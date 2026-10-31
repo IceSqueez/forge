@@ -3,7 +3,6 @@ use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
-use time::OffsetDateTime;
 use tokio::sync::{Notify, broadcast, mpsc, oneshot};
 use tokio::time::Instant;
 
@@ -292,7 +291,7 @@ pub(crate) struct SupervisorContext {
     pub(crate) state: Arc<AtomicConnectionState>,
     pub(crate) auth_state: Arc<RwLock<AuthState>>,
     pub(crate) shutdown: Arc<Notify>,
-    pub(crate) connected_at: Arc<RwLock<Option<OffsetDateTime>>>,
+    pub(crate) connected_at: Arc<RwLock<Option<Instant>>>,
     pub(crate) publisher: Arc<dyn EventPublisher>,
     pub(crate) creds: Arc<dyn CredentialsRepo>,
     pub(crate) req_rx: mpsc::UnboundedReceiver<PendingRequest>,
@@ -554,7 +553,7 @@ impl ReconnectingSession for SupervisorContext {
 
         {
             let mut g = connected_at.write_recover();
-            *g = Some(OffsetDateTime::now_utc());
+            *g = Some(Instant::now());
         }
         {
             let mut g = auth_state.write_recover();

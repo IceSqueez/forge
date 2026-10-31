@@ -2,11 +2,10 @@ use crate::vocabulary::labels;
 use forge_types::{IntegrationId, MessageRef, RecoverMutex, RecoverRwLock, UserText, VerbatimText};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use futures_util::StreamExt;
-use time::OffsetDateTime;
 use tokio::sync::{Notify, broadcast};
 use tokio::task::JoinHandle;
 
@@ -71,7 +70,7 @@ pub struct ObsClient {
     state: Arc<AtomicConnectionState>,
     shutdown: Arc<tokio::sync::Mutex<Arc<Notify>>>,
     supervisor: Arc<std::sync::Mutex<Option<JoinHandle<()>>>>,
-    connected_at: Arc<RwLock<Option<OffsetDateTime>>>,
+    connected_at: Arc<RwLock<Option<Instant>>>,
     obs_id: IntegrationId,
     obs_version: Arc<RwLock<Option<String>>>,
     obs_ws_version: Arc<RwLock<Option<String>>>,
@@ -110,7 +109,7 @@ impl ObsClient {
         let state = Arc::new(AtomicConnectionState::new(ConnectionState::Connecting));
         let notify = Arc::new(Notify::new());
         let shutdown = Arc::new(tokio::sync::Mutex::new(Arc::clone(&notify)));
-        let connected_at = Arc::new(RwLock::new(None::<OffsetDateTime>));
+        let connected_at = Arc::new(RwLock::new(None::<Instant>));
         let obs_version = Arc::new(RwLock::new(None));
         let obs_ws_version = Arc::new(RwLock::new(None::<String>));
         let mirror = Arc::new(ObsMirror::default());
@@ -266,13 +265,7 @@ impl BuiltinStatus for ObsClient {
     }
 
     fn uptime(&self) -> Option<Duration> {
-        let at = (*self.connected_at.read_recover())?;
-        let elapsed = OffsetDateTime::now_utc() - at;
-        if elapsed.is_positive() {
-            Some(elapsed.unsigned_abs())
-        } else {
-            None
-        }
+        self.connected_at.read_recover().map(|at| at.elapsed())
     }
 
     fn endpoint(&self) -> Option<UserText> {
@@ -411,7 +404,7 @@ struct SupervisorContext {
     inner: SessionSlot,
     state: Arc<AtomicConnectionState>,
     shutdown: Arc<Notify>,
-    connected_at: Arc<RwLock<Option<OffsetDateTime>>>,
+    connected_at: Arc<RwLock<Option<Instant>>>,
     obs_version: Arc<RwLock<Option<String>>>,
     obs_ws_version: Arc<RwLock<Option<String>>>,
     mirror: Arc<ObsMirror>,
@@ -605,7 +598,7 @@ impl ReconnectingSession for ObsSupervisor {
 
         {
             let mut g = connected_at.write_recover();
-            *g = Some(OffsetDateTime::now_utc());
+            *g = Some(Instant::now());
         }
 
         record_connection_failure(state, last_failure, None);
@@ -1291,7 +1284,7 @@ fn required_event_subscriptions() -> obws::requests::EventSubscription {
         | Sub::FILTERS
 }
 
-fn clear_connected_at(connected_at: &RwLock<Option<OffsetDateTime>>) {
+fn clear_connected_at(connected_at: &RwLock<Option<Instant>>) {
     {
         let mut g = connected_at.write_recover();
         *g = None;

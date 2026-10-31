@@ -6,7 +6,6 @@ use crate::vocabulary::messages;
 pub(crate) fn message(error: &MidiError) -> MessageRef {
     match error {
         MidiError::PortNotFound { name } => messages::port_not_found(name),
-        MidiError::PortDisconnected { name } => messages::port_disconnected(name),
         MidiError::InvalidStatusByte(byte) => messages::invalid_status_byte(*byte),
         MidiError::ValueOutOfRange { value, max } => messages::value_out_of_range(*value, *max),
         MidiError::MidirInit(detail) => messages::backend_unavailable_with(detail),
@@ -33,10 +32,6 @@ mod tests {
             (
                 MidiError::PortNotFound { name: "Pad".into() },
                 "midi.port_not_found",
-            ),
-            (
-                MidiError::PortDisconnected { name: "Pad".into() },
-                "midi.port_disconnected",
             ),
             (
                 MidiError::InvalidStatusByte(0x7F),
@@ -80,15 +75,11 @@ mod tests {
 
     #[test]
     fn port_errors_carry_the_port_name_as_a_verbatim_argument() {
-        for error in [
-            MidiError::PortNotFound { name: "Pad".into() },
-            MidiError::PortDisconnected { name: "Pad".into() },
-        ] {
-            assert_eq!(
-                message(&error).arg("port"),
-                Some(&MessageArg::Verbatim(VerbatimText::new("Pad")))
-            );
-        }
+        let error = MidiError::PortNotFound { name: "Pad".into() };
+        assert_eq!(
+            message(&error).arg("port"),
+            Some(&MessageArg::Verbatim(VerbatimText::new("Pad")))
+        );
     }
 
     #[test]

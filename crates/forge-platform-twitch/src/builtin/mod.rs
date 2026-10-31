@@ -309,12 +309,18 @@ impl TwitchIntegrationBundle {
     }
 
     pub(crate) async fn refresh_identity(&self) {
-        let Ok(Some(stored)) = credentials::load(self.creds.as_ref()).await else {
-            return;
+        let stored = match credentials::load(self.creds.as_ref()).await {
+            Ok(Some(stored)) => stored,
+            Ok(None) => return,
+            Err(error) => {
+                tracing::warn!(%error, "broadcaster credentials unreadable; identity not refreshed");
+                return;
+            }
         };
         self.record_token_expiry(stored.expires_at);
-        if let Ok(tier) = resolve_broadcaster_tier(self.transport.as_ref(), &stored.user_id).await {
-            self.record_tier(tier);
+        match resolve_broadcaster_tier(self.transport.as_ref(), &stored.user_id).await {
+            Ok(tier) => self.record_tier(tier),
+            Err(error) => tracing::debug!(%error, "broadcaster tier unavailable"),
         }
     }
 

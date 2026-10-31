@@ -6,8 +6,8 @@ use async_trait::async_trait;
 use forge_events::{EventChannel, EventPublisher, EventSubscription};
 use forge_net::Gateway;
 use forge_platform_core::{
-    ActingSender, ChatPlatform, ConnectionState, PlatformCapabilities, PlatformError,
-    SenderPreference, credential_storage_error,
+    ActingSender, ChatPlatform, ConnectionState, PlatformError, SenderPreference,
+    credential_storage_error,
 };
 use forge_storage::CredentialsRepo;
 use tokio::sync::{Mutex, OnceCell, watch};
@@ -27,7 +27,6 @@ use crate::vocabulary::PLATFORM_ID;
 pub(crate) const EVENT_CHANNEL_CAPACITY: usize = forge_events::PLATFORM_EVENT_CHANNEL_CAPACITY;
 
 pub struct TwitchPlatform {
-    capabilities: PlatformCapabilities,
     config: ChatSessionConfig,
     events: Arc<EventChannel>,
     creds: Arc<dyn CredentialsRepo>,
@@ -51,16 +50,6 @@ impl TwitchPlatform {
         lifecycle: TwitchLifecycle,
     ) -> Self {
         Self {
-            capabilities: PlatformCapabilities {
-                can_send_chat: true,
-                can_moderate: true,
-                can_subscribe_events: true,
-                can_polls: true,
-                can_predictions: true,
-                can_channel_points: true,
-                limited: false,
-                limited_reason: None,
-            },
             config,
             events: Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY)),
             creds,
@@ -136,11 +125,6 @@ impl TwitchPlatform {
     }
 
     async fn senders(&self) -> Result<ChatSenders, PlatformError> {
-        if !self.capabilities.can_send_chat {
-            return Err(PlatformError::Unsupported {
-                feature: "chat.send".to_owned(),
-            });
-        }
         Ok(ChatSenders::new(
             self.helix_transport().await?,
             Arc::new(SelfIdentity::new(Arc::clone(&self.creds))),

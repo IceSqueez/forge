@@ -4,6 +4,7 @@ use forge_types::{RecoverMutex, Secret};
 use crate::client::{DiscordClient, SendRecord};
 use crate::credentials::{DISCORD_CRED_PREFIX, WebhookCredential};
 use crate::error::{DiscordError, ValidationFault};
+use crate::mention::MentionPolicy;
 use crate::route::WebhookRoute;
 
 pub fn validate_webhook_url(url: &str) -> Result<(), DiscordError> {
@@ -90,7 +91,10 @@ impl DiscordClient {
         content: &str,
     ) -> Result<String, DiscordError> {
         let route = WebhookRoute::parse(url)?;
-        let body = serde_json::json!({ "content": content });
+        let body = serde_json::json!({
+            "content": content,
+            "allowed_mentions": MentionPolicy::default().to_wire(),
+        });
         let record = SendRecord { embed_count: 0 };
         self.execute_post(&route, &body, webhook_name, record).await
     }

@@ -5,9 +5,6 @@ pub enum MidiError {
     #[error("MIDI port not found: {name:?}")]
     PortNotFound { name: String },
 
-    #[error("MIDI port disconnected: {name:?}")]
-    PortDisconnected { name: String },
-
     #[error("invalid status byte: 0x{0:02X}")]
     InvalidStatusByte(u8),
 

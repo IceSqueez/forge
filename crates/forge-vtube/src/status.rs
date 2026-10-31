@@ -1,7 +1,5 @@
 use std::time::Duration;
 
-use time::OffsetDateTime;
-
 use forge_platform_core::{
     BuiltinStatus, CapabilityFlags, CollectionRevisions, ConnectionState, CredentialState,
     HeaderAction,
@@ -46,13 +44,7 @@ impl BuiltinStatus for VTubeClient {
     }
 
     fn uptime(&self) -> Option<Duration> {
-        let at = (*self.connected_at.read_recover())?;
-        let elapsed = OffsetDateTime::now_utc() - at;
-        if elapsed.is_positive() {
-            Some(elapsed.unsigned_abs())
-        } else {
-            None
-        }
+        self.connected_at.read_recover().map(|at| at.elapsed())
     }
 
     fn endpoint(&self) -> Option<UserText> {

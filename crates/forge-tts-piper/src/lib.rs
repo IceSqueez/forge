@@ -122,14 +122,14 @@ fn scan_voices_dir(
             let raw = match std::fs::read_to_string(&sidecar) {
                 Ok(raw) => raw,
                 Err(e) => {
-                    tracing::warn!(sidecar = %sidecar.display(), "unreadable sidecar: {e}");
+                    tracing::warn!(sidecar = %sidecar.display(), error = %e, "unreadable sidecar");
                     continue;
                 }
             };
             let meta: VoiceSidecar = match serde_json::from_str(&raw) {
                 Ok(m) => m,
                 Err(e) => {
-                    tracing::warn!(sidecar = %sidecar.display(), "malformed sidecar: {e}");
+                    tracing::warn!(sidecar = %sidecar.display(), error = %e, "malformed sidecar");
                     continue;
                 }
             };
@@ -139,17 +139,20 @@ fn scan_voices_dir(
                 .unwrap_or_default();
             let locale = bcp47_locale(&meta.language.code);
             let num = meta.num_speakers.max(1);
+            let speaker_names: std::collections::BTreeMap<u32, &str> = meta
+                .speaker_id_map
+                .iter()
+                .map(|(speaker_name, index)| (*index, speaker_name.as_str()))
+                .collect();
             for speaker in 0..num {
                 let voice_id = if num == 1 {
                     stem.clone()
                 } else {
                     format!("{}#{}", stem, speaker)
                 };
-                let name = meta
-                    .speaker_id_map
-                    .iter()
-                    .find(|(_, idx)| **idx == speaker)
-                    .map(|(speaker_name, _)| capitalize(speaker_name))
+                let name = speaker_names
+                    .get(&speaker)
+                    .map(|speaker_name| capitalize(speaker_name))
                     .unwrap_or_else(|| voice_id.clone());
                 voices.push(PiperEntry {
                     voice: TtsVoice {

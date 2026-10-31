@@ -1,9 +1,10 @@
 use crate::error::TwitchError;
 use forge_types::RecoverRwLock;
 use std::sync::{Arc, RwLock};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use forge_platform_core::{CollectionRevisionSignal, CollectionRevisions, QuickActionLiveness};
+use tokio::time::Instant;
 
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
 use crate::vocabulary::topics;
@@ -223,7 +224,11 @@ impl TwitchLifecycle {
         transport: &dyn HelixTransport,
         broadcaster_id: &str,
     ) {
-        if let Ok(body) = transport.execute(polls_request(broadcaster_id)).await
+        let polls = transport
+            .execute(polls_request(broadcaster_id))
+            .await
+            .inspect_err(|error| tracing::debug!(%error, "poll seed unavailable"));
+        if let Ok(body) = polls
             && let Some(rows) = entity_rows(&body)
         {
             let phase = if rows_have_status(rows, STATUS_ACTIVE) {
@@ -237,7 +242,11 @@ impl TwitchLifecycle {
             self.quick_actions.bump();
         }
 
-        if let Ok(body) = transport.execute(predictions_request(broadcaster_id)).await
+        let predictions = transport
+            .execute(predictions_request(broadcaster_id))
+            .await
+            .inspect_err(|error| tracing::debug!(%error, "prediction seed unavailable"));
+        if let Ok(body) = predictions
             && let Some(rows) = entity_rows(&body)
         {
             let phase = if rows_have_status(rows, STATUS_ACTIVE) {
@@ -277,7 +286,10 @@ impl TwitchLifecycle {
             Err(TwitchError::Http { status, .. }) if status == FORBIDDEN => {
                 Some(ShieldPhase::Unauthorized)
             }
-            Err(_) => None,
+            Err(error) => {
+                tracing::debug!(%error, "shield mode seed unavailable");
+                None
+            }
         };
         if let Some(phase) = shield_phase {
             self.set_shield(phase);

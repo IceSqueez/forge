@@ -9,7 +9,7 @@ use tokio_util::sync::CancellationToken;
 use crate::pusher::chat::{ChatLinkStatus, KickChatHandle};
 use forge_events::EventChannel;
 
-pub(crate) const PLATFORM_ID: &str = "kick";
+pub(crate) const PLATFORM_ID: &str = crate::vocabulary::INTEGRATION_ID;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct SessionGeneration(u64);

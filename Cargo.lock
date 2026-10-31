@@ -2864,6 +2864,7 @@ dependencies = [
  "forge-types",
  "forge-vtube",
  "futures-util",
+ "serde",
  "serde_json",
  "tempfile",
  "time",

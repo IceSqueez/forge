@@ -18,7 +18,6 @@ use tokio_util::sync::CancellationToken;
 
 use crate::api::poller::{CHANNEL_POLL_INTERVAL, PollerAuth, REDEMPTION_POLL_INTERVAL};
 use crate::auth::credentials_manager::KickCredentialsManager;
-use crate::capabilities::KICK_COMMUNITY_NOTE;
 use crate::platform::KickPlatform;
 use crate::triggers::ban::BanDescriptor;
 use crate::triggers::chat::ChatDescriptor;
@@ -31,6 +30,7 @@ use crate::triggers::reward_redeemed::RewardRedeemedDescriptor;
 use crate::triggers::sub::SubDescriptor;
 use crate::triggers::sub_gift::SubGiftDescriptor;
 use crate::vocabulary::messages;
+use crate::vocabulary::messages::KICK_COMMUNITY_NOTE;
 
 const LIVE_CHAT_METRIC: HealthMetricId = HealthMetricId::new(messages::HEALTH_LIVE_CHAT);
 const EVENTS_METRIC: HealthMetricId = HealthMetricId::new(messages::HEALTH_EVENTS);
@@ -74,7 +74,7 @@ impl KickIntegrationBundle {
         credentials_manager: Arc<KickCredentialsManager>,
         rate_limiter: Arc<dyn RateLimiter>,
         viewers: &KickViewerSource,
-    ) -> (Arc<Self>, broadcast::Sender<HealthDelta>) {
+    ) -> Arc<Self> {
         Self::with_feeds(
             slug,
             user_id,
@@ -94,7 +94,7 @@ impl KickIntegrationBundle {
         rate_limiter: Arc<dyn RateLimiter>,
         viewer_report_rx: watch::Receiver<ViewerReport>,
         poller_auth_rx: watch::Receiver<PollerAuth>,
-    ) -> (Arc<Self>, broadcast::Sender<HealthDelta>) {
+    ) -> Arc<Self> {
         let (health_tx, _) = broadcast::channel(forge_platform_core::HEALTH_CHANNEL_CAPACITY);
         let state_rx = platform.state_receiver();
         let bundle = Arc::new(Self {
@@ -102,7 +102,7 @@ impl KickIntegrationBundle {
             slug,
             user_id,
             token_expires_at: RwLock::new(None),
-            health_tx: health_tx.clone(),
+            health_tx,
             platform,
             credentials_manager,
             rate_limiter,
@@ -116,7 +116,7 @@ impl KickIntegrationBundle {
         Self::spawn_events_health_bridge(&bundle);
         Self::spawn_identity_refresh(&bundle);
         Self::spawn_token_expiry_bridge(&bundle);
-        (bundle, health_tx)
+        bundle
     }
 
     fn current_state(&self) -> ConnectionState {
@@ -153,6 +153,7 @@ impl KickIntegrationBundle {
 
     fn spawn_health_bridge(bundle: &Arc<Self>) {
         let Ok(handle) = tokio::runtime::Handle::try_current() else {
+            tracing::warn!("kick health bridge not started: no tokio runtime");
             return;
         };
         let bundle = Arc::clone(bundle);
@@ -197,6 +198,7 @@ impl KickIntegrationBundle {
 
     fn spawn_viewer_health_bridge(bundle: &Arc<Self>) {
         let Ok(handle) = tokio::runtime::Handle::try_current() else {
+            tracing::warn!("kick health bridge not started: no tokio runtime");
             return;
         };
         let bundle = Arc::clone(bundle);
@@ -233,6 +235,7 @@ impl KickIntegrationBundle {
 
     fn spawn_events_health_bridge(bundle: &Arc<Self>) {
         let Ok(handle) = tokio::runtime::Handle::try_current() else {
+            tracing::warn!("kick health bridge not started: no tokio runtime");
             return;
         };
         let bundle = Arc::clone(bundle);
@@ -264,6 +267,7 @@ impl KickIntegrationBundle {
 
     fn spawn_token_expiry_bridge(bundle: &Arc<Self>) {
         let Ok(handle) = tokio::runtime::Handle::try_current() else {
+            tracing::warn!("kick health bridge not started: no tokio runtime");
             return;
         };
         let bundle = Arc::clone(bundle);
@@ -286,6 +290,7 @@ impl KickIntegrationBundle {
 
     fn spawn_identity_refresh(bundle: &Arc<Self>) {
         let Ok(handle) = tokio::runtime::Handle::try_current() else {
+            tracing::warn!("kick health bridge not started: no tokio runtime");
             return;
         };
         let bundle = Arc::clone(bundle);
@@ -555,7 +560,7 @@ mod tests {
         ) {
             let (viewer_tx, viewer_rx) = watch::channel(ViewerReport::Absent);
             let (auth_tx, auth_rx) = watch::channel(PollerAuth::Authorized);
-            let (bundle, _) = KickIntegrationBundle::with_feeds(
+            let bundle = KickIntegrationBundle::with_feeds(
                 "test_channel".to_owned(),
                 777,
                 platform,

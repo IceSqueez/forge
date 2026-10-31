@@ -4,9 +4,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_events::{Event, EventChannel, EventSubscription};
-use forge_platform_core::{
-    ChatPlatform, ConnectionState, PlatformCapabilities, PlatformEndpoints, PlatformError,
-};
+use forge_platform_core::{ChatPlatform, ConnectionState, PlatformEndpoints, PlatformError};
 use forge_storage::BanLedgerRepo;
 use tokio::sync::{mpsc, watch};
 
@@ -14,7 +12,6 @@ use crate::ban_ledger::observed_ban;
 
 use crate::api::chat_messages::KickSendChat;
 use crate::auth::credentials_manager::KickCredentialsManager;
-use crate::capabilities::kick_capabilities;
 use crate::platform::sessions::{ChatSessions, PLATFORM_ID, SessionPublisher};
 use crate::pusher::chat::{ChatLinkStatus, KickChat, PusherTiming};
 use crate::pusher::chatroom_lookup::ChannelInfoFetcher;
@@ -25,7 +22,6 @@ const CHAT_FORWARD_CAPACITY: usize = 256;
 pub(crate) const EVENT_CHANNEL_CAPACITY: usize = forge_events::PLATFORM_EVENT_CHANNEL_CAPACITY;
 
 pub struct KickPlatform {
-    capabilities: PlatformCapabilities,
     events: Arc<EventChannel>,
     credentials_manager: Arc<KickCredentialsManager>,
     endpoints: PlatformEndpoints,
@@ -46,7 +42,6 @@ impl KickPlatform {
     ) -> Self {
         let events = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         Self {
-            capabilities: kick_capabilities(),
             sessions: ChatSessions::new(Arc::clone(&events)),
             events,
             credentials_manager,
@@ -72,18 +67,9 @@ impl KickPlatform {
     }
 
     async fn send_credentials(&self) -> Result<(String, u64), PlatformError> {
-        if !self.capabilities.can_send_chat {
-            return Err(PlatformError::Unsupported {
-                feature: "chat.send".to_owned(),
-            });
-        }
-        let creds = self.credentials_manager.load().await?.ok_or_else(|| {
-            PlatformError::ReauthRequired {
-                platform: PLATFORM_ID.to_owned(),
-            }
-        })?;
+        let user_id = self.credentials_manager.user_id().await?;
         let token = self.credentials_manager.get_valid_access_token().await?;
-        Ok((token, creds.user_id))
+        Ok((token, user_id))
     }
 }
 

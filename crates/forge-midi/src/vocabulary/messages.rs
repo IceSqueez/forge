@@ -13,8 +13,6 @@ pub const RAW_BYTES_SHAPE: MessageCode =
     MessageCode::from_static(INTEGRATION_ID, "raw_bytes_shape");
 
 const PORT_NOT_FOUND: MessageCode = MessageCode::from_static(INTEGRATION_ID, "port_not_found");
-const PORT_DISCONNECTED: MessageCode =
-    MessageCode::from_static(INTEGRATION_ID, "port_disconnected");
 const INVALID_STATUS_BYTE: MessageCode =
     MessageCode::from_static(INTEGRATION_ID, "invalid_status_byte");
 const VALUE_OUT_OF_RANGE: MessageCode =
@@ -90,7 +88,6 @@ pub const MIDI_MESSAGES: MessageCatalog = MessageCatalog {
         BACKEND_UNAVAILABLE,
         RAW_BYTES_SHAPE,
         PORT_NOT_FOUND,
-        PORT_DISCONNECTED,
         INVALID_STATUS_BYTE,
         VALUE_OUT_OF_RANGE,
         PORT_CONNECT_FAILED,
@@ -152,10 +149,6 @@ pub(crate) fn backend_unavailable_with(detail: &str) -> MessageRef {
 
 pub(crate) fn port_not_found(port: &str) -> MessageRef {
     MessageRef::new(PORT_NOT_FOUND).with_arg(PORT_ARG, VerbatimText::new(port))
-}
-
-pub(crate) fn port_disconnected(port: &str) -> MessageRef {
-    MessageRef::new(PORT_DISCONNECTED).with_arg(PORT_ARG, VerbatimText::new(port))
 }
 
 pub(crate) fn value_out_of_range(value: u8, max: i64) -> MessageRef {
@@ -236,7 +229,6 @@ mod tests {
             MessageRef::new(RAW_BYTES_SHAPE),
             backend_unavailable_with("c"),
             port_not_found("p"),
-            port_disconnected("p"),
             invalid_status_byte(1),
             value_out_of_range(200, 127),
             port_connect_failed("c"),

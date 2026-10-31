@@ -158,7 +158,6 @@ mod tests {
             viewer_rx,
             auth_rx,
         )
-        .0
     }
 
     fn credentials(stored: StoredCredentials) -> Arc<SwitchableCredentials> {

@@ -425,7 +425,7 @@ impl IntegrationFactory<BuiltinObject> for KickFactory {
             }),
             poller_tx,
         );
-        let (bundle, _health_tx) = forge_platform_kick::KickIntegrationBundle::new(
+        let bundle = forge_platform_kick::KickIntegrationBundle::new(
             stored.username,
             stored.user_id,
             Arc::clone(&self.platform),

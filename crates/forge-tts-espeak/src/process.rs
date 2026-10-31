@@ -36,11 +36,16 @@ pub(crate) fn check_espeak_version(binary: &Path) -> Result<(), EspeakError> {
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status()
-        .map_err(|_| EspeakError::BinaryNotFound)?;
+        .map_err(|error| match error.kind() {
+            std::io::ErrorKind::NotFound => EspeakError::BinaryNotFound,
+            _ => EspeakError::VersionProbeFailed(error.to_string()),
+        })?;
     if status.success() {
         Ok(())
     } else {
-        Err(EspeakError::BinaryNotFound)
+        Err(EspeakError::VersionProbeFailed(format!(
+            "--version exited with {status}"
+        )))
     }
 }
 

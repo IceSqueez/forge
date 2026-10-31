@@ -1,8 +1,8 @@
 use std::sync::{Arc, OnceLock, RwLock};
 
-use time::OffsetDateTime;
 use tokio::sync::{Notify, broadcast, mpsc};
 use tokio::task::JoinHandle;
+use tokio::time::Instant;
 
 use forge_events::EventPublisher;
 use forge_platform_core::{
@@ -42,7 +42,7 @@ pub struct VTubeClient {
     pub(crate) shutdown: Arc<tokio::sync::Mutex<Arc<Notify>>>,
     pub(crate) lifecycle: tokio::sync::Mutex<()>,
     pub(crate) supervisor: Arc<std::sync::Mutex<Option<JoinHandle<()>>>>,
-    pub(crate) connected_at: Arc<RwLock<Option<OffsetDateTime>>>,
+    pub(crate) connected_at: Arc<RwLock<Option<Instant>>>,
     pub(crate) vtube_version: Arc<OnceLock<String>>,
     pub(crate) req_tx: ReqTxSlot,
     pub(crate) health_state: Arc<RwLock<HealthSnapshot>>,
@@ -107,7 +107,7 @@ impl VTubeClient {
         let auth_state = Arc::new(RwLock::new(AuthState::Cold));
         let notify = Arc::new(Notify::new());
         let shutdown = Arc::new(tokio::sync::Mutex::new(Arc::clone(&notify)));
-        let connected_at = Arc::new(RwLock::new(None::<OffsetDateTime>));
+        let connected_at = Arc::new(RwLock::new(None::<Instant>));
         let vtube_version = Arc::new(OnceLock::<String>::new());
         let (health_tx, health_state) = make_health_channel();
         let (req_tx, req_rx) = mpsc::unbounded_channel::<PendingRequest>();
@@ -423,7 +423,7 @@ pub(crate) mod tests {
         async fn last_refresh(
             &self,
             _id: &CredentialId,
-        ) -> Result<Option<OffsetDateTime>, StorageError> {
+        ) -> Result<Option<time::OffsetDateTime>, StorageError> {
             Ok(None)
         }
 

@@ -345,7 +345,13 @@ fn find_input_device(host: &cpal::Host, id: Option<&DeviceId>) -> Option<cpal::D
                     .map(|found| found.id() == id.as_str())
                     .unwrap_or(false)
             })
-            .or_else(|| host.default_input_device()),
+            .or_else(|| {
+                tracing::warn!(
+                    device = id.as_str(),
+                    "input device not found, falling back to default"
+                );
+                host.default_input_device()
+            }),
     }
 }
 

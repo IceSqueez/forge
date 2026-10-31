@@ -3,7 +3,6 @@ mod auth;
 mod ban_ledger;
 mod ban_list;
 mod builtin;
-mod capabilities;
 pub(crate) mod control;
 #[cfg(test)]
 #[path = "../../forge-platform-core/test_support/emitted_codes.rs"]
@@ -58,5 +57,5 @@ pub use api::rewards::RedemptionRecord;
 pub use api::rewards::UpdateRewardParams;
 pub use auth::KICK_AUTHORIZE_ENDPOINT;
 pub use auth::LoopbackCode;
-pub use capabilities::KICK_COMMUNITY_NOTE;
 pub use pusher::chatroom_lookup::KickChannelInfo;
+pub use vocabulary::messages::KICK_COMMUNITY_NOTE;

@@ -111,7 +111,14 @@ pub(crate) async fn handle_set_global(
         }
     };
     let globals_repo: &dyn GlobalsRepo = ctx.globals.as_ref();
-    let prev_value = globals_repo.get(&name).await.ok().flatten();
+    let prev_value = globals_repo
+        .get(&name)
+        .await
+        .inspect_err(
+            |error| tracing::warn!(%error, global = %name, "previous global value unreadable"),
+        )
+        .ok()
+        .flatten();
     let changed = GlobalSet {
         key: name.clone(),
         new_value: variant_to_wire_value(&variant),

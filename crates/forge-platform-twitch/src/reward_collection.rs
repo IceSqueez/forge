@@ -444,10 +444,12 @@ impl TwitchIntegrationBundle {
         request: HelixRequest,
         call: RewardCall,
     ) -> CollectionOutcome<serde_json::Value> {
-        self.helix()
-            .execute(request)
-            .await
-            .map_err(|e| self.reward_failure(e, call))
+        self.helix().execute(request).await.map_err(|error| {
+            if call == RewardCall::Modify && error.is_not_found() {
+                self.lifecycle().rewards_changed();
+            }
+            self.reward_failure(error, call)
+        })
     }
 
     fn reward_failure(&self, error: TwitchError, call: RewardCall) -> CollectionFailure {
@@ -458,10 +460,7 @@ impl TwitchIntegrationBundle {
             TwitchError::Http { status, body } => match status {
                 forge_net::status::BAD_REQUEST => bad_request_failure(&body),
                 forge_net::status::FORBIDDEN => forbidden_failure(&body, call, self.tier()),
-                NOT_FOUND if call == RewardCall::Modify => {
-                    self.lifecycle().rewards_changed();
-                    reward_gone()
-                }
+                NOT_FOUND if call == RewardCall::Modify => reward_gone(),
                 _ => CollectionFailure::Transport,
             },
             _ => CollectionFailure::Transport,

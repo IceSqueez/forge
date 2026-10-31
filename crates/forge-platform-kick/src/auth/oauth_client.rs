@@ -14,7 +14,7 @@ use serde::Deserialize;
 use crate::gateway::{gateway_error, malformed};
 use forge_net::status::BAD_REQUEST;
 
-const PLATFORM: &str = "kick";
+const PLATFORM: &str = crate::vocabulary::INTEGRATION_ID;
 const AUTHORIZE_PATH: &str = "/authorize";
 const TOKEN_PATH: &str = "/token";
 

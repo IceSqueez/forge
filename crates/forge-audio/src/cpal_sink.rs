@@ -442,9 +442,11 @@ fn prepare_samples(buffer: &PcmBuffer, dst_sr: u32, dst_ch: u16) -> Result<Vec<i
 
 fn stream_error_callback(watch: Arc<OutputWatch>) -> impl FnMut(cpal::Error) + Send + 'static {
     move |err: cpal::Error| {
-        tracing::error!("cpal stream error: {}", err);
         if ends_playback(err.kind()) {
+            tracing::error!(error = %err, "cpal output stream failed");
             watch.fail(err.to_string());
+        } else {
+            tracing::debug!(error = %err, "cpal output stream hiccup");
         }
     }
 }

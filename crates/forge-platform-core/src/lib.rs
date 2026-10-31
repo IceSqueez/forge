@@ -1,7 +1,6 @@
 mod auth;
 mod ban_list;
 mod builtin;
-mod capabilities;
 mod chat;
 mod collections;
 mod connection_announcer;
@@ -37,7 +36,6 @@ pub use builtin::{
     QuickActionFieldValue, QuickActionGroup, QuickActionLiveness, QuickActions, RowAction,
     SectionIcon, StatColumn, SubscriptionRow, SubscriptionStatus, TokenColor, TrailingToken,
 };
-pub use capabilities::PlatformCapabilities;
 pub use chat::{
     AtomicConnectionState, ChatPlatform, ConnectionState, ConnectionTransition,
     connection_state_changed_event,

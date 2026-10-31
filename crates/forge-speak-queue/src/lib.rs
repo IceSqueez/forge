@@ -189,7 +189,13 @@ pub struct QueueConfig {
 
 const DEFAULT_MAX_QUEUE_LEN: usize = 100;
 const DEFAULT_PER_USER_LIMIT: usize = 5;
-const DEFAULT_MASTER_VOLUME: f32 = 1.0;
+pub(crate) const UNITY_GAIN: f32 = 1.0;
+const MUTE_GAIN: f32 = 0.0;
+const DEFAULT_MASTER_VOLUME: f32 = UNITY_GAIN;
+
+pub(crate) fn clamp_gain(gain: f32) -> f32 {
+    gain.clamp(MUTE_GAIN, UNITY_GAIN)
+}
 const QUEUE_TIMEOUT_MARGIN: Duration = Duration::from_secs(5);
 const DEFAULT_SYNTHESIS_TIMEOUT: Duration =
     forge_tts_core::ENGINE_SYNTHESIS_BUDGET.saturating_add(QUEUE_TIMEOUT_MARGIN);
@@ -268,7 +274,7 @@ impl SpeakQueueHandle {
             .load()
             .get(engine_id)
             .copied()
-            .unwrap_or(1.0)
+            .unwrap_or(UNITY_GAIN)
     }
 
     pub fn master_volume(&self) -> f32 {
@@ -406,7 +412,7 @@ mod tests {
             depth: Arc::new(AtomicUsize::new(0)),
             voices: Shared::new(Vec::new()),
             disabled_engines: Shared::new(HashSet::new()),
-            master_volume_bits: Arc::new(AtomicU32::new(1.0f32.to_bits())),
+            master_volume_bits: Arc::new(AtomicU32::new(UNITY_GAIN.to_bits())),
             engine_gains: Shared::new(HashMap::new()),
             resolver: Shared::new(VoiceAliasResolver::new(
                 Vec::new(),

@@ -14,7 +14,7 @@ use crate::auth::credentials::{CREDENTIAL_KEY, KickCredentials};
 use crate::auth::oauth_client::KickOAuthClient;
 use crate::auth::{KickAuthBundle, expiry_after};
 
-const PLATFORM: &str = "kick";
+const PLATFORM: &str = crate::vocabulary::INTEGRATION_ID;
 
 pub struct KickCredentialsManager {
     refresh: SingleFlightRefresh<KickRotation>,
@@ -853,7 +853,7 @@ mod tests {
         ));
         let (_viewers, viewer_rx) = tokio::sync::watch::channel(ViewerReport::Absent);
         let (_poller, auth_rx) = tokio::sync::watch::channel(PollerAuth::Authorized);
-        let (bundle, _) = crate::builtin::KickIntegrationBundle::with_feeds(
+        let bundle = crate::builtin::KickIntegrationBundle::with_feeds(
             "test_channel".to_owned(),
             777,
             platform,

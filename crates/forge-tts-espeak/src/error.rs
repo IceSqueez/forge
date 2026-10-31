@@ -6,6 +6,9 @@ pub(crate) enum EspeakError {
     #[error("espeak-ng binary not found on PATH")]
     BinaryNotFound,
 
+    #[error("espeak-ng is unusable: {0}")]
+    VersionProbeFailed(String),
+
     #[error("espeak-ng exited with error: {0}")]
     SubprocessFailed(String),
 
@@ -28,6 +31,10 @@ impl From<EspeakError> for TtsError {
             EspeakError::BinaryNotFound => TtsError::EngineUnavailable {
                 id: EngineId(ENGINE_ID_ESPEAK_NG.into()),
                 detail: "espeak-ng binary not found on PATH".into(),
+            },
+            EspeakError::VersionProbeFailed(detail) => TtsError::EngineUnavailable {
+                id: EngineId(ENGINE_ID_ESPEAK_NG.into()),
+                detail,
             },
             EspeakError::SubprocessFailed(detail) => TtsError::SynthesisFailed {
                 id: EngineId(ENGINE_ID_ESPEAK_NG.into()),

@@ -23,7 +23,7 @@ use crate::voice::{ResolveResult, VoiceAliasResolver, candidate_languages, voice
 
 use crate::{
     PipelineConfigHandle, Priority, QueueConfig, QueuedOrderEntry, RequestId, SpeakCommand,
-    SpeakEvent, SpeakRequest, TargetedLegs,
+    SpeakEvent, SpeakRequest, TargetedLegs, UNITY_GAIN, clamp_gain,
 };
 
 pub(crate) struct ActorDeps {
@@ -606,7 +606,7 @@ pub(crate) async fn run_actor(
                             resolver.set_engine_default(engine_id.clone(), defaults);
                         });
                         let mut next = (*engine_gains.load()).clone();
-                        next.insert(engine_id, gain.clamp(0.0, 1.0));
+                        next.insert(engine_id, clamp_gain(gain));
                         engine_gains.store(next);
                     }
                     Some(c) => handle_command(
@@ -823,7 +823,7 @@ fn start_clip(
         }),
         queue_len,
     );
-    let engine_gain = engine_gains.get(&engine_id).copied().unwrap_or(1.0);
+    let engine_gain = engine_gains.get(&engine_id).copied().unwrap_or(UNITY_GAIN);
     pcm.apply_gain(config.master_volume * engine_gain);
     match sink_for(&request, deps, targeted_legs) {
         Ok(sink) => {
@@ -1210,7 +1210,7 @@ fn handle_command(
             });
         }
         SpeakCommand::SetVolume(volume) => {
-            config.master_volume = volume.clamp(0.0, 1.0);
+            config.master_volume = clamp_gain(volume);
         }
         SpeakCommand::SetRepeatWindow(window) => {
             config.repeat_window = window;

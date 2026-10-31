@@ -5,7 +5,6 @@ msg-midi-health_last_note_on = Last Note On
 msg-midi-health_events_per_minute = Events / min
 msg-midi-raw_bytes_shape = Must be a list of byte values
 msg-midi-port_not_found = MIDI port "{ $port }" was not found.
-msg-midi-port_disconnected = MIDI port "{ $port }" was disconnected.
 msg-midi-value_out_of_range = The MIDI value { $value } is above the maximum of { $max }.
 msg-midi-invalid_status_byte = The MIDI message has an invalid status byte ({ $byte }).
 msg-midi-port_connect_failed = Could not connect to the MIDI port.

@@ -154,6 +154,7 @@ impl YoutubeIntegrationBundle {
 
     fn spawn_health_bridge(bundle: &Arc<Self>) {
         let Ok(handle) = tokio::runtime::Handle::try_current() else {
+            tracing::warn!("youtube health bridge not started: no tokio runtime");
             return;
         };
         let bundle = Arc::clone(bundle);
@@ -198,6 +199,7 @@ impl YoutubeIntegrationBundle {
 
     fn spawn_viewer_health_bridge(bundle: &Arc<Self>) {
         let Ok(handle) = tokio::runtime::Handle::try_current() else {
+            tracing::warn!("youtube health bridge not started: no tokio runtime");
             return;
         };
         let bundle = Arc::clone(bundle);
@@ -224,6 +226,7 @@ impl YoutubeIntegrationBundle {
 
     fn spawn_token_expiry_bridge(bundle: &Arc<Self>) {
         let Ok(handle) = tokio::runtime::Handle::try_current() else {
+            tracing::warn!("youtube health bridge not started: no tokio runtime");
             return;
         };
         let bundle = Arc::clone(bundle);
@@ -243,6 +246,7 @@ impl YoutubeIntegrationBundle {
 
     fn spawn_identity_refresh(bundle: &Arc<Self>) {
         let Ok(handle) = tokio::runtime::Handle::try_current() else {
+            tracing::warn!("youtube health bridge not started: no tokio runtime");
             return;
         };
         let bundle = Arc::clone(bundle);

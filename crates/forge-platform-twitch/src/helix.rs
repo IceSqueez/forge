@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 pub(crate) use forge_net::status::CONFLICT;
-use forge_net::status::TOO_MANY_REQUESTS;
+use forge_net::status::{NOT_FOUND, TOO_MANY_REQUESTS};
 use forge_net::{ExpectedRefusal, Gateway, GatewayFailure, GatewayRequest, Method, RequestBody};
 use forge_types::OAuthToken;
 use forge_types::Secret;
@@ -78,6 +78,10 @@ impl HelixRequest {
 impl TwitchError {
     pub(crate) fn is_already_exists(&self) -> bool {
         matches!(self, Self::Http { status, .. } if *status == CONFLICT)
+    }
+
+    pub(crate) fn is_not_found(&self) -> bool {
+        matches!(self, Self::Http { status, .. } if *status == NOT_FOUND)
     }
 
     pub(crate) fn is_server_error(&self) -> bool {

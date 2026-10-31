@@ -857,7 +857,7 @@ mod tests {
     use forge_storage::test_support::MemorySettings;
 
     use super::*;
-    use crate::bus::NullEventLogRepo;
+    use crate::NullEventLogRepo;
 
     const STAGE: &str = "stage-audio";
 

@@ -27,7 +27,7 @@ mod tests {
     use time::OffsetDateTime;
 
     use super::*;
-    use crate::bus::NullEventLogRepo;
+    use crate::NullEventLogRepo;
 
     #[tokio::test]
     async fn bus_donation_reaches_the_slot_and_comes_back_as_a_change_event() {

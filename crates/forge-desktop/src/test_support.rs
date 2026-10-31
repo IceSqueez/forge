@@ -1279,6 +1279,19 @@ pub(crate) async fn yield_until(mut reached: impl FnMut() -> bool) {
     .await;
 }
 
+pub(crate) struct StalledDownloader;
+
+#[async_trait::async_trait]
+impl crate::update_flow::ArtifactDownloader for StalledDownloader {
+    async fn download(
+        &self,
+        _artifact: &forge_update::Artifact,
+        _staging_dir: &std::path::Path,
+    ) -> Result<forge_update::StagedArtifact, forge_update::UpdateError> {
+        std::future::pending().await
+    }
+}
+
 pub(crate) struct NeutralOverlaySamples;
 
 #[async_trait::async_trait]

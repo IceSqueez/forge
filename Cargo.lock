@@ -3062,6 +3062,7 @@ dependencies = [
  "forge-paths",
  "forge-platform-core",
  "forge-registry",
+ "forge-runtime",
  "forge-script",
  "forge-storage",
  "forge-storage-sqlite",

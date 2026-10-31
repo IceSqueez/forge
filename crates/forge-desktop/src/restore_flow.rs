@@ -355,7 +355,8 @@ mod tests {
     use crate::restore_passphrase_modal::tests::type_passphrase;
     use crate::restore_problem::RestoreProblem;
     use crate::test_support::{
-        error_toasts, install_presentation, pump, runtime, staged_restore_in, test_backend,
+        StalledDownloader, error_toasts, install_presentation, pump, runtime, staged_restore_in,
+        test_backend,
     };
     use crate::update_exit::ExitHandoff;
     use crate::update_flow::UpdateFlow;
@@ -429,6 +430,7 @@ mod tests {
             let update_flow = cx.new(|_| {
                 UpdateFlow::new(
                     backend as Arc<dyn DataProvider>,
+                    Arc::new(StalledDownloader),
                     handle.clone(),
                     data_dir.clone(),
                 )

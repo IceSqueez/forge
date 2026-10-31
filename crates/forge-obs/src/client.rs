@@ -435,7 +435,7 @@ struct SupervisorContext {
     timing: ObsTiming,
 }
 
-const EVENT_BUFFER_CAPACITY: usize = 1024;
+pub const EVENT_BUFFER_CAPACITY: usize = 1024;
 
 enum RetryWait {
     Elapsed,

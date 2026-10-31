@@ -36,31 +36,6 @@ pub enum BusError {
     Storage(#[from] StorageError),
 }
 
-pub struct NullEventLogRepo;
-
-#[async_trait]
-impl EventLogRepo for NullEventLogRepo {
-    async fn insert(&self, _event: &Event) -> Result<(), StorageError> {
-        Ok(())
-    }
-
-    async fn get(&self, _id: EventId) -> Result<Option<Event>, StorageError> {
-        Ok(None)
-    }
-
-    async fn recent(&self, _limit: usize) -> Result<Vec<Event>, StorageError> {
-        Ok(Vec::new())
-    }
-
-    async fn recent_since(
-        &self,
-        _limit: usize,
-        _since: Option<EventId>,
-    ) -> Result<Vec<Event>, StorageError> {
-        Ok(Vec::new())
-    }
-}
-
 pub struct EventBus {
     observers: EventChannel,
     ring: Mutex<EventRing>,
@@ -482,6 +457,7 @@ const _: () = {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::NullEventLogRepo;
     use crate::test_support::{Sandboxed, sandboxed_backend};
     use forge_events::{Delivery, EventSource};
     use forge_storage::DataProvider;

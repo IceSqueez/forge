@@ -2570,10 +2570,7 @@ mod tests {
 
         session.publish_chat_message(&event_data);
 
-        let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
-            .await
-            .expect("timeout")
-            .expect("recv error");
+        let ev = next_published(&mut sub);
 
         assert_eq!(ev.kind, "twitch.channel.chat.message");
         assert_eq!(ev.source, EventSource::Twitch);
@@ -2606,10 +2603,7 @@ mod tests {
                 "chatter_user_login": "someone",
                 "message": {"text": "hi"},
             }));
-            let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
-                .await
-                .expect("timeout")
-                .expect("recv error");
+            let ev = next_published(&mut sub);
 
             assert_eq!(
                 ev.payload
@@ -2637,10 +2631,7 @@ mod tests {
         });
         session.publish_chat_message(&event_data);
 
-        let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
-            .await
-            .expect("timeout")
-            .expect("recv error");
+        let ev = next_published(&mut sub);
 
         assert_eq!(ev.payload["cheer"]["bits"].as_i64(), Some(100));
         assert!(
@@ -2668,10 +2659,7 @@ mod tests {
         });
         session.publish_chat_message(&event_data);
 
-        let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
-            .await
-            .expect("timeout")
-            .expect("recv error");
+        let ev = next_published(&mut sub);
 
         assert_eq!(
             ev.payload["from_channel"]["login"].as_str(),
@@ -2702,10 +2690,7 @@ mod tests {
         });
         session.publish_chat_message(&event_data);
 
-        let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
-            .await
-            .expect("timeout")
-            .expect("recv error");
+        let ev = next_published(&mut sub);
 
         assert!(
             ev.payload.get("from_channel").is_none(),
@@ -2741,10 +2726,7 @@ mod tests {
         for (name, event_data) in [("keys absent", plain), ("empty source id", empty_source)] {
             session.publish_chat_message(&event_data);
 
-            let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
-                .await
-                .expect("timeout")
-                .expect("recv error");
+            let ev = next_published(&mut sub);
 
             assert!(ev.payload.get("cheer").is_none(), "cheer present: {name}");
             assert!(
@@ -2778,10 +2760,7 @@ mod tests {
         });
         session.publish_chat_message(&event_data);
 
-        let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
-            .await
-            .unwrap()
-            .unwrap();
+        let ev = next_published(&mut sub);
 
         let chat_val = ev.payload.get(ChatPayload::KEY).expect("_chat key missing");
         let chat: ChatPayload = serde_json::from_value(chat_val.clone()).unwrap();
@@ -2814,10 +2793,7 @@ mod tests {
         });
         session.publish_chat_message(&event_data);
 
-        let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
-            .await
-            .unwrap()
-            .unwrap();
+        let ev = next_published(&mut sub);
 
         assert!(ev.payload.get("channel").is_some(), "channel key missing");
         assert!(ev.payload.get("user").is_some(), "user key missing");
@@ -2844,10 +2820,7 @@ mod tests {
         });
         session.publish_subscribe_event(&event_data, "meta-msg-001");
 
-        let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
-            .await
-            .unwrap()
-            .unwrap();
+        let ev = next_published(&mut sub);
 
         assert_eq!(ev.kind, "twitch.channel.subscribe");
         let chat_val = ev.payload.get(ChatPayload::KEY).expect("_chat key missing");
@@ -2867,11 +2840,14 @@ mod tests {
         );
     }
 
-    async fn published(mut sub: EventSubscription) -> Event {
-        tokio::time::timeout(Duration::from_millis(100), sub.recv())
-            .await
-            .expect("the ingest must publish within the wait")
+    fn next_published(sub: &mut EventSubscription) -> Event {
+        sub.try_recv()
             .expect("the bus must stay open")
+            .expect("the ingest must publish before it returns")
+    }
+
+    fn published(mut sub: EventSubscription) -> Event {
+        next_published(&mut sub)
     }
 
     #[tokio::test]
@@ -2888,7 +2864,7 @@ mod tests {
             "message": { "text": "hello there" },
         }));
 
-        let event = published(sub).await;
+        let event = published(sub);
         assert_eq!(
             event.payload["user"]["display_name"].as_str(),
             Some("LoyalFan")
@@ -2913,7 +2889,7 @@ mod tests {
             "source_broadcaster_user_login": "other_chan",
             "source_broadcaster_user_name": "OtherChan",
         }));
-        let event = published(sub).await;
+        let event = published(sub);
 
         let mut registry = forge_registry::TriggerRegistry::new();
         crate::triggers::register_twitch_triggers(&mut registry).unwrap();
@@ -2947,7 +2923,7 @@ mod tests {
                 "message": { "text": "hello there" },
             }));
 
-            let event = published(sub).await;
+            let event = published(sub);
             assert_eq!(
                 event.payload["user"]["display_name"].as_str(),
                 Some("loyalfan"),
@@ -2978,7 +2954,7 @@ mod tests {
             }
             session.publish_gift_sub_event(&event_data, "meta-gift-001");
 
-            let event = published(sub).await;
+            let event = published(sub);
             assert_eq!(
                 event.payload["gift_total"].as_i64(),
                 Some(expected),
@@ -3002,10 +2978,7 @@ mod tests {
         });
         session.publish_raid_event(&event_data, "meta-raid-001");
 
-        let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
-            .await
-            .unwrap()
-            .unwrap();
+        let ev = next_published(&mut sub);
 
         assert_eq!(ev.kind, "twitch.channel.raid");
         assert_eq!(ev.payload["viewer_count"].as_i64(), Some(500));
@@ -3057,10 +3030,7 @@ mod tests {
 
             session.publish_ban_event(&event_data, "meta-ban-003");
 
-            let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
-                .await
-                .unwrap()
-                .unwrap();
+            let ev = next_published(&mut sub);
             let attached: ChatModerationPayload =
                 serde_json::from_value(ev.payload[ChatModerationPayload::KEY].clone()).unwrap();
             assert_eq!(
@@ -3098,10 +3068,7 @@ mod tests {
         });
         session.publish_automod_hold_event(&event_data, "meta-automod-malformed");
 
-        let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
-            .await
-            .unwrap()
-            .unwrap();
+        let ev = next_published(&mut sub);
 
         assert_eq!(
             ev.payload["blocked_term"]["terms_found"],
@@ -3127,10 +3094,7 @@ mod tests {
         });
         session.publish_automod_message_update_event(&event_data, "meta-automod-msg-blocked");
 
-        let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
-            .await
-            .unwrap()
-            .unwrap();
+        let ev = next_published(&mut sub);
 
         assert!(ev.payload["automod"]["category"].is_null());
         assert!(ev.payload["automod"]["level"].is_null());
@@ -3159,10 +3123,7 @@ mod tests {
             });
             session.publish_automod_hold_event(&event_data, "meta");
 
-            let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
-                .await
-                .unwrap()
-                .unwrap();
+            let ev = next_published(&mut sub);
 
             assert_eq!(ev.payload["message_text"].as_str(), Some(expected));
         }
@@ -3181,10 +3142,7 @@ mod tests {
         });
         session.publish_guest_star_guest_update_event(&event_data, "meta-gs-slot-only");
 
-        let ev = tokio::time::timeout(Duration::from_millis(100), sub.recv())
-            .await
-            .unwrap()
-            .unwrap();
+        let ev = next_published(&mut sub);
 
         assert!(
             ev.payload["guest"]["id"].is_null(),
@@ -5645,7 +5603,7 @@ mod tests {
         let sub = bus.subscribe();
 
         session.publish_chat_message(&fixture["raw"]);
-        let ev = published(sub).await;
+        let ev = published(sub);
 
         let actual =
             serde_json::json!({ "source": ev.source, "kind": ev.kind, "payload": ev.payload });

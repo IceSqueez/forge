@@ -32,6 +32,8 @@ mod latest_overlay_feed;
 mod lifecycle_messages;
 mod live_viewers;
 mod notification_policy;
+#[cfg(any(test, feature = "test-support"))]
+mod null_event_log;
 mod overlay_definition_revision;
 mod overlay_lanes;
 mod overlay_media;
@@ -64,7 +66,7 @@ pub use action_engine::{
     ActionEngineHandle, DispatchError, ExecutionRequest, PendingQuickAction, spawn_action_engine,
 };
 pub use audio_runners::register_speech_sub_actions;
-pub use bus::{BusError, EventBus, EventHistory, NullEventLogRepo};
+pub use bus::{BusError, EventBus, EventHistory};
 pub use catalog::Catalog;
 pub use chain::{ChainEngine, ChainRun};
 pub use chat_history_persistence::{ChatHistoryRetentionHandle, spawn_chat_history_persistence};
@@ -97,6 +99,8 @@ pub use notification_policy::{
     ActionFailureNotice, NotificationIntent, NotificationIntents, NotificationPolicyHandle,
     NotificationPreferences, spawn_notification_policy,
 };
+#[cfg(any(test, feature = "test-support"))]
+pub use null_event_log::NullEventLogRepo;
 pub use overlay_definition_revision::OverlayDefinitionChanges;
 pub use overlay_media::OverlayMediaLibrary;
 pub use overlay_samples::{OverlaySampleSource, OverlaySamples};

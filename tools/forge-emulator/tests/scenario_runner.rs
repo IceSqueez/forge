@@ -686,26 +686,39 @@ async fn a_server_drop_notice_inside_the_window_fails_an_absence_check() {
 #[tokio::test]
 async fn stop_interrupts_the_running_step_and_skips_the_rest() {
     let harness = Harness::start(COOPERATIVE, false).await;
-    let mut scenario = scenario(
+    let scenario = scenario(
         json!({ "chat_commands": [{ "phrase": "!ping", "action_name": "Ping" }] }),
         json!({}),
         json!([
             ready(),
-            { "do": { "pause": { "ms": 5000, "reason": "long enough to be interrupted" } } },
-            { "do": { "run_action": { "action": "Ping" } } }
+            {
+                "do": { "run_action": { "action": "Ping" } },
+                "expect": [ { "event": { "kind": "custom.never", "within_ms": 120000 } } ]
+            },
+            { "do": { "pause": { "ms": 1, "reason": "must not run" } } }
         ]),
     );
-    scenario.steps.remove(0);
+    let second_step_acted = harness.journal.wait_until(Instant::now() + DEADLINE, |view| {
+        view.entries.iter().any(|entry| {
+            matches!(&entry.observation, Observation::Event(event) if event.kind == "action.start")
+        })
+    });
+
     let steps = timeout(
         DEADLINE,
-        execute_steps(&scenario, &harness.session(), std::future::ready(())),
+        execute_steps(&scenario, &harness.session(), second_step_acted),
     )
     .await
     .unwrap();
 
     assert_eq!(
         statuses(&steps),
-        [StepStatus::Interrupted, StepStatus::NotRun]
+        [
+            StepStatus::Passed,
+            StepStatus::Interrupted,
+            StepStatus::NotRun
+        ],
+        "{steps:#?}"
     );
 }
 

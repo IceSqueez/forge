@@ -186,8 +186,8 @@ mod tests {
     use super::{RestoreClose, RestoreCloseEvent};
     use crate::i18n::install_language;
     use crate::test_support::{
-        GatedSchedule, keyless_enabled_schedule, pump, pump_until, runtime, staged_restore_in,
-        test_backend, within_hang_guard,
+        GatedSchedule, StalledDownloader, keyless_enabled_schedule, pump, pump_until, runtime,
+        staged_restore_in, test_backend, within_hang_guard,
     };
     use crate::update_exit::ExitHandoff;
     use crate::update_flow::UpdateFlow;
@@ -229,6 +229,7 @@ mod tests {
             let update_flow = cx.new(|_| {
                 UpdateFlow::new(
                     backend as Arc<dyn DataProvider>,
+                    Arc::new(StalledDownloader),
                     handle.clone(),
                     data_dir.clone(),
                 )

@@ -25,7 +25,7 @@ mod timing;
 mod triggers;
 pub mod vocabulary;
 
-pub use client::{ObsClient, parse_endpoint};
+pub use client::{EVENT_BUFFER_CAPACITY, ObsClient, parse_endpoint};
 pub use error::ObsError;
 pub use integration::OBS_INTEGRATION;
 pub use probe::probe_connection;

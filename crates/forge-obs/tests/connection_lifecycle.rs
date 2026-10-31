@@ -13,7 +13,7 @@ use common::{
 };
 use forge_events::{Event, EventPublisher};
 use forge_events::{PlatformConnectionChanged, TypedEvent};
-use forge_obs::{ObsClient, ObsError, ObsSink, ObsSource, ObsTiming};
+use forge_obs::{EVENT_BUFFER_CAPACITY, ObsClient, ObsError, ObsSink, ObsSource, ObsTiming};
 use forge_platform_core::{BuiltinControl, BuiltinStatus, ConnectionState};
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
@@ -45,7 +45,8 @@ const ATTEMPTS_BEFORE_VERDICT: usize = 3;
 
 const SESSION_INVALIDATED: u16 = 4011;
 
-const EVENT_BURST: usize = 1100;
+const BEYOND_THE_BUFFER: usize = 76;
+const EVENT_BURST: usize = EVENT_BUFFER_CAPACITY + BEYOND_THE_BUFFER;
 
 fn endless_retry_pause() -> ObsTiming {
     ObsTiming {

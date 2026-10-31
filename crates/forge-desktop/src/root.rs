@@ -43,7 +43,7 @@ use crate::speak_state::SpeakState;
 use crate::system_info::WindowFacts;
 use crate::topics::Topics;
 use crate::twitch_bot_presence::{TwitchBotPresence, start_twitch_bot_seed};
-use crate::update_flow::UpdateFlow;
+use crate::update_flow::{GithubArtifactDownloader, UpdateFlow};
 use crate::window_presence::PresenceGate;
 use forge_components::PushToast;
 use forge_components::{ActivePresentation, Presentation};
@@ -273,6 +273,7 @@ pub(crate) fn run_boot(
                     let update_flow = cx.new(|_| {
                         UpdateFlow::new(
                             Arc::clone(&handles.backend),
+                            Arc::new(GithubArtifactDownloader),
                             handles.rt_handle.clone(),
                             crate::app_paths::app_paths().data_dir(),
                         )

@@ -28,8 +28,7 @@ async fn serve_one_reply(
     let Ok(mut socket) = tokio_tungstenite::accept_async(stream).await else {
         return;
     };
-    let Ok(Some(Ok(Message::Text(text)))) =
-        tokio::time::timeout(Duration::from_secs(30), socket.next()).await
+    let Ok(Some(Ok(Message::Text(text)))) = tokio::time::timeout(HANG_GUARD, socket.next()).await
     else {
         return;
     };
@@ -208,6 +207,25 @@ async fn a_peer_that_never_answers_ends_in_a_timeout_at_the_probe_budget() {
         matches!(error, VTubeError::Timeout),
         "expected the probe deadline to fire, got {error:?}"
     );
+}
+
+#[tokio::test(start_paused = true)]
+async fn the_default_probe_budget_ends_a_stalled_upgrade_before_the_connect_budget() {
+    let timing = VTubeTiming::default();
+    assert!(timing.probe_timeout < timing.connect_timeout);
+    let (listener, port) = bind_loopback().await;
+    let started = tokio::time::Instant::now();
+
+    let error = expect_error(probe_connection("127.0.0.1", port).await);
+
+    drop(listener);
+    assert!(matches!(error, VTubeError::Timeout), "{error:?}");
+    assert!(
+        started.elapsed() < timing.connect_timeout,
+        "{:?}",
+        started.elapsed()
+    );
+    assert!(started.elapsed() >= timing.probe_timeout);
 }
 
 #[tokio::test]

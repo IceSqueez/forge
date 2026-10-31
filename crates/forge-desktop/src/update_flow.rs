@@ -1,6 +1,7 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use async_trait::async_trait;
 use forge_storage::DataProvider;
 use forge_update::{
     ApplyMode, Artifact, CancelSignal, StagedArtifact, UpdatableInstall, UpdateClient, UpdateError,
@@ -80,6 +81,37 @@ pub(crate) enum CloseDecision {
     Hold,
 }
 
+#[async_trait]
+pub(crate) trait ArtifactDownloader: Send + Sync {
+    async fn download(
+        &self,
+        artifact: &Artifact,
+        staging_dir: &Path,
+    ) -> Result<StagedArtifact, UpdateError>;
+}
+
+pub(crate) struct GithubArtifactDownloader;
+
+#[async_trait]
+impl ArtifactDownloader for GithubArtifactDownloader {
+    async fn download(
+        &self,
+        artifact: &Artifact,
+        staging_dir: &Path,
+    ) -> Result<StagedArtifact, UpdateError> {
+        let client = UpdateClient::for_github()?;
+        let (progress, _) = progress_channel();
+        download_artifact(
+            &client,
+            artifact,
+            staging_dir,
+            &progress,
+            &CancelSignal::new(),
+        )
+        .await
+    }
+}
+
 pub(crate) fn failure_of(error: &UpdateError) -> UpdateFailure {
     match error {
         UpdateError::ArtifactHashMismatch
@@ -105,6 +137,7 @@ pub(crate) struct UpdateFlow {
     silent_retry_spent: bool,
     toast: Option<u64>,
     backend: Arc<dyn DataProvider>,
+    downloader: Arc<dyn ArtifactDownloader>,
     rt_handle: Handle,
     data_dir: PathBuf,
     exclusivity: TransferExclusivity,
@@ -119,6 +152,7 @@ impl EventEmitter<UpdateFlowEvent> for UpdateFlow {}
 impl UpdateFlow {
     pub(crate) fn new(
         backend: Arc<dyn DataProvider>,
+        downloader: Arc<dyn ArtifactDownloader>,
         rt_handle: Handle,
         data_dir: PathBuf,
     ) -> Self {
@@ -129,6 +163,7 @@ impl UpdateFlow {
             silent_retry_spent: false,
             toast: None,
             backend,
+            downloader,
             rt_handle,
             data_dir,
             exclusivity: TransferExclusivity::new(),
@@ -189,22 +224,8 @@ impl UpdateFlow {
         self.stage = UpdateStage::Downloading(candidate);
 
         let artifact = target.artifact;
-        let download = async move {
-            let (progress, _) = progress_channel();
-            match UpdateClient::for_github() {
-                Ok(client) => {
-                    download_artifact(
-                        &client,
-                        &artifact,
-                        &staging_dir,
-                        &progress,
-                        &CancelSignal::new(),
-                    )
-                    .await
-                }
-                Err(error) => Err(error),
-            }
-        };
+        let downloader = Arc::clone(&self.downloader);
+        let download = async move { downloader.download(&artifact, &staging_dir).await };
         let (done_tx, done_rx) = tokio::sync::oneshot::channel();
         self.rt_handle.spawn(async move {
             #[expect(
@@ -619,6 +640,7 @@ fn run_command(flow: &WeakEntity<UpdateFlow>, command: UpdateCommand, cx: &mut A
 mod tests {
     use std::cell::RefCell;
     use std::rc::Rc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     use forge_storage::Language;
     use forge_update::{InstallLayout, Sha256Digest};
@@ -627,8 +649,9 @@ mod tests {
     use super::*;
     use crate::i18n::install_language;
     use crate::test_support::{
-        GatedSchedule, TestBackend, gated_running_schedule_sharing, keyless_enabled_schedule, pump,
-        runtime, settle_until, test_backend, test_backend_with_gated_export, within_hang_guard,
+        GatedSchedule, StalledDownloader, TestBackend, gated_running_schedule_sharing,
+        keyless_enabled_schedule, pump, runtime, settle_until, test_backend,
+        test_backend_with_gated_export, within_hang_guard,
     };
 
     const VERSION: &str = "0.9.0";
@@ -653,6 +676,21 @@ mod tests {
         )
     }
 
+    fn harness_downloading_with(
+        cx: &mut TestAppContext,
+        downloader: Arc<dyn ArtifactDownloader>,
+    ) -> Harness {
+        build_harness(
+            cx,
+            runtime(),
+            test_backend().0,
+            downloader,
+            TransferExclusivity::new(),
+            None,
+            PathBuf::from("/data/forge"),
+        )
+    }
+
     fn harness_on(
         cx: &mut TestAppContext,
         rt: tokio::runtime::Runtime,
@@ -661,12 +699,37 @@ mod tests {
         scheduled: Option<ScheduledBackupHandle>,
         data_dir: PathBuf,
     ) -> Harness {
+        build_harness(
+            cx,
+            rt,
+            backend,
+            Arc::new(StalledDownloader),
+            exclusivity,
+            scheduled,
+            data_dir,
+        )
+    }
+
+    fn build_harness(
+        cx: &mut TestAppContext,
+        rt: tokio::runtime::Runtime,
+        backend: Arc<TestBackend>,
+        downloader: Arc<dyn ArtifactDownloader>,
+        exclusivity: TransferExclusivity,
+        scheduled: Option<ScheduledBackupHandle>,
+        data_dir: PathBuf,
+    ) -> Harness {
         install_language(Language::En);
         let handle = rt.handle().clone();
         cx.update(|cx| cx.set_global(Toasts::new()));
         let flow = cx.new(|_| {
-            let flow = UpdateFlow::new(backend as Arc<dyn DataProvider>, handle, data_dir)
-                .with_exclusivity(exclusivity);
+            let flow = UpdateFlow::new(
+                backend as Arc<dyn DataProvider>,
+                downloader,
+                handle,
+                data_dir,
+            )
+            .with_exclusivity(exclusivity);
             match scheduled {
                 Some(scheduled) => flow.with_scheduled_backups(scheduled),
                 None => flow,
@@ -681,6 +744,36 @@ mod tests {
             .detach();
         });
         Harness { flow, events, rt }
+    }
+
+    struct AnsweringDownloader {
+        answer: fn() -> Result<StagedArtifact, UpdateError>,
+        requests: AtomicUsize,
+    }
+
+    impl AnsweringDownloader {
+        fn with(answer: fn() -> Result<StagedArtifact, UpdateError>) -> Arc<Self> {
+            Arc::new(Self {
+                answer,
+                requests: AtomicUsize::new(0),
+            })
+        }
+
+        fn requests(&self) -> usize {
+            self.requests.load(Ordering::SeqCst)
+        }
+    }
+
+    #[async_trait]
+    impl ArtifactDownloader for AnsweringDownloader {
+        async fn download(
+            &self,
+            _artifact: &Artifact,
+            _staging_dir: &Path,
+        ) -> Result<StagedArtifact, UpdateError> {
+            self.requests.fetch_add(1, Ordering::SeqCst);
+            (self.answer)()
+        }
     }
 
     struct Waiting {
@@ -1046,6 +1139,30 @@ mod tests {
             toast_actions(cx),
             vec![Some("Restart to update".to_owned())]
         );
+    }
+
+    #[gpui::test]
+    fn the_answer_of_the_downloader_makes_the_update_ready(cx: &mut TestAppContext) {
+        let downloader = AnsweringDownloader::with(|| Ok(staged()));
+        let h = harness_downloading_with(cx, Arc::clone(&downloader) as _);
+        download(cx, &h, installable());
+
+        drive_until(cx, &h, ready_with_the_staged_update);
+
+        assert_eq!(downloader.requests(), 1);
+    }
+
+    #[gpui::test]
+    fn a_downloader_that_keeps_failing_is_asked_twice_before_the_flow_gives_up(
+        cx: &mut TestAppContext,
+    ) {
+        let downloader = AnsweringDownloader::with(network_error);
+        let h = harness_downloading_with(cx, Arc::clone(&downloader) as _);
+        download(cx, &h, installable());
+
+        drive_until(cx, &h, is_download_failure);
+
+        assert_eq!(downloader.requests(), 2);
     }
 
     #[gpui::test]

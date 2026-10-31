@@ -40,7 +40,11 @@ serde_json = { workspace = true }
 time = { workspace = true }
 ulid = { workspace = true }
 
+[features]
+test-support = []
+
 [dev-dependencies]
+forge-runtime = { path = ".", features = ["test-support"] }
 forge-events = { path = "../forge-events", features = ["test-support"] }
 forge-storage = { path = "../forge-storage", features = ["test-mocks", "settings-test-support"] }
 forge-storage-sqlite = { path = "../forge-storage-sqlite" }

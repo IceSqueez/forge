@@ -32,6 +32,7 @@ arc-swap = { workspace = true }
 async-trait = { workspace = true }
 
 [dev-dependencies]
+forge-runtime = { path = "../forge-runtime", features = ["test-support"] }
 forge-registry = { path = "../forge-registry" }
 tokio-tungstenite = { workspace = true }
 forge-storage = { path = "../forge-storage", features = ["test-mocks", "settings-test-support"] }

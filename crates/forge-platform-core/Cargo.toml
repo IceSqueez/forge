@@ -16,6 +16,7 @@ forge-events = { path = "../forge-events" }
 forge-net = { path = "../forge-net" }
 async-trait = { workspace = true }
 tokio = { workspace = true }
+tokio-stream = { workspace = true }
 thiserror = { workspace = true }
 url = { workspace = true }
 serde = { workspace = true }

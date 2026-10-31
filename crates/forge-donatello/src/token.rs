@@ -1,17 +1,14 @@
-use forge_net::is_valid_header_value;
+use forge_platform_core::parse_header_token;
 use forge_types::Secret;
 
 use crate::error::DonatelloError;
 
 pub(crate) fn parse_token(raw: &str) -> Result<Secret, DonatelloError> {
-    let trimmed = raw.trim();
-    if trimmed.is_empty() {
-        return Err(DonatelloError::MissingToken);
-    }
-    if !is_valid_header_value(trimmed) {
-        return Err(DonatelloError::MalformedToken);
-    }
-    Ok(Secret::new(trimmed))
+    parse_header_token(
+        raw,
+        DonatelloError::MissingToken,
+        DonatelloError::MalformedToken,
+    )
 }
 
 #[cfg(test)]

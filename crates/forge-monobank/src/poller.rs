@@ -1,19 +1,17 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use forge_net::{Backoff, DedupSet};
-use forge_platform_core::PlatformError;
+use forge_net::DedupSet;
+use forge_platform_core::{PollScope, PollWorker};
 use forge_storage::CredentialsRepo;
 use forge_types::{Donation, IntegrationId, Secret};
 use time::OffsetDateTime;
-use tokio::sync::{mpsc, watch};
-use tracing::{debug, warn};
+use tracing::debug;
 
 use crate::api::MonobankApi;
-use crate::config::MonobankTiming;
 use crate::credentials;
 use crate::error::MonobankError;
-use crate::jar::{JarDirectory, JarId};
+use crate::jar::{JarDirectory, JarId, MonobankJar};
 use crate::normalize::donation_from_item;
 use crate::status::{PollFailure, PollPhase, StatusBoard};
 use crate::window::{Coverage, StatementWindow, WindowPlanner};
@@ -21,25 +19,13 @@ use crate::wire::{StatementItemWire, TRANSACTION_ID_FIELD, TRANSACTION_TIME_FIEL
 
 const SEEN_TRANSACTION_CAPACITY: usize = 4096;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct PollControl {
-    pub(crate) enabled: bool,
-    pub(crate) generation: u64,
-}
-
-pub(crate) type DonationSink = mpsc::Sender<Result<Donation, PlatformError>>;
-
 pub(crate) struct PollContext {
     pub(crate) provider: IntegrationId,
     pub(crate) api: Arc<MonobankApi>,
     pub(crate) jars: Arc<JarDirectory>,
     pub(crate) creds: Arc<dyn CredentialsRepo>,
     pub(crate) planner: WindowPlanner,
-    pub(crate) control: watch::Receiver<PollControl>,
     pub(crate) status: Arc<StatusBoard>,
-    pub(crate) sink: DonationSink,
-    pub(crate) timing: MonobankTiming,
-    pub(crate) active_generation: u64,
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -64,22 +50,46 @@ impl PollMemory {
     }
 }
 
-enum CycleError {
-    Poll(MonobankError),
-    SinkClosed,
-    Interrupted,
+type CycleError = forge_platform_core::CycleError<MonobankError>;
+
+pub(crate) struct Worker {
+    ctx: PollContext,
+    session: Option<Session>,
+    memory: Option<PollMemory>,
 }
 
-impl From<MonobankError> for CycleError {
-    fn from(error: MonobankError) -> Self {
-        Self::Poll(error)
+impl Worker {
+    pub(crate) const fn new(ctx: PollContext) -> Self {
+        Self {
+            ctx,
+            session: None,
+            memory: None,
+        }
     }
 }
 
-enum Wake {
-    Elapsed,
-    ControlChanged,
-    Closed,
+impl PollWorker for Worker {
+    type Subject = MonobankJar;
+    type Failure = PollFailure;
+    type Error = MonobankError;
+
+    const LOG_NAME: &'static str = "monobank";
+
+    fn forget_session(&mut self) {
+        self.session = None;
+    }
+
+    async fn cycle(&mut self, scope: &PollScope) -> Result<(), CycleError> {
+        cycle(&self.ctx, scope, &mut self.session, &mut self.memory).await
+    }
+
+    fn pacing_delay(&self, error: &MonobankError) -> Option<Duration> {
+        let MonobankError::CoolingDown { retry_after_secs } = error else {
+            return None;
+        };
+        debug!(retry_after_secs, "monobank call budget cooling down");
+        Some(Duration::from_secs(u64::from(*retry_after_secs)))
+    }
 }
 
 #[derive(Default)]
@@ -89,98 +99,9 @@ struct Harvest {
     oldest_item_unix: Option<i64>,
 }
 
-pub(crate) async fn run(mut ctx: PollContext) {
-    let _running = ctx.status.poller_started();
-    let mut session: Option<Session> = None;
-    let mut memory: Option<PollMemory> = None;
-    let mut generation = None;
-    let mut backoff = Backoff::new(ctx.timing.error_backoff_base, ctx.timing.error_backoff_cap);
-    loop {
-        let control = *ctx.control.borrow_and_update();
-        if !control.enabled {
-            ctx.status.enter(PollPhase::Paused);
-            match wait(&mut ctx, None).await {
-                Wake::Closed => return,
-                Wake::Elapsed | Wake::ControlChanged => continue,
-            }
-        }
-        if generation != Some(control.generation) {
-            generation = Some(control.generation);
-            ctx.active_generation = control.generation;
-            session = None;
-            backoff.reset();
-        }
-        let delay = match cycle(&ctx, &mut session, &mut memory).await {
-            Ok(()) => {
-                backoff.reset();
-                Some(ctx.timing.statement_call_interval)
-            }
-            Err(CycleError::SinkClosed) => return,
-            Err(CycleError::Interrupted) => continue,
-            Err(CycleError::Poll(MonobankError::CoolingDown { retry_after_secs })) => {
-                debug!(retry_after_secs, "monobank call budget cooling down");
-                Some(Duration::from_secs(u64::from(retry_after_secs)))
-            }
-            Err(CycleError::Poll(error)) => {
-                ctx.status.record_failure(&error);
-                warn!(
-                    failure = PollFailure::of(&error).label(),
-                    error = %error,
-                    "monobank poll failed"
-                );
-                let needs_user = error.requires_user_action();
-                if needs_user {
-                    session = None;
-                }
-                if ctx.sink.send(Err(error.into())).await.is_err() {
-                    return;
-                }
-                (!needs_user).then(|| ctx.timing.statement_call_interval + backoff.next_delay())
-            }
-        };
-        if let Wake::Closed = wait(&mut ctx, delay).await {
-            return;
-        }
-    }
-}
-
-async fn wait(ctx: &mut PollContext, delay: Option<Duration>) -> Wake {
-    let sleep = async {
-        match delay {
-            Some(delay) => tokio::time::sleep(delay).await,
-            None => std::future::pending::<()>().await,
-        }
-    };
-    tokio::select! {
-        () = sleep => Wake::Elapsed,
-        changed = ctx.control.changed() => {
-            if changed.is_ok() { Wake::ControlChanged } else { Wake::Closed }
-        }
-        () = ctx.sink.closed() => Wake::Closed,
-    }
-}
-
-fn cycle_is_stale(control: &PollControl, generation: u64) -> bool {
-    !control.enabled || control.generation != generation
-}
-
-async fn interruptible<T, E: Into<CycleError>>(
-    ctx: &PollContext,
-    work: impl Future<Output = Result<T, E>>,
-) -> Result<T, CycleError> {
-    let generation = ctx.active_generation;
-    let mut control = ctx.control.clone();
-    tokio::select! {
-        outcome = work => outcome.map_err(Into::into),
-        _ = control.wait_for(|control| cycle_is_stale(control, generation)) => {
-            Err(CycleError::Interrupted)
-        }
-        () = ctx.sink.closed() => Err(CycleError::SinkClosed),
-    }
-}
-
 async fn cycle(
     ctx: &PollContext,
+    scope: &PollScope,
     session: &mut Option<Session>,
     memory: &mut Option<PollMemory>,
 ) -> Result<(), CycleError> {
@@ -192,9 +113,10 @@ async fn cycle(
                 .await?
                 .ok_or(MonobankError::MissingToken)?;
             let jar_id = credential.jar_id.ok_or(MonobankError::MissingJar)?;
-            let jar =
-                interruptible(ctx, ctx.jars.find(&ctx.api, &credential.token, &jar_id)).await?;
-            ctx.status.record_jar(jar);
+            let jar = scope
+                .interruptible(ctx.jars.find(&ctx.api, &credential.token, &jar_id))
+                .await?;
+            ctx.status.record_subject(jar);
             let started = Session {
                 token: credential.token,
                 jar: jar_id,
@@ -210,20 +132,18 @@ async fn cycle(
     let window = ctx
         .planner
         .next(&memory.coverage, OffsetDateTime::now_utc().unix_timestamp());
-    let items = interruptible(
-        ctx,
-        ctx.api.statement(
+    let items = scope
+        .interruptible(ctx.api.statement(
             &current.token,
             &current.jar,
             window.from_unix,
             window.to_unix,
-        ),
-    )
-    .await?;
+        ))
+        .await?;
     let item_count = items.len();
     let harvest = harvest(&ctx.provider, &mut memory.seen, items, window);
     let oldest_item_unix = harvest.oldest_item_unix;
-    let newest = emit(ctx, harvest).await?;
+    let newest = emit(ctx, scope, harvest).await?;
     memory.coverage.record(window, item_count, oldest_item_unix);
     ctx.status.record_poll(newest);
     Ok(())
@@ -275,28 +195,15 @@ fn harvest(
 
 async fn emit(
     ctx: &PollContext,
-    mut harvest: Harvest,
+    scope: &PollScope,
+    harvest: Harvest,
 ) -> Result<Option<OffsetDateTime>, CycleError> {
-    harvest
-        .donations
-        .sort_by_key(|donation| donation.occurred_at);
-    let newest = harvest
-        .donations
-        .last()
-        .map(|donation| donation.occurred_at);
-    for donation in harvest.donations {
-        ctx.sink
-            .send(Ok(donation))
-            .await
-            .map_err(|_| CycleError::SinkClosed)?;
-    }
-    for error in harvest.rejected {
-        ctx.status.record_rejected_donation(&error);
-        warn!(error = %error, "monobank transaction skipped");
-        ctx.sink
-            .send(Err(error.into()))
-            .await
-            .map_err(|_| CycleError::SinkClosed)?;
-    }
-    Ok(newest)
+    scope
+        .emit(
+            &ctx.status,
+            harvest.donations,
+            harvest.rejected,
+            "monobank transaction skipped",
+        )
+        .await
 }

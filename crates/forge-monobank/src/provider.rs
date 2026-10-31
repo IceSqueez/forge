@@ -1,37 +1,31 @@
-use forge_types::{IntegrationId, RecoverMutex, Secret};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use forge_events::EventPublisher;
-use forge_platform_core::{DonationProvider, DonationStream};
+use forge_net::Backoff;
+use forge_platform_core::{DonationPoll, DonationProvider, DonationStream, PolledDonationProvider};
 use forge_storage::CredentialsRepo;
-use tokio::runtime::Handle;
-use tokio::sync::{mpsc, watch};
-use tokio::task::AbortHandle;
-use tokio_stream::wrappers::ReceiverStream;
+use forge_types::IntegrationId;
+use forge_types::Secret;
 
 use crate::api::{MonobankApi, MonobankGateways};
 use crate::config::{MonobankConfig, MonobankTiming};
 use crate::credentials::{self, MonobankCredential};
 use crate::error::MonobankError;
+use crate::health;
 use crate::integration::MONOBANK_INTEGRATION;
 use crate::jar::{JarDirectory, JarId, MonobankJar};
-use crate::poller::{self, PollContext, PollControl};
-use crate::status::{PollStatus, StatusBoard};
+use crate::poller::{PollContext, Worker};
+use crate::status::{PollFailure, PollStatus};
 use crate::token::parse_token;
 use crate::window::WindowPlanner;
 
-const DONATION_BUFFER: usize = 64;
-
 pub struct MonobankProvider {
-    pub(crate) id: IntegrationId,
-    pub(crate) config: MonobankConfig,
+    pub(crate) poll: DonationPoll<MonobankJar, PollFailure>,
+    config: MonobankConfig,
     api: Arc<MonobankApi>,
     jars: Arc<JarDirectory>,
     creds: Arc<dyn CredentialsRepo>,
-    control: watch::Sender<PollControl>,
-    pub(crate) status: Arc<StatusBoard>,
     timing: MonobankTiming,
-    running_poller: Mutex<Option<AbortHandle>>,
 }
 
 impl MonobankProvider {
@@ -40,40 +34,41 @@ impl MonobankProvider {
         creds: Arc<dyn CredentialsRepo>,
         gateways: MonobankGateways,
     ) -> Self {
-        let api = Arc::new(MonobankApi::new(gateways));
-        let (control, _) = watch::channel(PollControl {
-            enabled: true,
-            generation: 0,
-        });
+        let timing = MonobankTiming::default();
         Self {
-            id: MONOBANK_INTEGRATION.id,
+            poll: DonationPoll::new(
+                MONOBANK_INTEGRATION.id,
+                timing.statement_call_interval,
+                health::metrics,
+            ),
             config,
-            api,
+            api: Arc::new(MonobankApi::new(gateways)),
             jars: Arc::new(JarDirectory::default()),
             creds,
-            control,
-            status: Arc::new(StatusBoard::new()),
-            timing: MonobankTiming::default(),
-            running_poller: Mutex::new(None),
+            timing,
         }
     }
 
     pub fn with_timing(mut self, timing: MonobankTiming) -> Self {
         self.timing = timing;
+        self.poll.set_interval(timing.statement_call_interval);
+        self.poll
+            .board()
+            .set_poll_interval(timing.statement_call_interval);
         self
     }
 
     pub fn with_event_publisher(self, publisher: Arc<dyn EventPublisher>) -> Self {
-        self.status.attach_publisher(publisher);
+        self.poll.attach_publisher(publisher);
         self
     }
 
     pub fn poll_status(&self) -> PollStatus {
-        self.status.snapshot()
+        self.poll.status()
     }
 
     pub fn is_polling_enabled(&self) -> bool {
-        self.control.borrow().enabled
+        self.poll.is_enabled()
     }
 
     pub async fn verify_token(&self, raw: &str) -> Result<Vec<MonobankJar>, MonobankError> {
@@ -106,25 +101,8 @@ impl MonobankProvider {
     pub async fn remove_token(&self) -> Result<bool, MonobankError> {
         let removed = credentials::delete(self.creds.as_ref()).await?;
         self.jars.forget();
-        self.control.send_modify(|control| {
-            control.generation = control.generation.wrapping_add(1);
-        });
+        self.poll.forget_session();
         Ok(removed)
-    }
-
-    pub(crate) fn restart(&self) {
-        self.control.send_modify(|control| {
-            control.enabled = true;
-            control.generation = control.generation.wrapping_add(1);
-        });
-    }
-
-    pub(crate) fn pause(&self) {
-        self.control.send_if_modified(|control| {
-            let changed = control.enabled;
-            control.enabled = false;
-            changed
-        });
     }
 
     async fn stored_credential(&self) -> Result<MonobankCredential, MonobankError> {
@@ -148,51 +126,50 @@ impl MonobankProvider {
             },
         )
         .await?;
-        self.restart();
+        self.poll.restart();
         Ok(jar)
+    }
+}
+
+impl PolledDonationProvider for MonobankProvider {
+    type Subject = MonobankJar;
+    type Failure = PollFailure;
+
+    fn poll(&self) -> &DonationPoll<MonobankJar, PollFailure> {
+        &self.poll
+    }
+
+    fn brand_name(&self) -> &'static str {
+        MONOBANK_INTEGRATION.brand_name
+    }
+
+    fn api_base_url(&self) -> &str {
+        &self.config.base_url
     }
 }
 
 impl DonationProvider for MonobankProvider {
     fn provider(&self) -> &IntegrationId {
-        &self.id
+        self.poll.id()
     }
 
     fn donations(&self) -> DonationStream {
-        let (sink, receiver) = mpsc::channel(DONATION_BUFFER);
-        match Handle::try_current() {
-            Ok(runtime) => {
-                let poller = runtime.spawn(poller::run(PollContext {
-                    provider: self.id.clone(),
-                    api: Arc::clone(&self.api),
-                    jars: Arc::clone(&self.jars),
-                    creds: Arc::clone(&self.creds),
-                    planner: WindowPlanner {
-                        history_lookback: self.config.history_lookback,
-                        overlap: self.config.window_overlap,
-                    },
-                    control: self.control.subscribe(),
-                    status: Arc::clone(&self.status),
-                    sink,
-                    timing: self.timing,
-                    active_generation: 0,
-                }));
-                let superseded = self
-                    .running_poller
-                    .lock_recover()
-                    .replace(poller.abort_handle());
-                if let Some(superseded) = superseded {
-                    superseded.abort();
-                }
-            }
-            Err(_) => {
-                #[expect(
-                    clippy::let_underscore_must_use,
-                    reason = "the fresh channel has room for this single error"
-                )]
-                let _ = sink.try_send(Err(MonobankError::NoRuntime.into()));
-            }
-        }
-        Box::pin(ReceiverStream::new(receiver))
+        let worker = Worker::new(PollContext {
+            provider: self.poll.id().clone(),
+            api: Arc::clone(&self.api),
+            jars: Arc::clone(&self.jars),
+            creds: Arc::clone(&self.creds),
+            planner: WindowPlanner {
+                history_lookback: self.config.history_lookback,
+                overlap: self.config.window_overlap,
+            },
+            status: Arc::clone(self.poll.board()),
+        });
+        let backoff = Backoff::new(
+            self.timing.error_backoff_base,
+            self.timing.error_backoff_cap,
+        );
+        self.poll
+            .start(worker, backoff, MonobankError::NoRuntime.into())
     }
 }

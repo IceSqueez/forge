@@ -1,3 +1,4 @@
+use forge_platform_core::{PollPhaseCodes, PollVocabulary};
 use forge_types::{MessageCatalog, MessageCode};
 
 const INTEGRATION_ID: &str = "monobank";
@@ -69,6 +70,22 @@ pub(crate) const LABEL_BANNER_JAR_MISSING: MessageCode =
     MessageCode::from_static(INTEGRATION_ID, "label_banner_jar_missing");
 pub(crate) const LABEL_BANNER_TOKEN_MISSING: MessageCode =
     MessageCode::from_static(INTEGRATION_ID, "label_banner_token_missing");
+
+pub(crate) const POLL_VOCABULARY: PollVocabulary = PollVocabulary {
+    health_last_poll: HEALTH_LAST_POLL,
+    health_last_error: HEALTH_LAST_ERROR,
+    health_last_donation: HEALTH_LAST_DONATION,
+    health_time: HEALTH_TIME,
+    failure_none: FAILURE_NONE,
+    phases: PollPhaseCodes {
+        paused: PHASE_PAUSED,
+        awaiting_token: PHASE_AWAITING_TOKEN,
+        starting: PHASE_STARTING,
+        polling: PHASE_POLLING,
+        retrying: PHASE_RETRYING,
+        action_required: PHASE_ACTION_REQUIRED,
+    },
+};
 
 pub const MONOBANK_MESSAGES: MessageCatalog = MessageCatalog {
     namespace: INTEGRATION_ID,

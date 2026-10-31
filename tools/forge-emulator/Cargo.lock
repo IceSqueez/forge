@@ -1113,7 +1113,6 @@ dependencies = [
 name = "forge-donatello"
 version = "0.6.3"
 dependencies = [
- "async-trait",
  "forge-events",
  "forge-net",
  "forge-platform-core",
@@ -1124,8 +1123,6 @@ dependencies = [
  "serde_json",
  "thiserror",
  "time",
- "tokio",
- "tokio-stream",
  "tracing",
 ]
 
@@ -1196,7 +1193,6 @@ dependencies = [
 name = "forge-monobank"
 version = "0.6.3"
 dependencies = [
- "async-trait",
  "forge-events",
  "forge-net",
  "forge-platform-core",
@@ -1206,8 +1202,6 @@ dependencies = [
  "serde_json",
  "thiserror",
  "time",
- "tokio",
- "tokio-stream",
  "tracing",
 ]
 
@@ -1288,6 +1282,7 @@ dependencies = [
  "thiserror",
  "time",
  "tokio",
+ "tokio-stream",
  "tracing",
  "url",
 ]

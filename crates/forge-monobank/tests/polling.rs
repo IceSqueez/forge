@@ -413,7 +413,7 @@ async fn status_carries_the_selected_jar_once_polling() {
     h.wait_for("baseline poll", |s| s.last_poll_at.is_some())
         .await;
 
-    let jar = h.provider.poll_status().jar.unwrap();
+    let jar = h.provider.poll_status().subject.unwrap();
 
     assert_eq!(
         (jar.id.as_str(), jar.currency.map(|c| c.as_str().to_owned())),

@@ -1,6 +1,8 @@
 use std::time::Duration;
 
-use forge_platform_core::{EndpointSurface, PlatformEndpoints};
+use forge_platform_core::{
+    EndpointSurface, POLL_ERROR_BACKOFF_BASE, POLL_ERROR_BACKOFF_CAP, PlatformEndpoints,
+};
 use forge_storage::SettingDisclosure::Withheld;
 use forge_storage::SettingPortability::Portable;
 use forge_storage::{Setting, Tally};
@@ -14,8 +16,6 @@ pub const DONATELLO_POLL_INTERVAL_SECS: Setting<Tally> = Setting::new(
     Portable,
     Withheld,
 );
-const ERROR_BACKOFF_BASE: Duration = Duration::from_secs(5);
-const ERROR_BACKOFF_CAP: Duration = Duration::from_secs(300);
 
 #[derive(Clone, Copy, Debug)]
 pub struct DonatelloTiming {
@@ -28,8 +28,8 @@ impl Default for DonatelloTiming {
     fn default() -> Self {
         Self {
             min_poll_interval: MIN_POLL_INTERVAL,
-            error_backoff_base: ERROR_BACKOFF_BASE,
-            error_backoff_cap: ERROR_BACKOFF_CAP,
+            error_backoff_base: POLL_ERROR_BACKOFF_BASE,
+            error_backoff_cap: POLL_ERROR_BACKOFF_CAP,
         }
     }
 }

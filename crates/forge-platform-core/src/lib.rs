@@ -9,6 +9,7 @@ mod collections;
 mod connection_announcer;
 mod credential_errors;
 mod donation;
+mod donation_poll;
 mod donation_test;
 #[cfg(test)]
 #[path = "../test_support/emitted_codes.rs"]
@@ -48,6 +49,11 @@ pub use collections::{
 pub use connection_announcer::ConnectionAnnouncer;
 pub use credential_errors::{credential_storage_error, reauth_required};
 pub use donation::{DonationProvider, DonationStream};
+pub use donation_poll::{
+    CycleError, DonationPoll, POLL_ERROR_BACKOFF_BASE, POLL_ERROR_BACKOFF_CAP, PollError,
+    PollMetrics, PollPhase, PollPhaseCodes, PollScope, PollStatus, PollStatusBoard, PollVocabulary,
+    PollWorker, PolledDonationProvider, RunningPoller, parse_header_token, poll_metrics,
+};
 pub use donation_test::{
     TEST_DONATION_AMOUNT, TEST_DONATION_AMOUNT_KEY, TEST_DONATION_CURRENCY,
     TEST_DONATION_CURRENCY_KEY, TEST_DONATION_DONOR, TEST_DONATION_DONOR_KEY,

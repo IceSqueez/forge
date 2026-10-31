@@ -1,17 +1,14 @@
-use forge_net::is_valid_header_value;
+use forge_platform_core::parse_header_token;
 use forge_types::Secret;
 
 use crate::error::MonobankError;
 
 pub(crate) fn parse_token(raw: &str) -> Result<Secret, MonobankError> {
-    let trimmed = raw.trim();
-    if trimmed.is_empty() {
-        return Err(MonobankError::MissingToken);
-    }
-    if !is_valid_header_value(trimmed) {
-        return Err(MonobankError::MalformedToken);
-    }
-    Ok(Secret::new(trimmed))
+    parse_header_token(
+        raw,
+        MonobankError::MissingToken,
+        MonobankError::MalformedToken,
+    )
 }
 
 #[cfg(test)]

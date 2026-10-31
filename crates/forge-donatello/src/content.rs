@@ -22,12 +22,12 @@ impl BuiltinContent for DonatelloProvider {
 
 impl QuickActions for DonatelloProvider {
     fn actions(&self) -> Vec<QuickAction> {
-        vec![test_donation_quick_action(&self.id)]
+        vec![test_donation_quick_action(self.poll.id())]
     }
 }
 
 fn account_card(status: &PollStatus) -> DetailSection {
-    let account = status.account.as_ref();
+    let account = status.subject.as_ref();
     let field = |label: MessageCode, value: Option<UserText>| InfoField {
         label: label.into(),
         value: value.unwrap_or_else(|| VerbatimText::new(NOT_SET).into()),
@@ -46,7 +46,15 @@ fn account_card(status: &PollStatus) -> DetailSection {
                 messages::LABEL_PAGE,
                 known(account.and_then(|account| account.page.as_ref())),
             ),
-            field(messages::LABEL_STATUS, Some(status.phase.message().into())),
+            field(
+                messages::LABEL_STATUS,
+                Some(
+                    status
+                        .phase
+                        .message(&messages::POLL_VOCABULARY.phases)
+                        .into(),
+                ),
+            ),
             InfoField {
                 label: messages::LABEL_POLL_INTERVAL.into(),
                 value: MessageRef::new(messages::LABEL_POLL_INTERVAL_VALUE)
@@ -105,16 +113,9 @@ mod tests {
                 Some(PollFailure::TokenUnreadable),
                 Some(PollFailure::ProfileIncomplete),
             ] {
-                let status = PollStatus {
-                    phase,
-                    account: None,
-                    poll_interval: std::time::Duration::ZERO,
-                    last_poll_at: None,
-                    last_donation_at: None,
-                    last_error: failure,
-                    last_error_at: None,
-                    polling_since: None,
-                };
+                let mut status = PollStatus::initial(std::time::Duration::ZERO);
+                status.phase = phase;
+                status.last_error = failure;
                 let emitted = emitted_codes(&serde_json::json!((
                     action_banner(&status),
                     account_card(&status)
@@ -142,16 +143,9 @@ mod tests {
                 messages::LABEL_BANNER_TOKEN_REJECTED,
             ),
         ] {
-            let status = PollStatus {
-                phase: PollPhase::ActionRequired,
-                account: None,
-                poll_interval: std::time::Duration::ZERO,
-                last_poll_at: None,
-                last_donation_at: None,
-                last_error: Some(failure),
-                last_error_at: None,
-                polling_since: None,
-            };
+            let mut status = PollStatus::initial(std::time::Duration::ZERO);
+            status.phase = PollPhase::ActionRequired;
+            status.last_error = Some(failure);
 
             let Some(DetailSection::WarningBanner { body: shown, .. }) = action_banner(&status)
             else {

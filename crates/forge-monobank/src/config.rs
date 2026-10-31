@@ -1,6 +1,8 @@
 use std::time::Duration;
 
-use forge_platform_core::{EndpointSurface, PlatformEndpoints};
+use forge_platform_core::{
+    EndpointSurface, POLL_ERROR_BACKOFF_BASE, POLL_ERROR_BACKOFF_CAP, PlatformEndpoints,
+};
 
 const SECONDS_PER_MINUTE: u64 = 60;
 const SECONDS_PER_HOUR: u64 = 60 * SECONDS_PER_MINUTE;
@@ -8,8 +10,6 @@ const SECONDS_PER_DAY: u64 = 24 * SECONDS_PER_HOUR;
 const MAX_STATEMENT_WINDOW_DAYS: u64 = 31;
 const HISTORY_LOOKBACK_HOURS: u64 = 1;
 const WINDOW_OVERLAP_MINUTES: u64 = 5;
-const ERROR_BACKOFF_BASE: Duration = Duration::from_secs(5);
-const ERROR_BACKOFF_CAP: Duration = Duration::from_secs(300);
 
 pub const STATEMENT_CALL_INTERVAL: Duration = Duration::from_secs(SECONDS_PER_MINUTE);
 pub(crate) const MAX_STATEMENT_WINDOW: Duration =
@@ -30,8 +30,8 @@ impl Default for MonobankTiming {
     fn default() -> Self {
         Self {
             statement_call_interval: STATEMENT_CALL_INTERVAL,
-            error_backoff_base: ERROR_BACKOFF_BASE,
-            error_backoff_cap: ERROR_BACKOFF_CAP,
+            error_backoff_base: POLL_ERROR_BACKOFF_BASE,
+            error_backoff_cap: POLL_ERROR_BACKOFF_CAP,
         }
     }
 }

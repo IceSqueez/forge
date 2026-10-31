@@ -1,17 +1,14 @@
 use std::cmp::Ordering;
 use std::sync::Arc;
-use std::time::Duration;
 
-use forge_net::{Backoff, DedupSet};
-use forge_platform_core::PlatformError;
+use forge_net::DedupSet;
+use forge_platform_core::{PollScope, PollWorker};
 use forge_storage::CredentialsRepo;
 use forge_types::{Donation, DonationOrigin, IntegrationId, Secret};
 use time::OffsetDateTime;
-use tokio::sync::{mpsc, watch};
-use tracing::{debug, warn};
+use tracing::debug;
 
-use crate::api::{DonatelloApi, PAGE_SIZE};
-use crate::config::DonatelloTiming;
+use crate::api::{DonatelloAccount, DonatelloApi, PAGE_SIZE};
 use crate::credentials;
 use crate::error::DonatelloError;
 use crate::normalize::{created_at_instant, donation_from_wire};
@@ -20,24 +17,11 @@ use crate::wire::{CREATED_AT_FIELD, DONATION_ID_FIELD, DonateWire, DonatesPageWi
 
 const MAX_SCAN_PAGES: u64 = 500;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct PollControl {
-    pub(crate) enabled: bool,
-    pub(crate) generation: u64,
-    pub(crate) interval: Duration,
-}
-
-pub(crate) type DonationSink = mpsc::Sender<Result<Donation, PlatformError>>;
-
 pub(crate) struct PollContext {
     pub(crate) provider: IntegrationId,
     pub(crate) api: Arc<DonatelloApi>,
     pub(crate) creds: Arc<dyn CredentialsRepo>,
-    pub(crate) control: watch::Receiver<PollControl>,
     pub(crate) status: Arc<StatusBoard>,
-    pub(crate) sink: DonationSink,
-    pub(crate) timing: DonatelloTiming,
-    pub(crate) active_generation: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -68,22 +52,38 @@ impl PollMemory {
     }
 }
 
-enum CycleError {
-    Poll(DonatelloError),
-    SinkClosed,
-    Interrupted,
+type CycleError = forge_platform_core::CycleError<DonatelloError>;
+
+pub(crate) struct Worker {
+    ctx: PollContext,
+    session: Option<Secret>,
+    memory: Option<PollMemory>,
 }
 
-impl From<DonatelloError> for CycleError {
-    fn from(error: DonatelloError) -> Self {
-        Self::Poll(error)
+impl Worker {
+    pub(crate) const fn new(ctx: PollContext) -> Self {
+        Self {
+            ctx,
+            session: None,
+            memory: None,
+        }
     }
 }
 
-enum Wake {
-    Elapsed,
-    ControlChanged,
-    Closed,
+impl PollWorker for Worker {
+    type Subject = DonatelloAccount;
+    type Failure = PollFailure;
+    type Error = DonatelloError;
+
+    const LOG_NAME: &'static str = "donatello";
+
+    fn forget_session(&mut self) {
+        self.session = None;
+    }
+
+    async fn cycle(&mut self, scope: &PollScope) -> Result<(), CycleError> {
+        cycle(&self.ctx, scope, &mut self.session, &mut self.memory).await
+    }
 }
 
 struct Harvest {
@@ -102,95 +102,9 @@ impl Harvest {
     }
 }
 
-pub(crate) async fn run(mut ctx: PollContext) {
-    let _running = ctx.status.poller_started();
-    let mut session: Option<Secret> = None;
-    let mut memory: Option<PollMemory> = None;
-    let mut generation = None;
-    let mut backoff = Backoff::new(ctx.timing.error_backoff_base, ctx.timing.error_backoff_cap);
-    loop {
-        let control = *ctx.control.borrow_and_update();
-        ctx.status.set_poll_interval(control.interval);
-        if !control.enabled {
-            ctx.status.enter(PollPhase::Paused);
-            match wait(&mut ctx, None).await {
-                Wake::Closed => return,
-                Wake::Elapsed | Wake::ControlChanged => continue,
-            }
-        }
-        if generation != Some(control.generation) {
-            generation = Some(control.generation);
-            ctx.active_generation = control.generation;
-            session = None;
-            backoff.reset();
-        }
-        let delay = match cycle(&ctx, &mut session, &mut memory).await {
-            Ok(()) => {
-                backoff.reset();
-                Some(control.interval)
-            }
-            Err(CycleError::SinkClosed) => return,
-            Err(CycleError::Interrupted) => continue,
-            Err(CycleError::Poll(error)) => {
-                ctx.status.record_failure(&error);
-                warn!(
-                    failure = PollFailure::of(&error).label(),
-                    error = %error,
-                    "donatello poll failed"
-                );
-                let needs_user = error.requires_user_action();
-                if needs_user {
-                    session = None;
-                }
-                if ctx.sink.send(Err(error.into())).await.is_err() {
-                    return;
-                }
-                (!needs_user).then(|| control.interval + backoff.next_delay())
-            }
-        };
-        if let Wake::Closed = wait(&mut ctx, delay).await {
-            return;
-        }
-    }
-}
-
-async fn wait(ctx: &mut PollContext, delay: Option<Duration>) -> Wake {
-    let sleep = async {
-        match delay {
-            Some(delay) => tokio::time::sleep(delay).await,
-            None => std::future::pending::<()>().await,
-        }
-    };
-    tokio::select! {
-        () = sleep => Wake::Elapsed,
-        changed = ctx.control.changed() => {
-            if changed.is_ok() { Wake::ControlChanged } else { Wake::Closed }
-        }
-        () = ctx.sink.closed() => Wake::Closed,
-    }
-}
-
-fn cycle_is_stale(control: &PollControl, generation: u64) -> bool {
-    !control.enabled || control.generation != generation
-}
-
-async fn interruptible<T, E: Into<CycleError>>(
-    ctx: &PollContext,
-    work: impl Future<Output = Result<T, E>>,
-) -> Result<T, CycleError> {
-    let generation = ctx.active_generation;
-    let mut control = ctx.control.clone();
-    tokio::select! {
-        outcome = work => outcome.map_err(Into::into),
-        _ = control.wait_for(|control| cycle_is_stale(control, generation)) => {
-            Err(CycleError::Interrupted)
-        }
-        () = ctx.sink.closed() => Err(CycleError::SinkClosed),
-    }
-}
-
 async fn cycle(
     ctx: &PollContext,
+    scope: &PollScope,
     session: &mut Option<Secret>,
     memory: &mut Option<PollMemory>,
 ) -> Result<(), CycleError> {
@@ -201,8 +115,8 @@ async fn cycle(
             let token = credentials::load(ctx.creds.as_ref())
                 .await?
                 .ok_or(DonatelloError::MissingToken)?;
-            let account = interruptible(ctx, ctx.api.account(&token)).await?;
-            ctx.status.record_account(account);
+            let account = scope.interruptible(ctx.api.account(&token)).await?;
+            ctx.status.record_subject(account);
             *session = Some(token.clone());
             token
         }
@@ -212,9 +126,9 @@ async fn cycle(
         slot => slot.insert(PollMemory::new(token.clone())),
     };
     let newest = if memory.baseline_taken {
-        scan_for_new(ctx, &token, memory).await?
+        scan_for_new(ctx, scope, &token, memory).await?
     } else {
-        take_baseline(ctx, &token, memory).await?
+        take_baseline(ctx, scope, &token, memory).await?
     };
     ctx.status.record_poll(newest);
     Ok(())
@@ -222,6 +136,7 @@ async fn cycle(
 
 async fn take_baseline(
     ctx: &PollContext,
+    scope: &PollScope,
     token: &Secret,
     memory: &mut PollMemory,
 ) -> Result<Option<OffsetDateTime>, CycleError> {
@@ -229,7 +144,9 @@ async fn take_baseline(
     let mut total = None;
     let mut page_index = 0;
     loop {
-        let mut page = interruptible(ctx, ctx.api.donates_page(token, page_index)).await?;
+        let mut page = scope
+            .interruptible(ctx.api.donates_page(token, page_index))
+            .await?;
         if page_index == 0 {
             total = page.total_count();
             memory.order = list_order(&page.content);
@@ -242,7 +159,7 @@ async fn take_baseline(
                 .truncate(items_before_arrivals(total, page_index));
         }
         let harvest = harvest(&ctx.provider, memory, page.content, DonationOrigin::History);
-        newest = newest.max(emit(ctx, harvest).await?);
+        newest = newest.max(emit(ctx, scope, harvest).await?);
         if finished {
             break;
         }
@@ -255,10 +172,11 @@ async fn take_baseline(
 
 async fn scan_for_new(
     ctx: &PollContext,
+    scope: &PollScope,
     token: &Secret,
     memory: &mut PollMemory,
 ) -> Result<Option<OffsetDateTime>, CycleError> {
-    let first = interruptible(ctx, ctx.api.donates_page(token, 0)).await?;
+    let first = scope.interruptible(ctx.api.donates_page(token, 0)).await?;
     let total = first.total_count();
     memory.order = list_order(&first.content).or(memory.order);
     let expected_new = total.zip(memory.known_total).map_or(0, |(total, known)| {
@@ -276,7 +194,10 @@ async fn scan_for_new(
         if found.unseen >= expected_new && !page_was_all_arrivals {
             break;
         }
-        match interruptible(ctx, ctx.api.donates_page(token, page_index)).await {
+        match scope
+            .interruptible(ctx.api.donates_page(token, page_index))
+            .await
+        {
             Ok(page) => {
                 let listed = page.content.len();
                 let more = harvest(&ctx.provider, memory, page.content, DonationOrigin::Live);
@@ -301,7 +222,7 @@ async fn scan_for_new(
         }
     }
     let unseen_found = found.unseen;
-    let newest = emit(ctx, found).await?;
+    let newest = emit(ctx, scope, found).await?;
     if let Some(error) = failure {
         memory.pages_walked_before_failure += pages_walked;
         memory.known_total = memory
@@ -401,30 +322,17 @@ fn harvest(
 
 async fn emit(
     ctx: &PollContext,
-    mut harvest: Harvest,
+    scope: &PollScope,
+    harvest: Harvest,
 ) -> Result<Option<OffsetDateTime>, CycleError> {
-    harvest
-        .donations
-        .sort_by_key(|donation| donation.occurred_at);
-    let newest = harvest
-        .donations
-        .last()
-        .map(|donation| donation.occurred_at);
-    for donation in harvest.donations {
-        ctx.sink
-            .send(Ok(donation))
-            .await
-            .map_err(|_| CycleError::SinkClosed)?;
-    }
-    for error in harvest.rejected {
-        ctx.status.record_rejected_donation(&error);
-        warn!(error = %error, "donatello donation skipped");
-        ctx.sink
-            .send(Err(error.into()))
-            .await
-            .map_err(|_| CycleError::SinkClosed)?;
-    }
-    Ok(newest)
+    scope
+        .emit(
+            &ctx.status,
+            harvest.donations,
+            harvest.rejected,
+            "donatello donation skipped",
+        )
+        .await
 }
 
 #[cfg(test)]

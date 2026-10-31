@@ -10,7 +10,7 @@ use crate::overlay_service::OverlayConnectListener;
 
 #[async_trait]
 pub trait DonationAudience: Send + Sync {
-    async fn is_listening(&self) -> bool;
+    async fn may_release_held(&self) -> bool;
 }
 
 #[derive(Default)]

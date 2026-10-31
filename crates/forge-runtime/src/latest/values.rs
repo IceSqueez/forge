@@ -143,7 +143,7 @@ impl LatestValues {
         {
             return;
         }
-        let platform = value.platform.clone();
+        let platform = value.platform().to_owned();
         let merged_changed = {
             let mut values = self.values.write_recover();
             let slot_values = values.entry(declaration.slot).or_default();
@@ -189,16 +189,16 @@ impl LatestValues {
         let values = self.values.read_recover();
         values
             .get(slot)
-            .and_then(|slot_values| slot_values.get(&value.platform))
-            .is_none_or(|stored| value.occurred_at > stored.occurred_at)
+            .and_then(|slot_values| slot_values.get(value.platform()))
+            .is_none_or(|stored| value.occurred_at() > stored.occurred_at())
     }
 
     async fn persist(&self, slot: &str, value: &LatestValue) -> bool {
         let record = LatestRecord {
             slot: slot.to_owned(),
-            platform: value.platform.clone(),
+            platform: value.platform().to_owned(),
             payload: value.to_variant().to_json(),
-            occurred_at: value.occurred_at,
+            occurred_at: value.occurred_at(),
             updated_at: OffsetDateTime::now_utc(),
         };
         let mut attempt = 1;
@@ -208,7 +208,7 @@ impl LatestValues {
                 Err(error) if attempt >= PERSIST_ATTEMPTS => {
                     tracing::error!(
                         slot,
-                        platform = %value.platform,
+                        platform = %value.platform(),
                         error = %error,
                         "latest value could not be saved; it shows until restart"
                     );
@@ -244,11 +244,11 @@ fn admits(event: &Event) -> bool {
 }
 
 fn most_recent(slot_values: &SlotValues) -> Option<&LatestValue> {
-    slot_values.values().max_by_key(|value| value.occurred_at)
+    slot_values.values().max_by_key(|value| value.occurred_at())
 }
 
 fn merged_identity(slot_values: &SlotValues) -> Option<(String, OffsetDateTime)> {
-    most_recent(slot_values).map(|value| (value.platform.clone(), value.occurred_at))
+    most_recent(slot_values).map(|value| (value.platform().to_owned(), value.occurred_at()))
 }
 
 async fn with_timeout<T>(
@@ -492,7 +492,7 @@ mod tests {
     }
 
     fn user_name(value: Option<LatestValue>) -> Option<String> {
-        value.and_then(|value| match value.fields.get(latest_fields::USER_NAME) {
+        value.and_then(|value| match value.fields().get(latest_fields::USER_NAME) {
             Some(Variant::String(name)) => Some(name.clone()),
             _ => None,
         })
@@ -747,7 +747,7 @@ mod tests {
 
     fn now_playing_title(values: &LatestValues, scope: LatestScope<'_>) -> Option<String> {
         values.latest(NOW_PLAYING_SLOT, scope).and_then(|value| {
-            match value.fields.get(latest_fields::TITLE) {
+            match value.fields().get(latest_fields::TITLE) {
                 Some(Variant::String(title)) => Some(title.clone()),
                 _ => None,
             }

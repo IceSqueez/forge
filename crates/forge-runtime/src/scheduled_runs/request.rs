@@ -2,6 +2,7 @@ use crate::error::RuntimeError;
 use std::collections::BTreeMap;
 use std::time::Duration;
 
+use forge_registry::SECONDS_PER_MINUTE;
 use forge_storage::{MissedRunPolicy, ScheduledRunId, ScheduledRunSpec};
 use forge_types::{ActionId, EventId, Variant};
 use time::OffsetDateTime;
@@ -36,9 +37,6 @@ pub struct ScheduledPlacement {
     pub due_at: OffsetDateTime,
     pub superseded: Option<ScheduledRunId>,
 }
-
-const SECONDS_PER_MINUTE: u64 = 60;
-pub(crate) const SECONDS_PER_DAY: u64 = 24 * 60 * SECONDS_PER_MINUTE;
 
 pub(crate) fn skip_if_late_by_minutes(minutes: i64) -> MissedRunPolicy {
     let minutes = u64::try_from(minutes).unwrap_or(0);

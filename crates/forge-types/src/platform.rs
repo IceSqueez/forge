@@ -22,7 +22,7 @@ impl PlatformId {
         }
     }
 
-    pub fn parse(raw: &str) -> Option<Self> {
+    pub fn from_canonical(raw: &str) -> Option<Self> {
         Self::ALL
             .into_iter()
             .find(|platform| platform.as_str() == raw)
@@ -117,7 +117,7 @@ mod tests {
             ("", None),
             ("trovo", None),
         ] {
-            assert_eq!(PlatformId::parse(raw), expected, "raw {raw:?}");
+            assert_eq!(PlatformId::from_canonical(raw), expected, "raw {raw:?}");
         }
     }
 

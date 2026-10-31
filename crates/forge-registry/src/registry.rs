@@ -26,16 +26,19 @@ impl TriggerRegistry {
         Self::default()
     }
 
-    pub fn register(&mut self, d: Box<dyn TriggerKindDescriptor>) -> Result<(), RegistryError> {
-        let id = d.id().to_owned();
+    pub fn register(
+        &mut self,
+        descriptor: Box<dyn TriggerKindDescriptor>,
+    ) -> Result<(), RegistryError> {
+        let id = descriptor.id().to_owned();
         if self.descriptors.contains_key(&id) {
             return Err(RegistryError::DuplicateId(id));
         }
-        let declaration = DescriptorDeclaration::of(d.as_ref());
+        let declaration = DescriptorDeclaration::of(descriptor.as_ref());
         self.descriptors.insert(
             id,
             RegisteredTrigger {
-                descriptor: d,
+                descriptor,
                 declaration,
             },
         );
@@ -104,9 +107,12 @@ pub struct OwnedTriggerRegistration<'a> {
 }
 
 impl OwnedTriggerRegistration<'_> {
-    pub fn register(&mut self, d: Box<dyn TriggerKindDescriptor>) -> Result<(), RegistryError> {
-        let id = d.id().to_owned();
-        self.registry.register(d)?;
+    pub fn register(
+        &mut self,
+        descriptor: Box<dyn TriggerKindDescriptor>,
+    ) -> Result<(), RegistryError> {
+        let id = descriptor.id().to_owned();
+        self.registry.register(descriptor)?;
         self.registry.owners.insert(id, self.owner.clone());
         Ok(())
     }
@@ -128,12 +134,12 @@ impl SubActionRegistry {
         Self::default()
     }
 
-    pub fn register(&mut self, r: Box<dyn SubActionRunner>) -> Result<(), RegistryError> {
-        let id = r.id().to_owned();
+    pub fn register(&mut self, runner: Box<dyn SubActionRunner>) -> Result<(), RegistryError> {
+        let id = runner.id().to_owned();
         if self.runners.contains_key(&id) {
             return Err(RegistryError::DuplicateId(id));
         }
-        self.runners.insert(id, r);
+        self.runners.insert(id, runner);
         Ok(())
     }
 
@@ -175,9 +181,9 @@ pub struct OwnedSubActionRegistration<'a> {
 }
 
 impl OwnedSubActionRegistration<'_> {
-    pub fn register(&mut self, r: Box<dyn SubActionRunner>) -> Result<(), RegistryError> {
-        let id = r.id().to_owned();
-        self.registry.register(r)?;
+    pub fn register(&mut self, runner: Box<dyn SubActionRunner>) -> Result<(), RegistryError> {
+        let id = runner.id().to_owned();
+        self.registry.register(runner)?;
         self.registry.owners.insert(id, self.owner.clone());
         Ok(())
     }
@@ -191,7 +197,7 @@ impl OwnedSubActionRegistration<'_> {
 mod tests {
     use super::*;
     use crate::category::{SubActionCategory, TriggerCategory};
-    use crate::evaluator::EventFilter;
+    use crate::event_filter::EventFilter;
     use crate::form::FormField;
     use crate::kind_platform_contract::KindPlatformContract;
     use crate::run_context::RunContext;

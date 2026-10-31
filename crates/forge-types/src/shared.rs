@@ -1,7 +1,14 @@
 use crate::RecoverRwLock;
+use std::fmt;
 use std::sync::{Arc, RwLock};
 
 pub struct Shared<T>(Arc<RwLock<Arc<T>>>);
+
+impl<T: fmt::Debug> fmt::Debug for Shared<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("Shared").field(&self.load()).finish()
+    }
+}
 
 impl<T> Clone for Shared<T> {
     fn clone(&self) -> Self {

@@ -152,11 +152,11 @@ mod tests {
             "file:///etc/passwd",
             "javascript:alert(1)",
             "data:text/html;base64,PHNjcmlwdD4=",
-            "example.com", // scheme-less
+            "example.com",
             "ftp://host/resource",
-            "JAVASCRIPT:alert(1)", // uppercase dangerous scheme must stay rejected
-            "  file:///etc/passwd", // leading whitespace must not enable a bypass
-            "ftp://host/r?access_token=QUERY-SECRET", // a rejected URL may still carry a secret
+            "JAVASCRIPT:alert(1)",
+            "  file:///etc/passwd",
+            "ftp://host/r?access_token=QUERY-SECRET",
         ] {
             let port = Arc::new(RecordingUrlOpenPort::new());
             let outcome = run(Arc::clone(&port), ArgStack::new(), url).await;

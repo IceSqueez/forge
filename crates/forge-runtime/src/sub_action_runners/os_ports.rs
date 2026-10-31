@@ -12,6 +12,7 @@ pub enum NotifyUrgency {
     Critical,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DesktopNotice {
     pub title: String,
     pub body: String,

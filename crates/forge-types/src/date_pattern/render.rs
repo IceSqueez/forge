@@ -4,15 +4,13 @@ use time::{OffsetDateTime, UtcOffset};
 
 use super::names::{self, NamesLanguage};
 use super::syntax::{DateField, Padding, PatternPiece};
+use super::units::{
+    FOUR_DIGITS, HOURS_PER_HALF_DAY, NANOSECOND_DIGITS, OFFSET_SEPARATOR, SECONDS_PER_HOUR,
+    SECONDS_PER_MINUTE, TWO_DIGITS,
+};
 
 const MINIMAL_DIGITS: usize = 1;
-const TWO_DIGITS: usize = 2;
-const FOUR_DIGITS: usize = 4;
-const NANOSECOND_DIGITS: usize = 9;
 const YEARS_PER_CENTURY: i32 = 100;
-const HOURS_PER_HALF_DAY: u8 = 12;
-const SECONDS_PER_MINUTE: i32 = 60;
-const SECONDS_PER_HOUR: i32 = 3600;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum PatternZone {
@@ -146,7 +144,7 @@ fn offset_hours_minutes(offset_seconds: i32) -> String {
     let magnitude = offset_seconds.abs();
     let hours = magnitude / SECONDS_PER_HOUR;
     let minutes = magnitude % SECONDS_PER_HOUR / SECONDS_PER_MINUTE;
-    format!("{sign}{hours:0TWO_DIGITS$}:{minutes:0TWO_DIGITS$}")
+    format!("{sign}{hours:0TWO_DIGITS$}{OFFSET_SEPARATOR}{minutes:0TWO_DIGITS$}")
 }
 
 #[cfg(test)]

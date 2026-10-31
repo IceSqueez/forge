@@ -9,7 +9,7 @@ use crate::scheduled_runs::limits::{
     MAX_SCHEDULE_DELAY, MAX_SCHEDULE_KEY_CHARS, MAX_SCHEDULED_ARGS_BYTES, MIN_LATE_TOLERANCE,
     MIN_SCHEDULE_DELAY,
 };
-use crate::scheduled_runs::request::SECONDS_PER_DAY;
+use forge_registry::SECONDS_PER_DAY;
 
 #[derive(Debug, Error)]
 pub enum RuntimeError {

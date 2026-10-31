@@ -285,7 +285,7 @@ mod tests {
     }
 
     fn text(value: &LatestValue, field: &str) -> String {
-        match value.fields.get(field) {
+        match value.fields().get(field) {
             Some(Variant::String(text)) => text.clone(),
             other => panic!("{field} is not a string: {other:?}"),
         }
@@ -353,13 +353,13 @@ mod tests {
 
             assert_eq!(
                 (
-                    value.platform.as_str(),
+                    value.platform(),
                     text(&value, latest_fields::USER_NAME).as_str(),
                     text(&value, latest_fields::AMOUNT_FORMATTED).as_str(),
                     text(&value, latest_fields::CURRENCY).as_str(),
                     text(&value, latest_fields::DONATION_KIND).as_str(),
-                    value.fields.get(latest_fields::AMOUNT_MICROS),
-                    value.occurred_at,
+                    value.fields().get(latest_fields::AMOUNT_MICROS),
+                    value.occurred_at(),
                 ),
                 (
                     platform,
@@ -384,7 +384,7 @@ mod tests {
         ));
 
         assert_eq!(
-            value.fields.get(latest_fields::AMOUNT),
+            value.fields().get(latest_fields::AMOUNT),
             Some(&Variant::Float(500.0))
         );
     }

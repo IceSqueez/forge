@@ -1,5 +1,6 @@
 use forge_events::EventSource;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EventFilter {
     pub source: Option<EventSource>,
     pub kind_prefix: Option<String>,
@@ -7,7 +8,10 @@ pub struct EventFilter {
 
 pub fn kind_matches_prefix(kind: &str, prefix: &str) -> bool {
     match kind.strip_prefix(prefix) {
-        Some(rest) => rest.is_empty() || prefix.ends_with('.') || rest.starts_with('.'),
+        Some(rest) => {
+            rest.is_empty()
+                || (!prefix.is_empty() && (prefix.ends_with('.') || rest.starts_with('.')))
+        }
         None => false,
     }
 }
@@ -74,5 +78,6 @@ mod tests {
     fn an_empty_prefix_matches_only_the_empty_kind() {
         assert!(kind_matches_prefix("", ""));
         assert!(!kind_matches_prefix("twitch.channel.unban", ""));
+        assert!(!kind_matches_prefix(".x", ""));
     }
 }

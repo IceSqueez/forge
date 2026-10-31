@@ -11,14 +11,17 @@ macro_rules! define_id {
         pub struct $name(Ulid);
 
         impl $name {
+            #[expect(clippy::new_without_default, reason = "a fresh random id is no default")]
             pub fn new() -> Self {
                 Self(Ulid::generate())
             }
         }
 
-        impl Default for $name {
-            fn default() -> Self {
-                Self::new()
+        impl FromStr for $name {
+            type Err = ulid::DecodeError;
+
+            fn from_str(s: &str) -> Result<Self, Self::Err> {
+                s.parse::<Ulid>().map(Self)
             }
         }
 
@@ -44,38 +47,6 @@ define_id!(ScriptId);
 define_id!(ClipId);
 
 pub const DEFAULT_QUEUE_ID: QueueId = QueueId(Ulid::nil());
-
-impl FromStr for ActionId {
-    type Err = ulid::DecodeError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        s.parse::<Ulid>().map(Self)
-    }
-}
-
-impl FromStr for TriggerInstanceId {
-    type Err = ulid::DecodeError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        s.parse::<Ulid>().map(Self)
-    }
-}
-
-impl FromStr for QueueId {
-    type Err = ulid::DecodeError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        s.parse::<Ulid>().map(Self)
-    }
-}
-
-impl FromStr for ClipId {
-    type Err = ulid::DecodeError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        s.parse::<Ulid>().map(Self)
-    }
-}
 
 #[cfg(test)]
 mod tests {

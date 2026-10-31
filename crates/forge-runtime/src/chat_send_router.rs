@@ -202,7 +202,6 @@ pub fn spawn_chat_send_router(
                     ));
                     continue;
                 }
-                Err(_) => continue,
             };
             if !is_script_or_core_request(&event) {
                 continue;

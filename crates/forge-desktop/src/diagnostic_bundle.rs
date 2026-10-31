@@ -11,7 +11,7 @@ use crate::run_disclosure::{
 use forge_platform_core::HealthValue;
 use forge_runtime::COMMAND_LINE_TARGET;
 use forge_storage::{DataProvider, SettingsRepo, disclose_rows, load_setting_rows};
-use forge_types::STAMP;
+use forge_types::REDACTION_STAMP;
 use forge_types::{INTEGRATION_DISABLED, LogLevel, SCRIPT_LOG_TARGET};
 use time::OffsetDateTime;
 
@@ -212,7 +212,7 @@ fn write_header(out: &mut String, input: &BundleInput) {
          build      : {profile}\n\
          log level  : {} (from {level_source})\n\
          generated  : {}\n\
-         redaction  : a value shown as `{STAMP} len=N>` or `{STAMP}>` was withheld on purpose - \
+         redaction  : a value shown as `{REDACTION_STAMP} len=N>` or `{REDACTION_STAMP}>` was withheld on purpose - \
          it is a redaction, not a truncated or failed read.\n",
         env!("CARGO_PKG_VERSION"),
         std::env::consts::OS,
@@ -361,7 +361,7 @@ fn trigger_shape(trigger: &DisclosedTrigger) -> String {
         DisclosedTrigger::QuickAction {
             builtin_id,
             label_chars,
-        } => format!("quick_action({builtin_id}, label {STAMP} len={label_chars}>)"),
+        } => format!("quick_action({builtin_id}, label {REDACTION_STAMP} len={label_chars}>)"),
         DisclosedTrigger::Scheduled {
             event_id,
             scheduled_run_id,
@@ -374,7 +374,7 @@ fn outcome_shape(outcome: &DisclosedOutcome) -> String {
         DisclosedOutcome::Success => "success".to_owned(),
         DisclosedOutcome::Cancelled => "cancelled".to_owned(),
         DisclosedOutcome::Failed { reason_chars } => {
-            format!("failed(reason {STAMP} len={reason_chars}>)")
+            format!("failed(reason {REDACTION_STAMP} len={reason_chars}>)")
         }
     }
 }
@@ -383,10 +383,10 @@ fn step_outcome_shape(outcome: &DisclosedStepOutcome) -> String {
     match outcome {
         DisclosedStepOutcome::Success => "success".to_owned(),
         DisclosedStepOutcome::Failed { reason_chars } => {
-            format!("failed(reason {STAMP} len={reason_chars}>)")
+            format!("failed(reason {REDACTION_STAMP} len={reason_chars}>)")
         }
         DisclosedStepOutcome::Skipped { reason_chars } => {
-            format!("skipped(reason {STAMP} len={reason_chars}>)")
+            format!("skipped(reason {REDACTION_STAMP} len={reason_chars}>)")
         }
         DisclosedStepOutcome::IntegrationDisabled(integration) => {
             format!("failed({INTEGRATION_DISABLED}: {integration})")

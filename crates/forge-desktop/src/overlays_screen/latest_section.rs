@@ -189,7 +189,10 @@ impl OverlayPropertyPanel {
                 let value = source.values.latest(&binding.slot, binding.scope());
                 let descriptor = source.kinds.get(&kind_id)?;
                 let content = latest_content(descriptor, &stored, value.as_ref());
-                Some(current_value(&content, value.map(|value| value.platform)))
+                Some(current_value(
+                    &content,
+                    value.map(|value| value.platform().to_owned()),
+                ))
             },
             move |this, current, cx| this.on_latest_read(epoch, current, cx),
             cx,

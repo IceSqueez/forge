@@ -222,7 +222,7 @@ impl ActionEngine {
                 biased;
                 () = engine.tasks.stopped() => {
                     let cancelled = engine.cancel_registry.cancel_all();
-                    info!("action engine stopped: cancelled {cancelled} running executions");
+                    info!(cancelled, "action engine stopped");
                     return;
                 }
                 job = input.recv() => match job {
@@ -364,7 +364,7 @@ impl ActionEngine {
                 }
             },
             Err(e) => {
-                warn!("action catalog rebuild failed: {e}");
+                warn!(error = %e, "action catalog rebuild failed");
                 self.refuse(
                     req,
                     origin,

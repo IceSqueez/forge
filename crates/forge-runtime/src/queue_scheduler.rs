@@ -979,7 +979,7 @@ impl QueueScheduler {
         } = req;
 
         let Some(slot) = slots.get_mut(&queue_id) else {
-            warn!("enqueue: queue {queue_id} not found, dropping");
+            warn!(queue = %queue_id, "queue not found; run dropped");
             Self::publish_skip(
                 bus,
                 queue_id,
@@ -1101,9 +1101,11 @@ impl QueueScheduler {
         let previous = slot.gate.replace_limit(limit);
         if previous != limit {
             info!(
-                "queue {}: concurrency {previous} -> {limit} with {} executions still running",
-                queue.name,
-                slot.inflight.len()
+                queue = %queue.name,
+                previous,
+                limit,
+                in_flight = slot.inflight.len(),
+                "queue concurrency changed"
             );
         }
         slot.name = queue.name;

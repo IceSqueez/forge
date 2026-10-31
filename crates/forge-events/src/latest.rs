@@ -34,9 +34,7 @@ pub struct NowPlaying {
     pub title: String,
     #[serde(default)]
     pub artist: String,
-    #[serde(default)]
     pub album: Option<String>,
-    #[serde(default)]
     pub art: Option<String>,
     #[serde(with = "time::serde::rfc3339")]
     pub occurred_at: OffsetDateTime,

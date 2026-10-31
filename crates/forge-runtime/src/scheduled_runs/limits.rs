@@ -1,7 +1,9 @@
 use std::time::Duration;
 
-const MINUTE: Duration = Duration::from_secs(60);
-const DAY: Duration = Duration::from_secs(24 * 60 * 60);
+use forge_registry::{SECONDS_PER_DAY, SECONDS_PER_MINUTE};
+
+const MINUTE: Duration = Duration::from_secs(SECONDS_PER_MINUTE);
+const DAY: Duration = Duration::from_secs(SECONDS_PER_DAY);
 
 pub const MIN_SCHEDULE_DELAY: Duration = MINUTE;
 pub const MAX_SCHEDULE_DELAY: Duration = DAY.saturating_mul(365);

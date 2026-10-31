@@ -1,6 +1,6 @@
-use std::collections::BTreeMap;
-
-use forge_types::{Action, TriggerInstance, Variant, variable_references};
+use forge_types::{
+    Action, SubActionConfig, TriggerConfig, TriggerInstance, Variant, variable_references,
+};
 
 use crate::form::FormField;
 use crate::references::codec::{UNTAGGED, decode};
@@ -14,8 +14,6 @@ use crate::step_tree::{CASE_CHAIN_KEY, STEP_CONFIG_KEY, STEP_KIND_KEY};
 pub(crate) const ACTION_QUEUE_KEY: &str = "queue_id";
 pub(crate) const ACTION_STEPS_KEY: &str = "sub_actions";
 pub(crate) const TRIGGER_OVERRIDES_KEY: &str = "overrides";
-
-type ConfigMap = BTreeMap<String, Variant>;
 
 struct FieldDeclarations {
     fields: Vec<FormField>,
@@ -45,13 +43,17 @@ impl<'a> ReferenceCatalog<'a> {
         }
     }
 
-    pub fn sub_action_references(&self, kind_id: &str, config: &ConfigMap) -> ReferenceListing {
+    pub fn sub_action_references(
+        &self,
+        kind_id: &str,
+        config: &SubActionConfig,
+    ) -> ReferenceListing {
         let mut listing = ReferenceListing::default();
         self.walk_step(kind_id, config, &ReferenceLocation::root(), &mut listing);
         listing
     }
 
-    pub fn trigger_references(&self, kind_id: &str, config: &ConfigMap) -> ReferenceListing {
+    pub fn trigger_references(&self, kind_id: &str, config: &TriggerConfig) -> ReferenceListing {
         let mut listing = ReferenceListing::default();
         match self.trigger_declarations(kind_id) {
             Some(declarations) => self.walk_declarations(
@@ -68,7 +70,11 @@ impl<'a> ReferenceCatalog<'a> {
         listing
     }
 
-    pub fn field_references(&self, fields: &[FormField], config: &ConfigMap) -> ReferenceListing {
+    pub fn field_references(
+        &self,
+        fields: &[FormField],
+        config: &SubActionConfig,
+    ) -> ReferenceListing {
         let mut listing = ReferenceListing::default();
         for field in fields {
             self.walk_field(field, config, &ReferenceLocation::root(), &mut listing);
@@ -124,7 +130,7 @@ impl<'a> ReferenceCatalog<'a> {
     fn walk_step(
         &self,
         kind_id: &str,
-        config: &ConfigMap,
+        config: &SubActionConfig,
         at: &ReferenceLocation,
         listing: &mut ReferenceListing,
     ) {
@@ -140,7 +146,7 @@ impl<'a> ReferenceCatalog<'a> {
     fn walk_declarations(
         &self,
         declarations: &FieldDeclarations,
-        config: &ConfigMap,
+        config: &SubActionConfig,
         at: &ReferenceLocation,
         listing: &mut ReferenceListing,
     ) {
@@ -160,7 +166,7 @@ impl<'a> ReferenceCatalog<'a> {
     fn walk_field(
         &self,
         field: &FormField,
-        config: &ConfigMap,
+        config: &SubActionConfig,
         at: &ReferenceLocation,
         listing: &mut ReferenceListing,
     ) {
@@ -217,7 +223,7 @@ impl<'a> ReferenceCatalog<'a> {
             let Some(kind_id) = step.get(STEP_KIND_KEY).and_then(Variant::as_str) else {
                 continue;
             };
-            let empty = ConfigMap::new();
+            let empty = SubActionConfig::new();
             let config = step
                 .get(STEP_CONFIG_KEY)
                 .and_then(Variant::as_object)
@@ -235,7 +241,7 @@ impl<'a> ReferenceCatalog<'a> {
 fn push_value(
     options_key: &str,
     key: &str,
-    config: &ConfigMap,
+    config: &SubActionConfig,
     at: &ReferenceLocation,
     listing: &mut ReferenceListing,
 ) {

@@ -6,20 +6,15 @@ use time::{Date, Month, OffsetDateTime, PrimitiveDateTime, Time, UtcOffset};
 use super::names::{self, NameForm, NameWidth, NamesLanguage};
 use super::render::PatternZone;
 use super::syntax::{DateField, Padding, PatternPiece};
+use super::units::{
+    DAYS_IN_WEEK, FOUR_DIGITS, HOURS_PER_HALF_DAY, MONTHS_IN_YEAR, NANOSECOND_DIGITS,
+    OFFSET_SEPARATOR, SECONDS_PER_HOUR, SECONDS_PER_MINUTE, TWO_DIGITS,
+};
 
-const MONTHS_IN_YEAR: u8 = 12;
-const DAYS_IN_WEEK: u8 = 7;
-const HOURS_PER_HALF_DAY: u8 = 12;
-const SECONDS_PER_MINUTE: i32 = 60;
-const SECONDS_PER_HOUR: i32 = 3600;
-const NANOSECOND_DIGITS: usize = 9;
 const DECIMAL_BASE: u32 = 10;
 const CENTURY_OF_TWO_DIGIT_YEARS: i32 = 2000;
 const ONE_DIGIT: usize = 1;
-const TWO_DIGITS: usize = 2;
-const FOUR_DIGITS: usize = 4;
 const MAX_YEAR_DIGITS: usize = 6;
-const OFFSET_SEPARATOR: char = ':';
 const UTC_DESIGNATORS: [char; 2] = ['Z', 'z'];
 const NAME_FORMS: [NameForm; 2] = [NameForm::Format, NameForm::StandAlone];
 const NAME_WIDTHS: [NameWidth; 2] = [NameWidth::Wide, NameWidth::Abbreviated];

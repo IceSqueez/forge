@@ -1,6 +1,4 @@
-use std::collections::BTreeMap;
-
-use forge_types::{Action, QueueId, TriggerInstance, Variant};
+use forge_types::{Action, QueueId, SubActionConfig, TriggerConfig, TriggerInstance, Variant};
 
 use crate::error::RegistryError;
 use crate::form::FormField;
@@ -9,13 +7,11 @@ use crate::references::listing::ConfigReference;
 use crate::references::namespace::InternalNamespace;
 use crate::references::remap::ReferenceRemap;
 
-type ConfigMap = BTreeMap<String, Variant>;
-
 impl ReferenceCatalog<'_> {
     pub fn rewrite_sub_action_config(
         &self,
         kind_id: &str,
-        config: &mut ConfigMap,
+        config: &mut SubActionConfig,
         remap: &ReferenceRemap,
     ) -> usize {
         let listing = self.sub_action_references(kind_id, config);
@@ -25,7 +21,7 @@ impl ReferenceCatalog<'_> {
     pub fn rewrite_trigger_config(
         &self,
         kind_id: &str,
-        config: &mut ConfigMap,
+        config: &mut TriggerConfig,
         remap: &ReferenceRemap,
     ) -> usize {
         let listing = self.trigger_references(kind_id, config);
@@ -35,7 +31,7 @@ impl ReferenceCatalog<'_> {
     pub fn rewrite_field_config(
         &self,
         fields: &[FormField],
-        config: &mut ConfigMap,
+        config: &mut SubActionConfig,
         remap: &ReferenceRemap,
     ) -> usize {
         let listing = self.field_references(fields, config);
@@ -73,7 +69,11 @@ impl ReferenceCatalog<'_> {
     }
 }
 
-fn apply(references: &[ConfigReference], config: &mut ConfigMap, remap: &ReferenceRemap) -> usize {
+fn apply(
+    references: &[ConfigReference],
+    config: &mut SubActionConfig,
+    remap: &ReferenceRemap,
+) -> usize {
     let mut rewritten = 0;
     for reference in references.iter().filter(|reference| !reference.templated) {
         let Some(namespace) = reference.namespace.internal() else {

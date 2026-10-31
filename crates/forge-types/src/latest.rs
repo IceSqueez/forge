@@ -25,9 +25,9 @@ pub mod latest_fields {
 
 #[derive(Clone, PartialEq)]
 pub struct LatestValue {
-    pub platform: String,
-    pub occurred_at: OffsetDateTime,
-    pub fields: BTreeMap<String, Variant>,
+    platform: String,
+    occurred_at: OffsetDateTime,
+    fields: BTreeMap<String, Variant>,
 }
 
 impl LatestValue {
@@ -53,6 +53,18 @@ impl LatestValue {
             occurred_at,
             fields,
         }
+    }
+
+    pub fn platform(&self) -> &str {
+        &self.platform
+    }
+
+    pub fn occurred_at(&self) -> OffsetDateTime {
+        self.occurred_at
+    }
+
+    pub fn fields(&self) -> &BTreeMap<String, Variant> {
+        &self.fields
     }
 
     pub fn to_variant(&self) -> Variant {

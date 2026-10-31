@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use forge_types::STAMP;
+use forge_types::REDACTION_STAMP;
 
 use super::row::SettingRow;
 
@@ -53,7 +53,7 @@ fn shape_of(value: &str) -> String {
     match serde_json::from_str::<serde_json::Value>(value) {
         Ok(serde_json::Value::Array(items)) => format!("list({})", items.len()),
         Ok(serde_json::Value::Object(fields)) => format!("map({})", fields.len()),
-        _ => format!("{STAMP} len={}>", value.chars().count()),
+        _ => format!("{REDACTION_STAMP} len={}>", value.chars().count()),
     }
 }
 

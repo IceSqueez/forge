@@ -137,6 +137,12 @@ impl ActorSlot {
 }
 
 const MIN_GIFT_COUNT: i64 = 1;
+const MAX_SYNTHESIZED_GIFT_COUNT: i64 = 100;
+const MAX_SYNTHESIZED_VIEWERS: i64 = 50_000;
+const MIN_SYNTHESIZED_BITS: i64 = 1;
+const MAX_SYNTHESIZED_BITS: i64 = 10_000;
+const MIN_SYNTHESIZED_SUB_MONTHS: i64 = 1;
+const MAX_SYNTHESIZED_SUB_MONTHS: i64 = 120;
 
 impl CanonicalCount {
     pub const ALL: [CanonicalCount; 5] = [
@@ -168,18 +174,21 @@ impl CanonicalCount {
         match self {
             CanonicalCount::ViewerCount => SynthesisHint::BoundedInt {
                 min: 0,
-                max: 50_000,
+                max: MAX_SYNTHESIZED_VIEWERS,
             },
             CanonicalCount::BitsAmount => SynthesisHint::BoundedInt {
-                min: 1,
-                max: 10_000,
+                min: MIN_SYNTHESIZED_BITS,
+                max: MAX_SYNTHESIZED_BITS,
             },
             CanonicalCount::GiftCount => SynthesisHint::BoundedInt {
                 min: MIN_GIFT_COUNT,
-                max: 100,
+                max: MAX_SYNTHESIZED_GIFT_COUNT,
             },
             CanonicalCount::SubCumulativeMonths | CanonicalCount::SubStreakMonths => {
-                SynthesisHint::BoundedInt { min: 1, max: 120 }
+                SynthesisHint::BoundedInt {
+                    min: MIN_SYNTHESIZED_SUB_MONTHS,
+                    max: MAX_SYNTHESIZED_SUB_MONTHS,
+                }
             }
         }
     }

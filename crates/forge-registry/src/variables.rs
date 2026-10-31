@@ -148,25 +148,15 @@ impl TriggerVariables {
         Self::default()
     }
 
-    pub fn actor<F>(mut self, block: ActorBlock, read: F) -> Self
+    pub fn actor<F>(self, block: ActorBlock, read: F) -> Self
     where
         F: Fn(&Event) -> ActorIdentity + Send + Sync + 'static,
     {
-        let read = Arc::new(read);
-        for slot in ActorSlot::ALL {
-            if slot == ActorSlot::Login && block.login == LoginSlot::PlatformHasNone {
-                continue;
-            }
-            let canonical = CanonicalVariable::actor(block.role, slot);
-            let identity = Arc::clone(&read);
-            let platform = block.platform;
-            self.entries.push(VariableEntry {
-                declared: canonical_declaration(canonical),
-                standing: VariableStanding::Canonical(canonical),
-                read: Arc::new(move |event, _| Some(actor_value(slot, platform, &identity(event)))),
-            });
-        }
-        self
+        let platform = block.platform;
+        self.sourced_actor(block.role, block.login, move |event| SourcedActor {
+            identity: read(event),
+            source: platform.as_str().to_owned(),
+        })
     }
 
     pub fn sourced_actor<F>(mut self, role: ActorRole, login: LoginSlot, read: F) -> Self
@@ -418,13 +408,6 @@ fn canonical_declaration(canonical: CanonicalVariable) -> DeclaredVariable {
         label: canonical.label(),
         synthesis: canonical.synthesis(),
     }
-}
-
-fn actor_value(slot: ActorSlot, platform: PlatformId, identity: &ActorIdentity) -> Variant {
-    Variant::String(match slot {
-        ActorSlot::Platform => platform.as_str().to_owned(),
-        ActorSlot::Id | ActorSlot::Name | ActorSlot::Login => identity_value(slot, identity),
-    })
 }
 
 fn identity_value(slot: ActorSlot, identity: &ActorIdentity) -> String {

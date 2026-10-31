@@ -107,7 +107,7 @@ fn texts(pairs: &[(&str, &str)]) -> BTreeMap<String, Variant> {
 
 fn record_args(value: &LatestValue) -> ArgStack {
     value
-        .fields
+        .fields()
         .iter()
         .fold(ArgStack::new(), |stack, (name, field)| {
             stack.set(name.clone(), field.clone())

@@ -132,7 +132,7 @@ pub trait RemoteAudioDestination: Send + Sync {
 
 #[cfg(test)]
 mod tests {
-    use forge_types::STAMP;
+    use forge_types::REDACTION_STAMP;
 
     use super::*;
 
@@ -153,7 +153,7 @@ mod tests {
                 "{rendering} leaks the capability"
             );
             assert!(
-                rendering.contains(STAMP),
+                rendering.contains(REDACTION_STAMP),
                 "{rendering} does not mark the value as withheld"
             );
         }

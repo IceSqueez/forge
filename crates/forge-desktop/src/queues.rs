@@ -756,7 +756,7 @@ impl QueuesView {
     fn persist(&mut self, draft: &QueueDraft, cx: &mut Context<Self>) {
         let editing = draft.editing;
         let queue = Queue {
-            id: editing.unwrap_or_default(),
+            id: editing.unwrap_or_else(QueueId::new),
             name: draft.name.clone(),
             description: draft.description.clone(),
             concurrency: NonZeroU32::new(draft.concurrency.clamp(MIN_CONCURRENCY, MAX_CONCURRENCY))

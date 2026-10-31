@@ -284,7 +284,10 @@ async fn nothing_waits_when_no_enabled_overlay_shows_donations() {
             vec![switched_off(latest(LATEST_DONATION_SLOT, NOBODY))],
         ),
     ] {
-        assert!(audience(wirings, &pages).is_listening().await, "{label}");
+        assert!(
+            audience(wirings, &pages).may_release_held().await,
+            "{label}"
+        );
     }
 }
 
@@ -325,7 +328,9 @@ async fn a_donation_overlay_listens_only_once_a_browser_source_is_connected() {
             ("one browser source", ONE_SOURCE, true),
         ] {
             assert_eq!(
-                audience(wiring(), &[page(receivers)]).is_listening().await,
+                audience(wiring(), &[page(receivers)])
+                    .may_release_held()
+                    .await,
                 expected,
                 "{shape} with {connected}"
             );
@@ -347,7 +352,7 @@ async fn one_connected_donation_overlay_is_enough_among_several() {
         ],
     );
 
-    assert!(audience.is_listening().await);
+    assert!(audience.may_release_held().await);
 }
 
 #[tokio::test]
@@ -363,6 +368,6 @@ async fn an_unreadable_catalog_or_overlay_list_keeps_donations_held() {
             sub_actions(),
         );
 
-        assert!(!audience.is_listening().await, "{label}");
+        assert!(!audience.may_release_held().await, "{label}");
     }
 }

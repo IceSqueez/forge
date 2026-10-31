@@ -1,4 +1,5 @@
-#![allow(clippy::unwrap_used)]
+#![expect(clippy::unwrap_used, reason = "helpers outside #[test] functions")]
+
 use std::fmt::Debug;
 use std::sync::{Arc, Mutex};
 

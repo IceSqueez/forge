@@ -1,4 +1,5 @@
-#![allow(clippy::expect_used)]
+#![expect(clippy::expect_used, reason = "helpers outside #[test] functions")]
+
 mod fakes;
 
 use forge_registry::{ActorRole, ActorSlot, CanonicalVariable};

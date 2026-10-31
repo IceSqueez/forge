@@ -1,5 +1,7 @@
-const MONTHS_IN_YEAR: usize = 12;
-const DAYS_IN_WEEK: usize = 7;
+use super::units;
+
+const MONTHS_IN_YEAR: usize = units::MONTHS_IN_YEAR as usize;
+const DAYS_IN_WEEK: usize = units::DAYS_IN_WEEK as usize;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum NamesLanguage {

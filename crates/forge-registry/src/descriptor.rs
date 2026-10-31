@@ -4,7 +4,7 @@ use forge_types::{ArgStack, TriggerConfig, UserText, VariableSchema};
 use crate::category::TriggerCategory;
 use crate::condition_messages::any_condition;
 use crate::config_problem::ConfigProblem;
-use crate::evaluator::EventFilter;
+use crate::event_filter::EventFilter;
 use crate::form::FormField;
 use crate::kind_platform_contract::KindPlatformContract;
 use crate::references::ReferenceField;

@@ -1,30 +1,12 @@
-#![allow(clippy::unwrap_used, clippy::expect_used)]
-use std::process::Command;
+#![expect(clippy::unwrap_used, reason = "helpers outside #[test] functions")]
 
+mod common;
+
+use common::in_child_zone;
 use forge_types::{DatePattern, NamesLanguage, PatternZone};
 use time::{Date, Month, OffsetDateTime, UtcOffset};
 
-const CHILD_MARKER: &str = "FORGE_DATE_PATTERN_ZONE_CHILD";
 const FULL_PATTERN: &str = "yyyy-MM-dd HH:mm:ss xxx";
-
-fn in_child_zone(test_name: &str, zone: &str) -> bool {
-    if std::env::var_os(CHILD_MARKER).is_some() {
-        return true;
-    }
-    let output = Command::new(std::env::current_exe().unwrap())
-        .args([test_name, "--exact", "--test-threads=1", "--nocapture"])
-        .env(CHILD_MARKER, "1")
-        .env("TZ", zone)
-        .output()
-        .expect("re-run the test binary in a child process");
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        output.status.success() && stdout.contains("1 passed"),
-        "child run of {test_name} in TZ={zone} failed:\n{stdout}\n{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    false
-}
 
 fn utc(year: i32, month: Month, day: u8, hms: (u8, u8, u8)) -> OffsetDateTime {
     Date::from_calendar_date(year, month, day)

@@ -7,6 +7,7 @@ mod names;
 mod read;
 mod render;
 mod syntax;
+mod units;
 
 use std::str::FromStr;
 

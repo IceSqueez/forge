@@ -264,10 +264,10 @@ mod tests {
     fn validate_rejects_title_length_outside_one_to_hundred() {
         let runner = CoreNotifyShowRunner::new(Arc::new(RecordingNotifyPort::new()));
         let cases: [(String, bool); 4] = [
-            (String::new(), false),   // empty rejected
-            ("x".to_owned(), true),   // lower boundary
-            ("a".repeat(100), true),  // upper boundary
-            ("a".repeat(101), false), // one over upper boundary
+            (String::new(), false),
+            ("x".to_owned(), true),
+            ("a".repeat(100), true),
+            ("a".repeat(101), false),
         ];
         for (title, expect_ok) in cases {
             let mut cfg = SubActionConfig::new();

@@ -5,6 +5,21 @@ pub fn is_variable_reference(name: &str) -> bool {
             .all(|c| c.is_alphanumeric() || matches!(c, '_' | '.' | '-'))
 }
 
+pub fn strip_var_decoration(raw: &str) -> String {
+    let trimmed = raw.trim();
+    trimmed
+        .strip_prefix('%')
+        .and_then(|inner| inner.strip_suffix('%'))
+        .unwrap_or(trimmed)
+        .trim()
+        .to_owned()
+}
+
+pub fn normalize_var_name(raw: &str) -> Option<String> {
+    let name = strip_var_decoration(raw);
+    is_variable_reference(&name).then_some(name)
+}
+
 pub fn variable_references(template: &str) -> impl Iterator<Item = &str> {
     TemplatePieces::new(template).filter_map(|piece| match piece {
         TemplatePiece::Reference { name, .. } => Some(name),
@@ -12,6 +27,7 @@ pub fn variable_references(template: &str) -> impl Iterator<Item = &str> {
     })
 }
 
+#[derive(Debug)]
 pub enum TemplatePiece<'a> {
     Literal(&'a str),
     Reference {
@@ -31,6 +47,7 @@ fn split_reference(body: &str) -> Option<(&str, Option<&str>)> {
 
 const FORMAT_SEPARATOR: char = ':';
 
+#[derive(Debug)]
 pub struct TemplatePieces<'a> {
     rest: &'a str,
 }

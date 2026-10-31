@@ -15,12 +15,11 @@ mod declared_fields_more;
 mod descriptor;
 mod duration_bounds;
 mod error;
-mod evaluator;
+mod event_filter;
 mod first_chatter;
 mod flow_kinds;
 mod form;
 mod integration_references;
-mod io;
 mod kind_platform_contract;
 mod merge;
 mod message_emotes;
@@ -31,6 +30,7 @@ mod retired_ids;
 mod run_context;
 mod runner;
 mod scope;
+mod scope_io;
 mod step_tree;
 mod synthesis;
 mod telemetry;
@@ -69,10 +69,10 @@ pub use descriptor::{
 };
 pub use duration_bounds::{
     DURATION_UNIT_DAYS, DURATION_UNIT_HOURS, DURATION_UNIT_MILLISECONDS, DURATION_UNIT_MINUTES,
-    DURATION_UNIT_SECONDS, DurationBounds,
+    DURATION_UNIT_SECONDS, DurationBounds, SECONDS_PER_DAY, SECONDS_PER_HOUR, SECONDS_PER_MINUTE,
 };
 pub use error::RegistryError;
-pub use evaluator::{EventFilter, kind_matches_prefix};
+pub use event_filter::{EventFilter, kind_matches_prefix};
 pub use first_chatter::{
     FIRST_CHATTERS_ONLY, admits_chatter, chat_message_condition, first_chatters_only_field,
 };
@@ -81,7 +81,6 @@ pub use form::{
     AmountUnit, CodeKind, CodeLanguage, ENGINE_VOICE_OPTIONS_KEY, FormField, UnitAmountBounds,
 };
 pub use integration_references::{IntegrationReferences, ReferencingAction, tally_references};
-pub use io::{ProducedVariable, SubActionIo};
 pub use kind_platform_contract::KindPlatformContract;
 pub use merge::effective_config;
 pub use message_emotes::{chat_emote_codes, message_emote_codes};
@@ -95,6 +94,7 @@ pub use retired_ids::IdSuccession;
 pub use run_context::RunContext;
 pub use runner::{SubActionConfig, SubActionRunner, validate_declared_config};
 pub use scope::{ScopeLevel, ScopeOrigin, ScopedVariable, variables_in_scope};
+pub use scope_io::{ProducedVariable, SubActionIo};
 pub use step_tree::{
     CASE_CHAIN_KEY, CASE_MATCH_KEY, ChainEntry, STEP_CONDITION_KEY, STEP_CONFIG_KEY, STEP_KIND_KEY,
     StepNode, StepReach, UndecodableReason, UndecodableStep, decode_chain, decode_step,

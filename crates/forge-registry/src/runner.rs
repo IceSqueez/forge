@@ -8,10 +8,10 @@ use crate::config_problem::ConfigProblem;
 use crate::declared_config::{ConfigSpec, Interpolation};
 use crate::error::RegistryError;
 use crate::form::FormField;
-use crate::io::SubActionIo;
 use crate::references::ReferenceField;
 use crate::refinement::FormRefinement;
 use crate::run_context::RunContext;
+use crate::scope_io::SubActionIo;
 
 #[async_trait]
 pub trait SubActionRunner: Send + Sync {

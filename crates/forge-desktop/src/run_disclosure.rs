@@ -2,8 +2,8 @@ use std::collections::BTreeMap;
 use std::fmt;
 
 use forge_types::{
-    ActionId, EventId, ExecutionContext, ExecutionMetadata, ExecutionOutcome, IntegrationId, STAMP,
-    SubActionOutcome, SubActionTelemetry, Variant, datetime_to_text,
+    ActionId, EventId, ExecutionContext, ExecutionMetadata, ExecutionOutcome, IntegrationId,
+    REDACTION_STAMP, SubActionOutcome, SubActionTelemetry, Variant, datetime_to_text,
 };
 use time::OffsetDateTime;
 
@@ -49,7 +49,7 @@ impl fmt::Display for DisclosedValue {
             Self::Float(v) => write!(f, "{v}"),
             Self::Bool(v) => write!(f, "{v}"),
             Self::Datetime(v) => f.write_str(&datetime_to_text(v)),
-            Self::Text { chars } => write!(f, "{STAMP} len={chars}>"),
+            Self::Text { chars } => write!(f, "{REDACTION_STAMP} len={chars}>"),
             Self::Array { items } => write!(f, "array({items})"),
             Self::Object { entries } => write!(f, "object({entries})"),
         }
@@ -311,7 +311,7 @@ mod tests {
         for (value, chars) in [("", 0), ("abc", 3), ("Привіт", 6), ("🙂🙂", 2)] {
             assert_eq!(
                 DisclosedValue::text(value).to_string(),
-                format!("{STAMP} len={chars}>"),
+                format!("{REDACTION_STAMP} len={chars}>"),
                 "value {value:?}",
             );
         }

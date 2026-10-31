@@ -39,7 +39,9 @@ const GENERIC_FLOAT_MAX: f64 = 99.99;
 const RATIO_RESOLUTION: i64 = 1_000;
 const FIRST_IN_POOL: usize = 0;
 const MID_RATIO_STEP: i64 = RATIO_RESOLUTION / 2;
+const EVEN_ODDS: f64 = 0.5;
 
+#[derive(Debug)]
 pub struct SynthesisSample {
     platform: Option<PlatformId>,
     name_index: usize,
@@ -59,7 +61,7 @@ impl SynthesisSample {
             message_index: rng.random_range(0..MESSAGE_POOL.len()),
             tier_index: rng.random_range(0..SUB_TIER_POOL.len()),
             ratio_step: rng.random_range(0..=RATIO_RESOLUTION),
-            flag: rng.random_range(0..=1) == 1,
+            flag: rng.random_bool(EVEN_ODDS),
             now: OffsetDateTime::now_utc(),
         }
     }
@@ -111,7 +113,7 @@ impl SynthesisSample {
 
     fn bounded_int(&self, min: i64, max: i64) -> i64 {
         let (lo, hi) = if min <= max { (min, max) } else { (max, min) };
-        lo + ((hi - lo) as f64 * self.ratio()).round() as i64
+        lo.saturating_add_unsigned((hi.abs_diff(lo) as f64 * self.ratio()).round() as u64)
     }
 
     fn bounded_float(&self, min: f64, max: f64) -> f64 {

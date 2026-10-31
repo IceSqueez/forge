@@ -1,4 +1,5 @@
-#![allow(clippy::unwrap_used)]
+#![expect(clippy::unwrap_used, reason = "helpers outside #[test] functions")]
+
 use forge_registry::{
     BoundedTextField, ConfigProblem, ConfigReason, FormField, Interpolation, SeparatedListField,
     TextEditor, TypedField, ValueBounds,

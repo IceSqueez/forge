@@ -56,7 +56,9 @@ pub(crate) fn send_target_id(platform: PlatformId) -> SharedString {
 }
 
 pub(crate) fn send_target_platforms(ids: &[SharedString]) -> Vec<PlatformId> {
-    ids.iter().filter_map(|id| PlatformId::parse(id)).collect()
+    ids.iter()
+        .filter_map(|id| PlatformId::from_canonical(id))
+        .collect()
 }
 
 pub(crate) fn badge_color(kind: BadgeKind, palette: &ForgePalette) -> Rgba {

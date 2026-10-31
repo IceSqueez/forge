@@ -1,11 +1,12 @@
-#![allow(clippy::unwrap_used, clippy::expect_used)]
+#![expect(clippy::unwrap_used, reason = "helpers outside #[test] functions")]
+
+mod common;
+
 use forge_types::{ArgStack, NamesLanguage, RecoverMutex, Variant, set_current_names_language};
-use std::process::Command;
 use std::sync::{Mutex, MutexGuard};
 
+use common::in_child_zone;
 use time::{Date, Month, OffsetDateTime};
-
-const CHILD_MARKER: &str = "FORGE_INLINE_DATE_FORMAT_CHILD";
 
 static NAMES_LANGUAGE_LOCK: Mutex<()> = Mutex::new(());
 
@@ -13,25 +14,6 @@ fn names_language(language: NamesLanguage) -> MutexGuard<'static, ()> {
     let guard = NAMES_LANGUAGE_LOCK.lock_recover();
     set_current_names_language(language);
     guard
-}
-
-fn in_child_zone(test_name: &str, zone: &str) -> bool {
-    if std::env::var_os(CHILD_MARKER).is_some() {
-        return true;
-    }
-    let output = Command::new(std::env::current_exe().unwrap())
-        .args([test_name, "--exact", "--test-threads=1", "--nocapture"])
-        .env(CHILD_MARKER, "1")
-        .env("TZ", zone)
-        .output()
-        .expect("re-run the test binary in a child process");
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        output.status.success() && stdout.contains("1 passed"),
-        "child run of {test_name} in TZ={zone} failed:\n{stdout}\n{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    false
 }
 
 fn mid_october_noon_utc() -> OffsetDateTime {

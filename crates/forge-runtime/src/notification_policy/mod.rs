@@ -12,7 +12,7 @@ use forge_events::{
 use forge_net::TaskOwner;
 use tokio::sync::{mpsc, watch};
 use tokio::time::Instant;
-use tracing::debug;
+use tracing::warn;
 
 use crate::bus::EventBus;
 use crate::delivery::NOTIFICATION_POLICY;
@@ -134,7 +134,7 @@ impl NotificationPolicy {
                 continue;
             }
             if let Err(e) = self.intents.try_send(intent) {
-                debug!("notification policy: intent not delivered: {e}");
+                warn!(error = %e, "notification intent dropped");
             }
         }
     }

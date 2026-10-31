@@ -4,7 +4,7 @@ use crate::references::namespace::InternalNamespace;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ReferenceRemap {
-    entries: HashMap<(InternalNamespace, String), String>,
+    entries: HashMap<InternalNamespace, HashMap<String, String>>,
 }
 
 impl ReferenceRemap {
@@ -14,13 +14,14 @@ impl ReferenceRemap {
         from: impl Into<String>,
         to: impl Into<String>,
     ) {
-        self.entries.insert((namespace, from.into()), to.into());
+        self.entries
+            .entry(namespace)
+            .or_default()
+            .insert(from.into(), to.into());
     }
 
     pub fn get(&self, namespace: InternalNamespace, from: &str) -> Option<&str> {
-        self.entries
-            .get(&(namespace, from.to_owned()))
-            .map(String::as_str)
+        self.entries.get(&namespace)?.get(from).map(String::as_str)
     }
 
     pub fn is_empty(&self) -> bool {

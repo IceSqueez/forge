@@ -33,7 +33,7 @@ pub(crate) fn split_stored(stored: &str) -> (Option<PlatformId>, &str) {
     stored
         .split_once(PLATFORM_SEPARATOR)
         .and_then(|(token, handle)| {
-            PlatformId::parse(token).map(|platform| (Some(platform), handle))
+            PlatformId::from_canonical(token).map(|platform| (Some(platform), handle))
         })
         .unwrap_or((None, stored))
 }

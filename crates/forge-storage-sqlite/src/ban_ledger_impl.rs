@@ -36,7 +36,7 @@ struct BanLedgerRow {
 }
 
 fn decode_row(row: BanLedgerRow) -> Result<BanLedgerEntry, SqliteStorageError> {
-    let platform = PlatformId::parse(&row.platform).ok_or_else(|| {
+    let platform = PlatformId::from_canonical(&row.platform).ok_or_else(|| {
         SqliteStorageError::Decode(format!("invalid ban ledger platform '{}'", row.platform))
     })?;
     let origin = BanOrigin::parse(&row.origin).ok_or_else(|| {

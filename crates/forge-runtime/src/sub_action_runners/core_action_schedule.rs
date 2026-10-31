@@ -2,10 +2,11 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use forge_registry::{
-    AmountUnit, ConfigProblem, ConfigSpec, DateTimeField, DurationBounds, DurationField,
-    OptionalField, OptionalSwitch, ProducedVariable, RunContext, StepTimer, SubActionCategory,
-    SubActionIo, SubActionRunner, TextEditor, TextField, ToggleField, TypedField, UnitAmountBounds,
-    UnitAmountField, VariableField,
+    AmountUnit, ConfigProblem, ConfigSpec, DURATION_UNIT_DAYS, DURATION_UNIT_HOURS,
+    DURATION_UNIT_MINUTES, DateTimeField, DurationBounds, DurationField, OptionalField,
+    OptionalSwitch, ProducedVariable, RunContext, SECONDS_PER_DAY, SECONDS_PER_HOUR,
+    SECONDS_PER_MINUTE, StepTimer, SubActionCategory, SubActionIo, SubActionRunner, TextEditor,
+    TextField, ToggleField, TypedField, UnitAmountBounds, UnitAmountField, VariableField,
 };
 use forge_storage::MissedRunPolicy;
 use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant, VariantKind};
@@ -19,9 +20,9 @@ use crate::scheduled_runs::{
 
 pub const SCHEDULE_ACTION_KIND_ID: &str = "core.action.schedule";
 
-pub(crate) const UNIT_MINUTES: &str = "minutes";
-pub(crate) const UNIT_HOURS: &str = "hours";
-pub(crate) const UNIT_DAYS: &str = "days";
+pub(crate) const UNIT_MINUTES: &str = DURATION_UNIT_MINUTES;
+pub(crate) const UNIT_HOURS: &str = DURATION_UNIT_HOURS;
+pub(crate) const UNIT_DAYS: &str = DURATION_UNIT_DAYS;
 
 pub(crate) const DEFAULT_DUE_AT_VARIABLE: &str = "schedule.due_at";
 pub(crate) const DEFAULT_SCHEDULED_ID_VARIABLE: &str = "schedule.id";
@@ -29,9 +30,6 @@ pub(crate) const DEFAULT_SCHEDULED_ID_VARIABLE: &str = "schedule.id";
 const DUE_AT_INTO_KEY: &str = "due_at_into_var";
 const ID_INTO_KEY: &str = "id_into_var";
 
-const SECONDS_PER_MINUTE: u64 = 60;
-const SECONDS_PER_HOUR: u64 = 60 * SECONDS_PER_MINUTE;
-const SECONDS_PER_DAY: u64 = 24 * SECONDS_PER_HOUR;
 const DEFAULT_DELAY_MINUTES: i64 = 10;
 const MIN_DELAY_AMOUNT: i64 = 1;
 const DEFAULT_LATE_TOLERANCE_MINUTES: i64 = 10;

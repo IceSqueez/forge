@@ -5,7 +5,6 @@ use crate::message::{
     INTEGRATION_DISABLED, MessageRef, UserText, VerbatimText, WHISPERS_UNSUPPORTED,
 };
 use crate::redaction::RedactedText;
-use crate::template::is_variable_reference;
 use crate::template::{TemplatePiece, TemplatePieces};
 use crate::variant::Variant;
 use serde::{Deserialize, Serialize};
@@ -94,43 +93,6 @@ impl fmt::Debug for SubActionTelemetry {
     }
 }
 
-pub fn strip_var_decoration(raw: &str) -> String {
-    let trimmed = raw.trim();
-    trimmed
-        .strip_prefix('%')
-        .and_then(|inner| inner.strip_suffix('%'))
-        .unwrap_or(trimmed)
-        .trim()
-        .to_owned()
-}
-
-pub fn normalize_var_name(raw: &str) -> Option<String> {
-    let name = strip_var_decoration(raw);
-    is_variable_reference(&name).then_some(name)
-}
-
-pub fn variant_preview(value: &Variant) -> String {
-    const MAX_CHARS: usize = 800;
-    let rendered = match value {
-        Variant::Array(items) => return crate::variant::array_summary(items),
-        Variant::Object(_) => serde_json::to_string_pretty(&value.to_plain_json())
-            .unwrap_or_else(|_| value.to_string()),
-        Variant::String(s) if !s.contains('\n') => {
-            serde_json::to_string(s).unwrap_or_else(|_| format!("\"{s}\""))
-        }
-        scalar => scalar.to_string(),
-    };
-    if rendered.chars().count() <= MAX_CHARS {
-        return rendered;
-    }
-    let clipped: String = rendered.chars().take(MAX_CHARS).collect();
-    let clipped = match clipped.rfind('\n') {
-        Some(pos) => &clipped[..pos],
-        None => clipped.as_str(),
-    };
-    format!("{clipped}\n...")
-}
-
 impl SubActionTelemetry {
     pub const NESTED: usize = usize::MAX;
 
@@ -165,8 +127,14 @@ pub const COMMAND_NAME_VARIABLE: &str = "command_name";
 pub const COMMAND_ARGS_VARIABLE: &str = "command.args";
 pub const COMMAND_TAIL_VARIABLE: &str = "command.tail";
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct ArgStack(BTreeMap<String, Variant>);
+
+impl fmt::Debug for ArgStack {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_set().entries(self.0.keys()).finish()
+    }
+}
 
 impl ArgStack {
     pub fn new() -> Self {
@@ -228,12 +196,6 @@ fn render_reference(value: &Variant, format: Option<&str>) -> String {
     }
 }
 
-impl Default for ArgStack {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ExecutionContext {
     pub action_id: ActionId,
@@ -252,7 +214,9 @@ mod tests {
     use super::*;
     use crate::ids::{ActionId, EventId};
     use crate::message::MessageArg;
+    use crate::template::{normalize_var_name, strip_var_decoration};
     use crate::variant::Variant;
+    use crate::variant::variant_preview;
     use time::OffsetDateTime;
 
     fn stack_with(pairs: &[(&str, Variant)]) -> ArgStack {
@@ -515,12 +479,12 @@ mod tests {
                 trigger_kind: None,
             },
             arg_stack_snapshot: BTreeMap::new(),
-            started_at: OffsetDateTime::now_utc(),
+            started_at: OffsetDateTime::UNIX_EPOCH,
             completed_at: None,
             telemetry: vec![SubActionTelemetry {
                 index: 0,
                 kind: "SendChat".to_string(),
-                started_at: OffsetDateTime::now_utc(),
+                started_at: OffsetDateTime::UNIX_EPOCH,
                 duration_ms: 5,
                 outcome: SubActionOutcome::Success,
                 args_in: BTreeMap::new(),

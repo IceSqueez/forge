@@ -1,7 +1,6 @@
-use std::collections::BTreeMap;
 use std::fmt;
 
-use forge_types::Variant;
+use forge_types::{SubActionConfig, Variant};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum LocationSegment {
@@ -39,10 +38,7 @@ impl ReferenceLocation {
         Self(segments)
     }
 
-    pub(crate) fn slot_mut<'c>(
-        &self,
-        config: &'c mut BTreeMap<String, Variant>,
-    ) -> Option<&'c mut Variant> {
+    pub(crate) fn slot_mut<'c>(&self, config: &'c mut SubActionConfig) -> Option<&'c mut Variant> {
         let (first, rest) = self.0.split_first()?;
         let LocationSegment::Key(first) = first else {
             return None;

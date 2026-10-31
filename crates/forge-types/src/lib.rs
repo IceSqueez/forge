@@ -9,9 +9,11 @@ mod execution;
 mod ids;
 mod integration;
 mod latest;
+mod log_level;
 mod log_target;
 mod message;
 mod money;
+mod output_device;
 mod permission_rung;
 mod platform;
 mod platform_scope;
@@ -21,7 +23,6 @@ mod redaction;
 mod script;
 mod secret;
 mod shared;
-mod sub_action;
 mod sub_action_step;
 mod template;
 mod trigger_config;
@@ -43,8 +44,7 @@ pub use error::TypesError;
 pub use execution::{
     ArgStack, COMMAND_ARGS_VARIABLE, COMMAND_NAME_VARIABLE, COMMAND_TAIL_VARIABLE,
     ExecutionContext, ExecutionMetadata, ExecutionOutcome, SubActionOutcome, SubActionTelemetry,
-    integration_disabled_message, normalize_var_name, strip_var_decoration, variant_preview,
-    whispers_unsupported_message,
+    integration_disabled_message, whispers_unsupported_message,
 };
 pub use ids::{ActionId, ClipId, DEFAULT_QUEUE_ID, EventId, QueueId, ScriptId, TriggerInstanceId};
 pub use integration::{IntegrationAvailability, IntegrationId};
@@ -52,6 +52,7 @@ pub use latest::{
     LATEST_DONATION_SLOT, LatestScope, LatestValue, LatestValueReader, NOW_PLAYING_SLOT,
     latest_fields,
 };
+pub use log_level::LogLevel;
 pub use log_target::SCRIPT_LOG_TARGET;
 pub use message::{
     COMMON_MESSAGES, FiniteFloat, HEALTH_VIEWERS, INTEGRATION_DISABLED, MAX_UPSTREAM_DETAIL_CHARS,
@@ -60,6 +61,7 @@ pub use message::{
     UpstreamDetail, UserText, VerbatimText, WHISPERS_UNSUPPORTED,
 };
 pub use money::{CurrencyCode, MICROS_PER_MAJOR_UNIT, MoneyAmount};
+pub use output_device::OutputDevice;
 pub use permission_rung::PermissionRung;
 pub use platform::{
     PlatformId, requested_chat_target, resolve_chat_target, unknown_chat_target_message,
@@ -67,13 +69,15 @@ pub use platform::{
 pub use platform_scope::PlatformScope;
 pub use queue::Queue;
 pub use recover_lock::{RecoverMutex, RecoverRwLock};
-pub use redaction::{MARKER, Redacted, RedactedText, STAMP};
+pub use redaction::{REDACTION_MARKER, REDACTION_STAMP, Redacted, RedactedText};
 pub use script::{ScriptContract, ScriptInput};
 pub use secret::{ClipCapability, OAuthToken, OverlayCredential, RemoteClipId, Secret};
 pub use shared::Shared;
-pub use sub_action::{LogLevel, OutputDevice};
 pub use sub_action_step::{SubActionConfig, SubActionStep};
-pub use template::{TemplatePiece, TemplatePieces, is_variable_reference, variable_references};
+pub use template::{
+    TemplatePiece, TemplatePieces, is_variable_reference, normalize_var_name, strip_var_decoration,
+    variable_references,
+};
 pub use trigger_config::TriggerConfig;
 pub use trigger_instance::TriggerInstance;
 pub use unified_chat::{
@@ -83,5 +87,5 @@ pub use unified_chat::{
 };
 pub use variant::{
     MAX_COLLECTION_LEN as VARIANT_MAX_COLLECTION_LEN, MAX_DEPTH as VARIANT_MAX_DEPTH, Variant,
-    VariantKind, display_scalar,
+    VariantKind, display_scalar, variant_preview,
 };

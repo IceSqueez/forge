@@ -39,7 +39,7 @@ struct ViewerRow {
 }
 
 fn row_to_viewer(row: ViewerRow) -> Result<Viewer, StorageError> {
-    let platform = PlatformId::parse(&row.platform).ok_or_else(|| {
+    let platform = PlatformId::from_canonical(&row.platform).ok_or_else(|| {
         StorageError::from(SqliteStorageError::Decode(format!(
             "unknown platform `{}`",
             row.platform

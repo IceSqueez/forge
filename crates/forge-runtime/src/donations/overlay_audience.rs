@@ -81,7 +81,7 @@ impl DonationOverlayAudience {
 
 #[async_trait]
 impl DonationAudience for DonationOverlayAudience {
-    async fn is_listening(&self) -> bool {
+    async fn may_release_held(&self) -> bool {
         let overlays = match self.donation_overlays().await {
             Ok(overlays) => overlays,
             Err(error) => {

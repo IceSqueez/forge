@@ -1,14 +1,14 @@
 use std::fmt;
 
-pub const STAMP: &str = "<redacted";
+pub const REDACTION_STAMP: &str = "<redacted";
 
-pub const MARKER: &str = "<redacted>";
+pub const REDACTION_MARKER: &str = "<redacted>";
 
 pub struct Redacted;
 
 impl fmt::Debug for Redacted {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(MARKER)
+        f.write_str(REDACTION_MARKER)
     }
 }
 
@@ -22,7 +22,7 @@ impl RedactedText {
 
 impl fmt::Debug for RedactedText {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{STAMP} len={}>", self.0)
+        write!(f, "{REDACTION_STAMP} len={}>", self.0)
     }
 }
 
@@ -32,7 +32,7 @@ mod tests {
 
     #[test]
     fn placeholder_debug_shapes_are_pinned() {
-        assert_eq!(MARKER, "<redacted>");
+        assert_eq!(REDACTION_MARKER, "<redacted>");
         assert_eq!(format!("{Redacted:?}"), "<redacted>");
         assert_eq!(
             format!("{:?}", RedactedText::new("abc")),
@@ -43,14 +43,14 @@ mod tests {
     #[test]
     fn every_placeholder_rendering_opens_with_the_shared_stamp() {
         for rendering in [
-            MARKER.to_owned(),
+            REDACTION_MARKER.to_owned(),
             format!("{Redacted:?}"),
             format!("{:?}", RedactedText::new("")),
             format!("{:?}", RedactedText::new("Привіт")),
         ] {
             assert!(
-                rendering.starts_with(STAMP),
-                "{rendering:?} does not open with {STAMP:?}",
+                rendering.starts_with(REDACTION_STAMP),
+                "{rendering:?} does not open with {REDACTION_STAMP:?}",
             );
         }
     }

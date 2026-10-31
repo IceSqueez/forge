@@ -15,7 +15,7 @@ pub(crate) async fn build_connected_accounts(
     ids.into_iter()
         .filter_map(|id| {
             let (platform, login) = id.as_str().split_once(CREDENTIAL_ID_SEPARATOR)?;
-            let platform = PlatformId::parse(platform)?;
+            let platform = PlatformId::from_canonical(platform)?;
             Some(serde_json::json!({
                 "platform": platform.as_str(),
                 "login": login,

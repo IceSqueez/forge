@@ -1,4 +1,5 @@
 use super::DatePattern;
+use super::units::OFFSET_SEPARATOR;
 
 const COMPONENT_OPEN: char = '[';
 const COMPONENT_CLOSE: char = ']';
@@ -6,7 +7,6 @@ const ESCAPE: char = '\\';
 const MODIFIER_SEPARATOR: char = ':';
 const LDML_QUOTE: char = '\'';
 const LDML_QUOTED_QUOTE: &str = "''";
-const OFFSET_SEPARATOR: char = ':';
 const SUBSECOND_DIGIT_COUNTS: [&str; 9] = ["1", "2", "3", "4", "5", "6", "7", "8", "9"];
 
 const LEGACY_COMPONENT_NAMES: [&str; 19] = [
@@ -31,7 +31,9 @@ const LEGACY_COMPONENT_NAMES: [&str; 19] = [
     "year",
 ];
 
-const PADDING: (&str, &[&str]) = ("padding", &["zero", "none"]);
+const PADDING_KEY: &str = "padding";
+const PADDING: (&str, &[&str]) = (PADDING_KEY, &["zero", "none"]);
+const ZERO_PADDING: (&str, &[&str]) = (PADDING_KEY, &["zero"]);
 const CASE_SENSITIVE: (&str, &[&str]) = ("case_sensitive", &["true", "false"]);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -296,11 +298,11 @@ fn offset_hours_minutes(
     rest: &[Item],
 ) -> Result<(String, usize), UntranslatableFragment> {
     let hour_ok = hour.value("sign") == Some("mandatory")
-        && hour.admits_only(&[("sign", &["mandatory"]), ("padding", &["zero"])]);
+        && hour.admits_only(&[("sign", &["mandatory"]), ZERO_PADDING]);
     let followed_by_minutes = matches!(
         rest,
         [Item::Literal(OFFSET_SEPARATOR), Item::Component(minute), ..]
-            if minute.name == "offset_minute" && minute.admits_only(&[("padding", &["zero"])])
+            if minute.name == "offset_minute" && minute.admits_only(&[ZERO_PADDING])
     );
     if hour_ok && followed_by_minutes {
         Ok(("xxx".to_owned(), 2))

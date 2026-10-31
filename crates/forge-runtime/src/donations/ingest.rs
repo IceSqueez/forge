@@ -70,7 +70,7 @@ impl DonationIngest {
         let ingest = Arc::downgrade(self);
         tasks.spawn_until_stopped(async move {
             while let Some(ingest) = ingest.upgrade() {
-                if !hold.is_empty() && audience.is_listening().await {
+                if !hold.is_empty() && audience.may_release_held().await {
                     for donation in hold.take_in_order() {
                         ingest
                             .announce_recorded(&donation, OffsetDateTime::now_utc())
@@ -704,7 +704,7 @@ mod tests {
 
     #[async_trait]
     impl DonationAudience for ScriptedAudience {
-        async fn is_listening(&self) -> bool {
+        async fn may_release_held(&self) -> bool {
             let gate = self.first_answer_gate.lock().await.take();
             let answer = self.listening.load(Ordering::SeqCst);
             self.asked.send_modify(|count| *count += 1);
@@ -749,7 +749,7 @@ mod tests {
 
     #[async_trait]
     impl DonationAudience for DeafAudience {
-        async fn is_listening(&self) -> bool {
+        async fn may_release_held(&self) -> bool {
             false
         }
     }

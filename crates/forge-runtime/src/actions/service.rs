@@ -17,6 +17,9 @@ use super::overlay_wiring::{
 use super::types::{ActionDetail, ActionSummary, OverlayFeed};
 use crate::sub_action_runners::feeds_overlay;
 
+const RUN_STATS_WINDOW: time::Duration = time::Duration::DAY;
+const DETAIL_HISTORY_RUNS: u32 = 20;
+
 pub struct ActionsService {
     actions: Arc<dyn ActionRepo>,
     queues: Arc<dyn QueueRepo>,
@@ -44,7 +47,7 @@ impl ActionsService {
     pub async fn list_summaries(&self) -> Result<Vec<ActionSummary>, StorageError> {
         let actions = self.actions.list().await?;
         let all_queues = self.queues.list().await?;
-        let since = OffsetDateTime::now_utc() - time::Duration::hours(24);
+        let since = OffsetDateTime::now_utc() - RUN_STATS_WINDOW;
         let stats = self.history.stats_summary(since).await?;
 
         let mut summaries = Vec::with_capacity(actions.len());
@@ -88,7 +91,10 @@ impl ActionsService {
                 key: id.to_string(),
             })?;
         let trigger_instances = self.trigger_instances.list_for_action(id).await?;
-        let recent = self.history.recent_for_action(id, 20).await?;
+        let recent = self
+            .history
+            .recent_for_action(id, DETAIL_HISTORY_RUNS)
+            .await?;
         let sub_action_avg_ms = compute_sub_action_averages(&recent, action.sub_actions.len());
         let last_step_outcomes = compute_last_step_outcomes(&recent, action.sub_actions.len());
 

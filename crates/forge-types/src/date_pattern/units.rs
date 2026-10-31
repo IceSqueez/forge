@@ -1,0 +1,9 @@
+pub(super) const MONTHS_IN_YEAR: u8 = 12;
+pub(super) const DAYS_IN_WEEK: u8 = 7;
+pub(super) const HOURS_PER_HALF_DAY: u8 = 12;
+pub(super) const SECONDS_PER_MINUTE: i32 = 60;
+pub(super) const SECONDS_PER_HOUR: i32 = 3600;
+pub(super) const TWO_DIGITS: usize = 2;
+pub(super) const FOUR_DIGITS: usize = 4;
+pub(super) const NANOSECOND_DIGITS: usize = 9;
+pub(super) const OFFSET_SEPARATOR: char = ':';

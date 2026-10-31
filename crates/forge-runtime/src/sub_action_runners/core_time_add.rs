@@ -249,49 +249,49 @@ mod tests {
                 1,
                 "months",
                 (2024, Month::February, 29),
-            ), // leap clamp
+            ),
             (
                 (2023, Month::January, 31),
                 1,
                 "months",
                 (2023, Month::February, 28),
-            ), // non-leap clamp
+            ),
             (
                 (2023, Month::December, 15),
                 1,
                 "months",
                 (2024, Month::January, 15),
-            ), // year rollover fwd
+            ),
             (
                 (2024, Month::March, 31),
                 -1,
                 "months",
                 (2024, Month::February, 29),
-            ), // negative + leap clamp
+            ),
             (
                 (2024, Month::January, 15),
                 -1,
                 "months",
                 (2023, Month::December, 15),
-            ), // negative year rollback
+            ),
             (
                 (2024, Month::January, 1),
                 12,
                 "months",
                 (2025, Month::January, 1),
-            ), // rem_euclid wrap
+            ),
             (
                 (2024, Month::January, 31),
                 1,
                 "years",
                 (2025, Month::January, 31),
-            ), // years = months * 12
+            ),
             (
                 (2024, Month::February, 29),
                 1,
                 "years",
                 (2025, Month::February, 28),
-            ), // leap-day anniversary clamp
+            ),
         ];
         for ((by, bm, bd), amount, unit, (ey, em, ed)) in cases {
             let base = utc(by, bm, bd, 8, 30, 15);

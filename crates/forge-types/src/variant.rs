@@ -359,6 +359,28 @@ fn object_entries(
     Ok(Variant::Object(entries))
 }
 
+pub fn variant_preview(value: &Variant) -> String {
+    const MAX_CHARS: usize = 800;
+    let rendered = match value {
+        Variant::Array(items) => return array_summary(items),
+        Variant::Object(_) => serde_json::to_string_pretty(&value.to_plain_json())
+            .unwrap_or_else(|_| value.to_string()),
+        Variant::String(s) if !s.contains('\n') => {
+            serde_json::to_string(s).unwrap_or_else(|_| format!("\"{s}\""))
+        }
+        scalar => scalar.to_string(),
+    };
+    if rendered.chars().count() <= MAX_CHARS {
+        return rendered;
+    }
+    let clipped: String = rendered.chars().take(MAX_CHARS).collect();
+    let clipped = match clipped.rfind('\n') {
+        Some(pos) => &clipped[..pos],
+        None => clipped.as_str(),
+    };
+    format!("{clipped}\n...")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

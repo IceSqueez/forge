@@ -2,7 +2,7 @@ use forge_components::{
     Density, FONT_XS, ForgePalette, Icon, Spacing, body_family, icon, spacing, tr,
 };
 use forge_types::LogLevel;
-use forge_types::STAMP;
+use forge_types::REDACTION_STAMP;
 use gpui::{Pixels, SharedString, div, prelude::*, px};
 
 use crate::diagnostic_bundle::{Bundle, RUN_HISTORY_LIMIT};
@@ -47,7 +47,7 @@ pub(crate) fn export_statement(bundle: &Bundle, level: &LogLevel) -> Vec<Stateme
         )),
         plain(tr!(
             "settings_diagnostics_export_preview_excludes",
-            stamp = STAMP
+            stamp = REDACTION_STAMP
         )),
         plain(tr!("settings_diagnostics_export_preview_lengths")),
     ];

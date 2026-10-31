@@ -1,6 +1,4 @@
-use std::collections::BTreeMap;
-
-use forge_types::Variant;
+use forge_types::{SubActionConfig, Variant};
 
 use crate::form::FormField;
 
@@ -16,7 +14,7 @@ pub trait FormSchemaSource {
 
 pub fn refined_fields(
     refinement: FormRefinement,
-    config: &BTreeMap<String, Variant>,
+    config: &SubActionConfig,
     source: &dyn FormSchemaSource,
 ) -> Vec<FormField> {
     let selector = match config.get(refinement.selector_key) {

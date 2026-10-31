@@ -111,7 +111,7 @@ impl LatestValueReader for SlotStore {
     fn latest(&self, slot: &str, scope: LatestScope<'_>) -> Option<LatestValue> {
         let held = self.0.lock().unwrap().get(slot).cloned()?;
         match scope {
-            LatestScope::Platform(platform) if platform != held.platform => None,
+            LatestScope::Platform(platform) if platform != held.platform() => None,
             _ => Some(held),
         }
     }

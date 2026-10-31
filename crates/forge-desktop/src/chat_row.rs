@@ -638,7 +638,13 @@ mod reply_snippet_tests {
 
     #[test]
     fn a_reply_snippet_is_one_trimmed_line() {
-        assert_eq!(reply_snippet("  first\r\nsecond\n"), "first  second");
+        for (text, expected) in [
+            ("  first\r\nsecond\n", "first  second"),
+            ("", ""),
+            (" \r\n ", ""),
+        ] {
+            assert_eq!(reply_snippet(text), expected, "{text:?}");
+        }
     }
 
     #[test]

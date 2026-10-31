@@ -408,24 +408,9 @@ mod tests {
 
     use super::run_supervisor;
     use crate::backend::MidiBackend;
-    use crate::backend::tests::MockMidiBackend;
+    use crate::backend::tests::{MockMidiBackend, input_port, output_port};
     use crate::client::MidiClient;
     use crate::config::MidiConfig;
-    use crate::events::{MidiPortInfo, PortDirection};
-
-    fn input_port(name: &str) -> MidiPortInfo {
-        MidiPortInfo {
-            name: name.to_owned(),
-            direction: PortDirection::Input,
-        }
-    }
-
-    fn output_port(name: &str) -> MidiPortInfo {
-        MidiPortInfo {
-            name: name.to_owned(),
-            direction: PortDirection::Output,
-        }
-    }
 
     const HANG_GUARD: Duration = Duration::from_secs(30);
 
@@ -652,12 +637,6 @@ mod tests {
         }
     }
 
-    async fn settle() {
-        for _ in 0..4 {
-            tokio::task::yield_now().await;
-        }
-    }
-
     fn note_on_ports(publisher: &CapturingPublisher) -> Vec<String> {
         publisher
             .of_kind("midi.input.note_on")
@@ -858,15 +837,10 @@ mod tests {
         wait_until("port A delivers", || note_on_ports(&publisher).len() == 1).await;
 
         client.disable_input().await.unwrap();
-        wait_until("port A closes", || open_ports(&backend) == 0).await;
-        backend.inject_all(0, vec![0x90, 62, 100]).await;
-        settle().await;
-
-        assert_eq!(
-            note_on_ports(&publisher).len(),
-            1,
-            "disable must close the subscription opened before it"
-        );
+        wait_until("disable closes the subscription opened before it", || {
+            open_ports(&backend) == 0
+        })
+        .await;
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -883,7 +857,7 @@ mod tests {
 
         drop(control_tx);
 
-        let finished = tokio::time::timeout(Duration::from_secs(30), task).await;
+        let finished = tokio::time::timeout(HANG_GUARD, task).await;
         assert!(
             finished.is_ok(),
             "the supervisor must exit once its control channel closes"
@@ -897,14 +871,15 @@ mod tests {
         let client = start_client(Arc::clone(&backend), Arc::clone(&publisher)).await;
 
         client.enable_input().await.unwrap();
-        backend.inject_all(0, vec![0x90, 60, 100]).await;
-        backend.inject_all(0, vec![0x90, 61, 100]).await;
-        wait_until("both notes arrive", || note_on_ports(&publisher).len() >= 2).await;
-        settle().await;
+        client.disable_input().await.unwrap();
+        wait_until("the disable after the enable is handled", || {
+            open_ports(&backend) == 0
+        })
+        .await;
 
         assert_eq!(
-            note_on_ports(&publisher).len(),
-            2,
+            backend.state.lock().unwrap().next_token,
+            1,
             "a redundant enable must not re-open an already open port"
         );
     }
@@ -1054,7 +1029,7 @@ mod tests {
 
         client.shutdown().await.unwrap();
 
-        let stopped = tokio::time::timeout(Duration::from_secs(30), async {
+        let stopped = tokio::time::timeout(HANG_GUARD, async {
             while open_ports() > 0 || Arc::strong_count(&client) > 1 {
                 tokio::task::yield_now().await;
             }

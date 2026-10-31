@@ -126,11 +126,11 @@ async fn stop_runner_maps_config_to_the_control_stop_signal() {
 
     for (mark_as, reason, expected) in rows {
         let mut cfg = SubActionConfig::new();
-        if let Some(m) = mark_as {
-            cfg.insert("mark_as".to_owned(), Variant::String((*m).to_owned()));
+        if let Some(mark) = mark_as {
+            cfg.insert("mark_as".to_owned(), Variant::String((*mark).to_owned()));
         }
-        if let Some(r) = reason {
-            cfg.insert("reason".to_owned(), Variant::String((*r).to_owned()));
+        if let Some(text) = reason {
+            cfg.insert("reason".to_owned(), Variant::String((*text).to_owned()));
         }
         let cell = ControlCell::new();
         let ctx = ctx_with(
@@ -159,14 +159,14 @@ fn wait_runner() -> CoreLogicWaitUntilRunner {
 }
 
 fn wait_cfg(condition: &str, timeout_ms: i64) -> SubActionConfig {
-    let mut c = SubActionConfig::new();
-    c.insert(
+    let mut config = SubActionConfig::new();
+    config.insert(
         "condition".to_owned(),
         Variant::String(condition.to_owned()),
     );
-    c.insert("poll_interval_ms".to_owned(), Variant::Int(100));
-    c.insert("timeout_ms".to_owned(), Variant::Int(timeout_ms));
-    c
+    config.insert("poll_interval_ms".to_owned(), Variant::Int(100));
+    config.insert("timeout_ms".to_owned(), Variant::Int(timeout_ms));
+    config
 }
 
 #[tokio::test]
@@ -276,7 +276,7 @@ async fn stop_runner_with_an_unknown_mark_fails_without_signalling() {
         let (tel, _) = CoreLogicStopRunner.execute(&cfg, &ctx).await;
 
         assert!(
-            matches!(&tel.outcome, SubActionOutcome::Failed(m) if common::rejected_field(m) == Some("mark_as")),
+            matches!(&tel.outcome, SubActionOutcome::Failed(message) if common::rejected_field(message) == Some("mark_as")),
             "{mark_as}: {:?}",
             tel.outcome
         );

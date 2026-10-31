@@ -44,13 +44,14 @@ mod tests {
 
     const TONE_COUNT: usize = 2;
     const ZERO_CROSSING_TOLERANCE: usize = 4;
+    const BODY_PEAK_FLOOR_PERCENT: u32 = 95;
 
     fn tone_frames() -> usize {
-        (SAMPLE_RATE_HZ * TONE_DURATION_MS / MILLIS_PER_SECOND) as usize
+        frames_for(TONE_DURATION_MS)
     }
 
     fn fade_frames() -> usize {
-        (SAMPLE_RATE_HZ * FADE_DURATION_MS / MILLIS_PER_SECOND) as usize
+        frames_for(FADE_DURATION_MS)
     }
 
     fn left_channel(buffer: &PcmBuffer) -> Vec<i16> {
@@ -120,7 +121,7 @@ mod tests {
 
     #[test]
     fn tone_body_reaches_close_to_amplitude_cap() {
-        let floor = u32::from(amplitude_cap().unsigned_abs()) * 95 / 100;
+        let floor = u32::from(amplitude_cap().unsigned_abs()) * BODY_PEAK_FLOOR_PERCENT / 100;
         let left = left_channel(&alert_cue());
         for tone in left.chunks(tone_frames()) {
             let body_peak = tone[fade_frames()..tone.len() - fade_frames()]

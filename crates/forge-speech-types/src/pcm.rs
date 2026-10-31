@@ -87,15 +87,16 @@ mod tests {
     }
 
     #[test]
-    fn duration_ms_one_second() {
-        let buf = PcmBuffer::new(vec![0; 88_200], 44_100, 2);
-        assert_eq!(buf.duration_ms(), 1_000);
-    }
-
-    #[test]
-    fn duration_ms_zero_sample_rate_is_zero() {
-        let buf = PcmBuffer::new(vec![0; 100], 0, 2);
-        assert_eq!(buf.duration_ms(), 0);
+    fn duration_ms_counts_frames_at_the_sample_rate_and_is_zero_without_a_rate() {
+        for (samples, sample_rate, channels, expected) in [
+            (88_200, 44_100_u32, 2_u16, 1_000_u64),
+            (44_100, 44_100, 1, 1_000),
+            (100, 0, 2, 0),
+            (100, 44_100, 0, 0),
+        ] {
+            let buf = PcmBuffer::new(vec![0; samples], sample_rate, channels);
+            assert_eq!(buf.duration_ms(), expected, "{samples} at {sample_rate}");
+        }
     }
 
     #[test]

@@ -95,13 +95,13 @@ fn action(id: ActionId, queue_id: QueueId, enabled: bool, set_global: &str) -> A
 }
 
 fn fire_cfg(instance_id: &str, override_outputs: Variant) -> SubActionConfig {
-    let mut c = SubActionConfig::new();
-    c.insert(
+    let mut config = SubActionConfig::new();
+    config.insert(
         "trigger_instance_id".to_owned(),
         Variant::String(instance_id.to_owned()),
     );
-    c.insert("override_outputs".to_owned(), override_outputs);
-    c
+    config.insert("override_outputs".to_owned(), override_outputs);
+    config
 }
 
 fn one_output(key: &str, value: &str) -> Variant {
@@ -143,8 +143,9 @@ async fn await_action_done(sub: &mut EventSubscription, action_id: ActionId) -> 
     .unwrap_or(false)
 }
 
-fn fire_runner(h: &Harness) -> &dyn SubActionRunner {
-    h.runtime
+fn fire_runner(harness: &Harness) -> &dyn SubActionRunner {
+    harness
+        .runtime
         .sub_action_registry
         .get("core.test.fire_trigger")
         .unwrap()
@@ -153,25 +154,27 @@ fn fire_runner(h: &Harness) -> &dyn SubActionRunner {
 #[tokio::test]
 async fn fired_trigger_runs_the_chain_of_its_one_bound_enabled_action() {
     let q_id = QueueId::new();
-    let h = harness(nonblocking(q_id)).await;
-    let mut sub = h.bus.subscribe();
+    let harness = harness(nonblocking(q_id)).await;
+    let mut sub = harness.bus.subscribe();
 
     let a_id = ActionId::new();
-    h.actions
+    harness
+        .actions
         .save(&action(a_id, q_id, true, "captured"))
         .await
         .unwrap();
-    let instance_id = h
+    let instance_id = harness
         .trigger_instances
         .upsert_default("test.kind", "Test Trigger")
         .await
         .unwrap();
-    h.trigger_instances
+    harness
+        .trigger_instances
         .link_action(a_id, instance_id)
         .await
         .unwrap();
 
-    let runner = fire_runner(&h);
+    let runner = fire_runner(&harness);
     let outcome = run_outcome(
         runner,
         &fire_cfg(&instance_id.to_string(), one_output("out_key", "ran")),
@@ -183,12 +186,12 @@ async fn fired_trigger_runs_the_chain_of_its_one_bound_enabled_action() {
         await_action_done(&mut sub, a_id).await,
         "firing the instance must run the bound enabled action's chain to completion"
     );
-    h.handle.shutdown();
+    harness.handle.shutdown();
 }
 
 struct Fired {
     outcome: SubActionOutcome,
-    h: Harness,
+    harness: Harness,
     sub: EventSubscription,
     queue_id: QueueId,
     bound: ActionId,
@@ -196,24 +199,26 @@ struct Fired {
 
 async fn fire_bound_action(override_outputs: Variant) -> Fired {
     let queue_id = QueueId::new();
-    let h = harness(blocking(queue_id)).await;
-    let sub = h.bus.subscribe();
+    let harness = harness(blocking(queue_id)).await;
+    let sub = harness.bus.subscribe();
     let bound = ActionId::new();
-    h.actions
+    harness
+        .actions
         .save(&action(bound, queue_id, true, "captured"))
         .await
         .unwrap();
-    let instance_id = h
+    let instance_id = harness
         .trigger_instances
         .upsert_default("test.kind", "Test Trigger")
         .await
         .unwrap();
-    h.trigger_instances
+    harness
+        .trigger_instances
         .link_action(bound, instance_id)
         .await
         .unwrap();
 
-    let runner = fire_runner(&h);
+    let runner = fire_runner(&harness);
     let outcome = run_outcome(
         runner,
         &fire_cfg(&instance_id.to_string(), override_outputs),
@@ -221,7 +226,7 @@ async fn fire_bound_action(override_outputs: Variant) -> Fired {
     .await;
     Fired {
         outcome,
-        h,
+        harness,
         sub,
         queue_id,
         bound,
@@ -243,12 +248,12 @@ async fn override_outputs_reach_the_fired_actions_execution_context() {
             await_action_done(&mut fired.sub, fired.bound).await,
             "the bound action must complete before its global is read"
         );
-        let captured = fired.h.globals.get("captured").await.unwrap();
+        let captured = fired.harness.globals.get("captured").await.unwrap();
         assert!(
             matches!(captured, Some(Variant::String(ref s)) if s == "synthetic-output-marker"),
             "{outputs:?}: override_outputs must arrive as the fired action's ArgStack, got {captured:?}"
         );
-        fired.h.handle.shutdown();
+        fired.harness.handle.shutdown();
     }
 }
 
@@ -257,20 +262,20 @@ async fn invalid_override_outputs_fail_naming_the_field_and_dispatch_nothing() {
     for outputs in ["object{0}", "[1]", "null"] {
         let mut fired = fire_bound_action(Variant::String(outputs.to_owned())).await;
         assert!(
-            matches!(&fired.outcome, SubActionOutcome::Failed(m) if common::rejected_field(m) == Some("override_outputs")),
+            matches!(&fired.outcome, SubActionOutcome::Failed(message) if common::rejected_field(message) == Some("override_outputs")),
             "{outputs}: {:?}",
             fired.outcome
         );
 
         let barrier = ActionId::new();
         fired
-            .h
+            .harness
             .actions
             .save(&action(barrier, fired.queue_id, true, "barrier_ran"))
             .await
             .unwrap();
         fired
-            .h
+            .harness
             .handle
             .dispatch(SchedulerRequest {
                 queue_id: fired.queue_id,
@@ -288,17 +293,23 @@ async fn invalid_override_outputs_fail_naming_the_field_and_dispatch_nothing() {
             "barrier must complete so the FIFO queue is fully drained"
         );
         assert!(
-            fired.h.globals.get("captured").await.unwrap().is_none(),
+            fired
+                .harness
+                .globals
+                .get("captured")
+                .await
+                .unwrap()
+                .is_none(),
             "{outputs}: a rejected override must not dispatch the bound action"
         );
-        fired.h.handle.shutdown();
+        fired.harness.handle.shutdown();
     }
 }
 
 #[tokio::test]
 async fn validate_config_rejects_non_object_override_outputs_as_invalid_format() {
-    let h = harness(nonblocking(QueueId::new())).await;
-    let runner = fire_runner(&h);
+    let harness = harness(nonblocking(QueueId::new())).await;
+    let runner = fire_runner(&harness);
     let err = runner
         .validate_config(&fire_cfg(
             &TriggerInstanceId::new().to_string(),
@@ -319,8 +330,8 @@ async fn validate_config_rejects_non_object_override_outputs_as_invalid_format()
 
 #[tokio::test]
 async fn unknown_trigger_instance_id_fails() {
-    let h = harness(nonblocking(QueueId::new())).await;
-    let runner = fire_runner(&h);
+    let harness = harness(nonblocking(QueueId::new())).await;
+    let runner = fire_runner(&harness);
 
     let missing = TriggerInstanceId::new();
     let outcome = run_outcome(runner, &fire_cfg(&missing.to_string(), no_outputs())).await;
@@ -331,14 +342,14 @@ async fn unknown_trigger_instance_id_fails() {
         verbatim_arg(refusal, "instance"),
         Some(missing.to_string().as_str())
     );
-    h.handle.shutdown();
+    harness.handle.shutdown();
 }
 
 #[tokio::test]
 async fn unparseable_trigger_instance_id_fails() {
     const SENTINEL: &str = "not-an-instance-id-a-viewer-typed-this";
-    let h = harness(nonblocking(QueueId::new())).await;
-    let runner = fire_runner(&h);
+    let harness = harness(nonblocking(QueueId::new())).await;
+    let runner = fire_runner(&harness);
 
     let outcome = run_outcome(runner, &fire_cfg(SENTINEL, no_outputs())).await;
 
@@ -359,21 +370,22 @@ async fn unparseable_trigger_instance_id_fails() {
 #[tokio::test]
 async fn instance_with_no_bound_actions_succeeds_and_dispatches_nothing() {
     let q_id = QueueId::new();
-    let h = harness(blocking(q_id)).await;
-    let mut sub = h.bus.subscribe();
+    let harness = harness(blocking(q_id)).await;
+    let mut sub = harness.bus.subscribe();
 
     let trap = ActionId::new();
-    h.actions
+    harness
+        .actions
         .save(&action(trap, q_id, true, "trap_ran"))
         .await
         .unwrap();
-    let instance_id = h
+    let instance_id = harness
         .trigger_instances
         .upsert_default("test.kind", "Test Trigger")
         .await
         .unwrap();
 
-    let runner = fire_runner(&h);
+    let runner = fire_runner(&harness);
     let outcome = run_outcome(runner, &fire_cfg(&instance_id.to_string(), no_outputs())).await;
     assert!(
         matches!(outcome, SubActionOutcome::Success),
@@ -381,11 +393,13 @@ async fn instance_with_no_bound_actions_succeeds_and_dispatches_nothing() {
     );
 
     let barrier = ActionId::new();
-    h.actions
+    harness
+        .actions
         .save(&action(barrier, q_id, true, "barrier_ran"))
         .await
         .unwrap();
-    h.handle
+    harness
+        .handle
         .dispatch(SchedulerRequest {
             queue_id: q_id,
             action_id: barrier,
@@ -403,38 +417,40 @@ async fn instance_with_no_bound_actions_succeeds_and_dispatches_nothing() {
     );
 
     assert!(
-        h.globals.get("barrier_ran").await.unwrap().is_some(),
+        harness.globals.get("barrier_ran").await.unwrap().is_some(),
         "the barrier's own write proves the step that would expose the trap works"
     );
     assert!(
-        h.globals.get("trap_ran").await.unwrap().is_none(),
+        harness.globals.get("trap_ran").await.unwrap().is_none(),
         "firing an instance with no bound actions must dispatch nothing"
     );
-    h.handle.shutdown();
+    harness.handle.shutdown();
 }
 
 #[tokio::test]
 async fn fired_trigger_dispatches_disabled_action_but_engine_skips_it() {
     let q_id = QueueId::new();
-    let h = harness(blocking(q_id)).await;
-    let mut sub = h.bus.subscribe();
+    let harness = harness(blocking(q_id)).await;
+    let mut sub = harness.bus.subscribe();
 
     let disabled = ActionId::new();
-    h.actions
+    harness
+        .actions
         .save(&action(disabled, q_id, false, "disabled_ran"))
         .await
         .unwrap();
-    let instance_id = h
+    let instance_id = harness
         .trigger_instances
         .upsert_default("test.kind", "Test Trigger")
         .await
         .unwrap();
-    h.trigger_instances
+    harness
+        .trigger_instances
         .link_action(disabled, instance_id)
         .await
         .unwrap();
 
-    let runner = fire_runner(&h);
+    let runner = fire_runner(&harness);
     let outcome = run_outcome(
         runner,
         &fire_cfg(&instance_id.to_string(), one_output("out_key", "x")),
@@ -446,11 +462,13 @@ async fn fired_trigger_dispatches_disabled_action_but_engine_skips_it() {
     );
 
     let barrier = ActionId::new();
-    h.actions
+    harness
+        .actions
         .save(&action(barrier, q_id, true, "barrier_ran"))
         .await
         .unwrap();
-    h.handle
+    harness
+        .handle
         .dispatch(SchedulerRequest {
             queue_id: q_id,
             action_id: barrier,
@@ -468,12 +486,12 @@ async fn fired_trigger_dispatches_disabled_action_but_engine_skips_it() {
     );
 
     assert!(
-        h.globals.get("disabled_ran").await.unwrap().is_none(),
+        harness.globals.get("disabled_ran").await.unwrap().is_none(),
         "the engine must skip the disabled action: no execution effect"
     );
     assert!(
-        h.globals.get("barrier_ran").await.unwrap().is_some(),
+        harness.globals.get("barrier_ran").await.unwrap().is_some(),
         "positive control: the barrier action must have executed"
     );
-    h.handle.shutdown();
+    harness.handle.shutdown();
 }

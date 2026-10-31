@@ -155,26 +155,18 @@ pub(crate) fn record_midi_event(snap: &mut MidiContentSnapshot, port: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::events::PortDirection;
+    use crate::backend::tests::{input_port, output_port};
 
     #[test]
     fn set_ports_replaces_every_port_list_and_the_subscribed_set_together() {
         let snap_arc = make_content_state();
         let mut snap = snap_arc.lock().unwrap();
-        let port = |name: &str, direction| MidiPortInfo {
-            name: name.to_owned(),
-            direction,
-        };
         snap.set_ports(
-            vec![port("Piano", PortDirection::Input)],
-            vec![port("Synth", PortDirection::Output)],
+            vec![input_port("Piano")],
+            vec![output_port("Synth")],
             HashSet::from(["Piano".to_owned()]),
         );
-        snap.set_ports(
-            vec![port("Pads", PortDirection::Input)],
-            Vec::new(),
-            HashSet::new(),
-        );
+        snap.set_ports(vec![input_port("Pads")], Vec::new(), HashSet::new());
 
         assert_eq!(
             snap.input_ports

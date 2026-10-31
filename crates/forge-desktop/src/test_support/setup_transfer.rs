@@ -389,16 +389,33 @@ async fn history_of(store: &Store) -> History {
     }
 }
 
-type ClipView = (
-    String,
-    String,
-    u32,
-    Option<String>,
-    String,
-    bool,
-    Option<MediaBlobId>,
-);
-type OverlayView = (String, String, bool, serde_json::Value, Vec<String>);
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+struct ScriptView {
+    id: String,
+    name: String,
+    body: String,
+    enabled: bool,
+}
+
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+struct ClipView {
+    id: String,
+    name: String,
+    volume_bits: u32,
+    hotkey: Option<String>,
+    category: String,
+    loop_playback: bool,
+    source_blob: Option<MediaBlobId>,
+}
+
+#[derive(Debug, PartialEq)]
+struct OverlayView {
+    name: String,
+    kind_id: String,
+    enabled: bool,
+    config: serde_json::Value,
+    source_overrides: Vec<String>,
+}
 
 #[derive(Debug, PartialEq)]
 struct ConfigView {
@@ -406,7 +423,7 @@ struct ConfigView {
     links: Vec<(ActionId, Vec<forge_types::TriggerInstanceId>)>,
     triggers: Vec<TriggerInstance>,
     queues: Vec<Queue>,
-    scripts: Vec<(String, String, String, bool)>,
+    scripts: Vec<ScriptView>,
     persisted_globals: Vec<(String, Variant)>,
     clips: Vec<ClipView>,
     overlays: Vec<OverlayView>,
@@ -452,7 +469,12 @@ async fn config_of(store: &Store) -> ConfigView {
         .await
         .unwrap()
         .into_iter()
-        .map(|s| (s.id.to_string(), s.name, s.body, s.enabled))
+        .map(|s| ScriptView {
+            id: s.id.to_string(),
+            name: s.name,
+            body: s.body,
+            enabled: s.enabled,
+        })
         .collect();
     scripts.sort();
     let mut persisted_globals: Vec<_> = GlobalsRepo::list(p)
@@ -466,33 +488,31 @@ async fn config_of(store: &Store) -> ConfigView {
     let media_repo = p.media_repo();
     let mut clips = Vec::new();
     for clip in p.soundboard_clips_repo().list().await.unwrap() {
-        clips.push((
-            clip.id.to_string(),
-            clip.name,
-            clip.volume.to_bits(),
-            clip.hotkey,
-            clip.category,
-            clip.loop_playback,
-            media_repo
+        clips.push(ClipView {
+            id: clip.id.to_string(),
+            name: clip.name,
+            volume_bits: clip.volume.to_bits(),
+            hotkey: clip.hotkey,
+            category: clip.category,
+            loop_playback: clip.loop_playback,
+            source_blob: media_repo
                 .blob_of(&clip_source_referrer(clip.id))
                 .await
                 .unwrap(),
-        ));
+        });
     }
     clips.sort();
     let mut overlays: Vec<_> = overlay_rows
         .into_iter()
-        .map(|o| {
-            (
-                o.display_name,
-                o.kind_id,
-                o.enabled,
-                serde_json::to_value(o.config).unwrap(),
-                o.source_overrides,
-            )
+        .map(|o| OverlayView {
+            name: o.display_name,
+            kind_id: o.kind_id,
+            enabled: o.enabled,
+            config: serde_json::to_value(o.config).unwrap(),
+            source_overrides: o.source_overrides,
         })
         .collect();
-    overlays.sort_by(|a, b| a.0.cmp(&b.0));
+    overlays.sort_by(|a, b| a.name.cmp(&b.name));
     let mut overlay_files: Vec<_> = files_under(&store.overlay_root())
         .into_iter()
         .map(|(path, bytes)| {

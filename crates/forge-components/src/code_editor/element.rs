@@ -513,3 +513,169 @@ impl Element for CodeEditorElement {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use gpui::{AppContext as _, Entity, TestAppContext, VisualTestContext, font};
+
+    use super::*;
+    use crate::code_editor::layout::TextMetrics;
+    use crate::highlight::Language;
+    use crate::palette::FORGE_DEFAULT;
+    use crate::test_support::install_presentation;
+
+    const LINE_HEIGHT: Pixels = px(20.0);
+    const VIEW_HEIGHT: Pixels = px(100.0);
+    const OVERSCAN: usize = 2;
+
+    fn offset_of_line(editor: &CodeEditor, index: usize) -> usize {
+        editor.lines.line(index).unwrap().start()
+    }
+
+    fn laid_out<'a>(
+        cx: &'a mut TestAppContext,
+        text: &str,
+    ) -> (Entity<CodeEditor>, &'a mut VisualTestContext) {
+        install_presentation(cx);
+        let (editor, vcx) = cx.add_window_view(|_window, cx| {
+            CodeEditor::new(Language::Rhai, "", cx).with_line_height(LINE_HEIGHT)
+        });
+        let text = text.to_owned();
+        vcx.update(|window, cx| {
+            editor.update(cx, |editor, cx| {
+                editor.set_content(text, cx);
+                let metrics = TextMetrics {
+                    font: font("Mono"),
+                    font_size: px(12.0),
+                    line_height: LINE_HEIGHT,
+                    advance: px(10.0),
+                    wrap_width: px(100_000.0),
+                };
+                editor.geometry.configure(metrics, &mut editor.lines);
+                editor.geometry.refresh(&editor.lines);
+                for index in 0..editor.lines.len() {
+                    editor
+                        .geometry
+                        .shape_line(&mut editor.lines, index, &FORGE_DEFAULT, window);
+                }
+                editor.geometry.refresh(&editor.lines);
+            });
+        });
+        (editor, vcx)
+    }
+
+    fn numbered_lines(count: usize) -> String {
+        vec!["x"; count].join("\n")
+    }
+
+    #[gpui::test]
+    fn the_scroll_moves_only_as_far_as_the_caret_row_needs(cx: &mut TestAppContext) {
+        let (editor, vcx) = laid_out(cx, &numbered_lines(20));
+
+        let scrolled: Vec<(f32, f32)> = vcx.update(|_window, cx| {
+            let editor = editor.read(cx);
+            [
+                (0, px(0.0)),
+                (3, px(0.0)),
+                (4, px(0.0)),
+                (10, px(0.0)),
+                (2, px(100.0)),
+                (5, px(100.0)),
+            ]
+            .map(|(line, scroll)| {
+                let cursor = offset_of_line(editor, line);
+                let after = editor.scroll_to_caret(scroll, cursor, VIEW_HEIGHT);
+                (f32::from(scroll), f32::from(after))
+            })
+            .to_vec()
+        });
+
+        assert_eq!(
+            scrolled,
+            [
+                (0.0, 0.0),
+                (0.0, 0.0),
+                (0.0, 20.0),
+                (0.0, 140.0),
+                (100.0, 40.0),
+                (100.0, 100.0),
+            ]
+        );
+    }
+
+    #[gpui::test]
+    fn a_caret_on_an_unmeasured_document_leaves_the_scroll_alone(cx: &mut TestAppContext) {
+        let editor = cx.new(|cx| CodeEditor::new(Language::Rhai, "", cx));
+
+        let after = editor.read_with(cx, |editor, _cx| {
+            editor.scroll_to_caret(px(37.0), 0, VIEW_HEIGHT)
+        });
+
+        assert_eq!(after, px(37.0));
+    }
+
+    #[gpui::test]
+    fn the_painted_lines_cover_the_view_plus_overscan_clamped_to_the_document(
+        cx: &mut TestAppContext,
+    ) {
+        let (editor, vcx) = laid_out(cx, &numbered_lines(100));
+
+        let cases = vcx.update(|_window, cx| {
+            let editor = editor.read(cx);
+            [px(0.0), px(1000.0), px(1990.0), px(5000.0)]
+                .map(|scroll| editor.visible_lines(scroll, VIEW_HEIGHT, OVERSCAN))
+        });
+
+        assert_eq!(cases, [0..=6, 47..=56, 97..=99, 97..=99]);
+    }
+
+    fn rows_of(
+        cx: &mut VisualTestContext,
+        editor: &Entity<CodeEditor>,
+        range: Range<usize>,
+        cover_newline: bool,
+    ) -> Vec<f32> {
+        cx.update(|_window, cx| {
+            let editor = editor.read(cx);
+            let viewport = Viewport {
+                bounds: Bounds::default(),
+                text_x: px(0.0),
+                origin_y: px(0.0),
+                line_height: LINE_HEIGHT,
+                advance: px(10.0),
+                font: font("Mono"),
+                font_size: px(12.0),
+            };
+            let painted = 0..=editor.lines.len() - 1;
+            editor
+                .range_rows(&painted, &range, &viewport, cover_newline)
+                .into_iter()
+                .map(|row| f32::from(row.origin.y))
+                .collect()
+        })
+    }
+
+    #[gpui::test]
+    fn a_selection_paints_one_row_per_line_it_touches(cx: &mut TestAppContext) {
+        let (editor, vcx) = laid_out(cx, "aa\nbb\ncc");
+
+        assert_eq!(rows_of(vcx, &editor, 1..4, false), [0.0, 20.0]);
+    }
+
+    #[gpui::test]
+    fn a_selection_across_a_newline_marks_it_only_when_asked_to(cx: &mut TestAppContext) {
+        let (editor, vcx) = laid_out(cx, "aa\nbb\ncc");
+
+        assert_eq!(rows_of(vcx, &editor, 1..4, true), [0.0, 0.0, 20.0]);
+    }
+
+    #[gpui::test]
+    fn an_empty_range_paints_nothing_and_a_multibyte_line_is_cut_on_its_end(
+        cx: &mut TestAppContext,
+    ) {
+        let (editor, vcx) = laid_out(cx, "\u{439}\u{439}\nb");
+
+        assert!(rows_of(vcx, &editor, 2..2, true).is_empty());
+        assert_eq!(rows_of(vcx, &editor, 0..4, false), [0.0]);
+    }
+}

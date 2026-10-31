@@ -145,102 +145,66 @@ fn decode_stream(mss: MediaSourceStream, hint: Hint) -> Result<PcmBuffer, AudioE
 }
 
 #[cfg(test)]
-#[expect(
-    clippy::cast_possible_truncation,
-    reason = "test fixture values are small and bounded"
-)]
 mod tests {
-    use std::io::Write as _;
-
     use super::*;
+    use crate::wave::encode_wave;
 
-    fn write_wav(sample_rate: u32, channels: u16, samples: &[i16]) -> Vec<u8> {
-        let bits_per_sample: u16 = 16;
-        let block_align = channels * bits_per_sample / 8;
-        let byte_rate = sample_rate * u32::from(block_align);
-        let data_len = (samples.len() * 2) as u32;
-        let file_len = 36 + data_len;
+    const ROUNDING_TOLERANCE: u16 = 1;
 
-        let mut buf = Vec::with_capacity(44 + samples.len() * 2);
+    fn ramp(sample_rate: u32, channels: u16, duration_ms: u64) -> PcmBuffer {
+        let frames = u64::from(sample_rate) * duration_ms / 1_000;
+        let samples = (0..frames * u64::from(channels))
+            .map(|index| (index % 2_048) as i16 - 1_024)
+            .collect();
+        PcmBuffer::new(samples, sample_rate, channels)
+    }
 
-        buf.write_all(b"RIFF").unwrap();
-        buf.write_all(&file_len.to_le_bytes()).unwrap();
-        buf.write_all(b"WAVE").unwrap();
+    #[test]
+    fn wav_decodes_to_the_encoded_samples_rate_and_channels_from_bytes_and_from_a_file() {
+        for (sample_rate, channels, duration_ms) in [
+            (22_050_u32, 1_u16, 100_u64),
+            (24_000, 1, 50),
+            (44_100, 2, 500),
+        ] {
+            let source = ramp(sample_rate, channels, duration_ms);
+            let wav = encode_wave(&source);
+            let file = tempfile::Builder::new().suffix(".wav").tempfile().unwrap();
+            std::fs::write(file.path(), &wav).unwrap();
 
-        buf.write_all(b"fmt ").unwrap();
-        buf.write_all(&16u32.to_le_bytes()).unwrap();
-        buf.write_all(&1u16.to_le_bytes()).unwrap();
-        buf.write_all(&channels.to_le_bytes()).unwrap();
-        buf.write_all(&sample_rate.to_le_bytes()).unwrap();
-        buf.write_all(&byte_rate.to_le_bytes()).unwrap();
-        buf.write_all(&block_align.to_le_bytes()).unwrap();
-        buf.write_all(&bits_per_sample.to_le_bytes()).unwrap();
-
-        buf.write_all(b"data").unwrap();
-        buf.write_all(&data_len.to_le_bytes()).unwrap();
-
-        for &s in samples {
-            buf.write_all(&s.to_le_bytes()).unwrap();
+            for decoded in [
+                decode_bytes(&wav, Some("wav")).unwrap(),
+                decode_file(file.path()).unwrap(),
+            ] {
+                assert_eq!(decoded.sample_rate, sample_rate);
+                assert_eq!(decoded.channels, channels);
+                assert_eq!(decoded.samples.len(), source.samples.len());
+                assert!(
+                    decoded
+                        .samples
+                        .iter()
+                        .zip(&source.samples)
+                        .all(|(got, want)| got.abs_diff(*want) <= ROUNDING_TOLERANCE),
+                    "{sample_rate} Hz samples drifted from the source"
+                );
+            }
         }
-
-        buf
-    }
-
-    fn sine_samples(sample_rate: u32, freq_hz: f64, duration_ms: u64) -> Vec<i16> {
-        let n = (sample_rate as u64 * duration_ms / 1000) as usize;
-        (0..n)
-            .map(|i| {
-                let t = i as f64 / sample_rate as f64;
-                let v = (2.0 * std::f64::consts::PI * freq_hz * t).sin();
-                (v * 32767.0) as i16
-            })
-            .collect()
     }
 
     #[test]
-    fn decode_22050_mono_wav_100ms() {
-        let sample_rate = 22_050_u32;
-        let freq = 1_000.0_f64;
-        let samples = sine_samples(sample_rate, freq, 100);
-
-        let wav_bytes = write_wav(sample_rate, 1, &samples);
-
-        let tmp = tempfile::NamedTempFile::new().unwrap();
-        std::fs::write(tmp.path(), &wav_bytes).unwrap();
-
-        let pcm = decode_file(tmp.path()).unwrap();
-
-        assert_eq!(pcm.sample_rate, sample_rate);
-        assert_eq!(pcm.channels, 1);
-
-        let expected_frames = samples.len();
-        let tolerance = expected_frames / 20 + 2;
-        assert!(
-            pcm.frame_count().abs_diff(expected_frames) <= tolerance,
-            "expected ~{} frames, got {}",
-            expected_frames,
-            pcm.frame_count(),
-        );
+    fn decode_missing_file_returns_io_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let result = decode_file(&dir.path().join("audio.wav"));
+        assert!(matches!(result, Err(AudioError::Io(_))), "got {result:?}");
     }
 
     #[test]
-    fn decode_bytes_24000_mono_wav_50ms() {
-        let sample_rate = 24_000_u32;
-        let samples = sine_samples(sample_rate, 440.0, 50);
-        let wav_bytes = write_wav(sample_rate, 1, &samples);
-
-        let pcm = decode_bytes(&wav_bytes, Some("wav")).unwrap();
-
-        assert_eq!(pcm.sample_rate, sample_rate);
-        assert_eq!(pcm.channels, 1);
-
-        let expected_frames = samples.len();
-        let tolerance = expected_frames / 20 + 2;
+    fn decode_of_a_file_that_is_not_audio_returns_decode_error() {
+        let file = tempfile::Builder::new().suffix(".wav").tempfile().unwrap();
+        std::fs::write(file.path(), b"not a wav file at all").unwrap();
+        let result = decode_file(file.path());
         assert!(
-            pcm.frame_count().abs_diff(expected_frames) <= tolerance,
-            "expected ~{} frames, got {}",
-            expected_frames,
-            pcm.frame_count(),
+            matches!(result, Err(AudioError::Decode(_))),
+            "got {result:?}"
         );
     }
 }

@@ -439,7 +439,7 @@ pub(crate) mod tests {
             test_dp(),
         );
         config.bind_addr = format!("127.0.0.1:{port}").parse().expect("addr");
-        config.overlay_root = std::path::PathBuf::from("/tmp/forge-test-overlays");
+        config.overlay_root = std::path::PathBuf::new();
         config.additional_origins = additional_origins;
         config
     }
@@ -509,14 +509,13 @@ pub(crate) mod tests {
             .is_ok()
     }
 
-    async fn info_status(port: u16) -> u16 {
+    async fn info_status(port: u16) -> reqwest::StatusCode {
         reqwest::Client::new()
             .get(format!("http://127.0.0.1:{port}/api/v1/info"))
             .send()
             .await
             .expect("HTTP request")
             .status()
-            .as_u16()
     }
 
     async fn ws_handshake(
@@ -743,7 +742,7 @@ pub(crate) mod tests {
             "the live port must be on the allowlist"
         );
         let response = refused_ws_handshake(addr, "http://127.0.0.1:0").await;
-        assert_eq!(response.status().as_u16(), 403);
+        assert_eq!(response.status(), reqwest::StatusCode::FORBIDDEN);
 
         handle.stop().await.expect("stop");
     }
@@ -773,7 +772,7 @@ pub(crate) mod tests {
         let stale =
             refused_ws_handshake(new_addr, &format!("http://127.0.0.1:{}", boot_addr.port())).await;
         assert_eq!(
-            stale.status().as_u16(),
+            stale.status(),
             403,
             "the pre-restart port must not survive on the allowlist"
         );
@@ -818,7 +817,7 @@ pub(crate) mod tests {
         let (handle, addr) = make_server(false, MemCreds::new()).await;
         let url = format!("http://{}/api/v1/info", addr);
         let resp = reqwest::get(&url).await.expect("HTTP request");
-        assert_eq!(resp.status().as_u16(), 200);
+        assert_eq!(resp.status(), reqwest::StatusCode::OK);
         handle.stop().await.expect("stop");
     }
 
@@ -832,7 +831,7 @@ pub(crate) mod tests {
             .send()
             .await
             .expect("HTTP request");
-        assert_eq!(resp.status().as_u16(), 401);
+        assert_eq!(resp.status(), reqwest::StatusCode::UNAUTHORIZED);
         let body: serde_json::Value = resp.json().await.expect("JSON body");
         assert_eq!(body["error"]["code"], "UNAUTHENTICATED");
         handle.stop().await.expect("stop");
@@ -850,7 +849,7 @@ pub(crate) mod tests {
             .await
             .expect("HTTP request");
         assert!(
-            resp.status().as_u16() != 401,
+            resp.status() != reqwest::StatusCode::UNAUTHORIZED,
             "expected auth to pass, got 401"
         );
         handle.stop().await.expect("stop");
@@ -867,7 +866,7 @@ pub(crate) mod tests {
             .send()
             .await
             .expect("HTTP request");
-        assert_eq!(resp.status().as_u16(), 401);
+        assert_eq!(resp.status(), reqwest::StatusCode::UNAUTHORIZED);
         handle.stop().await.expect("stop");
     }
 
@@ -877,7 +876,7 @@ pub(crate) mod tests {
         let (handle, addr) = make_server(true, creds).await;
         let url = format!("http://{}/api/v1/info", addr);
         let resp = reqwest::get(&url).await.expect("HTTP request");
-        assert_eq!(resp.status().as_u16(), 401);
+        assert_eq!(resp.status(), reqwest::StatusCode::UNAUTHORIZED);
         handle.stop().await.expect("stop");
     }
 
@@ -892,7 +891,7 @@ pub(crate) mod tests {
             .send()
             .await
             .expect("HTTP request");
-        assert_eq!(resp.status().as_u16(), 200);
+        assert_eq!(resp.status(), reqwest::StatusCode::OK);
         handle.stop().await.expect("stop");
     }
 
@@ -909,7 +908,7 @@ pub(crate) mod tests {
             .await
             .expect("request");
         assert!(
-            resp.status().as_u16() != 401,
+            resp.status() != reqwest::StatusCode::UNAUTHORIZED,
             "old token should be accepted before regenerate"
         );
 
@@ -921,7 +920,7 @@ pub(crate) mod tests {
             .send()
             .await
             .expect("request");
-        assert_eq!(resp.status().as_u16(), 401);
+        assert_eq!(resp.status(), reqwest::StatusCode::UNAUTHORIZED);
 
         let resp = reqwest::Client::new()
             .post(&url)
@@ -930,7 +929,7 @@ pub(crate) mod tests {
             .await
             .expect("request");
         assert!(
-            resp.status().as_u16() != 401,
+            resp.status() != reqwest::StatusCode::UNAUTHORIZED,
             "new token should be accepted after regenerate"
         );
 
@@ -956,7 +955,7 @@ pub(crate) mod tests {
             .send()
             .await
             .expect("HTTP request after restart");
-        assert_eq!(resp.status().as_u16(), 200);
+        assert_eq!(resp.status(), reqwest::StatusCode::OK);
         assert_eq!(handle.bind_addr().await.port(), new_port);
 
         handle.stop().await.expect("stop after restart");
@@ -1621,14 +1620,14 @@ pub(crate) mod tests {
             )
         }
 
-        async fn lan_get(&self, url: String) -> (u16, String) {
+        async fn lan_get(&self, url: String) -> (reqwest::StatusCode, String) {
             let response = reqwest::Client::new()
                 .get(url)
                 .header(reqwest::header::HOST, LAN_AUTHORITY)
                 .send()
                 .await
                 .expect("HTTP request");
-            let status = response.status().as_u16();
+            let status = response.status();
             (status, response.text().await.expect("body"))
         }
 
@@ -1691,7 +1690,11 @@ pub(crate) mod tests {
             ),
         ] {
             let (status, body) = server.lan_get(server.link(&file)).await;
-            assert_eq!(status, 200, "{file} must load for the browser source");
+            assert_eq!(
+                status,
+                reqwest::StatusCode::OK,
+                "{file} must load for the browser source"
+            );
             assert_eq!(body, expected_body, "{file}");
         }
 
@@ -1748,7 +1751,7 @@ pub(crate) mod tests {
             .expect("HTTP request")
             .status();
 
-        assert_eq!(anonymous, 401);
+        assert_eq!(anonymous, reqwest::StatusCode::UNAUTHORIZED);
         assert_eq!(authorized, reqwest::StatusCode::OK);
         server.handle.stop().await.expect("stop");
     }
@@ -2139,7 +2142,10 @@ pub(crate) mod tests {
         handle.stop().await.expect("stop");
     }
 
-    async fn raw_exchange(addr: std::net::SocketAddr, head: String) -> (u16, String) {
+    async fn raw_exchange(
+        addr: std::net::SocketAddr,
+        head: String,
+    ) -> (reqwest::StatusCode, String) {
         use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 
         let mut stream = tokio::net::TcpStream::connect(addr).await.expect("connect");
@@ -2150,7 +2156,7 @@ pub(crate) mod tests {
         let status = text
             .split_whitespace()
             .nth(1)
-            .and_then(|code| code.parse().ok())
+            .and_then(|code| reqwest::StatusCode::from_bytes(code.as_bytes()).ok())
             .expect("status line");
         let body = text
             .split_once("\r\n\r\n")
@@ -2163,7 +2169,7 @@ pub(crate) mod tests {
         addr: std::net::SocketAddr,
         target: &str,
         host: Option<&str>,
-    ) -> (u16, String) {
+    ) -> (reqwest::StatusCode, String) {
         let head = match host {
             Some(host) => {
                 format!("GET {target} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n")
@@ -2173,7 +2179,11 @@ pub(crate) mod tests {
         raw_exchange(addr, head).await
     }
 
-    async fn raw_report_naming(addr: std::net::SocketAddr, target: &str, host: &str) -> u16 {
+    async fn raw_report_naming(
+        addr: std::net::SocketAddr,
+        target: &str,
+        host: &str,
+    ) -> reqwest::StatusCode {
         let body = serde_json::json!({ "verdict": "played" }).to_string();
         let head = format!(
             "POST {target} HTTP/1.1\r\nHost: {host}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
@@ -2224,9 +2234,9 @@ pub(crate) mod tests {
             raw_request_naming(dial, ticket.clip_path(), Some(&page_host)).await;
         let report_status = raw_report_naming(dial, ticket.report_path(), &page_host).await;
 
-        assert_eq!(clip_status, reqwest::StatusCode::OK.as_u16());
+        assert_eq!(clip_status, reqwest::StatusCode::OK);
         assert_eq!(clip_body.as_bytes(), AUDIO_CLIP_BYTES);
-        assert_eq!(report_status, reqwest::StatusCode::NO_CONTENT.as_u16());
+        assert_eq!(report_status, reqwest::StatusCode::NO_CONTENT);
         assert_eq!(outcome.recv().await, ClipOutcome::Played);
         handle.stop().await.expect("stop");
     }
@@ -2251,8 +2261,8 @@ pub(crate) mod tests {
         let (api, _) = raw_request_naming(dial, "/api/v1/info", Some(&page_host)).await;
         let (clip, _) = raw_request_naming(dial, ticket.clip_path(), Some(&page_host)).await;
 
-        assert_eq!(api, reqwest::StatusCode::UNAUTHORIZED.as_u16());
-        assert_eq!(clip, reqwest::StatusCode::OK.as_u16());
+        assert_eq!(api, reqwest::StatusCode::UNAUTHORIZED);
+        assert_eq!(clip, reqwest::StatusCode::OK);
         handle.stop().await.expect("stop");
     }
 
@@ -2277,13 +2287,13 @@ pub(crate) mod tests {
         let refused_report = raw_report_naming(addr, ticket.report_path(), &foreign).await;
         let accepted_report = raw_report_naming(addr, ticket.report_path(), &addressed).await;
 
-        let misdirected = reqwest::StatusCode::MISDIRECTED_REQUEST.as_u16();
+        let misdirected = reqwest::StatusCode::MISDIRECTED_REQUEST;
         assert_eq!(refused_clip, misdirected);
         assert_eq!(json["error"]["code"], "HOST_NOT_ALLOWED");
-        assert_eq!(served_clip, reqwest::StatusCode::OK.as_u16());
+        assert_eq!(served_clip, reqwest::StatusCode::OK);
         assert_eq!(served_body.as_bytes(), AUDIO_CLIP_BYTES);
         assert_eq!(refused_report, misdirected);
-        assert_eq!(accepted_report, reqwest::StatusCode::NO_CONTENT.as_u16());
+        assert_eq!(accepted_report, reqwest::StatusCode::NO_CONTENT);
         assert_eq!(outcome.recv().await, ClipOutcome::Played);
         handle.stop().await.expect("stop");
     }
@@ -2299,11 +2309,7 @@ pub(crate) mod tests {
             crate::routes::overlays::FAVICON_PATH,
         ] {
             let (status, body) = raw_request_naming(addr, target, Some(&foreign)).await;
-            assert_eq!(
-                status,
-                reqwest::StatusCode::MISDIRECTED_REQUEST.as_u16(),
-                "{target}"
-            );
+            assert_eq!(status, reqwest::StatusCode::MISDIRECTED_REQUEST, "{target}");
             let json: serde_json::Value = serde_json::from_str(&body).expect("json body");
             assert_eq!(json["error"]["code"], "HOST_NOT_ALLOWED", "{target}");
         }
@@ -2327,7 +2333,7 @@ pub(crate) mod tests {
             None,
         ] {
             let (status, _) = raw_request_naming(addr, "/api/v1/info", host.as_deref()).await;
-            assert_eq!(status, reqwest::StatusCode::OK.as_u16(), "host {host:?}");
+            assert_eq!(status, reqwest::StatusCode::OK, "host {host:?}");
         }
         handle.stop().await.expect("stop");
     }
@@ -2605,9 +2611,13 @@ pub(crate) mod tests {
             .expect("write page");
 
         for (stored, tokenless_status, case) in [
-            (None, 404, "setting never written"),
-            (Some(true), 404, "setting on"),
-            (Some(false), 200, "setting off"),
+            (
+                None,
+                reqwest::StatusCode::NOT_FOUND,
+                "setting never written",
+            ),
+            (Some(true), reqwest::StatusCode::NOT_FOUND, "setting on"),
+            (Some(false), reqwest::StatusCode::OK, "setting off"),
         ] {
             let settings = mem_settings();
             if let Some(required) = stored {

@@ -204,6 +204,8 @@ mod tests {
 
     use crate::test_helpers::{TestDataProvider, dispatch_ctx, registered_dispatch_ctx, test_dp};
 
+    const HANG_GUARD: std::time::Duration = std::time::Duration::from_secs(120);
+
     fn make_ctx(authenticated: bool, auth_required_for_reads: bool) -> DispatchContext {
         let mut tdp = TestDataProvider::new();
         tdp.action().expect_list().returning(|| Ok(vec![]));
@@ -753,7 +755,10 @@ mod tests {
         assert_eq!(json["status"], "ok");
         assert_eq!(json["ok"], true);
 
-        let replayed = bus_sub.recv().await.unwrap();
+        let replayed = tokio::time::timeout(HANG_GUARD, bus_sub.recv())
+            .await
+            .expect("the bus delivered nothing")
+            .unwrap();
         assert_eq!(replayed.kind, "test.original");
         assert!(replayed.replay);
     }
@@ -1079,7 +1084,10 @@ mod tests {
 
         let mut events = Vec::new();
         while events.len() < 2 {
-            let event = bus_sub.recv().await.unwrap();
+            let event = tokio::time::timeout(HANG_GUARD, bus_sub.recv())
+                .await
+                .expect("the bus delivered nothing")
+                .unwrap();
             if event.kind == "global.set" {
                 events.push(event);
             }
@@ -1223,7 +1231,10 @@ mod tests {
         assert_eq!(json["status"], "ok");
         assert_eq!(json["ok"], true);
 
-        let event = bus_sub.recv().await.unwrap();
+        let event = tokio::time::timeout(HANG_GUARD, bus_sub.recv())
+            .await
+            .expect("the bus delivered nothing")
+            .unwrap();
         assert_eq!(event.source, EventSource::Server);
         assert_eq!(event.kind, "custom.my_event");
         assert_eq!(event.payload["scene"], "Gameplay");

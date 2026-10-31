@@ -108,7 +108,11 @@ mod tests {
         let stored = alias_shape(&stored);
         assert_eq!(
             (
-                (stored.1.as_str(), stored.2.as_str(), stored.7.clone()),
+                (
+                    stored.viewer_id.as_str(),
+                    stored.viewer_name.as_str(),
+                    stored.state.clone(),
+                ),
                 shapes(repo.list().await.expect("list")),
                 live_alias(&resolver, "twitch:111").map(|live| alias_shape(&live)),
             ),

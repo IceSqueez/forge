@@ -237,8 +237,8 @@ fn long_wait_then_instant(queue_id: QueueId) -> Action {
 
 async fn rig(queues: Vec<Queue>, actions: &[&Action]) -> Rig {
     let repo = Arc::new(InMemoryActionRepo::new());
-    for a in actions {
-        repo.save(a).await.unwrap();
+    for action in actions {
+        repo.save(action).await.unwrap();
     }
 
     let until_cancelled_running = Arc::new(Notify::new());
@@ -307,10 +307,10 @@ async fn rig(queues: Vec<Queue>, actions: &[&Action]) -> Rig {
     }
 }
 
-fn req(a: &Action) -> SchedulerRequest {
+fn req(action: &Action) -> SchedulerRequest {
     SchedulerRequest {
-        queue_id: a.queue_id,
-        action_id: a.id,
+        queue_id: action.queue_id,
+        action_id: action.id,
         trigger_event_id: EventId::new(),
         trigger_kind: None,
         manual_test: false,
@@ -334,13 +334,13 @@ fn ids_of(events: &[Event], kind: &str) -> Vec<String> {
         .collect()
 }
 
-fn start_of(a: &Action) -> impl FnMut(&Event) -> bool {
-    let target = a.id.to_string();
+fn start_of(action: &Action) -> impl FnMut(&Event) -> bool {
+    let target = action.id.to_string();
     move |ev| ev.kind == "action.start" && action_id_of(ev).as_deref() == Some(target.as_str())
 }
 
-fn done_of(a: &Action) -> impl FnMut(&Event) -> bool {
-    let target = a.id.to_string();
+fn done_of(action: &Action) -> impl FnMut(&Event) -> bool {
+    let target = action.id.to_string();
     move |ev| ev.kind == "action.done" && action_id_of(ev).as_deref() == Some(target.as_str())
 }
 
@@ -428,33 +428,37 @@ async fn a_long_execution_in_one_queue_does_not_delay_an_action_in_another() {
     let (qa, qb) = (QueueId::new(), QueueId::new());
     let slow = single(qa, SLOW_KIND_ID);
     let quick = single(qb, INSTANT_KIND_ID);
-    let r = rig(vec![queue(qa, 1), queue(qb, 1)], &[&slow, &quick]).await;
-    let mut sub = r.bus.subscribe();
+    let rig = rig(vec![queue(qa, 1), queue(qb, 1)], &[&slow, &quick]).await;
+    let mut sub = rig.bus.subscribe();
 
-    r.sched.dispatch(req(&slow)).await.unwrap();
+    rig.sched.dispatch(req(&slow)).await.unwrap();
     events_until(&mut sub, start_of(&slow)).await;
-    r.sched.dispatch(req(&quick)).await.unwrap();
+    rig.sched.dispatch(req(&quick)).await.unwrap();
 
     let seen = events_until(&mut sub, done_of(&quick)).await;
     assert!(
         !ids_of(&seen, "action.done").contains(&slow.id.to_string()),
         "the other queue's action must finish while the long one is still running"
     );
-    r.sched.shutdown();
+    rig.sched.shutdown();
 }
 
 async fn two_of_three_started_on_a_queue_of_two() -> (Rig, EventSubscription, QueueId, [Action; 3])
 {
-    let q = QueueId::new();
+    let queue_id = QueueId::new();
     let actions = [
-        single(q, SLOW_KIND_ID),
-        single(q, SLOW_KIND_ID),
-        single(q, SLOW_KIND_ID),
+        single(queue_id, SLOW_KIND_ID),
+        single(queue_id, SLOW_KIND_ID),
+        single(queue_id, SLOW_KIND_ID),
     ];
-    let r = rig(vec![queue(q, 2)], &[&actions[0], &actions[1], &actions[2]]).await;
-    let mut sub = r.bus.subscribe();
-    for a in &actions {
-        r.sched.dispatch(req(a)).await.unwrap();
+    let rig = rig(
+        vec![queue(queue_id, 2)],
+        &[&actions[0], &actions[1], &actions[2]],
+    )
+    .await;
+    let mut sub = rig.bus.subscribe();
+    for action in &actions {
+        rig.sched.dispatch(req(action)).await.unwrap();
     }
     let seen = events_until(&mut sub, nth_start(2)).await;
     assert_eq!(
@@ -462,24 +466,24 @@ async fn two_of_three_started_on_a_queue_of_two() -> (Rig, EventSubscription, Qu
         vec![actions[0].id.to_string(), actions[1].id.to_string()],
         "a queue of two must start its first two tasks together"
     );
-    (r, sub, q, actions)
+    (rig, sub, queue_id, actions)
 }
 
 #[tokio::test(start_paused = true)]
 async fn a_queue_with_limit_two_runs_two_executions_at_once() {
-    let (r, _sub, q, _) = two_of_three_started_on_a_queue_of_two().await;
+    let (rig, _sub, queue_id, _) = two_of_three_started_on_a_queue_of_two().await;
 
     assert_eq!(
-        state_of(&r.sched, q).await.in_flight,
+        state_of(&rig.sched, queue_id).await.in_flight,
         2,
         "both started executions must hold a slot while they run"
     );
-    r.sched.shutdown();
+    rig.sched.shutdown();
 }
 
 #[tokio::test(start_paused = true)]
 async fn a_queue_with_limit_two_never_starts_a_third_while_two_run() {
-    let (r, mut sub, q, _) = two_of_three_started_on_a_queue_of_two().await;
+    let (rig, mut sub, queue_id, _) = two_of_three_started_on_a_queue_of_two().await;
 
     quiesce().await;
 
@@ -487,47 +491,50 @@ async fn a_queue_with_limit_two_never_starts_a_third_while_two_run() {
         ids_of(&drain(&mut sub), "action.start").is_empty(),
         "no third execution may start while both slots are taken"
     );
-    assert_eq!(state_of(&r.sched, q).await.pending, 1);
-    r.sched.shutdown();
+    assert_eq!(state_of(&rig.sched, queue_id).await.pending, 1);
+    rig.sched.shutdown();
 }
 
 #[tokio::test(start_paused = true)]
 async fn a_queue_slot_stays_taken_until_its_execution_ends() {
-    let q = QueueId::new();
-    let slow = single(q, SLOW_KIND_ID);
-    let r = rig(vec![queue(q, 1)], &[&slow]).await;
-    let mut sub = r.bus.subscribe();
+    let queue_id = QueueId::new();
+    let slow = single(queue_id, SLOW_KIND_ID);
+    let rig = rig(vec![queue(queue_id, 1)], &[&slow]).await;
+    let mut sub = rig.bus.subscribe();
 
-    r.sched.dispatch(req(&slow)).await.unwrap();
+    rig.sched.dispatch(req(&slow)).await.unwrap();
     events_until(&mut sub, start_of(&slow)).await;
     quiesce().await;
     assert_eq!(
-        state_of(&r.sched, q).await.in_flight,
+        state_of(&rig.sched, queue_id).await.in_flight,
         1,
         "the slot must not be released while the execution is still running"
     );
 
-    r.open_slow_gate();
-    settle(&r.sched, q, "the slot released after the run", |s| {
-        s.in_flight == 0
-    })
+    rig.open_slow_gate();
+    settle(
+        &rig.sched,
+        queue_id,
+        "the slot released after the run",
+        |s| s.in_flight == 0,
+    )
     .await;
-    r.sched.shutdown();
+    rig.sched.shutdown();
 }
 
 #[tokio::test(start_paused = true)]
 async fn shutdown_during_a_long_wait_records_the_run_as_cancelled_without_the_next_step() {
-    let q = QueueId::new();
-    let waiting = long_wait_then_instant(q);
-    let mut r = rig(vec![queue(q, 1)], &[&waiting]).await;
-    let mut sub = r.bus.subscribe();
+    let queue_id = QueueId::new();
+    let waiting = long_wait_then_instant(queue_id);
+    let mut rig = rig(vec![queue(queue_id, 1)], &[&waiting]).await;
+    let mut sub = rig.bus.subscribe();
 
-    r.sched.dispatch(req(&waiting)).await.unwrap();
+    rig.sched.dispatch(req(&waiting)).await.unwrap();
     events_until(&mut sub, start_of(&waiting)).await;
     let stopped_at = tokio::time::Instant::now();
-    r.engine.clone().shutdown();
+    rig.engine.clone().shutdown();
 
-    let saved = r.next_saved().await;
+    let saved = rig.next_saved().await;
     assert_eq!(saved.outcome, ExecutionOutcome::Cancelled);
     assert_eq!(
         saved.telemetry.len(),
@@ -539,52 +546,55 @@ async fn shutdown_during_a_long_wait_records_the_run_as_cancelled_without_the_ne
         "the cancelled run must end long before its 60 s wait, took {:?}",
         stopped_at.elapsed()
     );
-    r.sched.shutdown();
+    rig.sched.shutdown();
 }
 
 #[tokio::test(start_paused = true)]
 async fn shutdown_releases_the_queue_slot_of_the_cancelled_execution() {
-    let q = QueueId::new();
-    let waiting = long_wait_then_instant(q);
-    let mut r = rig(vec![queue(q, 1)], &[&waiting]).await;
-    let mut sub = r.bus.subscribe();
+    let queue_id = QueueId::new();
+    let waiting = long_wait_then_instant(queue_id);
+    let mut rig = rig(vec![queue(queue_id, 1)], &[&waiting]).await;
+    let mut sub = rig.bus.subscribe();
 
-    r.sched.dispatch(req(&waiting)).await.unwrap();
+    rig.sched.dispatch(req(&waiting)).await.unwrap();
     events_until(&mut sub, start_of(&waiting)).await;
-    r.engine.clone().shutdown();
-    r.next_saved().await;
+    rig.engine.clone().shutdown();
+    rig.next_saved().await;
 
-    settle(&r.sched, q, "the cancelled run's slot released", |s| {
-        s.in_flight == 0
-    })
+    settle(
+        &rig.sched,
+        queue_id,
+        "the cancelled run's slot released",
+        |s| s.in_flight == 0,
+    )
     .await;
-    r.sched.shutdown();
+    rig.sched.shutdown();
 }
 
 #[tokio::test(start_paused = true)]
 async fn a_panicking_runner_releases_its_slot_and_the_next_job_still_runs() {
-    let q = QueueId::new();
-    let panics = single(q, PANIC_KIND_ID);
-    let next = single(q, INSTANT_KIND_ID);
-    let r = rig(vec![queue(q, 1)], &[&panics, &next]).await;
-    let mut sub = r.bus.subscribe();
+    let queue_id = QueueId::new();
+    let panics = single(queue_id, PANIC_KIND_ID);
+    let next = single(queue_id, INSTANT_KIND_ID);
+    let rig = rig(vec![queue(queue_id, 1)], &[&panics, &next]).await;
+    let mut sub = rig.bus.subscribe();
 
-    r.sched.dispatch(req(&panics)).await.unwrap();
-    r.sched.dispatch(req(&next)).await.unwrap();
+    rig.sched.dispatch(req(&panics)).await.unwrap();
+    rig.sched.dispatch(req(&next)).await.unwrap();
 
     let seen = events_until(&mut sub, done_of(&next)).await;
     assert!(
         ids_of(&seen, "action.start").contains(&panics.id.to_string()),
         "the panicking action must have started before the next one ran"
     );
-    r.sched.shutdown();
+    rig.sched.shutdown();
 }
 
 #[tokio::test(start_paused = true)]
 async fn a_long_quick_action_does_not_block_the_next_quick_action() {
-    let mut r = rig(Vec::new(), &[]).await;
+    let mut rig = rig(Vec::new(), &[]).await;
 
-    r.engine
+    rig.engine
         .execute_quick_action(
             step(SLOW_KIND_ID, SubActionConfig::new()),
             forge_runtime::QuickActionOrigin {
@@ -595,7 +605,7 @@ async fn a_long_quick_action_does_not_block_the_next_quick_action() {
         )
         .await
         .unwrap();
-    r.engine
+    rig.engine
         .execute_quick_action(
             step(INSTANT_KIND_ID, SubActionConfig::new()),
             forge_runtime::QuickActionOrigin {
@@ -607,7 +617,7 @@ async fn a_long_quick_action_does_not_block_the_next_quick_action() {
         .await
         .unwrap();
 
-    let saved = r.next_saved().await;
+    let saved = rig.next_saved().await;
     assert!(
         matches!(&saved.metadata, ExecutionMetadata::QuickAction { label, .. } if label == "instant"),
         "the instant quick action must finish while the slow one runs, got {:?}",
@@ -617,18 +627,18 @@ async fn a_long_quick_action_does_not_block_the_next_quick_action() {
 
 #[tokio::test(start_paused = true)]
 async fn a_run_that_finishes_last_keeps_the_earlier_start_time() {
-    let q = QueueId::new();
-    let first = single(q, SLOW_KIND_ID);
-    let second = single(q, INSTANT_KIND_ID);
-    let mut r = rig(vec![queue(q, 2)], &[&first, &second]).await;
-    let mut sub = r.bus.subscribe();
+    let queue_id = QueueId::new();
+    let first = single(queue_id, SLOW_KIND_ID);
+    let second = single(queue_id, INSTANT_KIND_ID);
+    let mut rig = rig(vec![queue(queue_id, 2)], &[&first, &second]).await;
+    let mut sub = rig.bus.subscribe();
 
-    r.sched.dispatch(req(&first)).await.unwrap();
+    rig.sched.dispatch(req(&first)).await.unwrap();
     events_until(&mut sub, start_of(&first)).await;
-    r.sched.dispatch(req(&second)).await.unwrap();
-    let finished_first = r.next_saved().await;
-    r.open_slow_gate();
-    let finished_last = r.next_saved().await;
+    rig.sched.dispatch(req(&second)).await.unwrap();
+    let finished_first = rig.next_saved().await;
+    rig.open_slow_gate();
+    let finished_last = rig.next_saved().await;
 
     assert_eq!(
         (finished_first.action_id, finished_last.action_id),
@@ -639,7 +649,7 @@ async fn a_run_that_finishes_last_keeps_the_earlier_start_time() {
         finished_last.started_at < finished_first.started_at,
         "a run's start time must be taken when it starts, not when it is saved"
     );
-    r.sched.shutdown();
+    rig.sched.shutdown();
 }
 
 type OutcomeCheck = fn(&SubActionOutcome) -> bool;
@@ -660,7 +670,7 @@ async fn quick(engine: &ActionEngineHandle, kind_id: &str) -> PendingQuickAction
 
 #[tokio::test(start_paused = true)]
 async fn a_quick_action_reports_how_its_step_ended() {
-    let r = rig(Vec::new(), &[]).await;
+    let rig = rig(Vec::new(), &[]).await;
 
     let cases: [(&str, OutcomeCheck); 3] = [
         (INSTANT_KIND_ID, |o| matches!(o, SubActionOutcome::Success)),
@@ -673,7 +683,7 @@ async fn a_quick_action_reports_how_its_step_ended() {
         }),
     ];
     for (kind_id, expected) in cases {
-        let outcome = quick(&r.engine, kind_id)
+        let outcome = quick(&rig.engine, kind_id)
             .await
             .outcome()
             .await
@@ -684,10 +694,10 @@ async fn a_quick_action_reports_how_its_step_ended() {
 
 #[tokio::test(start_paused = true)]
 async fn a_quick_action_still_in_the_intake_at_shutdown_reports_no_outcome() {
-    let r = rig(Vec::new(), &[]).await;
+    let rig = rig(Vec::new(), &[]).await;
 
-    r.engine.clone().shutdown();
-    let pending = quick(&r.engine, INSTANT_KIND_ID).await;
+    rig.engine.clone().shutdown();
+    let pending = quick(&rig.engine, INSTANT_KIND_ID).await;
 
     assert!(matches!(
         pending.outcome().await,
@@ -697,11 +707,11 @@ async fn a_quick_action_still_in_the_intake_at_shutdown_reports_no_outcome() {
 
 #[tokio::test(start_paused = true)]
 async fn shutdown_cancels_a_running_quick_action() {
-    let r = rig(Vec::new(), &[]).await;
-    let pending = quick(&r.engine, UNTIL_CANCELLED_KIND_ID).await;
-    r.until_cancelled_running.notified().await;
+    let rig = rig(Vec::new(), &[]).await;
+    let pending = quick(&rig.engine, UNTIL_CANCELLED_KIND_ID).await;
+    rig.until_cancelled_running.notified().await;
 
-    r.engine.clone().shutdown();
+    rig.engine.clone().shutdown();
 
     let outcome = tokio::time::timeout(QUIET_STEP, pending.outcome())
         .await
@@ -715,11 +725,11 @@ async fn shutdown_cancels_a_running_quick_action() {
 
 #[tokio::test(start_paused = true)]
 async fn a_quick_action_whose_outcome_nobody_awaits_still_runs_and_is_saved() {
-    let mut r = rig(Vec::new(), &[]).await;
+    let mut rig = rig(Vec::new(), &[]).await;
 
-    drop(quick(&r.engine, INSTANT_KIND_ID).await);
+    drop(quick(&rig.engine, INSTANT_KIND_ID).await);
 
-    let saved = r.next_saved().await;
+    let saved = rig.next_saved().await;
     assert!(
         matches!(&saved.metadata, ExecutionMetadata::QuickAction { label, .. } if label == INSTANT_KIND_ID),
         "the abandoned quick action must still record its run, got {:?}",
@@ -729,12 +739,12 @@ async fn a_quick_action_whose_outcome_nobody_awaits_still_runs_and_is_saved() {
 
 #[tokio::test(start_paused = true)]
 async fn a_quick_action_reports_its_outcome_without_waiting_for_its_run_to_be_saved() {
-    let mut r = rig(Vec::new(), &[]).await;
-    r.save_gate.send_replace(false);
+    let mut rig = rig(Vec::new(), &[]).await;
+    rig.save_gate.send_replace(false);
 
     let outcome = tokio::time::timeout(
         QUIET_STEP,
-        quick(&r.engine, INSTANT_KIND_ID).await.outcome(),
+        quick(&rig.engine, INSTANT_KIND_ID).await.outcome(),
     )
     .await;
     assert!(
@@ -742,8 +752,8 @@ async fn a_quick_action_reports_its_outcome_without_waiting_for_its_run_to_be_sa
         "a slow history write must not hold back the caller's outcome"
     );
 
-    r.save_gate.send_replace(true);
-    let saved = tokio::time::timeout(Duration::from_secs(5), r.saved.recv())
+    rig.save_gate.send_replace(true);
+    let saved = tokio::time::timeout(Duration::from_secs(5), rig.saved.recv())
         .await
         .unwrap()
         .unwrap();
@@ -762,16 +772,16 @@ fn queue_of(ev: &Event) -> Option<&str> {
 }
 
 async fn refused_run(
-    r: &mut Rig,
-    a: &Action,
+    rig: &mut Rig,
+    action: &Action,
     sub: &mut EventSubscription,
 ) -> (Event, ExecutionContext) {
-    r.sched.dispatch(req(a)).await.unwrap();
+    rig.sched.dispatch(req(action)).await.unwrap();
     let skipped = events_until(sub, |ev| ev.kind == "action.skipped")
         .await
         .pop()
         .unwrap();
-    (skipped, r.next_saved().await)
+    (skipped, rig.next_saved().await)
 }
 
 fn failure_code(saved: &ExecutionContext) -> String {
@@ -783,31 +793,31 @@ fn failure_code(saved: &ExecutionContext) -> String {
 
 #[tokio::test(start_paused = true)]
 async fn a_run_of_a_disabled_action_is_skipped_and_saved_as_failed_on_its_own_queue() {
-    let q = QueueId::new();
+    let queue_id = QueueId::new();
     let disabled = Action {
         enabled: false,
-        ..single(q, INSTANT_KIND_ID)
+        ..single(queue_id, INSTANT_KIND_ID)
     };
-    let mut r = rig(vec![queue(q, 1)], &[&disabled]).await;
-    let mut sub = r.bus.subscribe();
+    let mut rig = rig(vec![queue(queue_id, 1)], &[&disabled]).await;
+    let mut sub = rig.bus.subscribe();
 
-    let (skipped, saved) = refused_run(&mut r, &disabled, &mut sub).await;
+    let (skipped, saved) = refused_run(&mut rig, &disabled, &mut sub).await;
 
     assert_eq!(reason_of(&skipped), Some(ACTION_DISABLED_REASON));
-    assert_eq!(queue_of(&skipped), Some(q.to_string().as_str()));
+    assert_eq!(queue_of(&skipped), Some(queue_id.to_string().as_str()));
     assert_eq!(failure_code(&saved), "core.action_disabled");
     assert!(saved.telemetry.is_empty(), "no step of a refused run runs");
-    r.sched.shutdown();
+    rig.sched.shutdown();
 }
 
 #[tokio::test(start_paused = true)]
 async fn a_run_of_a_deleted_action_is_skipped_and_saved_as_failed() {
-    let q = QueueId::new();
-    let deleted = single(q, INSTANT_KIND_ID);
-    let mut r = rig(vec![queue(q, 1)], &[]).await;
-    let mut sub = r.bus.subscribe();
+    let queue_id = QueueId::new();
+    let deleted = single(queue_id, INSTANT_KIND_ID);
+    let mut rig = rig(vec![queue(queue_id, 1)], &[]).await;
+    let mut sub = rig.bus.subscribe();
 
-    let (skipped, saved) = refused_run(&mut r, &deleted, &mut sub).await;
+    let (skipped, saved) = refused_run(&mut rig, &deleted, &mut sub).await;
 
     assert_eq!(reason_of(&skipped), Some(ACTION_NOT_FOUND_REASON));
     assert_eq!(
@@ -815,53 +825,53 @@ async fn a_run_of_a_deleted_action_is_skipped_and_saved_as_failed() {
         Some(DEFAULT_QUEUE_ID.to_string().as_str())
     );
     assert_eq!(failure_code(&saved), "core.unknown_action");
-    r.sched.shutdown();
+    rig.sched.shutdown();
 }
 
 #[tokio::test(start_paused = true)]
 async fn a_run_is_skipped_and_saved_as_failed_when_actions_cannot_be_read() {
-    let q = QueueId::new();
-    let wanted = single(q, INSTANT_KIND_ID);
-    let mut r = rig(vec![queue(q, 1)], &[&wanted]).await;
-    r.repo.set_list_unreadable(true);
-    let mut sub = r.bus.subscribe();
+    let queue_id = QueueId::new();
+    let wanted = single(queue_id, INSTANT_KIND_ID);
+    let mut rig = rig(vec![queue(queue_id, 1)], &[&wanted]).await;
+    rig.repo.set_list_unreadable(true);
+    let mut sub = rig.bus.subscribe();
 
-    let (skipped, saved) = refused_run(&mut r, &wanted, &mut sub).await;
+    let (skipped, saved) = refused_run(&mut rig, &wanted, &mut sub).await;
 
     assert_eq!(reason_of(&skipped), Some(ACTIONS_UNAVAILABLE_REASON));
     assert_eq!(failure_code(&saved), "core.storage_failed");
-    r.sched.shutdown();
+    rig.sched.shutdown();
 }
 
 #[tokio::test(start_paused = true)]
 async fn a_lookup_failure_for_an_action_outside_the_catalog_is_saved_as_a_storage_failure() {
-    let q = QueueId::new();
+    let queue_id = QueueId::new();
     let disabled = Action {
         enabled: false,
-        ..single(q, INSTANT_KIND_ID)
+        ..single(queue_id, INSTANT_KIND_ID)
     };
-    let mut r = rig(vec![queue(q, 1)], &[&disabled]).await;
-    r.repo.set_get_unreadable(true);
-    let mut sub = r.bus.subscribe();
+    let mut rig = rig(vec![queue(queue_id, 1)], &[&disabled]).await;
+    rig.repo.set_get_unreadable(true);
+    let mut sub = rig.bus.subscribe();
 
-    let (skipped, saved) = refused_run(&mut r, &disabled, &mut sub).await;
+    let (skipped, saved) = refused_run(&mut rig, &disabled, &mut sub).await;
 
     assert_eq!(reason_of(&skipped), Some(ACTIONS_UNAVAILABLE_REASON));
     assert_eq!(failure_code(&saved), "core.storage_failed");
-    r.sched.shutdown();
+    rig.sched.shutdown();
 }
 
 #[tokio::test(start_paused = true)]
 async fn a_queued_run_that_cannot_reach_a_stopped_engine_is_skipped_and_frees_its_slot() {
-    let q = QueueId::new();
-    let a = single(q, INSTANT_KIND_ID);
-    let r = rig(vec![queue(q, 1)], &[&a]).await;
-    let mut sub = r.bus.subscribe();
-    r.engine.clone().shutdown();
-    while r
+    let queue_id = QueueId::new();
+    let action = single(queue_id, INSTANT_KIND_ID);
+    let rig = rig(vec![queue(queue_id, 1)], &[&action]).await;
+    let mut sub = rig.bus.subscribe();
+    rig.engine.clone().shutdown();
+    while rig
         .engine
         .dispatch(ExecutionRequest {
-            action_id: a.id,
+            action_id: action.id,
             trigger_event_id: EventId::new(),
             trigger_kind: None,
             manual_test: false,
@@ -873,18 +883,21 @@ async fn a_queued_run_that_cannot_reach_a_stopped_engine_is_skipped_and_frees_it
         tokio::task::yield_now().await;
     }
 
-    r.sched.dispatch(req(&a)).await.unwrap();
+    rig.sched.dispatch(req(&action)).await.unwrap();
 
     let skipped = events_until(&mut sub, |ev| ev.kind == "action.skipped")
         .await
         .pop()
         .unwrap();
     assert_eq!(reason_of(&skipped), Some(ENGINE_STOPPED_REASON));
-    settle(&r.sched, q, "the undelivered run's slot released", |s| {
-        s.in_flight == 0
-    })
+    settle(
+        &rig.sched,
+        queue_id,
+        "the undelivered run's slot released",
+        |s| s.in_flight == 0,
+    )
     .await;
-    r.sched.shutdown();
+    rig.sched.shutdown();
 }
 
 fn concurrent(action: Action) -> Action {
@@ -894,10 +907,10 @@ fn concurrent(action: Action) -> Action {
     }
 }
 
-fn admitted(a: &Action) -> SchedulerRequest {
+fn admitted(action: &Action) -> SchedulerRequest {
     SchedulerRequest {
-        admission: QueueAdmission::from(a),
-        ..req(a)
+        admission: QueueAdmission::from(action),
+        ..req(action)
     }
 }
 
@@ -911,79 +924,82 @@ fn step_trace(events: &[Event]) -> Vec<(&str, i64)> {
 
 #[tokio::test(start_paused = true)]
 async fn an_alongside_run_starts_while_the_only_slot_is_busy() {
-    let q = QueueId::new();
-    let slow = single(q, SLOW_KIND_ID);
-    let beside = concurrent(single(q, INSTANT_KIND_ID));
-    let r = rig(vec![queue(q, 1)], &[&slow, &beside]).await;
-    let mut sub = r.bus.subscribe();
+    let queue_id = QueueId::new();
+    let slow = single(queue_id, SLOW_KIND_ID);
+    let beside = concurrent(single(queue_id, INSTANT_KIND_ID));
+    let rig = rig(vec![queue(queue_id, 1)], &[&slow, &beside]).await;
+    let mut sub = rig.bus.subscribe();
 
-    r.sched.dispatch(req(&slow)).await.unwrap();
+    rig.sched.dispatch(req(&slow)).await.unwrap();
     events_until(&mut sub, start_of(&slow)).await;
-    r.sched.dispatch(admitted(&beside)).await.unwrap();
+    rig.sched.dispatch(admitted(&beside)).await.unwrap();
 
     let seen = events_until(&mut sub, done_of(&beside)).await;
     assert!(
         !ids_of(&seen, "action.done").contains(&slow.id.to_string()),
         "the concurrent action must finish while the slow one still holds the only slot"
     );
-    r.sched.shutdown();
+    rig.sched.shutdown();
 }
 
 #[tokio::test(start_paused = true)]
 async fn alongside_runs_count_as_in_flight_beyond_the_queue_limit() {
-    let q = QueueId::new();
-    let slow = single(q, SLOW_KIND_ID);
-    let beside = concurrent(single(q, SLOW_KIND_ID));
-    let r = rig(vec![queue(q, 1)], &[&slow, &beside]).await;
+    let queue_id = QueueId::new();
+    let slow = single(queue_id, SLOW_KIND_ID);
+    let beside = concurrent(single(queue_id, SLOW_KIND_ID));
+    let rig = rig(vec![queue(queue_id, 1)], &[&slow, &beside]).await;
 
-    r.sched.dispatch(req(&slow)).await.unwrap();
-    r.sched.dispatch(admitted(&beside)).await.unwrap();
+    rig.sched.dispatch(req(&slow)).await.unwrap();
+    rig.sched.dispatch(admitted(&beside)).await.unwrap();
 
-    settle(&r.sched, q, "both runs in flight on a queue of one", |s| {
-        s.in_flight == 2 && s.pending == 0
-    })
+    settle(
+        &rig.sched,
+        queue_id,
+        "both runs in flight on a queue of one",
+        |s| s.in_flight == 2 && s.pending == 0,
+    )
     .await;
-    r.sched.shutdown();
+    rig.sched.shutdown();
 }
 
 #[tokio::test(start_paused = true)]
 async fn a_running_alongside_run_leaves_the_slot_to_a_gated_run() {
-    let q = QueueId::new();
-    let beside = concurrent(single(q, SLOW_KIND_ID));
-    let gated = single(q, INSTANT_KIND_ID);
-    let r = rig(vec![queue(q, 1)], &[&beside, &gated]).await;
-    let mut sub = r.bus.subscribe();
+    let queue_id = QueueId::new();
+    let beside = concurrent(single(queue_id, SLOW_KIND_ID));
+    let gated = single(queue_id, INSTANT_KIND_ID);
+    let rig = rig(vec![queue(queue_id, 1)], &[&beside, &gated]).await;
+    let mut sub = rig.bus.subscribe();
 
-    r.sched.dispatch(admitted(&beside)).await.unwrap();
+    rig.sched.dispatch(admitted(&beside)).await.unwrap();
     events_until(&mut sub, start_of(&beside)).await;
-    r.sched.dispatch(req(&gated)).await.unwrap();
+    rig.sched.dispatch(req(&gated)).await.unwrap();
 
     let seen = events_until(&mut sub, done_of(&gated)).await;
     assert!(
         !ids_of(&seen, "action.done").contains(&beside.id.to_string()),
         "the gated action must take the slot while the concurrent one still runs"
     );
-    r.sched.shutdown();
+    rig.sched.shutdown();
 }
 
 #[tokio::test(start_paused = true)]
 async fn a_concurrent_action_runs_its_steps_one_after_another() {
-    let q = QueueId::new();
+    let queue_id = QueueId::new();
     let both = concurrent(action(
-        q,
+        queue_id,
         vec![
             step(SLOW_KIND_ID, SubActionConfig::new()),
             step(INSTANT_KIND_ID, SubActionConfig::new()),
         ],
     ));
-    let r = rig(vec![queue(q, 1)], &[&both]).await;
-    let mut sub = r.bus.subscribe();
+    let rig = rig(vec![queue(queue_id, 1)], &[&both]).await;
+    let mut sub = rig.bus.subscribe();
 
-    r.sched.dispatch(admitted(&both)).await.unwrap();
+    rig.sched.dispatch(admitted(&both)).await.unwrap();
     let mut seen = events_until(&mut sub, start_of(&both)).await;
     quiesce().await;
     seen.extend(drain(&mut sub));
-    r.open_slow_gate();
+    rig.open_slow_gate();
     seen.extend(events_until(&mut sub, done_of(&both)).await);
 
     assert_eq!(
@@ -995,22 +1011,28 @@ async fn a_concurrent_action_runs_its_steps_one_after_another() {
             ("subaction.done", 1),
         ]
     );
-    r.sched.shutdown();
+    rig.sched.shutdown();
 }
 
 #[tokio::test(start_paused = true)]
 async fn holding_withholds_an_alongside_run_until_the_queue_resumes() {
-    let q = QueueId::new();
-    let beside = concurrent(single(q, INSTANT_KIND_ID));
-    let r = rig(vec![queue(q, 1)], &[&beside]).await;
-    let mut sub = r.bus.subscribe();
+    let queue_id = QueueId::new();
+    let beside = concurrent(single(queue_id, INSTANT_KIND_ID));
+    let rig = rig(vec![queue(queue_id, 1)], &[&beside]).await;
+    let mut sub = rig.bus.subscribe();
 
-    r.sched.set_mode(q, QueueMode::HOLDING).await.unwrap();
-    r.sched.dispatch(admitted(&beside)).await.unwrap();
-    settle(&r.sched, q, "the run held", |s| s.pending == 1).await;
+    rig.sched
+        .set_mode(queue_id, QueueMode::HOLDING)
+        .await
+        .unwrap();
+    rig.sched.dispatch(admitted(&beside)).await.unwrap();
+    settle(&rig.sched, queue_id, "the run held", |s| s.pending == 1).await;
     quiesce().await;
     let while_held = drain(&mut sub);
-    r.sched.set_mode(q, QueueMode::RUNNING).await.unwrap();
+    rig.sched
+        .set_mode(queue_id, QueueMode::RUNNING)
+        .await
+        .unwrap();
     let after_resume = events_until(&mut sub, done_of(&beside)).await;
 
     assert_eq!(
@@ -1020,48 +1042,51 @@ async fn holding_withholds_an_alongside_run_until_the_queue_resumes() {
         ),
         (Vec::new(), vec![beside.id.to_string()])
     );
-    r.sched.shutdown();
+    rig.sched.shutdown();
 }
 
 #[tokio::test(start_paused = true)]
 async fn a_bypass_pause_alongside_run_passes_a_held_queue_while_a_plain_one_waits() {
-    let q = QueueId::new();
-    let plain = concurrent(single(q, INSTANT_KIND_ID));
+    let queue_id = QueueId::new();
+    let plain = concurrent(single(queue_id, INSTANT_KIND_ID));
     let bypass = Action {
         bypass_pause: true,
-        ..concurrent(single(q, INSTANT_KIND_ID))
+        ..concurrent(single(queue_id, INSTANT_KIND_ID))
     };
-    let r = rig(vec![queue(q, 1)], &[&plain, &bypass]).await;
-    let mut sub = r.bus.subscribe();
+    let rig = rig(vec![queue(queue_id, 1)], &[&plain, &bypass]).await;
+    let mut sub = rig.bus.subscribe();
 
-    r.sched.set_mode(q, QueueMode::HOLDING).await.unwrap();
-    r.sched.dispatch(admitted(&plain)).await.unwrap();
-    r.sched.dispatch(admitted(&bypass)).await.unwrap();
+    rig.sched
+        .set_mode(queue_id, QueueMode::HOLDING)
+        .await
+        .unwrap();
+    rig.sched.dispatch(admitted(&plain)).await.unwrap();
+    rig.sched.dispatch(admitted(&bypass)).await.unwrap();
     let seen = events_until(&mut sub, done_of(&bypass)).await;
 
     assert_eq!(
         (
             ids_of(&seen, "action.start"),
-            state_of(&r.sched, q).await.pending
+            state_of(&rig.sched, queue_id).await.pending
         ),
         (vec![bypass.id.to_string()], 1)
     );
-    r.sched.shutdown();
+    rig.sched.shutdown();
 }
 
 #[tokio::test(start_paused = true)]
 async fn paused_and_draining_queues_refuse_an_alongside_run() {
-    let q = QueueId::new();
-    let beside = concurrent(single(q, INSTANT_KIND_ID));
-    let r = rig(vec![queue(q, 1)], &[&beside]).await;
-    let mut sub = r.bus.subscribe();
+    let queue_id = QueueId::new();
+    let beside = concurrent(single(queue_id, INSTANT_KIND_ID));
+    let rig = rig(vec![queue(queue_id, 1)], &[&beside]).await;
+    let mut sub = rig.bus.subscribe();
 
     for (mode, reason) in [
         (QueueMode::PAUSED, QUEUE_PAUSED_REASON),
         (QueueMode::DRAINING, QUEUE_DRAINING_REASON),
     ] {
-        r.sched.set_mode(q, mode).await.unwrap();
-        r.sched.dispatch(admitted(&beside)).await.unwrap();
+        rig.sched.set_mode(queue_id, mode).await.unwrap();
+        rig.sched.dispatch(admitted(&beside)).await.unwrap();
         let seen = events_until(&mut sub, |ev| ev.kind == "action.skipped").await;
         assert_eq!(
             seen.last()
@@ -1071,101 +1096,113 @@ async fn paused_and_draining_queues_refuse_an_alongside_run() {
             "{mode:?}"
         );
     }
-    r.sched.shutdown();
+    rig.sched.shutdown();
 }
 
 #[tokio::test(start_paused = true)]
 async fn an_alongside_run_past_the_pending_cap_is_refused_as_overflow() {
-    let q = QueueId::new();
-    let plain = single(q, INSTANT_KIND_ID);
-    let beside = concurrent(single(q, INSTANT_KIND_ID));
-    let r = rig(vec![queue(q, 1)], &[&plain, &beside]).await;
+    let queue_id = QueueId::new();
+    let plain = single(queue_id, INSTANT_KIND_ID);
+    let beside = concurrent(single(queue_id, INSTANT_KIND_ID));
+    let rig = rig(vec![queue(queue_id, 1)], &[&plain, &beside]).await;
 
-    r.sched.set_mode(q, QueueMode::HOLDING).await.unwrap();
+    rig.sched
+        .set_mode(queue_id, QueueMode::HOLDING)
+        .await
+        .unwrap();
     for _ in 0..MAX_PENDING_PER_QUEUE {
-        r.sched.dispatch(req(&plain)).await.unwrap();
+        rig.sched.dispatch(req(&plain)).await.unwrap();
     }
-    r.sched.dispatch(admitted(&beside)).await.unwrap();
+    rig.sched.dispatch(admitted(&beside)).await.unwrap();
 
-    settle(&r.sched, q, "the alongside run counted as overflow", |s| {
-        s.pending == MAX_PENDING_PER_QUEUE && s.overflowed == 1
-    })
+    settle(
+        &rig.sched,
+        queue_id,
+        "the alongside run counted as overflow",
+        |s| s.pending == MAX_PENDING_PER_QUEUE && s.overflowed == 1,
+    )
     .await;
-    r.sched.shutdown();
+    rig.sched.shutdown();
 }
 
 #[tokio::test(start_paused = true)]
 async fn clearing_discards_withheld_alongside_runs() {
-    let q = QueueId::new();
-    let beside = concurrent(single(q, INSTANT_KIND_ID));
-    let r = rig(vec![queue(q, 1)], &[&beside]).await;
-    let mut sub = r.bus.subscribe();
+    let queue_id = QueueId::new();
+    let beside = concurrent(single(queue_id, INSTANT_KIND_ID));
+    let rig = rig(vec![queue(queue_id, 1)], &[&beside]).await;
+    let mut sub = rig.bus.subscribe();
 
-    r.sched.set_mode(q, QueueMode::HOLDING).await.unwrap();
-    for _ in 0..2 {
-        r.sched.dispatch(admitted(&beside)).await.unwrap();
-    }
-    settle(&r.sched, q, "two runs held", |s| s.pending == 2).await;
-    r.sched
-        .clear(q, forge_runtime::ClearMode::KeepCurrent)
+    rig.sched
+        .set_mode(queue_id, QueueMode::HOLDING)
         .await
         .unwrap();
-    r.sched.set_mode(q, QueueMode::RUNNING).await.unwrap();
+    for _ in 0..2 {
+        rig.sched.dispatch(admitted(&beside)).await.unwrap();
+    }
+    settle(&rig.sched, queue_id, "two runs held", |s| s.pending == 2).await;
+    rig.sched.clear(queue_id, forge_runtime::ClearMode::KeepCurrent).await.unwrap();
+    rig.sched
+        .set_mode(queue_id, QueueMode::RUNNING)
+        .await
+        .unwrap();
     quiesce().await;
 
     assert!(
         ids_of(&drain(&mut sub), "action.start").is_empty(),
         "cleared alongside runs must never start"
     );
-    r.sched.shutdown();
+    rig.sched.shutdown();
 }
 
 #[tokio::test(start_paused = true)]
 async fn clearing_without_keeping_current_cancels_a_running_alongside_run() {
-    let q = QueueId::new();
-    let waiting = concurrent(long_wait_then_instant(q));
-    let mut r = rig(vec![queue(q, 1)], &[&waiting]).await;
-    let mut sub = r.bus.subscribe();
+    let queue_id = QueueId::new();
+    let waiting = concurrent(long_wait_then_instant(queue_id));
+    let mut rig = rig(vec![queue(queue_id, 1)], &[&waiting]).await;
+    let mut sub = rig.bus.subscribe();
 
-    r.sched.dispatch(admitted(&waiting)).await.unwrap();
+    rig.sched.dispatch(admitted(&waiting)).await.unwrap();
     events_until(&mut sub, start_of(&waiting)).await;
-    r.sched
-        .clear(q, forge_runtime::ClearMode::CancelCurrent)
-        .await
-        .unwrap();
+    rig.sched.clear(queue_id, forge_runtime::ClearMode::CancelCurrent).await.unwrap();
 
-    assert_eq!(r.next_saved().await.outcome, ExecutionOutcome::Cancelled);
-    r.sched.shutdown();
+    assert_eq!(rig.next_saved().await.outcome, ExecutionOutcome::Cancelled);
+    rig.sched.shutdown();
 }
 
 const STOP_GRACE: Duration = Duration::from_secs(1);
 
 #[tokio::test(start_paused = true)]
 async fn stop_returns_only_after_the_running_action_and_its_queue_tasks_have_ended() {
-    let q = QueueId::new();
-    let waiting = long_wait_then_instant(q);
-    let mut r = rig(vec![queue(q, 1)], &[&waiting]).await;
-    let mut sub = r.bus.subscribe();
-    r.sched.dispatch(req(&waiting)).await.unwrap();
+    let queue_id = QueueId::new();
+    let waiting = long_wait_then_instant(queue_id);
+    let mut rig = rig(vec![queue(queue_id, 1)], &[&waiting]).await;
+    let mut sub = rig.bus.subscribe();
+    rig.sched.dispatch(req(&waiting)).await.unwrap();
     events_until(&mut sub, start_of(&waiting)).await;
 
-    r.sched.shutdown();
-    r.engine.shutdown();
-    let (queues, engine) = tokio::join!(r.sched.stopped(STOP_GRACE), r.engine.stopped(STOP_GRACE));
+    rig.sched.shutdown();
+    rig.engine.shutdown();
+    let (queues, engine) = tokio::join!(
+        rig.sched.stopped(STOP_GRACE),
+        rig.engine.stopped(STOP_GRACE)
+    );
 
     assert_eq!(
         (queues, engine),
         (TaskShutdown::Drained, TaskShutdown::Drained)
     );
-    assert_eq!(r.next_saved().await.outcome, ExecutionOutcome::Cancelled);
+    assert_eq!(rig.next_saved().await.outcome, ExecutionOutcome::Cancelled);
 }
 
 #[tokio::test(start_paused = true)]
 async fn stop_with_nothing_running_ends_the_engine_and_every_queue_worker() {
-    let q = QueueId::new();
-    let r = rig(vec![queue(q, 1), queue(QueueId::new(), 2)], &[]).await;
+    let queue_id = QueueId::new();
+    let rig = rig(vec![queue(queue_id, 1), queue(QueueId::new(), 2)], &[]).await;
 
-    let (queues, engine) = tokio::join!(r.sched.stopped(STOP_GRACE), r.engine.stopped(STOP_GRACE));
+    let (queues, engine) = tokio::join!(
+        rig.sched.stopped(STOP_GRACE),
+        rig.engine.stopped(STOP_GRACE)
+    );
 
     assert_eq!(
         (queues, engine),
@@ -1175,11 +1212,11 @@ async fn stop_with_nothing_running_ends_the_engine_and_every_queue_worker() {
 
 #[tokio::test(start_paused = true)]
 async fn stop_ends_a_running_quick_action_before_returning() {
-    let r = rig(Vec::new(), &[]).await;
-    let pending = quick(&r.engine, UNTIL_CANCELLED_KIND_ID).await;
-    r.until_cancelled_running.notified().await;
+    let rig = rig(Vec::new(), &[]).await;
+    let pending = quick(&rig.engine, UNTIL_CANCELLED_KIND_ID).await;
+    rig.until_cancelled_running.notified().await;
 
-    let stopped = r.engine.stopped(STOP_GRACE).await;
+    let stopped = rig.engine.stopped(STOP_GRACE).await;
 
     assert_eq!(stopped, TaskShutdown::Drained);
     assert!(pending.outcome().await.is_ok());
@@ -1187,15 +1224,18 @@ async fn stop_ends_a_running_quick_action_before_returning() {
 
 #[tokio::test(start_paused = true)]
 async fn a_run_that_ignores_the_cancel_is_dropped_when_the_grace_runs_out() {
-    let q = QueueId::new();
-    let stuck = single(q, SLOW_KIND_ID);
-    let r = rig(vec![queue(q, 1)], &[&stuck]).await;
-    let mut sub = r.bus.subscribe();
-    r.sched.dispatch(req(&stuck)).await.unwrap();
+    let queue_id = QueueId::new();
+    let stuck = single(queue_id, SLOW_KIND_ID);
+    let rig = rig(vec![queue(queue_id, 1)], &[&stuck]).await;
+    let mut sub = rig.bus.subscribe();
+    rig.sched.dispatch(req(&stuck)).await.unwrap();
     events_until(&mut sub, start_of(&stuck)).await;
     let asked = tokio::time::Instant::now();
 
-    let (queues, engine) = tokio::join!(r.sched.stopped(STOP_GRACE), r.engine.stopped(STOP_GRACE));
+    let (queues, engine) = tokio::join!(
+        rig.sched.stopped(STOP_GRACE),
+        rig.engine.stopped(STOP_GRACE)
+    );
 
     assert_eq!(asked.elapsed(), STOP_GRACE);
     assert!(matches!(queues, TaskShutdown::Aborted { .. }), "{queues:?}");

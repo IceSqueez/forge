@@ -57,7 +57,6 @@ use crate::ws_client::WsClient;
 
 const TEST_BIND_ADDR: &str = "127.0.0.1:9515";
 const TEST_PEER_ADDR: &str = "127.0.0.1:0";
-const TEST_OVERLAY_ROOT: &str = "/tmp/forge-test-overlays";
 const TEST_BEARER_TOKEN: &str = "test-token";
 const STORE_REFUSAL_REASON: &str = "disk is full";
 
@@ -635,7 +634,7 @@ pub(crate) fn app_state_over(
         server_info: ServerInfo::serving(BTreeSet::new()),
         action_engine,
         audio_clips: AudioClipStore::new(),
-        overlay_root: Arc::new(PathBuf::from(TEST_OVERLAY_ROOT)),
+        overlay_root: Arc::new(PathBuf::new()),
         overlay_cors_any_origin: true,
         bind_addr,
         timing: ServerTiming::default(),
@@ -686,7 +685,7 @@ fn context_for(
         credentials: test_creds(),
         server_info: ServerInfo::serving(BTreeSet::new()),
         action_engine,
-        overlay_root: Arc::new(PathBuf::from(TEST_OVERLAY_ROOT)),
+        overlay_root: Arc::new(PathBuf::new()),
         overlay_channel_swap: tokio::sync::Mutex::new(None),
         close_after_auth_failure: AtomicBool::new(false),
     }

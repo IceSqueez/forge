@@ -655,7 +655,7 @@ impl RenderOnce for ContextMenu {
 mod tests {
     use std::cell::RefCell;
 
-    use gpui::{Context, Render, TestAppContext, VisualTestContext};
+    use gpui::{Context, Modifiers, Render, TestAppContext, VisualTestContext};
 
     use super::*;
     use crate::palette::{FORGE_DEFAULT, ThemeId};
@@ -763,6 +763,38 @@ mod tests {
 
         assert!(picked(vcx, &host).is_empty());
         assert!(host.read_with(vcx, |host, _| host.open));
+    }
+
+    fn click_at(vcx: &mut VisualTestContext, position: Point<Pixels>) {
+        vcx.simulate_click(position, Modifiers::default());
+        vcx.run_until_parked();
+    }
+
+    #[gpui::test]
+    fn a_click_on_the_backdrop_closes_the_menu_without_running_an_item(cx: &mut TestAppContext) {
+        let (host, vcx) = opened(cx);
+
+        click_at(vcx, point(px(700.0), px(500.0)));
+
+        assert!(picked(vcx, &host).is_empty());
+        assert!(!host.read_with(vcx, |host, _| host.open));
+    }
+
+    #[gpui::test]
+    fn clicking_down_the_panel_skips_header_and_disabled_rows_and_the_first_live_item_closes_it(
+        cx: &mut TestAppContext,
+    ) {
+        let (host, vcx) = opened(cx);
+
+        for y in (2..200).step_by(2) {
+            click_at(vcx, point(px(12.0), px(y as f32)));
+            if !host.read_with(vcx, |host, _| host.open) {
+                break;
+            }
+        }
+
+        assert_eq!(picked(vcx, &host), ["one"]);
+        assert!(!host.read_with(vcx, |host, _| host.open));
     }
 
     #[gpui::test]

@@ -82,9 +82,8 @@ pub(crate) mod tests {
     #[tokio::test]
     async fn switchable_sink_reaches_only_the_currently_installed_engine() {
         use crate::backend::MidiBackend;
-        use crate::backend::tests::MockMidiBackend;
+        use crate::backend::tests::{MockMidiBackend, output_port};
         use crate::config::MidiConfig;
-        use crate::events::{MidiPortInfo, PortDirection};
         use forge_events::test_support::NullPublisher;
 
         let note = MidiOutMessage::NoteOn {
@@ -92,13 +91,7 @@ pub(crate) mod tests {
             velocity: 100,
             channel: 0,
         };
-        let backend = Arc::new(MockMidiBackend::new(
-            vec![],
-            vec![MidiPortInfo {
-                name: "Out".to_owned(),
-                direction: PortDirection::Output,
-            }],
-        ));
+        let backend = Arc::new(MockMidiBackend::new(vec![], vec![output_port("Out")]));
         let sink = SwitchableMidiSink::new();
 
         let before = sink.send_output("Out", &note).await;

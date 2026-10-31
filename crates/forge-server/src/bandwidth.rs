@@ -103,17 +103,13 @@ mod tests {
         assert_eq!(tracker.total(), 800);
     }
 
-    #[test]
-    fn current_bps_returns_bytes_within_one_second_window() {
+    #[tokio::test(start_paused = true)]
+    async fn current_bps_sums_the_bytes_inside_the_one_second_window() {
         let tracker = BandwidthTracker::new();
         for _ in 0..60 {
             tracker.record(1000);
         }
-        let bps = tracker.current_bps();
-        assert!(
-            (55_000..=65_000).contains(&bps),
-            "expected ~60000 bps, got {bps}"
-        );
+        assert_eq!(tracker.current_bps(), 60_000);
     }
 
     #[test]

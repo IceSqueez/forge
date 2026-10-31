@@ -167,6 +167,8 @@ pub fn remix(src: &[i16], src_channels: u16, dst_channels: u16) -> Vec<i16> {
 
 #[cfg(test)]
 mod tests {
+    use forge_speech_types::PcmBuffer;
+
     use super::*;
 
     #[test]
@@ -177,23 +179,27 @@ mod tests {
     }
 
     #[test]
-    fn resample_22050_mono_to_48000_stereo_length_sanity() {
-        let frames = 2205_usize;
+    fn a_22050_mono_clip_resampled_to_48000_stereo_keeps_its_duration() {
+        let frames = 2_205_usize;
         let input: Vec<i16> = (0..frames).map(|i| i as i16).collect();
 
         let resampled = resample(&input, 22_050, 48_000, 1).unwrap();
         let remixed = remix(&resampled, 1, 2);
 
         let expected_frames = (frames as f64 * 48_000.0 / 22_050.0) as usize;
-        let actual_frames = remixed.len() / 2;
-
         let tolerance = (expected_frames as f64 * 0.02) as usize + 2;
+        let buffer = PcmBuffer::new(remixed, 48_000, 2);
+        assert_eq!(buffer.frame_count(), resampled.len());
         assert!(
-            actual_frames.abs_diff(expected_frames) <= tolerance,
-            "expected ~{} frames, got {}",
-            expected_frames,
-            actual_frames,
+            buffer.frame_count().abs_diff(expected_frames) <= tolerance,
+            "expected ~{expected_frames} frames, got {}",
+            buffer.frame_count(),
         );
+    }
+
+    #[test]
+    fn resample_of_empty_input_is_empty() {
+        assert!(resample(&[], 22_050, 48_000, 1).unwrap().is_empty());
     }
 
     #[test]

@@ -104,9 +104,10 @@ mod tests {
     use forge_types::{ArgStack, EventId, SubActionOutcome, UserText};
 
     use super::*;
+    use crate::backend::tests::output_port;
     use crate::client::MidiClient;
     use crate::error::MidiError;
-    use crate::events::{MidiOutMessage, MidiPortInfo, PortDirection};
+    use crate::events::MidiOutMessage;
     use crate::runners::MidiSendRunner;
     use crate::sink::MidiSink;
 
@@ -163,10 +164,7 @@ mod tests {
         let c = MidiClient::new_for_test();
         {
             let mut snap = c.content_state.lock().unwrap();
-            snap.output_ports.push(MidiPortInfo {
-                name: "Synth".to_owned(),
-                direction: PortDirection::Output,
-            });
+            snap.output_ports.push(output_port("Synth"));
         }
         c
     }

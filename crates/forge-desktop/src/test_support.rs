@@ -1260,28 +1260,29 @@ pub(crate) fn live_alias(
         .cloned()
 }
 
-pub(crate) type AliasShape = (
-    String,
-    String,
-    String,
-    String,
-    String,
-    Option<f32>,
-    Option<f32>,
-    forge_speech_types::AliasState,
-);
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct AliasShape {
+    pub(crate) id: String,
+    pub(crate) viewer_id: String,
+    pub(crate) viewer_name: String,
+    pub(crate) engine_id: String,
+    pub(crate) voice_id: String,
+    pub(crate) pitch_semitones: Option<f32>,
+    pub(crate) rate_multiplier: Option<f32>,
+    pub(crate) state: forge_speech_types::AliasState,
+}
 
 pub(crate) fn alias_shape(alias: &forge_speech_types::VoiceAlias) -> AliasShape {
-    (
-        alias.id.0.clone(),
-        alias.viewer_id.clone(),
-        alias.viewer_name.clone(),
-        alias.engine_id.0.clone(),
-        alias.voice_id.0.clone(),
-        alias.pitch_semitones,
-        alias.rate_multiplier,
-        alias.state.clone(),
-    )
+    AliasShape {
+        id: alias.id.0.clone(),
+        viewer_id: alias.viewer_id.clone(),
+        viewer_name: alias.viewer_name.clone(),
+        engine_id: alias.engine_id.0.clone(),
+        voice_id: alias.voice_id.0.clone(),
+        pitch_semitones: alias.pitch_semitones,
+        rate_multiplier: alias.rate_multiplier,
+        state: alias.state.clone(),
+    }
 }
 
 struct CurrentSchemaDatabase;

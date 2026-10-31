@@ -69,15 +69,12 @@ impl BuiltinStatus for MidiClient {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::events::{MidiPortInfo, PortDirection};
+    use crate::backend::tests::input_port;
 
     #[test]
     fn connection_is_disconnected_while_input_is_disabled_despite_open_ports() {
         let client = MidiClient::new_for_test();
-        client.content_state.lock_recover().input_ports = vec![MidiPortInfo {
-            name: "Piano".to_owned(),
-            direction: PortDirection::Input,
-        }];
+        client.content_state.lock_recover().input_ports = vec![input_port("Piano")];
 
         let status: &dyn BuiltinStatus = &*client;
         assert_eq!(status.connection(), ConnectionState::Connected);

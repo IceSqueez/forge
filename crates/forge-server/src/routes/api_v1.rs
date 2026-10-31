@@ -273,7 +273,7 @@ mod tests {
                 .send()
                 .await
                 .expect("request");
-            assert_eq!(resp.status().as_u16(), 404, "{path}");
+            assert_eq!(resp.status(), reqwest::StatusCode::NOT_FOUND, "{path}");
             let body: serde_json::Value = resp.json().await.expect("json");
             assert_eq!(body["error"]["code"], "NOT_FOUND", "{path}");
             assert_eq!(body["status"], "error", "{path}");
@@ -304,7 +304,7 @@ mod tests {
             .send()
             .await
             .expect("request");
-        assert_eq!(resp.status().as_u16(), 200);
+        assert_eq!(resp.status(), reqwest::StatusCode::OK);
         let body: serde_json::Value = resp.json().await.expect("json");
         assert!(body.get("version").is_some(), "missing version field");
         handle.stop().await.expect("stop");
@@ -316,7 +316,7 @@ mod tests {
         let resp = reqwest::get(format!("http://{addr}/api/v1/info"))
             .await
             .expect("request");
-        assert_eq!(resp.status().as_u16(), 401);
+        assert_eq!(resp.status(), reqwest::StatusCode::UNAUTHORIZED);
         handle.stop().await.expect("stop");
     }
 
@@ -326,7 +326,7 @@ mod tests {
         let resp = reqwest::get(format!("http://{addr}/api/v1/info"))
             .await
             .expect("request");
-        assert_eq!(resp.status().as_u16(), 200);
+        assert_eq!(resp.status(), reqwest::StatusCode::OK);
         let body: serde_json::Value = resp.json().await.expect("json");
         assert!(body.get("version").is_some(), "missing version field");
         handle.stop().await.expect("stop");
@@ -341,7 +341,7 @@ mod tests {
             .send()
             .await
             .expect("request");
-        assert_eq!(resp.status().as_u16(), 200);
+        assert_eq!(resp.status(), reqwest::StatusCode::OK);
         let body: serde_json::Value = resp.json().await.expect("json");
         assert!(body.get("globals").is_some(), "missing globals field");
         handle.stop().await.expect("stop");
@@ -357,7 +357,7 @@ mod tests {
             .send()
             .await
             .expect("request");
-        assert_eq!(resp.status().as_u16(), 200);
+        assert_eq!(resp.status(), reqwest::StatusCode::OK);
         handle.stop().await.expect("stop");
     }
 
@@ -370,7 +370,7 @@ mod tests {
             .send()
             .await
             .expect("request");
-        assert_eq!(resp.status().as_u16(), 401);
+        assert_eq!(resp.status(), reqwest::StatusCode::UNAUTHORIZED);
         handle.stop().await.expect("stop");
     }
 }

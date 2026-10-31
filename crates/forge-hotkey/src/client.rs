@@ -366,6 +366,8 @@ pub(crate) mod tests {
     use crate::backend::tests::{MockFailAllBackend, MockPortalBackend};
     pub(crate) use forge_events::test_support::CapturingPublisher;
 
+    const HANG_GUARD: std::time::Duration = std::time::Duration::from_secs(120);
+
     pub(crate) fn noop_publisher() -> Arc<dyn EventPublisher> {
         Arc::new(forge_events::test_support::NullPublisher)
     }
@@ -389,13 +391,7 @@ pub(crate) mod tests {
     }
 
     async fn wait_for_kind(publisher: &CapturingPublisher, kind: &str) {
-        for _ in 0..10_000 {
-            if publisher.has_kind(kind) {
-                return;
-            }
-            tokio::task::yield_now().await;
-        }
-        panic!("{kind} was never published");
+        publisher.wait_for_kind(kind).await;
     }
 
     fn combo(s: &str) -> HotkeyCombo {
@@ -1153,17 +1149,20 @@ pub(crate) mod tests {
     }
 
     #[cfg(target_os = "linux")]
-    async fn wait_for_backend_tile(client: &HotkeyClient, expected: (bool, Option<HealthText>)) {
-        for _ in 0..10_000 {
-            if backend_tile(client).as_ref() == Some(&expected) {
-                return;
+    async fn next_backend_delta(stream: &mut forge_platform_core::HealthStream) {
+        use tokio_stream::StreamExt;
+
+        let delta = async {
+            while let Some(delta) = stream.next().await {
+                if delta.metric == crate::health::BACKEND_METRIC {
+                    return;
+                }
             }
-            tokio::task::yield_now().await;
-        }
-        panic!(
-            "BACKEND tile never became {expected:?}, last {:?}",
-            backend_tile(client)
-        );
+            panic!("the health stream ended before a backend delta");
+        };
+        tokio::time::timeout(HANG_GUARD, delta)
+            .await
+            .expect("no backend delta was pushed");
     }
 
     #[cfg(target_os = "linux")]
@@ -1198,6 +1197,7 @@ pub(crate) mod tests {
         let (backend, _inject_tx) = MockPortalBackend::new();
         let session_tx = backend.session_tx.clone();
         let client = start_supervised(backend, noop_publisher());
+        let mut stream = forge_platform_core::BuiltinHealth::stream(&*client);
         assert_eq!(backend_tile(&client), Some((true, None)));
 
         session_tx
@@ -1206,22 +1206,23 @@ pub(crate) mod tests {
             ))
             .await
             .unwrap();
-        wait_for_backend_tile(
-            &client,
-            (
+        next_backend_delta(&mut stream).await;
+        assert_eq!(
+            backend_tile(&client),
+            Some((
                 false,
                 Some(HealthText::Text(
                     forge_types::VerbatimText::new("bind failed").into(),
                 )),
-            ),
-        )
-        .await;
+            ))
+        );
 
         session_tx
             .send(crate::backend::BackendSessionEvent::Restored)
             .await
             .unwrap();
-        wait_for_backend_tile(&client, (true, None)).await;
+        next_backend_delta(&mut stream).await;
+        assert_eq!(backend_tile(&client), Some((true, None)));
     }
 
     #[cfg(target_os = "linux")]

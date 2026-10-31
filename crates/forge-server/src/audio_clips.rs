@@ -456,7 +456,7 @@ mod tests {
     const SAMPLE_CLIP_BYTES: usize = 4_096;
     const ONE_BYTE: usize = 1;
     const MINT_SAMPLES: usize = 64;
-    const SCHEDULER_TURNS: usize = 8;
+    const HANG_GUARD: Duration = Duration::from_secs(120);
     const UNKNOWN_CAPABILITY: &str = "SMNhcGFiaWxpdHlUaGF0V2FzTmV2ZXJNaW50ZWRBdEFsbA";
     const MALFORMED_CAPABILITY: &str = "~~not-base64~~";
     const LATE_REASON: &str = "a verdict that arrives after the clip is gone";
@@ -852,13 +852,13 @@ mod tests {
         assert!(store.revoke(first.capability().expose()));
         assert!(store.revoke(second.capability().expose()));
         store.deadline_moved.notify_one();
-        for _ in 0..SCHEDULER_TURNS {
-            tokio::task::yield_now().await;
-        }
-        assert!(
-            !sweeper_armed(&store),
-            "a sweeper must retire rather than poll an empty store"
-        );
+        tokio::time::timeout(HANG_GUARD, async {
+            while sweeper_armed(&store) {
+                tokio::time::sleep(Duration::from_millis(1)).await;
+            }
+        })
+        .await
+        .expect("a sweeper must retire rather than poll an empty store");
 
         let (_third, _third_outcome) = store.offer(&owner(), clip_offer()).expect("offer");
         assert!(
@@ -1043,12 +1043,6 @@ mod tests {
         FetchAndHold,
     }
 
-    async fn settle_the_sweeper() {
-        for _ in 0..SCHEDULER_TURNS {
-            tokio::task::yield_now().await;
-        }
-    }
-
     #[tokio::test(start_paused = true)]
     async fn the_background_sweeper_closes_each_window_on_the_tokio_clock_and_not_a_moment_early() {
         for (case, before, closes_after, expected) in [
@@ -1072,34 +1066,23 @@ mod tests {
             ),
         ] {
             let store = AudioClipStore::new();
+            let opened = tokio::time::Instant::now();
             let (ticket, outcome) = store
                 .offer(&owner(), sized_offer(SAMPLE_CLIP_BYTES))
                 .expect("offer");
             let capability = ticket.capability().expose();
-            settle_the_sweeper().await;
             if matches!(before, Before::Fetch | Before::FetchAndHold) {
                 store.take_clip(capability).expect("fetch");
             }
             if matches!(before, Before::FetchAndHold) {
                 assert!(store.hold(capability));
             }
-            settle_the_sweeper().await;
 
-            tokio::time::advance(closes_after - Duration::from_millis(1)).await;
-            settle_the_sweeper().await;
-            assert!(
-                still_waiting(&store, capability),
-                "{case}: the sweeper closed the window early"
-            );
-
-            tokio::time::advance(Duration::from_millis(1)).await;
-            settle_the_sweeper().await;
-            assert!(
-                !still_waiting(&store, capability),
-                "{case}: the sweeper missed the deadline"
-            );
-            assert_eq!(held_bytes(&store), 0, "{case}");
             assert_eq!(outcome.recv().await, expected, "{case}");
+
+            assert_eq!(opened.elapsed(), closes_after, "{case}");
+            assert!(!still_waiting(&store, capability), "{case}");
+            assert_eq!(held_bytes(&store), 0, "{case}");
         }
     }
 

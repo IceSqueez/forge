@@ -447,7 +447,7 @@ mod tests {
     use super::*;
 
     const LONG_CLIP_MS: u64 = 600_000;
-    const EARLY_EXIT_BUDGET: Duration = Duration::from_secs(30);
+    const HANG_GUARD: Duration = Duration::from_secs(30);
 
     #[test]
     fn a_stream_error_ends_playback_only_when_the_device_can_no_longer_play() {
@@ -599,15 +599,11 @@ mod tests {
         let failure: StreamFailure = Arc::new(OnceLock::new());
         failure.set("device unplugged".to_owned()).unwrap();
         let (_tx, drained) = crossbeam_channel::unbounded::<i16>();
-        let (stop, paused) = idle_flags();
-        let started = std::time::Instant::now();
 
-        wait_for_completion(LONG_CLIP_MS, &drained, &stop, &paused, &failure);
+        let done = wait_on_thread(LONG_CLIP_MS, drained, failure);
 
-        assert!(
-            started.elapsed() < EARLY_EXIT_BUDGET,
-            "a failed stream kept the playback thread waiting for the whole clip"
-        );
+        done.recv_timeout(HANG_GUARD)
+            .expect("a failed stream kept the playback thread waiting for the whole clip");
     }
 
     #[test]
@@ -622,7 +618,7 @@ mod tests {
         while drained.try_recv().is_ok() {}
 
         let queue_was_empty_on_return = done
-            .recv_timeout(EARLY_EXIT_BUDGET)
+            .recv_timeout(HANG_GUARD)
             .expect("the wait never ended after the queue drained");
         assert!(queue_was_empty_on_return);
     }
@@ -636,7 +632,7 @@ mod tests {
         let done = wait_on_thread(0, drained, failure);
 
         let queue_was_empty_on_return = done
-            .recv_timeout(EARLY_EXIT_BUDGET)
+            .recv_timeout(HANG_GUARD)
             .expect("the stall cap never ended the wait");
         assert!(!queue_was_empty_on_return);
         drop(tx);
@@ -649,12 +645,17 @@ mod tests {
         let (stop, paused) = idle_flags();
         stop.store(true, Ordering::Relaxed);
         let failure: StreamFailure = Arc::new(OnceLock::new());
-        let started = std::time::Instant::now();
+        let (done_tx, done_rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            wait_for_completion(LONG_CLIP_MS, &drained, &stop, &paused, &failure);
+            done_tx.send(drained.len()).unwrap();
+        });
 
-        wait_for_completion(LONG_CLIP_MS, &drained, &stop, &paused, &failure);
-
-        assert!(started.elapsed() < EARLY_EXIT_BUDGET);
-        assert_eq!(drained.len(), 1);
+        let still_queued = done_rx
+            .recv_timeout(HANG_GUARD)
+            .expect("a stop request kept the playback thread waiting for the whole clip");
+        assert_eq!(still_queued, 1);
+        drop(tx);
     }
 
     #[test]

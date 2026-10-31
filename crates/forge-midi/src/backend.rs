@@ -160,6 +160,20 @@ pub(crate) mod tests {
 
     type PortSender = mpsc::Sender<(u64, Vec<u8>)>;
 
+    pub(crate) fn input_port(name: &str) -> MidiPortInfo {
+        MidiPortInfo {
+            name: name.to_owned(),
+            direction: PortDirection::Input,
+        }
+    }
+
+    pub(crate) fn output_port(name: &str) -> MidiPortInfo {
+        MidiPortInfo {
+            name: name.to_owned(),
+            direction: PortDirection::Output,
+        }
+    }
+
     pub(crate) struct MockInputHandle {
         state: Arc<Mutex<MockState>>,
         token: u64,

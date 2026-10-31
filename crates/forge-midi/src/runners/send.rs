@@ -221,11 +221,10 @@ mod tests {
     use forge_types::{ArgStack, EventId, SubActionOutcome, Variant};
 
     use super::*;
-    use crate::backend::tests::MockMidiBackend;
+    use crate::backend::tests::{MockMidiBackend, output_port};
     use crate::client::MidiClient;
     use crate::config::MidiConfig;
     use crate::error::MidiError;
-    use crate::events::{MidiPortInfo, PortDirection};
     use crate::sink::MidiSink;
 
     #[derive(Default)]
@@ -254,14 +253,8 @@ mod tests {
         }
     }
 
-    fn make_sink_with_output_port(port: &str) -> (Arc<MidiClient>, Arc<MockMidiBackend>) {
-        let backend = Arc::new(MockMidiBackend::new(
-            vec![],
-            vec![MidiPortInfo {
-                name: port.to_owned(),
-                direction: PortDirection::Output,
-            }],
-        ));
+    fn client_with_output_port(port: &str) -> (Arc<MidiClient>, Arc<MockMidiBackend>) {
+        let backend = Arc::new(MockMidiBackend::new(vec![], vec![output_port(port)]));
         let client = MidiClient::start(
             MidiConfig::default(),
             Arc::new(NullPublisher),
@@ -311,7 +304,7 @@ mod tests {
 
     #[tokio::test]
     async fn note_on_runner_dispatches_correct_bytes() {
-        let (client, backend) = make_sink_with_output_port("Out");
+        let (client, backend) = client_with_output_port("Out");
         let runner = MidiSendRunner::new(client as Arc<dyn MidiSink>);
         let config = step(
             "note_on",
@@ -334,7 +327,7 @@ mod tests {
 
     #[tokio::test]
     async fn cc_runner_dispatches_correct_bytes() {
-        let (client, backend) = make_sink_with_output_port("Out");
+        let (client, backend) = client_with_output_port("Out");
         let runner = MidiSendRunner::new(client as Arc<dyn MidiSink>);
         let config = step(
             "cc",
@@ -357,7 +350,7 @@ mod tests {
 
     #[tokio::test]
     async fn sending_to_an_unknown_port_fails_with_the_port_not_found_message() {
-        let (client, backend) = make_sink_with_output_port("Out");
+        let (client, backend) = client_with_output_port("Out");
         let runner = MidiSendRunner::new(client as Arc<dyn MidiSink>);
         let mut config = step("raw", &[("raw_bytes", bytes(&[0x90, 60, 100]))]);
         config.insert("port".to_owned(), Variant::String("Ghost".to_owned()));
@@ -381,7 +374,7 @@ mod tests {
 
     #[tokio::test]
     async fn raw_invalid_status_returns_failed() {
-        let (client, backend) = make_sink_with_output_port("Out");
+        let (client, backend) = client_with_output_port("Out");
         let runner = MidiSendRunner::new(client as Arc<dyn MidiSink>);
         let config = step("raw", &[("raw_bytes", bytes(&[0x00]))]);
 

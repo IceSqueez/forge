@@ -379,8 +379,6 @@ mod tests {
         assert!(matches!(err, DiscordError::WebhookNotFound { .. }));
     }
 
-    const INTERLEAVING_YIELDS: usize = 16;
-
     struct StalledListing {
         inner: Arc<MemoryCredentials>,
         entered: tokio::sync::Notify,
@@ -448,13 +446,16 @@ mod tests {
             async move { client.list_webhooks().await }
         });
         stalled.entered.notified().await;
-        let edited = tokio::spawn(edit(Arc::clone(&client)));
-        for _ in 0..INTERLEAVING_YIELDS {
-            tokio::task::yield_now().await;
+        let mut edited = Box::pin(edit(Arc::clone(&client)));
+        tokio::select! {
+            biased;
+            _ = &mut edited => panic!("the edit ran through the listing instead of waiting for it"),
+            () = std::future::ready(()) => {}
         }
         stalled.release.notify_one();
-        listing.await.unwrap().unwrap();
-        (client, edited.await.unwrap())
+        let (listed, output) = tokio::join!(listing, edited);
+        listed.unwrap().unwrap();
+        (client, output)
     }
 
     #[tokio::test]

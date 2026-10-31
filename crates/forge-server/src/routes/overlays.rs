@@ -300,7 +300,7 @@ mod tests {
         let resp = reqwest::get(format!("http://{}/overlays/fgo_fixture/alerts.html", addr))
             .await
             .expect("request");
-        assert_eq!(resp.status().as_u16(), 200);
+        assert_eq!(resp.status(), reqwest::StatusCode::OK);
         let ct = resp.headers().get("content-type").expect("content-type");
         assert!(ct.to_str().unwrap().contains("text/html"));
         let body = resp.bytes().await.expect("body");
@@ -409,12 +409,16 @@ mod tests {
         let resp = reqwest::get(format!("http://{}/overlays/fgo_fixture/nope.html", addr))
             .await
             .expect("request");
-        assert_eq!(resp.status().as_u16(), 404);
+        assert_eq!(resp.status(), reqwest::StatusCode::NOT_FOUND);
 
         handle.stop().await.expect("stop");
     }
 
-    async fn raw_get(addr: SocketAddr, target: &str, extra_headers: &str) -> (u16, String) {
+    async fn raw_get(
+        addr: SocketAddr,
+        target: &str,
+        extra_headers: &str,
+    ) -> (reqwest::StatusCode, String) {
         use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 
         let mut stream = tokio::net::TcpStream::connect(addr).await.expect("connect");
@@ -431,7 +435,7 @@ mod tests {
         let status = text
             .split_whitespace()
             .nth(1)
-            .and_then(|code| code.parse().ok())
+            .and_then(|code| reqwest::StatusCode::from_bytes(code.as_bytes()).ok())
             .expect("status line");
         (status, text)
     }
@@ -469,7 +473,11 @@ mod tests {
             "/overlays/fgo_fixture/.%2e%2fsecret.html",
         ] {
             let (status, body) = raw_get(addr, target, "").await;
-            assert_eq!(status, 404, "expected 404 for {target}");
+            assert_eq!(
+                status,
+                reqwest::StatusCode::NOT_FOUND,
+                "expected 404 for {target}"
+            );
             assert!(
                 !body.contains(ESCAPE_MARKER),
                 "escaped the overlay root via {target}"
@@ -494,7 +502,11 @@ mod tests {
             format!("/overlays/fgo_fixture/{absolute}"),
         ] {
             let (status, body) = raw_get(addr, &target, "").await;
-            assert_eq!(status, 404, "expected 404 for {target}");
+            assert_eq!(
+                status,
+                reqwest::StatusCode::NOT_FOUND,
+                "expected 404 for {target}"
+            );
             assert!(
                 !body.contains(ESCAPE_MARKER),
                 "absolute path re-rooted the join via {target}"
@@ -515,7 +527,7 @@ mod tests {
         let (handle, addr) = make_overlay_server(root, true, MemCreds::new()).await;
 
         let (status, body) = raw_get(addr, "/overlays/fgo_fixture/link.html", "").await;
-        assert_eq!(status, 404);
+        assert_eq!(status, reqwest::StatusCode::NOT_FOUND);
         assert!(!body.contains(ESCAPE_MARKER));
 
         handle.stop().await.expect("stop");
@@ -535,7 +547,7 @@ mod tests {
         let (handle, addr) = make_overlay_server(root, true, MemCreds::new()).await;
 
         let (status, body) = raw_get(addr, "/overlays/fgo_fixture/alias.html", "").await;
-        assert_eq!(status, 200);
+        assert_eq!(status, reqwest::StatusCode::OK);
         assert!(body.contains("<p>inside</p>"));
 
         handle.stop().await.expect("stop");
@@ -554,7 +566,7 @@ mod tests {
         let resp = reqwest::get(format!("http://{}/overlays/fgo_fixture/.secret", addr))
             .await
             .expect("request");
-        assert_eq!(resp.status().as_u16(), 404);
+        assert_eq!(resp.status(), reqwest::StatusCode::NOT_FOUND);
 
         handle.stop().await.expect("stop");
     }
@@ -671,11 +683,11 @@ mod tests {
             .expect("write");
     }
 
-    async fn get_status_and_body(addr: SocketAddr, target: &str) -> (u16, String) {
+    async fn get_status_and_body(addr: SocketAddr, target: &str) -> (reqwest::StatusCode, String) {
         let resp = reqwest::get(format!("http://{addr}{target}"))
             .await
             .expect("request");
-        let status = resp.status().as_u16();
+        let status = resp.status();
         let body = resp.text().await.expect("body");
         (status, body)
     }
@@ -695,7 +707,11 @@ mod tests {
             let resp = reqwest::get(format!("http://{addr}{target}"))
                 .await
                 .expect("request");
-            assert_eq!(resp.status().as_u16(), 200, "expected 200 for {target}");
+            assert_eq!(
+                resp.status(),
+                reqwest::StatusCode::OK,
+                "expected 200 for {target}"
+            );
             let content_type = resp
                 .headers()
                 .get("content-type")
@@ -734,7 +750,11 @@ mod tests {
             "/overlays/fgo_fixture/shadowed",
         ] {
             let (status, _) = get_status_and_body(addr, target).await;
-            assert_eq!(status, 404, "expected 404 for {target}");
+            assert_eq!(
+                status,
+                reqwest::StatusCode::NOT_FOUND,
+                "expected 404 for {target}"
+            );
         }
 
         handle.stop().await.expect("stop");
@@ -761,7 +781,11 @@ mod tests {
             "/overlays/fgo_fixture/alerts",
         ] {
             let (status, body) = raw_get(addr, target, "").await;
-            assert_eq!(status, 404, "expected 404 for {target}");
+            assert_eq!(
+                status,
+                reqwest::StatusCode::NOT_FOUND,
+                "expected 404 for {target}"
+            );
             assert!(
                 !body.contains(ESCAPE_MARKER),
                 "directory index escaped the overlay root via {target}"
@@ -792,7 +816,11 @@ mod tests {
             let resp = reqwest::get(format!("http://{addr}{target}"))
                 .await
                 .expect("request");
-            assert_eq!(resp.status().as_u16(), 200, "expected 200 for {target}");
+            assert_eq!(
+                resp.status(),
+                reqwest::StatusCode::OK,
+                "expected 200 for {target}"
+            );
             let content_type = resp
                 .headers()
                 .get("content-type")
@@ -848,7 +876,11 @@ mod tests {
         let response = reqwest::get(format!("http://{addr}{target}"))
             .await
             .expect("request");
-        assert_eq!(response.status().as_u16(), 200, "expected 200 for {target}");
+        assert_eq!(
+            response.status(),
+            reqwest::StatusCode::OK,
+            "expected 200 for {target}"
+        );
         response
             .headers()
             .get(reqwest::header::CACHE_CONTROL)
@@ -975,7 +1007,11 @@ mod tests {
             "/overlays/fgo_fixture/off/asset.js",
         ] {
             let (status, body) = get_status_and_body(addr, target).await;
-            assert_eq!(status, 404, "expected 404 for {target}");
+            assert_eq!(
+                status,
+                reqwest::StatusCode::NOT_FOUND,
+                "expected 404 for {target}"
+            );
             assert!(
                 !body.contains("<p>off</p>"),
                 "disabled overlay served its body via {target}"
@@ -1006,7 +1042,11 @@ mod tests {
             "/overlays/fgo_fixture/alias/",
         ] {
             let (status, body) = get_status_and_body(addr, target).await;
-            assert_eq!(status, 404, "expected 404 for {target}");
+            assert_eq!(
+                status,
+                reqwest::StatusCode::NOT_FOUND,
+                "expected 404 for {target}"
+            );
             assert!(
                 !body.contains("<p>off</p>"),
                 "a disabled overlay served itself under an alias via {target}"
@@ -1030,7 +1070,7 @@ mod tests {
 
         let (status, _) = get_status_and_body(addr, "/overlays/fgo_fixture/boom/index.html").await;
 
-        assert_eq!(status, 404);
+        assert_eq!(status, reqwest::StatusCode::NOT_FOUND);
         handle.stop().await.expect("stop");
     }
 
@@ -1059,7 +1099,7 @@ mod tests {
             ),
         ] {
             let (status, body) = get_status_and_body(addr, target).await;
-            assert_eq!(status, 200, "expected 200 for {target}");
+            assert_eq!(status, reqwest::StatusCode::OK, "expected 200 for {target}");
             assert_eq!(body, expected_body, "wrong body for {target}");
         }
 
@@ -1083,7 +1123,11 @@ mod tests {
             "/overlays/fgo_fixture/%5C%5Chost%5Cs%5Cx",
         ] {
             let (status, body) = raw_get(addr, target, "").await;
-            assert_eq!(status, 404, "expected 404 for {target}");
+            assert_eq!(
+                status,
+                reqwest::StatusCode::NOT_FOUND,
+                "expected 404 for {target}"
+            );
             assert!(!body.contains(ESCAPE_MARKER), "{target} was served");
         }
 
@@ -1228,7 +1272,11 @@ mod tests {
                 let target = format!("http://{addr}/overlays/{prefix}{path}");
                 let response = reqwest::get(&target).await.expect("request");
 
-                assert_eq!(response.status().as_u16(), 404, "{target}");
+                assert_eq!(
+                    response.status(),
+                    reqwest::StatusCode::NOT_FOUND,
+                    "{target}"
+                );
                 assert_eq!(
                     referrer_policy(&response).as_deref(),
                     Some("no-referrer"),
@@ -1254,7 +1302,7 @@ mod tests {
             let target = format!("http://{addr}/overlays/{FIXTURE_OVERLAY_TOKEN}/{path}");
             let response = reqwest::get(&target).await.expect("request");
 
-            assert_eq!(response.status().as_u16(), 200, "{target}");
+            assert_eq!(response.status(), reqwest::StatusCode::OK, "{target}");
             assert_eq!(
                 referrer_policy(&response).as_deref(),
                 Some("no-referrer"),
@@ -1280,7 +1328,11 @@ mod tests {
             ] {
                 let (status, body) = get_status_and_body(addr, &target).await;
 
-                assert_eq!(status, 404, "{target} with the token required {required}");
+                assert_eq!(
+                    status,
+                    reqwest::StatusCode::NOT_FOUND,
+                    "{target} with the token required {required}"
+                );
                 assert!(
                     body.is_empty(),
                     "{target} with the token required {required}"
@@ -1307,7 +1359,7 @@ mod tests {
         ] {
             let (status, response) = raw_get(addr, &target, "").await;
 
-            assert_ne!(status, 200, "{target}");
+            assert_ne!(status, reqwest::StatusCode::OK, "{target}");
             assert!(
                 !response.contains(ESCAPE_MARKER),
                 "{target} escaped the root"
@@ -1326,15 +1378,21 @@ mod tests {
         let tokened = format!("/overlays/{FIXTURE_OVERLAY_TOKEN}/alerts/config.json");
 
         handle.set_http_overlay_token_required(false).await;
-        assert_eq!(get_status_and_body(addr, tokenless).await.0, 200);
+        assert_eq!(
+            get_status_and_body(addr, tokenless).await.0,
+            reqwest::StatusCode::OK
+        );
         assert_eq!(
             get_status_and_body(addr, &tokened).await.0,
-            200,
+            reqwest::StatusCode::OK,
             "a copied URL must keep working while the requirement is off"
         );
 
         handle.set_http_overlay_token_required(true).await;
-        assert_eq!(get_status_and_body(addr, tokenless).await.0, 404);
+        assert_eq!(
+            get_status_and_body(addr, tokenless).await.0,
+            reqwest::StatusCode::NOT_FOUND
+        );
 
         handle.stop().await.expect("stop");
     }
@@ -1351,7 +1409,7 @@ mod tests {
 
         let (status, _) = get_status_and_body(addr, "/overlays/fgo_wrong/alerts/").await;
 
-        assert_eq!(status, 404);
+        assert_eq!(status, reqwest::StatusCode::NOT_FOUND);
         handle.stop().await.expect("stop");
     }
 

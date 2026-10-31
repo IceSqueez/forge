@@ -711,7 +711,7 @@ mod tests {
 
             assert_eq!(
                 seen.iter()
-                    .map(|shape| (shape.1.as_str(), shape.2.as_str()))
+                    .map(|shape| (shape.viewer_id.as_str(), shape.viewer_name.as_str()))
                     .collect::<Vec<_>>(),
                 [(viewer_id, "alice")],
                 "locked = {locked}"
@@ -735,7 +735,7 @@ mod tests {
 
             assert_eq!(
                 seen.iter()
-                    .map(|shape| (shape.1.as_str(), shape.2.as_str()))
+                    .map(|shape| (shape.viewer_id.as_str(), shape.viewer_name.as_str()))
                     .collect::<Vec<_>>(),
                 [(viewer_id, "Зірка")],
                 "{platform:?}"
@@ -765,7 +765,7 @@ mod tests {
 
             assert_eq!(
                 seen.iter()
-                    .map(|shape| shape.2.as_str())
+                    .map(|shape| shape.viewer_name.as_str())
                     .collect::<Vec<_>>(),
                 [viewer_name],
                 "locked = {locked}"

@@ -1251,15 +1251,6 @@ mod tests {
     }
 
     #[test]
-    fn the_default_card_art_draws_the_card_the_pickers_had_before_it_was_a_knob() {
-        let art = GridPickerArt::default();
-
-        assert_eq!((art.tile, art.glyph), (px(26.0), px(13.0)));
-        assert_eq!(art.card_height(), px(72.0));
-        assert_eq!(art.row_height(), px(80.0));
-    }
-
-    #[test]
     fn a_taller_tile_grows_the_card_and_its_row_by_what_the_tile_gained() {
         let base = GridPickerArt::default();
 

@@ -128,16 +128,20 @@ impl MidiClient {
 
     #[cfg(test)]
     pub(crate) fn new_for_test() -> Arc<Self> {
+        let (control_tx, _control_rx) = mpsc::channel::<SupervisorCommand>(8);
+        Self::with_control_for_test(control_tx)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_control_for_test(control_tx: mpsc::Sender<SupervisorCommand>) -> Arc<Self> {
         use crate::backend::tests::MockMidiBackend;
         use forge_events::test_support::NullPublisher;
 
-        let backend = Arc::new(MockMidiBackend::new(vec![], vec![]));
         let (health_tx, health_state) = make_health_state();
-        let (control_tx, _control_rx) = mpsc::channel::<SupervisorCommand>(8);
         Arc::new(Self {
-            id: IntegrationId::new("midi"),
+            id: crate::MIDI_INTEGRATION.id,
             config: MidiConfig::default(),
-            backend,
+            backend: Arc::new(MockMidiBackend::new(vec![], vec![])),
             publisher: Arc::new(NullPublisher),
             health_state,
             health_tx,
@@ -152,26 +156,11 @@ impl MidiClient {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::backend::tests::MockMidiBackend;
-    use crate::events::{MidiPortInfo, PortDirection};
-    use forge_events::test_support::NullPublisher;
+    use crate::backend::tests::{input_port, output_port};
 
     fn client_holding_control_rx() -> (Arc<MidiClient>, mpsc::Receiver<SupervisorCommand>) {
-        let (health_tx, health_state) = make_health_state();
         let (control_tx, control_rx) = mpsc::channel::<SupervisorCommand>(8);
-        let client = Arc::new(MidiClient {
-            id: IntegrationId::new("midi"),
-            config: MidiConfig::default(),
-            backend: Arc::new(MockMidiBackend::new(vec![], vec![])),
-            publisher: Arc::new(NullPublisher),
-            health_state,
-            health_tx,
-            content_state: make_content_state(),
-            enabled: Arc::new(AtomicBool::new(true)),
-            control_tx,
-            monitor_tx: make_monitor_state(),
-        });
-        (client, control_rx)
+        (MidiClient::with_control_for_test(control_tx), control_rx)
     }
 
     #[tokio::test]
@@ -198,14 +187,8 @@ mod tests {
         let client = MidiClient::new_for_test();
         {
             let mut snap = client.content_state.lock_recover();
-            snap.input_ports = vec![MidiPortInfo {
-                name: "Keys In".to_owned(),
-                direction: PortDirection::Input,
-            }];
-            snap.output_ports = vec![MidiPortInfo {
-                name: "Synth Out".to_owned(),
-                direction: PortDirection::Output,
-            }];
+            snap.input_ports = vec![input_port("Keys In")];
+            snap.output_ports = vec![output_port("Synth Out")];
         }
 
         assert_eq!(client.connected_input_ports(), vec!["Keys In".to_owned()]);

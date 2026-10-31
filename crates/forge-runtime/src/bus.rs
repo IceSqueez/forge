@@ -499,7 +499,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn publish_subscribe_roundtrip() {
+    async fn a_subscriber_receives_the_published_event() {
         let bus = null_bus();
         let mut sub = bus.subscribe();
         let ev = core_event("action.start");
@@ -604,7 +604,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn replay_and_publish_ring_hit() {
+    async fn replay_of_a_ring_held_event_republishes_it_with_a_fresh_id() {
         let bus = null_bus();
         let mut sub = bus.subscribe();
 
@@ -625,7 +625,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn replay_and_publish_db_fallback() {
+    async fn replay_of_an_evicted_event_is_read_back_from_the_event_log() {
         let (bus, backend) = backed_bus_with_caps(64, 2).await;
         let mut sub = bus.subscribe();
 

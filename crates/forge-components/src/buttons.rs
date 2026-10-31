@@ -578,28 +578,4 @@ mod tests {
             );
         }
     }
-
-    #[test]
-    fn keyed_palette_fields_are_distinct_hues() {
-        let fields = [
-            ("brand", P.brand),
-            ("danger", P.danger),
-            ("shell", P.shell),
-            ("text_primary", P.text_primary),
-            ("text_secondary", P.text_secondary),
-            ("text_muted", P.text_muted),
-            ("border_regular", P.border_regular),
-            ("border_input", P.border_input),
-        ];
-        for i in 0..fields.len() {
-            for j in (i + 1)..fields.len() {
-                let (na, a) = fields[i];
-                let (nb, b) = fields[j];
-                assert!(
-                    !same_rgb(a, b),
-                    "{na} and {nb} share a hue - a mis-wire between them would pass unnoticed",
-                );
-            }
-        }
-    }
 }

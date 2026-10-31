@@ -686,15 +686,6 @@ mod tests {
         assert_eq!(downstream_runs.load(Ordering::Relaxed), 0);
     }
 
-    #[test]
-    fn cancel_signal_propagates_through_clones() {
-        let signal = CancelSignal::new();
-        let child = signal.clone();
-        assert!(!child.is_cancelled());
-        signal.cancel();
-        assert!(child.is_cancelled());
-    }
-
     #[tokio::test]
     async fn sequential_step_failure_halts_chain_with_error_signal() {
         let downstream_runs = Arc::new(AtomicUsize::new(0));

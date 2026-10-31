@@ -740,3 +740,75 @@ fn step_icon_btn(
         .on_click(handler)
         .into_any_element()
 }
+
+#[cfg(test)]
+mod tests {
+    use forge_types::{Action, ActionId, ExecutionMode, QueueId};
+
+    use super::{group_actions, tr};
+
+    fn action(name: &str, group: Option<&str>) -> Action {
+        Action {
+            id: ActionId::new(),
+            name: name.to_owned(),
+            group: group.map(str::to_owned),
+            queue_id: QueueId::new(),
+            enabled: true,
+            concurrent: false,
+            bypass_pause: false,
+            execution_mode: ExecutionMode::default(),
+            description: None,
+            sub_actions: Vec::new(),
+        }
+    }
+
+    fn shape(actions: Vec<Action>) -> Vec<(String, Vec<String>)> {
+        group_actions(actions)
+            .into_iter()
+            .map(|group| {
+                (
+                    group.name.to_string(),
+                    group.actions.into_iter().map(|a| a.name).collect(),
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn groups_merge_regardless_of_case_or_surrounding_space_and_sort_their_members() {
+        let groups = shape(vec![
+            action("zeta", Some(" chat ")),
+            action("Alpha", Some("CHAT")),
+            action("beta", Some("Chat")),
+            action("solo", Some("alerts")),
+        ]);
+
+        assert_eq!(
+            groups,
+            vec![
+                ("ALERTS".to_owned(), vec!["solo".to_owned()]),
+                (
+                    "CHAT".to_owned(),
+                    vec!["Alpha".to_owned(), "beta".to_owned(), "zeta".to_owned()]
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_missing_or_blank_group_lands_in_the_ungrouped_bucket() {
+        let groups = shape(vec![
+            action("none", None),
+            action("empty", Some("")),
+            action("space", Some("   ")),
+        ]);
+
+        assert_eq!(
+            groups,
+            vec![(
+                tr!("actions_group_ungrouped").to_uppercase(),
+                vec!["empty".to_owned(), "none".to_owned(), "space".to_owned()]
+            )]
+        );
+    }
+}

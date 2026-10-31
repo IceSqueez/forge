@@ -60,10 +60,8 @@ mod tests {
     }
 
     #[test]
-    fn event_id_display_roundtrips_via_debug() {
-        let id = EventId::new();
-        let s = id.to_string();
-        assert_eq!(s.len(), 26, "ULID string length must be 26 chars");
+    fn event_id_displays_as_a_parseable_ulid() {
+        assert!(ulid::Ulid::from_string(&EventId::new().to_string()).is_ok());
     }
 
     #[test]

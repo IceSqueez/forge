@@ -1,4 +1,5 @@
 #![allow(clippy::unwrap_used)]
+use forge_paths::MEDIA_DIR_NAME;
 mod common;
 
 use std::collections::BTreeSet;
@@ -80,9 +81,13 @@ impl Store {
 
     fn dir_copy(&self, name: &str) -> String {
         let dir = self.backups().join(name);
-        std::fs::create_dir_all(dir.join("media")).unwrap();
+        std::fs::create_dir_all(dir.join(MEDIA_DIR_NAME)).unwrap();
         std::fs::write(dir.join(DATABASE_FILE_NAME), vec![0_u8; COPY_BYTES]).unwrap();
-        std::fs::write(dir.join("media").join("clip"), vec![0_u8; COPY_BYTES]).unwrap();
+        std::fs::write(
+            dir.join(MEDIA_DIR_NAME).join("clip"),
+            vec![0_u8; COPY_BYTES],
+        )
+        .unwrap();
         name.to_owned()
     }
 

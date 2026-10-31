@@ -100,7 +100,7 @@ mod tests {
             source,
             "chat.message",
             json!({
-                ChatPayload::KEY: {
+                (ChatPayload::KEY): {
                     "platform_msg_id": "m-1",
                     "author": "NovaFox",
                     "author_color": null,

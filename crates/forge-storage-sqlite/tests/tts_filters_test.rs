@@ -60,24 +60,9 @@ fn blocklist_rule(id: &str, pos: u32, mode: BlocklistMode) -> FilterRule {
 #[tokio::test]
 async fn fresh_db_settings_row_has_documented_defaults() {
     let r = repo().await;
-    let s = r.get_pipeline_settings().await.expect("get");
-    assert_eq!(s.url_mode, UrlMode::Speak, "url_mode default");
     assert_eq!(
-        s.blocklist_mode,
-        BlocklistMode::Censor,
-        "blocklist_mode default"
-    );
-    assert!(s.strip_twitch_emotes, "strip_twitch_emotes default");
-    assert!(s.strip_reward_emotes, "strip_reward_emotes default");
-    assert!(!s.strip_emoji, "strip_emoji is opt-in");
-    assert!(s.max_length.is_none(), "max_length default is unlimited");
-    assert!(
-        s.output_max_duration_secs.is_none(),
-        "output_max_duration_secs default is no cap"
-    );
-    assert!(
-        s.output_language_aware_voice.is_none(),
-        "output_language_aware_voice default is off"
+        r.get_pipeline_settings().await.expect("get"),
+        TtsPipelineSettings::default()
     );
 }
 
@@ -147,35 +132,17 @@ async fn pipeline_settings_url_and_blocklist_mode_round_trip() {
 async fn pipeline_settings_max_length_none_and_some_round_trip() {
     let r = repo().await;
 
-    let s_none = TtsPipelineSettings {
-        max_length: None,
-        ..TtsPipelineSettings::default()
-    };
-    r.set_pipeline_settings(&s_none).await.expect("set none");
-    assert_eq!(
-        r.get_pipeline_settings().await.expect("get").max_length,
-        None
-    );
-
-    let s_zero = TtsPipelineSettings {
-        max_length: Some(0),
-        ..TtsPipelineSettings::default()
-    };
-    r.set_pipeline_settings(&s_zero).await.expect("set 0");
-    assert_eq!(
-        r.get_pipeline_settings().await.expect("get").max_length,
-        Some(0)
-    );
-
-    let s_max = TtsPipelineSettings {
-        max_length: Some(u32::MAX),
-        ..TtsPipelineSettings::default()
-    };
-    r.set_pipeline_settings(&s_max).await.expect("set max");
-    assert_eq!(
-        r.get_pipeline_settings().await.expect("get").max_length,
-        Some(u32::MAX)
-    );
+    for cap in [None, Some(0), Some(u32::MAX)] {
+        let settings = TtsPipelineSettings {
+            max_length: cap,
+            ..TtsPipelineSettings::default()
+        };
+        r.set_pipeline_settings(&settings).await.expect("set");
+        assert_eq!(
+            r.get_pipeline_settings().await.expect("get").max_length,
+            cap
+        );
+    }
 }
 
 #[tokio::test]
@@ -435,7 +402,7 @@ async fn literal_stored_before_the_inside_words_flag_existed_matches_whole_words
 }
 
 #[tokio::test]
-async fn regex_rule_pattern_stored_verbatim_not_compiled() {
+async fn regex_pattern_round_trips_verbatim() {
     let r = repo().await;
     let raw = r"(?i)(?-u)\p{L}+\s*\d{2,4}".to_owned();
 

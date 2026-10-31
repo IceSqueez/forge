@@ -123,7 +123,7 @@ pub(crate) fn clip(hotkey: Option<&str>) -> StoredClip {
         volume: 1.0,
         output_device: OutputDevice::Default,
         hotkey: hotkey.map(str::to_owned),
-        created_at: OffsetDateTime::now_utc(),
+        created_at: OffsetDateTime::UNIX_EPOCH,
         category: String::new(),
         loop_playback: false,
         duration_secs: None,

@@ -311,30 +311,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn with_api_forge_log_runs_without_error() {
-        let dp = open_test_dp().await;
-        let engine = Engine::with_api(unhurried(), make_api(dp.clone()));
-        let result = tokio::task::spawn_blocking(move || {
-            engine.eval_script(r#"forge::log("hello from script")"#)
-        })
-        .await
-        .unwrap();
-        assert!(result.is_ok(), "forge::log must succeed: {result:?}");
-    }
-
-    #[tokio::test]
-    async fn with_api_forge_warn_runs_without_error() {
-        let dp = open_test_dp().await;
-        let engine = Engine::with_api(unhurried(), make_api(dp.clone()));
-        let result = tokio::task::spawn_blocking(move || {
-            engine.eval_script(r#"forge::warn("something fishy")"#)
-        })
-        .await
-        .unwrap();
-        assert!(result.is_ok());
-    }
-
-    #[tokio::test]
     async fn with_api_forge_sleep_waits_at_least_the_requested_time() {
         const REQUESTED_MS: u64 = 5;
         let dp = open_test_dp().await;

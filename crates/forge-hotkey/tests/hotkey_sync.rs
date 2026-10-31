@@ -1,8 +1,8 @@
 #![allow(clippy::unwrap_used)]
 mod support;
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -18,7 +18,7 @@ use forge_storage::{
     MediaBlobId, MockTriggerInstanceRepo, SoundboardClipsRepo, StorageError, StoredClip,
     TriggerChanges, TriggerInstanceRepo, TriggerWiring,
 };
-use forge_types::{ClipId, Queue, QueueId, TriggerInstanceId};
+use forge_types::{ClipId, Queue, QueueId, TriggerInstance, TriggerInstanceId};
 use support::{
     Store, clip, instance, recording_client, registered, seed_action, store, stored_combo,
     with_combo,
@@ -26,6 +26,35 @@ use support::{
 use tokio::sync::Notify;
 
 const STILL_WAITING: Duration = Duration::from_millis(50);
+
+fn storage_down() -> StorageError {
+    StorageError::Connection {
+        reason: "disk gone".to_owned(),
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum TriggerRemoval {
+    Delete,
+    Archive,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum RefusedWrite {
+    Save,
+    Batch,
+    SetEnabled,
+    Delete,
+    Archive,
+    Restore,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum ClipUnbinding {
+    Delete,
+    BlankCombo,
+    NoCombo,
+}
 
 struct Synced {
     store: Store,
@@ -69,17 +98,17 @@ struct ListGate {
 }
 
 struct ProbeClips {
-    clips: std::sync::Mutex<Vec<StoredClip>>,
+    clips: Mutex<Vec<StoredClip>>,
     unreadable: AtomicBool,
-    gate: std::sync::Mutex<Option<ListGate>>,
+    gate: Mutex<Option<ListGate>>,
 }
 
 impl ProbeClips {
     fn holding(clips: Vec<StoredClip>, gate: Option<ListGate>) -> Arc<Self> {
         Arc::new(Self {
-            clips: std::sync::Mutex::new(clips),
+            clips: Mutex::new(clips),
             unreadable: AtomicBool::new(false),
-            gate: std::sync::Mutex::new(gate),
+            gate: Mutex::new(gate),
         })
     }
 
@@ -92,9 +121,7 @@ impl ProbeClips {
 impl SoundboardClipsRepo for ProbeClips {
     async fn list(&self) -> Result<Vec<StoredClip>, StorageError> {
         if self.unreadable.load(Ordering::SeqCst) {
-            return Err(StorageError::Connection {
-                reason: "disk gone".to_owned(),
-            });
+            return Err(storage_down());
         }
         let listed = self.clips.lock().unwrap().clone();
         let gate = self.gate.lock().unwrap().take();
@@ -125,7 +152,7 @@ impl SoundboardClipsRepo for ProbeClips {
     }
 }
 
-fn triggers_listing(instances: Vec<forge_types::TriggerInstance>) -> Arc<dyn TriggerInstanceRepo> {
+fn triggers_listing(instances: Vec<TriggerInstance>) -> Arc<dyn TriggerInstanceRepo> {
     let mut repo = MockTriggerInstanceRepo::new();
     repo.expect_list_all()
         .returning(move || Ok(instances.clone()));
@@ -161,18 +188,18 @@ async fn changing_a_triggers_combo_moves_the_registration_to_the_new_combo() {
 
 #[tokio::test]
 async fn removing_the_last_trigger_on_a_combo_releases_its_registration() {
-    for removal in ["delete", "archive"] {
+    for removal in [TriggerRemoval::Delete, TriggerRemoval::Archive] {
         let synced = synced().await;
         let trigger = instance(event_kinds::GLOBAL_PRESSED, Some("F5"));
         synced.repo.save(&trigger).await.unwrap();
 
         let removed = match removal {
-            "delete" => synced.repo.delete(trigger.id).await,
-            _ => synced.repo.archive(trigger.id).await,
+            TriggerRemoval::Delete => synced.repo.delete(trigger.id).await,
+            TriggerRemoval::Archive => synced.repo.archive(trigger.id).await,
         };
 
-        assert!(removed.unwrap(), "{removal} reports the row removed");
-        assert!(registered(&synced.client).is_empty(), "after {removal}");
+        assert!(removed.unwrap(), "{removal:?} reports the row removed");
+        assert!(registered(&synced.client).is_empty(), "after {removal:?}");
     }
 }
 
@@ -285,16 +312,14 @@ async fn applying_changes_stores_combos_canonically_and_registers_them() {
 #[tokio::test]
 async fn a_refused_write_leaves_the_client_registrations_untouched() {
     let valid = instance(event_kinds::GLOBAL_PRESSED, Some("F9"));
-    let failure = || StorageError::Connection {
-        reason: "disk gone".to_owned(),
-    };
+    let failure = storage_down;
     for write in [
-        "save",
-        "batch",
-        "delete",
-        "archive",
-        "restore",
-        "set enabled",
+        RefusedWrite::Save,
+        RefusedWrite::Batch,
+        RefusedWrite::SetEnabled,
+        RefusedWrite::Delete,
+        RefusedWrite::Archive,
+        RefusedWrite::Restore,
     ] {
         let mut inner = MockTriggerInstanceRepo::new();
         let listed = valid.clone();
@@ -320,21 +345,21 @@ async fn a_refused_write_leaves_the_client_registrations_untouched() {
         );
         let repo = HotkeySyncedTriggerRepo::wrap(inner, Some(reconciler));
 
-        let batch_of = |instance: &forge_types::TriggerInstance| TriggerChanges {
+        let batch_of = |instance: &TriggerInstance| TriggerChanges {
             saved: vec![instance.clone()],
             ..TriggerChanges::default()
         };
         let outcome = match write {
-            "save" => repo.save(&valid).await.map(|_| ()),
-            "batch" => repo.apply_changes(&batch_of(&valid)).await,
-            "set enabled" => repo.set_enabled(valid.id, false).await,
-            "delete" => repo.delete(valid.id).await.map(|_| ()),
-            "archive" => repo.archive(valid.id).await.map(|_| ()),
-            _ => repo.restore(valid.id).await.map(|_| ()),
+            RefusedWrite::Save => repo.save(&valid).await.map(|_| ()),
+            RefusedWrite::Batch => repo.apply_changes(&batch_of(&valid)).await,
+            RefusedWrite::SetEnabled => repo.set_enabled(valid.id, false).await,
+            RefusedWrite::Delete => repo.delete(valid.id).await.map(|_| ()),
+            RefusedWrite::Archive => repo.archive(valid.id).await.map(|_| ()),
+            RefusedWrite::Restore => repo.restore(valid.id).await.map(|_| ()),
         };
 
-        assert!(outcome.is_err(), "{write} must report the failure");
-        assert!(backend.calls().is_empty(), "{write} touched the client");
+        assert!(outcome.is_err(), "{write:?} must report the failure");
+        assert!(backend.calls().is_empty(), "{write:?} touched the client");
     }
 }
 
@@ -531,23 +556,27 @@ async fn changing_a_clips_combo_moves_the_registration_to_the_new_combo() {
 
 #[tokio::test]
 async fn a_clip_that_loses_its_combo_releases_the_registration() {
-    for removal in ["delete", "blank", "none"] {
+    for removal in [
+        ClipUnbinding::Delete,
+        ClipUnbinding::BlankCombo,
+        ClipUnbinding::NoCombo,
+    ] {
         let synced = synced().await;
         let bound = clip(Some("F9"));
         synced.clips.save(&bound).await.unwrap();
 
         match removal {
-            "delete" => {
+            ClipUnbinding::Delete => {
                 synced.clips.delete(bound.id).await.unwrap();
             }
-            "blank" => {
+            ClipUnbinding::BlankCombo => {
                 let blanked = StoredClip {
                     hotkey: Some("   ".to_owned()),
                     ..bound
                 };
                 synced.clips.save(&blanked).await.unwrap();
             }
-            _ => {
+            ClipUnbinding::NoCombo => {
                 let cleared = StoredClip {
                     hotkey: None,
                     ..bound
@@ -556,7 +585,7 @@ async fn a_clip_that_loses_its_combo_releases_the_registration() {
             }
         }
 
-        assert!(registered(&synced.client).is_empty(), "after {removal}");
+        assert!(registered(&synced.client).is_empty(), "after {removal:?}");
     }
 }
 

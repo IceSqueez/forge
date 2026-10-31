@@ -43,7 +43,7 @@ fn engine() -> Arc<ChainEngine> {
     ))
 }
 
-fn s(value: &str) -> Variant {
+fn text(value: &str) -> Variant {
     Variant::String(value.to_owned())
 }
 
@@ -69,10 +69,10 @@ async fn if_then_else_runs_the_taken_branchs_inline_chain() {
         assert_eq!(run.signal, ChainSignal::Completed, "condition {condition}");
         assert_eq!(
             run.arg_stack.get("marker"),
-            Some(&s(marker)),
+            Some(&text(marker)),
             "branch body effect must land for condition {condition}",
         );
-        assert_eq!(run.arg_stack.get("branch.taken"), Some(&s(branch)));
+        assert_eq!(run.arg_stack.get("branch.taken"), Some(&text(branch)));
     }
 }
 
@@ -127,7 +127,7 @@ async fn run_with(
     args: &[(&str, &str)],
 ) -> ChainRun {
     let stack = args.iter().fold(ArgStack::new(), |acc, (k, v)| {
-        acc.set((*k).to_owned(), s(v))
+        acc.set((*k).to_owned(), text(v))
     });
     engine
         .run_sequential(&steps, &stack, EventId::new(), &CancelSignal::new())
@@ -143,7 +143,7 @@ async fn if_undefined_variable_falls_to_else_when_treating_undefined_as_false() 
     let run = run_top(&eng, vec![step("core.logic.if_then_else", cfg)]).await;
 
     assert_eq!(run.signal, ChainSignal::Completed);
-    assert_eq!(run.arg_stack.get("marker"), Some(&s("ELSE")));
+    assert_eq!(run.arg_stack.get("marker"), Some(&text("ELSE")));
 }
 
 #[tokio::test]
@@ -200,7 +200,7 @@ async fn if_condition_argument_text_cannot_pick_the_branch() {
     .await;
 
     assert_eq!(run.signal, ChainSignal::Completed);
-    assert_eq!(run.arg_stack.get("marker"), Some(&s("ELSE")));
+    assert_eq!(run.arg_stack.get("marker"), Some(&text("ELSE")));
 }
 
 #[tokio::test]
@@ -215,13 +215,13 @@ async fn if_condition_compares_quoted_chat_text_literally() {
     .await;
 
     assert_eq!(run.signal, ChainSignal::Completed);
-    assert_eq!(run.arg_stack.get("marker"), Some(&s("THEN")));
+    assert_eq!(run.arg_stack.get("marker"), Some(&text("THEN")));
 }
 
 fn while_cfg(condition: &str, max_iterations: i64) -> SubActionConfig {
     let mut c = SubActionConfig::new();
-    c.insert("mode".to_owned(), s("while"));
-    c.insert("while_condition".to_owned(), s(condition));
+    c.insert("mode".to_owned(), text("while"));
+    c.insert("while_condition".to_owned(), text(condition));
     c.insert("max_iterations".to_owned(), Variant::Int(max_iterations));
     c.insert("body".to_owned(), inline(vec![]));
     c
@@ -288,7 +288,7 @@ async fn loop_absorbs_break_and_stops_iterating() {
         ChainSignal::Completed,
         "break must be absorbed by the loop, not leaked to the root",
     );
-    assert_eq!(run.arg_stack.get("loop.exit_reason"), Some(&s("break")));
+    assert_eq!(run.arg_stack.get("loop.exit_reason"), Some(&text("break")));
     assert_eq!(
         run.arg_stack.get("loop.iterations_completed"),
         Some(&Variant::Int(1)),
@@ -311,7 +311,10 @@ async fn loop_absorbs_continue_and_skips_the_rest_of_the_body() {
         Some(&Variant::Int(3)),
         "continue advances the loop, it does not stop it",
     );
-    assert_eq!(run.arg_stack.get("loop.exit_reason"), Some(&s("completed")));
+    assert_eq!(
+        run.arg_stack.get("loop.exit_reason"),
+        Some(&text("completed"))
+    );
     assert!(
         run.arg_stack.get("after_continue").is_none(),
         "the post-continue body step must be skipped every iteration",
@@ -341,7 +344,7 @@ async fn if_then_else_re_propagates_break_to_the_enclosing_loop() {
     assert_eq!(run.signal, ChainSignal::Completed);
     assert_eq!(
         run.arg_stack.get("loop.exit_reason"),
-        Some(&s("break")),
+        Some(&text("break")),
         "break raised inside the if must travel through it to the loop",
     );
     assert_eq!(
@@ -358,7 +361,7 @@ async fn switch_case_re_propagates_break_to_the_enclosing_loop() {
         switch_cfg(
             "go",
             vec![case(
-                s("go"),
+                text("go"),
                 inline(vec![chain_step(
                     "core.logic.break_loop",
                     SubActionConfig::new(),
@@ -377,7 +380,7 @@ async fn switch_case_re_propagates_break_to_the_enclosing_loop() {
     .await;
 
     assert_eq!(run.signal, ChainSignal::Completed);
-    assert_eq!(run.arg_stack.get("loop.exit_reason"), Some(&s("break")));
+    assert_eq!(run.arg_stack.get("loop.exit_reason"), Some(&text("break")));
     assert_eq!(
         run.arg_stack.get("loop.iterations_completed"),
         Some(&Variant::Int(1)),
@@ -416,7 +419,7 @@ async fn loop_names_why_it_ended_for_every_early_exit() {
     ] {
         let run = run_top(&eng, vec![step("core.logic.loop", loop_config)]).await;
 
-        assert_eq!(run.arg_stack.get("loop.exit_reason"), Some(&s(expected)));
+        assert_eq!(run.arg_stack.get("loop.exit_reason"), Some(&text(expected)));
     }
 }
 
@@ -431,7 +434,7 @@ async fn a_loop_entered_after_the_run_was_cancelled_exits_as_cancelled_without_i
     let (telemetry, produced) = runner.execute(&loop_cfg(5, inline(vec![])), &ctx).await;
 
     let produced = produced.unwrap();
-    assert_eq!(produced.get("loop.exit_reason"), Some(&s("cancelled")));
+    assert_eq!(produced.get("loop.exit_reason"), Some(&text("cancelled")));
     assert_eq!(
         produced.get("loop.iterations_completed"),
         Some(&Variant::Int(0))
@@ -492,7 +495,10 @@ async fn break_in_an_inner_loop_does_not_escape_to_the_outer_loop() {
         run.arg_stack.get("loop.iterations_completed"),
         Some(&Variant::Int(2)),
     );
-    assert_eq!(run.arg_stack.get("loop.exit_reason"), Some(&s("completed")));
+    assert_eq!(
+        run.arg_stack.get("loop.exit_reason"),
+        Some(&text("completed"))
+    );
 }
 
 #[tokio::test]
@@ -502,15 +508,15 @@ async fn switch_runs_the_first_matching_cases_chain() {
         "b",
         vec![
             case(
-                s("a"),
+                text("a"),
                 inline(vec![chain_step("core.args.set", args_set("hit", "A"))]),
             ),
             case(
-                s("b"),
+                text("b"),
                 inline(vec![chain_step("core.args.set", args_set("hit", "B"))]),
             ),
             case(
-                s("b"),
+                text("b"),
                 inline(vec![chain_step("core.args.set", args_set("hit", "B2"))]),
             ),
         ],
@@ -521,7 +527,7 @@ async fn switch_runs_the_first_matching_cases_chain() {
     assert_eq!(run.signal, ChainSignal::Completed);
     assert_eq!(
         run.arg_stack.get("hit"),
-        Some(&s("B")),
+        Some(&text("B")),
         "the first matching case wins, not a later duplicate",
     );
     assert_eq!(
@@ -543,7 +549,7 @@ async fn switch_matches_a_value_in_a_case_value_list_by_display_form() {
     );
     let run = run_top(&eng, vec![step("core.logic.switch_case", cfg)]).await;
 
-    assert_eq!(run.arg_stack.get("hit"), Some(&s("list")));
+    assert_eq!(run.arg_stack.get("hit"), Some(&text("list")));
     assert_eq!(
         run.arg_stack.get("switch.matched_case_index"),
         Some(&Variant::Int(0)),
@@ -556,7 +562,7 @@ async fn switch_runs_default_chain_with_index_minus_one_when_no_case_matches() {
     let cfg = switch_cfg(
         "zzz",
         vec![case(
-            s("a"),
+            text("a"),
             inline(vec![chain_step("core.args.set", args_set("hit", "A"))]),
         )],
         inline(vec![chain_step(
@@ -567,7 +573,7 @@ async fn switch_runs_default_chain_with_index_minus_one_when_no_case_matches() {
     let run = run_top(&eng, vec![step("core.logic.switch_case", cfg)]).await;
 
     assert_eq!(run.signal, ChainSignal::Completed);
-    assert_eq!(run.arg_stack.get("hit"), Some(&s("DEFAULT")));
+    assert_eq!(run.arg_stack.get("hit"), Some(&text("DEFAULT")));
     assert_eq!(
         run.arg_stack.get("switch.matched_case_index"),
         Some(&Variant::Int(-1)),
@@ -578,8 +584,8 @@ const FOREACH_LIMIT: usize = 10_000;
 
 fn foreach_cfg(body: Variant) -> SubActionConfig {
     let mut c = SubActionConfig::new();
-    c.insert("mode".to_owned(), s("foreach_array"));
-    c.insert("array_source".to_owned(), s("items"));
+    c.insert("mode".to_owned(), text("foreach_array"));
+    c.insert("array_source".to_owned(), text("items"));
     c.insert("body".to_owned(), body);
     c
 }
@@ -599,10 +605,10 @@ async fn foreach_hands_each_array_item_to_the_body_in_order() {
         "core.args.set",
         args_set("seen", "%seen%%loop.item%"),
     )]);
-    let items = Variant::Array(vec![s("a"), s("b"), s("c")]);
+    let items = Variant::Array(vec![text("a"), text("b"), text("c")]);
     let stack = ArgStack::new()
         .set("items".to_owned(), items)
-        .set("seen".to_owned(), s(""));
+        .set("seen".to_owned(), text(""));
     let run = eng
         .run_sequential(
             &[step("core.logic.loop", foreach_cfg(body))],
@@ -612,7 +618,7 @@ async fn foreach_hands_each_array_item_to_the_body_in_order() {
         )
         .await;
 
-    assert_eq!(run.arg_stack.get("seen"), Some(&s("abc")));
+    assert_eq!(run.arg_stack.get("seen"), Some(&text("abc")));
 }
 
 #[tokio::test]
@@ -631,7 +637,7 @@ async fn foreach_up_to_the_iteration_limit_visits_every_item() {
             (
                 ChainSignal::Completed,
                 Some(&Variant::Int(len as i64)),
-                Some(&s("completed")),
+                Some(&text("completed")),
             ),
             "len={len}",
         );
@@ -656,7 +662,7 @@ async fn foreach_one_item_past_the_limit_fails_the_step_after_the_limit() {
         ),
         (
             Some(&Variant::Int(FOREACH_LIMIT as i64)),
-            Some(&s("foreach_limit")),
+            Some(&text("foreach_limit")),
         ),
     );
 }
@@ -672,7 +678,7 @@ async fn foreach_limit_exit_reason_reaches_the_next_step_when_the_loop_continues
     ];
     let run = run_foreach(&eng, FOREACH_LIMIT + 1, steps).await;
 
-    assert_eq!(run.arg_stack.get("observed"), Some(&s("foreach_limit")));
+    assert_eq!(run.arg_stack.get("observed"), Some(&text("foreach_limit")));
 }
 
 #[tokio::test]
@@ -680,12 +686,12 @@ async fn logic_steps_skip_unreadable_nested_entries_and_run_the_rest_of_the_chai
     let eng = engine();
     let chain = || {
         let mut wrong_flag = SubActionConfig::new();
-        wrong_flag.insert("kind_id".to_owned(), s("core.args.set"));
+        wrong_flag.insert("kind_id".to_owned(), text("core.args.set"));
         wrong_flag.insert(
             "config".to_owned(),
             Variant::Object(args_set("skipped", "ran")),
         );
-        wrong_flag.insert("enabled".to_owned(), s("yes"));
+        wrong_flag.insert("enabled".to_owned(), text("yes"));
         let mut no_kind = SubActionConfig::new();
         no_kind.insert(
             "config".to_owned(),
@@ -694,7 +700,7 @@ async fn logic_steps_skip_unreadable_nested_entries_and_run_the_rest_of_the_chai
         inline(vec![
             chain_step("core.args.set", args_set("before", "ran")),
             Variant::Object(wrong_flag),
-            s("not a step"),
+            text("not a step"),
             Variant::Object(no_kind),
             chain_step("core.args.set", args_set("after", "ran")),
         ])
@@ -719,7 +725,7 @@ async fn logic_steps_skip_unreadable_nested_entries_and_run_the_rest_of_the_chai
             "case",
             step(
                 "core.logic.switch_case",
-                switch_cfg("a", vec![case(s("a"), chain())], inline(vec![])),
+                switch_cfg("a", vec![case(text("a"), chain())], inline(vec![])),
             ),
         ),
         (
@@ -730,8 +736,8 @@ async fn logic_steps_skip_unreadable_nested_entries_and_run_the_rest_of_the_chai
         let run = run_top(&eng, vec![logic]).await;
 
         assert_eq!(run.signal, ChainSignal::Completed, "{arm}");
-        assert_eq!(run.arg_stack.get("before"), Some(&s("ran")), "{arm}");
-        assert_eq!(run.arg_stack.get("after"), Some(&s("ran")), "{arm}");
+        assert_eq!(run.arg_stack.get("before"), Some(&text("ran")), "{arm}");
+        assert_eq!(run.arg_stack.get("after"), Some(&text("ran")), "{arm}");
         assert!(run.arg_stack.get("skipped").is_none(), "{arm}");
     }
 }
@@ -854,7 +860,10 @@ async fn a_loop_cancelled_between_iterations_counts_the_finished_one_and_reports
 
     let (run, _cancel) = run_cancellable(&eng, vec![looped]).await;
 
-    assert_eq!(run.arg_stack.get("loop.exit_reason"), Some(&s("cancelled")));
+    assert_eq!(
+        run.arg_stack.get("loop.exit_reason"),
+        Some(&text("cancelled"))
+    );
     assert_eq!(
         run.arg_stack.get("loop.iterations_completed"),
         Some(&Variant::Int(1))
@@ -874,7 +883,10 @@ async fn a_loop_body_interrupted_mid_way_does_not_count_as_a_finished_iteration(
 
     let (run, _cancel) = run_cancellable(&eng, vec![looped]).await;
 
-    assert_eq!(run.arg_stack.get("loop.exit_reason"), Some(&s("cancelled")));
+    assert_eq!(
+        run.arg_stack.get("loop.exit_reason"),
+        Some(&text("cancelled"))
+    );
     assert_eq!(
         run.arg_stack.get("loop.iterations_completed"),
         Some(&Variant::Int(0))

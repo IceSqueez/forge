@@ -72,8 +72,7 @@ async fn save_updates_existing_row() {
     repo.save(&inst).await.expect("save 1");
     inst.name = "Updated".to_owned();
     repo.save(&inst).await.expect("save 2");
-    let got = repo.get(id).await.expect("get").unwrap();
-    assert_eq!(got.name, "Updated");
+    assert_eq!(repo.get(id).await.expect("get"), Some(inst));
 }
 
 #[tokio::test]
@@ -97,12 +96,7 @@ async fn overrides_survive_roundtrip() {
     };
     let id = inst.id;
     repo.save(&inst).await.expect("save");
-    let got = repo.get(id).await.expect("get").unwrap();
-    assert_eq!(got.overrides.get("min_bits"), Some(&Variant::Int(500)));
-    assert_eq!(
-        got.overrides.get("label"),
-        Some(&Variant::String("VIP".to_owned()))
-    );
+    assert_eq!(repo.get(id).await.expect("get"), Some(inst));
 }
 
 #[tokio::test]
@@ -116,9 +110,7 @@ async fn list_user_defined_filters_correctly() {
     repo.save(&default).await.expect("save default");
 
     let list = repo.list_user_defined().await.expect("list");
-    assert_eq!(list.len(), 1);
-    assert!(list[0].user_defined);
-    assert_eq!(list[0].id, user.id);
+    assert_eq!(list, vec![user]);
 }
 
 #[tokio::test]
@@ -674,7 +666,7 @@ async fn every_permission_rung_survives_a_save_and_get_roundtrip() {
 }
 
 #[tokio::test]
-async fn legacy_rows_without_a_permission_rung_read_as_everyone() {
+async fn rows_inserted_without_a_permission_rung_read_as_everyone() {
     let backend = setup().await;
     let repo = backend.trigger_instance_repo();
 
@@ -701,7 +693,7 @@ async fn legacy_rows_without_a_permission_rung_read_as_everyone() {
 }
 
 #[tokio::test]
-async fn migration_applies_any_default_to_legacy_rows() {
+async fn rows_inserted_without_a_platform_scope_read_as_any() {
     let backend = setup().await;
     let repo = backend.trigger_instance_repo();
 

@@ -135,7 +135,7 @@ mod tests {
     }
 
     #[test]
-    fn build_arg_stack_maps_prediction_id_and_title_only() {
+    fn build_arg_stack_maps_prediction_id_and_title() {
         let stack = PredictionProgressDescriptor.build_arg_stack(&prediction_progress_event());
         assert_eq!(
             stack.get("prediction.id"),
@@ -144,6 +144,33 @@ mod tests {
         assert_eq!(
             stack.get("prediction.title"),
             Some(&Variant::String("Next round outcome".to_owned()))
+        );
+    }
+
+    #[test]
+    fn the_progress_trigger_exposes_the_running_outcome_counts() {
+        let event = Event::new(
+            EventSource::Twitch,
+            "twitch.channel.prediction.progress",
+            serde_json::json!({
+                "outcomes": [{"id": "o-1", "users": 11, "channel_points": 250}],
+            }),
+        );
+
+        let stack = PredictionProgressDescriptor.build_arg_stack(&event);
+        let Some(Variant::Array(outcomes)) = stack.get("prediction.outcomes") else {
+            panic!("outcomes missing from the progress stack");
+        };
+
+        assert_eq!(
+            outcomes.as_slice(),
+            [Variant::Object(std::collections::BTreeMap::from([
+                ("id".to_owned(), Variant::String("o-1".to_owned())),
+                ("title".to_owned(), Variant::String(String::new())),
+                ("color".to_owned(), Variant::String(String::new())),
+                ("users".to_owned(), Variant::Int(11)),
+                ("channel_points".to_owned(), Variant::Int(250)),
+            ]))]
         );
     }
 }

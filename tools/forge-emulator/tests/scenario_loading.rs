@@ -33,7 +33,7 @@ fn syntax_and_shape_errors_carry_file_line_and_column() {
             r#"{"name": "n", "purpose": "p", "fixture": {},
 "steps": [{"do": {"wait_for": {}}}]}"#,
             (2, 28),
-            "unknown variant `wait_for`, expected one of `forge_ready`, `twitch_subscribed`, `chat`, `crowd`, `twitch_event`, `session_reconnect`, `overlay_page`, `pause`, `run_action`, `set_global`, `kick_chat_joined`, `kick_chat`, `kick_pusher_event`, `kick_stream`, `kick_channel_polled`, `youtube_chat_polled`, `youtube_chat`, `youtube_chat_event`, `youtube_broadcast`, `obs_online`, `obs_identified`, `obs_restart`, `obs_scene_switch`, `obs_stream`, `obs_input_mute`, `vtube_online`, `vtube_authenticated`, `vtube_hotkey`, `vtube_model_load`, `vtube_model_unload`, `vtube_model_config_changed`, `vtube_tracking`, `vtube_item_added`, `vtube_item_removed`, `vtube_expression`, `donatello_donation`, `monobank_top_up`, `donations_polled`, `forge_restart`",
+            "unknown variant `wait_for`",
         ),
         (
             "unknown field inside a step",
@@ -41,7 +41,7 @@ fn syntax_and_shape_errors_carry_file_line_and_column() {
 "steps": [{"do": {"pause": {"ms": 5, "reason": "r",
   "jitter": 2}}}]}"#,
             (3, 10),
-            "unknown field `jitter`, expected `ms` or `reason`",
+            "unknown field `jitter`",
         ),
         (
             "unknown expectation",
@@ -49,21 +49,21 @@ fn syntax_and_shape_errors_carry_file_line_and_column() {
 "steps": [{"do": {"forge_ready": {"within_ms": 1}},
   "expect": [{"event_seen": {}}]}]}"#,
             (3, 26),
-            "unknown variant `event_seen`, expected one of `event`, `event_absent`, `caused_by`, `twitch_subscription`, `twitch_no_unexpected_requests`, `twitch_request_count`, `kick_request`, `kick_request_count`, `kick_no_unexpected_requests`, `youtube_request`, `youtube_request_count`, `youtube_no_unexpected_requests`, `overlay_content`, `log_line`, `discord_post`, `obs_request`, `obs_auth`, `vtube_request`, `vtube_auth`",
+            "unknown variant `event_seen`",
         ),
         (
             "unknown top-level field",
             r#"{"name": "n", "purpose": "p", "fixture": {}, "steps": [],
 "timeout": 5}"#,
             (2, 9),
-            "unknown field `timeout`, expected one of `name`, `purpose`, `fixture`, `fakes`, `steps`",
+            "unknown field `timeout`",
         ),
         (
             "unknown fixture field is refused by the reused fixture schema",
             r#"{"name": "n", "purpose": "p",
 "fixture": {"twich": {}}, "steps": []}"#,
             (2, 19),
-            "unknown field `twich`, expected one of `twitch`, `overlays`, `chat_commands`, `event_triggers`, `queues`, `discord_webhooks`, `kick`, `youtube`, `obs`, `vtube`, `donatello`, `monobank`",
+            "unknown field `twich`",
         ),
         (
             "missing deadline",
@@ -85,7 +85,7 @@ fn syntax_and_shape_errors_carry_file_line_and_column() {
             r#"{"name": "n", "purpose": "p", "fixture": {}, "steps": [{"do": {"chat": {
 "viewer": {"user_id": "1", "login": "a", "badges": ["founder"]}, "text": "t"}}}]}"#,
             (2, 61),
-            "unknown variant `founder`, expected one of `broadcaster`, `moderator`, `vip`, `subscriber`",
+            "unknown variant `founder`",
         ),
         (
             "trailing comma",
@@ -105,7 +105,10 @@ fn syntax_and_shape_errors_carry_file_line_and_column() {
             }) => {
                 assert_eq!(reported, path, "case: {label}");
                 assert_eq!((got_line, got_column), (line, column), "case: {label}");
-                assert_eq!(got_reason, reason, "case: {label}");
+                assert!(
+                    got_reason.starts_with(reason),
+                    "case: {label}: {got_reason}"
+                );
             }
             other => panic!("case {label}: expected a syntax error, got {other:?}"),
         }

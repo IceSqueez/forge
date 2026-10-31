@@ -560,6 +560,9 @@ fn every_motion_key_the_page_reads_is_one_the_alert_document_carries() {
     }
 }
 
+const MIN_STAGGER_MS: i64 = 40;
+const MAX_STAGGER_MS: i64 = 80;
+
 #[test]
 fn the_agreed_motion_pacing_holds_three_intensities_and_a_quick_default_stagger() {
     let staggers: Vec<i64> = engine_table("TEXT_EFFECTS")
@@ -568,17 +571,15 @@ fn the_agreed_motion_pacing_holds_three_intensities_and_a_quick_default_stagger(
         .map(|value| value.trim_end_matches(',').parse().unwrap())
         .collect();
 
-    assert_eq!(
-        (
-            INTENSITY_OPTIONS.len(),
-            staggers.len(),
-            staggers.iter().all(|ms| (40..=80).contains(ms)),
-            MOTION_SOURCE.contains("var ENTRANCE_SHARE = 0.75;"),
-        ),
-        (3, options(TEXT_EFFECT_OPTIONS).len(), true, true),
-        "the pacing drifted from the agreed three intensities, 40-80 ms per text unit and an \
-         entrance capped at three quarters of the window: staggers {staggers:?}"
+    assert_eq!(INTENSITY_OPTIONS.len(), 3);
+    assert_eq!(staggers.len(), options(TEXT_EFFECT_OPTIONS).len());
+    assert!(
+        staggers
+            .iter()
+            .all(|ms| (MIN_STAGGER_MS..=MAX_STAGGER_MS).contains(ms)),
+        "{staggers:?}"
     );
+    assert!(MOTION_SOURCE.contains("var ENTRANCE_SHARE = 0.75;"));
 }
 
 #[test]

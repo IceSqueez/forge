@@ -856,8 +856,8 @@ async fn a_reconnecting_page_is_handed_back_the_content_it_was_last_showing() {
     assert_eq!(
         frames.len(),
         2,
-        "a reconnect delivered {} frames instead of the one replay",
-        frames.len() - 1
+        "a reconnect left {} frames instead of the original and its one replay",
+        frames.len()
     );
     assert_eq!(
         frames[1],
@@ -1102,19 +1102,24 @@ async fn audio_to_an_identity_no_record_carries_is_refused_without_a_frame() {
     );
 }
 
+type SettingsCase = (fn(&MemorySettings), &'static str);
+
 #[tokio::test]
 async fn an_overlay_root_setting_that_names_nowhere_falls_back_to_the_default_directory() {
-    for (case, label) in [
-        (0u8, "an absent setting"),
-        (1, "a setting holding an empty string"),
-        (2, "a setting storage cannot read"),
-    ] {
+    let cases: [SettingsCase; 3] = [
+        (|_| {}, "an absent setting"),
+        (
+            |settings| settings.seed_raw(&core_settings::SERVER_OVERLAY_ROOT, ""),
+            "a setting holding an empty string",
+        ),
+        (
+            |settings| settings.fail_reads(true),
+            "a setting storage cannot read",
+        ),
+    ];
+    for (arrange, label) in cases {
         let settings = MemorySettings::new();
-        match case {
-            0 => {}
-            1 => settings.seed_raw(&core_settings::SERVER_OVERLAY_ROOT, ""),
-            _ => settings.fail_reads(true),
-        }
+        arrange(&settings);
 
         let service = OverlayServiceHandle::new(OverlayServiceParts {
             tasks: forge_net::TaskOwner::new(),

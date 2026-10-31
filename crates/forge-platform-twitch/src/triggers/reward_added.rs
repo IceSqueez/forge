@@ -136,7 +136,6 @@ impl TriggerKindDescriptor for RewardAddedDescriptor {
 
 #[cfg(test)]
 mod tests {
-    use forge_events::Event;
 
     use super::*;
 

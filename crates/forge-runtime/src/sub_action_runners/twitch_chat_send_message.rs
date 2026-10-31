@@ -263,7 +263,6 @@ mod tests {
             (Some("%platform%"), Some("kick")),
             (Some("  kick \t"), Some("kick")),
             (Some("Twitch"), Some("twitch")),
-            (Some("%platform%"), Some("kick")),
             (Some("myspace"), None),
             (None, Some("twitch")),
             (Some(""), None),

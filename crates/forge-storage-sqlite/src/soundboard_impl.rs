@@ -237,11 +237,12 @@ mod tests {
                 name: "Speakers".to_string(),
             },
             hotkey: Some("Ctrl+1".to_string()),
-            created_at: OffsetDateTime::now_utc(),
+            created_at: OffsetDateTime::UNIX_EPOCH
+                + time::Duration::milliseconds(1_700_000_000_123),
             category: "memes".to_string(),
-            loop_playback: false,
-            duration_secs: None,
-            builtin_id: None,
+            loop_playback: true,
+            duration_secs: Some(1.5),
+            builtin_id: Some("airhorn".to_string()),
         }
     }
 
@@ -252,10 +253,7 @@ mod tests {
         let repo = backend.soundboard_clips_repo_impl();
         repo.save(&clip).await.unwrap();
         let back = repo.get(clip.id).await.unwrap().unwrap();
-        assert_eq!(back.name, clip.name);
-        assert_eq!(back.file_path, clip.file_path);
-        assert!((back.volume - 0.8).abs() < 1e-6);
-        assert_eq!(back.hotkey.as_deref(), Some("Ctrl+1"));
+        assert_eq!(back, clip);
     }
 
     #[tokio::test]

@@ -325,19 +325,38 @@ pub(crate) const LATTE: ForgePalette = ForgePalette {
 mod tests {
     use super::*;
 
-    fn named_accent(theme: ThemeId, accent: AccentColor) -> Rgba {
-        let p = theme.palette();
-        match (accent, theme) {
-            (AccentColor::Red, _) => p.danger,
-            (AccentColor::Peach, _) => p.accent_peach,
-            (AccentColor::Yellow, _) => p.warning,
-            (AccentColor::Green, _) => p.success,
-            (AccentColor::Sky, _) => p.info,
-            (AccentColor::Mauve, ThemeId::Latte) => hex(0x88, 0x39, 0xef),
-            (AccentColor::Mauve, _) => p.theme_brand,
-            (AccentColor::Flamingo, ThemeId::ForgeDefault) => p.accent_pink_light,
-            (AccentColor::Flamingo, ThemeId::TokyoNight) => hex(0xff, 0x79, 0xc6),
-            (AccentColor::Flamingo, ThemeId::Latte) => hex(0xdd, 0x78, 0x78),
+    #[test]
+    fn the_accents_with_no_palette_counterpart_are_the_design_colors() {
+        for (theme, accent, expected) in [
+            (
+                ThemeId::TokyoNight,
+                AccentColor::Flamingo,
+                hex(0xff, 0x79, 0xc6),
+            ),
+            (ThemeId::Latte, AccentColor::Flamingo, hex(0xdd, 0x78, 0x78)),
+            (ThemeId::Latte, AccentColor::Mauve, hex(0x88, 0x39, 0xef)),
+        ] {
+            assert_eq!(theme.accent(accent), expected, "{theme:?} {accent:?}");
+        }
+    }
+
+    #[test]
+    fn the_keyed_fields_of_the_default_palette_are_distinct_hues() {
+        let p = &FORGE_DEFAULT;
+        let fields = [
+            ("brand", p.brand),
+            ("danger", p.danger),
+            ("shell", p.shell),
+            ("text_primary", p.text_primary),
+            ("text_secondary", p.text_secondary),
+            ("text_muted", p.text_muted),
+            ("border_regular", p.border_regular),
+            ("border_input", p.border_input),
+        ];
+        for (index, (first_name, first)) in fields.iter().enumerate() {
+            for (second_name, second) in &fields[index + 1..] {
+                assert_ne!(first, second, "{first_name} and {second_name}");
+            }
         }
     }
 
@@ -346,7 +365,7 @@ mod tests {
         for theme in ThemeId::ALL {
             for accent in AccentColor::ALL {
                 let accented = theme.accented_palette(accent);
-                let expected = named_accent(theme, accent);
+                let expected = theme.accent(accent);
 
                 assert_eq!(
                     (accented.brand, accented.border_active),
@@ -423,7 +442,7 @@ mod tests {
             for accent in AccentColor::ALL {
                 assert_eq!(
                     accent_swatch("mauve", &theme.accented_palette(accent)),
-                    Some(named_accent(theme, AccentColor::Mauve)),
+                    Some(theme.accent(AccentColor::Mauve)),
                     "{theme:?} {accent:?}"
                 );
             }

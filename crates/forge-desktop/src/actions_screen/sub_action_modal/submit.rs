@@ -116,3 +116,41 @@ fn resolve_step_label(raw: &str, kind_label: &str) -> Option<String> {
         Some(trimmed.to_owned())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{normalize_condition, resolve_step_label};
+
+    #[test]
+    fn a_condition_loses_surrounding_space_and_one_leading_if_keyword() {
+        for (raw, expected) in [
+            ("if x", Some("x")),
+            ("  if   x > 1  ", Some("x > 1")),
+            ("iffy", Some("iffy")),
+            ("if if x", Some("if x")),
+            ("x", Some("x")),
+            ("", None),
+            ("   ", None),
+        ] {
+            assert_eq!(normalize_condition(raw).as_deref(), expected, "{raw:?}");
+        }
+    }
+
+    #[test]
+    fn a_step_label_equal_to_the_kind_label_or_blank_is_dropped() {
+        for (raw, expected) in [
+            ("", None),
+            ("   ", None),
+            ("Send chat", None),
+            ("  Send chat  ", None),
+            ("send chat", Some("send chat")),
+            ("  Greet viewers ", Some("Greet viewers")),
+        ] {
+            assert_eq!(
+                resolve_step_label(raw, "Send chat").as_deref(),
+                expected,
+                "{raw:?}"
+            );
+        }
+    }
+}

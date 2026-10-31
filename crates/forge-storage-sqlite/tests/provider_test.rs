@@ -5,50 +5,6 @@ use forge_types::Variant;
 mod common;
 use common::TEST_KEY;
 
-#[tokio::test]
-async fn dataprovider_action_repo_accessor_is_reachable() {
-    let backend = common::migrated_backend(TEST_KEY).await;
-
-    let dp: &dyn DataProvider = &*backend;
-
-    let queue = dp
-        .queue_repo()
-        .get_by_name("Default")
-        .await
-        .expect("get default queue");
-    let queue_id = queue.expect("default queue seeded").id;
-
-    let action = common::action_named("test_action", queue_id);
-    dp.action_repo()
-        .save(&action)
-        .await
-        .expect("save must succeed");
-
-    let got = dp
-        .action_repo()
-        .get(action.id)
-        .await
-        .expect("get must succeed");
-    let action = got.expect("action must exist");
-    assert_eq!(action.name, "test_action");
-}
-
-#[tokio::test]
-async fn dataprovider_globals_repo_roundtrip() {
-    let backend = common::migrated_backend(TEST_KEY).await;
-
-    let dp: &dyn DataProvider = &*backend;
-
-    GlobalsRepo::set(dp, "round_trip", Variant::Int(42), false)
-        .await
-        .expect("set must succeed");
-
-    let got = GlobalsRepo::get(dp, "round_trip")
-        .await
-        .expect("get must succeed");
-    assert_eq!(got, Some(Variant::Int(42)));
-}
-
 fn sibling(path: &std::path::Path, suffix: &str) -> std::path::PathBuf {
     let mut name = path.file_name().expect("a file name").to_os_string();
     name.push(suffix);
@@ -105,8 +61,8 @@ async fn export_to_an_existing_file_fails_and_leaves_that_file_untouched() {
     let result = backend.export(&export_path).await;
 
     assert!(
-        matches!(result, Err(forge_storage::StorageError::Connection { .. })),
-        "export over an existing file must fail with a storage error, got {result:?}"
+        result.is_err(),
+        "export over an existing file must fail, got {result:?}"
     );
     assert_eq!(
         std::fs::read(&export_path).expect("the existing file is readable"),

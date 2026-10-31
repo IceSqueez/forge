@@ -101,7 +101,6 @@ fn session_host_identity(event: &Event) -> ActorIdentity {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use forge_events::Event;
     use forge_types::ArgStack;
 
     fn str_var(stack: &ArgStack, key: &str) -> String {

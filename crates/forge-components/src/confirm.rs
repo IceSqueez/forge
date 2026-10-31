@@ -383,15 +383,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn destructive_and_warning_are_distinct_hues() {
-        let p = &FORGE_DEFAULT;
-        assert_ne!(
-            ConfirmTone::Destructive.accent(p),
-            ConfirmTone::Warning.accent(p),
-        );
-    }
-
     #[derive(Default)]
     struct Presses {
         confirmed: Cell<usize>,

@@ -154,21 +154,8 @@ pub(crate) fn record_midi_event(snap: &mut MidiContentSnapshot, port: &str) {
 
 #[cfg(test)]
 mod tests {
-    use forge_platform_core::{BuiltinContent, DetailSection};
-
     use super::*;
-    use crate::client::MidiClient;
     use crate::events::PortDirection;
-
-    #[test]
-    fn sections_returns_two_sections() {
-        let c = MidiClient::new_for_test();
-        let content: &dyn BuiltinContent = &*c;
-        let sections = content.sections();
-        assert_eq!(sections.len(), 2);
-        assert!(matches!(sections[0], DetailSection::TwoColumnLists { .. }));
-        assert!(matches!(sections[1], DetailSection::KeyValueList { .. }));
-    }
 
     #[test]
     fn set_ports_replaces_every_port_list_and_the_subscribed_set_together() {

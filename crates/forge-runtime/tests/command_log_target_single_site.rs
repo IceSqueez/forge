@@ -36,7 +36,7 @@ fn the_command_line_target_is_named_exactly_once_across_the_workspace() {
         .filter_map(|path| {
             let text = std::fs::read_to_string(&path).unwrap_or_default();
             let count = text
-                .split("#[cfg(test)]")
+                .split("#[cfg(test)]\nmod tests {")
                 .next()
                 .unwrap_or_default()
                 .matches(COMMAND_TARGET)

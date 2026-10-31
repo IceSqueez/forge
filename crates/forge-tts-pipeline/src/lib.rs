@@ -1071,7 +1071,7 @@ mod tests {
     }
 
     #[test]
-    fn process_passthrough_no_config() {
+    fn default_config_speaks_text_unchanged() {
         let config = neutral_config();
         let result = process("hello world", &config, &ctx());
         assert_eq!(result, PipelineResult::Speak("hello world".into()));
@@ -1229,7 +1229,7 @@ mod tests {
     }
 
     #[test]
-    fn skip_rules_starts_with_bang() {
+    fn skip_prefix_skips_only_prefixed_messages() {
         let config = PipelineConfig {
             skip_rules: SkipRulesConfig {
                 skip_prefix: Some("!".into()),
@@ -1374,7 +1374,7 @@ mod tests {
     }
 
     #[test]
-    fn emote_stripper_strips_emoji() {
+    fn emote_stripper_removes_emoji_and_keeps_the_words() {
         let mut config = neutral_config();
         config.output.strip_emoji = true;
         let result = process("hello 🎉 world", &config, &ctx());
@@ -1537,7 +1537,7 @@ mod tests {
     }
 
     #[test]
-    fn text_replacement_case_insensitive() {
+    fn case_insensitive_rule_replaces_any_casing() {
         let config = PipelineConfig {
             replacement_rules: vec![ReplacementRule::Text {
                 pattern: "lol".into(),
@@ -1693,7 +1693,7 @@ mod tests {
     }
 
     #[test]
-    fn text_replacement_regex() {
+    fn regex_rule_replaces_every_match() {
         let config = PipelineConfig {
             replacement_rules: vec![ReplacementRule::Regex {
                 compiled: regex::Regex::new(r"\d+").unwrap(),

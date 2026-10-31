@@ -85,7 +85,7 @@ mod tests {
         Event::new(
             EventSource::Twitch,
             "twitch.channel.chat.message",
-            serde_json::json!({ "_chat_viewer": { "id": login, "name": login } }),
+            serde_json::json!({ (ChatViewer::KEY): { "id": login, "name": login } }),
         )
     }
 

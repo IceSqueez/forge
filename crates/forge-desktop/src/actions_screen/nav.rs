@@ -360,8 +360,9 @@ mod tests {
     use forge_types::{ArgStack, SubActionTelemetry};
 
     use super::{
-        ChainItem, NavFrame, append_empty_case, branch_step_count, case_list_keys, chain_steps,
-        resolve_chain, set_chain,
+        ChainItem, NavFrame, append_empty_case, branch_step_count, case_count, case_list_keys,
+        case_match_display, case_match_is_multi, chain_steps, move_case, remove_case,
+        resolve_chain, set_case_match, set_chain,
     };
 
     const LOG: &str = "core.log";
@@ -755,5 +756,167 @@ mod tests {
         let keys = [step(SWITCH), step(LOG)].map(|step| case_list_keys(&step, &registry));
 
         assert_eq!(keys, [vec![OPTIONAL_CASES_KEY], Vec::new()]);
+    }
+
+    const CASES: &str = "cases";
+
+    fn named_case(name: &str) -> Variant {
+        obj([
+            ("match", s(name)),
+            ("chain", Variant::Array(vec![s(&format!("{name}-body"))])),
+        ])
+    }
+
+    fn cases_config(names: &[&str]) -> SubActionConfig {
+        SubActionConfig::from([(
+            CASES.to_owned(),
+            Variant::Array(names.iter().map(|name| named_case(name)).collect()),
+        )])
+    }
+
+    #[test]
+    fn a_case_shows_its_match_text_unless_the_match_is_a_multi_value_list() {
+        let mut switch = step("core.switch");
+        switch.config.insert(
+            CASES.to_owned(),
+            Variant::Array(vec![
+                obj([("match", s("one"))]),
+                obj([("match", Variant::Array(vec![s("a"), s("b")]))]),
+                obj([("match", Variant::Int(7))]),
+                obj([("chain", Variant::Array(Vec::new()))]),
+                s("not a case"),
+            ]),
+        );
+
+        let cases = [
+            (0, Some("one"), false),
+            (1, None, true),
+            (2, Some("7"), false),
+            (3, Some(""), false),
+            (4, None, false),
+            (5, None, false),
+        ];
+        for (index, display, multi) in cases {
+            assert_eq!(
+                case_match_display(&switch, CASES, index).as_deref(),
+                display,
+                "display of case {index}"
+            );
+            assert_eq!(
+                case_match_is_multi(&switch, CASES, index),
+                multi,
+                "multi of case {index}"
+            );
+        }
+    }
+
+    #[test]
+    fn case_count_is_zero_unless_the_key_holds_a_list() {
+        let mut switch = step("core.switch");
+        assert_eq!(case_count(&switch, CASES), 0);
+        switch.config.insert(CASES.to_owned(), s("not a list"));
+        assert_eq!(case_count(&switch, CASES), 0);
+        switch.config = cases_config(&["a", "b"]);
+        assert_eq!(case_count(&switch, CASES), 2);
+    }
+
+    #[test]
+    fn a_missing_chain_counts_zero_steps() {
+        let populated = switch_with_two_cases();
+
+        assert_eq!(branch_step_count(&step("core.if"), THEN, None), 0);
+        assert_eq!(branch_step_count(&populated, CASES, Some(5)), 0);
+    }
+
+    #[test]
+    fn appending_a_case_over_a_value_that_is_not_a_list_starts_a_new_list() {
+        let mut config = SubActionConfig::from([(CASES.to_owned(), s("legacy"))]);
+
+        append_empty_case(&mut config, CASES);
+
+        assert_eq!(
+            config.get(CASES),
+            Some(&Variant::Array(vec![obj([
+                ("match", s("")),
+                ("chain", Variant::Array(Vec::new())),
+            ])]))
+        );
+    }
+
+    #[test]
+    fn removing_a_case_drops_only_that_case_and_ignores_an_index_past_the_end() {
+        for (index, expected) in [
+            (0, vec!["b", "c"]),
+            (2, vec!["a", "b"]),
+            (3, vec!["a", "b", "c"]),
+        ] {
+            let mut config = cases_config(&["a", "b", "c"]);
+
+            remove_case(&mut config, CASES, index);
+
+            assert_eq!(config, cases_config(&expected), "remove {index}");
+        }
+    }
+
+    #[test]
+    fn moving_a_case_swaps_it_with_its_neighbour_and_stops_at_both_ends() {
+        for (index, up, expected) in [
+            (1, true, ["b", "a", "c"]),
+            (1, false, ["a", "c", "b"]),
+            (2, true, ["a", "c", "b"]),
+            (0, false, ["b", "a", "c"]),
+            (0, true, ["a", "b", "c"]),
+            (2, false, ["a", "b", "c"]),
+            (3, true, ["a", "b", "c"]),
+            (3, false, ["a", "b", "c"]),
+            (usize::MAX, false, ["a", "b", "c"]),
+        ] {
+            let mut config = cases_config(&["a", "b", "c"]);
+
+            move_case(&mut config, CASES, index, up);
+
+            assert_eq!(config, cases_config(&expected), "move {index} up={up}");
+        }
+    }
+
+    #[test]
+    fn setting_a_case_match_replaces_a_multi_value_and_keeps_its_chain() {
+        let body = Variant::Array(vec![s("kept")]);
+        let mut config = SubActionConfig::from([(
+            CASES.to_owned(),
+            Variant::Array(vec![
+                named_case("a"),
+                obj([
+                    ("match", Variant::Array(vec![s("x"), s("y")])),
+                    ("chain", body.clone()),
+                ]),
+            ]),
+        )]);
+
+        set_case_match(&mut config, CASES, 1, "typed");
+
+        assert_eq!(
+            config.get(CASES),
+            Some(&Variant::Array(vec![
+                named_case("a"),
+                obj([("match", s("typed")), ("chain", body)]),
+            ]))
+        );
+    }
+
+    #[test]
+    fn setting_a_case_match_leaves_the_config_alone_when_there_is_no_such_case() {
+        for (index, cases) in [
+            (1, Variant::Array(vec![named_case("a")])),
+            (0, Variant::Array(vec![s("not a case")])),
+            (0, s("not a list")),
+        ] {
+            let mut config = SubActionConfig::from([(CASES.to_owned(), cases)]);
+            let before = config.clone();
+
+            set_case_match(&mut config, CASES, index, "typed");
+
+            assert_eq!(config, before);
+        }
     }
 }

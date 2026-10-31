@@ -399,15 +399,6 @@ mod tests {
     }
 
     #[test]
-    fn map_badges_subscriber_with_months() {
-        let badges = serde_json::json!([{ "set_id": "subscriber", "id": "3012", "info": "36" }]);
-        assert_eq!(
-            map_badges(Some(&badges)),
-            vec![UserBadge::Subscriber { months: 36 }]
-        );
-    }
-
-    #[test]
     fn map_badges_maps_extended_set_ids_to_their_variants() {
         let cases = [
             ("partner", "", UserBadge::Partner),
@@ -417,6 +408,7 @@ mod tests {
             ("hype-train", "", UserBadge::HypeTrain),
             ("bits", "10000", UserBadge::Bits { amount: 10000 }),
             ("bits-leader", "2", UserBadge::BitsLeader { rank: 2 }),
+            ("subscriber", "36", UserBadge::Subscriber { months: 36 }),
         ];
         for (set_id, info, expected) in cases {
             let badges = serde_json::json!([{ "set_id": set_id, "id": "1", "info": info }]);
@@ -435,48 +427,30 @@ mod tests {
     }
 
     #[test]
-    fn tier_str_to_u8_known_values() {
-        assert_eq!(tier_str_to_u8("1000"), 1);
-        assert_eq!(tier_str_to_u8("2000"), 2);
-        assert_eq!(tier_str_to_u8("3000"), 3);
+    fn tier_str_to_u8_reads_the_three_tiers_and_zeroes_anything_else() {
+        for (tier, expected) in [("1000", 1), ("2000", 2), ("3000", 3), ("", 0), ("4000", 0)] {
+            assert_eq!(tier_str_to_u8(tier), expected, "{tier:?}");
+        }
     }
 
     #[test]
-    fn tier_str_to_u8_unknown_returns_zero() {
-        assert_eq!(tier_str_to_u8(""), 0);
-        assert_eq!(tier_str_to_u8("4000"), 0);
+    fn chat_message_author_color_is_the_wire_color_and_blank_means_none() {
+        for (color, expected) in [("#FF0000", Some("#FF0000")), ("", None)] {
+            let event_data = serde_json::json!({
+                "message_id": "x",
+                "chatter_user_name": "Viewer",
+                "chatter_user_login": "viewer",
+                "color": color,
+                "message": { "text": "hi", "fragments": [] },
+                "badges": []
+            });
+            let payload = build_chat_message_chat_payload(&event_data);
+            assert_eq!(payload.author_color.as_deref(), expected, "{color:?}");
+        }
     }
 
     #[test]
-    fn chat_message_with_color_populates_author_color() {
-        let event_data = serde_json::json!({
-            "message_id": "x",
-            "chatter_user_name": "Viewer",
-            "chatter_user_login": "viewer",
-            "color": "#FF0000",
-            "message": { "text": "hi", "fragments": [] },
-            "badges": []
-        });
-        let payload = build_chat_message_chat_payload(&event_data);
-        assert_eq!(payload.author_color, Some("#FF0000".to_owned()));
-    }
-
-    #[test]
-    fn chat_message_without_color_has_none_author_color() {
-        let event_data = serde_json::json!({
-            "message_id": "x",
-            "chatter_user_name": "Viewer",
-            "chatter_user_login": "viewer",
-            "color": "",
-            "message": { "text": "hi", "fragments": [] },
-            "badges": []
-        });
-        let payload = build_chat_message_chat_payload(&event_data);
-        assert_eq!(payload.author_color, None);
-    }
-
-    #[test]
-    fn cheer_amount_encodes_bits_as_micros() {
+    fn cheer_payload_carries_the_bits_amount() {
         let event_data = serde_json::json!({
             "user_name": "cheerer",
             "user_login": "cheerer",

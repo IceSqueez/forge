@@ -833,19 +833,21 @@ async fn deleting_an_action_advances_the_schedule_revision_only_when_a_row_went(
     }
 }
 
-macro_rules! bumps {
-    ($backend:expr, $label:literal, $op:expr, $schedule:expr) => {{
-        let schedule = $backend.scheduled_run_revision();
-        let catalog = $backend.catalog_revision();
-        let before = (schedule.current(), catalog.current());
-        $op.await.expect($label);
-        assert_eq!(
-            (schedule.current() > before.0, catalog.current()),
-            ($schedule, before.1),
-            "{}",
-            $label,
-        );
-    }};
+async fn bumps<T, E: std::fmt::Debug>(
+    backend: &SqliteBackend,
+    label: &str,
+    op: impl std::future::Future<Output = Result<T, E>>,
+    expect_schedule_bump: bool,
+) {
+    let schedule = backend.scheduled_run_revision();
+    let catalog = backend.catalog_revision();
+    let before = (schedule.current(), catalog.current());
+    op.await.expect(label);
+    assert_eq!(
+        (schedule.current() > before.0, catalog.current()),
+        (expect_schedule_bump, before.1),
+        "{label}",
+    );
 }
 
 #[tokio::test]
@@ -856,30 +858,33 @@ async fn every_schedule_write_advances_the_schedule_revision_and_never_the_catal
     let keyed = spec(target, 10, Some("vip:alice"));
     let plain = spec(target, 10, None);
 
-    bumps!(backend, "schedule", repo.schedule(&keyed), true);
-    bumps!(backend, "schedule replace", repo.schedule(&keyed), true);
-    bumps!(
-        backend,
+    bumps(&backend, "schedule", repo.schedule(&keyed), true).await;
+    bumps(&backend, "schedule replace", repo.schedule(&keyed), true).await;
+    bumps(
+        &backend,
         "cancel_by_key",
         repo.cancel_by_key("vip:alice", at_min(1)),
-        true
-    );
+        true,
+    )
+    .await;
     let claimed = place(&repo, &plain).await;
-    bumps!(backend, "claim", repo.claim(claimed, at_min(1)), true);
-    bumps!(
-        backend,
+    bumps(&backend, "claim", repo.claim(claimed, at_min(1)), true).await;
+    bumps(
+        &backend,
         "settle",
         repo.settle(claimed, ScheduledRunOutcome::Failed, None, at_min(2)),
-        true
-    );
+        true,
+    )
+    .await;
     let cancelled = place(&repo, &plain).await;
-    bumps!(backend, "cancel", repo.cancel(cancelled, at_min(1)), true);
-    bumps!(
-        backend,
+    bumps(&backend, "cancel", repo.cancel(cancelled, at_min(1)), true).await;
+    bumps(
+        &backend,
         "prune",
         repo.prune_resolved_before(at_min(60)),
-        true
-    );
+        true,
+    )
+    .await;
 }
 
 #[tokio::test]
@@ -889,23 +894,25 @@ async fn schedule_reads_leave_both_revisions_unchanged() {
     let target = ActionId::new();
     let id = place(&repo, &spec(target, 10, None)).await;
 
-    bumps!(backend, "get", repo.get(id), false);
-    bumps!(backend, "list_pending", repo.list_pending(), false);
-    bumps!(backend, "list_due", repo.list_due(at_min(60)), false);
-    bumps!(backend, "next_due", repo.next_due(), false);
-    bumps!(
-        backend,
+    bumps(&backend, "get", repo.get(id), false).await;
+    bumps(&backend, "list_pending", repo.list_pending(), false).await;
+    bumps(&backend, "list_due", repo.list_due(at_min(60)), false).await;
+    bumps(&backend, "next_due", repo.next_due(), false).await;
+    bumps(
+        &backend,
         "list_recent_resolved",
         repo.list_recent_resolved(10),
-        false
-    );
-    bumps!(backend, "count_pending", repo.count_pending(), false);
-    bumps!(
-        backend,
+        false,
+    )
+    .await;
+    bumps(&backend, "count_pending", repo.count_pending(), false).await;
+    bumps(
+        &backend,
         "count_pending_for_action",
         repo.count_pending_for_action(target),
-        false
-    );
+        false,
+    )
+    .await;
 }
 
 async fn migrated_pools() -> (SqlitePools, tempfile::TempDir) {

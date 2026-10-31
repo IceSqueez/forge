@@ -656,9 +656,10 @@ async fn a_waiting_step_whose_show_is_dropped_before_it_runs_fails_at_once() {
                 Lifecycle::Delete => {
                     harness.service.delete(&id).await.unwrap();
                 }
-                _ => {
+                Lifecycle::Disable => {
                     harness.service.set_enabled(&id, false).await.unwrap();
                 }
+                Lifecycle::Enable => unreachable!("the loop never enables"),
             }
         });
 

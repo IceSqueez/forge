@@ -461,10 +461,8 @@ async fn accepted_refresh_hands_forge_the_token_the_fake_now_accepts() {
     let fake = start(FakeKickSetup::default()).await;
     let manager = manager(&fake, &KickAccount::default().client_secret).await;
     let token = manager.get_valid_access_token().await.unwrap();
-    assert_eq!(
-        (token.as_str() != KickAccount::default().access_token, token),
-        (true, fake.access_token())
-    );
+    assert_ne!(token, KickAccount::default().access_token);
+    assert_eq!(token, fake.access_token());
 }
 
 #[tokio::test]

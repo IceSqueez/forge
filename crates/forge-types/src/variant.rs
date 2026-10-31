@@ -413,27 +413,20 @@ mod tests {
     }
 
     #[test]
-    fn float_rejects_nan() {
-        assert!(matches!(
-            Variant::float(f64::NAN),
-            Err(TypesError::InvalidFloat { reason: "NaN" })
-        ));
-    }
-
-    #[test]
-    fn float_rejects_positive_infinity() {
-        assert!(matches!(
-            Variant::float(f64::INFINITY),
-            Err(TypesError::InvalidFloat { reason: "infinite" })
-        ));
-    }
-
-    #[test]
-    fn float_rejects_negative_infinity() {
-        assert!(matches!(
-            Variant::float(f64::NEG_INFINITY),
-            Err(TypesError::InvalidFloat { reason: "infinite" })
-        ));
+    fn float_rejects_non_finite_values_naming_the_reason() {
+        for (value, expected) in [
+            (f64::NAN, "NaN"),
+            (f64::INFINITY, "infinite"),
+            (f64::NEG_INFINITY, "infinite"),
+        ] {
+            assert!(
+                matches!(
+                    Variant::float(value),
+                    Err(TypesError::InvalidFloat { reason }) if reason == expected
+                ),
+                "{value}"
+            );
+        }
     }
 
     #[test]
@@ -779,7 +772,7 @@ mod tests {
     }
 
     #[test]
-    fn display_format_non_allocating_for_collections() {
+    fn collections_display_as_their_item_or_key_count() {
         let arr = Variant::Array(vec![Variant::Int(1), Variant::Int(2)]);
         assert_eq!(arr.to_string(), "[2 items]");
 

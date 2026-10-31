@@ -1108,7 +1108,7 @@ mod tests {
             .expect("history channel closed")
     }
 
-    fn quick_step(kind_id: &str, config: BTreeMap<String, Variant>) -> SubActionStep {
+    fn action_step(kind_id: &str, config: BTreeMap<String, Variant>) -> SubActionStep {
         SubActionStep {
             kind_id: kind_id.to_owned(),
             config,
@@ -1168,7 +1168,7 @@ mod tests {
         for (kind, expected) in cases {
             engine
                 .execute_quick_action(
-                    quick_step(kind, BTreeMap::new()),
+                    action_step(kind, BTreeMap::new()),
                     "obs".to_owned(),
                     kind.to_owned(),
                     None,
@@ -1202,7 +1202,7 @@ mod tests {
 
         engine
             .execute_quick_action(
-                quick_step("quick.probe", BTreeMap::new()),
+                action_step("quick.probe", BTreeMap::new()),
                 "twitch".to_owned(),
                 "Set title".to_owned(),
                 None,
@@ -1244,7 +1244,7 @@ mod tests {
 
         engine
             .execute_quick_action(
-                quick_step("quick.probe", BTreeMap::new()),
+                action_step("quick.probe", BTreeMap::new()),
                 "obs".to_owned(),
                 "Run".to_owned(),
                 None,
@@ -1254,7 +1254,7 @@ mod tests {
         let first = recv_ctx(&mut rx).await;
         engine
             .execute_quick_action(
-                quick_step("quick.probe", BTreeMap::new()),
+                action_step("quick.probe", BTreeMap::new()),
                 "obs".to_owned(),
                 "Run".to_owned(),
                 None,
@@ -1296,7 +1296,7 @@ mod tests {
         overrides.insert("a".to_owned(), Variant::Int(99));
         engine
             .execute_quick_action(
-                quick_step("test.record", overrides),
+                action_step("test.record", overrides),
                 "obs".to_owned(),
                 "Rec".to_owned(),
                 None,
@@ -1436,7 +1436,7 @@ mod tests {
     async fn self_loop_rig() -> SelfLoopRig {
         self_loop_rig_with(
             EventBus::new(Arc::new(NullEventLogRepo)),
-            vec![quick_step(EMIT_KIND, BTreeMap::new())],
+            vec![action_step(EMIT_KIND, BTreeMap::new())],
         )
         .await
     }
@@ -1445,7 +1445,7 @@ mod tests {
         small_ring_rig(
             steps
                 .iter()
-                .map(|kind_id| quick_step(kind_id, BTreeMap::new()))
+                .map(|kind_id| action_step(kind_id, BTreeMap::new()))
                 .collect(),
         )
         .await
@@ -1618,7 +1618,7 @@ mod tests {
     }
 
     fn taken_branch_around(kind_id: &str) -> SubActionStep {
-        quick_step(
+        action_step(
             "core.logic.if_then_else",
             BTreeMap::from([
                 ("condition".to_owned(), Variant::String("1 == 1".to_owned())),
@@ -1628,7 +1628,7 @@ mod tests {
     }
 
     fn single_pass_loop_around(kind_id: &str) -> SubActionStep {
-        quick_step(
+        action_step(
             "core.logic.loop",
             BTreeMap::from([
                 ("mode".to_owned(), Variant::String("count".to_owned())),
@@ -1678,7 +1678,7 @@ mod tests {
     #[tokio::test]
     async fn finished_run_releases_every_lineage_it_held() {
         let rig = small_ring_rig(vec![
-            quick_step(EMIT_KIND, BTreeMap::new()),
+            action_step(EMIT_KIND, BTreeMap::new()),
             taken_branch_around(EMIT_KIND),
             single_pass_loop_around(EMIT_KIND),
         ])
@@ -1695,7 +1695,7 @@ mod tests {
     async fn cancelled_run_releases_every_lineage_it_held() {
         let rig = small_ring_rig(vec![
             taken_branch_around(CANCEL_KIND),
-            quick_step(EMIT_KIND, BTreeMap::new()),
+            action_step(EMIT_KIND, BTreeMap::new()),
         ])
         .await;
         let mut sub = rig.bus.subscribe();
@@ -1717,7 +1717,7 @@ mod tests {
 
         rig.engine
             .execute_quick_action(
-                quick_step(EMIT_KIND, BTreeMap::new()),
+                action_step(EMIT_KIND, BTreeMap::new()),
                 "obs".to_owned(),
                 "Run".to_owned(),
                 Some(parent_id),

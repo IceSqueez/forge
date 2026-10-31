@@ -108,7 +108,7 @@ mod tests {
 
     #[test]
     fn eval_treats_percent_tokens_literally_without_re_interpolating() {
-        assert!(eval("%kills%").is_err());
+        assert!(matches!(eval("%kills%"), Err(ScriptError::Compile { .. })));
     }
 
     #[test]

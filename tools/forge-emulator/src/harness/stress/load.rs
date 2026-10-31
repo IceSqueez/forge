@@ -236,8 +236,7 @@ mod tests {
             other => panic!("chat stimulus delivered {other:?}"),
         };
         let first_cycle: Vec<String> = (0..3).map(user).collect();
-        let mut distinct = first_cycle.clone();
-        distinct.dedup();
+        let distinct: std::collections::HashSet<&String> = first_cycle.iter().collect();
         assert_eq!(distinct.len(), 3);
         assert_eq!((3..6).map(user).collect::<Vec<_>>(), first_cycle);
     }

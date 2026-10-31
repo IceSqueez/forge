@@ -461,7 +461,7 @@ mod tests {
     }
 
     #[test]
-    fn arg_stack_set_returns_new_layer() {
+    fn chained_sets_keep_every_earlier_key() {
         let s1 = ArgStack::new();
         let s2 = s1.set("x".to_string(), Variant::Int(1));
         let s3 = s2.set("y".to_string(), Variant::Int(2));

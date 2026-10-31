@@ -113,7 +113,7 @@ fn skip_rules_longer_than_checks_original_length_not_post_replacement_length() {
 }
 
 #[test]
-fn url_skip_rule_prevents_downstream_processing() {
+fn a_url_skip_wins_over_a_censoring_blocklist() {
     let config = PipelineConfig {
         skip_rules: SkipRulesConfig {
             contains_url: true,

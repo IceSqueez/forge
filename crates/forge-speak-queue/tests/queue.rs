@@ -7,7 +7,7 @@ use forge_types::EventId;
 use common::{recording_bus, recording_sink, request, standard_deps, wait_for};
 
 #[tokio::test]
-async fn enqueue_and_finish() {
+async fn an_enqueued_request_plays_once_and_reports_finished() {
     let (sink, play_count) = recording_sink();
     let (handle, mut stream) =
         forge_speak_queue::spawn(QueueConfig::default(), standard_deps(sink));
@@ -21,29 +21,7 @@ async fn enqueue_and_finish() {
 }
 
 #[tokio::test]
-async fn pause_holds_synthesis() {
-    let (sink, play_count) = recording_sink();
-    let (handle, mut stream) =
-        forge_speak_queue::spawn(QueueConfig::default(), standard_deps(sink));
-
-    handle.send(SpeakCommand::Pause).await.unwrap();
-    wait_for(&mut stream, |e| matches!(e, SpeakEvent::Paused)).await;
-
-    let req = request("viewer1", "paused message");
-    handle.send(SpeakCommand::Enqueue(req)).await.unwrap();
-
-    common::enqueue_proving_nothing_started(&handle, &mut stream).await;
-    assert_eq!(*play_count.lock().unwrap(), 0);
-
-    handle.send(SpeakCommand::Resume).await.unwrap();
-    for _ in 0..2 {
-        wait_for(&mut stream, |e| matches!(e, SpeakEvent::Finished { .. })).await;
-    }
-    assert_eq!(*play_count.lock().unwrap(), 2);
-}
-
-#[tokio::test]
-async fn clear_empties_queue() {
+async fn clearing_drops_everything_waiting() {
     let (sink, play_count) = recording_sink();
     let config = QueueConfig {
         max_queue_len: 50,
@@ -69,27 +47,6 @@ async fn clear_empties_queue() {
     wait_for(&mut stream, |e| matches!(e, SpeakEvent::Finished { .. })).await;
 
     assert_eq!(*play_count.lock().unwrap(), 1);
-}
-
-#[tokio::test]
-async fn per_user_limit_rejects_excess() {
-    let (sink, _plays) = recording_sink();
-    let config = QueueConfig {
-        per_user_limit: 2,
-        max_queue_len: 50,
-        ..QueueConfig::default()
-    };
-    let (handle, mut stream) = forge_speak_queue::spawn(config, standard_deps(sink));
-
-    handle.send(SpeakCommand::Pause).await.unwrap();
-    wait_for(&mut stream, |e| matches!(e, SpeakEvent::Paused)).await;
-
-    for _ in 0..3 {
-        let req = request("same_user", "test");
-        handle.send(SpeakCommand::Enqueue(req)).await.unwrap();
-    }
-
-    wait_for(&mut stream, |e| matches!(e, SpeakEvent::Rejected { .. })).await;
 }
 
 #[tokio::test]

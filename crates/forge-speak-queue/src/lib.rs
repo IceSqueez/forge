@@ -395,12 +395,11 @@ pub use filters::BuiltConfig;
 mod tests {
     use super::*;
 
-    #[tokio::test]
-    async fn handle_send_returns_actor_gone_after_drop() {
-        let (cmd_tx, cmd_rx) = tokio::sync::mpsc::channel::<SpeakCommand>(1);
-        let (event_tx, _event_rx) = tokio::sync::broadcast::channel::<SpeakEvent>(1);
-        drop(cmd_rx);
-        let handle = SpeakQueueHandle {
+    fn test_handle(
+        cmd_tx: tokio::sync::mpsc::Sender<SpeakCommand>,
+        event_tx: tokio::sync::broadcast::Sender<SpeakEvent>,
+    ) -> SpeakQueueHandle {
+        SpeakQueueHandle {
             tx: cmd_tx,
             event_tx,
             depth: Arc::new(AtomicUsize::new(0)),
@@ -417,33 +416,24 @@ mod tests {
             registry: Shared::new(TtsRegistry::new()),
             targeted_legs: Shared::new(None),
             language_detector_ready: tokio::sync::watch::channel(false).1,
-        };
+        }
+    }
+
+    #[tokio::test]
+    async fn handle_send_returns_actor_gone_after_drop() {
+        let (cmd_tx, cmd_rx) = tokio::sync::mpsc::channel::<SpeakCommand>(1);
+        let (event_tx, _event_rx) = tokio::sync::broadcast::channel::<SpeakEvent>(1);
+        drop(cmd_rx);
+        let handle = test_handle(cmd_tx, event_tx);
         let result = handle.send(SpeakCommand::Skip).await;
         assert!(matches!(result, Err(SpeakError::ActorGone)));
     }
 
     #[tokio::test]
-    async fn subscribe_returns_new_receiver() {
+    async fn a_subscriber_receives_events_sent_after_subscribing() {
         let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::channel::<SpeakCommand>(1);
         let (event_tx, _event_rx) = tokio::sync::broadcast::channel::<SpeakEvent>(8);
-        let handle = SpeakQueueHandle {
-            tx: cmd_tx,
-            event_tx: event_tx.clone(),
-            depth: Arc::new(AtomicUsize::new(0)),
-            voices: Shared::new(Vec::new()),
-            disabled_engines: Shared::new(HashSet::new()),
-            master_volume_bits: Arc::new(AtomicU32::new(1.0f32.to_bits())),
-            engine_gains: Shared::new(HashMap::new()),
-            resolver: Shared::new(VoiceAliasResolver::new(
-                Vec::new(),
-                AssignmentStrategy::DeterministicByName,
-                forge_speech_types::IgnoreProfile::default(),
-                SynthesisDefaults::default(),
-            )),
-            registry: Shared::new(TtsRegistry::new()),
-            targeted_legs: Shared::new(None),
-            language_detector_ready: tokio::sync::watch::channel(false).1,
-        };
+        let handle = test_handle(cmd_tx, event_tx.clone());
         let mut sub = handle.subscribe();
         event_tx
             .send(SpeakEvent::Cleared)

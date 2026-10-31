@@ -285,7 +285,7 @@ async fn sub_action_runner_sees_merged_default_and_override() {
 }
 
 #[tokio::test]
-async fn linked_action_executes_via_join_table_only() {
+async fn an_instance_without_a_link_row_dispatches_nothing() {
     let (backend, _media) = make_backend().await;
     let dp: Arc<dyn DataProvider> = Arc::clone(&backend) as Arc<dyn DataProvider>;
 

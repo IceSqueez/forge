@@ -1,5 +1,4 @@
-#![allow(clippy::expect_used)]
-#![cfg(unix)]
+#![expect(clippy::expect_used, reason = "test fixtures")]
 
 use std::path::PathBuf;
 use std::time::Duration;
@@ -31,11 +30,8 @@ fn synthetic_voice(
 }
 
 fn fake_piper_binary(dir: &std::path::Path) -> PathBuf {
-    use std::os::unix::fs::PermissionsExt;
     let path = dir.join("piper");
-    std::fs::write(&path, b"#!/bin/sh\nexit 0\n").expect("write fake binary");
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))
-        .expect("chmod fake binary");
+    std::fs::write(&path, b"placeholder").expect("write fake binary");
     path
 }
 
@@ -54,7 +50,20 @@ async fn end_to_end_voice_listing_through_engine() {
 
     let engine = PiperEngine::new(piper, voices_dir, Duration::from_secs(30)).expect("engine");
     let voices = engine.list_voices().await.expect("list_voices");
-    assert_eq!(voices.len(), 5);
+    let listed: Vec<(String, &str)> = voices
+        .iter()
+        .map(|voice| (voice.locale.to_string(), voice.id.0.as_str()))
+        .collect();
+    let expected = [
+        ("en-US", "en_US-amy-medium"),
+        ("en-US", "en_US-multi#0"),
+        ("en-US", "en_US-multi#1"),
+        ("en-US", "en_US-multi#2"),
+        ("uk-UA", "uk_UA-ukrainian-medium"),
+    ]
+    .map(|(locale, id)| (locale.to_owned(), id))
+    .to_vec();
+    assert_eq!(listed, expected);
 }
 
 #[tokio::test]

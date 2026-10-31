@@ -462,7 +462,15 @@ fn rejecting(seen: Seen<'_>) -> Reply {
         | "GetRecordStatus"
         | "GetInputSettings"
         | "SetCurrentProfile"
-        | "SetCurrentSceneCollection" => Reply::Reject,
+        | "SetCurrentSceneCollection"
+        | "StartStream"
+        | "SaveReplayBuffer"
+        | "StartVirtualCam"
+        | "SetSourceFilterEnabled"
+        | "TriggerMediaInputAction"
+        | "SaveSourceScreenshot"
+        | "SetCurrentSceneTransition"
+        | "SendStreamCaption" => Reply::Reject,
         "SetCurrentPreviewScene" | "TriggerStudioModeTransition" => {
             Reply::RejectWith(OBS_STUDIO_MODE_NOT_ACTIVE)
         }
@@ -490,6 +498,23 @@ fn rejected_table() -> Vec<(Command, &'static str)> {
             |c| c.set_current_scene_collection(COLLECTION),
             "SetCurrentSceneCollection",
         ),
+        (|c| c.start_stream(), "StartStream"),
+        (|c| c.save_replay_buffer(), "SaveReplayBuffer"),
+        (|c| c.start_virtual_cam(), "StartVirtualCam"),
+        (
+            |c| c.set_source_filter_enabled(SOURCE, FILTER, true),
+            "SetSourceFilterEnabled",
+        ),
+        (|c| c.restart_media_input(INPUT), "TriggerMediaInputAction"),
+        (
+            |c| c.save_source_screenshot(SOURCE, SCREENSHOT_PATH, SCREENSHOT_FORMAT),
+            "SaveSourceScreenshot",
+        ),
+        (
+            |c| c.set_current_scene_transition(TRANSITION),
+            "SetCurrentSceneTransition",
+        ),
+        (|c| c.send_stream_caption(CAPTION), "SendStreamCaption"),
         (
             |c| Box::pin(async move { c.get_record_status().await.map(|_| ()) }),
             "GetRecordStatus",

@@ -23,7 +23,7 @@ pub mod vocabulary;
 pub use api::categories::KickCategories;
 pub use api::channel::KickChannel;
 pub use api::chat_messages::KickSendChat;
-pub use api::moderation::KickModeration;
+pub use api::moderation::{BanNote, BanSubject, KickModeration};
 pub use api::poller::spawn_kick_poller;
 pub use api::rewards::KickRewards;
 pub use auth::credentials::{CREDENTIAL_KEY, KickCredentials};

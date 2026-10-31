@@ -37,7 +37,6 @@ serde_json = { workspace = true, features = ["preserve_order"] }
 tempfile = { workspace = true }
 sha2 = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
-ulid = { workspace = true }
 
 [target.'cfg(unix)'.dev-dependencies]
 libc = { workspace = true }

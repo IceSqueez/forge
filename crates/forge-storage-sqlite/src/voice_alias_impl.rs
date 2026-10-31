@@ -26,17 +26,17 @@ pub(crate) async fn upsert_alias(
             .map_err(SqliteStorageError::Sqlx)?;
 
     let stored_id = match viewer_holder {
-        Some((holder_id,)) if holder_id != alias.id.0 => {
+        Some((holder_id,)) if holder_id != alias.id.as_str() => {
             let id_is_stored: Option<(i64,)> =
                 sqlx::query_as("SELECT 1 FROM voice_aliases WHERE id = ?")
-                    .bind(&alias.id.0)
+                    .bind(alias.id.as_str())
                     .fetch_optional(&mut *conn)
                     .await
                     .map_err(SqliteStorageError::Sqlx)?;
             if id_is_stored.is_some() {
                 return Err(StorageError::AliasViewerTaken);
             }
-            AliasId(holder_id)
+            AliasId::from_string(holder_id)
         }
         _ => alias.id.clone(),
     };
@@ -56,7 +56,7 @@ pub(crate) async fn upsert_alias(
             state           = excluded.state,
             updated_at      = excluded.updated_at",
     )
-    .bind(&stored_id.0)
+    .bind(stored_id.as_str())
     .bind(&alias.viewer_id)
     .bind(&alias.viewer_name)
     .bind(&alias.engine_id.0)
@@ -131,7 +131,7 @@ fn decode_alias_row(row: AliasRow) -> Result<VoiceAlias, StorageError> {
         }
     };
     Ok(VoiceAlias {
-        id: AliasId(row.id),
+        id: AliasId::from_string(row.id),
         viewer_id: row.viewer_id,
         viewer_name: row.viewer_name,
         engine_id: EngineId(row.engine_id),
@@ -171,7 +171,7 @@ impl VoiceAliasRepo for SqliteVoiceAliasRepo {
 
     async fn delete(&self, id: &AliasId) -> Result<(), StorageError> {
         sqlx::query("DELETE FROM voice_aliases WHERE id = ?")
-            .bind(&id.0)
+            .bind(id.as_str())
             .execute(self.db.writer())
             .await
             .map_err(SqliteStorageError::Sqlx)?;
@@ -264,7 +264,7 @@ mod tests {
 
     fn sample_alias() -> VoiceAlias {
         VoiceAlias {
-            id: AliasId(ulid::Ulid::generate().to_string()),
+            id: AliasId::new(),
             viewer_id: "123456".into(),
             viewer_name: "testviewer".into(),
             engine_id: EngineId("piper".into()),
@@ -355,7 +355,7 @@ mod tests {
 
     fn alias(id: &str, viewer_id: &str, voice: &str) -> VoiceAlias {
         VoiceAlias {
-            id: AliasId(id.into()),
+            id: AliasId::from_string(id.into()),
             viewer_id: viewer_id.into(),
             voice_id: VoiceId(voice.into()),
             ..sample_alias()
@@ -368,7 +368,7 @@ mod tests {
             .await
             .expect("list")
             .into_iter()
-            .map(|a| (a.id.0, a.viewer_id, a.voice_id.0))
+            .map(|a| (a.id.as_str().to_owned(), a.viewer_id, a.voice_id.0))
             .collect();
         rows.sort();
         rows
@@ -452,7 +452,7 @@ mod tests {
 
         assert_eq!(
             (
-                returned.id.0.as_str(),
+                returned.id.as_str(),
                 returned.viewer_id.as_str(),
                 returned.viewer_name.as_str(),
                 returned.engine_id.0.as_str(),

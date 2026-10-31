@@ -143,13 +143,13 @@ impl SetupImport<'_, '_> {
         let kept: BTreeSet<&str> = voices
             .aliases
             .iter()
-            .map(|alias| alias.id.0.as_str())
+            .map(|alias| alias.id.as_str())
             .collect();
         let absent: Vec<_> = self
             .inventory
             .voice_aliases
             .iter()
-            .filter(|alias| !kept.contains(alias.id.0.as_str()))
+            .filter(|alias| !kept.contains(alias.id.as_str()))
             .map(|alias| alias.id.clone())
             .collect();
         for id in absent {

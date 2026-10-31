@@ -7,7 +7,7 @@ use std::sync::Arc;
 use forge_net::{Gateway, RateLimiter};
 use forge_platform_core::{ChatPlatform, EndpointSurface, PlatformEndpoints};
 use forge_platform_kick::{
-    ChannelInfoFetcher, KickAuthBundle, KickCategories, KickChannel, KickChat,
+    BanNote, BanSubject, ChannelInfoFetcher, KickAuthBundle, KickCategories, KickChannel, KickChat,
     KickCredentialsManager, KickModeration, KickOAuthClient, KickPlatform, KickRewards,
     KickSendChat, kick_api_gateway, kick_channel_info_gateway, kick_oauth_gateway,
 };
@@ -118,7 +118,14 @@ async fn public_api_override_carries_every_rest_client_to_the_override_host() {
     sender.send("hi", "tok", 7, false).await.ok();
     sender.delete("msg-1", "tok").await.ok();
     KickModeration::new(api(&endpoints), ban_ledger())
-        .ban(9, 7, None, None, "tok")
+        .ban(
+            BanSubject {
+                target_user_id: 9,
+                broadcaster_user_id: 7,
+            },
+            BanNote::default(),
+            "tok",
+        )
         .await
         .ok();
     KickChannel::new(api(&endpoints))

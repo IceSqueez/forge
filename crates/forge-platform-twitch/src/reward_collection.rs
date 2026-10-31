@@ -491,15 +491,13 @@ impl BuiltinCollections for TwitchIntegrationBundle {
 
     async fn list(&self, collection: &CollectionId) -> CollectionOutcome<Vec<CollectionItem>> {
         let broadcaster_id = self.rewards_broadcaster(collection)?;
-        let all = self
-            .reward_call(
+        let (all, manageable) = tokio::try_join!(
+            self.reward_call(
                 list_request(broadcaster_id.clone(), false),
                 RewardCall::List,
-            )
-            .await?;
-        let manageable = self
-            .reward_call(list_request(broadcaster_id, true), RewardCall::List)
-            .await?;
+            ),
+            self.reward_call(list_request(broadcaster_id, true), RewardCall::List),
+        )?;
         let owned: HashSet<&str> = rows(&manageable).filter_map(row_id).collect();
         Ok(rows(&all)
             .filter_map(|row| {

@@ -30,11 +30,26 @@ impl HotkeySyncedTriggerRepo {
     async fn sync(&self) {
         self.reconciler.reconcile().await;
     }
+
+    async fn stored_as_hotkey(&self, id: TriggerInstanceId) -> bool {
+        match self.inner.get(id).await {
+            Ok(Some(stored)) => is_hotkey(&stored),
+            Ok(None) => false,
+            Err(error) => {
+                tracing::debug!(%error, "trigger kind unreadable; syncing hotkeys anyway");
+                true
+            }
+        }
+    }
+}
+
+fn is_hotkey(instance: &TriggerInstance) -> bool {
+    HotkeyEdge::from_kind(&instance.kind_id).is_some()
 }
 
 fn canonicalized(instance: &TriggerInstance) -> Result<TriggerInstance, StorageError> {
     let mut canonical = instance.clone();
-    if HotkeyEdge::from_kind(&instance.kind_id).is_none() {
+    if !is_hotkey(instance) {
         return Ok(canonical);
     }
     if let Some(Variant::String(raw)) = instance.overrides.get(COMBO_FIELD) {
@@ -149,14 +164,20 @@ impl TriggerInstanceRepo for HotkeySyncedTriggerRepo {
 
     async fn save(&self, instance: &TriggerInstance) -> Result<(), StorageError> {
         let canonical = canonicalized(instance)?;
+        let touches_hotkey = is_hotkey(&canonical) || self.stored_as_hotkey(instance.id).await;
         self.inner.save(&canonical).await?;
-        self.sync().await;
+        if touches_hotkey {
+            self.sync().await;
+        }
         Ok(())
     }
 
     async fn delete(&self, id: TriggerInstanceId) -> Result<bool, StorageError> {
+        let touches_hotkey = self.stored_as_hotkey(id).await;
         let deleted = self.inner.delete(id).await?;
-        self.sync().await;
+        if touches_hotkey {
+            self.sync().await;
+        }
         Ok(deleted)
     }
 
@@ -170,7 +191,9 @@ impl TriggerInstanceRepo for HotkeySyncedTriggerRepo {
 
     async fn set_enabled(&self, id: TriggerInstanceId, enabled: bool) -> Result<(), StorageError> {
         self.inner.set_enabled(id, enabled).await?;
-        self.sync().await;
+        if self.stored_as_hotkey(id).await {
+            self.sync().await;
+        }
         Ok(())
     }
 
@@ -185,14 +208,19 @@ impl TriggerInstanceRepo for HotkeySyncedTriggerRepo {
     }
 
     async fn archive(&self, id: TriggerInstanceId) -> Result<bool, StorageError> {
+        let touches_hotkey = self.stored_as_hotkey(id).await;
         let archived = self.inner.archive(id).await?;
-        self.sync().await;
+        if touches_hotkey {
+            self.sync().await;
+        }
         Ok(archived)
     }
 
     async fn restore(&self, id: TriggerInstanceId) -> Result<bool, StorageError> {
         let restored = self.inner.restore(id).await?;
-        self.sync().await;
+        if self.stored_as_hotkey(id).await {
+            self.sync().await;
+        }
         Ok(restored)
     }
 

@@ -135,8 +135,7 @@ impl TwitchIntegrationBundle {
         Self::spawn_health_bridge(&bundle);
         Self::spawn_token_expiry_bridge(&bundle);
         Self::spawn_viewer_poll(&bundle, transport);
-        Self::spawn_identity_refresh(&bundle);
-        Self::spawn_lifecycle_seed(&bundle);
+        Self::spawn_stored_expiry_read(&bundle);
         bundle
     }
 
@@ -271,6 +270,13 @@ impl TwitchIntegrationBundle {
         self.record_reported_connection(state.to_connection_state());
     }
 
+    fn spawn_stored_expiry_read(bundle: &Arc<Self>) {
+        let bundle = Arc::clone(bundle);
+        tokio::spawn(async move {
+            bundle.read_stored_expiry().await;
+        });
+    }
+
     fn spawn_identity_refresh(bundle: &Arc<Self>) {
         let bundle = Arc::clone(bundle);
         tokio::spawn(async move {
@@ -308,16 +314,22 @@ impl TwitchIntegrationBundle {
         });
     }
 
-    pub(crate) async fn refresh_identity(&self) {
+    async fn read_stored_expiry(&self) -> Option<credentials::StoredCredential> {
         let stored = match credentials::load(self.creds.as_ref()).await {
-            Ok(Some(stored)) => stored,
-            Ok(None) => return,
+            Ok(stored) => stored?,
             Err(error) => {
                 tracing::warn!(%error, "broadcaster credentials unreadable; identity not refreshed");
-                return;
+                return None;
             }
         };
         self.record_token_expiry(stored.expires_at);
+        Some(stored)
+    }
+
+    pub(crate) async fn refresh_identity(&self) {
+        let Some(stored) = self.read_stored_expiry().await else {
+            return;
+        };
         match resolve_broadcaster_tier(self.transport.as_ref(), &stored.user_id).await {
             Ok(tier) => self.record_tier(tier),
             Err(error) => tracing::debug!(%error, "broadcaster tier unavailable"),

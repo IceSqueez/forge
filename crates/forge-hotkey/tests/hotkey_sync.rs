@@ -326,6 +326,7 @@ async fn a_refused_write_leaves_the_client_registrations_untouched() {
         inner
             .expect_list_all()
             .returning(move || Ok(vec![listed.clone()]));
+        inner.expect_get().returning(|_| Ok(None));
         inner.expect_save().returning(move |_| Err(failure()));
         inner.expect_delete().returning(move |_| Err(failure()));
         inner.expect_archive().returning(move |_| Err(failure()));

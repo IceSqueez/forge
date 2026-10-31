@@ -3,23 +3,19 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ConfigProblem, ConfigReason, ConfigSpec, Interpolation, OptionalField, RunContext, StepTimer,
+    ConfigProblem, ConfigReason, ConfigSpec, Interpolation, RunContext, StepTimer,
     SubActionCategory, SubActionRunner, TextEditor, TextField, TypedField,
 };
 use forge_types::{ArgStack, SubActionTelemetry};
 
-use super::fields::{MESSAGE_ID, WEBHOOK, optional_text, present, unlisted_text};
+use super::fields::{MESSAGE_ID, WEBHOOK, optional_text, present};
 use super::mention_fields::{ALLOW_EVERYONE_PINGS, ALLOW_ROLE_PINGS, read_mention_policy};
 use super::step_failure;
-use crate::embed::DiscordEmbed;
 use crate::mention::MentionPolicy;
 use crate::sink::DiscordSink;
 use crate::vocabulary::{config_keys, sub_action_ids};
 
 const CONTENT: TextField = optional_text(config_keys::CONTENT, "New Content", TextEditor::Area);
-
-const EMBED_TITLE: OptionalField<TextField> =
-    unlisted_text(config_keys::EMBED_TITLE, "Embed Title");
 
 const CONFIG: ConfigSpec = ConfigSpec::new(&[
     &WEBHOOK,
@@ -30,36 +26,24 @@ const CONFIG: ConfigSpec = ConfigSpec::new(&[
 ]);
 
 fn no_content() -> ConfigProblem {
-    ConfigProblem::whole(ConfigReason::any_of([
-        config_keys::CONTENT,
-        config_keys::EMBED_TITLE,
-    ]))
+    ConfigProblem::whole(ConfigReason::any_of([config_keys::CONTENT]))
 }
 
 struct MessageEdit {
     webhook: String,
     message_id: String,
-    content: Option<String>,
-    embed: Option<DiscordEmbed>,
+    content: String,
     mentions: MentionPolicy,
 }
 
 fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<MessageEdit, ConfigProblem> {
     let webhook = WEBHOOK.read(config, args)?;
     let message_id = MESSAGE_ID.read(config, args)?;
-    let content = present(CONTENT.read(config, args)?);
-    let embed_title = EMBED_TITLE.read(config, args)?.and_then(present);
-    if content.is_none() && embed_title.is_none() {
-        return Err(no_content());
-    }
+    let content = present(CONTENT.read(config, args)?).ok_or_else(no_content)?;
     Ok(MessageEdit {
         webhook,
         message_id,
         content,
-        embed: embed_title.map(|title| DiscordEmbed {
-            title: Some(title),
-            ..Default::default()
-        }),
         mentions: read_mention_policy(config, args)?,
     })
 }
@@ -110,9 +94,7 @@ impl SubActionRunner for EditMessageRunner {
         interpolation: Interpolation<'_>,
     ) -> Result<(), ConfigProblem> {
         let content = CONTENT.peek(config, interpolation)?;
-        let embed_title = EMBED_TITLE.peek(config, interpolation)?;
-        if content.is_some_and(|text| present(text).is_none()) && matches!(embed_title, Some(None))
-        {
+        if content.is_some_and(|text| present(text).is_none()) {
             return Err(no_content());
         }
         Ok(())
@@ -133,8 +115,8 @@ impl SubActionRunner for EditMessageRunner {
             .edit_message(
                 &edit.webhook,
                 &edit.message_id,
-                edit.content.as_deref(),
-                edit.embed,
+                Some(&edit.content),
+                None,
                 edit.mentions,
             )
             .await;
@@ -150,12 +132,11 @@ mod tests {
 
     const SNOWFLAKE: &str = "123456789012345678";
 
-    fn edit(content: &str, embed_title: &str) -> Result<MessageEdit, ConfigProblem> {
+    fn edit(content: &str) -> Result<MessageEdit, ConfigProblem> {
         let config: SubActionConfig = [
             (config_keys::WEBHOOK_NAME, "alerts"),
             (config_keys::MESSAGE_ID, SNOWFLAKE),
             (config_keys::CONTENT, content),
-            (config_keys::EMBED_TITLE, embed_title),
         ]
         .iter()
         .map(|(key, value)| ((*key).to_owned(), Variant::String((*value).to_owned())))
@@ -164,24 +145,16 @@ mod tests {
     }
 
     #[test]
-    fn an_edit_with_neither_content_nor_embed_title_is_refused() {
-        for (content, embed_title) in [("", ""), ("  ", "\n")] {
-            let refused = edit(content, embed_title).err().expect("nothing to edit");
+    fn an_edit_without_content_is_refused() {
+        for content in ["", "  ", "\n"] {
+            let refused = edit(content).err().expect("nothing to edit");
             assert!(matches!(refused.reason, ConfigReason::AnyOfRequired(_)));
         }
     }
 
     #[test]
-    fn an_edit_carries_only_the_parts_it_was_given() {
-        let text_only = edit("new text", "").expect("content alone is an edit");
-        assert_eq!(text_only.content.as_deref(), Some("new text"));
-        assert_eq!(text_only.embed, None);
-
-        let embed_only = edit("", "New title").expect("an embed title alone is an edit");
-        assert_eq!(embed_only.content, None);
-        assert_eq!(
-            embed_only.embed.and_then(|embed| embed.title).as_deref(),
-            Some("New title")
-        );
+    fn an_edit_carries_its_content() {
+        let edited = edit("new text").expect("content is an edit");
+        assert_eq!(edited.content, "new text");
     }
 }

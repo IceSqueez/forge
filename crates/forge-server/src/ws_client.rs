@@ -103,7 +103,7 @@ impl WsClient {
         Self::compute_eps(&self.recent_events.lock_recover())
     }
 
-    pub(crate) fn record_event(&self) -> f32 {
+    pub(crate) fn record_event(&self) {
         let now = Instant::now();
         let mut guard = self.recent_events.lock_recover();
         guard.push_back(now);
@@ -113,7 +113,6 @@ impl WsClient {
         while guard.front().is_some_and(|&oldest| oldest < cutoff) {
             guard.pop_front();
         }
-        Self::compute_eps(&guard)
     }
 
     fn compute_eps(deque: &VecDeque<Instant>) -> f32 {
@@ -214,11 +213,11 @@ mod tests {
         tokio::time::pause();
         let client = make_client();
 
-        let mut reported = 0.0;
         for _ in 0..EVENTS_WINDOW_SECS * 25 {
-            reported = client.record_event();
+            client.record_event();
         }
 
+        let reported = client.events_per_second();
         assert!(
             (reported - 25.0).abs() < 0.001,
             "expected 25 ev/s, got {reported}"

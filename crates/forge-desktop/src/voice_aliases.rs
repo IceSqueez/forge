@@ -884,7 +884,7 @@ impl VoiceAliasesView {
         cx: &mut Context<Self>,
     ) -> DataRow {
         let muted = row.blocked;
-        let row_key: SharedString = row.id.0.clone().into();
+        let row_key: SharedString = row.id.as_str().to_owned().into();
         let name_color = if muted {
             palette.text_muted
         } else {
@@ -1296,7 +1296,7 @@ mod tests {
 
     fn keyed(id: &str, viewer_id: &str, voice: &str) -> VoiceAlias {
         VoiceAlias {
-            id: AliasId(id.to_owned()),
+            id: AliasId::from_string(id.to_owned()),
             voice_id: VoiceId(voice.to_owned()),
             ..stored_alias(viewer_id, viewer_id)
         }
@@ -1367,7 +1367,7 @@ mod tests {
         });
 
         let live = live_alias_for(&fixture, "twitch:alice").expect("live alias");
-        assert_eq!(live.id.0, "stored");
+        assert_eq!(live.id.as_str(), "stored");
     }
 
     #[gpui::test]
@@ -1404,7 +1404,7 @@ mod tests {
             .block_on(fixture.backend.voice_alias_repo().list())
             .expect("list")
             .into_iter()
-            .map(|alias| alias.id.0)
+            .map(|alias| alias.id.as_str().to_owned())
             .collect::<Vec<_>>();
         ids.sort();
         ids
@@ -1433,7 +1433,7 @@ mod tests {
         let fixture = mount_loaded(cx, &rt, vec![alice.clone(), bob.clone()]);
 
         fixture.view.update(cx, |view, cx| {
-            view.request_delete(AliasId("b".to_owned()), cx);
+            view.request_delete(AliasId::from_string("b".to_owned()), cx);
             view.apply_aliases(vec![bob, alice], cx);
             view.confirm_delete(cx);
         });
@@ -1450,7 +1450,7 @@ mod tests {
         let fixture = mount_loaded(cx, &rt, vec![alice.clone(), bob]);
 
         fixture.view.update(cx, |view, cx| {
-            view.request_delete(AliasId("b".to_owned()), cx);
+            view.request_delete(AliasId::from_string("b".to_owned()), cx);
             view.apply_aliases(vec![alice], cx);
             view.confirm_delete(cx);
         });
@@ -1482,7 +1482,7 @@ mod tests {
         ] {
             let rt = runtime();
             let seeded = VoiceAlias {
-                id: AliasId("a1".to_owned()),
+                id: AliasId::from_string("a1".to_owned()),
                 ..stored_alias(viewer_id, viewer_name)
             };
             let (fixture, vcx) = mount_in_window(cx, &rt, vec![seeded]);
@@ -1493,7 +1493,7 @@ mod tests {
 
             vcx.update(|window, cx| {
                 view.update(cx, |view, cx| {
-                    view.open_edit(&AliasId("a1".to_owned()), window, cx)
+                    view.open_edit(&AliasId::from_string("a1".to_owned()), window, cx)
                 })
             });
             vcx.run_until_parked();
@@ -1527,7 +1527,7 @@ mod tests {
     ) {
         let rt = runtime();
         let seeded = VoiceAlias {
-            id: AliasId("a1".to_owned()),
+            id: AliasId::from_string("a1".to_owned()),
             engine_id: EngineId("elevenlabs".to_owned()),
             pitch_semitones: Some(-2.5),
             rate_multiplier: Some(1.25),
@@ -1542,7 +1542,7 @@ mod tests {
 
         vcx.update(|window, cx| {
             view.update(cx, |view, cx| {
-                view.open_edit(&AliasId("a1".to_owned()), window, cx)
+                view.open_edit(&AliasId::from_string("a1".to_owned()), window, cx)
             })
         });
         vcx.run_until_parked();
@@ -2222,7 +2222,7 @@ mod tests {
         listing.wait_for(cx, |cx| listing.rows(cx) == 1);
 
         listing.view.update(cx, |view, cx| {
-            view.preview(&AliasId("a".to_owned()), cx);
+            view.preview(&AliasId::from_string("a".to_owned()), cx);
         });
         listing.wait_for(cx, |cx| cx.update(|cx| error_toasts(cx)) == 1);
 

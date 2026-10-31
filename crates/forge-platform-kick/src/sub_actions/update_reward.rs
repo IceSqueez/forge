@@ -165,11 +165,6 @@ impl SubActionRunner for UpdateRewardRunner {
                             title: update.title,
                             cost: update.cost,
                             description: update.description,
-                            background_color: None,
-                            is_enabled: None,
-                            is_paused: None,
-                            is_user_input_required: None,
-                            should_redemptions_skip_request_queue: None,
                         },
                         &token,
                     )

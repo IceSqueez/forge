@@ -322,7 +322,6 @@ fn admit(destination_id: &RemoteDestinationId, live_players: usize) -> Result<()
     if live_players == 0 {
         return Err(AudioError::NoRemoteListener {
             destination: destination_id.to_string(),
-            live_players,
         });
     }
     Ok(())
@@ -532,10 +531,10 @@ mod tests {
         assert!(
             matches!(
                 &refusal,
-                Some(AudioError::NoRemoteListener { destination, live_players })
-                    if destination == DESTINATION && *live_players == 0
+                Some(AudioError::NoRemoteListener { destination })
+                    if destination == DESTINATION
             ),
-            "a route nobody listens to must name the overlay and the count, got {refusal:?}"
+            "a route nobody listens to must name the overlay, got {refusal:?}"
         );
         assert_eq!(
             page.verdict_calls(),

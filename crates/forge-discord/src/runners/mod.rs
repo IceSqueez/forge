@@ -488,7 +488,7 @@ mod tests {
         }
     }
 
-    fn any_of(keys: [&str; 2]) -> forge_registry::ConfigProblem {
+    fn any_of<const N: usize>(keys: [&str; N]) -> forge_registry::ConfigProblem {
         forge_registry::ConfigProblem::whole(forge_registry::ConfigReason::any_of(keys))
     }
 
@@ -499,13 +499,13 @@ mod tests {
         let embed = PostEmbedRunner::new(Arc::new(MockSink));
         let edit = EditMessageRunner::new(Arc::new(MockSink));
         let embed_needs = Some(any_of(["embed_title", "embed_description"]));
-        let edit_needs = Some(any_of(["content", "embed_title"]));
+        let edit_needs = Some(any_of(["content"]));
         type Case<'a> = (
             &'a dyn SubActionRunner,
             Vec<(&'a str, &'a str)>,
             Option<forge_registry::ConfigProblem>,
         );
-        let cases: [Case<'_>; 10] = [
+        let cases: [Case<'_>; 9] = [
             (&embed, vec![], embed_needs.clone()),
             (
                 &embed,
@@ -517,7 +517,6 @@ mod tests {
             (&embed, vec![("embed_title", "%title%")], None),
             (&edit, vec![], edit_needs.clone()),
             (&edit, vec![("content", "")], edit_needs),
-            (&edit, vec![("embed_title", "Live")], None),
             (&edit, vec![("content", "Ended")], None),
             (&edit, vec![("content", "%summary%")], None),
         ];
@@ -544,15 +543,15 @@ mod tests {
         type Case<'a> = (
             &'a dyn SubActionRunner,
             Vec<(&'a str, &'a str)>,
-            [&'a str; 2],
+            forge_registry::ConfigProblem,
         );
         let cases: [Case<'_>; 2] = [
             (
                 &embed,
                 vec![("embed_title", "  "), ("embed_description", "\t")],
-                ["embed_title", "embed_description"],
+                any_of(["embed_title", "embed_description"]),
             ),
-            (&edit, vec![("content", "  ")], ["content", "embed_title"]),
+            (&edit, vec![("content", "  ")], any_of(["content"])),
         ];
 
         for (runner, entries, needs) in cases {
@@ -564,7 +563,7 @@ mod tests {
                 .err()
                 .map(|error| error.into_config_problem());
 
-            assert_eq!(problem, Some(any_of(needs)), "{} {entries:?}", runner.id());
+            assert_eq!(problem, Some(needs), "{} {entries:?}", runner.id());
         }
     }
 
@@ -583,7 +582,7 @@ mod tests {
                 "embed_title",
                 any_of(["embed_title", "embed_description"]),
             ),
-            (&edit, "content", any_of(["content", "embed_title"])),
+            (&edit, "content", any_of(["content"])),
         ];
         let stack = ArgStack::new().set("empty".to_owned(), text(""));
         let publisher = NullPublisher;

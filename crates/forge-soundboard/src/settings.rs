@@ -108,11 +108,6 @@ impl SoundboardSettingsHandle {
         SoundboardSettingsChanges(self.revision.subscribe())
     }
 
-    pub fn swap(&self, settings: SoundboardSettings) {
-        *self.current.write_recover() = Arc::new(settings);
-        self.announce_change();
-    }
-
     pub fn update(&self, change: impl FnOnce(&mut SoundboardSettings)) -> Arc<SoundboardSettings> {
         let next = {
             let mut guard = self.current.write_recover();
@@ -200,27 +195,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_listener_is_woken_by_swap_and_update_and_reads_the_new_settings() {
-        let changes: [fn(&SoundboardSettingsHandle); 2] = [
-            |handle| {
-                handle.swap(SoundboardSettings {
-                    master_volume: 0.25,
-                    ..SoundboardSettings::default()
-                });
-            },
-            |handle| {
-                handle.update(|settings| settings.master_volume = 0.25);
-            },
-        ];
-        for change in changes {
-            let handle = SoundboardSettingsHandle::default();
-            let mut listener = handle.changes();
+    async fn a_listener_is_woken_by_update_and_reads_the_new_settings() {
+        let handle = SoundboardSettingsHandle::default();
+        let mut listener = handle.changes();
 
-            change(&handle);
+        handle.update(|settings| settings.master_volume = 0.25);
 
-            assert!(listener.changed().await);
-            assert_eq!(handle.load().master_volume, 0.25);
-        }
+        assert!(listener.changed().await);
+        assert_eq!(handle.load().master_volume, 0.25);
     }
 
     #[tokio::test]

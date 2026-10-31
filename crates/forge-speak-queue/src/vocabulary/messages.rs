@@ -374,7 +374,6 @@ mod tests {
             AudioError::AllRoutesFailed("a".into()),
             AudioError::NoRemoteListener {
                 destination: "overlay".into(),
-                live_players: 0,
             },
         ]
     }
@@ -634,7 +633,6 @@ mod tests {
             (
                 AudioError::NoRemoteListener {
                     destination: "overlay".into(),
-                    live_players: 0,
                 },
                 expected(
                     "speak.no_overlay_listener",

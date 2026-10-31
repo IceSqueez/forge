@@ -14,7 +14,7 @@ use super::ban_reason::REASON;
 use super::display_name;
 use super::fields::USER_ID;
 use super::step_failure;
-use crate::api::moderation::KickModeration;
+use crate::api::moderation::{BanNote, BanSubject, KickModeration};
 use crate::vocabulary::{config_keys, sub_action_ids};
 
 const MIN_TIMEOUT_MINUTES: i64 = 1;
@@ -131,11 +131,15 @@ impl SubActionRunner for TimeoutUserRunner {
                     &self
                         .client
                         .timeout(
-                            request.target_id,
-                            broadcaster_user_id,
+                            BanSubject {
+                                target_user_id: request.target_id,
+                                broadcaster_user_id,
+                            },
                             request.minutes,
-                            display_name.as_deref(),
-                            request.reason.as_deref(),
+                            BanNote {
+                                display_name: display_name.as_deref(),
+                                reason: request.reason.as_deref(),
+                            },
                             &token,
                         )
                         .await,

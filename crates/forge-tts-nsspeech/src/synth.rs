@@ -27,13 +27,21 @@ pub(crate) enum NsSpeechRequest {
 }
 
 #[cfg(target_os = "macos")]
+const WORKER_THREAD_NAME: &str = "avspeech-worker";
+
+#[cfg(target_os = "macos")]
 pub(crate) fn spawn_worker() -> mpsc::Sender<NsSpeechRequest> {
     let (tx, rx) = mpsc::channel::<NsSpeechRequest>();
-    std::thread::spawn(move || {
-        // SAFETY: the synthesizer is created and used only on this worker thread and has no init preconditions.
-        let synth = unsafe { objc2_avf_audio::AVSpeechSynthesizer::new() };
-        worker_loop(synth, rx);
-    });
+    let spawned = std::thread::Builder::new()
+        .name(WORKER_THREAD_NAME.to_owned())
+        .spawn(move || {
+            // SAFETY: the synthesizer is created and used only on this worker thread and has no init preconditions.
+            let synth = unsafe { objc2_avf_audio::AVSpeechSynthesizer::new() };
+            worker_loop(synth, rx);
+        });
+    if let Err(error) = spawned {
+        tracing::error!(%error, "speech worker thread not started");
+    }
     tx
 }
 
@@ -187,7 +195,7 @@ fn run_synthesis(
 
     let (mutex, cvar) = &*shared;
     let guard = mutex.lock().unwrap_or_else(|e| e.into_inner());
-    let (final_state, timeout_result) = cvar
+    let (mut final_state, timeout_result) = cvar
         .wait_timeout_while(guard, SYNTHESIS_WAIT_TIMEOUT, |s| !s.done)
         .unwrap_or_else(|e| e.into_inner());
 
@@ -201,7 +209,7 @@ fn run_synthesis(
     }
 
     Ok(PcmBuffer::new(
-        final_state.samples.clone(),
+        std::mem::take(&mut final_state.samples),
         final_state.sample_rate,
         final_state.channels as u16,
     ))

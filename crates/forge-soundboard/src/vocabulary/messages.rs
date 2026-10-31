@@ -188,7 +188,6 @@ mod tests {
             (
                 AudioError::NoRemoteListener {
                     destination: "ov".into(),
-                    live_players: 0,
                 },
                 "soundboard.no_overlay_listener",
             ),
@@ -279,8 +278,7 @@ mod tests {
         );
         assert_eq!(
             audio_failure(&AudioError::NoRemoteListener {
-                destination: "ov".into(),
-                live_players: 3,
+                destination: "ov".into()
             })
             .arg("destination"),
             Some(&verbatim("ov"))

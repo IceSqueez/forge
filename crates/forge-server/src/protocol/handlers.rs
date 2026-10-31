@@ -387,7 +387,8 @@ pub(crate) async fn handle_get_overlay_files(recursive: bool, ctx: &DispatchCont
             if files.len() >= MAX_OVERLAY_FILE_ENTRIES {
                 break 'walk;
             }
-            let canon_entry = match crate::sandbox::confine(root, &entry.path()).await {
+            let canon_entry = match crate::sandbox::confine_within(&canon_root, &entry.path()).await
+            {
                 Some(p) => p,
                 None => continue,
             };

@@ -163,7 +163,7 @@ mod tests {
     use crate::api::categories::KickCategories;
     use crate::api::channel::KickChannel;
     use crate::api::chat_messages::KickSendChat;
-    use crate::api::moderation::KickModeration;
+    use crate::api::moderation::{BanNote, BanSubject, KickModeration};
     use crate::api::rewards::{CreateRewardParams, KickRewards};
     use crate::pusher::error::KickError;
     use crate::test_support::{
@@ -174,6 +174,11 @@ mod tests {
     const TOKEN: &str = "kick-secret-token-9f3a";
 
     type Outcome = Result<(), PlatformError>;
+
+    const BAN_SUBJECT: BanSubject = BanSubject {
+        target_user_id: 99,
+        broadcaster_user_id: 42,
+    };
 
     struct Clients {
         send: KickSendChat,
@@ -205,8 +210,8 @@ mod tests {
                 self.channel
                     .update_info(TOKEN, Some("t".to_owned()), None, None),
                 self.channel.get_channel(TOKEN),
-                self.moderation.ban(99, 42, None, None, TOKEN),
-                self.moderation.unban(99, 42, TOKEN),
+                self.moderation.ban(BAN_SUBJECT, BanNote::default(), TOKEN),
+                self.moderation.unban(BAN_SUBJECT, TOKEN),
                 self.rewards.create(reward(), TOKEN),
                 self.rewards.list_pending_redemptions(TOKEN),
             );
@@ -229,10 +234,6 @@ mod tests {
             title: "Hydrate".to_owned(),
             cost: 500,
             description: None,
-            background_color: None,
-            is_enabled: None,
-            is_user_input_required: None,
-            should_redemptions_skip_request_queue: None,
         }
     }
 

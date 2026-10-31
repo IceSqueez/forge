@@ -122,13 +122,12 @@ impl BuiltinContent for DiscordClient {
                     .as_deref()
                     .map(|id| id.chars().take(8).collect::<String>())
                     .unwrap_or_else(|| "no-id".to_owned());
-                let ts = r
-                    .sent_at
-                    .format(
-                        &time::format_description::parse_borrowed::<2>("[hour]:[minute]:[second]")
-                            .unwrap_or_default(),
-                    )
-                    .unwrap_or_else(|_| "--:--:--".to_owned());
+                let ts = format!(
+                    "{:02}:{:02}:{:02}",
+                    r.sent_at.hour(),
+                    r.sent_at.minute(),
+                    r.sent_at.second()
+                );
                 ContentListItem {
                     icon: SectionIcon::new("message"),
                     icon_tint: None,

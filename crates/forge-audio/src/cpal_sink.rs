@@ -67,21 +67,11 @@ const OUTPUT_CANDIDATES: [OutputCandidate; 2] =
 
 pub(crate) struct CpalSink {
     device_id: DeviceId,
-    target_sample_rate: Option<u32>,
-    target_channels: Option<u16>,
 }
 
 impl CpalSink {
-    pub(crate) fn new(
-        device_id: DeviceId,
-        target_sample_rate: Option<u32>,
-        target_channels: Option<u16>,
-    ) -> Self {
-        Self {
-            device_id,
-            target_sample_rate,
-            target_channels,
-        }
+    pub(crate) fn new(device_id: DeviceId) -> Self {
+        Self { device_id }
     }
 
     async fn start_playback(
@@ -93,8 +83,6 @@ impl CpalSink {
         let request = PlaybackRequest {
             device_id: self.device_id.as_str().to_owned(),
             buffer,
-            target_sr: self.target_sample_rate,
-            target_ch: self.target_channels,
             control,
             started: started_tx,
         };
@@ -157,8 +145,6 @@ impl Drop for StopIfAbandoned {
 struct PlaybackRequest {
     device_id: String,
     buffer: PcmBuffer,
-    target_sr: Option<u32>,
-    target_ch: Option<u16>,
     control: Arc<PlaybackControl>,
     started: oneshot::Sender<()>,
 }
@@ -173,8 +159,6 @@ fn run_playback(request: PlaybackRequest) -> Result<(), AudioError> {
     let PlaybackRequest {
         device_id,
         buffer,
-        target_sr,
-        target_ch,
         control,
         started,
     } = request;
@@ -187,7 +171,7 @@ fn run_playback(request: PlaybackRequest) -> Result<(), AudioError> {
     let mut last_error = AudioError::NoDefaultDevice;
     for candidate in OUTPUT_CANDIDATES {
         let attempt = locate_device(&host, candidate, &device_id)
-            .and_then(|device| try_start_stream(&device, &buffer, target_sr, target_ch, &watch));
+            .and_then(|device| try_start_stream(&device, &buffer, &watch));
         match attempt {
             Ok(stream) => {
                 opened = Some((candidate, stream));
@@ -260,20 +244,15 @@ fn locate_device(
 fn try_start_stream(
     device: &cpal::Device,
     buffer: &PcmBuffer,
-    target_sr: Option<u32>,
-    target_ch: Option<u16>,
     watch: &Arc<OutputWatch>,
 ) -> Result<StartedStream, AudioError> {
     let config = device
         .default_output_config()
         .map_err(|e| AudioError::Host(e.to_string()))?;
 
-    let device_sr = config.sample_rate();
-    let device_ch = config.channels();
+    let dst_sr = config.sample_rate();
+    let dst_ch = config.channels();
     let sample_format = config.sample_format();
-
-    let dst_sr = target_sr.unwrap_or(device_sr);
-    let dst_ch = target_ch.unwrap_or(device_ch);
 
     let converted = prepare_samples(buffer, dst_sr, dst_ch)?;
 

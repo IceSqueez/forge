@@ -80,5 +80,5 @@ pub(crate) async fn resolve_output_device(
 }
 
 pub(crate) fn build_cpal_sink(device_id: DeviceId) -> Arc<dyn AudioSink> {
-    Arc::new(CpalSink::new(device_id, None, None))
+    Arc::new(CpalSink::new(device_id))
 }

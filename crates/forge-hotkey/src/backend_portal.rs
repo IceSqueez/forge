@@ -89,7 +89,7 @@ enum PortalCmd {
         HotkeyCombo,
         oneshot::Sender<Result<(), HotkeyError>>,
     ),
-    Unregister(HotkeyId),
+    Unregister(HotkeyId, oneshot::Sender<Result<(), HotkeyError>>),
 }
 
 struct PortalOutputs {
@@ -192,9 +192,14 @@ impl HotkeyBackend for PortalBackend {
     }
 
     async fn unregister(&self, id: HotkeyId) -> Result<(), HotkeyError> {
+        let (reply_tx, reply_rx) = oneshot::channel();
         self.cmd_tx
-            .try_send(PortalCmd::Unregister(id))
-            .map_err(|e| HotkeyError::Backend(e.to_string()))
+            .send(PortalCmd::Unregister(id, reply_tx))
+            .await
+            .map_err(|_| HotkeyError::Backend("portal session task stopped".to_owned()))?;
+        reply_rx
+            .await
+            .map_err(|_| HotkeyError::Backend("portal session task stopped".to_owned()))?
     }
 
     async fn shutdown(&self, grace: Duration) -> TaskShutdown {
@@ -247,7 +252,14 @@ impl PortalSession {
                             )]
                             let _ = reply.send(outcome);
                         }
-                        Some(PortalCmd::Unregister(id)) => self.unregister(id).await,
+                        Some(PortalCmd::Unregister(id, reply)) => {
+                            let outcome = self.unregister(id).await;
+                            #[expect(
+                                clippy::let_underscore_must_use,
+                                reason = "the requester may stop waiting for the reply"
+                            )]
+                            let _ = reply.send(outcome);
+                        }
                         None => break,
                     }
                 }
@@ -329,13 +341,18 @@ impl PortalSession {
         })
     }
 
-    async fn unregister(&mut self, id: HotkeyId) {
+    async fn unregister(&mut self, id: HotkeyId) -> Result<(), HotkeyError> {
         let Some(combo) = self.registered.remove(&id) else {
-            return;
+            return Ok(());
         };
         self.shortcut_ids.remove(combo.as_str());
         let outcome = self.bind().await.map(|_| ());
+        let reply = match &outcome {
+            Ok(()) => Ok(()),
+            Err(reason) => Err(HotkeyError::Backend(reason.to_string())),
+        };
         self.note_session_outcome(outcome).await;
+        reply
     }
 
     async fn note_session_outcome(&mut self, outcome: Result<(), HotkeyError>) {

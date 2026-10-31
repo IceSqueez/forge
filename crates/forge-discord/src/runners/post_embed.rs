@@ -3,13 +3,12 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
 use forge_registry::{
-    ConfigProblem, ConfigReason, ConfigSpec, DeclaredField, Interpolation, OptionalField,
-    RunContext, StepTimer, SubActionCategory, SubActionIo, SubActionRunner, TextEditor, TextField,
-    TypedField,
+    ConfigProblem, ConfigReason, ConfigSpec, Interpolation, RunContext, StepTimer,
+    SubActionCategory, SubActionIo, SubActionRunner, TextEditor, TextField, TypedField,
 };
 use forge_types::{ArgStack, SubActionTelemetry};
 
-use super::fields::{WEBHOOK, optional_text, present, unlisted_text};
+use super::fields::{WEBHOOK, optional_text, present};
 use super::step_failure;
 use super::{message_id_scope_io, message_id_stack};
 use crate::embed::DiscordEmbed;
@@ -29,17 +28,6 @@ const DESCRIPTION: TextField = optional_text(
     "Description",
     TextEditor::Area,
 );
-
-const FOOTER_TEXT: OptionalField<TextField> =
-    unlisted_text(config_keys::EMBED_FOOTER_TEXT, "Footer");
-const AUTHOR_NAME: OptionalField<TextField> =
-    unlisted_text(config_keys::EMBED_AUTHOR_NAME, "Author");
-const THUMBNAIL_URL: OptionalField<TextField> =
-    unlisted_text(config_keys::EMBED_THUMBNAIL_URL, "Thumbnail URL");
-const IMAGE_URL: OptionalField<TextField> =
-    unlisted_text(config_keys::EMBED_IMAGE_URL, "Image URL");
-
-const UNLISTED: [&dyn DeclaredField; 4] = [&FOOTER_TEXT, &AUTHOR_NAME, &THUMBNAIL_URL, &IMAGE_URL];
 
 const CONFIG: ConfigSpec = ConfigSpec::new(&[&WEBHOOK, &TITLE, &DESCRIPTION]);
 
@@ -67,10 +55,6 @@ fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<EmbedPost, C
         embed: DiscordEmbed {
             title,
             description,
-            footer_text: FOOTER_TEXT.read(config, args)?.and_then(present),
-            author_name: AUTHOR_NAME.read(config, args)?.and_then(present),
-            thumbnail_url: THUMBNAIL_URL.read(config, args)?.and_then(present),
-            image_url: IMAGE_URL.read(config, args)?.and_then(present),
             ..Default::default()
         },
     })
@@ -121,9 +105,6 @@ impl SubActionRunner for PostEmbedRunner {
         config: &SubActionConfig,
         interpolation: Interpolation<'_>,
     ) -> Result<(), ConfigProblem> {
-        UNLISTED
-            .iter()
-            .try_for_each(|field| field.check(config, interpolation))?;
         let title = TITLE.peek(config, interpolation)?;
         let description = DESCRIPTION.peek(config, interpolation)?;
         if title.is_some_and(|text| present(text).is_none())
@@ -195,16 +176,12 @@ mod tests {
     }
 
     #[test]
-    fn every_embed_field_interpolates_and_blank_optional_parts_stay_out_of_the_embed() {
+    fn the_embed_title_and_description_interpolate() {
         let args = ArgStack::new().set("who".to_owned(), Variant::String("alice".to_owned()));
         let config = config(&[
             (config_keys::WEBHOOK_NAME, "alerts"),
             (config_keys::EMBED_TITLE, "for %who%"),
             (config_keys::EMBED_DESCRIPTION, "hi %who%"),
-            (config_keys::EMBED_FOOTER_TEXT, "by %who%"),
-            (config_keys::EMBED_AUTHOR_NAME, "  "),
-            (config_keys::EMBED_THUMBNAIL_URL, "https://t.example/%who%"),
-            (config_keys::EMBED_IMAGE_URL, ""),
         ]);
 
         let post = read_config(&config, &args).expect("the embed has content");
@@ -214,8 +191,6 @@ mod tests {
             DiscordEmbed {
                 title: Some("for alice".to_owned()),
                 description: Some("hi alice".to_owned()),
-                footer_text: Some("by alice".to_owned()),
-                thumbnail_url: Some("https://t.example/alice".to_owned()),
                 ..Default::default()
             }
         );

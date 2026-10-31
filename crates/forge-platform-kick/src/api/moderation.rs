@@ -15,6 +15,18 @@ const MODERATION_REFUSALS: RefusalReasons = RefusalReasons {
     forbidden: Some("moderation forbidden (403); check moderation:ban scope"),
 };
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BanSubject {
+    pub target_user_id: u64,
+    pub broadcaster_user_id: u64,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct BanNote<'a> {
+    pub display_name: Option<&'a str>,
+    pub reason: Option<&'a str>,
+}
+
 pub struct KickModeration {
     api: Gateway,
     ban_ledger: Arc<dyn BanLedgerRepo>,
@@ -27,68 +39,39 @@ impl KickModeration {
 
     pub async fn ban(
         &self,
-        target_user_id: u64,
-        broadcaster_user_id: u64,
-        display_name: Option<&str>,
-        reason: Option<&str>,
+        subject: BanSubject,
+        note: BanNote<'_>,
         token: &str,
     ) -> Result<(), PlatformError> {
-        self.post_ban(target_user_id, broadcaster_user_id, None, reason, token)
-            .await?;
-        self.record_issued_ban(
-            target_user_id,
-            broadcaster_user_id,
-            display_name,
-            None,
-            reason,
-        )
-        .await;
+        self.post_ban(subject, None, note.reason, token).await?;
+        self.record_issued_ban(subject, note, None).await;
         Ok(())
     }
 
     pub async fn timeout(
         &self,
-        target_user_id: u64,
-        broadcaster_user_id: u64,
+        subject: BanSubject,
         duration_minutes: u32,
-        display_name: Option<&str>,
-        reason: Option<&str>,
+        note: BanNote<'_>,
         token: &str,
     ) -> Result<(), PlatformError> {
-        self.post_ban(
-            target_user_id,
-            broadcaster_user_id,
-            Some(duration_minutes),
-            reason,
-            token,
-        )
-        .await?;
-        self.record_issued_ban(
-            target_user_id,
-            broadcaster_user_id,
-            display_name,
-            Some(timeout_term_minutes(duration_minutes)),
-            reason,
-        )
-        .await;
+        self.post_ban(subject, Some(duration_minutes), note.reason, token)
+            .await?;
+        self.record_issued_ban(subject, note, Some(timeout_term_minutes(duration_minutes)))
+            .await;
         Ok(())
     }
 
-    pub async fn unban(
-        &self,
-        target_user_id: u64,
-        broadcaster_user_id: u64,
-        token: &str,
-    ) -> Result<(), PlatformError> {
+    pub async fn unban(&self, subject: BanSubject, token: &str) -> Result<(), PlatformError> {
         let body = serde_json::json!({
-            "broadcaster_user_id": broadcaster_user_id,
-            "user_id": target_user_id,
+            "broadcaster_user_id": subject.broadcaster_user_id,
+            "user_id": subject.target_user_id,
         });
         self.send_bans(GatewayRequest::delete(BANS_PATH), token, &body)
             .await?;
         self.forget_ban(&ban_ledger_key(
-            broadcaster_user_id,
-            &target_user_id.to_string(),
+            subject.broadcaster_user_id,
+            &subject.target_user_id.to_string(),
         ))
         .await;
         Ok(())
@@ -96,15 +79,14 @@ impl KickModeration {
 
     async fn post_ban(
         &self,
-        target_user_id: u64,
-        broadcaster_user_id: u64,
+        subject: BanSubject,
         duration_minutes: Option<u32>,
         reason: Option<&str>,
         token: &str,
     ) -> Result<(), PlatformError> {
         let mut body = serde_json::json!({
-            "broadcaster_user_id": broadcaster_user_id,
-            "user_id": target_user_id,
+            "broadcaster_user_id": subject.broadcaster_user_id,
+            "user_id": subject.target_user_id,
         });
         if let Some(minutes) = duration_minutes {
             body["duration"] = serde_json::Value::from(minutes);
@@ -133,14 +115,12 @@ impl KickModeration {
 
     async fn record_issued_ban(
         &self,
-        target_user_id: u64,
-        broadcaster_user_id: u64,
-        display_name: Option<&str>,
+        subject: BanSubject,
+        note: BanNote<'_>,
         term: Option<Duration>,
-        reason: Option<&str>,
     ) {
-        let viewer_id = target_user_id.to_string();
-        let key = ban_ledger_key(broadcaster_user_id, &viewer_id);
+        let viewer_id = subject.target_user_id.to_string();
+        let key = ban_ledger_key(subject.broadcaster_user_id, &viewer_id);
         let banned_at = OffsetDateTime::now_utc();
         let known_name = match self.ban_ledger.get(&key, banned_at).await {
             Ok(stored) => stored.map(|entry| entry.viewer_name),
@@ -151,11 +131,11 @@ impl KickModeration {
         };
         let entry = issued_ban(
             key,
-            display_name
+            note.display_name
                 .map(str::to_owned)
                 .or(known_name)
                 .unwrap_or(viewer_id),
-            reason.map(str::to_owned),
+            note.reason.map(str::to_owned),
             banned_at,
             term,
         );
@@ -204,7 +184,9 @@ mod tests {
                 .mount(&server)
                 .await;
 
-            let result = moderation_on(&server).ban(99, 42, None, None, "tok").await;
+            let result = moderation_on(&server)
+                .ban(SUBJECT, BanNote::default(), "tok")
+                .await;
             assert!(result.is_ok(), "status {status} must map to Ok");
 
             let body = last_body(&server).await;
@@ -229,7 +211,7 @@ mod tests {
             .await;
 
         let result = moderation_on(&server)
-            .timeout(99, 42, 15, None, None, "tok")
+            .timeout(SUBJECT, 15, BanNote::default(), "tok")
             .await;
         assert!(result.is_ok());
 
@@ -249,12 +231,16 @@ mod tests {
             .mount(&server)
             .await;
 
-        let result = moderation_on(&server).unban(99, 42, "tok").await;
+        let result = moderation_on(&server).unban(SUBJECT, "tok").await;
         assert!(result.is_ok());
     }
 
     const TARGET: u64 = 99;
     const BROADCASTER: u64 = 42;
+    const SUBJECT: BanSubject = BanSubject {
+        target_user_id: TARGET,
+        broadcaster_user_id: BROADCASTER,
+    };
 
     fn moderation_over(server: &MockServer, ledger: &Arc<MemoryBanLedger>) -> KickModeration {
         KickModeration::new(
@@ -302,12 +288,27 @@ mod tests {
         match duration_minutes {
             None => {
                 moderation
-                    .ban(TARGET, BROADCASTER, None, reason, "tok")
+                    .ban(
+                        SUBJECT,
+                        BanNote {
+                            display_name: None,
+                            reason,
+                        },
+                        "tok",
+                    )
                     .await
             }
             Some(minutes) => {
                 moderation
-                    .timeout(TARGET, BROADCASTER, minutes, None, reason, "tok")
+                    .timeout(
+                        SUBJECT,
+                        minutes,
+                        BanNote {
+                            display_name: None,
+                            reason,
+                        },
+                        "tok",
+                    )
                     .await
             }
         }
@@ -385,12 +386,27 @@ mod tests {
                 match duration_minutes {
                     None => {
                         moderation
-                            .ban(TARGET, BROADCASTER, display_name, None, "tok")
+                            .ban(
+                                SUBJECT,
+                                BanNote {
+                                    display_name,
+                                    reason: None,
+                                },
+                                "tok",
+                            )
                             .await
                     }
                     Some(minutes) => {
                         moderation
-                            .timeout(TARGET, BROADCASTER, minutes, display_name, None, "tok")
+                            .timeout(
+                                SUBJECT,
+                                minutes,
+                                BanNote {
+                                    display_name,
+                                    reason: None,
+                                },
+                                "tok",
+                            )
                             .await
                     }
                 }
@@ -490,7 +506,7 @@ mod tests {
         ledger.seed(standing_row("Troll", BanOrigin::IssuedByForge));
 
         moderation_over(&server, &ledger)
-            .unban(TARGET, BROADCASTER, "tok")
+            .unban(SUBJECT, "tok")
             .await
             .unwrap();
 
@@ -505,7 +521,7 @@ mod tests {
             ledger.seed(standing_row("Troll", BanOrigin::IssuedByForge));
 
             let result = moderation_over(&server, &ledger)
-                .unban(TARGET, BROADCASTER, "tok")
+                .unban(SUBJECT, "tok")
                 .await;
 
             assert!(result.is_err(), "status {status}");
@@ -519,7 +535,7 @@ mod tests {
         let ledger = Arc::new(MemoryBanLedger::failing_on(LedgerOp::Remove));
 
         let result = moderation_over(&server, &ledger)
-            .unban(TARGET, BROADCASTER, "tok")
+            .unban(SUBJECT, "tok")
             .await;
 
         assert!(result.is_ok(), "{result:?}");

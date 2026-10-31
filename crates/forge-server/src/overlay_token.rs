@@ -76,10 +76,7 @@ impl OverlayTokenState {
         self.required.store(required, Ordering::SeqCst);
     }
 
-    pub(crate) async fn stage_rotation(
-        &self,
-        creds: &dyn CredentialsRepo,
-    ) -> Result<Secret, ServerError> {
+    pub(crate) async fn stage_rotation(creds: &dyn CredentialsRepo) -> Result<Secret, ServerError> {
         let fresh = Secret::new(generate_overlay_token());
         let id = CredentialId::new(SERVER_OVERLAY_TOKEN_CREDENTIAL_ID);
         creds.store(&id, fresh.expose()).await?;

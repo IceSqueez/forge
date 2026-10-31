@@ -52,7 +52,6 @@ impl SoundboardView {
         let builtin_id = entry.builtin_id.to_owned();
         let name = entry.display_name.to_owned();
         let category = entry.category.to_owned();
-        let loop_playback = entry.loop_playback;
         let library = Arc::clone(&self.library);
         let player = Arc::clone(&self.player);
         async_bridge::run_async(
@@ -72,7 +71,7 @@ impl SoundboardView {
                     hotkey: None,
                     created_at: OffsetDateTime::now_utc(),
                     category,
-                    loop_playback,
+                    loop_playback: false,
                     duration_secs: None,
                     builtin_id: Some(builtin_id),
                 };

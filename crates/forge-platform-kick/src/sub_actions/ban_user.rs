@@ -14,7 +14,7 @@ use super::ban_reason::REASON;
 use super::display_name;
 use super::fields::USER_ID;
 use super::step_failure;
-use crate::api::moderation::KickModeration;
+use crate::api::moderation::{BanNote, BanSubject, KickModeration};
 use crate::vocabulary::sub_action_ids;
 
 const CONFIG: ConfigSpec = ConfigSpec::new(&[&USER_ID, &REASON]);
@@ -101,10 +101,14 @@ impl SubActionRunner for BanUserRunner {
                     &self
                         .client
                         .ban(
-                            target_id,
-                            broadcaster_user_id,
-                            display_name.as_deref(),
-                            reason.as_deref(),
+                            BanSubject {
+                                target_user_id: target_id,
+                                broadcaster_user_id,
+                            },
+                            BanNote {
+                                display_name: display_name.as_deref(),
+                                reason: reason.as_deref(),
+                            },
                             &token,
                         )
                         .await,

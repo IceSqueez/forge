@@ -46,9 +46,6 @@ pub enum AudioError {
     #[error("remote audio destination failed: {0}")]
     RemoteDestination(RemoteFailure),
 
-    #[error("no live page is listening on audio overlay '{destination}' ({live_players} live)")]
-    NoRemoteListener {
-        destination: String,
-        live_players: usize,
-    },
+    #[error("no live page is listening on audio overlay '{destination}'")]
+    NoRemoteListener { destination: String },
 }

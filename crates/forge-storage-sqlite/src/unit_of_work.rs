@@ -130,7 +130,12 @@ async fn apply(conn: &mut SqliteConnection, change: &StoreChange) -> Result<(), 
         StoreChange::ReplaceFilterRules(rules) => write_rules(conn, rules).await,
         StoreChange::UpsertVoiceAlias(alias) => upsert_alias(conn, alias).await.map(drop),
         StoreChange::DeleteVoiceAlias(id) => {
-            execute(conn, "DELETE FROM voice_aliases WHERE id = ?", id.0.clone()).await
+            execute(
+                conn,
+                "DELETE FROM voice_aliases WHERE id = ?",
+                id.as_str().to_owned(),
+            )
+            .await
         }
         StoreChange::SetIgnoreProfile(profile) => store_ignore_profile(conn, profile).await,
         StoreChange::PutSetting(row) => {

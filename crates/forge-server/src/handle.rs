@@ -5,6 +5,8 @@ use std::time::Duration;
 
 use forge_runtime::{OverlaySampleSource, OverlayServiceHandle};
 use forge_storage::OverlayId;
+
+use crate::overlay_token::OverlayTokenState;
 use forge_types::{ClipCapability, Secret};
 use tokio::net::TcpListener;
 use tokio::sync::{Mutex, watch};
@@ -270,7 +272,7 @@ impl ServerHandle {
     ) -> Result<Secret, ServerError> {
         let state = self.inner.lock().await.state.clone();
         let gate = state.auth.overlay_token();
-        let fresh = gate.stage_rotation(state.credentials.as_ref()).await?;
+        let fresh = OverlayTokenState::stage_rotation(state.credentials.as_ref()).await?;
         let reissued = match state.overlays.reissue_all_credentials().await {
             Ok(reissued) => reissued,
             Err(reissue_error) => {

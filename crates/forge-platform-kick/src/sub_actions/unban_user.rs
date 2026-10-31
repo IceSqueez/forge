@@ -11,7 +11,7 @@ use futures::future::BoxFuture;
 
 use super::fields::USER_ID;
 use super::step_failure;
-use crate::api::moderation::KickModeration;
+use crate::api::moderation::{BanSubject, KickModeration};
 use crate::vocabulary::sub_action_ids;
 
 const CONFIG: ConfigSpec = ConfigSpec::new(&[&USER_ID]);
@@ -89,7 +89,13 @@ impl SubActionRunner for UnbanUserRunner {
                 Ok(broadcaster_user_id) => step_failure::outcome(
                     &self
                         .client
-                        .unban(target_id, broadcaster_user_id, &token)
+                        .unban(
+                            BanSubject {
+                                target_user_id: target_id,
+                                broadcaster_user_id,
+                            },
+                            &token,
+                        )
                         .await,
                 ),
             },

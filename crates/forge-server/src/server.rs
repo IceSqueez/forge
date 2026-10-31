@@ -260,14 +260,7 @@ pub(crate) fn serve_on_with_shutdown(
     let join = tokio::spawn(async move {
         let result = axum::serve(listener, app)
             .with_graceful_shutdown(async move {
-                loop {
-                    if shutdown_rx.changed().await.is_err() {
-                        break;
-                    }
-                    if *shutdown_rx.borrow() {
-                        break;
-                    }
-                }
+                crate::routes::ws::shutdown_signalled(&mut shutdown_rx).await;
             })
             .await
             .map_err(|e| ServerError::Io(std::io::Error::other(e)));

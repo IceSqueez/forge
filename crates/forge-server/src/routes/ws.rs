@@ -278,7 +278,7 @@ async fn handle_socket(
     state.bus_adapter.unregister_client(handle.id).await;
 }
 
-async fn shutdown_signalled(shutdown: &mut watch::Receiver<bool>) {
+pub(crate) async fn shutdown_signalled(shutdown: &mut watch::Receiver<bool>) {
     #[expect(
         clippy::let_underscore_must_use,
         reason = "a dropped shutdown sender also means stopping"

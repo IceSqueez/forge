@@ -6,14 +6,20 @@ use crate::voice::{EngineId, TtsVoice, VoiceId};
 pub struct AliasId(pub String);
 
 impl AliasId {
+    #[expect(
+        clippy::new_without_default,
+        reason = "new mints a fresh identity, which a Default must not"
+    )]
     pub fn new() -> Self {
         Self(ulid::Ulid::generate().to_string())
     }
-}
 
-impl Default for AliasId {
-    fn default() -> Self {
-        Self::new()
+    pub fn from_string(id: String) -> Self {
+        Self(id)
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
     }
 }
 
@@ -112,7 +118,7 @@ mod tests {
     #[test]
     fn voice_alias_keeps_its_stored_json_shape() {
         let alias = VoiceAlias {
-            id: AliasId("01HWTEST".into()),
+            id: AliasId::from_string("01HWTEST".into()),
             viewer_id: "123456".into(),
             viewer_name: "testviewer".into(),
             engine_id: EngineId("piper".into()),

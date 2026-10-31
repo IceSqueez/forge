@@ -34,6 +34,7 @@ pub enum ResolveResult {
 #[derive(Clone)]
 pub struct VoiceAliasResolver {
     aliases: Vec<VoiceAlias>,
+    lowered_handles: Vec<(Option<PlatformId>, String)>,
     strategy: AssignmentStrategy,
     profile: IgnoreProfile,
     defaults: SynthesisDefaults,
@@ -48,6 +49,7 @@ impl VoiceAliasResolver {
         defaults: SynthesisDefaults,
     ) -> Self {
         Self {
+            lowered_handles: lowered_handles_of(&aliases),
             aliases,
             strategy,
             profile,
@@ -85,10 +87,12 @@ impl VoiceAliasResolver {
             Some(existing) => *existing = alias,
             None => self.aliases.push(alias),
         }
+        self.lowered_handles = lowered_handles_of(&self.aliases);
     }
 
     pub fn remove_alias(&mut self, id: &AliasId) {
         self.aliases.retain(|alias| &alias.id != id);
+        self.lowered_handles = lowered_handles_of(&self.aliases);
     }
 
     pub fn switch_alias(&mut self, key: &str, engine_id: EngineId, voice_id: VoiceId) {
@@ -188,19 +192,21 @@ impl VoiceAliasResolver {
     }
 
     fn pick_from_pool(&self, pool: &[&TtsVoice], draw: impl FnOnce() -> u64) -> ResolveResult {
-        let mut eligible: Vec<&TtsVoice> = pool
+        let mut eligible: Vec<(usize, &TtsVoice)> = pool
             .iter()
             .copied()
             .filter(|voice| self.profile.is_eligible(voice))
+            .enumerate()
             .collect();
         if eligible.is_empty() {
             return ResolveResult::Skip {
                 reason: VoiceSkip::NoVoicesAvailable,
             };
         }
-        eligible.sort_by(|a, b| a.id.0.cmp(&b.id.0));
 
-        let voice = eligible[(draw() as usize) % eligible.len()];
+        let position = (draw() as usize) % eligible.len();
+        let (_, (_, voice), _) = eligible
+            .select_nth_unstable_by(position, |a, b| a.1.id.0.cmp(&b.1.id.0).then(a.0.cmp(&b.0)));
         self.speak(voice.id.clone(), voice.engine_id.clone(), None, None)
     }
 
@@ -224,10 +230,12 @@ impl VoiceAliasResolver {
         let lowered_name = viewer_name.to_lowercase();
         let (viewer_platform, _) = split_stored(viewer_id);
         let named_on = |platform: Option<PlatformId>| {
-            self.aliases.iter().find(|alias| {
-                let (alias_platform, handle) = split_stored(&alias.viewer_id);
-                alias_platform == platform && handle.to_lowercase() == lowered_name
-            })
+            self.lowered_handles
+                .iter()
+                .position(|(alias_platform, handle)| {
+                    *alias_platform == platform && *handle == lowered_name
+                })
+                .map(|index| &self.aliases[index])
         };
         self.aliases
             .iter()
@@ -235,6 +243,16 @@ impl VoiceAliasResolver {
             .or_else(|| viewer_platform.and_then(|platform| named_on(Some(platform))))
             .or_else(|| named_on(None))
     }
+}
+
+fn lowered_handles_of(aliases: &[VoiceAlias]) -> Vec<(Option<PlatformId>, String)> {
+    aliases
+        .iter()
+        .map(|alias| {
+            let (platform, handle) = split_stored(&alias.viewer_id);
+            (platform, handle.to_lowercase())
+        })
+        .collect()
 }
 
 fn scoped_pool<'a>(

@@ -23,61 +23,22 @@ pub struct KickRewards {
     api: Gateway,
 }
 
+#[derive(Serialize)]
 pub struct CreateRewardParams {
     pub title: String,
     pub cost: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
-    pub background_color: Option<String>,
-    pub is_enabled: Option<bool>,
-    pub is_user_input_required: Option<bool>,
-    pub should_redemptions_skip_request_queue: Option<bool>,
 }
 
+#[derive(Serialize)]
 pub struct UpdateRewardParams {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub cost: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
-    pub background_color: Option<String>,
-    pub is_enabled: Option<bool>,
-    pub is_paused: Option<bool>,
-    pub is_user_input_required: Option<bool>,
-    pub should_redemptions_skip_request_queue: Option<bool>,
-}
-
-#[derive(Serialize)]
-struct CreateBody {
-    title: String,
-    cost: u64,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    description: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    background_color: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    is_enabled: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    is_user_input_required: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    should_redemptions_skip_request_queue: Option<bool>,
-}
-
-#[derive(Serialize)]
-struct UpdateBody {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    title: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    cost: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    description: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    background_color: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    is_enabled: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    is_paused: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    is_user_input_required: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    should_redemptions_skip_request_queue: Option<bool>,
 }
 
 #[derive(Serialize)]
@@ -149,17 +110,8 @@ impl KickRewards {
         params: CreateRewardParams,
         token: &str,
     ) -> Result<Option<String>, PlatformError> {
-        let body = CreateBody {
-            title: params.title,
-            cost: params.cost,
-            description: params.description,
-            background_color: params.background_color,
-            is_enabled: params.is_enabled,
-            is_user_input_required: params.is_user_input_required,
-            should_redemptions_skip_request_queue: params.should_redemptions_skip_request_queue,
-        };
         let request = authorized(GatewayRequest::post(REWARDS_PATH), token, REWARDS_PATH)
-            .body(json_body(&body)?);
+            .body(json_body(&params)?);
         let response = self.send(request).await?;
         match response.json::<CreateResponse>() {
             Ok(created) => Ok(created.id.or_else(|| created.data.and_then(|d| d.id))),
@@ -176,22 +128,12 @@ impl KickRewards {
         params: UpdateRewardParams,
         token: &str,
     ) -> Result<(), PlatformError> {
-        let body = UpdateBody {
-            title: params.title,
-            cost: params.cost,
-            description: params.description,
-            background_color: params.background_color,
-            is_enabled: params.is_enabled,
-            is_paused: params.is_paused,
-            is_user_input_required: params.is_user_input_required,
-            should_redemptions_skip_request_queue: params.should_redemptions_skip_request_queue,
-        };
         let request = authorized(
             GatewayRequest::patch(reward_path(reward_id)),
             token,
             REWARD_LABEL,
         )
-        .body(json_body(&body)?);
+        .body(json_body(&params)?);
         self.send(request).await.map(drop)
     }
 
@@ -312,10 +254,6 @@ mod tests {
             title: "Hydrate".to_owned(),
             cost: 500,
             description: None,
-            background_color: None,
-            is_enabled: None,
-            is_user_input_required: None,
-            should_redemptions_skip_request_queue: None,
         }
     }
 
@@ -413,11 +351,6 @@ mod tests {
             title: Some("New".to_owned()),
             cost: None,
             description: None,
-            background_color: None,
-            is_enabled: None,
-            is_paused: None,
-            is_user_input_required: None,
-            should_redemptions_skip_request_queue: None,
         };
         let result = rewards_on(&server).update("rw_9", params, "tok").await;
         assert!(result.is_ok());

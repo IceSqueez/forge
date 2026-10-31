@@ -58,10 +58,6 @@ fn read_config(
         title: TITLE.read(config, args)?,
         cost: COST.read(config, args)?,
         description: non_empty(DESCRIPTION.read(config, args)?),
-        background_color: None,
-        is_enabled: None,
-        is_user_input_required: None,
-        should_redemptions_skip_request_queue: None,
     })
 }
 

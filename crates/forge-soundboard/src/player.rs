@@ -439,7 +439,12 @@ impl SoundboardPlayer {
             return Ok(PlayOutcome::StoppedBeforeStart);
         }
 
-        let legs = match play_target(&prepared.sinks, prepared.buffer.clone()).await {
+        let (played, replay_buffer) = if clip.loop_playback {
+            (prepared.buffer.clone(), Some(prepared.buffer))
+        } else {
+            (prepared.buffer, None)
+        };
+        let legs = match play_target(&prepared.sinks, played).await {
             Ok(legs) => legs,
             Err(e) => return reported_failure(&reporter, &play, SoundboardError::Audio(e)),
         };
@@ -460,12 +465,12 @@ impl SoundboardPlayer {
             return Ok(PlayOutcome::Started);
         }
 
-        if clip.loop_playback {
+        if let Some(buffer) = replay_buffer {
             tokio::spawn(run_loop(LoopPlay {
                 play,
                 reporter,
                 sinks: prepared.sinks,
-                buffer: prepared.buffer,
+                buffer,
                 cycle_ms: prepared.duration_ms.max(LOOP_MIN_CYCLE_MS),
                 main: legs.main,
             }));
@@ -529,11 +534,12 @@ impl SoundboardPlayer {
 
         let device = resolve_device(&clip.output_device, override_device, settings);
         let device_label = device_label(&device);
-        let sinks = self.build_sinks(&device, settings.also_headphones).await?;
-
-        let mut buffer = tokio::task::spawn_blocking(move || forge_audio::decode_file(&path))
-            .await
-            .map_err(|_| SoundboardError::TaskFailed)??;
+        let (sinks, decoded) = tokio::join!(
+            self.build_sinks(&device, settings.also_headphones),
+            tokio::task::spawn_blocking(move || forge_audio::decode_file(&path)),
+        );
+        let sinks = sinks?;
+        let mut buffer = decoded.map_err(|_| SoundboardError::TaskFailed)??;
         buffer.apply_gain(
             clip.volume.clamp(0.0, MAX_VOLUME) * settings.master_volume.clamp(0.0, MAX_VOLUME),
         );
@@ -561,8 +567,13 @@ impl SoundboardPlayer {
         let mut sinks: Vec<Arc<dyn AudioSink>> = Vec::new();
 
         if clip_route.route.plays_local() {
-            for (idx, target) in fan_out_targets(device, also_headphones).iter().enumerate() {
-                match self.sink_factory.build(target).await {
+            let targets = fan_out_targets(device, also_headphones);
+            let built = futures::future::join_all(
+                targets.iter().map(|target| self.sink_factory.build(target)),
+            )
+            .await;
+            for (idx, sink) in built.into_iter().enumerate() {
+                match sink {
                     Ok(sink) => sinks.push(sink),
                     Err(e) if idx == 0 && overlay.is_none() => return Err(e),
                     Err(e) => {
@@ -691,12 +702,20 @@ async fn play_target(
     sinks: &[Arc<dyn AudioSink>],
     buffer: PcmBuffer,
 ) -> Result<StartedLegs, AudioError> {
-    let starts = sinks.iter().map(|sink| {
+    let Some((last_sink, other_sinks)) = sinks.split_last() else {
+        return Err(AudioError::NoRoute);
+    };
+    let other_starts = other_sinks.iter().map(|sink| {
         let sink = Arc::clone(sink);
         let buffer = buffer.clone();
         async move { sink.play_controlled(buffer).await }
     });
-    let mut outcomes = futures::future::join_all(starts).await.into_iter();
+    let (mut outcomes, last_outcome) = tokio::join!(
+        futures::future::join_all(other_starts),
+        last_sink.play_controlled(buffer),
+    );
+    outcomes.push(last_outcome);
+    let mut outcomes = outcomes.into_iter();
     let Some(main) = outcomes.next() else {
         return Err(AudioError::NoRoute);
     };

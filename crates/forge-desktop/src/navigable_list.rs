@@ -124,6 +124,14 @@ impl<Id: Clone + PartialEq> ListCursor<Id> {
         }
     }
 
+    pub(crate) fn reachable_by_tab(cx: &mut App) -> Self {
+        let cursor = Self::new(cx);
+        Self {
+            focus: cursor.focus.clone().tab_stop(true),
+            ..cursor
+        }
+    }
+
     pub(crate) fn focus(&self) -> &FocusHandle {
         &self.focus
     }
@@ -174,6 +182,14 @@ impl<Id: Clone + PartialEq> ListCursor<Id> {
 
     pub(crate) fn move_to(&mut self, id: Id) {
         self.cursor = Some(id);
+    }
+
+    pub(crate) fn current(&self) -> Option<&Id> {
+        self.cursor.as_ref()
+    }
+
+    pub(crate) fn clear(&mut self) {
+        self.cursor = None;
     }
 
     pub(crate) fn step(

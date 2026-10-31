@@ -2,8 +2,8 @@ use super::IntegrationDetail;
 use crate::user_text::resolve_message;
 use forge_components::{
     BORDER_THIN, CTA_HOVER_ALPHA, ConfirmTone, Density, FONT_SM, FONT_XS, ForgePalette, Icon,
-    OverlayPosition, Radius, Spacing, body_family, confirm_modal, icon, overlay, radius, spacing,
-    tr, with_alpha,
+    KeyActivated, OverlayPosition, Radius, Spacing, body_family, confirm_modal, icon, overlay,
+    radius, spacing, tr, with_alpha,
 };
 use forge_platform_core::ConnectionState;
 use forge_types::PlatformId;
@@ -57,6 +57,7 @@ impl IntegrationDetail {
             .bg(palette.warning)
             .cursor_pointer()
             .hover(|s| s.bg(with_alpha(palette.warning, CTA_HOVER_ALPHA)))
+            .key_activated(palette.text_primary)
             .on_click(cx.listener(|this, _, _, cx| this.reset_to_connect(PlatformId::Twitch, cx)))
             .child(
                 div()

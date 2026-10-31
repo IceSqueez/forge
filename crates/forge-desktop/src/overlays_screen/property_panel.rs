@@ -6,8 +6,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use forge_components::{
-    BORDER_THIN, FONT_XXS, ForgePalette, Picker, PickerEvent, PickerItem, PickerLabels,
-    accent_swatch, body_family, field_label, scaled, section_label, tr,
+    BORDER_THIN, FONT_XXS, ForgePalette, KeyActivated, Picker, PickerEvent, PickerItem,
+    PickerLabels, accent_swatch, body_family, field_label, scaled, section_label, tr,
 };
 use forge_overlay::config::{ACCENT, RETIRED_KEYS, SOUND_OPTIONS_KEY, SPEECH_VOICE};
 use forge_overlay::{ConfigSection, MediaIssue, MediaSlot, SectionedField, media_slot};
@@ -623,6 +623,7 @@ impl OverlayPropertyPanel {
             .id(SharedString::from(format!("overlays-panel-{key}")))
             .cursor_pointer()
             .hover(move |style| style.border_color(hover_border))
+            .key_activated(palette.text_primary)
             .on_click(
                 move |_: &gpui::ClickEvent, _window: &mut Window, cx: &mut App| {
                     view.update(cx, |this, cx| this.request_icon_pick(open_key.clone(), cx));

@@ -2,8 +2,8 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use forge_components::{
-    Density, FONT_XS, ForgePalette, Icon, Radius, Spacing, body_family, fmt_clock, icon, radius,
-    scaled, spacing, tr,
+    Density, FONT_XS, ForgePalette, Icon, KeyActivated, Radius, Spacing, body_family, fmt_clock,
+    icon, radius, scaled, spacing, tr,
 };
 use forge_soundboard::{ClipAvailability, PlayOutcome, SoundboardError};
 use forge_types::ClipId;
@@ -164,6 +164,7 @@ impl SoundboardView {
             .px(spacing(Spacing::Xs, density))
             .rounded(radius(Radius::Sm))
             .hover(|s| s.bg(palette.surface_overlay))
+            .key_activated(palette.text_primary)
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.stop_all(cx)))
             .child(icon(Icon::PlayerStop, STOP_ICON, palette.danger))
             .child(

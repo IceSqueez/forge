@@ -1,8 +1,8 @@
 use forge_components::FONT_LABEL;
 use forge_components::{
     ActivePresentation, BORDER_THIN, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon,
-    Radius, Spacing, body_family, icon, mono_family, pulse_dot, radius, scaled, spacing,
-    tooltip_builder, tr, with_alpha,
+    KeyActivated, Radius, Spacing, body_family, icon, mono_family, pulse_dot, radius, scaled,
+    spacing, tooltip_builder, tr, with_alpha,
 };
 use forge_platform_core::{QuickAction, QuickActionAccent, QuickActionGroup, QuickActionLiveness};
 use gpui::{AnyElement, ClickEvent, Context, Pixels, Rgba, div, prelude::*, px};
@@ -122,6 +122,7 @@ impl IntegrationDetail {
             .border_color(palette.border_regular)
             .cursor_pointer()
             .hover(move |s| s.border_color(hover_border))
+            .key_activated(palette.text_primary)
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.open_run_history(cx)))
             .child(icon(Icon::History, FONT_XS, text_color))
             .child(
@@ -294,6 +295,7 @@ impl IntegrationDetail {
             btn = btn
                 .cursor_pointer()
                 .hover(move |s| s.border_color(hover_border))
+                .key_activated(palette.text_primary)
                 .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
                     this.on_quick_action(idx, window, cx)
                 }));

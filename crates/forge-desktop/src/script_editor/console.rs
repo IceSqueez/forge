@@ -5,9 +5,9 @@ use crate::async_bridge::{BridgeFlow, drain_events};
 use crate::runtime_event;
 use crate::runtime_event::RuntimeEvent;
 use forge_components::{
-    BORDER_THIN, DateShape, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, ResizeEdge,
-    ResizeRange, Spacing, badge, body_family, fmt_display, icon, install_resize, mono_family,
-    scaled, spacing, tr,
+    BORDER_THIN, DateShape, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, KeyActivated,
+    ResizeEdge, ResizeRange, Spacing, badge, body_family, fmt_display, icon, install_resize,
+    mono_family, scaled, spacing, tr,
 };
 use forge_events::{ScriptLogLevel, ScriptLogged};
 use gpui::prelude::*;
@@ -196,6 +196,7 @@ impl ScriptEditorView {
             .items_center()
             .gap(scaled(px(5.0), density))
             .cursor_pointer()
+            .key_activated(palette.text_primary)
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
                 this.set_console_tab(ConsoleTab::Output, cx)
             }))
@@ -233,6 +234,7 @@ impl ScriptEditorView {
                 .items_center()
                 .gap(spacing(Spacing::Xs, density))
                 .cursor_pointer()
+                .key_activated(palette.text_primary)
                 .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
                     this.set_console_tab(ConsoleTab::Problems, cx)
                 }))
@@ -276,6 +278,7 @@ impl ScriptEditorView {
                 div()
                     .id("console-clear")
                     .cursor_pointer()
+                    .key_activated(palette.text_primary)
                     .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.clear_console(cx)))
                     .child(icon(Icon::Eraser, GLYPH_ACTION, palette.text_faint)),
             )
@@ -283,6 +286,7 @@ impl ScriptEditorView {
                 div()
                     .id("console-collapse")
                     .cursor_pointer()
+                    .key_activated(palette.text_primary)
                     .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_console(cx)))
                     .child(icon(collapse_glyph, GLYPH_ACTION, palette.text_faint)),
             );

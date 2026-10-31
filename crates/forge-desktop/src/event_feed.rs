@@ -10,9 +10,9 @@ use std::collections::{HashSet, VecDeque};
 
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent,
-    Radius, SearchState, SheetWidth, Spacing, TextInput, ToastKind, badge, body_family, chip,
-    empty_state, header_status, icon, mono_family, page_frame, radius, scaled, spacing, status_dot,
-    tr, with_alpha,
+    KeyActivated, Radius, SearchState, SheetWidth, Spacing, TextInput, ToastKind, badge,
+    body_family, chip, empty_state, header_status, icon, mono_family, page_frame, radius, scaled,
+    spacing, status_dot, tr, with_alpha,
 };
 use std::sync::Arc;
 
@@ -494,14 +494,17 @@ impl EventFeedView {
         };
         let pause = Self::action_shell("event-action-pause", palette, density)
             .child(icon(pause_icon, ACTION_ICON, pause_ink))
+            .key_activated(palette.text_primary)
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_pause(cx)));
 
         let clear = Self::action_shell("event-action-clear", palette, density)
             .child(icon(Icon::Eraser, ACTION_ICON, palette.danger))
+            .key_activated(palette.text_primary)
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.clear(cx)));
 
         let export = Self::action_shell("event-action-export", palette, density)
             .child(icon(Icon::Download, ACTION_ICON, palette.success))
+            .key_activated(palette.text_primary)
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.export(cx)));
 
         let (scroll_ink, scroll_label) = if self.auto_scroll {
@@ -512,6 +515,7 @@ impl EventFeedView {
         let auto_scroll = Self::action_shell("event-action-autoscroll", palette, density)
             .child(status_dot(scroll_ink, STATUS_DOT))
             .child(Self::action_label(scroll_label, palette))
+            .key_activated(palette.text_primary)
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_auto_scroll(cx)));
 
         div()
@@ -877,6 +881,7 @@ impl EventFeedView {
         } else {
             replay
                 .cursor_pointer()
+                .key_activated(palette.text_primary)
                 .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.replay(cx)))
         };
         let replay = replay

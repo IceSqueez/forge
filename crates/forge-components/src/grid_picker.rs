@@ -3,6 +3,7 @@ use crate::FONT_FIELD;
 use crate::FONT_META;
 use crate::FONT_ROW;
 use crate::FONT_SECTION_LABEL;
+use crate::key_activation::KeyActivated;
 use crate::presentation::ActivePresentation;
 use std::collections::HashSet;
 
@@ -520,6 +521,7 @@ impl GridPicker {
             .rounded(radius(Radius::Sm))
             .cursor_pointer()
             .hover(move |s| s.bg(p.surface_overlay))
+            .key_activated(p.text_primary)
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.emit_dismiss(cx)))
             .child(icon(Icon::X, GRID_CLOSE_ICON, p.text_faint));
 
@@ -552,6 +554,7 @@ impl GridPicker {
                     .id("forge-grid-search-clear")
                     .flex_none()
                     .cursor_pointer()
+                    .key_activated(p.text_primary)
                     .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.clear_search(cx)))
                     .child(icon(Icon::X, GRID_SEARCH_ICON, p.text_faint)),
             );
@@ -1096,6 +1099,7 @@ fn grid_rail_entry(
         .bg(bg)
         .cursor_pointer()
         .hover(move |s| s.bg(hover_bg))
+        .key_activated(palette.text_primary)
         .on_click(handler)
         .child(lead_slot)
         .child(

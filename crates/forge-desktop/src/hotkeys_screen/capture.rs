@@ -4,7 +4,9 @@ use forge_components::Radius;
 use forge_components::Spacing;
 use forge_components::radius;
 use forge_components::spacing;
-use forge_components::{BORDER_THIN, ForgePalette, Icon, ToastKind, body_family, icon, scaled, tr};
+use forge_components::{
+    BORDER_THIN, ForgePalette, Icon, KeyActivated, ToastKind, body_family, icon, scaled, tr,
+};
 use forge_types::TriggerInstanceId;
 use gpui::{AnyElement, ClickEvent, Context, Keystroke, Pixels, div, prelude::*, px};
 
@@ -219,6 +221,7 @@ impl HotkeysScreenView {
             .border_color(palette.success)
             .bg(palette.surface_overlay)
             .cursor_pointer()
+            .key_activated(palette.text_primary)
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_capture(cx)))
             .child(icon(Icon::Keyboard, CAPTURE_GLYPH, palette.success))
             .child(
@@ -239,6 +242,7 @@ impl HotkeysScreenView {
                     .text_color(palette.text_faint)
                     .cursor_pointer()
                     .hover(move |style| style.text_color(cancel_hover))
+                    .key_activated(palette.text_primary)
                     .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
                         cx.stop_propagation();
                         this.cancel_capture(cx);

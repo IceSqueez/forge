@@ -5,9 +5,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use forge_components::{
-    BORDER_THIN, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, Spacing,
-    ToastKind, body_family, card, ghost_button_with_icon, icon, mono_family, radius, scaled,
-    section_label, spacing, tr, with_alpha,
+    BORDER_THIN, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, KeyActivated, Radius,
+    Spacing, ToastKind, body_family, card, ghost_button_with_icon, icon, mono_family, radius,
+    scaled, section_label, spacing, tr, with_alpha,
 };
 use forge_runtime::{HandOff, ScheduledRunsHandle, WaitingForQueueWatch, WaitingRuns};
 use forge_storage::{ActionRepo, CatalogChanges, ScheduledRun, ScheduledRunId, ScheduledRunRepo};
@@ -328,6 +328,7 @@ impl ScheduledRunsView {
                         .text_size(FONT_SM)
                         .text_color(palette.text_primary)
                         .hover(|s| s.underline())
+                        .key_activated(palette.text_primary)
                         .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
                             this.open_action(target, cx)
                         }))
@@ -441,6 +442,7 @@ impl ScheduledRunsView {
                         .text_size(FONT_XXS)
                         .text_color(palette.text_secondary)
                         .hover(|s| s.underline())
+                        .key_activated(palette.text_primary)
                         .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
                             this.open_action(source, cx)
                         }))
@@ -554,6 +556,7 @@ impl ScheduledRunsView {
             .gap(spacing(Spacing::Xxs, density))
             .py(spacing(Spacing::Xs, density))
             .cursor_pointer()
+            .key_activated(palette.text_primary)
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_recent(cx)))
             .child(icon(chevron, BADGE_GLYPH, palette.text_muted))
             .child(section_label(

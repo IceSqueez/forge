@@ -7,9 +7,9 @@ use forge_components::spacing;
 use std::sync::Arc;
 
 use forge_components::{
-    BORDER_THIN, BreadcrumbCrumb, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, body_family,
-    ghost_button_with_icon, health_tile, icon, integration_inactive_badge, mono_family, page_frame,
-    primary_button_with_icon, radius, scaled, tr,
+    BORDER_THIN, BreadcrumbCrumb, FONT_XS, FONT_XXS, ForgePalette, Icon, KeyActivated, Radius,
+    body_family, ghost_button_with_icon, health_tile, icon, integration_inactive_badge,
+    mono_family, page_frame, primary_button_with_icon, radius, scaled, tr,
 };
 use forge_platform_core::{ConnectionAffordance, IntegrationDeclaration};
 use forge_registry::{IntegrationReferences, SubActionRegistry, TriggerRegistry};
@@ -385,6 +385,7 @@ impl IntegrationDisabledView {
                             )),
                     )
                     .child(icon(Icon::ChevronRight, ROW_CHEVRON, palette.text_faint))
+                    .key_activated(palette.text_primary)
                     .on_click({
                         let action_id = action.id;
                         cx.listener(move |this, _: &ClickEvent, _, cx| {
@@ -416,6 +417,7 @@ impl IntegrationDisabledView {
                                 )),
                         )
                         .child(icon(Icon::ChevronRight, ROW_CHEVRON, palette.text_faint))
+                        .key_activated(palette.text_primary)
                         .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
                             this.go(Screen::Triggers(None), cx)
                         })),

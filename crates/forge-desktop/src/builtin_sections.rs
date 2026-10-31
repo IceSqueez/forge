@@ -4,9 +4,9 @@ use forge_components::FONT_ROW;
 use forge_components::FONT_SECTION_LABEL;
 use forge_components::TINT_FILL_ALPHA;
 use forge_components::{
-    BORDER_THIN, Density, FONT_LG, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, Spacing,
-    body_family, card_shell, divider, grow_cell, icon, mono_family, radius, scaled, spacing,
-    status_dot, tr, with_alpha,
+    BORDER_THIN, Density, FONT_LG, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, KeyActivated,
+    Radius, Spacing, body_family, card_shell, divider, grow_cell, icon, mono_family, radius,
+    scaled, spacing, status_dot, tr, with_alpha,
 };
 use forge_platform_core::{
     ActiveRow, BannerLevel, ContentList, ContentListItem, DetailSection, HealthBar, HealthLevel,
@@ -822,6 +822,7 @@ fn content_list_item_row(
                 .id(rows.element_id("row", row_index))
                 .cursor_pointer()
                 .hover(move |s| s.bg(hover_bg))
+                .key_activated(palette.text_primary)
                 .on_click(move |_: &ClickEvent, window, cx| run(&click, window, cx))
                 .child(content)
                 .into_any_element()
@@ -1114,6 +1115,7 @@ pub(crate) fn panel_header_row(
                 .flex_none()
                 .cursor_pointer()
                 .child(icon(Icon::Refresh, PANEL_REFRESH_GLYPH, palette.text_faint))
+                .key_activated(palette.text_primary)
                 .on_click(move |event, window, cx| handler(event, window, cx)),
         );
     }
@@ -1297,6 +1299,7 @@ fn trailing_token_elem(
                     .element_id(&format!("token-{}", site.index), site.row_index))
                 .cursor_pointer()
                 .hover(move |s| s.text_color(hover_tint))
+                .key_activated(palette.text_primary)
                 .on_click(move |_: &ClickEvent, window, cx| {
                     cx.stop_propagation();
                     run(&click, window, cx);

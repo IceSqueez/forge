@@ -5,10 +5,11 @@ use std::sync::Arc;
 
 use forge_components::{
     AccentColor, BORDER_THIN, BreadcrumbCrumb, Density, FONT_MD, FONT_SM, FONT_XS, FONT_XXS,
-    ForgePalette, Icon, Picker, PickerEvent, PickerItem, PickerLabels, Radius, Spacing, ThemeId,
-    badge, body_family, card, dropdown, field_hint, field_label, ghost_button_with_icon, icon,
-    mono_family, page_frame, radius, scaled, set_body_family, set_mono_family, setting_block,
-    setting_groups, setting_row, setting_rows, setting_sections, spacing, toggle, tr, with_alpha,
+    ForgePalette, Icon, KeyActivated, Picker, PickerEvent, PickerItem, PickerLabels, Radius,
+    Spacing, ThemeId, badge, body_family, card, dropdown, field_hint, field_label,
+    ghost_button_with_icon, icon, mono_family, page_frame, radius, scaled, set_body_family,
+    set_mono_family, setting_block, setting_groups, setting_row, setting_rows, setting_sections,
+    spacing, toggle, tr, with_alpha,
 };
 use forge_storage::settings::core_settings;
 use forge_storage::{Language, SettingsRepo, write_setting};
@@ -517,6 +518,7 @@ impl SettingsView {
                     .child(current),
             )
             .child(icon(Icon::ChevronDown, FONT_XS, palette.text_faint))
+            .key_activated(palette.text_primary)
             .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
                 this.open_font_picker(target, window, cx)
             }));
@@ -731,6 +733,7 @@ impl SettingsView {
             .text_color(text_color)
             .child(icon(section.icon(), NAV_ROW_ICON, icon_color))
             .child(section.label())
+            .key_activated(palette.text_primary)
             .on_click(
                 cx.listener(move |this, _: &ClickEvent, _, cx| this.select_section(section, cx)),
             );
@@ -890,6 +893,7 @@ impl SettingsView {
                 .rounded_full()
                 .bg(theme.accent(accent))
                 .cursor_pointer()
+                .key_activated(palette.text_primary)
                 .on_click(
                     cx.listener(move |this, _: &ClickEvent, _, cx| this.select_accent(accent, cx)),
                 );
@@ -1033,6 +1037,7 @@ impl SettingsView {
             .border_color(border_color)
             .bg(palette.elevated)
             .cursor_pointer()
+            .key_activated(pal.text_primary)
             .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.select_theme(theme, cx)))
             .child(preview)
             .child(footer)
@@ -1061,6 +1066,7 @@ impl SettingsView {
             palette,
             cx.density(),
         )
+        .key_activated(palette.text_primary)
         .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.select_density(option, cx)))
     }
 
@@ -1111,6 +1117,7 @@ impl SettingsView {
             palette,
             density,
         )
+        .key_activated(palette.text_primary)
         .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.select_language(lang, cx)))
     }
 

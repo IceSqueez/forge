@@ -8,7 +8,7 @@ use forge_components::radius;
 use forge_components::spacing;
 use forge_components::{
     BORDER_THIN, CodeEditor, Confirm, ConfirmTone, FONT_XS, FONT_XXS, ForgePalette, Icon,
-    InputEvent, OverlayPosition, SaveCode, body_family, confirm_modal, empty_state,
+    InputEvent, KeyActivated, OverlayPosition, SaveCode, body_family, confirm_modal, empty_state,
     ghost_button_with_icon, icon, mono_family, overlay, primary_button_with_icon, scaled,
     status_dot, tr,
 };
@@ -492,6 +492,7 @@ impl OverlaysView {
                     } else {
                         palette.text_secondary
                     })
+                    .key_activated(palette.text_primary)
                     .on_click(
                         cx.listener(move |this, _: &ClickEvent, _, cx| this.select_file(file, cx)),
                     )

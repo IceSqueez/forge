@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use forge_audio::{AudioRoute, AudioSink};
 use forge_components::{
-    BORDER_THIN, Density, FONT_SM, FONT_XS, ForgePalette, Icon, Radius, SettingRow, Spacing,
-    body_family, drive_overlay_focus, dropdown, dropdown_list, dropdown_row,
+    BORDER_THIN, Density, FONT_SM, FONT_XS, ForgePalette, Icon, KeyActivated, Radius, SettingRow,
+    Spacing, body_family, drive_overlay_focus, dropdown, dropdown_list, dropdown_row,
     ghost_button_with_icon, icon, radius, scaled, segment, segmented, setting_block, setting_row,
     setting_rows, spacing, tr,
 };
@@ -356,6 +356,7 @@ impl SettingsAudioRoutingView {
             .border(BORDER_THIN)
             .border_color(palette.border_input)
             .cursor_pointer()
+            .key_activated(palette.text_primary)
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_picker(cx)))
             .child(
                 div()

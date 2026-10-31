@@ -2,8 +2,8 @@ use super::ScriptEditorView;
 use crate::navigation::{NavRequested, Screen};
 use forge_components::{
     BORDER_THIN, Density, FONT_SECTION_LABEL, FONT_XS, FONT_XXS, ForgePalette, HOVER_FILL_ALPHA,
-    Icon, Radius, Spacing, body_family, fmt_display_relative, icon, mono_family, radius, scaled,
-    spacing, status_dot, tr, with_alpha,
+    Icon, KeyActivated, Radius, Spacing, body_family, fmt_display_relative, icon, mono_family,
+    radius, scaled, spacing, status_dot, tr, with_alpha,
 };
 use gpui::prelude::*;
 use gpui::{
@@ -184,6 +184,7 @@ impl ScriptEditorView {
             .when(run_idle, |el| {
                 el.cursor_pointer()
                     .hover(|s| s.bg(with_alpha(palette.success, HOVER_FILL_ALPHA)))
+                    .key_activated(palette.text_primary)
                     .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.run(cx)))
             })
             .when(!run_idle, |el| {
@@ -244,6 +245,7 @@ impl ScriptEditorView {
                     .rounded(radius(Radius::Sm))
                     .cursor_pointer()
                     .hover(move |s| s.bg(hover))
+                    .key_activated(palette.text_primary)
                     .on_click(cx.listener(move |_this, _: &ClickEvent, _, cx| {
                         cx.emit(NavRequested(Screen::Actions(Some(action_id))));
                     }))
@@ -343,6 +345,7 @@ impl ScriptEditorView {
             .rounded(radius(Radius::Sm))
             .cursor_pointer()
             .hover(move |s| s.bg(hover))
+            .key_activated(palette.text_primary)
             .on_click(handler)
             .child(icon(glyph, GLYPH_TOOLBAR, palette.text_secondary))
             .child(

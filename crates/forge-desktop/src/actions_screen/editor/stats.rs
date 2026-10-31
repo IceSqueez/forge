@@ -1,7 +1,8 @@
 use super::*;
 use forge_components::BORDER_THIN;
 use forge_components::{
-    ActivePresentation, FONT_SM, FONT_XXS, ForgePalette, Radius, mono_family, radius, scaled, tr,
+    ActivePresentation, FONT_SM, FONT_XXS, ForgePalette, KeyActivated, Radius, mono_family, radius,
+    scaled, tr,
 };
 use forge_types::ExecutionOutcome;
 use gpui::{AnyElement, ClickEvent, Context, Rgba, SharedString, div};
@@ -153,6 +154,7 @@ impl ScreenActionsView {
                     .text_decoration_1()
                     .text_decoration_color(palette.border_input)
                     .child(value.into())
+                    .key_activated(palette.text_primary)
                     .on_click(
                         cx.listener(|this, _: &ClickEvent, _, cx| this.open_history_modal(cx)),
                     ),

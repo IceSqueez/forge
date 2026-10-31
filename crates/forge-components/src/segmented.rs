@@ -6,6 +6,7 @@ use gpui::{
 };
 
 use crate::icons::{Icon, icon};
+use crate::key_activation::KeyActivated;
 use crate::palette::{ForgePalette, with_alpha};
 use crate::tokens::{BORDER_THIN, DISABLED_OPACITY, body_family, scaled};
 
@@ -178,7 +179,10 @@ impl RenderOnce for SegmentedControl {
             if seg.disabled {
                 chip = chip.opacity(DISABLED_OPACITY);
             } else {
-                chip = chip.cursor_pointer().on_click(seg.on_click);
+                chip = chip
+                    .key_activated(fg)
+                    .cursor_pointer()
+                    .on_click(seg.on_click);
             }
             container = container.child(chip);
         }

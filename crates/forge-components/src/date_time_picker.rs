@@ -1,3 +1,4 @@
+use crate::key_activation::KeyActivated;
 use crate::presentation::ActivePresentation;
 use forge_types::{datetime_from_text, datetime_to_text};
 use gpui::{
@@ -380,6 +381,7 @@ impl DateTimePicker {
                     .when(!selected, |c| {
                         c.text_color(p.text_primary).hover(move |s| s.bg(hover_bg))
                     })
+                    .key_activated(p.text_primary)
                     .on_click(
                         cx.listener(move |this, _: &ClickEvent, _, cx| this.pick_day(day, cx)),
                     )
@@ -614,6 +616,7 @@ fn nav_btn(
         .rounded(radius(Radius::Sm))
         .cursor_pointer()
         .hover(move |s| s.bg(hover))
+        .key_activated(palette.text_primary)
         .on_click(handler)
         .child(icon(glyph, NAV_GLYPH, ink))
         .into_any_element()
@@ -641,6 +644,7 @@ fn choice_chip(
         .rounded(radius(Radius::Sm))
         .font_family(mono_family())
         .text_size(FONT_XS)
+        .key_activated(p.text_primary)
         .cursor_pointer()
         .when(selected, |c| c.bg(p.brand).text_color(p.base))
         .when(!selected, |c| {

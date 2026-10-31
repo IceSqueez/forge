@@ -4,8 +4,8 @@ use crate::async_bridge;
 use crate::integration_switch::{category_inactive_badge, inactive_badge};
 use crate::repo_failure::RepoFailure;
 use forge_components::{
-    BORDER_THIN, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, PushToast, Radius, Spacing,
-    body_family, icon, mono_family, radius, row_card, spacing, status_dot, tr,
+    BORDER_THIN, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, KeyActivated, PushToast, Radius,
+    Spacing, body_family, icon, mono_family, radius, row_card, spacing, status_dot, tr,
 };
 use forge_registry::TriggerKindDescriptor;
 use forge_types::{TriggerInstance, TriggerInstanceId};
@@ -29,6 +29,7 @@ fn trigger_unlink_btn(
         .rounded(radius(Radius::Sm))
         .cursor_pointer()
         .hover(move |s| s.bg(solid))
+        .key_activated(palette.text_primary)
         .on_click(handler)
         .child(icon(Icon::X, UNLINK_GLYPH, palette.text_faint))
         .into_any_element()

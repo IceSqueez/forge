@@ -35,6 +35,8 @@ actions!(forge_step_drag, [StepDragCancel]);
 
 actions!(forge_app, [Quit]);
 
+actions!(forge_focus, [FocusContent]);
+
 fn bind_list_keys(cx: &mut App) {
     cx.bind_keys([
         KeyBinding::new("up", ListSelectPrev, Some(LIST_CONTEXT)),

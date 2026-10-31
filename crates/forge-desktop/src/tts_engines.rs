@@ -6,9 +6,9 @@ use std::sync::{Arc, RwLock};
 
 use forge_components::{
     BORDER_THIN, DISABLED_OPACITY, Density, FONT_MD, FONT_XS, FONT_XXS, ForgePalette, Icon,
-    PushToast, Radius, Spacing, ToastKind, avatar_tile, body_family, card, empty_state,
-    error_row_with_retry, hash_accent, icon, mono_family, radius, section_label, slider, spacing,
-    status_dot, toggle, tr,
+    KeyActivated, PushToast, Radius, Spacing, ToastKind, avatar_tile, body_family, card,
+    empty_state, error_row_with_retry, hash_accent, icon, mono_family, radius, section_label,
+    slider, spacing, status_dot, toggle, tr,
 };
 use forge_speak_queue::{
     EmoteTokenSet, Priority, RequestId, SpeakCommand, SpeakQueueHandle, SpeakRequest,
@@ -641,6 +641,7 @@ impl TtsEnginesView {
             .rounded(radius(Radius::Sm))
             .when(selected, |d| d.bg(palette.surface_overlay))
             .cursor_pointer()
+            .key_activated(palette.text_primary)
             .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.select_engine(index, cx)))
             .child(status_dot(dot_color, STATUS_DOT))
             .child(identity)
@@ -668,6 +669,7 @@ impl TtsEnginesView {
             .border_dashed()
             .border_color(palette.border_regular)
             .cursor_pointer()
+            .key_activated(palette.text_primary)
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_add_picker(cx)))
             .child(icon(Icon::Plus, PLUS_GLYPH, palette.brand))
             .child(
@@ -714,6 +716,7 @@ impl TtsEnginesView {
                     .rounded(radius(Radius::Sm))
                     .cursor_pointer()
                     .hover(|s| s.bg(palette.surface_overlay))
+                    .key_activated(palette.text_primary)
                     .on_click(
                         cx.listener(move |this, _: &ClickEvent, _, cx| this.choose_add(kind, cx)),
                     )
@@ -1053,6 +1056,7 @@ impl TtsEnginesView {
             .id(SharedString::from(format!("tts-voice-play-{voice_id}")))
             .flex_shrink_0()
             .cursor_pointer()
+            .key_activated(palette.text_primary)
             .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
                 this.preview_voice(engine_id.clone(), voice_id.clone(), cx)
             }))

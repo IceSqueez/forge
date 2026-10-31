@@ -4,6 +4,7 @@ use gpui::{
 };
 
 use crate::ActivePresentation;
+use crate::key_activation::KeyActivated;
 use crate::palette::ForgePalette;
 use crate::tokens::{
     BORDER_THIN, DISABLED_OPACITY, Density, FONT_SM, FONT_XXS, Radius, Spacing, body_family,
@@ -255,7 +256,10 @@ impl RenderOnce for RadioRow {
         if self.disabled {
             row.opacity(self.disabled_opacity).into_any_element()
         } else if let Some(handler) = self.on_click {
-            row.cursor_pointer().on_click(handler).into_any_element()
+            row.cursor_pointer()
+                .key_activated(cx.palette().text_primary)
+                .on_click(handler)
+                .into_any_element()
         } else {
             row.into_any_element()
         }

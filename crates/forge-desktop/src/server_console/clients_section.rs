@@ -6,9 +6,9 @@ use crate::async_bridge;
 use crate::platform_visuals::platform_color;
 use forge_components::{
     BORDER_THIN, ColumnWidth, ConfirmTone, DataRow, Density, FONT_SM, FONT_XS, FONT_XXS,
-    ForgePalette, Icon, OverlayPosition, PushToast, Radius, Spacing, ToastKind, body_family, card,
-    column, confirm_modal, data_table, empty_state, fmt_number, icon, mono_family, overlay,
-    spacing, status_dot, tooltip_builder, tr, virtual_table,
+    ForgePalette, Icon, KeyActivated, OverlayPosition, PushToast, Radius, Spacing, ToastKind,
+    body_family, card, column, confirm_modal, data_table, empty_state, fmt_number, icon,
+    mono_family, overlay, spacing, status_dot, tooltip_builder, tr, virtual_table,
 };
 use forge_events::EventSource;
 use forge_server::ClientId;
@@ -311,6 +311,7 @@ impl ServerConsoleView {
             .flex()
             .cursor_pointer()
             .tooltip(tooltip_builder(tr!("server_disconnect_tooltip"), palette))
+            .key_activated(palette.text_primary)
             .on_click(
                 cx.listener(move |this, _: &ClickEvent, _, cx| this.request_disconnect(index, cx)),
             )

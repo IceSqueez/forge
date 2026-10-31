@@ -1,4 +1,5 @@
 use crate::HOVER_FILL_ALPHA;
+use crate::key_activation::KeyActivated;
 use crate::presentation::ActivePresentation;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -175,6 +176,7 @@ fn accent_confirm_button(
         .text_color(ink)
         .cursor_pointer()
         .hover(move |style| style.bg(with_alpha(accent, HOVER_FILL_ALPHA)))
+        .key_activated(ink)
         .on_click(move |event, window, cx| handler(event, window, cx))
         .child(label)
 }
@@ -314,9 +316,10 @@ impl RenderOnce for ConfirmModal {
         }
 
         card.when_some(enter_binding, |card, (focus, confirm)| {
+            let enter_scope = focus.clone();
             confine_tab(card.key_context(KEY_CONTEXT).track_focus(&focus), &focus).on_key_down(
                 move |event: &KeyDownEvent, window, cx| {
-                    if plain_enter_press(event) {
+                    if plain_enter_press(event) && enter_scope.is_focused(window) {
                         cx.stop_propagation();
                         confirm(&keyboard_click(), window, cx);
                     }
@@ -509,6 +512,19 @@ mod tests {
         rig.press("enter");
 
         assert_eq!(rig.counts(), (1, 0));
+    }
+
+    #[gpui::test]
+    fn enter_on_the_tabbed_cancel_button_does_not_confirm(cx: &mut TestAppContext) {
+        let mut rig = open(cx, CONFIRMING);
+        rig.vcx
+            .update(|_, cx| crate::key_activation::bind_key_activation(cx));
+        rig.vcx.update(|window, cx| window.focus_next(cx));
+        rig.vcx.run_until_parked();
+
+        rig.press("enter");
+
+        assert_eq!(rig.counts(), (0, 0));
     }
 
     #[gpui::test]

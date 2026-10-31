@@ -10,8 +10,8 @@ use forge_components::spacing;
 use std::ops::Range;
 
 use forge_components::{
-    ForgePalette, Icon, ModalSize, OverlayPosition, Radius, body_family, ghost_button, icon, modal,
-    mono_family, overlay, radius, scaled, tr,
+    ForgePalette, Icon, KeyActivated, ModalSize, OverlayPosition, Radius, body_family,
+    ghost_button, icon, modal, mono_family, overlay, radius, scaled, tr,
 };
 use gpui::{
     AnyElement, ClickEvent, Context, FontWeight, HighlightStyle, Hsla, Pixels, Rgba, SharedString,
@@ -279,6 +279,7 @@ pub(crate) fn render_disable_modal(
         .text_color(palette.shell)
         .child(icon(Icon::PlugOff, CONFIRM_ICON, palette.shell))
         .child(tr!("integration_disable_confirm", name = prompt.name))
+        .key_activated(palette.text_primary)
         .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.confirm_disable(cx)));
 
     let footer = div()

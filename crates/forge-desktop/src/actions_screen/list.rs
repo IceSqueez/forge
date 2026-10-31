@@ -11,11 +11,11 @@ use forge_components::SEARCH_FIELD_WIDTH;
 use forge_components::focus_inside_modal;
 use forge_components::{
     BORDER_THIN, ChipGlyph, ConfirmTone, Density, FONT_XS, FONT_XXS, ForgePalette, Icon,
-    InlineEditEvent, InputEvent, ModalSize, OverlayPosition, ResizeEdge, ResizeRange, Spacing,
-    TextArea, TextInput, ToastKind, body_family, chip, confirm_modal, context_menu, header_stat,
-    header_stats, icon, inline_edit, install_resize, menu_divider, menu_item, modal, mono_family,
-    overlay, primary_button, primary_button_with_icon, scaled, secondary_button, spacing,
-    status_dot, toggle, tr,
+    InlineEditEvent, InputEvent, KeyActivated, ModalSize, OverlayPosition, ResizeEdge, ResizeRange,
+    Spacing, TextArea, TextInput, ToastKind, body_family, chip, confirm_modal, context_menu,
+    header_stat, header_stats, icon, inline_edit, install_resize, menu_divider, menu_item, modal,
+    mono_family, overlay, primary_button, primary_button_with_icon, scaled, secondary_button,
+    spacing, status_dot, toggle, tr,
 };
 use forge_types::{Action, ActionId, DEFAULT_QUEUE_ID, ExecutionMode, Queue};
 use gpui::{
@@ -724,6 +724,7 @@ impl ScreenActionsView {
             .py(spacing(Spacing::Xs, density))
             .cursor_pointer()
             .hover(move |s| s.bg(hover_bg))
+            .key_activated(palette.text_primary)
             .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.toggle_group(index, cx)))
             .child(icon(chevron, TREE_GLYPH, palette.text_muted))
             .child(

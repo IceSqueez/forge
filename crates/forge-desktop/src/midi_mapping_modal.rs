@@ -9,10 +9,10 @@ use forge_components::spacing;
 use std::sync::Arc;
 
 use forge_components::{
-    BORDER_THIN, Density, FONT_SECTION_LABEL, ForgePalette, Icon, InputEvent, OverlayPosition,
-    Radius, SearchState, TextInput, body_family, dropdown, dropdown_list, dropdown_row,
-    field_label, ghost_button_with_icon, grow_cell, icon, modal, mono_family, overlay,
-    primary_button, scaled, secondary_button, tr, with_alpha,
+    BORDER_THIN, Density, FONT_SECTION_LABEL, ForgePalette, Icon, InputEvent, KeyActivated,
+    OverlayPosition, Radius, SearchState, TextInput, body_family, dropdown, dropdown_list,
+    dropdown_row, field_label, ghost_button_with_icon, grow_cell, icon, modal, mono_family,
+    overlay, primary_button, scaled, secondary_button, tr, with_alpha,
 };
 use forge_storage::ActionRepo;
 use forge_types::{ActionId, TriggerInstanceId};
@@ -534,6 +534,7 @@ impl MidiMappingModal {
             .bg(palette.shell)
             .cursor_pointer()
             .hover(move |s| s.border_color(hover_border))
+            .key_activated(palette.text_primary)
             .on_click(on_click)
             .child(
                 div()
@@ -760,6 +761,7 @@ impl MidiMappingModal {
             .border_color(border)
             .bg(background)
             .cursor_pointer()
+            .key_activated(palette.text_primary)
             .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.select_action(id, cx)))
             .child(
                 div()

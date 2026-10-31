@@ -9,8 +9,8 @@ use forge_components::spacing;
 use std::sync::Arc;
 
 use forge_components::{
-    BORDER_THIN, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, TextInput, body_family, grow_cell,
-    icon, mono_family, radius, scaled, spinner, toggle, tr, with_alpha,
+    BORDER_THIN, FONT_XS, FONT_XXS, ForgePalette, Icon, KeyActivated, Radius, TextInput,
+    body_family, grow_cell, icon, mono_family, radius, scaled, spinner, toggle, tr, with_alpha,
 };
 use forge_storage::{Flag, Setting, SettingsRepo, read_setting_or_default, write_setting};
 use gpui::{
@@ -527,6 +527,7 @@ pub(crate) fn form_buttons<V: 'static>(
         .when(!test_disabled, |el| {
             el.cursor_pointer()
                 .hover(|s| s.border_color(palette.border_input))
+                .key_activated(palette.text_primary)
                 .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| on_test(this, cx)))
         })
         .when(test_disabled, |el| el.opacity(BUSY_OPACITY))
@@ -557,6 +558,7 @@ pub(crate) fn form_buttons<V: 'static>(
         .when(!submit_disabled, |el| {
             el.cursor_pointer()
                 .hover(|s| s.bg(with_alpha(palette.brand, CTA_HOVER_ALPHA)))
+                .key_activated(palette.text_primary)
                 .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| on_submit(this, cx)))
         })
         .when(submit_disabled, |el| el.opacity(BUSY_OPACITY))

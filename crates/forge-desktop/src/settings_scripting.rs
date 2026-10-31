@@ -2,10 +2,10 @@ use std::ops::RangeInclusive;
 use std::sync::Arc;
 
 use forge_components::{
-    DISABLED_OPACITY, Density, FONT_SM, FONT_XS, ForgePalette, Icon, InputEvent, PushToast, Radius,
-    SettingRow, Spacing, TextInput, ToastKind, body_family, error_row_with_retry, icon,
-    icon_button, radius, setting_block, setting_groups, setting_row, setting_rows, spacing, toggle,
-    tr,
+    DISABLED_OPACITY, Density, FONT_SM, FONT_XS, ForgePalette, Icon, InputEvent, KeyActivated,
+    PushToast, Radius, SettingRow, Spacing, TextInput, ToastKind, body_family,
+    error_row_with_retry, icon, icon_button, radius, setting_block, setting_groups, setting_row,
+    setting_rows, spacing, toggle, tr,
 };
 use forge_script::{EngineConfig, ScriptHttpConfig, stored_script_http_allowed_domains};
 use forge_storage::{
@@ -534,6 +534,7 @@ impl SettingsScriptingView {
                     .items_center()
                     .justify_center()
                     .cursor_pointer()
+                    .key_activated(palette.text_primary)
                     .on_click(
                         cx.listener(move |this, _: &ClickEvent, _, cx| this.remove_domain(idx, cx)),
                     )

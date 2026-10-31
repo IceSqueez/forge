@@ -2,8 +2,8 @@ use gpui::Rgba;
 use std::sync::{Arc, RwLock};
 
 use forge_components::{
-    BORDER_THIN, BreadcrumbCrumb, Density, FONT_XS, ForgePalette, body_family, header_status,
-    page_frame, scaled, tr, with_alpha,
+    BORDER_THIN, BreadcrumbCrumb, Density, FONT_XS, ForgePalette, KeyActivated, body_family,
+    header_status, page_frame, scaled, tr, with_alpha,
 };
 use forge_speak_queue::{PipelineConfigHandle, SpeakQueueHandle};
 use forge_storage::{CredentialsRepo, DataProvider, SettingsRepo};
@@ -205,6 +205,7 @@ impl TtsView {
             .border_b(TAB_INDICATOR_H)
             .border_color(indicator)
             .cursor_pointer()
+            .key_activated(palette.text_primary)
             .on_click(
                 cx.listener(move |this, _: &ClickEvent, _, cx| this.select_section(section, cx)),
             )

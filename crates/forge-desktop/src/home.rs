@@ -2,7 +2,7 @@ use forge_components::FONT_XL;
 use forge_components::FONT_XXL;
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, Density, FONT_LG, FONT_MD, FONT_SM, FONT_XS, FONT_XXS,
-    ForgePalette, Icon, Radius, Spacing, body_family, card, dropdown, dropdown_row,
+    ForgePalette, Icon, KeyActivated, Radius, Spacing, body_family, card, dropdown, dropdown_row,
     dropdown_surface, empty_state, ghost_button_with_icon, grow_cell, icon, mono_family,
     page_frame, pulse_dot, radius, scaled, spacing, sparkline, status_dot, tr,
 };
@@ -508,6 +508,7 @@ impl HomeView {
             .bg(palette.elevated)
             .cursor_pointer()
             .hover(move |s| s.border_color(hover_border))
+            .key_activated(palette.text_primary)
             .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.go(target.clone(), cx)))
             .child(head)
             .child(stat_row)
@@ -771,6 +772,7 @@ impl HomeView {
             .bg(cell_bg)
             .cursor_pointer()
             .hover(move |s| s.bg(hover_bg))
+            .key_activated(palette.text_primary)
             .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.go(target.clone(), cx)))
             .child(brand_dot)
             .child(label_col)

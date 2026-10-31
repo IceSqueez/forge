@@ -2,9 +2,9 @@ use forge_components::FONT_META;
 use std::sync::{Arc, RwLock};
 
 use forge_components::{
-    BORDER_THIN, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, Radius, Spacing,
-    TextInput, ToastKind, body_family, card, icon, mono_family, radius, scaled, section_label,
-    spacing, tr,
+    BORDER_THIN, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, KeyActivated, Radius,
+    Spacing, TextInput, ToastKind, body_family, card, icon, mono_family, radius, scaled,
+    section_label, spacing, tr,
 };
 use forge_speak_queue::{SpeakCommand, SpeakQueueHandle};
 use forge_speech_types::EngineId;
@@ -743,6 +743,7 @@ impl CloudCredentialsView {
                         )))
                         .flex_shrink_0()
                         .cursor_pointer()
+                        .key_activated(palette.text_primary)
                         .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
                             this.toggle_reveal(field, cx)
                         }))
@@ -804,6 +805,7 @@ impl CloudCredentialsView {
             test_base
                 .id(SharedString::from(format!("cloud-test-{}", kind.key())))
                 .cursor_pointer()
+                .key_activated(palette.text_primary)
                 .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.test(kind, cx)))
                 .into_any_element()
         } else {
@@ -818,6 +820,7 @@ impl CloudCredentialsView {
                 .rounded(radius(Radius::Md))
                 .bg(palette.brand)
                 .cursor_pointer()
+                .key_activated(palette.text_primary)
                 .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.save(kind, cx)))
                 .font_family(body_family())
                 .text_size(FONT_XS)

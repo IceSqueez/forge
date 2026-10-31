@@ -8,8 +8,8 @@ use forge_components::FONT_XL;
 use forge_components::Spacing;
 use forge_components::spacing;
 use forge_components::{
-    BORDER_THIN, FONT_XS, ForgePalette, Icon, Radius, body_family, icon, mono_family, radius,
-    scaled, tr,
+    BORDER_THIN, FONT_XS, ForgePalette, Icon, KeyActivated, Radius, body_family, icon, mono_family,
+    radius, scaled, tr,
 };
 use forge_platform_core::IntegrationDeclaration;
 use gpui::{
@@ -121,6 +121,7 @@ impl IntegrationsHubView {
             .text_color(palette.text_faint)
             .hover(|style| style.text_color(palette.text_secondary))
             .child(tr!("integration_welcome_skip"))
+            .key_activated(palette.text_primary)
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.finish_welcome(cx)));
 
         let label = if can_enter {
@@ -146,6 +147,7 @@ impl IntegrationsHubView {
         enter = if can_enter {
             enter
                 .cursor_pointer()
+                .key_activated(palette.text_primary)
                 .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.finish_welcome(cx)))
         } else {
             enter.opacity(CTA_IDLE_OPACITY)

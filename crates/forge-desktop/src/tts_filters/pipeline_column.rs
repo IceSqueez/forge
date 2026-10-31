@@ -1,8 +1,8 @@
 use super::TtsFiltersView;
 use forge_components::{
-    BORDER_THIN, DISABLED_OPACITY, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius,
-    Spacing, TINT_FILL_ALPHA, body_family, card, error_row_with_retry, icon, mono_family, radius,
-    scaled, spacing, toggle, tr, with_alpha,
+    BORDER_THIN, DISABLED_OPACITY, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon,
+    KeyActivated, Radius, Spacing, TINT_FILL_ALPHA, body_family, card, error_row_with_retry, icon,
+    mono_family, radius, scaled, spacing, toggle, tr, with_alpha,
 };
 use gpui::prelude::*;
 use gpui::{AnyElement, App, ClickEvent, Context, Pixels, Rgba, SharedString, Window, div, px};
@@ -165,6 +165,7 @@ impl TtsFiltersView {
             .items_center()
             .gap(spacing(Spacing::Xxs, density))
             .cursor_pointer()
+            .key_activated(palette.text_primary)
             .on_click(handler)
             .child(icon(Icon::Plus, FONT_XS, palette.brand))
             .child(
@@ -237,6 +238,7 @@ impl TtsFiltersView {
                     .id(x_id)
                     .flex()
                     .cursor_pointer()
+                    .key_activated(palette.text_primary)
                     .on_click(on_x)
                     .child(icon(Icon::X, FONT_XS, palette.text_faint)),
             );

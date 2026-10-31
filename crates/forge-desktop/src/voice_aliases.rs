@@ -11,11 +11,11 @@ use std::sync::Arc;
 
 use forge_components::{
     BORDER_THIN, ColumnWidth, Confirm, ConfirmTone, DataRow, Density, FONT_XS, FONT_XXS,
-    ForgePalette, Icon, OverlayPosition, Picker, PickerEvent, PickerItem, PickerLabels, Radius,
-    SearchState, Spacing, ToastKind, avatar_tile, badge, body_family, card, column, confirm_modal,
-    data_table, dropdown, empty_state, error_row, error_row_with_retry, hash_accent, icon,
-    mono_family, overlay, primary_button_with_icon, radius, scaled, segment, segmented, spacing,
-    status_dot, toolbar_row, tr, virtual_table, with_alpha,
+    ForgePalette, Icon, KeyActivated, OverlayPosition, Picker, PickerEvent, PickerItem,
+    PickerLabels, Radius, SearchState, Spacing, ToastKind, avatar_tile, badge, body_family, card,
+    column, confirm_modal, data_table, dropdown, empty_state, error_row, error_row_with_retry,
+    hash_accent, icon, mono_family, overlay, primary_button_with_icon, radius, scaled, segment,
+    segmented, spacing, status_dot, toolbar_row, tr, virtual_table, with_alpha,
 };
 use forge_speak_queue::{
     AliasKey, EmoteTokenSet, Priority, RequestId, SpeakCommand, SpeakQueueHandle, SpeakRequest,
@@ -992,14 +992,19 @@ impl VoiceAliasesView {
             .flex()
             .child(icon(Icon::PlayerPlay, ACTION_GLYPH, preview_color));
         if !muted {
-            preview = preview.cursor_pointer().on_click(
-                cx.listener(move |this, _: &ClickEvent, _, cx| this.preview(&preview_alias, cx)),
-            );
+            preview =
+                preview
+                    .cursor_pointer()
+                    .key_activated(palette.text_primary)
+                    .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                        this.preview(&preview_alias, cx)
+                    }));
         }
         let edit = div()
             .id((gpui::ElementId::from("va-edit"), row_key.clone()))
             .flex()
             .cursor_pointer()
+            .key_activated(palette.text_primary)
             .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
                 this.open_edit(&edit_alias, window, cx)
             }))
@@ -1008,6 +1013,7 @@ impl VoiceAliasesView {
             .id((gpui::ElementId::from("va-delete"), row_key.clone()))
             .flex()
             .cursor_pointer()
+            .key_activated(palette.text_primary)
             .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
                 this.request_delete(delete_alias.clone(), cx)
             }))

@@ -2,9 +2,9 @@ use std::time::Duration;
 
 use forge_components::{
     BORDER_THIN, ConfirmTone, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon,
-    OverlayPosition, Radius, Spacing, body_family, confirm_modal, ghost_button_with_icon, icon,
-    mono_family, overlay, primary_button, radio_row, radius, secondary_button, segment, segmented,
-    spacing, status_dot, tr,
+    KeyActivated, OverlayPosition, Radius, Spacing, body_family, confirm_modal,
+    ghost_button_with_icon, icon, mono_family, overlay, primary_button, radio_row, radius,
+    secondary_button, segment, segmented, spacing, status_dot, tr,
 };
 use forge_monobank::MonobankJar;
 use gpui::{
@@ -85,6 +85,7 @@ impl DonationSettingsView {
                     .id("donation-token-reveal")
                     .flex_none()
                     .cursor_pointer()
+                    .key_activated(palette.text_primary)
                     .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_reveal(cx)))
                     .child(icon(eye, EYE_GLYPH, palette.text_faint)),
             );
@@ -101,6 +102,7 @@ impl DonationSettingsView {
             .gap(spacing(Spacing::Xxs, density))
             .cursor_pointer()
             .text_color(palette.brand)
+            .key_activated(palette.text_primary)
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.open_token_page(cx)))
             .child(text(
                 tr!("donation_token_page_link"),

@@ -4,7 +4,7 @@ use crate::chat_gap_row::chat_gap_row;
 use crate::chat_row::{ChatRow, chat_row};
 use crate::platform_visuals::{platform_mark, role_badge};
 use forge_components::{
-    BORDER_THIN, ChipGlyph, DateShape, Density, FONT_XS, ForgePalette, Icon, Radius,
+    BORDER_THIN, ChipGlyph, DateShape, Density, FONT_XS, ForgePalette, Icon, KeyActivated, Radius,
     SEARCH_FIELD_WIDTH, Spacing, chip, empty_state, fmt_display, icon, mono_family, radius,
     spacing, tr,
 };
@@ -134,6 +134,7 @@ impl ChatView {
             .rounded(ICON_BTN_RADIUS)
             .cursor_pointer()
             .hover(move |s| s.bg(surf))
+            .key_activated(palette.text_primary)
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.export_chat_log(cx)))
             .child(icon(Icon::Download, EXPORT_ICON, green))
             .into_any_element()
@@ -155,6 +156,8 @@ impl ChatView {
         let row_gap = spacing(Spacing::Xxs, density);
         let pal = *palette;
         let view = cx.entity();
+        let cursor_seq = self.feed_keys.current().copied();
+        let cursor_bg = palette.shell;
         let list_el = list(self.chat_list.clone(), move |ix, _window, app| {
             let Some(seq) = snapshot.get(ix).copied() else {
                 return div().into_any_element();
@@ -184,6 +187,7 @@ impl ChatView {
             };
             let author_key = msg.author_key();
             let menu_view = view.clone();
+            let cursor_view = view.clone();
             let menu_target = author_key
                 .as_ref()
                 .map(|key| ViewerTarget::new(key, msg.username.to_string()));
@@ -197,7 +201,7 @@ impl ChatView {
                     }
                 },
             );
-            let mut framed = div().pb(row_gap);
+            let mut framed = div().relative().pb(row_gap);
             if !gap.is_empty() {
                 framed = framed.child(div().pb(row_gap).child(chat_gap_row(
                     gap.label(),
@@ -206,6 +210,11 @@ impl ChatView {
                 )));
             }
             framed = framed.child(row);
+            if cursor_seq == Some(seq) {
+                framed = framed
+                    .bg(cursor_bg)
+                    .child(cursor_view.read(app).feed_keys.row_anchor(None));
+            }
             if let Some(menu_target) = menu_target {
                 framed = framed.on_mouse_down(
                     MouseButton::Right,
@@ -243,7 +252,8 @@ impl ChatView {
             list_el.into_any_element()
         };
 
-        let mut area = div()
+        let mut area = self
+            .feed_keys_on(div(), palette, cx)
             .relative()
             .flex_1()
             .min_h(px(0.0))
@@ -271,6 +281,7 @@ impl ChatView {
                 .rounded(radius(Radius::Pill))
                 .bg(palette.brand)
                 .cursor_pointer()
+                .key_activated(pal.text_primary)
                 .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.jump_to_latest(cx)))
                 .child(icon(Icon::ArrowDown, FONT_XS, palette.shell))
                 .child(

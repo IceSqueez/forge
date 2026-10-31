@@ -3,8 +3,8 @@ use super::viewer_actions::ViewerAction;
 use super::{ChatView, ReplyTarget};
 use crate::chat_author::AuthorKey;
 use forge_components::{
-    BORDER_THIN, Density, FONT_XS, FONT_XXS, ForgePalette, InputEvent, Radius, Spacing, TextInput,
-    ToastKind, body_family, radius, spacing, tr,
+    BORDER_THIN, Density, FONT_XS, FONT_XXS, ForgePalette, InputEvent, KeyActivated, Radius,
+    Spacing, TextInput, ToastKind, body_family, radius, spacing, tr,
 };
 use forge_platform_twitch::vocabulary::config_keys as twitch_config_keys;
 use forge_types::{PlatformId, SubActionStep, Variant};
@@ -192,6 +192,7 @@ impl ChatView {
             .border_color(border)
             .cursor_pointer()
             .hover(move |s| s.bg(surf).border_color(border_hover).text_color(text_hover))
+            .key_activated(palette.text_primary)
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_whisper(cx)))
             .child(
                 div()
@@ -213,6 +214,7 @@ impl ChatView {
             .rounded(radius(Radius::Sm))
             .bg(brand)
             .cursor_pointer()
+            .key_activated(palette.text_primary)
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.send_whisper(cx)))
             .child(
                 div()
@@ -276,6 +278,7 @@ impl ChatView {
             .border_color(border)
             .cursor_pointer()
             .hover(move |s| s.bg(surf).border_color(border_hover).text_color(text_hover))
+            .key_activated(palette.text_primary)
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_reply(cx)))
             .child(
                 div()
@@ -297,6 +300,7 @@ impl ChatView {
             .rounded(radius(Radius::Sm))
             .bg(brand)
             .cursor_pointer()
+            .key_activated(palette.text_primary)
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.send_reply(cx)))
             .child(
                 div()

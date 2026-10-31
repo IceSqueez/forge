@@ -3,9 +3,9 @@ use forge_components::Spacing;
 use forge_components::focus_inside_modal;
 use forge_components::spacing;
 use forge_components::{
-    BORDER_THIN, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, ModalSize, OverlayPosition,
-    Radius, TextInput, body_family, ghost_button_with_icon, icon, modal, modal_width, mono_family,
-    overlay, primary_button, scaled, secondary_button, tr,
+    BORDER_THIN, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, KeyActivated, ModalSize,
+    OverlayPosition, Radius, TextInput, body_family, ghost_button_with_icon, icon, modal,
+    modal_width, mono_family, overlay, primary_button, scaled, secondary_button, tr,
 };
 use forge_discord::validate_webhook_url;
 use gpui::{
@@ -226,6 +226,7 @@ impl DiscordWebhookModal {
                     .flex()
                     .flex_shrink_0()
                     .cursor_pointer()
+                    .key_activated(palette.text_primary)
                     .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_reveal(cx)))
                     .child(icon(reveal_glyph, CONTROL_GLYPH, palette.text_faint)),
             )
@@ -235,6 +236,7 @@ impl DiscordWebhookModal {
                     .flex()
                     .flex_shrink_0()
                     .cursor_pointer()
+                    .key_activated(palette.text_primary)
                     .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.copy_url(cx)))
                     .child(icon(Icon::Copy, CONTROL_GLYPH, palette.text_faint)),
             );

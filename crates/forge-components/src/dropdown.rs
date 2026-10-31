@@ -3,6 +3,7 @@ use crate::Elevation;
 use crate::FONT_META;
 use crate::FONT_ROW;
 use crate::elevation_shadow;
+use crate::key_activation::KeyActivated;
 use std::rc::Rc;
 
 use gpui::prelude::FluentBuilder;
@@ -70,6 +71,7 @@ pub struct DropdownRow {
     trailing: Option<Icon>,
     current: bool,
     highlighted: bool,
+    key_cursor: bool,
     on_click: Option<RowClick>,
     palette: ForgePalette,
 }
@@ -89,6 +91,7 @@ pub fn dropdown_row(
         trailing: None,
         current: false,
         highlighted: false,
+        key_cursor: false,
         on_click: None,
         palette: *palette,
     }
@@ -104,6 +107,7 @@ impl DropdownRow {
     #[must_use]
     pub fn highlighted(mut self, highlighted: bool) -> Self {
         self.highlighted = highlighted;
+        self.key_cursor = true;
         self
     }
 
@@ -255,6 +259,9 @@ impl RenderOnce for DropdownRow {
             row = row.hover(move |style| style.bg(hover_bg));
         }
         if let Some(handler) = self.on_click {
+            if !self.key_cursor {
+                row = row.key_activated(p.text_primary);
+            }
             row = row.on_click(handler);
         }
         row

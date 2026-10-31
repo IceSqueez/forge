@@ -110,7 +110,7 @@ pub use integration_gating::{
     health_tile, integration_disabled_notice, integration_disabled_reason,
     integration_inactive_badge,
 };
-pub use key_activation::bind_key_activation;
+pub use key_activation::{KeyActivated, bind_key_activation, with_focus_ring};
 pub use locale::{
     ArgsBuilder, CatalogLanguage, catalog_source, duplicate_message_ids, fmt_bytes, fmt_clock,
     fmt_number, fmt_uptime, fmt_uptime_short, ftl_id, install_bundle, install_process_language,

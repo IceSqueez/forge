@@ -3,8 +3,9 @@ use crate::load_notice::{LoadNotice, NoticeWidth, load_notice};
 use crate::navigable_list::{ListStep, NavigableList, navigable_list};
 use forge_components::{
     ActivePresentation, BORDER_THIN, Density, FONT_FIELD, FONT_XS, FONT_XXS, ForgePalette, Icon,
-    Radius, ResizeEdge, ResizeRange, Spacing, body_family, context_menu, icon, install_resize,
-    menu_divider, menu_item, mono_family, radius, scaled, spacing, status_dot, tr, with_alpha,
+    KeyActivated, Radius, ResizeEdge, ResizeRange, Spacing, body_family, context_menu, icon,
+    install_resize, menu_divider, menu_item, mono_family, radius, scaled, spacing, status_dot, tr,
+    with_alpha,
 };
 use forge_types::ScriptId;
 use gpui::prelude::*;
@@ -276,6 +277,7 @@ impl ScriptEditorView {
                     .bg(palette.base)
                     .cursor_pointer()
                     .hover(move |s| s.border_color(brand).bg(hover_bg))
+                    .key_activated(palette.text_primary)
                     .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.new_script(cx)))
                     .child(icon(Icon::Plus, GLYPH_ACTION, palette.brand))
                     .child(

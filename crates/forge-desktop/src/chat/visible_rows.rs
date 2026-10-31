@@ -110,6 +110,7 @@ impl ChatView {
     }
 
     pub(super) fn jump_to_latest(&mut self, cx: &mut Context<Self>) {
+        self.feed_keys.clear();
         self.auto_scroll = true;
         self.chat_list.scroll_to_end();
         self.unread = 0;

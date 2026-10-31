@@ -17,8 +17,8 @@ use crate::home_stats::HomeStats;
 use crate::navigable_list::forward_root_focus_to_list;
 
 use crate::actions::{
-    GoActions, GoChat, GoHome, GoSettings, GoTriggers, GoTwitch, NewAction, Quit, RunFocused,
-    SHELL_CONTEXT, SaveFocused, ToggleEventFeed, ToggleLiveChat,
+    FocusContent, GoActions, GoChat, GoHome, GoSettings, GoTriggers, GoTwitch, NewAction, Quit,
+    RunFocused, SHELL_CONTEXT, SaveFocused, ToggleEventFeed, ToggleLiveChat,
 };
 use crate::actions_screen::ScreenActionsView;
 use crate::chat::ChatView;
@@ -1195,6 +1195,10 @@ impl AppShell {
         }
     }
 
+    fn focus_content(&mut self, _: &FocusContent, window: &mut Window, cx: &mut Context<Self>) {
+        window.focus(&self.focus, cx);
+    }
+
     fn focus_next_stop(&mut self, _: &FocusNextField, window: &mut Window, cx: &mut Context<Self>) {
         let before = window.focused(cx);
         window.focus_next(cx);
@@ -1317,6 +1321,7 @@ impl Render for AppShell {
             .on_action(cx.listener(Self::new_action))
             .on_action(cx.listener(Self::toggle_live_chat))
             .on_action(cx.listener(Self::toggle_event_feed))
+            .on_action(cx.listener(Self::focus_content))
             .on_action(cx.listener(Self::focus_next_stop))
             .on_action(cx.listener(Self::focus_previous_stop))
             .size_full()

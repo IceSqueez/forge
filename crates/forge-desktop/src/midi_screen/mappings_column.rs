@@ -2,9 +2,9 @@ use super::{Capture, MappingRow, MidiScreenView};
 use crate::midi_signal::kind_color;
 use forge_components::{
     ActivePresentation, BORDER_THIN, Density, FONT_BADGE, FONT_LABEL, FONT_MICRO, FONT_XS,
-    FONT_XXS, ForgePalette, Icon, MenuPlacement, Radius, SectionLabel, Spacing, badge, body_family,
-    card, icon, menu_button, menu_divider, menu_item, mono_family, pad_tile, radius, scaled,
-    spacing, status_dot, tr,
+    FONT_XXS, ForgePalette, Icon, KeyActivated, MenuPlacement, Radius, SectionLabel, Spacing,
+    badge, body_family, card, icon, menu_button, menu_divider, menu_item, mono_family, pad_tile,
+    radius, scaled, spacing, status_dot, tr,
 };
 use forge_types::TriggerInstanceId;
 use gpui::{AnyElement, ClickEvent, Context, Pixels, div, prelude::*, px};
@@ -114,6 +114,7 @@ impl MidiScreenView {
             .items_center()
             .gap(spacing(Spacing::Sm, density))
             .cursor_pointer()
+            .key_activated(palette.text_primary)
             .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.edit_mapping(id, cx)))
             .child(
                 div()
@@ -301,6 +302,7 @@ impl MidiScreenView {
             .border_color(accent)
             .bg(palette.surface_overlay)
             .cursor_pointer()
+            .key_activated(palette.text_primary)
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_learn(cx)))
             .child(icon(Icon::Antenna, LEARN_GLYPH, accent))
             .child(
@@ -321,6 +323,7 @@ impl MidiScreenView {
                     .text_color(palette.text_faint)
                     .cursor_pointer()
                     .hover(move |style| style.text_color(cancel_hover))
+                    .key_activated(palette.text_primary)
                     .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
                         cx.stop_propagation();
                         this.cancel_learn(cx);

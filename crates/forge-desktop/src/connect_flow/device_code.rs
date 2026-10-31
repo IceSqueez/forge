@@ -8,8 +8,8 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use forge_components::{
-    BORDER_THIN, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, Spacing, body_family,
-    icon, mono_family, pulse_dot, radius, scaled, spacing, spinner, tr, with_alpha,
+    BORDER_THIN, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, KeyActivated, Radius, Spacing,
+    body_family, icon, mono_family, pulse_dot, radius, scaled, spacing, spinner, tr, with_alpha,
 };
 use forge_platform_core::{DeviceAuthEnd, PlatformError};
 use forge_platform_twitch::{DeviceCodeInfo, TWITCH_BROADCASTER_SCOPES, TwitchAuthFlow, UserInfo};
@@ -547,6 +547,7 @@ impl ConnectFlow {
             .border_color(palette.border_regular)
             .cursor_pointer()
             .hover(|s| s.border_color(palette.border_active))
+            .key_activated(palette.text_primary)
             .on_click(cx.listener(|this, _, _, cx| this.twitch_open_url(cx)))
             .child(icon(Icon::ExternalLink, px(13.0), accent))
             .child(
@@ -649,6 +650,7 @@ impl ConnectFlow {
             .border_color(palette.border_regular)
             .cursor_pointer()
             .hover(|s| s.border_color(palette.border_active))
+            .key_activated(palette.text_primary)
             .on_click(cx.listener(|this, _, _, cx| this.on_twitch_copy(cx)))
             .child(icon(
                 if copied { Icon::Check } else { Icon::Copy },
@@ -709,6 +711,7 @@ impl ConnectFlow {
                     .items_center()
                     .gap(spacing(Spacing::Xxs, density))
                     .cursor_pointer()
+                    .key_activated(palette.text_primary)
                     .on_click(cx.listener(|this, _, _, cx| this.begin_twitch_device(cx)))
                     .child(icon(Icon::Refresh, px(12.0), accent))
                     .child(
@@ -887,6 +890,7 @@ impl ConnectFlow {
             .bg(accent)
             .cursor_pointer()
             .hover(|s| s.bg(with_alpha(accent, CTA_HOVER_ALPHA)))
+            .key_activated(palette.text_primary)
             .on_click(cx.listener(|this, _, _, cx| this.begin_twitch_device(cx)))
             .child(icon(Icon::Refresh, px(12.0), palette.shell))
             .child(
@@ -948,6 +952,7 @@ impl ConnectFlow {
             .items_center()
             .gap(spacing(Spacing::Xxs, density))
             .cursor_pointer()
+            .key_activated(palette.text_primary)
             .on_click(cx.listener(|this, _, _, cx| this.cancel_twitch_and_leave(cx)))
             .child(icon(Icon::ChevronLeft, px(13.0), palette.text_muted))
             .child(
@@ -967,6 +972,7 @@ impl ConnectFlow {
             .border_color(palette.border_regular)
             .cursor_pointer()
             .hover(|s| s.bg(with_alpha(palette.border_regular, ROW_HOVER_WASH_ALPHA)))
+            .key_activated(palette.text_primary)
             .on_click(cx.listener(|this, _, _, cx| this.cancel_twitch_and_leave(cx)))
             .child(
                 div()

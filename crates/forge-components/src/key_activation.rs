@@ -1,6 +1,6 @@
 use gpui::{
-    App, BoxShadow, Div, InteractiveElement, KeyBinding, NoAction, Pixels, Rgba, Stateful, Styled,
-    point, px,
+    App, BoxShadow, InteractiveElement, KeyBinding, NoAction, Pixels, Rgba,
+    StatefulInteractiveElement, Styled, point, px,
 };
 
 use crate::text_input::CommitFocusedField;
@@ -17,24 +17,32 @@ pub fn bind_key_activation(cx: &mut App) {
     ]);
 }
 
-pub(crate) fn key_activated(element: Stateful<Div>, ring: Rgba) -> Stateful<Div> {
-    element
-        .key_context(KEY_CONTEXT)
-        .tab_index(TAB_ORDER_BY_PAINT)
-        .on_any_mouse_down(|_, window, cx| {
-            window.prevent_default();
-            window.dispatch_action(Box::new(CommitFocusedField), cx);
-        })
-        .focus_visible(move |style| {
-            style.shadow(vec![BoxShadow {
-                color: ring.into(),
-                offset: point(px(0.0), px(0.0)),
-                blur_radius: px(0.0),
-                spread_radius: FOCUS_RING_WIDTH,
-                inset: true,
-            }])
-        })
+pub fn with_focus_ring<E: InteractiveElement>(element: E, ring: Rgba) -> E {
+    element.focus_visible(move |style| {
+        style.shadow(vec![BoxShadow {
+            color: ring.into(),
+            offset: point(px(0.0), px(0.0)),
+            blur_radius: px(0.0),
+            spread_radius: FOCUS_RING_WIDTH,
+            inset: true,
+        }])
+    })
 }
+
+pub trait KeyActivated: StatefulInteractiveElement + Styled {
+    fn key_activated(self, ring: Rgba) -> Self {
+        let tab_stop = self
+            .key_context(KEY_CONTEXT)
+            .tab_index(TAB_ORDER_BY_PAINT)
+            .on_any_mouse_down(|_, window, cx| {
+                window.prevent_default();
+                window.dispatch_action(Box::new(CommitFocusedField), cx);
+            });
+        with_focus_ring(tab_stop, ring)
+    }
+}
+
+impl<E: StatefulInteractiveElement + Styled> KeyActivated for E {}
 
 #[cfg(test)]
 mod tests {
@@ -49,15 +57,18 @@ mod tests {
     };
 
     use super::*;
+    use crate::breadcrumb::{BreadcrumbCrumb, breadcrumb};
     use crate::buttons::primary_button;
-    use crate::cards::row_card;
+    use crate::cards::{pad_tile, row_card};
     use crate::chip::{ChipGlyph, chip};
+    use crate::modal::modal;
     use crate::overlay::{focus_inside_modal, overlay};
     use crate::palette::FORGE_DEFAULT;
     use crate::test_support::install_presentation;
     use crate::text_input::{
         FocusNextField, FocusPreviousField, InputEvent, TextInput, bind_text_input_keys,
     };
+    use crate::toggle::toggle;
 
     actions!(key_activation_test, [Activated]);
 
@@ -216,6 +227,144 @@ mod tests {
             (hits.button.get(), hits.chip.get(), hits.row.get()),
             (0, 0, 0)
         );
+    }
+
+    const SURFACE_COUNT: usize = 4;
+
+    struct Surfaces {
+        focus: FocusHandle,
+        hits: Rc<[Cell<usize>; SURFACE_COUNT]>,
+    }
+
+    impl Render for Surfaces {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            let palette = &FORGE_DEFAULT;
+            let hit = |slot: usize| {
+                let hits = self.hits.clone();
+                move |_: &gpui::ClickEvent, _: &mut Window, _: &mut App| bump(&hits[slot])
+            };
+            div()
+                .size_full()
+                .track_focus(&self.focus)
+                .on_action(|_: &FocusNextField, window, cx| window.focus_next(cx))
+                .child(pad_tile("pad", "P", "Pad", palette).on_click(hit(0)))
+                .child(breadcrumb(
+                    vec![BreadcrumbCrumb::link("Parent", "crumb", hit(1))],
+                    palette,
+                ))
+                .child(toggle(false, palette).on_click("switch", hit(2)))
+                .child(modal("Title", "Body", palette).on_close("close", hit(3)))
+        }
+    }
+
+    #[gpui::test]
+    fn tab_then_enter_fires_each_kit_surface_in_paint_order(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            bind_key_activation(cx);
+            cx.bind_keys([KeyBinding::new("tab", FocusNextField, None)]);
+        });
+        install_presentation(cx);
+        let hits: Rc<[Cell<usize>; SURFACE_COUNT]> = Rc::default();
+        let seen = hits.clone();
+        let (_, vcx) = cx.add_window_view(move |window, cx| {
+            let focus = cx.focus_handle();
+            window.focus(&focus, cx);
+            Surfaces { focus, hits: seen }
+        });
+        vcx.update(|window, _| window.activate_window());
+        vcx.run_until_parked();
+
+        for slot in 0..SURFACE_COUNT {
+            press(vcx, "tab enter");
+
+            let fired: Vec<usize> = hits.iter().map(Cell::get).collect();
+            let expected: Vec<usize> = (0..SURFACE_COUNT)
+                .map(|at| usize::from(at <= slot))
+                .collect();
+            assert_eq!(fired, expected);
+        }
+    }
+
+    const STOPS_BEYOND_THE_WALK_LIMIT: usize = 600;
+
+    struct Crowded {
+        focus: FocusHandle,
+        field: Entity<TextInput>,
+        open: bool,
+        outside: Rc<Cell<usize>>,
+        inside: Rc<Cell<usize>>,
+    }
+
+    impl Render for Crowded {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            let palette = &FORGE_DEFAULT;
+            let inside = self.inside.clone();
+            div()
+                .size_full()
+                .track_focus(&self.focus)
+                .on_action(|_: &FocusNextField, window, cx| window.focus_next(cx))
+                .children((0..STOPS_BEYOND_THE_WALK_LIMIT).map(|index| {
+                    let outside = self.outside.clone();
+                    primary_button("Behind", palette)
+                        .on_click(("behind", index), move |_, _, _| bump(&outside))
+                }))
+                .when(self.open, |root| {
+                    root.child(
+                        overlay(
+                            div().child(self.field.clone()).child(
+                                primary_button("Inside", palette)
+                                    .on_click("inside", move |_, _, _| bump(&inside)),
+                            ),
+                            palette,
+                        )
+                        .on_dismiss("crowded-sheet", |_, _| {}),
+                    )
+                })
+        }
+    }
+
+    #[gpui::test]
+    fn tab_stays_in_an_overlay_over_more_stops_than_the_walk_limit(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            bind_key_activation(cx);
+            bind_text_input_keys(cx);
+            cx.bind_keys([KeyBinding::new("tab", FocusNextField, None)]);
+        });
+        install_presentation(cx);
+        let outside = Rc::new(Cell::new(0));
+        let inside = Rc::new(Cell::new(0));
+        let (seen_outside, seen_inside) = (outside.clone(), inside.clone());
+        let (crowded, vcx) = cx.add_window_view(move |window, cx| {
+            let focus = cx.focus_handle();
+            window.focus(&focus, cx);
+            Crowded {
+                focus,
+                field: cx.new(|cx| TextInput::new("crowded-field", cx)),
+                open: false,
+                outside: seen_outside,
+                inside: seen_inside,
+            }
+        });
+        vcx.update(|window, _| window.activate_window());
+        vcx.run_until_parked();
+        vcx.update(|window, cx| {
+            let field = crowded.read(cx).field.clone();
+            focus_inside_modal(window, cx, |window, cx| {
+                field.update(cx, |field, cx| field.focus(window, cx));
+            });
+            crowded.update(cx, |crowded, cx| {
+                crowded.open = true;
+                cx.notify();
+            });
+        });
+        vcx.run_until_parked();
+
+        for _ in 0..4 {
+            press(vcx, "tab enter");
+        }
+
+        assert_eq!(outside.get(), 0);
+        assert!(inside.get() > 0);
     }
 
     actions!(key_activation_test, [StepList]);

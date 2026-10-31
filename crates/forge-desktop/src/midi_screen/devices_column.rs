@@ -3,9 +3,9 @@ use super::bridges::monitor_value_label;
 use crate::midi_signal::{kind_color, short_kind_label};
 use forge_components::{
     ActivePresentation, BORDER_THIN, Density, FONT_HERO, FONT_LABEL, FONT_ROW, FONT_SECTION_LABEL,
-    FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, SectionLabel, Spacing, badge, body_family, card,
-    error_row_with_retry, ghost_button_with_icon, icon, mono_family, radius, scaled, spacing,
-    toggle, tr,
+    FONT_XS, FONT_XXS, ForgePalette, Icon, KeyActivated, Radius, SectionLabel, Spacing, badge,
+    body_family, card, error_row_with_retry, ghost_button_with_icon, icon, mono_family, radius,
+    scaled, spacing, toggle, tr,
 };
 use gpui::{AnyElement, ClickEvent, Context, Pixels, div, prelude::*, px};
 
@@ -271,6 +271,7 @@ impl MidiScreenView {
             .bg(surface)
             .text_color(palette.text_primary)
             .cursor_pointer()
+            .key_activated(palette.text_primary)
             .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
                 this.select_device(target.clone(), cx)
             }))

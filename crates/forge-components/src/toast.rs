@@ -1,5 +1,6 @@
 use crate::Elevation;
 use crate::elevation_shadow;
+use crate::key_activation::KeyActivated;
 use crate::presentation::ActivePresentation;
 use gpui::{
     AnimationExt, App, ClickEvent, ElementId, InteractiveElement, IntoElement, ParentElement,
@@ -259,6 +260,7 @@ impl ToastCard {
                 .py(spacing(Spacing::Xxs, density))
                 .px(spacing(Spacing::Xxs, density))
                 .cursor_pointer()
+                .key_activated(self.dismiss_color)
                 .on_click(handler)
                 .child(icon(Icon::X, DISMISS_ICON, self.dismiss_color)),
         )
@@ -347,6 +349,7 @@ fn action_button(
         .font_family(body_family())
         .text_size(FONT_SM)
         .text_color(color)
+        .key_activated(color)
         .on_click(handler)
         .child(label)
 }

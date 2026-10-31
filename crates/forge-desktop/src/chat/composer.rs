@@ -359,8 +359,11 @@ mod tests {
         cx.add_window_view(|_window, cx| ChatComposer::new(home_stats, handle, FORGE_DEFAULT, cx))
     }
 
-    fn type_text(vcx: &mut VisualTestContext, text: &str) {
-        vcx.update(|window, cx| window.focus_next(cx));
+    fn type_text(composer: &Entity<ChatComposer>, vcx: &mut VisualTestContext, text: &str) {
+        vcx.update(|window, cx| {
+            let field = composer.read(cx).input.read(cx).field();
+            field.update(cx, |field, cx| field.focus(window, cx));
+        });
         vcx.simulate_input(text);
         vcx.run_until_parked();
     }
@@ -458,7 +461,7 @@ mod tests {
         ] {
             let rt = runtime();
             let (composer, vcx) = mount(cx, &rt, &[Integration::Twitch]);
-            type_text(vcx, typed);
+            type_text(&composer, vcx, typed);
             let report = SendReport {
                 message: "hello".to_owned(),
                 results: vec![(PlatformId::Twitch, result.clone())],
@@ -512,7 +515,7 @@ mod tests {
         let (composer, vcx) = mount(cx, &rt, &[Integration::Twitch]);
         let bus = connected_bus(&composer, vcx);
         let mut observer = bus.subscribe();
-        type_text(vcx, "hello");
+        type_text(&composer, vcx, "hello");
 
         send(&composer, vcx, "hello");
         pump(&rt);

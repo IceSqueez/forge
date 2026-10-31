@@ -1,7 +1,7 @@
 use super::*;
 use forge_components::{
-    BORDER_THIN, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, Spacing, body_family,
-    icon, radius, scaled, spacing, with_alpha,
+    BORDER_THIN, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, KeyActivated, Radius, Spacing,
+    body_family, icon, radius, scaled, spacing, with_alpha,
 };
 use gpui::{AnyElement, App, ClickEvent, ElementId, Rgba, SharedString, Window, div};
 
@@ -31,6 +31,7 @@ pub(super) fn add_row_button(
         .bg(palette.shell)
         .cursor_pointer()
         .hover(move |s| s.bg(hover).border_color(accent))
+        .key_activated(palette.text_primary)
         .on_click(handler)
         .child(icon(glyph, CARD_GLYPH, accent))
         .child(

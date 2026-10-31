@@ -2,8 +2,8 @@ use super::preview::SPOKEN_QUOTE;
 use super::preview::{MarkTint, PreviewMark};
 use super::{TtsFiltersView, mono_caption};
 use forge_components::{
-    BORDER_THIN, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, Spacing,
-    body_family, card, icon, mono_family, radius, spacing, tr,
+    BORDER_THIN, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, KeyActivated, Radius,
+    Spacing, body_family, card, icon, mono_family, radius, spacing, tr,
 };
 use forge_tts_pipeline::{PipelineResult, SkipReason, StageAction, StageName, StageOutcome};
 use gpui::prelude::*;
@@ -103,6 +103,7 @@ impl TtsFiltersView {
             .rounded(radius(Radius::Sm))
             .bg(palette.brand)
             .cursor_pointer()
+            .key_activated(palette.text_primary)
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.speak_preview(cx)))
             .child(icon(Icon::PlayerPlayFilled, FONT_XS, palette.shell))
             .child(

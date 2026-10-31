@@ -2,8 +2,8 @@ use forge_components::ActivePresentation;
 use forge_components::FONT_LABEL;
 use forge_components::ROW_OFF_OPACITY;
 use forge_components::{
-    BORDER_THIN, DISABLED_OPACITY, Density, ForgePalette, Icon, MenuPlacement, badge, body_family,
-    card, icon, menu_button, menu_item, mono_family, scaled, toggle, tr,
+    BORDER_THIN, DISABLED_OPACITY, Density, ForgePalette, Icon, KeyActivated, MenuPlacement, badge,
+    body_family, card, icon, menu_button, menu_item, mono_family, scaled, toggle, tr,
 };
 use gpui::{AnyElement, ClickEvent, Context, Pixels, div, prelude::*, px};
 
@@ -61,6 +61,7 @@ impl HotkeysScreenView {
                     .flex_none()
                     .min_w(KEYCAPS_MIN_W)
                     .cursor_pointer()
+                    .key_activated(palette.text_primary)
                     .on_click(cx.listener(move |this, event: &ClickEvent, _, cx| {
                         if event.click_count() >= 2 {
                             this.start_capture(Capture::App(id), cx);

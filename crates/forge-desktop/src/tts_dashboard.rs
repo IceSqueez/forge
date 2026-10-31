@@ -8,10 +8,10 @@ use forge_components::FONT_SECTION_LABEL;
 use forge_components::FONT_XS;
 use forge_components::{
     BORDER_THIN, ChipGlyph, ConfirmTone, DRAG_SOURCE_OPACITY, Density, FONT_SM, FONT_XXS,
-    ForgePalette, Icon, InputEvent, OverlayPosition, Radius, ResizeEdge, ResizeRange, Spacing,
-    TextInput, badge, body_family, card, chip, confirm_modal, empty_state, fmt_clock, hash_accent,
-    icon, install_resize, mono_family, overlay, radius, scaled, section_label, slider, spacing,
-    status_dot, tooltip_builder, tr, with_alpha,
+    ForgePalette, Icon, InputEvent, KeyActivated, OverlayPosition, Radius, ResizeEdge, ResizeRange,
+    Spacing, TextInput, badge, body_family, card, chip, confirm_modal, empty_state, fmt_clock,
+    hash_accent, icon, install_resize, mono_family, overlay, radius, scaled, section_label, slider,
+    spacing, status_dot, tooltip_builder, tr, with_alpha,
 };
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
@@ -378,6 +378,7 @@ impl TtsDashboardView {
             .rounded(radius(Radius::Sm))
             .bg(btn_bg)
             .cursor_pointer()
+            .key_activated(palette.text_primary)
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_pause(cx)))
             .child(icon(pause_glyph, PAUSE_GLYPH, palette.shell))
             .child(
@@ -480,6 +481,7 @@ impl TtsDashboardView {
             .rounded(radius(Radius::Sm))
             .bg(palette.brand)
             .cursor_pointer()
+            .key_activated(palette.text_primary)
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.speak_test(cx)))
             .child(icon(Icon::PlayerPlayFilled, SPEAK_BTN_GLYPH, palette.shell))
             .child(
@@ -541,6 +543,7 @@ impl TtsDashboardView {
             .text_color(text_color)
             .cursor_pointer()
             .hover(move |s| s.border_color(hover_border).text_color(hover_text))
+            .key_activated(palette.text_primary)
             .on_click(handler)
             .child(icon(glyph, STRIP_BTN_GLYPH, text_color))
             .child(
@@ -872,6 +875,7 @@ impl TtsDashboardView {
             .flex_shrink_0()
             .cursor_pointer()
             .tooltip(tooltip_builder(tr!("tts_dash_play_now"), palette))
+            .key_activated(palette.text_primary)
             .on_click(
                 cx.listener(move |this, _: &ClickEvent, _, cx| this.play_now(play_id.clone(), cx)),
             )
@@ -886,6 +890,7 @@ impl TtsDashboardView {
             .flex_shrink_0()
             .cursor_pointer()
             .tooltip(tooltip_builder(tr!("tts_dash_remove_queued"), palette))
+            .key_activated(palette.text_primary)
             .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
                 this.remove_queued(remove_id.clone(), cx)
             }))

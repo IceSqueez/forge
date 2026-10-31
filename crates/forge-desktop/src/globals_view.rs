@@ -13,11 +13,12 @@ use forge_components::ModalSize;
 use forge_components::highlighted_text;
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, CodeEditor, ColumnWidth, DataRow, Density, FONT_XS, FONT_XXS,
-    ForgePalette, Icon, InlineEdit, InlineEditEvent, InputEvent, OverlayPosition, Radius, Spacing,
-    TextInput, ToastKind, badge, body_family, chip, column, confirm_modal, context_menu,
-    empty_state, header_stat, header_stats, hover_reveal, icon, inline_edit, menu_divider,
-    menu_item, modal, mono_family, overlay, page_frame, primary_button, primary_button_with_icon,
-    radius, scaled, secondary_button, spacing, status_dot, toggle, tr, virtual_table, with_alpha,
+    ForgePalette, Icon, InlineEdit, InlineEditEvent, InputEvent, KeyActivated, OverlayPosition,
+    Radius, Spacing, TextInput, ToastKind, badge, body_family, chip, column, confirm_modal,
+    context_menu, empty_state, header_stat, header_stats, hover_reveal, icon, inline_edit,
+    menu_divider, menu_item, modal, mono_family, overlay, page_frame, primary_button,
+    primary_button_with_icon, radius, scaled, secondary_button, spacing, status_dot, toggle, tr,
+    virtual_table, with_alpha,
 };
 use forge_components::{Confirm, SearchState};
 use std::path::PathBuf;
@@ -954,6 +955,7 @@ impl GlobalsView {
             .cursor_pointer()
             .hover(move |s| s.bg(export_hover))
             .child(icon(Icon::Download, px(14.0), palette.success))
+            .key_activated(palette.text_primary)
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.export(cx)));
         let new_btn =
             primary_button_with_icon(Icon::Plus, tr!("globals_editor_title_create"), palette)
@@ -1327,6 +1329,7 @@ impl GlobalsView {
                     .rounded(radius(Radius::Sm))
                     .cursor_pointer()
                     .hover(move |s| s.bg(hover_bg))
+                    .key_activated(palette.text_primary)
                     .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
                         cx.stop_propagation();
                         this.open_inspect(target.clone(), cx);
@@ -1372,6 +1375,7 @@ impl GlobalsView {
             .rounded(radius(Radius::Sm))
             .cursor_pointer()
             .hover(move |s| s.bg(hover_bg))
+            .key_activated(idle)
             .on_click(handler)
             .child(icon(glyph, FONT_XS, idle))
     }

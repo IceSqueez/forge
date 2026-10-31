@@ -8,7 +8,8 @@ use crate::chat_row::PlatformMark;
 use forge_components::ActivePresentation;
 use forge_components::ForgePalette;
 use forge_components::{
-    BORDER_THIN, FONT_SM, FONT_XXS, Radius, Spacing, body_family, mono_family, radius, spacing,
+    BORDER_THIN, FONT_SM, FONT_XXS, KeyActivated, Radius, Spacing, body_family, mono_family,
+    radius, spacing,
 };
 use forge_components::{Icon, icon, tr};
 use forge_components::{InputEvent, TextInput};
@@ -230,6 +231,11 @@ impl InputBar {
         self.field.read(cx).content().to_string()
     }
 
+    #[cfg(test)]
+    pub(crate) fn field(&self) -> Entity<TextInput> {
+        self.field.clone()
+    }
+
     pub(crate) fn clear(&mut self, cx: &mut Context<Self>) {
         self.field.update(cx, |field, cx| field.clear(cx));
         cx.notify();
@@ -307,6 +313,7 @@ impl InputBar {
                 .px(SWITCH_PAD_X)
                 .rounded(TARGET_RADIUS)
                 .cursor_pointer()
+                .key_activated(p.text_primary)
                 .on_click(cx.listener(move |this, _event, _window, cx| this.pick_switch(idx, cx)))
                 .child(
                     div()
@@ -378,9 +385,12 @@ impl InputBar {
             .h(TARGET_SIZE)
             .rounded(TARGET_RADIUS);
         if available {
-            tile = tile.cursor_pointer().on_click(
-                cx.listener(move |this, _event, _window, cx| this.toggle_target(idx, cx)),
-            );
+            tile = tile
+                .cursor_pointer()
+                .key_activated(p.text_primary)
+                .on_click(
+                    cx.listener(move |this, _event, _window, cx| this.toggle_target(idx, cx)),
+                );
         }
         tile = tile.child(
             div()
@@ -458,6 +468,7 @@ impl InputBar {
                     .font_family(body_family())
                     .text_size(FONT_SM)
                     .hover(move |style| style.bg(p.surface_overlay))
+                    .key_activated(p.text_primary)
                     .on_click(
                         cx.listener(move |this, _event, _window, cx| this.insert_emoji(emoji, cx)),
                     )
@@ -506,6 +517,7 @@ impl Render for InputBar {
             .items_center()
             .justify_center()
             .cursor_pointer()
+            .key_activated(p.text_primary)
             .on_click(cx.listener(|this, _event, _window, cx| this.toggle_emoji(cx)))
             .child(icon(Icon::MoodSmile, GLYPH_SIZE, p.text_faint));
 
@@ -516,6 +528,7 @@ impl Render for InputBar {
             .items_center()
             .justify_center()
             .cursor_pointer()
+            .key_activated(p.text_primary)
             .on_click(cx.listener(|this, _event, _window, cx| this.emit_send(cx)))
             .child(icon(Icon::Send, GLYPH_SIZE, p.brand));
 

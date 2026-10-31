@@ -3,7 +3,7 @@ use crate::FONT_LABEL;
 use crate::FONT_META;
 use crate::cards::field_label;
 use crate::icons::{Icon, icon};
-use crate::key_activation::key_activated;
+use crate::key_activation::KeyActivated;
 use crate::palette::ForgePalette;
 use crate::toggle::toggle;
 use crate::tokens::Density;
@@ -102,6 +102,7 @@ pub fn choice_trigger(
         .gap(scaled(CHOICE_GAP, density))
         .cursor_pointer()
         .hover(move |s| s.border_color(border_active))
+        .key_activated(palette.text_primary)
         .on_click(on_click)
         .child(
             div()
@@ -148,7 +149,9 @@ pub fn failure_with_retry(
         .gap(spacing(Spacing::Xs, density))
         .child(failure_note(reason, palette, density))
         .child(
-            key_activated(div().id(id), palette.info)
+            div()
+                .id(id)
+                .key_activated(palette.info)
                 .flex()
                 .items_center()
                 .gap(scaled(RETRY_GAP, density))

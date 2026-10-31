@@ -3,6 +3,7 @@ use gpui::{
     Rgba, StatefulInteractiveElement, Styled, Window, div, px,
 };
 
+use crate::key_activation::KeyActivated;
 use crate::palette::ForgePalette;
 use crate::tokens::{Radius, radius};
 
@@ -99,6 +100,7 @@ impl RenderOnce for Toggle {
             (Some(id), Some(handler)) => track
                 .id(id)
                 .cursor_pointer()
+                .key_activated(self.colors.thumb)
                 .on_click(handler)
                 .into_any_element(),
             _ => track.into_any_element(),

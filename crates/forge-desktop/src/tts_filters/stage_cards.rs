@@ -2,8 +2,8 @@ use super::TtsFiltersView;
 use super::filter_options::{ModalStage, OutputOpt, SkipRule};
 use super::preview::is_replacement_kind;
 use forge_components::{
-    Density, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, Spacing, body_family, icon,
-    mono_family, radio_row, radio_row_label, radius, scaled, spacing, tr,
+    Density, FONT_XS, FONT_XXS, ForgePalette, Icon, KeyActivated, Radius, Spacing, body_family,
+    icon, mono_family, radio_row, radio_row_label, radius, scaled, spacing, tr,
 };
 use forge_speak_queue::configured_skip_prefix;
 use forge_storage::{BlocklistMode, FilterRule, FilterRuleKind};
@@ -279,6 +279,7 @@ impl TtsFiltersView {
                             .id(x_id)
                             .flex()
                             .cursor_pointer()
+                            .key_activated(palette.text_primary)
                             .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
                                 this.remove_blocklist_word(ri, wi, cx)
                             }))
@@ -296,6 +297,7 @@ impl TtsFiltersView {
                     .px(spacing(Spacing::Xs, density))
                     .rounded(radius(Radius::Sm))
                     .bg(palette.surface_overlay)
+                    .key_activated(palette.text_primary)
                     .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.expand_blocklist(cx)))
                     .child(
                         div()

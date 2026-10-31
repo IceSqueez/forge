@@ -3,8 +3,8 @@ use crate::config_field_label::{field_label, form_field_label};
 use forge_components::ActivePresentation;
 use forge_components::BORDER_THIN;
 use forge_components::{
-    Density, FONT_XS, ForgePalette, Icon, InputEvent, Spacing, TextInput, body_family, icon,
-    mono_family, spacing, tr,
+    Density, FONT_XS, ForgePalette, Icon, InputEvent, KeyActivated, Spacing, TextInput,
+    body_family, icon, mono_family, spacing, tr,
 };
 use forge_registry::FormField;
 use forge_types::SubActionStep;
@@ -59,6 +59,7 @@ fn drill_in_chip(
     base.id(id.into())
         .cursor_pointer()
         .hover(move |s| s.bg(hover))
+        .key_activated(palette.text_primary)
         .on_click(handler)
         .into_any_element()
 }
@@ -277,6 +278,7 @@ impl ScreenActionsView {
                             .text_color(palette.text_muted)
                             .cursor_pointer()
                             .hover(move |s| s.text_color(text_primary).underline())
+                            .key_activated(palette.text_primary)
                             .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
                                 this.breadcrumb_pop(depth, cx)
                             }))
@@ -497,6 +499,7 @@ impl ScreenActionsView {
             .items_center()
             .gap(spacing(Spacing::Xxs, density))
             .cursor_pointer()
+            .key_activated(palette.text_primary)
             .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
                 this.add_switch_case(step_index, cases_key.clone(), cx)
             }))

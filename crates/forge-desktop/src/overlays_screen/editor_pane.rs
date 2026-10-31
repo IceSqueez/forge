@@ -5,8 +5,8 @@ use forge_components::FONT_META;
 use forge_components::Spacing;
 use forge_components::spacing;
 use forge_components::{
-    BORDER_THIN, FONT_XS, FONT_XXS, ForgePalette, Icon, body_family, empty_state, icon,
-    mono_family, scaled, segment, segmented, tr,
+    BORDER_THIN, FONT_XS, FONT_XXS, ForgePalette, Icon, KeyActivated, body_family, empty_state,
+    icon, mono_family, scaled, segment, segmented, tr,
 };
 use forge_overlay::look_contract;
 use forge_storage::OverlayDefinition;
@@ -261,6 +261,7 @@ impl OverlaysView {
                     .gap(scaled(COPY_GAP, density))
                     .cursor_pointer()
                     .text_color(palette.brand)
+                    .key_activated(palette.text_primary)
                     .on_click(
                         cx.listener(move |this, _: &ClickEvent, _, cx| this.copy_url(&id, cx)),
                     )

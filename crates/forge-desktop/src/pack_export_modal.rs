@@ -3,9 +3,9 @@ use std::collections::BTreeSet;
 use forge_components::focus_inside_modal;
 use forge_components::{
     ActivePresentation, BORDER_THIN, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent,
-    ModalSize, OverlayPosition, Radius, SearchState, Spacing, TextInput, body_family, checkbox,
-    failure_note, field_column, field_frame, ghost_button, icon, modal, modal_width, mono_family,
-    overlay, primary_button, radius, section_label, spacing, tr,
+    KeyActivated, ModalSize, OverlayPosition, Radius, SearchState, Spacing, TextInput, body_family,
+    checkbox, failure_note, field_column, field_frame, ghost_button, icon, modal, modal_width,
+    mono_family, overlay, primary_button, radius, section_label, spacing, tr,
 };
 use forge_transfer::{PackInventory, PackMetadata, PackSelection, resolve_pack_closure};
 use forge_types::ActionId;
@@ -426,6 +426,7 @@ impl PackExportModal {
             .rounded(radius(Radius::Sm))
             .cursor_pointer()
             .hover(move |style| style.bg(hover_bg))
+            .key_activated(palette.text_primary)
             .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.toggle(id, cx)))
             .child(check)
             .child(

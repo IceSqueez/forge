@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use forge_components::{ActivePresentation, Icon, TextInput, icon, scaled, tr};
+use forge_components::{ActivePresentation, Icon, KeyActivated, TextInput, icon, scaled, tr};
 use forge_events::EventPublisher;
 use forge_storage::SettingDisclosure::Withheld;
 use forge_storage::SettingPortability::Portable;
@@ -345,6 +345,7 @@ impl Render for ObsCredentialsForm {
             .id("obs-connect-password-eye")
             .flex_none()
             .cursor_pointer()
+            .key_activated(palette.text_primary)
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.on_toggle_password(cx)))
             .child(icon(eye_glyph, EYE_GLYPH, palette.text_faint));
 

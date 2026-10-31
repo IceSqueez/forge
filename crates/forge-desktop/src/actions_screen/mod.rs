@@ -17,9 +17,9 @@ use forge_components::Radius;
 use forge_components::drive_overlay_focus;
 use forge_components::radius;
 use forge_components::{
-    BreadcrumbCrumb, Confirm, Density, ForgePalette, GridPicker, Icon, InlineEdit, OverlayPosition,
-    SearchState, TextArea, TextInput, ToastKind, fmt_display_relative, fmt_number, icon, overlay,
-    page_frame, tr,
+    BreadcrumbCrumb, Confirm, Density, ForgePalette, GridPicker, Icon, InlineEdit, KeyActivated,
+    OverlayPosition, SearchState, TextArea, TextInput, ToastKind, fmt_display_relative, fmt_number,
+    icon, overlay, page_frame, tr,
 };
 use forge_overlay::OverlayKindRegistry;
 use forge_registry::{SubActionRegistry, TriggerCategory, TriggerRegistry};
@@ -871,6 +871,7 @@ fn step_icon_btn(
     base.id(id.into())
         .cursor_pointer()
         .hover(move |s| s.bg(hover))
+        .key_activated(palette.text_primary)
         .on_click(handler)
         .into_any_element()
 }

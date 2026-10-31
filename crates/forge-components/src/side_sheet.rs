@@ -1,3 +1,4 @@
+use crate::key_activation::KeyActivated;
 use crate::presentation::ActivePresentation;
 use crate::resize_handle::clamp_extent;
 use crate::tokens::Density;
@@ -223,6 +224,7 @@ impl SideSheet {
                     .rounded(radius(Radius::Sm))
                     .cursor_pointer()
                     .hover(move |s| s.bg(hover))
+                    .key_activated(self.close_color)
                     .on_click(handler)
                     .child(icon(Icon::X, FONT_MD, self.close_color)),
             );

@@ -14,12 +14,12 @@ use std::time::{Duration, Instant};
 use forge_components::ConfirmTone;
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, ChipGlyph, Confirm, Density, FONT_SM, FONT_XS, FONT_XXS,
-    ForgePalette, Icon, InputEvent, MenuItem, MenuPlacement, ModalSize, OverlayPosition, Radius,
-    SearchState, Spacing, TextInput, ToastKind, badge, body_family, card, chip, confirm_modal,
-    empty_state, fmt_uptime, ghost_button_with_icon, header_stat, header_stats, icon, menu_button,
-    menu_divider, menu_item, modal, mono_family, overlay, page_frame, primary_button,
-    primary_button_with_icon, radius, scaled, secondary_button, slider, spacing, spinner,
-    tooltip_builder, tr, with_alpha,
+    ForgePalette, Icon, InputEvent, KeyActivated, MenuItem, MenuPlacement, ModalSize,
+    OverlayPosition, Radius, SearchState, Spacing, TextInput, ToastKind, badge, body_family, card,
+    chip, confirm_modal, empty_state, fmt_uptime, ghost_button_with_icon, header_stat,
+    header_stats, icon, menu_button, menu_divider, menu_item, modal, mono_family, overlay,
+    page_frame, primary_button, primary_button_with_icon, radius, scaled, secondary_button, slider,
+    spacing, spinner, tooltip_builder, tr, with_alpha,
 };
 use forge_runtime::{
     MAX_PENDING_PER_QUEUE, MembershipOutcome, QueueIntake, QueueMode, QueueProcessing,
@@ -2084,6 +2084,7 @@ fn card_button(
         .px(scaled(px(11.0), density))
         .rounded(radius(Radius::Sm))
         .cursor_pointer()
+        .key_activated(palette.text_primary)
         .on_click(handler)
         .child(icon(glyph, PANEL_GLYPH, ink))
         .child(
@@ -2219,6 +2220,7 @@ fn not_live_badge(
     div()
         .id(id.into())
         .cursor_pointer()
+        .key_activated(palette.text_primary)
         .on_click(handler)
         .tooltip(tooltip_builder(tr!("queues_not_live_tooltip"), palette))
         .flex()

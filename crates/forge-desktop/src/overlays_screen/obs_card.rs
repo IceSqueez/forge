@@ -3,8 +3,8 @@ use forge_components::Density;
 use forge_components::Spacing;
 use forge_components::spacing;
 use forge_components::{
-    BORDER_THIN, FONT_XS, FONT_XXS, ForgePalette, Icon, body_family, icon, mono_family, scaled,
-    section_label, tr,
+    BORDER_THIN, FONT_XS, FONT_XXS, ForgePalette, Icon, KeyActivated, body_family, icon,
+    mono_family, scaled, section_label, tr,
 };
 use forge_overlay::config::{SOUND, SPEECH};
 use forge_overlay::{OverlayConfig, PreviewCanvas};
@@ -200,6 +200,7 @@ fn copy_link(
         .font_family(mono_family())
         .text_size(FONT_XXS)
         .text_color(palette.brand)
+        .key_activated(palette.text_primary)
         .on_click(on_click)
         .child(icon(Icon::Copy, COPY_GLYPH, palette.brand))
         .child(tr!("overlays_url_copy"))

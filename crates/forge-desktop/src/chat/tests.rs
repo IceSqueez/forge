@@ -840,3 +840,151 @@ fn a_drawer_viewer_with_no_message_on_screen_gets_no_reply_entry(cx: &mut TestAp
 
     assert!(view.read_with(vcx, |view, _| view.reply_target.is_none()));
 }
+
+struct FeedRig<'a> {
+    view: Entity<ChatView>,
+    vcx: &'a mut VisualTestContext,
+}
+
+impl<'a> FeedRig<'a> {
+    const FIRST: &'static str = "ada";
+    const SECOND: &'static str = "bob";
+    const THIRD: &'static str = "cyd";
+
+    fn mount(cx: &'a mut TestAppContext, rt: &tokio::runtime::Runtime) -> Self {
+        let (view, vcx) = mount_in_window(cx, rt, MockVoiceAliasRepo::new());
+        vcx.update(|_, cx| crate::actions::register_key_bindings(cx));
+        let feed = view.read_with(vcx, |view, _| view.feed.clone());
+        push_each(
+            vcx,
+            &feed,
+            [Self::FIRST, Self::SECOND, Self::THIRD]
+                .into_iter()
+                .zip(1..)
+                .map(|(name, unix)| line_by(&Self::key(name), unix))
+                .collect(),
+        );
+        let focus = view.read_with(vcx, |view, _| view.feed_keys.focus().clone());
+        vcx.update(|window, cx| window.focus(&focus, cx));
+        vcx.run_until_parked();
+        Self { view, vcx }
+    }
+
+    fn key(name: &str) -> AuthorKey {
+        AuthorKey::by_viewer_id(PlatformId::Twitch, name)
+    }
+
+    fn press(&mut self, keys: &str) {
+        self.vcx.simulate_keystrokes(keys);
+        self.vcx.run_until_parked();
+    }
+
+    fn cursor_row(&mut self) -> Option<usize> {
+        self.view.read_with(self.vcx, |view, _| {
+            let seq = *view.feed_keys.current()?;
+            view.visible.iter().position(|row| *row == seq)
+        })
+    }
+}
+
+#[gpui::test]
+fn the_first_arrow_lands_on_the_newest_message_and_up_walks_older(cx: &mut TestAppContext) {
+    let rt = runtime();
+    let mut rig = FeedRig::mount(cx, &rt);
+
+    rig.press("up");
+    assert_eq!(rig.cursor_row(), Some(2));
+    rig.press("up up up");
+    assert_eq!(rig.cursor_row(), Some(0));
+    rig.press("down");
+    assert_eq!(rig.cursor_row(), Some(1));
+}
+
+#[gpui::test]
+fn down_from_no_cursor_stays_on_the_newest_message(cx: &mut TestAppContext) {
+    let rt = runtime();
+    let mut rig = FeedRig::mount(cx, &rt);
+
+    rig.press("down");
+
+    assert_eq!(rig.cursor_row(), Some(2));
+}
+
+#[gpui::test]
+fn enter_opens_the_viewer_of_the_cursor_row(cx: &mut TestAppContext) {
+    let rt = runtime();
+    let mut rig = FeedRig::mount(cx, &rt);
+
+    rig.press("up up enter");
+
+    let selected = rig
+        .view
+        .read_with(rig.vcx, |view, _| view.selected_viewer.clone());
+    assert_eq!(selected, Some(FeedRig::key(FeedRig::SECOND)));
+}
+
+#[gpui::test]
+fn enter_without_a_cursor_opens_nothing(cx: &mut TestAppContext) {
+    let rt = runtime();
+    let mut rig = FeedRig::mount(cx, &rt);
+
+    rig.press("enter");
+
+    let selected = rig
+        .view
+        .read_with(rig.vcx, |view, _| view.selected_viewer.clone());
+    assert_eq!(selected, None);
+}
+
+#[gpui::test]
+fn a_cursor_stays_on_its_message_and_freezes_following_while_messages_arrive(
+    cx: &mut TestAppContext,
+) {
+    let rt = runtime();
+    let mut rig = FeedRig::mount(cx, &rt);
+    rig.press("up up");
+    let feed = rig.view.read_with(rig.vcx, |view, _| view.feed.clone());
+
+    push_each(
+        rig.vcx,
+        &feed,
+        vec![
+            line_by(&FeedRig::key("dee"), 4),
+            line_by(&FeedRig::key("eli"), 5),
+        ],
+    );
+
+    assert_eq!(rig.cursor_row(), Some(1));
+    let (following, unread) = rig
+        .view
+        .read_with(rig.vcx, |view, _| (view.auto_scroll, view.unread));
+    assert_eq!((following, unread), (false, 2));
+}
+
+#[gpui::test]
+fn jumping_to_the_latest_message_drops_the_cursor(cx: &mut TestAppContext) {
+    let rt = runtime();
+    let mut rig = FeedRig::mount(cx, &rt);
+    rig.press("up");
+
+    rig.view.update(rig.vcx, |view, cx| view.jump_to_latest(cx));
+
+    assert_eq!(rig.cursor_row(), None);
+}
+
+#[gpui::test]
+fn a_filtered_out_cursor_row_activates_nothing(cx: &mut TestAppContext) {
+    let rt = runtime();
+    let mut rig = FeedRig::mount(cx, &rt);
+    rig.press("up");
+
+    rig.view.update(rig.vcx, |view, cx| {
+        view.set_platform_filter(PlatformFilter::Single(PlatformId::Kick), cx)
+    });
+    rig.press("enter");
+
+    let selected = rig
+        .view
+        .read_with(rig.vcx, |view, _| view.selected_viewer.clone());
+    assert_eq!(selected, None);
+}

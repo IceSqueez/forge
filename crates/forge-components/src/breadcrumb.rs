@@ -4,6 +4,7 @@ use gpui::{
 };
 
 use crate::icons::{Icon, icon};
+use crate::key_activation::KeyActivated;
 use crate::palette::ForgePalette;
 use crate::presentation::ActivePresentation;
 use crate::tokens::{BORDER_THIN, Density, FONT_XS, Spacing, body_family, scaled, spacing};
@@ -120,6 +121,7 @@ impl RenderOnce for Breadcrumb {
                     .id(id)
                     .cursor_pointer()
                     .hover(move |s| s.text_color(current))
+                    .key_activated(cx.palette().text_primary)
                     .on_click(handler)
                     .child(crumb.label)
                     .into_any_element(),

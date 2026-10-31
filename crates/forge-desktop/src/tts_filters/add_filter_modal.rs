@@ -4,10 +4,10 @@ use super::filter_options::{
 };
 use forge_components::ActivePresentation;
 use forge_components::{
-    BORDER_THIN, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, ModalSize,
-    OverlayPosition, Radius, Spacing, TextArea, TextInput, body_family, field_label, ghost_button,
-    modal, mono_family, overlay, primary_button_with_icon, radio_row, radio_row_label, radius,
-    scaled, spacing, toggle, tr,
+    BORDER_THIN, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, KeyActivated,
+    ModalSize, OverlayPosition, Radius, Spacing, TextArea, TextInput, body_family, field_label,
+    ghost_button, modal, mono_family, overlay, primary_button_with_icon, radio_row,
+    radio_row_label, radius, scaled, spacing, toggle, tr,
 };
 use forge_storage::BlocklistMode;
 use gpui::prelude::*;
@@ -468,6 +468,7 @@ impl AddFilterModal {
                 .font_family(mono_family())
                 .text_size(FONT_XXS)
                 .text_color(fg)
+                .key_activated(palette.text_primary)
                 .on_click(
                     cx.listener(move |this, _: &ClickEvent, _, cx| this.set_replace_kind(kind, cx)),
                 )

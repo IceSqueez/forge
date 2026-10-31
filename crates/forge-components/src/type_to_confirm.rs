@@ -1,4 +1,5 @@
 use crate::HOVER_FILL_ALPHA;
+use crate::key_activation::KeyActivated;
 use crate::presentation::ActivePresentation;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -233,6 +234,7 @@ fn confirm_button(
             .text_color(ink)
             .cursor_pointer()
             .hover(move |style| style.bg(with_alpha(accent, HOVER_FILL_ALPHA)))
+            .key_activated(palette.text_primary)
             .on_click(handler)
             .child(label)
             .into_any_element()

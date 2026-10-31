@@ -5,10 +5,10 @@ use forge_components::ActivePresentation;
 use forge_components::BORDER_THIN;
 use forge_components::Language;
 use forge_components::{
-    Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, ModalSize, OverlayPosition, Radius,
-    Spacing, body_family, error_row, fmt_display_relative, highlighted_text, icon,
-    integration_disabled_reason, modal, mono_family, overlay, radius, scaled, spacing, status_dot,
-    tooltip_builder, tr,
+    Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, KeyActivated, ModalSize,
+    OverlayPosition, Radius, Spacing, body_family, error_row, fmt_display_relative,
+    highlighted_text, icon, integration_disabled_reason, modal, mono_family, overlay, radius,
+    scaled, spacing, status_dot, tooltip_builder, tr,
 };
 use forge_registry::{TriggerKindDescriptor, TriggerRegistry};
 use forge_types::{
@@ -74,6 +74,7 @@ fn disabled_reason_link(
             ),
             palette,
         ))
+        .key_activated(palette.text_primary)
         .on_click(
             cx.listener(move |this, _: &ClickEvent, _, cx| {
                 this.open_integration(target.clone(), cx)
@@ -296,6 +297,7 @@ impl RunHistoryModal {
             .bg(bg)
             .cursor_pointer()
             .hover(move |s| s.bg(hover_bg))
+            .key_activated(palette.text_primary)
             .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.select_run(index, cx)))
             .child(status_dot(dot_color, ROW_DOT))
             .child(

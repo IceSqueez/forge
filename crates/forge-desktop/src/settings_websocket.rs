@@ -5,11 +5,11 @@ use std::sync::Arc;
 use forge_components::focus_inside_modal;
 use forge_components::{
     BORDER_THIN, BulletItem, BulletKind, ConfirmTone, DISABLED_OPACITY, Density, FONT_SM, FONT_XS,
-    FONT_XXS, ForgePalette, Icon, InputEvent, OverlayPosition, Radius, SaveState, Spacing,
-    TextArea, TextInput, TypeToConfirm, TypeToConfirmEvent, body_family, confirm_modal, error_row,
-    error_row_with_retry, field_title, ghost_button_with_icon, grow_cell, icon, mono_family,
-    overlay, radio_row, radius, save_indicator, scaled, setting_block, setting_row, setting_rows,
-    setting_sections, spacing, toggle, tr, type_to_confirm,
+    FONT_XXS, ForgePalette, Icon, InputEvent, KeyActivated, OverlayPosition, Radius, SaveState,
+    Spacing, TextArea, TextInput, TypeToConfirm, TypeToConfirmEvent, body_family, confirm_modal,
+    error_row, error_row_with_retry, field_title, ghost_button_with_icon, grow_cell, icon,
+    mono_family, overlay, radio_row, radius, save_indicator, scaled, setting_block, setting_row,
+    setting_rows, setting_sections, spacing, toggle, tr, type_to_confirm,
 };
 use forge_runtime::{OverlaySampleSource, OverlayServiceHandle};
 use forge_server::{
@@ -1290,6 +1290,7 @@ impl SettingsWebSocketView {
                             .id("settings-ws-token-reveal")
                             .flex()
                             .cursor_pointer()
+                            .key_activated(palette.text_primary)
                             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
                                 this.toggle_token_reveal(cx)
                             }))
@@ -1300,6 +1301,7 @@ impl SettingsWebSocketView {
                             .id("settings-ws-token-copy")
                             .flex()
                             .cursor_pointer()
+                            .key_activated(palette.text_primary)
                             .on_click(
                                 cx.listener(|this, _: &ClickEvent, _, cx| this.copy_token(cx)),
                             )
@@ -1425,6 +1427,7 @@ impl SettingsWebSocketView {
                     .flex()
                     .flex_none()
                     .cursor_pointer()
+                    .key_activated(palette.text_primary)
                     .on_click(
                         cx.listener(|this, _: &ClickEvent, _, cx| this.copy_overlay_token(cx)),
                     )

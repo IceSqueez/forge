@@ -1,8 +1,8 @@
 use super::field::{SelectEntries, SubFormField};
 use super::*;
 use forge_components::{
-    BORDER_THIN, FONT_SM, FONT_XS, FONT_XXS, Picker, PickerEvent, PickerItem, PickerLabels, Radius,
-    Spacing, body_family, dropdown, mono_family, radius, spacing,
+    BORDER_THIN, FONT_SM, FONT_XS, FONT_XXS, KeyActivated, Picker, PickerEvent, PickerItem,
+    PickerLabels, Radius, Spacing, body_family, dropdown, mono_family, radius, spacing,
 };
 use gpui::Rgba;
 
@@ -193,6 +193,7 @@ impl EditSubActionForm {
             .bg(palette.shell)
             .cursor_pointer()
             .hover(move |s| s.border_color(hover_border))
+            .key_activated(palette.text_primary)
             .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
                 this.open_select_picker(key_open.clone(), window, cx)
             }))

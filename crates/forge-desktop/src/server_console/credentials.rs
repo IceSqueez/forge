@@ -3,8 +3,8 @@ use crate::async_bridge;
 use crate::repo_failure::RepoFailure;
 use crate::server_bearer;
 use forge_components::{
-    BORDER_THIN, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, Spacing,
-    body_family, card, icon, mono_family, radius, spacing, tooltip_builder, tr,
+    BORDER_THIN, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, KeyActivated, Radius,
+    Spacing, body_family, card, icon, mono_family, radius, spacing, tooltip_builder, tr,
 };
 use forge_types::Secret;
 use gpui::{AnyElement, ClickEvent, Context, Div, div, prelude::*, px};
@@ -145,6 +145,7 @@ impl ServerConsoleView {
                         .flex_none()
                         .cursor_pointer()
                         .tooltip(tooltip_builder(tr!("common_copy"), palette))
+                        .key_activated(palette.text_primary)
                         .on_click(
                             cx.listener(|this, _: &ClickEvent, _, cx| this.copy_bind_address(cx)),
                         )
@@ -231,6 +232,7 @@ impl ServerConsoleView {
                             .id("srv-token-reveal")
                             .flex()
                             .cursor_pointer()
+                            .key_activated(palette.text_primary)
                             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
                                 this.toggle_token_reveal(cx)
                             }))
@@ -242,6 +244,7 @@ impl ServerConsoleView {
                             .flex()
                             .cursor_pointer()
                             .tooltip(tooltip_builder(tr!("common_copy"), palette))
+                            .key_activated(palette.text_primary)
                             .on_click(
                                 cx.listener(|this, _: &ClickEvent, _, cx| this.copy_token(cx)),
                             )
@@ -270,6 +273,7 @@ impl ServerConsoleView {
                     .text_color(palette.warning)
                     .child(tr!("server_btn_regenerate")),
             )
+            .key_activated(palette.text_primary)
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.request_regenerate(cx)));
 
         div()

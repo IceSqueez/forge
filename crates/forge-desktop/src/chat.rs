@@ -4,6 +4,7 @@ mod banned_tab;
 mod composer;
 mod drawer_pane;
 mod drawer_state;
+mod feed_keys;
 mod feed_pane;
 mod log_export;
 mod moderation;
@@ -113,6 +114,7 @@ pub(crate) struct ChatView {
     viewers: ViewerDirectory,
     drawer_keys: Vec<AuthorKey>,
     drawer_list_keys: ListCursor<AuthorKey>,
+    feed_keys: ListCursor<u64>,
     drawer_list_scroll: UniformListScrollHandle,
     whisper_open: bool,
     whisper_input: Entity<TextInput>,
@@ -239,6 +241,7 @@ impl ChatView {
             viewers: ViewerDirectory::default(),
             drawer_keys: Vec::new(),
             drawer_list_keys: ListCursor::new(cx),
+            feed_keys: ListCursor::reachable_by_tab(cx),
             drawer_list_scroll: UniformListScrollHandle::new(),
             whisper_open: false,
             whisper_input,

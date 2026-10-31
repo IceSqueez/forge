@@ -5,10 +5,10 @@ use forge_audio::{
     stored_output_device,
 };
 use forge_components::{
-    BORDER_THIN, Density, FONT_SM, FONT_XS, ForgePalette, Icon, Radius, Spacing, body_family,
-    drive_overlay_focus, dropdown, dropdown_list, dropdown_row, ghost_button_with_icon, icon,
-    icon_button, radius, scaled, setting_block, setting_groups, setting_row, setting_rows, spacing,
-    tr,
+    BORDER_THIN, Density, FONT_SM, FONT_XS, ForgePalette, Icon, KeyActivated, Radius, Spacing,
+    body_family, drive_overlay_focus, dropdown, dropdown_list, dropdown_row,
+    ghost_button_with_icon, icon, icon_button, radius, scaled, setting_block, setting_groups,
+    setting_row, setting_rows, spacing, tr,
 };
 use forge_speech_types::PcmBuffer;
 use forge_storage::settings::core_settings;
@@ -297,6 +297,7 @@ impl SettingsAudioView {
             .border(BORDER_THIN)
             .border_color(palette.border_input)
             .cursor_pointer()
+            .key_activated(palette.text_primary)
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_picker(cx)))
             .child(
                 div()

@@ -7,8 +7,9 @@ use forge_components::FONT_SECTION_LABEL;
 use forge_components::Spacing;
 use forge_components::spacing;
 use forge_components::{
-    BORDER_THIN, FONT_XXS, ForgePalette, Icon, MenuPlacement, body_family, icon, menu_button,
-    menu_divider, menu_item, mono_family, pad_tile, scaled, toggle, tooltip_builder, tr,
+    BORDER_THIN, FONT_XXS, ForgePalette, Icon, KeyActivated, MenuPlacement, body_family, icon,
+    menu_button, menu_divider, menu_item, mono_family, pad_tile, scaled, toggle, tooltip_builder,
+    tr,
 };
 use forge_storage::{OverlayDefinition, OverlayId};
 use gpui::{
@@ -230,6 +231,7 @@ impl OverlaysView {
             .bg(row_bg)
             .cursor_pointer()
             .when(!selected, |row| row.hover(move |s| s.bg(hover_bg)))
+            .key_activated(palette.text_primary)
             .on_click(
                 cx.listener(move |this, _: &ClickEvent, _, cx| this.select(select_id.clone(), cx)),
             )

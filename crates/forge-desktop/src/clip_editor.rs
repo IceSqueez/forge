@@ -5,10 +5,10 @@ use forge_components::TINT_FILL_ALPHA;
 use std::path::PathBuf;
 
 use forge_components::{
-    BORDER_THIN, ChipGlyph, FONT_XS, Icon, InputEvent, OverlayPosition, Radius, Spacing, TextInput,
-    body_family, chip, ghost_button_with_icon, icon, integration_disabled_notice, modal,
-    mono_family, overlay, primary_button, radius, scaled, secondary_button, spacing, toggle, tr,
-    with_alpha,
+    BORDER_THIN, ChipGlyph, FONT_XS, Icon, InputEvent, KeyActivated, OverlayPosition, Radius,
+    Spacing, TextInput, body_family, chip, ghost_button_with_icon, icon,
+    integration_disabled_notice, modal, mono_family, overlay, primary_button, radius, scaled,
+    secondary_button, spacing, toggle, tr, with_alpha,
 };
 use forge_types::ClipId;
 use gpui::{
@@ -373,6 +373,7 @@ impl ClipEditor {
             .border_color(border)
             .bg(palette.shell)
             .cursor_pointer()
+            .key_activated(palette.text_primary)
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.start_key_capture(cx)));
         display = match (&key.combo, capturing) {
             (_, true) => display

@@ -18,9 +18,10 @@ use forge_components::FONT_SM;
 use forge_components::FONT_XS;
 use forge_components::ROW_OFF_OPACITY;
 use forge_components::{
-    Density, FONT_XXS, Icon, InputEvent, Picker, PickerEvent, Radius, ResizeEdge, ResizeRange,
-    Spacing, TextInput, body_family, ghost_button_with_icon, icon, install_resize, mono_family,
-    primary_button, radius, row_card, scaled, segment, segmented, spacing, status_dot, toggle, tr,
+    Density, FONT_XXS, Icon, InputEvent, KeyActivated, Picker, PickerEvent, Radius, ResizeEdge,
+    ResizeRange, Spacing, TextInput, body_family, ghost_button_with_icon, icon, install_resize,
+    mono_family, primary_button, radius, row_card, scaled, segment, segmented, spacing, status_dot,
+    toggle, tr,
 };
 use forge_registry::effective_config;
 use gpui::{AnyElement, ClickEvent, FontWeight, SharedString};
@@ -557,6 +558,7 @@ impl TriggersRegistryView {
             .text_size(NAME_FS)
             .text_color(palette.text_primary)
             .child(instance.name.clone())
+            .key_activated(palette.text_primary)
             .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
                 this.start_rename(id, window, cx)
             }));
@@ -600,6 +602,7 @@ impl TriggersRegistryView {
             .cursor_pointer()
             .p(spacing(Spacing::Xxs, density))
             .child(icon(Icon::X, px(15.0), palette.text_faint))
+            .key_activated(palette.text_primary)
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.close_detail(cx)));
 
         div()
@@ -798,6 +801,7 @@ impl TriggersRegistryView {
                 .cursor_pointer()
                 .hover(move |s| s.bg(hover))
                 .child(icon(Icon::X, px(11.0), palette.text_faint))
+                .key_activated(palette.text_primary)
                 .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
                     this.revert_config_field(revert_key.clone(), cx)
                 }))
@@ -1107,6 +1111,7 @@ impl TriggersRegistryView {
             delete_base
                 .id("triggers-detail-delete")
                 .cursor_pointer()
+                .key_activated(palette.text_primary)
                 .on_click(
                     cx.listener(move |this, _: &ClickEvent, _, cx| this.request_delete(id, cx)),
                 )

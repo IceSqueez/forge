@@ -13,8 +13,8 @@ use crate::hub_card::{
 };
 
 use forge_components::{
-    BreadcrumbCrumb, ForgePalette, Icon, ToastKind, body_family, icon, mono_family, page_frame,
-    scaled, toggle, tr,
+    BreadcrumbCrumb, ForgePalette, Icon, KeyActivated, ToastKind, body_family, icon, mono_family,
+    page_frame, scaled, toggle, tr,
 };
 use forge_platform_core::{
     ConnectionAffordance, ControlFailure, ControlOutcome, IntegrationCategory,
@@ -334,6 +334,7 @@ impl IntegrationsHubView {
             .text_color(palette.brand)
             .child(icon(remedy.icon(), FOOTER_ICON, palette.brand))
             .child(remedy.label())
+            .key_activated(palette.text_primary)
             .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
                 cx.stop_propagation();
                 this.apply_remedy(&remedy_id, remedy, cx)
@@ -415,6 +416,7 @@ impl IntegrationsHubView {
                     .text_decoration_color(palette.border_input)
                     .child(reference_summary(references)),
             )
+            .key_activated(palette.text_primary)
             .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
                 cx.stop_propagation();
                 this.go(target.clone(), cx)

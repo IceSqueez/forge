@@ -1,8 +1,8 @@
 use std::time::Instant;
 
 use forge_components::{
-    Density, FONT_XXS, ForgePalette, Icon, Radius, empty_state, icon, mono_family, pad_tile,
-    radius, scaled, tooltip_builder, tr, with_alpha,
+    Density, FONT_XXS, ForgePalette, Icon, KeyActivated, Radius, empty_state, icon, mono_family,
+    pad_tile, radius, scaled, tooltip_builder, tr, with_alpha,
 };
 use gpui::{
     AnyElement, ClickEvent, Context, Pixels, Rgba, SharedString, Window, div, prelude::*, px, svg,
@@ -220,6 +220,7 @@ impl SoundboardView {
             .rounded(radius(Radius::Sm))
             .cursor_pointer()
             .hover(move |s| s.bg(with_alpha(tint, PAD_ACTION_HOVER_ALPHA)))
+            .key_activated(cx.palette().text_primary)
             .on_click(cx.listener(move |this, ev: &ClickEvent, window, cx| {
                 cx.stop_propagation();
                 handler(this, ev, window, cx);

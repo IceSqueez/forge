@@ -17,7 +17,8 @@ use forge_components::ForgePalette;
 use forge_components::status_dot;
 use forge_components::tooltip_builder;
 use forge_components::{
-    BORDER_THIN, FONT_SECTION_LABEL, FONT_XXS, Radius, body_family, mono_family, radius, scaled,
+    BORDER_THIN, FONT_SECTION_LABEL, FONT_XXS, KeyActivated, Radius, body_family, mono_family,
+    radius, scaled,
 };
 use forge_components::{Icon, icon, spinner};
 
@@ -414,6 +415,7 @@ impl RenderOnce for HubCard {
             frame = frame
                 .cursor_pointer()
                 .hover(move |s| s.border_color(hover_border))
+                .key_activated(cx.palette().text_primary)
                 .on_click(handler);
         }
         frame

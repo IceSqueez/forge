@@ -2,6 +2,7 @@ use crate::FONT_LABEL;
 use crate::FONT_META;
 use crate::FONT_MICRO;
 use crate::FONT_SECTION_LABEL;
+use crate::key_activation::KeyActivated;
 use crate::presentation::ActivePresentation;
 use crate::tokens::Density;
 use crate::tokens::Spacing;
@@ -165,10 +166,13 @@ impl RenderOnce for IntegrationDisabledNotice {
             .child(icon(Icon::Power, ENABLE_GLYPH, palette.success))
             .child(self.enable_label);
         if let Some(handler) = self.on_enable {
-            enable = enable.on_click(move |event, window, cx| {
-                cx.stop_propagation();
-                handler(event, window, cx);
-            });
+            enable =
+                enable
+                    .key_activated(palette.text_primary)
+                    .on_click(move |event, window, cx| {
+                        cx.stop_propagation();
+                        handler(event, window, cx);
+                    });
         }
         div()
             .id(ElementId::Name(format!("{}-notice", self.id).into()))

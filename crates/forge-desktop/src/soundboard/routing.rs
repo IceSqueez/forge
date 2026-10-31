@@ -3,9 +3,9 @@ use std::sync::Arc;
 
 use forge_audio::list_output_devices;
 use forge_components::{
-    ActivePresentation, BORDER_THIN, Density, FONT_XS, ForgePalette, Icon, Radius, Spacing,
-    body_family, dropdown, dropdown_list, dropdown_row, icon, radius, scaled, slider, spacing,
-    toggle, tr,
+    ActivePresentation, BORDER_THIN, Density, FONT_XS, ForgePalette, Icon, KeyActivated, Radius,
+    Spacing, body_family, dropdown, dropdown_list, dropdown_row, icon, radius, scaled, slider,
+    spacing, toggle, tr,
 };
 use forge_soundboard::settings::{save_also_headphones, save_master_volume, save_output_device};
 use gpui::{AnyElement, ClickEvent, Context, Pixels, SharedString, div, prelude::*, px};
@@ -226,6 +226,7 @@ impl SoundboardView {
             .bg(palette.shell)
             .cursor_pointer()
             .hover(|s| s.border_color(palette.border_active))
+            .key_activated(palette.text_primary)
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_device_menu(cx)))
             .child(
                 div()

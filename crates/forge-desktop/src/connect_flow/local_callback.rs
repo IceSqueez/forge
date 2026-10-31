@@ -13,8 +13,8 @@ const AUTHORIZATION_TIMEOUT: Duration = Duration::from_secs(300);
 use crate::async_bridge;
 use crate::error::DesktopError;
 use forge_components::{
-    BORDER_THIN, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, Spacing, body_family,
-    icon, mono_family, pulse_dot, radius, scaled, spacing, spinner, tr, with_alpha,
+    BORDER_THIN, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, KeyActivated, Radius, Spacing,
+    body_family, icon, mono_family, pulse_dot, radius, scaled, spacing, spinner, tr, with_alpha,
 };
 use forge_types::PlatformId;
 use gpui::{
@@ -701,6 +701,7 @@ impl ConnectFlow {
             .bg(palette.brand)
             .cursor_pointer()
             .hover(|s| s.bg(with_alpha(palette.brand, CTA_HOVER_ALPHA)))
+            .key_activated(palette.text_primary)
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.start_connect(cx)))
             .child(
                 div()
@@ -719,6 +720,7 @@ impl ConnectFlow {
             .border_color(palette.border_regular)
             .cursor_pointer()
             .hover(|s| s.bg(with_alpha(palette.border_regular, ROW_HOVER_WASH_ALPHA)))
+            .key_activated(palette.text_primary)
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.reset_flow(cx)))
             .child(
                 div()
@@ -780,6 +782,7 @@ impl ConnectFlow {
             .items_center()
             .gap(scaled(px(5.0), density))
             .cursor_pointer()
+            .key_activated(palette.text_primary)
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.leave(cx)))
             .child(icon(Icon::ArrowLeft, px(13.0), palette.text_muted))
             .child(
@@ -805,6 +808,7 @@ impl ConnectFlow {
                         .bg(palette.brand)
                         .cursor_pointer()
                         .hover(|s| s.bg(with_alpha(palette.brand, CTA_HOVER_ALPHA)))
+                        .key_activated(palette.text_primary)
                         .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.start_connect(cx)))
                         .child(icon(Icon::ExternalLink, px(13.0), palette.shell))
                         .child(
@@ -829,6 +833,7 @@ impl ConnectFlow {
                     .border_color(palette.border_regular)
                     .cursor_pointer()
                     .hover(|s| s.border_color(palette.border_input))
+                    .key_activated(palette.text_primary)
                     .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.reset_flow(cx)))
                     .child(
                         div()

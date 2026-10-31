@@ -3,8 +3,8 @@ use super::contract_editing::KindTarget;
 use super::details_pane::{details_heading, variant_kind_display};
 use crate::globals::variant_kind_color;
 use forge_components::{
-    ActivePresentation, BORDER_THIN, FONT_XS, FONT_XXS, ForgePalette, Icon, MenuItem, Radius,
-    Spacing, body_family, context_menu, icon, menu_divider, menu_item, mono_family, radius,
+    ActivePresentation, BORDER_THIN, FONT_XS, FONT_XXS, ForgePalette, Icon, KeyActivated, MenuItem,
+    Radius, Spacing, body_family, context_menu, icon, menu_divider, menu_item, mono_family, radius,
     spacing, tr, with_alpha,
 };
 use forge_types::{ScriptInput, VariantKind};
@@ -93,6 +93,7 @@ impl ScriptEditorView {
                     .rounded(radius(Radius::Sm))
                     .cursor_pointer()
                     .hover(move |s| s.bg(hover_bg))
+                    .key_activated(palette.text_primary)
                     .on_click(
                         cx.listener(|this, _: &ClickEvent, _, cx| this.add_contract_input(cx)),
                     )
@@ -137,6 +138,7 @@ impl ScriptEditorView {
                 .truncate()
                 .cursor_pointer()
                 .text_color(palette.code_var)
+                .key_activated(palette.text_primary)
                 .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
                     this.start_input_rename(index, window, cx)
                 }))
@@ -343,6 +345,7 @@ where
         .rounded(radius(Radius::Sm))
         .cursor_pointer()
         .hover(move |s| s.bg(hover_bg))
+        .key_activated(tint)
         .on_click(on_click)
         .child(icon(glyph, GLYPH_SIGNATURE_ACTION, tint))
 }

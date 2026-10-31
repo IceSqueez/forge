@@ -1,8 +1,8 @@
 use std::collections::HashSet;
 
 use forge_components::{
-    FONT_XS, FONT_XXS, ForgePalette, Icon, badge, body_family, icon, icon_button, mono_family,
-    spinner, toggle, tooltip_builder, tr,
+    FONT_XS, FONT_XXS, ForgePalette, Icon, KeyActivated, badge, body_family, icon, icon_button,
+    mono_family, spinner, toggle, tooltip_builder, tr,
 };
 use forge_platform_core::{CollectionItem, CollectionItemAccess, CollectionItemId};
 use gpui::{
@@ -303,6 +303,7 @@ fn id_line(index: usize, item: &CollectionItem, palette: &ForgePalette) -> AnyEl
         .text_color(palette.text_faint)
         .hover(move |style| style.text_color(hover))
         .tooltip(tooltip_builder(tr!("common_copy"), palette))
+        .key_activated(palette.text_primary)
         .on_click(move |_: &ClickEvent, _, cx| copy_to_clipboard(id.clone(), cx))
         .child(
             div()

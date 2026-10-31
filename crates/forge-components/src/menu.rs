@@ -1,5 +1,6 @@
 use crate::FONT_MICRO;
 use crate::FONT_SECTION_LABEL;
+use crate::key_activation::KeyActivated;
 use crate::presentation::ActivePresentation;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -485,7 +486,7 @@ impl MenuButton {
             .hover(move |style| style.bg(hover_bg));
 
         if let Some(handler) = self.on_toggle.take() {
-            trigger = trigger.on_click(handler);
+            trigger = trigger.key_activated(self.trigger_ink).on_click(handler);
         }
 
         trigger.into_any_element()

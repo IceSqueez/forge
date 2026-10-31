@@ -2,8 +2,8 @@ use forge_components::ActivePresentation;
 use forge_components::Spacing;
 use forge_components::spacing;
 use forge_components::{
-    BORDER_THIN, Button, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, body_family,
-    empty_state, ghost_button_with_icon, icon, mono_family, radius, scaled, tr,
+    BORDER_THIN, Button, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, KeyActivated, Radius,
+    body_family, empty_state, ghost_button_with_icon, icon, mono_family, radius, scaled, tr,
 };
 use gpui::{AnyElement, App, ClickEvent, Entity, Pixels, SharedString, div, prelude::*, px};
 
@@ -147,6 +147,7 @@ fn feed_chip(
         .border_color(palette.border_regular)
         .bg(palette.shell)
         .cursor_pointer()
+        .key_activated(palette.text_primary)
         .on_click(move |_: &ClickEvent, _window, cx: &mut App| {
             target.update(cx, |this, cx| this.open_action(action_id, cx));
         })

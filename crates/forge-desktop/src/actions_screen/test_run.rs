@@ -5,8 +5,8 @@ use crate::runtime_event::{self, RuntimeEvent};
 use crate::user_text::resolve_user_text;
 use forge_components::ROW_OFF_OPACITY;
 use forge_components::{
-    BORDER_THIN, Density, FONT_SM, FONT_XS, FONT_XXS, MenuItem, Radius, Spacing, body_family,
-    context_menu, ghost_button_with_icon, menu_header, menu_item, modal, mono_family,
+    BORDER_THIN, Density, FONT_SM, FONT_XS, FONT_XXS, KeyActivated, MenuItem, Radius, Spacing,
+    body_family, context_menu, ghost_button_with_icon, menu_header, menu_item, modal, mono_family,
     primary_button, radius, scaled, spacing,
 };
 use forge_events::{Event, RunOutcome, SubActionDone};
@@ -441,6 +441,7 @@ impl TestRunModal {
                     .child(label),
             )
             .child(icon(Icon::ChevronDown, ROW_GLYPH, palette.text_faint))
+            .key_activated(palette.text_primary)
             .on_click(cx.listener(|this, ev: &ClickEvent, _, cx| {
                 this.toggle_trigger_menu(ev.position(), cx)
             }))

@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use forge_components::{
-    ActivePresentation, FONT_XXS, ForgePalette, Icon, icon, mono_family, scaled, tr,
+    ActivePresentation, FONT_XXS, ForgePalette, Icon, KeyActivated, icon, mono_family, scaled, tr,
 };
 use forge_overlay::motion::{
     DEFAULT_ENTRANCE_MS, ENTRANCE, ENTRANCE_MS, EXIT, EXIT_MS, INTENSITY, MOTION_MS_MAX,
@@ -304,6 +304,7 @@ impl OverlaysView {
                 .gap(scaled(REPLAY_GAP, density))
                 .cursor_pointer()
                 .text_color(palette.brand)
+                .key_activated(palette.text_primary)
                 .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.open_preview_page(cx)))
                 .child(icon(Icon::Repeat, HINT_GLYPH, palette.brand))
                 .child(tr!("overlays_motion_replay"))

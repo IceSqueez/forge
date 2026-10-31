@@ -8,9 +8,9 @@ use std::rc::Rc;
 
 use forge_components::Language;
 use forge_components::{
-    BORDER_THIN, CodeEditor, Density, ForgePalette, Icon, InputEvent, Picker, PickerEvent,
-    PickerItem, PickerLabels, Radius, Spacing, TextInput, accent_swatch, body_family, dropdown,
-    icon, mono_family, radius, scaled, slider, spacing, toggle, tr,
+    BORDER_THIN, CodeEditor, Density, ForgePalette, Icon, InputEvent, KeyActivated, Picker,
+    PickerEvent, PickerItem, PickerLabels, Radius, Spacing, TextInput, accent_swatch, body_family,
+    dropdown, icon, mono_family, radius, scaled, slider, spacing, toggle, tr,
 };
 use forge_registry::{CodeKind, CodeLanguage, FormField};
 
@@ -1259,6 +1259,7 @@ fn render_swatch<V: 'static>(
                 .border(SWATCH_RING)
                 .border_color(ring)
                 .cursor_pointer()
+                .key_activated(palette.text_primary)
                 .on_click(move |_: &ClickEvent, _window: &mut Window, cx: &mut App| {
                     view.update(cx, |this, cx| {
                         on_pick(this, pick_key.clone(), pick_value.clone(), cx)
@@ -1326,6 +1327,7 @@ fn render_choice<V: 'static>(
     trigger = trigger
         .cursor_pointer()
         .hover(move |s| s.border_color(hover_border))
+        .key_activated(palette.text_primary)
         .on_click(move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
             open_view.update(cx, |this, cx| {
                 open_choice(this, open_key.clone(), window, cx)

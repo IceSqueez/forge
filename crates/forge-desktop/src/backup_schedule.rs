@@ -5,10 +5,10 @@ use std::sync::Arc;
 
 use forge_components::{
     ActivePresentation, BORDER_THIN, DISABLED_OPACITY, DateShape, Density, FONT_SM, FONT_XS,
-    ForgePalette, Icon, InputEvent, PushToast, Radius, SettingRow, Spacing, TextInput, ToastKind,
-    body_family, checkbox, error_row_with_retry, fmt_bytes, fmt_display, fmt_display_relative,
-    ghost_button, ghost_button_with_icon, mono_family, radius, setting_row, setting_rows, spacing,
-    toggle, tr,
+    ForgePalette, Icon, InputEvent, KeyActivated, PushToast, Radius, SettingRow, Spacing,
+    TextInput, ToastKind, body_family, checkbox, error_row_with_retry, fmt_bytes, fmt_display,
+    fmt_display_relative, ghost_button, ghost_button_with_icon, mono_family, radius, setting_row,
+    setting_rows, spacing, toggle, tr,
 };
 use forge_storage::settings::core_settings::{
     BACKUP_SCHEDULE_DESTINATION, BACKUP_SCHEDULE_ENABLED, BACKUP_SCHEDULE_INCLUDE_ASSETS,
@@ -1051,6 +1051,7 @@ impl BackupScheduleView {
             item = item
                 .cursor_pointer()
                 .hover(move |style| style.bg(hover_bg))
+                .key_activated(palette.text_primary)
                 .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
                     this.toggle_category(category, cx)
                 }));

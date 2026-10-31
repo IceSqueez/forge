@@ -5,7 +5,8 @@ use crate::chat_drawer::{DASH, SubStatus, ViewerSummary};
 use crate::platform_visuals::{BadgeKind, badge_color, badge_label};
 use forge_components::{
     BORDER_THIN, DISABLED_OPACITY, Density, FONT_MD, FONT_SM, FONT_XS, FONT_XXS, ForgePalette,
-    Icon, Radius, Spacing, avatar_tile, badge, body_family, icon, mono_family, radius, spacing, tr,
+    Icon, KeyActivated, Radius, Spacing, avatar_tile, badge, body_family, icon, mono_family,
+    radius, spacing, tr,
 };
 use gpui::{
     AnyElement, App, ClickEvent, Context, Div, FontWeight, Pixels, Rgba, SharedString, Window, div,
@@ -233,6 +234,7 @@ impl ChatView {
                     .id("chat-drawer-messages")
                     .cursor_pointer()
                     .hover(move |style| style.bg(tile_hover))
+                    .key_activated(palette.text_primary)
                     .on_click(cx.listener(
                         move |this, _: &ClickEvent, _, cx| {
                             this.open_viewer_history(history_key.clone(), history_name.clone(), cx)

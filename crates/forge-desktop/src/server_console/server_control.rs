@@ -4,8 +4,8 @@ use crate::navigation::{NavRequested, Screen, SettingsSection};
 use crate::repo_failure::RepoFailure;
 use crate::server_restart::restart_ignoring_disabled;
 use forge_components::{
-    Density, FONT_XXS, ForgePalette, Icon, Spacing, body_family, ghost_button_with_icon, spacing,
-    tr,
+    Density, FONT_XXS, ForgePalette, Icon, KeyActivated, Spacing, body_family,
+    ghost_button_with_icon, spacing, tr,
 };
 use gpui::{AnyElement, ClickEvent, Context, div, prelude::*};
 
@@ -97,6 +97,7 @@ impl ServerConsoleView {
                         .text_size(FONT_XXS)
                         .text_color(palette.info)
                         .child(tr!("server_console_disabled_hint_link"))
+                        .key_activated(palette.text_primary)
                         .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
                             this.open_websocket_settings(cx)
                         })),

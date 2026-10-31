@@ -5,8 +5,9 @@ use super::{
 };
 use crate::async_bridge::{self, ErrorSink};
 use forge_components::{
-    BORDER_THIN, Density, FONT_SM, FONT_XXS, ForgePalette, Icon, Radius, Spacing, body_family,
-    card, empty_state, fmt_bytes, icon, mono_family, radius, spacing, tooltip_builder, tr,
+    BORDER_THIN, Density, FONT_SM, FONT_XXS, ForgePalette, Icon, KeyActivated, Radius, Spacing,
+    body_family, card, empty_state, fmt_bytes, icon, mono_family, radius, spacing, tooltip_builder,
+    tr,
 };
 use forge_overlay::MARKUP_FILE;
 use forge_server::{overlay_file_url, overlay_origin, overlay_page_url};
@@ -238,6 +239,7 @@ impl ServerConsoleView {
                     .cursor_pointer()
                     .hover(move |s| s.border_color(palette.border_input))
                     .tooltip(tooltip_builder(tr!("server_open_overlay_folder"), palette))
+                    .key_activated(palette.text_primary)
                     .on_click(
                         cx.listener(|this, _: &ClickEvent, _, cx| this.open_overlay_folder(cx)),
                     )
@@ -260,6 +262,7 @@ impl ServerConsoleView {
                         tr!("server_refresh_overlay_files"),
                         palette,
                     ))
+                    .key_activated(palette.text_primary)
                     .on_click(
                         cx.listener(|this, _: &ClickEvent, _, cx| this.refresh_overlay_listing(cx)),
                     )
@@ -361,6 +364,7 @@ impl ServerConsoleView {
             let name = entry.name.clone();
             row = row
                 .cursor_pointer()
+                .key_activated(palette.text_primary)
                 .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
                     this.select_overlay_entry(name.clone(), cx)
                 }));
@@ -402,6 +406,7 @@ impl ServerConsoleView {
                     .flex_none()
                     .cursor_pointer()
                     .tooltip(tooltip_builder(tr!("common_copy"), palette))
+                    .key_activated(palette.text_primary)
                     .on_click(
                         cx.listener(|this, _: &ClickEvent, _, cx| this.copy_browser_source_url(cx)),
                     )

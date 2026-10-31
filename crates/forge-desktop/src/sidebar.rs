@@ -3,8 +3,9 @@ use forge_components::FONT_MICRO;
 use forge_components::Spacing;
 use forge_components::spacing;
 use forge_components::{
-    BORDER_THIN, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, ResizeEdge, ResizeRange,
-    body_family, icon, install_resize, mono_family, pulse_dot, radius, scaled, status_dot, tr,
+    BORDER_THIN, FONT_XS, FONT_XXS, ForgePalette, Icon, KeyActivated, Radius, ResizeEdge,
+    ResizeRange, body_family, icon, install_resize, mono_family, pulse_dot, radius, scaled,
+    status_dot, tr,
 };
 use forge_platform_core::{ConnectionAffordance, IntegrationCategory};
 use gpui::{
@@ -12,6 +13,7 @@ use gpui::{
     Rgba, SharedString, Window, div, prelude::*, px,
 };
 
+use crate::actions::FocusContent;
 use crate::integration_catalog::{core_features, declarations, look_of};
 use crate::integration_lifecycle::{CardStatus, IntegrationLifecycle};
 use crate::navigation::{NavRequested, Screen};
@@ -309,9 +311,11 @@ impl SidebarNav {
             .rounded(radius(Radius::Sm))
             .text_color(fg)
             .cursor_pointer()
-            .on_click(
-                cx.listener(move |this, _: &ClickEvent, _, cx| this.request(screen.clone(), cx)),
-            )
+            .key_activated(palette.text_primary)
+            .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                window.dispatch_action(Box::new(FocusContent), cx);
+                this.request(screen.clone(), cx);
+            }))
             .children(children);
         if active {
             row = row.bg(palette.surface_overlay);

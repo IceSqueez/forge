@@ -1,5 +1,5 @@
 use forge_components::{ForgePalette, Icon, app_footer, footer_alert, footer_indicator, tr};
-use gpui::{AnyElement, Context, Entity, SharedString, Window, div, prelude::*};
+use gpui::{AnyElement, Context, Entity, SharedString, Subscription, Window, div, prelude::*};
 
 use crate::awake_state::{AwakeState, AwakeTone};
 use crate::event_loss::{EventLoss, breakdown, consumer_label, tier_label};
@@ -16,6 +16,7 @@ pub(crate) struct Footer {
     event_loss: Entity<EventLoss>,
     awake: Entity<AwakeState>,
     lifecycle: Entity<IntegrationLifecycle>,
+    _subs: Vec<Subscription>,
 }
 
 impl Footer {
@@ -27,19 +28,21 @@ impl Footer {
         lifecycle: Entity<IntegrationLifecycle>,
         cx: &mut Context<Self>,
     ) -> Self {
-        cx.observe(&status, |_, _, cx| cx.notify()).detach();
-        cx.observe(&connectivity, |_, _, cx| cx.notify()).detach();
-        cx.observe(&event_loss, |_, _, cx| cx.notify()).detach();
-        cx.observe(&awake, |_, _, cx| cx.notify()).detach();
-        cx.observe(&lifecycle, |_, _, cx| cx.notify()).detach();
-        cx.observe_global::<Presentation>(|_, cx| cx.notify())
-            .detach();
+        let subs = vec![
+            cx.observe(&status, |_, _, cx| cx.notify()),
+            cx.observe(&connectivity, |_, _, cx| cx.notify()),
+            cx.observe(&event_loss, |_, _, cx| cx.notify()),
+            cx.observe(&awake, |_, _, cx| cx.notify()),
+            cx.observe(&lifecycle, |_, _, cx| cx.notify()),
+            cx.observe_global::<Presentation>(|_, cx| cx.notify()),
+        ];
         Self {
             status,
             connectivity,
             event_loss,
             awake,
             lifecycle,
+            _subs: subs,
         }
     }
 

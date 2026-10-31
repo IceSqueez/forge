@@ -64,7 +64,7 @@ impl ConnectFlow {
             PlatformId::YouTube => {
                 let Some(sign_in) = self.youtube_sign_in.clone() else {
                     self.phase = LocalCallbackFlowPhase::Failed;
-                    self.error = Some(tr!("auth_error_credentials_missing_youtube").to_string());
+                    self.error = Some(tr!("auth_error_credentials_missing_youtube"));
                     cx.notify();
                     return;
                 };
@@ -75,7 +75,7 @@ impl ConnectFlow {
             PlatformId::Kick => {
                 let Some(sign_in) = self.kick_sign_in.clone() else {
                     self.phase = LocalCallbackFlowPhase::Failed;
-                    self.error = Some(tr!("auth_error_credentials_missing_kick").to_string());
+                    self.error = Some(tr!("auth_error_credentials_missing_kick"));
                     cx.notify();
                     return;
                 };

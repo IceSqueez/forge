@@ -13,8 +13,8 @@ use crate::icons::{Icon, icon};
 use crate::palette::{ForgePalette, with_alpha};
 use crate::text_input::{InputEvent, TextInput};
 use crate::tokens::{
-    BORDER_THIN, Density, FONT_MD, FONT_SM, FONT_XS, Radius, Spacing, body_family, mono_family,
-    radius, scaled, spacing,
+    BORDER_THIN, Density, FONT_MD, FONT_SM, Radius, Spacing, body_family, mono_family, radius,
+    scaled, spacing,
 };
 
 const HEADER_GAP: Pixels = px(12.0);
@@ -35,6 +35,7 @@ pub enum BulletKind {
     Info,
 }
 
+#[derive(Debug)]
 pub struct BulletItem {
     pub kind: BulletKind,
     pub text: SharedString,
@@ -63,10 +64,6 @@ pub(crate) fn bullet_glyph(kind: BulletKind, palette: &ForgePalette) -> (Icon, R
     }
 }
 
-pub(crate) fn matches(typed: &str, target: &str) -> bool {
-    typed == target
-}
-
 fn match_border(matched: bool, palette: &ForgePalette) -> Rgba {
     if matched {
         palette.brand
@@ -80,7 +77,6 @@ pub struct TypeToConfirm {
     target: SharedString,
     title: SharedString,
     explanation: SharedString,
-    section_caption: SharedString,
     instruction_prefix: SharedString,
     instruction_suffix: SharedString,
     bullets: Vec<BulletItem>,
@@ -101,7 +97,7 @@ pub fn type_to_confirm(
 ) -> TypeToConfirm {
     let target = target.into();
     let palette = *palette;
-    let matched = matches("", target.as_ref());
+    let matched = target.is_empty();
 
     let input = cx.new(|cx| {
         TextInput::new("", cx)
@@ -112,7 +108,7 @@ pub fn type_to_confirm(
 
     let sub = cx.subscribe(&input, |this, input, event: &InputEvent, cx| match event {
         InputEvent::Changed(text) => {
-            let now = matches(text.as_ref(), this.target.as_ref());
+            let now = text.as_ref() == this.target.as_ref();
             if now != this.matched {
                 this.matched = now;
                 let border = match_border(now, &this.palette);
@@ -137,7 +133,6 @@ pub fn type_to_confirm(
         target,
         title: SharedString::default(),
         explanation: SharedString::default(),
-        section_caption: SharedString::default(),
         instruction_prefix: SharedString::default(),
         instruction_suffix: SharedString::default(),
         bullets: Vec::new(),
@@ -217,6 +212,7 @@ fn confirm_button(
     let disabled_ink = palette.disabled;
 
     let base = div()
+        .max_w_full()
         .flex()
         .items_center()
         .py(spacing(Spacing::Xxs, density))
@@ -300,15 +296,6 @@ impl Render for TypeToConfirm {
             .border_t(BORDER_THIN)
             .border_color(p.border_regular);
 
-        if !self.section_caption.is_empty() {
-            risk = risk.child(
-                div()
-                    .font_family(mono_family())
-                    .text_size(FONT_XS)
-                    .text_color(p.text_muted)
-                    .child(self.section_caption.clone()),
-            );
-        }
         for item in &self.bullets {
             let (glyph, hue) = bullet_glyph(item.kind, &p);
             risk = risk.child(
@@ -373,12 +360,11 @@ impl Render for TypeToConfirm {
             .child(self.input.clone());
 
         let cancel_entity = entity.clone();
-        let cancel = secondary_button(self.cancel_label.clone(), &p).on_click(
-            "type-to-confirm-cancel",
-            move |_event, _window, app| {
+        let cancel = secondary_button(self.cancel_label.clone(), &p)
+            .fits_parent()
+            .on_click("type-to-confirm-cancel", move |_event, _window, app| {
                 cancel_entity.update(app, |_this, cx| cx.emit(TypeToConfirmEvent::Cancelled));
-            },
-        );
+            });
 
         let confirm_entity = entity.clone();
         let confirm_handler: ActionHandler = Box::new(move |_event, _window, app| {

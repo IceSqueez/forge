@@ -1,5 +1,5 @@
+use forge_components::STICKY_TOAST;
 use std::collections::BTreeSet;
-use std::time::Duration;
 
 use forge_components::{PushToast, ToastKind, duplicate_message_ids, tr};
 use forge_host::integration_catalog::INTEGRATION_MESSAGE_CATALOGS;
@@ -106,7 +106,7 @@ pub(crate) fn report_catalog_problems<T: 'static>(cx: &mut Context<T>) {
                 tr!("message_catalog_conflict", problems = listed),
                 None,
                 None,
-                Duration::ZERO,
+                STICKY_TOAST,
             );
         });
     })

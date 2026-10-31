@@ -47,7 +47,7 @@ impl IntegrationDetail {
         .esc_hint(tr!("widget_confirm_esc_to_cancel"))
         .on_cancel(
             "integration-disconnect-cancel",
-            tr!("widget_confirm_cancel"),
+            tr!("common_cancel"),
             cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_disconnect(cx)),
         )
         .on_confirm(

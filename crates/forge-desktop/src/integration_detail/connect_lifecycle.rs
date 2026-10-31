@@ -43,13 +43,9 @@ impl IntegrationDetail {
         cx: &mut Context<Self>,
     ) {
         match event {
-            ConnectFlowEvent::Connected(object) => self.adopt_connected(object, cx),
+            ConnectFlowEvent::Connected(object) => self.adopt_builtin(object.clone(), cx),
             ConnectFlowEvent::Leave => self.navigate_to(Screen::Integrations(None), cx),
         }
-    }
-
-    fn adopt_connected(&mut self, object: &BuiltinObject, cx: &mut Context<Self>) {
-        self.adopt_builtin(object.clone(), cx);
     }
 
     pub(super) fn reload(&mut self, cx: &mut Context<Self>) {

@@ -116,6 +116,7 @@ impl RunHistoryModal {
         }
     }
 
+    #[must_use]
     pub(crate) fn with_action_names(mut self, names: HashMap<ActionId, SharedString>) -> Self {
         self.action_names = names;
         self
@@ -276,7 +277,7 @@ impl RunHistoryModal {
         let duration = match ctx.completed_at {
             Some(done) => {
                 let ms = (done - ctx.started_at).whole_milliseconds().max(0);
-                tr!("action_editor_run_history_duration_ms", count = ms as i64)
+                tr!("action_editor_run_history_duration_ms", count = ms)
             }
             None => "-".to_owned(),
         };
@@ -338,7 +339,7 @@ impl RunHistoryModal {
         let duration = match ctx.completed_at {
             Some(done) => {
                 let ms = (done - ctx.started_at).whole_milliseconds().max(0);
-                tr!("action_editor_run_history_duration_ms", count = ms as i64)
+                tr!("action_editor_run_history_duration_ms", count = ms)
             }
             None => "-".to_owned(),
         };
@@ -546,7 +547,7 @@ impl RunHistoryModal {
         };
 
         let marker = if nested {
-            tr!("action_editor_run_history_step_nested").to_string()
+            tr!("action_editor_run_history_step_nested")
         } else {
             format!("#{}", step.index + 1)
         };

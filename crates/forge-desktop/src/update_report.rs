@@ -1,6 +1,6 @@
+use forge_components::STICKY_TOAST;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Duration;
 
 use forge_components::{Icon, ToastAction, ToastKind, tr};
 use forge_storage::SettingDisclosure::Verbatim;
@@ -192,16 +192,16 @@ fn raise_report_toast(report: &UpdateReport, rt_handle: Handle, cx: &mut App) {
         ReportOffer::Nothing => cx.push_toast_full(
             notice.kind,
             notice.message,
-            Some(Icon::Sparkles),
+            (notice.kind == ToastKind::Info).then_some(Icon::Sparkles),
             None,
-            Duration::ZERO,
+            STICKY_TOAST,
         ),
         ReportOffer::Download { version } => cx.push_toast_full(
             notice.kind,
             notice.message,
             None,
             Some(download_action(&version, rt_handle)),
-            Duration::ZERO,
+            STICKY_TOAST,
         ),
     }
 }

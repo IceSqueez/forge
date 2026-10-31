@@ -502,6 +502,7 @@ impl<'a> ArgsBuilder<'a> {
         Self(FluentArgs::new())
     }
 
+    #[must_use]
     pub fn set(mut self, key: &'a str, value: impl Into<FluentValue<'a>>) -> Self {
         self.0.set(key, value);
         self

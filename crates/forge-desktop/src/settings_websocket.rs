@@ -12,7 +12,8 @@ use forge_server::{DEFAULT_PORT, ServerHandle, ServerSettings};
 use forge_storage::{CredentialsRepo, DataProvider, SettingsRepo};
 use forge_types::Secret;
 use gpui::{
-    ClickEvent, Context, Entity, Pixels, SharedString, Subscription, Window, div, prelude::*, px,
+    ClickEvent, Context, Entity, Pixels, SharedString, Subscription, Task, Window, div, prelude::*,
+    px,
 };
 
 use crate::async_bridge;
@@ -106,6 +107,7 @@ pub(crate) struct SettingsWebSocketView {
     lan_modal: Option<Entity<TypeToConfirm>>,
     lan_sub: Option<Subscription>,
     _subs: Vec<Subscription>,
+    _run_state_bridge: Option<Task<()>>,
 }
 
 impl SettingsWebSocketView {
@@ -198,6 +200,7 @@ impl SettingsWebSocketView {
             lan_modal: None,
             lan_sub: None,
             _subs: subs,
+            _run_state_bridge: None,
         };
         async_bridge::attach_to_window(Self::attach_origins_blur, cx);
         view.load(cx);
@@ -206,12 +209,12 @@ impl SettingsWebSocketView {
         view
     }
 
-    fn start_run_state_bridge(&self, cx: &mut Context<Self>) {
+    fn start_run_state_bridge(&mut self, cx: &mut Context<Self>) {
         let Some(handle) = self.server.as_ref() else {
             return;
         };
         let mut run_state = handle.run_state();
-        cx.spawn(async move |this, cx| {
+        self._run_state_bridge = Some(cx.spawn(async move |this, cx| {
             loop {
                 let running = run_state.latest();
                 if this
@@ -222,8 +225,7 @@ impl SettingsWebSocketView {
                     break;
                 }
             }
-        })
-        .detach();
+        }));
     }
 
     fn apply_run_state(&mut self, running: bool, cx: &mut Context<Self>) {

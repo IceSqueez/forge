@@ -162,7 +162,7 @@ impl ConnectFlow {
         ) else {
             self.twitch_device = Some(TwitchDeviceState::failed(
                 TwitchDevicePhase::Failed,
-                tr!("auth_error_credentials_missing_twitch").to_string(),
+                tr!("auth_error_credentials_missing_twitch"),
             ));
             cx.notify();
             return;
@@ -265,7 +265,7 @@ impl ConnectFlow {
             Err(TwitchWaitError::Denied) => {
                 if let Some(dev) = &mut self.twitch_device {
                     dev.phase = TwitchDevicePhase::Denied;
-                    dev.error = Some(tr!("twitch_device_denied_detail").to_string());
+                    dev.error = Some(tr!("twitch_device_denied_detail"));
                 }
                 cx.notify();
             }
@@ -297,7 +297,7 @@ impl ConnectFlow {
             tracing::error!("twitch integration absent at sign-in; client id was missing at boot");
             if let Some(dev) = &mut self.twitch_device {
                 dev.phase = TwitchDevicePhase::Failed;
-                dev.error = Some(tr!("auth_error_credentials_missing_twitch").to_string());
+                dev.error = Some(tr!("auth_error_credentials_missing_twitch"));
             }
             cx.notify();
             return;
@@ -877,7 +877,7 @@ impl ConnectFlow {
             .twitch_device
             .as_ref()
             .and_then(|d| d.error.clone())
-            .unwrap_or_else(|| tr!("twitch_device_denied_detail").to_string());
+            .unwrap_or_else(|| tr!("twitch_device_denied_detail"));
         let retry = div()
             .id("twitch-denied-retry")
             .flex_none()
@@ -1221,7 +1221,7 @@ mod tests {
             (phase, error),
             (
                 TwitchDevicePhase::Failed,
-                Some(tr!("auth_error_credentials_missing_twitch").to_string())
+                Some(tr!("auth_error_credentials_missing_twitch"))
             ),
             "a sign-in with no install seed must fail visibly instead of building a bundle"
         );

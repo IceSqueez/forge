@@ -255,7 +255,6 @@ pub(crate) struct QueuesView {
     pending_free: Confirm<QueueId>,
     menu_open: Option<QueueId>,
     menu_click_pos: Option<Point<Pixels>>,
-    diverged: HashSet<QueueId>,
     queue_health: Entity<QueueHealth>,
     scheduler: QueueSchedulerHandle,
     queue_repo: Arc<dyn QueueRepo>,
@@ -304,7 +303,6 @@ impl QueuesView {
             pending_free: Confirm::default(),
             menu_open: None,
             menu_click_pos: None,
-            diverged: HashSet::new(),
             queue_health,
             scheduler,
             queue_repo,
@@ -470,7 +468,6 @@ impl QueuesView {
     }
 
     fn apply_rows(&mut self, rows: Vec<QueueRow>, cx: &mut Context<Self>) {
-        self.diverged = rows.iter().filter(|r| !r.live).map(|r| r.id).collect();
         self.queues = rows;
         self.list_load = Loadable::Loaded(());
         let health = self.queue_health.clone();
@@ -1278,7 +1275,13 @@ mod tests {
     }
 
     fn diverged(view: &Entity<QueuesView>, cx: &mut TestAppContext) -> Vec<QueueId> {
-        view.read_with(cx, |view, _| view.diverged.iter().copied().collect())
+        view.read_with(cx, |view, _| {
+            view.queues
+                .iter()
+                .filter(|row| !row.live)
+                .map(|row| row.id)
+                .collect()
+        })
     }
 
     fn toasts(cx: &mut TestAppContext) -> Vec<(ToastKind, String)> {

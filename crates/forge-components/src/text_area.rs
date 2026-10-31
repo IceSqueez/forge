@@ -107,26 +107,31 @@ impl TextArea {
         }
     }
 
+    #[must_use]
     pub fn with_palette(mut self, palette: ForgePalette) -> Self {
         self.palette = palette;
         self
     }
 
+    #[must_use]
     pub fn with_font_size(mut self, size: Pixels) -> Self {
         self.font_size = size;
         self
     }
 
+    #[must_use]
     pub fn with_height(mut self, height: Pixels) -> Self {
         self.height = height;
         self
     }
 
+    #[must_use]
     pub fn mono(mut self) -> Self {
         self.font_family = mono_family();
         self
     }
 
+    #[must_use]
     pub fn on_surface(mut self) -> Self {
         self.on_surface = true;
         self

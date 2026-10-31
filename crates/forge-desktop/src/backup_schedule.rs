@@ -34,7 +34,7 @@ use forge_transfer::{
     change_schedule_passphrase, create_schedule_key,
 };
 use gpui::{
-    AnyView, ClickEvent, Context, Entity, Pixels, SharedString, Subscription, Window, div,
+    AnyView, ClickEvent, Context, Entity, Pixels, SharedString, Subscription, Task, Window, div,
     prelude::*, px,
 };
 use time::OffsetDateTime;
@@ -455,6 +455,7 @@ pub(crate) struct BackupScheduleView {
     numbers: Vec<NumberField>,
     prompt: Option<PassphrasePrompt>,
     _subs: Vec<Subscription>,
+    _status_bridge: Option<Task<()>>,
 }
 
 impl BackupScheduleView {
@@ -506,6 +507,7 @@ impl BackupScheduleView {
             numbers,
             prompt: None,
             _subs: subs,
+            _status_bridge: None,
         };
         view.load(cx);
         view.start_status_bridge(cx);
@@ -561,9 +563,9 @@ impl BackupScheduleView {
         cx.notify();
     }
 
-    fn start_status_bridge(&self, cx: &mut Context<Self>) {
+    fn start_status_bridge(&mut self, cx: &mut Context<Self>) {
         let mut status = self.service.status();
-        cx.spawn(async move |this, cx| {
+        self._status_bridge = Some(cx.spawn(async move |this, cx| {
             loop {
                 let current = status.borrow_and_update().clone();
                 if this
@@ -574,8 +576,7 @@ impl BackupScheduleView {
                     break;
                 }
             }
-        })
-        .detach();
+        }));
     }
 
     pub(crate) fn apply_status(&mut self, status: ScheduledBackupStatus, cx: &mut Context<Self>) {

@@ -1,4 +1,3 @@
-use crate::FONT_MICRO;
 use crate::FONT_SECTION_LABEL;
 use crate::key_activation::KeyActivated;
 use crate::presentation::ActivePresentation;
@@ -29,7 +28,6 @@ const ITEM_GAP: Pixels = px(9.0);
 const ITEM_RADIUS: Pixels = px(5.0);
 const HEADER_BOTTOM_PAD_RATIO: f32 = 0.5;
 const ITEM_ICON_SIZE: Pixels = px(13.0);
-const SHORTCUT_FONT_SIZE: Pixels = FONT_MICRO;
 const HEADER_FONT_SIZE: Pixels = FONT_SECTION_LABEL;
 
 const TRIGGER_SIZE: Pixels = px(20.0);
@@ -59,7 +57,6 @@ pub struct MenuEntry {
     id: ElementId,
     label: SharedString,
     icon: Option<Icon>,
-    shortcut: Option<SharedString>,
     color: Option<Rgba>,
     disabled: bool,
     on_click: ItemClick,
@@ -74,7 +71,6 @@ pub fn menu_item(
         id: id.into(),
         label: label.into(),
         icon: None,
-        shortcut: None,
         color: None,
         disabled: false,
         on_click: Rc::new(on_click),
@@ -210,17 +206,6 @@ impl MenuInk {
                 .text_color(text_ink)
                 .child(entry.label),
         );
-
-        if let Some(shortcut) = entry.shortcut {
-            row = row.child(
-                div()
-                    .font_family(mono_family())
-                    .whitespace_nowrap()
-                    .text_size(SHORTCUT_FONT_SIZE)
-                    .text_color(self.faint_ink)
-                    .child(shortcut),
-            );
-        }
 
         if entry.disabled {
             return row.opacity(DISABLED_OPACITY).into_any_element();

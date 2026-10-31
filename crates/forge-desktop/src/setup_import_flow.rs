@@ -1,3 +1,4 @@
+use forge_components::STICKY_TOAST;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -22,7 +23,6 @@ use crate::restore_problem::RestoreProblem;
 use crate::setup_confirm::{SetupConfirmCard, SetupCount, setup_counts};
 
 const SETUP_TOAST_DURATION: Duration = Duration::from_secs(10);
-const STICKY: Duration = Duration::ZERO;
 const DISCARD_CONTEXT: &str = "staged setup discard";
 
 pub(crate) enum SetupApplied {
@@ -138,7 +138,7 @@ impl SetupImportFlow {
                 tracing::warn!(error = %message, "setup could not be staged");
                 cx.push_toast(
                     ToastKind::Error,
-                    tr!("home_import_failed", error = message.text()),
+                    tr!("common_import_failed", error = message.text()),
                 );
             }
         }
@@ -236,7 +236,7 @@ impl SetupImportFlow {
                 tr!("setup_import_done_restart"),
                 None,
                 Some(action),
-                STICKY,
+                STICKY_TOAST,
             );
         } else {
             let snapshot = outcome.safety_snapshot.clone();
@@ -315,7 +315,7 @@ fn report_rollback_incomplete(message: &str, snapshot: PathBuf, cx: &mut Context
     let action = ToastAction::new(tr!("pack_import_reveal_snapshot"), move |_window, app| {
         app.reveal_path(&snapshot)
     });
-    cx.push_toast_full(ToastKind::Error, text, None, Some(action), STICKY);
+    cx.push_toast_full(ToastKind::Error, text, None, Some(action), STICKY_TOAST);
 }
 
 impl Drop for SetupImportFlow {
@@ -932,7 +932,7 @@ mod tests {
             (
                 "idle",
                 vec![tr!(
-                    "home_import_failed",
+                    "common_import_failed",
                     error = RestoreProblem::NotABundle.message()
                 )]
             )

@@ -79,9 +79,10 @@ static RULES: LazyLock<Option<Vec<(Regex, &'static str)>>> = LazyLock::new(|| {
 
 pub(crate) fn scrub(input: &str) -> Cow<'_, str> {
     let Some(rules) = RULES.as_ref() else {
-        return match input.ends_with('\n') {
-            true => Cow::Owned(format!("{UNAVAILABLE}\n")),
-            false => Cow::Borrowed(UNAVAILABLE),
+        return if input.ends_with('\n') {
+            Cow::Owned(format!("{UNAVAILABLE}\n"))
+        } else {
+            Cow::Borrowed(UNAVAILABLE)
         };
     };
 

@@ -32,7 +32,8 @@ use gpui::{
 use crate::async_bridge::{self, Loadable, SnapshotWriter, WriteOutcome};
 use crate::load_notice::{LoadNotice, NoticeWidth, load_notice};
 use crate::voice_alias_form::{
-    AliasForm, AliasFormEvent, AliasIdentity, AliasScope, AliasValues, alias_key_scope, fmt_field,
+    AliasForm, AliasFormEvent, AliasIdentity, AliasScope, AliasValues, alias_key_scope,
+    format_optional_number,
 };
 use crate::voice_alias_store::save_alias;
 use forge_components::ActivePresentation;
@@ -460,8 +461,8 @@ impl VoiceAliasesView {
         let values = AliasValues {
             engine: Some(row.engine_id.clone()),
             voice: row.voice_id.clone(),
-            pitch: fmt_field(row.pitch_semitones),
-            rate: fmt_field(row.rate_multiplier),
+            pitch: format_optional_number(row.pitch_semitones),
+            rate: format_optional_number(row.rate_multiplier),
             blocked: row.blocked,
         };
         let id = row.id.clone();

@@ -24,10 +24,13 @@ use forge_host::audio_routes::{
     set_destination, set_route,
 };
 
+const ROUTE_LOCAL_KEY: &str = "settings_audio_route_local";
+const ROUTE_OVERLAY_KEY: &str = "settings_audio_route_overlay";
+const ROUTE_BOTH_KEY: &str = "settings_audio_route_both";
 const EVERY_ROUTE: [(AudioRoute, &str); 3] = [
-    (AudioRoute::Local, "settings_audio_route_local"),
-    (AudioRoute::Overlay, "settings_audio_route_overlay"),
-    (AudioRoute::Both, "settings_audio_route_both"),
+    (AudioRoute::Local, ROUTE_LOCAL_KEY),
+    (AudioRoute::Overlay, ROUTE_OVERLAY_KEY),
+    (AudioRoute::Both, ROUTE_BOTH_KEY),
 ];
 
 const SINGLE_PAGE: usize = 1;
@@ -703,14 +706,11 @@ fn fallback_label(fallback: RouteFallback) -> String {
 }
 
 fn route_label(route: AudioRoute) -> String {
-    let key = EVERY_ROUTE
-        .into_iter()
-        .find(|(candidate, _)| *candidate == route)
-        .map(|(_, key)| key);
-    match key {
-        Some(key) => tr!(key),
-        None => route.as_str().to_owned(),
-    }
+    tr!(match route {
+        AudioRoute::Local => ROUTE_LOCAL_KEY,
+        AudioRoute::Overlay => ROUTE_OVERLAY_KEY,
+        AudioRoute::Both => ROUTE_BOTH_KEY,
+    })
 }
 
 async fn load_routing(

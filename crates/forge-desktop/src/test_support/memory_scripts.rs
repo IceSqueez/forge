@@ -31,6 +31,7 @@ impl MemoryScripts {
         scripts
     }
 
+    #[must_use]
     pub(crate) fn referenced_by(self, name: &str, references: ScriptReferences) -> Self {
         self.shelves
             .lock()

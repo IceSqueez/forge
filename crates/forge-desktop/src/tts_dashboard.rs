@@ -35,6 +35,7 @@ use crate::tts_engine_roster::{RosterEngine, engine_class_label, load_engine_ros
 use forge_components::ActivePresentation;
 use forge_components::{PushToast, ToastKind};
 
+const NO_LATENCY_READING: &str = "-";
 const VOL_SLIDER_W: Pixels = px(90.0);
 const TEST_INPUT_W: Pixels = px(160.0);
 const RAIL_DEFAULT_W: Pixels = px(240.0);
@@ -562,10 +563,6 @@ impl TtsDashboardView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let density = cx.density();
-        let latency = stats
-            .avg_latency_ms
-            .map(|ms| format!("{ms}ms"))
-            .unwrap_or_else(|| "-".to_owned());
 
         let stat_rows = div()
             .flex()
@@ -596,7 +593,7 @@ impl TtsDashboardView {
             ))
             .child(stat_row(
                 tr!("tts_dash_stat_avg_latency"),
-                latency,
+                NO_LATENCY_READING.to_owned(),
                 palette.success,
                 palette,
                 false,
@@ -751,7 +748,7 @@ impl TtsDashboardView {
                 .font_family(mono_family())
                 .text_size(FONT_XXS)
                 .text_color(palette.text_faint)
-                .child(tr!("tts_dash_queue_total", secs = total as i64))
+                .child(tr!("tts_dash_queue_total", secs = total))
                 .into_any_element()
         });
 
@@ -822,10 +819,7 @@ impl TtsDashboardView {
                     .child(item.viewer_name.clone()),
             );
         if item.is_high_priority {
-            let label = item
-                .bits_amount
-                .map(|b| tr!("tts_dash_priority_bits", amount = b as i64))
-                .unwrap_or_else(|| tr!("tts_dash_priority_high"));
+            let label = tr!("tts_dash_priority_high");
             name_row = name_row.child(badge(
                 palette.warning,
                 palette.shell,

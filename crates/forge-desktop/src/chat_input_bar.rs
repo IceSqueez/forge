@@ -174,6 +174,7 @@ impl InputBar {
         }
     }
 
+    #[must_use]
     pub(crate) fn with_targets(mut self, targets: Vec<(SendTarget, bool)>) -> Self {
         self.targets = targets
             .into_iter()

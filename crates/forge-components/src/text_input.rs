@@ -144,11 +144,13 @@ impl TextInput {
         self
     }
 
+    #[must_use]
     pub fn with_palette(mut self, palette: ForgePalette) -> Self {
         self.palette = palette;
         self
     }
 
+    #[must_use]
     pub fn with_font_size(mut self, size: Pixels) -> Self {
         self.font_size = size;
         self
@@ -166,36 +168,43 @@ impl TextInput {
         self
     }
 
+    #[must_use]
     pub fn secure(mut self, secure: bool) -> Self {
         self.secure = secure;
         self
     }
 
+    #[must_use]
     pub fn read_only(mut self, read_only: bool) -> Self {
         self.read_only = read_only;
         self
     }
 
+    #[must_use]
     pub fn leading_icon(mut self, glyph: Icon, tint: Rgba) -> Self {
         self.leading_icon = Some((glyph, tint));
         self
     }
 
+    #[must_use]
     pub fn prefix(mut self, prefix: impl Into<SharedString>) -> Self {
         self.prefix = Some(prefix.into());
         self
     }
 
+    #[must_use]
     pub fn accent(mut self, accent: Rgba) -> Self {
         self.accent = Some(accent);
         self
     }
 
+    #[must_use]
     pub fn on_surface(mut self) -> Self {
         self.on_surface = true;
         self
     }
 
+    #[must_use]
     pub fn static_chrome(mut self, border: Rgba, corner: Radius) -> Self {
         self.static_chrome = Some((border, corner));
         self

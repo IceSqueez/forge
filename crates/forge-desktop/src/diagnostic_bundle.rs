@@ -31,6 +31,7 @@ const FRAMING_RESERVE: usize = 4096;
 const RULE: &str =
     "================================================================================";
 
+#[derive(Debug)]
 pub(crate) struct IntegrationFacts {
     pub id: String,
     pub connection: &'static str,
@@ -43,6 +44,7 @@ pub(crate) struct IntegrationFacts {
     pub quick_actions: usize,
 }
 
+#[derive(Debug)]
 pub(crate) struct BundleInput {
     pub log_dir: PathBuf,
     pub level: LogLevel,
@@ -52,6 +54,7 @@ pub(crate) struct BundleInput {
     pub runs: Vec<DisclosedRun>,
 }
 
+#[derive(Debug)]
 pub(crate) struct Bundle {
     pub text: String,
     pub script_lines: usize,

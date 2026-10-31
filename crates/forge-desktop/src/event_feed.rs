@@ -496,17 +496,17 @@ impl EventFeedView {
         } else {
             (Icon::PlayerPause, palette.warning)
         };
-        let pause = Self::action_shell("event-action-pause", palette, density)
+        let pause = Self::action_shell("event-action-pause", palette)
             .child(icon(pause_icon, ACTION_ICON, pause_ink))
             .key_activated(palette.text_primary)
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_pause(cx)));
 
-        let clear = Self::action_shell("event-action-clear", palette, density)
+        let clear = Self::action_shell("event-action-clear", palette)
             .child(icon(Icon::Eraser, ACTION_ICON, palette.danger))
             .key_activated(palette.text_primary)
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.clear(cx)));
 
-        let export = Self::action_shell("event-action-export", palette, density)
+        let export = Self::action_shell("event-action-export", palette)
             .child(icon(Icon::Download, ACTION_ICON, palette.success))
             .key_activated(palette.text_primary)
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.export(cx)));
@@ -516,7 +516,7 @@ impl EventFeedView {
         } else {
             (palette.disabled, tr!("event_feed_auto_scroll_off"))
         };
-        let auto_scroll = Self::action_shell("event-action-autoscroll", palette, density)
+        let auto_scroll = Self::action_shell("event-action-autoscroll", palette)
             .child(status_dot(scroll_ink, STATUS_DOT))
             .child(Self::action_label(scroll_label, palette))
             .key_activated(palette.text_primary)
@@ -1043,7 +1043,7 @@ impl EventFeedView {
         }
     }
 
-    fn action_shell(id: &'static str, palette: &ForgePalette, _density: Density) -> Stateful<Div> {
+    fn action_shell(id: &'static str, palette: &ForgePalette) -> Stateful<Div> {
         let hover = palette.surface_overlay;
         div()
             .id(id)

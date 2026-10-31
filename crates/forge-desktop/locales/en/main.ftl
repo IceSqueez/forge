@@ -161,7 +161,7 @@ setup_import_settings_skipped = { $count } settings were not imported: { $undecl
 setup_import_rollback_incomplete = The setup import failed and could not be fully undone: { $error }. Restore the safety backup { $snapshot }
 home_import_dialog_filter = forge files
 home_hero_new_action = New action
-home_import_failed = Import failed: { $error }
+common_import_failed = Import failed: { $error }
 
 ## Home - jump cards
 
@@ -477,7 +477,7 @@ settings_storage_transfer_busy_hint = Another export, import or restore is in pr
 settings_storage_backup_btn_busy = Backing up...
 settings_storage_backup_done = Backup saved to { $path }
 settings_storage_backup_failed = Backup failed: { $error }
-settings_storage_backup_reveal = Reveal
+common_reveal_in_folder = Reveal
 settings_storage_passphrase_title = Encrypt backup
 settings_storage_passphrase_subtitle = A new passphrase is asked for every backup
 settings_storage_passphrase_warning = forge never stores this passphrase. If you forget it, nobody can recover it and this backup becomes unusable.
@@ -1898,7 +1898,6 @@ scheduled_span_days = { $days } d { $hours } h
 ## TTS dashboard - engine card sublabels / priority badge
 
 tts_dash_priority_high = HIGH
-tts_dash_priority_bits = BITS { $amount }
 
 ## TTS engines - unknown engine fallback
 
@@ -2492,7 +2491,6 @@ widget_builtin_chip_grid_empty = No items yet
 widget_confirm_type_prefix = Type
 widget_confirm_type_suffix = to confirm:
 widget_confirm_esc_to_cancel = to cancel
-widget_confirm_cancel = Cancel
 
 ## Widget - destructive confirm modal
 

@@ -236,7 +236,7 @@ pub(crate) struct HomeStats {
     connections: Vec<(Integration, bool)>,
     obs_health: Option<ObsHealth>,
     throughput: ThroughputWindow,
-    recent_events: Vec<HomeEvent>,
+    recent_events: VecDeque<HomeEvent>,
 }
 
 impl HomeStats {
@@ -258,7 +258,7 @@ impl HomeStats {
             connections,
             obs_health: None,
             throughput: ThroughputWindow::default(),
-            recent_events: Vec::new(),
+            recent_events: VecDeque::with_capacity(RECENT_CAP),
         }
     }
 
@@ -273,9 +273,9 @@ impl HomeStats {
             return false;
         };
         if self.recent_events.len() >= RECENT_CAP {
-            self.recent_events.remove(0);
+            self.recent_events.pop_front();
         }
-        self.recent_events.push(home_event);
+        self.recent_events.push_back(home_event);
         true
     }
 

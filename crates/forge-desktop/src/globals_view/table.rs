@@ -1,4 +1,3 @@
-use super::editor::kind_word;
 use super::{ACTION_HOVER_ALPHA, GlobalsView, ROW_DOT, RowMenu, VALUE_ICON};
 use crate::globals::{Global, variant_kind_color};
 use crate::load_notice::{LoadNotice, NoticeWidth, load_notice};
@@ -121,7 +120,7 @@ impl GlobalsView {
         let kind_pill = div().flex().items_center().child(badge(
             palette.surface_overlay,
             variant_kind_color(kind, palette),
-            kind_word(kind),
+            kind.contract_name(),
             true,
             px(9.5),
         ));

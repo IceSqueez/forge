@@ -93,6 +93,7 @@ impl IssueForm {
         url
     }
 
+    #[must_use]
     pub(crate) fn fitted(self, repo_url: &str, max_bytes: usize) -> Self {
         let mut form = self.with_fitted_backtrace(repo_url, max_bytes);
         for (id, full_text_file) in TRIM_ORDER {

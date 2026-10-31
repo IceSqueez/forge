@@ -30,6 +30,8 @@ use crate::navigation::Screen;
 use forge_components::ActivePresentation;
 use forge_components::grow_cell;
 use forge_host::integration_catalog::declaration_of;
+
+use crate::hub_crumb::hub_crumb;
 use forge_host::integrations::BuiltinObject;
 use forge_runtime::{IntegrationSlot, LifecycleState};
 
@@ -192,14 +194,8 @@ impl IntegrationDisabledView {
     }
 
     fn crumbs(&self, cx: &mut Context<Self>) -> Vec<BreadcrumbCrumb> {
-        vec![
-            BreadcrumbCrumb::link(
-                tr!("integrations_breadcrumb"),
-                "integration-disabled-crumb-hub",
-                cx.listener(|this, _: &ClickEvent, _, cx| this.go(Screen::Integrations(None), cx)),
-            ),
-            BreadcrumbCrumb::leaf(self.name()),
-        ]
+        let category = self.declaration.as_ref().map(|d| d.category);
+        vec![hub_crumb(category, cx), BreadcrumbCrumb::leaf(self.name())]
     }
 
     fn hero(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {

@@ -492,7 +492,7 @@ impl CollectionManager {
         .esc_hint(tr!("widget_confirm_esc_to_cancel"))
         .on_cancel(
             "collection-delete-cancel",
-            tr!("widget_confirm_cancel"),
+            tr!("common_cancel"),
             cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_delete(cx)),
         )
         .on_confirm(

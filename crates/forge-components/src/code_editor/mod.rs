@@ -103,27 +103,32 @@ impl CodeEditor {
         }
     }
 
+    #[must_use]
     pub fn with_palette(mut self, palette: ForgePalette) -> Self {
         self.palette = palette;
         self
     }
 
+    #[must_use]
     pub fn with_font_size(mut self, size: Pixels) -> Self {
         self.font_size = size;
         self.line_height = size * LINE_HEIGHT_RATIO;
         self
     }
 
+    #[must_use]
     pub fn with_line_height(mut self, line_height: Pixels) -> Self {
         self.line_height = line_height;
         self
     }
 
+    #[must_use]
     pub fn with_field_rows(mut self, rows: RangeInclusive<usize>) -> Self {
         self.field_rows = Some(rows);
         self
     }
 
+    #[must_use]
     pub fn compact_field(mut self) -> Self {
         self.field_rows = Some(COMPACT_FIELD_ROWS);
         self.compact = true;

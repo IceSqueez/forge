@@ -425,7 +425,7 @@ impl TriggersRegistryView {
         .into_any_element()
     }
 
-    fn divider(&self, palette: &ForgePalette) -> AnyElement {
+    fn divider(palette: &ForgePalette) -> AnyElement {
         div()
             .w(FILTER_DIV_W)
             .h(FILTER_DIV_H)
@@ -518,9 +518,9 @@ impl TriggersRegistryView {
                     .w(SEARCH_FIELD_WIDTH)
                     .child(self.search.field().clone()),
             )
-            .child(self.divider(palette))
+            .child(Self::divider(palette))
             .child(platform_chips)
-            .child(self.divider(palette))
+            .child(Self::divider(palette))
             .child(usage_chips)
             .into_any_element()
     }
@@ -586,7 +586,7 @@ impl TriggersRegistryView {
             )
     }
 
-    fn caption_cell(&self, palette: &ForgePalette, label: impl Into<SharedString>) -> AnyElement {
+    fn caption_cell(palette: &ForgePalette, label: impl Into<SharedString>) -> AnyElement {
         div()
             .font_family(mono_family())
             .text_size(FONT_XXS)
@@ -598,10 +598,10 @@ impl TriggersRegistryView {
     fn render_caption(&self, palette: &ForgePalette, density: Density) -> AnyElement {
         let cols = Self::columns(
             div().into_any_element(),
-            self.caption_cell(palette, tr!("triggers_col_name")),
-            self.caption_cell(palette, tr!("triggers_col_kind")),
-            self.caption_cell(palette, tr!("triggers_col_used")),
-            self.caption_cell(palette, tr!("triggers_col_on")),
+            Self::caption_cell(palette, tr!("triggers_col_name")),
+            Self::caption_cell(palette, tr!("triggers_col_kind")),
+            Self::caption_cell(palette, tr!("triggers_col_used")),
+            Self::caption_cell(palette, tr!("triggers_col_on")),
             div().into_any_element(),
         );
         div()

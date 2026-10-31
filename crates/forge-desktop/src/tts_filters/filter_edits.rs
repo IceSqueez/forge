@@ -176,10 +176,11 @@ impl TtsFiltersView {
     }
 
     pub(super) fn remove_skip_regex(&mut self, index: usize, cx: &mut Context<Self>) {
+        if index >= self.shown().settings.skip_custom_regexes.len() {
+            return;
+        }
         self.edit(cx, |filters| {
-            if index < filters.settings.skip_custom_regexes.len() {
-                filters.settings.skip_custom_regexes.remove(index);
-            }
+            filters.settings.skip_custom_regexes.remove(index);
         });
     }
 
@@ -299,6 +300,9 @@ impl TtsFiltersView {
     }
 
     pub(super) fn toggle_rule(&mut self, index: usize, cx: &mut Context<Self>) {
+        if index >= self.shown().rules.len() {
+            return;
+        }
         self.edit(cx, |filters| {
             if let Some(rule) = filters.rules.get_mut(index) {
                 rule.enabled = !rule.enabled;
@@ -307,10 +311,11 @@ impl TtsFiltersView {
     }
 
     pub(super) fn delete_rule(&mut self, index: usize, cx: &mut Context<Self>) {
+        if index >= self.shown().rules.len() {
+            return;
+        }
         self.edit(cx, |filters| {
-            if index < filters.rules.len() {
-                filters.rules.remove(index);
-            }
+            filters.rules.remove(index);
         });
     }
 
@@ -450,12 +455,21 @@ impl TtsFiltersView {
                 }
             } else {
                 let position = u32::try_from(filters.rules.len()).unwrap_or(u32::MAX);
+                let mut unique: Vec<String> = Vec::with_capacity(words.len());
+                for word in &words {
+                    if !unique.iter().any(|kept| kept.eq_ignore_ascii_case(word)) {
+                        unique.push(word.clone());
+                    }
+                }
                 filters.rules.push(FilterRule {
                     id: ulid::Ulid::generate().to_string(),
                     name: String::new(),
                     enabled: true,
                     position,
-                    kind: FilterRuleKind::Blocklist { words, mode },
+                    kind: FilterRuleKind::Blocklist {
+                        words: unique,
+                        mode,
+                    },
                 });
             }
         })

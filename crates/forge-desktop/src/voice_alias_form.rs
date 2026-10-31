@@ -72,7 +72,7 @@ pub(crate) fn alias_key_scope(key: &AliasKey) -> AliasScope {
     key.platform.map_or(AliasScope::Any, platform_scope)
 }
 
-pub(crate) fn fmt_field(value: Option<f32>) -> String {
+pub(crate) fn format_optional_number(value: Option<f32>) -> String {
     value.map(|v| format!("{v}")).unwrap_or_default()
 }
 
@@ -121,8 +121,8 @@ impl AliasValues {
         Self {
             engine: Some(alias.engine_id.0.clone()),
             voice: alias.voice_id.0.clone(),
-            pitch: fmt_field(alias.pitch_semitones),
-            rate: fmt_field(alias.rate_multiplier),
+            pitch: format_optional_number(alias.pitch_semitones),
+            rate: format_optional_number(alias.rate_multiplier),
             blocked,
         }
     }

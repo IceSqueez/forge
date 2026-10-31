@@ -103,7 +103,6 @@ region_name_kz = Казахстан
 
 region_name_au = Австралія
 
-widget_grid_picker_badge_added = додано
 
 widget_grid_picker_badge_off = вимк.
 

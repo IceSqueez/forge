@@ -106,6 +106,7 @@ impl StubTrigger {
         }
     }
 
+    #[must_use]
     pub(crate) fn refusing(mut self, key: &'static str, value: &'static str) -> Self {
         self.refused = Some((key, value));
         self
@@ -121,21 +122,25 @@ impl StubTrigger {
         self
     }
 
+    #[must_use]
     pub(crate) fn with_contract(mut self, contract: KindPlatformContract) -> Self {
         self.contract = contract;
         self
     }
 
+    #[must_use]
     pub(crate) fn with_fields(mut self, fields: Vec<FormField>) -> Self {
         self.fields = fields;
         self
     }
 
+    #[must_use]
     pub(crate) fn with_defaults(mut self, defaults: TriggerConfig) -> Self {
         self.defaults = defaults;
         self
     }
 
+    #[must_use]
     pub(crate) fn in_chat_family(mut self, family: ChatTriggerFamily) -> Self {
         self.chat_family = Some(family);
         self

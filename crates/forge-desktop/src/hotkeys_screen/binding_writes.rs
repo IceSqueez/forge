@@ -88,6 +88,7 @@ impl HotkeysScreenView {
         let reconciler = Arc::clone(&self.reconciler);
         async_bridge::optimistic(
             &self.rt_handle,
+            "hotkey binding write",
             previous,
             async move {
                 let written = set_binding_enabled(backend, ids, enabled).await;

@@ -161,7 +161,7 @@ setup_import_settings_skipped = Не імпортовано налаштуван
 setup_import_rollback_incomplete = Імпорт конфігурації не вдався, і його не вдалося повністю скасувати: { $error }. Відновіть страхувальну резервну копію { $snapshot }
 home_import_dialog_filter = Файли forge
 home_hero_new_action = Нова дія
-home_import_failed = Не вдалося імпортувати: { $error }
+common_import_failed = Не вдалося імпортувати: { $error }
 
 ## Головна - картки швидкого переходу
 
@@ -487,7 +487,7 @@ settings_storage_transfer_busy_hint = Триває інший експорт, і
 settings_storage_backup_btn_busy = Створюю копію...
 settings_storage_backup_done = Копію збережено: { $path }
 settings_storage_backup_failed = Не вдалося створити копію: { $error }
-settings_storage_backup_reveal = Показати
+common_reveal_in_folder = Показати
 settings_storage_passphrase_title = Шифрування копії
 settings_storage_passphrase_subtitle = Пароль запитується для кожної копії окремо
 settings_storage_passphrase_warning = forge ніколи не зберігає цей пароль. Якщо ви його забудете, ніхто не зможе його відновити, і ця копія стане непридатною.
@@ -1935,7 +1935,6 @@ scheduled_span_days = { $days } д { $hours } год
 ## TTS дашборд - підписи карток рушіїв / бейдж пріоритету
 
 tts_dash_priority_high = ВИСОК.
-tts_dash_priority_bits = БІТСИ { $amount }
 
 ## TTS рушії - запасний підпис невідомого рушія
 
@@ -2545,7 +2544,6 @@ widget_builtin_chip_grid_empty = Поки немає елементів
 widget_confirm_type_prefix = Введіть
 widget_confirm_type_suffix = для підтвердження:
 widget_confirm_esc_to_cancel = щоб скасувати
-widget_confirm_cancel = Скасувати
 
 ## Widget - destructive confirm modal
 

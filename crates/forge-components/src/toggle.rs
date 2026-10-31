@@ -53,6 +53,7 @@ pub fn toggle(on: bool, palette: &ForgePalette) -> Toggle {
 }
 
 impl Toggle {
+    #[must_use]
     pub fn on_color(mut self, color: Rgba) -> Self {
         if self.on {
             self.colors.track = color;

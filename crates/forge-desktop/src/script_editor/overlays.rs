@@ -27,7 +27,7 @@ impl ScriptEditorView {
         .esc_hint(tr!("widget_confirm_esc_to_cancel"))
         .on_cancel(
             "script-delete-cancel",
-            tr!("widget_confirm_cancel"),
+            tr!("common_cancel"),
             cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_delete(cx)),
         )
         .on_confirm(
@@ -63,7 +63,7 @@ impl ScriptEditorView {
         .esc_hint(tr!("widget_confirm_esc_to_cancel"))
         .on_cancel(
             "script-rename-cancel",
-            tr!("widget_confirm_cancel"),
+            tr!("common_cancel"),
             cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_pending_rename(cx)),
         )
         .on_confirm(

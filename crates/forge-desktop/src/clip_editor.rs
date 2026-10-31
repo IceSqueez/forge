@@ -469,7 +469,7 @@ impl Render for ClipEditor {
             .and_then(|p| p.file_name())
             .and_then(|n| n.to_str())
             .map(str::to_owned)
-            .unwrap_or_else(|| tr!("soundboard_modal_no_file").to_string());
+            .unwrap_or_else(|| tr!("soundboard_modal_no_file"));
         let browse = ghost_button_with_icon(
             Icon::FolderOpen,
             tr!("soundboard_modal_browse_btn"),

@@ -31,7 +31,7 @@ pub(super) enum EditQueueEvent {
 
 pub(super) struct EditQueueModal {
     pub(super) editing: Option<QueueId>,
-    orig_name: String,
+    original_name: String,
     name_input: Entity<TextInput>,
     desc_input: Entity<TextInput>,
     pub(super) concurrency: u32,
@@ -51,7 +51,7 @@ impl EditQueueModal {
         cx: &mut Context<Self>,
     ) -> Self {
         let palette = cx.palette();
-        let orig_name = name_seed.to_owned();
+        let original_name = name_seed.to_owned();
         let name_seed = name_seed.to_owned();
         let desc_seed = desc_seed.to_owned();
         let name_input = cx.new(|cx| {
@@ -85,7 +85,7 @@ impl EditQueueModal {
         );
         EditQueueModal {
             editing,
-            orig_name,
+            original_name,
             name_input,
             desc_input,
             concurrency: concurrency.clamp(MIN_CONCURRENCY, MAX_CONCURRENCY),
@@ -305,7 +305,7 @@ impl Render for EditQueueModal {
         let palette = cx.palette();
         let density = cx.density();
         let title = if self.editing.is_some() {
-            tr!("queues_edit_title", name = self.orig_name.clone())
+            tr!("queues_edit_title", name = self.original_name.clone())
         } else {
             tr!("queues_create_title")
         };

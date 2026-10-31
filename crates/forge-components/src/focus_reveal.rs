@@ -8,6 +8,7 @@ use gpui::{
 };
 
 use crate::text_input::{FocusNextField, FocusPreviousField};
+use crate::tokens::BORDER_THIN;
 
 actions!(forge_focus_reveal, [RevealFocused]);
 
@@ -78,11 +79,14 @@ pub trait ReportsRevealBounds: InteractiveElement + ParentElement + Sized {
             }
         })
         .child(
-            canvas(move |bounds, _, _| probe.set(Some(bounds)), |_, _, _, _| {})
-                .absolute()
-                .top_0()
-                .left_0()
-                .size_full(),
+            canvas(
+                move |bounds, _, _| probe.set(Some(bounds.dilate(BORDER_THIN))),
+                |_, _, _, _| {},
+            )
+            .absolute()
+            .top_0()
+            .left_0()
+            .size_full(),
         )
     }
 }
@@ -166,7 +170,6 @@ mod tests {
     use crate::palette::FORGE_DEFAULT;
     use crate::test_support::install_presentation;
     use crate::text_input::{TextInput, bind_text_input_keys};
-    use crate::tokens::BORDER_THIN;
 
     const SCROLLED: f32 = -50.0;
     const SIDEWAYS: f32 = -7.0;
@@ -387,6 +390,7 @@ mod tests {
         assert!(rig.is_focused(1));
         let viewport = rig.bounds(SCROLLER);
         assert_flush(rig.bounds(FIELDS[1]).bottom(), viewport.bottom());
+        assert!(rig.bounds(FIELDS[1]).bottom() <= viewport.bottom());
     }
 
     #[gpui::test]
@@ -410,6 +414,7 @@ mod tests {
         assert!(rig.is_focused(0));
         let viewport = rig.bounds(SCROLLER);
         assert_flush(rig.bounds(FIELDS[0]).top(), viewport.top());
+        assert!(rig.bounds(FIELDS[0]).top() >= viewport.top());
     }
 
     #[gpui::test]

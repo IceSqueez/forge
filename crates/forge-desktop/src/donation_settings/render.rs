@@ -372,7 +372,7 @@ pub(crate) fn remove_confirm(
     .esc_hint(tr!("widget_confirm_esc_to_cancel"))
     .on_cancel(
         "donation-token-remove-cancel",
-        tr!("widget_confirm_cancel"),
+        tr!("common_cancel"),
         move |_: &ClickEvent, _, cx| {
             cancel_view.update(cx, |this, cx| this.cancel_remove(cx));
         },

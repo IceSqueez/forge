@@ -1,8 +1,8 @@
+use forge_components::STICKY_TOAST;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Duration;
 
 use forge_audio::stored_output_device;
 use forge_components::OverflowRevealingFocus;
@@ -35,6 +35,8 @@ use crate::update_check::REPO_URL;
 use forge_host::integrations::BuiltinRegistry;
 
 const REPORT_FOLDER_PREFIX: &str = "report-";
+const FIRST_COLLISION_SUFFIX: u32 = 2;
+const LAST_COLLISION_SUFFIX: u32 = 99;
 const PREVIEW_WIDTH: Pixels = px(600.0);
 const ISSUE_TEXT_MAX_HEIGHT: Pixels = px(220.0);
 
@@ -245,7 +247,7 @@ impl ProblemReport {
                     tr!("problem_report_saved"),
                     None,
                     None,
-                    Duration::ZERO,
+                    STICKY_TOAST,
                 );
             }
             Err(error) => {
@@ -449,11 +451,35 @@ pub(crate) fn report_folder_name(now: OffsetDateTime) -> String {
     )
 }
 
+fn claim_report_folder(folder: &Path) -> io::Result<PathBuf> {
+    if let Some(parent) = folder.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let mut claimed = folder.to_path_buf();
+    let mut attempt = FIRST_COLLISION_SUFFIX;
+    loop {
+        match fs::create_dir(&claimed) {
+            Ok(()) => return Ok(claimed),
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists && claimed.is_dir() => {
+                if attempt > LAST_COLLISION_SUFFIX {
+                    return Err(error);
+                }
+                let mut name = folder.as_os_str().to_owned();
+                name.push(format!("-{attempt}"));
+                claimed = PathBuf::from(name);
+                attempt += 1;
+            }
+            Err(error) => return Err(error),
+        }
+    }
+}
+
 pub(crate) fn write_report_folder(
     folder: &Path,
     contents: &ReportFolderContents,
 ) -> io::Result<PathBuf> {
-    fs::create_dir_all(folder)?;
+    let folder = claim_report_folder(folder)?;
+    let folder = folder.as_path();
     fs::write(folder.join(BUNDLE_FILE_NAME), &contents.bundle_text)?;
     fs::write(folder.join(SYSTEM_INFO_FILE_NAME), &contents.system_info)?;
     if let Some(crash_text) = &contents.crash_text {
@@ -514,7 +540,7 @@ fn raise_crash_toast(
         Some(Icon::Bug),
         report_action,
         dismiss_action,
-        Duration::ZERO,
+        STICKY_TOAST,
     );
 }
 
@@ -627,6 +653,24 @@ mod tests {
         ];
         expected.sort();
         assert_eq!(sorted_names(&folder), expected);
+    }
+
+    #[test]
+    fn a_second_report_in_the_same_second_gets_its_own_folder() {
+        let temp = tempfile::tempdir().unwrap();
+        let folder = temp.path().join("report-1");
+
+        let first = write_report_folder(&folder, &contents(Some("first"))).unwrap();
+        let second = write_report_folder(&folder, &contents(Some("second"))).unwrap();
+        let third = write_report_folder(&folder, &contents(Some("third"))).unwrap();
+
+        assert_eq!(first, folder);
+        assert_eq!(second, temp.path().join("report-1-2"));
+        assert_eq!(third, temp.path().join("report-1-3"));
+        assert_eq!(
+            fs::read_to_string(first.join(CRASH_REPORT_FILE_NAME)).unwrap(),
+            "first"
+        );
     }
 
     #[test]

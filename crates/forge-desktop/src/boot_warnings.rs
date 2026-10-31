@@ -1,4 +1,4 @@
-use std::time::Duration;
+use forge_components::STICKY_TOAST;
 
 use forge_components::{PushToast, ToastAction, ToastKind, tr};
 use forge_host::boot_warnings::{BootWarning, BootWarnings};
@@ -43,7 +43,7 @@ pub(crate) fn raise_boot_warnings(warnings: &BootWarnings, navigator: Navigator,
         tr!("boot_warnings_toast", count = count),
         None,
         Some(action),
-        Duration::ZERO,
+        STICKY_TOAST,
     );
 }
 

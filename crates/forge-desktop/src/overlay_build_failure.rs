@@ -1,5 +1,5 @@
+use forge_components::STICKY_TOAST;
 use std::fmt::Display;
-use std::time::Duration;
 
 use forge_components::{ToastKind, tr};
 use forge_runtime::MaterializePass;
@@ -36,7 +36,7 @@ impl OverlayBuildFailure {
     }
 
     pub(crate) fn raise(&self, cx: &mut App) {
-        cx.push_toast_full(ToastKind::Error, self.message(), None, None, Duration::ZERO);
+        cx.push_toast_full(ToastKind::Error, self.message(), None, None, STICKY_TOAST);
     }
 }
 

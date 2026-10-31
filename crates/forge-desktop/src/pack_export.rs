@@ -155,7 +155,7 @@ fn report(result: Result<PathBuf, RepoFailure>, cx: &mut Context<PackExportFlow>
                 tr!("pack_export_done", path = shown.as_str()),
                 None,
                 Some(ToastAction::new(
-                    tr!("settings_storage_backup_reveal"),
+                    tr!("common_reveal_in_folder"),
                     move |_window, app| app.reveal_path(&path),
                 )),
                 PACK_TOAST_DURATION,

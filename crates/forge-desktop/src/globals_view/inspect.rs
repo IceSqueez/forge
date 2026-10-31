@@ -1,5 +1,4 @@
 use super::GlobalsView;
-use super::editor::kind_word;
 use crate::globals::{Global, variant_kind_color};
 use forge_components::{
     ActivePresentation, BORDER_THIN, ConfirmTone, FONT_XS, ForgePalette, Icon, Language, ModalSize,
@@ -56,7 +55,7 @@ impl GlobalsView {
         let (count_key, count) = inspect_count(&g.value);
         let subtitle = tr!(
             count_key,
-            kind = kind_word(kind),
+            kind = kind.contract_name(),
             count = i64::try_from(count).unwrap_or(i64::MAX)
         );
 

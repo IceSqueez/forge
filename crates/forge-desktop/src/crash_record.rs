@@ -39,6 +39,7 @@ pub(crate) struct CrashRecord {
 }
 
 impl CrashRecord {
+    #[must_use]
     pub(crate) fn scrubbed(self, scrubber: &IdentityScrubber) -> Self {
         Self {
             message: scrubber.scrub(&self.message),

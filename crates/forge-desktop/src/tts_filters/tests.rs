@@ -1262,6 +1262,27 @@ fn adding_blocklist_words_merges_case_insensitively_and_moves_the_rule_to_the_ne
 }
 
 #[gpui::test]
+fn a_new_blocklist_rule_keeps_one_copy_of_each_word(cx: &mut TestAppContext) {
+    install_presentation(cx);
+    let rt = runtime();
+    let view = view_over(&RecordingFilters::storing(Vec::new()), &rt, cx);
+
+    view.update(cx, |v, cx| {
+        v.apply_blocklist_words(
+            vec!["gtfo".to_owned(), "GTFO".to_owned(), "noob".to_owned()],
+            BlocklistMode::Suppress,
+            cx,
+        )
+    });
+    settle(&rt, cx);
+
+    assert_eq!(
+        blocklist_words(&view, cx),
+        vec![vec!["gtfo".to_owned(), "noob".to_owned()]]
+    );
+}
+
+#[gpui::test]
 fn adding_no_blocklist_words_changes_nothing(cx: &mut TestAppContext) {
     install_presentation(cx);
     let rt = runtime();

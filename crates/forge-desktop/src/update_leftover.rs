@@ -1,6 +1,6 @@
+use forge_components::STICKY_TOAST;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Duration;
 
 use forge_components::{ToastAction, ToastKind, tr};
 use forge_storage::SettingDisclosure::Verbatim;
@@ -100,7 +100,7 @@ fn raise_leftover_toast(backend: Arc<dyn DataProvider>, rt_handle: Handle, cx: &
                 );
             },
         )),
-        Duration::ZERO,
+        STICKY_TOAST,
     );
 }
 

@@ -116,6 +116,7 @@ pub struct Button {
     disabled: bool,
     busy: bool,
     full_width: bool,
+    fits_parent: bool,
     height: Option<Pixels>,
     id: Option<ElementId>,
     on_click: Option<ButtonClick>,
@@ -141,37 +142,50 @@ impl Button {
             disabled: false,
             busy: false,
             full_width: false,
+            fits_parent: false,
             height: None,
             id: None,
             on_click: None,
         }
     }
 
+    #[must_use]
     pub fn height(mut self, height: Pixels) -> Self {
         self.height = Some(height);
         self
     }
 
+    #[must_use]
     pub fn density(mut self, density: Density) -> Self {
         self.density = Some(density);
         self
     }
 
+    #[must_use]
     pub fn full_width(mut self) -> Self {
         self.full_width = true;
         self
     }
 
+    #[must_use]
+    pub fn fits_parent(mut self) -> Self {
+        self.fits_parent = true;
+        self
+    }
+
+    #[must_use]
     pub fn disabled(mut self, disabled: bool) -> Self {
         self.disabled = disabled;
         self
     }
 
+    #[must_use]
     pub fn busy(mut self, busy: bool) -> Self {
         self.busy = busy;
         self
     }
 
+    #[must_use]
     pub fn ink(mut self, color: Rgba) -> Self {
         self.colors.text = color;
         self.colors.hover_text = color;
@@ -234,6 +248,9 @@ impl RenderOnce for Button {
             root = root.w_full().justify_start();
         } else {
             root = root.flex_none();
+        }
+        if self.fits_parent {
+            root = root.max_w_full();
         }
         if let Some(h) = self.height {
             root = root.h(h);

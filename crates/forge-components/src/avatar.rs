@@ -53,26 +53,31 @@ pub fn avatar_tile(
 }
 
 impl AvatarTile {
+    #[must_use]
     pub fn size(mut self, size: Pixels) -> Self {
         self.size = size;
         self
     }
 
+    #[must_use]
     pub fn corner(mut self, corner: Pixels) -> Self {
         self.corner = corner;
         self
     }
 
+    #[must_use]
     pub fn font(mut self, font: Pixels) -> Self {
         self.font = font;
         self
     }
 
+    #[must_use]
     pub fn mono(mut self) -> Self {
         self.mono = true;
         self
     }
 
+    #[must_use]
     pub fn fg(mut self, fg: Rgba) -> Self {
         self.fg = fg;
         self

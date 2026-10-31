@@ -167,7 +167,7 @@ impl IntegrationDetail {
             right = right.child(pill(label.to_uppercase(), palette.warning, palette));
         }
         for (i, action) in self.shown.header_actions.iter().enumerate() {
-            right = right.child(self.action_button(i, action.clone(), palette, density, cx));
+            right = right.child(self.action_button(i, action.clone(), palette, cx));
         }
 
         platform_hero(letter, brand, hero_name, sub, palette)
@@ -182,7 +182,6 @@ impl IntegrationDetail {
         idx: usize,
         action: HeaderAction,
         palette: &ForgePalette,
-        _density: Density,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let density = cx.density();

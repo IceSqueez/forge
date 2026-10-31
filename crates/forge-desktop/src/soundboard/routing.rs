@@ -100,8 +100,8 @@ impl SoundboardView {
                 .iter()
                 .find(|d| &d.id.0 == id)
                 .map(|d| d.name.clone())
-                .unwrap_or_else(|| tr!("soundboard_device_system_default").to_string()),
-            None => tr!("soundboard_device_system_default").to_string(),
+                .unwrap_or_else(|| tr!("soundboard_device_system_default")),
+            None => tr!("soundboard_device_system_default"),
         }
     }
 

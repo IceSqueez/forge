@@ -686,7 +686,7 @@ impl TestRunModal {
                     palette.danger,
                     tr!(
                         "action_editor_test_run_failed_banner",
-                        step = (*step as i64) + 1,
+                        step = step.saturating_add(1),
                         name = name.as_ref()
                     ),
                     Some(message),

@@ -90,7 +90,6 @@ region_name_kz = Kazakhstan
 
 region_name_au = Australia
 
-widget_grid_picker_badge_added = added
 
 widget_grid_picker_badge_off = off
 

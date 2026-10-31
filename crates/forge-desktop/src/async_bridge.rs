@@ -1,3 +1,4 @@
+use forge_components::STICKY_TOAST;
 use std::cell::Cell;
 use std::collections::HashMap;
 use std::fmt::Display;
@@ -431,6 +432,7 @@ impl Generation {
 
 pub(crate) fn optimistic<V, S, F, E>(
     handle: &Handle,
+    context: &'static str,
     snapshot: S,
     fut: F,
     restore: impl FnOnce(&mut V, S, RepoFailure, &mut Context<V>) + Send + 'static,
@@ -451,7 +453,7 @@ pub(crate) fn optimistic<V, S, F, E>(
     });
     cx.spawn(async move |this, cx| {
         if let Ok(Err(failure)) = rx.await {
-            tracing::warn!(error = %failure, "optimistic persist failed");
+            tracing::warn!(context, error = %failure, "optimistic persist failed");
             #[expect(
                 clippy::let_underscore_must_use,
                 reason = "the view may close before the result arrives"
@@ -598,7 +600,7 @@ impl SnapshotWriter {
         cx.spawn(async move |cx| {
             if let Ok(WriteOutcome::Failed(_)) = outcome.await {
                 cx.update(|cx| {
-                    cx.push_toast_full(ToastKind::Error, failure, None, None, Duration::ZERO);
+                    cx.push_toast_full(ToastKind::Error, failure, None, None, STICKY_TOAST);
                 });
             }
         })

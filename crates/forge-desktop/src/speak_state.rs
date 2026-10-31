@@ -20,17 +20,16 @@ pub(crate) struct QueueItem {
     pub text: String,
     pub duration_secs: u32,
     pub is_high_priority: bool,
-    pub bits_amount: Option<u32>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub(crate) struct SessionStats {
     pub spoken: u32,
     pub skipped: u32,
     pub filtered: u32,
-    pub avg_latency_ms: Option<u32>,
 }
 
+#[derive(Default)]
 pub(crate) struct SpeakState {
     manual_paused: bool,
     gate_held: bool,
@@ -42,19 +41,7 @@ pub(crate) struct SpeakState {
 
 impl SpeakState {
     pub(crate) fn new() -> Self {
-        Self {
-            manual_paused: false,
-            gate_held: false,
-            now_speaking: None,
-            queue: Vec::new(),
-            stats: SessionStats {
-                spoken: 0,
-                skipped: 0,
-                filtered: 0,
-                avg_latency_ms: None,
-            },
-            last_drop: None,
-        }
+        Self::default()
     }
 
     pub(crate) fn last_drop(&self) -> Option<&UserText> {
@@ -79,7 +66,6 @@ impl SpeakState {
                     text,
                     duration_secs: estimated_secs,
                     is_high_priority,
-                    bits_amount: None,
                 };
                 match self
                     .queue

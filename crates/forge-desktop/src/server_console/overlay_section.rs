@@ -318,7 +318,7 @@ impl ServerConsoleView {
             OwnedOverlayKind::Dir { .. } => (
                 Icon::Folder,
                 palette.warning,
-                tr!("server_overlay_dir_files", count = entry.child_count as i64),
+                tr!("server_overlay_dir_files", count = entry.child_count),
             ),
             OwnedOverlayKind::File { .. } => {
                 (Icon::FileCode, palette.info, fmt_bytes(entry.size_bytes))

@@ -984,11 +984,7 @@ fn upgrade_screen(
                 .font_family(body_family())
                 .text_size(FONT_SM)
                 .text_color(palette.text_secondary)
-                .child(tr!(
-                    "boot_upgrade_body",
-                    found = found as i64,
-                    expected = expected as i64
-                )),
+                .child(tr!("boot_upgrade_body", found = found, expected = expected)),
         )
         .child(
             div()
@@ -1036,7 +1032,7 @@ fn pre_baseline_screen(found: u32, palette: &ForgePalette, density: Density) -> 
                 .text_color(palette.text_secondary)
                 .child(tr!(
                     "boot_pre_baseline_body",
-                    found = found as i64,
+                    found = found,
                     release = forge_storage::LAST_PRE_BASELINE_RELEASE
                 )),
         )

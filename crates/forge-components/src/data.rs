@@ -57,6 +57,7 @@ pub fn column(label: impl Into<SharedString>, width: ColumnWidth) -> Column {
 }
 
 impl Column {
+    #[must_use]
     pub fn align_end(mut self) -> Self {
         self.align = HeaderAlign::End;
         self
@@ -142,51 +143,61 @@ pub fn data_table(palette: &ForgePalette, columns: Vec<Column>, rows: Vec<DataRo
 }
 
 impl DataTable {
+    #[must_use]
     pub fn density(mut self, density: Density) -> Self {
         self.density = Some(density);
         self
     }
 
+    #[must_use]
     pub fn header_bg(mut self, color: Rgba) -> Self {
         self.colors.header_bg = color;
         self
     }
 
+    #[must_use]
     pub fn separator(mut self, color: Rgba) -> Self {
         self.colors.separator = color;
         self
     }
 
+    #[must_use]
     pub fn header_rule(mut self, color: Rgba) -> Self {
         self.colors.header_rule = Some(color);
         self
     }
 
+    #[must_use]
     pub fn row_hover(mut self, color: Rgba) -> Self {
         self.colors.hover = color;
         self
     }
 
+    #[must_use]
     pub fn header_padding(mut self, vertical: Pixels, horizontal: Pixels) -> Self {
         self.header_pad = Some((vertical, horizontal));
         self
     }
 
+    #[must_use]
     pub fn row_padding(mut self, vertical: Pixels, horizontal: Pixels) -> Self {
         self.row_pad = Some((vertical, horizontal));
         self
     }
 
+    #[must_use]
     pub fn cell_gap(mut self, gap: Pixels) -> Self {
         self.cell_gap = gap;
         self
     }
 
+    #[must_use]
     pub fn trailing_rule(mut self, on: bool) -> Self {
         self.trailing_rule = on;
         self
     }
 
+    #[must_use]
     pub fn scroll_body(mut self, id: impl Into<ElementId>) -> Self {
         self.scroll_id = Some(id.into());
         self

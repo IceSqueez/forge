@@ -94,11 +94,13 @@ impl DateTimePicker {
         picker
     }
 
+    #[must_use]
     pub fn first_day(mut self, first_day: FirstWeekday) -> Self {
         self.first_day = first_day;
         self
     }
 
+    #[must_use]
     pub fn clock(mut self, clock: ClockStyle) -> Self {
         self.clock = clock;
         self

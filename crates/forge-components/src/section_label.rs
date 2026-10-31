@@ -37,16 +37,19 @@ impl SectionLabel {
         }
     }
 
+    #[must_use]
     pub fn row(mut self) -> Self {
         self.row = true;
         self
     }
 
+    #[must_use]
     pub fn trailing(mut self, trailing: Option<AnyElement>) -> Self {
         self.trailing = trailing;
         self
     }
 
+    #[must_use]
     pub fn padded(mut self) -> Self {
         self.padded = true;
         self

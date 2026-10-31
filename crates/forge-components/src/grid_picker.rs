@@ -68,10 +68,9 @@ const GRID_STAR_PAD: Pixels = px(2.0);
 
 const GRID_HEADER_ROW_H: Pixels = px(30.0);
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GridPickerItemState {
     Normal,
-    Added,
     Disabled,
 }
 
@@ -105,7 +104,7 @@ pub enum GridPickerSubtitle {
     },
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct GridPickerArt {
     pub tile: Pixels,
     pub glyph: Pixels,
@@ -967,16 +966,6 @@ fn render_card_el(
     };
 
     let trailing: Option<AnyElement> = match card.state {
-        GridPickerItemState::Added => Some(
-            badge(
-                p.surface_overlay,
-                p.success,
-                tr!("widget_grid_picker_badge_added"),
-                true,
-                GRID_BADGE_FS,
-            )
-            .into_any_element(),
-        ),
         GridPickerItemState::Disabled => Some(
             badge(
                 p.surface_overlay,
@@ -1028,10 +1017,6 @@ fn render_card_el(
         .bg(p.shell)
         .child(top)
         .child(desc);
-
-    if matches!(card.state, GridPickerItemState::Added) {
-        return base.opacity(DISABLED_OPACITY).into_any_element();
-    }
 
     let base = if dim {
         base.opacity(DISABLED_OPACITY)

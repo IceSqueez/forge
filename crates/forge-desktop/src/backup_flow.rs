@@ -175,7 +175,7 @@ impl BackupFlow {
                     tr!("settings_storage_backup_done", path = shown.as_str()),
                     None,
                     Some(ToastAction::new(
-                        tr!("settings_storage_backup_reveal"),
+                        tr!("common_reveal_in_folder"),
                         move |_window, app| app.reveal_path(&path),
                     )),
                     BACKUP_TOAST_DURATION,

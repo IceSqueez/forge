@@ -1,3 +1,4 @@
+use forge_components::STICKY_TOAST;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -18,7 +19,6 @@ use crate::repo_failure::RepoFailure;
 use crate::restore_problem::RestoreProblem;
 
 const PACK_TOAST_DURATION: Duration = Duration::from_secs(10);
-const STICKY: Duration = Duration::ZERO;
 const DISCARD_CONTEXT: &str = "staged pack discard";
 
 pub(crate) struct Planned {
@@ -167,7 +167,7 @@ impl PackImportFlow {
                 tracing::warn!(error = %message, "pack import planning failed");
                 cx.push_toast(
                     ToastKind::Error,
-                    tr!("home_import_failed", error = message.text()),
+                    tr!("common_import_failed", error = message.text()),
                 );
             }
         }
@@ -260,7 +260,7 @@ impl PackImportFlow {
     }
 
     fn report_success(
-        &mut self,
+        &self,
         outcome: PackImportOutcome,
         live: LiveRefresh,
         cx: &mut Context<Self>,
@@ -275,7 +275,7 @@ impl PackImportFlow {
         let message = success_message(&counts, live);
         let duration = match live {
             LiveRefresh::Applied => PACK_TOAST_DURATION,
-            LiveRefresh::NeedsRestart => STICKY,
+            LiveRefresh::NeedsRestart => STICKY_TOAST,
         };
         let action = outcome.safety_snapshot.map(|snapshot| {
             ToastAction::new(tr!("pack_import_reveal_snapshot"), move |_window, app| {
@@ -286,7 +286,7 @@ impl PackImportFlow {
     }
 
     fn report_rollback_incomplete(
-        &mut self,
+        &self,
         message: &str,
         snapshot_taken: bool,
         cx: &mut Context<Self>,
@@ -311,7 +311,7 @@ impl PackImportFlow {
                 app.reveal_path(&folder)
             })
         });
-        cx.push_toast_full(ToastKind::Error, text, None, action, STICKY);
+        cx.push_toast_full(ToastKind::Error, text, None, action, STICKY_TOAST);
     }
 }
 
@@ -871,7 +871,7 @@ mod tests {
             (
                 "idle",
                 vec![tr!(
-                    "home_import_failed",
+                    "common_import_failed",
                     error = RestoreProblem::NotABundle.message()
                 )]
             )
@@ -911,7 +911,7 @@ mod tests {
             (messages, staged_left),
             (
                 vec![tr!(
-                    "home_import_failed",
+                    "common_import_failed",
                     error = RestoreProblem::of(&refusal).message()
                 )],
                 0

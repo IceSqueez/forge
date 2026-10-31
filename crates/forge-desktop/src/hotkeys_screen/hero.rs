@@ -28,6 +28,7 @@ impl HotkeysScreenView {
         let engine = self.engine.clone();
         async_bridge::optimistic(
             &self.rt_handle,
+            "hotkey hero toggle",
             previous,
             async move {
                 let engine = engine

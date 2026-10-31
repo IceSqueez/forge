@@ -264,6 +264,18 @@ impl ViewerHistory {
         cx.notify();
     }
 
+    fn retry_first_page(&mut self, cx: &mut Context<Self>) {
+        if self.state != HistoryState::Failed || self._load.is_some() {
+            return;
+        }
+        let Some(query) = stored_author(&self.key) else {
+            return;
+        };
+        self.state = HistoryState::Loading;
+        self.spawn_load(query, None, cx);
+        cx.notify();
+    }
+
     fn on_scrolled(&mut self, visible_end: usize, cx: &mut Context<Self>) {
         self.visible_end = visible_end;
         self.load_more_if_near(cx);
@@ -414,9 +426,22 @@ impl ViewerHistory {
             HistoryState::Loading => {
                 Self::render_note(tr!("chat_drawer_history_loading"), palette.text_faint)
             }
-            HistoryState::Failed => {
-                Self::render_note(tr!("chat_drawer_history_failed"), palette.danger)
-            }
+            HistoryState::Failed => div()
+                .w_full()
+                .flex()
+                .items_center()
+                .gap(spacing(Spacing::Xs, cx.density()))
+                .child(Self::render_note(
+                    tr!("chat_drawer_history_failed"),
+                    palette.danger,
+                ))
+                .child(
+                    ghost_button(tr!("chat_drawer_history_retry"), palette).on_click(
+                        "chat-viewer-history-first-page-retry",
+                        cx.listener(|this, _: &ClickEvent, _, cx| this.retry_first_page(cx)),
+                    ),
+                )
+                .into_any_element(),
             HistoryState::Loaded if self.listed.total == 0 => {
                 Self::render_note(tr!("chat_drawer_history_empty"), palette.text_faint)
             }
@@ -736,6 +761,29 @@ mod tests {
 
         settle(cx, &rt);
 
+        assert!(matches!(state(cx, &history), HistoryState::Failed));
+    }
+
+    #[gpui::test]
+    fn retrying_a_failed_first_page_asks_storage_again(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let asked = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counted = std::sync::Arc::clone(&asked);
+        let mut repo = MockChatHistoryRepo::new();
+        repo.expect_author_page().returning(move |_, _, _| {
+            counted.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Err(StorageError::Connection {
+                reason: "closed".into(),
+            })
+        });
+        let (_feed, history) = mount_history(cx, &rt, key_of(ANN), repo, vec![line("m1", 10, ANN)]);
+        settle(cx, &rt);
+
+        history.update(cx, |history, cx| history.retry_first_page(cx));
+        assert!(matches!(state(cx, &history), HistoryState::Loading));
+        settle(cx, &rt);
+
+        assert_eq!(asked.load(std::sync::atomic::Ordering::SeqCst), 2);
         assert!(matches!(state(cx, &history), HistoryState::Failed));
     }
 

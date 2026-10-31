@@ -28,11 +28,13 @@ impl SettingsPaneHeader {
         }
     }
 
+    #[must_use]
     pub(crate) fn subtitle(mut self, subtitle: impl Into<SharedString>) -> Self {
         self.subtitle = Some(subtitle.into());
         self
     }
 
+    #[must_use]
     pub(crate) fn trailing(mut self, element: impl IntoElement) -> Self {
         self.trailing.push(element.into_any_element());
         self

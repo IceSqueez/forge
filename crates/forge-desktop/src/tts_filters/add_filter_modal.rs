@@ -348,8 +348,8 @@ impl AddFilterModal {
                         .text_color(palette.text_faint)
                         .child(tr!(
                             "tts_filters_preset_output_maxdur_range",
-                            min = MAX_DURATION_MIN as i64,
-                            max = MAX_DURATION_MAX as i64
+                            min = MAX_DURATION_MIN,
+                            max = MAX_DURATION_MAX
                         )),
                 );
         }

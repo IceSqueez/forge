@@ -25,25 +25,14 @@ const COPY_GAP: Pixels = px(3.0);
 const COPY_GLYPH: Pixels = px(12.0);
 const HALF: f32 = 0.5;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) struct ObsRecommendations {
-    pub(super) shutdown_when_hidden: bool,
-    pub(super) refresh_on_activate: bool,
-    pub(super) control_audio: bool,
-}
-
-pub(super) fn obs_recommendations(config: &OverlayConfig, receiver: bool) -> ObsRecommendations {
+pub(super) fn obs_controls_audio(config: &OverlayConfig, receiver: bool) -> bool {
     let carries = |key: &str| {
         config
             .get(key)
             .and_then(Variant::as_str)
             .is_some_and(|value| !value.trim().is_empty())
     };
-    ObsRecommendations {
-        shutdown_when_hidden: false,
-        refresh_on_activate: false,
-        control_audio: receiver || carries(SOUND) || carries(SPEECH),
-    }
+    receiver || carries(SOUND) || carries(SPEECH)
 }
 
 fn switch_text(on: bool) -> String {
@@ -69,7 +58,8 @@ impl OverlaysView {
             .get(&definition.kind_id)
             .is_some_and(|descriptor| descriptor.has_visual_page());
         let config = self.effective_config(definition).unwrap_or_default();
-        let advice = obs_recommendations(&config, self.receiver.as_ref() == Some(&definition.id));
+        let control_audio =
+            obs_controls_audio(&config, self.receiver.as_ref() == Some(&definition.id));
 
         let id = definition.id.clone();
         let url_row = match self.displayed_overlay_url(&definition.id) {
@@ -124,13 +114,13 @@ impl OverlaysView {
             .gap_y(spacing(Spacing::Xxs, density))
             .child(tip(
                 tr!("overlays_obs_shutdown"),
-                switch_text(advice.shutdown_when_hidden),
+                switch_text(false),
                 palette,
                 density,
             ))
             .child(tip(
                 tr!("overlays_obs_refresh"),
-                switch_text(advice.refresh_on_activate),
+                switch_text(false),
                 palette,
                 density,
             ))
@@ -142,7 +132,7 @@ impl OverlaysView {
             ))
             .child(tip(
                 tr!("overlays_obs_audio"),
-                switch_text(advice.control_audio),
+                switch_text(control_audio),
                 palette,
                 density,
             ));
@@ -309,7 +299,7 @@ mod tests {
             (config(&[(SPEECH, "{user} followed")]), false, true),
         ] {
             assert_eq!(
-                obs_recommendations(&stored, receiver).control_audio,
+                obs_controls_audio(&stored, receiver),
                 expected,
                 "{stored:?} receiver={receiver}"
             );

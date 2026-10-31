@@ -1,5 +1,5 @@
+use forge_components::STICKY_TOAST;
 use std::path::Path;
-use std::time::Duration;
 
 use forge_components::{PushToast, ToastAction, ToastKind, tr};
 use forge_transfer::{
@@ -7,8 +7,6 @@ use forge_transfer::{
     restore_in_flight, restore_pending,
 };
 use gpui::{App, Global};
-
-const STICKY: Duration = Duration::ZERO;
 
 pub(crate) struct BootRestore(pub RestoreOutcome);
 
@@ -30,10 +28,10 @@ pub(crate) fn raise_boot_restore_toast(cx: &mut App) {
                 tr!("restore_boot_applied", path = shown.as_str()),
                 None,
                 Some(ToastAction::new(
-                    tr!("settings_storage_backup_reveal"),
+                    tr!("common_reveal_in_folder"),
                     move |_window, app| app.reveal_path(&pre_restore_snapshot),
                 )),
-                STICKY,
+                STICKY_TOAST,
             );
         }
         RestoreOutcome::RolledBack { reason } => cx.push_toast_full(
@@ -44,14 +42,14 @@ pub(crate) fn raise_boot_restore_toast(cx: &mut App) {
             ),
             None,
             None,
-            STICKY,
+            STICKY_TOAST,
         ),
         RestoreOutcome::Deferred { reason } => cx.push_toast_full(
             ToastKind::Warn,
             tr!("restore_boot_deferred", reason = deferral_reason(reason)),
             None,
             None,
-            STICKY,
+            STICKY_TOAST,
         ),
     }
 }
@@ -113,6 +111,7 @@ mod tests {
     use forge_transfer::{RESTORE_MARKER_FILE, RestoreRollback, restore_staging_root};
     use gpui::TestAppContext;
     use std::path::PathBuf;
+    use std::time::Duration;
     use tempfile::TempDir;
 
     use crate::i18n::install_language;

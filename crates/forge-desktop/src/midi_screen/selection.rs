@@ -71,6 +71,7 @@ impl MidiScreenView {
         let integration = self.integration.clone();
         async_bridge::optimistic(
             &self.rt_handle,
+            "midi selection",
             previous,
             async move {
                 let integration =

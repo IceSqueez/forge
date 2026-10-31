@@ -35,7 +35,7 @@ use crate::integration_catalog::{
 };
 use crate::integration_disable_modal::{DisablePrompt, render_disable_modal};
 use crate::integration_failed::LiveDetailRequested;
-use crate::integration_lifecycle::{CardStatus, IntegrationLifecycle};
+use crate::integration_lifecycle::{CardStatus, IntegrationLifecycle, is_desired_on};
 use crate::integration_switch::category_members;
 use crate::navigation::NavRequested;
 use crate::navigation::Screen;
@@ -141,6 +141,7 @@ impl IntegrationsHubView {
         view
     }
 
+    #[must_use]
     pub(crate) fn welcome(mut self) -> Self {
         self.welcome = true;
         self
@@ -343,7 +344,7 @@ impl IntegrationsHubView {
             .into_any_element()
     }
 
-    fn go(&mut self, screen: Screen, cx: &mut Context<Self>) {
+    fn go(&self, screen: Screen, cx: &mut Context<Self>) {
         cx.emit(NavRequested(screen));
     }
 
@@ -436,7 +437,7 @@ impl IntegrationsHubView {
         let state = self.lifecycle.read(cx).state_of(&id);
         let connected = self.is_connected(&id, cx);
         let status = CardStatus::resolve(&state, declaration.connection, connected);
-        let on = crate::integration_lifecycle::is_desired_on(&state);
+        let on = is_desired_on(&state);
         let look = look_of(&id, palette);
         let references = self.references_of(&id);
 

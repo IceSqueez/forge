@@ -28,7 +28,7 @@ impl QueuesView {
         density: Density,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let not_live = self.diverged.contains(&q.id);
+        let not_live = !q.live;
 
         let border_color = if q.mode == QueueMode::RUNNING {
             palette.border_input
@@ -501,7 +501,7 @@ fn activity_panel(q: &QueueRow, palette: &ForgePalette, density: Density) -> Any
     let spin_id = SharedString::from(format!("q-strip-spin-{}", q.id));
     status_strip(
         spinner(spin_id, Icon::Loader2, PANEL_GLYPH, palette.brand).into_any_element(),
-        SharedString::from(tr!("queues_running_count", count = q.in_flight as i64)),
+        SharedString::from(tr!("queues_running_count", count = q.in_flight)),
         palette.text_primary,
         None,
         q,
@@ -525,8 +525,8 @@ fn status_strip(
         .text_color(palette.text_faint)
         .child(SharedString::from(tr!(
             "queues_strip_counts",
-            pending = q.pending as i64,
-            in_flight = q.in_flight as i64
+            pending = q.pending,
+            in_flight = q.in_flight
         )));
 
     let mut strip = div()

@@ -203,9 +203,9 @@ struct TriggerDetail {
 
 pub(crate) fn cooldown_suffix(secs: u32, global: bool) -> String {
     if global {
-        tr!("triggers_cooldown_suffix_global", secs = secs as i64)
+        tr!("triggers_cooldown_suffix_global", secs = secs)
     } else {
-        tr!("triggers_cooldown_suffix_per_user", secs = secs as i64)
+        tr!("triggers_cooldown_suffix_per_user", secs = secs)
     }
 }
 

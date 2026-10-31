@@ -1,5 +1,5 @@
+use forge_components::STICKY_TOAST;
 use std::sync::Arc;
-use std::time::Duration;
 
 use forge_components::{PushToast, ToastAction, ToastKind, tr};
 use forge_registry::{SubActionRegistry, TriggerRegistry};
@@ -8,8 +8,6 @@ use gpui::{App, AsyncApp};
 use tokio::runtime::Handle;
 
 use crate::navigation::{Navigator, Screen};
-
-const STICKY: Duration = Duration::ZERO;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct IdReplacement {
@@ -159,7 +157,7 @@ fn raise_notice(uses: &[RetiredIdUse], navigator: Navigator, cx: &mut App) {
         notice_message(uses),
         None,
         Some(action),
-        STICKY,
+        STICKY_TOAST,
     );
 }
 

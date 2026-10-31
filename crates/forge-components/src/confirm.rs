@@ -165,6 +165,7 @@ fn accent_confirm_button(
 ) -> impl IntoElement {
     div()
         .id(id)
+        .max_w_full()
         .flex()
         .items_center()
         .py(spacing(Spacing::Xxs, density))
@@ -196,6 +197,8 @@ fn enter_focus(id: &ElementId, window: &mut Window, cx: &mut App) -> FocusHandle
 pub(crate) fn confirm_actions_row(density: Density) -> Div {
     div()
         .ml_auto()
+        .max_w_full()
+        .overflow_hidden()
         .flex()
         .flex_wrap()
         .justify_end()
@@ -300,7 +303,11 @@ impl RenderOnce for ConfirmModal {
         let has_actions = cancel.is_some() || alternate.is_some() || confirm.is_some();
         let mut actions = confirm_actions_row(density);
         for (id, label, handler) in [cancel, alternate].into_iter().flatten() {
-            actions = actions.child(secondary_button(label, &palette).on_click(id, handler));
+            actions = actions.child(
+                secondary_button(label, &palette)
+                    .fits_parent()
+                    .on_click(id, handler),
+            );
         }
         let mut enter_binding = None;
         if let Some((id, label, handler)) = confirm {
@@ -674,7 +681,9 @@ mod tests {
     const BUTTON_HEIGHT: Pixels = px(30.0);
     const LAST_WIDTH_ON_ONE_LINE: f32 = 182.0;
     const FOOTER_HINT: &str = "esc to keep everything as it is";
-    const LONG_LABEL: &str = "Delete this action and its triggers too";
+    const LONG_LABEL: &str = "Delete this action and its triggers too ";
+    const WRAPPING_LABEL_REPEATS: usize = 3;
+    const ACTIONS_ROW: &str = "confirm-test-actions-row";
 
     struct FooterCard {
         hint: Option<&'static str>,
@@ -684,8 +693,9 @@ mod tests {
     impl Render for FooterCard {
         fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
             let density = cx.density();
-            let actions =
-                confirm_actions_row(density).children(self.buttons.iter().map(|&(id, width)| {
+            let actions = confirm_actions_row(density)
+                .debug_selector(|| ACTIONS_ROW.to_owned())
+                .children(self.buttons.iter().map(|&(id, width)| {
                     div()
                         .debug_selector(|| id.to_owned())
                         .w(width)
@@ -804,6 +814,40 @@ mod tests {
         assert_inside(button, card);
         assert_eq!(button.size.width, NEARLY_FULL_BUTTON);
         assert!(button.top() > plain_top, "{button:?} above {plain_top:?}");
+    }
+
+    #[gpui::test]
+    fn a_button_wider_than_the_footer_stays_within_its_padding(cx: &mut TestAppContext) {
+        let padding = spacing(Spacing::Lg, Density::Cozy);
+        let vcx = mount_footer(cx, None, vec![(FIRST, FOOTER_CARD_WIDTH * 2.0)]);
+
+        let card = painted(vcx, FOOTER_CARD);
+        let rows = painted(vcx, ACTIONS_ROW);
+
+        assert_eq!(rows.right(), card.right() - padding);
+        assert_eq!(rows.left(), card.left() + padding);
+    }
+
+    #[gpui::test]
+    fn a_label_wider_than_the_card_wraps_inside_it(cx: &mut TestAppContext) {
+        install_presentation(cx);
+        let (_, vcx) = cx.add_window_view(|_, _| Slot {
+            card: || {
+                let label = LONG_LABEL.repeat(WRAPPING_LABEL_REPEATS);
+                footed_card()
+                    .on_cancel("wide-cancel", label.clone(), |_, _, _| {})
+                    .on_alternate("wide-alternate", label, |_, _, _| {})
+            },
+        });
+        vcx.run_until_parked();
+
+        let padding = spacing(Spacing::Lg, Density::Cozy);
+        let card = painted(vcx, CARD_SLOT);
+        for id in ["wide-cancel", "wide-alternate"] {
+            let button = painted(vcx, id);
+            assert!(button.left() >= card.left() + padding, "{button:?}");
+            assert!(button.right() <= card.right() - padding, "{button:?}");
+        }
     }
 
     #[gpui::test]

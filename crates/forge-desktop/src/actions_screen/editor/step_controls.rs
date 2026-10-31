@@ -417,7 +417,7 @@ mod tests {
 
     fn steps_gone() -> Vec<String> {
         let message = RepoFailure::steps_gone().text();
-        vec![tr!("actions_toast_error", message = message.as_str()).to_string()]
+        vec![tr!("actions_toast_error", message = message.as_str())]
     }
 
     fn undo_left_the_stored_action_alone(screen: &Screen, cx: &mut TestAppContext) -> bool {

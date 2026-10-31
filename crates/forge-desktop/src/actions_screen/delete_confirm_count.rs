@@ -2,6 +2,7 @@ use super::*;
 use forge_storage::ScheduledRunRepo;
 
 impl ScreenActionsView {
+    #[must_use]
     pub(crate) fn with_scheduled_runs(mut self, repo: Arc<dyn ScheduledRunRepo>) -> Self {
         self.scheduled_runs = Some(repo);
         self

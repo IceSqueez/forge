@@ -347,7 +347,7 @@ impl GlobalEditor {
         for (i, &kind) in EDITOR_KINDS.iter().enumerate() {
             let active = self.kind == kind;
             let mut c = chip(
-                kind_word(kind),
+                kind.contract_name(),
                 ChipGlyph::Dot(variant_kind_color(kind, palette)),
                 active,
                 palette,
@@ -578,18 +578,6 @@ fn section(
                 .child(label.into()),
         )
         .child(control)
-}
-
-pub(super) fn kind_word(kind: VariantKind) -> &'static str {
-    match kind {
-        VariantKind::Int => "int",
-        VariantKind::Float => "float",
-        VariantKind::Bool => "bool",
-        VariantKind::String => "string",
-        VariantKind::Datetime => "datetime",
-        VariantKind::Array => "array",
-        VariantKind::Object => "object",
-    }
 }
 
 fn single_line_placeholder(kind: VariantKind) -> &'static str {

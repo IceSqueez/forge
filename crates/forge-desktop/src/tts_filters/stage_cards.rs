@@ -31,7 +31,7 @@ impl TtsFiltersView {
                 SkipRule::LongerThan,
                 tr!(
                     "tts_filters_skip_longer_than",
-                    chars = settings.longer_than_max_chars as i64
+                    chars = settings.longer_than_max_chars
                 )
                 .into(),
             ),
@@ -39,7 +39,7 @@ impl TtsFiltersView {
                 SkipRule::Repeat,
                 tr!(
                     "tts_filters_skip_repeat",
-                    window = settings.repeat_of_recent_window as i64
+                    window = settings.repeat_of_recent_window
                 )
                 .into(),
             ),
@@ -454,7 +454,7 @@ impl TtsFiltersView {
             body = body.child(self.stage_row(
                 tr!("tts_filters_preset_output_maxdur").into(),
                 settings.output_max_duration_enabled,
-                Some(tr!("tts_filters_output_max_duration_meta", secs = secs as i64).into()),
+                Some(tr!("tts_filters_output_max_duration_meta", secs = secs).into()),
                 "filt-out-t-maxdur".into(),
                 "filt-out-x-maxdur".into(),
                 i != total,

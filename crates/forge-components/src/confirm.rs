@@ -266,7 +266,10 @@ impl RenderOnce for ConfirmModal {
 
         let has_actions = cancel.is_some() || alternate.is_some() || confirm.is_some();
         let mut actions = div()
+            .ml_auto()
             .flex()
+            .flex_wrap()
+            .justify_end()
             .items_center()
             .gap(scaled(ACTIONS_GAP, density));
         for (id, label, handler) in [cancel, alternate].into_iter().flatten() {
@@ -302,11 +305,13 @@ impl RenderOnce for ConfirmModal {
                 div()
                     .w_full()
                     .flex()
+                    .flex_wrap()
                     .items_center()
+                    .gap_x(spacing(Spacing::Xxs, density))
+                    .gap_y(scaled(ACTIONS_GAP, density))
                     .when_some(esc_hint, |footer, phrase| {
                         footer.child(esc_hint_label(phrase, &palette))
                     })
-                    .child(div().flex_1())
                     .py(spacing(Spacing::Sm, density))
                     .px(spacing(Spacing::Lg, density))
                     .border_t(BORDER_THIN)

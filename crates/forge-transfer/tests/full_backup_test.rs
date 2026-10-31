@@ -814,11 +814,7 @@ async fn manifestless_archive_in_the_previous_layout_stages_as_legacy() {
             (DATABASE_FILE_NAME.to_owned(), DB_BYTES.to_vec()),
             (CREDENTIALS_KEY_FILE_NAME.to_owned(), KEY_BYTES.to_vec()),
             (
-                Path::new(MEDIA_DIR_NAME)
-                    .join("sub")
-                    .join("clip.ogg")
-                    .to_string_lossy()
-                    .into_owned(),
+                format!("{MEDIA_DIR_NAME}/sub/clip.ogg"),
                 MEDIA_BYTES.to_vec(),
             ),
         ])
@@ -1140,8 +1136,8 @@ async fn bundle_written_before_categories_restores_every_folder() {
     let expected: BTreeMap<String, Vec<u8>> = files
         .iter()
         .map(|(path, bytes)| {
-            let relative: PathBuf = path.split('/').skip(1).collect();
-            (relative.to_string_lossy().into_owned(), bytes.to_vec())
+            let relative = path.split('/').skip(1).collect::<Vec<_>>().join("/");
+            (relative, bytes.to_vec())
         })
         .collect();
     assert_eq!(staged_files, expected);

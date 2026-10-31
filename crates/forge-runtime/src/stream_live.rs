@@ -1,5 +1,6 @@
 use std::collections::BTreeSet;
 
+use forge_net::TaskOwner;
 use forge_types::PlatformId;
 use futures_core::Stream;
 use tokio::sync::watch;
@@ -61,11 +62,12 @@ impl StreamLiveHandle {
 pub fn spawn_stream_live_signal(
     viewers: &LiveViewerAggregatorHandle,
     obs: watch::Receiver<bool>,
+    tasks: &TaskOwner,
 ) -> StreamLiveHandle {
     let platforms = viewers.live_platforms();
     let initial = StreamLiveState::from_parts(&platforms.borrow(), *obs.borrow());
     let (output, receiver) = watch::channel(initial);
-    tokio::spawn(follow_live_inputs(platforms, obs, output));
+    tasks.spawn_until_stopped(follow_live_inputs(platforms, obs, output));
     StreamLiveHandle(receiver)
 }
 
@@ -155,9 +157,9 @@ mod tests {
 
     #[tokio::test]
     async fn live_report_marks_stream_live_with_the_registered_platform() {
-        let viewers = spawn_live_viewer_aggregator();
+        let viewers = spawn_live_viewer_aggregator(&forge_net::TaskOwner::new());
         let (_obs_sink, obs) = idle_obs();
-        let mut live = spawn_stream_live_signal(&viewers, obs);
+        let mut live = spawn_stream_live_signal(&viewers, obs, &TaskOwner::new());
         let (source, reports) = channel_viewer_source();
         viewers.register(PlatformId::Twitch, source);
 
@@ -172,9 +174,9 @@ mod tests {
 
     #[tokio::test]
     async fn absent_report_from_the_only_live_platform_clears_stream_live() {
-        let viewers = spawn_live_viewer_aggregator();
+        let viewers = spawn_live_viewer_aggregator(&forge_net::TaskOwner::new());
         let (_obs_sink, obs) = idle_obs();
-        let mut live = spawn_stream_live_signal(&viewers, obs);
+        let mut live = spawn_stream_live_signal(&viewers, obs, &TaskOwner::new());
         let (source, reports) = channel_viewer_source();
         viewers.register(PlatformId::Kick, source);
         reports.send(ViewerReport::Live { count: 3 }).unwrap();
@@ -192,9 +194,9 @@ mod tests {
 
     #[tokio::test]
     async fn stream_stays_live_on_the_remaining_platform_when_another_drops() {
-        let viewers = spawn_live_viewer_aggregator();
+        let viewers = spawn_live_viewer_aggregator(&forge_net::TaskOwner::new());
         let (_obs_sink, obs) = idle_obs();
-        let mut live = spawn_stream_live_signal(&viewers, obs);
+        let mut live = spawn_stream_live_signal(&viewers, obs, &TaskOwner::new());
         let (twitch, twitch_reports) = channel_viewer_source();
         let (youtube, youtube_reports) = channel_viewer_source();
         viewers.register(PlatformId::Twitch, twitch);
@@ -267,7 +269,7 @@ mod tests {
 
     #[tokio::test]
     async fn signal_starts_from_platforms_already_live_at_spawn() {
-        let viewers = spawn_live_viewer_aggregator();
+        let viewers = spawn_live_viewer_aggregator(&forge_net::TaskOwner::new());
         let mut platforms = viewers.live_platforms();
         let (source, reports) = channel_viewer_source();
         viewers.register(PlatformId::Twitch, source);
@@ -275,7 +277,7 @@ mod tests {
         platforms.changed().await.unwrap();
         let (_obs_sink, obs) = idle_obs();
 
-        let live = spawn_stream_live_signal(&viewers, obs);
+        let live = spawn_stream_live_signal(&viewers, obs, &TaskOwner::new());
 
         assert_eq!(
             live.current().sources(),
@@ -285,9 +287,9 @@ mod tests {
 
     #[tokio::test]
     async fn new_subscriber_first_receives_the_current_state() {
-        let viewers = spawn_live_viewer_aggregator();
+        let viewers = spawn_live_viewer_aggregator(&forge_net::TaskOwner::new());
         let (_obs_sink, obs) = idle_obs();
-        let mut live = spawn_stream_live_signal(&viewers, obs);
+        let mut live = spawn_stream_live_signal(&viewers, obs, &TaskOwner::new());
         let (source, reports) = channel_viewer_source();
         viewers.register(PlatformId::YouTube, source);
         reports.send(ViewerReport::Live { count: 4 }).unwrap();

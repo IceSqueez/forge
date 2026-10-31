@@ -1836,7 +1836,7 @@ pub(crate) fn idle_supervisor(
         settings,
         forge_runtime::IntegrationGate::new(),
         Arc::new(crate::integrations::BuiltinRegistry::default()),
-        forge_runtime::spawn_live_viewer_aggregator(),
+        forge_runtime::spawn_live_viewer_aggregator(&forge_net::TaskOwner::new()),
     )
 }
 

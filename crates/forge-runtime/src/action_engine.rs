@@ -1,9 +1,11 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use forge_events::{
     ActionDone, ActionSkipped, ActionStarted, EventPublisher, EventSource, QuickActionDone,
     RunOutcome, SubActionRun, TypedEvent,
 };
+use forge_net::{TaskOwner, TaskShutdown};
 use forge_registry::{CancelSignal, ChainSignal, RunContext, RunningAction, SubActionRegistry};
 use forge_storage::{ActionExecution, ActionRepo, ExecutionStatus, HistoryRepo};
 use forge_types::{
@@ -12,7 +14,7 @@ use forge_types::{
     UserText, VerbatimText,
 };
 use time::OffsetDateTime;
-use tokio::sync::{mpsc, oneshot, watch};
+use tokio::sync::{mpsc, oneshot};
 use tracing::{info, warn};
 
 use crate::action_cancel::ActionCancelRegistry;
@@ -51,7 +53,7 @@ impl PendingQuickAction {
 pub struct ActionEngineHandle {
     sender: mpsc::Sender<EngineJob>,
     quick_sender: mpsc::Sender<QuickActionRequest>,
-    stop: Arc<watch::Sender<bool>>,
+    tasks: TaskOwner,
     integrations: IntegrationGate,
 }
 
@@ -154,8 +156,12 @@ impl ActionEngineHandle {
         &self.integrations
     }
 
-    pub fn shutdown(self) {
-        self.stop.send_replace(true);
+    pub fn shutdown(&self) {
+        self.tasks.request_stop();
+    }
+
+    pub async fn stopped(&self, grace: Duration) -> TaskShutdown {
+        self.tasks.shutdown(grace).await
     }
 }
 
@@ -166,6 +172,7 @@ struct ActionEngine {
     history: RunHistoryWriter,
     chain_engine: Arc<ChainEngine>,
     cancel_registry: Arc<ActionCancelRegistry>,
+    tasks: TaskOwner,
 }
 
 impl ActionEngine {
@@ -179,7 +186,7 @@ impl ActionEngine {
     ) -> ActionEngineHandle {
         let (tx, rx) = mpsc::channel(EXECUTION_INTAKE_CAPACITY);
         let (quick_tx, quick_rx) = mpsc::channel(QUICK_ACTION_INTAKE_CAPACITY);
-        let (stop_tx, stop_rx) = watch::channel(false);
+        let tasks = TaskOwner::new();
         let config = Config::default();
         let gate = Arc::new(crate::condition::ConditionGate::new(&config));
         let chain_engine = Arc::new(ChainEngine::on_bus(
@@ -197,11 +204,12 @@ impl ActionEngine {
             history: history.clone(),
             chain_engine,
             cancel_registry,
+            tasks: tasks.clone(),
         });
-        tokio::spawn(Self::run(engine, rx, stop_rx.clone()));
-        tokio::spawn(run_quick_action_loop(
+        tasks.spawn(Self::run(engine, rx));
+        tasks.spawn(run_quick_action_loop(
             quick_rx,
-            stop_rx,
+            tasks.clone(),
             bus,
             history,
             sub_action_registry,
@@ -210,20 +218,16 @@ impl ActionEngine {
         ActionEngineHandle {
             sender: tx,
             quick_sender: quick_tx,
-            stop: Arc::new(stop_tx),
+            tasks,
             integrations,
         }
     }
 
-    async fn run(
-        engine: Arc<Self>,
-        mut input: mpsc::Receiver<EngineJob>,
-        mut stop: watch::Receiver<bool>,
-    ) {
+    async fn run(engine: Arc<Self>, mut input: mpsc::Receiver<EngineJob>) {
         loop {
             tokio::select! {
                 biased;
-                Ok(_) = stop.wait_for(|stopped| *stopped) => {
+                () = engine.tasks.stopped() => {
                     let cancelled = engine.cancel_registry.cancel_all();
                     info!("action engine stopped: cancelled {cancelled} running executions");
                     return;
@@ -251,7 +255,7 @@ impl ActionEngine {
             action_id: request.action_id,
         };
         let engine = Arc::clone(self);
-        tokio::spawn(async move {
+        self.tasks.spawn(async move {
             engine.run_execution(request, origin, &cancel).await;
             drop(cancel_guard);
             if let Some(done) = on_complete {
@@ -528,7 +532,7 @@ impl Drop for CancelGuard {
 
 async fn run_quick_action_loop(
     mut rx: mpsc::Receiver<QuickActionRequest>,
-    mut stop: watch::Receiver<bool>,
+    tasks: TaskOwner,
     bus: Arc<EventBus>,
     history: RunHistoryWriter,
     sub_action_registry: Arc<SubActionRegistry>,
@@ -538,13 +542,13 @@ async fn run_quick_action_loop(
     loop {
         tokio::select! {
             biased;
-            Ok(_) = stop.wait_for(|stopped| *stopped) => {
+            () = tasks.stopped() => {
                 cancel.cancel();
                 return;
             }
             req = rx.recv() => match req {
                 Some(req) => {
-                    tokio::spawn(run_quick_action(
+                    tasks.spawn(run_quick_action(
                         req,
                         cancel.clone(),
                         Arc::clone(&bus),

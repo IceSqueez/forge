@@ -308,6 +308,7 @@ mod tests {
             register_builtin_kinds(&mut kinds).expect("the builtin overlay kinds register");
             let (tx, announced) = unbounded_channel();
             let service = OverlayServiceHandle::new(forge_runtime::OverlayServiceParts {
+                tasks: forge_net::TaskOwner::new(),
                 repo: Arc::clone(&overlays) as Arc<dyn OverlayRepo>,
                 settings: Arc::clone(&backend) as Arc<dyn SettingsRepo>,
                 kinds: Arc::new(kinds),

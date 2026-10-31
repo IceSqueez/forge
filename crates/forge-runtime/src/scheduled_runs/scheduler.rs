@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use forge_net::TaskOwner;
 use forge_storage::{
     ActionRepo, CatalogChanges, CatalogRevision, ScheduledRunRepo, ScheduledRunSpec,
 };
@@ -18,7 +19,6 @@ use super::limits::{
 use super::request::{ScheduleError, ScheduleRequest, ScheduledPlacement};
 use super::waiting::WaitingRuns;
 use crate::catalog::Catalog;
-use crate::task_stop::{StopListener, task_stop};
 use crate::{EventBus, QueueSchedulerHandle};
 use forge_types::WallClock;
 
@@ -49,7 +49,7 @@ pub(crate) struct ScheduledRunsStart {
     clock: Arc<dyn WallClock>,
     commands: mpsc::Receiver<Command>,
     waiting: watch::Sender<WaitingRuns>,
-    listener: StopListener,
+    tasks: TaskOwner,
 }
 
 struct ScheduledRunsTask {
@@ -68,20 +68,20 @@ pub(crate) fn reserve_scheduled_runs(
 ) -> (ScheduledRunsHandle, ScheduledRunsStart) {
     let (commands_tx, commands) = mpsc::channel(COMMAND_CAPACITY);
     let (waiting, waiting_rx) = watch::channel(WaitingRuns::new());
-    let (stop, listener) = task_stop();
+    let tasks = TaskOwner::new();
     let handle = ScheduledRunsHandle::new(
         commands_tx,
         Arc::clone(&repo),
         Arc::clone(&clock),
         waiting_rx,
-        stop,
+        tasks.clone(),
     );
     let start = ScheduledRunsStart {
         repo,
         clock,
         commands,
         waiting,
-        listener,
+        tasks,
     };
     (handle, start)
 }
@@ -93,7 +93,7 @@ impl ScheduledRunsStart {
             clock,
             commands,
             waiting,
-            listener,
+            tasks,
         } = self;
         let ScheduledRunsStartParts {
             revision,
@@ -121,10 +121,10 @@ impl ScheduledRunsStart {
             retry_at: None,
             waiting,
         };
-        tokio::spawn(async move {
-            task.run(commands, changes, intake_changes, catch_up, &listener)
+        let stop = tasks.clone();
+        tasks.spawn(async move {
+            task.run(commands, changes, intake_changes, catch_up, &stop)
                 .await;
-            listener.mark_stopped();
         });
     }
 }
@@ -159,7 +159,7 @@ impl ScheduledRunsTask {
         mut changes: CatalogChanges,
         mut intake_changes: watch::Receiver<()>,
         catch_up: CatchUpSettle,
-        stop: &StopListener,
+        stop: &TaskOwner,
     ) {
         self.refresh_next_due().await;
         let mut settling = Box::pin(catch_up.wait(CATCH_UP_SETTLE_LIMIT));
@@ -172,7 +172,7 @@ impl ScheduledRunsTask {
             let waiting_for_queue = !self.waiting.borrow().is_empty();
             tokio::select! {
                 biased;
-                () = stop.requested() => return,
+                () = stop.stopped() => return,
                 command = commands.recv(), if commands_open => match command {
                     Some(command) => self.serve(command).await,
                     None => commands_open = false,

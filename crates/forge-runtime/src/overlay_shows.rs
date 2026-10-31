@@ -2,6 +2,7 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
+use forge_net::TaskOwner;
 use forge_overlay::silent_reveal_content;
 use forge_registry::CancelSignal;
 use forge_storage::OverlayId;
@@ -113,18 +114,21 @@ pub(crate) struct ShowSequencer {
     speaker: Option<Arc<dyn SpeakDispatcher>>,
     lanes: Mutex<HashMap<OverlayId, Lane>>,
     depths: watch::Sender<Depths>,
+    tasks: TaskOwner,
 }
 
 impl ShowSequencer {
     pub(crate) fn new(
         frames: Arc<dyn OverlayFrameSink>,
         speaker: Option<Arc<dyn SpeakDispatcher>>,
+        tasks: TaskOwner,
     ) -> Self {
         Self {
             frames,
             speaker,
             lanes: Mutex::default(),
             depths: watch::Sender::new(Depths::new()),
+            tasks,
         }
     }
 
@@ -166,7 +170,8 @@ impl ShowSequencer {
             !std::mem::replace(&mut lane.running, true)
         };
         if start_presenter {
-            tokio::spawn(Arc::clone(self).present_all(id.clone()));
+            self.tasks
+                .spawn_until_stopped(Arc::clone(self).present_all(id.clone()));
         }
         Ok(ShowTicket(ticket))
     }

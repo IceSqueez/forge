@@ -19,7 +19,6 @@ use tokio::sync::broadcast;
 use tokio::sync::broadcast::error::RecvError;
 
 const SPEAK_WAIT_HARD_CAP: Duration = Duration::from_secs(600);
-const SPEAK_WAIT_POLL_INTERVAL: Duration = Duration::from_millis(250);
 const SYSTEM_SPEAKER_ID: &str = "system";
 const SYSTEM_SPEAKER_NAME: &str = "Forge";
 
@@ -204,10 +203,8 @@ async fn wait_marking_start(
     let wait = async {
         loop {
             tokio::select! {
-                _ = tokio::time::sleep(SPEAK_WAIT_POLL_INTERVAL) => {
-                    if cancel.is_cancelled() {
-                        return Err(SpeakDispatchError::Dispatch(messages::wait_cancelled()));
-                    }
+                () = cancel.cancelled() => {
+                    return Err(SpeakDispatchError::Dispatch(messages::wait_cancelled()));
                 }
                 event = events.recv() => {
                     match event {
@@ -573,7 +570,7 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn cancelling_a_lagged_wait_ends_it_within_one_poll() {
+    async fn cancelling_a_lagged_wait_ends_it_at_once() {
         let (events, mut rx) = broadcast::channel(CAPACITY);
         lag(&events);
         let cancel = CancelSignal::new();
@@ -583,11 +580,7 @@ mod tests {
         let reason = reason(wait_for_terminal(&mut rx, &RequestId::new(), cancel).await);
 
         assert_eq!(reason, "speak.wait_cancelled");
-        assert!(
-            started.elapsed() <= SPEAK_WAIT_POLL_INTERVAL,
-            "a cancelled wait ran for {:?}",
-            started.elapsed()
-        );
+        assert_eq!(started.elapsed(), Duration::ZERO);
     }
 
     #[tokio::test(start_paused = true)]
@@ -604,7 +597,7 @@ mod tests {
         let result = wait_for_terminal(&mut rx, &request_id, CancelSignal::new()).await;
 
         assert!(
-            result.is_err() && started.elapsed() < SPEAK_WAIT_POLL_INTERVAL,
+            result.is_err() && started.elapsed().is_zero(),
             "a removed speech left its waiter with {result:?} after {:?}",
             started.elapsed()
         );
@@ -879,7 +872,11 @@ mod tests {
 
         let bus = forge_runtime::EventBus::new(Arc::new(forge_runtime::NullEventLogRepo));
         let lexicon = forge_runtime::TwitchEmoteLexicon::default();
-        forge_runtime::spawn_twitch_emote_learning(&bus, lexicon.clone());
+        forge_runtime::spawn_twitch_emote_learning(
+            &bus,
+            lexicon.clone(),
+            &forge_net::TaskOwner::new(),
+        );
         bus.publish(twitch_chat_with_emote("LUL"));
         tokio::time::timeout(Duration::from_secs(30), async {
             while lexicon.codes_in("LUL").is_empty() {
@@ -1197,6 +1194,7 @@ mod tests {
         });
         let overlays =
             forge_runtime::OverlayServiceHandle::new(forge_runtime::OverlayServiceParts {
+                tasks: forge_net::TaskOwner::new(),
                 repo: Arc::new(repo) as Arc<dyn OverlayRepo>,
                 settings: backend as Arc<dyn SettingsRepo>,
                 kinds: Arc::new(kinds),

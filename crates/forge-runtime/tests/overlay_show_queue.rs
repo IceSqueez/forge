@@ -117,6 +117,7 @@ fn definition_with(id: &str, kind_id: &str, config: OverlayConfig) -> OverlayDef
 struct Harness {
     sink: Arc<TimedSink>,
     service: OverlayServiceHandle,
+    tasks: forge_net::TaskOwner,
 }
 
 fn harness_with(definitions: Vec<OverlayDefinition>, absent_for: usize) -> Harness {
@@ -133,7 +134,9 @@ fn harness_with(definitions: Vec<OverlayDefinition>, absent_for: usize) -> Harne
     register_builtin_kinds(&mut kinds).expect("the builtin overlay kinds register");
     let sink = Arc::new(TimedSink::new(absent_for));
 
+    let tasks = forge_net::TaskOwner::new();
     let service = OverlayServiceHandle::new(OverlayServiceParts {
+        tasks: tasks.clone(),
         repo: Arc::new(repo) as Arc<dyn OverlayRepo>,
         settings: Arc::new(settings) as Arc<dyn SettingsRepo>,
         kinds: Arc::new(kinds),
@@ -143,7 +146,11 @@ fn harness_with(definitions: Vec<OverlayDefinition>, absent_for: usize) -> Harne
         speaker: None,
         latest: None,
     });
-    Harness { sink, service }
+    Harness {
+        sink,
+        service,
+        tasks,
+    }
 }
 
 fn harness(definitions: Vec<OverlayDefinition>) -> Harness {
@@ -179,6 +186,7 @@ async fn wired_stage(definitions: Vec<OverlayDefinition>) -> (Harness, FrozenRun
     let harness = Harness {
         sink,
         service: runtime.overlays.clone(),
+        tasks: forge_net::TaskOwner::new(),
     };
     (harness, runtime)
 }
@@ -803,4 +811,21 @@ async fn a_depth_watch_ends_once_the_overlay_service_is_gone() {
     drop(harness);
 
     assert_eq!(next_depth(&mut watch).await, None);
+}
+
+#[tokio::test(start_paused = true)]
+async fn stopping_the_owner_ends_a_presenter_mid_show() {
+    let harness = harness(vec![definition(STAGE, ALERT_KIND)]);
+    let showing = harness.queue(STAGE, "showing", None).await;
+    let waiting = harness.queue(STAGE, "waiting", None).await;
+    for _ in 0..16 {
+        tokio::task::yield_now().await;
+    }
+
+    let stopped = harness.tasks.shutdown(Duration::from_secs(1)).await;
+    drop(waiting);
+
+    assert_eq!(stopped, forge_net::TaskShutdown::Drained);
+    assert_eq!(texts(&harness.sink.arrivals(STAGE)), ["showing"]);
+    assert!(matches!(finished(showing).await, ShowEnd::Withdrawn));
 }

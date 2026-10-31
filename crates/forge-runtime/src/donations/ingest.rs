@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use forge_events::{DonationReceived, EventPublisher, EventSource, TypedEvent};
+use forge_net::TaskOwner;
 use forge_platform_core::DonationStream;
 use forge_storage::DonationRepo;
 use forge_types::{Donation, DonationOrigin, EventId, IntegrationId, Shared};
@@ -58,12 +59,16 @@ impl DonationIngest {
         self.catch_up.clone().map(CatchUpWaker)
     }
 
-    pub fn spawn_catch_up_release(self: &Arc<Self>, audience: Arc<dyn DonationAudience>) {
+    pub fn spawn_catch_up_release(
+        self: &Arc<Self>,
+        audience: Arc<dyn DonationAudience>,
+        tasks: &TaskOwner,
+    ) {
         let Some(hold) = self.catch_up.clone() else {
             return;
         };
         let ingest = Arc::downgrade(self);
-        tokio::spawn(async move {
+        tasks.spawn_until_stopped(async move {
             while let Some(ingest) = ingest.upgrade() {
                 if !hold.is_empty() && audience.is_listening().await {
                     for donation in hold.take_in_order() {
@@ -731,7 +736,7 @@ mod tests {
         let waker = ingest
             .catch_up_waker()
             .expect("a holding ingest hands out a waker");
-        ingest.spawn_catch_up_release(audience);
+        ingest.spawn_catch_up_release(audience, &TaskOwner::new());
         HeldRig {
             ledger,
             recorder,
@@ -761,7 +766,7 @@ mod tests {
             )
             .holding_catch_up(),
         );
-        ingest.spawn_catch_up_release(audience);
+        ingest.spawn_catch_up_release(audience, &TaskOwner::new());
         tokio::task::yield_now().await;
 
         drop(ingest);
@@ -919,5 +924,28 @@ mod tests {
         until_marked(&rig.ledger, &["missed"]).await;
 
         assert_eq!(rig.recorder.announced_ids(), ["missed"]);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn stopping_the_owner_ends_the_catch_up_release_while_the_ingest_lives_on() {
+        let audience = Arc::new(DeafAudience);
+        let task_holds = Arc::downgrade(&audience);
+        let tasks = TaskOwner::new();
+        let ingest = Arc::new(
+            DonationIngest::new(
+                Arc::new(Ledger::default()) as Arc<dyn DonationRepo>,
+                Arc::new(Recorder::default()) as Arc<dyn EventPublisher>,
+                Shared::new(PLACEHOLDER.to_owned()),
+            )
+            .holding_catch_up(),
+        );
+        ingest.spawn_catch_up_release(audience, &tasks);
+        tokio::task::yield_now().await;
+
+        let stopped = tasks.shutdown(std::time::Duration::from_secs(1)).await;
+
+        assert_eq!(stopped, forge_net::TaskShutdown::Drained);
+        assert_eq!(task_holds.strong_count(), 0);
+        drop(ingest);
     }
 }

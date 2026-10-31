@@ -1030,6 +1030,7 @@ mod tests {
         let (backend, _writes) = test_backend();
         let _entered = rt.enter();
         let overlay_service = OverlayServiceHandle::new(forge_runtime::OverlayServiceParts {
+            tasks: forge_net::TaskOwner::new(),
             repo: Arc::new(StubOverlays),
             settings: Arc::clone(&backend) as Arc<dyn SettingsRepo>,
             kinds: Arc::new(forge_overlay::OverlayKindRegistry::new()),

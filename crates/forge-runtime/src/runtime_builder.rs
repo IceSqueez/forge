@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use forge_events::EventPublisher;
+use forge_net::TaskOwner;
 use forge_overlay::OverlayKindRegistry;
 use forge_registry::{RegistryError, SubActionRegistry, TriggerRegistry};
 use forge_script::SpeakRequester;
@@ -39,6 +40,7 @@ pub struct RuntimeWiringParts {
     pub overlay_kinds: Arc<OverlayKindRegistry>,
     pub overlay_frames: Arc<dyn OverlayFrameSink>,
     pub clock: Arc<dyn WallClock>,
+    pub tasks: TaskOwner,
 }
 
 pub struct RuntimeWiring {
@@ -66,6 +68,7 @@ impl RuntimeWiring {
             overlay_kinds,
             overlay_frames,
             clock,
+            tasks,
         } = parts;
         let (scheduler, scheduler_start) = QueueScheduler::reserve();
         let (scheduled_runs, scheduled_runs_start) =
@@ -94,6 +97,7 @@ impl RuntimeWiring {
             )),
             speaker: overlay_speech,
             latest: Some(latest),
+            tasks,
         });
         Self {
             bus,

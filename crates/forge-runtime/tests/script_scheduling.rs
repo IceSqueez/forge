@@ -276,7 +276,11 @@ async fn a_stopped_scheduler_rejects_a_new_schedule_and_still_cancels_a_pending_
         })
         .await
         .unwrap();
-    harness.scheduled_runs.clone().stop().await;
+    harness
+        .scheduled_runs
+        .clone()
+        .stop(std::time::Duration::from_secs(1))
+        .await;
 
     let scheduled = scheduler.schedule(in_an_hour(&greet.to_string())).await;
     let cancelled = scheduler.cancel_by_key(RAID_KEY).await;

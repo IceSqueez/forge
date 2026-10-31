@@ -19,6 +19,7 @@ use forge_runtime::IntegrationSupervisor;
 
 pub(crate) struct RuntimeHandles {
     pub rt_handle: tokio::runtime::Handle,
+    pub services: forge_net::TaskOwner,
     pub log_tail: LogTail,
     pub backend: Arc<dyn DataProvider>,
     pub settings_catalog: Arc<SettingsCatalog>,

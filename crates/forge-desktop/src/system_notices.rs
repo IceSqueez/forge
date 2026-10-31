@@ -278,7 +278,9 @@ mod tests {
         cx.update(|cx| cx.set_global(Toasts::new()));
         let rt = runtime();
         let bus = quiet_bus(&rt);
-        let policy = rt.block_on(async { spawn_notification_policy(&bus, ALL_ON) });
+        let policy = rt.block_on(async {
+            spawn_notification_policy(&bus, ALL_ON, &forge_net::TaskOwner::new())
+        });
         start_system_notices(
             &mut cx.to_async(),
             &policy,

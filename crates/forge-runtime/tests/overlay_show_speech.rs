@@ -276,6 +276,7 @@ fn harness_checking_voice(
     let bus = EventBus::new(Arc::new(NullEventLogRepo));
 
     let service = OverlayServiceHandle::new(OverlayServiceParts {
+        tasks: forge_net::TaskOwner::new(),
         repo: Arc::new(repo) as Arc<dyn OverlayRepo>,
         settings: Arc::new(settings) as Arc<dyn SettingsRepo>,
         kinds: Arc::new(kinds),

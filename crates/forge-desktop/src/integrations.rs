@@ -720,7 +720,7 @@ pub(crate) mod tests {
                     Arc::new(TriggerRegistry::new()),
                     Arc::clone(&bus) as Arc<dyn forge_events::EventPublisher>,
                     Arc::clone(&bus),
-                    spawn_live_viewer_aggregator(),
+                    spawn_live_viewer_aggregator(&forge_net::TaskOwner::new()),
                     None,
                     None,
                     None,
@@ -827,6 +827,7 @@ pub(crate) mod tests {
             Arc::clone(&bus) as Arc<dyn forge_events::EventObserver>
         );
         let mut wiring = forge_runtime::RuntimeWiring::new(forge_runtime::RuntimeWiringParts {
+            tasks: forge_net::TaskOwner::new(),
             bus: Arc::clone(&bus),
             provider: Arc::clone(&backend),
             latest_values,

@@ -332,6 +332,7 @@ fn wired(catalog: Catalog) -> Wired {
     let page = Arc::new(RecordingPage::default());
     let speaker = Arc::new(ListeningSpeaker::default());
     let service = OverlayServiceHandle::new(OverlayServiceParts {
+        tasks: forge_net::TaskOwner::new(),
         repo: Arc::new(repo) as Arc<dyn OverlayRepo>,
         settings: Arc::new(settings) as Arc<dyn SettingsRepo>,
         kinds: overlay_kinds(),

@@ -3,6 +3,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Duration;
 
+use forge_net::{TaskOwner, TaskShutdown};
 use forge_runtime::{
     ActionEngineHandle, EventBus, IntegrationSupervisor, QueueSchedulerHandle, ScheduledRunsHandle,
     TimerSchedulerHandle, TriggerEvaluatorHandle,
@@ -17,11 +18,13 @@ use tokio::runtime::Runtime;
 use crate::integrations::BuiltinObject;
 use crate::runtime_handles::RuntimeHandles;
 
-const SETTLE: Duration = Duration::from_millis(10);
+const SETTLE: Duration = Duration::from_millis(2);
 const TIMER_STOP_BUDGET: Duration = Duration::from_millis(10);
 const SCHEDULED_RUNS_STOP_BUDGET: Duration = Duration::from_millis(10);
 const TRIGGER_EVALUATOR_STOP_BUDGET: Duration = Duration::from_millis(10);
 const SERVER_STOP_BUDGET: Duration = Duration::from_millis(30);
+const RUNS_STOP_BUDGET: Duration = Duration::from_millis(7);
+const SERVICES_STOP_BUDGET: Duration = Duration::from_millis(3);
 const INTEGRATIONS_STOP_BUDGET: Duration = Duration::from_millis(25);
 const SPEAK_STOP_BUDGET: Duration = Duration::from_millis(10);
 const FLUSH_BUDGET: Duration = Duration::from_millis(60);
@@ -32,6 +35,8 @@ const GRACEFUL_BUDGET: Duration = TIMER_STOP_BUDGET
     .saturating_add(TRIGGER_EVALUATOR_STOP_BUDGET)
     .saturating_add(SETTLE)
     .saturating_add(SERVER_STOP_BUDGET)
+    .saturating_add(RUNS_STOP_BUDGET)
+    .saturating_add(SERVICES_STOP_BUDGET)
     .saturating_add(INTEGRATIONS_STOP_BUDGET)
     .saturating_add(SPEAK_STOP_BUDGET)
     .saturating_add(FLUSH_BUDGET)
@@ -112,6 +117,7 @@ pub(crate) struct ShutdownHandles {
     speak: Option<SpeakQueueHandle>,
     hotkey: Option<Arc<forge_hotkey::HotkeyClient>>,
     integrations: Option<IntegrationSupervisor<BuiltinObject>>,
+    services: TaskOwner,
     storage: Arc<dyn DataProvider>,
 }
 
@@ -128,6 +134,7 @@ impl ShutdownHandles {
             speak: handles.speak.clone(),
             hotkey: handles.hotkey_client.clone(),
             integrations: Some(handles.integrations.clone()),
+            services: handles.services.clone(),
             storage: Arc::clone(&handles.backend),
         }
     }
@@ -147,24 +154,20 @@ impl ShutdownHandles {
         }
 
         tracing::info!("graceful shutdown: stopping intake");
-        if tokio::time::timeout(TIMER_STOP_BUDGET, self.timer_scheduler.stop())
-            .await
-            .is_err()
-        {
-            tracing::warn!(budget = ?TIMER_STOP_BUDGET, "timer scheduler did not stop in time");
-        }
-        if tokio::time::timeout(SCHEDULED_RUNS_STOP_BUDGET, self.scheduled_runs.stop())
-            .await
-            .is_err()
-        {
-            tracing::warn!(budget = ?SCHEDULED_RUNS_STOP_BUDGET, "scheduled runs did not stop in time");
-        }
-        if tokio::time::timeout(TRIGGER_EVALUATOR_STOP_BUDGET, self.trigger_evaluator.stop())
-            .await
-            .is_err()
-        {
-            tracing::warn!(budget = ?TRIGGER_EVALUATOR_STOP_BUDGET, "trigger evaluator did not stop in time");
-        }
+        report_stop(
+            "timer scheduler",
+            self.timer_scheduler.shutdown(TIMER_STOP_BUDGET).await,
+        );
+        report_stop(
+            "scheduled runs",
+            self.scheduled_runs.stop(SCHEDULED_RUNS_STOP_BUDGET).await,
+        );
+        report_stop(
+            "trigger evaluator",
+            self.trigger_evaluator
+                .shutdown(TRIGGER_EVALUATOR_STOP_BUDGET)
+                .await,
+        );
 
         if let Some(server) = self.server {
             match tokio::time::timeout(SERVER_STOP_BUDGET, server.stop()).await {
@@ -180,6 +183,12 @@ impl ShutdownHandles {
 
         self.scheduler.shutdown();
         self.action_engine.shutdown();
+        let (queues, engine) = tokio::join!(
+            self.scheduler.stopped(RUNS_STOP_BUDGET),
+            self.action_engine.stopped(RUNS_STOP_BUDGET),
+        );
+        report_stop("queue scheduler", queues);
+        report_stop("action engine", engine);
 
         if let Some(integrations) = &self.integrations {
             integrations.shutdown(INTEGRATIONS_STOP_BUDGET).await;
@@ -194,6 +203,11 @@ impl ShutdownHandles {
                 }
             }
         }
+
+        report_stop(
+            "runtime services",
+            self.services.shutdown(SERVICES_STOP_BUDGET).await,
+        );
 
         self.bus.shutdown();
         if tokio::time::timeout(FLUSH_BUDGET, self.bus.await_flush())
@@ -221,6 +235,16 @@ impl ShutdownHandles {
         } else {
             tracing::warn!(budget = ?STORAGE_CLOSE_BUDGET, "storage did not close in time");
         }
+    }
+}
+
+fn report_stop(subsystem: &'static str, outcome: TaskShutdown) {
+    if let TaskShutdown::Aborted { tasks } = outcome {
+        tracing::warn!(
+            subsystem,
+            tasks,
+            "tasks did not stop in time and were dropped"
+        );
     }
 }
 
@@ -585,10 +609,11 @@ mod tests {
             Arc::clone(&bus),
             intake.timer_catalog,
             spawn_stream_live_signal(
-                &spawn_live_viewer_aggregator(),
+                &spawn_live_viewer_aggregator(&forge_net::TaskOwner::new()),
                 forge_obs::SwitchableObsSink::new()
                     .stream_output()
                     .into_receiver(),
+                &TaskOwner::new(),
             ),
             forge_types::Shared::default(),
         );
@@ -613,6 +638,7 @@ mod tests {
             speak: None,
             hotkey: None,
             integrations: None,
+            services: TaskOwner::new(),
             storage: test_backend().0,
         }
     }
@@ -975,7 +1001,7 @@ mod tests {
             settings,
             forge_runtime::IntegrationGate::new(),
             Arc::new(crate::integrations::BuiltinRegistry::default()),
-            spawn_live_viewer_aggregator(),
+            spawn_live_viewer_aggregator(&forge_net::TaskOwner::new()),
         );
         supervisor
             .slot(&id)
@@ -995,6 +1021,37 @@ mod tests {
 
     fn settings_store() -> Arc<dyn forge_storage::SettingsRepo> {
         Arc::new(forge_storage::test_support::MemorySettings::new())
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn runtime_services_end_before_storage_closes() {
+        let milestones = Milestones::default();
+        let bus = EventBus::new(Arc::new(RecordedEventLog::default()));
+        EventBus::spawn_flush_task(Arc::clone(&bus));
+        let services = TaskOwner::new();
+        let stopped = milestone(&milestones, "services stopped");
+        services.spawn({
+            let services = services.clone();
+            async move {
+                services.stopped().await;
+                stopped();
+            }
+        });
+        let handles = ShutdownHandles {
+            services,
+            storage: crate::test_support::test_backend_observing_shutdown(milestone(
+                &milestones,
+                "storage closed",
+            )),
+            ..handles_over(Arc::clone(&bus), Intake::idle())
+        };
+
+        handles.run_graceful().await;
+
+        assert_eq!(
+            *milestones.lock().unwrap(),
+            ["services stopped", "storage closed"]
+        );
     }
 
     #[tokio::test(start_paused = true)]

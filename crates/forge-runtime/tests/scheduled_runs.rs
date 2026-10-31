@@ -1688,9 +1688,10 @@ async fn schedule_and_run_now_report_a_stopped_scheduler_once_stop_returns() {
     let action = harness.action(|_| {}).await;
     let pending = harness.place(&spec(action.id, base() + FIVE_MINUTES)).await;
     let handle = harness.start(CatchUpSettle::immediately());
-    timeout(DEADLINE, handle.clone().stop())
-        .await
-        .expect("stop never returned");
+    assert_eq!(
+        handle.clone().stop(DEADLINE).await,
+        forge_net::TaskShutdown::Drained
+    );
 
     let refusals = [
         handle.schedule(request(action.id)).await.map(|_| ()),
@@ -1710,9 +1711,13 @@ async fn a_stop_requested_before_the_first_pass_leaves_an_overdue_run_pending() 
     let action = harness.action(|_| {}).await;
     let id = harness.place(&overdue(action.id, FIVE_MINUTES)).await;
 
-    timeout(DEADLINE, harness.start(CatchUpSettle::immediately()).stop())
-        .await
-        .expect("stop never returned");
+    assert_eq!(
+        harness
+            .start(CatchUpSettle::immediately())
+            .stop(DEADLINE)
+            .await,
+        forge_net::TaskShutdown::Drained
+    );
 
     assert_eq!(harness.row(id).await.state, ScheduledRunState::Pending);
 }
@@ -1736,7 +1741,7 @@ async fn a_stop_during_a_hand_off_returns_only_after_the_run_is_dispatched() {
         .await
         .expect("the pass never reached the claim")
         .unwrap();
-    let stopping = tokio::spawn(handle.stop());
+    let stopping = tokio::spawn(handle.stop(DEADLINE));
     for _ in 0..64 {
         tokio::task::yield_now().await;
     }
@@ -1769,9 +1774,10 @@ async fn stop_returns_without_waiting_for_the_next_due_time() {
     }
     let asked = Instant::now();
 
-    timeout(DEADLINE, handle.stop())
-        .await
-        .expect("stop never returned");
+    assert_eq!(
+        handle.stop(DEADLINE).await,
+        forge_net::TaskShutdown::Drained
+    );
 
     assert_eq!(asked.elapsed(), Duration::ZERO);
 }

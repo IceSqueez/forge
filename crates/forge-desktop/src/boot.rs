@@ -5,6 +5,7 @@ use std::time::Duration;
 use forge_audio::{AudioSink, AudioSinkFactory};
 use forge_components::{AccentColor, Density, ThemeId};
 use forge_events::{EventObserver, EventPublisher};
+use forge_net::TaskOwner;
 use forge_overlay::{OverlayKindRegistry, register_builtin_kinds};
 use forge_platform_core::PlatformEndpoints;
 use forge_runtime::{
@@ -284,13 +285,15 @@ pub(crate) async fn build_runtime(inputs: RuntimeInputs) -> Result<RuntimeHandle
     };
     let bus = EventBus::with_first_chats(backend.event_log_repo(), first_chats);
     EventBus::spawn_flush_task(Arc::clone(&bus));
-    spawn_event_log_bridge(Arc::clone(&bus));
+    let services = TaskOwner::new();
+    spawn_event_log_bridge(Arc::clone(&bus), &services);
     if let Err(e) = forge_runtime::SystemNotifyPort::adopt_app_identity() {
         tracing::warn!(error = %e, "desktop notifications keep the default app identity");
     }
     let notification_policy = spawn_notification_policy(
         &bus,
         NotificationPreferences::load(settings_repo.as_ref()).await,
+        &services,
     );
     let transfer_exclusivity = forge_transfer::TransferExclusivity::new();
     crate::safety_copy_prune::spawn_boot_prune(
@@ -324,7 +327,7 @@ pub(crate) async fn build_runtime(inputs: RuntimeInputs) -> Result<RuntimeHandle
         anonymous_donor.clone(),
     )
     .await;
-    spawn_latest_projector(&bus, latest_values.clone());
+    spawn_latest_projector(&bus, latest_values.clone(), &services);
 
     let speech_output = build_speech_output(&backend, Arc::clone(&audio_sinks)).await;
     let speech_sink = Arc::new(RoutedSink::new(
@@ -360,6 +363,7 @@ pub(crate) async fn build_runtime(inputs: RuntimeInputs) -> Result<RuntimeHandle
     let overlay_kinds = Arc::new(overlay_kinds_mut);
     let delivery_hub = DeliveryHub::new(Arc::clone(&bus) as Arc<dyn EventObserver>);
     let mut wiring = RuntimeWiring::new(RuntimeWiringParts {
+        tasks: services.clone(),
         bus: Arc::clone(&bus),
         provider: Arc::clone(&backend),
         latest_values: latest_values.clone(),
@@ -455,7 +459,7 @@ pub(crate) async fn build_runtime(inputs: RuntimeInputs) -> Result<RuntimeHandle
     match speak_dispatcher {
         Some(dispatcher) => {
             let reward_emotes = TwitchEmoteLexicon::default();
-            spawn_twitch_emote_learning(&bus, reward_emotes.clone());
+            spawn_twitch_emote_learning(&bus, reward_emotes.clone(), &services);
             if let Err(e) =
                 register_speech_sub_actions(wiring.sub_actions_mut(), dispatcher, reward_emotes)
             {
@@ -499,7 +503,7 @@ pub(crate) async fn build_runtime(inputs: RuntimeInputs) -> Result<RuntimeHandle
     if !queues_loaded {
         boot_warnings.record(BootWarning::Queues);
     }
-    let live_viewers = spawn_live_viewer_aggregator();
+    let live_viewers = spawn_live_viewer_aggregator(&services);
     let supervisor = IntegrationSupervisor::launch(
         integrations.factories,
         Arc::clone(&backend) as Arc<dyn SettingsRepo>,
@@ -526,6 +530,7 @@ pub(crate) async fn build_runtime(inputs: RuntimeInputs) -> Result<RuntimeHandle
             .obs_install_seed
             .stream_output()
             .into_receiver(),
+        &services,
     );
     let bot_accounts = load_bot_accounts(&backend, &mut boot_warnings).await;
     let timer_scheduler = spawn_timer_scheduler(
@@ -560,7 +565,7 @@ pub(crate) async fn build_runtime(inputs: RuntimeInputs) -> Result<RuntimeHandle
         Arc::clone(&sub_action_registry),
         Arc::clone(&trigger_registry),
     ));
-    spawn_latest_overlay_feed(&bus, overlays.clone());
+    spawn_latest_overlay_feed(&bus, overlays.clone(), &services);
     let donation_audience = DonationOverlayAudience::new(
         Arc::clone(&catalog),
         overlays.clone(),
@@ -568,12 +573,12 @@ pub(crate) async fn build_runtime(inputs: RuntimeInputs) -> Result<RuntimeHandle
     );
     let mut connect_listeners = vec![Arc::new(overlays.clone()) as Arc<dyn OverlayConnectListener>];
     if let Some(waker) = donations.catch_up_waker() {
-        donation_audience.forward_changes_to(&waker);
+        donation_audience.forward_changes_to(&waker, &services);
         connect_listeners.push(Arc::new(waker) as Arc<dyn OverlayConnectListener>);
     }
     delivery_hub
         .set_overlay_connect_listener(Arc::new(OverlayConnectFanout::new(connect_listeners)));
-    donations.spawn_catch_up_release(Arc::new(donation_audience));
+    donations.spawn_catch_up_release(Arc::new(donation_audience), &services);
     match forge_transfer::sweep_abandoned_overlay_imports(
         backend.overlay_repo().as_ref(),
         &overlays.root().await,
@@ -609,6 +614,7 @@ pub(crate) async fn build_runtime(inputs: RuntimeInputs) -> Result<RuntimeHandle
 
     Ok(RuntimeHandles {
         rt_handle: tokio::runtime::Handle::current(),
+        services,
         log_tail,
         backend,
         settings_catalog,

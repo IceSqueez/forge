@@ -8,6 +8,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use forge_events::{
     ActionDone, ConnectionState, Event, PlatformConnectionChanged, RunOutcome, TypedEvent,
 };
+use forge_net::TaskOwner;
 use forge_types::ActionId;
 use tokio::sync::{mpsc, watch};
 use tokio::time::Instant;
@@ -51,6 +52,7 @@ impl NotificationPolicyHandle {
 pub fn spawn_notification_policy(
     bus: &EventBus,
     initial: NotificationPreferences,
+    tasks: &TaskOwner,
 ) -> NotificationPolicyHandle {
     let (preferences_tx, preferences) = watch::channel(initial);
     let (intents_tx, intents_rx) = mpsc::channel(NOTIFICATION_INTENT_CAPACITY);
@@ -60,7 +62,7 @@ pub fn spawn_notification_policy(
         preferences,
         intents: intents_tx,
     };
-    tokio::spawn(policy.run(bus.subscribe_observer(NOTIFICATION_POLICY)));
+    tasks.spawn_until_stopped(policy.run(bus.subscribe_observer(NOTIFICATION_POLICY)));
     NotificationPolicyHandle {
         preferences: Arc::new(preferences_tx),
         intents: Arc::new(Mutex::new(Some(NotificationIntents::new(intents_rx)))),
@@ -223,7 +225,7 @@ mod tests {
 
     async fn rig(preferences: NotificationPreferences) -> Rig {
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
-        let policy = spawn_notification_policy(&bus, preferences);
+        let policy = spawn_notification_policy(&bus, preferences, &TaskOwner::new());
         let intents = policy.take_intents().unwrap();
         settle().await;
         Rig {

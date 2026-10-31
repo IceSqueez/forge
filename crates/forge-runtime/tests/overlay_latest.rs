@@ -164,6 +164,7 @@ struct Harness {
     slots: Arc<SlotStore>,
     retained: RetainedStore,
     service: OverlayServiceHandle,
+    tasks: forge_net::TaskOwner,
 }
 
 impl Harness {
@@ -191,7 +192,9 @@ impl Harness {
 
         let sink = Arc::new(RecordingSink::default());
         let slots = Arc::new(SlotStore::default());
+        let tasks = forge_net::TaskOwner::new();
         let service = OverlayServiceHandle::new(OverlayServiceParts {
+            tasks: tasks.clone(),
             repo: Arc::new(repo) as Arc<dyn OverlayRepo>,
             settings: Arc::new(MemorySettings::new()) as Arc<dyn SettingsRepo>,
             kinds: Arc::new(kinds),
@@ -207,6 +210,7 @@ impl Harness {
             slots,
             retained,
             service,
+            tasks,
         }
     }
 
@@ -403,7 +407,7 @@ async fn a_latest_changed_event_refreshes_the_overlays_bound_to_that_slot() {
     harness
         .slots
         .fill(LATEST_DONATION_SLOT, latest_fields::USER_NAME, LIVE_DONOR);
-    spawn_latest_overlay_feed(&bus, harness.service.clone());
+    spawn_latest_overlay_feed(&bus, harness.service.clone(), &forge_net::TaskOwner::new());
 
     bus.publish(
         LatestChanged {
@@ -442,7 +446,7 @@ async fn a_feed_that_fell_behind_the_bus_refreshes_every_slot() {
     harness
         .slots
         .fill(NOW_PLAYING_SLOT, latest_fields::TITLE, LIVE_TRACK);
-    spawn_latest_overlay_feed(&bus, harness.service.clone());
+    spawn_latest_overlay_feed(&bus, harness.service.clone(), &forge_net::TaskOwner::new());
 
     for _ in 0..3 {
         bus.publish(Event::new(
@@ -460,4 +464,26 @@ async fn a_feed_that_fell_behind_the_bus_refreshes_every_slot() {
         ),
         (vec![LIVE_TRACK.to_owned()], vec![LIVE_DONOR.to_owned()])
     );
+}
+
+#[tokio::test(start_paused = true)]
+async fn stopping_the_owner_ends_the_latest_feed_and_a_pending_preview_restore() {
+    let bus = EventBus::new(Arc::new(NullEventLogRepo));
+    let harness = Harness::new(
+        &[latest("last-donation", LATEST_DONATION_SLOT)],
+        Arc::clone(&bus),
+    );
+    spawn_latest_overlay_feed(&bus, harness.service.clone(), &harness.tasks);
+    harness
+        .service
+        .test_fire(&OverlayId::new("last-donation"), &common::NeutralSamples)
+        .await
+        .unwrap();
+    let frames_before = harness.sink.identities().len();
+
+    let stopped = harness.tasks.shutdown(PREVIEW_HOLD / 2).await;
+    tokio::time::sleep(PREVIEW_HOLD * 2).await;
+
+    assert_eq!(stopped, forge_net::TaskShutdown::Drained);
+    assert_eq!(harness.sink.identities().len(), frames_before);
 }

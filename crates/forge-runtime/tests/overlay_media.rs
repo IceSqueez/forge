@@ -277,6 +277,7 @@ fn harness(config: OverlayConfig, library_world: Option<MediaWorld>) -> Harness 
     let world: World = Arc::new(Mutex::new(library_world.unwrap_or_default()));
 
     let service = OverlayServiceHandle::new(OverlayServiceParts {
+        tasks: forge_net::TaskOwner::new(),
         repo: Arc::new(repo) as Arc<dyn OverlayRepo>,
         settings: Arc::new(settings) as Arc<dyn SettingsRepo>,
         kinds: registry(),

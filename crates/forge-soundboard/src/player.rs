@@ -24,8 +24,6 @@ const MAX_VOLUME: f32 = 1.0;
 
 const PLAYBACK_TAIL_MS: u64 = 200;
 
-const LOOP_POLL_MS: u64 = 50;
-
 const LOOP_MIN_CYCLE_MS: u64 = 50;
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -684,14 +682,9 @@ async fn run_loop(looped: LoopPlay) {
 }
 
 async fn wait_cycle(control: &PlayControl, cycle_ms: u64) {
-    let mut waited = 0u64;
-    while waited < cycle_ms {
-        if control.is_stopped() {
-            return;
-        }
-        let step = LOOP_POLL_MS.min(cycle_ms - waited);
-        tokio::time::sleep(Duration::from_millis(step)).await;
-        waited += step;
+    tokio::select! {
+        () = control.stopped() => {}
+        () = tokio::time::sleep(Duration::from_millis(cycle_ms)) => {}
     }
 }
 

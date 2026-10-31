@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_events::DONATION_RECEIVED_KIND;
+use forge_net::TaskOwner;
 use forge_registry::SubActionRegistry;
 use forge_storage::OverlayId;
 use forge_types::LATEST_DONATION_SLOT;
@@ -32,17 +33,17 @@ impl DonationOverlayAudience {
         }
     }
 
-    pub fn forward_changes_to(&self, waker: &CatchUpWaker) {
+    pub fn forward_changes_to(&self, waker: &CatchUpWaker, tasks: &TaskOwner) {
         let mut catalog_changes = self.catalog.changes();
         let catalog_waker = waker.clone();
-        tokio::spawn(async move {
+        tasks.spawn_until_stopped(async move {
             while catalog_changes.changed().await.is_some() {
                 catalog_waker.wake();
             }
         });
         let mut overlay_changes = self.overlays.definition_changes();
         let overlay_waker = waker.clone();
-        tokio::spawn(async move {
+        tasks.spawn_until_stopped(async move {
             while overlay_changes.changed().await {
                 overlay_waker.wake();
             }

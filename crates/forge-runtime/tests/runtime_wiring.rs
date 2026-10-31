@@ -342,9 +342,11 @@ async fn stopping_scheduled_runs_whose_worker_never_started_returns() {
 
     drop(runtime.scheduled_runs_worker);
 
-    timeout(HANG_GUARD, runtime.scheduled_runs.stop())
-        .await
-        .expect("a stop waited for a worker that can never mark itself stopped");
+    assert_eq!(
+        runtime.scheduled_runs.stop(HANG_GUARD).await,
+        forge_net::TaskShutdown::Drained,
+        "a stop waited for a worker that can never start",
+    );
 }
 
 #[derive(Default)]

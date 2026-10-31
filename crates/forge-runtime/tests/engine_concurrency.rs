@@ -8,6 +8,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use forge_events::Event;
 use forge_events::EventSubscription;
+use forge_net::TaskShutdown;
 use forge_registry::{
     FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionRegistry,
     SubActionRunner,
@@ -1118,4 +1119,68 @@ async fn clearing_without_keeping_current_cancels_a_running_alongside_run() {
 
     assert_eq!(r.next_saved().await.outcome, ExecutionOutcome::Cancelled);
     r.sched.shutdown();
+}
+
+const STOP_GRACE: Duration = Duration::from_secs(1);
+
+#[tokio::test(start_paused = true)]
+async fn stop_returns_only_after_the_running_action_and_its_queue_tasks_have_ended() {
+    let q = QueueId::new();
+    let waiting = long_wait_then_instant(q);
+    let mut r = rig(vec![queue(q, 1)], &[&waiting]).await;
+    let mut sub = r.bus.subscribe();
+    r.sched.dispatch(req(&waiting)).await.unwrap();
+    events_until(&mut sub, start_of(&waiting)).await;
+
+    r.sched.shutdown();
+    r.engine.shutdown();
+    let (queues, engine) = tokio::join!(r.sched.stopped(STOP_GRACE), r.engine.stopped(STOP_GRACE));
+
+    assert_eq!(
+        (queues, engine),
+        (TaskShutdown::Drained, TaskShutdown::Drained)
+    );
+    assert_eq!(r.next_saved().await.outcome, ExecutionOutcome::Cancelled);
+}
+
+#[tokio::test(start_paused = true)]
+async fn stop_with_nothing_running_ends_the_engine_and_every_queue_worker() {
+    let q = QueueId::new();
+    let r = rig(vec![queue(q, 1), queue(QueueId::new(), 2)], &[]).await;
+
+    let (queues, engine) = tokio::join!(r.sched.stopped(STOP_GRACE), r.engine.stopped(STOP_GRACE));
+
+    assert_eq!(
+        (queues, engine),
+        (TaskShutdown::Drained, TaskShutdown::Drained)
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn stop_ends_a_running_quick_action_before_returning() {
+    let r = rig(Vec::new(), &[]).await;
+    let pending = quick(&r.engine, UNTIL_CANCELLED_KIND_ID).await;
+    r.until_cancelled_running.notified().await;
+
+    let stopped = r.engine.stopped(STOP_GRACE).await;
+
+    assert_eq!(stopped, TaskShutdown::Drained);
+    assert!(pending.outcome().await.is_ok());
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_run_that_ignores_the_cancel_is_dropped_when_the_grace_runs_out() {
+    let q = QueueId::new();
+    let stuck = single(q, SLOW_KIND_ID);
+    let r = rig(vec![queue(q, 1)], &[&stuck]).await;
+    let mut sub = r.bus.subscribe();
+    r.sched.dispatch(req(&stuck)).await.unwrap();
+    events_until(&mut sub, start_of(&stuck)).await;
+    let asked = tokio::time::Instant::now();
+
+    let (queues, engine) = tokio::join!(r.sched.stopped(STOP_GRACE), r.engine.stopped(STOP_GRACE));
+
+    assert_eq!(asked.elapsed(), STOP_GRACE);
+    assert!(matches!(queues, TaskShutdown::Aborted { .. }), "{queues:?}");
+    assert!(matches!(engine, TaskShutdown::Aborted { .. }), "{engine:?}");
 }

@@ -11,6 +11,7 @@ mod header_value;
 mod rate_limit;
 pub mod status;
 mod status_reason;
+mod task_owner;
 #[cfg(any(test, feature = "test-support"))]
 pub mod test_support;
 mod throttle_hint;
@@ -39,6 +40,7 @@ pub use rate_limit::{
     DEFAULT_RETRY_AFTER_SECS, RateLimitError, RateLimitOutcome, RateLimiter, TokenBucketRateLimiter,
 };
 pub use status_reason::{canonical_status_reason, status_class};
+pub use task_owner::{TaskOwner, TaskShutdown};
 pub use throttle_hint::{
     ThrottleHint, ThrottleHintFamily, ThrottleScope, parse_retry_after, parse_throttle_hint,
 };

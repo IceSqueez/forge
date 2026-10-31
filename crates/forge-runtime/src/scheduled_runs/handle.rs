@@ -1,12 +1,13 @@
 use std::sync::Arc;
+use std::time::Duration;
 
+use forge_net::{TaskOwner, TaskShutdown};
 use forge_storage::{ScheduledRunId, ScheduledRunRepo};
 use tokio::sync::{mpsc, oneshot, watch};
 
 use super::hand_off::HandOff;
 use super::request::{ScheduleError, ScheduleRequest, ScheduledPlacement, normalized_key};
 use super::waiting::{WaitingForQueueWatch, WaitingRuns};
-use crate::task_stop::TaskStop;
 use forge_types::WallClock;
 
 pub(super) enum Command {
@@ -26,7 +27,7 @@ pub struct ScheduledRunsHandle {
     repo: Arc<dyn ScheduledRunRepo>,
     clock: Arc<dyn WallClock>,
     waiting: watch::Receiver<WaitingRuns>,
-    stop: TaskStop,
+    tasks: TaskOwner,
 }
 
 impl ScheduledRunsHandle {
@@ -35,19 +36,19 @@ impl ScheduledRunsHandle {
         repo: Arc<dyn ScheduledRunRepo>,
         clock: Arc<dyn WallClock>,
         waiting: watch::Receiver<WaitingRuns>,
-        stop: TaskStop,
+        tasks: TaskOwner,
     ) -> Self {
         Self {
             commands,
             repo,
             clock,
             waiting,
-            stop,
+            tasks,
         }
     }
 
-    pub async fn stop(self) {
-        self.stop.stop().await;
+    pub async fn stop(self, grace: Duration) -> TaskShutdown {
+        self.tasks.shutdown(grace).await
     }
 
     pub fn watch_waiting_for_queue(&self) -> WaitingForQueueWatch {

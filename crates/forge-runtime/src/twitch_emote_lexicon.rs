@@ -2,14 +2,14 @@ use std::collections::{HashSet, VecDeque};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use forge_events::{Event, EventSource};
+use forge_net::TaskOwner;
 use forge_registry::chat_emote_codes;
-use tokio::task::JoinHandle;
 
 use crate::bus::EventBus;
+use crate::delivery::TWITCH_EMOTE_LEXICON;
 use forge_events::Delivery;
 
 pub(crate) const LEARNED_TWITCH_EMOTE_CAPACITY: usize = 4096;
-const LEXICON_OBSERVER: &str = "twitch-emote-lexicon";
 
 #[derive(Default)]
 struct LearnedCodes {
@@ -71,9 +71,9 @@ impl TwitchEmoteLexicon {
     }
 }
 
-pub fn spawn_twitch_emote_learning(bus: &EventBus, lexicon: TwitchEmoteLexicon) -> JoinHandle<()> {
-    let mut events = bus.subscribe_observer(LEXICON_OBSERVER);
-    tokio::spawn(async move {
+pub fn spawn_twitch_emote_learning(bus: &EventBus, lexicon: TwitchEmoteLexicon, tasks: &TaskOwner) {
+    let mut events = bus.subscribe_observer(TWITCH_EMOTE_LEXICON);
+    tasks.spawn_until_stopped(async move {
         loop {
             match events.next().await {
                 Delivery::Event(event) => lexicon.learn_from(&event),
@@ -81,7 +81,7 @@ pub fn spawn_twitch_emote_learning(bus: &EventBus, lexicon: TwitchEmoteLexicon) 
                 Delivery::Closed => break,
             }
         }
-    })
+    });
 }
 
 #[cfg(test)]
@@ -186,18 +186,20 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn the_learning_task_learns_from_the_bus_and_stops_when_it_closes() {
+    async fn the_learning_task_learns_from_the_bus_until_stopped() {
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let lexicon = TwitchEmoteLexicon::default();
-        let task = spawn_twitch_emote_learning(&bus, lexicon.clone());
+        let tasks = TaskOwner::new();
+        spawn_twitch_emote_learning(&bus, lexicon.clone(), &tasks);
 
         bus.publish(chat_event(EventSource::Twitch, &owned(&["LUL"])));
-        drop(bus);
-        tokio::time::timeout(std::time::Duration::from_secs(30), task)
-            .await
-            .unwrap()
-            .unwrap();
+        while lexicon.codes_in("LUL hi").is_empty() {
+            tokio::task::yield_now().await;
+        }
 
+        let stopped = tasks.shutdown(std::time::Duration::from_secs(30)).await;
+
+        assert_eq!(stopped, forge_net::TaskShutdown::Drained);
         assert_eq!(lexicon.codes_in("LUL hi"), owned(&["LUL"]));
     }
 }

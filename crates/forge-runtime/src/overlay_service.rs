@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use forge_events::{Event, EventSource};
+use forge_net::TaskOwner;
 use forge_overlay::{
     DEFAULT_DISPLAY_SECS, DeliveryDisposition, GENERATOR_VERSION, MaterializeReport,
     OverlayInstance, OverlayKindDescriptor, OverlayKindRegistry, OverlayMedia, SampleContext,
@@ -174,6 +175,7 @@ struct OverlayService {
     speaker: Option<Arc<dyn SpeakDispatcher>>,
     latest: Option<Arc<dyn LatestValueReader>>,
     definitions: OverlayDefinitionRevision,
+    tasks: TaskOwner,
 }
 
 pub struct OverlayServiceParts {
@@ -185,6 +187,7 @@ pub struct OverlayServiceParts {
     pub media: Option<OverlayMediaLibrary>,
     pub speaker: Option<Arc<dyn SpeakDispatcher>>,
     pub latest: Option<Arc<dyn LatestValueReader>>,
+    pub tasks: TaskOwner,
 }
 
 #[derive(Clone)]
@@ -203,8 +206,13 @@ impl OverlayServiceHandle {
             media,
             speaker,
             latest,
+            tasks,
         } = parts;
-        let shows = Arc::new(ShowSequencer::new(Arc::clone(&frames), speaker.clone()));
+        let shows = Arc::new(ShowSequencer::new(
+            Arc::clone(&frames),
+            speaker.clone(),
+            tasks.clone(),
+        ));
         Self {
             inner: Arc::new(OverlayService {
                 repo,
@@ -218,6 +226,7 @@ impl OverlayServiceHandle {
                 speaker,
                 latest,
                 definitions: OverlayDefinitionRevision::default(),
+                tasks,
             }),
         }
     }
@@ -547,7 +556,7 @@ impl OverlayServiceHandle {
         let Some(speaker) = self.inner.speaker.clone() else {
             return;
         };
-        tokio::spawn(async move {
+        self.inner.tasks.spawn_until_stopped(async move {
             let overlay = speech.overlay.clone();
             if let Err(e) = speaker
                 .speak_for_show(speech, CancelSignal::new(), SpeechStartSignal::new())
@@ -620,7 +629,7 @@ impl OverlayServiceHandle {
 
     fn restore_after_preview(&self, id: OverlayId) {
         let handle = self.clone();
-        tokio::spawn(async move {
+        self.inner.tasks.spawn_until_stopped(async move {
             tokio::time::sleep(LATEST_PREVIEW_HOLD).await;
             if let Err(error) = handle.replay_retained(&id).await {
                 tracing::warn!(overlay = %id, %error, "latest value did not return after a preview");
@@ -914,6 +923,7 @@ mod tests {
 
     fn handle_with(frames: Arc<dyn OverlayFrameSink>) -> OverlayServiceHandle {
         OverlayServiceHandle::new(OverlayServiceParts {
+            tasks: forge_net::TaskOwner::new(),
             repo: Arc::new(MockOverlayRepo::new()),
             settings: Arc::new(MemorySettings::new()),
             kinds: Arc::new(OverlayKindRegistry::new()),
@@ -990,6 +1000,7 @@ mod tests {
         let mut repo = MockOverlayRepo::new();
         repo.expect_delete().times(1).returning(move |_| outcome());
         OverlayServiceHandle::new(OverlayServiceParts {
+            tasks: forge_net::TaskOwner::new(),
             repo: Arc::new(repo),
             settings: Arc::new(MemorySettings::new()),
             kinds: Arc::new(OverlayKindRegistry::new()),

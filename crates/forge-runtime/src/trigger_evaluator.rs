@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use forge_events::{CommandMatched, Event, EventSource, TypedEvent};
+use forge_net::TaskOwner;
 use forge_registry::{
     ChatTriggerFamily, TriggerKindDescriptor, TriggerRegistry, effective_config,
     ignores_bot_messages, kind_matches_prefix,
@@ -19,7 +20,6 @@ use crate::catalog::{Catalog, CatalogSnapshot};
 use crate::cooldown::{CooldownKey, CooldownMap};
 use crate::delivery::{CriticalSubscription, TRIGGER_EVALUATOR};
 use crate::event_log_bridge::identity_digest;
-use crate::task_stop::{StopListener, TaskStop, task_stop};
 use crate::{
     Config, EventBus, QueueAdmission, QueueSchedulerHandle, SchedulerError, SchedulerRequest,
 };
@@ -31,7 +31,7 @@ pub const TRIGGER_BLOCKED_KIND: &str = "trigger.blocked";
 
 const MAX_RESOLVED_EVENT_SHAPES: usize = 4096;
 
-pub type TriggerEvaluatorHandle = TaskStop;
+pub type TriggerEvaluatorHandle = TaskOwner;
 
 pub(crate) struct TriggerEvaluator {
     bus: Arc<EventBus>,
@@ -68,19 +68,17 @@ impl TriggerEvaluator {
             cooldowns: CooldownMap::new(config.max_cooldown_entries),
             resolved: ResolvedBindings::default(),
         };
-        let (handle, listener) = task_stop();
-        tokio::spawn(async move {
-            evaluator.run(&listener).await;
-            listener.mark_stopped();
-        });
-        handle
+        let tasks = TaskOwner::new();
+        let stop = tasks.clone();
+        tasks.spawn(async move { evaluator.run(&stop).await });
+        tasks
     }
 
-    async fn run(mut self, stop: &StopListener) {
+    async fn run(mut self, stop: &TaskOwner) {
         loop {
             let event = tokio::select! {
                 biased;
-                () = stop.requested() => break,
+                () = stop.stopped() => break,
                 received = self.subscription.recv() => match received {
                     Some(event) => event,
                     None => break,
@@ -787,10 +785,10 @@ mod tests {
         let handle = fixture.spawn_evaluator();
         let_spawned_tasks_park().await;
 
-        let stopped = tokio::time::timeout(HANG_GUARD, handle.stop()).await;
+        let stopped = handle.shutdown(HANG_GUARD).await == forge_net::TaskShutdown::Drained;
 
         assert!(
-            stopped.is_ok(),
+            stopped,
             "an evaluator parked on an empty bus must hear the stop"
         );
     }
@@ -804,9 +802,9 @@ mod tests {
         bus.publish(matching_event());
         bus.publish(matching_event());
 
-        let stopped = tokio::time::timeout(HANG_GUARD, handle.stop()).await;
+        let stopped = handle.shutdown(HANG_GUARD).await == forge_net::TaskShutdown::Drained;
 
-        assert_eq!((stopped.is_ok(), count_done(&mut sub, 2).await), (true, 2));
+        assert_eq!((stopped, count_done(&mut sub, 2).await), (true, 2));
     }
 
     #[tokio::test]
@@ -819,9 +817,9 @@ mod tests {
         bus.publish(matching_event());
         tokio::task::yield_now().await;
 
-        let stopped = tokio::time::timeout(HANG_GUARD, handle.stop()).await;
+        let stopped = handle.shutdown(HANG_GUARD).await == forge_net::TaskShutdown::Drained;
 
-        assert_eq!((stopped.is_ok(), count_done(&mut sub, 1).await), (true, 1));
+        assert_eq!((stopped, count_done(&mut sub, 1).await), (true, 1));
     }
 
     #[tokio::test]
@@ -831,9 +829,8 @@ mod tests {
         let gone = EventBus::new(Arc::new(NullEventLogRepo));
         let evaluator = fixture.evaluator(gone.subscribe_critical(TRIGGER_EVALUATOR));
         drop(gone);
-        let (_stop, listener) = task_stop();
 
-        let finished = tokio::time::timeout(HANG_GUARD, evaluator.run(&listener)).await;
+        let finished = tokio::time::timeout(HANG_GUARD, evaluator.run(&TaskOwner::new())).await;
 
         assert!(finished.is_ok());
     }

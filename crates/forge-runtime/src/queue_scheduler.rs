@@ -1,8 +1,9 @@
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use forge_events::{ActionSkipped, Event, EventSource, TypedEvent};
+use forge_net::{TaskOwner, TaskShutdown};
 use forge_registry::CancelSignal;
 use forge_types::{Action, ActionId, ArgStack, EventId, Queue, QueueId};
 use serde::{Deserialize, Serialize};
@@ -202,6 +203,7 @@ pub struct QueueSchedulerHandle {
     sender: mpsc::UnboundedSender<SchedulerCommand>,
     depths: DepthBoard,
     intake_changes: watch::Receiver<()>,
+    tasks: TaskOwner,
 }
 
 enum SchedulerCommand {
@@ -585,12 +587,17 @@ impl QueueSchedulerHandle {
         self.depths.watch()
     }
 
-    pub fn shutdown(self) {
+    pub fn shutdown(&self) {
         #[expect(
             clippy::let_underscore_must_use,
             reason = "the scheduler may already have stopped"
         )]
         let _ = self.sender.send(SchedulerCommand::Shutdown);
+    }
+
+    pub async fn stopped(&self, grace: Duration) -> TaskShutdown {
+        self.shutdown();
+        self.tasks.shutdown(grace).await
     }
 
     pub async fn queue_states(
@@ -610,6 +617,7 @@ pub struct QueueSchedulerStart {
     commands: mpsc::UnboundedReceiver<SchedulerCommand>,
     depths: DepthBoard,
     intake_tx: watch::Sender<()>,
+    tasks: TaskOwner,
 }
 
 impl QueueSchedulerStart {
@@ -618,18 +626,26 @@ impl QueueSchedulerStart {
             commands,
             depths,
             intake_tx,
+            tasks,
         } = self;
         let engine = Arc::new(engine);
 
         let mut slots: HashMap<QueueId, QueueSlot> = HashMap::with_capacity(initial_queues.len());
         for queue in initial_queues {
             let id = queue.id;
-            let slot = QueueScheduler::make_queue_slot(queue, Arc::clone(&engine), &depths, &bus);
+            let slot =
+                QueueScheduler::make_queue_slot(queue, Arc::clone(&engine), &depths, &bus, &tasks);
             slots.insert(id, slot);
         }
 
-        tokio::spawn(QueueScheduler::run_scheduler(
-            commands, slots, bus, engine, depths, intake_tx,
+        tasks.spawn(QueueScheduler::run_scheduler(
+            commands,
+            slots,
+            bus,
+            engine,
+            depths,
+            intake_tx,
+            tasks.clone(),
         ));
     }
 }
@@ -640,6 +656,7 @@ struct Launcher {
     engine: Arc<ActionEngineHandle>,
     inflight: InflightTracker,
     bus: Arc<EventBus>,
+    tasks: TaskOwner,
 }
 
 impl Launcher {
@@ -658,7 +675,7 @@ impl Launcher {
         let cancel = CancelSignal::new();
         let id = self.inflight.register(cancel.clone(), action_id);
         let launcher = self.clone();
-        tokio::spawn(async move {
+        self.tasks.spawn(async move {
             let (done_tx, done_rx) = oneshot::channel::<()>();
             let dispatched = match origin {
                 Some(origin) => {
@@ -699,15 +716,18 @@ impl QueueScheduler {
         let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
         let depths = DepthBoard::new();
         let (intake_tx, intake_changes) = watch::channel(());
+        let tasks = TaskOwner::new();
         let handle = QueueSchedulerHandle {
             sender: cmd_tx,
             depths: depths.clone(),
             intake_changes,
+            tasks: tasks.clone(),
         };
         let start = QueueSchedulerStart {
             commands: cmd_rx,
             depths,
             intake_tx,
+            tasks,
         };
         (handle, start)
     }
@@ -727,6 +747,7 @@ impl QueueScheduler {
         engine: Arc<ActionEngineHandle>,
         depths: &DepthBoard,
         bus: &Arc<EventBus>,
+        tasks: &TaskOwner,
     ) -> QueueSlot {
         let mode = QueueMode::default();
         let (processing_tx, processing_rx) = watch::channel(mode.processing);
@@ -740,13 +761,14 @@ impl QueueScheduler {
             engine,
             inflight: inflight.clone(),
             bus: Arc::clone(bus),
+            tasks: tasks.clone(),
         };
-        tokio::spawn(Self::run_alongside(
+        tasks.spawn(Self::run_alongside(
             pending.clone(),
             processing_tx.subscribe(),
             launcher.clone(),
         ));
-        tokio::spawn(Self::run_bounded(
+        tasks.spawn(Self::run_bounded(
             pending.clone(),
             processing_rx,
             launcher,
@@ -830,6 +852,7 @@ impl QueueScheduler {
         engine: Arc<ActionEngineHandle>,
         depths: DepthBoard,
         intake_changed: watch::Sender<()>,
+        tasks: TaskOwner,
     ) {
         while let Some(cmd) = cmd_rx.recv().await {
             match cmd {
@@ -892,7 +915,13 @@ impl QueueScheduler {
                         MembershipOutcome::AlreadyRegistered
                     } else {
                         let id = queue.id;
-                        let slot = Self::make_queue_slot(queue, Arc::clone(&engine), &depths, &bus);
+                        let slot = Self::make_queue_slot(
+                            queue,
+                            Arc::clone(&engine),
+                            &depths,
+                            &bus,
+                            &tasks,
+                        );
                         slots.insert(id, slot);
                         intake_changed.send_replace(());
                         MembershipOutcome::Applied

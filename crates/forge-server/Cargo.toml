@@ -33,6 +33,7 @@ async-trait = { workspace = true }
 
 [dev-dependencies]
 forge-test-support = { path = "../forge-test-support" }
+forge-net = { path = "../forge-net" }
 forge-runtime = { path = "../forge-runtime", features = ["test-support"] }
 forge-registry = { path = "../forge-registry" }
 tokio-tungstenite = { workspace = true }

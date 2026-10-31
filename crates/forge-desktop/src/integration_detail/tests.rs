@@ -372,7 +372,7 @@ mod quick_action_bridge {
                 Arc::new(TriggerRegistry::new()),
                 Arc::clone(&bus) as Arc<dyn EventPublisher>,
                 Arc::clone(&bus),
-                spawn_live_viewer_aggregator(),
+                spawn_live_viewer_aggregator(&forge_net::TaskOwner::new()),
                 None,
                 kick_slot,
                 None,
@@ -942,7 +942,7 @@ mod sign_out {
             settings as Arc<dyn SettingsRepo>,
             forge_runtime::IntegrationGate::new(),
             Arc::new(crate::integrations::BuiltinRegistry::default()),
-            forge_runtime::spawn_live_viewer_aggregator(),
+            forge_runtime::spawn_live_viewer_aggregator(&forge_net::TaskOwner::new()),
         );
         let slot = supervisor.slot(&IntegrationId::new("kick")).unwrap();
         rt.block_on(slot.set_enabled(true)).unwrap();

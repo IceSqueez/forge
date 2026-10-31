@@ -52,7 +52,6 @@ pub mod settings;
 mod speak_dispatcher;
 mod stream_live;
 mod sub_action_runners;
-mod task_stop;
 #[cfg(test)]
 mod test_support;
 mod timer_scheduler;
@@ -202,7 +201,6 @@ pub use sub_action_runners::{
     SCRIPT_TARGET_VAR_KEY, ScriptRunInlineRunner, ServerBroadcastRunner, SystemNotifyPort,
     TwitchChatSendMessageRunner, WAIT_KIND_ID, WAIT_MS_KEY, translate_legacy_time_steps,
 };
-pub use task_stop::TaskStop;
 pub use triggers::{
     DONATION_PROVIDER_OPTIONS_KEY, DonationReceivedDescriptor, TIMER_TICK_KIND, TimerSchedule,
     TimerTickDescriptor, timer_every_message,

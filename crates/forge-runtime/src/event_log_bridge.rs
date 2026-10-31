@@ -5,6 +5,7 @@ use crate::bus::EventBus;
 use crate::delivery::EVENT_TRAIL;
 use forge_events::Delivery;
 use forge_events::Event;
+use forge_net::TaskOwner;
 use forge_types::RedactedText;
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
@@ -28,9 +29,9 @@ const HANDLE_KEYS: &[&str] = &[
     "username",
 ];
 
-pub fn spawn_event_log_bridge(bus: Arc<EventBus>) {
+pub fn spawn_event_log_bridge(bus: Arc<EventBus>, tasks: &TaskOwner) {
     let subscription = bus.subscribe_observer(EVENT_TRAIL);
-    tokio::spawn(async move {
+    tasks.spawn_until_stopped(async move {
         let mut subscription = subscription;
         loop {
             match subscription.next().await {

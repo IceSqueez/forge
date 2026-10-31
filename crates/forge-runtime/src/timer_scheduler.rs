@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use forge_events::{ChatSent, Event, TypedEvent};
+use forge_net::TaskOwner;
 use forge_registry::{TriggerKindDescriptor, effective_config};
 use forge_storage::CatalogChanges;
 use forge_types::{PlatformScope, Shared, TriggerInstanceId, UserBadge};
@@ -14,7 +15,6 @@ use crate::chat_stream::{ChatRecord, ChatRecordMapper};
 use crate::delivery::TIMER_SCHEDULER;
 use crate::own_chat_echoes::OwnChatEchoes;
 use crate::stream_live::StreamLiveHandle;
-use crate::task_stop::{StopListener, TaskStop, task_stop};
 use crate::triggers::{TIMER_TICK_KIND, TimerSchedule, TimerTickDescriptor};
 use forge_events::{Delivery, EventSubscription};
 
@@ -59,7 +59,7 @@ struct TimerScheduler {
     bot_accounts: Shared<Vec<String>>,
 }
 
-pub type TimerSchedulerHandle = TaskStop;
+pub type TimerSchedulerHandle = TaskOwner;
 
 pub fn spawn_timer_scheduler(
     bus: Arc<EventBus>,
@@ -78,12 +78,10 @@ pub fn spawn_timer_scheduler(
         own_echoes: OwnChatEchoes::default(),
         bot_accounts,
     };
-    let (handle, listener) = task_stop();
-    tokio::spawn(async move {
-        scheduler.run(changes, stream_live, chat, &listener).await;
-        listener.mark_stopped();
-    });
-    handle
+    let tasks = TaskOwner::new();
+    let stop = tasks.clone();
+    tasks.spawn(async move { scheduler.run(changes, stream_live, chat, &stop).await });
+    tasks
 }
 
 impl TimerScheduler {
@@ -92,7 +90,7 @@ impl TimerScheduler {
         mut changes: CatalogChanges,
         mut stream_live: StreamLiveHandle,
         mut chat: EventSubscription,
-        stop: &StopListener,
+        stop: &TaskOwner,
     ) {
         self.reconcile().await;
         let mut catalog_open = true;
@@ -101,7 +99,7 @@ impl TimerScheduler {
             let next_fire = self.armed.values().map(|timer| timer.next_fire).min();
             tokio::select! {
                 biased;
-                () = stop.requested() => return,
+                () = stop.stopped() => return,
                 revision = changes.changed(), if catalog_open => match revision {
                     Some(_) => self.reconcile().await,
                     None => catalog_open = false,
@@ -387,9 +385,9 @@ mod tests {
             revision.clone(),
         );
 
-        let viewers = spawn_live_viewer_aggregator();
+        let viewers = spawn_live_viewer_aggregator(&forge_net::TaskOwner::new());
         let (obs, obs_active) = tokio::sync::watch::channel(false);
-        let stream_live = spawn_stream_live_signal(&viewers, obs_active);
+        let stream_live = spawn_stream_live_signal(&viewers, obs_active, &TaskOwner::new());
         let (source, live_reports) = channel_viewer_source();
         viewers.register(PlatformId::Twitch, source);
 
@@ -522,9 +520,10 @@ mod tests {
         let mut rig = rig(vec![Timer::every(10).instance()]).await;
         let before_stop = rig.tick_count_over(10 * MINUTE).await;
 
-        tokio::time::timeout(SECOND, rig.stop.clone().stop())
-            .await
-            .expect("stop never returned");
+        assert_eq!(
+            rig.stop.shutdown(SECOND).await,
+            forge_net::TaskShutdown::Drained
+        );
 
         let after_stop = rig.tick_count_over(60 * MINUTE).await;
         assert_eq!((before_stop, after_stop), (1, 0));
@@ -535,9 +534,10 @@ mod tests {
         let rig = rig(vec![Timer::every(10).instance()]).await;
         let asked = Instant::now();
 
-        tokio::time::timeout(SECOND, rig.stop.clone().stop())
-            .await
-            .expect("stop never returned");
+        assert_eq!(
+            rig.stop.shutdown(SECOND).await,
+            forge_net::TaskShutdown::Drained
+        );
 
         assert_eq!(asked.elapsed(), Duration::ZERO);
     }

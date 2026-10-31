@@ -323,7 +323,9 @@ mod tests {
         initial: NotificationPreferences,
     ) -> NotificationPolicyHandle {
         let bus = quiet_bus(rt);
-        rt.block_on(async { spawn_notification_policy(&bus, initial) })
+        rt.block_on(async {
+            spawn_notification_policy(&bus, initial, &forge_net::TaskOwner::new())
+        })
     }
 
     fn mount(

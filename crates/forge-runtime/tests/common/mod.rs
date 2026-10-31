@@ -235,6 +235,7 @@ pub(crate) async fn wiring_parts(
     )
     .await;
     RuntimeWiringParts {
+        tasks: forge_net::TaskOwner::new(),
         bus,
         provider,
         latest_values,

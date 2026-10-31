@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
+use forge_net::TaskOwner;
 use forge_platform_core::{LiveViewerSource, ViewerReport};
 use forge_types::PlatformId;
 use futures_core::Stream;
@@ -45,6 +46,7 @@ pub struct LiveViewerAggregatorHandle {
     next_generation: Arc<AtomicU64>,
     forwarders: Arc<Mutex<BTreeMap<PlatformId, AbortHandle>>>,
     runtime: Handle,
+    tasks: TaskOwner,
 }
 
 impl LiveViewerAggregatorHandle {
@@ -52,43 +54,45 @@ impl LiveViewerAggregatorHandle {
         let mut forwarders = self.lock_forwarders();
         let generation = self.next_generation.fetch_add(1, Ordering::Relaxed);
         let commands = self.commands.clone();
-        let forwarder = self.runtime.spawn(async move {
-            if commands
-                .send(AggregatorCommand::Attach {
-                    generation,
-                    platform,
-                })
-                .await
-                .is_err()
-            {
-                return;
-            }
-            let mut stream = source.viewer_reports();
-            while let Some(report) = stream.next().await {
+        let forwarder = self
+            .tasks
+            .spawn_until_stopped_on(&self.runtime, async move {
                 if commands
-                    .send(AggregatorCommand::Report {
+                    .send(AggregatorCommand::Attach {
                         generation,
                         platform,
-                        report,
                     })
                     .await
                     .is_err()
                 {
                     return;
                 }
-            }
-            #[expect(
-                clippy::let_underscore_must_use,
-                reason = "a stopped aggregator has nothing left to detach"
-            )]
-            let _ = commands
-                .send(AggregatorCommand::Detach {
-                    generation,
-                    platform,
-                })
-                .await;
-        });
-        if let Some(previous) = forwarders.insert(platform, forwarder.abort_handle()) {
+                let mut stream = source.viewer_reports();
+                while let Some(report) = stream.next().await {
+                    if commands
+                        .send(AggregatorCommand::Report {
+                            generation,
+                            platform,
+                            report,
+                        })
+                        .await
+                        .is_err()
+                    {
+                        return;
+                    }
+                }
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "a stopped aggregator has nothing left to detach"
+                )]
+                let _ = commands
+                    .send(AggregatorCommand::Detach {
+                        generation,
+                        platform,
+                    })
+                    .await;
+            });
+        if let Some(previous) = forwarders.insert(platform, forwarder) {
             previous.abort();
         }
     }
@@ -99,18 +103,19 @@ impl LiveViewerAggregatorHandle {
         }
         let generation = self.next_generation.fetch_add(1, Ordering::Relaxed);
         let commands = self.commands.clone();
-        self.runtime.spawn(async move {
-            #[expect(
-                clippy::let_underscore_must_use,
-                reason = "a stopped aggregator has nothing left to detach"
-            )]
-            let _ = commands
-                .send(AggregatorCommand::Detach {
-                    generation,
-                    platform,
-                })
-                .await;
-        });
+        self.tasks
+            .spawn_until_stopped_on(&self.runtime, async move {
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "a stopped aggregator has nothing left to detach"
+                )]
+                let _ = commands
+                    .send(AggregatorCommand::Detach {
+                        generation,
+                        platform,
+                    })
+                    .await;
+            });
     }
 
     pub fn subscribe(&self) -> impl Stream<Item = LiveViewerCount> + Send + 'static {
@@ -126,11 +131,11 @@ impl LiveViewerAggregatorHandle {
     }
 }
 
-pub fn spawn_live_viewer_aggregator() -> LiveViewerAggregatorHandle {
+pub fn spawn_live_viewer_aggregator(tasks: &TaskOwner) -> LiveViewerAggregatorHandle {
     let (command_tx, command_rx) = mpsc::channel(COMMAND_CHANNEL_CAP);
     let (output_tx, output_rx) = watch::channel(LiveViewerCount::Empty);
     let (platforms_tx, platforms_rx) = watch::channel(LivePlatforms::new());
-    tokio::spawn(aggregate(command_rx, output_tx, platforms_tx));
+    tasks.spawn_until_stopped(aggregate(command_rx, output_tx, platforms_tx));
     LiveViewerAggregatorHandle {
         commands: command_tx,
         output: output_rx,
@@ -138,6 +143,7 @@ pub fn spawn_live_viewer_aggregator() -> LiveViewerAggregatorHandle {
         next_generation: Arc::new(AtomicU64::new(0)),
         forwarders: Arc::new(Mutex::new(BTreeMap::new())),
         runtime: Handle::current(),
+        tasks: tasks.clone(),
     }
 }
 
@@ -256,7 +262,7 @@ mod tests {
 
     #[tokio::test]
     async fn sum_is_additive_across_registered_slots() {
-        let handle = spawn_live_viewer_aggregator();
+        let handle = spawn_live_viewer_aggregator(&TaskOwner::new());
         let mut sub = Box::pin(handle.subscribe());
         let (src_a, tx_a) = channel_source();
         let (src_b, tx_b) = channel_source();
@@ -271,7 +277,7 @@ mod tests {
 
     #[tokio::test]
     async fn absent_report_removes_only_its_own_slot() {
-        let handle = spawn_live_viewer_aggregator();
+        let handle = spawn_live_viewer_aggregator(&TaskOwner::new());
         let mut sub = Box::pin(handle.subscribe());
         let (src_a, tx_a) = channel_source();
         let (src_b, tx_b) = channel_source();
@@ -288,7 +294,7 @@ mod tests {
 
     #[tokio::test]
     async fn absent_on_the_last_reporting_slot_yields_empty() {
-        let handle = spawn_live_viewer_aggregator();
+        let handle = spawn_live_viewer_aggregator(&TaskOwner::new());
         let mut sub = Box::pin(handle.subscribe());
         let (src, tx) = channel_source();
         handle.register(PlatformId::Kick, src);
@@ -301,7 +307,7 @@ mod tests {
 
     #[tokio::test]
     async fn stream_end_drops_only_that_slots_contribution() {
-        let handle = spawn_live_viewer_aggregator();
+        let handle = spawn_live_viewer_aggregator(&TaskOwner::new());
         let mut sub = Box::pin(handle.subscribe());
         let (src_a, tx_a) = channel_source();
         let (src_b, tx_b) = channel_source();
@@ -318,7 +324,7 @@ mod tests {
 
     #[tokio::test]
     async fn single_zero_report_is_reporting_zero_not_empty() {
-        let handle = spawn_live_viewer_aggregator();
+        let handle = spawn_live_viewer_aggregator(&TaskOwner::new());
         let mut sub = Box::pin(handle.subscribe());
         let (src, tx) = channel_source();
         handle.register(PlatformId::Kick, src);
@@ -329,7 +335,7 @@ mod tests {
 
     #[tokio::test]
     async fn late_subscriber_resynchronizes_to_current_value() {
-        let handle = spawn_live_viewer_aggregator();
+        let handle = spawn_live_viewer_aggregator(&TaskOwner::new());
         let mut early = Box::pin(handle.subscribe());
         let (src, tx) = channel_source();
         handle.register(PlatformId::Kick, src);
@@ -479,7 +485,7 @@ mod tests {
 
     #[tokio::test]
     async fn registering_again_for_a_platform_replaces_its_previous_source() {
-        let handle = spawn_live_viewer_aggregator();
+        let handle = spawn_live_viewer_aggregator(&TaskOwner::new());
         let mut sub = Box::pin(handle.subscribe());
         let (first, first_tx) = channel_source();
         let (other, other_tx) = channel_source();
@@ -501,7 +507,7 @@ mod tests {
         const ROUNDS: usize = 64;
         const COUNTS: [u64; 2] = [10, 20];
         for _ in 0..ROUNDS {
-            let handle = spawn_live_viewer_aggregator();
+            let handle = spawn_live_viewer_aggregator(&TaskOwner::new());
             let barrier = Arc::new(std::sync::Barrier::new(COUNTS.len()));
             let mut reports = Vec::new();
             let mut registrars = Vec::new();
@@ -545,7 +551,7 @@ mod tests {
 
     #[tokio::test]
     async fn replaced_source_stops_being_read() {
-        let handle = spawn_live_viewer_aggregator();
+        let handle = spawn_live_viewer_aggregator(&TaskOwner::new());
         let (first, first_tx) = channel_source();
         handle.register(PlatformId::Twitch, first);
         let (second, _second_tx) = channel_source();
@@ -558,7 +564,7 @@ mod tests {
 
     #[tokio::test]
     async fn unregister_drops_the_platform_viewers() {
-        let handle = spawn_live_viewer_aggregator();
+        let handle = spawn_live_viewer_aggregator(&TaskOwner::new());
         let mut sub = Box::pin(handle.subscribe());
         let (twitch, twitch_tx) = channel_source();
         let (youtube, youtube_tx) = channel_source();
@@ -575,7 +581,7 @@ mod tests {
 
     #[tokio::test]
     async fn unregister_drops_the_platform_from_the_live_set() {
-        let handle = spawn_live_viewer_aggregator();
+        let handle = spawn_live_viewer_aggregator(&TaskOwner::new());
         let (twitch, twitch_tx) = channel_source();
         let (kick, kick_tx) = channel_source();
         handle.register(PlatformId::Twitch, twitch);
@@ -591,7 +597,7 @@ mod tests {
 
     #[tokio::test]
     async fn platform_reports_again_after_unregister_and_fresh_register() {
-        let handle = spawn_live_viewer_aggregator();
+        let handle = spawn_live_viewer_aggregator(&TaskOwner::new());
         let mut sub = Box::pin(handle.subscribe());
         let (first, first_tx) = channel_source();
         handle.register(PlatformId::Kick, first);

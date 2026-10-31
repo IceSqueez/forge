@@ -52,14 +52,20 @@ impl TaskGroup {
         self.0.push(task.abort_handle());
     }
 
-    pub fn absorb(&mut self, other: TaskGroup) {
-        self.0.extend(other.0);
+    pub fn absorb(&mut self, mut other: TaskGroup) {
+        self.0.append(&mut other.0);
     }
 
     pub fn abort_all(&self) {
         for task in &self.0 {
             task.abort();
         }
+    }
+}
+
+impl Drop for TaskGroup {
+    fn drop(&mut self) {
+        self.abort_all();
     }
 }
 
@@ -717,7 +723,7 @@ mod tests {
                 Arc::clone(&settings) as Arc<dyn SettingsRepo>,
                 gate.clone(),
                 Arc::clone(&objects) as Arc<dyn IntegrationObjects<FakeObject>>,
-                spawn_live_viewer_aggregator(),
+                spawn_live_viewer_aggregator(&forge_net::TaskOwner::new()),
             );
             Self {
                 supervisor,
@@ -1175,7 +1181,7 @@ mod tests {
             Arc::new(settings) as Arc<dyn SettingsRepo>,
             IntegrationGate::new(),
             Arc::new(FakeObjects::default()) as Arc<dyn IntegrationObjects<FakeObject>>,
-            spawn_live_viewer_aggregator(),
+            spawn_live_viewer_aggregator(&forge_net::TaskOwner::new()),
         );
         let slot = supervisor.slot(&factory.id).expect("declared slot");
 
@@ -1323,7 +1329,7 @@ mod tests {
             Arc::clone(&settings) as Arc<dyn SettingsRepo>,
             gate.clone(),
             Arc::clone(&objects) as Arc<dyn IntegrationObjects<FakeObject>>,
-            spawn_live_viewer_aggregator(),
+            spawn_live_viewer_aggregator(&forge_net::TaskOwner::new()),
         );
         Harness {
             supervisor,
@@ -1518,5 +1524,28 @@ mod tests {
             states.changed().await;
         }
         assert_eq!(factory.teardowns(), 1);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn dropping_a_task_group_aborts_its_tasks_including_absorbed_ones() {
+        let (tracked_alive, tracked_gone) = tokio::sync::oneshot::channel::<()>();
+        let (absorbed_alive, absorbed_gone) = tokio::sync::oneshot::channel::<()>();
+        let mut absorbed = TaskGroup::default();
+        absorbed.track(tokio::spawn(async move {
+            let _alive = absorbed_alive;
+            std::future::pending::<()>().await;
+        }));
+        let mut group = TaskGroup::default();
+        group.track(tokio::spawn(async move {
+            let _alive = tracked_alive;
+            std::future::pending::<()>().await;
+        }));
+        group.absorb(absorbed);
+        tokio::task::yield_now().await;
+
+        drop(group);
+
+        assert!(tracked_gone.await.is_err());
+        assert!(absorbed_gone.await.is_err());
     }
 }

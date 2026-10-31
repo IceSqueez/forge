@@ -698,7 +698,11 @@ async fn a_stopped_scheduler_refuses_the_schedule_step_and_still_honours_a_cance
             ],
         )
         .await;
-    harness.scheduled_runs.clone().stop().await;
+    harness
+        .scheduled_runs
+        .clone()
+        .stop(std::time::Duration::from_secs(1))
+        .await;
 
     let (refused, produced) = harness
         .schedule(

@@ -72,40 +72,38 @@ pub(super) fn moved_step_index(from: usize, slot: usize, len: usize) -> Option<u
     (to != from).then_some(to)
 }
 
-impl ScreenActionsView {
-    fn step_drag_blocked(&self, cx: &App) -> bool {
-        self.has_open_modal(cx) || self.menus.step_open.is_some()
+impl ActionEditor {
+    fn step_drag_blocked(&self) -> bool {
+        self.step_drag_locked || self.has_open_modal() || self.step_open.is_some()
     }
 
-    fn accepts_step_drag(&self, drag: &StepDrag, cx: &App) -> bool {
-        let Some(detail) = self.editor.detail.as_ref() else {
+    fn accepts_step_drag(&self, drag: &StepDrag) -> bool {
+        let Some(detail) = self.detail.as_ref() else {
             return false;
         };
         detail.action.id == drag.action_id
-            && self.editor.nav_path == drag.path
-            && drag.from
-                < nav::resolve_chain(&detail.action.sub_actions, &self.editor.nav_path).len()
-            && !self.step_drag_blocked(cx)
+            && self.nav_path == drag.path
+            && drag.from < nav::resolve_chain(&detail.action.sub_actions, &self.nav_path).len()
+            && !self.step_drag_blocked()
     }
 
     pub(in crate::actions_screen) fn step_drop_indicator_slot(&self) -> Option<usize> {
-        let session = self.editor.step_drag.as_ref()?;
+        let session = self.step_drag.as_ref()?;
         let slot = session.slot?;
         let len = self.current_chain().len();
         moved_step_index(session.from, slot, len).map(|_| slot)
     }
 
     pub(in crate::actions_screen) fn is_step_dragged(&self, i: usize) -> bool {
-        self.editor
-            .step_drag
+        self.step_drag
             .as_ref()
             .is_some_and(|session| session.from == i)
     }
 
     fn begin_step_drag(&mut self, from: usize, window: &mut Window, cx: &mut Context<Self>) {
         let restore_focus = window.focused(cx);
-        window.focus(&self.editor.step_drag_focus, cx);
-        self.editor.step_drag = Some(StepDragSession {
+        window.focus(&self.step_drag_focus, cx);
+        self.step_drag = Some(StepDragSession {
             from,
             slot: None,
             restore_focus,
@@ -114,7 +112,7 @@ impl ScreenActionsView {
     }
 
     fn set_step_drop_slot(&mut self, slot: Option<usize>, cx: &mut Context<Self>) {
-        let Some(session) = self.editor.step_drag.as_mut() else {
+        let Some(session) = self.step_drag.as_mut() else {
             return;
         };
         if session.slot != slot {
@@ -132,7 +130,7 @@ impl ScreenActionsView {
         if !event.bounds.contains(&event.event.position) {
             return;
         }
-        let accepted = self.accepts_step_drag(event.drag(cx), cx);
+        let accepted = self.accepts_step_drag(event.drag(cx));
         let slot = accepted.then(|| drop_slot_for_pointer(i, event.event.position.y, event.bounds));
         self.set_step_drop_slot(slot, cx);
     }
@@ -144,8 +142,8 @@ impl ScreenActionsView {
     }
 
     fn finish_step_drag(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(session) = self.editor.step_drag.take()
-            && self.editor.step_drag_focus.is_focused(window)
+        if let Some(session) = self.step_drag.take()
+            && self.step_drag_focus.is_focused(window)
         {
             match session.restore_focus {
                 Some(focus) => window.focus(&focus, cx),
@@ -156,12 +154,8 @@ impl ScreenActionsView {
     }
 
     fn drop_step(&mut self, drag: &StepDrag, window: &mut Window, cx: &mut Context<Self>) {
-        let accepted = self.accepts_step_drag(drag, cx);
-        let slot = self
-            .editor
-            .step_drag
-            .as_ref()
-            .and_then(|session| session.slot);
+        let accepted = self.accepts_step_drag(drag);
+        let slot = self.step_drag.as_ref().and_then(|session| session.slot);
         let from = drag.from;
         self.finish_step_drag(window, cx);
         let Some(slot) = slot.filter(|_| accepted) else {
@@ -183,7 +177,7 @@ impl ScreenActionsView {
     }
 
     fn cancel_step_drag(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.editor.step_drag.is_none() {
+        if self.step_drag.is_none() {
             return;
         }
         cx.stop_active_drag(window);
@@ -191,16 +185,13 @@ impl ScreenActionsView {
     }
 
     fn release_step_drag(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.editor.step_drag.is_some() && !cx.has_active_drag() {
+        if self.step_drag.is_some() && !cx.has_active_drag() {
             self.finish_step_drag(window, cx);
         }
     }
 
-    pub(in crate::actions_screen) fn step_drag_release_watch(
-        &self,
-        cx: &mut Context<Self>,
-    ) -> Option<AnyElement> {
-        self.editor.step_drag.as_ref()?;
+    pub(super) fn step_drag_release_watch(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        self.step_drag.as_ref()?;
         let view = cx.entity().downgrade();
         let watch = canvas(
             |_, _, _| {},
@@ -213,7 +204,7 @@ impl ScreenActionsView {
                         cx.defer_in(window, Self::release_step_drag);
                     });
                     if released.is_err() {
-                        tracing::debug!("the actions view closed during a step drag");
+                        tracing::debug!("the action editor closed during a step drag");
                     }
                 });
             },
@@ -237,15 +228,15 @@ impl ScreenActionsView {
             .flex()
             .items_center()
             .child(icon(Icon::GripVertical, CARD_GLYPH, palette.text_faint));
-        let Some(detail) = self.editor.detail.as_ref() else {
+        let Some(detail) = self.detail.as_ref() else {
             return grip.into_any_element();
         };
-        if self.step_drag_blocked(cx) {
+        if self.step_drag_blocked() {
             return grip.into_any_element();
         }
         let payload = StepDrag {
             action_id: detail.action.id,
-            path: self.editor.nav_path.clone(),
+            path: self.nav_path.clone(),
             from: i,
         };
         let ghost = StepDragGhost {
@@ -311,8 +302,8 @@ impl ScreenActionsView {
     ) -> gpui::Stateful<gpui::Div> {
         list.id("actions-step-list")
             .key_context(STEP_DRAG_CONTEXT)
-            .when(self.editor.step_drag.is_some(), |el| {
-                el.track_focus(&self.editor.step_drag_focus)
+            .when(self.step_drag.is_some(), |el| {
+                el.track_focus(&self.step_drag_focus)
             })
             .on_action(cx.listener(|this, _: &StepDragCancel, window, cx| {
                 this.cancel_step_drag(window, cx);
@@ -336,9 +327,9 @@ mod tests {
         Entity, Modifiers, MouseButton, Point, TestAppContext, VisualTestContext, point, px, size,
     };
 
-    use super::super::tests::view_with;
+    use super::super::tests::{screen_parts, view_with};
     use super::*;
-    use crate::actions_screen::integration_gating::tests::detail;
+    use crate::actions_screen::editor::integration_gating::tests::detail;
     use crate::test_support::{error_toasts, runtime, step};
 
     const FIRST: &str = "test.first";
@@ -491,7 +482,9 @@ mod tests {
     }
 
     struct Fixture<'a> {
-        view: Entity<ScreenActionsView>,
+        view: Entity<ActionEditor>,
+        _tree: Entity<ActionTree>,
+        _screen: Entity<ScreenActionsView>,
         host: Entity<Host>,
         store: Arc<Store>,
         rt: tokio::runtime::Runtime,
@@ -539,7 +532,7 @@ mod tests {
         let saving = Arc::clone(&store);
         repo.expect_save()
             .returning(move |action| saving.save(action));
-        let view = view_with(
+        let screen_view = view_with(
             cx,
             &rt,
             Vec::new(),
@@ -549,11 +542,13 @@ mod tests {
         );
         crate::test_support::settle_runtime_work(cx, &rt);
         let action_id = opened.action.id;
+        let (view, tree) = screen_parts(cx, &screen_view);
+        tree.update(cx, |tree, _| tree.set_selected(Some(action_id)));
         view.update(cx, |view, _| {
-            view.tree.selected = Some(action_id);
-            view.editor.detail = Some(opened);
+            view.selected = Some(action_id);
+            view.detail = Some(opened);
         });
-        let screen = rendered.then(|| view.clone());
+        let screen = rendered.then(|| screen_view.clone());
         let (host, vcx) = cx.add_window_view(|_, cx| Host {
             screen,
             focus: cx.focus_handle(),
@@ -561,6 +556,8 @@ mod tests {
         });
         Fixture {
             view,
+            _tree: tree,
+            _screen: screen_view,
             host,
             store,
             rt,
@@ -574,16 +571,15 @@ mod tests {
         }
 
         fn action_id(&mut self) -> ActionId {
-            self.view.read_with(self.vcx, |view, _| {
-                view.editor.detail.as_ref().unwrap().action.id
-            })
+            self.view
+                .read_with(self.vcx, |view, _| view.detail.as_ref().unwrap().action.id)
         }
 
         fn payload(&mut self, from: usize) -> StepDrag {
             let action_id = self.action_id();
             let path = self
                 .view
-                .read_with(self.vcx, |view, _| view.editor.nav_path.clone());
+                .read_with(self.vcx, |view, _| view.nav_path.clone());
             StepDrag {
                 action_id,
                 path,
@@ -684,18 +680,18 @@ mod tests {
 
         fn shown_order(&mut self) -> Vec<String> {
             self.view.read_with(self.vcx, |view, _| {
-                kinds(&view.editor.detail.as_ref().unwrap().action)
+                kinds(&view.detail.as_ref().unwrap().action)
             })
         }
 
         fn save_idle(&mut self) -> bool {
             self.view
-                .read_with(self.vcx, |view, _| view.editor.action_writes.is_empty())
+                .read_with(self.vcx, |view, _| view.action_writes.is_empty())
         }
 
         fn accepts(&mut self, drag: &StepDrag) -> bool {
             self.view
-                .read_with(self.vcx, |view, cx| view.accepts_step_drag(drag, cx))
+                .read_with(self.vcx, |view, _| view.accepts_step_drag(drag))
         }
 
         fn indicator(&mut self) -> Option<usize> {
@@ -705,7 +701,7 @@ mod tests {
 
         fn session_open(&mut self) -> bool {
             self.view
-                .read_with(self.vcx, |view, _| view.editor.step_drag.is_some())
+                .read_with(self.vcx, |view, _| view.step_drag.is_some())
         }
 
         fn pointer_dragging(&mut self) -> bool {
@@ -783,7 +779,7 @@ mod tests {
                 "index past the chain" => drag.from = chain().len(),
                 "no action open" => fixture
                     .view
-                    .update(fixture.vcx, |view, _| view.editor.detail = None),
+                    .update(fixture.vcx, |view, _| view.detail = None),
                 _ => {}
             }
 
@@ -793,12 +789,12 @@ mod tests {
 
     #[gpui::test]
     fn no_payload_is_accepted_while_a_dialog_or_the_step_menu_is_open(cx: &mut TestAppContext) {
-        for case in ["delete prompt", "step menu"] {
+        for case in ["dialog", "step menu"] {
             let mut fixture = mount(cx, false);
             let drag = fixture.payload(0);
             fixture.view.update(fixture.vcx, |view, _| match case {
-                "delete prompt" => view.tree.pending_delete.request(ActionId::new()),
-                _ => view.menus.step_open = Some(0),
+                "dialog" => view.set_step_drag_locked(true),
+                _ => view.step_open = Some(0),
             });
 
             assert!(!fixture.accepts(&drag), "{case}");
@@ -830,7 +826,7 @@ mod tests {
             fixture.begin(from);
             fixture.hover(slot);
             fixture.view.update(fixture.vcx, |view, _| {
-                let detail = view.editor.detail.as_mut().unwrap();
+                let detail = view.detail.as_mut().unwrap();
                 detail.action.sub_actions.truncate(chain().len() - 1);
             });
 
@@ -1028,7 +1024,7 @@ mod tests {
         fixture.reorder(0, 3);
         let action_id = fixture.action_id();
         let stale = fixture.view.read_with(fixture.vcx, |view, _| {
-            let mut stale = view.editor.detail.clone().unwrap();
+            let mut stale = view.detail.clone().unwrap();
             stale.action.sub_actions = chain();
             stale
         });
@@ -1045,7 +1041,7 @@ mod tests {
         let mut fixture = mount(cx, false);
         let action_id = fixture.action_id();
         let stored = fixture.view.read_with(fixture.vcx, |view, _| {
-            let mut stored = view.editor.detail.clone().unwrap();
+            let mut stored = view.detail.clone().unwrap();
             stored.action.sub_actions.reverse();
             stored
         });

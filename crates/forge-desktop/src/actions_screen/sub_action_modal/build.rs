@@ -227,6 +227,94 @@ fn config_seed(config: &SubActionConfig, key: &str) -> String {
         .unwrap_or_default()
 }
 
+fn input_shape(
+    spec: &FormField,
+    copy: &FieldBuildContext<'_>,
+) -> Option<(&'static str, String, InputFlavor)> {
+    match spec {
+        FormField::Text {
+            key, placeholder, ..
+        } => Some((
+            key,
+            field_placeholder(copy.kind_id, key, placeholder),
+            text_flavor(key, copy.output_name_keys),
+        )),
+        FormField::Integer { key, min, max, .. } | FormField::Slider { key, min, max, .. } => {
+            Some((
+                key,
+                INTEGER_PLACEHOLDER.to_owned(),
+                InputFlavor::Integer(*min..=*max),
+            ))
+        }
+        FormField::OneBasedInteger { key, count, .. } => Some((
+            key,
+            INTEGER_PLACEHOLDER.to_owned(),
+            InputFlavor::OneBased(*count),
+        )),
+        FormField::FilePicker { key, .. } => Some((key, String::new(), InputFlavor::File)),
+        FormField::DateTime { key, .. } => Some((key, String::new(), InputFlavor::DateTime)),
+        _ => None,
+    }
+}
+
+fn select_field(
+    spec: &FormField,
+    label: String,
+    gate: Option<String>,
+    config: &SubActionConfig,
+    copy: &FieldBuildContext<'_>,
+) -> Option<SubFormField> {
+    let line = |key: &str| {
+        config
+            .get(key)
+            .map(crate::config_text::editable_line)
+            .unwrap_or_default()
+    };
+    let (key, options_key, options, dependency) = match spec {
+        FormField::Select { key, options, .. } | FormField::Swatch { key, options, .. } => {
+            let options = options
+                .iter()
+                .map(|opt| ((*opt).to_owned(), option_label(copy.kind_id, key, opt)))
+                .collect();
+            (*key, None, options, None)
+        }
+        FormField::DynamicSelect {
+            key, options_key, ..
+        } => {
+            let options = copy
+                .options_map
+                .get(*options_key)
+                .cloned()
+                .unwrap_or_default();
+            (*key, Some((*options_key).to_owned()), options, None)
+        }
+        FormField::DependentSelect {
+            key,
+            options_prefix,
+            depends_on,
+            ..
+        } => (
+            *key,
+            None,
+            dependent_options(copy.options_map, options_prefix, &line(depends_on)),
+            Some(SelectDependency {
+                options_prefix: (*options_prefix).to_owned(),
+                depends_on: (*depends_on).to_owned(),
+            }),
+        ),
+        _ => return None,
+    };
+    Some(SubFormField::Select {
+        key: key.to_owned(),
+        label,
+        options_key,
+        options,
+        gate,
+        selected: line(key),
+        dependency,
+    })
+}
+
 pub(super) fn push_form_field(
     spec: &FormField,
     gate: Option<String>,
@@ -238,18 +326,25 @@ pub(super) fn push_form_field(
     let palette = copy.palette;
     let label = field_label(copy.kind_id, spec);
     match spec {
-        FormField::Text {
-            key, placeholder, ..
-        } => out.push(build_input_field(
-            key,
-            &label,
-            field_placeholder(copy.kind_id, key, placeholder),
-            text_flavor(key, copy.output_name_keys),
-            gate,
-            config,
-            palette,
-            cx,
-        )),
+        FormField::Text { .. }
+        | FormField::Integer { .. }
+        | FormField::Slider { .. }
+        | FormField::OneBasedInteger { .. }
+        | FormField::FilePicker { .. }
+        | FormField::DateTime { .. } => {
+            if let Some((key, placeholder, flavor)) = input_shape(spec, copy) {
+                out.push(build_input_field(
+                    key,
+                    &label,
+                    placeholder,
+                    flavor,
+                    gate,
+                    config,
+                    palette,
+                    cx,
+                ));
+            }
+        }
         FormField::TextArea { key, .. } => {
             out.push(build_area_field(key, &label, gate, config, palette, cx))
         }
@@ -261,27 +356,6 @@ pub(super) fn push_form_field(
         } => out.push(build_code_field(
             key, &label, gate, *language, *kind, config, palette, cx,
         )),
-        FormField::Integer { key, min, max, .. } | FormField::Slider { key, min, max, .. } => out
-            .push(build_input_field(
-                key,
-                &label,
-                INTEGER_PLACEHOLDER.to_owned(),
-                InputFlavor::Integer(*min..=*max),
-                gate,
-                config,
-                palette,
-                cx,
-            )),
-        FormField::OneBasedInteger { key, count, .. } => out.push(build_input_field(
-            key,
-            &label,
-            INTEGER_PLACEHOLDER.to_owned(),
-            InputFlavor::OneBased(*count),
-            gate,
-            config,
-            palette,
-            cx,
-        )),
         FormField::UnitAmount { key, .. } | FormField::Duration { key, .. } => {
             if let Some(scale) = AmountScale::of(spec) {
                 out.push(build_unit_amount_field(
@@ -289,93 +363,11 @@ pub(super) fn push_form_field(
                 ));
             }
         }
-        FormField::FilePicker { key, .. } => out.push(build_input_field(
-            key,
-            &label,
-            String::new(),
-            InputFlavor::File,
-            gate,
-            config,
-            palette,
-            cx,
-        )),
-        FormField::DateTime { key, .. } => out.push(build_input_field(
-            key,
-            &label,
-            String::new(),
-            InputFlavor::DateTime,
-            gate,
-            config,
-            palette,
-            cx,
-        )),
-        FormField::Select { key, options, .. } | FormField::Swatch { key, options, .. } => {
-            let selected = config
-                .get(*key)
-                .map(crate::config_text::editable_line)
-                .unwrap_or_default();
-            let options = options
-                .iter()
-                .map(|opt| ((*opt).to_owned(), option_label(copy.kind_id, key, opt)))
-                .collect();
-            out.push(SubFormField::Select {
-                key: (*key).to_owned(),
-                label,
-                options_key: None,
-                options,
-                gate,
-                selected,
-                dependency: None,
-            });
-        }
-        FormField::DynamicSelect {
-            key, options_key, ..
-        } => {
-            let selected = config
-                .get(*key)
-                .map(crate::config_text::editable_line)
-                .unwrap_or_default();
-            let options = copy
-                .options_map
-                .get(*options_key)
-                .cloned()
-                .unwrap_or_default();
-            out.push(SubFormField::Select {
-                key: (*key).to_owned(),
-                label,
-                options_key: Some((*options_key).to_owned()),
-                options,
-                gate,
-                selected,
-                dependency: None,
-            });
-        }
-        FormField::DependentSelect {
-            key,
-            options_prefix,
-            depends_on,
-            ..
-        } => {
-            let selected = config
-                .get(*key)
-                .map(crate::config_text::editable_line)
-                .unwrap_or_default();
-            let sibling = config
-                .get(*depends_on)
-                .map(crate::config_text::editable_line)
-                .unwrap_or_default();
-            out.push(SubFormField::Select {
-                key: (*key).to_owned(),
-                label,
-                options_key: None,
-                options: dependent_options(copy.options_map, options_prefix, &sibling),
-                gate,
-                selected,
-                dependency: Some(SelectDependency {
-                    options_prefix: (*options_prefix).to_owned(),
-                    depends_on: (*depends_on).to_owned(),
-                }),
-            });
+        FormField::Select { .. }
+        | FormField::Swatch { .. }
+        | FormField::DynamicSelect { .. }
+        | FormField::DependentSelect { .. } => {
+            out.extend(select_field(spec, label, gate, config, copy));
         }
         FormField::Toggle { key, .. } => {
             let value = matches!(config.get(*key), Some(Variant::Bool(true)));

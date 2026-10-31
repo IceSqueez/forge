@@ -1,5 +1,7 @@
+use super::PlatformFilter;
+use super::timeline::ChatTimeline;
+use super::timeline::ChatTimelineEvent;
 use super::viewer_actions::ViewerTarget;
-use super::{ChatView, PlatformFilter};
 use crate::chat_gap_row::chat_gap_row;
 use crate::chat_row::{ChatRow, chat_row};
 use crate::platform_visuals::{platform_mark, role_badge};
@@ -21,13 +23,10 @@ const ICON_BTN_RADIUS: Pixels = px(5.0);
 const EXPORT_ICON: Pixels = px(14.0);
 const SEARCH_MISS_OPACITY: f32 = 0.3;
 
-impl ChatView {
-    pub(super) fn render_header_right(&self) -> impl IntoElement + use<> {
-        self.viewer_count.clone()
-    }
-
+impl ChatTimeline {
     pub(super) fn render_filter_left(
         &self,
+        offered: &[PlatformFilter],
         palette: &ForgePalette,
         density: Density,
         cx: &mut Context<Self>,
@@ -64,10 +63,10 @@ impl ChatView {
             .items_center()
             .gap(spacing(Spacing::Xxs, density));
         for (id, label, filter, dot) in platform_chips {
-            if !self.filter_offered(filter, cx) {
+            if !offered.contains(&filter) {
                 continue;
             }
-            let active = self.timeline.platform_filter == filter;
+            let active = self.platform_filter == filter;
             chips = chips.child(chip(label, ChipGlyph::Dot(dot), active, palette).on_click(
                 id,
                 cx.listener(move |this, _, _, cx| this.set_platform_filter(filter, cx)),
@@ -83,7 +82,7 @@ impl ChatView {
             chip(
                 tr!("chat_filter_events"),
                 ChipGlyph::None,
-                self.timeline.events_only,
+                self.events_only,
                 palette,
             )
             .on_click(
@@ -95,7 +94,7 @@ impl ChatView {
             chip(
                 tr!("chat_filter_hide_bots"),
                 ChipGlyph::Icon(Icon::BellOff, palette.text_faint),
-                self.timeline.hide_bots,
+                self.hide_bots,
                 palette,
             )
             .on_click(
@@ -111,7 +110,7 @@ impl ChatView {
             .child(
                 div()
                     .w(SEARCH_FIELD_WIDTH)
-                    .child(self.timeline.search.field().clone()),
+                    .child(self.search.field().clone()),
             )
             .child(chips)
             .into_any_element()
@@ -146,19 +145,19 @@ impl ChatView {
         density: Density,
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
-        let query = self.timeline.search.query().to_string();
+        let query = self.search.query().to_string();
         let search_active = !query.is_empty();
 
-        let snapshot: Rc<VecDeque<u64>> = self.timeline.visible.clone();
+        let snapshot: Rc<VecDeque<u64>> = self.visible.clone();
         let empty = snapshot.is_empty();
         let feed = self.feed.clone();
 
         let row_gap = spacing(Spacing::Xxs, density);
         let pal = *palette;
         let view = cx.entity();
-        let cursor_seq = self.timeline.feed_keys.current().copied();
+        let cursor_seq = self.feed_keys.current().copied();
         let cursor_bg = palette.shell;
-        let list_el = list(self.timeline.chat_list.clone(), move |ix, _window, app| {
+        let list_el = list(self.chat_list.clone(), move |ix, _window, app| {
             let Some(seq) = snapshot.get(ix).copied() else {
                 return div().into_any_element();
             };
@@ -197,7 +196,7 @@ impl ChatView {
                 (gpui::ElementId::from("chat-username"), msg.id.clone()),
                 move |_: &ClickEvent, _, app| {
                     if let Some(key) = author_key.clone() {
-                        view.update(app, |this, cx| this.open_viewer(key, cx));
+                        view.update(app, |_, cx| cx.emit(ChatTimelineEvent::OpenViewer(key)));
                     }
                 },
             );
@@ -213,7 +212,7 @@ impl ChatView {
             if cursor_seq == Some(seq) {
                 framed = framed
                     .bg(cursor_bg)
-                    .child(cursor_view.read(app).timeline.feed_keys.row_anchor(None));
+                    .child(cursor_view.read(app).feed_keys.row_anchor(None));
             }
             if let Some(menu_target) = menu_target {
                 framed = framed.on_mouse_down(
@@ -222,8 +221,12 @@ impl ChatView {
                         let position = event.position;
                         let viewer = menu_target.clone();
                         let message_id = menu_message_id.to_string();
-                        menu_view.update(app, |this, cx| {
-                            this.open_user_menu(position, viewer, Some(message_id), cx)
+                        menu_view.update(app, |_, cx| {
+                            cx.emit(ChatTimelineEvent::OpenUserMenu {
+                                position,
+                                viewer,
+                                message_id,
+                            });
                         });
                     },
                 );
@@ -262,13 +265,13 @@ impl ChatView {
             .bg(palette.base)
             .child(body);
 
-        if self.timeline.unread > 0 {
-            let label = if self.timeline.unread == 1 {
+        if self.unread > 0 {
+            let label = if self.unread == 1 {
                 tr!("chat_new_message")
             } else {
                 tr!(
                     "chat_new_messages",
-                    count = i64::try_from(self.timeline.unread).unwrap_or(i64::MAX)
+                    count = i64::try_from(self.unread).unwrap_or(i64::MAX)
                 )
             };
             let pill = div()

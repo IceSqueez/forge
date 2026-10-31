@@ -1,4 +1,4 @@
-use super::field::{InputFlavor, SubFormField, field_keys};
+use super::field::{InputFlavor, SubFormField, field_gate, field_keys};
 use super::field_controls::{bool_row, field_wrap, hint_block, multiline_field};
 use super::rejection::with_rejection_note;
 use super::variable_insert::InsertTarget;
@@ -23,9 +23,8 @@ impl EditSubActionForm {
                 _ => None,
             })
             .collect();
-        let gate_on = |gate: &Option<String>| {
-            gate.as_ref()
-                .map(|g| bool_vals.get(g.as_str()).copied().unwrap_or(false))
+        let gate_on = |gate: Option<&String>| {
+            gate.map(|g| bool_vals.get(g.as_str()).copied().unwrap_or(false))
                 .unwrap_or(true)
         };
 
@@ -36,149 +35,131 @@ impl EditSubActionForm {
         let mut rejection_shown_inline = false;
         let mut grid_items: Vec<(bool, AnyElement)> = Vec::new();
         for field in &self.fields {
-            let pushed_before = grid_items.len();
-            match field {
-                SubFormField::Input { label, gate, .. } => {
-                    if !gate_on(gate) {
-                        continue;
-                    }
-                    let control = self.input_control(field, palette, cx);
-                    grid_items.push((
-                        sub_field_is_half(field),
-                        field_wrap(label, control, palette),
-                    ));
-                }
-                SubFormField::Area {
-                    key,
-                    label,
-                    gate,
-                    area,
-                } => {
-                    if !gate_on(gate) {
-                        continue;
-                    }
-                    let button =
-                        self.variable_button(key, InsertTarget::Area(area.clone()), palette, cx);
-                    let block = multiline_field(
-                        label,
-                        None,
-                        Some(button),
-                        area.clone().into_any_element(),
-                        palette,
-                        density,
-                    );
-                    grid_items.push((false, self.with_variable_popover(key, block, cx)));
-                }
-                SubFormField::Code {
-                    key,
-                    label,
-                    gate,
-                    language,
-                    editor,
-                    ..
-                } => {
-                    if !gate_on(gate) {
-                        continue;
-                    }
-                    let tag = match language {
-                        CodeLanguage::Rhai => "rhai",
-                        CodeLanguage::Json => "json",
-                    };
-                    let button = field.accepts_variables().then(|| {
-                        self.variable_button(key, InsertTarget::Code(editor.clone()), palette, cx)
-                    });
-                    let block = multiline_field(
-                        label,
-                        Some(tag),
-                        button,
-                        editor.clone().into_any_element(),
-                        palette,
-                        density,
-                    );
-                    grid_items.push((false, self.with_variable_popover(key, block, cx)));
-                }
-                SubFormField::Bool {
-                    key,
-                    label,
-                    gate,
-                    value,
-                    ..
-                } => {
-                    if !gate_on(gate) {
-                        continue;
-                    }
-                    grid_items.push((false, bool_row(key, label, *value, palette, cx)));
-                }
-                SubFormField::Select {
-                    key,
-                    label,
-                    options,
-                    gate,
-                    selected,
-                    ..
-                } => {
-                    if !gate_on(gate) {
-                        continue;
-                    }
-                    let open_picker = self.open_picker_for(key);
-                    let select = self.render_select_field(
-                        key,
-                        label,
-                        options,
-                        selected,
-                        open_picker,
-                        palette,
-                        cx,
-                    );
-                    let select = match sender_field_helper(&self.kind_id, key) {
-                        Some(helper) => with_field_helper(select, helper, palette, density),
-                        None => select,
-                    };
-                    let select = match sender_bot_warning(&self.kind_id, key, selected) {
-                        Some(warning) => with_field_warning(select, warning, palette, density),
-                        None => select,
-                    };
-                    grid_items.push((true, select));
-                }
-                SubFormField::UnitAmount {
-                    label,
-                    unit_picker_key,
-                    scale,
-                    unit,
-                    gate,
-                    input,
-                    ..
-                } => {
-                    if !gate_on(gate) {
-                        continue;
-                    }
-                    let control =
-                        self.unit_amount_control(unit_picker_key, scale, unit, input, palette, cx);
-                    grid_items.push((false, field_wrap(label, control, palette)));
-                }
-                SubFormField::Hint { label } => {
-                    grid_items.push((false, hint_block(label, palette, density)));
-                }
+            if !gate_on(field_gate(field)) {
+                continue;
             }
+            let (half, mut element) = self.field_item(field, palette, cx);
             let names_rejected_key =
                 rejected_key.is_some_and(|rejected| field_keys(field).contains(&rejected));
             if names_rejected_key
-                && grid_items.len() > pushed_before
                 && let Some(message) = self.rejection.as_ref().map(|r| r.message.clone())
-                && let Some((half, element)) = grid_items.pop()
             {
                 rejection_shown_inline = true;
-                grid_items.push((
-                    half,
-                    with_rejection_note(element, message, palette, density),
-                ));
+                element = with_rejection_note(element, message, palette, density);
             }
+            grid_items.push((half, element));
         }
 
         (
             field_grid_layout(grid_items, palette, density),
             rejection_shown_inline,
         )
+    }
+
+    fn field_item(
+        &self,
+        field: &SubFormField,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> (bool, AnyElement) {
+        let density = cx.density();
+        match field {
+            SubFormField::Input { label, .. } => {
+                let control = self.input_control(field, palette, cx);
+                (
+                    sub_field_is_half(field),
+                    field_wrap(label, control, palette),
+                )
+            }
+            SubFormField::Area {
+                key, label, area, ..
+            } => {
+                let button =
+                    self.variable_button(key, InsertTarget::Area(area.clone()), palette, cx);
+                let block = multiline_field(
+                    label,
+                    None,
+                    Some(button),
+                    area.clone().into_any_element(),
+                    palette,
+                    density,
+                );
+                (false, self.with_variable_popover(key, block, cx))
+            }
+            SubFormField::Code {
+                key,
+                label,
+                language,
+                editor,
+                ..
+            } => {
+                let tag = match language {
+                    CodeLanguage::Rhai => "rhai",
+                    CodeLanguage::Json => "json",
+                };
+                let button = field.accepts_variables().then(|| {
+                    self.variable_button(key, InsertTarget::Code(editor.clone()), palette, cx)
+                });
+                let block = multiline_field(
+                    label,
+                    Some(tag),
+                    button,
+                    editor.clone().into_any_element(),
+                    palette,
+                    density,
+                );
+                (false, self.with_variable_popover(key, block, cx))
+            }
+            SubFormField::Bool {
+                key, label, value, ..
+            } => (false, bool_row(key, label, *value, palette, cx)),
+            SubFormField::Select {
+                key,
+                label,
+                options,
+                selected,
+                ..
+            } => (
+                true,
+                self.select_item(key, label, options, selected, palette, cx),
+            ),
+            SubFormField::UnitAmount {
+                label,
+                unit_picker_key,
+                scale,
+                unit,
+                input,
+                ..
+            } => {
+                let control =
+                    self.unit_amount_control(unit_picker_key, scale, unit, input, palette, cx);
+                (false, field_wrap(label, control, palette))
+            }
+            SubFormField::Hint { label } => (false, hint_block(label, palette, density)),
+        }
+    }
+
+    fn select_item(
+        &self,
+        key: &str,
+        label: &str,
+        options: &[(String, String)],
+        selected: &str,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let density = cx.density();
+        let open_picker = self.open_picker_for(key);
+        let select =
+            self.render_select_field(key, label, options, selected, open_picker, palette, cx);
+        let select = match sender_field_helper(&self.kind_id, key) {
+            Some(helper) => with_field_helper(select, helper, palette, density),
+            None => select,
+        };
+        match sender_bot_warning(&self.kind_id, key, selected) {
+            Some(warning) => with_field_warning(select, warning, palette, density),
+            None => select,
+        }
     }
 }
 

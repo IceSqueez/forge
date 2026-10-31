@@ -1,4 +1,3 @@
-use super::action_writes::{ActionSettings, ActionWrite};
 use super::*;
 use crate::async_bridge;
 use crate::repo_failure::RepoFailure;
@@ -11,11 +10,13 @@ use forge_components::{
     Spacing, TextArea, TextInput, ToastKind, body_family, chip, modal, mono_family, overlay,
     primary_button, secondary_button, spacing, status_dot, toggle, tr,
 };
-use forge_types::{Action, ActionId, DEFAULT_QUEUE_ID, ExecutionMode, Queue};
+use forge_storage::QueueRepo;
+use forge_types::{DEFAULT_QUEUE_ID, ExecutionMode, Queue};
 use gpui::{AnyElement, ClickEvent, Context, Pixels, Rgba, SharedString, Window, div, px};
 use std::sync::Arc;
 
 const DESCRIPTION_HEIGHT: Pixels = px(72.0);
+const GROUP_DOT: Pixels = px(8.0);
 
 fn modal_section(
     palette: &ForgePalette,
@@ -37,13 +38,50 @@ fn modal_section(
         .child(control)
 }
 
-impl ScreenActionsView {
-    pub(super) fn open_action_modal(
-        &mut self,
+pub(super) enum ActionFormEvent {
+    Saved(ActionId, Box<ActionWrite>),
+    Cancelled,
+}
+
+pub(super) struct ActionFormModal {
+    editing: Option<ActionId>,
+    base: Option<Action>,
+    name: Entity<TextInput>,
+    group: Entity<TextInput>,
+    description: Entity<TextArea>,
+    queues: Vec<(QueueId, SharedString)>,
+    selected_queue: usize,
+    preselect_queue: Option<QueueId>,
+    enabled: bool,
+    concurrent: bool,
+    bypass_pause: bool,
+    random_pick: bool,
+    claims_focus: bool,
+    _name_sub: Subscription,
+}
+
+impl EventEmitter<ActionFormEvent> for ActionFormModal {}
+
+impl Render for ActionFormModal {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if std::mem::take(&mut self.claims_focus) {
+            let name = self.name.clone();
+            focus_inside_modal(window, cx, |window, cx| {
+                name.update(cx, |field, cx| field.focus(window, cx))
+            });
+        }
+        let palette = cx.palette();
+        self.render_form(&palette, cx)
+    }
+}
+
+impl ActionFormModal {
+    pub(super) fn new(
         base: Option<Action>,
-        window: &mut Window,
+        queue_repo: Arc<dyn QueueRepo>,
+        rt_handle: &tokio::runtime::Handle,
         cx: &mut Context<Self>,
-    ) {
+    ) -> Self {
         let palette = cx.palette();
         let seed_name = base.as_ref().map(|a| a.name.clone()).unwrap_or_default();
         let seed_group = base
@@ -73,9 +111,6 @@ impl ScreenActionsView {
             area.set_content(seed_desc, cx);
             area
         });
-        focus_inside_modal(window, cx, |window, cx| {
-            name.update(cx, |f, cx| f.focus(window, cx))
-        });
         let name_sub = cx.subscribe(&name, |_this, _f, _e: &InputEvent, cx| cx.notify());
         let (editing, enabled, concurrent, bypass_pause, random_pick, preselect_queue) = match &base
         {
@@ -89,7 +124,16 @@ impl ScreenActionsView {
             ),
             None => (None, true, false, false, false, None),
         };
-        self.modals.action_form = Some(ActionForm {
+        async_bridge::run_async(
+            rt_handle,
+            async move { queue_repo.list().await.map_err(RepoFailure::from) },
+            |this, result, cx| match result {
+                Ok(queues) => this.apply_queue_options(queues, cx),
+                Err(failure) => on_repo_error(&failure, cx),
+            },
+            cx,
+        );
+        Self {
             editing,
             base,
             name,
@@ -102,107 +146,68 @@ impl ScreenActionsView {
             concurrent,
             bypass_pause,
             random_pick,
+            claims_focus: true,
             _name_sub: name_sub,
-        });
-        cx.notify();
+        }
+    }
 
-        let repo = Arc::clone(&self.deps.queue_repo);
-        async_bridge::run_async(
-            &self.deps.rt_handle,
-            async move { repo.list().await.map_err(RepoFailure::from) },
-            |this, result, cx| match result {
-                Ok(queues) => this.apply_queue_options(queues, cx),
-                Err(failure) => this.on_repo_error(&failure, cx),
-            },
-            cx,
-        );
+    pub(super) fn ready(&self, cx: &App) -> bool {
+        !self.name.read(cx).content().trim().is_empty() && !self.queues.is_empty()
     }
 
     fn apply_queue_options(&mut self, queues: Vec<Queue>, cx: &mut Context<Self>) {
-        if let Some(form) = self.modals.action_form.as_mut() {
-            form.queues = queues
-                .into_iter()
-                .map(|q| (q.id, SharedString::from(q.name)))
-                .collect();
-            let target = form.preselect_queue.unwrap_or(DEFAULT_QUEUE_ID);
-            form.selected_queue = form
-                .queues
-                .iter()
-                .position(|(qid, _)| *qid == target)
-                .unwrap_or(0);
-            cx.notify();
-        }
-    }
-
-    fn cancel_action_modal(&mut self, cx: &mut Context<Self>) {
-        self.modals.action_form = None;
+        self.queues = queues
+            .into_iter()
+            .map(|q| (q.id, SharedString::from(q.name)))
+            .collect();
+        let target = self.preselect_queue.unwrap_or(DEFAULT_QUEUE_ID);
+        self.selected_queue = self
+            .queues
+            .iter()
+            .position(|(qid, _)| *qid == target)
+            .unwrap_or(0);
         cx.notify();
     }
 
+    fn cancel(&mut self, cx: &mut Context<Self>) {
+        cx.emit(ActionFormEvent::Cancelled);
+    }
+
     fn select_queue(&mut self, index: usize, cx: &mut Context<Self>) {
-        if let Some(form) = self.modals.action_form.as_mut() {
-            form.selected_queue = index;
-            cx.notify();
-        }
+        self.selected_queue = index;
+        cx.notify();
     }
 
-    fn toggle_modal_enabled(&mut self, cx: &mut Context<Self>) {
-        if let Some(form) = self.modals.action_form.as_mut() {
-            form.enabled = !form.enabled;
-            cx.notify();
-        }
+    fn toggle(&mut self, flag: impl FnOnce(&mut Self) -> &mut bool, cx: &mut Context<Self>) {
+        let flag = flag(self);
+        *flag = !*flag;
+        cx.notify();
     }
 
-    fn toggle_modal_concurrent(&mut self, cx: &mut Context<Self>) {
-        if let Some(form) = self.modals.action_form.as_mut() {
-            form.concurrent = !form.concurrent;
-            cx.notify();
-        }
-    }
-
-    fn toggle_modal_bypass(&mut self, cx: &mut Context<Self>) {
-        if let Some(form) = self.modals.action_form.as_mut() {
-            form.bypass_pause = !form.bypass_pause;
-            cx.notify();
-        }
-    }
-
-    fn toggle_modal_random(&mut self, cx: &mut Context<Self>) {
-        if let Some(form) = self.modals.action_form.as_mut() {
-            form.random_pick = !form.random_pick;
-            cx.notify();
-        }
-    }
-
-    pub(super) fn submit_action_modal(&mut self, cx: &mut Context<Self>) {
-        let Some(form) = self.modals.action_form.as_ref() else {
-            return;
-        };
-        let name = form.name.read(cx).content().trim().to_owned();
+    pub(super) fn submit(&mut self, cx: &mut Context<Self>) {
+        let name = self.name.read(cx).content().trim().to_owned();
         if name.is_empty() {
             return;
         }
-        let Some(&(queue_id, _)) = form.queues.get(form.selected_queue) else {
+        let Some(&(queue_id, _)) = self.queues.get(self.selected_queue) else {
             cx.push_toast(ToastKind::Error, tr!("actions_no_queue"));
             return;
         };
-        let group_name = form.group.read(cx).content().trim().to_owned();
-        let description = form.description.read(cx).content().trim().to_owned();
-        let execution_mode = if form.random_pick {
+        let group_name = self.group.read(cx).content().trim().to_owned();
+        let description = self.description.read(cx).content().trim().to_owned();
+        let execution_mode = if self.random_pick {
             ExecutionMode::RandomPick
         } else {
             ExecutionMode::Sequential
         };
         let group = (!group_name.is_empty()).then_some(group_name);
         let description = (!description.is_empty()).then_some(description);
-        let write_target = form.base.as_ref().map(|existing| existing.id);
         let (enabled, concurrent, bypass_pause) =
-            (form.enabled, form.concurrent, form.bypass_pause);
-        self.modals.action_form = None;
-        match write_target {
-            Some(id) => self.write_action(
+            (self.enabled, self.concurrent, self.bypass_pause);
+        let saved = match self.base.as_ref().map(|existing| existing.id) {
+            Some(id) => ActionFormEvent::Saved(
                 id,
-                ActionWrite::Settings(ActionSettings {
+                Box::new(ActionWrite::Settings(ActionSettings {
                     name,
                     group,
                     queue_id,
@@ -211,8 +216,7 @@ impl ScreenActionsView {
                     bypass_pause,
                     execution_mode,
                     description,
-                }),
-                cx,
+                })),
             ),
             None => {
                 let action = Action {
@@ -227,36 +231,28 @@ impl ScreenActionsView {
                     description,
                     sub_actions: Vec::new(),
                 };
-                self.write_action(action.id, ActionWrite::Create(action), cx);
+                ActionFormEvent::Saved(action.id, Box::new(ActionWrite::Create(action)))
             }
-        }
+        };
+        cx.emit(saved);
     }
 
-    pub(super) fn render_action_modal(
-        &self,
-        form: &ActionForm,
-        palette: &ForgePalette,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
+    fn render_form(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
         let density = cx.density();
         let two_col = div()
             .flex()
             .gap(spacing(Spacing::Sm, density))
+            .child(div().flex_1().child(self.group_section(palette, density)))
             .child(
                 div()
                     .flex_1()
-                    .child(Self::group_section(form, palette, density)),
-            )
-            .child(
-                div()
-                    .flex_1()
-                    .child(Self::queue_section(form, palette, density, cx)),
+                    .child(self.queue_section(palette, density, cx)),
             );
 
         let desc_section = modal_section(
             palette,
             tr!("actions_modal_section_description"),
-            div().child(form.description.clone()),
+            div().child(self.description.clone()),
             density,
         );
 
@@ -270,41 +266,48 @@ impl ScreenActionsView {
             .flex()
             .flex_col()
             .gap(spacing(Spacing::Sm, density))
-            .child(Self::name_section(form, palette, density, cx))
+            .child(self.name_section(palette, density, cx))
             .child(two_col)
             .child(desc_section)
             .child(behavior_header)
-            .children(Self::behavior_rows(form, palette, density, cx));
+            .children(self.behavior_rows(palette, density, cx));
 
-        let modal_title = if form.editing.is_some() {
+        let modal_title = if self.editing.is_some() {
             tr!("actions_modal_edit_action_title")
         } else {
             tr!("actions_modal_new_action_title")
         };
         let card = modal(modal_title, body, palette)
             .size(ModalSize::Md)
-            .footer(Self::modal_footer(form, palette, density, cx))
+            .footer(self.modal_footer(palette, density, cx))
             .on_close(
                 "actions-modal-close",
-                cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_action_modal(cx)),
+                cx.listener(|this, _: &ClickEvent, _, cx| this.cancel(cx)),
             );
 
         let view = cx.entity();
-        overlay(card, palette)
-            .position(OverlayPosition::Center)
-            .on_dismiss("actions-modal-scrim", move |_window, cx| {
-                view.update(cx, |this, cx| this.cancel_action_modal(cx));
-            })
+        div()
+            .absolute()
+            .top_0()
+            .left_0()
+            .size_full()
+            .child(
+                overlay(card, palette)
+                    .position(OverlayPosition::Center)
+                    .on_dismiss("actions-modal-scrim", move |_window, cx| {
+                        view.update(cx, |this, cx| this.cancel(cx));
+                    }),
+            )
             .into_any_element()
     }
 
     fn name_section(
-        form: &ActionForm,
+        &self,
         palette: &ForgePalette,
         density: Density,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let name_len = form
+        let name_len = self
             .name
             .read(cx)
             .content()
@@ -315,7 +318,7 @@ impl ScreenActionsView {
             .flex()
             .items_center()
             .gap(spacing(Spacing::Xs, density))
-            .child(div().flex_1().child(form.name.clone()))
+            .child(div().flex_1().child(self.name.clone()))
             .child(
                 div()
                     .font_family(mono_family())
@@ -332,13 +335,13 @@ impl ScreenActionsView {
         .into_any_element()
     }
 
-    fn group_section(form: &ActionForm, palette: &ForgePalette, density: Density) -> AnyElement {
+    fn group_section(&self, palette: &ForgePalette, density: Density) -> AnyElement {
         let group_field = div()
             .flex()
             .items_center()
             .gap(spacing(Spacing::Xs, density))
             .child(status_dot(palette.brand, GROUP_DOT))
-            .child(div().flex_1().child(form.group.clone()));
+            .child(div().flex_1().child(self.group.clone()));
         modal_section(
             palette,
             tr!("actions_modal_section_group"),
@@ -349,12 +352,12 @@ impl ScreenActionsView {
     }
 
     fn queue_section(
-        form: &ActionForm,
+        &self,
         palette: &ForgePalette,
         density: Density,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let queue_control: AnyElement = if form.queues.is_empty() {
+        let queue_control: AnyElement = if self.queues.is_empty() {
             div()
                 .font_family(body_family())
                 .text_size(FONT_XS)
@@ -363,12 +366,12 @@ impl ScreenActionsView {
                 .into_any_element()
         } else {
             let mut queue_chips = div().flex().flex_wrap().gap(spacing(Spacing::Xxs, density));
-            for (i, (_, name)) in form.queues.iter().enumerate() {
+            for (i, (_, name)) in self.queues.iter().enumerate() {
                 queue_chips = queue_chips.child(
                     chip(
                         name.clone(),
                         ChipGlyph::Dot(palette.brand),
-                        form.selected_queue == i,
+                        self.selected_queue == i,
                         palette,
                     )
                     .on_click(
@@ -389,7 +392,7 @@ impl ScreenActionsView {
     }
 
     fn behavior_rows(
-        form: &ActionForm,
+        &self,
         palette: &ForgePalette,
         density: Density,
         cx: &mut Context<Self>,
@@ -398,40 +401,48 @@ impl ScreenActionsView {
             Self::modal_toggle_row(
                 tr!("actions_modal_enabled_label"),
                 tr!("actions_modal_enabled_desc"),
-                form.enabled,
+                self.enabled,
                 palette.success,
                 "actions-modal-enabled",
-                cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_modal_enabled(cx)),
+                cx.listener(|this, _: &ClickEvent, _, cx| {
+                    this.toggle(|form| &mut form.enabled, cx)
+                }),
                 palette,
                 density,
             ),
             Self::modal_toggle_row(
                 tr!("actions_modal_concurrent_label"),
                 tr!("actions_modal_concurrent_desc"),
-                form.concurrent,
+                self.concurrent,
                 palette.info,
                 "actions-modal-concurrent",
-                cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_modal_concurrent(cx)),
+                cx.listener(|this, _: &ClickEvent, _, cx| {
+                    this.toggle(|form| &mut form.concurrent, cx)
+                }),
                 palette,
                 density,
             ),
             Self::modal_toggle_row(
                 tr!("actions_modal_bypass_label"),
                 tr!("actions_modal_bypass_desc"),
-                form.bypass_pause,
+                self.bypass_pause,
                 palette.warning,
                 "actions-modal-bypass",
-                cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_modal_bypass(cx)),
+                cx.listener(|this, _: &ClickEvent, _, cx| {
+                    this.toggle(|form| &mut form.bypass_pause, cx)
+                }),
                 palette,
                 density,
             ),
             Self::modal_toggle_row(
                 tr!("actions_modal_random_pick_label"),
                 tr!("actions_modal_random_pick_desc"),
-                form.random_pick,
+                self.random_pick,
                 palette.danger,
                 "actions-modal-random",
-                cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_modal_random(cx)),
+                cx.listener(|this, _: &ClickEvent, _, cx| {
+                    this.toggle(|form| &mut form.random_pick, cx)
+                }),
                 palette,
                 density,
             ),
@@ -439,17 +450,17 @@ impl ScreenActionsView {
     }
 
     fn modal_footer(
-        form: &ActionForm,
+        &self,
         palette: &ForgePalette,
         density: Density,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let valid = form.ready(cx);
+        let valid = self.ready(cx);
         let cancel = secondary_button(tr!("actions_modal_cancel_btn"), palette).on_click(
             "actions-modal-cancel",
-            cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_action_modal(cx)),
+            cx.listener(|this, _: &ClickEvent, _, cx| this.cancel(cx)),
         );
-        let submit_label = if form.editing.is_some() {
+        let submit_label = if self.editing.is_some() {
             tr!("actions_modal_save_btn")
         } else {
             tr!("actions_modal_create_btn")
@@ -458,7 +469,7 @@ impl ScreenActionsView {
             .disabled(!valid)
             .on_click(
                 "actions-modal-create",
-                cx.listener(|this, _: &ClickEvent, _, cx| this.submit_action_modal(cx)),
+                cx.listener(|this, _: &ClickEvent, _, cx| this.submit(cx)),
             );
         div()
             .w_full()
@@ -512,5 +523,24 @@ impl ScreenActionsView {
             )
             .child(toggle(on, palette).on_color(accent).on_click(id, handler))
             .into_any_element()
+    }
+}
+
+#[cfg(test)]
+impl ActionFormModal {
+    pub(super) fn fill(&mut self, name: String, with_queue: bool, cx: &mut Context<Self>) {
+        self.name
+            .update(cx, |input, cx| input.set_content(name, cx));
+        if with_queue {
+            self.queues = vec![(QueueId::new(), "Default".into())];
+        }
+    }
+
+    pub(super) fn editing_id(&self) -> Option<ActionId> {
+        self.editing
+    }
+
+    pub(super) fn name_text(&self, cx: &App) -> String {
+        self.name.read(cx).content().to_owned()
     }
 }

@@ -35,9 +35,9 @@ fn trigger_unlink_btn(
         .into_any_element()
 }
 
-impl ScreenActionsView {
+impl ActionEditor {
     fn unlink_trigger(&mut self, instance_id: TriggerInstanceId, cx: &mut Context<Self>) {
-        let Some(action_id) = self.tree.selected else {
+        let Some(action_id) = self.selected else {
             return;
         };
         let service = Arc::clone(&self.deps.actions_service);
@@ -54,7 +54,7 @@ impl ScreenActionsView {
                     this.reload_detail(cx);
                     this.raise_unlink_undo_toast(action_id, instance_id, cx);
                 }
-                Err(failure) => this.on_repo_error(&failure, cx),
+                Err(failure) => on_repo_error(&failure, cx),
             },
             cx,
         );
@@ -95,7 +95,7 @@ impl ScreenActionsView {
             },
             |this, result, cx| match result {
                 Ok(()) => this.reload_detail(cx),
-                Err(failure) => this.on_repo_error(&failure, cx),
+                Err(failure) => on_repo_error(&failure, cx),
             },
             cx,
         );
@@ -269,7 +269,9 @@ impl ScreenActionsView {
             .on_click(
                 SharedString::from(format!("actions-trigger-open-{instance_id}")),
                 cx.listener(move |_this, _: &ClickEvent, _, cx| {
-                    cx.emit(NavRequested(Screen::Triggers(Some(instance_id))))
+                    cx.emit(ActionEditorEvent::Navigate(Screen::Triggers(Some(
+                        instance_id,
+                    ))))
                 }),
             );
         div()
@@ -290,8 +292,8 @@ mod tests {
     use forge_storage::{MockTriggerInstanceRepo, StorageError};
     use gpui::TestAppContext;
 
-    use super::super::super::action_writes::tests::Screen;
     use super::*;
+    use crate::actions_screen::editor::action_writes::tests::Screen;
     use crate::test_support::{StubHistory, blank_window, error_toasts, press_undo};
 
     type Links = Arc<Mutex<Vec<(ActionId, TriggerInstanceId)>>>;
@@ -396,7 +398,7 @@ mod tests {
         let instance = TriggerInstanceId::new();
         unlink(&screen, cx, instance);
         let bravo = screen.bravo;
-        screen.view.update(cx, |view, cx| view.select(bravo, cx));
+        screen.tree.update(cx, |view, cx| view.select(bravo, cx));
         screen.settle(cx);
 
         press_undo(cx);

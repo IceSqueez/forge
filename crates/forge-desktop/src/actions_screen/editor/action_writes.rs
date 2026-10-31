@@ -1,8 +1,10 @@
 use super::*;
+use crate::actions_screen::tree::next_list_read;
 use crate::repo_failure::RepoFailure;
 use forge_types::ExecutionMode;
 
-pub(super) struct ActionSettings {
+#[derive(Clone)]
+pub(in crate::actions_screen) struct ActionSettings {
     pub name: String,
     pub group: Option<String>,
     pub queue_id: QueueId,
@@ -13,7 +15,8 @@ pub(super) struct ActionSettings {
     pub description: Option<String>,
 }
 
-pub(super) enum ActionWrite {
+#[derive(Clone)]
+pub(in crate::actions_screen) enum ActionWrite {
     Create(Action),
     Settings(ActionSettings),
     SetEnabled(bool),
@@ -39,6 +42,13 @@ pub(super) enum ActionWrite {
 }
 
 impl ActionWrite {
+    pub(in crate::actions_screen) fn duplicate_copy() -> Self {
+        Self::Duplicate {
+            new_id: ActionId::new(),
+            copy_suffix: tr!("actions_duplicate_name_suffix"),
+        }
+    }
+
     fn is_edit(&self) -> bool {
         matches!(
             self,
@@ -267,7 +277,7 @@ async fn perform_writes(
     }
 }
 
-impl ScreenActionsView {
+impl ActionEditor {
     fn settled_against_known_action(
         &self,
         id: ActionId,
@@ -283,7 +293,6 @@ impl ScreenActionsView {
             return Some(write);
         };
         let shown = self
-            .editor
             .detail
             .as_ref()
             .filter(|detail| detail.action.id == id)
@@ -298,18 +307,18 @@ impl ScreenActionsView {
         })
     }
 
-    pub(super) fn write_action(
+    pub(in crate::actions_screen) fn write_action(
         &mut self,
         id: ActionId,
         write: ActionWrite,
         cx: &mut Context<Self>,
     ) {
         let Some(write) = self.settled_against_known_action(id, write) else {
-            self.on_repo_error(&RepoFailure::steps_gone(), cx);
+            on_repo_error(&RepoFailure::steps_gone(), cx);
             return;
         };
         let mut shown: Option<Action> = None;
-        if let Some(detail) = self.editor.detail.as_mut()
+        if let Some(detail) = self.detail.as_mut()
             && detail.action.id == id
         {
             if apply_action_edit(&mut detail.action, &write) {
@@ -318,8 +327,8 @@ impl ScreenActionsView {
                 return;
             }
         }
-        let is_new = !self.editor.action_writes.contains_key(&id);
-        let queue = self.editor.action_writes.entry(id).or_default();
+        let is_new = !self.action_writes.contains_key(&id);
+        let queue = self.action_writes.entry(id).or_default();
         match (queue.latest.as_mut(), &write) {
             (_, ActionWrite::Create(action)) => queue.latest = Some(action.clone()),
             (Some(latest), _) => {
@@ -329,12 +338,7 @@ impl ScreenActionsView {
             (None, _) => {}
         }
         queue.pending.push(write);
-        if self
-            .editor
-            .detail
-            .as_ref()
-            .is_some_and(|d| d.action.id == id)
-        {
+        if self.detail.as_ref().is_some_and(|d| d.action.id == id) {
             self.sync_case_fields(cx);
             self.recompute_step_health();
         }
@@ -343,15 +347,25 @@ impl ScreenActionsView {
     }
 
     pub(super) fn has_pending_action_writes(&self, id: ActionId) -> bool {
-        self.editor.action_writes.contains_key(&id)
+        self.action_writes.contains_key(&id)
     }
 
     pub(super) fn latest_written_action(&self, id: ActionId) -> Option<&Action> {
-        self.editor.action_writes.get(&id)?.latest.as_ref()
+        self.action_writes.get(&id)?.latest.as_ref()
+    }
+
+    pub(super) fn raise_undo_toast(&self, id: ActionId, name: String, cx: &mut Context<Self>) {
+        let view = cx.entity();
+        let message = tr!("actions_deleted_toast", name = name.as_str());
+        cx.push_undo_toast(message, move |_window, app: &mut App| {
+            view.update(app, |this, cx| {
+                this.write_action(id, ActionWrite::Restore, cx)
+            });
+        });
     }
 
     fn run_action_writes(&mut self, id: ActionId, cx: &mut Context<Self>) {
-        let Some(queue) = self.editor.action_writes.get_mut(&id) else {
+        let Some(queue) = self.action_writes.get_mut(&id) else {
             return;
         };
         if queue.running || queue.pending.is_empty() {
@@ -361,7 +375,7 @@ impl ScreenActionsView {
         let writes = std::mem::take(&mut queue.pending);
         let latest = queue.latest.clone();
         let repo = Arc::clone(&self.deps.action_repo);
-        let list_reads = Arc::clone(&self.tree.list_reads);
+        let list_reads = Arc::clone(&self.list_reads);
         async_bridge::run_async(
             &self.deps.rt_handle,
             perform_writes(repo, id, latest, writes, list_reads),
@@ -377,7 +391,7 @@ impl ScreenActionsView {
         cx: &mut Context<Self>,
     ) {
         let save_failed = outcome.saved.is_none();
-        let drained = match self.editor.action_writes.get_mut(&id) {
+        let drained = match self.action_writes.get_mut(&id) {
             Some(queue) => {
                 queue.running = false;
                 if save_failed {
@@ -390,19 +404,22 @@ impl ScreenActionsView {
             None => true,
         };
         if drained {
-            self.editor.action_writes.remove(&id);
+            self.action_writes.remove(&id);
         }
         for error in &outcome.errors {
-            self.on_repo_error(&error.failure(), cx);
+            on_repo_error(&error.failure(), cx);
         }
         for effect in outcome.effects {
             match effect {
-                WriteEffect::Select(new_id) => self.select(new_id, cx),
+                WriteEffect::Select(new_id) => cx.emit(ActionEditorEvent::SelectAction(new_id)),
                 WriteEffect::ArchiveUndo { name } => self.raise_undo_toast(id, name, cx),
             }
         }
         if drained {
-            self.land_list(outcome.list_read, outcome.listed, cx);
+            cx.emit(ActionEditorEvent::ListRead {
+                list_read: outcome.list_read,
+                listed: outcome.listed,
+            });
         } else {
             self.run_action_writes(id, cx);
         }
@@ -421,7 +438,7 @@ pub(in crate::actions_screen) mod tests {
     use gpui::TestAppContext;
     use time::OffsetDateTime;
 
-    use super::super::editor::tests::view_with;
+    use super::super::tests::{screen_parts, view_with};
     use super::*;
     use crate::test_support::{action_running, error_toasts, pump_until, runtime, step};
 
@@ -671,7 +688,9 @@ pub(in crate::actions_screen) mod tests {
     }
 
     pub(in crate::actions_screen) struct Screen {
-        pub(in crate::actions_screen) view: Entity<ScreenActionsView>,
+        pub(in crate::actions_screen) view: Entity<ActionEditor>,
+        pub(in crate::actions_screen) tree: Entity<ActionTree>,
+        _host: Entity<ScreenActionsView>,
         pub(in crate::actions_screen) store: Arc<MemActions>,
         pub(in crate::actions_screen) alpha: ActionId,
         pub(in crate::actions_screen) bravo: ActionId,
@@ -690,7 +709,7 @@ pub(in crate::actions_screen) mod tests {
             for action in [alpha, bravo] {
                 store.actions.lock().unwrap().insert(action.id, action);
             }
-            let view = view_with(
+            let host = view_with(
                 cx,
                 &rt,
                 Vec::new(),
@@ -698,8 +717,11 @@ pub(in crate::actions_screen) mod tests {
                 SubActionRegistry::new(),
                 Arc::clone(&store) as Arc<dyn ActionRepo>,
             );
+            let (view, tree) = screen_parts(cx, &host);
             let screen = Self {
                 view,
+                tree,
+                _host: host,
                 store,
                 alpha: ids.0,
                 bravo: ids.1,
@@ -707,7 +729,7 @@ pub(in crate::actions_screen) mod tests {
             };
             screen.settle(cx);
             let alpha = screen.alpha;
-            screen.view.update(cx, |view, cx| view.select(alpha, cx));
+            screen.tree.update(cx, |view, cx| view.select(alpha, cx));
             screen.settle(cx);
             screen
         }
@@ -733,9 +755,8 @@ pub(in crate::actions_screen) mod tests {
         }
 
         pub(in crate::actions_screen) fn shown(&self, cx: &mut TestAppContext) -> Action {
-            self.view.read_with(cx, |view, _| {
-                view.editor.detail.as_ref().unwrap().action.clone()
-            })
+            self.view
+                .read_with(cx, |view, _| view.detail.as_ref().unwrap().action.clone())
         }
 
         pub(in crate::actions_screen) fn hold_next_list(&self) -> tokio::sync::oneshot::Sender<()> {
@@ -746,7 +767,7 @@ pub(in crate::actions_screen) mod tests {
 
         fn idle(&self, cx: &mut TestAppContext) -> bool {
             self.view
-                .read_with(cx, |view, _| view.editor.action_writes.is_empty())
+                .read_with(cx, |view, _| view.action_writes.is_empty())
         }
     }
 
@@ -953,7 +974,7 @@ pub(in crate::actions_screen) mod tests {
     fn a_chain_edit_under_a_missing_nested_path_writes_nothing(cx: &mut TestAppContext) {
         let screen = Screen::open(cx);
         screen.view.update(cx, |view, _| {
-            view.editor.nav_path = vec![nav::NavFrame {
+            view.nav_path = vec![nav::NavFrame {
                 step_index: chain().len(),
                 chain_key: FIRST.to_owned(),
                 case_index: None,
@@ -992,7 +1013,7 @@ pub(in crate::actions_screen) mod tests {
         }
 
         fn listed_name(&self, cx: &mut TestAppContext, id: ActionId) -> Option<String> {
-            self.view.read_with(cx, |view, _| {
+            self.tree.read_with(cx, |view, _| {
                 view.find(id).map(|action| action.name.clone())
             })
         }
@@ -1027,7 +1048,7 @@ pub(in crate::actions_screen) mod tests {
         let older_landed = landed();
         let flag = Arc::clone(&older_landed);
 
-        screen.view.update(cx, |view, cx| {
+        screen.tree.update(cx, |view, cx| {
             view.spawn_reload(
                 async move {
                     older_gate.await.map_err(RepoFailure::operation)?;
@@ -1057,7 +1078,7 @@ pub(in crate::actions_screen) mod tests {
         let older_landed = landed();
         let flag = Arc::clone(&older_landed);
 
-        screen.view.update(cx, |view, cx| {
+        screen.tree.update(cx, |view, cx| {
             view.spawn_reload(
                 async move {
                     older_gate.await.map_err(RepoFailure::operation)?;
@@ -1084,7 +1105,7 @@ pub(in crate::actions_screen) mod tests {
         let older_landed = landed();
         let flag = Arc::clone(&older_landed);
 
-        screen.view.update(cx, |view, cx| {
+        screen.tree.update(cx, |view, cx| {
             view.spawn_reload(
                 async move {
                     older_gate.await.map_err(RepoFailure::operation)?;
@@ -1110,7 +1131,7 @@ pub(in crate::actions_screen) mod tests {
         let screen = Screen::open(cx);
         let reads_before = screen.detail_reads();
 
-        screen.view.update(cx, |view, cx| {
+        screen.tree.update(cx, |view, cx| {
             view.spawn_reload(async { Err(RepoFailure::operation("disk gone")) }, cx);
         });
         screen.settle(cx);
@@ -1126,7 +1147,7 @@ pub(in crate::actions_screen) mod tests {
         let older_landed = landed();
         let flag = Arc::clone(&older_landed);
 
-        screen.view.update(cx, |view, cx| {
+        screen.tree.update(cx, |view, cx| {
             view.spawn_reload(
                 async move {
                     older_gate.await.map_err(RepoFailure::operation)?;
@@ -1158,7 +1179,7 @@ pub(in crate::actions_screen) mod tests {
         let stale_landed = landed();
         let flag = Arc::clone(&stale_landed);
 
-        screen.view.update(cx, |view, cx| {
+        screen.tree.update(cx, |view, cx| {
             view.spawn_reload(
                 async move {
                     stale_gate.await.map_err(RepoFailure::operation)?;

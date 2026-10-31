@@ -1,4 +1,4 @@
-use super::ChatView;
+use super::timeline::ChatTimeline;
 use crate::async_bridge;
 use crate::chat_row::ChatBody;
 use crate::repo_failure::RepoFailure;
@@ -32,7 +32,7 @@ pub(super) fn body_export_text(body: &ChatBody) -> String {
     }
 }
 
-impl ChatView {
+impl ChatTimeline {
     pub(super) fn export_chat_log(&self, cx: &mut Context<Self>) {
         let feed = self.feed.read(cx);
         let mut lines: Vec<String> = Vec::new();
@@ -62,7 +62,7 @@ impl ChatView {
         let filename = format!("forge-chat-{}.txt", stamp.unix_timestamp());
 
         async_bridge::run_async(
-            &self.services.rt_handle,
+            &self.rt_handle,
             async move {
                 let path = crate::app_paths::app_paths().data_dir().join(filename);
                 tokio::fs::write(&path, contents)

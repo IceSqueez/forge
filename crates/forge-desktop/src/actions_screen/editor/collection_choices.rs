@@ -1,31 +1,23 @@
-use forge_components::tr;
-use gpui::Context;
+use gpui::{App, Context};
 
-use super::{AddTriggerStage, ScreenActionsView};
+use super::{ActionEditor, AddTriggerStage};
 use crate::async_bridge;
 use crate::option_choices::{ChoiceOptions, distinct_keys, resolve_options, watch_option_changes};
-use forge_host::integrations::BuiltinRegistry;
 
-impl ScreenActionsView {
-    #[must_use]
-    pub(crate) fn with_builtins(mut self, builtins: BuiltinRegistry) -> Self {
-        self.choices.builtins = builtins;
-        self
-    }
-
-    fn option_keys(&self) -> Vec<String> {
+impl ActionEditor {
+    fn option_keys(&self, cx: &App) -> Vec<String> {
         let trigger_fill = match self.modals.add_trigger.as_ref() {
-            Some(AddTriggerStage::Fill(form)) => form.choices.option_keys(),
+            Some(AddTriggerStage::Fill(host)) => host.form.read(cx).option_keys(),
             _ => Vec::new(),
         };
         distinct_keys(self.choices.option_keys.iter().chain(&trigger_fill))
     }
 
     pub(super) fn start_option_choices(&mut self, cx: &mut Context<Self>) {
-        self.refresh_trigger_fill_choices();
+        self.refresh_trigger_fill_choices(cx);
         self.choices._option_watch = watch_option_changes(
             &self.choices.builtins,
-            self.option_keys(),
+            self.option_keys(cx),
             Self::reload_option_choices,
             cx,
         );
@@ -33,7 +25,7 @@ impl ScreenActionsView {
     }
 
     fn reload_option_choices(&mut self, cx: &mut Context<Self>) {
-        let keys = self.option_keys();
+        let keys = self.option_keys(cx);
         if keys.is_empty() {
             return;
         }
@@ -56,7 +48,7 @@ impl ScreenActionsView {
         self.choices
             .select_options
             .extend(self.choices.integration_options.clone());
-        self.refresh_trigger_fill_choices();
+        self.refresh_trigger_fill_choices(cx);
         if let Some(form) = self.modals.sub_form.clone() {
             let merged = self.choices.select_options.clone();
             form.update(cx, |form, cx| form.apply_options(&merged, cx));
@@ -64,14 +56,11 @@ impl ScreenActionsView {
         cx.notify();
     }
 
-    fn refresh_trigger_fill_choices(&mut self) {
-        if let Some(AddTriggerStage::Fill(form)) = self.modals.add_trigger.as_mut() {
-            let blank = tr!("config_form_choice_any");
-            form.choices.refresh(
-                &mut form.fields,
-                &self.choices.integration_options,
-                Some(&blank),
-            );
+    fn refresh_trigger_fill_choices(&self, cx: &mut Context<Self>) {
+        if let Some(AddTriggerStage::Fill(host)) = self.modals.add_trigger.as_ref() {
+            let options = &self.choices.integration_options;
+            host.form
+                .update(cx, |form, cx| form.refresh_choices(options, cx));
         }
     }
 }
@@ -84,8 +73,8 @@ mod tests {
     use forge_storage::MockMediaRepo;
     use gpui::Entity;
 
-    use crate::actions_screen::ScreenActionsView;
-    use crate::actions_screen::editor::tests::view_with;
+    use crate::actions_screen::editor::ActionEditor;
+    use crate::actions_screen::editor::tests::{screen_parts, view_with};
     use crate::test_support::{FakeCollections, StubActions, owned_reward, pump_until, runtime};
 
     use forge_registry::{FormField, SubActionRegistry};
@@ -134,7 +123,7 @@ mod tests {
     }
 
     fn offered_titles(
-        view: &Entity<ScreenActionsView>,
+        view: &Entity<ActionEditor>,
         cx: &mut gpui::TestAppContext,
     ) -> Option<Vec<String>> {
         view.read_with(cx, |view, _| {
@@ -160,7 +149,7 @@ mod tests {
         let newer = fake.hold_next_listing(listing_of("after the rename"));
         let mut media = MockMediaRepo::new();
         media.expect_blob_of().returning(|_| Ok(None));
-        let view = view_with(
+        let host = view_with(
             cx,
             &rt,
             Vec::new(),
@@ -168,6 +157,7 @@ mod tests {
             SubActionRegistry::new(),
             Arc::new(StubActions),
         );
+        let view = screen_parts(cx, &host).0;
         let builtins = fake.installed_as("twitch");
         view.update(cx, |view, cx| {
             view.choices.builtins = builtins;

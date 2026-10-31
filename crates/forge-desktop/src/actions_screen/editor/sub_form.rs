@@ -8,7 +8,7 @@ use forge_registry::{FormField, FormSchemaSource, SubActionRunner};
 use forge_types::{SubActionConfig, SubActionStep};
 use gpui::{Context, Entity};
 
-impl ScreenActionsView {
+impl ActionEditor {
     pub(super) fn kind_label(&self, kind_id: &str) -> String {
         self.deps
             .sub_action_registry
@@ -52,7 +52,7 @@ impl ScreenActionsView {
                     return;
                 }
                 self.close_sub_form();
-                self.menus.step_open = None;
+                self.step_open = None;
                 self.apply_sub_form_commit(commit, cx);
                 cx.notify();
             }
@@ -193,7 +193,7 @@ impl ScreenActionsView {
             refinement,
             schema: Arc::clone(&self.overlay_schema) as Arc<dyn FormSchemaSource>,
         };
-        self.menus.step_open = None;
+        self.step_open = None;
         self.open_sub_form(launch, cx);
     }
 }
@@ -228,9 +228,8 @@ mod tests {
     use forge_types::{ClipId, Variant};
     use time::OffsetDateTime;
 
-    use super::super::tests::view_with;
+    use super::super::tests::{screen_parts, view_with};
     use super::*;
-    use crate::screen_shortcuts::ScreenShortcuts;
     use crate::test_support::runtime;
 
     const PLAY_SOUND: &str = "soundboard.sound.play";
@@ -290,7 +289,8 @@ mod tests {
     }
 
     struct PlaySoundEditor {
-        view: Entity<ScreenActionsView>,
+        view: Entity<ActionEditor>,
+        _host: Entity<ScreenActionsView>,
         saves: Arc<SavedActions>,
         rt: tokio::runtime::Runtime,
     }
@@ -312,7 +312,7 @@ mod tests {
             let saves = Arc::new(SavedActions::default());
             let mut media = MockMediaRepo::new();
             media.expect_blob_of().returning(|_| Ok(None));
-            let view = view_with(
+            let host = view_with(
                 cx,
                 &rt,
                 Vec::new(),
@@ -320,15 +320,21 @@ mod tests {
                 sub_actions,
                 Arc::clone(&saves) as Arc<dyn ActionRepo>,
             );
+            let view = screen_parts(cx, &host).0;
             view.update(cx, |view, cx| {
                 let mut step = crate::test_support::step(PLAY_SOUND, true);
                 step.config = stored;
-                view.editor.detail = Some(
-                    crate::actions_screen::integration_gating::tests::detail(vec![step]),
+                view.detail = Some(
+                    crate::actions_screen::editor::integration_gating::tests::detail(vec![step]),
                 );
                 view.open_edit_sub_action(0, cx);
             });
-            Self { view, saves, rt }
+            Self {
+                view,
+                _host: host,
+                saves,
+                rt,
+            }
         }
 
         fn form(&self, cx: &mut gpui::TestAppContext) -> Option<Entity<EditSubActionForm>> {
@@ -499,7 +505,7 @@ mod tests {
         ] {
             let editor = PlaySoundEditor::open_storing(cx, stored);
 
-            editor.view.update(cx, |view, cx| view.save_shortcut(cx));
+            editor.view.update(cx, |view, cx| view.save_open_form(cx));
             settle(&editor, cx);
 
             assert_eq!(editor.form(cx).is_none(), closes, "{case}");

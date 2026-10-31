@@ -6,6 +6,7 @@ use crate::config_form::{
     FILL_VAL_FS, FoldContext, collect_field_values, fold_config_field, render_config_row,
     set_picked_value, sparse_overrides,
 };
+use crate::option_choices::ChoiceOptions;
 use crate::repo_failure::RepoFailure;
 use crate::trigger_form_shape::{trigger_form_defaults, trigger_form_specs};
 use crate::triggers_screen::platform_dot_color;
@@ -16,17 +17,52 @@ use forge_components::{
     mono_family, overlay, primary_button, radius, secondary_button, spacing, tr,
 };
 use forge_types::{PermissionRung, PlatformScope, TriggerInstance, TriggerInstanceId};
-use gpui::{AnyElement, ClickEvent, Context, Entity, SharedString, Window, div};
+use gpui::{AnyElement, ClickEvent, Context, Entity, SharedString, WeakEntity, Window, div};
 
-impl ScreenActionsView {
-    pub(super) fn enter_trigger_fill(
-        &mut self,
+pub(super) struct TriggerFillDeps {
+    pub(super) editor: WeakEntity<ActionEditor>,
+    pub(super) trigger_registry: Arc<TriggerRegistry>,
+    pub(super) actions_service: Arc<forge_runtime::ActionsService>,
+    pub(super) rt_handle: tokio::runtime::Handle,
+}
+
+pub(super) enum TriggerFillEvent {
+    Cancelled,
+    SaveRequested(ActionId),
+    Created,
+}
+
+pub(super) struct TriggerFillModal {
+    deps: TriggerFillDeps,
+    action_id: ActionId,
+    kind_id: String,
+    kind_label: String,
+    name_field: Entity<TextInput>,
+    fields: Vec<ConfigField>,
+    labels: Vec<SharedString>,
+    choices: CollectionChoices,
+    saving: bool,
+    _name_sub: Subscription,
+}
+
+impl EventEmitter<TriggerFillEvent> for TriggerFillModal {}
+
+impl Render for TriggerFillModal {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let palette = cx.palette();
+        self.render_fill(&palette, cx)
+    }
+}
+
+impl TriggerFillModal {
+    pub(super) fn new(
+        deps: TriggerFillDeps,
         action_id: ActionId,
         kind_id: String,
         cx: &mut Context<Self>,
-    ) {
+    ) -> Self {
         let palette = cx.palette();
-        let descriptor = self.deps.trigger_registry.get(&kind_id);
+        let descriptor = deps.trigger_registry.get(&kind_id);
         let kind_label = descriptor
             .map(crate::kind_copy::trigger_name)
             .unwrap_or_else(|| kind_id.clone());
@@ -55,7 +91,8 @@ impl ScreenActionsView {
         });
         let name_sub = cx.subscribe(&name_field, Self::on_trigger_name_event);
 
-        self.modals.add_trigger = Some(AddTriggerStage::Fill(AddTriggerFill {
+        Self {
+            deps,
             action_id,
             kind_id,
             kind_label,
@@ -65,9 +102,7 @@ impl ScreenActionsView {
             choices: CollectionChoices::for_specs(&specs),
             saving: false,
             _name_sub: name_sub,
-        }));
-        self.start_option_choices(cx);
-        cx.notify();
+        }
     }
 
     fn on_trigger_name_event(
@@ -77,8 +112,8 @@ impl ScreenActionsView {
         cx: &mut Context<Self>,
     ) {
         match event {
-            InputEvent::Submitted(_) => self.submit_trigger_fill(cx),
-            InputEvent::Cancelled => self.cancel_trigger_picker(cx),
+            InputEvent::Submitted(_) => self.request_save(cx),
+            InputEvent::Cancelled => self.cancel(cx),
             InputEvent::Changed(_) => cx.notify(),
             InputEvent::Blurred(_) => {}
         }
@@ -86,55 +121,45 @@ impl ScreenActionsView {
 
     fn on_trigger_config_committed(&mut self, event: &InputEvent, cx: &mut Context<Self>) {
         if let InputEvent::Submitted(_) = event {
-            self.submit_trigger_fill(cx);
+            self.request_save(cx);
         }
     }
 
     fn toggle_trigger_config_field(&mut self, key: String, cx: &mut Context<Self>) {
-        if let Some(AddTriggerStage::Fill(form)) = self.modals.add_trigger.as_mut() {
-            for field in &mut form.fields {
-                if let ConfigField::Bool { key: k, value, .. } = field
-                    && *k == key
-                {
-                    *value = !*value;
-                }
+        for field in &mut self.fields {
+            if let ConfigField::Bool { key: k, value, .. } = field
+                && *k == key
+            {
+                *value = !*value;
             }
         }
         cx.notify();
     }
 
     fn slide_trigger_config_field(&mut self, key: String, next: i64, cx: &mut Context<Self>) {
-        if let Some(AddTriggerStage::Fill(form)) = self.modals.add_trigger.as_mut() {
-            for field in &mut form.fields {
-                if let ConfigField::Slide { key: k, value, .. } = field
-                    && *k == key
-                {
-                    *value = next;
-                }
+        for field in &mut self.fields {
+            if let ConfigField::Slide { key: k, value, .. } = field
+                && *k == key
+            {
+                *value = next;
             }
         }
         cx.notify();
     }
 
     fn pick_trigger_config_field(&mut self, key: String, choice: String, cx: &mut Context<Self>) {
-        if let Some(AddTriggerStage::Fill(form)) = self.modals.add_trigger.as_mut() {
-            set_picked_value(&mut form.fields, &key, &choice, cx);
-        }
+        set_picked_value(&mut self.fields, &key, &choice, cx);
         cx.notify();
     }
 
     fn open_trigger_choice(&mut self, key: String, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(AddTriggerStage::Fill(form)) = self.modals.add_trigger.as_mut() {
-            form.choices
-                .toggle(&form.fields, key, Self::on_trigger_choice_event, window, cx);
-        }
+        self.choices
+            .toggle(&self.fields, key, Self::on_trigger_choice_event, window, cx);
         cx.notify();
     }
 
     fn close_trigger_choice(&mut self, cx: &mut Context<Self>) {
-        if let Some(AddTriggerStage::Fill(form)) = self.modals.add_trigger.as_mut() {
-            form.choices.close();
-        }
+        self.choices.close();
         cx.notify();
     }
 
@@ -144,21 +169,18 @@ impl ScreenActionsView {
         event: &PickerEvent,
         cx: &mut Context<Self>,
     ) {
-        let Some(AddTriggerStage::Fill(form)) = self.modals.add_trigger.as_mut() else {
-            return;
-        };
         match event {
             PickerEvent::Selected(value) => {
-                if let Some(key) = form.choices.take_open_key() {
-                    set_picked_value(&mut form.fields, &key, value, cx);
+                if let Some(key) = self.choices.take_open_key() {
+                    set_picked_value(&mut self.fields, &key, value, cx);
                 }
             }
-            PickerEvent::Cancelled => form.choices.close(),
+            PickerEvent::Cancelled => self.choices.close(),
         }
         cx.notify();
     }
 
-    fn trigger_config_handlers(form: &AddTriggerFill) -> ConfigFieldHandlers<Self> {
+    fn trigger_config_handlers(&self) -> ConfigFieldHandlers<Self> {
         ConfigFieldHandlers {
             toggle: Self::toggle_trigger_config_field,
             slide: Self::slide_trigger_config_field,
@@ -166,36 +188,37 @@ impl ScreenActionsView {
             choice: Some(ChoiceDropdown {
                 open: Self::open_trigger_choice,
                 close: Self::close_trigger_choice,
-                active: form.choices.active(),
+                active: self.choices.active(),
             }),
         }
     }
 
-    fn back_to_trigger_picker(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.open_trigger_picker(window, cx);
+    fn back(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Err(closed) = self
+            .deps
+            .editor
+            .update(cx, |editor, cx| editor.open_trigger_picker(window, cx))
+        {
+            tracing::debug!(error = %closed, "the action editor closed under its trigger form");
+        }
     }
 
-    pub(in crate::actions_screen) fn submit_trigger_fill(&mut self, cx: &mut Context<Self>) {
-        let Some(AddTriggerStage::Fill(form)) = self.modals.add_trigger.as_ref() else {
-            return;
-        };
-        if form.saving {
-            return;
+    fn cancel(&mut self, cx: &mut Context<Self>) {
+        cx.emit(TriggerFillEvent::Cancelled);
+    }
+
+    pub(super) fn request_save(&mut self, cx: &mut Context<Self>) {
+        if !self.saving && !self.name_field.read(cx).content().trim().is_empty() {
+            cx.emit(TriggerFillEvent::SaveRequested(self.action_id));
         }
-        let name = form.name_field.read(cx).content().trim().to_owned();
-        if name.is_empty() {
-            return;
-        }
-        let action_id = form.action_id;
-        if self.tree.selected != Some(action_id) {
-            self.modals.add_trigger = None;
-            cx.notify();
-            return;
-        }
-        let kind_id = form.kind_id.clone();
+    }
+
+    pub(super) fn save(&mut self, cx: &mut Context<Self>) {
+        let name = self.name_field.read(cx).content().trim().to_owned();
+        let kind_id = self.kind_id.clone();
         let default = trigger_form_defaults(self.deps.trigger_registry.get(&kind_id));
         let mut buffer = default.clone();
-        collect_field_values(&form.fields, &mut buffer, cx);
+        collect_field_values(&self.fields, &mut buffer, cx);
         let overrides = sparse_overrides(&default, &buffer);
 
         let instance = TriggerInstance {
@@ -211,11 +234,10 @@ impl ScreenActionsView {
             permission_rung: PermissionRung::Everyone,
         };
 
-        if let Some(AddTriggerStage::Fill(form)) = self.modals.add_trigger.as_mut() {
-            form.saving = true;
-        }
+        self.saving = true;
         cx.notify();
 
+        let action_id = self.action_id;
         let service = Arc::clone(&self.deps.actions_service);
         async_bridge::run_async(
             &self.deps.rt_handle,
@@ -226,34 +248,34 @@ impl ScreenActionsView {
                     .map_err(RepoFailure::from)
             },
             |this, result: Result<(), RepoFailure>, cx| match result {
-                Ok(()) => {
-                    this.modals.add_trigger = None;
-                    this.reload_detail(cx);
-                    cx.notify();
-                }
+                Ok(()) => cx.emit(TriggerFillEvent::Created),
                 Err(message) => {
-                    if let Some(AddTriggerStage::Fill(form)) = this.modals.add_trigger.as_mut() {
-                        form.saving = false;
-                    }
-                    this.on_repo_error(&message, cx);
+                    this.saving = false;
+                    on_repo_error(&message, cx);
                 }
             },
             cx,
         );
     }
 
-    pub(super) fn render_trigger_fill(
-        &self,
-        form: &AddTriggerFill,
-        palette: &ForgePalette,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
+    pub(super) fn option_keys(&self) -> Vec<String> {
+        self.choices.option_keys()
+    }
+
+    pub(super) fn refresh_choices(&mut self, options: &ChoiceOptions, cx: &mut Context<Self>) {
+        let blank = tr!("config_form_choice_any");
+        self.choices
+            .refresh(&mut self.fields, options, Some(&blank));
+        cx.notify();
+    }
+
+    fn render_fill(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
         let density = cx.density();
-        let dot_color = platform_dot_color(&form.kind_id, &self.deps.trigger_registry, palette);
+        let dot_color = platform_dot_color(&self.kind_id, &self.deps.trigger_registry, palette);
         let glyph = self
             .deps
             .trigger_registry
-            .get(&form.kind_id)
+            .get(&self.kind_id)
             .map(|d| Icon::from_name(d.icon_name()))
             .unwrap_or(Icon::Bolt);
 
@@ -262,9 +284,9 @@ impl ScreenActionsView {
             .flex_col()
             .gap(spacing(Spacing::Xs, density))
             .child(self.fill_section_label(tr!("triggers_create_section_name"), palette))
-            .child(div().child(form.name_field.clone()));
+            .child(div().child(self.name_field.clone()));
 
-        let config_card: AnyElement = if form.fields.is_empty() {
+        let config_card: AnyElement = if self.fields.is_empty() {
             div()
                 .py(spacing(Spacing::Sm, density))
                 .px(spacing(Spacing::Sm, density))
@@ -275,14 +297,14 @@ impl ScreenActionsView {
                 .child(tr!("triggers_sheet_no_config"))
                 .into_any_element()
         } else {
-            let last = form.fields.len().saturating_sub(1);
+            let last = self.fields.len().saturating_sub(1);
             let view = cx.entity();
-            let handlers = Self::trigger_config_handlers(form);
+            let handlers = self.trigger_config_handlers();
             let mut col = div().flex().flex_col();
-            for (i, field) in form.fields.iter().enumerate() {
+            for (i, field) in self.fields.iter().enumerate() {
                 col = col.child(render_config_row(
                     field,
-                    row_label(&form.labels, i, field),
+                    row_label(&self.labels, i, field),
                     i == last,
                     palette,
                     "actions-trigger-field",
@@ -308,7 +330,7 @@ impl ScreenActionsView {
             .child(self.fill_section_label(tr!("triggers_create_section_config"), palette))
             .child(config_card)
             .children(crate::triggers_screen::timer_field_hints(
-                &form.kind_id,
+                &self.kind_id,
                 palette,
                 density,
             ));
@@ -320,24 +342,22 @@ impl ScreenActionsView {
             .child(name_section)
             .child(config_section);
 
-        let can_create = !form.name_field.read(cx).content().trim().is_empty() && !form.saving;
+        let can_create = !self.name_field.read(cx).content().trim().is_empty() && !self.saving;
 
         let back = ghost_button_with_icon(Icon::ArrowBackUp, tr!("triggers_create_back"), palette)
             .on_click(
                 "actions-trigger-fill-back",
-                cx.listener(|this, _: &ClickEvent, window, cx| {
-                    this.back_to_trigger_picker(window, cx)
-                }),
+                cx.listener(|this, _: &ClickEvent, window, cx| this.back(window, cx)),
             );
         let cancel = secondary_button(tr!("triggers_create_cancel"), palette).on_click(
             "actions-trigger-fill-cancel",
-            cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_trigger_picker(cx)),
+            cx.listener(|this, _: &ClickEvent, _, cx| this.cancel(cx)),
         );
         let create = primary_button(tr!("triggers_create_btn"), palette)
             .disabled(!can_create)
             .on_click(
                 "actions-trigger-fill-submit",
-                cx.listener(|this, _: &ClickEvent, _, cx| this.submit_trigger_fill(cx)),
+                cx.listener(|this, _: &ClickEvent, _, cx| this.request_save(cx)),
             );
         let footer = div()
             .w_full()
@@ -352,27 +372,34 @@ impl ScreenActionsView {
         let card = modal(
             tr!(
                 "triggers_create_new_instance",
-                kind = form.kind_label.as_str()
+                kind = self.kind_label.as_str()
             ),
             body,
             palette,
         )
         .header_icon(glyph, dot_color)
-        .subtitle(form.kind_id.clone())
+        .subtitle(self.kind_id.clone())
         .size(ModalSize::Md)
         .footer(footer)
         .on_close(
             "actions-trigger-fill-close",
-            cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_trigger_picker(cx)),
+            cx.listener(|this, _: &ClickEvent, _, cx| this.cancel(cx)),
         );
 
         let view = cx.entity();
-        overlay(card, palette)
-            .position(OverlayPosition::Center)
-            .busy(form.saving)
-            .on_dismiss("actions-trigger-fill-scrim", move |_window, cx| {
-                view.update(cx, |this, cx| this.cancel_trigger_picker(cx));
-            })
+        div()
+            .absolute()
+            .top_0()
+            .left_0()
+            .size_full()
+            .child(
+                overlay(card, palette)
+                    .position(OverlayPosition::Center)
+                    .busy(self.saving)
+                    .on_dismiss("actions-trigger-fill-scrim", move |_window, cx| {
+                        view.update(cx, |this, cx| this.cancel(cx));
+                    }),
+            )
             .into_any_element()
     }
 

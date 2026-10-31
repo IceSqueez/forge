@@ -30,13 +30,60 @@ impl EditSubActionForm {
             self.group.as_ref().map(|group| group.color(palette)),
             palette,
         );
-        let (step_index, step_total) = match self.target {
-            SubFormTarget::Edit(i) => (i + 1, self.chain_len),
-            SubFormTarget::Add => (self.chain_len + 1, self.chain_len + 1),
-        };
         let (grid, rejection_shown_inline) = self.render_field_grid(palette, cx);
 
-        let continue_row = div()
+        let advanced = self.render_advanced(palette, cx);
+
+        let body = div()
+            .id("actions-sub-scroll")
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Sm, density))
+            .px(spacing(Spacing::Md, density))
+            .py(spacing(Spacing::Sm, density))
+            .max_h(SUB_MODAL_MAX_H)
+            .min_h_0()
+            .overflow_y_revealing_focus()
+            .when(
+                self.group.as_ref().is_some_and(StepGroup::is_files),
+                |body| body.child(files_root_note(palette, density)),
+            )
+            .child(grid)
+            .child(advanced);
+
+        let title_slot = self.render_title_slot(palette, density);
+
+        let footer = self.render_footer(rejection_shown_inline, palette, cx);
+
+        let card = modal("", body, palette)
+            .width(STEP_MODAL_W)
+            .header_icon(header_glyph, header_color)
+            .header_tile_size(STEP_TILE, STEP_TILE_GLYPH)
+            .title_slot(title_slot)
+            .flush_body()
+            .body_scrolls_itself()
+            .footer(footer)
+            .on_close(
+                "actions-sub-close",
+                cx.listener(|this, _: &ClickEvent, _, cx| this.cancel(cx)),
+            );
+
+        let view = cx.entity();
+        overlay(card, palette)
+            .position(OverlayPosition::Center)
+            .on_dismiss("actions-sub-scrim", move |_window, cx| {
+                view.update(cx, |this, cx| this.cancel(cx));
+            })
+            .into_any_element()
+    }
+
+    fn render_continue_row(
+        &self,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement + use<> {
+        let density = cx.density();
+        div()
             .w_full()
             .flex()
             .items_center()
@@ -72,9 +119,15 @@ impl EditSubActionForm {
             .child(toggle(self.continue_on_error, palette).on_click(
                 "actions-sub-continue-on-error",
                 cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_sub_continue_on_error(cx)),
-            ));
+            ))
+    }
 
-        let condition_field = div()
+    fn render_condition_field(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+    ) -> impl IntoElement + use<> {
+        div()
             .flex()
             .flex_col()
             .gap(spacing(Spacing::Xxs, density))
@@ -92,9 +145,16 @@ impl EditSubActionForm {
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
                     .child(tr!("actions_step_condition_hint")),
-            );
+            )
+    }
 
-        let advanced = div()
+    fn render_advanced(
+        &self,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement + use<> {
+        let density = cx.density();
+        div()
             .w_full()
             .mt(spacing(Spacing::Xs, density))
             .pt(spacing(Spacing::Sm, density))
@@ -110,27 +170,20 @@ impl EditSubActionForm {
                     .text_color(palette.text_muted)
                     .child(tr!("actions_step_advanced")),
             )
-            .child(condition_field)
-            .child(continue_row);
+            .child(self.render_condition_field(palette, density))
+            .child(self.render_continue_row(palette, cx))
+    }
 
-        let body = div()
-            .id("actions-sub-scroll")
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Sm, density))
-            .px(spacing(Spacing::Md, density))
-            .py(spacing(Spacing::Sm, density))
-            .max_h(SUB_MODAL_MAX_H)
-            .min_h_0()
-            .overflow_y_revealing_focus()
-            .when(
-                self.group.as_ref().is_some_and(StepGroup::is_files),
-                |body| body.child(files_root_note(palette, density)),
-            )
-            .child(grid)
-            .child(advanced);
-
-        let title_slot = div()
+    fn render_title_slot(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+    ) -> impl IntoElement + use<> {
+        let (step_index, step_total) = match self.target {
+            SubFormTarget::Edit(i) => (i + 1, self.chain_len),
+            SubFormTarget::Add => (self.chain_len + 1, self.chain_len + 1),
+        };
+        div()
             .flex_1()
             .flex()
             .flex_col()
@@ -151,8 +204,16 @@ impl EditSubActionForm {
                         index = i64::try_from(step_index).unwrap_or(i64::MAX),
                         total = i64::try_from(step_total).unwrap_or(i64::MAX)
                     )),
-            );
+            )
+    }
 
+    fn render_footer(
+        &self,
+        rejection_shown_inline: bool,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement + use<> {
+        let density = cx.density();
         let cancel = secondary_button(tr!("common_cancel"), palette).on_click(
             "actions-sub-cancel",
             cx.listener(|this, _: &ClickEvent, _, cx| this.cancel(cx)),
@@ -166,34 +227,13 @@ impl EditSubActionForm {
             .as_ref()
             .filter(|_| !rejection_shown_inline)
             .map(|rejection| rejection_note(rejection.message.clone(), palette));
-        let footer = div()
+        div()
             .w_full()
             .flex()
             .items_center()
             .gap(spacing(Spacing::Xs, density))
             .child(div().flex_1().min_w_0().children(footer_rejection))
             .child(cancel)
-            .child(save);
-
-        let card = modal("", body, palette)
-            .width(STEP_MODAL_W)
-            .header_icon(header_glyph, header_color)
-            .header_tile_size(STEP_TILE, STEP_TILE_GLYPH)
-            .title_slot(title_slot)
-            .flush_body()
-            .body_scrolls_itself()
-            .footer(footer)
-            .on_close(
-                "actions-sub-close",
-                cx.listener(|this, _: &ClickEvent, _, cx| this.cancel(cx)),
-            );
-
-        let view = cx.entity();
-        overlay(card, palette)
-            .position(OverlayPosition::Center)
-            .on_dismiss("actions-sub-scrim", move |_window, cx| {
-                view.update(cx, |this, cx| this.cancel(cx));
-            })
-            .into_any_element()
+            .child(save)
     }
 }

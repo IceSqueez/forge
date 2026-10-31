@@ -64,7 +64,7 @@ fn drill_in_chip(
         .into_any_element()
 }
 
-impl ScreenActionsView {
+impl ActionEditor {
     fn enter_branch(
         &mut self,
         step_index: usize,
@@ -78,22 +78,22 @@ impl ScreenActionsView {
             .and_then(nav::ChainItem::step)
             .map(|s| nav::branch_step_count(s, &chain_key, case_index))
             .unwrap_or(0);
-        if self.editor.nav_path.len() >= nav::UI_MAX_NESTING_DEPTH && count == 0 {
+        if self.nav_path.len() >= nav::UI_MAX_NESTING_DEPTH && count == 0 {
             return;
         }
-        self.editor.nav_path.push(nav::NavFrame {
+        self.nav_path.push(nav::NavFrame {
             step_index,
             chain_key,
             case_index,
         });
-        self.menus.step_open = None;
+        self.step_open = None;
         self.sync_case_fields(cx);
         cx.notify();
     }
 
     fn breadcrumb_pop(&mut self, depth: usize, cx: &mut Context<Self>) {
-        self.editor.nav_path.truncate(depth);
-        self.menus.step_open = None;
+        self.nav_path.truncate(depth);
+        self.step_open = None;
         self.sync_case_fields(cx);
         cx.notify();
     }
@@ -197,7 +197,7 @@ impl ScreenActionsView {
         }
 
         let palette = cx.palette();
-        let mut previous = std::mem::take(&mut self.editor.case_fields);
+        let mut previous = std::mem::take(&mut self.case_fields);
         let mut fields = BTreeMap::new();
         for (si, cases_key, ci, seed) in specs {
             if let Some(kept) = previous.remove(&(si, ci))
@@ -232,7 +232,7 @@ impl ScreenActionsView {
                 },
             );
         }
-        self.editor.case_fields = fields;
+        self.case_fields = fields;
     }
 
     pub(super) fn render_breadcrumb(
@@ -244,9 +244,8 @@ impl ScreenActionsView {
         let density = cx.density();
         let mut segments: Vec<(String, Option<usize>)> =
             vec![(tr!("action_editor_breadcrumb_steps"), Some(0))];
-        for (depth, frame) in self.editor.nav_path.iter().enumerate() {
-            let prefix =
-                nav::resolve_chain(&detail.action.sub_actions, &self.editor.nav_path[..depth]);
+        for (depth, frame) in self.nav_path.iter().enumerate() {
+            let prefix = nav::resolve_chain(&detail.action.sub_actions, &self.nav_path[..depth]);
             let enclosing = prefix.get(frame.step_index).and_then(nav::ChainItem::step);
             let step_label = enclosing
                 .and_then(|s| {
@@ -265,7 +264,7 @@ impl ScreenActionsView {
                     })
                     .unwrap_or_else(|| branch_field_label(&frame.chain_key)),
             };
-            let pop_target = if depth + 1 == self.editor.nav_path.len() {
+            let pop_target = if depth + 1 == self.nav_path.len() {
                 None
             } else {
                 Some(depth + 1)
@@ -455,8 +454,7 @@ impl ScreenActionsView {
                 .w(CASE_MATCH_W)
                 .flex_none()
                 .children(
-                    self.editor
-                        .case_fields
+                    self.case_fields
                         .get(&(step_index, ci))
                         .map(|f| f.field.clone()),
                 )

@@ -1,3 +1,4 @@
+use super::trigger_fill::{TriggerFillDeps, TriggerFillEvent, TriggerFillModal};
 use super::*;
 use crate::async_bridge;
 use crate::picker_favorites::{bind_picker, follow_picker_event};
@@ -71,15 +72,15 @@ fn build_recent_group(
     (Some(group), picks)
 }
 
-impl ScreenActionsView {
+impl ActionEditor {
     pub(super) fn open_trigger_picker(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(action_id) = self.tree.selected else {
+        let Some(action_id) = self.selected else {
             return;
         };
-        if self.editor.detail.is_none() {
+        if self.detail.is_none() {
             return;
         }
-        self.menus.step_open = None;
+        self.step_open = None;
         let service = Arc::clone(&self.deps.actions_service);
         let reply = crate::async_bridge::on_runtime(&self.deps.rt_handle, async move {
             service
@@ -102,7 +103,7 @@ impl ScreenActionsView {
                     clippy::let_underscore_must_use,
                     reason = "the view may close before the result arrives"
                 )]
-                let _ = this.update(cx, |this, cx| this.on_repo_error(&message, cx));
+                let _ = this.update(cx, |_, cx| on_repo_error(&message, cx));
             }
             Err(_) => {}
         })
@@ -116,12 +117,11 @@ impl ScreenActionsView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.tree.selected != Some(action_id) || self.editor.detail.is_none() {
+        if self.selected != Some(action_id) || self.detail.is_none() {
             return;
         }
         let palette = cx.palette();
         let action_name = self
-            .editor
             .detail
             .as_ref()
             .map(|d| d.action.name.clone())
@@ -213,7 +213,7 @@ impl ScreenActionsView {
         cx: &mut Context<Self>,
     ) {
         self.modals.add_trigger = None;
-        if self.tree.selected != Some(action_id) {
+        if self.selected != Some(action_id) {
             cx.notify();
             return;
         }
@@ -228,14 +228,14 @@ impl ScreenActionsView {
             },
             |this, result, cx| match result {
                 Ok(()) => this.reload_detail(cx),
-                Err(failure) => this.on_repo_error(&failure, cx),
+                Err(failure) => on_repo_error(&failure, cx),
             },
             cx,
         );
         cx.notify();
     }
 
-    pub(in crate::actions_screen) fn render_add_trigger(
+    pub(super) fn render_add_trigger(
         &self,
         stage: &AddTriggerStage,
         palette: &ForgePalette,
@@ -251,7 +251,49 @@ impl ScreenActionsView {
                     })
                     .into_any_element()
             }
-            AddTriggerStage::Fill(form) => self.render_trigger_fill(form, palette, cx),
+            AddTriggerStage::Fill(host) => host.form.clone().into_any_element(),
+        }
+    }
+
+    fn enter_trigger_fill(&mut self, action_id: ActionId, kind_id: String, cx: &mut Context<Self>) {
+        let deps = TriggerFillDeps {
+            editor: cx.weak_entity(),
+            trigger_registry: Arc::clone(&self.deps.trigger_registry),
+            actions_service: Arc::clone(&self.deps.actions_service),
+            rt_handle: self.deps.rt_handle.clone(),
+        };
+        let form = cx.new(|cx| TriggerFillModal::new(deps, action_id, kind_id, cx));
+        let sub = cx.subscribe(&form, Self::on_trigger_fill_event);
+        self.modals.add_trigger = Some(AddTriggerStage::Fill(TriggerFillHost { form, _sub: sub }));
+        self.start_option_choices(cx);
+        cx.notify();
+    }
+
+    fn on_trigger_fill_event(
+        &mut self,
+        form: Entity<TriggerFillModal>,
+        event: &TriggerFillEvent,
+        cx: &mut Context<Self>,
+    ) {
+        match event {
+            TriggerFillEvent::Cancelled => self.cancel_trigger_picker(cx),
+            TriggerFillEvent::SaveRequested(action_id) => {
+                if self.selected == Some(*action_id) {
+                    form.update(cx, |form, cx| form.save(cx));
+                } else {
+                    self.cancel_trigger_picker(cx);
+                }
+            }
+            TriggerFillEvent::Created => {
+                self.cancel_trigger_picker(cx);
+                self.reload_detail(cx);
+            }
+        }
+    }
+
+    pub(in crate::actions_screen) fn submit_trigger_fill(&mut self, cx: &mut Context<Self>) {
+        if let Some(AddTriggerStage::Fill(host)) = self.modals.add_trigger.as_ref() {
+            host.form.update(cx, |form, cx| form.request_save(cx));
         }
     }
 }

@@ -7,7 +7,7 @@ use forge_components::{
 use forge_types::ExecutionOutcome;
 use gpui::{AnyElement, ClickEvent, Context, Rgba, SharedString, div};
 
-impl ScreenActionsView {
+impl ActionEditor {
     pub(super) fn render_stats_row(
         &self,
         telemetry: &ActionTelemetry,
@@ -31,7 +31,7 @@ impl ScreenActionsView {
             palette.success
         };
 
-        let (exec_value, exec_color): (SharedString, Rgba) = match &self.editor.last_outcome {
+        let (exec_value, exec_color): (SharedString, Rgba) = match &self.last_outcome {
             Some(ExecutionOutcome::Failed(_)) => (
                 tr!("action_editor_run_history_outcome_failed").into(),
                 palette.danger,
@@ -155,9 +155,7 @@ impl ScreenActionsView {
                     .text_decoration_color(palette.border_input)
                     .child(value.into())
                     .key_activated(palette.text_primary)
-                    .on_click(
-                        cx.listener(|this, _: &ClickEvent, _, cx| this.open_history_modal(cx)),
-                    ),
+                    .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.open_history(cx))),
             )
             .into_any_element()
     }

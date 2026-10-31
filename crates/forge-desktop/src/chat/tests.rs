@@ -13,6 +13,7 @@ use forge_types::PlatformId;
 use gpui::{App, AppContext as _, Context, Entity, TestAppContext, VisualTestContext};
 use time::OffsetDateTime;
 
+use super::timeline::ChatTimeline;
 use super::viewer_actions::ViewerTarget;
 use super::viewer_count::{StaleViewer, note_refreshed, read_viewers};
 use super::{ChatServices, ChatView, PlatformFilter};
@@ -413,7 +414,10 @@ fn a_context_menu_ban_goes_out_only_after_it_is_confirmed(cx: &mut TestAppContex
 fn unread_keeps_counting_past_the_feed_cap_while_scrolled_up(cx: &mut TestAppContext) {
     let rt = runtime();
     let (feed, view) = mount(cx, &rt);
-    view.update(cx, |view, _| view.timeline.auto_scroll = false);
+    view.update(cx, |view, cx| {
+        view.timeline
+            .update(cx, |timeline, _| timeline.auto_scroll = false)
+    });
 
     push_each(
         cx,
@@ -422,7 +426,7 @@ fn unread_keeps_counting_past_the_feed_cap_while_scrolled_up(cx: &mut TestAppCon
     );
 
     assert_eq!(
-        view.read_with(cx, |view, _| view.timeline.unread),
+        view.read_with(cx, |view, cx| view.timeline.read(cx).unread),
         CAP + OVERFLOW
     );
 }
@@ -432,8 +436,10 @@ fn the_visible_rows_and_list_follow_eviction_under_an_active_filter(cx: &mut Tes
     let rt = runtime();
     let (feed, view) = mount(cx, &rt);
     view.update(cx, |view, cx| {
-        view.timeline.hide_bots = true;
-        view.reset_chat_list(cx);
+        view.timeline.update(cx, |timeline, cx| {
+            timeline.hide_bots = true;
+            timeline.reset_chat_list(cx);
+        });
     });
 
     let total = CAP + OVERFLOW;
@@ -445,10 +451,11 @@ fn the_visible_rows_and_list_follow_eviction_under_an_active_filter(cx: &mut Tes
 
     let start = (total - CAP) as u64;
     let expected: Vec<u64> = (start..total as u64).filter(|seq| seq % 2 == 0).collect();
-    let (visible, list_len) = view.read_with(cx, |view, _| {
+    let (visible, list_len) = view.read_with(cx, |view, cx| {
+        let timeline = view.timeline.read(cx);
         (
-            view.timeline.visible.iter().copied().collect::<Vec<u64>>(),
-            view.timeline.chat_list.item_count(),
+            timeline.visible.iter().copied().collect::<Vec<u64>>(),
+            timeline.chat_list.item_count(),
         )
     });
     assert_eq!(visible, expected);
@@ -512,7 +519,9 @@ fn filtering_kick(
     });
     let (_feed, view) = mount_gated(cx, rt, Some(lifecycle.clone()), MockChatHistoryRepo::new());
     view.update(cx, |view, cx| {
-        view.set_platform_filter(PlatformFilter::Single(PlatformId::Kick), cx)
+        view.timeline.update(cx, |timeline, cx| {
+            timeline.set_platform_filter(PlatformFilter::Single(PlatformId::Kick), cx)
+        })
     });
     (lifecycle, view)
 }
@@ -531,8 +540,10 @@ fn switching_off_the_filtered_platform_resets_the_filter_to_all(cx: &mut TestApp
         ]),
     );
 
-    assert!(view.read_with(cx, |view, _| view.timeline.platform_filter
-        == PlatformFilter::All));
+    assert!(
+        view.read_with(cx, |view, cx| view.timeline.read(cx).platform_filter
+            == PlatformFilter::All)
+    );
 }
 
 #[gpui::test]
@@ -549,8 +560,8 @@ fn switching_off_another_platform_keeps_the_active_filter(cx: &mut TestAppContex
         ]),
     );
 
-    assert!(view.read_with(cx, |view, _| {
-        view.timeline.platform_filter == PlatformFilter::Single(PlatformId::Kick)
+    assert!(view.read_with(cx, |view, cx| {
+        view.timeline.read(cx).platform_filter == PlatformFilter::Single(PlatformId::Kick)
     }));
 }
 
@@ -593,7 +604,7 @@ fn a_name_without_a_platform_color_takes_the_color_of_its_drawer_avatar() {
         };
 
         assert_eq!(
-            ChatView::username_color(&msg, &FORGE_DEFAULT),
+            ChatTimeline::username_color(&msg, &FORGE_DEFAULT),
             drawer_avatar_color(name),
             "{name}"
         );
@@ -609,7 +620,7 @@ fn a_platform_sent_name_color_wins_over_the_hashed_accent() {
         ..message(0, false)
     };
 
-    assert_eq!(ChatView::username_color(&msg, &FORGE_DEFAULT), sent);
+    assert_eq!(ChatTimeline::username_color(&msg, &FORGE_DEFAULT), sent);
 }
 
 struct DrawerRig<'a> {
@@ -872,7 +883,9 @@ impl<'a> FeedRig<'a> {
                 .map(|(name, unix)| line_by(&Self::key(name), unix))
                 .collect(),
         );
-        let focus = view.read_with(vcx, |view, _| view.timeline.feed_keys.focus().clone());
+        let focus = view.read_with(vcx, |view, cx| {
+            view.timeline.read(cx).feed_keys.focus().clone()
+        });
         vcx.update(|window, cx| window.focus(&focus, cx));
         vcx.run_until_parked();
         Self { view, vcx }
@@ -888,9 +901,10 @@ impl<'a> FeedRig<'a> {
     }
 
     fn cursor_row(&mut self) -> Option<usize> {
-        self.view.read_with(self.vcx, |view, _| {
-            let seq = *view.timeline.feed_keys.current()?;
-            view.timeline.visible.iter().position(|row| *row == seq)
+        self.view.read_with(self.vcx, |view, cx| {
+            let timeline = view.timeline.read(cx);
+            let seq = *timeline.feed_keys.current()?;
+            timeline.visible.iter().position(|row| *row == seq)
         })
     }
 }
@@ -963,8 +977,9 @@ fn a_cursor_stays_on_its_message_and_freezes_following_while_messages_arrive(
     );
 
     assert_eq!(rig.cursor_row(), Some(1));
-    let (following, unread) = rig.view.read_with(rig.vcx, |view, _| {
-        (view.timeline.auto_scroll, view.timeline.unread)
+    let (following, unread) = rig.view.read_with(rig.vcx, |view, cx| {
+        let timeline = view.timeline.read(cx);
+        (timeline.auto_scroll, timeline.unread)
     });
     assert_eq!((following, unread), (false, 2));
 }
@@ -975,7 +990,10 @@ fn jumping_to_the_latest_message_drops_the_cursor(cx: &mut TestAppContext) {
     let mut rig = FeedRig::mount(cx, &rt);
     rig.press("up");
 
-    rig.view.update(rig.vcx, |view, cx| view.jump_to_latest(cx));
+    rig.view.update(rig.vcx, |view, cx| {
+        view.timeline
+            .update(cx, |timeline, cx| timeline.jump_to_latest(cx))
+    });
 
     assert_eq!(rig.cursor_row(), None);
 }
@@ -987,7 +1005,9 @@ fn a_filtered_out_cursor_row_activates_nothing(cx: &mut TestAppContext) {
     rig.press("up");
 
     rig.view.update(rig.vcx, |view, cx| {
-        view.set_platform_filter(PlatformFilter::Single(PlatformId::Kick), cx)
+        view.timeline.update(cx, |timeline, cx| {
+            timeline.set_platform_filter(PlatformFilter::Single(PlatformId::Kick), cx)
+        })
     });
     rig.press("enter");
 

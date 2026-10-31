@@ -2,14 +2,14 @@ use super::*;
 use crate::actions_screen::sub_action_modal::SubFormTarget;
 use forge_registry::{ScopeLevel, ScopedVariable, variables_in_scope};
 
-impl ScreenActionsView {
+impl ActionEditor {
     pub(super) fn step_scope(&self, target: SubFormTarget) -> Vec<ScopedVariable> {
-        let Some(detail) = &self.editor.detail else {
+        let Some(detail) = &self.detail else {
             return Vec::new();
         };
         scope_at(
             detail,
-            &self.editor.nav_path,
+            &self.nav_path,
             target,
             &self.deps.sub_action_registry,
             &self.deps.trigger_registry,

@@ -339,8 +339,8 @@ impl AppShell {
                 preselect,
                 cx,
             )
-            .with_builtins(builtins)
-            .with_scheduled_runs(scheduled_run_repo)
+            .with_builtins(builtins, cx)
+            .with_scheduled_runs(scheduled_run_repo, cx)
             .with_pack_export(cx)
             .with_integration_switch(switch, cx)
         });

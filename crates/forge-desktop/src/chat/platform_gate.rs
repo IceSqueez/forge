@@ -82,9 +82,11 @@ impl ChatView {
     }
 
     fn on_lifecycle_changed(&mut self, cx: &mut Context<Self>) {
-        if !self.filter_offered(self.timeline.platform_filter, cx) {
-            self.timeline.platform_filter = PlatformFilter::All;
-            self.reset_chat_list(cx);
+        let filter = self.timeline.read(cx).platform_filter;
+        if !self.filter_offered(filter, cx) {
+            self.timeline.update(cx, |timeline, cx| {
+                timeline.set_platform_filter(PlatformFilter::All, cx)
+            });
         }
         self.request_selected_follow(cx);
         cx.notify();

@@ -1,7 +1,7 @@
 use super::viewer_actions::ViewerTarget;
 use super::viewer_follow::FollowLookups;
 use super::viewer_tts::TtsVoiceHost;
-use super::{PlatformFilter, ReplyTarget, UserMenuTarget, ViewerHistoryHost};
+use super::{ReplyTarget, UserMenuTarget, ViewerHistoryHost};
 use crate::chat_author::AuthorKey;
 use crate::chat_drawer::ViewerDirectory;
 use crate::chat_viewer_messages::ViewerMessages;
@@ -11,9 +11,7 @@ use forge_runtime::ActionEngineHandle;
 use forge_speak_queue::SpeakQueueHandle;
 use forge_storage::{ChatHistoryRepo, VoiceAliasRepo};
 use forge_types::Shared;
-use gpui::{Entity, FocusHandle, ListState, Pixels, Point, Subscription, UniformListScrollHandle};
-use std::collections::VecDeque;
-use std::rc::Rc;
+use gpui::{Entity, FocusHandle, Pixels, Point, Subscription, UniformListScrollHandle};
 use std::sync::Arc;
 
 pub(crate) struct ChatServices {
@@ -23,20 +21,6 @@ pub(crate) struct ChatServices {
     pub(crate) voice_alias_repo: Arc<dyn VoiceAliasRepo>,
     pub(crate) speak: Option<SpeakQueueHandle>,
     pub(crate) bot_accounts: Shared<Vec<String>>,
-}
-
-pub(super) struct TimelineState {
-    pub(super) search: SearchState,
-    pub(super) platform_filter: PlatformFilter,
-    pub(super) events_only: bool,
-    pub(super) hide_bots: bool,
-    pub(super) visible: Rc<VecDeque<u64>>,
-    pub(super) appended_through: u64,
-    pub(super) feed_keys: ListCursor<u64>,
-    pub(super) auto_scroll: bool,
-    pub(super) unread: usize,
-    pub(super) last_seen_seq: u64,
-    pub(super) chat_list: ListState,
 }
 
 pub(super) struct DrawerState {
@@ -67,7 +51,7 @@ pub(super) struct ReplyMenuState {
 
 pub(super) struct ChatSubscriptions {
     pub(super) _feed_obs: Subscription,
-    pub(super) _search_sub: Subscription,
+    pub(super) _timeline_sub: Subscription,
     pub(super) _drawer_search_sub: Subscription,
     pub(super) _whisper_sub: Subscription,
     pub(super) _reply_sub: Subscription,

@@ -66,17 +66,16 @@ fn build_step_groups(
     (groups, picks)
 }
 
-impl ScreenActionsView {
+impl ActionEditor {
     pub(super) fn open_grid_picker(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(action_id) = self.tree.selected else {
+        let Some(action_id) = self.selected else {
             return;
         };
-        if self.editor.detail.is_none() {
+        if self.detail.is_none() {
             return;
         }
         let palette = cx.palette();
         let ctx_name = self
-            .editor
             .detail
             .as_ref()
             .map(|d| d.action.name.clone())
@@ -118,7 +117,7 @@ impl ScreenActionsView {
         focus_inside_modal(window, cx, |window, cx| {
             picker.update(cx, |f, cx| f.focus(window, cx))
         });
-        self.menus.step_open = None;
+        self.step_open = None;
         self.modals.grid_picker = Some(GridPickerForm {
             picker,
             picks,
@@ -163,7 +162,7 @@ impl ScreenActionsView {
             .modals
             .grid_picker
             .as_ref()
-            .zip(self.editor.detail.as_ref())
+            .zip(self.detail.as_ref())
             .is_some_and(|(f, d)| f.action_id == d.action.id);
         let prepared = self
             .deps
@@ -204,7 +203,7 @@ impl ScreenActionsView {
             refinement,
             schema: Arc::clone(&self.overlay_schema) as Arc<dyn FormSchemaSource>,
         };
-        self.menus.step_open = None;
+        self.step_open = None;
         self.open_sub_form(launch, cx);
     }
 }

@@ -50,7 +50,7 @@ fn mark_unavailable_clips(
     }
 }
 
-impl ScreenActionsView {
+impl ActionEditor {
     pub(in crate::actions_screen) fn fetch_select_options(&self, cx: &mut Context<Self>) {
         let action_repo = Arc::clone(&self.deps.action_repo);
         let queue_repo = Arc::clone(&self.deps.queue_repo);
@@ -237,7 +237,7 @@ impl ScreenActionsView {
             );
         }
         if !failed_keys.contains(&QUEUE_OPTIONS_KEY) {
-            self.tree.concurrent_queue_ids = concurrent_queue_ids;
+            self.concurrent_queue_ids = concurrent_queue_ids;
         }
         for key in &failed_keys {
             if let Some(previous) = self.choices.select_options.remove(*key) {
@@ -273,7 +273,7 @@ mod tests {
     use forge_types::{ClipId, OutputDevice};
     use time::OffsetDateTime;
 
-    use super::super::tests::view_with;
+    use super::super::tests::{screen_parts, view_with};
     use super::*;
     use crate::test_support::{StubActions, error_toasts, pump_until, runtime};
     use forge_storage::MockActionRepo;
@@ -338,15 +338,16 @@ mod tests {
         rt: &tokio::runtime::Runtime,
         clips: Vec<StoredClip>,
         media: MockMediaRepo,
-    ) -> Entity<ScreenActionsView> {
-        view_with(
+    ) -> (Entity<ActionEditor>, Entity<ScreenActionsView>) {
+        let host = view_with(
             cx,
             rt,
             clips,
             media,
             SubActionRegistry::new(),
             Arc::new(StubActions),
-        )
+        );
+        (screen_parts(cx, &host).0, host)
     }
 
     #[gpui::test]
@@ -362,7 +363,7 @@ mod tests {
             (&ghost.id.to_string(), "Ghost clip - file missing"),
             (&real.id.to_string(), "Real clip"),
         ]);
-        let view = view_over(cx, &rt, vec![ghost, real], media);
+        let (view, _host) = view_over(cx, &rt, vec![ghost, real], media);
 
         view.update(cx, |view, cx| view.fetch_select_options(cx));
         let mut listed = None;
@@ -400,7 +401,7 @@ mod tests {
         let known = play_step(&clip.id.to_string());
         let dangling = play_step(&ClipId::new().to_string());
         let media = media_holding(clip.id, managed_file.path().to_owned());
-        let view = view_over(cx, &rt, vec![clip], media);
+        let (view, _host) = view_over(cx, &rt, vec![clip], media);
 
         let mut details = None;
         pump_until(&rt, || {
@@ -431,7 +432,8 @@ mod tests {
     }
 
     struct FlakyListing {
-        view: Entity<ScreenActionsView>,
+        view: Entity<ActionEditor>,
+        _host: Entity<ScreenActionsView>,
         lists_fail: Arc<AtomicBool>,
         lists: Arc<AtomicUsize>,
         rt: tokio::runtime::Runtime,
@@ -456,7 +458,7 @@ mod tests {
                 Ok(vec![listed.clone()])
             }
         });
-        let view = view_with(
+        let host = view_with(
             cx,
             &rt,
             Vec::new(),
@@ -465,7 +467,8 @@ mod tests {
             Arc::new(repo),
         );
         let listing = FlakyListing {
-            view,
+            view: screen_parts(cx, &host).0,
+            _host: host,
             lists_fail,
             lists,
             rt,
@@ -541,7 +544,7 @@ mod tests {
         let known: HashSet<String> = ["queue-1".to_owned()].into_iter().collect();
         listing
             .view
-            .update(cx, |view, _| view.tree.concurrent_queue_ids = known.clone());
+            .update(cx, |view, _| view.concurrent_queue_ids = known.clone());
 
         listing.view.update(cx, |view, cx| {
             view.on_select_options_fetched(
@@ -558,7 +561,7 @@ mod tests {
 
         let kept = listing
             .view
-            .read_with(cx, |view, _| view.tree.concurrent_queue_ids.clone());
+            .read_with(cx, |view, _| view.concurrent_queue_ids.clone());
         assert_eq!(kept, known);
     }
 
@@ -572,7 +575,7 @@ mod tests {
         forge_overlay::register_builtin_kinds(&mut kinds).unwrap();
         let known: HashMap<String, String> =
             [(IDENTITY.to_owned(), "overlay.alert".to_owned())].into();
-        let content_fields = |view: &ScreenActionsView| {
+        let content_fields = |view: &ActionEditor| {
             view.overlay_schema
                 .fields_for(forge_runtime::CONTENT_SCHEMA_KEY, IDENTITY)
                 .len()

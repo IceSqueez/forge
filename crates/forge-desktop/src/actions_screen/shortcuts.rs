@@ -1,46 +1,30 @@
 use super::*;
 use crate::screen_shortcuts::ScreenShortcuts;
 
-impl ActionForm {
-    pub(super) fn ready(&self, cx: &App) -> bool {
-        !self.name.read(cx).content().trim().is_empty() && !self.queues.is_empty()
-    }
-}
-
 impl ScreenActionsView {
     pub(super) fn has_open_modal(&self, cx: &App) -> bool {
-        self.modals.action_form.is_some()
-            || self.modals.sub_form.is_some()
-            || self.modals.add_trigger.is_some()
-            || self.modals.grid_picker.is_some()
-            || self.modals.history.is_some()
-            || self.modals.test_run.is_some()
-            || self.tree.pending_delete.get().is_some()
-            || self
-                .modals
-                .pack_export
-                .as_ref()
-                .is_some_and(|host| host.flow.read(cx).is_busy())
+        self.screen_modal_open(cx) || self.editor.read(cx).has_open_modal()
     }
 }
 
 impl ScreenShortcuts for ScreenActionsView {
     fn save_shortcut(&mut self, cx: &mut Context<Self>) {
-        if let Some(form) = self.modals.sub_form.clone() {
-            form.update(cx, |form, cx| form.submit(cx));
-            return;
-        }
-        if matches!(self.modals.add_trigger, Some(AddTriggerStage::Fill(_))) {
-            self.submit_trigger_fill(cx);
-            return;
-        }
         if self
+            .editor
+            .update(cx, |editor, cx| editor.save_open_form(cx))
+        {
+            return;
+        }
+        let Some(form) = self
             .modals
             .action_form
             .as_ref()
-            .is_some_and(|form| form.ready(cx))
-        {
-            self.submit_action_modal(cx);
+            .map(|host| host.view.clone())
+        else {
+            return;
+        };
+        if form.read(cx).ready(cx) {
+            form.update(cx, |form, cx| form.submit(cx));
         }
     }
 
@@ -48,14 +32,15 @@ impl ScreenShortcuts for ScreenActionsView {
         if self.has_open_modal(cx) {
             return;
         }
-        self.start_test_run(cx);
+        self.editor
+            .update(cx, |editor, cx| editor.start_test_run(cx));
     }
 
-    fn new_action_shortcut(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    fn new_action_shortcut(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         if self.has_open_modal(cx) {
             return;
         }
-        self.open_action_modal(None, window, cx);
+        self.open_action_form(None, cx);
     }
 }
 
@@ -68,8 +53,8 @@ mod tests {
     use gpui::{TestAppContext, VisualTestContext};
 
     use super::super::editor::tests::view_with;
-    use super::super::integration_gating::tests::detail;
     use super::*;
+    use crate::actions_screen::editor::integration_gating::tests::detail;
     use crate::test_support::{error_toasts, runtime};
 
     struct Hosting(Entity<ScreenActionsView>);
@@ -131,12 +116,8 @@ mod tests {
         fn fill_action_form(&self, cx: &mut TestAppContext, name: &str, with_queue: bool) {
             let name = name.to_owned();
             self.view.update(cx, |view, cx| {
-                let form = view.modals.action_form.as_mut().unwrap();
-                form.name
-                    .update(cx, |input, cx| input.set_content(name, cx));
-                if with_queue {
-                    form.queues = vec![(QueueId::new(), "Default".into())];
-                }
+                let form = view.modals.action_form.as_ref().unwrap().view.clone();
+                form.update(cx, |form, cx| form.fill(name, with_queue, cx));
             });
         }
 
@@ -151,16 +132,20 @@ mod tests {
         }
 
         fn open_action(&self, cx: &mut TestAppContext) {
-            self.view.update(cx, |view, _| {
+            self.view.update(cx, |view, cx| {
                 let detail = detail(Vec::new());
-                view.tree.selected = Some(detail.action.id);
-                view.editor.detail = Some(detail);
+                view.tree
+                    .update(cx, |tree, _| tree.set_selected(Some(detail.action.id)));
+                view.editor
+                    .update(cx, |editor, _| editor.show_detail(detail));
             });
         }
 
         fn ask_delete(&self, cx: &mut TestAppContext) {
-            self.view.update(cx, |view, _| {
-                view.tree.pending_delete.request(ActionId::new())
+            self.view.update(cx, |view, cx| {
+                view.tree
+                    .update(cx, |tree, _| tree.ask_delete(ActionId::new()));
+                view.sync_step_drag_lock(cx);
             });
         }
 
@@ -170,8 +155,9 @@ mod tests {
         }
 
         fn test_run_open(&self, cx: &mut TestAppContext) -> bool {
-            self.view
-                .read_with(cx, |view, _| view.modals.test_run.is_some())
+            self.view.read_with(cx, |view, cx| {
+                view.editor.read(cx).test_run_modal().is_some()
+            })
         }
 
         fn saved(&self) -> usize {
@@ -186,10 +172,10 @@ mod tests {
         screen.press_new_action(cx);
 
         let blank = screen.view.read_with(cx, |view, cx| {
-            view.modals
-                .action_form
-                .as_ref()
-                .map(|form| (form.editing, form.name.read(cx).content().to_owned()))
+            view.modals.action_form.as_ref().map(|host| {
+                let form = host.view.read(cx);
+                (form.editing_id(), form.name_text(cx))
+            })
         });
         assert_eq!(blank, Some((None, String::new())));
     }
@@ -279,13 +265,13 @@ mod tests {
         screen.press_run(cx);
         let first = screen
             .view
-            .read_with(cx, |view, _| view.modals.test_run.clone());
+            .read_with(cx, |view, cx| view.editor.read(cx).test_run_modal());
 
         screen.press_run(cx);
 
         let second = screen
             .view
-            .read_with(cx, |view, _| view.modals.test_run.clone());
+            .read_with(cx, |view, cx| view.editor.read(cx).test_run_modal());
         assert_eq!(second.map(|m| m.entity_id()), first.map(|m| m.entity_id()));
     }
 }

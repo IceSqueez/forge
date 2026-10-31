@@ -14,6 +14,7 @@ mod send_plan;
 mod state;
 #[cfg(test)]
 mod tests;
+mod timeline;
 mod user_menu;
 mod viewer_actions;
 mod viewer_count;
@@ -24,12 +25,13 @@ mod viewer_tts;
 mod visible_rows;
 
 pub(crate) use self::state::ChatServices;
-use self::state::{ChatSubscriptions, DrawerState, ReplyMenuState, TimelineState};
+use self::state::{ChatSubscriptions, DrawerState, ReplyMenuState};
+use self::timeline::{ChatTimeline, ChatTimelineEvent};
 use self::{
     banned_tab::BannedHost, viewer_actions::ViewerTarget, viewer_count::ChatViewerCount,
     viewer_follow::FollowLookups, viewer_history::ViewerHistory,
 };
-use crate::chat_drawer::ViewerDirectory;
+use crate::chat_drawer::{ViewerDirectory, drawer_matches};
 use crate::chat_feed::ChatFeed;
 use crate::chat_viewer_messages::ViewerMessages;
 use crate::home_stats::HomeStats;
@@ -44,16 +46,9 @@ use forge_components::{
 use forge_storage::ViewerRepo;
 use forge_types::PlatformId;
 use gpui::UniformListScrollHandle;
-use gpui::{
-    Context, Entity, ListAlignment, ListState, Pixels, Point, Subscription, Window, div,
-    prelude::*, px,
-};
-use std::collections::VecDeque;
-use std::rc::Rc;
+use gpui::{App, Context, Entity, Pixels, Point, Subscription, Window, div, prelude::*, px};
 use std::sync::Arc;
 use std::time::Duration;
-
-const LIST_OVERDRAW: Pixels = px(240.0);
 
 const DRAWER_WIDTH: Pixels = px(320.0);
 const VIEWER_REFRESH: Duration = Duration::from_secs(15);
@@ -90,7 +85,7 @@ pub(crate) struct ChatView {
     lifecycle: Option<Entity<IntegrationLifecycle>>,
     banned: BannedHost,
     services: ChatServices,
-    timeline: TimelineState,
+    timeline: Entity<ChatTimeline>,
     drawer: DrawerState,
     reply_menu: ReplyMenuState,
     subscriptions: ChatSubscriptions,
@@ -118,7 +113,6 @@ impl ChatView {
         palette: ForgePalette,
         cx: &mut Context<Self>,
     ) -> Self {
-        let search = SearchState::new(cx, palette, tr!("chat_search_placeholder"));
         let drawer_search =
             SearchState::on_surface(cx, palette, tr!("chat_drawer_search_placeholder"));
         let whisper_input = cx.new(|cx| {
@@ -132,26 +126,15 @@ impl ChatView {
             ChatComposer::new(home_stats.clone(), services.rt_handle.clone(), palette, cx)
         });
         let viewer_count = cx.new(|cx| ChatViewerCount::new(home_stats, cx));
-        let search_sub = cx.subscribe(search.field(), Self::on_search_event);
         let drawer_search_sub = cx.subscribe(drawer_search.field(), Self::on_drawer_search_event);
         let whisper_sub = cx.subscribe(&whisper_input, Self::on_whisper_event);
         let reply_sub = cx.subscribe(&reply_input, Self::on_reply_event);
 
-        let last_seen_seq = feed.read(cx).end_seq();
-
-        let chat_list = ListState::new(0, ListAlignment::Top, LIST_OVERDRAW);
-        let list_entity = cx.entity();
-        chat_list.set_scroll_handler(move |event, _window, app| {
-            let at_bottom = event.visible_range.end >= event.count;
-            list_entity.update(app, |this, cx| {
-                this.timeline.auto_scroll = at_bottom;
-                if at_bottom {
-                    this.timeline.unread = 0;
-                    this.timeline.last_seen_seq = this.feed.read(cx).end_seq();
-                }
-                cx.notify();
-            });
-        });
+        let bot_accounts = services.bot_accounts.clone();
+        let rt_handle = services.rt_handle.clone();
+        let timeline =
+            cx.new(|cx| ChatTimeline::new(feed.clone(), bot_accounts, rt_handle, palette, cx));
+        let timeline_sub = cx.subscribe(&timeline, Self::on_timeline_event);
 
         let viewer_messages = cx.new(|_| ViewerMessages::default());
         let viewer_messages_obs = cx.observe(&viewer_messages, |_, _, cx| cx.notify());
@@ -172,19 +155,7 @@ impl ChatView {
             lifecycle: None,
             banned: BannedHost::default(),
             services,
-            timeline: TimelineState {
-                search,
-                platform_filter: PlatformFilter::All,
-                events_only: false,
-                hide_bots: false,
-                visible: Rc::new(VecDeque::new()),
-                appended_through: last_seen_seq,
-                feed_keys: ListCursor::reachable_by_tab(cx),
-                auto_scroll: true,
-                unread: 0,
-                last_seen_seq,
-                chat_list,
-            },
+            timeline,
             drawer: DrawerState {
                 drawer_width: DRAWER_WIDTH,
                 drawer_search,
@@ -211,7 +182,7 @@ impl ChatView {
             },
             subscriptions: ChatSubscriptions {
                 _feed_obs: feed_obs,
-                _search_sub: search_sub,
+                _timeline_sub: timeline_sub,
                 _drawer_search_sub: drawer_search_sub,
                 _whisper_sub: whisper_sub,
                 _reply_sub: reply_sub,
@@ -219,11 +190,58 @@ impl ChatView {
                 _lifecycle_obs: None,
             },
         };
-        this.rebuild_visible(cx);
-        this.timeline.chat_list.reset(this.timeline.visible.len());
         this.refresh_drawer_keys(cx);
         this.absorb_viewer_messages(cx);
         this
+    }
+}
+
+impl ChatView {
+    fn on_feed_changed(&mut self, _feed: Entity<ChatFeed>, cx: &mut Context<Self>) {
+        self.feed_changed.send_replace(());
+        self.refresh_drawer_keys(cx);
+        self.absorb_viewer_messages(cx);
+        cx.notify();
+    }
+
+    fn refresh_drawer_keys(&mut self, cx: &mut Context<Self>) {
+        let search = self.drawer.drawer_search.query();
+        self.drawer.drawer_keys = self
+            .feed
+            .read(cx)
+            .authors()
+            .newest_first()
+            .filter(|(_, activity)| drawer_matches(&activity.name, search))
+            .map(|(key, _)| key.clone())
+            .collect();
+    }
+
+    fn on_timeline_event(
+        &mut self,
+        _timeline: Entity<ChatTimeline>,
+        event: &ChatTimelineEvent,
+        cx: &mut Context<Self>,
+    ) {
+        match event {
+            ChatTimelineEvent::OpenViewer(key) => self.open_viewer(key.clone(), cx),
+            ChatTimelineEvent::OpenUserMenu {
+                position,
+                viewer,
+                message_id,
+            } => self.open_user_menu(*position, viewer.clone(), Some(message_id.clone()), cx),
+        }
+    }
+
+    fn offered_filters(&self, cx: &App) -> Vec<PlatformFilter> {
+        [
+            PlatformFilter::All,
+            PlatformFilter::Single(PlatformId::Twitch),
+            PlatformFilter::Single(PlatformId::YouTube),
+            PlatformFilter::Single(PlatformId::Kick),
+        ]
+        .into_iter()
+        .filter(|filter| self.filter_offered(*filter, cx))
+        .collect()
     }
 }
 
@@ -239,12 +257,21 @@ impl Render for ChatView {
         let palette = cx.palette();
         let density = cx.density();
 
-        let header_right = self.render_header_right();
+        let header_right = self.viewer_count.clone();
         let tabs = self.render_tabs(&palette, cx);
         let banned_panel = self.banned.panel().cloned();
         let feed_tab = banned_panel.is_none();
-        let filter_left = feed_tab.then(|| self.render_filter_left(&palette, density, cx));
-        let filter_right = feed_tab.then(|| self.render_filter_right(&palette, cx));
+        let offered = self.offered_filters(cx);
+        let filter_left = feed_tab.then(|| {
+            self.timeline.update(cx, |timeline, cx| {
+                timeline.render_filter_left(&offered, &palette, density, cx)
+            })
+        });
+        let filter_right = feed_tab.then(|| {
+            self.timeline.update(cx, |timeline, cx| {
+                timeline.render_filter_right(&palette, cx)
+            })
+        });
         let drawer = self.render_drawer(&palette, density, cx);
         let user_menu = self.render_user_menu(&palette, cx);
         let ban_confirm = self.render_ban_confirm(&palette, cx);
@@ -268,7 +295,7 @@ impl Render for ChatView {
                 .flex()
                 .flex_col()
                 .overflow_hidden()
-                .child(self.render_chat_area(&palette, density, cx))
+                .child(self.timeline.clone())
                 .children(reply_compose)
                 .child(self.composer.clone()),
         };

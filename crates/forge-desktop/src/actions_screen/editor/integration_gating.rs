@@ -3,13 +3,12 @@ use crate::integration_switch::{ClosedGate, IntegrationSwitch, integration_name}
 use forge_components::{integration_disabled_notice, mono_family};
 use forge_types::IntegrationId;
 
-impl ScreenActionsView {
-    #[must_use]
-    pub(crate) fn with_integration_switch(
-        mut self,
+impl ActionEditor {
+    pub(in crate::actions_screen) fn attach_integration_switch(
+        &mut self,
         switch: IntegrationSwitch,
         cx: &mut Context<Self>,
-    ) -> Self {
+    ) {
         self.integrations = Some(switch.watch(cx, |this: &mut Self, off, cx| {
             if let Some(integrations) = &mut this.integrations {
                 integrations.replace(off, cx);
@@ -17,7 +16,6 @@ impl ScreenActionsView {
             this.recompute_step_health();
         }));
         self.recompute_step_health();
-        self
     }
 
     pub(super) fn switched_off_step_owner(&self, step: &SubActionStep) -> Option<IntegrationId> {
@@ -121,7 +119,7 @@ impl ScreenActionsView {
 }
 
 #[cfg(test)]
-pub(super) mod tests {
+pub(in crate::actions_screen) mod tests {
     use forge_components::ThemeId;
     use forge_runtime::ActionsService;
     use forge_runtime::{ActionCancelRegistry, QueueScheduler, spawn_action_engine};
@@ -163,7 +161,8 @@ pub(super) mod tests {
     }
 
     pub(in crate::actions_screen) struct Rig {
-        pub(in crate::actions_screen) view: Entity<ScreenActionsView>,
+        pub(in crate::actions_screen) view: Entity<ActionEditor>,
+        pub(in crate::actions_screen) host: Entity<ScreenActionsView>,
         lifecycle: Entity<crate::integration_lifecycle::IntegrationLifecycle>,
         _rt: tokio::runtime::Runtime,
     }
@@ -205,9 +204,9 @@ pub(super) mod tests {
                 (bus, scheduler)
             });
             let handle = rt.handle().clone();
-            let view = cx.update(|cx| {
+            let host = cx.update(|cx| {
                 cx.new(|cx| {
-                    let mut view = ScreenActionsView::new(
+                    let view = ScreenActionsView::new(
                         super::ActionsDeps {
                             action_repo,
                             queue_repo,
@@ -232,12 +231,14 @@ pub(super) mod tests {
                         None,
                         cx,
                     );
-                    view.editor.detail = open;
+                    view.editor.update(cx, |editor, _| editor.detail = open);
                     view.with_integration_switch(switch, cx)
                 })
             });
+            let view = host.read_with(cx, |host, _| host.editor.clone());
             Self {
                 view,
+                host,
                 lifecycle,
                 _rt: rt,
             }
@@ -245,8 +246,7 @@ pub(super) mod tests {
 
         fn flagged(&self, cx: &mut gpui::TestAppContext) -> Vec<Option<IntegrationId>> {
             self.view.read_with(cx, |view, _| {
-                view.editor
-                    .step_health
+                view.step_health
                     .iter()
                     .map(|health| health.disabled_integration().cloned())
                     .collect()
@@ -255,8 +255,7 @@ pub(super) mod tests {
 
         fn flagged_failed(&self, cx: &mut gpui::TestAppContext) -> Vec<Option<IntegrationId>> {
             self.view.read_with(cx, |view, _| {
-                view.editor
-                    .step_health
+                view.step_health
                     .iter()
                     .map(|health| health.failed_integration().cloned())
                     .collect()

@@ -233,7 +233,6 @@ mod tests {
     use forge_net::GatewayRequest;
     use forge_platform_core::{FollowStatus, PlatformError};
     use forge_types::Secret;
-    use futures::future::BoxFuture;
     use reqwest::StatusCode;
     use serde_json::{Value, json};
     use tokio_util::sync::CancellationToken;
@@ -256,8 +255,7 @@ mod tests {
     use crate::thumbnail::YoutubeThumbnail;
     use forge_events::Event;
 
-    type TokenSource =
-        Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync>;
+    use forge_platform_core::TokenSource;
 
     const TOKEN: &str = "ya29.secret-access-token";
     const COST: u32 = 7;

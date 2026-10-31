@@ -1,9 +1,10 @@
 use forge_events::{Event, EventSource};
 use forge_registry::{
     ActorDeclaration, ActorIdentity, ActorRole, ActorSlot, CanonicalVariable, EventFilter,
-    FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor, TriggerVariables,
+    KindPlatformContract, TriggerCategory, TriggerKindDescriptor, TriggerVariables,
 };
-use forge_types::{PlatformId, TriggerConfig};
+use forge_types::PlatformId;
+use forge_types::TriggerConfig;
 
 use super::payload_read::{self, kick_actor};
 use crate::vocabulary::fields::chat as fields;
@@ -38,14 +39,6 @@ impl TriggerKindDescriptor for MessageDeletedDescriptor {
 
     fn platform_contract(&self) -> KindPlatformContract {
         KindPlatformContract::PlatformSpecific(PlatformId::Kick)
-    }
-
-    fn default_config(&self) -> TriggerConfig {
-        TriggerConfig::new()
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![]
     }
 
     fn event_filter(&self) -> EventFilter {

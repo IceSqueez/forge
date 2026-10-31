@@ -1,9 +1,5 @@
-use std::collections::BTreeMap;
-
 use forge_events::{Event, EventSource};
-use forge_registry::{
-    EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
-};
+use forge_registry::{EventFilter, KindPlatformContract, TriggerCategory, TriggerKindDescriptor};
 use forge_types::{
     ArgStack, DeclaredVariable, TriggerConfig, UserText, VariableSchema, Variant, VariantKind,
 };
@@ -41,14 +37,6 @@ impl TriggerKindDescriptor for RecordStartingDescriptor {
 
     fn platform_contract(&self) -> KindPlatformContract {
         KindPlatformContract::Universal
-    }
-
-    fn default_config(&self) -> TriggerConfig {
-        BTreeMap::new()
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![]
     }
 
     fn condition_display(&self, _: &TriggerConfig) -> UserText {
@@ -130,14 +118,14 @@ pub(crate) fn build_record_arg_stack(event: &Event) -> ArgStack {
 
 #[cfg(test)]
 mod tests {
+    use super::super::lifecycle;
     use super::super::{
-        RecordFileChangedDescriptor, RecordPausedDescriptor, RecordResumedDescriptor,
-        RecordStartedDescriptor, RecordStartingDescriptor, RecordStatusChangedDescriptor,
-        RecordStoppedDescriptor, RecordStoppingDescriptor,
+        RecordFileChangedDescriptor, RecordStartingDescriptor, RecordStatusChangedDescriptor,
     };
     use super::*;
     use forge_registry::TriggerKindDescriptor;
     use serde_json::json;
+    use std::collections::BTreeMap;
 
     const ALL_LIFECYCLE_KINDS: [&str; 6] = [
         "obs.recording.starting",
@@ -160,11 +148,11 @@ mod tests {
     fn each_specific_descriptor_matches_only_its_own_kind() {
         let descriptors: [(&str, &dyn TriggerKindDescriptor); 6] = [
             ("obs.recording.starting", &RecordStartingDescriptor),
-            ("obs.recording.started", &RecordStartedDescriptor),
-            ("obs.recording.stopping", &RecordStoppingDescriptor),
-            ("obs.recording.stopped", &RecordStoppedDescriptor),
-            ("obs.recording.paused", &RecordPausedDescriptor),
-            ("obs.recording.resumed", &RecordResumedDescriptor),
+            ("obs.recording.started", &lifecycle::RECORDING_STARTED),
+            ("obs.recording.stopping", &lifecycle::RECORDING_STOPPING),
+            ("obs.recording.stopped", &lifecycle::RECORDING_STOPPED),
+            ("obs.recording.paused", &lifecycle::RECORDING_PAUSED),
+            ("obs.recording.resumed", &lifecycle::RECORDING_RESUMED),
         ];
         let cfg = BTreeMap::new();
         for (own_kind, descriptor) in descriptors {

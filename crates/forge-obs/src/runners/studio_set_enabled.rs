@@ -11,8 +11,6 @@ use super::step_failure;
 use crate::ObsSink;
 use crate::vocabulary::{config_keys, sub_action_ids};
 
-const KIND_ID: &str = sub_action_ids::STUDIO_SET_ENABLED;
-
 const ON: ToggleField = ToggleField {
     key: config_keys::ON,
     label: "Enabled",
@@ -34,7 +32,7 @@ impl StudioSetEnabledRunner {
 #[async_trait]
 impl SubActionRunner for StudioSetEnabledRunner {
     fn id(&self) -> &str {
-        KIND_ID
+        sub_action_ids::STUDIO_SET_ENABLED
     }
 
     fn category(&self) -> SubActionCategory {
@@ -66,7 +64,7 @@ impl SubActionRunner for StudioSetEnabledRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, KIND_ID);
+        let timer = StepTimer::start(ctx, self.id());
         let on = match ON.read(config, ctx.arg_stack) {
             Ok(on) => on,
             Err(problem) => return (timer.invalid_config(&problem), None),

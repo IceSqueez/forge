@@ -15,8 +15,6 @@ use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
 use crate::step_failure;
 use crate::vocabulary::{config_keys, sub_action_ids};
 
-const KIND_ID: &str = sub_action_ids::CHANNEL_RUN_AD;
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum AdLength {
     Seconds30,
@@ -109,7 +107,7 @@ impl RunAdRunner {
 #[async_trait]
 impl SubActionRunner for RunAdRunner {
     fn id(&self) -> &str {
-        KIND_ID
+        sub_action_ids::CHANNEL_RUN_AD
     }
 
     fn category(&self) -> SubActionCategory {
@@ -141,7 +139,7 @@ impl SubActionRunner for RunAdRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, KIND_ID);
+        let timer = StepTimer::start(ctx, self.id());
         let length = match AD_LENGTH.read(config, ctx.arg_stack) {
             Ok(length) => length,
             Err(problem) => return (timer.invalid_config(&problem), None),

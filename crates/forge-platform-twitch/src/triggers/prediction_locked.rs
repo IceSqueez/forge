@@ -2,8 +2,7 @@ use crate::vocabulary::event_kinds;
 use crate::vocabulary::trigger_ids;
 use forge_events::{Event, EventSource};
 use forge_registry::{
-    ActorDeclaration, EventFilter, FormField, KindPlatformContract, TriggerCategory,
-    TriggerKindDescriptor,
+    ActorDeclaration, EventFilter, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
 use forge_types::{
     ArgStack, DeclaredVariable, PlatformId, TriggerConfig, VariableSchema, Variant, VariantKind,
@@ -40,14 +39,6 @@ impl TriggerKindDescriptor for PredictionLockedDescriptor {
 
     fn platform_contract(&self) -> KindPlatformContract {
         KindPlatformContract::PlatformSpecific(PlatformId::Twitch)
-    }
-
-    fn default_config(&self) -> TriggerConfig {
-        TriggerConfig::new()
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![]
     }
 
     fn event_filter(&self) -> EventFilter {

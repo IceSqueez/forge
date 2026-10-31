@@ -7,8 +7,6 @@ use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry};
 use crate::control::SoundboardControl;
 use crate::vocabulary::sub_action_ids;
 
-const KIND_ID: &str = sub_action_ids::SOUND_STOP_ALL;
-
 pub struct StopAllSoundsRunner {
     control: Arc<dyn SoundboardControl>,
 }
@@ -22,7 +20,7 @@ impl StopAllSoundsRunner {
 #[async_trait]
 impl SubActionRunner for StopAllSoundsRunner {
     fn id(&self) -> &str {
-        KIND_ID
+        sub_action_ids::SOUND_STOP_ALL
     }
 
     fn category(&self) -> SubActionCategory {
@@ -50,7 +48,7 @@ impl SubActionRunner for StopAllSoundsRunner {
         _config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, KIND_ID);
+        let timer = StepTimer::start(ctx, self.id());
         let outcome = super::step_failure::outcome(&self.control.stop_all().await);
         (timer.finish(outcome), None)
     }

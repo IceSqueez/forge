@@ -20,7 +20,6 @@ use crate::chat_sender::{ChatDelivery, ChatSenders, StepResult, failed_step, ste
 use crate::helix::HelixTransport;
 use crate::vocabulary::{config_keys, messages, sub_action_ids};
 
-const KIND_ID: &str = sub_action_ids::CHAT_SEND_ANNOUNCEMENT;
 const MAX_MESSAGE_CHARS: usize = 500;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -140,7 +139,7 @@ impl SendAnnouncementRunner {
 #[async_trait]
 impl SubActionRunner for SendAnnouncementRunner {
     fn id(&self) -> &str {
-        KIND_ID
+        sub_action_ids::CHAT_SEND_ANNOUNCEMENT
     }
 
     fn category(&self) -> SubActionCategory {
@@ -172,7 +171,7 @@ impl SubActionRunner for SendAnnouncementRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, KIND_ID);
+        let timer = StepTimer::start(ctx, self.id());
         let read = match read_config(config, ctx.arg_stack) {
             Ok(read) => read,
             Err(problem) => return (timer.invalid_config(&problem), None),

@@ -16,7 +16,6 @@ use crate::helix::{HelixError, HelixMethod, HelixRequest, HelixTransport};
 use crate::step_failure;
 use crate::vocabulary::sub_action_ids;
 
-const KIND_ID: &str = sub_action_ids::MODERATION_UNBAN_USER;
 const NOT_BANNED_MARKER: &str = "not banned";
 
 const CONFIG: ConfigSpec = ConfigSpec::new(&[&MODERATION_TARGET.login]);
@@ -70,7 +69,7 @@ impl UnbanUserRunner {
 #[async_trait]
 impl SubActionRunner for UnbanUserRunner {
     fn id(&self) -> &str {
-        KIND_ID
+        sub_action_ids::MODERATION_UNBAN_USER
     }
 
     fn category(&self) -> SubActionCategory {
@@ -110,7 +109,7 @@ impl SubActionRunner for UnbanUserRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, KIND_ID);
+        let timer = StepTimer::start(ctx, self.id());
         let target = match MODERATION_TARGET.read(config, ctx.arg_stack) {
             Ok(target) => target,
             Err(problem) => return (timer.invalid_config(&problem), None),

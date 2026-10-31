@@ -42,10 +42,6 @@ impl TriggerKindDescriptor for DonationReceivedDescriptor {
         KindPlatformContract::Universal
     }
 
-    fn default_config(&self) -> TriggerConfig {
-        TriggerConfig::new()
-    }
-
     fn config_fields(&self) -> Vec<FormField> {
         vec![FormField::Optional {
             key: PROVIDER_KEY,

@@ -73,7 +73,7 @@ impl SubActionRunner for DeleteMessageRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, KIND_ID);
+        let timer = StepTimer::start(ctx, self.id());
         let message_id = match MESSAGE_ID.read(config, ctx.arg_stack) {
             Ok(message_id) => message_id,
             Err(problem) => return (timer.invalid_config(&problem), None),

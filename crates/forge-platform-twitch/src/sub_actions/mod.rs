@@ -104,7 +104,7 @@ pub(crate) use send_announcement::SendAnnouncementRunner;
 pub(crate) use send_shoutout::SendShoutoutRunner;
 pub(crate) use send_whisper::SendWhisperRunner;
 pub(crate) use set_mode::SetModeRunner;
-pub(crate) use shield_mode::{ShieldModeOffRunner, ShieldModeOnRunner};
+pub(crate) use shield_mode::ShieldModeRunner;
 pub(crate) use snooze_ad::SnoozeAdRunner;
 pub(crate) use start_poll::StartPollRunner;
 pub(crate) use start_prediction::StartPredictionRunner;
@@ -182,11 +182,11 @@ pub fn register_twitch_sub_actions(
         Arc::clone(&transport),
         Arc::clone(&identity),
     )))?;
-    reg.register(Box::new(ShieldModeOnRunner::new(
+    reg.register(Box::new(ShieldModeRunner::on(
         Arc::clone(&transport),
         Arc::clone(&identity),
     )))?;
-    reg.register(Box::new(ShieldModeOffRunner::new(
+    reg.register(Box::new(ShieldModeRunner::off(
         Arc::clone(&transport),
         Arc::clone(&identity),
     )))?;

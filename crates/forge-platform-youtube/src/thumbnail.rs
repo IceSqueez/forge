@@ -1,10 +1,8 @@
 use std::path::PathBuf;
-use std::sync::Arc;
 
 use forge_net::{GatewayRequest, RequestBody};
 use forge_platform_core::PlatformError;
 use forge_types::Secret;
-use futures::future::BoxFuture;
 
 use crate::active_broadcast_id::ActiveBroadcastIdHandle;
 use crate::data_api::YoutubeDataApi;
@@ -16,7 +14,7 @@ const UNSUPPORTED_IMAGE_TYPE: &str = "thumbnail must be a .png, .jpg or .jpeg fi
 const HOME_PREFIX: &str = "~/";
 const MISSING_SCOPE: &str = "thumbnail upload scope missing";
 
-type TokenSource = Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync>;
+use forge_platform_core::TokenSource;
 
 pub struct YoutubeThumbnail {
     api: YoutubeDataApi,

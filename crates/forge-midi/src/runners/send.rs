@@ -198,7 +198,7 @@ impl SubActionRunner for MidiSendRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, KIND_ID);
+        let timer = StepTimer::start(ctx, self.id());
         let read = PORT
             .read(config, ctx.arg_stack)
             .and_then(|port| Ok((port, read_message(config, ctx.arg_stack)?)));

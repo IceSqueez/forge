@@ -1,9 +1,6 @@
-use std::sync::Arc;
-
 use forge_net::GatewayRequest;
 use forge_platform_core::PlatformError;
 use forge_types::Secret;
-use futures::future::BoxFuture;
 use time::OffsetDateTime;
 
 use crate::active_broadcast_id::ActiveBroadcastIdHandle;
@@ -14,7 +11,7 @@ const FETCH_COST: u32 = 1;
 const VIDEOS_PATH: &str = "/videos";
 const MISSING_SCOPE: &str = "stream stats scope missing";
 
-type TokenSource = Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync>;
+use forge_platform_core::TokenSource;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct YoutubeStreamDetails {

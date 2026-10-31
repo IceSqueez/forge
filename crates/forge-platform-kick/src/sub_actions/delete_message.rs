@@ -16,7 +16,6 @@ use crate::vocabulary::messages;
 use crate::vocabulary::variables::references;
 use crate::vocabulary::{config_keys, sub_action_ids};
 
-const KIND_ID: &str = sub_action_ids::CHAT_DELETE_MESSAGE;
 const UNRESOLVED_REFERENCE_MARKER: char = '%';
 
 const MESSAGE_ID: TextField = TextField {
@@ -53,7 +52,7 @@ impl DeleteMessageRunner {
 #[async_trait]
 impl SubActionRunner for DeleteMessageRunner {
     fn id(&self) -> &str {
-        KIND_ID
+        sub_action_ids::CHAT_DELETE_MESSAGE
     }
 
     fn category(&self) -> SubActionCategory {
@@ -85,7 +84,7 @@ impl SubActionRunner for DeleteMessageRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, KIND_ID);
+        let timer = StepTimer::start(ctx, self.id());
         let message_id = match MESSAGE_ID.read(config, ctx.arg_stack) {
             Ok(message_id) => message_id,
             Err(problem) => return (timer.invalid_config(&problem), None),

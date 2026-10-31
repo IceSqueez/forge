@@ -15,7 +15,6 @@ use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
 use crate::step_failure;
 use crate::vocabulary::{config_keys, sub_action_ids};
 
-const KIND_ID: &str = sub_action_ids::MODERATION_TIMEOUT_USER;
 const DEFAULT_DURATION_SECONDS: i64 = 600;
 const MIN_DURATION_SECONDS: i64 = 1;
 const MAX_DURATION_SECONDS: i64 = 1_209_600;
@@ -92,7 +91,7 @@ impl TimeoutUserRunner {
 #[async_trait]
 impl SubActionRunner for TimeoutUserRunner {
     fn id(&self) -> &str {
-        KIND_ID
+        sub_action_ids::MODERATION_TIMEOUT_USER
     }
 
     fn category(&self) -> SubActionCategory {
@@ -132,7 +131,7 @@ impl SubActionRunner for TimeoutUserRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, KIND_ID);
+        let timer = StepTimer::start(ctx, self.id());
         let read = match read_config(config, ctx.arg_stack) {
             Ok(read) => read,
             Err(problem) => return (timer.invalid_config(&problem), None),

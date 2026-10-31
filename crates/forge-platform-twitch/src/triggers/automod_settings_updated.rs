@@ -2,8 +2,8 @@ use crate::vocabulary::event_kinds;
 use crate::vocabulary::trigger_ids;
 use forge_events::{Event, EventSource};
 use forge_registry::{
-    ActorDeclaration, ActorIdentity, ActorRole, EventFilter, FormField, KindPlatformContract,
-    TriggerCategory, TriggerKindDescriptor, TriggerVariables,
+    ActorDeclaration, ActorIdentity, ActorRole, EventFilter, KindPlatformContract, TriggerCategory,
+    TriggerKindDescriptor, TriggerVariables,
 };
 use forge_types::{
     DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, Variant, VariantKind,
@@ -41,14 +41,6 @@ impl TriggerKindDescriptor for AutomodSettingsUpdatedDescriptor {
 
     fn platform_contract(&self) -> KindPlatformContract {
         KindPlatformContract::PlatformSpecific(PlatformId::Twitch)
-    }
-
-    fn default_config(&self) -> TriggerConfig {
-        TriggerConfig::new()
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![]
     }
 
     fn event_filter(&self) -> EventFilter {

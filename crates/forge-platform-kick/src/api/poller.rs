@@ -4,7 +4,6 @@ use std::time::Duration;
 use forge_events::{Event, EventSource};
 use forge_net::DedupSet;
 use forge_platform_core::{LiveViewerSource, PlatformError, ViewerReport, ViewerReportStream};
-use futures::future::BoxFuture;
 use tokio::sync::{mpsc, watch};
 use tokio::task::AbortHandle;
 use tokio_stream::wrappers::WatchStream;
@@ -18,8 +17,7 @@ use crate::vocabulary::fields::{reward as reward_fields, stream as stream_fields
 pub(crate) const CHANNEL_POLL_INTERVAL: Duration = Duration::from_secs(30);
 pub(crate) const REDEMPTION_POLL_INTERVAL: Duration = Duration::from_secs(12);
 
-pub(crate) type TokenSource =
-    Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync>;
+pub(crate) use forge_platform_core::TokenSource;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PollerAuth {
@@ -441,6 +439,7 @@ async fn run_loop(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use futures::future::BoxFuture;
     use std::time::Duration as StdDuration;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};

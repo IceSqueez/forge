@@ -1,9 +1,6 @@
-use std::sync::Arc;
-
 use forge_net::GatewayRequest;
 use forge_platform_core::PlatformError;
 use forge_types::Secret;
-use futures::future::BoxFuture;
 
 use crate::active_broadcast_id::ActiveBroadcastIdHandle;
 use crate::data_api::{YoutubeDataApi, json_body};
@@ -12,7 +9,7 @@ const CUEPOINT_COST: u32 = 50;
 const CUEPOINT_PATH: &str = "/liveBroadcasts/cuepoint";
 const MISSING_SCOPE: &str = "ad break scope missing";
 
-type TokenSource = Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync>;
+use forge_platform_core::TokenSource;
 
 pub struct YoutubeAdBreak {
     api: YoutubeDataApi,

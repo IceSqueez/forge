@@ -2,10 +2,11 @@ use crate::vocabulary::event_kinds;
 use crate::vocabulary::trigger_ids;
 use forge_events::{Event, EventSource};
 use forge_registry::{
-    ActorDeclaration, ActorIdentity, ActorRole, EventFilter, FormField, KindPlatformContract,
-    TriggerCategory, TriggerKindDescriptor, TriggerVariables,
+    ActorDeclaration, ActorIdentity, ActorRole, EventFilter, KindPlatformContract, TriggerCategory,
+    TriggerKindDescriptor, TriggerVariables,
 };
-use forge_types::{PlatformId, TriggerConfig};
+use forge_types::PlatformId;
+use forge_types::TriggerConfig;
 
 use super::payload_read::{self, twitch_actor};
 use crate::vocabulary::fields::moderation as fields;
@@ -39,14 +40,6 @@ impl TriggerKindDescriptor for ChannelUnbanDescriptor {
 
     fn platform_contract(&self) -> KindPlatformContract {
         KindPlatformContract::PlatformSpecific(PlatformId::Twitch)
-    }
-
-    fn default_config(&self) -> TriggerConfig {
-        TriggerConfig::new()
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![]
     }
 
     fn event_filter(&self) -> EventFilter {

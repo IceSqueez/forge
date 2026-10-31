@@ -11,7 +11,6 @@ use super::volume_field::VolumeField;
 use crate::control::SoundboardControl;
 use crate::vocabulary::{config_keys, sub_action_ids};
 
-const KIND_ID: &str = sub_action_ids::VOLUME_SET_MASTER;
 const MIN_VOLUME_DB: i64 = -30;
 const MAX_VOLUME_DB: i64 = 0;
 const UNITY_GAIN_DB: i64 = 0;
@@ -50,7 +49,7 @@ impl SetMasterVolumeRunner {
 #[async_trait]
 impl SubActionRunner for SetMasterVolumeRunner {
     fn id(&self) -> &str {
-        KIND_ID
+        sub_action_ids::VOLUME_SET_MASTER
     }
 
     fn category(&self) -> SubActionCategory {
@@ -82,7 +81,7 @@ impl SubActionRunner for SetMasterVolumeRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, KIND_ID);
+        let timer = StepTimer::start(ctx, self.id());
         let volume_db = match VOLUME_DB.read(config, ctx.arg_stack) {
             Ok(volume_db) => volume_db,
             Err(problem) => return (timer.invalid_config(&problem), None),

@@ -14,8 +14,6 @@ use super::step_failure;
 use crate::api::rewards::KickRewards;
 use crate::vocabulary::sub_action_ids;
 
-const KIND_ID: &str = sub_action_ids::REWARD_REDEMPTION_ACCEPT;
-
 const CONFIG: ConfigSpec = ConfigSpec::new(&[&REDEMPTION_IDS]);
 
 pub(crate) struct AcceptRedemptionRunner {
@@ -40,7 +38,7 @@ impl AcceptRedemptionRunner {
 #[async_trait]
 impl SubActionRunner for AcceptRedemptionRunner {
     fn id(&self) -> &str {
-        KIND_ID
+        sub_action_ids::REWARD_REDEMPTION_ACCEPT
     }
 
     fn category(&self) -> SubActionCategory {
@@ -72,7 +70,7 @@ impl SubActionRunner for AcceptRedemptionRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, KIND_ID);
+        let timer = StepTimer::start(ctx, self.id());
         let ids = match REDEMPTION_IDS.read(config, ctx.arg_stack) {
             Ok(ids) => ids,
             Err(problem) => return (timer.invalid_config(&problem), None),

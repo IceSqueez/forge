@@ -14,7 +14,6 @@ use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
 use crate::step_failure;
 use crate::vocabulary::{config_keys, sub_action_ids};
 
-const KIND_ID: &str = sub_action_ids::CHAT_SET_MODE;
 const SECONDS_PER_MINUTE: u64 = 60;
 const FOLLOWER_MODE_MIN_MINUTES: i64 = 0;
 const FOLLOWER_MODE_MAX_MINUTES: i64 = 129_600;
@@ -143,7 +142,7 @@ impl SetModeRunner {
 #[async_trait]
 impl SubActionRunner for SetModeRunner {
     fn id(&self) -> &str {
-        KIND_ID
+        sub_action_ids::CHAT_SET_MODE
     }
 
     fn category(&self) -> SubActionCategory {
@@ -175,7 +174,7 @@ impl SubActionRunner for SetModeRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, KIND_ID);
+        let timer = StepTimer::start(ctx, self.id());
         let modes = match ChatModes::read(config, ctx.arg_stack) {
             Ok(modes) => modes,
             Err(problem) => return (timer.invalid_config(&problem), None),

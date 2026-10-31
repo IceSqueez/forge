@@ -16,7 +16,6 @@ use crate::api::channel::KickChannel;
 use crate::vocabulary::messages;
 use crate::vocabulary::{config_keys, sub_action_ids};
 
-const KIND_ID: &str = sub_action_ids::CHANNEL_UPDATE_INFO;
 const MAX_TAGS: usize = 10;
 const KEEP_CURRENT_HINT: &str = "Leave empty to keep current";
 
@@ -91,7 +90,7 @@ impl UpdateInfoRunner {
 #[async_trait]
 impl SubActionRunner for UpdateInfoRunner {
     fn id(&self) -> &str {
-        KIND_ID
+        sub_action_ids::CHANNEL_UPDATE_INFO
     }
 
     fn category(&self) -> SubActionCategory {
@@ -140,7 +139,7 @@ impl SubActionRunner for UpdateInfoRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, KIND_ID);
+        let timer = StepTimer::start(ctx, self.id());
         let update = match read_config(config, ctx.arg_stack) {
             Ok(update) => update,
             Err(problem) => return (timer.invalid_config(&problem), None),

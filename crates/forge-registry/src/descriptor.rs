@@ -34,8 +34,12 @@ pub trait TriggerKindDescriptor: Send + Sync {
     fn search_text(&self) -> &str;
     fn icon_name(&self) -> &str;
     fn platform_contract(&self) -> KindPlatformContract;
-    fn default_config(&self) -> TriggerConfig;
-    fn config_fields(&self) -> Vec<FormField>;
+    fn default_config(&self) -> TriggerConfig {
+        TriggerConfig::new()
+    }
+    fn config_fields(&self) -> Vec<FormField> {
+        Vec::new()
+    }
     fn config_refinement(&self) -> Option<FormRefinement> {
         None
     }

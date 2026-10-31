@@ -1,9 +1,5 @@
-use std::collections::BTreeMap;
-
 use forge_events::{Event, EventSource};
-use forge_registry::{
-    EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
-};
+use forge_registry::{EventFilter, KindPlatformContract, TriggerCategory, TriggerKindDescriptor};
 use forge_types::{ArgStack, TriggerConfig, UserText, VariableSchema};
 
 use super::stream_starting::{build_stream_arg_stack, stream_variables};
@@ -39,14 +35,6 @@ impl TriggerKindDescriptor for StreamStatusChangedDescriptor {
 
     fn platform_contract(&self) -> KindPlatformContract {
         KindPlatformContract::Universal
-    }
-
-    fn default_config(&self) -> TriggerConfig {
-        BTreeMap::new()
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![]
     }
 
     fn condition_display(&self, _: &TriggerConfig) -> UserText {

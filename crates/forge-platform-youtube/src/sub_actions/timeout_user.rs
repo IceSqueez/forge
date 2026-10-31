@@ -14,7 +14,6 @@ use super::step_failure;
 use crate::moderation::YoutubeModeration;
 use crate::vocabulary::{config_keys, sub_action_ids};
 
-const KIND_ID: &str = sub_action_ids::MODERATION_TIMEOUT_USER;
 const MIN_TIMEOUT_SECONDS: i64 = 1;
 const MAX_TIMEOUT_SECONDS: i64 = 86_400;
 const DEFAULT_TIMEOUT_SECONDS: i64 = 300;
@@ -54,7 +53,7 @@ impl TimeoutUserRunner {
 #[async_trait]
 impl SubActionRunner for TimeoutUserRunner {
     fn id(&self) -> &str {
-        KIND_ID
+        sub_action_ids::MODERATION_TIMEOUT_USER
     }
 
     fn category(&self) -> SubActionCategory {
@@ -86,7 +85,7 @@ impl SubActionRunner for TimeoutUserRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, KIND_ID);
+        let timer = StepTimer::start(ctx, self.id());
         let (channel_id, seconds) = match read_config(config, ctx.arg_stack) {
             Ok(values) => values,
             Err(problem) => return (timer.invalid_config(&problem), None),

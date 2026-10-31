@@ -1,11 +1,14 @@
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use forge_platform_core::REFRESH_BUFFER_SECS;
-use forge_platform_core::{PlatformError, credential_storage_error, reauth_required};
+use async_trait::async_trait;
+use forge_platform_core::{
+    PlatformError, SingleFlightRefresh, TokenRotation, credential_storage_error,
+    expires_within_refresh_buffer, reauth_required,
+};
 use forge_storage::{CredentialId, CredentialsRepo};
 use time::{Duration, OffsetDateTime};
-use tokio::sync::{Mutex, watch};
+use tokio::sync::watch;
 
 use crate::auth::{YoutubeAuthBundle, fetch_own_channel};
 use crate::credentials::{
@@ -15,25 +18,15 @@ use crate::data_api::YoutubeDataApi;
 use crate::oauth_client::GoogleOAuthClient;
 
 const PLATFORM: &str = "youtube";
-const REFRESH_BUFFER: Duration = Duration::seconds(REFRESH_BUFFER_SECS as i64);
-const REFRESH_TASK_LOST: &str = "token refresh did not complete";
 
 pub struct YoutubeCredentialsManager {
+    refresh: SingleFlightRefresh<YoutubeRotation>,
+    api: YoutubeDataApi,
+}
+
+struct YoutubeRotation {
     store: CredentialStore,
     oauth: GoogleOAuthClient,
-    api: YoutubeDataApi,
-    refresh_guard: Arc<Mutex<()>>,
-}
-
-#[derive(Clone)]
-struct CredentialStore {
-    repo: Arc<dyn CredentialsRepo>,
-    expiry_tx: Arc<watch::Sender<Option<SystemTime>>>,
-}
-
-enum RefreshTrigger {
-    NearExpiry,
-    Rejected(String),
 }
 
 impl YoutubeCredentialsManager {
@@ -43,22 +36,27 @@ impl YoutubeCredentialsManager {
         api: YoutubeDataApi,
     ) -> Self {
         Self {
-            store: CredentialStore {
-                repo,
-                expiry_tx: Arc::new(watch::channel(None).0),
-            },
-            oauth,
+            refresh: SingleFlightRefresh::new(YoutubeRotation {
+                store: CredentialStore {
+                    repo,
+                    expiry_tx: watch::channel(None).0,
+                },
+                oauth,
+            }),
             api,
-            refresh_guard: Arc::new(Mutex::new(())),
         }
     }
 
+    fn store(&self) -> &CredentialStore {
+        &self.refresh.rotation().store
+    }
+
     pub(crate) fn subscribe_expiry(&self) -> watch::Receiver<Option<SystemTime>> {
-        self.store.expiry_tx.subscribe()
+        self.store().expiry_tx.subscribe()
     }
 
     pub(crate) fn oauth_client(&self) -> &GoogleOAuthClient {
-        &self.oauth
+        &self.refresh.rotation().oauth
     }
 
     pub(crate) fn data_api(&self) -> &YoutubeDataApi {
@@ -66,11 +64,11 @@ impl YoutubeCredentialsManager {
     }
 
     pub async fn load(&self) -> Result<Option<YoutubeCredentials>, PlatformError> {
-        self.store.load().await
+        self.store().load().await
     }
 
     pub async fn broadcaster(&self) -> Result<YoutubeBroadcaster, PlatformError> {
-        let creds = self.store.require().await?;
+        let creds = self.store().require().await?;
         Ok(YoutubeBroadcaster {
             channel_id: creds.channel_id,
             channel_title: creds.channel_title,
@@ -99,16 +97,13 @@ impl YoutubeCredentialsManager {
             channel_handle: bundle.channel_handle,
             expires_at,
         };
-        let _guard = self.refresh_guard.lock().await;
-        self.store.persist(&creds).await
+        let _guard = self.refresh.exclusive().await;
+        self.store().persist(&creds).await
     }
 
     pub async fn get_valid_access_token(&self) -> Result<String, PlatformError> {
-        let creds = self.store.require().await?;
-        if !near_expiry(&creds) {
-            return Ok(creds.access_token.expose().to_owned());
-        }
-        self.detached_refresh(RefreshTrigger::NearExpiry)
+        self.refresh
+            .valid_credential()
             .await
             .map(|creds| creds.access_token.expose().to_owned())
     }
@@ -117,29 +112,11 @@ impl YoutubeCredentialsManager {
         &self,
         failed_access_token: &str,
     ) -> Result<YoutubeCredentials, PlatformError> {
-        self.detached_refresh(RefreshTrigger::Rejected(failed_access_token.to_owned()))
-            .await
-    }
-
-    async fn detached_refresh(
-        &self,
-        trigger: RefreshTrigger,
-    ) -> Result<YoutubeCredentials, PlatformError> {
-        let store = self.store.clone();
-        let oauth = self.oauth.clone();
-        let guard = Arc::clone(&self.refresh_guard);
-        tokio::spawn(async move {
-            let _guard = guard.lock().await;
-            refresh_under_guard(&store, &oauth, trigger).await
-        })
-        .await
-        .map_err(|_| PlatformError::Auth {
-            reason: REFRESH_TASK_LOST.to_owned(),
-        })?
+        self.refresh.replace_rejected(failed_access_token).await
     }
 
     pub async fn ensure_channel_handle(&self) -> Result<YoutubeCredentials, PlatformError> {
-        let creds = self.store.require().await?;
+        let creds = self.store().require().await?;
         if creds.channel_handle.is_some() {
             return Ok(creds);
         }
@@ -154,56 +131,72 @@ impl YoutubeCredentialsManager {
             return Ok(creds);
         };
 
-        let _guard = self.refresh_guard.lock().await;
-        let mut latest = self.store.require().await?;
+        let _guard = self.refresh.exclusive().await;
+        let mut latest = self.store().require().await?;
         latest.channel_handle = Some(handle);
-        self.store.persist(&latest).await?;
+        self.store().persist(&latest).await?;
         Ok(latest)
     }
 
     pub async fn clear(&self) -> Result<(), PlatformError> {
-        let _guard = self.refresh_guard.lock().await;
-        self.store.clear().await
+        let _guard = self.refresh.exclusive().await;
+        self.store().clear().await
     }
 }
 
-async fn refresh_under_guard(
-    store: &CredentialStore,
-    oauth: &GoogleOAuthClient,
-    trigger: RefreshTrigger,
-) -> Result<YoutubeCredentials, PlatformError> {
-    let existing = store.require().await?;
-    let already_rotated = match &trigger {
-        RefreshTrigger::NearExpiry => !near_expiry(&existing),
-        RefreshTrigger::Rejected(failed) => existing.access_token.expose() != failed,
-    };
-    if already_rotated {
-        return Ok(existing);
+#[async_trait]
+impl TokenRotation for YoutubeRotation {
+    type Credential = YoutubeCredentials;
+
+    fn platform(&self) -> &'static str {
+        PLATFORM
     }
 
-    let grant = oauth.refresh(existing.refresh_token.expose()).await?;
-    let expires_in = i64::try_from(
-        grant
-            .expires_in
-            .unwrap_or(DEFAULT_ACCESS_TOKEN_LIFETIME_SECS),
-    )
-    .unwrap_or(i64::MAX);
-    let expires_at = OffsetDateTime::now_utc()
-        .checked_add(Duration::seconds(expires_in))
-        .ok_or_else(|| PlatformError::MalformedResponse {
-            reason: "token lifetime out of range".to_owned(),
-        })?;
-    let updated = YoutubeCredentials {
-        access_token: grant.access_token,
-        refresh_token: grant.refresh_token.unwrap_or(existing.refresh_token),
-        client_id: existing.client_id,
-        channel_id: existing.channel_id,
-        channel_title: existing.channel_title,
-        channel_handle: existing.channel_handle,
-        expires_at,
-    };
-    store.persist(&updated).await?;
-    Ok(updated)
+    async fn load(&self) -> Result<Option<YoutubeCredentials>, PlatformError> {
+        self.store.load().await
+    }
+
+    fn access_token<'a>(&self, credential: &'a YoutubeCredentials) -> &'a str {
+        credential.access_token.expose()
+    }
+
+    fn near_expiry(&self, credential: &YoutubeCredentials) -> bool {
+        expires_within_refresh_buffer(credential.expires_at)
+    }
+
+    async fn rotate(
+        &self,
+        existing: YoutubeCredentials,
+    ) -> Result<YoutubeCredentials, PlatformError> {
+        let grant = self.oauth.refresh(existing.refresh_token.expose()).await?;
+        let expires_in = i64::try_from(
+            grant
+                .expires_in
+                .unwrap_or(DEFAULT_ACCESS_TOKEN_LIFETIME_SECS),
+        )
+        .unwrap_or(i64::MAX);
+        let expires_at = OffsetDateTime::now_utc()
+            .checked_add(Duration::seconds(expires_in))
+            .ok_or_else(|| PlatformError::MalformedResponse {
+                reason: "token lifetime out of range".to_owned(),
+            })?;
+        let updated = YoutubeCredentials {
+            access_token: grant.access_token,
+            refresh_token: grant.refresh_token.unwrap_or(existing.refresh_token),
+            client_id: existing.client_id,
+            channel_id: existing.channel_id,
+            channel_title: existing.channel_title,
+            channel_handle: existing.channel_handle,
+            expires_at,
+        };
+        self.store.persist(&updated).await?;
+        Ok(updated)
+    }
+}
+
+struct CredentialStore {
+    repo: Arc<dyn CredentialsRepo>,
+    expiry_tx: watch::Sender<Option<SystemTime>>,
 }
 
 impl CredentialStore {
@@ -242,10 +235,6 @@ impl CredentialStore {
         self.expiry_tx.send_replace(None);
         Ok(())
     }
-}
-
-fn near_expiry(creds: &YoutubeCredentials) -> bool {
-    creds.expires_at <= OffsetDateTime::now_utc() + REFRESH_BUFFER
 }
 
 #[cfg(test)]

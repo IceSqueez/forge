@@ -15,8 +15,6 @@ use crate::api::channel::KickChannel;
 use crate::vocabulary::variables;
 use crate::vocabulary::{config_keys, sub_action_ids};
 
-const KIND_ID: &str = sub_action_ids::LOOKUP_USER;
-
 const SLUG: TextField = TextField {
     key: config_keys::SLUG,
     label: "Channel Slug",
@@ -51,7 +49,7 @@ impl LookupUserRunner {
 #[async_trait]
 impl SubActionRunner for LookupUserRunner {
     fn id(&self) -> &str {
-        KIND_ID
+        sub_action_ids::LOOKUP_USER
     }
 
     fn category(&self) -> SubActionCategory {
@@ -83,7 +81,7 @@ impl SubActionRunner for LookupUserRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, KIND_ID);
+        let timer = StepTimer::start(ctx, self.id());
         let slug = match SLUG.read(config, ctx.arg_stack) {
             Ok(slug) => slug,
             Err(problem) => return (timer.invalid_config(&problem), None),

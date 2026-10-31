@@ -12,8 +12,6 @@ use crate::ObsSink;
 use crate::runners::fields::SCENE;
 use crate::vocabulary::sub_action_ids;
 
-const KIND_ID: &str = sub_action_ids::SCENE_SWITCH_CURRENT;
-
 const CONFIG: ConfigSpec = ConfigSpec::new(&[&SCENE]);
 
 pub(crate) struct SwitchCurrentSceneRunner {
@@ -29,7 +27,7 @@ impl SwitchCurrentSceneRunner {
 #[async_trait]
 impl SubActionRunner for SwitchCurrentSceneRunner {
     fn id(&self) -> &str {
-        KIND_ID
+        sub_action_ids::SCENE_SWITCH_CURRENT
     }
 
     fn category(&self) -> SubActionCategory {
@@ -61,7 +59,7 @@ impl SubActionRunner for SwitchCurrentSceneRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, KIND_ID);
+        let timer = StepTimer::start(ctx, self.id());
         let scene = match SCENE.read(config, ctx.arg_stack) {
             Ok(scene) => scene,
             Err(problem) => return (timer.invalid_config(&problem), None),

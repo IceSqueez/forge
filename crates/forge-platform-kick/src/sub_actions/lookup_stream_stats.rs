@@ -12,8 +12,6 @@ use crate::api::channel::KickChannel;
 use crate::vocabulary::sub_action_ids;
 use crate::vocabulary::variables;
 
-const KIND_ID: &str = sub_action_ids::LOOKUP_STREAM_STATS;
-
 pub(crate) struct LookupStreamStatsRunner {
     client: Arc<KickChannel>,
     token_source: Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync>,
@@ -36,7 +34,7 @@ impl LookupStreamStatsRunner {
 #[async_trait]
 impl SubActionRunner for LookupStreamStatsRunner {
     fn id(&self) -> &str {
-        KIND_ID
+        sub_action_ids::LOOKUP_STREAM_STATS
     }
 
     fn category(&self) -> SubActionCategory {
@@ -64,7 +62,7 @@ impl SubActionRunner for LookupStreamStatsRunner {
         _config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, KIND_ID);
+        let timer = StepTimer::start(ctx, self.id());
         let token = match (self.token_source)().await {
             Ok(token) => token,
             Err(e) => {

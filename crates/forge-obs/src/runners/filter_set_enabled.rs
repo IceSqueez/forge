@@ -13,8 +13,6 @@ use crate::ObsSink;
 use crate::runners::fields::SOURCE;
 use crate::vocabulary::{config_keys, sub_action_ids};
 
-const KIND_ID: &str = sub_action_ids::FILTER_SET_ENABLED;
-
 const FILTER: TextField = TextField {
     key: config_keys::FILTER,
     label: "Filter Name",
@@ -57,7 +55,7 @@ impl FilterSetEnabledRunner {
 #[async_trait]
 impl SubActionRunner for FilterSetEnabledRunner {
     fn id(&self) -> &str {
-        KIND_ID
+        sub_action_ids::FILTER_SET_ENABLED
     }
 
     fn category(&self) -> SubActionCategory {
@@ -89,7 +87,7 @@ impl SubActionRunner for FilterSetEnabledRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, KIND_ID);
+        let timer = StepTimer::start(ctx, self.id());
         let (source, filter, enabled) = match read_config(config, ctx.arg_stack) {
             Ok(values) => values,
             Err(problem) => return (timer.invalid_config(&problem), None),

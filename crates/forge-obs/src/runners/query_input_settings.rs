@@ -12,8 +12,6 @@ use super::step_failure;
 use crate::ObsSink;
 use crate::vocabulary::{config_keys, sub_action_ids, variables};
 
-const KIND_ID: &str = sub_action_ids::SOURCE_GET_INPUT_SETTINGS;
-
 const SOURCE: TextField = TextField {
     key: config_keys::SOURCE,
     label: "Input name",
@@ -39,7 +37,7 @@ impl QueryInputSettingsRunner {
 #[async_trait]
 impl SubActionRunner for QueryInputSettingsRunner {
     fn id(&self) -> &str {
-        KIND_ID
+        sub_action_ids::SOURCE_GET_INPUT_SETTINGS
     }
 
     fn category(&self) -> SubActionCategory {
@@ -81,7 +79,7 @@ impl SubActionRunner for QueryInputSettingsRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, KIND_ID);
+        let timer = StepTimer::start(ctx, self.id());
         let source = match SOURCE.read(config, ctx.arg_stack) {
             Ok(source) => source,
             Err(problem) => return (timer.invalid_config(&problem), None),

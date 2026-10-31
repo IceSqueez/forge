@@ -14,8 +14,6 @@ use super::step_failure;
 use crate::stream_metadata::YoutubeStreamMetadata;
 use crate::vocabulary::{config_keys, sub_action_ids};
 
-const KIND_ID: &str = sub_action_ids::STREAM_UPDATE_PRIVACY;
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum PrivacyStatus {
     Public,
@@ -106,7 +104,7 @@ impl UpdatePrivacyRunner {
 #[async_trait]
 impl SubActionRunner for UpdatePrivacyRunner {
     fn id(&self) -> &str {
-        KIND_ID
+        sub_action_ids::STREAM_UPDATE_PRIVACY
     }
 
     fn category(&self) -> SubActionCategory {
@@ -138,7 +136,7 @@ impl SubActionRunner for UpdatePrivacyRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, KIND_ID);
+        let timer = StepTimer::start(ctx, self.id());
         let privacy_status = match PRIVACY_STATUS.read(config, ctx.arg_stack) {
             Ok(privacy_status) => privacy_status,
             Err(problem) => return (timer.invalid_config(&problem), None),

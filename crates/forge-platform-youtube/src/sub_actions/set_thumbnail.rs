@@ -12,8 +12,6 @@ use super::step_failure;
 use crate::thumbnail::YoutubeThumbnail;
 use crate::vocabulary::{config_keys, sub_action_ids};
 
-const KIND_ID: &str = sub_action_ids::STREAM_SET_THUMBNAIL;
-
 const IMAGE_PATH: TextField = TextField {
     key: config_keys::IMAGE_PATH,
     label: "Image Path",
@@ -39,7 +37,7 @@ impl SetThumbnailRunner {
 #[async_trait]
 impl SubActionRunner for SetThumbnailRunner {
     fn id(&self) -> &str {
-        KIND_ID
+        sub_action_ids::STREAM_SET_THUMBNAIL
     }
 
     fn category(&self) -> SubActionCategory {
@@ -71,7 +69,7 @@ impl SubActionRunner for SetThumbnailRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, KIND_ID);
+        let timer = StepTimer::start(ctx, self.id());
         let image_path = match IMAGE_PATH.read(config, ctx.arg_stack) {
             Ok(image_path) => image_path,
             Err(problem) => return (timer.invalid_config(&problem), None),

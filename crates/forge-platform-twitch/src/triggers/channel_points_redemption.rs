@@ -3,7 +3,8 @@ use crate::vocabulary::{event_kinds, messages};
 use forge_events::{Event, EventSource};
 use forge_registry::{
     ActorDeclaration, ActorIdentity, ActorRole, CanonicalVariable, EventFilter, FormField,
-    KindPlatformContract, TriggerCategory, TriggerKindDescriptor, TriggerVariables,
+    KindPlatformContract, SubActionConfigExt, TriggerCategory, TriggerKindDescriptor,
+    TriggerVariables,
 };
 use forge_types::{
     DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, UserText, Variant, VariantKind,
@@ -92,16 +93,7 @@ impl TriggerKindDescriptor for ChannelPointsRedemptionDescriptor {
     }
 
     fn matches_trigger(&self, config: &TriggerConfig, event: &Event) -> bool {
-        let reward_id = config
-            .get("reward_id")
-            .and_then(|v| {
-                if let Variant::String(s) = v {
-                    Some(s.as_str())
-                } else {
-                    None
-                }
-            })
-            .unwrap_or_default();
+        let reward_id = config.str("reward_id").unwrap_or_default();
 
         if !reward_id.is_empty() {
             let event_reward_id = event
@@ -113,16 +105,7 @@ impl TriggerKindDescriptor for ChannelPointsRedemptionDescriptor {
             return event_reward_id == reward_id;
         }
 
-        let reward_title = config
-            .get("reward_title")
-            .and_then(|v| {
-                if let Variant::String(s) = v {
-                    Some(s.as_str())
-                } else {
-                    None
-                }
-            })
-            .unwrap_or_default();
+        let reward_title = config.str("reward_title").unwrap_or_default();
 
         if !reward_title.is_empty() {
             let event_reward_title = event

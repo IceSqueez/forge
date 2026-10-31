@@ -12,8 +12,6 @@ use super::step_failure;
 use crate::stream_metadata::YoutubeStreamMetadata;
 use crate::vocabulary::{config_keys, sub_action_ids};
 
-const KIND_ID: &str = sub_action_ids::STREAM_UPDATE_TITLE;
-
 const TITLE: TextField = TextField {
     key: config_keys::TITLE,
     label: "Title",
@@ -39,7 +37,7 @@ impl UpdateTitleRunner {
 #[async_trait]
 impl SubActionRunner for UpdateTitleRunner {
     fn id(&self) -> &str {
-        KIND_ID
+        sub_action_ids::STREAM_UPDATE_TITLE
     }
 
     fn category(&self) -> SubActionCategory {
@@ -71,7 +69,7 @@ impl SubActionRunner for UpdateTitleRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, KIND_ID);
+        let timer = StepTimer::start(ctx, self.id());
         let title = match TITLE.read(config, ctx.arg_stack) {
             Ok(title) => title,
             Err(problem) => return (timer.invalid_config(&problem), None),

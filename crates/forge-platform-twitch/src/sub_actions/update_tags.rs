@@ -13,7 +13,6 @@ use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
 use crate::step_failure;
 use crate::vocabulary::{config_keys, sub_action_ids};
 
-const KIND_ID: &str = sub_action_ids::CHANNEL_UPDATE_TAGS;
 const MAX_TAGS: i64 = 10;
 const MAX_TAG_CHARS: i64 = 25;
 
@@ -61,7 +60,7 @@ impl UpdateTagsRunner {
 #[async_trait]
 impl SubActionRunner for UpdateTagsRunner {
     fn id(&self) -> &str {
-        KIND_ID
+        sub_action_ids::CHANNEL_UPDATE_TAGS
     }
 
     fn category(&self) -> SubActionCategory {
@@ -93,7 +92,7 @@ impl SubActionRunner for UpdateTagsRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, KIND_ID);
+        let timer = StepTimer::start(ctx, self.id());
         let tags = match TAGS.read(config, ctx.arg_stack) {
             Ok(tags) => tags,
             Err(problem) => return (timer.invalid_config(&problem), None),

@@ -1,9 +1,6 @@
-use std::sync::Arc;
-
 use forge_net::GatewayRequest;
 use forge_platform_core::PlatformError;
 use forge_types::Secret;
-use futures::future::BoxFuture;
 
 use crate::data_api::{YoutubeDataApi, malformed};
 
@@ -12,7 +9,7 @@ const CHANNEL_ID_LEN: usize = 24;
 const CHANNELS_PATH: &str = "/channels";
 const MISSING_SCOPE: &str = "channel lookup scope missing";
 
-type TokenSource = Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync>;
+use forge_platform_core::TokenSource;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct YoutubeChannelProfile {

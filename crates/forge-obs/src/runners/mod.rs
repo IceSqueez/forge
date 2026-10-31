@@ -1,45 +1,23 @@
-mod browser_refresh;
 mod capture_screenshot;
+mod commands;
 mod fields;
 mod filter_set_enabled;
-mod media_restart;
 mod path_field;
-mod profile_switch;
 mod query_input_list;
 mod query_input_settings;
 mod query_record_status;
 mod query_scene_list;
 mod query_stream_status;
-mod record_pause;
-mod record_resume;
-mod record_set_active;
 mod record_set_directory;
-mod record_start;
-mod record_stop;
-mod record_toggle_pause;
-mod replay_save;
-mod replay_set_active;
-mod replay_start;
-mod replay_stop;
-mod scene_collection_switch;
 mod set_input_settings;
 mod set_locked;
 mod set_mute;
-mod set_preview_scene;
-mod set_transition;
 mod set_visible;
 mod set_volume;
 mod step_failure;
 mod stream_send_caption;
-mod stream_set_active;
-mod stream_start;
-mod stream_stop;
-mod studio_disable;
-mod studio_enable;
 mod studio_set_enabled;
-mod studio_trigger_transition;
 mod switch_current;
-mod virtualcam_set_active;
 
 #[cfg(test)]
 pub(crate) mod test_support;
@@ -48,45 +26,22 @@ use std::sync::Arc;
 
 use forge_registry::{RegistryError, SubActionRegistry};
 
-pub(crate) use browser_refresh::BrowserRefreshRunner;
 pub(crate) use capture_screenshot::CaptureScreenshotRunner;
 pub(crate) use filter_set_enabled::FilterSetEnabledRunner;
-pub(crate) use media_restart::MediaRestartRunner;
-pub(crate) use profile_switch::ProfileSwitchRunner;
 pub(crate) use query_input_list::QueryInputListRunner;
 pub(crate) use query_input_settings::QueryInputSettingsRunner;
 pub(crate) use query_record_status::QueryRecordStatusRunner;
 pub(crate) use query_scene_list::QuerySceneListRunner;
 pub(crate) use query_stream_status::QueryStreamStatusRunner;
-pub(crate) use record_pause::RecordPauseRunner;
-pub(crate) use record_resume::RecordResumeRunner;
-pub(crate) use record_set_active::RecordSetActiveRunner;
 pub(crate) use record_set_directory::RecordSetDirectoryRunner;
-pub(crate) use record_start::RecordStartRunner;
-pub(crate) use record_stop::RecordStopRunner;
-pub(crate) use record_toggle_pause::RecordTogglePauseRunner;
-pub(crate) use replay_save::ReplaySaveRunner;
-pub(crate) use replay_set_active::ReplaySetActiveRunner;
-pub(crate) use replay_start::ReplayStartRunner;
-pub(crate) use replay_stop::ReplayStopRunner;
-pub(crate) use scene_collection_switch::SceneCollectionSwitchRunner;
 pub(crate) use set_input_settings::SetInputSettingsRunner;
 pub(crate) use set_locked::SetLockedRunner;
 pub(crate) use set_mute::SetMuteRunner;
-pub(crate) use set_preview_scene::SetPreviewSceneRunner;
-pub(crate) use set_transition::SetTransitionRunner;
 pub(crate) use set_visible::SetVisibleRunner;
 pub(crate) use set_volume::SetVolumeRunner;
 pub(crate) use stream_send_caption::StreamSendCaptionRunner;
-pub(crate) use stream_set_active::StreamSetActiveRunner;
-pub(crate) use stream_start::StreamStartRunner;
-pub(crate) use stream_stop::StreamStopRunner;
-pub(crate) use studio_disable::StudioDisableRunner;
-pub(crate) use studio_enable::StudioEnableRunner;
 pub(crate) use studio_set_enabled::StudioSetEnabledRunner;
-pub(crate) use studio_trigger_transition::StudioTriggerTransitionRunner;
 pub(crate) use switch_current::SwitchCurrentSceneRunner;
-pub(crate) use virtualcam_set_active::VirtualCamSetActiveRunner;
 
 use crate::ObsSink;
 
@@ -95,6 +50,9 @@ pub fn register_obs_sub_actions(
     sink: Arc<dyn ObsSink>,
 ) -> Result<(), RegistryError> {
     let mut reg = reg.owned_by(crate::OBS_INTEGRATION.id);
+    for runner in commands::command_runners(&sink) {
+        reg.register(runner)?;
+    }
     reg.register(Box::new(QueryInputListRunner::new(Arc::clone(&sink))))?;
     reg.register(Box::new(QueryInputSettingsRunner::new(Arc::clone(&sink))))?;
     reg.register(Box::new(QueryRecordStatusRunner::new(Arc::clone(&sink))))?;
@@ -104,38 +62,13 @@ pub fn register_obs_sub_actions(
     reg.register(Box::new(SetVisibleRunner::new(Arc::clone(&sink))))?;
     reg.register(Box::new(SetLockedRunner::new(Arc::clone(&sink))))?;
     reg.register(Box::new(SetMuteRunner::new(Arc::clone(&sink))))?;
-    reg.register(Box::new(RecordStartRunner::new(Arc::clone(&sink))))?;
-    reg.register(Box::new(RecordStopRunner::new(Arc::clone(&sink))))?;
-    reg.register(Box::new(RecordPauseRunner::new(Arc::clone(&sink))))?;
-    reg.register(Box::new(RecordResumeRunner::new(Arc::clone(&sink))))?;
-    reg.register(Box::new(RecordTogglePauseRunner::new(Arc::clone(&sink))))?;
-    reg.register(Box::new(StreamStartRunner::new(Arc::clone(&sink))))?;
-    reg.register(Box::new(StreamStopRunner::new(Arc::clone(&sink))))?;
     reg.register(Box::new(StreamSendCaptionRunner::new(Arc::clone(&sink))))?;
-    reg.register(Box::new(SetPreviewSceneRunner::new(Arc::clone(&sink))))?;
-    reg.register(Box::new(SetTransitionRunner::new(Arc::clone(&sink))))?;
     reg.register(Box::new(SetVolumeRunner::new(Arc::clone(&sink))))?;
     reg.register(Box::new(SetInputSettingsRunner::new(Arc::clone(&sink))))?;
-    reg.register(Box::new(ReplayStartRunner::new(Arc::clone(&sink))))?;
-    reg.register(Box::new(ReplayStopRunner::new(Arc::clone(&sink))))?;
-    reg.register(Box::new(ReplaySaveRunner::new(Arc::clone(&sink))))?;
-    reg.register(Box::new(StudioEnableRunner::new(Arc::clone(&sink))))?;
-    reg.register(Box::new(StudioDisableRunner::new(Arc::clone(&sink))))?;
-    reg.register(Box::new(StudioTriggerTransitionRunner::new(Arc::clone(
-        &sink,
-    ))))?;
     reg.register(Box::new(StudioSetEnabledRunner::new(Arc::clone(&sink))))?;
     reg.register(Box::new(FilterSetEnabledRunner::new(Arc::clone(&sink))))?;
-    reg.register(Box::new(BrowserRefreshRunner::new(Arc::clone(&sink))))?;
-    reg.register(Box::new(MediaRestartRunner::new(Arc::clone(&sink))))?;
-    reg.register(Box::new(StreamSetActiveRunner::new(Arc::clone(&sink))))?;
-    reg.register(Box::new(RecordSetActiveRunner::new(Arc::clone(&sink))))?;
-    reg.register(Box::new(VirtualCamSetActiveRunner::new(Arc::clone(&sink))))?;
-    reg.register(Box::new(ReplaySetActiveRunner::new(Arc::clone(&sink))))?;
     reg.register(Box::new(CaptureScreenshotRunner::new(Arc::clone(&sink))))?;
     reg.register(Box::new(RecordSetDirectoryRunner::new(Arc::clone(&sink))))?;
-    reg.register(Box::new(ProfileSwitchRunner::new(Arc::clone(&sink))))?;
-    reg.register(Box::new(SceneCollectionSwitchRunner::new(sink)))?;
     for succession in crate::vocabulary::retired_ids::RETIRED_SUB_ACTION_IDS {
         reg.declare_retired(succession)?;
     }
@@ -153,6 +86,22 @@ mod tests {
 
     use crate::ObsError;
     use crate::runners::test_support::{MockSink, RecordingSink, make_ctx};
+
+    const SIGNAL_RUNNERS: &[(&str, &str)] = &[
+        ("obs.recording.start", "start_record"),
+        ("obs.recording.stop", "stop_record"),
+        ("obs.recording.pause", "pause_record"),
+        ("obs.recording.resume", "resume_record"),
+        ("obs.recording.toggle_pause", "toggle_record_pause"),
+        ("obs.streaming.start", "start_stream"),
+        ("obs.streaming.stop", "stop_stream"),
+        ("obs.replay.start", "start_replay_buffer"),
+        ("obs.replay.stop", "stop_replay_buffer"),
+        ("obs.replay.save", "save_replay_buffer"),
+        ("obs.studio.enable", "set_studio_mode(true)"),
+        ("obs.studio.disable", "set_studio_mode(false)"),
+        ("obs.studio.trigger_transition", "trigger_studio_transition"),
+    ];
 
     const SET_ACTIVE_RUNNERS: &[(&str, &str, &str)] = &[
         ("obs.streaming.set_active", "start_stream", "stop_stream"),
@@ -177,6 +126,12 @@ mod tests {
     const SINGLE_STRING_RUNNERS: &[(&str, &str, &str)] = &[
         ("obs.browser.refresh", "source", "refresh_browser_source"),
         ("obs.media.restart", "source", "restart_media_input"),
+        ("obs.scene.set_preview", "scene", "set_preview_scene"),
+        (
+            "obs.scene.set_transition",
+            "transition",
+            "set_current_scene_transition",
+        ),
         (
             "obs.recording.set_directory",
             "path",
@@ -289,6 +244,45 @@ mod tests {
         register_obs_sub_actions(&mut reg, Arc::new(MockSink)).unwrap();
         let result = register_obs_sub_actions(&mut reg, Arc::new(MockSink));
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn signal_runners_send_exactly_one_matching_sink_call_and_report_its_kind() {
+        for (id, expected) in SIGNAL_RUNNERS {
+            let sink = RecordingSink::new();
+            let reg = registry_with(Arc::clone(&sink) as Arc<dyn ObsSink>);
+            let stack = ArgStack::new();
+
+            let (telemetry, produced) = reg
+                .get(id)
+                .unwrap()
+                .execute(&BTreeMap::new(), &make_ctx(&stack))
+                .await;
+
+            assert_eq!(sink.calls(), vec![(*expected).to_owned()], "{id}");
+            assert_eq!(telemetry.kind, *id);
+            assert_eq!(telemetry.outcome, SubActionOutcome::Success, "{id}");
+            assert!(produced.is_none(), "{id}");
+        }
+    }
+
+    #[tokio::test]
+    async fn signal_runners_report_failed_when_the_sink_errors() {
+        for (id, _) in SIGNAL_RUNNERS {
+            let reg = registry_with(RecordingSink::failing());
+            let stack = ArgStack::new();
+
+            let (telemetry, _) = reg
+                .get(id)
+                .unwrap()
+                .execute(&BTreeMap::new(), &make_ctx(&stack))
+                .await;
+
+            assert!(
+                matches!(telemetry.outcome, SubActionOutcome::Failed(_)),
+                "{id}"
+            );
+        }
     }
 
     #[tokio::test]

@@ -7,8 +7,7 @@ use std::time::Duration;
 
 use forge_events::{Event, EventSource, EventSubscription, EventsError};
 use forge_registry::{
-    ChatTriggerFamily, EventFilter, FormField, KindPlatformContract, TriggerCategory,
-    TriggerKindDescriptor,
+    ChatTriggerFamily, EventFilter, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
 use forge_runtime::TimerSchedule;
 use forge_runtime::{
@@ -81,16 +80,14 @@ impl TriggerKindDescriptor for CommandDescriptor {
         cfg.insert("phrase".to_owned(), Variant::String("!golden".to_owned()));
         cfg
     }
-    fn config_fields(&self) -> Vec<FormField> {
-        Vec::new()
-    }
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Twitch),
             kind_prefix: Some(COMMAND_EVENT_PREFIX.to_owned()),
         }
     }
-    fn matches_trigger(&self, _: &TriggerConfig, _: &Event) -> bool {
+
+    fn matches_trigger(&self, _config: &TriggerConfig, _event: &Event) -> bool {
         true
     }
     fn build_arg_stack(&self, _: &Event) -> ArgStack {

@@ -9,6 +9,12 @@ mod ssml;
 
 pub use ssml::xml_escape;
 
+pub const SEMITONES_PER_OCTAVE: f32 = 12.0;
+
+pub fn pitch_ratio_from_semitones(semitones: f32) -> f32 {
+    2.0_f32.powf(semitones / SEMITONES_PER_OCTAVE)
+}
+
 pub const ENGINE_SYNTHESIS_BUDGET: std::time::Duration = std::time::Duration::from_secs(25);
 
 pub const ENGINE_ID_PIPER: &str = "piper";
@@ -234,6 +240,17 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     use super::*;
+
+    #[test]
+    fn pitch_ratio_doubles_per_octave_and_is_unity_at_zero() {
+        const TOLERANCE: f32 = 1e-5;
+        for (semitones, ratio) in [(0.0, 1.0), (12.0, 2.0), (-12.0, 0.5), (24.0, 4.0)] {
+            assert!(
+                (pitch_ratio_from_semitones(semitones) - ratio).abs() < TOLERANCE,
+                "{semitones}"
+            );
+        }
+    }
 
     struct NullEngine {
         id: EngineId,

@@ -1,10 +1,7 @@
-use std::sync::Arc;
-
 use async_trait::async_trait;
 use forge_net::{ExpectedRefusal, GatewayFailure, GatewayRequest};
-use forge_platform_core::{FollowLookup, FollowStatus, PlatformError};
+use forge_platform_core::{FollowLookup, FollowStatus};
 use forge_types::Secret;
-use futures::future::BoxFuture;
 use serde::Deserialize;
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
@@ -21,7 +18,7 @@ const FOR_CHANNEL_ID_PARAM: &str = "forChannelId";
 const SUBSCRIPTION_FORBIDDEN_STATUS: u16 = forge_net::status::FORBIDDEN;
 const SUBSCRIPTION_FORBIDDEN_MARKER: &str = "\"subscriptionForbidden\"";
 
-type TokenSource = Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync>;
+use forge_platform_core::TokenSource;
 
 #[derive(Deserialize)]
 struct SubscriptionPage {
@@ -125,6 +122,8 @@ impl FollowLookup for YoutubeIntegrationBundle {
 
 #[cfg(test)]
 mod tests {
+    use forge_platform_core::PlatformError;
+    use std::sync::Arc;
     use std::time::Duration;
 
     use reqwest::StatusCode;

@@ -4,11 +4,11 @@ pub(crate) mod pack_flow;
 mod pack_transfer;
 mod setup_transfer;
 
+use forge_events::Event;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
-use forge_events::Event;
 use forge_overlay::SampleContext;
 use forge_registry::ActorRole;
 use forge_registry::{
@@ -205,7 +205,7 @@ impl TriggerKindDescriptor for StubTrigger {
         }
     }
 
-    fn matches_trigger(&self, _: &TriggerConfig, _: &Event) -> bool {
+    fn matches_trigger(&self, _config: &TriggerConfig, _event: &Event) -> bool {
         true
     }
 

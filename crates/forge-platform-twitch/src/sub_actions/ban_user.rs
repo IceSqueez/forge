@@ -15,8 +15,6 @@ use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
 use crate::step_failure;
 use crate::vocabulary::sub_action_ids;
 
-const KIND_ID: &str = sub_action_ids::MODERATION_BAN_USER;
-
 const CONFIG: ConfigSpec = ConfigSpec::new(&[&MODERATION_TARGET.login, &OPTIONAL_REASON]);
 
 fn read_config(
@@ -69,7 +67,7 @@ impl BanUserRunner {
 #[async_trait]
 impl SubActionRunner for BanUserRunner {
     fn id(&self) -> &str {
-        KIND_ID
+        sub_action_ids::MODERATION_BAN_USER
     }
 
     fn category(&self) -> SubActionCategory {
@@ -109,7 +107,7 @@ impl SubActionRunner for BanUserRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, KIND_ID);
+        let timer = StepTimer::start(ctx, self.id());
         let (target, reason) = match read_config(config, ctx.arg_stack) {
             Ok(values) => values,
             Err(problem) => return (timer.invalid_config(&problem), None),

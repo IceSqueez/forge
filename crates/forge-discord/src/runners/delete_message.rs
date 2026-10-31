@@ -13,8 +13,6 @@ use super::step_failure;
 use crate::sink::DiscordSink;
 use crate::vocabulary::sub_action_ids;
 
-const KIND_ID: &str = sub_action_ids::WEBHOOK_DELETE_MESSAGE;
-
 const CONFIG: ConfigSpec = ConfigSpec::new(&[&WEBHOOK, &MESSAGE_ID]);
 
 fn read_config(
@@ -37,7 +35,7 @@ impl DeleteMessageRunner {
 #[async_trait]
 impl SubActionRunner for DeleteMessageRunner {
     fn id(&self) -> &str {
-        KIND_ID
+        sub_action_ids::WEBHOOK_DELETE_MESSAGE
     }
 
     fn category(&self) -> SubActionCategory {
@@ -69,7 +67,7 @@ impl SubActionRunner for DeleteMessageRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, KIND_ID);
+        let timer = StepTimer::start(ctx, self.id());
         let (webhook, message_id) = match read_config(config, ctx.arg_stack) {
             Ok(values) => values,
             Err(problem) => return (timer.invalid_config(&problem), None),

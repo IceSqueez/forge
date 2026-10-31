@@ -1,7 +1,7 @@
 use forge_net::{CallClass, GatewayFailure, GatewayRequest, RequestBody};
 use forge_speech_types::PcmBuffer;
 use forge_speech_types::VoiceId;
-use forge_tts_core::{SynthesisRequest, xml_escape};
+use forge_tts_core::{SynthesisRequest, pitch_ratio_from_semitones, xml_escape};
 use forge_types::Secret;
 
 use crate::azure::SAMPLE_RATE_HZ;
@@ -49,7 +49,8 @@ fn build_ssml(req: &SynthesisRequest) -> String {
     let escaped = xml_escape(&req.text);
 
     let rate_pct = ((req.rate_multiplier - 1.0) * 100.0).clamp(-50.0, 200.0);
-    let pitch_pct = ((2f32.powf(req.pitch_semitones / 12.0) - 1.0) * 100.0).clamp(-50.0, 50.0);
+    let pitch_pct =
+        ((pitch_ratio_from_semitones(req.pitch_semitones) - 1.0) * 100.0).clamp(-50.0, 50.0);
     let rate_rounded = rate_pct.round() as i32;
     let pitch_rounded = pitch_pct.round() as i32;
 
@@ -134,9 +135,7 @@ pub(super) async fn synthesize(
         .await
         .map_err(|failure| classify_error(&failure, link, &req.voice_id))?;
 
-    let (pairs, _) = response.body().as_chunks::<2>();
-    let samples: Vec<i16> = pairs.iter().map(|pair| i16::from_le_bytes(*pair)).collect();
-    Ok(PcmBuffer::new(samples, SAMPLE_RATE_HZ, 1))
+    Ok(PcmBuffer::from_s16le(response.body(), SAMPLE_RATE_HZ, 1))
 }
 
 pub(super) async fn probe_connection(link: &ProviderLink, api_key: &str) -> Result<(), AzureError> {

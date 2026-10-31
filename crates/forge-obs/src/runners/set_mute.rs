@@ -12,8 +12,6 @@ use super::step_failure;
 use crate::ObsSink;
 use crate::vocabulary::{config_keys, picker_keys, sub_action_ids};
 
-const KIND_ID: &str = sub_action_ids::AUDIO_SET_MUTE;
-
 const SOURCE: PickedTextField = PickedTextField {
     key: config_keys::SOURCE,
     label: "Input",
@@ -49,7 +47,7 @@ impl SetMuteRunner {
 #[async_trait]
 impl SubActionRunner for SetMuteRunner {
     fn id(&self) -> &str {
-        KIND_ID
+        sub_action_ids::AUDIO_SET_MUTE
     }
 
     fn category(&self) -> SubActionCategory {
@@ -81,7 +79,7 @@ impl SubActionRunner for SetMuteRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, KIND_ID);
+        let timer = StepTimer::start(ctx, self.id());
         let (source, muted) = match read_config(config, ctx.arg_stack) {
             Ok(values) => values,
             Err(problem) => return (timer.invalid_config(&problem), None),

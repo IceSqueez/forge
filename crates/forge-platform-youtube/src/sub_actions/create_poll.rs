@@ -12,7 +12,6 @@ use super::step_failure;
 use crate::send_chat::YoutubeSendChat;
 use crate::vocabulary::{config_keys, sub_action_ids};
 
-const KIND_ID: &str = sub_action_ids::CHAT_CREATE_POLL;
 const MIN_OPTIONS: usize = 2;
 const MAX_OPTIONS: usize = 4;
 
@@ -107,7 +106,7 @@ impl CreatePollRunner {
 #[async_trait]
 impl SubActionRunner for CreatePollRunner {
     fn id(&self) -> &str {
-        KIND_ID
+        sub_action_ids::CHAT_CREATE_POLL
     }
 
     fn category(&self) -> SubActionCategory {
@@ -139,7 +138,7 @@ impl SubActionRunner for CreatePollRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, KIND_ID);
+        let timer = StepTimer::start(ctx, self.id());
         let (question, options) = match read_config(config, ctx.arg_stack) {
             Ok(values) => values,
             Err(problem) => return (timer.invalid_config(&problem), None),

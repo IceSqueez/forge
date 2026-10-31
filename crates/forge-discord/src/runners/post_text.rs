@@ -16,8 +16,6 @@ use crate::mention::MentionPolicy;
 use crate::sink::DiscordSink;
 use crate::vocabulary::{config_keys, sub_action_ids};
 
-const KIND_ID: &str = sub_action_ids::WEBHOOK_SEND_MESSAGE;
-
 const CONTENT: TextField = filled_text(config_keys::CONTENT, "Message", TextEditor::Area);
 
 const CONFIG: ConfigSpec =
@@ -50,7 +48,7 @@ impl PostTextRunner {
 #[async_trait]
 impl SubActionRunner for PostTextRunner {
     fn id(&self) -> &str {
-        KIND_ID
+        sub_action_ids::WEBHOOK_SEND_MESSAGE
     }
 
     fn category(&self) -> SubActionCategory {
@@ -86,7 +84,7 @@ impl SubActionRunner for PostTextRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, KIND_ID);
+        let timer = StepTimer::start(ctx, self.id());
         let post = match read_config(config, ctx.arg_stack) {
             Ok(post) => post,
             Err(problem) => return (timer.invalid_config(&problem), None),

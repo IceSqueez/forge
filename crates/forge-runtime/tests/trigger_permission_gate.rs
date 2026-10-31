@@ -7,8 +7,8 @@ use std::time::Duration;
 use forge_events::EventSubscription;
 use forge_events::{Event, EventSource, EventsError};
 use forge_registry::{
-    ChatTriggerFamily, EventFilter, FormField, KindPlatformContract, TriggerCategory,
-    TriggerKindDescriptor, TriggerRegistry,
+    ChatTriggerFamily, EventFilter, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
+    TriggerRegistry,
 };
 use forge_runtime::{EventBus, FrozenRuntime, NullEventLogRepo, RuntimeWiring};
 use forge_storage::DataProvider;
@@ -55,16 +55,14 @@ impl TriggerKindDescriptor for FakeDescriptor {
         cfg.insert("phrase".to_owned(), Variant::String("!go".to_owned()));
         cfg
     }
-    fn config_fields(&self) -> Vec<FormField> {
-        Vec::new()
-    }
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Twitch),
             kind_prefix: Some(self.prefix.to_owned()),
         }
     }
-    fn matches_trigger(&self, _: &TriggerConfig, _: &Event) -> bool {
+
+    fn matches_trigger(&self, _config: &TriggerConfig, _event: &Event) -> bool {
         true
     }
     fn build_arg_stack(&self, event: &Event) -> ArgStack {

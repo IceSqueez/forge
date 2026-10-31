@@ -2,18 +2,14 @@ use crate::step_failure;
 use crate::vocabulary::messages;
 use crate::vocabulary::sub_action_ids;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
-use forge_registry::{RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{RunContext, StepTimer, SubActionCategory, SubActionRunner};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
 
 use crate::account::identity::SelfIdentity;
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
-
-const KIND_ID: &str = sub_action_ids::GOAL_GET_CURRENT;
 
 pub(crate) struct GetCurrentGoalRunner {
     transport: Arc<dyn HelixTransport>,
@@ -92,7 +88,7 @@ struct GoalData {
 #[async_trait]
 impl SubActionRunner for GetCurrentGoalRunner {
     fn id(&self) -> &str {
-        KIND_ID
+        sub_action_ids::GOAL_GET_CURRENT
     }
 
     fn category(&self) -> SubActionCategory {
@@ -120,8 +116,7 @@ impl SubActionRunner for GetCurrentGoalRunner {
         _config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
+        let timer = StepTimer::start(ctx, self.id());
 
         match self.fetch().await {
             Ok(Some(goal)) => {
@@ -143,49 +138,16 @@ impl SubActionRunner for GetCurrentGoalRunner {
                         "goal.is_achieved".to_owned(),
                         Variant::Bool(goal.is_achieved),
                     );
-                (
-                    SubActionTelemetry {
-                        args_in: ::std::collections::BTreeMap::new(),
-                        produced: ::std::collections::BTreeMap::new(),
-                        kind: KIND_ID.to_owned(),
-                        started_at,
-                        duration_ms: u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX),
-                        outcome: SubActionOutcome::Success,
-                        index: ctx.index,
-                    },
-                    Some(output_stack),
-                )
+                (timer.success(), Some(output_stack))
             }
             Ok(None) => {
                 let output_stack = ctx
                     .arg_stack
                     .clone()
                     .set("goal.exists".to_owned(), Variant::Bool(false));
-                (
-                    SubActionTelemetry {
-                        args_in: ::std::collections::BTreeMap::new(),
-                        produced: ::std::collections::BTreeMap::new(),
-                        kind: KIND_ID.to_owned(),
-                        started_at,
-                        duration_ms: u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX),
-                        outcome: SubActionOutcome::Success,
-                        index: ctx.index,
-                    },
-                    Some(output_stack),
-                )
+                (timer.success(), Some(output_stack))
             }
-            Err(outcome) => (
-                SubActionTelemetry {
-                    args_in: ::std::collections::BTreeMap::new(),
-                    produced: ::std::collections::BTreeMap::new(),
-                    kind: KIND_ID.to_owned(),
-                    started_at,
-                    duration_ms: u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX),
-                    outcome,
-                    index: ctx.index,
-                },
-                None,
-            ),
+            Err(outcome) => (timer.finish(outcome), None),
         }
     }
 }

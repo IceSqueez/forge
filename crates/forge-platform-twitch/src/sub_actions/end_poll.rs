@@ -13,7 +13,6 @@ use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
 use crate::step_failure;
 use crate::vocabulary::{config_keys, sub_action_ids};
 
-const KIND_ID: &str = sub_action_ids::POLL_END;
 const POLL_ID_TEMPLATE: &str = "%poll.id%";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -99,7 +98,7 @@ impl EndPollRunner {
 #[async_trait]
 impl SubActionRunner for EndPollRunner {
     fn id(&self) -> &str {
-        KIND_ID
+        sub_action_ids::POLL_END
     }
 
     fn category(&self) -> SubActionCategory {
@@ -131,7 +130,7 @@ impl SubActionRunner for EndPollRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, KIND_ID);
+        let timer = StepTimer::start(ctx, self.id());
         let (poll_id, status) = match read_config(config, ctx.arg_stack) {
             Ok(values) => values,
             Err(problem) => return (timer.invalid_config(&problem), None),

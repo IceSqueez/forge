@@ -288,10 +288,7 @@ impl TtsEngine for PiperEngine {
             });
         }
 
-        let (pairs, _) = output.stdout.as_chunks::<2>();
-        let samples: Vec<i16> = pairs.iter().map(|pair| i16::from_le_bytes(*pair)).collect();
-
-        Ok(PcmBuffer::new(samples, sample_rate, 1))
+        Ok(PcmBuffer::from_s16le(&output.stdout, sample_rate, 1))
     }
 }
 

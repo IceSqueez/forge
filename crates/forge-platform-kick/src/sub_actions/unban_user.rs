@@ -14,8 +14,6 @@ use super::step_failure;
 use crate::api::moderation::KickModeration;
 use crate::vocabulary::sub_action_ids;
 
-const KIND_ID: &str = sub_action_ids::MODERATION_UNBAN;
-
 const CONFIG: ConfigSpec = ConfigSpec::new(&[&USER_ID]);
 
 pub(crate) struct UnbanUserRunner {
@@ -46,7 +44,7 @@ impl UnbanUserRunner {
 #[async_trait]
 impl SubActionRunner for UnbanUserRunner {
     fn id(&self) -> &str {
-        KIND_ID
+        sub_action_ids::MODERATION_UNBAN
     }
 
     fn category(&self) -> SubActionCategory {
@@ -78,7 +76,7 @@ impl SubActionRunner for UnbanUserRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, KIND_ID);
+        let timer = StepTimer::start(ctx, self.id());
         let target_id = match USER_ID.read(config, ctx.arg_stack) {
             Ok(target_id) => target_id,
             Err(problem) => return (timer.invalid_config(&problem), None),

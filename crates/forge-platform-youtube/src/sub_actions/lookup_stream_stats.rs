@@ -11,8 +11,6 @@ use crate::timestamp;
 use crate::vocabulary::sub_action_ids;
 use crate::vocabulary::variables::stream_stats as variables;
 
-const KIND_ID: &str = sub_action_ids::LOOKUP_STREAM_STATS;
-
 pub(crate) struct LookupStreamStatsRunner {
     stats: Arc<YoutubeStreamStats>,
 }
@@ -26,7 +24,7 @@ impl LookupStreamStatsRunner {
 #[async_trait]
 impl SubActionRunner for LookupStreamStatsRunner {
     fn id(&self) -> &str {
-        KIND_ID
+        sub_action_ids::LOOKUP_STREAM_STATS
     }
 
     fn category(&self) -> SubActionCategory {
@@ -54,7 +52,7 @@ impl SubActionRunner for LookupStreamStatsRunner {
         _config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, KIND_ID);
+        let timer = StepTimer::start(ctx, self.id());
         match self.stats.fetch().await {
             Ok(details) => {
                 let mut stack = ctx.arg_stack.clone().set(

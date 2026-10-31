@@ -2,11 +2,13 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use async_trait::async_trait;
-use forge_platform_core::REFRESH_BUFFER_SECS;
-use forge_platform_core::{PlatformError, credential_storage_error, reauth_required};
+use forge_platform_core::{
+    PlatformError, REFRESH_BUFFER_SECS, SingleFlightRefresh, TokenRotation,
+    credential_storage_error, reauth_required,
+};
 use forge_storage::{CredentialId, CredentialsRepo};
 use forge_types::OAuthToken;
-use tracing::{debug, info, warn};
+use tracing::{info, warn};
 
 use crate::credentials::{
     StoredCredential, TWITCH_BOT_CREDENTIAL_ID, TWITCH_CREDENTIAL_ID, load_at, store_credential_at,
@@ -17,10 +19,13 @@ use crate::vocabulary::PLATFORM_ID;
 const REFRESH_BUFFER: Duration = Duration::from_secs(REFRESH_BUFFER_SECS);
 
 pub struct TwitchCredentialsManager {
+    refresh: SingleFlightRefresh<TwitchRotation>,
+}
+
+struct TwitchRotation {
     repo: Arc<dyn CredentialsRepo>,
     credential_id: &'static str,
     oauth: TwitchOAuthClient,
-    refresh_guard: Arc<tokio::sync::Mutex<()>>,
     expiry_tx: tokio::sync::watch::Sender<Option<SystemTime>>,
 }
 
@@ -39,83 +44,42 @@ impl TwitchCredentialsManager {
         repo: Arc<dyn CredentialsRepo>,
     ) -> Self {
         Self {
-            repo,
-            credential_id,
-            oauth,
-            refresh_guard: Arc::new(tokio::sync::Mutex::new(())),
-            expiry_tx: tokio::sync::watch::channel(None).0,
+            refresh: SingleFlightRefresh::new(TwitchRotation {
+                repo,
+                credential_id,
+                oauth,
+                expiry_tx: tokio::sync::watch::channel(None).0,
+            }),
         }
     }
 
     pub(crate) fn subscribe_expiry(&self) -> tokio::sync::watch::Receiver<Option<SystemTime>> {
-        self.expiry_tx.subscribe()
+        self.refresh.rotation().expiry_tx.subscribe()
     }
 
     pub async fn load(&self) -> Result<Option<StoredCredential>, PlatformError> {
-        load_at(self.repo.as_ref(), self.credential_id)
-            .await
-            .map_err(|e| credential_storage_error(PLATFORM_ID, e.stored_secret_unrecoverable(), e))
+        self.refresh.rotation().load().await
     }
 
     pub async fn get_valid_access_token(&self) -> Result<OAuthToken, PlatformError> {
-        let cred = self
-            .load()
-            .await?
-            .ok_or_else(|| reauth_required(PLATFORM_ID))?;
-        if !near_expiry(&cred) {
-            return Ok(cred.access_token);
-        }
-        debug!(
-            buffer_secs = REFRESH_BUFFER_SECS,
-            "twitch access token inside the refresh buffer; renewing"
-        );
-        let guard = self.refresh_guard.clone().lock_owned().await;
-        let cred = self
-            .load()
-            .await?
-            .ok_or_else(|| reauth_required(PLATFORM_ID))?;
-        if !near_expiry(&cred) {
-            debug!("twitch token already renewed by a concurrent refresh");
-            return Ok(cred.access_token);
-        }
-        let refresh_token = cred
-            .refresh_token
-            .clone()
-            .ok_or_else(|| reauth_required(PLATFORM_ID))?;
-        let renewed = self.perform_refresh(refresh_token, cred, guard).await?;
-        Ok(renewed.access_token)
+        self.refresh
+            .valid_credential()
+            .await
+            .map(|credential| credential.access_token)
     }
 
     pub async fn refresh(
         &self,
         failed_access_token: &OAuthToken,
     ) -> Result<StoredCredential, PlatformError> {
-        let guard = self.refresh_guard.clone().lock_owned().await;
-        let existing = self
-            .load()
-            .await?
-            .ok_or_else(|| reauth_required(PLATFORM_ID))?;
-        if existing.access_token.expose() != failed_access_token.expose() {
-            debug!("twitch token already rotated by a concurrent refresh; reusing it");
-            return Ok(existing);
-        }
-        let refresh_token = existing
-            .refresh_token
-            .clone()
-            .ok_or_else(|| reauth_required(PLATFORM_ID))?;
-        self.perform_refresh(refresh_token, existing, guard).await
+        self.refresh
+            .replace_rejected(failed_access_token.expose())
+            .await
     }
 
     pub async fn clear(&self) -> Result<(), PlatformError> {
-        let _guard = self.refresh_guard.lock().await;
-        self.repo
-            .delete(&CredentialId::new(self.credential_id))
-            .await
-            .map_err(|e| {
-                credential_storage_error(PLATFORM_ID, e.stored_secret_unrecoverable(), e)
-            })?;
-        self.expiry_tx.send_replace(None);
-        Ok(())
+        let _guard = self.refresh.exclusive().await;
+        self.refresh.rotation().delete_stored().await
     }
 
     pub(crate) async fn revoke_and_clear<F, Fut>(&self, revoke: F) -> Result<(), PlatformError>
@@ -123,10 +87,16 @@ impl TwitchCredentialsManager {
         F: FnOnce(StoredCredential) -> Fut,
         Fut: std::future::Future<Output = ()>,
     {
-        let _guard = self.refresh_guard.lock().await;
+        let _guard = self.refresh.exclusive().await;
         if let Some(stored) = self.load().await? {
             revoke(stored).await;
         }
+        self.refresh.rotation().delete_stored().await
+    }
+}
+
+impl TwitchRotation {
+    async fn delete_stored(&self) -> Result<(), PlatformError> {
         self.repo
             .delete(&CredentialId::new(self.credential_id))
             .await
@@ -136,34 +106,54 @@ impl TwitchCredentialsManager {
         self.expiry_tx.send_replace(None);
         Ok(())
     }
+}
 
-    async fn perform_refresh(
-        &self,
-        refresh_token: OAuthToken,
-        existing: StoredCredential,
-        guard: tokio::sync::OwnedMutexGuard<()>,
-    ) -> Result<StoredCredential, PlatformError> {
-        let oauth = self.oauth.clone();
-        let repo = self.repo.clone();
-        let credential_id = self.credential_id;
-        let expiry_tx = self.expiry_tx.clone();
-        tokio::spawn(async move {
-            let _guard = guard;
-            let renewed = rotate_credential(
-                &oauth,
-                repo.as_ref(),
-                credential_id,
-                &refresh_token,
-                existing,
-            )
-            .await?;
-            expiry_tx.send_replace(renewed.expires_at);
-            Ok(renewed)
-        })
-        .await
-        .map_err(|e| PlatformError::Network {
-            reason: format!("token refresh task ended: {e}"),
-        })?
+#[async_trait]
+impl TokenRotation for TwitchRotation {
+    type Credential = StoredCredential;
+
+    fn platform(&self) -> &'static str {
+        PLATFORM_ID
+    }
+
+    async fn load(&self) -> Result<Option<StoredCredential>, PlatformError> {
+        load_at(self.repo.as_ref(), self.credential_id)
+            .await
+            .map_err(|e| credential_storage_error(PLATFORM_ID, e.stored_secret_unrecoverable(), e))
+    }
+
+    fn access_token<'a>(&self, credential: &'a StoredCredential) -> &'a str {
+        credential.access_token.expose()
+    }
+
+    fn near_expiry(&self, credential: &StoredCredential) -> bool {
+        credential
+            .expires_at
+            .map(|at| at <= SystemTime::now() + REFRESH_BUFFER)
+            .unwrap_or(false)
+    }
+
+    async fn rotate(&self, existing: StoredCredential) -> Result<StoredCredential, PlatformError> {
+        let refresh_token = existing
+            .refresh_token
+            .clone()
+            .ok_or_else(|| reauth_required(PLATFORM_ID))?;
+        let renewed = rotate_credential(
+            &self.oauth,
+            self.repo.as_ref(),
+            self.credential_id,
+            &refresh_token,
+            existing,
+        )
+        .await?;
+        self.expiry_tx.send_replace(renewed.expires_at);
+        Ok(renewed)
+    }
+
+    fn task_lost(&self, detail: String) -> PlatformError {
+        PlatformError::Network {
+            reason: format!("token refresh task ended: {detail}"),
+        }
     }
 }
 
@@ -216,12 +206,6 @@ async fn rotate_credential(
         .await
         .map_err(|e| credential_storage_error(PLATFORM_ID, e.stored_secret_unrecoverable(), e))?;
     Ok(renewed)
-}
-
-fn near_expiry(cred: &StoredCredential) -> bool {
-    cred.expires_at
-        .map(|at| at <= SystemTime::now() + REFRESH_BUFFER)
-        .unwrap_or(false)
 }
 
 #[async_trait]

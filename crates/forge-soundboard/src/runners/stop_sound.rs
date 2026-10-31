@@ -10,8 +10,6 @@ use super::clip_field::ClipField;
 use crate::control::SoundboardControl;
 use crate::vocabulary::sub_action_ids;
 
-const KIND_ID: &str = sub_action_ids::SOUND_STOP;
-
 const CLIP: ClipField = ClipField { required: false };
 
 const CONFIG: ConfigSpec = ConfigSpec::new(&[&CLIP]);
@@ -29,7 +27,7 @@ impl StopSoundRunner {
 #[async_trait]
 impl SubActionRunner for StopSoundRunner {
     fn id(&self) -> &str {
-        KIND_ID
+        sub_action_ids::SOUND_STOP
     }
 
     fn category(&self) -> SubActionCategory {
@@ -61,7 +59,7 @@ impl SubActionRunner for StopSoundRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, KIND_ID);
+        let timer = StepTimer::start(ctx, self.id());
         let stopped = match CLIP.read(config, ctx.arg_stack) {
             Ok(Some(clip_id)) => self.control.stop(clip_id).await,
             Ok(None) => self.control.stop_all().await,

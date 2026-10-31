@@ -19,7 +19,6 @@ use crate::helix::HelixTransport;
 use crate::step_failure;
 use crate::vocabulary::{config_keys, sub_action_ids};
 
-const KIND_ID: &str = sub_action_ids::CHANNEL_POINTS_UPDATE_REWARD;
 const MIN_TITLE_CHARS: i64 = 1;
 const UNLIMITED: i64 = 0;
 
@@ -241,7 +240,7 @@ impl UpdateRewardRunner {
 #[async_trait]
 impl SubActionRunner for UpdateRewardRunner {
     fn id(&self) -> &str {
-        KIND_ID
+        sub_action_ids::CHANNEL_POINTS_UPDATE_REWARD
     }
 
     fn category(&self) -> SubActionCategory {
@@ -273,7 +272,7 @@ impl SubActionRunner for UpdateRewardRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, KIND_ID);
+        let timer = StepTimer::start(ctx, self.id());
         let update = match RewardUpdate::read(config, ctx.arg_stack) {
             Ok(update) => update,
             Err(problem) => return (timer.invalid_config(&problem), None),

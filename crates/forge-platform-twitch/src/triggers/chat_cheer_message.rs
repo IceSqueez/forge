@@ -3,7 +3,8 @@ use crate::vocabulary::{event_kinds, messages};
 use forge_events::{Event, EventSource};
 use forge_registry::{
     ActorDeclaration, CanonicalCount, CanonicalVariable, EventFilter, FormField,
-    KindPlatformContract, TriggerCategory, TriggerKindDescriptor, TriggerVariables,
+    KindPlatformContract, SubActionConfigExt, TriggerCategory, TriggerKindDescriptor,
+    TriggerVariables,
 };
 use forge_types::{PlatformId, TriggerConfig, UserText, Variant};
 
@@ -104,26 +105,8 @@ impl TriggerKindDescriptor for ChatCheerMessageDescriptor {
             None => return false,
         };
 
-        let min = config
-            .get("min_bits")
-            .and_then(|v| {
-                if let Variant::Int(n) = v {
-                    Some(*n)
-                } else {
-                    None
-                }
-            })
-            .unwrap_or(1);
-        let max = config
-            .get("max_bits")
-            .and_then(|v| {
-                if let Variant::Int(n) = v {
-                    Some(*n)
-                } else {
-                    None
-                }
-            })
-            .unwrap_or(NO_MAXIMUM);
+        let min = config.int("min_bits").unwrap_or(1);
+        let max = config.int("max_bits").unwrap_or(NO_MAXIMUM);
 
         if max <= NO_MAXIMUM {
             return bits >= min;

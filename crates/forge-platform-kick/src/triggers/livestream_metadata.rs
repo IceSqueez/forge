@@ -1,7 +1,8 @@
-use forge_events::{Event, EventSource};
+use forge_events::Event;
+use forge_events::EventSource;
 use forge_registry::{
-    ActorDeclaration, EventFilter, FormField, KindPlatformContract, TriggerCategory,
-    TriggerKindDescriptor, TriggerVariables,
+    ActorDeclaration, EventFilter, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
+    TriggerVariables,
 };
 use forge_types::{DeclaredVariable, PlatformId, TriggerConfig, Variant, VariantKind};
 
@@ -38,14 +39,6 @@ impl TriggerKindDescriptor for LivestreamMetadataDescriptor {
 
     fn platform_contract(&self) -> KindPlatformContract {
         KindPlatformContract::PlatformSpecific(PlatformId::Kick)
-    }
-
-    fn default_config(&self) -> TriggerConfig {
-        TriggerConfig::new()
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![]
     }
 
     fn event_filter(&self) -> EventFilter {

@@ -82,4 +82,5 @@ pub use sender::{
 pub use auth::pkce_flow::PkceAuthorizeUrl;
 pub use auth::{
     CALLBACK_PATH, PkceAuthorization, PkceAuthorizeConfig, PkceLoopback, REFRESH_BUFFER_SECS,
+    SingleFlightRefresh, TokenRotation, TokenSource, expires_within_refresh_buffer,
 };

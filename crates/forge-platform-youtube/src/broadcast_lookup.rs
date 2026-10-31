@@ -1,10 +1,8 @@
 use std::fmt;
-use std::sync::Arc;
 
 use forge_net::GatewayRequest;
 use forge_platform_core::PlatformError;
 use forge_types::Secret;
-use futures::future::BoxFuture;
 use tokio_util::sync::CancellationToken;
 
 use crate::chat_poller::MISSING_SCOPE;
@@ -13,7 +11,7 @@ use crate::quota_state::BROADCAST_COST;
 
 const BROADCASTS_PATH: &str = "/liveBroadcasts";
 
-type TokenSource = Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync>;
+use forge_platform_core::TokenSource;
 
 pub(crate) struct ActiveBroadcast {
     pub(crate) live_chat_id: String,
@@ -98,6 +96,7 @@ impl fmt::Debug for BroadcastLookup {
 mod tests {
     use reqwest::StatusCode;
     use serde_json::json;
+    use std::sync::Arc;
     use wiremock::matchers::{header, method, path, query_param};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 

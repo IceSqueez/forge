@@ -8,7 +8,6 @@ use forge_platform_core::{
     connection_state_changed_event, reauth_required,
 };
 use forge_storage::BanLedgerRepo;
-use futures::future::BoxFuture;
 use tokio::sync::{mpsc, watch};
 use tokio_util::sync::CancellationToken;
 
@@ -23,7 +22,7 @@ use crate::send_chat::YoutubeSendChat;
 const PLATFORM_ID: &str = "youtube";
 pub(crate) const EVENT_CHANNEL_CAPACITY: usize = forge_events::PLATFORM_EVENT_CHANNEL_CAPACITY;
 
-type TokenSource = Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync>;
+use forge_platform_core::TokenSource;
 
 pub struct YoutubePlatform {
     api: YoutubeDataApi,

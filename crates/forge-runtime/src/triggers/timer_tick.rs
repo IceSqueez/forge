@@ -154,12 +154,12 @@ impl TriggerKindDescriptor for TimerTickDescriptor {
         }
     }
 
-    fn targeted_instance_field(&self) -> Option<&'static str> {
-        Some(INSTANCE_ID_FIELD)
-    }
-
     fn matches_trigger(&self, _config: &TriggerConfig, _event: &Event) -> bool {
         true
+    }
+
+    fn targeted_instance_field(&self) -> Option<&'static str> {
+        Some(INSTANCE_ID_FIELD)
     }
 
     fn actors(&self) -> ActorDeclaration {

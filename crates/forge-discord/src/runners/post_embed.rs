@@ -16,8 +16,6 @@ use crate::embed::DiscordEmbed;
 use crate::sink::DiscordSink;
 use crate::vocabulary::{config_keys, sub_action_ids};
 
-const KIND_ID: &str = sub_action_ids::WEBHOOK_SEND_EMBED;
-
 const TITLE: TextField = optional_text(
     config_keys::EMBED_TITLE,
     "Title",
@@ -91,7 +89,7 @@ impl PostEmbedRunner {
 #[async_trait]
 impl SubActionRunner for PostEmbedRunner {
     fn id(&self) -> &str {
-        KIND_ID
+        sub_action_ids::WEBHOOK_SEND_EMBED
     }
 
     fn category(&self) -> SubActionCategory {
@@ -145,7 +143,7 @@ impl SubActionRunner for PostEmbedRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, KIND_ID);
+        let timer = StepTimer::start(ctx, self.id());
         let post = match read_config(config, ctx.arg_stack) {
             Ok(post) => post,
             Err(problem) => return (timer.invalid_config(&problem), None),

@@ -13,8 +13,6 @@ use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
 use crate::step_failure;
 use crate::vocabulary::{config_keys, messages, sub_action_ids};
 
-const KIND_ID: &str = sub_action_ids::CHANNEL_UPDATE_CATEGORY;
-
 const CATEGORY_ID: TextField = TextField {
     key: config_keys::CATEGORY_ID,
     label: "Category ID",
@@ -106,7 +104,7 @@ impl UpdateCategoryRunner {
 #[async_trait]
 impl SubActionRunner for UpdateCategoryRunner {
     fn id(&self) -> &str {
-        KIND_ID
+        sub_action_ids::CHANNEL_UPDATE_CATEGORY
     }
 
     fn category(&self) -> SubActionCategory {
@@ -154,7 +152,7 @@ impl SubActionRunner for UpdateCategoryRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, KIND_ID);
+        let timer = StepTimer::start(ctx, self.id());
         let (category_id, category_name) = match read_config(config, ctx.arg_stack) {
             Ok(values) => values,
             Err(problem) => return (timer.invalid_config(&problem), None),

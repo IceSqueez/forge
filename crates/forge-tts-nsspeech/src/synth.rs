@@ -217,7 +217,7 @@ pub(crate) fn rate_apple_from_multiplier(multiplier: f32) -> f32 {
     expect(dead_code, reason = "used only by the macos synthesis backend")
 )]
 pub(crate) fn pitch_mult_from_semitones(semitones: f32) -> f32 {
-    2.0_f32.powf(semitones / 12.0).clamp(0.5, 2.0)
+    forge_tts_core::pitch_ratio_from_semitones(semitones).clamp(0.5, 2.0)
 }
 
 #[cfg(test)]

@@ -23,7 +23,7 @@ const MISSING_SCOPE: &str = "moderation scope missing";
 const BANNED_OUTSIDE_FORGE: &str =
     "unban - this ban was issued outside forge, lift it in YouTube Studio";
 
-type TokenSource = Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync>;
+use forge_platform_core::TokenSource;
 type BroadcasterSource =
     Arc<dyn Fn() -> BoxFuture<'static, Result<YoutubeBroadcaster, PlatformError>> + Send + Sync>;
 

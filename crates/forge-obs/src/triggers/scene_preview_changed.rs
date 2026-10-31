@@ -1,8 +1,7 @@
-use std::collections::BTreeMap;
-
 use forge_events::{Event, EventSource};
 use forge_registry::{
-    EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
+    EventFilter, FormField, KindPlatformContract, SubActionConfigExt, TriggerCategory,
+    TriggerKindDescriptor,
 };
 use forge_types::{
     ArgStack, DeclaredVariable, TriggerConfig, UserText, VariableSchema, Variant, VariantKind,
@@ -43,10 +42,6 @@ impl TriggerKindDescriptor for ScenePreviewChangedDescriptor {
         KindPlatformContract::Universal
     }
 
-    fn default_config(&self) -> TriggerConfig {
-        BTreeMap::new()
-    }
-
     fn config_fields(&self) -> Vec<FormField> {
         vec![FormField::Optional {
             key: "scene",
@@ -60,9 +55,9 @@ impl TriggerKindDescriptor for ScenePreviewChangedDescriptor {
     }
 
     fn condition_display(&self, config: &TriggerConfig) -> UserText {
-        match config.get("scene") {
-            Some(Variant::String(s)) if !s.is_empty() => messages::condition_preview(s).into(),
-            _ => messages::CONDITION_ANY_PREVIEW_SCENE.into(),
+        match config.str_nonempty("scene") {
+            Some(s) => messages::condition_preview(s).into(),
+            None => messages::CONDITION_ANY_PREVIEW_SCENE.into(),
         }
     }
 
@@ -77,15 +72,15 @@ impl TriggerKindDescriptor for ScenePreviewChangedDescriptor {
         if event.kind != event_kinds::SCENE_PREVIEW_CHANGED {
             return false;
         }
-        match config.get("scene") {
-            Some(Variant::String(s)) if !s.is_empty() => {
+        match config.str_nonempty("scene") {
+            Some(s) => {
                 event
                     .payload
                     .get(fields::SCENE_NAME_NEW)
                     .and_then(|v| v.as_str())
-                    == Some(s.as_str())
+                    == Some(s)
             }
-            _ => true,
+            None => true,
         }
     }
 
@@ -138,6 +133,7 @@ impl TriggerKindDescriptor for ScenePreviewChangedDescriptor {
 mod tests {
     use super::*;
     use serde_json::json;
+    use std::collections::BTreeMap;
 
     fn preview_event(old: &str, new: &str) -> Event {
         Event::new(

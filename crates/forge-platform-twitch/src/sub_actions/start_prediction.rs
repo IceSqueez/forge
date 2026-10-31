@@ -14,7 +14,6 @@ use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
 use crate::step_failure;
 use crate::vocabulary::{config_keys, messages, sub_action_ids};
 
-const KIND_ID: &str = sub_action_ids::PREDICTION_START;
 const MAX_TITLE_CHARS: i64 = 45;
 const MIN_OUTCOMES: i64 = 2;
 const MAX_OUTCOMES: i64 = 10;
@@ -128,7 +127,7 @@ impl StartPredictionRunner {
 #[async_trait]
 impl SubActionRunner for StartPredictionRunner {
     fn id(&self) -> &str {
-        KIND_ID
+        sub_action_ids::PREDICTION_START
     }
 
     fn category(&self) -> SubActionCategory {
@@ -160,7 +159,7 @@ impl SubActionRunner for StartPredictionRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, KIND_ID);
+        let timer = StepTimer::start(ctx, self.id());
         let resolved = match ResolvedConfig::read(config, ctx.arg_stack) {
             Ok(resolved) => resolved,
             Err(problem) => return (timer.invalid_config(&problem), None),

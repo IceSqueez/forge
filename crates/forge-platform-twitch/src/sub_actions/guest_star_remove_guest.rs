@@ -12,8 +12,6 @@ use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
 use crate::step_failure;
 use crate::vocabulary::sub_action_ids;
 
-const KIND_ID: &str = sub_action_ids::GUEST_STAR_REMOVE_GUEST;
-
 pub(crate) struct GuestStarRemoveGuestRunner {
     transport: Arc<dyn HelixTransport>,
     identity: Arc<SelfIdentity>,
@@ -56,7 +54,7 @@ impl GuestStarRemoveGuestRunner {
 #[async_trait]
 impl SubActionRunner for GuestStarRemoveGuestRunner {
     fn id(&self) -> &str {
-        KIND_ID
+        sub_action_ids::GUEST_STAR_REMOVE_GUEST
     }
 
     fn category(&self) -> SubActionCategory {
@@ -88,7 +86,7 @@ impl SubActionRunner for GuestStarRemoveGuestRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, KIND_ID);
+        let timer = StepTimer::start(ctx, self.id());
         let slot = match GuestSlot::read(config, ctx.arg_stack) {
             Ok(slot) => slot,
             Err(problem) => return (timer.invalid_config(&problem), None),

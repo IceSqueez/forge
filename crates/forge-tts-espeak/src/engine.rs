@@ -95,8 +95,7 @@ impl TtsEngine for EspeakEngine {
         .await
         .map_err(TtsError::from)?;
 
-        let wav = wav::parse(&wav_bytes).map_err(TtsError::from)?;
-        Ok(PcmBuffer::new(wav.samples, wav.sample_rate, wav.channels))
+        wav::parse(&wav_bytes).map_err(TtsError::from)
     }
 }
 

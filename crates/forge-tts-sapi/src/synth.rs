@@ -1,11 +1,10 @@
-use forge_tts_core::xml_escape;
+use forge_tts_core::{pitch_ratio_from_semitones, xml_escape};
 
 pub(crate) const SAMPLE_RATE_HZ: u32 = 22_050;
 
 const RATE_ADJUST_MIN: i32 = -10;
 const RATE_ADJUST_MAX: i32 = 10;
 const RATE_STEPS_PER_DOUBLING: f32 = 10.0;
-const SEMITONES_PER_OCTAVE: f32 = 12.0;
 const PERCENT: f32 = 100.0;
 const SSML_VERSION: &str = "1.0";
 const SSML_NAMESPACE: &str = "http://www.w3.org/2001/10/synthesis";
@@ -33,7 +32,7 @@ pub(crate) fn rate_adj_from_multiplier(multiplier: f32) -> i32 {
     expect(dead_code, reason = "used only by the windows synthesis backend")
 )]
 pub(crate) fn pitch_pct_from_semitones(semitones: f32) -> i32 {
-    ((2.0_f32.powf(semitones / SEMITONES_PER_OCTAVE) - 1.0) * PERCENT).round() as i32
+    ((pitch_ratio_from_semitones(semitones) - 1.0) * PERCENT).round() as i32
 }
 
 #[cfg_attr(
@@ -168,14 +167,8 @@ pub(crate) fn capture_pcm(
         pcm_bytes.extend_from_slice(&chunk[..read as usize]);
     }
 
-    let (sample_bytes, _) = pcm_bytes.as_chunks::<SAMPLE_BYTES>();
-    let samples: Vec<i16> = sample_bytes
-        .iter()
-        .map(|bytes| i16::from_le_bytes(*bytes))
-        .collect();
-
-    Ok(forge_speech_types::PcmBuffer::new(
-        samples,
+    Ok(forge_speech_types::PcmBuffer::from_s16le(
+        &pcm_bytes,
         SAMPLE_RATE_HZ,
         CHANNELS,
     ))

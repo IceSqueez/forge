@@ -3,7 +3,7 @@ use crate::vocabulary::{event_kinds, messages};
 use forge_events::{Event, EventSource};
 use forge_registry::{
     ActorDeclaration, ActorIdentity, ActorRole, ActorSlot, CanonicalVariable, EventFilter,
-    FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor, TriggerVariables,
+    KindPlatformContract, TriggerCategory, TriggerKindDescriptor, TriggerVariables,
 };
 use forge_types::{DeclaredVariable, PlatformId, TriggerConfig, UserText, Variant, VariantKind};
 
@@ -39,14 +39,6 @@ impl TriggerKindDescriptor for UserUpdateDescriptor {
 
     fn platform_contract(&self) -> KindPlatformContract {
         KindPlatformContract::PlatformSpecific(PlatformId::Twitch)
-    }
-
-    fn default_config(&self) -> TriggerConfig {
-        TriggerConfig::new()
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![]
     }
 
     fn condition_display(&self, _: &TriggerConfig) -> UserText {

@@ -1,9 +1,5 @@
-use std::collections::BTreeMap;
-
 use forge_events::{Event, EventSource};
-use forge_registry::{
-    EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
-};
+use forge_registry::{EventFilter, KindPlatformContract, TriggerCategory, TriggerKindDescriptor};
 use forge_types::{
     ArgStack, DeclaredVariable, TriggerConfig, UserText, VariableSchema, Variant, VariantKind,
 };
@@ -41,14 +37,6 @@ impl TriggerKindDescriptor for TransitionStartedDescriptor {
 
     fn platform_contract(&self) -> KindPlatformContract {
         KindPlatformContract::Universal
-    }
-
-    fn default_config(&self) -> TriggerConfig {
-        BTreeMap::new()
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![]
     }
 
     fn condition_display(&self, _: &TriggerConfig) -> UserText {
@@ -103,12 +91,12 @@ pub(crate) fn build_transition_arg_stack(event: &Event) -> ArgStack {
 
 #[cfg(test)]
 mod tests {
-    use super::super::{
-        TransitionEndedDescriptor, TransitionStartedDescriptor, TransitionVideoEndedDescriptor,
-    };
+    use super::super::TransitionStartedDescriptor;
+    use super::super::lifecycle;
     use super::*;
     use forge_registry::TriggerKindDescriptor;
     use serde_json::json;
+    use std::collections::BTreeMap;
 
     const ALL_TRANSITION_KINDS: [&str; 3] = [
         "obs.transition.started",
@@ -125,10 +113,10 @@ mod tests {
         let cfg = BTreeMap::new();
         let descriptors: [(&str, &dyn TriggerKindDescriptor); 3] = [
             ("obs.transition.started", &TransitionStartedDescriptor),
-            ("obs.transition.ended", &TransitionEndedDescriptor),
+            ("obs.transition.ended", &lifecycle::TRANSITION_ENDED),
             (
                 "obs.transition.video_ended",
-                &TransitionVideoEndedDescriptor,
+                &lifecycle::TRANSITION_VIDEO_ENDED,
             ),
         ];
         for (own_kind, descriptor) in descriptors {

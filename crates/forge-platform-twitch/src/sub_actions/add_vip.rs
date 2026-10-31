@@ -13,8 +13,6 @@ use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
 use crate::step_failure;
 use crate::vocabulary::sub_action_ids;
 
-const KIND_ID: &str = sub_action_ids::MODERATION_ADD_VIP;
-
 const CONFIG: ConfigSpec = ConfigSpec::new(&[&TARGET_LOGIN]);
 
 pub(crate) struct AddVipRunner {
@@ -49,7 +47,7 @@ impl AddVipRunner {
 #[async_trait]
 impl SubActionRunner for AddVipRunner {
     fn id(&self) -> &str {
-        KIND_ID
+        sub_action_ids::MODERATION_ADD_VIP
     }
 
     fn category(&self) -> SubActionCategory {
@@ -81,7 +79,7 @@ impl SubActionRunner for AddVipRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, KIND_ID);
+        let timer = StepTimer::start(ctx, self.id());
         let target_login = match TARGET_LOGIN.read(config, ctx.arg_stack) {
             Ok(login) => login,
             Err(problem) => return (timer.invalid_config(&problem), None),

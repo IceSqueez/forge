@@ -9,7 +9,7 @@ use forge_registry::{
     SOUNDBOARD_CLIP_OPTIONS_KEY,
 };
 use forge_registry::{
-    EventFilter, FormField, KindPlatformContract, ReferenceField, RunContext, SubActionCategory,
+    EventFilter, KindPlatformContract, ReferenceField, RunContext, SubActionCategory,
     SubActionRegistry, SubActionRunner, TriggerCategory, TriggerKindDescriptor, TriggerRegistry,
 };
 use forge_storage::{GlobalEntry, OverlayDefinition, OverlayId, ScriptRecord, StoredClip};
@@ -126,14 +126,6 @@ impl TriggerKindDescriptor for FixtureTrigger {
 
     fn platform_contract(&self) -> KindPlatformContract {
         KindPlatformContract::Universal
-    }
-
-    fn default_config(&self) -> TriggerConfig {
-        TriggerConfig::new()
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        Vec::new()
     }
 
     fn event_filter(&self) -> EventFilter {

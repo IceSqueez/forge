@@ -1,3 +1,5 @@
+use forge_speech_types::PcmBuffer;
+
 use crate::error::EspeakError;
 
 const RIFF_TAG: &[u8; 4] = b"RIFF";
@@ -9,12 +11,6 @@ const CHUNK_HEADER_LEN: usize = 8;
 const FMT_MIN_LEN: usize = 16;
 const PCM_FORMAT: u16 = 1;
 const BITS_PER_SAMPLE: u16 = 16;
-
-pub(crate) struct WavAudio {
-    pub samples: Vec<i16>,
-    pub sample_rate: u32,
-    pub channels: u16,
-}
 
 struct Format {
     sample_rate: u32,
@@ -46,7 +42,7 @@ fn parse_format(body: &[u8]) -> Option<Format> {
     })
 }
 
-pub(crate) fn parse(bytes: &[u8]) -> Result<WavAudio, EspeakError> {
+pub(crate) fn parse(bytes: &[u8]) -> Result<PcmBuffer, EspeakError> {
     if bytes.len() < RIFF_HEADER_LEN
         || &bytes[..4] != RIFF_TAG
         || &bytes[8..RIFF_HEADER_LEN] != WAVE_TAG
@@ -64,12 +60,11 @@ pub(crate) fn parse(bytes: &[u8]) -> Result<WavAudio, EspeakError> {
             format = parse_format(&bytes[body_start..body_end]);
         } else if tag == DATA_TAG {
             let format = format.ok_or(EspeakError::UnsupportedAudio)?;
-            let (pairs, _) = bytes[body_start..body_end].as_chunks::<2>();
-            return Ok(WavAudio {
-                samples: pairs.iter().map(|pair| i16::from_le_bytes(*pair)).collect(),
-                sample_rate: format.sample_rate,
-                channels: format.channels,
-            });
+            return Ok(PcmBuffer::from_s16le(
+                &bytes[body_start..body_end],
+                format.sample_rate,
+                format.channels,
+            ));
         }
         cursor = body_end + (declared & 1);
     }

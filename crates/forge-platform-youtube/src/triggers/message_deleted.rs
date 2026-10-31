@@ -1,9 +1,11 @@
-use forge_events::{Event, EventSource};
+use forge_events::Event;
+use forge_events::EventSource;
 use forge_registry::{
-    ActorDeclaration, EventFilter, FormField, KindPlatformContract, TriggerCategory,
-    TriggerKindDescriptor, TriggerVariables,
+    ActorDeclaration, EventFilter, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
+    TriggerVariables,
 };
-use forge_types::{PlatformId, TriggerConfig};
+use forge_types::PlatformId;
+use forge_types::TriggerConfig;
 
 use super::payload_read;
 use crate::vocabulary::fields::chat_mod as fields;
@@ -38,14 +40,6 @@ impl TriggerKindDescriptor for ChatMessageDeletedDescriptor {
 
     fn platform_contract(&self) -> KindPlatformContract {
         KindPlatformContract::PlatformSpecific(PlatformId::YouTube)
-    }
-
-    fn default_config(&self) -> TriggerConfig {
-        TriggerConfig::new()
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![]
     }
 
     fn event_filter(&self) -> EventFilter {

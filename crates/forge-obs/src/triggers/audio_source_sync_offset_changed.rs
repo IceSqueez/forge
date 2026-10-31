@@ -1,8 +1,7 @@
-use std::collections::BTreeMap;
-
 use forge_events::{Event, EventSource};
 use forge_registry::{
-    EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
+    EventFilter, FormField, KindPlatformContract, SubActionConfigExt, TriggerCategory,
+    TriggerKindDescriptor,
 };
 use forge_types::{
     ArgStack, DeclaredVariable, SynthesisHint, TriggerConfig, UserText, VariableSchema, Variant,
@@ -45,10 +44,6 @@ impl TriggerKindDescriptor for AudioSourceSyncOffsetChangedDescriptor {
         KindPlatformContract::Universal
     }
 
-    fn default_config(&self) -> TriggerConfig {
-        BTreeMap::new()
-    }
-
     fn config_fields(&self) -> Vec<FormField> {
         vec![FormField::Optional {
             key: "source_name",
@@ -62,9 +57,9 @@ impl TriggerKindDescriptor for AudioSourceSyncOffsetChangedDescriptor {
     }
 
     fn condition_display(&self, config: &TriggerConfig) -> UserText {
-        match config.get("source_name") {
-            Some(Variant::String(s)) if !s.is_empty() => messages::condition_source(s).into(),
-            _ => messages::CONDITION_ANY_SOURCE.into(),
+        match config.str_nonempty("source_name") {
+            Some(s) => messages::condition_source(s).into(),
+            None => messages::CONDITION_ANY_SOURCE.into(),
         }
     }
 

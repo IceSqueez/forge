@@ -13,7 +13,6 @@ use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
 use crate::step_failure;
 use crate::vocabulary::{config_keys, sub_action_ids};
 
-const KIND_ID: &str = sub_action_ids::CHANNEL_UPDATE_TITLE;
 const MAX_TITLE_CHARS: i64 = 140;
 
 const TITLE: BoundedTextField = BoundedTextField {
@@ -58,7 +57,7 @@ impl UpdateTitleRunner {
 #[async_trait]
 impl SubActionRunner for UpdateTitleRunner {
     fn id(&self) -> &str {
-        KIND_ID
+        sub_action_ids::CHANNEL_UPDATE_TITLE
     }
 
     fn category(&self) -> SubActionCategory {
@@ -90,7 +89,7 @@ impl SubActionRunner for UpdateTitleRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, KIND_ID);
+        let timer = StepTimer::start(ctx, self.id());
         let title = match TITLE.read(config, ctx.arg_stack) {
             Ok(title) => title,
             Err(problem) => return (timer.invalid_config(&problem), None),

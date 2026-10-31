@@ -1,9 +1,5 @@
-use std::collections::BTreeMap;
-
 use forge_events::{Event, EventSource};
-use forge_registry::{
-    EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
-};
+use forge_registry::{EventFilter, KindPlatformContract, TriggerCategory, TriggerKindDescriptor};
 use forge_types::{ArgStack, TriggerConfig, UserText, VariableSchema};
 
 use crate::vocabulary::{event_kinds, messages, trigger_ids};
@@ -39,14 +35,6 @@ impl TriggerKindDescriptor for ConnectionConnectedDescriptor {
         KindPlatformContract::Universal
     }
 
-    fn default_config(&self) -> TriggerConfig {
-        BTreeMap::new()
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![]
-    }
-
     fn condition_display(&self, _: &TriggerConfig) -> UserText {
         messages::CONDITION_CONNECTED.into()
     }
@@ -75,6 +63,7 @@ impl TriggerKindDescriptor for ConnectionConnectedDescriptor {
 mod tests {
     use super::*;
     use serde_json::json;
+    use std::collections::BTreeMap;
 
     #[test]
     fn matches_only_connected_among_connection_lifecycle() {

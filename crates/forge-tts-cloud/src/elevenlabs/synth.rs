@@ -91,9 +91,7 @@ pub(super) async fn synthesize(
         .await
         .map_err(|failure| classify_error(&failure, link, &req.voice_id))?;
 
-    let (pairs, _) = response.body().as_chunks::<2>();
-    let samples: Vec<i16> = pairs.iter().map(|pair| i16::from_le_bytes(*pair)).collect();
-    Ok(PcmBuffer::new(samples, SAMPLE_RATE_HZ, 1))
+    Ok(PcmBuffer::from_s16le(response.body(), SAMPLE_RATE_HZ, 1))
 }
 
 pub(super) async fn probe_connection(

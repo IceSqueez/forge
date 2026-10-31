@@ -13,7 +13,6 @@ use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
 use crate::step_failure;
 use crate::vocabulary::{config_keys, messages, sub_action_ids};
 
-const KIND_ID: &str = sub_action_ids::CHANNEL_CREATE_MARKER;
 const MAX_DESCRIPTION_CHARS: i64 = 140;
 
 const DESCRIPTION: BoundedTextField = BoundedTextField {
@@ -93,7 +92,7 @@ impl CreateMarkerRunner {
 #[async_trait]
 impl SubActionRunner for CreateMarkerRunner {
     fn id(&self) -> &str {
-        KIND_ID
+        sub_action_ids::CHANNEL_CREATE_MARKER
     }
 
     fn category(&self) -> SubActionCategory {
@@ -125,7 +124,7 @@ impl SubActionRunner for CreateMarkerRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, KIND_ID);
+        let timer = StepTimer::start(ctx, self.id());
         let description = match DESCRIPTION.read(config, ctx.arg_stack) {
             Ok(description) => description,
             Err(problem) => return (timer.invalid_config(&problem), None),

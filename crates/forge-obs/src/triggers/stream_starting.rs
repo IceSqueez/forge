@@ -1,9 +1,5 @@
-use std::collections::BTreeMap;
-
 use forge_events::{Event, EventSource};
-use forge_registry::{
-    EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
-};
+use forge_registry::{EventFilter, KindPlatformContract, TriggerCategory, TriggerKindDescriptor};
 use forge_types::{
     ArgStack, DeclaredVariable, TriggerConfig, UserText, VariableSchema, Variant, VariantKind,
 };
@@ -41,14 +37,6 @@ impl TriggerKindDescriptor for StreamStartingDescriptor {
 
     fn platform_contract(&self) -> KindPlatformContract {
         KindPlatformContract::Universal
-    }
-
-    fn default_config(&self) -> TriggerConfig {
-        BTreeMap::new()
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![]
     }
 
     fn condition_display(&self, _: &TriggerConfig) -> UserText {
@@ -114,13 +102,12 @@ pub(crate) fn build_stream_arg_stack(event: &Event) -> ArgStack {
 
 #[cfg(test)]
 mod tests {
-    use super::super::{
-        StreamStartedDescriptor, StreamStartingDescriptor, StreamStatusChangedDescriptor,
-        StreamStoppedDescriptor, StreamStoppingDescriptor,
-    };
+    use super::super::lifecycle;
+    use super::super::{StreamStartingDescriptor, StreamStatusChangedDescriptor};
     use super::*;
     use forge_registry::TriggerKindDescriptor;
     use serde_json::json;
+    use std::collections::BTreeMap;
 
     const ALL_STREAMING_KINDS: [&str; 6] = [
         "obs.streaming.starting",
@@ -139,9 +126,9 @@ mod tests {
     fn each_specific_descriptor_matches_only_its_own_kind() {
         let descriptors: [(&str, &dyn TriggerKindDescriptor); 4] = [
             ("obs.streaming.starting", &StreamStartingDescriptor),
-            ("obs.streaming.started", &StreamStartedDescriptor),
-            ("obs.streaming.stopping", &StreamStoppingDescriptor),
-            ("obs.streaming.stopped", &StreamStoppedDescriptor),
+            ("obs.streaming.started", &lifecycle::STREAMING_STARTED),
+            ("obs.streaming.stopping", &lifecycle::STREAMING_STOPPING),
+            ("obs.streaming.stopped", &lifecycle::STREAMING_STOPPED),
         ];
         let cfg = BTreeMap::new();
         for (own_kind, descriptor) in descriptors {

@@ -3,7 +3,8 @@ use crate::vocabulary::{event_kinds, messages};
 use forge_events::{Event, EventSource};
 use forge_registry::{
     ActorDeclaration, ActorIdentity, ActorRole, CanonicalVariable, EventFilter, FormField,
-    KindPlatformContract, TriggerCategory, TriggerKindDescriptor, TriggerVariables,
+    KindPlatformContract, SubActionConfigExt, TriggerCategory, TriggerKindDescriptor,
+    TriggerVariables,
 };
 use forge_types::{DeclaredVariable, PlatformId, TriggerConfig, UserText, Variant, VariantKind};
 
@@ -75,16 +76,7 @@ impl TriggerKindDescriptor for RedemptionUpdatedDescriptor {
     }
 
     fn matches_trigger(&self, config: &TriggerConfig, event: &Event) -> bool {
-        let filter = config
-            .get("status_filter")
-            .and_then(|v| {
-                if let Variant::String(s) = v {
-                    Some(s.as_str())
-                } else {
-                    None
-                }
-            })
-            .unwrap_or("any");
+        let filter = config.str("status_filter").unwrap_or("any");
 
         if filter == "any" {
             return true;

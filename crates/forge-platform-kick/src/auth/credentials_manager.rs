@@ -1,58 +1,55 @@
 use std::sync::Arc;
 use std::time::SystemTime;
 
+use async_trait::async_trait;
 use forge_net::Gateway;
-use forge_platform_core::REFRESH_BUFFER_SECS;
-use forge_platform_core::{PlatformError, credential_storage_error, reauth_required};
+use forge_platform_core::{
+    PlatformError, SingleFlightRefresh, TokenRotation, credential_storage_error,
+    expires_within_refresh_buffer, reauth_required,
+};
 use forge_storage::{CredentialId, CredentialsRepo};
-use time::{Duration, OffsetDateTime};
-use tokio::sync::{Mutex, watch};
+use tokio::sync::watch;
 
 use crate::auth::credentials::{CREDENTIAL_KEY, KickCredentials};
 use crate::auth::oauth_client::KickOAuthClient;
 use crate::auth::{KickAuthBundle, expiry_after};
 
 const PLATFORM: &str = "kick";
-const REFRESH_BUFFER: Duration = Duration::seconds(REFRESH_BUFFER_SECS as i64);
-const REFRESH_TASK_LOST: &str = "token refresh did not complete";
 
 pub struct KickCredentialsManager {
+    refresh: SingleFlightRefresh<KickRotation>,
+    api: Gateway,
+}
+
+struct KickRotation {
     store: CredentialStore,
     oauth: KickOAuthClient,
-    api: Gateway,
-    refresh_guard: Arc<Mutex<()>>,
-}
-
-#[derive(Clone)]
-struct CredentialStore {
-    repo: Arc<dyn CredentialsRepo>,
-    expiry_tx: Arc<watch::Sender<Option<SystemTime>>>,
-}
-
-enum RefreshTrigger {
-    NearExpiry,
-    Rejected(String),
 }
 
 impl KickCredentialsManager {
     pub fn new(repo: Arc<dyn CredentialsRepo>, oauth: KickOAuthClient, api: Gateway) -> Self {
         Self {
-            store: CredentialStore {
-                repo,
-                expiry_tx: Arc::new(watch::channel(None).0),
-            },
-            oauth,
+            refresh: SingleFlightRefresh::new(KickRotation {
+                store: CredentialStore {
+                    repo,
+                    expiry_tx: watch::channel(None).0,
+                },
+                oauth,
+            }),
             api,
-            refresh_guard: Arc::new(Mutex::new(())),
         }
     }
 
+    fn store(&self) -> &CredentialStore {
+        &self.refresh.rotation().store
+    }
+
     pub(crate) fn subscribe_expiry(&self) -> watch::Receiver<Option<SystemTime>> {
-        self.store.expiry_tx.subscribe()
+        self.store().expiry_tx.subscribe()
     }
 
     pub(crate) fn oauth_client(&self) -> &KickOAuthClient {
-        &self.oauth
+        &self.refresh.rotation().oauth
     }
 
     pub(crate) fn api(&self) -> &Gateway {
@@ -60,7 +57,7 @@ impl KickCredentialsManager {
     }
 
     pub async fn load(&self) -> Result<Option<KickCredentials>, PlatformError> {
-        self.store.load().await
+        self.store().load().await
     }
 
     pub async fn save_from_bundle(&self, bundle: KickAuthBundle) -> Result<(), PlatformError> {
@@ -72,80 +69,72 @@ impl KickCredentialsManager {
             client_id: bundle.client_id,
             expires_at: bundle.expires_at,
         };
-        let _guard = self.refresh_guard.lock().await;
-        self.store.persist(&creds).await
+        let _guard = self.refresh.exclusive().await;
+        self.store().persist(&creds).await
     }
 
     pub async fn get_valid_access_token(&self) -> Result<String, PlatformError> {
-        let creds = self.store.require().await?;
-        if !near_expiry(&creds) {
-            return Ok(creds.access_token.expose().to_owned());
-        }
-        self.detached_refresh(RefreshTrigger::NearExpiry)
+        self.refresh
+            .valid_credential()
             .await
             .map(|creds| creds.access_token.expose().to_owned())
     }
 
     pub async fn user_id(&self) -> Result<u64, PlatformError> {
-        Ok(self.store.require().await?.user_id)
+        Ok(self.store().require().await?.user_id)
     }
 
     pub async fn refresh(
         &self,
         failed_access_token: &str,
     ) -> Result<KickCredentials, PlatformError> {
-        self.detached_refresh(RefreshTrigger::Rejected(failed_access_token.to_owned()))
-            .await
-    }
-
-    async fn detached_refresh(
-        &self,
-        trigger: RefreshTrigger,
-    ) -> Result<KickCredentials, PlatformError> {
-        let store = self.store.clone();
-        let oauth = self.oauth.clone();
-        let guard = Arc::clone(&self.refresh_guard);
-        tokio::spawn(async move {
-            let _guard = guard.lock().await;
-            refresh_under_guard(&store, &oauth, trigger).await
-        })
-        .await
-        .map_err(|_| PlatformError::Auth {
-            reason: REFRESH_TASK_LOST.to_owned(),
-        })?
+        self.refresh.replace_rejected(failed_access_token).await
     }
 
     pub async fn clear(&self) -> Result<(), PlatformError> {
-        let _guard = self.refresh_guard.lock().await;
-        self.store.clear().await
+        let _guard = self.refresh.exclusive().await;
+        self.store().clear().await
     }
 }
 
-async fn refresh_under_guard(
-    store: &CredentialStore,
-    oauth: &KickOAuthClient,
-    trigger: RefreshTrigger,
-) -> Result<KickCredentials, PlatformError> {
-    let existing = store.require().await?;
-    let already_rotated = match &trigger {
-        RefreshTrigger::NearExpiry => !near_expiry(&existing),
-        RefreshTrigger::Rejected(failed) => existing.access_token.expose() != failed,
-    };
-    if already_rotated {
-        return Ok(existing);
+#[async_trait]
+impl TokenRotation for KickRotation {
+    type Credential = KickCredentials;
+
+    fn platform(&self) -> &'static str {
+        PLATFORM
     }
 
-    let grant = oauth.refresh(existing.refresh_token.expose()).await?;
-    let updated = KickCredentials {
-        access_token: grant.access_token,
-        refresh_token: grant.refresh_token.unwrap_or(existing.refresh_token),
-        user_id: existing.user_id,
-        username: existing.username,
-        client_id: existing.client_id,
-        expires_at: expiry_after(grant.expires_in)?,
-    };
-    store.persist(&updated).await?;
-    Ok(updated)
+    async fn load(&self) -> Result<Option<KickCredentials>, PlatformError> {
+        self.store.load().await
+    }
+
+    fn access_token<'a>(&self, credential: &'a KickCredentials) -> &'a str {
+        credential.access_token.expose()
+    }
+
+    fn near_expiry(&self, credential: &KickCredentials) -> bool {
+        expires_within_refresh_buffer(credential.expires_at)
+    }
+
+    async fn rotate(&self, existing: KickCredentials) -> Result<KickCredentials, PlatformError> {
+        let grant = self.oauth.refresh(existing.refresh_token.expose()).await?;
+        let updated = KickCredentials {
+            access_token: grant.access_token,
+            refresh_token: grant.refresh_token.unwrap_or(existing.refresh_token),
+            user_id: existing.user_id,
+            username: existing.username,
+            client_id: existing.client_id,
+            expires_at: expiry_after(grant.expires_in)?,
+        };
+        self.store.persist(&updated).await?;
+        Ok(updated)
+    }
+}
+
+struct CredentialStore {
+    repo: Arc<dyn CredentialsRepo>,
+    expiry_tx: watch::Sender<Option<SystemTime>>,
 }
 
 impl CredentialStore {
@@ -184,10 +173,6 @@ impl CredentialStore {
         self.expiry_tx.send_replace(None);
         Ok(())
     }
-}
-
-fn near_expiry(creds: &KickCredentials) -> bool {
-    creds.expires_at <= OffsetDateTime::now_utc() + REFRESH_BUFFER
 }
 
 #[cfg(test)]

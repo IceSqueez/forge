@@ -3,7 +3,8 @@ use crate::vocabulary::{event_kinds, messages};
 use forge_events::{Event, EventSource};
 use forge_registry::{
     ActorDeclaration, ActorIdentity, ActorRole, ActorSlot, CanonicalVariable, EventFilter,
-    FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor, TriggerVariables,
+    FormField, KindPlatformContract, SubActionConfigExt, TriggerCategory, TriggerKindDescriptor,
+    TriggerVariables,
 };
 use forge_types::{
     DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, UserText, Variant, VariantKind,
@@ -85,16 +86,7 @@ impl TriggerKindDescriptor for GuestStarGuestUpdatedDescriptor {
     }
 
     fn matches_trigger(&self, config: &TriggerConfig, event: &Event) -> bool {
-        let filter = config
-            .get("state_filter")
-            .and_then(|v| {
-                if let Variant::String(s) = v {
-                    Some(s.as_str())
-                } else {
-                    None
-                }
-            })
-            .unwrap_or("");
+        let filter = config.str("state_filter").unwrap_or("");
 
         if filter.is_empty() || filter == ANY_STATE {
             return true;

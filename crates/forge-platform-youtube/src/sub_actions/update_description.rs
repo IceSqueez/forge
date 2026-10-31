@@ -12,8 +12,6 @@ use super::step_failure;
 use crate::stream_metadata::YoutubeStreamMetadata;
 use crate::vocabulary::{config_keys, sub_action_ids};
 
-const KIND_ID: &str = sub_action_ids::STREAM_UPDATE_DESCRIPTION;
-
 const DESCRIPTION: TextField = TextField {
     key: config_keys::DESCRIPTION,
     label: "Description",
@@ -37,7 +35,7 @@ impl UpdateDescriptionRunner {
 #[async_trait]
 impl SubActionRunner for UpdateDescriptionRunner {
     fn id(&self) -> &str {
-        KIND_ID
+        sub_action_ids::STREAM_UPDATE_DESCRIPTION
     }
 
     fn category(&self) -> SubActionCategory {
@@ -69,7 +67,7 @@ impl SubActionRunner for UpdateDescriptionRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, KIND_ID);
+        let timer = StepTimer::start(ctx, self.id());
         let description = match DESCRIPTION.read(config, ctx.arg_stack) {
             Ok(description) => description,
             Err(problem) => return (timer.invalid_config(&problem), None),

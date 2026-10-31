@@ -3,8 +3,8 @@ use crate::vocabulary::trigger_ids;
 use forge_events::{Event, EventSource};
 use forge_registry::{
     ActorDeclaration, COMMAND_CASE_SENSITIVE_KEY, COMMAND_PHRASE_KEY, ChatTriggerFamily,
-    EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
-    TriggerVariables, command_phrase_matches,
+    EventFilter, FormField, KindPlatformContract, SubActionConfigExt, TriggerCategory,
+    TriggerKindDescriptor, TriggerVariables, command_phrase_matches,
 };
 use forge_types::{PlatformId, TriggerConfig, UserText, Variant};
 
@@ -78,31 +78,13 @@ impl TriggerKindDescriptor for ChatCommandDescriptor {
     }
 
     fn matches_trigger(&self, config: &TriggerConfig, event: &Event) -> bool {
-        let phrase = config
-            .get(COMMAND_PHRASE_KEY)
-            .and_then(|v| {
-                if let Variant::String(s) = v {
-                    Some(s.as_str())
-                } else {
-                    None
-                }
-            })
-            .unwrap_or("");
+        let phrase = config.str(COMMAND_PHRASE_KEY).unwrap_or("");
 
         if phrase.is_empty() {
             return false;
         }
 
-        let case_sensitive = config
-            .get(COMMAND_CASE_SENSITIVE_KEY)
-            .and_then(|v| {
-                if let Variant::Bool(b) = v {
-                    Some(*b)
-                } else {
-                    None
-                }
-            })
-            .unwrap_or(false);
+        let case_sensitive = config.bool(COMMAND_CASE_SENSITIVE_KEY).unwrap_or(false);
 
         let message = event
             .payload

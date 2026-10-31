@@ -10,8 +10,7 @@ use wiremock::MockServer;
 
 pub(crate) const DATA_API_PREFIX: &str = "/youtube/v3";
 
-pub(crate) type TokenSource =
-    Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync>;
+pub(crate) use forge_platform_core::TokenSource;
 pub(crate) type BroadcasterSource =
     Arc<dyn Fn() -> BoxFuture<'static, Result<YoutubeBroadcaster, PlatformError>> + Send + Sync>;
 

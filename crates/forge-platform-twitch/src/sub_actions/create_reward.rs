@@ -19,7 +19,6 @@ use crate::helix_envelope::first_row;
 use crate::step_failure;
 use crate::vocabulary::{config_keys, messages, sub_action_ids};
 
-const KIND_ID: &str = sub_action_ids::CHANNEL_POINTS_CREATE_REWARD;
 const UNLIMITED: i64 = 0;
 
 const TITLE: BoundedTextField = BoundedTextField {
@@ -206,7 +205,7 @@ impl CreateRewardRunner {
 #[async_trait]
 impl SubActionRunner for CreateRewardRunner {
     fn id(&self) -> &str {
-        KIND_ID
+        sub_action_ids::CHANNEL_POINTS_CREATE_REWARD
     }
 
     fn category(&self) -> SubActionCategory {
@@ -238,7 +237,7 @@ impl SubActionRunner for CreateRewardRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, KIND_ID);
+        let timer = StepTimer::start(ctx, self.id());
         let resolved = match ResolvedConfig::read(config, ctx.arg_stack) {
             Ok(resolved) => resolved,
             Err(problem) => return (timer.invalid_config(&problem), None),

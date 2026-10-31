@@ -15,7 +15,6 @@ use super::step_failure;
 use crate::api::chat_messages::KickSendChat;
 use crate::vocabulary::{config_keys, sub_action_ids};
 
-const KIND_ID: &str = sub_action_ids::CHAT_SEND_MESSAGE;
 const BROADCASTER_IGNORED_FOR_BOT: u64 = 0;
 
 const MESSAGE: TextField = TextField {
@@ -91,7 +90,7 @@ impl SendMessageRunner {
 #[async_trait]
 impl SubActionRunner for SendMessageRunner {
     fn id(&self) -> &str {
-        KIND_ID
+        sub_action_ids::CHAT_SEND_MESSAGE
     }
 
     fn category(&self) -> SubActionCategory {
@@ -123,7 +122,7 @@ impl SubActionRunner for SendMessageRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, KIND_ID);
+        let timer = StepTimer::start(ctx, self.id());
         let (message, as_bot) = match read_config(config, ctx.arg_stack) {
             Ok(values) => values,
             Err(problem) => return (timer.invalid_config(&problem), None),

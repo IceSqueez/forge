@@ -2,6 +2,7 @@ use std::path::Path;
 use std::process::{Output, Stdio};
 use std::time::Duration;
 
+use forge_tts_core::SEMITONES_PER_OCTAVE;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
 use tokio::process::Child;
 
@@ -45,7 +46,7 @@ pub(crate) fn rate_wpm_from_multiplier(rate_multiplier: f32) -> u32 {
 }
 
 pub(crate) fn pitch_from_semitones(pitch_semitones: f32) -> u32 {
-    (50.0_f32 + pitch_semitones * (50.0 / 12.0_f32))
+    (50.0_f32 + pitch_semitones * (50.0 / SEMITONES_PER_OCTAVE))
         .round()
         .clamp(0.0, 99.0) as u32
 }

@@ -1,11 +1,9 @@
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
-use forge_registry::{RunContext, SubActionCategory, SubActionRunner};
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
+use forge_registry::{RunContext, StepTimer, SubActionCategory, SubActionRunner};
+use forge_types::{ArgStack, SubActionTelemetry, Variant};
 
 use crate::runners::step_failure;
 use crate::sink::{VTubeSink, result_keys};
@@ -52,8 +50,7 @@ impl SubActionRunner for LookupCurrentModelRunner {
         _config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
+        let timer = StepTimer::start(ctx, self.id());
 
         match self.sink.get_current_model().await {
             Ok(variant) => {
@@ -69,31 +66,9 @@ impl SubActionRunner for LookupCurrentModelRunner {
                         stack = stack.set(variables::model::LOADED.to_owned(), v.clone());
                     }
                 }
-                (
-                    SubActionTelemetry {
-                        args_in: ::std::collections::BTreeMap::new(),
-                        produced: ::std::collections::BTreeMap::new(),
-                        kind: sub_action_ids::LOOKUP_CURRENT_MODEL.to_owned(),
-                        started_at,
-                        duration_ms: u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX),
-                        outcome: SubActionOutcome::Success,
-                        index: ctx.index,
-                    },
-                    Some(stack),
-                )
+                (timer.success(), Some(stack))
             }
-            Err(e) => (
-                SubActionTelemetry {
-                    args_in: ::std::collections::BTreeMap::new(),
-                    produced: ::std::collections::BTreeMap::new(),
-                    kind: sub_action_ids::LOOKUP_CURRENT_MODEL.to_owned(),
-                    started_at,
-                    duration_ms: u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX),
-                    outcome: step_failure::failed(&e),
-                    index: ctx.index,
-                },
-                None,
-            ),
+            Err(e) => (timer.finish(step_failure::failed(&e)), None),
         }
     }
 }
@@ -102,6 +77,7 @@ impl SubActionRunner for LookupCurrentModelRunner {
 mod tests {
     use super::*;
     use crate::runners::test_support::{MockSink, make_ctx};
+    use forge_types::SubActionOutcome;
     use std::collections::BTreeMap;
 
     #[tokio::test]

@@ -16,8 +16,6 @@ use crate::api::categories::KickCategories;
 use crate::vocabulary::variables;
 use crate::vocabulary::{config_keys, sub_action_ids};
 
-const KIND_ID: &str = sub_action_ids::LOOKUP_CATEGORY;
-
 const QUERY: TextField = TextField {
     key: config_keys::QUERY,
     label: "Search Query",
@@ -52,7 +50,7 @@ impl LookupCategoryRunner {
 #[async_trait]
 impl SubActionRunner for LookupCategoryRunner {
     fn id(&self) -> &str {
-        KIND_ID
+        sub_action_ids::LOOKUP_CATEGORY
     }
 
     fn category(&self) -> SubActionCategory {
@@ -84,7 +82,7 @@ impl SubActionRunner for LookupCategoryRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, KIND_ID);
+        let timer = StepTimer::start(ctx, self.id());
         let query = match QUERY.read(config, ctx.arg_stack) {
             Ok(query) => query,
             Err(problem) => return (timer.invalid_config(&problem), None),

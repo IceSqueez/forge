@@ -12,8 +12,6 @@ use super::{path_field, step_failure};
 use crate::ObsSink;
 use crate::vocabulary::{config_keys, sub_action_ids};
 
-const KIND_ID: &str = sub_action_ids::RECORDING_SET_DIRECTORY;
-
 const PATH: PickedTextField = PickedTextField {
     key: config_keys::PATH,
     label: "Directory",
@@ -37,7 +35,7 @@ impl RecordSetDirectoryRunner {
 #[async_trait]
 impl SubActionRunner for RecordSetDirectoryRunner {
     fn id(&self) -> &str {
-        KIND_ID
+        sub_action_ids::RECORDING_SET_DIRECTORY
     }
 
     fn category(&self) -> SubActionCategory {
@@ -77,7 +75,7 @@ impl SubActionRunner for RecordSetDirectoryRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, KIND_ID);
+        let timer = StepTimer::start(ctx, self.id());
         let path = match path_field::read_path(&PATH, config, ctx.arg_stack) {
             Ok(path) => path,
             Err(problem) => return (timer.invalid_config(&problem), None),

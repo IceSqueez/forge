@@ -1,5 +1,6 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod common;
+use forge_events::Event;
 use std::collections::HashMap;
 use std::fs;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -7,11 +8,10 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
-use forge_events::Event;
 use forge_overlay::config::SPEECH;
 use forge_overlay::{OverlayKindRegistry, SAMPLE_FILE, register_builtin_kinds};
 use forge_registry::{
-    CancelSignal, EventFilter, FormField, KindPlatformContract, SubActionRegistry, TriggerCategory,
+    CancelSignal, EventFilter, KindPlatformContract, SubActionRegistry, TriggerCategory,
     TriggerKindDescriptor, TriggerRegistry, TriggerVariables,
 };
 use forge_runtime::ActionsService;
@@ -78,14 +78,6 @@ impl TriggerKindDescriptor for ChatterTrigger {
 
     fn platform_contract(&self) -> KindPlatformContract {
         KindPlatformContract::Universal
-    }
-
-    fn default_config(&self) -> TriggerConfig {
-        TriggerConfig::new()
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        Vec::new()
     }
 
     fn event_filter(&self) -> EventFilter {

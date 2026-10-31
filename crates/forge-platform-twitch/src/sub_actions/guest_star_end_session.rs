@@ -13,8 +13,6 @@ use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
 use crate::step_failure;
 use crate::vocabulary::sub_action_ids;
 
-const KIND_ID: &str = sub_action_ids::GUEST_STAR_END_SESSION;
-
 const CONFIG: ConfigSpec = ConfigSpec::new(&[&SESSION_ID]);
 
 pub(crate) struct GuestStarEndSessionRunner {
@@ -50,7 +48,7 @@ impl GuestStarEndSessionRunner {
 #[async_trait]
 impl SubActionRunner for GuestStarEndSessionRunner {
     fn id(&self) -> &str {
-        KIND_ID
+        sub_action_ids::GUEST_STAR_END_SESSION
     }
 
     fn category(&self) -> SubActionCategory {
@@ -82,7 +80,7 @@ impl SubActionRunner for GuestStarEndSessionRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, KIND_ID);
+        let timer = StepTimer::start(ctx, self.id());
         let session_id = match SESSION_ID.read(config, ctx.arg_stack) {
             Ok(session_id) => session_id,
             Err(problem) => return (timer.invalid_config(&problem), None),

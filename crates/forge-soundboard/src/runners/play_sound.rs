@@ -11,8 +11,6 @@ use super::clip_field::ClipField;
 use crate::control::SoundboardControl;
 use crate::vocabulary::{config_keys, sub_action_ids};
 
-const KIND_ID: &str = sub_action_ids::SOUND_PLAY;
-
 const CLIP: ClipField = ClipField { required: true };
 
 const CONFIG: ConfigSpec = ConfigSpec::new(&[&CLIP]);
@@ -35,7 +33,7 @@ impl PlaySoundRunner {
 #[async_trait]
 impl SubActionRunner for PlaySoundRunner {
     fn id(&self) -> &str {
-        KIND_ID
+        sub_action_ids::SOUND_PLAY
     }
 
     fn category(&self) -> SubActionCategory {
@@ -67,7 +65,7 @@ impl SubActionRunner for PlaySoundRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, KIND_ID);
+        let timer = StepTimer::start(ctx, self.id());
         let clip_id = match read_clip(config, ctx.arg_stack) {
             Ok(clip_id) => clip_id,
             Err(problem) => return (timer.invalid_config(&problem), None),

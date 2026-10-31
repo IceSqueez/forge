@@ -1,10 +1,8 @@
-use std::sync::Arc;
 use std::time::Duration;
 
 use forge_net::GatewayRequest;
 use forge_platform_core::{LiveViewerSource, PlatformError, ViewerReport, ViewerReportStream};
 use forge_types::Secret;
-use futures::future::BoxFuture;
 use tokio::sync::watch;
 use tokio_stream::wrappers::WatchStream;
 
@@ -17,7 +15,7 @@ const VIEWER_LIST_COST: u32 = 1;
 const VIDEOS_PATH: &str = "/videos";
 const MISSING_SCOPE: &str = "viewer read scope missing";
 
-type TokenSource = Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync>;
+use forge_platform_core::TokenSource;
 
 pub(crate) struct YoutubeViewerSource {
     reports: watch::Receiver<ViewerReport>,
@@ -123,7 +121,9 @@ fn extract_concurrent_viewers(body: &serde_json::Value) -> Option<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use futures::future::BoxFuture;
     use serde_json::json;
+    use std::sync::Arc;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 

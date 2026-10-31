@@ -5,8 +5,8 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use forge_events::{DeliveryLane, Event, EventSource};
 use forge_registry::{
-    EventFilter, FormField, KindPlatformContract, SubActionRegistry, TriggerCategory,
-    TriggerKindDescriptor, TriggerRegistry,
+    EventFilter, KindPlatformContract, SubActionRegistry, TriggerCategory, TriggerKindDescriptor,
+    TriggerRegistry,
 };
 use forge_runtime::{
     ActionCancelRegistry, Catalog, EventBus, ExecutionRequest, spawn_action_engine,
@@ -44,19 +44,14 @@ impl TriggerKindDescriptor for ChatDescriptor {
     fn platform_contract(&self) -> KindPlatformContract {
         KindPlatformContract::Universal
     }
-    fn default_config(&self) -> TriggerConfig {
-        TriggerConfig::new()
-    }
-    fn config_fields(&self) -> Vec<FormField> {
-        Vec::new()
-    }
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Twitch),
             kind_prefix: Some(CHAT_KIND.to_owned()),
         }
     }
-    fn matches_trigger(&self, _: &TriggerConfig, _: &Event) -> bool {
+
+    fn matches_trigger(&self, _config: &TriggerConfig, _event: &Event) -> bool {
         true
     }
     fn delivery_lane(&self) -> DeliveryLane {

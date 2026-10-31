@@ -13,8 +13,6 @@ use super::step_failure;
 use crate::moderation::YoutubeModeration;
 use crate::vocabulary::sub_action_ids;
 
-const KIND_ID: &str = sub_action_ids::MODERATION_BAN_USER;
-
 const CONFIG: ConfigSpec = ConfigSpec::new(&[&CHANNEL_ID]);
 
 pub(crate) struct BanUserRunner {
@@ -30,7 +28,7 @@ impl BanUserRunner {
 #[async_trait]
 impl SubActionRunner for BanUserRunner {
     fn id(&self) -> &str {
-        KIND_ID
+        sub_action_ids::MODERATION_BAN_USER
     }
 
     fn category(&self) -> SubActionCategory {
@@ -62,7 +60,7 @@ impl SubActionRunner for BanUserRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, KIND_ID);
+        let timer = StepTimer::start(ctx, self.id());
         let channel_id = match CHANNEL_ID.read(config, ctx.arg_stack) {
             Ok(channel_id) => channel_id,
             Err(problem) => return (timer.invalid_config(&problem), None),

@@ -1,17 +1,13 @@
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
-use forge_registry::{RunContext, SubActionCategory, SubActionIo, SubActionRunner};
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
-use time::OffsetDateTime;
+use forge_registry::{RunContext, StepTimer, SubActionCategory, SubActionIo, SubActionRunner};
+use forge_types::{ArgStack, SubActionTelemetry, Variant};
 
 use super::step_failure;
 use crate::ObsSink;
 use crate::vocabulary::{sub_action_ids, variables};
-
-const KIND_ID: &str = sub_action_ids::SOURCE_GET_LIST;
 
 pub(crate) struct QueryInputListRunner {
     sink: Arc<dyn ObsSink>,
@@ -26,7 +22,7 @@ impl QueryInputListRunner {
 #[async_trait]
 impl SubActionRunner for QueryInputListRunner {
     fn id(&self) -> &str {
-        KIND_ID
+        sub_action_ids::SOURCE_GET_LIST
     }
 
     fn category(&self) -> SubActionCategory {
@@ -61,8 +57,7 @@ impl SubActionRunner for QueryInputListRunner {
         _config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
+        let timer = StepTimer::start(ctx, self.id());
 
         match self.sink.get_input_list().await {
             Ok(names) => {
@@ -71,31 +66,9 @@ impl SubActionRunner for QueryInputListRunner {
                     .arg_stack
                     .clone()
                     .set(variables::source_query::ALL_NAMES.to_owned(), all_names);
-                (
-                    SubActionTelemetry {
-                        args_in: ::std::collections::BTreeMap::new(),
-                        produced: ::std::collections::BTreeMap::new(),
-                        kind: KIND_ID.to_owned(),
-                        started_at,
-                        duration_ms: u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX),
-                        outcome: SubActionOutcome::Success,
-                        index: ctx.index,
-                    },
-                    Some(stack),
-                )
+                (timer.success(), Some(stack))
             }
-            Err(e) => (
-                SubActionTelemetry {
-                    args_in: ::std::collections::BTreeMap::new(),
-                    produced: ::std::collections::BTreeMap::new(),
-                    kind: KIND_ID.to_owned(),
-                    started_at,
-                    duration_ms: u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX),
-                    outcome: step_failure::failed(&e),
-                    index: ctx.index,
-                },
-                None,
-            ),
+            Err(e) => (timer.finish(step_failure::failed(&e)), None),
         }
     }
 }
@@ -104,6 +77,7 @@ impl SubActionRunner for QueryInputListRunner {
 mod tests {
     use super::*;
     use crate::runners::test_support::{MockSink, make_ctx};
+    use forge_types::SubActionOutcome;
     use std::collections::BTreeMap;
 
     #[tokio::test]

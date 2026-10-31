@@ -1,18 +1,14 @@
 use crate::step_failure;
 use crate::vocabulary::sub_action_ids;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
-use forge_registry::{RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{RunContext, StepTimer, SubActionCategory, SubActionRunner};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
-use time::OffsetDateTime;
 
 use crate::account::identity::SelfIdentity;
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
-
-const KIND_ID: &str = sub_action_ids::CHANNEL_SNOOZE_AD;
 
 pub(crate) struct SnoozeAdRunner {
     transport: Arc<dyn HelixTransport>,
@@ -41,7 +37,7 @@ impl SnoozeAdRunner {
 #[async_trait]
 impl SubActionRunner for SnoozeAdRunner {
     fn id(&self) -> &str {
-        KIND_ID
+        sub_action_ids::CHANNEL_SNOOZE_AD
     }
 
     fn category(&self) -> SubActionCategory {
@@ -69,23 +65,11 @@ impl SubActionRunner for SnoozeAdRunner {
         _config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
+        let timer = StepTimer::start(ctx, self.id());
 
         let outcome = self.snooze().await;
 
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                kind: KIND_ID.to_owned(),
-                started_at,
-                duration_ms: u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX),
-                outcome,
-                index: ctx.index,
-            },
-            None,
-        )
+        (timer.finish(outcome), None)
     }
 }
 

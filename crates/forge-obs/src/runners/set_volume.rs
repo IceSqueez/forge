@@ -12,8 +12,6 @@ use super::step_failure;
 use crate::ObsSink;
 use crate::vocabulary::{config_keys, picker_keys, sub_action_ids};
 
-const KIND_ID: &str = sub_action_ids::AUDIO_SET_VOLUME;
-
 const SOURCE: PickedTextField = PickedTextField {
     key: config_keys::SOURCE,
     label: "Audio Input",
@@ -51,7 +49,7 @@ impl SetVolumeRunner {
 #[async_trait]
 impl SubActionRunner for SetVolumeRunner {
     fn id(&self) -> &str {
-        KIND_ID
+        sub_action_ids::AUDIO_SET_VOLUME
     }
 
     fn category(&self) -> SubActionCategory {
@@ -83,7 +81,7 @@ impl SubActionRunner for SetVolumeRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, KIND_ID);
+        let timer = StepTimer::start(ctx, self.id());
         let (source, db) = match read_config(config, ctx.arg_stack) {
             Ok(values) => values,
             Err(problem) => return (timer.invalid_config(&problem), None),

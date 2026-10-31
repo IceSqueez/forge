@@ -14,8 +14,6 @@ use crate::helix::HelixTransport;
 use crate::step_failure;
 use crate::vocabulary::sub_action_ids;
 
-const KIND_ID: &str = sub_action_ids::CHANNEL_POINTS_DELETE_REWARD;
-
 pub(crate) struct DeleteRewardRunner {
     transport: Arc<dyn HelixTransport>,
     identity: Arc<SelfIdentity>,
@@ -42,7 +40,7 @@ impl DeleteRewardRunner {
 #[async_trait]
 impl SubActionRunner for DeleteRewardRunner {
     fn id(&self) -> &str {
-        KIND_ID
+        sub_action_ids::CHANNEL_POINTS_DELETE_REWARD
     }
 
     fn category(&self) -> SubActionCategory {
@@ -74,7 +72,7 @@ impl SubActionRunner for DeleteRewardRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, KIND_ID);
+        let timer = StepTimer::start(ctx, self.id());
         let reward_id = match REWARD_ID.read(config, ctx.arg_stack) {
             Ok(reward_id) => reward_id,
             Err(problem) => return (timer.invalid_config(&problem), None),

@@ -1,9 +1,5 @@
-use std::collections::BTreeMap;
-
 use forge_events::{Event, EventSource};
-use forge_registry::{
-    EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
-};
+use forge_registry::{EventFilter, KindPlatformContract, TriggerCategory, TriggerKindDescriptor};
 use forge_types::{
     ArgStack, DeclaredVariable, TriggerConfig, UserText, VariableSchema, Variant, VariantKind,
 };
@@ -41,14 +37,6 @@ impl TriggerKindDescriptor for SourceInputCreatedDescriptor {
 
     fn platform_contract(&self) -> KindPlatformContract {
         KindPlatformContract::Universal
-    }
-
-    fn default_config(&self) -> TriggerConfig {
-        BTreeMap::new()
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![]
     }
 
     fn condition_display(&self, _: &TriggerConfig) -> UserText {
@@ -120,6 +108,7 @@ mod tests {
     use super::*;
     use forge_registry::TriggerKindDescriptor;
     use serde_json::json;
+    use std::collections::BTreeMap;
 
     const ALL_SOURCE_KINDS: [&str; 4] = [
         "obs.source.input_created",

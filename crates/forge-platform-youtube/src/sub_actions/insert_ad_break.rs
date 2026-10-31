@@ -12,7 +12,6 @@ use super::step_failure;
 use crate::ad_break::YoutubeAdBreak;
 use crate::vocabulary::{config_keys, sub_action_ids};
 
-const KIND_ID: &str = sub_action_ids::STREAM_INSERT_AD_BREAK;
 const MIN_DURATION_SECS: i64 = 1;
 const MAX_DURATION_SECS: i64 = 3_600;
 const DEFAULT_DURATION_SECS: i64 = 30;
@@ -48,7 +47,7 @@ impl InsertAdBreakRunner {
 #[async_trait]
 impl SubActionRunner for InsertAdBreakRunner {
     fn id(&self) -> &str {
-        KIND_ID
+        sub_action_ids::STREAM_INSERT_AD_BREAK
     }
 
     fn category(&self) -> SubActionCategory {
@@ -80,7 +79,7 @@ impl SubActionRunner for InsertAdBreakRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, KIND_ID);
+        let timer = StepTimer::start(ctx, self.id());
         let duration_secs = match read_config(config, ctx.arg_stack) {
             Ok(duration_secs) => duration_secs,
             Err(problem) => return (timer.invalid_config(&problem), None),

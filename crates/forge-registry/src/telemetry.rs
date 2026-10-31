@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::time::Instant;
 
 use forge_types::{MessageArg, SubActionOutcome, SubActionTelemetry, UserText};
 use time::OffsetDateTime;
@@ -8,6 +9,7 @@ use crate::run_context::RunContext;
 
 pub struct StepTimer {
     started_at: OffsetDateTime,
+    monotonic_start: Instant,
     index: usize,
     kind: String,
 }
@@ -16,6 +18,7 @@ impl StepTimer {
     pub fn start(ctx: &RunContext<'_>, kind: impl Into<String>) -> Self {
         Self {
             started_at: OffsetDateTime::now_utc(),
+            monotonic_start: Instant::now(),
             index: ctx.index,
             kind: kind.into(),
         }
@@ -26,9 +29,8 @@ impl StepTimer {
     }
 
     pub fn finish(self, outcome: SubActionOutcome) -> SubActionTelemetry {
-        let duration_ms = (OffsetDateTime::now_utc() - self.started_at)
-            .whole_milliseconds()
-            .max(0) as u64;
+        let duration_ms =
+            u64::try_from(self.monotonic_start.elapsed().as_millis()).unwrap_or(u64::MAX);
         SubActionTelemetry {
             index: self.index,
             kind: self.kind,

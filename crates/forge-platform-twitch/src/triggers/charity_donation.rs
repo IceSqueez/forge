@@ -3,7 +3,8 @@ use crate::vocabulary::{event_kinds, messages};
 use forge_events::{Event, EventSource};
 use forge_registry::{
     ActorDeclaration, ActorIdentity, ActorRole, ActorSlot, CanonicalVariable, EventFilter,
-    FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor, TriggerVariables,
+    FormField, KindPlatformContract, SubActionConfigExt, TriggerCategory, TriggerKindDescriptor,
+    TriggerVariables,
 };
 use forge_types::{
     DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, UserText, Variant, VariantKind,
@@ -59,16 +60,7 @@ impl TriggerKindDescriptor for CharityDonationDescriptor {
     }
 
     fn condition_display(&self, config: &TriggerConfig) -> UserText {
-        let min = config
-            .get("min_amount_cents")
-            .and_then(|v| {
-                if let Variant::Int(n) = v {
-                    Some(*n)
-                } else {
-                    None
-                }
-            })
-            .unwrap_or(0);
+        let min = config.int("min_amount_cents").unwrap_or(0);
         if min == 0 {
             messages::CONDITION_ANY_AMOUNT.into()
         } else {
@@ -84,16 +76,7 @@ impl TriggerKindDescriptor for CharityDonationDescriptor {
     }
 
     fn matches_trigger(&self, config: &TriggerConfig, event: &Event) -> bool {
-        let min_amount_cents = config
-            .get("min_amount_cents")
-            .and_then(|v| {
-                if let Variant::Int(n) = v {
-                    Some(*n)
-                } else {
-                    None
-                }
-            })
-            .unwrap_or(0);
+        let min_amount_cents = config.int("min_amount_cents").unwrap_or(0);
 
         let amount_cents = event
             .payload

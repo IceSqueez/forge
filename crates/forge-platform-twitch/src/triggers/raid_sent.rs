@@ -4,8 +4,7 @@ use crate::vocabulary::trigger_ids;
 use forge_events::{Event, EventSource};
 use forge_registry::{
     ActorDeclaration, ActorIdentity, ActorRole, ActorSlot, CanonicalCount, CanonicalVariable,
-    EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
-    TriggerVariables,
+    EventFilter, KindPlatformContract, TriggerCategory, TriggerKindDescriptor, TriggerVariables,
 };
 use forge_types::{PlatformId, TriggerConfig};
 
@@ -41,14 +40,6 @@ impl TriggerKindDescriptor for RaidSentDescriptor {
 
     fn platform_contract(&self) -> KindPlatformContract {
         KindPlatformContract::PlatformSpecific(PlatformId::Twitch)
-    }
-
-    fn default_config(&self) -> TriggerConfig {
-        TriggerConfig::new()
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![]
     }
 
     fn event_filter(&self) -> EventFilter {

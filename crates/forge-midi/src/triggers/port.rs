@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-
 use forge_events::{Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
@@ -55,10 +53,6 @@ impl TriggerKindDescriptor for MidiPortTrigger {
 
     fn platform_contract(&self) -> KindPlatformContract {
         KindPlatformContract::Universal
-    }
-
-    fn default_config(&self) -> TriggerConfig {
-        BTreeMap::new()
     }
 
     fn config_fields(&self) -> Vec<FormField> {

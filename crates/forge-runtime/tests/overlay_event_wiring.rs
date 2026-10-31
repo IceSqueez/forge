@@ -1,8 +1,8 @@
 #![allow(clippy::expect_used, clippy::panic)]
 mod common;
+use forge_events::Event;
 use std::sync::{Arc, Mutex};
 
-use forge_events::Event;
 use forge_overlay::PreviewComposition;
 use forge_overlay::config::DURATION;
 use forge_overlay::kinds::alert::AlertOverlayKind;
@@ -10,9 +10,8 @@ use forge_overlay::{DeliveryDisposition, OverlayConfig, OverlayKindDescriptor, S
 use forge_overlay::{EventWiringTrigger, PageAssets, suggested_content};
 use forge_registry::ActorRole;
 use forge_registry::{
-    ActorBlock, ActorIdentity, EventFilter, FormField, KindPlatformContract, LoginSlot,
-    SubActionRegistry, TriggerCategory, TriggerKindDescriptor, TriggerVariables,
-    declared_variables,
+    ActorBlock, ActorIdentity, EventFilter, KindPlatformContract, LoginSlot, SubActionRegistry,
+    TriggerCategory, TriggerKindDescriptor, TriggerVariables, declared_variables,
 };
 use forge_runtime::{
     ActionsService, OVERLAY_ALERT_QUEUE, OverlayWiringError, OverlayWiringOutcome,
@@ -99,14 +98,6 @@ impl TriggerKindDescriptor for StubTrigger {
 
     fn platform_contract(&self) -> KindPlatformContract {
         KindPlatformContract::Universal
-    }
-
-    fn default_config(&self) -> TriggerConfig {
-        TriggerConfig::new()
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        Vec::new()
     }
 
     fn event_filter(&self) -> EventFilter {

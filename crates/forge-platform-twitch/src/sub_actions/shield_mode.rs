@@ -1,13 +1,11 @@
 use crate::step_failure;
 use crate::vocabulary::sub_action_ids;
 use std::sync::Arc;
-use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::SubActionConfig;
-use forge_registry::{RunContext, SubActionCategory, SubActionRunner};
+use forge_registry::{RunContext, StepTimer, SubActionCategory, SubActionRunner};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
-use time::OffsetDateTime;
 
 use crate::account::identity::SelfIdentity;
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
@@ -28,16 +26,51 @@ async fn set_shield(
     step_failure::outcome(&transport.execute(request).await)
 }
 
-const ON_KIND_ID: &str = sub_action_ids::MODERATION_SHIELD_MODE_ON;
+struct ShieldSwitch {
+    id: &'static str,
+    is_active: bool,
+    label: &'static str,
+    summary: &'static str,
+    search_text: &'static str,
+    icon_name: &'static str,
+}
 
-pub(crate) struct ShieldModeOnRunner {
+const SHIELD_ON: ShieldSwitch = ShieldSwitch {
+    id: sub_action_ids::MODERATION_SHIELD_MODE_ON,
+    is_active: true,
+    label: "Enable Shield Mode",
+    summary: "Activates Shield Mode on the broadcaster's channel.",
+    search_text: "twitch moderation shield mode on enable activate protect",
+    icon_name: "shield",
+};
+
+const SHIELD_OFF: ShieldSwitch = ShieldSwitch {
+    id: sub_action_ids::MODERATION_SHIELD_MODE_OFF,
+    is_active: false,
+    label: "Disable Shield Mode",
+    summary: "Deactivates Shield Mode on the broadcaster's channel.",
+    search_text: "twitch moderation shield mode off disable deactivate",
+    icon_name: "shield-off",
+};
+
+pub(crate) struct ShieldModeRunner {
+    switch: ShieldSwitch,
     transport: Arc<dyn HelixTransport>,
     identity: Arc<SelfIdentity>,
 }
 
-impl ShieldModeOnRunner {
-    pub(crate) fn new(transport: Arc<dyn HelixTransport>, identity: Arc<SelfIdentity>) -> Self {
+impl ShieldModeRunner {
+    pub(crate) fn on(transport: Arc<dyn HelixTransport>, identity: Arc<SelfIdentity>) -> Self {
         Self {
+            switch: SHIELD_ON,
+            transport,
+            identity,
+        }
+    }
+
+    pub(crate) fn off(transport: Arc<dyn HelixTransport>, identity: Arc<SelfIdentity>) -> Self {
+        Self {
+            switch: SHIELD_OFF,
             transport,
             identity,
         }
@@ -45,9 +78,9 @@ impl ShieldModeOnRunner {
 }
 
 #[async_trait]
-impl SubActionRunner for ShieldModeOnRunner {
+impl SubActionRunner for ShieldModeRunner {
     fn id(&self) -> &str {
-        ON_KIND_ID
+        self.switch.id
     }
 
     fn category(&self) -> SubActionCategory {
@@ -55,19 +88,19 @@ impl SubActionRunner for ShieldModeOnRunner {
     }
 
     fn label(&self) -> &str {
-        "Enable Shield Mode"
+        self.switch.label
     }
 
     fn summary(&self) -> &str {
-        "Activates Shield Mode on the broadcaster's channel."
+        self.switch.summary
     }
 
     fn search_text(&self) -> &str {
-        "twitch moderation shield mode on enable activate protect"
+        self.switch.search_text
     }
 
     fn icon_name(&self) -> &str {
-        "shield"
+        self.switch.icon_name
     }
 
     async fn execute(
@@ -75,90 +108,14 @@ impl SubActionRunner for ShieldModeOnRunner {
         _config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
-
-        let outcome = set_shield(self.transport.as_ref(), &self.identity, true).await;
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                kind: ON_KIND_ID.to_owned(),
-                started_at,
-                duration_ms: u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX),
-                outcome,
-                index: ctx.index,
-            },
-            None,
+        let timer = StepTimer::start(ctx, self.switch.id);
+        let outcome = set_shield(
+            self.transport.as_ref(),
+            &self.identity,
+            self.switch.is_active,
         )
-    }
-}
-
-const OFF_KIND_ID: &str = sub_action_ids::MODERATION_SHIELD_MODE_OFF;
-
-pub(crate) struct ShieldModeOffRunner {
-    transport: Arc<dyn HelixTransport>,
-    identity: Arc<SelfIdentity>,
-}
-
-impl ShieldModeOffRunner {
-    pub(crate) fn new(transport: Arc<dyn HelixTransport>, identity: Arc<SelfIdentity>) -> Self {
-        Self {
-            transport,
-            identity,
-        }
-    }
-}
-
-#[async_trait]
-impl SubActionRunner for ShieldModeOffRunner {
-    fn id(&self) -> &str {
-        OFF_KIND_ID
-    }
-
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Moderation
-    }
-
-    fn label(&self) -> &str {
-        "Disable Shield Mode"
-    }
-
-    fn summary(&self) -> &str {
-        "Deactivates Shield Mode on the broadcaster's channel."
-    }
-
-    fn search_text(&self) -> &str {
-        "twitch moderation shield mode off disable deactivate"
-    }
-
-    fn icon_name(&self) -> &str {
-        "shield-off"
-    }
-
-    async fn execute(
-        &self,
-        _config: &SubActionConfig,
-        ctx: &RunContext<'_>,
-    ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let started_at = OffsetDateTime::now_utc();
-        let start = Instant::now();
-
-        let outcome = set_shield(self.transport.as_ref(), &self.identity, false).await;
-
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                kind: OFF_KIND_ID.to_owned(),
-                started_at,
-                duration_ms: u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX),
-                outcome,
-                index: ctx.index,
-            },
-            None,
-        )
+        .await;
+        (timer.finish(outcome), None)
     }
 }
 
@@ -197,7 +154,7 @@ mod tests {
         let cases: Vec<Case> = vec![
             Case {
                 label: "shield_mode_on",
-                runner: Box::new(ShieldModeOnRunner::new(
+                runner: Box::new(ShieldModeRunner::on(
                     Arc::clone(&t_on) as Arc<dyn HelixTransport>,
                     identity(),
                 )),
@@ -206,7 +163,7 @@ mod tests {
             },
             Case {
                 label: "shield_mode_off",
-                runner: Box::new(ShieldModeOffRunner::new(
+                runner: Box::new(ShieldModeRunner::off(
                     Arc::clone(&t_off) as Arc<dyn HelixTransport>,
                     identity(),
                 )),

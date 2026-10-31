@@ -14,8 +14,6 @@ use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
 use crate::step_failure;
 use crate::vocabulary::sub_action_ids;
 
-const KIND_ID: &str = sub_action_ids::GUEST_STAR_ASSIGN_SLOT;
-
 pub(crate) const GUEST_SLOT_CONFIG: ConfigSpec =
     ConfigSpec::new(&[&SESSION_ID, &GUEST_LOGIN, &SLOT_ID]);
 
@@ -77,7 +75,7 @@ impl GuestStarAssignSlotRunner {
 #[async_trait]
 impl SubActionRunner for GuestStarAssignSlotRunner {
     fn id(&self) -> &str {
-        KIND_ID
+        sub_action_ids::GUEST_STAR_ASSIGN_SLOT
     }
 
     fn category(&self) -> SubActionCategory {
@@ -109,7 +107,7 @@ impl SubActionRunner for GuestStarAssignSlotRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, KIND_ID);
+        let timer = StepTimer::start(ctx, self.id());
         let slot = match GuestSlot::read(config, ctx.arg_stack) {
             Ok(slot) => slot,
             Err(problem) => return (timer.invalid_config(&problem), None),

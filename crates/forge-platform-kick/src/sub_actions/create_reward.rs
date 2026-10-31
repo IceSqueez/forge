@@ -16,7 +16,6 @@ use crate::api::rewards::{CreateRewardParams, KickRewards};
 use crate::vocabulary::variables::created_reward;
 use crate::vocabulary::{config_keys, sub_action_ids};
 
-const KIND_ID: &str = sub_action_ids::REWARD_CREATE;
 const MIN_COST: i64 = 1;
 
 const TITLE: TextField = TextField {
@@ -88,7 +87,7 @@ impl CreateRewardRunner {
 #[async_trait]
 impl SubActionRunner for CreateRewardRunner {
     fn id(&self) -> &str {
-        KIND_ID
+        sub_action_ids::REWARD_CREATE
     }
 
     fn category(&self) -> SubActionCategory {
@@ -127,7 +126,7 @@ impl SubActionRunner for CreateRewardRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, KIND_ID);
+        let timer = StepTimer::start(ctx, self.id());
         let params = match read_config(config, ctx.arg_stack) {
             Ok(params) => params,
             Err(problem) => return (timer.invalid_config(&problem), None),

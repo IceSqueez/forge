@@ -17,8 +17,6 @@ use crate::mention::MentionPolicy;
 use crate::sink::DiscordSink;
 use crate::vocabulary::{config_keys, messages, sub_action_ids};
 
-const KIND_ID: &str = sub_action_ids::WEBHOOK_SEND_FILE;
-
 const BYTES_PER_MEBIBYTE: u64 = 1024 * 1024;
 const UPLOAD_LIMIT_MEBIBYTES: u64 = 25;
 const DISCORD_UPLOAD_LIMIT_BYTES: u64 = UPLOAD_LIMIT_MEBIBYTES * BYTES_PER_MEBIBYTE;
@@ -70,7 +68,7 @@ impl SendFileRunner {
 #[async_trait]
 impl SubActionRunner for SendFileRunner {
     fn id(&self) -> &str {
-        KIND_ID
+        sub_action_ids::WEBHOOK_SEND_FILE
     }
 
     fn category(&self) -> SubActionCategory {
@@ -106,7 +104,7 @@ impl SubActionRunner for SendFileRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, KIND_ID);
+        let timer = StepTimer::start(ctx, self.id());
         let upload = match read_config(config, ctx.arg_stack) {
             Ok(upload) => upload,
             Err(problem) => return (timer.invalid_config(&problem), None),

@@ -16,6 +16,12 @@ impl PcmBuffer {
         }
     }
 
+    pub fn from_s16le(bytes: &[u8], sample_rate: u32, channels: u16) -> Self {
+        let (pairs, _) = bytes.as_chunks::<{ size_of::<i16>() }>();
+        let samples = pairs.iter().copied().map(i16::from_le_bytes).collect();
+        Self::new(samples, sample_rate, channels)
+    }
+
     pub fn frame_count(&self) -> usize {
         if self.channels == 0 {
             0
@@ -55,6 +61,22 @@ impl PcmBuffer {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn from_s16le_decodes_little_endian_pairs_in_order_and_drops_a_trailing_odd_byte() {
+        let cases: [(&[u8], &[i16]); 4] = [
+            (&[], &[]),
+            (&[0x7f], &[]),
+            (&[0x34, 0x12, 0xff, 0xff], &[0x1234, -1]),
+            (&[0x00, 0x80, 0xff, 0x7f, 0x7f], &[i16::MIN, i16::MAX]),
+        ];
+        for (bytes, samples) in cases {
+            let buffer = PcmBuffer::from_s16le(bytes, 24_000, 2);
+            assert_eq!(buffer.samples, samples, "{bytes:?}");
+            assert_eq!(buffer.sample_rate, 24_000);
+            assert_eq!(buffer.channels, 2);
+        }
+    }
 
     #[test]
     fn frame_count_divides_interleaved_samples_by_channel_count() {

@@ -13,8 +13,6 @@ use crate::channel_lookup::YoutubeChannelLookup;
 use crate::vocabulary::variables::viewer as variables;
 use crate::vocabulary::{config_keys, sub_action_ids};
 
-const KIND_ID: &str = sub_action_ids::LOOKUP_VIEWER;
-
 const IDENTIFIER: TextField = TextField {
     key: config_keys::IDENTIFIER,
     label: "Channel Handle or ID",
@@ -40,7 +38,7 @@ impl LookupViewerRunner {
 #[async_trait]
 impl SubActionRunner for LookupViewerRunner {
     fn id(&self) -> &str {
-        KIND_ID
+        sub_action_ids::LOOKUP_VIEWER
     }
 
     fn category(&self) -> SubActionCategory {
@@ -72,7 +70,7 @@ impl SubActionRunner for LookupViewerRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, KIND_ID);
+        let timer = StepTimer::start(ctx, self.id());
         let identifier = match IDENTIFIER.read(config, ctx.arg_stack) {
             Ok(identifier) => identifier,
             Err(problem) => return (timer.invalid_config(&problem), None),

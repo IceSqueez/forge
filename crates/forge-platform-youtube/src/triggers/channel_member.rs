@@ -1,9 +1,10 @@
 use forge_events::{Event, EventSource};
 use forge_registry::{
     ActorDeclaration, ActorIdentity, ActorRole, ActorSlot, CanonicalVariable, EventFilter,
-    FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor, TriggerVariables,
+    KindPlatformContract, TriggerCategory, TriggerKindDescriptor, TriggerVariables,
 };
-use forge_types::{PlatformId, TriggerConfig};
+use forge_types::PlatformId;
+use forge_types::TriggerConfig;
 
 use super::payload_read::{self, youtube_actor};
 use crate::vocabulary::fields::{chat as chat_fields, member as fields};
@@ -38,14 +39,6 @@ impl TriggerKindDescriptor for SupportNewMemberDescriptor {
 
     fn platform_contract(&self) -> KindPlatformContract {
         KindPlatformContract::PlatformSpecific(PlatformId::YouTube)
-    }
-
-    fn default_config(&self) -> TriggerConfig {
-        TriggerConfig::new()
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![]
     }
 
     fn event_filter(&self) -> EventFilter {

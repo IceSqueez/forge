@@ -2,7 +2,8 @@ use forge_events::{Event, EventSource};
 use forge_registry::{
     ActorDeclaration, ActorRole, ActorSlot, COMMAND_CASE_SENSITIVE_KEY, COMMAND_PHRASE_KEY,
     CanonicalVariable, ChatTriggerFamily, EventFilter, FormField, KindPlatformContract,
-    TriggerCategory, TriggerKindDescriptor, TriggerVariables, command_phrase_matches,
+    SubActionConfigExt, TriggerCategory, TriggerKindDescriptor, TriggerVariables,
+    command_phrase_matches,
 };
 use forge_types::{DeclaredVariable, PlatformId, TriggerConfig, UserText, Variant, VariantKind};
 
@@ -78,31 +79,13 @@ impl TriggerKindDescriptor for ChatCommandDescriptor {
     }
 
     fn matches_trigger(&self, config: &TriggerConfig, event: &Event) -> bool {
-        let phrase = config
-            .get(COMMAND_PHRASE_KEY)
-            .and_then(|v| {
-                if let Variant::String(s) = v {
-                    Some(s.as_str())
-                } else {
-                    None
-                }
-            })
-            .unwrap_or("");
+        let phrase = config.str(COMMAND_PHRASE_KEY).unwrap_or("");
 
         if phrase.is_empty() {
             return false;
         }
 
-        let case_sensitive = config
-            .get(COMMAND_CASE_SENSITIVE_KEY)
-            .and_then(|v| {
-                if let Variant::Bool(b) = v {
-                    Some(*b)
-                } else {
-                    None
-                }
-            })
-            .unwrap_or(false);
+        let case_sensitive = config.bool(COMMAND_CASE_SENSITIVE_KEY).unwrap_or(false);
 
         let content = payload_read::text(event, fields::CONTENT);
 

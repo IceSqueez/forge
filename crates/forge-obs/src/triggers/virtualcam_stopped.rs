@@ -1,9 +1,5 @@
-use std::collections::BTreeMap;
-
 use forge_events::{Event, EventSource};
-use forge_registry::{
-    EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
-};
+use forge_registry::{EventFilter, KindPlatformContract, TriggerCategory, TriggerKindDescriptor};
 use forge_types::{ArgStack, TriggerConfig, UserText, VariableSchema};
 
 use super::virtualcam_status_changed::{build_virtualcam_arg_stack, virtualcam_variables};
@@ -41,14 +37,6 @@ impl TriggerKindDescriptor for VirtualcamStoppedDescriptor {
         KindPlatformContract::Universal
     }
 
-    fn default_config(&self) -> TriggerConfig {
-        BTreeMap::new()
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![]
-    }
-
     fn condition_display(&self, _: &TriggerConfig) -> UserText {
         messages::CONDITION_VIRTUAL_CAMERA_STOPPED.into()
     }
@@ -79,6 +67,7 @@ impl TriggerKindDescriptor for VirtualcamStoppedDescriptor {
 mod tests {
     use super::*;
     use serde_json::json;
+    use std::collections::BTreeMap;
 
     #[test]
     fn matches_only_stopped_kind_among_virtualcam_lifecycle() {

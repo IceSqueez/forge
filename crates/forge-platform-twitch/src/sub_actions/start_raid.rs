@@ -14,8 +14,6 @@ use crate::lifecycle::TwitchLifecycle;
 use crate::step_failure;
 use crate::vocabulary::{config_keys, sub_action_ids};
 
-const KIND_ID: &str = sub_action_ids::CHANNEL_START_RAID;
-
 const TO_BROADCASTER_LOGIN: TextField = TextField {
     key: config_keys::TO_BROADCASTER_LOGIN,
     label: "Target Channel",
@@ -67,7 +65,7 @@ impl StartRaidRunner {
 #[async_trait]
 impl SubActionRunner for StartRaidRunner {
     fn id(&self) -> &str {
-        KIND_ID
+        sub_action_ids::CHANNEL_START_RAID
     }
 
     fn category(&self) -> SubActionCategory {
@@ -99,7 +97,7 @@ impl SubActionRunner for StartRaidRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, KIND_ID);
+        let timer = StepTimer::start(ctx, self.id());
         let to_broadcaster_login = match TO_BROADCASTER_LOGIN.read(config, ctx.arg_stack) {
             Ok(login) => login,
             Err(problem) => return (timer.invalid_config(&problem), None),

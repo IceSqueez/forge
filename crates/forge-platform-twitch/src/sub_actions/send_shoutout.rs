@@ -19,8 +19,6 @@ use crate::chat_sender::{ChatDelivery, ChatSenders, StepResult, failed_step, ste
 use crate::helix::HelixTransport;
 use crate::vocabulary::{config_keys, sub_action_ids};
 
-const KIND_ID: &str = sub_action_ids::CHANNEL_SEND_SHOUTOUT;
-
 const TARGET: TargetFields = TargetFields {
     id: TextField {
         key: config_keys::TO_BROADCASTER_ID,
@@ -87,7 +85,7 @@ impl SendShoutoutRunner {
 #[async_trait]
 impl SubActionRunner for SendShoutoutRunner {
     fn id(&self) -> &str {
-        KIND_ID
+        sub_action_ids::CHANNEL_SEND_SHOUTOUT
     }
 
     fn category(&self) -> SubActionCategory {
@@ -127,7 +125,7 @@ impl SubActionRunner for SendShoutoutRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, KIND_ID);
+        let timer = StepTimer::start(ctx, self.id());
         let (target, sender) = match read_config(config, ctx.arg_stack) {
             Ok(values) => values,
             Err(problem) => return (timer.invalid_config(&problem), None),

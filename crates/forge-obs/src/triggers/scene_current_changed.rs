@@ -1,8 +1,7 @@
-use std::collections::BTreeMap;
-
 use forge_events::{Event, EventSource};
 use forge_registry::{
-    EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
+    EventFilter, FormField, KindPlatformContract, SubActionConfigExt, TriggerCategory,
+    TriggerKindDescriptor,
 };
 use forge_types::{
     ArgStack, DeclaredVariable, TriggerConfig, UserText, VariableSchema, Variant, VariantKind,
@@ -43,10 +42,6 @@ impl TriggerKindDescriptor for SceneCurrentChangedDescriptor {
         KindPlatformContract::Universal
     }
 
-    fn default_config(&self) -> TriggerConfig {
-        BTreeMap::new()
-    }
-
     fn config_fields(&self) -> Vec<FormField> {
         vec![FormField::Optional {
             key: "scene",
@@ -60,9 +55,9 @@ impl TriggerKindDescriptor for SceneCurrentChangedDescriptor {
     }
 
     fn condition_display(&self, config: &TriggerConfig) -> UserText {
-        match config.get("scene") {
-            Some(Variant::String(s)) if !s.is_empty() => messages::condition_scene(s).into(),
-            _ => messages::CONDITION_ANY_SCENE.into(),
+        match config.str_nonempty("scene") {
+            Some(s) => messages::condition_scene(s).into(),
+            None => messages::CONDITION_ANY_SCENE.into(),
         }
     }
 
@@ -77,11 +72,9 @@ impl TriggerKindDescriptor for SceneCurrentChangedDescriptor {
         if event.kind != event_kinds::SCENE_CHANGED {
             return false;
         }
-        match config.get("scene") {
-            Some(Variant::String(s)) if !s.is_empty() => {
-                event.payload.get(fields::TO_SCENE).and_then(|v| v.as_str()) == Some(s.as_str())
-            }
-            _ => true,
+        match config.str_nonempty("scene") {
+            Some(s) => event.payload.get(fields::TO_SCENE).and_then(|v| v.as_str()) == Some(s),
+            None => true,
         }
     }
 
@@ -131,6 +124,7 @@ mod tests {
     use super::*;
     use forge_events::EventSource;
     use serde_json::json;
+    use std::collections::BTreeMap;
 
     fn named_config(scene: &str) -> BTreeMap<String, Variant> {
         BTreeMap::from([("scene".to_owned(), Variant::String(scene.to_owned()))])

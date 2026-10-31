@@ -13,7 +13,6 @@ use crate::helix::{HelixError, HelixMethod, HelixRequest, HelixTransport};
 use crate::step_failure;
 use crate::vocabulary::{config_keys, messages, sub_action_ids};
 
-const KIND_ID: &str = sub_action_ids::AUTOMOD_UPDATE_SETTINGS;
 const PATH: &str = "/helix/moderation/automod/settings";
 const MAX_LEVEL: u8 = 4;
 
@@ -191,7 +190,7 @@ fn current_level(current: &serde_json::Value, key: &str) -> Option<u8> {
 #[async_trait]
 impl SubActionRunner for UpdateAutomodSettingsRunner {
     fn id(&self) -> &str {
-        KIND_ID
+        sub_action_ids::AUTOMOD_UPDATE_SETTINGS
     }
 
     fn category(&self) -> SubActionCategory {
@@ -223,7 +222,7 @@ impl SubActionRunner for UpdateAutomodSettingsRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, KIND_ID);
+        let timer = StepTimer::start(ctx, self.id());
         let update = match LevelUpdate::read(config, ctx.arg_stack) {
             Ok(update) => update,
             Err(problem) => return (timer.invalid_config(&problem), None),

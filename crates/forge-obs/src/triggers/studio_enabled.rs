@@ -1,9 +1,5 @@
-use std::collections::BTreeMap;
-
 use forge_events::{Event, EventSource};
-use forge_registry::{
-    EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
-};
+use forge_registry::{EventFilter, KindPlatformContract, TriggerCategory, TriggerKindDescriptor};
 use forge_types::{
     ArgStack, DeclaredVariable, TriggerConfig, UserText, VariableSchema, Variant, VariantKind,
 };
@@ -39,14 +35,6 @@ impl TriggerKindDescriptor for StudioEnabledDescriptor {
 
     fn platform_contract(&self) -> KindPlatformContract {
         KindPlatformContract::Universal
-    }
-
-    fn default_config(&self) -> TriggerConfig {
-        BTreeMap::new()
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        vec![]
     }
 
     fn condition_display(&self, _: &TriggerConfig) -> UserText {
@@ -95,10 +83,12 @@ pub(crate) fn build_studio_arg_stack(event: &Event) -> ArgStack {
 
 #[cfg(test)]
 mod tests {
-    use super::super::{StudioDisabledDescriptor, StudioEnabledDescriptor};
+    use super::super::StudioEnabledDescriptor;
+    use super::super::lifecycle;
     use super::*;
     use forge_registry::TriggerKindDescriptor;
     use serde_json::json;
+    use std::collections::BTreeMap;
 
     fn studio_event(kind: &str) -> Event {
         Event::new(EventSource::Obs, kind, json!({}))
@@ -109,7 +99,7 @@ mod tests {
         let cfg = BTreeMap::new();
         let descriptors: [(&str, &dyn TriggerKindDescriptor); 2] = [
             ("obs.studio.enabled", &StudioEnabledDescriptor),
-            ("obs.studio.disabled", &StudioDisabledDescriptor),
+            ("obs.studio.disabled", &lifecycle::STUDIO_DISABLED),
         ];
         let kinds = ["obs.studio.enabled", "obs.studio.disabled"];
         for (own_kind, descriptor) in descriptors {
@@ -128,7 +118,7 @@ mod tests {
         let event = Event::new(EventSource::Obs, "obs.scene.changed", json!({}));
         let cfg = BTreeMap::new();
         assert!(!StudioEnabledDescriptor.matches_trigger(&cfg, &event));
-        assert!(!StudioDisabledDescriptor.matches_trigger(&cfg, &event));
+        assert!(!lifecycle::STUDIO_DISABLED.matches_trigger(&cfg, &event));
     }
 
     #[test]

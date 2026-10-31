@@ -14,8 +14,6 @@ use crate::ObsSink;
 use crate::runners::fields::SOURCE;
 use crate::vocabulary::{config_keys, sub_action_ids};
 
-const KIND_ID: &str = sub_action_ids::CAPTURE_SCREENSHOT;
-
 const PATH: PickedTextField = PickedTextField {
     key: config_keys::PATH,
     label: "Save To",
@@ -49,7 +47,7 @@ impl CaptureScreenshotRunner {
 #[async_trait]
 impl SubActionRunner for CaptureScreenshotRunner {
     fn id(&self) -> &str {
-        KIND_ID
+        sub_action_ids::CAPTURE_SCREENSHOT
     }
 
     fn category(&self) -> SubActionCategory {
@@ -89,7 +87,7 @@ impl SubActionRunner for CaptureScreenshotRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, KIND_ID);
+        let timer = StepTimer::start(ctx, self.id());
         let (source, path) = match read_config(config, ctx.arg_stack) {
             Ok(values) => values,
             Err(problem) => return (timer.invalid_config(&problem), None),

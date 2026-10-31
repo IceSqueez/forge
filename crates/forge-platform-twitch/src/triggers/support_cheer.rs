@@ -3,7 +3,8 @@ use crate::vocabulary::{event_kinds, messages};
 use forge_events::{Event, EventSource};
 use forge_registry::{
     ActorDeclaration, ActorIdentity, ActorRole, CanonicalCount, CanonicalVariable, EventFilter,
-    FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor, TriggerVariables,
+    FormField, KindPlatformContract, SubActionConfigExt, TriggerCategory, TriggerKindDescriptor,
+    TriggerVariables,
 };
 use forge_types::{DeclaredVariable, PlatformId, TriggerConfig, UserText, Variant, VariantKind};
 
@@ -72,16 +73,7 @@ impl TriggerKindDescriptor for SupportCheerDescriptor {
     }
 
     fn matches_trigger(&self, config: &TriggerConfig, event: &Event) -> bool {
-        let min_bits = config
-            .get("min_bits")
-            .and_then(|v| {
-                if let Variant::Int(n) = v {
-                    Some(*n)
-                } else {
-                    None
-                }
-            })
-            .unwrap_or(0);
+        let min_bits = config.int("min_bits").unwrap_or(0);
 
         let bits = event
             .payload

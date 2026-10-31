@@ -17,7 +17,6 @@ use super::step_failure;
 use crate::api::moderation::KickModeration;
 use crate::vocabulary::{config_keys, sub_action_ids};
 
-const KIND_ID: &str = sub_action_ids::MODERATION_TIMEOUT;
 const MIN_TIMEOUT_MINUTES: i64 = 1;
 const MAX_TIMEOUT_MINUTES: i64 = 10080;
 const DEFAULT_TIMEOUT_MINUTES: i64 = 10;
@@ -85,7 +84,7 @@ impl TimeoutUserRunner {
 #[async_trait]
 impl SubActionRunner for TimeoutUserRunner {
     fn id(&self) -> &str {
-        KIND_ID
+        sub_action_ids::MODERATION_TIMEOUT
     }
 
     fn category(&self) -> SubActionCategory {
@@ -117,7 +116,7 @@ impl SubActionRunner for TimeoutUserRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, KIND_ID);
+        let timer = StepTimer::start(ctx, self.id());
         let request = match read_config(config, ctx.arg_stack) {
             Ok(request) => request,
             Err(problem) => return (timer.invalid_config(&problem), None),

@@ -2,8 +2,8 @@ use crate::vocabulary::trigger_ids;
 use crate::vocabulary::{event_kinds, messages};
 use forge_events::{Event, EventSource};
 use forge_registry::{
-    ActorDeclaration, EventFilter, FormField, KindPlatformContract, TriggerCategory,
-    TriggerKindDescriptor,
+    ActorDeclaration, EventFilter, FormField, KindPlatformContract, SubActionConfigExt,
+    TriggerCategory, TriggerKindDescriptor,
 };
 use forge_types::{
     ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, UserText, VariableSchema,
@@ -74,16 +74,7 @@ impl TriggerKindDescriptor for HypeTrainProgressDescriptor {
     }
 
     fn matches_trigger(&self, config: &TriggerConfig, event: &Event) -> bool {
-        let min_level = config
-            .get("min_level")
-            .and_then(|v| {
-                if let Variant::Int(n) = v {
-                    Some(*n)
-                } else {
-                    None
-                }
-            })
-            .unwrap_or(1);
+        let min_level = config.int("min_level").unwrap_or(1);
 
         let level = event
             .payload

@@ -87,10 +87,6 @@ impl TriggerKindDescriptor for WhisperReceivedDescriptor {
         KindPlatformContract::PlatformSpecific(PlatformId::Twitch)
     }
 
-    fn default_config(&self) -> TriggerConfig {
-        TriggerConfig::new()
-    }
-
     fn config_fields(&self) -> Vec<FormField> {
         vec![
             FormField::Text {

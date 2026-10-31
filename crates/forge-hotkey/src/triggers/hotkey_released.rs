@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-
 use super::combo_condition;
 use forge_events::{Event, EventSource};
 use forge_registry::{
@@ -40,10 +38,6 @@ impl TriggerKindDescriptor for HotkeyReleasedDescriptor {
 
     fn platform_contract(&self) -> KindPlatformContract {
         KindPlatformContract::Universal
-    }
-
-    fn default_config(&self) -> TriggerConfig {
-        BTreeMap::new()
     }
 
     fn config_fields(&self) -> Vec<FormField> {
@@ -145,6 +139,7 @@ mod tests {
     use super::*;
     use forge_events::EventSource;
     use serde_json::json;
+    use std::collections::BTreeMap;
 
     fn released_event(combo: &str) -> Event {
         Event::new(

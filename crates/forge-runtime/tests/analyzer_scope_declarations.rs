@@ -1,13 +1,12 @@
 #![allow(clippy::expect_used)]
 mod common;
+use forge_events::Event;
 use forge_events::test_support::NullPublisher;
 use std::sync::Arc;
 
-use forge_events::Event;
 use forge_registry::{
-    EventFilter, Finding, FormField, KindPlatformContract, StepHealth, SubActionRegistry,
-    SubActionRunner, TriggerCategory, TriggerKindDescriptor, TriggerRegistry, TriggerVariables,
-    analyze,
+    EventFilter, Finding, KindPlatformContract, StepHealth, SubActionRegistry, SubActionRunner,
+    TriggerCategory, TriggerKindDescriptor, TriggerRegistry, TriggerVariables, analyze,
 };
 use forge_runtime::{ConditionGate, Config};
 use forge_runtime::{
@@ -54,14 +53,6 @@ impl TriggerKindDescriptor for SeedTrigger {
         KindPlatformContract::PlatformSpecific(PlatformId::Kick)
     }
 
-    fn default_config(&self) -> TriggerConfig {
-        TriggerConfig::new()
-    }
-
-    fn config_fields(&self) -> Vec<FormField> {
-        Vec::new()
-    }
-
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: None,
@@ -69,7 +60,7 @@ impl TriggerKindDescriptor for SeedTrigger {
         }
     }
 
-    fn matches_trigger(&self, _: &TriggerConfig, _: &Event) -> bool {
+    fn matches_trigger(&self, _config: &TriggerConfig, _event: &Event) -> bool {
         true
     }
 

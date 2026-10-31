@@ -1,4 +1,5 @@
 mod catalog;
+mod catalog_revisions;
 mod client;
 mod connect_failure;
 mod connect_settings;

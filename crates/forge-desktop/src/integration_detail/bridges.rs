@@ -1,12 +1,14 @@
+use super::state::BuiltinPorts;
 use super::{IntegrationDetail, VIEWER_DELTA_WINDOW_MINUTES};
 use crate::async_bridge;
 use crate::runtime_event::{self, RuntimeEvent};
 use crate::window_presence::PresenceGate;
 use forge_platform_core::{
-    BuiltinHealth, HealthDelta, HealthMetricId, HealthText, HealthValue, QuickActions, RevisionWait,
+    BuiltinHealth, CollectionRevisions, ConnectionState, HealthDelta, HealthMetricId, HealthText,
+    HealthValue, RevisionWait,
 };
 use forge_runtime::EventBus;
-use futures_util::StreamExt as _;
+use futures_util::{Stream, StreamExt as _, stream};
 use gpui::{Context, Task};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -18,7 +20,34 @@ const VIEWER_DELTA_WINDOW: Duration =
 
 const VIEWER_RING_CAP: usize = 256;
 const VIEWER_RING_SLACK: Duration = Duration::from_secs(60);
-const DETAIL_TICK: Duration = Duration::from_secs(30);
+const TOKEN_COUNTDOWN_REPAINT: Duration = Duration::from_secs(30);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum DetailChange {
+    Content,
+    Status,
+    QuickActions,
+}
+
+fn change_stream(
+    revisions: CollectionRevisions,
+    change: DetailChange,
+) -> impl Stream<Item = DetailChange> {
+    stream::unfold(revisions, move |mut revisions| async move {
+        (revisions.changed().await == RevisionWait::Changed).then_some((change, revisions))
+    })
+}
+
+fn merged_changes(ports: &BuiltinPorts) -> impl Stream<Item = DetailChange> + use<> {
+    let handles = [
+        (ports.content.content_revisions(), DetailChange::Content),
+        (ports.status.status_revisions(), DetailChange::Status),
+        (ports.quick.revisions(), DetailChange::QuickActions),
+    ];
+    stream::select_all(handles.into_iter().filter_map(|(revisions, change)| {
+        revisions.map(|revisions| change_stream(revisions, change).boxed())
+    }))
+}
 
 fn viewer_reading(value: &HealthValue) -> Option<u64> {
     match value {
@@ -47,6 +76,7 @@ impl IntegrationDetail {
         }
         self.shown.connection = self.ports.status.connection();
         self.shown.header_actions = self.ports.status.header_actions();
+        self.sync_token_countdown(cx);
         self.refresh_content(cx);
     }
 
@@ -72,31 +102,12 @@ impl IntegrationDetail {
         })
     }
 
-    pub(super) fn spawn_quick_action_bridge(
-        quick: &dyn QuickActions,
-        cx: &mut Context<Self>,
-    ) -> Option<Task<()>> {
-        let mut revisions = quick.revisions()?;
-        Some(cx.spawn(async move |this, cx| {
-            while revisions.changed().await == RevisionWait::Changed {
-                if this.update(cx, |this, cx| this.reload(cx)).is_err() {
-                    break;
-                }
-            }
-        }))
-    }
-
-    pub(super) fn spawn_obs_content_watch(bus: &Arc<EventBus>, cx: &mut Context<Self>) -> Task<()> {
-        let mut sub = bus.subscribe();
+    pub(super) fn spawn_change_bridge(ports: &BuiltinPorts, cx: &mut Context<Self>) -> Task<()> {
+        let mut changes = merged_changes(ports);
         cx.spawn(async move |this, cx| {
-            while let async_bridge::EventBatch::Ready(batch) =
-                async_bridge::recv_event_batch(&mut sub).await
-            {
-                if !batch.iter().any(runtime_event::changes_obs_content) {
-                    continue;
-                }
+            while let Some(change) = changes.next().await {
                 if this
-                    .update(cx, |this, cx| this.refresh_content(cx))
+                    .update(cx, |this, cx| this.apply_change(change, cx))
                     .is_err()
                 {
                     break;
@@ -105,68 +116,38 @@ impl IntegrationDetail {
         })
     }
 
-    pub(super) fn spawn_eventsub_tally(bus: &Arc<EventBus>, cx: &mut Context<Self>) -> Task<()> {
-        let mut sub = bus.subscribe();
-        cx.spawn(async move |this, cx| {
-            while let async_bridge::EventBatch::Ready(batch) =
-                async_bridge::recv_event_batch(&mut sub).await
-            {
-                let reauth = batch.iter().any(|e| {
-                    matches!(
-                        runtime_event::decode(e),
-                        Some(RuntimeEvent::ReauthRequired(_))
-                    )
-                });
-                let tails: Vec<String> = batch
-                    .iter()
-                    .filter_map(|e| runtime_event::twitch_topic(e).map(str::to_owned))
-                    .collect();
-                if tails.is_empty() && !reauth {
-                    continue;
-                }
-                if this
-                    .update(cx, |this, cx| {
-                        if reauth {
-                            this.shown.twitch_reauth_required = true;
-                        }
-                        this.apply_eventsub_tally(tails, cx);
-                    })
-                    .is_err()
-                {
-                    break;
-                }
-            }
-        })
+    pub(super) fn apply_change(&mut self, change: DetailChange, cx: &mut Context<Self>) {
+        match change {
+            DetailChange::Content => self.refresh_content(cx),
+            DetailChange::Status | DetailChange::QuickActions => self.reload(cx),
+        }
     }
 
-    pub(super) fn spawn_descriptor_reload_watch(
-        bus: &Arc<EventBus>,
-        cx: &mut Context<Self>,
-    ) -> Task<()> {
-        let mut sub = bus.subscribe();
-        cx.spawn(async move |this, cx| {
-            while let async_bridge::EventBatch::Ready(batch) =
-                async_bridge::recv_event_batch(&mut sub).await
-            {
-                if !batch.iter().any(runtime_event::rebuilds_descriptors) {
-                    continue;
-                }
-                if this.update(cx, |this, cx| this.reload(cx)).is_err() {
-                    break;
-                }
-            }
-        })
+    pub(super) fn sync_token_countdown(&mut self, cx: &mut Context<Self>) {
+        if !self.token_countdown_shown() {
+            self.background._token_countdown_repaint = None;
+            return;
+        }
+        if self.background._token_countdown_repaint.is_none() {
+            self.background._token_countdown_repaint = Some(Self::spawn_token_countdown(cx));
+        }
     }
 
-    pub(super) fn spawn_detail_ticker(cx: &mut Context<Self>) -> Task<()> {
+    fn token_countdown_shown(&self) -> bool {
+        self.shown.connection == ConnectionState::Connected && self.token_remaining().is_some()
+    }
+
+    fn spawn_token_countdown(cx: &mut Context<Self>) -> Task<()> {
         let mut presence = PresenceGate::of(cx);
         cx.spawn(async move |this, cx| {
             loop {
-                cx.background_executor().timer(DETAIL_TICK).await;
+                cx.background_executor()
+                    .timer(TOKEN_COUNTDOWN_REPAINT)
+                    .await;
                 presence.until_visible().await;
                 let alive = this.update(cx, |this, cx| {
-                    this.shown.sections = this.ports.content.sections();
                     cx.notify();
+                    this.sync_token_countdown(cx);
                 });
                 if alive.is_err() {
                     break;
@@ -175,11 +156,30 @@ impl IntegrationDetail {
         })
     }
 
-    fn apply_eventsub_tally(&mut self, tails: Vec<String>, cx: &mut Context<Self>) {
-        for tail in tails {
-            *self.live.eventsub_tally.entry(tail).or_insert(0) += 1;
-        }
-        cx.notify();
+    pub(super) fn spawn_reauth_watch(bus: &Arc<EventBus>, cx: &mut Context<Self>) -> Task<()> {
+        let mut sub = bus.subscribe();
+        cx.spawn(async move |this, cx| {
+            while let async_bridge::EventBatch::Ready(batch) =
+                async_bridge::recv_event_batch(&mut sub).await
+            {
+                let reauth = batch.iter().any(|event| {
+                    matches!(
+                        runtime_event::decode(event),
+                        Some(RuntimeEvent::ReauthRequired(_))
+                    )
+                });
+                if !reauth {
+                    continue;
+                }
+                let alive = this.update(cx, |this, cx| {
+                    this.shown.twitch_reauth_required = true;
+                    cx.notify();
+                });
+                if alive.is_err() {
+                    break;
+                }
+            }
+        })
     }
 
     pub(super) fn sample_viewers(&mut self) {

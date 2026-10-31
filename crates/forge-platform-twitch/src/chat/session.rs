@@ -545,6 +545,7 @@ impl ChatSession {
                         event_data,
                         &self.config.broadcaster_id,
                     );
+                    self.config.tracker.record_event(sub_type);
                     match dispatch::route_for(sub_type) {
                         Some(route) => route(self, event_data, frame_msg_id),
                         None => {
@@ -3819,6 +3820,7 @@ mod tests {
         api: wiremock::MockServer,
         base: FakeEventSub,
         session: RunningSession,
+        tracker: SubscriptionTracker,
         events: EventSubscription,
         predecessor: Peer,
     }
@@ -3826,7 +3828,7 @@ mod tests {
     async fn live_session() -> Live {
         let api = eventsub_api().await;
         let mut base = FakeEventSub::bind().await;
-        let session = spawn_session(&base.url, &api.uri());
+        let (session, tracker) = spawn_tracked_session(&base.url, &api.uri());
         let mut events = session.bus.subscribe();
         let predecessor = base.accept().await;
 
@@ -3842,6 +3844,7 @@ mod tests {
             api,
             base,
             session,
+            tracker,
             events,
             predecessor,
         }
@@ -3897,6 +3900,40 @@ mod tests {
         assert!(
             live.predecessor.wait_closed_by_forge().await,
             "the predecessor must be closed once the successor welcomes"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_notification_repeated_across_the_switchover_is_counted_once() {
+        let (mut live, _successor_socket, successor) = overlapping_session().await;
+        let pass_started = within_hang_guard(FAKE_WAIT, async {
+            while live.tracker.snapshot().is_empty() {
+                tokio::task::yield_now().await;
+            }
+        });
+        assert!(
+            pass_started.await.is_ok(),
+            "the pass must record its topics"
+        );
+        let chat_count = |tracker: &SubscriptionTracker| {
+            tracker
+                .event_counts()
+                .get(crate::vocabulary::topics::CHANNEL_CHAT_MESSAGE)
+                .copied()
+        };
+        live.predecessor.send(chat_frame("dup", "delivered twice"));
+        assert_eq!(next_chat_text(&mut live.events).await, "delivered twice");
+        let counted = chat_count(&live.tracker).expect("the notification was counted");
+
+        successor.send(welcome_frame("sess-2"));
+        successor.send(chat_frame("dup", "delivered twice"));
+        successor.send(chat_frame("next", "the one after"));
+        assert_eq!(next_chat_text(&mut live.events).await, "the one after");
+
+        assert_eq!(
+            chat_count(&live.tracker),
+            Some(counted + 1),
+            "the resend must not count, the next notification must"
         );
     }
 

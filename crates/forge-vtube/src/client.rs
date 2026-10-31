@@ -140,6 +140,7 @@ impl VTubeClient {
         let version_handle = crate::content::spawn_version_fetch(
             Arc::clone(&req_tx_slot),
             Arc::clone(&vtube_version),
+            Arc::clone(&state),
             connected_rx,
         );
 

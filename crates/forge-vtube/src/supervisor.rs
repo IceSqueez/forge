@@ -307,8 +307,12 @@ pub(crate) struct SupervisorContext {
     pub(crate) transport_layer: TransportLayer,
 }
 
-fn record_reason(slot: &RwLock<Option<MessageRef>>, reason: VTubeDisconnectReason) {
-    record_connection_failure(slot, messages::for_disconnect_reason(reason));
+fn record_reason(
+    state: &AtomicConnectionState,
+    slot: &RwLock<Option<MessageRef>>,
+    reason: VTubeDisconnectReason,
+) {
+    record_connection_failure(state, slot, messages::for_disconnect_reason(reason));
 }
 
 fn settle_unless_retrying(
@@ -416,7 +420,7 @@ impl ReconnectingSession for SupervisorContext {
                     error = %failed.detail,
                     "VTube Studio connection attempt failed"
                 );
-                record_connection_failure(last_failure, Some(failed.message));
+                record_connection_failure(state, last_failure, Some(failed.message));
                 settle_unless_retrying(auto_reconnect.is_enabled(), state, &**publisher);
                 emit_connection_changed(
                     &**publisher,
@@ -443,7 +447,7 @@ impl ReconnectingSession for SupervisorContext {
                     let mut g = auth_state.write_recover();
                     *g = AuthState::AuthRequired;
                 }
-                record_reason(last_failure, VTubeDisconnectReason::AuthRequired);
+                record_reason(state, last_failure, VTubeDisconnectReason::AuthRequired);
                 set_connection_state(
                     state,
                     &**publisher,
@@ -464,7 +468,7 @@ impl ReconnectingSession for SupervisorContext {
                     let mut g = auth_state.write_recover();
                     *g = AuthState::AuthRequired;
                 }
-                record_reason(last_failure, VTubeDisconnectReason::AuthDenied);
+                record_reason(state, last_failure, VTubeDisconnectReason::AuthDenied);
                 set_connection_state(
                     state,
                     &**publisher,
@@ -485,7 +489,7 @@ impl ReconnectingSession for SupervisorContext {
                     let mut g = auth_state.write_recover();
                     *g = AuthState::AuthRequired;
                 }
-                record_reason(last_failure, VTubeDisconnectReason::AuthTimeout);
+                record_reason(state, last_failure, VTubeDisconnectReason::AuthTimeout);
                 set_connection_state(
                     state,
                     &**publisher,
@@ -508,7 +512,7 @@ impl ReconnectingSession for SupervisorContext {
                     "auth failed, will retry"
                 );
                 let detail = e.to_string();
-                record_reason(last_failure, VTubeDisconnectReason::AuthFailed);
+                record_reason(state, last_failure, VTubeDisconnectReason::AuthFailed);
                 settle_unless_retrying(auto_reconnect.is_enabled(), state, &**publisher);
                 emit_connection_changed(
                     &**publisher,
@@ -535,7 +539,7 @@ impl ReconnectingSession for SupervisorContext {
             Err(e) => {
                 tracing::debug!(endpoint = %endpoint, error = %e, "event subscription failed, will retry");
                 let detail = e.to_string();
-                record_reason(last_failure, VTubeDisconnectReason::SubscribeFailed);
+                record_reason(state, last_failure, VTubeDisconnectReason::SubscribeFailed);
                 settle_unless_retrying(auto_reconnect.is_enabled(), state, &**publisher);
                 emit_connection_changed(
                     &**publisher,
@@ -556,7 +560,7 @@ impl ReconnectingSession for SupervisorContext {
             let mut g = auth_state.write_recover();
             *g = AuthState::Connected;
         }
-        record_connection_failure(last_failure, None);
+        record_connection_failure(state, last_failure, None);
         set_connection_state(
             state,
             &**publisher,
@@ -745,7 +749,7 @@ impl ReconnectingSession for SupervisorContext {
             let mut g = auth_state.write_recover();
             *g = AuthState::Cold;
         }
-        record_reason(last_failure, close_reason);
+        record_reason(state, last_failure, close_reason);
         let retry = auto_reconnect.is_enabled();
         settle_unless_retrying(retry, state, &**publisher);
         if retry {

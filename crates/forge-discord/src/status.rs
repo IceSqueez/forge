@@ -50,6 +50,10 @@ impl BuiltinStatus for DiscordClient {
     fn header_actions(&self) -> Vec<HeaderAction> {
         vec![HeaderAction::Settings]
     }
+
+    fn status_revisions(&self) -> Option<forge_platform_core::CollectionRevisions> {
+        None
+    }
 }
 
 #[cfg(test)]

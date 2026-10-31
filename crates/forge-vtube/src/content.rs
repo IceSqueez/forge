@@ -5,7 +5,8 @@ use std::time::Duration;
 use tokio::sync::{broadcast, mpsc};
 
 use forge_platform_core::{
-    AtomicConnectionState, BuiltinContent, DetailSection, HealthDelta, SectionIcon,
+    AtomicConnectionState, BuiltinContent, CollectionRevisions, DetailSection, HealthDelta,
+    SectionIcon,
 };
 
 use crate::client::VTubeClient;
@@ -412,6 +413,7 @@ async fn refresh_items(
 pub(crate) fn spawn_version_fetch(
     req_tx: impl Into<ReqTxHandle>,
     vtube_version: Arc<OnceLock<String>>,
+    status: Arc<AtomicConnectionState>,
     mut connected_rx: mpsc::UnboundedReceiver<()>,
 ) -> tokio::task::JoinHandle<()> {
     let req_tx: ReqTxHandle = req_tx.into();
@@ -423,12 +425,9 @@ pub(crate) fn spawn_version_fetch(
             let tx = req_tx.current().await;
             if let Ok(data) = send_internal(&tx, API_STATE_REQUEST, serde_json::json!({})).await
                 && let Some(version) = data["vTubeStudioVersion"].as_str()
+                && vtube_version.set(version.to_owned()).is_ok()
             {
-                #[expect(
-                    clippy::let_underscore_must_use,
-                    reason = "the version reported on the first connect is kept"
-                )]
-                let _ = vtube_version.set(version.to_owned());
+                status.mark_status_changed();
             }
         }
     })
@@ -468,6 +467,10 @@ impl BuiltinContent for VTubeClient {
         };
         vec![expressions]
     }
+
+    fn content_revisions(&self) -> Option<CollectionRevisions> {
+        Some(self.catalog_signal().revisions())
+    }
 }
 
 #[cfg(test)]
@@ -484,6 +487,10 @@ mod tests {
     use crate::client::VTubeClient;
     use crate::client::tests::wait_for;
     use crate::vts::request::ReqTxSlot;
+
+    fn status() -> Arc<AtomicConnectionState> {
+        Arc::new(AtomicConnectionState::new(ConnectionState::Connected))
+    }
 
     async fn mock_sequential_handler(
         mut rx: mpsc::UnboundedReceiver<PendingRequest>,
@@ -887,7 +894,14 @@ mod tests {
         let (req_tx, mut req_rx) = mpsc::unbounded_channel::<PendingRequest>();
         let (connected_tx, connected_rx) = mpsc::unbounded_channel::<()>();
         let version = Arc::new(OnceLock::<String>::new());
-        let handle = spawn_version_fetch(req_tx, Arc::clone(&version), connected_rx);
+        let status = status();
+        let mut status_revisions = status.status_revisions();
+        let handle = spawn_version_fetch(
+            req_tx,
+            Arc::clone(&version),
+            Arc::clone(&status),
+            connected_rx,
+        );
 
         assert!(
             tokio::time::timeout(tokio::time::Duration::from_millis(50), req_rx.recv())
@@ -917,6 +931,10 @@ mod tests {
             wait_for(|| version.get().is_some()).await,
             "the answered version must reach the shared cell"
         );
+        assert!(
+            signalled(&mut status_revisions).await,
+            "a learned version is a status change"
+        );
         handle.abort();
         assert_eq!(version.get().map(String::as_str), Some("1.28.0"));
     }
@@ -926,7 +944,7 @@ mod tests {
         let (req_tx, mut req_rx) = mpsc::unbounded_channel::<PendingRequest>();
         let (connected_tx, connected_rx) = mpsc::unbounded_channel::<()>();
         let version = Arc::new(OnceLock::<String>::new());
-        let handle = spawn_version_fetch(req_tx, Arc::clone(&version), connected_rx);
+        let handle = spawn_version_fetch(req_tx, Arc::clone(&version), status(), connected_rx);
 
         #[expect(
             clippy::let_underscore_must_use,
@@ -1293,6 +1311,7 @@ mod tests {
             let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
             c.content_state.write().unwrap().item_count = before;
             let mut revisions = forge_platform_core::BuiltinOptionSource::revisions(&c);
+            let mut content_revisions = c.content_revisions().expect("vtube declares a signal");
             let (req_tx, req_rx) = mpsc::unbounded_channel::<PendingRequest>();
             let done = serve(req_rx, vec![reply]);
 
@@ -1300,6 +1319,7 @@ mod tests {
             await_served(done).await;
 
             assert_eq!(revision_moved(&mut revisions), expected, "{case}");
+            assert_eq!(revision_moved(&mut content_revisions), expected, "{case}");
         }
     }
 }

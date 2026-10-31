@@ -402,6 +402,10 @@ impl BuiltinStatus for KickIntegrationBundle {
             monospace: true,
         }]
     }
+
+    fn status_revisions(&self) -> Option<forge_platform_core::CollectionRevisions> {
+        None
+    }
 }
 
 impl BuiltinHealth for KickIntegrationBundle {
@@ -440,6 +444,10 @@ impl BuiltinContent for KickIntegrationBundle {
             body: KICK_COMMUNITY_NOTE.into(),
             cta: None,
         }]
+    }
+
+    fn content_revisions(&self) -> Option<forge_platform_core::CollectionRevisions> {
+        None
     }
 }
 

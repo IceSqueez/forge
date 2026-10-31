@@ -5,6 +5,7 @@ pub use forge_events::ConnectionState;
 use forge_events::{Event, EventSource, EventSubscription, PlatformConnectionChanged, TypedEvent};
 
 use crate::PlatformError;
+use crate::collections::{CollectionRevisionSignal, CollectionRevisions};
 use crate::sender::{ActingSender, SenderPreference};
 
 fn encode_state(state: ConnectionState) -> u8 {
@@ -25,19 +26,36 @@ fn decode_state(value: u8) -> ConnectionState {
     }
 }
 
-pub struct AtomicConnectionState(AtomicU8);
+pub struct AtomicConnectionState {
+    state: AtomicU8,
+    status_changes: CollectionRevisionSignal,
+}
 
 impl AtomicConnectionState {
     pub fn new(initial: ConnectionState) -> Self {
-        Self(AtomicU8::new(encode_state(initial)))
+        Self {
+            state: AtomicU8::new(encode_state(initial)),
+            status_changes: CollectionRevisionSignal::new(),
+        }
     }
 
     pub fn load(&self) -> ConnectionState {
-        decode_state(self.0.load(Ordering::Relaxed))
+        decode_state(self.state.load(Ordering::Relaxed))
     }
 
     pub fn store(&self, state: ConnectionState) {
-        self.0.store(encode_state(state), Ordering::Relaxed);
+        let previous = self.state.swap(encode_state(state), Ordering::Relaxed);
+        if decode_state(previous) != state {
+            self.status_changes.bump();
+        }
+    }
+
+    pub fn status_revisions(&self) -> CollectionRevisions {
+        self.status_changes.subscribe()
+    }
+
+    pub fn mark_status_changed(&self) {
+        self.status_changes.bump();
     }
 
     pub fn advance(
@@ -139,6 +157,34 @@ pub fn connection_state_changed_event(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_state_change_moves_the_status_revision_and_repeating_the_state_does_not() {
+        let state = AtomicConnectionState::new(ConnectionState::Connecting);
+        let mut revisions = state.status_revisions();
+
+        state.store(ConnectionState::Connecting);
+        assert!(!revisions.moved(), "stored the same state");
+
+        state.store(ConnectionState::Connected);
+        assert!(revisions.moved(), "stored a new state");
+
+        let repeated = state.advance(
+            "obs",
+            ConnectionState::Connected,
+            ConnectionTransition::Unexpected,
+        );
+        assert!(repeated.is_none());
+        assert!(!revisions.moved(), "advanced to the same state");
+
+        let moved = state.advance(
+            "obs",
+            ConnectionState::Reconnecting,
+            ConnectionTransition::Unexpected,
+        );
+        assert!(moved.is_some());
+        assert!(revisions.moved(), "advanced to a new state");
+    }
 
     #[test]
     fn connection_state_serde_format_is_lowercase_for_each_variant() {

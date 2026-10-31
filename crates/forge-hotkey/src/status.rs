@@ -48,6 +48,10 @@ impl BuiltinStatus for HotkeyClient {
             vec![HeaderAction::Reconnect]
         }
     }
+
+    fn status_revisions(&self) -> Option<forge_platform_core::CollectionRevisions> {
+        None
+    }
 }
 
 #[cfg(test)]

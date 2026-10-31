@@ -173,7 +173,7 @@ impl BuiltinOptionSource for VTubeClient {
     }
 
     fn revisions(&self) -> CollectionRevisions {
-        self.catalog_signal().option_revisions()
+        self.catalog_signal().revisions()
     }
 
     async fn resolve(

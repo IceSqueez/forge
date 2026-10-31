@@ -6,6 +6,8 @@ use forge_net::Backoff;
 use forge_types::{MessageRef, RecoverRwLock};
 use tokio::sync::watch;
 
+use crate::chat::AtomicConnectionState;
+
 pub struct AutoReconnectSwitch(watch::Sender<bool>);
 
 impl AutoReconnectSwitch {
@@ -128,6 +130,45 @@ pub async fn run_reconnect_loop<S: ReconnectingSession>(
     }
 }
 
-pub fn record_connection_failure(slot: &RwLock<Option<MessageRef>>, failure: Option<MessageRef>) {
-    *slot.write_recover() = failure;
+pub fn record_connection_failure(
+    state: &AtomicConnectionState,
+    slot: &RwLock<Option<MessageRef>>,
+    failure: Option<MessageRef>,
+) {
+    let previous = std::mem::replace(&mut *slot.write_recover(), failure.clone());
+    if previous != failure {
+        state.mark_status_changed();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ConnectionState;
+    use forge_types::MessageCode;
+
+    const LOST: MessageCode = MessageCode::from_static("test", "connection-lost");
+    const REFUSED: MessageCode = MessageCode::from_static("test", "connection-refused");
+
+    #[test]
+    fn a_new_failure_moves_the_status_revision_and_the_same_failure_again_does_not() {
+        let state = AtomicConnectionState::new(ConnectionState::Reconnecting);
+        let slot = RwLock::new(None);
+        let mut revisions = state.status_revisions();
+
+        record_connection_failure(&state, &slot, None);
+        assert!(!revisions.moved(), "no failure replaced by none");
+
+        record_connection_failure(&state, &slot, Some(MessageRef::new(LOST)));
+        assert!(revisions.moved(), "first failure");
+
+        record_connection_failure(&state, &slot, Some(MessageRef::new(LOST)));
+        assert!(!revisions.moved(), "retry failed the same way");
+
+        record_connection_failure(&state, &slot, Some(MessageRef::new(REFUSED)));
+        assert!(revisions.moved(), "failed a different way");
+
+        record_connection_failure(&state, &slot, None);
+        assert!(revisions.moved(), "failure cleared");
+    }
 }

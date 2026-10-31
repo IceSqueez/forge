@@ -24,8 +24,6 @@ use forge_types::{ClipId, PlatformId};
 use forge_vtube::VTubeError;
 use forge_vtube::vocabulary::{VTubeConnectionChanged, VTubeDisconnectReason};
 
-const TWITCH_KIND_PREFIX: &str = "twitch.";
-
 const CHAT_MESSAGE_KINDS: [&str; 3] = [
     twitch_kinds::CHANNEL_CHAT_MESSAGE,
     youtube_kinds::CHAT_MESSAGE,
@@ -260,10 +258,6 @@ pub(crate) fn marks_chat_run(event: &Event) -> bool {
     )
 }
 
-pub(crate) fn twitch_topic(event: &Event) -> Option<&str> {
-    event.kind.strip_prefix(TWITCH_KIND_PREFIX)
-}
-
 pub(crate) fn is_twitch_follow(event: &Event) -> bool {
     event.kind == twitch_kinds::CHANNEL_FOLLOW
 }
@@ -278,21 +272,6 @@ pub(crate) fn is_discord_event(event: &Event) -> bool {
 
 pub(crate) fn is_midi_port_event(event: &Event) -> bool {
     event.kind.starts_with(midi_kinds::PORT_PREFIX)
-}
-
-pub(crate) fn changes_obs_content(event: &Event) -> bool {
-    event.source == EventSource::Obs
-        && obs_kinds::CATALOG_CHANGING_KINDS.contains(&event.kind.as_str())
-}
-
-pub(crate) fn rebuilds_descriptors(event: &Event) -> bool {
-    match event.source {
-        EventSource::Obs => event.kind.starts_with(obs_kinds::CONNECTION_PREFIX),
-        EventSource::Twitch => {
-            twitch_kinds::DESCRIPTOR_REBUILDING_KINDS.contains(&event.kind.as_str())
-        }
-        _ => false,
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -969,104 +948,6 @@ mod tests {
                 viewer_ban_platform(&bare(EventSource::Twitch, kind)),
                 expected,
                 "{kind:?}"
-            );
-        }
-    }
-
-    const PUBLISHED_LIFECYCLE_KINDS: [&str; 8] = [
-        "twitch.channel.poll.begin",
-        "twitch.channel.poll.progress",
-        "twitch.channel.poll.end",
-        "twitch.channel.prediction.begin",
-        "twitch.channel.prediction.progress",
-        "twitch.channel.prediction.lock",
-        "twitch.channel.prediction.end",
-        "twitch.channel.raid",
-    ];
-
-    #[test]
-    fn obs_connection_and_twitch_lifecycle_events_rebuild_the_descriptors() {
-        let mut cases: Vec<(EventSource, &str)> = vec![
-            (EventSource::Obs, "obs.connection.opened"),
-            (EventSource::Obs, "obs.connection.closed"),
-        ];
-        cases.extend(
-            PUBLISHED_LIFECYCLE_KINDS
-                .iter()
-                .map(|kind| (EventSource::Twitch, *kind)),
-        );
-
-        for (source, kind) in cases {
-            assert!(
-                rebuilds_descriptors(&bare(source, kind)),
-                "{source:?} / {kind} must trigger a descriptor rebuild"
-            );
-        }
-    }
-
-    #[test]
-    fn unrelated_kinds_and_mismatched_sources_do_not_rebuild_the_descriptors() {
-        for (source, kind) in [
-            (EventSource::Twitch, "twitch.chat.message"),
-            (EventSource::Twitch, "twitch.channel.follow"),
-            (EventSource::Twitch, "twitch.channel.poll"),
-            (EventSource::Twitch, "twitch.channel.raid_received"),
-            (EventSource::Twitch, "obs.connection.opened"),
-            (EventSource::Obs, "twitch.channel.poll.begin"),
-            (EventSource::Obs, "obs.scene.changed"),
-            (EventSource::Obs, "obs.connection"),
-            (EventSource::Core, "twitch.channel.raid"),
-            (EventSource::Kick, "obs.connection.opened"),
-        ] {
-            assert!(
-                !rebuilds_descriptors(&bare(source, kind)),
-                "{source:?} / {kind} must not trigger a descriptor rebuild"
-            );
-        }
-    }
-
-    const PUBLISHED_CATALOG_KINDS: [&str; 13] = [
-        "obs.scene.changed",
-        "obs.scene.preview_changed",
-        "obs.scene.list_changed",
-        "obs.scene.created",
-        "obs.scene.removed",
-        "obs.scene.renamed",
-        "obs.source.visibility_changed",
-        "obs.source.lock_changed",
-        "obs.source.input_created",
-        "obs.source.input_removed",
-        "obs.source.input_renamed",
-        "obs.source.scene_item_created",
-        "obs.source.scene_item_removed",
-    ];
-
-    #[test]
-    fn every_obs_scene_and_source_change_refreshes_the_content_rows() {
-        for kind in PUBLISHED_CATALOG_KINDS {
-            assert!(
-                changes_obs_content(&bare(EventSource::Obs, kind)),
-                "{kind} must refresh the OBS content rows"
-            );
-        }
-    }
-
-    #[test]
-    fn audio_level_and_non_catalog_events_leave_the_content_rows_alone() {
-        for (source, kind) in [
-            (EventSource::Obs, "obs.audio.source_volume_changed"),
-            (EventSource::Obs, "obs.audio.source_mute_changed"),
-            (EventSource::Obs, "obs.audio.source_balance_changed"),
-            (EventSource::Obs, "obs.audio.source_sync_offset_changed"),
-            (EventSource::Obs, "obs.connection.connected"),
-            (EventSource::Obs, "obs.streaming.started"),
-            (EventSource::Obs, "obs.scene"),
-            (EventSource::Core, "obs.scene.changed"),
-            (EventSource::Server, "obs.source.visibility_changed"),
-        ] {
-            assert!(
-                !changes_obs_content(&bare(source, kind)),
-                "{source:?} / {kind} must not refresh the OBS content rows"
             );
         }
     }

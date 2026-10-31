@@ -549,6 +549,7 @@ pub trait BuiltinStatus: Send + Sync {
     fn connect_failure(&self) -> Option<MessageRef> {
         None
     }
+    fn status_revisions(&self) -> Option<CollectionRevisions>;
 }
 
 pub const HEALTH_CHANNEL_CAPACITY: usize = 16;
@@ -562,6 +563,8 @@ pub trait BuiltinContent: Send + Sync {
     fn sections(&self) -> Vec<DetailSection>;
 
     fn request_refresh(&self) {}
+
+    fn content_revisions(&self) -> Option<CollectionRevisions>;
 }
 
 pub trait QuickActions: Send + Sync {

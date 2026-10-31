@@ -650,6 +650,10 @@ mod tests {
         fn hero_name(&self) -> Option<String> {
             Some(SECRET.to_owned())
         }
+
+        fn status_revisions(&self) -> Option<forge_platform_core::CollectionRevisions> {
+            None
+        }
     }
 
     const STUB_METRIC_IDS: [HealthMetricId; 4] = [
@@ -677,6 +681,10 @@ mod tests {
     impl BuiltinContent for ProbeBuiltin {
         fn sections(&self) -> Vec<DetailSection> {
             Vec::new()
+        }
+
+        fn content_revisions(&self) -> Option<forge_platform_core::CollectionRevisions> {
+            None
         }
     }
 

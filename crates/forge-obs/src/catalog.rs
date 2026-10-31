@@ -5,8 +5,8 @@ use std::hash::{Hash, Hasher};
 use std::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use forge_platform_core::{
-    BuiltinContent, ContentList, ContentListItem, DetailSection, SectionIcon, TokenColor,
-    TrailingToken,
+    BuiltinContent, CollectionRevisions, ContentList, ContentListItem, DetailSection, SectionIcon,
+    TokenColor, TrailingToken,
 };
 
 use crate::client::ObsClient;
@@ -240,9 +240,13 @@ impl BuiltinContent for ObsClient {
     fn request_refresh(&self) {
         self.request_catalog_resync();
     }
+
+    fn content_revisions(&self) -> Option<CollectionRevisions> {
+        Some(self.catalog_revisions.content())
+    }
 }
 
-fn catalog_sections(catalog: &ObsCatalog, actionable: bool) -> Vec<DetailSection> {
+pub(crate) fn catalog_sections(catalog: &ObsCatalog, actionable: bool) -> Vec<DetailSection> {
     let scene_items: Vec<ContentListItem> = catalog
         .scenes
         .iter()

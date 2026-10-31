@@ -214,6 +214,10 @@ mod tests {
         fn header_actions(&self) -> Vec<HeaderAction> {
             Vec::new()
         }
+
+        fn status_revisions(&self) -> Option<forge_platform_core::CollectionRevisions> {
+            None
+        }
     }
 
     const STUB_METRIC_IDS: [HealthMetricId; 4] = [
@@ -241,6 +245,10 @@ mod tests {
     impl BuiltinContent for FakeService {
         fn sections(&self) -> Vec<DetailSection> {
             Vec::new()
+        }
+
+        fn content_revisions(&self) -> Option<forge_platform_core::CollectionRevisions> {
+            None
         }
     }
 

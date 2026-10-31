@@ -175,6 +175,10 @@ impl BuiltinContent for DiscordClient {
             }),
         }]
     }
+
+    fn content_revisions(&self) -> Option<forge_platform_core::CollectionRevisions> {
+        None
+    }
 }
 
 #[cfg(test)]

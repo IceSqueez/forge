@@ -18,6 +18,10 @@ impl BuiltinContent for DonatelloProvider {
         sections.push(account_card(&status));
         sections
     }
+
+    fn content_revisions(&self) -> Option<forge_platform_core::CollectionRevisions> {
+        None
+    }
 }
 
 impl QuickActions for DonatelloProvider {

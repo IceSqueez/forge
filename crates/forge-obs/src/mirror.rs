@@ -1,3 +1,4 @@
+use forge_platform_core::DetailSection;
 use forge_types::RecoverRwLock;
 use std::collections::HashMap;
 use std::sync::RwLock;
@@ -59,6 +60,10 @@ impl ObsMirror {
 
     pub(crate) fn option_fingerprint(&self) -> u64 {
         self.read_state(|state| state.catalog.option_fingerprint())
+    }
+
+    pub(crate) fn content_rows(&self) -> Vec<DetailSection> {
+        self.read_state(|state| crate::catalog::catalog_sections(&state.catalog, true))
     }
 
     pub(crate) fn item_id(&self, scene: &str, source: &str) -> Option<i64> {

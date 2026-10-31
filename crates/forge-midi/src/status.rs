@@ -54,6 +54,10 @@ impl BuiltinStatus for MidiClient {
     fn header_actions(&self) -> Vec<HeaderAction> {
         vec![]
     }
+
+    fn status_revisions(&self) -> Option<forge_platform_core::CollectionRevisions> {
+        None
+    }
 }
 
 #[cfg(test)]

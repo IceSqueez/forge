@@ -41,7 +41,7 @@ impl BuiltinControl for VTubeClient {
             let mut g = self.connected_at.write_recover();
             *g = None;
         }
-        record_connection_failure(&self.last_failure, None);
+        record_connection_failure(&self.state, &self.last_failure, None);
 
         let (new_req_tx, new_req_rx) = tokio::sync::mpsc::unbounded_channel();
         {
@@ -90,7 +90,7 @@ impl BuiltinControl for VTubeClient {
         {
             tracing::warn!(%error, "vtube supervisor task ended abnormally");
         }
-        record_connection_failure(&self.last_failure, None);
+        record_connection_failure(&self.state, &self.last_failure, None);
         crate::supervisor::set_connection_state(
             &self.state,
             &*self.reconnect_publisher,

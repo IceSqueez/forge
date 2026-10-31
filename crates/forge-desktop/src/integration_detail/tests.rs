@@ -9,50 +9,11 @@ use forge_platform_core::{
     CapabilityFlags, DetailSection, HeaderAction, HealthMetric, QuickActions, SectionIcon,
 };
 use forge_registry::TriggerRegistry;
+use forge_runtime::EventBus;
 use forge_runtime::IntegrationSlot;
 use forge_storage::{CredentialsRepo, SettingsRepo};
-use forge_types::{UserText, VerbatimText};
-use std::collections::HashMap;
-
-#[test]
-fn subscription_counts_are_tallied_by_topic_kind_never_by_the_shown_label() {
-    fn row(kind: &str, error_label: Option<UserText>) -> forge_platform_core::SubscriptionRow {
-        forge_platform_core::SubscriptionRow {
-            kind: kind.to_owned(),
-            name: forge_types::VerbatimText::new(format!("{kind} (shown label)")).into(),
-            status: forge_platform_core::SubscriptionStatus::Active,
-            version: None,
-            event_count: None,
-            error_label,
-        }
-    }
-    let mut section = DetailSection::SubscriptionList {
-        title: forge_types::VerbatimText::new("EventSub").into(),
-        icon: SectionIcon::new("rss"),
-        items: vec![
-            row("channel.raid", None),
-            row("channel.follow", None),
-            row(
-                "channel.ban",
-                Some(forge_types::VerbatimText::new("failed").into()),
-            ),
-        ],
-        footer: None,
-        banner: None,
-    };
-    let tally = HashMap::from([
-        ("channel.raid".to_owned(), 3),
-        ("channel.ban".to_owned(), 5),
-    ]);
-
-    IntegrationDetail::fill_subscription_counts(&mut section, &tally);
-
-    let DetailSection::SubscriptionList { items, .. } = section else {
-        panic!("the section kind changed");
-    };
-    let counts: Vec<Option<u64>> = items.iter().map(|row| row.event_count).collect();
-    assert_eq!(counts, vec![Some(3), Some(0), None]);
-}
+use forge_types::VerbatimText;
+use std::sync::Arc;
 
 struct DeclaredActions(Vec<QuickAction>);
 
@@ -208,6 +169,11 @@ mod quick_action_bridge {
         label: Mutex<&'static str>,
         signal: CollectionRevisionSignal,
         refreshes: std::sync::atomic::AtomicUsize,
+        version: Mutex<Option<String>>,
+        status_signal: CollectionRevisionSignal,
+        banner: Mutex<&'static str>,
+        content_signal: CollectionRevisionSignal,
+        token_expiry: Mutex<Option<std::time::SystemTime>>,
     }
 
     impl ShiftingActions {
@@ -221,7 +187,27 @@ mod quick_action_bridge {
                 label: Mutex::new(label),
                 signal: CollectionRevisionSignal::new(),
                 refreshes: std::sync::atomic::AtomicUsize::new(0),
+                version: Mutex::new(None),
+                status_signal: CollectionRevisionSignal::new(),
+                banner: Mutex::new(""),
+                content_signal: CollectionRevisionSignal::new(),
+                token_expiry: Mutex::new(None),
             })
+        }
+
+        fn set_version(&self, version: &str) {
+            *self.version.lock_recover() = Some(version.to_owned());
+            self.status_signal.bump();
+        }
+
+        fn set_banner(&self, banner: &'static str) {
+            *self.banner.lock_recover() = banner;
+            self.content_signal.bump();
+        }
+
+        fn set_token_expiry(&self, expiry: Option<std::time::SystemTime>) {
+            *self.token_expiry.lock_recover() = expiry;
+            self.status_signal.bump();
         }
 
         fn relabel(&self, label: &'static str) {
@@ -268,7 +254,7 @@ mod quick_action_bridge {
             "Discord"
         }
         fn version(&self) -> Option<String> {
-            None
+            self.version.lock_recover().clone()
         }
         fn connection(&self) -> ConnectionState {
             ConnectionState::Connected
@@ -287,6 +273,14 @@ mod quick_action_bridge {
         }
         fn header_actions(&self) -> Vec<HeaderAction> {
             Vec::new()
+        }
+
+        fn token_expiry(&self) -> Option<std::time::SystemTime> {
+            *self.token_expiry.lock_recover()
+        }
+
+        fn status_revisions(&self) -> Option<forge_platform_core::CollectionRevisions> {
+            Some(self.status_signal.subscribe())
         }
     }
 
@@ -314,12 +308,21 @@ mod quick_action_bridge {
 
     impl BuiltinContent for ShiftingActions {
         fn sections(&self) -> Vec<DetailSection> {
-            Vec::new()
+            vec![DetailSection::WarningBanner {
+                level: forge_platform_core::BannerLevel::Info,
+                title: VerbatimText::new(*self.banner.lock_recover()).into(),
+                body: VerbatimText::new("").into(),
+                cta: None,
+            }]
         }
 
         fn request_refresh(&self) {
             self.refreshes
                 .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        }
+
+        fn content_revisions(&self) -> Option<forge_platform_core::CollectionRevisions> {
+            Some(self.content_signal.subscribe())
         }
     }
 
@@ -427,6 +430,87 @@ mod quick_action_bridge {
         cx.run_until_parked();
 
         assert_eq!(shown_labels(cx, &view), vec!["End Shield mode".to_owned()]);
+    }
+
+    fn shown_banner(cx: &mut TestAppContext, view: &Entity<IntegrationDetail>) -> Option<String> {
+        view.read_with(cx, |detail, _| match detail.shown.sections.as_slice() {
+            [DetailSection::WarningBanner { title, .. }] => Some(title.code_or_text()),
+            _ => None,
+        })
+    }
+
+    #[gpui::test]
+    fn a_content_revision_rereads_the_sections_and_leaves_the_rest_alone(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let _enter = rt.enter();
+        let builtin = ShiftingActions::labelled("before");
+        let view = open_detail(cx, &rt, builtin.object());
+
+        *builtin.label.lock_recover() = "not re-read";
+        builtin.set_banner("new rows");
+        cx.run_until_parked();
+
+        assert_eq!(shown_banner(cx, &view).as_deref(), Some("new rows"));
+        assert_eq!(shown_labels(cx, &view), vec!["before".to_owned()]);
+    }
+
+    #[gpui::test]
+    fn a_status_revision_reloads_the_shown_status(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let _enter = rt.enter();
+        let builtin = ShiftingActions::labelled("x");
+        let view = open_detail(cx, &rt, builtin.object());
+
+        builtin.set_version("31.0");
+        cx.run_until_parked();
+
+        let version = view.read_with(cx, |detail, _| detail.shown.version.clone());
+        assert_eq!(version.as_deref(), Some("31.0"));
+    }
+
+    #[gpui::test]
+    fn adoption_moves_the_change_bridge_to_the_new_object(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let _enter = rt.enter();
+        let first = ShiftingActions::labelled("x");
+        let view = open_detail(cx, &rt, first.object());
+        let second = ShiftingActions::labelled("x");
+        view.update(cx, |detail, cx| detail.adopt_builtin(second.object(), cx));
+
+        first.set_banner("retired object");
+        first.set_version("retired");
+        cx.run_until_parked();
+        assert_eq!(shown_banner(cx, &view).as_deref(), Some(""));
+
+        second.set_banner("adopted rows");
+        second.set_version("adopted");
+        cx.run_until_parked();
+        assert_eq!(shown_banner(cx, &view).as_deref(), Some("adopted rows"));
+        let version = view.read_with(cx, |detail, _| detail.shown.version.clone());
+        assert_eq!(version.as_deref(), Some("adopted"));
+    }
+
+    #[gpui::test]
+    fn the_countdown_repaint_runs_only_while_a_live_expiry_is_shown(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let _enter = rt.enter();
+        let builtin = ShiftingActions::labelled("x");
+        let view = open_detail(cx, &rt, builtin.object());
+        let armed = |cx: &mut TestAppContext| {
+            view.read_with(cx, |detail, _| {
+                detail.background._token_countdown_repaint.is_some()
+            })
+        };
+        assert!(!armed(cx), "no expiry reported");
+
+        let hour = Duration::from_secs(3600);
+        builtin.set_token_expiry(Some(std::time::SystemTime::now() + hour));
+        cx.run_until_parked();
+        assert!(armed(cx), "an expiry is shown");
+
+        builtin.set_token_expiry(Some(std::time::SystemTime::UNIX_EPOCH));
+        cx.run_until_parked();
+        assert!(!armed(cx), "the shown expiry passed");
     }
 
     fn shown_metric_values(
@@ -1250,6 +1334,10 @@ mod detail_lifetime {
         fn header_actions(&self) -> Vec<HeaderAction> {
             Vec::new()
         }
+
+        fn status_revisions(&self) -> Option<forge_platform_core::CollectionRevisions> {
+            None
+        }
     }
 
     const STUB_METRIC_IDS: [HealthMetricId; 4] = [
@@ -1280,6 +1368,10 @@ mod detail_lifetime {
     impl BuiltinContent for HeldStreamBuiltin {
         fn sections(&self) -> Vec<DetailSection> {
             Vec::new()
+        }
+
+        fn content_revisions(&self) -> Option<forge_platform_core::CollectionRevisions> {
+            None
         }
     }
 

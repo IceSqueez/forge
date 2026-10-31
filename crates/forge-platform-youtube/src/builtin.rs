@@ -400,6 +400,10 @@ impl BuiltinStatus for YoutubeIntegrationBundle {
             monospace: true,
         }]
     }
+
+    fn status_revisions(&self) -> Option<forge_platform_core::CollectionRevisions> {
+        None
+    }
 }
 
 impl BuiltinHealth for YoutubeIntegrationBundle {
@@ -431,6 +435,10 @@ impl BuiltinHealth for YoutubeIntegrationBundle {
 impl BuiltinContent for YoutubeIntegrationBundle {
     fn sections(&self) -> Vec<DetailSection> {
         Vec::new()
+    }
+
+    fn content_revisions(&self) -> Option<forge_platform_core::CollectionRevisions> {
+        None
     }
 }
 

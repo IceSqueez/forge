@@ -1,5 +1,7 @@
 use crate::vocabulary::{RaidDirection, messages};
+use forge_platform_core::{CollectionRevisionSignal, CollectionRevisions};
 use forge_types::{RecoverRwLock, UserText};
+use std::collections::HashMap;
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -23,7 +25,7 @@ pub enum SubscriptionFailure {
     Revoked(String),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SubscriptionRecord {
     pub kind: String,
     pub direction: Option<RaidDirection>,
@@ -42,8 +44,15 @@ impl SubscriptionRecord {
     }
 }
 
+#[derive(Debug, Default)]
+struct TrackerState {
+    records: RwLock<Vec<SubscriptionRecord>>,
+    event_counts: RwLock<HashMap<String, u64>>,
+    changes: CollectionRevisionSignal,
+}
+
 #[derive(Debug, Clone, Default)]
-pub struct SubscriptionTracker(Arc<RwLock<Vec<SubscriptionRecord>>>);
+pub struct SubscriptionTracker(Arc<TrackerState>);
 
 impl SubscriptionTracker {
     pub fn snapshot(&self) -> Vec<SubscriptionRecord> {
@@ -58,20 +67,53 @@ impl SubscriptionTracker {
     }
 
     pub fn reset(&self, records: Vec<SubscriptionRecord>) {
-        *self.write() = records;
+        let records_changed = {
+            let mut current = self.write();
+            let changed = *current != records;
+            *current = records;
+            changed
+        };
+        let counts_cleared = {
+            let mut counts = self.0.event_counts.write_recover();
+            let had_counts = !counts.is_empty();
+            counts.clear();
+            had_counts
+        };
+        if records_changed || counts_cleared {
+            self.0.changes.bump();
+        }
+    }
+
+    pub(crate) fn revisions(&self) -> CollectionRevisions {
+        self.0.changes.subscribe()
+    }
+
+    pub(crate) fn record_event(&self, subscription_type: &str) {
+        {
+            let mut counts = self.0.event_counts.write_recover();
+            match counts.get_mut(subscription_type) {
+                Some(count) => *count = count.saturating_add(1),
+                None => {
+                    counts.insert(subscription_type.to_owned(), 1);
+                }
+            }
+        }
+        self.0.changes.bump();
+    }
+
+    pub(crate) fn event_counts(&self) -> HashMap<String, u64> {
+        self.0.event_counts.read_recover().clone()
     }
 
     pub(crate) fn set_status(&self, index: usize, status: SubStatus) {
-        if let Some(record) = self.write().get_mut(index) {
-            record.status = status;
-        }
+        self.update_record(index, |record| record.status = status);
     }
 
     pub(crate) fn mark_active(&self, index: usize, subscription_id: Option<String>) {
-        if let Some(record) = self.write().get_mut(index) {
+        self.update_record(index, |record| {
             record.status = SubStatus::Active;
             record.subscription_id = subscription_id;
-        }
+        });
     }
 
     pub(crate) fn retrying_reason(&self, index: usize) -> Option<SubscriptionFailure> {
@@ -82,11 +124,11 @@ impl SubscriptionTracker {
     }
 
     pub(crate) fn settle_retrying(&self, index: usize) {
-        if let Some(record) = self.write().get_mut(index)
-            && let SubStatus::Retrying(reason) = &record.status
-        {
-            record.status = SubStatus::Failed(reason.clone());
-        }
+        self.update_record(index, |record| {
+            if let SubStatus::Retrying(reason) = &record.status {
+                record.status = SubStatus::Failed(reason.clone());
+            }
+        });
     }
 
     pub(crate) fn mark_revoked(
@@ -96,26 +138,44 @@ impl SubscriptionTracker {
         direction: Option<RaidDirection>,
         status: &str,
     ) {
-        let mut records = self.write();
-        let by_id = records
-            .iter()
-            .position(|record| record.subscription_id.as_deref() == Some(subscription_id));
-        let index = by_id.or_else(|| {
-            records
+        let index = {
+            let records = self.read();
+            let by_id = records
                 .iter()
-                .position(|record| record.matches_wire(kind, direction))
-        });
-        if let Some(record) = index.and_then(|index| records.get_mut(index)) {
-            record.status = SubStatus::Failed(SubscriptionFailure::Revoked(status.to_owned()));
+                .position(|record| record.subscription_id.as_deref() == Some(subscription_id));
+            by_id.or_else(|| {
+                records
+                    .iter()
+                    .position(|record| record.matches_wire(kind, direction))
+            })
+        };
+        if let Some(index) = index {
+            self.update_record(index, |record| {
+                record.status = SubStatus::Failed(SubscriptionFailure::Revoked(status.to_owned()));
+            });
+        }
+    }
+
+    fn update_record(&self, index: usize, update: impl FnOnce(&mut SubscriptionRecord)) {
+        let changed = {
+            let mut records = self.write();
+            records.get_mut(index).is_some_and(|record| {
+                let before = record.clone();
+                update(record);
+                *record != before
+            })
+        };
+        if changed {
+            self.0.changes.bump();
         }
     }
 
     fn read(&self) -> RwLockReadGuard<'_, Vec<SubscriptionRecord>> {
-        self.0.read_recover()
+        self.0.records.read_recover()
     }
 
     fn write(&self) -> RwLockWriteGuard<'_, Vec<SubscriptionRecord>> {
-        self.0.write_recover()
+        self.0.records.write_recover()
     }
 }
 
@@ -201,6 +261,81 @@ mod tests {
         assert_eq!(
             statuses_after_revoking(vec![active("channel.follow", None)], "channel.cheer", None),
             vec![SubStatus::Active]
+        );
+    }
+
+    fn moved(revisions: &mut forge_platform_core::CollectionRevisions) -> bool {
+        futures_util::FutureExt::now_or_never(revisions.changed()).is_some()
+    }
+
+    #[test]
+    fn every_real_tracker_change_moves_the_revision_and_a_repeat_does_not() {
+        let tracker = SubscriptionTracker::default();
+        let mut revisions = tracker.revisions();
+        let records = vec![active("channel.follow", None)];
+
+        tracker.reset(Vec::new());
+        assert!(!moved(&mut revisions), "reset to the same empty list");
+
+        tracker.reset(records.clone());
+        assert!(moved(&mut revisions), "new list");
+
+        tracker.reset(records);
+        assert!(!moved(&mut revisions), "reset to the same list");
+
+        tracker.set_status(0, SubStatus::Active);
+        assert!(!moved(&mut revisions), "same status");
+
+        tracker.set_status(1, SubStatus::Pending);
+        assert!(!moved(&mut revisions), "no such row");
+
+        tracker.mark_active(0, None);
+        assert!(!moved(&mut revisions), "already active with that id");
+
+        tracker.mark_active(0, Some("sub-1".to_owned()));
+        assert!(moved(&mut revisions), "a subscription id arrived");
+
+        tracker.settle_retrying(0);
+        assert!(!moved(&mut revisions), "nothing was retrying");
+
+        tracker.set_status(0, SubStatus::Retrying(SubscriptionFailure::Transport));
+        assert!(moved(&mut revisions), "started retrying");
+
+        tracker.settle_retrying(0);
+        assert!(moved(&mut revisions), "retry settled as failed");
+
+        tracker.mark_revoked("sub-1", "channel.follow", None, "user_removed");
+        assert!(moved(&mut revisions), "revoked");
+
+        tracker.mark_revoked("sub-1", "channel.follow", None, "user_removed");
+        assert!(!moved(&mut revisions), "revoked the same way again");
+
+        tracker.mark_revoked("sub-unknown", "channel.unlisted", None, "user_removed");
+        assert!(!moved(&mut revisions), "no matching row");
+    }
+
+    #[test]
+    fn events_are_counted_per_subscription_type_until_the_connection_resubscribes() {
+        let tracker = SubscriptionTracker::default();
+        let records = vec![active("channel.follow", None)];
+        tracker.reset(records.clone());
+        let mut revisions = tracker.revisions();
+
+        tracker.record_event("channel.follow");
+        assert!(moved(&mut revisions), "first event");
+        tracker.record_event("channel.follow");
+        tracker.record_event("channel.raid");
+        assert!(moved(&mut revisions), "later events");
+
+        let counts = tracker.event_counts();
+        assert_eq!(counts.get("channel.follow"), Some(&2));
+        assert_eq!(counts.get("channel.raid"), Some(&1));
+
+        tracker.reset(records);
+        assert!(tracker.event_counts().is_empty());
+        assert!(
+            moved(&mut revisions),
+            "a reset that clears counts is a change"
         );
     }
 }

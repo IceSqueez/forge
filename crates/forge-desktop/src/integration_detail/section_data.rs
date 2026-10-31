@@ -2,37 +2,12 @@ use super::header::hero_badge_elem;
 use super::{IntegrationDetail, VIEWER_DELTA_WINDOW_MINUTES};
 use crate::user_text::user_text_string;
 use forge_components::{ForgePalette, tr};
-use forge_platform_core::{DetailSection, HealthMetric, HealthMetricId, HealthText, HealthValue};
+use forge_platform_core::{HealthMetric, HealthMetricId, HealthText, HealthValue};
 use forge_types::{UserText, VerbatimText};
 use gpui::{AnyElement, prelude::*};
-use std::collections::HashMap;
+use std::time::{Duration, SystemTime};
 
 impl IntegrationDetail {
-    pub(super) fn augmented_sections(&self) -> Vec<DetailSection> {
-        let mut sections = self.shown.sections.clone();
-        for section in &mut sections {
-            if let DetailSection::TwoColumn { right, .. } = section {
-                Self::fill_subscription_counts(right, &self.live.eventsub_tally);
-            } else {
-                Self::fill_subscription_counts(section, &self.live.eventsub_tally);
-            }
-        }
-        sections
-    }
-
-    pub(super) fn fill_subscription_counts(
-        section: &mut DetailSection,
-        tally: &HashMap<String, u64>,
-    ) {
-        if let DetailSection::SubscriptionList { items, .. } = section {
-            for row in items.iter_mut() {
-                if row.error_label.is_none() {
-                    row.event_count = Some(tally.get(&row.kind).copied().unwrap_or(0));
-                }
-            }
-        }
-    }
-
     pub(super) fn augmented_health(&self) -> [HealthMetric; 4] {
         let mut metrics = self.shown.health_metrics.clone();
         if let Some(metric) = metrics.iter_mut().find(|m| m.id == HealthMetricId::VIEWERS)
@@ -60,13 +35,14 @@ impl IntegrationDetail {
             .collect()
     }
 
-    pub(super) fn token_countdown(&self) -> Option<String> {
+    pub(super) fn token_remaining(&self) -> Option<Duration> {
         let expiry = self.ports.status.token_expiry()?;
-        let remaining = expiry.duration_since(std::time::SystemTime::now()).ok()?;
-        let total = remaining.as_secs();
-        if total == 0 {
-            return None;
-        }
+        let remaining = expiry.duration_since(SystemTime::now()).ok()?;
+        (remaining.as_secs() > 0).then_some(remaining)
+    }
+
+    pub(super) fn token_countdown(&self) -> Option<String> {
+        let total = self.token_remaining()?.as_secs();
         let hours = total / 3600;
         let minutes = (total % 3600) / 60;
         Some(tr!(

@@ -14,12 +14,13 @@ use forge_events::EventPublisher;
 use forge_net::Backoff;
 use forge_platform_core::{
     AtomicConnectionState, AutoReconnectSwitch, AutoReconnectWatch, BuiltinControl, BuiltinStatus,
-    CapabilityFlags, CollectionRevisionSignal, ConnectionState, ConnectionTransition,
-    ControlFailure, ControlOutcome, HeaderAction, HealthDelta, HeroBadge, HeroBadgeTone,
-    ReconnectingSession, SessionEnd, record_connection_failure, run_reconnect_loop,
+    CapabilityFlags, CollectionRevisions, ConnectionState, ConnectionTransition, ControlFailure,
+    ControlOutcome, HeaderAction, HealthDelta, HeroBadge, HeroBadgeTone, ReconnectingSession,
+    SessionEnd, record_connection_failure, run_reconnect_loop,
 };
 
 use crate::catalog::{read_lock, write_lock};
+use crate::catalog_revisions::{CatalogBaseline, CatalogRevisions};
 use crate::connect_failure::connect_failure_message;
 use crate::error::ObsError;
 use crate::health::{HealthSnapshot, make_health_channel};
@@ -76,7 +77,7 @@ pub struct ObsClient {
     obs_ws_version: Arc<RwLock<Option<String>>>,
     pub(crate) health_state: Arc<RwLock<HealthSnapshot>>,
     pub(crate) health_tx: broadcast::Sender<HealthDelta>,
-    pub(crate) option_revisions: Arc<CollectionRevisionSignal>,
+    pub(crate) catalog_revisions: Arc<CatalogRevisions>,
     reconnect_host: String,
     reconnect_port: u16,
     reconnect_password: Arc<Option<String>>,
@@ -115,7 +116,7 @@ impl ObsClient {
         let mirror = Arc::new(ObsMirror::default());
 
         let (health_tx, health_state) = make_health_channel();
-        let option_revisions = Arc::new(CollectionRevisionSignal::new());
+        let catalog_revisions = Arc::new(CatalogRevisions::default());
 
         let stored_password = password.map(str::to_owned);
         let auto_reconnect = AutoReconnectSwitch::new(true);
@@ -131,7 +132,7 @@ impl ObsClient {
             obs_version: Arc::clone(&obs_version),
             obs_ws_version: Arc::clone(&obs_ws_version),
             mirror: Arc::clone(&mirror),
-            option_revisions: Arc::clone(&option_revisions),
+            catalog_revisions: Arc::clone(&catalog_revisions),
             health_state: Arc::clone(&health_state),
             health_tx: health_tx.clone(),
             publisher: Arc::clone(&publisher),
@@ -161,7 +162,7 @@ impl ObsClient {
             health_state,
             health_tx,
             mirror,
-            option_revisions,
+            catalog_revisions,
             reconnect_host: host,
             reconnect_port: port,
             reconnect_password: Arc::new(stored_password),
@@ -215,7 +216,7 @@ impl ObsClient {
             health_state,
             health_tx,
             mirror: Arc::new(ObsMirror::default()),
-            option_revisions: Arc::new(CollectionRevisionSignal::new()),
+            catalog_revisions: Arc::new(CatalogRevisions::default()),
             reconnect_host: host,
             reconnect_port: port,
             reconnect_password: Arc::new(None),
@@ -289,6 +290,10 @@ impl BuiltinStatus for ObsClient {
         vec![HeaderAction::Reconnect, HeaderAction::Settings]
     }
 
+    fn status_revisions(&self) -> Option<CollectionRevisions> {
+        Some(self.state.status_revisions())
+    }
+
     fn name_badges(&self) -> Vec<HeroBadge> {
         let Some(ws_version) = read_lock(&self.obs_ws_version).clone() else {
             return Vec::new();
@@ -336,7 +341,7 @@ impl BuiltinControl for ObsClient {
             ConnectionTransition::Expected,
         );
         clear_connected_at(&self.connected_at);
-        record_connection_failure(&self.last_failure, None);
+        record_connection_failure(&self.state, &self.last_failure, None);
 
         let ctx = SupervisorContext {
             inner: Arc::clone(&self.inner),
@@ -346,7 +351,7 @@ impl BuiltinControl for ObsClient {
             obs_version: Arc::clone(&self.obs_version),
             obs_ws_version: Arc::clone(&self.obs_ws_version),
             mirror: Arc::clone(&self.mirror),
-            option_revisions: Arc::clone(&self.option_revisions),
+            catalog_revisions: Arc::clone(&self.catalog_revisions),
             health_state: Arc::clone(&self.health_state),
             health_tx: self.health_tx.clone(),
             publisher: Arc::clone(&self.reconnect_publisher),
@@ -382,7 +387,7 @@ impl BuiltinControl for ObsClient {
         {
             tracing::warn!(%error, "obs supervisor task ended abnormally");
         }
-        record_connection_failure(&self.last_failure, None);
+        record_connection_failure(&self.state, &self.last_failure, None);
         settle_connection_state(
             &self.state,
             &*self.reconnect_publisher,
@@ -406,7 +411,7 @@ struct SupervisorContext {
     obs_version: Arc<RwLock<Option<String>>>,
     obs_ws_version: Arc<RwLock<Option<String>>>,
     mirror: Arc<ObsMirror>,
-    option_revisions: Arc<CollectionRevisionSignal>,
+    catalog_revisions: Arc<CatalogRevisions>,
     health_state: Arc<RwLock<HealthSnapshot>>,
     health_tx: broadcast::Sender<HealthDelta>,
     publisher: Arc<dyn EventPublisher>,
@@ -475,7 +480,7 @@ impl ReconnectingSession for ObsSupervisor {
                     ref obs_version,
                     ref obs_ws_version,
                     ref mirror,
-                    ref option_revisions,
+                    ref catalog_revisions,
                     ref health_state,
                     ref health_tx,
                     ref publisher,
@@ -525,7 +530,7 @@ impl ReconnectingSession for ObsSupervisor {
             Ok(client) => client,
             Err((message, ObsError::Authentication)) => {
                 tracing::warn!(host = %host, port, "OBS authentication rejected");
-                record_connection_failure(last_failure, Some(message));
+                record_connection_failure(state, last_failure, Some(message));
                 settle_connection_state(
                     state,
                     &**publisher,
@@ -540,7 +545,7 @@ impl ReconnectingSession for ObsSupervisor {
             }
             Err((message, e)) => {
                 tracing::debug!(host = %host, port, error = %e, "OBS connection attempt failed");
-                record_connection_failure(last_failure, Some(message));
+                record_connection_failure(state, last_failure, Some(message));
                 return SessionEnd::AttemptFailed;
             }
         };
@@ -555,7 +560,7 @@ impl ReconnectingSession for ObsSupervisor {
                     error = %e,
                     "OBS closed the connection right after the handshake"
                 );
-                record_connection_failure(last_failure, Some(messages::connection_lost()));
+                record_connection_failure(state, last_failure, Some(messages::connection_lost()));
                 return SessionEnd::AttemptFailed;
             }
         };
@@ -582,6 +587,7 @@ impl ReconnectingSession for ObsSupervisor {
                 "OBS connection lost while loading its catalog"
             );
             record_connection_failure(
+                state,
                 last_failure,
                 Some(match e {
                     ObsError::Timeout => messages::unresponsive(),
@@ -598,7 +604,7 @@ impl ReconnectingSession for ObsSupervisor {
             *g = Some(OffsetDateTime::now_utc());
         }
 
-        record_connection_failure(last_failure, None);
+        record_connection_failure(state, last_failure, None);
         settle_connection_state(
             state,
             &**publisher,
@@ -608,11 +614,11 @@ impl ReconnectingSession for ObsSupervisor {
         );
         tracing::info!(host = %host, port, "connected to OBS");
         publisher.publish(crate::events::make_connection_connected());
-        option_revisions.bump();
+        catalog_revisions.lists_changed();
 
         let feeds = CatalogFeeds {
             mirror: Arc::clone(mirror),
-            option_revisions: Arc::clone(option_revisions),
+            catalog_revisions: Arc::clone(catalog_revisions),
             health_state: Arc::clone(health_state),
             health_tx: health_tx.clone(),
             stream_output: stream_output.clone(),
@@ -635,13 +641,13 @@ impl ReconnectingSession for ObsSupervisor {
                     clear_connected_at(connected_at);
                     *write_lock(obs_ws_version) = None;
                     settle_connection_state(state, &**publisher, stream_output, ConnectionState::Disconnected, ConnectionTransition::Expected);
-                    option_revisions.bump();
+                    catalog_revisions.lists_changed();
                     tracing::info!("OBS supervisor shutting down");
                     return SessionEnd::Stopped;
                 }
                 () = session.suspected() => {
                     tracing::warn!(host = %host, port, "OBS stopped answering requests; reconnecting");
-                    record_connection_failure(last_failure, Some(messages::unresponsive()));
+                    record_connection_failure(state, last_failure, Some(messages::unresponsive()));
                     break;
                 }
                 item = stream.next() => match item {
@@ -655,7 +661,9 @@ impl ReconnectingSession for ObsSupervisor {
                         );
                         stream_output.refresh();
                         if changes_option_lists(&ev) {
-                            option_revisions.bump();
+                            catalog_revisions.lists_changed();
+                        } else if changes_content_rows_only(&ev) {
+                            catalog_revisions.rows_changed();
                         }
                         if matches!(ev, obws::events::Event::CurrentSceneCollectionChanged { .. }) {
                             respawn_full_resync(&mut pending_resync, &session, &feeds);
@@ -667,7 +675,7 @@ impl ReconnectingSession for ObsSupervisor {
                     }
                     None => {
                         tracing::info!(host = %host, port, "OBS connection lost; reconnecting");
-                        record_connection_failure(last_failure, Some(messages::connection_lost()));
+                        record_connection_failure(state, last_failure, Some(messages::connection_lost()));
                         break;
                     }
                 },
@@ -679,7 +687,7 @@ impl ReconnectingSession for ObsSupervisor {
         inner.write().await.take();
         clear_connected_at(connected_at);
         *write_lock(obs_ws_version) = None;
-        option_revisions.bump();
+        catalog_revisions.lists_changed();
         let retry = auto_reconnect.is_enabled();
         settle_connection_state(
             state,
@@ -740,7 +748,7 @@ async fn prime_session(
 #[derive(Clone)]
 struct CatalogFeeds {
     mirror: Arc<ObsMirror>,
-    option_revisions: Arc<CollectionRevisionSignal>,
+    catalog_revisions: Arc<CatalogRevisions>,
     health_state: Arc<RwLock<HealthSnapshot>>,
     health_tx: broadcast::Sender<HealthDelta>,
     stream_output: StreamOutputFeed,
@@ -755,7 +763,7 @@ fn respawn_full_resync(
     let session = session.clone();
     let CatalogFeeds {
         mirror,
-        option_revisions,
+        catalog_revisions,
         health_state,
         health_tx,
         stream_output,
@@ -764,7 +772,7 @@ fn respawn_full_resync(
         if let Err(e) = snapshot_catalog(&session, &mirror, &health_state, &health_tx).await {
             tracing::debug!(error = %e, "OBS catalog resync interrupted");
         }
-        option_revisions.bump();
+        catalog_revisions.lists_changed();
         stream_output.refresh();
     })));
 }
@@ -789,6 +797,14 @@ fn changes_option_lists(ev: &obws::events::Event) -> bool {
             | Event::ProfileListChanged { .. }
             | Event::CurrentSceneCollectionChanged { .. }
             | Event::SceneCollectionListChanged { .. }
+    )
+}
+
+fn changes_content_rows_only(ev: &obws::events::Event) -> bool {
+    use obws::events::Event;
+    matches!(
+        ev,
+        Event::CurrentPreviewSceneChanged { .. } | Event::SceneItemLockStateChanged { .. }
     )
 }
 
@@ -1118,7 +1134,7 @@ fn spawn_stats_poll(
 ) -> JoinHandle<()> {
     let CatalogFeeds {
         mirror,
-        option_revisions,
+        catalog_revisions,
         health_state,
         health_tx,
         stream_output,
@@ -1206,13 +1222,11 @@ fn spawn_stats_poll(
             }
 
             if nudged {
-                let before = mirror.option_fingerprint();
+                let baseline = CatalogBaseline::of(&mirror);
                 if let Err(e) = reconcile_catalog_topology(&session, &mirror).await {
                     tracing::debug!(error = %e, "OBS catalog reconciliation interrupted");
                 }
-                if mirror.option_fingerprint() != before {
-                    option_revisions.bump();
-                }
+                catalog_revisions.announce_difference(&mirror, &baseline);
             }
         }
     })
@@ -2167,6 +2181,68 @@ mod tests {
         for event in &events {
             assert!(changes_option_lists(event), "{event:?}");
         }
+    }
+
+    #[test]
+    fn every_event_that_changes_a_content_row_moves_the_content_revision() {
+        use obws::events::Event;
+        for event in [
+            Event::CurrentPreviewSceneChanged {
+                id: scene_id("BRB"),
+            },
+            Event::SceneItemLockStateChanged {
+                scene: scene_id("Gameplay"),
+                item_id: 1,
+                locked: true,
+            },
+        ] {
+            assert!(!changes_option_lists(&event), "{event:?}");
+            assert!(changes_content_rows_only(&event), "{event:?}");
+        }
+        for event in obs_events_that_change_a_picker_list() {
+            assert!(!changes_content_rows_only(&event), "{event:?}");
+        }
+    }
+
+    #[test]
+    fn a_volume_change_moves_no_content_revision() {
+        let event = obws::events::Event::InputVolumeChanged {
+            id: obws::responses::inputs::InputId {
+                name: "Mic".to_owned(),
+                ..Default::default()
+            },
+            mul: 0.5,
+            db: -6.0,
+        };
+        assert!(!changes_option_lists(&event));
+        assert!(!changes_content_rows_only(&event));
+    }
+
+    #[test]
+    fn a_connection_change_moves_the_status_revision_and_a_repeat_does_not() {
+        let client = ObsClient::new_for_test("localhost:4455".to_owned());
+        let mut revisions = client
+            .status_revisions()
+            .expect("obs declares a status signal");
+        let moved = |revisions: &mut CollectionRevisions| {
+            futures_util::FutureExt::now_or_never(revisions.changed()).is_some()
+        };
+
+        client.state.store(ConnectionState::Disconnected);
+        assert!(!moved(&mut revisions), "same state");
+
+        client.state.store(ConnectionState::Connected);
+        assert!(moved(&mut revisions), "connected");
+
+        record_connection_failure(&client.state, &client.last_failure, None);
+        assert!(!moved(&mut revisions), "no failure to clear");
+
+        record_connection_failure(
+            &client.state,
+            &client.last_failure,
+            Some(messages::connection_lost()),
+        );
+        assert!(moved(&mut revisions), "a failure to show");
     }
 
     #[test]

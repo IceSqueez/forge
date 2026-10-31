@@ -19,7 +19,7 @@ impl CatalogSignal {
         self.0.bump();
     }
 
-    pub(crate) fn option_revisions(&self) -> CollectionRevisions {
+    pub(crate) fn revisions(&self) -> CollectionRevisions {
         self.0.subscribe()
     }
 }

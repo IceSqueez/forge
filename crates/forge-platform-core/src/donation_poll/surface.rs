@@ -75,6 +75,10 @@ impl<T: PolledDonationProvider> BuiltinStatus for T {
             vec![HeaderAction::Reconnect, HeaderAction::Settings]
         }
     }
+
+    fn status_revisions(&self) -> Option<crate::CollectionRevisions> {
+        None
+    }
 }
 
 impl<T: PolledDonationProvider> BuiltinHealth for T {

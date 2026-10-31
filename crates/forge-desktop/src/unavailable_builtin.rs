@@ -59,6 +59,10 @@ impl BuiltinStatus for UnavailableStatus {
     fn header_actions(&self) -> Vec<HeaderAction> {
         Vec::new()
     }
+
+    fn status_revisions(&self) -> Option<forge_platform_core::CollectionRevisions> {
+        None
+    }
 }
 
 struct UnavailableHealth;
@@ -90,6 +94,10 @@ struct UnavailableContent;
 impl BuiltinContent for UnavailableContent {
     fn sections(&self) -> Vec<DetailSection> {
         Vec::new()
+    }
+
+    fn content_revisions(&self) -> Option<forge_platform_core::CollectionRevisions> {
+        None
     }
 }
 

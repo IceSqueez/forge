@@ -73,6 +73,7 @@ impl IntegrationDetail {
                 section.set_streamer_login(streamer_login, cx)
             });
         }
+        self.sync_token_countdown(cx);
         cx.notify();
     }
 
@@ -82,11 +83,9 @@ impl IntegrationDetail {
         self.ports = ports;
         self.sign_in.connect = None;
         self.close_collection_manager();
-        self.live.eventsub_tally.clear();
         self.live.viewer_samples.clear();
         self.background._health_bridge = Self::spawn_health_bridge(&self.ports.health, cx);
-        self.background._quick_action_bridge =
-            Self::spawn_quick_action_bridge(&*self.ports.quick, cx);
+        self.background._change_bridge = Self::spawn_change_bridge(&self.ports, cx);
         self.reload(cx);
         self.sample_viewers();
     }
@@ -112,7 +111,6 @@ impl IntegrationDetail {
                 this.ports.control = None;
                 this.close_collection_manager();
                 this.shown.twitch_reauth_required = false;
-                this.live.eventsub_tally.clear();
                 this.live.viewer_samples.clear();
                 this.open_connect_flow(platform, cx);
             },

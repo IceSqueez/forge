@@ -164,6 +164,13 @@ impl CollectionRevisions {
             Err(_) => RevisionWait::SignalDropped,
         }
     }
+
+    #[cfg(test)]
+    pub(crate) fn moved(&mut self) -> bool {
+        let mut context = std::task::Context::from_waker(std::task::Waker::noop());
+        let changed = std::pin::pin!(self.changed());
+        changed.poll(&mut context).is_ready()
+    }
 }
 
 #[async_trait]

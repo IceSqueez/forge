@@ -227,7 +227,7 @@ impl BuiltinOptionSource for ObsClient {
     }
 
     fn revisions(&self) -> CollectionRevisions {
-        self.option_revisions.subscribe()
+        self.catalog_revisions.options()
     }
 
     async fn resolve(

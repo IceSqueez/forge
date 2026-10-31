@@ -20,7 +20,7 @@ use forge_registry::TriggerRegistry;
 use forge_runtime::{ActionEngineHandle, EventBus, IntegrationSlot};
 use forge_storage::{CredentialsRepo, HistoryRepo, SettingsRepo};
 use gpui::{Entity, Subscription, Task};
-use std::collections::{HashMap, VecDeque};
+use std::collections::VecDeque;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -136,7 +136,6 @@ impl ShownState {
 
 #[derive(Default)]
 pub(super) struct LiveTallies {
-    pub(super) eventsub_tally: HashMap<String, u64>,
     pub(super) row_steps_in_flight: InFlightSteps,
     pub(super) viewer_samples: VecDeque<(Instant, u64)>,
     pub(super) signing_out: bool,
@@ -159,6 +158,7 @@ pub(super) struct DetailBackground {
     pub(super) _conn_obs: Subscription,
     pub(super) _qa_search_sub: Subscription,
     pub(super) _health_bridge: Task<()>,
-    pub(super) _quick_action_bridge: Option<Task<()>>,
-    pub(super) _bridges: Vec<Task<()>>,
+    pub(super) _change_bridge: Task<()>,
+    pub(super) _reauth_watch: Option<Task<()>>,
+    pub(super) _token_countdown_repaint: Option<Task<()>>,
 }

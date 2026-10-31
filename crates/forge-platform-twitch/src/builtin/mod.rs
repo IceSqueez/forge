@@ -13,10 +13,11 @@ use tracing::debug;
 
 use forge_net::Gateway;
 use forge_platform_core::{
-    BuiltinContent, BuiltinHealth, BuiltinStatus, CapabilityFlags, ChatPlatform, ConnectionState,
-    DetailSection, HeaderAction, HealthDelta, HealthMetric, HealthMetricId, HealthStream,
-    HealthText, HealthValue, HeroBadge, HeroBadgeTone, LiveViewerSource, SectionIcon,
-    SubscriptionRow, SubscriptionStatus, ViewerReport, ViewerReportStream,
+    BuiltinContent, BuiltinHealth, BuiltinStatus, CapabilityFlags, ChatPlatform,
+    CollectionRevisionSignal, CollectionRevisions, ConnectionState, DetailSection, HeaderAction,
+    HealthDelta, HealthMetric, HealthMetricId, HealthStream, HealthText, HealthValue, HeroBadge,
+    HeroBadgeTone, LiveViewerSource, SectionIcon, SubscriptionRow, SubscriptionStatus,
+    ViewerReport, ViewerReportStream,
 };
 
 use forge_events::EventPublisher;
@@ -90,6 +91,8 @@ pub struct TwitchIntegrationBundle {
     tier: watch::Sender<BroadcasterTier>,
     token_expires_at: std::sync::RwLock<Option<SystemTime>>,
     connected_at: std::sync::RwLock<Option<OffsetDateTime>>,
+    reported_connection: std::sync::RwLock<ConnectionState>,
+    status_changes: CollectionRevisionSignal,
     lifecycle: TwitchLifecycle,
     retired: CancellationToken,
 }
@@ -99,6 +102,8 @@ impl TwitchIntegrationBundle {
         let (health_tx, _) = broadcast::channel(forge_platform_core::HEALTH_CHANNEL_CAPACITY);
         let (viewer_report_tx, _) = watch::channel(ViewerReport::Absent);
         let config = platform.config().clone();
+        let reported_connection =
+            std::sync::RwLock::new(platform.session_states().borrow().to_connection_state());
         let bus = platform.publisher();
         let credentials_manager = Arc::clone(platform.credentials_manager());
         let helix = platform.helix_gateway().clone();
@@ -120,6 +125,8 @@ impl TwitchIntegrationBundle {
             tier: watch::Sender::new(BroadcasterTier::default()),
             token_expires_at: std::sync::RwLock::new(None),
             connected_at: std::sync::RwLock::new(None),
+            reported_connection,
+            status_changes: CollectionRevisionSignal::new(),
             lifecycle: platform.lifecycle().clone(),
             platform,
             retired: CancellationToken::new(),
@@ -204,7 +211,7 @@ impl TwitchIntegrationBundle {
                     changed = expiry_rx.changed() => if changed.is_err() { break },
                 }
                 let expiry = *expiry_rx.borrow_and_update();
-                *bundle.token_expires_at.write_recover() = expiry;
+                bundle.record_token_expiry(expiry);
                 let delta = HealthDelta {
                     metric: API_CALLS_METRIC,
                     new_value: bundle.api_calls_health_value(),
@@ -216,6 +223,32 @@ impl TwitchIntegrationBundle {
                 let _ = bundle.health_tx.send(delta);
             }
         });
+    }
+
+    fn record_token_expiry(&self, expiry: Option<SystemTime>) {
+        let previous = std::mem::replace(&mut *self.token_expires_at.write_recover(), expiry);
+        if previous != expiry {
+            self.status_changes.bump();
+        }
+    }
+
+    fn record_tier(&self, tier: BroadcasterTier) {
+        let changed = self.tier.send_if_modified(|current| {
+            let changed = *current != tier;
+            *current = tier;
+            changed
+        });
+        if changed {
+            self.status_changes.bump();
+        }
+    }
+
+    fn record_reported_connection(&self, connection: ConnectionState) {
+        let previous =
+            std::mem::replace(&mut *self.reported_connection.write_recover(), connection);
+        if previous != connection {
+            self.status_changes.bump();
+        }
     }
 
     fn on_chat_state_changed(self: &Arc<Self>, state: ChatConnectionState) {
@@ -234,6 +267,7 @@ impl TwitchIntegrationBundle {
             self.lifecycle.forget_phases();
             *self.connected_at.write_recover() = None;
         }
+        self.record_reported_connection(state.to_connection_state());
     }
 
     fn spawn_identity_refresh(bundle: &Arc<Self>) {
@@ -277,9 +311,9 @@ impl TwitchIntegrationBundle {
         let Ok(Some(stored)) = credentials::load(self.creds.as_ref()).await else {
             return;
         };
-        *self.token_expires_at.write_recover() = stored.expires_at;
+        self.record_token_expiry(stored.expires_at);
         if let Ok(tier) = resolve_broadcaster_tier(self.transport.as_ref(), &stored.user_id).await {
-            self.tier.send_replace(tier);
+            self.record_tier(tier);
         }
     }
 
@@ -432,6 +466,7 @@ impl TwitchIntegrationBundle {
             helix.clone(),
             lifecycle.clone(),
         ));
+        let reported_connection = std::sync::RwLock::new(state_rx.borrow().to_connection_state());
         Arc::new(Self {
             id: IntegrationId::new("twitch"),
             login,
@@ -452,6 +487,8 @@ impl TwitchIntegrationBundle {
             tier: watch::Sender::new(tier),
             token_expires_at: std::sync::RwLock::new(None),
             connected_at: std::sync::RwLock::new(None),
+            reported_connection,
+            status_changes: CollectionRevisionSignal::new(),
             lifecycle,
             retired: CancellationToken::new(),
         })
@@ -595,6 +632,10 @@ impl BuiltinStatus for TwitchIntegrationBundle {
         vec![HeaderAction::RefreshToken, HeaderAction::Disconnect]
     }
 
+    fn status_revisions(&self) -> Option<CollectionRevisions> {
+        Some(self.status_changes.subscribe())
+    }
+
     fn token_expiry(&self) -> Option<SystemTime> {
         *self.token_expires_at.read_recover()
     }
@@ -660,6 +701,7 @@ impl BuiltinContent for TwitchIntegrationBundle {
         };
 
         let records = self.tracker.snapshot();
+        let event_counts = self.tracker.event_counts();
         let dropped_kind = records
             .iter()
             .find(|r| matches!(r.status, SubStatus::Failed(_) | SubStatus::Retrying(_)))
@@ -680,12 +722,15 @@ impl BuiltinContent for TwitchIntegrationBundle {
                         Some(messages::subscription_failure(failure).into()),
                     ),
                 };
+                let event_count = error_label
+                    .is_none()
+                    .then(|| event_counts.get(&r.kind).copied().unwrap_or(0));
                 SubscriptionRow {
                     kind: r.kind.clone(),
                     name: r.label(),
                     status,
                     version: Some(format!("v{}", r.version)),
-                    event_count: None,
+                    event_count,
                     error_label,
                 }
             })
@@ -707,6 +752,10 @@ impl BuiltinContent for TwitchIntegrationBundle {
             left: Box::new(scopes_list),
             right: Box::new(eventsub_list),
         }]
+    }
+
+    fn content_revisions(&self) -> Option<CollectionRevisions> {
+        Some(self.tracker.revisions())
     }
 }
 
@@ -759,6 +808,91 @@ mod tests {
             Arc::new(MemoryCredentials::default()),
             tier,
         )
+    }
+
+    fn moved(revisions: &mut CollectionRevisions) -> bool {
+        futures_util::FutureExt::now_or_never(revisions.changed()).is_some()
+    }
+
+    #[tokio::test]
+    async fn a_shown_connection_change_moves_the_status_revision_and_a_new_attempt_does_not() {
+        let bundle = make_bundle(ChatConnectionState::Connecting);
+        let mut revisions = bundle
+            .status_revisions()
+            .expect("twitch declares a status signal");
+
+        bundle.on_chat_state_changed(ChatConnectionState::Connecting);
+        assert!(!moved(&mut revisions), "same state");
+
+        bundle.on_chat_state_changed(ChatConnectionState::Reconnecting { attempt: 1 });
+        assert!(moved(&mut revisions), "lost the connection");
+
+        bundle.on_chat_state_changed(ChatConnectionState::Reconnecting { attempt: 2 });
+        assert!(!moved(&mut revisions), "only the attempt number moved");
+    }
+
+    #[tokio::test]
+    async fn a_token_or_tier_change_moves_the_status_revision_and_a_repeat_does_not() {
+        let bundle = make_bundle(ChatConnectionState::Connected);
+        let mut revisions = bundle
+            .status_revisions()
+            .expect("twitch declares a status signal");
+        let expiry = Some(SystemTime::UNIX_EPOCH + Duration::from_secs(1));
+
+        bundle.record_token_expiry(None);
+        assert!(!moved(&mut revisions), "no expiry replaced by none");
+
+        bundle.record_token_expiry(expiry);
+        assert!(moved(&mut revisions), "refreshed token");
+
+        bundle.record_token_expiry(expiry);
+        assert!(!moved(&mut revisions), "same expiry");
+
+        bundle.record_tier(BroadcasterTier::Standard);
+        assert!(!moved(&mut revisions), "same tier");
+
+        bundle.record_tier(BroadcasterTier::Partner);
+        assert!(moved(&mut revisions), "promoted");
+        assert_eq!(bundle.tier(), BroadcasterTier::Partner);
+    }
+
+    #[test]
+    fn subscription_rows_carry_the_connection_count_by_topic_and_none_on_a_failed_row() {
+        let tracker = SubscriptionTracker::default();
+        let record = |kind: &str, status: SubStatus| SubscriptionRecord {
+            kind: kind.to_owned(),
+            direction: None,
+            version: "1".to_owned(),
+            status,
+            subscription_id: None,
+        };
+        tracker.reset(vec![
+            record("channel.raid", SubStatus::Active),
+            record("channel.follow", SubStatus::Active),
+            record(
+                "channel.ban",
+                SubStatus::Failed(crate::subscriptions::SubscriptionFailure::Transport),
+            ),
+        ]);
+        let bundle = make_bundle_with_tracker(ChatConnectionState::Connected, tracker.clone());
+        let mut revisions = bundle
+            .content_revisions()
+            .expect("twitch declares a content signal");
+
+        for kind in ["channel.raid", "channel.raid", "channel.ban"] {
+            tracker.record_event(kind);
+        }
+
+        assert!(moved(&mut revisions));
+        let sections = bundle.sections();
+        let [DetailSection::TwoColumn { right, .. }] = sections.as_slice() else {
+            panic!("the twitch layout changed");
+        };
+        let DetailSection::SubscriptionList { items, .. } = right.as_ref() else {
+            panic!("the subscription list moved");
+        };
+        let counts: Vec<Option<u64>> = items.iter().map(|row| row.event_count).collect();
+        assert_eq!(counts, vec![Some(2), Some(0), None]);
     }
 
     #[test]

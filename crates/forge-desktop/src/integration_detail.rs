@@ -28,13 +28,9 @@ use forge_components::OverflowRevealingFocus;
 use forge_components::{ActivePresentation, BreadcrumbCrumb, SearchState, page_frame, scaled, tr};
 use forge_host::integrations::BuiltinObject;
 use forge_platform_core::{ConnectionState, QuickAction};
-use forge_runtime::EventBus;
 use forge_types::PlatformId;
-use gpui::{
-    ClickEvent, Context, Entity, EventEmitter, Subscription, Task, Window, div, prelude::*, px,
-};
+use gpui::{ClickEvent, Context, Entity, EventEmitter, Subscription, Window, div, prelude::*, px};
 use std::rc::Rc;
-use std::sync::Arc;
 
 struct ActiveConnect {
     view: Entity<ConnectFlow>,
@@ -101,8 +97,10 @@ impl IntegrationDetail {
         let quick_actions = reachable_quick_actions(&*ports.quick, ports.collections.as_deref());
 
         let health_bridge = Self::spawn_health_bridge(&ports.health, cx);
-        let quick_action_bridge = Self::spawn_quick_action_bridge(&*ports.quick, cx);
-        let bridges = Self::spawn_platform_bridges(&ports, &shown, &event_bus, cx);
+        let change_bridge = Self::spawn_change_bridge(&ports, cx);
+        let reauth_watch = shown
+            .is_twitch
+            .then(|| Self::spawn_reauth_watch(&event_bus, cx));
 
         let mut this = Self {
             ports,
@@ -117,38 +115,18 @@ impl IntegrationDetail {
                 _conn_obs: conn_obs,
                 _qa_search_sub: qa_search_sub,
                 _health_bridge: health_bridge,
-                _quick_action_bridge: quick_action_bridge,
-                _bridges: bridges,
+                _change_bridge: change_bridge,
+                _reauth_watch: reauth_watch,
+                _token_countdown_repaint: None,
             },
         };
 
+        this.sync_token_countdown(cx);
         this.sample_viewers();
         if let Some(platform) = connect_platform {
             this.open_connect_flow(platform, cx);
         }
         this
-    }
-
-    fn spawn_platform_bridges(
-        ports: &BuiltinPorts,
-        shown: &ShownState,
-        event_bus: &Arc<EventBus>,
-        cx: &mut Context<Self>,
-    ) -> Vec<Task<()>> {
-        let mut bridges = Vec::new();
-        if shown.is_twitch {
-            bridges.push(Self::spawn_eventsub_tally(event_bus, cx));
-        }
-        if shown.is_twitch || shown.is_obs {
-            bridges.push(Self::spawn_descriptor_reload_watch(event_bus, cx));
-        }
-        if shown.is_obs {
-            bridges.push(Self::spawn_obs_content_watch(event_bus, cx));
-        }
-        if shown.is_twitch || matches!(ports.status.id().as_str(), "youtube" | "kick") {
-            bridges.push(Self::spawn_detail_ticker(cx));
-        }
-        bridges
     }
 }
 
@@ -192,8 +170,7 @@ impl Render for IntegrationDetail {
                     refresh: Some(refresh),
                     run_step: Some(run_step),
                 };
-                let content =
-                    content_sections(&self.augmented_sections(), &hooks, &palette, density);
+                let content = content_sections(&self.shown.sections, &hooks, &palette, density);
                 let quick = self.quick_actions_card(&palette, density, cx);
                 let donation_settings = self
                     .sign_in

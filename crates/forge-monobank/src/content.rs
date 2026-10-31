@@ -19,6 +19,10 @@ impl BuiltinContent for MonobankProvider {
         sections.push(token_scope_notice());
         sections
     }
+
+    fn content_revisions(&self) -> Option<forge_platform_core::CollectionRevisions> {
+        None
+    }
 }
 
 impl QuickActions for MonobankProvider {

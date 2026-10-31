@@ -61,19 +61,3 @@ pub const AUDIO_SOURCE_SYNC_OFFSET_CHANGED: &str = "obs.audio.source_sync_offset
 pub const FILTER_CREATED: &str = "obs.filter.created";
 pub const FILTER_REMOVED: &str = "obs.filter.removed";
 pub const FILTER_ENABLED_CHANGED: &str = "obs.filter.enabled_changed";
-
-pub const CATALOG_CHANGING_KINDS: [&str; 13] = [
-    SCENE_CHANGED,
-    SCENE_PREVIEW_CHANGED,
-    SCENE_LIST_CHANGED,
-    SCENE_CREATED,
-    SCENE_REMOVED,
-    SCENE_RENAMED,
-    SOURCE_VISIBILITY_CHANGED,
-    SOURCE_LOCK_CHANGED,
-    SOURCE_INPUT_CREATED,
-    SOURCE_INPUT_REMOVED,
-    SOURCE_INPUT_RENAMED,
-    SOURCE_SCENE_ITEM_CREATED,
-    SOURCE_SCENE_ITEM_REMOVED,
-];

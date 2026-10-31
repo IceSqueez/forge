@@ -7,6 +7,7 @@ mod coded_text;
 mod condition;
 mod contract;
 mod convert;
+mod data_audit;
 mod engine;
 mod error;
 mod format;
@@ -18,6 +19,7 @@ mod registration;
 mod runner;
 mod schedule;
 mod schedule_api;
+mod script_thread;
 pub mod settings;
 #[cfg(test)]
 mod test_support;

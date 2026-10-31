@@ -9,6 +9,8 @@ use rhai::packages::{BasicArrayPackage, BasicMapPackage, CorePackage, LogicPacka
 use crate::ScriptError;
 use crate::api::ForgeApi;
 use crate::convert::{dynamic_to_variant, register_variant_types};
+use crate::data_audit::{ensure_result_fits, install_data_audit};
+use crate::script_thread::on_script_stack;
 use crate::settings;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -54,8 +56,11 @@ pub(crate) fn register_sandbox_base(inner: &mut rhai::Engine, cfg: &EngineConfig
     inner.set_max_string_size(1 << 20);
     inner.set_max_array_size(VARIANT_MAX_COLLECTION_LEN);
     inner.set_max_map_size(VARIANT_MAX_COLLECTION_LEN);
+    install_data_audit(inner);
 
+    inner.set_optimization_level(rhai::OptimizationLevel::None);
     inner.disable_symbol("eval");
+    inner.disable_symbol("curry");
 }
 
 impl Engine {
@@ -94,10 +99,7 @@ impl Engine {
     }
 
     pub fn eval_script(&self, script: &str) -> Result<rhai::Dynamic, ScriptError> {
-        self.reset_timer();
-        self.inner
-            .eval::<rhai::Dynamic>(script)
-            .map_err(|e| map_eval_error(&self.config, *e, self.started_at()))
+        self.eval_script_with_scope(script, &mut rhai::Scope::new())
     }
 
     pub fn eval_script_with_scope(
@@ -105,10 +107,16 @@ impl Engine {
         body: &str,
         scope: &mut rhai::Scope<'_>,
     ) -> Result<rhai::Dynamic, ScriptError> {
-        self.reset_timer();
-        self.inner
-            .eval_with_scope::<rhai::Dynamic>(scope, body)
-            .map_err(|e| map_eval_error(&self.config, *e, self.started_at()))
+        on_script_stack(|| {
+            self.reset_timer();
+            let outcome = self
+                .inner
+                .eval_with_scope::<rhai::Dynamic>(scope, body)
+                .and_then(|value| ensure_result_fits(&value).map(|()| value))
+                .map_err(|e| map_eval_error(&self.config, *e, self.started_at()));
+            scope.clear();
+            outcome
+        })
     }
 
     pub fn eval_script_with_scope_as_variant(

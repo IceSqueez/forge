@@ -6,6 +6,7 @@ use rhai::Dynamic;
 use crate::ScriptError;
 use crate::arg_binding::BoundExpression;
 use crate::engine::{EngineConfig, map_eval_error, register_sandbox_base};
+use crate::script_thread::on_script_stack;
 
 #[derive(Debug, Clone)]
 pub struct MathEvaluator {
@@ -26,34 +27,36 @@ impl MathEvaluator {
     }
 
     fn run(&self, source: &str, mut scope: rhai::Scope<'static>) -> Result<Variant, ScriptError> {
-        let mut inner = rhai::Engine::new_raw();
-        register_sandbox_base(&mut inner, &self.config);
+        on_script_stack(move || {
+            let mut inner = rhai::Engine::new_raw();
+            register_sandbox_base(&mut inner, &self.config);
 
-        let started_at = Instant::now();
-        let deadline = started_at + Duration::from_millis(self.config.wall_time_ms);
-        inner.on_progress(move |_ops| {
-            if Instant::now() >= deadline {
-                Some(Dynamic::UNIT)
+            let started_at = Instant::now();
+            let deadline = started_at + Duration::from_millis(self.config.wall_time_ms);
+            inner.on_progress(move |_ops| {
+                if Instant::now() >= deadline {
+                    Some(Dynamic::UNIT)
+                } else {
+                    None
+                }
+            });
+
+            let value = inner
+                .eval_with_scope::<Dynamic>(&mut scope, source)
+                .map_err(|e| map_eval_error(&self.config, *e, started_at))?;
+
+            if let Ok(n) = value.as_int() {
+                Ok(Variant::Int(n))
+            } else if let Ok(f) = value.as_float() {
+                Variant::float(f).map_err(|_| ScriptError::Runtime {
+                    reason: "non-finite result".to_owned(),
+                })
             } else {
-                None
+                Err(ScriptError::Runtime {
+                    reason: format!("expected numeric result, got {}", value.type_name()),
+                })
             }
-        });
-
-        let value = inner
-            .eval_with_scope::<Dynamic>(&mut scope, source)
-            .map_err(|e| map_eval_error(&self.config, *e, started_at))?;
-
-        if let Ok(n) = value.as_int() {
-            Ok(Variant::Int(n))
-        } else if let Ok(f) = value.as_float() {
-            Variant::float(f).map_err(|_| ScriptError::Runtime {
-                reason: "non-finite result".to_owned(),
-            })
-        } else {
-            Err(ScriptError::Runtime {
-                reason: format!("expected numeric result, got {}", value.type_name()),
-            })
-        }
+        })
     }
 }
 

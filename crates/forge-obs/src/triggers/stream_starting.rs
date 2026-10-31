@@ -131,12 +131,8 @@ mod tests {
         "obs.streaming.reconnected",
     ];
 
-    fn stream_event(kind: &str, state: &str, active: bool) -> Event {
-        Event::new(
-            EventSource::Obs,
-            kind,
-            json!({ "output_state": state, "is_active": active }),
-        )
+    fn stream_event(kind: &str, active: bool) -> Event {
+        Event::new(EventSource::Obs, kind, json!({ "is_active": active }))
     }
 
     #[test]
@@ -150,7 +146,7 @@ mod tests {
         let cfg = BTreeMap::new();
         for (own_kind, descriptor) in descriptors {
             for kind in ALL_STREAMING_KINDS {
-                let event = stream_event(kind, "x", true);
+                let event = stream_event(kind, true);
                 assert_eq!(
                     descriptor.matches_trigger(&cfg, &event),
                     kind == own_kind,
@@ -165,7 +161,7 @@ mod tests {
         let cfg = BTreeMap::new();
         for kind in ALL_STREAMING_KINDS {
             assert!(
-                StreamStatusChangedDescriptor.matches_trigger(&cfg, &stream_event(kind, "x", true)),
+                StreamStatusChangedDescriptor.matches_trigger(&cfg, &stream_event(kind, true)),
                 "omnibus should match {kind}",
             );
         }
@@ -178,9 +174,8 @@ mod tests {
     }
 
     #[test]
-    fn build_arg_stack_extracts_output_state_and_is_active() {
-        let stack =
-            build_stream_arg_stack(&stream_event("obs.streaming.stopped", "stopped", false));
+    fn build_arg_stack_takes_the_state_from_the_kind_and_is_active_from_the_payload() {
+        let stack = build_stream_arg_stack(&stream_event("obs.streaming.stopped", false));
         assert_eq!(
             stack.get("obs.stream.output_state"),
             Some(&Variant::String("stopped".to_owned())),

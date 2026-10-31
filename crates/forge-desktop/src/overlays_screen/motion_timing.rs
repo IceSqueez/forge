@@ -487,7 +487,7 @@ mod tests {
     }
 
     fn plain(rendered: String) -> String {
-        rendered.replace(['\u{2068}', '\u{2069}'], "")
+        rendered.replace(crate::test_support::FORMAT_ISOLATES, "")
     }
 
     fn english() {

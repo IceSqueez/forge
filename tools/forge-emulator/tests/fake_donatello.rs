@@ -1,10 +1,8 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
-use std::collections::HashMap;
 use std::ffi::OsString;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 
-use async_trait::async_trait;
 use forge_donatello::{DONATELLO_CREDENTIAL_ID, DonatelloConfig, DonatelloProvider};
 use forge_emulator::fakes::donatello::{
     DonatesFault, DonatesOrder, FakeDonatello, FakeDonatelloConfig, FakeDonation,
@@ -13,11 +11,14 @@ use forge_emulator::fakes::donatello::{
 use forge_emulator::harness::scenario::DonatelloGift;
 use forge_emulator::vocabulary::FAKE_DONATELLO_TOKEN;
 use forge_platform_core::{DonationProvider, DonationStream, PlatformEndpoints, PlatformError};
-use forge_storage::{CredentialId, CredentialsRepo, StorageError};
+use forge_storage::{CredentialId, CredentialsRepo};
 use forge_types::{Donation, DonationOrigin};
 use futures_util::StreamExt;
 use serde_json::{Value, json};
-use time::OffsetDateTime;
+
+mod support;
+
+use support::MemoryCredentials;
 
 const WAIT: Duration = Duration::from_secs(30);
 
@@ -235,35 +236,6 @@ async fn blank_token_configuration_is_refused() {
     assert!(started.is_err());
 }
 
-#[derive(Default)]
-struct MemCreds(Mutex<HashMap<String, String>>);
-
-#[async_trait]
-impl CredentialsRepo for MemCreds {
-    async fn store(&self, id: &CredentialId, bundle: &str) -> Result<(), StorageError> {
-        self.0
-            .lock()
-            .unwrap()
-            .insert(id.as_str().to_owned(), bundle.to_owned());
-        Ok(())
-    }
-    async fn load(&self, id: &CredentialId) -> Result<Option<String>, StorageError> {
-        Ok(self.0.lock().unwrap().get(id.as_str()).cloned())
-    }
-    async fn delete(&self, id: &CredentialId) -> Result<bool, StorageError> {
-        Ok(self.0.lock().unwrap().remove(id.as_str()).is_some())
-    }
-    async fn list_ids(&self) -> Result<Vec<CredentialId>, StorageError> {
-        Ok(Vec::new())
-    }
-    async fn last_refresh(&self, _: &CredentialId) -> Result<Option<OffsetDateTime>, StorageError> {
-        Ok(None)
-    }
-    async fn mark_refreshed(&self, _: &CredentialId) -> Result<(), StorageError> {
-        Ok(())
-    }
-}
-
 fn endpoints_addressing(fake: &FakeDonatello) -> PlatformEndpoints {
     let (variable, value) = fake.endpoint_override();
     PlatformEndpoints::resolve(move |name| (name == variable).then(|| OsString::from(&value)))
@@ -271,7 +243,7 @@ fn endpoints_addressing(fake: &FakeDonatello) -> PlatformEndpoints {
 }
 
 async fn provider_against(fake: &FakeDonatello) -> (DonatelloProvider, DonationStream) {
-    let creds = Arc::new(MemCreds::default());
+    let creds = Arc::new(MemoryCredentials::default());
     creds
         .store(
             &CredentialId::new(DONATELLO_CREDENTIAL_ID),

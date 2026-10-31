@@ -131,14 +131,7 @@ fn engine_rect_styles() -> BTreeSet<String> {
 }
 
 fn engine_function(name: &str) -> &'static str {
-    let opening = format!("function {name}(");
-    let start = MOTION_SOURCE
-        .find(&opening)
-        .unwrap_or_else(|| panic!("the motion engine no longer declares '{opening}'"));
-    let rest = &MOTION_SOURCE[start..];
-    &rest[..rest
-        .find("\n  }")
-        .unwrap_or_else(|| panic!("'{opening}' is never closed"))]
+    common::js_function(MOTION_SOURCE, name)
 }
 
 #[test]

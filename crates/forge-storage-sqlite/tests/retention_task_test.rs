@@ -24,6 +24,14 @@ const CADENCE: Duration = Duration::from_millis(50);
 const HANG_GUARD: Duration = Duration::from_secs(60);
 const POLL: Duration = Duration::from_millis(5);
 const CHUNK_ROWS: usize = 1_000;
+fn default_window() -> time::Duration {
+    time::Duration::days(i64::from(forge_storage::DEFAULT_EVENT_LOG_RETENTION_DAYS))
+}
+
+fn just_past_the_default_window() -> time::Duration {
+    default_window() + time::Duration::days(1)
+}
+
 const BEYOND_ANY_WINDOW: time::Duration = time::Duration::days(3_650);
 
 struct Db {
@@ -208,9 +216,9 @@ impl Db {
 #[tokio::test]
 async fn a_sweep_deletes_every_event_older_than_the_window_across_whole_chunks_and_nothing_newer() {
     let db = open().await;
-    db.store(&aged_batch(2 * CHUNK_ROWS, time::Duration::days(8)))
+    db.store(&aged_batch(2 * CHUNK_ROWS, just_past_the_default_window()))
         .await;
-    let just_inside = aged(time::Duration::days(7) - time::Duration::hours(1));
+    let just_inside = aged(default_window() - time::Duration::hours(1));
     let recent = aged(time::Duration::days(1));
     db.store(&[Arc::clone(&just_inside), Arc::clone(&recent)])
         .await;
@@ -299,7 +307,7 @@ async fn dropping_the_backend_stops_its_pruner() {
 #[tokio::test]
 async fn a_sweep_prunes_resolved_scheduled_runs_older_than_the_window_and_keeps_pending_ones() {
     let db = open().await;
-    let expired = db.resolved_run(time::Duration::days(8)).await;
+    let expired = db.resolved_run(just_past_the_default_window()).await;
     let recent = db.resolved_run(time::Duration::days(1)).await;
     let now = OffsetDateTime::now_utc();
     let pending = db

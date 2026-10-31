@@ -120,7 +120,7 @@ impl SubActionRunner for WarnUserRunner {
 mod tests {
     use super::*;
     use crate::helix::HelixError;
-    use crate::sub_actions::test_support::{MockCreds, MockTransport, make_ctx, users_fixture};
+    use crate::sub_actions::test_support::{MockTransport, make_ctx, users_fixture};
     use forge_types::Variant;
     use std::collections::BTreeMap;
 
@@ -130,7 +130,7 @@ mod tests {
         let transport = Arc::new(MockTransport::returning_sequence(responses));
         let runner = WarnUserRunner::new(
             Arc::clone(&transport) as Arc<dyn HelixTransport>,
-            Arc::new(SelfIdentity::new(Arc::new(MockCreds::with_identity()))),
+            crate::sub_actions::test_support::self_identity(),
         );
         (transport, runner)
     }

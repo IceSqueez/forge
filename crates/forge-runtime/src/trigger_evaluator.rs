@@ -614,18 +614,6 @@ mod tests {
         .flatten()
     }
 
-    async fn drain_no_kind(sub: &mut EventSubscription, forbidden: &str, wait_ms: u64) -> bool {
-        let deadline = tokio::time::Instant::now() + Duration::from_millis(wait_ms);
-        while tokio::time::Instant::now() < deadline {
-            match tokio::time::timeout(Duration::from_millis(50), sub.recv()).await {
-                Ok(Ok(ev)) if ev.kind == forbidden => return true,
-                Ok(Ok(_)) => {}
-                _ => {}
-            }
-        }
-        false
-    }
-
     fn log_step_registry() -> Arc<SubActionRegistry> {
         let mut steps = SubActionRegistry::new();
         steps.register(Box::new(CoreLogWriteRunner)).unwrap();
@@ -745,11 +733,17 @@ mod tests {
             "custom.other_event",
             json!({}),
         ));
+        let matching = Event::new(EventSource::Server, "custom.my_event", json!({}));
+        let matching_id = matching.id;
+        bus.publish(matching);
 
-        let fired = drain_no_kind(&mut sub, "action.done", 300).await;
-        assert!(
-            !fired,
-            "action.done must not fire for non-matching event name"
+        let started = collect_kind(&mut sub, "action.start")
+            .await
+            .expect("the matching event dispatches");
+        assert_eq!(
+            started.caused_by,
+            Some(matching_id),
+            "the first action.start must answer the matching event, not the other one"
         );
     }
 

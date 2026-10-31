@@ -101,9 +101,7 @@ impl SubActionRunner for GuestStarRemoveGuestRunner {
 mod tests {
     use super::*;
     use crate::helix::HelixError;
-    use crate::sub_actions::test_support::{
-        MockCreds, MockTransport, SELF_USER_ID, make_ctx, users_fixture,
-    };
+    use crate::sub_actions::test_support::{MockTransport, SELF_USER_ID, make_ctx, users_fixture};
     use forge_types::Variant;
     use std::collections::BTreeMap;
 
@@ -113,7 +111,7 @@ mod tests {
         let transport = Arc::new(MockTransport::returning_sequence(responses));
         let runner = GuestStarRemoveGuestRunner::new(
             Arc::clone(&transport) as Arc<dyn HelixTransport>,
-            Arc::new(SelfIdentity::new(Arc::new(MockCreds::with_identity()))),
+            crate::sub_actions::test_support::self_identity(),
         );
         (transport, runner)
     }
@@ -212,7 +210,7 @@ mod tests {
     fn validate_config_requires_slot_id_in_addition_to_session_and_login() {
         let runner = GuestStarRemoveGuestRunner::new(
             Arc::new(MockTransport::returning(Ok(serde_json::Value::Null))),
-            Arc::new(SelfIdentity::new(Arc::new(MockCreds::with_identity()))),
+            crate::sub_actions::test_support::self_identity(),
         );
 
         assert!(

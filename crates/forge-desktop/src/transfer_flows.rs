@@ -410,7 +410,9 @@ mod tests {
                 .map(|toast| {
                     (
                         toast.kind,
-                        toast.message.replace(['\u{2068}', '\u{2069}'], ""),
+                        toast
+                            .message
+                            .replace(crate::test_support::FORMAT_ISOLATES, ""),
                     )
                 })
                 .collect()

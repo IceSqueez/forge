@@ -3323,7 +3323,7 @@ mod tests {
             (Duration::from_millis(1_000), "1s"),
             (Duration::from_secs(61), "1m 1s"),
         ] {
-            let shown = elapsed_text(elapsed).replace(['\u{2068}', '\u{2069}'], "");
+            let shown = elapsed_text(elapsed).replace(crate::test_support::FORMAT_ISOLATES, "");
 
             assert_eq!(shown, expected, "{elapsed:?}");
         }

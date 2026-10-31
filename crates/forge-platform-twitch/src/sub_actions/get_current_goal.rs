@@ -194,6 +194,7 @@ impl SubActionRunner for GetCurrentGoalRunner {
 mod tests {
     use super::*;
     use crate::helix::HelixError;
+    use crate::sub_actions::test_support::TOKEN_SENTINEL;
     use crate::sub_actions::test_support::{
         MockCreds, MockTransport, SELF_USER_ID, assert_request_refused, make_ctx,
     };
@@ -345,7 +346,7 @@ mod tests {
         let (_transport, runner) = runner_with(
             Err(HelixError::Http {
                 status: 401,
-                body: "unauthorized".to_owned(),
+                body: format!("unauthorized {TOKEN_SENTINEL}"),
             }),
             MockCreds::with_identity(),
         );

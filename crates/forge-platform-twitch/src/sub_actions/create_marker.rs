@@ -154,7 +154,7 @@ mod tests {
     use super::*;
     use crate::helix::HelixError;
     use crate::sub_actions::test_support::{
-        MockCreds, MockTransport, SELF_USER_ID, assert_request_refused, make_ctx,
+        MockTransport, SELF_USER_ID, assert_request_refused, make_ctx,
     };
     use crate::timestamp::tests::instant;
     use std::collections::BTreeMap;
@@ -176,7 +176,7 @@ mod tests {
         let transport = Arc::new(MockTransport::returning(response));
         let runner = CreateMarkerRunner::new(
             Arc::clone(&transport) as Arc<dyn HelixTransport>,
-            Arc::new(SelfIdentity::new(Arc::new(MockCreds::with_identity()))),
+            crate::sub_actions::test_support::self_identity(),
         );
         (transport, runner)
     }

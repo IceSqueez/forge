@@ -554,6 +554,12 @@ pub(crate) mod test_support {
             .build_arg_stack(&event)
     }
 
+    pub(crate) fn self_identity() -> std::sync::Arc<crate::account::identity::SelfIdentity> {
+        std::sync::Arc::new(crate::account::identity::SelfIdentity::new(
+            std::sync::Arc::new(MockCreds::with_identity()),
+        ))
+    }
+
     pub(crate) fn make_ctx(stack: &ArgStack) -> RunContext<'_> {
         RunContext::leaf(stack, 0, EventId::new(), &NullPublisher)
     }

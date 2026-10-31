@@ -1471,12 +1471,6 @@ mod tests {
         assert_eq!(retried, HashSet::from([twitch(), kick()]));
     }
 
-    struct SilentPublisher;
-
-    impl forge_events::EventPublisher for SilentPublisher {
-        fn publish(&self, _event: forge_events::Event) {}
-    }
-
     fn refused_obs_seed(rt: &tokio::runtime::Runtime) -> ObsInstallSeed {
         let seed = ObsInstallSeed::new(forge_obs::SwitchableObsSink::new());
         rt.block_on(async {
@@ -1487,7 +1481,7 @@ mod tests {
                 forge_obs::ObsClient::connect(
                     &format!("127.0.0.1:{port}"),
                     None,
-                    Arc::new(SilentPublisher),
+                    Arc::new(crate::test_support::SilentPublisher),
                 )
                 .await
                 .unwrap(),

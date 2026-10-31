@@ -610,12 +610,6 @@ mod tests {
         );
     }
 
-    struct NullPublisher;
-
-    impl forge_events::EventPublisher for NullPublisher {
-        fn publish(&self, _: forge_events::Event) {}
-    }
-
     struct Harness {
         per_user_limit: usize,
         aliases: Vec<forge_speech_types::VoiceAlias>,
@@ -631,7 +625,7 @@ mod tests {
                 per_user_limit: forge_speak_queue::QueueConfig::default().per_user_limit,
                 aliases: Vec::new(),
                 pipeline: crate::test_support::neutral_pipeline_config(),
-                bus: Arc::new(NullPublisher),
+                bus: Arc::new(crate::test_support::SilentPublisher),
                 engines: forge_tts_core::TtsRegistry::new(),
                 sink: Arc::new(forge_audio::NullSink),
             }
@@ -929,7 +923,12 @@ mod tests {
         let mut config = SubActionConfig::new();
         config.insert("text".to_owned(), Variant::String("LUL hi".to_owned()));
         config.insert("wait_for_completion".to_owned(), Variant::Bool(false));
-        let ctx = RunContext::leaf(&stack, 0, forge_types::EventId::new(), &NullPublisher);
+        let ctx = RunContext::leaf(
+            &stack,
+            0,
+            forge_types::EventId::new(),
+            &crate::test_support::SilentPublisher,
+        );
 
         runner.execute(&config, &ctx).await;
         next_matching(&mut stream, |event| match event {

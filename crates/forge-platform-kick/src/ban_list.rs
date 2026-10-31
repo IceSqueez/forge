@@ -61,9 +61,7 @@ impl BanListSource for KickIntegrationBundle {
 mod tests {
     use forge_types::OAuthToken;
     use std::sync::{Arc, Mutex};
-    use std::time::Duration as StdDuration;
 
-    use forge_net::{RateLimitError, RateLimitOutcome, RateLimiter};
     use forge_platform_core::ViewerReport;
     use forge_storage::{
         BanLedgerKey, BanLedgerRepo, BanOrigin, CredentialId, CredentialsRepo, StorageError,
@@ -134,15 +132,6 @@ mod tests {
         }
     }
 
-    struct GrantLimiter;
-    #[async_trait]
-    impl RateLimiter for GrantLimiter {
-        async fn acquire(&self, _: u32) -> Result<RateLimitOutcome, RateLimitError> {
-            Ok(RateLimitOutcome::Granted)
-        }
-        async fn observe_remote_throttle(&self, _: StdDuration) {}
-    }
-
     fn bundle_over(
         credentials: Arc<SwitchableCredentials>,
         ledger: Arc<dyn BanLedgerRepo>,
@@ -165,7 +154,7 @@ mod tests {
             42,
             platform,
             manager,
-            Arc::new(GrantLimiter),
+            Arc::new(crate::endpoints_test_support::GrantingLimiter),
             viewer_rx,
             auth_rx,
         )

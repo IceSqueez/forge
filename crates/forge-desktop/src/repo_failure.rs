@@ -446,7 +446,7 @@ mod tests {
     fn text_of(error: StorageError) -> String {
         RepoFailure::from(error)
             .text()
-            .replace(['\u{2068}', '\u{2069}'], "")
+            .replace(crate::test_support::FORMAT_ISOLATES, "")
     }
 
     fn reference_block(used_in_count: u32) -> StorageError {
@@ -657,7 +657,9 @@ mod tests {
     }
 
     fn plain(failure: &RepoFailure) -> String {
-        failure.text().replace(['\u{2068}', '\u{2069}'], "")
+        failure
+            .text()
+            .replace(crate::test_support::FORMAT_ISOLATES, "")
     }
 
     fn converted<E>(error: E, expected: &str) -> (String, String, String)

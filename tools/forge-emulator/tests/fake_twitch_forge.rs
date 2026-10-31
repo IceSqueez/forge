@@ -3,7 +3,7 @@ use forge_platform_twitch::vocabulary::event_kinds as twitch_kinds;
 use forge_platform_twitch::vocabulary::topics;
 use std::collections::HashMap;
 use std::ffi::OsString;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use async_trait::async_trait;
@@ -26,11 +26,14 @@ use forge_platform_twitch::{
     helix_gateway, send_chat, twitch_oauth_gateway,
 };
 use forge_registry::SubActionRegistry;
-use forge_storage::{CredentialId, CredentialsRepo, StorageError};
+use forge_storage::CredentialsRepo;
 use forge_types::{ChatPayload, OAuthToken, PermissionRung};
-use time::OffsetDateTime;
 use tokio::sync::mpsc;
 use tokio::time::timeout;
+
+mod support;
+
+use support::MemoryCredentials;
 
 const DEADLINE: Duration = Duration::from_secs(30);
 const CHAT_MESSAGE_KIND: &str = twitch_kinds::CHANNEL_CHAT_MESSAGE;
@@ -45,40 +48,6 @@ struct FixedTokenSource(OAuthToken);
 impl HelixTokenSource for FixedTokenSource {
     async fn access_token(&self) -> Result<OAuthToken, HelixError> {
         Ok(self.0.clone())
-    }
-}
-
-#[derive(Default)]
-struct MemoryCredentials(Mutex<HashMap<String, String>>);
-
-#[async_trait]
-impl CredentialsRepo for MemoryCredentials {
-    async fn store(&self, id: &CredentialId, bundle: &str) -> Result<(), StorageError> {
-        self.0
-            .lock()
-            .unwrap()
-            .insert(id.as_str().to_owned(), bundle.to_owned());
-        Ok(())
-    }
-
-    async fn load(&self, id: &CredentialId) -> Result<Option<String>, StorageError> {
-        Ok(self.0.lock().unwrap().get(id.as_str()).cloned())
-    }
-
-    async fn delete(&self, id: &CredentialId) -> Result<bool, StorageError> {
-        Ok(self.0.lock().unwrap().remove(id.as_str()).is_some())
-    }
-
-    async fn list_ids(&self) -> Result<Vec<CredentialId>, StorageError> {
-        Ok(Vec::new())
-    }
-
-    async fn last_refresh(&self, _: &CredentialId) -> Result<Option<OffsetDateTime>, StorageError> {
-        Ok(None)
-    }
-
-    async fn mark_refreshed(&self, _: &CredentialId) -> Result<(), StorageError> {
-        Ok(())
     }
 }
 

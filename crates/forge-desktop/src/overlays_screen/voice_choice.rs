@@ -59,7 +59,7 @@ mod tests {
                 (
                     options.len(),
                     value.as_str(),
-                    label.replace(['\u{2068}', '\u{2069}'], "")
+                    label.replace(crate::test_support::FORMAT_ISOLATES, "")
                 ),
                 (
                     voices.len() + 2,

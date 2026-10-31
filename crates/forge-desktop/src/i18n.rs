@@ -329,8 +329,8 @@ mod tests {
                         Language::Uk => uk,
                     };
                     let args = ArgsBuilder::new().set("count", count).build();
-                    let resolved =
-                        tr_lookup(key, Some(&args)).replace(['\u{2068}', '\u{2069}'], "");
+                    let resolved = tr_lookup(key, Some(&args))
+                        .replace(crate::test_support::FORMAT_ISOLATES, "");
                     assert_eq!(
                         resolved,
                         format!("{prefix}{expected}"),

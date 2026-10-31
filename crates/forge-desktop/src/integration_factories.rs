@@ -850,7 +850,6 @@ impl IntegrationFactory<BuiltinObject> for HotkeyFactory {
 mod tests {
     use std::collections::BTreeMap;
 
-    use forge_events::EventPublisher;
     use forge_hotkey::HotkeyConfig;
     use forge_hotkey::testing::test_client;
     use forge_hotkey::vocabulary::event_kinds;
@@ -862,12 +861,6 @@ mod tests {
     use super::*;
     use crate::start_failure::StartRemedy;
 
-    struct SilentPublisher;
-
-    impl EventPublisher for SilentPublisher {
-        fn publish(&self, _: Event) {}
-    }
-
     fn hotkey_factory(instances: Vec<TriggerInstance>) -> HotkeyFactory {
         let mut triggers = MockTriggerInstanceRepo::new();
         triggers
@@ -875,7 +868,10 @@ mod tests {
             .returning(move || Ok(instances.clone()));
         let mut clips = MockSoundboardClipsRepo::new();
         clips.expect_list().returning(|| Ok(Vec::new()));
-        let (client, _) = test_client(HotkeyConfig::default(), Arc::new(SilentPublisher));
+        let (client, _) = test_client(
+            HotkeyConfig::default(),
+            Arc::new(crate::test_support::SilentPublisher),
+        );
         HotkeyFactory {
             client,
             triggers: Arc::new(triggers),

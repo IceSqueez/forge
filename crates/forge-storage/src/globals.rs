@@ -193,8 +193,6 @@ pub fn type_mismatch(name: &str, found: &Variant) -> StorageError {
 mod tests {
     use super::*;
 
-    fn _trait_is_dyn_safe(_: &dyn GlobalsRepo) {}
-
     #[test]
     fn global_entry_serde_roundtrip() {
         let entry = GlobalEntry {

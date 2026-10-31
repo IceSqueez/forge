@@ -440,7 +440,7 @@ mod tests {
         }
         .into_event(EventSource::Timer, None);
 
-        let text = summary(&tick).replace(['\u{2068}', '\u{2069}'], "");
+        let text = summary(&tick).replace(crate::test_support::FORMAT_ISOLATES, "");
 
         assert_eq!(text, "every 15 min");
     }

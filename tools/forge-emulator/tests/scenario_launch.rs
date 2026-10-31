@@ -81,7 +81,7 @@ async fn stop_while_forge_boots_interrupts_the_run_and_leaves_no_forge_running()
     assert_eq!(outcome.verdict, ScenarioVerdict::Interrupted);
     let statuses: Vec<StepStatus> = outcome.steps.iter().map(|step| step.status).collect();
     assert_eq!(statuses, [StepStatus::Interrupted, StepStatus::NotRun]);
-    let pid = read_pid(&pid_file).await;
+    let pid = timeout(DEADLINE, read_pid(&pid_file)).await.unwrap();
     assert!(
         wait_until_gone(pid, DEADLINE).await,
         "forge stub {pid} survived the interrupted run"

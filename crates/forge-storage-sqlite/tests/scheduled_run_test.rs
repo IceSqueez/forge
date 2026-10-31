@@ -991,7 +991,7 @@ async fn insert_unreadable(
             target_action_id, due_at, missed_policy, args, scheduled_at, label, state, resolved_at
         ) VALUES ('not-an-action-id', ?, 'run_late_once', '{}', 0, 'l', ?, ?)",
     )
-    .bind(due_at.unix_timestamp() * 1000)
+    .bind(due_at.unix_timestamp() * MILLIS_PER_SECOND)
     .bind(state)
     .bind(resolved_at)
     .execute(pools.writer())
@@ -1073,7 +1073,7 @@ async fn a_failed_unreadable_run_records_the_reason_and_the_resolution_time() {
         (
             "failed".to_owned(),
             Some(UNREADABLE.to_owned()),
-            Some(at_min(10).unix_timestamp() * 1000)
+            Some(at_min(10).unix_timestamp() * MILLIS_PER_SECOND)
         )
     );
 }

@@ -148,7 +148,10 @@ mod tests {
                     .is_none(),
                 "a distinct chatter inside the window is never throttled on their first call"
             );
-            std::thread::sleep(Duration::from_millis(1));
+            let stamped = Instant::now();
+            while stamped.elapsed().is_zero() {
+                std::hint::spin_loop();
+            }
         }
 
         assert!(
@@ -169,14 +172,9 @@ mod tests {
         let instance = TriggerInstanceId::new();
 
         assert!(
-            map.remaining_or_stamp(
-                user_key(instance, "gone"),
-                Duration::from_millis(5),
-                EventId::new()
-            )
-            .is_none()
+            map.remaining_or_stamp(user_key(instance, "gone"), Duration::ZERO, EventId::new())
+                .is_none()
         );
-        std::thread::sleep(Duration::from_millis(10));
 
         assert!(
             map.remaining_or_stamp(user_key(instance, "live"), WINDOW, EventId::new())

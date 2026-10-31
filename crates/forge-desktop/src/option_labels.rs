@@ -305,7 +305,7 @@ mod tests {
             install_language(language);
             for option in ["0", "7", "4294967295"] {
                 let label = option_label("any.kind", DURATION_SECONDS_KEY, option)
-                    .replace(['\u{2068}', '\u{2069}'], "");
+                    .replace(crate::test_support::FORMAT_ISOLATES, "");
                 assert_eq!(label, format!("{option} {unit}"), "{language:?}");
             }
         }

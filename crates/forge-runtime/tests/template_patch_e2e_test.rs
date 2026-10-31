@@ -103,18 +103,6 @@ async fn collect_kind(sub: &mut EventSubscription, target: &str) -> Option<Event
     .flatten()
 }
 
-async fn drain_no_kind(sub: &mut EventSubscription, forbidden: &str, wait_ms: u64) -> bool {
-    let deadline = tokio::time::Instant::now() + Duration::from_millis(wait_ms);
-    while tokio::time::Instant::now() < deadline {
-        match tokio::time::timeout(Duration::from_millis(50), sub.recv()).await {
-            Ok(Ok(ev)) if ev.kind == forbidden => return true,
-            Ok(Ok(_)) => {}
-            _ => {}
-        }
-    }
-    false
-}
-
 struct RecordingRunner {
     captured: Arc<Mutex<Option<BTreeMap<String, Variant>>>>,
 }
@@ -219,18 +207,20 @@ async fn trigger_evaluator_applies_effective_config_overrides() {
          so matches_trigger returns true"
     );
 
-    tokio::time::sleep(Duration::from_millis(50)).await;
-
     bus.publish(Event::new(
         EventSource::Server,
         "custom.basic_event",
         json!({}),
     ));
+    let matching = Event::new(EventSource::Server, "custom.premium_event", json!({}));
+    let matching_id = matching.id;
+    bus.publish(matching);
 
-    let fired = drain_no_kind(&mut sub, "action.done", 300).await;
-    assert!(
-        !fired,
-        "action.done must not fire for basic_event: effective_config holds \
+    let next = collect_kind(&mut sub, "action.start").await;
+    assert_eq!(
+        next.and_then(|started| started.caused_by),
+        Some(matching_id),
+        "the action must not start for basic_event: effective_config holds \
          event_name=premium_event so matches_trigger must return false for basic_event"
     );
 }
@@ -333,17 +323,27 @@ async fn linked_action_executes_via_join_table_only() {
 
     let instance = custom_instance("go");
     dp.trigger_instance_repo().save(&instance).await.unwrap();
+    let linked = custom_instance("linked");
+    dp.trigger_instance_repo().save(&linked).await.unwrap();
+    dp.trigger_instance_repo()
+        .link_action(a_id, linked.id)
+        .await
+        .unwrap();
 
     let bus = EventBus::new(Arc::new(NullEventLogRepo));
     let mut sub = bus.subscribe();
     let _runtime = runtime_with_core_steps(Arc::clone(&dp), Arc::clone(&bus)).await;
 
     bus.publish(Event::new(EventSource::Server, "custom.go", json!({})));
+    let linked_event = Event::new(EventSource::Server, "custom.linked", json!({}));
+    let linked_id = linked_event.id;
+    bus.publish(linked_event);
 
-    let fired = drain_no_kind(&mut sub, "action.done", 300).await;
-    assert!(
-        !fired,
-        "action.done must not fire: the join table has no link_action row, \
-         so list_for_action returns empty and the evaluator dispatches nothing"
+    let next = collect_kind(&mut sub, "action.start").await;
+    assert_eq!(
+        next.and_then(|started| started.caused_by),
+        Some(linked_id),
+        "the action must not start for custom.go: the join table has no link_action row \
+         for it, so the evaluator dispatches nothing"
     );
 }

@@ -1,10 +1,9 @@
 #![allow(clippy::unwrap_used, clippy::panic)]
 use forge_platform_youtube::vocabulary::event_kinds as youtube_kinds;
-use std::collections::{BTreeSet, HashMap};
-use std::sync::{Arc, Mutex};
+use std::collections::BTreeSet;
+use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use async_trait::async_trait;
 use forge_emulator::EmulatorError;
 use forge_emulator::fakes::youtube::{
     FakeYouTube, FakeYouTubeConfig, FakeYouTubeSetup, LIVE_BROADCASTS_PATH,
@@ -21,15 +20,15 @@ use forge_platform_youtube::{
     YoutubeCredentialsManager, YoutubeDataApi, YoutubeSendChat, YoutubeViewerPoll,
     google_oauth_gateway,
 };
-use forge_storage::{CredentialId, CredentialsRepo, StorageError};
 use forge_types::OAuthToken;
 use serde_json::{Map, Value, json};
-use time::OffsetDateTime;
 use tokio::sync::{mpsc, watch};
 use tokio::task::JoinHandle;
 use tokio::time::timeout;
 
 mod support;
+
+use support::MemoryCredentials;
 use support::{QuietPublisher, endpoints_from, static_token_source};
 
 const WAIT: Duration = Duration::from_secs(30);
@@ -41,40 +40,6 @@ struct CancelOnDrop(JoinHandle<()>);
 impl Drop for CancelOnDrop {
     fn drop(&mut self) {
         self.0.abort();
-    }
-}
-
-#[derive(Default)]
-struct MemoryCredentials(Mutex<HashMap<String, String>>);
-
-#[async_trait]
-impl CredentialsRepo for MemoryCredentials {
-    async fn store(&self, id: &CredentialId, plaintext: &str) -> Result<(), StorageError> {
-        self.0
-            .lock()
-            .unwrap()
-            .insert(id.as_str().to_owned(), plaintext.to_owned());
-        Ok(())
-    }
-
-    async fn load(&self, id: &CredentialId) -> Result<Option<String>, StorageError> {
-        Ok(self.0.lock().unwrap().get(id.as_str()).cloned())
-    }
-
-    async fn delete(&self, id: &CredentialId) -> Result<bool, StorageError> {
-        Ok(self.0.lock().unwrap().remove(id.as_str()).is_some())
-    }
-
-    async fn list_ids(&self) -> Result<Vec<CredentialId>, StorageError> {
-        Ok(Vec::new())
-    }
-
-    async fn last_refresh(&self, _: &CredentialId) -> Result<Option<OffsetDateTime>, StorageError> {
-        Ok(None)
-    }
-
-    async fn mark_refreshed(&self, _: &CredentialId) -> Result<(), StorageError> {
-        Ok(())
     }
 }
 

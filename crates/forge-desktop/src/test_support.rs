@@ -1202,6 +1202,8 @@ pub(crate) fn pump(rt: &tokio::runtime::Runtime) {
     });
 }
 
+pub(crate) const FORMAT_ISOLATES: [char; 2] = ['\u{2068}', '\u{2069}'];
+
 pub(crate) fn pump_until(rt: &tokio::runtime::Runtime, mut reached: impl FnMut() -> bool) {
     let deadline = std::time::Instant::now() + PUMP_HANG_GUARD;
     while !reached() {
@@ -2096,7 +2098,7 @@ pub(crate) fn quiet_bus(rt: &tokio::runtime::Runtime) -> Arc<EventBus> {
 
 pub(crate) type LiveAliases = Arc<std::sync::RwLock<forge_speak_queue::VoiceAliasResolver>>;
 
-struct SilentPublisher;
+pub(crate) struct SilentPublisher;
 
 impl forge_events::EventPublisher for SilentPublisher {
     fn publish(&self, _: Event) {}

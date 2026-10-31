@@ -1587,7 +1587,10 @@ mod tests {
     #[test]
     fn a_gap_label_names_exact_counts_and_says_when_skipped_events_were_of_unknown_kind() {
         crate::i18n::install_language(forge_storage::Language::En);
-        let plain = |gap: FeedGap| gap.label().replace(['\u{2068}', '\u{2069}'], "");
+        let plain = |gap: FeedGap| {
+            gap.label()
+                .replace(crate::test_support::FORMAT_ISOLATES, "")
+        };
 
         assert_eq!(
             [

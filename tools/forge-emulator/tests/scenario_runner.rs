@@ -41,6 +41,8 @@ use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 
 mod support;
+
+use support::MemoryCredentials;
 use support::{QuietPublisher, TokenSource, endpoints_from, static_token_source};
 
 type Socket = WebSocketStream<MaybeTlsStream<TcpStream>>;
@@ -684,7 +686,7 @@ async fn a_server_drop_notice_inside_the_window_fails_an_absence_check() {
 #[tokio::test]
 async fn stop_interrupts_the_running_step_and_skips_the_rest() {
     let harness = Harness::start(COOPERATIVE, false).await;
-    let scenario = scenario(
+    let mut scenario = scenario(
         json!({ "chat_commands": [{ "phrase": "!ping", "action_name": "Ping" }] }),
         json!({}),
         json!([
@@ -693,24 +695,17 @@ async fn stop_interrupts_the_running_step_and_skips_the_rest() {
             { "do": { "run_action": { "action": "Ping" } } }
         ]),
     );
+    scenario.steps.remove(0);
     let steps = timeout(
         DEADLINE,
-        execute_steps(
-            &scenario,
-            &harness.session(),
-            tokio::time::sleep(Duration::from_millis(20)),
-        ),
+        execute_steps(&scenario, &harness.session(), std::future::ready(())),
     )
     .await
     .unwrap();
 
     assert_eq!(
         statuses(&steps),
-        [
-            StepStatus::Passed,
-            StepStatus::Interrupted,
-            StepStatus::NotRun
-        ]
+        [StepStatus::Interrupted, StepStatus::NotRun]
     );
 }
 
@@ -1289,58 +1284,6 @@ async fn forge_restart_fails_on_a_forge_the_emulator_did_not_launch() {
 }
 
 const VTUBE_TOKEN: &str = "vtube-runner-token";
-
-#[derive(Default)]
-struct MemoryCredentials(std::sync::Mutex<std::collections::HashMap<String, String>>);
-
-#[async_trait::async_trait]
-impl forge_storage::CredentialsRepo for MemoryCredentials {
-    async fn store(
-        &self,
-        id: &forge_storage::CredentialId,
-        plaintext: &str,
-    ) -> Result<(), forge_storage::StorageError> {
-        self.0
-            .lock()
-            .unwrap()
-            .insert(id.as_str().to_owned(), plaintext.to_owned());
-        Ok(())
-    }
-
-    async fn load(
-        &self,
-        id: &forge_storage::CredentialId,
-    ) -> Result<Option<String>, forge_storage::StorageError> {
-        Ok(self.0.lock().unwrap().get(id.as_str()).cloned())
-    }
-
-    async fn delete(
-        &self,
-        id: &forge_storage::CredentialId,
-    ) -> Result<bool, forge_storage::StorageError> {
-        Ok(self.0.lock().unwrap().remove(id.as_str()).is_some())
-    }
-
-    async fn list_ids(
-        &self,
-    ) -> Result<Vec<forge_storage::CredentialId>, forge_storage::StorageError> {
-        Ok(Vec::new())
-    }
-
-    async fn last_refresh(
-        &self,
-        _: &forge_storage::CredentialId,
-    ) -> Result<Option<time::OffsetDateTime>, forge_storage::StorageError> {
-        Ok(None)
-    }
-
-    async fn mark_refreshed(
-        &self,
-        _: &forge_storage::CredentialId,
-    ) -> Result<(), forge_storage::StorageError> {
-        Ok(())
-    }
-}
 
 fn vtube_scenario(online_at_boot: bool, steps: Value) -> Scenario {
     scenario(

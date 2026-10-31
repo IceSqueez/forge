@@ -140,89 +140,26 @@ impl ScriptGlobals for RuntimeScriptGlobals {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeMap;
     use std::sync::Mutex;
     use std::time::{Duration, Instant};
 
     use forge_registry::{RunContext, SubActionRunner};
     use forge_script::{Engine, EngineConfig, ForgeApi, ScriptError};
-    use forge_storage::GlobalEntry;
     use forge_types::{ArgStack, SubActionConfig, SubActionOutcome};
-    use time::OffsetDateTime;
 
     use super::*;
+    use crate::test_support::MapGlobals;
+
+    fn seeded(entries: &[(&str, Variant)]) -> Arc<MapGlobals> {
+        let globals = MapGlobals::with(entries.iter().map(|(key, value)| (*key, value.clone())));
+        Arc::new(globals.failing_reads_of(UNREADABLE))
+    }
     use crate::sub_action_runners::{
         CoreGlobalsDeleteRunner, CoreGlobalsIncrementRunner, CoreGlobalsSetRunner,
     };
     use forge_events::Event;
 
     const UNREADABLE: &str = "unreadable";
-
-    #[derive(Default)]
-    struct MapGlobals {
-        map: Mutex<BTreeMap<String, Variant>>,
-    }
-
-    impl MapGlobals {
-        fn seeded(entries: &[(&str, Variant)]) -> Arc<Self> {
-            let map = entries
-                .iter()
-                .map(|(key, value)| ((*key).to_owned(), value.clone()))
-                .collect();
-            Arc::new(Self {
-                map: Mutex::new(map),
-            })
-        }
-
-        fn stored(&self, key: &str) -> Option<Variant> {
-            self.map.lock().unwrap().get(key).cloned()
-        }
-    }
-
-    #[async_trait]
-    impl GlobalsRepo for MapGlobals {
-        async fn get(&self, name: &str) -> Result<Option<Variant>, StorageError> {
-            if name == UNREADABLE {
-                return Err(StorageError::Decryption);
-            }
-            Ok(self.stored(name))
-        }
-
-        async fn set(&self, name: &str, value: Variant, _: bool) -> Result<(), StorageError> {
-            self.map.lock().unwrap().insert(name.to_owned(), value);
-            Ok(())
-        }
-
-        async fn delete(&self, name: &str) -> Result<bool, StorageError> {
-            Ok(self.map.lock().unwrap().remove(name).is_some())
-        }
-
-        async fn list(&self) -> Result<Vec<GlobalEntry>, StorageError> {
-            Ok(Vec::new())
-        }
-
-        async fn storage_bytes(&self) -> Result<u64, StorageError> {
-            Ok(0)
-        }
-
-        async fn last_save_at(&self) -> Result<Option<OffsetDateTime>, StorageError> {
-            Ok(None)
-        }
-
-        async fn incr(&self, name: &str, amount: i64) -> Result<Variant, StorageError> {
-            let mut map = self.map.lock().unwrap();
-            match map.get(name) {
-                Some(Variant::Int(current)) => {
-                    let next = Variant::Int(current + amount);
-                    map.insert(name.to_owned(), next.clone());
-                    Ok(next)
-                }
-                _ => Err(StorageError::NotFound {
-                    key: name.to_owned(),
-                }),
-            }
-        }
-    }
 
     #[derive(Default)]
     struct Recorder(Mutex<Vec<Event>>);
@@ -371,17 +308,13 @@ mod tests {
     ) -> (Vec<Event>, Vec<Event>) {
         let script_publisher = Arc::new(Recorder::default());
         let script = mutation
-            .run_as_script(
-                MapGlobals::seeded(&prior_state()),
-                Arc::clone(&script_publisher),
-                cause,
-            )
+            .run_as_script(seeded(&prior_state()), Arc::clone(&script_publisher), cause)
             .await;
         assert!(script.is_ok(), "{mutation:?}: {script:?}");
 
         let runner_publisher = Recorder::default();
         let outcome = mutation
-            .run_as_sub_action(MapGlobals::seeded(&prior_state()), &runner_publisher, cause)
+            .run_as_sub_action(seeded(&prior_state()), &runner_publisher, cause)
             .await;
         assert!(
             matches!(outcome, SubActionOutcome::Success),
@@ -436,7 +369,7 @@ mod tests {
 
         let deleted = Mutation::Delete { key: "ghost" }
             .run_as_script(
-                MapGlobals::seeded(&prior_state()),
+                seeded(&prior_state()),
                 Arc::clone(&publisher),
                 EventId::new(),
             )
@@ -452,11 +385,7 @@ mod tests {
         let publisher = Recorder::default();
 
         let outcome = Mutation::Delete { key: "ghost" }
-            .run_as_sub_action(
-                MapGlobals::seeded(&prior_state()),
-                &publisher,
-                EventId::new(),
-            )
+            .run_as_sub_action(seeded(&prior_state()), &publisher, EventId::new())
             .await;
 
         assert!(matches!(outcome, SubActionOutcome::Success), "{outcome:?}");
@@ -472,7 +401,7 @@ mod tests {
             delta: 1,
         }
         .run_as_script(
-            MapGlobals::seeded(&prior_state()),
+            seeded(&prior_state()),
             Arc::clone(&publisher),
             EventId::new(),
         )
@@ -487,7 +416,7 @@ mod tests {
 
     #[tokio::test]
     async fn the_script_port_hands_a_failed_write_back_as_the_storage_error_it_was() {
-        let port = port_over(MapGlobals::seeded(&prior_state()));
+        let port = port_over(seeded(&prior_state()));
 
         let refused = port.increment("ghost", 1, EventId::new()).await;
 
@@ -504,7 +433,7 @@ mod tests {
     #[tokio::test]
     async fn each_mutation_reports_the_value_it_replaced() {
         let prior = prior_state();
-        let port = port_over(MapGlobals::seeded(&prior));
+        let port = port_over(seeded(&prior));
         let cause = EventId::new();
 
         let replaced = port.set("score", Variant::Int(42), false, cause).await;
@@ -529,7 +458,7 @@ mod tests {
 
     #[tokio::test]
     async fn setting_a_new_key_reports_no_previous_value() {
-        let port = port_over(MapGlobals::seeded(&[]));
+        let port = port_over(seeded(&[]));
 
         let replaced = port
             .set("fresh", Variant::Bool(true), false, EventId::new())
@@ -540,7 +469,7 @@ mod tests {
 
     #[tokio::test]
     async fn an_unreadable_previous_value_does_not_block_set() {
-        let globals = MapGlobals::seeded(&[(UNREADABLE, Variant::Int(1))]);
+        let globals = seeded(&[(UNREADABLE, Variant::Int(1))]);
         let publisher = Arc::new(Recorder::default());
         let port = RuntimeScriptGlobals::new(
             Arc::clone(&globals) as Arc<dyn GlobalsRepo>,
@@ -552,7 +481,7 @@ mod tests {
             .await;
 
         assert_eq!(replaced.unwrap(), None);
-        assert_eq!(globals.stored(UNREADABLE), Some(Variant::Int(7)));
+        assert_eq!(globals.snapshot(UNREADABLE), Some(Variant::Int(7)));
         let payloads: Vec<_> = publisher.events().into_iter().map(|e| e.payload).collect();
         assert_eq!(
             payloads,
@@ -562,7 +491,7 @@ mod tests {
 
     #[tokio::test]
     async fn an_unreadable_previous_value_does_not_block_delete() {
-        let globals = MapGlobals::seeded(&[(UNREADABLE, Variant::Int(1))]);
+        let globals = seeded(&[(UNREADABLE, Variant::Int(1))]);
         let publisher = Arc::new(Recorder::default());
         let port = RuntimeScriptGlobals::new(
             Arc::clone(&globals) as Arc<dyn GlobalsRepo>,
@@ -572,7 +501,7 @@ mod tests {
         let deleted = port.delete(UNREADABLE, EventId::new()).await;
 
         assert_eq!(deleted.unwrap(), GlobalDeletion::Deleted { previous: None });
-        assert_eq!(globals.stored(UNREADABLE), None);
+        assert_eq!(globals.snapshot(UNREADABLE), None);
         let kinds: Vec<_> = publisher.events().into_iter().map(|e| e.kind).collect();
         assert_eq!(kinds, ["global.deleted"]);
     }

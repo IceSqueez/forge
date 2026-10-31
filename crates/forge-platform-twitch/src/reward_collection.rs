@@ -1356,7 +1356,7 @@ mod tests {
             let runner_transport = Arc::new(MockTransport::returning(Ok(Value::Null)));
             let runner = runner(
                 Arc::clone(&runner_transport) as Arc<dyn HelixTransport>,
-                Arc::new(SelfIdentity::new(Arc::new(MockCreds::with_identity()))),
+                crate::sub_actions::test_support::self_identity(),
             );
             runner.execute(&config, &make_ctx(&stack)).await;
             let (manager_transport, bundle) =
@@ -1487,10 +1487,7 @@ mod tests {
                 .mount(&server)
                 .await;
             let (transport, bus) = observed_helix_at(&server.uri());
-            let runner = runner(
-                transport,
-                Arc::new(SelfIdentity::new(Arc::new(MockCreds::with_identity()))),
-            );
+            let runner = runner(transport, crate::sub_actions::test_support::self_identity());
 
             let (telemetry, _) = runner.execute(&config, &make_ctx(&stack)).await;
 

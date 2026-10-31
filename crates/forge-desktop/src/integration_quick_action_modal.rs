@@ -1358,7 +1358,7 @@ mod tests {
                 item.id.to_string(),
                 item.label.to_string(),
                 item.sublabel
-                    .map(|hint| hint.replace(['\u{2068}', '\u{2069}'], "")),
+                    .map(|hint| hint.replace(crate::test_support::FORMAT_ISOLATES, "")),
             ),
             (
                 "scene-1".to_owned(),

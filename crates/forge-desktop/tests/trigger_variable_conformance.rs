@@ -10,6 +10,7 @@ const VOCABULARY_HAS_NOT_REACHED: &[&str] = &[];
 
 fn every_registered_trigger() -> TriggerRegistry {
     let mut registry = TriggerRegistry::new();
+    forge_runtime::register_core_triggers(&mut registry).expect("core triggers");
     forge_platform_twitch::register_twitch_triggers(&mut registry).expect("twitch triggers");
     forge_platform_youtube::register_youtube_triggers(&mut registry).expect("youtube triggers");
     forge_platform_kick::register_kick_triggers(&mut registry).expect("kick triggers");

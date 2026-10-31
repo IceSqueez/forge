@@ -1,27 +1,28 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 use forge_vtube::vocabulary::event_kinds as vtube_kinds;
-use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use async_trait::async_trait;
 use forge_emulator::EmulatorError;
 use forge_emulator::fakes::vtube::{
     FakeModel, FakeVTube, FakeVTubeConfig, HOTKEY_TRIGGERED_EVENT, ITEM_EVENT, MODEL_LOADED_EVENT,
     TokenCheck, VTubeLedger, hotkey_id, model_id,
 };
 use forge_events::{Event, EventPublisher};
-use forge_storage::{CredentialId, CredentialsRepo, StorageError};
+use forge_storage::{CredentialId, CredentialsRepo};
 use forge_types::Variant;
 use forge_vtube::{VTUBE_CREDENTIAL_ID, VTubeClient, VTubeSink, probe_connection};
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
-use time::OffsetDateTime;
 use tokio::net::TcpStream;
 use tokio::time::timeout;
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
+
+mod support;
+
+use support::MemoryCredentials;
 
 type Socket = WebSocketStream<MaybeTlsStream<TcpStream>>;
 
@@ -184,46 +185,6 @@ impl Captured {
             tokio::time::sleep(POLL).await;
         }
         None
-    }
-}
-
-#[derive(Default)]
-struct MemoryCredentials(Mutex<HashMap<String, String>>);
-
-#[async_trait]
-impl CredentialsRepo for MemoryCredentials {
-    async fn store(&self, id: &CredentialId, plaintext: &str) -> Result<(), StorageError> {
-        self.0
-            .lock()
-            .unwrap()
-            .insert(id.as_str().to_owned(), plaintext.to_owned());
-        Ok(())
-    }
-
-    async fn load(&self, id: &CredentialId) -> Result<Option<String>, StorageError> {
-        Ok(self.0.lock().unwrap().get(id.as_str()).cloned())
-    }
-
-    async fn delete(&self, id: &CredentialId) -> Result<bool, StorageError> {
-        Ok(self.0.lock().unwrap().remove(id.as_str()).is_some())
-    }
-
-    async fn list_ids(&self) -> Result<Vec<CredentialId>, StorageError> {
-        Ok(self
-            .0
-            .lock()
-            .unwrap()
-            .keys()
-            .map(|key| CredentialId::new(key.clone()))
-            .collect())
-    }
-
-    async fn last_refresh(&self, _: &CredentialId) -> Result<Option<OffsetDateTime>, StorageError> {
-        Ok(None)
-    }
-
-    async fn mark_refreshed(&self, _: &CredentialId) -> Result<(), StorageError> {
-        Ok(())
     }
 }
 

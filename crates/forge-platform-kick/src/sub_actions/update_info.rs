@@ -165,23 +165,14 @@ impl SubActionRunner for UpdateInfoRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use forge_events::test_support::NullPublisher;
+    use crate::sub_actions::test_support::{make_ctx, token_source};
 
     use forge_registry::RegistryError;
-    use forge_types::EventId;
+
     use forge_types::Variant;
     use std::collections::BTreeMap;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
-
-    fn make_ctx(stack: &ArgStack) -> RunContext<'_> {
-        RunContext::leaf(stack, 0, EventId::new(), &NullPublisher)
-    }
-
-    fn token_source()
-    -> Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync> {
-        Arc::new(|| Box::pin(async { Ok("tok".to_owned()) }))
-    }
 
     fn runner_on(server: &MockServer) -> UpdateInfoRunner {
         let client = KickChannel::new(crate::endpoints_test_support::api_at(&server.uri()));

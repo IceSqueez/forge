@@ -77,9 +77,9 @@ impl SubActionRunner for PauseRewardRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::account::identity::SelfIdentity;
+
     use crate::helix::{HelixMethod, HelixTransport};
-    use crate::sub_actions::test_support::{MockCreds, MockTransport, SELF_USER_ID, make_ctx};
+    use crate::sub_actions::test_support::{MockTransport, SELF_USER_ID, make_ctx};
     use forge_types::{SubActionOutcome, Variant};
 
     #[tokio::test]
@@ -87,7 +87,7 @@ mod tests {
         let transport = Arc::new(MockTransport::returning(Ok(serde_json::Value::Null)));
         let runner = PauseRewardRunner::new(
             Arc::clone(&transport) as Arc<dyn HelixTransport>,
-            Arc::new(SelfIdentity::new(Arc::new(MockCreds::with_identity()))),
+            crate::sub_actions::test_support::self_identity(),
         );
         let stack = ArgStack::new().set("reward.id".to_owned(), Variant::String("rw2".to_owned()));
 

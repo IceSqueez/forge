@@ -142,7 +142,9 @@ async fn received_routes(server: &MockServer) -> Vec<(String, String)> {
 async fn public_api_override_carries_every_rest_client_to_the_override_host() {
     let server = MockServer::start().await;
     Mock::given(wiremock::matchers::any())
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "data": [] })))
+        .respond_with(
+            ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(json!({ "data": [] })),
+        )
         .mount(&server)
         .await;
     let endpoints = endpoints(&[(
@@ -189,10 +191,12 @@ async fn channel_api_override_carries_the_channel_info_fetch_to_the_override_hos
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/api/v2/channels/streamer"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "chatroom": { "id": CHATROOM_ID },
-            "livestream": { "viewer_count": 31 }
-        })))
+        .respond_with(
+            ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(json!({
+                "chatroom": { "id": CHATROOM_ID },
+                "livestream": { "viewer_count": 31 }
+            })),
+        )
         .mount(&server)
         .await;
     let endpoints = endpoints(&[(
@@ -210,11 +214,13 @@ async fn oauth_override_carries_the_token_refresh_to_the_override_host() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/oauth/token"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "access_token": "fresh-access",
-            "refresh_token": "fresh-refresh",
-            "expires_in": 3600
-        })))
+        .respond_with(
+            ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(json!({
+                "access_token": "fresh-access",
+                "refresh_token": "fresh-refresh",
+                "expires_in": 3600
+            })),
+        )
         .mount(&server)
         .await;
     let endpoints = endpoints(&[(
@@ -242,10 +248,12 @@ async fn oauth_override_carries_the_token_refresh_to_the_override_host() {
 async fn mount_channel(server: &MockServer) {
     Mock::given(method("GET"))
         .and(path("/api/v2/channels/streamer"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "chatroom": { "id": CHATROOM_ID },
-            "livestream": null
-        })))
+        .respond_with(
+            ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(json!({
+                "chatroom": { "id": CHATROOM_ID },
+                "livestream": null
+            })),
+        )
         .mount(server)
         .await;
 }
@@ -321,7 +329,7 @@ async fn platform_carries_its_overrides_into_the_chat_session_and_the_sender() {
     mount_channel(&server).await;
     Mock::given(method("POST"))
         .and(path("/public/v1/chat"))
-        .respond_with(ResponseTemplate::new(200))
+        .respond_with(ResponseTemplate::new(reqwest::StatusCode::OK))
         .expect(1)
         .mount(&server)
         .await;

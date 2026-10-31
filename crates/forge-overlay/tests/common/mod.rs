@@ -1,4 +1,4 @@
-#![allow(dead_code, clippy::expect_used)]
+#![allow(dead_code, clippy::expect_used, clippy::panic)]
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -35,6 +35,18 @@ pub(crate) const UNSAFE_IDENTITIES: &[(&str, &str)] = &[
     ("-leading-dash", "a leading dash"),
     (RESERVED_DIRECTORY, "the reserved shared subtree"),
 ];
+
+pub(crate) fn js_function(source: &'static str, name: &str) -> &'static str {
+    let opening = format!("function {name}(");
+    let start = source
+        .find(&opening)
+        .unwrap_or_else(|| panic!("the script no longer declares '{opening}'"));
+    let rest = &source[start..];
+    let end = rest
+        .find("\n  }")
+        .unwrap_or_else(|| panic!("'{opening}' is never closed"));
+    &rest[..end]
+}
 
 pub(crate) fn registry() -> OverlayKindRegistry {
     let mut reg = OverlayKindRegistry::new();

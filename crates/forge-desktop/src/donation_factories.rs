@@ -136,7 +136,6 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::time::Duration;
 
-    use forge_events::{Event, EventPublisher};
     use forge_platform_core::{
         CapabilityFlags, ConnectionState, ControlOutcome, DetailSection, DonationStream,
         HeaderAction, HealthMetric, HealthMetricId, HealthStream, HealthValue, QuickAction,
@@ -266,19 +265,13 @@ mod tests {
         }
     }
 
-    struct NullPublisher;
-
-    impl EventPublisher for NullPublisher {
-        fn publish(&self, _event: Event) {}
-    }
-
     fn supervised(service: &Arc<FakeService>) -> IntegrationSupervisor<BuiltinObject> {
         let (backend, _writes) = test_backend();
         let mut ledger = MockDonationRepo::new();
         ledger.expect_has_donations_from().returning(|_| Ok(true));
         let ingest = Arc::new(DonationIngest::new(
             Arc::new(ledger),
-            Arc::new(NullPublisher),
+            Arc::new(crate::test_support::SilentPublisher),
             Shared::new(String::new()),
         ));
         let factory = DonationFactory {

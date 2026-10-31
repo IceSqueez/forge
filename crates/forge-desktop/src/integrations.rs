@@ -489,12 +489,6 @@ pub(crate) mod tests {
         EventBus::new(Arc::new(NullEventLogRepo))
     }
 
-    struct SilentPublisher;
-
-    impl EventPublisher for SilentPublisher {
-        fn publish(&self, _event: Event) {}
-    }
-
     async fn listening_but_silent_port() -> (tokio::net::TcpListener, u16) {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
@@ -509,7 +503,7 @@ pub(crate) mod tests {
             forge_obs::ObsClient::connect(
                 &format!("127.0.0.1:{port}"),
                 None,
-                Arc::new(SilentPublisher),
+                Arc::new(crate::test_support::SilentPublisher),
             )
             .await
             .unwrap(),
@@ -544,7 +538,7 @@ pub(crate) mod tests {
             forge_obs::ObsClient::connect(
                 &format!("127.0.0.1:{port}"),
                 None,
-                Arc::new(SilentPublisher),
+                Arc::new(crate::test_support::SilentPublisher),
             )
             .await
             .unwrap(),
@@ -572,7 +566,7 @@ pub(crate) mod tests {
             forge_vtube::VTubeConfig {
                 endpoint: format!("ws://127.0.0.1:{port}/"),
             },
-            Arc::new(SilentPublisher),
+            Arc::new(crate::test_support::SilentPublisher),
             backend as Arc<dyn forge_storage::CredentialsRepo>,
         ));
         client.set_auto_reconnect(false);

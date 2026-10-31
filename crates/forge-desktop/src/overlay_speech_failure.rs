@@ -81,7 +81,7 @@ mod tests {
 
     fn plain(text: Option<String>) -> String {
         text.expect("a speech failure becomes a toast")
-            .replace(['\u{2068}', '\u{2069}'], "")
+            .replace(crate::test_support::FORMAT_ISOLATES, "")
     }
 
     #[test]
@@ -133,7 +133,7 @@ mod tests {
             EventSource::Core,
             OVERLAY_SPEECH_FAILED_KIND,
         ))
-        .map(|text| text.replace(['\u{2068}', '\u{2069}'], ""));
+        .map(|text| text.replace(crate::test_support::FORMAT_ISOLATES, ""));
 
         assert!(
             text.as_deref()

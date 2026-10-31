@@ -146,7 +146,8 @@ impl SubActionRunner for SendMessageRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use forge_events::test_support::NullPublisher;
+    use crate::sub_actions::test_support::{make_ctx, token_source};
+
     use forge_events::{Event, EventPublisher};
     use forge_types::EventId;
     use forge_types::Variant;
@@ -171,15 +172,6 @@ mod tests {
                 .map(|e| (e.source, e.kind.clone(), e.payload.clone(), e.caused_by))
                 .collect()
         }
-    }
-
-    fn make_ctx(stack: &ArgStack) -> RunContext<'_> {
-        RunContext::leaf(stack, 0, EventId::new(), &NullPublisher)
-    }
-
-    fn token_source()
-    -> Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync> {
-        Arc::new(|| Box::pin(async { Ok("tok".to_owned()) }))
     }
 
     fn broadcaster_id_source(

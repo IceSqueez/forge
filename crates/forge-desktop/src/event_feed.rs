@@ -1610,7 +1610,7 @@ mod tests {
                 }),
             );
 
-            let plain = tag.map(|tag| tag.replace(['\u{2068}', '\u{2069}'], ""));
+            let plain = tag.map(|tag| tag.replace(crate::test_support::FORMAT_ISOLATES, ""));
             assert!(
                 plain.as_ref().is_some_and(|tag| tag.contains("@forgebot")),
                 "{kind}: {plain:?}"

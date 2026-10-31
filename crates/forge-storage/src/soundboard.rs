@@ -62,10 +62,3 @@ pub trait SoundboardClipsRepo: Send + Sync {
         self.delete(id).await
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn _trait_is_dyn_safe(_: &dyn SoundboardClipsRepo) {}
-}

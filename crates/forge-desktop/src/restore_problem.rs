@@ -360,7 +360,7 @@ mod tests {
             panic!("expected Failed, got {problem:?}");
         };
         assert_eq!(
-            text.replace(['\u{2068}', '\u{2069}'], ""),
+            text.replace(crate::test_support::FORMAT_ISOLATES, ""),
             "\"media-in-the-way\" is in the way of the restore"
         );
     }
@@ -385,7 +385,7 @@ mod tests {
 
         let message = RestoreProblem::of(&error)
             .message()
-            .replace(['\u{2068}', '\u{2069}'], "");
+            .replace(crate::test_support::FORMAT_ISOLATES, "");
 
         assert!(
             message.contains("a forge setup, not a full backup"),

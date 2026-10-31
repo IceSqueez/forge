@@ -115,7 +115,7 @@ mod tests {
     use super::*;
     use crate::helix::HelixError;
     use crate::sub_actions::test_support::{
-        MockCreds, MockTransport, SELF_USER_ID, assert_request_refused, make_ctx, users_fixture,
+        MockTransport, SELF_USER_ID, assert_request_refused, make_ctx, users_fixture,
     };
     use forge_types::Variant;
     use std::collections::BTreeMap;
@@ -126,7 +126,7 @@ mod tests {
         let transport = Arc::new(MockTransport::returning_sequence(responses));
         let runner = GuestStarInviteRunner::new(
             Arc::clone(&transport) as Arc<dyn HelixTransport>,
-            Arc::new(SelfIdentity::new(Arc::new(MockCreds::with_identity()))),
+            crate::sub_actions::test_support::self_identity(),
         );
         (transport, runner)
     }
@@ -301,7 +301,7 @@ mod tests {
     fn validate_config_requires_session_id_and_target_login() {
         let runner = GuestStarInviteRunner::new(
             Arc::new(MockTransport::returning(Ok(serde_json::Value::Null))),
-            Arc::new(SelfIdentity::new(Arc::new(MockCreds::with_identity()))),
+            crate::sub_actions::test_support::self_identity(),
         );
 
         assert!(runner.validate_config(&runner.default_config()).is_err());

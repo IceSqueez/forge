@@ -113,10 +113,3 @@ pub trait ActionRepo: Send + Sync {
         Ok(Vec::new())
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn _trait_is_dyn_safe(_: &dyn ActionRepo) {}
-}

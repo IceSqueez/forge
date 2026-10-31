@@ -16,10 +16,3 @@ pub trait VoiceAliasRepo: Send + Sync {
     async fn get_ignore_profile(&self) -> Result<IgnoreProfile, StorageError>;
     async fn set_ignore_profile(&self, profile: &IgnoreProfile) -> Result<(), StorageError>;
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn _dyn_safe(_: &dyn VoiceAliasRepo) {}
-}

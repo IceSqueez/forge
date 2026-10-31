@@ -171,16 +171,13 @@ async fn upload_api_override_carries_the_thumbnail_upload_to_the_override_host()
         EndpointSurface::YouTubeUploadApi,
         format!("{}/upload/youtube/v3", server.uri()),
     )]);
-    let image = std::env::temp_dir().join(format!(
-        "forge-youtube-endpoint-thumbnail-{}.png",
-        std::process::id()
-    ));
+    let folder = tempfile::tempdir().unwrap();
+    let image = folder.path().join("thumbnail.png");
     std::fs::write(&image, b"\x89PNG\r\n\x1a\n").unwrap();
 
     let result = YoutubeThumbnail::new(api(&endpoints), token_source(), active_broadcast())
         .set(image.to_str().unwrap())
         .await;
-    std::fs::remove_file(&image).unwrap();
 
     assert!(result.is_ok(), "{result:?}");
     assert_eq!(

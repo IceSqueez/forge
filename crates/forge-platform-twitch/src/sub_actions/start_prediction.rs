@@ -182,6 +182,7 @@ impl SubActionRunner for StartPredictionRunner {
 mod tests {
     use super::*;
     use crate::helix::HelixError;
+    use crate::sub_actions::test_support::TOKEN_SENTINEL;
     use crate::sub_actions::test_support::{
         MockCreds, MockTransport, SELF_USER_ID, assert_request_refused, make_ctx,
     };
@@ -197,7 +198,7 @@ mod tests {
         let transport = Arc::new(MockTransport::returning(response));
         let runner = StartPredictionRunner::new(
             Arc::clone(&transport) as Arc<dyn HelixTransport>,
-            Arc::new(SelfIdentity::new(Arc::new(MockCreds::with_identity()))),
+            crate::sub_actions::test_support::self_identity(),
         );
         (transport, runner)
     }
@@ -312,7 +313,7 @@ mod tests {
     async fn http_failure_outcome_does_not_leak_token() {
         let (_, runner) = runner_with(Err(HelixError::Http {
             status: 400,
-            body: "invalid outcomes".to_owned(),
+            body: format!("invalid outcomes {TOKEN_SENTINEL}"),
         }));
         let stack = ArgStack::new();
         let (telemetry, _) = runner.execute(&full_cfg(), &make_ctx(&stack)).await;
@@ -323,7 +324,7 @@ mod tests {
     fn validate_config_enforces_field_constraints() {
         let runner = StartPredictionRunner::new(
             Arc::new(MockTransport::returning(Ok(serde_json::Value::Null))),
-            Arc::new(SelfIdentity::new(Arc::new(MockCreds::with_identity()))),
+            crate::sub_actions::test_support::self_identity(),
         );
 
         let valid = full_cfg();

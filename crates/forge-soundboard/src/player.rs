@@ -813,89 +813,21 @@ mod tests {
     use forge_audio::{AudioError, AudioSink};
     use forge_speech_types::PcmBuffer;
     use forge_storage::test_support::{INJECTED_FAILURE_REASON, MemorySettings};
-    use forge_storage::{
-        MediaBlob, MediaBlobId, MediaReferrer, MediaReferrerKind, MediaRepo, SoundboardClipsRepo,
-        StorageError, StoredClip,
-    };
+    use forge_storage::{MockMediaRepo, SoundboardClipsRepo, StorageError, StoredClip};
     use forge_types::{ClipId, OutputDevice};
     use time::OffsetDateTime;
 
     use super::*;
     use forge_audio::AudioSinkFactory;
 
-    struct NoManagedMedia {
-        imports: Arc<std::sync::atomic::AtomicUsize>,
-    }
-
-    #[async_trait]
-    impl MediaRepo for NoManagedMedia {
-        async fn store(&self, _label: &str, _bytes: Vec<u8>) -> Result<MediaBlob, StorageError> {
+    fn no_managed_media(imports: Arc<std::sync::atomic::AtomicUsize>) -> MockMediaRepo {
+        let mut media = MockMediaRepo::new();
+        media.expect_blob_of().returning(|_| Ok(None));
+        media.expect_import_file().returning(move |_| {
+            imports.fetch_add(1, Ordering::Relaxed);
             Err(StorageError::NotReady)
-        }
-
-        async fn import_file(&self, _source: &Path) -> Result<MediaBlob, StorageError> {
-            self.imports.fetch_add(1, Ordering::Relaxed);
-            Err(StorageError::NotReady)
-        }
-
-        async fn get(&self, _id: &MediaBlobId) -> Result<Option<MediaBlob>, StorageError> {
-            Ok(None)
-        }
-
-        async fn list(&self) -> Result<Vec<MediaBlob>, StorageError> {
-            Ok(Vec::new())
-        }
-
-        async fn total_bytes(&self) -> Result<u64, StorageError> {
-            Ok(0)
-        }
-
-        async fn resolve(&self, id: &MediaBlobId) -> Result<PathBuf, StorageError> {
-            Err(StorageError::NotFound {
-                key: id.as_str().to_owned(),
-            })
-        }
-
-        async fn read(&self, id: &MediaBlobId) -> Result<Vec<u8>, StorageError> {
-            Err(StorageError::NotFound {
-                key: id.as_str().to_owned(),
-            })
-        }
-
-        async fn delete(&self, _id: &MediaBlobId) -> Result<bool, StorageError> {
-            Ok(false)
-        }
-
-        async fn retain(
-            &self,
-            _referrer: &MediaReferrer,
-            _id: &MediaBlobId,
-        ) -> Result<(), StorageError> {
-            Ok(())
-        }
-
-        async fn release(&self, _referrer: &MediaReferrer) -> Result<bool, StorageError> {
-            Ok(false)
-        }
-
-        async fn release_all(
-            &self,
-            _kind: MediaReferrerKind,
-            _referrer_id: &str,
-        ) -> Result<u64, StorageError> {
-            Ok(0)
-        }
-
-        async fn referrers(&self, _id: &MediaBlobId) -> Result<Vec<MediaReferrer>, StorageError> {
-            Ok(Vec::new())
-        }
-
-        async fn blob_of(
-            &self,
-            _referrer: &MediaReferrer,
-        ) -> Result<Option<MediaBlobId>, StorageError> {
-            Ok(None)
-        }
+        });
+        media
     }
 
     fn unadopted_library(clip: Option<StoredClip>) -> Arc<ClipLibrary> {
@@ -908,9 +840,7 @@ mod tests {
         let imports = Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let library = Arc::new(ClipLibrary::new(
             Arc::new(MockClipsRepo { clip }),
-            Arc::new(NoManagedMedia {
-                imports: Arc::clone(&imports),
-            }),
+            Arc::new(no_managed_media(Arc::clone(&imports))),
         ));
         (library, imports)
     }
@@ -1811,9 +1741,7 @@ mod tests {
         });
         let library = Arc::new(ClipLibrary::new(
             Arc::clone(&repo) as Arc<dyn SoundboardClipsRepo>,
-            Arc::new(NoManagedMedia {
-                imports: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
-            }),
+            Arc::new(no_managed_media(Arc::default())),
         ));
         let (factory, _, _) = CountingFactory::new();
         let (event_sink, _) = RecordingEventSink::new();
@@ -2610,9 +2538,7 @@ mod tests {
         let (event_sink, events) = RecordingEventSink::new();
         let library = Arc::new(ClipLibrary::new(
             Arc::new(ClipShelf(clips.iter().map(|c| c.clip.clone()).collect())),
-            Arc::new(NoManagedMedia {
-                imports: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
-            }),
+            Arc::new(no_managed_media(Arc::default())),
         ));
         let player = SoundboardPlayer::with_settings(
             factory,

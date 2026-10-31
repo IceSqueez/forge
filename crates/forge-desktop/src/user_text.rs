@@ -144,7 +144,7 @@ mod tests {
     }
 
     fn plain(text: &str) -> String {
-        text.replace(['\u{2068}', '\u{2069}'], "")
+        text.replace(crate::test_support::FORMAT_ISOLATES, "")
     }
 
     fn primary(message: &MessageRef) -> String {

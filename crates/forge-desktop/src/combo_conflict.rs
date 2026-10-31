@@ -373,7 +373,9 @@ mod tests {
                 "Soundboard: airhorn",
             ),
         ] {
-            let label = holder.label().replace(['\u{2068}', '\u{2069}'], "");
+            let label = holder
+                .label()
+                .replace(crate::test_support::FORMAT_ISOLATES, "");
             assert_eq!(label, expected, "{holder:?}");
         }
     }

@@ -20,7 +20,6 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
 const SETTLE_DEADLINE: std::time::Duration = std::time::Duration::from_secs(30);
 const ADOPTION_EVENT: &str = "soundboard.clip.adopted";
-const CLIP_SOURCE_SLOT: &str = "source";
 const FANFARE: &str = "/home/streamer/sounds/fanfare.wav";
 const AIRHORN: &str = "/home/streamer/sounds/airhorn.wav";
 const UNREADABLE: &str = "/home/streamer/sounds/notes.txt";
@@ -114,7 +113,7 @@ fn clip_source(clip_id: ClipId) -> MediaReferrer {
     MediaReferrer::new(
         MediaReferrerKind::SoundboardClip,
         clip_id.to_string(),
-        CLIP_SOURCE_SLOT,
+        forge_storage::CLIP_SOURCE_SLOT,
     )
 }
 
@@ -318,6 +317,14 @@ impl RecordingPublisher {
             .collect()
     }
 
+    fn settled_for(&self, row: &StoredClip) -> usize {
+        let clip_id = json!(row.id.to_string());
+        self.settled()
+            .iter()
+            .filter(|payload| payload["clip_id"] == clip_id)
+            .count()
+    }
+
     fn published(&self) -> usize {
         self.events.lock().unwrap().len()
     }
@@ -356,6 +363,69 @@ impl Harness {
             .install_event_publisher(Arc::clone(&publisher) as Arc<dyn EventPublisher>);
         publisher
     }
+
+    fn adopt_a_later_row_in_background(&self) -> tempfile::NamedTempFile {
+        let source = legacy_source(".wav");
+        self.media.knows(
+            &source.path().to_string_lossy(),
+            AIRHORN_BLOB,
+            MANAGED_AIRHORN,
+        );
+        self.library
+            .adopt_in_background(ClipId::new(), source.path().to_path_buf());
+        source
+    }
+
+    fn shelve_one_row_of_each_outcome(&self) -> MixedRows {
+        let managed_source = legacy_source(".wav");
+        let adoptable_source = legacy_source(".wav");
+        let refused_source = legacy_source(".txt");
+
+        let managed = clip_at("Managed", managed_source.path());
+        self.media.knows(
+            &managed_source.path().to_string_lossy(),
+            FANFARE_BLOB,
+            &managed_source.path().to_string_lossy(),
+        );
+        self.media.already_retained(managed.id, FANFARE_BLOB);
+
+        let adoptable = clip_at("Adoptable", adoptable_source.path());
+        self.media.knows(
+            &adoptable_source.path().to_string_lossy(),
+            AIRHORN_BLOB,
+            MANAGED_AIRHORN,
+        );
+
+        let refused = clip_at("Refused", refused_source.path());
+        MixedRows {
+            managed,
+            adoptable,
+            refused,
+            gone: clip("Gone", FANFARE),
+            refused_label: file_name(refused_source.path()),
+            _sources: [managed_source, adoptable_source, refused_source],
+        }
+    }
+}
+
+struct MixedRows {
+    managed: StoredClip,
+    adoptable: StoredClip,
+    refused: StoredClip,
+    gone: StoredClip,
+    refused_label: String,
+    _sources: [tempfile::NamedTempFile; 3],
+}
+
+impl MixedRows {
+    fn in_order(&self) -> [StoredClip; 4] {
+        [
+            self.managed.clone(),
+            self.adoptable.clone(),
+            self.refused.clone(),
+            self.gone.clone(),
+        ]
+    }
 }
 
 fn clip(name: &str, source: &str) -> StoredClip {
@@ -390,12 +460,6 @@ fn file_name(path: &Path) -> String {
         .expect("a named source")
         .to_string_lossy()
         .into_owned()
-}
-
-async fn settle_background_work() {
-    for _ in 0..8 {
-        tokio::task::yield_now().await;
-    }
 }
 
 fn drain(calls: &mut UnboundedReceiver<MediaCall>) -> Vec<MediaCall> {
@@ -542,6 +606,7 @@ async fn a_refusal_recorded_while_saving_explains_the_row_in_a_later_availabilit
 #[tokio::test]
 async fn a_recorded_refusal_stops_the_background_path_but_not_an_explicit_adoption() {
     let mut fx = harness();
+    let bus = fx.listen();
     let source = legacy_source(".txt");
     let row = clip_at("Notes", source.path());
 
@@ -557,6 +622,7 @@ async fn a_recorded_refusal_stops_the_background_path_but_not_an_explicit_adopti
         ),
         "an unsupported source was not refused: {refused:?}"
     );
+    assert_eq!(bus.settled_for(&row), 1, "the refusal was not announced");
     let _ = drain(&mut fx.calls);
 
     fx.media.knows(
@@ -566,43 +632,27 @@ async fn a_recorded_refusal_stops_the_background_path_but_not_an_explicit_adopti
     );
     fx.library
         .adopt_in_background(row.id, source.path().to_path_buf());
-    settle_background_work().await;
-    assert!(
-        drain(&mut fx.calls).is_empty(),
+    let later = fx.adopt_a_later_row_in_background();
+    assert_eq!(
+        fx.calls.recv().await,
+        Some(MediaCall::Import(later.path().to_path_buf())),
         "the background path retried a source it had already refused"
+    );
+    assert_eq!(
+        bus.settled_for(&row),
+        1,
+        "the background path announced a refusal it never retried",
     );
 
     assert_eq!(
         fx.library.adopt_now(&row).await.expect("the retry settles"),
         AdoptionVerdict::Adopted
     );
-}
-
-#[tokio::test]
-async fn an_adoption_already_running_reports_in_flight_instead_of_importing_again() {
-    let gate = Arc::new(Notify::new());
-    let mut fx = harness_with_gate(Some(Arc::clone(&gate)));
-    let source = legacy_source(".wav");
-    fx.media.knows(
-        &source.path().to_string_lossy(),
-        FANFARE_BLOB,
-        MANAGED_FANFARE,
-    );
-    let row = clip_at("Alert", source.path());
-
-    fx.library
-        .adopt_in_background(row.id, source.path().to_path_buf());
     assert_eq!(
-        fx.calls.recv().await,
-        Some(MediaCall::Import(source.path().to_path_buf()))
+        bus.settled_for(&row),
+        2,
+        "the explicit retry settled without announcing it",
     );
-
-    let verdict = tokio::time::timeout(SETTLE_DEADLINE, fx.library.adopt_now(&row))
-        .await
-        .expect("the second caller must not wait on the running import")
-        .expect("the second caller settles");
-
-    assert_eq!(verdict, AdoptionVerdict::InFlight);
 }
 
 #[tokio::test]
@@ -667,36 +717,11 @@ async fn a_transient_import_failure_leaves_the_row_open_to_another_attempt() {
 #[tokio::test]
 async fn adopt_all_now_settles_every_row_with_its_own_verdict() {
     let fx = harness();
-    let managed_source = legacy_source(".wav");
-    let adoptable_source = legacy_source(".wav");
-    let refused_source = legacy_source(".txt");
-
-    let managed = clip_at("Managed", managed_source.path());
-    fx.media.knows(
-        &managed_source.path().to_string_lossy(),
-        FANFARE_BLOB,
-        &managed_source.path().to_string_lossy(),
-    );
-    fx.media.already_retained(managed.id, FANFARE_BLOB);
-
-    let adoptable = clip_at("Adoptable", adoptable_source.path());
-    fx.media.knows(
-        &adoptable_source.path().to_string_lossy(),
-        AIRHORN_BLOB,
-        MANAGED_AIRHORN,
-    );
-
-    let refused = clip_at("Refused", refused_source.path());
-    let gone = clip("Gone", FANFARE);
+    let rows = fx.shelve_one_row_of_each_outcome();
 
     let verdicts: HashMap<ClipId, AdoptionVerdict> = fx
         .library
-        .adopt_all_now(&[
-            managed.clone(),
-            adoptable.clone(),
-            refused.clone(),
-            gone.clone(),
-        ])
+        .adopt_all_now(&rows.in_order())
         .await
         .into_iter()
         .map(|(id, verdict)| (id, verdict.expect("every row settles with a verdict")))
@@ -705,15 +730,15 @@ async fn adopt_all_now_settles_every_row_with_its_own_verdict() {
     assert_eq!(
         verdicts,
         HashMap::from([
-            (managed.id, AdoptionVerdict::AlreadyManaged),
-            (adoptable.id, AdoptionVerdict::Adopted),
+            (rows.managed.id, AdoptionVerdict::AlreadyManaged),
+            (rows.adoptable.id, AdoptionVerdict::Adopted),
             (
-                refused.id,
+                rows.refused.id,
                 AdoptionVerdict::Refused(ClipRefusal::Unsupported {
-                    label: file_name(refused_source.path())
+                    label: rows.refused_label.clone()
                 })
             ),
-            (gone.id, AdoptionVerdict::SourceMissing),
+            (rows.gone.id, AdoptionVerdict::SourceMissing),
         ])
     );
 }
@@ -785,52 +810,25 @@ async fn availability_of_returns_nothing_for_an_empty_list() {
 async fn adopting_a_list_announces_one_settled_event_per_row_carrying_its_verdict() {
     let fx = harness();
     let bus = fx.listen();
-    let managed_source = legacy_source(".wav");
-    let adoptable_source = legacy_source(".wav");
-    let refused_source = legacy_source(".txt");
+    let rows = fx.shelve_one_row_of_each_outcome();
 
-    let managed = clip_at("Managed", managed_source.path());
-    fx.media.knows(
-        &managed_source.path().to_string_lossy(),
-        FANFARE_BLOB,
-        &managed_source.path().to_string_lossy(),
-    );
-    fx.media.already_retained(managed.id, FANFARE_BLOB);
-
-    let adoptable = clip_at("Adoptable", adoptable_source.path());
-    fx.media.knows(
-        &adoptable_source.path().to_string_lossy(),
-        AIRHORN_BLOB,
-        MANAGED_AIRHORN,
-    );
-
-    let refused = clip_at("Refused", refused_source.path());
-    let gone = clip("Gone", FANFARE);
-
-    fx.library
-        .adopt_all_now(&[
-            managed.clone(),
-            adoptable.clone(),
-            refused.clone(),
-            gone.clone(),
-        ])
-        .await;
+    fx.library.adopt_all_now(&rows.in_order()).await;
 
     let announced = bus.settled();
     assert_eq!(
         announced,
         vec![
-            json!({ "clip_id": managed.id.to_string(), "verdict": "already_managed" }),
-            json!({ "clip_id": adoptable.id.to_string(), "verdict": "adopted" }),
+            json!({ "clip_id": rows.managed.id.to_string(), "verdict": "already_managed" }),
+            json!({ "clip_id": rows.adoptable.id.to_string(), "verdict": "adopted" }),
             json!({
-                "clip_id": refused.id.to_string(),
+                "clip_id": rows.refused.id.to_string(),
                 "verdict": "refused",
                 "reason": ClipRefusal::Unsupported {
-                    label: file_name(refused_source.path()),
+                    label: rows.refused_label.clone(),
                 }
                 .to_string(),
             }),
-            json!({ "clip_id": gone.id.to_string(), "verdict": "source_missing" }),
+            json!({ "clip_id": rows.gone.id.to_string(), "verdict": "source_missing" }),
         ],
     );
     assert_eq!(
@@ -869,7 +867,7 @@ async fn a_refused_adoption_names_the_reason_without_leaking_the_source_path() {
 }
 
 #[tokio::test]
-async fn an_adoption_already_running_announces_nothing_for_the_second_caller() {
+async fn an_adoption_already_running_reports_in_flight_and_announces_nothing() {
     let gate = Arc::new(Notify::new());
     let mut fx = harness_with_gate(Some(Arc::clone(&gate)));
     let bus = fx.listen();
@@ -898,39 +896,6 @@ async fn an_adoption_already_running_announces_nothing_for_the_second_caller() {
         bus.settled().is_empty(),
         "an unsettled adoption was announced: {:?}",
         bus.settled(),
-    );
-}
-
-#[tokio::test]
-async fn a_recorded_refusal_silences_the_background_path_but_not_an_explicit_retry() {
-    let fx = harness();
-    let bus = fx.listen();
-    let source = legacy_source(".txt");
-    let row = clip_at("Notes", source.path());
-
-    fx.library
-        .adopt_now(&row)
-        .await
-        .expect("the first attempt settles");
-    assert_eq!(bus.settled().len(), 1, "the refusal was not announced");
-
-    fx.library
-        .adopt_in_background(row.id, source.path().to_path_buf());
-    settle_background_work().await;
-    assert_eq!(
-        bus.settled().len(),
-        1,
-        "the background path announced a refusal it never retried",
-    );
-
-    fx.library
-        .adopt_now(&row)
-        .await
-        .expect("the explicit retry settles");
-    assert_eq!(
-        bus.settled().len(),
-        2,
-        "the explicit retry settled without announcing it",
     );
 }
 

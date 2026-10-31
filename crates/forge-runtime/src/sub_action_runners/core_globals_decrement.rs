@@ -107,85 +107,18 @@ impl SubActionRunner for CoreGlobalsDecrementRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::MapGlobals;
     use crate::test_support::failure::failure_message;
     use forge_events::Event;
     use forge_events::EventPublisher;
     use forge_events::test_support::NullPublisher;
-    use forge_storage::{GlobalEntry, StorageError};
-    use forge_types::{EventId, VariantKind};
-    use std::collections::BTreeMap;
+    use forge_types::EventId;
     use std::sync::Mutex;
-    use time::OffsetDateTime;
 
     struct CapturingPublisher(Arc<Mutex<Vec<Event>>>);
     impl EventPublisher for CapturingPublisher {
         fn publish(&self, event: Event) {
             self.0.lock().unwrap().push(event);
-        }
-    }
-
-    #[derive(Default)]
-    struct MapGlobals {
-        map: Mutex<BTreeMap<String, Variant>>,
-    }
-
-    impl MapGlobals {
-        fn with(entries: impl IntoIterator<Item = (&'static str, Variant)>) -> Self {
-            let map = entries
-                .into_iter()
-                .map(|(k, v)| (k.to_owned(), v))
-                .collect();
-            Self {
-                map: Mutex::new(map),
-            }
-        }
-        fn snapshot(&self, key: &str) -> Option<Variant> {
-            self.map.lock().unwrap().get(key).cloned()
-        }
-    }
-
-    #[async_trait]
-    impl GlobalsRepo for MapGlobals {
-        async fn get(&self, name: &str) -> Result<Option<Variant>, StorageError> {
-            Ok(self.map.lock().unwrap().get(name).cloned())
-        }
-        async fn set(&self, name: &str, value: Variant, _p: bool) -> Result<(), StorageError> {
-            self.map.lock().unwrap().insert(name.to_owned(), value);
-            Ok(())
-        }
-        async fn delete(&self, name: &str) -> Result<bool, StorageError> {
-            Ok(self.map.lock().unwrap().remove(name).is_some())
-        }
-        async fn list(&self) -> Result<Vec<GlobalEntry>, StorageError> {
-            Ok(vec![])
-        }
-        async fn storage_bytes(&self) -> Result<u64, StorageError> {
-            Ok(0)
-        }
-        async fn last_save_at(&self) -> Result<Option<OffsetDateTime>, StorageError> {
-            Ok(None)
-        }
-        async fn incr(&self, name: &str, amount: i64) -> Result<Variant, StorageError> {
-            let mut map = self.map.lock().unwrap();
-            match map.get(name).cloned() {
-                None => Err(StorageError::NotFound {
-                    key: name.to_owned(),
-                }),
-                Some(Variant::Int(i)) => {
-                    let nv = Variant::Int(i + amount);
-                    map.insert(name.to_owned(), nv.clone());
-                    Ok(nv)
-                }
-                Some(Variant::Float(f)) => {
-                    let nv = Variant::float(f + amount as f64).expect("finite");
-                    map.insert(name.to_owned(), nv.clone());
-                    Ok(nv)
-                }
-                Some(other) => Err(StorageError::TypeMismatch {
-                    name: name.to_owned(),
-                    actual: VariantKind::from_variant(&other).label().to_owned(),
-                }),
-            }
         }
     }
 

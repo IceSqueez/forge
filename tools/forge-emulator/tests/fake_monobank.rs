@@ -1,10 +1,8 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
-use std::collections::HashMap;
 use std::ffi::OsString;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 
-use async_trait::async_trait;
 use forge_emulator::fakes::monobank::{
     FakeJar, FakeMonobank, FakeMonobankConfig, FakeTransaction, MAX_STATEMENT_ITEMS,
     MAX_STATEMENT_WINDOW_SECS, MonobankEndpoint, TOO_MANY_REQUESTS_MESSAGE, UNKNOWN_TOKEN_MESSAGE,
@@ -15,11 +13,14 @@ use forge_net::TokenBucketRateLimiter;
 use forge_platform_core::{
     BuiltinControl, DonationProvider, DonationStream, PlatformEndpoints, PlatformError,
 };
-use forge_storage::{CredentialId, CredentialsRepo, StorageError};
 use forge_types::{Donation, DonationOrigin, Donor};
-use futures_util::StreamExt;
+use futures_util::{FutureExt, StreamExt};
 use serde_json::{Value, json};
 use time::OffsetDateTime;
+
+mod support;
+
+use support::MemoryCredentials;
 
 const WAIT: Duration = Duration::from_secs(30);
 const JAR: &str = "fakeJar001";
@@ -333,35 +334,6 @@ async fn invalid_configurations_are_refused() {
     }
 }
 
-#[derive(Default)]
-struct MemCreds(Mutex<HashMap<String, String>>);
-
-#[async_trait]
-impl CredentialsRepo for MemCreds {
-    async fn store(&self, id: &CredentialId, bundle: &str) -> Result<(), StorageError> {
-        self.0
-            .lock()
-            .unwrap()
-            .insert(id.as_str().to_owned(), bundle.to_owned());
-        Ok(())
-    }
-    async fn load(&self, id: &CredentialId) -> Result<Option<String>, StorageError> {
-        Ok(self.0.lock().unwrap().get(id.as_str()).cloned())
-    }
-    async fn delete(&self, id: &CredentialId) -> Result<bool, StorageError> {
-        Ok(self.0.lock().unwrap().remove(id.as_str()).is_some())
-    }
-    async fn list_ids(&self) -> Result<Vec<CredentialId>, StorageError> {
-        Ok(Vec::new())
-    }
-    async fn last_refresh(&self, _: &CredentialId) -> Result<Option<OffsetDateTime>, StorageError> {
-        Ok(None)
-    }
-    async fn mark_refreshed(&self, _: &CredentialId) -> Result<(), StorageError> {
-        Ok(())
-    }
-}
-
 fn endpoints_addressing(fake: &FakeMonobank) -> PlatformEndpoints {
     let (variable, value) = fake.endpoint_override();
     PlatformEndpoints::resolve(move |name| (name == variable).then(|| OsString::from(&value)))
@@ -379,7 +351,7 @@ fn generous_limits() -> MonobankRateLimits {
 fn provider_against(fake: &FakeMonobank, limits: MonobankRateLimits) -> MonobankProvider {
     let config = MonobankConfig::new(&endpoints_addressing(fake));
     let gateways = forge_monobank::monobank_gateways(&config, limits).unwrap();
-    MonobankProvider::new(config, Arc::new(MemCreds::default()), gateways)
+    MonobankProvider::new(config, Arc::new(MemoryCredentials::default()), gateways)
 }
 
 async fn next(stream: &mut DonationStream) -> Result<Donation, PlatformError> {
@@ -429,11 +401,7 @@ async fn real_provider_connects_within_the_banks_call_limit() {
         "{:?}",
         fake.requests()
     );
-    assert!(
-        tokio::time::timeout(Duration::from_millis(50), stream.next())
-            .await
-            .is_err()
-    );
+    assert!(stream.next().now_or_never().is_none());
 }
 
 #[tokio::test]

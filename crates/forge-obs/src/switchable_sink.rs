@@ -271,7 +271,7 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn every_method_on_an_empty_sink_returns_disconnected() {
+    async fn an_empty_sink_refuses_scene_source_and_output_commands_as_disconnected() {
         let sink = SwitchableObsSink::new();
 
         let results: Vec<Result<(), ObsError>> = vec![

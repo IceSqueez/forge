@@ -38,7 +38,7 @@ mod tests {
     use crate::i18n::install_language;
 
     fn plain(text: String) -> String {
-        text.replace(['\u{2068}', '\u{2069}'], "")
+        text.replace(crate::test_support::FORMAT_ISOLATES, "")
     }
 
     #[test]

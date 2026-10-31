@@ -277,7 +277,8 @@ mod tests {
     #[test]
     fn breakdown_lists_only_the_nonzero_kinds_in_lane_order() {
         crate::i18n::install_language(forge_storage::Language::En);
-        let plain = |count: LossCount| breakdown(&count).replace(['\u{2068}', '\u{2069}'], "");
+        let plain =
+            |count: LossCount| breakdown(&count).replace(crate::test_support::FORMAT_ISOLATES, "");
 
         assert_eq!(
             [

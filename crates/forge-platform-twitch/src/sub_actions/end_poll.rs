@@ -144,8 +144,9 @@ impl SubActionRunner for EndPollRunner {
 mod tests {
     use super::*;
     use crate::helix::HelixError;
+    use crate::sub_actions::test_support::TOKEN_SENTINEL;
     use crate::sub_actions::test_support::{
-        MockCreds, MockTransport, SELF_USER_ID, assert_request_refused, make_ctx,
+        MockTransport, SELF_USER_ID, assert_request_refused, make_ctx,
     };
     use forge_types::Variant;
     use std::collections::BTreeMap;
@@ -156,7 +157,7 @@ mod tests {
         let transport = Arc::new(MockTransport::returning(response));
         let runner = EndPollRunner::new(
             Arc::clone(&transport) as Arc<dyn HelixTransport>,
-            Arc::new(SelfIdentity::new(Arc::new(MockCreds::with_identity()))),
+            crate::sub_actions::test_support::self_identity(),
         );
         (transport, runner)
     }
@@ -239,7 +240,7 @@ mod tests {
     async fn http_failure_outcome_does_not_leak_token() {
         let (_, runner) = runner_with(Err(HelixError::Http {
             status: 404,
-            body: "poll not found".to_owned(),
+            body: format!("poll not found {TOKEN_SENTINEL}"),
         }));
         let stack = ArgStack::new();
         let (telemetry, _) = runner
@@ -252,7 +253,7 @@ mod tests {
     fn validate_config_requires_poll_id_and_known_status() {
         let runner = EndPollRunner::new(
             Arc::new(MockTransport::returning(Ok(serde_json::Value::Null))),
-            Arc::new(SelfIdentity::new(Arc::new(MockCreds::with_identity()))),
+            crate::sub_actions::test_support::self_identity(),
         );
 
         let cases = [

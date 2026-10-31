@@ -238,9 +238,9 @@ mod tests {
 
     use super::*;
     use crate::helix::HelixError;
+    use crate::sub_actions::test_support::TOKEN_SENTINEL;
     use crate::sub_actions::test_support::{
-        MockCreds, MockTransport, SELF_USER_ID, assert_failed_with_code, assert_request_refused,
-        make_ctx,
+        MockTransport, SELF_USER_ID, assert_failed_with_code, assert_request_refused, make_ctx,
     };
     use forge_types::Variant;
 
@@ -259,7 +259,7 @@ mod tests {
     fn runner(transport: Arc<MockTransport>) -> UpdateAutomodSettingsRunner {
         UpdateAutomodSettingsRunner::new(
             transport as Arc<dyn HelixTransport>,
-            Arc::new(SelfIdentity::new(Arc::new(MockCreds::with_identity()))),
+            crate::sub_actions::test_support::self_identity(),
         )
     }
 
@@ -267,7 +267,7 @@ mod tests {
         let r = UpdateAutomodSettingsRunner::new(
             Arc::new(MockTransport::returning(Ok(serde_json::Value::Null)))
                 as Arc<dyn HelixTransport>,
-            Arc::new(SelfIdentity::new(Arc::new(MockCreds::with_identity()))),
+            crate::sub_actions::test_support::self_identity(),
         );
         let mut config = r.default_config();
         for (key, value) in overrides {
@@ -511,7 +511,7 @@ mod tests {
     async fn failure_outcome_does_not_leak_token() {
         let transport = Arc::new(MockTransport::returning(Err(HelixError::Http {
             status: 500,
-            body: "server error".to_owned(),
+            body: format!("server error {TOKEN_SENTINEL}"),
         })));
         let runner = runner(Arc::clone(&transport));
         let config = config_with(&[("overall_level", "1")]);

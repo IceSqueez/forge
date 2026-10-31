@@ -1371,7 +1371,7 @@ mod tests {
 
             let line =
                 forge_components::tr!("twitch_bot_fallback_active", login = "streamer".to_owned())
-                    .replace(['\u{2068}', '\u{2069}'], "");
+                    .replace(crate::test_support::FORMAT_ISOLATES, "");
 
             assert!(line.contains("@streamer"), "{language:?}: {line}");
         }

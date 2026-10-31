@@ -124,8 +124,7 @@ mod tests {
     use super::*;
     use crate::helix::HelixError;
     use crate::sub_actions::test_support::{
-        MockCreds, MockTransport, REQUEST_FAIL_KIND, SELF_USER_ID, make_ctx, observed_helix_at,
-        users_fixture,
+        MockTransport, REQUEST_FAIL_KIND, SELF_USER_ID, make_ctx, observed_helix_at, users_fixture,
     };
     use forge_types::Variant;
     use std::collections::BTreeMap;
@@ -138,7 +137,7 @@ mod tests {
         let transport = Arc::new(MockTransport::returning_sequence(responses));
         let runner = UnbanUserRunner::new(
             Arc::clone(&transport) as Arc<dyn HelixTransport>,
-            Arc::new(SelfIdentity::new(Arc::new(MockCreds::with_identity()))),
+            crate::sub_actions::test_support::self_identity(),
         );
         (transport, runner)
     }
@@ -319,10 +318,8 @@ mod tests {
                 .mount(&server)
                 .await;
             let (transport, bus) = observed_helix_at(&server.uri());
-            let runner = UnbanUserRunner::new(
-                transport,
-                Arc::new(SelfIdentity::new(Arc::new(MockCreds::with_identity()))),
-            );
+            let runner =
+                UnbanUserRunner::new(transport, crate::sub_actions::test_support::self_identity());
             let stack = ArgStack::new();
 
             let (telemetry, _) = runner.execute(&config("target"), &make_ctx(&stack)).await;

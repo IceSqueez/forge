@@ -569,7 +569,7 @@ mod tests {
         let mut health = ObsHealth::from_stats(stats, vec![1.0]);
         health.live_for = health
             .live_for
-            .map(|live_for| live_for.replace(['\u{2068}', '\u{2069}'], ""));
+            .map(|live_for| live_for.replace(crate::test_support::FORMAT_ISOLATES, ""));
 
         assert_eq!(
             health,

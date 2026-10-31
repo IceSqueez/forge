@@ -1,7 +1,6 @@
 #![allow(clippy::unwrap_used)]
 use forge_platform_kick::vocabulary::event_kinds as kick_kinds;
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -11,7 +10,7 @@ use forge_emulator::fakes::kick::{
     KickSurface, RefreshAnswer,
 };
 use forge_emulator::fixture::KickAccount;
-use forge_events::{Event, EventPublisher};
+use forge_events::Event;
 use forge_net::{Gateway, RateLimitError, RateLimitOutcome, RateLimiter};
 use forge_platform_core::{EndpointSurface, PlatformEndpoints, PlatformError};
 use forge_platform_kick::error::KickError;
@@ -21,7 +20,6 @@ use forge_platform_kick::{
     KickCredentialsManager, KickOAuthClient, KickRewards, KickSendChat, kick_api_gateway,
     kick_channel_info_gateway, kick_oauth_gateway,
 };
-use forge_storage::{CredentialId, CredentialsRepo, StorageError};
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
 use time::OffsetDateTime;
@@ -32,6 +30,8 @@ use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 
 mod support;
+
+use support::MemoryCredentials;
 use support::endpoints_from;
 
 type Socket = WebSocketStream<MaybeTlsStream<TcpStream>>;
@@ -50,40 +50,6 @@ impl RateLimiter for GrantLimiter {
     async fn observe_remote_throttle(&self, _retry_after: Duration) {}
 }
 
-#[derive(Default)]
-struct MemoryCredentials(Mutex<HashMap<String, String>>);
-
-#[async_trait]
-impl CredentialsRepo for MemoryCredentials {
-    async fn store(&self, id: &CredentialId, plaintext: &str) -> Result<(), StorageError> {
-        self.0
-            .lock()
-            .unwrap()
-            .insert(id.as_str().to_owned(), plaintext.to_owned());
-        Ok(())
-    }
-
-    async fn load(&self, id: &CredentialId) -> Result<Option<String>, StorageError> {
-        Ok(self.0.lock().unwrap().get(id.as_str()).cloned())
-    }
-
-    async fn delete(&self, id: &CredentialId) -> Result<bool, StorageError> {
-        Ok(self.0.lock().unwrap().remove(id.as_str()).is_some())
-    }
-
-    async fn list_ids(&self) -> Result<Vec<CredentialId>, StorageError> {
-        Ok(Vec::new())
-    }
-
-    async fn last_refresh(&self, _: &CredentialId) -> Result<Option<OffsetDateTime>, StorageError> {
-        Ok(None)
-    }
-
-    async fn mark_refreshed(&self, _: &CredentialId) -> Result<(), StorageError> {
-        Ok(())
-    }
-}
-
 async fn start(setup: FakeKickSetup) -> FakeKick {
     FakeKick::start(FakeKickConfig::for_account(&KickAccount::default(), &setup))
         .await
@@ -98,20 +64,23 @@ fn limiter() -> Arc<dyn RateLimiter> {
     Arc::new(GrantLimiter)
 }
 
-struct DiscardingPublisher;
-
-impl EventPublisher for DiscardingPublisher {
-    fn publish(&self, _event: Event) {}
-}
-
 fn api(fake: &FakeKick) -> Gateway {
-    kick_api_gateway(&endpoints(fake), limiter(), Arc::new(DiscardingPublisher)).unwrap()
+    kick_api_gateway(
+        &endpoints(fake),
+        limiter(),
+        Arc::new(support::QuietPublisher),
+    )
+    .unwrap()
 }
 
 fn channel_info(fake: &FakeKick) -> Arc<ChannelInfoFetcher> {
     Arc::new(ChannelInfoFetcher::new(
-        kick_channel_info_gateway(&endpoints(fake), limiter(), Arc::new(DiscardingPublisher))
-            .unwrap(),
+        kick_channel_info_gateway(
+            &endpoints(fake),
+            limiter(),
+            Arc::new(support::QuietPublisher),
+        )
+        .unwrap(),
     ))
 }
 

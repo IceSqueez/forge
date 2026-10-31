@@ -64,6 +64,4 @@ mod tests {
         let back: CredentialId = serde_json::from_str(&json).unwrap();
         assert_eq!(back, id);
     }
-
-    fn _credentials_repo_is_dyn_safe(_: &dyn CredentialsRepo) {}
 }

@@ -540,7 +540,11 @@ fn client_rows_sharing_a_remote_ip_still_get_distinct_element_keys() {
 fn client_row_clamps_a_negative_uptime_to_zero() {
     crate::i18n::install_language(forge_storage::Language::En);
     let row = client_row_from_snapshot(&snapshot_client("dash", 0.0, -42));
-    assert_eq!(row.uptime_short.replace(['\u{2068}', '\u{2069}'], ""), "0s");
+    assert_eq!(
+        row.uptime_short
+            .replace(crate::test_support::FORMAT_ISOLATES, ""),
+        "0s"
+    );
 }
 
 #[test]

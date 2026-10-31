@@ -1,18 +1,124 @@
+use std::collections::BTreeMap;
 use std::ops::Deref;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use forge_events::EventPublisher;
 use forge_overlay::OverlayKindRegistry;
-use forge_storage::{DataProvider, OverlayId};
+use forge_storage::{DataProvider, GlobalEntry, GlobalsRepo, OverlayId, StorageError};
 use forge_storage_sqlite::SqliteBackend;
-use forge_types::{Shared, SystemWallClock};
+use forge_types::{Shared, SystemWallClock, Variant, VariantKind};
 use tempfile::TempDir;
+use time::OffsetDateTime;
 
 use crate::{
     EventBus, FrozenRuntime, LatestValues, NullEventLogRepo, OverlayFrameSink, OverlayReceivers,
     RuntimeWiring, RuntimeWiringParts,
 };
+
+#[derive(Default)]
+pub(crate) struct MapGlobals {
+    map: Mutex<BTreeMap<String, (Variant, bool)>>,
+    unreadable: Option<String>,
+}
+
+impl MapGlobals {
+    pub(crate) fn with<'a>(entries: impl IntoIterator<Item = (&'a str, Variant)>) -> Self {
+        Self::seeded(entries.into_iter().map(|(k, v)| (k, v, false)))
+    }
+
+    pub(crate) fn seeded<'a>(entries: impl IntoIterator<Item = (&'a str, Variant, bool)>) -> Self {
+        let map = entries
+            .into_iter()
+            .map(|(k, v, p)| (k.to_owned(), (v, p)))
+            .collect();
+        Self {
+            map: Mutex::new(map),
+            unreadable: None,
+        }
+    }
+
+    pub(crate) fn failing_reads_of(mut self, key: &str) -> Self {
+        self.unreadable = Some(key.to_owned());
+        self
+    }
+
+    pub(crate) fn snapshot(&self, key: &str) -> Option<Variant> {
+        self.map.lock().unwrap().get(key).map(|(v, _)| v.clone())
+    }
+
+    pub(crate) fn persisted_flag(&self, key: &str) -> Option<bool> {
+        self.map.lock().unwrap().get(key).map(|(_, p)| *p)
+    }
+
+    pub(crate) fn array(&self, key: &str) -> Vec<Variant> {
+        match self.snapshot(key) {
+            Some(Variant::Array(items)) => items,
+            other => panic!("expected array at {key}, got {other:?}"),
+        }
+    }
+}
+
+#[async_trait]
+impl GlobalsRepo for MapGlobals {
+    async fn get(&self, name: &str) -> Result<Option<Variant>, StorageError> {
+        if self.unreadable.as_deref() == Some(name) {
+            return Err(StorageError::Decryption);
+        }
+        Ok(self.snapshot(name))
+    }
+
+    async fn set(&self, name: &str, value: Variant, persisted: bool) -> Result<(), StorageError> {
+        self.map
+            .lock()
+            .unwrap()
+            .insert(name.to_owned(), (value, persisted));
+        Ok(())
+    }
+
+    async fn persisted(&self, name: &str) -> Result<Option<bool>, StorageError> {
+        Ok(self.persisted_flag(name))
+    }
+
+    async fn delete(&self, name: &str) -> Result<bool, StorageError> {
+        Ok(self.map.lock().unwrap().remove(name).is_some())
+    }
+
+    async fn list(&self) -> Result<Vec<GlobalEntry>, StorageError> {
+        Ok(Vec::new())
+    }
+
+    async fn storage_bytes(&self) -> Result<u64, StorageError> {
+        Ok(0)
+    }
+
+    async fn last_save_at(&self) -> Result<Option<OffsetDateTime>, StorageError> {
+        Ok(None)
+    }
+
+    async fn incr(&self, name: &str, amount: i64) -> Result<Variant, StorageError> {
+        let mut map = self.map.lock().unwrap();
+        let Some((current, persisted)) = map.get(name).cloned() else {
+            return Err(StorageError::NotFound {
+                key: name.to_owned(),
+            });
+        };
+        let next = match current {
+            Variant::Int(value) => Variant::Int(value + amount),
+            Variant::Float(value) => {
+                Variant::float(value + amount as f64).expect("a finite test global")
+            }
+            other => {
+                return Err(StorageError::TypeMismatch {
+                    name: name.to_owned(),
+                    actual: VariantKind::from_variant(&other).label().to_owned(),
+                });
+            }
+        };
+        map.insert(name.to_owned(), (next.clone(), persisted));
+        Ok(next)
+    }
+}
 
 pub(crate) struct Sandboxed<T> {
     inner: T,

@@ -1000,7 +1000,7 @@ fn rejection(kind: VariantKind, raw: &str, language: forge_storage::Language) ->
 }
 
 fn without_isolates(text: &str) -> String {
-    text.replace(['\u{2068}', '\u{2069}'], "")
+    text.replace(crate::test_support::FORMAT_ISOLATES, "")
 }
 
 #[test]

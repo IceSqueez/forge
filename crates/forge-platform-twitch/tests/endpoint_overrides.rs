@@ -129,11 +129,13 @@ async fn oauth_override_carries_the_token_refresh_to_the_override_host() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/oauth2/token"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "access_token": "fresh-access",
-            "refresh_token": "fresh-refresh",
-            "expires_in": 3600
-        })))
+        .respond_with(
+            ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(json!({
+                "access_token": "fresh-access",
+                "refresh_token": "fresh-refresh",
+                "expires_in": 3600
+            })),
+        )
         .mount(&server)
         .await;
     let endpoints = oauth_override(format!("{}/oauth2", server.uri()));
@@ -191,7 +193,7 @@ async fn overrides_carry_the_whole_sign_in_through_the_oauth_and_helix_hosts() {
     ];
     for (route, body) in answers {
         Mock::given(path(route))
-            .respond_with(ResponseTemplate::new(200).set_body_json(body))
+            .respond_with(ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(body))
             .mount(&server)
             .await;
     }

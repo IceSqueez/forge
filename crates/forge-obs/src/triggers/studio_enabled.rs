@@ -100,8 +100,8 @@ mod tests {
     use forge_registry::TriggerKindDescriptor;
     use serde_json::json;
 
-    fn studio_event(kind: &str, enabled: bool) -> Event {
-        Event::new(EventSource::Obs, kind, json!({ "enabled": enabled }))
+    fn studio_event(kind: &str) -> Event {
+        Event::new(EventSource::Obs, kind, json!({}))
     }
 
     #[test]
@@ -115,7 +115,7 @@ mod tests {
         for (own_kind, descriptor) in descriptors {
             for kind in kinds {
                 assert_eq!(
-                    descriptor.matches_trigger(&cfg, &studio_event(kind, true)),
+                    descriptor.matches_trigger(&cfg, &studio_event(kind)),
                     kind == own_kind,
                     "descriptor for {own_kind} given {kind}",
                 );

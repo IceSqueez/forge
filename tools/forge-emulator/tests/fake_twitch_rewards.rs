@@ -2,13 +2,12 @@
 use forge_platform_twitch::vocabulary::topics;
 use std::collections::{BTreeMap, HashMap};
 use std::ffi::OsString;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
-use async_trait::async_trait;
 use forge_emulator::fakes::twitch::{FakeTwitch, FakeTwitchConfig, MAX_CUSTOM_REWARDS};
 use forge_emulator::fixture::TwitchAccount;
-use forge_events::{Event, EventPublisher};
+use forge_events::EventPublisher;
 use forge_platform_core::{
     BuiltinCollections, ChatPlatform, CollectionFailure, CollectionId, CollectionItemAccess,
     CollectionItemId, PlatformEndpoints, QuickActionFieldValue, RevisionWait,
@@ -16,57 +15,20 @@ use forge_platform_core::{
 use forge_platform_twitch::credentials::{StoredCredential, store_credential};
 use forge_platform_twitch::{BroadcasterTier, TwitchAssembly, TwitchIntegrationBundle};
 use forge_registry::SubActionRegistry;
-use forge_storage::{CredentialId, CredentialsRepo, StorageError};
+use forge_storage::CredentialsRepo;
 use forge_types::OAuthToken;
 use serde_json::{Value, json};
-use time::OffsetDateTime;
 use tokio::time::timeout;
+
+mod support;
+
+use support::MemoryCredentials;
 
 const DEADLINE: Duration = Duration::from_secs(30);
 const REWARDS_PATH: &str = "/helix/channel_points/custom_rewards";
 const REWARD_ADD: &str = topics::CHANNEL_CHANNEL_POINTS_CUSTOM_REWARD_ADD;
 const DASHBOARD_TITLE: &str = "Dashboard hydrate";
 const TIER_POLL: Duration = Duration::from_millis(10);
-
-#[derive(Default)]
-struct MemoryCredentials(Mutex<HashMap<String, String>>);
-
-#[async_trait]
-impl CredentialsRepo for MemoryCredentials {
-    async fn store(&self, id: &CredentialId, bundle: &str) -> Result<(), StorageError> {
-        self.0
-            .lock()
-            .unwrap()
-            .insert(id.as_str().to_owned(), bundle.to_owned());
-        Ok(())
-    }
-
-    async fn load(&self, id: &CredentialId) -> Result<Option<String>, StorageError> {
-        Ok(self.0.lock().unwrap().get(id.as_str()).cloned())
-    }
-
-    async fn delete(&self, id: &CredentialId) -> Result<bool, StorageError> {
-        Ok(self.0.lock().unwrap().remove(id.as_str()).is_some())
-    }
-
-    async fn list_ids(&self) -> Result<Vec<CredentialId>, StorageError> {
-        Ok(Vec::new())
-    }
-
-    async fn last_refresh(&self, _: &CredentialId) -> Result<Option<OffsetDateTime>, StorageError> {
-        Ok(None)
-    }
-
-    async fn mark_refreshed(&self, _: &CredentialId) -> Result<(), StorageError> {
-        Ok(())
-    }
-}
-
-struct DiscardBus;
-
-impl EventPublisher for DiscardBus {
-    fn publish(&self, _: Event) {}
-}
 
 struct Forge {
     bundle: Arc<TwitchIntegrationBundle>,
@@ -92,7 +54,7 @@ impl Forge {
         let endpoints =
             PlatformEndpoints::resolve(|variable| overrides.get(variable).map(OsString::from))
                 .unwrap();
-        let bus: Arc<dyn EventPublisher> = Arc::new(DiscardBus);
+        let bus: Arc<dyn EventPublisher> = Arc::new(support::QuietPublisher);
         let assembly = TwitchAssembly::new(
             &mut SubActionRegistry::new(),
             creds,

@@ -13,6 +13,7 @@ use forge_storage_sqlite::{SqliteBackend, SqliteSettingsRepo};
 
 mod common;
 use common::{Sandboxed, TEST_KEY};
+use forge_storage::DEFAULT_EVENT_LOG_RETENTION_DAYS;
 
 async fn setup_backend() -> Sandboxed<SqliteBackend> {
     common::migrated_backend(TEST_KEY).await
@@ -109,12 +110,12 @@ async fn language_seeds_en_and_round_trips_through_typed_repo() {
 }
 
 #[tokio::test]
-async fn event_log_retention_days_default_is_seven() {
+async fn event_log_retention_days_answers_the_shipped_window_while_unset() {
     let backend = setup_backend().await;
     let days = event_log_retention_days(&*backend)
         .await
         .expect("default retention");
-    assert_eq!(days, 7);
+    assert_eq!(days, DEFAULT_EVENT_LOG_RETENTION_DAYS);
 }
 
 #[tokio::test]
@@ -134,7 +135,7 @@ async fn event_log_retention_days_invalid_string_falls_back_to_seven() {
     let backend = setup_backend().await;
     inject_raw(&backend, EVENT_LOG_RETENTION_DAYS.name(), "not_a_number").await;
     let days = event_log_retention_days(&*backend).await.expect("fallback");
-    assert_eq!(days, 7);
+    assert_eq!(days, DEFAULT_EVENT_LOG_RETENTION_DAYS);
 }
 
 #[tokio::test]

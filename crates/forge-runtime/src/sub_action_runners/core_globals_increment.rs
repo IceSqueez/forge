@@ -93,60 +93,12 @@ impl SubActionRunner for CoreGlobalsIncrementRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::MapGlobals;
     use forge_events::test_support::NullPublisher;
 
     use forge_registry::RunContext;
-    use forge_storage::{GlobalEntry, StorageError};
+    use forge_types::EventId;
     use forge_types::Variant;
-    use forge_types::{EventId, VariantKind};
-    use std::collections::BTreeMap;
-    use std::sync::Mutex;
-    use time::OffsetDateTime;
-
-    #[derive(Default)]
-    struct MapGlobals {
-        map: Mutex<BTreeMap<String, Variant>>,
-    }
-
-    #[async_trait]
-    impl GlobalsRepo for MapGlobals {
-        async fn get(&self, name: &str) -> Result<Option<Variant>, StorageError> {
-            Ok(self.map.lock().unwrap().get(name).cloned())
-        }
-        async fn set(&self, name: &str, value: Variant, _p: bool) -> Result<(), StorageError> {
-            self.map.lock().unwrap().insert(name.to_owned(), value);
-            Ok(())
-        }
-        async fn delete(&self, name: &str) -> Result<bool, StorageError> {
-            Ok(self.map.lock().unwrap().remove(name).is_some())
-        }
-        async fn list(&self) -> Result<Vec<GlobalEntry>, StorageError> {
-            Ok(vec![])
-        }
-        async fn storage_bytes(&self) -> Result<u64, StorageError> {
-            Ok(0)
-        }
-        async fn last_save_at(&self) -> Result<Option<OffsetDateTime>, StorageError> {
-            Ok(None)
-        }
-        async fn incr(&self, name: &str, amount: i64) -> Result<Variant, StorageError> {
-            let mut map = self.map.lock().unwrap();
-            match map.get(name).cloned() {
-                None => Err(StorageError::NotFound {
-                    key: name.to_owned(),
-                }),
-                Some(Variant::Int(i)) => {
-                    let nv = Variant::Int(i + amount);
-                    map.insert(name.to_owned(), nv.clone());
-                    Ok(nv)
-                }
-                Some(other) => Err(StorageError::TypeMismatch {
-                    name: name.to_owned(),
-                    actual: VariantKind::from_variant(&other).label().to_owned(),
-                }),
-            }
-        }
-    }
 
     fn cfg(name: &str, amount: i64) -> SubActionConfig {
         let mut c = SubActionConfig::new();

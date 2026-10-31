@@ -146,7 +146,7 @@ mod tests {
     use super::*;
     use crate::helix::{HelixError, HelixMethod};
     use crate::sub_actions::test_support::{
-        MockCreds, MockTransport, SELF_USER_ID, assert_failed_with_detail, make_ctx, users_fixture,
+        MockTransport, SELF_USER_ID, assert_failed_with_detail, make_ctx, users_fixture,
     };
     use forge_platform_core::SENDER_FIELD;
     use forge_types::SubActionOutcome;
@@ -159,7 +159,7 @@ mod tests {
         let transport = Arc::new(MockTransport::returning_sequence(responses));
         let runner = SendShoutoutRunner::new(
             Arc::clone(&transport) as Arc<dyn HelixTransport>,
-            Arc::new(SelfIdentity::new(Arc::new(MockCreds::with_identity()))),
+            crate::sub_actions::test_support::self_identity(),
         );
         (transport, runner)
     }

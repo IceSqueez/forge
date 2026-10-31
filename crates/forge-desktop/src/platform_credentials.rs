@@ -60,7 +60,7 @@ pub(crate) mod tests {
     use std::sync::Mutex;
 
     use async_trait::async_trait;
-    use forge_events::{Event, EventPublisher};
+
     use forge_net::{RateLimiter, TokenBucketRateLimiter};
     use forge_platform_core::PlatformEndpoints;
     use forge_storage::StorageError;
@@ -146,12 +146,6 @@ pub(crate) mod tests {
         }
     }
 
-    struct Silent;
-
-    impl EventPublisher for Silent {
-        fn publish(&self, _: Event) {}
-    }
-
     fn limiter() -> Arc<dyn RateLimiter> {
         Arc::new(TokenBucketRateLimiter::new(
             forge_platform_twitch::TWITCH_OAUTH_BUDGET_CAPACITY,
@@ -182,7 +176,7 @@ pub(crate) mod tests {
             forge_platform_youtube::YoutubeDataApi::new(
                 &endpoints,
                 forge_platform_youtube::SharedQuota::default(),
-                Arc::new(Silent),
+                Arc::new(crate::test_support::SilentPublisher),
             )
             .unwrap(),
         );
@@ -205,7 +199,12 @@ pub(crate) mod tests {
                 "client".to_owned(),
                 forge_types::Secret::new("secret"),
             ),
-            forge_platform_kick::kick_api_gateway(&endpoints, limiter(), Arc::new(Silent)).unwrap(),
+            forge_platform_kick::kick_api_gateway(
+                &endpoints,
+                limiter(),
+                Arc::new(crate::test_support::SilentPublisher),
+            )
+            .unwrap(),
         ))
     }
 

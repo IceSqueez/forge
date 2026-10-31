@@ -75,8 +75,6 @@ mod tests {
     use super::*;
     use forge_types::{ScriptInput, VariantKind};
 
-    fn _trait_is_dyn_safe(_: &dyn ScriptRepo) {}
-
     fn make_record(name: &str) -> ScriptRecord {
         let ts = OffsetDateTime::from_unix_timestamp(1_700_000_000).unwrap();
         ScriptRecord {

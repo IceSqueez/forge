@@ -154,8 +154,6 @@ mod tests {
 pub(crate) mod test_ports {
     use std::sync::Mutex;
 
-    use forge_events::{Event, EventPublisher};
-
     use super::{ClipboardPort, DesktopNotice, NotifyPort, OsPortError, UrlOpenPort};
 
     #[derive(Clone, Copy)]
@@ -300,9 +298,5 @@ pub(crate) mod test_ports {
         }
     }
 
-    pub(crate) struct NullPublisher;
-
-    impl EventPublisher for NullPublisher {
-        fn publish(&self, _event: Event) {}
-    }
+    pub(crate) use forge_events::test_support::NullPublisher;
 }

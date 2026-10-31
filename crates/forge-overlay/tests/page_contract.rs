@@ -23,15 +23,7 @@ fn header() -> &'static str {
 }
 
 fn function_body(name: &str) -> &'static str {
-    let opening = format!("function {name}(");
-    let start = RUNTIME_SOURCE
-        .find(&opening)
-        .unwrap_or_else(|| panic!("the runtime no longer declares '{opening}'"));
-    let rest = &RUNTIME_SOURCE[start..];
-    let end = rest
-        .find("\n  }")
-        .unwrap_or_else(|| panic!("'{opening}' is never closed"));
-    &rest[..end]
+    common::js_function(RUNTIME_SOURCE, name)
 }
 
 fn published_names() -> BTreeSet<String> {

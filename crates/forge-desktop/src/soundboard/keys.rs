@@ -118,12 +118,6 @@ mod tests {
 
     use super::*;
 
-    struct SilentPublisher;
-
-    impl forge_events::EventPublisher for SilentPublisher {
-        fn publish(&self, _: forge_events::Event) {}
-    }
-
     #[tokio::test]
     async fn the_save_warning_names_the_clip_key_only_when_the_os_did_not_take_it() {
         let backend = crate::test_support::sandboxed_backend("sqlite::memory:", [0x11; 32])
@@ -131,7 +125,7 @@ mod tests {
             .map(|backend| Arc::new(backend) as Arc<dyn forge_storage::DataProvider>);
         let (client, _recorder) = forge_hotkey::testing::test_client(
             forge_hotkey::HotkeyConfig::default(),
-            Arc::new(SilentPublisher),
+            Arc::new(crate::test_support::SilentPublisher),
         );
         let reconciler = HotkeyReconciler::new(
             Arc::clone(&client),

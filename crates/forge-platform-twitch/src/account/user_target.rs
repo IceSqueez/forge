@@ -95,7 +95,7 @@ mod tests {
 
     use super::super::identity::SelfIdentity;
     use crate::helix::{HelixError, HelixRequest, HelixTransport};
-    use crate::sub_actions::test_support::{MockCreds, MockTransport, make_ctx, users_fixture};
+    use crate::sub_actions::test_support::{MockTransport, make_ctx, users_fixture};
     use crate::sub_actions::{
         BanUserRunner, SendShoutoutRunner, SendWhisperRunner, TimeoutUserRunner, UnbanUserRunner,
     };
@@ -194,7 +194,7 @@ mod tests {
             let transport = Arc::new(MockTransport::returning_sequence(responses));
             let runner = (self.build)(
                 Arc::clone(&transport) as Arc<dyn HelixTransport>,
-                Arc::new(SelfIdentity::new(Arc::new(MockCreds::with_identity()))),
+                crate::sub_actions::test_support::self_identity(),
             );
             (transport, runner)
         }

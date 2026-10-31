@@ -186,8 +186,8 @@ mod tests {
     use super::{RestoreClose, RestoreCloseEvent};
     use crate::i18n::install_language;
     use crate::test_support::{
-        GatedSchedule, keyless_enabled_schedule, pump, runtime, staged_restore_in, test_backend,
-        within_hang_guard,
+        GatedSchedule, keyless_enabled_schedule, pump, pump_until, runtime, staged_restore_in,
+        test_backend, within_hang_guard,
     };
     use crate::update_exit::ExitHandoff;
     use crate::update_flow::UpdateFlow;
@@ -269,14 +269,11 @@ mod tests {
     }
 
     fn settle_withdrawal(cx: &mut TestAppContext, h: &Harness) -> Vec<ToastKind> {
-        loop {
-            pump(&h.rt);
+        pump_until(&h.rt, || {
             cx.run_until_parked();
-            let kinds = toast_kinds(cx);
-            if !kinds.is_empty() {
-                return kinds;
-            }
-        }
+            !toast_kinds(cx).is_empty()
+        });
+        toast_kinds(cx)
     }
 
     #[gpui::test]

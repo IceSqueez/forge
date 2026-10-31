@@ -314,7 +314,7 @@ mod tests {
                     .iter()
                     .all(|part| line.contains(&category_label(*part)))
             };
-            let unmarked = |text: String| text.replace(['\u{2068}', '\u{2069}'], "");
+            let unmarked = |text: String| text.replace(crate::test_support::FORMAT_ISOLATES, "");
             let replaced_line = unmarked(tr!(
                 "restore_confirm_scope_replaced",
                 parts = joined_labels(&replaced)

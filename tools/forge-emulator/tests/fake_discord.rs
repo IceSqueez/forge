@@ -1,17 +1,15 @@
 #![allow(clippy::unwrap_used)]
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
-use async_trait::async_trait;
 use forge_discord::{DISCORD_CRED_PREFIX, DiscordClient, MentionPolicy};
 use forge_emulator::EmulatorError;
 use forge_emulator::fakes::discord::{FakeDiscord, UNKNOWN_WEBHOOK_CODE};
 use forge_emulator::fixture::{DiscordWebhook, Fixture};
-use forge_storage::{CredentialId, CredentialsRepo, StorageError};
 use serde_json::{Value, json};
-use time::OffsetDateTime;
 
 mod support;
+
+use support::MemoryCredentials;
 use support::QuietPublisher;
 
 const ALERTS: &str = "alerts";
@@ -220,54 +218,11 @@ async fn the_endpoint_override_names_the_discord_api_variable_and_a_loopback_api
     );
 }
 
-struct MemoryCreds {
-    store: Mutex<HashMap<String, String>>,
-}
-
-#[async_trait]
-impl CredentialsRepo for MemoryCreds {
-    async fn store(&self, id: &CredentialId, plaintext: &str) -> Result<(), StorageError> {
-        self.store
-            .lock()
-            .unwrap()
-            .insert(id.as_str().to_owned(), plaintext.to_owned());
-        Ok(())
-    }
-
-    async fn load(&self, id: &CredentialId) -> Result<Option<String>, StorageError> {
-        Ok(self.store.lock().unwrap().get(id.as_str()).cloned())
-    }
-
-    async fn delete(&self, id: &CredentialId) -> Result<bool, StorageError> {
-        Ok(self.store.lock().unwrap().remove(id.as_str()).is_some())
-    }
-
-    async fn list_ids(&self) -> Result<Vec<CredentialId>, StorageError> {
-        Ok(self
-            .store
-            .lock()
-            .unwrap()
-            .keys()
-            .map(|key| CredentialId::new(key.clone()))
-            .collect())
-    }
-
-    async fn last_refresh(&self, _: &CredentialId) -> Result<Option<OffsetDateTime>, StorageError> {
-        Ok(None)
-    }
-
-    async fn mark_refreshed(&self, _: &CredentialId) -> Result<(), StorageError> {
-        Ok(())
-    }
-}
-
 fn forge_client(fake: &FakeDiscord, saved: &str) -> Arc<DiscordClient> {
-    let creds = MemoryCreds {
-        store: Mutex::new(HashMap::from([(
-            format!("{DISCORD_CRED_PREFIX}{ALERTS}"),
-            json!({ "url": saved }).to_string(),
-        )])),
-    };
+    let creds = MemoryCredentials::holding(
+        &format!("{DISCORD_CRED_PREFIX}{ALERTS}"),
+        &json!({ "url": saved }).to_string(),
+    );
     let (variable, api_base) = fake.endpoint_override();
     let endpoints = forge_platform_core::PlatformEndpoints::resolve(|name| {
         (name == variable).then(|| api_base.clone().into())

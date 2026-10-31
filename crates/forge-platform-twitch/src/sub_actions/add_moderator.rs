@@ -102,7 +102,7 @@ mod tests {
     use crate::sub_actions::remove_moderator::RemoveModeratorRunner;
     use crate::sub_actions::remove_vip::RemoveVipRunner;
     use crate::sub_actions::test_support::{
-        MockCreds, MockTransport, SELF_USER_ID, assert_request_refused, make_ctx, users_fixture,
+        MockTransport, SELF_USER_ID, assert_request_refused, make_ctx, users_fixture,
     };
 
     fn runner_with(
@@ -111,7 +111,7 @@ mod tests {
         let transport = Arc::new(MockTransport::returning_sequence(responses));
         let runner = AddModeratorRunner::new(
             Arc::clone(&transport) as Arc<dyn HelixTransport>,
-            Arc::new(SelfIdentity::new(Arc::new(MockCreds::with_identity()))),
+            crate::sub_actions::test_support::self_identity(),
         );
         (transport, runner)
     }
@@ -141,7 +141,7 @@ mod tests {
         }
 
         fn identity() -> Arc<SelfIdentity> {
-            Arc::new(SelfIdentity::new(Arc::new(MockCreds::with_identity())))
+            crate::sub_actions::test_support::self_identity()
         }
 
         let t_add_mod = make_transport();

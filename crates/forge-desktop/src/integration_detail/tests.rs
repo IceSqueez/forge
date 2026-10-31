@@ -773,7 +773,7 @@ mod sign_out {
                     observe(cx, &detail),
                     warnings(cx)
                         .iter()
-                        .map(|toast| toast.replace(['\u{2068}', '\u{2069}'], ""))
+                        .map(|toast| toast.replace(crate::test_support::FORMAT_ISOLATES, ""))
                         .collect::<Vec<_>>()
                 ),
                 (

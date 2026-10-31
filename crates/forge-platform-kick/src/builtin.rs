@@ -499,7 +499,7 @@ mod tests {
         use std::time::Duration as StdDuration;
 
         use async_trait::async_trait;
-        use forge_net::{RateLimitError, RateLimitOutcome, RateLimiter};
+
         use forge_platform_core::{BuiltinControl, ControlFailure, QuickActions};
         use forge_storage::{CredentialId, CredentialsRepo, StorageError};
         use time::OffsetDateTime;
@@ -531,15 +531,6 @@ mod tests {
             async fn mark_refreshed(&self, _: &CredentialId) -> Result<(), StorageError> {
                 Ok(())
             }
-        }
-
-        pub(super) struct GrantLimiter;
-        #[async_trait]
-        impl RateLimiter for GrantLimiter {
-            async fn acquire(&self, _: u32) -> Result<RateLimitOutcome, RateLimitError> {
-                Ok(RateLimitOutcome::Granted)
-            }
-            async fn observe_remote_throttle(&self, _: StdDuration) {}
         }
 
         fn empty_manager() -> Arc<KickCredentialsManager> {
@@ -581,7 +572,7 @@ mod tests {
                 777,
                 platform,
                 manager,
-                Arc::new(GrantLimiter),
+                Arc::new(crate::endpoints_test_support::GrantingLimiter),
                 viewer_rx,
                 auth_rx,
             );
@@ -805,16 +796,17 @@ mod tests {
         use futures::future::BoxFuture;
 
         use super::super::*;
-        use super::lifecycle::{GrantLimiter, disconnected_bundle};
+        use super::lifecycle::disconnected_bundle;
         use crate::api::categories::KickCategories;
         use crate::api::channel::KickChannel;
         use crate::api::chat_messages::KickSendChat;
         use crate::api::moderation::KickModeration;
         use crate::api::rewards::KickRewards;
+        use crate::endpoints_test_support::GrantingLimiter;
         use crate::sub_actions::{KickSubActionDeps, register_kick_sub_actions};
 
         fn runner_registry() -> SubActionRegistry {
-            let limiter: Arc<dyn RateLimiter> = Arc::new(GrantLimiter);
+            let limiter: Arc<dyn RateLimiter> = Arc::new(GrantingLimiter);
             let mut registry = SubActionRegistry::new();
             register_kick_sub_actions(
                 &mut registry,

@@ -154,11 +154,11 @@ mod tests {
     }
 
     #[test]
-    fn build_arg_stack_extracts_output_state_and_is_active() {
+    fn build_arg_stack_takes_the_state_from_the_kind_and_is_active_from_the_payload() {
         let event = Event::new(
             EventSource::Obs,
             "obs.virtualcam.started",
-            json!({ "output_state": "started", "is_active": true }),
+            json!({ "is_active": true }),
         );
         let stack = build_virtualcam_arg_stack(&event);
         assert_eq!(
@@ -176,7 +176,7 @@ mod tests {
         let event = Event::new(
             EventSource::Obs,
             "obs.virtualcam.stopped",
-            json!({ "output_state": "stopped", "is_active": false }),
+            json!({ "is_active": false }),
         );
         assert_eq!(
             build_virtualcam_arg_stack(&event).get("obs.virtualcam.is_active"),
@@ -200,7 +200,7 @@ mod tests {
         let event = Event::new(
             EventSource::Obs,
             "obs.virtualcam.started",
-            json!({ "output_state": "started", "is_active": "true" }),
+            json!({ "is_active": "true" }),
         );
         let stack = build_virtualcam_arg_stack(&event);
         assert_eq!(

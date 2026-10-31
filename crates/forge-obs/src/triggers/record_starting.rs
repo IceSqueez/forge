@@ -152,7 +152,7 @@ mod tests {
         Event::new(
             EventSource::Obs,
             kind,
-            json!({ "output_state": "x", "is_active": true, "output_path": "/tmp/a.mkv" }),
+            json!({ "is_active": true, "output_path": "/tmp/a.mkv" }),
         )
     }
 
@@ -223,11 +223,11 @@ mod tests {
     }
 
     #[test]
-    fn build_arg_stack_extracts_state_active_and_path() {
+    fn build_arg_stack_takes_the_state_from_the_kind_and_the_rest_from_the_payload() {
         let event = Event::new(
             EventSource::Obs,
             "obs.recording.started",
-            json!({ "output_state": "started", "is_active": true, "output_path": "/rec/a.mkv" }),
+            json!({ "is_active": true, "output_path": "/rec/a.mkv" }),
         );
         let stack = build_record_arg_stack(&event);
         assert_eq!(

@@ -29,10 +29,3 @@ pub trait QueueRepo: Send + Sync {
         self.get_by_name(adoptable_name).await
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn _trait_is_dyn_safe(_: &dyn QueueRepo) {}
-}

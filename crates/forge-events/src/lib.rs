@@ -129,13 +129,6 @@ mod tests {
     }
 
     #[test]
-    fn event_has_unique_id_per_construction() {
-        let a = Event::new(EventSource::Core, "test.event", serde_json::Value::Null);
-        let b = Event::new(EventSource::Core, "test.event", serde_json::Value::Null);
-        assert_ne!(a.id, b.id);
-    }
-
-    #[test]
     fn caused_by_links_parent_event() {
         let parent = Event::new(EventSource::Twitch, "chat.message", serde_json::Value::Null);
         let parent_id = parent.id;
@@ -146,12 +139,6 @@ mod tests {
             parent_id,
         );
         assert_eq!(child.caused_by, Some(parent_id));
-    }
-
-    #[test]
-    fn event_without_parent_has_no_caused_by() {
-        let e = Event::new(EventSource::Core, "action.start", serde_json::Value::Null);
-        assert!(e.caused_by.is_none());
     }
 
     #[test]

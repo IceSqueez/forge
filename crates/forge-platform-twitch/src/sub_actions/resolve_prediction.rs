@@ -93,14 +93,14 @@ mod tests {
 
     use super::*;
     use crate::helix::HelixMethod;
-    use crate::sub_actions::test_support::{MockCreds, MockTransport, SELF_USER_ID, make_ctx};
+    use crate::sub_actions::test_support::{MockTransport, SELF_USER_ID, make_ctx};
     use forge_types::Variant;
 
     fn resolve_runner() -> (Arc<MockTransport>, ResolvePredictionRunner) {
         let transport = Arc::new(MockTransport::returning(Ok(serde_json::Value::Null)));
         let runner = ResolvePredictionRunner::new(
             Arc::clone(&transport) as Arc<dyn HelixTransport>,
-            Arc::new(SelfIdentity::new(Arc::new(MockCreds::with_identity()))),
+            crate::sub_actions::test_support::self_identity(),
         );
         (transport, runner)
     }

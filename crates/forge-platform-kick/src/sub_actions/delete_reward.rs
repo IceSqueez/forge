@@ -152,5 +152,11 @@ mod tests {
         let runner = runner_offline();
         assert!(runner.validate_config(&config("rw_1")).is_ok());
         assert!(runner.validate_config(&config("")).is_err());
+        assert!(runner.validate_config(&SubActionConfig::new()).is_err());
+        assert!(
+            runner
+                .validate_config(&BTreeMap::from([("reward_id".to_owned(), Variant::Int(7))]))
+                .is_err()
+        );
     }
 }

@@ -21,6 +21,8 @@ const PRE_SETUP: &str = "forge-pre-setup";
 const PRE_RESTORE: &str = "forge-pre-restore";
 const ARCHIVE: &str = "tar.gz";
 const PRE_UPDATE: &str = "pre-update.db";
+const RESTORE_STAGING: &str = "restore-staging";
+const UPDATE_APPLY_STATE_FILE: &str = "update-apply.json";
 const COPY_BYTES: usize = 64;
 const KEEP: u32 = 2;
 const DAYS: u32 = 30;
@@ -193,7 +195,7 @@ async fn clean_up_never_touches_bundles_partials_foreign_entries_or_unparseable_
         )),
         store.file(&format!("{PRE_SETUP}-yesterday.{ARCHIVE}")),
         store.dir_copy(&format!("{PRE_RESTORE}-by-hand")),
-        store.dir_copy("restore-staging"),
+        store.dir_copy(RESTORE_STAGING),
         store.file("notes.txt"),
     ];
 
@@ -330,7 +332,7 @@ async fn clean_up_removes_every_unprotected_copy_even_in_never_mode() {
 #[tokio::test]
 async fn clean_up_spares_every_pre_update_copy_while_an_update_is_in_flight() {
     let store = Store::open().await;
-    std::fs::write(store.data_dir().join("update-apply.json"), b"{}").unwrap();
+    std::fs::write(store.data_dir().join(UPDATE_APPLY_STATE_FILE), b"{}").unwrap();
     let update_new = store.pre_update(hours(1), "ddddd1");
     let update_old = store.pre_update(days(400), "ddddd2");
     store.pre_pack(hours(1), "aaaaa1");
@@ -431,7 +433,7 @@ async fn usage_counts_only_safety_copies_and_the_bytes_inside_them() {
         "{}.forgebundle",
         stamped(STEM_PREFIX, hours(1), "eeeee1")
     ));
-    store.dir_copy("restore-staging");
+    store.dir_copy(RESTORE_STAGING);
 
     let usage = safety_copy_usage(store.data_dir()).await.unwrap();
 

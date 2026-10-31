@@ -2,10 +2,8 @@
 use forge_events::test_support::ForwardingPublisher;
 use forge_platform_twitch::vocabulary::event_kinds as twitch_kinds;
 use forge_platform_twitch::vocabulary::topics;
-use std::collections::HashMap;
-use std::ffi::OsString;
 use std::sync::Arc;
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
 
 use async_trait::async_trait;
 use forge_emulator::fakes::twitch::{
@@ -16,7 +14,6 @@ use forge_events::{Event, EventPublisher, EventSubscription};
 use forge_events::{PlatformConnectionChanged, TypedEvent};
 use forge_net::{Gateway, TokenBucketRateLimiter};
 use forge_platform_core::{BuiltinControl, ChatPlatform, PlatformEndpoints};
-use forge_platform_twitch::credentials::{StoredCredential, store_credential};
 use forge_platform_twitch::{
     ChatConnectionState, ChatSessionConfig, HELIX_BUDGET_CAPACITY, HELIX_BUDGET_WINDOW,
     HelixHttpTransport, HelixTokenSource, SubscriptionTracker, TWITCH_OAUTH_BUDGET_CAPACITY,
@@ -24,15 +21,12 @@ use forge_platform_twitch::{
     TwitchCredentialsManager, TwitchError, TwitchIntegrationBundle, TwitchLifecycle,
     TwitchOAuthClient, helix_gateway, send_chat, twitch_oauth_gateway,
 };
-use forge_registry::SubActionRegistry;
 use forge_storage::CredentialsRepo;
 use forge_types::{ChatPayload, OAuthToken, PermissionRung};
 use tokio::sync::mpsc;
 use tokio::time::timeout;
 
 mod support;
-
-use forge_storage::test_support::MemoryCredentials;
 
 const DEADLINE: Duration = Duration::from_secs(30);
 const CHAT_MESSAGE_KIND: &str = twitch_kinds::CHANNEL_CHAT_MESSAGE;
@@ -59,35 +53,11 @@ struct Forge {
 
 impl Forge {
     async fn against(fake: &FakeTwitch, account: &TwitchAccount, access_token: &str) -> Self {
-        let creds: Arc<dyn CredentialsRepo> = Arc::new(MemoryCredentials::default());
-        store_credential(
-            creds.as_ref(),
-            &StoredCredential {
-                access_token: OAuthToken::new(access_token.to_owned()),
-                refresh_token: None,
-                user_id: account.user_id.clone(),
-                login: account.login.clone(),
-                expires_at: Some(SystemTime::now() + Duration::from_secs(3600)),
-            },
-        )
-        .await
-        .unwrap();
-        let overrides: HashMap<_, _> = fake.endpoint_overrides().into_iter().collect();
-        let endpoints =
-            PlatformEndpoints::resolve(&forge_emulator::endpoint_surfaces(), |variable| {
-                overrides.get(variable).map(OsString::from)
-            })
-            .unwrap();
+        let creds = support::twitch_credentials(account, access_token).await;
         let (tx, events) = mpsc::unbounded_channel();
         let bus: Arc<dyn EventPublisher> = Arc::new(ForwardingPublisher(tx));
-        let assembly = TwitchAssembly::new(
-            &mut SubActionRegistry::new(),
-            Arc::clone(&creds),
-            &bus,
-            &endpoints,
-            account.client_id.clone(),
-        )
-        .expect("the assembly builds");
+        let (assembly, endpoints) =
+            support::twitch_assembly(fake, account, Arc::clone(&creds), &bus);
         Self {
             assembly,
             creds,
@@ -174,12 +144,7 @@ async fn fake_urls_pass_forge_endpoint_override_validation() {
     let fake = FakeTwitch::start(FakeTwitchConfig::for_account(&TwitchAccount::default()))
         .await
         .unwrap();
-    let overrides: HashMap<_, _> = fake.endpoint_overrides().into_iter().collect();
-
-    let endpoints = PlatformEndpoints::resolve(&forge_emulator::endpoint_surfaces(), |variable| {
-        overrides.get(variable).map(OsString::from)
-    })
-    .unwrap();
+    let endpoints = support::endpoints_from(&fake.endpoint_overrides());
 
     assert_eq!(
         endpoints.base_url(forge_platform_twitch::endpoint_surfaces::TWITCH_API),

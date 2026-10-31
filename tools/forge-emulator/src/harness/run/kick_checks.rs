@@ -1,28 +1,13 @@
 use tokio::time::Instant;
 
-use super::http_checks::{count_verdict, counted, request_matches};
+use super::http_checks::{LedgerMark, count_verdict, counted, request_matches};
 use super::outcome::{EVIDENCE_LIMIT, Evidence, FailureCause, KickEvidence, Verdict};
 use crate::fakes::kick::{FakeKick, KickLedger, KickRequest};
 use crate::harness::scenario::{HttpRequestSeen, RequestCount};
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub(crate) struct KickMark {
-    pub(crate) requests: usize,
-    pub(crate) sessions: usize,
-}
-
-impl KickMark {
-    pub(crate) fn of(ledger: &KickLedger) -> Self {
-        Self {
-            requests: ledger.requests.len(),
-            sessions: ledger.sessions.len(),
-        }
-    }
-}
-
 pub(crate) async fn observe_kick_request(
     fake: &FakeKick,
-    from: KickMark,
+    from: LedgerMark,
     deadline: Instant,
     expected: &HttpRequestSeen,
 ) -> (Verdict, Evidence) {
@@ -68,7 +53,7 @@ pub(crate) fn assess_kick_request_count(
         .requests
         .iter()
         .filter(|request| counted(*request, expected));
-    (verdict, evidence(ledger, KickMark::default(), requests))
+    (verdict, evidence(ledger, LedgerMark::default(), requests))
 }
 
 pub(crate) fn assess_no_unexpected_kick_requests(ledger: &KickLedger) -> (Verdict, Evidence) {
@@ -80,13 +65,13 @@ pub(crate) fn assess_no_unexpected_kick_requests(ledger: &KickLedger) -> (Verdic
     };
     (
         verdict,
-        evidence(ledger, KickMark::default(), ledger.unexpected_requests()),
+        evidence(ledger, LedgerMark::default(), ledger.unexpected_requests()),
     )
 }
 
 fn evidence<'a>(
     ledger: &KickLedger,
-    from: KickMark,
+    from: LedgerMark,
     requests: impl Iterator<Item = &'a KickRequest>,
 ) -> Evidence {
     Evidence::Kick(KickEvidence {

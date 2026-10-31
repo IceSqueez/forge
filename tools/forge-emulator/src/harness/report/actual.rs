@@ -2,6 +2,7 @@ use super::text::{LISTED, VALUE_CHARS};
 use std::collections::BTreeMap;
 
 use forge_events::EventSource;
+use forge_types::EventId;
 
 use super::expected::{
     count_range, describe_matcher, event_label, pointer_label, request_label, source_name,
@@ -12,7 +13,10 @@ use crate::harness::run::{
     CausationEvidence, EventEvidence, Evidence, ExpectationOutcome, FailureCause, GapKind,
     JournaledEvent, LedgerExcerpt, LogEvidence, NearMiss,
 };
-use crate::harness::scenario::{Expectation, PayloadMatchers, TwitchSubscription};
+use crate::harness::scenario::{
+    AbsentEvent, Causation, Expectation, LogLine, ObservedEvent, OverlayContent, PayloadMatchers,
+    RequestCount, TwitchSubscription,
+};
 
 pub(crate) struct Actual {
     pub(crate) summary: String,
@@ -24,64 +28,15 @@ pub(crate) fn actual(
     expectation: &Expectation,
     outcome: &ExpectationOutcome,
 ) -> Actual {
-    let events = match &outcome.evidence {
-        Evidence::Events(events) => Some(events),
-        _ => None,
-    };
     match (cause, expectation) {
         (FailureCause::NotObserved { needed, observed }, Expectation::Event(event)) => {
-            let label = event_label(&event.kind, &event.payload);
-            let summary = if *observed == 0 {
-                format!(
-                    "forge published no matching {label} within {}",
-                    span_ms(event.within_ms)
-                )
-            } else {
-                format!(
-                    "forge published {observed} matching {label} within {}, {needed} needed",
-                    span_ms(event.within_ms)
-                )
-            };
-            let details = events
-                .map(|events| {
-                    stream_details(events, event.source, &event.payload, &event.kind, outcome)
-                })
-                .unwrap_or_default();
-            Actual { summary, details }
+            not_observed(*needed, *observed, event, outcome)
         }
         (FailureCause::WrongCount { expected, observed }, Expectation::Event(event)) => {
-            let summary = format!(
-                "forge published {observed} matching {} within {}, expected exactly {expected}",
-                event_label(&event.kind, &event.payload),
-                span_ms(event.within_ms)
-            );
-            let mut details = Vec::new();
-            if let Some(events) = events {
-                if !events.samples.is_empty() {
-                    details.push(format!("matches arrived at {}", arrivals(&events.samples)));
-                }
-                details.extend(stream_details(
-                    events,
-                    event.source,
-                    &event.payload,
-                    &event.kind,
-                    outcome,
-                ));
-            }
-            Actual { summary, details }
+            wrong_count(*expected, *observed, event, outcome)
         }
         (FailureCause::Present { observed }, Expectation::EventAbsent(absent)) => {
-            let summary = format!(
-                "forge published at least {} matching {} within {}",
-                plural(*observed as u64, "event"),
-                code(&absent.kind),
-                span_ms(absent.window_ms)
-            );
-            let details = events
-                .filter(|events| !events.samples.is_empty())
-                .map(|events| vec![format!("they arrived at {}", arrivals(&events.samples))])
-                .unwrap_or_default();
-            Actual { summary, details }
+            present(*observed, absent, outcome)
         }
         (
             FailureCause::StreamGap {
@@ -89,34 +44,11 @@ pub(crate) fn actual(
                 undecodable,
             },
             _,
-        ) => {
-            let summary = format!(
-                "the event stream lost {} and garbled {} after the step began, so it cannot prove or disprove the claim",
-                plural(*dropped, "event"),
-                plural(*undecodable as u64, "frame")
-            );
-            let mut details = Vec::new();
-            if let Some(events) = events {
-                details.push(format!("matching events seen: {}", events.matched));
-                details.extend(events.gaps.iter().take(LISTED).map(|gap| match &gap.kind {
-                    GapKind::Dropped(count) => format!(
-                        "at +{} ms the server reported {} dropped",
-                        gap.arrived_ms,
-                        plural(*count, "event")
-                    ),
-                    GapKind::Undecodable { frame, reason } => format!(
-                        "at +{} ms an undecodable frame ({reason}): {}",
-                        gap.arrived_ms,
-                        code(&clip(frame, VALUE_CHARS))
-                    ),
-                }));
-            }
-            Actual { summary, details }
-        }
+        ) => stream_gap(*dropped, *undecodable, event_evidence(outcome)),
         (FailureCause::StreamClosed, _) => Actual {
             summary: format!(
                 "the control connection closed before the window ended, after {} matching event(s)",
-                events.map_or(0, |events| events.matched)
+                event_evidence(outcome).map_or(0, |events| events.matched)
             ),
             details: Vec::new(),
         },
@@ -128,84 +60,16 @@ pub(crate) fn actual(
             details: Vec::new(),
         },
         (FailureCause::WrongCause { expected, actual }, Expectation::CausedBy(causation)) => {
-            let evidence = match &outcome.evidence {
-                Evidence::Causation(causation) => causation.clone(),
-                _ => CausationEvidence::default(),
-            };
-            let effect = named_event(&causation.effect, evidence.effect.as_ref());
-            let wanted = format!("{} ({})", code(&causation.cause), code(&expected.to_string()));
-            let summary = match actual {
-                Some(actual) => {
-                    let parent = evidence
-                        .chain
-                        .first()
-                        .filter(|parent| parent.event.id == *actual)
-                        .map(|parent| format!(" (a {} event)", code(&parent.event.kind)))
-                        .unwrap_or_default();
-                    format!(
-                        "{effect} was caused by {}{parent}, not by {wanted}",
-                        code(&actual.to_string())
-                    )
-                }
-                None => format!("{effect} carries no cause; expected {wanted}"),
-            };
-            let details = match (&evidence.effect, actual) {
-                (Some(effect), _) if !evidence.chain.is_empty() => {
-                    vec![format!(
-                        "observed ancestry, nearest first: {}",
-                        ancestry(effect, &evidence.chain)
-                    )]
-                }
-                (Some(_), Some(_)) => vec![
-                    "its cause is not among the events this run subscribed to, so the ancestry is unknown"
-                        .to_owned(),
-                ],
-                _ => Vec::new(),
-            };
-            Actual { summary, details }
+            wrong_cause(*expected, *actual, causation, outcome)
         }
-        (FailureCause::NoSubscription, Expectation::TwitchSubscription(subscription)) => Actual {
-            summary: format!(
-                "no live EventSub session held a {} subscription within {}",
-                code(&subscription.subscription_type),
-                span_ms(subscription.within_ms)
-            ),
-            details: match &outcome.evidence {
-                Evidence::Ledger(ledger) => subscription_details(ledger, subscription),
-                _ => Vec::new(),
-            },
-        },
-        (FailureCause::UnexpectedRequests { count }, _) => Actual {
-            summary: format!(
-                "forge sent {} the fake Twitch has no model for",
-                plural(*count as u64, "request")
-            ),
-            details: match &outcome.evidence {
-                Evidence::Ledger(ledger) => ledger
-                    .requests
-                    .iter()
-                    .take(LISTED)
-                    .map(request_line)
-                    .collect(),
-                _ => Vec::new(),
-            },
-        },
+        (FailureCause::NoSubscription, Expectation::TwitchSubscription(subscription)) => {
+            no_subscription(subscription, outcome)
+        }
+        (FailureCause::UnexpectedRequests { count }, _) => unexpected_requests(*count, outcome),
         (
             FailureCause::RequestCountOutOfRange { observed, min, max },
             Expectation::TwitchRequestCount(count),
-        ) => Actual {
-            summary: format!(
-                "forge sent {observed} {} request(s), allowed {}",
-                code(&request_label(count)),
-                count_range(*min, *max)
-            ),
-            details: match &outcome.evidence {
-                Evidence::Ledger(ledger) if !ledger.requests.is_empty() => {
-                    vec![format!("answered {}", statuses(&ledger.requests))]
-                }
-                _ => Vec::new(),
-            },
-        },
+        ) => request_count_out_of_range(*observed, *min, *max, count, outcome),
         (FailureCause::NoFakeTwitch, _) => Actual {
             summary: "the run has no fake Twitch (the scenario needs both `fixture.twitch` and `fakes.twitch`), so the check could not run".to_owned(),
             details: Vec::new(),
@@ -217,26 +81,9 @@ pub(crate) fn actual(
             ),
             details: Vec::new(),
         },
-        (
-            FailureCause::NoOverlayContent { observed },
-            Expectation::OverlayContent(content),
-        ) => Actual {
-            summary: if *observed == 0 {
-                format!(
-                    "the page for {} received no content frame within {}",
-                    code(&content.overlay),
-                    span_ms(content.within_ms)
-                )
-            } else {
-                format!(
-                    "the page for {} received {} within {}, none carrying those values",
-                    code(&content.overlay),
-                    plural(*observed as u64, "content frame"),
-                    span_ms(content.within_ms)
-                )
-            },
-            details: overlay_details(&outcome.evidence),
-        },
+        (FailureCause::NoOverlayContent { observed }, Expectation::OverlayContent(content)) => {
+            no_overlay_content(*observed, content, outcome)
+        }
         (FailureCause::TaggedOverlayValue { pointers }, _) => Actual {
             summary: format!(
                 "the content frame carries tagged Variant JSON at {}; a page renders that as {}",
@@ -245,17 +92,7 @@ pub(crate) fn actual(
             ),
             details: overlay_details(&outcome.evidence),
         },
-        (FailureCause::NoLogLine, Expectation::LogLine(line)) => Actual {
-            summary: format!(
-                "no line on target {} carried those fields within {}",
-                code(&line.target),
-                span_ms(line.within_ms)
-            ),
-            details: match &outcome.evidence {
-                Evidence::Log(log) => log_details(log, &line.target, &line.fields.0),
-                _ => Vec::new(),
-            },
-        },
+        (FailureCause::NoLogLine, Expectation::LogLine(line)) => no_log_line(line, outcome),
         (FailureCause::LogUnreadable { reason }, _) => Actual {
             summary: format!("forge's log could not be read: {reason}"),
             details: Vec::new(),
@@ -264,6 +101,245 @@ pub(crate) fn actual(
             summary: cause.to_string(),
             details: Vec::new(),
         },
+    }
+}
+
+fn not_observed(
+    needed: u32,
+    observed: usize,
+    event: &ObservedEvent,
+    outcome: &ExpectationOutcome,
+) -> Actual {
+    let events = event_evidence(outcome);
+    let label = event_label(&event.kind, &event.payload);
+    let summary = if observed == 0 {
+        format!(
+            "forge published no matching {label} within {}",
+            span_ms(event.within_ms)
+        )
+    } else {
+        format!(
+            "forge published {observed} matching {label} within {}, {needed} needed",
+            span_ms(event.within_ms)
+        )
+    };
+    let details = events
+        .map(|events| stream_details(events, event.source, &event.payload, &event.kind, outcome))
+        .unwrap_or_default();
+    Actual { summary, details }
+}
+
+fn wrong_count(
+    expected: u32,
+    observed: usize,
+    event: &ObservedEvent,
+    outcome: &ExpectationOutcome,
+) -> Actual {
+    let events = event_evidence(outcome);
+    let summary = format!(
+        "forge published {observed} matching {} within {}, expected exactly {expected}",
+        event_label(&event.kind, &event.payload),
+        span_ms(event.within_ms)
+    );
+    let mut details = Vec::new();
+    if let Some(events) = events {
+        if !events.samples.is_empty() {
+            details.push(format!("matches arrived at {}", arrivals(&events.samples)));
+        }
+        details.extend(stream_details(
+            events,
+            event.source,
+            &event.payload,
+            &event.kind,
+            outcome,
+        ));
+    }
+    Actual { summary, details }
+}
+
+fn present(observed: usize, absent: &AbsentEvent, outcome: &ExpectationOutcome) -> Actual {
+    let events = event_evidence(outcome);
+    let summary = format!(
+        "forge published at least {} matching {} within {}",
+        plural(observed as u64, "event"),
+        code(&absent.kind),
+        span_ms(absent.window_ms)
+    );
+    let details = events
+        .filter(|events| !events.samples.is_empty())
+        .map(|events| vec![format!("they arrived at {}", arrivals(&events.samples))])
+        .unwrap_or_default();
+    Actual { summary, details }
+}
+
+fn stream_gap(dropped: u64, undecodable: usize, events: Option<&EventEvidence>) -> Actual {
+    let summary = format!(
+        "the event stream lost {} and garbled {} after the step began, so it cannot prove or disprove the claim",
+        plural(dropped, "event"),
+        plural(undecodable as u64, "frame")
+    );
+    let mut details = Vec::new();
+    if let Some(events) = events {
+        details.push(format!("matching events seen: {}", events.matched));
+        details.extend(events.gaps.iter().take(LISTED).map(|gap| match &gap.kind {
+            GapKind::Dropped(count) => format!(
+                "at +{} ms the server reported {} dropped",
+                gap.arrived_ms,
+                plural(*count, "event")
+            ),
+            GapKind::Undecodable { frame, reason } => format!(
+                "at +{} ms an undecodable frame ({reason}): {}",
+                gap.arrived_ms,
+                code(&clip(frame, VALUE_CHARS))
+            ),
+        }));
+    }
+    Actual { summary, details }
+}
+
+fn wrong_cause(
+    expected: EventId,
+    actual: Option<EventId>,
+    causation: &Causation,
+    outcome: &ExpectationOutcome,
+) -> Actual {
+    let evidence = match &outcome.evidence {
+        Evidence::Causation(causation) => causation.clone(),
+        _ => CausationEvidence::default(),
+    };
+    let effect = named_event(&causation.effect, evidence.effect.as_ref());
+    let wanted = format!(
+        "{} ({})",
+        code(&causation.cause),
+        code(&expected.to_string())
+    );
+    let summary = match actual {
+        Some(actual) => {
+            let parent = evidence
+                .chain
+                .first()
+                .filter(|parent| parent.event.id == actual)
+                .map(|parent| format!(" (a {} event)", code(&parent.event.kind)))
+                .unwrap_or_default();
+            format!(
+                "{effect} was caused by {}{parent}, not by {wanted}",
+                code(&actual.to_string())
+            )
+        }
+        None => format!("{effect} carries no cause; expected {wanted}"),
+    };
+    let details = match (&evidence.effect, actual) {
+        (Some(effect), _) if !evidence.chain.is_empty() => {
+            vec![format!(
+                "observed ancestry, nearest first: {}",
+                ancestry(effect, &evidence.chain)
+            )]
+        }
+        (Some(_), Some(_)) => vec![
+            "its cause is not among the events this run subscribed to, so the ancestry is unknown"
+                .to_owned(),
+        ],
+        _ => Vec::new(),
+    };
+    Actual { summary, details }
+}
+
+fn no_subscription(subscription: &TwitchSubscription, outcome: &ExpectationOutcome) -> Actual {
+    Actual {
+        summary: format!(
+            "no live EventSub session held a {} subscription within {}",
+            code(&subscription.subscription_type),
+            span_ms(subscription.within_ms)
+        ),
+        details: match &outcome.evidence {
+            Evidence::Ledger(ledger) => subscription_details(ledger, subscription),
+            _ => Vec::new(),
+        },
+    }
+}
+
+fn unexpected_requests(count: usize, outcome: &ExpectationOutcome) -> Actual {
+    Actual {
+        summary: format!(
+            "forge sent {} the fake Twitch has no model for",
+            plural(count as u64, "request")
+        ),
+        details: match &outcome.evidence {
+            Evidence::Ledger(ledger) => ledger
+                .requests
+                .iter()
+                .take(LISTED)
+                .map(request_line)
+                .collect(),
+            _ => Vec::new(),
+        },
+    }
+}
+
+fn request_count_out_of_range(
+    observed: usize,
+    min: Option<u32>,
+    max: Option<u32>,
+    count: &RequestCount,
+    outcome: &ExpectationOutcome,
+) -> Actual {
+    Actual {
+        summary: format!(
+            "forge sent {observed} {} request(s), allowed {}",
+            code(&request_label(count)),
+            count_range(min, max)
+        ),
+        details: match &outcome.evidence {
+            Evidence::Ledger(ledger) if !ledger.requests.is_empty() => {
+                vec![format!("answered {}", statuses(&ledger.requests))]
+            }
+            _ => Vec::new(),
+        },
+    }
+}
+
+fn no_overlay_content(
+    observed: usize,
+    content: &OverlayContent,
+    outcome: &ExpectationOutcome,
+) -> Actual {
+    Actual {
+        summary: if observed == 0 {
+            format!(
+                "the page for {} received no content frame within {}",
+                code(&content.overlay),
+                span_ms(content.within_ms)
+            )
+        } else {
+            format!(
+                "the page for {} received {} within {}, none carrying those values",
+                code(&content.overlay),
+                plural(observed as u64, "content frame"),
+                span_ms(content.within_ms)
+            )
+        },
+        details: overlay_details(&outcome.evidence),
+    }
+}
+
+fn no_log_line(line: &LogLine, outcome: &ExpectationOutcome) -> Actual {
+    Actual {
+        summary: format!(
+            "no line on target {} carried those fields within {}",
+            code(&line.target),
+            span_ms(line.within_ms)
+        ),
+        details: match &outcome.evidence {
+            Evidence::Log(log) => log_details(log, &line.target, &line.fields.0),
+            _ => Vec::new(),
+        },
+    }
+}
+
+fn event_evidence(outcome: &ExpectationOutcome) -> Option<&EventEvidence> {
+    match &outcome.evidence {
+        Evidence::Events(events) => Some(events),
+        _ => None,
     }
 }
 

@@ -2665,6 +2665,7 @@ dependencies = [
 name = "forge-conformance"
 version = "0.6.3"
 dependencies = [
+ "flate2",
  "forge-events",
  "forge-host",
  "forge-hotkey",
@@ -2672,6 +2673,7 @@ dependencies = [
  "forge-net",
  "forge-obs",
  "forge-overlay",
+ "forge-paths",
  "forge-platform-core",
  "forge-platform-kick",
  "forge-platform-twitch",
@@ -2680,11 +2682,14 @@ dependencies = [
  "forge-runtime",
  "forge-storage",
  "forge-storage-sqlite",
+ "forge-transfer",
  "forge-types",
  "forge-vtube",
  "serde_json",
  "tempfile",
+ "time",
  "tokio",
+ "ulid",
 ]
 
 [[package]]
@@ -3320,6 +3325,7 @@ dependencies = [
  "forge-storage",
  "forge-storage-sqlite",
  "forge-types",
+ "libc",
  "rand 0.10.3",
  "serde",
  "serde_json",
@@ -3517,6 +3523,7 @@ dependencies = [
  "forge-platform-core",
  "forge-registry",
  "forge-storage",
+ "forge-test-support",
  "forge-types",
  "futures-util",
  "serde",

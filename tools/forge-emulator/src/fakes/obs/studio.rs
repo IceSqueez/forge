@@ -71,6 +71,44 @@ fn missing(field: &str) -> Answer {
     )
 }
 
+fn version_answer() -> Answer {
+    Answer::success(Some(json!({
+        "obsVersion": OBS_STUDIO_VERSION,
+        "obsWebSocketVersion": OBS_WEBSOCKET_VERSION,
+        "rpcVersion": RPC_VERSION,
+        "availableRequests": SUPPORTED_REQUESTS,
+        "supportedImageFormats": ["png"],
+        "platform": "ubuntu",
+        "platformDescription": "forge emulator",
+    })))
+}
+
+fn stats_answer() -> Answer {
+    Answer::success(Some(json!({
+        "cpuUsage": 1.5,
+        "memoryUsage": 256.0,
+        "availableDiskSpace": 100_000.0,
+        "activeFps": 60.0,
+        "averageFrameRenderTime": 0.5,
+        "renderSkippedFrames": 0,
+        "renderTotalFrames": 0,
+        "outputSkippedFrames": 0,
+        "outputTotalFrames": 0,
+        "webSocketSessionIncomingMessages": 0,
+        "webSocketSessionOutgoingMessages": 0,
+    })))
+}
+
+fn record_status() -> Answer {
+    Answer::success(Some(json!({
+        "outputActive": false,
+        "outputPaused": false,
+        "outputTimecode": IDLE_TIMECODE,
+        "outputDuration": 0,
+        "outputBytes": 0,
+    })))
+}
+
 impl Studio {
     pub(crate) fn new(config: &FakeObsConfig) -> Self {
         let current = config
@@ -105,28 +143,8 @@ impl Studio {
 
     pub(crate) fn answer(&mut self, request_type: &str, data: &Value) -> (Answer, Vec<Pushed>) {
         let answer = match request_type {
-            "GetVersion" => Answer::success(Some(json!({
-                "obsVersion": OBS_STUDIO_VERSION,
-                "obsWebSocketVersion": OBS_WEBSOCKET_VERSION,
-                "rpcVersion": RPC_VERSION,
-                "availableRequests": SUPPORTED_REQUESTS,
-                "supportedImageFormats": ["png"],
-                "platform": "ubuntu",
-                "platformDescription": "forge emulator",
-            }))),
-            "GetStats" => Answer::success(Some(json!({
-                "cpuUsage": 1.5,
-                "memoryUsage": 256.0,
-                "availableDiskSpace": 100_000.0,
-                "activeFps": 60.0,
-                "averageFrameRenderTime": 0.5,
-                "renderSkippedFrames": 0,
-                "renderTotalFrames": 0,
-                "outputSkippedFrames": 0,
-                "outputTotalFrames": 0,
-                "webSocketSessionIncomingMessages": 0,
-                "webSocketSessionOutgoingMessages": 0,
-            }))),
+            "GetVersion" => version_answer(),
+            "GetStats" => stats_answer(),
             "GetSceneList" => self.scene_list(),
             "GetCurrentProgramScene" => self.current_program_scene(),
             "SetCurrentProgramScene" => {
@@ -168,57 +186,59 @@ impl Studio {
                 }
                 Err(answer) => answer,
             },
-            "SetInputMute" => {
-                let index = match self.input_index(data) {
-                    Ok(index) => index,
-                    Err(answer) => return (answer, Vec::new()),
-                };
-                let Some(muted) = data.get("inputMuted").and_then(Value::as_bool) else {
-                    return (missing("inputMuted"), Vec::new());
-                };
-                return (Answer::success(None), self.mute(index, muted));
-            }
-            "ToggleInputMute" => {
-                let index = match self.input_index(data) {
-                    Ok(index) => index,
-                    Err(answer) => return (answer, Vec::new()),
-                };
-                let muted = !self.inputs[index].muted;
-                let pushed = self.mute(index, muted);
-                return (
-                    Answer::success(Some(json!({ "inputMuted": muted }))),
-                    pushed,
-                );
-            }
-            "GetStreamStatus" => Answer::success(Some(json!({
-                "outputActive": self.streaming,
-                "outputReconnecting": false,
-                "outputTimecode": IDLE_TIMECODE,
-                "outputDuration": 0,
-                "outputCongestion": 0.0,
-                "outputBytes": 0,
-                "outputSkippedFrames": 0,
-                "outputTotalFrames": 0,
-            }))),
+            "SetInputMute" => return self.answer_set_input_mute(data),
+            "ToggleInputMute" => return self.answer_toggle_input_mute(data),
+            "GetStreamStatus" => self.stream_status(),
             "StartStream" | "StopStream" => {
                 return match self.stream(request_type == "StartStream") {
                     Ok(pushed) => (Answer::success(None), pushed),
                     Err(answer) => (answer, Vec::new()),
                 };
             }
-            "GetRecordStatus" => Answer::success(Some(json!({
-                "outputActive": false,
-                "outputPaused": false,
-                "outputTimecode": IDLE_TIMECODE,
-                "outputDuration": 0,
-                "outputBytes": 0,
-            }))),
+            "GetRecordStatus" => record_status(),
             _ => Answer::failure(
                 STATUS_UNKNOWN_REQUEST_TYPE,
                 "Your request type is not valid.",
             ),
         };
         (answer, Vec::new())
+    }
+
+    fn answer_set_input_mute(&mut self, data: &Value) -> (Answer, Vec<Pushed>) {
+        let index = match self.input_index(data) {
+            Ok(index) => index,
+            Err(answer) => return (answer, Vec::new()),
+        };
+        let Some(muted) = data.get("inputMuted").and_then(Value::as_bool) else {
+            return (missing("inputMuted"), Vec::new());
+        };
+        (Answer::success(None), self.mute(index, muted))
+    }
+
+    fn answer_toggle_input_mute(&mut self, data: &Value) -> (Answer, Vec<Pushed>) {
+        let index = match self.input_index(data) {
+            Ok(index) => index,
+            Err(answer) => return (answer, Vec::new()),
+        };
+        let muted = !self.inputs[index].muted;
+        let pushed = self.mute(index, muted);
+        (
+            Answer::success(Some(json!({ "inputMuted": muted }))),
+            pushed,
+        )
+    }
+
+    fn stream_status(&self) -> Answer {
+        Answer::success(Some(json!({
+            "outputActive": self.streaming,
+            "outputReconnecting": false,
+            "outputTimecode": IDLE_TIMECODE,
+            "outputDuration": 0,
+            "outputCongestion": 0.0,
+            "outputBytes": 0,
+            "outputSkippedFrames": 0,
+            "outputTotalFrames": 0,
+        })))
     }
 
     pub(crate) fn switch_scene(&mut self, scene: &str) -> Result<Vec<Pushed>, Refusal> {

@@ -10,9 +10,12 @@ use super::bug::BugEntry;
 use super::document::{JSON_FILE, RunReport};
 use super::expected::source_name;
 use super::text::{cell, clip, code, compact, elapsed, fence, plural};
+use crate::fakes::discord::RecordedPost;
 use crate::harness::run::{
-    ActionReport, Evidence, ExpectationOutcome, ForgeEvidence, GapKind, JournaledEvent,
-    LedgerExcerpt, ScenarioVerdict, StepOutcome, StepStatus, Verdict,
+    ActionReport, CausationEvidence, EventEvidence, Evidence, ExpectationOutcome, ForgeEvidence,
+    GapKind, JournaledEvent, KickEvidence, LedgerExcerpt, LogEvidence, ObsEvidence,
+    OverlayEvidence, RecordedHttp, ScenarioVerdict, StepOutcome, StepStatus, VTubeEvidence,
+    Verdict, YouTubeEvidence,
 };
 
 const PAYLOAD_CHARS: usize = 200;
@@ -232,237 +235,245 @@ fn evidence_lines(report: &RunReport, bug: &BugEntry) -> Vec<String> {
 fn expectation_evidence(evidence: &Evidence) -> Vec<String> {
     match evidence {
         Evidence::None => Vec::new(),
-        Evidence::Events(events) => {
-            let mut lines = vec![format!("matching events in the window: {}", events.matched)];
-            listed(&mut lines, "matched", &events.samples, event_line);
-            listed(&mut lines, "late", &events.late, event_line);
-            listed(&mut lines, "near miss", &events.near_misses, |miss| {
-                event_line(&miss.event)
-            });
-            listed(&mut lines, "gap", &events.gaps, |gap| {
-                format!("+{} ms {}", gap.arrived_ms, compact_gap(&gap.kind))
-            });
-            lines
-        }
-        Evidence::Causation(causation) => {
-            let mut lines = Vec::new();
-            if let Some(effect) = &causation.effect {
-                lines.push(format!("effect: {}", event_line(effect)));
-            }
-            if let Some(cause) = &causation.cause {
-                lines.push(format!("expected cause: {}", event_line(cause)));
-            }
-            listed(&mut lines, "ancestor", &causation.chain, event_line);
-            lines
-        }
+        Evidence::Events(events) => event_evidence(events),
+        Evidence::Causation(causation) => causation_evidence(causation),
         Evidence::Ledger(ledger) => ledger_lines(ledger),
-        Evidence::Overlay(overlay) => {
-            let mut lines = vec![format!(
-                "content frames the page for {} received: {}",
-                code(&overlay.overlay),
-                overlay.frames.len()
-            )];
-            listed(&mut lines, "content frame", &overlay.frames, |frame| {
-                let duration = frame
-                    .duration_ms
-                    .map(|ms| format!(" for {ms} ms"))
-                    .unwrap_or_default();
-                format!(
-                    "+{} ms{duration} {}",
-                    frame.arrived_ms,
-                    code(&compact(&frame.content, PAYLOAD_CHARS))
-                )
-            });
-            if !overlay.tagged.is_empty() {
-                lines.push(format!(
-                    "tagged Variant JSON at: {}",
-                    overlay
-                        .tagged
+        Evidence::Overlay(overlay) => overlay_evidence(overlay),
+        Evidence::Discord(posts) => discord_evidence(posts),
+        Evidence::Obs(obs) => obs_evidence(obs),
+        Evidence::Kick(kick) => kick_evidence(kick),
+        Evidence::YouTube(youtube) => youtube_evidence(youtube),
+        Evidence::VTube(vtube) => vtube_evidence(vtube),
+        Evidence::Log(log) => log_evidence(log),
+    }
+}
+
+fn event_evidence(events: &EventEvidence) -> Vec<String> {
+    let mut lines = vec![format!("matching events in the window: {}", events.matched)];
+    listed(&mut lines, "matched", &events.samples, event_line);
+    listed(&mut lines, "late", &events.late, event_line);
+    listed(&mut lines, "near miss", &events.near_misses, |miss| {
+        event_line(&miss.event)
+    });
+    listed(&mut lines, "gap", &events.gaps, |gap| {
+        format!("+{} ms {}", gap.arrived_ms, compact_gap(&gap.kind))
+    });
+    lines
+}
+
+fn causation_evidence(causation: &CausationEvidence) -> Vec<String> {
+    let mut lines = Vec::new();
+    if let Some(effect) = &causation.effect {
+        lines.push(format!("effect: {}", event_line(effect)));
+    }
+    if let Some(cause) = &causation.cause {
+        lines.push(format!("expected cause: {}", event_line(cause)));
+    }
+    listed(&mut lines, "ancestor", &causation.chain, event_line);
+    lines
+}
+
+fn overlay_evidence(overlay: &OverlayEvidence) -> Vec<String> {
+    let mut lines = vec![format!(
+        "content frames the page for {} received: {}",
+        code(&overlay.overlay),
+        overlay.frames.len()
+    )];
+    listed(&mut lines, "content frame", &overlay.frames, |frame| {
+        let duration = frame
+            .duration_ms
+            .map(|ms| format!(" for {ms} ms"))
+            .unwrap_or_default();
+        format!(
+            "+{} ms{duration} {}",
+            frame.arrived_ms,
+            code(&compact(&frame.content, PAYLOAD_CHARS))
+        )
+    });
+    if !overlay.tagged.is_empty() {
+        lines.push(format!(
+            "tagged Variant JSON at: {}",
+            overlay
+                .tagged
+                .iter()
+                .map(|pointer| code(pointer))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+    }
+    lines
+}
+
+fn discord_evidence(posts: &[RecordedPost]) -> Vec<String> {
+    let mut lines = vec![format!(
+        "requests the fake Discord recorded in the window: {}",
+        posts.len()
+    )];
+    listed(&mut lines, "request", posts, |post| {
+        format!(
+            "{} to {} answered {}: content {}, allowed_mentions {}, {} file(s)",
+            post.method,
+            code(post.webhook.as_deref().unwrap_or("an unknown webhook")),
+            post.status,
+            code(&clip(post.content.as_deref().unwrap_or(""), LINE_CHARS)),
+            code(
+                &post
+                    .allowed_mentions
+                    .as_ref()
+                    .map_or_else(|| "absent".to_owned(), ToString::to_string)
+            ),
+            post.files.len()
+        )
+    });
+    lines
+}
+
+fn obs_evidence(obs: &ObsEvidence) -> Vec<String> {
+    let mut lines = Vec::new();
+    listed(&mut lines, "OBS connection", &obs.sessions, |session| {
+        format!(
+            "session {}: authentication {}, {}{}",
+            session.id,
+            authentication_label(session.authentication),
+            if session.identified {
+                "identified"
+            } else {
+                "not identified"
+            },
+            session
+                .close_code
+                .map(|close| format!(", closed with code {close}"))
+                .unwrap_or_default()
+        )
+    });
+    listed(&mut lines, "OBS request", &obs.requests, |request| {
+        format!(
+            "{} {} answered {}",
+            code(&request.request_type),
+            code(&compact(&request.request_data, PAYLOAD_CHARS)),
+            request.code
+        )
+    });
+    lines
+}
+
+fn kick_evidence(kick: &KickEvidence) -> Vec<String> {
+    let mut lines = Vec::new();
+    listed(
+        &mut lines,
+        "Kick chat connection",
+        &kick.sessions,
+        |session| {
+            format!(
+                "session {}: app key {}, joined {}{}",
+                session.id,
+                code(&session.app_key),
+                if session.subscriptions.is_empty() {
+                    "nothing".to_owned()
+                } else {
+                    session
+                        .subscriptions
                         .iter()
-                        .map(|pointer| code(pointer))
+                        .map(|channel| code(channel))
                         .collect::<Vec<_>>()
                         .join(", ")
-                ));
-            }
-            lines
-        }
-        Evidence::Discord(posts) => {
-            let mut lines = vec![format!(
-                "requests the fake Discord recorded in the window: {}",
-                posts.len()
-            )];
-            listed(&mut lines, "request", posts, |post| {
-                format!(
-                    "{} to {} answered {}: content {}, allowed_mentions {}, {} file(s)",
-                    post.method,
-                    code(post.webhook.as_deref().unwrap_or("an unknown webhook")),
-                    post.status,
-                    code(&clip(post.content.as_deref().unwrap_or(""), LINE_CHARS)),
-                    code(
-                        &post
-                            .allowed_mentions
-                            .as_ref()
-                            .map_or_else(|| "absent".to_owned(), ToString::to_string)
-                    ),
-                    post.files.len()
-                )
-            });
-            lines
-        }
-        Evidence::Obs(obs) => {
-            let mut lines = Vec::new();
-            listed(&mut lines, "OBS connection", &obs.sessions, |session| {
-                format!(
-                    "session {}: authentication {}, {}{}",
-                    session.id,
-                    authentication_label(session.authentication),
-                    if session.identified {
-                        "identified"
-                    } else {
-                        "not identified"
-                    },
-                    session
-                        .close_code
-                        .map(|close| format!(", closed with code {close}"))
-                        .unwrap_or_default()
-                )
-            });
-            listed(&mut lines, "OBS request", &obs.requests, |request| {
-                format!(
-                    "{} {} answered {}",
-                    code(&request.request_type),
-                    code(&compact(&request.request_data, PAYLOAD_CHARS)),
-                    request.code
-                )
-            });
-            lines
-        }
-        Evidence::Kick(kick) => {
-            let mut lines = Vec::new();
-            listed(
-                &mut lines,
-                "Kick chat connection",
-                &kick.sessions,
-                |session| {
-                    format!(
-                        "session {}: app key {}, joined {}{}",
-                        session.id,
-                        code(&session.app_key),
-                        if session.subscriptions.is_empty() {
-                            "nothing".to_owned()
-                        } else {
-                            session
-                                .subscriptions
-                                .iter()
-                                .map(|channel| code(channel))
-                                .collect::<Vec<_>>()
-                                .join(", ")
-                        },
-                        if session.live { "" } else { ", closed" }
-                    )
                 },
-            );
-            listed(&mut lines, "Kick request", &kick.requests, |request| {
-                format!(
-                    "{} {} answered {}{}",
-                    request.method,
-                    code(&request.path),
-                    request.status,
-                    request
-                        .body
-                        .as_ref()
-                        .map(|body| format!(" for body {}", code(&compact(body, PAYLOAD_CHARS))))
-                        .unwrap_or_default()
-                )
-            });
-            lines
-        }
-        Evidence::YouTube(youtube) => {
-            let mut lines = Vec::new();
-            listed(
-                &mut lines,
-                "YouTube request",
-                &youtube.requests,
-                |request| {
-                    format!(
-                        "{} {} answered {}{}",
-                        request.method,
-                        code(&request.path),
-                        request.status,
-                        request
-                            .body
-                            .as_ref()
-                            .map(|body| format!(
-                                " for body {}",
-                                code(&compact(body, PAYLOAD_CHARS))
-                            ))
-                            .unwrap_or_default()
-                    )
+                if session.live { "" } else { ", closed" }
+            )
+        },
+    );
+    listed(
+        &mut lines,
+        "Kick request",
+        &kick.requests,
+        http_request_line,
+    );
+    lines
+}
+
+fn youtube_evidence(youtube: &YouTubeEvidence) -> Vec<String> {
+    let mut lines = Vec::new();
+    listed(
+        &mut lines,
+        "YouTube request",
+        &youtube.requests,
+        http_request_line,
+    );
+    lines
+}
+
+fn vtube_evidence(vtube: &VTubeEvidence) -> Vec<String> {
+    let mut lines = Vec::new();
+    listed(
+        &mut lines,
+        "VTube Studio connection",
+        &vtube.sessions,
+        |session| {
+            format!(
+                "session {}: token {}{}, subscribed to {}{}",
+                session.id,
+                token_label(session.authentication),
+                if session.token_requested {
+                    " after a token request"
+                } else {
+                    ""
                 },
-            );
-            lines
-        }
-        Evidence::VTube(vtube) => {
-            let mut lines = Vec::new();
-            listed(
-                &mut lines,
-                "VTube Studio connection",
-                &vtube.sessions,
-                |session| {
-                    format!(
-                        "session {}: token {}{}, subscribed to {}{}",
-                        session.id,
-                        token_label(session.authentication),
-                        if session.token_requested {
-                            " after a token request"
-                        } else {
-                            ""
-                        },
-                        session.subscriptions.len(),
-                        if session.closed { ", closed" } else { "" }
-                    )
-                },
-            );
-            listed(
-                &mut lines,
-                "VTube Studio request",
-                &vtube.requests,
-                |request| {
-                    format!(
-                        "{} {} answered {}",
-                        code(&request.message_type),
-                        code(&compact(&request.data, PAYLOAD_CHARS)),
-                        request.error_id.map_or_else(
-                            || "without an error".to_owned(),
-                            |id| format!("error {id}")
-                        )
-                    )
-                },
-            );
-            lines
-        }
-        Evidence::Log(log) => {
-            let mut lines = Vec::new();
-            if let Some(record) = &log.matched {
-                lines.push(format!(
-                    "matched log line: {}",
-                    code(&clip(&record.line, LINE_CHARS))
-                ));
-            }
-            listed(&mut lines, "log line", &log.near_misses, |record| {
-                code(&clip(&record.line, LINE_CHARS))
-            });
-            if !log.files.is_empty() {
-                let files: Vec<String> = log
-                    .files
-                    .iter()
-                    .map(|file| code(&file.to_string_lossy()))
-                    .collect();
-                lines.push(format!("log files read: {}", files.join(", ")));
-            }
-            lines
-        }
+                session.subscriptions.len(),
+                if session.closed { ", closed" } else { "" }
+            )
+        },
+    );
+    listed(
+        &mut lines,
+        "VTube Studio request",
+        &vtube.requests,
+        |request| {
+            format!(
+                "{} {} answered {}",
+                code(&request.message_type),
+                code(&compact(&request.data, PAYLOAD_CHARS)),
+                request
+                    .error_id
+                    .map_or_else(|| "without an error".to_owned(), |id| format!("error {id}"))
+            )
+        },
+    );
+    lines
+}
+
+fn log_evidence(log: &LogEvidence) -> Vec<String> {
+    let mut lines = Vec::new();
+    if let Some(record) = &log.matched {
+        lines.push(format!(
+            "matched log line: {}",
+            code(&clip(&record.line, LINE_CHARS))
+        ));
     }
+    listed(&mut lines, "log line", &log.near_misses, |record| {
+        code(&clip(&record.line, LINE_CHARS))
+    });
+    if !log.files.is_empty() {
+        let files: Vec<String> = log
+            .files
+            .iter()
+            .map(|file| code(&file.to_string_lossy()))
+            .collect();
+        lines.push(format!("log files read: {}", files.join(", ")));
+    }
+    lines
+}
+
+fn http_request_line(request: &impl RecordedHttp) -> String {
+    format!(
+        "{} {} answered {}{}",
+        request.method(),
+        code(request.path()),
+        request.status(),
+        request
+            .body()
+            .map(|body| format!(" for body {}", code(&compact(body, PAYLOAD_CHARS))))
+            .unwrap_or_default()
+    )
 }
 
 fn ledger_lines(ledger: &LedgerExcerpt) -> Vec<String> {

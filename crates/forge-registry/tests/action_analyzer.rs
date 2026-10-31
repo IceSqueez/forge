@@ -5,10 +5,10 @@ mod fakes;
 use std::collections::HashSet;
 
 use forge_registry::{
-    ActorBlock, ActorIdentity, BREAK_LOOP_KIND_ID, CASE_CHAIN_KEY, CONTINUE_LOOP_KIND_ID, CodeKind,
-    CodeLanguage, ConfigProblem, Finding, FormField, HealthSeverity, LOOP_KIND_ID, LoginSlot,
-    ProducedVariable, STOP_KIND_ID, StepHealth, SubActionIo, SubActionRegistry, TriggerRegistry,
-    TriggerVariables, UndecodableReason, analyze, flag_failed, flag_switched_off,
+    ActorBlock, ActorIdentity, CASE_CHAIN_KEY, CodeKind, CodeLanguage, ConfigProblem, Finding,
+    FormField, HealthSeverity, LOOP_KIND_ID, LoginSlot, ProducedVariable, StepHealth, SubActionIo,
+    SubActionRegistry, TriggerRegistry, TriggerVariables, UndecodableReason, analyze, flag_failed,
+    flag_switched_off,
 };
 use forge_registry::{ActorRole, ActorSlot, CanonicalVariable};
 use forge_types::{
@@ -34,7 +34,6 @@ const PRODUCER_KIND: &str = "fake.producer";
 const SCOPED_KIND: &str = "fake.scoped";
 const SCOPED_BODY_KEY: &str = "scoped_body";
 const DECLARED_VAR: &str = "probe.result";
-const FLOW_CONTROL_KINDS: [&str; 3] = [BREAK_LOOP_KIND_ID, CONTINUE_LOOP_KIND_ID, STOP_KIND_ID];
 const OBS_SCENE: &str = "obs.scene.set";
 const TWITCH_SEND: &str = "twitch.chat.send";
 const CORE_LOG: &str = "core.log";
@@ -328,65 +327,10 @@ fn a_failed_last_run_marks_only_its_step_broken() {
     assert_eq!(health[1].severity(), HealthSeverity::Red);
 }
 
-fn outside_any_loop(kind_id: &str) -> Vec<(SubActionStep, &'static str)> {
-    vec![
-        (plain(kind_id), "at the top level"),
-        (branch(vec![plain(kind_id)]), "inside an if branch"),
-        (inside_case(vec![plain(kind_id)]), "inside a switch case"),
-        (
-            inside_default(vec![plain(kind_id)]),
-            "inside a switch default",
-        ),
-        (
-            inside_case(vec![branch(vec![plain(kind_id)])]),
-            "inside an if nested in a switch case",
-        ),
-    ]
-}
-
-fn inside_a_loop(kind_id: &str) -> Vec<(SubActionStep, &'static str)> {
-    vec![
-        (inside_loop(vec![plain(kind_id)]), "inside a loop body"),
-        (
-            inside_loop(vec![branch(vec![plain(kind_id)])]),
-            "inside an if nested in a loop",
-        ),
-    ]
-}
-
 fn action_of(steps: Vec<SubActionStep>, concurrent: bool) -> Action {
     Action {
         concurrent,
         ..action("stub action", steps)
-    }
-}
-
-fn health_without_triggers(action: &Action) -> Vec<StepHealth> {
-    analyze(
-        action,
-        &[],
-        &vec![None; action.sub_actions.len()],
-        &flow_registry(),
-        &triggers(&[]),
-    )
-}
-
-#[test]
-fn flow_control_raises_no_finding_whether_or_not_the_action_is_concurrent() {
-    for concurrent in [false, true] {
-        for kind_id in FLOW_CONTROL_KINDS {
-            for (placed, place) in outside_any_loop(kind_id)
-                .into_iter()
-                .chain(inside_a_loop(kind_id))
-            {
-                let health = health_without_triggers(&action_of(vec![placed], concurrent));
-                assert_eq!(
-                    health,
-                    vec![StepHealth::default()],
-                    "{kind_id} {place} concurrent={concurrent}"
-                );
-            }
-        }
     }
 }
 

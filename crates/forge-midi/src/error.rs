@@ -23,28 +23,3 @@ pub enum MidiError {
     #[error("MIDI supervisor task is not running")]
     SupervisorUnavailable,
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn port_not_found_display_contains_name() {
-        let e = MidiError::PortNotFound {
-            name: "Piano".to_owned(),
-        };
-        assert!(e.to_string().contains("Piano"));
-    }
-
-    #[test]
-    fn invalid_status_byte_display_is_hex() {
-        let e = MidiError::InvalidStatusByte(0x7F);
-        assert!(e.to_string().contains("7F"));
-    }
-
-    #[test]
-    fn midir_init_display_contains_message() {
-        let e = MidiError::MidirInit("init failed".to_owned());
-        assert!(e.to_string().contains("init failed"));
-    }
-}

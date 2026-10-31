@@ -175,13 +175,8 @@ fn view_over(
     view
 }
 
-const SETTLE_ROUNDS: usize = 3;
-
 fn settle(rt: &tokio::runtime::Runtime, cx: &mut TestAppContext) {
-    for _ in 0..SETTLE_ROUNDS {
-        pump(rt);
-        cx.run_until_parked();
-    }
+    crate::test_support::settle_runtime_work(cx, rt);
 }
 
 fn stored_rules() -> Vec<FilterRule> {
@@ -1085,10 +1080,7 @@ fn a_switched_off_bang_row_stays_on_screen_where_a_click_can_switch_it_back(
             cx,
         )
     });
-    for _ in 0..SETTLE_ROUNDS {
-        pump(&rt);
-        vcx.run_until_parked();
-    }
+    crate::test_support::settle_runtime_work(vcx, &rt);
     vcx.simulate_resize(gpui::size(px(SWITCH_SCAN_WINDOW), px(SWITCH_SCAN_WINDOW)));
     view.update(vcx, |v, cx| {
         let settings = &mut v.filters.loaded_mut().unwrap().settings;

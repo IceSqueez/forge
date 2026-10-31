@@ -147,7 +147,16 @@ mod tests {
 pub(crate) mod test_ports {
     use std::sync::Mutex;
 
+    use time::{Date, Month, OffsetDateTime, Time};
+
     use super::{ClipboardPort, DesktopNotice, NotifyPort, RuntimeError, UrlOpenPort};
+
+    pub(crate) fn utc(y: i32, m: Month, d: u8, h: u8, min: u8, s: u8) -> OffsetDateTime {
+        OffsetDateTime::new_utc(
+            Date::from_calendar_date(y, m, d).unwrap(),
+            Time::from_hms(h, min, s).unwrap(),
+        )
+    }
 
     #[derive(Clone, Copy)]
     pub(crate) enum MockErr {

@@ -500,9 +500,9 @@ mod tests {
             serde_json::Value::Null,
         )));
 
-        match rx.recv().await {
-            Ok(WsFrame::Text(text)) => assert!(text.contains("chat.message")),
-            _ => panic!("expected the observed event as a text frame"),
+        match first_frame(&mut rx).await {
+            WsFrame::Text(text) => assert!(text.contains("chat.message")),
+            WsFrame::Close => panic!("expected the observed event as a text frame"),
         }
     }
 

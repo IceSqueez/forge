@@ -2,6 +2,7 @@
 use std::path::PathBuf;
 
 use forge_emulator::EmulatorError;
+use forge_emulator::harness::scenario::MAX_KEEPALIVE_MS;
 use forge_emulator::harness::stress::{StressProfile, load_profile};
 use serde_json::{Value, json};
 
@@ -38,6 +39,9 @@ fn problems(profile: Value) -> Vec<String> {
     serde_json::from_value::<StressProfile>(profile)
         .unwrap()
         .problems()
+        .iter()
+        .map(ToString::to_string)
+        .collect()
 }
 
 fn with(mutate: impl FnOnce(&mut Value)) -> Value {
@@ -57,12 +61,12 @@ fn each_unrunnable_profile_is_refused_naming_what_is_wrong() {
         (
             "no senders",
             with(|p| p["senders"] = json!(0)),
-            "senders must be between 1",
+            "senders: must be between 1",
         ),
         (
             "empty ramp",
             with(|p| p["ramp"]["rates"] = json!([])),
-            "ramp.rates is empty",
+            "ramp.rates: is empty",
         ),
         (
             "zero rate",
@@ -87,22 +91,22 @@ fn each_unrunnable_profile_is_refused_naming_what_is_wrong() {
         (
             "no twitch account",
             with(|p| p["fixture"]["twitch"] = Value::Null),
-            "fixture.twitch is required",
+            "fixture.twitch: is required",
         ),
         (
             "page not seeded",
             with(|p| p["pages"] = json!(["Alert Box"])),
-            "pages names `Alert Box`",
+            "pages: names `Alert Box`",
         ),
         (
             "knee watches nothing",
             with(|p| p["knee"]["watch"] = json!([])),
-            "knee.watch names no action",
+            "knee.watch: names no action",
         ),
         (
             "knee watches a ghost",
             with(|p| p["knee"]["watch"] = json!(["Ghost"])),
-            "knee.watch names `Ghost`",
+            "knee.watch: names `Ghost`",
         ),
         (
             "share over one",
@@ -206,4 +210,58 @@ fn an_invalid_profile_file_reports_every_problem_at_once() {
             other.map(|p| p.name)
         ),
     }
+}
+
+#[test]
+fn the_twitch_keepalive_is_held_to_the_limits_of_a_scenario() {
+    let keepalive = |ms: u64| {
+        problems(with(|p| {
+            p["fakes"] = json!({ "keepalive_interval_ms": ms });
+        }))
+    };
+    assert_eq!(keepalive(1), Vec::<String>::new());
+    assert_eq!(keepalive(MAX_KEEPALIVE_MS), Vec::<String>::new());
+    assert_eq!(
+        keepalive(0),
+        [format!(
+            "fakes.keepalive_interval_ms: must be between 1 and {MAX_KEEPALIVE_MS}, got 0"
+        )]
+    );
+    assert_eq!(
+        keepalive(MAX_KEEPALIVE_MS + 1),
+        [format!(
+            "fakes.keepalive_interval_ms: must be between 1 and {MAX_KEEPALIVE_MS}, got {}",
+            MAX_KEEPALIVE_MS + 1
+        )]
+    );
+}
+
+#[test]
+fn a_profile_with_broken_json_names_the_line_and_column_of_the_mistake() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("broken.json");
+    std::fs::write(&path, "{\n  \"name\": ,\n}").unwrap();
+
+    match load_profile(&path) {
+        Err(EmulatorError::StressProfileSyntax {
+            line,
+            column,
+            reason,
+            ..
+        }) => {
+            assert_eq!((line, column), (2, 11));
+            assert!(!reason.contains("at line"), "{reason}");
+        }
+        other => panic!("expected a syntax error, got {:?}", other.map(|p| p.name)),
+    }
+}
+
+#[test]
+fn an_unreadable_profile_is_not_reported_as_a_syntax_error() {
+    let root = tempfile::tempdir().unwrap();
+
+    assert!(matches!(
+        load_profile(&root.path().join("absent.json")),
+        Err(EmulatorError::StressProfileUnreadable { .. })
+    ));
 }

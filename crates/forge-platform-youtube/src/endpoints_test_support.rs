@@ -116,7 +116,6 @@ pub(crate) async fn exhaust_quota(quota: &SharedQuota) {
     state.used_today = u32::MAX;
 }
 
-const SETTLE_TURNS: usize = 256;
 const WAIT_STEP: std::time::Duration = std::time::Duration::from_millis(1);
 pub(crate) const HANG_GUARD: std::time::Duration = std::time::Duration::from_secs(30);
 const HEADER_END: &[u8] = b"\r\n\r\n";
@@ -351,12 +350,6 @@ async fn answer(mut stream: tokio::net::TcpStream, routes: Arc<Mutex<StubRoutes>
     );
     if stream.write_all(response.as_bytes()).await.is_ok() {
         stream.shutdown().await.ok();
-    }
-}
-
-pub(crate) async fn settle() {
-    for _ in 0..SETTLE_TURNS {
-        tokio::task::yield_now().await;
     }
 }
 

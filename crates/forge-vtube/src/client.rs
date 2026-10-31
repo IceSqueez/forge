@@ -433,70 +433,8 @@ pub(crate) mod tests {
         }
     }
 
-    pub(crate) async fn serve_full_auth(
-        ws: &mut tokio_tungstenite::WebSocketStream<tokio::net::TcpStream>,
-    ) {
-        use tokio_tungstenite::tungstenite::Message;
-        let Ok(Some(Ok(Message::Text(text)))) =
-            tokio::time::timeout(Duration::from_secs(30), futures_util::StreamExt::next(ws)).await
-        else {
-            return;
-        };
-        let req: serde_json::Value = serde_json::from_str(&text).unwrap_or_default();
-        let request_id = req["requestID"].as_str().unwrap_or("unknown");
-        let msg_type = req["messageType"].as_str().unwrap_or("");
-
-        if msg_type == "AuthenticationTokenRequest" {
-            let resp = serde_json::json!({
-                "apiName": "VTubeStudioPublicAPI",
-                "apiVersion": "1.0",
-                "requestID": request_id,
-                "messageType": "AuthenticationTokenResponse",
-                "data": { "authenticationToken": "test-token-abc" }
-            });
-            ws.send(Message::Text(resp.to_string().into())).await.ok();
-
-            let Ok(Some(Ok(Message::Text(text2)))) =
-                tokio::time::timeout(Duration::from_secs(30), futures_util::StreamExt::next(ws))
-                    .await
-            else {
-                return;
-            };
-            let req2: serde_json::Value = serde_json::from_str(&text2).unwrap_or_default();
-            let rid2 = req2["requestID"].as_str().unwrap_or("unknown");
-            let auth_resp = serde_json::json!({
-                "apiName": "VTubeStudioPublicAPI",
-                "apiVersion": "1.0",
-                "requestID": rid2,
-                "messageType": "AuthenticationResponse",
-                "data": { "authenticated": true, "reason": "" }
-            });
-            ws.send(Message::Text(auth_resp.to_string().into()))
-                .await
-                .ok();
-        } else if msg_type == "AuthenticationRequest" {
-            let auth_resp = serde_json::json!({
-                "apiName": "VTubeStudioPublicAPI",
-                "apiVersion": "1.0",
-                "requestID": request_id,
-                "messageType": "AuthenticationResponse",
-                "data": { "authenticated": true, "reason": "" }
-            });
-            ws.send(Message::Text(auth_resp.to_string().into()))
-                .await
-                .ok();
-        }
-    }
-
     pub(crate) async fn wait_for(cond: impl Fn() -> bool) -> bool {
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
-        while tokio::time::Instant::now() < deadline {
-            if cond() {
-                return true;
-            }
-            tokio::time::sleep(Duration::from_millis(25)).await;
-        }
-        false
+        wait_until(SETTLE, cond).await
     }
 
     pub(crate) async fn wait_for_connected(publisher: &CapturingPublisher) -> bool {
@@ -505,15 +443,16 @@ pub(crate) mod tests {
 
     pub(crate) const POLL_STEP: Duration = Duration::from_millis(10);
 
+    pub(crate) const SETTLE: Duration = forge_test_support::HANG_GUARD;
+
     pub(crate) async fn wait_until(budget: Duration, cond: impl Fn() -> bool) -> bool {
-        let started = std::time::Instant::now();
-        while started.elapsed() < budget {
-            if cond() {
-                return true;
+        tokio::time::timeout(budget, async {
+            while !cond() {
+                tokio::time::sleep(POLL_STEP).await;
             }
-            tokio::time::sleep(POLL_STEP).await;
-        }
-        cond()
+        })
+        .await
+        .is_ok()
     }
 
     pub(crate) fn stored_token_creds() -> Arc<MockCreds> {
@@ -604,16 +543,20 @@ pub(crate) mod tests {
             {
                 return self.backlog.remove(pos).unwrap();
             }
-            let started = std::time::Instant::now();
-            while started.elapsed() < budget {
-                match tokio::time::timeout(POLL_STEP, self.frames.recv()).await {
-                    Ok(Some(frame)) if frame["messageType"] == message_type => return frame,
-                    Ok(Some(frame)) => self.backlog.push_back(frame),
-                    Ok(None) => panic!("the connection closed while waiting for {message_type}"),
-                    Err(_) => {}
+            let arrived = tokio::time::timeout(budget, async {
+                loop {
+                    match self.frames.recv().await {
+                        Some(frame) if frame["messageType"] == message_type => return frame,
+                        Some(frame) => self.backlog.push_back(frame),
+                        None => panic!("the connection closed while waiting for {message_type}"),
+                    }
                 }
+            })
+            .await;
+            match arrived {
+                Ok(frame) => frame,
+                Err(_) => panic!("no {message_type} from forge within {budget:?}"),
             }
-            panic!("no {message_type} from forge within {budget:?}");
         }
 
         pub(crate) async fn next_frame(&mut self) -> Option<serde_json::Value> {
@@ -623,10 +566,23 @@ pub(crate) mod tests {
             }
         }
 
+        pub(crate) async fn socket_ended(&mut self) -> bool {
+            tokio::time::timeout(SETTLE, async { while self.next_frame().await.is_some() {} })
+                .await
+                .is_ok()
+        }
+
+        pub(crate) async fn accept_cold_start(&mut self) {
+            let token_request = self.expect("AuthenticationTokenRequest", SETTLE).await;
+            self.tx.reply(
+                &token_request,
+                serde_json::json!({ "authenticationToken": "test-token-abc" }),
+            );
+            self.accept_login().await;
+        }
+
         pub(crate) async fn accept_login(&mut self) {
-            let login = self
-                .expect("AuthenticationRequest", Duration::from_secs(30))
-                .await;
+            let login = self.expect("AuthenticationRequest", SETTLE).await;
             self.tx.reply(
                 &login,
                 serde_json::json!({ "authenticated": true, "reason": "" }),
@@ -750,7 +706,7 @@ pub(crate) mod tests {
         }
 
         pub(crate) async fn logged_in_conn(&mut self) -> PeerConn {
-            let Some(mut conn) = self.next_conn(Duration::from_secs(30)).await else {
+            let Some(mut conn) = self.next_conn(SETTLE).await else {
                 panic!("forge never dialed the fake VTube Studio");
             };
             conn.accept_login().await;
@@ -786,6 +742,7 @@ pub(crate) mod tests {
                     Some(PeerCmd::Close) | None => {
                         #[expect(clippy::let_underscore_must_use, reason = "a failed close does not affect the scenario")]
                         let _ = ws.close(None).await;
+                        while let Some(Ok(_)) = futures_util::StreamExt::next(&mut ws).await {}
                         return;
                     }
                 },
@@ -794,51 +751,14 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
-    async fn connect_emits_connected_event_when_server_accepts() {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-
-        tokio::spawn(async move {
-            let Ok((stream, _)) = listener.accept().await else {
-                return;
-            };
-            let mut ws = tokio_tungstenite::accept_async(stream).await.unwrap();
-            serve_full_auth(&mut ws).await;
-            while let Some(Ok(_)) = futures_util::StreamExt::next(&mut ws).await {}
-        });
-
-        let publisher = CapturingPublisher::shared();
-        let creds = MockCreds::new();
-        let cfg = VTubeConfig {
-            endpoint: format!("ws://{addr}"),
-        };
-        let _client = VTubeClient::connect(cfg, publisher.clone(), creds.creds());
-
-        assert!(
-            wait_for_connected(&publisher).await,
-            "expected connected event"
-        );
-    }
-
-    #[tokio::test]
     async fn disconnect_emits_connection_changed_false() {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-
-        tokio::spawn(async move {
-            let Ok((stream, _)) = listener.accept().await else {
-                return;
-            };
-            let mut ws = tokio_tungstenite::accept_async(stream).await.unwrap();
-            serve_full_auth(&mut ws).await;
-        });
-
+        let mut vts = FakeVts::bind().await;
         let publisher = CapturingPublisher::shared();
-        let creds = MockCreds::new();
-        let cfg = VTubeConfig {
-            endpoint: format!("ws://{addr}"),
-        };
-        let _client = VTubeClient::connect(cfg, publisher.clone(), creds.creds());
+        let _client = vts.connect(&publisher, &MockCreds::new());
+        let mut conn = vts.next_conn(SETTLE).await.unwrap();
+        conn.accept_cold_start().await;
+
+        conn.tx.close();
 
         assert!(
             wait_for(|| publisher.disconnected_event().is_some()).await,
@@ -848,66 +768,29 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn client_reconnects_after_server_close() {
-        let accept_count = Arc::new(AtomicU32::new(0));
-        let counter = Arc::clone(&accept_count);
-        let (accept_tx, mut accept_rx) = tokio::sync::mpsc::channel::<()>(4);
-
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-
-        tokio::spawn(async move {
-            loop {
-                let Ok((stream, _)) = listener.accept().await else {
-                    break;
-                };
-                counter.fetch_add(1, AO::Release);
-                #[expect(
-                    clippy::let_underscore_must_use,
-                    reason = "the receiver may already be gone"
-                )]
-                let _ = accept_tx.send(()).await;
-                let mut ws = tokio_tungstenite::accept_async(stream).await.unwrap();
-                serve_full_auth(&mut ws).await;
-            }
-        });
-
+        let mut vts = FakeVts::bind().await;
         let publisher = CapturingPublisher::shared();
-        let creds = MockCreds::new();
-        let cfg = VTubeConfig {
-            endpoint: format!("ws://{addr}"),
-        };
-        let _client = VTubeClient::connect(cfg, publisher.clone(), creds.creds());
+        let _client = vts.connect(&publisher, &MockCreds::new());
+        let mut conn = vts.next_conn(SETTLE).await.unwrap();
+        conn.accept_cold_start().await;
 
-        let result = tokio::time::timeout(Duration::from_secs(30), async {
-            accept_rx.recv().await;
-            accept_rx.recv().await;
-        })
-        .await;
+        conn.tx.close();
 
-        assert!(result.is_ok(), "expected a reconnect");
-        assert!(accept_count.load(AO::Acquire) >= 2);
+        assert!(
+            vts.next_redial(SETTLE).await.is_some(),
+            "expected a reconnect"
+        );
     }
 
     #[tokio::test]
     async fn cold_start_auth_stores_token_and_reaches_connected() {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-
-        tokio::spawn(async move {
-            let Ok((stream, _)) = listener.accept().await else {
-                return;
-            };
-            let mut ws = tokio_tungstenite::accept_async(stream).await.unwrap();
-            serve_full_auth(&mut ws).await;
-            while let Some(Ok(_)) = futures_util::StreamExt::next(&mut ws).await {}
-        });
-
+        let mut vts = FakeVts::bind().await;
         let publisher = CapturingPublisher::shared();
         let creds = MockCreds::new();
-        let cfg = VTubeConfig {
-            endpoint: format!("ws://{addr}"),
-        };
-        let _client = VTubeClient::connect(cfg, publisher.clone(), creds.creds());
+        let _client = vts.connect(&publisher, &creds);
+        let mut conn = vts.next_conn(SETTLE).await.unwrap();
+
+        conn.accept_cold_start().await;
 
         assert!(
             wait_for_connected(&publisher).await,
@@ -927,11 +810,9 @@ pub(crate) mod tests {
         let publisher = CapturingPublisher::shared();
         let creds = stored_token_creds();
         let _client = vts.connect(&publisher, &creds);
-        let mut conn = vts.next_conn(Duration::from_secs(30)).await.unwrap();
+        let mut conn = vts.next_conn(SETTLE).await.unwrap();
 
-        let login = conn
-            .expect("AuthenticationRequest", Duration::from_secs(30))
-            .await;
+        let login = conn.expect("AuthenticationRequest", SETTLE).await;
         assert_eq!(login["data"]["authenticationToken"], "stored-token");
 
         conn.tx.reply(
@@ -973,15 +854,13 @@ pub(crate) mod tests {
             let publisher = CapturingPublisher::shared();
             let creds = stored_token_creds();
             let _client = vts.connect(&publisher, &creds);
-            let mut conn = vts.next_conn(Duration::from_secs(30)).await.unwrap();
+            let mut conn = vts.next_conn(SETTLE).await.unwrap();
 
-            let login = conn
-                .expect("AuthenticationRequest", Duration::from_secs(30))
-                .await;
+            let login = conn.expect("AuthenticationRequest", SETTLE).await;
             reject(&conn.tx, &login);
 
             assert!(
-                wait_until(Duration::from_secs(30), || {
+                wait_until(SETTLE, || {
                     publisher.disconnected_with_reason("auth_required")
                 })
                 .await,
@@ -1018,18 +897,13 @@ pub(crate) mod tests {
             let mut vts = FakeVts::bind().await;
             let publisher = CapturingPublisher::shared();
             let _client = vts.connect(&publisher, &MockCreds::new());
-            let mut conn = vts.next_conn(Duration::from_secs(30)).await.unwrap();
+            let mut conn = vts.next_conn(SETTLE).await.unwrap();
 
-            let popup = conn
-                .expect("AuthenticationTokenRequest", Duration::from_secs(30))
-                .await;
+            let popup = conn.expect("AuthenticationTokenRequest", SETTLE).await;
             answer(&conn.tx, &popup);
 
             assert!(
-                wait_until(Duration::from_secs(30), || {
-                    first_disconnect_reason(&publisher).is_some()
-                })
-                .await,
+                wait_until(SETTLE, || { first_disconnect_reason(&publisher).is_some() }).await,
                 "{case}: no outcome was reported"
             );
             assert_eq!(
@@ -1042,55 +916,20 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn connected_client_polls_expression_state() {
-        let (seen_tx, mut seen_rx) = tokio::sync::mpsc::channel::<()>(1);
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-
-        tokio::spawn(async move {
-            let Ok((stream, _)) = listener.accept().await else {
-                return;
-            };
-            let mut ws = tokio_tungstenite::accept_async(stream).await.unwrap();
-            serve_full_auth(&mut ws).await;
-            use tokio_tungstenite::tungstenite::Message;
-            while let Ok(Some(Ok(Message::Text(text)))) = tokio::time::timeout(
-                Duration::from_secs(30),
-                futures_util::StreamExt::next(&mut ws),
-            )
-            .await
-            {
-                let req: serde_json::Value = serde_json::from_str(&text).unwrap_or_default();
-                if req["messageType"] == "ExpressionStateRequest" {
-                    #[expect(
-                        clippy::let_underscore_must_use,
-                        reason = "the receiver may already be gone"
-                    )]
-                    let _ = seen_tx.send(()).await;
-                    break;
-                }
-            }
-        });
-
+        let mut vts = FakeVts::bind().await;
         let publisher = CapturingPublisher::shared();
-        let creds = MockCreds::new();
-        let cfg = VTubeConfig {
-            endpoint: format!("ws://{addr}"),
-        };
-        let _client = VTubeClient::connect_with_timing(
-            cfg,
-            publisher.clone(),
-            creds.creds(),
+        let _client = vts.connect_with_timing(
+            &publisher,
+            &MockCreds::new(),
             VTubeTiming {
                 expression_poll_interval: Duration::from_millis(1),
                 ..VTubeTiming::default()
             },
         );
+        let mut conn = vts.next_conn(SETTLE).await.unwrap();
+        conn.accept_cold_start().await;
 
-        let seen = tokio::time::timeout(Duration::from_secs(30), seen_rx.recv()).await;
-        assert!(
-            matches!(seen, Ok(Some(()))),
-            "a connected client must poll ExpressionStateRequest"
-        );
+        conn.expect("ExpressionStateRequest", SETTLE).await;
     }
 
     #[tokio::test]
@@ -1140,7 +979,7 @@ pub(crate) mod tests {
         rx: &mut ProbedEvents,
         matches: impl Fn(&Event) -> bool,
     ) -> Option<Option<ConnectionState>> {
-        tokio::time::timeout(Duration::from_secs(30), async {
+        tokio::time::timeout(SETTLE, async {
             loop {
                 let (event, state) = rx.recv().await?;
                 if matches(&event) {
@@ -1161,27 +1000,6 @@ pub(crate) mod tests {
         event.payload["reason"].as_str() == Some(reason)
     }
 
-    async fn serve_auth_then_gated_close(
-        listener: tokio::net::TcpListener,
-        gate: tokio::sync::oneshot::Receiver<()>,
-    ) {
-        let Ok((stream, _)) = listener.accept().await else {
-            return;
-        };
-        let Ok(mut ws) = tokio_tungstenite::accept_async(stream).await else {
-            return;
-        };
-        serve_full_auth(&mut ws).await;
-        if gate.await.is_err() {
-            return;
-        }
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "a failed close does not affect the scenario"
-        )]
-        let _ = ws.close(None).await;
-    }
-
     async fn serve_gated_token_rejection(
         listener: tokio::net::TcpListener,
         gate: tokio::sync::oneshot::Receiver<()>,
@@ -1193,11 +1011,8 @@ pub(crate) mod tests {
         let Ok(mut ws) = tokio_tungstenite::accept_async(stream).await else {
             return;
         };
-        let Ok(Some(Ok(Message::Text(text)))) = tokio::time::timeout(
-            Duration::from_secs(30),
-            futures_util::StreamExt::next(&mut ws),
-        )
-        .await
+        let Ok(Some(Ok(Message::Text(text)))) =
+            tokio::time::timeout(SETTLE, futures_util::StreamExt::next(&mut ws)).await
         else {
             return;
         };
@@ -1223,16 +1038,13 @@ pub(crate) mod tests {
             (false, ConnectionState::Disconnected),
             (true, ConnectionState::Reconnecting),
         ] {
-            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-            let addr = listener.local_addr().unwrap();
-            let (gate_tx, gate_rx) = tokio::sync::oneshot::channel();
-            let server = tokio::spawn(serve_auth_then_gated_close(listener, gate_rx));
+            let mut vts = FakeVts::bind().await;
             let (tx, mut rx) = mpsc::unbounded_channel();
             let slot: Arc<OnceLock<Arc<VTubeClient>>> = Arc::new(OnceLock::new());
 
             let client = Arc::new(VTubeClient::connect(
                 VTubeConfig {
-                    endpoint: format!("ws://{addr}"),
+                    endpoint: vts.endpoint.clone(),
                 },
                 Arc::new(StateProbePublisher {
                     client: Arc::clone(&slot),
@@ -1245,20 +1057,17 @@ pub(crate) mod tests {
                 reason = "the slot is filled at most once"
             )]
             let _ = slot.set(Arc::clone(&client));
+            let mut conn = vts.next_conn(SETTLE).await.unwrap();
+            conn.accept_cold_start().await;
             assert!(
                 state_when(&mut rx, is_connected).await.is_some(),
                 "expected the client to reach connected before the peer drops the socket"
             );
             client.set_auto_reconnect(auto_reconnect);
-            #[expect(
-                clippy::let_underscore_must_use,
-                reason = "the receiver may already be gone"
-            )]
-            let _ = gate_tx.send(());
+            conn.tx.close();
 
             let state = state_when(&mut rx, |e| has_reason(e, "socket_closed")).await;
 
-            server.abort();
             drop(client);
             assert_eq!(
                 state,
@@ -1267,8 +1076,6 @@ pub(crate) mod tests {
             );
         }
     }
-
-    const SETTLE: Duration = Duration::from_secs(30);
 
     const PARKED_WINDOW: Duration = Duration::from_millis(500);
 
@@ -1540,7 +1347,7 @@ pub(crate) mod tests {
         let _ = gate_tx.send(());
 
         let handle = client.supervisor.lock().unwrap().take().unwrap();
-        let stopped = tokio::time::timeout(Duration::from_secs(30), handle).await;
+        let stopped = tokio::time::timeout(SETTLE, handle).await;
         server.abort();
         assert!(
             stopped.is_ok(),
@@ -1620,14 +1427,10 @@ pub(crate) mod tests {
         assert_eq!(client.auth_state(), AuthState::AwaitingApproval);
     }
 
-    const RETRY_WALL_BUDGET: Duration = Duration::from_secs(20);
-
     const ATTEMPTS_BEFORE_VERDICT: usize = 3;
 
-    const PEER_SPEAKS_WINDOW: Duration = Duration::from_secs(30);
-
     async fn next_accept(accepted: &mut mpsc::UnboundedReceiver<()>, attempt: usize) {
-        let next = tokio::time::timeout(RETRY_WALL_BUDGET, accepted.recv()).await;
+        let next = tokio::time::timeout(SETTLE, accepted.recv()).await;
         assert!(
             matches!(next, Ok(Some(()))),
             "the supervisor stopped retrying before attempt {attempt}"
@@ -1644,34 +1447,6 @@ pub(crate) mod tests {
                 return;
             }
         }
-    }
-
-    async fn serve_auth_then_announced_close(
-        listener: tokio::net::TcpListener,
-        gate: tokio::sync::oneshot::Receiver<()>,
-        settled: tokio::sync::oneshot::Sender<()>,
-    ) {
-        let Ok((stream, _)) = listener.accept().await else {
-            return;
-        };
-        let Ok(mut ws) = tokio_tungstenite::accept_async(stream).await else {
-            return;
-        };
-        serve_full_auth(&mut ws).await;
-        if gate.await.is_err() {
-            return;
-        }
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "a failed close does not affect the scenario"
-        )]
-        let _ = ws.close(None).await;
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the receiver may already be gone"
-        )]
-        let _ = settled.send(());
-        while let Some(Ok(_)) = futures_util::StreamExt::next(&mut ws).await {}
     }
 
     fn announced_states(publisher: &CapturingPublisher) -> Vec<String> {
@@ -1719,22 +1494,11 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn a_session_reports_each_step_on_the_vtube_feed_as_well_as_the_shared_one() {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-        let (gate_tx, gate_rx) = tokio::sync::oneshot::channel();
-        let (settled_tx, _settled_rx) = tokio::sync::oneshot::channel();
-        let server = tokio::spawn(serve_auth_then_announced_close(
-            listener, gate_rx, settled_tx,
-        ));
+        let mut vts = FakeVts::bind().await;
         let publisher = CapturingPublisher::shared();
-
-        let client = VTubeClient::connect(
-            VTubeConfig {
-                endpoint: format!("ws://{addr}"),
-            },
-            publisher.clone(),
-            MockCreds::new().creds(),
-        );
+        let client = vts.connect(&publisher, &MockCreds::new());
+        let mut conn = vts.next_conn(SETTLE).await.unwrap();
+        conn.accept_cold_start().await;
         assert!(wait_for_connected(&publisher).await, "expected connected");
         assert_eq!(
             announced_states(&publisher),
@@ -1742,18 +1506,13 @@ pub(crate) mod tests {
             "reaching a live session must also announce it on the shared feed"
         );
 
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the receiver may already be gone"
-        )]
-        let _ = gate_tx.send(());
+        conn.tx.close();
         assert!(
             wait_for(|| publisher.disconnected_with_reason("socket_closed")).await,
             "a dropped socket must still name socket_closed on the vtube feed"
         );
 
         let states = announced_states(&publisher);
-        server.abort();
         drop(client);
         assert_eq!(
             states,
@@ -1764,39 +1523,20 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn a_retired_client_stays_silent_when_its_server_speaks_afterwards() {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-        let (gate_tx, gate_rx) = tokio::sync::oneshot::channel();
-        let (settled_tx, settled_rx) = tokio::sync::oneshot::channel();
-        let server = tokio::spawn(serve_auth_then_announced_close(
-            listener, gate_rx, settled_tx,
-        ));
+        let mut vts = FakeVts::bind().await;
         let publisher = CapturingPublisher::shared();
-
-        let client = VTubeClient::connect(
-            VTubeConfig {
-                endpoint: format!("ws://{addr}"),
-            },
-            publisher.clone(),
-            MockCreds::new().creds(),
-        );
+        let client = vts.connect(&publisher, &MockCreds::new());
+        let mut conn = vts.next_conn(SETTLE).await.unwrap();
+        conn.accept_cold_start().await;
         assert!(wait_for_connected(&publisher).await, "expected connected");
         client.disconnect().await.unwrap();
         drop(publisher.take());
 
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the receiver may already be gone"
-        )]
-        let _ = gate_tx.send(());
-        tokio::time::timeout(PEER_SPEAKS_WINDOW, settled_rx)
-            .await
-            .expect("the server spoke to the retired client")
-            .unwrap();
-        tokio::time::timeout(PEER_SPEAKS_WINDOW, server)
-            .await
-            .expect("the retired client let its socket go")
-            .unwrap();
+        conn.tx.close();
+        assert!(
+            conn.socket_ended().await,
+            "the retired client held on to its socket"
+        );
 
         assert!(
             publisher.events().is_empty(),
@@ -1835,23 +1575,13 @@ pub(crate) mod tests {
             (LeaveConnected::UserReconnects, "disconnected", true),
             (LeaveConnected::VtsClosesTheSocket, "reconnecting", false),
         ] {
-            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-            let addr = listener.local_addr().unwrap();
-            let (gate_tx, gate_rx) = tokio::sync::oneshot::channel();
-            let (settled_tx, _settled_rx) = tokio::sync::oneshot::channel();
-            let server = tokio::spawn(serve_auth_then_announced_close(
-                listener, gate_rx, settled_tx,
-            ));
+            let mut vts = FakeVts::bind().await;
             let publisher = CapturingPublisher::shared();
-            let client = VTubeClient::connect(
-                VTubeConfig {
-                    endpoint: format!("ws://{addr}"),
-                },
-                publisher.clone(),
-                MockCreds::new().creds(),
-            );
+            let client = vts.connect(&publisher, &MockCreds::new());
+            let mut conn = vts.next_conn(SETTLE).await.unwrap();
+            conn.accept_cold_start().await;
             assert!(
-                wait_until(Duration::from_secs(30), || {
+                wait_until(SETTLE, || {
                     announcements(&publisher)
                         .last()
                         .is_some_and(|(state, _)| state == "connected")
@@ -1864,13 +1594,10 @@ pub(crate) mod tests {
             match cause {
                 LeaveConnected::UserDisconnects => client.disconnect().await.unwrap(),
                 LeaveConnected::UserReconnects => client.reconnect().await.unwrap(),
-                LeaveConnected::VtsClosesTheSocket => gate_tx.send(()).unwrap(),
+                LeaveConnected::VtsClosesTheSocket => conn.tx.close(),
             }
             assert!(
-                wait_until(Duration::from_secs(30), || {
-                    announcements(&publisher).len() > before
-                })
-                .await,
+                wait_until(SETTLE, || { announcements(&publisher).len() > before }).await,
                 "{cause:?}: never left connected"
             );
 
@@ -1880,7 +1607,6 @@ pub(crate) mod tests {
                 "{cause:?}"
             );
             client.disconnect().await.unwrap();
-            server.abort();
         }
     }
 }

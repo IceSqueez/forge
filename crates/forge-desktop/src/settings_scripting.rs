@@ -1065,10 +1065,7 @@ mod tests {
     }
 
     fn settle(cx: &mut TestAppContext, rt: &tokio::runtime::Runtime) {
-        for _ in 0..3 {
-            pump(rt);
-            cx.run_until_parked();
-        }
+        crate::test_support::settle_paused_runtime_work(cx, rt);
     }
 
     fn domain_writes(writes: &mut UnboundedReceiver<SettingWrite>) -> Vec<Vec<String>> {

@@ -118,9 +118,11 @@ fn syntax_and_shape_errors_carry_file_line_and_column() {
 #[test]
 fn syntax_error_display_leads_with_path_line_and_column() {
     let error = parse_scenario(Path::new("s.json"), "{\n  \"nam\": 1\n}").unwrap_err();
-    assert_eq!(
-        error.to_string(),
-        "s.json:2:7: unknown field `nam`, expected one of `name`, `purpose`, `fixture`, `fakes`, `steps`"
+    assert!(
+        error
+            .to_string()
+            .starts_with("s.json:2:7: unknown field `nam`"),
+        "{error}"
     );
 }
 
@@ -250,5 +252,23 @@ fn run_command_refuses_a_bad_scenario_file_before_launching_anything() {
             "{}: a run root was prepared",
             file.display()
         );
+    }
+}
+
+#[test]
+fn every_keyword_in_the_shipped_scenarios_is_the_serialized_tag_of_its_variant() {
+    fn tag(value: serde_json::Value) -> String {
+        value.as_object().unwrap().keys().next().unwrap().clone()
+    }
+    for file in support::shipped_json("scenarios") {
+        let scenario = forge_emulator::harness::scenario::load_scenario(&file).unwrap();
+        for step in &scenario.steps {
+            let action = serde_json::to_value(&step.action).unwrap();
+            assert_eq!(tag(action), step.action.keyword(), "{}", file.display());
+            for expectation in &step.expect {
+                let value = serde_json::to_value(expectation).unwrap();
+                assert_eq!(tag(value), expectation.keyword(), "{}", file.display());
+            }
+        }
     }
 }

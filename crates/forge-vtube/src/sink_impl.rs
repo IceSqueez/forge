@@ -428,7 +428,7 @@ mod tests {
     };
     use crate::timing::VTubeTiming;
 
-    const SETTLE: Duration = Duration::from_secs(30);
+    const SETTLE: Duration = forge_test_support::HANG_GUARD;
     const SHORT_REQUEST_TIMEOUT: Duration = Duration::from_millis(100);
     const REJECTION_ERROR_ID: i64 = 452;
     const ITEM_ERROR_ID: i64 = 751;

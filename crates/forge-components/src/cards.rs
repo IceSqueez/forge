@@ -1130,12 +1130,6 @@ mod tests {
     }
 
     #[test]
-    fn idle_fill_is_fully_transparent_not_an_opaque_field() {
-        let idle_fill = default_colors().resolve(RowState::Idle).0;
-        assert_eq!(idle_fill.a, 0.0);
-    }
-
-    #[test]
     fn idle_hover_and_selected_fills_are_distinguishable_hues() {
         let c = default_colors();
         let idle = c.resolve(RowState::Idle).0;

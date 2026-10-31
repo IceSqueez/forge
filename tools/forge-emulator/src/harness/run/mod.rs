@@ -18,6 +18,7 @@ mod vtube_checks;
 mod youtube_checks;
 
 pub use forge_host::{ForgeHost, LiveForge, Relaunch};
+pub(crate) use http_checks::RecordedHttp;
 pub use journal::{Journal, JournalEntry, JournalView};
 pub use log_record::LogRecord;
 pub(crate) use log_tail::LogTail;

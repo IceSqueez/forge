@@ -1,6 +1,7 @@
 #![allow(clippy::unwrap_used, clippy::panic)]
 mod common;
 
+use forge_speak_queue::vocabulary::RejectReason;
 use forge_speak_queue::{QueueConfig, QueueDeps, SpeakCommand, SpeakEvent, SpeakEventStream};
 
 use common::{next_matching, recording_sink, request, standard_deps, wait_for};
@@ -52,12 +53,18 @@ async fn sixth_request_rejected_when_limit_is_five() {
         .unwrap();
 
     let events = admissions(&mut stream, 6).await;
-    let rejected_count = events
+    let rejections: Vec<&RejectReason> = events
         .iter()
-        .filter(|e| matches!(e, SpeakEvent::Rejected { .. }))
-        .count();
+        .filter_map(|e| match e {
+            SpeakEvent::Rejected { reason, .. } => Some(reason),
+            _ => None,
+        })
+        .collect();
 
-    assert_eq!(rejected_count, 1, "exactly one Rejected event expected");
+    assert!(
+        matches!(rejections.as_slice(), [RejectReason::PerUserLimit]),
+        "{rejections:?}"
+    );
 }
 
 #[tokio::test]

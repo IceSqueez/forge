@@ -7,9 +7,10 @@ use forge_net::TokenBucketRateLimiter;
 use forge_platform_core::{AuthFlow, PlatformEndpoints};
 use forge_platform_twitch::credentials::{StoredCredential, store_credential};
 use forge_platform_twitch::{
-    BroadcasterTier, HELIX_BUDGET_CAPACITY, HELIX_BUDGET_WINDOW, TWITCH_OAUTH_BUDGET_CAPACITY,
-    TWITCH_OAUTH_BUDGET_WINDOW, TwitchAuthFlow, TwitchCredentialsManager, TwitchOAuthClient,
-    helix_gateway, twitch_auth_flow, twitch_oauth_gateway,
+    BroadcasterTier, DeviceTiming, HELIX_BUDGET_CAPACITY, HELIX_BUDGET_WINDOW,
+    TWITCH_OAUTH_BUDGET_CAPACITY, TWITCH_OAUTH_BUDGET_WINDOW, TwitchAuthFlow,
+    TwitchCredentialsManager, TwitchOAuthClient, helix_gateway, twitch_auth_flow,
+    twitch_oauth_gateway,
 };
 use forge_storage::test_support::MemoryCredentials;
 use forge_types::OAuthToken;
@@ -154,7 +155,12 @@ async fn overrides_carry_the_whole_sign_in_through_the_oauth_and_helix_hosts() {
             .await;
     }
     let endpoints = overrides(format!("{}/oauth2", server.uri()), server.uri());
-    let mut flow = TwitchAuthFlow::new(oauth_client(&endpoints), helix(&endpoints));
+    let mut flow = TwitchAuthFlow::new(oauth_client(&endpoints), helix(&endpoints)).with_timing(
+        DeviceTiming {
+            poll_interval: Some(Duration::ZERO),
+            ..DeviceTiming::default()
+        },
+    );
 
     flow.start().await.unwrap();
     let bundle = flow

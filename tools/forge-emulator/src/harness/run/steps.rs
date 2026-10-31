@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::time::Duration;
 
-use axum::http::StatusCode;
+use axum::http::{Method, StatusCode};
 use forge_donatello::DONATELLO_INTEGRATION;
 use forge_monobank::MONOBANK_INTEGRATION;
 use forge_types::ActionId;
@@ -24,11 +24,14 @@ use crate::fakes::vtube::{
     FakeVTube, HOTKEY_TRIGGERED_EVENT, ITEM_EVENT, MODEL_CONFIG_CHANGED_EVENT, MODEL_LOADED_EVENT,
     TRACKING_STATUS_CHANGED_EVENT,
 };
-use crate::fakes::youtube::{FakeYouTube, LIVE_CHAT_MESSAGES_PATH};
+use crate::fakes::youtube::{FakeYouTube, LIVE_CHAT_MESSAGES_PATH, YouTubeChatter};
 use crate::fixture::SeedReport;
 use crate::harness::control::ControlClient;
 use crate::harness::overlay::OverlayPages;
-use crate::harness::scenario::{Crowd, DonatelloGift, MonobankGift, OfflineGift, StepAction};
+use crate::harness::scenario::{
+    ChatMessage, Crowd, DonatelloGift, KickChatMessage, MonobankGift, OfflineGift, StepAction,
+    YouTubeChatMessage,
+};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ActionIndex {
@@ -185,230 +188,90 @@ impl Stimuli<'_> {
             StepAction::TwitchSubscribed { types, within_ms } => {
                 self.await_subscriptions(types, *within_ms).await
             }
-            StepAction::Chat(message) => {
-                let twitch = self.twitch()?;
-                twitch
-                    .inject_chat_message(&message.viewer.to_viewer(), &message.text)
-                    .await
-                    .map(|message_id| ActionDetail::ChatSent { message_id })
-                    .map_err(|e| with_ledger(e.to_string(), twitch))
-            }
+            StepAction::Chat(message) => self.send_chat(message).await,
             StepAction::Crowd(crowd) => self.send_crowd(crowd).await,
             StepAction::TwitchEvent {
                 subscription_type,
                 event,
             } => self.inject_event(subscription_type, event).await,
             StepAction::SessionReconnect { within_ms } => self.reconnect(*within_ms).await,
-            StepAction::OverlayPage { overlay, within_ms } => self
-                .pages
-                .open_page(overlay, Duration::from_millis(*within_ms))
-                .await
-                .map(|identity| ActionDetail::OverlayPageOpened {
-                    overlay: overlay.clone(),
-                    identity,
-                })
-                .map_err(refused),
+            StepAction::OverlayPage { overlay, within_ms } => {
+                self.open_page(overlay, *within_ms).await
+            }
             StepAction::Pause { ms, .. } => {
                 tokio::time::sleep(Duration::from_millis(*ms)).await;
                 Ok(ActionDetail::Paused)
             }
-            StepAction::RunAction { action, args } => {
-                let action_id = self.actions.resolve(action).ok_or_else(|| {
-                    plain(format!("the fixture seeded no action named `{action}`"))
-                })?;
-                self.client
-                    .do_action(action_id, args)
-                    .await
-                    .map(|execution_id| ActionDetail::ActionRun {
-                        action_id,
-                        execution_id,
-                    })
-                    .map_err(refused)
-            }
+            StepAction::RunAction { action, args } => self.run_action(action, args).await,
             StepAction::SetGlobal {
                 name,
                 value,
                 persisted,
-            } => self
-                .client
-                .set_global(name, value, *persisted)
-                .await
-                .map(|()| ActionDetail::GlobalSet)
-                .map_err(refused),
-            StepAction::KickChatJoined { within_ms } => {
-                let kick = self.kick()?;
-                let channel = kick.chat_channel();
-                kick.wait_for(
-                    "a Kick chat connection joined to the chatroom",
-                    Duration::from_millis(*within_ms),
-                    |ledger| ledger.joined(&channel),
-                )
-                .await
-                .map(|session| ActionDetail::KickChatJoined { session })
-                .map_err(refused)
-            }
-            StepAction::KickChat(message) => self
-                .kick()?
-                .inject_chat_message(&message.sender, &message.text)
-                .await
-                .map(|message_id| ActionDetail::KickChatSent { message_id })
-                .map_err(refused),
-            StepAction::KickPusherEvent { event, data } => self
-                .kick()?
-                .push_event(event, data)
-                .await
-                .map(|delivered| ActionDetail::KickEventPushed {
-                    event: event.clone(),
-                    delivered,
-                })
-                .map_err(refused),
+            } => self.set_global(name, value, *persisted).await,
+            StepAction::KickChatJoined { within_ms } => self.await_kick_chat(*within_ms).await,
+            StepAction::KickChat(message) => self.kick_chat(message).await,
+            StepAction::KickPusherEvent { event, data } => self.kick_event(event, data).await,
             StepAction::KickStream { live } => {
                 self.kick()?.set_live(*live);
                 Ok(ActionDetail::KickStreamSet { live: *live })
             }
-            StepAction::KickChannelPolled { within_ms } => {
-                let kick = self.kick()?;
-                let from = kick.ledger().requests.len();
-                kick.wait_for(
-                    "a Kick channel poll",
-                    Duration::from_millis(*within_ms),
-                    |ledger| {
-                        ledger.requests[from..]
-                            .iter()
-                            .any(|request| {
-                                request.path == CHANNELS_PATH
-                                    && request.status == StatusCode::OK.as_u16()
-                            })
-                            .then_some(())
-                    },
-                )
-                .await
-                .map(|()| ActionDetail::KickChannelPolled)
-                .map_err(refused)
-            }
+            StepAction::KickChannelPolled { within_ms } => self.await_kick_poll(*within_ms).await,
             StepAction::YoutubeChatPolled { within_ms } => {
-                let youtube = self.youtube()?;
-                let from = youtube.ledger().requests.len();
-                youtube
-                    .wait_for(
-                        "a successful YouTube chat poll (forge needs non-empty build-time FORGE_YOUTUBE_CLIENT_ID and FORGE_YOUTUBE_CLIENT_SECRET to wire YouTube at all)",
-                        Duration::from_millis(*within_ms),
-                        |ledger| {
-                            ledger.requests[from..]
-                                .iter()
-                                .any(|request| {
-                                    request.method == "GET"
-                                        && request.path == LIVE_CHAT_MESSAGES_PATH
-                                        && request.status == StatusCode::OK.as_u16()
-                                })
-                                .then_some(())
-                        },
-                    )
-                    .await
-                    .map(|()| ActionDetail::YoutubeChatPolled)
-                    .map_err(refused)
+                self.await_youtube_poll(*within_ms).await
             }
-            StepAction::YoutubeChat(message) => self
-                .youtube()?
-                .inject_chat_message(&message.author, &message.text)
-                .map(|message_id| ActionDetail::YoutubeChatSent { message_id })
-                .map_err(refused),
+            StepAction::YoutubeChat(message) => self.youtube_chat(message),
             StepAction::YoutubeChatEvent { author, snippet } => {
-                let snippet = snippet.as_object().cloned().ok_or_else(|| {
-                    plain("the YouTube chat event snippet must be an object".to_owned())
-                })?;
-                self.youtube()?
-                    .inject_chat_event(author, snippet)
-                    .map(|message_id| ActionDetail::YoutubeChatSent { message_id })
-                    .map_err(refused)
+                self.youtube_chat_event(author, snippet)
             }
             StepAction::YoutubeBroadcast { live } => {
                 self.youtube()?.set_live(*live);
                 Ok(ActionDetail::YoutubeBroadcastSet { live: *live })
             }
-            StepAction::ObsOnline {} => self
-                .obs()?
-                .go_online()
-                .await
-                .map(|()| ActionDetail::ObsOnline)
-                .map_err(refused),
-            StepAction::ObsIdentified { within_ms } => self
-                .obs()?
-                .wait_for(
-                    "an identified OBS WebSocket session",
-                    Duration::from_millis(*within_ms),
-                    |ledger| ledger.live_sessions().last().map(|session| session.id),
-                )
-                .await
-                .map(|session| ActionDetail::ObsIdentified { session })
-                .map_err(refused),
-            StepAction::ObsRestart { down_ms } => self
-                .obs()?
-                .restart(Duration::from_millis(*down_ms))
-                .await
-                .map(|closed_sessions| ActionDetail::ObsRestarted { closed_sessions })
-                .map_err(refused),
-            StepAction::ObsSceneSwitch { scene } => {
-                let delivered = self.obs()?.switch_scene(scene).map_err(refused)?;
-                pushed(CURRENT_PROGRAM_SCENE_CHANGED, delivered)
-            }
-            StepAction::ObsStream { active } => {
-                let delivered = self.obs()?.set_streaming(*active).map_err(refused)?;
-                pushed(STREAM_STATE_CHANGED, delivered)
-            }
-            StepAction::ObsInputMute { input, muted } => {
-                let delivered = self.obs()?.set_input_mute(input, *muted).map_err(refused)?;
-                pushed(INPUT_MUTE_STATE_CHANGED, delivered)
-            }
-            StepAction::VtubeOnline {} => self
-                .vtube()?
-                .go_online()
-                .await
-                .map(|()| ActionDetail::VTubeOnline)
-                .map_err(refused),
-            StepAction::VtubeAuthenticated { within_ms } => self
-                .vtube()?
-                .wait_for(
-                    "an authenticated VTube Studio session",
-                    Duration::from_millis(*within_ms),
-                    |ledger| ledger.live_sessions().last().map(|session| session.id),
-                )
-                .await
-                .map(|session| ActionDetail::VTubeAuthenticated { session })
-                .map_err(refused),
-            StepAction::VtubeHotkey { hotkey } => {
-                let delivered = self.vtube()?.trigger_hotkey(hotkey).map_err(refused)?;
-                vtube_pushed(HOTKEY_TRIGGERED_EVENT, delivered)
-            }
-            StepAction::VtubeModelLoad { model } => {
-                let delivered = self.vtube()?.load_model(model).map_err(refused)?;
-                vtube_pushed(MODEL_LOADED_EVENT, delivered)
-            }
-            StepAction::VtubeModelUnload {} => {
-                let delivered = self.vtube()?.unload_model().map_err(refused)?;
-                vtube_pushed(MODEL_LOADED_EVENT, delivered)
-            }
-            StepAction::VtubeModelConfigChanged {} => {
-                let delivered = self.vtube()?.change_model_config().map_err(refused)?;
-                vtube_pushed(MODEL_CONFIG_CHANGED_EVENT, delivered)
-            }
-            StepAction::VtubeTracking { face_found } => {
-                let delivered = self.vtube()?.set_face_found(*face_found).map_err(refused)?;
-                vtube_pushed(TRACKING_STATUS_CHANGED_EVENT, delivered)
-            }
+            StepAction::ObsOnline {} => self.obs_online().await,
+            StepAction::ObsIdentified { within_ms } => self.await_obs(*within_ms).await,
+            StepAction::ObsRestart { down_ms } => self.obs_restart(*down_ms).await,
+            StepAction::ObsSceneSwitch { scene } => pushed(
+                CURRENT_PROGRAM_SCENE_CHANGED,
+                self.obs()?.switch_scene(scene).map_err(refused)?,
+            ),
+            StepAction::ObsStream { active } => pushed(
+                STREAM_STATE_CHANGED,
+                self.obs()?.set_streaming(*active).map_err(refused)?,
+            ),
+            StepAction::ObsInputMute { input, muted } => pushed(
+                INPUT_MUTE_STATE_CHANGED,
+                self.obs()?.set_input_mute(input, *muted).map_err(refused)?,
+            ),
+            StepAction::VtubeOnline {} => self.vtube_online().await,
+            StepAction::VtubeAuthenticated { within_ms } => self.await_vtube(*within_ms).await,
+            StepAction::VtubeHotkey { hotkey } => vtube_pushed(
+                HOTKEY_TRIGGERED_EVENT,
+                self.vtube()?.trigger_hotkey(hotkey).map_err(refused)?,
+            ),
+            StepAction::VtubeModelLoad { model } => vtube_pushed(
+                MODEL_LOADED_EVENT,
+                self.vtube()?.load_model(model).map_err(refused)?,
+            ),
+            StepAction::VtubeModelUnload {} => vtube_pushed(
+                MODEL_LOADED_EVENT,
+                self.vtube()?.unload_model().map_err(refused)?,
+            ),
+            StepAction::VtubeModelConfigChanged {} => vtube_pushed(
+                MODEL_CONFIG_CHANGED_EVENT,
+                self.vtube()?.change_model_config().map_err(refused)?,
+            ),
+            StepAction::VtubeTracking { face_found } => vtube_pushed(
+                TRACKING_STATUS_CHANGED_EVENT,
+                self.vtube()?.set_face_found(*face_found).map_err(refused)?,
+            ),
             StepAction::VtubeItemAdded { file } => {
-                let delivered = self.vtube()?.add_item(file).map_err(refused)?;
-                vtube_pushed(ITEM_EVENT, delivered)
+                vtube_pushed(ITEM_EVENT, self.vtube()?.add_item(file).map_err(refused)?)
             }
-            StepAction::VtubeItemRemoved { file } => {
-                let delivered = self.vtube()?.remove_item(file).map_err(refused)?;
-                vtube_pushed(ITEM_EVENT, delivered)
-            }
-            StepAction::VtubeExpression { file, active } => self
-                .vtube()?
-                .set_expression(file, *active)
-                .map(|_| ActionDetail::VTubeStateChanged)
-                .map_err(refused),
+            StepAction::VtubeItemRemoved { file } => vtube_pushed(
+                ITEM_EVENT,
+                self.vtube()?.remove_item(file).map_err(refused)?,
+            ),
+            StepAction::VtubeExpression { file, active } => self.vtube_expression(file, *active),
             StepAction::DonatelloDonation(gift) => self.donations.donate_on_donatello(gift),
             StepAction::MonobankTopUp(gift) => self.donations.top_up_on_monobank(gift),
             StepAction::DonationsPolled { within_ms } => {
@@ -420,6 +283,218 @@ impl Stimuli<'_> {
                 "forge_restart replaces the running forge, so the session performs it".to_owned(),
             )),
         }
+    }
+
+    async fn send_chat(&self, message: &ChatMessage) -> Result<ActionDetail, ActionFailure> {
+        let twitch = self.twitch()?;
+        twitch
+            .inject_chat_message(&message.viewer.to_viewer(), &message.text)
+            .await
+            .map(|message_id| ActionDetail::ChatSent { message_id })
+            .map_err(|e| with_ledger(e.to_string(), twitch))
+    }
+
+    async fn open_page(
+        &self,
+        overlay: &str,
+        within_ms: u64,
+    ) -> Result<ActionDetail, ActionFailure> {
+        self.pages
+            .open_page(overlay, Duration::from_millis(within_ms))
+            .await
+            .map(|identity| ActionDetail::OverlayPageOpened {
+                overlay: overlay.to_owned(),
+                identity,
+            })
+            .map_err(refused)
+    }
+
+    async fn run_action(
+        &self,
+        action: &str,
+        args: &serde_json::Map<String, serde_json::Value>,
+    ) -> Result<ActionDetail, ActionFailure> {
+        let action_id = self
+            .actions
+            .resolve(action)
+            .ok_or_else(|| plain(format!("the fixture seeded no action named `{action}`")))?;
+        self.client
+            .do_action(action_id, args)
+            .await
+            .map(|execution_id| ActionDetail::ActionRun {
+                action_id,
+                execution_id,
+            })
+            .map_err(refused)
+    }
+
+    async fn await_kick_chat(&self, within_ms: u64) -> Result<ActionDetail, ActionFailure> {
+        let kick = self.kick()?;
+        let channel = kick.chat_channel();
+        kick.wait_for(
+            "a Kick chat connection joined to the chatroom",
+            Duration::from_millis(within_ms),
+            |ledger| ledger.joined(&channel),
+        )
+        .await
+        .map(|session| ActionDetail::KickChatJoined { session })
+        .map_err(refused)
+    }
+
+    async fn await_kick_poll(&self, within_ms: u64) -> Result<ActionDetail, ActionFailure> {
+        let kick = self.kick()?;
+        let from = kick.ledger().requests.len();
+        kick.wait_for(
+            "a Kick channel poll",
+            Duration::from_millis(within_ms),
+            |ledger| {
+                ledger.requests[from..]
+                    .iter()
+                    .any(|request| {
+                        request.path == CHANNELS_PATH && request.status == StatusCode::OK.as_u16()
+                    })
+                    .then_some(())
+            },
+        )
+        .await
+        .map(|()| ActionDetail::KickChannelPolled)
+        .map_err(refused)
+    }
+
+    async fn await_youtube_poll(&self, within_ms: u64) -> Result<ActionDetail, ActionFailure> {
+        let youtube = self.youtube()?;
+        let from = youtube.ledger().requests.len();
+        youtube
+            .wait_for(
+                "a successful YouTube chat poll (forge needs non-empty build-time FORGE_YOUTUBE_CLIENT_ID and FORGE_YOUTUBE_CLIENT_SECRET to wire YouTube at all)",
+                Duration::from_millis(within_ms),
+                |ledger| {
+                    ledger.requests[from..]
+                        .iter()
+                        .any(|request| {
+                            request.method == Method::GET.as_str()
+                                && request.path == LIVE_CHAT_MESSAGES_PATH
+                                && request.status == StatusCode::OK.as_u16()
+                        })
+                        .then_some(())
+                },
+            )
+            .await
+            .map(|()| ActionDetail::YoutubeChatPolled)
+            .map_err(refused)
+    }
+
+    fn youtube_chat_event(
+        &self,
+        author: &YouTubeChatter,
+        snippet: &serde_json::Value,
+    ) -> Result<ActionDetail, ActionFailure> {
+        let snippet = snippet
+            .as_object()
+            .cloned()
+            .ok_or_else(|| plain("the YouTube chat event snippet must be an object".to_owned()))?;
+        self.youtube()?
+            .inject_chat_event(author, snippet)
+            .map(|message_id| ActionDetail::YoutubeChatSent { message_id })
+            .map_err(refused)
+    }
+
+    async fn set_global(
+        &self,
+        name: &str,
+        value: &serde_json::Value,
+        persisted: bool,
+    ) -> Result<ActionDetail, ActionFailure> {
+        self.client
+            .set_global(name, value, persisted)
+            .await
+            .map(|()| ActionDetail::GlobalSet)
+            .map_err(refused)
+    }
+
+    async fn kick_chat(&self, message: &KickChatMessage) -> Result<ActionDetail, ActionFailure> {
+        self.kick()?
+            .inject_chat_message(&message.sender, &message.text)
+            .await
+            .map(|message_id| ActionDetail::KickChatSent { message_id })
+            .map_err(refused)
+    }
+
+    async fn kick_event(
+        &self,
+        event: &str,
+        data: &serde_json::Value,
+    ) -> Result<ActionDetail, ActionFailure> {
+        self.kick()?
+            .push_event(event, data)
+            .await
+            .map(|delivered| ActionDetail::KickEventPushed {
+                event: event.to_owned(),
+                delivered,
+            })
+            .map_err(refused)
+    }
+
+    fn youtube_chat(&self, message: &YouTubeChatMessage) -> Result<ActionDetail, ActionFailure> {
+        self.youtube()?
+            .inject_chat_message(&message.author, &message.text)
+            .map(|message_id| ActionDetail::YoutubeChatSent { message_id })
+            .map_err(refused)
+    }
+
+    async fn obs_online(&self) -> Result<ActionDetail, ActionFailure> {
+        self.obs()?
+            .go_online()
+            .await
+            .map(|()| ActionDetail::ObsOnline)
+            .map_err(refused)
+    }
+
+    async fn await_obs(&self, within_ms: u64) -> Result<ActionDetail, ActionFailure> {
+        self.obs()?
+            .wait_for(
+                "an identified OBS WebSocket session",
+                Duration::from_millis(within_ms),
+                |ledger| ledger.live_sessions().last().map(|session| session.id),
+            )
+            .await
+            .map(|session| ActionDetail::ObsIdentified { session })
+            .map_err(refused)
+    }
+
+    async fn obs_restart(&self, down_ms: u64) -> Result<ActionDetail, ActionFailure> {
+        self.obs()?
+            .restart(Duration::from_millis(down_ms))
+            .await
+            .map(|closed_sessions| ActionDetail::ObsRestarted { closed_sessions })
+            .map_err(refused)
+    }
+
+    async fn vtube_online(&self) -> Result<ActionDetail, ActionFailure> {
+        self.vtube()?
+            .go_online()
+            .await
+            .map(|()| ActionDetail::VTubeOnline)
+            .map_err(refused)
+    }
+
+    async fn await_vtube(&self, within_ms: u64) -> Result<ActionDetail, ActionFailure> {
+        self.vtube()?
+            .wait_for(
+                "an authenticated VTube Studio session",
+                Duration::from_millis(within_ms),
+                |ledger| ledger.live_sessions().last().map(|session| session.id),
+            )
+            .await
+            .map(|session| ActionDetail::VTubeAuthenticated { session })
+            .map_err(refused)
+    }
+
+    fn vtube_expression(&self, file: &str, active: bool) -> Result<ActionDetail, ActionFailure> {
+        self.vtube()?
+            .set_expression(file, active)
+            .map(|_| ActionDetail::VTubeStateChanged)
+            .map_err(refused)
     }
 
     fn kick(&self) -> Result<&FakeKick, ActionFailure> {

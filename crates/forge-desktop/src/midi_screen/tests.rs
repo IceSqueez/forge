@@ -633,10 +633,7 @@ impl DeviceHarness {
     }
 
     fn settle(&self, cx: &mut gpui::TestAppContext) {
-        for _ in 0..3 {
-            crate::test_support::pump(&self.rt);
-            cx.run_until_parked();
-        }
+        crate::test_support::settle_runtime_work(cx, &self.rt);
     }
 
     fn device_writes(&mut self) -> Vec<Vec<String>> {

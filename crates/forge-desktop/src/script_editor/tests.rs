@@ -641,9 +641,7 @@ mod lifecycle {
 
     use super::*;
     use crate::i18n::install_language;
-    use crate::test_support::{
-        MemoryScripts, StubEventLog, pump, runtime, test_backend_with_scripts,
-    };
+    use crate::test_support::{MemoryScripts, StubEventLog, runtime, test_backend_with_scripts};
 
     const OLD_NAME: &str = "greet";
     const NEW_NAME: &str = "welcome";
@@ -741,10 +739,7 @@ mod lifecycle {
         }
 
         fn settle(&self, cx: &mut TestAppContext) {
-            for _ in 0..6 {
-                pump(&self.rt);
-                cx.run_until_parked();
-            }
+            crate::test_support::settle_runtime_work(cx, &self.rt);
         }
 
         fn open_row_menu(&self, cx: &mut TestAppContext) -> gpui::VisualTestContext {

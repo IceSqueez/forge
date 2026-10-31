@@ -263,24 +263,26 @@ mod tests {
         }))
     }
 
-    #[tokio::test]
-    async fn cancel_login_aborts_a_pending_bot_login_without_polling_or_storing() {
-        let harness = BotHarness::without_bot_row().await;
-        harness.mount("POST", "/device", device_response()).await;
-        harness.bot.begin_login().await.unwrap();
-        let bot = Arc::clone(&harness.bot);
-        let pending = tokio::spawn(async move { bot.await_login().await });
-        tokio::task::yield_now().await;
+    #[test]
+    fn cancel_login_aborts_a_pending_bot_login_without_polling_or_storing() {
+        forge_test_support::run_with_quiescence(|quiet| async move {
+            let harness = BotHarness::without_bot_row().await;
+            harness.mount("POST", "/device", device_response()).await;
+            harness.bot.begin_login().await.unwrap();
+            let bot = Arc::clone(&harness.bot);
+            let pending = tokio::spawn(async move { bot.await_login().await });
+            quiet.reached().await;
 
-        harness.bot.cancel_login();
-        let result = pending.await.unwrap();
+            harness.bot.cancel_login();
+            let result = pending.await.unwrap();
 
-        assert!(
-            matches!(result, Err(TwitchError::BotLoginCancelled)),
-            "got {result:?}"
-        );
-        assert!(harness.requests_to("/token").await.is_empty());
-        assert!(harness.repo.raw(TWITCH_BOT_CREDENTIAL_ID).is_none());
+            assert!(
+                matches!(result, Err(TwitchError::BotLoginCancelled)),
+                "got {result:?}"
+            );
+            assert!(harness.requests_to("/token").await.is_empty());
+            assert!(harness.repo.raw(TWITCH_BOT_CREDENTIAL_ID).is_none());
+        });
     }
 
     fn grant_for(user_id: &str, login: &str) -> TwitchAuthBundle {
@@ -420,61 +422,65 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn logout_during_a_bot_refresh_revokes_the_rotated_pair_and_stays_signed_out() {
-        use crate::auth::TWITCH_BOT_SCOPES;
-        use crate::bot_account::test_support::{CLIENT_ID, StoreGate, settle};
+    #[test]
+    fn logout_during_a_bot_refresh_revokes_the_rotated_pair_and_stays_signed_out() {
+        forge_test_support::run_with_quiescence(|quiet| async move {
+            use crate::auth::TWITCH_BOT_SCOPES;
+            use crate::bot_account::test_support::{CLIENT_ID, StoreGate};
 
-        let gate = StoreGate::armed();
-        let harness = BotHarness::with_bot_row_gated_by(Arc::clone(&gate)).await;
-        harness
-            .mount(
-                "POST",
-                "/token",
-                ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(serde_json::json!({
-                    "access_token": ROTATED_BOT_ACCESS,
-                    "refresh_token": ROTATED_BOT_REFRESH,
-                    "expires_in": 14400,
-                })),
-            )
-            .await;
-        harness
-            .mount(
-                "POST",
-                "/revoke",
-                ResponseTemplate::new(reqwest::StatusCode::OK),
-            )
-            .await;
-        let refreshing = tokio::spawn({
-            let bot = Arc::clone(&harness.bot);
-            async move { bot.manager.refresh(&OAuthToken::new(BOT_ACCESS)).await }
+            let gate = StoreGate::armed();
+            let harness = BotHarness::with_bot_row_gated_by(Arc::clone(&gate)).await;
+            harness
+                .mount(
+                    "POST",
+                    "/token",
+                    ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(
+                        serde_json::json!({
+                            "access_token": ROTATED_BOT_ACCESS,
+                            "refresh_token": ROTATED_BOT_REFRESH,
+                            "expires_in": 14400,
+                        }),
+                    ),
+                )
+                .await;
+            harness
+                .mount(
+                    "POST",
+                    "/revoke",
+                    ResponseTemplate::new(reqwest::StatusCode::OK),
+                )
+                .await;
+            let refreshing = tokio::spawn({
+                let bot = Arc::clone(&harness.bot);
+                async move { bot.manager.refresh(&OAuthToken::new(BOT_ACCESS)).await }
+            });
+            gate.arrival().await;
+            let logging_out = tokio::spawn({
+                let bot = Arc::clone(&harness.bot);
+                async move { bot.logout().await }
+            });
+            quiet.reached().await;
+            gate.open();
+            refreshing.await.unwrap().unwrap();
+            logging_out.await.unwrap().unwrap();
+            harness
+                .mount_validate(200, TWITCH_BOT_SCOPES, CLIENT_ID)
+                .await;
+
+            harness.bot.sync_status().await;
+
+            let revoked = revoked_tokens(&harness).await;
+            assert_eq!(
+                (
+                    harness.repo.raw(TWITCH_BOT_CREDENTIAL_ID),
+                    harness.bot.status(),
+                    revoked.iter().any(|body| body.contains(ROTATED_BOT_ACCESS)),
+                    revoked
+                        .iter()
+                        .any(|body| body.contains(ROTATED_BOT_REFRESH)),
+                ),
+                (None, BotStatus::NotConnected, true, true)
+            );
         });
-        gate.arrival().await;
-        let logging_out = tokio::spawn({
-            let bot = Arc::clone(&harness.bot);
-            async move { bot.logout().await }
-        });
-        settle().await;
-        gate.open();
-        refreshing.await.unwrap().unwrap();
-        logging_out.await.unwrap().unwrap();
-        harness
-            .mount_validate(200, TWITCH_BOT_SCOPES, CLIENT_ID)
-            .await;
-
-        harness.bot.sync_status().await;
-
-        let revoked = revoked_tokens(&harness).await;
-        assert_eq!(
-            (
-                harness.repo.raw(TWITCH_BOT_CREDENTIAL_ID),
-                harness.bot.status(),
-                revoked.iter().any(|body| body.contains(ROTATED_BOT_ACCESS)),
-                revoked
-                    .iter()
-                    .any(|body| body.contains(ROTATED_BOT_REFRESH)),
-            ),
-            (None, BotStatus::NotConnected, true, true)
-        );
     }
 }

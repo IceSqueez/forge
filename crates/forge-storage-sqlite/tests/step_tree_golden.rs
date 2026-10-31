@@ -37,14 +37,13 @@ async fn stored_steps(pool: &SqlitePool, id: ActionId) -> String {
 
 async fn resaved(pools: &SqlitePools, stored: &str) -> String {
     let id = ActionId::new();
-    sqlx::query(
-        "INSERT INTO actions (id, name, queue_id, sub_actions) VALUES (?, 'golden', '00000000000000000000000000', ?)",
-    )
-    .bind(id.to_string())
-    .bind(stored)
-    .execute(pools.writer())
-    .await
-    .expect("insert the stored tree");
+    sqlx::query("INSERT INTO actions (id, name, queue_id, sub_actions) VALUES (?, 'golden', ?, ?)")
+        .bind(id.to_string())
+        .bind(common::DEFAULT_QUEUE)
+        .bind(stored)
+        .execute(pools.writer())
+        .await
+        .expect("insert the stored tree");
     let repo = SqliteActionRepo::new(pools.clone());
 
     let action = repo

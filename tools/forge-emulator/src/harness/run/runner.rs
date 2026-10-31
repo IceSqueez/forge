@@ -2,6 +2,7 @@ use std::future::Future;
 use std::path::PathBuf;
 use std::time::Duration;
 
+use tokio::task::JoinHandle;
 use tokio::time::Instant;
 
 use super::forge_host::{ForgeHost, LiveForge, Relaunch};
@@ -22,10 +23,11 @@ use crate::fakes::obs::FakeObs;
 use crate::fakes::twitch::FakeTwitch;
 use crate::fakes::vtube::FakeVTube;
 use crate::fakes::youtube::{FakeYouTube, FakeYouTubeConfig};
-use crate::fixture::{Fixture, Redactions};
-use crate::harness::control::EventFilter;
+use crate::fixture::{Fixture, Redactions, SeedReport};
+use crate::harness::control::{ControlClient, EventFilter, EventStream};
 use crate::harness::launch::{
-    ForgeCommand, GameGuard, LaunchOptions, LaunchedForge, LivePaths, OutputStream, launch_forge,
+    CapturedOutput, ForgeCommand, ForgeExit, GameGuard, LaunchOptions, LaunchedForge, LivePaths,
+    OutputStream, launch_forge,
 };
 use crate::harness::overlay::OverlayPages;
 use crate::harness::scenario::{Expectation, Scenario, StepAction};
@@ -48,6 +50,108 @@ pub async fn run_scenario(
     options: RunOptions,
     stop: impl Future<Output = ()>,
 ) -> Result<ScenarioOutcome, EmulatorError> {
+    let ready_ms = validated_ready_ms(scenario)?;
+    let clock = RunClock::starting_now();
+    tokio::pin!(stop);
+
+    let fakes = RunFakes::start(scenario).await?;
+    let launch = launch_options(scenario, &options, &fakes, ready_ms);
+    let launched = tokio::select! {
+        launched = launch_forge(&launch) => launched,
+        () = &mut stop => {
+            fakes.shutdown().await;
+            return Ok(interrupted_before_ready(scenario));
+        }
+    };
+    let launched = match launched {
+        Ok(launched) => launched,
+        Err(e) => {
+            fakes.shutdown().await;
+            return Err(e);
+        }
+    };
+    let grace = options.shutdown_grace;
+    let LaunchedForge {
+        process,
+        client,
+        events,
+        seed,
+        attempts,
+        spec,
+    } = launched;
+    let attached = match attach(scenario, &client, events, &seed).await {
+        Ok(attached) => attached,
+        Err(e) => {
+            drop(client);
+            let _ = process.shutdown(grace).await;
+            fakes.shutdown().await;
+            return Err(e);
+        }
+    };
+    let log_dir = process.log_dir();
+    let data_dir = process.data_dir().to_owned();
+    let forge = ForgeHost::new(
+        process,
+        client,
+        attached.feeder,
+        attached.journal.clone(),
+        Relaunch {
+            spec,
+            guard: options.guard,
+            live: options.live,
+            server_port: seed.server.port,
+            bearer_token: seed.server.bearer_token.clone(),
+            filters: attached.filters,
+            shutdown_grace: grace,
+        },
+    );
+    let session = Session {
+        forge: &forge,
+        journal: &attached.journal,
+        twitch: fakes.twitch.as_ref(),
+        discord: fakes.discord.as_ref(),
+        kick: fakes.kick.as_ref(),
+        youtube: fakes.youtube.as_ref(),
+        obs: fakes.obs.as_ref(),
+        vtube: fakes.vtube.as_ref(),
+        donations: fakes.donations(&scenario.fixture),
+        actions: &attached.actions,
+        pages: &attached.pages,
+        log_dir: log_dir.clone(),
+        clock,
+        ready_at: Instant::now(),
+        ready: ActionDetail::ForgeReady {
+            attempts,
+            server_port: seed.server.port,
+        },
+    };
+    let steps = execute_steps(scenario, &session, &mut stop).await;
+    drop(session);
+    attached.pages.close();
+
+    let pid = forge.last_pid();
+    let teardown = tear_down(forge, grace).await;
+    fakes.shutdown().await;
+
+    let exited_during_run = teardown.exited_during_run;
+    let forge = teardown.evidence(ForgeIdentity {
+        run_root: options.run_root,
+        data_dir,
+        log_dir,
+        pid,
+        version: attached.version,
+        attempts,
+    });
+    Ok(ScenarioOutcome {
+        name: scenario.name.clone(),
+        verdict: verdict(&steps, exited_during_run),
+        steps,
+        forge: Some(forge),
+        redactions: Redactions::for_run(&scenario.fixture, Some(&seed)),
+    })
+}
+
+fn validated_ready_ms(scenario: &Scenario) -> Result<u64, EmulatorError> {
     let problems = scenario.problems();
     if !problems.is_empty() {
         let listed: Vec<String> = problems.iter().map(ToString::to_string).collect();
@@ -59,167 +163,134 @@ pub async fn run_scenario(
             ),
         });
     }
-    let Some(StepAction::ForgeReady { within_ms }) = scenario.steps.first().map(|s| &s.action)
-    else {
-        return Err(EmulatorError::InvalidLaunch {
+    match scenario.steps.first().map(|step| &step.action) {
+        Some(StepAction::ForgeReady { within_ms }) => Ok(*within_ms),
+        _ => Err(EmulatorError::InvalidLaunch {
             reason: "the first step must be forge_ready".to_owned(),
-        });
-    };
-    let clock = RunClock::starting_now();
-    tokio::pin!(stop);
+        }),
+    }
+}
 
-    let fakes = RunFakes::start(scenario).await?;
-    let fixture = fakes.addressed(&scenario.fixture);
-    let launch = LaunchOptions {
-        emulator: options.emulator,
-        forge: options.forge,
+fn launch_options(
+    scenario: &Scenario,
+    options: &RunOptions,
+    fakes: &RunFakes,
+    ready_ms: u64,
+) -> LaunchOptions {
+    LaunchOptions {
+        emulator: options.emulator.clone(),
+        forge: options.forge.clone(),
         run_root: options.run_root.clone(),
-        fixture,
+        fixture: fakes.addressed(&scenario.fixture),
         endpoint_overrides: fakes.endpoint_overrides(),
-        log_directives: options.log_directives,
+        log_directives: options.log_directives.clone(),
         guard: options.guard.clone(),
         live: options.live.clone(),
-        ready_timeout: Duration::from_millis(*within_ms),
+        ready_timeout: Duration::from_millis(ready_ms),
         max_attempts: options.max_attempts,
         shutdown_grace: options.shutdown_grace,
-    };
+    }
+}
 
-    let launched = tokio::select! {
-        launched = launch_forge(&launch) => launched,
-        () = &mut stop => {
-            fakes.shutdown().await;
-            return Ok(interrupted_before_ready(scenario));
-        }
-    };
-    let LaunchedForge {
-        process,
-        client,
-        events,
-        seed,
-        attempts,
-        spec,
-    } = match launched {
-        Ok(launched) => launched,
-        Err(e) => {
-            fakes.shutdown().await;
-            return Err(e);
-        }
-    };
+struct Attached {
+    feeder: JoinHandle<()>,
+    journal: Journal,
+    actions: ActionIndex,
+    pages: OverlayPages,
+    filters: Vec<EventFilter>,
+    version: Option<String>,
+}
 
+async fn attach(
+    scenario: &Scenario,
+    client: &ControlClient,
+    events: EventStream,
+    seed: &SeedReport,
+) -> Result<Attached, EmulatorError> {
     let filters = subscription_filters(scenario);
-    if !filters.is_empty()
-        && let Err(e) = client.subscribe(&filters).await
-    {
-        drop(client);
-        let _ = process.shutdown(options.shutdown_grace).await;
-        fakes.shutdown().await;
-        return Err(e);
+    if !filters.is_empty() {
+        client.subscribe(&filters).await?;
     }
     let version = client.forge_version().await.ok();
     let (journal, feeder) = Journal::follow(events);
-    let actions = ActionIndex::from_seed(&seed);
-    let pages = match OverlayPages::for_seed(&seed) {
-        Ok(pages) => pages,
-        Err(e) => {
-            drop(client);
-            let _ = process.shutdown(options.shutdown_grace).await;
-            fakes.shutdown().await;
-            return Err(e);
-        }
-    };
-    let log_dir = process.log_dir();
-    let data_dir = process.data_dir().to_owned();
-    let forge = ForgeHost::new(
-        process,
-        client,
+    let pages = OverlayPages::for_seed(seed)?;
+    Ok(Attached {
         feeder,
-        journal.clone(),
-        Relaunch {
-            spec,
-            guard: options.guard,
-            live: options.live,
-            server_port: seed.server.port,
-            bearer_token: seed.server.bearer_token.clone(),
-            filters,
-            shutdown_grace: options.shutdown_grace,
-        },
-    );
-    let session = Session {
-        forge: &forge,
-        journal: &journal,
-        twitch: fakes.twitch.as_ref(),
-        discord: fakes.discord.as_ref(),
-        kick: fakes.kick.as_ref(),
-        youtube: fakes.youtube.as_ref(),
-        obs: fakes.obs.as_ref(),
-        vtube: fakes.vtube.as_ref(),
-        donations: fakes.donations(&scenario.fixture),
-        actions: &actions,
-        pages: &pages,
-        log_dir: log_dir.clone(),
-        clock,
-        ready_at: Instant::now(),
-        ready: ActionDetail::ForgeReady {
-            attempts,
-            server_port: seed.server.port,
-        },
-    };
-    let steps = execute_steps(scenario, &session, &mut stop).await;
-    drop(session);
-    pages.close();
-
-    let pid = forge.last_pid();
-    let (exited_during_run, output, exit, teardown_error) =
-        match forge.into_live().map(LiveForge::into_parts) {
-            Some((Some(mut process), client, feeder)) => {
-                let exited_during_run = !process.is_running();
-                let output = process.output().clone();
-                drop(client);
-                let (exit, teardown_error) = match process.shutdown(options.shutdown_grace).await {
-                    Ok(exit) => (Some(exit), None),
-                    Err(e) => (None, Some(e.to_string())),
-                };
-                if let Some(feeder) = feeder {
-                    feeder.abort();
-                }
-                (exited_during_run, Some(output), exit, teardown_error)
-            }
-            _ => (
-                true,
-                None,
-                None,
-                Some("forge was not running at the end of the run".to_owned()),
-            ),
-        };
-    fakes.shutdown().await;
-
-    let forge = ForgeEvidence {
-        run_root: options.run_root,
-        data_dir,
-        log_tail: newest_lines(&log_dir, EVIDENCE_TAIL_LINES),
-        log_dir,
-        pid,
+        journal,
+        actions: ActionIndex::from_seed(seed),
+        pages,
+        filters,
         version,
-        attempts,
-        exited_during_run,
-        exit,
-        teardown_error,
-        stderr_tail: output
-            .as_ref()
-            .map(|output| output.tail(OutputStream::Stderr, EVIDENCE_TAIL_LINES))
-            .unwrap_or_default(),
-        stdout_tail: output
-            .as_ref()
-            .map(|output| output.tail(OutputStream::Stdout, EVIDENCE_TAIL_LINES))
-            .unwrap_or_default(),
-    };
-    Ok(ScenarioOutcome {
-        name: scenario.name.clone(),
-        verdict: verdict(&steps, exited_during_run),
-        steps,
-        forge: Some(forge),
-        redactions: Redactions::for_run(&scenario.fixture, Some(&seed)),
     })
+}
+
+struct Teardown {
+    exited_during_run: bool,
+    output: Option<CapturedOutput>,
+    exit: Option<ForgeExit>,
+    error: Option<String>,
+}
+
+async fn tear_down(forge: ForgeHost, grace: Duration) -> Teardown {
+    let Some((Some(mut process), client, feeder)) = forge.into_live().map(LiveForge::into_parts)
+    else {
+        return Teardown {
+            exited_during_run: true,
+            output: None,
+            exit: None,
+            error: Some("forge was not running at the end of the run".to_owned()),
+        };
+    };
+    let exited_during_run = !process.is_running();
+    let output = process.output().clone();
+    drop(client);
+    let (exit, error) = match process.shutdown(grace).await {
+        Ok(exit) => (Some(exit), None),
+        Err(e) => (None, Some(e.to_string())),
+    };
+    if let Some(feeder) = feeder {
+        feeder.abort();
+    }
+    Teardown {
+        exited_during_run,
+        output: Some(output),
+        exit,
+        error,
+    }
+}
+
+struct ForgeIdentity {
+    run_root: PathBuf,
+    data_dir: PathBuf,
+    log_dir: PathBuf,
+    pid: u32,
+    version: Option<String>,
+    attempts: u32,
+}
+
+impl Teardown {
+    fn evidence(self, identity: ForgeIdentity) -> ForgeEvidence {
+        let tail = |stream| {
+            self.output
+                .as_ref()
+                .map(|output| output.tail(stream, EVIDENCE_TAIL_LINES))
+                .unwrap_or_default()
+        };
+        ForgeEvidence {
+            run_root: identity.run_root,
+            data_dir: identity.data_dir,
+            log_tail: newest_lines(&identity.log_dir, EVIDENCE_TAIL_LINES),
+            log_dir: identity.log_dir,
+            pid: identity.pid,
+            version: identity.version,
+            attempts: identity.attempts,
+            exited_during_run: self.exited_during_run,
+            stderr_tail: tail(OutputStream::Stderr),
+            stdout_tail: tail(OutputStream::Stdout),
+            exit: self.exit,
+            teardown_error: self.error,
+        }
+    }
 }
 
 struct RunFakes {

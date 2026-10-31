@@ -266,7 +266,7 @@ mod tests {
     };
     use crate::endpoints_test_support::{
         CapturingPublisher, ReplyGate, StubReply, StubServer, data_api_with, oauth_client_at,
-        settle, unreachable_data_api, unreachable_oauth_client, used_today,
+        unreachable_data_api, unreachable_oauth_client, used_today,
     };
     use crate::quota_state::SharedQuota;
 
@@ -647,117 +647,123 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn concurrent_token_requests_and_refreshes_share_one_token_post() {
-        let rig = rig(&near_expiry()).await;
-        let gate = Arc::new(ReplyGate::default());
-        rig.server.reply_times(
-            TOKEN_PATH,
-            refreshed_grant(REFRESHED_ACCESS).gated_by(&gate),
-            1,
-        );
-        rig.server
-            .reply_always(TOKEN_PATH, refreshed_grant(SECOND_ACCESS));
-        let mut callers = Vec::new();
-        for caller in 0..CONCURRENT_CALLERS {
-            let manager = Arc::clone(&rig.manager);
-            callers.push(tokio::spawn(async move {
-                if caller % 2 == 0 {
-                    manager.get_valid_access_token().await
-                } else {
-                    manager
-                        .refresh(EXISTING_ACCESS)
-                        .await
-                        .map(|c| c.access_token.expose().to_owned())
-                }
-            }));
-        }
-        gate.arrival().await;
-        settle().await;
-        gate.open();
+    #[test]
+    fn concurrent_token_requests_and_refreshes_share_one_token_post() {
+        forge_test_support::run_with_quiescence(|quiet| async move {
+            let rig = rig(&near_expiry()).await;
+            let gate = Arc::new(ReplyGate::default());
+            rig.server.reply_times(
+                TOKEN_PATH,
+                refreshed_grant(REFRESHED_ACCESS).gated_by(&gate),
+                1,
+            );
+            rig.server
+                .reply_always(TOKEN_PATH, refreshed_grant(SECOND_ACCESS));
+            let mut callers = Vec::new();
+            for caller in 0..CONCURRENT_CALLERS {
+                let manager = Arc::clone(&rig.manager);
+                callers.push(tokio::spawn(async move {
+                    if caller % 2 == 0 {
+                        manager.get_valid_access_token().await
+                    } else {
+                        manager
+                            .refresh(EXISTING_ACCESS)
+                            .await
+                            .map(|c| c.access_token.expose().to_owned())
+                    }
+                }));
+            }
+            gate.arrival().await;
+            quiet.reached().await;
+            gate.open();
 
-        let mut tokens = Vec::new();
-        for caller in callers {
-            tokens.push(caller.await.unwrap().unwrap());
-        }
+            let mut tokens = Vec::new();
+            for caller in callers {
+                tokens.push(caller.await.unwrap().unwrap());
+            }
 
-        assert_eq!(
-            (tokens, rig.server.request_count(TOKEN_PATH)),
-            (vec![REFRESHED_ACCESS.to_owned(); CONCURRENT_CALLERS], 1)
-        );
+            assert_eq!(
+                (tokens, rig.server.request_count(TOKEN_PATH)),
+                (vec![REFRESHED_ACCESS.to_owned(); CONCURRENT_CALLERS], 1)
+            );
+        });
     }
 
-    #[tokio::test]
-    async fn a_cancelled_waiter_leaves_the_refresh_running_for_the_other_waiters() {
-        let rig = rig(&near_expiry()).await;
-        let gate = Arc::new(ReplyGate::default());
-        rig.server.reply_times(
-            TOKEN_PATH,
-            refreshed_grant(REFRESHED_ACCESS).gated_by(&gate),
-            1,
-        );
-        rig.server
-            .reply_always(TOKEN_PATH, refreshed_grant(SECOND_ACCESS));
-        let cancelled = tokio::spawn({
-            let manager = Arc::clone(&rig.manager);
-            async move { manager.get_valid_access_token().await }
-        });
-        gate.arrival().await;
-        cancelled.abort();
-        let aborted = cancelled.await.unwrap_err().is_cancelled();
-        let survivor = tokio::spawn({
-            let manager = Arc::clone(&rig.manager);
-            async move { manager.get_valid_access_token().await }
-        });
-        settle().await;
-        gate.open();
+    #[test]
+    fn a_cancelled_waiter_leaves_the_refresh_running_for_the_other_waiters() {
+        forge_test_support::run_with_quiescence(|quiet| async move {
+            let rig = rig(&near_expiry()).await;
+            let gate = Arc::new(ReplyGate::default());
+            rig.server.reply_times(
+                TOKEN_PATH,
+                refreshed_grant(REFRESHED_ACCESS).gated_by(&gate),
+                1,
+            );
+            rig.server
+                .reply_always(TOKEN_PATH, refreshed_grant(SECOND_ACCESS));
+            let cancelled = tokio::spawn({
+                let manager = Arc::clone(&rig.manager);
+                async move { manager.get_valid_access_token().await }
+            });
+            gate.arrival().await;
+            cancelled.abort();
+            let aborted = cancelled.await.unwrap_err().is_cancelled();
+            let survivor = tokio::spawn({
+                let manager = Arc::clone(&rig.manager);
+                async move { manager.get_valid_access_token().await }
+            });
+            quiet.reached().await;
+            gate.open();
 
-        let token = survivor.await.unwrap().unwrap();
+            let token = survivor.await.unwrap().unwrap();
 
-        let stored = stored_creds(&rig.repo).unwrap();
-        assert_eq!(
-            (
-                aborted,
-                token.as_str(),
-                stored.access_token.expose(),
-                stored.refresh_token.expose(),
-                rig.server.request_count(TOKEN_PATH)
-            ),
-            (true, REFRESHED_ACCESS, REFRESHED_ACCESS, ROTATED_REFRESH, 1)
-        );
+            let stored = stored_creds(&rig.repo).unwrap();
+            assert_eq!(
+                (
+                    aborted,
+                    token.as_str(),
+                    stored.access_token.expose(),
+                    stored.refresh_token.expose(),
+                    rig.server.request_count(TOKEN_PATH)
+                ),
+                (true, REFRESHED_ACCESS, REFRESHED_ACCESS, ROTATED_REFRESH, 1)
+            );
+        });
     }
 
-    #[tokio::test]
-    async fn clear_during_a_refresh_waits_so_logout_is_never_undone() {
-        let rig = rig(&near_expiry()).await;
-        let gate = Arc::new(ReplyGate::default());
-        rig.server.reply_always(
-            TOKEN_PATH,
-            refreshed_grant(REFRESHED_ACCESS).gated_by(&gate),
-        );
-        let refreshing = tokio::spawn({
-            let manager = Arc::clone(&rig.manager);
-            async move { manager.get_valid_access_token().await }
-        });
-        gate.arrival().await;
-        let clearing = tokio::spawn({
-            let manager = Arc::clone(&rig.manager);
-            async move { manager.clear().await }
-        });
-        settle().await;
-        let row_while_refresh_in_flight = stored_creds(&rig.repo).is_some();
-        gate.open();
+    #[test]
+    fn clear_during_a_refresh_waits_so_logout_is_never_undone() {
+        forge_test_support::run_with_quiescence(|quiet| async move {
+            let rig = rig(&near_expiry()).await;
+            let gate = Arc::new(ReplyGate::default());
+            rig.server.reply_always(
+                TOKEN_PATH,
+                refreshed_grant(REFRESHED_ACCESS).gated_by(&gate),
+            );
+            let refreshing = tokio::spawn({
+                let manager = Arc::clone(&rig.manager);
+                async move { manager.get_valid_access_token().await }
+            });
+            gate.arrival().await;
+            let clearing = tokio::spawn({
+                let manager = Arc::clone(&rig.manager);
+                async move { manager.clear().await }
+            });
+            quiet.reached().await;
+            let row_while_refresh_in_flight = stored_creds(&rig.repo).is_some();
+            gate.open();
 
-        refreshing.await.unwrap().unwrap();
-        clearing.await.unwrap().unwrap();
+            refreshing.await.unwrap().unwrap();
+            clearing.await.unwrap().unwrap();
 
-        assert_eq!(
-            (
-                row_while_refresh_in_flight,
-                stored_creds(&rig.repo).is_none()
-            ),
-            (true, true)
-        );
+            assert_eq!(
+                (
+                    row_while_refresh_in_flight,
+                    stored_creds(&rig.repo).is_none()
+                ),
+                (true, true)
+            );
+        });
     }
 
     #[tokio::test]

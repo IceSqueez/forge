@@ -1,3 +1,4 @@
+mod common;
 use forge_storage_sqlite::{apply_migrations, connect};
 
 #[tokio::test]
@@ -41,8 +42,9 @@ async fn restrict_fk_blocks_delete_of_referenced_trigger_instance() {
 
     sqlx::query(
         "INSERT INTO actions (id, name, queue_id, sub_actions) \
-         VALUES ('action-001', 'test action', '00000000000000000000000000', '[]')",
+         VALUES ('action-001', 'test action', ?, '[]')",
     )
+    .bind(common::DEFAULT_QUEUE)
     .execute(&pool)
     .await
     .expect("insert action");

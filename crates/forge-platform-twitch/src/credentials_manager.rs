@@ -999,70 +999,72 @@ pub(crate) mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn clear_during_an_in_flight_refresh_waits_and_leaves_each_role_signed_out() {
-        use crate::bot_account::test_support::{
-            GatedRepo, KeyedRepo, StoreGate, credential_json, settle,
-        };
-        use crate::credentials::TWITCH_BOT_CREDENTIAL_ID;
-        use crate::sub_actions::test_support::oauth_client_at;
+    #[test]
+    fn clear_during_an_in_flight_refresh_waits_and_leaves_each_role_signed_out() {
+        forge_test_support::run_with_quiescence(|quiet| async move {
+            use crate::bot_account::test_support::{
+                GatedRepo, KeyedRepo, StoreGate, credential_json,
+            };
+            use crate::credentials::TWITCH_BOT_CREDENTIAL_ID;
+            use crate::sub_actions::test_support::oauth_client_at;
 
-        for role in [TWITCH_CREDENTIAL_ID, TWITCH_BOT_CREDENTIAL_ID] {
-            let server = MockServer::start().await;
-            Mock::given(method("POST"))
-                .and(path("/token"))
-                .respond_with(rotating_token_endpoint())
-                .mount(&server)
-                .await;
-            let rows = Arc::new(KeyedRepo::default());
-            rows.put(
-                role,
-                credential_json("existing_access", "existing_refresh", "1", "streamer"),
-            );
-            let gate = StoreGate::armed();
-            let repo: Arc<dyn CredentialsRepo> =
-                GatedRepo::over(Arc::clone(&rows), Arc::clone(&gate));
-            let oauth = oauth_client_at(&server.uri(), "test_client_id");
-            let manager = Arc::new(if role == TWITCH_CREDENTIAL_ID {
-                TwitchCredentialsManager::new(oauth, repo)
-            } else {
-                TwitchCredentialsManager::for_bot(oauth, repo)
-            });
-            let expiry = manager.subscribe_expiry();
-            let in_flight = tokio::spawn({
-                let manager = Arc::clone(&manager);
-                async move { manager.refresh(&OAuthToken::new("existing_access")).await }
-            });
-            gate.arrival().await;
-            let clearing = tokio::spawn({
-                let manager = Arc::clone(&manager);
-                async move { manager.clear().await }
-            });
-            settle().await;
-            let queued = tokio::spawn({
-                let manager = Arc::clone(&manager);
-                async move { manager.refresh(&OAuthToken::new("new_access")).await }
-            });
-            settle().await;
-            let row_kept_while_refresh_held = rows.raw(role).is_some();
-            gate.open();
+            for role in [TWITCH_CREDENTIAL_ID, TWITCH_BOT_CREDENTIAL_ID] {
+                let server = MockServer::start().await;
+                Mock::given(method("POST"))
+                    .and(path("/token"))
+                    .respond_with(rotating_token_endpoint())
+                    .mount(&server)
+                    .await;
+                let rows = Arc::new(KeyedRepo::default());
+                rows.put(
+                    role,
+                    credential_json("existing_access", "existing_refresh", "1", "streamer"),
+                );
+                let gate = StoreGate::armed();
+                let repo: Arc<dyn CredentialsRepo> =
+                    GatedRepo::over(Arc::clone(&rows), Arc::clone(&gate));
+                let oauth = oauth_client_at(&server.uri(), "test_client_id");
+                let manager = Arc::new(if role == TWITCH_CREDENTIAL_ID {
+                    TwitchCredentialsManager::new(oauth, repo)
+                } else {
+                    TwitchCredentialsManager::for_bot(oauth, repo)
+                });
+                let expiry = manager.subscribe_expiry();
+                let in_flight = tokio::spawn({
+                    let manager = Arc::clone(&manager);
+                    async move { manager.refresh(&OAuthToken::new("existing_access")).await }
+                });
+                gate.arrival().await;
+                let clearing = tokio::spawn({
+                    let manager = Arc::clone(&manager);
+                    async move { manager.clear().await }
+                });
+                quiet.reached().await;
+                let queued = tokio::spawn({
+                    let manager = Arc::clone(&manager);
+                    async move { manager.refresh(&OAuthToken::new("new_access")).await }
+                });
+                quiet.reached().await;
+                let row_kept_while_refresh_held = rows.raw(role).is_some();
+                gate.open();
 
-            let refreshed = in_flight.await.unwrap();
-            clearing.await.unwrap().unwrap();
-            let queued = queued.await.unwrap();
+                let refreshed = in_flight.await.unwrap();
+                clearing.await.unwrap().unwrap();
+                let queued = queued.await.unwrap();
 
-            assert_eq!(
-                (
-                    row_kept_while_refresh_held,
-                    refreshed.is_ok(),
-                    rows.raw(role),
-                    matches!(queued, Err(PlatformError::ReauthRequired { .. })),
-                    *expiry.borrow(),
-                    token_posts(&server).await,
-                ),
-                (true, true, None, true, None, 1),
-                "{role}"
-            );
-        }
+                assert_eq!(
+                    (
+                        row_kept_while_refresh_held,
+                        refreshed.is_ok(),
+                        rows.raw(role),
+                        matches!(queued, Err(PlatformError::ReauthRequired { .. })),
+                        *expiry.borrow(),
+                        token_posts(&server).await,
+                    ),
+                    (true, true, None, true, None, 1),
+                    "{role}"
+                );
+            }
+        });
     }
 }

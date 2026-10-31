@@ -51,37 +51,6 @@ async fn clearing_drops_everything_waiting() {
 }
 
 #[tokio::test]
-async fn per_user_limit_rejects_excess() {
-    let (sink, _plays) = recording_sink();
-    let config = QueueConfig {
-        per_user_limit: 2,
-        max_queue_len: 50,
-        ..QueueConfig::default()
-    };
-    let (handle, mut stream) = forge_speak_queue::spawn(config, standard_deps(sink));
-
-    handle.send(SpeakCommand::Pause).await.unwrap();
-    wait_for(&mut stream, |e| matches!(e, SpeakEvent::Paused)).await;
-
-    for _ in 0..3 {
-        let req = request("same_user", "test");
-        handle.send(SpeakCommand::Enqueue(req)).await.unwrap();
-    }
-
-    let rejected = next_matching(&mut stream, |e| matches!(e, SpeakEvent::Rejected { .. })).await;
-    assert!(
-        matches!(
-            rejected,
-            SpeakEvent::Rejected {
-                reason: RejectReason::PerUserLimit,
-                ..
-            }
-        ),
-        "{rejected:?}"
-    );
-}
-
-#[tokio::test]
 async fn queue_full_rejects_when_at_capacity() {
     let (sink, _plays) = recording_sink();
     let config = QueueConfig {

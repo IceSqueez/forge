@@ -457,6 +457,7 @@ mod tests {
     const ONE_BYTE: usize = 1;
     const MINT_SAMPLES: usize = 64;
     const HANG_GUARD: Duration = Duration::from_secs(120);
+    const OUTCOME_HANG_GUARD: Duration = MAX_CLIP_LIFETIME.saturating_add(HANG_GUARD);
     const UNKNOWN_CAPABILITY: &str = "SMNhcGFiaWxpdHlUaGF0V2FzTmV2ZXJNaW50ZWRBdEFsbA";
     const MALFORMED_CAPABILITY: &str = "~~not-base64~~";
     const LATE_REASON: &str = "a verdict that arrives after the clip is gone";
@@ -681,7 +682,7 @@ mod tests {
 
             close_every_window(&store);
 
-            assert_eq!(outcome.recv().await, expected, "{case}");
+            assert_eq!(settled(outcome).await, expected, "{case}");
             assert_eq!(
                 held_bytes(&store),
                 0,
@@ -744,7 +745,7 @@ mod tests {
             "a spent capability must not accept a second verdict"
         );
 
-        assert_eq!(outcome.recv().await, ClipOutcome::Played);
+        assert_eq!(settled(outcome).await, ClipOutcome::Played);
     }
 
     #[tokio::test]
@@ -772,7 +773,7 @@ mod tests {
 
         assert!(store.record_verdict(ticket.capability().expose(), refused_verdict(FIRST_REFUSAL)));
 
-        assert_eq!(outcome.recv().await, refused(FIRST_REFUSAL));
+        assert_eq!(settled(outcome).await, refused(FIRST_REFUSAL));
         assert_eq!(held_bytes(&store), 0);
     }
 
@@ -788,7 +789,7 @@ mod tests {
         assert!(store.take_clip(capability).is_none());
         assert!(!store.revoke(capability), "a clip can only be revoked once");
 
-        assert_eq!(outcome.recv().await, ClipOutcome::Revoked);
+        assert_eq!(settled(outcome).await, ClipOutcome::Revoked);
         assert_eq!(held_bytes(&store), 0);
     }
 
@@ -807,8 +808,8 @@ mod tests {
 
         assert_eq!(store.discard_all(), 2);
 
-        assert_eq!(fetched_outcome.recv().await, ClipOutcome::ServerStopped);
-        assert_eq!(untouched_outcome.recv().await, ClipOutcome::ServerStopped);
+        assert_eq!(settled(fetched_outcome).await, ClipOutcome::ServerStopped);
+        assert_eq!(settled(untouched_outcome).await, ClipOutcome::ServerStopped);
         assert!(store.take_clip(untouched.capability().expose()).is_none());
         assert_eq!(held_bytes(&store), 0);
         assert_eq!(store.discard_all(), 0);
@@ -870,6 +871,12 @@ mod tests {
     const FIRST_REFUSAL: &str = "the second scene's page is muted";
     const SECOND_REFUSAL: &str = "the third scene's page is muted";
     const ONE_SECOND: Duration = Duration::from_secs(1);
+
+    async fn settled(outcome: ClipOutcomeHandle) -> ClipOutcome {
+        tokio::time::timeout(OUTCOME_HANG_GUARD, outcome.recv())
+            .await
+            .expect("the clip outcome never settled")
+    }
 
     fn refused(reason: &str) -> ClipOutcome {
         ClipOutcome::Refused {
@@ -970,7 +977,7 @@ mod tests {
             }
             close_every_window(&store);
 
-            assert_eq!(outcome.recv().await, expected, "{case}");
+            assert_eq!(settled(outcome).await, expected, "{case}");
         }
     }
 
@@ -992,7 +999,7 @@ mod tests {
             waiting_after_one_refusal,
             "one refusal settled a clip two pages were playing"
         );
-        assert_eq!(outcome.recv().await, refused(FIRST_REFUSAL));
+        assert_eq!(settled(outcome).await, refused(FIRST_REFUSAL));
     }
 
     #[tokio::test]
@@ -1012,7 +1019,7 @@ mod tests {
             !still_waiting(&store, capability),
             "the clip kept waiting on a page that was never there"
         );
-        assert_eq!(outcome.recv().await, refused(FIRST_REFUSAL));
+        assert_eq!(settled(outcome).await, refused(FIRST_REFUSAL));
     }
 
     #[tokio::test]
@@ -1031,7 +1038,7 @@ mod tests {
         store.record_verdict(capability, refused_verdict(FIRST_REFUSAL));
 
         assert_eq!(
-            outcome.recv().await,
+            settled(outcome).await,
             refused(FIRST_REFUSAL),
             "a paused clip must not be swept as unanswered"
         );
@@ -1078,7 +1085,7 @@ mod tests {
                 assert!(store.hold(capability));
             }
 
-            assert_eq!(outcome.recv().await, expected, "{case}");
+            assert_eq!(settled(outcome).await, expected, "{case}");
 
             assert_eq!(opened.elapsed(), closes_after, "{case}");
             assert!(!still_waiting(&store, capability), "{case}");

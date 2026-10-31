@@ -649,6 +649,48 @@ async fn do_bind_registers_the_combo_and_stores_the_binding() {
 }
 
 #[tokio::test]
+async fn do_bind_registers_the_canonical_combo_of_a_hand_typed_spelling() {
+    let store = store().await;
+    let backend = Arc::clone(&store.provider);
+    let action = seed_action(&backend, "Scene swap").await;
+    let rig = reconciled(&backend).await;
+
+    do_bind(
+        Arc::clone(&rig.reconciler),
+        Arc::clone(&backend),
+        " ctrl + f3 ".to_owned(),
+        HotkeyEdge::Press,
+        action,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(rig.registered(), ["Ctrl+F3"]);
+}
+
+#[tokio::test]
+async fn do_bind_with_an_unparseable_combo_claims_and_stores_nothing() {
+    let store = store().await;
+    let backend = Arc::clone(&store.provider);
+    let action = seed_action(&backend, "Scene swap").await;
+    let rig = reconciled(&backend).await;
+
+    let bound = do_bind(
+        Arc::clone(&rig.reconciler),
+        Arc::clone(&backend),
+        "Ctrl+XYZ".to_owned(),
+        HotkeyEdge::Press,
+        action,
+    )
+    .await;
+
+    assert!(bound.is_err(), "{bound:?}");
+    let stored = backend.trigger_instance_repo().list_all().await.unwrap();
+    assert!(stored.is_empty(), "{stored:?}");
+    assert!(rig.registered().is_empty());
+}
+
+#[tokio::test]
 async fn do_bind_keeps_the_old_binding_when_the_new_link_cannot_land() {
     let store = store().await;
     let backend = Arc::clone(&store.provider);

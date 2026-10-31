@@ -4,7 +4,9 @@ use serde_json::Value;
 
 use super::text::{clip, code, compact, quoted, span_ms};
 use crate::harness::scenario::{
-    Expectation, ObservedCount, PayloadMatchers, RequestCount, StepAction, ValueMatcher,
+    AbsentEvent, DiscordPost, Expectation, HttpRequestSeen, LogLine, ObsRequestSeen, ObservedCount,
+    ObservedEvent, OverlayContent, PayloadMatchers, RequestCount, StepAction, TwitchSubscription,
+    VTubeRequestSeen, ValueMatcher,
 };
 
 const SUBJECT_POINTERS: [(&str, &str, &str); 3] = [
@@ -15,153 +17,29 @@ const SUBJECT_POINTERS: [(&str, &str, &str); 3] = [
 
 pub(crate) fn expected(expectation: &Expectation, action: &StepAction) -> String {
     match expectation {
-        Expectation::Event(event) => {
-            let mut payload = event.payload.clone();
-            let subject = match take_subject(&event.kind, &mut payload) {
-                Some(subject) => subject,
-                None => format!(
-                    "forge publishes {}{}",
-                    code(&event.kind),
-                    from(event.source)
-                ),
-            };
-            let this_message = take_this_message(action, &mut payload);
-            format!(
-                "{subject}{this_message}{}{} within {}",
-                count_phrase(event.count),
-                conditions(&payload),
-                span_ms(event.within_ms)
-            )
-        }
-        Expectation::EventAbsent(absent) => {
-            let mut payload = absent.payload.clone();
-            let this_message = take_this_message(action, &mut payload);
-            format!(
-                "forge publishes no {}{}{this_message}{} within {}",
-                code(&absent.kind),
-                from(absent.source),
-                conditions(&payload),
-                span_ms(absent.window_ms)
-            )
-        }
+        Expectation::Event(event) => event_expected(event, action),
+        Expectation::EventAbsent(absent) => absent_expected(absent, action),
         Expectation::CausedBy(causation) => format!(
             "the event named {} is directly caused by the event named {}",
             code(&causation.effect),
             code(&causation.cause)
         ),
-        Expectation::TwitchSubscription(subscription) => format!(
-            "forge holds a live EventSub subscription to {}{} within {}",
-            code(&subscription.subscription_type),
-            subscription
-                .version
-                .as_ref()
-                .map(|version| format!(" (version {})", code(version)))
-                .unwrap_or_default(),
-            span_ms(subscription.within_ms)
-        ),
-        Expectation::TwitchNoUnexpectedRequests {} => {
-            "forge sends the fake Twitch only requests it models, over the whole run so far"
-                .to_owned()
-        }
+        Expectation::TwitchSubscription(subscription) => subscription_expected(subscription),
+        Expectation::TwitchNoUnexpectedRequests {} => only_modeled_requests("Twitch"),
         Expectation::TwitchRequestCount(count) => format!(
             "forge sends {} {} request(s) over the whole run so far",
             count_range(count.min, count.max),
             code(&request_label(count))
         ),
-        Expectation::KickRequest(request) => format!(
-            "forge sends the fake Kick {}{}{} within {}",
-            code(&match &request.method {
-                Some(method) => format!("{method} {}", request.path),
-                None => request.path.clone(),
-            }),
-            conditions(&request.body),
-            request
-                .status
-                .map(|status| format!(" answered with status {status}"))
-                .unwrap_or_default(),
-            span_ms(request.within_ms)
-        ),
-        Expectation::KickRequestCount(count) => format!(
-            "forge sends the fake Kick {} {} request(s) over the whole run so far",
-            count_range(count.min, count.max),
-            code(&request_label(count))
-        ),
-        Expectation::KickNoUnexpectedRequests {} => {
-            "forge sends the fake Kick only requests it models, over the whole run so far"
-                .to_owned()
-        }
-        Expectation::YoutubeRequest(request) => format!(
-            "forge sends the fake YouTube {}{}{} within {}",
-            code(&match &request.method {
-                Some(method) => format!("{method} {}", request.path),
-                None => request.path.clone(),
-            }),
-            conditions(&request.body),
-            request
-                .status
-                .map(|status| format!(" answered with status {status}"))
-                .unwrap_or_default(),
-            span_ms(request.within_ms)
-        ),
-        Expectation::YoutubeRequestCount(count) => format!(
-            "forge sends the fake YouTube {} {} request(s) over the whole run so far",
-            count_range(count.min, count.max),
-            code(&request_label(count))
-        ),
-        Expectation::YoutubeNoUnexpectedRequests {} => {
-            "forge sends the fake YouTube only requests it models, over the whole run so far"
-                .to_owned()
-        }
-        Expectation::OverlayContent(content) => {
-            let values: Vec<String> = content
-                .values
-                .0
-                .iter()
-                .map(|(key, value)| format!("{} = {}", code(key), quoted(value)))
-                .collect();
-            format!(
-                "the page for overlay {} receives a content frame carrying {} as plain values within {}",
-                code(&content.overlay),
-                values.join(", "),
-                span_ms(content.within_ms)
-            )
-        }
-        Expectation::DiscordPost(post) => {
-            let mut conditions = Vec::new();
-            if let Some(needle) = &post.content_contains {
-                conditions.push(format!("content containing {}", quoted(needle)));
-            }
-            if let Some(kinds) = &post.mention_parse {
-                conditions.push(format!(
-                    "allowed_mentions.parse = [{}]",
-                    kinds
-                        .iter()
-                        .map(|kind| code(kind))
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                ));
-            }
-            let conditions = if conditions.is_empty() {
-                String::new()
-            } else {
-                format!(" with {}", conditions.join(" and "))
-            };
-            format!(
-                "forge posts to the Discord webhook {}{conditions} within {}",
-                code(&post.webhook),
-                span_ms(post.within_ms)
-            )
-        }
-        Expectation::ObsRequest(request) => format!(
-            "forge sends OBS a {} request{}{} within {}",
-            code(&request.request_type),
-            conditions(&request.request_data),
-            request
-                .code
-                .map(|status| format!(" answered with status {status}"))
-                .unwrap_or_default(),
-            span_ms(request.within_ms)
-        ),
+        Expectation::KickRequest(request) => http_request_expected("Kick", request),
+        Expectation::KickRequestCount(count) => http_count_expected("Kick", count),
+        Expectation::KickNoUnexpectedRequests {} => only_modeled_requests("Kick"),
+        Expectation::YoutubeRequest(request) => http_request_expected("YouTube", request),
+        Expectation::YoutubeRequestCount(count) => http_count_expected("YouTube", count),
+        Expectation::YoutubeNoUnexpectedRequests {} => only_modeled_requests("YouTube"),
+        Expectation::OverlayContent(content) => overlay_expected(content),
+        Expectation::DiscordPost(post) => discord_expected(post),
+        Expectation::ObsRequest(request) => obs_request_expected(request),
         Expectation::ObsAuth(auth) => format!(
             "{} within {}",
             if auth.accepted {
@@ -171,18 +49,7 @@ pub(crate) fn expected(expectation: &Expectation, action: &StepAction) -> String
             },
             span_ms(auth.within_ms)
         ),
-        Expectation::VtubeRequest(request) => format!(
-            "forge sends VTube Studio a {}{}{} within {}",
-            code(&request.message_type),
-            conditions(&request.data),
-            match (request.succeeded, request.error_id) {
-                (_, Some(error_id)) => format!(" answered with error {error_id}"),
-                (Some(true), None) => " answered without an error".to_owned(),
-                (Some(false), None) => " answered with an error".to_owned(),
-                (None, None) => String::new(),
-            },
-            span_ms(request.within_ms)
-        ),
+        Expectation::VtubeRequest(request) => vtube_request_expected(request),
         Expectation::VtubeAuth(auth) => format!(
             "{} within {}",
             if auth.accepted {
@@ -192,25 +59,169 @@ pub(crate) fn expected(expectation: &Expectation, action: &StepAction) -> String
             },
             span_ms(auth.within_ms)
         ),
-        Expectation::LogLine(line) => {
-            let fields: Vec<String> = line
-                .fields
-                .0
-                .iter()
-                .map(|(key, value)| format!("{} = {}", code(key), quoted(value)))
-                .collect();
-            let fields = if fields.is_empty() {
-                "any fields".to_owned()
-            } else {
-                fields.join(", ")
-            };
-            format!(
-                "forge logs a line on target {} with {fields} within {}",
-                code(&line.target),
-                span_ms(line.within_ms)
-            )
-        }
+        Expectation::LogLine(line) => log_line_expected(line),
     }
+}
+
+fn event_expected(event: &ObservedEvent, action: &StepAction) -> String {
+    let mut payload = event.payload.clone();
+    let subject = match take_subject(&event.kind, &mut payload) {
+        Some(subject) => subject,
+        None => format!(
+            "forge publishes {}{}",
+            code(&event.kind),
+            from(event.source)
+        ),
+    };
+    let this_message = take_this_message(action, &mut payload);
+    format!(
+        "{subject}{this_message}{}{} within {}",
+        count_phrase(event.count),
+        conditions(&payload),
+        span_ms(event.within_ms)
+    )
+}
+
+fn absent_expected(absent: &AbsentEvent, action: &StepAction) -> String {
+    let mut payload = absent.payload.clone();
+    let this_message = take_this_message(action, &mut payload);
+    format!(
+        "forge publishes no {}{}{this_message}{} within {}",
+        code(&absent.kind),
+        from(absent.source),
+        conditions(&payload),
+        span_ms(absent.window_ms)
+    )
+}
+
+fn subscription_expected(subscription: &TwitchSubscription) -> String {
+    format!(
+        "forge holds a live EventSub subscription to {}{} within {}",
+        code(&subscription.subscription_type),
+        subscription
+            .version
+            .as_ref()
+            .map(|version| format!(" (version {})", code(version)))
+            .unwrap_or_default(),
+        span_ms(subscription.within_ms)
+    )
+}
+
+fn overlay_expected(content: &OverlayContent) -> String {
+    let values: Vec<String> = content
+        .values
+        .0
+        .iter()
+        .map(|(key, value)| format!("{} = {}", code(key), quoted(value)))
+        .collect();
+    format!(
+        "the page for overlay {} receives a content frame carrying {} as plain values within {}",
+        code(&content.overlay),
+        values.join(", "),
+        span_ms(content.within_ms)
+    )
+}
+
+fn discord_expected(post: &DiscordPost) -> String {
+    let mut conditions = Vec::new();
+    if let Some(needle) = &post.content_contains {
+        conditions.push(format!("content containing {}", quoted(needle)));
+    }
+    if let Some(kinds) = &post.mention_parse {
+        conditions.push(format!(
+            "allowed_mentions.parse = [{}]",
+            kinds
+                .iter()
+                .map(|kind| code(kind))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+    }
+    let conditions = if conditions.is_empty() {
+        String::new()
+    } else {
+        format!(" with {}", conditions.join(" and "))
+    };
+    format!(
+        "forge posts to the Discord webhook {}{conditions} within {}",
+        code(&post.webhook),
+        span_ms(post.within_ms)
+    )
+}
+
+fn obs_request_expected(request: &ObsRequestSeen) -> String {
+    format!(
+        "forge sends OBS a {} request{}{} within {}",
+        code(&request.request_type),
+        conditions(&request.request_data),
+        request
+            .code
+            .map(|status| format!(" answered with status {status}"))
+            .unwrap_or_default(),
+        span_ms(request.within_ms)
+    )
+}
+
+fn vtube_request_expected(request: &VTubeRequestSeen) -> String {
+    format!(
+        "forge sends VTube Studio a {}{}{} within {}",
+        code(&request.message_type),
+        conditions(&request.data),
+        match (request.succeeded, request.error_id) {
+            (_, Some(error_id)) => format!(" answered with error {error_id}"),
+            (Some(true), None) => " answered without an error".to_owned(),
+            (Some(false), None) => " answered with an error".to_owned(),
+            (None, None) => String::new(),
+        },
+        span_ms(request.within_ms)
+    )
+}
+
+fn log_line_expected(line: &LogLine) -> String {
+    let fields: Vec<String> = line
+        .fields
+        .0
+        .iter()
+        .map(|(key, value)| format!("{} = {}", code(key), quoted(value)))
+        .collect();
+    let fields = if fields.is_empty() {
+        "any fields".to_owned()
+    } else {
+        fields.join(", ")
+    };
+    format!(
+        "forge logs a line on target {} with {fields} within {}",
+        code(&line.target),
+        span_ms(line.within_ms)
+    )
+}
+
+fn http_request_expected(service: &str, request: &HttpRequestSeen) -> String {
+    format!(
+        "forge sends the fake {service} {}{}{} within {}",
+        code(&match &request.method {
+            Some(method) => format!("{method} {}", request.path),
+            None => request.path.clone(),
+        }),
+        conditions(&request.body),
+        request
+            .status
+            .map(|status| format!(" answered with status {status}"))
+            .unwrap_or_default(),
+        span_ms(request.within_ms)
+    )
+}
+
+fn http_count_expected(service: &str, count: &RequestCount) -> String {
+    format!(
+        "forge sends the fake {service} {} {} request(s) over the whole run so far",
+        count_range(count.min, count.max),
+        code(&request_label(count))
+    )
+}
+
+fn only_modeled_requests(service: &str) -> String {
+    format!("forge sends the fake {service} only requests it models, over the whole run so far")
 }
 
 pub(crate) fn matcher<T: serde::Serialize>(item: &T) -> String {

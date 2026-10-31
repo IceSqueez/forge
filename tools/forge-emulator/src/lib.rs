@@ -2,9 +2,11 @@ mod error;
 pub mod fakes;
 pub mod fixture;
 pub mod harness;
+mod problem;
 pub mod vocabulary;
 
 pub use error::EmulatorError;
+pub use problem::Problem;
 
 pub fn endpoint_surfaces() -> Vec<forge_platform_core::EndpointSurface> {
     [

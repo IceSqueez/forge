@@ -251,6 +251,27 @@ fn messages_no_form_of_which_matches_are_spoken() {
 }
 
 #[test]
+fn only_a_strict_majority_of_letters_outside_latin_skips_the_message() {
+    let config = with_rules(non_latin_rule());
+    for (case, input, skipped) in [
+        ("a tie", "aя", false),
+        ("one more cyrillic letter", "aяя", true),
+        ("one more latin letter", "aaя", false),
+        ("latin supplement and extended", "é ž я", false),
+        ("latin extended additional", "ắ ầ я", false),
+        ("digits do not count as latin", "12345 я", true),
+        ("no letters at all", "12345 \u{1F389}", false),
+    ] {
+        let expected = if skipped {
+            skipped_by(SkipRule::MostlyNonLatin)
+        } else {
+            speak(input)
+        };
+        assert_eq!(process(input, &config, &ctx()), expected, "{case}");
+    }
+}
+
+#[test]
 fn invisible_hangul_fillers_do_not_count_as_non_latin_letters() {
     let config = with_rules(non_latin_rule());
     for filler in ['\u{3164}', '\u{FFA0}', '\u{115F}', '\u{1160}'] {

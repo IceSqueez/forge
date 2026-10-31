@@ -2237,7 +2237,12 @@ pub(crate) mod tests {
         assert_eq!(clip_status, reqwest::StatusCode::OK);
         assert_eq!(clip_body.as_bytes(), AUDIO_CLIP_BYTES);
         assert_eq!(report_status, reqwest::StatusCode::NO_CONTENT);
-        assert_eq!(outcome.recv().await, ClipOutcome::Played);
+        assert_eq!(
+            tokio::time::timeout(HANG_GUARD, outcome.recv())
+                .await
+                .expect("the clip outcome never settled"),
+            ClipOutcome::Played
+        );
         handle.stop().await.expect("stop");
     }
 
@@ -2294,7 +2299,12 @@ pub(crate) mod tests {
         assert_eq!(served_body.as_bytes(), AUDIO_CLIP_BYTES);
         assert_eq!(refused_report, misdirected);
         assert_eq!(accepted_report, reqwest::StatusCode::NO_CONTENT);
-        assert_eq!(outcome.recv().await, ClipOutcome::Played);
+        assert_eq!(
+            tokio::time::timeout(HANG_GUARD, outcome.recv())
+                .await
+                .expect("the clip outcome never settled"),
+            ClipOutcome::Played
+        );
         handle.stop().await.expect("stop");
     }
 
@@ -2635,8 +2645,7 @@ pub(crate) mod tests {
             let status = reqwest::get(format!("http://{addr}/overlays/page.html"))
                 .await
                 .expect("request")
-                .status()
-                .as_u16();
+                .status();
 
             assert_eq!(status, tokenless_status, "{case}");
             handle.stop().await.expect("stop");

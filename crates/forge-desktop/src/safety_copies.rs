@@ -716,8 +716,8 @@ mod tests {
     use super::*;
     use crate::i18n::install_language;
     use crate::test_support::{
-        TestBackend, install_presentation, pump, serial_blocking_runtime, settle_until,
-        settle_until_blocking_work_finishes, test_backend,
+        TestBackend, install_presentation, pump, runtime, settle_runtime_work, settle_until,
+        test_backend,
     };
 
     const STEM_PREFIX: &str = "forge-backup";
@@ -762,7 +762,7 @@ mod tests {
         install_language(Language::En);
         install_presentation(cx);
         cx.update(|cx| cx.set_global(Toasts::new()));
-        let rt = serial_blocking_runtime();
+        let rt = runtime();
         let (provider, writes) = test_backend();
         let data_dir = tempfile::tempdir().unwrap();
         let exclusivity = TransferExclusivity::new();
@@ -1276,7 +1276,7 @@ mod tests {
             view.sweep_finished(SweepOrigin::CleanUp, Ok(report(0, &[], false)), cx);
         });
         settle_until(cx, &r.rt, |cx| r.usage(cx).is_some_and(|u| u.count == 0));
-        settle_until_blocking_work_finishes(cx, &r.rt);
+        settle_runtime_work(cx, &r.rt);
 
         assert_eq!(r.storage_backups_bytes(), Some(COPY_BYTES as u64));
     }

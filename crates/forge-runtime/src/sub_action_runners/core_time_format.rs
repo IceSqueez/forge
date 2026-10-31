@@ -155,17 +155,11 @@ mod tests {
     use super::*;
     use forge_events::test_support::NullPublisher;
 
+    use crate::sub_action_runners::os_ports::test_ports::utc;
     use forge_registry::ConfigReason;
     use forge_registry::RegistryError;
     use forge_types::{EventId, SubActionOutcome};
-    use time::{Date, Month, OffsetDateTime, Time};
-
-    fn utc(y: i32, m: Month, d: u8, h: u8, min: u8, s: u8) -> OffsetDateTime {
-        OffsetDateTime::new_utc(
-            Date::from_calendar_date(y, m, d).unwrap(),
-            Time::from_hms(h, min, s).unwrap(),
-        )
-    }
+    use time::Month;
 
     async fn run(cfg: &SubActionConfig) -> (SubActionOutcome, Option<ArgStack>) {
         let stack = ArgStack::new();

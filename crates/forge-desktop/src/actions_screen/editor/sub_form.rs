@@ -231,7 +231,7 @@ mod tests {
     use super::super::tests::view_with;
     use super::*;
     use crate::screen_shortcuts::ScreenShortcuts;
-    use crate::test_support::{pump, runtime};
+    use crate::test_support::runtime;
 
     const PLAY_SOUND: &str = "soundboard.sound.play";
     const CLIP_FIELD: &str = "clip_id";
@@ -354,10 +354,7 @@ mod tests {
         fn commit(&self, cx: &mut gpui::TestAppContext, commit: SubFormCommit) {
             let form = self.form(cx).unwrap();
             form.update(cx, |_, cx| cx.emit(SubFormEvent::Commit(commit)));
-            for _ in 0..3 {
-                pump(&self.rt);
-                cx.run_until_parked();
-            }
+            crate::test_support::settle_runtime_work(cx, &self.rt);
         }
     }
 
@@ -482,10 +479,7 @@ mod tests {
     }
 
     fn settle(editor: &PlaySoundEditor, cx: &mut gpui::TestAppContext) {
-        for _ in 0..3 {
-            pump(&editor.rt);
-            cx.run_until_parked();
-        }
+        crate::test_support::settle_runtime_work(cx, &editor.rt);
     }
 
     #[gpui::test]

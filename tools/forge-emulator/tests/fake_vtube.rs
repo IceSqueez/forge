@@ -29,7 +29,6 @@ type Socket = WebSocketStream<MaybeTlsStream<TcpStream>>;
 
 const TOKEN: &str = "vtube-fake-token-3f9a";
 const WAIT: Duration = Duration::from_secs(30);
-const LOCALHOST: &str = "127.0.0.1";
 const AVATAR: &str = "Avatar";
 const SPARE: &str = "Spare";
 const WAVE: &str = "Wave";
@@ -170,7 +169,7 @@ struct Forge {
 
 async fn forge_with_token(fake: &FakeVTube, token: &str) -> Forge {
     let credentials = Arc::new(MemoryCredentials::default());
-    forge_vtube::credentials::store(&*credentials, token, LOCALHOST, fake.port(), false)
+    forge_vtube::credentials::store(&*credentials, token, support::LOOPBACK, fake.port(), false)
         .await
         .unwrap();
     let events = Arc::new(CapturingPublisher::default());
@@ -273,7 +272,9 @@ async fn forge_with_a_revoked_token_reports_auth_required_and_forgets_the_token(
 async fn forge_probe_reads_the_version_of_a_session_that_is_not_authenticated() {
     let fake = start().await;
 
-    let probe = probe_connection(LOCALHOST, fake.port()).await.unwrap();
+    let probe = probe_connection(support::LOOPBACK, fake.port())
+        .await
+        .unwrap();
 
     assert!(!probe.api_version.is_empty());
     assert!(!probe.already_authenticated);

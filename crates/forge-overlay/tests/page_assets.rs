@@ -4,7 +4,7 @@ use common::{ALERT_KIND, registry};
 
 use std::collections::BTreeSet;
 
-use forge_overlay::config::{ANIMATION_OPTIONS, POSITION_OPTIONS};
+use forge_overlay::config::POSITION_OPTIONS;
 use forge_overlay::{BEHAVIOR_FILE, ConfigSection, RESERVED_DIRECTORY, RUNTIME_ASSET, STYLE_FILE};
 
 const ICON_BOX_MARKER: &str = "class=\"icon\"";
@@ -217,21 +217,23 @@ fn the_page_tints_an_icon_through_the_very_property_and_class_its_script_sets() 
 #[test]
 fn every_kind_stylesheet_keys_its_appearance_rules_off_values_the_form_offers() {
     for descriptor in registry().all() {
-        let style = descriptor.page_assets().style;
-
-        for (attribute, offered) in [
-            ("position", POSITION_OPTIONS),
-            ("animation", ANIMATION_OPTIONS),
-        ] {
-            let selected = quoted_after(style, &format!("body[data-{attribute}=\""));
-
-            for value in &selected {
-                assert!(
-                    offered.contains(&value.as_str()),
-                    "{} styles data-{attribute}='{value}', which the form never offers, so the rule can never match",
-                    descriptor.id()
-                );
-            }
+        for value in quoted_after(descriptor.page_assets().style, "body[data-position=\"") {
+            assert!(
+                POSITION_OPTIONS.contains(&value.as_str()),
+                "{} styles data-position='{value}', which the form never offers, so the rule can never match",
+                descriptor.id()
+            );
         }
+    }
+}
+
+#[test]
+fn no_stock_stylesheet_keys_a_rule_off_the_retired_animation_attribute() {
+    for descriptor in registry().all() {
+        assert!(
+            !descriptor.page_assets().style.contains("data-animation"),
+            "{} still styles data-animation, which no form sets any more",
+            descriptor.id()
+        );
     }
 }

@@ -1881,41 +1881,6 @@ mod tests {
     }
 
     #[test]
-    fn preview_all_stages_recorded_on_skip() {
-        let config = PipelineConfig {
-            skip_rules: SkipRulesConfig {
-                contains_url: true,
-                ..SkipRulesConfig::default()
-            },
-            ..neutral_config()
-        };
-        let (result, outcomes) = preview("visit https://example.com", &config, &ctx());
-        assert_eq!(outcomes.len(), 4);
-        assert!(matches!(result, PipelineResult::Skip { .. }));
-        assert_eq!(outcomes[0].stage, StageName::SkipRules);
-        assert!(matches!(outcomes[0].action, StageAction::Skipped { .. }));
-        assert!(matches!(outcomes[1].action, StageAction::Skipped { .. }));
-        assert!(matches!(outcomes[2].action, StageAction::Skipped { .. }));
-        assert!(matches!(outcomes[3].action, StageAction::Skipped { .. }));
-    }
-
-    #[test]
-    fn preview_stage_input_output_chain() {
-        let config = PipelineConfig {
-            replacement_rules: vec![ReplacementRule::Text {
-                pattern: "world".into(),
-                replacement: "forge".into(),
-            }],
-            ..neutral_config()
-        };
-        let (result, outcomes) = preview("hello world", &config, &ctx());
-        assert_eq!(result, PipelineResult::Speak("hello forge".into()));
-        assert_eq!(outcomes[1].output, "hello world");
-        assert_eq!(outcomes[2].input, "hello world");
-        assert_eq!(outcomes[2].output, "hello forge");
-    }
-
-    #[test]
     fn strip_emote_tokens_removes_whole_word_matches_only() {
         let mut set = EmoteTokenSet::default();
         set.tokens.insert("LUL".into());

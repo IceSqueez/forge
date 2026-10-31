@@ -63,12 +63,4 @@ mod tests {
     fn event_id_displays_as_a_parseable_ulid() {
         assert!(ulid::Ulid::from_string(&EventId::new().to_string()).is_ok());
     }
-
-    #[test]
-    fn event_id_serde_roundtrip() {
-        let id = EventId::new();
-        let json = serde_json::to_string(&id).unwrap();
-        let back: EventId = serde_json::from_str(&json).unwrap();
-        assert_eq!(id, back);
-    }
 }

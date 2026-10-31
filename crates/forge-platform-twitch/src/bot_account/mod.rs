@@ -284,7 +284,6 @@ pub(crate) mod test_support {
     pub(crate) const BOT_LOGIN: &str = "helper_bot";
     pub(crate) const BOT_ACCESS: &str = "BOT_ACCESS_SENTINEL_z9k";
     pub(crate) const BOT_REFRESH: &str = "BOT_REFRESH_SENTINEL_z9k";
-    const SETTLE_TURNS: usize = 32;
 
     #[derive(Default)]
     pub(crate) struct StoreGate {
@@ -355,12 +354,6 @@ pub(crate) mod test_support {
 
         async fn mark_refreshed(&self, id: &CredentialId) -> Result<(), StorageError> {
             self.rows.mark_refreshed(id).await
-        }
-    }
-
-    pub(crate) async fn settle() {
-        for _ in 0..SETTLE_TURNS {
-            tokio::task::yield_now().await;
         }
     }
 

@@ -1,7 +1,7 @@
 use super::text::VALUE_CHARS;
 use serde_json::Value;
 
-use super::text::{clip, code, code_list, compact, plural, quoted, span_ms};
+use super::text::{clip, code, code_list, compact, plural, quoted, snippet_kind, span_ms};
 use crate::fakes::twitch::ViewerBadge;
 use crate::harness::scenario::{ChatViewer, Crowd, StepAction};
 
@@ -60,10 +60,9 @@ pub(crate) fn story(action: &StepAction) -> String {
             code(name),
             code(&compact(value, VALUE_CHARS))
         ),
-        StepAction::KickChatJoined { within_ms } => format!(
-            "As Kick I wait up to {} for forge to join the channel's chatroom",
-            span_ms(*within_ms)
-        ),
+        StepAction::KickChatJoined { within_ms } => {
+            waits("Kick", *within_ms, "forge to join the channel's chatroom")
+        }
         StepAction::KickChat(message) => format!(
             "As a Kick viewer {} I send {} in chat",
             code(&message.sender.username),
@@ -77,14 +76,12 @@ pub(crate) fn story(action: &StepAction) -> String {
             "As the streamer I {} the Kick stream",
             if *live { "start" } else { "end" }
         ),
-        StepAction::KickChannelPolled { within_ms } => format!(
-            "As Kick I wait up to {} for forge to read the channel",
-            span_ms(*within_ms)
-        ),
-        StepAction::YoutubeChatPolled { within_ms } => format!(
-            "As YouTube I wait up to {} for forge to read the live chat",
-            span_ms(*within_ms)
-        ),
+        StepAction::KickChannelPolled { within_ms } => {
+            waits("Kick", *within_ms, "forge to read the channel")
+        }
+        StepAction::YoutubeChatPolled { within_ms } => {
+            waits("YouTube", *within_ms, "forge to read the live chat")
+        }
         StepAction::YoutubeChat(message) => format!(
             "As a YouTube viewer {} I send {} in the live chat",
             code(&message.author.display_name),
@@ -93,22 +90,16 @@ pub(crate) fn story(action: &StepAction) -> String {
         StepAction::YoutubeChatEvent { author, snippet } => format!(
             "As a YouTube viewer {} I cause a {} in the live chat",
             code(&author.display_name),
-            code(
-                snippet
-                    .get("type")
-                    .and_then(|kind| kind.as_str())
-                    .unwrap_or("message")
-            )
+            code(snippet_kind(snippet))
         ),
         StepAction::YoutubeBroadcast { live } => format!(
             "As the streamer I {} the YouTube broadcast",
             if *live { "start" } else { "end" }
         ),
-        StepAction::ObsOnline {} => "As the streamer I start OBS".to_owned(),
-        StepAction::ObsIdentified { within_ms } => format!(
-            "As OBS I wait up to {} for forge to connect and identify",
-            span_ms(*within_ms)
-        ),
+        StepAction::ObsOnline {} => streamer("start OBS"),
+        StepAction::ObsIdentified { within_ms } => {
+            waits("OBS", *within_ms, "forge to connect and identify")
+        }
         StepAction::ObsRestart { down_ms } => format!(
             "As the streamer I quit OBS and start it again {} later",
             span_ms(*down_ms)
@@ -125,10 +116,11 @@ pub(crate) fn story(action: &StepAction) -> String {
             if *muted { "mute" } else { "unmute" },
             code(input)
         ),
-        StepAction::VtubeOnline {} => "As the streamer I start VTube Studio".to_owned(),
-        StepAction::VtubeAuthenticated { within_ms } => format!(
-            "As VTube Studio I wait up to {} for forge to connect and authenticate",
-            span_ms(*within_ms)
+        StepAction::VtubeOnline {} => streamer("start VTube Studio"),
+        StepAction::VtubeAuthenticated { within_ms } => waits(
+            "VTube Studio",
+            *within_ms,
+            "forge to connect and authenticate",
         ),
         StepAction::VtubeHotkey { hotkey } => {
             format!(
@@ -142,11 +134,9 @@ pub(crate) fn story(action: &StepAction) -> String {
                 code(model)
             )
         }
-        StepAction::VtubeModelUnload {} => {
-            "As the streamer I unload the VTube Studio model".to_owned()
-        }
+        StepAction::VtubeModelUnload {} => streamer("unload the VTube Studio model"),
         StepAction::VtubeModelConfigChanged {} => {
-            "As the streamer I change the loaded VTube Studio model's settings".to_owned()
+            streamer("change the loaded VTube Studio model's settings")
         }
         StepAction::VtubeTracking { face_found } => format!(
             "As the streamer I {} the VTube Studio tracker",
@@ -182,9 +172,10 @@ pub(crate) fn story(action: &StepAction) -> String {
             gift.amount_minor,
             code(&gift.id)
         ),
-        StepAction::DonationsPolled { within_ms } => format!(
-            "As the donation services I wait up to {} for forge to read every donation list",
-            span_ms(*within_ms)
+        StepAction::DonationsPolled { within_ms } => waits(
+            "the donation services",
+            *within_ms,
+            "forge to read every donation list",
         ),
         StepAction::ForgeRestart { within_ms, offline } => format!(
             "As the streamer I quit forge, {} arrive while it is down, and I start it again and wait up to {} for it to be ready",
@@ -229,15 +220,9 @@ pub(crate) fn step_short(action: &StepAction) -> String {
             "YouTube chat message {}",
             quoted(&clip(&message.text, SHORT_TEXT_CHARS))
         ),
-        StepAction::YoutubeChatEvent { snippet, .. } => format!(
-            "a YouTube {}",
-            code(
-                snippet
-                    .get("type")
-                    .and_then(|kind| kind.as_str())
-                    .unwrap_or("message")
-            )
-        ),
+        StepAction::YoutubeChatEvent { snippet, .. } => {
+            format!("a YouTube {}", code(snippet_kind(snippet)))
+        }
         StepAction::YoutubeBroadcast { live } => format!(
             "{} the YouTube broadcast",
             if *live { "starting" } else { "ending" }
@@ -447,6 +432,14 @@ pub(crate) fn action_expected(action: &StepAction) -> String {
             span_ms(*within_ms)
         ),
     }
+}
+
+fn waits(who: &str, within_ms: u64, what: &str) -> String {
+    format!("As {who} I wait up to {} for {what}", span_ms(within_ms))
+}
+
+fn streamer(what: &str) -> String {
+    format!("As the streamer I {what}")
 }
 
 fn viewer(viewer: &ChatViewer) -> String {

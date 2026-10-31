@@ -1,23 +1,9 @@
 use tokio::time::Instant;
 
+use super::http_checks::LedgerMark;
 use super::outcome::{EVIDENCE_LIMIT, Evidence, FailureCause, VTubeEvidence, Verdict};
 use crate::fakes::vtube::{FakeVTube, TokenCheck, VTubeLedger, VTubeRequest, VTubeSession};
 use crate::harness::scenario::{VTubeAuthOutcome, VTubeRequestSeen};
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub(crate) struct VTubeMark {
-    pub(crate) sessions: usize,
-    pub(crate) requests: usize,
-}
-
-impl VTubeMark {
-    pub(crate) fn of(ledger: &VTubeLedger) -> Self {
-        Self {
-            sessions: ledger.sessions.len(),
-            requests: ledger.requests.len(),
-        }
-    }
-}
 
 pub(crate) fn request_matches(request: &VTubeRequest, expected: &VTubeRequestSeen) -> bool {
     request.message_type == expected.message_type
@@ -45,7 +31,7 @@ pub(crate) fn auth_matches(session: &VTubeSession, expected: &VTubeAuthOutcome) 
 
 pub(crate) async fn observe_vtube_request(
     fake: &FakeVTube,
-    from: VTubeMark,
+    from: LedgerMark,
     deadline: Instant,
     expected: &VTubeRequestSeen,
 ) -> (Verdict, Evidence) {
@@ -76,7 +62,7 @@ pub(crate) async fn observe_vtube_request(
 
 pub(crate) async fn observe_vtube_auth(
     fake: &FakeVTube,
-    from: VTubeMark,
+    from: LedgerMark,
     deadline: Instant,
     expected: &VTubeAuthOutcome,
 ) -> (Verdict, Evidence) {
@@ -107,7 +93,7 @@ pub(crate) async fn observe_vtube_auth(
     (verdict, evidence(&ledger, from, None))
 }
 
-fn evidence(ledger: &VTubeLedger, from: VTubeMark, message_type: Option<&str>) -> Evidence {
+fn evidence(ledger: &VTubeLedger, from: LedgerMark, message_type: Option<&str>) -> Evidence {
     let sessions = ledger
         .sessions
         .iter()

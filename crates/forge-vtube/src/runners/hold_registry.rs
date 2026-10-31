@@ -77,20 +77,22 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn a_hold_on_another_parameter_is_left_running() {
-        let registry = HoldRegistry::new();
-        let (first, mut first_ended) = hold_until_aborted();
-        let (second, _second_ended) = hold_until_aborted();
+    #[test]
+    fn a_hold_on_another_parameter_is_left_running() {
+        forge_test_support::run_with_quiescence(|quiet| async move {
+            let registry = HoldRegistry::new();
+            let (first, mut first_ended) = hold_until_aborted();
+            let (second, _second_ended) = hold_until_aborted();
 
-        registry.insert("ParamAngleX".to_owned(), first);
-        registry.insert("ParamAngleY".to_owned(), second);
-        tokio::task::yield_now().await;
+            registry.insert("ParamAngleX".to_owned(), first);
+            registry.insert("ParamAngleY".to_owned(), second);
+            quiet.reached().await;
 
-        assert!(matches!(
-            first_ended.try_recv(),
-            Err(oneshot::error::TryRecvError::Empty)
-        ));
+            assert!(matches!(
+                first_ended.try_recv(),
+                Err(oneshot::error::TryRecvError::Empty)
+            ));
+        });
     }
 
     #[tokio::test]

@@ -81,9 +81,9 @@ pub(crate) async fn with_deadline<T>(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use futures_util::FutureExt;
 
-    const WELL_PAST_ANY_DEADLINE: Duration = Duration::from_secs(600);
+    use super::*;
 
     fn unanswered() -> impl Future<Output = Result<(), obws::error::Error>> {
         std::future::pending()
@@ -91,20 +91,20 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn an_unanswered_request_times_out_exactly_when_its_deadline_elapses() {
-        let request = tokio::spawn(with_deadline(REQUEST_TIMEOUT, "GetStats", unanswered()));
+        let request = with_deadline(REQUEST_TIMEOUT, "GetStats", unanswered());
+        tokio::pin!(request);
+        assert!((&mut request).now_or_never().is_none(), "already timed out");
 
         tokio::time::advance(REQUEST_TIMEOUT - Duration::from_millis(1)).await;
-        tokio::task::yield_now().await;
         assert!(
-            !request.is_finished(),
+            (&mut request).now_or_never().is_none(),
             "the request gave up before its deadline"
         );
 
         tokio::time::advance(Duration::from_millis(1)).await;
-        let outcome = tokio::time::timeout(WELL_PAST_ANY_DEADLINE, request)
-            .await
-            .expect("an unanswered request never timed out")
-            .unwrap();
+        let outcome = (&mut request)
+            .now_or_never()
+            .expect("an unanswered request outlived its deadline");
         assert!(matches!(outcome, Err(ObsError::Timeout)), "got {outcome:?}");
     }
 }

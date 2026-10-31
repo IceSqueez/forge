@@ -2431,7 +2431,9 @@ mod tests {
 
     #[tokio::test]
     async fn refused_connection_reports_a_network_reason_stripped_of_the_request_url() {
-        let host = "127.0.0.1:1";
+        let closed = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let host = closed.local_addr().unwrap().to_string();
+        drop(closed);
         let poller = poller_at(format!("http://{host}/{URL_SENTINEL}"));
 
         for failure in failures_from_both_fetches(&poller).await {
@@ -2439,7 +2441,7 @@ mod tests {
                 panic!("expected Network, got {failure:?}");
             };
             assert!(
-                !reason.contains(URL_SENTINEL) && !reason.contains(host) && !reason.is_empty(),
+                !reason.contains(URL_SENTINEL) && !reason.contains(&host) && !reason.is_empty(),
                 "the transport failure must be described without the request URL: {reason:?}"
             );
         }

@@ -200,6 +200,53 @@ mod tests {
         );
     }
 
+    fn sine(frames: usize, tone_hz: f64, rate: u32, peak: f64) -> Vec<i16> {
+        (0..frames)
+            .map(|frame| {
+                let phase = std::f64::consts::TAU * tone_hz * frame as f64 / f64::from(rate);
+                (phase.sin() * peak) as i16
+            })
+            .collect()
+    }
+
+    fn rising_zero_crossings(samples: &[i16]) -> usize {
+        samples
+            .windows(2)
+            .filter(|pair| pair[0] < 0 && pair[1] >= 0)
+            .count()
+    }
+
+    #[test]
+    fn a_resampled_sine_keeps_its_pitch_and_its_peak() {
+        const TONE_HZ: f64 = 440.0;
+        const PEAK: f64 = 16_000.0;
+        const PEAK_TOLERANCE: f64 = 800.0;
+        const CROSSING_TOLERANCE: usize = 1;
+        const EDGE_DIVISOR: usize = 10;
+        for (src_rate, dst_rate) in [(22_050_u32, 48_000_u32), (48_000, 22_050)] {
+            let input = sine(src_rate as usize, TONE_HZ, src_rate, PEAK);
+
+            let output = resample(&input, src_rate, dst_rate, 1).unwrap();
+
+            let edge = output.len() / EDGE_DIVISOR;
+            let settled = &output[edge..output.len() - edge];
+            let expected = settled.len() as f64 * TONE_HZ / f64::from(dst_rate);
+            let crossings = rising_zero_crossings(settled);
+            assert!(
+                crossings.abs_diff(expected.round() as usize) <= CROSSING_TOLERANCE,
+                "{src_rate}->{dst_rate}: {crossings} crossings, expected about {expected}"
+            );
+            let peak = settled
+                .iter()
+                .map(|s| f64::from(*s).abs())
+                .fold(0.0, f64::max);
+            assert!(
+                (peak - PEAK).abs() <= PEAK_TOLERANCE,
+                "{src_rate}->{dst_rate}: peak {peak}"
+            );
+        }
+    }
+
     #[test]
     fn resample_of_empty_input_is_empty() {
         assert!(resample(&[], 22_050, 48_000, 1).unwrap().is_empty());

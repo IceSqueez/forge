@@ -45,7 +45,10 @@ async fn migration_scales_every_stored_timestamp_from_seconds_to_milliseconds() 
 
     assert_eq!(
         stored,
-        vec![STORED_SECONDS * 1000, (STORED_SECONDS + 1) * 1000]
+        vec![
+            STORED_SECONDS * common::MILLIS_PER_SECOND,
+            (STORED_SECONDS + 1) * common::MILLIS_PER_SECOND
+        ]
     );
 }
 

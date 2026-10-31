@@ -1268,10 +1268,7 @@ mod tests {
     }
 
     fn settle(cx: &mut TestAppContext, rt: &tokio::runtime::Runtime) {
-        for _ in 0..4 {
-            pump(rt);
-            cx.run_until_parked();
-        }
+        crate::test_support::settle_runtime_work(cx, rt);
     }
 
     fn diverged(view: &Entity<QueuesView>, cx: &mut TestAppContext) -> Vec<QueueId> {

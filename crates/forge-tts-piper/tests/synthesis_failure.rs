@@ -1,5 +1,5 @@
-#![allow(clippy::expect_used)]
 #![cfg(unix)]
+#![expect(clippy::expect_used, reason = "test fixtures")]
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;

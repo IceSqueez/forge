@@ -1477,39 +1477,6 @@ mod tests {
         }
     }
 
-    fn dispatch(
-        config: &mut QueueConfig,
-        deps: &ActorDeps,
-        tx: &tokio::sync::broadcast::Sender<SpeakEvent>,
-        cmd: SpeakCommand,
-    ) {
-        let mut high: VecDeque<SpeakRequest> = VecDeque::new();
-        let mut normal: VecDeque<SpeakRequest> = VecDeque::new();
-        let mut counts: HashMap<String, usize> = HashMap::new();
-        let mut paused = false;
-        let mut voicegate = false;
-        let mut active: Option<RequestId> = None;
-        let last: Option<SpeakRequest> = None;
-        let mut current_playback: Option<CurrentPlayback> = None;
-        let mut progress_ticker: Option<tokio::time::Interval> = None;
-        handle_command(
-            cmd,
-            config,
-            deps,
-            tx,
-            &mut high,
-            &mut normal,
-            &mut counts,
-            &mut paused,
-            &mut voicegate,
-            &mut active,
-            &last,
-            &mut current_playback,
-            &mut progress_ticker,
-            &[],
-        );
-    }
-
     fn request(viewer: &str, text: &str, priority: Priority) -> SpeakRequest {
         SpeakRequest {
             request_id: RequestId::new(),
@@ -1753,8 +1720,6 @@ mod tests {
 
     #[test]
     fn set_volume_clamps_into_unit_range() {
-        let deps = minimal_deps();
-        let (tx, _rx) = tokio::sync::broadcast::channel::<SpeakEvent>(8);
         for (input, expected) in [
             (1.5_f32, 1.0_f32),
             (-0.2, 0.0),
@@ -1762,10 +1727,10 @@ mod tests {
             (0.0, 0.0),
             (1.0, 1.0),
         ] {
-            let mut config = QueueConfig::default();
-            dispatch(&mut config, &deps, &tx, SpeakCommand::SetVolume(input));
+            let mut h = Harness::new();
+            h.run(SpeakCommand::SetVolume(input));
             assert_eq!(
-                config.master_volume, expected,
+                h.config.master_volume, expected,
                 "SetVolume({input}) must set master_volume to {expected}",
             );
         }
@@ -1773,16 +1738,15 @@ mod tests {
 
     #[test]
     fn enqueue_emits_event_carrying_request_payload() {
-        let deps = minimal_deps();
-        let mut config = QueueConfig::default();
-        let (tx, mut rx) = tokio::sync::broadcast::channel::<SpeakEvent>(8);
-        dispatch(
-            &mut config,
-            &deps,
-            &tx,
-            SpeakCommand::Enqueue(request("nova", "hi chat", Priority::High)),
-        );
-        let payload = std::iter::from_fn(|| rx.try_recv().ok())
+        let mut h = Harness::new();
+        h.run(SpeakCommand::Enqueue(request(
+            "nova",
+            "hi chat",
+            Priority::High,
+        )));
+        let payload = h
+            .drain_events()
+            .into_iter()
             .find_map(|ev| match ev {
                 SpeakEvent::Enqueued {
                     viewer_name,

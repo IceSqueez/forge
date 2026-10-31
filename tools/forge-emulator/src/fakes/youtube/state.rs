@@ -31,10 +31,12 @@ pub(crate) struct Inner {
     next_message: u64,
 }
 
+const UNIX_EPOCH_RFC3339: &str = "1970-01-01T00:00:00Z";
+
 pub(crate) fn now_rfc3339() -> String {
     OffsetDateTime::now_utc()
         .format(&Rfc3339)
-        .unwrap_or_default()
+        .unwrap_or_else(|_| UNIX_EPOCH_RFC3339.to_owned())
 }
 
 impl Inner {
@@ -64,9 +66,19 @@ impl Inner {
     pub(crate) fn append_message(
         &mut self,
         config: &FakeYouTubeConfig,
-        mut snippet: Map<String, Value>,
+        snippet: Map<String, Value>,
         author_details: Value,
     ) -> String {
+        let message = self.store_message(config, snippet, author_details);
+        message["id"].as_str().unwrap_or_default().to_owned()
+    }
+
+    pub(crate) fn store_message(
+        &mut self,
+        config: &FakeYouTubeConfig,
+        mut snippet: Map<String, Value>,
+        author_details: Value,
+    ) -> Value {
         let sequence = self.next_message;
         self.next_message += 1;
         let id = format!("emulator-message-{sequence}");
@@ -76,14 +88,15 @@ impl Inner {
             snippet.insert("authorChannelId".to_owned(), channel_id.clone());
         }
         snippet.entry("hasDisplayContent").or_insert(json!(true));
-        self.chat.push(json!({
+        let message = json!({
             "kind": "youtube#liveChatMessage",
             "etag": format!("emulator-etag-{sequence}"),
             "id": id,
             "snippet": snippet,
             "authorDetails": author_details,
-        }));
-        id
+        });
+        self.chat.push(message.clone());
+        message
     }
 
     pub(crate) fn owner_details(config: &FakeYouTubeConfig) -> Value {

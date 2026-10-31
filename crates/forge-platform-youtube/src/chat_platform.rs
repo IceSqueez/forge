@@ -483,16 +483,18 @@ mod tests {
         );
     }
 
-    #[test]
-    fn a_connect_disconnect_cycle_logs_the_started_line_then_the_stopped_line() {
-        let (_, lines) =
-            forge_test_support::log_capture::capture_blocking(tracing::Level::INFO, async {
-                let p = platform();
-                p.connect().await.unwrap();
-                p.disconnect().await.unwrap();
-                tokio::task::yield_now().await;
-            });
+    #[tokio::test]
+    async fn a_connect_disconnect_cycle_logs_the_started_line_then_the_stopped_line() {
+        let recording = forge_test_support::log_capture::LogRecording::start(tracing::Level::INFO);
+        let p = platform();
+        p.connect().await.unwrap();
+        p.disconnect().await.unwrap();
+        forge_test_support::settle_until("the retired poller logged its exit", || {
+            info_lifecycle_lines(&recording.lines()).len() >= 2
+        })
+        .await;
 
+        let lines = recording.lines();
         let messages: Vec<&str> = info_lifecycle_lines(&lines)
             .iter()
             .map(|line| line.message())

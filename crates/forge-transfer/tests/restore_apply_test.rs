@@ -220,7 +220,7 @@ fn failure_reason() -> Value {
 }
 
 fn update_state() -> &'static [(&'static str, &'static [u8])] {
-    &[("update-apply.json", b"{}")]
+    &[(UPDATE_APPLY_STATE_FILE, b"{}")]
 }
 
 fn original_tree(with_update_state: bool) -> Tree {
@@ -239,7 +239,7 @@ fn snapshot_of_original() -> Tree {
 fn restored_tree(with_update_state: bool) -> Tree {
     let mut expected = tree(&[RESTORED, UNTOUCHED, update_state()]);
     if !with_update_state {
-        expected.remove("update-apply.json");
+        expected.remove(UPDATE_APPLY_STATE_FILE);
     }
     expected.extend(snapshot_of_original());
     expected

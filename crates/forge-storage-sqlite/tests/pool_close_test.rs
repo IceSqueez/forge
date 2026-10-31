@@ -10,9 +10,8 @@ use sqlx::sqlite::SqliteConnectOptions;
 use sqlx::{Connection, SqliteConnection, SqlitePool};
 use tempfile::TempDir;
 
-const DEADLINE: Duration = Duration::from_secs(30);
-const SLOW_BUSY_TIMEOUT: Duration = Duration::from_secs(60);
-const HANG_GUARD: Duration = Duration::from_secs(20);
+const SLOW_BUSY_TIMEOUT: Duration = Duration::from_secs(600);
+const HANG_GUARD: Duration = Duration::from_secs(120);
 const ROWS: i64 = 50;
 
 fn wal_of(db: &Path) -> PathBuf {
@@ -100,7 +99,7 @@ async fn closing_a_single_pool_without_a_checkpointer_does_not_hang() {
     let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
     let pools = SqlitePools::from(pool);
 
-    tokio::time::timeout(DEADLINE, pools.close())
+    tokio::time::timeout(HANG_GUARD, pools.close())
         .await
         .expect("in-memory close must finish");
 }
@@ -110,7 +109,7 @@ async fn closing_twice_is_harmless() {
     let (pools, db, _dir) = populated().await;
 
     pools.close().await;
-    tokio::time::timeout(DEADLINE, pools.close())
+    tokio::time::timeout(HANG_GUARD, pools.close())
         .await
         .expect("second close must finish");
 

@@ -1211,7 +1211,7 @@ mod tests {
         use crate::client::{VTubeClient, VTubeConfig};
         use crate::timing::VTubeTiming;
 
-        const HANG_GUARD: Duration = Duration::from_secs(30);
+        const HANG_GUARD: Duration = forge_test_support::HANG_GUARD;
         const BEYOND_ANY_GUARD: Duration = Duration::from_secs(100 * 24 * 3600);
         const SHORT_CONNECT_TIMEOUT: Duration = Duration::from_millis(50);
 
@@ -1443,7 +1443,7 @@ mod tests {
         use crate::timing::VTubeTiming;
         use crate::vts::socket::tests::{DoomedWrite, WriteFate};
 
-        const SETTLE: Duration = Duration::from_secs(30);
+        const SETTLE: Duration = forge_test_support::HANG_GUARD;
         const BEYOND_ANY_GUARD: Duration = Duration::from_secs(100 * 24 * 3600);
         const SHORT_REQUEST_TIMEOUT: Duration = Duration::from_millis(100);
         const SHORT_SWEEP_INTERVAL: Duration = Duration::from_millis(150);

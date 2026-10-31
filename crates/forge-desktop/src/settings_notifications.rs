@@ -311,7 +311,7 @@ mod tests {
 
     use super::*;
     use crate::i18n::install_language;
-    use crate::test_support::{pump, quiet_bus, runtime, test_backend};
+    use crate::test_support::{quiet_bus, runtime, test_backend};
 
     const STORED: NotificationPreferences = NotificationPreferences {
         action_failure_notice: false,
@@ -344,10 +344,7 @@ mod tests {
     }
 
     fn settle(cx: &mut TestAppContext, rt: &tokio::runtime::Runtime) {
-        for _ in 0..4 {
-            pump(rt);
-            cx.run_until_parked();
-        }
+        crate::test_support::settle_runtime_work(cx, rt);
     }
 
     fn shown(

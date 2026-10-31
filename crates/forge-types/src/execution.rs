@@ -494,35 +494,7 @@ mod tests {
         };
         let json = serde_json::to_string(&ctx).unwrap();
         let back: ExecutionContext = serde_json::from_str(&json).unwrap();
-        assert_eq!(ctx.action_id, back.action_id);
-        assert_eq!(ctx.metadata, back.metadata);
-        assert_eq!(ctx.outcome, back.outcome);
-        assert_eq!(ctx.telemetry.len(), back.telemetry.len());
-    }
-
-    #[test]
-    fn execution_metadata_quick_action_serde_roundtrip() {
-        let meta = ExecutionMetadata::QuickAction {
-            builtin_id: "obs".to_string(),
-            label: "Toggle Stream".to_string(),
-        };
-        let json = serde_json::to_string(&meta).unwrap();
-        let back: ExecutionMetadata = serde_json::from_str(&json).unwrap();
-        assert_eq!(meta, back);
-    }
-
-    #[test]
-    fn execution_outcome_variants_serde_roundtrip() {
-        let outcomes = [
-            ExecutionOutcome::Success,
-            ExecutionOutcome::Failed(VerbatimText::new("rhai panic").into()),
-            ExecutionOutcome::Cancelled,
-        ];
-        for o in outcomes {
-            let json = serde_json::to_string(&o).unwrap();
-            let back: ExecutionOutcome = serde_json::from_str(&json).unwrap();
-            assert_eq!(o, back);
-        }
+        assert_eq!(back, ctx);
     }
 
     #[test]
@@ -551,21 +523,6 @@ mod tests {
             integration_disabled_message(&twitch).arg("integration"),
             Some(&MessageArg::Integration(twitch.clone()))
         );
-    }
-
-    #[test]
-    fn sub_action_outcome_variants_serde_roundtrip() {
-        let outcomes = [
-            SubActionOutcome::Success,
-            SubActionOutcome::Failed(VerbatimText::new("timeout").into()),
-            SubActionOutcome::Skipped(MessageRef::new(WHISPERS_UNSUPPORTED).into()),
-            SubActionOutcome::IntegrationDisabled(IntegrationId::from_static("twitch")),
-        ];
-        for o in outcomes {
-            let json = serde_json::to_string(&o).unwrap();
-            let back: SubActionOutcome = serde_json::from_str(&json).unwrap();
-            assert_eq!(o, back);
-        }
     }
 
     #[test]

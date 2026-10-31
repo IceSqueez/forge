@@ -30,16 +30,10 @@ fn replacement_rule_order_hides_original_text_from_later_rules() {
         ..neutral_config()
     };
 
-    match process("visit https://example.com today", &config, &ctx()) {
-        PipelineResult::Speak(text) => {
-            assert!(
-                !text.contains("SHOULD_NOT_APPEAR"),
-                "second rule ran on the original url - rule order broken"
-            );
-            assert!(text.contains("link"), "URL should have been substituted");
-        }
-        PipelineResult::Skip { .. } => panic!("expected Speak"),
-    }
+    assert_eq!(
+        process("visit https://example.com today", &config, &ctx()),
+        PipelineResult::Speak("visit link today".into())
+    );
 }
 
 #[test]
@@ -54,15 +48,10 @@ fn replacement_output_is_not_caught_by_blocklist() {
         ..neutral_config()
     };
 
-    match process("that was sneaky right", &config, &ctx()) {
-        PipelineResult::Speak(text) => {
-            assert!(
-                text.contains("badword"),
-                "blocklist runs before replacements now - it must not see the introduced word: {text}"
-            );
-        }
-        PipelineResult::Skip { .. } => panic!("expected Speak - blocklist already ran"),
-    }
+    assert_eq!(
+        process("that was sneaky right", &config, &ctx()),
+        PipelineResult::Speak("that was badword right".into())
+    );
 }
 
 #[test]
@@ -99,17 +88,10 @@ fn skip_rules_longer_than_checks_original_length_not_post_replacement_length() {
         ..neutral_config()
     };
 
-    match process("short text", &config, &ctx()) {
-        PipelineResult::Speak(text) => {
-            assert!(
-                text.contains("averylongword"),
-                "replacement must still apply after the original-length check passes: {text}"
-            );
-        }
-        PipelineResult::Skip { .. } => {
-            panic!("original message is exactly 10 chars - must not be skipped")
-        }
-    }
+    assert_eq!(
+        process("short text", &config, &ctx()),
+        PipelineResult::Speak("averylongword text".into())
+    );
 }
 
 #[test]
@@ -144,12 +126,12 @@ fn blocklist_skip_mode_short_circuits_downstream_stages() {
         ..neutral_config()
     };
 
-    match process("forbidden", &config, &ctx()) {
-        PipelineResult::Skip { reason } => {
-            assert_eq!(reason, SkipReason::BlockedByWordFilter);
+    assert_eq!(
+        process("forbidden", &config, &ctx()),
+        PipelineResult::Skip {
+            reason: SkipReason::BlockedByWordFilter
         }
-        PipelineResult::Speak(_) => panic!("expected Skip from blocklist"),
-    }
+    );
 }
 
 #[test]

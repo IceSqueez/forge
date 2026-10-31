@@ -485,7 +485,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn successful_ban_charges_fifty_quota_units() {
+    async fn a_successful_ban_charges_the_ban_cost() {
         let server = MockServer::start().await;
         mount_insert_ok(&server).await;
         let (moderation, quota) = moderation_on(&server);
@@ -525,7 +525,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn add_moderator_charges_fifty_quota_units() {
+    async fn adding_a_moderator_charges_the_ban_cost() {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/liveChat/moderators"))

@@ -70,7 +70,7 @@ mod tests {
     use super::super::editor::tests::view_with;
     use super::super::integration_gating::tests::detail;
     use super::*;
-    use crate::test_support::{error_toasts, pump, runtime};
+    use crate::test_support::{error_toasts, runtime};
 
     struct Hosting(Entity<ScreenActionsView>);
 
@@ -114,10 +114,7 @@ mod tests {
         }
 
         fn settle(&self, cx: &mut TestAppContext) {
-            for _ in 0..3 {
-                pump(&self.rt);
-                cx.run_until_parked();
-            }
+            crate::test_support::settle_runtime_work(cx, &self.rt);
         }
 
         fn press_new_action(&self, cx: &mut TestAppContext) {

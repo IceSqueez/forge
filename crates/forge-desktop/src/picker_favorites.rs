@@ -196,7 +196,7 @@ pub(crate) mod tests {
 
     use super::*;
     use crate::test_support::{
-        ReadFault, SettingWrite, TestBackend, error_toasts, install_presentation, pump, runtime,
+        ReadFault, SettingWrite, TestBackend, error_toasts, install_presentation, runtime,
         test_backend, writes_to,
     };
 
@@ -204,7 +204,6 @@ pub(crate) mod tests {
     const ADDED: &str = "sub.raw";
     const STORED: &str = r#"["sub.enable"]"#;
     const UNDECODABLE: &str = "not json";
-    const SETTLE_ROUNDS: usize = 3;
 
     pub(crate) struct Harness {
         pub(crate) rt: tokio::runtime::Runtime,
@@ -240,10 +239,7 @@ pub(crate) mod tests {
         }
 
         pub(crate) fn settle(&self, cx: &mut gpui::TestAppContext) {
-            for _ in 0..SETTLE_ROUNDS {
-                pump(&self.rt);
-                cx.run_until_parked();
-            }
+            crate::test_support::settle_runtime_work(cx, &self.rt);
         }
 
         pub(crate) fn written(&mut self, list: FavoritesList) -> Vec<Vec<String>> {

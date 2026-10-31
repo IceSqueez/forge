@@ -4,6 +4,7 @@ use common::{LATEST_KIND, registry, text};
 
 use std::collections::BTreeMap;
 
+use forge_overlay::config::{PLATFORM, SLOT};
 use forge_overlay::{
     LatestBinding, OverlayConfig, OverlayKindDescriptor, SampleContext, latest_binding,
     latest_content, sample_content,
@@ -129,7 +130,7 @@ fn only_the_latest_look_is_bound_to_a_slot() {
 
 #[test]
 fn the_latest_look_binds_to_the_stored_slot_and_platform_over_its_defaults() {
-    let stored = config(&[("slot", NOW_PLAYING_SLOT), ("platform", "spotify")]);
+    let stored = config(&[(SLOT, NOW_PLAYING_SLOT), (PLATFORM, "spotify")]);
 
     let binding = with_latest(|look| latest_binding(look, &stored)).expect("a slot binding");
 

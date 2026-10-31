@@ -17,6 +17,7 @@ test-support = [
   "dep:tempfile",
   "dep:tracing-subscriber",
   "forge-hotkey/testing",
+  "forge-storage-sqlite/settings-test-support",
   "forge-storage-sqlite/test-support",
   "forge-net/test-support",
   "forge-runtime/test-support",

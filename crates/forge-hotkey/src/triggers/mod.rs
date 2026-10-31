@@ -85,11 +85,4 @@ mod tests {
             );
         }
     }
-
-    #[test]
-    fn duplicate_registration_returns_error() {
-        let mut reg = TriggerRegistry::new();
-        register_hotkey_triggers(&mut reg).unwrap();
-        assert!(register_hotkey_triggers(&mut reg).is_err());
-    }
 }

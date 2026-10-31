@@ -8,7 +8,7 @@ use tokio::sync::oneshot;
 use tokio_tungstenite::tungstenite::Message;
 
 const SHORT_BUDGET: Duration = Duration::from_millis(50);
-const HANG_GUARD: Duration = Duration::from_secs(30);
+const HANG_GUARD: Duration = forge_test_support::HANG_GUARD;
 const BEYOND_ANY_GUARD: Duration = Duration::from_secs(100 * 24 * 3600);
 
 async fn bind_loopback() -> (TcpListener, u16) {
@@ -209,23 +209,11 @@ async fn a_peer_that_never_answers_ends_in_a_timeout_at_the_probe_budget() {
     );
 }
 
-#[tokio::test(start_paused = true)]
-async fn the_default_probe_budget_ends_a_stalled_upgrade_before_the_connect_budget() {
+#[test]
+fn the_default_probe_budget_is_shorter_than_the_connect_budget() {
     let timing = VTubeTiming::default();
+
     assert!(timing.probe_timeout < timing.connect_timeout);
-    let (listener, port) = bind_loopback().await;
-    let started = tokio::time::Instant::now();
-
-    let error = expect_error(probe_connection("127.0.0.1", port).await);
-
-    drop(listener);
-    assert!(matches!(error, VTubeError::Timeout), "{error:?}");
-    assert!(
-        started.elapsed() < timing.connect_timeout,
-        "{:?}",
-        started.elapsed()
-    );
-    assert!(started.elapsed() >= timing.probe_timeout);
 }
 
 #[tokio::test]

@@ -1,6 +1,5 @@
 mod memory_scripts;
 pub(crate) mod pack_flow;
-mod pack_transfer;
 mod setup_transfer;
 
 use forge_events::Event;
@@ -286,6 +285,8 @@ pub(crate) fn stored_shortcut_overrides(
     runtime().block_on(crate::shortcut_overrides::load_overrides(backend))
 }
 
+const QUIET_ROUNDS_TO_SETTLE: usize = 2;
+
 pub(crate) const FORMAT_ISOLATES: [char; 2] = ['\u{2068}', '\u{2069}'];
 
 pub(crate) fn settle_until(
@@ -307,33 +308,61 @@ pub(crate) fn settle_until(
     }
 }
 
+pub(crate) fn settle_runtime_work(cx: &mut gpui::TestAppContext, rt: &tokio::runtime::Runtime) {
+    settle_until_runtime_quiet(cx, rt, forge_host::test_support::run_until_tasks_park);
+}
+
+pub(crate) fn settle_paused_runtime_work(
+    cx: &mut gpui::TestAppContext,
+    rt: &tokio::runtime::Runtime,
+) {
+    settle_until_runtime_quiet(cx, rt, pump);
+}
+
+fn settle_until_runtime_quiet(
+    cx: &mut gpui::TestAppContext,
+    rt: &tokio::runtime::Runtime,
+    run_tasks: fn(&tokio::runtime::Runtime),
+) {
+    let deadline = std::time::Instant::now() + PUMP_HANG_GUARD;
+    let mut quiet_rounds = 0;
+    let mut last_alive = usize::MAX;
+    while quiet_rounds < QUIET_ROUNDS_TO_SETTLE {
+        settle_one_runtime_round(cx, rt, run_tasks);
+        let alive = alive_tasks(rt);
+        quiet_rounds = if alive == last_alive {
+            quiet_rounds + 1
+        } else {
+            0
+        };
+        last_alive = alive;
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the runtime never went quiet"
+        );
+    }
+}
+
+fn settle_one_runtime_round(
+    cx: &mut gpui::TestAppContext,
+    rt: &tokio::runtime::Runtime,
+    run_tasks: fn(&tokio::runtime::Runtime),
+) {
+    cx.run_until_parked();
+    run_tasks(rt);
+    rt.block_on(within_hang_guard(async {
+        tokio::task::spawn_blocking(|| ()).await.expect("fence");
+    }));
+    run_tasks(rt);
+    cx.run_until_parked();
+}
+
 pub(crate) fn settle_until_tasks_drain_to(
     cx: &mut gpui::TestAppContext,
     rt: &tokio::runtime::Runtime,
     background_tasks: usize,
 ) {
     settle_until(cx, rt, |_| alive_tasks(rt) <= background_tasks);
-    cx.run_until_parked();
-}
-
-pub(crate) fn serial_blocking_runtime() -> tokio::runtime::Runtime {
-    tokio::runtime::Builder::new_current_thread()
-        .max_blocking_threads(1)
-        .enable_all()
-        .build()
-        .expect("current-thread runtime")
-}
-
-pub(crate) fn settle_until_blocking_work_finishes(
-    cx: &mut gpui::TestAppContext,
-    rt: &tokio::runtime::Runtime,
-) {
-    cx.run_until_parked();
-    pump(rt);
-    rt.block_on(within_hang_guard(async {
-        tokio::task::spawn_blocking(|| ()).await.expect("fence");
-    }));
-    pump(rt);
     cx.run_until_parked();
 }
 
@@ -1356,4 +1385,66 @@ pub(crate) fn start_failure(detail: &str) -> forge_runtime::IntegrationStartErro
             detail,
         )),
     )
+}
+
+#[gpui::test]
+fn a_quiet_runtime_proves_slow_blocking_work_and_its_awaiting_task_finished(
+    cx: &mut gpui::TestAppContext,
+) {
+    let rt = runtime();
+    let finished = Arc::new(AtomicUsize::new(0));
+    let recorded = Arc::clone(&finished);
+    rt.spawn(async move {
+        tokio::task::spawn_blocking(|| std::thread::sleep(std::time::Duration::from_millis(20)))
+            .await
+            .expect("first job");
+        tokio::task::spawn_blocking(move || recorded.store(1, Ordering::SeqCst))
+            .await
+            .expect("second job");
+    });
+
+    settle_runtime_work(cx, &rt);
+
+    assert_eq!(finished.load(Ordering::SeqCst), 1);
+}
+
+#[gpui::test]
+fn a_quiet_runtime_lets_a_chain_longer_than_any_pump_run_to_its_end(cx: &mut gpui::TestAppContext) {
+    const NESTED_SPAWNS: usize = 300;
+
+    fn descend(depth: usize, bottom: Arc<AtomicUsize>) {
+        tokio::spawn(async move {
+            tokio::task::yield_now().await;
+            if depth == 0 {
+                bottom.store(1, Ordering::SeqCst);
+            } else {
+                descend(depth - 1, bottom);
+            }
+        });
+    }
+
+    let rt = runtime();
+    let reached_the_bottom = Arc::new(AtomicUsize::new(0));
+    {
+        let _entered = rt.enter();
+        descend(NESTED_SPAWNS, Arc::clone(&reached_the_bottom));
+    }
+
+    settle_runtime_work(cx, &rt);
+
+    assert_eq!(reached_the_bottom.load(Ordering::SeqCst), 1);
+}
+
+#[gpui::test]
+fn a_task_parked_on_a_gate_does_not_keep_the_runtime_from_going_quiet(
+    cx: &mut gpui::TestAppContext,
+) {
+    let rt = runtime();
+    let (gate, gated) = tokio::sync::oneshot::channel::<()>();
+    let waiting = rt.spawn(gated);
+
+    settle_runtime_work(cx, &rt);
+
+    assert!(!waiting.is_finished());
+    drop(gate);
 }

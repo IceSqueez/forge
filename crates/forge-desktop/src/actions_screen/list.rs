@@ -777,8 +777,8 @@ mod tests {
 
     use super::*;
     use crate::test_support::{
-        Declares, StubEventLog, StubHistory, StubOverlays, StubTrigger, pump, runtime,
-        stub_catalog, test_backend, trigger_registry,
+        Declares, StubEventLog, StubHistory, StubOverlays, StubTrigger, runtime, stub_catalog,
+        test_backend, trigger_registry,
     };
     use forge_components::Presentation;
 
@@ -947,10 +947,7 @@ mod tests {
         }
 
         fn settle(&self, cx: &mut gpui::TestAppContext) {
-            for _ in 0..3 {
-                pump(&self.rt);
-                cx.run_until_parked();
-            }
+            crate::test_support::settle_runtime_work(cx, &self.rt);
         }
 
         fn set_filter(&self, cx: &mut gpui::TestAppContext, filter: ActionsFilter) {

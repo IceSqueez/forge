@@ -55,7 +55,7 @@ pub struct Tracker {
     started: HashMap<EventId, (u64, usize)>,
     action_ids: HashMap<String, usize>,
     counts: Vec<ActionCounts>,
-    latencies: HashMap<(usize, usize, Leg), Vec<u32>>,
+    latencies: HashMap<(usize, Option<usize>, Leg), Vec<u32>>,
     pub twitch_events: u64,
     pub uncorrelated: u64,
     pub observer_dropped: u64,
@@ -151,7 +151,7 @@ impl Tracker {
             return;
         };
         self.started.insert(event.id, (seq, action));
-        self.record_for(seq, action, Leg::Start, arrived);
+        self.record_for(seq, Some(action), Leg::Start, arrived);
     }
 
     fn on_done(&mut self, event: &Event, arrived: Instant) {
@@ -172,7 +172,7 @@ impl Tracker {
         {
             counts.failed += 1;
         }
-        self.record_for(seq, action, Leg::Done, arrived);
+        self.record_for(seq, Some(action), Leg::Done, arrived);
     }
 
     fn on_skipped(&mut self, event: &Event) {
@@ -233,10 +233,10 @@ impl Tracker {
     }
 
     fn record(&mut self, seq: u64, leg: Leg, arrived: Instant) {
-        self.record_for(seq, usize::MAX, leg, arrived);
+        self.record_for(seq, None, leg, arrived);
     }
 
-    fn record_for(&mut self, seq: u64, action: usize, leg: Leg, arrived: Instant) {
+    fn record_for(&mut self, seq: u64, action: Option<usize>, leg: Leg, arrived: Instant) {
         let Some(injected) = usize::try_from(seq).ok().and_then(|i| self.injected.get(i)) else {
             self.uncorrelated += 1;
             return;
@@ -249,9 +249,7 @@ impl Tracker {
     }
 
     pub fn latencies(&self, phase: usize, action: Option<usize>, leg: Leg) -> Option<&[u32]> {
-        self.latencies
-            .get(&(phase, action.unwrap_or(usize::MAX), leg))
-            .map(Vec::as_slice)
+        self.latencies.get(&(phase, action, leg)).map(Vec::as_slice)
     }
 
     pub fn counts(&self, action: usize) -> &ActionCounts {

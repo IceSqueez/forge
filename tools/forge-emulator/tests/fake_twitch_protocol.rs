@@ -2,6 +2,8 @@
 use forge_platform_twitch::vocabulary::topics;
 use std::time::Duration;
 
+mod support;
+
 use forge_emulator::EmulatorError;
 use forge_emulator::fakes::twitch::{
     CredentialCheck, FakeGoal, FakeTwitch, FakeTwitchConfig, Viewer, ViewerBadge,
@@ -60,20 +62,8 @@ fn subscription_body(subscription_type: &str, session_id: &str) -> Value {
     })
 }
 
-fn authorized(
-    client: &reqwest::Client,
-    method: reqwest::Method,
-    url: String,
-) -> reqwest::RequestBuilder {
-    let account = TwitchAccount::default();
-    client
-        .request(method, url)
-        .header("Authorization", format!("Bearer {}", account.access_token))
-        .header("Client-Id", account.client_id)
-}
-
 async fn post_json(fake: &FakeTwitch, path: &str, body: &Value) -> (u16, Value) {
-    let response = authorized(
+    let response = support::twitch_authorized(
         &reqwest::Client::new(),
         reqwest::Method::POST,
         format!("{}{path}", fake.api_base_url()),
@@ -279,7 +269,7 @@ async fn unmodeled_requests_answer_404_and_are_flagged_unexpected() {
 
     for (method, path) in &cases {
         let url = format!("{}{path}?broadcaster_id=100000001", fake.api_base_url());
-        let status = authorized(&client, method.clone(), url)
+        let status = support::twitch_authorized(&client, method.clone(), url)
             .send()
             .await
             .unwrap()
@@ -490,7 +480,7 @@ async fn user_lookup_resolves_the_broadcaster_and_known_viewers_only() {
 
     for (query, expected_ids) in cases {
         let url = format!("{}/helix/users{query}", fake.api_base_url());
-        let body: Value = authorized(&client, reqwest::Method::GET, url)
+        let body: Value = support::twitch_authorized(&client, reqwest::Method::GET, url)
             .send()
             .await
             .unwrap()
@@ -540,7 +530,7 @@ async fn seeded_goals_are_served_only_to_their_broadcaster() {
 
     for (query, expected_status, expected_ids) in &cases {
         let url = format!("{}/helix/goals{query}", fake.api_base_url());
-        let response = authorized(&client, reqwest::Method::GET, url)
+        let response = support::twitch_authorized(&client, reqwest::Method::GET, url)
             .send()
             .await
             .unwrap();
@@ -596,7 +586,7 @@ async fn shield_mode_status_reads_inactive_for_the_broadcaster_only() {
             "{}/helix/moderation/shield_mode{query}",
             fake.api_base_url()
         );
-        let response = authorized(&client, reqwest::Method::GET, url)
+        let response = support::twitch_authorized(&client, reqwest::Method::GET, url)
             .send()
             .await
             .unwrap();
@@ -637,13 +627,14 @@ async fn a_viewer_who_renamed_is_found_by_the_new_login_only() {
     let lookup = |login: &'static str| {
         let url = format!("{}/helix/users?login={login}", fake.api_base_url());
         async move {
-            let body: Value = authorized(&reqwest::Client::new(), reqwest::Method::GET, url)
-                .send()
-                .await
-                .unwrap()
-                .json()
-                .await
-                .unwrap();
+            let body: Value =
+                support::twitch_authorized(&reqwest::Client::new(), reqwest::Method::GET, url)
+                    .send()
+                    .await
+                    .unwrap()
+                    .json()
+                    .await
+                    .unwrap();
             body["data"].as_array().unwrap().len()
         }
     };
@@ -713,7 +704,7 @@ async fn post_whisper(fake: &FakeTwitch, from: &str, to: &str, body: &Value) -> 
         "{}/helix/whispers?from_user_id={from}&to_user_id={to}",
         fake.api_base_url()
     );
-    authorized(&reqwest::Client::new(), reqwest::Method::POST, url)
+    support::twitch_authorized(&reqwest::Client::new(), reqwest::Method::POST, url)
         .json(body)
         .send()
         .await
@@ -826,7 +817,7 @@ async fn channel_followers_answers_from_the_injected_follows() {
 
     for (query, expected_status, expected_rows) in &cases {
         let url = format!("{}/helix/channels/followers{query}", fake.api_base_url());
-        let response = authorized(&client, reqwest::Method::GET, url)
+        let response = support::twitch_authorized(&client, reqwest::Method::GET, url)
             .send()
             .await
             .unwrap();
@@ -886,7 +877,7 @@ async fn fake_with_bans(events: &[(&str, Value)]) -> (FakeTwitch, Socket) {
 
 async fn get_banned(fake: &FakeTwitch, query: &str) -> (reqwest::StatusCode, Value) {
     let url = format!("{}/helix/moderation/banned{query}", fake.api_base_url());
-    let response = authorized(&reqwest::Client::new(), reqwest::Method::GET, url)
+    let response = support::twitch_authorized(&reqwest::Client::new(), reqwest::Method::GET, url)
         .send()
         .await
         .unwrap();
@@ -896,10 +887,11 @@ async fn get_banned(fake: &FakeTwitch, query: &str) -> (reqwest::StatusCode, Val
 
 async fn delete_ban(fake: &FakeTwitch, query: &str) -> (reqwest::StatusCode, String) {
     let url = format!("{}/helix/moderation/bans{query}", fake.api_base_url());
-    let response = authorized(&reqwest::Client::new(), reqwest::Method::DELETE, url)
-        .send()
-        .await
-        .unwrap();
+    let response =
+        support::twitch_authorized(&reqwest::Client::new(), reqwest::Method::DELETE, url)
+            .send()
+            .await
+            .unwrap();
     let status = response.status();
     (status, response.text().await.unwrap())
 }

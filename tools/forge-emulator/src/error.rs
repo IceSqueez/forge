@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use thiserror::Error;
 
-use crate::harness::scenario::ScenarioProblem;
+use crate::Problem;
 
 #[derive(Debug, Error)]
 pub enum EmulatorError {
@@ -178,27 +178,28 @@ pub enum EmulatorError {
     #[error("{}: invalid scenario{}", path.display(), listed(problems))]
     ScenarioInvalid {
         path: PathBuf,
-        problems: Vec<ScenarioProblem>,
+        problems: Vec<Problem>,
     },
 
     #[error("stress profile {}: {reason}", path.display())]
     StressProfileUnreadable { path: PathBuf, reason: String },
 
-    #[error("{}: invalid stress profile{}", path.display(), lines(problems))]
+    #[error("{}:{line}:{column}: {reason}", path.display())]
+    StressProfileSyntax {
+        path: PathBuf,
+        line: usize,
+        column: usize,
+        reason: String,
+    },
+
+    #[error("{}: invalid stress profile{}", path.display(), listed(problems))]
     StressProfileInvalid {
         path: PathBuf,
-        problems: Vec<String>,
+        problems: Vec<Problem>,
     },
 }
 
-fn lines(problems: &[String]) -> String {
-    problems
-        .iter()
-        .map(|problem| format!("\n  {problem}"))
-        .collect()
-}
-
-fn listed(problems: &[ScenarioProblem]) -> String {
+fn listed(problems: &[Problem]) -> String {
     problems
         .iter()
         .map(|problem| format!("\n  {problem}"))

@@ -380,7 +380,6 @@ mod tests {
         assert_eq!(resp.id, Some("5".into()));
         let json = serialize_response_frame(&resp);
         assert_eq!(json["status"], "ok");
-        assert!(json["actions"].is_array());
         assert_eq!(json["actions"].as_array().unwrap().len(), 0);
     }
 
@@ -532,10 +531,6 @@ mod tests {
         let resp = dispatch(req, &ctx).await;
         let json = serialize_response_frame(&resp);
         assert_eq!(json["status"], "ok");
-        assert!(json["version"].is_string());
-        assert!(json["uptime_seconds"].is_number());
-        assert!(json["connected_clients"].is_array());
-        assert!(json["bandwidth"].is_object());
     }
 
     #[tokio::test]
@@ -567,7 +562,6 @@ mod tests {
         let resp = dispatch(req, &ctx).await;
         let json = serialize_response_frame(&resp);
         assert_eq!(json["status"], "ok");
-        assert!(json["events"].is_array());
         assert_eq!(json["events"].as_array().unwrap().len(), 0);
     }
 
@@ -779,7 +773,10 @@ mod tests {
         assert_eq!(resp.id, Some("2".into()));
         let json = serialize_response_frame(&resp);
         assert_eq!(json["status"], "ok");
-        assert!(json["subscribed"].is_array());
+        assert_eq!(
+            json["subscribed"],
+            serde_json::json!([{ "source": "twitch", "type": "chat.message" }])
+        );
 
         let subs = ctx.bus_adapter.current_subscriptions(ctx.client.id).await;
         assert!(subs.contains(&EventFilter::new(
@@ -812,7 +809,10 @@ mod tests {
         assert_eq!(resp.id, Some("3".into()));
         let json = serialize_response_frame(&resp);
         assert_eq!(json["status"], "ok");
-        assert!(json["unsubscribed"].is_array());
+        assert_eq!(
+            json["unsubscribed"],
+            serde_json::json!([{ "source": "twitch", "type": "chat.message" }])
+        );
 
         let subs = ctx.bus_adapter.current_subscriptions(ctx.client.id).await;
         assert!(!subs.contains(&filter));
@@ -930,7 +930,7 @@ mod tests {
         assert!(clients.is_empty());
         assert_eq!(json["bandwidth"]["outbound_bytes_total"], 0u64);
         assert_eq!(json["bandwidth"]["peak_outbound_bytes_per_second"], 0u64);
-        assert!(json["available_platforms"].is_array());
+        assert_eq!(json["available_platforms"], serde_json::json!([]));
     }
 
     #[tokio::test]
@@ -950,10 +950,9 @@ mod tests {
         let clients = json["connected_clients"].as_array().unwrap();
         assert_eq!(clients.len(), 1);
         assert!(clients[0]["client_id"].as_str().unwrap().starts_with("ws_"));
-        assert!(clients[0]["bytes_sent"].is_number());
-        assert!(clients[0]["uptime_seconds"].is_number());
-        assert!(clients[0]["events_per_second"].is_number());
-        assert!(clients[0]["subscriptions"].is_array());
+        assert_eq!(clients[0]["bytes_sent"], 0);
+        assert_eq!(clients[0]["events_per_second"], 0.0);
+        assert_eq!(clients[0]["subscriptions"], serde_json::json!([]));
     }
 
     fn sample_global_entry() -> GlobalEntry {
@@ -1138,7 +1137,6 @@ mod tests {
         let resp = dispatch(req, &ctx).await;
         let json = serialize_response_frame(&resp);
         assert_eq!(json["status"], "ok");
-        assert!(json["globals"].is_array());
         assert_eq!(json["globals"].as_array().unwrap().len(), 0);
     }
 

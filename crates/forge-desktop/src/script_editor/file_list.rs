@@ -519,7 +519,7 @@ mod tests {
     use super::*;
     use crate::i18n::install_language;
     use crate::test_support::{
-        StubEventLog, action_running, pump, runtime, step, test_backend_with_scripts_and_actions,
+        StubEventLog, action_running, runtime, step, test_backend_with_scripts_and_actions,
     };
 
     const STORED: [&str; 4] = ["zeta", "beta", "gamma", "alpha"];
@@ -628,10 +628,7 @@ mod tests {
         }
 
         fn settle(&mut self) {
-            for _ in 0..6 {
-                pump(&self.rt);
-                self.vcx.run_until_parked();
-            }
+            crate::test_support::settle_runtime_work(&mut self.vcx, &self.rt);
         }
 
         fn id_of(&self, name: &str) -> ScriptId {

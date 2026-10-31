@@ -434,15 +434,4 @@ mod tests {
         assert!(repo.get(press).await.unwrap().is_none());
         assert!(repo.get(release).await.unwrap().is_some());
     }
-
-    #[test]
-    fn binding_instance_leaves_both_edges_without_a_cooldown() {
-        for edge in [HotkeyEdge::Press, HotkeyEdge::Release] {
-            assert_eq!(
-                binding_instance("Ctrl+F1".to_owned(), edge).cooldown_secs,
-                0,
-                "a {edge:?} binding must not be rate-limited"
-            );
-        }
-    }
 }

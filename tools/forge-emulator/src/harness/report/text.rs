@@ -42,6 +42,13 @@ pub(crate) fn compact(value: &Value, max_chars: usize) -> String {
     clip(&value.to_string(), max_chars)
 }
 
+pub(crate) fn snippet_kind(snippet: &Value) -> &str {
+    snippet
+        .get("type")
+        .and_then(Value::as_str)
+        .unwrap_or("message")
+}
+
 pub(crate) fn span_ms(ms: u64) -> String {
     if ms > 0 && ms.is_multiple_of(1000) {
         format!("{}s", ms / 1000)

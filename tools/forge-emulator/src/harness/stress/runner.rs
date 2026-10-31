@@ -21,8 +21,8 @@ use super::profile::{KneeRule, StressProfile};
 use super::tracker::Tracker;
 use crate::EmulatorError;
 use crate::fakes::twitch::FakeTwitch;
-use crate::fixture::TwitchAccount;
-use crate::harness::control::{EventFilter, Observation};
+use crate::fixture::{SeedReport, TwitchAccount};
+use crate::harness::control::{ControlClient, EventFilter, EventStream, Observation};
 use crate::harness::launch::{
     ForgeCommand, GameGuard, LaunchOptions, LaunchedForge, LivePaths, launch_forge,
 };
@@ -102,6 +102,15 @@ impl PhaseResult {
     }
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
+pub struct ActionSnapshot {
+    pub started: u64,
+    pub done: u64,
+    pub skipped: u64,
+    pub unstarted: u64,
+    pub in_flight: u64,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct Sample {
     pub at_ms: u64,
@@ -119,7 +128,7 @@ pub struct Sample {
     pub page_dropped: Vec<u64>,
     pub replies: u64,
     pub other_kinds: BTreeMap<String, u64>,
-    pub actions: BTreeMap<String, [u64; 5]>,
+    pub actions: BTreeMap<String, ActionSnapshot>,
     pub warnings: BTreeMap<String, u64>,
     pub log_error: Option<String>,
 }
@@ -196,130 +205,59 @@ async fn drive(
     let LaunchedForge {
         process,
         client,
-        mut events,
+        events,
         seed,
         ..
     } = launched;
     let clock = Instant::now();
     let data_dir = process.data_dir().to_owned();
-    let log_dir = process.log_dir();
-    let pid = process.pid();
     let version = client.forge_version().await;
 
-    let mut filters = vec![EventFilter {
-        source: Some(EventSource::Twitch),
-        kind: None,
-    }];
-    filters.extend(OBSERVED_KINDS.iter().map(|kind| EventFilter {
-        source: None,
-        kind: Some((*kind).to_owned()),
-    }));
-    client.subscribe(&filters).await?;
-
+    subscribe_observer(&client).await?;
     let actions = measured_actions(profile);
-    let runs = profile
-        .stimuli
-        .iter()
-        .map(|stimulus| {
-            stimulus
-                .runs
-                .iter()
-                .filter_map(|name| actions.iter().position(|action| action == name))
-                .collect()
-        })
-        .collect();
-    let mut tracker = Tracker::new(actions.clone(), runs, profile.pages.len());
-    for command in &seed.chat_commands {
-        tracker.learn_action_id(command.action_id.to_string(), &command.action_name);
-    }
-    for trigger in &seed.event_triggers {
-        tracker.learn_action_id(trigger.action_id.to_string(), &trigger.action_name);
-    }
-    let tracker: Shared<Tracker> = Arc::new(Mutex::new(tracker));
-
+    let tracker = seeded_tracker(profile, &actions, &seed);
     for (name, value) in &profile.globals {
         client.set_global(name, value, true).await?;
     }
     await_subscriptions(fake, &profile.subscription_types()).await?;
     let pages = OverlayPages::for_seed(&seed)?;
-    let mut opened: Vec<Arc<OverlayPage>> = Vec::new();
-    for name in &profile.pages {
-        pages.open_page(name, PAGE_TIMEOUT).await?;
-        if let Some(page) = pages.page(name) {
-            page.take_frames();
-            opened.push(page);
-        }
-    }
+    let opened = open_pages(&pages, &profile.pages).await?;
 
-    let background = TaskOwner::new();
-    let pump_tracker = Arc::clone(&tracker);
-    background.spawn(async move {
-        while let Some(observation) = events.next().await {
-            let arrived = Instant::now();
-            let mut tracker = lock(&pump_tracker);
-            match observation {
-                Observation::Event(event) => tracker.on_event(&event, arrived),
-                Observation::Dropped(count) => tracker.observer_dropped += count,
-                Observation::Undecodable { .. } => tracker.uncorrelated += 1,
-            }
-        }
-    });
-    let frame_tracker = Arc::clone(&tracker);
-    let frame_pages = opened.clone();
-    background.spawn(async move {
-        loop {
-            tokio::time::sleep(FRAME_POLL).await;
-            for (index, page) in frame_pages.iter().enumerate() {
-                let frames = page.take_frames();
-                if frames.is_empty() {
-                    continue;
-                }
-                let mut tracker = lock(&frame_tracker);
-                for frame in &frames {
-                    tracker.on_frame(index, &frame.raw, frame.arrived);
-                }
-            }
-        }
-    });
-    let mut replies = fake.tap_requests();
-    let reply_tracker = Arc::clone(&tracker);
-    background.spawn(async move {
-        while let Some(tapped) = replies.recv().await {
-            if tapped.request.path.ends_with("/chat/messages") {
-                lock(&reply_tracker).on_reply(tapped.request.body.as_ref(), tapped.arrived);
-            }
-        }
-    });
-
-    let phase_now: Shared<usize> = Arc::new(Mutex::new(0));
-    let samples: Shared<Vec<Sample>> = Arc::new(Mutex::new(Vec::new()));
-    let warnings_total: Shared<BTreeMap<String, u64>> = Arc::new(Mutex::new(BTreeMap::new()));
-    background.spawn(sample_loop(SampleLoop {
-        every: Duration::from_millis(profile.sample_ms),
-        probe: ProcessProbe::new(pid),
-        data_dir: data_dir.clone(),
-        log: LogTail::from_start(&log_dir),
-        clock,
+    let measurement = Measurement {
         tracker: Arc::clone(&tracker),
-        phase: Arc::clone(&phase_now),
-        samples: Arc::clone(&samples),
-        warnings_total: Arc::clone(&warnings_total),
-        actions: actions.clone(),
-    }));
+        phase_now: Arc::new(Mutex::new(0)),
+        samples: Arc::new(Mutex::new(Vec::new())),
+        warnings_total: Arc::new(Mutex::new(BTreeMap::new())),
+    };
+    let background = TaskOwner::new();
+    spawn_measurement(
+        &background,
+        &measurement,
+        events,
+        opened.clone(),
+        fake,
+        SampleLoopSetup {
+            every: Duration::from_millis(profile.sample_ms),
+            probe: ProcessProbe::new(process.pid()),
+            data_dir: data_dir.clone(),
+            log: LogTail::from_start(&process.log_dir()),
+            clock,
+            actions: actions.clone(),
+        },
+    );
 
     let generator = Generator {
         profile,
         account,
         fake,
         tracker: &tracker,
-        samples: &samples,
+        samples: &measurement.samples,
         mix: FloodMix::new(&profile.stimuli),
         clock,
     };
-    let phases = generator.run_all(&phase_now, &data_dir).await;
+    let phases = generator.run_all(&measurement.phase_now, &data_dir).await;
     background.shutdown(Duration::ZERO).await;
     let phases = phases?;
-
     pages.close();
     drop(opened);
     let mut process = process;
@@ -334,6 +272,13 @@ async fn drive(
             forced: exit.forced,
         });
 
+    let Measurement {
+        tracker: measured,
+        samples,
+        warnings_total,
+        ..
+    } = measurement;
+    drop(measured);
     let tracker = Arc::try_unwrap(tracker)
         .map(|mutex| mutex.into_inner().unwrap_or_else(PoisonError::into_inner))
         .map_err(|_| EmulatorError::InvalidLaunch {
@@ -353,6 +298,134 @@ async fn drive(
         data_dir,
         version,
     })
+}
+
+async fn subscribe_observer(client: &ControlClient) -> Result<(), EmulatorError> {
+    let mut filters = vec![EventFilter {
+        source: Some(EventSource::Twitch),
+        kind: None,
+    }];
+    filters.extend(OBSERVED_KINDS.iter().map(|kind| EventFilter {
+        source: None,
+        kind: Some((*kind).to_owned()),
+    }));
+    client.subscribe(&filters).await
+}
+
+fn seeded_tracker(
+    profile: &StressProfile,
+    actions: &[String],
+    seed: &SeedReport,
+) -> Shared<Tracker> {
+    let runs = profile
+        .stimuli
+        .iter()
+        .map(|stimulus| {
+            stimulus
+                .runs
+                .iter()
+                .filter_map(|name| actions.iter().position(|action| action == name))
+                .collect()
+        })
+        .collect();
+    let mut tracker = Tracker::new(actions.to_vec(), runs, profile.pages.len());
+    for command in &seed.chat_commands {
+        tracker.learn_action_id(command.action_id.to_string(), &command.action_name);
+    }
+    for trigger in &seed.event_triggers {
+        tracker.learn_action_id(trigger.action_id.to_string(), &trigger.action_name);
+    }
+    Arc::new(Mutex::new(tracker))
+}
+
+async fn open_pages(
+    pages: &OverlayPages,
+    names: &[String],
+) -> Result<Vec<Arc<OverlayPage>>, EmulatorError> {
+    let mut opened = Vec::new();
+    for name in names {
+        pages.open_page(name, PAGE_TIMEOUT).await?;
+        if let Some(page) = pages.page(name) {
+            page.take_frames();
+            opened.push(page);
+        }
+    }
+    Ok(opened)
+}
+
+struct Measurement {
+    tracker: Shared<Tracker>,
+    phase_now: Shared<usize>,
+    samples: Shared<Vec<Sample>>,
+    warnings_total: Shared<BTreeMap<String, u64>>,
+}
+
+struct SampleLoopSetup {
+    every: Duration,
+    probe: ProcessProbe,
+    data_dir: PathBuf,
+    log: LogTail,
+    clock: Instant,
+    actions: Vec<String>,
+}
+
+fn spawn_measurement(
+    background: &TaskOwner,
+    measurement: &Measurement,
+    mut events: EventStream,
+    opened: Vec<Arc<OverlayPage>>,
+    fake: &FakeTwitch,
+    setup: SampleLoopSetup,
+) {
+    let pump_tracker = Arc::clone(&measurement.tracker);
+    background.spawn(async move {
+        while let Some(observation) = events.next().await {
+            let arrived = Instant::now();
+            let mut tracker = lock(&pump_tracker);
+            match observation {
+                Observation::Event(event) => tracker.on_event(&event, arrived),
+                Observation::Dropped(count) => tracker.observer_dropped += count,
+                Observation::Undecodable { .. } => tracker.uncorrelated += 1,
+            }
+        }
+    });
+    let frame_tracker = Arc::clone(&measurement.tracker);
+    background.spawn(async move {
+        loop {
+            tokio::time::sleep(FRAME_POLL).await;
+            for (index, page) in opened.iter().enumerate() {
+                let frames = page.take_frames();
+                if frames.is_empty() {
+                    continue;
+                }
+                let mut tracker = lock(&frame_tracker);
+                for frame in &frames {
+                    tracker.on_frame(index, &frame.raw, frame.arrived);
+                }
+            }
+        }
+    });
+    let mut replies = fake.tap_requests();
+    let reply_tracker = Arc::clone(&measurement.tracker);
+    background.spawn(async move {
+        while let Some(tapped) = replies.recv().await {
+            if tapped.request.path.ends_with("/chat/messages") {
+                lock(&reply_tracker).on_reply(tapped.request.body.as_ref(), tapped.arrived);
+            }
+        }
+    });
+    background.spawn(sample_loop(SampleLoop {
+        every: setup.every,
+        probe: setup.probe,
+        data_dir: setup.data_dir,
+        log: setup.log,
+        clock: setup.clock,
+        tracker: Arc::clone(&measurement.tracker),
+        phase: Arc::clone(&measurement.phase_now),
+        samples: Arc::clone(&measurement.samples),
+        warnings_total: Arc::clone(&measurement.warnings_total),
+        actions: setup.actions,
+    }));
 }
 
 fn measured_actions(profile: &StressProfile) -> Vec<String> {
@@ -385,6 +458,29 @@ async fn await_subscriptions(fake: &FakeTwitch, types: &[&str]) -> Result<(), Em
     .await
 }
 
+#[derive(Debug, Default, PartialEq)]
+struct RampProgress {
+    last_stable: Option<f64>,
+    knee_found: bool,
+}
+
+impl RampProgress {
+    fn advance(&mut self, rate: u32, verdict: &PhaseVerdict) -> bool {
+        match verdict {
+            PhaseVerdict::Ok => self.last_stable = Some(f64::from(rate)),
+            PhaseVerdict::Degraded(_) => self.knee_found = true,
+            PhaseVerdict::Unjudged(_) => {}
+        }
+        !self.knee_found
+    }
+
+    fn burst_base(&self, rates: &[u32]) -> f64 {
+        self.last_stable
+            .or_else(|| rates.first().map(|rate| f64::from(*rate)))
+            .unwrap_or(1.0)
+    }
+}
+
 struct Generator<'a> {
     profile: &'a StressProfile,
     account: &'a TwitchAccount,
@@ -403,8 +499,7 @@ impl Generator<'_> {
     ) -> Result<Vec<PhaseResult>, EmulatorError> {
         let profile = self.profile;
         let mut results: Vec<PhaseResult> = Vec::new();
-        let mut last_stable: Option<f64> = None;
-        let mut knee_found = false;
+        let mut ramp = RampProgress::default();
         for rate in &profile.ramp.rates {
             let phase = Phase {
                 label: format!("ramp {rate}/s"),
@@ -421,15 +516,10 @@ impl Generator<'_> {
                 "forge-emulator: {} sent {} of {} owed - {}",
                 result.phase.label, result.sent, result.owed, result.verdict
             );
-            let verdict = result.verdict.clone();
+            let carries_on = ramp.advance(*rate, &result.verdict);
             results.push(result);
-            match verdict {
-                PhaseVerdict::Ok => last_stable = Some(f64::from(*rate)),
-                PhaseVerdict::Degraded(_) => {
-                    knee_found = true;
-                    break;
-                }
-                PhaseVerdict::Unjudged(_) => {}
+            if !carries_on {
+                break;
             }
         }
         let recovery = |label: &str| Phase {
@@ -444,9 +534,7 @@ impl Generator<'_> {
         result.read_tables(data_dir).await;
         results.push(result);
 
-        let base = last_stable
-            .or_else(|| profile.ramp.rates.first().map(|rate| f64::from(*rate)))
-            .unwrap_or(1.0);
+        let base = ramp.burst_base(&profile.ramp.rates);
         let burst = Phase {
             label: format!(
                 "burst {:.0}/s ({}x last stable)",
@@ -468,7 +556,7 @@ impl Generator<'_> {
             .await?;
         result.read_tables(data_dir).await;
         results.push(result);
-        if !knee_found {
+        if !ramp.knee_found {
             eprintln!("forge-emulator: the ramp ended without reaching a knee");
         }
         Ok(results)
@@ -753,13 +841,13 @@ async fn sample_loop(mut state: SampleLoop) {
                         let counts = tracker.counts(index);
                         (
                             name.clone(),
-                            [
-                                counts.started,
-                                counts.done,
-                                counts.skipped_total(),
-                                tracker.unstarted(index),
-                                tracker.in_flight(index),
-                            ],
+                            ActionSnapshot {
+                                started: counts.started,
+                                done: counts.done,
+                                skipped: counts.skipped_total(),
+                                unstarted: tracker.unstarted(index),
+                                in_flight: tracker.in_flight(index),
+                            },
                         )
                     })
                     .collect(),
@@ -801,6 +889,55 @@ pub(super) mod tests {
     const WATCHED: &str = "Chat";
     const WATCHED_STIMULUS: usize = 0;
     const WATCHED_ACTION_ID: &str = "01CHAT";
+
+    fn ramp_over(verdicts: &[(u32, PhaseVerdict)]) -> (RampProgress, usize) {
+        let mut ramp = RampProgress::default();
+        let walked = verdicts
+            .iter()
+            .take_while(|(rate, verdict)| ramp.advance(*rate, verdict))
+            .count();
+        (ramp, walked)
+    }
+
+    #[test]
+    fn the_ramp_stops_at_the_knee_and_keeps_the_last_healthy_rate() {
+        let (ramp, walked) = ramp_over(&[
+            (10, PhaseVerdict::Ok),
+            (20, PhaseVerdict::Ok),
+            (40, PhaseVerdict::Degraded("slow".to_owned())),
+            (80, PhaseVerdict::Ok),
+        ]);
+        assert_eq!(
+            ramp,
+            RampProgress {
+                last_stable: Some(20.0),
+                knee_found: true,
+            }
+        );
+        assert_eq!(walked, 2);
+    }
+
+    #[test]
+    fn an_unjudged_step_neither_ends_the_ramp_nor_counts_as_stable() {
+        let (ramp, walked) = ramp_over(&[
+            (10, PhaseVerdict::Ok),
+            (20, PhaseVerdict::Unjudged("dropped".to_owned())),
+            (40, PhaseVerdict::Ok),
+        ]);
+        assert_eq!(walked, 3);
+        assert_eq!(ramp.last_stable, Some(40.0));
+        assert!(!ramp.knee_found);
+    }
+
+    #[test]
+    fn the_burst_builds_on_the_last_stable_rate_else_the_first_rate() {
+        let stable = RampProgress {
+            last_stable: Some(20.0),
+            knee_found: true,
+        };
+        assert_eq!(stable.burst_base(&[10, 20, 40]), 20.0);
+        assert_eq!(RampProgress::default().burst_base(&[10, 20]), 10.0);
+    }
 
     fn knee() -> KneeRule {
         KneeRule {

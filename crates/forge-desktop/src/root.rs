@@ -1089,7 +1089,7 @@ mod tests {
     use super::*;
     use crate::home_stats::Integration;
     use crate::test_support::{
-        held_queue_scheduler, hold_one_dispatch, pump, runtime, test_backend, writes_to,
+        held_queue_scheduler, hold_one_dispatch, runtime, test_backend, writes_to,
     };
 
     fn queue(id: QueueId) -> Queue {
@@ -1245,8 +1245,6 @@ mod tests {
         }
     }
 
-    const BOOT_SETTLE_ROUNDS: usize = 3;
-
     #[gpui::test]
     fn boot_with_an_undecodable_stored_shortcut_value_leaves_it_unwritten(cx: &mut TestAppContext) {
         let key = crate::shortcut_overrides::KEYBOARD_SHORTCUTS.name();
@@ -1259,10 +1257,7 @@ mod tests {
             backend as Arc<dyn forge_storage::DataProvider>,
             rt.handle().clone(),
         );
-        for _ in 0..BOOT_SETTLE_ROUNDS {
-            pump(&rt);
-            cx.run_until_parked();
-        }
+        crate::test_support::settle_runtime_work(cx, &rt);
 
         assert_eq!(writes_to(&mut writes, key), Vec::<String>::new());
     }

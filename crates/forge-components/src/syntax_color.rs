@@ -55,18 +55,35 @@ pub fn highlighted_text(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::palette::{AccentColor, ThemeId};
+    use crate::palette::{AccentColor, FORGE_DEFAULT, ThemeId};
 
-    const CLASSES: [TokenClass; 8] = [
-        TokenClass::Keyword,
-        TokenClass::Function,
-        TokenClass::String,
-        TokenClass::Number,
-        TokenClass::Comment,
-        TokenClass::Variable,
-        TokenClass::Plain,
-        TokenClass::Punctuation,
-    ];
+    #[test]
+    fn code_classes_paint_the_design_colors_of_the_default_theme_in_every_code_language() {
+        let expected = [
+            (TokenClass::Keyword, 0x00c9_a6f0),
+            (TokenClass::Function, 0x008b_e9fd),
+            (TokenClass::String, 0x0050_fa7b),
+            (TokenClass::Number, 0x00ff_66d9),
+            (TokenClass::Comment, 0x006b_6884),
+            (TokenClass::Variable, 0x00ff_b86c),
+            (TokenClass::Plain, 0x00f0_eef8),
+            (TokenClass::Punctuation, 0x00c9_c4dd),
+        ];
+        for language in [
+            Language::Html,
+            Language::Css,
+            Language::JavaScript,
+            Language::Rhai,
+        ] {
+            for (class, color) in expected {
+                assert_eq!(
+                    token_color(language, class, &FORGE_DEFAULT),
+                    Hsla::from(gpui::rgb(color)),
+                    "{language:?} {class:?}"
+                );
+            }
+        }
+    }
 
     #[test]
     fn json_classes_use_data_viewer_colors_in_every_theme_whatever_the_accent() {
@@ -86,37 +103,6 @@ mod tests {
                         token_color(Language::Json, class, &palette),
                         Hsla::from(expected),
                         "{theme:?} {accent:?} {class:?}"
-                    );
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn code_classes_use_code_tokens_in_every_theme() {
-        for theme in ThemeId::ALL {
-            let palette = theme.palette();
-            for language in [
-                Language::Html,
-                Language::Css,
-                Language::JavaScript,
-                Language::Rhai,
-            ] {
-                for class in CLASSES {
-                    let expected = match class {
-                        TokenClass::Keyword => palette.code_keyword,
-                        TokenClass::Function => palette.code_fn,
-                        TokenClass::String => palette.code_str,
-                        TokenClass::Number => palette.code_num,
-                        TokenClass::Comment => palette.code_comment,
-                        TokenClass::Variable => palette.code_var,
-                        TokenClass::Plain => palette.text_primary,
-                        TokenClass::Punctuation => palette.text_secondary,
-                    };
-                    assert_eq!(
-                        token_color(language, class, &palette),
-                        Hsla::from(expected),
-                        "{theme:?} {language:?} {class:?}"
                     );
                 }
             }

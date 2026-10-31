@@ -841,11 +841,19 @@ mod tests {
 
         let standard_actions = standard.actions();
         let gated: Vec<&QuickAction> = standard_actions.iter().filter(|a| is_gated(a)).collect();
-        assert!(
-            gated.len() >= 6,
-            "expected every Polls and Predictions action, got {}",
-            gated.len()
-        );
+        for kind in [
+            sub_action_ids::POLL_START,
+            sub_action_ids::POLL_END,
+            sub_action_ids::PREDICTION_START,
+            sub_action_ids::PREDICTION_LOCK,
+            sub_action_ids::PREDICTION_RESOLVE,
+            sub_action_ids::PREDICTION_CANCEL,
+        ] {
+            assert!(
+                gated.iter().any(|a| a.subaction_template.kind_id == kind),
+                "{kind} must sit in a gated group"
+            );
+        }
         for a in gated {
             assert_eq!(
                 a.locked_reason,
@@ -952,7 +960,7 @@ mod tests {
             make_bundle_with_tier(ChatConnectionState::Connected, BroadcasterTier::Affiliate);
         let lists = bundle.option_lists();
 
-        let mut checked = 0;
+        let mut followers = std::collections::BTreeSet::new();
         for action in bundle.actions() {
             for (position, field) in action.fields.iter().enumerate() {
                 let Some(list) = option_list_of(field) else {
@@ -970,13 +978,15 @@ mod tests {
                         action.label.code_or_text(),
                         field.key
                     );
-                    checked += 1;
+                    followers.insert(field.key.clone());
                 }
             }
         }
         assert!(
-            checked >= 3,
-            "expected the settle and refund pairs, got {checked}"
+            [config_keys::WINNING_OUTCOME_ID, config_keys::REDEMPTION_ID]
+                .iter()
+                .all(|key| followers.contains(*key)),
+            "expected the settle and refund pairs, got {followers:?}"
         );
     }
 

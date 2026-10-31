@@ -103,9 +103,9 @@ pub struct FakeVTube {
 
 impl FakeVTube {
     pub async fn start(config: FakeVTubeConfig) -> Result<Self, EmulatorError> {
-        if let Some((field, problem)) = config.problems().into_iter().next() {
+        if let Some(problem) = config.problems().into_iter().next() {
             return Err(EmulatorError::InvalidFakeConfig {
-                reason: format!("{field} {problem}"),
+                reason: format!("{} {}", problem.location, problem.message),
             });
         }
         let listener = bind_loopback().await?;

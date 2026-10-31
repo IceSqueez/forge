@@ -2,7 +2,7 @@
 use forge_events::test_support::CapturingPublisher;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use forge_events::{Event, EventPublisher, PlatformConnectionChanged, TypedEvent};
 use forge_obs::vocabulary::picker_keys::SCENE_NAMES;
@@ -44,9 +44,7 @@ pub(crate) async fn bind_loopback() -> (TcpListener, u16) {
     (listener, port)
 }
 
-pub(crate) const WALL_BUDGET: Duration = Duration::from_secs(90);
-
-pub(crate) const REAL_CLOCK_POLL: Duration = Duration::from_millis(10);
+const REAL_CLOCK_POLL: Duration = Duration::from_millis(10);
 
 pub(crate) const SCENE: &str = "Main";
 const SOURCE_LIST: &str = "obs.sources";
@@ -63,7 +61,7 @@ pub(crate) const IDENTIFY_OP: u64 = 1;
 pub(crate) const OBS_SUCCESS: u16 = 100;
 pub(crate) const OBS_RESOURCE_NOT_FOUND: u16 = 600;
 
-pub(crate) use forge_test_support::settle_until;
+pub(crate) use forge_test_support::{HANG_GUARD, settle_until};
 
 #[derive(Clone, Copy)]
 pub(crate) enum Handshake {
@@ -386,6 +384,26 @@ pub(crate) fn completes_every_handshake(_: usize) -> Handshake {
     Handshake::Complete
 }
 
+pub(crate) fn only_the_first_handshake_completes(conn: usize) -> Handshake {
+    if conn == 0 {
+        Handshake::Complete
+    } else {
+        Handshake::Stall
+    }
+}
+
+pub(crate) fn the_first_two_handshakes_complete(conn: usize) -> Handshake {
+    if conn < 2 {
+        Handshake::Complete
+    } else {
+        Handshake::Stall
+    }
+}
+
+pub(crate) async fn finishes_promptly<F: Future>(work: F) -> Option<F::Output> {
+    tokio::time::timeout(HANG_GUARD, work).await.ok()
+}
+
 pub(crate) async fn connect_to(fake: &FakeObs, recorder: &Recorder) -> Arc<ObsClient> {
     connect_with_timing(fake, recorder, fast_retries()).await
 }
@@ -417,11 +435,13 @@ pub(crate) async fn settle_until_async<F: Future<Output = bool>>(
     what: &str,
     mut done: impl FnMut() -> F,
 ) {
-    let started = Instant::now();
-    while !done().await {
-        assert!(started.elapsed() < WALL_BUDGET, "never happened: {what}");
-        tokio::time::sleep(REAL_CLOCK_POLL).await;
-    }
+    let settled = tokio::time::timeout(HANG_GUARD, async {
+        while !done().await {
+            tokio::time::sleep(REAL_CLOCK_POLL).await;
+        }
+    })
+    .await;
+    assert!(settled.is_ok(), "never happened: {what}");
 }
 
 pub(crate) async fn every_earlier_dial_was_accepted(port: u16) {
@@ -432,7 +452,7 @@ pub(crate) async fn every_earlier_dial_was_accepted(port: u16) {
     )]
     let _ = probe.write_all(NOT_A_WEB_SOCKET_UPGRADE).await;
     let mut ignored = Vec::new();
-    let closed = tokio::time::timeout(WALL_BUDGET, probe.read_to_end(&mut ignored)).await;
+    let closed = tokio::time::timeout(HANG_GUARD, probe.read_to_end(&mut ignored)).await;
     assert!(closed.is_ok(), "the server never reached the probe dial");
 }
 

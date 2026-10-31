@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::Problem;
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FakeInput {
@@ -36,19 +38,22 @@ impl Default for FakeObsConfig {
 }
 
 impl FakeObsConfig {
-    pub fn problems(&self) -> Vec<(String, String)> {
+    pub fn problems(&self) -> Vec<Problem> {
         let mut problems = Vec::new();
         if self.scenes.is_empty() {
-            problems.push((
+            problems.push(Problem::new(
                 "scenes".to_owned(),
                 "needs at least one scene: OBS always has a program scene".to_owned(),
             ));
         }
         for (index, scene) in self.scenes.iter().enumerate() {
             if scene.trim().is_empty() {
-                problems.push((format!("scenes[{index}]"), "must not be blank".to_owned()));
+                problems.push(Problem::new(
+                    format!("scenes[{index}]"),
+                    "must not be blank".to_owned(),
+                ));
             } else if self.scenes[..index].contains(scene) {
-                problems.push((
+                problems.push(Problem::new(
                     format!("scenes[{index}]"),
                     format!("repeats `{scene}`; OBS scene names are unique"),
                 ));
@@ -57,14 +62,14 @@ impl FakeObsConfig {
         if let Some(current) = &self.current_scene
             && !self.scenes.contains(current)
         {
-            problems.push((
+            problems.push(Problem::new(
                 "current_scene".to_owned(),
                 format!("names `{current}`, which `scenes` does not list"),
             ));
         }
         for (index, input) in self.inputs.iter().enumerate() {
             if input.name.trim().is_empty() || input.kind.trim().is_empty() {
-                problems.push((
+                problems.push(Problem::new(
                     format!("inputs[{index}]"),
                     "needs a non-blank name and kind".to_owned(),
                 ));
@@ -72,14 +77,14 @@ impl FakeObsConfig {
                 .iter()
                 .any(|earlier| earlier.name == input.name)
             {
-                problems.push((
+                problems.push(Problem::new(
                     format!("inputs[{index}]"),
                     format!("repeats `{}`; OBS input names are unique", input.name),
                 ));
             }
         }
         if self.password.as_deref() == Some("") {
-            problems.push((
+            problems.push(Problem::new(
                 "password".to_owned(),
                 "must not be empty; omit it to run OBS without authentication".to_owned(),
             ));

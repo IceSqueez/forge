@@ -383,12 +383,6 @@ mod tests {
     }
 
     #[test]
-    fn map_badges_broadcaster() {
-        let badges = serde_json::json!([{ "set_id": "broadcaster", "id": "1", "info": "" }]);
-        assert_eq!(map_badges(Some(&badges)), vec![UserBadge::Broadcaster]);
-    }
-
-    #[test]
     fn map_badges_moderator_and_vip() {
         let badges = serde_json::json!([
             { "set_id": "moderator", "id": "1", "info": "" },
@@ -399,8 +393,9 @@ mod tests {
     }
 
     #[test]
-    fn map_badges_maps_extended_set_ids_to_their_variants() {
+    fn map_badges_maps_each_set_id_to_its_variant() {
         let cases = [
+            ("broadcaster", "", UserBadge::Broadcaster),
             ("partner", "", UserBadge::Partner),
             ("premium", "", UserBadge::Premium),
             ("founder", "", UserBadge::Founder),

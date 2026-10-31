@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::fmt;
 
 use forge_runtime::{OVERLAY_SEND_KIND_ID, OVERLAY_TARGET_KEY};
@@ -224,6 +225,15 @@ pub struct OverlayFixture {
     pub config: OverlayConfig,
 }
 
+fn invalid(reason: String) -> EmulatorError {
+    EmulatorError::InvalidFixture { reason }
+}
+
+fn first_duplicate<'a>(mut names: impl Iterator<Item = &'a str>) -> Option<&'a str> {
+    let mut seen = HashSet::new();
+    names.find(|name| !seen.insert(*name))
+}
+
 impl Fixture {
     pub fn chat_command_mvp() -> Self {
         Self {
@@ -278,7 +288,18 @@ impl Fixture {
     }
 
     pub fn validate(&self) -> Result<(), EmulatorError> {
-        let invalid = |reason: String| EmulatorError::InvalidFixture { reason };
+        self.validate_overlays()?;
+        self.validate_commands()?;
+        self.validate_triggers()?;
+        self.validate_webhooks()?;
+        self.validate_kick()?;
+        self.validate_youtube()?;
+        self.validate_monobank()?;
+        self.validate_queues()?;
+        self.validate_action_references()
+    }
+
+    fn validate_overlays(&self) -> Result<(), EmulatorError> {
         for (index, overlay) in self.overlays.iter().enumerate() {
             if overlay.display_name.trim().is_empty() {
                 return Err(invalid(format!(
@@ -291,16 +312,16 @@ impl Fixture {
                     overlay.display_name
                 )));
             }
-            if self.overlays[..index]
-                .iter()
-                .any(|earlier| earlier.display_name == overlay.display_name)
-            {
-                return Err(invalid(format!(
-                    "two overlays are both named `{}`, so a step could not tell them apart",
-                    overlay.display_name
-                )));
-            }
         }
+        match first_duplicate(self.overlays.iter().map(|o| o.display_name.as_str())) {
+            Some(name) => Err(invalid(format!(
+                "two overlays are both named `{name}`, so a step could not tell them apart"
+            ))),
+            None => Ok(()),
+        }
+    }
+
+    fn validate_commands(&self) -> Result<(), EmulatorError> {
         for command in &self.chat_commands {
             if command.phrase.is_empty() {
                 return Err(invalid(format!(
@@ -309,6 +330,10 @@ impl Fixture {
                 )));
             }
         }
+        Ok(())
+    }
+
+    fn validate_triggers(&self) -> Result<(), EmulatorError> {
         for trigger in &self.event_triggers {
             if trigger.trigger_kind.trim().is_empty() {
                 return Err(invalid(format!(
@@ -317,63 +342,79 @@ impl Fixture {
                 )));
             }
         }
+        Ok(())
+    }
+
+    fn validate_webhooks(&self) -> Result<(), EmulatorError> {
         for (index, webhook) in self.discord_webhooks.iter().enumerate() {
             if webhook.name.trim().is_empty() {
                 return Err(invalid(format!(
                     "discord_webhooks[{index}] has a blank name"
                 )));
             }
-            if self.discord_webhooks[..index]
-                .iter()
-                .any(|earlier| earlier.name == webhook.name)
-            {
+        }
+        match first_duplicate(self.discord_webhooks.iter().map(|w| w.name.as_str())) {
+            Some(name) => Err(invalid(format!(
+                "two Discord webhooks are both named `{name}`, so a step could not tell them apart"
+            ))),
+            None => Ok(()),
+        }
+    }
+
+    fn validate_kick(&self) -> Result<(), EmulatorError> {
+        let Some(kick) = &self.kick else {
+            return Ok(());
+        };
+        for (field, value) in [
+            ("client_id", &kick.client_id),
+            ("client_secret", &kick.client_secret),
+            ("username", &kick.username),
+            ("access_token", &kick.access_token),
+            ("refresh_token", &kick.refresh_token),
+        ] {
+            if value.trim().is_empty() {
                 return Err(invalid(format!(
-                    "two Discord webhooks are both named `{}`, so a step could not tell them apart",
-                    webhook.name
+                    "kick.{field} is blank, so forge could not reach the fake Kick"
                 )));
             }
         }
-        if let Some(kick) = &self.kick {
-            for (field, value) in [
-                ("client_id", &kick.client_id),
-                ("client_secret", &kick.client_secret),
-                ("username", &kick.username),
-                ("access_token", &kick.access_token),
-                ("refresh_token", &kick.refresh_token),
-            ] {
-                if value.trim().is_empty() {
-                    return Err(invalid(format!(
-                        "kick.{field} is blank, so forge could not reach the fake Kick"
-                    )));
-                }
-            }
-            if kick.user_id == 0 {
-                return Err(invalid(
-                    "kick.user_id is 0, which no Kick broadcaster has".to_owned(),
-                ));
-            }
-        }
-        if let Some(youtube) = &self.youtube {
-            for (field, value) in [
-                ("channel_id", &youtube.channel_id),
-                ("channel_title", &youtube.channel_title),
-                ("access_token", &youtube.access_token),
-                ("refresh_token", &youtube.refresh_token),
-            ] {
-                if value.trim().is_empty() {
-                    return Err(invalid(format!(
-                        "youtube.{field} is blank, so forge could not reach the fake YouTube"
-                    )));
-                }
-            }
-        }
-        if let Some(monobank) = &self.monobank
-            && monobank.jar_id.trim().is_empty()
-        {
+        if kick.user_id == 0 {
             return Err(invalid(
-                "monobank.jar_id is blank, so forge would have no jar to watch".to_owned(),
+                "kick.user_id is 0, which no Kick broadcaster has".to_owned(),
             ));
         }
+        Ok(())
+    }
+
+    fn validate_youtube(&self) -> Result<(), EmulatorError> {
+        let Some(youtube) = &self.youtube else {
+            return Ok(());
+        };
+        for (field, value) in [
+            ("channel_id", &youtube.channel_id),
+            ("channel_title", &youtube.channel_title),
+            ("access_token", &youtube.access_token),
+            ("refresh_token", &youtube.refresh_token),
+        ] {
+            if value.trim().is_empty() {
+                return Err(invalid(format!(
+                    "youtube.{field} is blank, so forge could not reach the fake YouTube"
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    fn validate_monobank(&self) -> Result<(), EmulatorError> {
+        match &self.monobank {
+            Some(monobank) if monobank.jar_id.trim().is_empty() => Err(invalid(
+                "monobank.jar_id is blank, so forge would have no jar to watch".to_owned(),
+            )),
+            _ => Ok(()),
+        }
+    }
+
+    fn validate_queues(&self) -> Result<(), EmulatorError> {
         for (index, queue) in self.queues.iter().enumerate() {
             if queue.name.trim().is_empty() {
                 return Err(invalid(format!("queues[{index}] has a blank name")));
@@ -384,17 +425,18 @@ impl Fixture {
                     queue.name
                 )));
             }
-            if queue.name == DEFAULT_QUEUE_NAME
-                || self.queues[..index]
-                    .iter()
-                    .any(|earlier| earlier.name == queue.name)
-            {
-                return Err(invalid(format!(
-                    "two queues are both named `{}`, so an action could not tell them apart",
-                    queue.name
-                )));
-            }
         }
+        let names = std::iter::once(DEFAULT_QUEUE_NAME)
+            .chain(self.queues.iter().map(|queue| queue.name.as_str()));
+        match first_duplicate(names) {
+            Some(name) => Err(invalid(format!(
+                "two queues are both named `{name}`, so an action could not tell them apart"
+            ))),
+            None => Ok(()),
+        }
+    }
+
+    fn validate_action_references(&self) -> Result<(), EmulatorError> {
         for action in self.actions() {
             if let Some(queue) = action.queue
                 && queue != DEFAULT_QUEUE_NAME

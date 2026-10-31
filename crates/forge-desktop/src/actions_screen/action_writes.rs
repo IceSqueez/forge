@@ -423,7 +423,7 @@ pub(in crate::actions_screen) mod tests {
 
     use super::super::editor::tests::view_with;
     use super::*;
-    use crate::test_support::{action_running, error_toasts, pump, pump_until, runtime, step};
+    use crate::test_support::{action_running, error_toasts, pump_until, runtime, step};
 
     pub(in crate::actions_screen) const FIRST: &str = "test.first";
     pub(in crate::actions_screen) const SECOND: &str = "test.second";
@@ -431,7 +431,6 @@ pub(in crate::actions_screen) mod tests {
     const ALPHA: &str = "Alpha";
     const BRAVO: &str = "Bravo";
     const RENAMED: &str = "Renamed";
-    const SETTLE_ROUNDS: usize = 4;
     const SAVE_OP: &str = "save";
     const ARCHIVE_OP: &str = "archive";
 
@@ -714,10 +713,7 @@ pub(in crate::actions_screen) mod tests {
         }
 
         pub(in crate::actions_screen) fn settle(&self, cx: &mut TestAppContext) {
-            for _ in 0..SETTLE_ROUNDS {
-                pump(&self.rt);
-                cx.run_until_parked();
-            }
+            crate::test_support::settle_runtime_work(cx, &self.rt);
         }
 
         pub(in crate::actions_screen) fn write(

@@ -2105,10 +2105,7 @@ pub(crate) mod tests {
         }
 
         fn settle(&self, cx: &mut TestAppContext) {
-            for _ in 0..3 {
-                pump(&self.rt);
-                cx.run_until_parked();
-            }
+            crate::test_support::settle_paused_runtime_work(cx, &self.rt);
         }
 
         fn past_the_save_debounce(&self, cx: &mut TestAppContext) {

@@ -1,7 +1,17 @@
+use std::sync::Arc;
+
+use tokio::sync::Notify;
+
 const RUNTIME_PUMPS: usize = 8;
+
+thread_local! {
+    static RUNTIME_PARKS: Arc<Notify> = Arc::new(Notify::new());
+}
 
 pub fn runtime() -> tokio::runtime::Runtime {
     tokio::runtime::Builder::new_current_thread()
+        .max_blocking_threads(1)
+        .on_thread_park(|| RUNTIME_PARKS.with(|parks| parks.notify_waiters()))
         .enable_all()
         .build()
         .expect("current-thread runtime")
@@ -17,6 +27,11 @@ pub fn pump(rt: &tokio::runtime::Runtime) {
             tokio::task::yield_now().await;
         }
     });
+}
+
+pub fn run_until_tasks_park(rt: &tokio::runtime::Runtime) {
+    let parks = RUNTIME_PARKS.with(Arc::clone);
+    rt.block_on(super::within_hang_guard(parks.notified()));
 }
 
 pub fn pump_until(rt: &tokio::runtime::Runtime, mut reached: impl FnMut() -> bool) {

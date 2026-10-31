@@ -6,6 +6,7 @@
 
 mod booted;
 mod logs;
+pub mod pack_fixture;
 mod pumps;
 mod schedules;
 
@@ -48,7 +49,7 @@ pub use booted::{
     on_app_runtime, open_store, runs_here_in_isolation, seed_integrations_and_server_off,
 };
 pub use logs::{console_line, install_tracing_interest_floor, signal_fields};
-pub use pumps::{alive_tasks, pump, pump_until, runtime};
+pub use pumps::{alive_tasks, pump, pump_until, run_until_tasks_park, runtime};
 pub use schedules::{
     GatedSchedule, gated_running_schedule, gated_running_schedule_sharing, keyless_enabled_schedule,
 };

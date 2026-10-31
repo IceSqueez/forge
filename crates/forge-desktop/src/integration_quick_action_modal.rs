@@ -1021,9 +1021,7 @@ mod tests {
 
     use super::*;
     use crate::i18n::{install_language, message_in};
-    use crate::test_support::{pump, runtime};
-
-    const SETTLE_ROUNDS: usize = 4;
+    use crate::test_support::runtime;
 
     type Resolved = CollectionOutcome<Vec<OptionEntry>>;
     type ResolveCall = (String, BTreeMap<String, QuickActionFieldValue>);
@@ -1154,10 +1152,7 @@ mod tests {
         }
 
         fn settle(&self, cx: &mut TestAppContext) {
-            for _ in 0..SETTLE_ROUNDS {
-                pump(&self.rt);
-                cx.run_until_parked();
-            }
+            crate::test_support::settle_runtime_work(cx, &self.rt);
         }
 
         fn seen(&self, cx: &mut TestAppContext, index: usize) -> Seen {

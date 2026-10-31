@@ -594,11 +594,16 @@ mod tests {
 
         let staging = setup_staging_root(&rig.world.data_dir());
         let shown = toasts(cx);
+        let kind_mismatch = crate::restore_problem::RestoreProblem::KindMismatch {
+            expected: BundleKind::Setup,
+            found: BundleKind::Pack,
+        }
+        .message()
+        .replace(&crate::test_support::FORMAT_ISOLATES[..], "");
         assert!(
             matches!(
                 shown.as_slice(),
-                [(ToastKind::Error, message)]
-                    if message.contains("This file is a forge pack, not a setup.")
+                [(ToastKind::Error, message)] if message.contains(kind_mismatch.as_str())
             ) && entries(&staging) == 0
                 && !rig.flows.read_with(cx, |flows, cx| flows.is_busy(cx)),
             "toasts {shown:?}, {} staged setups left",

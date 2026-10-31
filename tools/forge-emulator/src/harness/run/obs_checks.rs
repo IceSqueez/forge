@@ -1,23 +1,9 @@
 use tokio::time::Instant;
 
+use super::http_checks::LedgerMark;
 use super::outcome::{EVIDENCE_LIMIT, Evidence, FailureCause, ObsEvidence, Verdict};
 use crate::fakes::obs::{Authentication, FakeObs, ObsLedger, ObsRequest, ObsSession};
 use crate::harness::scenario::{ObsAuthOutcome, ObsRequestSeen};
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub(crate) struct ObsMark {
-    pub(crate) sessions: usize,
-    pub(crate) requests: usize,
-}
-
-impl ObsMark {
-    pub(crate) fn of(ledger: &ObsLedger) -> Self {
-        Self {
-            sessions: ledger.sessions.len(),
-            requests: ledger.requests.len(),
-        }
-    }
-}
 
 pub(crate) fn request_matches(request: &ObsRequest, expected: &ObsRequestSeen) -> bool {
     request.request_type == expected.request_type
@@ -39,7 +25,7 @@ pub(crate) fn auth_matches(session: &ObsSession, expected: &ObsAuthOutcome) -> b
 
 pub(crate) async fn observe_obs_request(
     fake: &FakeObs,
-    from: ObsMark,
+    from: LedgerMark,
     deadline: Instant,
     expected: &ObsRequestSeen,
 ) -> (Verdict, Evidence) {
@@ -70,7 +56,7 @@ pub(crate) async fn observe_obs_request(
 
 pub(crate) async fn observe_obs_auth(
     fake: &FakeObs,
-    from: ObsMark,
+    from: LedgerMark,
     deadline: Instant,
     expected: &ObsAuthOutcome,
 ) -> (Verdict, Evidence) {
@@ -97,7 +83,7 @@ pub(crate) async fn observe_obs_auth(
     (verdict, evidence(&ledger, from, None))
 }
 
-fn evidence(ledger: &ObsLedger, from: ObsMark, request_type: Option<&str>) -> Evidence {
+fn evidence(ledger: &ObsLedger, from: LedgerMark, request_type: Option<&str>) -> Evidence {
     let sessions = ledger
         .sessions
         .iter()

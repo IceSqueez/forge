@@ -463,6 +463,7 @@ mod tests {
     use super::*;
 
     const LONG_STALL: Duration = Duration::from_secs(600);
+    const WAIT_HANG_GUARD: Duration = Duration::from_secs(60);
 
     #[test]
     fn a_stream_error_ends_playback_only_when_the_device_can_no_longer_play() {
@@ -601,12 +602,26 @@ mod tests {
         OutputWatch::new(PlaybackControl::new())
     }
 
+    fn assert_the_wait_returns(watch: &Arc<OutputWatch>) {
+        let (returned_tx, returned_rx) = std::sync::mpsc::channel();
+        let waited_on = Arc::clone(watch);
+        std::thread::spawn(move || {
+            wait_for_completion(&waited_on, LONG_STALL);
+            returned_tx.send(()).unwrap();
+        });
+
+        assert!(
+            returned_rx.recv_timeout(WAIT_HANG_GUARD).is_ok(),
+            "the wait sat out its stall limit instead of ending at once"
+        );
+    }
+
     #[test]
     fn the_playback_wait_ends_as_soon_as_the_stream_reports_a_failure() {
         let watch = idle_watch();
         watch.fail("device unplugged".to_owned());
 
-        wait_for_completion(&watch, LONG_STALL);
+        assert_the_wait_returns(&watch);
     }
 
     #[test]
@@ -628,7 +643,7 @@ mod tests {
         feed.fill(&mut block);
 
         assert!(watch.is_drained());
-        wait_for_completion(&watch, LONG_STALL);
+        assert_the_wait_returns(&watch);
     }
 
     #[test]
@@ -645,7 +660,7 @@ mod tests {
         let watch = idle_watch();
         watch.control.stop();
 
-        wait_for_completion(&watch, LONG_STALL);
+        assert_the_wait_returns(&watch);
 
         assert!(!watch.is_drained());
     }

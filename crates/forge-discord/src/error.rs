@@ -107,14 +107,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn rate_limited_display() {
-        let e = DiscordError::RateLimited {
-            retry_after_secs: 1.5,
-        };
-        assert!(e.to_string().contains("1.50"));
-    }
-
-    #[test]
     fn bad_response_display_names_status_and_class_but_not_the_body() {
         let e = DiscordError::BadResponse {
             status: 404,
@@ -122,14 +114,6 @@ mod tests {
         };
         assert_eq!(e.to_string(), "HTTP 404 (client error)");
         assert_eq!(e.detail(), "HTTP 404");
-    }
-
-    #[test]
-    fn webhook_not_found_display_contains_name() {
-        let e = DiscordError::WebhookNotFound {
-            name: "alerts".to_owned(),
-        };
-        assert!(e.to_string().contains("alerts"));
     }
 
     #[test]

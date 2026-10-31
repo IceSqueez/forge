@@ -3,12 +3,25 @@
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
+use forge_emulator::fakes::twitch::FakeTwitch;
+use forge_emulator::fixture::TwitchAccount;
 use forge_emulator::harness::launch::{ForgeCommand, GameGuard, HyprlandProbe, LivePaths};
+use forge_events::EventPublisher;
 use forge_platform_core::{PlatformEndpoints, PlatformError};
+use forge_platform_twitch::TwitchAssembly;
+use forge_platform_twitch::credentials::{StoredCredential, store_credential};
+use forge_registry::SubActionRegistry;
+use forge_storage::CredentialsRepo;
+use forge_storage::test_support::MemoryCredentials;
+use forge_types::OAuthToken;
 use futures_util::future::BoxFuture;
+use reqwest::header::AUTHORIZATION;
 use tokio::time::timeout;
+
+pub const LOOPBACK: &str = "127.0.0.1";
+const STORED_TOKEN_LIFETIME: Duration = Duration::from_secs(3600);
 
 pub const EMULATOR: &str = env!("CARGO_BIN_EXE_forge-emulator");
 
@@ -27,6 +40,56 @@ pub fn endpoints_from(overrides: &[(&'static str, String)]) -> PlatformEndpoints
             .map(|(_, url)| OsString::from(url))
     })
     .unwrap()
+}
+
+pub async fn twitch_credentials(
+    account: &TwitchAccount,
+    access_token: &str,
+) -> Arc<dyn CredentialsRepo> {
+    let creds: Arc<dyn CredentialsRepo> = Arc::new(MemoryCredentials::default());
+    store_credential(
+        creds.as_ref(),
+        &StoredCredential {
+            access_token: OAuthToken::new(access_token.to_owned()),
+            refresh_token: None,
+            user_id: account.user_id.clone(),
+            login: account.login.clone(),
+            expires_at: Some(SystemTime::now() + STORED_TOKEN_LIFETIME),
+        },
+    )
+    .await
+    .unwrap();
+    creds
+}
+
+pub fn twitch_assembly(
+    fake: &FakeTwitch,
+    account: &TwitchAccount,
+    creds: Arc<dyn CredentialsRepo>,
+    bus: &Arc<dyn EventPublisher>,
+) -> (TwitchAssembly, PlatformEndpoints) {
+    let endpoints = endpoints_from(&fake.endpoint_overrides());
+    let assembly = TwitchAssembly::new(
+        &mut SubActionRegistry::new(),
+        creds,
+        bus,
+        &endpoints,
+        account.client_id.clone(),
+    )
+    .unwrap();
+    (assembly, endpoints)
+}
+
+pub fn twitch_authorized(
+    client: &reqwest::Client,
+    method: reqwest::Method,
+    url: String,
+) -> reqwest::RequestBuilder {
+    let account = TwitchAccount::default();
+    client
+        .request(method, url)
+        .header(AUTHORIZATION, format!("Bearer {}", account.access_token))
+        .header("Client-Id", account.client_id)
 }
 
 pub fn static_token_source(token: String) -> TokenSource {

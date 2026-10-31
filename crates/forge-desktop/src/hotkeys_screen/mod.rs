@@ -436,7 +436,7 @@ mod tests {
     use crate::shortcut_overrides::KEYBOARD_SHORTCUTS as SHORTCUTS_SETTING;
     use crate::test_support::{
         ReadFault, SETTINGS_READ_FAILED, Sandboxed, SettingWrite, TestBackend,
-        click_outside_the_list, hub_crumb_targets, install_presentation, open_under_root, pump,
+        click_outside_the_list, hub_crumb_targets, install_presentation, open_under_root,
         quiet_bus, runtime, sandboxed_provider, settle_focus, test_backend, writes_to,
     };
     use capture::Capture;
@@ -490,7 +490,6 @@ mod tests {
     };
     const CHAT: &str = "nav.chat";
     const STORED: &str = r#"{"nav.chat":{"chord":"ctrl-8","enabled":true}}"#;
-    const SETTLE_ROUNDS: usize = 3;
 
     struct Harness {
         rt: tokio::runtime::Runtime,
@@ -557,10 +556,7 @@ mod tests {
         }
 
         fn settle(&self, cx: &mut TestAppContext) {
-            for _ in 0..SETTLE_ROUNDS {
-                pump(&self.rt);
-                cx.run_until_parked();
-            }
+            crate::test_support::settle_runtime_work(cx, &self.rt);
         }
 
         fn shortcut_writes(&mut self) -> Vec<String> {

@@ -781,11 +781,7 @@ mod tests {
     }
 
     fn settle_persist(cx: &mut TestAppContext, rt: &tokio::runtime::Runtime) {
-        for _ in 0..3 {
-            cx.run_until_parked();
-            pump(rt);
-        }
-        cx.run_until_parked();
+        crate::test_support::settle_runtime_work(cx, rt);
     }
 
     fn toggle(view: &Entity<GlobalsView>, cx: &mut TestAppContext) {

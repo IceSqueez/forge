@@ -60,6 +60,17 @@ fn render(profile: &StressProfile, outcome: &StressOutcome, forge_binary: &Path)
         }
     );
 
+    phases_section(&mut out, outcome);
+    latency_section(&mut out, outcome);
+    actions_section(&mut out, profile, outcome);
+    skips_section(&mut out, outcome);
+    tables_section(&mut out, outcome);
+    observer_section(&mut out, outcome);
+    warnings_section(&mut out, outcome);
+    out
+}
+
+fn phases_section(out: &mut String, outcome: &StressOutcome) {
     let _ = writeln!(out, "## Phases\n");
     let _ = writeln!(
         out,
@@ -97,7 +108,9 @@ fn render(profile: &StressProfile, outcome: &StressOutcome, forge_binary: &Path)
                 .map_or_else(|| "-".to_owned(), |load| format!("{load:.1}")),
         );
     }
+}
 
+fn latency_section(out: &mut String, outcome: &StressOutcome) {
     let _ = writeln!(
         out,
         "\n## Latency from injection (ms, p50 / p95 / p99, count)\n"
@@ -131,7 +144,9 @@ fn render(profile: &StressProfile, outcome: &StressOutcome, forge_binary: &Path)
         }
         row(Leg::Reply, "chat reply at Helix".to_owned(), None);
     }
+}
 
+fn actions_section(out: &mut String, profile: &StressProfile, outcome: &StressOutcome) {
     let _ = writeln!(out, "\n## Actions at the end of each phase\n");
     let _ = writeln!(
         out,
@@ -142,16 +157,23 @@ fn render(profile: &StressProfile, outcome: &StressOutcome, forge_binary: &Path)
         let Some(last) = outcome.samples.iter().rfind(|s| s.phase == index) else {
             continue;
         };
-        for (name, [started, done, skipped, unstarted, in_flight]) in &last.actions {
+        for (name, action) in &last.actions {
             let _ = writeln!(
                 out,
-                "| {index} | {} | {name} | {} | {started} | {done} | {skipped} | {unstarted} | {in_flight} |",
+                "| {index} | {} | {name} | {} | {} | {} | {} | {} | {} |",
                 result.phase.label,
                 profile.queue_of(name),
+                action.started,
+                action.done,
+                action.skipped,
+                action.unstarted,
+                action.in_flight,
             );
         }
     }
+}
 
+fn skips_section(out: &mut String, outcome: &StressOutcome) {
     let _ = writeln!(out, "\n## Skips by reason (whole run)\n");
     for (index, name) in outcome.actions.iter().enumerate() {
         let counts = outcome.tracker.counts(index);
@@ -163,7 +185,9 @@ fn render(profile: &StressProfile, outcome: &StressOutcome, forge_binary: &Path)
             );
         }
     }
+}
 
+fn tables_section(out: &mut String, outcome: &StressOutcome) {
     let _ = writeln!(out, "\n## Table rows at the end of each phase\n");
     for (index, result) in outcome.phases.iter().enumerate() {
         if let Some(why) = &result.tables_error {
@@ -178,7 +202,9 @@ fn render(profile: &StressProfile, outcome: &StressOutcome, forge_binary: &Path)
             .collect();
         let _ = writeln!(out, "- {index} {}: {}", result.phase.label, busy.join(", "));
     }
+}
 
+fn observer_section(out: &mut String, outcome: &StressOutcome) {
     let _ = writeln!(
         out,
         "\n## Observer\n\n- twitch events seen: {}\n- events the server dropped for the observer: {}\n- uncorrelated observations: {}\n- frames per page: {:?}\n- frames forge dropped per page: {:?}\n- chat replies seen: {}\n- other kinds: {:?}\n",
@@ -190,14 +216,15 @@ fn render(profile: &StressProfile, outcome: &StressOutcome, forge_binary: &Path)
         outcome.tracker.replies,
         outcome.tracker.other_kinds
     );
+}
 
+fn warnings_section(out: &mut String, outcome: &StressOutcome) {
     let _ = writeln!(out, "## WARN / ERROR log lines (whole run)\n");
     let mut warnings: Vec<(&String, &u64)> = outcome.warnings_total.iter().collect();
     warnings.sort_by(|a, b| b.1.cmp(a.1));
     for (key, count) in warnings {
         let _ = writeln!(out, "- {count} x `{key}`");
     }
-    out
 }
 
 #[derive(Default)]

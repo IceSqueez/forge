@@ -377,8 +377,7 @@ fn insert_chat(
         "textMessageDetails".to_owned(),
         json!({ "messageText": text }),
     );
-    inner.append_message(config, snippet, Inner::owner_details(config));
-    let mut created = inner.chat.last().cloned().unwrap_or(Value::Null);
+    let mut created = inner.store_message(config, snippet, Inner::owner_details(config));
     if let Some(resource) = created.as_object_mut() {
         resource.remove("authorDetails");
     }

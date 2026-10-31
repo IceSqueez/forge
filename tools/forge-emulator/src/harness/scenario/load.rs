@@ -33,7 +33,7 @@ pub fn parse_scenario(path: &Path, text: &str) -> Result<Scenario, EmulatorError
     }
 }
 
-fn without_position(error: &serde_json::Error) -> String {
+pub(crate) fn without_position(error: &serde_json::Error) -> String {
     let full = error.to_string();
     let suffix = format!(" at line {} column {}", error.line(), error.column());
     full.strip_suffix(&suffix).unwrap_or(&full).to_owned()

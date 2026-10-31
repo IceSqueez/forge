@@ -485,7 +485,11 @@ mod tests {
         async fn forge_sent(&self, source: EventSource, message: &str) {
             self.bus.publish(
                 ChatSent {
-                    channel: "twitch".to_owned(),
+                    channel: source
+                        .to_platform_id()
+                        .expect("a chat echo comes from a platform")
+                        .as_str()
+                        .to_owned(),
                     message: message.to_owned(),
                     reply_to_message_id: None,
                     sent_as: None,

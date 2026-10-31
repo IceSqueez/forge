@@ -818,8 +818,7 @@ mod tests {
         tracker: SubscriptionTracker,
         tier: BroadcasterTier,
     ) -> Arc<TwitchIntegrationBundle> {
-        let (tx, rx) = watch::channel(state);
-        let _ = tx;
+        let (_, rx) = watch::channel(state);
         TwitchIntegrationBundle::for_test(
             Some("streamer".to_owned()),
             rx,
@@ -1867,7 +1866,7 @@ mod tests {
         let bundle =
             make_bundle_with_tier(ChatConnectionState::Connected, BroadcasterTier::Affiliate);
 
-        let mut checked = 0;
+        let mut checked = std::collections::BTreeSet::new();
         for action in bundle.actions() {
             for field in &action.fields {
                 let QuickActionFieldKind::Choice(QuickActionChoiceSource::Static(options)) =
@@ -1884,12 +1883,17 @@ mod tests {
                     action.label,
                     field.key
                 );
-                checked += 1;
+                checked.insert(field.key.clone());
             }
         }
         assert!(
-            checked >= 2,
-            "expected at least the announcement-color and ad-duration static choices, got {checked}"
+            [
+                crate::vocabulary::config_keys::COLOR,
+                crate::vocabulary::config_keys::DURATION_SECONDS
+            ]
+            .iter()
+            .all(|key| checked.contains(*key)),
+            "expected the announcement-color and ad-duration static choices, got {checked:?}"
         );
     }
 

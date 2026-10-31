@@ -339,7 +339,7 @@ mod tests {
     use super::super::tests::view_with;
     use super::*;
     use crate::actions_screen::integration_gating::tests::detail;
-    use crate::test_support::{error_toasts, pump, runtime, step};
+    use crate::test_support::{error_toasts, runtime, step};
 
     const FIRST: &str = "test.first";
     const SECOND: &str = "test.second";
@@ -353,7 +353,6 @@ mod tests {
     const SOURCE_HEIGHT: f32 = 40.0;
     const PRESS_AT: f32 = 10.0;
     const DRAG_TRAVEL: f32 = 20.0;
-    const SETTLE_ROUNDS: usize = 3;
     const PROBE_X_FRACTION: f32 = 0.75;
     const PROBE_STEP: f32 = 4.0;
 
@@ -548,10 +547,7 @@ mod tests {
             SubActionRegistry::new(),
             Arc::new(repo),
         );
-        for _ in 0..SETTLE_ROUNDS {
-            pump(&rt);
-            cx.run_until_parked();
-        }
+        crate::test_support::settle_runtime_work(cx, &rt);
         let action_id = opened.action.id;
         view.update(cx, |view, _| {
             view.tree.selected = Some(action_id);
@@ -574,10 +570,7 @@ mod tests {
 
     impl Fixture<'_> {
         fn settle(&mut self) {
-            for _ in 0..SETTLE_ROUNDS {
-                pump(&self.rt);
-                self.vcx.run_until_parked();
-            }
+            crate::test_support::settle_runtime_work(self.vcx, &self.rt);
         }
 
         fn action_id(&mut self) -> ActionId {

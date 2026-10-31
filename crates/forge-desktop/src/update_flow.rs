@@ -694,7 +694,6 @@ mod tests {
     const VERSION: &str = "0.9.0";
     const RELEASE_PAGE: &str = "https://example.invalid/releases/v0.9.0";
     const ARTIFACT_SIZE: u64 = 100;
-    const DRIVE_ROUNDS: usize = 4;
 
     struct Harness {
         flow: Entity<UpdateFlow>,
@@ -955,10 +954,7 @@ mod tests {
     }
 
     fn drive(cx: &mut TestAppContext, h: &Harness) {
-        for _ in 0..DRIVE_ROUNDS {
-            pump(&h.rt);
-            cx.run_until_parked();
-        }
+        crate::test_support::settle_runtime_work(cx, &h.rt);
     }
 
     fn install_target(target: &str) -> InstallTarget {

@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 
 use super::donation::{FakeDonatelloSetup, FakeMonobankSetup};
 use super::step::Step;
+use super::validate::MAX_KEEPALIVE_MS;
+use crate::Problem;
 use crate::fakes::kick::FakeKickSetup;
 use crate::fakes::obs::FakeObsConfig;
 use crate::fakes::twitch::{FakeGoal, FakeTwitchConfig};
@@ -70,6 +72,17 @@ fn default_keepalive_ms() -> u64 {
 }
 
 impl FakeTwitchSetup {
+    pub fn problems(&self) -> Vec<Problem> {
+        Problem::outside(
+            "keepalive_interval_ms",
+            self.keepalive_interval_ms,
+            1,
+            MAX_KEEPALIVE_MS,
+        )
+        .into_iter()
+        .collect()
+    }
+
     pub fn config_for(&self, account: &TwitchAccount) -> FakeTwitchConfig {
         FakeTwitchConfig {
             keepalive_interval: Duration::from_millis(self.keepalive_interval_ms),

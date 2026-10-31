@@ -29,7 +29,7 @@ use ulid::Ulid;
 
 use crate::settings_catalog::registered_settings_catalog;
 
-use super::pack_transfer::{
+use forge_host::test_support::pack_fixture::{
     Fixture, GLOBAL_NAME, Registries, SECRET_TOKEN, Store, files_under, seed,
 };
 
@@ -349,7 +349,7 @@ async fn seed_history(store: &Store, marker: &str) {
         .unwrap();
 }
 
-#[derive(PartialEq)]
+#[derive(Debug, PartialEq)]
 struct History {
     credentials: Vec<(String, Option<String>)>,
     events: serde_json::Value,
@@ -744,7 +744,7 @@ async fn importing_a_setup_leaves_credentials_and_every_history_kind_untouched()
 
     m.import().await.unwrap();
 
-    assert!(history_of(&m.target).await == before);
+    assert_eq!(history_of(&m.target).await, before);
 }
 
 #[tokio::test]
@@ -795,7 +795,7 @@ async fn a_setup_file_carries_no_credentials_history_or_machine_local_settings()
         "source-latest",
         "source-window",
         "source-speakers",
-        super::pack_transfer::SECRET_SETTING,
+        forge_host::test_support::pack_fixture::SECRET_SETTING,
     ] {
         assert!(!raw.contains(leaked), "setup bytes carry {leaked:?}");
     }
@@ -920,7 +920,7 @@ async fn a_failure_midway_through_the_import_leaves_the_target_as_it_was() {
 
     assert!(matches!(failed, Err(TransferError::Io(_))), "{failed:?}");
     assert_eq!(config_of(&m.target).await, config_before);
-    assert!(history_of(&m.target).await == history_before);
+    assert_eq!(history_of(&m.target).await, history_before);
     assert_eq!(settings_of(&m.target).await, settings_before);
 }
 
@@ -1129,11 +1129,14 @@ async fn a_portable_setting_only_the_target_holds_is_removed_and_recommends_a_re
 }
 
 async fn archive_greet(store: &Store) -> forge_types::ScriptId {
-    let id = ScriptRepo::get_by_name(store.provider.as_ref(), super::pack_transfer::SCRIPT_NAME)
-        .await
-        .unwrap()
-        .unwrap()
-        .id;
+    let id = ScriptRepo::get_by_name(
+        store.provider.as_ref(),
+        forge_host::test_support::pack_fixture::SCRIPT_NAME,
+    )
+    .await
+    .unwrap()
+    .unwrap()
+    .id;
     assert!(store.provider.archive_script(id).await.unwrap());
     id
 }
@@ -1150,10 +1153,13 @@ async fn archived_scripts(store: &Store) -> Vec<forge_types::ScriptId> {
 }
 
 async fn live_greet(store: &Store) -> Option<forge_types::ScriptId> {
-    ScriptRepo::get_by_name(store.provider.as_ref(), super::pack_transfer::SCRIPT_NAME)
-        .await
-        .unwrap()
-        .map(|script| script.id)
+    ScriptRepo::get_by_name(
+        store.provider.as_ref(),
+        forge_host::test_support::pack_fixture::SCRIPT_NAME,
+    )
+    .await
+    .unwrap()
+    .map(|script| script.id)
 }
 
 #[tokio::test]

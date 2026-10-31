@@ -611,13 +611,11 @@ mod tests {
     use crate::i18n::install_language;
     use crate::test_support::{
         ReadFault, SETTINGS_READ_FAILED, SettingWrite, TestBackend, error_toasts,
-        install_presentation, pump, runtime, spawn_speak_queue_with_registry, test_backend,
-        writes_to,
+        install_presentation, runtime, spawn_speak_queue_with_registry, test_backend, writes_to,
     };
 
     const ESPEAK: usize = 0;
     const PIPER: usize = 1;
-    const SETTLE_ROUNDS: usize = 3;
     const STORED_PIPER: EngineParams = EngineParams {
         pitch_semitones: 4.0,
         rate_multiplier: 1.5,
@@ -730,10 +728,7 @@ mod tests {
         }
 
         fn settle(&self, cx: &mut TestAppContext) {
-            for _ in 0..SETTLE_ROUNDS {
-                pump(&self.rt);
-                cx.run_until_parked();
-            }
+            crate::test_support::settle_paused_runtime_work(cx, &self.rt);
         }
 
         fn past_the_save_debounce(&self, cx: &mut TestAppContext) {

@@ -33,14 +33,13 @@ use crate::integration_lifecycle::IntegrationLifecycle;
 use crate::repo_failure::RepoFailure;
 use crate::test_support::{
     ClickArea, StubActions, StubEventLog, click_outside_the_list, click_until, open_under_root,
-    pump, runtime, switch_lifecycle,
+    runtime, switch_lifecycle,
 };
 use crate::unavailable_builtin::unavailable_builtin;
 use forge_host::integrations::{BuiltinObject, BuiltinRegistry};
 use forge_runtime::LifecycleState;
 
 const UNBAN_KIND: &str = "twitch.moderation.unban_user";
-const SETTLE_ROUNDS: usize = 4;
 
 pub(crate) struct FakeBans {
     asked: Mutex<Vec<Option<String>>>,
@@ -262,11 +261,7 @@ impl Mount {
 }
 
 pub(crate) fn settle(cx: &mut TestAppContext, rt: &tokio::runtime::Runtime) {
-    for _ in 0..SETTLE_ROUNDS {
-        cx.run_until_parked();
-        pump(rt);
-    }
-    cx.run_until_parked();
+    crate::test_support::settle_runtime_work(cx, rt);
 }
 
 fn shown(cx: &mut TestAppContext, panel: &Entity<BannedPanel>) -> Vec<PlatformId> {

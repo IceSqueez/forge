@@ -897,8 +897,7 @@ mod tests {
             ),
         ];
 
-        let default_queue: forge_types::QueueId =
-            serde_json::from_str("\"00000000000000000000000000\"").unwrap();
+        let default_queue = forge_types::DEFAULT_QUEUE_ID;
 
         for (kind, expected) in cases {
             let action_id = ActionId::new();
@@ -1525,7 +1524,7 @@ mod tests {
             id: action_id,
             name: "echo".to_owned(),
             group: None,
-            queue_id: serde_json::from_str("\"00000000000000000000000000\"").unwrap(),
+            queue_id: forge_types::DEFAULT_QUEUE_ID,
             enabled: true,
             concurrent: false,
             bypass_pause: false,
@@ -1843,8 +1842,7 @@ mod tests {
             Arc::new(SubActionRegistry::new()),
             Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
         );
-        let default_queue: forge_types::QueueId =
-            serde_json::from_str("\"00000000000000000000000000\"").unwrap();
+        let default_queue = forge_types::DEFAULT_QUEUE_ID;
         let mut action = forge_types::Action {
             id: ActionId::new(),
             name: "before".to_owned(),

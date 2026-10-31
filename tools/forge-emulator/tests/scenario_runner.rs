@@ -42,6 +42,8 @@ use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 
 mod support;
 
+use support::LOOPBACK;
+
 use forge_storage::test_support::MemoryCredentials;
 use support::{TokenSource, endpoints_from, static_token_source};
 
@@ -129,7 +131,7 @@ impl PretendForge {
             }
         });
         Self {
-            endpoint: ControlEndpoint::loopback("127.0.0.1", port).unwrap(),
+            endpoint: ControlEndpoint::loopback(LOOPBACK, port).unwrap(),
             requests,
             pushes,
         }
@@ -317,10 +319,72 @@ struct Harness {
     logs: TempDir,
 }
 
-impl Harness {
-    async fn start(behaviour: Behaviour, with_twitch: bool) -> Self {
+#[derive(Default)]
+struct DeclaredFakes {
+    discord: Option<FakeDiscord>,
+    kick: Option<FakeKick>,
+    youtube: Option<FakeYouTube>,
+    obs: Option<FakeObs>,
+    vtube: Option<FakeVTube>,
+    donatello: Option<FakeDonatello>,
+    monobank: Option<FakeMonobank>,
+}
+
+struct HarnessBuilder {
+    behaviour: Behaviour,
+    twitch: bool,
+    fakes: DeclaredFakes,
+}
+
+impl HarnessBuilder {
+    fn twitch(mut self) -> Self {
+        self.twitch = true;
+        self
+    }
+
+    fn discord(mut self, fake: FakeDiscord) -> Self {
+        self.fakes.discord = Some(fake);
+        self
+    }
+
+    fn kick(mut self, fake: FakeKick) -> Self {
+        self.fakes.kick = Some(fake);
+        self
+    }
+
+    fn youtube(mut self, fake: FakeYouTube) -> Self {
+        self.fakes.youtube = Some(fake);
+        self
+    }
+
+    fn obs(mut self, fake: FakeObs) -> Self {
+        self.fakes.obs = Some(fake);
+        self
+    }
+
+    fn vtube(mut self, fake: FakeVTube) -> Self {
+        self.fakes.vtube = Some(fake);
+        self
+    }
+
+    fn donatello(mut self, fake: FakeDonatello) -> Self {
+        self.fakes.donatello = Some(fake);
+        self
+    }
+
+    fn monobank(mut self, fake: FakeMonobank) -> Self {
+        self.fakes.monobank = Some(fake);
+        self
+    }
+
+    async fn start(self) -> Harness {
+        let Self {
+            behaviour,
+            twitch,
+            fakes,
+        } = self;
         let forge = PretendForge::start(behaviour).await;
-        let fake = if with_twitch {
+        let fake = if twitch {
             let fake = FakeTwitch::start(FakeTwitchConfig::for_account(&TwitchAccount::default()))
                 .await
                 .unwrap();
@@ -356,22 +420,32 @@ impl Harness {
         };
         let actions = ActionIndex::from_seed(&seed);
         let pages = OverlayPages::for_seed(&seed).unwrap();
-        Self {
+        Harness {
             forge,
             fake,
-            discord: None,
-            kick: None,
-            youtube: None,
-            obs: None,
-            vtube: None,
-            donatello: None,
-            monobank: None,
+            discord: fakes.discord,
+            kick: fakes.kick,
+            youtube: fakes.youtube,
+            obs: fakes.obs,
+            vtube: fakes.vtube,
+            donatello: fakes.donatello,
+            monobank: fakes.monobank,
             host: ForgeHost::attached(client, journal.clone()),
             journal,
             actions,
             pages,
             ping,
             logs: tempfile::tempdir().unwrap(),
+        }
+    }
+}
+
+impl Harness {
+    fn with(behaviour: Behaviour) -> HarnessBuilder {
+        HarnessBuilder {
+            behaviour,
+            twitch: false,
+            fakes: DeclaredFakes::default(),
         }
     }
 
@@ -479,7 +553,7 @@ fn ping_chat(expect: Value) -> Value {
 
 #[tokio::test]
 async fn scenario_whose_every_expectation_holds_passes_each_step_in_order() {
-    let harness = Harness::start(COOPERATIVE, true).await;
+    let harness = Harness::with(COOPERATIVE).twitch().start().await;
     let scenario = twitch_scenario(json!([
         ready(),
         subscribed(),
@@ -516,13 +590,12 @@ async fn scenario_whose_every_expectation_holds_passes_each_step_in_order() {
 
 #[tokio::test]
 async fn a_failed_expectation_fails_its_step_and_later_steps_never_run() {
-    let mut harness = Harness::start(
-        Behaviour {
-            runs_commands: false,
-            ..COOPERATIVE
-        },
-        true,
-    )
+    let mut harness = Harness::with(Behaviour {
+        runs_commands: false,
+        ..COOPERATIVE
+    })
+    .twitch()
+    .start()
     .await;
     let scenario = twitch_scenario(json!([
         ready(),
@@ -564,7 +637,7 @@ async fn a_failed_expectation_fails_its_step_and_later_steps_never_run() {
 
 #[tokio::test]
 async fn session_reconnect_completes_once_forge_opens_the_successor_session() {
-    let harness = Harness::start(COOPERATIVE, true).await;
+    let harness = Harness::with(COOPERATIVE).twitch().start().await;
     let scenario = twitch_scenario(json!([
         ready(),
         subscribed(),
@@ -592,7 +665,7 @@ async fn session_reconnect_completes_once_forge_opens_the_successor_session() {
 
 #[tokio::test]
 async fn crowd_delivers_every_planned_message_to_forge() {
-    let harness = Harness::start(COOPERATIVE, true).await;
+    let harness = Harness::with(COOPERATIVE).twitch().start().await;
     let scenario = twitch_scenario(json!([
         ready(),
         subscribed(),
@@ -624,13 +697,11 @@ async fn crowd_delivers_every_planned_message_to_forge() {
 
 #[tokio::test]
 async fn refused_run_action_fails_the_step_without_evaluating_its_expectations() {
-    let harness = Harness::start(
-        Behaviour {
-            refuses_actions: true,
-            ..COOPERATIVE
-        },
-        false,
-    )
+    let harness = Harness::with(Behaviour {
+        refuses_actions: true,
+        ..COOPERATIVE
+    })
+    .start()
     .await;
     let scenario = scenario(
         json!({ "chat_commands": [{ "phrase": "!ping", "action_name": "Ping" }] }),
@@ -657,7 +728,7 @@ async fn refused_run_action_fails_the_step_without_evaluating_its_expectations()
 
 #[tokio::test]
 async fn a_server_drop_notice_inside_the_window_fails_an_absence_check() {
-    let harness = Harness::start(COOPERATIVE, false).await;
+    let harness = Harness::with(COOPERATIVE).start().await;
     let scenario = scenario(
         json!({}),
         json!({}),
@@ -685,7 +756,7 @@ async fn a_server_drop_notice_inside_the_window_fails_an_absence_check() {
 
 #[tokio::test]
 async fn stop_interrupts_the_running_step_and_skips_the_rest() {
-    let harness = Harness::start(COOPERATIVE, false).await;
+    let harness = Harness::with(COOPERATIVE).start().await;
     let scenario = scenario(
         json!({ "chat_commands": [{ "phrase": "!ping", "action_name": "Ping" }] }),
         json!({}),
@@ -726,7 +797,7 @@ async fn stop_interrupts_the_running_step_and_skips_the_rest() {
 
 #[tokio::test]
 async fn events_published_before_a_step_starts_never_satisfy_its_expectations() {
-    let harness = Harness::start(COOPERATIVE, false).await;
+    let harness = Harness::with(COOPERATIVE).start().await;
     let scenario = scenario(
         json!({}),
         json!({}),
@@ -758,7 +829,7 @@ async fn events_published_before_a_step_starts_never_satisfy_its_expectations() 
 
 #[tokio::test]
 async fn forge_closing_the_control_connection_ends_waiting_expectations_as_a_closed_stream() {
-    let harness = Harness::start(COOPERATIVE, false).await;
+    let harness = Harness::with(COOPERATIVE).start().await;
     let scenario = scenario(
         json!({}),
         json!({}),
@@ -779,7 +850,7 @@ async fn forge_closing_the_control_connection_ends_waiting_expectations_as_a_clo
 
 #[tokio::test]
 async fn twitch_event_delivers_its_notification_to_the_session_subscribed_to_that_type() {
-    let harness = Harness::start(COOPERATIVE, true).await;
+    let harness = Harness::with(COOPERATIVE).twitch().start().await;
     let scenario = twitch_scenario(json!([
         ready(),
         awaiting(SUBSCRIBE),
@@ -816,7 +887,7 @@ async fn twitch_event_delivers_its_notification_to_the_session_subscribed_to_tha
 
 #[tokio::test]
 async fn twitch_event_no_session_holds_fails_the_step_naming_the_live_subscriptions() {
-    let harness = Harness::start(COOPERATIVE, true).await;
+    let harness = Harness::with(COOPERATIVE).twitch().start().await;
     let scenario = unvalidated_scenario(json!([
         ready(),
         awaiting(SUBSCRIBE),
@@ -850,14 +921,15 @@ fn discord_scenario(steps: Value) -> Scenario {
 }
 
 async fn harness_with_discord() -> (Harness, String) {
-    let mut harness = Harness::start(COOPERATIVE, false).await;
     let discord = FakeDiscord::start(&[GO_LIVE.to_owned()]).await.unwrap();
     let saved = discord.webhook_url(GO_LIVE).unwrap();
     let (_, webhook_route) = saved.split_once("/api/").unwrap();
     let (_, api_base) = discord.endpoint_override();
     let url = format!("{api_base}/{webhook_route}");
-    harness.discord = Some(discord);
-    (harness, url)
+    (
+        Harness::with(COOPERATIVE).discord(discord).start().await,
+        url,
+    )
 }
 
 async fn post_to_webhook(url: &str, body: Value) {
@@ -947,7 +1019,7 @@ async fn a_discord_post_made_before_a_step_starts_never_satisfies_its_expectatio
 
 #[tokio::test]
 async fn discord_post_without_a_fake_discord_fails_as_unrunnable() {
-    let harness = Harness::start(COOPERATIVE, false).await;
+    let harness = Harness::with(COOPERATIVE).start().await;
     let scenario = discord_scenario(json!([
         { "do": { "forge_ready": { "within_ms": 1000 } }, "expect": [role_ping_post(50)] }
     ]));
@@ -971,7 +1043,6 @@ fn obs_scenario(online_at_boot: bool, steps: Value) -> Scenario {
 }
 
 async fn harness_with_obs(online_at_boot: bool) -> Harness {
-    let mut harness = Harness::start(COOPERATIVE, false).await;
     let obs = FakeObs::start(FakeObsConfig {
         password: Some(OBS_PASSWORD.to_owned()),
         online_at_boot,
@@ -979,8 +1050,7 @@ async fn harness_with_obs(online_at_boot: bool) -> Harness {
     })
     .await
     .unwrap();
-    harness.obs = Some(obs);
-    harness
+    Harness::with(COOPERATIVE).obs(obs).start().await
 }
 
 async fn forge_obs_client(harness: &Harness, password: &str) -> forge_obs::ObsClient {
@@ -1136,7 +1206,7 @@ async fn an_obs_request_made_before_a_step_starts_never_satisfies_its_expectatio
 
 #[tokio::test]
 async fn obs_checks_without_a_fake_obs_fail_as_unrunnable() {
-    let harness = Harness::start(COOPERATIVE, false).await;
+    let harness = Harness::with(COOPERATIVE).start().await;
     let scenario = obs_scenario(
         true,
         json!([{
@@ -1155,22 +1225,31 @@ async fn obs_checks_without_a_fake_obs_fail_as_unrunnable() {
 
 const JAR: &str = "jar-stream";
 
-async fn harness_with_donations() -> Harness {
-    let mut harness = Harness::start(COOPERATIVE, false).await;
-    harness.donatello = Some(
-        FakeDonatello::start(FakeDonatelloConfig::default())
-            .await
-            .unwrap(),
-    );
-    harness.monobank = Some(
-        FakeMonobank::start(FakeMonobankConfig {
-            jars: vec![FakeJar::new(JAR, "Stream jar")],
-            ..FakeMonobankConfig::default()
-        })
+async fn fake_donatello() -> FakeDonatello {
+    FakeDonatello::start(FakeDonatelloConfig::default())
         .await
-        .unwrap(),
-    );
-    harness
+        .unwrap()
+}
+
+async fn harness_with_donatello() -> Harness {
+    Harness::with(COOPERATIVE)
+        .donatello(fake_donatello().await)
+        .start()
+        .await
+}
+
+async fn harness_with_donations() -> Harness {
+    let monobank = FakeMonobank::start(FakeMonobankConfig {
+        jars: vec![FakeJar::new(JAR, "Stream jar")],
+        ..FakeMonobankConfig::default()
+    })
+    .await
+    .unwrap();
+    Harness::with(COOPERATIVE)
+        .donatello(fake_donatello().await)
+        .monobank(monobank)
+        .start()
+        .await
 }
 
 fn donation_scenario(steps: Value) -> Scenario {
@@ -1243,8 +1322,7 @@ fn donatello_only_scenario(steps: Value) -> Scenario {
 
 #[tokio::test]
 async fn donations_polled_fails_when_no_list_is_read_after_the_step_begins() {
-    let mut harness = harness_with_donations().await;
-    harness.monobank = None;
+    let harness = harness_with_donatello().await;
     donatello_list(&harness).await;
     let scenario = donatello_only_scenario(json!([
         ready(),
@@ -1258,8 +1336,7 @@ async fn donations_polled_fails_when_no_list_is_read_after_the_step_begins() {
 
 #[tokio::test]
 async fn donations_polled_passes_once_every_service_serves_a_list() {
-    let mut harness = harness_with_donations().await;
-    harness.monobank = None;
+    let harness = harness_with_donatello().await;
     let base_url = harness.donatello.as_ref().unwrap().base_url().to_owned();
     let poller = tokio::spawn(async move {
         loop {
@@ -1313,7 +1390,6 @@ fn vtube_scenario(online_at_boot: bool, steps: Value) -> Scenario {
 }
 
 async fn harness_with_vtube(online_at_boot: bool) -> Harness {
-    let mut harness = Harness::start(COOPERATIVE, false).await;
     let vtube = FakeVTube::start(FakeVTubeConfig {
         token: VTUBE_TOKEN.to_owned(),
         online_at_boot,
@@ -1321,14 +1397,13 @@ async fn harness_with_vtube(online_at_boot: bool) -> Harness {
     })
     .await
     .unwrap();
-    harness.vtube = Some(vtube);
-    harness
+    Harness::with(COOPERATIVE).vtube(vtube).start().await
 }
 
 async fn forge_vtube_client(harness: &Harness, token: &str) -> Arc<forge_vtube::VTubeClient> {
     let port = harness.vtube.as_ref().unwrap().port();
     let credentials = Arc::new(MemoryCredentials::default());
-    forge_vtube::credentials::store(&*credentials, token, "127.0.0.1", port, false)
+    forge_vtube::credentials::store(&*credentials, token, LOOPBACK, port, false)
         .await
         .unwrap();
     forge_vtube::credentials::load_and_connect(
@@ -1492,13 +1567,10 @@ fn kick_scenario(steps: Value) -> Scenario {
 }
 
 async fn harness_with_kick() -> Harness {
-    let mut harness = Harness::start(COOPERATIVE, false).await;
-    harness.kick = Some(
-        FakeKick::start(forge_emulator::fakes::kick::FakeKickConfig::default())
-            .await
-            .unwrap(),
-    );
-    harness
+    let kick = FakeKick::start(forge_emulator::fakes::kick::FakeKickConfig::default())
+        .await
+        .unwrap();
+    Harness::with(COOPERATIVE).kick(kick).start().await
 }
 
 fn kick_endpoints(fake: &FakeKick) -> forge_platform_core::PlatformEndpoints {
@@ -1705,16 +1777,13 @@ fn youtube_scenario(steps: Value) -> Scenario {
 }
 
 async fn harness_with_youtube(live: bool) -> Harness {
-    let mut harness = Harness::start(COOPERATIVE, false).await;
-    harness.youtube = Some(
-        FakeYouTube::start(FakeYouTubeConfig {
-            live,
-            ..FakeYouTubeConfig::default()
-        })
-        .await
-        .unwrap(),
-    );
-    harness
+    let youtube = FakeYouTube::start(FakeYouTubeConfig {
+        live,
+        ..FakeYouTubeConfig::default()
+    })
+    .await
+    .unwrap();
+    Harness::with(COOPERATIVE).youtube(youtube).start().await
 }
 
 fn youtube_endpoints(fake: &FakeYouTube) -> forge_platform_core::PlatformEndpoints {

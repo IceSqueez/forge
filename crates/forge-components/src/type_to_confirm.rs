@@ -403,7 +403,7 @@ mod tests {
     use std::cell::RefCell;
     use std::rc::Rc;
 
-    use gpui::{Entity, TestAppContext, VisualTestContext};
+    use gpui::{Bounds, Entity, Modifiers, Point, TestAppContext, VisualTestContext, point};
 
     use super::*;
     use crate::palette::FORGE_DEFAULT;
@@ -414,6 +414,7 @@ mod tests {
     const CARD_SLOT: &str = "type-to-confirm-test-card";
     const CANCEL: &str = "type-to-confirm-cancel";
     const LONG_LABEL: &str = "Keep the server bound to this machine";
+    const PAST_THE_CANCEL_BUTTON: Pixels = px(24.0);
 
     struct Card<'a> {
         view: Entity<TypeToConfirm>,
@@ -424,8 +425,11 @@ mod tests {
     fn mount(cx: &mut TestAppContext) -> Card<'_> {
         install_presentation(cx);
         cx.update(bind_text_input_keys);
-        let (view, vcx) =
-            cx.add_window_view(|_window, cx| type_to_confirm(TARGET, &FORGE_DEFAULT, cx));
+        let (view, vcx) = cx.add_window_view(|_window, cx| {
+            type_to_confirm(TARGET, &FORGE_DEFAULT, cx)
+                .cancel_label("Keep it local")
+                .confirm_label("Open it to the network")
+        });
         let seen = Rc::new(RefCell::new(Vec::new()));
         let sink = seen.clone();
         vcx.update(|window, cx| {
@@ -449,6 +453,20 @@ mod tests {
         fn press(&mut self, key: &str) {
             self.vcx.simulate_keystrokes(key);
             self.vcx.run_until_parked();
+        }
+
+        fn click(&mut self, position: Point<Pixels>) {
+            self.vcx.simulate_click(position, Modifiers::default());
+            self.vcx.run_until_parked();
+        }
+
+        fn cancel_button(&mut self) -> Bounds<Pixels> {
+            self.vcx.debug_bounds(CANCEL).expect("the button paints")
+        }
+
+        fn confirm_button_center(&mut self) -> Point<Pixels> {
+            let cancel = self.cancel_button();
+            point(cancel.right() + PAST_THE_CANCEL_BUTTON, cancel.center().y)
         }
 
         fn matched(&mut self) -> bool {
@@ -498,6 +516,33 @@ mod tests {
         card.press("enter");
 
         assert_eq!(*card.seen.borrow(), [TypeToConfirmEvent::Confirmed]);
+    }
+
+    #[gpui::test]
+    fn the_confirm_button_is_inert_until_the_exact_text_is_typed(cx: &mut TestAppContext) {
+        let mut card = mount(cx);
+        let confirm = card.confirm_button_center();
+
+        card.click(confirm);
+        card.type_text("bind to LA");
+        card.click(confirm);
+        assert!(card.seen.borrow().is_empty());
+
+        card.type_text("N");
+        card.click(confirm);
+
+        assert_eq!(*card.seen.borrow(), [TypeToConfirmEvent::Confirmed]);
+    }
+
+    #[gpui::test]
+    fn the_cancel_button_cancels_whatever_was_typed(cx: &mut TestAppContext) {
+        let mut card = mount(cx);
+        card.type_text(TARGET);
+
+        let cancel = card.cancel_button().center();
+        card.click(cancel);
+
+        assert_eq!(*card.seen.borrow(), [TypeToConfirmEvent::Cancelled]);
     }
 
     #[gpui::test]

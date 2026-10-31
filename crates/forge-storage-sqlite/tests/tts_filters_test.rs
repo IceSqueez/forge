@@ -230,14 +230,6 @@ async fn replace_rules_mixed_set_returns_ordered_by_position() {
     let got = r.list_rules().await.expect("list");
     assert_eq!(got.len(), 3);
 
-    assert_eq!(got[0].position, 0);
-    assert_eq!(got[1].position, 1);
-    assert_eq!(got[2].position, 2);
-
-    assert_eq!(got[0].id, "r0");
-    assert_eq!(got[1].id, "r1");
-    assert_eq!(got[2].id, "r2");
-
     assert_eq!(got[0], literal_rule("r0", 0));
     assert_eq!(got[1], blocklist_rule("r1", 1, BlocklistMode::Censor));
     assert_eq!(got[2], regex_rule("r2", 2));

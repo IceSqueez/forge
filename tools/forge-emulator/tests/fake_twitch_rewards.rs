@@ -1,28 +1,21 @@
 #![allow(clippy::unwrap_used)]
 use forge_platform_twitch::vocabulary::topics;
-use std::collections::{BTreeMap, HashMap};
-use std::ffi::OsString;
+use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
 
 use forge_emulator::fakes::twitch::{FakeTwitch, FakeTwitchConfig, MAX_CUSTOM_REWARDS};
 use forge_emulator::fixture::TwitchAccount;
 use forge_events::EventPublisher;
 use forge_platform_core::{
     BuiltinCollections, ChatPlatform, CollectionFailure, CollectionId, CollectionItemAccess,
-    CollectionItemId, PlatformEndpoints, QuickActionFieldValue, RevisionWait,
+    CollectionItemId, QuickActionFieldValue, RevisionWait,
 };
-use forge_platform_twitch::credentials::{StoredCredential, store_credential};
-use forge_platform_twitch::{BroadcasterTier, TwitchAssembly, TwitchIntegrationBundle};
-use forge_registry::SubActionRegistry;
-use forge_storage::CredentialsRepo;
-use forge_types::OAuthToken;
+use forge_platform_twitch::{BroadcasterTier, TwitchIntegrationBundle};
 use serde_json::{Value, json};
 use tokio::time::timeout;
 
 mod support;
-
-use forge_storage::test_support::MemoryCredentials;
 
 const DEADLINE: Duration = Duration::from_secs(30);
 const REWARDS_PATH: &str = "/helix/channel_points/custom_rewards";
@@ -36,34 +29,9 @@ struct Forge {
 
 impl Forge {
     async fn against(fake: &FakeTwitch, account: &TwitchAccount) -> Self {
-        let creds: Arc<dyn CredentialsRepo> = Arc::new(MemoryCredentials::default());
-        store_credential(
-            creds.as_ref(),
-            &StoredCredential {
-                access_token: OAuthToken::new(account.access_token.clone()),
-                refresh_token: None,
-                user_id: account.user_id.clone(),
-                login: account.login.clone(),
-                expires_at: Some(SystemTime::now() + Duration::from_secs(3600)),
-            },
-        )
-        .await
-        .unwrap();
-        let overrides: HashMap<_, _> = fake.endpoint_overrides().into_iter().collect();
-        let endpoints =
-            PlatformEndpoints::resolve(&forge_emulator::endpoint_surfaces(), |variable| {
-                overrides.get(variable).map(OsString::from)
-            })
-            .unwrap();
+        let creds = support::twitch_credentials(account, &account.access_token).await;
         let bus: Arc<dyn EventPublisher> = Arc::new(forge_events::test_support::NullPublisher);
-        let assembly = TwitchAssembly::new(
-            &mut SubActionRegistry::new(),
-            creds,
-            &bus,
-            &endpoints,
-            account.client_id.clone(),
-        )
-        .unwrap();
+        let (assembly, _) = support::twitch_assembly(fake, account, creds, &bus);
         let session = assembly.open_session().await.unwrap();
         let platform = session.chat_platform();
         let bundle = session.into_bundle().unwrap();
@@ -112,14 +80,11 @@ fn draft(title: &str) -> BTreeMap<String, QuickActionFieldValue> {
 }
 
 fn authorized(method: reqwest::Method, fake: &FakeTwitch, query: &str) -> reqwest::RequestBuilder {
-    let account = TwitchAccount::default();
-    reqwest::Client::new()
-        .request(
-            method,
-            format!("{}{REWARDS_PATH}?{query}", fake.api_base_url()),
-        )
-        .header("Authorization", format!("Bearer {}", account.access_token))
-        .header("Client-Id", account.client_id)
+    support::twitch_authorized(
+        &reqwest::Client::new(),
+        method,
+        format!("{}{REWARDS_PATH}?{query}", fake.api_base_url()),
+    )
 }
 
 #[tokio::test]

@@ -4,6 +4,8 @@ use forge_obs::vocabulary::event_kinds as obs_kinds;
 use std::sync::Arc;
 use std::time::Duration;
 
+mod support;
+
 use forge_emulator::EmulatorError;
 use forge_emulator::fakes::obs::{
     Authentication, FakeInput, FakeObs, FakeObsConfig, ObsLedger, authentication_string,
@@ -20,7 +22,6 @@ type Socket = WebSocketStream<MaybeTlsStream<TcpStream>>;
 
 const PASSWORD: &str = "obs-fake-secret-7c1d";
 const WAIT: Duration = Duration::from_secs(30);
-const LOCALHOST: &str = "127.0.0.1";
 
 fn with_password() -> FakeObsConfig {
     FakeObsConfig {
@@ -108,7 +109,7 @@ async fn wait_ledger<T>(
 async fn forge_probe_authenticates_and_reads_the_scene_list() {
     let fake = FakeObs::start(with_password()).await.unwrap();
 
-    let probe = probe_connection(LOCALHOST, fake.port(), PASSWORD)
+    let probe = probe_connection(support::LOOPBACK, fake.port(), PASSWORD)
         .await
         .unwrap();
 
@@ -121,7 +122,7 @@ async fn forge_probe_authenticates_and_reads_the_scene_list() {
 async fn forge_probe_with_the_wrong_password_is_refused_as_an_authentication_failure() {
     let fake = FakeObs::start(with_password()).await.unwrap();
 
-    let outcome = probe_connection(LOCALHOST, fake.port(), "not-the-password")
+    let outcome = probe_connection(support::LOOPBACK, fake.port(), "not-the-password")
         .await
         .map(|probe| probe.scene_count);
 

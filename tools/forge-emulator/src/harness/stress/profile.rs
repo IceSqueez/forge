@@ -4,9 +4,9 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use crate::EmulatorError;
 use crate::fixture::{DEFAULT_QUEUE_NAME, Fixture};
-use crate::harness::scenario::FakeTwitchSetup;
+use crate::harness::scenario::{FakeTwitchSetup, without_position};
+use crate::{EmulatorError, Problem};
 
 pub const MAX_SENDERS: u32 = 1_000_000;
 pub const MAX_RATE: u32 = 100_000;
@@ -118,7 +118,12 @@ pub fn load_profile(path: &Path) -> Result<StressProfile, EmulatorError> {
     let text = std::fs::read_to_string(path).map_err(|e| unreadable(e.to_string()))?;
     let text = text.strip_prefix(BYTE_ORDER_MARK).unwrap_or(&text);
     let profile: StressProfile =
-        serde_json::from_str(text).map_err(|e| unreadable(e.to_string()))?;
+        serde_json::from_str(text).map_err(|e| EmulatorError::StressProfileSyntax {
+            path: path.to_owned(),
+            line: e.line(),
+            column: e.column(),
+            reason: without_position(&e),
+        })?;
     let problems = profile.problems();
     if problems.is_empty() {
         Ok(profile)
@@ -131,72 +136,30 @@ pub fn load_profile(path: &Path) -> Result<StressProfile, EmulatorError> {
 }
 
 impl StressProfile {
-    pub fn problems(&self) -> Vec<String> {
+    pub fn problems(&self) -> Vec<Problem> {
         let mut problems = Vec::new();
         if let Err(e) = self.fixture.validate() {
-            problems.push(e.to_string());
+            problems.push(Problem::new("fixture", e.to_string()));
         }
         if self.fixture.twitch.is_none() {
-            problems
-                .push("fixture.twitch is required: every stimulus arrives over Twitch".to_owned());
-        }
-        if self.senders == 0 || self.senders > MAX_SENDERS {
-            problems.push(format!(
-                "senders must be between 1 and {MAX_SENDERS}, got {}",
-                self.senders
+            problems.push(Problem::new(
+                "fixture.twitch",
+                "is required: every stimulus arrives over Twitch",
             ));
         }
-        if self.ramp.rates.is_empty() {
-            problems.push("ramp.rates is empty".to_owned());
-        }
-        for (index, rate) in self.ramp.rates.iter().enumerate() {
-            if *rate == 0 || *rate > MAX_RATE {
-                problems.push(format!(
-                    "ramp.rates[{index}] must be between 1 and {MAX_RATE}, got {rate}"
-                ));
-            }
-        }
-        for (label, secs) in [
-            ("ramp.hold_secs", self.ramp.hold_secs),
-            ("burst.secs", self.burst.secs),
-            ("recovery_secs", self.recovery_secs),
-        ] {
-            if secs == 0 || secs > MAX_HOLD_SECS {
-                problems.push(format!(
-                    "{label} must be between 1 and {MAX_HOLD_SECS}, got {secs}"
-                ));
-            }
-        }
-        if !(self.burst.multiplier.is_finite() && self.burst.multiplier >= 1.0) {
-            problems.push(format!(
-                "burst.multiplier must be at least 1, got {}",
-                self.burst.multiplier
-            ));
-        }
-        if self.sample_ms == 0 {
-            problems.push("sample_ms must be non-zero".to_owned());
-        }
-        if !(self.knee.max_backlog_secs.is_finite() && self.knee.max_backlog_secs > 0.0) {
-            problems.push("knee.max_backlog_secs must be positive".to_owned());
-        }
-        if !(0.0..=1.0).contains(&self.knee.min_achieved_share) {
-            problems.push("knee.min_achieved_share must be between 0 and 1".to_owned());
-        }
-        if self.knee.watch.is_empty() {
-            problems.push("knee.watch names no action, so no step could be judged".to_owned());
-        }
-        let seeded: BTreeSet<&str> = self.fixture.actions().iter().map(|a| a.name).collect();
-        for action in &self.knee.watch {
-            if !seeded.contains(action.as_str()) {
-                problems.push(format!(
-                    "knee.watch names `{action}`, which the fixture does not seed"
-                ));
-            }
-        }
+        problems.extend(
+            self.fakes
+                .problems()
+                .into_iter()
+                .map(|problem| problem.under("fakes")),
+        );
+        problems.extend(self.load_problems());
+        self.knee_problems(&mut problems);
         for page in &self.pages {
             if !self.fixture.declares_overlay(page) {
-                problems.push(format!(
-                    "pages names `{page}`, which the fixture does not declare"
+                problems.push(Problem::new(
+                    "pages",
+                    format!("names `{page}`, which the fixture does not declare"),
                 ));
             }
         }
@@ -204,22 +167,88 @@ impl StressProfile {
         problems
     }
 
-    fn stimulus_problems(&self, problems: &mut Vec<String>) {
+    fn load_problems(&self) -> Vec<Problem> {
+        let rates = self.ramp.rates.iter().enumerate();
+        let mut problems: Vec<Problem> = Problem::outside(
+            "senders",
+            u64::from(self.senders),
+            1,
+            u64::from(MAX_SENDERS),
+        )
+        .into_iter()
+        .chain(rates.filter_map(|(index, rate)| {
+            let location = format!("ramp.rates[{index}]");
+            Problem::outside(location, u64::from(*rate), 1, u64::from(MAX_RATE))
+        }))
+        .collect();
+        if self.ramp.rates.is_empty() {
+            problems.push(Problem::new("ramp.rates", "is empty"));
+        }
+        for (label, secs) in [
+            ("ramp.hold_secs", self.ramp.hold_secs),
+            ("burst.secs", self.burst.secs),
+            ("recovery_secs", self.recovery_secs),
+        ] {
+            problems.extend(Problem::outside(label, secs, 1, MAX_HOLD_SECS));
+        }
+        if !(self.burst.multiplier.is_finite() && self.burst.multiplier >= 1.0) {
+            problems.push(Problem::new(
+                "burst.multiplier",
+                format!("must be at least 1, got {}", self.burst.multiplier),
+            ));
+        }
+        if self.sample_ms == 0 {
+            problems.push(Problem::new("sample_ms", "must be non-zero"));
+        }
+        problems
+    }
+
+    fn knee_problems(&self, problems: &mut Vec<Problem>) {
+        if !(self.knee.max_backlog_secs.is_finite() && self.knee.max_backlog_secs > 0.0) {
+            problems.push(Problem::new("knee.max_backlog_secs", "must be positive"));
+        }
+        if !(0.0..=1.0).contains(&self.knee.min_achieved_share) {
+            problems.push(Problem::new(
+                "knee.min_achieved_share",
+                "must be between 0 and 1",
+            ));
+        }
+        if self.knee.watch.is_empty() {
+            problems.push(Problem::new(
+                "knee.watch",
+                "names no action, so no step could be judged",
+            ));
+        }
+        let seeded: BTreeSet<&str> = self.fixture.actions().iter().map(|a| a.name).collect();
+        for action in &self.knee.watch {
+            if !seeded.contains(action.as_str()) {
+                problems.push(Problem::new(
+                    "knee.watch",
+                    format!("names `{action}`, which the fixture does not seed"),
+                ));
+            }
+        }
+    }
+
+    fn stimulus_problems(&self, problems: &mut Vec<Problem>) {
         let actions: BTreeSet<&str> = self.fixture.actions().iter().map(|a| a.name).collect();
         let mut kinds = BTreeSet::new();
         let mut flood_weight = 0u64;
         for (index, stimulus) in self.stimuli.iter().enumerate() {
             let at = format!("stimuli[{index}] ({})", stimulus.kind.label());
             if !kinds.insert(stimulus.kind) {
-                problems.push(format!("{at} repeats a kind listed earlier"));
+                problems.push(Problem::new(&at, "repeats a kind listed earlier"));
             }
             match (stimulus.weight, stimulus.per_minute) {
                 (Some(0), None) | (None, Some(0)) => {
-                    problems.push(format!("{at} is zero, so it would never be sent"));
+                    problems.push(Problem::new(&at, "is zero, so it would never be sent"));
                 }
                 (Some(weight), None) => flood_weight += u64::from(weight),
                 (None, Some(_)) => {}
-                _ => problems.push(format!("{at} needs exactly one of weight or per_minute")),
+                _ => problems.push(Problem::new(
+                    &at,
+                    "needs exactly one of weight or per_minute",
+                )),
             }
             if stimulus.kind == StimulusKind::Command
                 && stimulus
@@ -227,23 +256,28 @@ impl StressProfile {
                     .as_deref()
                     .is_none_or(|text| text.trim().is_empty())
             {
-                problems.push(format!("{at} needs the command phrase in text"));
+                problems.push(Problem::new(&at, "needs the command phrase in text"));
             }
             if stimulus.runs.is_empty() {
-                problems.push(format!(
-                    "{at} runs no action, so nothing it causes is measured"
+                problems.push(Problem::new(
+                    &at,
+                    "runs no action, so nothing it causes is measured",
                 ));
             }
             for action in &stimulus.runs {
                 if !actions.contains(action.as_str()) {
-                    problems.push(format!(
-                        "{at} runs `{action}`, which the fixture does not seed"
+                    problems.push(Problem::new(
+                        &at,
+                        format!("runs `{action}`, which the fixture does not seed"),
                     ));
                 }
             }
         }
         if flood_weight == 0 {
-            problems.push("no stimulus has a weight, so the ramp would send nothing".to_owned());
+            problems.push(Problem::new(
+                "stimuli",
+                "no stimulus has a weight, so the ramp would send nothing",
+            ));
         }
     }
 

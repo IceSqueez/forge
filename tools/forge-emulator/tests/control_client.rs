@@ -3,6 +3,8 @@ use forge_platform_twitch::vocabulary::event_kinds as twitch_kinds;
 use forge_platform_youtube::vocabulary::event_kinds as youtube_kinds;
 use std::time::Duration;
 
+mod support;
+
 use forge_emulator::EmulatorError;
 use forge_emulator::harness::control::{
     ClientTimeouts, ControlClient, ControlEndpoint, EventFilter, EventStream, Observation,
@@ -70,7 +72,7 @@ impl FakeForge {
             }
         });
         Self {
-            endpoint: ControlEndpoint::loopback("127.0.0.1", port).unwrap(),
+            endpoint: ControlEndpoint::loopback(support::LOOPBACK, port).unwrap(),
             requests,
             frames,
         }
@@ -623,7 +625,7 @@ async fn a_refused_upgrade_is_a_connect_error() {
             .write_all(b"HTTP/1.1 403 Forbidden\r\ncontent-length: 0\r\n\r\n")
             .await;
     });
-    let endpoint = ControlEndpoint::loopback("127.0.0.1", port).unwrap();
+    let endpoint = ControlEndpoint::loopback(support::LOOPBACK, port).unwrap();
 
     let outcome = ControlClient::connect(&endpoint, ClientTimeouts::default()).await;
 
@@ -637,7 +639,7 @@ async fn a_refused_upgrade_is_a_connect_error() {
 async fn a_peer_that_never_answers_the_upgrade_is_a_connect_timeout() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
-    let endpoint = ControlEndpoint::loopback("127.0.0.1", port).unwrap();
+    let endpoint = ControlEndpoint::loopback(support::LOOPBACK, port).unwrap();
     let timeouts = ClientTimeouts {
         connect: Duration::from_millis(20),
         request: DEADLINE,

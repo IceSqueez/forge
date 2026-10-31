@@ -240,18 +240,32 @@ async fn import_file_refuses_a_source_one_byte_over_its_kind_cap() {
 }
 
 #[cfg(unix)]
+fn make_fifo(path: &Path) {
+    let raw = std::ffi::CString::new(std::os::unix::ffi::OsStrExt::as_bytes(path.as_os_str()))
+        .expect("a temp path has no interior nul");
+    #[expect(
+        unsafe_code,
+        reason = "mkfifo has no safe wrapper on every unix target"
+    )]
+    // SAFETY: `raw` is a nul-terminated string that outlives the call, and mkfifo keeps no pointer to it.
+    let created = unsafe { libc::mkfifo(raw.as_ptr(), 0o600) };
+    assert_eq!(
+        created,
+        0,
+        "mkfifo refused {path:?}: {}",
+        std::io::Error::last_os_error()
+    );
+}
+
+#[cfg(unix)]
 #[tokio::test]
 async fn import_file_stops_reading_a_source_that_understates_its_length_at_the_kind_cap() {
     const OVERSHOOT: usize = 64 * 1024;
-    const IMPORT_DEADLINE: std::time::Duration = std::time::Duration::from_secs(30);
+    const IMPORT_HANG_GUARD: std::time::Duration = std::time::Duration::from_secs(120);
 
     let fx = fixture().await;
     let source = fx.dir.path().join("stream.gif");
-    let made = std::process::Command::new("mkfifo")
-        .arg(&source)
-        .status()
-        .expect("mkfifo runs");
-    assert!(made.success(), "mkfifo refused to create {source:?}");
+    make_fifo(&source);
 
     let feed = source.clone();
     let writer = std::thread::spawn(move || {
@@ -268,7 +282,7 @@ async fn import_file_stops_reading_a_source_that_understates_its_length_at_the_k
         let _ = std::io::Write::write_all(&mut pipe, &bytes);
     });
 
-    let error = tokio::time::timeout(IMPORT_DEADLINE, fx.media().import_file(&source))
+    let error = tokio::time::timeout(IMPORT_HANG_GUARD, fx.media().import_file(&source))
         .await
         .expect("the import must not stall on a source that never ends")
         .unwrap_err();

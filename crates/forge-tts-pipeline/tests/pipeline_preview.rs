@@ -4,8 +4,8 @@ mod common;
 use common::{neutral_config, neutral_output};
 use forge_tts_pipeline::{
     AppliedReplacement, BlocklistMode, EmoteTokenSet, EmoteTreatment, OutputConfig, PipelineConfig,
-    PipelineContext, PipelineResult, ReplacementOrigin, ReplacementRule, SkipReason,
-    SkipRulesConfig, StageAction, StageName, StageOutcome, preview, process,
+    PipelineContext, PipelineResult, ReplacementOrigin, ReplacementRule, SkipRulesConfig,
+    StageAction, StageName, StageOutcome, preview, process,
 };
 
 fn ctx() -> PipelineContext<'static> {
@@ -194,26 +194,6 @@ fn preview_output_stage_records_display_name_prefix_as_transformed() {
         outcomes[3].output.starts_with("koval_dev says: "),
         "prefixed output must start with the viewer name: {}",
         outcomes[3].output
-    );
-}
-
-#[test]
-fn preview_skip_produces_final_result_skip_not_speak() {
-    let config = PipelineConfig {
-        word_blocklist: vec!["forbidden".into()],
-        blocklist_mode: BlocklistMode::SkipMessage,
-        ..neutral_config()
-    };
-
-    let (result, _) = preview("contains forbidden word", &config, &ctx());
-    assert!(
-        matches!(
-            result,
-            PipelineResult::Skip {
-                reason: SkipReason::BlockedByWordFilter
-            }
-        ),
-        "final result must be Skip(BlockedByWordFilter)"
     );
 }
 

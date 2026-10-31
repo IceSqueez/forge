@@ -5,6 +5,12 @@ use crate::fakes::kick::KickRequest;
 use crate::fakes::youtube::YouTubeRequest;
 use crate::harness::scenario::{HttpRequestSeen, RequestCount};
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct LedgerMark {
+    pub(crate) sessions: usize,
+    pub(crate) requests: usize,
+}
+
 pub(crate) trait RecordedHttp {
     fn method(&self) -> &str;
     fn path(&self) -> &str;

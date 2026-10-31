@@ -27,6 +27,7 @@ pub struct ElevenLabsCredentials {
 pub struct OpenAiCredentials {
     #[serde(serialize_with = "Secret::serialize_exposed")]
     pub api_key: Secret,
+    #[serde(default)]
     pub base_url: Option<String>,
 }
 

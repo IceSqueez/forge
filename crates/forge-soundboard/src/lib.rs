@@ -1,5 +1,3 @@
-#![doc = "Soundboard: clip storage, playback, in-app hotkey wiring, sound sub-action runners."]
-
 mod audio_event;
 mod builtin_library;
 mod bus_event_sink;

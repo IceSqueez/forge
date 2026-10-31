@@ -1,5 +1,3 @@
-#![doc = "Versioned WebSocket + HTTP server for overlays and remote control. /ws/v1/..."]
-
 mod routes;
 
 mod audio_clips;

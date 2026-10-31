@@ -6,6 +6,8 @@ use objc2_avf_audio::{
 };
 use objc2_foundation::NSArray;
 
+pub(crate) const NSSPEECH_SAMPLE_RATE_HZ: u32 = 22_050;
+
 use crate::error::NsSpeechError;
 
 pub(crate) fn voice_catalog(engine_id: &EngineId) -> Result<Vec<TtsVoice>, NsSpeechError> {
@@ -42,7 +44,7 @@ fn map_voice(voice: &AVSpeechSynthesisVoice, engine_id: &EngineId) -> TtsVoice {
         engine_id: engine_id.clone(),
         is_neural: quality == AVSpeechSynthesisVoiceQuality::Enhanced
             || quality == AVSpeechSynthesisVoiceQuality::Premium,
-        sample_rate_hint: 22_050,
+        sample_rate_hint: NSSPEECH_SAMPLE_RATE_HZ,
     }
 }
 

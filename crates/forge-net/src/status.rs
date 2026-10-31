@@ -4,5 +4,6 @@ pub const UNAUTHORIZED: u16 = 401;
 pub const FORBIDDEN: u16 = 403;
 pub const NOT_FOUND: u16 = 404;
 pub const CONFLICT: u16 = 409;
+pub const PAYLOAD_TOO_LARGE: u16 = 413;
 pub const UNPROCESSABLE_ENTITY: u16 = 422;
 pub const TOO_MANY_REQUESTS: u16 = 429;

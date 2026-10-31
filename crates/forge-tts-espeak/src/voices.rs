@@ -1,5 +1,7 @@
 use forge_speech_types::{EngineId, TtsVoice, VoiceGender, VoiceId};
 
+const ESPEAK_SAMPLE_RATE_HZ: u32 = 22_050;
+
 pub(crate) fn parse_voices_output(raw: &str, engine_id: &EngineId) -> Vec<TtsVoice> {
     raw.lines()
         .filter(|line| {
@@ -35,7 +37,7 @@ fn parse_voice_line(line: &str, engine_id: &EngineId) -> Option<TtsVoice> {
         gender,
         engine_id: engine_id.clone(),
         is_neural: false,
-        sample_rate_hint: 22_050,
+        sample_rate_hint: ESPEAK_SAMPLE_RATE_HZ,
     })
 }
 

@@ -12,6 +12,9 @@ const SUBPROCESS_TIMEOUT: Duration = Duration::from_secs(10);
 pub(crate) const ESPEAK_BINARY: &str = "espeak-ng";
 const DEFAULT_RATE_WPM: u32 = 175;
 const DEFAULT_PITCH: u32 = 50;
+const MIN_RATE_WPM: f32 = 50.0;
+const MAX_RATE_WPM: f32 = 450.0;
+const MAX_PITCH: f32 = 99.0;
 
 pub(crate) struct SynthesisInvocation<'a> {
     pub voice_id: &'a str,
@@ -42,13 +45,21 @@ pub(crate) fn check_espeak_version(binary: &Path) -> Result<(), EspeakError> {
 }
 
 pub(crate) fn rate_wpm_from_multiplier(rate_multiplier: f32) -> u32 {
-    (175.0_f32 * rate_multiplier).round().clamp(50.0, 450.0) as u32
+    if rate_multiplier.is_nan() {
+        return DEFAULT_RATE_WPM;
+    }
+    (DEFAULT_RATE_WPM as f32 * rate_multiplier)
+        .round()
+        .clamp(MIN_RATE_WPM, MAX_RATE_WPM) as u32
 }
 
 pub(crate) fn pitch_from_semitones(pitch_semitones: f32) -> u32 {
-    (50.0_f32 + pitch_semitones * (50.0 / SEMITONES_PER_OCTAVE))
+    if pitch_semitones.is_nan() {
+        return DEFAULT_PITCH;
+    }
+    (DEFAULT_PITCH as f32 + pitch_semitones * (DEFAULT_PITCH as f32 / SEMITONES_PER_OCTAVE))
         .round()
-        .clamp(0.0, 99.0) as u32
+        .clamp(0.0, MAX_PITCH) as u32
 }
 
 pub(crate) async fn list_voices_from_binary(binary: &Path) -> Result<String, EspeakError> {

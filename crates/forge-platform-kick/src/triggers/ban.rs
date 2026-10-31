@@ -11,6 +11,8 @@ use super::payload_read::{self, kick_actor};
 use crate::vocabulary::fields::moderation as fields;
 use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
+const MAX_BAN_SECONDS: i64 = 1_209_600;
+
 pub(crate) struct BanDescriptor;
 
 impl TriggerKindDescriptor for BanDescriptor {
@@ -65,7 +67,7 @@ impl TriggerKindDescriptor for BanDescriptor {
                         label: "Ban duration (seconds)".to_owned(),
                         synthesis: Some(SynthesisHint::BoundedInt {
                             min: 0,
-                            max: 1_209_600,
+                            max: MAX_BAN_SECONDS,
                         }),
                     },
                     |event| Variant::Int(payload_read::number(event, fields::DURATION_SECS)),

@@ -12,6 +12,7 @@ use super::payload_read::{self, youtube_actor};
 use crate::vocabulary::fields::ban as fields;
 use crate::vocabulary::{event_kinds, messages, trigger_ids, variables};
 
+const MAX_BAN_SECONDS: i64 = 86_400;
 const ANY_BAN: &str = "any";
 const PERMANENT_BAN: &str = "permanent";
 const TEMPORARY_BAN: &str = "temporary";
@@ -110,7 +111,7 @@ impl TriggerKindDescriptor for ChannelUserBannedDescriptor {
                         label: "Ban duration in seconds".to_owned(),
                         synthesis: Some(SynthesisHint::BoundedInt {
                             min: 0,
-                            max: 86_400,
+                            max: MAX_BAN_SECONDS,
                         }),
                     },
                     |event| Variant::Int(payload_read::number(event, fields::DURATION_SECS)),

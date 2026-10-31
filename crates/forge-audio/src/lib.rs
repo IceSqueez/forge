@@ -1,5 +1,3 @@
-#![doc = "Audio output abstraction: AudioSink trait, cpal device discovery, multi-sink fan-out, format conversion."]
-
 mod alert_cue;
 mod audio_route;
 mod convert;

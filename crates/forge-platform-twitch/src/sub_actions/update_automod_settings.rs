@@ -284,7 +284,7 @@ mod tests {
     async fn all_unchanged_succeeds_without_any_helix_call() {
         let transport = Arc::new(MockTransport::returning(Ok(serde_json::Value::Null)));
         let runner = runner(Arc::clone(&transport));
-        let config = config_with(&[]); // every select at "unchanged"
+        let config = config_with(&[]);
         let stack = ArgStack::new();
         let ctx = make_ctx(&stack);
 

@@ -53,7 +53,7 @@ impl YoutubeThumbnail {
             return Err(size_limit_error());
         }
         let bytes = tokio::fs::read(&image_path).await?;
-        if bytes.len() as u64 > MAX_THUMBNAIL_BYTES {
+        if u64::try_from(bytes.len()).map_or(true, |len| len > MAX_THUMBNAIL_BYTES) {
             return Err(size_limit_error());
         }
 

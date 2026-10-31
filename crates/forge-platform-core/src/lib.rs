@@ -1,5 +1,3 @@
-#![doc = "ChatPlatform trait, AuthFlow taxonomy, Integration page traits."]
-
 mod auth;
 mod ban_list;
 mod builtin;

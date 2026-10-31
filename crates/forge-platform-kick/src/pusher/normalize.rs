@@ -174,7 +174,7 @@ pub(crate) fn channel_subscription_gifted(raw: &Value) -> Value {
                 .collect()
         })
         .unwrap_or_default();
-    let count = giftees.len() as u64;
+    let count = u64::try_from(giftees.len()).unwrap_or(u64::MAX);
 
     let tier = raw.get("subscription").and_then(|s| str_field(s, "slug"));
 

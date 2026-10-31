@@ -158,7 +158,9 @@ fn forward_global_hotkey_event(
         timestamp_us: std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
-            .as_micros() as u64,
+            .as_micros()
+            .try_into()
+            .unwrap_or(u64::MAX),
         edge: if pressed {
             HotkeyEdge::Press
         } else {

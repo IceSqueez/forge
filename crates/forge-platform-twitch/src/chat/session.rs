@@ -80,6 +80,11 @@ const CLOSE_TIMEOUT: Duration = Duration::from_secs(2);
 const PREDECESSOR_DRAIN_LIMIT: usize = 256;
 const HELD_FRAME_LIMIT: usize = 1024;
 const AUTHORIZATION_REVOKED_STATUS: &str = "authorization_revoked";
+const MESSAGE_SESSION_WELCOME: &str = "session_welcome";
+const MESSAGE_SESSION_KEEPALIVE: &str = "session_keepalive";
+const MESSAGE_SESSION_RECONNECT: &str = "session_reconnect";
+const MESSAGE_NOTIFICATION: &str = "notification";
+const MESSAGE_REVOCATION: &str = "revocation";
 
 type EventSubSocket =
     tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
@@ -214,7 +219,7 @@ impl ChatSession {
                 ChatConnectionState::Connecting
             } else {
                 ChatConnectionState::Reconnecting {
-                    attempt: attempt.min(u8::MAX as u32) as u8,
+                    attempt: u8::try_from(attempt).unwrap_or(u8::MAX),
                 }
             });
 
@@ -473,7 +478,7 @@ impl ChatSession {
         };
 
         match frame.metadata.message_type.as_str() {
-            "session_welcome" => {
+            MESSAGE_SESSION_WELCOME => {
                 let id = match frame.payload.as_ref().and_then(|p| p.session.as_ref()) {
                     Some(s) => s.id.clone(),
                     None => {
@@ -509,11 +514,11 @@ impl ChatSession {
                 return FrameAction::Subscribe(Box::pin(pass.run()));
             }
 
-            "session_keepalive" => {
+            MESSAGE_SESSION_KEEPALIVE => {
                 trace!("keepalive received");
             }
 
-            "session_reconnect" => {
+            MESSAGE_SESSION_RECONNECT => {
                 let new_url = frame
                     .payload
                     .as_ref()
@@ -531,7 +536,7 @@ impl ChatSession {
                 }
             }
 
-            "notification" => {
+            MESSAGE_NOTIFICATION => {
                 let sub_type = frame.metadata.subscription_type.as_deref().unwrap_or("");
                 let frame_msg_id = frame.metadata.message_id.as_str();
                 if self.seen_messages.is_duplicate(frame_msg_id) {
@@ -556,7 +561,7 @@ impl ChatSession {
                 }
             }
 
-            "revocation" => {
+            MESSAGE_REVOCATION => {
                 let Some(revoked) = frame.payload.as_ref().and_then(|p| p.subscription.as_ref())
                 else {
                     warn!("revocation frame missing its subscription");
@@ -2214,7 +2219,7 @@ async fn welcome_on_successor(url: String) -> Result<(EventSubSocket, String), T
         let Ok(parsed) = serde_json::from_str::<WsFrame>(&text) else {
             continue;
         };
-        if parsed.metadata.message_type != "session_welcome" {
+        if parsed.metadata.message_type != MESSAGE_SESSION_WELCOME {
             debug!(
                 message_type = %parsed.metadata.message_type,
                 "successor socket frame ahead of session_welcome"

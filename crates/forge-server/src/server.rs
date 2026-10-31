@@ -28,6 +28,8 @@ use crate::server_info::ServerInfo;
 use crate::settings;
 use crate::{ServerConfig, ServerError, ServerHandle, ServerTiming};
 
+const BEARER_PREFIX: &str = "Bearer ";
+
 #[derive(Clone)]
 pub(crate) struct AppState {
     pub(crate) auth: Arc<AuthState>,
@@ -157,7 +159,7 @@ async fn auth_middleware(State(state): State<AppState>, request: Request, next: 
             .headers()
             .get(header::AUTHORIZATION)
             .and_then(|v| v.to_str().ok())
-            .and_then(|s| s.strip_prefix("Bearer "))
+            .and_then(|s| s.strip_prefix(BEARER_PREFIX))
             .map(str::trim);
 
         let authorized = match maybe_token {

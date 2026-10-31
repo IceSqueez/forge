@@ -47,7 +47,10 @@ impl FollowLookup for TwitchIntegrationBundle {
             .await
         {
             Ok(response) => status_from_response(&response),
-            Err(_) => FollowStatus::Unavailable,
+            Err(error) => {
+                tracing::debug!(%error, "follow lookup unavailable");
+                FollowStatus::Unavailable
+            }
         }
     }
 }

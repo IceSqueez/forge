@@ -80,7 +80,7 @@ fn run_synthesis(
     let shared = Arc::new((
         Mutex::new(SynthState {
             samples: Vec::new(),
-            sample_rate: 22_050,
+            sample_rate: crate::voices::NSSPEECH_SAMPLE_RATE_HZ,
             channels: 1,
             done: false,
         }),

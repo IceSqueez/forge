@@ -305,7 +305,7 @@ fn map_send_failure(failure: TwitchError) -> PlatformError {
             platform: PLATFORM_ID.to_owned(),
         },
         error @ TwitchError::MessageTooLong => PlatformError::Http {
-            status: 413,
+            status: forge_net::status::PAYLOAD_TOO_LARGE,
             body: error.to_string(),
         },
         TwitchError::MessageDropped { code, message } => PlatformError::Refused {

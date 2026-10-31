@@ -10,17 +10,13 @@ pub const SUBLINE: &str = "subline";
 pub const ACCENT: &str = "accent";
 pub const FONT: &str = "font";
 pub const POSITION: &str = "position";
-pub const ELEMENT_WIDTH: &str = "element_width";
-pub const ELEMENT_HEIGHT: &str = "element_height";
 pub const DESIGN_WIDTH: &str = "design_width";
 pub const DESIGN_HEIGHT: &str = "design_height";
 pub const MARGIN_TOP: &str = "margin_top";
 pub const MARGIN_RIGHT: &str = "margin_right";
 pub const MARGIN_BOTTOM: &str = "margin_bottom";
 pub const MARGIN_LEFT: &str = "margin_left";
-pub const MIGRATION_ACKNOWLEDGED: &str = "migration_acknowledged";
 pub const TEXT_SIZE: &str = "text_size";
-pub const ANIMATION: &str = "animation";
 pub const DURATION: &str = "duration";
 pub const SOUND: &str = "sound";
 pub const SPEECH: &str = "speech";
@@ -58,25 +54,9 @@ pub const FONT_OPTIONS: &[&str] = &["Inter", "JetBrains Mono", "Rubik", "Bebas N
 pub const POSITION_OPTIONS: &[&str] = &["top", "bottom"];
 pub const POSITION_TOP: &str = "top";
 pub const POSITION_BOTTOM: &str = "bottom";
-pub const ANIMATION_OPTIONS: &[&str] = &[
-    "fade",
-    "slide-up",
-    "slide-down",
-    "slide-left",
-    "pop",
-    "wipe-left",
-];
 
 pub const DURATION_MIN_SECS: i64 = 1;
 pub const DURATION_MAX_SECS: i64 = 15;
-
-pub const RETIRED_KEYS: &[&str] = &[
-    "canvas_width",
-    "canvas_height",
-    ELEMENT_WIDTH,
-    ELEMENT_HEIGHT,
-    ANIMATION,
-];
 
 pub const DESIGN_SIZE_MIN_PX: i64 = 40;
 pub const DESIGN_SIZE_MAX_PX: i64 = 7680;

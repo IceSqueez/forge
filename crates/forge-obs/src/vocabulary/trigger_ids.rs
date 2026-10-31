@@ -59,4 +59,4 @@ pub const TRANSITION_VIDEO_ENDED: &str = event_kinds::TRANSITION_VIDEO_ENDED;
 
 pub const VIRTUALCAM_STARTED: &str = event_kinds::VIRTUALCAM_STARTED;
 pub const VIRTUALCAM_STOPPED: &str = event_kinds::VIRTUALCAM_STOPPED;
-pub const VIRTUALCAM_STATUS_CHANGED: &str = "obs.virtualcam.state_changed";
+pub const VIRTUALCAM_STATUS_CHANGED: &str = "obs.virtualcam.status_changed";

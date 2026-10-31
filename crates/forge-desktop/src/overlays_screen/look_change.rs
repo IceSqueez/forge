@@ -11,7 +11,6 @@ use gpui::Context;
 use super::OverlaysView;
 use super::base_sections::{BaseLaunch, LookSummary};
 use super::kind_visuals::kind_text;
-use super::sizing_section::keep_sizing_notice;
 use super::writes::{Regenerated, regenerate};
 use crate::async_bridge;
 use crate::repo_failure::RepoFailure;
@@ -85,8 +84,7 @@ impl OverlaysView {
             self.report(&forge_components::tr!("overlays_toast_unknown_type"), cx);
             return;
         };
-        let mut carried = carried_config(descriptor, &config);
-        keep_sizing_notice(&config, &mut carried);
+        let carried = carried_config(descriptor, &config);
         let schema_version = descriptor.config_schema_version();
         let repo = Arc::clone(&self.handles.repo);
         let service = self.handles.service.clone();

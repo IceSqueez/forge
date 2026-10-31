@@ -10,5 +10,4 @@ pub const DESCRIPTION: &str = "description";
 pub const CATEGORY_ID: &str = "category_id";
 pub const PRIVACY_STATUS: &str = "privacy_status";
 pub const IMAGE_PATH: &str = "image_path";
-pub const AD_DURATION_SECS: &str = "duration_secs";
 pub const IDENTIFIER: &str = "identifier";

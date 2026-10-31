@@ -6,15 +6,13 @@ use common::{
 };
 
 use forge_overlay::config::{
-    DESIGN_HEIGHT, DESIGN_SIZE_MAX_PX, DESIGN_SIZE_MIN_PX, DESIGN_WIDTH, ELEMENT_HEIGHT,
-    ELEMENT_WIDTH, MARGIN_BOTTOM, MARGIN_LEFT, MARGIN_MAX_PERCENT, MARGIN_MIN_PERCENT,
-    MARGIN_RIGHT, MARGIN_TOP, MIGRATION_ACKNOWLEDGED, POSITION, TEXT_SIZE, TEXT_SIZE_MAX_PX,
-    TEXT_SIZE_MIN_PX,
+    DESIGN_HEIGHT, DESIGN_SIZE_MAX_PX, DESIGN_SIZE_MIN_PX, DESIGN_WIDTH, MARGIN_BOTTOM,
+    MARGIN_LEFT, MARGIN_MAX_PERCENT, MARGIN_MIN_PERCENT, MARGIN_RIGHT, MARGIN_TOP, POSITION,
+    TEXT_SIZE, TEXT_SIZE_MAX_PX, TEXT_SIZE_MIN_PX,
 };
 use forge_overlay::{
     ContentMargins, DesignSize, OverlayConfig, OverlayError, OverlayKindDescriptor, PreviewCanvas,
-    PreviewElement, acknowledge_sizing_notice, effective_overlay_config, element_sizing,
-    sizing_notice_pending, upgrade_config, validate_overlay_config,
+    PreviewElement, effective_overlay_config, element_sizing, validate_overlay_config,
 };
 use forge_registry::FormField;
 use forge_types::Variant;
@@ -28,16 +26,6 @@ const ALL_KINDS: [&str; 7] = [
     LATEST_KIND,
     TICKER_KIND,
 ];
-
-const PRE_BOX_SCHEMA: &[(&str, u32)] = &[
-    (ALERT_KIND, 2),
-    (CHAT_KIND, 1),
-    (FRAME_KIND, 1),
-    (GOAL_KIND, 1),
-    (TICKER_KIND, 1),
-];
-
-const VENDOR_KEY: &str = "vendor.future_key";
 
 const BASE_TEXT_SIZE: &[(&str, Option<u32>)] = &[
     (ALERT_KIND, Some(20)),
@@ -62,14 +50,6 @@ fn one(key: &str, value: Variant) -> OverlayConfig {
     OverlayConfig::from([(key.to_owned(), value)])
 }
 
-fn int(config: &OverlayConfig, key: &str) -> Option<i64> {
-    config.get(key).and_then(Variant::as_int)
-}
-
-fn margins_of(config: &OverlayConfig) -> [Option<i64>; 4] {
-    [MARGIN_TOP, MARGIN_RIGHT, MARGIN_BOTTOM, MARGIN_LEFT].map(|side| int(config, side))
-}
-
 fn drawn(kind_id: &str, stored: &OverlayConfig) -> PreviewElement {
     with_kind(kind_id, |descriptor| {
         descriptor
@@ -78,17 +58,6 @@ fn drawn(kind_id: &str, stored: &OverlayConfig) -> PreviewElement {
                 forge_types::NamesLanguage::En,
             )
             .element
-    })
-}
-
-fn upgraded(kind_id: &str, stored: &OverlayConfig) -> OverlayConfig {
-    let version = PRE_BOX_SCHEMA
-        .iter()
-        .find(|(kind, _)| *kind == kind_id)
-        .map(|(_, version)| *version)
-        .expect("a look that predates the box contract");
-    with_kind(kind_id, |descriptor| {
-        upgrade_config(descriptor, version, stored).expect("an older record is upgraded")
     })
 }
 
@@ -338,15 +307,9 @@ fn a_stored_design_size_is_previewed_pulled_into_range() {
 }
 
 #[test]
-fn the_box_contract_retires_element_size_everywhere_and_position_where_the_box_places_the_look() {
+fn every_look_offers_the_source_box_and_position_only_where_the_box_does_not_place_it() {
     for kind_id in ALL_KINDS {
         with_kind(kind_id, |descriptor| {
-            for retired in [ELEMENT_WIDTH, ELEMENT_HEIGHT] {
-                assert!(
-                    !offers(descriptor, retired),
-                    "{kind_id} still offers {retired}, which the source box replaced"
-                );
-            }
             for kept in [
                 DESIGN_WIDTH,
                 DESIGN_HEIGHT,
@@ -393,305 +356,6 @@ fn chat_and_frame_keep_position_as_a_top_or_bottom_edge_opening_on_the_bottom() 
 }
 
 #[test]
-fn a_record_already_at_the_current_schema_is_left_alone() {
-    for kind_id in ALL_KINDS {
-        let untouched = with_kind(kind_id, |descriptor| {
-            upgrade_config(
-                descriptor,
-                descriptor.config_schema_version(),
-                &OverlayConfig::from([(ELEMENT_WIDTH.to_owned(), Variant::Int(640))]),
-            )
-        });
-
-        assert!(
-            untouched.is_none(),
-            "{kind_id} rewrote a record that is already at its current schema: {untouched:?}"
-        );
-    }
-}
-
-#[test]
-fn an_older_alert_without_element_size_takes_the_look_default_box_and_its_old_padding_as_percent() {
-    let config = upgraded(ALERT_KIND, &OverlayConfig::new());
-
-    assert_eq!(
-        (int(&config, DESIGN_WIDTH), int(&config, DESIGN_HEIGHT)),
-        (Some(800), Some(600)),
-        "an alert sized by nobody did not open on its look default box"
-    );
-    assert_eq!(
-        margins_of(&config),
-        [Some(5), Some(4), Some(5), Some(4)],
-        "32px of old padding over an 800x600 box is 5% vertically and 4% horizontally"
-    );
-}
-
-#[test]
-fn an_older_record_seeds_its_box_from_the_element_size_it_stored_and_drops_that_size() {
-    let config = upgraded(
-        ALERT_KIND,
-        &OverlayConfig::from([
-            (ELEMENT_WIDTH.to_owned(), Variant::Int(1000)),
-            (ELEMENT_HEIGHT.to_owned(), Variant::Int(300)),
-        ]),
-    );
-
-    assert_eq!(
-        (int(&config, DESIGN_WIDTH), int(&config, DESIGN_HEIGHT)),
-        (Some(1000), Some(300)),
-        "the box ignored the element size the streamer had chosen"
-    );
-    assert_eq!(
-        margins_of(&config),
-        [Some(11), Some(3), Some(11), Some(3)],
-        "the old padding was not re-expressed as a share of the seeded box"
-    );
-    assert!(
-        !config.contains_key(ELEMENT_WIDTH) && !config.contains_key(ELEMENT_HEIGHT),
-        "the retired element size survived the upgrade"
-    );
-}
-
-#[test]
-fn a_seeded_box_is_pulled_into_the_design_size_range() {
-    for (stored, expected) in [
-        (i64::MAX, DESIGN_SIZE_MAX_PX),
-        (DESIGN_SIZE_MAX_PX + 1, DESIGN_SIZE_MAX_PX),
-        (DESIGN_SIZE_MIN_PX - 1, DESIGN_SIZE_MIN_PX),
-        (0, DESIGN_SIZE_MIN_PX),
-    ] {
-        let config = upgraded(GOAL_KIND, &one(ELEMENT_WIDTH, Variant::Int(stored)));
-
-        assert_eq!(
-            int(&config, DESIGN_WIDTH),
-            Some(expected),
-            "an element width of {stored} seeded a box outside the supported range"
-        );
-    }
-}
-
-#[test]
-fn an_element_size_held_as_anything_but_a_whole_number_seeds_the_look_default() {
-    for stored in [Variant::Float(500.0), text("500"), Variant::Bool(true)] {
-        let config = upgraded(GOAL_KIND, &one(ELEMENT_WIDTH, stored.clone()));
-
-        assert_eq!(
-            int(&config, DESIGN_WIDTH),
-            Some(640),
-            "an element width held as {stored:?} seeded a box the look does not default to"
-        );
-    }
-}
-
-#[test]
-fn a_huge_old_padding_share_is_pulled_down_to_the_margin_bound() {
-    let config = upgraded(
-        ALERT_KIND,
-        &OverlayConfig::from([
-            (ELEMENT_WIDTH.to_owned(), Variant::Int(DESIGN_SIZE_MIN_PX)),
-            (ELEMENT_HEIGHT.to_owned(), Variant::Int(DESIGN_SIZE_MIN_PX)),
-        ]),
-    );
-
-    assert_eq!(
-        margins_of(&config),
-        [Some(MARGIN_MAX_PERCENT); 4],
-        "32px over a 40px box seeded margins past the supported bound"
-    );
-}
-
-#[test]
-fn each_look_reexpresses_its_own_old_padding_over_its_default_box() {
-    for (kind_id, expected) in [
-        (CHAT_KIND, [Some(4), Some(6), Some(4), Some(6)]),
-        (GOAL_KIND, [Some(20), Some(5), Some(20), Some(5)]),
-        (TICKER_KIND, [Some(0); 4]),
-        (FRAME_KIND, [Some(0); 4]),
-    ] {
-        assert_eq!(
-            margins_of(&upgraded(kind_id, &OverlayConfig::new())),
-            expected,
-            "{kind_id} re-expressed its old padding as the wrong share of its box"
-        );
-    }
-}
-
-#[test]
-fn a_record_that_already_holds_a_box_or_margins_keeps_them_through_the_upgrade() {
-    let stored = OverlayConfig::from([
-        (DESIGN_WIDTH.to_owned(), Variant::Int(1280)),
-        (DESIGN_HEIGHT.to_owned(), Variant::Int(720)),
-        (ELEMENT_WIDTH.to_owned(), Variant::Int(400)),
-        (MARGIN_TOP.to_owned(), Variant::Int(30)),
-    ]);
-
-    let config = upgraded(ALERT_KIND, &stored);
-
-    assert_eq!(
-        (int(&config, DESIGN_WIDTH), int(&config, DESIGN_HEIGHT)),
-        (Some(1280), Some(720)),
-        "a box the streamer set was overwritten by the retired element size"
-    );
-    assert_eq!(
-        margins_of(&config),
-        [Some(30), None, None, None],
-        "a margin the streamer set was reseeded from the old padding"
-    );
-}
-
-#[test]
-fn an_upgrade_keeps_every_key_it_does_not_own() {
-    let config = upgraded(
-        CHAT_KIND,
-        &OverlayConfig::from([
-            (VENDOR_KEY.to_owned(), Variant::Bool(true)),
-            (TEXT_SIZE.to_owned(), Variant::Int(18)),
-        ]),
-    );
-
-    assert_eq!(config.get(VENDOR_KEY), Some(&Variant::Bool(true)));
-    assert_eq!(config.get(TEXT_SIZE), Some(&Variant::Int(18)));
-}
-
-#[test]
-fn an_upgrade_drops_position_where_the_box_places_the_look() {
-    for kind_id in [ALERT_KIND, TICKER_KIND, GOAL_KIND] {
-        let config = upgraded(kind_id, &one(POSITION, text("top")));
-
-        assert!(
-            !config.contains_key(POSITION),
-            "{kind_id} kept an in-page position the box replaced"
-        );
-    }
-}
-
-#[test]
-fn an_upgrade_folds_center_into_the_bottom_edge_and_keeps_an_offered_edge() {
-    for kind_id in [CHAT_KIND, FRAME_KIND] {
-        for (stored, expected) in [
-            (Some(text("center")), Some(text("bottom"))),
-            (Some(text("diagonal")), Some(text("bottom"))),
-            (Some(Variant::Int(1)), Some(text("bottom"))),
-            (Some(text("top")), Some(text("top"))),
-            (Some(text("bottom")), Some(text("bottom"))),
-            (None, None),
-        ] {
-            let before = stored
-                .clone()
-                .map_or_else(OverlayConfig::new, |value| one(POSITION, value));
-
-            assert_eq!(
-                upgraded(kind_id, &before).get(POSITION),
-                expected.as_ref(),
-                "{kind_id} upgraded a position of {stored:?} to the wrong edge"
-            );
-        }
-    }
-}
-
-#[test]
-fn an_upgraded_record_validates_against_its_current_form() {
-    for (kind_id, _) in PRE_BOX_SCHEMA {
-        let config = upgraded(
-            kind_id,
-            &OverlayConfig::from([
-                (ELEMENT_WIDTH.to_owned(), Variant::Int(i64::MAX)),
-                (ELEMENT_HEIGHT.to_owned(), Variant::Int(1)),
-                (POSITION.to_owned(), text("center")),
-            ]),
-        );
-
-        let refusal = with_kind(kind_id, |descriptor| {
-            validate_overlay_config(descriptor, &config).err()
-        });
-        assert!(
-            refusal.is_none(),
-            "{kind_id} upgraded a record into one its own form refuses: {refusal:?}"
-        );
-    }
-}
-
-#[test]
-fn upgrading_an_already_upgraded_record_again_changes_nothing() {
-    for (kind_id, _) in PRE_BOX_SCHEMA {
-        let stored = OverlayConfig::from([
-            (ELEMENT_WIDTH.to_owned(), Variant::Int(900)),
-            (POSITION.to_owned(), text("center")),
-        ]);
-        let once = upgraded(kind_id, &stored);
-
-        assert_eq!(
-            upgraded(kind_id, &once),
-            once,
-            "{kind_id} drifted when an interrupted upgrade ran a second time"
-        );
-    }
-}
-
-#[test]
-fn every_upgraded_look_raises_the_sizing_notice() {
-    for (kind_id, _) in PRE_BOX_SCHEMA {
-        let config = upgraded(kind_id, &OverlayConfig::new());
-
-        assert_eq!(
-            config.get(MIGRATION_ACKNOWLEDGED),
-            Some(&Variant::Bool(false)),
-            "{kind_id} changed its sizing silently"
-        );
-        assert!(sizing_notice_pending(&config), "{kind_id}");
-    }
-}
-
-#[test]
-fn a_record_that_never_migrated_shows_no_sizing_notice() {
-    for kind_id in ALL_KINDS {
-        let defaults = with_kind(kind_id, |descriptor| descriptor.default_config());
-
-        assert!(
-            !sizing_notice_pending(&defaults),
-            "{kind_id} opens a fresh overlay on a migration notice"
-        );
-    }
-}
-
-#[test]
-fn acknowledging_the_notice_clears_it_for_good() {
-    let mut config = upgraded(ALERT_KIND, &OverlayConfig::new());
-
-    acknowledge_sizing_notice(&mut config);
-
-    assert!(!sizing_notice_pending(&config));
-    acknowledge_sizing_notice(&mut config);
-    assert_eq!(
-        config.get(MIGRATION_ACKNOWLEDGED),
-        Some(&Variant::Bool(true)),
-        "acknowledging twice did not leave the notice acknowledged"
-    );
-}
-
-#[test]
-fn acknowledging_a_record_that_never_migrated_records_nothing() {
-    let mut config = OverlayConfig::new();
-
-    acknowledge_sizing_notice(&mut config);
-
-    assert!(
-        !config.contains_key(MIGRATION_ACKNOWLEDGED),
-        "an overlay that never migrated gained a migration marker"
-    );
-}
-
-#[test]
-fn a_notice_marker_of_the_wrong_type_is_not_a_pending_notice() {
-    for stored in [Variant::Int(0), text("false"), Variant::Bool(true)] {
-        assert!(
-            !sizing_notice_pending(&one(MIGRATION_ACKNOWLEDGED, stored.clone())),
-            "a marker held as {stored:?} raised the notice"
-        );
-    }
-}
-
-#[test]
 fn a_design_size_written_into_a_config_reads_back_unchanged() {
     for size in [
         DesignSize {
@@ -725,16 +389,4 @@ fn margins_written_into_a_config_read_back_unchanged_side_by_side() {
     margins.write_into(&mut config);
 
     assert_eq!(ContentMargins::read(&config, ContentMargins::NONE), margins);
-}
-
-#[test]
-fn blank_draws_nothing_on_stream_and_upgrades_without_a_sizing_notice() {
-    let upgraded_blank = with_kind(BLANK_KIND, |descriptor| {
-        upgrade_config(descriptor, 0, &OverlayConfig::new())
-    });
-
-    assert!(
-        upgraded_blank.is_none_or(|config| !sizing_notice_pending(&config)),
-        "blank draws nothing on stream yet raised a sizing notice"
-    );
 }

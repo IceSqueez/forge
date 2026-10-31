@@ -114,7 +114,7 @@ impl TriggerKindDescriptor for ChannelUserBannedDescriptor {
                             max: MAX_BAN_SECONDS,
                         }),
                     },
-                    |event| Variant::Int(payload_read::number(event, fields::DURATION_SECS)),
+                    |event| Variant::Int(payload_read::number(event, fields::DURATION_SECONDS)),
                 )
                 .legacy(
                     variables::ban::TARGET_DISPLAY_NAME,
@@ -184,7 +184,7 @@ mod tests {
             "target_user": { "display_name": "Troll", "channel_id": "UCtarget" },
             "moderator": { "channel_id": "UCmod", "display_name": "ModName" },
             "type": "temporary",
-            "duration_secs": 300_i64,
+            "duration_seconds": 300_i64,
         }))
     }
 

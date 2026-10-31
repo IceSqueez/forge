@@ -25,9 +25,7 @@ mod tests {
     use std::collections::BTreeSet;
 
     use super::*;
-    use crate::config::{
-        ELEMENT_HEIGHT, ELEMENT_WIDTH, effective_overlay_config, validate_overlay_config,
-    };
+    use crate::config::{effective_overlay_config, validate_overlay_config};
     use crate::descriptor::OverlayConfig;
 
     const BUILTIN_IDS: &[&str] = &[
@@ -63,9 +61,7 @@ mod tests {
     }
 
     #[test]
-    fn every_builtin_defaults_the_keys_its_form_declares_apart_from_the_sides_a_page_may_size() {
-        let optional: BTreeSet<&str> = BTreeSet::from([ELEMENT_WIDTH, ELEMENT_HEIGHT]);
-
+    fn every_builtin_defaults_the_keys_its_form_declares() {
         for descriptor in registry().all() {
             let declared: BTreeSet<&str> = descriptor
                 .config_fields()
@@ -82,12 +78,10 @@ mod tests {
                 descriptor.id()
             );
 
-            let undefaulted: BTreeSet<&str> = declared.difference(&defaulted).copied().collect();
-            let expected: BTreeSet<&str> = declared.intersection(&optional).copied().collect();
-            assert_eq!(
-                undefaulted,
-                expected,
-                "{} leaves a field without a default, or hands one to a side the page sizes itself",
+            let undefaulted: Vec<&&str> = declared.difference(&defaulted).collect();
+            assert!(
+                undefaulted.is_empty(),
+                "{} leaves {undefaulted:?} without a default",
                 descriptor.id()
             );
         }

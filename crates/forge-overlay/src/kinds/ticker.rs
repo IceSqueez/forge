@@ -13,9 +13,7 @@ use crate::source_box::{ContentMargins, DesignSize};
 
 pub const KIND_ID: &str = "overlay.ticker";
 
-pub const BOX_CONTRACT_SCHEMA_VERSION: u32 = 2;
-
-pub const MOTION_SCHEMA_VERSION: u32 = 3;
+pub const CONFIG_SCHEMA_VERSION: u32 = 3;
 
 const TICKER_DISPLAY_SECS: i64 = 8;
 const DESIGN_WIDTH_PX: u32 = 1920;
@@ -49,7 +47,7 @@ impl OverlayKindDescriptor for TickerOverlayKind {
     }
 
     fn config_schema_version(&self) -> u32 {
-        MOTION_SCHEMA_VERSION
+        CONFIG_SCHEMA_VERSION
     }
 
     fn motion(&self) -> MotionProfile {

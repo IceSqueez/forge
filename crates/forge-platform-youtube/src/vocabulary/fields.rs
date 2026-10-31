@@ -32,7 +32,7 @@ pub(crate) mod ban {
     pub(crate) const TARGET_USER: &str = "target_user";
     pub(crate) const MODERATOR: &str = "moderator";
     pub(crate) const TYPE: &str = "type";
-    pub(crate) const DURATION_SECS: &str = "duration_secs";
+    pub(crate) const DURATION_SECONDS: &str = "duration_seconds";
 }
 
 pub(crate) mod chat_mod {

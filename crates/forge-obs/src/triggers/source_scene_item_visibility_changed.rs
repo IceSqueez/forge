@@ -82,7 +82,7 @@ impl TriggerKindDescriptor for SourceSceneItemVisibilityChangedDescriptor {
             .and_then(|v| v.as_bool())
         {
             stack = stack.set(
-                variables::source::IS_ENABLED.to_owned(),
+                variables::source::IS_VISIBLE.to_owned(),
                 Variant::Bool(visible),
             );
         }
@@ -105,7 +105,7 @@ impl TriggerKindDescriptor for SourceSceneItemVisibilityChangedDescriptor {
                     synthesis: None,
                 },
                 DeclaredVariable {
-                    name: variables::source::IS_ENABLED.to_owned(),
+                    name: variables::source::IS_VISIBLE.to_owned(),
                     kind: VariantKind::Bool,
                     label: "Source visible".to_owned(),
                     synthesis: None,
@@ -138,7 +138,7 @@ mod tests {
             Some(&Variant::String("Cam".to_owned())),
         );
         assert_eq!(
-            stack.get("obs.source.is_enabled"),
+            stack.get("obs.source.is_visible"),
             Some(&Variant::Bool(true)),
         );
     }
@@ -152,7 +152,7 @@ mod tests {
         );
         let stack = SourceSceneItemVisibilityChangedDescriptor.build_arg_stack(&event);
         assert_eq!(
-            stack.get("obs.source.is_enabled"),
+            stack.get("obs.source.is_visible"),
             Some(&Variant::Bool(false)),
         );
     }
@@ -163,6 +163,6 @@ mod tests {
         let stack = SourceSceneItemVisibilityChangedDescriptor.build_arg_stack(&event);
         assert!(stack.get("obs.scene.name").is_none());
         assert!(stack.get("obs.source.name").is_none());
-        assert!(stack.get("obs.source.is_enabled").is_none());
+        assert!(stack.get("obs.source.is_visible").is_none());
     }
 }

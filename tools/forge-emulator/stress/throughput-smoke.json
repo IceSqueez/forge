@@ -162,7 +162,7 @@
                 "type": "string",
                 "value": "%who% just followed"
               },
-              "duration_secs": {
+              "duration_seconds": {
                 "type": "int",
                 "value": 1
               }
@@ -217,7 +217,7 @@
                 "type": "string",
                 "value": "%user_name% just subscribed"
               },
-              "duration_secs": {
+              "duration_seconds": {
                 "type": "int",
                 "value": 1
               }
@@ -258,7 +258,7 @@
                 "type": "string",
                 "value": "%user_name% cheered %bits_amount% bits"
               },
-              "duration_secs": {
+              "duration_seconds": {
                 "type": "int",
                 "value": 1
               }

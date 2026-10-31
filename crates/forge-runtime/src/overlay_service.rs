@@ -12,7 +12,7 @@ use forge_overlay::{
     OverlayInstance, OverlayKindDescriptor, OverlayKindRegistry, OverlayMedia, SampleContext,
     delivered_content, ensure_shared_directory, joined_to_show, latest_binding, latest_content,
     materialize_overlay, read_overlay_source, refresh_config_credential, remove_overlay_directory,
-    sample_content, show_timing, take_speech, upgrade_config, write_overlay_source,
+    sample_content, show_timing, take_speech, write_overlay_source,
 };
 use forge_registry::CancelSignal;
 use forge_storage::{
@@ -369,11 +369,9 @@ impl OverlayServiceHandle {
     }
 
     pub async fn save(&self, definition: &OverlayDefinition) -> Result<(), RuntimeError> {
-        self.inner.kinds.validate_stored(
-            &definition.kind_id,
-            definition.config_schema_version,
-            &definition.config,
-        )?;
+        self.inner
+            .kinds
+            .validate_stored(&definition.kind_id, &definition.config)?;
         Ok(self.inner.repo.save(definition).await?)
     }
 
@@ -385,11 +383,9 @@ impl OverlayServiceHandle {
         let Some(definition) = self.inner.repo.get(id).await? else {
             return Ok(false);
         };
-        self.inner.kinds.validate_stored(
-            &definition.kind_id,
-            definition.config_schema_version,
-            config,
-        )?;
+        self.inner
+            .kinds
+            .validate_stored(&definition.kind_id, config)?;
         Ok(self.inner.repo.update_config(id, config).await?)
     }
 
@@ -716,10 +712,9 @@ impl OverlayServiceHandle {
 
     async fn write_files(
         &self,
-        stored: &OverlayDefinition,
+        definition: &OverlayDefinition,
         samples: &dyn OverlaySampleSource,
     ) -> Result<MaterializeReport, RuntimeError> {
-        let definition = &self.upgraded(stored);
         let root = self.root().await;
         let instance = instance_of(
             definition,
@@ -746,31 +741,11 @@ impl OverlayServiceHandle {
 
         let mut stamped = definition.clone();
         stamped.generator_version = GENERATOR_VERSION;
-        if stamped != *stored {
+        if stamped != *definition {
             self.inner.repo.save(&stamped).await?;
         }
 
         Ok(report)
-    }
-
-    fn upgraded(&self, stored: &OverlayDefinition) -> OverlayDefinition {
-        let mut current = stored.clone();
-        let Some(descriptor) = self.inner.kinds.get(&stored.kind_id) else {
-            return current;
-        };
-        if let Some(config) =
-            upgrade_config(descriptor, stored.config_schema_version, &stored.config)
-        {
-            tracing::info!(
-                overlay = %stored.id,
-                from = stored.config_schema_version,
-                to = descriptor.config_schema_version(),
-                "overlay settings upgraded to the current layout"
-            );
-            current.config = config;
-            current.config_schema_version = descriptor.config_schema_version();
-        }
-        current
     }
 
     async fn media_pass(&self, definition: &OverlayDefinition) -> OverlayMedia {

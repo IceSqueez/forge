@@ -62,7 +62,7 @@ impl TriggerKindDescriptor for BanDescriptor {
                 .actor(kick_actor(ActorRole::Moderator), moderator_identity)
                 .event_specific(
                     DeclaredVariable {
-                        name: variables::ban::DURATION_SECS.to_owned(),
+                        name: variables::ban::DURATION_SECONDS.to_owned(),
                         kind: VariantKind::Int,
                         label: "Ban duration (seconds)".to_owned(),
                         synthesis: Some(SynthesisHint::BoundedInt {
@@ -70,7 +70,7 @@ impl TriggerKindDescriptor for BanDescriptor {
                             max: MAX_BAN_SECONDS,
                         }),
                     },
-                    |event| Variant::Int(payload_read::number(event, fields::DURATION_SECS)),
+                    |event| Variant::Int(payload_read::number(event, fields::DURATION_SECONDS)),
                 )
                 .event_specific(
                     DeclaredVariable {
@@ -131,7 +131,7 @@ mod tests {
             "banned_user": { "id": 77, "username": "bad_actor" },
             "moderator": { "id": 2, "username": "mod" },
             "is_permanent": false,
-            "duration_secs": 300,
+            "duration_seconds": 300,
             "reason": null
         }))
     }
@@ -176,11 +176,11 @@ mod tests {
         ] {
             let stack = BanDescriptor.build_arg_stack(&ban_event(json!({
                 "banned_user": { "id": 77, "username": "bad_actor" },
-                "duration_secs": duration.clone(),
+                "duration_seconds": duration.clone(),
                 "reason": reason.clone()
             })));
             assert_eq!(
-                stack.get("duration_secs"),
+                stack.get("duration_seconds"),
                 Some(&Variant::Int(expected_secs)),
                 "duration {duration}"
             );

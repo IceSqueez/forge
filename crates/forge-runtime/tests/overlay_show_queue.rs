@@ -37,7 +37,7 @@ const SIDE: &str = "side-alert";
 
 const HEADLINE_KEY: &str = "headline";
 const WAIT_KEY: &str = "wait_for_show";
-const DURATION_KEY: &str = "duration_secs";
+const DURATION_KEY: &str = "duration_seconds";
 
 const ALERT_WINDOW: Duration = Duration::from_secs(5);
 const ALERT_EXIT_TAIL: Duration = Duration::from_millis(DEFAULT_EXIT_MS.unsigned_abs());

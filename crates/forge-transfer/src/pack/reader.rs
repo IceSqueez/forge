@@ -9,7 +9,6 @@ use crate::bundle::naming::fresh_stem;
 use crate::documents::archive::{
     DocumentManifest, carried_file, check_bundled_files, documents_version, stage_document_bundle,
 };
-use crate::documents::command_arguments::upgrade_command_arguments;
 use crate::documents::model::{PACK_DOCUMENTS_VERSION, PackDocuments};
 use crate::error::TransferError;
 use crate::pack::manifest::{PackManifest, parse_pack};
@@ -45,10 +44,6 @@ impl StagedPack {
 
     pub fn documents(&self) -> &PackDocuments {
         &self.documents
-    }
-
-    pub fn upgrade_command_arguments(&mut self) {
-        upgrade_command_arguments(&mut self.documents);
     }
 
     pub fn file(&self, pack_path: &str) -> Option<PathBuf> {
@@ -114,6 +109,12 @@ fn parse_documents(bytes: &[u8]) -> Result<PackDocuments, TransferError> {
     let version = documents_version(bytes)?;
     if version > PACK_DOCUMENTS_VERSION {
         return Err(TransferError::NewerPackDocuments {
+            found: version,
+            supported: PACK_DOCUMENTS_VERSION,
+        });
+    }
+    if version < PACK_DOCUMENTS_VERSION {
+        return Err(TransferError::RetiredDocuments {
             found: version,
             supported: PACK_DOCUMENTS_VERSION,
         });

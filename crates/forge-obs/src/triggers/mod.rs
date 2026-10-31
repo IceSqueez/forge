@@ -187,7 +187,7 @@ mod tests {
             "obs.filter.enabled_changed",
             "obs.virtualcam.started",
             "obs.virtualcam.stopped",
-            "obs.virtualcam.state_changed",
+            "obs.virtualcam.status_changed",
             "obs.connection.connected",
             "obs.connection.disconnected",
             "obs.connection.auth_failed",

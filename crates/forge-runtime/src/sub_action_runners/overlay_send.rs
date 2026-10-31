@@ -14,7 +14,7 @@ use crate::core_messages;
 use crate::overlay_service::{OverlayDelivery, OverlayDispatch, OverlayServiceHandle};
 use crate::overlay_shows::ShowEnd;
 
-const DURATION_KEY: &str = "duration_secs";
+const DURATION_KEY: &str = "duration_seconds";
 const WAIT_KEY: &str = "wait_for_show";
 const MILLIS_PER_SECOND: u64 = 1_000;
 

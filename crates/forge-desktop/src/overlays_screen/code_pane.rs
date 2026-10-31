@@ -12,7 +12,7 @@ use forge_components::{
     ghost_button_with_icon, icon, mono_family, overlay, primary_button_with_icon, scaled,
     status_dot, tr,
 };
-use forge_overlay::{MediaIssue, OVERRIDABLE_FILES, sizing_notice_pending};
+use forge_overlay::{MediaIssue, OVERRIDABLE_FILES};
 use forge_storage::{OverlayDefinition, OverlayId};
 use gpui::{
     AnyElement, App, ClickEvent, Context, Entity, Pixels, SharedString, Subscription, div,
@@ -149,11 +149,6 @@ impl OverlaysView {
     fn is_overridden(&self, file: &str) -> bool {
         self.selected_definition()
             .is_some_and(|definition| definition.source_overrides.iter().any(|held| held == file))
-    }
-
-    fn predates_box(&self) -> bool {
-        self.selected_definition()
-            .is_some_and(|definition| sizing_notice_pending(&definition.config))
     }
 
     fn is_missing(&self, file: &str) -> bool {
@@ -583,12 +578,6 @@ impl OverlaysView {
                 Icon::AlertTriangle,
                 palette.danger,
                 tr!("overlays_code_hint_missing", file = file),
-            )
-        } else if self.is_overridden(file) && self.predates_box() {
-            (
-                Icon::AlertTriangle,
-                palette.warning,
-                tr!("overlays_code_hint_predates_box", file = file),
             )
         } else if self.is_overridden(file) {
             (

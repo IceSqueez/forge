@@ -42,7 +42,6 @@ const UNSHIPPED_KIND: &str = "overlay.vendor_unshipped";
 const POSITION_KEY: &str = "position";
 const KNOWN_POSITION: &str = "top";
 const UNKNOWN_POSITION: &str = "middle";
-const OLDEST_SCHEMA: u32 = 1;
 const PACKED_OVERLAY_NAME: &str = "Packed chat";
 
 type Expected = fn(&TransferError) -> bool;
@@ -434,15 +433,10 @@ fn carrying_overlay(overlay: OverlayDocument) -> PackDocuments {
 async fn planning_judges_each_overlay_against_the_look_and_schema_the_pack_recorded() {
     type Verdict = fn(&Result<PackImportPlan, TransferError>) -> bool;
     let current = current_schema(CHAT_KIND);
-    let cases: [(&str, OverlayDocument, Verdict); 4] = [
+    let cases: [(&str, OverlayDocument, Verdict); 3] = [
         (
             "valid settings",
             chat_overlay("valid", KNOWN_POSITION, current),
-            |r| r.is_ok(),
-        ),
-        (
-            "older schema the upgrade repairs",
-            chat_overlay("older", UNKNOWN_POSITION, OLDEST_SCHEMA),
             |r| r.is_ok(),
         ),
         (

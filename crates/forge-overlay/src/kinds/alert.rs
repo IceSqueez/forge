@@ -13,9 +13,7 @@ use crate::source_box::{ContentMargins, DesignSize};
 
 pub const KIND_ID: &str = "overlay.alert";
 
-pub const BOX_CONTRACT_SCHEMA_VERSION: u32 = 3;
-
-pub const MOTION_SCHEMA_VERSION: u32 = 4;
+pub const CONFIG_SCHEMA_VERSION: u32 = 4;
 
 const DESIGN_WIDTH_PX: u32 = 800;
 const DESIGN_HEIGHT_PX: u32 = 600;
@@ -49,7 +47,7 @@ impl OverlayKindDescriptor for AlertOverlayKind {
     }
 
     fn config_schema_version(&self) -> u32 {
-        MOTION_SCHEMA_VERSION
+        CONFIG_SCHEMA_VERSION
     }
 
     fn motion(&self) -> MotionProfile {

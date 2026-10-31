@@ -10,7 +10,7 @@ use forge_components::{
     BORDER_THIN, FONT_XXS, ForgePalette, KeyActivated, Picker, PickerEvent, PickerItem,
     PickerLabels, accent_swatch, body_family, field_label, scaled, section_label, tr,
 };
-use forge_overlay::config::{ACCENT, RETIRED_KEYS, SOUND_OPTIONS_KEY, SPEECH_VOICE};
+use forge_overlay::config::{ACCENT, SOUND_OPTIONS_KEY, SPEECH_VOICE};
 use forge_overlay::{ConfigSection, MediaIssue, MediaSlot, SectionedField, media_slot};
 use forge_registry::{ENGINE_VOICE_OPTIONS_KEY, FormField};
 use forge_runtime::{OverlaySampleSource, OverlayServiceHandle};
@@ -307,12 +307,7 @@ impl OverlayPropertyPanel {
 
     pub(super) fn pending_config(&self, cx: &App) -> OverlayConfig {
         let mut buffer = self.defaults.clone();
-        for (key, value) in &self.stored {
-            if RETIRED_KEYS.contains(&key.as_str()) {
-                continue;
-            }
-            buffer.insert(key.clone(), value.clone());
-        }
+        buffer.extend(self.stored.clone());
         collect_field_values(&self.fields, &mut buffer, cx);
         sparse_overrides(&self.defaults, &buffer)
     }
@@ -790,7 +785,6 @@ impl Render for OverlayPropertyPanel {
             .flex_col();
 
         body = body
-            .children(self.render_sizing_notice(&palette, cx))
             .children(override_notice(&self.overridden_files, &palette, density))
             .child(self.render_look_section(&palette, cx))
             .children(self.render_latest_section(&palette, cx));
@@ -825,12 +819,10 @@ pub(crate) mod tests {
     use std::sync::Mutex;
 
     use forge_components::{Density, ThemeId};
-    use forge_overlay::config::{
-        ACCENT_OPTIONS, ELEMENT_WIDTH, HEADLINE, ICON, ICON_OPTIONS_KEY, SOUND,
-    };
+    use forge_overlay::config::{ACCENT_OPTIONS, HEADLINE, ICON, ICON_OPTIONS_KEY, SOUND};
     use forge_overlay::config::{
         DESIGN_HEIGHT, DESIGN_SIZE_MAX_PX, DESIGN_SIZE_MIN_PX, DESIGN_WIDTH, MARGIN_BOTTOM,
-        MARGIN_LEFT, MARGIN_MAX_PERCENT, MARGIN_RIGHT, MARGIN_TOP, MIGRATION_ACKNOWLEDGED,
+        MARGIN_LEFT, MARGIN_MAX_PERCENT, MARGIN_RIGHT, MARGIN_TOP,
     };
     use forge_overlay::kinds::frame::FrameOverlayKind;
     use forge_overlay::kinds::goal::GoalOverlayKind;
@@ -855,8 +847,7 @@ pub(crate) mod tests {
     const TOKEN: &str = "token";
     const DEFAULT_HEADLINE: &str = "hello";
     const EDITED_HEADLINE: &str = "goodbye";
-    const CANVAS_WIDTH: &str = "canvas_width";
-    const CANVAS_HEIGHT: &str = "canvas_height";
+    const ELEMENT_WIDTH: &str = "element_width";
 
     pub(crate) struct RecordingOverlays {
         definition: Mutex<OverlayDefinition>,
@@ -1197,27 +1188,6 @@ pub(crate) mod tests {
                 HEADLINE,
                 Variant::String(EDITED_HEADLINE.into())
             )])]
-        );
-    }
-
-    #[gpui::test]
-    fn a_save_forgets_the_retired_canvas_keys_and_carries_every_other_one_forward(
-        cx: &mut gpui::TestAppContext,
-    ) {
-        let fixture = Fixture::new(
-            cx,
-            config(&[
-                (CANVAS_WIDTH, Variant::Int(1920)),
-                (CANVAS_HEIGHT, Variant::Int(1080)),
-                (ACCENT, Variant::String("sky".into())),
-            ]),
-        );
-
-        fixture.commit(cx);
-
-        assert_eq!(
-            fixture.saves(cx),
-            vec![config(&[(ACCENT, Variant::String("sky".into()))])]
         );
     }
 
@@ -1678,7 +1648,6 @@ pub(crate) mod tests {
     }
 
     const PANEL_H: f32 = 1200.0;
-    const SIZING_ACK: &str = "overlays-sizing-ack";
     const LOOK_TRIGGER: &str = "overlays-panel-look";
     const GOAL_LOOK_ROW: &str = "forge-picker-row-0";
     const HELD_WIDTH: i64 = 1500;
@@ -1884,46 +1853,10 @@ pub(crate) mod tests {
             );
         }
 
-        fn saves(&mut self) -> Vec<OverlayConfig> {
-            let heard = self.heard.clone();
-            self.vcx.update(|_window, cx| heard.read(cx).saves.clone())
-        }
-
         fn looks(&mut self) -> Vec<(String, OverlayConfig)> {
             let heard = self.heard.clone();
             self.vcx.update(|_window, cx| heard.read(cx).looks.clone())
         }
-    }
-
-    fn predating(entries: &[(&str, Variant)]) -> OverlayConfig {
-        let mut stored = config(entries);
-        stored.insert(MIGRATION_ACKNOWLEDGED.to_owned(), Variant::Bool(false));
-        stored
-    }
-
-    #[gpui::test]
-    fn got_it_on_the_sizing_notice_saves_the_acknowledgement(cx: &mut gpui::TestAppContext) {
-        let mut shown = show(cx, predating(&[]));
-
-        click_selector(shown.vcx, SIZING_ACK);
-
-        assert_eq!(
-            shown.saves(),
-            vec![config(&[(MIGRATION_ACKNOWLEDGED, Variant::Bool(true))])]
-        );
-    }
-
-    #[gpui::test]
-    fn the_sizing_notice_is_gone_once_acknowledged(cx: &mut gpui::TestAppContext) {
-        let shown = show(cx, predating(&[]));
-
-        click_selector(shown.vcx, SIZING_ACK);
-
-        assert_eq!(
-            shown.vcx.debug_bounds(SIZING_ACK),
-            None,
-            "the acknowledged notice still paints its button"
-        );
     }
 
     #[gpui::test]

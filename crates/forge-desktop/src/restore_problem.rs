@@ -15,6 +15,10 @@ pub(crate) enum RestoreProblem {
         found: u32,
         supported: u32,
     },
+    RetiredDocuments {
+        found: u32,
+        supported: u32,
+    },
     NewerFormat {
         found: u32,
         supported: u32,
@@ -58,6 +62,10 @@ impl RestoreProblem {
             },
             TransferError::NewerPackDocuments { found, supported }
             | TransferError::NewerSetupDocuments { found, supported } => Self::NewerDocuments {
+                found: *found,
+                supported: *supported,
+            },
+            TransferError::RetiredDocuments { found, supported } => Self::RetiredDocuments {
                 found: *found,
                 supported: *supported,
             },
@@ -114,6 +122,11 @@ impl RestoreProblem {
             ),
             Self::NewerDocuments { found, supported } => tr!(
                 "restore_problem_newer_documents",
+                found = found.to_string(),
+                supported = supported.to_string()
+            ),
+            Self::RetiredDocuments { found, supported } => tr!(
+                "restore_problem_retired_documents",
                 found = found.to_string(),
                 supported = supported.to_string()
             ),
@@ -287,6 +300,16 @@ mod tests {
                 RestoreProblem::NewerDocuments {
                     found: 6,
                     supported: 5,
+                },
+            ),
+            (
+                TransferError::RetiredDocuments {
+                    found: 1,
+                    supported: 2,
+                },
+                RestoreProblem::RetiredDocuments {
+                    found: 1,
+                    supported: 2,
                 },
             ),
         ] {

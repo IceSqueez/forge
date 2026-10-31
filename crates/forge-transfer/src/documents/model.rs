@@ -11,7 +11,7 @@ use forge_types::{
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
-pub const PACK_DOCUMENTS_VERSION: u32 = 1;
+pub const PACK_DOCUMENTS_VERSION: u32 = 2;
 
 pub(crate) type DocumentConfig = BTreeMap<String, Variant>;
 

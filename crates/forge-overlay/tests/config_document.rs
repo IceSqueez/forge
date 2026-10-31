@@ -3,9 +3,8 @@ mod common;
 use common::{ALERT_KIND, BLOB_IDENTITY, PAGE_CREDENTIAL};
 
 use forge_overlay::config::{
-    ACCENT, DEFAULT_ICON, DESIGN_HEIGHT, DESIGN_WIDTH, DURATION, ELEMENT_HEIGHT, ELEMENT_WIDTH,
-    FONT, HEADLINE, ICON, MARGIN_BOTTOM, MARGIN_LEFT, MARGIN_RIGHT, MARGIN_TOP,
-    MIGRATION_ACKNOWLEDGED, SOUND, SUBLINE, TEXT_SIZE,
+    ACCENT, DEFAULT_ICON, DESIGN_HEIGHT, DESIGN_WIDTH, DURATION, FONT, HEADLINE, ICON,
+    MARGIN_BOTTOM, MARGIN_LEFT, MARGIN_RIGHT, MARGIN_TOP, SOUND, SUBLINE, TEXT_SIZE,
 };
 use forge_overlay::motion::{
     ENTRANCE, ENTRANCE_MS, EXIT, EXIT_MS, INTENSITY, TEXT_EFFECT, TEXT_STAGGER_CUSTOM, TEXT_UNIT,
@@ -207,29 +206,4 @@ fn the_page_credential_is_a_top_level_slot_present_only_when_the_instance_holds_
         unbound.get("credential").is_none(),
         "an instance carrying no credential still emitted the slot as null"
     );
-}
-
-#[test]
-fn retired_sizing_keys_and_the_migration_notice_never_reach_the_page() {
-    let doc = document(OverlayConfig::from([
-        (ELEMENT_WIDTH.to_owned(), Variant::Int(640)),
-        (ELEMENT_HEIGHT.to_owned(), Variant::Int(200)),
-        ("canvas_width".to_owned(), Variant::Int(1920)),
-        ("canvas_height".to_owned(), Variant::Int(1080)),
-        (MIGRATION_ACKNOWLEDGED.to_owned(), Variant::Bool(false)),
-    ]));
-    let config = doc["config"].as_object().expect("config is an object");
-
-    for key in [
-        ELEMENT_WIDTH,
-        ELEMENT_HEIGHT,
-        "canvas_width",
-        "canvas_height",
-        MIGRATION_ACKNOWLEDGED,
-    ] {
-        assert!(
-            !config.contains_key(key),
-            "'{key}' reached a page that no longer sizes or places itself by it"
-        );
-    }
 }

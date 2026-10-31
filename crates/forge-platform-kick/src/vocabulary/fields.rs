@@ -17,7 +17,7 @@ pub(crate) mod moderation {
     pub(crate) const BANNED_USER: &str = "banned_user";
     pub(crate) const MODERATOR: &str = "moderator";
     pub(crate) const IS_PERMANENT: &str = "is_permanent";
-    pub(crate) const DURATION_SECS: &str = "duration_secs";
+    pub(crate) const DURATION_SECONDS: &str = "duration_seconds";
     pub(crate) const REASON: &str = "reason";
 }
 

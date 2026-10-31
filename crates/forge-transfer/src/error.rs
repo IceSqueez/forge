@@ -22,6 +22,9 @@ pub enum TransferError {
     #[error("this pack uses document format {found}; this forge reads up to format {supported}")]
     NewerPackDocuments { found: u32, supported: u32 },
 
+    #[error("this file uses retired document format {found}; this forge reads format {supported}")]
+    RetiredDocuments { found: u32, supported: u32 },
+
     #[error("the pack has no actions to export")]
     EmptyPack,
 

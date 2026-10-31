@@ -330,13 +330,12 @@ async fn stage_and_plan(
     bundle: PathBuf,
     data_dir: PathBuf,
 ) -> Result<Planned, PlanFailure> {
-    let mut staged = stage_pack(bundle, data_dir)
+    let staged = stage_pack(bundle, data_dir)
         .await
         .map_err(|error| PlanFailure::Refused(RestoreProblem::of(&error)))?;
     match services.load_source().await {
         Ok(source) => {
             let registries = services.registries(&source);
-            staged.upgrade_command_arguments();
             match plan_pack_import(&staged, &source.inventory, registries) {
                 Ok(plan) => Ok(Planned { staged, plan }),
                 Err(error) => {

@@ -44,7 +44,7 @@ pub(crate) fn observed_ban(
     let banned_user = payload.get(moderation::BANNED_USER)?;
     let viewer_id = banned_user.get(entity::ID)?.as_u64()?.to_string();
     let expires_at = match payload
-        .get(moderation::DURATION_SECS)
+        .get(moderation::DURATION_SECONDS)
         .and_then(Value::as_u64)
     {
         Some(seconds) => {

@@ -65,7 +65,7 @@ mod tests {
                 "deleted_by": "d",
                 "banned_user": true,
                 "moderator": 0,
-                "duration_secs": [],
+                "duration_seconds": [],
                 "reason": 1,
                 "subscriber": [],
                 "months": "3",

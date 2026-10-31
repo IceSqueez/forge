@@ -20,7 +20,7 @@ pub(crate) mod source {
     pub(crate) const KIND: &str = "obs.source.kind";
     pub(crate) const ITEM_ID: &str = "obs.source.item_id";
     pub(crate) const IS_LOCKED: &str = "obs.source.is_locked";
-    pub(crate) const IS_ENABLED: &str = "obs.source.is_enabled";
+    pub(crate) const IS_VISIBLE: &str = "obs.source.is_visible";
     pub(crate) const IS_MUTED: &str = "obs.source.is_muted";
     pub(crate) const VOLUME_DB: &str = "obs.source.volume_db";
     pub(crate) const VOLUME_MULTIPLIER: &str = "obs.source.volume_multiplier";

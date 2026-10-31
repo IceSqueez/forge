@@ -137,7 +137,7 @@ pub(crate) fn moderation_banned(raw: &Value) -> Value {
         (moderation::BANNED_USER): entity_json(banned_user_id, banned_user_username),
         (moderation::MODERATOR): entity_json(moderator_id, moderator_username),
         (moderation::IS_PERMANENT): is_permanent,
-        (moderation::DURATION_SECS): duration_secs,
+        (moderation::DURATION_SECONDS): duration_secs,
         (moderation::REASON): reason,
     })
 }
@@ -357,7 +357,7 @@ mod tests {
         assert_eq!(out["banned_user"]["id"], json!(77));
         assert_eq!(out["moderator"]["username"], json!("mod"));
         assert_eq!(out["is_permanent"], json!(false));
-        assert_eq!(out["duration_secs"], json!(300));
+        assert_eq!(out["duration_seconds"], json!(300));
         assert!(out["reason"].is_null());
     }
 
@@ -369,7 +369,7 @@ mod tests {
             "permanent_ban_reason": "spam"
         }));
         assert_eq!(out["is_permanent"], json!(true));
-        assert!(out["duration_secs"].is_null());
+        assert!(out["duration_seconds"].is_null());
         assert_eq!(out["reason"], json!("spam"));
     }
 

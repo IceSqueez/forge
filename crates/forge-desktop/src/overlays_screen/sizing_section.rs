@@ -1,29 +1,16 @@
 use forge_components::ActivePresentation;
-use forge_components::Spacing;
-use forge_components::spacing;
-use forge_components::{
-    BORDER_THIN, FONT_XS, FONT_XXS, ForgePalette, Icon, body_family, field_label,
-    ghost_button_with_icon, icon, scaled, section_label, tr,
-};
+use forge_components::{ForgePalette, field_label, scaled, section_label, tr};
 use forge_overlay::config::{
     DESIGN_HEIGHT, DESIGN_SIZE_MAX_PX, DESIGN_SIZE_MIN_PX, DESIGN_WIDTH, MARGIN_SIDES,
-    MIGRATION_ACKNOWLEDGED,
 };
-use forge_overlay::{
-    ContentMargins, DesignSize, OverlayConfig, acknowledge_sizing_notice, sizing_notice_pending,
-};
-use gpui::{AnyElement, ClickEvent, Context, FontWeight, Pixels, div, prelude::*, px};
+use forge_overlay::{ContentMargins, DesignSize, OverlayConfig};
+use gpui::{AnyElement, Context, Pixels, div, prelude::*, px};
 
 use super::base_sections::{PanelSection, hinted};
-use super::property_panel::{
-    FIELD_GAP, NOTICE_LINE_H, NOTICE_PAD, NOTICE_RADIUS, OverlayPropertyPanel, PropertyPanelEvent,
-    SECTION_GAP, SECTION_TOP_GAP,
-};
+use super::property_panel::{FIELD_GAP, OverlayPropertyPanel, SECTION_GAP, SECTION_TOP_GAP};
 use crate::config_form::{ConfigField, render_config_control};
 
 const PAIR_GAP: Pixels = px(8.0);
-const NOTICE_GAP: Pixels = px(8.0);
-const NOTICE_GLYPH: Pixels = px(12.0);
 
 pub(super) fn is_source_box_key(key: &str) -> bool {
     key == DESIGN_WIDTH || key == DESIGN_HEIGHT || MARGIN_SIDES.contains(&key)
@@ -48,12 +35,6 @@ pub(super) fn with_source_box(defaults: &OverlayConfig, sparse: OverlayConfig) -
     DesignSize::read(&effective, DesignSize::BROWSER_SOURCE_DEFAULT).write_into(&mut carried);
     ContentMargins::read(&effective, ContentMargins::NONE).write_into(&mut carried);
     carried
-}
-
-pub(super) fn keep_sizing_notice(from: &OverlayConfig, into: &mut OverlayConfig) {
-    if let Some(flag) = from.get(MIGRATION_ACKNOWLEDGED) {
-        into.insert(MIGRATION_ACKNOWLEDGED.to_owned(), flag.clone());
-    }
 }
 
 impl OverlayPropertyPanel {
@@ -90,94 +71,6 @@ impl OverlayPropertyPanel {
         for (input, settled) in corrections {
             input.update(cx, |input, cx| input.set_content(settled, cx));
         }
-    }
-
-    fn acknowledge_sizing(&mut self, cx: &mut Context<Self>) {
-        let mut next = self.pending_config(cx);
-        acknowledge_sizing_notice(&mut next);
-        if next == self.stored {
-            return;
-        }
-        self.stored = next.clone();
-        cx.emit(PropertyPanelEvent::Save(next));
-        cx.notify();
-    }
-
-    pub(super) fn render_sizing_notice(
-        &self,
-        palette: &ForgePalette,
-        cx: &mut Context<Self>,
-    ) -> Option<AnyElement> {
-        let density = cx.density();
-        if !sizing_notice_pending(&self.stored) {
-            return None;
-        }
-        let size = self.stored_design_size();
-        let width = size.width.to_string();
-        let height = size.height.to_string();
-
-        Some(
-            div()
-                .mb(SECTION_TOP_GAP)
-                .flex()
-                .items_start()
-                .gap(scaled(NOTICE_GAP, density))
-                .p(scaled(NOTICE_PAD, density))
-                .rounded(NOTICE_RADIUS)
-                .border(BORDER_THIN)
-                .border_color(palette.warning)
-                .bg(palette.base)
-                .child(icon(Icon::AlertTriangle, NOTICE_GLYPH, palette.warning))
-                .child(
-                    div()
-                        .flex_1()
-                        .min_w(px(0.0))
-                        .flex()
-                        .flex_col()
-                        .font_family(body_family())
-                        .line_height(NOTICE_LINE_H)
-                        .child(
-                            div()
-                                .text_size(FONT_XS)
-                                .font_weight(FontWeight::SEMIBOLD)
-                                .text_color(palette.text_secondary)
-                                .child(tr!("overlays_sizing_notice_title")),
-                        )
-                        .child(
-                            div()
-                                .text_size(FONT_XXS)
-                                .text_color(palette.text_muted)
-                                .child(tr!("overlays_sizing_notice_body")),
-                        )
-                        .child(
-                            div()
-                                .pt(spacing(Spacing::Xs, density))
-                                .text_size(FONT_XXS)
-                                .text_color(palette.text_secondary)
-                                .child(tr!(
-                                    "overlays_sizing_notice_size",
-                                    width = width.as_str(),
-                                    height = height.as_str()
-                                )),
-                        )
-                        .child(
-                            div().pt(spacing(Spacing::Xs, density)).child(
-                                ghost_button_with_icon(
-                                    Icon::Check,
-                                    tr!("overlays_sizing_notice_ack"),
-                                    palette,
-                                )
-                                .on_click(
-                                    "overlays-sizing-ack",
-                                    cx.listener(|this, _: &ClickEvent, _, cx| {
-                                        this.acknowledge_sizing(cx);
-                                    }),
-                                ),
-                            ),
-                        ),
-                )
-                .into_any_element(),
-        )
     }
 
     pub(super) fn render_source_section(
@@ -456,30 +349,6 @@ mod tests {
             ),
             "the target look dropped the box the panel carried into the change"
         );
-    }
-
-    #[test]
-    fn a_pending_sizing_notice_survives_the_look_change_that_filters_undeclared_keys() {
-        let mut from = config(&[(DESIGN_WIDTH, 1280)]);
-        from.insert(MIGRATION_ACKNOWLEDGED.to_owned(), Variant::Bool(false));
-        let mut into = carried_config(&ChatOverlayKind, &from);
-
-        keep_sizing_notice(&from, &mut into);
-
-        assert_eq!(
-            into.get(MIGRATION_ACKNOWLEDGED),
-            Some(&Variant::Bool(false))
-        );
-    }
-
-    #[test]
-    fn a_look_change_never_invents_a_sizing_notice_the_overlay_did_not_carry() {
-        let from = config(&[(DESIGN_WIDTH, 1280)]);
-        let mut into = carried_config(&ChatOverlayKind, &from);
-
-        keep_sizing_notice(&from, &mut into);
-
-        assert!(!into.contains_key(MIGRATION_ACKNOWLEDGED));
     }
 
     #[test]

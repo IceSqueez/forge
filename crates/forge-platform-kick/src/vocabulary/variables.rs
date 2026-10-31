@@ -24,7 +24,7 @@ pub(crate) mod legacy {
 }
 
 pub(crate) mod ban {
-    pub(crate) const DURATION_SECS: &str = "duration_secs";
+    pub(crate) const DURATION_SECONDS: &str = "duration_seconds";
     pub(crate) const REASON: &str = "reason";
     pub(crate) const IS_PERMANENT: &str = "is_permanent";
 }

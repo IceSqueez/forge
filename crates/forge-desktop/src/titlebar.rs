@@ -68,18 +68,6 @@ impl Render for TitleBar {
                     .text_size(FONT_SM)
                     .text_color(palette.text_primary)
                     .child("Forge"),
-            )
-            .child(
-                div()
-                    .text_size(FONT_XS)
-                    .text_color(palette.text_faint)
-                    .child("-"),
-            )
-            .child(
-                div()
-                    .text_size(FONT_XS)
-                    .text_color(palette.text_muted)
-                    .child("-"),
             );
 
         div()

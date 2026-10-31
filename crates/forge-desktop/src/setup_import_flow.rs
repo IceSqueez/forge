@@ -101,11 +101,9 @@ impl SetupImportFlow {
         async_bridge::run_async(
             &self.services.rt_handle,
             async move {
-                let mut staged = stage_setup(bundle, data_dir)
+                stage_setup(bundle, data_dir)
                     .await
-                    .map_err(|error| RestoreProblem::of(&error))?;
-                staged.upgrade_command_arguments();
-                Ok::<_, RestoreProblem>(staged)
+                    .map_err(|error| RestoreProblem::of(&error))
             },
             |this, result, cx| {
                 this.staged(

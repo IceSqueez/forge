@@ -13,9 +13,7 @@ use crate::source_box::{ContentMargins, DesignSize};
 
 pub const KIND_ID: &str = "overlay.frame";
 
-pub const BOX_CONTRACT_SCHEMA_VERSION: u32 = 2;
-
-pub const MOTION_SCHEMA_VERSION: u32 = 3;
+pub const CONFIG_SCHEMA_VERSION: u32 = 3;
 
 const DESIGN_WIDTH_PX: u32 = 1280;
 const DESIGN_HEIGHT_PX: u32 = 720;
@@ -48,7 +46,7 @@ impl OverlayKindDescriptor for FrameOverlayKind {
     }
 
     fn config_schema_version(&self) -> u32 {
-        MOTION_SCHEMA_VERSION
+        CONFIG_SCHEMA_VERSION
     }
 
     fn motion(&self) -> MotionProfile {

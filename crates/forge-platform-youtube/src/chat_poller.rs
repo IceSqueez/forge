@@ -844,7 +844,7 @@ impl YoutubeChatPoller {
                     (ban_fields::TARGET_USER): entity_json(target_channel_id, target_display_name),
                     (ban_fields::MODERATOR): author_json(author_details),
                     (ban_fields::TYPE): ban_type,
-                    (ban_fields::DURATION_SECS): ban_duration_secs,
+                    (ban_fields::DURATION_SECONDS): ban_duration_secs,
                 });
                 payload[ChatPayload::KEY] = serde_json::to_value(&chat_payload).ok()?;
                 Some(Event::new(
@@ -1453,7 +1453,7 @@ mod tests {
 
         assert_eq!(event.kind, "youtube.channel.user_banned");
         assert_eq!(event.payload["type"].as_str().unwrap(), "temporary");
-        assert_eq!(event.payload["duration_secs"].as_i64().unwrap(), 600);
+        assert_eq!(event.payload["duration_seconds"].as_i64().unwrap(), 600);
         assert_eq!(
             event.payload["target_user"]["display_name"]
                 .as_str()
@@ -1479,7 +1479,7 @@ mod tests {
 
         assert_eq!(event.kind, "youtube.channel.user_banned");
         assert_eq!(event.payload["type"].as_str().unwrap(), "permanent");
-        assert!(event.payload["duration_secs"].is_null());
+        assert!(event.payload["duration_seconds"].is_null());
     }
 
     #[tokio::test]

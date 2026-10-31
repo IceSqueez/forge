@@ -1,10 +1,8 @@
-use std::borrow::Cow;
 use std::collections::HashMap;
 
 use crate::config::{effective_overlay_config, validate_overlay_config};
 use crate::descriptor::{OverlayConfig, OverlayKindDescriptor};
 use crate::error::OverlayError;
-use crate::upgrade::upgrade_config;
 
 #[derive(Default)]
 pub struct OverlayKindRegistry {
@@ -46,15 +44,12 @@ impl OverlayKindRegistry {
     pub fn validate_stored(
         &self,
         kind_id: &str,
-        config_schema_version: u32,
         stored: &OverlayConfig,
     ) -> Result<(), OverlayError> {
         let descriptor = self
             .get(kind_id)
             .ok_or_else(|| OverlayError::UnknownKind(kind_id.to_owned()))?;
-        let current = upgrade_config(descriptor, config_schema_version, stored)
-            .map_or(Cow::Borrowed(stored), Cow::Owned);
-        validate_overlay_config(descriptor, &effective_overlay_config(descriptor, &current))
+        validate_overlay_config(descriptor, &effective_overlay_config(descriptor, stored))
     }
 }
 
@@ -198,7 +193,7 @@ mod tests {
     #[test]
     fn validate_stored_refuses_a_look_this_build_lacks() {
         let err = builtin()
-            .validate_stored("overlay.vendor_unshipped", 1, &OverlayConfig::new())
+            .validate_stored("overlay.vendor_unshipped", &OverlayConfig::new())
             .expect_err("an unregistered look cannot be validated");
 
         assert!(
@@ -208,77 +203,55 @@ mod tests {
     }
 
     #[test]
-    fn validate_stored_judges_the_config_after_upgrading_it_from_the_recorded_schema() {
+    fn validate_stored_judges_the_config_with_defaults_applied() {
         let registry = builtin();
-        let current = chat::MOTION_SCHEMA_VERSION;
-        let older = chat::BOX_CONTRACT_SCHEMA_VERSION - 1;
         let max = MARGIN_MAX_PERCENT;
-        let cases: [(&str, u32, OverlayConfig, Result<(), &str>); 9] = [
-            (
-                "sparse config takes defaults",
-                current,
-                OverlayConfig::new(),
-                Ok(()),
-            ),
+        let cases: [(&str, OverlayConfig, Result<(), &str>); 7] = [
+            ("sparse config takes defaults", OverlayConfig::new(), Ok(())),
             (
                 "margin at the upper bound",
-                current,
                 chat_config(&[(MARGIN_TOP, Variant::Int(max))]),
                 Ok(()),
             ),
             (
                 "margin at the lower bound",
-                current,
                 chat_config(&[(MARGIN_TOP, Variant::Int(MARGIN_MIN_PERCENT))]),
                 Ok(()),
             ),
             (
-                "older unknown position folded by the upgrade",
-                older,
-                chat_config(&[(POSITION, text("middle"))]),
-                Ok(()),
-            ),
-            (
                 "unknown position at the current schema",
-                current,
                 chat_config(&[(POSITION, text("middle"))]),
                 Err("unknown choice"),
             ),
             (
                 "margin one over the upper bound",
-                current,
                 chat_config(&[(MARGIN_TOP, Variant::Int(max + 1))]),
                 Err("out of range"),
             ),
             (
                 "margin one under the lower bound",
-                current,
                 chat_config(&[(MARGIN_TOP, Variant::Int(MARGIN_MIN_PERCENT - 1))]),
                 Err("out of range"),
             ),
             (
-                "older out-of-range margin the upgrade keeps",
-                older,
-                chat_config(&[(MARGIN_TOP, Variant::Int(max + 1))]),
-                Err("out of range"),
-            ),
-            (
                 "margin of the wrong type",
-                current,
                 chat_config(&[(MARGIN_TOP, text("wide"))]),
                 Err("wrong type"),
             ),
         ];
 
-        for (label, version, stored, expected) in cases {
-            let verdict = registry
-                .validate_stored(chat::KIND_ID, version, &stored)
-                .map_err(|err| match err {
-                    OverlayError::UnknownChoice { key, .. } if key == POSITION => "unknown choice",
-                    OverlayError::OutOfRange { key, .. } if key == MARGIN_TOP => "out of range",
-                    OverlayError::WrongType { key, .. } if key == MARGIN_TOP => "wrong type",
-                    _ => "unexpected error",
-                });
+        for (label, stored, expected) in cases {
+            let verdict =
+                registry
+                    .validate_stored(chat::KIND_ID, &stored)
+                    .map_err(|err| match err {
+                        OverlayError::UnknownChoice { key, .. } if key == POSITION => {
+                            "unknown choice"
+                        }
+                        OverlayError::OutOfRange { key, .. } if key == MARGIN_TOP => "out of range",
+                        OverlayError::WrongType { key, .. } if key == MARGIN_TOP => "wrong type",
+                        _ => "unexpected error",
+                    });
             assert_eq!(verdict, expected, "{label}");
         }
     }

@@ -8,7 +8,6 @@ use crate::bundle::naming::fresh_stem;
 use crate::documents::archive::{
     carried_file, check_bundled_files, documents_version, stage_document_bundle,
 };
-use crate::documents::command_arguments::upgrade_command_arguments;
 use crate::documents::model::PACK_DOCUMENTS_VERSION;
 use crate::error::TransferError;
 use crate::setup::documents::{SETUP_DOCUMENTS_VERSION, SetupDocuments};
@@ -34,10 +33,6 @@ impl StagedSetup {
 
     pub fn documents(&self) -> &SetupDocuments {
         &self.documents
-    }
-
-    pub fn upgrade_command_arguments(&mut self) {
-        upgrade_command_arguments(&mut self.documents.configuration);
     }
 
     pub fn file(&self, setup_path: &str) -> Option<PathBuf> {
@@ -109,6 +104,12 @@ fn parse_documents(bytes: &[u8]) -> Result<SetupDocuments, TransferError> {
         serde_json::from_slice(bytes).map_err(TransferError::damaged)?;
     if documents.configuration.version > PACK_DOCUMENTS_VERSION {
         return Err(TransferError::NewerSetupDocuments {
+            found: documents.configuration.version,
+            supported: PACK_DOCUMENTS_VERSION,
+        });
+    }
+    if documents.configuration.version < PACK_DOCUMENTS_VERSION {
+        return Err(TransferError::RetiredDocuments {
             found: documents.configuration.version,
             supported: PACK_DOCUMENTS_VERSION,
         });

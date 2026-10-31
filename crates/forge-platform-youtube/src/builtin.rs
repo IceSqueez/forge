@@ -1088,7 +1088,7 @@ mod tests {
         ),
         (
             "youtube.stream.insert_ad_break",
-            r#"{"duration_secs":{"type":"int","value":30}}"#,
+            r#"{"duration_seconds":{"type":"int","value":30}}"#,
         ),
         (
             "youtube.stream.set_thumbnail",

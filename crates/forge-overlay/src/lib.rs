@@ -23,7 +23,6 @@ mod registry;
 mod sample;
 mod source;
 mod source_box;
-mod upgrade;
 mod wiring;
 
 pub use assets::{
@@ -80,7 +79,6 @@ pub use registry::OverlayKindRegistry;
 pub use sample::{SampleContext, SampleTrigger, sample_content, sample_context};
 pub use source::{read_overlay_source, write_overlay_source};
 pub use source_box::{ContentMargins, DesignSize};
-pub use upgrade::{acknowledge_sizing_notice, sizing_notice_pending, upgrade_config};
 pub use wiring::{
     EventWiringTrigger, accepts_event_wiring, is_curated, order_curated_first, suggested_content,
 };

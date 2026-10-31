@@ -16,19 +16,19 @@ const MIN_DURATION_SECS: i64 = 1;
 const MAX_DURATION_SECS: i64 = 3_600;
 const DEFAULT_DURATION_SECS: i64 = 30;
 
-const DURATION_SECS: DurationField = DurationField {
-    key: config_keys::AD_DURATION_SECS,
-    label: "Length",
+const DURATION: DurationField = DurationField {
+    key: config_keys::DURATION_SECONDS,
+    label: "Duration",
     default: DEFAULT_DURATION_SECS,
     bounds: DurationBounds::in_seconds(MIN_DURATION_SECS, MAX_DURATION_SECS),
 };
 
-const CONFIG: ConfigSpec = ConfigSpec::new(&[&DURATION_SECS]);
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&DURATION]);
 
 fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<u32, ConfigProblem> {
-    u32::try_from(DURATION_SECS.read(config, args)?.as_secs()).map_err(|_| {
+    u32::try_from(DURATION.read(config, args)?.as_secs()).map_err(|_| {
         ConfigProblem::field(
-            config_keys::AD_DURATION_SECS,
+            config_keys::DURATION_SECONDS,
             ConfigReason::OutOfRange(ValueBounds::between(MIN_DURATION_SECS, MAX_DURATION_SECS)),
         )
     })
@@ -130,7 +130,7 @@ mod tests {
     }
 
     fn config(duration: i64) -> SubActionConfig {
-        BTreeMap::from([("duration_secs".to_owned(), Variant::Int(duration))])
+        BTreeMap::from([("duration_seconds".to_owned(), Variant::Int(duration))])
     }
 
     #[test]
@@ -155,13 +155,16 @@ mod tests {
             ),
             (
                 "numeric text",
-                BTreeMap::from([("duration_secs".to_owned(), Variant::String("30".to_owned()))]),
+                BTreeMap::from([(
+                    "duration_seconds".to_owned(),
+                    Variant::String("30".to_owned()),
+                )]),
                 true,
             ),
             (
                 "template",
                 BTreeMap::from([(
-                    "duration_secs".to_owned(),
+                    "duration_seconds".to_owned(),
                     Variant::String("%len%".to_owned()),
                 )]),
                 true,
@@ -169,14 +172,14 @@ mod tests {
             (
                 "non-numeric text",
                 BTreeMap::from([(
-                    "duration_secs".to_owned(),
+                    "duration_seconds".to_owned(),
                     Variant::String("long".to_owned()),
                 )]),
                 false,
             ),
             (
                 "bool",
-                BTreeMap::from([("duration_secs".to_owned(), Variant::Bool(true))]),
+                BTreeMap::from([("duration_seconds".to_owned(), Variant::Bool(true))]),
                 false,
             ),
         ];
@@ -214,13 +217,16 @@ mod tests {
             ("missing key", BTreeMap::new(), 30),
             (
                 "numeric text",
-                BTreeMap::from([("duration_secs".to_owned(), Variant::String("60".to_owned()))]),
+                BTreeMap::from([(
+                    "duration_seconds".to_owned(),
+                    Variant::String("60".to_owned()),
+                )]),
                 60,
             ),
             (
                 "template",
                 BTreeMap::from([(
-                    "duration_secs".to_owned(),
+                    "duration_seconds".to_owned(),
                     Variant::String("%len%".to_owned()),
                 )]),
                 45,

@@ -8,9 +8,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use age::secrecy::SecretString;
-use forge_overlay::OverlayKindRegistry;
-use forge_paths::{MEDIA_DIR_NAME, OVERLAYS_DIR_NAME};
-use forge_registry::{SubActionRegistry, TriggerRegistry};
+use forge_paths::MEDIA_DIR_NAME;
 use forge_storage::{
     ActionRepo, DATABASE_FILE_NAME, DataProvider, GlobalsRepo, QueueRepo, load_setting_rows,
 };
@@ -19,14 +17,14 @@ use forge_storage_sqlite::{
     SqliteQueueRepo, connect_pools,
 };
 use forge_transfer::{
-    BUNDLE_FORMAT_VERSION, BackupCategory, BundleKind, BundleOrigin, ClosureRegistries,
-    ContentEntry, ENCRYPTED_PAYLOAD_ENTRY_NAME, EncryptionScheme, FullManifest,
-    MANIFEST_ENTRY_NAME, PackImportRequest, Passphrase, PublicManifest, RestoreOutcome,
-    StageRequest, UpdateActivity, apply_pack_import, apply_pending_restore, load_pack_inventory,
-    plan_pack_import, record_pending_restore, stage_full_restore, stage_pack,
+    BUNDLE_FORMAT_VERSION, BackupCategory, BundleKind, BundleOrigin, ContentEntry,
+    ENCRYPTED_PAYLOAD_ENTRY_NAME, EncryptionScheme, FullManifest, MANIFEST_ENTRY_NAME,
+    PACK_DOCUMENTS_VERSION, Passphrase, PublicManifest, RestoreOutcome, StageRequest,
+    TransferError, UpdateActivity, apply_pending_restore, record_pending_restore,
+    stage_full_restore, stage_pack,
 };
-use forge_types::{Action, Queue, SubActionStep, TriggerInstance, Variant};
-use serde_json::{Value, json};
+use forge_types::{Action, Queue, SubActionStep, Variant};
+use serde_json::Value;
 use tempfile::TempDir;
 use time::OffsetDateTime;
 
@@ -37,7 +35,6 @@ const CHEAP_WORK_FACTOR: u8 = 2;
 const PACK_MANIFEST: &[u8] = include_bytes!("fixtures/older_pack/manifest.json");
 const PACK_DOCUMENTS: &[u8] = include_bytes!("fixtures/older_pack/documents.json");
 const PACK_DOCUMENTS_ENTRY: &str = "pack/documents.json";
-const PACK_IMPORTED_GOLDEN: &str = include_str!("fixtures/older_pack/imported.json");
 const BACKUP_SEED: &str = include_str!("fixtures/older_backup/seed.json");
 const BACKUP_DATABASE_ENTRY: &str = "forge/forge.db";
 const FAVORITE_STEPS_KEY: &str = "picker.favorites.sub_actions";
@@ -130,69 +127,11 @@ async fn open_current(data_dir: &Path) -> Arc<dyn DataProvider> {
     Arc::new(backend)
 }
 
-fn without_volatile_global_fields(globals: Vec<forge_storage::GlobalEntry>) -> Vec<Value> {
-    let mut rows: Vec<Value> = globals
-        .into_iter()
-        .map(|g| json!({ "name": g.name, "value": g.value, "persisted": g.persisted }))
-        .collect();
-    rows.sort_by_key(|row| row["name"].as_str().unwrap_or_default().to_owned());
-    rows
-}
-
-fn with_keys_sorted(value: Value) -> Value {
-    match value {
-        Value::Object(fields) => {
-            let sorted: BTreeMap<String, Value> = fields
-                .into_iter()
-                .map(|(key, value)| (key, with_keys_sorted(value)))
-                .collect();
-            Value::Object(sorted.into_iter().collect())
-        }
-        Value::Array(items) => Value::Array(items.into_iter().map(with_keys_sorted).collect()),
-        other => other,
-    }
-}
-
-async fn imported_state(provider: &dyn DataProvider) -> String {
-    let mut actions: Vec<Action> = provider.action_repo().list().await.unwrap();
-    actions.sort_by(|a, b| a.name.cmp(&b.name));
-    let mut queues: Vec<Queue> = provider.queue_repo().list().await.unwrap();
-    queues.sort_by(|a, b| a.name.cmp(&b.name));
-    let mut triggers: Vec<TriggerInstance> =
-        provider.trigger_instance_repo().list_all().await.unwrap();
-    triggers.sort_by(|a, b| a.name.cmp(&b.name));
-    let mut links = BTreeMap::new();
-    for action in &actions {
-        let linked: Vec<String> = provider
-            .trigger_instance_repo()
-            .list_for_action(action.id)
-            .await
-            .unwrap()
-            .into_iter()
-            .map(|trigger| trigger.name)
-            .collect();
-        links.insert(action.name.clone(), linked);
-    }
-    let globals = without_volatile_global_fields(GlobalsRepo::list(provider).await.unwrap());
-    let state = json!({
-        "actions": actions,
-        "queues": queues,
-        "triggers": triggers,
-        "trigger_links": links,
-        "globals": globals,
-    });
-    format!(
-        "{}\n",
-        serde_json::to_string_pretty(&with_keys_sorted(state)).unwrap()
-    )
-}
-
 #[tokio::test]
-async fn a_pack_written_by_an_older_build_imports_into_the_golden_state() {
+async fn a_pack_written_in_a_retired_document_format_is_refused() {
     let dir = tempfile::tempdir().unwrap();
     let data_dir = dir.path().join("data");
     std::fs::create_dir_all(&data_dir).unwrap();
-    let provider = open_current(&data_dir).await;
     let bundle = dir.path().join("older.forgebundle");
     std::fs::write(
         &bundle,
@@ -202,33 +141,15 @@ async fn a_pack_written_by_an_older_build_imports_into_the_golden_state() {
         ]),
     )
     .unwrap();
-    let sub_actions = SubActionRegistry::new();
-    let triggers = TriggerRegistry::new();
-    let overlays = OverlayKindRegistry::new();
-    let registries = ClosureRegistries {
-        sub_actions: &sub_actions,
-        triggers: &triggers,
-        overlays: &overlays,
-        schema: None,
-    };
 
-    let staged = stage_pack(bundle, data_dir.clone()).await.unwrap();
-    let inventory = load_pack_inventory(provider.as_ref()).await.unwrap();
-    let plan = plan_pack_import(&staged, &inventory, registries).unwrap();
-    apply_pack_import(PackImportRequest {
-        provider: Arc::clone(&provider),
-        registries,
-        staged: &staged,
-        plan,
-        data_dir: data_dir.clone(),
-        overlay_root: data_dir.join(OVERLAYS_DIR_NAME),
-    })
-    .await
-    .unwrap();
+    let refusal = stage_pack(bundle, data_dir).await.unwrap_err();
 
-    assert_eq!(
-        imported_state(provider.as_ref()).await,
-        PACK_IMPORTED_GOLDEN
+    assert!(
+        matches!(
+            refusal,
+            TransferError::RetiredDocuments { found: 1, supported } if supported == PACK_DOCUMENTS_VERSION
+        ),
+        "unexpected refusal: {refusal:?}"
     );
 }
 

@@ -16,9 +16,7 @@ use crate::source_box::{ContentMargins, DesignSize};
 
 pub const KIND_ID: &str = "overlay.chat";
 
-pub const BOX_CONTRACT_SCHEMA_VERSION: u32 = 2;
-
-pub const MOTION_SCHEMA_VERSION: u32 = 3;
+pub const CONFIG_SCHEMA_VERSION: u32 = 3;
 
 const ROW_ENTRANCE_MS: i64 = 300;
 const ROW_TEMPLATE_ID: &str = "row-template";
@@ -54,7 +52,7 @@ impl OverlayKindDescriptor for ChatOverlayKind {
     }
 
     fn config_schema_version(&self) -> u32 {
-        MOTION_SCHEMA_VERSION
+        CONFIG_SCHEMA_VERSION
     }
 
     fn motion(&self) -> MotionProfile {

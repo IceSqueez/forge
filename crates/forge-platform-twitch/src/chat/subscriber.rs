@@ -907,18 +907,19 @@ mod tests {
 
     #[test]
     fn the_pass_summary_counts_every_outcome_class_apart() {
-        let (result, lines) = crate::log_capture::capture_blocking(tracing::Level::DEBUG, async {
-            let server = MockServer::start().await;
-            mount_success(&server, "channel.chat.message", "sub-chat").await;
-            mount_status(&server, "stream.online", StatusCode::INTERNAL_SERVER_ERROR).await;
-            mount_status(&server, "stream.offline", StatusCode::BAD_REQUEST).await;
-            mount_catch_all_conflict(&server).await;
+        let (result, lines) =
+            forge_test_support::log_capture::capture_blocking(tracing::Level::DEBUG, async {
+                let server = MockServer::start().await;
+                mount_success(&server, "channel.chat.message", "sub-chat").await;
+                mount_status(&server, "stream.online", StatusCode::INTERNAL_SERVER_ERROR).await;
+                mount_status(&server, "stream.offline", StatusCode::BAD_REQUEST).await;
+                mount_catch_all_conflict(&server).await;
 
-            run_subscribe(&server).await.result
-        });
+                run_subscribe(&server).await.result
+            });
 
         assert!(matches!(&result, Ok(pass) if pass.any_live()));
-        let summary = crate::log_capture::forge_lines(&lines)
+        let summary = forge_test_support::log_capture::forge_lines(&lines)
             .into_iter()
             .find(|line| line.message() == "eventsub subscription pass complete")
             .expect("the pass must log its summary");

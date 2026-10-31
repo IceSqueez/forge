@@ -177,7 +177,7 @@ mod tests {
     use time::OffsetDateTime;
 
     use super::*;
-    use crate::test_support::{Sandboxed, sandboxed_backend};
+    use crate::test_support::{Sandboxed, sandboxed_backend_at};
     use forge_hotkey::vocabulary::event_kinds;
     use forge_hotkey::{BindingHalf, COMBO_FIELD};
 
@@ -393,7 +393,7 @@ mod tests {
 
     impl Rig {
         async fn start() -> Self {
-            let backend = sandboxed_backend("sqlite::memory:", TEST_KEY)
+            let backend = sandboxed_backend_at("sqlite::memory:", TEST_KEY)
                 .await
                 .map(|backend| Arc::new(backend) as Arc<dyn DataProvider>);
             let (client, _recorder) = forge_hotkey::testing::test_client(

@@ -130,7 +130,7 @@ mod tests {
 
     use super::*;
     use crate::combo_conflict::ClipKey;
-    use crate::test_support::sandboxed_backend;
+    use crate::test_support::sandboxed_backend_at;
     use forge_hotkey::BindingHalf;
 
     const TEST_KEY: [u8; 32] = [0x11; 32];
@@ -246,7 +246,7 @@ mod tests {
 
     #[tokio::test]
     async fn the_badge_follows_the_registered_set_only_when_refreshed() {
-        let backend = sandboxed_backend("sqlite::memory:", TEST_KEY)
+        let backend = sandboxed_backend_at("sqlite::memory:", TEST_KEY)
             .await
             .map(|backend| Arc::new(backend) as Arc<dyn DataProvider>);
         let (client, _recorder) = forge_hotkey::testing::test_client(

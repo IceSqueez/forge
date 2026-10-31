@@ -8,7 +8,12 @@ use crate::{CredentialId, CredentialsRepo, StorageError};
 
 #[derive(Default)]
 pub struct MemoryCredentials {
-    rows: Mutex<BTreeMap<String, String>>,
+    rows: Mutex<BTreeMap<String, StoredBundle>>,
+}
+
+struct StoredBundle {
+    plaintext: String,
+    refreshed_at: OffsetDateTime,
 }
 
 impl MemoryCredentials {
@@ -19,18 +24,24 @@ impl MemoryCredentials {
     }
 
     pub fn put(&self, id: &str, plaintext: &str) {
-        self.rows().insert(id.to_owned(), plaintext.to_owned());
+        self.rows().insert(
+            id.to_owned(),
+            StoredBundle {
+                plaintext: plaintext.to_owned(),
+                refreshed_at: OffsetDateTime::now_utc(),
+            },
+        );
     }
 
     pub fn stored(&self, id: &str) -> Option<String> {
-        self.rows().get(id).cloned()
+        self.rows().get(id).map(|row| row.plaintext.clone())
     }
 
     pub fn ids(&self) -> Vec<String> {
         self.rows().keys().cloned().collect()
     }
 
-    fn rows(&self) -> MutexGuard<'_, BTreeMap<String, String>> {
+    fn rows(&self) -> MutexGuard<'_, BTreeMap<String, StoredBundle>> {
         self.rows.lock().unwrap_or_else(PoisonError::into_inner)
     }
 }
@@ -56,12 +67,19 @@ impl CredentialsRepo for MemoryCredentials {
 
     async fn last_refresh(
         &self,
-        _id: &CredentialId,
+        id: &CredentialId,
     ) -> Result<Option<OffsetDateTime>, StorageError> {
-        Ok(None)
+        Ok(self.rows().get(id.as_str()).map(|row| row.refreshed_at))
     }
 
-    async fn mark_refreshed(&self, _id: &CredentialId) -> Result<(), StorageError> {
+    async fn mark_refreshed(&self, id: &CredentialId) -> Result<(), StorageError> {
+        let mut rows = self.rows();
+        let row = rows
+            .get_mut(id.as_str())
+            .ok_or_else(|| StorageError::NotFound {
+                key: id.as_str().to_owned(),
+            })?;
+        row.refreshed_at = OffsetDateTime::now_utc();
         Ok(())
     }
 }

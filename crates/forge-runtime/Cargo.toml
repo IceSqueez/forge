@@ -44,11 +44,12 @@ ulid = { workspace = true }
 test-support = []
 
 [dev-dependencies]
+forge-test-support = { path = "../forge-test-support" }
 reqwest = { workspace = true }
 forge-runtime = { path = ".", features = ["test-support"] }
 forge-events = { path = "../forge-events", features = ["test-support"] }
 forge-storage = { path = "../forge-storage", features = ["test-mocks", "settings-test-support"] }
-forge-storage-sqlite = { path = "../forge-storage-sqlite" }
+forge-storage-sqlite = { path = "../forge-storage-sqlite", features = ["test-support"] }
 wiremock = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
 tempfile = { workspace = true }

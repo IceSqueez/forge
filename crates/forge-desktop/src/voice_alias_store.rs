@@ -62,7 +62,7 @@ mod tests {
 
     use super::{block_viewer, save_alias};
     use crate::test_support::{
-        AliasShape, LiveAliases, alias_shape, live_alias, sandboxed_backend, spawn_speak_queue,
+        AliasShape, LiveAliases, alias_shape, live_alias, sandboxed_backend_at, spawn_speak_queue,
         yield_until,
     };
 
@@ -91,7 +91,7 @@ mod tests {
 
     #[tokio::test]
     async fn blocking_a_viewer_without_an_alias_stores_and_hot_reloads_one_blocked_alias() {
-        let backend = sandboxed_backend("sqlite::memory:", TEST_KEY).await;
+        let backend = sandboxed_backend_at("sqlite::memory:", TEST_KEY).await;
         let repo = backend.voice_alias_repo();
         let (speak, _events, resolver) = spawn_speak_queue(Vec::new());
 
@@ -122,7 +122,7 @@ mod tests {
 
     #[tokio::test]
     async fn blocking_a_viewer_with_an_alias_keeps_its_id_and_voice_and_takes_the_new_name() {
-        let backend = sandboxed_backend("sqlite::memory:", TEST_KEY).await;
+        let backend = sandboxed_backend_at("sqlite::memory:", TEST_KEY).await;
         let repo = backend.voice_alias_repo();
         let existing = alias("a1", "twitch:111", "old_name");
         repo.upsert(&existing).await.expect("seed");
@@ -151,7 +151,7 @@ mod tests {
     #[tokio::test]
     async fn saving_drops_the_previous_live_entry_only_when_it_replaces_an_edited_alias() {
         for (replaces_existing, old_entry_still_live) in [(true, false), (false, true)] {
-            let backend = sandboxed_backend("sqlite::memory:", TEST_KEY).await;
+            let backend = sandboxed_backend_at("sqlite::memory:", TEST_KEY).await;
             let repo = backend.voice_alias_repo();
             let existing = alias("a1", "twitch:alice", "alice");
             repo.upsert(&existing).await.expect("seed");

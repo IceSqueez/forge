@@ -115,7 +115,7 @@ async fn open_with_key_applies_action_registry_migration_on_boot() {
         .expect("insert action");
     }
 
-    let backend = common::sandboxed_backend(&url, TEST_KEY).await;
+    let backend = common::sandboxed_backend_at(&url, TEST_KEY).await;
 
     let action = backend
         .action_repo()

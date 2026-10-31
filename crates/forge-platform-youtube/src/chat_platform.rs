@@ -427,9 +427,9 @@ mod tests {
     }
 
     fn info_lifecycle_lines(
-        lines: &[crate::log_capture::CapturedLine],
-    ) -> Vec<&crate::log_capture::CapturedLine> {
-        crate::log_capture::forge_lines(lines)
+        lines: &[forge_test_support::log_capture::CapturedLine],
+    ) -> Vec<&forge_test_support::log_capture::CapturedLine> {
+        forge_test_support::log_capture::forge_lines(lines)
             .into_iter()
             .filter(|line| line.level == tracing::Level::INFO)
             .collect()
@@ -437,9 +437,10 @@ mod tests {
 
     #[test]
     fn connect_logs_a_started_line_identifying_the_channel_and_nothing_else() {
-        let (result, lines) = crate::log_capture::capture_blocking(tracing::Level::INFO, async {
-            platform().connect().await
-        });
+        let (result, lines) =
+            forge_test_support::log_capture::capture_blocking(tracing::Level::INFO, async {
+                platform().connect().await
+            });
         result.unwrap();
 
         let captured = info_lifecycle_lines(&lines);
@@ -460,12 +461,13 @@ mod tests {
 
     #[test]
     fn a_connect_disconnect_cycle_logs_the_started_line_then_the_stopped_line() {
-        let (_, lines) = crate::log_capture::capture_blocking(tracing::Level::INFO, async {
-            let p = platform();
-            p.connect().await.unwrap();
-            p.disconnect().await.unwrap();
-            tokio::task::yield_now().await;
-        });
+        let (_, lines) =
+            forge_test_support::log_capture::capture_blocking(tracing::Level::INFO, async {
+                let p = platform();
+                p.connect().await.unwrap();
+                p.disconnect().await.unwrap();
+                tokio::task::yield_now().await;
+            });
 
         let messages: Vec<&str> = info_lifecycle_lines(&lines)
             .iter()

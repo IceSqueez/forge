@@ -176,7 +176,7 @@ async fn setup_file_backed() -> (tempfile::TempDir, Sandboxed<Arc<SqliteBackend>
     let dir = tempfile::TempDir::new().expect("tempdir");
     let path = dir.path().join("test.sqlite");
     let url = common::sqlite_url(&path);
-    let backend = common::sandboxed_backend(&url, TEST_KEY)
+    let backend = common::sandboxed_backend_at(&url, TEST_KEY)
         .await
         .map(Arc::new);
     (dir, backend)

@@ -24,8 +24,6 @@ pub(crate) mod error_shape;
 mod follow_lookup;
 mod integration;
 mod live_chat_id;
-#[cfg(test)]
-mod log_capture;
 mod moderation;
 mod oauth_client;
 mod poll_health;

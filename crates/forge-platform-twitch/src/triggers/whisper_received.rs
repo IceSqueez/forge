@@ -420,12 +420,13 @@ mod tests {
         let cfg = regex_config("(unclosed-group-only-this-test-uses");
         let event = whisper_event("bobx", "anything");
 
-        let (matches, lines) = crate::log_capture::capture_blocking(tracing::Level::WARN, async {
-            [
-                WhisperReceivedDescriptor.matches_trigger(&cfg, &event),
-                WhisperReceivedDescriptor.matches_trigger(&cfg, &event),
-            ]
-        });
+        let (matches, lines) =
+            forge_test_support::log_capture::capture_blocking(tracing::Level::WARN, async {
+                [
+                    WhisperReceivedDescriptor.matches_trigger(&cfg, &event),
+                    WhisperReceivedDescriptor.matches_trigger(&cfg, &event),
+                ]
+            });
 
         let warnings = lines
             .iter()

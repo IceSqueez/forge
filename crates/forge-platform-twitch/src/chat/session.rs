@@ -3263,8 +3263,8 @@ mod tests {
     }
 
     fn session_welcome_over_failing_token_endpoint()
-    -> (Verdict, Vec<crate::log_capture::CapturedLine>) {
-        crate::log_capture::capture_blocking(tracing::Level::TRACE, async {
+    -> (Verdict, Vec<forge_test_support::log_capture::CapturedLine>) {
+        forge_test_support::log_capture::capture_blocking(tracing::Level::TRACE, async {
             let server = wiremock::MockServer::builder().start().await;
             wiremock::Mock::given(wiremock::matchers::method("POST"))
                 .and(wiremock::matchers::path("/token"))
@@ -3317,7 +3317,7 @@ mod tests {
         let (verdict, lines) = session_welcome_over_failing_token_endpoint();
         assert_eq!(verdict, Verdict::TokenUnavailable);
 
-        let forge_lines = crate::log_capture::forge_lines(&lines);
+        let forge_lines = forge_test_support::log_capture::forge_lines(&lines);
         assert!(
             !forge_lines.is_empty(),
             "the session_welcome path must have logged something to inspect"
@@ -3336,7 +3336,7 @@ mod tests {
     fn session_welcome_token_failure_warns_with_the_upstream_status() {
         let (_, lines) = session_welcome_over_failing_token_endpoint();
 
-        let session_warns: Vec<_> = crate::log_capture::forge_lines(&lines)
+        let session_warns: Vec<_> = forge_test_support::log_capture::forge_lines(&lines)
             .into_iter()
             .filter(|line| {
                 line.level == tracing::Level::WARN && line.target.ends_with("chat::session")
@@ -4027,17 +4027,18 @@ mod tests {
     #[test]
     fn a_failed_successor_dial_never_logs_the_reconnect_url() {
         const RECONNECT_TOKEN: &str = "RECONNECT_TOKEN_SENTINEL_q4";
-        let (_, lines) = crate::log_capture::capture_blocking(tracing::Level::TRACE, async {
-            let mut live = live_session().await;
-            let dead = unreachable_ws_url();
-            live.predecessor.send(reconnect_frame(&format!(
-                "{dead}/?reconnect_token={RECONNECT_TOKEN}"
-            )));
-            live.predecessor.close();
-            live.base.accept().await;
-        });
+        let (_, lines) =
+            forge_test_support::log_capture::capture_blocking(tracing::Level::TRACE, async {
+                let mut live = live_session().await;
+                let dead = unreachable_ws_url();
+                live.predecessor.send(reconnect_frame(&format!(
+                    "{dead}/?reconnect_token={RECONNECT_TOKEN}"
+                )));
+                live.predecessor.close();
+                live.base.accept().await;
+            });
 
-        let forge_lines = crate::log_capture::forge_lines(&lines);
+        let forge_lines = forge_test_support::log_capture::forge_lines(&lines);
         assert!(
             forge_lines
                 .iter()
@@ -4496,22 +4497,23 @@ mod tests {
 
     #[test]
     fn shutting_down_a_live_session_closes_its_socket_and_never_redials() {
-        let ((), lines) = crate::log_capture::capture_blocking(tracing::Level::WARN, async {
-            let api = eventsub_api().await;
-            let mut base = FakeEventSub::bind().await;
-            let (handle, mut peer, _events) = live_handle(&mut base, &api).await;
+        let ((), lines) =
+            forge_test_support::log_capture::capture_blocking(tracing::Level::WARN, async {
+                let api = eventsub_api().await;
+                let mut base = FakeEventSub::bind().await;
+                let (handle, mut peer, _events) = live_handle(&mut base, &api).await;
 
-            handle.shutdown().await;
+                handle.shutdown().await;
 
-            assert!(
-                peer.wait_closed_by_forge().await,
-                "shutdown must close the socket so Twitch drops the session's subscriptions"
-            );
-            assert!(
-                base.no_dial_pending(),
-                "a session that was shut down must not dial a replacement"
-            );
-        });
+                assert!(
+                    peer.wait_closed_by_forge().await,
+                    "shutdown must close the socket so Twitch drops the session's subscriptions"
+                );
+                assert!(
+                    base.no_dial_pending(),
+                    "a session that was shut down must not dial a replacement"
+                );
+            });
 
         assert!(
             !lines
@@ -4524,17 +4526,18 @@ mod tests {
 
     #[test]
     fn shutting_down_while_the_socket_handshake_hangs_ends_the_session() {
-        let ((), lines) = crate::log_capture::capture_blocking(tracing::Level::WARN, async {
-            let mut hung = HeldHttpEndpoint::bind().await;
-            let (chat, bus) = chat_over(&hung.ws_url(), &hung.url);
-            let mut events = bus.subscribe();
-            let handle = chat.start();
-            hung.wait_for_a_request().await;
+        let ((), lines) =
+            forge_test_support::log_capture::capture_blocking(tracing::Level::WARN, async {
+                let mut hung = HeldHttpEndpoint::bind().await;
+                let (chat, bus) = chat_over(&hung.ws_url(), &hung.url);
+                let mut events = bus.subscribe();
+                let handle = chat.start();
+                hung.wait_for_a_request().await;
 
-            handle.shutdown().await;
+                handle.shutdown().await;
 
-            connection_states_until(&mut events, ConnectionState::Disconnected).await;
-        });
+                connection_states_until(&mut events, ConnectionState::Disconnected).await;
+            });
 
         assert!(
             !lines
@@ -4861,40 +4864,43 @@ mod tests {
 
     #[test]
     fn a_graceful_shutdown_reports_disconnected_exactly_once() {
-        let ((), lines) = crate::log_capture::capture_blocking(tracing::Level::WARN, async {
-            let api = eventsub_api().await;
-            let mut base = FakeEventSub::bind().await;
-            let bus = Arc::new(RecordingBus::default());
-            let (session, state, shutdown) = session_over(
-                bus.clone(),
-                Arc::new(MockCreds::with_identity()),
-                None,
-                SubscriptionTracker::default(),
-                socket_and_api(&base.url, &api.uri()),
-            );
-            let handle = crate::chat::TwitchChatHandle::spawn(
-                session,
-                state,
-                shutdown,
-                crate::config::SHUTDOWN_GRACE,
-            );
-            let peer = base.accept().await;
-            peer.send(welcome_frame("sess-1"));
-            bus.wait_until("the Connected report", |bus| {
-                bus.connected_and_chat_timeline()
-                    .iter()
-                    .any(|entry| entry == "connected")
-            })
-            .await;
+        let ((), lines) = forge_test_support::log_capture::capture_blocking(
+            tracing::Level::WARN,
+            async {
+                let api = eventsub_api().await;
+                let mut base = FakeEventSub::bind().await;
+                let bus = Arc::new(RecordingBus::default());
+                let (session, state, shutdown) = session_over(
+                    bus.clone(),
+                    Arc::new(MockCreds::with_identity()),
+                    None,
+                    SubscriptionTracker::default(),
+                    socket_and_api(&base.url, &api.uri()),
+                );
+                let handle = crate::chat::TwitchChatHandle::spawn(
+                    session,
+                    state,
+                    shutdown,
+                    crate::config::SHUTDOWN_GRACE,
+                );
+                let peer = base.accept().await;
+                peer.send(welcome_frame("sess-1"));
+                bus.wait_until("the Connected report", |bus| {
+                    bus.connected_and_chat_timeline()
+                        .iter()
+                        .any(|entry| entry == "connected")
+                })
+                .await;
 
-            handle.shutdown().await;
+                handle.shutdown().await;
 
-            assert_eq!(
-                bus.disconnect_flags().len(),
-                1,
-                "a session that stops on request must report Disconnected once, not once per path"
-            );
-        });
+                assert_eq!(
+                    bus.disconnect_flags().len(),
+                    1,
+                    "a session that stops on request must report Disconnected once, not once per path"
+                );
+            },
+        );
 
         assert!(
             !lines

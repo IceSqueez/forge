@@ -1,13 +1,10 @@
 #![allow(clippy::panic)]
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsString;
-use std::sync::{Arc, Mutex, OnceLock};
 
 use forge_platform_core::{EndpointRefusal, EndpointSurface, PlatformEndpoints, PlatformError};
+use forge_test_support::log_capture::{CapturedLine, capture};
 use tracing::Level;
-use tracing::field::{Field, Visit};
-use tracing::span;
-use tracing::subscriber::Interest;
 
 fn lookup_from(
     pairs: &[(EndpointSurface, OsString)],
@@ -268,11 +265,11 @@ fn override_emits_one_warn_naming_every_overridden_variable() {
             "ws://localhost:2/app".into(),
         ),
     ]);
-    let (result, lines) = capture(|| PlatformEndpoints::resolve(lookup));
+    let (result, lines) = capture(Level::TRACE, || PlatformEndpoints::resolve(lookup));
     result.unwrap();
     let warns: Vec<&CapturedLine> = lines.iter().filter(|l| l.level == Level::WARN).collect();
     assert_eq!(warns.len(), 1, "expected exactly one WARN");
-    let surfaces = warns[0].fields.get("surfaces").map(String::as_str);
+    let surfaces = warns[0].field("surfaces");
     for surface in [EndpointSurface::TwitchApi, EndpointSurface::KickChatSocket] {
         assert!(
             surfaces.is_some_and(|s| s.contains(surface.env_var())),
@@ -284,115 +281,11 @@ fn override_emits_one_warn_naming_every_overridden_variable() {
 
 #[test]
 fn resolve_without_override_emits_no_log_line() {
-    let (result, lines) = capture(|| PlatformEndpoints::resolve(|_| None));
+    let (result, lines) = capture(Level::TRACE, || PlatformEndpoints::resolve(|_| None));
     result.unwrap();
     assert!(
         lines.is_empty(),
         "expected silence, captured {} lines",
         lines.len()
     );
-}
-
-struct CapturedLine {
-    level: Level,
-    fields: BTreeMap<String, String>,
-}
-
-#[derive(Default)]
-struct FieldCollector(BTreeMap<String, String>);
-
-impl Visit for FieldCollector {
-    fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
-        self.0.insert(field.name().to_owned(), format!("{value:?}"));
-    }
-
-    fn record_str(&mut self, field: &Field, value: &str) {
-        self.0.insert(field.name().to_owned(), value.to_owned());
-    }
-}
-
-struct InterestFloor;
-
-impl tracing::Subscriber for InterestFloor {
-    fn register_callsite(&self, _: &'static tracing::Metadata<'static>) -> Interest {
-        Interest::sometimes()
-    }
-
-    fn enabled(&self, _: &tracing::Metadata<'_>) -> bool {
-        false
-    }
-
-    fn new_span(&self, _: &span::Attributes<'_>) -> span::Id {
-        span::Id::from_u64(1)
-    }
-
-    fn record(&self, _: &span::Id, _: &span::Record<'_>) {}
-
-    fn record_follows_from(&self, _: &span::Id, _: &span::Id) {}
-
-    fn event(&self, _: &tracing::Event<'_>) {}
-
-    fn enter(&self, _: &span::Id) {}
-
-    fn exit(&self, _: &span::Id) {}
-}
-
-fn install_interest_floor() {
-    static INSTALLED: OnceLock<()> = OnceLock::new();
-    INSTALLED.get_or_init(|| {
-        drop(tracing::subscriber::set_global_default(InterestFloor));
-        tracing::callsite::rebuild_interest_cache();
-    });
-}
-
-struct CaptureSubscriber {
-    lines: Arc<Mutex<Vec<CapturedLine>>>,
-}
-
-impl tracing::Subscriber for CaptureSubscriber {
-    fn register_callsite(&self, _: &'static tracing::Metadata<'static>) -> Interest {
-        Interest::sometimes()
-    }
-
-    fn enabled(&self, metadata: &tracing::Metadata<'_>) -> bool {
-        metadata.target().starts_with("forge_platform_core")
-    }
-
-    fn new_span(&self, _: &span::Attributes<'_>) -> span::Id {
-        span::Id::from_u64(1)
-    }
-
-    fn record(&self, _: &span::Id, _: &span::Record<'_>) {}
-
-    fn record_follows_from(&self, _: &span::Id, _: &span::Id) {}
-
-    fn event(&self, event: &tracing::Event<'_>) {
-        let mut collector = FieldCollector::default();
-        event.record(&mut collector);
-        self.lines
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .push(CapturedLine {
-                level: *event.metadata().level(),
-                fields: collector.0,
-            });
-    }
-
-    fn enter(&self, _: &span::Id) {}
-
-    fn exit(&self, _: &span::Id) {}
-}
-
-fn capture<T>(work: impl FnOnce() -> T) -> (T, Vec<CapturedLine>) {
-    let lines = Arc::new(Mutex::new(Vec::new()));
-    let subscriber = CaptureSubscriber {
-        lines: Arc::clone(&lines),
-    };
-    install_interest_floor();
-    let output = tracing::subscriber::with_default(subscriber, || {
-        tracing::callsite::rebuild_interest_cache();
-        work()
-    });
-    let captured = std::mem::take(&mut *lines.lock().unwrap_or_else(|e| e.into_inner()));
-    (output, captured)
 }

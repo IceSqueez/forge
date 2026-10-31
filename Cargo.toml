@@ -40,6 +40,8 @@ members = [
   "crates/forge-update",
   "crates/forge-components",
   "crates/forge-desktop",
+  "crates/forge-test-support",
+  "crates/forge-conformance",
 ]
 default-members = ["crates/forge-desktop"]
 

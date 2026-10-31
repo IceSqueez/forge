@@ -1416,52 +1416,13 @@ pub(crate) fn tone() -> PcmBuffer {
     PcmBuffer::new(vec![0_i16; 16], 48_000, 1)
 }
 
-pub(crate) struct Sandboxed<T> {
-    inner: T,
-    _media_root: tempfile::TempDir,
-}
-
-impl<T> Sandboxed<T> {
-    pub(crate) fn map<U>(self, wrap: impl FnOnce(T) -> U) -> Sandboxed<U> {
-        Sandboxed {
-            inner: wrap(self.inner),
-            _media_root: self._media_root,
-        }
-    }
-}
-
-impl<T> std::ops::Deref for Sandboxed<T> {
-    type Target = T;
-
-    fn deref(&self) -> &T {
-        &self.inner
-    }
-}
+pub(crate) use forge_storage_sqlite::test_support::{Sandboxed, sandboxed_backend_at};
 
 pub(crate) fn sandboxed_over(provider: Arc<dyn DataProvider>) -> Sandboxed<Arc<dyn DataProvider>> {
-    Sandboxed {
-        inner: provider,
-        _media_root: tempfile::tempdir().expect("a temporary media root"),
-    }
-}
-
-pub(crate) async fn sandboxed_backend(
-    url: &str,
-    key: [u8; 32],
-) -> Sandboxed<forge_storage_sqlite::SqliteBackend> {
-    let media_root = tempfile::tempdir().expect("a temporary media root");
-    let backend = forge_storage_sqlite::SqliteBackend::open_for_test(
-        url,
-        key,
-        media_root.path().to_owned(),
-        None,
+    Sandboxed::new(
+        provider,
+        tempfile::tempdir().expect("a temporary media root"),
     )
-    .await
-    .expect("a backend");
-    Sandboxed {
-        inner: backend,
-        _media_root: media_root,
-    }
 }
 
 pub(crate) fn held_queue_scheduler(
@@ -1880,7 +1841,7 @@ pub(crate) fn idle_supervisor(
 }
 
 pub(crate) async fn sandboxed_provider() -> Sandboxed<Arc<dyn DataProvider>> {
-    sandboxed_backend("sqlite::memory:", STORAGE_KEY)
+    sandboxed_backend_at("sqlite::memory:", STORAGE_KEY)
         .await
         .map(|backend| Arc::new(backend) as Arc<dyn DataProvider>)
 }

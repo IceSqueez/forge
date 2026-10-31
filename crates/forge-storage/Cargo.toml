@@ -24,6 +24,7 @@ tracing = { workspace = true }
 mockall = { workspace = true, optional = true }
 
 [dev-dependencies]
+forge-test-support = { path = "../forge-test-support" }
 forge-storage = { path = ".", features = ["settings-test-support"] }
 
 [features]

@@ -27,8 +27,6 @@ mod helix_gateway;
 mod integration;
 mod lifecycle;
 mod live_item_options;
-#[cfg(test)]
-mod log_capture;
 mod oauth_client;
 mod quick_action_fields;
 mod reward_collection;

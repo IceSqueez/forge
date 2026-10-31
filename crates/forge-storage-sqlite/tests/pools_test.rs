@@ -67,7 +67,7 @@ fn wal_progress(db: &std::path::Path) -> (u32, u32) {
 async fn the_backend_checkpoints_what_the_writer_left_in_the_wal() {
     let dir = tempfile::tempdir().unwrap();
     let db = dir.path().join("forge.db");
-    let _backend = common::sandboxed_backend(&common::sqlite_url(&db), common::TEST_KEY).await;
+    let _backend = common::sandboxed_backend_at(&common::sqlite_url(&db), common::TEST_KEY).await;
 
     let deadline = tokio::time::Instant::now() + DEADLINE;
     let mut progress = wal_progress(&db);

@@ -4,7 +4,9 @@ mod memory;
 pub use credentials::MemoryCredentials;
 pub use memory::MemorySettings;
 
-use crate::RowClasses;
+use crate::{RowClasses, RowGate};
+
+pub const OPEN_ROW_GATE: RowGate = RowGate::open();
 
 pub const FAIL_CLOSED_CLASSES: RowClasses = RowClasses::FAIL_CLOSED;
 

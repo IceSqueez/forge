@@ -259,7 +259,7 @@ async fn a_schema_57_database_file_opens_through_the_backend_with_its_trigger_ki
     let url = db_url(&dir);
     schema_57_with_every_store(&url).await.close().await;
 
-    let backend = common::sandboxed_backend(&url, common::TEST_KEY).await;
+    let backend = common::sandboxed_backend_at(&url, common::TEST_KEY).await;
 
     let kinds: BTreeSet<String> = backend
         .trigger_instance_repo()

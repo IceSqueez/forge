@@ -62,7 +62,7 @@ async fn export_produces_a_standalone_file_holding_writes_still_in_the_wal() {
     let export_dir = tempfile::tempdir().expect("a temporary export directory");
     let export_path = export_dir.path().join("export.db");
 
-    let backend = common::sandboxed_backend(&common::sqlite_url(&source_path), TEST_KEY).await;
+    let backend = common::sandboxed_backend_at(&common::sqlite_url(&source_path), TEST_KEY).await;
     GlobalsRepo::set(&*backend, "exported", Variant::Int(7), true)
         .await
         .expect("set must succeed");
@@ -86,7 +86,7 @@ async fn export_produces_a_standalone_file_holding_writes_still_in_the_wal() {
         .collect();
     assert_eq!(exported_files, vec![std::ffi::OsString::from("export.db")]);
 
-    let reopened = common::sandboxed_backend(&common::sqlite_url(&export_path), TEST_KEY).await;
+    let reopened = common::sandboxed_backend_at(&common::sqlite_url(&export_path), TEST_KEY).await;
     let got = GlobalsRepo::get(&*reopened, "exported")
         .await
         .expect("get must succeed");
@@ -101,7 +101,7 @@ async fn export_to_an_existing_file_fails_and_leaves_that_file_untouched() {
     let existing_bytes = b"an unrelated file the user already had".to_vec();
     std::fs::write(&export_path, &existing_bytes).expect("seed the existing file");
 
-    let backend = common::sandboxed_backend(&common::sqlite_url(&source_path), TEST_KEY).await;
+    let backend = common::sandboxed_backend_at(&common::sqlite_url(&source_path), TEST_KEY).await;
     let result = backend.export(&export_path).await;
 
     assert!(
@@ -130,7 +130,7 @@ async fn schema_version_of_a_freshly_migrated_backend_is_the_expected_version() 
 async fn database_unit_file_names_are_exactly_the_files_an_open_backend_keeps_on_disk() {
     let dir = tempfile::tempdir().expect("a temporary database directory");
     let db_path = dir.path().join(forge_storage::DATABASE_FILE_NAME);
-    let backend = common::sandboxed_backend(&common::sqlite_url(&db_path), TEST_KEY).await;
+    let backend = common::sandboxed_backend_at(&common::sqlite_url(&db_path), TEST_KEY).await;
     GlobalsRepo::set(&*backend, "touch", Variant::Bool(true), false)
         .await
         .expect("set must succeed");
@@ -180,7 +180,7 @@ async fn export_creates_the_target_readable_by_the_owner_only() {
     let source_path = dir.path().join(forge_storage::DATABASE_FILE_NAME);
     let export_dir = tempfile::tempdir().expect("a temporary export directory");
     let export_path = export_dir.path().join("export.db");
-    let backend = common::sandboxed_backend(&common::sqlite_url(&source_path), TEST_KEY).await;
+    let backend = common::sandboxed_backend_at(&common::sqlite_url(&source_path), TEST_KEY).await;
 
     backend
         .export(&export_path)

@@ -25,8 +25,9 @@ serde_json = { workspace = true }
 time = { workspace = true }
 
 [dev-dependencies]
+forge-test-support = { path = "../forge-test-support" }
 forge-events = { path = "../forge-events", features = ["test-support"] }
-forge-storage-sqlite = { path = "../forge-storage-sqlite" }
+forge-storage-sqlite = { path = "../forge-storage-sqlite", features = ["test-support"] }
 forge-storage = { path = "../forge-storage", features = ["settings-test-support"] }
 tempfile = { workspace = true }
 wiremock = { workspace = true }

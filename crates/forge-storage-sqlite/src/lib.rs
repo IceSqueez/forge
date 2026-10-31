@@ -32,8 +32,8 @@ mod script_name_steps;
 mod settings_impl;
 mod snapshot;
 mod soundboard_impl;
-#[cfg(test)]
-mod test_support;
+#[cfg(any(test, feature = "test-support"))]
+pub mod test_support;
 mod trigger_instance_impl;
 mod tts_filters_impl;
 mod unit_of_work;

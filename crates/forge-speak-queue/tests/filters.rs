@@ -8,9 +8,11 @@ mod filters {
         BlocklistMode as StorageBlocklistMode, FilterRule, FilterRuleKind, SkipRegex,
         TtsPipelineSettings, UrlMode as StorageUrlMode,
     };
+    use forge_test_support::log_capture::capture;
     use forge_tts_pipeline::{
         PipelineConfig, PipelineContext, PipelineResult, SkipReason, SkipRule, process,
     };
+    use tracing::Level;
 
     fn ctx() -> PipelineContext<'static> {
         PipelineContext {
@@ -743,66 +745,12 @@ mod filters {
     }
 
     fn warning_patterns_while(run: impl FnOnce()) -> Vec<String> {
-        static INTEREST_FLOOR: std::sync::OnceLock<()> = std::sync::OnceLock::new();
-        INTEREST_FLOOR.get_or_init(|| {
-            drop(tracing::subscriber::set_global_default(
-                PatternCollector::default(),
-            ));
-        });
-        let collector = PatternCollector::default();
-        let patterns = std::sync::Arc::clone(&collector.patterns);
-        tracing::subscriber::with_default(collector, || {
-            tracing::callsite::rebuild_interest_cache();
-            run();
-        });
-        patterns.lock().unwrap_or_else(|e| e.into_inner()).clone()
-    }
-
-    #[derive(Default)]
-    struct PatternCollector {
-        patterns: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
-    }
-
-    struct PatternField<'a>(&'a mut Option<String>);
-
-    impl tracing::field::Visit for PatternField<'_> {
-        fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
-            if field.name() == "pattern" {
-                *self.0 = Some(format!("{value:?}"));
-            }
-        }
-    }
-
-    impl tracing::Subscriber for PatternCollector {
-        fn register_callsite(
-            &self,
-            _: &'static tracing::Metadata<'static>,
-        ) -> tracing::subscriber::Interest {
-            tracing::subscriber::Interest::sometimes()
-        }
-        fn max_level_hint(&self) -> Option<tracing::level_filters::LevelFilter> {
-            Some(tracing::level_filters::LevelFilter::WARN)
-        }
-        fn enabled(&self, metadata: &tracing::Metadata<'_>) -> bool {
-            *metadata.level() == tracing::Level::WARN
-        }
-        fn new_span(&self, _: &tracing::span::Attributes<'_>) -> tracing::span::Id {
-            tracing::span::Id::from_u64(1)
-        }
-        fn record(&self, _: &tracing::span::Id, _: &tracing::span::Record<'_>) {}
-        fn record_follows_from(&self, _: &tracing::span::Id, _: &tracing::span::Id) {}
-        fn event(&self, event: &tracing::Event<'_>) {
-            let mut pattern = None;
-            event.record(&mut PatternField(&mut pattern));
-            if let Some(pattern) = pattern {
-                self.patterns
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .push(pattern);
-            }
-        }
-        fn enter(&self, _: &tracing::span::Id) {}
-        fn exit(&self, _: &tracing::span::Id) {}
+        let ((), lines) = capture(Level::WARN, run);
+        lines
+            .iter()
+            .filter(|line| line.level == Level::WARN)
+            .filter_map(|line| line.field("pattern").map(str::to_owned))
+            .collect()
     }
 
     #[test]

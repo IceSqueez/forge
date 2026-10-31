@@ -1402,11 +1402,11 @@ mod tests {
             .unwrap()
     }
 
-    fn overrun_lines(lines: &[crate::test_support::log_capture::CapturedLine]) -> Vec<String> {
+    fn overrun_lines(lines: &[forge_test_support::log_capture::CapturedLine]) -> Vec<String> {
         lines
             .iter()
             .filter(|line| line.mentions("integrations did not retire in time"))
-            .map(|line| line.field("unfinished").to_owned())
+            .filter_map(|line| line.field("unfinished").map(str::to_owned))
             .collect()
     }
 
@@ -1422,7 +1422,7 @@ mod tests {
         let clean = FakeFactory::new("kick", Behaviour::default());
         let runtime = paused_runtime();
 
-        let lines = crate::test_support::log_capture::capture(tracing::Level::WARN, || {
+        let (_, lines) = forge_test_support::log_capture::capture(tracing::Level::WARN, || {
             runtime.block_on(async {
                 let harness = launch_all(&[&hung, &clean]);
                 harness.slot(&hung).set_enabled(true).await.unwrap();
@@ -1454,7 +1454,7 @@ mod tests {
         let factory = FakeFactory::new("twitch", Behaviour::default());
         let runtime = paused_runtime();
 
-        let lines = crate::test_support::log_capture::capture(tracing::Level::WARN, || {
+        let (_, lines) = forge_test_support::log_capture::capture(tracing::Level::WARN, || {
             runtime.block_on(async {
                 let harness = Harness::launch(&factory);
                 harness.slot(&factory).set_enabled(true).await.unwrap();

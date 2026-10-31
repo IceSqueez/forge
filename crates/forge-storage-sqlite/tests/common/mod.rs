@@ -1,62 +1,27 @@
-#![allow(dead_code, clippy::expect_used)]
+#![allow(dead_code, unused_imports, clippy::expect_used)]
 
 use std::collections::BTreeMap;
-use std::ops::Deref;
 use std::path::Path;
 
 use forge_storage::DataProvider;
+pub(crate) use forge_storage_sqlite::test_support::{
+    Sandboxed, TEST_KEY, sandboxed_backend_at, sandboxed_file_backend,
+};
 use forge_storage_sqlite::{SqliteBackend, SqlitePools, apply_migrations, connect_pools};
 use forge_types::{
     Action, ActionId, ExecutionMode, PermissionRung, QueueId, TriggerInstance, TriggerInstanceId,
 };
 use tempfile::TempDir;
 
-pub(crate) const TEST_KEY: [u8; 32] = [0xab; 32];
 const DATABASE_FILE: &str = "forge.db";
 const MEDIA_DIR: &str = "media";
 const DEFAULT_QUEUE_NAME: &str = "Default";
-
-pub(crate) struct Sandboxed<T> {
-    inner: T,
-    _temp_root: TempDir,
-}
-
-impl<T> Sandboxed<T> {
-    pub(crate) fn map<U>(self, wrap: impl FnOnce(T) -> U) -> Sandboxed<U> {
-        Sandboxed {
-            inner: wrap(self.inner),
-            _temp_root: self._temp_root,
-        }
-    }
-}
-
-impl<T> Deref for Sandboxed<T> {
-    type Target = T;
-
-    fn deref(&self) -> &T {
-        &self.inner
-    }
-}
-
-pub(crate) async fn sandboxed_backend(url: &str, key: [u8; 32]) -> Sandboxed<SqliteBackend> {
-    let media_root = tempfile::tempdir().expect("a temporary media root");
-    let backend = SqliteBackend::open_for_test(url, key, media_root.path().to_owned(), None)
-        .await
-        .expect("a backend");
-    Sandboxed {
-        inner: backend,
-        _temp_root: media_root,
-    }
-}
 
 pub(crate) async fn empty_pools() -> Sandboxed<SqlitePools> {
     let root = tempfile::tempdir().expect("a temporary database directory");
     let url = database_url(&root);
     let pools = connect_pools(&url).await.expect("the production pools");
-    Sandboxed {
-        inner: pools,
-        _temp_root: root,
-    }
+    Sandboxed::new(pools, root)
 }
 
 pub(crate) async fn migrated_pools() -> Sandboxed<SqlitePools> {
@@ -66,15 +31,7 @@ pub(crate) async fn migrated_pools() -> Sandboxed<SqlitePools> {
 }
 
 pub(crate) async fn migrated_backend(key: [u8; 32]) -> Sandboxed<SqliteBackend> {
-    let root = tempfile::tempdir().expect("a temporary database directory");
-    let url = database_url(&root);
-    let backend = SqliteBackend::open_for_test(&url, key, root.path().join(MEDIA_DIR), None)
-        .await
-        .expect("a backend");
-    Sandboxed {
-        inner: backend,
-        _temp_root: root,
-    }
+    sandboxed_file_backend(key).await
 }
 
 pub(crate) async fn setup() -> Sandboxed<SqliteBackend> {

@@ -250,7 +250,7 @@ mod tests {
 
     use super::*;
     use crate::delivery_loss::{DeliveryTier, LossCount, LossLedger};
-    use crate::test_support::log_capture::{CapturedLine, capture};
+    use forge_test_support::log_capture::{CapturedLine, capture};
 
     const LANE_CAPACITY: usize = 4;
     const FLOOD: usize = LANE_CAPACITY * 5;
@@ -572,7 +572,7 @@ mod tests {
     #[test]
     fn a_lane_flapping_at_its_edge_logs_one_overflow_episode() {
         let (sink, mut subscription, ledger) = sink(LANE_CAPACITY, LANE_CAPACITY);
-        let lines = capture(Level::WARN, || {
+        let (_, lines) = capture(Level::WARN, || {
             for _ in 0..=LANE_CAPACITY {
                 sink.offer(&core("action.start"), DeliveryLane::Bulk);
             }
@@ -598,7 +598,7 @@ mod tests {
     fn a_lane_counts_as_recovered_only_once_half_of_it_is_free_again() {
         for (drained, recovered) in [(2, 0), (3, 1)] {
             let (sink, mut subscription, _ledger) = sink(LANE_CAPACITY, LANE_CAPACITY);
-            let lines = capture(Level::WARN, || {
+            let (_, lines) = capture(Level::WARN, || {
                 for _ in 0..=LANE_CAPACITY {
                     sink.offer(&core("action.start"), DeliveryLane::Bulk);
                 }
@@ -619,7 +619,7 @@ mod tests {
     #[test]
     fn an_overflow_after_recovery_opens_a_new_logged_episode() {
         let (sink, mut subscription, _ledger) = sink(LANE_CAPACITY, LANE_CAPACITY);
-        let lines = capture(Level::WARN, || {
+        let (_, lines) = capture(Level::WARN, || {
             for _ in 0..=LANE_CAPACITY {
                 sink.offer(&core("action.start"), DeliveryLane::Bulk);
             }
@@ -635,7 +635,7 @@ mod tests {
     #[test]
     fn only_a_priority_overflow_is_logged_at_error_level() {
         let (sink, _subscription, _ledger) = sink(LANE_CAPACITY, LANE_CAPACITY);
-        let lines = capture(Level::WARN, || {
+        let (_, lines) = capture(Level::WARN, || {
             for lane in [DeliveryLane::Priority, DeliveryLane::Bulk] {
                 for _ in 0..=LANE_CAPACITY {
                     sink.offer(&core("action.start"), lane);

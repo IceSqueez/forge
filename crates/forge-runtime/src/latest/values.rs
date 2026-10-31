@@ -315,7 +315,7 @@ mod tests {
 
     use super::*;
     use crate::latest::feeds::CHEER_KIND;
-    use crate::test_support::log_capture::capture;
+    use forge_test_support::log_capture::capture;
 
     const ANONYMOUS: &str = "Anonymous donor";
     const BASE_UNIX: i64 = 1_790_000_000;
@@ -672,7 +672,7 @@ mod tests {
     fn exhausted_save_attempts_log_one_error_without_the_donor_name() {
         let (values, _store, _recorder) = rig_blocking(failing(3));
 
-        let lines = capture(Level::WARN, || {
+        let (_, lines) = capture(Level::WARN, || {
             project_on_paused_clock(&values, &donation("donatello", "Olena", 10, false));
         });
 
@@ -681,7 +681,7 @@ mod tests {
             .filter(|line| line.level == Level::ERROR)
             .collect();
         assert_eq!(errors.len(), 1);
-        assert_eq!(errors[0].field("platform"), "donatello");
+        assert_eq!(errors[0].field("platform"), Some("donatello"));
         assert!(!lines.iter().any(|line| line.mentions("Olena")));
     }
 
@@ -693,7 +693,7 @@ mod tests {
             Ok(true),
         ]));
 
-        let lines = capture(Level::WARN, || {
+        let (_, lines) = capture(Level::WARN, || {
             project_on_paused_clock(&values, &donation("donatello", "Olena", 10, false));
         });
 

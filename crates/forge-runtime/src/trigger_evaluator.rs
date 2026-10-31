@@ -521,7 +521,6 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
 
-    use crate::test_support::log_capture::{capture, on_target};
     use crate::test_support::{Sandboxed, sandboxed_backend};
     use forge_events::{Event, EventSource};
     use forge_registry::{
@@ -530,6 +529,7 @@ mod tests {
     };
     use forge_storage::DataProvider;
     use forge_storage_sqlite::SqliteBackend;
+    use forge_test_support::log_capture::{capture, on_target};
     use forge_types::{
         AUTHOR_IS_CONNECTED_BOT_FIELD, Action, ActionId, ChatSegment, DeclaredVariable,
         ModerationMarks, PlatformId, PlatformScope, Queue, QueueId, SubActionStep, TriggerInstance,
@@ -1076,18 +1076,24 @@ mod tests {
         let instance = command_instance(PlatformScope::Any, PermissionRung::Everyone, 0);
         let event = command_event(LINE, "alice", vec![]);
 
-        let lines = capture(Level::DEBUG, || {
+        let (_, lines) = capture(Level::DEBUG, || {
             evaluator.decide(&instance, &event);
         });
 
         let matched = on_target(&lines, DECISION_TARGET)
             .into_iter()
-            .find(|line| line.field("message") == "command matched")
+            .find(|line| line.message() == "command matched")
             .expect("a matched command must record its DEBUG summary");
-        assert_eq!(matched.field("phrase"), PHRASE);
-        assert_eq!(matched.field("viewer"), identity_digest("alice"));
-        assert_eq!(matched.field("arg_count"), "1");
-        assert_eq!(matched.field("arg_len"), TAIL.chars().count().to_string());
+        assert_eq!(matched.field("phrase"), Some(PHRASE));
+        assert_eq!(
+            matched.field("viewer"),
+            Some(identity_digest("alice").as_str())
+        );
+        assert_eq!(matched.field("arg_count"), Some("1"));
+        assert_eq!(
+            matched.field("arg_len"),
+            Some(TAIL.chars().count().to_string().as_str())
+        );
     }
 
     #[tokio::test]
@@ -1096,7 +1102,7 @@ mod tests {
         let instance = command_instance(PlatformScope::Any, PermissionRung::Everyone, 0);
         let event = command_event(LINE, "alice", vec![]);
 
-        let lines = capture(Level::DEBUG, || {
+        let (_, lines) = capture(Level::DEBUG, || {
             evaluator.decide(&instance, &event);
         });
 
@@ -1116,7 +1122,7 @@ mod tests {
         let instance = command_instance(PlatformScope::Any, PermissionRung::Everyone, 0);
         let event = command_event(LINE, "alice", vec![]);
 
-        let lines = capture(Level::TRACE, || {
+        let (_, lines) = capture(Level::TRACE, || {
             evaluator.decide(&instance, &event);
         });
 
@@ -1127,7 +1133,7 @@ mod tests {
             "the content line is single-sited so a bundle without the directive provably lacks it"
         );
         assert_eq!(raised[0].level, Level::TRACE);
-        assert_eq!(raised[0].field("line"), LINE);
+        assert_eq!(raised[0].field("line"), Some(LINE));
         assert!(
             !on_target(&lines, DECISION_TARGET)
                 .iter()
@@ -1193,16 +1199,16 @@ mod tests {
             }
 
             let event = command_event(LINE, "alice", vec![]);
-            let lines = capture(Level::DEBUG, || {
+            let (_, lines) = capture(Level::DEBUG, || {
                 evaluator.decide(&instance, &event);
             });
 
             let refusal = on_target(&lines, DECISION_TARGET)
                 .into_iter()
-                .find(|line| line.field("message") == "command trigger did not fire")
+                .find(|line| line.message() == "command trigger did not fire")
                 .unwrap_or_else(|| panic!("no decision line for a {} refusal", case.reason));
-            assert_eq!(refusal.field("reason"), case.reason);
-            assert_eq!(refusal.field("kind"), COMMAND_KIND);
+            assert_eq!(refusal.field("reason"), Some(case.reason));
+            assert_eq!(refusal.field("kind"), Some(COMMAND_KIND));
             assert!(
                 !lines.iter().any(|line| line.mentions(TAIL)),
                 "the \"my command didn't fire\" trail is served content-free ({})",
@@ -1223,7 +1229,7 @@ mod tests {
             let instance = command_instance(PlatformScope::Any, PermissionRung::Everyone, 0);
             let event = command_event(LINE, "alice", vec![]);
 
-            let lines = capture(Level::TRACE, || {
+            let (_, lines) = capture(Level::TRACE, || {
                 evaluator.decide(&instance, &event);
             });
 
@@ -1308,15 +1314,15 @@ mod tests {
         let instance = command_instance(PlatformScope::Any, PermissionRung::Everyone, 0);
         let event = flagged_command_event(json!(true));
 
-        let lines = capture(Level::DEBUG, || {
+        let (_, lines) = capture(Level::DEBUG, || {
             evaluator.decide(&instance, &event);
         });
 
         let refusal = on_target(&lines, DECISION_TARGET)
             .into_iter()
-            .find(|line| line.field("message") == "command trigger did not fire")
+            .find(|line| line.message() == "command trigger did not fire")
             .expect("a bot-author refusal must record its decision line");
-        assert_eq!(refusal.field("reason"), "bot_author");
+        assert_eq!(refusal.field("reason"), Some("bot_author"));
     }
 
     #[tokio::test]

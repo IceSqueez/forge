@@ -29,9 +29,10 @@ sha2 = { workspace = true }
 rand = { workspace = true }
 time = { workspace = true }
 tracing = { workspace = true }
+tempfile = { workspace = true, optional = true }
 
 [dev-dependencies]
-forge-storage-sqlite = { path = ".", features = ["settings-test-support"] }
+forge-storage-sqlite = { path = ".", features = ["settings-test-support", "test-support"] }
 serde_json = { workspace = true, features = ["preserve_order"] }
 tempfile = { workspace = true }
 sha2 = { workspace = true }
@@ -40,3 +41,4 @@ ulid = { workspace = true }
 
 [features]
 settings-test-support = ["forge-storage/settings-test-support"]
+test-support = ["dep:tempfile"]

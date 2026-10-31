@@ -1180,7 +1180,7 @@ async fn a_run_stored_before_replay_marking_reads_back_as_not_replayed() {
     .unwrap();
     pool.close().await;
 
-    let backend = common::sandboxed_backend(&url, TEST_KEY).await;
+    let backend = common::sandboxed_backend_at(&url, TEST_KEY).await;
     let replay_marks: Vec<bool> = backend
         .scheduled_run_repo()
         .list_pending()

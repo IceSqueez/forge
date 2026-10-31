@@ -120,7 +120,7 @@ mod tests {
 
     #[tokio::test]
     async fn the_save_warning_names_the_clip_key_only_when_the_os_did_not_take_it() {
-        let backend = crate::test_support::sandboxed_backend("sqlite::memory:", [0x11; 32])
+        let backend = crate::test_support::sandboxed_backend_at("sqlite::memory:", [0x11; 32])
             .await
             .map(|backend| Arc::new(backend) as Arc<dyn forge_storage::DataProvider>);
         let (client, _recorder) = forge_hotkey::testing::test_client(

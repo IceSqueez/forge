@@ -530,17 +530,18 @@ mod tests {
 
     #[test]
     fn giving_up_on_a_topic_warns_exactly_once_naming_the_kind_and_the_attempts() {
-        let (_, lines) = crate::log_capture::capture_blocking(tracing::Level::DEBUG, async {
-            tokio::time::pause();
-            let stub = ScriptedHelix::new([(
-                PROBED,
-                vec![Answer::Status(StatusCode::SERVICE_UNAVAILABLE)],
-            )]);
-            let mut retry = Retrying::after_pass(&stub).await;
-            retry.finish().await;
-        });
+        let (_, lines) =
+            forge_test_support::log_capture::capture_blocking(tracing::Level::DEBUG, async {
+                tokio::time::pause();
+                let stub = ScriptedHelix::new([(
+                    PROBED,
+                    vec![Answer::Status(StatusCode::SERVICE_UNAVAILABLE)],
+                )]);
+                let mut retry = Retrying::after_pass(&stub).await;
+                retry.finish().await;
+            });
 
-        let warns: Vec<_> = crate::log_capture::forge_lines(&lines)
+        let warns: Vec<_> = forge_test_support::log_capture::forge_lines(&lines)
             .into_iter()
             .filter(|line| line.level == tracing::Level::WARN)
             .map(|line| {
@@ -790,20 +791,21 @@ mod tests {
 
     #[test]
     fn a_conflict_on_a_retry_logs_the_recovery_at_info_without_a_warning() {
-        let (_, lines) = crate::log_capture::capture_blocking(tracing::Level::INFO, async {
-            tokio::time::pause();
-            let stub = ScriptedHelix::new([(
-                PROBED,
-                vec![
-                    Answer::Status(StatusCode::INTERNAL_SERVER_ERROR),
-                    Answer::Status(StatusCode::CONFLICT),
-                ],
-            )]);
-            let mut retry = Retrying::after_pass(&stub).await;
-            retry.finish().await;
-        });
+        let (_, lines) =
+            forge_test_support::log_capture::capture_blocking(tracing::Level::INFO, async {
+                tokio::time::pause();
+                let stub = ScriptedHelix::new([(
+                    PROBED,
+                    vec![
+                        Answer::Status(StatusCode::INTERNAL_SERVER_ERROR),
+                        Answer::Status(StatusCode::CONFLICT),
+                    ],
+                )]);
+                let mut retry = Retrying::after_pass(&stub).await;
+                retry.finish().await;
+            });
 
-        let logged: Vec<_> = crate::log_capture::forge_lines(&lines)
+        let logged: Vec<_> = forge_test_support::log_capture::forge_lines(&lines)
             .into_iter()
             .map(|line| {
                 (

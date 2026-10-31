@@ -426,8 +426,13 @@ pub(crate) mod tests {
 
     const BODY_SENTINEL: &str = "REFRESH_BODY_SENTINEL_p3k";
 
-    fn failing_refresh(status: u16) -> (PlatformError, Vec<crate::log_capture::CapturedLine>) {
-        crate::log_capture::capture_blocking(tracing::Level::TRACE, async move {
+    fn failing_refresh(
+        status: u16,
+    ) -> (
+        PlatformError,
+        Vec<forge_test_support::log_capture::CapturedLine>,
+    ) {
+        forge_test_support::log_capture::capture_blocking(tracing::Level::TRACE, async move {
             let server = MockServer::start().await;
             Mock::given(method("POST"))
                 .and(path("/token"))
@@ -457,7 +462,7 @@ pub(crate) mod tests {
                 );
             }
 
-            let forge_lines = crate::log_capture::forge_lines(&lines);
+            let forge_lines = forge_test_support::log_capture::forge_lines(&lines);
             assert!(
                 !forge_lines.is_empty(),
                 "HTTP {status}: the refresh path must have logged something to inspect"
@@ -473,7 +478,7 @@ pub(crate) mod tests {
         }
     }
 
-    type WarnExpectation = fn(&crate::log_capture::CapturedLine) -> bool;
+    type WarnExpectation = fn(&forge_test_support::log_capture::CapturedLine) -> bool;
 
     #[test]
     fn token_refresh_failure_warns_with_the_shape_of_its_branch() {
@@ -487,7 +492,7 @@ pub(crate) mod tests {
 
         for (status, is_expected) in cases {
             let (_, lines) = failing_refresh(status);
-            let warns: Vec<_> = crate::log_capture::forge_lines(&lines)
+            let warns: Vec<_> = forge_test_support::log_capture::forge_lines(&lines)
                 .into_iter()
                 .filter(|line| line.level == tracing::Level::WARN)
                 .collect();
@@ -890,17 +895,18 @@ pub(crate) mod tests {
 
     #[test]
     fn successful_refresh_logs_no_token_text() {
-        let (_, lines) = crate::log_capture::capture_blocking(tracing::Level::TRACE, async {
-            let server = MockServer::start().await;
-            mount_token_endpoint(&server, rotating_token_endpoint()).await;
-            let cred = stub_cred(SystemTime::now() + std::time::Duration::from_secs(10));
-            let mgr = manager_with_server(seeded_repo(&cred), &server);
-            mgr.refresh(&OAuthToken::new("existing_access"))
-                .await
-                .unwrap();
-        });
+        let (_, lines) =
+            forge_test_support::log_capture::capture_blocking(tracing::Level::TRACE, async {
+                let server = MockServer::start().await;
+                mount_token_endpoint(&server, rotating_token_endpoint()).await;
+                let cred = stub_cred(SystemTime::now() + std::time::Duration::from_secs(10));
+                let mgr = manager_with_server(seeded_repo(&cred), &server);
+                mgr.refresh(&OAuthToken::new("existing_access"))
+                    .await
+                    .unwrap();
+            });
 
-        let forge_lines = crate::log_capture::forge_lines(&lines);
+        let forge_lines = forge_test_support::log_capture::forge_lines(&lines);
         assert!(
             !forge_lines.is_empty(),
             "the refresh must have logged something to inspect"

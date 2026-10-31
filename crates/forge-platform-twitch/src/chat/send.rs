@@ -335,13 +335,14 @@ mod tests {
         assert!(matches!(err, ChatSendError::Http(_)));
     }
 
-    fn send_debug_line(message: &str) -> crate::log_capture::CapturedLine {
+    fn send_debug_line(message: &str) -> forge_test_support::log_capture::CapturedLine {
         let transport = MockTransport::returning(Ok(sent_fixture()));
-        let (result, lines) = crate::log_capture::capture_blocking(tracing::Level::DEBUG, async {
-            send_chat(&transport, "100", "200", message).await
-        });
+        let (result, lines) =
+            forge_test_support::log_capture::capture_blocking(tracing::Level::DEBUG, async {
+                send_chat(&transport, "100", "200", message).await
+            });
         assert!(result.is_ok(), "fixture send must succeed");
-        crate::log_capture::forge_lines(&lines)
+        forge_test_support::log_capture::forge_lines(&lines)
             .into_iter()
             .find(|line| line.message() == "sending chat message to helix")
             .cloned()

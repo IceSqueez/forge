@@ -3124,8 +3124,9 @@ mod tests {
         ] {
             let quota = SharedQuota::default();
             let observed = quota.clone();
-            let (outcome, lines) =
-                crate::log_capture::capture_blocking(tracing::Level::WARN, async move {
+            let (outcome, lines) = forge_test_support::log_capture::capture_blocking(
+                tracing::Level::WARN,
+                async move {
                     let server = StubServer::start().await;
                     server.reply_always(BROADCASTS, live_broadcast());
                     server.reply_always(held_path, StubReply::held());
@@ -3153,10 +3154,14 @@ mod tests {
                             .collect::<Vec<_>>(),
                         used_today(&observed).await,
                     )
-                });
+                },
+            );
 
             assert_eq!(
-                (outcome, crate::log_capture::forge_lines(&lines).len()),
+                (
+                    outcome,
+                    forge_test_support::log_capture::forge_lines(&lines).len()
+                ),
                 ((true, expected_reports, charged), 0),
                 "{label}"
             );

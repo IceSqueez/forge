@@ -219,11 +219,11 @@ fn row_to_clip(row: ClipRow) -> Result<StoredClip, StorageError> {
 mod tests {
     use super::*;
     use crate::SqliteBackend;
-    use crate::test_support::{Sandboxed, sandboxed_backend};
+    use crate::test_support::{Sandboxed, sandboxed_file_backend};
     use forge_types::OutputDevice;
 
     async fn open() -> Sandboxed<SqliteBackend> {
-        sandboxed_backend([0xab; 32]).await
+        sandboxed_file_backend([0xab; 32]).await
     }
 
     fn sample_clip() -> StoredClip {

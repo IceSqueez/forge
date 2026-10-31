@@ -1248,8 +1248,8 @@ mod tests {
     use super::*;
     use crate::i18n::install_language;
     use crate::test_support::{
-        LiveAliases, Sandboxed, alias_shape, error_toasts, live_alias, runtime, sandboxed_backend,
-        settle_until, spawn_speak_queue,
+        LiveAliases, Sandboxed, alias_shape, error_toasts, live_alias, runtime,
+        sandboxed_backend_at, settle_until, spawn_speak_queue,
     };
     use forge_components::Presentation;
     use forge_components::Toasts;
@@ -1310,7 +1310,7 @@ mod tests {
             cx.set_global(Presentation::new(ThemeId::ForgeDefault, Density::Cozy));
             cx.set_global(Toasts::new());
         });
-        let backend = rt.block_on(sandboxed_backend("sqlite::memory:", TEST_KEY));
+        let backend = rt.block_on(sandboxed_backend_at("sqlite::memory:", TEST_KEY));
         let repo = backend.voice_alias_repo();
         for alias in &seeded {
             rt.block_on(repo.upsert(alias)).expect("seed alias");

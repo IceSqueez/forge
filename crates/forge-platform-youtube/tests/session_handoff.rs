@@ -12,6 +12,7 @@ use forge_registry::{RunContext, SubActionConfig, SubActionRegistry};
 use forge_storage::BanLedgerRepo;
 use forge_storage::MockBanLedgerRepo;
 use forge_storage::test_support::MemoryCredentials;
+use forge_test_support::settle_until;
 use forge_types::{ArgStack, EventId, OAuthToken, Secret, SubActionOutcome, Variant};
 use serde_json::{Value, json};
 use support::{DATA_API_PREFIX, data_api_override};
@@ -137,16 +138,6 @@ async fn assembled_over(server: &MockServer) -> Assembled {
         ledger,
         _assembly: assembly,
     }
-}
-
-async fn settle_until(what: &str, mut done: impl FnMut() -> bool) {
-    let settled = tokio::time::timeout(HANG_GUARD, async {
-        while !done() {
-            tokio::time::sleep(STATE_POLL).await;
-        }
-    })
-    .await;
-    assert!(settled.is_ok(), "never happened: {what}");
 }
 
 async fn resolved_broadcast(fixture: &Assembled, broadcast: LiveBroadcast) {

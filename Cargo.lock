@@ -2661,6 +2661,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "forge-conformance"
+version = "0.6.3"
+dependencies = [
+ "forge-events",
+ "forge-hotkey",
+ "forge-midi",
+ "forge-net",
+ "forge-obs",
+ "forge-overlay",
+ "forge-platform-core",
+ "forge-platform-kick",
+ "forge-platform-twitch",
+ "forge-platform-youtube",
+ "forge-registry",
+ "forge-runtime",
+ "forge-storage",
+ "forge-storage-sqlite",
+ "forge-types",
+ "forge-vtube",
+ "serde_json",
+ "tempfile",
+ "time",
+ "tokio",
+]
+
+[[package]]
 name = "forge-desktop"
 version = "0.6.3"
 dependencies = [
@@ -2762,6 +2788,7 @@ dependencies = [
  "forge-net",
  "forge-platform-core",
  "forge-storage",
+ "forge-test-support",
  "forge-types",
  "jiff",
  "reqwest",
@@ -2851,6 +2878,7 @@ dependencies = [
  "forge-net",
  "forge-platform-core",
  "forge-storage",
+ "forge-test-support",
  "forge-types",
  "reqwest",
  "serde",
@@ -2871,6 +2899,7 @@ dependencies = [
  "async-trait",
  "bytes",
  "forge-net",
+ "forge-test-support",
  "forge-types",
  "httpdate",
  "rand 0.10.3",
@@ -2894,6 +2923,7 @@ dependencies = [
  "forge-platform-core",
  "forge-registry",
  "forge-storage",
+ "forge-test-support",
  "forge-types",
  "futures-util",
  "obws",
@@ -2911,11 +2941,7 @@ name = "forge-overlay"
 version = "0.6.3"
 dependencies = [
  "forge-durable",
- "forge-platform-kick",
- "forge-platform-twitch",
- "forge-platform-youtube",
  "forge-registry",
- "forge-runtime",
  "forge-types",
  "serde",
  "serde_json",
@@ -2940,6 +2966,7 @@ dependencies = [
  "base64 0.23.1",
  "forge-events",
  "forge-net",
+ "forge-test-support",
  "forge-types",
  "futures-core",
  "rand 0.10.3",
@@ -2965,6 +2992,7 @@ dependencies = [
  "forge-platform-core",
  "forge-registry",
  "forge-storage",
+ "forge-test-support",
  "forge-types",
  "futures",
  "futures-util",
@@ -2993,6 +3021,7 @@ dependencies = [
  "forge-registry",
  "forge-storage",
  "forge-storage-sqlite",
+ "forge-test-support",
  "forge-types",
  "futures-util",
  "regex",
@@ -3021,6 +3050,7 @@ dependencies = [
  "forge-registry",
  "forge-storage",
  "forge-storage-sqlite",
+ "forge-test-support",
  "forge-types",
  "futures",
  "jiff",
@@ -3069,6 +3099,7 @@ dependencies = [
  "forge-script",
  "forge-storage",
  "forge-storage-sqlite",
+ "forge-test-support",
  "forge-types",
  "futures-core",
  "futures-util",
@@ -3100,6 +3131,7 @@ dependencies = [
  "forge-platform-core",
  "forge-storage",
  "forge-storage-sqlite",
+ "forge-test-support",
  "forge-types",
  "rhai",
  "serde_json",
@@ -3125,6 +3157,7 @@ dependencies = [
  "forge-registry",
  "forge-runtime",
  "forge-storage",
+ "forge-test-support",
  "forge-types",
  "futures-util",
  "mockall",
@@ -3174,6 +3207,7 @@ dependencies = [
  "forge-events",
  "forge-speech-types",
  "forge-storage",
+ "forge-test-support",
  "forge-tts-core",
  "forge-tts-pipeline",
  "forge-types",
@@ -3205,6 +3239,7 @@ dependencies = [
  "forge-events",
  "forge-speech-types",
  "forge-storage",
+ "forge-test-support",
  "forge-types",
  "mockall",
  "serde",
@@ -3240,6 +3275,14 @@ dependencies = [
  "tracing",
  "ulid",
  "zeroize",
+]
+
+[[package]]
+name = "forge-test-support"
+version = "0.6.3"
+dependencies = [
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

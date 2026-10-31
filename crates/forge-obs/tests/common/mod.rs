@@ -65,13 +65,7 @@ pub(crate) const IDENTIFY_OP: u64 = 1;
 pub(crate) const OBS_SUCCESS: u16 = 100;
 pub(crate) const OBS_RESOURCE_NOT_FOUND: u16 = 600;
 
-pub(crate) async fn settle_until(what: &str, mut done: impl FnMut() -> bool) {
-    let started = Instant::now();
-    while !done() {
-        assert!(started.elapsed() < WALL_BUDGET, "never happened: {what}");
-        tokio::time::sleep(REAL_CLOCK_POLL).await;
-    }
-}
+pub(crate) use forge_test_support::settle_until;
 
 #[derive(Clone, Copy)]
 pub(crate) enum Handshake {

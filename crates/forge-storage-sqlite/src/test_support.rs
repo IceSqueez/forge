@@ -1,15 +1,36 @@
+#![allow(clippy::expect_used)]
+
 use std::ops::Deref;
 
 use tempfile::TempDir;
 
 use crate::SqliteBackend;
 
+pub const TEST_KEY: [u8; 32] = [0xab; 32];
+
 const DATABASE_FILE: &str = "forge.db";
 const MEDIA_DIR: &str = "media";
+const IN_MEMORY_URL: &str = ":memory:";
 
-pub(crate) struct Sandboxed<T> {
+pub struct Sandboxed<T> {
     inner: T,
     _temp_root: TempDir,
+}
+
+impl<T> Sandboxed<T> {
+    pub fn new(inner: T, temp_root: TempDir) -> Self {
+        Self {
+            inner,
+            _temp_root: temp_root,
+        }
+    }
+
+    pub fn map<U>(self, wrap: impl FnOnce(T) -> U) -> Sandboxed<U> {
+        Sandboxed {
+            inner: wrap(self.inner),
+            _temp_root: self._temp_root,
+        }
+    }
 }
 
 impl<T> Deref for Sandboxed<T> {
@@ -20,14 +41,23 @@ impl<T> Deref for Sandboxed<T> {
     }
 }
 
-pub(crate) async fn sandboxed_backend(key: [u8; 32]) -> Sandboxed<SqliteBackend> {
+pub async fn sandboxed_backend_at(url: &str, key: [u8; 32]) -> Sandboxed<SqliteBackend> {
+    let media_root = tempfile::tempdir().expect("a temporary media root");
+    let backend = SqliteBackend::open_for_test(url, key, media_root.path().to_owned(), None)
+        .await
+        .expect("a backend");
+    Sandboxed::new(backend, media_root)
+}
+
+pub async fn sandboxed_backend(key: [u8; 32]) -> Sandboxed<SqliteBackend> {
+    sandboxed_backend_at(IN_MEMORY_URL, key).await
+}
+
+pub async fn sandboxed_file_backend(key: [u8; 32]) -> Sandboxed<SqliteBackend> {
     let root = tempfile::tempdir().expect("a temporary database directory");
     let url = format!("sqlite://{}", root.path().join(DATABASE_FILE).display());
     let backend = SqliteBackend::open_for_test(&url, key, root.path().join(MEDIA_DIR), None)
         .await
         .expect("a file-backed backend");
-    Sandboxed {
-        inner: backend,
-        _temp_root: root,
-    }
+    Sandboxed::new(backend, root)
 }

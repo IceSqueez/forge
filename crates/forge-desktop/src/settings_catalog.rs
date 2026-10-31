@@ -78,7 +78,7 @@ mod tests {
     };
 
     use super::{DENSITY, registered_settings_catalog};
-    use crate::test_support::sandboxed_backend;
+    use crate::test_support::sandboxed_backend_at;
 
     #[test]
     fn a_density_write_stamps_the_declared_row_classes() {
@@ -195,7 +195,7 @@ mod tests {
 
     #[tokio::test]
     async fn every_setting_a_fresh_database_and_the_first_run_write_is_declared() {
-        let backend = sandboxed_backend("sqlite::memory:", TEST_KEY).await;
+        let backend = sandboxed_backend_at("sqlite::memory:", TEST_KEY).await;
         let settings: &dyn SettingsRepo = &*backend;
         crate::first_run::record_completed(settings).await.unwrap();
         let catalog = registered_settings_catalog();
@@ -291,7 +291,7 @@ mod tests {
     async fn diagnostic_config(
         rows: &[(&str, &str, Option<forge_storage::RowClasses>)],
     ) -> std::collections::BTreeMap<String, String> {
-        let sandboxed = sandboxed_backend("sqlite::memory:", TEST_KEY).await;
+        let sandboxed = sandboxed_backend_at("sqlite::memory:", TEST_KEY).await;
         for (name, value, classes) in rows {
             sandboxed
                 .seed_foreign_setting(name, value, *classes)

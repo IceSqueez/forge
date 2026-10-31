@@ -1,25 +1,13 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 use std::collections::{BTreeMap, BTreeSet};
 
+use forge_conformance::every_registered_trigger;
 use forge_events::{Event, EventSource};
 use forge_registry::{ActorDeclaration, KindPlatformContract, TriggerRegistry};
 use forge_registry::{ActorRole, ActorSlot, CanonicalVariable, SlotPresence};
 use forge_types::{TriggerConfig, Variant, VariantKind};
 
 const VOCABULARY_HAS_NOT_REACHED: &[&str] = &[];
-
-fn every_registered_trigger() -> TriggerRegistry {
-    let mut registry = TriggerRegistry::new();
-    forge_runtime::register_core_triggers(&mut registry).expect("core triggers");
-    forge_platform_twitch::register_twitch_triggers(&mut registry).expect("twitch triggers");
-    forge_platform_youtube::register_youtube_triggers(&mut registry).expect("youtube triggers");
-    forge_platform_kick::register_kick_triggers(&mut registry).expect("kick triggers");
-    forge_obs::register_obs_triggers(&mut registry).expect("obs triggers");
-    forge_vtube::register_vtube_triggers(&mut registry).expect("vtube triggers");
-    forge_midi::register_midi_triggers(&mut registry).expect("midi triggers");
-    forge_hotkey::register_hotkey_triggers(&mut registry).expect("hotkey triggers");
-    registry
-}
 
 fn declared_names(registry: &TriggerRegistry, trigger_id: &str) -> BTreeSet<String> {
     registry

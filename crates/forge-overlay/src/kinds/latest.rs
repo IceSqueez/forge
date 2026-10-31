@@ -1,6 +1,6 @@
 use forge_types::LATEST_DONATION_SLOT;
 
-use forge_types::MessageCode;
+use forge_types::{MessageCode, NamesLanguage};
 
 use crate::assets::PageAssets;
 use crate::base;
@@ -147,10 +147,10 @@ impl OverlayKindDescriptor for LatestOverlayKind {
         }
     }
 
-    fn preview(&self, config: &OverlayConfig) -> PreviewComposition {
+    fn preview(&self, config: &OverlayConfig, language: NamesLanguage) -> PreviewComposition {
         let sample = sample_latest_value(config::read_str(config, config::SLOT));
         let mut shown = config.clone();
-        shown.extend(latest_content(self, config, Some(&sample)));
+        shown.extend(latest_content(self, config, Some(&sample), language));
         compose(
             PreviewShape::LatestCard,
             metrics::element_sizing(KIND_ID),

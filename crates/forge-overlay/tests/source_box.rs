@@ -73,7 +73,10 @@ fn margins_of(config: &OverlayConfig) -> [Option<i64>; 4] {
 fn drawn(kind_id: &str, stored: &OverlayConfig) -> PreviewElement {
     with_kind(kind_id, |descriptor| {
         descriptor
-            .preview(&effective_overlay_config(descriptor, stored))
+            .preview(
+                &effective_overlay_config(descriptor, stored),
+                forge_types::NamesLanguage::En,
+            )
             .element
     })
 }
@@ -137,7 +140,9 @@ fn each_kind_defaults_to_the_text_size_its_stylesheet_falls_back_to() {
 fn each_kind_preview_without_a_stored_size_draws_its_own_base_text_size() {
     for (kind_id, base) in BASE_TEXT_SIZE {
         let element = with_kind(kind_id, |descriptor| {
-            descriptor.preview(&OverlayConfig::new()).element
+            descriptor
+                .preview(&OverlayConfig::new(), forge_types::NamesLanguage::En)
+                .element
         });
 
         assert_eq!(element.text_size, *base, "{kind_id}");
@@ -213,7 +218,10 @@ fn an_untouched_record_previews_at_its_looks_design_size_and_margins() {
         (FRAME_KIND, 1280, 720, ContentMargins::NONE),
     ] {
         let composition = with_kind(kind_id, |descriptor| {
-            descriptor.preview(&effective_overlay_config(descriptor, &OverlayConfig::new()))
+            descriptor.preview(
+                &effective_overlay_config(descriptor, &OverlayConfig::new()),
+                forge_types::NamesLanguage::En,
+            )
         });
 
         assert_eq!(
@@ -287,10 +295,10 @@ fn a_stored_margin_is_previewed_pulled_into_range() {
     ] {
         let margins = with_kind(ALERT_KIND, |descriptor| {
             descriptor
-                .preview(&effective_overlay_config(
-                    descriptor,
-                    &one(MARGIN_TOP, Variant::Int(stored)),
-                ))
+                .preview(
+                    &effective_overlay_config(descriptor, &one(MARGIN_TOP, Variant::Int(stored))),
+                    forge_types::NamesLanguage::En,
+                )
                 .margins
         });
 
@@ -314,10 +322,10 @@ fn a_stored_design_size_is_previewed_pulled_into_range() {
     ] {
         let canvas = with_kind(TICKER_KIND, |descriptor| {
             descriptor
-                .preview(&effective_overlay_config(
-                    descriptor,
-                    &one(DESIGN_WIDTH, Variant::Int(stored)),
-                ))
+                .preview(
+                    &effective_overlay_config(descriptor, &one(DESIGN_WIDTH, Variant::Int(stored))),
+                    forge_types::NamesLanguage::En,
+                )
                 .canvas
         });
 

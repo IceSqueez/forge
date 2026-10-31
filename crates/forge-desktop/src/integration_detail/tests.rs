@@ -432,6 +432,7 @@ mod quick_action_bridge {
             Arc::new(StubHistory),
             Arc::new(SubActionRegistry::new()),
             Arc::new(ActionCancelRegistry::new()),
+            forge_runtime::DateNamesHandle::default(),
         );
         let (backend, _writes) = test_backend();
         let view = cx.new(|cx| {
@@ -1717,6 +1718,7 @@ mod detail_lifetime {
             Arc::new(StubHistory),
             Arc::new(SubActionRegistry::new()),
             Arc::new(ActionCancelRegistry::new()),
+            forge_runtime::DateNamesHandle::default(),
         );
         let (backend, _writes) = test_backend();
         let view = cx.new(|cx| {

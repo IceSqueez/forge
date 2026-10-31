@@ -238,6 +238,7 @@ fn overlays(pages: &[Page], readable: bool) -> OverlayServiceHandle {
     let mut kinds = OverlayKindRegistry::new();
     register_builtin_kinds(&mut kinds).expect("the builtin overlay kinds register");
     OverlayServiceHandle::new(OverlayServiceParts {
+        date_names: forge_runtime::DateNamesHandle::default(),
         tasks: forge_net::TaskOwner::new(),
         repo: Arc::new(repo) as Arc<dyn OverlayRepo>,
         settings: Arc::new(MemorySettings::new()) as Arc<dyn SettingsRepo>,

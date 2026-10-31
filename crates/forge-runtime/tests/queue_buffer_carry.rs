@@ -201,6 +201,7 @@ async fn gated_queue(concurrency: u32, actions: &[ActionId]) -> GatedQueue {
         Arc::new(NullHistoryRepo),
         Arc::new(registry),
         Arc::new(ActionCancelRegistry::new()),
+        forge_runtime::DateNamesHandle::default(),
     );
     let sched = QueueScheduler::spawn(
         engine,

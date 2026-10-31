@@ -141,6 +141,7 @@ fn harness_with(definitions: Vec<OverlayDefinition>, absent_for: usize) -> Harne
 
     let tasks = forge_net::TaskOwner::new();
     let service = OverlayServiceHandle::new(OverlayServiceParts {
+        date_names: forge_runtime::DateNamesHandle::default(),
         tasks: tasks.clone(),
         repo: Arc::new(repo) as Arc<dyn OverlayRepo>,
         settings: Arc::new(settings) as Arc<dyn SettingsRepo>,
@@ -184,6 +185,7 @@ async fn wired_stage(definitions: Vec<OverlayDefinition>) -> (Harness, FrozenRun
     let bus = EventBus::new(Arc::new(NullEventLogRepo));
     let sink = Arc::new(TimedSink::new(0));
     let runtime = common::frozen_runtime(RuntimeWiringParts {
+        date_names: forge_runtime::DateNamesHandle::default(),
         overlay_frames: Arc::clone(&sink) as Arc<dyn OverlayFrameSink>,
         ..common::wiring_parts(Arc::new(provider), bus).await
     })

@@ -88,8 +88,18 @@ fn keys_a_page_can_receive(kind_id: &str) -> BTreeSet<String> {
     match latest_binding(descriptor, &stored) {
         Some(binding) => {
             let sample = sample_latest_value(&binding.slot);
-            let mut keys = keys_of(&latest_content(descriptor, &stored, Some(&sample)));
-            keys.extend(keys_of(&latest_content(descriptor, &stored, None)));
+            let mut keys = keys_of(&latest_content(
+                descriptor,
+                &stored,
+                Some(&sample),
+                forge_types::NamesLanguage::En,
+            ));
+            keys.extend(keys_of(&latest_content(
+                descriptor,
+                &stored,
+                None,
+                forge_types::NamesLanguage::En,
+            )));
             keys
         }
         None => keys_of(&sample_content(

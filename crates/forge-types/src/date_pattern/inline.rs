@@ -2,13 +2,17 @@ use time::OffsetDateTime;
 
 use super::PatternZone;
 use super::cache::cached_pattern;
-use super::current_language::current_names_language;
+use super::names::NamesLanguage;
 use crate::datetime_text::datetime_to_text;
 
-pub(crate) fn render_inline_pattern(value: OffsetDateTime, pattern: &str) -> String {
+pub(crate) fn render_inline_pattern(
+    value: OffsetDateTime,
+    pattern: &str,
+    language: NamesLanguage,
+) -> String {
     let cached = cached_pattern(pattern);
     match cached.parsed.as_ref() {
-        Ok(parsed) => parsed.format(value, PatternZone::Local, current_names_language()),
+        Ok(parsed) => parsed.format(value, PatternZone::Local, language),
         Err(error) => {
             if cached.newly_parsed {
                 tracing::warn!(
@@ -59,8 +63,8 @@ mod tests {
         let warnings = Arc::clone(&counter.0);
         let at = OffsetDateTime::UNIX_EPOCH;
         tracing::subscriber::with_default(counter, || {
-            render_inline_pattern(at, "'warn probe' qqq");
-            render_inline_pattern(at, "'warn probe' qqq");
+            render_inline_pattern(at, "'warn probe' qqq", NamesLanguage::En);
+            render_inline_pattern(at, "'warn probe' qqq", NamesLanguage::En);
         });
         assert_eq!(warnings.load(Ordering::SeqCst), 1);
     }

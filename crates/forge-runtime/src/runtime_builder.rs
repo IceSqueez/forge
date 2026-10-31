@@ -16,6 +16,7 @@ use crate::action_engine::{ActionEngineHandle, spawn_action_engine};
 use crate::bus::EventBus;
 use crate::catalog::Catalog;
 use crate::config::Config;
+use crate::date_names::DateNamesHandle;
 use crate::latest::LatestValues;
 use crate::overlay_media::OverlayMediaLibrary;
 use crate::overlay_service::{OverlayFrameSink, OverlayServiceHandle, OverlayServiceParts};
@@ -40,6 +41,7 @@ pub struct RuntimeWiringParts {
     pub overlay_kinds: Arc<OverlayKindRegistry>,
     pub overlay_frames: Arc<dyn OverlayFrameSink>,
     pub clock: Arc<dyn WallClock>,
+    pub date_names: DateNamesHandle,
     pub tasks: TaskOwner,
 }
 
@@ -49,6 +51,7 @@ pub struct RuntimeWiring {
     scripts: Arc<ScriptRegistry>,
     cancel_registry: Arc<ActionCancelRegistry>,
     overlays: OverlayServiceHandle,
+    date_names: DateNamesHandle,
     scheduler: QueueSchedulerHandle,
     scheduler_start: QueueSchedulerStart,
     scheduled_runs: ScheduledRunsHandle,
@@ -68,6 +71,7 @@ impl RuntimeWiring {
             overlay_kinds,
             overlay_frames,
             clock,
+            date_names,
             tasks,
         } = parts;
         let (scheduler, scheduler_start) = QueueScheduler::reserve();
@@ -97,6 +101,7 @@ impl RuntimeWiring {
             )),
             speaker: overlay_speech,
             latest: Some(latest),
+            date_names: date_names.clone(),
             tasks,
         });
         Self {
@@ -105,6 +110,7 @@ impl RuntimeWiring {
             scripts,
             cancel_registry: Arc::new(ActionCancelRegistry::new()),
             overlays,
+            date_names,
             scheduler,
             scheduler_start,
             scheduled_runs,
@@ -161,6 +167,7 @@ impl RuntimeWiring {
             scripts,
             cancel_registry,
             overlays,
+            date_names,
             scheduler,
             scheduler_start,
             scheduled_runs,
@@ -184,6 +191,7 @@ impl RuntimeWiring {
             provider.history_repo(),
             Arc::clone(&sub_action_registry),
             cancel_registry,
+            date_names,
         );
         scheduler_start.start(
             action_engine.clone(),

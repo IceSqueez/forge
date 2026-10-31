@@ -261,6 +261,7 @@ pub(super) fn new_view(
         Arc::new(StubHistory),
         Arc::new(SubActionRegistry::new()),
         Arc::new(ActionCancelRegistry::new()),
+        forge_runtime::DateNamesHandle::default(),
     );
     ChatView::new(
         feed,

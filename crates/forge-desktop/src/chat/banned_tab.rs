@@ -300,6 +300,7 @@ mod tests {
             Arc::new(history),
             Arc::new(registry),
             Arc::new(ActionCancelRegistry::new()),
+            forge_runtime::DateNamesHandle::default(),
         );
         let builtins = registry_with(&[
             (Integration::Twitch, Some(Arc::clone(&twitch))),

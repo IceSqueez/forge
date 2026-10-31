@@ -429,6 +429,7 @@ pub(crate) fn held_queue_scheduler(
             Arc::new(StubHistory),
             Arc::new(SubActionRegistry::new()),
             Arc::new(ActionCancelRegistry::new()),
+            forge_runtime::DateNamesHandle::default(),
         );
         let id = queue.id;
         let scheduler = forge_runtime::QueueScheduler::spawn(engine, bus, vec![queue]);

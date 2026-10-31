@@ -1,7 +1,7 @@
 use forge_components::{ForgePalette, Icon};
 use forge_overlay::{OverlayKindRegistry, PreviewAccent, effective_overlay_config};
 use forge_storage::OverlayDefinition;
-use forge_types::{MessageCode, MessageRef};
+use forge_types::{MessageCode, MessageRef, NamesLanguage};
 use gpui::Rgba;
 
 use crate::user_text::resolve_message;
@@ -37,7 +37,12 @@ pub(super) fn kind_visuals(
     let effective = effective_overlay_config(descriptor, &definition.config);
     KindVisuals {
         icon: Icon::from_name(descriptor.icon_name()),
-        accent: accent_color(descriptor.preview(&effective).accent, palette),
+        accent: accent_color(
+            descriptor
+                .preview(&effective, NamesLanguage::default())
+                .accent,
+            palette,
+        ),
         label: Some(kind_text(descriptor.label())),
     }
 }
@@ -151,7 +156,10 @@ mod tests {
                         ACCENT.to_owned(),
                         Variant::String((*name).to_owned()),
                     )]);
-                    let rendered = accent_color(descriptor.preview(&config).accent, &palette);
+                    let rendered = accent_color(
+                        descriptor.preview(&config, NamesLanguage::default()).accent,
+                        &palette,
+                    );
 
                     assert_eq!(
                         accent_swatch(name, &palette),

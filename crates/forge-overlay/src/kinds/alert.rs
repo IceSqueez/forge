@@ -102,7 +102,7 @@ impl OverlayKindDescriptor for AlertOverlayKind {
         }
     }
 
-    fn preview(&self, config: &OverlayConfig) -> PreviewComposition {
+    fn preview(&self, config: &OverlayConfig, _: forge_types::NamesLanguage) -> PreviewComposition {
         compose(
             PreviewShape::BadgeBanner,
             metrics::element_sizing(KIND_ID),

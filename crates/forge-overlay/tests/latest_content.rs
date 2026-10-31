@@ -48,7 +48,9 @@ fn a_filled_slot_renders_the_label_headline_and_subline_expanded_from_the_record
         (latest_fields::AMOUNT_FORMATTED, "150 UAH"),
     ]);
 
-    let content = with_latest(|look| latest_content(look, &stored, Some(&value)));
+    let content = with_latest(|look| {
+        latest_content(look, &stored, Some(&value), forge_types::NamesLanguage::En)
+    });
 
     assert_eq!(
         content,
@@ -68,7 +70,8 @@ fn an_empty_slot_renders_the_label_and_the_placeholder_and_no_value_lines() {
         ("placeholder", "Be the first"),
     ]);
 
-    let content = with_latest(|look| latest_content(look, &stored, None));
+    let content =
+        with_latest(|look| latest_content(look, &stored, None, forge_types::NamesLanguage::En));
 
     assert_eq!(
         content,
@@ -81,7 +84,9 @@ fn a_token_the_record_does_not_carry_is_left_verbatim() {
     let stored = config(&[("headline", "%user_name% %no_such_field%")]);
     let value = donation(&[(latest_fields::USER_NAME, "Olena")]);
 
-    let content = with_latest(|look| latest_content(look, &stored, Some(&value)));
+    let content = with_latest(|look| {
+        latest_content(look, &stored, Some(&value), forge_types::NamesLanguage::En)
+    });
 
     assert_eq!(
         content.get("headline"),
@@ -97,8 +102,11 @@ fn a_donor_message_never_reaches_the_page_even_when_the_record_and_config_carry_
         ("message", "a private note"),
     ]);
 
-    let filled = with_latest(|look| latest_content(look, &stored, Some(&value)));
-    let empty = with_latest(|look| latest_content(look, &stored, None));
+    let filled = with_latest(|look| {
+        latest_content(look, &stored, Some(&value), forge_types::NamesLanguage::En)
+    });
+    let empty =
+        with_latest(|look| latest_content(look, &stored, None, forge_types::NamesLanguage::En));
 
     for content in [filled, empty] {
         assert!(

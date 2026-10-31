@@ -1183,6 +1183,7 @@ mod tests {
         });
         let overlays =
             forge_runtime::OverlayServiceHandle::new(forge_runtime::OverlayServiceParts {
+                date_names: forge_runtime::DateNamesHandle::default(),
                 tasks: forge_net::TaskOwner::new(),
                 repo: Arc::new(repo) as Arc<dyn OverlayRepo>,
                 settings: backend as Arc<dyn SettingsRepo>,

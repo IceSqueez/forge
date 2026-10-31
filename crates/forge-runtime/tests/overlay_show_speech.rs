@@ -277,6 +277,7 @@ fn harness_checking_voice(
     let bus = EventBus::new(Arc::new(NullEventLogRepo));
 
     let service = OverlayServiceHandle::new(OverlayServiceParts {
+        date_names: forge_runtime::DateNamesHandle::default(),
         tasks: forge_net::TaskOwner::new(),
         repo: Arc::new(repo) as Arc<dyn OverlayRepo>,
         settings: Arc::new(settings) as Arc<dyn SettingsRepo>,
@@ -323,6 +324,7 @@ async fn wired_stage(kind_id: &str, speaks: Speaks) -> (Harness, FrozenRuntime) 
     });
     let bus = EventBus::new(Arc::new(NullEventLogRepo));
     let runtime = common::frozen_runtime(RuntimeWiringParts {
+        date_names: forge_runtime::DateNamesHandle::default(),
         overlay_speech: Some(Arc::clone(&speaker) as Arc<dyn SpeakDispatcher>),
         overlay_frames: Arc::clone(&page) as Arc<dyn OverlayFrameSink>,
         ..common::wiring_parts(Arc::new(provider), Arc::clone(&bus)).await

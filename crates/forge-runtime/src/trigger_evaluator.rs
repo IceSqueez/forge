@@ -636,6 +636,7 @@ mod tests {
             dp.history_repo(),
             log_step_registry(),
             Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
+            crate::DateNamesHandle::default(),
         );
         (
             catalog,
@@ -1009,6 +1010,7 @@ mod tests {
             Arc::new(forge_storage::MockHistoryRepo::new()),
             Arc::new(SubActionRegistry::new()),
             Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
+            crate::DateNamesHandle::default(),
         );
         let evaluator = TriggerEvaluator {
             bus: Arc::clone(&bus),

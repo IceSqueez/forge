@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use forge_registry::FormField;
-use forge_types::{ArgStack, MessageCode, Variant};
+use forge_types::{ArgStack, MessageCode, NamesLanguage, Variant};
 
 use crate::assets::PageAssets;
 use crate::base;
@@ -93,7 +93,7 @@ pub trait OverlayKindDescriptor: Send + Sync {
         fields
     }
     fn page_assets(&self) -> PageAssets;
-    fn preview(&self, config: &OverlayConfig) -> PreviewComposition;
+    fn preview(&self, config: &OverlayConfig, language: NamesLanguage) -> PreviewComposition;
     fn has_visual_page(&self) -> bool {
         true
     }

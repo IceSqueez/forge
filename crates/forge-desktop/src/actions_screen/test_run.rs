@@ -972,6 +972,7 @@ mod tests {
                 provider.history_repo(),
                 Arc::new(owned_sub_actions(&[(OBS_SCENE, "obs")])),
                 Arc::new(ActionCancelRegistry::new()),
+                forge_runtime::DateNamesHandle::default(),
             );
             engine.integration_gate().disable(obs.clone());
             let scheduler = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);

@@ -39,7 +39,8 @@ use forge_overlay::OverlayKindRegistry;
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::ActionsService;
 use forge_runtime::{
-    EventBus, LatestValues, OverlaySampleSource, OverlayServiceHandle, QueueSchedulerHandle,
+    DateNamesHandle, EventBus, LatestValues, OverlaySampleSource, OverlayServiceHandle,
+    QueueSchedulerHandle,
 };
 use forge_server::ServerHandle;
 use forge_soundboard::ClipLibrary;
@@ -85,6 +86,7 @@ struct OverlayHandles {
     kinds: Arc<OverlayKindRegistry>,
     service: OverlayServiceHandle,
     samples: Arc<dyn OverlaySampleSource>,
+    date_names: DateNamesHandle,
     library: Arc<ClipLibrary>,
     media: Arc<dyn MediaRepo>,
     settings_repo: Arc<dyn SettingsRepo>,
@@ -114,6 +116,7 @@ pub(crate) struct OverlaysLaunch {
     pub kinds: Arc<OverlayKindRegistry>,
     pub service: OverlayServiceHandle,
     pub samples: Arc<dyn OverlaySampleSource>,
+    pub date_names: DateNamesHandle,
     pub library: Arc<ClipLibrary>,
     pub media: Arc<dyn MediaRepo>,
     pub settings_repo: Arc<dyn SettingsRepo>,
@@ -173,6 +176,7 @@ impl OverlaysView {
                 kinds: launch.kinds,
                 service: launch.service,
                 samples: launch.samples,
+                date_names: launch.date_names,
                 library: launch.library,
                 media: launch.media,
                 settings_repo: launch.settings_repo,

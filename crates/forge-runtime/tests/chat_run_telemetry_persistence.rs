@@ -136,6 +136,7 @@ async fn run_for_chat_and_follow(chat: &Event, follow: &Event) -> Persisted {
         Arc::new(history),
         Arc::new(SubActionRegistry::new()),
         Arc::new(ActionCancelRegistry::new()),
+        forge_runtime::DateNamesHandle::default(),
     );
 
     let mut observer = bus.subscribe();

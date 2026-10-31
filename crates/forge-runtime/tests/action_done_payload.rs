@@ -76,6 +76,7 @@ async fn rig() -> Rig {
         dp.history_repo(),
         Arc::new(registry),
         Arc::clone(&cancel),
+        forge_runtime::DateNamesHandle::default(),
     );
     let sched = QueueScheduler::spawn(
         engine,

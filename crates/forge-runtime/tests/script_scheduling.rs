@@ -59,6 +59,7 @@ fn shown<T>(result: Result<T, ScriptError>) -> Result<T, String> {
 async fn fixed_clock_runtime(dp: Arc<dyn DataProvider>) -> FrozenRuntime {
     let bus = EventBus::new(Arc::new(NullEventLogRepo));
     common::frozen_runtime(RuntimeWiringParts {
+        date_names: forge_runtime::DateNamesHandle::default(),
         clock: Arc::new(FixedClock),
         ..common::wiring_parts(dp, bus).await
     })

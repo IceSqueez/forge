@@ -252,6 +252,7 @@ impl AppShell {
             kinds: Arc::clone(&handles.overlays.kinds),
             service: handles.overlays.service.clone(),
             samples: Arc::clone(&handles.overlays.samples),
+            date_names: handles.date_names.clone(),
             library: Arc::clone(handles.audio.soundboard_player.library()),
             media: handles.backend.media_repo(),
             settings_repo: Arc::clone(&handles.backend) as Arc<dyn SettingsRepo>,

@@ -175,6 +175,7 @@ fn engine_with(registry: SubActionRegistry) -> ActionEngineHandle {
         Arc::new(history),
         Arc::new(registry),
         Arc::new(ActionCancelRegistry::new()),
+        forge_runtime::DateNamesHandle::default(),
     )
 }
 

@@ -110,6 +110,7 @@ fn engine() -> Arc<ChainEngine> {
         Arc::new(reg),
         Arc::new(NullPublisher),
         gate,
+        forge_runtime::DateNamesHandle::default(),
         unhurried(),
     ))
 }

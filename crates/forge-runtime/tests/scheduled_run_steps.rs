@@ -104,6 +104,7 @@ impl Harness {
         dp.queue_repo().save(&queue).await.unwrap();
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let runtime = common::frozen_runtime(RuntimeWiringParts {
+            date_names: forge_runtime::DateNamesHandle::default(),
             clock: Arc::new(FixedClock),
             ..common::wiring_parts(Arc::clone(&dp), Arc::clone(&bus)).await
         })

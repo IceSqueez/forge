@@ -608,6 +608,7 @@ pub(crate) fn test_engine(bus: &Arc<EventBus>, dp: &dyn DataProvider) -> Arc<Act
         dp.history_repo(),
         Arc::new(SubActionRegistry::new()),
         Arc::new(ActionCancelRegistry::new()),
+        forge_runtime::DateNamesHandle::default(),
     ))
 }
 

@@ -3,21 +3,11 @@ use forge_events::test_support::NullPublisher;
 use std::process::Command;
 
 use forge_registry::{RunContext, SubActionRunner};
-use forge_runtime::DateNamesHandle;
 use forge_runtime::{CoreTimeFormatRunner, CoreTimeNowRunner, CoreTimeParseRunner};
 use forge_types::{ArgStack, EventId, NamesLanguage, SubActionConfig, SubActionOutcome, Variant};
 use time::{Date, Month, OffsetDateTime, UtcOffset};
-use tokio::sync::{Mutex, MutexGuard};
 
 const CHILD_MARKER: &str = "FORGE_TIME_STEP_PATTERNS_CHILD";
-
-static NAMES_LANGUAGE_LOCK: Mutex<()> = Mutex::const_new(());
-
-async fn names_language(language: NamesLanguage) -> MutexGuard<'static, ()> {
-    let guard = NAMES_LANGUAGE_LOCK.lock().await;
-    DateNamesHandle.set_language(language);
-    guard
-}
 
 fn in_child_zone(test_name: &str, zone: &str) -> bool {
     if std::env::var_os(CHILD_MARKER).is_some() {
@@ -67,7 +57,15 @@ fn s(value: &str) -> Variant {
 }
 
 async fn run_ok(runner: &dyn SubActionRunner, config: &SubActionConfig) -> ArgStack {
-    let stack = ArgStack::new();
+    run_ok_in(runner, config, NamesLanguage::En).await
+}
+
+async fn run_ok_in(
+    runner: &dyn SubActionRunner,
+    config: &SubActionConfig,
+    language: NamesLanguage,
+) -> ArgStack {
+    let stack = ArgStack::new().with_names_language(language);
     let ctx = RunContext::leaf(&stack, 0, EventId::new(), &NullPublisher);
     let (telemetry, out) = runner.execute(config, &ctx).await;
     assert!(
@@ -79,7 +77,11 @@ async fn run_ok(runner: &dyn SubActionRunner, config: &SubActionConfig) -> ArgSt
 }
 
 async fn formatted(config: &SubActionConfig) -> String {
-    run_ok(&CoreTimeFormatRunner, config)
+    formatted_in(config, NamesLanguage::En).await
+}
+
+async fn formatted_in(config: &SubActionConfig, language: NamesLanguage) -> String {
+    run_ok_in(&CoreTimeFormatRunner, config, language)
         .await
         .get("time.formatted")
         .and_then(Variant::as_str)
@@ -121,16 +123,13 @@ zone_test!(
 );
 
 #[tokio::test]
-async fn format_pattern_follows_the_names_language_switched_through_the_handle() {
-    let _language = names_language(NamesLanguage::En).await;
+async fn format_pattern_writes_names_in_the_language_its_arg_stack_carries() {
     for (language, expected) in [
         (NamesLanguage::Uk, "15 жовтня, четвер"),
         (NamesLanguage::En, "15 October, Thursday"),
-        (NamesLanguage::Uk, "15 жовтня, четвер"),
     ] {
-        DateNamesHandle.set_language(language);
         assert_eq!(
-            formatted(&format_cfg("d MMMM, EEEE", Some(true))).await,
+            formatted_in(&format_cfg("d MMMM, EEEE", Some(true)), language).await,
             expected,
             "{language:?}"
         );

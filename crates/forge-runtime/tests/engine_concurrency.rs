@@ -293,6 +293,7 @@ async fn rig(queues: Vec<Queue>, actions: &[&Action]) -> Rig {
         }),
         Arc::new(registry),
         Arc::new(ActionCancelRegistry::new()),
+        forge_runtime::DateNamesHandle::default(),
     );
     let sched = QueueScheduler::spawn(engine.clone(), Arc::clone(&bus), queues);
     Rig {

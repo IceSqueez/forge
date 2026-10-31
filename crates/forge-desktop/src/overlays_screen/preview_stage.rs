@@ -16,6 +16,7 @@ use forge_overlay::{
 };
 use forge_runtime::{OverlayDelivery, TestFire};
 use forge_storage::{OverlayDefinition, OverlayId};
+use forge_types::NamesLanguage;
 use gpui::{
     AnyElement, Bounds, ClickEvent, Context, Pixels, Rgba, Size, Window, canvas, div, fill, point,
     prelude::*, px, size,
@@ -151,8 +152,9 @@ impl OverlaysView {
     }
 
     pub(super) fn sync_preview(&mut self) {
+        let language = self.handles.date_names.language();
         let next = self.selected_definition().and_then(|definition| {
-            let composition = self.preview_composition(definition)?;
+            let composition = self.preview_composition(definition, language)?;
             let plan = ElementPlan::of(&definition.kind_id, composition.element);
             Some(StagePreview {
                 overlay: definition.id.clone(),
@@ -274,13 +276,17 @@ impl OverlaysView {
         Some(effective_overlay_config(descriptor, &definition.config))
     }
 
-    fn preview_composition(&self, definition: &OverlayDefinition) -> Option<PreviewComposition> {
+    fn preview_composition(
+        &self,
+        definition: &OverlayDefinition,
+        language: NamesLanguage,
+    ) -> Option<PreviewComposition> {
         let descriptor = self.handles.kinds.get(&definition.kind_id)?;
         let mut config = effective_overlay_config(descriptor, &definition.config);
         if let Some(content) = self.landed_content(&definition.id) {
             config.extend(content.iter().map(|(key, v)| (key.clone(), v.clone())));
         }
-        Some(descriptor.preview(&config))
+        Some(descriptor.preview(&config, language))
     }
 
     fn landed_content(&self, id: &OverlayId) -> Option<&OverlayConfig> {

@@ -142,6 +142,7 @@ impl Harness {
             Arc::new(history),
             Arc::new(SubActionRegistry::new()),
             Arc::new(ActionCancelRegistry::new()),
+            forge_runtime::DateNamesHandle::default(),
         );
         let queues = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue.clone()]);
         Self {
@@ -1109,6 +1110,7 @@ fn mock_parts(
         Arc::new(MockHistoryRepo::new()),
         Arc::new(SubActionRegistry::new()),
         Arc::new(ActionCancelRegistry::new()),
+        forge_runtime::DateNamesHandle::default(),
     );
     ScheduledRunsParts {
         repo: Arc::new(repo),
@@ -1632,6 +1634,7 @@ async fn a_run_waiting_on_a_paused_queue_is_rechecked_no_faster_than_the_wall_cl
         Arc::new(MockHistoryRepo::new()),
         Arc::new(SubActionRegistry::new()),
         Arc::new(ActionCancelRegistry::new()),
+        forge_runtime::DateNamesHandle::default(),
     );
     let queues = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue.clone()]);
     queues.set_mode(queue.id, QueueMode::PAUSED).await.unwrap();

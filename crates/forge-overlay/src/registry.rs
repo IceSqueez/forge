@@ -113,7 +113,11 @@ mod tests {
             Vec::new()
         }
 
-        fn preview(&self, config: &OverlayConfig) -> PreviewComposition {
+        fn preview(
+            &self,
+            config: &OverlayConfig,
+            _: forge_types::NamesLanguage,
+        ) -> PreviewComposition {
             compose(PreviewShape::Strip, None, config)
         }
         fn page_assets(&self) -> PageAssets {

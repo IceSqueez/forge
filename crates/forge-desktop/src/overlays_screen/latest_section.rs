@@ -182,13 +182,14 @@ impl OverlayPropertyPanel {
         let epoch = self.latest.read_epoch;
         let kind_id = self.base.kind_id().to_owned();
         let stored = self.pending_config(cx);
+        let language = crate::presentation::active_names_language(cx);
 
         async_bridge::run_async(
             &self.rt_handle,
             async move {
                 let value = source.values.latest(&binding.slot, binding.scope());
                 let descriptor = source.kinds.get(&kind_id)?;
-                let content = latest_content(descriptor, &stored, value.as_ref());
+                let content = latest_content(descriptor, &stored, value.as_ref(), language);
                 Some(current_value(
                     &content,
                     value.map(|value| value.platform().to_owned()),

@@ -177,6 +177,7 @@ pub async fn boot_host(
         local_tts_engines: Vec::new(),
         platform_identities,
         anonymous_donor,
+        date_names: forge_runtime::DateNamesHandle::default(),
     };
     let host = guarded("the boot", build_host(inputs)).await;
     BootedHost { host, sinks }

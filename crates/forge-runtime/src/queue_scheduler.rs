@@ -1390,6 +1390,7 @@ mod tests {
             dp.history_repo(),
             registry,
             Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
+            crate::DateNamesHandle::default(),
         );
         QueueScheduler::spawn(engine, Arc::clone(bus), queues)
     }

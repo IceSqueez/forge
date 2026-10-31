@@ -8,6 +8,7 @@ use forge_registry::{
 use forge_storage::OverlayId;
 
 use crate::actions::ActionsService;
+use crate::date_names::DateNamesHandle;
 
 #[async_trait]
 pub trait OverlaySampleSource: Send + Sync {
@@ -18,6 +19,7 @@ pub struct OverlaySamples {
     actions: Arc<ActionsService>,
     sub_actions: Arc<SubActionRegistry>,
     triggers: Arc<TriggerRegistry>,
+    date_names: DateNamesHandle,
 }
 
 impl OverlaySamples {
@@ -25,11 +27,13 @@ impl OverlaySamples {
         actions: Arc<ActionsService>,
         sub_actions: Arc<SubActionRegistry>,
         triggers: Arc<TriggerRegistry>,
+        date_names: DateNamesHandle,
     ) -> Self {
         Self {
             actions,
             sub_actions,
             triggers,
+            date_names,
         }
     }
 }
@@ -41,7 +45,7 @@ impl OverlaySampleSource for OverlaySamples {
             Ok(feeds) => feeds,
             Err(error) => {
                 tracing::warn!(overlay = %id, %error, "what feeds this overlay is unreadable; its sample stays neutral");
-                return SampleContext::neutral();
+                return SampleContext::neutral().with_names_language(self.date_names.language());
             }
         };
 
@@ -50,7 +54,7 @@ impl OverlaySampleSource for OverlaySamples {
             .flat_map(|feed| feed.triggers.iter())
             .map(|instance| feeding_trigger(&self.triggers, &instance.kind_id))
             .collect();
-        sample_context(&feeding)
+        sample_context(&feeding).with_names_language(self.date_names.language())
     }
 }
 

@@ -150,6 +150,7 @@ impl Fixture {
                 Arc::new(StubHistory),
                 Arc::new(SubActionRegistry::new()),
                 Arc::new(ActionCancelRegistry::new()),
+                forge_runtime::DateNamesHandle::default(),
             );
             let scheduler = QueueScheduler::spawn(engine, Arc::clone(&bus), Vec::new());
             (bus, scheduler)

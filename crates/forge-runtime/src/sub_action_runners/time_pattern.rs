@@ -1,7 +1,7 @@
 use forge_registry::{ConfigProblem, ConfigReason, ToggleField, TypedField};
 use forge_types::{
-    ArgStack, DatePattern, MessageRef, NamesLanguage, ParsedPattern, PatternZone, SubActionConfig,
-    current_names_language, shared_date_pattern,
+    ArgStack, DatePattern, MessageRef, ParsedPattern, PatternZone, SubActionConfig,
+    shared_date_pattern,
 };
 
 use crate::core_messages;
@@ -19,7 +19,6 @@ pub(crate) struct ResolvedTimePattern {
     text: String,
     parsed: ParsedPattern,
     pub(crate) zone: PatternZone,
-    pub(crate) language: NamesLanguage,
 }
 
 impl ResolvedTimePattern {
@@ -40,19 +39,13 @@ fn resolve_time_pattern(
     utc: Option<bool>,
 ) -> Result<ResolvedTimePattern, MessageRef> {
     let text = stored.to_owned();
-    let language = current_names_language();
     let zone = if utc.unwrap_or(false) {
         PatternZone::Utc
     } else {
         PatternZone::Local
     };
     let parsed = shared_date_pattern(&text);
-    Ok(ResolvedTimePattern {
-        text,
-        parsed,
-        zone,
-        language,
-    })
+    Ok(ResolvedTimePattern { text, parsed, zone })
 }
 
 pub(crate) fn checked_time_pattern(

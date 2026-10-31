@@ -46,6 +46,7 @@ pub(crate) async fn frozen_core_runtime(
     )
     .await;
     let mut wiring = RuntimeWiring::new(RuntimeWiringParts {
+        date_names: crate::DateNamesHandle::default(),
         tasks: forge_net::TaskOwner::new(),
         bus,
         provider,

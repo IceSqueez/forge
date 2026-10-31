@@ -19,7 +19,7 @@ fn latest_config(overrides: &[(&str, &str)]) -> OverlayConfig {
 fn preview(overrides: &[(&str, &str)]) -> forge_overlay::PreviewComposition {
     let reg = registry();
     let look = reg.get(LATEST_KIND).expect("the latest look");
-    look.preview(&latest_config(overrides))
+    look.preview(&latest_config(overrides), forge_types::NamesLanguage::En)
 }
 
 #[test]

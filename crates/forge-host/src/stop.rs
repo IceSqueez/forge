@@ -607,6 +607,7 @@ mod tests {
             Arc::new(MockHistoryRepo::new()),
             Arc::new(SubActionRegistry::new()),
             Arc::new(ActionCancelRegistry::new()),
+            forge_runtime::DateNamesHandle::default(),
         );
         let scheduler = QueueScheduler::spawn(action_engine.clone(), Arc::clone(&bus), Vec::new());
         let trigger_evaluator = spawn_trigger_evaluator(

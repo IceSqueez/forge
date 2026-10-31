@@ -6,11 +6,11 @@ use forge_events::{EventObserver, EventPublisher};
 use forge_hotkey::HOTKEY_INTEGRATION;
 use forge_platform_core::PlatformEndpoints;
 use forge_runtime::{
-    CatchUpSettle, DonationIngest, FrozenRuntime, IntegrationSupervisor, OverlayFrameSink,
-    RuntimeWiring, RuntimeWiringParts, TwitchEmoteLexicon, register_core_triggers,
-    register_donation_sub_actions, register_latest_sub_actions, register_speech_sub_actions,
-    spawn_live_viewer_aggregator, spawn_stream_live_signal, spawn_timer_scheduler,
-    spawn_twitch_emote_learning,
+    CatchUpSettle, DateNamesHandle, DonationIngest, FrozenRuntime, IntegrationSupervisor,
+    OverlayFrameSink, RuntimeWiring, RuntimeWiringParts, TwitchEmoteLexicon,
+    register_core_triggers, register_donation_sub_actions, register_latest_sub_actions,
+    register_speech_sub_actions, spawn_live_viewer_aggregator, spawn_stream_live_signal,
+    spawn_timer_scheduler, spawn_twitch_emote_learning,
 };
 use forge_server::DeliveryHub;
 use forge_soundboard::spawn_clip_hotkey_dispatcher;
@@ -40,6 +40,7 @@ pub struct HostInputs {
     pub local_tts_engines: Vec<LocalTtsEngine>,
     pub platform_identities: PlatformIdentities,
     pub anonymous_donor: Shared<String>,
+    pub date_names: DateNamesHandle,
 }
 
 pub async fn build_host(inputs: HostInputs) -> Host {
@@ -52,6 +53,7 @@ pub async fn build_host(inputs: HostInputs) -> Host {
         local_tts_engines,
         platform_identities,
         anonymous_donor,
+        date_names,
     } = inputs;
     let mut boot_warnings = BootWarnings::default();
     let core = build_core(&backend, data_dir, anonymous_donor.clone()).await;
@@ -90,6 +92,7 @@ pub async fn build_host(inputs: HostInputs) -> Host {
         overlay_kinds: Arc::clone(&overlay_kinds),
         overlay_frames: Arc::new(delivery_hub.clone()) as Arc<dyn OverlayFrameSink>,
         clock: Arc::new(SystemWallClock),
+        date_names: date_names.clone(),
     });
     if let Err(e) = wiring.scripts().load_all(backend.as_ref()).await {
         tracing::warn!(error = %e, "script registry load failed at boot");
@@ -266,6 +269,7 @@ pub async fn build_host(inputs: HostInputs) -> Host {
         delivery_hub: &delivery_hub,
         service: overlay_service,
         kinds: overlay_kinds,
+        date_names,
     })
     .await;
 

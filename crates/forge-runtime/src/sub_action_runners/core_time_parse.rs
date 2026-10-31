@@ -145,7 +145,7 @@ impl SubActionRunner for CoreTimeParseRunner {
             Err(e) => return (timer.failed(e.into()), None),
         };
 
-        let dt = match pattern.parse_text(&source, resolved.zone, resolved.language) {
+        let dt = match pattern.parse_text(&source, resolved.zone, ctx.arg_stack.names_language()) {
             Ok(dt) => dt,
             Err(e) => {
                 return (

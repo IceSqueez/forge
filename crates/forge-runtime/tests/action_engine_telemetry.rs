@@ -280,6 +280,7 @@ async fn successful_execution_records_one_success_row() {
         Arc::new(SpyHistoryRepo::new()),
         Arc::new(SubActionRegistry::new()),
         Arc::new(ActionCancelRegistry::new()),
+        forge_runtime::DateNamesHandle::default(),
     );
     engine.dispatch(request(id)).await.unwrap();
 
@@ -310,6 +311,7 @@ async fn failed_execution_records_one_error_row() {
         Arc::new(SpyHistoryRepo::new()),
         Arc::new(reg),
         Arc::new(ActionCancelRegistry::new()),
+        forge_runtime::DateNamesHandle::default(),
     );
     engine.dispatch(request(id)).await.unwrap();
 
@@ -353,6 +355,7 @@ async fn cancelled_execution_records_no_row_but_saves_history() {
         history.clone(),
         Arc::new(reg),
         Arc::clone(&cancel_registry),
+        forge_runtime::DateNamesHandle::default(),
     );
     engine.dispatch(request(id)).await.unwrap();
 
@@ -393,6 +396,7 @@ async fn a_failed_telemetry_write_does_not_stop_later_runs_from_recording() {
         Arc::new(SpyHistoryRepo::new()),
         Arc::new(SubActionRegistry::new()),
         Arc::new(ActionCancelRegistry::new()),
+        forge_runtime::DateNamesHandle::default(),
     );
 
     engine.dispatch(request(id)).await.unwrap();
@@ -474,6 +478,7 @@ fn spawn_with(
         history.clone(),
         Arc::new(reg),
         Arc::new(ActionCancelRegistry::new()),
+        forge_runtime::DateNamesHandle::default(),
     )
 }
 

@@ -11,8 +11,8 @@ use forge_registry::{CancelSignal, ChainSignal, RunContext, RunningAction, SubAc
 use forge_storage::{ActionExecution, ActionRepo, ExecutionStatus, HistoryRepo};
 use forge_types::{
     Action, ActionId, ArgStack, DEFAULT_QUEUE_ID, EventId, ExecutionContext, ExecutionMetadata,
-    ExecutionOutcome, MessageRef, QueueId, SubActionOutcome, SubActionStep, SubActionTelemetry,
-    UserText, VerbatimText,
+    ExecutionOutcome, MessageRef, NamesLanguage, QueueId, SubActionOutcome, SubActionStep,
+    SubActionTelemetry, UserText, VerbatimText,
 };
 use time::OffsetDateTime;
 use tokio::sync::{mpsc, oneshot};
@@ -22,6 +22,7 @@ use crate::action_cancel::ActionCancelRegistry;
 use crate::catalog::Catalog;
 use crate::chain::ChainEngine;
 use crate::core_messages;
+use crate::date_names::DateNamesHandle;
 use crate::integration_gate::{GatedLeafExecutor, IntegrationGate};
 use crate::run_history::RunHistoryWriter;
 use crate::scheduled_runs::{
@@ -182,6 +183,7 @@ impl ActionEngine {
         history: Arc<dyn HistoryRepo>,
         sub_action_registry: Arc<SubActionRegistry>,
         cancel_registry: Arc<ActionCancelRegistry>,
+        date_names: DateNamesHandle,
     ) -> ActionEngineHandle {
         let (tx, rx) = mpsc::channel(EXECUTION_INTAKE_CAPACITY);
         let (quick_tx, quick_rx) = mpsc::channel(QUICK_ACTION_INTAKE_CAPACITY);
@@ -192,6 +194,7 @@ impl ActionEngine {
             Arc::clone(&sub_action_registry),
             Arc::clone(&bus),
             gate,
+            date_names.clone(),
             config,
         ));
         let integrations = chain_engine.integration_gate().clone();
@@ -213,6 +216,7 @@ impl ActionEngine {
             history,
             sub_action_registry,
             integrations.clone(),
+            date_names,
         ));
         ActionEngineHandle {
             sender: tx,
@@ -536,6 +540,7 @@ async fn run_quick_action_loop(
     history: RunHistoryWriter,
     sub_action_registry: Arc<SubActionRegistry>,
     integrations: IntegrationGate,
+    date_names: DateNamesHandle,
 ) {
     let cancel = CancelSignal::new();
     loop {
@@ -554,6 +559,7 @@ async fn run_quick_action_loop(
                         history.clone(),
                         Arc::clone(&sub_action_registry),
                         integrations.clone(),
+                        date_names.language(),
                     ));
                 }
                 None => return,
@@ -569,6 +575,7 @@ async fn run_quick_action(
     history: RunHistoryWriter,
     sub_action_registry: Arc<SubActionRegistry>,
     integrations: IntegrationGate,
+    language: NamesLanguage,
 ) {
     let publisher: Arc<dyn EventPublisher> = Arc::clone(&bus) as Arc<dyn EventPublisher>;
     let run_event = SubActionRun {
@@ -579,7 +586,7 @@ async fn run_quick_action(
     let run_event_id = run_event.id;
     let _step_lineage = bus.publish_held(run_event);
 
-    let stack = ArgStack::new();
+    let stack = ArgStack::new().with_names_language(language);
     let leaf_ctx = RunContext::leaf(&stack, 0, run_event_id, publisher.as_ref());
     let executor = GatedLeafExecutor::new(integrations.clone(), cancel.clone());
     let run_ctx = RunContext {
@@ -712,6 +719,7 @@ pub fn spawn_action_engine(
     history: Arc<dyn HistoryRepo>,
     sub_action_registry: Arc<SubActionRegistry>,
     cancel_registry: Arc<ActionCancelRegistry>,
+    date_names: DateNamesHandle,
 ) -> ActionEngineHandle {
     ActionEngine::spawn(
         bus,
@@ -720,6 +728,7 @@ pub fn spawn_action_engine(
         history,
         sub_action_registry,
         cancel_registry,
+        date_names,
     )
 }
 
@@ -887,6 +896,7 @@ mod tests {
             dp.history_repo(),
             Arc::new(reg),
             Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
+            crate::DateNamesHandle::default(),
         );
 
         let cases = [
@@ -984,6 +994,7 @@ mod tests {
             dp.history_repo(),
             Arc::new(reg),
             Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
+            crate::DateNamesHandle::default(),
         );
 
         let mut overrides = BTreeMap::new();
@@ -1037,6 +1048,7 @@ mod tests {
             dp.history_repo(),
             Arc::new(SubActionRegistry::new()),
             Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
+            crate::DateNamesHandle::default(),
         );
 
         let parent = EventId::new();
@@ -1169,6 +1181,7 @@ mod tests {
             history,
             Arc::new(reg),
             Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
+            crate::DateNamesHandle::default(),
         );
 
         let cases = [
@@ -1214,6 +1227,7 @@ mod tests {
             history,
             Arc::new(SubActionRegistry::new()),
             Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
+            crate::DateNamesHandle::default(),
         );
 
         engine
@@ -1258,6 +1272,7 @@ mod tests {
             history,
             Arc::new(SubActionRegistry::new()),
             Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
+            crate::DateNamesHandle::default(),
         );
 
         engine
@@ -1312,6 +1327,7 @@ mod tests {
             history,
             Arc::new(reg),
             Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
+            crate::DateNamesHandle::default(),
         );
 
         let mut overrides = BTreeMap::new();
@@ -1518,6 +1534,7 @@ mod tests {
             dp.history_repo(),
             Arc::new(reg),
             Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
+            crate::DateNamesHandle::default(),
         );
         let action_id = ActionId::new();
         let action = forge_types::Action {
@@ -1841,6 +1858,7 @@ mod tests {
             dp.history_repo(),
             Arc::new(SubActionRegistry::new()),
             Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
+            crate::DateNamesHandle::default(),
         );
         let default_queue = forge_types::DEFAULT_QUEUE_ID;
         let mut action = forge_types::Action {

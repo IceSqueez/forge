@@ -137,7 +137,7 @@ impl SubActionRunner for CoreTimeFormatRunner {
         };
 
         let formatted = match resolved.runnable_pattern() {
-            Ok(pattern) => pattern.format(source, resolved.zone, resolved.language),
+            Ok(pattern) => pattern.format(source, resolved.zone, ctx.arg_stack.names_language()),
             Err(e) => return (timer.failed(e.into()), None),
         };
 

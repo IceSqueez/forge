@@ -124,7 +124,7 @@ impl OverlayKindDescriptor for ChatOverlayKind {
         }
     }
 
-    fn preview(&self, config: &OverlayConfig) -> PreviewComposition {
+    fn preview(&self, config: &OverlayConfig, _: forge_types::NamesLanguage) -> PreviewComposition {
         compose(
             PreviewShape::MessageFeed,
             metrics::element_sizing(KIND_ID),

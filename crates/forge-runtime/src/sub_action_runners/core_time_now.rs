@@ -5,7 +5,7 @@ use forge_registry::{
     ToggleField, TypedField, VariableField,
 };
 use forge_types::{
-    ArgStack, MessageRef, SubActionConfig, SubActionTelemetry, Variant, VariantKind,
+    ArgStack, MessageRef, NamesLanguage, SubActionConfig, SubActionTelemetry, Variant, VariantKind,
     datetime_to_text,
 };
 use time::OffsetDateTime;
@@ -112,7 +112,11 @@ fn read_config(
     Ok((text, INTO_VAR.read(config, args)?))
 }
 
-fn formatted(now: OffsetDateTime, text: &NowText) -> Result<String, MessageRef> {
+fn formatted(
+    now: OffsetDateTime,
+    text: &NowText,
+    language: NamesLanguage,
+) -> Result<String, MessageRef> {
     Ok(match text {
         NowText::UnixSeconds => now.unix_timestamp().to_string(),
         NowText::UnixMillis => {
@@ -122,7 +126,7 @@ fn formatted(now: OffsetDateTime, text: &NowText) -> Result<String, MessageRef> 
         NowText::Custom(resolved) => {
             resolved
                 .runnable_pattern()?
-                .format(now, resolved.zone, resolved.language)
+                .format(now, resolved.zone, language)
         }
         NowText::Iso8601 => datetime_to_text(&now),
     })
@@ -205,7 +209,7 @@ impl SubActionRunner for CoreTimeNowRunner {
             Ok(values) => values,
             Err(problem) => return (timer.invalid_config(&problem), None),
         };
-        let formatted = match formatted(now, &text) {
+        let formatted = match formatted(now, &text, ctx.arg_stack.names_language()) {
             Ok(formatted) => formatted,
             Err(e) => return (timer.failed(e.into()), None),
         };

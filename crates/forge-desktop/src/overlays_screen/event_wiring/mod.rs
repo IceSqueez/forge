@@ -19,7 +19,7 @@ use forge_runtime::{
 };
 use forge_runtime::{MembershipOutcome, QueueSchedulerHandle};
 use forge_storage::{OverlayDefinition, OverlayId, SettingsRepo};
-use forge_types::{ActionId, Queue};
+use forge_types::{ActionId, NamesLanguage, Queue};
 use gpui::{
     App, Context, Entity, EventEmitter, SharedString, Subscription, Window, div, prelude::*,
 };
@@ -330,7 +330,8 @@ impl EventWiringView {
                 action_id,
                 action_name: self.action_name(action_id),
             },
-            None => match self.build_draft(kind_id) {
+            None => match self.build_draft(kind_id, crate::presentation::active_names_language(cx))
+            {
                 Ok(draft) => ConfirmState::Ready(draft),
                 Err(refusal) => ConfirmState::Refused(plan::refusal_message(&refusal)),
             },
@@ -349,7 +350,11 @@ impl EventWiringView {
             .map_or_else(String::new, |row| row.action_name.clone())
     }
 
-    fn build_draft(&self, kind_id: &str) -> Result<WiringDraft, OverlayWiringRefusal> {
+    fn build_draft(
+        &self,
+        kind_id: &str,
+        language: NamesLanguage,
+    ) -> Result<WiringDraft, OverlayWiringRefusal> {
         let target_missing = || OverlayWiringRefusal::TargetMissing {
             trigger_kind_id: kind_id.to_owned(),
         };
@@ -364,7 +369,7 @@ impl EventWiringView {
             .triggers
             .get(kind_id)
             .ok_or_else(target_missing)?;
-        plan::draft_wiring(overlay, kind, trigger)
+        plan::draft_wiring(overlay, kind, trigger, language)
     }
 
     fn confirm(&mut self, cx: &mut Context<Self>) {
@@ -589,6 +594,7 @@ mod tests {
                 Arc::new(MockHistoryRepo::new()),
                 Arc::new(SubActionRegistry::new()),
                 Arc::new(ActionCancelRegistry::new()),
+                forge_runtime::DateNamesHandle::default(),
             );
             QueueScheduler::spawn(engine, bus, Vec::new())
         })
@@ -799,11 +805,15 @@ mod tests {
         let (view, _rt) = mount(cx);
         const UNKNOWN_EVENT: &str = "twitch.no_such_event";
 
-        let without_overlay = view.read_with(cx, |this, _| this.build_draft(SUBSCRIBER));
+        let without_overlay = view.read_with(cx, |this, _| {
+            this.build_draft(SUBSCRIBER, NamesLanguage::En)
+        });
         view.update(cx, |this, _| {
             this.overlay = Some(overlay_definition(alert::KIND_ID, OverlayConfig::new()));
         });
-        let without_trigger = view.read_with(cx, |this, _| this.build_draft(UNKNOWN_EVENT));
+        let without_trigger = view.read_with(cx, |this, _| {
+            this.build_draft(UNKNOWN_EVENT, NamesLanguage::En)
+        });
 
         for (outcome, kind) in [
             (without_overlay, SUBSCRIBER),

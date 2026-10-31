@@ -1088,6 +1088,7 @@ pub async fn every_registry_entry() -> (Arc<TriggerRegistry>, Arc<SubActionRegis
     let hub =
         forge_server::DeliveryHub::new(Arc::clone(&bus) as Arc<dyn forge_events::EventObserver>);
     let mut wiring = forge_runtime::RuntimeWiring::new(forge_runtime::RuntimeWiringParts {
+        date_names: forge_runtime::DateNamesHandle::default(),
         tasks: forge_net::TaskOwner::new(),
         bus: Arc::clone(&bus),
         provider: Arc::clone(&backend),

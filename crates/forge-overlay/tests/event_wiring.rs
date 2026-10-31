@@ -77,8 +77,12 @@ impl OverlayKindDescriptor for Retuned {
         AlertOverlayKind.page_assets()
     }
 
-    fn preview(&self, config: &OverlayConfig) -> PreviewComposition {
-        AlertOverlayKind.preview(config)
+    fn preview(
+        &self,
+        config: &OverlayConfig,
+        language: forge_types::NamesLanguage,
+    ) -> PreviewComposition {
+        AlertOverlayKind.preview(config, language)
     }
 
     fn has_visual_page(&self) -> bool {

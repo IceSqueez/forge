@@ -441,6 +441,7 @@ mod tests {
             .expect("overlay root setting");
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         OverlayServiceHandle::new(OverlayServiceParts {
+            date_names: forge_runtime::DateNamesHandle::default(),
             tasks: forge_net::TaskOwner::new(),
             repo: Arc::new(repo),
             settings: settings as Arc<dyn SettingsRepo>,

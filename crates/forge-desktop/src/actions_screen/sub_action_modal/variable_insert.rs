@@ -6,9 +6,7 @@ use forge_components::{
     VariablePickerLabels, dropdown, ghost_button_with_icon,
 };
 use forge_registry::{ScopeOrigin, ScopedVariable};
-use forge_types::{
-    DatePattern, NamesLanguage, PatternZone, VariantKind, current_names_language, datetime_to_text,
-};
+use forge_types::{DatePattern, NamesLanguage, PatternZone, VariantKind, datetime_to_text};
 use time::OffsetDateTime;
 
 const UK_DATETIME_PRESETS: [&str; 4] = ["d MMMM, HH:mm", "HH:mm", "dd.MM.yyyy", "d MMMM"];
@@ -113,7 +111,7 @@ impl EditSubActionForm {
         let palette = cx.palette();
         let groups = variable_groups(
             &self.variables.scope,
-            current_names_language(),
+            crate::presentation::active_names_language(cx),
             OffsetDateTime::now_utc(),
             &palette,
         );

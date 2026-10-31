@@ -774,6 +774,7 @@ mod tests {
             Arc::new(history),
             Arc::new(registry),
             Arc::new(ActionCancelRegistry::new()),
+            forge_runtime::DateNamesHandle::default(),
         )
     }
 

@@ -100,7 +100,10 @@ mod tests {
 
         for descriptor in reg.all().filter(|descriptor| descriptor.has_visual_page()) {
             let shape = descriptor
-                .preview(&effective_overlay_config(descriptor, &OverlayConfig::new()))
+                .preview(
+                    &effective_overlay_config(descriptor, &OverlayConfig::new()),
+                    forge_types::NamesLanguage::En,
+                )
                 .shape;
             if let Some((other, _)) = shapes.iter().find(|(_, drawn)| *drawn == shape) {
                 panic!(

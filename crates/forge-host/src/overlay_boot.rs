@@ -4,9 +4,9 @@ use forge_net::TaskOwner;
 use forge_overlay::{OverlayKindRegistry, register_builtin_kinds};
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::{
-    ActionsService, Catalog, DonationIngest, DonationOverlayAudience, EventBus, MaterializePass,
-    OverlayConnectFanout, OverlayConnectListener, OverlaySampleSource, OverlaySamples,
-    OverlayServiceHandle, RuntimeError, spawn_latest_overlay_feed,
+    ActionsService, Catalog, DateNamesHandle, DonationIngest, DonationOverlayAudience, EventBus,
+    MaterializePass, OverlayConnectFanout, OverlayConnectListener, OverlaySampleSource,
+    OverlaySamples, OverlayServiceHandle, RuntimeError, spawn_latest_overlay_feed,
 };
 use forge_server::DeliveryHub;
 use forge_storage::DataProvider;
@@ -35,6 +35,7 @@ pub(crate) struct OverlayInputs<'a> {
     pub(crate) delivery_hub: &'a DeliveryHub,
     pub(crate) service: OverlayServiceHandle,
     pub(crate) kinds: Arc<OverlayKindRegistry>,
+    pub(crate) date_names: DateNamesHandle,
 }
 
 pub(crate) async fn start_overlays(
@@ -51,6 +52,7 @@ pub(crate) async fn start_overlays(
         delivery_hub,
         service,
         kinds,
+        date_names,
     } = inputs;
     let actions = Arc::new(ActionsService::new(
         backend.action_repo(),
@@ -62,6 +64,7 @@ pub(crate) async fn start_overlays(
         Arc::clone(&actions),
         Arc::clone(sub_actions),
         Arc::clone(triggers),
+        date_names,
     ));
     spawn_latest_overlay_feed(bus, service.clone(), services);
     let donation_audience = DonationOverlayAudience::new(

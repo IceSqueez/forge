@@ -1020,6 +1020,7 @@ pub(crate) mod tests {
         let mut kinds = OverlayKindRegistry::new();
         forge_overlay::register_builtin_kinds(&mut kinds).expect("builtin kinds register");
         let service = OverlayServiceHandle::new(forge_runtime::OverlayServiceParts {
+            date_names: forge_runtime::DateNamesHandle::default(),
             tasks: forge_net::TaskOwner::new(),
             repo: Arc::clone(&repo) as Arc<dyn OverlayRepo>,
             settings: backend as Arc<dyn forge_storage::SettingsRepo>,

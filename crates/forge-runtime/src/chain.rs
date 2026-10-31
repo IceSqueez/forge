@@ -23,6 +23,7 @@ use crate::action_engine::{
 use crate::bus::{EventBus, LineageHold};
 use crate::condition::ConditionGate;
 use crate::core_messages;
+use crate::date_names::DateNamesHandle;
 use crate::integration_gate::{IntegrationGate, run_gated_step, step_owner};
 
 pub(crate) fn capture_args_in(
@@ -134,6 +135,7 @@ pub struct ChainEngine {
     lineage: Option<Arc<EventBus>>,
     gate: Arc<ConditionGate>,
     integrations: IntegrationGate,
+    date_names: DateNamesHandle,
     config: Config,
 }
 
@@ -154,6 +156,7 @@ impl ChainEngine {
         registry: Arc<SubActionRegistry>,
         publisher: Arc<dyn EventPublisher>,
         gate: Arc<ConditionGate>,
+        date_names: DateNamesHandle,
         config: Config,
     ) -> Self {
         Self {
@@ -162,6 +165,7 @@ impl ChainEngine {
             lineage: None,
             gate,
             integrations: IntegrationGate::new(),
+            date_names,
             config,
         }
     }
@@ -170,11 +174,12 @@ impl ChainEngine {
         registry: Arc<SubActionRegistry>,
         bus: Arc<EventBus>,
         gate: Arc<ConditionGate>,
+        date_names: DateNamesHandle,
         config: Config,
     ) -> Self {
         Self {
             lineage: Some(Arc::clone(&bus)),
-            ..Self::new(registry, bus, gate, config)
+            ..Self::new(registry, bus, gate, date_names, config)
         }
     }
 
@@ -256,6 +261,7 @@ impl ChainEngine {
         let mut telemetry = Vec::new();
 
         for (index, step) in steps.iter().enumerate() {
+            current = current.with_names_language(self.date_names.language());
             if !step.enabled {
                 let mut tel = disabled_telemetry(index, &step.kind_id);
                 tel.args_in = capture_args_in(&self.registry, step, &current);
@@ -535,7 +541,13 @@ mod tests {
             ..Default::default()
         };
         let gate = Arc::new(ConditionGate::new(&config));
-        Arc::new(ChainEngine::new(reg, publisher, gate, config))
+        Arc::new(ChainEngine::new(
+            reg,
+            publisher,
+            gate,
+            crate::DateNamesHandle::default(),
+            config,
+        ))
     }
 
     fn step(kind: &str) -> SubActionStep {
@@ -581,7 +593,13 @@ mod tests {
             ..Default::default()
         };
         let gate = Arc::new(ConditionGate::new(&config));
-        let eng = Arc::new(ChainEngine::new(reg, publisher, gate, config));
+        let eng = Arc::new(ChainEngine::new(
+            reg,
+            publisher,
+            gate,
+            crate::DateNamesHandle::default(),
+            config,
+        ));
         (eng, events)
     }
 

@@ -249,6 +249,7 @@ pub(crate) async fn build_runtime(inputs: RuntimeInputs) -> Result<RuntimeHandle
         local_tts_engines,
         platform_identities,
         anonymous_donor: pre_boot.anonymous_donor.clone(),
+        date_names: pre_boot.date_names.clone(),
     })
     .await;
     Ok(present_host(host, backend, log_tail, pre_boot).await)
@@ -296,8 +297,7 @@ pub(crate) async fn run_pre_boot(backend: &Arc<dyn DataProvider>) -> PreBoot {
     if let Err(e) = forge_runtime::SystemNotifyPort::adopt_app_identity() {
         tracing::warn!(error = %e, "desktop notifications keep the default app identity");
     }
-    let date_names = DateNamesHandle;
-    date_names.set_language(crate::i18n::date_names_language(startup_language));
+    let date_names = DateNamesHandle::new(crate::i18n::date_names_language(startup_language));
     let anonymous_donor = Shared::new(crate::i18n::message_in(
         startup_language,
         crate::i18n::ANONYMOUS_DONOR_KEY,

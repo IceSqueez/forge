@@ -77,6 +77,7 @@ pub(crate) fn pack_world(rt: &tokio::runtime::Runtime) -> PackWorld {
         let kinds = Arc::new(kinds);
         let bus = EventBus::new(Arc::new(StubEventLog));
         let overlays = OverlayServiceHandle::new(forge_runtime::OverlayServiceParts {
+            date_names: forge_runtime::DateNamesHandle::default(),
             tasks: forge_net::TaskOwner::new(),
             repo: provider.overlay_repo(),
             settings: Arc::clone(&provider) as Arc<dyn SettingsRepo>,
@@ -94,6 +95,7 @@ pub(crate) fn pack_world(rt: &tokio::runtime::Runtime) -> PackWorld {
             Arc::new(StubHistory),
             Arc::new(SubActionRegistry::new()),
             Arc::new(ActionCancelRegistry::new()),
+            forge_runtime::DateNamesHandle::default(),
         );
         let scheduler = QueueScheduler::spawn(engine, bus, Vec::new());
         PackWorld {

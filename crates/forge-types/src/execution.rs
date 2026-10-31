@@ -1,4 +1,4 @@
-use crate::date_pattern::render_inline_pattern;
+use crate::date_pattern::{NamesLanguage, render_inline_pattern};
 use crate::ids::{ActionId, EventId};
 use crate::integration::IntegrationId;
 use crate::message::{
@@ -128,38 +128,50 @@ pub const COMMAND_ARGS_VARIABLE: &str = "command.args";
 pub const COMMAND_TAIL_VARIABLE: &str = "command.tail";
 
 #[derive(Clone, Default)]
-pub struct ArgStack(BTreeMap<String, Variant>);
+pub struct ArgStack {
+    values: BTreeMap<String, Variant>,
+    names_language: NamesLanguage,
+}
 
 impl fmt::Debug for ArgStack {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_set().entries(self.0.keys()).finish()
+        f.debug_set().entries(self.values.keys()).finish()
     }
 }
 
 impl ArgStack {
     pub fn new() -> Self {
-        Self(BTreeMap::new())
+        Self::default()
+    }
+
+    pub fn with_names_language(mut self, names_language: NamesLanguage) -> Self {
+        self.names_language = names_language;
+        self
+    }
+
+    pub fn names_language(&self) -> NamesLanguage {
+        self.names_language
     }
 
     pub fn get(&self, key: &str) -> Option<&Variant> {
-        self.0.get(key)
+        self.values.get(key)
     }
 
     pub fn snapshot(&self) -> BTreeMap<String, Variant> {
-        self.0.clone()
+        self.values.clone()
     }
 
     pub fn set(mut self, key: String, value: Variant) -> Self {
-        self.0.insert(key, value);
+        self.values.insert(key, value);
         self
     }
 
     pub fn resolve(&self, key: &str) -> Option<&Variant> {
-        if let Some(exact) = self.0.get(key) {
+        if let Some(exact) = self.values.get(key) {
             return Some(exact);
         }
         key.match_indices('.')
-            .find_map(|(dot, _)| walk_path(self.0.get(&key[..dot])?, &key[dot + 1..]))
+            .find_map(|(dot, _)| walk_path(self.values.get(&key[..dot])?, &key[dot + 1..]))
     }
 
     pub fn interpolate(&self, template: &str) -> String {
@@ -168,7 +180,9 @@ impl ArgStack {
             match piece {
                 TemplatePiece::Literal(text) => result.push_str(text),
                 TemplatePiece::Reference { name, format, raw } => match self.resolve(name) {
-                    Some(value) => result.push_str(&render_reference(value, format)),
+                    Some(value) => {
+                        result.push_str(&render_reference(value, format, self.names_language));
+                    }
                     None => result.push_str(raw),
                 },
             }
@@ -189,9 +203,9 @@ fn walk_path<'v>(root: &'v Variant, path: &str) -> Option<&'v Variant> {
     Some(current)
 }
 
-fn render_reference(value: &Variant, format: Option<&str>) -> String {
+fn render_reference(value: &Variant, format: Option<&str>, language: NamesLanguage) -> String {
     match (value, format) {
-        (Variant::Datetime(at), Some(pattern)) => render_inline_pattern(*at, pattern),
+        (Variant::Datetime(at), Some(pattern)) => render_inline_pattern(*at, pattern, language),
         _ => value.to_string(),
     }
 }

@@ -8,7 +8,7 @@ use forge_overlay::{
 use forge_registry::{TriggerKindDescriptor, TriggerRegistry, declared_variables};
 use forge_runtime::{OverlayFeed, OverlayWiringRefusal, plan_overlay_wiring};
 use forge_storage::OverlayDefinition;
-use forge_types::{ActionId, Variant};
+use forge_types::{ActionId, NamesLanguage, Variant};
 use gpui::SharedString;
 
 use crate::triggers_screen::build_kind_groups;
@@ -112,6 +112,7 @@ pub(super) fn draft_wiring(
     overlay: &OverlayDefinition,
     kind: &dyn OverlayKindDescriptor,
     trigger: &dyn TriggerKindDescriptor,
+    language: NamesLanguage,
 ) -> Result<WiringDraft, OverlayWiringRefusal> {
     let plan = plan_overlay_wiring(overlay, kind, trigger)?;
     let supplied: OverlayConfig = plan
@@ -132,7 +133,12 @@ pub(super) fn draft_wiring(
         queue_name: plan.queue.name.to_owned(),
         wording: content_lines(
             kind,
-            &delivered_content(kind, &overlay.config, &supplied, &context.args()),
+            &delivered_content(
+                kind,
+                &overlay.config,
+                &supplied,
+                &context.with_names_language(language).args(),
+            ),
         ),
     })
 }
@@ -370,6 +376,7 @@ mod tests {
             &overlay_definition(blank::KIND_ID, OverlayConfig::new()),
             &BlankOverlayKind,
             &speaking,
+            NamesLanguage::En,
         ) else {
             panic!("a look that draws nothing was drafted a wiring")
         };
@@ -377,6 +384,7 @@ mod tests {
             &overlay_definition(alert::KIND_ID, OverlayConfig::new()),
             &AlertOverlayKind,
             &silent,
+            NamesLanguage::En,
         ) else {
             panic!("an event declaring nothing was drafted a wiring")
         };
@@ -433,6 +441,7 @@ mod tests {
             &overlay_definition(alert::KIND_ID, stored),
             &AlertOverlayKind,
             &speaks(SUBSCRIBER, "Subscribed", TriggerCategory::Subscriptions),
+            NamesLanguage::En,
         )
         .unwrap_or_else(|_| panic!("a curated event on an alert overlay is wireable"));
 

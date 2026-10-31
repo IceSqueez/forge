@@ -1,3 +1,4 @@
+use crate::date_names::DateNamesHandle;
 use crate::error::RuntimeError;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -156,6 +157,7 @@ struct OverlayService {
     speaker: Option<Arc<dyn SpeakDispatcher>>,
     latest: Option<Arc<dyn LatestValueReader>>,
     definitions: OverlayDefinitionRevision,
+    date_names: DateNamesHandle,
     tasks: TaskOwner,
 }
 
@@ -168,6 +170,7 @@ pub struct OverlayServiceParts {
     pub media: Option<OverlayMediaLibrary>,
     pub speaker: Option<Arc<dyn SpeakDispatcher>>,
     pub latest: Option<Arc<dyn LatestValueReader>>,
+    pub date_names: DateNamesHandle,
     pub tasks: TaskOwner,
 }
 
@@ -187,6 +190,7 @@ impl OverlayServiceHandle {
             media,
             speaker,
             latest,
+            date_names,
             tasks,
         } = parts;
         let shows = Arc::new(ShowSequencer::new(
@@ -207,6 +211,7 @@ impl OverlayServiceHandle {
                 speaker,
                 latest,
                 definitions: OverlayDefinitionRevision::default(),
+                date_names,
                 tasks,
             }),
         }
@@ -649,6 +654,7 @@ impl OverlayServiceHandle {
             descriptor,
             &definition.config,
             value.as_ref(),
+            self.inner.date_names.language(),
         ))
     }
 
@@ -902,6 +908,7 @@ mod tests {
 
     fn handle_with(frames: Arc<dyn OverlayFrameSink>) -> OverlayServiceHandle {
         OverlayServiceHandle::new(OverlayServiceParts {
+            date_names: DateNamesHandle::default(),
             tasks: forge_net::TaskOwner::new(),
             repo: Arc::new(MockOverlayRepo::new()),
             settings: Arc::new(MemorySettings::new()),
@@ -979,6 +986,7 @@ mod tests {
         let mut repo = MockOverlayRepo::new();
         repo.expect_delete().times(1).returning(move |_| outcome());
         OverlayServiceHandle::new(OverlayServiceParts {
+            date_names: DateNamesHandle::default(),
             tasks: forge_net::TaskOwner::new(),
             repo: Arc::new(repo),
             settings: Arc::new(MemorySettings::new()),

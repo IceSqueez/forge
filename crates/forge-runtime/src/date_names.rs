@@ -1,14 +1,18 @@
-use forge_types::{NamesLanguage, current_names_language, set_current_names_language};
+use forge_types::{NamesLanguage, Shared};
 
-#[derive(Debug, Clone, Copy, Default)]
-pub struct DateNamesHandle;
+#[derive(Debug, Clone, Default)]
+pub struct DateNamesHandle(Shared<NamesLanguage>);
 
 impl DateNamesHandle {
+    pub fn new(language: NamesLanguage) -> Self {
+        Self(Shared::new(language))
+    }
+
     pub fn set_language(&self, language: NamesLanguage) {
-        set_current_names_language(language);
+        self.0.store(language);
     }
 
     pub fn language(&self) -> NamesLanguage {
-        current_names_language()
+        *self.0.load()
     }
 }

@@ -91,6 +91,7 @@ impl ServerDeps {
             Arc::new(MockHistoryRepo::new()),
             Arc::new(SubActionRegistry::new()),
             Arc::new(ActionCancelRegistry::new()),
+            forge_runtime::DateNamesHandle::default(),
         ));
         let mut config = ServerConfig::new(
             self.settings,

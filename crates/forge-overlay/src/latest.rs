@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 
 use forge_types::{
-    ArgStack, LATEST_DONATION_SLOT, LatestScope, LatestValue, NOW_PLAYING_SLOT, Variant,
-    latest_fields,
+    ArgStack, LATEST_DONATION_SLOT, LatestScope, LatestValue, NOW_PLAYING_SLOT, NamesLanguage,
+    Variant, latest_fields,
 };
 use time::OffsetDateTime;
 
@@ -49,9 +49,13 @@ pub fn latest_content(
     descriptor: &dyn OverlayKindDescriptor,
     stored: &OverlayConfig,
     value: Option<&LatestValue>,
+    language: NamesLanguage,
 ) -> OverlayConfig {
     let config = effective_overlay_config(descriptor, stored);
-    let args = value.map(record_args).unwrap_or_default();
+    let args = value
+        .map(record_args)
+        .unwrap_or_default()
+        .with_names_language(language);
     let expand = |key: &str| Variant::String(args.interpolate(read_str(&config, key)));
 
     let mut content = OverlayConfig::from([(LABEL.to_owned(), expand(LABEL))]);

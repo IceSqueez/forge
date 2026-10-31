@@ -97,6 +97,7 @@ async fn cancel_runner_aborts_a_live_in_flight_execution() {
         history,
         Arc::new(reg),
         Arc::clone(&cancel_registry),
+        forge_runtime::DateNamesHandle::default(),
     );
 
     let target = ActionId::new();
@@ -163,6 +164,7 @@ async fn cancel_guard_deregisters_after_a_run_completes() {
         history,
         Arc::new(SubActionRegistry::new()),
         Arc::clone(&cancel_registry),
+        forge_runtime::DateNamesHandle::default(),
     );
 
     let id = ActionId::new();
@@ -296,6 +298,7 @@ async fn a_run_cancelled_inside_a_composite_step_is_recorded_as_cancelled() {
         history,
         Arc::new(reg),
         Arc::new(ActionCancelRegistry::new()),
+        forge_runtime::DateNamesHandle::default(),
     );
     let child = ActionId::new();
     dp.action_repo()

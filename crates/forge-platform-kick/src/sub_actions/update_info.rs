@@ -94,7 +94,7 @@ impl SubActionRunner for UpdateInfoRunner {
     }
 
     fn category(&self) -> SubActionCategory {
-        SubActionCategory::Kick
+        SubActionCategory::Integration
     }
 
     fn label(&self) -> &str {

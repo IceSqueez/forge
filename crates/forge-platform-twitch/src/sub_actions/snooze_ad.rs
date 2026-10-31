@@ -41,7 +41,7 @@ impl SubActionRunner for SnoozeAdRunner {
     }
 
     fn category(&self) -> SubActionCategory {
-        SubActionCategory::Twitch
+        SubActionCategory::Integration
     }
 
     fn label(&self) -> &str {

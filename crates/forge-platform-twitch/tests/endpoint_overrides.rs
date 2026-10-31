@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use forge_net::TokenBucketRateLimiter;
-use forge_platform_core::{AuthFlow, EndpointSurface, PlatformEndpoints};
+use forge_platform_core::{AuthFlow, PlatformEndpoints};
 use forge_platform_twitch::credentials::{StoredCredential, store_credential};
 use forge_platform_twitch::{
     BroadcasterTier, HELIX_BUDGET_CAPACITY, HELIX_BUDGET_WINDOW, TWITCH_OAUTH_BUDGET_CAPACITY,
@@ -21,15 +21,18 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 const LONG_EXPIRED_AFTER: Duration = Duration::from_secs(60);
 
 fn overrides(oauth_base: String, api_base: String) -> PlatformEndpoints {
-    PlatformEndpoints::resolve(move |variable| {
-        if variable == EndpointSurface::TwitchOAuth.env_var() {
-            Some(OsString::from(oauth_base.clone()))
-        } else if variable == EndpointSurface::TwitchApi.env_var() {
-            Some(OsString::from(api_base.clone()))
-        } else {
-            None
-        }
-    })
+    PlatformEndpoints::resolve(
+        forge_platform_twitch::endpoint_surfaces::ENDPOINT_SURFACES,
+        move |variable| {
+            if variable == forge_platform_twitch::endpoint_surfaces::TWITCH_OAUTH.env_var() {
+                Some(OsString::from(oauth_base.clone()))
+            } else if variable == forge_platform_twitch::endpoint_surfaces::TWITCH_API.env_var() {
+                Some(OsString::from(api_base.clone()))
+            } else {
+                None
+            }
+        },
+    )
     .unwrap()
 }
 

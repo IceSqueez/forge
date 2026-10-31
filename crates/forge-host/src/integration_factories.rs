@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use forge_events::Event;
 use forge_net::{Gateway, RateLimiter, TokenBucketRateLimiter};
 use forge_obs::{OBS_AUTO_RECONNECT, OBS_CONNECT_ON_LAUNCH};
-use forge_platform_core::{ChatPlatform, EndpointSurface, PlatformEndpoints};
+use forge_platform_core::{ChatPlatform, PlatformEndpoints};
 use forge_registry::SubActionRegistry;
 use forge_runtime::{
     DEFAULT_TEARDOWN_GRACE, EventBus, IntegrationFactory, IntegrationStartError,
@@ -632,7 +632,7 @@ pub(crate) fn wire_discord(
     endpoints: &PlatformEndpoints,
 ) -> Option<DiscordFactory> {
     let client = forge_discord::DiscordClient::new(
-        endpoints.base_url(EndpointSurface::DiscordApi),
+        endpoints.base_url(forge_discord::endpoint_surfaces::DISCORD_API),
         publisher(bus),
         creds_of(backend),
     )

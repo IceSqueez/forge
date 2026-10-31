@@ -14,7 +14,7 @@ impl TriggerKindDescriptor for StudioEnabledDescriptor {
     }
 
     fn category(&self) -> TriggerCategory {
-        TriggerCategory::Obs
+        TriggerCategory::Integration
     }
 
     fn label(&self) -> &str {

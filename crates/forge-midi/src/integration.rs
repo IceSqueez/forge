@@ -1,6 +1,6 @@
 use forge_platform_core::{
-    ConnectionAffordance, IntegrationCategory, IntegrationDeclaration, IntegrationIdentity,
-    IntegrationTint, SignInRoute, TileMark,
+    CatalogLabel, ConnectionAffordance, IntegrationCatalogGroup, IntegrationCategory,
+    IntegrationDeclaration, IntegrationIdentity, IntegrationTint, SignInRoute, TileMark,
 };
 use forge_types::IntegrationId;
 
@@ -17,6 +17,12 @@ pub const MIDI_INTEGRATION: IntegrationDeclaration = IntegrationDeclaration {
         tile_mark: TileMark::Glyph,
         tile_tint: IntegrationTint::Info,
         hero_tint: IntegrationTint::AccentTeal,
+    },
+    catalog_group: IntegrationCatalogGroup {
+        label: CatalogLabel::Brand("MIDI"),
+        filter_label: CatalogLabel::Brand("MIDI"),
+        step_tint: IntegrationTint::Danger,
+        trigger_tint: IntegrationTint::Danger,
     },
     disclaimer: None,
 };

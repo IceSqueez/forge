@@ -4,6 +4,7 @@ use crate::chat::topic_catalog::raid_direction;
 use crate::config::{ChatSessionConfig, ChatTiming};
 use crate::credentials_manager::TwitchCredentialsManager;
 use crate::credentials_manager::warn_token_failure;
+use crate::endpoint_surfaces::TWITCH_EVENTSUB_SOCKET;
 use crate::error::TwitchError;
 use crate::helix::{FixedTokenSource, HelixHttpTransport, HelixTransport};
 use crate::lifecycle::TwitchLifecycle;
@@ -12,8 +13,8 @@ use crate::vocabulary::{self, PlatformReauthRequired, RaidDirection};
 use forge_events::{Event, EventPublisher, EventSource, TypedEvent};
 use forge_net::{Backoff, Gateway};
 use forge_platform_core::{
-    ConnectionState, ConnectionTransition, CredentialState, EndpointSurface, PlatformEndpoints,
-    PlatformError, connection_state_changed_event,
+    ConnectionState, ConnectionTransition, CredentialState, PlatformEndpoints, PlatformError,
+    connection_state_changed_event,
 };
 use forge_types::{
     AUTHOR_IS_CONNECTED_BOT_FIELD, ChatModerationAction, ChatModerationPayload, ChatPayload,
@@ -211,7 +212,7 @@ impl ChatSession {
         let url = self
             .config
             .endpoints
-            .base_url(EndpointSurface::TwitchEventSubSocket)
+            .base_url(TWITCH_EVENTSUB_SOCKET)
             .to_owned();
         loop {
             let attempt = self.backoff.attempt();
@@ -3280,7 +3281,7 @@ mod tests {
             let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
             let publisher: Arc<dyn EventPublisher> = bus.clone();
             let endpoints = crate::sub_actions::test_support::endpoints_with(&[(
-                EndpointSurface::TwitchApi,
+                crate::endpoint_surfaces::TWITCH_API,
                 &server.uri(),
             )]);
             let (mut session, _state_rx, _shutdown_tx) = ChatSession::new(
@@ -3404,8 +3405,11 @@ mod tests {
             .await;
         let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let endpoints = crate::sub_actions::test_support::endpoints_with(&[
-            (EndpointSurface::TwitchApi, &server.uri()),
-            (EndpointSurface::TwitchEventSubSocket, "ws://127.0.0.1:1"),
+            (crate::endpoint_surfaces::TWITCH_API, &server.uri()),
+            (
+                crate::endpoint_surfaces::TWITCH_EVENTSUB_SOCKET,
+                "ws://127.0.0.1:1",
+            ),
         ]);
         let (mut session, _state_rx, _shutdown_tx) =
             session_with(&bus, Arc::new(MockCreds::with_identity()), endpoints);
@@ -3606,8 +3610,8 @@ mod tests {
     fn spawn_session_timed(socket_url: &str, api_url: &str, timing: ChatTiming) -> RunningSession {
         let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
         let endpoints = crate::sub_actions::test_support::endpoints_with(&[
-            (EndpointSurface::TwitchApi, api_url),
-            (EndpointSurface::TwitchEventSubSocket, socket_url),
+            (crate::endpoint_surfaces::TWITCH_API, api_url),
+            (crate::endpoint_surfaces::TWITCH_EVENTSUB_SOCKET, socket_url),
         ]);
         let (session, state, shutdown) =
             session_with(&bus, Arc::new(MockCreds::with_identity()), endpoints);
@@ -4476,8 +4480,8 @@ mod tests {
 
     fn socket_and_api(socket_url: &str, api_url: &str) -> PlatformEndpoints {
         crate::sub_actions::test_support::endpoints_with(&[
-            (EndpointSurface::TwitchApi, api_url),
-            (EndpointSurface::TwitchEventSubSocket, socket_url),
+            (crate::endpoint_surfaces::TWITCH_API, api_url),
+            (crate::endpoint_surfaces::TWITCH_EVENTSUB_SOCKET, socket_url),
         ])
     }
 

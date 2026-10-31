@@ -76,13 +76,15 @@ impl TriggersRegistryView {
     }
 
     fn platform_counts(&self) -> Vec<(Platform, usize)> {
-        Platform::ORDER
+        Platform::ordered()
             .into_iter()
             .filter_map(|p| {
                 let count = self
                     .instances
                     .iter()
-                    .filter(|i| Platform::from_kind_id(&i.kind_id) == Some(p))
+                    .filter(|i| {
+                        Platform::from_kind_id(&i.kind_id, &self.registry).as_ref() == Some(&p)
+                    })
                     .count();
                 (count > 0).then_some((p, count))
             })
@@ -115,7 +117,7 @@ impl TriggersRegistryView {
 
     fn passes(&self, instance: &TriggerInstanceRow) -> bool {
         if !self.platforms.is_empty()
-            && !Platform::from_kind_id(&instance.kind_id)
+            && !Platform::from_kind_id(&instance.kind_id, &self.registry)
                 .is_some_and(|p| self.platforms.contains(&p))
         {
             return false;
@@ -146,7 +148,7 @@ impl TriggersRegistryView {
     }
 
     fn toggle_platform(&mut self, platform: Platform, cx: &mut Context<Self>) {
-        if let Some(pos) = self.platforms.iter().position(|&p| p == platform) {
+        if let Some(pos) = self.platforms.iter().position(|p| *p == platform) {
             self.platforms.remove(pos);
         } else {
             self.platforms.push(platform);
@@ -454,9 +456,9 @@ impl TriggersRegistryView {
                     palette,
                 )
                 .on_click(
-                    SharedString::from(format!("triggers-platform-{}", platform.label())),
+                    SharedString::from(format!("triggers-platform-{}", platform.element_key())),
                     cx.listener(move |this, _: &ClickEvent, _, cx| {
-                        this.toggle_platform(platform, cx)
+                        this.toggle_platform(platform.clone(), cx)
                     }),
                 ),
             );
@@ -685,7 +687,7 @@ impl TriggersRegistryView {
         let selected = self.selected == Some(id);
         let cursor = self.list_cursor == Some(id);
         let hovered = self.hovered == Some(id);
-        let dot_color = platform_dot_color(&instance.kind_id, palette);
+        let dot_color = platform_dot_color(&instance.kind_id, &self.registry, palette);
         let descriptor = self.registry.get(&instance.kind_id);
         let kind_glyph = descriptor
             .map(|d| Icon::from_name(d.icon_name()))

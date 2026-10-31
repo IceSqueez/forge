@@ -1100,7 +1100,7 @@ pub(super) mod tests {
         defaults: TriggerConfig,
     ) -> TriggerRegistry {
         trigger_registry(vec![
-            StubTrigger::new(KIND, NAME, TriggerCategory::Midi, Declares::Nothing)
+            StubTrigger::new(KIND, NAME, TriggerCategory::Integration, Declares::Nothing)
                 .with_fields(vec![FormField::Text {
                     key: "greeting",
                     label: "Greeting",
@@ -1226,13 +1226,12 @@ pub(super) mod tests {
 
     fn greeting_sheet(cx: &mut gpui::TestAppContext) -> Fixture {
         let registry = trigger_registry(vec![
-            StubTrigger::new(KIND, NAME, TriggerCategory::Midi, Declares::Nothing).with_fields(
-                vec![FormField::Text {
+            StubTrigger::new(KIND, NAME, TriggerCategory::Integration, Declares::Nothing)
+                .with_fields(vec![FormField::Text {
                     key: "greeting",
                     label: "Greeting",
                     placeholder: "",
-                }],
-            ),
+                }]),
         ]);
         let overrides: TriggerConfig = [(
             GREETING_FIELD.to_owned(),

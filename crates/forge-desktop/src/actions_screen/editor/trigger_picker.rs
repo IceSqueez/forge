@@ -55,7 +55,7 @@ fn build_recent_group(
         items.push(GridPickerItem {
             id,
             glyph: GlyphArt::Icon(glyph),
-            tint: platform_dot_color(&instance.kind_id, palette),
+            tint: platform_dot_color(&instance.kind_id, registry, palette),
             name: crate::kind_copy::trigger_instance_name(&instance.name, descriptor).into(),
             desc: desc.into(),
             state,

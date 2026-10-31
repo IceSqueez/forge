@@ -6,7 +6,6 @@ use axum::Router;
 use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode, Uri, header};
 use axum::response::{IntoResponse, Json, Response};
-use forge_platform_core::EndpointSurface;
 use serde_json::{Value, json};
 use tokio::sync::watch;
 use tokio::time::Instant;
@@ -97,7 +96,7 @@ impl FakeMonobank {
 
     pub fn endpoint_override(&self) -> (&'static str, String) {
         (
-            EndpointSurface::MonobankApi.env_var(),
+            forge_monobank::endpoint_surfaces::MONOBANK_API.env_var(),
             self.base_url.clone(),
         )
     }

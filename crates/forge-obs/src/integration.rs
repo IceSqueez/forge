@@ -1,6 +1,6 @@
 use forge_platform_core::{
-    ConnectionAffordance, IntegrationCategory, IntegrationDeclaration, IntegrationIdentity,
-    IntegrationTint, SignInRoute, TileMark,
+    CatalogLabel, ConnectionAffordance, IntegrationCatalogGroup, IntegrationCategory,
+    IntegrationDeclaration, IntegrationIdentity, IntegrationTint, SignInRoute, TileMark,
 };
 use forge_types::IntegrationId;
 
@@ -19,6 +19,12 @@ pub const OBS_INTEGRATION: IntegrationDeclaration = IntegrationDeclaration {
         tile_mark: TileMark::Glyph,
         tile_tint: IntegrationTint::Success,
         hero_tint: IntegrationTint::Success,
+    },
+    catalog_group: IntegrationCatalogGroup {
+        label: CatalogLabel::Brand("OBS"),
+        filter_label: CatalogLabel::Brand("OBS"),
+        step_tint: IntegrationTint::TextSecondary,
+        trigger_tint: IntegrationTint::AccentTeal,
     },
     disclaimer: None,
 };

@@ -1,8 +1,8 @@
+use forge_platform_core::EndpointSurface;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
-use forge_platform_core::EndpointSurface;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use tokio::sync::watch;
@@ -85,15 +85,15 @@ impl FakeYouTube {
     pub fn endpoint_overrides(&self) -> [(&'static str, String); 3] {
         [
             (
-                EndpointSurface::YouTubeDataApi.env_var(),
+                forge_platform_youtube::endpoint_surfaces::YOUTUBE_DATA_API.env_var(),
                 format!("{}{DATA_API_PREFIX}", self.http_base),
             ),
             (
-                EndpointSurface::YouTubeUploadApi.env_var(),
+                forge_platform_youtube::endpoint_surfaces::YOUTUBE_UPLOAD_API.env_var(),
                 format!("{}{UPLOAD_API_PREFIX}", self.http_base),
             ),
             (
-                EndpointSurface::YouTubeOAuth.env_var(),
+                forge_platform_youtube::endpoint_surfaces::YOUTUBE_OAUTH.env_var(),
                 format!("{}{OAUTH_PREFIX}", self.http_base),
             ),
         ]

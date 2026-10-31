@@ -1,10 +1,11 @@
-use forge_platform_core::{EndpointSurface, PlatformEndpoints};
+use forge_platform_core::PlatformEndpoints;
 
 pub(crate) fn unreachable_endpoints() -> PlatformEndpoints {
     tracing::subscriber::with_default(tracing::subscriber::NoSubscriber::default(), || {
-        PlatformEndpoints::resolve(|variable| {
-            EndpointSurface::ALL
-                .into_iter()
+        PlatformEndpoints::resolve(crate::endpoint_surfaces::ENDPOINT_SURFACES, |variable| {
+            crate::endpoint_surfaces::ENDPOINT_SURFACES
+                .iter()
+                .copied()
                 .any(|surface| surface.env_var() == variable)
                 .then(|| {
                     let scheme = if variable.contains("_WS_") {

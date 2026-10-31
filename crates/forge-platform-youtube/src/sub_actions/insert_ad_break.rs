@@ -51,7 +51,7 @@ impl SubActionRunner for InsertAdBreakRunner {
     }
 
     fn category(&self) -> SubActionCategory {
-        SubActionCategory::YouTube
+        SubActionCategory::Integration
     }
 
     fn label(&self) -> &str {

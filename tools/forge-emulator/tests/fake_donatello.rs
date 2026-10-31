@@ -238,8 +238,10 @@ async fn blank_token_configuration_is_refused() {
 
 fn endpoints_addressing(fake: &FakeDonatello) -> PlatformEndpoints {
     let (variable, value) = fake.endpoint_override();
-    PlatformEndpoints::resolve(move |name| (name == variable).then(|| OsString::from(&value)))
-        .unwrap()
+    PlatformEndpoints::resolve(&forge_emulator::endpoint_surfaces(), move |name| {
+        (name == variable).then(|| OsString::from(&value))
+    })
+    .unwrap()
 }
 
 async fn provider_against(fake: &FakeDonatello) -> (DonatelloProvider, DonationStream) {

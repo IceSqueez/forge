@@ -16,7 +16,7 @@ impl TriggerKindDescriptor for HotkeyTriggeredDescriptor {
     }
 
     fn category(&self) -> TriggerCategory {
-        TriggerCategory::VTube
+        TriggerCategory::Integration
     }
 
     fn label(&self) -> &str {

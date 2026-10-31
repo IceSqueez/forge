@@ -9,7 +9,6 @@ use forge_emulator::fakes::console::{
 use forge_emulator::fakes::donatello::{DonatesFault, FakeDonatello, FakeDonatelloConfig};
 use forge_emulator::fakes::monobank::{FakeJar, FakeMonobank, FakeMonobankConfig};
 use forge_emulator::vocabulary::{FAKE_DONATELLO_TOKEN, FAKE_MONOBANK_TOKEN};
-use forge_platform_core::EndpointSurface;
 use serde_json::Value;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Lines};
 use tokio::process::{Child, ChildStdout, Command};
@@ -295,7 +294,10 @@ impl Running {
 #[tokio::test]
 async fn fake_donatello_mode_prints_its_address_and_serves_donations_typed_on_stdin() {
     let mut fake = Running::start(&["fake-donatello"]).await;
-    let base_url = Running::value_of(&fake.line().await, EndpointSurface::DonatelloApi.env_var());
+    let base_url = Running::value_of(
+        &fake.line().await,
+        forge_donatello::endpoint_surfaces::DONATELLO_API.env_var(),
+    );
     let token = Running::value_of(&fake.line().await, "DONATELLO_TOKEN");
 
     let ack = fake.send("donate Alice 50 hello there").await;
@@ -309,7 +311,10 @@ async fn fake_donatello_mode_prints_its_address_and_serves_donations_typed_on_st
 #[tokio::test]
 async fn fake_monobank_mode_prints_its_address_and_jars_and_serves_typed_top_ups() {
     let mut fake = Running::start(&["fake-monobank", "--jar", "jar-main=Stream jar"]).await;
-    let base_url = Running::value_of(&fake.line().await, EndpointSurface::MonobankApi.env_var());
+    let base_url = Running::value_of(
+        &fake.line().await,
+        forge_monobank::endpoint_surfaces::MONOBANK_API.env_var(),
+    );
     let token = Running::value_of(&fake.line().await, "MONOBANK_TOKEN");
     let jar = Running::value_of(&fake.line().await, "MONOBANK_JAR");
 

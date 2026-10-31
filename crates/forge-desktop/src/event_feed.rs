@@ -1407,6 +1407,7 @@ mod tests {
             payload: serde_json::Value::Null,
             typed: None,
             categories: Vec::new(),
+            owners: Vec::new(),
         }
     }
 
@@ -1576,7 +1577,11 @@ mod tests {
 
     fn decoded_item(source: EventSource, kind: &str, payload: serde_json::Value) -> EventItem {
         let event = Event::new(source, kind, payload);
-        EventLog::item_from_event(&event, crate::runtime_event::decode(&event), Vec::new())
+        EventLog::item_from_event(
+            &event,
+            crate::runtime_event::decode(&event),
+            crate::event_categories::EventClasses::default(),
+        )
     }
 
     #[test]

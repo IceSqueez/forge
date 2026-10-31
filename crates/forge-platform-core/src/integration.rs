@@ -121,6 +121,20 @@ pub struct IntegrationDisclaimer {
     pub full_key: &'static str,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CatalogLabel {
+    Brand(&'static str),
+    Localized(&'static str),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct IntegrationCatalogGroup {
+    pub label: CatalogLabel,
+    pub filter_label: CatalogLabel,
+    pub step_tint: IntegrationTint,
+    pub trigger_tint: IntegrationTint,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IntegrationDeclaration {
     pub id: IntegrationId,
@@ -130,6 +144,7 @@ pub struct IntegrationDeclaration {
     pub connection: ConnectionAffordance,
     pub sign_in: SignInRoute,
     pub identity: IntegrationIdentity,
+    pub catalog_group: IntegrationCatalogGroup,
     pub disclaimer: Option<IntegrationDisclaimer>,
 }
 

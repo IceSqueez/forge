@@ -79,7 +79,7 @@ impl SubActionRunner for GuestStarAssignSlotRunner {
     }
 
     fn category(&self) -> SubActionCategory {
-        SubActionCategory::Twitch
+        SubActionCategory::Integration
     }
 
     fn label(&self) -> &str {

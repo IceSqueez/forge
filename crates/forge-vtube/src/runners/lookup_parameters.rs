@@ -26,7 +26,7 @@ impl SubActionRunner for LookupParametersRunner {
     }
 
     fn category(&self) -> SubActionCategory {
-        SubActionCategory::VTube
+        SubActionCategory::Integration
     }
 
     fn label(&self) -> &str {

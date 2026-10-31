@@ -1,9 +1,11 @@
 use super::select_options::CLIP_OPTIONS_KEY;
 use super::*;
 use crate::globals::variant_kind_color;
-use crate::platform_visuals::platform_color;
+use crate::integration_catalog::{catalog_text, tint_color};
 use forge_components::{FONT_XS, ForgePalette, Icon, mono_family, tr};
-use forge_registry::SubActionCategory;
+use forge_host::integration_catalog::declaration_of;
+use forge_platform_core::IntegrationDeclaration;
+use forge_registry::{SubActionCategory, SubActionRegistry, SubActionRunner};
 use forge_runtime::{
     CHAT_SEND_DEFAULT_TARGET, CHAT_SEND_KIND_ID, CHAT_SEND_MESSAGE_KEY, CHAT_SEND_TARGET_KEY,
     FILE_READ_KIND_ID, FILE_READ_PATH_KEY, FILE_READ_TARGET_VAR_KEY, GLOBAL_AMOUNT_KEY,
@@ -16,7 +18,7 @@ use forge_runtime::{SPEAK_KIND_ID, SPEECH_TEXT_KEY};
 use forge_soundboard::vocabulary::config_keys::CLIP_ID;
 use forge_soundboard::vocabulary::sub_action_ids::SOUND_PLAY;
 use forge_storage::{SCRIPT_NAME_KEY, SCRIPT_RUN_NAMED_KIND};
-use forge_types::{PlatformId, SubActionStep, Variant, VariantKind};
+use forge_types::{SubActionStep, Variant, VariantKind};
 use gpui::{AnyElement, HighlightStyle, Hsla, Rgba, SharedString, StyledText, div};
 use std::collections::HashMap;
 use std::ops::Range;
@@ -190,7 +192,7 @@ pub(in crate::actions_screen) fn sub_action_summary(
     }
 }
 
-pub(super) fn sub_category_label(cat: SubActionCategory) -> String {
+fn sub_category_label(cat: SubActionCategory) -> String {
     match cat {
         SubActionCategory::Chat => tr!("sub_cat_chat"),
         SubActionCategory::Moderation => tr!("sub_cat_moderation"),
@@ -201,24 +203,16 @@ pub(super) fn sub_category_label(cat: SubActionCategory) -> String {
         SubActionCategory::Delay => tr!("sub_cat_delay"),
         SubActionCategory::Scripts => tr!("sub_cat_scripts"),
         SubActionCategory::Files => tr!("sub_cat_files"),
-        SubActionCategory::Twitch => "Twitch".to_owned(),
-        SubActionCategory::YouTube => "YouTube".to_owned(),
-        SubActionCategory::Kick => "Kick".to_owned(),
-        SubActionCategory::Obs => "OBS".to_owned(),
-        SubActionCategory::VTube => "VTube Studio".to_owned(),
-        SubActionCategory::Discord => "Discord".to_owned(),
-        SubActionCategory::Midi => "MIDI".to_owned(),
-        SubActionCategory::Hotkey => tr!("sub_cat_hotkey"),
         SubActionCategory::Audio => tr!("sub_cat_audio"),
         SubActionCategory::Tts => tr!("sub_cat_tts"),
         SubActionCategory::Http => tr!("sub_cat_http"),
         SubActionCategory::Server => tr!("sub_cat_server"),
         SubActionCategory::Overlay => tr!("sub_cat_overlay"),
-        SubActionCategory::Util => tr!("sub_cat_util"),
+        SubActionCategory::Util | SubActionCategory::Integration => tr!("sub_cat_util"),
     }
 }
 
-pub(super) fn sub_category_slug(cat: SubActionCategory) -> &'static str {
+fn sub_category_slug(cat: SubActionCategory) -> &'static str {
     match cat {
         SubActionCategory::Chat => "chat",
         SubActionCategory::Moderation => "moderation",
@@ -229,47 +223,75 @@ pub(super) fn sub_category_slug(cat: SubActionCategory) -> &'static str {
         SubActionCategory::Delay => "delay",
         SubActionCategory::Scripts => "scripts",
         SubActionCategory::Files => "files",
-        SubActionCategory::Twitch => "twitch",
-        SubActionCategory::YouTube => "youtube",
-        SubActionCategory::Kick => "kick",
-        SubActionCategory::Obs => "obs",
-        SubActionCategory::VTube => "vtube",
-        SubActionCategory::Discord => "discord",
-        SubActionCategory::Midi => "midi",
-        SubActionCategory::Hotkey => "hotkey",
         SubActionCategory::Audio => "audio",
         SubActionCategory::Tts => "tts",
         SubActionCategory::Http => "http",
         SubActionCategory::Server => "server",
         SubActionCategory::Overlay => "overlay",
-        SubActionCategory::Util => "util",
+        SubActionCategory::Util | SubActionCategory::Integration => "util",
     }
 }
 
-pub(in crate::actions_screen) fn sub_category_color(
-    cat: SubActionCategory,
-    palette: &ForgePalette,
-) -> Rgba {
+fn sub_category_color(cat: SubActionCategory, palette: &ForgePalette) -> Rgba {
     match cat {
-        SubActionCategory::Chat | SubActionCategory::Twitch => palette.theme_brand,
+        SubActionCategory::Chat => palette.theme_brand,
         SubActionCategory::Tts | SubActionCategory::Audio => palette.success,
         SubActionCategory::Globals => palette.warning,
         SubActionCategory::Files => palette.danger,
-        SubActionCategory::YouTube => platform_color(PlatformId::YouTube, palette),
-        SubActionCategory::Kick => platform_color(PlatformId::Kick, palette),
-        SubActionCategory::Obs => palette.text_secondary,
-        SubActionCategory::VTube => palette.accent_teal,
-        SubActionCategory::Discord
-        | SubActionCategory::Http
-        | SubActionCategory::Server
-        | SubActionCategory::Overlay => palette.info,
-        SubActionCategory::Midi | SubActionCategory::Moderation => palette.danger,
+        SubActionCategory::Http | SubActionCategory::Server | SubActionCategory::Overlay => {
+            palette.info
+        }
+        SubActionCategory::Moderation => palette.danger,
         SubActionCategory::ChannelPoints => palette.accent_pink_light,
-        SubActionCategory::Hotkey
-        | SubActionCategory::PollsPredictions
-        | SubActionCategory::Scripts => palette.warning,
-        SubActionCategory::Logic | SubActionCategory::Delay | SubActionCategory::Util => {
-            palette.text_muted
+        SubActionCategory::PollsPredictions | SubActionCategory::Scripts => palette.warning,
+        SubActionCategory::Logic
+        | SubActionCategory::Delay
+        | SubActionCategory::Util
+        | SubActionCategory::Integration => palette.text_muted,
+    }
+}
+
+#[derive(Clone)]
+pub(in crate::actions_screen) struct StepGroup {
+    category: SubActionCategory,
+    owner: Option<IntegrationDeclaration>,
+}
+
+impl StepGroup {
+    pub(in crate::actions_screen) fn of(
+        registry: &SubActionRegistry,
+        runner: &dyn SubActionRunner,
+    ) -> Self {
+        let category = runner.category();
+        let owner = (category == SubActionCategory::Integration)
+            .then(|| registry.owning_integration(runner.id()))
+            .flatten()
+            .and_then(declaration_of);
+        Self { category, owner }
+    }
+
+    pub(in crate::actions_screen) fn is_files(&self) -> bool {
+        self.category == SubActionCategory::Files
+    }
+
+    pub(super) fn scope(&self) -> String {
+        match &self.owner {
+            Some(owner) => owner.id.to_string(),
+            None => sub_category_slug(self.category).to_owned(),
+        }
+    }
+
+    pub(super) fn label(&self) -> String {
+        match &self.owner {
+            Some(owner) => catalog_text(owner.catalog_group.label),
+            None => sub_category_label(self.category),
+        }
+    }
+
+    pub(in crate::actions_screen) fn color(&self, palette: &ForgePalette) -> Rgba {
+        match &self.owner {
+            Some(owner) => tint_color(owner.catalog_group.step_tint, palette),
+            None => sub_category_color(self.category, palette),
         }
     }
 }

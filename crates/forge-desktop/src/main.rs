@@ -670,7 +670,9 @@ fn main() {
         tracing::warn!(error = %error, "pending update could not be resumed at start");
     }
 
-    let endpoints = match forge_platform_core::PlatformEndpoints::from_env() {
+    let endpoints = match forge_platform_core::PlatformEndpoints::from_env(
+        &forge_host::integration_catalog::endpoint_surfaces(),
+    ) {
         Ok(endpoints) => endpoints,
         Err(err) => {
             boot_signal::endpoint_override_refused(&err);

@@ -1,7 +1,7 @@
 use crate::vocabulary::PLATFORM_ID;
 use forge_platform_core::{
-    ConnectionAffordance, IntegrationCategory, IntegrationDeclaration, IntegrationIdentity,
-    IntegrationTint, SignInRoute, TileMark,
+    CatalogLabel, ConnectionAffordance, IntegrationCatalogGroup, IntegrationCategory,
+    IntegrationDeclaration, IntegrationIdentity, IntegrationTint, SignInRoute, TileMark,
 };
 use forge_types::{IntegrationId, PlatformId};
 
@@ -18,6 +18,12 @@ pub const TWITCH_INTEGRATION: IntegrationDeclaration = IntegrationDeclaration {
         tile_mark: TileMark::Monogram,
         tile_tint: IntegrationTint::PlatformBrand(PlatformId::Twitch),
         hero_tint: IntegrationTint::ThemeBrand,
+    },
+    catalog_group: IntegrationCatalogGroup {
+        label: CatalogLabel::Brand("Twitch"),
+        filter_label: CatalogLabel::Brand("Twitch"),
+        step_tint: IntegrationTint::ThemeBrand,
+        trigger_tint: IntegrationTint::PlatformBrand(PlatformId::Twitch),
     },
     disclaimer: None,
 };

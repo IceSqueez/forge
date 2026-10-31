@@ -17,7 +17,7 @@ impl TriggerKindDescriptor for HotkeyReleasedDescriptor {
     }
 
     fn category(&self) -> TriggerCategory {
-        TriggerCategory::Hotkey
+        TriggerCategory::Integration
     }
 
     fn label(&self) -> &str {

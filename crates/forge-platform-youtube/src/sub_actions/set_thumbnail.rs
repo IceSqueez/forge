@@ -41,7 +41,7 @@ impl SubActionRunner for SetThumbnailRunner {
     }
 
     fn category(&self) -> SubActionCategory {
-        SubActionCategory::YouTube
+        SubActionCategory::Integration
     }
 
     fn label(&self) -> &str {

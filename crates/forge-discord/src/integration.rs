@@ -1,6 +1,6 @@
 use forge_platform_core::{
-    ConnectionAffordance, IntegrationCategory, IntegrationDeclaration, IntegrationIdentity,
-    IntegrationTint, SignInRoute, TileMark,
+    CatalogLabel, ConnectionAffordance, IntegrationCatalogGroup, IntegrationCategory,
+    IntegrationDeclaration, IntegrationIdentity, IntegrationTint, SignInRoute, TileMark,
 };
 use forge_types::IntegrationId;
 
@@ -19,6 +19,12 @@ pub const DISCORD_INTEGRATION: IntegrationDeclaration = IntegrationDeclaration {
         tile_mark: TileMark::Glyph,
         tile_tint: IntegrationTint::ThemeBrand,
         hero_tint: IntegrationTint::ThemeBrand,
+    },
+    catalog_group: IntegrationCatalogGroup {
+        label: CatalogLabel::Brand("Discord"),
+        filter_label: CatalogLabel::Brand("Discord"),
+        step_tint: IntegrationTint::Info,
+        trigger_tint: IntegrationTint::Info,
     },
     disclaimer: None,
 };

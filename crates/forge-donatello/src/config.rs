@@ -1,8 +1,7 @@
+use crate::endpoint_surfaces::DONATELLO_API;
 use std::time::Duration;
 
-use forge_platform_core::{
-    EndpointSurface, POLL_ERROR_BACKOFF_BASE, POLL_ERROR_BACKOFF_CAP, PlatformEndpoints,
-};
+use forge_platform_core::{POLL_ERROR_BACKOFF_BASE, POLL_ERROR_BACKOFF_CAP, PlatformEndpoints};
 use forge_storage::SettingDisclosure::Withheld;
 use forge_storage::SettingPortability::Portable;
 use forge_storage::{Setting, Tally};
@@ -50,7 +49,7 @@ impl DonatelloConfig {
     pub fn new(endpoints: &PlatformEndpoints) -> Self {
         Self {
             base_url: endpoints
-                .base_url(EndpointSurface::DonatelloApi)
+                .base_url(DONATELLO_API)
                 .trim_end_matches('/')
                 .to_owned(),
             poll_interval: DEFAULT_POLL_INTERVAL,

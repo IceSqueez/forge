@@ -19,12 +19,16 @@ pub(crate) fn endpoints(overrides: &[(EndpointSurface, String)]) -> PlatformEndp
         .iter()
         .map(|(surface, url)| (surface.env_var(), url.clone()))
         .collect();
-    PlatformEndpoints::resolve(|variable| table.get(variable).map(OsString::from)).unwrap()
+    PlatformEndpoints::resolve(
+        forge_platform_youtube::endpoint_surfaces::ENDPOINT_SURFACES,
+        |variable| table.get(variable).map(OsString::from),
+    )
+    .unwrap()
 }
 
 pub(crate) fn data_api_override(server: &MockServer) -> PlatformEndpoints {
     endpoints(&[(
-        EndpointSurface::YouTubeDataApi,
+        forge_platform_youtube::endpoint_surfaces::YOUTUBE_DATA_API,
         format!("{}{DATA_API_PREFIX}", server.uri()),
     )])
 }

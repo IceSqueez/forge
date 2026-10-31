@@ -1185,7 +1185,7 @@ mod tests {
             let _entered = rt.enter();
             DiscordClient::new(
                 forge_platform_core::PlatformEndpoints::default()
-                    .base_url(forge_platform_core::EndpointSurface::DiscordApi),
+                    .base_url(forge_discord::endpoint_surfaces::DISCORD_API),
                 Arc::clone(&bus) as Arc<dyn forge_events::EventPublisher>,
                 backend as Arc<dyn CredentialsRepo>,
             )

@@ -2,7 +2,6 @@ use forge_platform_twitch::vocabulary::topics;
 use std::sync::Arc;
 use std::time::Duration;
 
-use forge_platform_core::EndpointSurface;
 use serde_json::Value;
 use tokio::sync::watch;
 
@@ -69,11 +68,11 @@ impl FakeTwitch {
     pub fn endpoint_overrides(&self) -> [(&'static str, String); 2] {
         [
             (
-                EndpointSurface::TwitchApi.env_var(),
+                forge_platform_twitch::endpoint_surfaces::TWITCH_API.env_var(),
                 self.api_base_url.clone(),
             ),
             (
-                EndpointSurface::TwitchEventSubSocket.env_var(),
+                forge_platform_twitch::endpoint_surfaces::TWITCH_EVENTSUB_SOCKET.env_var(),
                 self.eventsub_ws_url().to_owned(),
             ),
         ]

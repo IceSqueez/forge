@@ -94,7 +94,7 @@ impl SubActionRunner for ItemMoveRunner {
     }
 
     fn category(&self) -> SubActionCategory {
-        SubActionCategory::VTube
+        SubActionCategory::Integration
     }
 
     fn label(&self) -> &str {

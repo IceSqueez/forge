@@ -49,7 +49,7 @@ impl SubActionRunner for SetLockedRunner {
     }
 
     fn category(&self) -> SubActionCategory {
-        SubActionCategory::Obs
+        SubActionCategory::Integration
     }
 
     fn label(&self) -> &str {

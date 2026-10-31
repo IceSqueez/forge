@@ -13,7 +13,7 @@ use forge_emulator::fakes::youtube::{
 use forge_emulator::fixture::YouTubeAccount;
 use forge_emulator::vocabulary::REDACTED;
 use forge_events::Event;
-use forge_platform_core::{EndpointSurface, PlatformEndpoints, PlatformError, ViewerReport};
+use forge_platform_core::{PlatformEndpoints, PlatformError, ViewerReport};
 use forge_platform_youtube::{
     ActiveBroadcastIdHandle, GOOGLE_OAUTH_BUDGET_CAPACITY, GOOGLE_OAUTH_BUDGET_WINDOW,
     GoogleOAuthClient, LiveChatIdHandle, SharedQuota, YoutubeAuthBundle, YoutubeChatPoller,
@@ -67,7 +67,7 @@ fn endpoints(fake: &FakeYouTube) -> PlatformEndpoints {
 fn data_api(fake: &FakeYouTube, route: &str) -> String {
     format!(
         "{}{route}",
-        endpoints(fake).base_url(EndpointSurface::YouTubeDataApi)
+        endpoints(fake).base_url(forge_platform_youtube::endpoint_surfaces::YOUTUBE_DATA_API)
     )
 }
 
@@ -237,16 +237,16 @@ fn far_future() -> SystemTime {
 #[tokio::test]
 async fn overrides_cover_every_youtube_surface_and_pass_forges_own_validation() {
     let fake = start(FakeYouTubeSetup::default()).await;
-    let overridden: BTreeSet<EndpointSurface> = endpoints(&fake)
+    let overridden: BTreeSet<&str> = endpoints(&fake)
         .overridden()
-        .map(|(surface, _)| surface)
+        .map(|(surface, _)| surface.env_var())
         .collect();
     assert_eq!(
         overridden,
         BTreeSet::from([
-            EndpointSurface::YouTubeDataApi,
-            EndpointSurface::YouTubeUploadApi,
-            EndpointSurface::YouTubeOAuth,
+            forge_platform_youtube::endpoint_surfaces::YOUTUBE_DATA_API.env_var(),
+            forge_platform_youtube::endpoint_surfaces::YOUTUBE_UPLOAD_API.env_var(),
+            forge_platform_youtube::endpoint_surfaces::YOUTUBE_OAUTH.env_var(),
         ])
     );
 }
@@ -816,7 +816,7 @@ async fn malformed_refresh_forms_are_refused_with_googles_error_codes() {
     let fake = start(FakeYouTubeSetup::default()).await;
     let url = format!(
         "{}/token",
-        endpoints(&fake).base_url(EndpointSurface::YouTubeOAuth)
+        endpoints(&fake).base_url(forge_platform_youtube::endpoint_surfaces::YOUTUBE_OAUTH)
     );
     let refresh = YouTubeAccount::default().refresh_token;
     let cases = [
@@ -866,15 +866,15 @@ async fn unmodeled_routes_are_recorded_as_unexpected_404s() {
     let requests = [
         client.put(format!(
             "{}/videos",
-            overrides.base_url(EndpointSurface::YouTubeDataApi)
+            overrides.base_url(forge_platform_youtube::endpoint_surfaces::YOUTUBE_DATA_API)
         )),
         client.post(format!(
             "{}/thumbnails/set",
-            overrides.base_url(EndpointSurface::YouTubeUploadApi)
+            overrides.base_url(forge_platform_youtube::endpoint_surfaces::YOUTUBE_UPLOAD_API)
         )),
         client.get(format!(
             "{}/revoke",
-            overrides.base_url(EndpointSurface::YouTubeOAuth)
+            overrides.base_url(forge_platform_youtube::endpoint_surfaces::YOUTUBE_OAUTH)
         )),
     ];
     for request in requests {

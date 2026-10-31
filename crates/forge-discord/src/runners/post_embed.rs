@@ -93,7 +93,7 @@ impl SubActionRunner for PostEmbedRunner {
     }
 
     fn category(&self) -> SubActionCategory {
-        SubActionCategory::Discord
+        SubActionCategory::Integration
     }
 
     fn label(&self) -> &str {

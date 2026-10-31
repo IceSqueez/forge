@@ -1,10 +1,18 @@
 use forge_events::{Event, EventSource};
 use forge_registry::{TriggerCategory, TriggerRegistry, kind_matches_prefix};
+use forge_types::IntegrationId;
 
 struct CategorizedPrefix {
     source: Option<EventSource>,
     prefix: String,
     category: TriggerCategory,
+    owner: Option<IntegrationId>,
+}
+
+#[derive(Debug, Default, PartialEq, Eq)]
+pub(crate) struct EventClasses {
+    pub categories: Vec<TriggerCategory>,
+    pub owners: Vec<IntegrationId>,
 }
 
 #[derive(Default)]
@@ -22,13 +30,14 @@ impl EventCategories {
                     source: filter.source,
                     prefix: filter.kind_prefix?,
                     category: descriptor.category(),
+                    owner: registry.owning_integration(descriptor.id()).cloned(),
                 })
             })
             .collect();
         Self { prefixes }
     }
 
-    pub(crate) fn of(&self, event: &Event) -> Vec<TriggerCategory> {
+    pub(crate) fn of(&self, event: &Event) -> EventClasses {
         let candidates = || {
             self.prefixes.iter().filter(|entry| {
                 entry.source.is_none_or(|source| source == event.source)
@@ -36,15 +45,21 @@ impl EventCategories {
             })
         };
         let Some(longest) = candidates().map(|entry| entry.prefix.len()).max() else {
-            return Vec::new();
+            return EventClasses::default();
         };
-        let mut categories = Vec::new();
+        let mut classes = EventClasses::default();
         for entry in candidates().filter(|entry| entry.prefix.len() == longest) {
-            if !categories.contains(&entry.category) {
-                categories.push(entry.category);
+            if !classes.categories.contains(&entry.category) {
+                classes.categories.push(entry.category);
+            }
+            if entry.category == TriggerCategory::Integration
+                && let Some(owner) = &entry.owner
+                && !classes.owners.contains(owner)
+            {
+                classes.owners.push(owner.clone());
             }
         }
-        categories
+        classes
     }
 }
 
@@ -72,7 +87,9 @@ mod tests {
     }
 
     fn of(categories: &EventCategories, source: EventSource, kind: &str) -> Vec<TriggerCategory> {
-        categories.of(&Event::new(source, kind, serde_json::Value::Null))
+        categories
+            .of(&Event::new(source, kind, serde_json::Value::Null))
+            .categories
     }
 
     #[test]
@@ -123,7 +140,7 @@ mod tests {
                 "scene-switch",
                 Some(EventSource::Obs),
                 "obs.scene.changed",
-                TriggerCategory::Obs,
+                TriggerCategory::Integration,
             ),
             ("scene-any", None, "obs.scene", TriggerCategory::Streams),
         ]);
@@ -164,6 +181,50 @@ mod tests {
             found.contains(&TriggerCategory::Subscriptions)
                 && found.contains(&TriggerCategory::Hype),
             "{found:?}"
+        );
+    }
+
+    #[test]
+    fn only_integration_grouped_kinds_report_their_owner() {
+        let mut registry = TriggerRegistry::new();
+        let mut owned = registry.owned_by(forge_obs::OBS_INTEGRATION.id);
+        owned
+            .register(Box::new(
+                StubTrigger::new(
+                    "grouped",
+                    "grouped",
+                    TriggerCategory::Integration,
+                    Declares::Nothing,
+                )
+                .listening_to(None, "obs.scene"),
+            ))
+            .unwrap();
+        owned
+            .register(Box::new(
+                StubTrigger::new(
+                    "functional",
+                    "functional",
+                    TriggerCategory::Streams,
+                    Declares::Nothing,
+                )
+                .listening_to(None, "obs.stream"),
+            ))
+            .unwrap();
+        let categories = EventCategories::from_registry(&registry);
+        let classes_of = |kind: &str| {
+            categories.of(&Event::new(
+                EventSource::Core,
+                kind,
+                serde_json::Value::Null,
+            ))
+        };
+
+        assert_eq!(
+            (
+                classes_of("obs.scene.changed").owners,
+                classes_of("obs.stream.started").owners,
+            ),
+            (vec![forge_obs::OBS_INTEGRATION.id], Vec::new())
         );
     }
 

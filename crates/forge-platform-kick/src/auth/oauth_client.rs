@@ -1,3 +1,4 @@
+use crate::endpoint_surfaces::KICK_OAUTH;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -6,7 +7,7 @@ use forge_net::{
     GatewayProfile, GatewayRequest, GatewayResponse, RateLimiter, ThrottleHintFamily,
 };
 use forge_platform_core::PkceAuthorization;
-use forge_platform_core::{EndpointSurface, PlatformEndpoints, PlatformError, reauth_required};
+use forge_platform_core::{PlatformEndpoints, PlatformError, reauth_required};
 use forge_types::{OAuthToken, Secret};
 use serde::Deserialize;
 
@@ -36,7 +37,7 @@ pub fn kick_oauth_gateway(
     limiter: Arc<dyn RateLimiter>,
 ) -> Result<Gateway, GatewayBuildError> {
     Gateway::new(
-        endpoints.base_url(EndpointSurface::KickOAuth),
+        endpoints.base_url(KICK_OAUTH),
         limiter,
         KICK_OAUTH_GATEWAY_PROFILE,
         None,
@@ -67,10 +68,7 @@ impl KickOAuthClient {
     ) -> Self {
         Self {
             gateway,
-            authorize_endpoint: format!(
-                "{}{AUTHORIZE_PATH}",
-                endpoints.base_url(EndpointSurface::KickOAuth)
-            ),
+            authorize_endpoint: format!("{}{AUTHORIZE_PATH}", endpoints.base_url(KICK_OAUTH)),
             client_id,
             client_secret,
         }
@@ -140,7 +138,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     use forge_platform_core::PkceAuthorization;
-    use forge_platform_core::{EndpointSurface, PlatformEndpoints, PlatformError};
+    use forge_platform_core::{PlatformEndpoints, PlatformError};
     use reqwest::StatusCode;
     use serde_json::json;
     use wiremock::matchers::{method, path};
@@ -254,7 +252,7 @@ mod tests {
                 client.authorize_endpoint().to_owned(),
                 format!(
                     "{}{TOKEN_PATH}",
-                    defaults.base_url(EndpointSurface::KickOAuth)
+                    defaults.base_url(crate::endpoint_surfaces::KICK_OAUTH)
                 )
             ),
             (
@@ -485,8 +483,8 @@ mod tests {
         let oauth = token_endpoint_answering(grant()).await;
         let api = token_endpoint_answering(grant()).await;
         let endpoints = endpoints_at(&[
-            (EndpointSurface::KickOAuth, &oauth.uri()),
-            (EndpointSurface::KickPublicApi, &api.uri()),
+            (crate::endpoint_surfaces::KICK_OAUTH, &oauth.uri()),
+            (crate::endpoint_surfaces::KICK_PUBLIC_API, &api.uri()),
         ]);
         let client = oauth_client_over(&endpoints, granting_limiter());
 

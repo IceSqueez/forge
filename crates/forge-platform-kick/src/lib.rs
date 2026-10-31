@@ -8,6 +8,7 @@ pub(crate) mod control;
 #[cfg(test)]
 #[path = "../../forge-platform-core/test_support/emitted_codes.rs"]
 mod emitted_codes;
+pub mod endpoint_surfaces;
 mod gateway;
 mod integration;
 mod platform;

@@ -214,7 +214,7 @@ mod tests {
     const REQUEST_FAIL_KIND: &str = "request.fail";
 
     fn overrides(pairs: &[(EndpointSurface, String)]) -> PlatformEndpoints {
-        PlatformEndpoints::resolve(|variable| {
+        PlatformEndpoints::resolve(crate::endpoint_surfaces::ENDPOINT_SURFACES, |variable| {
             pairs
                 .iter()
                 .find(|(surface, _)| surface.env_var() == variable)
@@ -300,8 +300,8 @@ mod tests {
         mount_token(&oauth, StatusCode::OK, token_success_body()).await;
         mount_channels(&api, channel_body()).await;
         let endpoints = overrides(&[
-            (EndpointSurface::YouTubeOAuth, oauth.uri()),
-            (EndpointSurface::YouTubeDataApi, api.uri()),
+            (crate::endpoint_surfaces::YOUTUBE_OAUTH, oauth.uri()),
+            (crate::endpoint_surfaces::YOUTUBE_DATA_API, api.uri()),
         ]);
         let gateway = google_oauth_gateway(
             &endpoints,

@@ -8,7 +8,7 @@ use axum::body::Bytes;
 use axum::extract::{Query, State};
 use axum::http::{HeaderMap, Method, StatusCode, Uri, header};
 use axum::response::{IntoResponse, Json, Response};
-use forge_platform_core::{EndpointSurface, PlatformEndpoints};
+use forge_platform_core::PlatformEndpoints;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tokio::sync::watch;
@@ -128,7 +128,8 @@ impl FakeDiscord {
                 .map(|webhook| {
                     format!(
                         "{}/webhooks/{}/{}",
-                        PlatformEndpoints::default().base_url(EndpointSurface::DiscordApi),
+                        PlatformEndpoints::default()
+                            .base_url(forge_discord::endpoint_surfaces::DISCORD_API),
                         webhook.id,
                         webhook.token
                     )
@@ -138,7 +139,7 @@ impl FakeDiscord {
 
     pub fn endpoint_override(&self) -> (&'static str, String) {
         (
-            EndpointSurface::DiscordApi.env_var(),
+            forge_discord::endpoint_surfaces::DISCORD_API.env_var(),
             format!("{}{API_PATH}", self.base_url),
         )
     }

@@ -336,8 +336,10 @@ async fn invalid_configurations_are_refused() {
 
 fn endpoints_addressing(fake: &FakeMonobank) -> PlatformEndpoints {
     let (variable, value) = fake.endpoint_override();
-    PlatformEndpoints::resolve(move |name| (name == variable).then(|| OsString::from(&value)))
-        .unwrap()
+    PlatformEndpoints::resolve(&forge_emulator::endpoint_surfaces(), move |name| {
+        (name == variable).then(|| OsString::from(&value))
+    })
+    .unwrap()
 }
 
 fn generous_limits() -> MonobankRateLimits {

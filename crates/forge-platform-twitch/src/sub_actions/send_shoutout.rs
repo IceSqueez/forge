@@ -89,7 +89,7 @@ impl SubActionRunner for SendShoutoutRunner {
     }
 
     fn category(&self) -> SubActionCategory {
-        SubActionCategory::Twitch
+        SubActionCategory::Integration
     }
 
     fn label(&self) -> &str {

@@ -92,7 +92,7 @@ impl SubActionRunner for ParamSetRunner {
     }
 
     fn category(&self) -> SubActionCategory {
-        SubActionCategory::VTube
+        SubActionCategory::Integration
     }
 
     fn label(&self) -> &str {

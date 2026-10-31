@@ -6,6 +6,7 @@ use crate::config_form::{
     FILL_VAL_FS, FoldContext, collect_field_values, fold_config_field, render_config_row,
     set_picked_value, sparse_overrides,
 };
+use crate::integration_catalog::{catalog_text, tint_color};
 use crate::option_choices::ChoiceOptions;
 use crate::picker_favorites::{bind_picker, follow_picker_event};
 use crate::repo_failure::RepoFailure;
@@ -19,8 +20,11 @@ use forge_components::{
     body_family, ghost_button_with_icon, modal, mono_family, overlay, primary_button, radius,
     secondary_button, spacing, tr,
 };
+use forge_host::integration_catalog::{declaration_of, declarations};
+use forge_platform_core::IntegrationDeclaration;
 use forge_registry::{TriggerCategory, TriggerKindDescriptor, TriggerRegistry};
 use forge_types::{PermissionRung, PlatformScope, TriggerInstance, TriggerInstanceId};
+use gpui::Rgba;
 use gpui::{
     AnyElement, ClickEvent, Context, Entity, SharedString, Subscription, Window, div, prelude::*,
 };
@@ -375,7 +379,7 @@ impl TriggersRegistryView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let density = cx.density();
-        let dot_color = platform_dot_color(&form.kind_id, palette);
+        let dot_color = platform_dot_color(&form.kind_id, &self.registry, palette);
         let glyph = self
             .registry
             .get(&form.kind_id)
@@ -517,17 +521,19 @@ pub(crate) fn build_kind_groups(
     let mut groups: Vec<GridPickerGroup> = Vec::new();
     let mut picks: HashMap<SharedString, String> = HashMap::new();
 
-    for cat in CATEGORY_ORDER {
-        let (label, slug, color) = category_meta(cat, palette);
+    for slot in kind_slots() {
+        let (label, slug, color) = slot.meta(palette);
         let mut descs: Vec<(String, &dyn TriggerKindDescriptor)> = registry
             .all()
-            .filter(|d| d.category() == cat)
+            .filter(|d| slot.holds(registry, *d))
             .map(|d| (crate::kind_copy::trigger_name(d), d))
             .collect();
         if descs.is_empty() {
             continue;
         }
-        descs.sort_by(|(a, _), (b, _)| a.cmp(b));
+        descs.sort_by(|(a_name, a), (b_name, b)| {
+            a_name.cmp(b_name).then_with(|| a.id().cmp(b.id()))
+        });
 
         let mut items = Vec::with_capacity(descs.len());
         for (name, d) in descs {
@@ -546,7 +552,7 @@ pub(crate) fn build_kind_groups(
         groups.push(GridPickerGroup {
             label,
             dot_color: color,
-            scope: SharedString::from(slug),
+            scope: slug,
             items,
         });
     }
@@ -554,7 +560,57 @@ pub(crate) fn build_kind_groups(
     (groups, picks)
 }
 
-const CATEGORY_ORDER: [TriggerCategory; 24] = [
+#[derive(Clone)]
+enum KindSlot {
+    Category(TriggerCategory),
+    Owner(Box<IntegrationDeclaration>),
+}
+
+impl KindSlot {
+    fn holds(&self, registry: &TriggerRegistry, descriptor: &dyn TriggerKindDescriptor) -> bool {
+        let category = descriptor.category();
+        let owner = || registry.owning_integration(descriptor.id());
+        match self {
+            Self::Owner(declaration) => {
+                category == TriggerCategory::Integration && owner() == Some(&declaration.id)
+            }
+            Self::Category(TriggerCategory::Ungrouped) => {
+                category == TriggerCategory::Ungrouped
+                    || (category == TriggerCategory::Integration
+                        && owner().and_then(declaration_of).is_none())
+            }
+            Self::Category(own) => category == *own,
+        }
+    }
+
+    fn meta(&self, palette: &ForgePalette) -> (SharedString, SharedString, Rgba) {
+        match self {
+            Self::Owner(declaration) => (
+                catalog_text(declaration.catalog_group.label).into(),
+                declaration.id.to_string().into(),
+                tint_color(declaration.catalog_group.trigger_tint, palette),
+            ),
+            Self::Category(category) => {
+                let (label, slug, color) = category_meta(*category, palette);
+                (label, slug.into(), color)
+            }
+        }
+    }
+}
+
+fn kind_slots() -> Vec<KindSlot> {
+    CATEGORY_ORDER
+        .into_iter()
+        .flat_map(|category| match category {
+            TriggerCategory::Integration => declarations()
+                .map(|declaration| KindSlot::Owner(Box::new(declaration)))
+                .to_vec(),
+            other => vec![KindSlot::Category(other)],
+        })
+        .collect()
+}
+
+const CATEGORY_ORDER: [TriggerCategory; 20] = [
     TriggerCategory::Chat,
     TriggerCategory::Subscriptions,
     TriggerCategory::Bits,
@@ -570,11 +626,7 @@ const CATEGORY_ORDER: [TriggerCategory; 24] = [
     TriggerCategory::Streams,
     TriggerCategory::Users,
     TriggerCategory::Moderation,
-    TriggerCategory::Obs,
-    TriggerCategory::VTube,
-    TriggerCategory::Discord,
-    TriggerCategory::Midi,
-    TriggerCategory::Hotkey,
+    TriggerCategory::Integration,
     TriggerCategory::Timer,
     TriggerCategory::Server,
     TriggerCategory::Core,
@@ -584,7 +636,7 @@ const CATEGORY_ORDER: [TriggerCategory; 24] = [
 fn category_meta(
     cat: TriggerCategory,
     palette: &ForgePalette,
-) -> (SharedString, &'static str, gpui::Rgba) {
+) -> (SharedString, &'static str, Rgba) {
     match cat {
         TriggerCategory::Chat => (tr!("trigger_cat_chat").into(), "chat", palette.info),
         TriggerCategory::Subscriptions => (
@@ -629,15 +681,6 @@ fn category_meta(
         TriggerCategory::Clips => (tr!("trigger_cat_clips").into(), "clips", palette.info),
         TriggerCategory::Streams => (tr!("trigger_cat_streams").into(), "streams", palette.info),
         TriggerCategory::Users => (tr!("trigger_cat_users").into(), "users", palette.info),
-        TriggerCategory::Obs => ("OBS".into(), "obs", palette.accent_teal),
-        TriggerCategory::VTube => ("VTube Studio".into(), "vtube", palette.accent_teal),
-        TriggerCategory::Discord => ("Discord".into(), "discord", palette.info),
-        TriggerCategory::Midi => ("MIDI".into(), "midi", palette.danger),
-        TriggerCategory::Hotkey => (
-            tr!("triggers_filter_hotkey").into(),
-            "hotkey",
-            palette.warning,
-        ),
         TriggerCategory::Core => (tr!("trigger_cat_core").into(), "core", palette.info),
         TriggerCategory::Server => (
             tr!("triggers_create_cat_server").into(),
@@ -649,7 +692,7 @@ fn category_meta(
             "timer",
             palette.warning,
         ),
-        TriggerCategory::Ungrouped => {
+        TriggerCategory::Ungrouped | TriggerCategory::Integration => {
             (tr!("trigger_cat_other").into(), "other", palette.text_muted)
         }
     }
@@ -779,12 +822,8 @@ mod tests {
             C::Goals => Some(C::Clips),
             C::Clips => Some(C::Streams),
             C::Streams => Some(C::Users),
-            C::Users => Some(C::Obs),
-            C::Obs => Some(C::VTube),
-            C::VTube => Some(C::Discord),
-            C::Discord => Some(C::Midi),
-            C::Midi => Some(C::Hotkey),
-            C::Hotkey => Some(C::Core),
+            C::Users => Some(C::Integration),
+            C::Integration => Some(C::Core),
             C::Core => Some(C::Server),
             C::Server => Some(C::Timer),
             C::Timer => Some(C::Ungrouped),

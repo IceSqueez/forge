@@ -41,7 +41,7 @@ impl SubActionRunner for StreamSendCaptionRunner {
     }
 
     fn category(&self) -> SubActionCategory {
-        SubActionCategory::Obs
+        SubActionCategory::Integration
     }
 
     fn label(&self) -> &str {

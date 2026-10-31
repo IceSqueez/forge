@@ -41,7 +41,7 @@ impl SubActionRunner for ModelLoadRunner {
     }
 
     fn category(&self) -> SubActionCategory {
-        SubActionCategory::VTube
+        SubActionCategory::Integration
     }
 
     fn label(&self) -> &str {

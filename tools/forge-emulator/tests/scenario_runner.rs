@@ -1633,7 +1633,7 @@ async fn kick_no_unexpected_requests_fails_after_an_unmodeled_call() {
     let fake = harness.kick.as_ref().unwrap();
     let users = format!(
         "{}/users",
-        kick_endpoints(fake).base_url(forge_platform_core::EndpointSurface::KickPublicApi)
+        kick_endpoints(fake).base_url(forge_platform_kick::endpoint_surfaces::KICK_PUBLIC_API)
     );
     reqwest::get(&users).await.unwrap();
     let scenario = kick_scenario(json!([
@@ -1877,7 +1877,8 @@ async fn youtube_no_unexpected_requests_fails_after_an_unmodeled_call() {
     reqwest::Client::new()
         .put(format!(
             "{}/videos",
-            youtube_endpoints(fake).base_url(forge_platform_core::EndpointSurface::YouTubeDataApi)
+            youtube_endpoints(fake)
+                .base_url(forge_platform_youtube::endpoint_surfaces::YOUTUBE_DATA_API)
         ))
         .bearer_auth(fake.access_token())
         .send()

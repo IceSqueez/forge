@@ -545,7 +545,7 @@ pub(crate) mod test_support {
     }
 
     pub(crate) fn endpoints_with(overrides: &[(EndpointSurface, &str)]) -> PlatformEndpoints {
-        PlatformEndpoints::resolve(|variable| {
+        PlatformEndpoints::resolve(crate::endpoint_surfaces::ENDPOINT_SURFACES, |variable| {
             overrides
                 .iter()
                 .find(|(surface, _)| surface.env_var() == variable)
@@ -577,7 +577,7 @@ pub(crate) mod test_support {
     ) {
         let bus = std::sync::Arc::new(crate::bot_account::test_support::RecordingBus::default());
         let gateway = crate::helix_gateway::helix_gateway(
-            &endpoints_with(&[(EndpointSurface::TwitchApi, base_url)]),
+            &endpoints_with(&[(crate::endpoint_surfaces::TWITCH_API, base_url)]),
             std::sync::Arc::new(TokenBucketRateLimiter::new(
                 HELIX_BUDGET_CAPACITY,
                 HELIX_BUDGET_WINDOW,
@@ -604,7 +604,7 @@ pub(crate) mod test_support {
         client_id: &str,
         limiter: std::sync::Arc<dyn RateLimiter>,
     ) -> TwitchOAuthClient {
-        let endpoints = endpoints_with(&[(EndpointSurface::TwitchOAuth, base_url)]);
+        let endpoints = endpoints_with(&[(crate::endpoint_surfaces::TWITCH_OAUTH, base_url)]);
         TwitchOAuthClient::new(
             twitch_oauth_gateway(&endpoints, limiter).unwrap(),
             client_id.to_owned(),
@@ -628,8 +628,11 @@ pub(crate) mod test_support {
 
     pub(crate) fn unreachable_twitch_endpoints() -> PlatformEndpoints {
         endpoints_with(&[
-            (EndpointSurface::TwitchApi, "http://127.0.0.1:0"),
-            (EndpointSurface::TwitchEventSubSocket, "ws://127.0.0.1:0"),
+            (crate::endpoint_surfaces::TWITCH_API, "http://127.0.0.1:0"),
+            (
+                crate::endpoint_surfaces::TWITCH_EVENTSUB_SOCKET,
+                "ws://127.0.0.1:0",
+            ),
         ])
     }
 }

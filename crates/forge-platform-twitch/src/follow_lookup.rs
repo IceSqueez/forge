@@ -61,7 +61,7 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     use forge_net::TokenBucketRateLimiter;
-    use forge_platform_core::{EndpointSurface, PlatformEndpoints};
+    use forge_platform_core::PlatformEndpoints;
     use forge_types::OAuthToken;
     use serde_json::{Value, json};
     use tokio::sync::watch;
@@ -173,7 +173,7 @@ mod tests {
     }
 
     fn api_override(server: &MockServer) -> PlatformEndpoints {
-        endpoints_with(&[(EndpointSurface::TwitchApi, &server.uri())])
+        endpoints_with(&[(crate::endpoint_surfaces::TWITCH_API, &server.uri())])
     }
 
     #[tokio::test]

@@ -58,7 +58,7 @@ impl SubActionRunner for ModelMoveRunner {
     }
 
     fn category(&self) -> SubActionCategory {
-        SubActionCategory::VTube
+        SubActionCategory::Integration
     }
 
     fn label(&self) -> &str {

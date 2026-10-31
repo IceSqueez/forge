@@ -20,7 +20,7 @@ pub type TokenSource =
     Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync>;
 
 pub fn endpoints_from(overrides: &[(&'static str, String)]) -> PlatformEndpoints {
-    PlatformEndpoints::resolve(|variable| {
+    PlatformEndpoints::resolve(&forge_emulator::endpoint_surfaces(), |variable| {
         overrides
             .iter()
             .find(|(name, _)| *name == variable)

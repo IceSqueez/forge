@@ -72,7 +72,7 @@ impl SubActionRunner for SendFileRunner {
     }
 
     fn category(&self) -> SubActionCategory {
-        SubActionCategory::Discord
+        SubActionCategory::Integration
     }
 
     fn label(&self) -> &str {

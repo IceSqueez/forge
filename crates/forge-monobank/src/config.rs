@@ -1,8 +1,7 @@
+use crate::endpoint_surfaces::MONOBANK_API;
 use std::time::Duration;
 
-use forge_platform_core::{
-    EndpointSurface, POLL_ERROR_BACKOFF_BASE, POLL_ERROR_BACKOFF_CAP, PlatformEndpoints,
-};
+use forge_platform_core::{POLL_ERROR_BACKOFF_BASE, POLL_ERROR_BACKOFF_CAP, PlatformEndpoints};
 
 const SECONDS_PER_MINUTE: u64 = 60;
 const SECONDS_PER_HOUR: u64 = 60 * SECONDS_PER_MINUTE;
@@ -47,7 +46,7 @@ impl MonobankConfig {
     pub fn new(endpoints: &PlatformEndpoints) -> Self {
         Self {
             base_url: endpoints
-                .base_url(EndpointSurface::MonobankApi)
+                .base_url(MONOBANK_API)
                 .trim_end_matches('/')
                 .to_owned(),
             history_lookback: DEFAULT_HISTORY_LOOKBACK,

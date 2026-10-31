@@ -1341,13 +1341,16 @@ pub(crate) mod tests {
         let creds = Arc::new(MemoryCredentials::default());
         store_hook(&creds, "alerts", &hook_url("discord.com", ""));
         let override_base = format!("{}/api", server.uri());
-        let endpoints = forge_platform_core::PlatformEndpoints::resolve(|name| {
-            (name == forge_platform_core::EndpointSurface::DiscordApi.env_var())
-                .then(|| override_base.clone().into())
-        })
+        let endpoints = forge_platform_core::PlatformEndpoints::resolve(
+            crate::endpoint_surfaces::ENDPOINT_SURFACES,
+            |name| {
+                (name == crate::endpoint_surfaces::DISCORD_API.env_var())
+                    .then(|| override_base.clone().into())
+            },
+        )
         .unwrap();
         let client = client_at(
-            endpoints.base_url(forge_platform_core::EndpointSurface::DiscordApi),
+            endpoints.base_url(crate::endpoint_surfaces::DISCORD_API),
             &CapturingPublisher::shared(),
             &creds,
         );

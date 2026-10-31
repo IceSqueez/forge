@@ -7,7 +7,6 @@ use axum::Router;
 use axum::extract::{Query, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode, Uri, header};
 use axum::response::{IntoResponse, Json, Response};
-use forge_platform_core::EndpointSurface;
 use serde_json::{Value, json};
 use tokio::sync::watch;
 
@@ -93,7 +92,7 @@ impl FakeDonatello {
 
     pub fn endpoint_override(&self) -> (&'static str, String) {
         (
-            EndpointSurface::DonatelloApi.env_var(),
+            forge_donatello::endpoint_surfaces::DONATELLO_API.env_var(),
             self.base_url.clone(),
         )
     }

@@ -1,9 +1,10 @@
+use crate::endpoint_surfaces::{YOUTUBE_DATA_API, YOUTUBE_OAUTH, YOUTUBE_UPLOAD_API};
 pub(crate) use forge_events::test_support::CapturingPublisher;
 use std::ffi::OsString;
 use std::sync::{Arc, Mutex};
 
 use forge_events::EventPublisher;
-use forge_platform_core::{EndpointSurface, PlatformEndpoints};
+use forge_platform_core::PlatformEndpoints;
 
 use forge_net::{RateLimiter, TokenBucketRateLimiter};
 
@@ -26,16 +27,17 @@ fn endpoints_with(data_api_base: Option<&str>) -> PlatformEndpoints {
 
 fn endpoints_at(data_api_base: Option<&str>, oauth_base: Option<&str>) -> PlatformEndpoints {
     tracing::subscriber::with_default(tracing::subscriber::NoSubscriber::default(), || {
-        PlatformEndpoints::resolve(|variable| {
-            EndpointSurface::ALL
-                .into_iter()
+        PlatformEndpoints::resolve(crate::endpoint_surfaces::ENDPOINT_SURFACES, |variable| {
+            crate::endpoint_surfaces::ENDPOINT_SURFACES
+                .iter()
+                .copied()
                 .find(|surface| surface.env_var() == variable)
                 .map(|surface| {
                     let rest_base = match surface {
-                        EndpointSurface::YouTubeDataApi | EndpointSurface::YouTubeUploadApi => {
+                        YOUTUBE_DATA_API | YOUTUBE_UPLOAD_API => {
                             data_api_base.unwrap_or(UNREACHABLE_HTTP)
                         }
-                        EndpointSurface::YouTubeOAuth => oauth_base.unwrap_or(UNREACHABLE_HTTP),
+                        YOUTUBE_OAUTH => oauth_base.unwrap_or(UNREACHABLE_HTTP),
                         _ => UNREACHABLE_HTTP,
                     };
                     let base = if variable.contains(WS_SURFACE_MARKER) {

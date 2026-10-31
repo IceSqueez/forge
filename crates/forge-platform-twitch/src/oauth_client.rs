@@ -1,3 +1,4 @@
+use crate::endpoint_surfaces::TWITCH_OAUTH;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -5,9 +6,7 @@ use forge_net::{
     CallClass, FormBody, Gateway, GatewayBuildError, GatewayFailure, GatewayProfile,
     GatewayRequest, GatewayResponse, RateLimiter, ThrottleHintFamily,
 };
-use forge_platform_core::{
-    DeviceAuthEnd, EndpointSurface, PlatformEndpoints, PlatformError, reauth_required,
-};
+use forge_platform_core::{DeviceAuthEnd, PlatformEndpoints, PlatformError, reauth_required};
 use forge_types::OAuthToken;
 use forge_types::Secret;
 use serde::Deserialize;
@@ -48,7 +47,7 @@ pub fn twitch_oauth_gateway(
     limiter: Arc<dyn RateLimiter>,
 ) -> Result<Gateway, GatewayBuildError> {
     Gateway::new(
-        endpoints.base_url(EndpointSurface::TwitchOAuth),
+        endpoints.base_url(TWITCH_OAUTH),
         limiter,
         TWITCH_OAUTH_GATEWAY_PROFILE,
         None,

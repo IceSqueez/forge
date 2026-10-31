@@ -1,6 +1,6 @@
 use forge_platform_core::{
-    ConnectionAffordance, IntegrationCategory, IntegrationDeclaration, IntegrationIdentity,
-    IntegrationTint, SignInRoute, TileMark,
+    CatalogLabel, ConnectionAffordance, IntegrationCatalogGroup, IntegrationCategory,
+    IntegrationDeclaration, IntegrationIdentity, IntegrationTint, SignInRoute, TileMark,
 };
 use forge_types::IntegrationId;
 
@@ -19,6 +19,12 @@ pub const VTUBE_INTEGRATION: IntegrationDeclaration = IntegrationDeclaration {
         tile_mark: TileMark::Glyph,
         tile_tint: IntegrationTint::Warning,
         hero_tint: IntegrationTint::Warning,
+    },
+    catalog_group: IntegrationCatalogGroup {
+        label: CatalogLabel::Brand("VTube Studio"),
+        filter_label: CatalogLabel::Brand("VTube"),
+        step_tint: IntegrationTint::AccentTeal,
+        trigger_tint: IntegrationTint::AccentTeal,
     },
     disclaimer: None,
 };

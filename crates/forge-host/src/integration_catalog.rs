@@ -1,4 +1,4 @@
-use forge_platform_core::IntegrationDeclaration;
+use forge_platform_core::{EndpointSurface, IntegrationDeclaration};
 use forge_types::{IntegrationId, MessageCatalog};
 
 pub const INTEGRATION_MESSAGE_CATALOGS: &[MessageCatalog] = &[
@@ -30,8 +30,101 @@ pub fn declarations() -> [IntegrationDeclaration; 10] {
     ]
 }
 
+pub fn endpoint_surfaces() -> Vec<EndpointSurface> {
+    [
+        forge_platform_twitch::endpoint_surfaces::ENDPOINT_SURFACES,
+        forge_platform_kick::endpoint_surfaces::ENDPOINT_SURFACES,
+        forge_platform_youtube::endpoint_surfaces::ENDPOINT_SURFACES,
+        forge_donatello::endpoint_surfaces::ENDPOINT_SURFACES,
+        forge_monobank::endpoint_surfaces::ENDPOINT_SURFACES,
+        forge_discord::endpoint_surfaces::ENDPOINT_SURFACES,
+    ]
+    .concat()
+}
+
 pub fn declaration_of(id: &IntegrationId) -> Option<IntegrationDeclaration> {
     declarations()
         .into_iter()
         .find(|declaration| &declaration.id == id)
+}
+
+#[cfg(test)]
+mod endpoint_tests {
+    use std::collections::BTreeSet;
+
+    use forge_platform_core::{EndpointRefusal, PlatformEndpoints, PlatformError};
+
+    use super::endpoint_surfaces;
+
+    const PRODUCTION: [(&str, &str); 13] = [
+        ("FORGE_TWITCH_API_BASE_URL", "https://api.twitch.tv"),
+        (
+            "FORGE_TWITCH_EVENTSUB_WS_URL",
+            "wss://eventsub.wss.twitch.tv/ws",
+        ),
+        ("FORGE_TWITCH_OAUTH_BASE_URL", "https://id.twitch.tv/oauth2"),
+        ("FORGE_KICK_API_BASE_URL", "https://api.kick.com/public/v1"),
+        ("FORGE_KICK_CHANNEL_API_BASE_URL", "https://kick.com/api/v2"),
+        ("FORGE_KICK_CHAT_WS_BASE_URL", "wss://ws-us2.pusher.com/app"),
+        ("FORGE_KICK_OAUTH_BASE_URL", "https://id.kick.com/oauth"),
+        (
+            "FORGE_YOUTUBE_API_BASE_URL",
+            "https://www.googleapis.com/youtube/v3",
+        ),
+        (
+            "FORGE_YOUTUBE_UPLOAD_BASE_URL",
+            "https://www.googleapis.com/upload/youtube/v3",
+        ),
+        (
+            "FORGE_YOUTUBE_OAUTH_BASE_URL",
+            "https://oauth2.googleapis.com",
+        ),
+        (
+            "FORGE_DONATELLO_API_BASE_URL",
+            "https://donatello.to/api/v1",
+        ),
+        ("FORGE_MONOBANK_API_BASE_URL", "https://api.monobank.ua"),
+        ("FORGE_DISCORD_API_BASE_URL", "https://discord.com/api"),
+    ];
+
+    #[test]
+    fn every_surface_keeps_its_variable_and_production_url_in_roster_order() {
+        let endpoints = PlatformEndpoints::default();
+        let declared: Vec<(&str, &str)> = endpoint_surfaces()
+            .into_iter()
+            .map(|surface| (surface.env_var(), endpoints.base_url(surface)))
+            .collect::<Vec<_>>();
+        assert_eq!(declared, PRODUCTION);
+    }
+
+    #[test]
+    fn each_surface_reads_a_distinct_variable() {
+        let surfaces = endpoint_surfaces();
+        let variables: BTreeSet<&str> = surfaces.iter().map(|s| s.env_var()).collect();
+        assert_eq!(variables.len(), surfaces.len());
+    }
+
+    #[test]
+    fn the_socket_surfaces_refuse_an_http_override_and_the_rest_a_socket_one() {
+        for surface in endpoint_surfaces() {
+            let is_socket = surface.env_var().contains("_WS_");
+            let wrong_scheme = if is_socket {
+                "http://127.0.0.1"
+            } else {
+                "ws://127.0.0.1"
+            };
+            let result = PlatformEndpoints::resolve(&[surface], |_| Some(wrong_scheme.into()));
+            assert!(
+                matches!(
+                    result,
+                    Err(PlatformError::EndpointOverrideRefused {
+                        reason: EndpointRefusal::SchemeMismatch,
+                        ..
+                    })
+                ),
+                "{}",
+                surface.env_var()
+            );
+        }
+    }
 }

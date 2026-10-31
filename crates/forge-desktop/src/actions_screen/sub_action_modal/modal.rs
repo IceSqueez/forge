@@ -1,6 +1,6 @@
 use super::rejection::rejection_note;
 use super::*;
-use crate::actions_screen::editor::{step_glyph, sub_category_color};
+use crate::actions_screen::editor::{StepGroup, step_glyph};
 use crate::actions_screen::files_root_note::files_root_note;
 use forge_components::BORDER_THIN;
 use forge_components::OverflowRevealingFocus;
@@ -8,7 +8,6 @@ use forge_components::{
     FONT_XS, FONT_XXS, Spacing, body_family, modal, mono_family, primary_button, scaled,
     secondary_button, spacing, toggle,
 };
-use forge_registry::SubActionCategory;
 use gpui::FontWeight;
 
 const TITLE_GAP: Pixels = px(2.0);
@@ -28,7 +27,7 @@ impl EditSubActionForm {
         let (header_glyph, header_color) = step_glyph(
             &self.kind_id,
             &self.icon_name,
-            self.category.map(|c| sub_category_color(c, palette)),
+            self.group.as_ref().map(|group| group.color(palette)),
             palette,
         );
         let (step_index, step_total) = match self.target {
@@ -124,9 +123,10 @@ impl EditSubActionForm {
             .max_h(SUB_MODAL_MAX_H)
             .min_h_0()
             .overflow_y_revealing_focus()
-            .when(self.category == Some(SubActionCategory::Files), |body| {
-                body.child(files_root_note(palette, density))
-            })
+            .when(
+                self.group.as_ref().is_some_and(StepGroup::is_files),
+                |body| body.child(files_root_note(palette, density)),
+            )
             .child(grid)
             .child(advanced);
 

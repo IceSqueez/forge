@@ -38,7 +38,7 @@ impl SubActionRunner for LookupStreamStatsRunner {
     }
 
     fn category(&self) -> SubActionCategory {
-        SubActionCategory::Kick
+        SubActionCategory::Integration
     }
 
     fn label(&self) -> &str {

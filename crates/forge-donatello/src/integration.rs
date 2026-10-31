@@ -1,6 +1,6 @@
 use forge_platform_core::{
-    ConnectionAffordance, IntegrationCategory, IntegrationDeclaration, IntegrationIdentity,
-    IntegrationTint, SignInRoute, TileMark,
+    CatalogLabel, ConnectionAffordance, IntegrationCatalogGroup, IntegrationCategory,
+    IntegrationDeclaration, IntegrationIdentity, IntegrationTint, SignInRoute, TileMark,
 };
 use forge_types::IntegrationId;
 
@@ -17,6 +17,12 @@ pub const DONATELLO_INTEGRATION: IntegrationDeclaration = IntegrationDeclaration
         tile_mark: TileMark::Monogram,
         tile_tint: IntegrationTint::AccentPinkLight,
         hero_tint: IntegrationTint::AccentPinkLight,
+    },
+    catalog_group: IntegrationCatalogGroup {
+        label: CatalogLabel::Brand("Donatello"),
+        filter_label: CatalogLabel::Brand("Donatello"),
+        step_tint: IntegrationTint::AccentPinkLight,
+        trigger_tint: IntegrationTint::AccentPinkLight,
     },
     disclaimer: None,
 };

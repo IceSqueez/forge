@@ -2,14 +2,15 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 
 use forge_events::{Event, EventSource};
+use forge_obs::vocabulary::INTEGRATION_ID as OBS_INTEGRATION_ID;
 use forge_registry::TriggerCategory;
 use forge_runtime::timer_every_message;
-use forge_types::{ChatPayload, ChatSegment};
+use forge_types::{ChatPayload, ChatSegment, IntegrationId};
 use gpui::SharedString;
 use serde::Serialize;
 use time::OffsetDateTime;
 
-use crate::event_categories::EventCategories;
+use crate::event_categories::{EventCategories, EventClasses};
 use crate::runtime_event::{self, RuntimeEvent};
 use crate::user_text::resolve_message;
 
@@ -47,6 +48,8 @@ pub(crate) struct EventItem {
     pub typed: Option<RuntimeEvent>,
     #[serde(skip)]
     pub categories: Vec<TriggerCategory>,
+    #[serde(skip)]
+    pub owners: Vec<IntegrationId>,
 }
 
 impl EventItem {
@@ -64,7 +67,11 @@ impl EventItem {
                     || matches!(self.typed, Some(RuntimeEvent::TimerTick(_)))
             }
             EventFilter::Obs => {
-                self.source == EventSource::Obs || self.has_category(TriggerCategory::Obs)
+                self.source == EventSource::Obs
+                    || self
+                        .owners
+                        .iter()
+                        .any(|owner| owner.as_str() == OBS_INTEGRATION_ID)
             }
             EventFilter::Errors => self.is_error,
         }
@@ -166,8 +173,8 @@ impl EventLog {
         if self.paused {
             return;
         }
-        let categories = self.categories.of(event);
-        self.push(Self::item_from_event(event, typed, categories));
+        let classes = self.categories.of(event);
+        self.push(Self::item_from_event(event, typed, classes));
     }
 
     pub(crate) fn items(&self) -> &VecDeque<Arc<EventItem>> {
@@ -218,8 +225,12 @@ impl EventLog {
     pub(crate) fn item_from_event(
         event: &Event,
         typed: Option<RuntimeEvent>,
-        mut categories: Vec<TriggerCategory>,
+        classes: EventClasses,
     ) -> EventItem {
+        let EventClasses {
+            mut categories,
+            owners,
+        } = classes;
         if runtime_event::is_twitch_follow(event)
             && !categories.contains(&TriggerCategory::Subscriptions)
         {
@@ -250,6 +261,7 @@ impl EventLog {
             payload: event.payload.clone(),
             typed,
             categories,
+            owners,
         }
     }
 
@@ -353,7 +365,7 @@ mod tests {
     }
 
     fn item(event: &Event) -> EventItem {
-        EventLog::item_from_event(event, runtime_event::decode(event), Vec::new())
+        EventLog::item_from_event(event, runtime_event::decode(event), EventClasses::default())
     }
 
     fn summary(event: &Event) -> String {

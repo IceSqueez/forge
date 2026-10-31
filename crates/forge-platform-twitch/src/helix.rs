@@ -242,7 +242,6 @@ mod tests {
     use forge_events::{Event, EventPublisher, EventSource};
     use forge_net::RateLimiter;
     use forge_net::test_support::RecordingRateLimiter;
-    use forge_platform_core::EndpointSurface;
     use wiremock::matchers::{header, method, path, query_param};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -304,7 +303,7 @@ mod tests {
         tokens: Arc<dyn HelixTokenSource>,
     ) -> Harness {
         let bus = Arc::new(RecordingBus::default());
-        let endpoints = endpoints_with(&[(EndpointSurface::TwitchApi, base_url)]);
+        let endpoints = endpoints_with(&[(crate::endpoint_surfaces::TWITCH_API, base_url)]);
         let gateway = helix_gateway(
             &endpoints,
             Arc::clone(&limiter) as Arc<dyn RateLimiter>,

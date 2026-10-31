@@ -16,7 +16,7 @@ impl TriggerKindDescriptor for ProfileCurrentChangedDescriptor {
     }
 
     fn category(&self) -> TriggerCategory {
-        TriggerCategory::Obs
+        TriggerCategory::Integration
     }
 
     fn label(&self) -> &str {

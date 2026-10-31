@@ -1,6 +1,7 @@
 use forge_platform_core::{
-    ConnectionAffordance, IntegrationCategory, IntegrationDeclaration, IntegrationDisclaimer,
-    IntegrationIdentity, IntegrationTint, SignInRoute, TileMark,
+    CatalogLabel, ConnectionAffordance, IntegrationCatalogGroup, IntegrationCategory,
+    IntegrationDeclaration, IntegrationDisclaimer, IntegrationIdentity, IntegrationTint,
+    SignInRoute, TileMark,
 };
 use forge_types::{IntegrationId, PlatformId};
 
@@ -17,6 +18,12 @@ pub const KICK_INTEGRATION: IntegrationDeclaration = IntegrationDeclaration {
         tile_mark: TileMark::Monogram,
         tile_tint: IntegrationTint::PlatformBrand(PlatformId::Kick),
         hero_tint: IntegrationTint::Info,
+    },
+    catalog_group: IntegrationCatalogGroup {
+        label: CatalogLabel::Brand("Kick"),
+        filter_label: CatalogLabel::Brand("Kick"),
+        step_tint: IntegrationTint::PlatformBrand(PlatformId::Kick),
+        trigger_tint: IntegrationTint::PlatformBrand(PlatformId::Kick),
     },
     disclaimer: Some(IntegrationDisclaimer {
         short_key: "integration_kick_disclaimer_short",

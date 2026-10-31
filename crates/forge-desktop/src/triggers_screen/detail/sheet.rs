@@ -101,7 +101,7 @@ impl TriggersRegistryView {
         let density = cx.density();
         let instance = &detail.instance;
         let id = instance.id;
-        let dot_color = platform_dot_color(&instance.kind_id, palette);
+        let dot_color = platform_dot_color(&instance.kind_id, &self.registry, palette);
         let glyph = self
             .registry
             .get(&instance.kind_id)

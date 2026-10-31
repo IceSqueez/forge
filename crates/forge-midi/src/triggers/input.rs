@@ -70,7 +70,7 @@ impl TriggerKindDescriptor for MidiInputTrigger {
     }
 
     fn category(&self) -> TriggerCategory {
-        TriggerCategory::Midi
+        TriggerCategory::Integration
     }
 
     fn label(&self) -> &str {

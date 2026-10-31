@@ -415,7 +415,6 @@ mod tests {
     use forge_events::EventPublisher;
     use forge_net::RateLimiter;
     use forge_net::test_support::RecordingRateLimiter;
-    use forge_platform_core::EndpointSurface;
     use forge_types::OAuthToken;
     use reqwest::StatusCode;
     use std::sync::Arc;
@@ -448,7 +447,7 @@ mod tests {
         let limiter = Arc::new(limiter);
         let publisher: Arc<dyn EventPublisher> = bus.clone();
         let endpoints = crate::sub_actions::test_support::endpoints_with(&[(
-            EndpointSurface::TwitchApi,
+            crate::endpoint_surfaces::TWITCH_API,
             api_url,
         )]);
         let gateway = crate::helix_gateway::helix_gateway(

@@ -70,7 +70,7 @@ pub fn runs_here_in_isolation(test_path: &str) -> bool {
         .env("HOME", home.path())
         .env("XDG_RUNTIME_DIR", home.path())
         .env_remove("FORGE_CREDENTIAL_KEY_FILE");
-    for surface in EndpointSurface::ALL {
+    for surface in crate::integration_catalog::endpoint_surfaces() {
         child.env(surface.env_var(), endpoint_override(surface, port));
     }
     let absent_bus = format!("unix:path={}", home.path().join("absent-bus").display());
@@ -170,7 +170,8 @@ pub async fn boot_host(
     let inputs = HostInputs {
         provider,
         data_dir: forge_paths::data_dir(),
-        endpoints: PlatformEndpoints::from_env().unwrap(),
+        endpoints: PlatformEndpoints::from_env(&crate::integration_catalog::endpoint_surfaces())
+            .unwrap(),
         hotkey_main_thread: forge_hotkey::testing::offline_main_thread_link(),
         audio_sinks: Arc::clone(&sinks) as Arc<dyn AudioSinkFactory>,
         local_tts_engines: Vec::new(),

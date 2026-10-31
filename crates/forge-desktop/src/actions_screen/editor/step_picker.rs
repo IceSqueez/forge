@@ -1,4 +1,4 @@
-use super::step_presentation::{sub_category_label, sub_category_slug};
+use super::step_presentation::StepGroup;
 use super::*;
 use crate::actions_screen::sub_action_modal::{SubFormLaunch, SubFormTarget};
 use crate::picker_favorites::{bind_picker, follow_picker_event};
@@ -16,22 +16,32 @@ fn build_step_groups(
     registry: &SubActionRegistry,
     palette: &ForgePalette,
 ) -> (Vec<GridPickerGroup>, HashMap<SharedString, String>) {
-    let mut runners: Vec<(String, &dyn SubActionRunner)> = registry
+    let mut runners: Vec<(String, String, StepGroup, &dyn SubActionRunner)> = registry
         .all()
-        .map(|runner| (crate::kind_copy::step_name(runner), runner))
+        .map(|runner| {
+            let group = StepGroup::of(registry, runner);
+            (
+                group.scope(),
+                crate::kind_copy::step_name(runner),
+                group,
+                runner,
+            )
+        })
         .collect();
-    runners.sort_by(|(a_name, a), (b_name, b)| {
-        sub_category_slug(a.category())
-            .cmp(sub_category_slug(b.category()))
-            .then_with(|| a_name.cmp(b_name))
-    });
+    runners.sort_by(
+        |(a_scope, a_name, _, a_runner), (b_scope, b_name, _, b_runner)| {
+            a_scope
+                .cmp(b_scope)
+                .then_with(|| a_name.cmp(b_name))
+                .then_with(|| a_runner.id().cmp(b_runner.id()))
+        },
+    );
 
     let mut groups: Vec<GridPickerGroup> = Vec::new();
     let mut picks: HashMap<SharedString, String> = HashMap::new();
-    for (name, runner) in runners {
-        let cat = runner.category();
-        let scope = SharedString::from(sub_category_slug(cat));
-        let color = sub_category_color(cat, palette);
+    for (scope, name, group, runner) in runners {
+        let scope = SharedString::from(scope);
+        let color = group.color(palette);
         let id = SharedString::from(format!("step-{}", runner.id()));
         picks.insert(id.clone(), runner.id().to_owned());
         let item = GridPickerItem {
@@ -46,7 +56,7 @@ fn build_step_groups(
         match groups.iter_mut().find(|g| g.scope == scope) {
             Some(g) => g.items.push(item),
             None => groups.push(GridPickerGroup {
-                label: sub_category_label(cat).into(),
+                label: group.label().into(),
                 dot_color: color,
                 scope,
                 items: vec![item],
@@ -166,13 +176,12 @@ impl ScreenActionsView {
                     runner.config_fields(),
                     super::sub_form::output_name_keys(runner),
                     runner.icon_name().to_owned(),
-                    runner.category(),
+                    StepGroup::of(&self.deps.sub_action_registry, runner),
                     runner.config_refinement(),
                 )
             });
         self.modals.grid_picker = None;
-        let Some((config, specs, output_name_keys, icon_name, category, refinement)) = prepared
-        else {
+        let Some((config, specs, output_name_keys, icon_name, group, refinement)) = prepared else {
             cx.notify();
             return;
         };
@@ -189,7 +198,7 @@ impl ScreenActionsView {
             continue_on_error: false,
             kind_label,
             icon_name,
-            category: Some(category),
+            group: Some(group),
             chain_len,
             options_seed: self.choices.select_options.clone(),
             refinement,
@@ -197,5 +206,39 @@ impl ScreenActionsView {
         };
         self.menus.step_open = None;
         self.open_sub_form(launch, cx);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn owned_steps_keep_their_group_scope_label_and_tint() {
+        crate::i18n::install_language(forge_storage::Language::En);
+        let palette = forge_components::FORGE_DEFAULT;
+        let (_, steps) = crate::test_support::every_registry_entry().await;
+
+        let (groups, _) = build_step_groups(&steps, &palette);
+
+        let found = |scope: &str| {
+            groups
+                .iter()
+                .find(|group| group.scope.as_ref() == scope)
+                .map(|group| (group.label.to_string(), group.dot_color))
+        };
+        for (scope, label, tint) in [
+            ("twitch", "Twitch", palette.theme_brand),
+            ("obs", "OBS", palette.text_secondary),
+            ("vtube", "VTube Studio", palette.accent_teal),
+            ("discord", "Discord", palette.info),
+            ("midi", "MIDI", palette.danger),
+        ] {
+            assert_eq!(found(scope), Some((label.to_owned(), tint)), "{scope}");
+        }
+        let scopes: Vec<&str> = groups.iter().map(|group| group.scope.as_ref()).collect();
+        let mut sorted = scopes.clone();
+        sorted.sort_unstable();
+        assert_eq!(scopes, sorted);
     }
 }

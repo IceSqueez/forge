@@ -23,7 +23,7 @@ mod trigger_list;
 mod trigger_picker;
 
 pub(crate) use step_presentation::parse_variable_segments;
-pub(super) use step_presentation::{step_glyph, sub_action_summary, sub_category_color};
+pub(super) use step_presentation::{StepGroup, step_glyph, sub_action_summary};
 
 use cards::inline_warning_card;
 pub(super) use export::PackExportHost;

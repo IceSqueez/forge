@@ -157,14 +157,14 @@ impl ScreenActionsView {
         let kind_id = step.kind_id.clone();
         let mut config = step.config.clone();
         let continue_on_error = step.continue_on_error;
-        let Some((specs, output_name_keys, defaults, icon_name, category, refinement)) =
+        let Some((specs, output_name_keys, defaults, icon_name, group, refinement)) =
             self.deps.sub_action_registry.get(&kind_id).map(|r| {
                 (
                     r.config_fields(),
                     output_name_keys(r),
                     r.default_config(),
                     r.icon_name().to_owned(),
-                    r.category(),
+                    StepGroup::of(&self.deps.sub_action_registry, r),
                     r.config_refinement(),
                 )
             })
@@ -187,7 +187,7 @@ impl ScreenActionsView {
             continue_on_error,
             kind_label,
             icon_name,
-            category: Some(category),
+            group: Some(group),
             chain_len,
             options_seed: self.choices.select_options.clone(),
             refinement,

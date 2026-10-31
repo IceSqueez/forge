@@ -1,6 +1,6 @@
 use forge_platform_core::{
-    ConnectionAffordance, IntegrationCategory, IntegrationDeclaration, IntegrationIdentity,
-    IntegrationTint, SignInRoute, TileMark,
+    CatalogLabel, ConnectionAffordance, IntegrationCatalogGroup, IntegrationCategory,
+    IntegrationDeclaration, IntegrationIdentity, IntegrationTint, SignInRoute, TileMark,
 };
 use forge_types::IntegrationId;
 
@@ -19,6 +19,12 @@ pub const HOTKEY_INTEGRATION: IntegrationDeclaration = IntegrationDeclaration {
         tile_mark: TileMark::Glyph,
         tile_tint: IntegrationTint::Success,
         hero_tint: IntegrationTint::Info,
+    },
+    catalog_group: IntegrationCatalogGroup {
+        label: CatalogLabel::Localized("triggers_filter_hotkey"),
+        filter_label: CatalogLabel::Localized("triggers_filter_hotkey"),
+        step_tint: IntegrationTint::Warning,
+        trigger_tint: IntegrationTint::Warning,
     },
     disclaimer: None,
 };

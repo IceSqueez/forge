@@ -1024,7 +1024,9 @@ impl ScreenActionsView {
         let (icon, color) = super::editor::step_glyph(
             &step.kind_id,
             runner.map(|r| r.icon_name()).unwrap_or(fallback_icon),
-            runner.map(|r| super::editor::sub_category_color(r.category(), palette)),
+            runner.map(|r| {
+                super::editor::StepGroup::of(&self.deps.sub_action_registry, r).color(palette)
+            }),
             palette,
         );
         TestRunRow {

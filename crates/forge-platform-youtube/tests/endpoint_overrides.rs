@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use forge_net::TokenBucketRateLimiter;
-use forge_platform_core::{ChatPlatform, EndpointSurface, PlatformEndpoints, ViewerReport};
+use forge_platform_core::{ChatPlatform, PlatformEndpoints, ViewerReport};
 use forge_platform_youtube::{
     ActiveBroadcastIdHandle, GOOGLE_OAUTH_BUDGET_CAPACITY, GOOGLE_OAUTH_BUDGET_WINDOW,
     GoogleOAuthClient, LiveChatIdHandle, SharedQuota, YoutubeAdBreak, YoutubeAuthBundle,
@@ -180,7 +180,7 @@ async fn upload_api_override_carries_the_thumbnail_upload_to_the_override_host()
         .mount(&server)
         .await;
     let endpoints = endpoints(&[(
-        EndpointSurface::YouTubeUploadApi,
+        forge_platform_youtube::endpoint_surfaces::YOUTUBE_UPLOAD_API,
         format!("{}/upload/youtube/v3", server.uri()),
     )]);
     let folder = tempfile::tempdir().unwrap();
@@ -215,7 +215,7 @@ async fn oauth_override_carries_the_token_refresh_to_the_override_host() {
         .mount(&server)
         .await;
     let endpoints = endpoints(&[(
-        EndpointSurface::YouTubeOAuth,
+        forge_platform_youtube::endpoint_surfaces::YOUTUBE_OAUTH,
         format!("{}/google-oauth", server.uri()),
     )]);
     let manager = manager_holding(

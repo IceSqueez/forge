@@ -461,13 +461,17 @@ pub(crate) mod tests {
     }
 
     fn endpoints_on(socket_base: String, channel_api_base: String) -> PlatformEndpoints {
-        use forge_platform_core::EndpointSurface;
-
         let overrides = [
-            (EndpointSurface::KickChannelApi.env_var(), channel_api_base),
-            (EndpointSurface::KickChatSocket.env_var(), socket_base),
+            (
+                crate::endpoint_surfaces::KICK_CHANNEL_API.env_var(),
+                channel_api_base,
+            ),
+            (
+                crate::endpoint_surfaces::KICK_CHAT_SOCKET.env_var(),
+                socket_base,
+            ),
         ];
-        PlatformEndpoints::resolve(|variable| {
+        PlatformEndpoints::resolve(crate::endpoint_surfaces::ENDPOINT_SURFACES, |variable| {
             overrides
                 .iter()
                 .find(|(name, _)| *name == variable)

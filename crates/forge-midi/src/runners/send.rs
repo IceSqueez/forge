@@ -159,7 +159,7 @@ impl SubActionRunner for MidiSendRunner {
     }
 
     fn category(&self) -> SubActionCategory {
-        SubActionCategory::Midi
+        SubActionCategory::Integration
     }
 
     fn label(&self) -> &str {

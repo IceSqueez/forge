@@ -1,7 +1,6 @@
 use std::ffi::{OsStr, OsString};
 use std::path::PathBuf;
 
-use forge_platform_core::EndpointSurface;
 use tokio::process::Command;
 
 use crate::EmulatorError;
@@ -83,7 +82,7 @@ impl LaunchSpec {
             )));
         }
         for (variable, _) in &self.endpoint_overrides {
-            if !EndpointSurface::ALL
+            if !crate::endpoint_surfaces()
                 .iter()
                 .any(|surface| surface.env_var() == *variable)
             {
@@ -158,7 +157,7 @@ mod tests {
             twitch_client_id: Some("fixtureclient".to_owned()),
             kick_client: None,
             endpoint_overrides: vec![(
-                EndpointSurface::TwitchApi.env_var(),
+                forge_platform_twitch::endpoint_surfaces::TWITCH_API.env_var(),
                 "http://127.0.0.1:1".to_owned(),
             )],
             log_directives: DEFAULT_LOG_DIRECTIVES.to_owned(),

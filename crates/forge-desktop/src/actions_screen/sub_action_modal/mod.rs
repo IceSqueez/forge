@@ -1,13 +1,12 @@
 use super::step_validation::StepRejection;
 use super::*;
+use crate::actions_screen::editor::StepGroup;
 use crate::config_form::dependent_options;
 use build::{FieldBuildContext, build_form_fields, build_step_meta_inputs, push_form_field};
 use datetime_picker::DateTimePickerForm;
 use field::{SubFormField, field_keys, field_values};
 use forge_components::drive_overlay_focus;
-use forge_registry::{
-    FormField, FormRefinement, FormSchemaSource, SubActionCategory, refined_fields,
-};
+use forge_registry::{FormField, FormRefinement, FormSchemaSource, refined_fields};
 use forge_types::{SubActionConfig, Variant};
 use gpui::FocusHandle;
 use select_picker::{SelectPickerForm, select_picker_items};
@@ -42,7 +41,7 @@ pub(super) struct SubFormLaunch {
     pub continue_on_error: bool,
     pub kind_label: String,
     pub icon_name: String,
-    pub category: Option<SubActionCategory>,
+    pub group: Option<StepGroup>,
     pub chain_len: usize,
     pub options_seed: HashMap<String, Vec<(String, String)>>,
     pub refinement: Option<FormRefinement>,
@@ -69,7 +68,7 @@ pub(super) struct EditSubActionForm {
     kind_id: String,
     kind_label: String,
     icon_name: String,
-    category: Option<SubActionCategory>,
+    group: Option<StepGroup>,
     target: SubFormTarget,
     chain_len: usize,
     fields: Vec<SubFormField>,
@@ -110,7 +109,7 @@ impl EditSubActionForm {
             continue_on_error,
             kind_label,
             icon_name,
-            category,
+            group,
             chain_len,
             options_seed,
             refinement,
@@ -133,7 +132,7 @@ impl EditSubActionForm {
             kind_id,
             kind_label,
             icon_name,
-            category,
+            group,
             target,
             chain_len,
             fields,
@@ -350,7 +349,7 @@ mod tests {
             continue_on_error: false,
             kind_label: "Enable reward".to_owned(),
             icon_name: "gift".to_owned(),
-            category: None,
+            group: None,
             chain_len: 0,
             options_seed: HashMap::new(),
             refinement: None,

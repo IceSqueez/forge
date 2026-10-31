@@ -1,4 +1,4 @@
-use crate::platform_visuals::platform_color;
+use crate::integration_catalog::{catalog_text, tint_color};
 use crate::repo_failure::RepoFailure;
 use forge_components::FONT_BADGE;
 use forge_components::FONT_META;
@@ -9,10 +9,12 @@ use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, Confirm, ForgePalette, InlineEdit, SearchState, TextInput,
     ToastKind, page_frame, tr,
 };
+use forge_host::integration_catalog::{declaration_of, declarations};
+use forge_platform_core::IntegrationDeclaration;
 use forge_registry::TriggerRegistry;
 use forge_storage::{ActionRepo, SettingsRepo, TriggerInstanceRepo};
 use forge_types::{
-    ActionId, PermissionRung, PlatformId, TriggerConfig, TriggerInstance, TriggerInstanceId,
+    ActionId, IntegrationId, PermissionRung, TriggerConfig, TriggerInstance, TriggerInstanceId,
 };
 use gpui::{
     App, Context, Entity, EventEmitter, FocusHandle, Pixels, Point, Rgba, SharedString,
@@ -75,15 +77,9 @@ const EMPTY_GLYPH: Pixels = px(22.0);
 const EMPTY_TITLE_FS: Pixels = FONT_SM;
 const EMPTY_BODY_FS: Pixels = FONT_XS;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 enum Platform {
-    Twitch,
-    Youtube,
-    Kick,
-    Obs,
-    Vtube,
-    Midi,
-    Hotkey,
+    Owned(Box<IntegrationDeclaration>),
     Donation,
     Timer,
     Script,
@@ -91,62 +87,51 @@ enum Platform {
 }
 
 impl Platform {
-    const ORDER: [Platform; 11] = [
-        Platform::Twitch,
-        Platform::Youtube,
-        Platform::Kick,
-        Platform::Obs,
-        Platform::Vtube,
-        Platform::Midi,
-        Platform::Hotkey,
-        Platform::Donation,
-        Platform::Timer,
-        Platform::Script,
-        Platform::Core,
-    ];
+    fn owned(declaration: IntegrationDeclaration) -> Platform {
+        Platform::Owned(Box::new(declaration))
+    }
 
-    fn from_kind_id(kind_id: &str) -> Option<Platform> {
-        match kind_id.split('.').next().unwrap_or("") {
-            "twitch" => Some(Platform::Twitch),
-            "youtube" => Some(Platform::Youtube),
-            "kick" => Some(Platform::Kick),
-            "obs" => Some(Platform::Obs),
-            "vtube" => Some(Platform::Vtube),
-            "midi" => Some(Platform::Midi),
-            "hotkey" => Some(Platform::Hotkey),
+    fn ordered() -> Vec<Platform> {
+        let mut ordered: Vec<Platform> = declarations().map(Platform::owned).to_vec();
+        ordered.extend([
+            Platform::Donation,
+            Platform::Timer,
+            Platform::Script,
+            Platform::Core,
+        ]);
+        ordered
+    }
+
+    fn from_kind_id(kind_id: &str, registry: &TriggerRegistry) -> Option<Platform> {
+        if let Some(declaration) = registry
+            .owning_integration(kind_id)
+            .and_then(declaration_of)
+        {
+            return Some(Platform::owned(declaration));
+        }
+        let prefix = kind_id.split('.').next().unwrap_or("");
+        match prefix {
             "donation" => Some(Platform::Donation),
             "timer" => Some(Platform::Timer),
             "script" | "rhai" => Some(Platform::Script),
             "core" => Some(Platform::Core),
-            _ => None,
+            _ => declaration_of(&IntegrationId::new(prefix)).map(Platform::owned),
         }
     }
 
-    fn label(self) -> &'static str {
+    fn element_key(&self) -> String {
         match self {
-            Platform::Twitch => "Twitch",
-            Platform::Youtube => "YouTube",
-            Platform::Kick => "Kick",
-            Platform::Obs => "OBS",
-            Platform::Vtube => "VTube",
-            Platform::Midi => "MIDI",
-            Platform::Hotkey => "Hotkey",
-            Platform::Donation => "Donation",
-            Platform::Timer => "Timer",
-            Platform::Script => "Script",
-            Platform::Core => "Core",
+            Platform::Owned(declaration) => declaration.id.to_string(),
+            Platform::Donation => "donation".to_owned(),
+            Platform::Timer => "timer".to_owned(),
+            Platform::Script => "script".to_owned(),
+            Platform::Core => "core".to_owned(),
         }
     }
 
-    fn display(self) -> String {
+    fn display(&self) -> String {
         match self {
-            Platform::Twitch => "Twitch".to_owned(),
-            Platform::Youtube => "YouTube".to_owned(),
-            Platform::Kick => "Kick".to_owned(),
-            Platform::Obs => "OBS".to_owned(),
-            Platform::Vtube => "VTube".to_owned(),
-            Platform::Midi => "MIDI".to_owned(),
-            Platform::Hotkey => tr!("triggers_filter_hotkey"),
+            Platform::Owned(declaration) => catalog_text(declaration.catalog_group.filter_label),
             Platform::Donation => tr!("trigger_cat_donations"),
             Platform::Timer => tr!("triggers_platform_timer"),
             Platform::Script => tr!("triggers_platform_script"),
@@ -154,14 +139,11 @@ impl Platform {
         }
     }
 
-    fn dot(self, palette: &ForgePalette) -> Rgba {
+    fn dot(&self, palette: &ForgePalette) -> Rgba {
         match self {
-            Platform::Twitch => platform_color(PlatformId::Twitch, palette),
-            Platform::Youtube => platform_color(PlatformId::YouTube, palette),
-            Platform::Kick => platform_color(PlatformId::Kick, palette),
-            Platform::Obs | Platform::Vtube => palette.accent_teal,
-            Platform::Midi => palette.danger,
-            Platform::Hotkey => palette.warning,
+            Platform::Owned(declaration) => {
+                tint_color(declaration.catalog_group.trigger_tint, palette)
+            }
             Platform::Donation => palette.success,
             Platform::Timer => palette.warning,
             Platform::Script => palette.accent_peach,
@@ -170,8 +152,12 @@ impl Platform {
     }
 }
 
-pub(crate) fn platform_dot_color(kind_id: &str, palette: &ForgePalette) -> Rgba {
-    Platform::from_kind_id(kind_id)
+pub(crate) fn platform_dot_color(
+    kind_id: &str,
+    registry: &TriggerRegistry,
+    palette: &ForgePalette,
+) -> Rgba {
+    Platform::from_kind_id(kind_id, registry)
         .map(|p| p.dot(palette))
         .unwrap_or(palette.info)
 }
@@ -639,28 +625,79 @@ mod tests {
 
     const TWITCH_CHAT: &str = "twitch.chat";
 
+    fn owned(id: &str) -> Option<Platform> {
+        declaration_of(&IntegrationId::new(id)).map(Platform::owned)
+    }
+
     #[test]
-    fn a_kind_id_maps_to_its_source_chip_by_prefix() {
+    fn a_kind_id_outside_the_registry_maps_to_its_source_chip_by_prefix() {
+        let registry = TriggerRegistry::new();
         for (kind_id, expected) in [
-            ("twitch.chat", Some(Platform::Twitch)),
-            ("youtube.super_chat", Some(Platform::Youtube)),
-            ("kick.chat", Some(Platform::Kick)),
-            ("obs.scene_changed", Some(Platform::Obs)),
-            ("vtube.model_loaded", Some(Platform::Vtube)),
-            ("midi.note_on", Some(Platform::Midi)),
-            ("hotkey.pressed", Some(Platform::Hotkey)),
+            ("twitch.chat", owned("twitch")),
+            ("youtube.super_chat", owned("youtube")),
+            ("kick.chat", owned("kick")),
+            ("obs.scene_changed", owned("obs")),
+            ("vtube.model_loaded", owned("vtube")),
+            ("midi.note_on", owned("midi")),
+            ("hotkey.pressed", owned("hotkey")),
             ("donation.received", Some(Platform::Donation)),
             ("timer.tick", Some(Platform::Timer)),
             ("script.exec", Some(Platform::Script)),
             ("rhai.exec", Some(Platform::Script)),
             ("core.startup", Some(Platform::Core)),
-            ("twitch", Some(Platform::Twitch)),
-            ("discord.message", None),
+            ("twitch", owned("twitch")),
             ("Twitch.chat", None),
             ("", None),
         ] {
-            assert!(Platform::from_kind_id(kind_id) == expected, "{kind_id:?}");
+            assert!(
+                Platform::from_kind_id(kind_id, &registry) == expected,
+                "{kind_id:?}"
+            );
         }
+    }
+
+    #[test]
+    fn a_registered_kind_follows_its_owner_not_its_prefix() {
+        const ELSEWHERE: &str = "elsewhere.changed";
+        let mut registry = TriggerRegistry::new();
+        registry
+            .owned_by(forge_obs::OBS_INTEGRATION.id)
+            .register(Box::new(crate::test_support::StubTrigger::new(
+                ELSEWHERE,
+                ELSEWHERE,
+                forge_registry::TriggerCategory::Integration,
+                crate::test_support::Declares::Nothing,
+            )))
+            .unwrap();
+
+        assert!(Platform::from_kind_id(ELSEWHERE, &registry) == owned("obs"));
+    }
+
+    #[tokio::test]
+    async fn owned_kinds_group_after_moderation_in_declaration_order() {
+        crate::i18n::install_language(forge_storage::Language::En);
+        let (triggers, _) = crate::test_support::every_registry_entry().await;
+
+        let (groups, _) = build_kind_groups(&triggers, &forge_components::FORGE_DEFAULT);
+
+        let scopes: Vec<String> = groups.iter().map(|g| g.scope.to_string()).collect();
+        let start = scopes.iter().position(|s| s == "moderation").unwrap();
+        let labels: Vec<(String, String)> = groups[start + 1..]
+            .iter()
+            .map(|g| (g.scope.to_string(), g.label.to_string()))
+            .collect();
+        assert_eq!(
+            labels,
+            [
+                ("obs", "OBS"),
+                ("vtube", "VTube Studio"),
+                ("midi", "MIDI"),
+                ("hotkey", "Hotkey"),
+                ("timer", "Timer"),
+                ("core", "Core"),
+            ]
+            .map(|(scope, label)| (scope.to_owned(), label.to_owned()))
+        );
     }
 
     #[test]
@@ -707,7 +744,7 @@ mod tests {
         let chipless: Vec<&str> = registry
             .all()
             .map(|descriptor| descriptor.id())
-            .filter(|kind_id| Platform::from_kind_id(kind_id).is_none())
+            .filter(|kind_id| Platform::from_kind_id(kind_id, &registry).is_none())
             .collect();
 
         assert!(chipless.is_empty(), "kinds without a chip: {chipless:?}");

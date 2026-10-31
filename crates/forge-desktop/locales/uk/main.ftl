@@ -866,7 +866,6 @@ sub_cat_logic = Логіка
 sub_cat_delay = Затримка
 sub_cat_scripts = Скрипти
 sub_cat_files = Файли
-sub_cat_hotkey = Гарячі клавіші
 sub_cat_audio = Аудіо
 sub_cat_tts = Синтез мовлення
 sub_cat_http = HTTP

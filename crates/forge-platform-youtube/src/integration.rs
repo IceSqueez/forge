@@ -1,6 +1,6 @@
 use forge_platform_core::{
-    ConnectionAffordance, IntegrationCategory, IntegrationDeclaration, IntegrationIdentity,
-    IntegrationTint, SignInRoute, TileMark,
+    CatalogLabel, ConnectionAffordance, IntegrationCatalogGroup, IntegrationCategory,
+    IntegrationDeclaration, IntegrationIdentity, IntegrationTint, SignInRoute, TileMark,
 };
 use forge_types::{IntegrationId, PlatformId};
 
@@ -17,6 +17,12 @@ pub const YOUTUBE_INTEGRATION: IntegrationDeclaration = IntegrationDeclaration {
         tile_mark: TileMark::Monogram,
         tile_tint: IntegrationTint::PlatformBrand(PlatformId::YouTube),
         hero_tint: IntegrationTint::Danger,
+    },
+    catalog_group: IntegrationCatalogGroup {
+        label: CatalogLabel::Brand("YouTube"),
+        filter_label: CatalogLabel::Brand("YouTube"),
+        step_tint: IntegrationTint::PlatformBrand(PlatformId::YouTube),
+        trigger_tint: IntegrationTint::PlatformBrand(PlatformId::YouTube),
     },
     disclaimer: None,
 };

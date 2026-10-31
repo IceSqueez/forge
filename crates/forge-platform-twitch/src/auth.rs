@@ -1,11 +1,10 @@
+use crate::endpoint_surfaces::TWITCH_OAUTH;
 use std::time::{Duration, SystemTime};
 
 use tokio::time::Instant;
 
 use forge_net::{Gateway, GatewayRequest};
-use forge_platform_core::{
-    AuthFlow, DeviceAuthEnd, EndpointSurface, PlatformEndpoints, PlatformError,
-};
+use forge_platform_core::{AuthFlow, DeviceAuthEnd, PlatformEndpoints, PlatformError};
 use forge_types::OAuthToken;
 use forge_types::Secret;
 use serde::Deserialize;
@@ -78,17 +77,11 @@ pub(crate) const TWITCH_BOT_SCOPES: &[&str] = &[
 const DEVICE_LIFETIME_OUT_OF_RANGE_REASON: &str = "device code lifetime out of range";
 
 pub(crate) fn twitch_device_endpoint(endpoints: &PlatformEndpoints) -> String {
-    format!(
-        "{}{TWITCH_DEVICE_PATH}",
-        endpoints.base_url(EndpointSurface::TwitchOAuth)
-    )
+    format!("{}{TWITCH_DEVICE_PATH}", endpoints.base_url(TWITCH_OAUTH))
 }
 
 pub(crate) fn twitch_token_endpoint(endpoints: &PlatformEndpoints) -> String {
-    format!(
-        "{}{TWITCH_TOKEN_PATH}",
-        endpoints.base_url(EndpointSurface::TwitchOAuth)
-    )
+    format!("{}{TWITCH_TOKEN_PATH}", endpoints.base_url(TWITCH_OAUTH))
 }
 
 pub fn twitch_auth_flow(endpoints: &PlatformEndpoints) -> AuthFlow {
@@ -805,7 +798,7 @@ mod tests {
             }
             let bus = Arc::new(RecordingBus::default());
             let helix = crate::helix_gateway::helix_gateway(
-                &endpoints_with(&[(EndpointSurface::TwitchApi, server.uri().as_str())]),
+                &endpoints_with(&[(crate::endpoint_surfaces::TWITCH_API, server.uri().as_str())]),
                 Arc::new(forge_net::TokenBucketRateLimiter::new(
                     crate::config::HELIX_BUDGET_CAPACITY,
                     crate::config::HELIX_BUDGET_WINDOW,

@@ -54,7 +54,7 @@ impl SubActionRunner for LookupCategoryRunner {
     }
 
     fn category(&self) -> SubActionCategory {
-        SubActionCategory::Kick
+        SubActionCategory::Integration
     }
 
     fn label(&self) -> &str {

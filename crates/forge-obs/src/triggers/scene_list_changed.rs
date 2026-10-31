@@ -16,7 +16,7 @@ impl TriggerKindDescriptor for SceneListChangedDescriptor {
     }
 
     fn category(&self) -> TriggerCategory {
-        TriggerCategory::Obs
+        TriggerCategory::Integration
     }
 
     fn label(&self) -> &str {

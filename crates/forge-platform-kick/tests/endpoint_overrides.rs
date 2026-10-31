@@ -36,7 +36,11 @@ fn endpoints(overrides: &[(EndpointSurface, String)]) -> PlatformEndpoints {
         .iter()
         .map(|(surface, url)| (surface.env_var(), url.clone()))
         .collect();
-    PlatformEndpoints::resolve(|variable| table.get(variable).map(OsString::from)).unwrap()
+    PlatformEndpoints::resolve(
+        forge_platform_kick::endpoint_surfaces::ENDPOINT_SURFACES,
+        |variable| table.get(variable).map(OsString::from),
+    )
+    .unwrap()
 }
 
 fn limiter() -> Arc<dyn RateLimiter> {
@@ -106,7 +110,7 @@ async fn public_api_override_carries_every_rest_client_to_the_override_host() {
         .mount(&server)
         .await;
     let endpoints = endpoints(&[(
-        EndpointSurface::KickPublicApi,
+        forge_platform_kick::endpoint_surfaces::KICK_PUBLIC_API,
         format!("{}/public/v1", server.uri()),
     )]);
 
@@ -158,7 +162,7 @@ async fn channel_api_override_carries_the_channel_info_fetch_to_the_override_hos
         .mount(&server)
         .await;
     let endpoints = endpoints(&[(
-        EndpointSurface::KickChannelApi,
+        forge_platform_kick::endpoint_surfaces::KICK_CHANNEL_API,
         format!("{}/api/v2", server.uri()),
     )]);
 
@@ -182,7 +186,7 @@ async fn oauth_override_carries_the_token_refresh_to_the_override_host() {
         .mount(&server)
         .await;
     let endpoints = endpoints(&[(
-        EndpointSurface::KickOAuth,
+        forge_platform_kick::endpoint_surfaces::KICK_OAUTH,
         format!("{}/oauth", server.uri()),
     )]);
     let manager = manager(&endpoints);
@@ -278,10 +282,13 @@ async fn chat_socket_override_carries_the_pusher_handshake_and_subscribe_to_the_
     let (socket_base, peer) = spawn_pusher_peer().await;
     let endpoints = endpoints(&[
         (
-            EndpointSurface::KickChannelApi,
+            forge_platform_kick::endpoint_surfaces::KICK_CHANNEL_API,
             format!("{}/api/v2", channel_api.uri()),
         ),
-        (EndpointSurface::KickChatSocket, socket_base),
+        (
+            forge_platform_kick::endpoint_surfaces::KICK_CHAT_SOCKET,
+            socket_base,
+        ),
     ]);
     let (event_tx, _event_rx) = mpsc::channel(8);
 
@@ -308,14 +315,17 @@ async fn platform_carries_its_overrides_into_the_chat_session_and_the_sender() {
     let (socket_base, peer) = spawn_pusher_peer().await;
     let endpoints = endpoints(&[
         (
-            EndpointSurface::KickPublicApi,
+            forge_platform_kick::endpoint_surfaces::KICK_PUBLIC_API,
             format!("{}/public/v1", server.uri()),
         ),
         (
-            EndpointSurface::KickChannelApi,
+            forge_platform_kick::endpoint_surfaces::KICK_CHANNEL_API,
             format!("{}/api/v2", server.uri()),
         ),
-        (EndpointSurface::KickChatSocket, socket_base),
+        (
+            forge_platform_kick::endpoint_surfaces::KICK_CHAT_SOCKET,
+            socket_base,
+        ),
     ]);
     let manager = manager(&endpoints);
     manager

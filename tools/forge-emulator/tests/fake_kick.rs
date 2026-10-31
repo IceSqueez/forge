@@ -116,7 +116,9 @@ async fn manager(fake: &FakeKick, client_secret: &str) -> KickCredentialsManager
 }
 
 async fn raw_socket(fake: &FakeKick, app_key: &str) -> Socket {
-    let base = fake.url_for(EndpointSurface::KickChatSocket).unwrap();
+    let base = fake
+        .url_for(forge_platform_kick::endpoint_surfaces::KICK_CHAT_SOCKET)
+        .unwrap();
     tokio_tungstenite::connect_async(format!("{base}/{app_key}?protocol=7"))
         .await
         .unwrap()
@@ -152,10 +154,10 @@ async fn overrides_cover_every_kick_surface_and_pass_forges_own_validation() {
     assert_eq!(
         overridden,
         vec![
-            EndpointSurface::KickPublicApi,
-            EndpointSurface::KickChannelApi,
-            EndpointSurface::KickChatSocket,
-            EndpointSurface::KickOAuth,
+            forge_platform_kick::endpoint_surfaces::KICK_PUBLIC_API,
+            forge_platform_kick::endpoint_surfaces::KICK_CHANNEL_API,
+            forge_platform_kick::endpoint_surfaces::KICK_CHAT_SOCKET,
+            forge_platform_kick::endpoint_surfaces::KICK_OAUTH,
         ]
     );
 }

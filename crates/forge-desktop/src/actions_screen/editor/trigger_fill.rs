@@ -249,7 +249,7 @@ impl ScreenActionsView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let density = cx.density();
-        let dot_color = platform_dot_color(&form.kind_id, palette);
+        let dot_color = platform_dot_color(&form.kind_id, &self.deps.trigger_registry, palette);
         let glyph = self
             .deps
             .trigger_registry

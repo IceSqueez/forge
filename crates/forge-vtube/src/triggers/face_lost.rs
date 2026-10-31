@@ -16,7 +16,7 @@ impl TriggerKindDescriptor for FaceLostDescriptor {
     }
 
     fn category(&self) -> TriggerCategory {
-        TriggerCategory::VTube
+        TriggerCategory::Integration
     }
 
     fn label(&self) -> &str {

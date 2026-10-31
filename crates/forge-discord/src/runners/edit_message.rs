@@ -81,7 +81,7 @@ impl SubActionRunner for EditMessageRunner {
     }
 
     fn category(&self) -> SubActionCategory {
-        SubActionCategory::Discord
+        SubActionCategory::Integration
     }
 
     fn label(&self) -> &str {

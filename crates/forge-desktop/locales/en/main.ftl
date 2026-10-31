@@ -845,7 +845,6 @@ sub_cat_logic = Logic
 sub_cat_delay = Delay
 sub_cat_scripts = Scripts
 sub_cat_files = Files
-sub_cat_hotkey = Hotkey
 sub_cat_audio = Audio
 sub_cat_tts = Text-to-speech
 sub_cat_http = HTTP

@@ -1,3 +1,4 @@
+use crate::endpoint_surfaces::YOUTUBE_OAUTH;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -7,7 +8,7 @@ use forge_net::{
     GatewayProfile, GatewayRequest, GatewayResponse, RateLimiter, ThrottleHintFamily,
 };
 use forge_platform_core::PkceAuthorization;
-use forge_platform_core::{EndpointSurface, PlatformEndpoints, PlatformError, reauth_required};
+use forge_platform_core::{PlatformEndpoints, PlatformError, reauth_required};
 use forge_types::{OAuthToken, Secret};
 use serde::Deserialize;
 
@@ -34,7 +35,7 @@ pub fn google_oauth_gateway(
     limiter: Arc<dyn RateLimiter>,
 ) -> Result<Gateway, GatewayBuildError> {
     Gateway::new(
-        endpoints.base_url(EndpointSurface::YouTubeOAuth),
+        endpoints.base_url(YOUTUBE_OAUTH),
         limiter,
         GOOGLE_OAUTH_GATEWAY_PROFILE,
         None,

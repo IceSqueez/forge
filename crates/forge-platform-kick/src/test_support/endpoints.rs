@@ -1,3 +1,4 @@
+use crate::endpoint_surfaces::{KICK_CHANNEL_API, KICK_OAUTH, KICK_PUBLIC_API};
 pub(crate) use forge_events::test_support::CapturingPublisher;
 use std::sync::Arc;
 use std::time::Duration;
@@ -24,9 +25,10 @@ pub(crate) fn unreachable_endpoints() -> PlatformEndpoints {
 
 pub(crate) fn endpoints_at(overrides: &[(EndpointSurface, &str)]) -> PlatformEndpoints {
     tracing::subscriber::with_default(tracing::subscriber::NoSubscriber::default(), || {
-        PlatformEndpoints::resolve(|variable| {
-            EndpointSurface::ALL
-                .into_iter()
+        PlatformEndpoints::resolve(crate::endpoint_surfaces::ENDPOINT_SURFACES, |variable| {
+            crate::endpoint_surfaces::ENDPOINT_SURFACES
+                .iter()
+                .copied()
                 .find(|surface| surface.env_var() == variable)
                 .map(|surface| {
                     let fallback = if variable.contains(WS_SURFACE_MARKER) {
@@ -50,12 +52,7 @@ pub(crate) fn api_with(
     limiter: Arc<dyn RateLimiter>,
     bus: Arc<dyn EventPublisher>,
 ) -> Gateway {
-    kick_api_gateway(
-        &endpoints_at(&[(EndpointSurface::KickPublicApi, base)]),
-        limiter,
-        bus,
-    )
-    .unwrap()
+    kick_api_gateway(&endpoints_at(&[(KICK_PUBLIC_API, base)]), limiter, bus).unwrap()
 }
 
 pub(crate) fn api_limited_by(base: &str, limiter: Arc<dyn RateLimiter>) -> Gateway {
@@ -97,12 +94,8 @@ pub(crate) fn channel_info_with(
     bus: Arc<dyn EventPublisher>,
 ) -> ChannelInfoFetcher {
     ChannelInfoFetcher::new(
-        kick_channel_info_gateway(
-            &endpoints_at(&[(EndpointSurface::KickChannelApi, base)]),
-            limiter,
-            bus,
-        )
-        .unwrap(),
+        kick_channel_info_gateway(&endpoints_at(&[(KICK_CHANNEL_API, base)]), limiter, bus)
+            .unwrap(),
     )
 }
 
@@ -134,10 +127,7 @@ pub(crate) fn oauth_client_limited_by(
     base: &str,
     limiter: Arc<dyn RateLimiter>,
 ) -> KickOAuthClient {
-    oauth_client_over(
-        &endpoints_at(&[(EndpointSurface::KickOAuth, base)]),
-        limiter,
-    )
+    oauth_client_over(&endpoints_at(&[(KICK_OAUTH, base)]), limiter)
 }
 
 pub(crate) fn oauth_client_at(base: &str) -> KickOAuthClient {

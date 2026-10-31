@@ -1,3 +1,4 @@
+use crate::endpoint_surfaces::{YOUTUBE_DATA_API, YOUTUBE_UPLOAD_API};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -7,7 +8,7 @@ use forge_net::{
     GatewayBuildError, GatewayFailure, GatewayProfile, GatewayRequest, GatewayResponse,
     RateLimiter, RequestBody, ThrottleHintFamily, TokenBucketRateLimiter,
 };
-use forge_platform_core::{EndpointSurface, PlatformEndpoints, PlatformError};
+use forge_platform_core::{PlatformEndpoints, PlatformError};
 
 use crate::quota_state::{SharedQuota, today_pacific};
 
@@ -51,13 +52,13 @@ impl YoutubeDataApi {
             YOUTUBE_CALL_BUDGET_WINDOW,
         ));
         let data = Gateway::new(
-            endpoints.base_url(EndpointSurface::YouTubeDataApi),
+            endpoints.base_url(YOUTUBE_DATA_API),
             Arc::clone(&limiter),
             YOUTUBE_DATA_API_PROFILE,
             Some(Arc::clone(&observer)),
         )?;
         let upload = Gateway::new(
-            endpoints.base_url(EndpointSurface::YouTubeUploadApi),
+            endpoints.base_url(YOUTUBE_UPLOAD_API),
             limiter,
             YOUTUBE_UPLOAD_PROFILE,
             Some(observer),

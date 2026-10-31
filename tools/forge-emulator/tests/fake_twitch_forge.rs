@@ -15,7 +15,7 @@ use forge_emulator::fixture::TwitchAccount;
 use forge_events::{Event, EventPublisher, EventSubscription};
 use forge_events::{PlatformConnectionChanged, TypedEvent};
 use forge_net::{Gateway, TokenBucketRateLimiter};
-use forge_platform_core::{BuiltinControl, ChatPlatform, EndpointSurface, PlatformEndpoints};
+use forge_platform_core::{BuiltinControl, ChatPlatform, PlatformEndpoints};
 use forge_platform_twitch::credentials::{StoredCredential, store_credential};
 use forge_platform_twitch::{
     ChatConnectionState, ChatSessionConfig, HELIX_BUDGET_CAPACITY, HELIX_BUDGET_WINDOW,
@@ -74,8 +74,10 @@ impl Forge {
         .unwrap();
         let overrides: HashMap<_, _> = fake.endpoint_overrides().into_iter().collect();
         let endpoints =
-            PlatformEndpoints::resolve(|variable| overrides.get(variable).map(OsString::from))
-                .unwrap();
+            PlatformEndpoints::resolve(&forge_emulator::endpoint_surfaces(), |variable| {
+                overrides.get(variable).map(OsString::from)
+            })
+            .unwrap();
         let (tx, events) = mpsc::unbounded_channel();
         let bus: Arc<dyn EventPublisher> = Arc::new(ForwardingPublisher(tx));
         let assembly = TwitchAssembly::new(
@@ -174,15 +176,17 @@ async fn fake_urls_pass_forge_endpoint_override_validation() {
         .unwrap();
     let overrides: HashMap<_, _> = fake.endpoint_overrides().into_iter().collect();
 
-    let endpoints =
-        PlatformEndpoints::resolve(|variable| overrides.get(variable).map(OsString::from)).unwrap();
+    let endpoints = PlatformEndpoints::resolve(&forge_emulator::endpoint_surfaces(), |variable| {
+        overrides.get(variable).map(OsString::from)
+    })
+    .unwrap();
 
     assert_eq!(
-        endpoints.base_url(EndpointSurface::TwitchApi),
+        endpoints.base_url(forge_platform_twitch::endpoint_surfaces::TWITCH_API),
         fake.api_base_url()
     );
     assert_eq!(
-        endpoints.base_url(EndpointSurface::TwitchEventSubSocket),
+        endpoints.base_url(forge_platform_twitch::endpoint_surfaces::TWITCH_EVENTSUB_SOCKET),
         fake.eventsub_ws_url()
     );
 }

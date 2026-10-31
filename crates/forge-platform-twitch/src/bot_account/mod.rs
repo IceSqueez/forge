@@ -267,7 +267,6 @@ pub(crate) mod test_support {
 
     use async_trait::async_trait;
     use forge_events::{Event, EventPublisher};
-    use forge_platform_core::EndpointSurface;
     use forge_storage::{CredentialId, CredentialsRepo, StorageError};
     use time::OffsetDateTime;
     use tokio::sync::Notify;
@@ -567,8 +566,11 @@ pub(crate) mod test_support {
             };
             let bus = Arc::new(RecordingBus::default());
             let endpoints = endpoints_with(&[
-                (EndpointSurface::TwitchApi, server.uri().as_str()),
-                (EndpointSurface::TwitchOAuth, server.uri().as_str()),
+                (crate::endpoint_surfaces::TWITCH_API, server.uri().as_str()),
+                (
+                    crate::endpoint_surfaces::TWITCH_OAUTH,
+                    server.uri().as_str(),
+                ),
             ]);
             let broadcaster = RoutedTransport::unreachable();
             let bot = TwitchBotAccount::new(

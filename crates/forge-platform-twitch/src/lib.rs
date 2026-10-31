@@ -18,6 +18,7 @@ mod custom_rewards;
 #[cfg(test)]
 #[path = "../../forge-platform-core/test_support/emitted_codes.rs"]
 mod emitted_codes;
+pub mod endpoint_surfaces;
 #[cfg(test)]
 mod endpoints_test_support;
 mod error;

@@ -26,7 +26,7 @@ impl SubActionRunner for QueryRecordStatusRunner {
     }
 
     fn category(&self) -> SubActionCategory {
-        SubActionCategory::Obs
+        SubActionCategory::Integration
     }
 
     fn label(&self) -> &str {

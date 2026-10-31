@@ -1,8 +1,9 @@
 use crate::platform_visuals::platform_color;
-use forge_components::{ForgePalette, Icon};
+use forge_components::{ForgePalette, Icon, tr};
 use forge_host::integration_catalog::declaration_of;
 use forge_platform_core::{
-    IntegrationCategory, IntegrationDisclaimer, IntegrationIdentity, IntegrationTint, TileMark,
+    CatalogLabel, IntegrationCategory, IntegrationDisclaimer, IntegrationIdentity, IntegrationTint,
+    TileMark,
 };
 use forge_types::{IntegrationId, PlatformId};
 use gpui::Rgba;
@@ -92,6 +93,13 @@ pub(crate) fn tint_color(tint: IntegrationTint, palette: &ForgePalette) -> Rgba 
         IntegrationTint::Warning => palette.warning,
         IntegrationTint::Danger => palette.danger,
         IntegrationTint::Info => palette.info,
+    }
+}
+
+pub(crate) fn catalog_text(label: CatalogLabel) -> String {
+    match label {
+        CatalogLabel::Brand(name) => name.to_owned(),
+        CatalogLabel::Localized(key) => tr!(key),
     }
 }
 

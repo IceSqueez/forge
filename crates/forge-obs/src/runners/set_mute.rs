@@ -51,7 +51,7 @@ impl SubActionRunner for SetMuteRunner {
     }
 
     fn category(&self) -> SubActionCategory {
-        SubActionCategory::Obs
+        SubActionCategory::Integration
     }
 
     fn label(&self) -> &str {

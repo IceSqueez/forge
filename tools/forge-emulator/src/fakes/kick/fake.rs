@@ -1,7 +1,7 @@
+use forge_platform_core::EndpointSurface;
 use std::sync::Arc;
 use std::time::Duration;
 
-use forge_platform_core::EndpointSurface;
 use rand::Rng as _;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -77,19 +77,19 @@ impl FakeKick {
     pub fn endpoint_overrides(&self) -> [(&'static str, String); 4] {
         [
             (
-                EndpointSurface::KickPublicApi.env_var(),
+                forge_platform_kick::endpoint_surfaces::KICK_PUBLIC_API.env_var(),
                 format!("{}{PUBLIC_API_PREFIX}", self.http_base),
             ),
             (
-                EndpointSurface::KickChannelApi.env_var(),
+                forge_platform_kick::endpoint_surfaces::KICK_CHANNEL_API.env_var(),
                 format!("{}{CHANNEL_API_PREFIX}", self.http_base),
             ),
             (
-                EndpointSurface::KickOAuth.env_var(),
+                forge_platform_kick::endpoint_surfaces::KICK_OAUTH.env_var(),
                 format!("{}{OAUTH_PREFIX}", self.http_base),
             ),
             (
-                EndpointSurface::KickChatSocket.env_var(),
+                forge_platform_kick::endpoint_surfaces::KICK_CHAT_SOCKET.env_var(),
                 self.socket_base.clone(),
             ),
         ]

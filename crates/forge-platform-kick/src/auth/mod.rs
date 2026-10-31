@@ -215,7 +215,7 @@ fn resolve_credential(
 mod tests {
     use std::sync::Arc;
 
-    use forge_platform_core::{EndpointSurface, PlatformEndpoints};
+    use forge_platform_core::PlatformEndpoints;
     use reqwest::StatusCode;
     use serde_json::json;
     use wiremock::matchers::{header, method, path};
@@ -284,8 +284,8 @@ mod tests {
         api: &MockServer,
     ) -> Result<KickAuthBundle, PlatformError> {
         let endpoints = endpoints_at(&[
-            (EndpointSurface::KickOAuth, &oauth.uri()),
-            (EndpointSurface::KickPublicApi, &api.uri()),
+            (crate::endpoint_surfaces::KICK_OAUTH, &oauth.uri()),
+            (crate::endpoint_surfaces::KICK_PUBLIC_API, &api.uri()),
         ]);
         let mut flow = KickAuthFlow::with_callback_port(
             oauth_client_over(&endpoints, granting_limiter()),

@@ -206,13 +206,14 @@ async fn the_endpoint_override_names_the_discord_api_variable_and_a_loopback_api
     let (fake, _) = fake().await;
 
     let (variable, api_base) = fake.endpoint_override();
-    let endpoints = forge_platform_core::PlatformEndpoints::resolve(|name| {
-        (name == variable).then(|| api_base.clone().into())
-    })
+    let endpoints = forge_platform_core::PlatformEndpoints::resolve(
+        &forge_emulator::endpoint_surfaces(),
+        |name| (name == variable).then(|| api_base.clone().into()),
+    )
     .unwrap();
 
     assert_eq!(
-        endpoints.base_url(forge_platform_core::EndpointSurface::DiscordApi),
+        endpoints.base_url(forge_discord::endpoint_surfaces::DISCORD_API),
         api_base
     );
 }
@@ -223,12 +224,13 @@ fn forge_client(fake: &FakeDiscord, saved: &str) -> Arc<DiscordClient> {
         &json!({ "url": saved }).to_string(),
     );
     let (variable, api_base) = fake.endpoint_override();
-    let endpoints = forge_platform_core::PlatformEndpoints::resolve(|name| {
-        (name == variable).then(|| api_base.clone().into())
-    })
+    let endpoints = forge_platform_core::PlatformEndpoints::resolve(
+        &forge_emulator::endpoint_surfaces(),
+        |name| (name == variable).then(|| api_base.clone().into()),
+    )
     .unwrap();
     DiscordClient::new(
-        endpoints.base_url(forge_platform_core::EndpointSurface::DiscordApi),
+        endpoints.base_url(forge_discord::endpoint_surfaces::DISCORD_API),
         Arc::new(forge_events::test_support::NullPublisher),
         Arc::new(creds),
     )

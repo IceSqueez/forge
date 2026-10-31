@@ -312,7 +312,7 @@ impl ScreenActionsView {
         let (glyph, glyph_color) = step_glyph(
             &step.kind_id,
             runner.map(|r| r.icon_name()).unwrap_or(fallback_icon),
-            runner.map(|r| sub_category_color(r.category(), palette)),
+            runner.map(|r| StepGroup::of(&self.deps.sub_action_registry, r).color(palette)),
             palette,
         );
         let detail_str = detail_opt

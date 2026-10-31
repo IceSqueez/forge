@@ -74,7 +74,7 @@ fn refused_variable(error: &PlatformError) -> &'static str {
 #[cfg(test)]
 mod tests {
     use forge_host::test_support::{console_line, signal_fields};
-    use forge_platform_core::{EndpointRefusal, EndpointSurface};
+    use forge_platform_core::EndpointRefusal;
 
     use super::*;
 
@@ -109,7 +109,7 @@ mod tests {
 
     #[test]
     fn override_refusal_line_carries_the_refused_variable_before_the_error() {
-        let variable = EndpointSurface::TwitchApi.env_var();
+        let variable = forge_platform_twitch::endpoint_surfaces::TWITCH_API.env_var();
         let error = PlatformError::EndpointOverrideRefused {
             variable,
             reason: EndpointRefusal::NotLoopback,

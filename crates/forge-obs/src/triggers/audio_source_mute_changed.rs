@@ -19,7 +19,7 @@ impl TriggerKindDescriptor for AudioSourceMuteChangedDescriptor {
     }
 
     fn category(&self) -> TriggerCategory {
-        TriggerCategory::Obs
+        TriggerCategory::Integration
     }
 
     fn label(&self) -> &str {

@@ -36,12 +36,18 @@ struct Subject {
     platform: Arc<dyn ChatPlatform>,
 }
 
+fn chat_endpoint_surfaces() -> Vec<EndpointSurface> {
+    [
+        forge_platform_twitch::endpoint_surfaces::ENDPOINT_SURFACES,
+        forge_platform_kick::endpoint_surfaces::ENDPOINT_SURFACES,
+        forge_platform_youtube::endpoint_surfaces::ENDPOINT_SURFACES,
+    ]
+    .concat()
+}
+
 fn unreachable_endpoints() -> PlatformEndpoints {
-    PlatformEndpoints::resolve(|variable| {
-        let surface = EndpointSurface::ALL
-            .into_iter()
-            .find(|surface| surface.env_var() == variable)?;
-        let url = if surface.env_var().contains("_WS_") {
+    PlatformEndpoints::resolve(&chat_endpoint_surfaces(), |variable| {
+        let url = if variable.contains("_WS_") {
             UNREACHABLE_SOCKET
         } else {
             UNREACHABLE_HTTP

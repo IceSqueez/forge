@@ -1,3 +1,4 @@
+use crate::endpoint_surfaces::TWITCH_API;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -6,7 +7,7 @@ use forge_net::{
     CallClass, FailureContext, FailureObserver, Gateway, GatewayBuildError, GatewayFailure,
     GatewayProfile, RateLimiter, ThrottleHintFamily,
 };
-use forge_platform_core::{EndpointSurface, PlatformEndpoints};
+use forge_platform_core::PlatformEndpoints;
 
 const BODY_SNIPPET_MAX_CHARS: usize = 200;
 const NO_RESET_HEADER_WAIT: Duration = Duration::from_secs(5);
@@ -23,7 +24,7 @@ pub fn helix_gateway(
     bus: Arc<dyn EventPublisher>,
 ) -> Result<Gateway, GatewayBuildError> {
     Gateway::new(
-        endpoints.base_url(EndpointSurface::TwitchApi),
+        endpoints.base_url(TWITCH_API),
         limiter,
         HELIX_GATEWAY_PROFILE,
         Some(Arc::new(RequestFailPublisher { bus })),

@@ -1,3 +1,4 @@
+use crate::endpoint_surfaces::{KICK_CHANNEL_API, KICK_PUBLIC_API};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -33,7 +34,7 @@ pub fn kick_api_gateway(
     limiter: Arc<dyn RateLimiter>,
     bus: Arc<dyn EventPublisher>,
 ) -> Result<Gateway, GatewayBuildError> {
-    kick_gateway(endpoints, EndpointSurface::KickPublicApi, limiter, bus)
+    kick_gateway(endpoints, KICK_PUBLIC_API, limiter, bus)
 }
 
 pub fn kick_channel_info_gateway(
@@ -41,7 +42,7 @@ pub fn kick_channel_info_gateway(
     limiter: Arc<dyn RateLimiter>,
     bus: Arc<dyn EventPublisher>,
 ) -> Result<Gateway, GatewayBuildError> {
-    kick_gateway(endpoints, EndpointSurface::KickChannelApi, limiter, bus)
+    kick_gateway(endpoints, KICK_CHANNEL_API, limiter, bus)
 }
 
 fn kick_gateway(

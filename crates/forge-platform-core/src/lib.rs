@@ -67,8 +67,9 @@ pub use endpoints::{EndpointRefusal, EndpointSurface, PlatformEndpoints};
 pub use error::{DeviceAuthEnd, HTTP_UNAUTHORIZED, PlatformError};
 pub use follow_lookup::{FollowLookup, FollowStatus};
 pub use integration::{
-    ConnectionAffordance, IntegrationCategory, IntegrationDeclaration, IntegrationDisclaimer,
-    IntegrationIdentity, IntegrationTint, SignInRoute, TileMark,
+    CatalogLabel, ConnectionAffordance, IntegrationCatalogGroup, IntegrationCategory,
+    IntegrationDeclaration, IntegrationDisclaimer, IntegrationIdentity, IntegrationTint,
+    SignInRoute, TileMark,
 };
 pub use live_viewers::{LiveViewerSource, ViewerReport, ViewerReportStream};
 pub use option_source::{

@@ -52,7 +52,7 @@ impl SubActionRunner for PostTextRunner {
     }
 
     fn category(&self) -> SubActionCategory {
-        SubActionCategory::Discord
+        SubActionCategory::Integration
     }
 
     fn label(&self) -> &str {

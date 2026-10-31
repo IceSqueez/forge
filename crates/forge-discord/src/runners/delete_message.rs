@@ -39,7 +39,7 @@ impl SubActionRunner for DeleteMessageRunner {
     }
 
     fn category(&self) -> SubActionCategory {
-        SubActionCategory::Discord
+        SubActionCategory::Integration
     }
 
     fn label(&self) -> &str {

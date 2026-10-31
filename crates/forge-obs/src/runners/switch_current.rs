@@ -31,7 +31,7 @@ impl SubActionRunner for SwitchCurrentSceneRunner {
     }
 
     fn category(&self) -> SubActionCategory {
-        SubActionCategory::Obs
+        SubActionCategory::Integration
     }
 
     fn label(&self) -> &str {

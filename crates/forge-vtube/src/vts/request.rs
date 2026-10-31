@@ -17,32 +17,6 @@ pub(crate) struct PendingRequest {
 
 pub(crate) type ReqTxSlot = Arc<Mutex<mpsc::UnboundedSender<PendingRequest>>>;
 
-pub(crate) enum ReqTxHandle {
-    Fixed(mpsc::UnboundedSender<PendingRequest>),
-    Shared(ReqTxSlot),
-}
-
-impl From<mpsc::UnboundedSender<PendingRequest>> for ReqTxHandle {
-    fn from(tx: mpsc::UnboundedSender<PendingRequest>) -> Self {
-        ReqTxHandle::Fixed(tx)
-    }
-}
-
-impl From<ReqTxSlot> for ReqTxHandle {
-    fn from(slot: ReqTxSlot) -> Self {
-        ReqTxHandle::Shared(slot)
-    }
-}
-
-impl ReqTxHandle {
-    pub(crate) async fn current(&self) -> mpsc::UnboundedSender<PendingRequest> {
-        match self {
-            ReqTxHandle::Fixed(tx) => tx.clone(),
-            ReqTxHandle::Shared(slot) => slot.lock().await.clone(),
-        }
-    }
-}
-
 pub(crate) async fn round_trip(
     req_tx: &mpsc::UnboundedSender<PendingRequest>,
     msg_type: &str,

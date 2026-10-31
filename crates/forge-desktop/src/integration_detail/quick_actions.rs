@@ -108,7 +108,11 @@ impl IntegrationDetail {
         let engine = self.services.action_engine.clone();
         async_bridge::run_async(
             &self.services.rt_handle,
-            async_bridge::run_quick_step(engine, step, builtin_id, label),
+            async_bridge::run_quick_step(
+                engine,
+                step,
+                forge_runtime::QuickActionOrigin { builtin_id, label },
+            ),
             settled,
             cx,
         );

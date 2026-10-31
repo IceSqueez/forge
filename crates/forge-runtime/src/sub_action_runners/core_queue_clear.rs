@@ -6,8 +6,8 @@ use forge_registry::{
 use forge_types::{ArgStack, QueueId, SubActionConfig, SubActionOutcome, SubActionTelemetry};
 
 use super::core_queue_shared::QUEUE;
-use crate::QueueSchedulerHandle;
 use crate::core_messages;
+use crate::{ClearMode, QueueSchedulerHandle};
 
 const KEEP_CURRENT: ToggleField = ToggleField {
     key: "keep_current",
@@ -34,7 +34,12 @@ impl CoreQueueClearRunner {
     }
 
     async fn run(&self, queue_id: QueueId, keep_current: bool) -> SubActionOutcome {
-        match self.scheduler.clear(queue_id, keep_current).await {
+        let mode = if keep_current {
+            ClearMode::KeepCurrent
+        } else {
+            ClearMode::CancelCurrent
+        };
+        match self.scheduler.clear(queue_id, mode).await {
             Ok(()) => SubActionOutcome::Success,
             Err(e) => SubActionOutcome::Failed(core_messages::scheduler_failed(e).into()),
         }

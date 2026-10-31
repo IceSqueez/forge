@@ -17,7 +17,13 @@ pub(crate) async fn create_owner_only_target(path: &std::path::Path) -> std::io:
     options.mode(OWNER_ONLY_MODE);
     match options.open(path).await {
         Ok(_) => Ok(()),
-        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+            if tokio::fs::metadata(path).await?.len() == 0 {
+                Ok(())
+            } else {
+                Err(error)
+            }
+        }
         Err(error) => Err(error),
     }
 }

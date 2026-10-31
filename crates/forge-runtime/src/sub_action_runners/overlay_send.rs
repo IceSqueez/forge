@@ -83,8 +83,10 @@ impl OverlaySendRunner {
                 &OverlayId::new(identity),
                 &supplied_content(config),
                 ctx.arg_stack,
-                send.duration_ms,
-                Some(ctx.parent_event_id),
+                crate::overlay_service::OverlaySendOptions {
+                    duration_ms: send.duration_ms,
+                    caused_by: Some(ctx.parent_event_id),
+                },
             )
             .await
         {

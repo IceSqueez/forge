@@ -439,14 +439,20 @@ async fn clearing_with_keep_current_leaves_the_running_execution_cancellable() {
     q.sched.dispatch(req(q.q_id, a)).await.unwrap();
     events_until(&mut sub, start_of(a)).await;
 
-    q.sched.clear(q.q_id, true).await.unwrap();
+    q.sched
+        .clear(q.q_id, forge_runtime::ClearMode::KeepCurrent)
+        .await
+        .unwrap();
     let kept = state_of(&q.sched, q.q_id).await;
     assert_eq!(
         kept.in_flight, 1,
         "keep_current must leave the running execution registered on the slot"
     );
 
-    q.sched.clear(q.q_id, false).await.unwrap();
+    q.sched
+        .clear(q.q_id, forge_runtime::ClearMode::CancelCurrent)
+        .await
+        .unwrap();
     q.gate.open();
     settle(&q.sched, q.q_id, "an idle queue", |s| s.in_flight == 0).await;
 
@@ -562,7 +568,10 @@ async fn clearing_after_lowering_concurrency_cancels_executions_started_under_th
     let mut sub = q.bus.subscribe();
 
     q.sched.reconfigure(queue_with(q.q_id, 1)).await.unwrap();
-    q.sched.clear(q.q_id, false).await.unwrap();
+    q.sched
+        .clear(q.q_id, forge_runtime::ClearMode::CancelCurrent)
+        .await
+        .unwrap();
     q.gate.open();
     q.sched.dispatch(req(q.q_id, d)).await.unwrap();
 

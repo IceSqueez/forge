@@ -156,6 +156,7 @@ pub enum SpeakEvent {
     },
     Rejected {
         request_id: RequestId,
+        reason: vocabulary::RejectReason,
         message: MessageRef,
     },
     QueueChanged {

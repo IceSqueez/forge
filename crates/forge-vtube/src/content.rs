@@ -21,7 +21,7 @@ use crate::vts::message_type::{
     HOTKEYS_IN_CURRENT_MODEL_REQUEST, ITEM_LIST_REQUEST,
 };
 use crate::vts::protocol::check_response;
-use crate::vts::request::{PendingRequest, ReqTxHandle, round_trip};
+use crate::vts::request::{PendingRequest, ReqTxSlot, round_trip};
 
 const CATALOG_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -114,15 +114,19 @@ fn send_refresh(items_changed_tx: &mpsc::UnboundedSender<()>) {
     let _ = items_changed_tx.send(());
 }
 
+async fn current_sender(slot: &ReqTxSlot) -> mpsc::UnboundedSender<PendingRequest> {
+    slot.lock().await.clone()
+}
+
 pub(crate) fn spawn_content_task(
     snap: Arc<RwLock<ContentSnapshot>>,
-    req_tx: impl Into<ReqTxHandle>,
+    req_tx: ReqTxSlot,
     model_changed_rx: mpsc::UnboundedReceiver<()>,
     items_changed_tx: mpsc::UnboundedSender<()>,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(run_content_task(
         snap,
-        req_tx.into(),
+        req_tx,
         model_changed_rx,
         items_changed_tx,
     ))
@@ -130,14 +134,14 @@ pub(crate) fn spawn_content_task(
 
 async fn run_content_task(
     snap: Arc<RwLock<ContentSnapshot>>,
-    req_tx: ReqTxHandle,
+    req_tx: ReqTxSlot,
     mut model_changed_rx: mpsc::UnboundedReceiver<()>,
     items_changed_tx: mpsc::UnboundedSender<()>,
 ) {
-    refresh_models_and_hotkeys(&snap, &req_tx.current().await).await;
+    refresh_models_and_hotkeys(&snap, &current_sender(&req_tx).await).await;
 
     while let Some(()) = model_changed_rx.recv().await {
-        refresh_models_and_hotkeys(&snap, &req_tx.current().await).await;
+        refresh_models_and_hotkeys(&snap, &current_sender(&req_tx).await).await;
         send_refresh(&items_changed_tx);
     }
 }
@@ -146,7 +150,7 @@ pub(crate) fn spawn_catalog_metrics_task(
     content_state: Arc<RwLock<ContentSnapshot>>,
     health_state: Arc<RwLock<HealthSnapshot>>,
     connection: Arc<AtomicConnectionState>,
-    req_tx: impl Into<ReqTxHandle>,
+    req_tx: ReqTxSlot,
     health_tx: broadcast::Sender<HealthDelta>,
     items_changed_rx: mpsc::UnboundedReceiver<()>,
 ) -> tokio::task::JoinHandle<()> {
@@ -154,7 +158,7 @@ pub(crate) fn spawn_catalog_metrics_task(
         content_state,
         health_state,
         connection,
-        req_tx.into(),
+        req_tx,
         health_tx,
         items_changed_rx,
     ))
@@ -164,7 +168,7 @@ async fn run_catalog_metrics_task(
     content_state: Arc<RwLock<ContentSnapshot>>,
     health_state: Arc<RwLock<HealthSnapshot>>,
     connection: Arc<AtomicConnectionState>,
-    req_tx: ReqTxHandle,
+    req_tx: ReqTxSlot,
     health_tx: broadcast::Sender<HealthDelta>,
     mut items_changed_rx: mpsc::UnboundedReceiver<()>,
 ) {
@@ -174,7 +178,7 @@ async fn run_catalog_metrics_task(
     let mut items_changed = false;
     loop {
         if connection.load().is_connected() {
-            let tx = req_tx.current().await;
+            let tx = current_sender(&req_tx).await;
             report_expressions(&content_state, &tx, &health_tx).await;
             if items_changed {
                 report_items(&content_state, &tx, &health_tx).await;
@@ -411,18 +415,17 @@ async fn refresh_items(
 }
 
 pub(crate) fn spawn_version_fetch(
-    req_tx: impl Into<ReqTxHandle>,
+    req_tx: ReqTxSlot,
     vtube_version: Arc<OnceLock<String>>,
     status: Arc<AtomicConnectionState>,
     mut connected_rx: mpsc::UnboundedReceiver<()>,
 ) -> tokio::task::JoinHandle<()> {
-    let req_tx: ReqTxHandle = req_tx.into();
     tokio::spawn(async move {
         while connected_rx.recv().await.is_some() {
             if vtube_version.get().is_some() {
                 continue;
             }
-            let tx = req_tx.current().await;
+            let tx = current_sender(&req_tx).await;
             if let Ok(data) = send_internal(&tx, API_STATE_REQUEST, serde_json::json!({})).await
                 && let Some(version) = data["vTubeStudioVersion"].as_str()
                 && vtube_version.set(version.to_owned()).is_ok()
@@ -486,7 +489,6 @@ mod tests {
     use super::*;
     use crate::client::VTubeClient;
     use crate::client::tests::wait_for;
-    use crate::vts::request::ReqTxSlot;
 
     fn status() -> Arc<AtomicConnectionState> {
         Arc::new(AtomicConnectionState::new(ConnectionState::Connected))
@@ -609,7 +611,7 @@ mod tests {
 
         let handle = spawn_content_task(
             Arc::clone(&snap),
-            req_tx,
+            slot_of(req_tx),
             model_changed_rx,
             notifier.items_changed_sender(),
         );
@@ -647,7 +649,7 @@ mod tests {
 
         let handle = spawn_content_task(
             Arc::clone(&snap),
-            req_tx,
+            slot_of(req_tx),
             model_changed_rx,
             notifier.items_changed_sender(),
         );
@@ -756,9 +758,13 @@ mod tests {
         assert_eq!(items, ["Blush".to_owned(), "wink.exp3.json".to_owned()]);
     }
 
+    fn slot_of(req_tx: mpsc::UnboundedSender<PendingRequest>) -> ReqTxSlot {
+        Arc::new(tokio::sync::Mutex::new(req_tx))
+    }
+
     fn spawn_sweep(
         c: &VTubeClient,
-        req_tx: impl Into<ReqTxHandle>,
+        req_tx: ReqTxSlot,
     ) -> (tokio::task::JoinHandle<()>, mpsc::UnboundedSender<()>) {
         let (items_changed_tx, items_changed_rx) = mpsc::unbounded_channel();
         let handle = spawn_catalog_metrics_task(
@@ -798,7 +804,7 @@ mod tests {
         let c = connected_client();
         let mut health_rx = c.health_tx.subscribe();
         let (req_tx, mut req_rx) = mpsc::unbounded_channel::<PendingRequest>();
-        let (handle, _items_changed_tx) = spawn_sweep(&c, req_tx);
+        let (handle, _items_changed_tx) = spawn_sweep(&c, slot_of(req_tx));
 
         answer(next_request(&mut req_rx).await, expressions(2));
 
@@ -818,7 +824,7 @@ mod tests {
         let c = connected_client();
         let mut health_rx = c.health_tx.subscribe();
         let (req_tx, mut req_rx) = mpsc::unbounded_channel::<PendingRequest>();
-        let (handle, items_changed_tx) = spawn_sweep(&c, req_tx);
+        let (handle, items_changed_tx) = spawn_sweep(&c, slot_of(req_tx));
         answer(next_request(&mut req_rx).await, expressions(0));
 
         for _ in 0..3 {
@@ -897,7 +903,7 @@ mod tests {
         let status = status();
         let mut status_revisions = status.status_revisions();
         let handle = spawn_version_fetch(
-            req_tx,
+            slot_of(req_tx),
             Arc::clone(&version),
             Arc::clone(&status),
             connected_rx,
@@ -944,7 +950,12 @@ mod tests {
         let (req_tx, mut req_rx) = mpsc::unbounded_channel::<PendingRequest>();
         let (connected_tx, connected_rx) = mpsc::unbounded_channel::<()>();
         let version = Arc::new(OnceLock::<String>::new());
-        let handle = spawn_version_fetch(req_tx, Arc::clone(&version), status(), connected_rx);
+        let handle = spawn_version_fetch(
+            slot_of(req_tx),
+            Arc::clone(&version),
+            status(),
+            connected_rx,
+        );
 
         #[expect(
             clippy::let_underscore_must_use,
@@ -1013,7 +1024,7 @@ mod tests {
         let mut health_rx = c.health_tx.subscribe();
         let (req_tx, _req_rx) = mpsc::unbounded_channel::<PendingRequest>();
 
-        let (handle, items_changed_tx) = spawn_sweep(&c, req_tx);
+        let (handle, items_changed_tx) = spawn_sweep(&c, slot_of(req_tx));
 
         assert_eq!(
             next_text_delta(&mut health_rx, &c).await,
@@ -1056,7 +1067,7 @@ mod tests {
             let mut health_rx = c.health_tx.subscribe();
             let (req_tx, mut req_rx) = mpsc::unbounded_channel::<PendingRequest>();
 
-            let (handle, items_changed_tx) = spawn_sweep(&c, req_tx);
+            let (handle, items_changed_tx) = spawn_sweep(&c, slot_of(req_tx));
             items_changed_tx.send(()).unwrap();
 
             assert_eq!(next_text_delta(&mut health_rx, &c).await.0, MODEL_METRIC);

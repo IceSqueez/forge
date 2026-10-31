@@ -35,7 +35,12 @@ impl BannedPanel {
         let label = target.label(&ViewerAction::Unban);
         let (tx, rx) = tokio::sync::oneshot::channel();
         self.rt_handle.spawn(async move {
-            let outcome = async_bridge::run_quick_step(engine, step, builtin_id, label).await;
+            let outcome = async_bridge::run_quick_step(
+                engine,
+                step,
+                forge_runtime::QuickActionOrigin { builtin_id, label },
+            )
+            .await;
             #[expect(
                 clippy::let_underscore_must_use,
                 reason = "the view may close before the result arrives"

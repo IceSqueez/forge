@@ -580,7 +580,7 @@ async fn switch_runs_default_chain_with_index_minus_one_when_no_case_matches() {
     );
 }
 
-const FOREACH_LIMIT: usize = 10_000;
+const FOREACH_LIMIT: usize = forge_runtime::MAX_FOREACH_ITERATIONS as usize;
 
 fn foreach_cfg(body: Variant) -> SubActionConfig {
     let mut c = SubActionConfig::new();

@@ -197,6 +197,12 @@ pub struct QueueSchedulerHandle {
     tasks: TaskOwner,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClearMode {
+    KeepCurrent,
+    CancelCurrent,
+}
+
 enum SchedulerCommand {
     Enqueue(SchedulerRequest),
     Offer(SchedulerRequest, oneshot::Sender<Result<(), RuntimeError>>),
@@ -211,7 +217,11 @@ enum SchedulerCommand {
         QueueMode,
         oneshot::Sender<Result<(), RuntimeError>>,
     ),
-    Clear(QueueId, bool, oneshot::Sender<Result<(), RuntimeError>>),
+    Clear(
+        QueueId,
+        ClearMode,
+        oneshot::Sender<Result<(), RuntimeError>>,
+    ),
     Register(Queue, oneshot::Sender<MembershipOutcome>),
     Deregister(QueueId, oneshot::Sender<MembershipOutcome>),
     Reconfigure(Queue, oneshot::Sender<MembershipOutcome>),
@@ -539,10 +549,10 @@ impl QueueSchedulerHandle {
         rx.await.map_err(|_| RuntimeError::SchedulerChannelClosed)?
     }
 
-    pub async fn clear(&self, queue_id: QueueId, keep_current: bool) -> Result<(), RuntimeError> {
+    pub async fn clear(&self, queue_id: QueueId, mode: ClearMode) -> Result<(), RuntimeError> {
         let (tx, rx) = oneshot::channel();
         self.sender
-            .send(SchedulerCommand::Clear(queue_id, keep_current, tx))
+            .send(SchedulerCommand::Clear(queue_id, mode, tx))
             .map_err(|_| RuntimeError::SchedulerChannelClosed)?;
         rx.await.map_err(|_| RuntimeError::SchedulerChannelClosed)?
     }
@@ -888,8 +898,8 @@ impl QueueScheduler {
                     )]
                     let _ = reply.send(r);
                 }
-                SchedulerCommand::Clear(queue_id, keep_current, reply) => {
-                    let r = Self::clear_queue(&slots, &queue_id, keep_current, &bus);
+                SchedulerCommand::Clear(queue_id, mode, reply) => {
+                    let r = Self::clear_queue(&slots, &queue_id, mode, &bus);
                     #[expect(
                         clippy::let_underscore_must_use,
                         reason = "the requester may stop waiting for the reply"
@@ -1116,14 +1126,14 @@ impl QueueScheduler {
     fn clear_queue(
         slots: &HashMap<QueueId, QueueSlot>,
         queue_id: &QueueId,
-        keep_current: bool,
+        mode: ClearMode,
         bus: &Arc<EventBus>,
     ) -> Result<(), RuntimeError> {
         let slot = slots
             .get(queue_id)
             .ok_or(RuntimeError::QueueNotFound(*queue_id))?;
 
-        if !keep_current {
+        if mode == ClearMode::CancelCurrent {
             slot.inflight.cancel_all();
         }
         slot.pending.clear();
@@ -1134,7 +1144,7 @@ impl QueueScheduler {
             json!({
                 "queue_id": queue_id.to_string(),
                 "queue_name": slot.name,
-                "keep_current": keep_current,
+                "keep_current": mode == ClearMode::KeepCurrent,
             }),
         ));
 
@@ -1966,7 +1976,7 @@ mod tests {
         sched.dispatch(req(q_id, b)).await.unwrap();
         sched.dispatch(req(q_id, c)).await.unwrap();
 
-        sched.clear(q_id, true).await.unwrap();
+        sched.clear(q_id, ClearMode::KeepCurrent).await.unwrap();
         sched.dispatch(req(q_id, d)).await.unwrap();
         held.release_one();
 
@@ -2013,7 +2023,7 @@ mod tests {
             "A must be in-flight before clearing"
         );
 
-        sched.clear(q_id, false).await.unwrap();
+        sched.clear(q_id, ClearMode::CancelCurrent).await.unwrap();
         sched.dispatch(req(q_id, d)).await.unwrap();
 
         let seen = events_until_done(&mut sub, d).await;
@@ -2039,7 +2049,7 @@ mod tests {
         let sched = spawn_sched(&dp, &bus, Arc::new(SubActionRegistry::new()), vec![queue]);
 
         sched.set_mode(q_id, QueueMode::PAUSED).await.unwrap();
-        sched.clear(q_id, true).await.unwrap();
+        sched.clear(q_id, ClearMode::KeepCurrent).await.unwrap();
 
         let states = sched.queue_states().await.unwrap();
         assert_eq!(
@@ -2056,7 +2066,10 @@ mod tests {
         let dp = make_dp().await;
         let sched = spawn_sched(&dp, &bus, Arc::new(SubActionRegistry::new()), vec![]);
 
-        let err = sched.clear(QueueId::new(), true).await.unwrap_err();
+        let err = sched
+            .clear(QueueId::new(), ClearMode::KeepCurrent)
+            .await
+            .unwrap_err();
         assert!(matches!(err, RuntimeError::QueueNotFound(_)));
         sched.shutdown();
     }
@@ -2072,7 +2085,7 @@ mod tests {
         let sched = spawn_sched(&dp, &bus, Arc::new(SubActionRegistry::new()), vec![queue]);
         let mut sub = bus.subscribe();
 
-        sched.clear(q_id, true).await.unwrap();
+        sched.clear(q_id, ClearMode::KeepCurrent).await.unwrap();
 
         assert!(
             await_queue_event(&mut sub, "queue.cleared", q_id).await,
@@ -2541,7 +2554,7 @@ mod tests {
             Some(depth(2, 0, 0))
         );
 
-        sched.clear(q_id, true).await.unwrap();
+        sched.clear(q_id, ClearMode::KeepCurrent).await.unwrap();
 
         assert_eq!(watch.current().get(&q_id), Some(&depth(0, 0, 0)));
         sched.shutdown();

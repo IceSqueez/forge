@@ -120,17 +120,18 @@ fn run_synthesis(
                 // SAFETY: `pcm` is a live buffer; a null result for a non-float format is checked below.
                 let float_channels = unsafe { pcm.floatChannelData() };
                 if !float_channels.is_null() {
-                    for frame in 0..frame_count {
-                        for channel in 0..channel_count {
-                            // SAFETY: `channel` is below channelCount and `frame` below frameLength of this live buffer.
-                            let sample =
-                                unsafe { *(*float_channels.add(channel)).as_ptr().add(frame) };
-                            state.samples.push(
-                                (sample * i16::MAX as f32).clamp(i16::MIN as f32, i16::MAX as f32)
-                                    as i16,
-                            );
-                        }
-                    }
+                    let planes: Vec<&[f32]> = (0..channel_count)
+                        .map(|channel| {
+                            // SAFETY: `channel` is below channelCount, and each plane holds frameLength samples of this live buffer.
+                            unsafe {
+                                std::slice::from_raw_parts(
+                                    (*float_channels.add(channel)).as_ptr(),
+                                    frame_count,
+                                )
+                            }
+                        })
+                        .collect();
+                    append_float_frames(&planes, &mut state.samples);
                     return;
                 }
                 // SAFETY: `pcm` is a live buffer; a null result for a non-int16 format is checked below.
@@ -140,13 +141,18 @@ fn run_synthesis(
                     cvar.notify_one();
                     return;
                 }
-                for frame in 0..frame_count {
-                    for channel in 0..channel_count {
-                        // SAFETY: `channel` is below channelCount and `frame` below frameLength of this live buffer.
-                        let sample = unsafe { *(*int_channels.add(channel)).as_ptr().add(frame) };
-                        state.samples.push(sample);
-                    }
-                }
+                let planes: Vec<&[i16]> = (0..channel_count)
+                    .map(|channel| {
+                        // SAFETY: `channel` is below channelCount, and each plane holds frameLength samples of this live buffer.
+                        unsafe {
+                            std::slice::from_raw_parts(
+                                (*int_channels.add(channel)).as_ptr(),
+                                frame_count,
+                            )
+                        }
+                    })
+                    .collect();
+                append_int16_frames(&planes, &mut state.samples);
             });
         });
 
@@ -205,6 +211,40 @@ fn run_synthesis(
     not(any(target_os = "macos", test)),
     expect(dead_code, reason = "used only by the macos synthesis backend")
 )]
+fn append_float_frames(planes: &[&[f32]], out: &mut Vec<i16>) {
+    append_interleaved(planes, out, |sample| {
+        (sample * i16::MAX as f32).clamp(i16::MIN as f32, i16::MAX as f32) as i16
+    });
+}
+
+#[cfg_attr(
+    not(any(target_os = "macos", test)),
+    expect(dead_code, reason = "used only by the macos synthesis backend")
+)]
+fn append_int16_frames(planes: &[&[i16]], out: &mut Vec<i16>) {
+    append_interleaved(planes, out, |sample| sample);
+}
+
+#[cfg_attr(
+    not(any(target_os = "macos", test)),
+    expect(dead_code, reason = "used only by the macos synthesis backend")
+)]
+fn append_interleaved<T: Copy>(planes: &[&[T]], out: &mut Vec<i16>, convert: impl Fn(T) -> i16) {
+    let frame_count = planes.first().map_or(0, |plane| plane.len());
+    for frame in 0..frame_count {
+        out.extend(
+            planes
+                .iter()
+                .filter_map(|plane| plane.get(frame).copied())
+                .map(&convert),
+        );
+    }
+}
+
+#[cfg_attr(
+    not(any(target_os = "macos", test)),
+    expect(dead_code, reason = "used only by the macos synthesis backend")
+)]
 pub(crate) fn rate_apple_from_multiplier(multiplier: f32) -> f32 {
     const RATE_DEFAULT: f32 = 0.5;
     const RATE_MAX: f32 = 1.0;
@@ -223,6 +263,39 @@ pub(crate) fn pitch_mult_from_semitones(semitones: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn float_planes_interleave_and_scale_to_full_range_samples() {
+        let cases: [(&[&[f32]], &[i16]); 5] = [
+            (&[], &[]),
+            (&[&[]], &[]),
+            (&[&[0.0, 1.0, -1.0]], &[0, i16::MAX, -i16::MAX]),
+            (&[&[2.0, -2.0]], &[i16::MAX, i16::MIN]),
+            (
+                &[&[0.0, 1.0], &[-1.0, 0.5]],
+                &[0, -i16::MAX, i16::MAX, 16383],
+            ),
+        ];
+        for (planes, expected) in cases {
+            let mut out = vec![7];
+            append_float_frames(planes, &mut out);
+            assert_eq!(out[1..], *expected, "{planes:?}");
+        }
+    }
+
+    #[test]
+    fn int16_planes_interleave_unchanged() {
+        let cases: [(&[&[i16]], &[i16]); 3] = [
+            (&[&[]], &[]),
+            (&[&[1, -2, 3]], &[1, -2, 3]),
+            (&[&[1, 2], &[-1, -2]], &[1, -1, 2, -2]),
+        ];
+        for (planes, expected) in cases {
+            let mut out = Vec::new();
+            append_int16_frames(planes, &mut out);
+            assert_eq!(out, *expected, "{planes:?}");
+        }
+    }
 
     #[test]
     fn rate_maps_multiplier_with_clamping_at_quad_speed() {

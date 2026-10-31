@@ -717,44 +717,6 @@ fn a_link_planted_in_the_namespace_is_reported_and_its_target_is_left_alone() {
 
 #[cfg(unix)]
 #[test]
-fn a_namespace_that_cannot_be_read_is_reported_without_failing_the_pass() {
-    use std::os::unix::fs::PermissionsExt as _;
-
-    let home = TempDir::new().unwrap();
-    let root = unborn_root(&home);
-    let reg = registry();
-
-    let first = materialize_overlay(
-        &root,
-        &instance_holding(vec![resolved_media(BLOB_IDENTITY)]),
-        &reg,
-    )
-    .expect("first pass");
-    let namespace = namespace_of(&first.directory);
-    fs::set_permissions(&namespace, fs::Permissions::from_mode(0o300)).unwrap();
-
-    let second = materialize_overlay(
-        &root,
-        &instance_holding(vec![resolved_media(BLOB_IDENTITY)]),
-        &reg,
-    );
-    fs::set_permissions(&namespace, fs::Permissions::from_mode(0o755)).unwrap();
-
-    let second = second.expect("an unsweepable namespace must not fail the overlay");
-    assert_eq!(
-        second.media_sweep_failures,
-        vec![namespace.to_string_lossy().into_owned()],
-        "an unreadable namespace must be named in the report"
-    );
-    assert_eq!(
-        sorted(&second.written),
-        generated_page(),
-        "an unsweepable namespace stopped the pass from writing the page"
-    );
-}
-
-#[cfg(unix)]
-#[test]
 fn a_namespace_that_is_a_symbolic_link_is_refused_without_writing_through_it() {
     let home = TempDir::new().unwrap();
     let root = unborn_root(&home);

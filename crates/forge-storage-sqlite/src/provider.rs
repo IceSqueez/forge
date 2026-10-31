@@ -672,15 +672,11 @@ impl DataProvider for SqliteBackend {
     }
 
     async fn export(&self, path: &std::path::Path) -> Result<(), StorageError> {
-        let path_str = path.to_str().ok_or_else(|| StorageError::Connection {
-            reason: "non-utf8 export path".into(),
+        let path_str = path.to_str().ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::InvalidInput, "non-utf8 export path")
         })?;
 
-        crate::snapshot::create_owner_only_target(path)
-            .await
-            .map_err(|e| StorageError::Connection {
-                reason: e.to_string(),
-            })?;
+        crate::snapshot::create_owner_only_target(path).await?;
         crate::snapshot::vacuum_into(self.pool.snapshot_source(), path_str)
             .await
             .map_err(|e| StorageError::Connection {

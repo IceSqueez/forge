@@ -439,7 +439,12 @@ async fn a_page_built_from_the_real_samples_then_plays_a_spoken_show_from_the_sa
 
     let dispatch = wired
         .service
-        .send_to(&wired.overlay, &show, &ArgStack::new(), None, None)
+        .send_to(
+            &wired.overlay,
+            &show,
+            &ArgStack::new(),
+            forge_runtime::OverlaySendOptions::default(),
+        )
         .await
         .expect("a stored overlay accepts a send");
     assert!(

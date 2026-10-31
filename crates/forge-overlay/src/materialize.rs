@@ -332,6 +332,27 @@ mod tests {
     }
 
     #[test]
+    fn a_namespace_that_cannot_be_listed_is_named_in_the_report() {
+        let directory = TempDir::new().unwrap();
+        let namespace = directory.path().join("not-a-directory");
+        fs::write(&namespace, b"body").unwrap();
+        let mut report = MaterializeReport {
+            directory: directory.path().to_path_buf(),
+            written: Vec::new(),
+            preserved: Vec::new(),
+            missing_overrides: Vec::new(),
+            media_written: Vec::new(),
+            media_removed: Vec::new(),
+            media_sweep_failures: Vec::new(),
+            media_issues: Vec::new(),
+        };
+
+        sweep_generated_media(&namespace, &BTreeSet::new(), &mut report);
+
+        assert_eq!(report.media_sweep_failures, vec![display(&namespace)]);
+    }
+
+    #[test]
     fn a_failed_replace_reports_the_target_and_leaves_no_staged_file() {
         let directory = TempDir::new().unwrap();
         fs::create_dir(directory.path().join("occupied")).unwrap();

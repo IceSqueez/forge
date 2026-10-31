@@ -550,8 +550,10 @@ async fn a_quick_action_of_a_disabled_integration_reports_integration_disabled()
     let outcome = engine
         .execute_quick_action(
             action_with(vec!["test.owned"]).sub_actions.remove(0),
-            "twitch".to_owned(),
-            "Quick".to_owned(),
+            forge_runtime::QuickActionOrigin {
+                builtin_id: "twitch".to_owned(),
+                label: "Quick".to_owned(),
+            },
             None,
         )
         .await
@@ -611,7 +613,14 @@ async fn a_quick_chat_send_targeted_at_a_disabled_platform_reports_integration_d
     ]);
 
     let outcome = engine
-        .execute_quick_action(step, "kick".to_owned(), "Quick".to_owned(), None)
+        .execute_quick_action(
+            step,
+            forge_runtime::QuickActionOrigin {
+                builtin_id: "kick".to_owned(),
+                label: "Quick".to_owned(),
+            },
+            None,
+        )
         .await
         .unwrap()
         .outcome()
@@ -681,8 +690,10 @@ impl ScriptHarness {
         self.engine
             .execute_quick_action(
                 inline_script_step(body),
-                "twitch".to_owned(),
-                "Quick".to_owned(),
+                forge_runtime::QuickActionOrigin {
+                    builtin_id: "twitch".to_owned(),
+                    label: "Quick".to_owned(),
+                },
                 None,
             )
             .await

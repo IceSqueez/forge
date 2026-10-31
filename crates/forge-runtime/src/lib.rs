@@ -141,6 +141,7 @@ pub use triggers::register_core_triggers;
 pub use twitch_emote_lexicon::{TwitchEmoteLexicon, spawn_twitch_emote_learning};
 pub use viewer_tracker::spawn_viewer_tracker;
 
+pub use action_engine::QuickActionOrigin;
 pub use actions::overlay_wiring::PlannedAction;
 pub use actions::overlay_wiring::QueuePlacement;
 pub use actions::types::ActionSummary;
@@ -159,6 +160,8 @@ pub use donations::CatchUpWaker;
 pub use integration_supervisor::LifecycleWatch;
 pub use overlay_service::EnabledOverlay;
 pub use overlay_service::OVERLAY_TEST_FIRE_KIND;
+pub use overlay_service::OverlaySendOptions;
+pub use queue_scheduler::ClearMode;
 pub use queue_scheduler::QueueSchedulerStart;
 pub use runtime_builder::ScheduledRunsWorker;
 pub use scheduled_runs::ScheduleIntent;
@@ -198,6 +201,7 @@ pub use sub_action_runners::{
     SCRIPT_TARGET_VAR_KEY, ScriptRunInlineRunner, ServerBroadcastRunner, SystemNotifyPort,
     TwitchChatSendMessageRunner, WAIT_KIND_ID, WAIT_MS_KEY, translate_legacy_time_steps,
 };
+pub use sub_action_runners::{MAX_FOREACH_ITERATIONS, MAX_RECORDED_ITERATIONS};
 pub use triggers::{
     DONATION_PROVIDER_OPTIONS_KEY, DonationReceivedDescriptor, TIMER_TICK_KIND, TimerSchedule,
     TimerTickDescriptor, timer_every_message,

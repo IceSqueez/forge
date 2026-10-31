@@ -145,7 +145,14 @@ async fn run_quick_chat_sends(rig: &Rig) -> (Vec<Event>, Vec<Event>) {
     ] {
         rig.runtime
             .action_engine
-            .execute_quick_action(step, "twitch".to_owned(), label.to_owned(), None)
+            .execute_quick_action(
+                step,
+                forge_runtime::QuickActionOrigin {
+                    builtin_id: "twitch".to_owned(),
+                    label: label.to_owned(),
+                },
+                None,
+            )
             .await
             .unwrap();
     }

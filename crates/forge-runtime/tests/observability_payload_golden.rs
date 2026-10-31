@@ -341,7 +341,10 @@ async fn queue_control_payloads_match_the_per_kind_goldens() {
     ] {
         rig.scheduler.set_mode(rig.queue_id, mode).await.unwrap();
     }
-    rig.scheduler.clear(rig.queue_id, true).await.unwrap();
+    rig.scheduler
+        .clear(rig.queue_id, forge_runtime::ClearMode::KeepCurrent)
+        .await
+        .unwrap();
     let events = collect_until(&mut rig.sub, QUEUE_CONTROL_KINDS, |seen| {
         let kinds: BTreeSet<&str> = seen.iter().map(|event| event.kind.as_str()).collect();
         QUEUE_CONTROL_KINDS.iter().all(|kind| kinds.contains(kind))

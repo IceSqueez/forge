@@ -775,7 +775,12 @@ async fn delivered_content_is_kept_for_replay_only_by_a_kind_whose_delivery_is_t
 
         harness
             .service
-            .send_to(&stored.id, &content, &ArgStack::new(), None, None)
+            .send_to(
+                &stored.id,
+                &content,
+                &ArgStack::new(),
+                forge_runtime::OverlaySendOptions::default(),
+            )
             .await
             .expect("a bound overlay accepts content");
 
@@ -818,7 +823,12 @@ async fn every_variant_kind_reaches_the_page_as_a_plain_json_value() {
 
         harness
             .service
-            .send_to(&stored.id, &content, &ArgStack::new(), None, None)
+            .send_to(
+                &stored.id,
+                &content,
+                &ArgStack::new(),
+                forge_runtime::OverlaySendOptions::default(),
+            )
             .await
             .expect("a bound overlay accepts content");
 
@@ -846,7 +856,15 @@ async fn a_reconnecting_page_is_handed_back_the_content_it_was_last_showing() {
     let content = text_config(&[(LABEL_KEY, "Sub goal"), (VALUE_KEY, "42")]);
     harness
         .service
-        .send_to(&stored.id, &content, &ArgStack::new(), Some(4_000), None)
+        .send_to(
+            &stored.id,
+            &content,
+            &ArgStack::new(),
+            forge_runtime::OverlaySendOptions {
+                duration_ms: Some(4_000),
+                caused_by: None,
+            },
+        )
         .await
         .expect("a bound overlay accepts content");
 
@@ -905,8 +923,10 @@ async fn sending_content_funnels_the_step_fields_over_the_overlays_own_and_retai
             &stored.id,
             &text_config(&[(VALUE_KEY, "%bits%"), (ACCENT_KEY, "red")]),
             &args,
-            Some(2_000),
-            None,
+            forge_runtime::OverlaySendOptions {
+                duration_ms: Some(2_000),
+                caused_by: None,
+            },
         )
         .await
         .expect("a bound overlay of a shipped kind accepts a send");
@@ -954,8 +974,7 @@ async fn sending_content_with_nothing_serving_still_retains_it_for_the_next_conn
             &stored.id,
             &text_config(&[(VALUE_KEY, "42")]),
             &ArgStack::new(),
-            None,
-            None,
+            forge_runtime::OverlaySendOptions::default(),
         )
         .await
         .expect("a send does not fail merely because no page is connected");
@@ -994,8 +1013,7 @@ async fn sending_content_refuses_an_unknown_identity_or_an_overlay_type_this_bui
                 &id,
                 &text_config(&[(VALUE_KEY, "42")]),
                 &ArgStack::new(),
-                None,
-                None,
+                forge_runtime::OverlaySendOptions::default(),
             )
             .await
             .expect_err("a send that cannot be resolved must be refused");
@@ -1066,8 +1084,7 @@ async fn audio_is_never_retained_even_by_a_look_that_keeps_its_last_content() {
             &goal.id,
             &text_config(&[(VALUE_KEY, "42")]),
             &ArgStack::new(),
-            None,
-            None,
+            forge_runtime::OverlaySendOptions::default(),
         )
         .await
         .expect("a goal accepts a send");

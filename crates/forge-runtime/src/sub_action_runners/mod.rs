@@ -123,7 +123,7 @@ pub use core_log_write::{LOG_DEFAULT_LEVEL, LOG_LEVEL_KEY, LOG_MESSAGE_KEY, LOG_
 pub use core_logic_break_loop::CoreLogicBreakLoopRunner;
 pub use core_logic_continue_loop::CoreLogicContinueLoopRunner;
 pub use core_logic_if_then_else::CoreLogicIfThenElseRunner;
-pub use core_logic_loop::CoreLogicLoopRunner;
+pub use core_logic_loop::{CoreLogicLoopRunner, MAX_FOREACH_ITERATIONS, MAX_RECORDED_ITERATIONS};
 pub use core_logic_stop::CoreLogicStopRunner;
 pub use core_logic_switch_case::CoreLogicSwitchCaseRunner;
 pub use core_logic_wait::{CoreLogicWaitRunner, WAIT_KIND_ID, WAIT_MS_KEY};

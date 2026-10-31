@@ -15,7 +15,7 @@ use forge_components::{
     inline_edit, page_frame, tr,
 };
 use forge_runtime::EventBus;
-use forge_storage::{GlobalEntry, GlobalsExport, GlobalsRepo};
+use forge_storage::{GlobalEntry, GlobalTransit, GlobalsExport, GlobalsRepo};
 use forge_types::VariantKind;
 use gpui::prelude::*;
 use gpui::{
@@ -631,13 +631,8 @@ impl Render for GlobalsView {
 async fn export_globals_to_chosen_file(
     repo: Arc<dyn GlobalsRepo>,
 ) -> Result<Option<PathBuf>, DesktopError> {
-    let entries = repo.export_all().await?;
-    let envelope = GlobalsExport::new(entries);
-    let json = serde_json::to_string_pretty(&envelope)?;
-    let default_name = format!(
-        "forge-globals-{}.json",
-        time::OffsetDateTime::now_utc().unix_timestamp()
-    );
+    let json = globals_export_json(repo.export_all().await?)?;
+    let default_name = default_export_name(time::OffsetDateTime::now_utc());
     let filter = async_bridge::DialogFilter {
         name: "JSON".to_owned(),
         extensions: vec!["json"],
@@ -647,6 +642,14 @@ async fn export_globals_to_chosen_file(
     };
     tokio::fs::write(&path, json).await?;
     Ok(Some(path))
+}
+
+fn globals_export_json(entries: Vec<GlobalTransit>) -> Result<String, serde_json::Error> {
+    serde_json::to_string_pretty(&GlobalsExport::new(entries))
+}
+
+fn default_export_name(now: time::OffsetDateTime) -> String {
+    format!("forge-globals-{}.json", now.unix_timestamp())
 }
 
 fn global_from_entry(entry: &GlobalEntry) -> Global {
@@ -678,6 +681,43 @@ mod tests {
     use crate::test_support::{
         StubEventLog, error_toasts, install_presentation, press_undo, pump, pump_until, runtime,
     };
+
+    #[test]
+    fn the_export_envelope_carries_its_format_version_and_every_global() {
+        let json = globals_export_json(vec![GlobalTransit {
+            name: "score".to_owned(),
+            value: Variant::Int(3),
+            persisted: true,
+            last_modified: OffsetDateTime::UNIX_EPOCH,
+            reads: 1,
+            writes: 2,
+        }])
+        .unwrap();
+
+        let parsed: GlobalsExport = serde_json::from_str(&json).unwrap();
+        assert_eq!(
+            (
+                parsed.format_version,
+                parsed
+                    .globals
+                    .iter()
+                    .map(|global| (global.name.as_str(), &global.value))
+                    .collect::<Vec<_>>()
+            ),
+            (
+                GlobalsExport::new(Vec::new()).format_version,
+                vec![("score", &Variant::Int(3))]
+            )
+        );
+    }
+
+    #[test]
+    fn the_default_export_name_is_stamped_with_the_unix_second() {
+        assert_eq!(
+            default_export_name(OffsetDateTime::from_unix_timestamp(1_700_000_000).unwrap()),
+            "forge-globals-1700000000.json"
+        );
+    }
 
     const SCORE: &str = "score";
     const LISTED: [&str; 3] = ["alpha", "beta", "gamma"];

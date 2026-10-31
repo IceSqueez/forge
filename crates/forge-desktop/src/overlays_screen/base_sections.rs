@@ -301,7 +301,12 @@ impl OverlayPropertyPanel {
             async move {
                 let args = samples.sample(&id).await.args();
                 match service
-                    .send_to(&id, &OverlayConfig::new(), &args, None, None)
+                    .send_to(
+                        &id,
+                        &OverlayConfig::new(),
+                        &args,
+                        forge_runtime::OverlaySendOptions::default(),
+                    )
                     .await
                 {
                     Ok(OverlayDispatch::Applied(delivery)) => Ok(Fired::Applied(delivery)),

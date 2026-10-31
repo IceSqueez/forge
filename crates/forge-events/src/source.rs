@@ -29,7 +29,18 @@ impl EventSource {
             Self::Twitch => Some(PlatformId::Twitch),
             Self::YouTube => Some(PlatformId::YouTube),
             Self::Kick => Some(PlatformId::Kick),
-            _ => None,
+            Self::Core
+            | Self::Rhai
+            | Self::Http
+            | Self::Obs
+            | Self::VTube
+            | Self::Discord
+            | Self::Midi
+            | Self::Hotkey
+            | Self::Timer
+            | Self::Server
+            | Self::Audio
+            | Self::Donation => None,
         }
     }
 }

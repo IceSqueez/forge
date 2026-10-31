@@ -582,8 +582,10 @@ async fn a_long_quick_action_does_not_block_the_next_quick_action() {
     r.engine
         .execute_quick_action(
             step(SLOW_KIND_ID, SubActionConfig::new()),
-            "obs".to_owned(),
-            "slow".to_owned(),
+            forge_runtime::QuickActionOrigin {
+                builtin_id: "obs".to_owned(),
+                label: "slow".to_owned(),
+            },
             None,
         )
         .await
@@ -591,8 +593,10 @@ async fn a_long_quick_action_does_not_block_the_next_quick_action() {
     r.engine
         .execute_quick_action(
             step(INSTANT_KIND_ID, SubActionConfig::new()),
-            "obs".to_owned(),
-            "instant".to_owned(),
+            forge_runtime::QuickActionOrigin {
+                builtin_id: "obs".to_owned(),
+                label: "instant".to_owned(),
+            },
             None,
         )
         .await
@@ -639,8 +643,10 @@ async fn quick(engine: &ActionEngineHandle, kind_id: &str) -> PendingQuickAction
     engine
         .execute_quick_action(
             step(kind_id, SubActionConfig::new()),
-            "obs".to_owned(),
-            kind_id.to_owned(),
+            forge_runtime::QuickActionOrigin {
+                builtin_id: "obs".to_owned(),
+                label: kind_id.to_owned(),
+            },
             None,
         )
         .await
@@ -1095,7 +1101,10 @@ async fn clearing_discards_withheld_alongside_runs() {
         r.sched.dispatch(admitted(&beside)).await.unwrap();
     }
     settle(&r.sched, q, "two runs held", |s| s.pending == 2).await;
-    r.sched.clear(q, true).await.unwrap();
+    r.sched
+        .clear(q, forge_runtime::ClearMode::KeepCurrent)
+        .await
+        .unwrap();
     r.sched.set_mode(q, QueueMode::RUNNING).await.unwrap();
     quiesce().await;
 
@@ -1115,7 +1124,10 @@ async fn clearing_without_keeping_current_cancels_a_running_alongside_run() {
 
     r.sched.dispatch(admitted(&waiting)).await.unwrap();
     events_until(&mut sub, start_of(&waiting)).await;
-    r.sched.clear(q, false).await.unwrap();
+    r.sched
+        .clear(q, forge_runtime::ClearMode::CancelCurrent)
+        .await
+        .unwrap();
 
     assert_eq!(r.next_saved().await.outcome, ExecutionOutcome::Cancelled);
     r.sched.shutdown();

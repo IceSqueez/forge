@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use forge_components::ToastKind;
 use forge_events::{Event, EventSubscription, EventsError};
-use forge_runtime::{ActionEngineHandle, EventBus};
+use forge_runtime::{ActionEngineHandle, EventBus, QuickActionOrigin};
 use forge_types::{SubActionOutcome, SubActionStep, integration_disabled_message};
 use gpui::{App, AsyncApp, Context, Entity, SharedString, Window};
 use tokio::runtime::Handle;
@@ -54,11 +54,10 @@ pub(crate) async fn recv_event_batch(sub: &mut EventSubscription) -> EventBatch 
 pub(crate) async fn run_quick_step(
     engine: ActionEngineHandle,
     step: SubActionStep,
-    builtin_id: String,
-    label: String,
+    origin: QuickActionOrigin,
 ) -> Result<(), RepoFailure> {
     let pending = engine
-        .execute_quick_action(step, builtin_id, label, None)
+        .execute_quick_action(step, origin, None)
         .await
         .map_err(RepoFailure::from)?;
     match pending.outcome().await.map_err(RepoFailure::from)? {
@@ -791,8 +790,10 @@ mod tests {
         run_quick_step(
             engine,
             quick_step(kind_id),
-            "obs".to_owned(),
-            kind_id.to_owned(),
+            QuickActionOrigin {
+                builtin_id: "obs".to_owned(),
+                label: kind_id.to_owned(),
+            },
         )
         .await
         .map_err(|failure| failure.to_string())

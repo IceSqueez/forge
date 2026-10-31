@@ -61,8 +61,12 @@ async fn export_to_an_existing_file_fails_and_leaves_that_file_untouched() {
     let result = backend.export(&export_path).await;
 
     assert!(
-        result.is_err(),
-        "export over an existing file must fail, got {result:?}"
+        matches!(
+            &result,
+            Err(forge_storage::StorageError::Io(error))
+                if error.kind() == std::io::ErrorKind::AlreadyExists
+        ),
+        "export over an existing file must report that file exists, got {result:?}"
     );
     assert_eq!(
         std::fs::read(&export_path).expect("the existing file is readable"),

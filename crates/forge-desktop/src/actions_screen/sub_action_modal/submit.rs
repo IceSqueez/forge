@@ -102,9 +102,18 @@ impl EditSubActionForm {
     }
 }
 
+const CONDITION_KEYWORD: &str = "if";
+const CONDITION_PREFIX: &str = "if ";
+
 fn normalize_condition(raw: &str) -> Option<String> {
     let trimmed = raw.trim();
-    let trimmed = trimmed.strip_prefix("if ").unwrap_or(trimmed).trim();
+    if trimmed == CONDITION_KEYWORD {
+        return None;
+    }
+    let trimmed = trimmed
+        .strip_prefix(CONDITION_PREFIX)
+        .unwrap_or(trimmed)
+        .trim();
     (!trimmed.is_empty()).then(|| trimmed.to_owned())
 }
 
@@ -131,6 +140,9 @@ mod tests {
             ("x", Some("x")),
             ("", None),
             ("   ", None),
+            ("if", None),
+            ("if ", None),
+            ("  if  ", None),
         ] {
             assert_eq!(normalize_condition(raw).as_deref(), expected, "{raw:?}");
         }

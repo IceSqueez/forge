@@ -83,7 +83,7 @@ pub(crate) fn config_text(config: &TriggerConfig, key: &str) -> Option<String> {
     }
 }
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct MidiSignal {
     pub kind_id: String,
     pub selector: Option<i64>,
@@ -286,10 +286,7 @@ mod tests {
         ] {
             let event = monitor_event(monitor_kind, number, 9, "Keys");
             let captured = MidiSignal::from_monitor(&event);
-            assert!(
-                captured == expected,
-                "{monitor_kind:?} captured the wrong signal"
-            );
+            assert_eq!(captured, expected, "{monitor_kind:?}");
         }
     }
 
@@ -305,11 +302,7 @@ mod tests {
             signal(PITCH_BEND, None, None, None),
         ] {
             let restored = MidiSignal::from_instance(&original.kind_id, &original.overrides());
-            assert!(
-                restored == original,
-                "{} lost a field through overrides",
-                original.kind_id
-            );
+            assert_eq!(restored, original);
         }
     }
 

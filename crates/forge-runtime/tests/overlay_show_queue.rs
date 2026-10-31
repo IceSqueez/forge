@@ -209,8 +209,10 @@ impl Harness {
                 &OverlayId::new(id),
                 &headline(text),
                 &ArgStack::new(),
-                duration_ms,
-                None,
+                forge_runtime::OverlaySendOptions {
+                    duration_ms,
+                    caused_by: None,
+                },
             )
             .await
             .expect("a stored overlay of a shipped look accepts a send")
@@ -413,8 +415,7 @@ async fn a_burst_past_the_capacity_refuses_only_the_excess_and_shows_every_accep
                 &OverlayId::new(STAGE),
                 &headline(&index.to_string()),
                 &ArgStack::new(),
-                None,
-                None,
+                forge_runtime::OverlaySendOptions::default(),
             )
             .await
         {

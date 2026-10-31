@@ -227,7 +227,7 @@ async fn wait_marking_start(
                         Ok(SpeakEvent::Removed { request_id: rid }) if &rid == request_id => {
                             return Err(messages::removed_from_queue());
                         }
-                        Ok(SpeakEvent::Rejected { request_id: rid, message }) if &rid == request_id => {
+                        Ok(SpeakEvent::Rejected { request_id: rid, message, .. }) if &rid == request_id => {
                             return Err(message);
                         }
                         Ok(_) => continue,
@@ -1220,8 +1220,7 @@ mod tests {
                 &OverlayId::new("stage-alert"),
                 &content,
                 &forge_types::ArgStack::new(),
-                None,
-                None,
+                forge_runtime::OverlaySendOptions::default(),
             )
             .await
             .unwrap();
@@ -1518,6 +1517,7 @@ mod tests {
             },
             SpeakEvent::Rejected {
                 request_id,
+                reason: forge_speak_queue::vocabulary::RejectReason::QueueFull,
                 message: message(),
             },
         ]

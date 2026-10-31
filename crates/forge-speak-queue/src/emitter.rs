@@ -138,6 +138,7 @@ impl<'a> SpeakEmitter<'a> {
             } => {
                 self.feed(SpeakEvent::Rejected {
                     request_id: request_id.clone(),
+                    reason,
                     message: messages::reject_message(reason, limit),
                 });
                 self.publish(

@@ -353,8 +353,7 @@ impl Harness {
                 &OverlayId::new(STAGE),
                 &spoken_show(text),
                 &ArgStack::new(),
-                None,
-                None,
+                forge_runtime::OverlaySendOptions::default(),
             )
             .await
             .expect("a stored overlay of a shipped look accepts a send")
@@ -694,8 +693,10 @@ async fn a_show_whose_voice_is_not_installed_is_shown_silently_and_its_failure_i
                 &OverlayId::new(STAGE),
                 &spoken_show("tip"),
                 &ArgStack::new(),
-                None,
-                Some(trigger),
+                forge_runtime::OverlaySendOptions {
+                    duration_ms: None,
+                    caused_by: Some(trigger),
+                },
             )
             .await
             .expect("a stored overlay of a shipped look accepts a send");

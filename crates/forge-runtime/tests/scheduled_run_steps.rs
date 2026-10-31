@@ -832,8 +832,10 @@ async fn a_quick_action_schedule_has_no_scheduling_run_and_is_caused_by_its_step
         .engine
         .execute_quick_action(
             schedule_step(target),
-            "core".to_owned(),
-            "Schedule".to_owned(),
+            forge_runtime::QuickActionOrigin {
+                builtin_id: "core".to_owned(),
+                label: "Schedule".to_owned(),
+            },
             None,
         )
         .await

@@ -128,21 +128,27 @@ async fn sweep(
             Sweep::ByPolicy(policy) => doomed(copies, policy.retention(), now, &protection),
             Sweep::Everything => everything_unprotected(copies, &protection),
         };
-        Ok(remove_all(condemned))
+        Ok(remove_all(condemned, remove_from_disk))
     })
     .await
 }
 
-fn remove_all(condemned: Vec<SafetyCopy>) -> SafetyCopyReport {
+fn remove_from_disk(copy: &SafetyCopy) -> std::io::Result<()> {
+    if copy.kind == SafetyCopyKind::Restore {
+        remove_dir_all_if_present(&copy.path)
+    } else {
+        remove_file_if_present(&copy.path)
+    }
+}
+
+fn remove_all(
+    condemned: Vec<SafetyCopy>,
+    remove: impl Fn(&SafetyCopy) -> std::io::Result<()>,
+) -> SafetyCopyReport {
     let mut report = SafetyCopyReport::default();
     for copy in condemned {
         let existed = exists(&copy.path).unwrap_or(true);
-        let removed = if copy.kind == SafetyCopyKind::Restore {
-            remove_dir_all_if_present(&copy.path)
-        } else {
-            remove_file_if_present(&copy.path)
-        };
-        match removed {
+        match remove(&copy) {
             Ok(()) => {
                 report.removed += 1;
                 if existed {
@@ -168,18 +174,13 @@ mod tests {
     use forge_storage_sqlite::SqliteBackend;
     use time::Duration;
 
-    use super::{prune_after_safety_copy, remove_all};
+    use super::{SafetyCopyReport, prune_after_safety_copy, remove_all, remove_from_disk};
     use crate::bundle::naming::{
         FILE_PREFIX, LEGACY_ARCHIVE_EXTENSION, PRE_PACK_PREFIX, backup_file_stem, backups_dir,
     };
     use crate::safety_copies::inventory::SafetyCopy;
     use crate::safety_copies::kind::SafetyCopyKind;
     use crate::safety_copies::settings::{SafetyCopyMode, SafetyCopySettings};
-
-    #[cfg(unix)]
-    const READ_AND_LIST_ONLY: u32 = 0o500;
-    #[cfg(unix)]
-    const OWNER_FULL_ACCESS: u32 = 0o700;
 
     fn copy(path: &Path, kind: SafetyCopyKind) -> SafetyCopy {
         SafetyCopy {
@@ -190,11 +191,15 @@ mod tests {
         }
     }
 
+    fn remove_all_from_disk(condemned: Vec<SafetyCopy>) -> SafetyCopyReport {
+        remove_all(condemned, remove_from_disk)
+    }
+
     #[test]
     fn a_copy_that_is_already_gone_counts_as_removed() {
         let dir = tempfile::tempdir().unwrap();
 
-        let report = remove_all(vec![
+        let report = remove_all_from_disk(vec![
             copy(&dir.path().join("vanished-dir"), SafetyCopyKind::Restore),
             copy(&dir.path().join("vanished.tar.gz"), SafetyCopyKind::Pack),
         ]);
@@ -208,7 +213,7 @@ mod tests {
         let present = dir.path().join("present.tar.gz");
         std::fs::write(&present, b"x").unwrap();
 
-        let report = remove_all(vec![
+        let report = remove_all_from_disk(vec![
             copy(&present, SafetyCopyKind::Pack),
             copy(&dir.path().join("vanished.tar.gz"), SafetyCopyKind::Pack),
         ]);
@@ -258,27 +263,27 @@ mod tests {
         );
     }
 
-    #[cfg(unix)]
     #[test]
     fn a_copy_that_cannot_be_deleted_is_reported_and_the_rest_are_still_removed() {
-        use std::os::unix::fs::PermissionsExt;
-
         let dir = tempfile::tempdir().unwrap();
         let stuck = dir.path().join("stuck");
-        let locked = stuck.join("locked");
-        std::fs::create_dir_all(&locked).unwrap();
-        std::fs::write(locked.join("forge.db"), b"x").unwrap();
-        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(READ_AND_LIST_ONLY))
-            .unwrap();
+        std::fs::create_dir_all(&stuck).unwrap();
         let loose = dir.path().join("loose.tar.gz");
         std::fs::write(&loose, b"x").unwrap();
 
-        let report = remove_all(vec![
-            copy(&stuck, SafetyCopyKind::Restore),
-            copy(&loose, SafetyCopyKind::Pack),
-        ]);
-        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(OWNER_FULL_ACCESS))
-            .unwrap();
+        let report = remove_all(
+            vec![
+                copy(&stuck, SafetyCopyKind::Restore),
+                copy(&loose, SafetyCopyKind::Pack),
+            ],
+            |condemned| {
+                if condemned.path == stuck {
+                    Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied))
+                } else {
+                    remove_from_disk(condemned)
+                }
+            },
+        );
 
         assert_eq!(
             (

@@ -633,7 +633,12 @@ impl QueuesView {
         let scheduler = self.scheduler.clone();
         async_bridge::run_async(
             &self.rt_handle,
-            async move { scheduler.clear(id, true).await.map_err(RepoFailure::from) },
+            async move {
+                scheduler
+                    .clear(id, forge_runtime::ClearMode::KeepCurrent)
+                    .await
+                    .map_err(RepoFailure::from)
+            },
             move |this, result, cx| match result {
                 Ok(()) => {
                     cx.push_toast(

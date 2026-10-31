@@ -308,8 +308,7 @@ async fn an_action_sending_content_to_a_latest_overlay_is_refused_and_nothing_re
         &OverlayId::new("last-donation"),
         &supplied,
         &ArgStack::new(),
-        None,
-        None,
+        forge_runtime::OverlaySendOptions::default(),
     ))
     .await;
 

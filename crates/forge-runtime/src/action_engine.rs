@@ -34,6 +34,12 @@ const QUICK_ACTION_INTAKE_CAPACITY: usize = 64;
 const MAX_CAUSATION_DEPTH: usize = 16;
 const CAUSATION_DEPTH_SKIP_REASON: &str = "causation_depth_exceeded";
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct QuickActionOrigin {
+    pub builtin_id: String,
+    pub label: String,
+}
+
 struct QuickActionRequest {
     step: SubActionStep,
     builtin_id: String,
@@ -127,10 +133,10 @@ impl ActionEngineHandle {
     pub async fn execute_quick_action(
         &self,
         step: SubActionStep,
-        builtin_id: String,
-        label: String,
+        origin: QuickActionOrigin,
         caused_by: Option<EventId>,
     ) -> Result<PendingQuickAction, RuntimeError> {
+        let QuickActionOrigin { builtin_id, label } = origin;
         let (outcome, pending) = oneshot::channel();
         self.quick_sender
             .send(QuickActionRequest {
@@ -994,7 +1000,14 @@ mod tests {
         };
 
         engine
-            .execute_quick_action(step, "test.record".to_owned(), "Test".to_owned(), None)
+            .execute_quick_action(
+                step,
+                QuickActionOrigin {
+                    builtin_id: "test.record".to_owned(),
+                    label: "Test".to_owned(),
+                },
+                None,
+            )
             .await
             .unwrap();
 
@@ -1042,8 +1055,10 @@ mod tests {
             engine
                 .execute_quick_action(
                     step,
-                    "twitch".to_owned(),
-                    "Probe".to_owned(),
+                    QuickActionOrigin {
+                        builtin_id: "twitch".to_owned(),
+                        label: "Probe".to_owned(),
+                    },
                     expected_parent,
                 )
                 .await
@@ -1169,8 +1184,10 @@ mod tests {
             engine
                 .execute_quick_action(
                     action_step(kind, BTreeMap::new()),
-                    "obs".to_owned(),
-                    kind.to_owned(),
+                    QuickActionOrigin {
+                        builtin_id: "obs".to_owned(),
+                        label: kind.to_owned(),
+                    },
                     None,
                 )
                 .await
@@ -1203,8 +1220,10 @@ mod tests {
         engine
             .execute_quick_action(
                 action_step("quick.probe", BTreeMap::new()),
-                "twitch".to_owned(),
-                "Set title".to_owned(),
+                QuickActionOrigin {
+                    builtin_id: "twitch".to_owned(),
+                    label: "Set title".to_owned(),
+                },
                 None,
             )
             .await
@@ -1245,8 +1264,10 @@ mod tests {
         engine
             .execute_quick_action(
                 action_step("quick.probe", BTreeMap::new()),
-                "obs".to_owned(),
-                "Run".to_owned(),
+                QuickActionOrigin {
+                    builtin_id: "obs".to_owned(),
+                    label: "Run".to_owned(),
+                },
                 None,
             )
             .await
@@ -1255,8 +1276,10 @@ mod tests {
         engine
             .execute_quick_action(
                 action_step("quick.probe", BTreeMap::new()),
-                "obs".to_owned(),
-                "Run".to_owned(),
+                QuickActionOrigin {
+                    builtin_id: "obs".to_owned(),
+                    label: "Run".to_owned(),
+                },
                 None,
             )
             .await
@@ -1297,8 +1320,10 @@ mod tests {
         engine
             .execute_quick_action(
                 action_step("test.record", overrides),
-                "obs".to_owned(),
-                "Rec".to_owned(),
+                QuickActionOrigin {
+                    builtin_id: "obs".to_owned(),
+                    label: "Rec".to_owned(),
+                },
                 None,
             )
             .await
@@ -1718,8 +1743,10 @@ mod tests {
         rig.engine
             .execute_quick_action(
                 action_step(EMIT_KIND, BTreeMap::new()),
-                "obs".to_owned(),
-                "Run".to_owned(),
+                QuickActionOrigin {
+                    builtin_id: "obs".to_owned(),
+                    label: "Run".to_owned(),
+                },
                 Some(parent_id),
             )
             .await

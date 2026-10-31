@@ -55,6 +55,12 @@ pub struct OverlayReceivers {
     pub preview_tabs: usize,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct OverlaySendOptions {
+    pub duration_ms: Option<u64>,
+    pub caused_by: Option<EventId>,
+}
+
 #[derive(Debug)]
 pub enum OverlayDispatch {
     Applied(OverlayDelivery),
@@ -420,9 +426,12 @@ impl OverlayServiceHandle {
         id: &OverlayId,
         supplied: &OverlayConfig,
         args: &ArgStack,
-        duration_ms: Option<u64>,
-        caused_by: Option<EventId>,
+        options: OverlaySendOptions,
     ) -> Result<OverlayDispatch, RuntimeError> {
+        let OverlaySendOptions {
+            duration_ms,
+            caused_by,
+        } = options;
         let definition = self.load(id).await?;
         let Some(descriptor) = self.inner.kinds.get(&definition.kind_id) else {
             return Err(RuntimeError::UnavailableOverlayKind {

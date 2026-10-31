@@ -252,7 +252,7 @@ async fn empty_branch_body_leaves_only_the_non_nested_composite_row() {
     assert_eq!(top[0].kind, "core.logic.if_then_else");
 }
 
-const RECORDED_ITERATIONS: usize = 100;
+const RECORDED_ITERATIONS: usize = forge_runtime::MAX_RECORDED_ITERATIONS as usize;
 
 fn recorded_iteration_paths(iterations: usize) -> Vec<String> {
     (0..iterations)

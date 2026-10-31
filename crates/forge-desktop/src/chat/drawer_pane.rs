@@ -3,14 +3,15 @@ use super::viewer_detail::{drawer_role_badge, viewer_avatar, with_transparent};
 use super::{ChatView, DRAWER_TIMEOUT_SECONDS, DrawerResizeDrag};
 use crate::chat_author::AuthorKey;
 use crate::chat_drawer::{ViewerSummary, author_summary, selected_summary};
+use crate::navigable_list::{ListStep, NavigableList, navigable_list};
 use forge_components::{
     BORDER_THIN, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, MenuPlacement, Radius, ResizeEdge,
     ResizeRange, Spacing, body_family, icon, install_resize, menu_button, menu_divider, menu_item,
     mono_family, spacing, tr,
 };
 use gpui::{
-    AnyElement, ClickEvent, Context, FontWeight, Pixels, SharedString, div, prelude::*, px,
-    uniform_list,
+    AnyElement, ClickEvent, Context, FontWeight, Pixels, ScrollStrategy, SharedString, Window, div,
+    prelude::*, px, uniform_list,
 };
 
 const DRAWER_MIN: Pixels = px(260.0);
@@ -19,6 +20,26 @@ const AVATAR_ROW: Pixels = px(22.0);
 const ROW_STRIPE: Pixels = px(2.0);
 const VIEWERS_ICON: Pixels = px(13.0);
 const BADGE_ROW: Pixels = px(8.5);
+
+impl NavigableList for ChatView {
+    fn step_list(&mut self, step: ListStep, cx: &mut Context<Self>) {
+        let selected = self.selected_viewer.clone();
+        let next = self
+            .drawer_list_keys
+            .step(&self.drawer_keys, selected.as_ref(), step);
+        if let Some(next) = next {
+            self.drawer_list_scroll
+                .scroll_to_item(next, ScrollStrategy::Nearest);
+            cx.notify();
+        }
+    }
+
+    fn activate_list(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(key) = self.drawer_list_keys.activation_target(&self.drawer_keys) {
+            self.select_viewer(key, cx);
+        }
+    }
+}
 
 impl ChatView {
     pub(super) fn render_drawer(
@@ -267,12 +288,14 @@ impl ChatView {
                     rows
                 }),
             )
+            .track_scroll(&self.drawer_list_scroll)
             .flex_1()
             .min_h(px(0.0))
             .into_any_element()
         };
 
-        div()
+        let focus = self.drawer_list_keys.focus().clone();
+        navigable_list(div(), &focus, cx)
             .flex_1()
             .min_h(px(0.0))
             .flex()
@@ -290,6 +313,7 @@ impl ChatView {
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
         let key = summary.key.clone();
+        let is_cursor = self.drawer_list_keys.is_at(&key);
         let row_id = summary.key.element_id("chat-drawer-row");
         let stripe = if is_sel {
             palette.brand
@@ -367,6 +391,8 @@ impl ChatView {
 
         if is_sel {
             row = row.bg(selected_bg);
+        } else if is_cursor {
+            row = row.bg(hover_bg);
         } else {
             row = row.hover(move |s| s.bg(hover_bg));
         }

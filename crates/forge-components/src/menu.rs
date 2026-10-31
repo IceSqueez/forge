@@ -6,13 +6,13 @@ use std::sync::Arc;
 
 use gpui::{
     Anchor, AnchoredPositionMode, AnimationExt, AnyElement, App, ClickEvent, Div, ElementId,
-    FocusHandle, InteractiveElement, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent,
-    ParentElement, Pixels, Point, RenderOnce, Rgba, SharedString, StatefulInteractiveElement,
-    Styled, Window, anchored, deferred, div, point, px,
+    Entity, FocusHandle, InteractiveElement, IntoElement, KeyDownEvent, MouseButton,
+    MouseDownEvent, ParentElement, Pixels, Point, RenderOnce, Rgba, SharedString,
+    StatefulInteractiveElement, Styled, Window, anchored, deferred, div, point, px,
 };
 
 use crate::icons::{Icon, icon};
-use crate::overlay::enter_animation;
+use crate::overlay::{drive_overlay_focus, enter_animation};
 use crate::palette::ForgePalette;
 use crate::tokens::{
     BORDER_THIN, DISABLED_OPACITY, Density, FONT_XS, Spacing, body_family, mono_family, scaled,
@@ -289,6 +289,19 @@ impl MenuInk {
     }
 }
 
+struct MenuFocus {
+    handle: FocusHandle,
+    restore: Option<FocusHandle>,
+}
+
+impl MenuFocus {
+    fn drive(focus: &Entity<Self>, open: bool, window: &mut Window, cx: &mut App) {
+        focus.update(cx, |state, cx| {
+            drive_overlay_focus(open, &state.handle, &mut state.restore, window, cx);
+        });
+    }
+}
+
 #[derive(IntoElement)]
 pub struct MenuButton {
     trigger_icon: Icon,
@@ -299,7 +312,6 @@ pub struct MenuButton {
     trigger_id: ElementId,
     on_toggle: Option<ToggleHandler>,
     on_dismiss: Option<DismissHandler>,
-    escape_focus: Option<FocusHandle>,
     trigger_ink: Rgba,
     trigger_hover_bg: Rgba,
     ink: MenuInk,
@@ -315,7 +327,6 @@ pub fn menu_button(trigger_icon: Icon, open: bool, palette: &ForgePalette) -> Me
         trigger_id: ElementId::Name(SharedString::new_static("forge-menu-trigger")),
         on_toggle: None,
         on_dismiss: None,
-        escape_focus: None,
         trigger_ink: palette.text_faint,
         trigger_hover_bg: palette.surface_overlay,
         ink: MenuInk::from_palette(palette),
@@ -358,10 +369,18 @@ impl MenuButton {
         self
     }
 
-    #[must_use]
-    pub fn dismiss_on_escape(mut self, focus_handle: &FocusHandle) -> Self {
-        self.escape_focus = Some(focus_handle.clone());
-        self
+    fn menu_focus(&self, window: &mut Window, cx: &mut App) -> Entity<MenuFocus> {
+        window.use_keyed_state(
+            ElementId::NamedChild(
+                Arc::new(self.trigger_id.clone()),
+                SharedString::new_static("focus"),
+            ),
+            cx,
+            |_, cx| MenuFocus {
+                handle: cx.focus_handle(),
+                restore: None,
+            },
+        )
     }
 
     fn render_trigger(&mut self) -> AnyElement {
@@ -394,6 +413,8 @@ impl MenuButton {
 impl RenderOnce for MenuButton {
     fn render(mut self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let density = cx.density();
+        let focus = self.menu_focus(window, cx);
+        MenuFocus::drive(&focus, self.open, window, cx);
         let trigger = self.render_trigger();
 
         let mut root = div().relative().child(trigger);
@@ -407,12 +428,21 @@ impl RenderOnce for MenuButton {
             Arc::new(self.trigger_id.clone()),
             SharedString::new_static("panel"),
         );
+        let dismiss = self.on_dismiss.clone().map(|dismiss| {
+            let focus = focus.clone();
+            let release_then_dismiss: DismissHandler = Rc::new(move |window, cx| {
+                MenuFocus::drive(&focus, false, window, cx);
+                dismiss(window, cx);
+            });
+            release_then_dismiss
+        });
+        let focus_handle = focus.read(cx).handle.clone();
         let panel = self
             .ink
             .render_panel(
                 std::mem::take(&mut self.items),
-                self.escape_focus.as_ref(),
-                self.on_dismiss.clone(),
+                Some(&focus_handle),
+                dismiss.clone(),
                 density,
             )
             .with_animation(panel_anim_id, enter_animation(), |el, delta| {
@@ -421,7 +451,7 @@ impl RenderOnce for MenuButton {
 
         let viewport = window.viewport_size();
         let mut backdrop = div().size_full().occlude();
-        if let Some(dismiss) = self.on_dismiss.clone() {
+        if let Some(dismiss) = dismiss {
             backdrop =
                 backdrop.on_mouse_down(MouseButton::Left, move |_: &MouseDownEvent, window, cx| {
                     dismiss(window, cx);

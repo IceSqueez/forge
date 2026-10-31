@@ -1,7 +1,7 @@
 use super::*;
-use crate::actions::{ListActivate, ListSelectNext, ListSelectPrev};
 use crate::async_bridge;
 use crate::integration_switch::{category_inactive_badge, inactive_badge};
+use crate::navigable_list::{ListStep, NavigableList, stepped_index};
 use crate::repo_failure::RepoFailure;
 use forge_components::ActivePresentation;
 use forge_components::PushToast;
@@ -19,6 +19,35 @@ use gpui::{
     Pixels, Point, Rgba, ScrollStrategy, SharedString, Window, div, px, uniform_list,
 };
 use std::sync::Arc;
+
+impl NavigableList for TriggersRegistryView {
+    fn step_list(&mut self, step: ListStep, cx: &mut Context<Self>) {
+        let current = self.list_cursor.and_then(|id| {
+            self.visible
+                .iter()
+                .position(|&idx| self.instances.get(idx).map(|r| r.id) == Some(id))
+        });
+        let Some(next) = stepped_index(current, self.visible.len(), step) else {
+            return;
+        };
+        if let Some(row) = self
+            .visible
+            .get(next)
+            .and_then(|&idx| self.instances.get(idx))
+        {
+            self.list_cursor = Some(row.id);
+            self.list_scroll
+                .scroll_to_item(next, ScrollStrategy::Nearest);
+            cx.notify();
+        }
+    }
+
+    fn activate_list(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(id) = self.list_cursor {
+            self.select(id, cx);
+        }
+    }
+}
 
 impl TriggersRegistryView {
     pub(super) fn find(&self, id: TriggerInstanceId) -> Option<&TriggerInstanceRow> {
@@ -148,61 +177,6 @@ impl TriggersRegistryView {
         self.list_cursor = Some(id);
         self.load_detail(id, cx);
         cx.notify();
-    }
-
-    pub(super) fn on_list_prev(
-        &mut self,
-        _: &ListSelectPrev,
-        _w: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.move_cursor(-1, cx);
-    }
-
-    pub(super) fn on_list_next(
-        &mut self,
-        _: &ListSelectNext,
-        _w: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.move_cursor(1, cx);
-    }
-
-    pub(super) fn on_list_activate(
-        &mut self,
-        _: &ListActivate,
-        _w: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        if let Some(id) = self.list_cursor {
-            self.select(id, cx);
-        }
-    }
-
-    fn move_cursor(&mut self, delta: isize, cx: &mut Context<Self>) {
-        if self.visible.is_empty() {
-            return;
-        }
-        let cur = self
-            .list_cursor
-            .and_then(|id| {
-                self.visible
-                    .iter()
-                    .position(|&idx| self.instances.get(idx).map(|r| r.id) == Some(id))
-            })
-            .unwrap_or(0);
-        let last = self.visible.len() as isize - 1;
-        let next = (cur as isize + delta).clamp(0, last) as usize;
-        if let Some(row) = self
-            .visible
-            .get(next)
-            .and_then(|&idx| self.instances.get(idx))
-        {
-            self.list_cursor = Some(row.id);
-            self.list_scroll
-                .scroll_to_item(next, ScrollStrategy::Nearest);
-            cx.notify();
-        }
     }
 
     fn set_hover(&mut self, id: TriggerInstanceId, hovered: bool, cx: &mut Context<Self>) {

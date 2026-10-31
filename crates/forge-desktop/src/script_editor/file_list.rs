@@ -1,4 +1,5 @@
 use super::{GLYPH_ACTION, ScriptEditorView, ScriptEntry};
+use crate::navigable_list::{ListStep, NavigableList, navigable_list};
 use forge_components::{
     ActivePresentation, BORDER_THIN, Density, FONT_FIELD, FONT_XS, FONT_XXS, ForgePalette, Icon,
     Radius, ResizeEdge, ResizeRange, Spacing, body_family, context_menu, icon, install_resize,
@@ -8,7 +9,7 @@ use forge_types::ScriptId;
 use gpui::prelude::*;
 use gpui::{
     AnyElement, ClickEvent, Context, FontWeight, MouseButton, MouseDownEvent, Pixels, Point, Rgba,
-    SharedString, div, px,
+    SharedString, Window, div, px,
 };
 
 const STRIPE_W: Pixels = px(2.0);
@@ -20,6 +21,44 @@ struct ScriptsListResizeDrag;
 pub(super) struct RowMenu {
     pub(super) id: ScriptId,
     pub(super) position: Point<Pixels>,
+}
+
+struct ScriptRow {
+    id: ScriptId,
+    child_index: usize,
+}
+
+const GROUP_HEADER_ROWS: usize = 1;
+const GROUP_GAP_ROWS: usize = 1;
+
+fn group_gap(density: Density) -> AnyElement {
+    div().h(spacing(Spacing::Sm, density)).into_any_element()
+}
+
+impl NavigableList for ScriptEditorView {
+    fn step_list(&mut self, step: ListStep, cx: &mut Context<Self>) {
+        if self.rename.is_some() {
+            return;
+        }
+        let rows = self.script_rows();
+        let ids: Vec<ScriptId> = rows.iter().map(|row| row.id).collect();
+        if let Some(next) = self.list_keys.step(&ids, self.selected.as_ref(), step) {
+            if let Some(row) = rows.get(next) {
+                self.list_scroll.scroll_to_item(row.child_index);
+            }
+            cx.notify();
+        }
+    }
+
+    fn activate_list(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        if self.rename.is_some() {
+            return;
+        }
+        let ids: Vec<ScriptId> = self.script_rows().iter().map(|row| row.id).collect();
+        if let Some(id) = self.list_keys.activation_target(&ids) {
+            self.select(id, cx);
+        }
+    }
 }
 
 impl ScriptEditorView {
@@ -40,6 +79,34 @@ impl ScriptEditorView {
             self.list_width = clamped;
             cx.notify();
         }
+    }
+
+    fn grouped_scripts(&self) -> (Vec<&ScriptEntry>, Vec<&ScriptEntry>) {
+        self.scripts
+            .iter()
+            .filter(|e| self.search.matches(&e.name))
+            .partition(|e| e.linked.is_some())
+    }
+
+    fn script_rows(&self) -> Vec<ScriptRow> {
+        let (action, standalone) = self.grouped_scripts();
+        let mut rows = Vec::with_capacity(action.len() + standalone.len());
+        let mut child_index = 0;
+        for group in [action, standalone] {
+            if group.is_empty() {
+                continue;
+            }
+            child_index += GROUP_HEADER_ROWS;
+            for entry in group {
+                rows.push(ScriptRow {
+                    id: entry.id,
+                    child_index,
+                });
+                child_index += 1;
+            }
+            child_index += GROUP_GAP_ROWS;
+        }
+        rows
     }
 
     pub(super) fn left_pane(
@@ -82,81 +149,61 @@ impl ScriptEditorView {
             .child(title_row)
             .child(self.search.field().clone());
 
-        let mut scripts = div().flex().flex_col();
+        let mut rows: Vec<AnyElement> = Vec::new();
         if self.scripts.is_empty() {
-            scripts = scripts.child(
+            rows.push(
                 div()
                     .py(spacing(Spacing::Xxs, density))
                     .px(spacing(Spacing::Xs, density))
                     .font_family(mono_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_faint)
-                    .child(tr!("script_editor_no_scripts")),
+                    .child(tr!("script_editor_no_scripts"))
+                    .into_any_element(),
             );
         } else {
-            let filtered: Vec<&ScriptEntry> = self
-                .scripts
-                .iter()
-                .filter(|e| self.search.matches(&e.name))
-                .collect();
-            let action: Vec<&ScriptEntry> = filtered
-                .iter()
-                .copied()
-                .filter(|e| e.linked.is_some())
-                .collect();
-            let standalone: Vec<&ScriptEntry> = filtered
-                .iter()
-                .copied()
-                .filter(|e| e.linked.is_none())
-                .collect();
+            let (action, standalone) = self.grouped_scripts();
 
             if !action.is_empty() {
-                let mut group = div()
-                    .flex()
-                    .flex_col()
-                    .mb(spacing(Spacing::Sm, density))
-                    .child(self.group_header(
-                        Icon::Bolt,
-                        palette.brand,
-                        tr!("script_editor_group_action"),
-                        action.len(),
-                        palette,
-                        density,
-                    ));
+                rows.push(self.group_header(
+                    Icon::Bolt,
+                    palette.brand,
+                    tr!("script_editor_group_action"),
+                    action.len(),
+                    palette,
+                    density,
+                ));
                 for entry in &action {
-                    group = group.child(self.file_row(entry, palette.brand, palette, cx));
+                    rows.push(self.file_row(entry, palette.brand, palette, cx));
                 }
-                scripts = scripts.child(group);
+                rows.push(group_gap(density));
             }
 
             if !standalone.is_empty() {
-                let mut group = div()
-                    .flex()
-                    .flex_col()
-                    .mb(spacing(Spacing::Sm, density))
-                    .child(self.group_header(
-                        Icon::FileCode,
-                        palette.accent_peach,
-                        tr!("script_editor_group_standalone"),
-                        standalone.len(),
-                        palette,
-                        density,
-                    ));
+                rows.push(self.group_header(
+                    Icon::FileCode,
+                    palette.accent_peach,
+                    tr!("script_editor_group_standalone"),
+                    standalone.len(),
+                    palette,
+                    density,
+                ));
                 for entry in &standalone {
-                    group = group.child(self.file_row(entry, palette.accent_peach, palette, cx));
+                    rows.push(self.file_row(entry, palette.accent_peach, palette, cx));
                 }
-                scripts = scripts.child(group);
+                rows.push(group_gap(density));
             }
         }
 
-        let scroll = div()
-            .id("script-left-scroll")
+        let focus = self.list_keys.focus().clone();
+        let scroll = navigable_list(div().id("script-left-scroll"), &focus, cx)
+            .track_scroll(&self.list_scroll)
             .flex_1()
             .min_h_0()
             .overflow_y_scroll()
             .py(spacing(Spacing::Sm, density))
             .px(spacing(Spacing::Xs, density))
-            .child(scripts);
+            .children(rows);
 
         let pane = div()
             .flex_none()
@@ -271,6 +318,7 @@ impl ScriptEditorView {
         let density = cx.density();
         let id = entry.id;
         let selected = self.selected == Some(id);
+        let keyboard_cursor = self.list_keys.is_at(&id);
         let renaming = self.rename.as_ref().is_some_and(|r| r.target == id);
 
         let icon_color = if selected {
@@ -356,6 +404,7 @@ impl ScriptEditorView {
             .border_l(STRIPE_W)
             .border_color(stripe)
             .when(selected, |d| d.bg(palette.surface_overlay))
+            .when(keyboard_cursor && !selected, |d| d.bg(palette.base))
             .on_mouse_down(
                 MouseButton::Right,
                 cx.listener(move |this, e: &MouseDownEvent, _, cx| {

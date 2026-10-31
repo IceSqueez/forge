@@ -22,7 +22,6 @@ use gpui::{
 use std::future::Future;
 use std::sync::Arc;
 
-use crate::actions::LIST_CONTEXT;
 use crate::actions_screen::config_problem_text::config_problem_text;
 use crate::async_bridge::Generation;
 use crate::async_bridge::{self, KeyedSnapshotWriters, WriteOutcome};
@@ -30,6 +29,7 @@ use crate::collection_options::ChoiceOptions;
 use crate::config_form::{CollectionChoices, ConfigField};
 use crate::integration_switch::{IntegrationSwitch, SwitchWatch};
 use crate::integrations::BuiltinRegistry;
+use crate::navigable_list::navigable_list;
 use crate::navigation::NavRequested;
 use crate::navigation::Screen;
 use crate::picker_favorites::{StoredFavorites, TRIGGER_FAVORITES};
@@ -527,12 +527,8 @@ impl Render for TriggersRegistryView {
         let stats = self.render_stats(&palette, density);
         let filter_left = self.render_filter_left(&palette, cx);
         let filter_right = self.render_filter_right(&palette, cx);
-        let list = div()
-            .track_focus(&self.list_focus)
-            .key_context(LIST_CONTEXT)
-            .on_action(cx.listener(Self::on_list_prev))
-            .on_action(cx.listener(Self::on_list_next))
-            .on_action(cx.listener(Self::on_list_activate))
+        let list_focus = self.list_focus.clone();
+        let list = navigable_list(div(), &list_focus, cx)
             .flex()
             .flex_col()
             .flex_1()

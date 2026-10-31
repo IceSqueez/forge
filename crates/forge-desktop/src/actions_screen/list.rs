@@ -1,6 +1,7 @@
 use super::action_writes::{ActionSettings, ActionWrite};
 use super::*;
 use crate::async_bridge;
+use crate::navigable_list::{ListStep, NavigableList, navigable_list};
 use crate::repo_failure::RepoFailure;
 use forge_components::ActivePresentation;
 use forge_components::NAME_FIELD_LIMIT;
@@ -20,6 +21,11 @@ use gpui::{
     SharedString, Window, div, px,
 };
 use std::sync::Arc;
+
+struct TreeActionRow {
+    id: ActionId,
+    child_index: usize,
+}
 
 const DESCRIPTION_HEIGHT: Pixels = px(72.0);
 const ROW_PAD_R: Pixels = px(8.0);
@@ -53,6 +59,32 @@ fn modal_section(
                 .child(label.into()),
         )
         .child(control)
+}
+
+impl NavigableList for ScreenActionsView {
+    fn step_list(&mut self, step: ListStep, cx: &mut Context<Self>) {
+        if self.renaming.is_some() {
+            return;
+        }
+        let rows = self.tree_action_rows();
+        let ids: Vec<ActionId> = rows.iter().map(|row| row.id).collect();
+        if let Some(next) = self.tree_keys.step(&ids, self.selected.as_ref(), step) {
+            if let Some(row) = rows.get(next) {
+                self.tree_scroll.scroll_to_item(row.child_index);
+            }
+            cx.notify();
+        }
+    }
+
+    fn activate_list(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        if self.renaming.is_some() {
+            return;
+        }
+        let ids: Vec<ActionId> = self.tree_action_rows().iter().map(|row| row.id).collect();
+        if let Some(id) = self.tree_keys.activation_target(&ids) {
+            self.select(id, cx);
+        }
+    }
 }
 
 impl ScreenActionsView {
@@ -557,9 +589,36 @@ impl ScreenActionsView {
             .into_any_element()
     }
 
+    fn tree_action_rows(&self) -> Vec<TreeActionRow> {
+        let mut rows = Vec::new();
+        let mut child_index = 0;
+        for group in &self.groups {
+            let mut surviving = group
+                .actions
+                .iter()
+                .filter(|a| self.action_passes(a))
+                .peekable();
+            if surviving.peek().is_none() {
+                continue;
+            }
+            child_index += 1;
+            if group.collapsed {
+                continue;
+            }
+            for action in surviving {
+                rows.push(TreeActionRow {
+                    id: action.id,
+                    child_index,
+                });
+                child_index += 1;
+            }
+        }
+        rows
+    }
+
     pub(super) fn render_tree(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
         let density = cx.density();
-        let mut col = div().flex().flex_col();
+        let mut rows: Vec<AnyElement> = Vec::new();
 
         if self.total_actions() == 0 {
             let caption = if self.loading {
@@ -567,11 +626,10 @@ impl ScreenActionsView {
             } else {
                 tr!("actions_empty")
             };
-            col = col.child(tree_notice(
-                SharedString::from(caption),
-                palette.text_faint,
-                density,
-            ));
+            rows.push(
+                tree_notice(SharedString::from(caption), palette.text_faint, density)
+                    .into_any_element(),
+            );
         } else {
             for (index, group) in self.groups.iter().enumerate() {
                 let surviving: Vec<&ActionSummary> = group
@@ -582,23 +640,23 @@ impl ScreenActionsView {
                 if surviving.is_empty() {
                     continue;
                 }
-                col =
-                    col.child(self.render_group_header(index, group, surviving.len(), palette, cx));
+                rows.push(self.render_group_header(index, group, surviving.len(), palette, cx));
                 if !group.collapsed {
                     for action in surviving {
-                        col = col.child(self.render_row(action, palette, cx));
+                        rows.push(self.render_row(action, palette, cx));
                     }
                 }
             }
         }
 
-        let inner = div()
-            .id("actions-tree")
+        let focus = self.tree_keys.focus().clone();
+        let inner = navigable_list(div().id("actions-tree"), &focus, cx)
+            .track_scroll(&self.tree_scroll)
             .flex_1()
             .min_h(px(0.0))
             .py(spacing(Spacing::Xs, density))
             .overflow_y_scroll()
-            .child(col)
+            .children(rows)
             .children(self.render_row_context_menu(palette, cx));
 
         let panel = div()
@@ -701,7 +759,7 @@ impl ScreenActionsView {
         } else {
             gpui::transparent_black().into()
         };
-        let row_bg: Rgba = if selected || hovered {
+        let row_bg: Rgba = if selected || hovered || self.tree_keys.is_at(&id) {
             palette.elevated
         } else {
             gpui::transparent_black().into()

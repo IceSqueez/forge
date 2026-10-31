@@ -103,6 +103,7 @@ mod message_catalogs;
 mod midi_mapping_modal;
 mod midi_screen;
 mod midi_signal;
+mod navigable_list;
 mod navigation;
 mod navigation_guard;
 mod obs_catalog_options;

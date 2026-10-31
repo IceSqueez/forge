@@ -22,6 +22,7 @@ use self::diagnostics::EditorProblem;
 use self::file_list::RowMenu;
 use self::run_modal::RunModal;
 use self::script_rename::{PendingRename, RenameState};
+use crate::navigable_list::ListCursor;
 use crate::navigation::NavRequested;
 use crate::screen_shortcuts::ScreenShortcuts;
 use crate::unsaved_work::UnsavedWork;
@@ -37,12 +38,12 @@ use forge_storage::{
     ScriptTelemetry,
 };
 use forge_types::{Action, ActionId, IntegrationAvailability, ScriptContract, ScriptId};
-use gpui::FocusHandle;
 use gpui::prelude::*;
 use gpui::{
     AnyElement, App, Context, Entity, EventEmitter, Pixels, SharedString, Subscription, Task,
     UniformListScrollHandle, Window, div, px,
 };
+use gpui::{FocusHandle, ScrollHandle};
 use std::collections::VecDeque;
 use std::sync::Arc;
 
@@ -107,6 +108,8 @@ pub struct ScriptEditorView {
     engine_timeout_ms: Option<u64>,
 
     list_width: Pixels,
+    list_keys: ListCursor<ScriptId>,
+    list_scroll: ScrollHandle,
     details_width: Pixels,
     console_height: Pixels,
 
@@ -262,6 +265,8 @@ impl ScriptEditorView {
             run_in_flight: false,
             engine_timeout_ms: None,
             list_width: LEFT_PANE_W,
+            list_keys: ListCursor::new(cx),
+            list_scroll: ScrollHandle::new(),
             details_width: DETAILS_PANE_W,
             console_height: CONSOLE_INIT_H,
             search,
@@ -323,6 +328,7 @@ impl Render for ScriptEditorView {
             window,
             cx,
         );
+        self.list_keys.claim_focus_once(window, cx);
         let palette = cx.palette();
         let density = cx.density();
 

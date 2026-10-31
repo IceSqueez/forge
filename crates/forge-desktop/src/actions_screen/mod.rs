@@ -3,6 +3,7 @@ use crate::collection_options::{ChoiceOptions, CollectionChoiceField};
 use crate::config_form::CollectionChoices;
 use crate::integration_switch::SwitchWatch;
 use crate::integrations::BuiltinRegistry;
+use crate::navigable_list::ListCursor;
 use crate::navigation::NavRequested;
 use crate::navigation::Screen;
 use crate::obs_catalog_options::ObsCatalogField;
@@ -33,11 +34,11 @@ use forge_storage::{
 };
 use forge_tts_core::TtsRegistry;
 use forge_types::{Action, ActionId, ExecutionOutcome, QueueId, SubActionStep, TriggerInstanceId};
-use gpui::FocusHandle;
 use gpui::{
     AnyElement, App, ClickEvent, Context, ElementId, Entity, EventEmitter, Pixels, Point,
     SharedString, Subscription, Window, div, prelude::*, px,
 };
+use gpui::{FocusHandle, ScrollHandle};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::future::Future;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -207,6 +208,8 @@ pub struct ScreenActionsView {
     _collection_watch: Vec<gpui::Task<()>>,
     concurrent_queue_ids: HashSet<String>,
     tree_width: Pixels,
+    tree_keys: ListCursor<ActionId>,
+    tree_scroll: ScrollHandle,
     loading: bool,
     list_reads: Arc<AtomicU64>,
     landed_list_read: u64,
@@ -325,6 +328,8 @@ impl ScreenActionsView {
             _collection_watch: Vec::new(),
             concurrent_queue_ids: HashSet::new(),
             tree_width: LEFT_PANEL_W,
+            tree_keys: ListCursor::new(cx),
+            tree_scroll: ScrollHandle::new(),
             loading: true,
             list_reads: Arc::new(AtomicU64::new(0)),
             landed_list_read: 0,
@@ -664,6 +669,7 @@ impl Render for ScreenActionsView {
             window,
             cx,
         );
+        self.tree_keys.claim_focus_once(window, cx);
         let density = cx.density();
         self.release_step_drag(window, cx);
         let palette = cx.palette();

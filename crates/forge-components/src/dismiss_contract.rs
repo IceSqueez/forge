@@ -70,7 +70,6 @@ impl Render for Host {
                 .into_any_element(),
             Surface::MenuButton => menu_button(Icon::Check, true, &FORGE_DEFAULT)
                 .on_dismiss(dismiss)
-                .dismiss_on_escape(&self.focus)
                 .into_any_element(),
             Surface::ContextMenu => context_menu(corner, &FORGE_DEFAULT)
                 .on_dismiss(dismiss)
@@ -212,5 +211,61 @@ fn a_right_click_outside_dismisses_only_the_context_menu(cx: &mut TestAppContext
         opened.vcx.run_until_parked();
 
         assert_eq!(opened.dismissals.get(), dismissals, "{surface:?}");
+    }
+}
+
+struct MenuHost {
+    earlier_focus: FocusHandle,
+    dismiss_removes_the_button: bool,
+    menu_open: bool,
+    button_shown: bool,
+}
+
+impl Render for MenuHost {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let view = cx.entity();
+        let removes_the_button = self.dismiss_removes_the_button;
+        let button = self.button_shown.then(|| {
+            menu_button(Icon::Check, self.menu_open, &FORGE_DEFAULT).on_dismiss(move |_, cx| {
+                view.update(cx, |host, cx| {
+                    host.menu_open = false;
+                    host.button_shown = !removes_the_button;
+                    cx.notify();
+                });
+            })
+        });
+        div()
+            .size_full()
+            .track_focus(&self.earlier_focus)
+            .children(button)
+    }
+}
+
+#[gpui::test]
+fn escape_closes_a_menu_button_and_returns_focus_even_when_its_row_is_gone(
+    cx: &mut TestAppContext,
+) {
+    for dismiss_removes_the_button in [false, true] {
+        install_presentation(cx);
+        let (host, vcx) = cx.add_window_view(move |_window, cx| MenuHost {
+            earlier_focus: cx.focus_handle(),
+            dismiss_removes_the_button,
+            menu_open: false,
+            button_shown: true,
+        });
+        vcx.run_until_parked();
+        let earlier_focus = host.read_with(vcx, |host, _| host.earlier_focus.clone());
+        vcx.update(|window, cx| window.focus(&earlier_focus, cx));
+        host.update(vcx, |host, cx| {
+            host.menu_open = true;
+            cx.notify();
+        });
+        vcx.run_until_parked();
+        vcx.update(|window, _| assert!(!earlier_focus.is_focused(window)));
+
+        vcx.simulate_keystrokes("escape");
+
+        assert!(!host.read_with(vcx, |host, _| host.menu_open));
+        vcx.update(|window, _| assert!(earlier_focus.is_focused(window)));
     }
 }

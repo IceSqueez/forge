@@ -31,6 +31,7 @@ use crate::chat_feed::ChatFeed;
 use crate::chat_viewer_messages::ViewerMessages;
 use crate::home_stats::HomeStats;
 use crate::integration_lifecycle::IntegrationLifecycle;
+use crate::navigable_list::ListCursor;
 pub use composer::ChatComposer;
 use forge_components::drive_overlay_focus;
 use forge_components::{
@@ -41,11 +42,11 @@ use forge_runtime::ActionEngineHandle;
 use forge_speak_queue::SpeakQueueHandle;
 use forge_storage::{ChatHistoryRepo, ViewerRepo, VoiceAliasRepo};
 use forge_types::{PlatformId, Shared};
-use gpui::FocusHandle;
 use gpui::{
     Context, Entity, ListAlignment, ListState, Pixels, Point, Subscription, Window, div,
     prelude::*, px,
 };
+use gpui::{FocusHandle, UniformListScrollHandle};
 use std::collections::VecDeque;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -111,6 +112,8 @@ pub struct ChatView {
     feed_changed: tokio::sync::watch::Sender<()>,
     viewers: ViewerDirectory,
     drawer_keys: Vec<AuthorKey>,
+    drawer_list_keys: ListCursor<AuthorKey>,
+    drawer_list_scroll: UniformListScrollHandle,
     whisper_open: bool,
     whisper_input: Entity<TextInput>,
     reply_target: Option<ReplyTarget>,
@@ -235,6 +238,8 @@ impl ChatView {
             feed_changed,
             viewers: ViewerDirectory::default(),
             drawer_keys: Vec::new(),
+            drawer_list_keys: ListCursor::new(cx),
+            drawer_list_scroll: UniformListScrollHandle::new(),
             whisper_open: false,
             whisper_input,
             reply_target: None,

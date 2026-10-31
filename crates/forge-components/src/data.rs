@@ -65,6 +65,7 @@ impl Column {
 pub struct DataRow {
     cells: Vec<AnyElement>,
     reveal_group: Option<SharedString>,
+    highlighted: bool,
 }
 
 impl DataRow {
@@ -72,6 +73,7 @@ impl DataRow {
         Self {
             cells,
             reveal_group: None,
+            highlighted: false,
         }
     }
 
@@ -79,7 +81,14 @@ impl DataRow {
         Self {
             cells,
             reveal_group: Some(group.into()),
+            highlighted: false,
         }
+    }
+
+    #[must_use]
+    pub fn highlighted(mut self, highlighted: bool) -> Self {
+        self.highlighted = highlighted;
+        self
     }
 }
 
@@ -462,6 +471,9 @@ impl<'a> VirtualTable<'a> {
                         .children(cells);
                     if trailing_rule || !last {
                         row_el = row_el.border_b(BORDER_THIN).border_color(separator);
+                    }
+                    if row.highlighted {
+                        row_el = row_el.bg(hover);
                     }
                     if let Some(group) = row.reveal_group {
                         row_el = row_el.group(group);

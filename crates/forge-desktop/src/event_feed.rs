@@ -26,9 +26,9 @@ use gpui::{
     uniform_list,
 };
 
-use crate::actions::{LIST_CONTEXT, ListActivate, ListSelectNext, ListSelectPrev};
 use crate::async_bridge;
 use crate::event_log::{EventCausation, EventFilter, EventItem, EventLog};
+use crate::navigable_list::{ListStep, NavigableList, navigable_list, stepped_index};
 use crate::runtime_event::RuntimeEvent;
 use forge_components::ActivePresentation;
 use forge_components::PushToast;
@@ -159,6 +159,20 @@ fn extend_projection(
     log.end_seq()
 }
 
+impl NavigableList for EventFeedView {
+    fn step_list(&mut self, step: ListStep, cx: &mut Context<Self>) {
+        if let Some(next) = stepped_index(self.selected_or_newest(), self.visible.len(), step) {
+            self.select_index(next, cx);
+        }
+    }
+
+    fn activate_list(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(current) = self.selected_or_newest() {
+            self.select_index(current, cx);
+        }
+    }
+}
+
 impl EventFeedView {
     pub fn new(
         log: Entity<EventLog>,
@@ -219,34 +233,19 @@ impl EventFeedView {
         self.kind_col_w = widest;
     }
 
-    fn move_selection(&mut self, delta: isize, cx: &mut Context<Self>) {
-        if self.visible.is_empty() {
-            return;
-        }
-        let cur = self
-            .selected
+    fn selected_or_newest(&self) -> Option<usize> {
+        self.selected
             .as_ref()
             .and_then(|id| self.visible.iter().position(|e| &e.item.id == id))
-            .unwrap_or(self.visible.len() - 1);
-        let last = self.visible.len() as isize - 1;
-        let next = (cur as isize + delta).clamp(0, last) as usize;
+            .or_else(|| self.visible.len().checked_sub(1))
+    }
+
+    fn select_index(&mut self, next: usize, cx: &mut Context<Self>) {
         self.selected = self.visible.get(next).map(|e| e.item.id.clone());
         self.auto_scroll = false;
         self.list_scroll
             .scroll_to_item(next, ScrollStrategy::Nearest);
         cx.notify();
-    }
-
-    fn on_list_prev(&mut self, _: &ListSelectPrev, _w: &mut Window, cx: &mut Context<Self>) {
-        self.move_selection(-1, cx);
-    }
-
-    fn on_list_next(&mut self, _: &ListSelectNext, _w: &mut Window, cx: &mut Context<Self>) {
-        self.move_selection(1, cx);
-    }
-
-    fn on_list_activate(&mut self, _: &ListActivate, _w: &mut Window, cx: &mut Context<Self>) {
-        self.move_selection(0, cx);
     }
 
     fn on_log_changed(&mut self, _log: Entity<EventLog>, cx: &mut Context<Self>) {
@@ -724,13 +723,8 @@ impl EventFeedView {
             .into_any_element()
         };
 
-        div()
-            .id("event-feed-scroll")
-            .track_focus(&self.list_focus)
-            .key_context(LIST_CONTEXT)
-            .on_action(cx.listener(Self::on_list_prev))
-            .on_action(cx.listener(Self::on_list_next))
-            .on_action(cx.listener(Self::on_list_activate))
+        let focus = self.list_focus.clone();
+        navigable_list(div().id("event-feed-scroll"), &focus, cx)
             .flex_1()
             .h_full()
             .flex()

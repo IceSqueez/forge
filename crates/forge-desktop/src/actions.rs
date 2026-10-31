@@ -5,6 +5,7 @@ use gpui::{App, KeyBinding, Keystroke, actions};
 
 pub const SHELL_CONTEXT: &str = "ForgeShell";
 pub const LIST_CONTEXT: &str = "ForgeList";
+pub const STEP_DRAG_CONTEXT: &str = "ForgeStepDrag";
 const NEXT_FIELD_CHORD: &str = "tab";
 const QUIT_CHORD: &str = "cmd-q";
 
@@ -26,6 +27,8 @@ actions!(
 
 actions!(forge_list, [ListSelectPrev, ListSelectNext, ListActivate]);
 
+actions!(forge_step_drag, [StepDragCancel]);
+
 actions!(forge_app, [Quit]);
 
 fn bind_list_keys(cx: &mut App) {
@@ -33,6 +36,7 @@ fn bind_list_keys(cx: &mut App) {
         KeyBinding::new("up", ListSelectPrev, Some(LIST_CONTEXT)),
         KeyBinding::new("down", ListSelectNext, Some(LIST_CONTEXT)),
         KeyBinding::new("enter", ListActivate, Some(LIST_CONTEXT)),
+        KeyBinding::new("escape", StepDragCancel, Some(STEP_DRAG_CONTEXT)),
     ]);
 }
 

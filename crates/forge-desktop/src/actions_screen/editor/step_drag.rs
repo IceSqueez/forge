@@ -1,11 +1,12 @@
 use super::*;
+use crate::actions::{STEP_DRAG_CONTEXT, StepDragCancel};
 use forge_components::{
-    BORDER_THIN, DRAG_SOURCE_OPACITY, ESCAPE_KEY, FONT_XS, ForgePalette, Icon, Radius, Spacing,
-    body_family, icon, radius, scaled, spacing,
+    BORDER_THIN, DRAG_SOURCE_OPACITY, FONT_XS, ForgePalette, Icon, Radius, Spacing, body_family,
+    icon, radius, scaled, spacing,
 };
 use gpui::{
     AnyElement, Bounds, ClickEvent, Context, CursorStyle, DragMoveEvent, FocusHandle, FontWeight,
-    Half, KeyDownEvent, Pixels, Rgba, SharedString, Window, div,
+    Half, Pixels, Rgba, SharedString, Window, div,
 };
 
 pub(super) struct StepDrag {
@@ -280,13 +281,12 @@ impl ScreenActionsView {
         cx: &mut Context<Self>,
     ) -> gpui::Stateful<gpui::Div> {
         list.id("actions-step-list")
+            .key_context(STEP_DRAG_CONTEXT)
             .when(self.step_drag.is_some(), |el| {
                 el.track_focus(&self.step_drag_focus)
             })
-            .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
-                if event.keystroke.key.as_str() == ESCAPE_KEY {
-                    this.cancel_step_drag(window, cx);
-                }
+            .on_action(cx.listener(|this, _: &StepDragCancel, window, cx| {
+                this.cancel_step_drag(window, cx);
             }))
             .on_drag_move(cx.listener(|this, event: &DragMoveEvent<StepDrag>, _, cx| {
                 this.hover_step_list(event, cx)
@@ -493,6 +493,7 @@ mod tests {
     fn mount_failing(cx: &mut TestAppContext, rendered: bool, failures: usize) -> Fixture<'_> {
         crate::i18n::install_language(forge_storage::Language::En);
         cx.update(|cx| cx.set_global(forge_components::Toasts::new()));
+        cx.update(crate::actions::register_key_bindings);
         let rt = runtime();
         let opened = detail(chain());
         let store = Arc::new(Store {

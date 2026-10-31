@@ -21,15 +21,16 @@ use forge_components::{
 use forge_components::{Confirm, SearchState};
 use std::path::PathBuf;
 
+use crate::navigable_list::{ListCursor, ListStep, NavigableList, navigable_list};
 use forge_components::drive_overlay_focus;
 use forge_runtime::EventBus;
 use forge_storage::{GlobalEntry, GlobalsExport, GlobalsRepo};
 use forge_types::{Variant, VariantKind};
-use gpui::FocusHandle;
 use gpui::{
     App, ClickEvent, Context, Entity, EventEmitter, MouseButton, MouseDownEvent, Rgba,
     SharedString, Subscription, Task, UniformListScrollHandle, Window, div, prelude::*, px, svg,
 };
+use gpui::{FocusHandle, ScrollStrategy};
 
 use crate::async_bridge::{self, KeyedSnapshotWriters, WriteOutcome};
 use crate::error::DesktopError;
@@ -359,6 +360,7 @@ pub struct GlobalsView {
     row_menu: Option<RowMenu>,
     menu_focus: FocusHandle,
     menu_focus_restore: Option<FocusHandle>,
+    table_keys: ListCursor<SharedString>,
     table_scroll: UniformListScrollHandle,
     _globals_obs: Subscription,
     _search_sub: Subscription,
@@ -405,6 +407,7 @@ impl GlobalsView {
             row_menu: None,
             menu_focus: cx.focus_handle(),
             menu_focus_restore: None,
+            table_keys: ListCursor::new(cx),
             table_scroll: UniformListScrollHandle::new(),
             _globals_obs: globals_obs,
             _search_sub: search_sub,
@@ -1010,14 +1013,18 @@ impl GlobalsView {
             )
         };
 
-        div()
-            .id("globals-table")
+        let focus = self.table_keys.focus().clone();
+        navigable_list(div().id("globals-table"), &focus, cx)
             .flex_1()
             .h_full()
             .flex()
             .flex_col()
             .bg(palette.base)
             .child(body)
+    }
+
+    fn visible_names(&self) -> Vec<SharedString> {
+        self.visible.iter().map(|g| g.name.clone()).collect()
     }
 
     fn build_row(&self, g: &Global, palette: &ForgePalette, cx: &mut Context<Self>) -> DataRow {
@@ -1112,6 +1119,7 @@ impl GlobalsView {
             ],
             group,
         )
+        .highlighted(self.table_keys.is_at(&g.name))
     }
 
     fn name_cell(
@@ -1718,6 +1726,29 @@ impl GlobalsView {
     }
 }
 
+impl NavigableList for GlobalsView {
+    fn step_list(&mut self, step: ListStep, cx: &mut Context<Self>) {
+        if self.renaming.is_some() {
+            return;
+        }
+        let names = self.visible_names();
+        if let Some(next) = self.table_keys.step(&names, None, step) {
+            self.table_scroll
+                .scroll_to_item(next, ScrollStrategy::Nearest);
+            cx.notify();
+        }
+    }
+
+    fn activate_list(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.renaming.is_some() {
+            return;
+        }
+        if let Some(name) = self.table_keys.activation_target(&self.visible_names()) {
+            self.open_edit(name, window, cx);
+        }
+    }
+}
+
 impl Render for GlobalsView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         drive_overlay_focus(
@@ -1727,6 +1758,7 @@ impl Render for GlobalsView {
             window,
             cx,
         );
+        self.table_keys.claim_focus_once(window, cx);
         let palette = cx.palette();
         let density = cx.density();
 

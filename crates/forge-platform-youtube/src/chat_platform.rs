@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use forge_events::{Event, EventChannel, EventPublisher, EventSubscription};
 use forge_platform_core::{
     ChatPlatform, ConnectionState, ConnectionTransition, PlatformError,
-    connection_state_changed_event,
+    connection_state_changed_event, reauth_required,
 };
 use forge_storage::BanLedgerRepo;
 use futures::future::BoxFuture;
@@ -96,6 +96,11 @@ impl ChatPlatform for YoutubePlatform {
     }
 
     async fn connect(&self) -> Result<(), PlatformError> {
+        self.credentials_manager
+            .load()
+            .await?
+            .ok_or_else(|| reauth_required(PLATFORM_ID))?;
+
         let previous = self.cancel.lock().unwrap_or_else(|p| p.into_inner()).take();
         if let Some(previous) = previous {
             let _current = self.state.lock().unwrap_or_else(|p| p.into_inner());
@@ -270,19 +275,49 @@ mod tests {
 
     use super::*;
 
-    fn platform() -> YoutubePlatform {
+    fn stored_credentials() -> String {
+        serde_json::to_string(&crate::credentials::YoutubeCredentials {
+            access_token: forge_types::OAuthToken::new("access"),
+            refresh_token: forge_types::OAuthToken::new("refresh"),
+            client_id: "client".to_owned(),
+            channel_id: "UCtest".to_owned(),
+            channel_title: "Test".to_owned(),
+            channel_handle: None,
+            expires_at: OffsetDateTime::now_utc() + time::Duration::days(1),
+        })
+        .unwrap()
+    }
+
+    fn platform_with(
+        credentials: MemoryCredentials,
+        api: crate::data_api::YoutubeDataApi,
+    ) -> YoutubePlatform {
         let manager = Arc::new(YoutubeCredentialsManager::new(
-            Arc::new(MemoryCredentials::default()),
+            Arc::new(credentials),
             crate::endpoints_test_support::unreachable_oauth_client(),
             crate::endpoints_test_support::unreachable_data_api(),
         ));
         YoutubePlatform::new(
-            crate::endpoints_test_support::unreachable_data_api(),
+            api,
             "UCtest".to_owned(),
             manager,
             LiveChatIdHandle::new(),
             ActiveBroadcastIdHandle::new(),
             crate::ban_ledger_test_support::MemoryBanLedger::shared(),
+        )
+    }
+
+    fn signed_out_platform() -> YoutubePlatform {
+        platform_with(
+            MemoryCredentials::default(),
+            crate::endpoints_test_support::unreachable_data_api(),
+        )
+    }
+
+    fn platform() -> YoutubePlatform {
+        platform_with(
+            MemoryCredentials::holding(crate::credentials::CREDENTIAL_KEY, &stored_credentials()),
+            crate::endpoints_test_support::unreachable_data_api(),
         )
     }
 
@@ -300,12 +335,23 @@ mod tests {
 
     #[tokio::test]
     async fn send_message_without_credentials_requires_reauth() {
-        let p = platform();
+        let p = signed_out_platform();
         let err = p.send_message("chan", "hello").await.unwrap_err();
         assert!(
             matches!(&err, PlatformError::ReauthRequired { platform } if platform == "youtube"),
             "expected ReauthRequired {{ platform: youtube }}, got {err:?}"
         );
+    }
+
+    #[tokio::test]
+    async fn connect_without_credentials_requires_reauth_and_stays_disconnected() {
+        let p = signed_out_platform();
+        let err = p.connect().await.unwrap_err();
+        assert!(
+            matches!(&err, PlatformError::ReauthRequired { platform } if platform == "youtube"),
+            "expected ReauthRequired {{ platform: youtube }}, got {err:?}"
+        );
+        assert_eq!(p.connection_state(), ConnectionState::Disconnected);
     }
 
     #[tokio::test]
@@ -333,31 +379,9 @@ mod tests {
     }
 
     fn platform_polling(server: &crate::endpoints_test_support::StubServer) -> YoutubePlatform {
-        let credentials = serde_json::to_string(&crate::credentials::YoutubeCredentials {
-            access_token: forge_types::OAuthToken::new("access"),
-            refresh_token: forge_types::OAuthToken::new("refresh"),
-            client_id: "client".to_owned(),
-            channel_id: "UCtest".to_owned(),
-            channel_title: "Test".to_owned(),
-            channel_handle: None,
-            expires_at: OffsetDateTime::now_utc() + time::Duration::days(1),
-        })
-        .unwrap();
-        let manager = Arc::new(YoutubeCredentialsManager::new(
-            Arc::new(MemoryCredentials::holding(
-                crate::credentials::CREDENTIAL_KEY,
-                &credentials,
-            )),
-            crate::endpoints_test_support::unreachable_oauth_client(),
-            crate::endpoints_test_support::unreachable_data_api(),
-        ));
-        YoutubePlatform::new(
+        platform_with(
+            MemoryCredentials::holding(crate::credentials::CREDENTIAL_KEY, &stored_credentials()),
             crate::endpoints_test_support::data_api_at(&server.uri()),
-            "UCtest".to_owned(),
-            manager,
-            LiveChatIdHandle::new(),
-            ActiveBroadcastIdHandle::new(),
-            crate::ban_ledger_test_support::MemoryBanLedger::shared(),
         )
     }
 

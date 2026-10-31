@@ -47,6 +47,8 @@ pub(crate) enum SendFailure {
     Helix(HelixError),
     #[error("{0}")]
     Credentials(String),
+    #[error("no twitch credentials stored")]
+    NotSignedIn,
 }
 
 impl SendFailure {
@@ -167,10 +169,15 @@ impl ChatSenders {
         preference: SenderPreference,
         events: &dyn EventPublisher,
     ) -> Result<ActingSender, SendFailure> {
-        let stored = self.identity.stored().await.map_err(|e| match e {
-            HelixError::Credentials(reason) => SendFailure::Credentials(reason),
-            other => SendFailure::Chat(ChatSendError::from(other)),
-        })?;
+        let stored = self
+            .identity
+            .stored_if_signed_in()
+            .await
+            .map_err(|e| match e {
+                HelixError::Credentials(reason) => SendFailure::Credentials(reason),
+                other => SendFailure::Chat(ChatSendError::from(other)),
+            })?
+            .ok_or(SendFailure::NotSignedIn)?;
         let broadcaster_id = stored.user_id.clone();
         let streamer = Actor {
             role: SenderRole::Streamer,

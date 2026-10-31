@@ -21,10 +21,17 @@ impl SelfIdentity {
     }
 
     pub(crate) async fn stored(&self) -> Result<credentials::StoredCredential, HelixError> {
+        self.stored_if_signed_in()
+            .await?
+            .ok_or_else(|| HelixError::Credentials("no twitch credentials stored".to_owned()))
+    }
+
+    pub(crate) async fn stored_if_signed_in(
+        &self,
+    ) -> Result<Option<credentials::StoredCredential>, HelixError> {
         credentials::load(self.creds.as_ref())
             .await
-            .map_err(|e| HelixError::Credentials(e.to_string()))?
-            .ok_or_else(|| HelixError::Credentials("no twitch credentials stored".to_owned()))
+            .map_err(|e| HelixError::Credentials(e.to_string()))
     }
 }
 

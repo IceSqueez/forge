@@ -73,6 +73,7 @@ pub(crate) fn send_failure(failure: &SendFailure) -> MessageRef {
         SendFailure::ModerationThrottled => messages::rate_limited(),
         SendFailure::Helix(error) => helix_message(error),
         SendFailure::Credentials(detail) => messages::credentials_unavailable(detail),
+        SendFailure::NotSignedIn => messages::credentials_unavailable(&failure.to_string()),
     }
 }
 

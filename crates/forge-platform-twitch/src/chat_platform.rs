@@ -296,6 +296,9 @@ fn map_send_failure(failure: SendFailure) -> PlatformError {
         SendFailure::Chat(err) => map_send_error(err),
         SendFailure::Whisper(err) => map_whisper_error(err),
         SendFailure::Credentials(reason) => PlatformError::Network { reason },
+        SendFailure::NotSignedIn => PlatformError::ReauthRequired {
+            platform: PLATFORM_ID.to_owned(),
+        },
     }
 }
 

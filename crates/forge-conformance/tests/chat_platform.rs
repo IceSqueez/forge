@@ -31,9 +31,6 @@ const TEXT: &str = "hello";
 const PARENT_MESSAGE: &str = "parent";
 const CLIENT_ID: &str = "client";
 
-const CONNECTS_WITHOUT_CREDENTIALS: &[&str] = &["youtube"];
-const SENDS_REPORT_A_NETWORK_FAILURE_WITHOUT_CREDENTIALS: &[&str] = &["twitch"];
-
 struct Subject {
     id: &'static str,
     platform: Arc<dyn ChatPlatform>,
@@ -149,22 +146,6 @@ fn assert_asks_for_sign_in<T: std::fmt::Debug>(
     );
 }
 
-fn assert_send_refused_for_sign_in<T: std::fmt::Debug>(
-    subject: &Subject,
-    call: &str,
-    answer: Result<T, PlatformError>,
-) {
-    if SENDS_REPORT_A_NETWORK_FAILURE_WITHOUT_CREDENTIALS.contains(&subject.id) {
-        assert!(
-            matches!(&answer, Err(PlatformError::Network { .. })),
-            "{} {call} now answers {answer:?}, so drop it from the pinned list",
-            subject.id
-        );
-    } else {
-        assert_asks_for_sign_in(subject, call, answer);
-    }
-}
-
 #[tokio::test]
 async fn a_platform_starts_disconnected() {
     for subject in every_signed_out_platform().await {
@@ -198,15 +179,6 @@ async fn connecting_without_credentials_asks_for_sign_in_and_stays_disconnected(
     for subject in every_signed_out_platform().await {
         let answer = subject.platform.connect().await;
 
-        if CONNECTS_WITHOUT_CREDENTIALS.contains(&subject.id) {
-            assert!(
-                answer.is_ok(),
-                "{} now refuses with {answer:?}, so drop it from the pinned list",
-                subject.id
-            );
-            subject.platform.disconnect().await.unwrap();
-            continue;
-        }
         assert_asks_for_sign_in(&subject, "connect", answer);
         assert_eq!(
             subject.platform.connection_state(),
@@ -222,24 +194,24 @@ async fn sending_without_credentials_asks_for_sign_in() {
     for subject in every_signed_out_platform().await {
         let platform = &subject.platform;
 
-        assert_send_refused_for_sign_in(
+        assert_asks_for_sign_in(
             &subject,
             "send_message",
             platform.send_message(CHANNEL, TEXT).await,
         );
-        assert_send_refused_for_sign_in(
+        assert_asks_for_sign_in(
             &subject,
             "send_reply",
             platform.send_reply(CHANNEL, PARENT_MESSAGE, TEXT).await,
         );
-        assert_send_refused_for_sign_in(
+        assert_asks_for_sign_in(
             &subject,
             "send_message_as",
             platform
                 .send_message_as(CHANNEL, TEXT, SenderPreference::Default)
                 .await,
         );
-        assert_send_refused_for_sign_in(
+        assert_asks_for_sign_in(
             &subject,
             "send_reply_as",
             platform

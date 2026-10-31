@@ -581,6 +581,17 @@ mod tests {
         .unwrap()
     }
 
+    fn signed_in_repo() -> Arc<MemoryCredentials> {
+        Arc::new(MemoryCredentials::holding(
+            crate::credentials::CREDENTIAL_KEY,
+            &stored_credential_json(
+                "Live",
+                None,
+                OffsetDateTime::from_unix_timestamp(1_800_000_000).unwrap(),
+            ),
+        ))
+    }
+
     #[test]
     fn duplicate_registration_returns_error() {
         let mut reg = TriggerRegistry::new();
@@ -969,7 +980,7 @@ mod tests {
 
     #[tokio::test]
     async fn health_stream_emits_chat_delta_inactive_connecting_when_platform_connects() {
-        let (bundle, platform) = make_bundle(Arc::new(MemoryCredentials::default()));
+        let (bundle, platform) = make_bundle(signed_in_repo());
         let mut health = BuiltinHealth::stream(bundle.as_ref());
 
         platform.connect().await.unwrap();
@@ -996,7 +1007,7 @@ mod tests {
 
     #[tokio::test]
     async fn health_stream_emits_events_delta_mirroring_connecting_state_on_connect() {
-        let (bundle, platform) = make_bundle(Arc::new(MemoryCredentials::default()));
+        let (bundle, platform) = make_bundle(signed_in_repo());
         let mut health = BuiltinHealth::stream(bundle.as_ref());
 
         platform.connect().await.unwrap();
@@ -1023,7 +1034,7 @@ mod tests {
 
     #[tokio::test]
     async fn shutting_down_twice_disconnects_and_stops_every_bridge_that_holds_the_bundle() {
-        let (bundle, platform) = make_bundle(Arc::new(MemoryCredentials::default()));
+        let (bundle, platform) = make_bundle(signed_in_repo());
         platform.connect().await.unwrap();
 
         bundle.shutdown().await;
@@ -1168,7 +1179,7 @@ mod tests {
         use crate::emitted_codes::{emitted_codes, uncatalogued};
         use crate::vocabulary::messages::YOUTUBE_MESSAGES;
 
-        let (bundle, _platform) = make_bundle(Arc::new(MemoryCredentials::default()));
+        let (bundle, _platform) = make_bundle(signed_in_repo());
         let emitted = emitted_codes(&serde_json::json!((
             QuickActions::actions(bundle.as_ref()),
             BuiltinContent::sections(bundle.as_ref()),

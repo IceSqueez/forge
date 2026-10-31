@@ -16,11 +16,10 @@ use super::fields::{SENDER, SendAs};
 use crate::account::identity::SelfIdentity;
 use crate::bot_account::TwitchBotAccount;
 use crate::cadence::CadenceLedger;
+use crate::chat::MAX_MESSAGE_LEN;
 use crate::chat_sender::{ChatDelivery, ChatSenders, StepResult, failed_step, step_result};
 use crate::helix::HelixTransport;
 use crate::vocabulary::{config_keys, messages, sub_action_ids};
-
-const MAX_MESSAGE_CHARS: usize = 500;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum AnnouncementColor {
@@ -125,8 +124,8 @@ impl SendAnnouncementRunner {
         sender: SenderPreference,
         events: &dyn EventPublisher,
     ) -> StepResult {
-        if message.chars().count() > MAX_MESSAGE_CHARS {
-            return failed_step(messages::message_too_long(MAX_MESSAGE_CHARS));
+        if message.chars().count() > MAX_MESSAGE_LEN {
+            return failed_step(messages::message_too_long(MAX_MESSAGE_LEN));
         }
         let delivery = ChatDelivery::Announcement {
             text: message,

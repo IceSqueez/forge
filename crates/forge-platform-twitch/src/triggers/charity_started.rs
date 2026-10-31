@@ -138,7 +138,7 @@ pub(super) fn build_charity_lifecycle_schema() -> VariableSchema {
                 label: "Current amount (cents)".to_owned(),
                 synthesis: Some(SynthesisHint::BoundedInt {
                     min: 0,
-                    max: 1000000,
+                    max: super::MAX_SYNTHESIZED_COUNT,
                 }),
             },
             DeclaredVariable {
@@ -147,7 +147,7 @@ pub(super) fn build_charity_lifecycle_schema() -> VariableSchema {
                 label: "Target amount (cents)".to_owned(),
                 synthesis: Some(SynthesisHint::BoundedInt {
                     min: 0,
-                    max: 1000000,
+                    max: super::MAX_SYNTHESIZED_COUNT,
                 }),
             },
             DeclaredVariable {

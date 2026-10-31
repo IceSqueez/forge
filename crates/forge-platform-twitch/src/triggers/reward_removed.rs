@@ -113,7 +113,7 @@ impl TriggerKindDescriptor for RewardRemovedDescriptor {
                         label: "Reward cost".to_owned(),
                         synthesis: Some(SynthesisHint::BoundedInt {
                             min: 0,
-                            max: 1000000,
+                            max: super::MAX_SYNTHESIZED_COUNT,
                         }),
                     },
                     DeclaredVariable {

@@ -13,11 +13,10 @@ use forge_types::{ArgStack, SubActionTelemetry};
 use super::fields::{ResolvedIdField, SENDER, SendAs};
 use crate::account::identity::SelfIdentity;
 use crate::bot_account::TwitchBotAccount;
+use crate::chat::MAX_MESSAGE_LEN;
 use crate::chat_sender::{ChatDelivery, ChatSenders, StepResult, failed_step, step_result};
 use crate::helix::HelixTransport;
 use crate::vocabulary::{config_keys, messages, sub_action_ids};
-
-const MAX_MESSAGE_CHARS: usize = 500;
 
 const MESSAGE: TextField = TextField {
     key: config_keys::MESSAGE,
@@ -72,8 +71,8 @@ impl ReplyChatRunner {
         sender: SenderPreference,
         events: &dyn EventPublisher,
     ) -> StepResult {
-        if message.chars().count() > MAX_MESSAGE_CHARS {
-            return failed_step(messages::message_too_long(MAX_MESSAGE_CHARS));
+        if message.chars().count() > MAX_MESSAGE_LEN {
+            return failed_step(messages::message_too_long(MAX_MESSAGE_LEN));
         }
         let delivery = ChatDelivery::Reply {
             text: message,

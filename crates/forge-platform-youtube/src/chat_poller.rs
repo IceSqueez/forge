@@ -212,7 +212,10 @@ impl YoutubeChatPoller {
                 }
                 Err(FetchFailure::Failed(e)) => {
                     health.failed();
-                    tracing::warn!("broadcast resolution failed: {e}");
+                    tracing::warn!(
+                        "broadcast resolution failed: {}",
+                        crate::error_shape::redact_platform_error(&e)
+                    );
                     tokio::select! {
                         () = tokio::time::sleep(self.timings.broadcast_cadence) => {}
                         () = cancel.cancelled() => return Ok(()),
@@ -325,7 +328,10 @@ impl YoutubeChatPoller {
                     }
                     Err(FetchFailure::Failed(e)) => {
                         health.failed();
-                        tracing::warn!("chat messages fetch failed: {e}");
+                        tracing::warn!(
+                            "chat messages fetch failed: {}",
+                            crate::error_shape::redact_platform_error(&e)
+                        );
                         tokio::select! {
                             () = tokio::time::sleep(floor) => {}
                             () = cancel.cancelled() => return Ok(()),

@@ -124,7 +124,7 @@ impl TriggerKindDescriptor for HypeTrainStartedDescriptor {
                         label: "Level goal".to_owned(),
                         synthesis: Some(SynthesisHint::BoundedInt {
                             min: 0,
-                            max: 1000000,
+                            max: super::MAX_SYNTHESIZED_COUNT,
                         }),
                     },
                     DeclaredVariable {
@@ -133,7 +133,7 @@ impl TriggerKindDescriptor for HypeTrainStartedDescriptor {
                         label: "Current progress".to_owned(),
                         synthesis: Some(SynthesisHint::BoundedInt {
                             min: 0,
-                            max: 1000000,
+                            max: super::MAX_SYNTHESIZED_COUNT,
                         }),
                     },
                     DeclaredVariable {
@@ -142,7 +142,7 @@ impl TriggerKindDescriptor for HypeTrainStartedDescriptor {
                         label: "Total points".to_owned(),
                         synthesis: Some(SynthesisHint::BoundedInt {
                             min: 0,
-                            max: 1000000,
+                            max: super::MAX_SYNTHESIZED_COUNT,
                         }),
                     },
                     DeclaredVariable {

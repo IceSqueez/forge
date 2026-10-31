@@ -129,7 +129,7 @@ impl TriggerKindDescriptor for CharityDonationDescriptor {
                         label: "Donation amount (cents)".to_owned(),
                         synthesis: Some(SynthesisHint::BoundedInt {
                             min: 0,
-                            max: 1000000,
+                            max: super::MAX_SYNTHESIZED_COUNT,
                         }),
                     },
                     |event| {

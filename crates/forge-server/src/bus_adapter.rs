@@ -142,7 +142,7 @@ fn serialize_push(event: &Event) -> Result<String, serde_json::Error> {
     let time_stamp = event
         .timestamp
         .format(&Rfc3339)
-        .unwrap_or_else(|_| String::new());
+        .map_err(<serde_json::Error as serde::ser::Error>::custom)?;
     let frame = PushFrame {
         time_stamp,
         event: PushEventEnvelope {

@@ -74,6 +74,7 @@ mod whisper_received;
 use forge_registry::{RegistryError, TriggerRegistry};
 
 const HYPE_TRAIN_LEVEL_MAX: i64 = 20;
+const MAX_SYNTHESIZED_COUNT: i64 = 1_000_000;
 
 use ad_break_started::AdBreakStartedDescriptor;
 use automatic_reward_redeemed::AutomaticRewardRedeemedDescriptor;

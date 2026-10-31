@@ -127,7 +127,7 @@ impl TriggerKindDescriptor for GoalStartedDescriptor {
                         label: "Current amount".to_owned(),
                         synthesis: Some(SynthesisHint::BoundedInt {
                             min: 0,
-                            max: 1000000,
+                            max: super::MAX_SYNTHESIZED_COUNT,
                         }),
                     },
                     DeclaredVariable {
@@ -136,7 +136,7 @@ impl TriggerKindDescriptor for GoalStartedDescriptor {
                         label: "Target amount".to_owned(),
                         synthesis: Some(SynthesisHint::BoundedInt {
                             min: 0,
-                            max: 1000000,
+                            max: super::MAX_SYNTHESIZED_COUNT,
                         }),
                     },
                     DeclaredVariable {

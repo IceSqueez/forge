@@ -113,31 +113,57 @@ struct ServerStats {
     dropped_events: u64,
 }
 
-pub(crate) struct ServerConsoleView {
+struct ServerConsoleServices {
     server: Option<ServerHandle>,
     rt_handle: tokio::runtime::Handle,
     credentials: Arc<dyn CredentialsRepo>,
     settings: Arc<dyn SettingsRepo>,
+}
+
+struct ServerLifecycleState {
     running: bool,
     enabled: bool,
     restarting: bool,
     bind_address: Option<String>,
     routable_host: Option<String>,
     routable_host_resolved_for: Option<String>,
+}
+
+struct ServerSecretsState {
     bearer_token: Secret,
     token_revealed: bool,
     overlay_token: Option<Secret>,
-    _overlay_token_watch: Subscription,
-    connected_clients: Vec<OwnedClientRow>,
-    recent_clients: usize,
-    clients_scroll: UniformListScrollHandle,
+    regenerate_pending: bool,
+}
+
+struct ClientsState {
+    connected: Vec<OwnedClientRow>,
+    recent: usize,
+    scroll: UniformListScrollHandle,
+    pending_disconnect: Confirm<ClientId>,
+}
+
+#[derive(Default)]
+struct TrafficState {
     throughput_samples: Vec<f32>,
     stats: ServerStats,
-    overlay_root: String,
-    overlay_entries: Vec<OwnedOverlayEntry>,
-    selected_overlay_entry: Option<String>,
-    pending_disconnect: Confirm<ClientId>,
-    regenerate_pending: bool,
+}
+
+#[derive(Default)]
+struct OverlayState {
+    root: String,
+    entries: Vec<OwnedOverlayEntry>,
+    selected: Option<String>,
+}
+
+pub(crate) struct ServerConsoleView {
+    services: ServerConsoleServices,
+    lifecycle: ServerLifecycleState,
+    secrets: ServerSecretsState,
+    clients: ClientsState,
+    traffic: TrafficState,
+    overlay: OverlayState,
+    _overlay_token_watch: Subscription,
 }
 
 impl ServerConsoleView {
@@ -155,38 +181,43 @@ impl ServerConsoleView {
         let overlay_token_watch = crate::overlay_link_token::follow(
             server.as_ref(),
             &rt_handle,
-            |this: &mut Self, token| this.overlay_token = token,
+            |this: &mut Self, token| this.secrets.overlay_token = token,
             cx,
         );
         let view = Self {
-            server,
-            rt_handle,
-            credentials,
-            settings,
-            running,
-            enabled: true,
-            restarting: false,
-            bind_address: None,
-            routable_host: None,
-            routable_host_resolved_for: None,
-            bearer_token: Secret::new(""),
-            token_revealed: false,
-            overlay_token,
+            services: ServerConsoleServices {
+                server,
+                rt_handle,
+                credentials,
+                settings,
+            },
+            lifecycle: ServerLifecycleState {
+                running,
+                enabled: true,
+                restarting: false,
+                bind_address: None,
+                routable_host: None,
+                routable_host_resolved_for: None,
+            },
+            secrets: ServerSecretsState {
+                bearer_token: Secret::new(""),
+                token_revealed: false,
+                overlay_token,
+                regenerate_pending: false,
+            },
+            clients: ClientsState {
+                connected: Vec::new(),
+                recent: 0,
+                scroll: UniformListScrollHandle::new(),
+                pending_disconnect: Confirm::default(),
+            },
+            traffic: TrafficState::default(),
+            overlay: OverlayState::default(),
             _overlay_token_watch: overlay_token_watch,
-            connected_clients: Vec::new(),
-            recent_clients: 0,
-            clients_scroll: UniformListScrollHandle::new(),
-            throughput_samples: Vec::new(),
-            stats: ServerStats::default(),
-            overlay_root: String::new(),
-            overlay_entries: Vec::new(),
-            selected_overlay_entry: None,
-            pending_disconnect: Confirm::default(),
-            regenerate_pending: false,
         };
         view.fetch_token(cx);
         view.fetch_enabled(cx);
-        if view.server.is_some() {
+        if view.services.server.is_some() {
             view.start_run_state_bridge(cx);
             view.start_poll(cx);
         }
@@ -239,7 +270,7 @@ impl Render for ServerConsoleView {
             .child(body);
 
         let modal = self.disconnect_confirm(&palette, cx);
-        let regenerate_modal = self.regenerate_pending.then(|| {
+        let regenerate_modal = self.secrets.regenerate_pending.then(|| {
             server_bearer::regenerate_confirm(
                 &palette,
                 Self::cancel_regenerate,

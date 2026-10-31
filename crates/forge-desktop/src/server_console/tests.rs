@@ -64,10 +64,10 @@ fn file_entry(name: &str) -> OwnedOverlayEntry {
 }
 
 fn serve(view: &mut ServerConsoleView, entries: Vec<OwnedOverlayEntry>) {
-    view.running = true;
-    view.bind_address = Some(WILDCARD_BIND.to_owned());
-    view.routable_host = Some(ROUTABLE_HOST.to_owned());
-    view.overlay_entries = entries;
+    view.lifecycle.running = true;
+    view.lifecycle.bind_address = Some(WILDCARD_BIND.to_owned());
+    view.lifecycle.routable_host = Some(ROUTABLE_HOST.to_owned());
+    view.overlay.entries = entries;
 }
 
 fn listing_poll(entries: Vec<OwnedOverlayEntry>) -> ServerPoll {
@@ -276,7 +276,7 @@ fn no_browser_source_url_is_offered_until_the_server_hosts_something(cx: &mut Te
     ] {
         let url = view.update(cx, |this, _| {
             serve(this, entries);
-            this.running = running;
+            this.lifecycle.running = running;
             this.browser_source_url()
         });
 
@@ -324,7 +324,7 @@ fn no_browser_source_url_is_offered_before_the_overlay_token_is_known(cx: &mut T
 
     let url = view.update(cx, |this, _| {
         serve(this, vec![dir_entry(OVERLAY_DIR, true)]);
-        this.overlay_token = None;
+        this.secrets.overlay_token = None;
         this.browser_source_url()
     });
 
@@ -382,9 +382,9 @@ fn restart_is_offered_only_while_the_server_runs_with_no_restart_in_flight(
         ),
     ] {
         view.update(cx, |this, _| {
-            this.running = running;
-            this.restarting = restarting;
-            this.enabled = enabled;
+            this.lifecycle.running = running;
+            this.lifecycle.restarting = restarting;
+            this.lifecycle.enabled = enabled;
             assert_eq!(this.restart_disabled(), disabled, "{case}");
         });
     }
@@ -417,8 +417,8 @@ fn the_bind_field_shows_an_address_only_while_the_server_runs(cx: &mut TestAppCo
         ),
     ] {
         view.update(cx, |this, _| {
-            this.running = running;
-            this.bind_address = bind_address.map(str::to_owned);
+            this.lifecycle.running = running;
+            this.lifecycle.bind_address = bind_address.map(str::to_owned);
             assert_eq!(this.bind_state(), expected, "{case}");
         });
     }
@@ -630,7 +630,8 @@ fn console_hosting_a_folder(cx: &mut TestAppContext) -> HostingConsole {
 impl HostingConsole {
     fn listed(&self, cx: &mut TestAppContext) -> Vec<String> {
         self.view.read_with(cx, |view, _| {
-            view.overlay_entries
+            view.overlay
+                .entries
                 .iter()
                 .map(|entry| entry.name.clone())
                 .collect()
@@ -639,17 +640,17 @@ impl HostingConsole {
 
     fn seat_namesake_clients(&self, cx: &mut TestAppContext) -> (ClientId, ClientId) {
         self.view.update(cx, |view, _| {
-            view.connected_clients = vec![
+            view.clients.connected = vec![
                 client_row_from_snapshot(&snapshot_client("obs-browser", 0.0, 30)),
                 client_row_from_snapshot(&snapshot_client("obs-browser", 0.0, 30)),
             ];
-            (view.connected_clients[0].id, view.connected_clients[1].id)
+            (view.clients.connected[0].id, view.clients.connected[1].id)
         })
     }
 
     fn seated_ids(&self, cx: &mut TestAppContext) -> Vec<ClientId> {
         self.view.read_with(cx, |view, _| {
-            view.connected_clients.iter().map(|row| row.id).collect()
+            view.clients.connected.iter().map(|row| row.id).collect()
         })
     }
 
@@ -737,7 +738,7 @@ fn refreshing_drops_a_picked_entry_that_left_the_overlay_folder(cx: &mut TestApp
 
     let picked = console
         .view
-        .read_with(cx, |view, _| view.selected_overlay_entry.clone());
+        .read_with(cx, |view, _| view.overlay.selected.clone());
     assert_eq!(picked, None);
 }
 
@@ -747,7 +748,7 @@ fn regenerating_the_token_waits_for_the_confirmation(cx: &mut TestAppContext) {
     let token = |cx: &mut TestAppContext| {
         console
             .view
-            .read_with(cx, |view, _| view.bearer_token.expose().to_owned())
+            .read_with(cx, |view, _| view.secrets.bearer_token.expose().to_owned())
     };
     pump_until(&console.rt, || {
         cx.run_until_parked();
@@ -789,8 +790,8 @@ fn a_poll_that_skipped_the_serving_facts_keeps_the_known_address_and_listing(
         let resolve = this.apply_poll(poll);
         (
             resolve,
-            this.bind_address.clone(),
-            this.overlay_entries.len(),
+            this.lifecycle.bind_address.clone(),
+            this.overlay.entries.len(),
         )
     });
 
@@ -821,7 +822,7 @@ fn an_unreadable_enabled_setting_keeps_the_state_already_shown(cx: &mut TestAppC
     let settled = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let landed = Arc::clone(&settled);
     view.update(cx, |view, cx| {
-        view.enabled = false;
+        view.lifecycle.enabled = false;
         view.fetch_enabled(cx);
         async_bridge::run_async(
             &rt.handle().clone(),
@@ -837,7 +838,7 @@ fn an_unreadable_enabled_setting_keeps_the_state_already_shown(cx: &mut TestAppC
         settled.load(std::sync::atomic::Ordering::SeqCst)
     });
 
-    assert!(!view.read_with(cx, |view, _| view.enabled));
+    assert!(!view.read_with(cx, |view, _| view.lifecycle.enabled));
 }
 
 #[gpui::test]
@@ -847,7 +848,7 @@ fn a_new_bind_address_asks_for_a_host_resolve_once(cx: &mut TestAppContext) {
 
     let (first, repeat) = view.update(cx, |this, _| {
         let first = this.apply_poll(listing_poll(Vec::new()));
-        this.routable_host_resolved_for.clone_from(&first);
+        this.lifecycle.routable_host_resolved_for.clone_from(&first);
         (first, this.apply_poll(listing_poll(Vec::new())))
     });
 

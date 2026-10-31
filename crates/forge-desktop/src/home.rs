@@ -1,3 +1,6 @@
+mod hero;
+mod panels;
+
 use forge_components::FONT_XL;
 use forge_components::FONT_XXL;
 use forge_components::RevealsFocusIn;
@@ -122,24 +125,32 @@ struct JumpCard {
     target: Screen,
 }
 
-pub(crate) struct HomeView {
-    stats: Entity<HomeStats>,
-    event_loss: Entity<EventLoss>,
-    lifecycle: Option<Entity<IntegrationLifecycle>>,
-    transfers: Entity<TransferFlows>,
+struct HomeFlows {
     restore: Entity<RestoreFlow>,
     backup: Entity<BackupFlow>,
     pack_export: Entity<PackExportFlow>,
     pack_import: Entity<PackImportFlow>,
     setup_export: Entity<SetupExportFlow>,
     setup_import: Entity<SetupImportFlow>,
+}
+
+struct HomeSubscriptions {
+    _transfers: Subscription,
+    _stats: Subscription,
+    _loss: Subscription,
+    _lifecycle: Option<Subscription>,
+}
+
+pub(crate) struct HomeView {
+    stats: Entity<HomeStats>,
+    event_loss: Entity<EventLoss>,
+    lifecycle: Option<Entity<IntegrationLifecycle>>,
+    transfers: Entity<TransferFlows>,
+    flows: HomeFlows,
     export_menu_open: bool,
     row_keys: ListCursor<HomeRow>,
     scroll: ScrollHandle,
-    _transfer_obs: Subscription,
-    _stats_obs: Subscription,
-    _loss_obs: Subscription,
-    _lifecycle_obs: Option<Subscription>,
+    subs: HomeSubscriptions,
 }
 
 impl HomeView {
@@ -158,33 +169,30 @@ impl HomeView {
             })
         });
         let transfer_obs = cx.observe(&transfers, |_, _, cx| cx.notify());
-        let flows = transfers.read(cx);
-        let (restore, backup, pack_export, pack_import, setup_export, setup_import) = (
-            flows.restore.clone(),
-            flows.backup.clone(),
-            flows.pack_export.clone(),
-            flows.pack_import.clone(),
-            flows.setup_export.clone(),
-            flows.setup_import.clone(),
-        );
+        let source = transfers.read(cx);
+        let flows = HomeFlows {
+            restore: source.restore.clone(),
+            backup: source.backup.clone(),
+            pack_export: source.pack_export.clone(),
+            pack_import: source.pack_import.clone(),
+            setup_export: source.setup_export.clone(),
+            setup_import: source.setup_import.clone(),
+        };
         Self {
             stats,
             event_loss,
             lifecycle: None,
             transfers,
-            restore,
-            backup,
-            pack_export,
-            pack_import,
-            setup_export,
-            setup_import,
+            flows,
             export_menu_open: false,
             row_keys: ListCursor::new(cx),
             scroll: ScrollHandle::new(),
-            _transfer_obs: transfer_obs,
-            _stats_obs: stats_obs,
-            _loss_obs: loss_obs,
-            _lifecycle_obs: None,
+            subs: HomeSubscriptions {
+                _transfers: transfer_obs,
+                _stats: stats_obs,
+                _loss: loss_obs,
+                _lifecycle: None,
+            },
         }
     }
 
@@ -194,7 +202,7 @@ impl HomeView {
         lifecycle: Entity<IntegrationLifecycle>,
         cx: &mut Context<Self>,
     ) -> Self {
-        self._lifecycle_obs = Some(cx.observe(&lifecycle, |_, _, cx| cx.notify()));
+        self.subs._lifecycle = Some(cx.observe(&lifecycle, |_, _, cx| cx.notify()));
         self.lifecycle = Some(lifecycle);
         self
     }
@@ -282,840 +290,6 @@ impl HomeView {
         self.transfers
             .update(cx, |transfers, cx| transfers.export_setup(cx));
         cx.notify();
-    }
-
-    fn render_export_menu(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
-        let view = cx.entity();
-        let rows = dropdown_surface(palette)
-            .w(EXPORT_MENU_W)
-            .child(
-                dropdown_row("home-export-full", tr!("home_export_full"), palette)
-                    .icon(Some(Icon::Lock))
-                    .on_click(
-                        cx.listener(|this, _: &ClickEvent, _, cx| this.export_full_backup(cx)),
-                    ),
-            )
-            .child(
-                dropdown_row("home-export-pack", tr!("home_export_pack"), palette)
-                    .icon(Some(Icon::Category))
-                    .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.export_pack(cx))),
-            )
-            .child(
-                dropdown_row("home-export-setup", tr!("home_export_setup"), palette)
-                    .icon(Some(Icon::Settings))
-                    .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.export_setup(cx))),
-            );
-        dropdown(div().flex().justify_end().child(rows))
-            .on_dismiss(move |_window, cx| {
-                view.update(cx, |this, cx| this.close_export_menu(cx));
-            })
-            .into_any_element()
-    }
-
-    fn render_hero(
-        &self,
-        palette: &ForgePalette,
-        density: Density,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement + use<> {
-        let brand_box = div()
-            .flex_none()
-            .size(HERO_BRAND_BOX)
-            .flex()
-            .items_center()
-            .justify_center()
-            .rounded(radius(Radius::Lg))
-            .bg(palette.brand)
-            .child(
-                div()
-                    .font_family(body_family())
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .text_size(HERO_BRAND_FONT)
-                    .text_color(palette.shell)
-                    .child("F"),
-            );
-
-        let title_col = div()
-            .flex_1()
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Xxs, density))
-            .child(
-                div()
-                    .font_family(body_family())
-                    .text_size(HERO_TITLE_FONT)
-                    .text_color(palette.text_primary)
-                    .child("Forge"),
-            )
-            .child(
-                div()
-                    .font_family(body_family())
-                    .text_size(FONT_SM)
-                    .text_color(palette.text_muted)
-                    .child(tr!("home_hero_tagline")),
-            );
-
-        let transfer_busy = self.transfer_busy(cx);
-        let import_btn = ghost_button_with_icon(Icon::Download, tr!("home_hero_import"), palette)
-            .density(density)
-            .disabled(transfer_busy)
-            .on_click(
-                "home-import",
-                cx.listener(|this, _: &ClickEvent, _, cx| this.request_import(cx)),
-            );
-        let export_btn = ghost_button_with_icon(Icon::ArrowBarUp, tr!("home_hero_export"), palette)
-            .density(density)
-            .disabled(transfer_busy)
-            .on_click(
-                "home-export",
-                cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_export_menu(cx)),
-            );
-        let export_menu = self
-            .export_menu_open
-            .then(|| self.render_export_menu(palette, cx));
-        let export_control = div().relative().child(export_btn).children(export_menu);
-        let new_action_btn =
-            ghost_button_with_icon(Icon::Plus, tr!("home_hero_new_action"), palette)
-                .density(density)
-                .on_click(
-                    "home-new-action",
-                    cx.listener(|this, _: &ClickEvent, _, cx| this.go(Screen::Actions(None), cx)),
-                );
-
-        let buttons = div()
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Xs, density))
-            .child(import_btn)
-            .child(export_control)
-            .child(new_action_btn);
-
-        let inner = div()
-            .w_full()
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Md, density))
-            .child(brand_box)
-            .child(title_col)
-            .child(buttons);
-
-        card(inner, palette)
-            .full_width()
-            .padding_xy(scaled(HERO_PAD_V, density), HERO_PAD_H)
-            .radius(Radius::Lg)
-    }
-
-    fn jump_card(
-        &self,
-        spec: JumpCard,
-        palette: &ForgePalette,
-        density: Density,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let icon_box = div()
-            .flex_none()
-            .size(JUMP_ICON_BOX)
-            .flex()
-            .items_center()
-            .justify_center()
-            .rounded(JUMP_ICON_RADIUS)
-            .bg(palette.surface_overlay)
-            .child(icon(spec.glyph, JUMP_ICON_GLYPH, spec.glyph_color));
-
-        let label_col = div()
-            .flex_1()
-            .flex()
-            .flex_col()
-            .child(
-                div()
-                    .font_family(mono_family())
-                    .text_size(FONT_XXS)
-                    .text_color(palette.text_faint)
-                    .child(spec.section),
-            )
-            .child(
-                div()
-                    .font_family(body_family())
-                    .text_size(FONT_SM)
-                    .text_color(palette.text_primary)
-                    .child(spec.title),
-            );
-
-        let mut head = div()
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Sm, density))
-            .child(icon_box)
-            .child(label_col);
-        if spec.warn {
-            head = head.child(icon(Icon::AlertTriangle, JUMP_WARN_ICON, palette.warning));
-        }
-
-        let stat_row = div()
-            .flex()
-            .items_end()
-            .gap(spacing(Spacing::Xs, density))
-            .child(
-                div()
-                    .font_family(mono_family())
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .text_size(JUMP_STAT_FONT)
-                    .text_color(spec.glyph_color)
-                    .child(spec.stat),
-            )
-            .child(
-                div()
-                    .font_family(body_family())
-                    .text_size(FONT_XS)
-                    .text_color(palette.text_muted)
-                    .child(spec.stat_label),
-            );
-
-        let hint_row = div()
-            .w_full()
-            .flex()
-            .items_center()
-            .justify_between()
-            .child(
-                div()
-                    .font_family(body_family())
-                    .text_size(FONT_XS)
-                    .text_color(palette.text_faint)
-                    .child(spec.hint),
-            )
-            .child(icon(Icon::ArrowRight, JUMP_HINT_ARROW, palette.text_faint));
-
-        let border = palette.border_regular;
-        let hover_border = palette.border_input;
-        let target = spec.target;
-        let key = HomeRow::Jump(target.clone());
-        let border = if self.row_keys.is_at(&key) {
-            palette.brand
-        } else {
-            border
-        };
-        let card = div()
-            .id(spec.id)
-            .relative()
-            .flex()
-            .flex_1()
-            .flex_col()
-            .gap(spacing(Spacing::Sm, density))
-            .py(spacing(Spacing::Md, density))
-            .px(scaled(JUMP_PAD_H, density))
-            .rounded(radius(Radius::Md))
-            .border(BORDER_THIN)
-            .border_color(border)
-            .bg(palette.elevated)
-            .cursor_pointer()
-            .hover(move |s| s.border_color(hover_border))
-            .key_activated(palette.text_primary)
-            .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.go(target.clone(), cx)))
-            .child(head)
-            .child(stat_row)
-            .child(hint_row);
-        self.with_row_anchor(&key, card).into_any_element()
-    }
-
-    fn render_jump_cards(
-        &self,
-        cards: [JumpCard; 3],
-        palette: &ForgePalette,
-        density: Density,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement + use<> {
-        let mut row = div().w_full().flex().gap(spacing(Spacing::Xs, density));
-        for spec in cards {
-            row = row.child(self.jump_card(spec, palette, density, cx));
-        }
-        row
-    }
-
-    fn health_stat(
-        label: String,
-        value: String,
-        unit: Option<String>,
-        value_color: Rgba,
-        palette: &ForgePalette,
-        density: Density,
-    ) -> AnyElement {
-        let mut value_row = div()
-            .flex()
-            .items_end()
-            .gap(spacing(Spacing::Xxs, density))
-            .child(
-                div()
-                    .font_family(mono_family())
-                    .text_size(FONT_MD)
-                    .text_color(value_color)
-                    .child(value),
-            );
-        if let Some(unit) = unit {
-            value_row = value_row.child(
-                div()
-                    .font_family(mono_family())
-                    .text_size(FONT_XS)
-                    .text_color(palette.text_muted)
-                    .child(unit),
-            );
-        }
-
-        div()
-            .flex_1()
-            .flex()
-            .flex_col()
-            .gap(scaled(px(3.0), density))
-            .child(
-                div()
-                    .font_family(mono_family())
-                    .text_size(FONT_XXS)
-                    .text_color(palette.text_faint)
-                    .child(label),
-            )
-            .child(value_row)
-            .into_any_element()
-    }
-
-    fn render_stream_health(
-        &self,
-        health: ObsHealth,
-        palette: &ForgePalette,
-        density: Density,
-    ) -> impl IntoElement + use<> {
-        let (badge_ink, badge_label) = match &health.live_for {
-            Some(live_for) => (palette.success, live_for.clone()),
-            None => (palette.text_faint, tr!("home_health_offline")),
-        };
-        let status_badge = div()
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Xxs, density))
-            .child(if health.live_for.is_some() {
-                pulse_dot("home-health-live-pulse", badge_ink, HEALTH_LIVE_DOT).into_any_element()
-            } else {
-                status_dot(badge_ink, HEALTH_LIVE_DOT).into_any_element()
-            })
-            .child(
-                div()
-                    .font_family(mono_family())
-                    .text_size(FONT_XS)
-                    .text_color(badge_ink)
-                    .child(badge_label),
-            );
-
-        let header_left = div()
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Xs, density))
-            .child(icon(Icon::ChartLine, HEALTH_ICON, palette.success))
-            .child(
-                div()
-                    .font_family(body_family())
-                    .text_size(FONT_SM)
-                    .text_color(palette.text_primary)
-                    .child(tr!("home_health_title")),
-            )
-            .child(status_badge);
-
-        let header = div()
-            .w_full()
-            .flex()
-            .items_center()
-            .justify_between()
-            .child(header_left)
-            .child(
-                div()
-                    .font_family(mono_family())
-                    .text_size(FONT_XS)
-                    .text_color(palette.text_faint)
-                    .child(tr!("home_health_refresh_hint")),
-            );
-
-        let throughput = div()
-            .flex_1()
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Xxs, density))
-            .child(
-                div()
-                    .font_family(mono_family())
-                    .text_size(FONT_XXS)
-                    .text_color(palette.text_faint)
-                    .child(tr!("home_health_throughput_label")),
-            )
-            .child(
-                div()
-                    .w_full()
-                    .h(px(40.0))
-                    .child(sparkline(&health.throughput, palette.brand)),
-            );
-
-        let dropped_color = if health.dropped_ok {
-            palette.success
-        } else {
-            palette.warning
-        };
-        let bitrate_unit = health.bitrate_known.then(|| "kbps".to_owned());
-
-        let stats_row = div()
-            .w_full()
-            .flex()
-            .items_end()
-            .gap(spacing(Spacing::Sm, density))
-            .child(throughput)
-            .child(Self::health_stat(
-                tr!("home_health_bitrate_label"),
-                health.bitrate,
-                bitrate_unit,
-                palette.text_primary,
-                palette,
-                density,
-            ))
-            .child(Self::health_stat(
-                tr!("home_health_dropped_label"),
-                health.dropped,
-                health.dropped_pct,
-                dropped_color,
-                palette,
-                density,
-            ))
-            .child(Self::health_stat(
-                tr!("home_health_fps_label"),
-                health.fps,
-                None,
-                palette.text_primary,
-                palette,
-                density,
-            ))
-            .child(Self::health_stat(
-                tr!("home_health_cpu_label"),
-                health.cpu,
-                Some("%".to_owned()),
-                palette.text_primary,
-                palette,
-                density,
-            ));
-
-        let content = div()
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Xs, density))
-            .child(header)
-            .child(stats_row);
-
-        card(content, palette)
-            .full_width()
-            .padding(spacing(Spacing::Sm, density))
-    }
-
-    fn connection_cell(
-        &self,
-        integ: Integration,
-        connected: bool,
-        palette: &ForgePalette,
-        density: Density,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let (status_text, status_color): (String, Rgba) = if connected {
-            (tr!("home_conn_connected"), palette.success)
-        } else {
-            (tr!("home_conn_offline"), palette.text_faint)
-        };
-        let dot_color = if connected {
-            palette.success
-        } else {
-            palette.text_extreme_faint
-        };
-
-        let brand_dot = div()
-            .flex_none()
-            .size(CONN_BRAND_DOT)
-            .rounded(CONN_BRAND_DOT_RADIUS)
-            .bg(integ.dot_color(palette));
-
-        let label_col = div()
-            .flex_1()
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Xxs, density))
-            .child(
-                div()
-                    .font_family(body_family())
-                    .text_size(FONT_XS)
-                    .text_color(palette.text_primary)
-                    .child(integ.label()),
-            )
-            .child(
-                div()
-                    .font_family(mono_family())
-                    .text_size(FONT_XXS)
-                    .text_color(status_color)
-                    .child(status_text),
-            );
-
-        let hover_bg = palette.shell;
-        let target = integ.screen();
-        let key = HomeRow::Connection(integ);
-        let cell_bg = if self.row_keys.is_at(&key) {
-            hover_bg
-        } else {
-            palette.elevated
-        };
-        let cell = div()
-            .id(("home-conn-cell", integ as usize))
-            .relative()
-            .flex_1()
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Xs, density))
-            .py(scaled(CONN_CELL_PAD_V, density))
-            .px(scaled(CONN_CELL_PAD_H, density))
-            .bg(cell_bg)
-            .cursor_pointer()
-            .hover(move |s| s.bg(hover_bg))
-            .key_activated(palette.text_primary)
-            .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.go(target.clone(), cx)))
-            .child(brand_dot)
-            .child(label_col)
-            .child(status_dot(dot_color, CONN_STATUS_DOT));
-        self.with_row_anchor(&key, cell).into_any_element()
-    }
-
-    fn render_connections(
-        &self,
-        connections: Vec<(Integration, bool)>,
-        connected: usize,
-        total: usize,
-        palette: &ForgePalette,
-        density: Density,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement + use<> {
-        let disconnected = total.saturating_sub(connected);
-        let summary = tr!(
-            "home_connections_summary",
-            active = connected,
-            disconnected = disconnected
-        );
-
-        let header = div()
-            .w_full()
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Xs, density))
-            .child(icon(Icon::PlugConnected, CONN_HEADER_ICON, palette.success))
-            .child(
-                div()
-                    .font_family(body_family())
-                    .text_size(FONT_SM)
-                    .text_color(palette.text_primary)
-                    .child(tr!("home_connections_title")),
-            )
-            .child(
-                div()
-                    .font_family(body_family())
-                    .text_size(FONT_XS)
-                    .text_color(palette.text_faint)
-                    .child(summary),
-            );
-
-        let header_bar = card(header, palette)
-            .full_width()
-            .padding_xy(CONN_HEADER_PAD_V, scaled(CONN_HEADER_PAD_H, density))
-            .split_radius(radius(Radius::Md), px(0.0));
-
-        let mut cells = div().w_full().flex().gap(CELL_GAP);
-        for (integ, ok) in connections {
-            cells = cells.child(self.connection_cell(integ, ok, palette, density, cx));
-        }
-
-        let cells_card = card(cells, palette)
-            .full_width()
-            .padding(px(0.0))
-            .background(palette.surface_overlay)
-            .split_radius(px(0.0), radius(Radius::Md));
-
-        div()
-            .w_full()
-            .flex()
-            .flex_col()
-            .child(header_bar)
-            .child(cells_card)
-    }
-
-    fn event_row(
-        &self,
-        ev: HomeEvent,
-        has_border: bool,
-        palette: &ForgePalette,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let density = cx.density();
-        let hue = ev.hue.color(palette);
-
-        let spans = div()
-            .flex_1()
-            .flex()
-            .items_center()
-            .overflow_hidden()
-            .child(
-                div()
-                    .font_family(body_family())
-                    .text_size(FONT_XS)
-                    .text_color(hue)
-                    .child(ev.source.clone()),
-            )
-            .child(
-                div()
-                    .font_family(body_family())
-                    .text_size(FONT_XS)
-                    .text_color(palette.text_muted)
-                    .child(": "),
-            )
-            .child(
-                div()
-                    .font_family(body_family())
-                    .text_size(FONT_XS)
-                    .text_color(palette.brand)
-                    .child(ev.name.clone()),
-            )
-            .child(
-                div()
-                    .font_family(body_family())
-                    .text_size(FONT_XS)
-                    .text_color(palette.text_muted)
-                    .child(" - "),
-            )
-            .child(
-                div()
-                    .flex_1()
-                    .font_family(body_family())
-                    .text_size(FONT_XS)
-                    .text_color(palette.text_primary)
-                    .child(ev.desc.clone()),
-            );
-
-        let inner = div()
-            .w_full()
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Xs, density))
-            .py(scaled(EVENT_ROW_PAD_V, density))
-            .px(spacing(Spacing::Xxs, density))
-            .child(status_dot(hue, EVENT_DOT))
-            .child(
-                div()
-                    .flex_none()
-                    .w(event_time_width())
-                    .font_family(mono_family())
-                    .text_size(FONT_XS)
-                    .text_color(palette.text_muted)
-                    .child(fmt_display(DateShape::TimeWithSeconds, ev.at)),
-            )
-            .child(spans);
-
-        let hover_bg = palette.shell;
-        let mut row = div()
-            .id((gpui::ElementId::from("home-event"), ev.id.clone()))
-            .relative()
-            .w_full()
-            .rounded(radius(Radius::Sm))
-            .cursor_pointer()
-            .hover(move |s| s.bg(hover_bg))
-            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.go(Screen::EventFeed, cx)))
-            .child(inner);
-        if has_border {
-            row = row
-                .border_b(BORDER_THIN)
-                .border_color(palette.border_regular);
-        }
-        let key = HomeRow::Event(ev.id.clone());
-        if self.row_keys.is_at(&key) {
-            row = row.bg(hover_bg);
-        }
-        self.with_row_anchor(&key, row).into_any_element()
-    }
-
-    fn render_recent_events(
-        &self,
-        recent: Vec<HomeEvent>,
-        palette: &ForgePalette,
-        density: Density,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement + use<> {
-        let live_label = div()
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Xxs, density))
-            .child(pulse_dot(
-                "home-events-live-pulse",
-                palette.success,
-                EVENT_LIVE_DOT,
-            ))
-            .child(
-                div()
-                    .font_family(mono_family())
-                    .text_size(FONT_XS)
-                    .text_color(palette.text_faint)
-                    .child(tr!("home_health_live")),
-            );
-
-        let header = div()
-            .w_full()
-            .flex()
-            .items_center()
-            .justify_between()
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(spacing(Spacing::Xs, density))
-                    .child(icon(Icon::Activity, EVENT_HEADER_ICON, palette.info))
-                    .child(
-                        div()
-                            .font_family(body_family())
-                            .text_size(FONT_SM)
-                            .text_color(palette.text_primary)
-                            .child(tr!("home_events_title")),
-                    ),
-            )
-            .child(live_label);
-
-        let body: AnyElement = if recent.is_empty() {
-            empty_state(tr!("home_events_empty"), palette)
-                .density(density)
-                .into_any_element()
-        } else {
-            let count = recent.len();
-            let mut list = div().flex().flex_col();
-            for (i, ev) in recent.into_iter().enumerate() {
-                list = list.child(self.event_row(ev, i + 1 < count, palette, cx));
-            }
-            list.into_any_element()
-        };
-
-        let content = div()
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Xs, density))
-            .child(header)
-            .child(body);
-
-        card(content, palette)
-            .full_width()
-            .full_height()
-            .padding(spacing(Spacing::Sm, density))
-    }
-
-    fn glance_row(
-        label: String,
-        value: String,
-        value_color: Rgba,
-        last: bool,
-        palette: &ForgePalette,
-        density: Density,
-    ) -> AnyElement {
-        let row = div()
-            .w_full()
-            .flex()
-            .items_center()
-            .justify_between()
-            .py(scaled(GLANCE_ROW_PAD_V, density))
-            .child(
-                div()
-                    .font_family(body_family())
-                    .text_size(FONT_XS)
-                    .text_color(palette.text_muted)
-                    .child(label),
-            )
-            .child(
-                div()
-                    .font_family(mono_family())
-                    .text_size(FONT_SM)
-                    .text_color(value_color)
-                    .child(value),
-            );
-        if last {
-            row.into_any_element()
-        } else {
-            div()
-                .w_full()
-                .flex()
-                .flex_col()
-                .child(row)
-                .child(div().w_full().h(DIVIDER_H).bg(palette.border_regular))
-                .into_any_element()
-        }
-    }
-
-    fn render_glance(
-        &self,
-        actions: String,
-        commands: String,
-        fired: String,
-        globals: String,
-        palette: &ForgePalette,
-        density: Density,
-    ) -> impl IntoElement + use<> {
-        let rows = div()
-            .flex()
-            .flex_col()
-            .child(Self::glance_row(
-                tr!("home_glance_actions"),
-                actions,
-                palette.brand,
-                false,
-                palette,
-                density,
-            ))
-            .child(Self::glance_row(
-                tr!("home_glance_commands"),
-                commands,
-                palette.info,
-                false,
-                palette,
-                density,
-            ))
-            .child(Self::glance_row(
-                tr!("home_glance_fired"),
-                fired,
-                palette.success,
-                false,
-                palette,
-                density,
-            ))
-            .child(Self::glance_row(
-                tr!("home_glance_globals"),
-                globals,
-                palette.warning,
-                true,
-                palette,
-                density,
-            ));
-
-        let content = div()
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Xs, density))
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(spacing(Spacing::Xs, density))
-                    .child(icon(Icon::LayoutGrid, GLANCE_HEADER_ICON, palette.brand))
-                    .child(
-                        div()
-                            .font_family(body_family())
-                            .text_size(FONT_SM)
-                            .text_color(palette.text_primary)
-                            .child(tr!("home_glance_title")),
-                    ),
-            )
-            .child(rows);
-
-        card(content, palette)
-            .full_width()
-            .full_height()
-            .padding(spacing(Spacing::Sm, density))
     }
 }
 
@@ -1247,12 +421,12 @@ impl Render for HomeView {
             .relative()
             .size_full()
             .child(page_frame(vec![BreadcrumbCrumb::leaf(tr!("nav_home"))], &palette).body(body))
-            .child(self.backup.clone())
-            .child(self.pack_export.clone())
-            .child(self.pack_import.clone())
-            .child(self.setup_export.clone())
-            .child(self.setup_import.clone())
-            .child(self.restore.clone())
+            .child(self.flows.backup.clone())
+            .child(self.flows.pack_export.clone())
+            .child(self.flows.pack_import.clone())
+            .child(self.flows.setup_export.clone())
+            .child(self.flows.setup_import.clone())
+            .child(self.flows.restore.clone())
     }
 }
 

@@ -94,29 +94,33 @@ pub(super) async fn scan_overlay_root(root: &std::path::Path) -> OverlayListing 
 
 impl ServerConsoleView {
     fn browser_source_entry(&self) -> Option<&OwnedOverlayEntry> {
-        self.selected_overlay_entry
+        self.overlay
+            .selected
             .as_deref()
-            .and_then(|name| self.overlay_entries.iter().find(|entry| entry.name == name))
+            .and_then(|name| self.overlay.entries.iter().find(|entry| entry.name == name))
             .filter(|entry| entry.is_selectable())
-            .or_else(|| self.overlay_entries.iter().find(|e| e.hosts_overlay()))
-            .or_else(|| self.overlay_entries.iter().find(|e| e.is_html()))
+            .or_else(|| self.overlay.entries.iter().find(|e| e.hosts_overlay()))
+            .or_else(|| self.overlay.entries.iter().find(|e| e.is_html()))
     }
 
     pub(super) fn browser_source_url(&self) -> Option<String> {
-        self.browser_source_url_with(self.overlay_token.as_ref()?.expose())
+        self.browser_source_url_with(self.secrets.overlay_token.as_ref()?.expose())
     }
 
     pub(super) fn displayed_browser_source_url(&self) -> Option<String> {
         self.browser_source_url_with(&crate::overlay_link_token::displayed(
-            self.overlay_token.as_ref()?.expose(),
+            self.secrets.overlay_token.as_ref()?.expose(),
         ))
     }
 
     fn browser_source_url_with(&self, token: &str) -> Option<String> {
-        if !self.running {
+        if !self.lifecycle.running {
             return None;
         }
-        let origin = overlay_origin(self.bind_address.as_deref()?, self.routable_host.as_deref());
+        let origin = overlay_origin(
+            self.lifecycle.bind_address.as_deref()?,
+            self.lifecycle.routable_host.as_deref(),
+        );
         let entry = self.browser_source_entry()?;
         Some(match entry.kind {
             OwnedOverlayKind::Dir { .. } => overlay_page_url(&origin, token, &entry.name),
@@ -131,11 +135,11 @@ impl ServerConsoleView {
     }
 
     fn open_overlay_folder(&mut self, cx: &mut Context<Self>) {
-        let Some(handle) = self.server.clone() else {
+        let Some(handle) = self.services.server.clone() else {
             return;
         };
         async_bridge::report_failure(
-            &self.rt_handle,
+            &self.services.rt_handle,
             async move {
                 let root = handle.overlay_root().await;
                 async_bridge::open_path((*root).clone()).await
@@ -147,11 +151,11 @@ impl ServerConsoleView {
     }
 
     pub(super) fn refresh_overlay_listing(&mut self, cx: &mut Context<Self>) {
-        let Some(handle) = self.server.clone() else {
+        let Some(handle) = self.services.server.clone() else {
             return;
         };
         async_bridge::run_async(
-            &self.rt_handle,
+            &self.services.rt_handle,
             async move {
                 let root = handle.overlay_root().await;
                 scan_overlay_root(root.as_ref()).await
@@ -165,17 +169,17 @@ impl ServerConsoleView {
     }
 
     pub(super) fn apply_overlay_listing(&mut self, overlay: OverlayListing) {
-        self.overlay_root = overlay.root;
-        self.overlay_entries = overlay.entries;
-        if let Some(name) = &self.selected_overlay_entry
-            && !self.overlay_entries.iter().any(|entry| &entry.name == name)
+        self.overlay.root = overlay.root;
+        self.overlay.entries = overlay.entries;
+        if let Some(name) = &self.overlay.selected
+            && !self.overlay.entries.iter().any(|entry| &entry.name == name)
         {
-            self.selected_overlay_entry = None;
+            self.overlay.selected = None;
         }
     }
 
     pub(super) fn select_overlay_entry(&mut self, name: String, cx: &mut Context<Self>) {
-        self.selected_overlay_entry = Some(name);
+        self.overlay.selected = Some(name);
         cx.notify();
     }
 
@@ -204,10 +208,10 @@ impl ServerConsoleView {
                     .child(tr!("server_overlay_host_title")),
             );
 
-        let root_label = if self.overlay_root.is_empty() {
+        let root_label = if self.overlay.root.is_empty() {
             "-".to_owned()
         } else {
-            self.overlay_root.clone()
+            self.overlay.root.clone()
         };
         let path_row = div()
             .w_full()
@@ -269,13 +273,13 @@ impl ServerConsoleView {
                     .child(icon(Icon::Refresh, CONTROL_GLYPH, palette.text_muted)),
             );
 
-        let files: AnyElement = if self.overlay_entries.is_empty() {
+        let files: AnyElement = if self.overlay.entries.is_empty() {
             empty_state(tr!("server_overlay_files_empty"), palette)
                 .density(density)
                 .into_any_element()
         } else {
             let mut col = div().w_full().flex().flex_col();
-            for entry in &self.overlay_entries {
+            for entry in &self.overlay.entries {
                 col = col.child(self.overlay_entry_row(entry, palette, density, cx));
             }
             col.into_any_element()

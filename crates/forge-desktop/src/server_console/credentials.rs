@@ -30,42 +30,42 @@ pub(super) fn mono_field(palette: &ForgePalette, density: Density) -> Div {
 
 impl ServerConsoleView {
     fn toggle_token_reveal(&mut self, cx: &mut Context<Self>) {
-        self.token_revealed = !self.token_revealed;
+        self.secrets.token_revealed = !self.secrets.token_revealed;
         cx.notify();
     }
 
     fn copy_bind_address(&mut self, cx: &mut Context<Self>) {
-        if let Some(address) = self.bind_address.clone() {
+        if let Some(address) = self.lifecycle.bind_address.clone() {
             crate::toasts::copy_to_clipboard(address, cx);
         }
     }
 
     fn copy_token(&mut self, cx: &mut Context<Self>) {
-        crate::toasts::copy_to_clipboard(self.bearer_token.expose().to_owned(), cx);
+        crate::toasts::copy_to_clipboard(self.secrets.bearer_token.expose().to_owned(), cx);
     }
 
     pub(super) fn request_regenerate(&mut self, cx: &mut Context<Self>) {
-        self.regenerate_pending = true;
+        self.secrets.regenerate_pending = true;
         cx.notify();
     }
 
     pub(super) fn cancel_regenerate(&mut self, cx: &mut Context<Self>) {
-        self.regenerate_pending = false;
+        self.secrets.regenerate_pending = false;
         cx.notify();
     }
 
     pub(super) fn confirm_regenerate(&mut self, cx: &mut Context<Self>) {
-        self.regenerate_pending = false;
+        self.secrets.regenerate_pending = false;
         self.regenerate_token(cx);
         cx.notify();
     }
 
     fn regenerate_token(&mut self, cx: &mut Context<Self>) {
-        let Some(handle) = self.server.clone() else {
+        let Some(handle) = self.services.server.clone() else {
             return;
         };
         async_bridge::run_async(
-            &self.rt_handle,
+            &self.services.rt_handle,
             async move {
                 handle
                     .regenerate_bearer_token()
@@ -74,7 +74,7 @@ impl ServerConsoleView {
             },
             |this, result: Result<Secret, RepoFailure>, cx| match result {
                 Ok(token) => {
-                    this.bearer_token = token;
+                    this.secrets.bearer_token = token;
                     cx.notify();
                 }
                 Err(reason) => server_bearer::token_regenerate_failed(&reason.text(), cx),
@@ -115,7 +115,7 @@ impl ServerConsoleView {
     }
 
     pub(super) fn bind_state(&self) -> BindState {
-        match (self.running, self.bind_address.clone()) {
+        match (self.lifecycle.running, self.lifecycle.bind_address.clone()) {
             (true, Some(address)) => BindState::Bound(address),
             (true, None) => BindState::AwaitingAddress,
             (false, _) => BindState::Stopped,
@@ -200,12 +200,12 @@ impl ServerConsoleView {
         density: Density,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let shown = if self.token_revealed {
-            self.bearer_token.expose().to_owned()
+        let shown = if self.secrets.token_revealed {
+            self.secrets.bearer_token.expose().to_owned()
         } else {
-            forge_server::masked_token(self.bearer_token.expose())
+            forge_server::masked_token(self.secrets.bearer_token.expose())
         };
-        let reveal_glyph = if self.token_revealed {
+        let reveal_glyph = if self.secrets.token_revealed {
             Icon::EyeOff
         } else {
             Icon::Eye

@@ -11,18 +11,18 @@ use gpui::{AnyElement, ClickEvent, Context, div, prelude::*};
 
 impl ServerConsoleView {
     fn restart_server(&mut self, cx: &mut Context<Self>) {
-        let Some(handle) = self.server.clone() else {
+        let Some(handle) = self.services.server.clone() else {
             return;
         };
-        if self.restarting {
+        if self.lifecycle.restarting {
             return;
         }
-        self.restarting = true;
+        self.lifecycle.restarting = true;
         async_bridge::run_async(
-            &self.rt_handle,
+            &self.services.rt_handle,
             async move { restart_ignoring_disabled(&handle).await },
             |this, result: Result<(), RepoFailure>, cx| {
-                this.restarting = false;
+                this.lifecycle.restarting = false;
                 if let Err(message) = result {
                     tracing::warn!(error = %message, "failed to restart websocket server");
                     ErrorSink::Toast.report(message.text(), cx);
@@ -35,7 +35,7 @@ impl ServerConsoleView {
     }
 
     pub(super) fn restart_disabled(&self) -> bool {
-        self.restarting || !self.running
+        self.lifecycle.restarting || !self.lifecycle.running
     }
 
     pub(super) fn restart_control(
@@ -43,14 +43,14 @@ impl ServerConsoleView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let label = if self.restarting {
+        let label = if self.lifecycle.restarting {
             tr!("server_btn_restarting")
         } else {
             tr!("server_btn_restart")
         };
         ghost_button_with_icon(Icon::Refresh, label, palette)
             .disabled(self.restart_disabled())
-            .busy(self.restarting)
+            .busy(self.lifecycle.restarting)
             .on_click(
                 "srv-restart",
                 cx.listener(|this, _: &ClickEvent, _, cx| this.restart_server(cx)),
@@ -65,7 +65,7 @@ impl ServerConsoleView {
     }
 
     fn switched_off_hint_visible(&self) -> bool {
-        !self.enabled
+        !self.lifecycle.enabled
     }
 
     pub(super) fn disabled_hint(
@@ -107,11 +107,11 @@ impl ServerConsoleView {
     }
 
     pub(super) fn is_running(&self) -> bool {
-        self.running
+        self.lifecycle.running
     }
 
     pub(super) fn start_run_state_bridge(&self, cx: &mut Context<Self>) {
-        let Some(handle) = self.server.as_ref() else {
+        let Some(handle) = self.services.server.as_ref() else {
             return;
         };
         let mut run_state = handle.run_state();
@@ -131,15 +131,15 @@ impl ServerConsoleView {
     }
 
     fn apply_run_state(&mut self, running: bool, cx: &mut Context<Self>) {
-        if self.running == running {
+        if self.lifecycle.running == running {
             return;
         }
-        self.running = running;
+        self.lifecycle.running = running;
         if !running {
-            self.connected_clients.clear();
-            self.recent_clients = 0;
-            self.pending_disconnect.cancel();
-            self.throughput_samples.clear();
+            self.clients.connected.clear();
+            self.clients.recent = 0;
+            self.clients.pending_disconnect.cancel();
+            self.traffic.throughput_samples.clear();
         }
         cx.notify();
     }

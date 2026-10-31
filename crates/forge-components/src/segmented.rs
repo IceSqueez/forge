@@ -75,7 +75,7 @@ pub struct SegmentedControl {
     hover_bg: Rgba,
     seg_radius: Pixels,
     seg_fs: Pixels,
-    glyph_active: Rgba,
+    glyph_active: Option<Rgba>,
     glyph_idle: Rgba,
 }
 
@@ -94,7 +94,7 @@ pub fn segmented(segments: Vec<Segment>, palette: &ForgePalette) -> SegmentedCon
         hover_bg: with_alpha(palette.border_regular, HOVER_ALPHA),
         seg_radius: SEG_RADIUS,
         seg_fs: SEG_FS,
-        glyph_active: palette.brand,
+        glyph_active: None,
         glyph_idle: palette.text_faint,
     }
 }
@@ -111,12 +111,13 @@ impl SegmentedControl {
     pub fn subtle(mut self, palette: &ForgePalette) -> Self {
         self.active_bg = palette.surface_overlay;
         self.active_fg = palette.text_primary;
+        self.glyph_active.get_or_insert(palette.brand);
         self
     }
 
     #[must_use]
     pub fn accent(mut self, accent: Rgba) -> Self {
-        self.glyph_active = accent;
+        self.glyph_active = Some(accent);
         self
     }
 }
@@ -124,6 +125,7 @@ impl SegmentedControl {
 impl RenderOnce for SegmentedControl {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let density = cx.density();
+        let glyph_active = self.glyph_active.unwrap_or(self.active_fg);
         let mut container = if self.joined {
             div()
                 .flex()
@@ -151,7 +153,7 @@ impl RenderOnce for SegmentedControl {
             let glyph = seg.glyph.map(|glyph| {
                 let tint = match (seg.disabled, seg.active) {
                     (true, _) => self.disabled_fg,
-                    (false, true) => self.glyph_active,
+                    (false, true) => glyph_active,
                     (false, false) => self.glyph_idle,
                 };
                 icon(glyph, self.seg_fs, tint)

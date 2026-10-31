@@ -111,14 +111,14 @@ fn event_source_label(source: EventSource) -> &'static str {
 
 impl ServerConsoleView {
     pub(super) fn fetch_token(&self, cx: &mut Context<Self>) {
-        let credentials = Arc::clone(&self.credentials);
-        let server = self.server.clone();
+        let credentials = Arc::clone(&self.services.credentials);
+        let server = self.services.server.clone();
         async_bridge::run_async(
-            &self.rt_handle,
+            &self.services.rt_handle,
             server_bearer::current_bearer_token(server, credentials),
             |this, result: Result<Option<Secret>, RepoFailure>, cx| match result {
                 Ok(Some(token)) => {
-                    this.bearer_token = token;
+                    this.secrets.bearer_token = token;
                     cx.notify();
                 }
                 Ok(None) => {}
@@ -129,9 +129,9 @@ impl ServerConsoleView {
     }
 
     pub(super) fn fetch_enabled(&self, cx: &mut Context<Self>) {
-        let settings = Arc::clone(&self.settings);
+        let settings = Arc::clone(&self.services.settings);
         async_bridge::run_async(
-            &self.rt_handle,
+            &self.services.rt_handle,
             async move {
                 ServerSettings::load(settings.as_ref())
                     .await
@@ -139,7 +139,7 @@ impl ServerConsoleView {
             },
             |this, loaded, cx| match loaded {
                 Ok(enabled) => {
-                    this.enabled = enabled;
+                    this.lifecycle.enabled = enabled;
                     cx.notify();
                 }
                 Err(error) => {
@@ -151,14 +151,14 @@ impl ServerConsoleView {
     }
 
     fn resolve_routable_host_for(&mut self, bind_address: String, cx: &mut Context<Self>) {
-        self.routable_host_resolved_for = Some(bind_address.clone());
+        self.lifecycle.routable_host_resolved_for = Some(bind_address.clone());
         let target = bind_address.clone();
         async_bridge::run_async(
-            &self.rt_handle,
+            &self.services.rt_handle,
             async move { resolve_routable_host(&bind_address) },
             move |this, routable_host: Option<String>, cx| {
-                if this.routable_host_resolved_for.as_deref() == Some(target.as_str()) {
-                    this.routable_host = routable_host;
+                if this.lifecycle.routable_host_resolved_for.as_deref() == Some(target.as_str()) {
+                    this.lifecycle.routable_host = routable_host;
                     cx.notify();
                 }
             },
@@ -167,10 +167,10 @@ impl ServerConsoleView {
     }
 
     pub(super) fn start_poll(&self, cx: &mut Context<Self>) {
-        let Some(handle) = self.server.clone() else {
+        let Some(handle) = self.services.server.clone() else {
             return;
         };
-        let rt_handle = self.rt_handle.clone();
+        let rt_handle = self.services.rt_handle.clone();
         let mut presence = PresenceGate::of(cx);
         cx.spawn(async move |this, cx| {
             let mut run_state = handle.run_state();
@@ -224,21 +224,21 @@ impl ServerConsoleView {
     pub(super) fn apply_poll(&mut self, poll: ServerPoll) -> Option<String> {
         let polled_address = poll.bind_address.clone();
         if polled_address.is_some() {
-            self.bind_address.clone_from(&polled_address);
+            self.lifecycle.bind_address.clone_from(&polled_address);
         }
         let needs_resolve = polled_address.as_deref().is_some()
-            && self.routable_host_resolved_for.as_deref() != polled_address.as_deref();
+            && self.lifecycle.routable_host_resolved_for.as_deref() != polled_address.as_deref();
 
-        if self.running {
+        if self.lifecycle.running {
             let snapshot = &poll.snapshot;
-            self.connected_clients = snapshot
+            self.clients.connected = snapshot
                 .connected_clients
                 .iter()
                 .map(client_row_from_snapshot)
                 .collect();
-            self.recent_clients = count_recent_clients(&snapshot.connected_clients);
+            self.clients.recent = count_recent_clients(&snapshot.connected_clients);
 
-            self.stats = ServerStats {
+            self.traffic.stats = ServerStats {
                 events_per_second: snapshot.aggregate_events_per_second,
                 http_requests: snapshot.http_requests_total,
                 bandwidth_kilobytes_per_second: snapshot.bandwidth.outbound_bytes_per_second as f32
@@ -247,11 +247,12 @@ impl ServerConsoleView {
                 total_events_out: snapshot.events_out_total,
                 dropped_events: snapshot.dropped_events_total,
             };
-            self.throughput_samples
+            self.traffic
+                .throughput_samples
                 .push(snapshot.aggregate_events_per_second);
-            if self.throughput_samples.len() > MAX_THROUGHPUT_SAMPLES {
-                let excess = self.throughput_samples.len() - MAX_THROUGHPUT_SAMPLES;
-                self.throughput_samples.drain(..excess);
+            if self.traffic.throughput_samples.len() > MAX_THROUGHPUT_SAMPLES {
+                let excess = self.traffic.throughput_samples.len() - MAX_THROUGHPUT_SAMPLES;
+                self.traffic.throughput_samples.drain(..excess);
             }
         }
 

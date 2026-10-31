@@ -27,7 +27,7 @@ fn footer_cell(text: impl Into<SharedString>, color: Rgba) -> impl IntoElement {
 impl ServerConsoleView {
     pub(super) fn stats_grid(&self, palette: &ForgePalette, density: Density) -> AnyElement {
         let cell = |el: AnyElement| div().flex_1().min_w(px(0.0)).child(el);
-        let recent_color = (self.recent_clients > 0).then_some(palette.success);
+        let recent_color = (self.clients.recent > 0).then_some(palette.success);
 
         div()
             .w_full()
@@ -37,10 +37,10 @@ impl ServerConsoleView {
             .child(cell(
                 metric_card(
                     tr!("server_stat_clients"),
-                    fmt_number(self.connected_clients.len() as f64, 0),
+                    fmt_number(self.clients.connected.len() as f64, 0),
                     Some(tr!(
                         "server_stat_clients_sub",
-                        count = i64::try_from(self.recent_clients).unwrap_or(i64::MAX),
+                        count = i64::try_from(self.clients.recent).unwrap_or(i64::MAX),
                         minutes = RECENT_CLIENT_WINDOW_MINUTES
                     )),
                     recent_color,
@@ -52,7 +52,7 @@ impl ServerConsoleView {
             .child(cell(
                 metric_card(
                     tr!("server_stat_events_rate"),
-                    fmt_number(self.stats.events_per_second as f64, 1),
+                    fmt_number(self.traffic.stats.events_per_second as f64, 1),
                     Some(tr!(
                         "server_stat_events_sub",
                         seconds = EVENT_RATE_WINDOW_SECONDS
@@ -66,7 +66,7 @@ impl ServerConsoleView {
             .child(cell(
                 metric_card(
                     tr!("server_stat_http"),
-                    fmt_number(self.stats.http_requests as f64, 0),
+                    fmt_number(self.traffic.stats.http_requests as f64, 0),
                     Some(tr!("server_stat_http_sub")),
                     None,
                     palette,
@@ -79,7 +79,8 @@ impl ServerConsoleView {
                     tr!("server_stat_bandwidth"),
                     tr!(
                         "server_stat_bandwidth_value",
-                        rate = fmt_number(self.stats.bandwidth_kilobytes_per_second as f64, 0)
+                        rate =
+                            fmt_number(self.traffic.stats.bandwidth_kilobytes_per_second as f64, 0)
                     ),
                     Some(tr!("server_stat_bandwidth_sub")),
                     None,
@@ -92,8 +93,9 @@ impl ServerConsoleView {
     }
 
     pub(super) fn throughput_card(&self, palette: &ForgePalette, density: Density) -> AnyElement {
-        let sample_count = self.throughput_samples.len();
+        let sample_count = self.traffic.throughput_samples.len();
         let max = self
+            .traffic
             .throughput_samples
             .iter()
             .copied()
@@ -133,7 +135,7 @@ impl ServerConsoleView {
             );
 
         let chart = div().w_full().h(SPARK_HEIGHT).child(
-            sparkline(&self.throughput_samples, palette.brand)
+            sparkline(&self.traffic.throughput_samples, palette.brand)
                 .zero_baseline()
                 .fading_fill(SPARK_FILL_TOP_ALPHA)
                 .stroke_width(SPARK_STROKE_WIDTH),
@@ -155,13 +157,13 @@ impl ServerConsoleView {
     }
 
     pub(super) fn footer_bar(&self, palette: &ForgePalette, density: Density) -> AnyElement {
-        let (health_label, health_color) = if self.stats.dropped_events == 0 {
+        let (health_label, health_color) = if self.traffic.stats.dropped_events == 0 {
             (tr!("server_footer_health_ok"), palette.text_faint)
         } else {
             (
                 tr!(
                     "server_footer_health_degraded",
-                    dropped = i64::try_from(self.stats.dropped_events).unwrap_or(i64::MAX)
+                    dropped = i64::try_from(self.traffic.stats.dropped_events).unwrap_or(i64::MAX)
                 ),
                 palette.warning,
             )
@@ -174,15 +176,15 @@ impl ServerConsoleView {
             .child(footer_cell(
                 tr!(
                     "server_footer_totals",
-                    sent = fmt_bytes(self.stats.total_bytes_sent),
-                    events = i64::try_from(self.stats.total_events_out).unwrap_or(i64::MAX)
+                    sent = fmt_bytes(self.traffic.stats.total_bytes_sent),
+                    events = i64::try_from(self.traffic.stats.total_events_out).unwrap_or(i64::MAX)
                 ),
                 palette.text_faint,
             ))
             .child(footer_cell("·", palette.text_faint))
             .child(footer_cell(health_label, health_color));
 
-        let (endpoint_label, dot_color) = match self.bind_address.as_deref() {
+        let (endpoint_label, dot_color) = match self.lifecycle.bind_address.as_deref() {
             Some(address) if self.is_running() => (
                 tr!(
                     "server_footer_endpoint_accepting",
@@ -223,7 +225,7 @@ impl ServerConsoleView {
                 palette.success,
                 tr!(
                     "server_status_listening",
-                    clients = i64::try_from(self.connected_clients.len()).unwrap_or(i64::MAX)
+                    clients = i64::try_from(self.clients.connected.len()).unwrap_or(i64::MAX)
                 ),
                 density,
             )

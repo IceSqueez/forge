@@ -142,28 +142,28 @@ fn color_for_source(source: EventSource, palette: &ForgePalette) -> Rgba {
 
 impl ServerConsoleView {
     pub(super) fn request_disconnect(&mut self, index: usize, cx: &mut Context<Self>) {
-        if let Some(row) = self.connected_clients.get(index) {
-            self.pending_disconnect.request(row.id);
+        if let Some(row) = self.clients.connected.get(index) {
+            self.clients.pending_disconnect.request(row.id);
             cx.notify();
         }
     }
 
     fn cancel_disconnect(&mut self, cx: &mut Context<Self>) {
-        self.pending_disconnect.cancel();
+        self.clients.pending_disconnect.cancel();
         cx.notify();
     }
 
     pub(super) fn confirm_disconnect(&mut self, cx: &mut Context<Self>) {
-        let target = self.pending_disconnect.take();
+        let target = self.clients.pending_disconnect.take();
         cx.notify();
-        let (Some(id), Some(handle)) = (target, self.server.clone()) else {
+        let (Some(id), Some(handle)) = (target, self.services.server.clone()) else {
             return;
         };
         async_bridge::run_async(
-            &self.rt_handle,
+            &self.services.rt_handle,
             async move { (id, handle.kick_client(id).await) },
             |this, (id, kicked): (ClientId, bool), cx| {
-                this.connected_clients.retain(|c| c.id != id);
+                this.clients.connected.retain(|c| c.id != id);
                 if !kicked {
                     cx.push_toast(ToastKind::Info, tr!("server_client_already_gone"));
                 }
@@ -202,7 +202,7 @@ impl ServerConsoleView {
                     .font_family(body_family())
                     .text_size(FONT_SM)
                     .text_color(palette.text_faint)
-                    .child(fmt_number(self.connected_clients.len() as f64, 0)),
+                    .child(fmt_number(self.clients.connected.len() as f64, 0)),
             )
             .child(div().flex_1())
             .child(
@@ -225,7 +225,7 @@ impl ServerConsoleView {
             column("", ColumnWidth::Fixed(X_CELL_W)),
         ];
 
-        let table: AnyElement = if self.connected_clients.is_empty() {
+        let table: AnyElement = if self.clients.connected.is_empty() {
             let header_only = data_table(palette, columns, Vec::new())
                 .density(density)
                 .header_bg(palette.elevated)
@@ -253,8 +253,8 @@ impl ServerConsoleView {
                 "srv-clients-scroll",
                 palette,
                 columns,
-                self.connected_clients.len(),
-                &self.clients_scroll,
+                self.clients.connected.len(),
+                &self.clients.scroll,
                 density,
             )
             .header_bg(palette.elevated)
@@ -264,7 +264,7 @@ impl ServerConsoleView {
             .row_padding(spacing(Spacing::Xs, density), spacing(Spacing::Sm, density))
             .cell_gap(spacing(Spacing::Xs, density))
             .build(
-                move |this, ix, _window, cx| match this.connected_clients.get(ix) {
+                move |this, ix, _window, cx| match this.clients.connected.get(ix) {
                     Some(row) => this.client_row(ix, row, &pal, density, cx),
                     None => DataRow::new(Vec::new()),
                 },
@@ -343,8 +343,8 @@ impl ServerConsoleView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
-        let id = *self.pending_disconnect.get()?;
-        let row = self.connected_clients.iter().find(|c| c.id == id)?;
+        let id = *self.clients.pending_disconnect.get()?;
+        let row = self.clients.connected.iter().find(|c| c.id == id)?;
 
         let message = tr!(
             "server_disconnect_confirm_hint",

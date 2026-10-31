@@ -14,7 +14,8 @@ use gpui::{
     Subscription, Task, Window, div, list, prelude::*, px,
 };
 
-use super::{body_export_text, platform_display_name};
+use super::log_export::body_export_text;
+use super::platform_display_name;
 use crate::chat_author::AuthorKey;
 use crate::chat_feed::{ChatFeed, ChatMessage};
 use crate::chat_viewer_messages::{ViewerMessages, stored_author};

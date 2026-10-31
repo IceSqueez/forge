@@ -3,6 +3,7 @@ use crate::home_stats::Integration;
 use crate::integration_lifecycle::IntegrationLifecycle;
 use forge_runtime::LifecycleState;
 use forge_types::PlatformId;
+use gpui::App;
 
 pub(crate) fn platform_integration(platform: PlatformId) -> Integration {
     match platform {

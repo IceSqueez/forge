@@ -153,6 +153,7 @@ impl BuiltinContent for DiscordClient {
             left: Box::new(ContentList {
                 title: labels::WEBHOOKS.into(),
                 icon: SectionIcon::new("webhook"),
+                icon_tint: None,
                 inline_label: None,
                 count_label: Some(webhook_count),
                 visible_rows: None,
@@ -164,6 +165,7 @@ impl BuiltinContent for DiscordClient {
             right: Box::new(ContentList {
                 title: labels::RECENT_POSTS.into(),
                 icon: SectionIcon::new("message"),
+                icon_tint: None,
                 inline_label: None,
                 count_label: Some(post_count),
                 visible_rows: None,

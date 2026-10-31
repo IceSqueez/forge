@@ -39,26 +39,27 @@ const BUTTON_RADIUS: Pixels = px(7.0);
 const BODY_LINE_H: Pixels = px(20.0);
 const PAGE_MAX_W: Pixels = px(640.0);
 const STEP_BADGE: Pixels = px(24.0);
-const BLOCK_MB: Pixels = px(8.0);
-const BLOCK_MB_ALT: Pixels = px(14.0);
-const BLOCK_MB_WIDE: Pixels = px(22.0);
-const ROW_PAD_V: Pixels = px(5.0);
-const ROW_PAD_V_ALT: Pixels = px(8.0);
-const ROW_PAD_V_WIDE: Pixels = px(11.0);
-const ROW_PAD_V_TALL: Pixels = px(14.0);
-const ROW_PAD_H: Pixels = px(11.0);
-const ROW_PAD_H_ALT: Pixels = px(12.0);
-const ROW_PAD_H_WIDE: Pixels = px(14.0);
-const ROW_PAD_H_TALL: Pixels = px(20.0);
-const ROW_GAP: Pixels = px(1.0);
-const ROW_GAP_ALT: Pixels = px(3.0);
-const ROW_GAP_WIDE: Pixels = px(5.0);
-const ROW_GAP_TALL: Pixels = px(8.0);
-const ROW_GAP_XL: Pixels = px(14.0);
-const BLOCK_PAD: Pixels = px(14.0);
+const OPEN_TITLE_MB: Pixels = px(8.0);
+const CARD_STACK_MB: Pixels = px(14.0);
+const INTRO_TEXT_MB: Pixels = px(22.0);
+const OPEN_BUTTON_PAD_V: Pixels = px(5.0);
+const URL_BOX_PAD_V: Pixels = px(8.0);
+const NOTICE_PAD_V: Pixels = px(11.0);
+const CODE_BOX_PAD_V: Pixels = px(14.0);
+const OPEN_BUTTON_PAD_H: Pixels = px(11.0);
+const URL_BOX_PAD_H: Pixels = px(12.0);
+const NOTICE_PAD_H: Pixels = px(14.0);
+const CODE_BOX_PAD_H: Pixels = px(20.0);
+const NOTICE_TEXT_GAP: Pixels = px(1.0);
+const COPY_BUTTON_GAP: Pixels = px(3.0);
+const ICON_LABEL_GAP: Pixels = px(5.0);
+const URL_ROW_GAP: Pixels = px(8.0);
+const CODE_GLYPH_GAP: Pixels = px(8.0);
+const META_ROW_GAP: Pixels = px(14.0);
+const STEP_CARD_GAP: Pixels = px(14.0);
+const COPY_BUTTON_PAD: Pixels = px(14.0);
 
 const CLIENT_ID_LOG_PREFIX_CHARS: usize = 6;
-const TWITCH_DEVICE_POLL_SECS: &str = "5";
 const COPY_FLIP: Duration = Duration::from_millis(1400);
 const USER_CODE_FONT: Pixels = px(28.0);
 
@@ -80,6 +81,7 @@ struct DeviceCodeData {
     user_code: String,
     verification_uri: String,
     expires_at: SystemTime,
+    poll_interval: Duration,
 }
 
 impl DeviceCodeData {
@@ -253,6 +255,7 @@ impl ConnectFlow {
                 user_code: info.user_code,
                 verification_uri: info.verification_uri,
                 expires_at: info.expires_at,
+                poll_interval: info.poll_interval,
             });
         }
         let credentials = Arc::clone(&self.credentials);
@@ -534,7 +537,7 @@ impl ConnectFlow {
             .text_size(FONT_XS)
             .text_color(palette.text_muted)
             .line_height(BODY_LINE_H)
-            .mb(scaled(BLOCK_MB_WIDE, density))
+            .mb(scaled(INTRO_TEXT_MB, density))
             .child(styled)
             .into_any_element()
     }
@@ -557,8 +560,8 @@ impl ConnectFlow {
         let url_box = div()
             .flex_1()
             .min_w(px(0.0))
-            .py(scaled(ROW_PAD_V_ALT, density))
-            .px(scaled(ROW_PAD_H_ALT, density))
+            .py(scaled(URL_BOX_PAD_V, density))
+            .px(scaled(URL_BOX_PAD_H, density))
             .rounded(BUTTON_RADIUS)
             .border(BORDER_THIN)
             .border_color(palette.border_regular)
@@ -572,9 +575,9 @@ impl ConnectFlow {
             .flex_none()
             .flex()
             .items_center()
-            .gap(scaled(ROW_GAP_WIDE, density))
-            .py(scaled(ROW_PAD_V, density))
-            .px(scaled(ROW_PAD_H, density))
+            .gap(scaled(ICON_LABEL_GAP, density))
+            .py(scaled(OPEN_BUTTON_PAD_V, density))
+            .px(scaled(OPEN_BUTTON_PAD_H, density))
             .rounded(radius(Radius::Sm))
             .border(BORDER_THIN)
             .border_color(palette.border_regular)
@@ -611,14 +614,14 @@ impl ConnectFlow {
                         .font_weight(FontWeight::MEDIUM)
                         .text_size(FONT_XS)
                         .text_color(palette.text_primary)
-                        .mb(scaled(BLOCK_MB, density))
+                        .mb(scaled(OPEN_TITLE_MB, density))
                         .child(tr!("twitch_device_open_title")),
                 )
                 .child(
                     div()
                         .flex()
                         .items_center()
-                        .gap(scaled(ROW_GAP_TALL, density))
+                        .gap(scaled(URL_ROW_GAP, density))
                         .child(url_box)
                         .child(open_btn),
                 ),
@@ -656,9 +659,9 @@ impl ConnectFlow {
             .flex()
             .items_center()
             .justify_center()
-            .gap(scaled(ROW_GAP_TALL, density))
-            .py(scaled(ROW_PAD_V_TALL, density))
-            .px(scaled(ROW_PAD_H_TALL, density))
+            .gap(scaled(CODE_GLYPH_GAP, density))
+            .py(scaled(CODE_BOX_PAD_V, density))
+            .px(scaled(CODE_BOX_PAD_H, density))
             .rounded(radius(Radius::Md))
             .border(BORDER_THIN)
             .border_color(accent)
@@ -676,8 +679,8 @@ impl ConnectFlow {
             .flex()
             .flex_col()
             .items_center()
-            .gap(scaled(ROW_GAP_ALT, density))
-            .p(scaled(BLOCK_PAD, density))
+            .gap(scaled(COPY_BUTTON_GAP, density))
+            .p(scaled(COPY_BUTTON_PAD, density))
             .rounded(radius(Radius::Md))
             .border(BORDER_THIN)
             .border_color(palette.border_regular)
@@ -708,13 +711,13 @@ impl ConnectFlow {
         let meta_row = div()
             .flex()
             .items_center()
-            .gap(scaled(ROW_GAP_XL, density))
+            .gap(scaled(META_ROW_GAP, density))
             .mt(spacing(Spacing::Sm, density))
             .child(
                 div()
                     .flex()
                     .items_center()
-                    .gap(scaled(ROW_GAP_WIDE, density))
+                    .gap(scaled(ICON_LABEL_GAP, density))
                     .child(icon(Icon::Clock, ICON_INLINE, palette.text_muted))
                     .child(
                         div()
@@ -758,7 +761,7 @@ impl ConnectFlow {
 
         step_card(2, accent, palette.shell, palette, density)
             .border_color(accent)
-            .mb(scaled(BLOCK_MB_ALT, density))
+            .mb(scaled(CARD_STACK_MB, density))
             .child(
                 div()
                     .flex_1()
@@ -801,24 +804,32 @@ impl ConnectFlow {
         } else {
             tr!("twitch_device_waiting", name = name.as_str())
         };
-        let subline = tr!(
-            "twitch_device_polling_subline",
-            interval = TWITCH_DEVICE_POLL_SECS,
-            scopes = scopes.as_str()
-        );
+        let poll_interval = self
+            .twitch_device
+            .as_ref()
+            .and_then(|device| device.code.as_ref())
+            .map(|code| code.poll_interval.as_secs().to_string());
+        let subline = match poll_interval {
+            Some(interval) => tr!(
+                "twitch_device_polling_subline",
+                interval = interval.as_str(),
+                scopes = scopes.as_str()
+            ),
+            None => tr!("twitch_device_requesting_subline", scopes = scopes.as_str()),
+        };
         let pulse = pulse_dot("twitch-device-pulse", accent, PULSE_DOT);
         div()
             .w_full()
             .flex()
             .items_center()
             .gap(spacing(Spacing::Sm, density))
-            .py(scaled(ROW_PAD_V_WIDE, density))
-            .px(scaled(ROW_PAD_H_WIDE, density))
+            .py(scaled(NOTICE_PAD_V, density))
+            .px(scaled(NOTICE_PAD_H, density))
             .rounded(radius(Radius::Md))
             .border(BORDER_THIN)
             .border_color(palette.border_regular)
             .bg(palette.elevated)
-            .mb(scaled(BLOCK_MB_ALT, density))
+            .mb(scaled(CARD_STACK_MB, density))
             .child(pulse)
             .child(
                 div()
@@ -826,7 +837,7 @@ impl ConnectFlow {
                     .min_w(px(0.0))
                     .flex()
                     .flex_col()
-                    .gap(scaled(ROW_GAP, density))
+                    .gap(scaled(NOTICE_TEXT_GAP, density))
                     .child(
                         div()
                             .font_family(body_family())
@@ -852,13 +863,13 @@ impl ConnectFlow {
             .flex()
             .items_center()
             .gap(spacing(Spacing::Sm, density))
-            .py(scaled(ROW_PAD_V_WIDE, density))
-            .px(scaled(ROW_PAD_H_WIDE, density))
+            .py(scaled(NOTICE_PAD_V, density))
+            .px(scaled(NOTICE_PAD_H, density))
             .rounded(radius(Radius::Md))
             .border(BORDER_THIN)
             .border_color(palette.success)
             .bg(palette.elevated)
-            .mb(scaled(BLOCK_MB_ALT, density))
+            .mb(scaled(CARD_STACK_MB, density))
             .child(icon(Icon::CircleCheckFilled, ICON_NOTICE, palette.success))
             .child(
                 div()
@@ -883,7 +894,7 @@ impl ConnectFlow {
             .border(BORDER_THIN)
             .border_color(palette.warning)
             .bg(palette.elevated)
-            .mb(scaled(BLOCK_MB_ALT, density))
+            .mb(scaled(CARD_STACK_MB, density))
             .child(icon(Icon::Clock, ICON_NOTICE, palette.warning))
             .child(
                 div()
@@ -944,7 +955,7 @@ impl ConnectFlow {
             .border(BORDER_THIN)
             .border_color(palette.danger)
             .bg(palette.elevated)
-            .mb(scaled(BLOCK_MB_ALT, density))
+            .mb(scaled(CARD_STACK_MB, density))
             .child(
                 div()
                     .flex()
@@ -1053,7 +1064,7 @@ fn step_card(
         .w_full()
         .flex()
         .items_start()
-        .gap(scaled(ROW_GAP_XL, density))
+        .gap(scaled(STEP_CARD_GAP, density))
         .p(spacing(Spacing::Md, density))
         .rounded(radius(Radius::Md))
         .border(BORDER_THIN)
@@ -1140,6 +1151,7 @@ mod tests {
             user_code: "ABCD-EFGH".to_owned(),
             verification_uri: "https://example.invalid/activate".to_owned(),
             expires_at: std::time::SystemTime::UNIX_EPOCH,
+            poll_interval: Duration::from_secs(5),
         }
     }
 

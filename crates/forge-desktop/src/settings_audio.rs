@@ -25,7 +25,7 @@ use crate::settings_pane_header::SettingsPaneHeader;
 use crate::settings_voice_gate::SettingsVoiceGateView;
 use forge_components::ActivePresentation;
 
-const ROW_PAD_V: gpui::Pixels = px(7.0);
+const DEVICE_TRIGGER_PAD_V: gpui::Pixels = px(7.0);
 
 const TEST_TONE_SAMPLE_RATE: u32 = 22_050;
 
@@ -293,7 +293,7 @@ impl SettingsAudioView {
             .justify_between()
             .w_full()
             .px(spacing(Spacing::Sm, density))
-            .py(scaled(ROW_PAD_V, density))
+            .py(scaled(DEVICE_TRIGGER_PAD_V, density))
             .rounded(radius(Radius::Sm))
             .bg(palette.base)
             .border(BORDER_THIN)

@@ -6,7 +6,7 @@ use time::OffsetDateTime;
 
 use crate::repo_failure::RepoFailure;
 
-const LOG_PREFIX: &str = "forge.log";
+pub(crate) const LOG_PREFIX: &str = "forge.log";
 
 pub(crate) fn files(dir: &Path) -> Result<Vec<PathBuf>, RepoFailure> {
     let entries = match fs::read_dir(dir) {

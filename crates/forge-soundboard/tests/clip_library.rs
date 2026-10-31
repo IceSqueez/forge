@@ -7,8 +7,9 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use forge_events::{EventPublisher, EventSource};
 use forge_soundboard::{
-    AdoptionVerdict, ClipAvailability, ClipLibrary, ClipRefusal, ClipSource, SoundboardError,
+    AdoptionVerdict, ClipAvailability, ClipLibrary, ClipSource, SoundboardError,
 };
+use forge_storage::MediaRefusal;
 use forge_storage::{
     MediaBlob, MediaBlobId, MediaFormat, MediaReferrer, MediaReferrerKind, MediaRepo,
     SoundboardClipsRepo, StorageError, StoredClip,
@@ -153,12 +154,12 @@ impl MediaRepo for FakeMedia {
                 label: "fixture.wav".to_owned(),
                 imported_at: OffsetDateTime::UNIX_EPOCH,
             }),
-            None => Err(StorageError::MediaUnsupported {
+            None => Err(StorageError::MediaRefused(MediaRefusal::Unsupported {
                 label: source
                     .file_name()
                     .map(|name| name.to_string_lossy().into_owned())
                     .unwrap_or_default(),
-            }),
+            })),
         }
     }
 
@@ -446,7 +447,7 @@ async fn a_refused_import_on_save_writes_no_clip_row() {
     assert!(
         matches!(
             error,
-            SoundboardError::ImportRefused(StorageError::MediaUnsupported { .. })
+            SoundboardError::ImportRefused(MediaRefusal::Unsupported { .. })
         ),
         "an unsupported source was not reported as a refusal: {error:?}"
     );
@@ -561,7 +562,7 @@ async fn a_refusal_recorded_while_saving_explains_the_row_in_a_later_availabilit
         vec![(
             row.id,
             ClipAvailability::Unadopted {
-                refusal: Some(ClipRefusal::Unsupported {
+                refusal: Some(MediaRefusal::Unsupported {
                     label: file_name(source.path())
                 })
             }
@@ -584,7 +585,7 @@ async fn a_recorded_refusal_stops_the_background_path_but_not_an_explicit_adopti
     assert!(
         matches!(
             refused,
-            AdoptionVerdict::Refused(ClipRefusal::Unsupported { .. })
+            AdoptionVerdict::Refused(MediaRefusal::Unsupported { .. })
         ),
         "an unsupported source was not refused: {refused:?}"
     );
@@ -700,7 +701,7 @@ async fn adopt_all_now_settles_every_row_with_its_own_verdict() {
             (rows.adoptable.id, AdoptionVerdict::Adopted),
             (
                 rows.refused.id,
-                AdoptionVerdict::Refused(ClipRefusal::Unsupported {
+                AdoptionVerdict::Refused(MediaRefusal::Unsupported {
                     label: rows.refused_label.clone()
                 })
             ),
@@ -789,7 +790,7 @@ async fn adopting_a_list_announces_one_settled_event_per_row_carrying_its_verdic
             json!({
                 "clip_id": rows.refused.id.to_string(),
                 "verdict": "refused",
-                "reason": ClipRefusal::Unsupported {
+                "reason": MediaRefusal::Unsupported {
                     label: rows.refused_label.clone(),
                 }
                 .to_string(),

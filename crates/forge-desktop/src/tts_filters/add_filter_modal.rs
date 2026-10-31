@@ -17,11 +17,11 @@ use gpui::{
 };
 
 const INPUT_H: Pixels = px(62.0);
-const ROW_GAP: Pixels = px(2.0);
-const ROW_GAP_ALT: Pixels = px(5.0);
-const ROW_PAD_V: Pixels = px(5.0);
-const ROW_PAD_H: Pixels = px(14.0);
-const BLOCK_PAD: Pixels = px(2.0);
+const REPLACE_TABS_GAP: Pixels = px(2.0);
+const RADIO_LIST_GAP: Pixels = px(5.0);
+const REPLACE_TAB_PAD_V: Pixels = px(5.0);
+const REPLACE_TAB_PAD_H: Pixels = px(14.0);
+const REPLACE_TABS_PAD: Pixels = px(2.0);
 
 const MODAL_W: Pixels = px(480.0);
 
@@ -268,7 +268,7 @@ impl AddFilterModal {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let color = palette.danger;
-        let mut list = div().flex().flex_col().gap(scaled(ROW_GAP_ALT, density));
+        let mut list = div().flex().flex_col().gap(scaled(RADIO_LIST_GAP, density));
         for preset in SKIP_PRESETS {
             let selected = self.skip_preset == preset;
             let id = SharedString::from(format!("filt-modal-skip-{}", preset.key()));
@@ -311,7 +311,7 @@ impl AddFilterModal {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let color = palette.success;
-        let mut list = div().flex().flex_col().gap(scaled(ROW_GAP_ALT, density));
+        let mut list = div().flex().flex_col().gap(scaled(RADIO_LIST_GAP, density));
         for preset in OUTPUT_PRESETS {
             let selected = self.output_preset == preset;
             let id = SharedString::from(format!("filt-modal-output-{}", preset.key()));
@@ -381,7 +381,7 @@ impl AddFilterModal {
         let mode_list = div()
             .flex()
             .flex_col()
-            .gap(scaled(ROW_GAP_ALT, density))
+            .gap(scaled(RADIO_LIST_GAP, density))
             .child(
                 radio_row(
                     "filt-modal-bl-censor",
@@ -446,8 +446,8 @@ impl AddFilterModal {
         let is_regex = self.replace_kind == ReplaceKind::Regex;
         let mut tabs = div()
             .flex()
-            .p(BLOCK_PAD)
-            .gap(ROW_GAP)
+            .p(REPLACE_TABS_PAD)
+            .gap(REPLACE_TABS_GAP)
             .rounded(radius(Radius::Sm))
             .bg(palette.shell)
             .border(BORDER_THIN)
@@ -468,8 +468,8 @@ impl AddFilterModal {
             };
             let mut chip = div()
                 .id(id)
-                .py(scaled(ROW_PAD_V, density))
-                .px(scaled(ROW_PAD_H, density))
+                .py(scaled(REPLACE_TAB_PAD_V, density))
+                .px(scaled(REPLACE_TAB_PAD_H, density))
                 .rounded(radius(Radius::Sm))
                 .cursor_pointer()
                 .font_family(mono_family())

@@ -10,7 +10,7 @@ use forge_storage::{BlocklistMode, FilterRule, FilterRuleKind};
 use gpui::prelude::*;
 use gpui::{AnyElement, ClickEvent, Context, SharedString, div, px};
 
-const ROW_GAP: gpui::Pixels = px(5.0);
+const MODE_CHOICE_GAP: gpui::Pixels = px(5.0);
 
 const COLLAPSED_BLOCKLIST_CHIPS: usize = 3;
 
@@ -155,7 +155,7 @@ impl TtsFiltersView {
         let mode_choice = div()
             .flex()
             .flex_col()
-            .gap(scaled(ROW_GAP, density))
+            .gap(scaled(MODE_CHOICE_GAP, density))
             .py(spacing(Spacing::Xs, density))
             .child(
                 radio_row(

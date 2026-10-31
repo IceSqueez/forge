@@ -14,7 +14,8 @@ use forge_components::{
 };
 use forge_storage::{OverlayDefinition, OverlayId};
 use gpui::{
-    AnyElement, ClickEvent, Context, FontWeight, Pixels, Rgba, SharedString, div, prelude::*, px,
+    AnyElement, ClickEvent, Context, ElementId, FontWeight, Pixels, Rgba, SharedString, div,
+    prelude::*, px,
 };
 
 use super::OverlaysView;
@@ -44,6 +45,13 @@ const EMPTY_PAD_V: Pixels = px(14.0);
 
 const FOOTER_PAD_H: Pixels = px(12.0);
 const ADD_GLYPH: Pixels = px(13.0);
+
+fn row_element_id(control: &'static str, overlay: &OverlayId) -> ElementId {
+    ElementId::from((
+        ElementId::from(control),
+        SharedString::from(overlay.to_string()),
+    ))
+}
 
 impl OverlaysView {
     pub(super) fn render_registry_pane(
@@ -128,15 +136,14 @@ impl OverlaysView {
                 .into_any_element();
         }
 
-        for (index, definition) in self.registry.overlays.iter().enumerate() {
-            list = list.child(self.render_row(index, definition, palette, cx));
+        for definition in &self.registry.overlays {
+            list = list.child(self.render_row(definition, palette, cx));
         }
         list.into_any_element()
     }
 
     fn render_row(
         &self,
-        index: usize,
         definition: &OverlayDefinition,
         palette: &ForgePalette,
         cx: &mut Context<Self>,
@@ -210,7 +217,7 @@ impl OverlaysView {
         let switch = toggle(definition.enabled, palette)
             .on_color(visuals.accent)
             .on_click(
-                ("overlay-toggle", index),
+                row_element_id("overlay-toggle", &id),
                 cx.listener(move |this, _: &ClickEvent, _, cx| {
                     this.toggle_enabled(toggle_id.clone(), cx)
                 }),
@@ -219,7 +226,7 @@ impl OverlaysView {
         let select_id = id.clone();
         let hover_bg = palette.elevated;
         div()
-            .id(("overlay-row", index))
+            .id(row_element_id("overlay-row", &id))
             .flex()
             .items_center()
             .gap(spacing(Spacing::Sm, density))
@@ -238,22 +245,17 @@ impl OverlaysView {
             )
             .child(tile)
             .child(labels)
-            .children(self.render_media_badge(index, &id, palette))
+            .children(self.render_media_badge(&id, palette))
             .child(switch)
-            .child(self.render_row_menu(index, &id, palette, cx))
+            .child(self.render_row_menu(&id, palette, cx))
             .into_any_element()
     }
 
-    fn render_media_badge(
-        &self,
-        index: usize,
-        id: &OverlayId,
-        palette: &ForgePalette,
-    ) -> Option<AnyElement> {
+    fn render_media_badge(&self, id: &OverlayId, palette: &ForgePalette) -> Option<AnyElement> {
         let note = self.media_badge(id)?;
         Some(
             div()
-                .id(("overlay-media-issue", index))
+                .id(row_element_id("overlay-media-issue", id))
                 .flex_none()
                 .tooltip(tooltip_builder(note, palette))
                 .child(icon(Icon::AlertTriangle, ROW_BADGE_GLYPH, palette.warning))
@@ -263,7 +265,6 @@ impl OverlaysView {
 
     fn render_row_menu(
         &self,
-        index: usize,
         id: &OverlayId,
         palette: &ForgePalette,
         cx: &mut Context<Self>,
@@ -280,7 +281,7 @@ impl OverlaysView {
             .open_at(self.registry.menu_click_pos)
             .items(vec![
                 menu_item(
-                    ("overlay-menu-rename", index),
+                    row_element_id("overlay-menu-rename", id),
                     tr!("overlays_menu_rename"),
                     cx.listener(move |this, _: &ClickEvent, _, cx| {
                         this.open_rename_form(rename_id.clone(), cx)
@@ -289,7 +290,7 @@ impl OverlaysView {
                 .icon(Icon::Pencil)
                 .into(),
                 menu_item(
-                    ("overlay-menu-copy-url", index),
+                    row_element_id("overlay-menu-copy-url", id),
                     tr!("overlays_menu_copy_url"),
                     cx.listener(move |this, _: &ClickEvent, _, cx| this.copy_url(&copy_id, cx)),
                 )
@@ -297,7 +298,7 @@ impl OverlaysView {
                 .into(),
                 menu_divider(),
                 menu_item(
-                    ("overlay-menu-delete", index),
+                    row_element_id("overlay-menu-delete", id),
                     tr!("common_delete"),
                     cx.listener(move |this, _: &ClickEvent, _, cx| {
                         this.prompt_delete(delete_id.clone(), cx)
@@ -308,7 +309,7 @@ impl OverlaysView {
                 .into(),
             ])
             .on_toggle(
-                ("overlay-menu-trigger", index),
+                row_element_id("overlay-menu-trigger", id),
                 cx.listener(move |this, event: &ClickEvent, _, cx| {
                     this.toggle_menu(&toggle_id, event.position(), cx)
                 }),

@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
+use forge_storage::MediaRefusal;
 use forge_storage::{
     DataProvider, MediaBlobId, MediaFormat, MediaKind, MediaReferrer, MediaReferrerKind, MediaRepo,
     StorageError,
@@ -175,11 +176,11 @@ async fn a_refused_store_leaves_neither_a_row_nor_a_file() {
     assert!(
         matches!(
             error,
-            StorageError::MediaTypeMismatch {
+            StorageError::MediaRefused(MediaRefusal::TypeMismatch {
                 claimed: MediaFormat::Mp3,
                 detected: MediaFormat::Png,
                 ..
-            }
+            })
         ),
         "png bytes named .mp3 were not refused as a mismatch: {error:?}"
     );
@@ -207,7 +208,7 @@ async fn import_file_refuses_content_outside_the_accepted_list() {
 
     let error = fx.media().import_file(&source).await.unwrap_err();
 
-    let StorageError::MediaUnsupported { label } = error else {
+    let StorageError::MediaRefused(MediaRefusal::Unsupported { label }) = error else {
         panic!("random bytes were not refused as unsupported: {error:?}");
     };
     assert_eq!(label, "notes.txt");
@@ -223,9 +224,9 @@ async fn import_file_refuses_a_source_one_byte_over_its_kind_cap() {
 
     let error = fx.media().import_file(&source).await.unwrap_err();
 
-    let StorageError::MediaTooLarge {
+    let StorageError::MediaRefused(MediaRefusal::TooLarge {
         size, limit, kind, ..
-    } = error
+    }) = error
     else {
         panic!("an oversized image was not refused: {error:?}");
     };
@@ -292,9 +293,9 @@ async fn import_file_stops_reading_a_source_that_understates_its_length_at_the_k
     )]
     let _ = writer.join();
 
-    let StorageError::MediaTooLarge {
+    let StorageError::MediaRefused(MediaRefusal::TooLarge {
         size, limit, kind, ..
-    } = error
+    }) = error
     else {
         panic!("an endless image was not refused: {error:?}");
     };

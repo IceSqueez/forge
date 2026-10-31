@@ -17,8 +17,8 @@ use gpui::{
     div, px,
 };
 
-const ROW_PAD_H: gpui::Pixels = px(12.0);
-const ROW_GAP: gpui::Pixels = px(14.0);
+const CONCURRENCY_BOX_PAD_H: gpui::Pixels = px(12.0);
+const CONCURRENCY_SLIDER_GAP: gpui::Pixels = px(14.0);
 
 pub(super) struct QueueDraft {
     pub(super) editing: Option<QueueId>,
@@ -195,7 +195,7 @@ impl EditQueueModal {
             .flex_col()
             .gap(spacing(Spacing::Xxs, density))
             .py(spacing(Spacing::Sm, density))
-            .px(scaled(ROW_PAD_H, density))
+            .px(scaled(CONCURRENCY_BOX_PAD_H, density))
             .rounded(CONCURRENCY_BOX_RADIUS)
             .border(BORDER_THIN)
             .border_color(palette.border_input)
@@ -205,7 +205,7 @@ impl EditQueueModal {
                     .w_full()
                     .flex()
                     .items_center()
-                    .gap(scaled(ROW_GAP, density))
+                    .gap(scaled(CONCURRENCY_SLIDER_GAP, density))
                     .child(
                         div().flex_1().child(
                             slider(

@@ -1969,6 +1969,7 @@ twitch_device_get_new_code = Get new code
 twitch_device_waiting = Waiting for you to authorize on { $name }...
 twitch_device_requesting = Requesting a code from { $name }...
 twitch_device_polling_subline = polling every { $interval }s · scopes: { $scopes }
+twitch_device_requesting_subline = scopes: { $scopes }
 twitch_device_do_later = I'll do this later
 twitch_device_expired_title = This code expired before you finished
 twitch_device_denied_title = Authorization denied

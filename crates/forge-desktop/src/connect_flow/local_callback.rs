@@ -17,19 +17,21 @@ const BODY_LINE_H: gpui::Pixels = px(20.0);
 const PAGE_MAX_W: gpui::Pixels = px(640.0);
 const STEP_BADGE: gpui::Pixels = px(24.0);
 const STEP_BORDER: gpui::Pixels = px(1.5);
-const BLOCK_MB: gpui::Pixels = px(14.0);
-const BLOCK_MB_ALT: gpui::Pixels = px(22.0);
-const ROW_PAD_V: gpui::Pixels = px(5.0);
-const ROW_PAD_V_ALT: gpui::Pixels = px(7.0);
-const ROW_PAD_V_WIDE: gpui::Pixels = px(9.0);
-const ROW_PAD_V_TALL: gpui::Pixels = px(11.0);
-const ROW_PAD_H: gpui::Pixels = px(11.0);
-const ROW_PAD_H_ALT: gpui::Pixels = px(14.0);
-const ROW_PAD_H_WIDE: gpui::Pixels = px(20.0);
-const ROW_GAP: gpui::Pixels = px(1.0);
-const ROW_GAP_ALT: gpui::Pixels = px(5.0);
-const ROW_GAP_WIDE: gpui::Pixels = px(7.0);
-const ROW_GAP_TALL: gpui::Pixels = px(13.0);
+const CARD_STACK_MB: gpui::Pixels = px(14.0);
+const INTRO_TEXT_MB: gpui::Pixels = px(22.0);
+const CANCEL_BUTTON_PAD_V: gpui::Pixels = px(5.0);
+const URL_BOX_PAD_V: gpui::Pixels = px(7.0);
+const SIGN_IN_BUTTON_PAD_V: gpui::Pixels = px(9.0);
+const NOTICE_PAD_V: gpui::Pixels = px(11.0);
+const STEP_ROW_PAD_V: gpui::Pixels = px(11.0);
+const URL_BOX_PAD_H: gpui::Pixels = px(11.0);
+const CANCEL_BUTTON_PAD_H: gpui::Pixels = px(11.0);
+const NOTICE_PAD_H: gpui::Pixels = px(14.0);
+const SIGN_IN_BUTTON_PAD_H: gpui::Pixels = px(20.0);
+const NOTICE_TEXT_GAP: gpui::Pixels = px(1.0);
+const BUTTON_ICON_GAP: gpui::Pixels = px(5.0);
+const HINT_ICON_GAP: gpui::Pixels = px(7.0);
+const STEP_ROW_GAP: gpui::Pixels = px(13.0);
 
 const AUTHORIZATION_TIMEOUT: Duration = Duration::from_secs(300);
 
@@ -385,7 +387,7 @@ impl ConnectFlow {
             .text_size(FONT_FIELD)
             .text_color(palette.text_muted)
             .line_height(BODY_LINE_H)
-            .mb(scaled(BLOCK_MB_ALT, density))
+            .mb(scaled(INTRO_TEXT_MB, density))
             .child(styled)
             .into_any_element()
     }
@@ -407,8 +409,8 @@ impl ConnectFlow {
         );
         let url_box = div()
             .w_full()
-            .py(scaled(ROW_PAD_V_ALT, density))
-            .px(scaled(ROW_PAD_H, density))
+            .py(scaled(URL_BOX_PAD_V, density))
+            .px(scaled(URL_BOX_PAD_H, density))
             .rounded(BUTTON_RADIUS)
             .border(BORDER_THIN)
             .border_color(palette.border_regular)
@@ -451,7 +453,7 @@ impl ConnectFlow {
                 div()
                     .flex()
                     .items_center()
-                    .gap(scaled(ROW_GAP_WIDE, density))
+                    .gap(scaled(HINT_ICON_GAP, density))
                     .mt(spacing(Spacing::Xs, density))
                     .child(icon(
                         Icon::Server2,
@@ -520,7 +522,7 @@ impl ConnectFlow {
             .bg(palette.elevated)
             .py(spacing(Spacing::Xxs, density))
             .px(spacing(Spacing::Md, density))
-            .mb(scaled(BLOCK_MB, density))
+            .mb(scaled(CARD_STACK_MB, density))
             .child(s1)
             .child(s2)
             .child(s3)
@@ -598,8 +600,8 @@ impl ConnectFlow {
             .w_full()
             .flex()
             .items_start()
-            .gap(scaled(ROW_GAP_TALL, density))
-            .py(scaled(ROW_PAD_V_TALL, density))
+            .gap(scaled(STEP_ROW_GAP, density))
+            .py(scaled(STEP_ROW_PAD_V, density))
             .child(circle)
             .child(content);
         if !is_last {
@@ -647,13 +649,13 @@ impl ConnectFlow {
             .flex()
             .items_center()
             .gap(spacing(Spacing::Sm, density))
-            .py(scaled(ROW_PAD_V_TALL, density))
-            .px(scaled(ROW_PAD_H_ALT, density))
+            .py(scaled(NOTICE_PAD_V, density))
+            .px(scaled(NOTICE_PAD_H, density))
             .rounded(radius(Radius::Md))
             .border(BORDER_THIN)
             .border_color(palette.border_regular)
             .bg(palette.elevated)
-            .mb(scaled(BLOCK_MB, density))
+            .mb(scaled(CARD_STACK_MB, density))
             .child(pulse)
             .child(
                 div()
@@ -661,7 +663,7 @@ impl ConnectFlow {
                     .min_w(px(0.0))
                     .flex()
                     .flex_col()
-                    .gap(scaled(ROW_GAP, density))
+                    .gap(scaled(NOTICE_TEXT_GAP, density))
                     .child(
                         div()
                             .font_family(body_family())
@@ -687,13 +689,13 @@ impl ConnectFlow {
             .flex()
             .items_center()
             .gap(spacing(Spacing::Sm, density))
-            .py(scaled(ROW_PAD_V_TALL, density))
-            .px(scaled(ROW_PAD_H_ALT, density))
+            .py(scaled(NOTICE_PAD_V, density))
+            .px(scaled(NOTICE_PAD_H, density))
             .rounded(radius(Radius::Md))
             .border(BORDER_THIN)
             .border_color(palette.success)
             .bg(palette.elevated)
-            .mb(scaled(BLOCK_MB, density))
+            .mb(scaled(CARD_STACK_MB, density))
             .child(icon(Icon::CircleCheckFilled, ICON_NOTICE, palette.success))
             .child(
                 div()
@@ -804,7 +806,7 @@ impl ConnectFlow {
             .id("oauth-choose-different")
             .flex()
             .items_center()
-            .gap(scaled(ROW_GAP_ALT, density))
+            .gap(scaled(BUTTON_ICON_GAP, density))
             .cursor_pointer()
             .key_activated(palette.text_primary)
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.leave(cx)))
@@ -825,9 +827,9 @@ impl ConnectFlow {
                         .id("oauth-signin")
                         .flex()
                         .items_center()
-                        .gap(scaled(ROW_GAP_ALT, density))
-                        .py(scaled(ROW_PAD_V_WIDE, density))
-                        .px(scaled(ROW_PAD_H_WIDE, density))
+                        .gap(scaled(BUTTON_ICON_GAP, density))
+                        .py(scaled(SIGN_IN_BUTTON_PAD_V, density))
+                        .px(scaled(SIGN_IN_BUTTON_PAD_H, density))
                         .rounded(radius(Radius::Sm))
                         .bg(palette.brand)
                         .cursor_pointer()
@@ -850,8 +852,8 @@ impl ConnectFlow {
                 div()
                     .id("oauth-footer-cancel")
                     .flex_none()
-                    .py(scaled(ROW_PAD_V, density))
-                    .px(scaled(ROW_PAD_H, density))
+                    .py(scaled(CANCEL_BUTTON_PAD_V, density))
+                    .px(scaled(CANCEL_BUTTON_PAD_H, density))
                     .rounded(radius(Radius::Sm))
                     .border(BORDER_THIN)
                     .border_color(palette.border_regular)

@@ -8,7 +8,7 @@ use super::HotkeysScreenView;
 use super::capture::Capture;
 use crate::actions::chord_caps;
 use crate::async_bridge;
-use crate::combo_conflict::{ComboHolder, conflict_prompt, release_holder};
+use crate::combo_conflict::{ComboHolder, ConflictChoices, conflict_prompt, release_holder};
 use crate::repo_failure::RepoFailure;
 
 pub(super) struct ConflictPrompt {
@@ -99,8 +99,10 @@ impl HotkeysScreenView {
             &prompt.holder,
             palette,
             cx,
-            Self::conflict_cancel,
-            Self::conflict_replace,
+            ConflictChoices {
+                on_cancel: Self::conflict_cancel,
+                on_replace: Self::conflict_replace,
+            },
         )
     }
 }

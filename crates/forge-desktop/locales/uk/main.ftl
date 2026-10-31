@@ -2006,6 +2006,7 @@ twitch_device_get_new_code = Отримати новий код
 twitch_device_waiting = Очікування підтвердження на { $name }...
 twitch_device_requesting = Запитуємо код у { $name }...
 twitch_device_polling_subline = опитування кожні { $interval }с · scopes: { $scopes }
+twitch_device_requesting_subline = scopes: { $scopes }
 twitch_device_do_later = Зроблю це пізніше
 twitch_device_expired_title = Цей код сплив, перш ніж ви завершили
 twitch_device_denied_title = Авторизацію відхилено

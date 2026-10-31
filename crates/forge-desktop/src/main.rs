@@ -338,7 +338,7 @@ fn init_tracing() -> (Option<tracing_appender::non_blocking::WorkerGuard>, LogTa
     let appender = std::fs::create_dir_all(&log_dir).ok().and_then(|()| {
         tracing_appender::rolling::Builder::new()
             .rotation(tracing_appender::rolling::Rotation::DAILY)
-            .filename_prefix("forge.log")
+            .filename_prefix(log_archive::LOG_PREFIX)
             .max_log_files(RETAINED_LOG_FILES)
             .build(&log_dir)
             .ok()

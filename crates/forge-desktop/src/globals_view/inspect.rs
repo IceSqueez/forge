@@ -12,8 +12,8 @@ use gpui::{ClickEvent, Context, SharedString, div, px};
 
 const GUTTER_W: gpui::Pixels = px(34.0);
 const PANEL_MAX_H: gpui::Pixels = px(400.0);
-const BLOCK_PR: gpui::Pixels = px(12.0);
-const ROW_PAD_H: gpui::Pixels = px(12.0);
+const GUTTER_PAD_R: gpui::Pixels = px(12.0);
+const LISTING_PAD_H: gpui::Pixels = px(12.0);
 
 pub(super) struct InspectedGlobal {
     global: Global,
@@ -107,7 +107,7 @@ impl GlobalsView {
                         div()
                             .flex_none()
                             .w(GUTTER_W)
-                            .pr(scaled(BLOCK_PR, density))
+                            .pr(scaled(GUTTER_PAD_R, density))
                             .flex()
                             .justify_end()
                             .font_family(mono_family())
@@ -125,7 +125,7 @@ impl GlobalsView {
             .border_color(palette.border_regular)
             .rounded(radius(Radius::Md))
             .py(spacing(Spacing::Sm, density))
-            .px(scaled(ROW_PAD_H, density))
+            .px(scaled(LISTING_PAD_H, density))
             .child(listing);
         let body = div()
             .id("globals-inspect-scroll")

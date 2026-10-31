@@ -1,6 +1,6 @@
 use forge_components::{fmt_bytes, tr};
-use forge_soundboard::{ClipRefusal, SoundboardError};
-use forge_storage::StorageError;
+use forge_soundboard::SoundboardError;
+use forge_storage::{MediaRefusal, StorageError};
 
 pub(crate) fn failure_message(error: &SoundboardError) -> String {
     match error {
@@ -13,40 +13,19 @@ pub(crate) fn failure_message(error: &SoundboardError) -> String {
     }
 }
 
-pub(crate) fn clip_refusal_message(refusal: &ClipRefusal) -> String {
-    refusal_message(&match refusal {
-        ClipRefusal::Unsupported { label } => StorageError::MediaUnsupported {
-            label: label.clone(),
-        },
-        ClipRefusal::TypeMismatch {
-            label,
-            claimed,
-            detected,
-        } => StorageError::MediaTypeMismatch {
-            label: label.clone(),
-            claimed: *claimed,
-            detected: *detected,
-        },
-        ClipRefusal::TooLarge {
-            label,
-            size,
-            limit,
-            kind,
-        } => StorageError::MediaTooLarge {
-            label: label.clone(),
-            size: *size,
-            limit: *limit,
-            kind: *kind,
-        },
-    })
+pub(crate) fn storage_refusal_message(error: &StorageError) -> String {
+    match error {
+        StorageError::MediaRefused(refusal) => refusal_message(refusal),
+        other => other.to_string(),
+    }
 }
 
-pub(crate) fn refusal_message(refusal: &StorageError) -> String {
+pub(crate) fn refusal_message(refusal: &MediaRefusal) -> String {
     match refusal {
-        StorageError::MediaUnsupported { label } => {
+        MediaRefusal::Unsupported { label } => {
             tr!("soundboard_import_unsupported", file = label.as_str())
         }
-        StorageError::MediaTypeMismatch {
+        MediaRefusal::TypeMismatch {
             label,
             claimed,
             detected,
@@ -56,7 +35,7 @@ pub(crate) fn refusal_message(refusal: &StorageError) -> String {
             named = claimed.as_str(),
             detected = detected.as_str()
         ),
-        StorageError::MediaTooLarge {
+        MediaRefusal::TooLarge {
             label, size, limit, ..
         } => {
             let size = fmt_bytes(*size);
@@ -68,6 +47,5 @@ pub(crate) fn refusal_message(refusal: &StorageError) -> String {
                 limit = limit.as_str()
             )
         }
-        other => other.to_string(),
     }
 }

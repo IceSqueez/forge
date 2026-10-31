@@ -16,9 +16,9 @@ use gpui::{
 use crate::repo_failure::RepoFailure;
 use forge_components::ActivePresentation;
 
-const ROW_GAP: Pixels = px(2.0);
-const ROW_GAP_ALT: Pixels = px(3.0);
-const ROW_PAD_V: Pixels = px(1.0);
+const TITLE_SUBTITLE_GAP: Pixels = px(2.0);
+const BADGE_GAP: Pixels = px(3.0);
+const BADGE_PAD_V: Pixels = px(1.0);
 
 const MIN_PORT: u16 = 1024;
 const BADGE_GLYPH: Pixels = px(10.0);
@@ -210,8 +210,8 @@ impl SettingsWebSocketView {
             .flex_none()
             .flex()
             .items_center()
-            .gap(scaled(ROW_GAP_ALT, density))
-            .py(scaled(ROW_PAD_V, density))
+            .gap(scaled(BADGE_GAP, density))
+            .py(scaled(BADGE_PAD_V, density))
             .px(spacing(Spacing::Xs, density))
             .rounded(radius(Radius::Sm))
             .bg(palette.surface_overlay)
@@ -251,7 +251,7 @@ impl SettingsWebSocketView {
             .min_w(px(0.0))
             .flex()
             .flex_col()
-            .gap(scaled(ROW_GAP, density))
+            .gap(scaled(TITLE_SUBTITLE_GAP, density))
             .child(title_row)
             .child(
                 div()

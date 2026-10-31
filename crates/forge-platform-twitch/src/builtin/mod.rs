@@ -12,6 +12,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::debug;
 
 use forge_net::Gateway;
+use forge_platform_core::TokenColor;
 use forge_platform_core::{
     BuiltinContent, BuiltinHealth, BuiltinStatus, CapabilityFlags, ChatPlatform,
     CollectionRevisionSignal, CollectionRevisions, ConnectionState, CredentialState, DetailSection,
@@ -772,6 +773,7 @@ impl BuiltinContent for TwitchIntegrationBundle {
         let scopes_list = DetailSection::ScopesList {
             title: labels::OAUTH_SCOPES.into(),
             icon: SectionIcon::new("key"),
+            icon_tint: Some(TokenColor::Yellow),
             scopes: TWITCH_BROADCASTER_SCOPES
                 .iter()
                 .map(|s| (*s).to_owned())
@@ -818,6 +820,7 @@ impl BuiltinContent for TwitchIntegrationBundle {
         let eventsub_list = DetailSection::SubscriptionList {
             title: labels::EVENTSUB_SUBSCRIPTIONS.into(),
             icon: SectionIcon::new("rss"),
+            icon_tint: Some(TokenColor::ThemeBrand),
             items: sub_items,
             footer: None,
             banner: dropped_kind.map(|kind| {

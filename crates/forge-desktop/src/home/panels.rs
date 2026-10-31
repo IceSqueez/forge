@@ -1,7 +1,14 @@
 use super::*;
 
 const BAR_H: gpui::Pixels = px(40.0);
-const ROW_GAP: gpui::Pixels = px(3.0);
+const HEALTH_STAT_GAP: gpui::Pixels = px(3.0);
+
+pub(super) struct GlanceCounts {
+    pub(super) actions: String,
+    pub(super) commands: String,
+    pub(super) fired: String,
+    pub(super) globals: String,
+}
 
 impl HomeView {
     pub(super) fn health_stat(
@@ -37,7 +44,7 @@ impl HomeView {
             .flex_1()
             .flex()
             .flex_col()
-            .gap(scaled(ROW_GAP, density))
+            .gap(scaled(HEALTH_STAT_GAP, density))
             .child(
                 div()
                     .font_family(mono_family())
@@ -522,10 +529,7 @@ impl HomeView {
 
     pub(super) fn render_glance(
         &self,
-        actions: String,
-        commands: String,
-        fired: String,
-        globals: String,
+        counts: GlanceCounts,
         palette: &ForgePalette,
         density: Density,
     ) -> impl IntoElement + use<> {
@@ -534,7 +538,7 @@ impl HomeView {
             .flex_col()
             .child(Self::glance_row(
                 tr!("home_glance_actions"),
-                actions,
+                counts.actions,
                 palette.brand,
                 false,
                 palette,
@@ -542,7 +546,7 @@ impl HomeView {
             ))
             .child(Self::glance_row(
                 tr!("home_glance_commands"),
-                commands,
+                counts.commands,
                 palette.info,
                 false,
                 palette,
@@ -550,7 +554,7 @@ impl HomeView {
             ))
             .child(Self::glance_row(
                 tr!("home_glance_fired"),
-                fired,
+                counts.fired,
                 palette.success,
                 false,
                 palette,
@@ -558,7 +562,7 @@ impl HomeView {
             ))
             .child(Self::glance_row(
                 tr!("home_glance_globals"),
-                globals,
+                counts.globals,
                 palette.warning,
                 true,
                 palette,

@@ -68,11 +68,6 @@ fn settled_kinds(states: &LifecycleStates) -> HashMap<IntegrationId, Discriminan
         .map(|(id, state)| (id.clone(), std::mem::discriminant(state)))
         .collect()
 }
-const OBS_BUILTIN_ID: &str = "obs";
-const VTUBE_BUILTIN_ID: &str = "vtube";
-const MIDI_BUILTIN_ID: &str = "midi";
-const HOTKEY_BUILTIN_ID: &str = "hotkey";
-const DISCORD_BUILTIN_ID: &str = "discord";
 
 struct Router {
     screen: Screen,
@@ -359,23 +354,31 @@ impl AppShell {
         cx: &mut Context<Self>,
     ) -> AnyView {
         let builtin = match id.as_str() {
-            OBS_BUILTIN_ID => match handles.integrations.obs_install_seed.live() {
-                Some(client) => Some(obs_builtin_object(client)),
-                None => return Self::obs_connect_screen(handles, cx),
-            },
-            VTUBE_BUILTIN_ID => match handles.integrations.vtube_install_seed.live() {
-                Some(client) => Some(vtube_builtin_object(client)),
-                None => return Self::vtube_connect_screen(handles, cx),
-            },
-            MIDI_BUILTIN_ID => return Self::midi_screen(handles, cx),
-            HOTKEY_BUILTIN_ID => match handles.integrations.hotkey_reconciler.clone() {
-                Some(reconciler) => return Self::hotkeys_screen(handles, reconciler, cx),
-                None => handles.integrations.builtins.get(id),
-            },
-            DISCORD_BUILTIN_ID => match handles.integrations.discord_client.clone() {
-                Some(client) => return Self::discord_screen(handles, client, cx),
-                None => handles.integrations.builtins.get(id),
-            },
+            forge_obs::vocabulary::INTEGRATION_ID => {
+                match handles.integrations.obs_install_seed.live() {
+                    Some(client) => Some(obs_builtin_object(client)),
+                    None => return Self::obs_connect_screen(handles, cx),
+                }
+            }
+            forge_vtube::vocabulary::INTEGRATION_ID => {
+                match handles.integrations.vtube_install_seed.live() {
+                    Some(client) => Some(vtube_builtin_object(client)),
+                    None => return Self::vtube_connect_screen(handles, cx),
+                }
+            }
+            forge_midi::vocabulary::INTEGRATION_ID => return Self::midi_screen(handles, cx),
+            forge_hotkey::vocabulary::INTEGRATION_ID => {
+                match handles.integrations.hotkey_reconciler.clone() {
+                    Some(reconciler) => return Self::hotkeys_screen(handles, reconciler, cx),
+                    None => handles.integrations.builtins.get(id),
+                }
+            }
+            forge_discord::vocabulary::INTEGRATION_ID => {
+                match handles.integrations.discord_client.clone() {
+                    Some(client) => return Self::discord_screen(handles, client, cx),
+                    None => handles.integrations.builtins.get(id),
+                }
+            }
             _ => handles.integrations.builtins.get(id),
         };
         let object = builtin.unwrap_or_else(|| unavailable_builtin(id));
@@ -806,7 +809,10 @@ impl AppShell {
     }
 
     fn go_twitch(&mut self, _: &GoTwitch, _: &mut Window, cx: &mut Context<Self>) {
-        self.navigate(Screen::BuiltinDetail(IntegrationId::new("twitch")), cx);
+        self.navigate(
+            Screen::BuiltinDetail(forge_platform_twitch::TWITCH_INTEGRATION.id),
+            cx,
+        );
     }
 
     fn go_settings(&mut self, _: &GoSettings, _: &mut Window, cx: &mut Context<Self>) {

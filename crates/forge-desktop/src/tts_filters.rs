@@ -23,6 +23,8 @@ use gpui::prelude::*;
 use gpui::{Context, Entity, SharedString, Subscription, Window, div, px};
 use std::sync::{Arc, LazyLock};
 
+const PREVIEW_INPUT_H: gpui::Pixels = px(56.0);
+
 #[derive(Clone, Default)]
 struct FilterSet {
     rules: Vec<FilterRule>,
@@ -64,7 +66,7 @@ impl TtsFiltersView {
             let mut input = TextArea::new(tr!("tts_filters_preview_input_placeholder"), cx)
                 .with_palette(palette)
                 .on_surface()
-                .with_height(px(56.0));
+                .with_height(PREVIEW_INPUT_H);
             input.set_content(tr!("tts_filters_preview_sample"), cx);
             input
         });

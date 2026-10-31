@@ -2,13 +2,12 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use forge_discord::DiscordClient;
+use forge_discord::vocabulary::fields::webhook::WEBHOOK_NAME;
+use forge_discord::vocabulary::sub_action_ids;
 use forge_storage::ActionRepo;
 use forge_types::{Action, ActionId};
 
 use crate::repo_failure::RepoFailure;
-
-const DISCORD_SUB_ACTION_PREFIX: &str = "discord.";
-const WEBHOOK_NAME_FIELD: &str = "webhook_name";
 
 pub(crate) struct WebhookRow {
     pub name: String,
@@ -61,10 +60,10 @@ pub(crate) fn name_is_taken(rows: &[WebhookRow], name: &str) -> bool {
 
 fn posts_to(action: &Action, webhook_name: &str) -> bool {
     action.sub_actions.iter().any(|step| {
-        step.kind_id.starts_with(DISCORD_SUB_ACTION_PREFIX)
+        step.kind_id.starts_with(sub_action_ids::PREFIX)
             && step
                 .config
-                .get(WEBHOOK_NAME_FIELD)
+                .get(WEBHOOK_NAME)
                 .and_then(|value| value.as_str())
                 == Some(webhook_name)
     })
@@ -81,7 +80,7 @@ mod tests {
     fn step(kind_id: &str, webhook: Option<Variant>) -> SubActionStep {
         let mut config = BTreeMap::new();
         if let Some(value) = webhook {
-            config.insert(WEBHOOK_NAME_FIELD.to_owned(), value);
+            config.insert(WEBHOOK_NAME.to_owned(), value);
         }
         SubActionStep {
             kind_id: kind_id.to_owned(),

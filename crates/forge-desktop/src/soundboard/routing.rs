@@ -15,7 +15,7 @@ use super::{LABEL_FS, SMALL_GLYPH, SoundboardView};
 use crate::async_bridge::{self, ErrorSink};
 use crate::repo_failure::RepoFailure;
 
-const BLOCK_MT: Pixels = px(5.0);
+const DEVICE_HINT_MT: Pixels = px(5.0);
 
 pub(super) const ROUTING_PAD: Pixels = px(14.0);
 const SELECT_RADIUS: Pixels = px(7.0);
@@ -133,7 +133,7 @@ impl SoundboardView {
             .child(self.render_device_select(&device_label, palette, cx));
         device_col = device_col.child(
             div()
-                .mt(scaled(BLOCK_MT, density))
+                .mt(scaled(DEVICE_HINT_MT, density))
                 .font_family(body_family())
                 .text_size(HINT_FS)
                 .text_color(palette.text_faint)

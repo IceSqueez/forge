@@ -52,6 +52,7 @@ pub(crate) struct SettingsDiagnosticsView {
     builtins: BuiltinRegistry,
     rt_handle: tokio::runtime::Handle,
     lines: Vec<LogLine>,
+    shown_tail_revision: Option<u64>,
     level: LogLevel,
     level_load: Loadable<()>,
     level_picked: bool,
@@ -82,6 +83,7 @@ impl SettingsDiagnosticsView {
             builtins,
             rt_handle,
             lines: Vec::new(),
+            shown_tail_revision: None,
             level: DEFAULT_DIAGNOSTIC_LOG_LEVEL,
             level_load: Loadable::Loading,
             level_picked: false,
@@ -195,6 +197,11 @@ impl SettingsDiagnosticsView {
     }
 
     fn refresh(&mut self, cx: &mut Context<Self>) {
+        let revision = self.tail.revision();
+        if self.shown_tail_revision == Some(revision) {
+            return;
+        }
+        self.shown_tail_revision = Some(revision);
         let follow = self.is_at_bottom();
         self.lines = self.tail.snapshot();
         if follow {

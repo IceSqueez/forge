@@ -540,6 +540,7 @@ pub(crate) async fn run_actor(
                         publish_catalog(
                             rebuilt,
                             &voices,
+                            &SpeakEmitter::new(&event_tx, deps.event_bus.as_ref()),
                             &mut task_deps,
                             language_aware,
                             &mut detector_builds,
@@ -557,6 +558,7 @@ pub(crate) async fn run_actor(
                         publish_catalog(
                             rebuilt,
                             &voices,
+                            &SpeakEmitter::new(&event_tx, deps.event_bus.as_ref()),
                             &mut task_deps,
                             language_aware,
                             &mut detector_builds,
@@ -579,6 +581,7 @@ pub(crate) async fn run_actor(
                         publish_catalog(
                             rebuilt,
                             &voices,
+                            &SpeakEmitter::new(&event_tx, deps.event_bus.as_ref()),
                             &mut task_deps,
                             language_aware,
                             &mut detector_builds,
@@ -651,6 +654,7 @@ pub(crate) async fn run_actor(
                     publish_catalog(
                         merged,
                         &voices,
+                        &SpeakEmitter::new(&event_tx, deps.event_bus.as_ref()),
                         &mut task_deps,
                         language_aware,
                         &mut detector_builds,
@@ -1401,6 +1405,7 @@ impl DetectorBuilds {
 fn publish_catalog(
     merged: Arc<Vec<TtsVoice>>,
     voices: &Shared<Vec<TtsVoice>>,
+    emitter: &SpeakEmitter<'_>,
     task_deps: &mut SynthTaskDeps,
     language_aware: bool,
     detector_builds: &mut DetectorBuilds,
@@ -1410,6 +1415,7 @@ fn publish_catalog(
         detector_builds.rebuild(&merged);
     }
     task_deps.voice_catalog = merged;
+    emitter.feed(SpeakEvent::VoiceCatalogChanged);
 }
 
 fn next_request<'a>(

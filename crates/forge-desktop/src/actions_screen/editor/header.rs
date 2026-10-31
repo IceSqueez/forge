@@ -6,6 +6,8 @@ use forge_components::{
 };
 use gpui::{AnyElement, ClickEvent, Context, FontWeight, SharedString, div, px};
 
+const STATUS_PILL_PAD_V: gpui::Pixels = px(1.0);
+
 impl ActionEditor {
     pub(super) fn render_editor_header(
         &self,
@@ -105,7 +107,7 @@ impl ActionEditor {
             .flex()
             .items_center()
             .gap(spacing(Spacing::Xxs, density))
-            .py(scaled(px(1.0), density))
+            .py(scaled(STATUS_PILL_PAD_V, density))
             .px(spacing(Spacing::Xs, density))
             .rounded(PILL_RADIUS)
             .bg(palette.surface_overlay)

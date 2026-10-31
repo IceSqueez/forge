@@ -24,7 +24,7 @@ use forge_host::audio_routes::{
     set_destination, set_route,
 };
 
-const ROW_PAD_V: gpui::Pixels = px(7.0);
+const DESTINATION_TRIGGER_PAD_V: gpui::Pixels = px(7.0);
 
 const ROUTE_LOCAL_KEY: &str = "settings_audio_route_local";
 const ROUTE_OVERLAY_KEY: &str = "settings_audio_route_overlay";
@@ -355,7 +355,7 @@ impl SettingsAudioRoutingView {
             .justify_between()
             .w_full()
             .px(spacing(Spacing::Sm, density))
-            .py(scaled(ROW_PAD_V, density))
+            .py(scaled(DESTINATION_TRIGGER_PAD_V, density))
             .rounded(radius(Radius::Sm))
             .bg(palette.base)
             .border(BORDER_THIN)

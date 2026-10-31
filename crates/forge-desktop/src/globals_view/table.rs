@@ -20,9 +20,9 @@ const COL_MODIFIED_W: gpui::Pixels = px(120.0);
 const COL_BY_W: gpui::Pixels = px(96.0);
 const COL_PERSIST_W: gpui::Pixels = px(64.0);
 const COL_ACTIONS_W: gpui::Pixels = px(84.0);
-const ROW_GAP: gpui::Pixels = px(2.0);
-const BLOCK_PAD: gpui::Pixels = px(2.0);
-const BLOCK_PAD_ALT: gpui::Pixels = px(4.0);
+const ROW_ACTIONS_GAP: gpui::Pixels = px(2.0);
+const INSPECT_BUTTON_PAD: gpui::Pixels = px(2.0);
+const ROW_ACTION_PAD: gpui::Pixels = px(4.0);
 
 impl GlobalsView {
     pub(super) fn render_table(
@@ -176,7 +176,7 @@ impl GlobalsView {
             .flex()
             .items_center()
             .justify_end()
-            .gap(scaled(ROW_GAP, density))
+            .gap(scaled(ROW_ACTIONS_GAP, density))
             .child(self.row_action(
                 (gpui::ElementId::from("globals-edit"), name.clone()),
                 Icon::Edit,
@@ -386,7 +386,7 @@ impl GlobalsView {
                     .flex()
                     .items_center()
                     .justify_center()
-                    .p(BLOCK_PAD)
+                    .p(INSPECT_BUTTON_PAD)
                     .rounded(radius(Radius::Sm))
                     .cursor_pointer()
                     .hover(move |s| s.bg(hover_bg))
@@ -432,7 +432,7 @@ impl GlobalsView {
             .flex()
             .items_center()
             .justify_center()
-            .p(BLOCK_PAD_ALT)
+            .p(ROW_ACTION_PAD)
             .rounded(radius(Radius::Sm))
             .cursor_pointer()
             .hover(move |s| s.bg(hover_bg))

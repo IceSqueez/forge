@@ -108,6 +108,7 @@ pub struct DeviceCodeInfo {
     pub user_code: String,
     pub verification_uri: String,
     pub expires_at: SystemTime,
+    pub poll_interval: Duration,
 }
 
 #[derive(Debug, Clone)]
@@ -233,6 +234,7 @@ impl TwitchAuthFlow {
             user_code: authorization.user_code,
             verification_uri: authorization.verification_uri,
             expires_at,
+            poll_interval: self.poll_interval,
         })
     }
 

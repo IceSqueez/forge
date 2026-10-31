@@ -136,14 +136,11 @@ impl DonationSettingsView {
                     DonationService::Donatello(_) => None,
                 };
                 let interval = match &service {
-                    DonationService::Donatello(_) => Some(
+                    DonationService::Donatello(provider) => Some(
                         stored_donatello_poll_interval(settings.as_ref())
                             .await
                             .map_or(forge_donatello::DEFAULT_POLL_INTERVAL, |stored| {
-                                stored.clamp(
-                                    forge_donatello::MIN_POLL_INTERVAL,
-                                    forge_donatello::MAX_POLL_INTERVAL,
-                                )
+                                provider.bounded_poll_interval(stored)
                             }),
                     ),
                     DonationService::Monobank(_) => None,

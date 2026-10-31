@@ -58,8 +58,12 @@ impl DonatelloProvider {
         self.poll.is_enabled()
     }
 
+    pub fn bounded_poll_interval(&self, requested: Duration) -> Duration {
+        self.timing.bounded_poll_interval(requested)
+    }
+
     pub fn set_poll_interval(&self, requested: Duration) -> Duration {
-        let interval = self.timing.bounded_poll_interval(requested);
+        let interval = self.bounded_poll_interval(requested);
         self.poll.set_interval(interval);
         interval
     }

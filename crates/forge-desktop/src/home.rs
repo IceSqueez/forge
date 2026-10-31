@@ -1,6 +1,8 @@
 mod hero;
 mod panels;
 
+use panels::GlanceCounts;
+
 use forge_components::FONT_XL;
 use forge_components::FONT_XXL;
 use forge_components::RevealsFocusIn;
@@ -324,10 +326,12 @@ impl Render for HomeView {
 
         let stats = self.stats.read(cx);
         let viewers = stats.viewers_display();
-        let actions = stats.actions_display();
-        let commands = stats.commands_display();
-        let fired = stats.triggers_fired_display();
-        let globals = stats.globals_display();
+        let glance = GlanceCounts {
+            actions: stats.actions_display(),
+            commands: stats.commands_display(),
+            fired: stats.triggers_fired_display(),
+            globals: stats.globals_display(),
+        };
         let tally = self.connections(cx);
         let warn = tally.warn();
         let (connected, total) = (tally.connected, tally.total);
@@ -356,8 +360,11 @@ impl Render for HomeView {
                 glyph_color: palette.warning,
                 section: tr!("home_card_automation_section"),
                 title: tr!("home_card_automation_title"),
-                stat: actions.clone(),
-                stat_label: tr!("home_card_automation_stat_label", fired = fired.clone()),
+                stat: glance.actions.clone(),
+                stat_label: tr!(
+                    "home_card_automation_stat_label",
+                    fired = glance.fired.clone()
+                ),
                 hint: tr!("home_card_automation_hint"),
                 warn: false,
                 target: to_actions,
@@ -379,7 +386,7 @@ impl Render for HomeView {
         let connections_strip =
             self.render_connections(connections, connected, total, &palette, density, cx);
         let recent_card = self.render_recent_events(recent, &palette, density, cx);
-        let glance_card = self.render_glance(actions, commands, fired, globals, &palette, density);
+        let glance_card = self.render_glance(glance, &palette, density);
         let loss_card = event_loss_card(self.event_loss.read(cx), &palette, density);
 
         let bottom = div()

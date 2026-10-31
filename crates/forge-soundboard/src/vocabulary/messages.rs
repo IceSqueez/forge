@@ -205,7 +205,9 @@ mod tests {
                 "soundboard.source_missing",
             ),
             (
-                SoundboardError::ImportRefused(storage_error()),
+                SoundboardError::ImportRefused(forge_storage::MediaRefusal::Unsupported {
+                    label: "clip".to_owned(),
+                }),
                 "soundboard.import_refused",
             ),
             (

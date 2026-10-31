@@ -54,6 +54,7 @@ impl BuiltinContent for HotkeyClient {
             left: Box::new(ContentList {
                 title: labels::REGISTERED_HOTKEYS.into(),
                 icon: SectionIcon::new("keyboard"),
+                icon_tint: None,
                 inline_label: None,
                 count_label: Some(hotkey_count),
                 visible_rows: None,
@@ -65,6 +66,7 @@ impl BuiltinContent for HotkeyClient {
             right: Box::new(ContentList {
                 title: labels::RECENT_TRIGGERS.into(),
                 icon: SectionIcon::new("bolt"),
+                icon_tint: None,
                 inline_label: None,
                 count_label: Some(trigger_count),
                 visible_rows: None,

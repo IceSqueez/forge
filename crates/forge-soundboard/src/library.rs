@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 
 use forge_events::{EventPublisher, EventSource, TypedEvent};
 use forge_storage::{
-    MediaBlobId, MediaFormat, MediaKind, MediaRepo, SoundboardClipsRepo, StorageError, StoredClip,
+    MediaBlobId, MediaRefusal, MediaRepo, SoundboardClipsRepo, StorageError, StoredClip,
 };
 
 pub(crate) use forge_storage::clip_source_referrer;
@@ -28,7 +28,7 @@ impl ClipSource {
         }
     }
 
-    pub fn availability(&self, refusal: Option<ClipRefusal>) -> ClipAvailability {
+    pub fn availability(&self, refusal: Option<MediaRefusal>) -> ClipAvailability {
         match self {
             Self::Managed(_) => ClipAvailability::Managed,
             Self::Legacy(_) => ClipAvailability::Unadopted { refusal },
@@ -40,7 +40,7 @@ impl ClipSource {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ClipAvailability {
     Managed,
-    Unadopted { refusal: Option<ClipRefusal> },
+    Unadopted { refusal: Option<MediaRefusal> },
     Missing,
 }
 
@@ -51,57 +51,12 @@ impl ClipAvailability {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ClipRefusal {
-    Unsupported {
-        label: String,
-    },
-    TypeMismatch {
-        label: String,
-        claimed: MediaFormat,
-        detected: MediaFormat,
-    },
-    TooLarge {
-        label: String,
-        size: u64,
-        limit: u64,
-        kind: MediaKind,
-    },
-}
-
-impl std::fmt::Display for ClipRefusal {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Unsupported { label } => {
-                write!(f, "'{label}' is not an accepted audio or image file")
-            }
-            Self::TypeMismatch {
-                label,
-                claimed,
-                detected,
-            } => write!(
-                f,
-                "'{label}' is named {claimed} but its content is {detected}"
-            ),
-            Self::TooLarge {
-                label,
-                size,
-                limit,
-                kind,
-            } => write!(
-                f,
-                "'{label}' is {size} bytes, over the {limit} byte limit for {kind} files"
-            ),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AdoptionVerdict {
     Adopted,
     AlreadyManaged,
     InFlight,
     SourceMissing,
-    Refused(ClipRefusal),
+    Refused(MediaRefusal),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -142,37 +97,11 @@ pub(crate) fn plan_source(previous: Option<&Path>, next: &Path, resolvable: bool
     }
 }
 
-pub(crate) fn final_refusal(error: &StorageError) -> Option<ClipRefusal> {
+pub(crate) fn final_refusal(error: &StorageError) -> Option<MediaRefusal> {
     match error {
-        StorageError::MediaUnsupported { label } => Some(ClipRefusal::Unsupported {
-            label: label.clone(),
-        }),
-        StorageError::MediaTypeMismatch {
-            label,
-            claimed,
-            detected,
-        } => Some(ClipRefusal::TypeMismatch {
-            label: label.clone(),
-            claimed: *claimed,
-            detected: *detected,
-        }),
-        StorageError::MediaTooLarge {
-            label,
-            size,
-            limit,
-            kind,
-        } => Some(ClipRefusal::TooLarge {
-            label: label.clone(),
-            size: *size,
-            limit: *limit,
-            kind: *kind,
-        }),
+        StorageError::MediaRefused(refusal) => Some(refusal.clone()),
         _ => None,
     }
-}
-
-pub(crate) fn refusal_is_final(error: &StorageError) -> bool {
-    final_refusal(error).is_some()
 }
 
 fn storage_failed(error: StorageError) -> SoundboardError {
@@ -180,10 +109,9 @@ fn storage_failed(error: StorageError) -> SoundboardError {
 }
 
 fn import_failed(error: StorageError) -> SoundboardError {
-    if refusal_is_final(&error) {
-        SoundboardError::ImportRefused(error)
-    } else {
-        SoundboardError::Storage(error)
+    match error {
+        StorageError::MediaRefused(refusal) => SoundboardError::ImportRefused(refusal),
+        other => SoundboardError::Storage(other),
     }
 }
 
@@ -222,7 +150,7 @@ pub struct ClipLibrary {
     clips: Arc<dyn SoundboardClipsRepo>,
     media: Arc<dyn MediaRepo>,
     adopting: Mutex<HashSet<ClipId>>,
-    refused: Mutex<HashMap<ClipId, ClipRefusal>>,
+    refused: Mutex<HashMap<ClipId, MediaRefusal>>,
     publisher: Shared<Option<Arc<dyn EventPublisher>>>,
 }
 
@@ -483,11 +411,11 @@ impl ClipLibrary {
         self.adopting.lock_recover().remove(&clip_id);
     }
 
-    fn record_refusal(&self, clip_id: ClipId, refusal: ClipRefusal) {
+    fn record_refusal(&self, clip_id: ClipId, refusal: MediaRefusal) {
         self.refused.lock_recover().insert(clip_id, refusal);
     }
 
-    fn recorded_refusal(&self, clip_id: ClipId) -> Option<ClipRefusal> {
+    fn recorded_refusal(&self, clip_id: ClipId) -> Option<MediaRefusal> {
         self.refused.lock_recover().get(&clip_id).cloned()
     }
 
@@ -568,33 +496,33 @@ mod tests {
     fn only_an_admission_refusal_is_final_and_it_carries_the_reason_verbatim() {
         for (error, expected) in [
             (
-                StorageError::MediaUnsupported {
+                StorageError::MediaRefused(MediaRefusal::Unsupported {
                     label: "notes.txt".to_owned(),
-                },
-                Some(ClipRefusal::Unsupported {
+                }),
+                Some(MediaRefusal::Unsupported {
                     label: "notes.txt".to_owned(),
                 }),
             ),
             (
-                StorageError::MediaTypeMismatch {
+                StorageError::MediaRefused(MediaRefusal::TypeMismatch {
                     label: "logo.mp3".to_owned(),
                     claimed: MediaFormat::Mp3,
                     detected: MediaFormat::Png,
-                },
-                Some(ClipRefusal::TypeMismatch {
+                }),
+                Some(MediaRefusal::TypeMismatch {
                     label: "logo.mp3".to_owned(),
                     claimed: MediaFormat::Mp3,
                     detected: MediaFormat::Png,
                 }),
             ),
             (
-                StorageError::MediaTooLarge {
+                StorageError::MediaRefused(MediaRefusal::TooLarge {
                     label: "huge.wav".to_owned(),
                     size: 2,
                     limit: 1,
                     kind: MediaKind::Audio,
-                },
-                Some(ClipRefusal::TooLarge {
+                }),
+                Some(MediaRefusal::TooLarge {
                     label: "huge.wav".to_owned(),
                     size: 2,
                     limit: 1,

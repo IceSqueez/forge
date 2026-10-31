@@ -14,8 +14,9 @@ use super::playback::{readout_total, time_readout};
 use super::{SoundClip, SoundboardView};
 use forge_components::ActivePresentation;
 
-const ROW_GAP: Pixels = px(5.0);
-const BLOCK_MT: Pixels = px(3.0);
+const PAD_STATUS_GAP: Pixels = px(5.0);
+const PAD_FOOTER_GAP: Pixels = px(5.0);
+const PAD_FOOTER_MT: Pixels = px(3.0);
 
 pub(super) const GRID_GAP: Pixels = px(10.0);
 const PADS_PER_ROW: usize = 4;
@@ -94,7 +95,7 @@ impl SoundboardView {
             .flex_1()
             .min_w_0()
             .items_center()
-            .gap(scaled(ROW_GAP, density));
+            .gap(scaled(PAD_STATUS_GAP, density));
         if clip.loop_playback {
             status = status.child(icon(Icon::Repeat, LOOP_ICON, palette.text_faint));
         }
@@ -151,8 +152,8 @@ impl SoundboardView {
             .flex()
             .items_center()
             .justify_between()
-            .gap(scaled(ROW_GAP, density))
-            .mt(scaled(BLOCK_MT, density))
+            .gap(scaled(PAD_FOOTER_GAP, density))
+            .mt(scaled(PAD_FOOTER_MT, density))
             .child(status)
             .child(
                 div()

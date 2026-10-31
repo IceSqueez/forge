@@ -15,7 +15,7 @@ use gpui::{
 };
 
 use crate::async_bridge;
-use crate::builtin_sections::panel_header_row;
+use crate::builtin_sections::{PanelIcon, panel_header_row};
 use crate::repo_failure::RepoFailure;
 use crate::twitch_bot_presence::TwitchBotPresence;
 
@@ -651,7 +651,7 @@ impl Render for TwitchBotSection {
         let sent_as = self.sent_as_row(&palette, density, cx);
         card_shell(&palette)
             .child(panel_header_row(
-                SECTION_ICON,
+                PanelIcon::untinted(SECTION_ICON),
                 &tr!("twitch_bot_section_title"),
                 None,
                 Some(&header_status),
@@ -877,6 +877,7 @@ mod tests {
             user_code: "ABCD-EFGH".to_owned(),
             verification_uri: "https://www.twitch.tv/activate".to_owned(),
             expires_at: SystemTime::UNIX_EPOCH,
+            poll_interval: std::time::Duration::from_secs(5),
         }
     }
 

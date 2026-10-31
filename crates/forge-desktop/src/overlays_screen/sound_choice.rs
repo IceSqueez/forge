@@ -7,7 +7,7 @@ use forge_storage::StoredClip;
 use forge_types::ClipId;
 use gpui::{AnyElement, div, prelude::*};
 
-use crate::clip_messages::{clip_refusal_message, failure_message};
+use crate::clip_messages::{failure_message, refusal_message};
 
 pub(super) const NO_SOUND: &str = "";
 
@@ -58,7 +58,7 @@ pub(super) fn pick_outcome(result: AdoptionResult) -> PickOutcome {
             PickOutcome::Refused(tr!("soundboard_error_source_missing", name = name.as_str()))
         }
         Ok(Some((_, AdoptionVerdict::Refused(refusal)))) => {
-            PickOutcome::Refused(clip_refusal_message(&refusal))
+            PickOutcome::Refused(refusal_message(&refusal))
         }
         Err(error) => PickOutcome::Refused(failure_message(&error)),
     }
@@ -145,8 +145,7 @@ mod tests {
     use std::path::PathBuf;
 
     use forge_overlay::config::{HEADLINE, ICON, SOUND};
-    use forge_soundboard::ClipRefusal;
-    use forge_storage::MediaFormat;
+    use forge_storage::{MediaFormat, MediaRefusal};
     use forge_types::OutputDevice;
     use time::OffsetDateTime;
 
@@ -285,7 +284,7 @@ mod tests {
             (
                 Ok(Some((
                     "Fanfare".to_owned(),
-                    AdoptionVerdict::Refused(ClipRefusal::Unsupported {
+                    AdoptionVerdict::Refused(MediaRefusal::Unsupported {
                         label: "notes.txt".to_owned(),
                     }),
                 ))),
@@ -326,7 +325,7 @@ mod tests {
             (
                 Ok(Some((
                     "Fanfare".to_owned(),
-                    AdoptionVerdict::Refused(ClipRefusal::TypeMismatch {
+                    AdoptionVerdict::Refused(MediaRefusal::TypeMismatch {
                         label: "fanfare.wav".to_owned(),
                         claimed: MediaFormat::Wav,
                         detected: MediaFormat::Mp3,

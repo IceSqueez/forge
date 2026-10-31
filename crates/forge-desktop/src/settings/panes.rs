@@ -5,11 +5,11 @@ const SWATCH_RADIUS: gpui::Pixels = px(11.0);
 const SKETCH_W: gpui::Pixels = px(46.0);
 const SKETCH_H: gpui::Pixels = px(100.0);
 const SWATCH: gpui::Pixels = px(48.0);
-const BLOCK_PAD: gpui::Pixels = px(6.0);
-const BLOCK_PAD_ALT: gpui::Pixels = px(8.0);
-const BLOCK_PAD_WIDE: gpui::Pixels = px(12.0);
-const ROW_GAP: gpui::Pixels = px(4.0);
-const ROW_GAP_ALT: gpui::Pixels = px(5.0);
+const SKETCH_RAIL_PAD: gpui::Pixels = px(6.0);
+const SKETCH_CONTENT_PAD: gpui::Pixels = px(8.0);
+const THEME_CARD_PAD: gpui::Pixels = px(12.0);
+const SKETCH_RAIL_GAP: gpui::Pixels = px(4.0);
+const SKETCH_CONTENT_GAP: gpui::Pixels = px(5.0);
 
 impl SettingsView {
     pub(super) fn render_nav(
@@ -287,8 +287,8 @@ impl SettingsView {
             .h_full()
             .flex()
             .flex_col()
-            .gap(ROW_GAP)
-            .p(BLOCK_PAD)
+            .gap(SKETCH_RAIL_GAP)
+            .p(SKETCH_RAIL_PAD)
             .bg(pal.shell)
             .border_r(BORDER_THIN)
             .border_color(pal.border_regular)
@@ -315,8 +315,8 @@ impl SettingsView {
             .h_full()
             .flex()
             .flex_col()
-            .gap(ROW_GAP_ALT)
-            .p(BLOCK_PAD_ALT)
+            .gap(SKETCH_CONTENT_GAP)
+            .p(SKETCH_CONTENT_PAD)
             .child(bar(
                 8.0,
                 gpui::relative(0.5),
@@ -332,7 +332,7 @@ impl SettingsView {
                 div()
                     .flex()
                     .flex_row()
-                    .gap(ROW_GAP_ALT)
+                    .gap(SKETCH_CONTENT_GAP)
                     .child(bar(14.0, gpui::relative(0.4), pal.brand))
                     .child(bar(
                         14.0,
@@ -386,7 +386,7 @@ impl SettingsView {
             .flex()
             .flex_col()
             .gap(spacing(Spacing::Xs, density))
-            .p(scaled(BLOCK_PAD_WIDE, density))
+            .p(scaled(THEME_CARD_PAD, density))
             .rounded(radius(Radius::Md))
             .border(BORDER_THIN)
             .border_color(border_color)

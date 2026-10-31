@@ -1,5 +1,6 @@
 use forge_types::RecoverMutex;
 use std::collections::VecDeque;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use time::OffsetDateTime;
@@ -21,17 +22,23 @@ pub(crate) struct LogLine {
 #[derive(Clone)]
 pub(crate) struct LogTail {
     lines: Arc<Mutex<VecDeque<LogLine>>>,
+    revision: Arc<AtomicU64>,
 }
 
 impl LogTail {
     pub(crate) fn new() -> Self {
         Self {
             lines: Arc::new(Mutex::new(VecDeque::with_capacity(CAPACITY))),
+            revision: Arc::new(AtomicU64::new(0)),
         }
     }
 
     pub(crate) fn layer(&self) -> LogTailLayer {
         LogTailLayer { tail: self.clone() }
+    }
+
+    pub(crate) fn revision(&self) -> u64 {
+        self.revision.load(Ordering::Relaxed)
     }
 
     pub(crate) fn snapshot(&self) -> Vec<LogLine> {
@@ -42,6 +49,7 @@ impl LogTail {
     pub(crate) fn clear(&self) {
         let mut lines = self.lines.lock_recover();
         lines.clear();
+        self.revision.fetch_add(1, Ordering::Relaxed);
     }
 
     fn push(&self, line: LogLine) {
@@ -50,6 +58,7 @@ impl LogTail {
             lines.pop_front();
         }
         lines.push_back(line);
+        self.revision.fetch_add(1, Ordering::Relaxed);
     }
 }
 

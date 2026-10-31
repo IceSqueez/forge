@@ -40,11 +40,16 @@ pub(crate) struct SpeakState {
     queue: Arc<Vec<QueueItem>>,
     stats: SessionStats,
     last_drop: Option<UserText>,
+    voice_catalog_revision: u64,
 }
 
 impl SpeakState {
     pub(crate) fn new() -> Self {
         Self::default()
+    }
+
+    pub(crate) fn voice_catalog_revision(&self) -> u64 {
+        self.voice_catalog_revision
     }
 
     pub(crate) fn last_drop(&self) -> Option<&UserText> {
@@ -154,6 +159,10 @@ impl SpeakState {
             }
             SpeakEvent::Cleared => {
                 self.now_speaking = None;
+                true
+            }
+            SpeakEvent::VoiceCatalogChanged => {
+                self.voice_catalog_revision = self.voice_catalog_revision.wrapping_add(1);
                 true
             }
         }

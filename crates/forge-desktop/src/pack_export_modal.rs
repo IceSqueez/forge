@@ -349,10 +349,7 @@ impl PackExportModal {
                     .choices
                     .iter()
                     .filter(|choice| self.search.matches(&choice.name))
-                    .enumerate()
-                    .map(|(index, choice)| {
-                        self.render_action_row(index, choice, palette, density, cx)
-                    })
+                    .map(|choice| self.render_action_row(choice, palette, density, cx))
                     .collect();
                 if rows.is_empty() {
                     list_message(tr!("pack_export_no_matches"), palette, density)
@@ -406,7 +403,6 @@ impl PackExportModal {
 
     fn render_action_row(
         &self,
-        index: usize,
         choice: &ActionChoice,
         palette: &ForgePalette,
         density: Density,
@@ -417,7 +413,10 @@ impl PackExportModal {
         let hover_bg = palette.base;
         let check = checkbox(checked, palette);
         div()
-            .id(("pack-export-action", index))
+            .id((
+                gpui::ElementId::from("pack-export-action"),
+                SharedString::from(id.to_string()),
+            ))
             .w_full()
             .flex()
             .items_center()

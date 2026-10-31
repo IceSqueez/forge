@@ -122,15 +122,23 @@ pub(crate) async fn release_holder(
     }
 }
 
+pub(crate) struct ConflictChoices<V: 'static> {
+    pub(crate) on_cancel: fn(&mut V, &mut Context<V>),
+    pub(crate) on_replace: fn(&mut V, &mut Context<V>),
+}
+
 pub(crate) fn conflict_prompt<V: 'static>(
     scope: &'static str,
     item_name: impl Into<SharedString>,
     holder: &str,
     palette: &ForgePalette,
     cx: &mut Context<V>,
-    on_cancel: fn(&mut V, &mut Context<V>),
-    on_replace: fn(&mut V, &mut Context<V>),
+    choices: ConflictChoices<V>,
 ) -> AnyElement {
+    let ConflictChoices {
+        on_cancel,
+        on_replace,
+    } = choices;
     let card = confirm_modal(
         tr!("hotkeys_conflict_title"),
         tr!("hotkeys_conflict_body", holder = holder),

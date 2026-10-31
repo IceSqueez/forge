@@ -10,8 +10,8 @@ use forge_storage::{CredentialsRepo, DataProvider, SettingsRepo};
 use forge_tts_cloud::CloudGateways;
 use forge_types::Shared;
 use gpui::{
-    AnyElement, ClickEvent, Context, Entity, EventEmitter, FontWeight, Pixels, Window, div,
-    prelude::*, px,
+    AnyElement, ClickEvent, Context, Entity, EventEmitter, FontWeight, Pixels, Subscription,
+    Window, div, prelude::*, px,
 };
 
 use crate::hub_crumb::{core_category, hub_crumb};
@@ -48,6 +48,8 @@ pub(crate) struct TtsView {
     aliases: Entity<VoiceAliasesView>,
     filters: Entity<TtsFiltersView>,
     speak: Option<SpeakQueueHandle>,
+    voice_catalog_revision: u64,
+    _speak_state_obs: Subscription,
 }
 
 impl TtsView {
@@ -66,6 +68,14 @@ impl TtsView {
         preselect: Option<TtsSection>,
         cx: &mut Context<Self>,
     ) -> Self {
+        let voice_catalog_revision = speak_state.read(cx).voice_catalog_revision();
+        let speak_state_obs = cx.observe(&speak_state, |this, state, cx| {
+            let revision = state.read(cx).voice_catalog_revision();
+            if revision != this.voice_catalog_revision {
+                this.voice_catalog_revision = revision;
+                this.voice_catalog_changed(cx);
+            }
+        });
         let credentials: Arc<dyn CredentialsRepo> =
             Arc::clone(&backend) as Arc<dyn CredentialsRepo>;
         let settings: Arc<dyn SettingsRepo> = Arc::clone(&backend) as Arc<dyn SettingsRepo>;
@@ -114,15 +124,22 @@ impl TtsView {
             aliases,
             filters,
             speak,
+            voice_catalog_revision,
+            _speak_state_obs: speak_state_obs,
         }
+    }
+
+    fn voice_catalog_changed(&mut self, cx: &mut Context<Self>) {
+        self.dashboard
+            .update(cx, |dashboard, cx| dashboard.refresh_engine_roster(cx));
+        self.engines
+            .update(cx, |engines, cx| engines.refresh_engine_roster(cx));
+        self.aliases.update(cx, |_, cx| cx.notify());
+        cx.notify();
     }
 
     fn select_section(&mut self, section: TtsSection, cx: &mut Context<Self>) {
         self.section = section;
-        if section == TtsSection::Dashboard {
-            self.dashboard
-                .update(cx, |dashboard, cx| dashboard.refresh_engine_roster(cx));
-        }
         cx.notify();
     }
 

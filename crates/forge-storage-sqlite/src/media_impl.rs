@@ -150,20 +150,24 @@ fn read_import(source: &Path) -> Result<(String, Vec<u8>), StorageError> {
     std::io::Read::take(&mut file, IMPORT_SNIFF_WINDOW_BYTES).read_to_end(&mut bytes)?;
 
     let Some(format) = sniff(&bytes) else {
-        return Err(StorageError::MediaUnsupported {
-            label: sanitize_label(&raw_label),
-        });
+        return Err(StorageError::MediaRefused(
+            forge_storage::MediaRefusal::Unsupported {
+                label: sanitize_label(&raw_label),
+            },
+        ));
     };
 
     let kind = format.kind();
     let limit = kind.max_blob_bytes();
     if declared_len > limit {
-        return Err(StorageError::MediaTooLarge {
-            label: sanitize_label(&raw_label),
-            size: declared_len,
-            limit,
-            kind,
-        });
+        return Err(StorageError::MediaRefused(
+            forge_storage::MediaRefusal::TooLarge {
+                label: sanitize_label(&raw_label),
+                size: declared_len,
+                limit,
+                kind,
+            },
+        ));
     }
 
     let remaining = (limit + 1).saturating_sub(bytes.len() as u64);

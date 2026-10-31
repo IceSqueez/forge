@@ -9,7 +9,7 @@ use gpui::{ClickEvent, Context, div, px};
 
 const ICON_ROW: gpui::Pixels = px(14.0);
 const SEARCH_W: gpui::Pixels = px(200.0);
-const BLOCK_PAD: gpui::Pixels = px(5.0);
+const EXPORT_BUTTON_PAD: gpui::Pixels = px(5.0);
 
 impl GlobalsView {
     pub(super) fn render_stats<'a>(
@@ -103,7 +103,7 @@ impl GlobalsView {
             .flex()
             .items_center()
             .justify_center()
-            .p(BLOCK_PAD)
+            .p(EXPORT_BUTTON_PAD)
             .rounded(radius(Radius::Sm))
             .cursor_pointer()
             .hover(move |s| s.bg(export_hover))

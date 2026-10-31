@@ -82,6 +82,7 @@ impl BuiltinContent for MidiClient {
                 left: Box::new(ContentList {
                     title: labels::INPUT_PORTS.into(),
                     icon: SectionIcon::new("plug"),
+                    icon_tint: None,
                     inline_label: None,
                     count_label: Some(input_count),
                     visible_rows: None,
@@ -93,6 +94,7 @@ impl BuiltinContent for MidiClient {
                 right: Box::new(ContentList {
                     title: labels::OUTPUT_PORTS.into(),
                     icon: SectionIcon::new("plug"),
+                    icon_tint: None,
                     inline_label: None,
                     count_label: Some(output_count),
                     visible_rows: None,
@@ -105,6 +107,7 @@ impl BuiltinContent for MidiClient {
             DetailSection::KeyValueList {
                 title: labels::STATUS.into(),
                 icon: SectionIcon::new("info"),
+                icon_tint: None,
                 items: vec![
                     KeyValueRow {
                         icon: SectionIcon::new("tag"),

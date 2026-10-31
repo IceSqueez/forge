@@ -46,8 +46,7 @@ pub(crate) fn step_field_label(kind_id: &str, key: &str) -> String {
 }
 
 pub(crate) fn field_label(kind_id: &str, spec: &FormField) -> String {
-    scoped_copy(copy_prefix(spec), kind_id, spec.key())
-        .unwrap_or_else(|| descriptor_label(spec).to_owned())
+    scoped_copy(copy_prefix(spec), kind_id, spec.key()).unwrap_or_else(|| spec.label().to_owned())
 }
 
 fn copy_prefix(spec: &FormField) -> &'static str {
@@ -104,29 +103,6 @@ fn declaring_spec<'a>(spec: &'a FormField, key: &str) -> Option<&'a FormField> {
         }
         FormField::UnitAmount { unit_key, .. } if *unit_key == key => Some(spec),
         _ => (spec.key() == key).then_some(spec),
-    }
-}
-
-fn descriptor_label(spec: &FormField) -> &'static str {
-    match spec {
-        FormField::Text { label, .. }
-        | FormField::TextArea { label, .. }
-        | FormField::Code { label, .. }
-        | FormField::Integer { label, .. }
-        | FormField::OneBasedInteger { label, .. }
-        | FormField::Slider { label, .. }
-        | FormField::Toggle { label, .. }
-        | FormField::FilePicker { label, .. }
-        | FormField::DateTime { label, .. }
-        | FormField::Select { label, .. }
-        | FormField::UnitAmount { label, .. }
-        | FormField::Duration { label, .. }
-        | FormField::DynamicSelect { label, .. }
-        | FormField::DependentSelect { label, .. }
-        | FormField::Swatch { label, .. }
-        | FormField::Optional { label, .. }
-        | FormField::SubChain { label, .. }
-        | FormField::CaseList { label, .. } => label,
     }
 }
 
@@ -581,7 +557,7 @@ field_label_k3 = Global
         let mismatched: Vec<String> = fields
             .iter()
             .filter_map(|field| {
-                let english = descriptor_label(&field.spec);
+                let english = field.spec.label();
                 let resolved = field_label(&field.kind_id, &field.spec);
                 let reworded = INTENTIONAL_EN_REWORDINGS.contains(&(
                     field.namespace(),

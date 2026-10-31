@@ -1,4 +1,4 @@
-use forge_storage::StorageError;
+use forge_storage::{MediaRefusal, StorageError};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -10,7 +10,7 @@ pub enum SoundboardError {
     SourceMissing(String),
 
     #[error("import refused: {0}")]
-    ImportRefused(StorageError),
+    ImportRefused(MediaRefusal),
 
     #[error("audio backend error: {0}")]
     Audio(#[from] forge_audio::AudioError),

@@ -1,5 +1,11 @@
+use std::str::FromStr;
+
 use forge_types::PlatformId;
 use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("unknown event source {0:?}")]
+pub struct UnknownEventSource(pub String);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -24,6 +30,44 @@ pub enum EventSource {
 }
 
 impl EventSource {
+    pub const ALL: [Self; 15] = [
+        Self::Twitch,
+        Self::YouTube,
+        Self::Kick,
+        Self::Core,
+        Self::Rhai,
+        Self::Http,
+        Self::Obs,
+        Self::VTube,
+        Self::Discord,
+        Self::Midi,
+        Self::Hotkey,
+        Self::Timer,
+        Self::Server,
+        Self::Audio,
+        Self::Donation,
+    ];
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Twitch => "twitch",
+            Self::YouTube => "youtube",
+            Self::Kick => "kick",
+            Self::Core => "core",
+            Self::Rhai => "rhai",
+            Self::Http => "http",
+            Self::Obs => "obs",
+            Self::VTube => "vtube",
+            Self::Discord => "discord",
+            Self::Midi => "midi",
+            Self::Hotkey => "hotkey",
+            Self::Timer => "timer",
+            Self::Server => "server",
+            Self::Audio => "audio",
+            Self::Donation => "donation",
+        }
+    }
+
     pub fn to_platform_id(self) -> Option<PlatformId> {
         match self {
             Self::Twitch => Some(PlatformId::Twitch),
@@ -42,6 +86,17 @@ impl EventSource {
             | Self::Audio
             | Self::Donation => None,
         }
+    }
+}
+
+impl FromStr for EventSource {
+    type Err = UnknownEventSource;
+
+    fn from_str(wire_name: &str) -> Result<Self, Self::Err> {
+        Self::ALL
+            .into_iter()
+            .find(|source| source.as_str() == wire_name)
+            .ok_or_else(|| UnknownEventSource(wire_name.to_owned()))
     }
 }
 

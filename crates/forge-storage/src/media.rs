@@ -297,33 +297,56 @@ pub struct AcceptedMedia {
     pub label: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum MediaRefusal {
+    #[error("'{label}' is not an accepted audio or image file")]
+    Unsupported { label: String },
+
+    #[error("'{label}' is named {claimed} but its content is {detected}")]
+    TypeMismatch {
+        label: String,
+        claimed: MediaFormat,
+        detected: MediaFormat,
+    },
+
+    #[error("'{label}' is {size} bytes, over the {limit} byte limit for {kind} files")]
+    TooLarge {
+        label: String,
+        size: u64,
+        limit: u64,
+        kind: MediaKind,
+    },
+}
+
 pub fn accept_media(label: &str, bytes: &[u8]) -> Result<AcceptedMedia, StorageError> {
     let sanitized = sanitize_label(label);
 
     let Some(detected) = sniff(bytes) else {
-        return Err(StorageError::MediaUnsupported { label: sanitized });
+        return Err(StorageError::MediaRefused(MediaRefusal::Unsupported {
+            label: sanitized,
+        }));
     };
 
     if let Some(claimed) = claimed_format(&sanitized)
         && claimed != detected
     {
-        return Err(StorageError::MediaTypeMismatch {
+        return Err(StorageError::MediaRefused(MediaRefusal::TypeMismatch {
             label: sanitized,
             claimed,
             detected,
-        });
+        }));
     }
 
     let size = bytes.len() as u64;
     let kind = detected.kind();
     let limit = kind.max_blob_bytes();
     if size > limit {
-        return Err(StorageError::MediaTooLarge {
+        return Err(StorageError::MediaRefused(MediaRefusal::TooLarge {
             label: sanitized,
             size,
             limit,
             kind,
-        });
+        }));
     }
 
     Ok(AcceptedMedia {
@@ -616,11 +639,11 @@ mod tests {
             ),
         ] {
             let error = accept_media(label, bytes).unwrap_err();
-            let StorageError::MediaTypeMismatch {
+            let StorageError::MediaRefused(MediaRefusal::TypeMismatch {
                 label: reported,
                 claimed: got_claimed,
                 detected: got_detected,
-            } = error
+            }) = error
             else {
                 panic!("{label:?} was not refused as a type mismatch: {error:?}");
             };
@@ -639,7 +662,8 @@ mod tests {
             ("", "untitled"),
         ] {
             let error = accept_media(label, RANDOM).unwrap_err();
-            let StorageError::MediaUnsupported { label: reported } = error else {
+            let StorageError::MediaRefused(MediaRefusal::Unsupported { label: reported }) = error
+            else {
                 panic!("{label} was not refused as unsupported: {error:?}");
             };
             assert_eq!(reported, expected_label);
@@ -680,12 +704,12 @@ mod tests {
         ] {
             let bytes = padded(magic, cap + 1);
             let error = accept_media("over-cap", &bytes).unwrap_err();
-            let StorageError::MediaTooLarge {
+            let StorageError::MediaRefused(MediaRefusal::TooLarge {
                 size,
                 limit,
                 kind: reported,
                 ..
-            } = error
+            }) = error
             else {
                 panic!("a file of {} bytes was not refused: {error:?}", cap + 1);
             };

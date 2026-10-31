@@ -362,7 +362,7 @@ impl Render for SoundboardView {
 #[cfg(test)]
 mod tests {
     use forge_soundboard::SoundboardError;
-    use forge_storage::{MediaFormat, MediaKind, StorageError};
+    use forge_storage::{MediaFormat, MediaKind, MediaRefusal};
 
     use crate::clip_messages::failure_message;
 
@@ -400,13 +400,13 @@ mod tests {
                 "soundboard_error_clip_gone",
             ),
             (
-                SoundboardError::ImportRefused(StorageError::MediaUnsupported {
+                SoundboardError::ImportRefused(MediaRefusal::Unsupported {
                     label: "notes.txt".to_owned(),
                 }),
                 "soundboard_import_unsupported",
             ),
             (
-                SoundboardError::ImportRefused(StorageError::MediaTypeMismatch {
+                SoundboardError::ImportRefused(MediaRefusal::TypeMismatch {
                     label: "logo.mp3".to_owned(),
                     claimed: MediaFormat::Mp3,
                     detected: MediaFormat::Png,
@@ -414,7 +414,7 @@ mod tests {
                 "soundboard_import_type_mismatch",
             ),
             (
-                SoundboardError::ImportRefused(StorageError::MediaTooLarge {
+                SoundboardError::ImportRefused(MediaRefusal::TooLarge {
                     label: "huge.wav".to_owned(),
                     size: 60 * 1024 * 1024,
                     limit: 50 * 1024 * 1024,
@@ -433,19 +433,6 @@ mod tests {
             reason: "disk is busy".to_owned(),
         });
         assert_eq!(failure_message(&error), error.to_string());
-    }
-
-    #[test]
-    fn a_refusal_from_outside_the_admission_gate_falls_back_to_its_own_text() {
-        let refusal = StorageError::NotFound {
-            key: "sha256-abc".to_owned(),
-        };
-        let expected = refusal.to_string();
-
-        assert_eq!(
-            failure_message(&SoundboardError::ImportRefused(refusal)),
-            expected
-        );
     }
 
     #[test]

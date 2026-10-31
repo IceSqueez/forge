@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use tokio::sync::{broadcast, mpsc};
 
+use forge_platform_core::TokenColor;
 use forge_platform_core::{
     AtomicConnectionState, BuiltinContent, CollectionRevisions, DetailSection, HealthDelta,
     SectionIcon,
@@ -466,6 +467,7 @@ impl BuiltinContent for VTubeClient {
         let expressions = DetailSection::ChipGrid {
             title: labels::AVAILABLE_EXPRESSIONS.into(),
             icon: SectionIcon::new("mood-smile"),
+            icon_tint: Some(TokenColor::Pink),
             chip_icon: SectionIcon::new("mood-smile"),
             items: expression_names,
         };

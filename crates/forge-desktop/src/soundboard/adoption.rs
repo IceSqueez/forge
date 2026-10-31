@@ -5,7 +5,8 @@ use forge_components::{
     Density, ForgePalette, Icon, Spacing, icon, mono_family, scaled, secondary_button, spacing, tr,
 };
 use forge_soundboard::vocabulary::SettledVerdict;
-use forge_soundboard::{AdoptionVerdict, ClipAvailability, ClipRefusal, SoundboardError};
+use forge_soundboard::{AdoptionVerdict, ClipAvailability, SoundboardError};
+use forge_storage::MediaRefusal;
 use forge_storage::StoredClip;
 use forge_types::ClipId;
 use gpui::{AnyElement, ClickEvent, Context, SharedString, div, prelude::*};
@@ -14,7 +15,7 @@ use super::footer::{FOOTER_FS, FOOTER_PAD_X, FOOTER_PAD_Y};
 use super::pad::LOOP_ICON;
 use super::{SoundClip, SoundboardView};
 use crate::async_bridge;
-use crate::clip_messages::{clip_refusal_message, failure_message};
+use crate::clip_messages::{failure_message, refusal_message};
 
 const ADOPT_SUMMARY_SEPARATOR: &str = " · ";
 
@@ -246,7 +247,7 @@ impl SoundboardView {
 }
 
 enum AdoptionBadge {
-    Blocked(ClipRefusal),
+    Blocked(MediaRefusal),
     Pending,
 }
 
@@ -276,7 +277,7 @@ pub(super) enum LibraryBadge {
 pub(super) fn library_badge(availability: Option<&ClipAvailability>) -> Option<LibraryBadge> {
     match adoption_badge(availability)? {
         AdoptionBadge::Blocked(refusal) => {
-            Some(LibraryBadge::Blocked(clip_refusal_message(&refusal).into()))
+            Some(LibraryBadge::Blocked(refusal_message(&refusal).into()))
         }
         AdoptionBadge::Pending => Some(LibraryBadge::Pending),
     }
@@ -402,8 +403,8 @@ mod tests {
         }
     }
 
-    fn unsupported(label: &str) -> ClipRefusal {
-        ClipRefusal::Unsupported {
+    fn unsupported(label: &str) -> MediaRefusal {
+        MediaRefusal::Unsupported {
             label: label.to_owned(),
         }
     }
@@ -491,7 +492,7 @@ mod tests {
         for (refusal, expected_key) in [
             (unsupported("notes.txt"), "soundboard_import_unsupported"),
             (
-                ClipRefusal::TypeMismatch {
+                MediaRefusal::TypeMismatch {
                     label: "logo.mp3".to_owned(),
                     claimed: MediaFormat::Mp3,
                     detected: MediaFormat::Png,
@@ -499,7 +500,7 @@ mod tests {
                 "soundboard_import_type_mismatch",
             ),
             (
-                ClipRefusal::TooLarge {
+                MediaRefusal::TooLarge {
                     label: "huge.wav".to_owned(),
                     size: 60 * 1024 * 1024,
                     limit: 50 * 1024 * 1024,
@@ -508,7 +509,7 @@ mod tests {
                 "soundboard_import_too_large",
             ),
         ] {
-            assert_eq!(clip_refusal_message(&refusal), expected_key, "{refusal:?}");
+            assert_eq!(refusal_message(&refusal), expected_key, "{refusal:?}");
         }
     }
 
@@ -565,7 +566,7 @@ mod tests {
                 Some(ClipAvailability::Unadopted {
                     refusal: Some(refusal.clone()),
                 }),
-                Some(("blocked", Some(clip_refusal_message(&refusal)))),
+                Some(("blocked", Some(refusal_message(&refusal)))),
             ),
         ] {
             assert_eq!(badge(availability.clone()), expected, "{availability:?}");

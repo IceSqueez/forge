@@ -133,7 +133,7 @@ fn matches_query(item: &EventItem, query: &str) -> bool {
         return true;
     }
     item.kind.to_lowercase().contains(query)
-        || source_label(item.source).to_lowercase().contains(query)
+        || item.source.as_str().contains(query)
         || item.summary.to_lowercase().contains(query)
 }
 
@@ -944,7 +944,7 @@ impl EventFeedView {
             &mut lines,
         );
         push_json_lines(
-            &serde_json::json!(source_label(item.source).to_lowercase()),
+            &serde_json::json!(item.source.as_str()),
             1,
             Some("source"),
             true,
@@ -1237,24 +1237,8 @@ fn replay_badge(palette: &ForgePalette, size: Pixels) -> impl IntoElement + use<
     )
 }
 
-fn source_label(source: EventSource) -> &'static str {
-    match source {
-        EventSource::Twitch => "TWITCH",
-        EventSource::YouTube => "YOUTUBE",
-        EventSource::Kick => "KICK",
-        EventSource::Core => "CORE",
-        EventSource::Rhai => "RHAI",
-        EventSource::Http => "HTTP",
-        EventSource::Obs => "OBS",
-        EventSource::VTube => "VTUBE",
-        EventSource::Discord => "DISCORD",
-        EventSource::Midi => "MIDI",
-        EventSource::Hotkey => "HOTKEY",
-        EventSource::Timer => "TIMER",
-        EventSource::Server => "SERVER",
-        EventSource::Audio => "AUDIO",
-        EventSource::Donation => "DONATION",
-    }
+fn source_label(source: EventSource) -> String {
+    source.as_str().to_ascii_uppercase()
 }
 
 fn source_color(source: EventSource, palette: &ForgePalette) -> Rgba {

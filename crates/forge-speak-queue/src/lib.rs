@@ -170,6 +170,7 @@ pub enum SpeakEvent {
     VoiceGateHeld,
     VoiceGateReleased,
     Cleared,
+    VoiceCatalogChanged,
 }
 
 #[derive(Debug, thiserror::Error)]

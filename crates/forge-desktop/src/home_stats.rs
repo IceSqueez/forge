@@ -123,7 +123,7 @@ impl HomeEvent {
         Some(Self {
             id: event.id.to_string().into(),
             at: event.timestamp,
-            source: source_label(event.source).into(),
+            source: event.source.as_str().into(),
             name: event.kind.clone().into(),
             desc: EventLog::summarize(event, typed).into(),
             hue: SourceHue::from_source(event.source),
@@ -381,26 +381,6 @@ impl HomeStats {
             .take(limit)
             .cloned()
             .collect()
-    }
-}
-
-fn source_label(source: EventSource) -> &'static str {
-    match source {
-        EventSource::Twitch => "twitch",
-        EventSource::YouTube => "youtube",
-        EventSource::Kick => "kick",
-        EventSource::Core => "core",
-        EventSource::Rhai => "rhai",
-        EventSource::Http => "http",
-        EventSource::Obs => "obs",
-        EventSource::VTube => "vtube",
-        EventSource::Discord => "discord",
-        EventSource::Midi => "midi",
-        EventSource::Hotkey => "hotkey",
-        EventSource::Timer => "timer",
-        EventSource::Server => "server",
-        EventSource::Audio => "audio",
-        EventSource::Donation => "donation",
     }
 }
 

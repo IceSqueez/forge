@@ -43,7 +43,7 @@ pub use script::{
     CUSTOM_EVENT_PREFIX, ScriptFailed, ScriptHttpCall, ScriptHttpMethod, ScriptLogLevel,
     ScriptLogged, ScriptReloaded, ScriptStarted,
 };
-pub use source::EventSource;
+pub use source::{EventSource, UnknownEventSource};
 pub use timer::TimerTick;
 pub use trigger::CommandMatched;
 pub use typed::TypedEvent;

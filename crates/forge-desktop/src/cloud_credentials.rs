@@ -24,6 +24,7 @@ use gpui::{
     AnyElement, App, ClickEvent, Context, Entity, EventEmitter, Pixels, Rgba, SharedString,
     Subscription, Window, div, prelude::*, px,
 };
+use serde::Deserialize;
 
 use crate::async_bridge::{self, Generation};
 use crate::repo_failure::RepoFailure;
@@ -95,6 +96,27 @@ impl CloudEngineKind {
     fn engine_id(self) -> EngineId {
         EngineId(self.key().to_owned())
     }
+}
+
+#[derive(Deserialize)]
+struct StoredRegion {
+    region: Option<String>,
+}
+
+pub(crate) async fn stored_region(
+    credentials: &dyn CredentialsRepo,
+    kind: CloudEngineKind,
+) -> Result<Option<String>, RepoFailure> {
+    let stored = credentials
+        .load(&CredentialId::new(kind.credential_id()))
+        .await
+        .map_err(RepoFailure::from)?;
+    let Some(json) = stored else {
+        return Ok(None);
+    };
+    let parsed: StoredRegion = serde_json::from_str(&json)
+        .map_err(|_| RepoFailure::operation("stored cloud credentials are not valid JSON"))?;
+    Ok(parsed.region)
 }
 
 #[derive(Clone, Copy)]

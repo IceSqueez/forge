@@ -418,7 +418,7 @@ impl RepoFailure {
 
 #[cfg(test)]
 mod tests {
-    use forge_storage::{Language, MediaFormat, MediaKind};
+    use forge_storage::{Language, MediaFormat, MediaKind, MediaRefusal};
 
     use super::*;
     use crate::i18n::install_language;
@@ -502,18 +502,18 @@ mod tests {
             StorageError::AliasViewerTaken,
             StorageError::Serialization(serde_json::from_str::<u8>("x").unwrap_err()),
             StorageError::DefaultQueueUndeletable,
-            StorageError::MediaUnsupported { label: text() },
-            StorageError::MediaTypeMismatch {
+            StorageError::MediaRefused(MediaRefusal::Unsupported { label: text() }),
+            StorageError::MediaRefused(MediaRefusal::TypeMismatch {
                 label: text(),
                 claimed: MediaFormat::Wav,
                 detected: MediaFormat::Png,
-            },
-            StorageError::MediaTooLarge {
+            }),
+            StorageError::MediaRefused(MediaRefusal::TooLarge {
                 label: text(),
                 size: 2,
                 limit: 1,
                 kind: MediaKind::Audio,
-            },
+            }),
             StorageError::MediaReferenced { referrer_count: 1 },
             StorageError::MalformedMediaBlobId { raw: text() },
             StorageError::Parse(text()),

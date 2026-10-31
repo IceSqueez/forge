@@ -275,7 +275,7 @@ pub(crate) fn fold_config_field<V: 'static>(
             min: *min,
             max: *max,
             unit,
-            value: read_int(ctx.config, key).unwrap_or(*min).clamp(*min, *max),
+            value: within(read_int(ctx.config, key).unwrap_or(*min), &(*min..=*max)),
         }),
         FormField::Swatch { key, options, .. } => out.push(ConfigField::Swatch {
             key: (*key).to_owned(),

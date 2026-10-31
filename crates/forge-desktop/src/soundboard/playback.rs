@@ -14,7 +14,7 @@ use crate::clip_messages::failure_message;
 use crate::clip_playback::PadPlayClaims;
 use crate::window_presence::PresenceGate;
 
-const ROW_GAP: Pixels = px(5.0);
+const STOP_ALL_ICON_GAP: Pixels = px(5.0);
 
 const TICK_INTERVAL: Duration = Duration::from_millis(100);
 const STOP_ICON: Pixels = px(12.0);
@@ -156,7 +156,7 @@ impl SoundboardView {
             .id("sb-stop-all")
             .flex()
             .items_center()
-            .gap(scaled(ROW_GAP, density))
+            .gap(scaled(STOP_ALL_ICON_GAP, density))
             .cursor_pointer()
             .py(spacing(Spacing::Xxs, density))
             .px(spacing(Spacing::Xs, density))
@@ -233,7 +233,7 @@ pub(super) fn time_readout(elapsed_secs: f64, total_secs: Option<f64>) -> String
 
 #[cfg(test)]
 mod tests {
-    use forge_storage::StorageError;
+    use forge_storage::MediaRefusal;
 
     use super::*;
 
@@ -354,7 +354,7 @@ mod tests {
             ),
             (SoundboardError::ClipNotFound("01J0".to_owned()), None),
             (
-                SoundboardError::ImportRefused(StorageError::MediaUnsupported {
+                SoundboardError::ImportRefused(MediaRefusal::Unsupported {
                     label: "notes.txt".to_owned(),
                 }),
                 None,
@@ -392,11 +392,9 @@ mod tests {
                 true,
             ),
             (
-                Err(SoundboardError::ImportRefused(
-                    StorageError::MediaUnsupported {
-                        label: "notes.txt".to_owned(),
-                    },
-                )),
+                Err(SoundboardError::ImportRefused(MediaRefusal::Unsupported {
+                    label: "notes.txt".to_owned(),
+                })),
                 true,
             ),
             (

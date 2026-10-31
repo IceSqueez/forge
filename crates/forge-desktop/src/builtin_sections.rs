@@ -28,18 +28,19 @@ const METER_RADIUS: Pixels = px(5.0);
 const PILL_RADIUS: Pixels = px(8.0);
 const LIVE_DOT: Pixels = px(5.0);
 const ROW_DOT: Pixels = px(7.0);
+const SUBSCRIPTION_DOT: Pixels = px(6.0);
 const METER_H: Pixels = px(6.0);
 const ACCENT_EDGE_W: Pixels = px(2.0);
-const ROW_GAP: Pixels = px(2.0);
-const ROW_GAP_ALT: Pixels = px(5.0);
-const ROW_GAP_WIDE: Pixels = px(7.0);
-const ROW_GAP_TALL: Pixels = px(12.0);
-const BLOCK_PAD: Pixels = px(14.0);
-const ROW_PAD_V: Pixels = px(0.0);
-const ROW_PAD_V_ALT: Pixels = px(7.0);
-const ROW_PAD_V_WIDE: Pixels = px(8.0);
-const ROW_PAD_H: Pixels = px(12.0);
-const ROW_PAD_H_ALT: Pixels = px(14.0);
+const HEALTH_VALUE_HINT_GAP: Pixels = px(2.0);
+const STATUS_BADGE_GAP: Pixels = px(5.0);
+const PANEL_TITLE_GAP: Pixels = px(7.0);
+const PANEL_SPLIT_GAP: Pixels = px(12.0);
+const SCROLL_PANEL_PAD: Pixels = px(14.0);
+const BADGE_PAD_V: Pixels = px(0.0);
+const CHIP_PAD_V: Pixels = px(7.0);
+const LIST_ROW_PAD_V: Pixels = px(8.0);
+const HEALTH_TILE_PAD_H: Pixels = px(12.0);
+const PANEL_ROW_PAD_H: Pixels = px(14.0);
 
 const SCROLL_PANEL_MAX_H: f32 = 320.0;
 const SCROLL_ROW_EST_H: f32 = 30.0;
@@ -145,12 +146,30 @@ fn dispatch_section(
         DetailSection::TwoColumnLists { left, right } => {
             render_two_column_lists(left, right, hooks, palette, density)
         }
-        DetailSection::KeyValueList { title, icon, items } => {
-            render_key_value_list(&user_text_string(title), icon, items, palette, density)
-        }
-        DetailSection::ActiveItemList { title, icon, items } => {
-            render_active_item_list(&user_text_string(title), icon, items, palette, density)
-        }
+        DetailSection::KeyValueList {
+            title,
+            icon,
+            icon_tint,
+            items,
+        } => render_key_value_list(
+            &user_text_string(title),
+            PanelIcon::of(icon, icon_tint),
+            items,
+            palette,
+            density,
+        ),
+        DetailSection::ActiveItemList {
+            title,
+            icon,
+            icon_tint,
+            items,
+        } => render_active_item_list(
+            &user_text_string(title),
+            PanelIcon::of(icon, icon_tint),
+            items,
+            palette,
+            density,
+        ),
         DetailSection::WarningBanner {
             level,
             title,
@@ -167,12 +186,13 @@ fn dispatch_section(
         DetailSection::SubscriptionList {
             title,
             icon,
+            icon_tint,
             items,
             footer,
             banner,
         } => render_subscription_list(
             &user_text_string(title),
-            icon,
+            PanelIcon::of(icon, icon_tint),
             items,
             footer.as_ref(),
             banner.as_ref().map(user_text_string).as_deref(),
@@ -182,11 +202,12 @@ fn dispatch_section(
         DetailSection::ScopesList {
             title,
             icon,
+            icon_tint,
             scopes,
             footer,
         } => render_scopes_list(
             &user_text_string(title),
-            icon,
+            PanelIcon::of(icon, icon_tint),
             scopes,
             footer.as_ref(),
             palette,
@@ -211,16 +232,24 @@ fn dispatch_section(
         DetailSection::StatsGrid {
             title,
             icon,
+            icon_tint,
             columns,
-        } => render_stats_grid(&user_text_string(title), icon, columns, palette, density),
+        } => render_stats_grid(
+            &user_text_string(title),
+            PanelIcon::of(icon, icon_tint),
+            columns,
+            palette,
+            density,
+        ),
         DetailSection::ChipGrid {
             title,
             icon,
+            icon_tint,
             chip_icon,
             items,
         } => render_chip_grid(
             &user_text_string(title),
-            icon,
+            PanelIcon::of(icon, icon_tint),
             chip_icon,
             items,
             palette,
@@ -257,7 +286,7 @@ fn render_two_column_lists(
 
 fn render_key_value_list(
     title: &str,
-    icon: &SectionIcon,
+    icon: PanelIcon<'_>,
     items: &[KeyValueRow],
     palette: &ForgePalette,
     density: Density,
@@ -268,13 +297,7 @@ fn render_key_value_list(
     }
     card_shell(palette)
         .child(panel_header_row(
-            icon.as_str(),
-            title,
-            None,
-            None,
-            None,
-            palette,
-            density,
+            icon, title, None, None, None, palette, density,
         ))
         .child(divider(palette))
         .child(rows)
@@ -283,7 +306,7 @@ fn render_key_value_list(
 
 fn render_active_item_list(
     title: &str,
-    icon: &SectionIcon,
+    icon: PanelIcon<'_>,
     items: &[ActiveRow],
     palette: &ForgePalette,
     density: Density,
@@ -299,7 +322,7 @@ fn render_active_item_list(
     }
     card_shell(palette)
         .child(panel_header_row(
-            icon.as_str(),
+            icon,
             title,
             None,
             count.as_deref(),
@@ -360,7 +383,7 @@ fn render_warning_banner(
 
 fn render_subscription_list(
     title: &str,
-    icon: &SectionIcon,
+    icon: PanelIcon<'_>,
     items: &[SubscriptionRow],
     footer: Option<&ListFooter>,
     banner: Option<&str>,
@@ -406,7 +429,7 @@ fn render_subscription_list(
     let mut card = card_shell(palette)
         .max_h(px(SCROLL_PANEL_MAX_H))
         .child(panel_header_row(
-            icon.as_str(),
+            icon,
             title,
             None,
             Some(&count),
@@ -450,7 +473,7 @@ fn subscription_banner(message: &str, palette: &ForgePalette, density: Density) 
 
 fn render_scopes_list(
     title: &str,
-    icon_token: &SectionIcon,
+    icon_token: PanelIcon<'_>,
     scopes: &[String],
     footer: Option<&ListFooter>,
     palette: &ForgePalette,
@@ -492,7 +515,7 @@ fn render_scopes_list(
     let mut card = card_shell(palette)
         .max_h(px(SCROLL_PANEL_MAX_H))
         .child(panel_header_row(
-            icon_token.as_str(),
+            icon_token,
             title,
             None,
             Some(&count),
@@ -519,7 +542,7 @@ fn render_two_column(
         .w_full()
         .flex()
         .items_stretch()
-        .gap(scaled(ROW_GAP_TALL, density))
+        .gap(scaled(PANEL_SPLIT_GAP, density))
         .child(grow_cell(
             dispatch_section(left, hooks, palette, density),
             10.0,
@@ -572,7 +595,7 @@ fn render_info_card(
 
 fn render_stats_grid(
     title: &str,
-    icon: &SectionIcon,
+    icon: PanelIcon<'_>,
     columns: &[StatColumn],
     palette: &ForgePalette,
     density: Density,
@@ -587,13 +610,7 @@ fn render_stats_grid(
     }
     card_shell(palette)
         .child(panel_header_row(
-            icon.as_str(),
-            title,
-            None,
-            None,
-            None,
-            palette,
-            density,
+            icon, title, None, None, None, palette, density,
         ))
         .child(divider(palette))
         .child(stats_row)
@@ -606,7 +623,7 @@ const CHIP_NAME_FONT: Pixels = FONT_LABEL;
 
 fn render_chip_grid(
     title: &str,
-    icon_token: &SectionIcon,
+    icon_token: PanelIcon<'_>,
     chip_icon: &SectionIcon,
     items: &[String],
     palette: &ForgePalette,
@@ -639,19 +656,13 @@ fn render_chip_grid(
             .w_full()
             .max_h(px(SCROLL_PANEL_MAX_H))
             .overflow_y_revealing_focus()
-            .p(scaled(BLOCK_PAD, density))
+            .p(scaled(SCROLL_PANEL_PAD, density))
             .child(grid)
             .into_any_element()
     };
     card_shell(palette)
         .child(panel_header_row(
-            icon_token.as_str(),
-            title,
-            None,
-            None,
-            None,
-            palette,
-            density,
+            icon_token, title, None, None, None, palette, density,
         ))
         .child(divider(palette))
         .child(panel_body)
@@ -672,7 +683,7 @@ fn chip_elem(
         .border(BORDER_THIN)
         .border_color(palette.border_regular)
         .rounded(radius(Radius::Sm))
-        .py(scaled(ROW_PAD_V_ALT, density))
+        .py(scaled(CHIP_PAD_V, density))
         .px(spacing(Spacing::Sm, density))
         .child(icon(
             Icon::from_name(chip_icon.as_str()),
@@ -734,7 +745,7 @@ fn content_list_panel(
     let refresh = list.refreshable.then(|| hooks.refresh.clone()).flatten();
     let mut card = card_shell(palette)
         .child(panel_header_row(
-            list.icon.as_str(),
+            PanelIcon::of(&list.icon, &list.icon_tint),
             &user_text_string(&list.title),
             list.inline_label.as_ref().map(user_text_string).as_deref(),
             list.count_label.as_ref().map(user_text_string).as_deref(),
@@ -940,7 +951,7 @@ fn subscription_row_elem(
         .gap(spacing(Spacing::Sm, density))
         .child(status_dot(
             subscription_status_color(&item.status, palette),
-            px(6.0),
+            SUBSCRIPTION_DOT,
         ))
         .child(name_el);
     if let Some(ver) = &item.version {
@@ -1077,18 +1088,33 @@ fn stat_column_cell(col: &StatColumn, palette: &ForgePalette, density: Density) 
         .into_any_element()
 }
 
-fn panel_header_icon_color(icon_str: &str, palette: &ForgePalette) -> Rgba {
-    match icon_str {
-        "key" => palette.warning,
-        "rss" | "layout-grid" => palette.theme_brand,
-        "stack-2" => palette.info,
-        "mood-smile" => palette.accent_pink_light,
-        _ => palette.text_secondary,
+#[derive(Clone, Copy)]
+pub(crate) struct PanelIcon<'a> {
+    name: &'a str,
+    tint: Option<&'a TokenColor>,
+}
+
+impl<'a> PanelIcon<'a> {
+    fn of(icon: &'a SectionIcon, tint: &'a Option<TokenColor>) -> Self {
+        Self {
+            name: icon.as_str(),
+            tint: tint.as_ref(),
+        }
+    }
+
+    pub(crate) fn untinted(name: &'a str) -> Self {
+        Self { name, tint: None }
+    }
+
+    fn color(self, palette: &ForgePalette) -> Rgba {
+        self.tint.map_or(palette.text_secondary, |tint| {
+            token_color_value(tint, palette)
+        })
     }
 }
 
 pub(crate) fn panel_header_row(
-    icon_str: &str,
+    panel_icon: PanelIcon<'_>,
     title: &str,
     inline_label: Option<&str>,
     count: Option<&str>,
@@ -1101,11 +1127,11 @@ pub(crate) fn panel_header_row(
         .min_w(px(0.0))
         .flex()
         .items_center()
-        .gap(scaled(ROW_GAP_WIDE, density))
+        .gap(scaled(PANEL_TITLE_GAP, density))
         .child(icon(
-            Icon::from_name(icon_str),
+            Icon::from_name(panel_icon.name),
             FONT_SM,
-            panel_header_icon_color(icon_str, palette),
+            panel_icon.color(palette),
         ))
         .child(
             body(title.to_owned(), PANEL_TITLE_FONT, palette.text_primary)
@@ -1121,7 +1147,7 @@ pub(crate) fn panel_header_row(
         .flex()
         .items_center()
         .py(spacing(Spacing::Sm, density))
-        .px(scaled(ROW_PAD_H_ALT, density))
+        .px(scaled(PANEL_ROW_PAD_H, density))
         .child(left);
     if let Some(c) = count {
         row = row.child(mono(c.to_owned(), FONT_XXS, palette.text_faint));
@@ -1161,8 +1187,8 @@ fn info_card_header(
         let badge = div()
             .flex()
             .items_center()
-            .gap(scaled(ROW_GAP_ALT, density))
-            .py(ROW_PAD_V)
+            .gap(scaled(STATUS_BADGE_GAP, density))
+            .py(BADGE_PAD_V)
             .px(spacing(Spacing::Xs, density))
             .rounded(PILL_RADIUS)
             .bg(palette.surface_overlay)
@@ -1184,8 +1210,8 @@ fn list_footer_bar(footer: &ListFooter, palette: &ForgePalette, density: Density
         .flex()
         .items_center()
         .gap(spacing(Spacing::Sm, density))
-        .py(scaled(ROW_PAD_V_WIDE, density))
-        .px(scaled(ROW_PAD_H_ALT, density))
+        .py(scaled(LIST_ROW_PAD_V, density))
+        .px(scaled(PANEL_ROW_PAD_H, density))
         .border_t(BORDER_THIN)
         .border_color(palette.border_regular)
         .bg(palette.shell);
@@ -1245,7 +1271,7 @@ fn plain_row_wrapper(
 fn active_badge(label: &str, palette: &ForgePalette, density: Density) -> AnyElement {
     div()
         .flex_none()
-        .py(ROW_PAD_V)
+        .py(BADGE_PAD_V)
         .px(spacing(Spacing::Xs, density))
         .rounded(radius(Radius::Md))
         .bg(palette.surface_overlay)
@@ -1269,7 +1295,7 @@ fn trailing_token_elem(
             let tc = with_alpha(token_color_value(color, palette), dim);
             div()
                 .flex_none()
-                .py(ROW_PAD_V)
+                .py(BADGE_PAD_V)
                 .px(spacing(Spacing::Xs, density))
                 .rounded(radius(Radius::Md))
                 .bg(palette.surface_overlay)
@@ -1339,6 +1365,9 @@ fn token_color_value(color: &TokenColor, palette: &ForgePalette) -> Rgba {
         TokenColor::Muted => palette.text_faint,
         TokenColor::Accent => palette.brand,
         TokenColor::Subtle => palette.text_muted,
+        TokenColor::Info => palette.info,
+        TokenColor::ThemeBrand => palette.theme_brand,
+        TokenColor::Pink => palette.accent_pink_light,
     }
 }
 
@@ -1403,7 +1432,7 @@ fn health_metric_card(
         .flex_col()
         .gap(spacing(Spacing::Xxs, density))
         .py(spacing(Spacing::Sm, density))
-        .px(scaled(ROW_PAD_H, density))
+        .px(scaled(HEALTH_TILE_PAD_H, density))
         .rounded(radius(Radius::Md))
         .border(BORDER_THIN)
         .border_color(palette.border_regular)
@@ -1439,7 +1468,7 @@ fn health_value_col(value: &HealthValue, palette: &ForgePalette, density: Densit
                 div()
                     .flex()
                     .flex_col()
-                    .gap(scaled(ROW_GAP, density))
+                    .gap(scaled(HEALTH_VALUE_HINT_GAP, density))
                     .child(value_row)
                     .child(mono(health_text(d), FONT_XXS, palette.text_faint))
                     .into_any_element()
@@ -1453,7 +1482,7 @@ fn health_value_col(value: &HealthValue, palette: &ForgePalette, density: Densit
                 div()
                     .flex()
                     .flex_col()
-                    .gap(scaled(ROW_GAP, density))
+                    .gap(scaled(HEALTH_VALUE_HINT_GAP, density))
                     .child(primary_el)
                     .child(mono(health_text(sec), FONT_XXS, palette.text_faint))
                     .into_any_element()
@@ -1477,7 +1506,7 @@ fn health_value_col(value: &HealthValue, palette: &ForgePalette, density: Densit
                 div()
                     .flex()
                     .flex_col()
-                    .gap(scaled(ROW_GAP, density))
+                    .gap(scaled(HEALTH_VALUE_HINT_GAP, density))
                     .child(ratio_el)
                     .child(mono(health_text(hint), FONT_XXS, palette.text_faint))
                     .into_any_element()
@@ -1541,6 +1570,7 @@ mod tests {
         ContentList {
             title: forge_types::VerbatimText::new(title).into(),
             icon: SectionIcon::new("film"),
+            icon_tint: None,
             inline_label: None,
             count_label: None,
             visible_rows: None,

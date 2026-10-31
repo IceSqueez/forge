@@ -18,7 +18,9 @@ use gpui::{
 
 use crate::async_bridge;
 use crate::combo_capture::{CapturedKey, ComboCapture, captured_key, warn_if_typing_key};
-use crate::combo_conflict::{Claimant, ComboHolder, ComboHolders, conflict_prompt};
+use crate::combo_conflict::{
+    Claimant, ComboHolder, ComboHolders, ConflictChoices, conflict_prompt,
+};
 use crate::hotkey_action_modal::keycaps;
 use crate::integration_switch::{IntegrationSwitch, SwitchWatch, integration_name};
 use crate::soundboard::hotkeys_notice::hotkeys_integration;
@@ -455,8 +457,10 @@ impl ClipEditor {
             &pending.holder.label(),
             &palette,
             cx,
-            Self::cancel_conflict,
-            Self::replace_holder,
+            ConflictChoices {
+                on_cancel: Self::cancel_conflict,
+                on_replace: Self::replace_holder,
+            },
         ))
     }
 }

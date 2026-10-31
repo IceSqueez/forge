@@ -25,7 +25,7 @@ use crate::window_presence::PresenceGate;
 use forge_components::ActivePresentation;
 use forge_host::voice_gate::VoiceGateOwner;
 
-const ROW_PAD_V: Pixels = px(7.0);
+const DEVICE_TRIGGER_PAD_V: Pixels = px(7.0);
 
 const METER_WIDTH: Pixels = px(72.0);
 const METER_HEIGHT: Pixels = px(6.0);
@@ -390,7 +390,7 @@ impl SettingsVoiceGateView {
             .justify_between()
             .w_full()
             .px(spacing(Spacing::Sm, density))
-            .py(scaled(ROW_PAD_V, density))
+            .py(scaled(DEVICE_TRIGGER_PAD_V, density))
             .rounded(radius(Radius::Sm))
             .bg(palette.base)
             .border(BORDER_THIN)

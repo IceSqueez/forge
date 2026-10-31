@@ -18,7 +18,7 @@ use forge_speak_queue::{
 };
 use forge_speech_types::SynthesisDefaults;
 use forge_speech_types::{EngineId, TtsVoice, VoiceId};
-use forge_storage::{CredentialId, CredentialsRepo, EngineParams, SettingsRepo, StorageError};
+use forge_storage::{CredentialsRepo, EngineParams, SettingsRepo, StorageError};
 use forge_tts_cloud::CloudGateways;
 use forge_tts_core::EngineClass;
 use gpui::{
@@ -29,7 +29,9 @@ use gpui::{
 use crate::async_bridge::{
     self, ErrorSink, Generation, Loadable, SLIDER_PERSIST_DEBOUNCE, SnapshotWriter, WriteOutcome,
 };
-use crate::cloud_credentials::{CloudCredentialsView, CloudEngineKind, CloudEngineRegistered};
+use crate::cloud_credentials::{
+    CloudCredentialsView, CloudEngineKind, CloudEngineRegistered, stored_region,
+};
 use crate::repo_failure::RepoFailure;
 use crate::tts_engine_roster::{
     RosterEngine, engine_class_label, load_engine_roster, voice_descriptor_label,
@@ -417,6 +419,17 @@ impl TtsEnginesView {
         }
     }
 
+    pub(crate) fn refresh_engine_roster(&mut self, cx: &mut Context<Self>) {
+        let selected_engine = self.selected_engine_id();
+        self.engines = load_engine_roster(self.speak.as_ref());
+        if let Selection::Engine(_) = self.selected {
+            self.selected = selected_engine
+                .and_then(|id| self.engines.iter().position(|engine| engine.id == id))
+                .map_or(Selection::None, Selection::Engine);
+        }
+        cx.notify();
+    }
+
     fn on_engine_registered(&mut self, engine_id: &EngineId, cx: &mut Context<Self>) {
         self.engines = load_engine_roster(self.speak.as_ref());
         if let Some(index) = self.engines.iter().position(|e| e.id == engine_id.0) {
@@ -435,27 +448,19 @@ impl TtsEnginesView {
         let Some(kind) = CloudEngineKind::from_engine_id(engine_id) else {
             return;
         };
-        let cred_id = kind.credential_id();
         let repo = Arc::clone(&self.credentials);
         let id = engine_id.to_owned();
         async_bridge::run_async(
             &self.rt_handle,
-            async move {
-                match repo.load(&CredentialId::new(cred_id)).await {
-                    Ok(Some(json)) => serde_json::from_str::<serde_json::Value>(&json)
-                        .ok()
-                        .and_then(|v| {
-                            v.get("region")
-                                .and_then(|r| r.as_str())
-                                .map(|s| s.to_owned())
-                        }),
-                    _ => None,
-                }
-            },
-            move |this, region: Option<String>, cx| {
-                if let Some(region) = region {
+            async move { stored_region(repo.as_ref(), kind).await },
+            move |this, region: Result<Option<String>, RepoFailure>, cx| match region {
+                Ok(Some(region)) => {
                     this.regions.insert(id, region);
                     cx.notify();
+                }
+                Ok(None) => {}
+                Err(failure) => {
+                    tracing::warn!(engine = %id, error = %failure.text(), "could not read the cloud engine region");
                 }
             },
             cx,

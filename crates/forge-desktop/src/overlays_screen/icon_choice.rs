@@ -27,7 +27,7 @@ use gpui::{
 use super::OverlaysView;
 use super::property_panel::{IconPickRequested, IconPickResult, OverlayPropertyPanel};
 use crate::async_bridge::{self, DialogFilter};
-use crate::clip_messages::refusal_message;
+use crate::clip_messages::storage_refusal_message;
 use crate::config_form::{CHOICE_GLYPH, CHOICE_PAD_H, CHOICE_PAD_V, FILL_VAL_FS};
 use crate::picker_favorites::{FavoritesList, bind_picker, follow_picker_event};
 use forge_components::ActivePresentation;
@@ -145,7 +145,7 @@ pub(super) fn import_outcome(result: Result<MediaBlob, StorageError>) -> IconPic
             file = blob.label.as_str(),
             format = blob.format.as_str()
         )),
-        Err(error) => IconPickResult::Refused(refusal_message(&error)),
+        Err(error) => IconPickResult::Refused(storage_refusal_message(&error)),
     }
 }
 
@@ -567,7 +567,9 @@ mod tests {
     use forge_overlay::config::{DEFAULT_ICON, ICON};
     use forge_overlay::kinds::alert::AlertOverlayKind;
     use forge_overlay::{IconCategory, effective_overlay_config};
-    use forge_storage::{MediaBlob, MediaBlobId, MediaFormat, MediaKind, OverlayConfig};
+    use forge_storage::{
+        MediaBlob, MediaBlobId, MediaFormat, MediaKind, MediaRefusal, OverlayConfig,
+    };
     use forge_types::Variant;
     use time::OffsetDateTime;
 
@@ -784,9 +786,10 @@ mod tests {
 
     #[test]
     fn a_refused_import_reuses_the_library_wording() {
-        let unsupported = import_outcome(Err(StorageError::MediaUnsupported {
-            label: "notes.txt".to_owned(),
-        }));
+        let unsupported =
+            import_outcome(Err(StorageError::MediaRefused(MediaRefusal::Unsupported {
+                label: "notes.txt".to_owned(),
+            })));
         let broken = import_outcome(Err(StorageError::Connection {
             reason: "disk gone".to_owned(),
         }));

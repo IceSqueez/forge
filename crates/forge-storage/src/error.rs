@@ -1,4 +1,4 @@
-use crate::media::{MediaFormat, MediaKind};
+use crate::media::MediaRefusal;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -56,23 +56,8 @@ pub enum StorageError {
     #[error("the default queue cannot be deleted")]
     DefaultQueueUndeletable,
 
-    #[error("'{label}' is not an accepted audio or image file")]
-    MediaUnsupported { label: String },
-
-    #[error("'{label}' is named {claimed} but its content is {detected}")]
-    MediaTypeMismatch {
-        label: String,
-        claimed: MediaFormat,
-        detected: MediaFormat,
-    },
-
-    #[error("'{label}' is {size} bytes, over the {limit} byte limit for {kind} files")]
-    MediaTooLarge {
-        label: String,
-        size: u64,
-        limit: u64,
-        kind: MediaKind,
-    },
+    #[error(transparent)]
+    MediaRefused(#[from] MediaRefusal),
 
     #[error("cannot delete media: still referenced by {referrer_count} item(s)")]
     MediaReferenced { referrer_count: u32 },
@@ -111,6 +96,7 @@ impl StorageError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::media::{MediaFormat, MediaKind};
 
     #[test]
     fn schema_mismatch_display_carries_both_fields() {
@@ -178,22 +164,25 @@ mod tests {
                 false,
             ),
             (StorageError::DefaultQueueUndeletable, false),
-            (StorageError::MediaUnsupported { label: text() }, false),
             (
-                StorageError::MediaTypeMismatch {
-                    label: text(),
-                    claimed: MediaFormat::Png,
-                    detected: MediaFormat::Wav,
-                },
+                StorageError::MediaRefused(MediaRefusal::Unsupported { label: text() }),
                 false,
             ),
             (
-                StorageError::MediaTooLarge {
+                StorageError::MediaRefused(MediaRefusal::TypeMismatch {
+                    label: text(),
+                    claimed: MediaFormat::Png,
+                    detected: MediaFormat::Wav,
+                }),
+                false,
+            ),
+            (
+                StorageError::MediaRefused(MediaRefusal::TooLarge {
                     label: text(),
                     size: 2,
                     limit: 1,
                     kind: MediaKind::Image,
-                },
+                }),
                 false,
             ),
             (StorageError::MediaReferenced { referrer_count: 1 }, false),

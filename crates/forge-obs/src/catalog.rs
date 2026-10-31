@@ -285,6 +285,7 @@ pub(crate) fn catalog_sections(catalog: &ObsCatalog, actionable: bool) -> Vec<De
     let left = ContentList {
         title: labels::SCENES.into(),
         icon: SectionIcon::new("layout-grid"),
+        icon_tint: Some(TokenColor::ThemeBrand),
         inline_label: Some(scene_count),
         count_label: None,
         visible_rows: Some(PANEL_VISIBLE_ROWS),
@@ -297,6 +298,7 @@ pub(crate) fn catalog_sections(catalog: &ObsCatalog, actionable: bool) -> Vec<De
     let right = ContentList {
         title: labels::SOURCES.into(),
         icon: SectionIcon::new("stack-2"),
+        icon_tint: Some(TokenColor::Info),
         inline_label: source_scene_label,
         count_label: Some(source_count_label),
         visible_rows: Some(PANEL_VISIBLE_ROWS),

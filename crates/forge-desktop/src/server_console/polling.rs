@@ -71,10 +71,11 @@ pub(super) fn subscription_chip(filter: &EventFilterSnapshot) -> OwnedSubscripti
         };
     }
 
-    let source =
-        serde_json::from_value::<EventSource>(serde_json::Value::String(filter.source.clone()))
-            .ok();
-    let source_label = source.map(event_source_label).unwrap_or(&filter.source);
+    let source = filter.source.parse::<EventSource>().ok();
+    let source_label = match source {
+        Some(source) => source.as_str(),
+        None => filter.source.as_str(),
+    };
     let label = if kind_wildcard {
         format!("{source_label}.*")
     } else {
@@ -86,26 +87,6 @@ pub(super) fn subscription_chip(filter: &EventFilterSnapshot) -> OwnedSubscripti
             Some(source) => SubscriptionChipKind::Source(source),
             None => SubscriptionChipKind::Unknown,
         },
-    }
-}
-
-fn event_source_label(source: EventSource) -> &'static str {
-    match source {
-        EventSource::Twitch => "twitch",
-        EventSource::YouTube => "youtube",
-        EventSource::Kick => "kick",
-        EventSource::Core => "core",
-        EventSource::Rhai => "rhai",
-        EventSource::Http => "http",
-        EventSource::Obs => "obs",
-        EventSource::VTube => "vtube",
-        EventSource::Discord => "discord",
-        EventSource::Midi => "midi",
-        EventSource::Hotkey => "hotkey",
-        EventSource::Timer => "timer",
-        EventSource::Server => "server",
-        EventSource::Audio => "audio",
-        EventSource::Donation => "donation",
     }
 }
 

@@ -132,6 +132,9 @@ pub enum TokenColor {
     Muted,
     Accent,
     Subtle,
+    Info,
+    ThemeBrand,
+    Pink,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -179,6 +182,8 @@ fn default_row_padding_y_px() -> u8 {
 pub struct ContentList {
     pub title: UserText,
     pub icon: SectionIcon,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon_tint: Option<TokenColor>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub inline_label: Option<UserText>,
     pub count_label: Option<UserText>,
@@ -292,11 +297,15 @@ pub enum DetailSection {
     KeyValueList {
         title: UserText,
         icon: SectionIcon,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        icon_tint: Option<TokenColor>,
         items: Vec<KeyValueRow>,
     },
     ActiveItemList {
         title: UserText,
         icon: SectionIcon,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        icon_tint: Option<TokenColor>,
         items: Vec<ActiveRow>,
     },
     WarningBanner {
@@ -308,6 +317,8 @@ pub enum DetailSection {
     SubscriptionList {
         title: UserText,
         icon: SectionIcon,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        icon_tint: Option<TokenColor>,
         items: Vec<SubscriptionRow>,
         footer: Option<ListFooter>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -316,6 +327,8 @@ pub enum DetailSection {
     ScopesList {
         title: UserText,
         icon: SectionIcon,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        icon_tint: Option<TokenColor>,
         scopes: Vec<String>,
         footer: Option<ListFooter>,
     },
@@ -328,6 +341,8 @@ pub enum DetailSection {
     StatsGrid {
         title: UserText,
         icon: SectionIcon,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        icon_tint: Option<TokenColor>,
         columns: Vec<StatColumn>,
     },
     TwoColumn {
@@ -337,6 +352,8 @@ pub enum DetailSection {
     ChipGrid {
         title: UserText,
         icon: SectionIcon,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        icon_tint: Option<TokenColor>,
         chip_icon: SectionIcon,
         items: Vec<String>,
     },
@@ -794,6 +811,7 @@ mod tests {
         ContentList {
             title: VerbatimText::new(title).into(),
             icon: SectionIcon::new("list"),
+            icon_tint: None,
             inline_label: None,
             count_label: Some(VerbatimText::new("3").into()),
             visible_rows: Some(8),

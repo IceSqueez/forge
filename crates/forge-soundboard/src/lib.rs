@@ -21,7 +21,7 @@ pub use bus_event_sink::BusAudioEventSink;
 pub use control::SoundboardControl;
 pub use error::SoundboardError;
 pub use hotkey_dispatch::{pressed_combo, spawn_clip_hotkey_dispatcher};
-pub use library::{AdoptionVerdict, ClipAvailability, ClipLibrary, ClipRefusal, ClipSource};
+pub use library::{AdoptionVerdict, ClipAvailability, ClipLibrary, ClipSource};
 pub use player::ClipToggle;
 pub use player::{ClipRoute, PlayOutcome, SoundboardPlayer};
 pub use runners::{

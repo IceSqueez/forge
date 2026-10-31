@@ -1,3 +1,4 @@
+use forge_types::RecoverMutex;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
@@ -157,9 +158,7 @@ impl Drop for StopStartedIfAbandoned {
 fn lock_started(
     started: &Mutex<Vec<PlaybackHandle>>,
 ) -> std::sync::MutexGuard<'_, Vec<PlaybackHandle>> {
-    started
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
+    started.lock_recover()
 }
 
 enum RouteStart {

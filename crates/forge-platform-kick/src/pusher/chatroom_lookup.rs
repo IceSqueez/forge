@@ -1,4 +1,5 @@
-use std::sync::{Mutex, PoisonError};
+use forge_types::RecoverMutex;
+use std::sync::Mutex;
 
 use forge_net::{Gateway, GatewayFailure, GatewayRequest};
 use serde::Deserialize;
@@ -47,7 +48,7 @@ impl ChannelInfoFetcher {
             return Ok(info);
         }
         let info = self.request(slug).await?;
-        *self.cached.lock().unwrap_or_else(PoisonError::into_inner) = Some(CachedChannelInfo {
+        *self.cached.lock_recover() = Some(CachedChannelInfo {
             slug: slug.to_owned(),
             info: info.clone(),
             fetched_at: Instant::now(),
@@ -56,7 +57,7 @@ impl ChannelInfoFetcher {
     }
 
     fn fresh(&self, slug: &str) -> Option<KickChannelInfo> {
-        let cached = self.cached.lock().unwrap_or_else(PoisonError::into_inner);
+        let cached = self.cached.lock_recover();
         cached
             .as_ref()
             .filter(|entry| {

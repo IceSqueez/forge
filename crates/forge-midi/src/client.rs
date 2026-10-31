@@ -1,3 +1,4 @@
+use forge_types::{IntegrationId, RecoverMutex};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -5,7 +6,6 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 
 use forge_events::EventPublisher;
-use forge_types::IntegrationId;
 
 use crate::backend::{MidiBackend, MidirBackend};
 use crate::config::MidiConfig;
@@ -106,12 +106,12 @@ impl MidiClient {
     }
 
     pub fn connected_input_ports(&self) -> Vec<String> {
-        let snap = self.content_state.lock().unwrap_or_else(|p| p.into_inner());
+        let snap = self.content_state.lock_recover();
         snap.input_ports.iter().map(|p| p.name.clone()).collect()
     }
 
     pub fn connected_output_ports(&self) -> Vec<String> {
-        let snap = self.content_state.lock().unwrap_or_else(|p| p.into_inner());
+        let snap = self.content_state.lock_recover();
         snap.output_ports.iter().map(|p| p.name.clone()).collect()
     }
 
@@ -197,10 +197,7 @@ mod tests {
     fn connected_port_getters_do_not_cross_directions() {
         let client = MidiClient::new_for_test();
         {
-            let mut snap = client
-                .content_state
-                .lock()
-                .unwrap_or_else(|p| p.into_inner());
+            let mut snap = client.content_state.lock_recover();
             snap.input_ports = vec![MidiPortInfo {
                 name: "Keys In".to_owned(),
                 direction: PortDirection::Input,

@@ -4,6 +4,7 @@ use super::{
 use crate::helix::HelixError;
 use crate::subscriptions::{SubStatus, SubscriptionTracker};
 use forge_net::Backoff;
+use forge_types::RecoverMutex;
 use futures_util::stream::{self, StreamExt};
 use std::future::Future;
 use std::pin::Pin;
@@ -85,17 +86,14 @@ impl RetryingSettle {
     }
 
     pub(super) fn register(&self, index: usize) {
-        let mut indexes = self.indexes.lock().unwrap_or_else(|p| p.into_inner());
+        let mut indexes = self.indexes.lock_recover();
         if !indexes.contains(&index) {
             indexes.push(index);
         }
     }
 
     fn registered(&self) -> Vec<usize> {
-        self.indexes
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .clone()
+        self.indexes.lock_recover().clone()
     }
 }
 

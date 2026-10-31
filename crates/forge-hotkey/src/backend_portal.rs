@@ -1,5 +1,6 @@
 #![cfg(target_os = "linux")]
 
+use forge_types::RecoverMutex;
 use std::collections::HashMap;
 use std::future::Future;
 use std::sync::{Arc, Mutex};
@@ -191,10 +192,7 @@ impl HotkeyBackend for PortalBackend {
     }
 
     fn fired_rx(&self) -> Option<mpsc::Receiver<HotkeyFiredEvent>> {
-        self.fired_rx_slot
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .take()
+        self.fired_rx_slot.lock_recover().take()
     }
 
     fn delivery_gate_only(&self) -> bool {
@@ -202,17 +200,11 @@ impl HotkeyBackend for PortalBackend {
     }
 
     fn restart_rx(&self) -> Option<mpsc::Receiver<()>> {
-        self.restart_rx_slot
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .take()
+        self.restart_rx_slot.lock_recover().take()
     }
 
     fn session_events_rx(&self) -> Option<mpsc::Receiver<BackendSessionEvent>> {
-        self.session_rx_slot
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .take()
+        self.session_rx_slot.lock_recover().take()
     }
 }
 

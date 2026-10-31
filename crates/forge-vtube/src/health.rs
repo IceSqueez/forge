@@ -1,10 +1,9 @@
+use forge_types::{RecoverRwLock, VerbatimText};
 use std::sync::{Arc, RwLock};
 
 use tokio::sync::broadcast;
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::BroadcastStream;
-
-use forge_types::VerbatimText;
 
 use forge_platform_core::{
     BuiltinHealth, HealthDelta, HealthMetric, HealthMetricId, HealthStream, HealthText, HealthValue,
@@ -153,16 +152,8 @@ fn tracking_value(face_found: bool) -> HealthValue {
 
 impl BuiltinHealth for VTubeClient {
     fn metrics(&self) -> [HealthMetric; 4] {
-        let snap = self
-            .health_state
-            .read()
-            .unwrap_or_else(|p| p.into_inner())
-            .clone();
-        let content = self
-            .content_state
-            .read()
-            .unwrap_or_else(|p| p.into_inner())
-            .clone();
+        let snap = self.health_state.read_recover().clone();
+        let content = self.content_state.read_recover().clone();
 
         let model_name = if snap.model_loaded {
             snap.model_name.as_str()
@@ -198,6 +189,7 @@ impl BuiltinHealth for VTubeClient {
 
 #[cfg(test)]
 mod tests {
+    use forge_types::RecoverRwLock;
 
     use forge_platform_core::{BuiltinHealth, HealthValue};
 
@@ -338,7 +330,8 @@ mod tests {
     #[test]
     fn metrics_report_expression_and_item_counts_from_the_content_snapshot() {
         let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
-        if let Ok(mut s) = c.content_state.write() {
+        {
+            let mut s = c.content_state.write_recover();
             s.expressions = vec![expression_item(), expression_item(), expression_item()];
             s.item_count = Some(7);
         }
@@ -357,11 +350,13 @@ mod tests {
     #[test]
     fn a_loaded_model_is_annotated_with_its_live2d_parameter_count() {
         let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
-        if let Ok(mut s) = c.health_state.write() {
+        {
+            let mut s = c.health_state.write_recover();
             s.model_loaded = true;
             s.model_name = "MyAvatar".to_owned();
         }
-        if let Ok(mut s) = c.content_state.write() {
+        {
+            let mut s = c.content_state.write_recover();
             s.current_model_param_count = Some(42);
         }
 
@@ -400,7 +395,8 @@ mod tests {
     #[test]
     fn a_stale_name_of_an_unloaded_model_is_not_shown_on_the_tile() {
         let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
-        if let Ok(mut s) = c.health_state.write() {
+        {
+            let mut s = c.health_state.write_recover();
             s.model_loaded = false;
             s.model_name = "GoneAvatar".to_owned();
         }
@@ -411,7 +407,8 @@ mod tests {
     #[test]
     fn a_loaded_model_without_a_name_reads_as_not_loaded() {
         let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
-        if let Ok(mut s) = c.health_state.write() {
+        {
+            let mut s = c.health_state.write_recover();
             s.model_loaded = true;
             s.model_name = String::new();
         }

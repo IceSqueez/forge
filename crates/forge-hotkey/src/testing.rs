@@ -1,5 +1,6 @@
 #![cfg(feature = "testing")]
 
+use forge_types::RecoverMutex;
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
@@ -48,14 +49,11 @@ impl RecordingBackend {
     }
 
     pub fn fail_next_register(&self, combo: &HotkeyCombo) {
-        self.fail_combos
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .insert(combo.clone());
+        self.fail_combos.lock_recover().insert(combo.clone());
     }
 
     pub fn calls(&self) -> Vec<RecordedCall> {
-        self.calls.lock().unwrap_or_else(|p| p.into_inner()).clone()
+        self.calls.lock_recover().clone()
     }
 
     pub async fn fire(&self, combo: &HotkeyCombo, edge: FiredEdge) {
@@ -89,36 +87,25 @@ impl RecordingBackend {
 #[async_trait]
 impl HotkeyBackend for RecordingBackend {
     async fn register(&self, id: HotkeyId, combo: &HotkeyCombo) -> Result<(), HotkeyError> {
-        let should_fail = self
-            .fail_combos
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .remove(combo);
+        let should_fail = self.fail_combos.lock_recover().remove(combo);
         if should_fail {
             return Err(HotkeyError::AlreadyRegistered {
                 combo: combo.as_str().to_owned(),
             });
         }
         self.calls
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
+            .lock_recover()
             .push(RecordedCall::Register(id, combo.clone()));
         Ok(())
     }
 
     async fn unregister(&self, id: HotkeyId) -> Result<(), HotkeyError> {
-        self.calls
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .push(RecordedCall::Unregister(id));
+        self.calls.lock_recover().push(RecordedCall::Unregister(id));
         Ok(())
     }
 
     fn fired_rx(&self) -> Option<mpsc::Receiver<HotkeyFiredEvent>> {
-        self.fired_rx_slot
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .take()
+        self.fired_rx_slot.lock_recover().take()
     }
 }
 

@@ -1,3 +1,4 @@
+use forge_types::RecoverMutex;
 use std::collections::HashMap;
 use std::sync::Mutex;
 
@@ -128,7 +129,7 @@ impl MidiBackend for MidirBackend {
     }
 
     fn send_output(&self, port_name: &str, data: &[u8]) -> Result<(), MidiError> {
-        let mut outputs = self.outputs.lock().unwrap_or_else(|p| p.into_inner());
+        let mut outputs = self.outputs.lock_recover();
         let reused = outputs
             .remove(port_name)
             .and_then(|mut conn| conn.send(data).is_ok().then_some(conn));
@@ -146,10 +147,7 @@ impl MidiBackend for MidirBackend {
     }
 
     fn release_output(&self, port_name: &str) {
-        self.outputs
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .remove(port_name);
+        self.outputs.lock_recover().remove(port_name);
     }
 }
 
@@ -173,8 +171,7 @@ pub(crate) mod tests {
         fn drop(&mut self) {
             let token = self.token;
             self.state
-                .lock()
-                .unwrap_or_else(|p| p.into_inner())
+                .lock_recover()
                 .senders
                 .retain(|(open, _)| *open != token);
         }
@@ -211,22 +208,16 @@ pub(crate) mod tests {
         }
 
         pub(crate) fn set_input_ports(&self, ports: Vec<MidiPortInfo>) {
-            self.state
-                .lock()
-                .unwrap_or_else(|p| p.into_inner())
-                .input_ports = ports;
+            self.state.lock_recover().input_ports = ports;
         }
 
         pub(crate) fn set_output_ports(&self, ports: Vec<MidiPortInfo>) {
-            self.state
-                .lock()
-                .unwrap_or_else(|p| p.into_inner())
-                .output_ports = ports;
+            self.state.lock_recover().output_ports = ports;
         }
 
         pub(crate) async fn inject_all(&self, ts: u64, data: Vec<u8>) {
             let senders: Vec<PortSender> = {
-                let state = self.state.lock().unwrap_or_else(|p| p.into_inner());
+                let state = self.state.lock_recover();
                 state
                     .senders
                     .iter()
@@ -245,17 +236,12 @@ pub(crate) mod tests {
         }
 
         pub(crate) fn released_outputs(&self) -> Vec<String> {
-            self.state
-                .lock()
-                .unwrap_or_else(|p| p.into_inner())
-                .released_outputs
-                .clone()
+            self.state.lock_recover().released_outputs.clone()
         }
 
         pub(crate) fn sent_outputs(&self) -> Vec<(String, Vec<u8>)> {
             self.state
-                .lock()
-                .unwrap_or_else(|p| p.into_inner())
+                .lock_recover()
                 .sent_outputs
                 .iter()
                 .cloned()
@@ -265,19 +251,11 @@ pub(crate) mod tests {
 
     impl MidiBackend for MockMidiBackend {
         fn list_input_ports(&self) -> Vec<MidiPortInfo> {
-            self.state
-                .lock()
-                .unwrap_or_else(|p| p.into_inner())
-                .input_ports
-                .clone()
+            self.state.lock_recover().input_ports.clone()
         }
 
         fn list_output_ports(&self) -> Vec<MidiPortInfo> {
-            self.state
-                .lock()
-                .unwrap_or_else(|p| p.into_inner())
-                .output_ports
-                .clone()
+            self.state.lock_recover().output_ports.clone()
         }
 
         fn open_input(
@@ -285,7 +263,7 @@ pub(crate) mod tests {
             port_name: &str,
             event_tx: mpsc::Sender<(u64, Vec<u8>)>,
         ) -> Result<Box<dyn InputHandle>, MidiError> {
-            let mut state = self.state.lock().unwrap_or_else(|p| p.into_inner());
+            let mut state = self.state.lock_recover();
             if state.refused_opens.contains(port_name)
                 || !state.input_ports.iter().any(|p| p.name == port_name)
             {
@@ -303,7 +281,7 @@ pub(crate) mod tests {
         }
 
         fn send_output(&self, port_name: &str, data: &[u8]) -> Result<(), MidiError> {
-            let mut state = self.state.lock().unwrap_or_else(|p| p.into_inner());
+            let mut state = self.state.lock_recover();
             if !state.output_ports.iter().any(|p| p.name == port_name) {
                 return Err(MidiError::PortNotFound {
                     name: port_name.to_owned(),
@@ -317,8 +295,7 @@ pub(crate) mod tests {
 
         fn release_output(&self, port_name: &str) {
             self.state
-                .lock()
-                .unwrap_or_else(|p| p.into_inner())
+                .lock_recover()
                 .released_outputs
                 .push(port_name.to_owned());
         }

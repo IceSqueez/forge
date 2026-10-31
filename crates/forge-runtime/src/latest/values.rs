@@ -1,10 +1,12 @@
+use forge_types::{
+    EventId, LatestScope, LatestValue, LatestValueReader, RecoverRwLock, Shared, Variant,
+};
 use std::collections::{BTreeMap, HashMap};
-use std::sync::{Arc, PoisonError, RwLock};
+use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
 use forge_events::{Event, EventPublisher, EventSource, LatestChanged, TypedEvent};
 use forge_storage::{LatestRecord, LatestValueRepo, StorageError};
-use forge_types::{EventId, LatestScope, LatestValue, LatestValueReader, Shared, Variant};
 use time::OffsetDateTime;
 use tokio::sync::Mutex as AsyncMutex;
 
@@ -61,7 +63,7 @@ impl LatestValues {
     }
 
     pub fn latest(&self, slot: &str, scope: LatestScope<'_>) -> Option<LatestValue> {
-        let values = self.values.read().unwrap_or_else(PoisonError::into_inner);
+        let values = self.values.read_recover();
         let slot_values = values.get(slot)?;
         match scope {
             LatestScope::Platform(platform) => slot_values.get(platform).cloned(),
@@ -77,7 +79,7 @@ impl LatestValues {
             with_timeout(self.repo.reset_slot(declaration.slot)).await?;
         }
         let removed = {
-            let mut values = self.values.write().unwrap_or_else(PoisonError::into_inner);
+            let mut values = self.values.write_recover();
             values
                 .remove(declaration.slot)
                 .is_some_and(|slot_values| !slot_values.is_empty())
@@ -150,7 +152,7 @@ impl LatestValues {
         }
         let platform = value.platform.clone();
         let merged_changed = {
-            let mut values = self.values.write().unwrap_or_else(PoisonError::into_inner);
+            let mut values = self.values.write_recover();
             let slot_values = values.entry(declaration.slot).or_default();
             let before = merged_identity(slot_values);
             slot_values.insert(platform.clone(), value);
@@ -169,7 +171,7 @@ impl LatestValues {
 
     fn end(&self, slot: &'static str, platform: String, cause: EventId) {
         let merged_changed = {
-            let mut values = self.values.write().unwrap_or_else(PoisonError::into_inner);
+            let mut values = self.values.write_recover();
             let Some(slot_values) = values.get_mut(slot) else {
                 return;
             };
@@ -191,7 +193,7 @@ impl LatestValues {
     }
 
     fn is_newer(&self, slot: &str, value: &LatestValue) -> bool {
-        let values = self.values.read().unwrap_or_else(PoisonError::into_inner);
+        let values = self.values.read_recover();
         values
             .get(slot)
             .and_then(|slot_values| slot_values.get(&value.platform))

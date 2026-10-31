@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use forge_types::RecoverMutex;
 use std::sync::{Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 use thiserror::Error;
@@ -168,9 +169,7 @@ impl TokenBucketRateLimiter {
     }
 
     fn lock_state(&self) -> MutexGuard<'_, BucketState> {
-        self.state
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+        self.state.lock_recover()
     }
 
     fn tokens_per_sec(&self) -> f64 {

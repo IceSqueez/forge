@@ -1,12 +1,12 @@
+use forge_types::{ClipId, RecoverMutex, Shared};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex};
 
 use forge_events::{EventPublisher, EventSource, TypedEvent};
 use forge_storage::{
     MediaBlobId, MediaFormat, MediaKind, MediaRepo, SoundboardClipsRepo, StorageError, StoredClip,
 };
-use forge_types::{ClipId, Shared};
 
 pub(crate) use forge_storage::clip_source_referrer;
 
@@ -476,39 +476,23 @@ impl ClipLibrary {
     }
 
     fn claim_adoption(&self, clip_id: ClipId) -> bool {
-        self.adopting
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .insert(clip_id)
+        self.adopting.lock_recover().insert(clip_id)
     }
 
     fn release_claim(&self, clip_id: ClipId) {
-        self.adopting
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .remove(&clip_id);
+        self.adopting.lock_recover().remove(&clip_id);
     }
 
     fn record_refusal(&self, clip_id: ClipId, refusal: ClipRefusal) {
-        self.refused
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .insert(clip_id, refusal);
+        self.refused.lock_recover().insert(clip_id, refusal);
     }
 
     fn recorded_refusal(&self, clip_id: ClipId) -> Option<ClipRefusal> {
-        self.refused
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .get(&clip_id)
-            .cloned()
+        self.refused.lock_recover().get(&clip_id).cloned()
     }
 
     fn clear_refusal(&self, clip_id: ClipId) {
-        self.refused
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .remove(&clip_id);
+        self.refused.lock_recover().remove(&clip_id);
     }
 }
 

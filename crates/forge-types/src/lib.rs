@@ -15,6 +15,7 @@ mod permission_rung;
 mod platform;
 mod platform_scope;
 mod queue;
+mod recover_lock;
 mod redaction;
 mod script;
 mod secret;
@@ -66,6 +67,7 @@ pub use platform::{
 };
 pub use platform_scope::PlatformScope;
 pub use queue::Queue;
+pub use recover_lock::{RecoverMutex, RecoverRwLock};
 pub use redaction::{MARKER, Redacted, RedactedText, STAMP};
 pub use script::{ScriptContract, ScriptInput};
 pub use secret::{ClipCapability, OAuthToken, OverlayCredential, RemoteClipId, Secret};

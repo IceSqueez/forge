@@ -1,8 +1,7 @@
+use forge_types::{RecoverRwLock, Variant};
 use std::sync::{Arc, RwLock};
 
 use async_trait::async_trait;
-
-use forge_types::Variant;
 
 use crate::client::VTubeClient;
 use crate::error::VTubeError;
@@ -20,17 +19,17 @@ impl SwitchableVTubeSink {
     }
 
     pub fn install(&self, client: Arc<VTubeClient>) {
-        let mut guard = self.inner.write().unwrap_or_else(|e| e.into_inner());
+        let mut guard = self.inner.write_recover();
         *guard = Some(client);
     }
 
     pub fn clear(&self) {
-        let mut guard = self.inner.write().unwrap_or_else(|e| e.into_inner());
+        let mut guard = self.inner.write_recover();
         *guard = None;
     }
 
     fn get(&self) -> Result<Arc<VTubeClient>, VTubeError> {
-        let guard = self.inner.read().unwrap_or_else(|e| e.into_inner());
+        let guard = self.inner.read_recover();
         guard.clone().ok_or(VTubeError::NotConnected)
     }
 }

@@ -11,6 +11,7 @@ msg-hotkey-health_backend = Backend
 msg-hotkey-health_registered_hint = hotkeys
 msg-hotkey-health_disabled = disabled
 msg-hotkey-health_last_triggered_at = { $time } { $combo }
+msg-hotkey-recent_trigger_time = { $time }
 msg-hotkey-health_conflicts_hint = since startup
 msg-hotkey-health_portal_session_lost = Portal session lost, hotkeys will not fire
 msg-hotkey-health_portal_active = Portal active

@@ -1,3 +1,4 @@
+use forge_types::RecoverMutex;
 use std::{
     collections::VecDeque,
     net::SocketAddr,
@@ -99,17 +100,12 @@ impl WsClient {
     }
 
     pub(crate) fn events_per_second(&self) -> f32 {
-        let Ok(guard) = self.recent_events.lock() else {
-            return 0.0;
-        };
-        Self::compute_eps(&guard)
+        Self::compute_eps(&self.recent_events.lock_recover())
     }
 
     pub(crate) fn record_event(&self) -> f32 {
         let now = Instant::now();
-        let Ok(mut guard) = self.recent_events.lock() else {
-            return 0.0;
-        };
+        let mut guard = self.recent_events.lock_recover();
         guard.push_back(now);
         let cutoff = now
             .checked_sub(Duration::from_secs(EVENTS_WINDOW_SECS))

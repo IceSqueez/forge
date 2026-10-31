@@ -1,3 +1,4 @@
+use forge_types::RecoverMutex;
 use std::collections::HashSet;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -68,28 +69,30 @@ pub struct DeviceInfo {
 }
 
 pub fn list_output_devices() -> Result<Vec<DeviceInfo>, AudioError> {
-    if let Ok(guard) = DEVICE_CACHE.lock()
-        && let Some((stamp, ref devices)) = *guard
+    if let Some((stamp, ref devices)) = *DEVICE_CACHE.lock_recover()
         && stamp.elapsed() < DEVICE_CACHE_TTL
     {
         return Ok(devices.clone());
     }
     let fresh = enumerate_uncached()?;
-    if let Ok(mut guard) = DEVICE_CACHE.lock() {
+    {
+        let mut guard = DEVICE_CACHE.lock_recover();
         *guard = Some((Instant::now(), fresh.clone()));
     }
     Ok(fresh)
 }
 
 pub(crate) fn forget_output_devices() {
-    if let Ok(mut guard) = DEVICE_CACHE.lock() {
+    {
+        let mut guard = DEVICE_CACHE.lock_recover();
         *guard = None;
     }
 }
 
 pub fn refresh_output_devices() -> Result<Vec<DeviceInfo>, AudioError> {
     let fresh = enumerate_uncached()?;
-    if let Ok(mut guard) = DEVICE_CACHE.lock() {
+    {
+        let mut guard = DEVICE_CACHE.lock_recover();
         *guard = Some((Instant::now(), fresh.clone()));
     }
     Ok(fresh)
@@ -166,14 +169,14 @@ pub fn pick_default_output_device(devices: &[DeviceInfo]) -> Option<DeviceId> {
 }
 
 pub fn list_input_devices() -> Result<Vec<DeviceInfo>, AudioError> {
-    if let Ok(guard) = INPUT_DEVICE_CACHE.lock()
-        && let Some((stamp, ref devices)) = *guard
+    if let Some((stamp, ref devices)) = *INPUT_DEVICE_CACHE.lock_recover()
         && stamp.elapsed() < DEVICE_CACHE_TTL
     {
         return Ok(devices.clone());
     }
     let fresh = enumerate_input_uncached()?;
-    if let Ok(mut guard) = INPUT_DEVICE_CACHE.lock() {
+    {
+        let mut guard = INPUT_DEVICE_CACHE.lock_recover();
         *guard = Some((Instant::now(), fresh.clone()));
     }
     Ok(fresh)
@@ -181,7 +184,8 @@ pub fn list_input_devices() -> Result<Vec<DeviceInfo>, AudioError> {
 
 pub fn refresh_input_devices() -> Result<Vec<DeviceInfo>, AudioError> {
     let fresh = enumerate_input_uncached()?;
-    if let Ok(mut guard) = INPUT_DEVICE_CACHE.lock() {
+    {
+        let mut guard = INPUT_DEVICE_CACHE.lock_recover();
         *guard = Some((Instant::now(), fresh.clone()));
     }
     Ok(fresh)

@@ -147,8 +147,9 @@ fn refused_variable(error: &PlatformError) -> &'static str {
 
 #[cfg(test)]
 mod tests {
+    use forge_types::RecoverMutex;
     use std::io;
-    use std::sync::{Arc, Mutex, PoisonError};
+    use std::sync::{Arc, Mutex};
 
     use forge_platform_core::{EndpointRefusal, EndpointSurface};
     use tracing_subscriber::fmt::MakeWriter;
@@ -161,10 +162,7 @@ mod tests {
 
     impl io::Write for Console {
         fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-            self.0
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .extend_from_slice(bytes);
+            self.0.lock_recover().extend_from_slice(bytes);
             Ok(bytes.len())
         }
 
@@ -190,11 +188,7 @@ mod tests {
                 .with_writer(console.clone()),
         );
         tracing::subscriber::with_default(subscriber, emit);
-        let written = console
-            .0
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone();
+        let written = console.0.lock_recover().clone();
         String::from_utf8_lossy(&written).trim_end().to_owned()
     }
 

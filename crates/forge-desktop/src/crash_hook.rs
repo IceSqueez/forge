@@ -1,3 +1,4 @@
+use forge_types::RecoverMutex;
 use std::backtrace::Backtrace;
 use std::panic::PanicHookInfo;
 use std::path::PathBuf;
@@ -29,7 +30,8 @@ pub(crate) fn install(crash_dir: PathBuf) {
 }
 
 pub(crate) fn remember_system_info(report_text: String) {
-    if let Ok(mut snapshot) = SYSTEM_INFO_SNAPSHOT.lock() {
+    {
+        let mut snapshot = SYSTEM_INFO_SNAPSHOT.lock_recover();
         *snapshot = Some(report_text);
     }
 }

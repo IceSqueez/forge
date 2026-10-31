@@ -1,10 +1,10 @@
+use forge_types::{PlatformId, RecoverMutex};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use forge_platform_core::PlatformError;
 use forge_storage::{BanLedgerEntry, BanLedgerKey, BanLedgerRepo, StorageError, merge_ban_entry};
-use forge_types::PlatformId;
 use futures::future::BoxFuture;
 use time::OffsetDateTime;
 
@@ -31,10 +31,7 @@ pub(crate) fn switchable_broadcaster_source(
     current: Arc<Mutex<YoutubeBroadcaster>>,
 ) -> BroadcasterSource {
     Arc::new(move || {
-        let broadcaster = current
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .clone();
+        let broadcaster = current.lock_recover().clone();
         Box::pin(async move { Ok(broadcaster) })
     })
 }
@@ -84,9 +81,7 @@ impl MemoryBanLedger {
     }
 
     fn rows(&self) -> std::sync::MutexGuard<'_, HashMap<BanLedgerKey, BanLedgerEntry>> {
-        self.rows
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+        self.rows.lock_recover()
     }
 
     fn check(&self, op: LedgerOp) -> Result<(), StorageError> {

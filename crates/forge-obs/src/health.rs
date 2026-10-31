@@ -1,3 +1,4 @@
+use forge_types::RecoverRwLock;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
@@ -153,11 +154,7 @@ fn dropped_value(snapshot: &HealthSnapshot) -> HealthValue {
 
 impl BuiltinHealth for ObsClient {
     fn metrics(&self) -> [HealthMetric; 4] {
-        let snap = self
-            .health_state
-            .read()
-            .unwrap_or_else(|p| p.into_inner())
-            .clone();
+        let snap = self.health_state.read_recover().clone();
 
         [
             HealthMetric {

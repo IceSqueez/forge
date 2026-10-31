@@ -1,7 +1,6 @@
+use forge_types::{CurrencyCode, MoneyAmount, RecoverMutex, Secret};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
-
-use forge_types::{CurrencyCode, MoneyAmount, Secret};
 
 use crate::api::MonobankApi;
 use crate::currency;
@@ -118,9 +117,7 @@ impl JarDirectory {
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, Option<JarListing>> {
-        self.latest
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+        self.latest.lock_recover()
     }
 }
 

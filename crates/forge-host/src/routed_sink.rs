@@ -1,4 +1,5 @@
-use std::sync::{Arc, PoisonError, RwLock};
+use forge_types::RecoverRwLock;
+use std::sync::{Arc, RwLock};
 
 use async_trait::async_trait;
 use forge_audio::{AudioError, AudioSink, ControlledPlayback, PlaybackHandle};
@@ -16,11 +17,11 @@ impl RoutedSink {
     }
 
     pub fn install(&self, sink: Arc<dyn AudioSink>) {
-        *self.current.write().unwrap_or_else(PoisonError::into_inner) = sink;
+        *self.current.write_recover() = sink;
     }
 
     fn current(&self) -> Arc<dyn AudioSink> {
-        Arc::clone(&self.current.read().unwrap_or_else(PoisonError::into_inner))
+        Arc::clone(&self.current.read_recover())
     }
 }
 

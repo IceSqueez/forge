@@ -1,8 +1,8 @@
+use forge_types::{EventId, RecoverMutex};
 use std::collections::HashMap;
 use std::time::Instant;
 
 use forge_events::{Event, EventSource, TypedEvent};
-use forge_types::EventId;
 
 use crate::backend::HotkeyId;
 use crate::client::HotkeyClient;
@@ -18,7 +18,7 @@ pub(crate) struct Hold {
 pub(crate) type HoldMap = HashMap<HotkeyId, Hold>;
 
 pub(crate) fn open(client: &HotkeyClient, id: HotkeyId, combo: String, timestamp_us: u64) -> bool {
-    let mut holds = client.holds.lock().unwrap_or_else(|p| p.into_inner());
+    let mut holds = client.holds.lock_recover();
     if holds.contains_key(&id) {
         return false;
     }
@@ -45,7 +45,7 @@ pub(crate) fn open(client: &HotkeyClient, id: HotkeyId, combo: String, timestamp
 
 pub(crate) fn close_observed(client: &HotkeyClient, id: HotkeyId, timestamp_us: u64) {
     let held = {
-        let mut holds = client.holds.lock().unwrap_or_else(|p| p.into_inner());
+        let mut holds = client.holds.lock_recover();
         holds.remove(&id)
     };
     if let Some(hold) = held {
@@ -55,7 +55,7 @@ pub(crate) fn close_observed(client: &HotkeyClient, id: HotkeyId, timestamp_us: 
 
 pub(crate) fn close_synthesized(client: &HotkeyClient, id: HotkeyId) {
     let held = {
-        let mut holds = client.holds.lock().unwrap_or_else(|p| p.into_inner());
+        let mut holds = client.holds.lock_recover();
         holds.remove(&id)
     };
     if let Some(hold) = held {
@@ -65,7 +65,7 @@ pub(crate) fn close_synthesized(client: &HotkeyClient, id: HotkeyId) {
 
 pub(crate) fn close_all_synthesized(client: &HotkeyClient) {
     let held: Vec<(HotkeyId, Hold)> = {
-        let mut holds = client.holds.lock().unwrap_or_else(|p| p.into_inner());
+        let mut holds = client.holds.lock_recover();
         holds.drain().collect()
     };
     let timestamp_us = now_us();
@@ -81,7 +81,7 @@ pub(crate) fn close_expired(client: &HotkeyClient) {
 
     let now = Instant::now();
     let expired: Vec<(HotkeyId, Hold)> = {
-        let mut holds = client.holds.lock().unwrap_or_else(|p| p.into_inner());
+        let mut holds = client.holds.lock_recover();
         let ids: Vec<HotkeyId> = holds
             .iter()
             .filter(|(_, hold)| now.saturating_duration_since(hold.started_at) >= ceiling)
@@ -126,10 +126,7 @@ fn publish_release(
     ));
 
     if synthesized {
-        let mut snap = client
-            .health_state
-            .lock()
-            .unwrap_or_else(|p| p.into_inner());
+        let mut snap = client.health_state.lock_recover();
         snap.record_synthesized_release();
     }
 }

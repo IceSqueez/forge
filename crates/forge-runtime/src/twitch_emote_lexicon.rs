@@ -1,3 +1,4 @@
+use forge_types::RecoverMutex;
 use std::collections::{HashSet, VecDeque};
 use std::sync::{Arc, Mutex, MutexGuard};
 
@@ -65,9 +66,7 @@ impl TwitchEmoteLexicon {
     }
 
     fn learned(&self) -> MutexGuard<'_, LearnedCodes> {
-        self.0
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+        self.0.lock_recover()
     }
 }
 

@@ -5,23 +5,14 @@ use forge_platform_core::{
 use forge_types::{UserText, VerbatimText};
 
 use crate::client::HotkeyClient;
-use crate::vocabulary::labels;
+use crate::vocabulary::{labels, messages};
 
 impl BuiltinContent for HotkeyClient {
     fn sections(&self) -> Vec<DetailSection> {
-        let snap = self.health_state.lock().unwrap_or_else(|p| p.into_inner());
-        let recent_triggers: Vec<_> = snap.recent_triggers.iter().rev().cloned().collect();
-        drop(snap);
+        let view = self.view();
 
-        let registered = self
-            .id_to_combo
-            .read()
-            .unwrap_or_else(|p| p.into_inner())
-            .values()
-            .cloned()
-            .collect::<Vec<_>>();
-
-        let hotkey_items: Vec<ContentListItem> = registered
+        let hotkey_items: Vec<ContentListItem> = view
+            .registered
             .iter()
             .map(|combo| ContentListItem {
                 icon: SectionIcon::new("keyboard"),
@@ -38,27 +29,21 @@ impl BuiltinContent for HotkeyClient {
 
         let hotkey_count: UserText = VerbatimText::new(hotkey_items.len().to_string()).into();
 
-        let trigger_items: Vec<ContentListItem> = recent_triggers
+        let trigger_items: Vec<ContentListItem> = view
+            .recent_triggers
             .iter()
-            .map(|record| {
-                let time_str = record
-                    .at
-                    .format(
-                        &time::format_description::parse_borrowed::<2>("[hour]:[minute]:[second]")
-                            .unwrap_or_default(),
-                    )
-                    .unwrap_or_else(|_| "--:--:--".to_owned());
-                ContentListItem {
-                    icon: SectionIcon::new("bolt"),
-                    icon_tint: None,
-                    name: record.combo.clone(),
-                    monospace_name: true,
-                    active: true,
-                    active_label: None,
-                    trailing: vec![TrailingToken::Label(VerbatimText::new(time_str).into())],
-                    enabled: true,
-                    on_click: None,
-                }
+            .map(|record| ContentListItem {
+                icon: SectionIcon::new("bolt"),
+                icon_tint: None,
+                name: record.combo.clone(),
+                monospace_name: true,
+                active: true,
+                active_label: None,
+                trailing: vec![TrailingToken::Label(
+                    messages::recent_trigger_time(record.at).into(),
+                )],
+                enabled: true,
+                on_click: None,
             })
             .collect();
 

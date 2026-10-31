@@ -1,4 +1,5 @@
-use std::sync::{Arc, PoisonError, RwLock};
+use crate::RecoverRwLock;
+use std::sync::{Arc, RwLock};
 
 pub struct Shared<T>(Arc<RwLock<Arc<T>>>);
 
@@ -14,7 +15,7 @@ impl<T> Shared<T> {
     }
 
     pub fn load(&self) -> Arc<T> {
-        Arc::clone(&self.0.read().unwrap_or_else(PoisonError::into_inner))
+        Arc::clone(&self.0.read_recover())
     }
 
     pub fn store(&self, value: T) {
@@ -22,7 +23,7 @@ impl<T> Shared<T> {
     }
 
     pub fn store_arc(&self, value: Arc<T>) {
-        let mut guard = self.0.write().unwrap_or_else(PoisonError::into_inner);
+        let mut guard = self.0.write_recover();
         *guard = value;
     }
 }

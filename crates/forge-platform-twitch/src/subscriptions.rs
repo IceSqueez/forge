@@ -1,5 +1,5 @@
 use crate::vocabulary::{RaidDirection, messages};
-use forge_types::UserText;
+use forge_types::{RecoverRwLock, UserText};
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -111,15 +111,11 @@ impl SubscriptionTracker {
     }
 
     fn read(&self) -> RwLockReadGuard<'_, Vec<SubscriptionRecord>> {
-        self.0
-            .read()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+        self.0.read_recover()
     }
 
     fn write(&self) -> RwLockWriteGuard<'_, Vec<SubscriptionRecord>> {
-        self.0
-            .write()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+        self.0.write_recover()
     }
 }
 

@@ -1,4 +1,5 @@
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use forge_types::RecoverMutex;
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use tokio::sync::watch;
 
@@ -76,7 +77,7 @@ impl RunState {
     }
 
     fn current(&self) -> MutexGuard<'_, u64> {
-        self.current.lock().unwrap_or_else(PoisonError::into_inner)
+        self.current.lock_recover()
     }
 }
 

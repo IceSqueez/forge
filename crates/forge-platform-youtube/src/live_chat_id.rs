@@ -1,3 +1,4 @@
+use forge_types::RecoverMutex;
 use std::sync::{Arc, OnceLock};
 
 use forge_platform_core::PlatformError;
@@ -17,18 +18,18 @@ impl LiveChatIdHandle {
     }
 
     pub fn set(&self, id: Option<String>) {
-        *self.inner.lock().unwrap_or_else(|p| p.into_inner()) = id;
+        *self.inner.lock_recover() = id;
     }
 
     pub fn set_while_active(&self, id: Option<String>, cancel: &CancellationToken) {
-        let mut guard = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+        let mut guard = self.inner.lock_recover();
         if !cancel.is_cancelled() {
             *guard = id;
         }
     }
 
     pub fn get(&self) -> Option<String> {
-        self.inner.lock().unwrap_or_else(|p| p.into_inner()).clone()
+        self.inner.lock_recover().clone()
     }
 
     pub(crate) fn fall_back_to(&self, lookup: BroadcastLookup) {

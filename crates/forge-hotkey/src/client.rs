@@ -1,10 +1,10 @@
-use std::collections::{BTreeSet, HashMap, HashSet};
+use forge_types::{IntegrationId, RecoverMutex, RecoverRwLock};
+use std::collections::{BTreeSet, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 
 use forge_events::EventPublisher;
-use forge_types::IntegrationId;
 use tokio::sync::{mpsc, oneshot};
 
 use crate::backend::{HotkeyBackend, HotkeyId, NullBackend};
@@ -14,6 +14,7 @@ use crate::error::HotkeyError;
 use crate::health::{HealthTx, HotkeyHealthSnapshot, make_health_state};
 use crate::hold::{self, HoldMap};
 use crate::main_thread::MainThreadLink;
+use crate::registrations::Registrations;
 use crate::supervisor::{self, SupervisorCommand};
 
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(2);
@@ -29,9 +30,8 @@ pub struct HotkeyClient {
     pub(crate) id: IntegrationId,
     pub(crate) config: HotkeyConfig,
     pub(crate) backend: Arc<dyn HotkeyBackend>,
-    pub(crate) registry: RwLock<HashMap<String, HotkeyId>>,
-    pub(crate) id_to_combo: RwLock<HashMap<HotkeyId, HotkeyCombo>>,
-    pub(crate) refused: Mutex<Vec<HotkeyCombo>>,
+    registrations: RwLock<Registrations>,
+    refused: Mutex<Vec<HotkeyCombo>>,
     id_counter: AtomicU32,
     pub(crate) publisher: Arc<dyn EventPublisher>,
     pub(crate) health_state: Arc<Mutex<HotkeyHealthSnapshot>>,
@@ -60,8 +60,7 @@ impl HotkeyClient {
             id: crate::HOTKEY_INTEGRATION.id,
             config,
             backend,
-            registry: RwLock::new(HashMap::new()),
-            id_to_combo: RwLock::new(HashMap::new()),
+            registrations: RwLock::new(Registrations::default()),
             refused: Mutex::new(Vec::new()),
             id_counter: AtomicU32::new(1),
             publisher,
@@ -99,13 +98,9 @@ impl HotkeyClient {
         let _serial = self.registration_serial.lock().await;
         let combo_str = combo.as_str().to_owned();
 
-        {
-            let guard = self.registry.read().unwrap_or_else(|p| p.into_inner());
-            if guard.contains_key(&combo_str) {
-                let mut snap = self.health_state.lock().unwrap_or_else(|p| p.into_inner());
-                snap.conflict_count = snap.conflict_count.saturating_add(1);
-                return Err(HotkeyError::AlreadyRegistered { combo: combo_str });
-            }
+        if self.registrations.read_recover().contains_combo(&combo_str) {
+            self.note_conflict();
+            return Err(HotkeyError::AlreadyRegistered { combo: combo_str });
         }
 
         let id = HotkeyId(self.id_counter.fetch_add(1, Ordering::Relaxed));
@@ -113,21 +108,13 @@ impl HotkeyClient {
         if self.os_registration_active() {
             self.backend.register(id, &combo).await.map_err(|e| {
                 if matches!(e, HotkeyError::AlreadyRegistered { .. }) {
-                    let mut snap = self.health_state.lock().unwrap_or_else(|p| p.into_inner());
-                    snap.conflict_count = snap.conflict_count.saturating_add(1);
+                    self.note_conflict();
                 }
                 e
             })?;
         }
 
-        {
-            let mut guard = self.registry.write().unwrap_or_else(|p| p.into_inner());
-            guard.insert(combo_str.clone(), id);
-        }
-        {
-            let mut guard = self.id_to_combo.write().unwrap_or_else(|p| p.into_inner());
-            guard.insert(id, combo);
-        }
+        self.registrations.write_recover().insert(id, combo);
 
         supervisor::emit_registered(self, &combo_str, id.0);
 
@@ -136,10 +123,7 @@ impl HotkeyClient {
 
     pub async fn unregister(&self, id: HotkeyId) -> Result<(), HotkeyError> {
         let _serial = self.registration_serial.lock().await;
-        let combo = {
-            let guard = self.id_to_combo.read().unwrap_or_else(|p| p.into_inner());
-            guard.get(&id).cloned()
-        };
+        let combo = self.registrations.read_recover().combo_of(id).cloned();
 
         let Some(combo) = combo else {
             return Ok(());
@@ -147,25 +131,14 @@ impl HotkeyClient {
 
         let combo_str = combo.as_str().to_owned();
 
-        let still_held = self
-            .unreleased
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .contains(&id);
+        let still_held = self.unreleased.lock_recover().contains(&id);
         if self.os_registration_active() || still_held {
             self.backend.unregister(id).await?;
         }
 
         hold::close_synthesized(self, id);
 
-        {
-            let mut guard = self.id_to_combo.write().unwrap_or_else(|p| p.into_inner());
-            guard.remove(&id);
-        }
-        {
-            let mut guard = self.registry.write().unwrap_or_else(|p| p.into_inner());
-            guard.remove(&combo_str);
-        }
+        self.registrations.write_recover().remove(id);
 
         supervisor::emit_unregistered(self, &combo_str, id.0);
 
@@ -173,18 +146,10 @@ impl HotkeyClient {
     }
 
     pub(crate) fn forget_registration(&self, id: HotkeyId) {
-        let combo = self
-            .id_to_combo
-            .write()
-            .unwrap_or_else(|p| p.into_inner())
-            .remove(&id);
+        let combo = self.registrations.write_recover().remove(id);
         let Some(combo) = combo else {
             return;
         };
-        self.registry
-            .write()
-            .unwrap_or_else(|p| p.into_inner())
-            .remove(combo.as_str());
         hold::close_synthesized(self, id);
         supervisor::emit_unregistered(self, combo.as_str(), id.0);
     }
@@ -203,12 +168,7 @@ impl HotkeyClient {
         let (reply_tx, reply_rx) = oneshot::channel();
         self.send_command(SupervisorCommand::Enable(reply_tx))
             .await?;
-        let registrations = self
-            .id_to_combo
-            .read()
-            .unwrap_or_else(|p| p.into_inner())
-            .len()
-            + self.refused.lock().unwrap_or_else(|p| p.into_inner()).len();
+        let registrations = self.registered_count() + self.refused.lock_recover().len();
         let budget = COMMAND_TIMEOUT.saturating_mul(
             u32::try_from(registrations)
                 .unwrap_or(u32::MAX)
@@ -221,20 +181,16 @@ impl HotkeyClient {
     }
 
     pub(crate) fn note_refused(&self, combos: impl IntoIterator<Item = HotkeyCombo>) {
-        self.refused
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .extend(combos);
+        self.refused.lock_recover().extend(combos);
     }
 
     pub(crate) fn take_refused(&self) -> Vec<HotkeyCombo> {
-        std::mem::take(&mut *self.refused.lock().unwrap_or_else(|p| p.into_inner()))
+        std::mem::take(&mut *self.refused.lock_recover())
     }
 
     pub(crate) fn drop_unwanted_refused(&self, wanted: &BTreeSet<String>) {
         self.refused
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
+            .lock_recover()
             .retain(|combo| wanted.contains(combo.as_str()));
     }
 
@@ -270,12 +226,20 @@ impl HotkeyClient {
     }
 
     pub fn registered_combos(&self) -> Vec<(HotkeyId, HotkeyCombo)> {
-        self.id_to_combo
-            .read()
-            .unwrap_or_else(|p| p.into_inner())
-            .iter()
-            .map(|(&id, combo)| (id, combo.clone()))
-            .collect()
+        self.registrations.read_recover().entries()
+    }
+
+    pub(crate) fn registered_count(&self) -> usize {
+        self.registrations.read_recover().len()
+    }
+
+    pub(crate) fn has_registered_combo(&self, combo: &str) -> bool {
+        self.registrations.read_recover().contains_combo(combo)
+    }
+
+    fn note_conflict(&self) {
+        let mut snap = self.health_state.lock_recover();
+        snap.conflict_count = snap.conflict_count.saturating_add(1);
     }
 
     pub fn portal_available(&self) -> Option<bool> {
@@ -283,10 +247,7 @@ impl HotkeyClient {
     }
 
     pub fn last_synthesized_release(&self) -> Option<time::OffsetDateTime> {
-        self.health_state
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .last_synthesized_release_at
+        self.health_state.lock_recover().last_synthesized_release_at
     }
 
     #[cfg(test)]
@@ -302,8 +263,7 @@ impl HotkeyClient {
             id: IntegrationId::new("hotkey"),
             config: HotkeyConfig::default(),
             backend: Arc::new(backend),
-            registry: RwLock::new(HashMap::new()),
-            id_to_combo: RwLock::new(HashMap::new()),
+            registrations: RwLock::new(Registrations::default()),
             refused: Mutex::new(Vec::new()),
             id_counter: AtomicU32::new(1),
             publisher: Arc::new(NullPublisher),

@@ -1,3 +1,4 @@
+use forge_types::RecoverMutex;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use forge_events::{Event, EventPublisher};
@@ -58,9 +59,7 @@ struct SessionOutlet {
 
 impl SessionOutlet {
     fn lock(&self) -> MutexGuard<'_, SessionSlot> {
-        self.slot
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+        self.slot.lock_recover()
     }
 
     fn announce(&self, status: ChatLinkStatus) {

@@ -1,3 +1,4 @@
+use forge_types::{MessageRef, RecoverRwLock};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
@@ -13,7 +14,6 @@ use forge_platform_core::{
     connection_state_changed_event,
 };
 use forge_storage::CredentialsRepo;
-use forge_types::MessageRef;
 
 use crate::auth::AuthState;
 use crate::client::VTUBE_PLATFORM_ID;
@@ -252,7 +252,8 @@ async fn run_auth(
         tracing::debug!(endpoint, "using stored VTube Studio credential");
         c.token.expose().to_owned()
     } else {
-        if let Ok(mut g) = auth_state.write() {
+        {
+            let mut g = auth_state.write_recover();
             *g = AuthState::AwaitingApproval;
         }
         emit_connection_changed(
@@ -345,7 +346,8 @@ async fn park_until_auto_reconnect(
 }
 
 pub(crate) fn record_failure(slot: &RwLock<Option<MessageRef>>, failure: Option<MessageRef>) {
-    if let Ok(mut g) = slot.write() {
+    {
+        let mut g = slot.write_recover();
         *g = failure;
     }
 }
@@ -494,7 +496,8 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
         match auth_outcome {
             Ok(()) => {}
             Err(VTubeError::TokenRejected) => {
-                if let Ok(mut g) = auth_state.write() {
+                {
+                    let mut g = auth_state.write_recover();
                     *g = AuthState::AuthRequired;
                 }
                 record_reason(&last_failure, VTubeDisconnectReason::AuthRequired);
@@ -514,7 +517,8 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
                 return;
             }
             Err(VTubeError::TokenDenied) => {
-                if let Ok(mut g) = auth_state.write() {
+                {
+                    let mut g = auth_state.write_recover();
                     *g = AuthState::AuthRequired;
                 }
                 record_reason(&last_failure, VTubeDisconnectReason::AuthDenied);
@@ -534,7 +538,8 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
                 return;
             }
             Err(VTubeError::TokenTimeout) => {
-                if let Ok(mut g) = auth_state.write() {
+                {
+                    let mut g = auth_state.write_recover();
                     *g = AuthState::AuthRequired;
                 }
                 record_reason(&last_failure, VTubeDisconnectReason::AuthTimeout);
@@ -602,10 +607,12 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
             }
         };
 
-        if let Ok(mut g) = connected_at.write() {
+        {
+            let mut g = connected_at.write_recover();
             *g = Some(OffsetDateTime::now_utc());
         }
-        if let Ok(mut g) = auth_state.write() {
+        {
+            let mut g = auth_state.write_recover();
             *g = AuthState::Connected;
         }
         record_failure(&last_failure, None);
@@ -789,10 +796,12 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
         clear_session_state(&health_state, &health_tx);
         catalog_signal.bump_options();
 
-        if let Ok(mut g) = connected_at.write() {
+        {
+            let mut g = connected_at.write_recover();
             *g = None;
         }
-        if let Ok(mut g) = auth_state.write() {
+        {
+            let mut g = auth_state.write_recover();
             *g = AuthState::Cold;
         }
         record_reason(&last_failure, close_reason);
@@ -839,7 +848,8 @@ fn announce_stopped(
         ConnectionState::Disconnected,
         ConnectionTransition::Expected,
     );
-    if let Ok(mut g) = auth_state.write() {
+    {
+        let mut g = auth_state.write_recover();
         *g = AuthState::Cold;
     }
     emit_connection_changed(publisher, endpoint, false, None, None);

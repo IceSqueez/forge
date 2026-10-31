@@ -3,7 +3,7 @@ use std::time::Duration;
 use time::OffsetDateTime;
 
 use forge_platform_core::{BuiltinStatus, CapabilityFlags, ConnectionState, HeaderAction};
-use forge_types::{IntegrationId, MessageRef, UserText, VerbatimText};
+use forge_types::{IntegrationId, MessageRef, RecoverRwLock, UserText, VerbatimText};
 
 use crate::client::VTubeClient;
 
@@ -25,11 +25,11 @@ impl BuiltinStatus for VTubeClient {
     }
 
     fn connect_failure(&self) -> Option<MessageRef> {
-        self.last_failure.read().ok().and_then(|g| g.clone())
+        self.last_failure.read_recover().clone()
     }
 
     fn uptime(&self) -> Option<Duration> {
-        let at = self.connected_at.read().ok().and_then(|g| *g)?;
+        let at = (*self.connected_at.read_recover())?;
         let elapsed = OffsetDateTime::now_utc() - at;
         if elapsed.is_positive() {
             Some(elapsed.unsigned_abs())

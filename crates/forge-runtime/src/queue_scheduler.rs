@@ -1,3 +1,4 @@
+use forge_types::{Action, ActionId, ArgStack, EventId, Queue, QueueId, RecoverMutex};
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -5,7 +6,6 @@ use std::time::{Duration, Instant};
 use forge_events::{ActionSkipped, Event, EventSource, TypedEvent};
 use forge_net::{TaskOwner, TaskShutdown};
 use forge_registry::CancelSignal;
-use forge_types::{Action, ActionId, ArgStack, EventId, Queue, QueueId};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio::sync::futures::Notified;
@@ -306,7 +306,7 @@ impl ConcurrencyGate {
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, GateState> {
-        self.inner.state.lock().unwrap_or_else(|e| e.into_inner())
+        self.inner.state.lock_recover()
     }
 }
 
@@ -410,7 +410,7 @@ impl PendingBuffer {
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, VecDeque<QueueTask>> {
-        self.inner.tasks.lock().unwrap_or_else(|e| e.into_inner())
+        self.inner.tasks.lock_recover()
     }
 }
 
@@ -474,7 +474,7 @@ impl InflightTracker {
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, InflightInner> {
-        self.inner.lock().unwrap_or_else(|e| e.into_inner())
+        self.inner.lock_recover()
     }
 }
 

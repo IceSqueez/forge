@@ -1,8 +1,8 @@
+use forge_types::{RecoverMutex, VARIANT_MAX_COLLECTION_LEN, Variant};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use forge_storage::{SettingsRepo, read_setting_or_default};
-use forge_types::{VARIANT_MAX_COLLECTION_LEN, Variant};
 use rhai::Dynamic;
 use rhai::packages::{BasicArrayPackage, BasicMapPackage, CorePackage, LogicPackage, Package};
 
@@ -73,10 +73,7 @@ impl Engine {
         let timer_for_closure = Arc::clone(&wall_timer);
         let wall_time_ms = cfg.wall_time_ms;
         inner.on_progress(move |_ops| {
-            let elapsed = timer_for_closure
-                .lock()
-                .unwrap_or_else(|p| p.into_inner())
-                .elapsed();
+            let elapsed = timer_for_closure.lock_recover().elapsed();
             if elapsed.as_millis() > wall_time_ms as u128 {
                 Some(Dynamic::UNIT)
             } else {
@@ -136,11 +133,11 @@ impl Engine {
     }
 
     pub(crate) fn reset_timer(&self) {
-        *self.wall_timer.lock().unwrap_or_else(|p| p.into_inner()) = Instant::now();
+        *self.wall_timer.lock_recover() = Instant::now();
     }
 
     fn started_at(&self) -> Instant {
-        *self.wall_timer.lock().unwrap_or_else(|p| p.into_inner())
+        *self.wall_timer.lock_recover()
     }
 }
 

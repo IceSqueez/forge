@@ -1,6 +1,7 @@
+use forge_types::RecoverMutex;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use async_trait::async_trait;
 use tokio::sync::{Semaphore, watch};
@@ -46,7 +47,7 @@ impl Drop for InFlightWrite<'_> {
 }
 
 fn locked<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex.lock().unwrap_or_else(PoisonError::into_inner)
+    mutex.lock_recover()
 }
 
 fn injected_failure() -> StorageError {

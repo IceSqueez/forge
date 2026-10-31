@@ -1,5 +1,6 @@
+use forge_types::RecoverMutex;
 use std::collections::VecDeque;
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex};
 
 use time::OffsetDateTime;
 use tracing::field::{Field, Visit};
@@ -34,17 +35,17 @@ impl LogTail {
     }
 
     pub(crate) fn snapshot(&self) -> Vec<LogLine> {
-        let lines = self.lines.lock().unwrap_or_else(PoisonError::into_inner);
+        let lines = self.lines.lock_recover();
         lines.iter().cloned().collect()
     }
 
     pub(crate) fn clear(&self) {
-        let mut lines = self.lines.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut lines = self.lines.lock_recover();
         lines.clear();
     }
 
     fn push(&self, line: LogLine) {
-        let mut lines = self.lines.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut lines = self.lines.lock_recover();
         if lines.len() == CAPACITY {
             lines.pop_front();
         }

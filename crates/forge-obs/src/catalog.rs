@@ -1,13 +1,13 @@
+use forge_types::{MessageRef, RecoverRwLock, SubActionStep, UserText, Variant, VerbatimText};
 use std::collections::HashMap;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
-use std::sync::{PoisonError, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use std::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use forge_platform_core::{
     BuiltinContent, ContentList, ContentListItem, DetailSection, SectionIcon, TokenColor,
     TrailingToken,
 };
-use forge_types::{MessageRef, SubActionStep, UserText, Variant, VerbatimText};
 
 use crate::client::ObsClient;
 use crate::source::SourceInfo;
@@ -18,11 +18,11 @@ const SCENE_ROW_PADDING_Y_PX: u8 = 8;
 const SOURCE_ROW_PADDING_Y_PX: u8 = 7;
 
 pub(crate) fn read_lock<T>(lock: &RwLock<T>) -> RwLockReadGuard<'_, T> {
-    lock.read().unwrap_or_else(PoisonError::into_inner)
+    lock.read_recover()
 }
 
 pub(crate) fn write_lock<T>(lock: &RwLock<T>) -> RwLockWriteGuard<'_, T> {
-    lock.write().unwrap_or_else(PoisonError::into_inner)
+    lock.write_recover()
 }
 
 #[derive(Default)]
@@ -232,74 +232,77 @@ fn source_to_item(scene: &str, info: &SourceInfo, actionable: bool) -> ContentLi
 
 impl BuiltinContent for ObsClient {
     fn sections(&self) -> Vec<DetailSection> {
-        let catalog = read_lock(&self.catalog_state);
         let actionable = self.connection_state().is_connected();
-
-        let scene_items: Vec<ContentListItem> = catalog
-            .scenes
-            .iter()
-            .map(|s| {
-                let source_count = catalog.sources.get(s).map(Vec::len);
-                scene_to_item(
-                    s,
-                    catalog.current_scene.as_deref(),
-                    source_count,
-                    actionable,
-                )
-            })
-            .collect();
-        let scene_count: UserText = VerbatimText::new(catalog.scenes.len().to_string()).into();
-
-        let source_items: Vec<ContentListItem> = catalog
-            .current_scene
-            .as_deref()
-            .and_then(|scene| catalog.sources.get(scene).map(|sources| (scene, sources)))
-            .map(|(scene, sources)| {
-                sources
-                    .iter()
-                    .map(|info| source_to_item(scene, info, actionable))
-                    .collect()
-            })
-            .unwrap_or_default();
-        let source_scene_label = catalog.current_scene.as_deref().map(|scene| {
-            MessageRef::new(labels::SOURCES_IN_SCENE)
-                .with_arg("scene", VerbatimText::new(scene))
-                .into()
-        });
-        let source_count_label = MessageRef::new(labels::SOURCE_TOTAL)
-            .with_arg("count", source_items.len())
-            .into();
-
-        let left = ContentList {
-            title: labels::SCENES.into(),
-            icon: SectionIcon::new("layout-grid"),
-            inline_label: Some(scene_count),
-            count_label: None,
-            visible_rows: Some(PANEL_VISIBLE_ROWS),
-            row_padding_y_px: SCENE_ROW_PADDING_Y_PX,
-            refreshable: true,
-            items: scene_items,
-            footer: None,
-        };
-
-        let right = ContentList {
-            title: labels::SOURCES.into(),
-            icon: SectionIcon::new("stack-2"),
-            inline_label: source_scene_label,
-            count_label: Some(source_count_label),
-            visible_rows: Some(PANEL_VISIBLE_ROWS),
-            row_padding_y_px: SOURCE_ROW_PADDING_Y_PX,
-            refreshable: false,
-            items: source_items,
-            footer: None,
-        };
-
-        let lists = DetailSection::TwoColumnLists {
-            left: Box::new(left),
-            right: Box::new(right),
-        };
-        vec![lists]
+        self.mirror
+            .read(|catalog| catalog_sections(catalog, actionable))
     }
+}
+
+fn catalog_sections(catalog: &ObsCatalog, actionable: bool) -> Vec<DetailSection> {
+    let scene_items: Vec<ContentListItem> = catalog
+        .scenes
+        .iter()
+        .map(|s| {
+            let source_count = catalog.sources.get(s).map(Vec::len);
+            scene_to_item(
+                s,
+                catalog.current_scene.as_deref(),
+                source_count,
+                actionable,
+            )
+        })
+        .collect();
+    let scene_count: UserText = VerbatimText::new(catalog.scenes.len().to_string()).into();
+
+    let source_items: Vec<ContentListItem> = catalog
+        .current_scene
+        .as_deref()
+        .and_then(|scene| catalog.sources.get(scene).map(|sources| (scene, sources)))
+        .map(|(scene, sources)| {
+            sources
+                .iter()
+                .map(|info| source_to_item(scene, info, actionable))
+                .collect()
+        })
+        .unwrap_or_default();
+    let source_scene_label = catalog.current_scene.as_deref().map(|scene| {
+        MessageRef::new(labels::SOURCES_IN_SCENE)
+            .with_arg("scene", VerbatimText::new(scene))
+            .into()
+    });
+    let source_count_label = MessageRef::new(labels::SOURCE_TOTAL)
+        .with_arg("count", source_items.len())
+        .into();
+
+    let left = ContentList {
+        title: labels::SCENES.into(),
+        icon: SectionIcon::new("layout-grid"),
+        inline_label: Some(scene_count),
+        count_label: None,
+        visible_rows: Some(PANEL_VISIBLE_ROWS),
+        row_padding_y_px: SCENE_ROW_PADDING_Y_PX,
+        refreshable: true,
+        items: scene_items,
+        footer: None,
+    };
+
+    let right = ContentList {
+        title: labels::SOURCES.into(),
+        icon: SectionIcon::new("stack-2"),
+        inline_label: source_scene_label,
+        count_label: Some(source_count_label),
+        visible_rows: Some(PANEL_VISIBLE_ROWS),
+        row_padding_y_px: SOURCE_ROW_PADDING_Y_PX,
+        refreshable: false,
+        items: source_items,
+        footer: None,
+    };
+
+    let lists = DetailSection::TwoColumnLists {
+        left: Box::new(left),
+        right: Box::new(right),
+    };
+    vec![lists]
 }
 
 #[cfg(test)]
@@ -325,7 +328,7 @@ mod tests {
     fn sections_populated_catalog_marks_current_scene_active_with_live_label() {
         let client = ObsClient::new_for_test("localhost:4455".to_owned());
         {
-            let mut catalog = client.catalog_state.write().unwrap();
+            let mut catalog = client.mirror.write_for_test();
             catalog.scenes = vec!["Gameplay".to_owned(), "BRB".to_owned()];
             catalog.current_scene = Some("Gameplay".to_owned());
             catalog.sources.insert(
@@ -702,7 +705,7 @@ mod tests {
         let empty = ObsClient::new_for_test("localhost:4455".to_owned());
         let populated = ObsClient::new_for_test("localhost:4455".to_owned());
         {
-            let mut catalog = populated.catalog_state.write().unwrap();
+            let mut catalog = populated.mirror.write_for_test();
             catalog.scenes = vec!["Gameplay".to_owned(), "BRB".to_owned()];
             catalog.current_scene = Some("Gameplay".to_owned());
             catalog.sources.insert(

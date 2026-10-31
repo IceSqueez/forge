@@ -1,3 +1,4 @@
+use forge_types::RecoverRwLock;
 use std::sync::{Arc, OnceLock, RwLock};
 use std::time::Duration;
 
@@ -208,9 +209,9 @@ async fn report_expressions(
     req_tx: &mpsc::UnboundedSender<PendingRequest>,
     health_tx: &broadcast::Sender<HealthDelta>,
 ) {
-    let before = snap.read().map(|s| s.expressions.len()).unwrap_or(0);
+    let before = snap.read_recover().expressions.len();
     refresh_expressions(snap, req_tx).await;
-    let after = snap.read().map(|s| s.expressions.len()).unwrap_or(before);
+    let after = snap.read_recover().expressions.len();
     if after != before {
         #[expect(
             clippy::let_underscore_must_use,
@@ -228,9 +229,9 @@ async fn report_items(
     req_tx: &mpsc::UnboundedSender<PendingRequest>,
     health_tx: &broadcast::Sender<HealthDelta>,
 ) {
-    let before = snap.read().map(|s| s.item_count).unwrap_or(None);
+    let before = snap.read_recover().item_count;
     refresh_items(snap, req_tx).await;
-    let after = snap.read().map(|s| s.item_count).unwrap_or(before);
+    let after = snap.read_recover().item_count;
     if after != before {
         #[expect(
             clippy::let_underscore_must_use,
@@ -258,9 +259,7 @@ fn report_model_secondary(
     }
     *last_param_count = Some(param_count);
 
-    let Ok(health) = health_state.read() else {
-        return;
-    };
+    let health = health_state.read_recover();
     if !health.model_loaded || health.model_name.is_empty() {
         return;
     }
@@ -293,7 +292,8 @@ async fn refresh_models_and_hotkeys(
                     .collect()
             })
             .unwrap_or_default();
-        if let Ok(mut s) = snap.write() {
+        {
+            let mut s = snap.write_recover();
             let changed = s.models != models;
             s.models = models;
             if changed {
@@ -309,7 +309,8 @@ async fn refresh_models_and_hotkeys(
             .then(|| data["numberOfLive2DParameters"].as_u64())
             .flatten()
             .map(|n| u32::try_from(n).unwrap_or(u32::MAX));
-        if let Ok(mut s) = snap.write() {
+        {
+            let mut s = snap.write_recover();
             let changed = s.current_model_id != current_id;
             s.current_model_id = current_id;
             s.current_model_param_count = param_count;
@@ -337,7 +338,8 @@ async fn refresh_models_and_hotkeys(
                     .collect()
             })
             .unwrap_or_default();
-        if let Ok(mut s) = snap.write() {
+        {
+            let mut s = snap.write_recover();
             let changed = s.hotkeys != hotkeys;
             s.hotkeys = hotkeys;
             if changed {
@@ -367,7 +369,8 @@ async fn refresh_expressions(
                 .collect()
         })
         .unwrap_or_default();
-    if let Ok(mut s) = snap.write() {
+    {
+        let mut s = snap.write_recover();
         let changed = s.expressions != expressions;
         s.expressions = expressions;
         if changed {
@@ -396,7 +399,8 @@ async fn refresh_items(
     let item_count = data["itemsInSceneCount"]
         .as_u64()
         .map(|n| u32::try_from(n).unwrap_or(u32::MAX));
-    if let Ok(mut s) = snap.write() {
+    {
+        let mut s = snap.write_recover();
         let changed = s.item_count != item_count;
         s.item_count = item_count;
         if changed {
@@ -442,11 +446,7 @@ async fn send_internal(
 
 impl BuiltinContent for VTubeClient {
     fn sections(&self) -> Vec<DetailSection> {
-        let snap = self
-            .content_state
-            .read()
-            .unwrap_or_else(|p| p.into_inner())
-            .clone();
+        let snap = self.content_state.read_recover().clone();
 
         let expression_names: Vec<String> = snap
             .expressions
@@ -720,7 +720,8 @@ mod tests {
     #[test]
     fn expression_chips_use_the_display_name_and_fall_back_to_the_file_name() {
         let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
-        if let Ok(mut s) = c.content_state.write() {
+        {
+            let mut s = c.content_state.write_recover();
             s.expressions = vec![
                 ExpressionItem {
                     name: "Blush".to_owned(),
@@ -836,11 +837,13 @@ mod tests {
     #[test]
     fn the_model_metric_regains_its_parameter_count_after_a_switch() {
         let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
-        if let Ok(mut s) = c.health_state.write() {
+        {
+            let mut s = c.health_state.write_recover();
             s.model_loaded = true;
             s.model_name = "NewAvatar".to_owned();
         }
-        if let Ok(mut s) = c.content_state.write() {
+        {
+            let mut s = c.content_state.write_recover();
             s.current_model_param_count = Some(55);
         }
         let mut health_rx = c.health_tx.subscribe();
@@ -979,11 +982,13 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn a_model_switch_between_equal_parameter_counts_still_republishes_the_count() {
         let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
-        if let Ok(mut s) = c.health_state.write() {
+        {
+            let mut s = c.health_state.write_recover();
             s.model_loaded = true;
             s.model_name = "Avatar A".to_owned();
         }
-        if let Ok(mut s) = c.content_state.write() {
+        {
+            let mut s = c.content_state.write_recover();
             s.current_model_id = Some("m-a".to_owned());
             s.current_model_param_count = Some(42);
         }
@@ -997,10 +1002,12 @@ mod tests {
             (MODEL_METRIC, model_value("Avatar A", Some(42)))
         );
 
-        if let Ok(mut s) = c.health_state.write() {
+        {
+            let mut s = c.health_state.write_recover();
             s.model_name = "Avatar B".to_owned();
         }
-        if let Ok(mut s) = c.content_state.write() {
+        {
+            let mut s = c.content_state.write_recover();
             s.current_model_id = Some("m-b".to_owned());
         }
         items_changed_tx.send(()).unwrap();
@@ -1019,11 +1026,13 @@ mod tests {
         ] {
             let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
             c.state.store(state);
-            if let Ok(mut s) = c.health_state.write() {
+            {
+                let mut s = c.health_state.write_recover();
                 s.model_loaded = true;
                 s.model_name = "Avatar A".to_owned();
             }
-            if let Ok(mut s) = c.content_state.write() {
+            {
+                let mut s = c.content_state.write_recover();
                 s.current_model_param_count = Some(42);
             }
             let mut health_rx = c.health_tx.subscribe();

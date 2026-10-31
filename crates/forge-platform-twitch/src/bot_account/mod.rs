@@ -2,6 +2,7 @@ mod login;
 mod moderator;
 mod validate;
 
+use forge_types::RecoverRwLock;
 use std::sync::{Arc, RwLock};
 
 use forge_events::{EventPublisher, EventSource, TypedEvent};
@@ -123,26 +124,15 @@ impl TwitchBotAccount {
     }
 
     pub fn moderator_status(&self) -> BotModerator {
-        self.state
-            .read()
-            .unwrap_or_else(|p| p.into_inner())
-            .moderator
+        self.state.read_recover().moderator
     }
 
     pub fn status(&self) -> BotStatus {
-        self.state
-            .read()
-            .unwrap_or_else(|p| p.into_inner())
-            .status
-            .clone()
+        self.state.read_recover().status.clone()
     }
 
     pub(crate) fn connected_user_id(&self) -> Option<String> {
-        self.state
-            .read()
-            .unwrap_or_else(|p| p.into_inner())
-            .user_id
-            .clone()
+        self.state.read_recover().user_id.clone()
     }
 
     pub async fn sync_status(&self) {
@@ -198,13 +188,13 @@ impl TwitchBotAccount {
     }
 
     fn token_known_rejected(&self) -> bool {
-        let guard = self.state.read().unwrap_or_else(|p| p.into_inner());
+        let guard = self.state.read_recover();
         guard.token_rejected || matches!(guard.status, BotStatus::ReauthRequired { .. })
     }
 
     pub(crate) fn mark_reauth_required(&self) {
         let (login, user_id) = {
-            let mut guard = self.state.write().unwrap_or_else(|p| p.into_inner());
+            let mut guard = self.state.write_recover();
             guard.token_rejected = true;
             (
                 guard.status.login().map(str::to_owned),
@@ -213,7 +203,7 @@ impl TwitchBotAccount {
         };
         if let Some(login) = login {
             self.set_state(BotStatus::ReauthRequired { login }, user_id);
-            let mut guard = self.state.write().unwrap_or_else(|p| p.into_inner());
+            let mut guard = self.state.write_recover();
             guard.token_rejected = true;
         }
     }
@@ -228,7 +218,7 @@ impl TwitchBotAccount {
 
     fn set_state(&self, status: BotStatus, user_id: Option<String>) {
         let changed = {
-            let mut guard = self.state.write().unwrap_or_else(|p| p.into_inner());
+            let mut guard = self.state.write_recover();
             let changed = guard.status != status;
             if status == BotStatus::NotConnected {
                 guard.moderator = BotModerator::Unknown;
@@ -245,7 +235,7 @@ impl TwitchBotAccount {
 
     fn set_moderator(&self, moderator: BotModerator) {
         let changed = {
-            let mut guard = self.state.write().unwrap_or_else(|p| p.into_inner());
+            let mut guard = self.state.write_recover();
             let changed = guard.moderator != moderator;
             guard.moderator = moderator;
             changed
@@ -257,7 +247,7 @@ impl TwitchBotAccount {
 
     fn publish_status(&self) {
         let (status, moderator) = {
-            let guard = self.state.read().unwrap_or_else(|p| p.into_inner());
+            let guard = self.state.read_recover();
             (guard.status.clone(), guard.moderator)
         };
         let changed = BotStatusChanged::new(&status, moderator);

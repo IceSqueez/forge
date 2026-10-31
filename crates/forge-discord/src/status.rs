@@ -1,7 +1,7 @@
+use forge_types::{IntegrationId, RecoverMutex, UserText};
 use std::time::Duration;
 
 use forge_platform_core::{BuiltinStatus, CapabilityFlags, ConnectionState, HeaderAction};
-use forge_types::{IntegrationId, UserText};
 
 use crate::client::DiscordClient;
 
@@ -19,7 +19,7 @@ impl BuiltinStatus for DiscordClient {
     }
 
     fn connection(&self) -> ConnectionState {
-        let snap = self.content_state.lock().unwrap_or_else(|p| p.into_inner());
+        let snap = self.content_state.lock_recover();
         if snap.webhook_names.is_empty() {
             ConnectionState::Disconnected
         } else {
@@ -43,7 +43,7 @@ impl BuiltinStatus for DiscordClient {
     }
 
     fn activity_count(&self) -> Option<usize> {
-        let snap = self.content_state.lock().unwrap_or_else(|p| p.into_inner());
+        let snap = self.content_state.lock_recover();
         (!snap.webhook_names.is_empty()).then_some(snap.webhook_names.len())
     }
 

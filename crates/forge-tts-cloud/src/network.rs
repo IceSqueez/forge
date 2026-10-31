@@ -1,3 +1,4 @@
+use forge_types::RecoverMutex;
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -164,9 +165,7 @@ pub(crate) fn ceil_secs(wait: Duration) -> u64 {
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
+    mutex.lock_recover()
 }
 
 #[cfg(test)]

@@ -1,5 +1,6 @@
 #![cfg(target_os = "linux")]
 
+use forge_types::{RecoverMutex, RecoverRwLock};
 use std::collections::{HashMap, HashSet};
 use std::io::Read;
 use std::os::unix::fs::OpenOptionsExt;
@@ -78,26 +79,17 @@ impl EvdevBackend {
 #[async_trait::async_trait]
 impl HotkeyBackend for EvdevBackend {
     async fn register(&self, id: HotkeyId, combo: &HotkeyCombo) -> Result<(), HotkeyError> {
-        self.registered
-            .write()
-            .unwrap_or_else(|p| p.into_inner())
-            .insert(id, combo.clone());
+        self.registered.write_recover().insert(id, combo.clone());
         Ok(())
     }
 
     async fn unregister(&self, id: HotkeyId) -> Result<(), HotkeyError> {
-        self.registered
-            .write()
-            .unwrap_or_else(|p| p.into_inner())
-            .remove(&id);
+        self.registered.write_recover().remove(&id);
         Ok(())
     }
 
     fn fired_rx(&self) -> Option<mpsc::Receiver<HotkeyFiredEvent>> {
-        self.fired_rx_slot
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .take()
+        self.fired_rx_slot.lock_recover().take()
     }
 }
 
@@ -267,8 +259,7 @@ async fn read_device_events(
 
 async fn release_all_held(held_keys: &HeldKeys, fired_tx: &mpsc::Sender<HotkeyFiredEvent>) {
     let held: Vec<(HotkeyId, HotkeyCombo)> = held_keys
-        .lock()
-        .unwrap_or_else(|p| p.into_inner())
+        .lock_recover()
         .drain()
         .map(|(_, binding)| binding)
         .collect();
@@ -300,10 +291,7 @@ async fn handle_key_event(
     let value = i32::from_ne_bytes([raw[20], raw[21], raw[22], raw[23]]);
 
     if ev_type == EV_SYN && code == SYN_DROPPED {
-        modifier_state
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .clear();
+        modifier_state.lock_recover().clear();
         return;
     }
 
@@ -312,7 +300,7 @@ async fn handle_key_event(
     }
 
     if modifier_at(code).is_some() {
-        let mut state = modifier_state.lock().unwrap_or_else(|p| p.into_inner());
+        let mut state = modifier_state.lock_recover();
         if value == KEY_DOWN {
             state.insert(code);
         } else if value == KEY_UP {
@@ -320,8 +308,7 @@ async fn handle_key_event(
         }
     } else if let Some(key) = key_at(code) {
         if value == KEY_DOWN {
-            let modifiers =
-                held_modifiers(&modifier_state.lock().unwrap_or_else(|p| p.into_inner()));
+            let modifiers = held_modifiers(&modifier_state.lock_recover());
             let pressed = HotkeyCombo::new(modifiers, key);
             press_key(code, &pressed, held_keys, registered, fired_tx).await;
         } else if value == KEY_UP {
@@ -338,7 +325,7 @@ async fn press_key(
     fired_tx: &mpsc::Sender<HotkeyFiredEvent>,
 ) {
     let matched = {
-        let guard = registered.read().unwrap_or_else(|p| p.into_inner());
+        let guard = registered.read_recover();
         guard
             .iter()
             .find(|(_, combo)| *combo == pressed)
@@ -349,7 +336,7 @@ async fn press_key(
     };
 
     {
-        let mut guard = held_keys.lock().unwrap_or_else(|p| p.into_inner());
+        let mut guard = held_keys.lock_recover();
         guard.insert(code, (id, combo.clone()));
     }
 
@@ -369,7 +356,7 @@ async fn press_key(
 
 async fn release_key(code: u16, held_keys: &HeldKeys, fired_tx: &mpsc::Sender<HotkeyFiredEvent>) {
     let held = {
-        let mut guard = held_keys.lock().unwrap_or_else(|p| p.into_inner());
+        let mut guard = held_keys.lock_recover();
         guard.remove(&code)
     };
     let Some((id, combo)) = held else {

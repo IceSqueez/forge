@@ -1,7 +1,8 @@
+use forge_types::{ClipId, OutputDevice, RecoverMutex, Shared};
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -10,7 +11,6 @@ use forge_audio::{
 };
 use forge_speech_types::PcmBuffer;
 use forge_storage::{SettingsRepo, StoredClip};
-use forge_types::{ClipId, OutputDevice, Shared};
 use tokio::sync::oneshot;
 
 use crate::audio_event::{AudioEvent, AudioEventSink};
@@ -27,7 +27,7 @@ const PLAYBACK_TAIL_MS: u64 = 200;
 const LOOP_MIN_CYCLE_MS: u64 = 50;
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex.lock().unwrap_or_else(PoisonError::into_inner)
+    mutex.lock_recover()
 }
 
 #[derive(Default)]

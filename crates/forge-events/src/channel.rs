@@ -110,6 +110,7 @@ impl EventSubscription {
 
 #[cfg(test)]
 mod tests {
+    use forge_types::RecoverMutex;
     use std::sync::Mutex;
 
     use super::*;
@@ -124,13 +125,14 @@ mod tests {
 
     impl RecordedLags {
         fn snapshot(&self) -> Vec<u64> {
-            self.0.lock().map(|lags| lags.clone()).unwrap_or_default()
+            self.0.lock_recover().clone()
         }
     }
 
     impl LagRecorder for RecordedLags {
         fn lagged(&self, skipped: u64) {
-            if let Ok(mut lags) = self.0.lock() {
+            {
+                let mut lags = self.0.lock_recover();
                 lags.push(skipped);
             }
         }

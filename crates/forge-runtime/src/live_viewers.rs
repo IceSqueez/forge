@@ -1,10 +1,10 @@
+use forge_types::{PlatformId, RecoverMutex};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use forge_net::TaskOwner;
 use forge_platform_core::{LiveViewerSource, ViewerReport};
-use forge_types::PlatformId;
 use futures_core::Stream;
 use tokio::runtime::Handle;
 use tokio::sync::{mpsc, watch};
@@ -127,7 +127,7 @@ impl LiveViewerAggregatorHandle {
     }
 
     fn lock_forwarders(&self) -> std::sync::MutexGuard<'_, BTreeMap<PlatformId, AbortHandle>> {
-        self.forwarders.lock().unwrap_or_else(|e| e.into_inner())
+        self.forwarders.lock_recover()
     }
 }
 

@@ -1,3 +1,4 @@
+use forge_types::RecoverRwLock;
 use std::sync::Arc;
 
 use forge_platform_core::{CollectionRevisionSignal, CollectionRevisions};
@@ -92,10 +93,7 @@ impl ContentSnapshot {
 
 impl VTubeClient {
     pub fn catalog(&self) -> VTubeCatalog {
-        self.content_state
-            .read()
-            .map(|snapshot| snapshot.catalog())
-            .unwrap_or_default()
+        self.content_state.read_recover().catalog()
     }
 
     pub fn catalog_changes(&self) -> VTubeCatalogChanges {
@@ -103,10 +101,7 @@ impl VTubeClient {
     }
 
     pub(crate) fn catalog_signal(&self) -> CatalogSignal {
-        self.content_state
-            .read()
-            .map(|snapshot| snapshot.signal.clone())
-            .unwrap_or_else(|poisoned| poisoned.into_inner().signal.clone())
+        self.content_state.read_recover().signal.clone()
     }
 }
 

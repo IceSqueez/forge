@@ -1,3 +1,7 @@
+use forge_types::{
+    ArgStack, EventId, IntegrationAvailability, IntegrationId, RecoverMutex, SubActionConfig,
+    SubActionOutcome, SubActionStep, SubActionTelemetry,
+};
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -6,10 +10,6 @@ use async_trait::async_trait;
 use forge_registry::{
     CancelSignal, ChainExecutor, ChainSignal, ChildChainOutcome, RegistryError, RunContext,
     StepTimer, SubActionRegistry, SubActionRunner,
-};
-use forge_types::{
-    ArgStack, EventId, IntegrationAvailability, IntegrationId, SubActionConfig, SubActionOutcome,
-    SubActionStep, SubActionTelemetry,
 };
 use tokio::sync::Notify;
 
@@ -84,7 +84,7 @@ impl IntegrationGate {
     }
 
     fn lock(&self) -> MutexGuard<'_, GateState> {
-        self.state.lock().unwrap_or_else(|e| e.into_inner())
+        self.state.lock_recover()
     }
 }
 

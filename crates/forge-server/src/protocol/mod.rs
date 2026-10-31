@@ -183,7 +183,7 @@ async fn route(req: WsRequest, ctx: &DispatchContext) -> WsResponse {
 
 #[cfg(test)]
 mod tests {
-    use forge_types::Secret;
+    use forge_types::{Action, ActionId, EventId, QueueId, Secret, SubActionStep, Variant};
     use std::collections::{BTreeSet, HashSet};
     use std::sync::Arc;
     use std::sync::atomic::Ordering;
@@ -195,7 +195,6 @@ mod tests {
     };
     use forge_runtime::{BusError, EventHistory};
     use forge_storage::{DataProvider, StorageError};
-    use forge_types::{Action, ActionId, EventId, QueueId, SubActionStep, Variant};
 
     use super::*;
     use crate::bus_adapter::{ClientFilterSet, EventFilter};
@@ -932,8 +931,8 @@ mod tests {
     #[tokio::test]
     async fn get_info_with_connected_client_returns_telemetry() {
         let ctx = make_registered_ctx(false, false).await;
-        ctx.server_info
-            .register(ctx.client.id, Arc::clone(&ctx.client))
+        ctx.bus_adapter
+            .attach_session(ctx.client.id, Arc::clone(&ctx.client))
             .await;
 
         let req = WsEnvelope {

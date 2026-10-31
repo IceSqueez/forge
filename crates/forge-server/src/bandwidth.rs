@@ -1,3 +1,4 @@
+use forge_types::RecoverMutex;
 use std::collections::VecDeque;
 use std::sync::{
     Mutex,
@@ -68,10 +69,7 @@ impl BandwidthTracker {
 
     pub(crate) fn current_bps(&self) -> u64 {
         let now = Instant::now();
-        let Ok(window) = self.outbound_window.lock() else {
-            return 0;
-        };
-        compute_bps(&window, now)
+        compute_bps(&self.outbound_window.lock_recover(), now)
     }
 
     pub(crate) fn peak(&self) -> u64 {

@@ -1,10 +1,9 @@
+use forge_types::{ChatViewer, PlatformId, RecoverMutex};
 use std::collections::HashSet;
 use std::sync::Mutex;
 
 use forge_events::Event;
 use forge_storage::{StorageError, ViewerRepo};
-use forge_types::ChatViewer;
-use forge_types::PlatformId;
 
 pub struct FirstChatLedger {
     seen: Mutex<HashSet<(PlatformId, String)>>,
@@ -35,8 +34,7 @@ impl FirstChatLedger {
         };
         let first = self
             .seen
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
+            .lock_recover()
             .insert((platform, viewer.id.clone()));
         if viewer.first_message != first {
             viewer.first_message = first;

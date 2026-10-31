@@ -1,4 +1,5 @@
-use std::sync::{Mutex, PoisonError};
+use forge_types::RecoverMutex;
+use std::sync::Mutex;
 
 use crate::{Event, EventPublisher};
 
@@ -15,18 +16,12 @@ pub struct CapturingPublisher {
 
 impl CapturingPublisher {
     pub fn events(&self) -> Vec<Event> {
-        self.events
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
+        self.events.lock_recover().clone()
     }
 }
 
 impl EventPublisher for CapturingPublisher {
     fn publish(&self, event: Event) {
-        self.events
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(event);
+        self.events.lock_recover().push(event);
     }
 }

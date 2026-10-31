@@ -1,3 +1,4 @@
+use forge_types::RecoverRwLock;
 use std::sync::{Arc, RwLock};
 
 use async_trait::async_trait;
@@ -34,17 +35,17 @@ impl SwitchableMidiSink {
     }
 
     pub fn install(&self, client: Arc<MidiClient>) {
-        let mut guard = self.live.write().unwrap_or_else(|e| e.into_inner());
+        let mut guard = self.live.write_recover();
         *guard = Some(client);
     }
 
     pub fn take(&self) -> Option<Arc<MidiClient>> {
-        let mut guard = self.live.write().unwrap_or_else(|e| e.into_inner());
+        let mut guard = self.live.write_recover();
         guard.take()
     }
 
     pub fn live(&self) -> Option<Arc<MidiClient>> {
-        let guard = self.live.read().unwrap_or_else(|e| e.into_inner());
+        let guard = self.live.read_recover();
         guard.clone()
     }
 }

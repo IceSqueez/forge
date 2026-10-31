@@ -1,5 +1,11 @@
-use crate::bus_adapter::{BusAdapter, ClientId};
+use std::collections::HashSet;
+use std::sync::atomic::Ordering;
+
+use crate::bus_adapter::{BusAdapter, ClientId, EventFilter};
 use crate::server_info::ServerInfo;
+use crate::ws_client::WsClient;
+
+const WILDCARD: &str = "*";
 
 pub struct EventFilterSnapshot {
     pub source: String,
@@ -36,7 +42,7 @@ pub(crate) async fn build_server_snapshot(
     server_info: &ServerInfo,
     bus_adapter: &BusAdapter,
 ) -> ServerSnapshot {
-    let connected_clients = connected_clients_snapshot(server_info, bus_adapter).await;
+    let connected_clients = connected_clients_snapshot(bus_adapter).await;
     let aggregate_events_per_second = connected_clients.iter().map(|c| c.events_per_second).sum();
     let bw = &server_info.bandwidth;
 
@@ -55,55 +61,63 @@ pub(crate) async fn build_server_snapshot(
     }
 }
 
-async fn connected_clients_snapshot(
-    server_info: &ServerInfo,
-    bus_adapter: &BusAdapter,
-) -> Vec<ConnectedClientSnapshot> {
-    let preview_tabs = bus_adapter.preview_tabs().await;
-    let rows: Vec<_> = {
-        let clients = server_info.connected_clients.read().await;
-        clients
-            .iter()
-            .filter(|(id, _)| !preview_tabs.contains(id))
-            .map(|(id, client)| {
-                (
-                    *id,
-                    client.identification.load_full(),
-                    client.client_type.load_full(),
-                    client.remote_addr.ip().to_string(),
-                    client.events_per_second(),
-                    client.uptime().whole_seconds(),
-                )
-            })
-            .collect()
-    };
+async fn connected_clients_snapshot(bus_adapter: &BusAdapter) -> Vec<ConnectedClientSnapshot> {
+    bus_adapter
+        .client_rows()
+        .await
+        .into_iter()
+        .map(ConnectedClientSnapshot::from)
+        .collect()
+}
 
-    let mut result = Vec::with_capacity(rows.len());
-    for (id, identification, client_type, remote_addr, events_per_second, uptime_seconds) in rows {
-        let subs = bus_adapter.current_subscriptions(id).await;
-        let subscriptions = subs
-            .iter()
-            .map(|f| EventFilterSnapshot {
-                source: f
-                    .source
-                    .and_then(|s| serde_json::to_value(s).ok())
-                    .and_then(|v| v.as_str().map(str::to_owned))
-                    .unwrap_or_else(|| "*".to_owned()),
-                kind: f.kind.clone().unwrap_or_else(|| "*".to_owned()),
-            })
-            .collect();
+pub(crate) struct ClientRow {
+    pub(crate) id: ClientId,
+    pub(crate) identification: String,
+    pub(crate) remote_addr: String,
+    pub(crate) client_type: String,
+    pub(crate) subscriptions: Vec<EventFilterSnapshot>,
+    pub(crate) events_per_second: f32,
+    pub(crate) uptime_seconds: i64,
+    pub(crate) bytes_sent: u64,
+}
 
-        result.push(ConnectedClientSnapshot {
+impl ClientRow {
+    pub(crate) fn new(id: ClientId, session: &WsClient, filters: &HashSet<EventFilter>) -> Self {
+        Self {
             id,
-            identification: identification.as_str().to_owned(),
-            remote_addr,
-            client_type: client_type.type_str().to_owned(),
-            subscriptions,
-            events_per_second,
-            uptime_seconds,
-        });
+            identification: session.identification.load_full().as_str().to_owned(),
+            remote_addr: session.remote_addr.ip().to_string(),
+            client_type: session.client_type.load_full().type_str().to_owned(),
+            subscriptions: filters
+                .iter()
+                .map(|f| EventFilterSnapshot {
+                    source: f
+                        .source
+                        .and_then(|s| serde_json::to_value(s).ok())
+                        .and_then(|v| v.as_str().map(str::to_owned))
+                        .unwrap_or_else(|| WILDCARD.to_owned()),
+                    kind: f.kind.clone().unwrap_or_else(|| WILDCARD.to_owned()),
+                })
+                .collect(),
+            events_per_second: session.events_per_second(),
+            uptime_seconds: session.uptime().whole_seconds(),
+            bytes_sent: session.bytes_sent_session.load(Ordering::Relaxed),
+        }
     }
-    result
+}
+
+impl From<ClientRow> for ConnectedClientSnapshot {
+    fn from(row: ClientRow) -> Self {
+        Self {
+            id: row.id,
+            identification: row.identification,
+            remote_addr: row.remote_addr,
+            client_type: row.client_type,
+            subscriptions: row.subscriptions,
+            events_per_second: row.events_per_second,
+            uptime_seconds: row.uptime_seconds,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -143,7 +157,7 @@ mod tests {
             );
             let client = Arc::new(WsClient::new(handle.id, addr, Arc::new(AtomicU64::new(0))));
             client.identification.store(Arc::new(label.to_owned()));
-            info.register(handle.id, client).await;
+            adapter.attach_session(handle.id, client).await;
         }
 
         let snapshot = build_server_snapshot(&info, &adapter).await;

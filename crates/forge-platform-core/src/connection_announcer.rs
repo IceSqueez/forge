@@ -1,3 +1,4 @@
+use forge_types::{RecoverMutex, RecoverRwLock};
 use std::sync::{Arc, Mutex, RwLock};
 
 use forge_events::EventPublisher;
@@ -20,18 +21,12 @@ impl ConnectionAnnouncer {
     }
 
     pub fn attach(&self, publisher: Arc<dyn EventPublisher>) {
-        *self
-            .publisher
-            .write()
-            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(publisher);
+        *self.publisher.write_recover() = Some(publisher);
     }
 
     pub fn announce(&self, state: ConnectionState, transition: ConnectionTransition) {
         let changed = {
-            let mut announced = self
-                .announced
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            let mut announced = self.announced.lock_recover();
             if *announced == state {
                 false
             } else {
@@ -39,11 +34,7 @@ impl ConnectionAnnouncer {
                 true
             }
         };
-        let publisher = self
-            .publisher
-            .read()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .clone();
+        let publisher = self.publisher.read_recover().clone();
         if changed && let Some(publisher) = publisher {
             publisher.publish(connection_state_changed_event(
                 &self.platform_id,

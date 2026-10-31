@@ -1,5 +1,6 @@
+use forge_types::RecoverMutex;
 use std::collections::{HashMap, VecDeque};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use forge_net::TaskOwner;
@@ -160,7 +161,7 @@ impl ShowSequencer {
     ) -> Result<ShowTicket, QueueFull> {
         let (done, ticket) = oneshot::channel();
         let start_presenter = {
-            let mut lanes = self.lanes.lock().unwrap_or_else(PoisonError::into_inner);
+            let mut lanes = self.lanes.lock_recover();
             let lane = lanes.entry(id.clone()).or_default();
             if lane.pending.len() >= SHOW_QUEUE_CAPACITY {
                 return Err(QueueFull);
@@ -178,15 +179,14 @@ impl ShowSequencer {
 
     pub(crate) fn depth(&self, id: &OverlayId) -> usize {
         self.lanes
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
+            .lock_recover()
             .get(id)
             .map_or(0, |lane| lane.pending.len())
     }
 
     pub(crate) fn drop_pending(&self, id: &OverlayId, end: ShowEnd) -> usize {
         let dropped: Vec<Pending> = {
-            let mut lanes = self.lanes.lock().unwrap_or_else(PoisonError::into_inner);
+            let mut lanes = self.lanes.lock_recover();
             let drained: Vec<Pending> = lanes
                 .get_mut(id)
                 .map(|lane| lane.pending.drain(..).collect())
@@ -282,7 +282,7 @@ impl ShowSequencer {
     }
 
     fn next(&self, id: &OverlayId) -> Option<Pending> {
-        let mut lanes = self.lanes.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut lanes = self.lanes.lock_recover();
         let lane = lanes.get_mut(id)?;
         let next = lane.pending.pop_front();
         let depth = lane.pending.len();

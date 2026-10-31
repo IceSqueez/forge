@@ -1,6 +1,6 @@
 use crate::api::poller::KickViewerSource;
 use crate::vocabulary::labels;
-use forge_types::UserText;
+use forge_types::{IntegrationId, MessageRef, RecoverRwLock, UserText, VerbatimText};
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, SystemTime};
 
@@ -11,7 +11,6 @@ use forge_platform_core::{
     HealthStream, HealthText, HealthValue, HeroBadge, HeroBadgeTone, ViewerReport,
 };
 use forge_registry::{RegistryError, TriggerRegistry};
-use forge_types::{IntegrationId, MessageRef, VerbatimText};
 use tokio::sync::{broadcast, watch};
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::BroadcastStream;
@@ -272,7 +271,8 @@ impl KickIntegrationBundle {
                     changed = expiry_rx.changed() => if changed.is_err() { break },
                 }
                 let expiry = *expiry_rx.borrow_and_update();
-                if let Ok(mut guard) = bundle.token_expires_at.write() {
+                {
+                    let mut guard = bundle.token_expires_at.write_recover();
                     *guard = expiry;
                 }
             }
@@ -388,10 +388,7 @@ impl BuiltinStatus for KickIntegrationBundle {
     }
 
     fn token_expiry(&self) -> Option<SystemTime> {
-        *self
-            .token_expires_at
-            .read()
-            .unwrap_or_else(|p| p.into_inner())
+        *self.token_expires_at.read_recover()
     }
 
     fn hero_name(&self) -> Option<String> {

@@ -1,7 +1,8 @@
 #![allow(clippy::unwrap_used)]
 
+use forge_types::RecoverMutex;
 use std::sync::mpsc;
-use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::sync::{Mutex, MutexGuard};
 
 use forge_components::{
     CatalogLanguage, ClockStyle, DateFormatChoice, DisplayFormats, FirstWeekday,
@@ -19,7 +20,7 @@ type Localized = (String, String);
 type Runner = fn(fn() -> Localized) -> Localized;
 
 fn serialized() -> MutexGuard<'static, ()> {
-    PROCESS_STATE.lock().unwrap_or_else(PoisonError::into_inner)
+    PROCESS_STATE.lock_recover()
 }
 
 fn localized() -> Localized {
@@ -344,10 +345,7 @@ mod missing_key_warnings {
         fn event(&self, event: &tracing::Event<'_>) {
             let mut fields = WarnFields::default();
             event.record(&mut fields);
-            self.0
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .push((fields.key, fields.message));
+            self.0.lock_recover().push((fields.key, fields.message));
         }
 
         fn enter(&self, _: &tracing::span::Id) {}
@@ -363,7 +361,7 @@ mod missing_key_warnings {
                 tracing::callsite::rebuild_interest_cache();
                 body();
             });
-            lines.lock().unwrap_or_else(PoisonError::into_inner).clone()
+            lines.lock_recover().clone()
         })
     }
 
@@ -457,7 +455,7 @@ mod missing_key_warnings {
                     tr_find_warned("absent_find_warned_once", None),
                 ]
             });
-            let warnings = lines.lock().unwrap_or_else(PoisonError::into_inner).clone();
+            let warnings = lines.lock_recover().clone();
             (found, warnings)
         });
 

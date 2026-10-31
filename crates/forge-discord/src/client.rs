@@ -1,3 +1,4 @@
+use forge_types::{IntegrationId, RecoverMutex, Secret};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -9,7 +10,6 @@ use forge_net::{
 };
 use forge_platform_core::ConnectionState;
 use forge_storage::{CredentialId, CredentialsRepo};
-use forge_types::{IntegrationId, Secret};
 use tokio::sync::broadcast;
 
 use crate::content::{DiscordContentSnapshot, make_content_state, record_send};
@@ -118,7 +118,7 @@ impl DiscordClient {
     }
 
     pub(crate) fn connection_state(&self) -> ConnectionState {
-        let snap = self.content_state.lock().unwrap_or_else(|p| p.into_inner());
+        let snap = self.content_state.lock_recover();
         if snap.webhook_names.is_empty() {
             ConnectionState::Disconnected
         } else {
@@ -159,7 +159,7 @@ impl DiscordClient {
 
     fn record_missing_webhook_failure(&self, webhook_name: &str, err: &DiscordError) {
         let deltas = {
-            let mut snap = self.health_state.lock().unwrap_or_else(|p| p.into_inner());
+            let mut snap = self.health_state.lock_recover();
             record_missing_webhook(&mut snap)
         };
         for delta in deltas {
@@ -170,7 +170,7 @@ impl DiscordClient {
             let _ = self.health_tx.send(delta);
         }
         {
-            let mut snap = self.content_state.lock().unwrap_or_else(|p| p.into_inner());
+            let mut snap = self.content_state.lock_recover();
             record_send(&mut snap, webhook_name, None, false, false);
         }
         publish_failed(self.publisher.as_ref(), webhook_name, err);
@@ -400,7 +400,7 @@ impl DiscordClient {
         start: Instant,
     ) -> Delivered {
         if let Some((limit, remaining, reset_after)) = bucket_headers(&response) {
-            let mut rl = self.rate_limiter.lock().unwrap_or_else(|p| p.into_inner());
+            let mut rl = self.rate_limiter.lock_recover();
             rl.record_response(Instant::now(), webhook_name, limit, remaining, reset_after);
         }
         Delivered {
@@ -419,8 +419,7 @@ impl DiscordClient {
         if matches!(failure, GatewayFailure::BudgetExhausted { .. }) {
             let global_wait = self
                 .rate_limiter
-                .lock()
-                .unwrap_or_else(|p| p.into_inner())
+                .lock_recover()
                 .global_wait_duration(Instant::now())
                 .unwrap_or_default();
             let err = DiscordError::RateLimited {
@@ -468,7 +467,7 @@ impl DiscordClient {
     }
 
     fn check_pre_send(&self, webhook_name: &str) -> Result<(), DiscordError> {
-        let mut rl = self.rate_limiter.lock().unwrap_or_else(|p| p.into_inner());
+        let mut rl = self.rate_limiter.lock_recover();
         let now = Instant::now();
         if let Some(wait) = rl.global_wait_duration(now) {
             let ra = wait.as_secs_f64();
@@ -488,7 +487,7 @@ impl DiscordClient {
     }
 
     fn observe_throttle(&self, webhook_name: &str, wait: Duration, scope: ThrottleScope) {
-        let mut rl = self.rate_limiter.lock().unwrap_or_else(|p| p.into_inner());
+        let mut rl = self.rate_limiter.lock_recover();
         match scope {
             ThrottleScope::Global => rl.observe_global_throttle(Instant::now(), wait),
             ThrottleScope::Bucket => rl.observe_remote_throttle(Instant::now(), webhook_name, wait),
@@ -504,17 +503,17 @@ impl DiscordClient {
         record: SendRecord,
     ) {
         let (rl_remaining, rl_total) = {
-            let rl = self.rate_limiter.lock().unwrap_or_else(|p| p.into_inner());
+            let rl = self.rate_limiter.lock_recover();
             rl.budget(webhook_name)
         };
         let reset_hint = {
-            let rl = self.rate_limiter.lock().unwrap_or_else(|p| p.into_inner());
+            let rl = self.rate_limiter.lock_recover();
             rl.reset_hint_secs(Instant::now(), webhook_name)
                 .and_then(|secs| Duration::try_from_secs_f64(secs.round()).ok())
         };
 
         let deltas = {
-            let mut snap = self.health_state.lock().unwrap_or_else(|p| p.into_inner());
+            let mut snap = self.health_state.lock_recover();
             update_on_send(
                 &mut snap,
                 latency_ms,
@@ -534,7 +533,7 @@ impl DiscordClient {
 
         {
             let has_embed = record.embed_count > 0;
-            let mut snap = self.content_state.lock().unwrap_or_else(|p| p.into_inner());
+            let mut snap = self.content_state.lock_recover();
             record_send(&mut snap, webhook_name, message_id, has_embed, ok);
         }
     }

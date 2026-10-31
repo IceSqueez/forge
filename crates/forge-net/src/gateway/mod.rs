@@ -13,8 +13,9 @@ mod target;
 mod timings;
 mod user_directed;
 
+use forge_types::RecoverMutex;
 use std::fmt;
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
 use reqwest::header::{
@@ -344,11 +345,7 @@ impl Gateway {
     }
 
     fn streaming_client(&self) -> Result<reqwest::Client, GatewayFailure> {
-        let mut slot = self
-            .inner
-            .streaming_client
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
+        let mut slot = self.inner.streaming_client.lock_recover();
         if let Some(client) = slot.as_ref() {
             return Ok(client.clone());
         }

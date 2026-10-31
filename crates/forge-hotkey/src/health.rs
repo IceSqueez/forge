@@ -1,5 +1,4 @@
 use std::collections::VecDeque;
-use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 
 use time::OffsetDateTime;
@@ -24,7 +23,6 @@ pub(crate) struct TriggerRecord {
 
 #[derive(Default)]
 pub(crate) struct HotkeyHealthSnapshot {
-    pub(crate) registered_count: usize,
     pub(crate) last_triggered_at: Option<OffsetDateTime>,
     pub(crate) last_triggered_combo: Option<String>,
     pub(crate) conflict_count: usize,
@@ -79,10 +77,10 @@ pub(crate) fn registered_count_health_value(enabled: bool, count: usize) -> Heal
     }
 }
 
-fn last_triggered_value(snap: &HotkeyHealthSnapshot) -> HealthValue {
-    let primary = match (snap.last_triggered_at, &snap.last_triggered_combo) {
-        (Some(at), Some(combo)) => messages::health_last_triggered_at(at, combo).into(),
-        _ => HealthText::placeholder(),
+fn last_triggered_text(last: Option<&(OffsetDateTime, String)>) -> HealthValue {
+    let primary = match last {
+        Some((at, combo)) => messages::health_last_triggered_at(*at, combo).into(),
+        None => HealthText::placeholder(),
     };
     HealthValue::Text {
         primary,
@@ -93,26 +91,27 @@ fn last_triggered_value(snap: &HotkeyHealthSnapshot) -> HealthValue {
 pub(crate) fn build_trigger_delta(snap: &HotkeyHealthSnapshot) -> HealthDelta {
     HealthDelta {
         metric: LAST_TRIGGERED_METRIC,
-        new_value: last_triggered_value(snap),
+        new_value: last_triggered_text(
+            snap.last_triggered_at
+                .zip(snap.last_triggered_combo.clone())
+                .as_ref(),
+        ),
     }
 }
 
 impl BuiltinHealth for HotkeyClient {
     fn metrics(&self) -> [HealthMetric; 4] {
-        let snap = self.health_state.lock().unwrap_or_else(|p| p.into_inner());
+        let view = self.view();
 
-        let registered_value = registered_count_health_value(
-            self.enabled.load(Ordering::Relaxed),
-            snap.registered_count,
-        );
+        let registered_value = registered_count_health_value(view.enabled, view.registered_count());
 
         let conflicts_value = HealthValue::Text {
-            primary: HealthText::Count(snap.conflict_count as u64),
+            primary: HealthText::Count(view.conflicts as u64),
             secondary: Some(messages::health_conflicts_hint().into()),
         };
 
         let portal_value =
-            backend_health_value(self.portal_available, snap.backend_session_lost.as_deref());
+            backend_health_value(self.portal_available, view.backend_session_lost.as_deref());
 
         [
             HealthMetric {
@@ -121,7 +120,7 @@ impl BuiltinHealth for HotkeyClient {
             },
             HealthMetric {
                 id: LAST_TRIGGERED_METRIC,
-                value: last_triggered_value(&snap),
+                value: last_triggered_text(view.last_triggered.as_ref()),
             },
             HealthMetric {
                 id: CONFLICTS_METRIC,

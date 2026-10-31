@@ -1,3 +1,4 @@
+use forge_types::{MessageRef, RecoverMutex};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -6,7 +7,6 @@ use forge_events::EventPublisher;
 use forge_platform_core::{
     ConnectionAnnouncer, ConnectionState, ConnectionTransition, HealthDelta,
 };
-use forge_types::MessageRef;
 use time::OffsetDateTime;
 use tokio::sync::broadcast;
 
@@ -190,10 +190,7 @@ impl StatusBoard {
     }
 
     pub(crate) fn snapshot(&self) -> PollStatus {
-        self.status
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .clone()
+        self.status.lock_recover().clone()
     }
 
     pub(crate) fn subscribe_health(&self) -> broadcast::Receiver<HealthDelta> {
@@ -252,10 +249,7 @@ impl StatusBoard {
 
     fn update(&self, transition: ConnectionTransition, change: impl FnOnce(&mut PollStatus)) {
         let (snapshot, changed) = {
-            let mut status = self
-                .status
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            let mut status = self.status.lock_recover();
             let before = status.clone();
             change(&mut status);
             (status.clone(), *status != before)

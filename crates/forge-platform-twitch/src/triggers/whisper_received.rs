@@ -5,7 +5,8 @@ use forge_registry::{
     TriggerKindDescriptor, TriggerVariables, joined_condition,
 };
 use forge_types::{
-    DeclaredVariable, MessageRef, PlatformId, TriggerConfig, UserText, Variant, VariantKind,
+    DeclaredVariable, MessageRef, PlatformId, RecoverMutex, TriggerConfig, UserText, Variant,
+    VariantKind,
 };
 use regex::Regex;
 use std::collections::HashMap;
@@ -24,10 +25,7 @@ pub(crate) struct WhisperReceivedDescriptor;
 
 fn compiled_pattern(pattern: &str) -> Option<Regex> {
     static CACHE: OnceLock<Mutex<HashMap<String, Option<Regex>>>> = OnceLock::new();
-    let mut cache = CACHE
-        .get_or_init(Default::default)
-        .lock()
-        .unwrap_or_else(|p| p.into_inner());
+    let mut cache = CACHE.get_or_init(Default::default).lock_recover();
     if let Some(compiled) = cache.get(pattern) {
         return compiled.clone();
     }

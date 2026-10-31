@@ -1,6 +1,5 @@
 use async_trait::async_trait;
 
-use crate::catalog::read_lock;
 use crate::client::ObsClient;
 use crate::error::ObsError;
 use crate::source::{ObsSource, SourceInfo};
@@ -8,37 +7,35 @@ use crate::source::{ObsSource, SourceInfo};
 #[async_trait]
 impl ObsSource for ObsClient {
     async fn scenes(&self) -> Result<Vec<String>, ObsError> {
-        let catalog = read_lock(&self.catalog_state);
-        Ok(catalog.scenes.clone())
+        Ok(self.mirror.read(|catalog| catalog.scenes.clone()))
     }
 
     async fn current_scene(&self) -> Result<Option<String>, ObsError> {
-        let catalog = read_lock(&self.catalog_state);
-        Ok(catalog.current_scene.clone())
+        Ok(self.mirror.read(|catalog| catalog.current_scene.clone()))
     }
 
     async fn sources(&self, scene: &str) -> Result<Vec<SourceInfo>, ObsError> {
-        let catalog = read_lock(&self.catalog_state);
-        Ok(catalog
-            .sources
-            .get(scene)
-            .map(|v| {
-                v.iter()
-                    .map(|s| SourceInfo {
-                        name: s.name.clone(),
-                        visible: s.visible,
-                        locked: s.locked,
-                        audio_db: s.audio_db,
-                        kind: s.kind.clone(),
-                    })
-                    .collect()
-            })
-            .unwrap_or_default())
+        Ok(self.mirror.read(|catalog| {
+            catalog
+                .sources
+                .get(scene)
+                .map(|v| {
+                    v.iter()
+                        .map(|s| SourceInfo {
+                            name: s.name.clone(),
+                            visible: s.visible,
+                            locked: s.locked,
+                            audio_db: s.audio_db,
+                            kind: s.kind.clone(),
+                        })
+                        .collect()
+                })
+                .unwrap_or_default()
+        }))
     }
 
     async fn audio_inputs(&self) -> Result<Vec<String>, ObsError> {
-        let catalog = read_lock(&self.catalog_state);
-        Ok(catalog.audio_inputs.clone())
+        Ok(self.mirror.read(|catalog| catalog.audio_inputs.clone()))
     }
 
     async fn transitions(&self) -> Result<Vec<String>, ObsError> {
@@ -78,7 +75,7 @@ mod tests {
     async fn scenes_returns_catalog_scenes() {
         let client = ObsClient::new_for_test("localhost:4455".to_owned());
         {
-            let mut catalog = client.catalog_state.write().unwrap();
+            let mut catalog = client.mirror.write_for_test();
             catalog.scenes = vec!["Gameplay".to_owned(), "BRB".to_owned()];
         }
         let scenes = client.scenes().await.unwrap();
@@ -89,7 +86,7 @@ mod tests {
     async fn current_scene_returns_catalog_current() {
         let client = ObsClient::new_for_test("localhost:4455".to_owned());
         {
-            let mut catalog = client.catalog_state.write().unwrap();
+            let mut catalog = client.mirror.write_for_test();
             catalog.current_scene = Some("Gameplay".to_owned());
         }
         let scene = client.current_scene().await.unwrap();
@@ -107,7 +104,7 @@ mod tests {
     async fn sources_returns_cached_sources() {
         let client = ObsClient::new_for_test("localhost:4455".to_owned());
         {
-            let mut catalog = client.catalog_state.write().unwrap();
+            let mut catalog = client.mirror.write_for_test();
             catalog.sources.insert(
                 "Gameplay".to_owned(),
                 vec![SourceInfo {
@@ -128,7 +125,7 @@ mod tests {
     async fn audio_inputs_returns_catalog_inputs() {
         let client = ObsClient::new_for_test("localhost:4455".to_owned());
         {
-            let mut catalog = client.catalog_state.write().unwrap();
+            let mut catalog = client.mirror.write_for_test();
             catalog.audio_inputs = vec!["Mic/Aux".to_owned(), "Desktop Audio".to_owned()];
         }
         let inputs = client.audio_inputs().await.unwrap();

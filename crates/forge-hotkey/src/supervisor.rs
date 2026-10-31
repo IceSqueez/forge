@@ -1,3 +1,4 @@
+use forge_types::RecoverMutex;
 use std::collections::HashSet;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
@@ -95,11 +96,7 @@ fn handle_session_event(client: &Arc<HotkeyClient>, event: BackendSessionEvent) 
         emit_portal_event(client, fields::portal::reason::SESSION_LOST, detail);
     }
     let new_value = backend_health_value(client.portal_available, lost_detail.as_deref());
-    client
-        .health_state
-        .lock()
-        .unwrap_or_else(|p| p.into_inner())
-        .backend_session_lost = lost_detail;
+    client.health_state.lock_recover().backend_session_lost = lost_detail;
     #[expect(
         clippy::let_underscore_must_use,
         reason = "having no subscribers is a normal state"
@@ -124,13 +121,7 @@ fn handle_press(client: &Arc<HotkeyClient>, event: HotkeyFiredEvent) {
 
     let combo_str = event.combo.as_str().to_owned();
 
-    let registered = client
-        .registry
-        .read()
-        .unwrap_or_else(|p| p.into_inner())
-        .contains_key(&combo_str);
-
-    if !registered {
+    if !client.has_registered_combo(&combo_str) {
         return;
     }
 
@@ -139,10 +130,7 @@ fn handle_press(client: &Arc<HotkeyClient>, event: HotkeyFiredEvent) {
     }
 
     let delta = {
-        let mut snap = client
-            .health_state
-            .lock()
-            .unwrap_or_else(|p| p.into_inner());
+        let mut snap = client.health_state.lock_recover();
         snap.record_trigger(combo_str);
         build_trigger_delta(&snap)
     };
@@ -248,7 +236,7 @@ async fn disable_engine(client: &Arc<HotkeyClient>) -> Result<(), HotkeyError> {
         }
     }
     if let Some(error) = first_failure {
-        *client.unreleased.lock().unwrap_or_else(|p| p.into_inner()) = unreleased;
+        *client.unreleased.lock_recover() = unreleased;
         return Err(error);
     }
     emit_engine_state_change(client, false);
@@ -256,7 +244,7 @@ async fn disable_engine(client: &Arc<HotkeyClient>) -> Result<(), HotkeyError> {
 }
 
 fn take_unreleased(client: &HotkeyClient) -> HashSet<HotkeyId> {
-    std::mem::take(&mut client.unreleased.lock().unwrap_or_else(|p| p.into_inner()))
+    std::mem::take(&mut client.unreleased.lock_recover())
 }
 
 fn record_enable_failures(client: &Arc<HotkeyClient>, failures: &[EnableFailure]) {
@@ -267,10 +255,7 @@ fn record_enable_failures(client: &Arc<HotkeyClient>, failures: &[EnableFailure]
     if conflicts == 0 {
         return;
     }
-    let mut snap = client
-        .health_state
-        .lock()
-        .unwrap_or_else(|p| p.into_inner());
+    let mut snap = client.health_state.lock_recover();
     snap.conflict_count = snap.conflict_count.saturating_add(conflicts);
 }
 
@@ -283,13 +268,7 @@ fn emit_enable_failed(client: &Arc<HotkeyClient>, failures: &[EnableFailure]) {
 }
 
 fn known_combos(client: &Arc<HotkeyClient>) -> Vec<(HotkeyId, HotkeyCombo)> {
-    client
-        .id_to_combo
-        .read()
-        .unwrap_or_else(|p| p.into_inner())
-        .iter()
-        .map(|(&id, combo)| (id, combo.clone()))
-        .collect()
+    client.registered_combos()
 }
 
 fn emit_engine_state_change(client: &Arc<HotkeyClient>, enabled: bool) {
@@ -302,21 +281,25 @@ fn emit_engine_state_change(client: &Arc<HotkeyClient>, enabled: bool) {
         .publisher
         .publish(Event::new(EventSource::Hotkey, kind, serde_json::json!({})));
 
-    let delta = {
-        let snap = client
-            .health_state
-            .lock()
-            .unwrap_or_else(|p| p.into_inner());
-        HealthDelta {
-            metric: REGISTERED_METRIC,
-            new_value: registered_count_health_value(enabled, snap.registered_count),
-        }
+    let delta = HealthDelta {
+        metric: REGISTERED_METRIC,
+        new_value: registered_count_health_value(enabled, client.registered_count()),
     };
     #[expect(
         clippy::let_underscore_must_use,
         reason = "having no subscribers is a normal state"
     )]
     let _ = client.health_tx.send(delta);
+}
+
+fn registered_delta(client: &HotkeyClient) -> HealthDelta {
+    HealthDelta {
+        metric: REGISTERED_METRIC,
+        new_value: registered_count_health_value(
+            client.enabled.load(Ordering::Relaxed),
+            client.registered_count(),
+        ),
+    }
 }
 
 pub(crate) fn emit_registered(client: &HotkeyClient, combo_str: &str, id_u32: u32) {
@@ -326,20 +309,7 @@ pub(crate) fn emit_registered(client: &HotkeyClient, combo_str: &str, id_u32: u3
         serde_json::json!({ (fields::COMBO): combo_str, (fields::ID): id_u32 }),
     ));
 
-    let delta: HealthDelta = {
-        let mut snap = client
-            .health_state
-            .lock()
-            .unwrap_or_else(|p| p.into_inner());
-        snap.registered_count = snap.registered_count.saturating_add(1);
-        HealthDelta {
-            metric: REGISTERED_METRIC,
-            new_value: registered_count_health_value(
-                client.enabled.load(Ordering::Relaxed),
-                snap.registered_count,
-            ),
-        }
-    };
+    let delta = registered_delta(client);
     #[expect(
         clippy::let_underscore_must_use,
         reason = "having no subscribers is a normal state"
@@ -354,20 +324,7 @@ pub(crate) fn emit_unregistered(client: &HotkeyClient, combo_str: &str, id_u32: 
         serde_json::json!({ (fields::COMBO): combo_str, (fields::ID): id_u32 }),
     ));
 
-    let delta = {
-        let mut snap = client
-            .health_state
-            .lock()
-            .unwrap_or_else(|p| p.into_inner());
-        snap.registered_count = snap.registered_count.saturating_sub(1);
-        HealthDelta {
-            metric: REGISTERED_METRIC,
-            new_value: registered_count_health_value(
-                client.enabled.load(Ordering::Relaxed),
-                snap.registered_count,
-            ),
-        }
-    };
+    let delta = registered_delta(client);
     #[expect(
         clippy::let_underscore_must_use,
         reason = "having no subscribers is a normal state"

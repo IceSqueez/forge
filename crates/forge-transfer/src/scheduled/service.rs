@@ -482,13 +482,12 @@ mod tests {
         });
         let mut status = handle.status();
 
-        let first_run = tokio::time::timeout(
-            std::time::Duration::from_secs(10),
-            status.wait_for(|status| status.state == ScheduleState::Running),
-        )
-        .await;
+        let first_run_started = status
+            .wait_for(|status| status.state == ScheduleState::Running)
+            .await
+            .is_ok();
 
         handle.shutdown();
-        assert!(first_run.is_ok(), "the first backup never started");
+        assert!(first_run_started, "the first backup never started");
     }
 }

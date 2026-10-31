@@ -2,7 +2,7 @@ use forge_platform_core::{
     QuickAction, QuickActionAccent, QuickActionLiveness, QuickActions, SectionIcon,
 };
 use forge_registry::{ConfigChoice, SubActionConfig};
-use forge_types::{MessageCode, SubActionStep, Variant};
+use forge_types::{MessageCode, RecoverMutex, SubActionStep, Variant};
 
 use crate::client::MidiClient;
 use crate::decode::NOTE_ON_STATUS;
@@ -53,7 +53,7 @@ fn send_action(
 
 impl QuickActions for MidiClient {
     fn actions(&self) -> Vec<QuickAction> {
-        let snap = self.content_state.lock().unwrap_or_else(|p| p.into_inner());
+        let snap = self.content_state.lock_recover();
         let first_port = snap.output_ports.first().map(|p| p.name.clone());
         drop(snap);
 
@@ -120,16 +120,14 @@ mod tests {
 
     use forge_platform_core::QuickActions;
     use forge_registry::{RunContext, SubActionRunner};
-    use forge_types::{ArgStack, EventId, SubActionOutcome};
+    use forge_types::{ArgStack, EventId, SubActionOutcome, UserText};
 
     use super::*;
     use crate::client::MidiClient;
-    use crate::content::record_port_added;
     use crate::error::MidiError;
     use crate::events::{MidiOutMessage, MidiPortInfo, PortDirection};
     use crate::runners::MidiSendRunner;
     use crate::sink::MidiSink;
-    use forge_types::UserText;
 
     const FULL_STORED_TEMPLATES: [(MessageCode, &str); 4] = [
         (
@@ -184,13 +182,10 @@ mod tests {
         let c = MidiClient::new_for_test();
         {
             let mut snap = c.content_state.lock().unwrap();
-            record_port_added(
-                &mut snap,
-                MidiPortInfo {
-                    name: "Synth".to_owned(),
-                    direction: PortDirection::Output,
-                },
-            );
+            snap.output_ports.push(MidiPortInfo {
+                name: "Synth".to_owned(),
+                direction: PortDirection::Output,
+            });
         }
         c
     }

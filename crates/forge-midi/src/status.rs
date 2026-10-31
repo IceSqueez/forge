@@ -1,8 +1,8 @@
+use forge_types::{IntegrationId, RecoverMutex, UserText};
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use forge_platform_core::{BuiltinStatus, CapabilityFlags, ConnectionState, HeaderAction};
-use forge_types::{IntegrationId, UserText};
 
 use crate::client::MidiClient;
 
@@ -23,7 +23,7 @@ impl BuiltinStatus for MidiClient {
         if !self.enabled.load(Ordering::Relaxed) {
             return ConnectionState::Disconnected;
         }
-        let snap = self.content_state.lock().unwrap_or_else(|p| p.into_inner());
+        let snap = self.content_state.lock_recover();
         if snap.input_ports.is_empty() && snap.output_ports.is_empty() {
             ConnectionState::Disconnected
         } else {
@@ -47,7 +47,7 @@ impl BuiltinStatus for MidiClient {
     }
 
     fn activity_count(&self) -> Option<usize> {
-        let snap = self.content_state.lock().unwrap_or_else(|p| p.into_inner());
+        let snap = self.content_state.lock_recover();
         Some(snap.input_ports.len())
     }
 
@@ -64,11 +64,7 @@ mod tests {
     #[test]
     fn connection_is_disconnected_while_input_is_disabled_despite_open_ports() {
         let client = MidiClient::new_for_test();
-        client
-            .content_state
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .input_ports = vec![MidiPortInfo {
+        client.content_state.lock_recover().input_ports = vec![MidiPortInfo {
             name: "Piano".to_owned(),
             direction: PortDirection::Input,
         }];

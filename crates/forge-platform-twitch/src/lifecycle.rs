@@ -1,3 +1,4 @@
+use forge_types::RecoverRwLock;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 
@@ -83,7 +84,7 @@ impl TwitchLifecycle {
     }
 
     pub(crate) fn snapshot(&self) -> LifecycleSnapshot {
-        let entities = *self.entities.read().unwrap_or_else(|p| p.into_inner());
+        let entities = *self.entities.read_recover();
         LifecycleSnapshot {
             poll: entities.poll,
             prediction: entities.prediction,
@@ -112,7 +113,7 @@ impl TwitchLifecycle {
             _ => {}
         }
         let changed = {
-            let mut entities = self.entities.write().unwrap_or_else(|p| p.into_inner());
+            let mut entities = self.entities.write_recover();
             let before = entities.liveness();
             Self::apply_phase_change(&mut entities, subscription_type, event, self_broadcaster_id);
             before != entities.liveness()
@@ -152,10 +153,7 @@ impl TwitchLifecycle {
     }
 
     pub(crate) fn shield_phase(&self) -> ShieldPhase {
-        self.entities
-            .read()
-            .unwrap_or_else(|p| p.into_inner())
-            .shield
+        self.entities.read_recover().shield
     }
 
     pub(crate) fn quick_action_revisions(&self) -> CollectionRevisions {
@@ -164,7 +162,7 @@ impl TwitchLifecycle {
 
     fn set_shield(&self, phase: ShieldPhase) {
         let changed = {
-            let mut entities = self.entities.write().unwrap_or_else(|p| p.into_inner());
+            let mut entities = self.entities.write_recover();
             std::mem::replace(&mut entities.shield, phase) != phase
         };
         if changed {
@@ -187,7 +185,7 @@ impl TwitchLifecycle {
 
     pub(crate) fn raid_started(&self) {
         {
-            let mut entities = self.entities.write().unwrap_or_else(|p| p.into_inner());
+            let mut entities = self.entities.write_recover();
             entities.raid_until = Some(Instant::now() + RAID_COUNTDOWN);
         }
         self.quick_actions.bump();
@@ -202,7 +200,7 @@ impl TwitchLifecycle {
 
     pub(crate) fn raid_canceled(&self) {
         {
-            let mut entities = self.entities.write().unwrap_or_else(|p| p.into_inner());
+            let mut entities = self.entities.write_recover();
             entities.raid_until = None;
         }
         self.quick_actions.bump();
@@ -210,7 +208,7 @@ impl TwitchLifecycle {
 
     pub(crate) fn forget_phases(&self) {
         {
-            let mut entities = self.entities.write().unwrap_or_else(|p| p.into_inner());
+            let mut entities = self.entities.write_recover();
             entities.poll = PollPhase::Unknown;
             entities.prediction = PredictionPhase::Unknown;
             entities.shield = ShieldPhase::Unknown;
@@ -232,7 +230,7 @@ impl TwitchLifecycle {
             } else {
                 PollPhase::Absent
             };
-            let mut entities = self.entities.write().unwrap_or_else(|p| p.into_inner());
+            let mut entities = self.entities.write_recover();
             entities.poll = phase;
             drop(entities);
             self.quick_actions.bump();
@@ -248,7 +246,7 @@ impl TwitchLifecycle {
             } else {
                 PredictionPhase::Absent
             };
-            let mut entities = self.entities.write().unwrap_or_else(|p| p.into_inner());
+            let mut entities = self.entities.write_recover();
             entities.prediction = phase;
             drop(entities);
             self.quick_actions.bump();

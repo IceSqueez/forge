@@ -1,3 +1,4 @@
+use forge_types::RecoverMutex;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -178,8 +179,7 @@ impl RateLimiter for GlobalThrottleGate {
     async fn acquire(&self, _weight: u32) -> Result<forge_net::RateLimitOutcome, RateLimitError> {
         let global_wait = self
             .limiter
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
+            .lock_recover()
             .global_wait_duration(Instant::now());
         Ok(
             global_wait.map_or(forge_net::RateLimitOutcome::Granted, |wait_for| {

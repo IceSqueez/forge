@@ -1,10 +1,10 @@
+use forge_types::{ArgStack, EventId, MessageArg, RecoverMutex, UserText, Variant};
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use forge_events::{Event, EventPublisher};
 use forge_registry::RunContext;
-use forge_types::{ArgStack, EventId, MessageArg, UserText, Variant};
 
 use crate::{InputSettings, ObsError, ObsSink, RecordStatus, SceneList, StreamStatus};
 
@@ -168,21 +168,15 @@ impl RecordingSink {
     }
 
     pub(crate) fn calls(&self) -> Vec<String> {
-        self.calls.lock().unwrap_or_else(|p| p.into_inner()).clone()
+        self.calls.lock_recover().clone()
     }
 
     pub(crate) fn input_settings_calls(&self) -> Vec<InputSettingsCall> {
-        self.input_settings
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .clone()
+        self.input_settings.lock_recover().clone()
     }
 
     fn record(&self, call: String) -> Result<(), ObsError> {
-        self.calls
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .push(call);
+        self.calls.lock_recover().push(call);
         if self.fail {
             Err(ObsError::Disconnected)
         } else {
@@ -248,8 +242,7 @@ impl ObsSink for RecordingSink {
         overlay: bool,
     ) -> Result<(), ObsError> {
         self.input_settings
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
+            .lock_recover()
             .push((input.to_owned(), settings.clone(), overlay));
         self.record(format!("set_input_settings({input})"))
     }

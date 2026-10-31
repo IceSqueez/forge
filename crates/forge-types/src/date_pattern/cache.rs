@@ -1,5 +1,6 @@
+use crate::RecoverRwLock;
 use std::collections::{HashMap, VecDeque};
-use std::sync::{Arc, LazyLock, PoisonError, RwLock};
+use std::sync::{Arc, LazyLock, RwLock};
 
 use super::{DatePattern, DatePatternError};
 
@@ -37,21 +38,14 @@ pub fn shared_date_pattern(pattern: &str) -> ParsedPattern {
 }
 
 pub(super) fn cached_pattern(pattern: &str) -> CachedPattern {
-    if let Some(parsed) = PATTERN_CACHE
-        .read()
-        .unwrap_or_else(PoisonError::into_inner)
-        .entries
-        .get(pattern)
-    {
+    if let Some(parsed) = PATTERN_CACHE.read_recover().entries.get(pattern) {
         return CachedPattern {
             parsed: Arc::clone(parsed),
             newly_parsed: false,
         };
     }
     let parsed = Arc::new(DatePattern::parse(pattern));
-    let mut cache = PATTERN_CACHE
-        .write()
-        .unwrap_or_else(PoisonError::into_inner);
+    let mut cache = PATTERN_CACHE.write_recover();
     if let Some(existing) = cache.entries.get(pattern) {
         return CachedPattern {
             parsed: Arc::clone(existing),

@@ -1,6 +1,6 @@
 use forge_platform_core::{DeviceAuthEnd, PlatformError};
 use forge_storage::StorageError;
-use forge_types::OAuthToken;
+use forge_types::{OAuthToken, RecoverMutex};
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 use tracing::debug;
@@ -56,11 +56,7 @@ impl TwitchBotAccount {
             .await
             .take()
             .ok_or(BotLoginError::NotStarted)?;
-        let cancel = self
-            .login_cancel
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .clone();
+        let cancel = self.login_cancel.lock_recover().clone();
         let bundle = flow.wait_for_authorization(cancel).await?;
         self.adopt_grant(bundle).await
     }
@@ -97,7 +93,7 @@ impl TwitchBotAccount {
     }
 
     pub fn cancel_login(&self) {
-        let mut guard = self.login_cancel.lock().unwrap_or_else(|p| p.into_inner());
+        let mut guard = self.login_cancel.lock_recover();
         guard.cancel();
         *guard = CancellationToken::new();
     }

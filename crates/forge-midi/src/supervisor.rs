@@ -1,3 +1,4 @@
+use forge_types::RecoverMutex;
 use std::collections::HashMap;
 use std::ops::ControlFlow;
 use std::sync::atomic::Ordering;
@@ -14,7 +15,7 @@ use forge_platform_core::HealthDelta;
 
 use crate::backend::InputHandle;
 use crate::client::MidiClient;
-use crate::content::{record_midi_event, record_port_added, record_port_removed};
+use crate::content::record_midi_event;
 use crate::decode::decode_midi_bytes;
 use crate::events::{MidiEvent, MidiPortInfo, PortDirection};
 use crate::health::{
@@ -27,6 +28,23 @@ use crate::vocabulary::event_kinds;
 use crate::vocabulary::fields::port as port_fields;
 
 pub(crate) type RawEvent = (u64, Vec<u8>, String);
+
+#[derive(Default)]
+struct PortState {
+    inputs: Vec<MidiPortInfo>,
+    outputs: Vec<MidiPortInfo>,
+    handles: HashMap<String, Box<dyn InputHandle>>,
+}
+
+impl PortState {
+    fn publish(&self, client: &MidiClient) {
+        client.content_state.lock_recover().set_ports(
+            self.inputs.clone(),
+            self.outputs.clone(),
+            self.handles.keys().cloned().collect(),
+        );
+    }
+}
 
 pub(crate) enum SupervisorCommand {
     Enable,
@@ -41,21 +59,12 @@ pub(crate) async fn run_supervisor(
     mut merged_rx: mpsc::Receiver<RawEvent>,
     mut control_rx: mpsc::Receiver<SupervisorCommand>,
 ) {
-    let mut input_snap: Vec<MidiPortInfo> = Vec::new();
-    let mut output_snap: Vec<MidiPortInfo> = Vec::new();
-    let mut handles: HashMap<String, Box<dyn InputHandle>> = HashMap::new();
+    let mut ports = PortState::default();
 
     let Some(first) = client.upgrade() else {
         return;
     };
-    do_port_discovery(
-        &first,
-        &merged_tx,
-        &mut input_snap,
-        &mut output_snap,
-        &mut handles,
-    )
-    .await;
+    do_port_discovery(&first, &merged_tx, &mut ports).await;
     drop(first);
 
     let start = tokio::time::Instant::now() + DEVICE_POLL_INTERVAL;
@@ -71,30 +80,16 @@ pub(crate) async fn run_supervisor(
             maybe_cmd = control_rx.recv() => {
                 let Some(cmd) = maybe_cmd else { break };
                 let Some(client) = client.upgrade() else { break };
-                if handle_supervisor_command(
-                    &client,
-                    cmd,
-                    &merged_tx,
-                    &mut input_snap,
-                    &mut output_snap,
-                    &mut handles,
-                )
-                .await
-                .is_break()
+                if handle_supervisor_command(&client, cmd, &merged_tx, &mut ports)
+                    .await
+                    .is_break()
                 {
                     break;
                 }
             }
             _ = poll.tick() => {
                 let Some(client) = client.upgrade() else { break };
-                do_port_discovery(
-                    &client,
-                    &merged_tx,
-                    &mut input_snap,
-                    &mut output_snap,
-                    &mut handles,
-                )
-                .await;
+                do_port_discovery(&client, &merged_tx, &mut ports).await;
                 decay_events_per_minute(&client);
             }
         }
@@ -105,32 +100,30 @@ async fn handle_supervisor_command(
     client: &Arc<MidiClient>,
     cmd: SupervisorCommand,
     merged_tx: &mpsc::Sender<RawEvent>,
-    input_snap: &mut Vec<MidiPortInfo>,
-    output_snap: &mut Vec<MidiPortInfo>,
-    handles: &mut HashMap<String, Box<dyn InputHandle>>,
+    ports: &mut PortState,
 ) -> ControlFlow<()> {
     match cmd {
         SupervisorCommand::Rescan => {
-            do_port_discovery(client, merged_tx, input_snap, output_snap, handles).await;
+            do_port_discovery(client, merged_tx, ports).await;
         }
         SupervisorCommand::Shutdown => {
-            handles.clear();
+            ports.handles.clear();
             return ControlFlow::Break(());
         }
         SupervisorCommand::Disable => {
-            handles.clear();
-            sync_subscribed_inputs(client, handles);
+            ports.handles.clear();
+            ports.publish(client);
             client.enabled.store(false, Ordering::Relaxed);
             emit_engine_state_change(client, false);
         }
         SupervisorCommand::Enable => {
             client.enabled.store(true, Ordering::Relaxed);
-            for port in input_snap.iter() {
-                if !handles.contains_key(&port.name) {
-                    open_input_port(client, merged_tx, handles, port);
+            for port in &ports.inputs {
+                if !ports.handles.contains_key(&port.name) {
+                    open_input_port(client, merged_tx, &mut ports.handles, port);
                 }
             }
-            sync_subscribed_inputs(client, handles);
+            ports.publish(client);
             emit_engine_state_change(client, true);
         }
     }
@@ -148,10 +141,7 @@ fn emit_engine_state_change(client: &Arc<MidiClient>, enabled: bool) {
         .publish(Event::new(EventSource::Midi, kind, serde_json::json!({})));
 
     let input_count = {
-        let snap = client
-            .health_state
-            .lock()
-            .unwrap_or_else(|p| p.into_inner());
+        let snap = client.health_state.lock_recover();
         snap.input_count
     };
     let delta = HealthDelta {
@@ -165,23 +155,9 @@ fn emit_engine_state_change(client: &Arc<MidiClient>, enabled: bool) {
     let _ = client.health_tx.send(delta);
 }
 
-fn sync_subscribed_inputs(
-    client: &Arc<MidiClient>,
-    handles: &HashMap<String, Box<dyn InputHandle>>,
-) {
-    let mut content = client
-        .content_state
-        .lock()
-        .unwrap_or_else(|p| p.into_inner());
-    content.subscribed_inputs = handles.keys().cloned().collect();
-}
-
 fn decay_events_per_minute(client: &Arc<MidiClient>) {
     let delta = {
-        let mut snap = client
-            .health_state
-            .lock()
-            .unwrap_or_else(|p| p.into_inner());
+        let mut snap = client.health_state.lock_recover();
         let before = snap.event_timestamps.len();
         let epm = events_per_minute(&mut snap.event_timestamps);
         (snap.event_timestamps.len() != before).then(|| HealthDelta {
@@ -208,36 +184,28 @@ async fn list_ports(client: &Arc<MidiClient>) -> (Vec<MidiPortInfo>, Vec<MidiPor
 async fn do_port_discovery(
     client: &Arc<MidiClient>,
     merged_tx: &mpsc::Sender<RawEvent>,
-    input_snap: &mut Vec<MidiPortInfo>,
-    output_snap: &mut Vec<MidiPortInfo>,
-    handles: &mut HashMap<String, Box<dyn InputHandle>>,
+    ports: &mut PortState,
 ) {
     let (new_inputs, new_outputs) = list_ports(client).await;
 
-    diff_input_ports(client, merged_tx, input_snap, handles, &new_inputs);
-    diff_output_ports(client, output_snap, &new_outputs);
-    sync_subscribed_inputs(client, handles);
+    diff_input_ports(
+        client,
+        merged_tx,
+        &ports.inputs,
+        &mut ports.handles,
+        &new_inputs,
+    );
+    diff_output_ports(client, &ports.outputs, &new_outputs);
 
-    *input_snap = new_inputs.clone();
-    *output_snap = new_outputs.clone();
+    ports.inputs = new_inputs;
+    ports.outputs = new_outputs;
+    ports.publish(client);
 
-    let input_count = input_snap.len();
-    let output_count = output_snap.len();
-
-    {
-        let mut snap = client
-            .content_state
-            .lock()
-            .unwrap_or_else(|p| p.into_inner());
-        snap.input_ports = new_inputs;
-        snap.output_ports = new_outputs;
-    }
+    let input_count = ports.inputs.len();
+    let output_count = ports.outputs.len();
 
     let deltas = {
-        let mut snap = client
-            .health_state
-            .lock()
-            .unwrap_or_else(|p| p.into_inner());
+        let mut snap = client.health_state.lock_recover();
         build_port_count_deltas(client, &mut snap, input_count, output_count)
     };
     for d in deltas {
@@ -265,11 +233,6 @@ fn diff_input_ports(
         }
         if !old_names.contains(port.name.as_str()) {
             emit_port_event(client, &port.name, PortDirection::Input, true);
-            let mut content = client
-                .content_state
-                .lock()
-                .unwrap_or_else(|p| p.into_inner());
-            record_port_added(&mut content, port.clone());
         }
     }
 
@@ -277,11 +240,6 @@ fn diff_input_ports(
         if !new_names.contains(port.name.as_str()) {
             handles.remove(&port.name);
             emit_port_event(client, &port.name, PortDirection::Input, false);
-            let mut content = client
-                .content_state
-                .lock()
-                .unwrap_or_else(|p| p.into_inner());
-            record_port_removed(&mut content, &port.name, PortDirection::Input);
         }
     }
 }
@@ -293,11 +251,6 @@ fn diff_output_ports(client: &Arc<MidiClient>, old: &[MidiPortInfo], new: &[Midi
     for port in new {
         if !old_names.contains(port.name.as_str()) {
             emit_port_event(client, &port.name, PortDirection::Output, true);
-            let mut content = client
-                .content_state
-                .lock()
-                .unwrap_or_else(|p| p.into_inner());
-            record_port_added(&mut content, port.clone());
         }
     }
 
@@ -305,11 +258,6 @@ fn diff_output_ports(client: &Arc<MidiClient>, old: &[MidiPortInfo], new: &[Midi
         if !new_names.contains(port.name.as_str()) {
             client.backend.release_output(&port.name);
             emit_port_event(client, &port.name, PortDirection::Output, false);
-            let mut content = client
-                .content_state
-                .lock()
-                .unwrap_or_else(|p| p.into_inner());
-            record_port_removed(&mut content, &port.name, PortDirection::Output);
         }
     }
 }
@@ -382,10 +330,7 @@ fn emit_midi_event(client: &Arc<MidiClient>, port_name: &str, event: MidiEvent) 
     let is_note_on = matches!(event, MidiEvent::NoteOn { .. });
 
     let deltas: Vec<HealthDelta> = {
-        let mut snap = client
-            .health_state
-            .lock()
-            .unwrap_or_else(|p| p.into_inner());
+        let mut snap = client.health_state.lock_recover();
         snap.event_timestamps.push_back(now);
         if is_note_on {
             snap.last_note_on_at = Some(OffsetDateTime::now_utc());
@@ -401,10 +346,7 @@ fn emit_midi_event(client: &Arc<MidiClient>, port_name: &str, event: MidiEvent) 
     }
 
     {
-        let mut snap = client
-            .content_state
-            .lock()
-            .unwrap_or_else(|p| p.into_inner());
+        let mut snap = client.content_state.lock_recover();
         record_midi_event(&mut snap, port_name);
     }
 }

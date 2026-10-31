@@ -1,5 +1,6 @@
 #![cfg(any(target_os = "windows", target_os = "macos"))]
 
+use forge_types::RecoverMutex;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -97,24 +98,21 @@ impl HotkeyBackend for GlobalHotkeyBackend {
         self.main_thread
             .run(move || with_manager(|manager| manager.register(hotkey), &job_combo))
             .await??;
-        self.registrations
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .insert(
-                hotkey.id(),
-                Registration {
-                    hotkey,
-                    caller_id: id,
-                    combo: combo.clone(),
-                    held: false,
-                },
-            );
+        self.registrations.lock_recover().insert(
+            hotkey.id(),
+            Registration {
+                hotkey,
+                caller_id: id,
+                combo: combo.clone(),
+                held: false,
+            },
+        );
         Ok(())
     }
 
     async fn unregister(&self, id: HotkeyId) -> Result<(), HotkeyError> {
         let target = {
-            let guard = self.registrations.lock().unwrap_or_else(|p| p.into_inner());
+            let guard = self.registrations.lock_recover();
             guard
                 .iter()
                 .find(|(_, reg)| reg.caller_id == id)
@@ -126,18 +124,12 @@ impl HotkeyBackend for GlobalHotkeyBackend {
         self.main_thread
             .run(move || with_manager(|manager| manager.unregister(hotkey), &combo))
             .await??;
-        self.registrations
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .remove(&internal_id);
+        self.registrations.lock_recover().remove(&internal_id);
         Ok(())
     }
 
     fn fired_rx(&self) -> Option<mpsc::Receiver<HotkeyFiredEvent>> {
-        self.fired_rx_slot
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .take()
+        self.fired_rx_slot.lock_recover().take()
     }
 }
 
@@ -149,7 +141,7 @@ fn forward_global_hotkey_event(
     let pressed = event.state == HotKeyState::Pressed;
 
     let transition = {
-        let mut guard = registrations.lock().unwrap_or_else(|p| p.into_inner());
+        let mut guard = registrations.lock_recover();
         guard.get_mut(&event.id).and_then(|reg| {
             let changed = reg.held != pressed;
             reg.held = pressed;

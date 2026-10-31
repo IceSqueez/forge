@@ -11,6 +11,7 @@ msg-hotkey-health_backend = Бекенд
 msg-hotkey-health_registered_hint = гарячих клавіш
 msg-hotkey-health_disabled = вимкнено
 msg-hotkey-health_last_triggered_at = { $time } { $combo }
+msg-hotkey-recent_trigger_time = { $time }
 msg-hotkey-health_conflicts_hint = з запуску
 msg-hotkey-health_portal_session_lost = Сесію порталу втрачено, гарячі клавіші не спрацюють
 msg-hotkey-health_portal_active = Портал активний

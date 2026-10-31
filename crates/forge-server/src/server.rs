@@ -368,7 +368,10 @@ pub(crate) mod tests {
         client
             .identification
             .store(Arc::new(identification.to_owned()));
-        state.server_info.register(client_handle.id, client).await;
+        state
+            .bus_adapter
+            .attach_session(client_handle.id, client)
+            .await;
         (client_handle.id, rx)
     }
 

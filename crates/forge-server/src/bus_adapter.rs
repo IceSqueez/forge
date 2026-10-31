@@ -13,6 +13,9 @@ use serde::Serialize;
 use time::format_description::well_known::Rfc3339;
 use tokio::sync::{RwLock, broadcast};
 
+use crate::snapshot::ClientRow;
+use crate::ws_client::WsClient;
+
 pub(crate) const CLIENT_CHANNEL_CAP: usize = 1024;
 pub(crate) const OVERLAY_CHANNEL_CAP: usize = 64;
 
@@ -104,6 +107,7 @@ struct OverlayConnection {
 
 struct ConnectedClient {
     id: ClientId,
+    session: Option<Arc<WsClient>>,
     sender: broadcast::Sender<WsFrame>,
     filters: ClientFilterSet,
     overlay: Option<OverlayConnection>,
@@ -351,6 +355,7 @@ impl BusAdapter {
         let (sender, receiver) = broadcast::channel(CLIENT_CHANNEL_CAP);
         self.registry.write().await.push(ConnectedClient {
             id,
+            session: None,
             sender,
             filters,
             overlay: None,
@@ -374,6 +379,30 @@ impl BusAdapter {
         Some(receiver)
     }
 
+    pub(crate) async fn attach_session(&self, id: ClientId, session: Arc<WsClient>) {
+        if let Some(client) = self.registry.write().await.iter_mut().find(|c| c.id == id) {
+            client.session = Some(session);
+        }
+    }
+
+    pub(crate) async fn client_rows(&self) -> Vec<ClientRow> {
+        self.registry
+            .read()
+            .await
+            .iter()
+            .filter(|c| {
+                !c.overlay
+                    .as_ref()
+                    .is_some_and(|o| o.class == OverlayClientClass::PreviewTab)
+            })
+            .filter_map(|c| {
+                let session = c.session.as_ref()?;
+                Some(ClientRow::new(c.id, session, &c.filters.subscriptions))
+            })
+            .collect()
+    }
+
+    #[cfg(test)]
     pub(crate) async fn preview_tabs(&self) -> HashSet<ClientId> {
         self.registry
             .read()

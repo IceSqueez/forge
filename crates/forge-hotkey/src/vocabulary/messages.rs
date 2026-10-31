@@ -38,6 +38,8 @@ const HEALTH_REGISTERED_HINT: MessageCode =
 const HEALTH_DISABLED: MessageCode = MessageCode::from_static(INTEGRATION_ID, "health_disabled");
 const HEALTH_LAST_TRIGGERED_AT: MessageCode =
     MessageCode::from_static(INTEGRATION_ID, "health_last_triggered_at");
+const RECENT_TRIGGER_TIME: MessageCode =
+    MessageCode::from_static(INTEGRATION_ID, "recent_trigger_time");
 const HEALTH_CONFLICTS_HINT: MessageCode =
     MessageCode::from_static(INTEGRATION_ID, "health_conflicts_hint");
 const HEALTH_PORTAL_SESSION_LOST: MessageCode =
@@ -69,6 +71,7 @@ pub const HOTKEY_MESSAGES: MessageCatalog = MessageCatalog {
         HEALTH_REGISTERED_HINT,
         HEALTH_DISABLED,
         HEALTH_LAST_TRIGGERED_AT,
+        RECENT_TRIGGER_TIME,
         HEALTH_CONFLICTS_HINT,
         HEALTH_PORTAL_SESSION_LOST,
         HEALTH_PORTAL_ACTIVE,
@@ -107,6 +110,10 @@ pub(crate) fn health_last_triggered_at(at: OffsetDateTime, combo: &str) -> Messa
     MessageRef::new(HEALTH_LAST_TRIGGERED_AT)
         .with_arg(TIME_ARG, MessageArg::TimeOfDay(at))
         .with_arg(COMBO_ARG, forge_types::VerbatimText::new(combo))
+}
+
+pub(crate) fn recent_trigger_time(at: OffsetDateTime) -> MessageRef {
+    MessageRef::new(RECENT_TRIGGER_TIME).with_arg(TIME_ARG, MessageArg::TimeOfDay(at))
 }
 
 pub(crate) fn health_conflicts_hint() -> MessageRef {
@@ -357,6 +364,7 @@ mod tests {
             health_registered_hint(),
             health_disabled(),
             health_last_triggered_at(OffsetDateTime::UNIX_EPOCH, "Ctrl+A"),
+            recent_trigger_time(OffsetDateTime::UNIX_EPOCH),
             health_conflicts_hint(),
         ];
         #[cfg(target_os = "linux")]

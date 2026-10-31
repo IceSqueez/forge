@@ -1,3 +1,4 @@
+use forge_types::{IntegrationId, MessageRef, RecoverRwLock};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -10,7 +11,7 @@ use forge_platform_core::{
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::{DonationIngest, EventBus};
 use forge_storage::{CredentialsRepo, DataProvider};
-use forge_types::{IntegrationId, MessageRef};
+use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
 use crate::donation_factories::{wire_donatello, wire_monobank};
@@ -40,31 +41,45 @@ pub struct BuiltinObject {
     pub ban_list: Option<Arc<dyn BanListSource>>,
 }
 
-#[derive(Clone, Default)]
+type BuiltinEntries = HashMap<IntegrationId, BuiltinObject>;
+
+#[derive(Clone)]
 pub struct BuiltinRegistry {
-    entries: Arc<std::sync::RwLock<HashMap<IntegrationId, BuiltinObject>>>,
+    entries: Arc<watch::Sender<Arc<BuiltinEntries>>>,
+}
+
+impl Default for BuiltinRegistry {
+    fn default() -> Self {
+        Self {
+            entries: Arc::new(watch::Sender::new(Arc::new(BuiltinEntries::new()))),
+        }
+    }
 }
 
 impl BuiltinRegistry {
+    fn current(&self) -> Arc<BuiltinEntries> {
+        Arc::clone(&self.entries.borrow())
+    }
+
     pub fn get(&self, id: &IntegrationId) -> Option<BuiltinObject> {
-        let guard = self.entries.read().unwrap_or_else(|e| e.into_inner());
-        guard.get(id).cloned()
+        self.current().get(id).cloned()
     }
 
     pub fn snapshot(&self) -> Vec<BuiltinObject> {
-        let guard = self.entries.read().unwrap_or_else(|e| e.into_inner());
-        guard.values().cloned().collect()
+        self.current().values().cloned().collect()
     }
 
     pub fn install(&self, object: BuiltinObject) {
         let id = object.status.id().clone();
-        let mut guard = self.entries.write().unwrap_or_else(|e| e.into_inner());
-        guard.insert(id, object);
+        self.entries.send_modify(|entries| {
+            Arc::make_mut(entries).insert(id, object);
+        });
     }
 
     pub fn remove(&self, id: &IntegrationId) {
-        let mut guard = self.entries.write().unwrap_or_else(|e| e.into_inner());
-        guard.remove(id);
+        self.entries.send_modify(|entries| {
+            Arc::make_mut(entries).remove(id);
+        });
     }
 }
 
@@ -123,18 +138,18 @@ impl ObsInstallSeed {
 
     pub fn install(&self, client: Arc<forge_obs::ObsClient>) {
         self.sink.install(Arc::clone(&client));
-        let mut guard = self.live.write().unwrap_or_else(|e| e.into_inner());
+        let mut guard = self.live.write_recover();
         *guard = Some(client);
     }
 
     pub fn clear(&self) {
-        let mut guard = self.live.write().unwrap_or_else(|e| e.into_inner());
+        let mut guard = self.live.write_recover();
         *guard = None;
     }
 
     pub async fn disconnect_live(&self) {
         let previous = {
-            let mut guard = self.live.write().unwrap_or_else(|e| e.into_inner());
+            let mut guard = self.live.write_recover();
             guard.take()
         };
         if let Some(client) = previous
@@ -145,7 +160,7 @@ impl ObsInstallSeed {
     }
 
     pub fn live(&self) -> Option<Arc<forge_obs::ObsClient>> {
-        let guard = self.live.read().unwrap_or_else(|e| e.into_inner());
+        let guard = self.live.read_recover();
         guard.clone()
     }
 
@@ -170,18 +185,18 @@ impl VTubeInstallSeed {
 
     pub fn install(&self, client: Arc<forge_vtube::VTubeClient>) {
         self.sink.install(Arc::clone(&client));
-        let mut guard = self.live.write().unwrap_or_else(|e| e.into_inner());
+        let mut guard = self.live.write_recover();
         *guard = Some(client);
     }
 
     pub fn clear(&self) {
-        let mut guard = self.live.write().unwrap_or_else(|e| e.into_inner());
+        let mut guard = self.live.write_recover();
         *guard = None;
     }
 
     pub async fn disconnect_live(&self) {
         let previous = {
-            let mut guard = self.live.write().unwrap_or_else(|e| e.into_inner());
+            let mut guard = self.live.write_recover();
             guard.take()
         };
         if let Some(client) = previous
@@ -192,7 +207,7 @@ impl VTubeInstallSeed {
     }
 
     pub fn live(&self) -> Option<Arc<forge_vtube::VTubeClient>> {
-        let guard = self.live.read().unwrap_or_else(|e| e.into_inner());
+        let guard = self.live.read_recover();
         guard.clone()
     }
 

@@ -108,11 +108,7 @@ pub fn registered_combos(client: &HotkeyClient) -> Vec<(HotkeyId, String)> {
 }
 
 pub fn conflict_count(client: &HotkeyClient) -> usize {
-    client
-        .health_state
-        .lock()
-        .unwrap_or_else(|p| p.into_inner())
-        .conflict_count
+    client.view().conflicts
 }
 
 #[cfg(test)]

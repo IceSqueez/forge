@@ -1,10 +1,7 @@
-use std::sync::atomic::Ordering;
-
 use forge_storage::CredentialsRepo;
 use forge_types::PlatformId;
 
 use crate::bus_adapter::BusAdapter;
-use crate::server_info::ServerInfo;
 
 const CREDENTIAL_ID_SEPARATOR: char = ':';
 
@@ -27,69 +24,29 @@ pub(crate) async fn build_connected_accounts(
         .collect()
 }
 
-pub(crate) async fn build_connected_clients(
-    server_info: &ServerInfo,
-    bus_adapter: &BusAdapter,
-) -> Vec<serde_json::Value> {
-    let preview_tabs = bus_adapter.preview_tabs().await;
-    let snapshots: Vec<_> = {
-        let clients = server_info.connected_clients.read().await;
-        clients
-            .iter()
-            .filter(|(id, _)| !preview_tabs.contains(id))
-            .map(|(id, client)| {
-                (
-                    *id,
-                    client.identification.load_full(),
-                    client.client_type.load_full(),
-                    client.remote_addr.ip().to_string(),
-                    client.events_per_second(),
-                    client.uptime().whole_seconds(),
-                    client.bytes_sent_session.load(Ordering::Relaxed),
-                )
+pub(crate) async fn build_connected_clients(bus_adapter: &BusAdapter) -> Vec<serde_json::Value> {
+    bus_adapter
+        .client_rows()
+        .await
+        .into_iter()
+        .map(|row| {
+            let subscriptions: Vec<serde_json::Value> = row
+                .subscriptions
+                .iter()
+                .map(|f| serde_json::json!({ "source": f.source, "type": f.kind }))
+                .collect();
+            serde_json::json!({
+                "client_id": row.id.to_string(),
+                "identification": row.identification,
+                "remote_addr": row.remote_addr,
+                "client_type": row.client_type,
+                "subscriptions": subscriptions,
+                "events_per_second": row.events_per_second,
+                "uptime_seconds": row.uptime_seconds,
+                "bytes_sent": row.bytes_sent,
             })
-            .collect()
-    };
-
-    let mut result = Vec::with_capacity(snapshots.len());
-    for (
-        id,
-        identification,
-        client_type,
-        remote_addr,
-        events_per_second,
-        uptime_seconds,
-        bytes_sent,
-    ) in snapshots
-    {
-        let subs = bus_adapter.current_subscriptions(id).await;
-        let subscriptions: Vec<serde_json::Value> = subs
-            .iter()
-            .map(|f| {
-                let source_str = match f.source {
-                    None => "*".to_owned(),
-                    Some(s) => serde_json::to_value(s)
-                        .ok()
-                        .and_then(|v| v.as_str().map(str::to_owned))
-                        .unwrap_or_else(|| "*".to_owned()),
-                };
-                let kind_str = f.kind.as_deref().unwrap_or("*");
-                serde_json::json!({ "source": source_str, "type": kind_str })
-            })
-            .collect();
-
-        result.push(serde_json::json!({
-            "client_id": id.to_string(),
-            "identification": identification.as_str(),
-            "remote_addr": remote_addr,
-            "client_type": client_type.type_str(),
-            "subscriptions": subscriptions,
-            "events_per_second": events_per_second,
-            "uptime_seconds": uptime_seconds,
-            "bytes_sent": bytes_sent,
-        }));
-    }
-    result
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -103,7 +60,6 @@ mod tests {
 
     use super::{build_connected_accounts, build_connected_clients};
     use crate::bus_adapter::{BusAdapter, ClientFilterSet, EventFilter, OverlayClientClass};
-    use crate::server_info::ServerInfo;
     use crate::test_helpers::TestDataProvider;
     use crate::ws_client::WsClient;
 
@@ -161,7 +117,6 @@ mod tests {
     async fn the_wire_client_list_answers_with_the_browser_source_and_drops_the_preview_tab() {
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let adapter = BusAdapter::new(bus);
-        let info = ServerInfo::serving(std::collections::BTreeSet::new());
         let identity = forge_storage::OverlayId::new("goal-box");
         let addr: std::net::SocketAddr = "203.0.113.7:5555".parse().unwrap();
 
@@ -181,10 +136,10 @@ mod tests {
             );
             let client = Arc::new(WsClient::new(handle.id, addr, Arc::new(AtomicU64::new(0))));
             client.identification.store(Arc::new(label.to_owned()));
-            info.register(handle.id, client).await;
+            adapter.attach_session(handle.id, client).await;
         }
 
-        let rows = build_connected_clients(&info, &adapter).await;
+        let rows = build_connected_clients(&adapter).await;
 
         let listed: Vec<&str> = rows
             .iter()
@@ -213,10 +168,9 @@ mod tests {
             .identification
             .store(Arc::new("dashboard-1".to_owned()));
 
-        let info = ServerInfo::serving(std::collections::BTreeSet::new());
-        info.register(handle.id, client).await;
+        adapter.attach_session(handle.id, client).await;
 
-        let rows = build_connected_clients(&info, &adapter).await;
+        let rows = build_connected_clients(&adapter).await;
         assert_eq!(rows.len(), 1);
         let row = &rows[0];
         assert_eq!(row["client_id"], handle.id.to_string());
@@ -227,24 +181,5 @@ mod tests {
         assert_eq!(subs.len(), 1);
         assert_eq!(subs[0]["source"], "twitch");
         assert_eq!(subs[0]["type"], "chat.message");
-    }
-
-    #[tokio::test]
-    async fn client_absent_from_bus_adapter_yields_empty_subscriptions() {
-        let bus = EventBus::new(Arc::new(NullEventLogRepo));
-        let adapter = BusAdapter::new(bus);
-        let (handle, _rx) = adapter
-            .register_client(ClientFilterSet::new(HashSet::new()))
-            .await;
-        adapter.unregister_client(handle.id).await;
-
-        let addr: std::net::SocketAddr = "203.0.113.9:6000".parse().unwrap();
-        let client = Arc::new(WsClient::new(handle.id, addr, Arc::new(AtomicU64::new(0))));
-        let info = ServerInfo::serving(std::collections::BTreeSet::new());
-        info.register(handle.id, client).await;
-
-        let rows = build_connected_clients(&info, &adapter).await;
-        assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0]["subscriptions"].as_array().unwrap().len(), 0);
     }
 }

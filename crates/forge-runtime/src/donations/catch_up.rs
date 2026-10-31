@@ -1,9 +1,9 @@
+use forge_types::{Donation, RecoverMutex};
 use std::collections::VecDeque;
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use forge_storage::OverlayId;
-use forge_types::Donation;
 use tokio::sync::Notify;
 
 use crate::overlay_service::OverlayConnectListener;
@@ -21,27 +21,16 @@ pub(crate) struct CatchUpHold {
 
 impl CatchUpHold {
     pub(crate) fn hold(&self, donation: Donation) {
-        self.held
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push_back(donation);
+        self.held.lock_recover().push_back(donation);
         self.wake.notify_one();
     }
 
     pub(crate) fn is_empty(&self) -> bool {
-        self.held
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .is_empty()
+        self.held.lock_recover().is_empty()
     }
 
     pub(crate) fn take_in_order(&self) -> Vec<Donation> {
-        let mut batch: Vec<Donation> = self
-            .held
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .drain(..)
-            .collect();
+        let mut batch: Vec<Donation> = self.held.lock_recover().drain(..).collect();
         batch.sort_by_key(|donation| donation.occurred_at);
         batch
     }

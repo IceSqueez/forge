@@ -1,3 +1,4 @@
+use forge_types::RecoverRwLock;
 use std::sync::RwLock;
 
 use gpui::{BoxShadow, Pixels, SharedString, hsla, point, px};
@@ -179,13 +180,15 @@ pub fn mono_family() -> SharedString {
 }
 
 pub fn set_body_family(family: Option<SharedString>) {
-    if let Ok(mut guard) = BODY_FAMILY_OVERRIDE.write() {
+    {
+        let mut guard = BODY_FAMILY_OVERRIDE.write_recover();
         *guard = family;
     }
 }
 
 pub fn set_mono_family(family: Option<SharedString>) {
-    if let Ok(mut guard) = MONO_FAMILY_OVERRIDE.write() {
+    {
+        let mut guard = MONO_FAMILY_OVERRIDE.write_recover();
         *guard = family;
     }
 }

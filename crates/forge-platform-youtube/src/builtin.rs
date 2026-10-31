@@ -1,4 +1,4 @@
-use forge_types::UserText;
+use forge_types::{IntegrationId, MessageRef, RecoverRwLock, UserText, VerbatimText};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, SystemTime};
@@ -9,7 +9,6 @@ use forge_platform_core::{
     HealthText, HealthValue, HeroBadge, HeroBadgeTone, LiveViewerSource, ViewerReport,
 };
 use forge_registry::{RegistryError, TriggerRegistry};
-use forge_types::{IntegrationId, MessageRef, VerbatimText};
 use tokio::sync::{broadcast, watch};
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::BroadcastStream;
@@ -237,10 +236,7 @@ impl YoutubeIntegrationBundle {
                     changed = expiry_rx.changed() => if changed.is_err() { break },
                 }
                 let expiry = *expiry_rx.borrow_and_update();
-                *bundle
-                    .token_expires_at
-                    .write()
-                    .unwrap_or_else(|p| p.into_inner()) = expiry;
+                *bundle.token_expires_at.write_recover() = expiry;
             }
         });
     }
@@ -267,13 +263,12 @@ impl YoutubeIntegrationBundle {
                 .await
                 .unwrap_or(stored)
         };
-        *self.hero_name.write().unwrap_or_else(|p| p.into_inner()) = Some(
+        *self.hero_name.write_recover() = Some(
             handle_hero_name(stored.channel_handle.as_deref())
                 .unwrap_or_else(|| stored.channel_title.clone()),
         );
         self.token_expires_at
-            .write()
-            .unwrap_or_else(|p| p.into_inner())
+            .write_recover()
             .get_or_insert_with(|| SystemTime::from(stored.expires_at));
     }
 
@@ -391,17 +386,11 @@ impl BuiltinStatus for YoutubeIntegrationBundle {
     }
 
     fn token_expiry(&self) -> Option<SystemTime> {
-        *self
-            .token_expires_at
-            .read()
-            .unwrap_or_else(|p| p.into_inner())
+        *self.token_expires_at.read_recover()
     }
 
     fn hero_name(&self) -> Option<String> {
-        self.hero_name
-            .read()
-            .unwrap_or_else(|p| p.into_inner())
-            .clone()
+        self.hero_name.read_recover().clone()
     }
 
     fn name_badges(&self) -> Vec<HeroBadge> {

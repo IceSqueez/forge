@@ -1,3 +1,4 @@
+use forge_types::RecoverMutex;
 use std::collections::HashMap;
 use std::sync::{Mutex, MutexGuard};
 
@@ -15,9 +16,7 @@ impl HoldRegistry {
     }
 
     fn lock(&self) -> MutexGuard<'_, HashMap<String, JoinHandle<()>>> {
-        self.holds
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+        self.holds.lock_recover()
     }
 
     pub(crate) fn abort(&self, param_id: &str) {

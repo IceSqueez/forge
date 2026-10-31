@@ -17,7 +17,7 @@ use forge_events::{
 };
 use forge_registry::TriggerRegistry;
 use forge_storage::{EventLogRepo, StorageError};
-use forge_types::EventId;
+use forge_types::{EventId, RecoverMutex};
 use futures_util::FutureExt;
 use futures_util::future::Shared;
 use std::collections::HashMap;
@@ -85,11 +85,7 @@ pub(crate) struct LineageHold<'a> {
 
 impl Drop for LineageHold<'_> {
     fn drop(&mut self) {
-        self.bus
-            .held_lineages
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .remove(&self.event_id);
+        self.bus.held_lineages.lock_recover().remove(&self.event_id);
     }
 }
 
@@ -157,7 +153,7 @@ impl EventBus {
     fn publish_tracked(&self, mut event: Event, hold_lineage: bool) {
         let lanes = self.lanes.load();
         let (event, transient) = {
-            let mut ring = self.ring.lock().unwrap_or_else(|p| p.into_inner());
+            let mut ring = self.ring.lock_recover();
             let lineage = self.lineage_with_parent(&event, &ring);
             event.causation_depth = lineage.depth;
             event.replay = lineage.replay;
@@ -165,10 +161,7 @@ impl EventBus {
                 ledger.stamp(&mut event);
             }
             if hold_lineage {
-                self.held_lineages
-                    .lock()
-                    .unwrap_or_else(|p| p.into_inner())
-                    .insert(event.id, lineage);
+                self.held_lineages.lock_recover().insert(event.id, lineage);
             }
             let event = Arc::new(event);
             let transient = lanes.is_transient(&event, &ring);
@@ -182,7 +175,7 @@ impl EventBus {
     }
 
     pub fn record(&self, mut event: Event) {
-        let mut ring = self.ring.lock().unwrap_or_else(|p| p.into_inner());
+        let mut ring = self.ring.lock_recover();
         event.replay = self.lineage_with_parent(&event, &ring).replay;
         ring.push(Arc::new(event));
     }
@@ -239,29 +232,25 @@ impl EventBus {
 
     pub fn lookup(&self, event_id: EventId) -> Option<Event> {
         self.ring
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
+            .lock_recover()
             .get(event_id)
             .map(|event| Event::clone(event))
     }
 
     pub(crate) fn causation_depth(&self, event_id: EventId) -> u16 {
-        let ring = self.ring.lock().unwrap_or_else(|p| p.into_inner());
+        let ring = self.ring.lock_recover();
         self.lineage_of(event_id, &ring).depth
     }
 
     pub(crate) fn is_replay(&self, event_id: EventId) -> bool {
-        let ring = self.ring.lock().unwrap_or_else(|p| p.into_inner());
+        let ring = self.ring.lock_recover();
         self.lineage_of(event_id, &ring).replay
     }
 
     pub(crate) fn hold_lineage(&self, event: &Event) -> LineageHold<'_> {
-        let ring = self.ring.lock().unwrap_or_else(|p| p.into_inner());
+        let ring = self.ring.lock_recover();
         let lineage = self.lineage_with_parent(event, &ring);
-        self.held_lineages
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .insert(event.id, lineage);
+        self.held_lineages.lock_recover().insert(event.id, lineage);
         LineageHold {
             bus: self,
             event_id: event.id,
@@ -277,20 +266,14 @@ impl EventBus {
     }
 
     fn lineage_of(&self, event_id: EventId, ring: &EventRing) -> Lineage {
-        let held = self
-            .held_lineages
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .get(&event_id)
-            .copied();
+        let held = self.held_lineages.lock_recover().get(&event_id).copied();
         held.or_else(|| ring.get(event_id).map(|event| Lineage::of(event)))
             .unwrap_or_default()
     }
 
     pub fn recent(&self, limit: usize) -> Vec<Event> {
         self.ring
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
+            .lock_recover()
             .iter()
             .rev()
             .take(limit)
@@ -305,7 +288,7 @@ impl EventBus {
         };
 
         let ring_result = {
-            let ring = self.ring.lock().unwrap_or_else(|p| p.into_inner());
+            let ring = self.ring.lock_recover();
             ring.position(since_id).map(|pos| {
                 ring.after(pos)
                     .rev()
@@ -383,10 +366,7 @@ impl EventBus {
 
     pub(crate) fn flush_ticket(&self) -> FlushTicket {
         let (done, finished) = oneshot::channel();
-        self.flushes
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .push(finished.shared());
+        self.flushes.lock_recover().push(finished.shared());
         FlushTicket::new(self.flush_stop.subscribe(), done).abandonable(
             self.flush_abandon.subscribe(),
             Arc::clone(&self.abandoned_rows),
@@ -411,11 +391,7 @@ impl EventBus {
     }
 
     pub async fn await_flush(&self) {
-        let pending: Vec<Shared<oneshot::Receiver<()>>> = self
-            .flushes
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .clone();
+        let pending: Vec<Shared<oneshot::Receiver<()>>> = self.flushes.lock_recover().clone();
         futures_util::future::join_all(pending).await;
     }
 

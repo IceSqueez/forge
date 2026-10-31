@@ -1,12 +1,12 @@
+use forge_types::{ClipCapability, RecoverMutex, Secret};
 use std::collections::HashMap;
 use std::fmt;
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
 use axum::body::Bytes;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use forge_storage::OverlayId;
-use forge_types::{ClipCapability, Secret};
 use rand::Rng as _;
 use tokio::sync::{Notify, oneshot};
 use tokio::time::Instant;
@@ -136,7 +136,7 @@ impl AudioClipStore {
     }
 
     fn lock(&self) -> MutexGuard<'_, StoreInner> {
-        self.inner.lock().unwrap_or_else(PoisonError::into_inner)
+        self.inner.lock_recover()
     }
 
     pub(crate) fn offer(

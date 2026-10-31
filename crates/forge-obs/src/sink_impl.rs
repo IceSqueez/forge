@@ -1,5 +1,4 @@
 use std::path::Path;
-use std::sync::PoisonError;
 
 use async_trait::async_trait;
 use forge_types::Variant;
@@ -10,7 +9,6 @@ use obws::requests::scene_items::{Id, SetEnabled, SetLocked};
 use obws::requests::scenes::SceneId;
 use obws::requests::sources::{SaveScreenshot, SourceId};
 
-use crate::catalog::write_lock;
 use crate::client::ObsClient;
 use crate::error::ObsError;
 use crate::session::{CONFIG_SWITCH_TIMEOUT, LiveSession};
@@ -42,13 +40,7 @@ impl ObsClient {
         scene: &str,
         source: &str,
     ) -> Result<i64, ObsError> {
-        let cached_id = self
-            .scene_item_id_cache
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .item_id(scene, source);
-
-        if let Some(id) = cached_id {
+        if let Some(id) = self.mirror.item_id(scene, source) {
             return Ok(id);
         }
 
@@ -62,18 +54,12 @@ impl ObsClient {
                 }),
             )
             .await?;
-        self.scene_item_id_cache
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .insert(scene, id, source);
+        self.mirror.remember_item(scene, id, source);
         Ok(id)
     }
 
     fn forget_scene_item_ids(&self) {
-        self.scene_item_id_cache
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clear();
+        self.mirror.forget_items();
     }
 }
 
@@ -208,15 +194,7 @@ impl ObsSink for ObsClient {
             )
             .await?;
 
-        let mut catalog = write_lock(&self.catalog_state);
-        for sources in catalog.sources.values_mut() {
-            for info in sources.iter_mut() {
-                if info.name == input {
-                    info.audio_db = Some(db as f32);
-                }
-            }
-        }
-        catalog.revision = catalog.revision.wrapping_add(1);
+        self.mirror.record_input_volume(input, db as f32);
 
         Ok(())
     }

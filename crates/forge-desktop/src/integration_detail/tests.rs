@@ -1,9 +1,8 @@
 use super::quick_actions::reachable_quick_actions;
 use super::*;
 use forge_platform_core::CollectionId;
-use forge_types::UserText;
+use forge_types::{UserText, VerbatimText};
 
-use forge_types::VerbatimText;
 #[test]
 fn subscription_counts_are_tallied_by_topic_kind_never_by_the_shown_label() {
     fn row(kind: &str, error_label: Option<UserText>) -> forge_platform_core::SubscriptionRow {
@@ -177,7 +176,7 @@ mod quick_action_bridge {
     use forge_platform_core::{CollectionRevisionSignal, CollectionRevisions, HealthStream};
     use forge_registry::SubActionRegistry;
     use forge_runtime::{ActionCancelRegistry, spawn_action_engine, spawn_live_viewer_aggregator};
-    use forge_types::MessageCode;
+    use forge_types::{IntegrationId, MessageCode, RecoverMutex, VerbatimText};
     use gpui::TestAppContext;
 
     use super::super::*;
@@ -190,8 +189,6 @@ mod quick_action_bridge {
     use forge_platform_core::HealthDelta;
     use forge_platform_core::HealthMetricId;
     use forge_platform_core::HealthValue;
-    use forge_types::IntegrationId;
-    use forge_types::VerbatimText;
     use std::time::Duration;
 
     pub(super) struct ShiftingActions {
@@ -214,7 +211,7 @@ mod quick_action_bridge {
         }
 
         fn relabel(&self, label: &'static str) {
-            *self.label.lock().unwrap_or_else(|p| p.into_inner()) = label;
+            *self.label.lock_recover() = label;
             self.signal.bump();
         }
 
@@ -311,10 +308,7 @@ mod quick_action_bridge {
 
     impl QuickActions for ShiftingActions {
         fn actions(&self) -> Vec<QuickAction> {
-            vec![action(
-                *self.label.lock().unwrap_or_else(|p| p.into_inner()),
-                None,
-            )]
+            vec![action(*self.label.lock_recover(), None)]
         }
 
         fn revisions(&self) -> Option<CollectionRevisions> {
@@ -567,6 +561,7 @@ mod sign_out {
 
     use async_trait::async_trait;
     use forge_storage::{CredentialId, StorageError};
+    use forge_types::IntegrationId;
     use gpui::TestAppContext;
     use time::OffsetDateTime;
 
@@ -577,7 +572,6 @@ mod sign_out {
     use crate::test_support::{error_toasts, pump, runtime};
     use forge_components::ToastKind;
     use forge_components::Toasts;
-    use forge_types::IntegrationId;
     use std::time::Duration;
 
     struct ScriptedCredentials {

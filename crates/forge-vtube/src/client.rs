@@ -7,7 +7,7 @@ use tokio::task::JoinHandle;
 use forge_events::EventPublisher;
 use forge_platform_core::{AtomicConnectionState, ConnectionState, HealthDelta};
 use forge_storage::CredentialsRepo;
-use forge_types::{IntegrationId, MessageRef};
+use forge_types::{IntegrationId, MessageRef, RecoverMutex};
 
 use crate::auth::AuthState;
 use crate::error::VTubeError;
@@ -225,13 +225,13 @@ impl VTubeClient {
             &self.catalog_metrics_task,
             &self.version_task,
         ] {
-            if let Some(h) = task.lock().ok().and_then(|mut g| g.take()) {
+            if let Some(h) = task.lock_recover().take() {
                 h.abort();
             }
         }
         let notify = self.shutdown.lock().await.clone();
         notify.notify_one();
-        let handle = self.supervisor.lock().ok().and_then(|mut g| g.take());
+        let handle = self.supervisor.lock_recover().take();
         if let Some(h) = handle
             && let Err(error) = h.await
         {
@@ -284,18 +284,14 @@ impl Drop for VTubeClient {
             &self.catalog_metrics_task,
             &self.version_task,
         ] {
-            if let Ok(mut g) = task.lock()
-                && let Some(h) = g.take()
-            {
+            if let Some(h) = task.lock_recover().take() {
                 h.abort();
             }
         }
         if let Ok(notify) = self.shutdown.try_lock() {
             notify.notify_one();
         }
-        if let Ok(mut supervisor) = self.supervisor.lock()
-            && let Some(handle) = supervisor.take()
-        {
+        if let Some(handle) = self.supervisor.lock_recover().take() {
             handle.abort();
         }
     }

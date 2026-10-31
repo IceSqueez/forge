@@ -1,3 +1,4 @@
+use forge_types::RecoverMutex;
 use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::Duration;
@@ -58,7 +59,7 @@ impl Drop for AnnouncementReservation<'_> {
 
 impl CadenceLedger {
     fn state(&self) -> std::sync::MutexGuard<'_, AnnouncementState> {
-        self.announcements.lock().unwrap_or_else(|p| p.into_inner())
+        self.announcements.lock_recover()
     }
 
     pub(crate) fn reserve_announcement(&self) -> AnnouncementReservation<'_> {
@@ -105,7 +106,7 @@ pub(crate) struct ShoutoutReservation<'a> {
 impl ShoutoutReservation<'_> {
     pub(crate) fn extend(&mut self, target_keys: &[&str]) -> Result<(), Duration> {
         let now = Instant::now();
-        let mut last = self.ledger.last.lock().unwrap_or_else(|p| p.into_inner());
+        let mut last = self.ledger.last.lock_recover();
         let held = |key: &CadenceKey| self.undo.iter().any(|(reserved, _)| reserved == key);
         let remaining = |last: &HashMap<CadenceKey, Instant>, key: CadenceKey, interval| {
             if held(&key) {
@@ -157,7 +158,7 @@ impl Drop for ShoutoutReservation<'_> {
         if self.settled {
             return;
         }
-        let mut last = self.ledger.last.lock().unwrap_or_else(|p| p.into_inner());
+        let mut last = self.ledger.last.lock_recover();
         for (key, previous) in self.undo.drain(..).rev() {
             match previous {
                 Some(at) => last.insert(key, at),

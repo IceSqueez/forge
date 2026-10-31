@@ -1,3 +1,4 @@
+use forge_types::RecoverMutex;
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, Weak};
@@ -145,7 +146,7 @@ impl LossLedger {
         consumer: &'static str,
         tier: DeliveryTier,
     ) -> Arc<ConsumerLossCounters> {
-        let mut consumers = self.consumers.lock().unwrap_or_else(|p| p.into_inner());
+        let mut consumers = self.consumers.lock_recover();
         Arc::clone(consumers.entry((consumer, tier)).or_insert_with(|| {
             Arc::new(ConsumerLossCounters {
                 consumer,
@@ -161,8 +162,7 @@ impl LossLedger {
 
     pub(crate) fn report(&self) -> Vec<ConsumerLoss> {
         self.consumers
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
+            .lock_recover()
             .values()
             .map(|counters| counters.snapshot())
             .collect()

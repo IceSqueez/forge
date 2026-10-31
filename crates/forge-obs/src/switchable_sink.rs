@@ -1,3 +1,4 @@
+use forge_types::RecoverRwLock;
 use std::sync::{Arc, RwLock};
 
 use async_trait::async_trait;
@@ -21,7 +22,7 @@ impl SwitchableObsSink {
     }
 
     pub fn install(&self, client: Arc<ObsClient>) {
-        let mut guard = self.inner.write().unwrap_or_else(|e| e.into_inner());
+        let mut guard = self.inner.write_recover();
         if let Some(previous) = guard.as_ref() {
             previous.stream_output.detach();
         }
@@ -40,7 +41,7 @@ impl SwitchableObsSink {
     }
 
     fn get(&self) -> Result<Arc<ObsClient>, ObsError> {
-        let guard = self.inner.read().unwrap_or_else(|e| e.into_inner());
+        let guard = self.inner.read_recover();
         guard.clone().ok_or(ObsError::Disconnected)
     }
 }

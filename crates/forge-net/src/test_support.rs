@@ -1,3 +1,4 @@
+use forge_types::RecoverMutex;
 use std::collections::VecDeque;
 use std::sync::{Mutex, MutexGuard};
 use std::time::Duration;
@@ -60,9 +61,7 @@ impl RecordingRateLimiter {
     }
 
     fn lock(&self) -> MutexGuard<'_, Record> {
-        self.record
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+        self.record.lock_recover()
     }
 }
 

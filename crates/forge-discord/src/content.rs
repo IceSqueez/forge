@@ -1,3 +1,4 @@
+use forge_types::{RecoverMutex, UserText, VerbatimText};
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
 
@@ -7,8 +8,6 @@ use forge_platform_core::{
     BuiltinContent, ContentList, ContentListItem, DetailSection, SectionIcon, TokenColor,
     TrailingToken,
 };
-
-use forge_types::{UserText, VerbatimText};
 
 use crate::client::DiscordClient;
 use crate::vocabulary::labels;
@@ -45,12 +44,12 @@ pub struct WebhookPost {
 
 impl DiscordClient {
     pub fn webhook_names(&self) -> Vec<String> {
-        let snap = self.content_state.lock().unwrap_or_else(|p| p.into_inner());
+        let snap = self.content_state.lock_recover();
         snap.webhook_names.clone()
     }
 
     pub fn recent_posts(&self) -> Vec<WebhookPost> {
-        let snap = self.content_state.lock().unwrap_or_else(|p| p.into_inner());
+        let snap = self.content_state.lock_recover();
         snap.recent_posts
             .iter()
             .map(|record| WebhookPost {
@@ -85,7 +84,7 @@ pub(crate) fn record_send(
 
 impl BuiltinContent for DiscordClient {
     fn sections(&self) -> Vec<DetailSection> {
-        let snap = self.content_state.lock().unwrap_or_else(|p| p.into_inner());
+        let snap = self.content_state.lock_recover();
 
         let webhook_items: Vec<ContentListItem> = snap
             .webhook_names

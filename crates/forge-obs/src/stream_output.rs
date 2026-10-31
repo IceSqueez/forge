@@ -1,3 +1,4 @@
+use forge_types::{RecoverMutex, RecoverRwLock};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 
@@ -91,7 +92,7 @@ impl StreamOutputFeed {
     }
 
     pub(crate) fn route_to(&self, target: StreamOutputTarget) {
-        let mut guard = self.target.lock().unwrap_or_else(|e| e.into_inner());
+        let mut guard = self.target.lock_recover();
         *guard = target;
         self.publish_locked(&guard);
     }
@@ -101,15 +102,13 @@ impl StreamOutputFeed {
     }
 
     pub(crate) fn refresh(&self) {
-        let guard = self.target.lock().unwrap_or_else(|e| e.into_inner());
+        let guard = self.target.lock_recover();
         self.publish_locked(&guard);
     }
 
     fn publish_locked(&self, target: &StreamOutputTarget) {
         let connected = self.state.load() == ConnectionState::Connected;
-        let stats = connected
-            .then(|| self.health.read().ok().map(|health| health.stream_stats()))
-            .flatten();
+        let stats = connected.then(|| self.health.read_recover().stream_stats());
         let active = stats.is_some_and(|stats| stats.stream_active);
         target.active.send_if_modified(|current| {
             let changed = *current != active;

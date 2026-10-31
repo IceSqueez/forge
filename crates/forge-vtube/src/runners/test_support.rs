@@ -1,11 +1,11 @@
 use forge_events::test_support::NullPublisher;
+use forge_types::{ArgStack, EventId, MessageArg, RecoverMutex, UserText, Variant};
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::sync::{Mutex, MutexGuard};
 
 use async_trait::async_trait;
 use forge_registry::RunContext;
-use forge_types::{ArgStack, EventId, MessageArg, UserText, Variant};
 
 use crate::error::VTubeError;
 use crate::sink::VTubeSink;
@@ -131,7 +131,7 @@ impl MockSink {
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex.lock().unwrap_or_else(PoisonError::into_inner)
+    mutex.lock_recover()
 }
 
 #[expect(

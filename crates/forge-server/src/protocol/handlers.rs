@@ -28,7 +28,7 @@ pub(crate) fn mime_for_extension(ext: &str) -> Option<&'static str> {
 
 pub(crate) async fn handle_get_info(ctx: &DispatchContext) -> WsResponse {
     let connected_accounts = build_connected_accounts(ctx.credentials.as_ref()).await;
-    let connected_clients = build_connected_clients(&ctx.server_info, &ctx.bus_adapter).await;
+    let connected_clients = build_connected_clients(&ctx.bus_adapter).await;
     let bw = &ctx.server_info.bandwidth;
     WsResponse::Ok(serde_json::json!({
         "version": ctx.server_info.version,

@@ -1,5 +1,6 @@
+use forge_types::{ClipCapability, RecoverMutex, RemoteClipId};
 use std::collections::HashMap;
-use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::sync::{Mutex, MutexGuard};
 
 use async_trait::async_trait;
 use forge_audio::{
@@ -12,7 +13,6 @@ use forge_overlay::{
 use forge_runtime::{OverlayDelivery, OverlayServiceHandle};
 use forge_server::{ClipMediaType, ClipOffer, ClipOutcome, ClipOutcomeHandle, ServerHandle};
 use forge_storage::OverlayId;
-use forge_types::{ClipCapability, RemoteClipId};
 use ulid::Ulid;
 
 const UNKNOWN_CLIP: &str = "the clip is no longer waiting on a verdict";
@@ -65,7 +65,7 @@ impl OverlayAudioDestination {
     }
 
     fn pending(&self) -> MutexGuard<'_, HashMap<String, Pending>> {
-        self.pending.lock().unwrap_or_else(PoisonError::into_inner)
+        self.pending.lock_recover()
     }
 
     fn register(&self, clip_id: String, capability: ClipCapability, outcome: ClipOutcomeHandle) {
@@ -295,17 +295,11 @@ mod tests {
         }
 
         fn pushed(&self) -> Vec<serde_json::Value> {
-            self.pushed
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .clone()
+            self.pushed.lock_recover().clone()
         }
 
         fn forget_what_was_pushed(&self) {
-            self.pushed
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .clear();
+            self.pushed.lock_recover().clear();
         }
     }
 
@@ -317,10 +311,7 @@ mod tests {
             content: serde_json::Value,
             _: Option<u64>,
         ) -> OverlayReceivers {
-            self.pushed
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .push(content);
+            self.pushed.lock_recover().push(content);
             self.receivers
         }
 

@@ -11,6 +11,7 @@ mod events;
 mod health;
 mod integration;
 mod item_ids;
+mod mirror;
 mod option_source;
 mod probe;
 mod quick_actions;

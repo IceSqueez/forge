@@ -345,6 +345,7 @@ mod tests {
     };
     use forge_storage::test_support::{MemorySettings, StoredSettingRow};
     use forge_storage::{Language, RowClasses};
+    use forge_types::RecoverMutex;
     use gpui::{Entity, TestAppContext};
     use time::{Date, Month, Time};
 
@@ -355,9 +356,7 @@ mod tests {
     static PROCESS_FORMATS_TESTS: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     fn process_formats_turn() -> std::sync::MutexGuard<'static, ()> {
-        PROCESS_FORMATS_TESTS
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+        PROCESS_FORMATS_TESTS.lock_recover()
     }
 
     fn noon() -> OffsetDateTime {

@@ -1,4 +1,5 @@
-use std::sync::{Arc, PoisonError, RwLock};
+use forge_types::{OutputDevice, RecoverRwLock};
+use std::sync::{Arc, RwLock};
 
 use forge_storage::SettingDisclosure::{Presence, Verbatim};
 use forge_storage::SettingPortability::{MachineLocal, Portable};
@@ -7,7 +8,6 @@ use forge_storage::{
     Flag, Level, OptionalText, Setting, SettingSpec, SettingsRepo, StorageError, read_setting,
     write_setting,
 };
-use forge_types::OutputDevice;
 use tokio::sync::watch;
 
 pub const ENABLED: Setting<Flag> = Setting::new(
@@ -101,7 +101,7 @@ impl SoundboardSettingsHandle {
     }
 
     pub fn load(&self) -> Arc<SoundboardSettings> {
-        Arc::clone(&self.current.read().unwrap_or_else(PoisonError::into_inner))
+        Arc::clone(&self.current.read_recover())
     }
 
     pub fn changes(&self) -> SoundboardSettingsChanges {
@@ -109,13 +109,13 @@ impl SoundboardSettingsHandle {
     }
 
     pub fn swap(&self, settings: SoundboardSettings) {
-        *self.current.write().unwrap_or_else(PoisonError::into_inner) = Arc::new(settings);
+        *self.current.write_recover() = Arc::new(settings);
         self.announce_change();
     }
 
     pub fn update(&self, change: impl FnOnce(&mut SoundboardSettings)) -> Arc<SoundboardSettings> {
         let next = {
-            let mut guard = self.current.write().unwrap_or_else(PoisonError::into_inner);
+            let mut guard = self.current.write_recover();
             let mut next = (**guard).clone();
             change(&mut next);
             let next = Arc::new(next);

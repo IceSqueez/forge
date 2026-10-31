@@ -1,5 +1,6 @@
+use forge_types::RecoverMutex;
 use std::collections::BTreeMap;
-use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::sync::{Mutex, MutexGuard};
 
 use async_trait::async_trait;
 use time::OffsetDateTime;
@@ -42,7 +43,7 @@ impl MemoryCredentials {
     }
 
     fn rows(&self) -> MutexGuard<'_, BTreeMap<String, StoredBundle>> {
-        self.rows.lock().unwrap_or_else(PoisonError::into_inner)
+        self.rows.lock_recover()
     }
 }
 

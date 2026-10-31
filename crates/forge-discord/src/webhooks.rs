@@ -1,5 +1,5 @@
 use forge_storage::CredentialId;
-use forge_types::Secret;
+use forge_types::{RecoverMutex, Secret};
 
 use crate::client::{DiscordClient, SendRecord};
 use crate::credentials::{DISCORD_CRED_PREFIX, WebhookCredential};
@@ -30,7 +30,7 @@ impl DiscordClient {
             .collect();
         names.sort_unstable();
 
-        let mut snap = self.content_state.lock().unwrap_or_else(|p| p.into_inner());
+        let mut snap = self.content_state.lock_recover();
         snap.webhook_names.clone_from(&names);
         drop(snap);
 
@@ -55,7 +55,7 @@ impl DiscordClient {
             .await
             .map_err(|e| DiscordError::Credential(e.to_string()))?;
 
-        let mut snap = self.content_state.lock().unwrap_or_else(|p| p.into_inner());
+        let mut snap = self.content_state.lock_recover();
         if !snap.webhook_names.iter().any(|known| known == name) {
             snap.webhook_names.push(name.to_owned());
             snap.webhook_names.sort_unstable();
@@ -72,7 +72,7 @@ impl DiscordClient {
             .await
             .map_err(|e| DiscordError::Credential(e.to_string()))?;
 
-        let mut snap = self.content_state.lock().unwrap_or_else(|p| p.into_inner());
+        let mut snap = self.content_state.lock_recover();
         snap.webhook_names.retain(|known| known != name);
         snap.webhook_last_ok.remove(name);
 

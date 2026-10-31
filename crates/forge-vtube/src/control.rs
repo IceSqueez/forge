@@ -1,3 +1,4 @@
+use forge_types::{RecoverMutex, RecoverRwLock};
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -22,7 +23,7 @@ impl BuiltinControl for VTubeClient {
             old_notify.notify_one();
         }
 
-        let old_handle = self.supervisor.lock().ok().and_then(|mut g| g.take());
+        let old_handle = self.supervisor.lock_recover().take();
         if let Some(h) = old_handle
             && let Err(error) = h.await
         {
@@ -35,7 +36,8 @@ impl BuiltinControl for VTubeClient {
             ConnectionState::Connecting,
             ConnectionTransition::Expected,
         );
-        if let Ok(mut g) = self.connected_at.write() {
+        {
+            let mut g = self.connected_at.write_recover();
             *g = None;
         }
         crate::supervisor::record_failure(&self.last_failure, None);
@@ -66,7 +68,8 @@ impl BuiltinControl for VTubeClient {
             transport_layer: Arc::clone(&self.transport_layer),
         };
         let new_handle = tokio::spawn(crate::supervisor::run_supervisor(ctx));
-        if let Ok(mut g) = self.supervisor.lock() {
+        {
+            let mut g = self.supervisor.lock_recover();
             *g = Some(new_handle);
         }
 
@@ -80,7 +83,7 @@ impl BuiltinControl for VTubeClient {
         drop(slot);
         notify.notify_one();
 
-        let handle = self.supervisor.lock().ok().and_then(|mut g| g.take());
+        let handle = self.supervisor.lock_recover().take();
         if let Some(h) = handle
             && let Err(error) = h.await
         {

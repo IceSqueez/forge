@@ -1,7 +1,9 @@
+use forge_types::{
+    NamesLanguage, PatternZone, RecoverRwLock, datetime_to_text, shared_date_pattern,
+};
 use std::cell::Cell;
-use std::sync::{PoisonError, RwLock};
+use std::sync::RwLock;
 
-use forge_types::{NamesLanguage, PatternZone, datetime_to_text, shared_date_pattern};
 use time::{Date, OffsetDateTime, Time};
 
 use crate::display_formats::{ClockStyle, DisplayFormatChoices, DisplayFormats};
@@ -89,9 +91,7 @@ thread_local! {
 }
 
 pub fn install_process_display_formats(formats: DisplayFormats) {
-    *PROCESS_FORMATS
-        .write()
-        .unwrap_or_else(PoisonError::into_inner) = Some(formats);
+    *PROCESS_FORMATS.write_recover() = Some(formats);
 }
 
 pub fn install_display_formats(formats: DisplayFormats) {
@@ -101,11 +101,7 @@ pub fn install_display_formats(formats: DisplayFormats) {
 pub fn active_display_formats() -> DisplayFormats {
     THREAD_FORMATS
         .get()
-        .or_else(|| {
-            *PROCESS_FORMATS
-                .read()
-                .unwrap_or_else(PoisonError::into_inner)
-        })
+        .or_else(|| *PROCESS_FORMATS.read_recover())
         .unwrap_or_else(|| {
             DisplayFormatChoices::following(Region::for_language(CatalogLanguage::En)).resolve()
         })

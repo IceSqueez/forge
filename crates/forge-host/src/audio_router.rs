@@ -1,4 +1,5 @@
-use std::sync::{Arc, Mutex, PoisonError};
+use forge_types::RecoverMutex;
+use std::sync::{Arc, Mutex};
 
 use forge_audio::{AudioSink, RemoteAudioDestination, RemoteDestinationId, RemoteSink};
 use forge_runtime::OverlayServiceHandle;
@@ -61,7 +62,7 @@ impl AudioRouter {
 
     pub async fn apply(&self) -> Option<AppliedRoutes> {
         let ticket = {
-            let mut latest = self.latest.lock().unwrap_or_else(PoisonError::into_inner);
+            let mut latest = self.latest.lock_recover();
             *latest += 1;
             *latest
         };
@@ -75,7 +76,7 @@ impl AudioRouter {
         )
         .await;
 
-        let latest = self.latest.lock().unwrap_or_else(PoisonError::into_inner);
+        let latest = self.latest.lock_recover();
         if *latest != ticket {
             return None;
         }

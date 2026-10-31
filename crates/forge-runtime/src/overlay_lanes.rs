@@ -1,5 +1,6 @@
+use forge_types::RecoverMutex;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, PoisonError, Weak};
+use std::sync::{Arc, Mutex, Weak};
 
 use forge_storage::OverlayId;
 use tokio::sync::{Mutex as AsyncMutex, OwnedMutexGuard};
@@ -15,7 +16,7 @@ impl OverlayLanes {
     }
 
     fn lane(&self, id: &OverlayId) -> Arc<AsyncMutex<()>> {
-        let mut lanes = self.lanes.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut lanes = self.lanes.lock_recover();
         if let Some(lane) = lanes.get(id).and_then(Weak::upgrade) {
             return lane;
         }

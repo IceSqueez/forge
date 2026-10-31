@@ -1,10 +1,11 @@
+use forge_types::RecoverMutex;
 use std::collections::HashMap;
 use std::future::Future as _;
 use std::io;
 use std::net::{IpAddr, SocketAddr};
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex as StdMutex, PoisonError};
+use std::sync::{Arc, Mutex as StdMutex};
 use std::task::{Context, Poll};
 use std::time::Duration;
 
@@ -89,7 +90,7 @@ struct PerIpLimiter {
 
 impl PerIpLimiter {
     fn try_acquire(self: &Arc<Self>, ip: IpAddr) -> Option<PerIpPermit> {
-        let mut counts = self.counts.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut counts = self.counts.lock_recover();
         let slot = counts.entry(ip).or_insert(0);
         if *slot >= PER_IP_MAX_CONNECTIONS {
             return None;
@@ -109,11 +110,7 @@ struct PerIpPermit {
 
 impl Drop for PerIpPermit {
     fn drop(&mut self) {
-        let mut counts = self
-            .limiter
-            .counts
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
+        let mut counts = self.limiter.counts.lock_recover();
         if let Some(slot) = counts.get_mut(&self.ip) {
             *slot -= 1;
             if *slot == 0 {

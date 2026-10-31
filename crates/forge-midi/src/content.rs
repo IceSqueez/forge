@@ -1,3 +1,4 @@
+use forge_types::{RecoverMutex, UserText, VerbatimText};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
@@ -6,10 +7,8 @@ use forge_platform_core::{
     TrailingToken,
 };
 
-use forge_types::{UserText, VerbatimText};
-
 use crate::client::MidiClient;
-use crate::events::{MidiPortInfo, PortDirection};
+use crate::events::MidiPortInfo;
 use crate::vocabulary::labels;
 
 #[derive(Default)]
@@ -27,7 +26,7 @@ pub(crate) fn make_content_state() -> Arc<Mutex<MidiContentSnapshot>> {
 
 impl BuiltinContent for MidiClient {
     fn sections(&self) -> Vec<DetailSection> {
-        let snap = self.content_state.lock().unwrap_or_else(|p| p.into_inner());
+        let snap = self.content_state.lock_recover();
         let client_name = self.config.client_name.clone();
         let total = snap.total_events;
         let engine_enabled = self.is_enabled();
@@ -131,29 +130,16 @@ impl BuiltinContent for MidiClient {
     }
 }
 
-pub(crate) fn record_port_added(snap: &mut MidiContentSnapshot, port: MidiPortInfo) {
-    match port.direction {
-        PortDirection::Input => {
-            if !snap.input_ports.iter().any(|p| p.name == port.name) {
-                snap.input_ports.push(port);
-            }
-        }
-        PortDirection::Output => {
-            if !snap.output_ports.iter().any(|p| p.name == port.name) {
-                snap.output_ports.push(port);
-            }
-        }
-    }
-}
-
-pub(crate) fn record_port_removed(
-    snap: &mut MidiContentSnapshot,
-    name: &str,
-    direction: PortDirection,
-) {
-    match direction {
-        PortDirection::Input => snap.input_ports.retain(|p| p.name != name),
-        PortDirection::Output => snap.output_ports.retain(|p| p.name != name),
+impl MidiContentSnapshot {
+    pub(crate) fn set_ports(
+        &mut self,
+        inputs: Vec<MidiPortInfo>,
+        outputs: Vec<MidiPortInfo>,
+        subscribed: HashSet<String>,
+    ) {
+        self.input_ports = inputs;
+        self.output_ports = outputs;
+        self.subscribed_inputs = subscribed;
     }
 }
 
@@ -168,6 +154,7 @@ mod tests {
 
     use super::*;
     use crate::client::MidiClient;
+    use crate::events::PortDirection;
 
     #[test]
     fn sections_returns_two_sections() {
@@ -180,33 +167,33 @@ mod tests {
     }
 
     #[test]
-    fn record_port_added_adds_input_port() {
+    fn set_ports_replaces_every_port_list_and_the_subscribed_set_together() {
         let snap_arc = make_content_state();
         let mut snap = snap_arc.lock().unwrap();
-        record_port_added(
-            &mut snap,
-            MidiPortInfo {
-                name: "Piano".to_owned(),
-                direction: PortDirection::Input,
-            },
+        let port = |name: &str, direction| MidiPortInfo {
+            name: name.to_owned(),
+            direction,
+        };
+        snap.set_ports(
+            vec![port("Piano", PortDirection::Input)],
+            vec![port("Synth", PortDirection::Output)],
+            HashSet::from(["Piano".to_owned()]),
         );
-        assert_eq!(snap.input_ports.len(), 1);
-        assert_eq!(snap.input_ports[0].name, "Piano");
-    }
+        snap.set_ports(
+            vec![port("Pads", PortDirection::Input)],
+            Vec::new(),
+            HashSet::new(),
+        );
 
-    #[test]
-    fn record_port_removed_removes_input_port() {
-        let snap_arc = make_content_state();
-        let mut snap = snap_arc.lock().unwrap();
-        record_port_added(
-            &mut snap,
-            MidiPortInfo {
-                name: "Piano".to_owned(),
-                direction: PortDirection::Input,
-            },
+        assert_eq!(
+            snap.input_ports
+                .iter()
+                .map(|p| p.name.as_str())
+                .collect::<Vec<_>>(),
+            ["Pads"]
         );
-        record_port_removed(&mut snap, "Piano", PortDirection::Input);
-        assert!(snap.input_ports.is_empty());
+        assert!(snap.output_ports.is_empty());
+        assert!(snap.subscribed_inputs.is_empty());
     }
 
     #[test]

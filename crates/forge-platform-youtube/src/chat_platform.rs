@@ -1,3 +1,4 @@
+use forge_types::RecoverMutex;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
@@ -92,7 +93,7 @@ impl YoutubePlatform {
 #[async_trait]
 impl ChatPlatform for YoutubePlatform {
     fn connection_state(&self) -> ConnectionState {
-        *self.state.lock().unwrap_or_else(|p| p.into_inner())
+        *self.state.lock_recover()
     }
 
     async fn connect(&self) -> Result<(), PlatformError> {
@@ -101,9 +102,9 @@ impl ChatPlatform for YoutubePlatform {
             .await?
             .ok_or_else(|| reauth_required(PLATFORM_ID))?;
 
-        let previous = self.cancel.lock().unwrap_or_else(|p| p.into_inner()).take();
+        let previous = self.cancel.lock_recover().take();
         if let Some(previous) = previous {
-            let _current = self.state.lock().unwrap_or_else(|p| p.into_inner());
+            let _current = self.state.lock_recover();
             previous.cancel();
         }
 
@@ -163,14 +164,14 @@ impl ChatPlatform for YoutubePlatform {
             tracing::info!("youtube chat polling stopped");
         });
 
-        *self.cancel.lock().unwrap_or_else(|p| p.into_inner()) = Some(cancel);
+        *self.cancel.lock_recover() = Some(cancel);
         tracing::info!(channel_id = %self.channel_id, "youtube chat polling started");
         Ok(())
     }
 
     async fn disconnect(&self) -> Result<(), PlatformError> {
-        let cancel = self.cancel.lock().unwrap_or_else(|p| p.into_inner()).take();
-        let mut current = self.state.lock().unwrap_or_else(|p| p.into_inner());
+        let cancel = self.cancel.lock_recover().take();
+        let mut current = self.state.lock_recover();
         if let Some(cancel) = cancel {
             cancel.cancel();
         }
@@ -232,7 +233,7 @@ fn publish_unless_cancelled(
     new: ConnectionState,
     transition: ConnectionTransition,
 ) {
-    let mut current = state.lock().unwrap_or_else(|p| p.into_inner());
+    let mut current = state.lock_recover();
     if !cancel.is_cancelled() {
         apply_transition(&mut current, state_tx, events, new, transition);
     }
@@ -245,7 +246,7 @@ fn publish_transition(
     new: ConnectionState,
     transition: ConnectionTransition,
 ) {
-    let mut current = state.lock().unwrap_or_else(|p| p.into_inner());
+    let mut current = state.lock_recover();
     apply_transition(&mut current, state_tx, events, new, transition);
 }
 

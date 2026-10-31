@@ -1,3 +1,4 @@
+use forge_types::RecoverMutex;
 use std::sync::Mutex;
 use std::time::Duration;
 
@@ -34,11 +35,11 @@ impl VoiceGateOwner {
     }
 
     pub fn is_running(&self) -> bool {
-        matches!(self.running.lock(), Ok(guard) if guard.is_some())
+        self.running.lock_recover().is_some()
     }
 
     pub fn state(&self) -> Option<VoiceGateState> {
-        let guard = self.running.lock().ok()?;
+        let guard = self.running.lock_recover();
         guard.as_ref().map(|running| running.monitor.state())
     }
 
@@ -68,18 +69,13 @@ impl VoiceGateOwner {
     }
 
     pub fn reconfigure(&self, config: VoiceGateConfig) {
-        if let Ok(guard) = self.running.lock()
-            && let Some(running) = guard.as_ref()
-        {
+        if let Some(running) = self.running.lock_recover().as_ref() {
             running.monitor.reconfigure(config);
         }
     }
 
     pub fn stop(&self) {
-        let taken = match self.running.lock() {
-            Ok(mut guard) => guard.take(),
-            Err(_) => None,
-        };
+        let taken = self.running.lock_recover().take();
         let Some(running) = taken else {
             return;
         };

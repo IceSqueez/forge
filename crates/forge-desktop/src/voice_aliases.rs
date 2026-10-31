@@ -1239,6 +1239,7 @@ fn fmt_rate(value: Option<f32>, blocked: bool) -> String {
 
 #[cfg(test)]
 mod tests {
+    use forge_types::RecoverMutex;
 
     use forge_components::ThemeId;
     use forge_speech_types::{EngineId, VoiceId};
@@ -1642,7 +1643,7 @@ mod tests {
         }
 
         fn lock(&self) -> std::sync::MutexGuard<'_, StrategyStore> {
-            self.0.lock().unwrap_or_else(|p| p.into_inner())
+            self.0.lock_recover()
         }
 
         fn writes(&self) -> Vec<AssignmentStrategy> {

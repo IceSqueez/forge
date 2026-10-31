@@ -2,7 +2,7 @@ use forge_platform_core::{
     ConnectionState, QuickAction, QuickActionAccent, QuickActionLiveness, QuickActions, SectionIcon,
 };
 use forge_registry::SubActionConfig;
-use forge_types::{MessageCode, SubActionStep, Variant};
+use forge_types::{MessageCode, RecoverMutex, SubActionStep, Variant};
 
 use crate::client::DiscordClient;
 use crate::vocabulary::{config_keys, labels, sub_action_ids};
@@ -40,7 +40,7 @@ fn webhook_action(
 
 impl QuickActions for DiscordClient {
     fn actions(&self) -> Vec<QuickAction> {
-        let snap = self.content_state.lock().unwrap_or_else(|p| p.into_inner());
+        let snap = self.content_state.lock_recover();
         let first_webhook = snap.webhook_names.first().cloned();
         drop(snap);
 

@@ -1,12 +1,14 @@
 use super::mapping_store::{MIDI_KNOWN_DEVICES, load_mappings, save_mapping};
 use super::selection::{follow_device, resolve_selection, visible_mappings};
 use crate::midi_mapping_modal::MappingDraft;
-use forge_types::{PermissionRung, PlatformScope, TriggerInstance};
+use forge_types::{
+    Action, ExecutionMode, PermissionRung, PlatformScope, QueueId, RecoverMutex, TriggerConfig,
+    TriggerInstance, Variant,
+};
 use std::sync::Mutex;
 
 use async_trait::async_trait;
 use forge_storage::{ActionTelemetry, ExecutionStatus, StorageError};
-use forge_types::{Action, ExecutionMode, QueueId, TriggerConfig, Variant};
 use time::OffsetDateTime;
 
 use super::*;
@@ -41,7 +43,7 @@ impl FakeTriggerRepo {
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, TriggerStore> {
-        self.state.lock().unwrap_or_else(|p| p.into_inner())
+        self.state.lock_recover()
     }
 
     fn instances(&self) -> Vec<TriggerInstance> {
@@ -193,18 +195,13 @@ impl FakeActionRepo {
 #[async_trait]
 impl ActionRepo for FakeActionRepo {
     async fn list(&self) -> Result<Vec<Action>, StorageError> {
-        Ok(self
-            .actions
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .clone())
+        Ok(self.actions.lock_recover().clone())
     }
 
     async fn get(&self, id: ActionId) -> Result<Option<Action>, StorageError> {
         Ok(self
             .actions
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
+            .lock_recover()
             .iter()
             .find(|a| a.id == id)
             .cloned())

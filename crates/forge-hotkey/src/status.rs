@@ -1,4 +1,3 @@
-use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use forge_platform_core::{BuiltinStatus, CapabilityFlags, ConnectionState, HeaderAction};
@@ -20,15 +19,7 @@ impl BuiltinStatus for HotkeyClient {
     }
 
     fn connection(&self) -> ConnectionState {
-        if !self.enabled.load(Ordering::Relaxed) {
-            return ConnectionState::Disconnected;
-        }
-        let snap = self.health_state.lock().unwrap_or_else(|p| p.into_inner());
-        if snap.backend_session_lost.is_none() && snap.registered_count > 0 {
-            ConnectionState::Connected
-        } else {
-            ConnectionState::Disconnected
-        }
+        self.view().connection()
     }
 
     fn uptime(&self) -> Option<Duration> {
@@ -47,8 +38,7 @@ impl BuiltinStatus for HotkeyClient {
     }
 
     fn activity_count(&self) -> Option<usize> {
-        let snap = self.health_state.lock().unwrap_or_else(|p| p.into_inner());
-        Some(snap.registered_count)
+        Some(self.registered_count())
     }
 
     fn header_actions(&self) -> Vec<HeaderAction> {

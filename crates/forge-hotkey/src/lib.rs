@@ -18,6 +18,7 @@ mod integration;
 mod main_thread;
 mod quick_actions;
 mod reconciler;
+mod registrations;
 pub(crate) mod status;
 pub(crate) mod supervisor;
 mod synced_clips;
@@ -25,6 +26,7 @@ mod synced_triggers;
 #[cfg(feature = "testing")]
 pub mod testing;
 mod triggers;
+mod view;
 pub mod vocabulary;
 
 #[cfg(target_os = "linux")]

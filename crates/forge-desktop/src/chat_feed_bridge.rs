@@ -1,3 +1,4 @@
+use forge_types::RecoverMutex;
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -136,15 +137,12 @@ struct FeedChannel {
 
 impl FeedChannel {
     fn push(&self, item: FeedItem) {
-        self.inbox
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .push(item);
+        self.inbox.lock_recover().push(item);
         self.wake.notify_one();
     }
 
     fn take(&self) -> Vec<FeedItem> {
-        self.inbox.lock().unwrap_or_else(|p| p.into_inner()).take()
+        self.inbox.lock_recover().take()
     }
 }
 

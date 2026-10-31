@@ -3,13 +3,13 @@ mod connection_loss;
 mod intent;
 mod preferences;
 
-use std::sync::{Arc, Mutex, PoisonError};
+use forge_types::{ActionId, RecoverMutex};
+use std::sync::{Arc, Mutex};
 
 use forge_events::{
     ActionDone, ConnectionState, Event, PlatformConnectionChanged, RunOutcome, TypedEvent,
 };
 use forge_net::TaskOwner;
-use forge_types::ActionId;
 use tokio::sync::{mpsc, watch};
 use tokio::time::Instant;
 use tracing::debug;
@@ -42,10 +42,7 @@ impl NotificationPolicyHandle {
     }
 
     pub fn take_intents(&self) -> Option<NotificationIntents> {
-        self.intents
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .take()
+        self.intents.lock_recover().take()
     }
 }
 

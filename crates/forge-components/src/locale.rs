@@ -1,12 +1,12 @@
+use forge_types::{NamesLanguage, RecoverMutex, RecoverRwLock};
 use std::borrow::Cow;
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeSet, HashSet};
 use std::rc::Rc;
-use std::sync::{Arc, Mutex, PoisonError, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 
 use fluent::memoizer::MemoizerKind;
 use fluent::{FluentArgs, FluentBundle, FluentError, FluentResource, FluentValue};
-use forge_types::NamesLanguage;
 use unic_langid::LanguageIdentifier;
 
 const EN_CATALOG: &str = include_str!("../locales/en/main.ftl");
@@ -87,10 +87,7 @@ impl ActiveBundle {
 }
 
 fn process_catalog() -> Option<Arc<ProcessCatalog>> {
-    PROCESS_CATALOG
-        .read()
-        .unwrap_or_else(PoisonError::into_inner)
-        .clone()
+    PROCESS_CATALOG.read_recover().clone()
 }
 
 fn active_bundle() -> Option<ActiveBundle> {
@@ -149,13 +146,8 @@ pub fn install_process_language(language: CatalogLanguage, app_sources: &[&str])
         app_sources,
     );
     let catalog = Arc::new(ProcessCatalog { bundle, language });
-    *PROCESS_CATALOG
-        .write()
-        .unwrap_or_else(PoisonError::into_inner) = Some(catalog);
-    PROCESS_WARNED_KEYS
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .clear();
+    *PROCESS_CATALOG.write_recover() = Some(catalog);
+    PROCESS_WARNED_KEYS.lock_recover().clear();
 }
 
 pub fn install_thread_language(language: CatalogLanguage, app_sources: &[&str]) {
@@ -490,10 +482,7 @@ fn warn_missing_once_in_process(key: &str) {
     let _ = key;
     #[cfg(debug_assertions)]
     {
-        let first_miss = PROCESS_WARNED_KEYS
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .insert(key.to_owned());
+        let first_miss = PROCESS_WARNED_KEYS.lock_recover().insert(key.to_owned());
         if first_miss {
             tracing::warn!(key, "tr!: key not found in active bundle");
         }
@@ -776,10 +765,7 @@ mod tests {
         fn event(&self, event: &tracing::Event<'_>) {
             let mut fields = WarnFields::default();
             event.record(&mut fields);
-            self.0
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .push((fields.key, fields.thread));
+            self.0.lock_recover().push((fields.key, fields.thread));
         }
 
         fn enter(&self, _: &tracing::span::Id) {}

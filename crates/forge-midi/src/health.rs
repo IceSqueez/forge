@@ -1,3 +1,4 @@
+use forge_types::RecoverMutex;
 use std::collections::VecDeque;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
@@ -90,7 +91,7 @@ pub(crate) fn events_per_minute(timestamps: &mut VecDeque<Instant>) -> usize {
 
 impl BuiltinHealth for MidiClient {
     fn metrics(&self) -> [HealthMetric; 4] {
-        let mut snap = self.health_state.lock().unwrap_or_else(|p| p.into_inner());
+        let mut snap = self.health_state.lock_recover();
 
         let input_value =
             input_port_health_value(self.enabled.load(Ordering::Relaxed), snap.input_count);
@@ -170,10 +171,7 @@ mod tests {
     #[test]
     fn metrics_report_the_input_port_slot_as_disabled_when_input_is_off() {
         let c = MidiClient::new_for_test();
-        c.health_state
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .input_count = 2;
+        c.health_state.lock_recover().input_count = 2;
         c.enabled.store(false, Ordering::Relaxed);
 
         let h: &dyn BuiltinHealth = &*c;

@@ -1,10 +1,9 @@
+use forge_types::{IntegrationId, RecoverMutex, Secret};
 use std::sync::{Arc, Mutex};
 
 use forge_events::EventPublisher;
 use forge_platform_core::{DonationProvider, DonationStream};
 use forge_storage::CredentialsRepo;
-use forge_types::IntegrationId;
-use forge_types::Secret;
 use tokio::runtime::Handle;
 use tokio::sync::{mpsc, watch};
 use tokio::task::AbortHandle;
@@ -180,8 +179,7 @@ impl DonationProvider for MonobankProvider {
                 }));
                 let superseded = self
                     .running_poller
-                    .lock()
-                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .lock_recover()
                     .replace(poller.abort_handle());
                 if let Some(superseded) = superseded {
                     superseded.abort();

@@ -1,3 +1,4 @@
+use forge_types::RecoverMutex;
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -164,7 +165,7 @@ pub struct DiscordSendHealth {
 
 impl DiscordClient {
     pub fn send_health(&self) -> DiscordSendHealth {
-        let mut snap = self.health_state.lock().unwrap_or_else(|p| p.into_inner());
+        let mut snap = self.health_state.lock_recover();
         DiscordSendHealth {
             latency_p50_ms: compute_p50(&snap.latencies_ms),
             latency_samples: snap.latencies_ms.len(),
@@ -198,7 +199,7 @@ fn compute_p50(latencies: &VecDeque<u64>) -> Option<u64> {
 
 impl BuiltinHealth for DiscordClient {
     fn metrics(&self) -> [HealthMetric; 4] {
-        let mut snap = self.health_state.lock().unwrap_or_else(|p| p.into_inner());
+        let mut snap = self.health_state.lock_recover();
 
         let latency = latency_value(&snap.latencies_ms);
         let budget = budget_value(

@@ -125,10 +125,7 @@ impl ObsClient {
         if !self.connection_state().is_connected() {
             return Err(CollectionFailure::NotConnected);
         }
-        self.catalog_state
-            .read()
-            .map(|catalog| read(&catalog))
-            .map_err(|_| CollectionFailure::Transport)
+        Ok(self.mirror.read(read))
     }
 
     async fn transition_entries(&self) -> Result<Vec<OptionEntry>, ObsError> {
@@ -513,7 +510,7 @@ mod tests {
     #[tokio::test]
     async fn resolve_on_a_disconnected_client_ignores_a_stale_catalog_mirror() {
         let client = disconnected();
-        *client.catalog_state.write().unwrap() = fixture();
+        *client.mirror.write_for_test() = fixture();
         for list in [SCENE_LIST, SOURCE_LIST, INPUT_LIST] {
             assert_eq!(
                 client

@@ -1,3 +1,4 @@
+use forge_types::RecoverMutex;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -17,7 +18,7 @@ pub(crate) struct GlobalReadTally {
 impl GlobalReadTally {
     pub(crate) fn count(&self, name: &str) {
         {
-            let mut pending = self.pending.lock().unwrap_or_else(|p| p.into_inner());
+            let mut pending = self.pending.lock_recover();
             match pending.get_mut(name) {
                 Some(reads) => *reads = reads.saturating_add(1),
                 None => {
@@ -29,23 +30,15 @@ impl GlobalReadTally {
     }
 
     pub(crate) fn unflushed(&self, name: &str) -> u64 {
-        self.pending
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .get(name)
-            .copied()
-            .unwrap_or(0)
+        self.pending.lock_recover().get(name).copied().unwrap_or(0)
     }
 
     pub(crate) fn forget(&self, name: &str) {
-        self.pending
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .remove(name);
+        self.pending.lock_recover().remove(name);
     }
 
     pub(crate) fn rename(&self, old_name: &str, new_name: &str) {
-        let mut pending = self.pending.lock().unwrap_or_else(|p| p.into_inner());
+        let mut pending = self.pending.lock_recover();
         if let Some(reads) = pending.remove(old_name) {
             pending.insert(new_name.to_owned(), reads);
         }
@@ -56,11 +49,11 @@ impl GlobalReadTally {
     }
 
     fn take(&self) -> HashMap<String, u64> {
-        std::mem::take(&mut *self.pending.lock().unwrap_or_else(|p| p.into_inner()))
+        std::mem::take(&mut *self.pending.lock_recover())
     }
 
     fn put_back(&self, unsaved: HashMap<String, u64>) {
-        let mut pending = self.pending.lock().unwrap_or_else(|p| p.into_inner());
+        let mut pending = self.pending.lock_recover();
         for (name, reads) in unsaved {
             let total = pending.entry(name).or_insert(0);
             *total = total.saturating_add(reads);

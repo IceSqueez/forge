@@ -1,9 +1,9 @@
+use forge_types::{PlatformId, RecoverMutex};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use forge_storage::{BanLedgerEntry, BanLedgerKey, BanLedgerRepo, StorageError, merge_ban_entry};
-use forge_types::PlatformId;
 use time::OffsetDateTime;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -45,9 +45,7 @@ impl MemoryBanLedger {
     }
 
     fn rows(&self) -> std::sync::MutexGuard<'_, HashMap<BanLedgerKey, BanLedgerEntry>> {
-        self.rows
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+        self.rows.lock_recover()
     }
 
     fn check(&self, op: LedgerOp) -> Result<(), StorageError> {

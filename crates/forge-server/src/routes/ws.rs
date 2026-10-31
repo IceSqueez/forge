@@ -112,8 +112,8 @@ async fn handle_socket(
     }
 
     state
-        .server_info
-        .register(client.id, Arc::clone(&client))
+        .bus_adapter
+        .attach_session(client.id, Arc::clone(&client))
         .await;
 
     let ctx = DispatchContext {
@@ -276,7 +276,6 @@ async fn handle_socket(
     }
 
     state.bus_adapter.unregister_client(handle.id).await;
-    state.server_info.unregister(handle.id).await;
 }
 
 async fn shutdown_signalled(shutdown: &mut watch::Receiver<bool>) {

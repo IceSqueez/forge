@@ -1,3 +1,4 @@
+use forge_types::RecoverMutex;
 use std::collections::BTreeSet;
 use std::sync::{Arc, OnceLock};
 
@@ -47,7 +48,7 @@ impl HotkeyReconciler {
     }
 
     fn note_bound(&self, bound: BTreeSet<String>, wanted: &BTreeSet<String>) -> bool {
-        let mut known = self.known_combos.lock().unwrap_or_else(|p| p.into_inner());
+        let mut known = self.known_combos.lock_recover();
         let grew = known
             .as_ref()
             .is_some_and(|previous| wanted.iter().any(|combo| !previous.contains(combo)));

@@ -1,8 +1,8 @@
+use forge_types::{ActionId, RecoverMutex};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use forge_registry::CancelSignal;
-use forge_types::ActionId;
 
 #[derive(Clone, Default)]
 pub struct ActionCancelRegistry {
@@ -68,7 +68,7 @@ impl ActionCancelRegistry {
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, RegistryInner> {
-        self.inner.lock().unwrap_or_else(|e| e.into_inner())
+        self.inner.lock_recover()
     }
 }
 

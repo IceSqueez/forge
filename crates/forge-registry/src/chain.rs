@@ -1,10 +1,10 @@
+use forge_types::{
+    ActionId, ArgStack, EventId, IntegrationAvailability, RecoverMutex, SubActionStep,
+    SubActionTelemetry, UserText,
+};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use async_trait::async_trait;
-use forge_types::{
-    ActionId, ArgStack, EventId, IntegrationAvailability, SubActionStep, SubActionTelemetry,
-    UserText,
-};
 use tokio::sync::watch;
 
 use crate::error::RegistryError;
@@ -49,9 +49,7 @@ impl ControlCell {
     }
 
     fn guard(&self) -> MutexGuard<'_, Option<ControlSignal>> {
-        self.0
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+        self.0.lock_recover()
     }
 }
 
@@ -78,9 +76,7 @@ impl TelemetrySink {
     }
 
     fn guard(&self) -> MutexGuard<'_, Vec<SubActionTelemetry>> {
-        self.0
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+        self.0.lock_recover()
     }
 }
 

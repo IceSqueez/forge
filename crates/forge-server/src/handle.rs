@@ -352,18 +352,7 @@ impl ServerHandle {
 
     pub async fn kick_client(&self, id: ClientId) -> bool {
         let state = self.inner.lock().await.state.clone();
-        let connected = state
-            .server_info
-            .connected_clients
-            .read()
-            .await
-            .contains_key(&id);
-        if !connected {
-            return false;
-        }
-        state.server_info.unregister(id).await;
-        state.bus_adapter.kick_client(id).await;
-        true
+        state.bus_adapter.kick_client(id).await
     }
 }
 

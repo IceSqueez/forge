@@ -1,8 +1,8 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
+use forge_types::{ArgStack, NamesLanguage, RecoverMutex, Variant, set_current_names_language};
 use std::process::Command;
-use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::sync::{Mutex, MutexGuard};
 
-use forge_types::{ArgStack, NamesLanguage, Variant, set_current_names_language};
 use time::{Date, Month, OffsetDateTime};
 
 const CHILD_MARKER: &str = "FORGE_INLINE_DATE_FORMAT_CHILD";
@@ -10,9 +10,7 @@ const CHILD_MARKER: &str = "FORGE_INLINE_DATE_FORMAT_CHILD";
 static NAMES_LANGUAGE_LOCK: Mutex<()> = Mutex::new(());
 
 fn names_language(language: NamesLanguage) -> MutexGuard<'static, ()> {
-    let guard = NAMES_LANGUAGE_LOCK
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner);
+    let guard = NAMES_LANGUAGE_LOCK.lock_recover();
     set_current_names_language(language);
     guard
 }

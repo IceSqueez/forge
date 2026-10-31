@@ -1,5 +1,5 @@
 use crate::vocabulary::labels;
-use forge_types::UserText;
+use forge_types::{IntegrationId, MessageRef, RecoverRwLock, UserText, VerbatimText};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
@@ -18,7 +18,6 @@ use forge_platform_core::{
     HealthText, HealthValue, HeroBadge, HeroBadgeTone, LiveViewerSource, SectionIcon,
     SubscriptionRow, SubscriptionStatus, ViewerReport, ViewerReportStream,
 };
-use forge_types::{IntegrationId, MessageRef, VerbatimText};
 
 use forge_events::EventPublisher;
 use forge_storage::CredentialsRepo;
@@ -205,10 +204,7 @@ impl TwitchIntegrationBundle {
                     changed = expiry_rx.changed() => if changed.is_err() { break },
                 }
                 let expiry = *expiry_rx.borrow_and_update();
-                *bundle
-                    .token_expires_at
-                    .write()
-                    .unwrap_or_else(|p| p.into_inner()) = expiry;
+                *bundle.token_expires_at.write_recover() = expiry;
                 let delta = HealthDelta {
                     metric: API_CALLS_METRIC,
                     new_value: bundle.api_calls_health_value(),
@@ -224,14 +220,9 @@ impl TwitchIntegrationBundle {
 
     fn on_chat_state_changed(self: &Arc<Self>, state: ChatConnectionState) {
         if state == ChatConnectionState::Connected {
-            let already_connected = self
-                .connected_at
-                .read()
-                .unwrap_or_else(|p| p.into_inner())
-                .is_some();
+            let already_connected = self.connected_at.read_recover().is_some();
             self.connected_at
-                .write()
-                .unwrap_or_else(|p| p.into_inner())
+                .write_recover()
                 .get_or_insert_with(OffsetDateTime::now_utc);
             if !already_connected {
                 Self::spawn_identity_refresh(self);
@@ -241,7 +232,7 @@ impl TwitchIntegrationBundle {
             }
         } else {
             self.lifecycle.forget_phases();
-            *self.connected_at.write().unwrap_or_else(|p| p.into_inner()) = None;
+            *self.connected_at.write_recover() = None;
         }
     }
 
@@ -286,10 +277,7 @@ impl TwitchIntegrationBundle {
         let Ok(Some(stored)) = credentials::load(self.creds.as_ref()).await else {
             return;
         };
-        *self
-            .token_expires_at
-            .write()
-            .unwrap_or_else(|p| p.into_inner()) = stored.expires_at;
+        *self.token_expires_at.write_recover() = stored.expires_at;
         if let Ok(tier) = resolve_broadcaster_tier(self.transport.as_ref(), &stored.user_id).await {
             self.tier.send_replace(tier);
         }
@@ -339,10 +327,7 @@ impl TwitchIntegrationBundle {
                     Some(count) => ViewerPollState::Live(count),
                     None => ViewerPollState::Offline,
                 };
-                *bundle
-                    .viewer_state
-                    .write()
-                    .unwrap_or_else(|p| p.into_inner()) = new_state;
+                *bundle.viewer_state.write_recover() = new_state;
                 bundle.viewer_report_tx.send_replace(new_state.as_report());
                 let delta = HealthDelta {
                     metric: HealthMetricId::VIEWERS,
@@ -515,7 +500,7 @@ impl TwitchIntegrationBundle {
     }
 
     fn viewers_health_value(&self) -> HealthValue {
-        let state = *self.viewer_state.read().unwrap_or_else(|p| p.into_inner());
+        let state = *self.viewer_state.read_recover();
         match state {
             ViewerPollState::Unknown => HealthValue::Text {
                 primary: HealthText::Count(0),
@@ -586,7 +571,7 @@ impl BuiltinStatus for TwitchIntegrationBundle {
     }
 
     fn uptime(&self) -> Option<Duration> {
-        let at = (*self.connected_at.read().unwrap_or_else(|p| p.into_inner()))?;
+        let at = (*self.connected_at.read_recover())?;
         let elapsed = OffsetDateTime::now_utc() - at;
         if elapsed.is_positive() {
             Some(elapsed.unsigned_abs())
@@ -611,10 +596,7 @@ impl BuiltinStatus for TwitchIntegrationBundle {
     }
 
     fn token_expiry(&self) -> Option<SystemTime> {
-        *self
-            .token_expires_at
-            .read()
-            .unwrap_or_else(|p| p.into_inner())
+        *self.token_expires_at.read_recover()
     }
 
     fn name_badges(&self) -> Vec<HeroBadge> {
@@ -1449,12 +1431,7 @@ mod tests {
     async fn a_poisoned_connected_at_lock_still_records_both_connection_transitions() {
         let b = make_bundle(ChatConnectionState::Disconnected);
         poison(&b.connected_at);
-        let read = || {
-            b.connected_at
-                .read()
-                .unwrap_or_else(|p| p.into_inner())
-                .is_some()
-        };
+        let read = || b.connected_at.read_recover().is_some();
 
         b.on_chat_state_changed(ChatConnectionState::Connected);
         let after_connect = read();
@@ -1480,12 +1457,7 @@ mod tests {
 
         b.refresh_identity().await;
 
-        assert!(
-            b.token_expires_at
-                .read()
-                .unwrap_or_else(|p| p.into_inner())
-                .is_some()
-        );
+        assert!(b.token_expires_at.read_recover().is_some());
     }
 
     #[test]

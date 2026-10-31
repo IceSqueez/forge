@@ -1291,10 +1291,12 @@ mod tests {
             let actions: Vec<Action> = seeds.iter().map(action).collect();
             let mut instances = Vec::new();
             let mut users: HashMap<TriggerInstanceId, Vec<ActionId>> = HashMap::new();
+            let mut linked: HashMap<ActionId, Vec<TriggerInstance>> = HashMap::new();
             for (seed, action) in seeds.iter().zip(&actions) {
                 for kind in seed.trigger_kinds {
                     let instance = instance(kind);
                     users.insert(instance.id, vec![action.id]);
+                    linked.entry(action.id).or_default().push(instance.clone());
                     instances.push(instance);
                 }
             }
@@ -1304,7 +1306,17 @@ mod tests {
             action_repo
                 .expect_list()
                 .returning(move || Ok(listed.clone()));
+            let found = actions.clone();
+            action_repo
+                .expect_get()
+                .returning(move |id| Ok(found.iter().find(|a| a.id == id).cloned()));
+            action_repo
+                .expect_telemetry()
+                .returning(|_| Ok(forge_storage::ActionTelemetry::default()));
             let mut trigger_repo = MockTriggerInstanceRepo::new();
+            trigger_repo
+                .expect_list_for_action()
+                .returning(move |id| Ok(linked.get(&id).cloned().unwrap_or_default()));
             trigger_repo
                 .expect_list_all()
                 .returning(move || Ok(instances.clone()));
@@ -1313,9 +1325,13 @@ mod tests {
                 .returning(move || Ok(users.clone()));
 
             let action_repo: Arc<dyn ActionRepo> = Arc::new(action_repo);
-            let queue_repo: Arc<dyn QueueRepo> = Arc::new(MockQueueRepo::new());
+            let mut queues = MockQueueRepo::new();
+            queues.expect_list().returning(|| Ok(Vec::new()));
+            let queue_repo: Arc<dyn QueueRepo> = Arc::new(queues);
             let trigger_repo: Arc<dyn TriggerInstanceRepo> = Arc::new(trigger_repo);
-            let clips: Arc<dyn SoundboardClipsRepo> = Arc::new(MockSoundboardClipsRepo::new());
+            let mut stored_clips = MockSoundboardClipsRepo::new();
+            stored_clips.expect_list().returning(|| Ok(Vec::new()));
+            let clips: Arc<dyn SoundboardClipsRepo> = Arc::new(stored_clips);
             let service = Arc::new(ActionsService::new(
                 Arc::clone(&action_repo),
                 Arc::clone(&queue_repo),
@@ -1323,6 +1339,8 @@ mod tests {
                 Arc::clone(&trigger_repo),
             ));
             let (backend, _writes) = test_backend();
+            let mut globals = forge_storage::MockGlobalsRepo::new();
+            globals.expect_list().returning(|| Ok(Vec::new()));
             let (bus, scheduler) = rt.block_on(async {
                 let bus = EventBus::new(Arc::new(StubEventLog));
                 let engine = spawn_action_engine(
@@ -1344,9 +1362,10 @@ mod tests {
                         queue_repo,
                         service,
                         trigger_repo,
-                        Arc::clone(&backend) as Arc<dyn ScriptRepo>,
+                        Arc::new(crate::test_support::MemoryScripts::default())
+                            as Arc<dyn ScriptRepo>,
                         Arc::new(ClipLibrary::new(clips, backend.media_repo())),
-                        Arc::clone(&backend) as Arc<dyn GlobalsRepo>,
+                        Arc::new(globals) as Arc<dyn GlobalsRepo>,
                         Arc::clone(&backend) as Arc<dyn SettingsRepo>,
                         Arc::new(StubOverlays),
                         Arc::new(OverlayKindRegistry::new()),
@@ -1405,6 +1424,95 @@ mod tests {
             };
             self.view
                 .update(cx, |view, _| view.sync_filter_membership(&detail));
+        }
+    }
+
+    struct Hosting(Entity<ScreenActionsView>);
+
+    impl Render for Hosting {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            div().size_full().child(self.0.clone())
+        }
+    }
+
+    impl Fixture {
+        fn in_window(&self, cx: &mut gpui::TestAppContext) -> gpui::VisualTestContext {
+            cx.update(crate::actions::register_key_bindings);
+            let hosted = self.view.clone();
+            let window = cx.add_window(|_, _| Hosting(hosted));
+            let vcx = gpui::VisualTestContext::from_window(window.into(), cx);
+            vcx.run_until_parked();
+            vcx
+        }
+
+        fn collapse(&self, cx: &mut gpui::TestAppContext, group: &str) {
+            self.view.update(cx, |view, cx| {
+                let name = group.to_uppercase();
+                let index = view.groups.iter().position(|g| g.name == name).unwrap();
+                view.toggle_group(index, cx);
+            });
+        }
+
+        fn search(&self, cx: &mut gpui::TestAppContext, query: &str) {
+            self.view.update(cx, |view, cx| {
+                view.search
+                    .on_changed(&InputEvent::Changed(query.to_owned().into()));
+                cx.notify();
+            });
+        }
+
+        fn name_of(&self, id: ActionId) -> &str {
+            let found = self.actions.iter().find(|a| a.id == id);
+            &found.unwrap().name
+        }
+
+        fn press(&self, vcx: &mut gpui::VisualTestContext, keys: &str) {
+            vcx.simulate_keystrokes(keys);
+            vcx.run_until_parked();
+        }
+
+        fn cursor_name(&self, vcx: &mut gpui::VisualTestContext) -> Option<String> {
+            let ids: Vec<ActionId> = self.actions.iter().map(|a| a.id).collect();
+            self.view.read_with(vcx, |view, _| {
+                let at = ids.iter().find(|id| view.tree_keys.is_at(id));
+                at.map(|id| self.name_of(*id).to_owned())
+            })
+        }
+
+        fn selected_name(&self, vcx: &mut gpui::VisualTestContext) -> Option<String> {
+            let selected = self.view.read_with(vcx, |view, _| view.selected);
+            selected.map(|id| self.name_of(id).to_owned())
+        }
+
+        fn keyboard_walk(&self, vcx: &mut gpui::VisualTestContext, rows: usize) -> Vec<String> {
+            (0..rows)
+                .map(|_| {
+                    self.press(vcx, "down");
+                    self.cursor_name(vcx).unwrap()
+                })
+                .collect()
+        }
+
+        fn click_row(&self, vcx: &mut gpui::VisualTestContext, position: usize) {
+            let bounds = self.view.read_with(vcx, |view, _| {
+                let child = view.tree_action_rows()[position].child_index;
+                view.tree_scroll.bounds_for_item(child).unwrap()
+            });
+            let name_area = gpui::point(bounds.left() + ROW_INDENT, bounds.center().y);
+            vcx.simulate_click(name_area, gpui::Modifiers::none());
+            self.settle(vcx);
+        }
+
+        fn clicked_walk(&self, vcx: &mut gpui::VisualTestContext) -> Vec<String> {
+            let rows = self
+                .view
+                .read_with(vcx, |view, _| view.tree_action_rows().len());
+            (0..rows)
+                .map(|position| {
+                    self.click_row(vcx, position);
+                    self.selected_name(vcx).unwrap()
+                })
+                .collect()
         }
     }
 
@@ -1693,5 +1801,147 @@ mod tests {
             )
         });
         assert_eq!(own, app_wide);
+    }
+
+    #[gpui::test]
+    fn arrows_walk_the_tree_in_the_order_it_renders_past_collapsed_groups_and_filters(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let all = [
+            "Free hug",
+            "Hydrate",
+            "Lurk",
+            "Hug",
+            "Shoutout",
+            "Spin the wheel",
+            "Stretch",
+            "Raid train",
+        ];
+        for (filter, query, collapsed, expected) in [
+            (ActionsFilter::All, "", None, all.to_vec()),
+            (
+                ActionsFilter::All,
+                "",
+                Some("Misc"),
+                vec!["Free hug", "Hydrate", "Lurk", "Raid train"],
+            ),
+            (
+                ActionsFilter::Timers,
+                "",
+                None,
+                vec!["Hydrate", "Spin the wheel", "Stretch"],
+            ),
+            (
+                ActionsFilter::Timers,
+                "",
+                Some("Chat Commands"),
+                vec!["Spin the wheel", "Stretch"],
+            ),
+            (ActionsFilter::All, "hu", None, vec!["Free hug", "Hug"]),
+        ] {
+            let fixture = Fixture::new(cx, &seeds());
+            let vcx = &mut fixture.in_window(cx);
+            fixture.set_filter(vcx, filter);
+            fixture.search(vcx, query);
+            if let Some(group) = collapsed {
+                fixture.collapse(vcx, group);
+            }
+            vcx.run_until_parked();
+
+            assert_eq!(
+                fixture.keyboard_walk(vcx, expected.len()),
+                expected,
+                "keys under {} {query:?} {collapsed:?}",
+                label(filter)
+            );
+            assert_eq!(
+                fixture.clicked_walk(vcx),
+                expected,
+                "rendered rows under {} {query:?} {collapsed:?}",
+                label(filter)
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn enter_on_the_cursor_row_opens_the_action_a_click_on_that_row_opens(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let opened = |fixture: &Fixture, vcx: &mut gpui::VisualTestContext| {
+            fixture.settle(vcx);
+            let detail = fixture.view.read_with(vcx, |view, _| {
+                view.detail.as_ref().map(|detail| detail.action.id)
+            });
+            (
+                fixture.selected_name(vcx),
+                detail.map(|id| fixture.name_of(id).to_owned()),
+            )
+        };
+
+        let by_key = Fixture::new(cx, &seeds());
+        let vcx = &mut by_key.in_window(cx);
+        by_key.press(vcx, "down down down enter");
+        let entered = opened(&by_key, vcx);
+
+        let by_mouse = Fixture::new(cx, &seeds());
+        let vcx = &mut by_mouse.in_window(cx);
+        by_mouse.click_row(vcx, 2);
+        let clicked = opened(&by_mouse, vcx);
+
+        let lurk = Some("Lurk".to_owned());
+        assert_eq!(entered, (lurk.clone(), lurk));
+        assert_eq!(entered, clicked);
+    }
+
+    #[gpui::test]
+    fn a_row_that_stops_being_listed_takes_the_cursor_with_it(cx: &mut gpui::TestAppContext) {
+        type Hide = fn(&Fixture, &mut gpui::VisualTestContext);
+        let hides: [(&str, Hide); 3] = [
+            ("collapse", |fixture, vcx| {
+                fixture.collapse(vcx, "Chat Commands")
+            }),
+            ("filter", |fixture, vcx| {
+                fixture.set_filter(vcx, ActionsFilter::Points)
+            }),
+            ("search", |fixture, vcx| fixture.search(vcx, "raid")),
+        ];
+        for (how, hide) in hides {
+            let fixture = Fixture::new(cx, &seeds());
+            let vcx = &mut fixture.in_window(cx);
+            fixture.press(vcx, "down down");
+            assert_eq!(fixture.cursor_name(vcx).as_deref(), Some("Hydrate"));
+
+            hide(&fixture, vcx);
+            vcx.run_until_parked();
+            fixture.press(vcx, "enter");
+            assert_eq!(fixture.selected_name(vcx), None, "{how}");
+
+            let first = fixture
+                .view
+                .read_with(vcx, |view, _| view.tree_action_rows()[0].id);
+            fixture.press(vcx, "down");
+            assert_eq!(
+                fixture.cursor_name(vcx).as_deref(),
+                Some(fixture.name_of(first)),
+                "{how}"
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn an_inline_rename_silences_the_list_keys(cx: &mut gpui::TestAppContext) {
+        let fixture = Fixture::new(cx, &seeds());
+        let vcx = &mut fixture.in_window(cx);
+        fixture.press(vcx, "down");
+        let renamed = fixture.actions[0].id;
+        fixture.view.update_in(vcx, |view, window, cx| {
+            view.start_rename(renamed, window, cx);
+            view.step_list(ListStep::Next, cx);
+            view.activate_list(window, cx);
+        });
+        vcx.run_until_parked();
+
+        assert_eq!(fixture.cursor_name(vcx).as_deref(), Some("Free hug"));
+        assert_eq!(fixture.selected_name(vcx), None);
     }
 }

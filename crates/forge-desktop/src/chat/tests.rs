@@ -581,3 +581,90 @@ fn a_platform_sent_name_color_wins_over_the_hashed_accent() {
 
     assert_eq!(ChatView::username_color(&msg, &FORGE_DEFAULT), sent);
 }
+
+struct DrawerRig<'a> {
+    view: Entity<ChatView>,
+    vcx: &'a mut VisualTestContext,
+}
+
+const NEWEST: &str = "ada";
+const MIDDLE: &str = "ben";
+const OLDEST: &str = "cy";
+
+impl<'a> DrawerRig<'a> {
+    fn mount(cx: &'a mut TestAppContext, rt: &tokio::runtime::Runtime) -> Self {
+        let (view, vcx) = mount_in_window(cx, rt, MockVoiceAliasRepo::new());
+        vcx.update(|_, cx| crate::actions::register_key_bindings(cx));
+        let feed = view.read_with(vcx, |view, _| view.feed.clone());
+        push_each(
+            vcx,
+            &feed,
+            [(OLDEST, 1), (MIDDLE, 2), (NEWEST, 3)]
+                .into_iter()
+                .map(|(name, unix)| line_by(&Self::key(name), unix))
+                .collect(),
+        );
+        let focus = view.read_with(vcx, |view, _| view.drawer_list_keys.focus().clone());
+        vcx.update(|window, cx| window.focus(&focus, cx));
+        vcx.run_until_parked();
+        Self { view, vcx }
+    }
+
+    fn key(name: &str) -> AuthorKey {
+        AuthorKey::by_viewer_id(PlatformId::Kick, name)
+    }
+
+    fn press(&mut self, keys: &str) {
+        self.vcx.simulate_keystrokes(keys);
+        self.vcx.run_until_parked();
+    }
+
+    fn search(&mut self, query: &str) {
+        let changed = forge_components::InputEvent::Changed(query.to_owned().into());
+        self.view.update(self.vcx, |view, cx| {
+            let field = view.drawer_search.field().clone();
+            view.on_drawer_search_event(field, &changed, cx);
+        });
+        self.vcx.run_until_parked();
+    }
+
+    fn selected(&mut self) -> Option<AuthorKey> {
+        self.view
+            .read_with(self.vcx, |view, _| view.selected_viewer.clone())
+    }
+
+    fn at(&mut self, name: &str) -> bool {
+        self.view.read_with(self.vcx, |view, _| {
+            view.drawer_list_keys.is_at(&Self::key(name))
+        })
+    }
+}
+
+#[gpui::test]
+fn arrows_walk_the_viewer_rows_newest_first_and_enter_selects_the_cursor_row(
+    cx: &mut TestAppContext,
+) {
+    let rt = runtime();
+    let mut rig = DrawerRig::mount(cx, &rt);
+
+    rig.press("down down");
+
+    assert!(rig.at(MIDDLE));
+    assert_eq!(rig.selected(), None);
+    rig.press("enter");
+    assert_eq!(rig.selected(), Some(DrawerRig::key(MIDDLE)));
+}
+
+#[gpui::test]
+fn a_drawer_search_that_hides_the_cursor_row_takes_the_cursor_with_it(cx: &mut TestAppContext) {
+    let rt = runtime();
+    let mut rig = DrawerRig::mount(cx, &rt);
+    rig.press("down");
+
+    rig.search(OLDEST);
+    rig.press("enter");
+    assert_eq!(rig.selected(), None);
+
+    rig.press("down");
+    assert!(rig.at(OLDEST));
+}

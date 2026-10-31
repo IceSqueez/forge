@@ -484,3 +484,284 @@ impl ScriptEditorView {
         )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use forge_components::{InputEvent, Presentation, ThemeId};
+    use forge_runtime::EventBus;
+    use forge_storage::MockActionRepo;
+    use forge_storage::MockScriptRepo;
+    use forge_storage::{
+        Language, SCRIPT_NAME_KEY, SCRIPT_RUN_NAMED_KIND, ScriptRecord, StorageError,
+    };
+    use forge_types::{Action, IntegrationId, ScriptContract, Variant};
+    use gpui::{Entity, IntoElement, Modifiers, Render, TestAppContext, VisualTestContext};
+    use std::sync::Arc;
+    use time::OffsetDateTime;
+
+    use super::super::{IntegrationAvailability, ScriptRegistry};
+    use super::*;
+    use crate::i18n::install_language;
+    use crate::test_support::{
+        StubEventLog, action_running, pump, runtime, step, test_backend_with_scripts_and_actions,
+    };
+
+    const STORED: [&str; 4] = ["zeta", "beta", "gamma", "alpha"];
+    const LINKED: [&str; 2] = ["beta", "alpha"];
+
+    struct NothingDisabled;
+
+    impl IntegrationAvailability for NothingDisabled {
+        fn is_disabled(&self, _: &IntegrationId) -> bool {
+            false
+        }
+    }
+
+    struct Hosting(Entity<ScriptEditorView>);
+
+    impl Render for Hosting {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            div().size_full().child(self.0.clone())
+        }
+    }
+
+    fn record(name: &str) -> ScriptRecord {
+        let now = OffsetDateTime::UNIX_EPOCH;
+        ScriptRecord {
+            id: ScriptId::new(),
+            name: name.to_owned(),
+            body: "let x = 1;".to_owned(),
+            contract: ScriptContract::default(),
+            enabled: true,
+            created_at: now,
+            last_modified: now,
+        }
+    }
+
+    fn linking_action(script: &str) -> Action {
+        let mut running = step(SCRIPT_RUN_NAMED_KIND, true);
+        running.config.insert(
+            SCRIPT_NAME_KEY.to_owned(),
+            Variant::String(script.to_owned()),
+        );
+        action_running(&format!("runs {script}"), vec![running])
+    }
+
+    struct Rig {
+        rt: tokio::runtime::Runtime,
+        view: Entity<ScriptEditorView>,
+        records: Vec<ScriptRecord>,
+        vcx: VisualTestContext,
+    }
+
+    impl Rig {
+        fn mount(cx: &mut TestAppContext) -> Self {
+            install_language(Language::En);
+            cx.update(|cx| {
+                cx.set_global(Presentation::new(ThemeId::ForgeDefault, Density::Cozy));
+                crate::actions::register_key_bindings(cx);
+            });
+            let rt = runtime();
+            let records: Vec<ScriptRecord> = STORED.iter().map(|name| record(name)).collect();
+
+            let mut scripts = MockScriptRepo::new();
+            let listed = records.clone();
+            scripts.expect_list().returning(move || Ok(listed.clone()));
+            let found = records.clone();
+            scripts
+                .expect_get()
+                .returning(move |id| Ok(found.iter().find(|r| r.id == id).cloned()));
+            scripts.expect_telemetry().returning(|_| {
+                Err(StorageError::NotFound {
+                    key: "telemetry".to_owned(),
+                })
+            });
+            let mut actions = MockActionRepo::new();
+            let linking: Vec<Action> = LINKED.iter().map(|name| linking_action(name)).collect();
+            actions.expect_list().returning(move || Ok(linking.clone()));
+
+            let backend =
+                test_backend_with_scripts_and_actions(Arc::new(scripts), Arc::new(actions));
+            let bus = {
+                let _entered = rt.enter();
+                EventBus::new(Arc::new(StubEventLog))
+            };
+            let handle = rt.handle().clone();
+            let view = cx.new(|cx| {
+                ScriptEditorView::new(
+                    backend,
+                    Arc::new(ScriptRegistry::new()),
+                    bus,
+                    Arc::new(NothingDisabled),
+                    handle,
+                    cx,
+                )
+            });
+            let hosted = view.clone();
+            let window = cx.add_window(|_, _| Hosting(hosted));
+            let vcx = VisualTestContext::from_window(window.into(), cx);
+            let mut rig = Self {
+                rt,
+                view,
+                records,
+                vcx,
+            };
+            rig.settle();
+            rig
+        }
+
+        fn settle(&mut self) {
+            for _ in 0..6 {
+                pump(&self.rt);
+                self.vcx.run_until_parked();
+            }
+        }
+
+        fn id_of(&self, name: &str) -> ScriptId {
+            self.records.iter().find(|r| r.name == name).unwrap().id
+        }
+
+        fn name_of(&self, id: ScriptId) -> String {
+            let found = self.records.iter().find(|r| r.id == id);
+            found.unwrap().name.clone()
+        }
+
+        fn search(&mut self, query: &str) {
+            let changed = InputEvent::Changed(query.to_owned().into());
+            self.view.update(&mut self.vcx, |view, cx| {
+                view.search.on_changed(&changed);
+                cx.notify();
+            });
+            self.vcx.run_until_parked();
+        }
+
+        fn press(&mut self, keys: &str) {
+            self.vcx.simulate_keystrokes(keys);
+            self.settle();
+        }
+
+        fn row_count(&mut self) -> usize {
+            self.view
+                .read_with(&self.vcx, |view, _| view.script_rows().len())
+        }
+
+        fn climb_to_the_top(&mut self) {
+            for _ in 0..STORED.len() {
+                self.press("up");
+            }
+        }
+
+        fn cursor(&mut self) -> Option<String> {
+            let names = STORED.map(|name| (self.id_of(name), name));
+            self.view.read_with(&self.vcx, |view, _| {
+                names
+                    .iter()
+                    .find(|(id, _)| view.list_keys.is_at(id))
+                    .map(|(_, name)| (*name).to_owned())
+            })
+        }
+
+        fn selected(&mut self) -> Option<String> {
+            let selected = self.view.read_with(&self.vcx, |view, _| view.selected);
+            selected.map(|id| self.name_of(id))
+        }
+
+        fn opened(&mut self) -> Option<String> {
+            let open = self
+                .view
+                .read_with(&self.vcx, |view, _| view.open.as_ref().map(|open| open.id));
+            open.map(|id| self.name_of(id))
+        }
+
+        fn keyboard_walk(&mut self) -> Vec<String> {
+            let rows = self.row_count();
+            self.climb_to_the_top();
+            let mut walked = vec![self.cursor().unwrap()];
+            for _ in 1..rows {
+                self.press("down");
+                walked.push(self.cursor().unwrap());
+            }
+            walked
+        }
+
+        fn click_row(&mut self, position: usize) {
+            let bounds = self.view.read_with(&self.vcx, |view, _| {
+                let child = view.script_rows()[position].child_index;
+                view.list_scroll.bounds_for_item(child).unwrap()
+            });
+            self.vcx.simulate_click(bounds.center(), Modifiers::none());
+            self.settle();
+        }
+
+        fn clicked_walk(&mut self) -> Vec<String> {
+            (0..self.row_count())
+                .map(|position| {
+                    self.click_row(position);
+                    self.selected().unwrap()
+                })
+                .collect()
+        }
+    }
+
+    #[gpui::test]
+    fn arrows_walk_the_script_list_in_the_order_it_renders_under_any_search(
+        cx: &mut TestAppContext,
+    ) {
+        for (query, expected) in [
+            ("", vec!["beta", "alpha", "zeta", "gamma"]),
+            ("et", vec!["beta", "zeta"]),
+            ("alpha", vec!["alpha"]),
+            ("gamma", vec!["gamma"]),
+        ] {
+            let mut rig = Rig::mount(cx);
+            rig.search(query);
+
+            assert_eq!(rig.keyboard_walk(), expected, "keys under {query:?}");
+            assert_eq!(rig.clicked_walk(), expected, "rendered under {query:?}");
+        }
+    }
+
+    #[gpui::test]
+    fn enter_on_the_cursor_row_opens_the_script_a_click_on_that_row_opens(cx: &mut TestAppContext) {
+        let mut by_key = Rig::mount(cx);
+        by_key.climb_to_the_top();
+        by_key.press("down enter");
+
+        let mut by_mouse = Rig::mount(cx);
+        by_mouse.click_row(1);
+
+        assert_eq!(by_key.opened().as_deref(), Some("alpha"));
+        assert_eq!(by_mouse.opened().as_deref(), Some("alpha"));
+    }
+
+    #[gpui::test]
+    fn a_search_that_hides_the_cursor_row_takes_the_cursor_with_it(cx: &mut TestAppContext) {
+        let mut rig = Rig::mount(cx);
+        rig.climb_to_the_top();
+        rig.press("down");
+        assert_eq!(rig.cursor().as_deref(), Some("alpha"));
+
+        rig.search("gamma");
+        rig.press("enter");
+        assert_eq!(rig.selected().as_deref(), Some("zeta"));
+
+        rig.press("down");
+        assert_eq!(rig.cursor().as_deref(), Some("gamma"));
+    }
+
+    #[gpui::test]
+    fn an_inline_rename_silences_the_list_keys(cx: &mut TestAppContext) {
+        let mut rig = Rig::mount(cx);
+        rig.climb_to_the_top();
+        let renamed = rig.id_of("gamma");
+        rig.view.update_in(&mut rig.vcx, |view, window, cx| {
+            view.start_rename(renamed, window, cx);
+            view.step_list(ListStep::Next, cx);
+            view.activate_list(window, cx);
+        });
+        rig.settle();
+
+        assert_eq!(rig.cursor().as_deref(), Some("beta"));
+        assert_eq!(rig.selected().as_deref(), Some("zeta"));
+    }
+}

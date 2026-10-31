@@ -1950,6 +1950,7 @@ mod tests {
     };
 
     const SCORE: &str = "score";
+    const LISTED: [&str; 3] = ["alpha", "beta", "gamma"];
 
     fn entry(name: &str) -> GlobalEntry {
         let now = OffsetDateTime::UNIX_EPOCH;
@@ -2447,5 +2448,104 @@ mod tests {
             ("globals_inspect_subtitle_items", 2)
         );
         assert_eq!(inspect_count(&object), ("globals_inspect_subtitle_keys", 1));
+    }
+
+    struct Hosting(Entity<GlobalsView>);
+
+    impl Render for Hosting {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            div().size_full().child(self.0.clone())
+        }
+    }
+
+    struct ListRig {
+        view: Entity<GlobalsView>,
+        vcx: gpui::VisualTestContext,
+        _rt: tokio::runtime::Runtime,
+    }
+
+    impl ListRig {
+        fn mount(cx: &mut TestAppContext) -> Self {
+            let rt = runtime();
+            let bus = EventBus::new(Arc::new(StubEventLog));
+            let (stored, repo) = stored_repo();
+            stored.rows.lock().unwrap().extend(LISTED.map(entry));
+            let (_globals, view) = mount(cx, &rt, repo, &bus);
+            cx.update(crate::actions::register_key_bindings);
+            let hosted = view.clone();
+            let window = cx.add_window(|_, _| Hosting(hosted));
+            let vcx = gpui::VisualTestContext::from_window(window.into(), cx);
+            vcx.run_until_parked();
+            Self { view, vcx, _rt: rt }
+        }
+
+        fn press(&mut self, keys: &str) {
+            self.vcx.simulate_keystrokes(keys);
+            self.vcx.run_until_parked();
+        }
+
+        fn search(&mut self, query: &str) {
+            let changed = InputEvent::Changed(query.to_owned().into());
+            self.view.update(&mut self.vcx, |view, cx| {
+                let field = view.search.field().clone();
+                view.on_search_event(field, &changed, cx);
+            });
+            self.vcx.run_until_parked();
+        }
+
+        fn cursor(&self) -> Option<&'static str> {
+            self.view.read_with(&self.vcx, |view, _| {
+                LISTED
+                    .into_iter()
+                    .find(|name| view.table_keys.is_at(&SharedString::from(*name)))
+            })
+        }
+
+        fn edited(&self) -> Option<String> {
+            self.view.read_with(&self.vcx, |view, cx| {
+                let editor = view.editor.as_ref()?.read(cx);
+                match &editor.mode {
+                    EditorMode::Edit(name) => Some(name.to_string()),
+                    EditorMode::Create => None,
+                }
+            })
+        }
+    }
+
+    #[gpui::test]
+    fn enter_opens_the_editor_on_the_row_the_arrows_reached(cx: &mut TestAppContext) {
+        let mut rig = ListRig::mount(cx);
+
+        rig.press("down down down up enter");
+
+        assert_eq!(rig.edited().as_deref(), Some(LISTED[1]));
+    }
+
+    #[gpui::test]
+    fn a_search_that_hides_the_cursor_row_takes_the_cursor_with_it(cx: &mut TestAppContext) {
+        let mut rig = ListRig::mount(cx);
+        rig.press("down");
+
+        rig.search(LISTED[2]);
+        rig.press("enter");
+        assert_eq!(rig.edited(), None);
+
+        rig.press("down");
+        assert_eq!(rig.cursor(), Some(LISTED[2]));
+    }
+
+    #[gpui::test]
+    fn an_inline_rename_silences_the_list_keys(cx: &mut TestAppContext) {
+        let mut rig = ListRig::mount(cx);
+        rig.press("down");
+        rig.view.update_in(&mut rig.vcx, |view, window, cx| {
+            view.start_rename(LISTED[2].into(), window, cx);
+            view.step_list(ListStep::Next, cx);
+            view.activate_list(window, cx);
+        });
+        rig.vcx.run_until_parked();
+
+        assert_eq!(rig.cursor(), Some(LISTED[0]));
+        assert_eq!(rig.edited(), None);
     }
 }

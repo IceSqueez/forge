@@ -491,15 +491,16 @@ mod tests {
     }
 
     fn rig(cx: &mut TestAppContext) -> Rig {
-        rig_on(cx, runtime())
+        rig_with_jobs_on(cx, None)
     }
 
-    fn rig_on(cx: &mut TestAppContext, rt: tokio::runtime::Runtime) -> Rig {
+    fn rig_with_jobs_on(cx: &mut TestAppContext, jobs: Option<&tokio::runtime::Runtime>) -> Rig {
         install_language(Language::En);
         install_presentation(cx);
         cx.update(|cx| cx.set_global(Toasts::new()));
+        let rt = runtime();
         let world = pack_world(&rt);
-        let services = world.services.clone();
+        let services = jobs.map_or_else(|| world.services.clone(), |jobs| world.with_runtime(jobs));
         let data_dir = world.data_dir();
         let flow = cx.new(|_| PackImportFlow::new(services, data_dir));
         Rig { rt, world, flow }
@@ -853,14 +854,15 @@ mod tests {
     fn an_unreadable_pack_staged_on_a_worker_thread_toasts_the_refusal_in_the_ui_language(
         cx: &mut TestAppContext,
     ) {
-        let rig = rig_on(cx, worker_runtime());
+        let worker = worker_runtime();
+        let rig = rig_with_jobs_on(cx, Some(&worker));
         install_language(Language::Uk);
         let junk = rig.world.data_dir().join("junk.forgebundle");
         std::fs::write(&junk, b"not a bundle").unwrap();
-        let background_tasks = alive_tasks(&rig.rt);
+        let background_tasks = alive_tasks(&worker);
 
         rig.flow.update(cx, |flow, cx| flow.open(junk, cx));
-        wait_until_worker_drains_to(&rig.rt, background_tasks);
+        wait_until_worker_drains_to(&worker, background_tasks);
         cx.run_until_parked();
 
         let messages: Vec<String> = toasts(cx).into_iter().map(|toast| toast.1).collect();

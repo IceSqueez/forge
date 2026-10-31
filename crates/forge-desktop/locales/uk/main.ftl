@@ -306,7 +306,7 @@ settings_appearance_font_search = Пошук встановлених шрифт
 settings_appearance_font_default_body = Типовий (Inter)
 settings_appearance_font_default_mono = Типовий (JetBrains Mono)
 settings_appearance_font_persist_failed = Не вдалося зберегти шрифт
-settings_theme_desc_dark = темна
+settings_theme_desc_violet_dark = Фіолетова · темна
 settings_theme_desc_storm = Шторм
 settings_theme_desc_light_mode = Світлий режим
 
@@ -5219,3 +5219,13 @@ script_editor_loading = Завантаження скриптів...
 discord_bindings_loading = Завантаження вебхуків...
 settings_storage_limits_loading = Завантаження лімітів сховища...
 settings_diagnostics_level_loading = Завантаження рівня журналу...
+
+chat_drawer_message_count = { $count } пов.
+tts_filters_preview_sample = привіт @viewer глянь сюди https://example.com POGGERS
+midi_signal_note_on = Нота ввімк.
+midi_signal_note_off = Нота вимк.
+midi_signal_control_change = CC
+midi_signal_program_change = Зміна програми
+midi_signal_pitch_bend = Зсув висоти
+midi_signal_pitch_short = Висота
+midi_signal_program_short = PC

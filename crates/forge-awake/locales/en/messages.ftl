@@ -1,0 +1,10 @@
+msg-awake-service_missing = No { $service } is running.
+msg-awake-unreachable = The { $service } cannot be reached.
+msg-awake-refused = The { $service } refused the request.
+msg-awake-unsupported = Keeping the machine awake is not supported on this platform.
+msg-awake-stopped = The stay-awake service has stopped.
+msg-awake-service_session_bus = session bus
+msg-awake-service_system_bus = system bus
+msg-awake-service_screen_saver = screen saver service
+msg-awake-service_login_manager = login manager
+msg-awake-service_power_manager = power manager

@@ -1,5 +1,8 @@
+use forge_types::MessageCode;
+
 use crate::assets::PageAssets;
 use crate::descriptor::{DeliveryDisposition, OverlayConfig, OverlayKindDescriptor};
+use crate::messages;
 use crate::metrics;
 use crate::preview::{PreviewComposition, PreviewShape, compose};
 
@@ -12,12 +15,12 @@ impl OverlayKindDescriptor for BlankOverlayKind {
         KIND_ID
     }
 
-    fn label(&self) -> &str {
-        "Blank"
+    fn label(&self) -> MessageCode {
+        messages::BLANK_LABEL
     }
 
-    fn summary(&self) -> &str {
-        "Draws nothing on the canvas; it only plays the audio forge sends it"
+    fn summary(&self) -> MessageCode {
+        messages::BLANK_SUMMARY
     }
 
     fn icon_name(&self) -> &str {

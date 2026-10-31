@@ -1,3 +1,5 @@
+use forge_types::MessageRef;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Aspect {
     Display,
@@ -13,7 +15,7 @@ pub enum AspectState {
     Off,
     Pending,
     Held,
-    Unavailable { reason: String },
+    Unavailable { reason: MessageRef },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

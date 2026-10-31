@@ -1,8 +1,11 @@
+use forge_types::MessageCode;
+
 use crate::assets::PageAssets;
 use crate::config;
 use crate::descriptor::{
     DeliveryDisposition, OverlayConfig, OverlayKindDescriptor, SectionedField,
 };
+use crate::messages;
 use crate::metrics;
 use crate::motion::{self, MotionAxes, MotionProfile};
 use crate::preview::{PreviewComposition, PreviewShape, compose};
@@ -25,12 +28,12 @@ impl OverlayKindDescriptor for AlertOverlayKind {
         KIND_ID
     }
 
-    fn label(&self) -> &str {
-        "Alert"
+    fn label(&self) -> MessageCode {
+        messages::ALERT_LABEL
     }
 
-    fn summary(&self) -> &str {
-        "Shows a banner for a few seconds each time an action sends one"
+    fn summary(&self) -> MessageCode {
+        messages::ALERT_SUMMARY
     }
 
     fn icon_name(&self) -> &str {

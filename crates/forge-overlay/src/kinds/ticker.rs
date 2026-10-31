@@ -1,8 +1,11 @@
+use forge_types::MessageCode;
+
 use crate::assets::PageAssets;
 use crate::config;
 use crate::descriptor::{
     DeliveryDisposition, OverlayConfig, OverlayKindDescriptor, SectionedField,
 };
+use crate::messages;
 use crate::metrics;
 use crate::motion::{self, MotionAxes, MotionProfile};
 use crate::preview::{PreviewComposition, PreviewShape, compose};
@@ -25,12 +28,12 @@ impl OverlayKindDescriptor for TickerOverlayKind {
         KIND_ID
     }
 
-    fn label(&self) -> &str {
-        "Ticker"
+    fn label(&self) -> MessageCode {
+        messages::TICKER_LABEL
     }
 
-    fn summary(&self) -> &str {
-        "Runs a full-width strip carrying the latest line an action sends"
+    fn summary(&self) -> MessageCode {
+        messages::TICKER_SUMMARY
     }
 
     fn icon_name(&self) -> &str {

@@ -128,7 +128,7 @@ fn theme_meta(theme: ThemeId) -> (String, String) {
     match theme {
         ThemeId::ForgeDefault => (
             "Forge Default".to_owned(),
-            format!("Violet · {}", tr!("settings_theme_desc_dark")),
+            tr!("settings_theme_desc_violet_dark"),
         ),
         ThemeId::TokyoNight => ("Tokyo Night".to_owned(), tr!("settings_theme_desc_storm")),
         ThemeId::Latte => (

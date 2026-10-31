@@ -7,8 +7,8 @@ use zbus::Connection;
 use zbus::OwnedFd;
 
 use crate::Aspect;
-use crate::AwakeError;
 use crate::backend::{AwakeBackend, DisruptionSender};
+use crate::{AwakeError, AwakeService};
 
 const APP_NAME: &str = "forge";
 
@@ -26,10 +26,10 @@ const NAME_HAS_NO_OWNER: &str = "org.freedesktop.DBus.Error.NameHasNoOwner";
 const UNKNOWN_OBJECT: &str = "org.freedesktop.DBus.Error.UnknownObject";
 const UNKNOWN_METHOD: &str = "org.freedesktop.DBus.Error.UnknownMethod";
 
-const SESSION_BUS: &str = "session bus";
-const SYSTEM_BUS: &str = "system bus";
-const SCREEN_SAVER_SERVICE: &str = "screen saver service";
-const LOGIN_SERVICE: &str = "login manager";
+const SESSION_BUS: AwakeService = AwakeService::SessionBus;
+const SYSTEM_BUS: AwakeService = AwakeService::SystemBus;
+const SCREEN_SAVER_SERVICE: AwakeService = AwakeService::ScreenSaver;
+const LOGIN_SERVICE: AwakeService = AwakeService::LoginManager;
 
 const BUS_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -239,7 +239,7 @@ impl AwakeBackend for LinuxBackend {
 }
 
 async fn connect(
-    bus: &'static str,
+    bus: AwakeService,
     connecting: impl Future<Output = zbus::Result<Connection>>,
 ) -> Result<Connection, AwakeError> {
     match tokio::time::timeout(BUS_TIMEOUT, connecting).await {
@@ -249,7 +249,7 @@ async fn connect(
     }
 }
 
-fn unreachable(bus: &'static str, cause: &dyn std::fmt::Display) -> AwakeError {
+fn unreachable(bus: AwakeService, cause: &dyn std::fmt::Display) -> AwakeError {
     AwakeError::Unreachable {
         service: bus,
         reason: cause.to_string(),
@@ -316,14 +316,14 @@ fn is_error_named(err: &zbus::Error, names: &[&str]) -> bool {
     matches!(err, zbus::Error::MethodError(name, _, _) if names.contains(&name.as_str()))
 }
 
-fn classify(err: zbus::Error, service: &'static str) -> AwakeError {
+fn classify(err: zbus::Error, service: AwakeService) -> AwakeError {
     if is_error_named(&err, &[SERVICE_UNKNOWN, NAME_HAS_NO_OWNER]) {
         return AwakeError::ServiceMissing { service };
     }
     refused(service, err)
 }
 
-fn refused(service: &'static str, err: impl std::fmt::Display) -> AwakeError {
+fn refused(service: AwakeService, err: impl std::fmt::Display) -> AwakeError {
     AwakeError::Refused {
         service,
         reason: err.to_string(),

@@ -1,0 +1,10 @@
+msg-awake-service_missing = Не запущено: { $service }.
+msg-awake-unreachable = Недоступно: { $service }.
+msg-awake-refused = Запит відхилено: { $service }.
+msg-awake-unsupported = Ця платформа не підтримує утримання комп'ютера без сну.
+msg-awake-stopped = Службу утримання без сну зупинено.
+msg-awake-service_session_bus = сеансова шина
+msg-awake-service_system_bus = системна шина
+msg-awake-service_screen_saver = служба заставки
+msg-awake-service_login_manager = менеджер входу
+msg-awake-service_power_manager = менеджер живлення

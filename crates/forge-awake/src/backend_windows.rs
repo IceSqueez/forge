@@ -16,10 +16,10 @@ use windows::Win32::UI::WindowsAndMessaging::{DEVICE_NOTIFY_CALLBACK, PBT_APMRES
 use windows::core::PWSTR;
 
 use crate::backend::{AwakeBackend, DisruptionSender};
-use crate::{Aspect, AwakeError};
+use crate::{Aspect, AwakeError, AwakeService};
 
 const POWER_REQUEST_CONTEXT_VERSION: u32 = 0;
-const POWER_SERVICE: &str = "power manager";
+const POWER_SERVICE: AwakeService = AwakeService::PowerManager;
 
 const DISPLAY_REQUESTS: [POWER_REQUEST_TYPE; 2] =
     [PowerRequestDisplayRequired, PowerRequestSystemRequired];

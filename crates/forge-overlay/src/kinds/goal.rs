@@ -1,8 +1,11 @@
+use forge_types::MessageCode;
+
 use crate::assets::PageAssets;
 use crate::config;
 use crate::descriptor::{
     DeliveryDisposition, OverlayConfig, OverlayKindDescriptor, SectionedField,
 };
+use crate::messages;
 use crate::metrics;
 use crate::motion::{self, MotionAxes, MotionProfile};
 use crate::preview::{PreviewComposition, PreviewShape, compose};
@@ -24,12 +27,12 @@ impl OverlayKindDescriptor for GoalOverlayKind {
         KIND_ID
     }
 
-    fn label(&self) -> &str {
-        "Goal"
+    fn label(&self) -> MessageCode {
+        messages::GOAL_LABEL
     }
 
-    fn summary(&self) -> &str {
-        "Tracks progress toward a target an action keeps updating"
+    fn summary(&self) -> MessageCode {
+        messages::GOAL_SUMMARY
     }
 
     fn icon_name(&self) -> &str {

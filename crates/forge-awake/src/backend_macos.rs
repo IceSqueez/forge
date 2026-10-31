@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use objc2_core_foundation::CFString;
 
 use crate::backend::AwakeBackend;
-use crate::{Aspect, AwakeError};
+use crate::{Aspect, AwakeError, AwakeService};
 
 type IoReturn = i32;
 type AssertionId = u32;
@@ -13,7 +13,7 @@ const IO_RETURN_SUCCESS: IoReturn = 0;
 const ASSERTION_LEVEL_ON: u32 = 255;
 const PREVENT_DISPLAY_SLEEP: &str = "PreventUserIdleDisplaySleep";
 const PREVENT_SYSTEM_SLEEP: &str = "PreventUserIdleSystemSleep";
-const POWER_SERVICE: &str = "power manager";
+const POWER_SERVICE: AwakeService = AwakeService::PowerManager;
 
 #[link(name = "IOKit", kind = "framework")]
 unsafe extern "C" {

@@ -1,5 +1,8 @@
 use forge_awake::{Aspect, AspectState, AwakeStatus};
 use forge_components::tr;
+use forge_types::MessageRef;
+
+use crate::user_text::resolve_message;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum AwakeTone {
@@ -37,10 +40,10 @@ impl AwakeState {
             .into_iter()
             .filter(|aspect| *status.aspect(*aspect) == AspectState::Held)
             .collect();
-        let refused: Vec<(Aspect, &str)> = Aspect::ALL
+        let refused: Vec<(Aspect, &MessageRef)> = Aspect::ALL
             .into_iter()
             .filter_map(|aspect| match status.aspect(aspect) {
-                AspectState::Unavailable { reason } => Some((aspect, reason.as_str())),
+                AspectState::Unavailable { reason } => Some((aspect, reason)),
                 _ => None,
             })
             .collect();
@@ -54,7 +57,7 @@ impl AwakeState {
         };
         let mut details = vec![headline];
         details.extend(refused.iter().map(|(aspect, reason)| {
-            let reason = (*reason).to_owned();
+            let reason = resolve_message(reason).inline();
             match aspect {
                 Aspect::Display => tr!("stay_awake_tooltip_display_refused", reason = reason),
                 Aspect::System => tr!("stay_awake_tooltip_system_refused", reason = reason),

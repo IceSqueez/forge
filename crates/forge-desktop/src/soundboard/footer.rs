@@ -24,7 +24,7 @@ impl SoundboardView {
         let size_label = self
             .total_size
             .map(fmt_bytes)
-            .unwrap_or_else(|| "\u{2014}".to_owned());
+            .unwrap_or_else(|| "-".to_owned());
         let ready = self.output_ready();
         let (dot, status_text) = if ready {
             (palette.success, tr!("soundboard_output_ready"))

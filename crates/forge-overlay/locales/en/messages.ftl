@@ -1,0 +1,14 @@
+msg-overlay-kind_alert = Alert
+msg-overlay-kind_alert_summary = Shows a banner for a few seconds each time an action sends one
+msg-overlay-kind_blank = Blank
+msg-overlay-kind_blank_summary = Draws nothing on the canvas; it only plays the audio forge sends it
+msg-overlay-kind_chat = Chat
+msg-overlay-kind_chat_summary = Lists the latest chat rows an action sends, oldest falling off the ring
+msg-overlay-kind_frame = Frame
+msg-overlay-kind_frame_summary = Borders a camera or capture area and labels its corner
+msg-overlay-kind_goal = Goal
+msg-overlay-kind_goal_summary = Tracks progress toward a target an action keeps updating
+msg-overlay-kind_latest = Latest
+msg-overlay-kind_latest_summary = Keeps the latest value of a slot, such as the last donation, on screen across restarts
+msg-overlay-kind_ticker = Ticker
+msg-overlay-kind_ticker_summary = Runs a full-width strip carrying the latest line an action sends

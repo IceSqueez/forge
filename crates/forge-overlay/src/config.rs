@@ -548,6 +548,9 @@ mod tests {
     use crate::motion;
     use crate::preview::{PreviewComposition, PreviewShape, compose};
     use forge_registry::{AmountUnit, DurationBounds, UnitAmountBounds};
+    use forge_types::MessageCode;
+
+    const PROBE_CODE: MessageCode = MessageCode::from_static("probe", "kind");
 
     const PROBE_TOGGLE: &str = "probe.toggle";
     const PROBE_INTEGER: &str = "probe.integer";
@@ -580,12 +583,12 @@ mod tests {
             "probe"
         }
 
-        fn label(&self) -> &str {
-            "Probe"
+        fn label(&self) -> MessageCode {
+            PROBE_CODE
         }
 
-        fn summary(&self) -> &str {
-            ""
+        fn summary(&self) -> MessageCode {
+            PROBE_CODE
         }
 
         fn icon_name(&self) -> &str {

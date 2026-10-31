@@ -38,24 +38,24 @@ pub(crate) fn selector_key(kind_id: &str) -> Option<&'static str> {
     }
 }
 
-pub(crate) fn kind_label(kind_id: &str) -> &str {
+pub(crate) fn kind_label(kind_id: &str) -> String {
     match kind_id {
-        NOTE_ON => "Note On",
-        NOTE_OFF => "Note Off",
-        CONTROL_CHANGE => "CC",
-        PROGRAM_CHANGE => "Program change",
-        PITCH_BEND => "Pitch bend",
-        other => other,
+        NOTE_ON => tr!("midi_signal_note_on"),
+        NOTE_OFF => tr!("midi_signal_note_off"),
+        CONTROL_CHANGE => tr!("midi_signal_control_change"),
+        PROGRAM_CHANGE => tr!("midi_signal_program_change"),
+        PITCH_BEND => tr!("midi_signal_pitch_bend"),
+        other => other.to_owned(),
     }
 }
 
-pub(crate) fn short_kind_label(kind: MidiSignalKind) -> &'static str {
+pub(crate) fn short_kind_label(kind: MidiSignalKind) -> String {
     match kind {
-        MidiSignalKind::NoteOn => "Note On",
-        MidiSignalKind::NoteOff => "Note Off",
-        MidiSignalKind::ControlChange => "CC",
-        MidiSignalKind::PitchBend => "Pitch",
-        MidiSignalKind::ProgramChange => "PC",
+        MidiSignalKind::NoteOn => tr!("midi_signal_note_on"),
+        MidiSignalKind::NoteOff => tr!("midi_signal_note_off"),
+        MidiSignalKind::ControlChange => tr!("midi_signal_control_change"),
+        MidiSignalKind::PitchBend => tr!("midi_signal_pitch_short"),
+        MidiSignalKind::ProgramChange => tr!("midi_signal_program_short"),
     }
 }
 

@@ -150,9 +150,7 @@ pub(crate) fn build_subscribe_chat_payload(
         platform_msg_id: format!("twitch.support.subscriber:{frame_msg_id}"),
         author,
         author_color: None,
-        segments: vec![ChatSegment::Text {
-            text: format!("subscribed at tier {tier}"),
-        }],
+        segments: Vec::new(),
         badges: vec![UserBadge::Subscriber { months: 1 }],
         is_event: true,
         event_detail: Some(ChatEventDetail::Subscription {
@@ -244,9 +242,7 @@ pub(crate) fn build_gift_sub_chat_payload(
         platform_msg_id: format!("twitch.support.gift_sub:{frame_msg_id}"),
         author,
         author_color: None,
-        segments: vec![ChatSegment::Text {
-            text: format!("gifted a tier {tier} subscription"),
-        }],
+        segments: Vec::new(),
         badges: vec![],
         is_event: true,
         event_detail: Some(ChatEventDetail::Subscription {

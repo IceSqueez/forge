@@ -11,9 +11,11 @@ mod error;
 #[cfg(test)]
 mod fake_backend;
 mod handle;
+mod messages;
 mod status;
 mod supervisor;
 
-pub use error::AwakeError;
+pub use error::{AwakeError, AwakeService};
 pub use handle::{StatusWatch, StayAwake, StayAwakeConfig};
+pub use messages::AWAKE_MESSAGES;
 pub use status::{Aspect, AspectState, AwakeStatus};

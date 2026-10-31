@@ -80,7 +80,7 @@ impl Supervisor {
         let state = match self.backend.acquire(aspect).await {
             Ok(()) => AspectState::Held,
             Err(e) => AspectState::Unavailable {
-                reason: e.to_string(),
+                reason: e.message(),
             },
         };
         self.record(aspect, state);
@@ -94,7 +94,7 @@ impl Supervisor {
         match &state {
             AspectState::Held => tracing::info!(?aspect, "stay awake: hold acquired"),
             AspectState::Unavailable { reason } => {
-                tracing::warn!(?aspect, %reason, "stay awake: hold unavailable")
+                tracing::warn!(?aspect, code = %reason.code(), "stay awake: hold unavailable")
             }
             AspectState::Off | AspectState::Pending => {}
         }
@@ -110,7 +110,7 @@ mod tests {
 
     use super::Command;
     use crate::fake_backend::{Call, FakeBackend, spawn_supervisor, supervisor};
-    use crate::{Aspect, AspectState, AwakeError, AwakeStatus};
+    use crate::{Aspect, AspectState, AwakeError, AwakeService, AwakeStatus};
 
     const WAIT: Duration = Duration::from_secs(30);
 
@@ -126,7 +126,7 @@ mod tests {
 
     fn missing_screen_saver() -> AwakeError {
         AwakeError::ServiceMissing {
-            service: "screen saver service",
+            service: AwakeService::ScreenSaver,
         }
     }
 
@@ -157,15 +157,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn failed_acquire_reports_the_error_text_as_the_unavailable_reason() {
+    async fn failed_acquire_reports_the_error_message_as_the_unavailable_reason() {
         for err in [
             missing_screen_saver(),
             AwakeError::Unreachable {
-                service: "session bus",
+                service: AwakeService::SessionBus,
                 reason: "connection timed out".into(),
             },
             AwakeError::Refused {
-                service: "power manager",
+                service: AwakeService::PowerManager,
                 reason: "access denied".into(),
             },
             AwakeError::Unsupported,
@@ -179,7 +179,7 @@ mod tests {
             assert_eq!(
                 *harness.status.borrow().aspect(Aspect::Display),
                 AspectState::Unavailable {
-                    reason: err.to_string()
+                    reason: err.message()
                 },
                 "for {err:?}"
             );

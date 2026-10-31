@@ -1,8 +1,11 @@
+use forge_types::MessageCode;
+
 use crate::assets::PageAssets;
 use crate::config;
 use crate::descriptor::{
     DeliveryDisposition, OverlayConfig, OverlayKindDescriptor, SectionedField,
 };
+use crate::messages;
 use crate::metrics;
 use crate::motion::{self, MotionAxes, MotionProfile};
 use crate::preview::{PreviewComposition, PreviewShape, compose};
@@ -24,12 +27,12 @@ impl OverlayKindDescriptor for FrameOverlayKind {
         KIND_ID
     }
 
-    fn label(&self) -> &str {
-        "Frame"
+    fn label(&self) -> MessageCode {
+        messages::FRAME_LABEL
     }
 
-    fn summary(&self) -> &str {
-        "Borders a camera or capture area and labels its corner"
+    fn summary(&self) -> MessageCode {
+        messages::FRAME_SUMMARY
     }
 
     fn icon_name(&self) -> &str {

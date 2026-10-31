@@ -1,5 +1,7 @@
 use thiserror::Error;
 
+use crate::remote::RemoteFailure;
+
 #[derive(Debug, Error)]
 pub enum AudioError {
     #[error("no default output device available")]
@@ -33,7 +35,7 @@ pub enum AudioError {
     AllRoutesFailed(String),
 
     #[error("remote audio destination failed: {0}")]
-    RemoteDestination(String),
+    RemoteDestination(RemoteFailure),
 
     #[error("no live page is listening on audio overlay '{destination}' ({live_players} live)")]
     NoRemoteListener {

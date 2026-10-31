@@ -13,6 +13,7 @@ pub mod kinds;
 mod latest;
 mod materialize;
 mod media;
+mod messages;
 pub mod metrics;
 pub mod motion;
 mod motion_scan;
@@ -65,6 +66,7 @@ pub use media::{
     emitted_media_value, glyph_media, image_reference, image_references, media_slot,
     read_icon_value, read_media_value,
 };
+pub use messages::OVERLAY_MESSAGES;
 pub use metrics::{AxisBound, ElementSizing, element_sizing, style_guards};
 pub use motion_scan::{MotionIssue, OverriddenSources, motion_issues};
 pub use page_contract::{

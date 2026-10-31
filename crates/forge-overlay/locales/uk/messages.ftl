@@ -1,0 +1,14 @@
+msg-overlay-kind_alert = Сповіщення
+msg-overlay-kind_alert_summary = Показує банер на кілька секунд щоразу, коли дія його надсилає
+msg-overlay-kind_blank = Порожній
+msg-overlay-kind_blank_summary = Нічого не малює на полотні, лише відтворює звук, який надсилає forge
+msg-overlay-kind_chat = Чат
+msg-overlay-kind_chat_summary = Показує останні рядки чату, які надсилає дія; найстаріші зникають
+msg-overlay-kind_frame = Рамка
+msg-overlay-kind_frame_summary = Обрамлює зону камери чи захоплення і підписує її кут
+msg-overlay-kind_goal = Ціль
+msg-overlay-kind_goal_summary = Відстежує поступ до цілі, яку дія оновлює
+msg-overlay-kind_latest = Останнє
+msg-overlay-kind_latest_summary = Тримає на екрані останнє значення слота, наприклад останній донат, навіть після перезапуску
+msg-overlay-kind_ticker = Біжучий рядок
+msg-overlay-kind_ticker_summary = Веде смугу на всю ширину з останнім рядком, який надсилає дія

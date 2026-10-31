@@ -81,9 +81,7 @@ pub(crate) fn audio_failure(error: &AudioError) -> MessageRef {
         AudioError::AllRoutesFailed(detail) => {
             with_detail(MessageRef::new(AUDIO_ROUTES_FAILED), detail)
         }
-        AudioError::RemoteDestination(detail) => {
-            with_detail(MessageRef::new(AUDIO_REMOTE_FAILED), detail)
-        }
+        AudioError::RemoteDestination(failure) => failure.message(),
         AudioError::NoRemoteListener { destination, .. } => MessageRef::new(NO_OVERLAY_LISTENER)
             .with_arg(DESTINATION_ARG, VerbatimText::new(destination)),
     }
@@ -115,6 +113,7 @@ pub(crate) fn failure(error: &SoundboardError) -> MessageRef {
 mod tests {
     use std::collections::{BTreeMap, BTreeSet};
 
+    use forge_audio::RemoteFailure;
     use forge_storage::StorageError;
     use forge_types::MessageArg;
 
@@ -182,10 +181,6 @@ mod tests {
                 "soundboard.audio_routes_failed",
             ),
             (
-                AudioError::RemoteDestination("r".into()),
-                "soundboard.audio_remote_failed",
-            ),
-            (
                 AudioError::NoRemoteListener {
                     destination: "ov".into(),
                     live_players: 0,
@@ -222,6 +217,16 @@ mod tests {
                 "soundboard.playback_task_failed",
             ),
         ]
+    }
+
+    #[test]
+    fn a_remote_failure_keeps_the_message_of_its_own_cause() {
+        let failure = RemoteFailure::PageRefused("autoplay blocked".into());
+
+        assert_eq!(
+            audio_failure(&AudioError::RemoteDestination(failure.clone())),
+            failure.message()
+        );
     }
 
     #[test]
@@ -325,6 +330,7 @@ mod tests {
                     .iter()
                     .map(|(error, _)| failure(error)),
             )
+            .chain(std::iter::once(MessageRef::new(AUDIO_REMOTE_FAILED)))
             .collect()
     }
 

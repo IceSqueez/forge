@@ -41,11 +41,11 @@ impl OverlayKindDescriptor for Retuned {
         "overlay.retuned"
     }
 
-    fn label(&self) -> &str {
+    fn label(&self) -> forge_types::MessageCode {
         AlertOverlayKind.label()
     }
 
-    fn summary(&self) -> &str {
+    fn summary(&self) -> forge_types::MessageCode {
         AlertOverlayKind.summary()
     }
 

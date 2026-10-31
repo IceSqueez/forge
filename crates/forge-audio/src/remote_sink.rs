@@ -9,7 +9,7 @@ use crate::error::AudioError;
 use crate::handle::{ControlledPlayback, PlaybackHandle};
 use crate::remote::{
     ClipMediaType, PlaybackCorrelation, RemoteAudioDestination, RemoteClip, RemoteCommand,
-    RemoteDelivery, RemoteDestinationId, RemoteVerdict,
+    RemoteDelivery, RemoteDestinationId, RemoteFailure, RemoteVerdict,
 };
 use crate::sink::AudioSink;
 use crate::wave::encode_wave;
@@ -21,7 +21,6 @@ const WATCHDOG_SLACK: Duration = Duration::from_secs(45);
 const WATCHDOG_CEILING: Duration = Duration::from_secs(360);
 const MAX_REASON_CHARS: usize = 200;
 const SINGLE_PLAYER: usize = 1;
-const WATCHDOG_REASON: &str = "the page never reported whether it played the clip";
 
 pub struct RemoteSink {
     destination: Arc<dyn RemoteAudioDestination>,
@@ -214,7 +213,7 @@ struct ControlState {
 
 enum RemoteSettlement {
     Finished,
-    Degraded(String),
+    Degraded(RemoteFailure),
     Failed(AudioError),
 }
 
@@ -285,7 +284,7 @@ async fn settle_clip(
                 settle(clip.controls.stop.load(Ordering::Relaxed), verdict)
             }
             () = run_out(&clip.controls, budget) => {
-                RemoteSettlement::Degraded(WATCHDOG_REASON.to_owned())
+                RemoteSettlement::Degraded(RemoteFailure::NoVerdict)
             }
         }
     };
@@ -373,22 +372,25 @@ fn settle(stopped: bool, verdict: Result<RemoteVerdict, AudioError>) -> RemoteSe
     }
     match verdict {
         Ok(RemoteVerdict::Played) => RemoteSettlement::Finished,
-        Ok(RemoteVerdict::Unknown { reason }) => {
-            RemoteSettlement::Degraded(bounded_reason(&reason))
-        }
+        Ok(RemoteVerdict::Unknown { reason }) => RemoteSettlement::Degraded(bounded(reason)),
         Ok(RemoteVerdict::Refused { reason }) => {
-            RemoteSettlement::Failed(AudioError::RemoteDestination(bounded_reason(&reason)))
+            RemoteSettlement::Failed(AudioError::RemoteDestination(bounded(reason)))
         }
         Err(e) => RemoteSettlement::Failed(e),
     }
 }
 
-fn bounded_reason(reason: &str) -> String {
-    reason
-        .chars()
-        .filter(|c| !c.is_control())
-        .take(MAX_REASON_CHARS)
-        .collect()
+fn bounded(failure: RemoteFailure) -> RemoteFailure {
+    match failure {
+        RemoteFailure::PageRefused(reason) => RemoteFailure::PageRefused(
+            reason
+                .chars()
+                .filter(|c| !c.is_control())
+                .take(MAX_REASON_CHARS)
+                .collect(),
+        ),
+        other => other,
+    }
 }
 
 #[cfg(test)]
@@ -500,7 +502,9 @@ mod tests {
                     self.told.notified().await;
                     Ok(verdict.clone())
                 }
-                Report::Fails(reason) => Err(AudioError::RemoteDestination(reason.clone())),
+                Report::Fails(reason) => Err(AudioError::RemoteDestination(
+                    RemoteFailure::PageRefused(reason.clone()),
+                )),
             }
         }
     }
@@ -562,14 +566,14 @@ mod tests {
         let (page, _rx) = FakePage::new(
             1,
             Report::Now(RemoteVerdict::Refused {
-                reason: PAGE_REFUSAL.to_owned(),
+                reason: RemoteFailure::PageRefused(PAGE_REFUSAL.to_owned()),
             }),
         );
 
         let outcome = finish(sink(&page), clip_of(20)).await;
 
         assert!(
-            matches!(&outcome, Err(AudioError::RemoteDestination(reason)) if reason == PAGE_REFUSAL),
+            matches!(&outcome, Err(AudioError::RemoteDestination(RemoteFailure::PageRefused(reason))) if reason == PAGE_REFUSAL),
             "a page that refused the clip must fail the utterance with its own words, got {outcome:?}"
         );
     }
@@ -591,13 +595,15 @@ mod tests {
             let (page, _rx) = FakePage::new(
                 1,
                 Report::Now(RemoteVerdict::Refused {
-                    reason: raw.clone(),
+                    reason: RemoteFailure::PageRefused(raw.clone()),
                 }),
             );
 
             let outcome = finish(sink(&page), clip_of(20)).await;
 
-            let Some(AudioError::RemoteDestination(reason)) = outcome.err() else {
+            let Some(AudioError::RemoteDestination(RemoteFailure::PageRefused(reason))) =
+                outcome.err()
+            else {
                 panic!(
                     "a refusal of {} chars must fail the clip",
                     raw.chars().count()
@@ -617,7 +623,7 @@ mod tests {
         let (page, _rx) = FakePage::new(
             1,
             Report::Now(RemoteVerdict::Unknown {
-                reason: "the page never said whether it played".to_owned(),
+                reason: RemoteFailure::NoVerdict,
             }),
         );
 
@@ -658,7 +664,7 @@ mod tests {
         let (page, mut rx) = FakePage::new(
             1,
             Report::OnStop(RemoteVerdict::Refused {
-                reason: PAGE_REFUSAL.to_owned(),
+                reason: RemoteFailure::PageRefused(PAGE_REFUSAL.to_owned()),
             }),
         );
         let playback = sink(&page).play_controlled(clip_of(4_000)).await.unwrap();
@@ -760,7 +766,7 @@ mod tests {
         let outcome = finish(sink(&page), clip_of(20)).await;
 
         assert!(
-            matches!(&outcome, Err(AudioError::RemoteDestination(reason)) if reason == TRANSPORT_FAULT),
+            matches!(&outcome, Err(AudioError::RemoteDestination(RemoteFailure::PageRefused(reason))) if reason == TRANSPORT_FAULT),
             "a transport that broke mid-clip must reach the caller, not count as played, got {outcome:?}"
         );
     }
@@ -770,7 +776,7 @@ mod tests {
         let (page, mut rx) = FakePage::new(
             1,
             Report::OnStop(RemoteVerdict::Refused {
-                reason: PAGE_REFUSAL.to_owned(),
+                reason: RemoteFailure::PageRefused(PAGE_REFUSAL.to_owned()),
             }),
         );
 
@@ -842,7 +848,7 @@ mod tests {
         let (page, _rx) = FakePage::new(
             1,
             Report::WhenTold(RemoteVerdict::Refused {
-                reason: PAGE_REFUSAL.to_owned(),
+                reason: RemoteFailure::PageRefused(PAGE_REFUSAL.to_owned()),
             }),
         );
         let playback = sink(&page).play_controlled(clip_of(20)).await.unwrap();
@@ -856,7 +862,7 @@ mod tests {
         let outcome = settling.await.unwrap();
 
         assert!(
-            matches!(&outcome, Err(AudioError::RemoteDestination(reason)) if reason == PAGE_REFUSAL),
+            matches!(&outcome, Err(AudioError::RemoteDestination(RemoteFailure::PageRefused(reason))) if reason == PAGE_REFUSAL),
             "paused time must not count toward the watchdog, got {outcome:?}"
         );
     }

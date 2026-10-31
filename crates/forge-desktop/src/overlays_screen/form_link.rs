@@ -4,6 +4,7 @@ use gpui::{Context, Entity, Subscription, prelude::*};
 
 use super::OverlaysView;
 use super::form_modal::{OverlayFormEvent, OverlayFormLaunch, OverlayFormModal, OverlayTypeChoice};
+use super::kind_visuals::kind_text;
 
 pub(super) struct OpenForm {
     pub(super) view: Entity<OverlayFormModal>,
@@ -18,8 +19,8 @@ impl OverlaysView {
             .all()
             .map(|descriptor| OverlayTypeChoice {
                 kind_id: descriptor.id().to_owned(),
-                label: descriptor.label().to_owned(),
-                summary: descriptor.summary().to_owned(),
+                label: kind_text(descriptor.label()),
+                summary: kind_text(descriptor.summary()),
                 icon: Icon::from_name(descriptor.icon_name()),
             })
             .collect();

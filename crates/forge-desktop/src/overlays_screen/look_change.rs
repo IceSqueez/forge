@@ -10,6 +10,7 @@ use gpui::Context;
 
 use super::OverlaysView;
 use super::base_sections::{BaseLaunch, LookSummary};
+use super::kind_visuals::kind_text;
 use super::sizing_section::keep_sizing_notice;
 use super::writes::{Regenerated, regenerate};
 use crate::async_bridge;
@@ -18,8 +19,8 @@ use crate::repo_failure::RepoFailure;
 pub(super) fn look_summary(descriptor: &dyn OverlayKindDescriptor) -> LookSummary {
     LookSummary {
         kind_id: descriptor.id().to_owned(),
-        label: descriptor.label().to_owned(),
-        summary: descriptor.summary().to_owned(),
+        label: kind_text(descriptor.label()),
+        summary: kind_text(descriptor.summary()),
         icon: Icon::from_name(descriptor.icon_name()),
         disposition: descriptor.delivery_disposition(),
         draws: descriptor.has_visual_page(),
@@ -128,6 +129,9 @@ mod tests {
 
     use super::*;
 
+    const GUARDED_CODE: forge_types::MessageCode =
+        forge_types::MessageCode::from_static("probe", "guarded");
+
     const GUARDED: &str = "outline";
     const GUARDED_VALUE: &str = "outline_width";
 
@@ -148,12 +152,12 @@ mod tests {
             "overlay.guarded"
         }
 
-        fn label(&self) -> &str {
-            "Guarded"
+        fn label(&self) -> forge_types::MessageCode {
+            GUARDED_CODE
         }
 
-        fn summary(&self) -> &str {
-            ""
+        fn summary(&self) -> forge_types::MessageCode {
+            GUARDED_CODE
         }
 
         fn icon_name(&self) -> &str {

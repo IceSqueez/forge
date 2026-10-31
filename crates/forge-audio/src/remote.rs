@@ -81,8 +81,35 @@ pub struct RemoteDelivery {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RemoteVerdict {
     Played,
-    Refused { reason: String },
-    Unknown { reason: String },
+    Refused { reason: RemoteFailure },
+    Unknown { reason: RemoteFailure },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RemoteFailure {
+    PageRefused(String),
+    ClipNotOffered,
+    NotDelivered,
+    NotPending,
+    NeverFetched,
+    NoVerdict,
+    Withdrawn,
+    ServerStopped,
+}
+
+impl fmt::Display for RemoteFailure {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::PageRefused(reason) => write!(f, "the page refused the clip: {reason}"),
+            Self::ClipNotOffered => f.write_str("the server did not take the clip"),
+            Self::NotDelivered => f.write_str("the clip did not reach the overlay"),
+            Self::NotPending => f.write_str("the clip is no longer waiting on a verdict"),
+            Self::NeverFetched => f.write_str("the page never asked for the clip"),
+            Self::NoVerdict => f.write_str("the page never reported whether it played the clip"),
+            Self::Withdrawn => f.write_str("the clip was withdrawn before it settled"),
+            Self::ServerStopped => f.write_str("the server stopped before the clip settled"),
+        }
+    }
 }
 
 #[async_trait]

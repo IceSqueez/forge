@@ -30,6 +30,9 @@ pub(crate) const REGISTERED_CATALOGS: &[MessageCatalog] = &[
     forge_donatello::DONATELLO_MESSAGES,
     forge_monobank::MONOBANK_MESSAGES,
     forge_speak_queue::vocabulary::messages::SPEAK_MESSAGES,
+    forge_awake::AWAKE_MESSAGES,
+    forge_audio::AUDIO_MESSAGES,
+    forge_overlay::OVERLAY_MESSAGES,
     crate::repo_failure::REPO_MESSAGES,
 ];
 

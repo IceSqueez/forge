@@ -419,7 +419,7 @@ impl MidiMappingModal {
         let open = matches!(self.open_panel, Some(OpenPanel::Type));
         let trigger = self.select_trigger(
             "midi-modal-type",
-            kind_label(&self.kind_id).to_owned(),
+            kind_label(&self.kind_id),
             open,
             palette,
             cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_panel(OpenPanel::Type, cx)),
@@ -434,7 +434,7 @@ impl MidiMappingModal {
                     let kind_id = (*kind).to_owned();
                     self.panel_row(
                         ("midi-modal-type-option", index),
-                        kind_label(kind).to_owned(),
+                        kind_label(kind),
                         *kind == self.kind_id,
                         palette,
                         cx.listener(move |this, _: &ClickEvent, _, cx| {

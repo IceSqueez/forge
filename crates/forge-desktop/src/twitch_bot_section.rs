@@ -600,7 +600,7 @@ impl TwitchBotSection {
                     tr!("twitch_bot_sent_as_role_streamer")
                 },
             ),
-            None => ("\u{2014}".to_owned(), String::new()),
+            None => ("-".to_owned(), String::new()),
         };
         div()
             .w_full()

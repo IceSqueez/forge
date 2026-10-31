@@ -5,7 +5,7 @@ use std::sync::{Mutex, MutexGuard};
 use async_trait::async_trait;
 use forge_audio::{
     AudioError, RemoteAudioDestination, RemoteClip, RemoteCommand, RemoteDelivery,
-    RemoteDestinationId, RemoteVerdict,
+    RemoteDestinationId, RemoteFailure, RemoteVerdict,
 };
 use forge_overlay::{
     AudioAnnouncement, AudioCommand, announcement_content, command_content, joined_to_show,
@@ -14,12 +14,6 @@ use forge_runtime::{OverlayDelivery, OverlayServiceHandle};
 use forge_server::{ClipMediaType, ClipOffer, ClipOutcome, ClipOutcomeHandle, ServerHandle};
 use forge_storage::OverlayId;
 use ulid::Ulid;
-
-const UNKNOWN_CLIP: &str = "the clip is no longer waiting on a verdict";
-const NEVER_FETCHED: &str = "the page never asked for the clip";
-const NO_VERDICT: &str = "the page never reported whether it played the clip";
-const REVOKED: &str = "the clip was withdrawn before it settled";
-const SERVER_STOPPED: &str = "the server stopped before the clip settled";
 
 struct Pending {
     capability: ClipCapability,
@@ -134,7 +128,10 @@ impl RemoteAudioDestination for OverlayAudioDestination {
                 },
             )
             .await
-            .map_err(|e| AudioError::RemoteDestination(e.to_string()))?;
+            .map_err(|error| {
+                tracing::warn!(%error, "remote audio: the server did not take the clip");
+                AudioError::RemoteDestination(RemoteFailure::ClipNotOffered)
+            })?;
         self.server
             .admit_audio_players(ticket.capability(), expected_players)
             .await;
@@ -164,11 +161,12 @@ impl RemoteAudioDestination for OverlayAudioDestination {
                     live_players,
                 })
             }
-            Err(e) => {
+            Err(error) => {
                 if let Some(capability) = self.forget(&clip_id) {
                     self.server.revoke_audio_clip(&capability).await;
                 }
-                Err(AudioError::RemoteDestination(e.to_string()))
+                tracing::warn!(%error, "remote audio: the clip did not reach the overlay");
+                Err(AudioError::RemoteDestination(RemoteFailure::NotDelivered))
             }
         }
     }
@@ -202,14 +200,15 @@ impl RemoteAudioDestination for OverlayAudioDestination {
             self.server.revoke_audio_clip(&capability).await;
         }
 
-        pushed
-            .map(|_| ())
-            .map_err(|e| AudioError::RemoteDestination(e.to_string()))
+        pushed.map(|_| ()).map_err(|error| {
+            tracing::warn!(%error, "remote audio: the control did not reach the overlay");
+            AudioError::RemoteDestination(RemoteFailure::NotDelivered)
+        })
     }
 
     async fn verdict(&self, clip_id: &RemoteClipId) -> Result<RemoteVerdict, AudioError> {
         let Some(outcome) = self.take_outcome(clip_id.expose()) else {
-            return Err(AudioError::RemoteDestination(UNKNOWN_CLIP.to_owned()));
+            return Err(AudioError::RemoteDestination(RemoteFailure::NotPending));
         };
         let mut entry = PendingEntryGuard {
             destination: self,
@@ -247,18 +246,20 @@ fn live_players(delivery: OverlayDelivery) -> usize {
 fn verdict_of(outcome: ClipOutcome) -> RemoteVerdict {
     match outcome {
         ClipOutcome::Played => RemoteVerdict::Played,
-        ClipOutcome::Refused { reason } => RemoteVerdict::Refused { reason },
+        ClipOutcome::Refused { reason } => RemoteVerdict::Refused {
+            reason: RemoteFailure::PageRefused(reason),
+        },
         ClipOutcome::NeverFetched => RemoteVerdict::Refused {
-            reason: NEVER_FETCHED.to_owned(),
+            reason: RemoteFailure::NeverFetched,
         },
         ClipOutcome::NoVerdict => RemoteVerdict::Unknown {
-            reason: NO_VERDICT.to_owned(),
+            reason: RemoteFailure::NoVerdict,
         },
         ClipOutcome::Revoked => RemoteVerdict::Unknown {
-            reason: REVOKED.to_owned(),
+            reason: RemoteFailure::Withdrawn,
         },
         ClipOutcome::ServerStopped => RemoteVerdict::Unknown {
-            reason: SERVER_STOPPED.to_owned(),
+            reason: RemoteFailure::ServerStopped,
         },
     }
 }
@@ -810,7 +811,7 @@ mod tests {
                 true,
                 false,
                 Some(RemoteVerdict::Unknown {
-                    reason: REVOKED.to_owned()
+                    reason: RemoteFailure::Withdrawn
                 })
             )
         );

@@ -79,7 +79,7 @@ impl SoundboardView {
         });
         let total = readout_total(clip.duration_secs, progress);
         let readout = if !playing && total.is_none() {
-            "\u{2014}".to_owned()
+            "-".to_owned()
         } else {
             time_readout(elapsed_secs, total)
         };

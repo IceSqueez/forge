@@ -382,7 +382,7 @@ impl ChatView {
             name_row = name_row.child(drawer_role_badge(role, BADGE_ROW, palette));
         }
 
-        let meta = format!("{} msg", summary.message_count);
+        let meta = tr!("chat_drawer_message_count", count = summary.message_count);
         let name_col = div()
             .flex_1()
             .min_w(px(0.0))

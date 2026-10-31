@@ -1,5 +1,7 @@
 use forge_types::LATEST_DONATION_SLOT;
 
+use forge_types::MessageCode;
+
 use crate::assets::PageAssets;
 use crate::base;
 use crate::config::{self, SPEECH, SPEECH_VOICE};
@@ -7,6 +9,7 @@ use crate::descriptor::{
     ContentFeed, DeliveryDisposition, OverlayConfig, OverlayKindDescriptor, SectionedField,
 };
 use crate::latest::{SLOT_OPTIONS, latest_content, sample_latest_value};
+use crate::messages;
 use crate::metrics;
 use crate::motion::{self, MotionAxes, MotionProfile};
 use crate::preview::{PreviewComposition, PreviewShape, compose};
@@ -28,12 +31,12 @@ impl OverlayKindDescriptor for LatestOverlayKind {
         KIND_ID
     }
 
-    fn label(&self) -> &str {
-        "Latest"
+    fn label(&self) -> MessageCode {
+        messages::LATEST_LABEL
     }
 
-    fn summary(&self) -> &str {
-        "Keeps the latest value of a slot, such as the last donation, on screen across restarts"
+    fn summary(&self) -> MessageCode {
+        messages::LATEST_SUMMARY
     }
 
     fn icon_name(&self) -> &str {

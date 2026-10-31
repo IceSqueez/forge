@@ -12,6 +12,7 @@ workspace = true
 
 [dependencies]
 async-trait = { workspace = true }
+forge-types = { path = "../forge-types" }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }

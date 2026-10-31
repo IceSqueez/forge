@@ -298,7 +298,7 @@ settings_appearance_font_search = Search installed fonts
 settings_appearance_font_default_body = Default (Inter)
 settings_appearance_font_default_mono = Default (JetBrains Mono)
 settings_appearance_font_persist_failed = Failed to save font
-settings_theme_desc_dark = dark
+settings_theme_desc_violet_dark = Violet · dark
 settings_theme_desc_storm = Storm
 settings_theme_desc_light_mode = Light mode
 
@@ -5112,3 +5112,13 @@ script_editor_loading = Loading scripts...
 discord_bindings_loading = Loading webhooks...
 settings_storage_limits_loading = Loading storage limits...
 settings_diagnostics_level_loading = Loading the log level...
+
+chat_drawer_message_count = { $count } msg
+tts_filters_preview_sample = hey @viewer check this out https://example.com POGGERS
+midi_signal_note_on = Note On
+midi_signal_note_off = Note Off
+midi_signal_control_change = CC
+midi_signal_program_change = Program change
+midi_signal_pitch_bend = Pitch bend
+midi_signal_pitch_short = Pitch
+midi_signal_program_short = PC

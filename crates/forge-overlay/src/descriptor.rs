@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use forge_registry::FormField;
-use forge_types::{ArgStack, Variant};
+use forge_types::{ArgStack, MessageCode, Variant};
 
 use crate::assets::PageAssets;
 use crate::base;
@@ -45,8 +45,8 @@ pub struct SectionedField {
 
 pub trait OverlayKindDescriptor: Send + Sync {
     fn id(&self) -> &str;
-    fn label(&self) -> &str;
-    fn summary(&self) -> &str;
+    fn label(&self) -> MessageCode;
+    fn summary(&self) -> MessageCode;
     fn icon_name(&self) -> &str;
     fn delivery_disposition(&self) -> DeliveryDisposition;
     fn order_sensitive(&self) -> bool;

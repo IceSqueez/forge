@@ -1,7 +1,10 @@
 use forge_components::{ForgePalette, Icon};
 use forge_overlay::{OverlayKindRegistry, PreviewAccent, effective_overlay_config};
 use forge_storage::OverlayDefinition;
+use forge_types::{MessageCode, MessageRef};
 use gpui::Rgba;
+
+use crate::user_text::resolve_message;
 
 pub(super) struct KindVisuals {
     pub(super) icon: Icon,
@@ -35,8 +38,12 @@ pub(super) fn kind_visuals(
     KindVisuals {
         icon: Icon::from_name(descriptor.icon_name()),
         accent: accent_color(descriptor.preview(&effective).accent, palette),
-        label: Some(descriptor.label().to_owned()),
+        label: Some(kind_text(descriptor.label())),
     }
+}
+
+pub(super) fn kind_text(code: MessageCode) -> String {
+    resolve_message(&MessageRef::from(code)).inline()
 }
 
 #[cfg(test)]
@@ -171,6 +178,7 @@ mod tests {
 
     #[test]
     fn a_record_is_marked_unavailable_exactly_when_this_build_lacks_its_overlay_type() {
+        crate::i18n::install_language(forge_storage::Language::En);
         let registry = registry();
         let palette = ThemeId::default().palette();
 

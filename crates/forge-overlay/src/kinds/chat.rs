@@ -1,11 +1,14 @@
 use forge_registry::{ActorRole, ActorSlot, CanonicalVariable};
 use forge_types::{ArgStack, PlatformId, Variant};
 
+use forge_types::MessageCode;
+
 use crate::assets::PageAssets;
 use crate::config;
 use crate::descriptor::{
     DeliveryDisposition, OverlayConfig, OverlayKindDescriptor, SectionedField,
 };
+use crate::messages;
 use crate::metrics;
 use crate::motion::{self, MotionAxes, MotionProfile};
 use crate::preview::{PreviewComposition, PreviewShape, compose};
@@ -30,12 +33,12 @@ impl OverlayKindDescriptor for ChatOverlayKind {
         KIND_ID
     }
 
-    fn label(&self) -> &str {
-        "Chat"
+    fn label(&self) -> MessageCode {
+        messages::CHAT_LABEL
     }
 
-    fn summary(&self) -> &str {
-        "Lists the latest chat rows an action sends, oldest falling off the ring"
+    fn summary(&self) -> MessageCode {
+        messages::CHAT_SUMMARY
     }
 
     fn icon_name(&self) -> &str {

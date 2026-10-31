@@ -61,7 +61,7 @@ impl OverlayKindRegistry {
 #[cfg(test)]
 mod tests {
     use crate::descriptor::{DeliveryDisposition, SectionedField};
-    use forge_types::Variant;
+    use forge_types::{MessageCode, Variant};
 
     use super::*;
     use crate::assets::PageAssets;
@@ -73,7 +73,7 @@ mod tests {
 
     struct StubKind {
         id: &'static str,
-        label: &'static str,
+        label: MessageCode,
     }
 
     impl OverlayKindDescriptor for StubKind {
@@ -81,12 +81,12 @@ mod tests {
             self.id
         }
 
-        fn label(&self) -> &str {
-            self.label
+        fn label(&self) -> MessageCode {
+            self.label.clone()
         }
 
-        fn summary(&self) -> &str {
-            ""
+        fn summary(&self) -> MessageCode {
+            self.label.clone()
         }
 
         fn icon_name(&self) -> &str {
@@ -125,17 +125,20 @@ mod tests {
         }
     }
 
-    fn stub(id: &'static str, label: &'static str) -> Box<dyn OverlayKindDescriptor> {
+    const FIRST_LABEL: MessageCode = MessageCode::from_static("probe", "first");
+    const SECOND_LABEL: MessageCode = MessageCode::from_static("probe", "second");
+
+    fn stub(id: &'static str, label: MessageCode) -> Box<dyn OverlayKindDescriptor> {
         Box::new(StubKind { id, label })
     }
 
     #[test]
     fn registering_a_duplicate_id_is_rejected_and_keeps_the_incumbent() {
         let mut registry = OverlayKindRegistry::new();
-        registry.register(stub("dup", "First")).expect("first");
+        registry.register(stub("dup", FIRST_LABEL)).expect("first");
 
         let err = registry
-            .register(stub("dup", "Second"))
+            .register(stub("dup", SECOND_LABEL))
             .expect_err("a second descriptor claiming a taken id must be rejected");
 
         assert!(
@@ -144,7 +147,7 @@ mod tests {
         );
         assert_eq!(
             registry.get("dup").expect("still registered").label(),
-            "First",
+            FIRST_LABEL,
             "a rejected duplicate must not replace the descriptor already registered"
         );
     }
@@ -152,7 +155,9 @@ mod tests {
     #[test]
     fn effective_config_resolves_by_kind_id_and_errors_for_a_kind_this_build_lacks() {
         let mut registry = OverlayKindRegistry::new();
-        registry.register(stub("known", "Known")).expect("register");
+        registry
+            .register(stub("known", FIRST_LABEL))
+            .expect("register");
         let stored = OverlayConfig::from([(STUB_KEY.to_owned(), Variant::Int(9))]);
 
         let effective = registry

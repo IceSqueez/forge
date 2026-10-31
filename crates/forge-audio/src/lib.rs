@@ -12,6 +12,7 @@ mod error;
 mod fan_out;
 mod handle;
 mod remote;
+mod remote_messages;
 mod remote_sink;
 mod route;
 mod sink;
@@ -35,8 +36,9 @@ pub use fan_out::FanOutSink;
 pub use handle::{ControlledPlayback, PlaybackHandle};
 pub use remote::{
     ClipMediaType, PlaybackCorrelation, RemoteAudioDestination, RemoteClip, RemoteCommand,
-    RemoteDelivery, RemoteDestinationId, RemoteVerdict,
+    RemoteDelivery, RemoteDestinationId, RemoteFailure, RemoteVerdict,
 };
+pub use remote_messages::AUDIO_MESSAGES;
 pub use remote_sink::RemoteSink;
 pub use route::resolve_device;
 pub use sink::{AudioSink, NullSink};

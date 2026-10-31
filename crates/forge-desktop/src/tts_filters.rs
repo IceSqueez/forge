@@ -64,7 +64,7 @@ impl TtsFiltersView {
                 .with_palette(palette)
                 .on_surface()
                 .with_height(px(56.0));
-            input.set_content("hey @koval check this out https://example.com POGGERS", cx);
+            input.set_content(tr!("tts_filters_preview_sample"), cx);
             input
         });
         let preview_sub = cx.subscribe(&preview_input, |this, _input, event: &InputEvent, cx| {

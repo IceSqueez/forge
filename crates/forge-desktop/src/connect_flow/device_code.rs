@@ -518,7 +518,7 @@ impl ConnectFlow {
             .as_ref()
             .and_then(|d| d.code.as_ref())
             .map_or_else(
-                || SharedString::from("\u{2014}"),
+                || SharedString::from("-"),
                 |c| SharedString::from(c.verification_uri.clone()),
             );
         let url_box = div()
@@ -605,7 +605,7 @@ impl ConnectFlow {
 
         let glyphs: Vec<AnyElement> = code
             .map(|c| c.user_code.chars().collect::<Vec<_>>())
-            .unwrap_or_else(|| vec!['\u{2014}'])
+            .unwrap_or_else(|| vec!['-'])
             .into_iter()
             .map(|ch| {
                 div()

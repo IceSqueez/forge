@@ -198,9 +198,7 @@ pub fn audio_failure(error: &AudioError) -> MessageRef {
         AudioError::AllRoutesFailed(detail) => {
             with_detail(MessageRef::new(AUDIO_ROUTES_FAILED), detail)
         }
-        AudioError::RemoteDestination(detail) => {
-            with_detail(MessageRef::new(AUDIO_REMOTE_FAILED), detail)
-        }
+        AudioError::RemoteDestination(failure) => failure.message(),
         AudioError::NoRemoteListener { destination, .. } => MessageRef::new(NO_OVERLAY_LISTENER)
             .with_arg(DESTINATION_ARG, VerbatimText::new(destination)),
     }
@@ -369,7 +367,6 @@ mod tests {
             AudioError::NoRoute,
             AudioError::UnknownRoute("main".into()),
             AudioError::AllRoutesFailed("a".into()),
-            AudioError::RemoteDestination("r".into()),
             AudioError::NoRemoteListener {
                 destination: "overlay".into(),
                 live_players: 0,
@@ -386,6 +383,7 @@ mod tests {
                 .map(|reason| skip_message(reason, None)),
         );
         all.extend([
+            MessageRef::new(AUDIO_REMOTE_FAILED),
             engine_not_registered(&engine()),
             audio_start_timed_out(5),
             reject_message(RejectReason::QueueFull, 5),
@@ -627,10 +625,6 @@ mod tests {
             (
                 AudioError::AllRoutesFailed("a".into()),
                 expected("speak.audio_routes_failed", &[], Some("a")),
-            ),
-            (
-                AudioError::RemoteDestination("r".into()),
-                expected("speak.audio_remote_failed", &[], Some("r")),
             ),
             (
                 AudioError::NoRemoteListener {

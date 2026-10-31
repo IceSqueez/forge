@@ -2635,6 +2635,7 @@ name = "forge-awake"
 version = "0.6.3"
 dependencies = [
  "async-trait",
+ "forge-types",
  "objc2-core-foundation",
  "serde",
  "thiserror 2.0.21",

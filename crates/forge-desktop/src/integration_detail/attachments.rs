@@ -17,13 +17,13 @@ impl IntegrationDetail {
     ) {
         let launch = DonationSettingsLaunch {
             service,
-            credentials: Arc::clone(&self.credentials),
-            settings: Arc::clone(&self.settings),
-            rt_handle: self.rt_handle.clone(),
+            credentials: Arc::clone(&self.services.credentials),
+            settings: Arc::clone(&self.services.settings),
+            rt_handle: self.services.rt_handle.clone(),
         };
         let view = cx.new(|cx| DonationSettingsView::new(launch, cx));
         let repaint = cx.observe(&view, |_, _, cx| cx.notify());
-        self.donation_settings = Some(DonationSettingsLink {
+        self.sign_in.donation_settings = Some(DonationSettingsLink {
             view,
             _repaint: repaint,
         });
@@ -36,14 +36,14 @@ impl IntegrationDetail {
         presence: Entity<TwitchBotPresence>,
         cx: &mut Context<Self>,
     ) {
-        if !self.is_twitch {
+        if !self.shown.is_twitch {
             return;
         }
-        let rt_handle = self.rt_handle.clone();
-        let streamer_login = self.status.hero_name();
+        let rt_handle = self.services.rt_handle.clone();
+        let streamer_login = self.ports.status.hero_name();
         let section =
             cx.new(|cx| TwitchBotSection::new(bot, presence, rt_handle, streamer_login, cx));
-        self._twitch_bot_subs = vec![
+        self.sign_in._twitch_bot_subs = vec![
             cx.subscribe(
                 &section,
                 |this, _section, _: &StreamerSignInRequested, cx| {
@@ -52,26 +52,26 @@ impl IntegrationDetail {
             ),
             cx.observe(&section, |_, _, cx| cx.notify()),
         ];
-        self.twitch_bot = Some(section);
+        self.sign_in.twitch_bot = Some(section);
         cx.notify();
     }
 
     pub(crate) fn attach_twitch_sign_in(&mut self, sign_in: forge_platform_twitch::TwitchSignIn) {
-        self.twitch_sign_in = Some(sign_in);
+        self.sign_in.twitch_sign_in = Some(sign_in);
     }
 
     pub(crate) fn attach_youtube_sign_in(
         &mut self,
         sign_in: forge_platform_youtube::YoutubeSignIn,
     ) {
-        self.youtube_sign_in = Some(sign_in);
+        self.sign_in.youtube_sign_in = Some(sign_in);
     }
 
     pub(crate) fn attach_kick_sign_in(&mut self, sign_in: forge_platform_kick::KickSignIn) {
-        self.kick_sign_in = Some(sign_in);
+        self.sign_in.kick_sign_in = Some(sign_in);
     }
 
     pub(crate) fn attach_platform_credentials(&mut self, managers: PlatformCredentialManagers) {
-        self.platform_credentials = managers;
+        self.sign_in.platform_credentials = managers;
     }
 }

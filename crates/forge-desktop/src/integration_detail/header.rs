@@ -126,13 +126,13 @@ impl IntegrationDetail {
         palette: &ForgePalette,
         density: Density,
     ) -> AnyElement {
-        let (dot, text) = match self.connection {
+        let (dot, text) = match self.shown.connection {
             ConnectionState::Connected => (palette.success, palette.success),
             ConnectionState::Connecting => (palette.info, palette.info),
             ConnectionState::Reconnecting => (palette.warning, palette.warning),
             ConnectionState::Disconnected => (palette.text_faint, palette.text_muted),
         };
-        let label = connection_label(self.connection);
+        let label = connection_label(self.shown.connection);
         div()
             .flex()
             .items_center()
@@ -155,15 +155,16 @@ impl IntegrationDetail {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let (letter, brand) = hero_identity(
-            self.status.id(),
-            self.icon.as_str(),
-            &self.display_name,
+            self.ports.status.id(),
+            self.shown.icon.as_str(),
+            &self.shown.display_name,
             palette,
         );
         let hero_name = self
+            .ports
             .status
             .hero_name()
-            .unwrap_or_else(|| self.display_name.clone());
+            .unwrap_or_else(|| self.shown.display_name.clone());
         let sub = self.hero_subtitle();
         let name_badges = self.hero_badges(palette);
 
@@ -172,18 +173,19 @@ impl IntegrationDetail {
             .flex()
             .items_center()
             .gap(spacing(Spacing::Xs, density));
-        if let Some(version) = &self.version {
+        if let Some(version) = &self.shown.version {
             right = right.child(pill(version.clone(), palette.text_muted, palette));
         }
-        if self.capability_flags.limited {
+        if self.shown.capability_flags.limited {
             let label = self
+                .shown
                 .capability_flags
                 .label
                 .as_ref()
                 .map_or_else(|| tr!("widget_header_capability_limited"), user_text_string);
             right = right.child(pill(label.to_uppercase(), palette.warning, palette));
         }
-        for (i, action) in self.header_actions.iter().enumerate() {
+        for (i, action) in self.shown.header_actions.iter().enumerate() {
             right = right.child(self.action_button(i, action.clone(), palette, density, cx));
         }
 
@@ -203,7 +205,7 @@ impl IntegrationDetail {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let density = cx.density();
-        let signing_out = self.signing_out && matches!(action, HeaderAction::Disconnect);
+        let signing_out = self.live.signing_out && matches!(action, HeaderAction::Disconnect);
         let label = if signing_out {
             tr!("integration_signing_out")
         } else {

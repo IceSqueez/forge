@@ -58,9 +58,9 @@ impl ChatView {
         after: impl FnOnce(&mut Self, bool, &mut Context<Self>) + 'static,
         cx: &mut Context<Self>,
     ) {
-        let engine = self.action_engine.clone();
+        let engine = self.services.action_engine.clone();
         let (tx, rx) = tokio::sync::oneshot::channel();
-        self.rt_handle.spawn(async move {
+        self.services.rt_handle.spawn(async move {
             let outcome = async_bridge::run_quick_step(engine, step, builtin_id, label).await;
             #[expect(
                 clippy::let_underscore_must_use,
@@ -87,7 +87,7 @@ impl ChatView {
     }
 
     pub(super) fn shoutout_viewer(&mut self, target: ViewerTarget, cx: &mut Context<Self>) {
-        self.drawer_menu_open = None;
+        self.drawer.drawer_menu_open = None;
         self.run_viewer_action(
             &target,
             ViewerAction::Shoutout,
@@ -104,7 +104,7 @@ impl ChatView {
     }
 
     pub(super) fn timeout_viewer(&mut self, target: ViewerTarget, cx: &mut Context<Self>) {
-        self.drawer_menu_open = None;
+        self.drawer.drawer_menu_open = None;
         self.run_viewer_action(
             &target,
             ViewerAction::Timeout {
@@ -123,18 +123,18 @@ impl ChatView {
     }
 
     pub(super) fn request_ban(&mut self, target: ViewerTarget, cx: &mut Context<Self>) {
-        self.drawer_menu_open = None;
-        self.pending_ban.request(target);
+        self.drawer.drawer_menu_open = None;
+        self.drawer.pending_ban.request(target);
         cx.notify();
     }
 
     pub(super) fn cancel_ban(&mut self, cx: &mut Context<Self>) {
-        self.pending_ban.cancel();
+        self.drawer.pending_ban.cancel();
         cx.notify();
     }
 
     pub(super) fn confirm_ban(&mut self, cx: &mut Context<Self>) {
-        if let Some(target) = self.pending_ban.take() {
+        if let Some(target) = self.drawer.pending_ban.take() {
             self.ban_viewer(target, cx);
         }
         cx.notify();
@@ -145,7 +145,7 @@ impl ChatView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
-        let target = self.pending_ban.get()?;
+        let target = self.drawer.pending_ban.get()?;
         let card = confirm_modal(
             tr!("chat_ban_confirm_title"),
             tr!("chat_ban_confirm_message", name = target.name.as_str()),
@@ -175,7 +175,7 @@ impl ChatView {
     }
 
     pub(super) fn ban_viewer(&mut self, target: ViewerTarget, cx: &mut Context<Self>) {
-        self.drawer_menu_open = None;
+        self.drawer.drawer_menu_open = None;
         self.run_viewer_action(
             &target,
             ViewerAction::Ban,

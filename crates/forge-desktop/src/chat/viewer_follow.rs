@@ -121,12 +121,12 @@ impl FollowLookups {
 impl ChatView {
     #[must_use]
     pub(crate) fn with_follow_lookups(mut self, builtins: BuiltinRegistry) -> Self {
-        self.follows = FollowLookups::new(builtins);
+        self.drawer.follows = FollowLookups::new(builtins);
         self
     }
 
     pub(super) fn request_selected_follow(&mut self, cx: &mut Context<Self>) {
-        if let Some(key) = self.selected_viewer.clone() {
+        if let Some(key) = self.drawer.selected_viewer.clone() {
             self.request_follow(&key, cx);
         }
     }
@@ -142,14 +142,14 @@ impl ChatView {
             .get(key)
             .and_then(|activity| activity.role);
         if role == Some(BadgeKind::Broadcaster)
-            || !self.follows.needs_request(key)
+            || !self.drawer.follows.needs_request(key)
             || !self.platform_running(key.platform, cx)
         {
             return;
         }
-        let builtins = self.follows.builtins.clone();
+        let builtins = self.drawer.follows.builtins.clone();
         let (tx, rx) = tokio::sync::oneshot::channel();
-        self.rt_handle.spawn(async move {
+        self.services.rt_handle.spawn(async move {
             let lookup = builtins
                 .get(&request.builtin)
                 .and_then(|object| object.follow);
@@ -171,12 +171,12 @@ impl ChatView {
                 reason = "the view may close before the result arrives"
             )]
             let _ = this.update(cx, |this, cx| {
-                if this.follows.settle(pending, status) {
+                if this.drawer.follows.settle(pending, status) {
                     cx.notify();
                 }
             });
         });
-        self.follows.begin(key.clone(), task);
+        self.drawer.follows.begin(key.clone(), task);
     }
 }
 
@@ -345,7 +345,7 @@ mod tests {
         let (feed, view) = mount_gated(cx, rt, lifecycle, MockChatHistoryRepo::new());
         let registry = registry_with(lookup);
         view.update(cx, |view, _| {
-            view.follows = FollowLookups::new(registry);
+            view.drawer.follows = FollowLookups::new(registry);
         });
         (feed, view)
     }
@@ -360,7 +360,7 @@ mod tests {
         view: &Entity<ChatView>,
         key: &AuthorKey,
     ) -> Option<FollowStatus> {
-        view.read_with(cx, |view, _| view.follows.status_of(key))
+        view.read_with(cx, |view, _| view.drawer.follows.status_of(key))
     }
 
     #[test]
@@ -739,7 +739,7 @@ mod tests {
         let (view, vcx) = mount_in_window(cx, &rt, MockVoiceAliasRepo::new());
         let registry = registry_with(&lookup);
         view.update(vcx, |view, _| {
-            view.follows = FollowLookups::new(registry);
+            view.drawer.follows = FollowLookups::new(registry);
         });
 
         view.update(vcx, |view, cx| {

@@ -835,7 +835,10 @@ mod tests {
         view: &Entity<ChatView>,
     ) -> Option<Entity<ViewerHistory>> {
         view.read_with(cx, |view, _| {
-            view.viewer_history.as_ref().map(|host| host.view.clone())
+            view.drawer
+                .viewer_history
+                .as_ref()
+                .map(|host| host.view.clone())
         })
     }
 
@@ -1107,8 +1110,8 @@ mod tests {
             author_summary(
                 &key_of(ANN),
                 view.feed.read(cx).authors(),
-                &view.viewers,
-                view.viewer_messages.read(cx),
+                &view.drawer.viewers,
+                view.drawer.viewer_messages.read(cx),
                 &FORGE_DEFAULT,
             )
             .map(|summary| summary.message_count)

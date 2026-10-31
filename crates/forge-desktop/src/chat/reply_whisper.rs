@@ -33,7 +33,7 @@ fn build_reply_step(username: &str, message: &str, parent_message_id: &str) -> S
 
 impl ChatView {
     pub(super) fn open_reply(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(target) = self.user_menu.take() else {
+        let Some(target) = self.reply_menu.user_menu.take() else {
             cx.notify();
             return;
         };
@@ -44,11 +44,11 @@ impl ChatView {
             cx.notify();
             return;
         };
-        self.reply_target = Some(ReplyTarget {
+        self.reply_menu.reply_target = Some(ReplyTarget {
             username: target.viewer.name,
             message_id,
         });
-        self.reply_input.update(cx, |input, cx| {
+        self.reply_menu.reply_input.update(cx, |input, cx| {
             input.clear(cx);
             input.focus(window, cx);
         });
@@ -56,21 +56,31 @@ impl ChatView {
     }
 
     fn cancel_reply(&mut self, cx: &mut Context<Self>) {
-        self.reply_target = None;
-        self.reply_input.update(cx, |input, cx| input.clear(cx));
+        self.reply_menu.reply_target = None;
+        self.reply_menu
+            .reply_input
+            .update(cx, |input, cx| input.clear(cx));
         cx.notify();
     }
 
     fn send_reply(&mut self, cx: &mut Context<Self>) {
-        let Some(target) = self.reply_target.clone() else {
+        let Some(target) = self.reply_menu.reply_target.clone() else {
             return;
         };
-        let message = self.reply_input.read(cx).content().trim().to_owned();
+        let message = self
+            .reply_menu
+            .reply_input
+            .read(cx)
+            .content()
+            .trim()
+            .to_owned();
         if message.is_empty() {
             return;
         }
-        self.reply_target = None;
-        self.reply_input.update(cx, |input, cx| input.clear(cx));
+        self.reply_menu.reply_target = None;
+        self.reply_menu
+            .reply_input
+            .update(cx, |input, cx| input.clear(cx));
         let step = build_reply_step(&target.username, &message, &target.message_id);
         let username = target.username;
         self.dispatch_quick_action(
@@ -108,9 +118,9 @@ impl ChatView {
         cx: &mut Context<Self>,
     ) {
         self.point_at_viewer(key, cx);
-        self.drawer_menu_open = None;
-        self.whisper_open = true;
-        self.whisper_input.update(cx, |input, cx| {
+        self.drawer.drawer_menu_open = None;
+        self.drawer.whisper_open = true;
+        self.drawer.whisper_input.update(cx, |input, cx| {
             input.clear(cx);
             input.focus(window, cx);
         });
@@ -118,8 +128,10 @@ impl ChatView {
     }
 
     fn cancel_whisper(&mut self, cx: &mut Context<Self>) {
-        self.whisper_open = false;
-        self.whisper_input.update(cx, |input, cx| input.clear(cx));
+        self.drawer.whisper_open = false;
+        self.drawer
+            .whisper_input
+            .update(cx, |input, cx| input.clear(cx));
         cx.notify();
     }
 
@@ -127,12 +139,20 @@ impl ChatView {
         let Some(target) = self.displayed_target(cx) else {
             return;
         };
-        let message = self.whisper_input.read(cx).content().trim().to_owned();
+        let message = self
+            .drawer
+            .whisper_input
+            .read(cx)
+            .content()
+            .trim()
+            .to_owned();
         if message.is_empty() {
             return;
         }
-        self.whisper_open = false;
-        self.whisper_input.update(cx, |input, cx| input.clear(cx));
+        self.drawer.whisper_open = false;
+        self.drawer
+            .whisper_input
+            .update(cx, |input, cx| input.clear(cx));
         self.run_viewer_action(
             &target,
             ViewerAction::Whisper(message),
@@ -243,7 +263,7 @@ impl ChatView {
             .border(BORDER_THIN)
             .border_color(palette.border_regular)
             .child(title)
-            .child(self.whisper_input.clone())
+            .child(self.drawer.whisper_input.clone())
             .child(buttons)
     }
 
@@ -329,7 +349,7 @@ impl ChatView {
             .border(BORDER_THIN)
             .border_color(palette.border_regular)
             .child(title)
-            .child(self.reply_input.clone())
+            .child(self.reply_menu.reply_input.clone())
             .child(buttons);
 
         div()

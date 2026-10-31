@@ -29,7 +29,8 @@ use crate::home_stats::HomeStats;
 use crate::integration_lifecycle::IntegrationLifecycle;
 use crate::local_tts_engines::discover_local_tts_engines;
 use crate::log_tail::LogTail;
-use crate::navigation::Screen;
+use crate::navigation::{Navigator, Screen};
+use crate::overlay_build_failure::OverlayBuildFailure;
 use crate::platforms::PlatformConnectivity;
 use crate::problem_report::ProblemReport;
 use crate::queue_health::QueueHealth;
@@ -37,6 +38,7 @@ use crate::repo_failure::RepoFailure;
 use crate::runtime_event::{self, RuntimeEvent};
 use crate::runtime_handles::RuntimeHandles;
 use crate::runtime_status::RuntimeStatus;
+use crate::script_retired_ids::IdReplacement;
 use crate::shell::AppShell;
 use crate::speak_state::SpeakState;
 use crate::system_info::WindowFacts;
@@ -46,6 +48,7 @@ use crate::update_flow::{GithubArtifactDownloader, UpdateFlow};
 use crate::window_presence::PresenceGate;
 use forge_components::PushToast;
 use forge_components::{ActivePresentation, Presentation};
+use forge_host::boot_warnings::BootWarnings;
 use forge_host::platform_identities::PlatformIdentities;
 use forge_speak_queue::{SpeakError, SpeakEventStream};
 
@@ -59,23 +62,22 @@ enum BootState {
     Failed(BootFailure),
 }
 
+#[derive(Clone)]
+pub(crate) struct BootInputs {
+    pub(crate) rt_handle: tokio::runtime::Handle,
+    pub(crate) log_tail: LogTail,
+    pub(crate) endpoints: PlatformEndpoints,
+    pub(crate) initial_screen: Screen,
+}
+
 pub(crate) struct RootView {
     state: BootState,
-    rt_handle: tokio::runtime::Handle,
-    log_tail: LogTail,
-    endpoints: PlatformEndpoints,
-    initial_screen: Screen,
+    inputs: BootInputs,
     window: Option<WindowHandle<RootView>>,
 }
 
 impl RootView {
-    pub(crate) fn new(
-        rt_handle: tokio::runtime::Handle,
-        log_tail: LogTail,
-        endpoints: PlatformEndpoints,
-        initial_screen: Screen,
-        cx: &mut Context<Self>,
-    ) -> Self {
+    pub(crate) fn new(inputs: BootInputs, cx: &mut Context<Self>) -> Self {
         cx.observe_global::<Presentation>(|_, cx| cx.notify())
             .detach();
         cx.observe_global::<Toasts>(|root, cx| {
@@ -86,10 +88,7 @@ impl RootView {
         .detach();
         Self {
             state: BootState::Booting,
-            rt_handle,
-            log_tail,
-            endpoints,
-            initial_screen,
+            inputs,
             window: None,
         }
     }
@@ -110,45 +109,115 @@ impl RootView {
         let Some(window) = self.window else {
             return;
         };
-        let rt_handle = self.rt_handle.clone();
-        let log_tail = self.log_tail.clone();
-        let endpoints = self.endpoints.clone();
-        let initial_screen = self.initial_screen.clone();
+        let inputs = self.inputs.clone();
         self.state = BootState::Booting;
         cx.notify();
-        run_boot(
-            rt_handle,
-            log_tail,
-            endpoints,
-            initial_screen,
-            None,
-            window,
-            cx,
-        );
+        run_boot(inputs, None, window, cx);
     }
 }
 
+#[derive(Clone)]
+struct BootEntities {
+    status: Entity<RuntimeStatus>,
+    chat_feed: Entity<ChatFeed>,
+    home_stats: Entity<HomeStats>,
+    event_log: Entity<EventLog>,
+    globals: Entity<Globals>,
+    platforms: Entity<PlatformConnectivity>,
+    speak: Entity<SpeakState>,
+    queue_health: Entity<QueueHealth>,
+    event_loss: Entity<EventLoss>,
+    awake: Entity<AwakeState>,
+    twitch_bot: Entity<TwitchBotPresence>,
+}
+
+impl BootEntities {
+    fn new(cx: &mut App) -> Self {
+        let status = cx.new(|_| RuntimeStatus::new());
+        let chat_feed = cx.new(|_| ChatFeed::new());
+        let home_stats = cx.new(|_| HomeStats::new());
+        let event_log = cx.new(|_| EventLog::new());
+        let globals = cx.new(|_| Globals::empty());
+        let platforms = cx.new(|_| PlatformConnectivity::new());
+        mirror_connections_into_home(&platforms, home_stats.clone(), cx);
+        let speak = cx.new(|_| SpeakState::new());
+        let queue_health = cx.new(|_| QueueHealth::new());
+        let event_loss = cx.new(|_| EventLoss::new());
+        let awake = cx.new(|_| AwakeState::default());
+        let twitch_bot = cx.new(|_| TwitchBotPresence::new());
+        Self {
+            status,
+            chat_feed,
+            home_stats,
+            event_log,
+            globals,
+            platforms,
+            speak,
+            queue_health,
+            event_loss,
+            awake,
+            twitch_bot,
+        }
+    }
+}
+
+struct BootCaptures {
+    speak_events: Option<SpeakEventStream>,
+    overlay_build_failure: Option<OverlayBuildFailure>,
+    boot_warnings: BootWarnings,
+    credentials_key_loss: Option<CredentialsKeyLoss>,
+    bridge_sub: EventSubscription,
+    chat_feed_bridge: ChatFeedBridge,
+    loss_watch: LossWatch,
+    depth_watch: QueueDepthWatch,
+    obs_stats_watch: forge_obs::ObsStatsWatch,
+    awake_watch: StatusWatch,
+    event_categories: EventCategories,
+    retired_ids: Vec<IdReplacement>,
+}
+
+impl BootCaptures {
+    fn take(handles: &mut RuntimeHandles) -> Self {
+        Self {
+            speak_events: handles.speech.speak_events.take(),
+            overlay_build_failure: handles.overlay_build_failure.take(),
+            boot_warnings: handles.boot_warnings.clone(),
+            credentials_key_loss: handles.credentials_key_loss,
+            bridge_sub: handles.core.bus.subscribe_observer(UI_EVENTS),
+            chat_feed_bridge: ChatFeedBridge::subscribe(&handles.core.bus, &handles.rt_handle),
+            loss_watch: handles.core.bus.watch_loss(),
+            depth_watch: handles.automation.scheduler.watch_depths(),
+            obs_stats_watch: handles.integrations.obs_install_seed.stream_stats(),
+            awake_watch: handles.stay_awake.watch(),
+            event_categories: EventCategories::from_registry(&handles.automation.trigger_registry),
+            retired_ids: crate::script_retired_ids::retired_successions(
+                &handles.automation.trigger_registry,
+                &handles.automation.sub_action_registry,
+            ),
+        }
+    }
+}
+
+struct InstalledShell {
+    update_flow: Entity<UpdateFlow>,
+    problem_report: Entity<ProblemReport>,
+    window_facts: WindowFacts,
+    navigator: Navigator,
+}
+
 pub(crate) fn run_boot(
-    rt_handle: tokio::runtime::Handle,
-    log_tail: LogTail,
-    endpoints: PlatformEndpoints,
-    initial_screen: Screen,
+    inputs: BootInputs,
     opening: Option<crate::boot::BackendOpening>,
     window: WindowHandle<RootView>,
     cx: &mut App,
 ) {
-    let status = cx.new(|_| RuntimeStatus::new());
-    let chat_feed = cx.new(|_| ChatFeed::new());
-    let home_stats = cx.new(|_| HomeStats::new());
-    let event_log = cx.new(|_| EventLog::new());
-    let globals = cx.new(|_| Globals::empty());
-    let platforms = cx.new(|_| PlatformConnectivity::new());
-    mirror_connections_into_home(&platforms, home_stats.clone(), cx);
-    let speak = cx.new(|_| SpeakState::new());
-    let queue_health = cx.new(|_| QueueHealth::new());
-    let event_loss = cx.new(|_| EventLoss::new());
-    let awake = cx.new(|_| AwakeState::default());
-    let twitch_bot = cx.new(|_| TwitchBotPresence::new());
+    let entities = BootEntities::new(cx);
+    let BootInputs {
+        rt_handle,
+        log_tail,
+        endpoints,
+        initial_screen,
+    } = inputs;
 
     let (hotkey_host, hotkey_main_thread) = forge_hotkey::main_thread_channel();
     cx.spawn(async move |_| hotkey_host.run().await).detach();
@@ -190,275 +259,7 @@ pub(crate) fn run_boot(
             }),
         };
         match outcome {
-            Ok(mut handles) => {
-                let speak_events = handles.speech.speak_events.take();
-                let overlay_build_failure = handles.overlay_build_failure.take();
-                let boot_warnings = handles.boot_warnings.clone();
-                let initial_screen = handles.first_run.opening_screen(initial_screen);
-                let handles = Arc::new(handles);
-                let bridge_sub = handles.core.bus.subscribe_observer(UI_EVENTS);
-                let chat_feed_bridge =
-                    ChatFeedBridge::subscribe(&handles.core.bus, &handles.rt_handle);
-                let loss_watch = handles.core.bus.watch_loss();
-                let depth_watch = handles.automation.scheduler.watch_depths();
-                let obs_stats_watch = handles.integrations.obs_install_seed.stream_stats();
-                let home_stats_for_obs = home_stats.clone();
-                let event_loss_for_bridge = event_loss.clone();
-                let awake_for_bridge = awake.clone();
-                let awake_watch = handles.stay_awake.watch();
-                let event_loss_for_chat = event_loss.clone();
-                let handles_for_shell = Arc::clone(&handles);
-                let status_for_clock = status.clone();
-                let home_stats_for_bridge = home_stats.clone();
-                let home_stats_for_viewers = home_stats.clone();
-                let event_log_for_bridge = event_log.clone();
-                let platforms_for_bridge = platforms.clone();
-                let twitch_bot_for_bridge = twitch_bot.clone();
-                let event_categories =
-                    EventCategories::from_registry(&handles.automation.trigger_registry);
-                let twitch_bot_for_seed = twitch_bot.clone();
-                let twitch_bot_handle = handles.integrations.twitch_bot.clone();
-                let rt_handle_for_bot_seed = handles.rt_handle.clone();
-                let queue_health_for_bridge = queue_health.clone();
-                let queue_health_for_depths = queue_health.clone();
-                let speak_for_bridge = speak.clone();
-                let live_viewers_handle = handles.automation.live_viewers.clone();
-                let notification_policy = handles.core.notification_policy.clone();
-                let scripts_for_retired_ids =
-                    Arc::clone(&handles.backend) as Arc<dyn forge_storage::ScriptRepo>;
-                let retired_ids = crate::script_retired_ids::retired_successions(
-                    &handles.automation.trigger_registry,
-                    &handles.automation.sub_action_registry,
-                );
-                let rt_handle_for_notices = handles.rt_handle.clone();
-                let scheduled_backups_for_notices = handles.core.scheduled_backups.clone();
-                let settings_for_backup_notices =
-                    Arc::clone(&handles.backend) as Arc<dyn forge_storage::SettingsRepo>;
-                let backend_for_shortcuts = Arc::clone(&handles.backend);
-                let rt_handle_for_shortcuts = handles.rt_handle.clone();
-                let chat_feed_for_history = chat_feed.clone();
-                let backend_for_history = Arc::clone(&handles.backend);
-                let rt_handle_for_history = handles.rt_handle.clone();
-                let backend_for_updates = Arc::clone(&handles.backend);
-                let rt_handle_for_updates = handles.rt_handle.clone();
-                let mut flow_for_updates = None;
-                let mut report_for_crashes = None;
-                let mut window_facts = None;
-                let mut navigator_for_notices = None;
-                let credentials_key_loss = handles.credentials_key_loss;
-                let applied = window.update(cx, |root, window, cx| {
-                    crate::i18n::install_process_language(handles.startup_language);
-                    cx.set_global(crate::presentation::ActiveLanguage(
-                        handles.startup_language,
-                    ));
-                    forge_components::install_process_display_formats(
-                        handles.startup_display_formats.resolve(),
-                    );
-                    cx.set_global(crate::presentation::ActiveDisplayFormats(
-                        handles.startup_display_formats,
-                    ));
-                    crate::message_catalogs::report_catalog_problems(cx);
-                    if let Some(reason) = handles.server_unavailable.clone() {
-                        cx.set_global(crate::server_unavailable::ServerUnavailable(reason));
-                    }
-                    platforms.update(cx, |connectivity, cx| {
-                        connectivity.seed_from_builtins(&handles.integrations.builtins);
-                        cx.notify();
-                    });
-                    crate::donation_services::mirror_donation_connectivity(
-                        &handles.integrations.donation_services,
-                        &platforms,
-                        cx,
-                    );
-                    let integration_lifecycle = cx.new(|_| {
-                        IntegrationLifecycle::new(handles.integrations.supervisor.watch().current())
-                    });
-                    let update_flow = cx.new(|_| {
-                        UpdateFlow::new(
-                            Arc::clone(&handles.backend),
-                            Arc::new(GithubArtifactDownloader),
-                            handles.rt_handle.clone(),
-                            crate::app_paths::app_paths().data_dir(),
-                        )
-                        .with_exclusivity(handles.core.transfer_exclusivity.clone())
-                        .with_scheduled_backups(handles.core.scheduled_backups.clone())
-                    });
-                    flow_for_updates = Some(update_flow.clone());
-                    let problem_report = cx.new(|_| {
-                        ProblemReport::new(
-                            Arc::clone(&handles.backend),
-                            handles.integrations.builtins.clone(),
-                            handles.rt_handle.clone(),
-                        )
-                    });
-                    report_for_crashes = Some(problem_report.clone());
-                    window_facts = Some(WindowFacts::read(window, cx));
-                    let topics = Topics::new(
-                        chat_feed,
-                        home_stats,
-                        event_log,
-                        globals,
-                        platforms,
-                        speak,
-                        queue_health,
-                        event_loss,
-                        awake,
-                        integration_lifecycle,
-                        update_flow,
-                        problem_report,
-                        twitch_bot,
-                    );
-                    let shell = cx.new(|cx| {
-                        AppShell::new(
-                            status,
-                            topics,
-                            handles_for_shell,
-                            initial_screen,
-                            window,
-                            cx,
-                        )
-                    });
-                    AppShell::route_quit(&shell, cx);
-                    navigator_for_notices = Some(AppShell::navigator(&shell));
-                    let mut ordered_stop = Some(handles.stop.clone());
-                    let stay_awake = handles.stay_awake.clone();
-                    App::on_app_quit(cx, move |cx| {
-                        stay_awake.release();
-                        let taken = ordered_stop.take();
-                        let teardown = crate::shutdown::QuitTeardown::claim(cx);
-                        let exit = crate::update_exit::ExitHandoff::claim_at_quit(cx);
-                        async move {
-                            if let Some(stop) = taken {
-                                stop.run().await;
-                            }
-                            if let Some(exit) = exit {
-                                exit.finish();
-                            }
-                            teardown.finish();
-                        }
-                    })
-                    .detach();
-                    root.mark_ready(shell);
-                    cx.notify();
-                });
-                if applied.is_ok() {
-                    crate::boot_signal::ready();
-                }
-                if let (Ok(()), Some(update_flow), Some(problem_report), Some(navigator)) = (
-                    applied,
-                    flow_for_updates,
-                    report_for_crashes,
-                    navigator_for_notices,
-                ) {
-                    cx.update(crate::boot_restore::raise_boot_restore_toast);
-                    if let Some(loss) = credentials_key_loss {
-                        cx.update(|cx| raise_credentials_key_loss_toast(loss, cx));
-                    }
-                    if let Some(failure) = overlay_build_failure {
-                        cx.update(|cx| failure.raise(cx));
-                    }
-                    let warnings_navigator = navigator.clone();
-                    cx.update(|cx| {
-                        crate::boot_warnings::raise_boot_warnings(
-                            &boot_warnings,
-                            warnings_navigator,
-                            cx,
-                        );
-                    });
-                    seed_chat_history(
-                        cx,
-                        chat_feed_for_history.clone(),
-                        backend_for_history,
-                        rt_handle_for_history,
-                    )
-                    .await;
-                    start_loss_bridge(cx, event_loss_for_bridge, loss_watch);
-                    start_queue_depth_bridge(cx, queue_health_for_depths, depth_watch);
-                    start_obs_stats_bridge(cx, home_stats_for_obs, obs_stats_watch);
-                    chat_feed_bridge.start(cx, chat_feed_for_history, event_loss_for_chat);
-                    event_log_for_bridge.update(cx, |log, _| log.set_categories(event_categories));
-                    start_bridge(
-                        cx,
-                        home_stats_for_bridge,
-                        event_log_for_bridge,
-                        platforms_for_bridge,
-                        queue_health_for_bridge,
-                        twitch_bot_for_bridge,
-                        bridge_sub,
-                    );
-                    if let Some(bot) = twitch_bot_handle {
-                        start_twitch_bot_seed(
-                            cx,
-                            twitch_bot_for_seed,
-                            bot,
-                            &rt_handle_for_bot_seed,
-                        );
-                    }
-                    start_uptime_clock(cx, status_for_clock);
-                    start_awake_bridge(cx, awake_for_bridge, awake_watch);
-                    start_live_viewers_bridge(cx, home_stats_for_viewers, live_viewers_handle);
-                    crate::system_notices::start_system_notices(
-                        cx,
-                        &notification_policy,
-                        Arc::new(forge_runtime::SystemNotifyPort),
-                        rt_handle_for_notices.clone(),
-                    );
-                    crate::scheduled_backup_notices::start_scheduled_backup_notices(
-                        cx,
-                        &scheduled_backups_for_notices,
-                        settings_for_backup_notices,
-                        Arc::new(forge_runtime::SystemNotifyPort),
-                        rt_handle_for_notices.clone(),
-                        navigator.clone(),
-                    );
-                    crate::script_retired_ids::start_script_retired_id_notice(
-                        cx,
-                        scripts_for_retired_ids,
-                        retired_ids,
-                        &rt_handle_for_notices,
-                        navigator,
-                    );
-                    apply_persisted_shortcuts(cx, backend_for_shortcuts, rt_handle_for_shortcuts);
-                    let boot_report = crate::update_report::start_update_report(
-                        cx,
-                        Arc::clone(&backend_for_updates),
-                        rt_handle_for_updates.clone(),
-                    );
-                    crate::update_leftover::start_leftover_install_notice(
-                        cx,
-                        Arc::clone(&backend_for_updates),
-                        rt_handle_for_updates.clone(),
-                    );
-                    crate::problem_report::start_crash_notice(
-                        cx,
-                        problem_report,
-                        rt_handle_for_updates.clone(),
-                    );
-                    let rt_handle_for_snapshot = rt_handle_for_updates.clone();
-                    crate::update_check::start_update_check(
-                        cx,
-                        backend_for_updates,
-                        rt_handle_for_updates,
-                        boot_report,
-                        update_flow,
-                    );
-                    if let Some(window_facts) = window_facts {
-                        cx.spawn(async move |_| {
-                            crate::crash_hook::snapshot_system_info(
-                                window_facts,
-                                &rt_handle_for_snapshot,
-                            )
-                            .await;
-                            #[cfg(debug_assertions)]
-                            crate::crash_hook::panic_if_requested();
-                        })
-                        .detach();
-                    }
-                    if let Some(events) = speak_events {
-                        start_speak_bridge(cx, speak_for_bridge, events);
-                    }
-                }
-            }
+            Ok(handles) => finish_boot(handles, entities, initial_screen, window, cx).await,
             Err(failure) => {
                 crate::boot_signal::boot_failed(&failure);
                 #[expect(
@@ -472,6 +273,293 @@ pub(crate) fn run_boot(
                 cx.update(crate::boot_restore::raise_boot_restore_toast);
             }
         }
+    })
+    .detach();
+}
+
+async fn finish_boot(
+    mut handles: RuntimeHandles,
+    entities: BootEntities,
+    initial_screen: Screen,
+    window: WindowHandle<RootView>,
+    cx: &mut AsyncApp,
+) {
+    let captures = BootCaptures::take(&mut handles);
+    let initial_screen = handles.first_run.opening_screen(initial_screen);
+    let handles = Arc::new(handles);
+    let shell_entities = entities.clone();
+    let installed = window.update(cx, |root, window, cx| {
+        install_shell(root, &handles, shell_entities, initial_screen, window, cx)
+    });
+    if let Ok(installed) = installed {
+        crate::boot_signal::ready();
+        start_boot_services(&handles, entities, captures, installed, cx).await;
+    }
+}
+
+fn install_shell(
+    root: &mut RootView,
+    handles: &Arc<RuntimeHandles>,
+    entities: BootEntities,
+    initial_screen: Screen,
+    window: &mut Window,
+    cx: &mut Context<RootView>,
+) -> InstalledShell {
+    let BootEntities {
+        status,
+        chat_feed,
+        home_stats,
+        event_log,
+        globals,
+        platforms,
+        speak,
+        queue_health,
+        event_loss,
+        awake,
+        twitch_bot,
+    } = entities;
+    crate::i18n::install_process_language(handles.startup_language);
+    cx.set_global(crate::presentation::ActiveLanguage(
+        handles.startup_language,
+    ));
+    forge_components::install_process_display_formats(handles.startup_display_formats.resolve());
+    cx.set_global(crate::presentation::ActiveDisplayFormats(
+        handles.startup_display_formats,
+    ));
+    crate::message_catalogs::report_catalog_problems(cx);
+    if let Some(reason) = handles.server_unavailable.clone() {
+        cx.set_global(crate::server_unavailable::ServerUnavailable(reason));
+    }
+    platforms.update(cx, |connectivity, cx| {
+        connectivity.seed_from_builtins(&handles.integrations.builtins);
+        cx.notify();
+    });
+    crate::donation_services::mirror_donation_connectivity(
+        &handles.integrations.donation_services,
+        &platforms,
+        cx,
+    );
+    let integration_lifecycle =
+        cx.new(|_| IntegrationLifecycle::new(handles.integrations.supervisor.watch().current()));
+    let update_flow = cx.new(|_| {
+        UpdateFlow::new(
+            Arc::clone(&handles.backend),
+            Arc::new(GithubArtifactDownloader),
+            handles.rt_handle.clone(),
+            crate::app_paths::app_paths().data_dir(),
+        )
+        .with_exclusivity(handles.core.transfer_exclusivity.clone())
+        .with_scheduled_backups(handles.core.scheduled_backups.clone())
+    });
+    let problem_report = cx.new(|_| {
+        ProblemReport::new(
+            Arc::clone(&handles.backend),
+            handles.integrations.builtins.clone(),
+            handles.rt_handle.clone(),
+        )
+    });
+    let window_facts = WindowFacts::read(window, cx);
+    let topics = Topics::new(
+        chat_feed,
+        home_stats,
+        event_log,
+        globals,
+        platforms,
+        speak,
+        queue_health,
+        event_loss,
+        awake,
+        integration_lifecycle,
+        update_flow.clone(),
+        problem_report.clone(),
+        twitch_bot,
+    );
+    let shell = cx.new(|cx| {
+        AppShell::new(
+            status,
+            topics,
+            Arc::clone(handles),
+            initial_screen,
+            window,
+            cx,
+        )
+    });
+    AppShell::route_quit(&shell, cx);
+    let navigator = AppShell::navigator(&shell);
+    let mut ordered_stop = Some(handles.stop.clone());
+    let stay_awake = handles.stay_awake.clone();
+    App::on_app_quit(cx, move |cx| {
+        stay_awake.release();
+        let taken = ordered_stop.take();
+        let teardown = crate::shutdown::QuitTeardown::claim(cx);
+        let exit = crate::update_exit::ExitHandoff::claim_at_quit(cx);
+        async move {
+            if let Some(stop) = taken {
+                stop.run().await;
+            }
+            if let Some(exit) = exit {
+                exit.finish();
+            }
+            teardown.finish();
+        }
+    })
+    .detach();
+    root.mark_ready(shell);
+    cx.notify();
+    InstalledShell {
+        update_flow,
+        problem_report,
+        window_facts,
+        navigator,
+    }
+}
+
+async fn start_boot_services(
+    handles: &Arc<RuntimeHandles>,
+    entities: BootEntities,
+    captures: BootCaptures,
+    installed: InstalledShell,
+    cx: &mut AsyncApp,
+) {
+    let BootEntities {
+        status,
+        chat_feed,
+        home_stats,
+        event_log,
+        globals: _,
+        platforms,
+        speak,
+        queue_health,
+        event_loss,
+        awake,
+        twitch_bot,
+    } = entities;
+    let BootCaptures {
+        speak_events,
+        overlay_build_failure,
+        boot_warnings,
+        credentials_key_loss,
+        bridge_sub,
+        chat_feed_bridge,
+        loss_watch,
+        depth_watch,
+        obs_stats_watch,
+        awake_watch,
+        event_categories,
+        retired_ids,
+    } = captures;
+    let InstalledShell {
+        update_flow,
+        problem_report,
+        window_facts,
+        navigator,
+    } = installed;
+
+    cx.update(crate::boot_restore::raise_boot_restore_toast);
+    if let Some(loss) = credentials_key_loss {
+        cx.update(|cx| raise_credentials_key_loss_toast(loss, cx));
+    }
+    if let Some(failure) = overlay_build_failure {
+        cx.update(|cx| failure.raise(cx));
+    }
+    let warnings_navigator = navigator.clone();
+    cx.update(|cx| {
+        crate::boot_warnings::raise_boot_warnings(&boot_warnings, warnings_navigator, cx);
+    });
+    seed_chat_history(
+        cx,
+        chat_feed.clone(),
+        Arc::clone(&handles.backend),
+        handles.rt_handle.clone(),
+    )
+    .await;
+    start_loss_bridge(cx, event_loss.clone(), loss_watch);
+    start_queue_depth_bridge(cx, queue_health.clone(), depth_watch);
+    start_obs_stats_bridge(cx, home_stats.clone(), obs_stats_watch);
+    chat_feed_bridge.start(cx, chat_feed, event_loss);
+    event_log.update(cx, |log, _| log.set_categories(event_categories));
+    start_bridge(
+        cx,
+        home_stats.clone(),
+        event_log,
+        platforms,
+        queue_health,
+        twitch_bot.clone(),
+        bridge_sub,
+    );
+    if let Some(bot) = handles.integrations.twitch_bot.clone() {
+        start_twitch_bot_seed(cx, twitch_bot, bot, &handles.rt_handle);
+    }
+    start_uptime_clock(cx, status);
+    start_awake_bridge(cx, awake, awake_watch);
+    start_live_viewers_bridge(cx, home_stats, handles.automation.live_viewers.clone());
+    start_boot_notices(handles, retired_ids, navigator, cx);
+    apply_persisted_shortcuts(cx, Arc::clone(&handles.backend), handles.rt_handle.clone());
+    start_update_services(handles, update_flow, problem_report, window_facts, cx);
+    if let Some(events) = speak_events {
+        start_speak_bridge(cx, speak, events);
+    }
+}
+
+fn start_boot_notices(
+    handles: &Arc<RuntimeHandles>,
+    retired_ids: Vec<IdReplacement>,
+    navigator: Navigator,
+    cx: &mut AsyncApp,
+) {
+    crate::system_notices::start_system_notices(
+        cx,
+        &handles.core.notification_policy,
+        Arc::new(forge_runtime::SystemNotifyPort),
+        handles.rt_handle.clone(),
+    );
+    crate::scheduled_backup_notices::start_scheduled_backup_notices(
+        cx,
+        &handles.core.scheduled_backups,
+        Arc::clone(&handles.backend) as Arc<dyn forge_storage::SettingsRepo>,
+        Arc::new(forge_runtime::SystemNotifyPort),
+        handles.rt_handle.clone(),
+        navigator.clone(),
+    );
+    crate::script_retired_ids::start_script_retired_id_notice(
+        cx,
+        Arc::clone(&handles.backend) as Arc<dyn forge_storage::ScriptRepo>,
+        retired_ids,
+        &handles.rt_handle,
+        navigator,
+    );
+}
+
+fn start_update_services(
+    handles: &Arc<RuntimeHandles>,
+    update_flow: Entity<UpdateFlow>,
+    problem_report: Entity<ProblemReport>,
+    window_facts: WindowFacts,
+    cx: &mut AsyncApp,
+) {
+    let boot_report = crate::update_report::start_update_report(
+        cx,
+        Arc::clone(&handles.backend),
+        handles.rt_handle.clone(),
+    );
+    crate::update_leftover::start_leftover_install_notice(
+        cx,
+        Arc::clone(&handles.backend),
+        handles.rt_handle.clone(),
+    );
+    crate::problem_report::start_crash_notice(cx, problem_report, handles.rt_handle.clone());
+    crate::update_check::start_update_check(
+        cx,
+        Arc::clone(&handles.backend),
+        handles.rt_handle.clone(),
+        boot_report,
+        update_flow,
+    );
+    let rt_handle_for_snapshot = handles.rt_handle.clone();
+    cx.spawn(async move |_| {
+        crate::crash_hook::snapshot_system_info(window_facts, &rt_handle_for_snapshot).await;
+        #[cfg(debug_assertions)]
+        crate::crash_hook::panic_if_requested();
     })
     .detach();
 }
@@ -1143,10 +1231,12 @@ mod tests {
         let handle = rt.handle().clone();
         let (view, vcx) = cx.add_window_view(move |_window, cx| {
             RootView::new(
-                handle,
-                LogTail::new(),
-                PlatformEndpoints::default(),
-                Screen::Home,
+                BootInputs {
+                    rt_handle: handle,
+                    log_tail: LogTail::new(),
+                    endpoints: PlatformEndpoints::default(),
+                    initial_screen: Screen::Home,
+                },
                 cx,
             )
         });

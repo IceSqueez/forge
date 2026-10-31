@@ -67,7 +67,7 @@ impl ChatView {
             if !self.filter_offered(filter, cx) {
                 continue;
             }
-            let active = self.platform_filter == filter;
+            let active = self.timeline.platform_filter == filter;
             chips = chips.child(chip(label, ChipGlyph::Dot(dot), active, palette).on_click(
                 id,
                 cx.listener(move |this, _, _, cx| this.set_platform_filter(filter, cx)),
@@ -83,7 +83,7 @@ impl ChatView {
             chip(
                 tr!("chat_filter_events"),
                 ChipGlyph::None,
-                self.events_only,
+                self.timeline.events_only,
                 palette,
             )
             .on_click(
@@ -95,7 +95,7 @@ impl ChatView {
             chip(
                 tr!("chat_filter_hide_bots"),
                 ChipGlyph::Icon(Icon::BellOff, palette.text_faint),
-                self.hide_bots,
+                self.timeline.hide_bots,
                 palette,
             )
             .on_click(
@@ -111,7 +111,7 @@ impl ChatView {
             .child(
                 div()
                     .w(SEARCH_FIELD_WIDTH)
-                    .child(self.search.field().clone()),
+                    .child(self.timeline.search.field().clone()),
             )
             .child(chips)
             .into_any_element()
@@ -146,19 +146,19 @@ impl ChatView {
         density: Density,
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
-        let query = self.search.query().to_string();
+        let query = self.timeline.search.query().to_string();
         let search_active = !query.is_empty();
 
-        let snapshot: Rc<VecDeque<u64>> = self.visible.clone();
+        let snapshot: Rc<VecDeque<u64>> = self.timeline.visible.clone();
         let empty = snapshot.is_empty();
         let feed = self.feed.clone();
 
         let row_gap = spacing(Spacing::Xxs, density);
         let pal = *palette;
         let view = cx.entity();
-        let cursor_seq = self.feed_keys.current().copied();
+        let cursor_seq = self.timeline.feed_keys.current().copied();
         let cursor_bg = palette.shell;
-        let list_el = list(self.chat_list.clone(), move |ix, _window, app| {
+        let list_el = list(self.timeline.chat_list.clone(), move |ix, _window, app| {
             let Some(seq) = snapshot.get(ix).copied() else {
                 return div().into_any_element();
             };
@@ -213,7 +213,7 @@ impl ChatView {
             if cursor_seq == Some(seq) {
                 framed = framed
                     .bg(cursor_bg)
-                    .child(cursor_view.read(app).feed_keys.row_anchor(None));
+                    .child(cursor_view.read(app).timeline.feed_keys.row_anchor(None));
             }
             if let Some(menu_target) = menu_target {
                 framed = framed.on_mouse_down(
@@ -262,13 +262,13 @@ impl ChatView {
             .bg(palette.base)
             .child(body);
 
-        if self.unread > 0 {
-            let label = if self.unread == 1 {
+        if self.timeline.unread > 0 {
+            let label = if self.timeline.unread == 1 {
                 tr!("chat_new_message")
             } else {
                 tr!(
                     "chat_new_messages",
-                    count = i64::try_from(self.unread).unwrap_or(i64::MAX)
+                    count = i64::try_from(self.timeline.unread).unwrap_or(i64::MAX)
                 )
             };
             let pill = div()

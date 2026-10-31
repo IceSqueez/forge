@@ -71,14 +71,14 @@ impl IntegrationDetail {
             return;
         }
         let action = action.clone();
-        let option_source = self.option_source.clone();
-        let rt_handle = self.rt_handle.clone();
+        let option_source = self.ports.option_source.clone();
+        let rt_handle = self.services.rt_handle.clone();
         let modal = cx.new(|cx| QuickActionModal::new(action, option_source, rt_handle, cx));
         focus_inside_modal(window, cx, |window, cx| {
             modal.update(cx, |m, cx| m.focus(window, cx))
         });
-        self._qa_modal_sub = Some(cx.subscribe(&modal, Self::on_quick_action_modal_event));
-        self.quick_action_modal = Some(modal);
+        self.modals._qa_modal_sub = Some(cx.subscribe(&modal, Self::on_quick_action_modal_event));
+        self.modals.quick_action_modal = Some(modal);
         cx.notify();
     }
 
@@ -104,10 +104,10 @@ impl IntegrationDetail {
         settled: impl FnOnce(&mut Self, Result<(), RepoFailure>, &mut Context<Self>) + Send + 'static,
         cx: &mut Context<Self>,
     ) {
-        let builtin_id = self.status.id().as_str().to_owned();
-        let engine = self.action_engine.clone();
+        let builtin_id = self.ports.status.id().as_str().to_owned();
+        let engine = self.services.action_engine.clone();
         async_bridge::run_async(
-            &self.rt_handle,
+            &self.services.rt_handle,
             async_bridge::run_quick_step(engine, step, builtin_id, label),
             settled,
             cx,
@@ -139,7 +139,7 @@ impl IntegrationDetail {
     pub(super) fn run_row_step(&mut self, click: &StepClick, cx: &mut Context<Self>) {
         let row = click.row.to_string();
         let kind = click.step.kind_id.clone();
-        if !self.row_steps_in_flight.try_begin(&row, &kind) {
+        if !self.live.row_steps_in_flight.try_begin(&row, &kind) {
             return;
         }
         cx.notify();
@@ -147,7 +147,7 @@ impl IntegrationDetail {
             click.step.clone(),
             row.clone(),
             move |detail, result, cx| {
-                detail.row_steps_in_flight.finish(&row, &kind);
+                detail.live.row_steps_in_flight.finish(&row, &kind);
                 if let Err(err) = result {
                     tracing::warn!(error = %err, "content row action failed");
                     cx.push_toast(
@@ -167,7 +167,7 @@ impl IntegrationDetail {
         accent: Rgba,
         cx: &mut Context<Self>,
     ) {
-        let Some(capability) = self.collections.clone() else {
+        let Some(capability) = self.ports.collections.clone() else {
             return;
         };
         let Some(metadata) = capability
@@ -177,12 +177,12 @@ impl IntegrationDetail {
         else {
             return;
         };
-        let rt_handle = self.rt_handle.clone();
+        let rt_handle = self.services.rt_handle.clone();
         let manager =
             cx.new(|cx| CollectionManager::new(capability, metadata, accent, rt_handle, cx));
-        self._collection_manager_sub =
+        self.modals._collection_manager_sub =
             Some(cx.subscribe(&manager, Self::on_collection_manager_event));
-        self.collection_manager = Some(manager);
+        self.modals.collection_manager = Some(manager);
         cx.notify();
     }
 
@@ -201,29 +201,29 @@ impl IntegrationDetail {
     }
 
     pub(super) fn close_collection_manager(&mut self) {
-        self.collection_manager = None;
-        self._collection_manager_sub = None;
+        self.modals.collection_manager = None;
+        self.modals._collection_manager_sub = None;
     }
 
     fn close_quick_action_modal(&mut self, cx: &mut Context<Self>) {
-        self.quick_action_modal = None;
-        self._qa_modal_sub = None;
+        self.modals.quick_action_modal = None;
+        self.modals._qa_modal_sub = None;
         cx.notify();
     }
 
     pub(crate) fn open_run_history(&mut self, cx: &mut Context<Self>) {
-        let registry = Arc::clone(&self.trigger_registry);
-        let modal = cx.new(|_| RunHistoryModal::new(self.display_name.clone(), registry));
-        self._history_modal_subs = vec![
+        let registry = Arc::clone(&self.services.trigger_registry);
+        let modal = cx.new(|_| RunHistoryModal::new(self.shown.display_name.clone(), registry));
+        self.modals._history_modal_subs = vec![
             cx.subscribe(&modal, Self::on_run_history_event),
             cx.subscribe(&modal, Self::on_run_history_open_integration),
         ];
-        self.history_modal = Some(modal.clone());
+        self.modals.history_modal = Some(modal.clone());
 
-        let history = Arc::clone(&self.history);
-        let builtin_id = self.status.id().as_str().to_owned();
+        let history = Arc::clone(&self.services.history);
+        let builtin_id = self.ports.status.id().as_str().to_owned();
         async_bridge::run_async(
-            &self.rt_handle,
+            &self.services.rt_handle,
             async move {
                 history
                     .recent_for_builtin(&builtin_id, HISTORY_LIMIT)
@@ -254,8 +254,8 @@ impl IntegrationDetail {
         _event: &RunHistoryDismissed,
         cx: &mut Context<Self>,
     ) {
-        self.history_modal = None;
-        self._history_modal_subs.clear();
+        self.modals.history_modal = None;
+        self.modals._history_modal_subs.clear();
         cx.notify();
     }
 
@@ -265,8 +265,8 @@ impl IntegrationDetail {
         event: &RunHistoryOpenIntegration,
         cx: &mut Context<Self>,
     ) {
-        self.history_modal = None;
-        self._history_modal_subs.clear();
+        self.modals.history_modal = None;
+        self.modals._history_modal_subs.clear();
         self.navigate_to(Screen::BuiltinDetail(event.0.clone()), cx);
         cx.notify();
     }

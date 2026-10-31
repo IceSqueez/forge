@@ -9,12 +9,12 @@ use std::collections::HashMap;
 
 impl IntegrationDetail {
     pub(super) fn augmented_sections(&self) -> Vec<DetailSection> {
-        let mut sections = self.sections.clone();
+        let mut sections = self.shown.sections.clone();
         for section in &mut sections {
             if let DetailSection::TwoColumn { right, .. } = section {
-                Self::fill_subscription_counts(right, &self.eventsub_tally);
+                Self::fill_subscription_counts(right, &self.live.eventsub_tally);
             } else {
-                Self::fill_subscription_counts(section, &self.eventsub_tally);
+                Self::fill_subscription_counts(section, &self.live.eventsub_tally);
             }
         }
         sections
@@ -34,7 +34,7 @@ impl IntegrationDetail {
     }
 
     pub(super) fn augmented_health(&self) -> [HealthMetric; 4] {
-        let mut metrics = self.health_metrics.clone();
+        let mut metrics = self.shown.health_metrics.clone();
         if let Some(metric) = metrics.iter_mut().find(|m| m.id == HealthMetricId::VIEWERS)
             && let HealthValue::Text { secondary, .. } = &mut metric.value
         {
@@ -52,7 +52,8 @@ impl IntegrationDetail {
     }
 
     pub(super) fn hero_badges(&self, palette: &ForgePalette) -> Vec<AnyElement> {
-        self.status
+        self.ports
+            .status
             .name_badges()
             .into_iter()
             .map(|b| hero_badge_elem(&b, palette).into_any_element())
@@ -60,7 +61,7 @@ impl IntegrationDetail {
     }
 
     pub(super) fn token_countdown(&self) -> Option<String> {
-        let expiry = self.status.token_expiry()?;
+        let expiry = self.ports.status.token_expiry()?;
         let remaining = expiry.duration_since(std::time::SystemTime::now()).ok()?;
         let total = remaining.as_secs();
         if total == 0 {
@@ -75,11 +76,15 @@ impl IntegrationDetail {
     }
 
     pub(super) fn is_oauth_platform(&self) -> bool {
-        matches!(self.status.id().as_str(), "twitch" | "youtube" | "kick")
+        matches!(
+            self.ports.status.id().as_str(),
+            "twitch" | "youtube" | "kick"
+        )
     }
 
     pub(super) fn hero_subtitle(&self) -> String {
-        self.status
+        self.ports
+            .status
             .endpoint()
             .map(|endpoint| user_text_string(&endpoint))
             .unwrap_or_default()

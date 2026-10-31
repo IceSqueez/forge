@@ -212,7 +212,7 @@ impl ChatView {
         let follow = follow_display(
             summary.key.platform,
             summary.role,
-            self.follows.status_of(&summary.key),
+            self.drawer.follows.status_of(&summary.key),
             palette,
         );
         let tile_hover = palette.surface_overlay;
@@ -295,7 +295,7 @@ impl ChatView {
             ))
             .child(self.render_drawer_menu(&summary.key, &target, palette, cx));
 
-        let whisper = (self.whisper_open && can_whisper)
+        let whisper = (self.drawer.whisper_open && can_whisper)
             .then(|| self.render_whisper_compose(summary.username.clone(), palette, density, cx));
 
         frame

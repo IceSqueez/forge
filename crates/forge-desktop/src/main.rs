@@ -223,7 +223,7 @@ use gpui::{
 use crate::actions::register_key_bindings;
 use crate::log_tail::LogTail;
 use crate::navigation::Screen;
-use crate::root::{RestoreWaitView, RootView, run_boot};
+use crate::root::{BootInputs, RestoreWaitView, RootView, run_boot};
 use crate::settings::{NAV_WIDTH, PANE_MIN_WIDTH};
 use crate::shutdown::{RUNTIME_SHUTDOWN_BUDGET, RuntimeSlot, silence_logging};
 use crate::sidebar::SIDEBAR_MAX;
@@ -599,10 +599,13 @@ fn open_main_window(
         ..Default::default()
     };
 
-    let rt_handle_for_root = rt_handle.clone();
-    let log_tail_for_root = log_tail.clone();
-    let endpoints_for_root = endpoints.clone();
-    let initial_screen_for_root = initial_screen.clone();
+    let boot_inputs = BootInputs {
+        rt_handle: rt_handle.clone(),
+        log_tail: log_tail.clone(),
+        endpoints: endpoints.clone(),
+        initial_screen: initial_screen.clone(),
+    };
+    let boot_inputs_for_root = boot_inputs.clone();
     let placement_storage = presentation.backend.clone().map(|backend| {
         (
             backend,
@@ -617,15 +620,7 @@ fn open_main_window(
                 window, backend, rt_handle, persisted, cx,
             );
         }
-        cx.new(|cx| {
-            RootView::new(
-                rt_handle_for_root.clone(),
-                log_tail_for_root.clone(),
-                endpoints_for_root.clone(),
-                initial_screen_for_root.clone(),
-                cx,
-            )
-        })
+        cx.new(|cx| RootView::new(boot_inputs_for_root.clone(), cx))
     }) {
         Ok(window) => window,
         Err(err) => {
@@ -646,15 +641,7 @@ fn open_main_window(
         .update(cx, |root, _window, _cx| root.set_window(window))
         .ok();
 
-    run_boot(
-        rt_handle.clone(),
-        log_tail.clone(),
-        endpoints.clone(),
-        initial_screen.clone(),
-        Some(opening),
-        window,
-        cx,
-    );
+    run_boot(boot_inputs, Some(opening), window, cx);
 }
 
 fn main() {

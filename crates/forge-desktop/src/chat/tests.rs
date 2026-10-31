@@ -15,7 +15,7 @@ use time::OffsetDateTime;
 
 use super::viewer_actions::ViewerTarget;
 use super::viewer_count::{StaleViewer, note_refreshed, read_viewers};
-use super::{ChatView, PlatformFilter};
+use super::{ChatServices, ChatView, PlatformFilter};
 use crate::chat_author::AuthorKey;
 use crate::chat_feed::{ChatFeed, ChatMessage};
 use crate::home_stats::{HomeStats, Integration};
@@ -262,13 +262,15 @@ pub(super) fn new_view(
     ChatView::new(
         feed,
         home_stats,
-        rt.handle().clone(),
         Arc::new(viewers),
-        Arc::new(chat_history),
-        engine,
-        Arc::new(voice_aliases),
-        None,
-        forge_types::Shared::default(),
+        ChatServices {
+            rt_handle: rt.handle().clone(),
+            action_engine: engine,
+            chat_history_repo: Arc::new(chat_history),
+            voice_alias_repo: Arc::new(voice_aliases),
+            speak: None,
+            bot_accounts: forge_types::Shared::default(),
+        },
         FORGE_DEFAULT,
         cx,
     )
@@ -385,7 +387,7 @@ fn a_context_menu_ban_goes_out_only_after_it_is_confirmed(cx: &mut TestAppContex
     };
 
     request(vcx);
-    let asked = view.read_with(vcx, |view, _| view.pending_ban.get().is_some());
+    let asked = view.read_with(vcx, |view, _| view.drawer.pending_ban.get().is_some());
     view.update(vcx, |view, cx| view.cancel_ban(cx));
     pump(&rt);
     vcx.run_until_parked();
@@ -400,7 +402,7 @@ fn a_context_menu_ban_goes_out_only_after_it_is_confirmed(cx: &mut TestAppContex
     assert_eq!(
         (
             asked,
-            view.read_with(vcx, |view, _| view.pending_ban.get().is_some()),
+            view.read_with(vcx, |view, _| view.drawer.pending_ban.get().is_some()),
             vcx.update(|_, cx| cx.global::<Toasts>().items().len()),
         ),
         (true, false, 1)
@@ -411,7 +413,7 @@ fn a_context_menu_ban_goes_out_only_after_it_is_confirmed(cx: &mut TestAppContex
 fn unread_keeps_counting_past_the_feed_cap_while_scrolled_up(cx: &mut TestAppContext) {
     let rt = runtime();
     let (feed, view) = mount(cx, &rt);
-    view.update(cx, |view, _| view.auto_scroll = false);
+    view.update(cx, |view, _| view.timeline.auto_scroll = false);
 
     push_each(
         cx,
@@ -419,7 +421,10 @@ fn unread_keeps_counting_past_the_feed_cap_while_scrolled_up(cx: &mut TestAppCon
         (0..CAP + OVERFLOW).map(|ix| message(ix, false)).collect(),
     );
 
-    assert_eq!(view.read_with(cx, |view, _| view.unread), CAP + OVERFLOW);
+    assert_eq!(
+        view.read_with(cx, |view, _| view.timeline.unread),
+        CAP + OVERFLOW
+    );
 }
 
 #[gpui::test]
@@ -427,7 +432,7 @@ fn the_visible_rows_and_list_follow_eviction_under_an_active_filter(cx: &mut Tes
     let rt = runtime();
     let (feed, view) = mount(cx, &rt);
     view.update(cx, |view, cx| {
-        view.hide_bots = true;
+        view.timeline.hide_bots = true;
         view.reset_chat_list(cx);
     });
 
@@ -442,8 +447,8 @@ fn the_visible_rows_and_list_follow_eviction_under_an_active_filter(cx: &mut Tes
     let expected: Vec<u64> = (start..total as u64).filter(|seq| seq % 2 == 0).collect();
     let (visible, list_len) = view.read_with(cx, |view, _| {
         (
-            view.visible.iter().copied().collect::<Vec<u64>>(),
-            view.chat_list.item_count(),
+            view.timeline.visible.iter().copied().collect::<Vec<u64>>(),
+            view.timeline.chat_list.item_count(),
         )
     });
     assert_eq!(visible, expected);
@@ -526,7 +531,8 @@ fn switching_off_the_filtered_platform_resets_the_filter_to_all(cx: &mut TestApp
         ]),
     );
 
-    assert!(view.read_with(cx, |view, _| view.platform_filter == PlatformFilter::All));
+    assert!(view.read_with(cx, |view, _| view.timeline.platform_filter
+        == PlatformFilter::All));
 }
 
 #[gpui::test]
@@ -544,7 +550,7 @@ fn switching_off_another_platform_keeps_the_active_filter(cx: &mut TestAppContex
     );
 
     assert!(view.read_with(cx, |view, _| {
-        view.platform_filter == PlatformFilter::Single(PlatformId::Kick)
+        view.timeline.platform_filter == PlatformFilter::Single(PlatformId::Kick)
     }));
 }
 
@@ -628,7 +634,7 @@ impl<'a> DrawerRig<'a> {
                 .map(|(name, unix)| line_by(&Self::key(name), unix))
                 .collect(),
         );
-        let focus = view.read_with(vcx, |view, _| view.drawer_list_keys.focus().clone());
+        let focus = view.read_with(vcx, |view, _| view.drawer.drawer_list_keys.focus().clone());
         vcx.update(|window, cx| window.focus(&focus, cx));
         vcx.run_until_parked();
         Self { view, vcx }
@@ -646,7 +652,7 @@ impl<'a> DrawerRig<'a> {
     fn search(&mut self, query: &str) {
         let changed = forge_components::InputEvent::Changed(query.to_owned().into());
         self.view.update(self.vcx, |view, cx| {
-            let field = view.drawer_search.field().clone();
+            let field = view.drawer.drawer_search.field().clone();
             view.on_drawer_search_event(field, &changed, cx);
         });
         self.vcx.run_until_parked();
@@ -654,7 +660,7 @@ impl<'a> DrawerRig<'a> {
 
     fn selected(&mut self) -> Option<AuthorKey> {
         self.view
-            .read_with(self.vcx, |view, _| view.selected_viewer.clone())
+            .read_with(self.vcx, |view, _| view.drawer.selected_viewer.clone())
     }
 
     fn add_viewer(&mut self, name: &str, unix: i64) {
@@ -664,9 +670,9 @@ impl<'a> DrawerRig<'a> {
 
     fn click_row(&mut self, position: usize) {
         let (bounds, row_height) = self.view.read_with(self.vcx, |view, _| {
-            let scroll = view.drawer_list_scroll.0.borrow();
+            let scroll = view.drawer.drawer_list_scroll.0.borrow();
             let contents = scroll.last_item_size.unwrap().contents;
-            let rows = view.drawer_keys.len() as f32;
+            let rows = view.drawer.drawer_keys.len() as f32;
             (scroll.base_handle.bounds(), contents.height / rows)
         });
         let row_center = gpui::point(
@@ -679,7 +685,7 @@ impl<'a> DrawerRig<'a> {
 
     fn at(&mut self, name: &str) -> bool {
         self.view.read_with(self.vcx, |view, _| {
-            view.drawer_list_keys.is_at(&Self::key(name))
+            view.drawer.drawer_list_keys.is_at(&Self::key(name))
         })
     }
 }
@@ -798,7 +804,8 @@ fn the_keyboard_opens_the_user_menu_on_the_drawer_cursor_and_replies_from_it(
     vcx.simulate_keystrokes("down shift-f10");
 
     let opened = view.read_with(vcx, |view, _| {
-        view.user_menu
+        view.reply_menu
+            .user_menu
             .as_ref()
             .map(|menu| (menu.viewer.name.clone(), menu.message_id.clone()))
     });
@@ -809,7 +816,8 @@ fn the_keyboard_opens_the_user_menu_on_the_drawer_cursor_and_replies_from_it(
     crate::test_support::settle_focus(vcx);
 
     let reply = view.read_with(vcx, |view, _| {
-        view.reply_target
+        view.reply_menu
+            .reply_target
             .as_ref()
             .map(|target| target.message_id.clone())
     });
@@ -838,7 +846,7 @@ fn a_drawer_viewer_with_no_message_on_screen_gets_no_reply_entry(cx: &mut TestAp
     opened(vcx);
     vcx.update(|window, cx| view.update(cx, |view, cx| view.open_reply(window, cx)));
 
-    assert!(view.read_with(vcx, |view, _| view.reply_target.is_none()));
+    assert!(view.read_with(vcx, |view, _| view.reply_menu.reply_target.is_none()));
 }
 
 struct FeedRig<'a> {
@@ -864,7 +872,7 @@ impl<'a> FeedRig<'a> {
                 .map(|(name, unix)| line_by(&Self::key(name), unix))
                 .collect(),
         );
-        let focus = view.read_with(vcx, |view, _| view.feed_keys.focus().clone());
+        let focus = view.read_with(vcx, |view, _| view.timeline.feed_keys.focus().clone());
         vcx.update(|window, cx| window.focus(&focus, cx));
         vcx.run_until_parked();
         Self { view, vcx }
@@ -881,8 +889,8 @@ impl<'a> FeedRig<'a> {
 
     fn cursor_row(&mut self) -> Option<usize> {
         self.view.read_with(self.vcx, |view, _| {
-            let seq = *view.feed_keys.current()?;
-            view.visible.iter().position(|row| *row == seq)
+            let seq = *view.timeline.feed_keys.current()?;
+            view.timeline.visible.iter().position(|row| *row == seq)
         })
     }
 }
@@ -919,7 +927,7 @@ fn enter_opens_the_viewer_of_the_cursor_row(cx: &mut TestAppContext) {
 
     let selected = rig
         .view
-        .read_with(rig.vcx, |view, _| view.selected_viewer.clone());
+        .read_with(rig.vcx, |view, _| view.drawer.selected_viewer.clone());
     assert_eq!(selected, Some(FeedRig::key(FeedRig::SECOND)));
 }
 
@@ -932,7 +940,7 @@ fn enter_without_a_cursor_opens_nothing(cx: &mut TestAppContext) {
 
     let selected = rig
         .view
-        .read_with(rig.vcx, |view, _| view.selected_viewer.clone());
+        .read_with(rig.vcx, |view, _| view.drawer.selected_viewer.clone());
     assert_eq!(selected, None);
 }
 
@@ -955,9 +963,9 @@ fn a_cursor_stays_on_its_message_and_freezes_following_while_messages_arrive(
     );
 
     assert_eq!(rig.cursor_row(), Some(1));
-    let (following, unread) = rig
-        .view
-        .read_with(rig.vcx, |view, _| (view.auto_scroll, view.unread));
+    let (following, unread) = rig.view.read_with(rig.vcx, |view, _| {
+        (view.timeline.auto_scroll, view.timeline.unread)
+    });
     assert_eq!((following, unread), (false, 2));
 }
 
@@ -985,6 +993,6 @@ fn a_filtered_out_cursor_row_activates_nothing(cx: &mut TestAppContext) {
 
     let selected = rig
         .view
-        .read_with(rig.vcx, |view, _| view.selected_viewer.clone());
+        .read_with(rig.vcx, |view, _| view.drawer.selected_viewer.clone());
     assert_eq!(selected, None);
 }

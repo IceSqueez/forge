@@ -20,7 +20,7 @@ impl ChatView {
         lifecycle: Entity<IntegrationLifecycle>,
         cx: &mut Context<Self>,
     ) -> Self {
-        self._lifecycle_obs = Some(cx.observe(&lifecycle, |this, _, cx| {
+        self.subscriptions._lifecycle_obs = Some(cx.observe(&lifecycle, |this, _, cx| {
             this.on_lifecycle_changed(cx);
         }));
         self.composer.update(cx, |composer, cx| {
@@ -82,8 +82,8 @@ impl ChatView {
     }
 
     fn on_lifecycle_changed(&mut self, cx: &mut Context<Self>) {
-        if !self.filter_offered(self.platform_filter, cx) {
-            self.platform_filter = PlatformFilter::All;
+        if !self.filter_offered(self.timeline.platform_filter, cx) {
+            self.timeline.platform_filter = PlatformFilter::All;
             self.reset_chat_list(cx);
         }
         self.request_selected_follow(cx);

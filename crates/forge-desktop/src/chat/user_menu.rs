@@ -17,7 +17,7 @@ impl ChatView {
         message_id: Option<String>,
         cx: &mut Context<Self>,
     ) {
-        self.user_menu = Some(UserMenuTarget {
+        self.reply_menu.user_menu = Some(UserMenuTarget {
             position,
             viewer,
             message_id,
@@ -26,14 +26,14 @@ impl ChatView {
     }
 
     fn close_user_menu(&mut self, cx: &mut Context<Self>) {
-        if self.user_menu.is_some() {
-            self.user_menu = None;
+        if self.reply_menu.user_menu.is_some() {
+            self.reply_menu.user_menu = None;
             cx.notify();
         }
     }
 
     fn ctx_timeout_viewer(&mut self, seconds: i64, cx: &mut Context<Self>) {
-        let Some(target) = self.user_menu.take() else {
+        let Some(target) = self.reply_menu.user_menu.take() else {
             cx.notify();
             return;
         };
@@ -53,7 +53,7 @@ impl ChatView {
     }
 
     pub(super) fn ctx_ban_viewer(&mut self, cx: &mut Context<Self>) {
-        let Some(target) = self.user_menu.take() else {
+        let Some(target) = self.reply_menu.user_menu.take() else {
             cx.notify();
             return;
         };
@@ -65,7 +65,7 @@ impl ChatView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
-        let target = self.user_menu.as_ref()?;
+        let target = self.reply_menu.user_menu.as_ref()?;
         let position = target.position;
         let viewer = &target.viewer;
         let can_reply = viewer.platform == PlatformId::Twitch && target.message_id.is_some();
@@ -144,7 +144,7 @@ impl ChatView {
         Some(
             context_menu(position, palette)
                 .items(items)
-                .dismiss_on_escape(&self.menu_focus)
+                .dismiss_on_escape(&self.reply_menu.menu_focus)
                 .on_dismiss(move |_window, cx| {
                     view.update(cx, |this, cx| this.close_user_menu(cx));
                 })

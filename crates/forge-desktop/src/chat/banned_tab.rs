@@ -54,8 +54,8 @@ impl ChatView {
             let builtins = self.banned.builtins.clone();
             let lifecycle = self.lifecycle.clone();
             let bus = self.banned.bus.clone();
-            let rt_handle = self.rt_handle.clone();
-            let action_engine = self.action_engine.clone();
+            let rt_handle = self.services.rt_handle.clone();
+            let action_engine = self.services.action_engine.clone();
             self.banned.panel = Some(cx.new(|cx| {
                 BannedPanel::new(builtins, lifecycle, bus, rt_handle, action_engine, cx)
             }));
@@ -73,7 +73,7 @@ impl ChatView {
                     active == ChatTab::Feed,
                     cx.listener(|this, _: &ClickEvent, window, cx| {
                         this.set_tab(ChatTab::Feed, cx);
-                        window.focus(this.drawer_list_keys.focus(), cx);
+                        window.focus(this.drawer.drawer_list_keys.focus(), cx);
                     }),
                 )
                 .icon(Icon::MessageCircle),
@@ -308,7 +308,7 @@ mod tests {
         view.update(cx, |view, _| {
             view.banned.builtins = builtins;
             view.banned.bus = Some(EventBus::new(Arc::new(StubEventLog)));
-            view.action_engine = engine;
+            view.services.action_engine = engine;
         });
         Moderated {
             view,

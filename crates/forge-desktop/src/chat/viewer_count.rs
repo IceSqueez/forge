@@ -163,7 +163,7 @@ impl ChatView {
     }
 
     fn apply_viewers(&mut self, viewers: Vec<Viewer>, cx: &mut Context<Self>) {
-        if self.viewers.absorb(viewers) {
+        if self.drawer.viewers.absorb(viewers) {
             cx.notify();
         }
     }
@@ -214,7 +214,7 @@ impl ChatView {
             return;
         }
         let feed = self.feed.clone();
-        self.viewer_messages.update(cx, |messages, cx| {
+        self.drawer.viewer_messages.update(cx, |messages, cx| {
             messages.replace_tallies(keys.into_iter().zip(tallies), feed.read(cx));
             cx.notify();
         });
@@ -222,7 +222,7 @@ impl ChatView {
 
     pub(super) fn absorb_viewer_messages(&mut self, cx: &mut Context<Self>) {
         let feed = self.feed.clone();
-        self.viewer_messages.update(cx, |messages, cx| {
+        self.drawer.viewer_messages.update(cx, |messages, cx| {
             if messages.absorb(feed.read(cx)) {
                 cx.notify();
             }

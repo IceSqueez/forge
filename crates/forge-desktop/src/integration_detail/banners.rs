@@ -21,7 +21,7 @@ impl IntegrationDetail {
             ConfirmTone::Warning,
             palette,
         )
-        .item_name(self.display_name.clone())
+        .item_name(self.shown.display_name.clone())
         .esc_hint(tr!("widget_confirm_esc_to_cancel"))
         .on_cancel(
             "integration-disconnect-cancel",
@@ -109,39 +109,43 @@ impl IntegrationDetail {
         palette: &ForgePalette,
         density: Density,
     ) -> Option<AnyElement> {
-        let (accent, glyph, title, detail): (Rgba, Icon, String, String) = match self.connection {
-            ConnectionState::Connected => return None,
-            ConnectionState::Disconnected if self.donation_settings.is_some() => return None,
-            ConnectionState::Connecting => (
-                palette.info,
-                Icon::Refresh,
-                tr!("integration_state_connecting_title"),
-                tr!("integration_state_connecting_detail"),
-            ),
-            ConnectionState::Reconnecting => (
-                palette.warning,
-                Icon::Refresh,
-                tr!("integration_state_reconnecting_title"),
-                tr!("integration_state_reconnecting_detail"),
-            ),
-            ConnectionState::Disconnected if self.obs_password_rejected => (
-                palette.warning,
-                Icon::AlertTriangle,
-                tr!("obs_state_password_rejected_title"),
-                tr!("obs_state_password_rejected_detail"),
-            ),
-            ConnectionState::Disconnected => (
-                palette.text_muted,
-                Icon::PlugConnected,
-                tr!("common_status_not_connected"),
-                tr!("integration_state_disconnected_detail"),
-            ),
-        };
+        let (accent, glyph, title, detail): (Rgba, Icon, String, String) =
+            match self.shown.connection {
+                ConnectionState::Connected => return None,
+                ConnectionState::Disconnected if self.sign_in.donation_settings.is_some() => {
+                    return None;
+                }
+                ConnectionState::Connecting => (
+                    palette.info,
+                    Icon::Refresh,
+                    tr!("integration_state_connecting_title"),
+                    tr!("integration_state_connecting_detail"),
+                ),
+                ConnectionState::Reconnecting => (
+                    palette.warning,
+                    Icon::Refresh,
+                    tr!("integration_state_reconnecting_title"),
+                    tr!("integration_state_reconnecting_detail"),
+                ),
+                ConnectionState::Disconnected if self.shown.obs_password_rejected => (
+                    palette.warning,
+                    Icon::AlertTriangle,
+                    tr!("obs_state_password_rejected_title"),
+                    tr!("obs_state_password_rejected_detail"),
+                ),
+                ConnectionState::Disconnected => (
+                    palette.text_muted,
+                    Icon::PlugConnected,
+                    tr!("common_status_not_connected"),
+                    tr!("integration_state_disconnected_detail"),
+                ),
+            };
 
-        let failure_reason = if self.obs_password_rejected {
+        let failure_reason = if self.shown.obs_password_rejected {
             None
         } else {
-            self.status
+            self.ports
+                .status
                 .connect_failure()
                 .map(|failure| resolve_message(&failure).inline())
         };

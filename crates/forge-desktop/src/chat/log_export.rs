@@ -62,7 +62,7 @@ impl ChatView {
         let filename = format!("forge-chat-{}.txt", stamp.unix_timestamp());
 
         async_bridge::run_async(
-            &self.rt_handle,
+            &self.services.rt_handle,
             async move {
                 let path = crate::app_paths::app_paths().data_dir().join(filename);
                 tokio::fs::write(&path, contents)

@@ -15,17 +15,18 @@ impl ChatView {
         cx: &mut Context<Self>,
     ) {
         let feed = self.feed.clone();
-        let messages = self.viewer_messages.clone();
-        let repo = Arc::clone(&self.chat_history_repo);
-        let rt_handle = self.rt_handle.clone();
+        let messages = self.drawer.viewer_messages.clone();
+        let repo = Arc::clone(&self.services.chat_history_repo);
+        let rt_handle = self.services.rt_handle.clone();
         let held = key.clone();
-        self.viewer_messages
+        self.drawer
+            .viewer_messages
             .update(cx, |messages, _| messages.hold(held));
         let view = cx.new(|cx| {
             ViewerHistory::new(key, feed, messages, repo, rt_handle, cx).titled(viewer_name)
         });
         let dismissed = cx.subscribe(&view, Self::on_viewer_history_dismissed);
-        self.viewer_history = Some(ViewerHistoryHost {
+        self.drawer.viewer_history = Some(ViewerHistoryHost {
             view,
             _dismissed: dismissed,
         });
@@ -38,22 +39,23 @@ impl ChatView {
         _event: &ViewerHistoryDismissed,
         cx: &mut Context<Self>,
     ) {
-        self.viewer_history = None;
-        self.viewer_messages
+        self.drawer.viewer_history = None;
+        self.drawer
+            .viewer_messages
             .update(cx, |messages, _| messages.release());
         cx.notify();
     }
 
     pub(super) fn set_drawer_width(&mut self, width: Pixels, cx: &mut Context<Self>) {
-        if self.drawer_width != width {
-            self.drawer_width = width;
+        if self.drawer.drawer_width != width {
+            self.drawer.drawer_width = width;
             cx.notify();
         }
     }
 
     pub(super) fn point_at_viewer(&mut self, key: AuthorKey, cx: &mut Context<Self>) {
-        self.drawer_list_keys.move_to(key.clone());
-        self.selected_viewer = Some(key);
+        self.drawer.drawer_list_keys.move_to(key.clone());
+        self.drawer.selected_viewer = Some(key);
         self.request_selected_follow(cx);
     }
 
@@ -68,7 +70,7 @@ impl ChatView {
         event: &InputEvent,
         cx: &mut Context<Self>,
     ) {
-        if self.drawer_search.on_changed(event) {
+        if self.drawer.drawer_search.on_changed(event) {
             self.refresh_drawer_keys(cx);
             cx.notify();
         }
@@ -81,13 +83,13 @@ impl ChatView {
 
     pub(super) fn displayed_target(&self, cx: &App) -> Option<ViewerTarget> {
         let authors = self.feed.read(cx).authors();
-        let key = displayed_viewer(self.selected_viewer.as_ref(), authors)?;
-        let name = current_name(&key, authors, &self.viewers)?;
+        let key = displayed_viewer(self.drawer.selected_viewer.as_ref(), authors)?;
+        let name = current_name(&key, authors, &self.drawer.viewers)?;
         Some(ViewerTarget::new(&key, name.to_string()))
     }
 
     pub(super) fn toggle_drawer_menu(&mut self, position: Point<Pixels>, cx: &mut Context<Self>) {
-        self.drawer_menu_open = if self.drawer_menu_open.is_some() {
+        self.drawer.drawer_menu_open = if self.drawer.drawer_menu_open.is_some() {
             None
         } else {
             Some(position)
@@ -96,8 +98,8 @@ impl ChatView {
     }
 
     pub(super) fn close_drawer_menu(&mut self, cx: &mut Context<Self>) {
-        if self.drawer_menu_open.is_some() {
-            self.drawer_menu_open = None;
+        if self.drawer.drawer_menu_open.is_some() {
+            self.drawer.drawer_menu_open = None;
             cx.notify();
         }
     }

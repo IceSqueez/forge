@@ -23,34 +23,45 @@ const BADGE_ROW: Pixels = px(8.5);
 
 impl NavigableList for ChatView {
     fn step_list(&mut self, step: ListStep, cx: &mut Context<Self>) {
-        let selected = self.selected_viewer.clone();
-        let next = self
-            .drawer_list_keys
-            .step(&self.drawer_keys, selected.as_ref(), step);
+        let selected = self.drawer.selected_viewer.clone();
+        let next =
+            self.drawer
+                .drawer_list_keys
+                .step(&self.drawer.drawer_keys, selected.as_ref(), step);
         if let Some(next) = next {
-            self.drawer_list_scroll
+            self.drawer
+                .drawer_list_scroll
                 .scroll_to_item(next, ScrollStrategy::Nearest);
             cx.notify();
         }
     }
 
     fn activate_list(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(key) = self.drawer_list_keys.activation_target(&self.drawer_keys) {
+        if let Some(key) = self
+            .drawer
+            .drawer_list_keys
+            .activation_target(&self.drawer.drawer_keys)
+        {
             self.select_viewer(key, cx);
         }
     }
 
     fn open_list_menu(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
-        let Some(key) = self.drawer_list_keys.activation_target(&self.drawer_keys) else {
+        let Some(key) = self
+            .drawer
+            .drawer_list_keys
+            .activation_target(&self.drawer.drawer_keys)
+        else {
             return;
         };
         let feed = self.feed.read(cx);
-        let Some(name) = current_name(&key, feed.authors(), &self.viewers) else {
+        let Some(name) = current_name(&key, feed.authors(), &self.drawer.viewers) else {
             return;
         };
         let viewer = ViewerTarget::new(&key, name.to_string());
         let message_id = feed.latest_message_id_of(&key);
         let position = self
+            .drawer
             .drawer_list_keys
             .row_bounds()
             .map(|row| row.bottom_left())
@@ -68,12 +79,12 @@ impl ChatView {
     ) -> impl IntoElement + use<> {
         let authors = self.feed.read(cx).authors();
         let total = authors.len();
-        let shown = self.drawer_keys.len();
+        let shown = self.drawer.drawer_keys.len();
         let detail = selected_summary(
-            self.selected_viewer.as_ref(),
+            self.drawer.selected_viewer.as_ref(),
             authors,
-            &self.viewers,
-            self.viewer_messages.read(cx),
+            &self.drawer.viewers,
+            self.drawer.viewer_messages.read(cx),
             palette,
         );
         let selected_key = detail.as_ref().map(|d| d.key.clone());
@@ -83,7 +94,7 @@ impl ChatView {
         let list_el = self.render_viewer_list(selected_key, shown, palette, density, cx);
 
         let panel = div()
-            .w(self.drawer_width)
+            .w(self.drawer.drawer_width)
             .flex_none()
             .h_full()
             .flex()
@@ -152,7 +163,7 @@ impl ChatView {
             .border_b(BORDER_THIN)
             .border_color(palette.border_regular)
             .child(title)
-            .child(self.drawer_search.field().clone())
+            .child(self.drawer.drawer_search.field().clone())
     }
 
     pub(super) fn render_drawer_menu(
@@ -236,20 +247,22 @@ impl ChatView {
             .into(),
         ];
 
-        menu_button(Icon::DotsVertical, self.drawer_menu_open.is_some(), palette)
-            .placement(MenuPlacement::TopRight)
-            .open_at(self.drawer_menu_open)
-            .items(items)
-            .on_toggle(
-                "chat-drawer-menu-trigger",
-                cx.listener(|this, ev: &ClickEvent, _, cx| {
-                    this.toggle_drawer_menu(ev.position(), cx)
-                }),
-            )
-            .on_dismiss(move |_window, cx| {
-                view.update(cx, |this, cx| this.close_drawer_menu(cx));
-            })
-            .into_any_element()
+        menu_button(
+            Icon::DotsVertical,
+            self.drawer.drawer_menu_open.is_some(),
+            palette,
+        )
+        .placement(MenuPlacement::TopRight)
+        .open_at(self.drawer.drawer_menu_open)
+        .items(items)
+        .on_toggle(
+            "chat-drawer-menu-trigger",
+            cx.listener(|this, ev: &ClickEvent, _, cx| this.toggle_drawer_menu(ev.position(), cx)),
+        )
+        .on_dismiss(move |_window, cx| {
+            view.update(cx, |this, cx| this.close_drawer_menu(cx));
+        })
+        .into_any_element()
     }
 
     fn render_viewer_list(
@@ -289,12 +302,12 @@ impl ChatView {
                 cx.processor(move |this, range: std::ops::Range<usize>, _window, cx| {
                     let mut rows = Vec::with_capacity(range.len());
                     for ix in range {
-                        let Some(summary) = this.drawer_keys.get(ix).and_then(|key| {
+                        let Some(summary) = this.drawer.drawer_keys.get(ix).and_then(|key| {
                             author_summary(
                                 key,
                                 this.feed.read(cx).authors(),
-                                &this.viewers,
-                                this.viewer_messages.read(cx),
+                                &this.drawer.viewers,
+                                this.drawer.viewer_messages.read(cx),
                                 &pal,
                             )
                         }) else {
@@ -309,13 +322,13 @@ impl ChatView {
                     rows
                 }),
             )
-            .track_scroll(&self.drawer_list_scroll)
+            .track_scroll(&self.drawer.drawer_list_scroll)
             .flex_1()
             .min_h(px(0.0))
             .into_any_element()
         };
 
-        let focus = self.drawer_list_keys.focus().clone();
+        let focus = self.drawer.drawer_list_keys.focus().clone();
         navigable_list(div(), &focus, cx)
             .flex_1()
             .min_h(px(0.0))
@@ -334,7 +347,7 @@ impl ChatView {
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
         let key = summary.key.clone();
-        let is_cursor = self.drawer_list_keys.is_at(&key);
+        let is_cursor = self.drawer.drawer_list_keys.is_at(&key);
         let row_id = summary.key.element_id("chat-drawer-row");
         let stripe = if is_sel {
             palette.brand
@@ -412,7 +425,7 @@ impl ChatView {
             .child(last_seen);
 
         if is_cursor {
-            row = row.child(self.drawer_list_keys.row_anchor(None));
+            row = row.child(self.drawer.drawer_list_keys.row_anchor(None));
         }
         if is_sel {
             row = row.bg(selected_bg);

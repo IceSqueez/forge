@@ -1,7 +1,18 @@
 use super::quick_actions::reachable_quick_actions;
 use super::*;
+use forge_events::EventPublisher;
+use forge_host::integrations::{ObsInstallSeed, VTubeInstallSeed};
+use forge_host::platform_credentials::PlatformCredentialManagers;
 use forge_platform_core::CollectionId;
+use forge_platform_core::{
+    BuiltinCollections, BuiltinContent, BuiltinControl, BuiltinHealth, BuiltinStatus,
+    CapabilityFlags, DetailSection, HeaderAction, HealthMetric, QuickActions, SectionIcon,
+};
+use forge_registry::TriggerRegistry;
+use forge_runtime::IntegrationSlot;
+use forge_storage::{CredentialsRepo, SettingsRepo};
 use forge_types::{UserText, VerbatimText};
+use std::collections::HashMap;
 
 #[test]
 fn subscription_counts_are_tallied_by_topic_kind_never_by_the_shown_label() {
@@ -179,8 +190,8 @@ mod quick_action_bridge {
     use forge_types::{IntegrationId, MessageCode, RecoverMutex, VerbatimText};
     use gpui::TestAppContext;
 
-    use super::super::*;
     use super::action;
+    use super::*;
     use crate::platforms::PlatformConnectivity;
     use crate::test_support::{StubActions, StubEventLog, StubHistory, runtime, test_backend};
     use crate::twitch_bot_presence::TwitchBotPresence;
@@ -358,21 +369,27 @@ mod quick_action_bridge {
         let view = cx.new(|cx| {
             IntegrationDetail::new(
                 object,
-                rt.handle().clone(),
-                engine,
-                credentials,
-                backend as Arc<dyn SettingsRepo>,
-                Arc::new(StubHistory),
-                Arc::new(TriggerRegistry::new()),
-                Arc::clone(&bus) as Arc<dyn EventPublisher>,
-                Arc::clone(&bus),
-                spawn_live_viewer_aggregator(&forge_net::TaskOwner::new()),
-                None,
-                kick_slot,
-                None,
-                ObsInstallSeed::new(forge_obs::SwitchableObsSink::new()),
-                VTubeInstallSeed::new(forge_vtube::SwitchableVTubeSink::new()),
-                connectivity,
+                DetailServices {
+                    rt_handle: rt.handle().clone(),
+                    action_engine: engine,
+                    credentials,
+                    settings: backend as Arc<dyn SettingsRepo>,
+                    history: Arc::new(StubHistory),
+                    trigger_registry: Arc::new(TriggerRegistry::new()),
+                    bus: Arc::clone(&bus) as Arc<dyn EventPublisher>,
+                    twitch_slot: None,
+                    kick_slot,
+                    youtube_slot: None,
+                    obs_install_seed: ObsInstallSeed::new(forge_obs::SwitchableObsSink::new()),
+                    vtube_install_seed: VTubeInstallSeed::new(
+                        forge_vtube::SwitchableVTubeSink::new(),
+                    ),
+                },
+                DetailFeeds {
+                    event_bus: Arc::clone(&bus),
+                    live_viewers: spawn_live_viewer_aggregator(&forge_net::TaskOwner::new()),
+                    connectivity,
+                },
                 cx,
             )
         });
@@ -409,6 +426,7 @@ mod quick_action_bridge {
     ) -> Vec<HealthValue> {
         view.read_with(cx, |detail, _| {
             detail
+                .shown
                 .health_metrics
                 .iter()
                 .map(|metric| metric.value.clone())
@@ -473,7 +491,7 @@ mod quick_action_bridge {
         let view = open_detail(cx, &rt, ShiftingActions::labelled("idle").object());
 
         let augmented = view.update(cx, |detail, _| {
-            detail.health_metrics[1].id = HealthMetricId::VIEWERS;
+            detail.shown.health_metrics[1].id = HealthMetricId::VIEWERS;
             detail.augmented_health()
         });
 
@@ -529,10 +547,11 @@ mod quick_action_bridge {
         );
         let presence = cx.new(|_| TwitchBotPresence::new());
         view.update(cx, |detail, cx| detail.attach_twitch_bot(bot, presence, cx));
-        let section = view.read_with(cx, |detail, _| detail.twitch_bot.clone());
+        let section = view.read_with(cx, |detail, _| detail.sign_in.twitch_bot.clone());
         let connect_flow = |cx: &mut TestAppContext| {
             view.read_with(cx, |detail, _| {
                 detail
+                    .sign_in
                     .connect
                     .as_ref()
                     .map(|connect| connect.view.entity_id())
@@ -565,10 +584,10 @@ mod sign_out {
     use gpui::TestAppContext;
     use time::OffsetDateTime;
 
-    use super::super::*;
     use super::quick_action_bridge::{
         LiveControl, ShiftingActions, open_detail_over, open_detail_with,
     };
+    use super::*;
     use crate::test_support::{error_toasts, pump, runtime};
     use forge_components::ToastKind;
     use forge_components::Toasts;
@@ -710,7 +729,7 @@ mod sign_out {
 
     fn observe(cx: &mut TestAppContext, detail: &SignedInDetail) -> SignOutView {
         let (control_kept, connect_flow_open) = detail.view.read_with(cx, |this, _| {
-            (this.control.is_some(), this.connect.is_some())
+            (this.ports.control.is_some(), this.sign_in.connect.is_some())
         });
         SignOutView {
             control_kept,
@@ -753,7 +772,7 @@ mod sign_out {
         for id in ["obs", "vtube"] {
             let detail = signed_in_detail(cx, &rt, id, ScriptedCredentials::new(false, None));
             detail.view.update(cx, |this, _| {
-                this.control = Some(Arc::new(UnreachableControl));
+                this.ports.control = Some(Arc::new(UnreachableControl));
             });
 
             confirm_sign_out(cx, &detail);
@@ -761,7 +780,7 @@ mod sign_out {
 
             let display_name = detail
                 .view
-                .read_with(cx, |this, _| this.display_name.clone());
+                .read_with(cx, |this, _| this.shown.display_name.clone());
             assert_eq!(
                 (
                     observe(cx, &detail),
@@ -986,7 +1005,7 @@ mod sign_out {
                 (
                     journal.lock().unwrap().clone(),
                     unmanaged.deletes.load(Ordering::SeqCst),
-                    view.read_with(cx, |this, _| this.connect.is_some()),
+                    view.read_with(cx, |this, _| this.sign_in.connect.is_some()),
                 ),
                 (expected, 0, !delete_fails),
                 "delete_fails={delete_fails}"
@@ -1008,7 +1027,7 @@ mod detail_lifetime {
     use forge_types::{IntegrationId, MessageCode};
     use gpui::{AppContext as _, TestAppContext};
 
-    use crate::integration_detail::IntegrationDetail;
+    use crate::integration_detail::{DetailFeeds, DetailServices, IntegrationDetail};
     use crate::platforms::PlatformConnectivity;
     use crate::test_support::{StubActions, StubEventLog, StubHistory, runtime, test_backend};
     use forge_components::Presentation;
@@ -1134,21 +1153,27 @@ mod detail_lifetime {
         let view = cx.new(|cx| {
             IntegrationDetail::new(
                 object,
-                rt.handle().clone(),
-                engine,
-                Arc::clone(&backend) as Arc<dyn CredentialsRepo>,
-                backend as Arc<dyn SettingsRepo>,
-                Arc::new(StubHistory),
-                Arc::new(TriggerRegistry::new()),
-                Arc::clone(&bus) as Arc<dyn forge_events::EventPublisher>,
-                Arc::clone(&bus),
-                spawn_live_viewer_aggregator(&forge_net::TaskOwner::new()),
-                None,
-                None,
-                None,
-                ObsInstallSeed::new(forge_obs::SwitchableObsSink::new()),
-                VTubeInstallSeed::new(forge_vtube::SwitchableVTubeSink::new()),
-                connectivity,
+                DetailServices {
+                    rt_handle: rt.handle().clone(),
+                    action_engine: engine,
+                    credentials: Arc::clone(&backend) as Arc<dyn CredentialsRepo>,
+                    settings: backend as Arc<dyn SettingsRepo>,
+                    history: Arc::new(StubHistory),
+                    trigger_registry: Arc::new(TriggerRegistry::new()),
+                    bus: Arc::clone(&bus) as Arc<dyn forge_events::EventPublisher>,
+                    twitch_slot: None,
+                    kick_slot: None,
+                    youtube_slot: None,
+                    obs_install_seed: ObsInstallSeed::new(forge_obs::SwitchableObsSink::new()),
+                    vtube_install_seed: VTubeInstallSeed::new(
+                        forge_vtube::SwitchableVTubeSink::new(),
+                    ),
+                },
+                DetailFeeds {
+                    event_bus: Arc::clone(&bus),
+                    live_viewers: spawn_live_viewer_aggregator(&forge_net::TaskOwner::new()),
+                    connectivity,
+                },
                 cx,
             )
         });

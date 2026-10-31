@@ -23,16 +23,16 @@ pub(super) struct TtsVoiceHost {
 
 impl ChatView {
     pub(super) fn block_tts_viewer(&mut self, target: ViewerTarget, cx: &mut Context<Self>) {
-        self.drawer_menu_open = None;
+        self.drawer.drawer_menu_open = None;
         cx.notify();
         let Some(key) = target.tts_alias_key() else {
             return;
         };
-        let repo = Arc::clone(&self.voice_alias_repo);
-        let speak = self.speak.clone();
+        let repo = Arc::clone(&self.services.voice_alias_repo);
+        let speak = self.services.speak.clone();
         let name = target.name;
         async_bridge::run_async(
-            &self.rt_handle,
+            &self.services.rt_handle,
             async move { block_viewer(repo.as_ref(), speak.as_ref(), key, name).await },
             |_this, outcome, cx| match outcome {
                 Ok(_) => cx.push_toast(ToastKind::Success, tr!("chat_drawer_block_tts_sent")),
@@ -54,18 +54,18 @@ impl ChatView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.drawer_menu_open = None;
+        self.drawer.drawer_menu_open = None;
         cx.notify();
-        if self.tts_voice.is_some() {
+        if self.drawer.tts_voice.is_some() {
             return;
         }
         let Some(key) = target.tts_alias_key() else {
             return;
         };
-        let repo = Arc::clone(&self.voice_alias_repo);
+        let repo = Arc::clone(&self.services.voice_alias_repo);
         let lookup_key = key.clone();
         let (tx, rx) = tokio::sync::oneshot::channel();
-        self.rt_handle.spawn(async move {
+        self.services.rt_handle.spawn(async move {
             #[expect(
                 clippy::let_underscore_must_use,
                 reason = "the view may close before the result arrives"
@@ -102,7 +102,7 @@ impl ChatView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.tts_voice.is_some() {
+        if self.drawer.tts_voice.is_some() {
             return;
         }
         let identity = AliasIdentity {
@@ -117,7 +117,7 @@ impl ChatView {
             view.update(cx, |form, cx| form.focus(window, cx))
         });
         let events = cx.subscribe(&view, Self::on_tts_voice_event);
-        self.tts_voice = Some(TtsVoiceHost {
+        self.drawer.tts_voice = Some(TtsVoiceHost {
             view,
             _events: events,
         });
@@ -146,10 +146,10 @@ impl ChatView {
             form.set_saving(true, cx);
             form.is_editing()
         });
-        let repo = Arc::clone(&self.voice_alias_repo);
-        let speak = self.speak.clone();
+        let repo = Arc::clone(&self.services.voice_alias_repo);
+        let speak = self.services.speak.clone();
         async_bridge::run_async(
-            &self.rt_handle,
+            &self.services.rt_handle,
             async move { save_alias(repo.as_ref(), speak.as_ref(), &alias, replaces_existing).await },
             move |this, outcome, cx| match outcome {
                 Ok(_) => {
@@ -173,7 +173,7 @@ impl ChatView {
     }
 
     fn close_tts_voice(&mut self, cx: &mut Context<Self>) {
-        self.tts_voice = None;
+        self.drawer.tts_voice = None;
         cx.notify();
     }
 }
@@ -231,7 +231,7 @@ mod tests {
     }
 
     fn form_open(cx: &mut TestAppContext, view: &Entity<ChatView>) -> bool {
-        view.read_with(cx, |view, _| view.tts_voice.is_some())
+        view.read_with(cx, |view, _| view.drawer.tts_voice.is_some())
     }
 
     fn toasts(cx: &mut TestAppContext) -> Vec<(ToastKind, String)> {

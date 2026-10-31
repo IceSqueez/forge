@@ -30,9 +30,9 @@ impl IntegrationDetail {
             HeaderAction::Disconnect => self.request_disconnect(cx),
             HeaderAction::Reconnect => self.dispatch_control(ControlVerb::Reconnect, cx),
             HeaderAction::RefreshToken => self.dispatch_control(ControlVerb::RefreshToken, cx),
-            HeaderAction::Settings if self.is_obs => self.open_obs_settings(window, cx),
-            HeaderAction::Settings if self.donation_settings.is_some() => {
-                if let Some(link) = &self.donation_settings {
+            HeaderAction::Settings if self.shown.is_obs => self.open_obs_settings(window, cx),
+            HeaderAction::Settings if self.sign_in.donation_settings.is_some() => {
+                if let Some(link) = &self.sign_in.donation_settings {
                     link.view
                         .update(cx, |settings, cx| settings.focus_token(window, cx));
                 }
@@ -44,26 +44,26 @@ impl IntegrationDetail {
     }
 
     pub(super) fn request_disconnect(&mut self, cx: &mut Context<Self>) {
-        if self.signing_out {
+        if self.live.signing_out {
             return;
         }
-        self.pending_disconnect.request(());
+        self.modals.pending_disconnect.request(());
         cx.notify();
     }
 
     fn open_obs_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let rt_handle = self.rt_handle.clone();
-        let credentials = Arc::clone(&self.credentials);
-        let settings = Arc::clone(&self.settings);
-        let bus = Arc::clone(&self.bus);
-        let seed = self.obs_install_seed.clone();
+        let rt_handle = self.services.rt_handle.clone();
+        let credentials = Arc::clone(&self.services.credentials);
+        let settings = Arc::clone(&self.services.settings);
+        let bus = Arc::clone(&self.services.bus);
+        let seed = self.services.obs_install_seed.clone();
         let modal =
             cx.new(|cx| ObsSettingsModal::new(rt_handle, credentials, settings, bus, seed, cx));
         focus_inside_modal(window, cx, |window, cx| {
             modal.update(cx, |m, cx| m.focus(window, cx))
         });
-        self._obs_modal_sub = Some(cx.subscribe(&modal, Self::on_obs_settings_event));
-        self.obs_settings_modal = Some(modal);
+        self.modals._obs_modal_sub = Some(cx.subscribe(&modal, Self::on_obs_settings_event));
+        self.modals.obs_settings_modal = Some(modal);
         cx.notify();
     }
 
@@ -87,17 +87,18 @@ impl IntegrationDetail {
     }
 
     fn close_obs_settings(&mut self, cx: &mut Context<Self>) {
-        self.obs_settings_modal = None;
-        self._obs_modal_sub = None;
+        self.modals.obs_settings_modal = None;
+        self.modals._obs_modal_sub = None;
         cx.notify();
     }
 
     fn dispatch_control(&mut self, verb: ControlVerb, cx: &mut Context<Self>) {
-        let Some(ctrl) = self.control.clone() else {
+        let Some(ctrl) = self.ports.control.clone() else {
             return;
         };
-        if self.is_twitch && matches!(verb, ControlVerb::RefreshToken) {
+        if self.shown.is_twitch && matches!(verb, ControlVerb::RefreshToken) {
             let task = self
+                .services
                 .rt_handle
                 .spawn(async move { ctrl.refresh_token().await });
             cx.spawn(async move |this, cx| {
@@ -106,11 +107,11 @@ impl IntegrationDetail {
                 };
                 this.update(cx, |this, cx| match result {
                     Ok(()) => {
-                        this.twitch_reauth_required = false;
+                        this.shown.twitch_reauth_required = false;
                         cx.notify();
                     }
                     Err(ControlFailure::Unauthorized) => {
-                        this.twitch_reauth_required = true;
+                        this.shown.twitch_reauth_required = true;
                         cx.notify();
                     }
                     Err(err) => {
@@ -124,7 +125,7 @@ impl IntegrationDetail {
             return;
         }
         async_bridge::run_async(
-            &self.rt_handle,
+            &self.services.rt_handle,
             async move {
                 match verb {
                     ControlVerb::Reconnect => ctrl.reconnect().await,
@@ -145,17 +146,17 @@ impl IntegrationDetail {
     }
 
     pub(super) fn cancel_disconnect(&mut self, cx: &mut Context<Self>) {
-        self.pending_disconnect.cancel();
+        self.modals.pending_disconnect.cancel();
         cx.notify();
     }
 
     pub(super) fn confirm_disconnect(&mut self, cx: &mut Context<Self>) {
-        if self.pending_disconnect.take().is_some() {
-            if self.is_obs {
+        if self.modals.pending_disconnect.take().is_some() {
+            if self.shown.is_obs {
                 self.sign_out_obs(cx);
-            } else if self.is_vtube {
+            } else if self.shown.is_vtube {
                 self.sign_out_vtube(cx);
-            } else if let Some(platform) = platform_of(self.status.id().as_str()) {
+            } else if let Some(platform) = platform_of(self.ports.status.id().as_str()) {
                 self.reset_to_connect(platform, cx);
             } else {
                 self.dispatch_control(ControlVerb::Disconnect, cx);

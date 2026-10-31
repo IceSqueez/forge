@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use tokio::time::Instant;
 
 use crate::error::AudioError;
-use crate::handle::{ControlledPlayback, PlaybackHandle};
+use crate::handle::{ControlSnapshot, ControlledPlayback, PlaybackControl, PlaybackHandle};
 use crate::remote::{
     ClipMediaType, PlaybackCorrelation, RemoteAudioDestination, RemoteClip, RemoteCommand,
     RemoteDelivery, RemoteDestinationId, RemoteFailure, RemoteVerdict,
@@ -16,7 +16,6 @@ use crate::wave::encode_wave;
 use forge_speech_types::PcmBuffer;
 use forge_types::RemoteClipId;
 
-const CONTROL_POLL_INTERVAL: Duration = Duration::from_millis(50);
 const WATCHDOG_SLACK: Duration = Duration::from_secs(45);
 const WATCHDOG_CEILING: Duration = Duration::from_secs(360);
 const MAX_REASON_CHARS: usize = 200;
@@ -104,8 +103,7 @@ impl AudioSink for RemoteSink {
         }
 
         let controls = Controls::new();
-        let handle =
-            PlaybackHandle::from_flags(Arc::clone(&controls.stop), Arc::clone(&controls.pause));
+        let handle = PlaybackHandle::from_control(Arc::clone(&controls.control));
         let budget = watchdog_budget(duration_ms);
         let clip = LiveClip {
             destination: Arc::clone(&self.destination),
@@ -130,31 +128,16 @@ impl AudioSink for RemoteSink {
 
 #[derive(Clone)]
 struct Controls {
-    stop: Arc<AtomicBool>,
-    pause: Arc<AtomicBool>,
-    finished: Arc<AtomicBool>,
+    control: Arc<PlaybackControl>,
     stop_sent: Arc<AtomicBool>,
 }
 
 impl Controls {
     fn new() -> Self {
         Self {
-            stop: Arc::new(AtomicBool::new(false)),
-            pause: Arc::new(AtomicBool::new(false)),
-            finished: Arc::new(AtomicBool::new(false)),
+            control: PlaybackControl::new(),
             stop_sent: Arc::new(AtomicBool::new(false)),
         }
-    }
-
-    fn observed(&self) -> ControlState {
-        ControlState {
-            stopped: self.stop.load(Ordering::Relaxed),
-            held: self.pause.load(Ordering::Relaxed),
-        }
-    }
-
-    fn held(&self) -> bool {
-        self.pause.load(Ordering::Relaxed)
     }
 
     fn claim_stop(&self) -> bool {
@@ -193,7 +176,7 @@ impl Drop for StopUnlessSettled {
             return;
         }
         let controls = &self.clip.controls;
-        controls.stop.store(true, Ordering::Relaxed);
+        controls.control.stop();
         if !controls.claim_stop() {
             return;
         }
@@ -227,11 +210,17 @@ async fn observe_controls(clip: LiveClip, budget: Duration) {
 async fn forward_commands(clip: &LiveClip) {
     let controls = &clip.controls;
     let mut sent = ControlState::default();
+    let mut seen = ControlSnapshot::default();
 
     loop {
-        tokio::time::sleep(CONTROL_POLL_INTERVAL).await;
+        let now = controls.control.changed_from(seen).await;
+        seen = now;
+        let observed = ControlState {
+            stopped: now.stopped,
+            held: now.paused,
+        };
 
-        if let Some(command) = next_command(sent, controls.observed()) {
+        if let Some(command) = next_command(sent, observed) {
             if command == RemoteCommand::Stop && !controls.claim_stop() {
                 return;
             }
@@ -239,10 +228,7 @@ async fn forward_commands(clip: &LiveClip) {
             clip.push(command).await;
         }
 
-        if sent.stopped
-            || controls.finished.load(Ordering::Relaxed)
-            || controls.stop_sent.load(Ordering::Acquire)
-        {
+        if sent.stopped || now.finished || controls.stop_sent.load(Ordering::Acquire) {
             return;
         }
     }
@@ -251,23 +237,33 @@ async fn forward_commands(clip: &LiveClip) {
 async fn run_out(controls: &Controls, budget: Duration) {
     let ceiling = Instant::now() + WATCHDOG_CEILING;
     let mut remaining = budget;
+    let mut seen = controls.control.snapshot();
 
     loop {
         let left_on_the_wall = ceiling.saturating_duration_since(Instant::now());
         if remaining.is_zero() || left_on_the_wall.is_zero() {
             return;
         }
-        let held = controls.held();
-        let step = if held {
-            CONTROL_POLL_INTERVAL
+        let held = seen.paused;
+        let wait = if held {
+            left_on_the_wall
         } else {
-            remaining.min(CONTROL_POLL_INTERVAL)
-        }
-        .min(left_on_the_wall);
+            remaining.min(left_on_the_wall)
+        };
+        let started = Instant::now();
 
-        tokio::time::sleep(step).await;
-        if !held {
-            remaining = remaining.saturating_sub(step);
+        tokio::select! {
+            () = tokio::time::sleep(wait) => {
+                if !held {
+                    remaining = remaining.saturating_sub(wait);
+                }
+            }
+            now = controls.control.changed_from(seen) => {
+                if !held {
+                    remaining = remaining.saturating_sub(started.elapsed());
+                }
+                seen = now;
+            }
         }
     }
 }
@@ -281,14 +277,14 @@ async fn settle_clip(
         let clip = &guard.clip;
         tokio::select! {
             verdict = clip.destination.verdict(&clip.clip_id) => {
-                settle(clip.controls.stop.load(Ordering::Relaxed), verdict)
+                settle(clip.controls.control.is_stopped(), verdict)
             }
             () = run_out(&clip.controls, budget) => {
                 RemoteSettlement::Degraded(RemoteFailure::NoVerdict)
             }
         }
     };
-    guard.clip.controls.finished.store(true, Ordering::Relaxed);
+    guard.clip.controls.control.finish();
     guard.settled = true;
 
     match settlement {
@@ -409,6 +405,7 @@ mod tests {
     const TRANSPORT_FAULT: &str = "the overlay channel closed mid-clip";
     const CLOCK_RATE_HZ: u32 = 1_000;
     const QUIET: Duration = Duration::from_secs(5);
+    const TIMING_TOLERANCE: Duration = Duration::from_millis(50);
 
     enum Report {
         Now(RemoteVerdict),
@@ -653,7 +650,7 @@ mod tests {
                 "a page that never reports must not fail a {duration_ms} ms clip, got {outcome:?}"
             );
             assert!(
-                waited >= expected && waited < expected + CONTROL_POLL_INTERVAL,
+                waited >= expected && waited < expected + TIMING_TOLERANCE,
                 "a {duration_ms} ms clip must settle at {expected:?}, waited {waited:?}"
             );
         }
@@ -679,7 +676,7 @@ mod tests {
             "a clip the caller stopped finishes cleanly however the page reports it, got {outcome:?}"
         );
         assert!(
-            waited <= CONTROL_POLL_INTERVAL * 2,
+            waited <= TIMING_TOLERANCE * 2,
             "a stop must release the queue at once, not wait the watchdog out, waited {waited:?}"
         );
         assert_eq!(next_pushed(&mut rx).await, Some(RemoteCommand::Stop));
@@ -816,7 +813,7 @@ mod tests {
             let (page, mut rx) = FakePage::new(1, Report::Never);
             let mut playback = sink(&page).play_controlled(clip_of(4_000)).await.unwrap();
             if poll_first {
-                let parked = tokio::time::timeout(CONTROL_POLL_INTERVAL / 2, &mut playback).await;
+                let parked = tokio::time::timeout(TIMING_TOLERANCE / 2, &mut playback).await;
                 assert!(parked.is_err(), "{case}: the clip settled on its own");
             }
             if stop_first {
@@ -901,7 +898,7 @@ mod tests {
             "a clip held to the ceiling degrades, got {outcome:?}"
         );
         assert!(
-            waited >= WATCHDOG_CEILING && waited < WATCHDOG_CEILING + CONTROL_POLL_INTERVAL,
+            waited >= WATCHDOG_CEILING && waited < WATCHDOG_CEILING + TIMING_TOLERANCE,
             "a held clip must settle at the ceiling, waited {waited:?}"
         );
     }

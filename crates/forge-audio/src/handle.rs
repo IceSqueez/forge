@@ -1,53 +1,149 @@
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, OnceLock};
 use std::task::{Context, Poll};
+use std::thread::Thread;
+
+use tokio::sync::Notify;
 
 use crate::error::AudioError;
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct ControlSnapshot {
+    pub(crate) stopped: bool,
+    pub(crate) paused: bool,
+    pub(crate) finished: bool,
+}
+
+#[derive(Default)]
+pub(crate) struct PlaybackControl {
+    stop: AtomicBool,
+    pause: AtomicBool,
+    finish: AtomicBool,
+    changed: Notify,
+    worker: OnceLock<Thread>,
+}
+
+impl PlaybackControl {
+    pub(crate) fn new() -> Arc<Self> {
+        Arc::new(Self::default())
+    }
+
+    pub(crate) fn attach_worker(&self, worker: Thread) {
+        self.worker.get_or_init(|| worker);
+    }
+
+    pub(crate) fn wake_worker(&self) {
+        if let Some(worker) = self.worker.get() {
+            worker.unpark();
+        }
+    }
+
+    fn announce(&self) {
+        self.changed.notify_waiters();
+        self.wake_worker();
+    }
+
+    pub(crate) fn stop(&self) {
+        self.stop.store(true, Ordering::Release);
+        self.announce();
+    }
+
+    pub(crate) fn pause(&self) {
+        self.pause.store(true, Ordering::Release);
+        self.announce();
+    }
+
+    pub(crate) fn resume(&self) {
+        self.pause.store(false, Ordering::Release);
+        self.announce();
+    }
+
+    pub(crate) fn finish(&self) {
+        self.finish.store(true, Ordering::Release);
+        self.announce();
+    }
+
+    pub(crate) fn is_stopped(&self) -> bool {
+        self.stop.load(Ordering::Acquire)
+    }
+
+    pub(crate) fn is_paused(&self) -> bool {
+        self.pause.load(Ordering::Acquire)
+    }
+
+    pub(crate) fn snapshot(&self) -> ControlSnapshot {
+        ControlSnapshot {
+            stopped: self.is_stopped(),
+            paused: self.is_paused(),
+            finished: self.finish.load(Ordering::Acquire),
+        }
+    }
+
+    pub(crate) async fn changed_from(&self, seen: ControlSnapshot) -> ControlSnapshot {
+        loop {
+            let notified = self.changed.notified();
+            tokio::pin!(notified);
+            notified.as_mut().enable();
+            let now = self.snapshot();
+            if now != seen {
+                return now;
+            }
+            notified.await;
+        }
+    }
+}
+
 #[derive(Clone, Default)]
 pub struct PlaybackHandle {
-    stop_flags: Arc<[Arc<AtomicBool>]>,
-    pause_flags: Arc<[Arc<AtomicBool>]>,
+    controls: Arc<[Arc<PlaybackControl>]>,
 }
 
 impl PlaybackHandle {
-    pub(crate) fn from_flags(stop: Arc<AtomicBool>, pause: Arc<AtomicBool>) -> Self {
+    pub(crate) fn from_control(control: Arc<PlaybackControl>) -> Self {
         Self {
-            stop_flags: Arc::from([stop]),
-            pause_flags: Arc::from([pause]),
+            controls: Arc::from([control]),
         }
     }
 
     pub(crate) fn merge(handles: impl IntoIterator<Item = PlaybackHandle>) -> Self {
-        let mut stop_flags = Vec::new();
-        let mut pause_flags = Vec::new();
-        for h in handles {
-            stop_flags.extend(h.stop_flags.iter().cloned());
-            pause_flags.extend(h.pause_flags.iter().cloned());
-        }
+        let controls: Vec<_> = handles
+            .into_iter()
+            .flat_map(|h| h.controls.iter().cloned().collect::<Vec<_>>())
+            .collect();
         Self {
-            stop_flags: Arc::from(stop_flags),
-            pause_flags: Arc::from(pause_flags),
+            controls: Arc::from(controls),
         }
     }
 
     pub fn stop(&self) {
-        for flag in self.stop_flags.iter() {
-            flag.store(true, Ordering::Relaxed);
+        for control in self.controls.iter() {
+            control.stop();
         }
     }
 
     pub fn pause(&self) {
-        for flag in self.pause_flags.iter() {
-            flag.store(true, Ordering::Relaxed);
+        for control in self.controls.iter() {
+            control.pause();
         }
     }
 
     pub fn resume(&self) {
-        for flag in self.pause_flags.iter() {
-            flag.store(false, Ordering::Relaxed);
+        for control in self.controls.iter() {
+            control.resume();
+        }
+    }
+
+    pub async fn finished(&self) {
+        for control in self.controls.iter() {
+            loop {
+                let seen = control.snapshot();
+                if seen.finished {
+                    break;
+                }
+                control.changed_from(seen).await;
+            }
         }
     }
 }

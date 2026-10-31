@@ -1,6 +1,6 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -10,13 +10,51 @@ use tokio::sync::oneshot;
 use crate::convert;
 use crate::device::{DeviceId, forget_output_devices};
 use crate::error::AudioError;
-use crate::handle::{ControlledPlayback, PlaybackHandle};
+use crate::handle::{ControlledPlayback, PlaybackControl, PlaybackHandle};
 use crate::sink::AudioSink;
 use forge_speech_types::PcmBuffer;
 
 type PlaybackTask = tokio::task::JoinHandle<Result<(), AudioError>>;
 
-type StreamFailure = Arc<OnceLock<String>>;
+struct OutputWatch {
+    control: Arc<PlaybackControl>,
+    failure: OnceLock<String>,
+    drained: AtomicBool,
+}
+
+impl OutputWatch {
+    fn new(control: Arc<PlaybackControl>) -> Arc<Self> {
+        Arc::new(Self {
+            control,
+            failure: OnceLock::new(),
+            drained: AtomicBool::new(false),
+        })
+    }
+
+    fn fail(&self, reason: String) {
+        if self.failure.set(reason).is_ok() {
+            self.control.wake_worker();
+        }
+    }
+
+    fn mark_drained(&self) {
+        if !self.drained.swap(true, Ordering::AcqRel) {
+            self.control.wake_worker();
+        }
+    }
+
+    fn is_drained(&self) -> bool {
+        self.drained.load(Ordering::Acquire)
+    }
+}
+
+struct FinishOnDrop(Arc<PlaybackControl>);
+
+impl Drop for FinishOnDrop {
+    fn drop(&mut self) {
+        self.0.finish();
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum OutputCandidate {
@@ -49,8 +87,7 @@ impl CpalSink {
     async fn start_playback(
         &self,
         buffer: PcmBuffer,
-        stop: Arc<AtomicBool>,
-        paused: Arc<AtomicBool>,
+        control: Arc<PlaybackControl>,
     ) -> Result<Option<PlaybackTask>, AudioError> {
         let (started_tx, started_rx) = oneshot::channel();
         let request = PlaybackRequest {
@@ -58,8 +95,7 @@ impl CpalSink {
             buffer,
             target_sr: self.target_sample_rate,
             target_ch: self.target_channels,
-            stop,
-            paused,
+            control,
             started: started_tx,
         };
         let task = tokio::task::spawn_blocking(move || run_playback(request));
@@ -75,9 +111,7 @@ impl CpalSink {
 #[async_trait]
 impl AudioSink for CpalSink {
     async fn play(&self, buffer: PcmBuffer) -> Result<(), AudioError> {
-        let stop = Arc::new(AtomicBool::new(false));
-        let paused = Arc::new(AtomicBool::new(false));
-        match self.start_playback(buffer, stop, paused).await? {
+        match self.start_playback(buffer, PlaybackControl::new()).await? {
             Some(task) => task
                 .await
                 .map_err(|e| AudioError::JoinFailed(e.to_string()))?,
@@ -86,19 +120,16 @@ impl AudioSink for CpalSink {
     }
 
     async fn play_stoppable(&self, buffer: PcmBuffer) -> Result<PlaybackHandle, AudioError> {
-        let stop = Arc::new(AtomicBool::new(false));
-        let paused = Arc::new(AtomicBool::new(false));
-        self.start_playback(buffer, Arc::clone(&stop), Arc::clone(&paused))
-            .await?;
-        Ok(PlaybackHandle::from_flags(stop, paused))
+        let control = PlaybackControl::new();
+        self.start_playback(buffer, Arc::clone(&control)).await?;
+        Ok(PlaybackHandle::from_control(control))
     }
 
     async fn play_controlled(&self, buffer: PcmBuffer) -> Result<ControlledPlayback, AudioError> {
-        let stop = Arc::new(AtomicBool::new(false));
-        let paused = Arc::new(AtomicBool::new(false));
-        let handle = PlaybackHandle::from_flags(Arc::clone(&stop), Arc::clone(&paused));
-        let start_guard = StopIfAbandoned(Some(Arc::clone(&stop)));
-        let started = self.start_playback(buffer, stop, paused).await?;
+        let control = PlaybackControl::new();
+        let handle = PlaybackHandle::from_control(Arc::clone(&control));
+        let start_guard = StopIfAbandoned(Some(Arc::clone(&control)));
+        let started = self.start_playback(buffer, control).await?;
         start_guard.disarm();
         match started {
             Some(task) => Ok(ControlledPlayback::from_handle(handle, task)),
@@ -107,7 +138,7 @@ impl AudioSink for CpalSink {
     }
 }
 
-struct StopIfAbandoned(Option<Arc<AtomicBool>>);
+struct StopIfAbandoned(Option<Arc<PlaybackControl>>);
 
 impl StopIfAbandoned {
     fn disarm(mut self) {
@@ -117,8 +148,8 @@ impl StopIfAbandoned {
 
 impl Drop for StopIfAbandoned {
     fn drop(&mut self) {
-        if let Some(stop) = self.0.take() {
-            stop.store(true, Ordering::SeqCst);
+        if let Some(control) = self.0.take() {
+            control.stop();
         }
     }
 }
@@ -128,15 +159,13 @@ struct PlaybackRequest {
     buffer: PcmBuffer,
     target_sr: Option<u32>,
     target_ch: Option<u16>,
-    stop: Arc<AtomicBool>,
-    paused: Arc<AtomicBool>,
+    control: Arc<PlaybackControl>,
     started: oneshot::Sender<()>,
 }
 
 struct StartedStream {
     stream: cpal::Stream,
-    drained: crossbeam_channel::Receiver<i16>,
-    duration_ms: u64,
+    stall_limit: Duration,
     device_name: String,
 }
 
@@ -146,21 +175,19 @@ fn run_playback(request: PlaybackRequest) -> Result<(), AudioError> {
         buffer,
         target_sr,
         target_ch,
-        stop,
-        paused,
+        control,
         started,
     } = request;
+    let _finish = FinishOnDrop(Arc::clone(&control));
+    control.attach_worker(std::thread::current());
     let host = cpal::default_host();
-    let failure: StreamFailure = Arc::new(OnceLock::new());
+    let watch = OutputWatch::new(control);
 
     let mut opened = None;
     let mut last_error = AudioError::NoDefaultDevice;
     for candidate in OUTPUT_CANDIDATES {
-        let attempt = locate_device(&host, candidate, &device_id).and_then(|device| {
-            try_start_stream(
-                &device, &buffer, target_sr, target_ch, &stop, &paused, &failure,
-            )
-        });
+        let attempt = locate_device(&host, candidate, &device_id)
+            .and_then(|device| try_start_stream(&device, &buffer, target_sr, target_ch, &watch));
         match attempt {
             Ok(stream) => {
                 opened = Some((candidate, stream));
@@ -197,16 +224,10 @@ fn run_playback(request: PlaybackRequest) -> Result<(), AudioError> {
         reason = "the requester may stop waiting for the reply"
     )]
     let _ = started.send(());
-    wait_for_completion(
-        started_stream.duration_ms,
-        &started_stream.drained,
-        &stop,
-        &paused,
-        &failure,
-    );
+    wait_for_completion(&watch, started_stream.stall_limit);
     drop(started_stream.stream);
 
-    if let Some(reason) = failure.get() {
+    if let Some(reason) = watch.failure.get() {
         forget_output_devices();
         tracing::warn!(
             requested = %device_id,
@@ -241,9 +262,7 @@ fn try_start_stream(
     buffer: &PcmBuffer,
     target_sr: Option<u32>,
     target_ch: Option<u16>,
-    stop: &Arc<AtomicBool>,
-    paused: &Arc<AtomicBool>,
-    failure: &StreamFailure,
+    watch: &Arc<OutputWatch>,
 ) -> Result<StartedStream, AudioError> {
     let config = device
         .default_output_config()
@@ -264,15 +283,11 @@ fn try_start_stream(
         0
     };
 
-    let (tx, rx) = crossbeam_channel::bounded::<i16>(converted.len().max(1));
-    for s in converted {
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the receiver lives in this scope and the channel holds every sample"
-        )]
-        let _ = tx.send(s);
-    }
-    drop(tx);
+    let channels = usize::from(dst_ch.max(1));
+    let tail_frames = u64::from(dst_sr) * u64::from(OUTPUT_TAIL_MS) / MS_PER_SECOND;
+    let tail_samples = usize::try_from(tail_frames)
+        .unwrap_or(usize::MAX)
+        .saturating_mul(channels);
 
     let stream_config = cpal::StreamConfig {
         channels: dst_ch,
@@ -285,46 +300,56 @@ fn try_start_stream(
         .map(|d| d.name().to_owned())
         .unwrap_or_default();
 
-    let drained = rx.clone();
     let feed = PlaybackFeed {
-        samples: rx,
-        stop: Arc::clone(stop),
-        paused: Arc::clone(paused),
+        samples: converted,
+        cursor: 0,
+        channels,
+        tail_left: tail_samples,
+        watch: Arc::clone(watch),
     };
     let format = OutputFormat {
         config: stream_config,
         sample_format,
     };
-    let stream = build_output_stream(device, format, feed, failure)?;
+    let stream = build_output_stream(device, format, feed, watch)?;
 
     stream.play().map_err(|e| AudioError::Host(e.to_string()))?;
 
     Ok(StartedStream {
         stream,
-        drained,
-        duration_ms,
+        stall_limit: Duration::from_millis(duration_ms + STALL_GRACE_MS),
         device_name,
     })
 }
 
 struct PlaybackFeed {
-    samples: crossbeam_channel::Receiver<i16>,
-    stop: Arc<AtomicBool>,
-    paused: Arc<AtomicBool>,
+    samples: Vec<i16>,
+    cursor: usize,
+    channels: usize,
+    tail_left: usize,
+    watch: Arc<OutputWatch>,
 }
 
 impl PlaybackFeed {
-    fn fill<T: Sample + FromSample<i16>>(&self, data: &mut [T]) {
-        if self.stop.load(Ordering::Relaxed) || self.paused.load(Ordering::Relaxed) {
+    fn fill<T: Sample + FromSample<i16>>(&mut self, data: &mut [T]) {
+        if self.watch.control.is_stopped() || self.watch.control.is_paused() {
             data.fill(T::EQUILIBRIUM);
             return;
         }
-        for slot in data.iter_mut() {
-            *slot = self
-                .samples
-                .try_recv()
-                .map(T::from_sample)
-                .unwrap_or(T::EQUILIBRIUM);
+        let queued = self.samples.len() - self.cursor;
+        let available = data.len().min(queued);
+        let whole_frames = available - available % self.channels;
+        let block = &self.samples[self.cursor..self.cursor + whole_frames];
+        for (slot, &sample) in data.iter_mut().zip(block) {
+            *slot = T::from_sample(sample);
+        }
+        data[whole_frames..].fill(T::EQUILIBRIUM);
+        self.cursor += whole_frames;
+        if self.cursor == self.samples.len() {
+            self.tail_left = self.tail_left.saturating_sub(data.len() - whole_frames);
+            if self.tail_left == 0 {
+                self.watch.mark_drained();
+            }
         }
     }
 }
@@ -338,22 +363,22 @@ fn build_output_stream(
     device: &cpal::Device,
     format: OutputFormat,
     feed: PlaybackFeed,
-    failure: &StreamFailure,
+    watch: &Arc<OutputWatch>,
 ) -> Result<cpal::Stream, AudioError> {
     let stream_config = format.config;
     let stream = match format.sample_format {
-        SampleFormat::I8 => typed_output_stream::<i8>(device, stream_config, feed, failure),
-        SampleFormat::I16 => typed_output_stream::<i16>(device, stream_config, feed, failure),
-        SampleFormat::I24 => typed_output_stream::<I24>(device, stream_config, feed, failure),
-        SampleFormat::I32 => typed_output_stream::<i32>(device, stream_config, feed, failure),
-        SampleFormat::I64 => typed_output_stream::<i64>(device, stream_config, feed, failure),
-        SampleFormat::U8 => typed_output_stream::<u8>(device, stream_config, feed, failure),
-        SampleFormat::U16 => typed_output_stream::<u16>(device, stream_config, feed, failure),
-        SampleFormat::U24 => typed_output_stream::<U24>(device, stream_config, feed, failure),
-        SampleFormat::U32 => typed_output_stream::<u32>(device, stream_config, feed, failure),
-        SampleFormat::U64 => typed_output_stream::<u64>(device, stream_config, feed, failure),
-        SampleFormat::F32 => typed_output_stream::<f32>(device, stream_config, feed, failure),
-        SampleFormat::F64 => typed_output_stream::<f64>(device, stream_config, feed, failure),
+        SampleFormat::I8 => typed_output_stream::<i8>(device, stream_config, feed, watch),
+        SampleFormat::I16 => typed_output_stream::<i16>(device, stream_config, feed, watch),
+        SampleFormat::I24 => typed_output_stream::<I24>(device, stream_config, feed, watch),
+        SampleFormat::I32 => typed_output_stream::<i32>(device, stream_config, feed, watch),
+        SampleFormat::I64 => typed_output_stream::<i64>(device, stream_config, feed, watch),
+        SampleFormat::U8 => typed_output_stream::<u8>(device, stream_config, feed, watch),
+        SampleFormat::U16 => typed_output_stream::<u16>(device, stream_config, feed, watch),
+        SampleFormat::U24 => typed_output_stream::<U24>(device, stream_config, feed, watch),
+        SampleFormat::U32 => typed_output_stream::<u32>(device, stream_config, feed, watch),
+        SampleFormat::U64 => typed_output_stream::<u64>(device, stream_config, feed, watch),
+        SampleFormat::F32 => typed_output_stream::<f32>(device, stream_config, feed, watch),
+        SampleFormat::F64 => typed_output_stream::<f64>(device, stream_config, feed, watch),
         other => {
             return Err(AudioError::UnsupportedSampleFormat(format!("{other:?}")));
         }
@@ -365,47 +390,40 @@ fn build_output_stream(
 fn typed_output_stream<T: SizedSample + FromSample<i16>>(
     device: &cpal::Device,
     stream_config: cpal::StreamConfig,
-    feed: PlaybackFeed,
-    failure: &StreamFailure,
+    mut feed: PlaybackFeed,
+    watch: &Arc<OutputWatch>,
 ) -> Result<cpal::Stream, cpal::Error> {
     device.build_output_stream(
         stream_config,
         move |data: &mut [T], _: &cpal::OutputCallbackInfo| feed.fill(data),
-        stream_error_callback(Arc::clone(failure)),
+        stream_error_callback(Arc::clone(watch)),
         None,
     )
 }
 
-const COMPLETION_POLL_MS: u64 = 20;
-const OUTPUT_TAIL_MS: u64 = 150;
+const OUTPUT_TAIL_MS: u32 = 150;
+const MS_PER_SECOND: u64 = 1_000;
 const STALL_GRACE_MS: u64 = 2_000;
 
-fn wait_for_completion(
-    duration_ms: u64,
-    drained: &crossbeam_channel::Receiver<i16>,
-    stop: &Arc<AtomicBool>,
-    paused: &Arc<AtomicBool>,
-    failure: &StreamFailure,
-) {
-    let stall_limit_ms = duration_ms + STALL_GRACE_MS;
-    let mut elapsed_ms = 0u64;
-    let mut tail_ms = 0u64;
+fn wait_for_completion(watch: &OutputWatch, stall_limit: Duration) {
+    let control = &watch.control;
+    let mut active = Duration::ZERO;
     loop {
-        if stop.load(Ordering::Relaxed) || failure.get().is_some() {
-            break;
+        if control.is_stopped() || watch.failure.get().is_some() || watch.is_drained() {
+            return;
         }
-        std::thread::sleep(Duration::from_millis(COMPLETION_POLL_MS));
-        if paused.load(Ordering::Relaxed) {
+        if control.is_paused() {
+            std::thread::park();
             continue;
         }
-        elapsed_ms += COMPLETION_POLL_MS;
-        if drained.is_empty() {
-            tail_ms += COMPLETION_POLL_MS;
-            if tail_ms >= OUTPUT_TAIL_MS {
-                break;
-            }
-        } else if elapsed_ms >= stall_limit_ms {
-            break;
+        let left = stall_limit.saturating_sub(active);
+        if left.is_zero() {
+            return;
+        }
+        let parked_at = Instant::now();
+        std::thread::park_timeout(left);
+        if !control.is_paused() {
+            active += parked_at.elapsed();
         }
     }
 }
@@ -422,15 +440,11 @@ fn prepare_samples(buffer: &PcmBuffer, dst_sr: u32, dst_ch: u16) -> Result<Vec<i
     Ok(convert::remix(&resampled, buffer.channels, dst_ch))
 }
 
-fn stream_error_callback(failure: StreamFailure) -> impl FnMut(cpal::Error) + Send + 'static {
+fn stream_error_callback(watch: Arc<OutputWatch>) -> impl FnMut(cpal::Error) + Send + 'static {
     move |err: cpal::Error| {
         tracing::error!("cpal stream error: {}", err);
         if ends_playback(err.kind()) {
-            #[expect(
-                clippy::let_underscore_must_use,
-                reason = "the first stream failure is the one reported"
-            )]
-            let _ = failure.set(err.to_string());
+            watch.fail(err.to_string());
         }
     }
 }
@@ -446,8 +460,7 @@ pub(crate) fn ends_playback(kind: cpal::ErrorKind) -> bool {
 mod tests {
     use super::*;
 
-    const LONG_CLIP_MS: u64 = 600_000;
-    const HANG_GUARD: Duration = Duration::from_secs(30);
+    const LONG_STALL: Duration = Duration::from_secs(600);
 
     #[test]
     fn a_stream_error_ends_playback_only_when_the_device_can_no_longer_play() {
@@ -459,28 +472,38 @@ mod tests {
             (cpal::ErrorKind::StreamInvalidated, true),
             (cpal::ErrorKind::BackendError, true),
         ] {
-            let failure: StreamFailure = Arc::new(OnceLock::new());
-            let mut on_error = stream_error_callback(Arc::clone(&failure));
+            let watch = OutputWatch::new(PlaybackControl::new());
+            let mut on_error = stream_error_callback(Arc::clone(&watch));
 
             on_error(cpal::Error::new(kind));
 
-            assert_eq!(failure.get().is_some(), ends, "wrong verdict for {kind:?}");
+            assert_eq!(
+                watch.failure.get().is_some(),
+                ends,
+                "wrong verdict for {kind:?}"
+            );
         }
     }
 
     const SCALE_TOLERANCE: f64 = 0.01;
+    const TAIL_SAMPLES: usize = 8;
 
     type LevelRenderer = fn(&[i16]) -> Vec<f64>;
 
     fn feed_with(samples: &[i16], stopped: bool, paused: bool) -> PlaybackFeed {
-        let (tx, rx) = crossbeam_channel::unbounded();
-        for &sample in samples {
-            tx.send(sample).unwrap();
+        let control = PlaybackControl::new();
+        if stopped {
+            control.stop();
+        }
+        if paused {
+            control.pause();
         }
         PlaybackFeed {
-            samples: rx,
-            stop: Arc::new(AtomicBool::new(stopped)),
-            paused: Arc::new(AtomicBool::new(paused)),
+            samples: samples.to_vec(),
+            cursor: 0,
+            channels: 1,
+            tail_left: TAIL_SAMPLES,
+            watch: OutputWatch::new(control),
         }
     }
 
@@ -488,14 +511,14 @@ mod tests {
     where
         f64: FromSample<T>,
     {
-        let feed = feed_with(samples, false, false);
+        let mut feed = feed_with(samples, false, false);
         let mut out = vec![T::EQUILIBRIUM; samples.len()];
         feed.fill(&mut out);
         out.into_iter().map(f64::from_sample).collect()
     }
 
     fn underrun_tail_is<T: Sample + FromSample<i16>>(queued: &[i16], expected_silence: T) -> bool {
-        let feed = feed_with(queued, false, false);
+        let mut feed = feed_with(queued, false, false);
         let mut out = vec![T::from_sample(i16::MAX); queued.len() + 4];
         feed.fill(&mut out);
         out[queued.len()..]
@@ -556,7 +579,7 @@ mod tests {
     fn a_paused_or_stopped_feed_writes_silence_without_draining_the_queue() {
         let queued = [i16::MAX, i16::MAX, i16::MAX];
         for (stopped, paused) in [(true, false), (false, true), (true, true)] {
-            let feed = feed_with(&queued, stopped, paused);
+            let mut feed = feed_with(&queued, stopped, paused);
             let mut out = vec![u16::MAX; 8];
 
             feed.fill(&mut out);
@@ -566,103 +589,70 @@ mod tests {
                 "stopped={stopped} paused={paused}: wrote audio instead of silence"
             );
             assert_eq!(
-                feed.samples.len(),
-                queued.len(),
+                feed.cursor, 0,
                 "stopped={stopped} paused={paused}: queued audio was consumed"
             );
         }
     }
 
-    fn idle_flags() -> (Arc<AtomicBool>, Arc<AtomicBool>) {
-        (
-            Arc::new(AtomicBool::new(false)),
-            Arc::new(AtomicBool::new(false)),
-        )
-    }
-
-    fn wait_on_thread(
-        duration_ms: u64,
-        drained: crossbeam_channel::Receiver<i16>,
-        failure: StreamFailure,
-    ) -> std::sync::mpsc::Receiver<bool> {
-        let (done_tx, done_rx) = std::sync::mpsc::channel();
-        std::thread::spawn(move || {
-            let (stop, paused) = idle_flags();
-            wait_for_completion(duration_ms, &drained, &stop, &paused, &failure);
-            done_tx.send(drained.is_empty()).unwrap();
-        });
-        done_rx
+    fn idle_watch() -> Arc<OutputWatch> {
+        OutputWatch::new(PlaybackControl::new())
     }
 
     #[test]
     fn the_playback_wait_ends_as_soon_as_the_stream_reports_a_failure() {
-        let failure: StreamFailure = Arc::new(OnceLock::new());
-        failure.set("device unplugged".to_owned()).unwrap();
-        let (_tx, drained) = crossbeam_channel::unbounded::<i16>();
+        let watch = idle_watch();
+        watch.fail("device unplugged".to_owned());
 
-        let done = wait_on_thread(LONG_CLIP_MS, drained, failure);
-
-        done.recv_timeout(HANG_GUARD)
-            .expect("a failed stream kept the playback thread waiting for the whole clip");
+        wait_for_completion(&watch, LONG_STALL);
     }
 
     #[test]
-    fn the_playback_wait_ends_shortly_after_the_queue_drains_not_after_the_nominal_duration() {
-        let (tx, drained) = crossbeam_channel::unbounded::<i16>();
-        for _ in 0..64 {
-            tx.send(1).unwrap();
-        }
-        let failure: StreamFailure = Arc::new(OnceLock::new());
-        let done = wait_on_thread(LONG_CLIP_MS, drained.clone(), failure);
+    fn the_playback_wait_ends_once_the_feed_has_rendered_its_silent_tail() {
+        let watch = idle_watch();
+        let mut feed = PlaybackFeed {
+            samples: vec![1; 4],
+            cursor: 0,
+            channels: 1,
+            tail_left: TAIL_SAMPLES,
+            watch: Arc::clone(&watch),
+        };
+        let mut block = [0_i16; 4];
 
-        while drained.try_recv().is_ok() {}
+        feed.fill(&mut block);
+        assert!(!watch.is_drained(), "the clip body is not the tail");
+        feed.fill(&mut block);
+        assert!(!watch.is_drained(), "half the tail is not the whole tail");
+        feed.fill(&mut block);
 
-        let queue_was_empty_on_return = done
-            .recv_timeout(HANG_GUARD)
-            .expect("the wait never ended after the queue drained");
-        assert!(queue_was_empty_on_return);
+        assert!(watch.is_drained());
+        wait_for_completion(&watch, LONG_STALL);
     }
 
     #[test]
-    fn the_playback_wait_gives_up_on_a_queue_that_never_drains() {
-        let (tx, drained) = crossbeam_channel::unbounded::<i16>();
-        tx.send(1).unwrap();
-        let failure: StreamFailure = Arc::new(OnceLock::new());
+    fn the_playback_wait_gives_up_on_a_stream_that_never_asks_for_audio() {
+        let watch = idle_watch();
 
-        let done = wait_on_thread(0, drained, failure);
+        wait_for_completion(&watch, Duration::ZERO);
 
-        let queue_was_empty_on_return = done
-            .recv_timeout(HANG_GUARD)
-            .expect("the stall cap never ended the wait");
-        assert!(!queue_was_empty_on_return);
-        drop(tx);
+        assert!(!watch.is_drained());
     }
 
     #[test]
     fn the_playback_wait_ends_when_stop_is_requested_with_audio_still_queued() {
-        let (tx, drained) = crossbeam_channel::unbounded::<i16>();
-        tx.send(1).unwrap();
-        let (stop, paused) = idle_flags();
-        stop.store(true, Ordering::Relaxed);
-        let failure: StreamFailure = Arc::new(OnceLock::new());
-        let (done_tx, done_rx) = std::sync::mpsc::channel();
-        std::thread::spawn(move || {
-            wait_for_completion(LONG_CLIP_MS, &drained, &stop, &paused, &failure);
-            done_tx.send(drained.len()).unwrap();
-        });
+        let watch = idle_watch();
+        watch.control.stop();
 
-        let still_queued = done_rx
-            .recv_timeout(HANG_GUARD)
-            .expect("a stop request kept the playback thread waiting for the whole clip");
-        assert_eq!(still_queued, 1);
-        drop(tx);
+        wait_for_completion(&watch, LONG_STALL);
+
+        assert!(!watch.is_drained());
     }
 
     #[test]
     fn a_start_abandoned_before_it_returned_raises_the_stop_flag_and_a_finished_one_does_not() {
         for (finished_starting, stop_raised) in [(false, true), (true, false)] {
-            let stop = Arc::new(AtomicBool::new(false));
-            let guard = StopIfAbandoned(Some(Arc::clone(&stop)));
+            let control = PlaybackControl::new();
+            let guard = StopIfAbandoned(Some(Arc::clone(&control)));
 
             if finished_starting {
                 guard.disarm();
@@ -671,7 +661,7 @@ mod tests {
             }
 
             assert_eq!(
-                stop.load(Ordering::SeqCst),
+                control.is_stopped(),
                 stop_raised,
                 "finished starting: {finished_starting}"
             );

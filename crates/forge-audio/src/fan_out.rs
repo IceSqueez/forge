@@ -252,7 +252,9 @@ fn route_failure(refusals: Vec<AudioError>) -> AudioError {
 mod tests {
     use std::pin::pin;
     use std::sync::Mutex;
-    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use crate::handle::PlaybackControl;
 
     use futures::poll;
     use tokio::sync::oneshot;
@@ -272,8 +274,7 @@ mod tests {
     struct MockRoute {
         start_refusal: Option<String>,
         finish: Mutex<Option<oneshot::Receiver<FinishOutcome>>>,
-        stop: Arc<AtomicBool>,
-        pause: Arc<AtomicBool>,
+        control: Arc<PlaybackControl>,
         completions: Arc<AtomicUsize>,
         received: Mutex<Vec<PcmBuffer>>,
     }
@@ -290,10 +291,7 @@ mod tests {
 
         async fn play_stoppable(&self, buffer: PcmBuffer) -> Result<PlaybackHandle, AudioError> {
             self.play(buffer).await?;
-            Ok(PlaybackHandle::from_flags(
-                Arc::clone(&self.stop),
-                Arc::clone(&self.pause),
-            ))
+            Ok(PlaybackHandle::from_control(Arc::clone(&self.control)))
         }
 
         async fn play_controlled(
@@ -329,11 +327,11 @@ mod tests {
         }
 
         fn stopped(&self) -> bool {
-            self.route.stop.load(Ordering::Relaxed)
+            self.route.control.is_stopped()
         }
 
         fn paused(&self) -> bool {
-            self.route.pause.load(Ordering::Relaxed)
+            self.route.control.is_paused()
         }
 
         fn completions(&self) -> usize {
@@ -351,8 +349,7 @@ mod tests {
             route: Arc::new(MockRoute {
                 start_refusal: start_refusal.map(str::to_owned),
                 finish: Mutex::new(Some(finish_rx)),
-                stop: Arc::new(AtomicBool::new(false)),
-                pause: Arc::new(AtomicBool::new(false)),
+                control: PlaybackControl::new(),
                 completions: Arc::new(AtomicUsize::new(0)),
                 received: Mutex::new(Vec::new()),
             }),

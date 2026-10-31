@@ -1277,6 +1277,7 @@ actions_duplicate_name_suffix = (копія)
 actions_rename_taken = Назву '{ $name }' вже зайнято
 actions_deleted_toast = Видалено '{ $name }'
 actions_step_removed_toast = Крок видалено
+tts_filters_rule_removed_toast = Правило фільтра видалено
 actions_trigger_unlinked_toast = Тригер відв'язано
 actions_delete_title = Видалити дію?
 actions_delete_body = Це видалить дію та всі її кроки й тригери.

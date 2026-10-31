@@ -156,6 +156,15 @@ async fn load_appearance(settings: &dyn SettingsRepo) -> PersistedAppearance {
     }
 }
 
+fn sqlite_url(db_path: &std::path::Path) -> String {
+    let escaped = db_path
+        .display()
+        .to_string()
+        .replace('%', "%25")
+        .replace('?', "%3F");
+    format!("sqlite://{escaped}?mode=rwc")
+}
+
 async fn open_backend() -> Result<Arc<dyn DataProvider>, BootFailure> {
     let db_path = default_db_path();
     if let Some(parent) = db_path.parent()
@@ -165,7 +174,7 @@ async fn open_backend() -> Result<Arc<dyn DataProvider>, BootFailure> {
             failure: RepoFailure::data_dir_unavailable(parent, &e),
         });
     }
-    let url = format!("sqlite://{}?mode=rwc", db_path.display());
+    let url = sqlite_url(&db_path);
     match SqliteBackend::open(&url).await {
         Ok(backend) => Ok(Arc::new(backend) as Arc<dyn DataProvider>),
         Err(e) => {

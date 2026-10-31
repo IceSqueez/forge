@@ -1251,6 +1251,7 @@ actions_duplicate_name_suffix = (copy)
 actions_rename_taken = Name '{ $name }' is already taken
 actions_deleted_toast = Deleted '{ $name }'
 actions_step_removed_toast = Step removed
+tts_filters_rule_removed_toast = Filter rule removed
 actions_trigger_unlinked_toast = Trigger unlinked
 actions_delete_title = Delete action?
 actions_delete_body = This will remove the action and all of its steps and triggers.

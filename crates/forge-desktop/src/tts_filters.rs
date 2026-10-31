@@ -10,7 +10,7 @@ mod tests;
 
 use self::add_filter_modal::AddFilterModal;
 use self::filter_edits::renumber;
-use self::preview::CachedPreview;
+use self::preview::{CachedPreview, PreviewConfig};
 use crate::async_bridge;
 use crate::async_bridge::{Loadable, SnapshotWriter};
 use crate::repo_failure::RepoFailure;
@@ -44,6 +44,7 @@ pub(crate) struct TtsFiltersView {
     save_error: Option<String>,
     blocklist_expanded: bool,
     preview_input: Entity<TextArea>,
+    preview_config: Option<PreviewConfig>,
     cached_preview: Option<CachedPreview>,
     _preview_sub: Subscription,
 }
@@ -69,7 +70,7 @@ impl TtsFiltersView {
         });
         let preview_sub = cx.subscribe(&preview_input, |this, _input, event: &InputEvent, cx| {
             if let InputEvent::Changed(_) = event {
-                this.refresh_preview(cx);
+                this.rerun_preview(cx);
                 cx.notify();
             }
         });
@@ -87,6 +88,7 @@ impl TtsFiltersView {
             save_error: None,
             blocklist_expanded: false,
             preview_input,
+            preview_config: None,
             cached_preview: None,
             _preview_sub: preview_sub,
         };

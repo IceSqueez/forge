@@ -203,7 +203,13 @@ impl IdentityScrubber {
     pub(crate) fn new(identities: impl IntoIterator<Item = String>) -> Self {
         let mut needles: Vec<String> = identities
             .into_iter()
-            .map(|identity| identity.trim().to_ascii_lowercase())
+            .map(|identity| {
+                identity
+                    .trim()
+                    .chars()
+                    .flat_map(char::to_lowercase)
+                    .collect::<String>()
+            })
             .filter(|identity| identity.len() >= MIN_SCRUBBED_IDENTITY_LEN)
             .collect();
         needles.sort_by(|a, b| b.len().cmp(&a.len()).then_with(|| a.cmp(b)));
@@ -225,11 +231,10 @@ impl IdentityScrubber {
     }
 
     pub(crate) fn scrub(&self, text: &str) -> String {
-        let lowered = text.to_ascii_lowercase();
         let mut scrubbed = String::with_capacity(text.len());
         let mut copied_until = 0;
         let mut position = 0;
-        while let Some(rest) = lowered.get(position..).filter(|rest| !rest.is_empty()) {
+        while let Some(rest) = text.get(position..).filter(|rest| !rest.is_empty()) {
             match self.longest_needle_at_start_of(rest) {
                 Some(needle_len) => {
                     scrubbed.push_str(&text[copied_until..position]);
@@ -247,9 +252,23 @@ impl IdentityScrubber {
     fn longest_needle_at_start_of(&self, text: &str) -> Option<usize> {
         self.needles
             .iter()
-            .find(|needle| text.starts_with(needle.as_str()))
-            .map(String::len)
+            .find_map(|needle| case_folded_prefix_len(text, needle))
     }
+}
+
+fn case_folded_prefix_len(text: &str, folded_needle: &str) -> Option<usize> {
+    let mut expected = folded_needle.chars();
+    for (offset, found) in text.char_indices() {
+        for folded in found.to_lowercase() {
+            if expected.next() != Some(folded) {
+                return None;
+            }
+        }
+        if expected.as_str().is_empty() {
+            return Some(offset + found.len_utf8());
+        }
+    }
+    None
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -37,18 +37,18 @@ pub(crate) fn corpus(dir: &Path, budget: usize) -> Result<Corpus, RepoFailure> {
     let mut blocks: Vec<String> = Vec::new();
 
     for path in files(dir)?.iter().rev() {
-        let body = match fs::read_to_string(path) {
-            Ok(text) => text,
-            Err(e) => format!("<unreadable: {e}>\n"),
-        };
         let name = path.file_name().unwrap_or(path.as_os_str());
         let header = format!("\n---- {} ----\n", name.to_string_lossy());
 
         if remaining <= header.len() {
-            elided_bytes += body.len() as u64;
+            elided_bytes += fs::metadata(path).map_or(0, |metadata| metadata.len());
             continue;
         }
 
+        let body = match fs::read_to_string(path) {
+            Ok(text) => text,
+            Err(e) => format!("<unreadable: {e}>\n"),
+        };
         let room = remaining - header.len();
         if body.len() <= room {
             remaining -= header.len() + body.len();

@@ -123,9 +123,13 @@ impl DonationSettingsView {
             async move {
                 let present = has_credentials_for(credentials.as_ref(), service.id()).await;
                 let jar = match &service {
-                    DonationService::Monobank(provider) => {
-                        provider.selected_jar_id().await.ok().flatten()
-                    }
+                    DonationService::Monobank(provider) => match provider.selected_jar_id().await {
+                        Ok(jar) => jar,
+                        Err(error) => {
+                            tracing::warn!(%error, "could not read the selected Monobank jar");
+                            None
+                        }
+                    },
                     DonationService::Donatello(_) => None,
                 };
                 let interval = match &service {

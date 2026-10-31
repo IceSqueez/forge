@@ -20,7 +20,7 @@ use gpui::{
     AnyElement, ClickEvent, Context, ElementId, EventEmitter, Pixels, Rgba, SharedString, Window,
     div, prelude::*, px,
 };
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 const RAIL_ROW_GAP: Pixels = px(2.0);
@@ -96,6 +96,36 @@ pub(crate) struct RunHistoryModal {
     action_names: HashMap<ActionId, SharedString>,
     load: Load,
     selected: usize,
+    argument_listings: Vec<Option<String>>,
+    structured_values: HashSet<String>,
+}
+
+fn argument_listing(ctx: &ExecutionContext) -> Option<String> {
+    if ctx.arg_stack_snapshot.is_empty() {
+        return None;
+    }
+    let object = ctx
+        .arg_stack_snapshot
+        .iter()
+        .map(|(name, value)| (name.clone(), value.to_plain_json()))
+        .collect();
+    serde_json::to_string_pretty(&serde_json::Value::Object(object)).ok()
+}
+
+fn is_structured_json(value: &str) -> bool {
+    matches!(
+        serde_json::from_str::<serde_json::Value>(value),
+        Ok(serde_json::Value::Array(_) | serde_json::Value::Object(_))
+    )
+}
+
+fn structured_step_values(runs: &[ExecutionContext]) -> HashSet<String> {
+    runs.iter()
+        .flat_map(|run| &run.telemetry)
+        .flat_map(|step| step.args_in.values().chain(step.produced.values()))
+        .filter(|value| is_structured_json(value))
+        .cloned()
+        .collect()
 }
 
 impl EventEmitter<RunHistoryDismissed> for RunHistoryModal {}
@@ -113,6 +143,8 @@ impl RunHistoryModal {
             action_names: HashMap::new(),
             load: Load::Pending,
             selected: 0,
+            argument_listings: Vec::new(),
+            structured_values: HashSet::new(),
         }
     }
 
@@ -137,6 +169,8 @@ impl RunHistoryModal {
     }
 
     pub(crate) fn set_runs(&mut self, runs: Vec<ExecutionContext>, cx: &mut Context<Self>) {
+        self.argument_listings = runs.iter().map(argument_listing).collect();
+        self.structured_values = structured_step_values(&runs);
         self.load = Load::Ready(runs);
         self.selected = 0;
         cx.notify();
@@ -490,13 +524,7 @@ impl RunHistoryModal {
             .pl(ROW_DOT + spacing(Spacing::Xs, density))
             .child(header);
 
-        if !ctx.arg_stack_snapshot.is_empty() {
-            let mut object = serde_json::Map::new();
-            for (name, value) in &ctx.arg_stack_snapshot {
-                object.insert(name.clone(), value.to_plain_json());
-            }
-            let json = serde_json::to_string_pretty(&serde_json::Value::Object(object))
-                .unwrap_or_default();
+        if let Some(Some(json)) = self.argument_listings.get(self.selected) {
             section = section.child(
                 div()
                     .min_w(px(0.))
@@ -505,7 +533,7 @@ impl RunHistoryModal {
                     .font_family(mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_muted)
-                    .child(highlighted_text(Language::Json, json, palette)),
+                    .child(highlighted_text(Language::Json, json.clone(), palette)),
             );
         }
 
@@ -654,11 +682,7 @@ impl RunHistoryModal {
     ) -> AnyElement {
         let io_indent = spacing(Spacing::Lg, density) + spacing(Spacing::Xs, density);
         let value = if value.is_empty() { "\"\"" } else { value };
-        let multiline = value.contains('\n')
-            || matches!(
-                serde_json::from_str::<serde_json::Value>(value),
-                Ok(serde_json::Value::Array(_) | serde_json::Value::Object(_))
-            );
+        let multiline = value.contains('\n') || self.structured_values.contains(value);
 
         let mut head = div()
             .flex()

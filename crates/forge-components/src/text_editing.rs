@@ -205,8 +205,8 @@ pub(crate) trait TextEditor: CaretHost + EventEmitter<InputEvent> {
         self.edited(cx);
     }
 
-    fn step_history(&mut self, step: fn(&mut TextBuffer) -> bool, cx: &mut Context<Self>) {
-        if self.policy().read_only || !step(self.buffer_mut()) {
+    fn edit_if_changed(&mut self, change: fn(&mut TextBuffer) -> bool, cx: &mut Context<Self>) {
+        if self.policy().read_only || !change(self.buffer_mut()) {
             return;
         }
         self.motion().goal_x = None;
@@ -308,11 +308,11 @@ pub(crate) trait TextEditor: CaretHost + EventEmitter<InputEvent> {
     }
 
     fn backspace(&mut self, _: &Backspace, _: &mut Window, cx: &mut Context<Self>) {
-        self.edit(TextBuffer::delete_backward, cx);
+        self.edit_if_changed(TextBuffer::delete_backward, cx);
     }
 
     fn delete(&mut self, _: &Delete, _: &mut Window, cx: &mut Context<Self>) {
-        self.edit(TextBuffer::delete_forward, cx);
+        self.edit_if_changed(TextBuffer::delete_forward, cx);
     }
 
     fn copy(&mut self, _: &Copy, _: &mut Window, cx: &mut Context<Self>) {
@@ -339,11 +339,11 @@ pub(crate) trait TextEditor: CaretHost + EventEmitter<InputEvent> {
     }
 
     fn undo(&mut self, _: &Undo, _: &mut Window, cx: &mut Context<Self>) {
-        self.step_history(TextBuffer::undo, cx);
+        self.edit_if_changed(TextBuffer::undo, cx);
     }
 
     fn redo(&mut self, _: &Redo, _: &mut Window, cx: &mut Context<Self>) {
-        self.step_history(TextBuffer::redo, cx);
+        self.edit_if_changed(TextBuffer::redo, cx);
     }
 
     fn on_mouse_down(&mut self, event: &MouseDownEvent, _: &mut Window, cx: &mut Context<Self>) {

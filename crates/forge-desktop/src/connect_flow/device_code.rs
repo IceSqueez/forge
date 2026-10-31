@@ -30,6 +30,7 @@ use forge_runtime::IntegrationStartError;
 
 pub(super) type TwitchFlowHandle = Arc<tokio::sync::Mutex<Option<TwitchAuthFlow>>>;
 
+const CLIENT_ID_LOG_PREFIX_CHARS: usize = 6;
 const TWITCH_DEVICE_POLL_SECS: &str = "5";
 const COPY_FLIP: Duration = Duration::from_millis(1400);
 const USER_CODE_FONT: Pixels = px(28.0);
@@ -169,7 +170,7 @@ impl ConnectFlow {
         };
         tracing::info!(
             source = id_source,
-            id_prefix = &cid[..cid.len().min(6)],
+            id_prefix = %cid.chars().take(CLIENT_ID_LOG_PREFIX_CHARS).collect::<String>(),
             "starting twitch device flow"
         );
         let handle: TwitchFlowHandle =

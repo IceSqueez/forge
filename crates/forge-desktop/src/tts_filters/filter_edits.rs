@@ -5,13 +5,15 @@ use super::filter_options::{
 use super::{FilterSet, TtsFiltersView};
 use crate::async_bridge::WriteOutcome;
 use crate::repo_failure::RepoFailure;
+use forge_components::{PushToast, tr};
 use forge_speak_queue::{
     EmoteTreatment, SpeakCommand, build_config, emote_treatment, repeat_window,
     store_emote_treatment,
 };
 use forge_storage::{BlocklistMode, FilterRule, FilterRuleKind, SkipRegex, TtsPipelineSettings};
 use gpui::prelude::*;
-use gpui::{Context, Entity};
+use gpui::{App, Context, Entity};
+use std::cell::Cell;
 use std::sync::Arc;
 
 pub(super) fn set_emote_to_word(settings: &mut TtsPipelineSettings, value: bool) {
@@ -311,11 +313,34 @@ impl TtsFiltersView {
     }
 
     pub(super) fn delete_rule(&mut self, index: usize, cx: &mut Context<Self>) {
-        if index >= self.shown().rules.len() {
+        let Some(removed) = self.shown().rules.get(index).cloned() else {
             return;
-        }
-        self.edit(cx, |filters| {
+        };
+        let deleted = self.try_apply(cx, |filters| {
             filters.rules.remove(index);
+        });
+        if deleted {
+            self.raise_rule_undo_toast(index, removed, cx);
+        }
+    }
+
+    fn raise_rule_undo_toast(&self, index: usize, removed: FilterRule, cx: &mut Context<Self>) {
+        let view = cx.entity();
+        let removed = Cell::new(Some(removed));
+        cx.push_undo_toast(
+            tr!("tts_filters_rule_removed_toast"),
+            move |_window, app: &mut App| {
+                if let Some(rule) = removed.take() {
+                    view.update(app, |this, cx| this.restore_rule(index, rule, cx));
+                }
+            },
+        );
+    }
+
+    fn restore_rule(&mut self, index: usize, rule: FilterRule, cx: &mut Context<Self>) {
+        self.edit(cx, |filters| {
+            let slot = index.min(filters.rules.len());
+            filters.rules.insert(slot, rule);
         });
     }
 

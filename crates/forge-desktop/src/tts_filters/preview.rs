@@ -4,11 +4,18 @@ use forge_speak_queue::{
     EmoteTokenSet, Priority, ReplacementSource, RequestId, SpeakCommand, SpeakRequest, build_config,
 };
 use forge_storage::FilterRuleKind;
-use forge_tts_pipeline::{AppliedReplacement, PipelineResult, ReplacementOrigin, StageOutcome};
+use forge_tts_pipeline::{
+    AppliedReplacement, PipelineConfig, PipelineResult, ReplacementOrigin, StageOutcome,
+};
 use gpui::Context;
 use std::ops::Range;
 
 pub(super) const SPOKEN_QUOTE: &str = "\"";
+
+pub(super) struct PreviewConfig {
+    config: PipelineConfig,
+    replacement_sources: Vec<ReplacementSource>,
+}
 
 pub(super) struct CachedPreview {
     pub(super) stages: Vec<StageOutcome>,
@@ -31,25 +38,33 @@ pub(super) struct PreviewMark {
 
 impl TtsFiltersView {
     pub(super) fn refresh_preview(&mut self, cx: &mut Context<Self>) {
-        let input = self.preview_input.read(cx).content().to_owned();
-        if input.is_empty() {
-            self.cached_preview = None;
-            return;
-        }
         let shown = self.shown();
         let (config, replacement_sources) =
             build_config(&shown.rules, &shown.settings).dropping_invalid();
+        self.preview_config = Some(PreviewConfig {
+            config,
+            replacement_sources,
+        });
+        self.rerun_preview(cx);
+    }
+
+    pub(super) fn rerun_preview(&mut self, cx: &mut Context<Self>) {
+        let input = self.preview_input.read(cx).content().to_owned();
+        let Some(prepared) = self.preview_config.as_ref().filter(|_| !input.is_empty()) else {
+            self.cached_preview = None;
+            return;
+        };
         let speaker_name = tr!("tts_filters_preview_speaker_name");
         let context = forge_tts_pipeline::PipelineContext {
             viewer_name: &speaker_name,
             recent_messages: &[],
             speech_language: None,
         };
-        let (result, stages) = forge_tts_pipeline::preview(&input, &config, &context);
+        let (result, stages) = forge_tts_pipeline::preview(&input, &prepared.config, &context);
         self.cached_preview = Some(CachedPreview {
             stages,
             result,
-            replacement_sources,
+            replacement_sources: prepared.replacement_sources.clone(),
         });
     }
 

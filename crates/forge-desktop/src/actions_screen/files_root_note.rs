@@ -57,15 +57,23 @@ pub(super) fn files_root_note(palette: &ForgePalette, density: Density) -> AnyEl
 
 fn open_files_root(cx: &mut App) {
     let root = crate::app_paths::app_paths().assets_dir();
-    if let Err(e) = std::fs::create_dir_all(&root) {
-        cx.push_toast(
-            ToastKind::Error,
-            tr!(
-                "actions_sub_files_root_create_failed",
-                reason = RepoFailure::from(e).text()
+    cx.spawn(async move |cx| {
+        let created = cx
+            .background_spawn({
+                let root = root.clone();
+                async move { std::fs::create_dir_all(root) }
+            })
+            .await;
+        cx.update(|cx| match created {
+            Ok(()) => cx.reveal_path(&root),
+            Err(e) => cx.push_toast(
+                ToastKind::Error,
+                tr!(
+                    "actions_sub_files_root_create_failed",
+                    reason = RepoFailure::from(e).text()
+                ),
             ),
-        );
-        return;
-    }
-    cx.reveal_path(&root);
+        })
+    })
+    .detach();
 }

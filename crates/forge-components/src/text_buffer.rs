@@ -405,12 +405,12 @@ impl TextBuffer {
         self.set_last_selection_after();
     }
 
-    pub(crate) fn delete_backward(&mut self) {
-        self.delete_toward(EditKind::DeleteBackward);
+    pub(crate) fn delete_backward(&mut self) -> bool {
+        self.delete_toward(EditKind::DeleteBackward)
     }
 
-    pub(crate) fn delete_forward(&mut self) {
-        self.delete_toward(EditKind::DeleteForward);
+    pub(crate) fn delete_forward(&mut self) -> bool {
+        self.delete_toward(EditKind::DeleteForward)
     }
 
     pub(crate) fn replace_in_utf16_range(&mut self, range_utf16: Option<Range<usize>>, text: &str) {
@@ -495,8 +495,8 @@ impl TextBuffer {
         self.group_open = origin.group_open;
     }
 
-    fn delete_toward(&mut self, kind: EditKind) {
-        if self.selection.range.is_empty() {
+    fn delete_toward(&mut self, kind: EditKind) -> bool {
+        let changed = if self.selection.range.is_empty() {
             let cursor = self.cursor();
             let target = if kind == EditKind::DeleteBackward {
                 previous_grapheme_boundary(&self.text, cursor)
@@ -505,12 +505,13 @@ impl TextBuffer {
             };
             let extended = cursor.min(target)..cursor.max(target);
             let range = self.marked.clone().unwrap_or(extended);
-            self.apply(range, "", kind);
+            self.apply(range, "", kind)
         } else {
             let range = self.target_range(None);
-            self.apply(range, "", EditKind::Standalone);
-        }
+            self.apply(range, "", EditKind::Standalone)
+        };
         self.marked = None;
+        changed
     }
 
     fn target_range(&self, range_utf16: Option<Range<usize>>) -> Range<usize> {
@@ -590,6 +591,7 @@ impl TextBuffer {
 mod tests {
     use super::*;
 
+    type DeleteOp = fn(&mut TextBuffer) -> bool;
     type BufferOp = fn(&mut TextBuffer);
 
     fn type_chars(buffer: &mut TextBuffer, text: &str) {
@@ -686,7 +688,7 @@ mod tests {
 
     #[test]
     fn consecutive_deletes_in_one_direction_undo_as_one_step() {
-        let deletes: [(BufferOp, usize, &str); 2] = [
+        let deletes: [(DeleteOp, usize, &str); 2] = [
             (TextBuffer::delete_backward, 5, "he"),
             (TextBuffer::delete_forward, 0, "lo"),
         ];

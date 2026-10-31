@@ -6,9 +6,9 @@ use forge_storage::{CredentialsRepo, SettingsRepo};
 use gpui::{Context, Entity, EventEmitter, SharedString, Subscription, Window, prelude::*};
 
 use crate::connect_scaffold::{ConnectPage, GuideStep, fragment, mono_fragment};
-use crate::integrations::ObsInstallSeed;
 use crate::navigation::NavRequested;
 use crate::obs_credentials_form::{DEFAULT_PORT, ObsConnected, ObsCredentialsForm, ObsSubmit};
+use forge_host::integrations::ObsInstallSeed;
 
 pub(crate) struct ObsConnectView {
     form: Entity<ObsCredentialsForm>,

@@ -49,13 +49,13 @@ use gpui::{
     AnyElement, Context, Entity, EventEmitter, Pixels, Subscription, Window, div, prelude::*, px,
 };
 
-use crate::audio_router::AudioRouter;
 use crate::hub_crumb::{core_category, hub_crumb};
 use crate::navigation::NavRequested;
 use crate::navigation::Screen;
 use crate::picker_favorites::StoredFavorites;
 use forge_components::ActivePresentation;
 use forge_components::PushToast;
+use forge_host::audio_router::AudioRouter;
 
 use catalog::MediaCatalog;
 use delete_prompt::PendingDelete;

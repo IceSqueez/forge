@@ -5,7 +5,7 @@ use forge_components::{
     ActivePresentation, Density, ForgePalette, Icon, TextInput, body_family, pulse_dot, scaled, tr,
 };
 use forge_events::EventPublisher;
-use forge_storage::{CredentialsRepo, Flag, Setting, SettingsRepo};
+use forge_storage::{CredentialsRepo, SettingsRepo};
 use forge_vtube::{
     PLUGIN_NAME, VTubeAttemptPhase, VTubeClient, VTubeConfig, VTubeConnectAttempt, VTubeProbeResult,
 };
@@ -22,22 +22,9 @@ use crate::connect_scaffold::{
     flag_rows, form_buttons, mono_box_text, outcome_strip, persist_flag, read_endpoint,
     strip_frame, strip_icon,
 };
-use crate::integrations::VTubeInstallSeed;
 use crate::runtime_event::VTubeDisconnect;
-
-pub(crate) const VTUBE_AUTO_RECONNECT: Setting<Flag> = Setting::new(
-    "vtube.auto_reconnect",
-    Flag { default: true },
-    forge_storage::SettingPortability::Portable,
-    forge_storage::SettingDisclosure::Withheld,
-);
-
-pub(crate) const VTUBE_CONNECT_ON_LAUNCH: Setting<Flag> = Setting::new(
-    "vtube.connect_on_launch",
-    Flag { default: true },
-    forge_storage::SettingPortability::Portable,
-    forge_storage::SettingDisclosure::Withheld,
-);
+use forge_host::integrations::VTubeInstallSeed;
+use forge_vtube::{VTUBE_AUTO_RECONNECT, VTUBE_CONNECT_ON_LAUNCH};
 
 pub(crate) const DEFAULT_HOST: &str = "localhost";
 pub(crate) const DEFAULT_PORT: u16 = 8001;

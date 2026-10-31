@@ -26,11 +26,11 @@ use tokio::runtime::Builder;
 
 use crate::boot::{BootFailure, RuntimeInputs, build_runtime};
 use crate::log_tail::LogTail;
-use crate::platform_identities::{OAuthClientIdentity, PlatformIdentities};
 use crate::runtime_handles::RuntimeHandles;
 use crate::shutdown::{RUNTIME_SHUTDOWN_BUDGET, ShutdownHandles, stop_scheduled_backups};
 use crate::stay_awake::STAY_AWAKE;
 use crate::test_support::{RecordingSink, tone};
+use forge_host::platform_identities::{OAuthClientIdentity, PlatformIdentities};
 
 const HANG_GUARD: Duration = Duration::from_secs(60);
 const CHILD_MARKER: &str = "FORGE_BOOT_SMOKE_CHILD";

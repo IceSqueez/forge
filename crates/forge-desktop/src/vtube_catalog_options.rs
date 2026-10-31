@@ -9,8 +9,8 @@ use gpui::{Context, Task};
 
 use crate::async_bridge;
 use crate::collection_options::ChoiceOptions;
-use crate::integrations::BuiltinRegistry;
 use crate::runtime_event;
+use forge_host::integrations::BuiltinRegistry;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum VTubeCatalogList {

@@ -7,7 +7,7 @@ use gpui::{AnyElement, AppContext, ClickEvent, Context, Entity, IntoElement};
 
 use super::ChatView;
 use super::banned_panel::BannedPanel;
-use crate::integrations::BuiltinRegistry;
+use forge_host::integrations::BuiltinRegistry;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) enum ChatTab {

@@ -30,7 +30,6 @@ use crate::integration_lifecycle::IntegrationLifecycle;
 use crate::local_tts_engines::discover_local_tts_engines;
 use crate::log_tail::LogTail;
 use crate::navigation::Screen;
-use crate::platform_identities::PlatformIdentities;
 use crate::platforms::PlatformConnectivity;
 use crate::problem_report::ProblemReport;
 use crate::queue_health::QueueHealth;
@@ -47,6 +46,7 @@ use crate::update_flow::{GithubArtifactDownloader, UpdateFlow};
 use crate::window_presence::PresenceGate;
 use forge_components::PushToast;
 use forge_components::{ActivePresentation, Presentation};
+use forge_host::platform_identities::PlatformIdentities;
 use forge_speak_queue::{SpeakError, SpeakEventStream};
 
 const LOSS_REPAINT_INTERVAL: Duration = Duration::from_millis(250);
@@ -366,7 +366,13 @@ pub(crate) fn run_boot(
                         cx.update(|cx| failure.raise(cx));
                     }
                     let warnings_navigator = navigator.clone();
-                    cx.update(|cx| boot_warnings.raise(warnings_navigator, cx));
+                    cx.update(|cx| {
+                        crate::boot_warnings::raise_boot_warnings(
+                            &boot_warnings,
+                            warnings_navigator,
+                            cx,
+                        );
+                    });
                     seed_chat_history(
                         cx,
                         chat_feed_for_history.clone(),
@@ -1106,7 +1112,7 @@ mod tests {
             home.read_with(cx, |home, _| home.enabled_connections(|_| true).connected);
 
         platforms.update(cx, |connectivity, cx| {
-            connectivity.seed_from_builtins(&crate::integrations::BuiltinRegistry::default());
+            connectivity.seed_from_builtins(&forge_host::integrations::BuiltinRegistry::default());
             cx.notify();
         });
         cx.run_until_parked();

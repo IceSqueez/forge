@@ -1,9 +1,9 @@
 use super::{DonationSettingsLink, IntegrationDetail};
-use crate::donation_services::DonationService;
 use crate::donation_settings::{DonationSettingsLaunch, DonationSettingsView};
-use crate::platform_credentials::PlatformCredentialManagers;
 use crate::twitch_bot_presence::TwitchBotPresence;
 use crate::twitch_bot_section::{StreamerSignInRequested, TwitchBotSection};
+use forge_host::donation_services::DonationService;
+use forge_host::platform_credentials::PlatformCredentialManagers;
 use forge_platform_twitch::TwitchBotAccount;
 use forge_types::PlatformId;
 use gpui::{Context, Entity, prelude::*};

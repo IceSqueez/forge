@@ -38,7 +38,6 @@ use crate::integration_disabled::{DisabledLaunch, IntegrationDisabledView};
 use crate::integration_failed::{IntegrationFailedView, LiveDetailRequested};
 use crate::integration_lifecycle::IntegrationLifecycle;
 use crate::integration_switch::IntegrationSwitch;
-use crate::integrations::{obs_builtin_object, vtube_builtin_object};
 use crate::integrations_hub::{HubLaunch, IntegrationsHubView};
 use crate::midi_screen::MidiScreenView;
 use crate::navigation::{NavRequested, Navigator, Screen};
@@ -70,6 +69,7 @@ use crate::update_flow::{CloseDecision, UpdateFlowEvent};
 use crate::vtube_connect::VTubeConnectView;
 use crate::vtube_connect_form::VTubeConnected;
 use forge_components::{ActivePresentation, Presentation};
+use forge_host::integrations::{obs_builtin_object, vtube_builtin_object};
 use forge_hotkey::{HotkeyReconciler, HotkeySyncedTriggerRepo};
 use forge_runtime::{LifecycleState, LifecycleStates};
 

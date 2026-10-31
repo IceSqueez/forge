@@ -130,7 +130,7 @@ mod tests {
     use forge_storage::Language;
 
     use crate::i18n::install_language;
-    use crate::integrations::tests::every_registry_entry;
+    use crate::test_support::every_registry_entry;
 
     const EN_FTL: &str = include_str!("../locales/en/main.ftl");
     const UK_FTL: &str = include_str!("../locales/uk/main.ftl");

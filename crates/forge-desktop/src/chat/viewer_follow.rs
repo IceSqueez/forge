@@ -11,7 +11,7 @@ use super::platform_gate::platform_integration;
 use super::{ChatView, INFINITY_GLYPH};
 use crate::chat_author::{AuthorHandle, AuthorKey};
 use crate::chat_drawer::DASH;
-use crate::integrations::BuiltinRegistry;
+use forge_host::integrations::BuiltinRegistry;
 
 pub(crate) struct FollowRequest {
     pub builtin: IntegrationId,
@@ -204,8 +204,8 @@ mod tests {
     use crate::chat_drawer::DASH;
     use crate::home_stats::Integration;
     use crate::integration_lifecycle::IntegrationLifecycle;
-    use crate::integrations::{BuiltinObject, BuiltinRegistry};
     use crate::test_support::{pump, runtime, switch_lifecycle};
+    use forge_host::integrations::{BuiltinObject, BuiltinRegistry};
     use forge_runtime::LifecycleState;
 
     struct StubBuiltin {

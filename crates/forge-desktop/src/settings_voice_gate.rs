@@ -21,9 +21,9 @@ use crate::async_bridge::{self, Loadable};
 use crate::load_notice::{LoadNotice, NoticeWidth, load_notice};
 use crate::repo_failure::RepoFailure;
 use crate::settings_audio::DeviceRow;
-use crate::voice_gate::VoiceGateOwner;
 use crate::window_presence::PresenceGate;
 use forge_components::ActivePresentation;
+use forge_host::voice_gate::VoiceGateOwner;
 
 const METER_WIDTH: Pixels = px(72.0);
 const METER_HEIGHT: Pixels = px(6.0);

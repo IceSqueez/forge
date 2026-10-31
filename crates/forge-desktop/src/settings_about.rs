@@ -222,8 +222,8 @@ mod tests {
     use gpui::{TestAppContext, VisualTestContext};
 
     use super::*;
-    use crate::integrations::BuiltinRegistry;
     use crate::test_support::{alive_tasks, runtime, test_backend};
+    use forge_host::integrations::BuiltinRegistry;
 
     fn about_in_window<'a>(
         rt: &tokio::runtime::Runtime,

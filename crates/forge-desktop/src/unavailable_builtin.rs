@@ -8,7 +8,7 @@ use forge_platform_core::{
 };
 use forge_types::{IntegrationId, MessageCode, UserText, VerbatimText};
 
-use crate::integrations::BuiltinObject;
+use forge_host::integrations::BuiltinObject;
 
 const MISSING_VALUE: &str = "-";
 

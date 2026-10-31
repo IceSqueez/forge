@@ -14,7 +14,7 @@ use forge_tts_cloud::openai::OpenAiEngineFactory;
 use forge_tts_cloud::polly::PollyEngineFactory;
 use forge_tts_core::TtsRegistry;
 
-pub(crate) async fn register_cloud_engines(
+pub async fn register_cloud_engines(
     registry: &mut TtsRegistry,
     creds: &dyn CredentialsRepo,
     gateways: &CloudGateways,
@@ -25,17 +25,14 @@ pub(crate) async fn register_cloud_engines(
     try_register_polly(registry, creds, gateways).await;
 }
 
-pub(crate) fn azure_registration(
-    creds: AzureCredentials,
-    gateways: &CloudGateways,
-) -> EngineRegistration {
+pub fn azure_registration(creds: AzureCredentials, gateways: &CloudGateways) -> EngineRegistration {
     EngineRegistration {
         id: EngineId(forge_tts_core::ENGINE_ID_AZURE.into()),
         factory: Arc::new(AzureEngineFactory::new(creds, gateways)),
     }
 }
 
-pub(crate) fn elevenlabs_registration(
+pub fn elevenlabs_registration(
     creds: ElevenLabsCredentials,
     gateways: &CloudGateways,
 ) -> EngineRegistration {
@@ -45,7 +42,7 @@ pub(crate) fn elevenlabs_registration(
     }
 }
 
-pub(crate) fn openai_registration(
+pub fn openai_registration(
     creds: OpenAiCredentials,
     gateways: &CloudGateways,
 ) -> EngineRegistration {
@@ -55,10 +52,7 @@ pub(crate) fn openai_registration(
     }
 }
 
-pub(crate) fn polly_registration(
-    creds: PollyCredentials,
-    gateways: &CloudGateways,
-) -> EngineRegistration {
+pub fn polly_registration(creds: PollyCredentials, gateways: &CloudGateways) -> EngineRegistration {
     EngineRegistration {
         id: EngineId(forge_tts_core::ENGINE_ID_POLLY.into()),
         factory: Arc::new(PollyEngineFactory::new(creds, gateways)),

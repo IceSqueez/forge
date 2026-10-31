@@ -31,7 +31,6 @@ use crate::discord_webhook_modal::{
 };
 use crate::discord_webhooks::{WebhookRow, distinct_linked_actions, load_webhooks, name_is_taken};
 use crate::hub_crumb::hub_crumb;
-use crate::integrations::BuiltinObject;
 use crate::load_notice::{LoadNotice, NoticeWidth, load_notice};
 use crate::navigation::NavRequested;
 use crate::repo_failure::RepoFailure;
@@ -39,6 +38,7 @@ use crate::runtime_event;
 use forge_components::ActivePresentation;
 use forge_components::PushToast;
 use forge_components::{grow_cell, stat_card};
+use forge_host::integrations::BuiltinObject;
 use forge_runtime::IntegrationSlot;
 
 const SCROLL_PAD_X: Pixels = px(22.0);

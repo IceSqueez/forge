@@ -2700,6 +2700,7 @@ dependencies = [
  "forge-discord",
  "forge-donatello",
  "forge-events",
+ "forge-host",
  "forge-hotkey",
  "forge-midi",
  "forge-monobank",
@@ -2821,6 +2822,47 @@ dependencies = [
  "time",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "forge-host"
+version = "0.6.3"
+dependencies = [
+ "async-trait",
+ "forge-audio",
+ "forge-discord",
+ "forge-donatello",
+ "forge-events",
+ "forge-hotkey",
+ "forge-midi",
+ "forge-monobank",
+ "forge-net",
+ "forge-obs",
+ "forge-overlay",
+ "forge-platform-core",
+ "forge-platform-kick",
+ "forge-platform-twitch",
+ "forge-platform-youtube",
+ "forge-registry",
+ "forge-runtime",
+ "forge-script",
+ "forge-server",
+ "forge-soundboard",
+ "forge-speak-queue",
+ "forge-speech-types",
+ "forge-storage",
+ "forge-storage-sqlite",
+ "forge-tts-cloud",
+ "forge-tts-core",
+ "forge-tts-pipeline",
+ "forge-types",
+ "forge-vtube",
+ "futures-util",
+ "serde_json",
+ "time",
+ "tokio",
+ "tracing",
+ "ulid",
 ]
 
 [[package]]

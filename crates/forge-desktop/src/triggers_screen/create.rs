@@ -665,8 +665,8 @@ mod tests {
         Fixture, GREETING_FIELD, KIND, REFUSED_GREETING, refusing_registry,
     };
     use super::*;
-    use crate::integrations::BuiltinRegistry;
     use crate::test_support::{error_toasts, pump_until};
+    use forge_host::integrations::BuiltinRegistry;
 
     fn fill_form(cx: &mut TestAppContext, greeting: &str) -> Fixture {
         crate::i18n::install_language(forge_storage::Language::En);

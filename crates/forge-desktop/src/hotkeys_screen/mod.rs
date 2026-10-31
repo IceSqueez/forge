@@ -19,7 +19,6 @@ use crate::async_bridge::{self, BridgeFlow, Loadable, SnapshotWriter, WriteOutco
 use crate::combo_capture::ComboCapture;
 use crate::combo_conflict::{ClipKey, clip_keys, combo_holder};
 use crate::hub_crumb::hub_crumb;
-use crate::integrations::BuiltinObject;
 use crate::navigable_list::ListCursor;
 use crate::navigation::NavRequested;
 use crate::repo_failure::RepoFailure;
@@ -27,6 +26,7 @@ use crate::runtime_event::{self, RuntimeEvent};
 use crate::shortcut_overrides::{ShortcutOverrides, load_overrides, save_overrides};
 use forge_components::ActivePresentation;
 use forge_components::PushToast;
+use forge_host::integrations::BuiltinObject;
 use forge_hotkey::HotkeyReconciler;
 use forge_hotkey::{BindingRow, HotkeyEdge, conflict_count, load_bindings, registered_combos};
 use forge_runtime::IntegrationSlot;

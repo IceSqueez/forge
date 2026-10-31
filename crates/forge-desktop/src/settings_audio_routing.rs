@@ -14,15 +14,15 @@ use gpui::{
 };
 
 use crate::async_bridge::{self, Loadable};
-use crate::audio_router::{AppliedRoutes, AudioRouter};
-use crate::audio_routes::{
-    AudioDomain, RouteFallback, RoutePlan, load_audio_routes, plan_route, resolve_destination,
-    set_destination, set_route,
-};
 use crate::load_notice::{LoadNotice, NoticeWidth, load_notice};
 use crate::repo_failure::RepoFailure;
 use crate::settings_audio::test_tone;
 use forge_components::ActivePresentation;
+use forge_host::audio_router::{AppliedRoutes, AudioRouter};
+use forge_host::audio_routes::{
+    AudioDomain, RouteFallback, RoutePlan, load_audio_routes, plan_route, resolve_destination,
+    set_destination, set_route,
+};
 
 const EVERY_ROUTE: [(AudioRoute, &str); 3] = [
     (AudioRoute::Local, "settings_audio_route_local"),
@@ -754,9 +754,9 @@ mod tests {
     use forge_storage::settings::core_settings::AUDIO_OVERLAY_ID;
     use forge_storage::{Language, MockOverlayRepo, StorageError};
 
-    use crate::audio_router::AudioRouterParts;
-    use crate::audio_routes::SPEECH_ROUTE;
-    use crate::routed_sink::RoutedSink;
+    use forge_host::audio_router::AudioRouterParts;
+    use forge_host::audio_routes::SPEECH_ROUTE;
+    use forge_host::routed_sink::RoutedSink;
     use forge_soundboard::SoundboardPlayer;
 
     use super::*;

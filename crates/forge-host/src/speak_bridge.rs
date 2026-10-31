@@ -30,12 +30,12 @@ fn queue_identity(viewer: Option<SpeakingViewer>) -> (String, String) {
     }
 }
 
-pub(crate) struct SpeakBridge {
+pub struct SpeakBridge {
     handle: Arc<SpeakQueueHandle>,
 }
 
 impl SpeakBridge {
-    pub(crate) fn new(handle: Arc<SpeakQueueHandle>) -> Self {
+    pub fn new(handle: Arc<SpeakQueueHandle>) -> Self {
         Self { handle }
     }
 

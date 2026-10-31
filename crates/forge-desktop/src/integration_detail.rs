@@ -20,11 +20,9 @@ use crate::hub_crumb::hub_crumb;
 use crate::in_flight_steps::InFlightSteps;
 use crate::integration_catalog::declaration_of;
 use crate::integration_quick_action_modal::QuickActionModal;
-use crate::integrations::{BuiltinObject, ObsInstallSeed, VTubeInstallSeed};
 use crate::navigation::NavRequested;
 use crate::obs_credentials_form::ObsConnected;
 use crate::obs_settings_modal::ObsSettingsModal;
-use crate::platform_credentials::PlatformCredentialManagers;
 use crate::platforms::PlatformConnectivity;
 use crate::run_history_modal::RunHistoryModal;
 use crate::twitch_bot_section::TwitchBotSection;
@@ -33,6 +31,8 @@ use forge_components::{
     ActivePresentation, BreadcrumbCrumb, Confirm, SearchState, page_frame, scaled, tr,
 };
 use forge_events::EventPublisher;
+use forge_host::integrations::{BuiltinObject, ObsInstallSeed, VTubeInstallSeed};
+use forge_host::platform_credentials::PlatformCredentialManagers;
 use forge_obs::ObsClient;
 use forge_platform_core::{
     BuiltinCollections, BuiltinContent, BuiltinControl, BuiltinHealth, BuiltinOptionSource,

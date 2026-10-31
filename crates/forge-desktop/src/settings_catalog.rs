@@ -3,17 +3,17 @@ use forge_storage::SettingPortability::Portable;
 use forge_storage::settings::DEFAULT_NOTIFICATIONS_SCHEDULED_BACKUP_FAILURE_OS_NOTICE;
 use forge_storage::{Flag, OptionalText, Setting, SettingSpec, SettingsCatalog};
 
-use crate::audio_routes::{CLIPS_ROUTE, SPEECH_ROUTE};
-use crate::donation_services::DONATELLO_POLL_INTERVAL_SECS;
 use crate::first_run::FIRST_RUN_COMPLETED;
 use crate::midi_screen::MIDI_KNOWN_DEVICES;
-use crate::obs_credentials_form::{OBS_AUTO_RECONNECT, OBS_CONNECT_ON_LAUNCH};
 use crate::shortcut_overrides::KEYBOARD_SHORTCUTS;
 use crate::stay_awake::STAY_AWAKE;
 use crate::update_leftover::LEFTOVER_INSTALL_NOTICED;
 use crate::update_report::ROLLED_BACK_VERSION;
-use crate::vtube_connect_form::{VTUBE_AUTO_RECONNECT, VTUBE_CONNECT_ON_LAUNCH};
 use crate::window_placement::WINDOW_PLACEMENT;
+use forge_donatello::DONATELLO_POLL_INTERVAL_SECS;
+use forge_host::audio_routes::{CLIPS_ROUTE, SPEECH_ROUTE};
+use forge_obs::{OBS_AUTO_RECONNECT, OBS_CONNECT_ON_LAUNCH};
+use forge_vtube::{VTUBE_AUTO_RECONNECT, VTUBE_CONNECT_ON_LAUNCH};
 
 pub(crate) const DENSITY: Setting<OptionalText> =
     Setting::new("density", OptionalText, Portable, Verbatim);

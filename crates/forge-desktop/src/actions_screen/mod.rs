@@ -2,7 +2,6 @@ use crate::async_bridge::{self, Loadable};
 use crate::collection_options::{ChoiceOptions, CollectionChoiceField};
 use crate::config_form::CollectionChoices;
 use crate::integration_switch::SwitchWatch;
-use crate::integrations::BuiltinRegistry;
 use crate::navigable_list::ListCursor;
 use crate::navigation::NavRequested;
 use crate::navigation::Screen;
@@ -21,6 +20,7 @@ use forge_components::{
     OverlayPosition, SearchState, TextArea, TextInput, ToastKind, fmt_display_relative, fmt_number,
     icon, overlay, page_frame, tr,
 };
+use forge_host::integrations::BuiltinRegistry;
 use forge_overlay::OverlayKindRegistry;
 use forge_registry::{SubActionRegistry, TriggerCategory, TriggerRegistry};
 use forge_runtime::translate_legacy_time_steps;

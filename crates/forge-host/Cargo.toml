@@ -1,0 +1,74 @@
+[package]
+name = "forge-host"
+description = "Composition root that assembles the Forge runtime without any GUI dependency"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[features]
+test-support = [
+  "dep:forge-storage-sqlite",
+  "dep:forge-tts-pipeline",
+  "forge-storage-sqlite/test-support",
+  "forge-net/test-support",
+  "forge-runtime/test-support",
+  "forge-storage/test-mocks",
+  "forge-storage/settings-test-support",
+]
+
+[dependencies]
+async-trait = { workspace = true }
+forge-audio = { path = "../forge-audio" }
+forge-discord = { path = "../forge-discord" }
+forge-donatello = { path = "../forge-donatello" }
+forge-events = { path = "../forge-events" }
+forge-hotkey = { path = "../forge-hotkey" }
+forge-midi = { path = "../forge-midi" }
+forge-monobank = { path = "../forge-monobank" }
+forge-net = { path = "../forge-net" }
+forge-obs = { path = "../forge-obs" }
+forge-overlay = { path = "../forge-overlay" }
+forge-platform-core = { path = "../forge-platform-core" }
+forge-platform-kick = { path = "../forge-platform-kick" }
+forge-platform-twitch = { path = "../forge-platform-twitch" }
+forge-platform-youtube = { path = "../forge-platform-youtube" }
+forge-registry = { path = "../forge-registry" }
+forge-runtime = { path = "../forge-runtime" }
+forge-script = { path = "../forge-script" }
+forge-server = { path = "../forge-server" }
+forge-soundboard = { path = "../forge-soundboard" }
+forge-speak-queue = { path = "../forge-speak-queue" }
+forge-speech-types = { path = "../forge-speech-types" }
+forge-storage = { path = "../forge-storage" }
+forge-storage-sqlite = { path = "../forge-storage-sqlite", optional = true }
+forge-tts-cloud = { path = "../forge-tts-cloud", features = [
+  "azure",
+  "elevenlabs",
+  "openai",
+  "polly",
+] }
+forge-tts-core = { path = "../forge-tts-core" }
+forge-tts-pipeline = { path = "../forge-tts-pipeline", optional = true }
+forge-types = { path = "../forge-types" }
+forge-vtube = { path = "../forge-vtube" }
+futures-util = { workspace = true }
+serde_json = { workspace = true }
+time = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+ulid = { workspace = true }
+
+[dev-dependencies]
+forge-hotkey = { path = "../forge-hotkey", features = ["testing"] }
+forge-net = { path = "../forge-net", features = ["test-support"] }
+forge-storage-sqlite = { path = "../forge-storage-sqlite", features = ["test-support"] }
+forge-runtime = { path = "../forge-runtime", features = ["test-support"] }
+forge-storage = { path = "../forge-storage", features = ["test-mocks", "settings-test-support"] }
+forge-tts-pipeline = { path = "../forge-tts-pipeline" }
+tokio = { workspace = true, features = ["test-util"] }
+
+[lints]
+workspace = true

@@ -46,7 +46,7 @@ mod tests {
 
     use super::*;
     use crate::i18n::install_language;
-    use crate::integrations::tests::every_registry_entry;
+    use crate::test_support::every_registry_entry;
     use crate::test_support::{Declares, StubTrigger};
 
     const EN_FTL: &str = include_str!("../locales/en/main.ftl");

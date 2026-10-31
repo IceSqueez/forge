@@ -1,4 +1,7 @@
 use forge_components::tr;
+use forge_host::integration_factories::{
+    KICK_EVENT_RELAY, TWITCH_EVENT_RELAY, YOUTUBE_EVENT_RELAY,
+};
 use forge_runtime::delivery::{
     CHAT_HISTORY, EVENT_LOG, EVENT_TRAIL, LATEST_OVERLAYS, LATEST_VALUES, RUN_HISTORY,
     TRIGGER_EVALUATOR, UNNAMED_OBSERVER, VIEWER_TRACKER,
@@ -9,9 +12,6 @@ use crate::chat_feed_bridge::UI_CHAT_FEED;
 
 pub(crate) const UI_EVENTS: &str = "ui_events";
 const UI_CHAT_DISPLAY: &str = "ui_chat_display";
-pub(crate) const TWITCH_EVENT_RELAY: &str = "twitch_event_relay";
-pub(crate) const YOUTUBE_EVENT_RELAY: &str = "youtube_event_relay";
-pub(crate) const KICK_EVENT_RELAY: &str = "kick_event_relay";
 
 #[derive(Default)]
 pub(crate) struct EventLoss {

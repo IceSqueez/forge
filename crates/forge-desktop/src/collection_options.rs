@@ -7,7 +7,7 @@ use forge_registry::FormField;
 use forge_types::IntegrationId;
 use gpui::{Context, Task};
 
-use crate::integrations::BuiltinRegistry;
+use forge_host::integrations::BuiltinRegistry;
 
 const OPTIONS_PREFIX: &str = "collections.";
 const MANAGEABLE_SUFFIX: &str = ".manageable";

@@ -28,8 +28,8 @@ use tempfile::TempDir;
 use time::OffsetDateTime;
 use ulid::Ulid;
 
-use crate::integrations::tests::every_registry_entry;
 use crate::test_support::STORAGE_KEY;
+use crate::test_support::every_registry_entry;
 
 pub(super) const QUEUE_NAME: &str = "Alerts queue";
 pub(super) const SCRIPT_NAME: &str = "greet";

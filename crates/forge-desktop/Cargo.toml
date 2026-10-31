@@ -22,12 +22,13 @@ forge-components = { path = "../forge-components" }
 forge-discord = { path = "../forge-discord" }
 forge-donatello = { path = "../forge-donatello" }
 forge-events = { path = "../forge-events" }
+forge-host = { path = "../forge-host" }
 forge-hotkey = { path = "../forge-hotkey" }
 forge-midi = { path = "../forge-midi" }
 forge-monobank = { path = "../forge-monobank" }
+forge-net = { path = "../forge-net" }
 forge-obs = { path = "../forge-obs" }
 forge-overlay = { path = "../forge-overlay" }
-forge-net = { path = "../forge-net" }
 forge-platform-core = { path = "../forge-platform-core" }
 forge-platform-kick = { path = "../forge-platform-kick" }
 forge-platform-twitch = { path = "../forge-platform-twitch" }
@@ -80,11 +81,11 @@ ulid = { workspace = true }
 unic-langid = { workspace = true }
 
 [dev-dependencies]
-forge-net = { path = "../forge-net", features = ["test-support"] }
 forge-runtime = { path = "../forge-runtime", features = ["test-support"] }
 flate2 = { workspace = true }
 fluent = { workspace = true }
 forge-hotkey = { path = "../forge-hotkey", features = ["testing"] }
+forge-host = { path = "../forge-host", features = ["test-support"] }
 forge-storage-sqlite = { path = "../forge-storage-sqlite", features = ["settings-test-support", "test-support"] }
 forge-storage = { path = "../forge-storage", features = ["test-mocks", "settings-test-support"] }
 gpui = { workspace = true, features = ["test-support"] }

@@ -1,6 +1,7 @@
 mod catalog;
 mod client;
 mod connect_failure;
+mod connect_settings;
 pub mod credentials;
 #[cfg(test)]
 #[path = "../../forge-platform-core/test_support/emitted_codes.rs"]
@@ -26,6 +27,7 @@ mod triggers;
 pub mod vocabulary;
 
 pub use client::{EVENT_BUFFER_CAPACITY, ObsClient, parse_endpoint};
+pub use connect_settings::{OBS_AUTO_RECONNECT, OBS_CONNECT_ON_LAUNCH};
 pub use error::ObsError;
 pub use integration::OBS_INTEGRATION;
 pub use probe::probe_connection;

@@ -9,7 +9,7 @@ use forge_registry::{
 use forge_registry::{LOCAL_FILE_NAMESPACE, OVERLAY_ICON_OPTIONS_KEY, OVERLAY_SOUND_OPTIONS_KEY};
 use forge_types::{Action, ActionId, ExecutionMode, QueueId, SubActionStep, Variant};
 
-use crate::integrations::tests::every_registry_entry;
+use crate::test_support::every_registry_entry;
 
 type Config = BTreeMap<String, Variant>;
 

@@ -24,9 +24,9 @@ use gpui::{
 use tokio_util::sync::CancellationToken;
 
 use super::{ConnectFlow, status_dot};
-use crate::integrations::BuiltinObject;
 use crate::start_failure::start_failure_text;
 use crate::user_text::resolve_message;
+use forge_host::integrations::BuiltinObject;
 use forge_runtime::{IntegrationSlot, IntegrationStartError};
 
 pub(super) type YoutubeFlowHandle =

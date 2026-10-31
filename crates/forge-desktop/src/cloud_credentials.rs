@@ -26,10 +26,10 @@ use gpui::{
 };
 
 use crate::async_bridge::{self, Generation};
-use crate::cloud_tts_boot;
 use crate::repo_failure::RepoFailure;
 use forge_components::ActivePresentation;
 use forge_components::PushToast;
+use forge_host::cloud_tts_boot;
 
 const VALUE_BOX_GAP: Pixels = px(8.0);
 const NOTE_GAP: Pixels = px(5.0);

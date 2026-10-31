@@ -4,6 +4,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use forge_events::Event;
 use forge_net::{Gateway, RateLimiter, TokenBucketRateLimiter};
+use forge_obs::{OBS_AUTO_RECONNECT, OBS_CONNECT_ON_LAUNCH};
 use forge_platform_core::{ChatPlatform, EndpointSurface, PlatformEndpoints, SectionIcon};
 use forge_registry::SubActionRegistry;
 use forge_runtime::{
@@ -15,9 +16,9 @@ use forge_storage::{
     TriggerInstanceRepo, has_credentials_for, read_setting, read_setting_or_default,
 };
 use forge_types::{IntegrationId, PlatformId};
+use forge_vtube::{VTUBE_AUTO_RECONNECT, VTUBE_CONNECT_ON_LAUNCH};
 use tokio::sync::mpsc;
 
-use crate::event_loss::{KICK_EVENT_RELAY, TWITCH_EVENT_RELAY, YOUTUBE_EVENT_RELAY};
 use crate::integration_start_errors::{
     hotkey_start_error, kick_start_error, midi_start_error, twitch_start_error, youtube_start_error,
 };
@@ -25,12 +26,14 @@ use crate::integrations::{
     BuiltinObject, ObsInstallSeed, VTubeInstallSeed, creds_of, kick_builtin_object, publisher,
     spawn_connect, spawn_event_bridge, twitch_builtin_object, youtube_builtin_object,
 };
-use crate::obs_credentials_form::{OBS_AUTO_RECONNECT, OBS_CONNECT_ON_LAUNCH};
 use crate::platform_identities::OAuthClientIdentity;
-use crate::vtube_connect_form::{VTUBE_AUTO_RECONNECT, VTUBE_CONNECT_ON_LAUNCH};
 use forge_hotkey::HotkeyReconciler;
 use forge_hotkey::bound_hotkey_combos;
 use forge_hotkey::clip_bindings_of;
+
+pub const TWITCH_EVENT_RELAY: &str = "twitch_event_relay";
+pub const YOUTUBE_EVENT_RELAY: &str = "youtube_event_relay";
+pub const KICK_EVENT_RELAY: &str = "kick_event_relay";
 
 const CONNECT_GUARD: Duration = Duration::from_secs(5);
 const KICK_POLLER_QUEUE_CAPACITY: usize = 256;
@@ -859,7 +862,7 @@ mod tests {
     use forge_types::{PermissionRung, PlatformScope, TriggerInstance, TriggerInstanceId, Variant};
 
     use super::*;
-    use crate::start_failure::StartRemedy;
+    use forge_runtime::StartFailureCategory;
 
     fn hotkey_factory(instances: Vec<TriggerInstance>) -> HotkeyFactory {
         let mut triggers = MockTriggerInstanceRepo::new();
@@ -933,10 +936,10 @@ mod tests {
         };
 
         assert_eq!(
-            (error.message().code().clone(), StartRemedy::of(&error)),
+            (error.message().code().clone(), error.category()),
             (
                 forge_platform_twitch::vocabulary::messages::STORED_SIGN_IN_UNREADABLE,
-                StartRemedy::SignIn
+                StartFailureCategory::Credentials
             )
         );
     }

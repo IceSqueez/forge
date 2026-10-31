@@ -7,10 +7,9 @@ use forge_storage::{CredentialsRepo, SettingsRepo, has_credentials_for, write_se
 use gpui::{AppContext as _, Context, Entity, Subscription, Window, px};
 
 use crate::async_bridge::{self, ErrorSink};
-use crate::donation_services::{
-    DONATELLO_POLL_INTERVAL_SECS, DonationService, stored_donatello_poll_interval,
-};
 use forge_components::ActivePresentation;
+use forge_donatello::DONATELLO_POLL_INTERVAL_SECS;
+use forge_host::donation_services::{DonationService, stored_donatello_poll_interval};
 
 mod problem;
 mod render;

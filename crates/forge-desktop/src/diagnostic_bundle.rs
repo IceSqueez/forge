@@ -15,8 +15,8 @@ use forge_types::STAMP;
 use forge_types::{INTEGRATION_DISABLED, LogLevel, SCRIPT_LOG_TARGET};
 use time::OffsetDateTime;
 
-use crate::integrations::BuiltinRegistry;
 use crate::log_archive;
+use forge_host::integrations::BuiltinRegistry;
 
 pub(crate) const RUN_HISTORY_LIMIT: u32 = 25;
 
@@ -469,7 +469,7 @@ mod tests {
     };
 
     use super::*;
-    use crate::integrations::BuiltinObject;
+    use forge_host::integrations::BuiltinObject;
 
     const SECRET: &str = "nova_the_broadcaster";
 

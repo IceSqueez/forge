@@ -47,7 +47,7 @@ mod tests {
 
     use super::*;
     use crate::i18n::install_language;
-    use crate::integrations::tests::every_registry_entry;
+    use crate::test_support::every_registry_entry;
 
     const LANGUAGES: [Language; 2] = [Language::En, Language::Uk];
     const DASHES: [char; 4] = ['\u{2014}', '\u{2013}', '\u{2012}', '\u{2015}'];

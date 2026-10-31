@@ -7,8 +7,8 @@ use gpui::Context;
 
 use super::OverlaysView;
 use crate::async_bridge;
-use crate::audio_routes::{AudioDomain, load_audio_routes, set_destination, set_route};
 use crate::repo_failure::RepoFailure;
+use forge_host::audio_routes::{AudioDomain, load_audio_routes, set_destination, set_route};
 
 impl OverlaysView {
     pub(super) fn load_receiver(&mut self, cx: &mut Context<Self>) {
@@ -140,8 +140,8 @@ mod tests {
     use forge_storage::settings::core_settings::AUDIO_OVERLAY_ID;
 
     use super::*;
-    use crate::audio_routes::{CLIPS_ROUTE, SPEECH_ROUTE};
     use crate::test_support::test_backend;
+    use forge_host::audio_routes::{CLIPS_ROUTE, SPEECH_ROUTE};
 
     const RECEIVER: &str = "stage-audio";
 

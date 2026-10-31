@@ -2,8 +2,8 @@ use forge_platform_core::ConnectionState;
 use forge_types::IntegrationId;
 
 use crate::home_stats::Integration;
-use crate::integrations::BuiltinRegistry;
 use crate::runtime_event::{ObsConnection, RuntimeEvent};
+use forge_host::integrations::BuiltinRegistry;
 
 const ROSTER: [Integration; 5] = [
     Integration::Twitch,

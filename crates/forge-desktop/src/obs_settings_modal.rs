@@ -11,9 +11,9 @@ use gpui::{
     ClickEvent, Context, Entity, EventEmitter, Pixels, Subscription, Window, div, prelude::*, px,
 };
 
-use crate::integrations::ObsInstallSeed;
 use crate::obs_credentials_form::{ObsConnected, ObsCredentialsForm, ObsSubmit};
 use forge_components::ActivePresentation;
+use forge_host::integrations::ObsInstallSeed;
 
 const MODAL_WIDTH: Pixels = px(460.0);
 const FOOTER_GAP: Pixels = px(12.0);

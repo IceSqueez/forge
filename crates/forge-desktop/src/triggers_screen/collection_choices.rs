@@ -11,7 +11,6 @@ use crate::collection_options::{
     ChoiceOptions, CollectionSource, distinct_sources, load_collection_options,
     watch_collection_revisions,
 };
-use crate::integrations::BuiltinRegistry;
 use crate::obs_catalog_options::{
     ObsCatalogField, distinct_obs_fields, live_obs_client, load_obs_catalog_options,
     watch_obs_catalog,
@@ -20,6 +19,7 @@ use crate::vtube_catalog_options::{
     VTubeCatalogField, current_vtube_catalog_options, distinct_vtube_fields, live_vtube_client,
     watch_vtube_catalog,
 };
+use forge_host::integrations::BuiltinRegistry;
 
 impl TriggersRegistryView {
     #[must_use]

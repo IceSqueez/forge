@@ -309,7 +309,7 @@ mod tests {
             let mut sub_actions = SubActionRegistry::new();
             sub_actions
                 .register(Box::new(forge_soundboard::PlaySoundRunner::new(Arc::new(
-                    crate::integrations::tests::SilentSoundboard,
+                    forge_host::test_support::SilentSoundboard,
                 ))))
                 .unwrap();
             let saves = Arc::new(SavedActions::default());

@@ -38,7 +38,6 @@ use crate::integration_disable_modal::{DisablePrompt, render_disable_modal};
 use crate::integration_failed::LiveDetailRequested;
 use crate::integration_lifecycle::{CardStatus, IntegrationLifecycle};
 use crate::integration_switch::category_members;
-use crate::integrations::{BuiltinObject, BuiltinRegistry, ObsInstallSeed, VTubeInstallSeed};
 use crate::navigation::NavRequested;
 use crate::navigation::Screen;
 use crate::platforms::PlatformConnectivity;
@@ -46,6 +45,7 @@ use crate::start_failure::{StartRemedy, start_failure_text, start_failure_toolti
 use crate::user_text::resolve_message;
 use forge_components::ActivePresentation;
 use forge_components::PushToast;
+use forge_host::integrations::{BuiltinObject, BuiltinRegistry, ObsInstallSeed, VTubeInstallSeed};
 use forge_runtime::{IntegrationSupervisor, LifecycleState};
 
 mod welcome;

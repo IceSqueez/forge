@@ -941,7 +941,7 @@ mod sign_out {
                 as Arc<dyn forge_runtime::IntegrationFactory<BuiltinObject>>],
             settings as Arc<dyn SettingsRepo>,
             forge_runtime::IntegrationGate::new(),
-            Arc::new(crate::integrations::BuiltinRegistry::default()),
+            Arc::new(forge_host::integrations::BuiltinRegistry::default()),
             forge_runtime::spawn_live_viewer_aggregator(&forge_net::TaskOwner::new()),
         );
         let slot = supervisor.slot(&IntegrationId::new("kick")).unwrap();
@@ -964,7 +964,7 @@ mod sign_out {
                 delete_fails,
             });
             let managers = PlatformCredentialManagers {
-                kick: Some(crate::platform_credentials::tests::kick_manager_over(
+                kick: Some(forge_host::test_support::kick_manager_over(
                     managed as Arc<dyn CredentialsRepo>,
                 )),
                 ..PlatformCredentialManagers::default()
@@ -998,5 +998,179 @@ mod sign_out {
                 "delete_fails={delete_fails}"
             );
         }
+    }
+}
+
+mod detail_lifetime {
+    use std::sync::Mutex;
+
+    use forge_components::{Density, ThemeId};
+    use forge_platform_core::{
+        BuiltinContent, BuiltinHealth, BuiltinStatus, CapabilityFlags, ConnectionState,
+        DetailSection, HeaderAction, HealthDelta, HealthMetric, HealthMetricId, HealthStream,
+        HealthValue, QuickAction, QuickActions, SectionIcon,
+    };
+    use forge_runtime::{ActionCancelRegistry, spawn_action_engine, spawn_live_viewer_aggregator};
+    use forge_types::{IntegrationId, MessageCode};
+    use gpui::{AppContext as _, TestAppContext};
+
+    use crate::integration_detail::IntegrationDetail;
+    use crate::platforms::PlatformConnectivity;
+    use crate::test_support::{StubActions, StubEventLog, StubHistory, runtime, test_backend};
+    use forge_components::Presentation;
+    use forge_host::integrations::{BuiltinObject, ObsInstallSeed, VTubeInstallSeed};
+    use forge_registry::{SubActionRegistry, TriggerRegistry};
+    use forge_runtime::EventBus;
+    use forge_storage::{CredentialsRepo, SettingsRepo};
+    use std::sync::Arc;
+    use std::time::Duration;
+    use tokio::sync::mpsc;
+
+    struct HeldStreamBuiltin {
+        id: IntegrationId,
+        deltas: Mutex<Option<mpsc::UnboundedReceiver<HealthDelta>>>,
+    }
+
+    impl BuiltinStatus for HeldStreamBuiltin {
+        fn id(&self) -> &IntegrationId {
+            &self.id
+        }
+        fn display_name(&self) -> &str {
+            "OBS"
+        }
+        fn version(&self) -> Option<String> {
+            None
+        }
+        fn connection(&self) -> ConnectionState {
+            ConnectionState::Connected
+        }
+        fn uptime(&self) -> Option<Duration> {
+            None
+        }
+        fn endpoint(&self) -> Option<forge_types::UserText> {
+            None
+        }
+        fn capability_flags(&self) -> CapabilityFlags {
+            CapabilityFlags {
+                limited: false,
+                label: None,
+            }
+        }
+        fn header_actions(&self) -> Vec<HeaderAction> {
+            Vec::new()
+        }
+    }
+
+    const STUB_METRIC_IDS: [HealthMetricId; 4] = [
+        HealthMetricId::new(MessageCode::from_static("stub", "metric0")),
+        HealthMetricId::new(MessageCode::from_static("stub", "metric1")),
+        HealthMetricId::new(MessageCode::from_static("stub", "metric2")),
+        HealthMetricId::new(MessageCode::from_static("stub", "metric3")),
+    ];
+
+    impl BuiltinHealth for HeldStreamBuiltin {
+        fn metrics(&self) -> [HealthMetric; 4] {
+            std::array::from_fn(|i| HealthMetric {
+                id: STUB_METRIC_IDS[i].clone(),
+                value: HealthValue::Text {
+                    primary: forge_types::VerbatimText::new("").into(),
+                    secondary: None,
+                },
+            })
+        }
+        fn stream(&self) -> HealthStream {
+            let rx = self.deltas.lock().unwrap().take().unwrap();
+            Box::pin(futures_util::stream::unfold(rx, |mut rx| async move {
+                rx.recv().await.map(|delta| (delta, rx))
+            }))
+        }
+    }
+
+    impl BuiltinContent for HeldStreamBuiltin {
+        fn sections(&self) -> Vec<DetailSection> {
+            Vec::new()
+        }
+    }
+
+    impl QuickActions for HeldStreamBuiltin {
+        fn actions(&self) -> Vec<QuickAction> {
+            Vec::new()
+        }
+    }
+
+    #[gpui::test]
+    fn closing_an_integration_screen_ends_the_task_holding_its_health_stream(
+        cx: &mut TestAppContext,
+    ) {
+        cx.update(|cx| {
+            cx.set_global(Presentation::new(ThemeId::ForgeDefault, Density::Cozy));
+        });
+        let rt = runtime();
+        let _enter = rt.enter();
+        let (deltas_tx, deltas_rx) = mpsc::unbounded_channel();
+        let probe = Arc::new(HeldStreamBuiltin {
+            id: IntegrationId::new("obs"),
+            deltas: Mutex::new(Some(deltas_rx)),
+        });
+        let object = BuiltinObject {
+            icon: SectionIcon::new("bug"),
+            status: probe.clone(),
+            health: probe.clone(),
+            content: probe.clone(),
+            quick: probe,
+            control: None,
+            collections: None,
+            option_source: None,
+            obs_client: None,
+            vtube_client: None,
+            follow: None,
+            ban_list: None,
+        };
+        let bus = EventBus::new(Arc::new(StubEventLog));
+        let engine = spawn_action_engine(
+            Arc::clone(&bus),
+            crate::test_support::stub_catalog(),
+            Arc::new(StubActions),
+            Arc::new(StubHistory),
+            Arc::new(SubActionRegistry::new()),
+            Arc::new(ActionCancelRegistry::new()),
+        );
+        let (backend, _writes) = test_backend();
+        let connectivity = cx.new(|_| PlatformConnectivity::new());
+        let view = cx.new(|cx| {
+            IntegrationDetail::new(
+                object,
+                rt.handle().clone(),
+                engine,
+                Arc::clone(&backend) as Arc<dyn CredentialsRepo>,
+                backend as Arc<dyn SettingsRepo>,
+                Arc::new(StubHistory),
+                Arc::new(TriggerRegistry::new()),
+                Arc::clone(&bus) as Arc<dyn forge_events::EventPublisher>,
+                Arc::clone(&bus),
+                spawn_live_viewer_aggregator(&forge_net::TaskOwner::new()),
+                None,
+                None,
+                None,
+                ObsInstallSeed::new(forge_obs::SwitchableObsSink::new()),
+                VTubeInstallSeed::new(forge_vtube::SwitchableVTubeSink::new()),
+                connectivity,
+                cx,
+            )
+        });
+        cx.run_until_parked();
+        assert!(
+            !deltas_tx.is_closed(),
+            "the open screen must hold its health stream"
+        );
+
+        drop(view);
+        cx.update(|_| {});
+        cx.run_until_parked();
+
+        assert!(
+            deltas_tx.is_closed(),
+            "the closed screen's health task must end without waiting for a delta"
+        );
     }
 }

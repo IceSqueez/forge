@@ -9,7 +9,7 @@ use gpui::{App, Context, Entity, IntoElement, SharedString, Subscription};
 
 use crate::integration_catalog::{declaration_of, declarations};
 use crate::integration_lifecycle::IntegrationLifecycle;
-use crate::integrations::BuiltinObject;
+use forge_host::integrations::BuiltinObject;
 use forge_runtime::IntegrationSupervisor;
 
 #[derive(Clone)]

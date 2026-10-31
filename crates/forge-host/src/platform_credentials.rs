@@ -5,14 +5,14 @@ use forge_storage::{CredentialId, CredentialsRepo};
 use forge_types::PlatformId;
 
 #[derive(Clone, Default)]
-pub(crate) struct PlatformCredentialManagers {
+pub struct PlatformCredentialManagers {
     pub twitch: Option<Arc<forge_platform_twitch::TwitchCredentialsManager>>,
     pub youtube: Option<Arc<forge_platform_youtube::YoutubeCredentialsManager>>,
     pub kick: Option<Arc<forge_platform_kick::KickCredentialsManager>>,
 }
 
 impl PlatformCredentialManagers {
-    pub(crate) async fn forget(
+    pub async fn forget(
         &self,
         platform: PlatformId,
         unmanaged: &dyn CredentialsRepo,
@@ -55,7 +55,7 @@ fn credential_key(platform: PlatformId) -> &'static str {
 }
 
 #[cfg(test)]
-pub(crate) mod tests {
+mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::sync::Mutex;
 
@@ -67,6 +67,7 @@ pub(crate) mod tests {
     use time::OffsetDateTime;
 
     use super::*;
+    use crate::test_support::kick_manager_over;
 
     const ROWS: [(PlatformId, &str); 3] = [
         (
@@ -185,27 +186,6 @@ pub(crate) mod tests {
             youtube: wired(PlatformId::YouTube).then(|| Arc::new(youtube)),
             kick: wired(PlatformId::Kick).then(|| kick_manager_over(repo)),
         }
-    }
-
-    pub(crate) fn kick_manager_over(
-        repo: Arc<dyn CredentialsRepo>,
-    ) -> Arc<forge_platform_kick::KickCredentialsManager> {
-        let endpoints = PlatformEndpoints::default();
-        Arc::new(forge_platform_kick::KickCredentialsManager::new(
-            repo,
-            forge_platform_kick::KickOAuthClient::new(
-                &endpoints,
-                forge_platform_kick::kick_oauth_gateway(&endpoints, limiter()).unwrap(),
-                "client".to_owned(),
-                forge_types::Secret::new("secret"),
-            ),
-            forge_platform_kick::kick_api_gateway(
-                &endpoints,
-                limiter(),
-                Arc::new(crate::test_support::SilentPublisher),
-            )
-            .unwrap(),
-        ))
     }
 
     fn every_row() -> BTreeSet<String> {

@@ -17,13 +17,13 @@ use crate::hub_crumb::hub_crumb;
 use crate::integration_catalog::declaration_of;
 use crate::integration_disabled::{disclaimer_block, hero_card};
 use crate::integration_lifecycle::{CardStatus, IntegrationLifecycle};
-use crate::integrations::BuiltinObject;
 use crate::integrations_hub::card_status_badge;
 use crate::navigation::NavRequested;
 use crate::navigation::Screen;
 use crate::start_failure::{StartRemedy, start_failure_text};
 use forge_components::ActivePresentation;
 use forge_components::PushToast;
+use forge_host::integrations::BuiltinObject;
 use forge_runtime::{IntegrationSlot, IntegrationStartError, LifecycleState};
 
 const BODY_PAD_V: Pixels = px(18.0);

@@ -30,12 +30,12 @@ use crate::home_stats::Integration;
 use crate::i18n::{install_language, message_in};
 use crate::integration_disabled::disclaimer_line;
 use crate::integration_lifecycle::IntegrationLifecycle;
-use crate::integrations::{BuiltinObject, BuiltinRegistry};
 use crate::test_support::{
     ClickArea, StubActions, StubEventLog, click_outside_the_list, click_until, open_under_root,
     pump, runtime, switch_lifecycle,
 };
 use crate::unavailable_builtin::unavailable_builtin;
+use forge_host::integrations::{BuiltinObject, BuiltinRegistry};
 use forge_runtime::LifecycleState;
 
 const UNBAN_KIND: &str = "twitch.moderation.unban_user";

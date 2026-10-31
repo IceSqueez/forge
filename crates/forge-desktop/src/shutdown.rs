@@ -15,8 +15,8 @@ use forge_transfer::{ScheduleState, ScheduledBackupHandle};
 use gpui::{App, Global};
 use tokio::runtime::Runtime;
 
-use crate::integrations::BuiltinObject;
 use crate::runtime_handles::RuntimeHandles;
+use forge_host::integrations::BuiltinObject;
 
 const SETTLE: Duration = Duration::from_millis(2);
 const TIMER_STOP_BUDGET: Duration = Duration::from_millis(10);
@@ -951,7 +951,9 @@ mod tests {
     }
 
     #[async_trait::async_trait]
-    impl forge_runtime::IntegrationFactory<crate::integrations::BuiltinObject> for RetiringIntegration {
+    impl forge_runtime::IntegrationFactory<forge_host::integrations::BuiltinObject>
+        for RetiringIntegration
+    {
         fn id(&self) -> forge_types::IntegrationId {
             self.id.clone()
         }
@@ -967,7 +969,7 @@ mod tests {
         async fn start(
             &self,
         ) -> Result<
-            forge_runtime::RunningIntegration<crate::integrations::BuiltinObject>,
+            forge_runtime::RunningIntegration<forge_host::integrations::BuiltinObject>,
             forge_runtime::IntegrationStartError,
         > {
             let hangs = self.teardown_hangs;
@@ -987,7 +989,7 @@ mod tests {
         settings: Arc<dyn forge_storage::SettingsRepo>,
         teardown_hangs: bool,
         on_teardown: impl Fn() + Send + Sync + 'static,
-    ) -> IntegrationSupervisor<crate::integrations::BuiltinObject> {
+    ) -> IntegrationSupervisor<forge_host::integrations::BuiltinObject> {
         let id = forge_types::IntegrationId::from_static("twitch");
         let supervisor = IntegrationSupervisor::launch(
             vec![Arc::new(RetiringIntegration {
@@ -996,11 +998,11 @@ mod tests {
                 on_teardown: Arc::new(on_teardown),
             })
                 as Arc<
-                    dyn forge_runtime::IntegrationFactory<crate::integrations::BuiltinObject>,
+                    dyn forge_runtime::IntegrationFactory<forge_host::integrations::BuiltinObject>,
                 >],
             settings,
             forge_runtime::IntegrationGate::new(),
-            Arc::new(crate::integrations::BuiltinRegistry::default()),
+            Arc::new(forge_host::integrations::BuiltinRegistry::default()),
             spawn_live_viewer_aggregator(&forge_net::TaskOwner::new()),
         );
         supervisor

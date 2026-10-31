@@ -25,7 +25,7 @@ use forge_hotkey::HotkeyReconciler;
 use forge_runtime::{IntegrationFactory, IntegrationObjects};
 
 #[derive(Clone)]
-pub(crate) struct BuiltinObject {
+pub struct BuiltinObject {
     pub icon: SectionIcon,
     pub status: Arc<dyn BuiltinStatus>,
     pub health: Arc<dyn BuiltinHealth>,
@@ -41,28 +41,28 @@ pub(crate) struct BuiltinObject {
 }
 
 #[derive(Clone, Default)]
-pub(crate) struct BuiltinRegistry {
+pub struct BuiltinRegistry {
     entries: Arc<std::sync::RwLock<HashMap<IntegrationId, BuiltinObject>>>,
 }
 
 impl BuiltinRegistry {
-    pub(crate) fn get(&self, id: &IntegrationId) -> Option<BuiltinObject> {
+    pub fn get(&self, id: &IntegrationId) -> Option<BuiltinObject> {
         let guard = self.entries.read().unwrap_or_else(|e| e.into_inner());
         guard.get(id).cloned()
     }
 
-    pub(crate) fn snapshot(&self) -> Vec<BuiltinObject> {
+    pub fn snapshot(&self) -> Vec<BuiltinObject> {
         let guard = self.entries.read().unwrap_or_else(|e| e.into_inner());
         guard.values().cloned().collect()
     }
 
-    pub(crate) fn install(&self, object: BuiltinObject) {
+    pub fn install(&self, object: BuiltinObject) {
         let id = object.status.id().clone();
         let mut guard = self.entries.write().unwrap_or_else(|e| e.into_inner());
         guard.insert(id, object);
     }
 
-    pub(crate) fn remove(&self, id: &IntegrationId) {
+    pub fn remove(&self, id: &IntegrationId) {
         let mut guard = self.entries.write().unwrap_or_else(|e| e.into_inner());
         guard.remove(id);
     }
@@ -82,7 +82,7 @@ impl IntegrationObjects<BuiltinObject> for BuiltinRegistry {
     }
 }
 
-pub(crate) struct Integrations {
+pub struct Integrations {
     pub builtins: BuiltinRegistry,
     pub factories: Vec<Arc<dyn IntegrationFactory<BuiltinObject>>>,
     pub obs_install_seed: ObsInstallSeed,
@@ -100,39 +100,39 @@ pub(crate) struct Integrations {
 }
 
 #[derive(Clone)]
-pub(crate) struct ObsInstallSeed {
+pub struct ObsInstallSeed {
     sink: Arc<forge_obs::SwitchableObsSink>,
     live: Arc<std::sync::RwLock<Option<Arc<forge_obs::ObsClient>>>>,
 }
 
 impl ObsInstallSeed {
-    pub(crate) fn new(sink: Arc<forge_obs::SwitchableObsSink>) -> Self {
+    pub fn new(sink: Arc<forge_obs::SwitchableObsSink>) -> Self {
         Self {
             sink,
             live: Arc::new(std::sync::RwLock::new(None)),
         }
     }
 
-    pub(crate) fn stream_output(&self) -> forge_obs::StreamOutputActive {
+    pub fn stream_output(&self) -> forge_obs::StreamOutputActive {
         self.sink.stream_output()
     }
 
-    pub(crate) fn stream_stats(&self) -> forge_obs::ObsStatsWatch {
+    pub fn stream_stats(&self) -> forge_obs::ObsStatsWatch {
         self.sink.stream_stats()
     }
 
-    pub(crate) fn install(&self, client: Arc<forge_obs::ObsClient>) {
+    pub fn install(&self, client: Arc<forge_obs::ObsClient>) {
         self.sink.install(Arc::clone(&client));
         let mut guard = self.live.write().unwrap_or_else(|e| e.into_inner());
         *guard = Some(client);
     }
 
-    pub(crate) fn clear(&self) {
+    pub fn clear(&self) {
         let mut guard = self.live.write().unwrap_or_else(|e| e.into_inner());
         *guard = None;
     }
 
-    pub(crate) async fn disconnect_live(&self) {
+    pub async fn disconnect_live(&self) {
         let previous = {
             let mut guard = self.live.write().unwrap_or_else(|e| e.into_inner());
             guard.take()
@@ -144,42 +144,42 @@ impl ObsInstallSeed {
         }
     }
 
-    pub(crate) fn live(&self) -> Option<Arc<forge_obs::ObsClient>> {
+    pub fn live(&self) -> Option<Arc<forge_obs::ObsClient>> {
         let guard = self.live.read().unwrap_or_else(|e| e.into_inner());
         guard.clone()
     }
 
-    pub(crate) fn connect_failure(&self) -> Option<MessageRef> {
+    pub fn connect_failure(&self) -> Option<MessageRef> {
         self.live()?.connect_failure()
     }
 }
 
 #[derive(Clone)]
-pub(crate) struct VTubeInstallSeed {
+pub struct VTubeInstallSeed {
     sink: Arc<forge_vtube::SwitchableVTubeSink>,
     live: Arc<std::sync::RwLock<Option<Arc<forge_vtube::VTubeClient>>>>,
 }
 
 impl VTubeInstallSeed {
-    pub(crate) fn new(sink: Arc<forge_vtube::SwitchableVTubeSink>) -> Self {
+    pub fn new(sink: Arc<forge_vtube::SwitchableVTubeSink>) -> Self {
         Self {
             sink,
             live: Arc::new(std::sync::RwLock::new(None)),
         }
     }
 
-    pub(crate) fn install(&self, client: Arc<forge_vtube::VTubeClient>) {
+    pub fn install(&self, client: Arc<forge_vtube::VTubeClient>) {
         self.sink.install(Arc::clone(&client));
         let mut guard = self.live.write().unwrap_or_else(|e| e.into_inner());
         *guard = Some(client);
     }
 
-    pub(crate) fn clear(&self) {
+    pub fn clear(&self) {
         let mut guard = self.live.write().unwrap_or_else(|e| e.into_inner());
         *guard = None;
     }
 
-    pub(crate) async fn disconnect_live(&self) {
+    pub async fn disconnect_live(&self) {
         let previous = {
             let mut guard = self.live.write().unwrap_or_else(|e| e.into_inner());
             guard.take()
@@ -191,17 +191,17 @@ impl VTubeInstallSeed {
         }
     }
 
-    pub(crate) fn live(&self) -> Option<Arc<forge_vtube::VTubeClient>> {
+    pub fn live(&self) -> Option<Arc<forge_vtube::VTubeClient>> {
         let guard = self.live.read().unwrap_or_else(|e| e.into_inner());
         guard.clone()
     }
 
-    pub(crate) fn connect_failure(&self) -> Option<MessageRef> {
+    pub fn connect_failure(&self) -> Option<MessageRef> {
         self.live()?.connect_failure()
     }
 }
 
-pub(crate) fn vtube_builtin_object(client: Arc<forge_vtube::VTubeClient>) -> BuiltinObject {
+pub fn vtube_builtin_object(client: Arc<forge_vtube::VTubeClient>) -> BuiltinObject {
     BuiltinObject {
         icon: SectionIcon::new("mood-smile"),
         status: client.clone(),
@@ -218,7 +218,7 @@ pub(crate) fn vtube_builtin_object(client: Arc<forge_vtube::VTubeClient>) -> Bui
     }
 }
 
-pub(crate) fn obs_builtin_object(client: Arc<forge_obs::ObsClient>) -> BuiltinObject {
+pub fn obs_builtin_object(client: Arc<forge_obs::ObsClient>) -> BuiltinObject {
     BuiltinObject {
         icon: SectionIcon::new("broadcast"),
         status: client.clone(),
@@ -235,7 +235,7 @@ pub(crate) fn obs_builtin_object(client: Arc<forge_obs::ObsClient>) -> BuiltinOb
     }
 }
 
-pub(crate) fn twitch_builtin_object(
+pub fn twitch_builtin_object(
     bundle: Arc<forge_platform_twitch::TwitchIntegrationBundle>,
 ) -> BuiltinObject {
     BuiltinObject {
@@ -254,7 +254,7 @@ pub(crate) fn twitch_builtin_object(
     }
 }
 
-pub(crate) fn youtube_builtin_object(
+pub fn youtube_builtin_object(
     bundle: Arc<forge_platform_youtube::YoutubeIntegrationBundle>,
 ) -> BuiltinObject {
     BuiltinObject {
@@ -273,7 +273,7 @@ pub(crate) fn youtube_builtin_object(
     }
 }
 
-pub(crate) fn kick_builtin_object(
+pub fn kick_builtin_object(
     bundle: Arc<forge_platform_kick::KickIntegrationBundle>,
 ) -> BuiltinObject {
     BuiltinObject {
@@ -292,13 +292,13 @@ pub(crate) fn kick_builtin_object(
     }
 }
 
-pub(crate) struct IntegrationInputs {
+pub struct IntegrationInputs {
     pub endpoints: PlatformEndpoints,
     pub hotkey_main_thread: forge_hotkey::MainThreadLink,
     pub platform_identities: PlatformIdentities,
 }
 
-pub(crate) async fn build_integrations(
+pub async fn build_integrations(
     sub_actions: &mut SubActionRegistry,
     triggers: &mut TriggerRegistry,
     backend: &Arc<dyn DataProvider>,
@@ -402,7 +402,7 @@ fn kinds_owned_by(triggers: &TriggerRegistry, owner: &IntegrationId) -> Vec<Stri
         .collect()
 }
 
-fn register_platform_triggers(triggers: &mut TriggerRegistry) {
+pub(crate) fn register_platform_triggers(triggers: &mut TriggerRegistry) {
     if let Err(e) = forge_platform_twitch::register_twitch_triggers(triggers) {
         tracing::error!(error = %e, "twitch trigger registration failed");
     }
@@ -464,13 +464,13 @@ pub(crate) fn spawn_connect(
 }
 
 #[cfg(test)]
-pub(crate) mod tests {
+mod tests {
     use super::*;
-    use crate::event_loss::TWITCH_EVENT_RELAY;
-    use crate::test_support::yield_until;
+    use crate::integration_factories::TWITCH_EVENT_RELAY;
+    use crate::test_support::{every_registry_entry, yield_until};
     use forge_events::{Event, EventChannel, EventSource};
 
-    use forge_platform_core::{ConnectionState, PlatformError};
+    use forge_platform_core::ConnectionState;
     use forge_runtime::NullEventLogRepo;
     use std::time::Duration;
 
@@ -569,431 +569,6 @@ pub(crate) mod tests {
 
         assert_eq!(code.as_deref(), Some("connect_refused"));
         assert!(seed.connect_failure().is_none());
-    }
-
-    mod detail_lifetime {
-        use std::sync::Mutex;
-
-        use forge_components::{Density, ThemeId};
-        use forge_platform_core::{
-            BuiltinContent, BuiltinHealth, BuiltinStatus, CapabilityFlags, ConnectionState,
-            DetailSection, HeaderAction, HealthDelta, HealthMetric, HealthMetricId, HealthStream,
-            HealthValue, QuickAction, QuickActions, SectionIcon,
-        };
-        use forge_runtime::{
-            ActionCancelRegistry, spawn_action_engine, spawn_live_viewer_aggregator,
-        };
-        use forge_types::{IntegrationId, MessageCode};
-        use gpui::{AppContext as _, TestAppContext};
-
-        use super::super::{BuiltinObject, ObsInstallSeed, VTubeInstallSeed};
-        use crate::integration_detail::IntegrationDetail;
-        use crate::platforms::PlatformConnectivity;
-        use crate::test_support::{StubActions, StubEventLog, StubHistory, runtime, test_backend};
-        use forge_components::Presentation;
-        use forge_registry::{SubActionRegistry, TriggerRegistry};
-        use forge_runtime::EventBus;
-        use forge_storage::{CredentialsRepo, SettingsRepo};
-        use std::sync::Arc;
-        use std::time::Duration;
-        use tokio::sync::mpsc;
-
-        struct HeldStreamBuiltin {
-            id: IntegrationId,
-            deltas: Mutex<Option<mpsc::UnboundedReceiver<HealthDelta>>>,
-        }
-
-        impl BuiltinStatus for HeldStreamBuiltin {
-            fn id(&self) -> &IntegrationId {
-                &self.id
-            }
-            fn display_name(&self) -> &str {
-                "OBS"
-            }
-            fn version(&self) -> Option<String> {
-                None
-            }
-            fn connection(&self) -> ConnectionState {
-                ConnectionState::Connected
-            }
-            fn uptime(&self) -> Option<Duration> {
-                None
-            }
-            fn endpoint(&self) -> Option<forge_types::UserText> {
-                None
-            }
-            fn capability_flags(&self) -> CapabilityFlags {
-                CapabilityFlags {
-                    limited: false,
-                    label: None,
-                }
-            }
-            fn header_actions(&self) -> Vec<HeaderAction> {
-                Vec::new()
-            }
-        }
-
-        const STUB_METRIC_IDS: [HealthMetricId; 4] = [
-            HealthMetricId::new(MessageCode::from_static("stub", "metric0")),
-            HealthMetricId::new(MessageCode::from_static("stub", "metric1")),
-            HealthMetricId::new(MessageCode::from_static("stub", "metric2")),
-            HealthMetricId::new(MessageCode::from_static("stub", "metric3")),
-        ];
-
-        impl BuiltinHealth for HeldStreamBuiltin {
-            fn metrics(&self) -> [HealthMetric; 4] {
-                std::array::from_fn(|i| HealthMetric {
-                    id: STUB_METRIC_IDS[i].clone(),
-                    value: HealthValue::Text {
-                        primary: forge_types::VerbatimText::new("").into(),
-                        secondary: None,
-                    },
-                })
-            }
-            fn stream(&self) -> HealthStream {
-                let rx = self.deltas.lock().unwrap().take().unwrap();
-                Box::pin(futures_util::stream::unfold(rx, |mut rx| async move {
-                    rx.recv().await.map(|delta| (delta, rx))
-                }))
-            }
-        }
-
-        impl BuiltinContent for HeldStreamBuiltin {
-            fn sections(&self) -> Vec<DetailSection> {
-                Vec::new()
-            }
-        }
-
-        impl QuickActions for HeldStreamBuiltin {
-            fn actions(&self) -> Vec<QuickAction> {
-                Vec::new()
-            }
-        }
-
-        #[gpui::test]
-        fn closing_an_integration_screen_ends_the_task_holding_its_health_stream(
-            cx: &mut TestAppContext,
-        ) {
-            cx.update(|cx| {
-                cx.set_global(Presentation::new(ThemeId::ForgeDefault, Density::Cozy));
-            });
-            let rt = runtime();
-            let _enter = rt.enter();
-            let (deltas_tx, deltas_rx) = mpsc::unbounded_channel();
-            let probe = Arc::new(HeldStreamBuiltin {
-                id: IntegrationId::new("obs"),
-                deltas: Mutex::new(Some(deltas_rx)),
-            });
-            let object = BuiltinObject {
-                icon: SectionIcon::new("bug"),
-                status: probe.clone(),
-                health: probe.clone(),
-                content: probe.clone(),
-                quick: probe,
-                control: None,
-                collections: None,
-                option_source: None,
-                obs_client: None,
-                vtube_client: None,
-                follow: None,
-                ban_list: None,
-            };
-            let bus = EventBus::new(Arc::new(StubEventLog));
-            let engine = spawn_action_engine(
-                Arc::clone(&bus),
-                crate::test_support::stub_catalog(),
-                Arc::new(StubActions),
-                Arc::new(StubHistory),
-                Arc::new(SubActionRegistry::new()),
-                Arc::new(ActionCancelRegistry::new()),
-            );
-            let (backend, _writes) = test_backend();
-            let connectivity = cx.new(|_| PlatformConnectivity::new());
-            let view = cx.new(|cx| {
-                IntegrationDetail::new(
-                    object,
-                    rt.handle().clone(),
-                    engine,
-                    Arc::clone(&backend) as Arc<dyn CredentialsRepo>,
-                    backend as Arc<dyn SettingsRepo>,
-                    Arc::new(StubHistory),
-                    Arc::new(TriggerRegistry::new()),
-                    Arc::clone(&bus) as Arc<dyn forge_events::EventPublisher>,
-                    Arc::clone(&bus),
-                    spawn_live_viewer_aggregator(&forge_net::TaskOwner::new()),
-                    None,
-                    None,
-                    None,
-                    ObsInstallSeed::new(forge_obs::SwitchableObsSink::new()),
-                    VTubeInstallSeed::new(forge_vtube::SwitchableVTubeSink::new()),
-                    connectivity,
-                    cx,
-                )
-            });
-            cx.run_until_parked();
-            assert!(
-                !deltas_tx.is_closed(),
-                "the open screen must hold its health stream"
-            );
-
-            drop(view);
-            cx.update(|_| {});
-            cx.run_until_parked();
-
-            assert!(
-                deltas_tx.is_closed(),
-                "the closed screen's health task must end without waiting for a delta"
-            );
-        }
-    }
-
-    pub(crate) struct SilentSoundboard;
-
-    #[async_trait::async_trait]
-    impl forge_soundboard::SoundboardControl for SilentSoundboard {
-        async fn play(
-            &self,
-            _clip_id: forge_types::ClipId,
-            _output_device_override: Option<forge_types::OutputDevice>,
-        ) -> Result<(), forge_soundboard::SoundboardError> {
-            Ok(())
-        }
-
-        async fn stop(
-            &self,
-            _clip_id: forge_types::ClipId,
-        ) -> Result<(), forge_soundboard::SoundboardError> {
-            Ok(())
-        }
-
-        async fn stop_all(&self) -> Result<(), forge_soundboard::SoundboardError> {
-            Ok(())
-        }
-
-        async fn set_master_volume(
-            &self,
-            _gain: f32,
-        ) -> Result<(), forge_soundboard::SoundboardError> {
-            Ok(())
-        }
-    }
-
-    struct SilentSpeaker;
-
-    #[async_trait::async_trait]
-    impl forge_runtime::SpeakDispatcher for SilentSpeaker {
-        async fn speak(
-            &self,
-            _text: String,
-            _voice: Option<String>,
-            _origin: forge_runtime::SpeechOrigin,
-        ) -> Result<(), forge_runtime::SpeakDispatchError> {
-            Ok(())
-        }
-    }
-
-    struct NoLatestValues;
-
-    impl forge_types::LatestValueReader for NoLatestValues {
-        fn latest(
-            &self,
-            _slot: &str,
-            _scope: forge_types::LatestScope<'_>,
-        ) -> Option<forge_types::LatestValue> {
-            None
-        }
-    }
-
-    pub(crate) async fn every_registry_entry() -> (Arc<TriggerRegistry>, Arc<SubActionRegistry>) {
-        let media_root = tempfile::tempdir().unwrap();
-        let backend: Arc<dyn DataProvider> = Arc::new(
-            forge_storage_sqlite::SqliteBackend::open_for_test(
-                "sqlite::memory:",
-                [0x11; 32],
-                media_root.path().to_owned(),
-                None,
-            )
-            .await
-            .unwrap(),
-        );
-        let bus = test_bus();
-        let latest_values = forge_runtime::LatestValues::load(
-            backend.latest_value_repo(),
-            publisher(&bus),
-            forge_types::Shared::new(String::new()),
-        )
-        .await;
-        let hub = forge_server::DeliveryHub::new(
-            Arc::clone(&bus) as Arc<dyn forge_events::EventObserver>
-        );
-        let mut wiring = forge_runtime::RuntimeWiring::new(forge_runtime::RuntimeWiringParts {
-            tasks: forge_net::TaskOwner::new(),
-            bus: Arc::clone(&bus),
-            provider: Arc::clone(&backend),
-            latest_values,
-            script_speech: None,
-            overlay_speech: None,
-            overlay_kinds: Arc::new(forge_overlay::OverlayKindRegistry::new()),
-            overlay_frames: Arc::new(hub) as Arc<dyn forge_runtime::OverlayFrameSink>,
-            clock: Arc::new(forge_types::SystemWallClock),
-        });
-        wiring.register_core_sub_actions().unwrap();
-        wiring.register_scheduled_run_sub_actions().unwrap();
-        forge_runtime::register_core_triggers(wiring.triggers_mut()).unwrap();
-        let (sub_actions, triggers) = wiring.registries_mut();
-        register_platform_triggers(triggers);
-        wire_obs(&mut *sub_actions, &backend, &bus);
-        wire_vtube(&mut *sub_actions, &backend, &bus);
-        wire_discord(
-            &mut *sub_actions,
-            &backend,
-            &bus,
-            &PlatformEndpoints::default(),
-        );
-        wire_midi(&mut *sub_actions, &backend, &bus, Vec::new());
-        register_twitch_runners(&mut *sub_actions, &backend, &bus);
-        register_youtube_runners(&mut *sub_actions, &bus);
-        register_kick_runners(&mut *sub_actions, &bus);
-        forge_soundboard::register_soundboard_sub_actions(
-            &mut *sub_actions,
-            Arc::new(SilentSoundboard),
-        )
-        .unwrap();
-        forge_runtime::register_speech_sub_actions(
-            &mut *sub_actions,
-            Arc::new(SilentSpeaker),
-            forge_runtime::TwitchEmoteLexicon::default(),
-        )
-        .unwrap();
-        forge_runtime::register_donation_sub_actions(
-            &mut *sub_actions,
-            Arc::new(DonationIngest::new(
-                backend.donation_repo(),
-                publisher(&bus),
-                forge_types::Shared::new(String::new()),
-            )),
-        )
-        .unwrap();
-        forge_runtime::register_latest_sub_actions(&mut *sub_actions, Arc::new(NoLatestValues))
-            .unwrap();
-        let frozen = wiring.freeze().await;
-        (frozen.trigger_registry, frozen.sub_action_registry)
-    }
-
-    fn register_twitch_runners(
-        sub_actions: &mut SubActionRegistry,
-        backend: &Arc<dyn DataProvider>,
-        bus: &Arc<EventBus>,
-    ) {
-        let creds = creds_of(backend);
-        let manager = Arc::new(forge_platform_twitch::TwitchCredentialsManager::new(
-            crate::test_support::default_twitch_oauth_client(),
-            Arc::clone(&creds),
-        ));
-        let transport: Arc<dyn forge_platform_twitch::HelixTransport> =
-            Arc::new(forge_platform_twitch::HelixHttpTransport::new(
-                crate::test_support::default_twitch_helix_gateway(publisher(bus)),
-                "test-client".to_owned(),
-                manager as Arc<dyn forge_platform_twitch::HelixTokenSource>,
-            ));
-        forge_platform_twitch::register_twitch_sub_actions(
-            sub_actions,
-            transport,
-            creds,
-            forge_platform_twitch::TwitchLifecycle::new(),
-            None,
-        )
-        .unwrap();
-    }
-
-    fn youtube_token_source() -> Arc<
-        dyn Fn() -> futures_util::future::BoxFuture<'static, Result<String, PlatformError>>
-            + Send
-            + Sync,
-    > {
-        Arc::new(|| Box::pin(async { Ok("token".to_owned()) }))
-    }
-
-    fn register_youtube_runners(sub_actions: &mut SubActionRegistry, bus: &Arc<EventBus>) {
-        use forge_platform_youtube as yt;
-        let api = yt::YoutubeDataApi::new(
-            &forge_platform_core::PlatformEndpoints::default(),
-            yt::SharedQuota::default(),
-            publisher(bus),
-        )
-        .unwrap();
-        let chat = yt::LiveChatIdHandle::new();
-        let broadcast = yt::ActiveBroadcastIdHandle::new();
-        yt::register_youtube_sub_actions(
-            sub_actions,
-            Arc::new(yt::YoutubeSendChat::new(
-                api.clone(),
-                youtube_token_source(),
-                chat.clone(),
-            )),
-            Arc::new(yt::YoutubeModeration::new(
-                api.clone(),
-                youtube_token_source(),
-                Arc::new(|| {
-                    Box::pin(async {
-                        Ok(yt::YoutubeBroadcaster {
-                            channel_id: "UCtest".to_owned(),
-                            channel_title: "Test".to_owned(),
-                        })
-                    })
-                }),
-                chat,
-                Arc::new(forge_storage::MockBanLedgerRepo::new()),
-            )),
-            Arc::new(yt::YoutubeStreamMetadata::new(
-                api.clone(),
-                youtube_token_source(),
-                broadcast.clone(),
-            )),
-            Arc::new(yt::YoutubeStreamStats::new(
-                api.clone(),
-                youtube_token_source(),
-                broadcast.clone(),
-            )),
-            Arc::new(yt::YoutubeAdBreak::new(
-                api.clone(),
-                youtube_token_source(),
-                broadcast.clone(),
-            )),
-            Arc::new(yt::YoutubeThumbnail::new(
-                api.clone(),
-                youtube_token_source(),
-                broadcast,
-            )),
-            Arc::new(yt::YoutubeChannelLookup::new(api, youtube_token_source())),
-        )
-        .unwrap();
-    }
-
-    fn register_kick_runners(sub_actions: &mut SubActionRegistry, bus: &Arc<EventBus>) {
-        use forge_platform_kick as kick;
-        let api = kick::kick_api_gateway(
-            &forge_platform_core::PlatformEndpoints::default(),
-            Arc::new(forge_net::test_support::RecordingRateLimiter::granting()),
-            publisher(bus),
-        )
-        .unwrap();
-        kick::register_kick_sub_actions(
-            sub_actions,
-            kick::KickSubActionDeps {
-                client: Arc::new(kick::KickSendChat::new(api.clone())),
-                token_source: Arc::new(|| Box::pin(async { Ok("token".to_owned()) })),
-                broadcaster_id_source: Arc::new(|| Box::pin(async { Ok(1) })),
-                moderation: Arc::new(kick::KickModeration::new(
-                    api.clone(),
-                    Arc::new(forge_storage::MockBanLedgerRepo::new()),
-                )),
-                channel: Arc::new(kick::KickChannel::new(api.clone())),
-                rewards: Arc::new(kick::KickRewards::new(api.clone())),
-                categories: Arc::new(kick::KickCategories::new(api)),
-            },
-        )
-        .unwrap();
     }
 
     fn declared_integrations() -> Vec<IntegrationId> {

@@ -28,13 +28,13 @@ use crate::async_bridge::{self, KeyedSnapshotWriters, Loadable, WriteOutcome};
 use crate::collection_options::ChoiceOptions;
 use crate::config_form::{CollectionChoices, ConfigField};
 use crate::integration_switch::{IntegrationSwitch, SwitchWatch};
-use crate::integrations::BuiltinRegistry;
 use crate::navigable_list::navigable_list;
 use crate::navigation::NavRequested;
 use crate::navigation::Screen;
 use crate::picker_favorites::{StoredFavorites, TRIGGER_FAVORITES};
 use forge_components::ActivePresentation;
 use forge_components::PushToast;
+use forge_host::integrations::BuiltinRegistry;
 
 mod collection_choices;
 mod create;

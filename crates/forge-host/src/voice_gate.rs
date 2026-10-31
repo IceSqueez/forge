@@ -5,7 +5,7 @@ use forge_audio::{DeviceId, VoiceGateConfig, VoiceGateMonitor, VoiceGateState, V
 use forge_speak_queue::SpeakQueueHandle;
 use forge_storage::VoiceGateSettings;
 
-pub(crate) fn config_from_settings(settings: &VoiceGateSettings) -> VoiceGateConfig {
+pub fn config_from_settings(settings: &VoiceGateSettings) -> VoiceGateConfig {
     VoiceGateConfig {
         device: settings.input_device_id.clone().map(DeviceId::new),
         threshold: settings.threshold,
@@ -18,14 +18,14 @@ struct Running {
     pump: tokio::task::JoinHandle<()>,
 }
 
-pub(crate) struct VoiceGateOwner {
+pub struct VoiceGateOwner {
     rt_handle: tokio::runtime::Handle,
     speak: Option<SpeakQueueHandle>,
     running: Mutex<Option<Running>>,
 }
 
 impl VoiceGateOwner {
-    pub(crate) fn new(rt_handle: tokio::runtime::Handle, speak: Option<SpeakQueueHandle>) -> Self {
+    pub fn new(rt_handle: tokio::runtime::Handle, speak: Option<SpeakQueueHandle>) -> Self {
         Self {
             rt_handle,
             speak,
@@ -33,16 +33,16 @@ impl VoiceGateOwner {
         }
     }
 
-    pub(crate) fn is_running(&self) -> bool {
+    pub fn is_running(&self) -> bool {
         matches!(self.running.lock(), Ok(guard) if guard.is_some())
     }
 
-    pub(crate) fn state(&self) -> Option<VoiceGateState> {
+    pub fn state(&self) -> Option<VoiceGateState> {
         let guard = self.running.lock().ok()?;
         guard.as_ref().map(|running| running.monitor.state())
     }
 
-    pub(crate) fn level(&self) -> f32 {
+    pub fn level(&self) -> f32 {
         match self.running.lock() {
             Ok(guard) => guard
                 .as_ref()
@@ -52,7 +52,7 @@ impl VoiceGateOwner {
         }
     }
 
-    pub(crate) fn start(&self, config: VoiceGateConfig) {
+    pub fn start(&self, config: VoiceGateConfig) {
         let Ok(mut guard) = self.running.lock() else {
             return;
         };
@@ -67,7 +67,7 @@ impl VoiceGateOwner {
         *guard = Some(Running { monitor, pump });
     }
 
-    pub(crate) fn reconfigure(&self, config: VoiceGateConfig) {
+    pub fn reconfigure(&self, config: VoiceGateConfig) {
         if let Ok(guard) = self.running.lock()
             && let Some(running) = guard.as_ref()
         {
@@ -75,7 +75,7 @@ impl VoiceGateOwner {
         }
     }
 
-    pub(crate) fn stop(&self) {
+    pub fn stop(&self) {
         let taken = match self.running.lock() {
             Ok(mut guard) => guard.take(),
             Err(_) => None,

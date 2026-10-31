@@ -1,6 +1,6 @@
 use forge_types::Secret;
 
-pub(crate) struct OAuthClientIdentity {
+pub struct OAuthClientIdentity {
     pub client_id: String,
     pub client_secret: Secret,
 }
@@ -15,14 +15,14 @@ impl From<(String, Secret)> for OAuthClientIdentity {
 }
 
 #[derive(Default)]
-pub(crate) struct PlatformIdentities {
+pub struct PlatformIdentities {
     pub twitch_client_id: Option<String>,
     pub youtube: Option<OAuthClientIdentity>,
     pub kick: Option<OAuthClientIdentity>,
 }
 
 impl PlatformIdentities {
-    pub(crate) fn from_environment() -> Self {
+    pub fn from_environment() -> Self {
         Self {
             twitch_client_id: forge_platform_twitch::client_id(),
             youtube: forge_platform_youtube::client_credentials().map(Into::into),

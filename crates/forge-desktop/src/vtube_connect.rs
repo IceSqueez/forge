@@ -6,9 +6,9 @@ use forge_storage::{CredentialsRepo, SettingsRepo};
 use gpui::{Context, Entity, EventEmitter, SharedString, Subscription, Window, prelude::*};
 
 use crate::connect_scaffold::{ConnectPage, GuideStep, fragment, mono_fragment};
-use crate::integrations::VTubeInstallSeed;
 use crate::navigation::NavRequested;
 use crate::vtube_connect_form::{DEFAULT_PORT, VTubeConnectForm, VTubeConnected};
+use forge_host::integrations::VTubeInstallSeed;
 
 pub(crate) struct VTubeConnectView {
     form: Entity<VTubeConnectForm>,

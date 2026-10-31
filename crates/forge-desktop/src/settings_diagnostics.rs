@@ -20,11 +20,10 @@ use gpui::{
 use tracing::Level;
 
 use crate::async_bridge::{self, Loadable};
-use crate::boot_warnings::BootWarnings;
+use crate::boot_warnings::boot_warning_message;
 use crate::bundle_preview::{export_statement, statement_row};
 use crate::diagnostic_bundle::{self, BUNDLE_FILE_NAME, Bundle};
 use crate::error::DesktopError;
-use crate::integrations::BuiltinRegistry;
 use crate::load_notice::{LoadNotice, NoticeWidth, load_notice};
 use crate::log_archive;
 use crate::log_tail::{LogLine, LogTail};
@@ -35,6 +34,8 @@ use crate::window_presence::PresenceGate;
 use forge_components::ActivePresentation;
 use forge_components::PushToast;
 use forge_components::{DateShape, fmt_display};
+use forge_host::boot_warnings::BootWarnings;
+use forge_host::integrations::BuiltinRegistry;
 use forge_transfer::ScheduledBackupHandle;
 
 const TAIL_REFRESH: Duration = Duration::from_secs(2);
@@ -418,7 +419,7 @@ impl SettingsDiagnosticsView {
                         .min_w(px(0.0))
                         .text_size(FONT_XS)
                         .text_color(palette.text_primary)
-                        .child(warning.message()),
+                        .child(boot_warning_message(warning)),
                 )
         });
         let body = div()
@@ -905,7 +906,7 @@ mod tests {
                 super::SettingsDiagnosticsView::new(
                     crate::log_tail::LogTail::new(),
                     backend as std::sync::Arc<dyn forge_storage::DataProvider>,
-                    crate::integrations::BuiltinRegistry::default(),
+                    forge_host::integrations::BuiltinRegistry::default(),
                     rt.handle().clone(),
                     false,
                     cx,
@@ -980,7 +981,7 @@ mod tests {
     fn the_boot_problems_card_appears_only_after_a_start_that_recorded_one(
         cx: &mut gpui::TestAppContext,
     ) {
-        use crate::boot_warnings::{BootWarning, BootWarnings};
+        use forge_host::boot_warnings::{BootWarning, BootWarnings};
 
         let rig = mount_with_stored(LogLevel::Warn, cx);
         let card_shown = |rig: &LevelRig, cx: &mut gpui::TestAppContext| {

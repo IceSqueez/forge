@@ -2,9 +2,7 @@ use std::sync::Arc;
 
 use forge_components::{ActivePresentation, Icon, KeyActivated, TextInput, icon, scaled, tr};
 use forge_events::EventPublisher;
-use forge_storage::SettingDisclosure::Withheld;
-use forge_storage::SettingPortability::Portable;
-use forge_storage::{CredentialsRepo, Flag, Setting, SettingsRepo, write_setting};
+use forge_storage::{CredentialsRepo, SettingsRepo, write_setting};
 use forge_types::Secret;
 use gpui::{
     AnyElement, ClickEvent, Context, Entity, EventEmitter, Focusable, Pixels, Subscription, Window,
@@ -17,21 +15,8 @@ use crate::connect_scaffold::{
     FIELD_BLOCK_GAP, FormButtons, StripLook, endpoint_input, endpoint_row, field_label, flag_rows,
     form_buttons, input_box, persist_flag, read_endpoint,
 };
-use crate::integrations::ObsInstallSeed;
-
-pub(crate) const OBS_AUTO_RECONNECT: Setting<Flag> = Setting::new(
-    "obs.auto_reconnect",
-    Flag { default: true },
-    Portable,
-    Withheld,
-);
-
-pub(crate) const OBS_CONNECT_ON_LAUNCH: Setting<Flag> = Setting::new(
-    "obs.connect_on_launch",
-    Flag { default: true },
-    Portable,
-    Withheld,
-);
+use forge_host::integrations::ObsInstallSeed;
+use forge_obs::{OBS_AUTO_RECONNECT, OBS_CONNECT_ON_LAUNCH};
 
 pub(crate) const DEFAULT_HOST: &str = "localhost";
 pub(crate) const DEFAULT_PORT: u16 = 4455;

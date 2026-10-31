@@ -15,12 +15,12 @@ use crate::remote_audio::OverlayAudioDestination;
 use crate::routed_sink::RoutedSink;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct AppliedRoutes {
+pub struct AppliedRoutes {
     pub speech: RoutePlan,
     pub clips: RoutePlan,
 }
 
-pub(crate) struct AudioRouterParts {
+pub struct AudioRouterParts {
     pub backend: Arc<dyn DataProvider>,
     pub server: Option<ServerHandle>,
     pub overlays: OverlayServiceHandle,
@@ -30,14 +30,14 @@ pub(crate) struct AudioRouterParts {
     pub speak: Option<SpeakQueueHandle>,
 }
 
-pub(crate) struct AudioRouter {
+pub struct AudioRouter {
     parts: AudioRouterParts,
     remote: Option<Arc<dyn RemoteAudioDestination>>,
     latest: Mutex<u64>,
 }
 
 impl AudioRouter {
-    pub(crate) fn new(parts: AudioRouterParts) -> Self {
+    pub fn new(parts: AudioRouterParts) -> Self {
         let remote = parts.server.clone().map(|handle| {
             Arc::new(OverlayAudioDestination::new(handle, parts.overlays.clone()))
                 as Arc<dyn RemoteAudioDestination>
@@ -49,11 +49,17 @@ impl AudioRouter {
         }
     }
 
-    pub(crate) fn speech_sink(&self) -> Arc<dyn AudioSink> {
+    pub fn speech_sink(&self) -> Arc<dyn AudioSink> {
         Arc::clone(&self.parts.speech_sink) as Arc<dyn AudioSink>
     }
 
-    pub(crate) async fn apply(&self) -> Option<AppliedRoutes> {
+    pub async fn started(parts: AudioRouterParts) -> Arc<Self> {
+        let router = Arc::new(Self::new(parts));
+        router.apply().await;
+        router
+    }
+
+    pub async fn apply(&self) -> Option<AppliedRoutes> {
         let ticket = {
             let mut latest = self.latest.lock().unwrap_or_else(PoisonError::into_inner);
             *latest += 1;

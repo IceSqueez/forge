@@ -18,8 +18,8 @@ use super::ban_labels::changed_platforms;
 use super::platform_gate::platform_integration;
 use crate::async_bridge::{self, EventBatch};
 use crate::integration_lifecycle::IntegrationLifecycle;
-use crate::integrations::BuiltinRegistry;
 use crate::navigable_list::{ListCursor, navigable_list};
+use forge_host::integrations::BuiltinRegistry;
 
 mod ban_group;
 mod row_keys;

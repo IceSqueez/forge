@@ -251,8 +251,8 @@ mod tests {
 
     use super::{ViewerAction, ViewerTarget};
     use crate::chat_author::AuthorKey;
-    use crate::speak_bridge::SpeakBridge;
     use crate::test_support::{spawn_speak_queue, within_hang_guard};
+    use forge_host::speak_bridge::SpeakBridge;
 
     const ONE_WEEK_SECONDS: i64 = 604_800;
     const TWO_WEEKS_SECONDS: i64 = 1_209_600;

@@ -20,7 +20,8 @@ mod wire;
 
 pub use api::{DonatelloAccount, default_rate_limiter, donatello_gateway};
 pub use config::{
-    DEFAULT_POLL_INTERVAL, DonatelloConfig, DonatelloTiming, MAX_POLL_INTERVAL, MIN_POLL_INTERVAL,
+    DEFAULT_POLL_INTERVAL, DONATELLO_POLL_INTERVAL_SECS, DonatelloConfig, DonatelloTiming,
+    MAX_POLL_INTERVAL, MIN_POLL_INTERVAL,
 };
 pub use credentials::DONATELLO_CREDENTIAL_ID;
 pub use error::DonatelloError;

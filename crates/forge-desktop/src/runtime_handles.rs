@@ -10,11 +10,11 @@ use forge_runtime::{
 };
 use forge_storage::{CredentialsKeyLoss, DataProvider, Language, SettingsCatalog};
 
-use crate::audio_router::AudioRouter;
-use crate::integrations::{BuiltinObject, BuiltinRegistry, ObsInstallSeed, VTubeInstallSeed};
 use crate::log_tail::LogTail;
-use crate::platform_credentials::PlatformCredentialManagers;
-use crate::voice_gate::VoiceGateOwner;
+use forge_host::audio_router::AudioRouter;
+use forge_host::integrations::{BuiltinObject, BuiltinRegistry, ObsInstallSeed, VTubeInstallSeed};
+use forge_host::platform_credentials::PlatformCredentialManagers;
+use forge_host::voice_gate::VoiceGateOwner;
 use forge_runtime::IntegrationSupervisor;
 
 pub(crate) struct RuntimeHandles {
@@ -30,7 +30,7 @@ pub(crate) struct RuntimeHandles {
     pub latest_values: LatestValues,
     pub credentials_key_loss: Option<CredentialsKeyLoss>,
     pub overlay_build_failure: Option<crate::overlay_build_failure::OverlayBuildFailure>,
-    pub boot_warnings: crate::boot_warnings::BootWarnings,
+    pub boot_warnings: forge_host::boot_warnings::BootWarnings,
     pub bus: Arc<EventBus>,
     pub script_registry: Arc<ScriptRegistry>,
     pub sub_action_registry: Arc<SubActionRegistry>,
@@ -54,7 +54,7 @@ pub(crate) struct RuntimeHandles {
     pub obs_install_seed: ObsInstallSeed,
     pub vtube_install_seed: VTubeInstallSeed,
     pub discord_client: Option<Arc<forge_discord::DiscordClient>>,
-    pub donation_services: crate::donation_services::DonationServices,
+    pub donation_services: forge_host::donation_services::DonationServices,
     pub twitch_bot: Option<Arc<forge_platform_twitch::TwitchBotAccount>>,
     pub twitch_sign_in: Option<forge_platform_twitch::TwitchSignIn>,
     pub youtube_sign_in: Option<forge_platform_youtube::YoutubeSignIn>,

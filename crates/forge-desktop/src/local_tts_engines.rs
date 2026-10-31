@@ -8,7 +8,7 @@ use forge_tts_nsspeech::NsSpeechEngineFactory;
 use forge_tts_piper::{PiperEngine, PiperEngineFactory};
 use forge_tts_sapi::SapiEngineFactory;
 
-use crate::speak_boot::{LocalTtsEngine, TtsEngineAdmission};
+use forge_host::speak_boot::{LocalTtsEngine, TtsEngineAdmission};
 
 const PIPER_SYNTHESIS_TIMEOUT: Duration = Duration::from_secs(30);
 

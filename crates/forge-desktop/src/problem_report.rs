@@ -26,13 +26,13 @@ use crate::async_bridge::{self, detached, open_path};
 use crate::bundle_preview::{export_statement, statement_row};
 use crate::crash_record::{self, CrashRecord, PendingCrash};
 use crate::diagnostic_bundle::{self, BUNDLE_FILE_NAME, Bundle};
-use crate::integrations::BuiltinRegistry;
 use crate::issue_link::{
     CRASH_REPORT_FILE_NAME, ISSUE_URL_MAX_BYTES, IssueForm, SYSTEM_INFO_FILE_NAME,
 };
 use crate::repo_failure::RepoFailure;
 use crate::system_info::{HostFacts, InfoField, SystemInfo, WindowFacts};
 use crate::update_check::REPO_URL;
+use forge_host::integrations::BuiltinRegistry;
 
 const REPORT_FOLDER_PREFIX: &str = "report-";
 const PREVIEW_WIDTH: Pixels = px(600.0);

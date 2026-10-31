@@ -24,8 +24,8 @@ use tokio_util::sync::CancellationToken;
 use super::{ConnectFlow, status_dot};
 use crate::async_bridge;
 use crate::error::DesktopError;
-use crate::integrations::BuiltinObject;
 use crate::start_failure::start_failure_text;
+use forge_host::integrations::BuiltinObject;
 use forge_runtime::IntegrationStartError;
 
 pub(super) type TwitchFlowHandle = Arc<tokio::sync::Mutex<Option<TwitchAuthFlow>>>;

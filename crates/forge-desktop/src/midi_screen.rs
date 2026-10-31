@@ -10,7 +10,6 @@ mod tests;
 pub(crate) use self::mapping_store::MIDI_KNOWN_DEVICES;
 use crate::async_bridge::{Loadable, SnapshotWriter};
 use crate::hub_crumb::hub_crumb;
-use crate::integrations::BuiltinObject;
 use crate::midi_mapping_modal::MidiMappingModal;
 use crate::midi_signal::MidiSignal;
 use crate::navigation::NavRequested;
@@ -18,6 +17,7 @@ use forge_components::OverflowRevealingFocus;
 use forge_components::{
     ActivePresentation, BreadcrumbCrumb, grow_cell, header_status, page_frame, scaled, tr,
 };
+use forge_host::integrations::BuiltinObject;
 use forge_midi::{MidiClient, MidiMonitorEvent, SwitchableMidiSink};
 use forge_runtime::{EventBus, IntegrationSlot};
 use forge_storage::{ActionRepo, SettingsRepo, TriggerInstanceRepo};

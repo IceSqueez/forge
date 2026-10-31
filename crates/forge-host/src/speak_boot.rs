@@ -1,8 +1,11 @@
 use std::sync::Arc;
 
-use forge_audio::{AudioSinkFactory, DeviceSink, OutputDeviceHandle, stored_output_device};
+use forge_audio::{
+    AudioSink, AudioSinkFactory, DeviceSink, OutputDeviceHandle, stored_output_device,
+};
 use forge_events::EventPublisher;
-use forge_runtime::EventBus;
+use forge_runtime::{EventBus, SpeakDispatcher};
+use forge_script::SpeakRequester;
 use forge_speak_queue::{
     PipelineConfigHandle, QueueConfig, QueueDeps, SpeakEventStream, VoiceAliasResolver,
     build_config, repeat_window,
@@ -10,19 +13,24 @@ use forge_speak_queue::{
 use forge_speech_types::EngineId;
 use forge_speech_types::{AssignmentStrategy, IgnoreProfile, SynthesisDefaults};
 use forge_storage::settings::core_settings::AUDIO_OUTPUT_DEVICE_ID;
-use forge_storage::{CredentialsRepo, DataProvider, FilterRule, TtsPipelineSettings, read_setting};
+use forge_storage::{
+    CredentialsRepo, DataProvider, FilterRule, SettingsRepo, TtsPipelineSettings, read_setting,
+};
 use forge_tts_cloud::CloudGateways;
 use forge_tts_core::{TtsEngineFactory, TtsRegistry, build_engine};
 
 use crate::boot_warnings::{BootWarning, BootWarnings};
 use crate::cloud_tts_boot::register_cloud_engines;
+use crate::routed_sink::RoutedSink;
+use crate::speak_bridge::SpeakBridge;
+use crate::voice_gate::{VoiceGateOwner, config_from_settings};
 
-pub(crate) enum TtsEngineAdmission {
+pub enum TtsEngineAdmission {
     Unprobed,
     Probed,
 }
 
-pub(crate) struct LocalTtsEngine {
+pub struct LocalTtsEngine {
     pub id: EngineId,
     pub factory: Arc<dyn TtsEngineFactory>,
     pub admission: TtsEngineAdmission,
@@ -155,7 +163,7 @@ async fn load_filters(backend: &Arc<dyn DataProvider>) -> (Vec<FilterRule>, TtsP
     })
 }
 
-pub(crate) async fn build_speech_output(
+async fn build_speech_output(
     backend: &Arc<dyn DataProvider>,
     audio_sinks: Arc<dyn AudioSinkFactory>,
 ) -> Arc<DeviceSink> {
@@ -172,10 +180,10 @@ pub(crate) async fn build_speech_output(
     ))
 }
 
-pub(crate) async fn build_speak_queue(
+async fn build_speak_queue(
     bus: &Arc<EventBus>,
     backend: &Arc<dyn DataProvider>,
-    audio_sink: Arc<dyn forge_audio::AudioSink>,
+    audio_sink: Arc<dyn AudioSink>,
     cloud_gateways: &CloudGateways,
     local_engines: Vec<LocalTtsEngine>,
     warnings: &mut BootWarnings,
@@ -216,4 +224,77 @@ pub(crate) async fn build_speak_queue(
     };
     let (handle, stream) = forge_speak_queue::spawn(queue_config, deps);
     (Some(handle), Some(stream), Some(pipeline))
+}
+
+async fn build_voice_gate(
+    settings: &dyn SettingsRepo,
+    speak: Option<forge_speak_queue::SpeakQueueHandle>,
+    warnings: &mut BootWarnings,
+) -> Arc<VoiceGateOwner> {
+    let owner = Arc::new(VoiceGateOwner::new(
+        tokio::runtime::Handle::current(),
+        speak,
+    ));
+    match forge_storage::voice_gate_settings(settings).await {
+        Ok(settings) if settings.enabled => owner.start(config_from_settings(&settings)),
+        Ok(_) => {}
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to load voice gate settings; leaving it off");
+            warnings.record(BootWarning::VoiceGate);
+        }
+    }
+    owner
+}
+
+pub struct Speech {
+    pub output: Arc<DeviceSink>,
+    pub routed_sink: Arc<RoutedSink>,
+    pub cloud_gateways: CloudGateways,
+    pub queue: Option<forge_speak_queue::SpeakQueueHandle>,
+    pub events: Option<SpeakEventStream>,
+    pub pipeline_config: Option<PipelineConfigHandle>,
+    pub voice_gate: Arc<VoiceGateOwner>,
+    pub dispatcher: Option<Arc<dyn SpeakDispatcher>>,
+    pub script_requester: Option<Arc<dyn SpeakRequester>>,
+}
+
+pub async fn build_speech(
+    bus: &Arc<EventBus>,
+    backend: &Arc<dyn DataProvider>,
+    audio_sinks: Arc<dyn AudioSinkFactory>,
+    local_engines: Vec<LocalTtsEngine>,
+    warnings: &mut BootWarnings,
+) -> Speech {
+    let output = build_speech_output(backend, audio_sinks).await;
+    let routed_sink = Arc::new(RoutedSink::new(Arc::clone(&output) as Arc<dyn AudioSink>));
+    let cloud_gateways = CloudGateways::new();
+    let (queue, events, pipeline_config) = build_speak_queue(
+        bus,
+        backend,
+        Arc::clone(&routed_sink) as Arc<dyn AudioSink>,
+        &cloud_gateways,
+        local_engines,
+        warnings,
+    )
+    .await;
+    let settings = Arc::clone(backend) as Arc<dyn SettingsRepo>;
+    let voice_gate = build_voice_gate(settings.as_ref(), queue.clone(), warnings).await;
+    let bridge = queue
+        .clone()
+        .map(|handle| Arc::new(SpeakBridge::new(Arc::new(handle))));
+    let dispatcher = bridge
+        .clone()
+        .map(|bridge| bridge as Arc<dyn SpeakDispatcher>);
+    let script_requester = bridge.map(|bridge| bridge as Arc<dyn SpeakRequester>);
+    Speech {
+        output,
+        routed_sink,
+        cloud_gateways,
+        queue,
+        events,
+        pipeline_config,
+        voice_gate,
+        dispatcher,
+        script_requester,
+    }
 }

@@ -38,6 +38,7 @@ members = [
   "crates/forge-tts-cloud",
   "crates/forge-speak-queue",
   "crates/forge-update",
+  "crates/forge-host",
   "crates/forge-components",
   "crates/forge-desktop",
   "crates/forge-test-support",

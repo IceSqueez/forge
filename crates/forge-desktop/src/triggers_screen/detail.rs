@@ -1188,13 +1188,13 @@ pub(super) mod tests {
     use forge_types::{PlatformScope, TriggerConfig, TriggerInstance, TriggerInstanceId, Variant};
 
     use super::*;
-    use crate::integrations::BuiltinRegistry;
     use crate::screen_shortcuts::ScreenShortcuts;
     use crate::test_support::{
         Declares, FakeCollections, StubActions, StubTrigger, error_toasts, owned_reward, pump,
         pump_until, runtime, test_backend, trigger_registry,
     };
     use forge_components::Presentation;
+    use forge_host::integrations::BuiltinRegistry;
 
     pub(in crate::triggers_screen) const KIND: &str = "midi.input.note_on";
     const NAME: &str = "Note on";

@@ -11,8 +11,8 @@ use gpui::{AnyElement, Context, EventEmitter, Rgba, Window, div, prelude::*, px}
 use tokio_util::sync::CancellationToken;
 
 use crate::async_bridge::{self, ErrorSink};
-use crate::integrations::BuiltinObject;
 use forge_components::ActivePresentation;
+use forge_host::integrations::BuiltinObject;
 use forge_runtime::IntegrationSlot;
 
 use device_code::{TwitchDeviceState, TwitchFlowHandle};

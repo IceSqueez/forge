@@ -1,8 +1,8 @@
 use super::{Capture, MidiScreenView};
 use crate::async_bridge::{BridgeFlow, drain_events};
-use crate::integrations::BuiltinObject;
 use crate::midi_signal::{MidiSignal, note_name};
 use crate::runtime_event;
+use forge_host::integrations::BuiltinObject;
 use forge_midi::{MidiClient, MidiMonitorEvent, MidiSignalKind};
 use forge_runtime::{EventBus, IntegrationSlot, LifecycleState};
 use futures_util::StreamExt;

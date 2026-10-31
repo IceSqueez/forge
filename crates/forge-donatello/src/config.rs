@@ -1,10 +1,19 @@
 use std::time::Duration;
 
 use forge_platform_core::{EndpointSurface, PlatformEndpoints};
+use forge_storage::SettingDisclosure::Withheld;
+use forge_storage::SettingPortability::Portable;
+use forge_storage::{Setting, Tally};
 
 pub const DEFAULT_POLL_INTERVAL: Duration = Duration::from_secs(15);
 pub const MIN_POLL_INTERVAL: Duration = Duration::from_secs(10);
 pub const MAX_POLL_INTERVAL: Duration = Duration::from_secs(300);
+pub const DONATELLO_POLL_INTERVAL_SECS: Setting<Tally> = Setting::new(
+    "donations.donatello.poll_interval_secs",
+    Tally { default: 0 },
+    Portable,
+    Withheld,
+);
 const ERROR_BACKOFF_BASE: Duration = Duration::from_secs(5);
 const ERROR_BACKOFF_CAP: Duration = Duration::from_secs(300);
 

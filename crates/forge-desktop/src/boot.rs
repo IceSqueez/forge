@@ -12,12 +12,12 @@ use forge_runtime::{
     ActionEngineHandle, CatchUpSettle, DateNamesHandle, DonationIngest, DonationOverlayAudience,
     EventBus, EventHistory, FirstChatLedger, FrozenRuntime, LatestValues, NotificationPreferences,
     OverlayConnectFanout, OverlayConnectListener, OverlayFrameSink, OverlaySampleSource,
-    OverlaySamples, RuntimeWiring, RuntimeWiringParts, SpeakDispatcher, TwitchEmoteLexicon,
-    register_core_triggers, register_donation_sub_actions, register_latest_sub_actions,
-    register_speech_sub_actions, spawn_chat_history_persistence, spawn_event_log_bridge,
-    spawn_latest_overlay_feed, spawn_latest_projector, spawn_live_viewer_aggregator,
-    spawn_notification_policy, spawn_stream_live_signal, spawn_timer_scheduler,
-    spawn_twitch_emote_learning, spawn_viewer_tracker,
+    OverlaySamples, RuntimeWiring, RuntimeWiringParts, TwitchEmoteLexicon, register_core_triggers,
+    register_donation_sub_actions, register_latest_sub_actions, register_speech_sub_actions,
+    spawn_chat_history_persistence, spawn_event_log_bridge, spawn_latest_overlay_feed,
+    spawn_latest_projector, spawn_live_viewer_aggregator, spawn_notification_policy,
+    spawn_stream_live_signal, spawn_timer_scheduler, spawn_twitch_emote_learning,
+    spawn_viewer_tracker,
 };
 use forge_server::DeliveryHub;
 use forge_soundboard::{
@@ -33,20 +33,17 @@ use forge_storage_sqlite::SqliteBackend;
 use forge_types::SystemWallClock;
 use forge_types::{LatestValueReader, PlatformId, Shared};
 
-use crate::audio_router::{AudioRouter, AudioRouterParts};
-use crate::boot_warnings::{BootWarning, BootWarnings};
-use crate::integrations::{IntegrationInputs, build_integrations};
 use crate::log_tail::LogTail;
 use crate::overlay_build_failure::OverlayBuildFailure;
-use crate::platform_identities::PlatformIdentities;
 use crate::repo_failure::RepoFailure;
-use crate::routed_sink::RoutedSink;
 use crate::runtime_handles::RuntimeHandles;
 use crate::settings_catalog::DENSITY;
-use crate::speak_boot::{LocalTtsEngine, build_speak_queue, build_speech_output};
-use crate::speak_bridge::SpeakBridge;
-use crate::voice_gate::{VoiceGateOwner, config_from_settings};
 use crate::window_placement::{WINDOW_PLACEMENT, WindowPlacement};
+use forge_host::audio_router::{AudioRouter, AudioRouterParts};
+use forge_host::boot_warnings::{BootWarning, BootWarnings};
+use forge_host::integrations::{IntegrationInputs, build_integrations};
+use forge_host::platform_identities::PlatformIdentities;
+use forge_host::speak_boot::{LocalTtsEngine, Speech, build_speech};
 use forge_hotkey::HotkeySyncedClipsRepo;
 use forge_runtime::IntegrationSupervisor;
 use forge_soundboard::spawn_clip_hotkey_dispatcher;
@@ -329,31 +326,25 @@ pub(crate) async fn build_runtime(inputs: RuntimeInputs) -> Result<RuntimeHandle
     .await;
     spawn_latest_projector(&bus, latest_values.clone(), &services);
 
-    let speech_output = build_speech_output(&backend, Arc::clone(&audio_sinks)).await;
-    let speech_sink = Arc::new(RoutedSink::new(
-        Arc::clone(&speech_output) as Arc<dyn AudioSink>
-    ));
-    let cloud_tts_gateways = forge_tts_cloud::CloudGateways::new();
-    let (speak, speak_events, pipeline_config) = build_speak_queue(
+    let Speech {
+        output: speech_output,
+        routed_sink: speech_sink,
+        cloud_gateways: cloud_tts_gateways,
+        queue: speak,
+        events: speak_events,
+        pipeline_config,
+        voice_gate,
+        dispatcher: speak_dispatcher,
+        script_requester: speak_requester,
+    } = build_speech(
         &bus,
         &backend,
-        Arc::clone(&speech_sink) as Arc<dyn AudioSink>,
-        &cloud_tts_gateways,
+        Arc::clone(&audio_sinks),
         local_tts_engines,
         &mut boot_warnings,
     )
     .await;
-    let voice_gate =
-        build_voice_gate(settings_repo.as_ref(), speak.clone(), &mut boot_warnings).await;
-    let speak_bridge = speak
-        .clone()
-        .map(|handle| Arc::new(SpeakBridge::new(Arc::new(handle))));
-    let speak_dispatcher: Option<Arc<dyn SpeakDispatcher>> = speak_bridge
-        .clone()
-        .map(|bridge| bridge as Arc<dyn SpeakDispatcher>);
     let show_speaker = speak_dispatcher.clone();
-    let speak_requester: Option<Arc<dyn forge_script::SpeakRequester>> =
-        speak_bridge.map(|bridge| bridge as Arc<dyn forge_script::SpeakRequester>);
 
     let mut overlay_kinds_mut = OverlayKindRegistry::new();
     if let Err(e) = register_builtin_kinds(&mut overlay_kinds_mut) {
@@ -601,7 +592,7 @@ pub(crate) async fn build_runtime(inputs: RuntimeInputs) -> Result<RuntimeHandle
     }
     let overlay_build_failure = OverlayBuildFailure::from_outcome(&overlay_pass);
 
-    let audio_router = Arc::new(AudioRouter::new(AudioRouterParts {
+    let audio_router = AudioRouter::started(AudioRouterParts {
         backend: Arc::clone(&backend),
         server: server.clone(),
         overlays: overlays.clone(),
@@ -609,8 +600,8 @@ pub(crate) async fn build_runtime(inputs: RuntimeInputs) -> Result<RuntimeHandle
         speech_output: Arc::clone(&speech_output) as Arc<dyn AudioSink>,
         soundboard_player: Arc::clone(&soundboard_player),
         speak: speak.clone(),
-    }));
-    audio_router.apply().await;
+    })
+    .await;
 
     Ok(RuntimeHandles {
         rt_handle: tokio::runtime::Handle::current(),
@@ -686,26 +677,6 @@ async fn load_bot_accounts(
             forge_types::Shared::default()
         }
     }
-}
-
-async fn build_voice_gate(
-    settings: &dyn SettingsRepo,
-    speak: Option<forge_speak_queue::SpeakQueueHandle>,
-    warnings: &mut BootWarnings,
-) -> Arc<VoiceGateOwner> {
-    let owner = Arc::new(VoiceGateOwner::new(
-        tokio::runtime::Handle::current(),
-        speak,
-    ));
-    match forge_storage::voice_gate_settings(settings).await {
-        Ok(settings) if settings.enabled => owner.start(config_from_settings(&settings)),
-        Ok(_) => {}
-        Err(e) => {
-            tracing::warn!(error = %e, "failed to load voice gate settings; leaving it off");
-            warnings.record(BootWarning::VoiceGate);
-        }
-    }
-    owner
 }
 
 struct ServerBoot {

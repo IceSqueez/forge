@@ -605,7 +605,6 @@ mod tests {
                 id: IntegrationId::new(id),
             });
             BuiltinObject {
-                icon: forge_platform_core::SectionIcon::new("bug"),
                 status: probe.clone(),
                 health: probe.clone(),
                 content: probe.clone(),
@@ -622,6 +621,9 @@ mod tests {
     impl BuiltinStatus for ProbeBuiltin {
         fn id(&self) -> &IntegrationId {
             &self.id
+        }
+        fn credential_state(&self) -> forge_platform_core::CredentialState {
+            forge_platform_core::CredentialState::Valid
         }
         fn display_name(&self) -> &str {
             SECRET

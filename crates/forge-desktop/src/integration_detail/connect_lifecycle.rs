@@ -78,9 +78,7 @@ impl IntegrationDetail {
     }
 
     pub(super) fn adopt_builtin(&mut self, object: BuiltinObject, cx: &mut Context<Self>) {
-        let (icon, ports) = BuiltinPorts::from_object(object);
-        self.shown.icon = icon;
-        self.ports = ports;
+        self.ports = BuiltinPorts::from_object(object);
         self.sign_in.connect = None;
         self.close_collection_manager();
         self.live.viewer_samples.clear();

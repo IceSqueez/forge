@@ -4,10 +4,11 @@ use std::time::Duration;
 use forge_platform_core::{
     BuiltinContent, BuiltinHealth, BuiltinStatus, CapabilityFlags, ConnectionState, DetailSection,
     HeaderAction, HealthMetric, HealthMetricId, HealthStream, HealthText, HealthValue, QuickAction,
-    QuickActions, SectionIcon,
+    QuickActions,
 };
 use forge_types::{IntegrationId, MessageCode, UserText, VerbatimText};
 
+use forge_host::integration_catalog::declaration_of;
 use forge_host::integrations::BuiltinObject;
 
 const MISSING_VALUE: &str = "-";
@@ -58,6 +59,10 @@ impl BuiltinStatus for UnavailableStatus {
     }
     fn header_actions(&self) -> Vec<HeaderAction> {
         Vec::new()
+    }
+
+    fn credential_state(&self) -> forge_platform_core::CredentialState {
+        forge_platform_core::CredentialState::Valid
     }
 
     fn status_revisions(&self) -> Option<forge_platform_core::CollectionRevisions> {
@@ -119,25 +124,18 @@ fn blank_metric(id: HealthMetricId) -> HealthMetric {
     }
 }
 
-fn identity(id: &IntegrationId) -> (String, &'static str) {
-    match id.as_str() {
-        "twitch" => ("Twitch".to_owned(), "brand-twitch"),
-        "youtube" => ("YouTube".to_owned(), "brand-youtube"),
-        "kick" => ("Kick".to_owned(), "brand-kick"),
-        "discord" => ("Discord".to_owned(), "brand-discord"),
-        "midi" => ("MIDI".to_owned(), "piano"),
-        "hotkey" => ("Hotkeys".to_owned(), "keyboard"),
-        other => (other.to_owned(), "broadcast"),
-    }
+fn display_name_of(id: &IntegrationId) -> String {
+    declaration_of(id).map_or_else(
+        || id.to_string(),
+        |declaration| declaration.brand_name.to_owned(),
+    )
 }
 
 pub(crate) fn unavailable_builtin(id: &IntegrationId) -> BuiltinObject {
-    let (display_name, icon) = identity(id);
     BuiltinObject {
-        icon: SectionIcon::new(icon),
         status: Arc::new(UnavailableStatus {
             id: id.clone(),
-            display_name,
+            display_name: display_name_of(id),
         }),
         health: Arc::new(UnavailableHealth),
         content: Arc::new(UnavailableContent),

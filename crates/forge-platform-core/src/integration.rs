@@ -1,4 +1,4 @@
-use forge_types::IntegrationId;
+use forge_types::{IntegrationId, PlatformId};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct IntegrationCategory {
@@ -80,6 +80,47 @@ pub enum ConnectionAffordance {
     Connectionless,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SignInRoute {
+    ChatPlatform(PlatformId),
+    CredentialForm,
+    NotNeeded,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IntegrationTint {
+    PlatformBrand(PlatformId),
+    ThemeBrand,
+    AccentPinkLight,
+    AccentTeal,
+    TextSecondary,
+    Success,
+    Warning,
+    Danger,
+    Info,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TileMark {
+    Monogram,
+    Glyph,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct IntegrationIdentity {
+    pub icon: &'static str,
+    pub monogram: &'static str,
+    pub tile_mark: TileMark,
+    pub tile_tint: IntegrationTint,
+    pub hero_tint: IntegrationTint,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct IntegrationDisclaimer {
+    pub short_key: &'static str,
+    pub full_key: &'static str,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IntegrationDeclaration {
     pub id: IntegrationId,
@@ -87,6 +128,18 @@ pub struct IntegrationDeclaration {
     pub category: IntegrationCategory,
     pub description_key: &'static str,
     pub connection: ConnectionAffordance,
+    pub sign_in: SignInRoute,
+    pub identity: IntegrationIdentity,
+    pub disclaimer: Option<IntegrationDisclaimer>,
+}
+
+impl IntegrationDeclaration {
+    pub const fn chat_platform(&self) -> Option<PlatformId> {
+        match self.sign_in {
+            SignInRoute::ChatPlatform(platform) => Some(platform),
+            SignInRoute::CredentialForm | SignInRoute::NotNeeded => None,
+        }
+    }
 }
 
 #[cfg(test)]

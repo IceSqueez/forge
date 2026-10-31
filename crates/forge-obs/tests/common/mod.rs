@@ -1,11 +1,16 @@
 #![allow(dead_code, clippy::unwrap_used)]
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use forge_events::{Event, EventPublisher, PlatformConnectionChanged, TypedEvent};
+use forge_obs::vocabulary::picker_keys::SCENE_NAMES;
 use forge_obs::{ObsClient, ObsTiming};
-use forge_platform_core::ConnectionState;
+use forge_platform_core::{
+    BuiltinContent, BuiltinOptionSource, ConnectionState, ContentListItem, DetailSection,
+    OptionEntry, OptionListId, QuickActionFieldValue, TrailingToken,
+};
+use forge_types::{MessageArg, UserText};
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -55,6 +60,10 @@ pub(crate) const WALL_BUDGET: Duration = Duration::from_secs(90);
 pub(crate) const REAL_CLOCK_POLL: Duration = Duration::from_millis(10);
 
 pub(crate) const SCENE: &str = "Main";
+const SOURCE_LIST: &str = "obs.sources";
+const SCENE_FIELD: &str = "scene";
+const HIDDEN_HINT: &str = "option_hint_hidden";
+const AUDIO_DB_ARG: &str = "db";
 pub(crate) const SCENE_UUID: &str = "6f1d3c1e-8a3b-4b8e-9d1a-0c2b3a4d5e6f";
 pub(crate) const SOURCE: &str = "Webcam";
 pub(crate) const SNAPSHOT_ITEM_ID: i64 = 7;
@@ -458,4 +467,73 @@ impl FakeObs {
         every_earlier_dial_was_accepted(self.port).await;
         self.log.accepted() - 1
     }
+}
+
+pub(crate) async fn listed_scenes(client: &ObsClient) -> Vec<String> {
+    client
+        .resolve(&OptionListId::new(SCENE_NAMES), &BTreeMap::new())
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .map(|entry| entry.value)
+        .collect()
+}
+
+pub(crate) async fn listed_sources(client: &ObsClient, scene: &str) -> Vec<OptionEntry> {
+    let scene = QuickActionFieldValue::Text(scene.to_owned());
+    client
+        .resolve(
+            &OptionListId::new(SOURCE_LIST),
+            &BTreeMap::from([(SCENE_FIELD.to_owned(), scene)]),
+        )
+        .await
+        .unwrap_or_default()
+}
+
+pub(crate) fn is_hidden(entry: &OptionEntry) -> bool {
+    entry
+        .hint
+        .as_ref()
+        .is_some_and(|hint| hint.key == HIDDEN_HINT)
+}
+
+fn page_rows(client: &ObsClient) -> (Vec<ContentListItem>, Vec<ContentListItem>) {
+    client
+        .sections()
+        .into_iter()
+        .find_map(|section| match section {
+            DetailSection::TwoColumnLists { left, right } => Some((left.items, right.items)),
+            _ => None,
+        })
+        .unwrap_or_default()
+}
+
+pub(crate) fn page_scenes(client: &ObsClient) -> Vec<String> {
+    page_rows(client)
+        .0
+        .into_iter()
+        .map(|row| row.name)
+        .collect()
+}
+
+pub(crate) fn page_sources(client: &ObsClient) -> Vec<String> {
+    page_rows(client)
+        .1
+        .into_iter()
+        .map(|row| row.name)
+        .collect()
+}
+
+pub(crate) fn page_source_audio_db(client: &ObsClient) -> Option<MessageArg> {
+    let (_, sources) = page_rows(client);
+    sources
+        .first()?
+        .trailing
+        .iter()
+        .find_map(|token| match token {
+            TrailingToken::TintedLabel(UserText::Message(label), _) => {
+                label.arg(AUDIO_DB_ARG).cloned()
+            }
+            _ => None,
+        })
 }

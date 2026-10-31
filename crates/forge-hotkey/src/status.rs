@@ -1,6 +1,8 @@
 use std::time::Duration;
 
-use forge_platform_core::{BuiltinStatus, CapabilityFlags, ConnectionState, HeaderAction};
+use forge_platform_core::{
+    BuiltinStatus, CapabilityFlags, ConnectionState, CredentialState, HeaderAction,
+};
 use forge_types::{IntegrationId, UserText, VerbatimText};
 
 use crate::client::HotkeyClient;
@@ -47,6 +49,10 @@ impl BuiltinStatus for HotkeyClient {
         } else {
             vec![HeaderAction::Reconnect]
         }
+    }
+
+    fn credential_state(&self) -> CredentialState {
+        CredentialState::Valid
     }
 
     fn status_revisions(&self) -> Option<forge_platform_core::CollectionRevisions> {

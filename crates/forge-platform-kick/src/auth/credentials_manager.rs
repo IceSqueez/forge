@@ -4,8 +4,8 @@ use std::time::SystemTime;
 use async_trait::async_trait;
 use forge_net::Gateway;
 use forge_platform_core::{
-    PlatformError, SingleFlightRefresh, TokenRotation, credential_storage_error,
-    expires_within_refresh_buffer, reauth_required,
+    CredentialState, CredentialStateTracker, PlatformError, SingleFlightRefresh, TokenRotation,
+    credential_storage_error, expires_within_refresh_buffer, reauth_required,
 };
 use forge_storage::{CredentialId, CredentialsRepo};
 use tokio::sync::watch;
@@ -48,6 +48,10 @@ impl KickCredentialsManager {
         self.store().expiry_tx.subscribe()
     }
 
+    pub(crate) fn credential_state(&self) -> &CredentialStateTracker {
+        self.refresh.credential_state()
+    }
+
     pub(crate) fn oauth_client(&self) -> &KickOAuthClient {
         &self.refresh.rotation().oauth
     }
@@ -70,7 +74,9 @@ impl KickCredentialsManager {
             expires_at: bundle.expires_at,
         };
         let _guard = self.refresh.exclusive().await;
-        self.store().persist(&creds).await
+        self.store().persist(&creds).await?;
+        self.credential_state().report(CredentialState::Valid);
+        Ok(())
     }
 
     pub async fn get_valid_access_token(&self) -> Result<String, PlatformError> {
@@ -93,7 +99,9 @@ impl KickCredentialsManager {
 
     pub async fn clear(&self) -> Result<(), PlatformError> {
         let _guard = self.refresh.exclusive().await;
-        self.store().clear().await
+        self.store().clear().await?;
+        self.credential_state().report(CredentialState::Valid);
+        Ok(())
     }
 }
 

@@ -3,8 +3,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
 use forge_platform_core::{
-    PlatformError, SingleFlightRefresh, TokenRotation, credential_storage_error,
-    expires_within_refresh_buffer, reauth_required,
+    CredentialState, CredentialStateTracker, PlatformError, SingleFlightRefresh, TokenRotation,
+    credential_storage_error, expires_within_refresh_buffer, reauth_required,
 };
 use forge_storage::{CredentialId, CredentialsRepo};
 use time::{Duration, OffsetDateTime};
@@ -55,6 +55,10 @@ impl YoutubeCredentialsManager {
         self.store().expiry_tx.subscribe()
     }
 
+    pub(crate) fn credential_state(&self) -> &CredentialStateTracker {
+        self.refresh.credential_state()
+    }
+
     pub(crate) fn oauth_client(&self) -> &GoogleOAuthClient {
         &self.refresh.rotation().oauth
     }
@@ -98,7 +102,9 @@ impl YoutubeCredentialsManager {
             expires_at,
         };
         let _guard = self.refresh.exclusive().await;
-        self.store().persist(&creds).await
+        self.store().persist(&creds).await?;
+        self.credential_state().report(CredentialState::Valid);
+        Ok(())
     }
 
     pub async fn get_valid_access_token(&self) -> Result<String, PlatformError> {
@@ -140,7 +146,9 @@ impl YoutubeCredentialsManager {
 
     pub async fn clear(&self) -> Result<(), PlatformError> {
         let _guard = self.refresh.exclusive().await;
-        self.store().clear().await
+        self.store().clear().await?;
+        self.credential_state().report(CredentialState::Valid);
+        Ok(())
     }
 }
 
@@ -763,6 +771,21 @@ mod tests {
             matches!(outcome, Err(PlatformError::Auth { .. })),
             "{:?}",
             outcome.err()
+        );
+    }
+
+    #[tokio::test]
+    async fn forgetting_the_account_clears_a_reported_reauth() {
+        let rig = rig(&fresh()).await;
+        rig.manager
+            .credential_state()
+            .report(forge_platform_core::CredentialState::ReauthRequired);
+
+        rig.manager.clear().await.unwrap();
+
+        assert_eq!(
+            rig.manager.credential_state().current(),
+            forge_platform_core::CredentialState::Valid
         );
     }
 

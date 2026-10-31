@@ -14,7 +14,7 @@ use forge_host::platform_credentials::PlatformCredentialManagers;
 use forge_platform_core::{
     BuiltinCollections, BuiltinContent, BuiltinControl, BuiltinHealth, BuiltinOptionSource,
     BuiltinStatus, CapabilityFlags, ConnectionState, DetailSection, HeaderAction, HealthMetric,
-    QuickActions, SectionIcon,
+    QuickActions,
 };
 use forge_registry::TriggerRegistry;
 use forge_runtime::{ActionEngineHandle, EventBus, IntegrationSlot};
@@ -55,9 +55,8 @@ pub(super) struct BuiltinPorts {
 }
 
 impl BuiltinPorts {
-    pub(super) fn from_object(object: BuiltinObject) -> (SectionIcon, Self) {
+    pub(super) fn from_object(object: BuiltinObject) -> Self {
         let BuiltinObject {
-            icon,
             status,
             health,
             content,
@@ -68,7 +67,7 @@ impl BuiltinPorts {
             follow: _,
             ban_list: _,
         } = object;
-        let ports = Self {
+        Self {
             status,
             health,
             content,
@@ -76,8 +75,7 @@ impl BuiltinPorts {
             control,
             collections,
             option_source,
-        };
-        (icon, ports)
+        }
     }
 }
 
@@ -99,7 +97,6 @@ pub(super) struct ShownState {
     pub(super) is_vtube: bool,
     pub(super) twitch_reauth_required: bool,
     pub(super) obs_password_rejected: bool,
-    pub(super) icon: SectionIcon,
     pub(super) display_name: String,
     pub(super) version: Option<String>,
     pub(super) connection: ConnectionState,
@@ -110,11 +107,7 @@ pub(super) struct ShownState {
 }
 
 impl ShownState {
-    pub(super) fn read(
-        icon: SectionIcon,
-        obs_password_rejected: bool,
-        ports: &BuiltinPorts,
-    ) -> Self {
+    pub(super) fn read(obs_password_rejected: bool, ports: &BuiltinPorts) -> Self {
         let id = ports.status.id();
         Self {
             is_twitch: id.as_str() == "twitch",
@@ -122,7 +115,6 @@ impl ShownState {
             is_vtube: id.as_str() == "vtube",
             twitch_reauth_required: false,
             obs_password_rejected,
-            icon,
             display_name: ports.status.display_name().to_owned(),
             version: ports.status.version(),
             connection: ports.status.connection(),

@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use forge_platform_core::{
-    BuiltinControl, ChatPlatform, ControlFailure, ControlOutcome, PlatformError,
+    BuiltinControl, ChatPlatform, ControlFailure, ControlOutcome, CredentialState, PlatformError,
 };
 use forge_storage::StorageError;
 use tracing::warn;
@@ -33,6 +33,18 @@ impl BuiltinControl for TwitchIntegrationBundle {
     }
 
     async fn refresh_token(&self) -> ControlOutcome {
+        let outcome = self.refresh_stored_token().await;
+        if matches!(outcome, Err(ControlFailure::Unauthorized)) {
+            self.credentials_manager()
+                .credential_state()
+                .report(CredentialState::ReauthRequired);
+        }
+        outcome
+    }
+}
+
+impl TwitchIntegrationBundle {
+    async fn refresh_stored_token(&self) -> ControlOutcome {
         let stored = load(self.credentials().as_ref())
             .await
             .map_err(credential_load_failure)?

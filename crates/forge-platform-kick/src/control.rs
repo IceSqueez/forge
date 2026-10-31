@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use forge_platform_core::{
-    BuiltinControl, ChatPlatform, ConnectionState, ControlFailure, ControlOutcome,
+    BuiltinControl, ChatPlatform, ConnectionState, ControlFailure, ControlOutcome, CredentialState,
     HTTP_UNAUTHORIZED, PlatformError,
 };
 
@@ -37,6 +37,18 @@ impl BuiltinControl for KickIntegrationBundle {
     }
 
     async fn refresh_token(&self) -> ControlOutcome {
+        let outcome = self.refresh_stored_token().await;
+        if matches!(outcome, Err(ControlFailure::Unauthorized)) {
+            self.credentials_manager()
+                .credential_state()
+                .report(CredentialState::ReauthRequired);
+        }
+        outcome
+    }
+}
+
+impl KickIntegrationBundle {
+    async fn refresh_stored_token(&self) -> ControlOutcome {
         let creds = self
             .credentials_manager()
             .load()

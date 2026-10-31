@@ -401,8 +401,12 @@ impl BuiltinStatus for YoutubeIntegrationBundle {
         }]
     }
 
+    fn credential_state(&self) -> forge_platform_core::CredentialState {
+        self.credentials_manager.credential_state().current()
+    }
+
     fn status_revisions(&self) -> Option<forge_platform_core::CollectionRevisions> {
-        None
+        Some(self.credentials_manager.credential_state().revisions())
     }
 }
 

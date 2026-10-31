@@ -14,9 +14,9 @@ use tracing::debug;
 use forge_net::Gateway;
 use forge_platform_core::{
     BuiltinContent, BuiltinHealth, BuiltinStatus, CapabilityFlags, ChatPlatform,
-    CollectionRevisionSignal, CollectionRevisions, ConnectionState, DetailSection, HeaderAction,
-    HealthDelta, HealthMetric, HealthMetricId, HealthStream, HealthText, HealthValue, HeroBadge,
-    HeroBadgeTone, LiveViewerSource, SectionIcon, SubscriptionRow, SubscriptionStatus,
+    CollectionRevisionSignal, CollectionRevisions, ConnectionState, CredentialState, DetailSection,
+    HeaderAction, HealthDelta, HealthMetric, HealthMetricId, HealthStream, HealthText, HealthValue,
+    HeroBadge, HeroBadgeTone, LiveViewerSource, SectionIcon, SubscriptionRow, SubscriptionStatus,
     ViewerReport, ViewerReportStream,
 };
 
@@ -92,7 +92,7 @@ pub struct TwitchIntegrationBundle {
     token_expires_at: std::sync::RwLock<Option<SystemTime>>,
     connected_at: std::sync::RwLock<Option<OffsetDateTime>>,
     reported_connection: std::sync::RwLock<ConnectionState>,
-    status_changes: CollectionRevisionSignal,
+    status_changes: Arc<CollectionRevisionSignal>,
     lifecycle: TwitchLifecycle,
     retired: CancellationToken,
 }
@@ -108,6 +108,7 @@ impl TwitchIntegrationBundle {
         let credentials_manager = Arc::clone(platform.credentials_manager());
         let helix = platform.helix_gateway().clone();
         let transport = Self::build_helix_transport(&config, &credentials_manager, helix.clone());
+        let status_changes = credentials_manager.credential_state().status_signal();
         let bundle = Arc::new(Self {
             id: crate::TWITCH_INTEGRATION.id,
             login,
@@ -126,7 +127,7 @@ impl TwitchIntegrationBundle {
             token_expires_at: std::sync::RwLock::new(None),
             connected_at: std::sync::RwLock::new(None),
             reported_connection,
-            status_changes: CollectionRevisionSignal::new(),
+            status_changes,
             lifecycle: platform.lifecycle().clone(),
             platform,
             retired: CancellationToken::new(),
@@ -467,6 +468,7 @@ impl TwitchIntegrationBundle {
             lifecycle.clone(),
         ));
         let reported_connection = std::sync::RwLock::new(state_rx.borrow().to_connection_state());
+        let status_changes = credentials_manager.credential_state().status_signal();
         Arc::new(Self {
             id: IntegrationId::new("twitch"),
             login,
@@ -488,7 +490,7 @@ impl TwitchIntegrationBundle {
             token_expires_at: std::sync::RwLock::new(None),
             connected_at: std::sync::RwLock::new(None),
             reported_connection,
-            status_changes: CollectionRevisionSignal::new(),
+            status_changes,
             lifecycle,
             retired: CancellationToken::new(),
         })
@@ -630,6 +632,10 @@ impl BuiltinStatus for TwitchIntegrationBundle {
 
     fn header_actions(&self) -> Vec<HeaderAction> {
         vec![HeaderAction::RefreshToken, HeaderAction::Disconnect]
+    }
+
+    fn credential_state(&self) -> CredentialState {
+        self.credentials_manager.credential_state().current()
     }
 
     fn status_revisions(&self) -> Option<CollectionRevisions> {
@@ -829,6 +835,23 @@ mod tests {
 
         bundle.on_chat_state_changed(ChatConnectionState::Reconnecting { attempt: 2 });
         assert!(!moved(&mut revisions), "only the attempt number moved");
+    }
+
+    #[tokio::test]
+    async fn the_manager_reported_credential_state_reaches_the_status_and_its_revision() {
+        let bundle = make_bundle(ChatConnectionState::Connected);
+        let mut revisions = bundle
+            .status_revisions()
+            .expect("twitch declares a status signal");
+        assert_eq!(bundle.credential_state(), CredentialState::Valid);
+
+        bundle
+            .credentials_manager
+            .credential_state()
+            .report(CredentialState::ReauthRequired);
+
+        assert_eq!(bundle.credential_state(), CredentialState::ReauthRequired);
+        assert!(moved(&mut revisions));
     }
 
     #[tokio::test]

@@ -1,4 +1,7 @@
-use forge_platform_core::{ConnectionAffordance, IntegrationCategory, IntegrationDeclaration};
+use forge_platform_core::{
+    ConnectionAffordance, IntegrationCategory, IntegrationDeclaration, IntegrationIdentity,
+    IntegrationTint, SignInRoute, TileMark,
+};
 use forge_types::IntegrationId;
 
 use crate::vocabulary;
@@ -9,4 +12,13 @@ pub const HOTKEY_INTEGRATION: IntegrationDeclaration = IntegrationDeclaration {
     category: IntegrationCategory::CONTROLS,
     description_key: "integration_hotkey_description",
     connection: ConnectionAffordance::Connectionless,
+    sign_in: SignInRoute::NotNeeded,
+    identity: IntegrationIdentity {
+        icon: "keyboard",
+        monogram: "H",
+        tile_mark: TileMark::Glyph,
+        tile_tint: IntegrationTint::Success,
+        hero_tint: IntegrationTint::Info,
+    },
+    disclaimer: None,
 };

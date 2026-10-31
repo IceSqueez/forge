@@ -21,14 +21,15 @@ use crate::builtin_sections::{
 use crate::connect_flow::ConnectFlow;
 use crate::donation_settings::{DonationSettingsView, remove_confirm};
 use crate::hub_crumb::hub_crumb;
-use crate::integration_catalog::declaration_of;
+use crate::integration_catalog::chat_platform_of;
 use crate::navigation::NavRequested;
 use crate::obs_credentials_form::ObsConnected;
 use forge_components::OverflowRevealingFocus;
 use forge_components::{ActivePresentation, BreadcrumbCrumb, SearchState, page_frame, scaled, tr};
+use forge_host::integration_catalog::declaration_of;
 use forge_host::integrations::BuiltinObject;
 use forge_platform_core::{ConnectionState, QuickAction};
-use forge_types::PlatformId;
+use forge_types::{IntegrationId, PlatformId};
 use gpui::{ClickEvent, Context, Entity, EventEmitter, Subscription, Window, div, prelude::*, px};
 use std::rc::Rc;
 
@@ -75,7 +76,7 @@ impl IntegrationDetail {
             event_bus,
             connectivity,
         } = feeds;
-        let (icon, ports) = BuiltinPorts::from_object(object);
+        let ports = BuiltinPorts::from_object(object);
         let is_obs_detail = ports.status.id().as_str() == "obs";
         let obs_password_rejected = is_obs_detail && connectivity.read(cx).obs_password_rejected();
         let conn_obs = cx.observe(&connectivity, move |this, connectivity, cx| {
@@ -91,9 +92,8 @@ impl IntegrationDetail {
                 .with_font_size(px(11.5))
         }));
         let qa_search_sub = cx.subscribe(qa_search.field(), Self::on_qa_search);
-        let connect_platform =
-            connect_platform_for(ports.status.id().as_str(), ports.control.is_some());
-        let shown = ShownState::read(icon, obs_password_rejected, &ports);
+        let connect_platform = connect_platform_for(ports.status.id(), ports.control.is_some());
+        let shown = ShownState::read(obs_password_rejected, &ports);
         let quick_actions = reachable_quick_actions(&*ports.quick, ports.collections.as_deref());
 
         let health_bridge = Self::spawn_health_bridge(&ports.health, cx);
@@ -261,18 +261,9 @@ impl Render for IntegrationDetail {
     }
 }
 
-fn platform_of(id: &str) -> Option<PlatformId> {
-    match id {
-        "twitch" => Some(PlatformId::Twitch),
-        "youtube" => Some(PlatformId::YouTube),
-        "kick" => Some(PlatformId::Kick),
-        _ => None,
-    }
-}
-
-fn connect_platform_for(id: &str, has_control: bool) -> Option<PlatformId> {
+fn connect_platform_for(id: &IntegrationId, has_control: bool) -> Option<PlatformId> {
     if has_control {
         return None;
     }
-    platform_of(id)
+    chat_platform_of(id)
 }

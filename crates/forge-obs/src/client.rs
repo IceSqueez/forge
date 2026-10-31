@@ -15,13 +15,13 @@ use forge_net::Backoff;
 use forge_platform_core::{
     AtomicConnectionState, AutoReconnectSwitch, AutoReconnectWatch, BuiltinControl, BuiltinStatus,
     CapabilityFlags, CollectionRevisions, ConnectionState, ConnectionTransition, ControlFailure,
-    ControlOutcome, HeaderAction, HealthDelta, HeroBadge, HeroBadgeTone, ReconnectingSession,
-    SessionEnd, record_connection_failure, run_reconnect_loop,
+    ControlOutcome, CredentialState, HeaderAction, HealthDelta, HeroBadge, HeroBadgeTone,
+    ReconnectingSession, SessionEnd, record_connection_failure, run_reconnect_loop,
 };
 
 use crate::catalog::{read_lock, write_lock};
 use crate::catalog_revisions::{CatalogBaseline, CatalogRevisions};
-use crate::connect_failure::connect_failure_message;
+use crate::connect_failure::{connect_failure_message, credential_state_after};
 use crate::error::ObsError;
 use crate::health::{HealthSnapshot, make_health_channel};
 use crate::item_ids::SceneItemIds;
@@ -288,6 +288,10 @@ impl BuiltinStatus for ObsClient {
 
     fn header_actions(&self) -> Vec<HeaderAction> {
         vec![HeaderAction::Reconnect, HeaderAction::Settings]
+    }
+
+    fn credential_state(&self) -> CredentialState {
+        credential_state_after(self.last_failure.read_recover().as_ref())
     }
 
     fn status_revisions(&self) -> Option<CollectionRevisions> {

@@ -4,8 +4,8 @@ use forge_types::IntegrationId;
 use futures_util::StreamExt as _;
 use gpui::{App, Entity};
 
-use crate::integration_catalog::declarations;
 use crate::platforms::PlatformConnectivity;
+use forge_host::integration_catalog::declarations;
 
 pub(crate) fn donation_provider_options() -> Vec<(String, String)> {
     declarations()

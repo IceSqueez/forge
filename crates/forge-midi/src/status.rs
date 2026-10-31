@@ -2,7 +2,9 @@ use forge_types::{IntegrationId, RecoverMutex, UserText};
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
-use forge_platform_core::{BuiltinStatus, CapabilityFlags, ConnectionState, HeaderAction};
+use forge_platform_core::{
+    BuiltinStatus, CapabilityFlags, ConnectionState, CredentialState, HeaderAction,
+};
 
 use crate::client::MidiClient;
 
@@ -53,6 +55,10 @@ impl BuiltinStatus for MidiClient {
 
     fn header_actions(&self) -> Vec<HeaderAction> {
         vec![]
+    }
+
+    fn credential_state(&self) -> CredentialState {
+        CredentialState::Valid
     }
 
     fn status_revisions(&self) -> Option<forge_platform_core::CollectionRevisions> {

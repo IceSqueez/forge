@@ -189,7 +189,7 @@ mod tests {
     use forge_platform_core::{
         BuiltinContent, BuiltinHealth, BuiltinStatus, CapabilityFlags, ConnectionState,
         DetailSection, FollowLookup, FollowStatus, HeaderAction, HealthMetric, HealthMetricId,
-        HealthStream, HealthValue, QuickAction, QuickActions, SectionIcon,
+        HealthStream, HealthValue, QuickAction, QuickActions,
     };
     use forge_storage::MockChatHistoryRepo;
     use forge_storage::MockVoiceAliasRepo;
@@ -215,6 +215,9 @@ mod tests {
     impl BuiltinStatus for StubBuiltin {
         fn id(&self) -> &IntegrationId {
             &self.id
+        }
+        fn credential_state(&self) -> forge_platform_core::CredentialState {
+            forge_platform_core::CredentialState::Valid
         }
         fn display_name(&self) -> &str {
             "stub"
@@ -317,7 +320,6 @@ mod tests {
                 id: integration.builtin_id(),
             });
             registry.install(BuiltinObject {
-                icon: SectionIcon::new("bug"),
                 status: stub.clone(),
                 health: stub.clone(),
                 content: stub.clone(),

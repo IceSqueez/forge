@@ -76,6 +76,10 @@ impl<T: PolledDonationProvider> BuiltinStatus for T {
         }
     }
 
+    fn credential_state(&self) -> crate::CredentialState {
+        crate::CredentialState::Valid
+    }
+
     fn status_revisions(&self) -> Option<crate::CollectionRevisions> {
         None
     }

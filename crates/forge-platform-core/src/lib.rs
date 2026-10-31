@@ -8,6 +8,7 @@ mod chat;
 mod collections;
 mod connection_announcer;
 mod credential_errors;
+mod credential_state;
 mod donation;
 mod donation_poll;
 mod donation_test;
@@ -50,6 +51,7 @@ pub use collections::{
 };
 pub use connection_announcer::ConnectionAnnouncer;
 pub use credential_errors::{credential_storage_error, reauth_required};
+pub use credential_state::{CredentialState, CredentialStateTracker};
 pub use donation::{DonationProvider, DonationStream};
 pub use donation_poll::{
     CycleError, DonationPoll, POLL_ERROR_BACKOFF_BASE, POLL_ERROR_BACKOFF_CAP, PollError,
@@ -66,7 +68,10 @@ pub use donation_test::{
 pub use endpoints::{EndpointRefusal, EndpointSurface, PlatformEndpoints};
 pub use error::{DeviceAuthEnd, HTTP_UNAUTHORIZED, PlatformError};
 pub use follow_lookup::{FollowLookup, FollowStatus};
-pub use integration::{ConnectionAffordance, IntegrationCategory, IntegrationDeclaration};
+pub use integration::{
+    ConnectionAffordance, IntegrationCategory, IntegrationDeclaration, IntegrationDisclaimer,
+    IntegrationIdentity, IntegrationTint, SignInRoute, TileMark,
+};
 pub use live_viewers::{LiveViewerSource, ViewerReport, ViewerReportStream};
 pub use option_source::{
     BuiltinOptionSource, OptionEntry, OptionHint, OptionListId, OptionListMetadata,

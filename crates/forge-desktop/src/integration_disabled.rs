@@ -22,13 +22,14 @@ use gpui::{
 };
 
 use crate::hub_card::hub_tile;
-use crate::integration_catalog::{declaration_of, disclaimer_of, look_of};
+use crate::integration_catalog::{disclaimer_of, look_of};
 use crate::integration_lifecycle::{CardStatus, IntegrationLifecycle};
 use crate::integrations_hub::{card_status_badge, load_references};
 use crate::navigation::NavRequested;
 use crate::navigation::Screen;
 use forge_components::ActivePresentation;
 use forge_components::grow_cell;
+use forge_host::integration_catalog::declaration_of;
 use forge_host::integrations::BuiltinObject;
 use forge_runtime::{IntegrationSlot, LifecycleState};
 

@@ -12,8 +12,8 @@ use crate::vocabulary::{self, PlatformReauthRequired, RaidDirection};
 use forge_events::{Event, EventPublisher, EventSource, TypedEvent};
 use forge_net::{Backoff, Gateway};
 use forge_platform_core::{
-    ConnectionState, ConnectionTransition, EndpointSurface, PlatformEndpoints, PlatformError,
-    connection_state_changed_event,
+    ConnectionState, ConnectionTransition, CredentialState, EndpointSurface, PlatformEndpoints,
+    PlatformError, connection_state_changed_event,
 };
 use forge_types::{
     AUTHOR_IS_CONNECTED_BOT_FIELD, ChatModerationAction, ChatModerationPayload, ChatPayload,
@@ -299,6 +299,10 @@ impl ChatSession {
                                 .and_then(|mut handoff| handoff.try_recv().ok())
                                 .and_then(TopicRetries::into_run);
                             self.backoff.reset();
+                            self.config
+                                .manager
+                                .credential_state()
+                                .report(CredentialState::Valid);
                             self.set_state(ChatConnectionState::Connected);
                             self.publish_connection_event();
                             info!(broadcaster_id = %self.config.broadcaster_id, "chat connected");
@@ -1845,6 +1849,10 @@ impl ChatSession {
     }
 
     fn publish_reauth_required(&self) {
+        self.config
+            .manager
+            .credential_state()
+            .report(CredentialState::ReauthRequired);
         PlatformReauthRequired {
             platform_id: vocabulary::PLATFORM,
         }

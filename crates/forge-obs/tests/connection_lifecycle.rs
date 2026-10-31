@@ -8,8 +8,9 @@ use std::time::Duration;
 use common::{
     ChannelPublisher, FakeObs, Handshake, RELOOKED_ITEM_ID, Recorder, Reply, SCENE, SCENE_UUID,
     SNAPSHOT_ITEM_ID, SOURCE, Seen, WALL_BUDGET, bind_loopback, completes_every_handshake,
-    connect_to, connect_with_timing, connected, event_frame, fast_retries, settle_until,
-    settle_until_async, spawn_fake_obs, standard_reply, version_data,
+    connect_to, connect_with_timing, connected, event_frame, fast_retries, is_hidden,
+    listed_scenes, listed_sources, page_scenes, page_sources, settle_until, settle_until_async,
+    spawn_fake_obs, standard_reply, version_data,
 };
 use forge_events::{Event, EventPublisher};
 use forge_events::{PlatformConnectionChanged, TypedEvent};
@@ -429,6 +430,9 @@ async fn drive_a_drop_during_the_catalog_load() -> (Recorder, Arc<ObsClient>, Fa
         the_first_two_handshakes_complete,
         Arc::new(|seen: Seen<'_>| match (seen.conn, seen.request_type) {
             (0, "SetCurrentProgramScene") | (1, "GetSceneList") => Reply::DropSocket,
+            (_, "GetCurrentProgramScene") => {
+                Reply::Answer(json!({ "sceneName": SCENE, "sceneUuid": SCENE_UUID }))
+            }
             (_, other) => standard_reply(other),
         }),
     )
@@ -436,7 +440,7 @@ async fn drive_a_drop_during_the_catalog_load() -> (Recorder, Arc<ObsClient>, Fa
     let recorder = Recorder::default();
     let client = connect_to(&fake, &recorder).await;
     connected(&client).await;
-    assert_eq!(client.scene_names(), [SCENE], "precondition");
+    assert_eq!(listed_scenes(&client).await, [SCENE], "precondition");
 
     let lost = client.set_scene(SCENE).await;
     assert!(matches!(lost, Err(ObsError::Disconnected)), "got {lost:?}");
@@ -471,8 +475,8 @@ async fn a_connection_lost_during_the_catalog_load_is_retried_without_announcing
 async fn a_connection_lost_during_the_catalog_load_keeps_the_last_good_catalog() {
     let (_recorder, client, _fake) = drive_a_drop_during_the_catalog_load().await;
 
-    assert_eq!(client.scene_names(), [SCENE]);
-    assert_eq!(client.scene_items(SCENE).len(), 1);
+    assert_eq!(page_scenes(&client), [SCENE]);
+    assert_eq!(page_sources(&client).len(), 1);
 }
 
 #[tokio::test]
@@ -537,9 +541,9 @@ async fn a_scene_item_toggled_during_the_catalog_load_lands_in_the_catalog_and_o
     })
     .await;
 
-    let rows = client.scene_items(SCENE);
+    let rows = listed_sources(&client, SCENE).await;
     assert!(
-        rows.iter().any(|row| row.name == SOURCE && !row.visible),
+        rows.iter().any(|row| row.value == SOURCE && is_hidden(row)),
         "the catalog kept the snapshot's stale visibility: {rows:?}"
     );
 }
@@ -557,7 +561,7 @@ fn scene_list(names: &[&str]) -> Reply {
 
 async fn wait_for_scene(client: &ObsClient, scene: &str) {
     settle_until_async("the created scene appeared", || async {
-        client.scene_names().iter().any(|s| s == scene)
+        listed_scenes(client).await.iter().any(|s| s == scene)
     })
     .await;
 }
@@ -596,10 +600,10 @@ async fn a_scene_created_during_a_held_topology_fetch_survives_the_resync() {
     release.notify_one();
 
     settle_until_async("a refetch replaced the stale fetch", || async {
-        !client.scene_items(INTRO).is_empty()
+        !listed_sources(&client, INTRO).await.is_empty()
     })
     .await;
-    assert_eq!(client.scene_names(), vec![SCENE, INTRO]);
+    assert_eq!(listed_scenes(&client).await, vec![SCENE, INTRO]);
 }
 
 #[tokio::test]

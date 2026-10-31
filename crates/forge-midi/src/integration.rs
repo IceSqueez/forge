@@ -1,4 +1,7 @@
-use forge_platform_core::{ConnectionAffordance, IntegrationCategory, IntegrationDeclaration};
+use forge_platform_core::{
+    ConnectionAffordance, IntegrationCategory, IntegrationDeclaration, IntegrationIdentity,
+    IntegrationTint, SignInRoute, TileMark,
+};
 use forge_types::IntegrationId;
 
 pub const MIDI_INTEGRATION: IntegrationDeclaration = IntegrationDeclaration {
@@ -7,4 +10,13 @@ pub const MIDI_INTEGRATION: IntegrationDeclaration = IntegrationDeclaration {
     category: IntegrationCategory::CONTROLS,
     description_key: "integration_midi_description",
     connection: ConnectionAffordance::Connectionless,
+    sign_in: SignInRoute::NotNeeded,
+    identity: IntegrationIdentity {
+        icon: "piano",
+        monogram: "M",
+        tile_mark: TileMark::Glyph,
+        tile_tint: IntegrationTint::Info,
+        hero_tint: IntegrationTint::AccentTeal,
+    },
+    disclaimer: None,
 };

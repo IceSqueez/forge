@@ -253,6 +253,11 @@ impl KickIntegrationBundle {
                     reason = "having no subscribers is a normal state"
                 )]
                 let _ = bundle.health_tx.send(events_delta);
+                bundle
+                    .credentials_manager
+                    .credential_state()
+                    .status_signal()
+                    .bump();
             }
         });
     }
@@ -403,8 +408,15 @@ impl BuiltinStatus for KickIntegrationBundle {
         }]
     }
 
+    fn credential_state(&self) -> forge_platform_core::CredentialState {
+        match *self.poller_auth_rx.borrow() {
+            PollerAuth::AuthRequired => forge_platform_core::CredentialState::ReauthRequired,
+            PollerAuth::Authorized => self.credentials_manager.credential_state().current(),
+        }
+    }
+
     fn status_revisions(&self) -> Option<forge_platform_core::CollectionRevisions> {
-        None
+        Some(self.credentials_manager.credential_state().revisions())
     }
 }
 
@@ -698,6 +710,32 @@ mod tests {
                     secondary: Some(message_text(messages::health_viewers_live())),
                 }
             );
+        }
+
+        #[tokio::test]
+        async fn a_poller_losing_auth_reports_reauth_and_moves_the_status_revision() {
+            let (bundle, _viewer_tx, auth_tx) = bundle_with_feeds();
+            let mut health = bundle.stream();
+            let mut revisions = bundle
+                .status_revisions()
+                .expect("kick declares a status signal");
+            assert_eq!(
+                bundle.credential_state(),
+                forge_platform_core::CredentialState::Valid
+            );
+
+            auth_tx.send(PollerAuth::AuthRequired).unwrap();
+            tokio::time::timeout(StdDuration::from_secs(30), health.next())
+                .await
+                .expect("the events bridge must publish a health delta");
+
+            assert_eq!(
+                bundle.credential_state(),
+                forge_platform_core::CredentialState::ReauthRequired
+            );
+            tokio::time::timeout(StdDuration::from_secs(30), revisions.changed())
+                .await
+                .expect("the status revision must move");
         }
 
         #[tokio::test]

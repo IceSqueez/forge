@@ -13,6 +13,7 @@ use forge_types::{
 
 use crate::ConnectionState;
 use crate::collections::{CollectionId, CollectionRevisions};
+use crate::credential_state::CredentialState;
 use crate::option_source::OptionListId;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -549,6 +550,7 @@ pub trait BuiltinStatus: Send + Sync {
     fn connect_failure(&self) -> Option<MessageRef> {
         None
     }
+    fn credential_state(&self) -> CredentialState;
     fn status_revisions(&self) -> Option<CollectionRevisions>;
 }
 

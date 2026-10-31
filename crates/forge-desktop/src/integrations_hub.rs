@@ -31,8 +31,7 @@ use gpui::{
 
 use crate::async_bridge::{self, Generation};
 use crate::integration_catalog::{
-    CoreFeature, activity_key, core_features, core_tint, declaration_of, declarations,
-    disclaimer_of, look_of,
+    CoreFeature, activity_key, core_features, core_tint, disclaimer_of, look_of,
 };
 use crate::integration_disable_modal::{DisablePrompt, render_disable_modal};
 use crate::integration_failed::LiveDetailRequested;
@@ -45,6 +44,7 @@ use crate::start_failure::{StartRemedy, start_failure_text, start_failure_toolti
 use crate::user_text::resolve_message;
 use forge_components::ActivePresentation;
 use forge_components::PushToast;
+use forge_host::integration_catalog::{declaration_of, declarations};
 use forge_host::integrations::{BuiltinObject, BuiltinRegistry, ObsInstallSeed, VTubeInstallSeed};
 use forge_runtime::{IntegrationSupervisor, LifecycleState};
 

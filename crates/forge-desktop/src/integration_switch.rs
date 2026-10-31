@@ -7,8 +7,8 @@ use forge_platform_core::IntegrationCategory;
 use forge_types::IntegrationId;
 use gpui::{App, Context, Entity, IntoElement, SharedString, Subscription};
 
-use crate::integration_catalog::{declaration_of, declarations};
 use crate::integration_lifecycle::IntegrationLifecycle;
+use forge_host::integration_catalog::{declaration_of, declarations};
 use forge_host::integrations::BuiltinObject;
 use forge_runtime::IntegrationSupervisor;
 

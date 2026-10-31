@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use forge_events::Event;
 use forge_net::{Gateway, RateLimiter, TokenBucketRateLimiter};
 use forge_obs::{OBS_AUTO_RECONNECT, OBS_CONNECT_ON_LAUNCH};
-use forge_platform_core::{ChatPlatform, EndpointSurface, PlatformEndpoints, SectionIcon};
+use forge_platform_core::{ChatPlatform, EndpointSurface, PlatformEndpoints};
 use forge_registry::SubActionRegistry;
 use forge_runtime::{
     DEFAULT_TEARDOWN_GRACE, EventBus, IntegrationFactory, IntegrationStartError,
@@ -652,7 +652,6 @@ impl IntegrationFactory<BuiltinObject> for DiscordFactory {
     async fn start(&self) -> Result<RunningIntegration<BuiltinObject>, IntegrationStartError> {
         let client = Arc::clone(&self.client);
         Ok(RunningIntegration::idle().with_object(BuiltinObject {
-            icon: SectionIcon::new("brand-discord"),
             status: client.clone(),
             health: client.clone(),
             content: client.clone(),
@@ -727,7 +726,6 @@ impl IntegrationFactory<BuiltinObject> for MidiFactory {
         .map_err(|e| midi_start_error(&e))?;
         self.sink.install(Arc::clone(&client));
         let object = BuiltinObject {
-            icon: SectionIcon::new("piano"),
             status: client.clone(),
             health: client.clone(),
             content: client.clone(),
@@ -824,7 +822,6 @@ impl IntegrationFactory<BuiltinObject> for HotkeyFactory {
         }
         let client = Arc::clone(&self.client);
         let object = BuiltinObject {
-            icon: SectionIcon::new("keyboard"),
             status: client.clone(),
             health: client.clone(),
             content: client.clone(),

@@ -1,5 +1,7 @@
-use super::{IntegrationDetail, platform_of};
+use super::IntegrationDetail;
 use crate::async_bridge;
+use crate::integration_catalog::chat_platform_of;
+use crate::integration_extensions::{DetailExtension, has_extension};
 use crate::navigation::{NavRequested, Screen};
 use crate::obs_credentials_form::ObsConnected;
 use crate::obs_settings_modal::{ObsSettingsModal, ObsSettingsModalEvent};
@@ -30,7 +32,11 @@ impl IntegrationDetail {
             HeaderAction::Disconnect => self.request_disconnect(cx),
             HeaderAction::Reconnect => self.dispatch_control(ControlVerb::Reconnect, cx),
             HeaderAction::RefreshToken => self.dispatch_control(ControlVerb::RefreshToken, cx),
-            HeaderAction::Settings if self.shown.is_obs => self.open_obs_settings(window, cx),
+            HeaderAction::Settings
+                if has_extension(self.ports.status.id(), DetailExtension::ObsSettingsModal) =>
+            {
+                self.open_obs_settings(window, cx)
+            }
             HeaderAction::Settings if self.sign_in.donation_settings.is_some() => {
                 if let Some(link) = &self.sign_in.donation_settings {
                     link.view
@@ -156,7 +162,7 @@ impl IntegrationDetail {
                 self.sign_out_obs(cx);
             } else if self.shown.is_vtube {
                 self.sign_out_vtube(cx);
-            } else if let Some(platform) = platform_of(self.ports.status.id().as_str()) {
+            } else if let Some(platform) = chat_platform_of(self.ports.status.id()) {
                 self.reset_to_connect(platform, cx);
             } else {
                 self.dispatch_control(ControlVerb::Disconnect, cx);

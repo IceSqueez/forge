@@ -34,7 +34,6 @@ pub use integration::OBS_INTEGRATION;
 pub use probe::probe_connection;
 pub use runners::register_obs_sub_actions;
 pub use sink::{InputSettings, ObsSink, RecordStatus, SceneList, StreamStatus};
-pub use source::SourceInfo;
 pub use stream_output::{ObsStatsWatch, ObsStreamStats, StreamOutputActive};
 pub use switchable_sink::SwitchableObsSink;
 pub use timing::ObsTiming;

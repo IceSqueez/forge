@@ -15,11 +15,12 @@ use gpui::{
 };
 
 use crate::actions::FocusContent;
-use crate::integration_catalog::{core_features, declarations, look_of};
+use crate::integration_catalog::{core_features, look_of};
 use crate::integration_lifecycle::{CardStatus, IntegrationLifecycle};
 use crate::navigation::{NavRequested, Screen};
 use crate::platforms::PlatformConnectivity;
 use forge_components::{ActivePresentation, Presentation};
+use forge_host::integration_catalog::declarations;
 
 const SIDEBAR_WIDTH: Pixels = px(210.0);
 const SIDEBAR_MIN: Pixels = px(170.0);
@@ -559,7 +560,7 @@ mod tests {
     use gpui::TestAppContext;
 
     use super::*;
-    use crate::integration_catalog::declaration_of;
+    use forge_host::integration_catalog::declaration_of;
     use forge_runtime::{LifecycleState, LifecycleStates};
 
     enum Row {
@@ -617,7 +618,7 @@ mod tests {
     }
 
     fn every_integration(state: LifecycleState) -> LifecycleStates {
-        crate::integration_catalog::declarations()
+        declarations()
             .into_iter()
             .map(|declaration| (declaration.id, state.clone()))
             .collect()
@@ -684,7 +685,7 @@ mod tests {
                 Row::Other => {}
             }
         }
-        assert_eq!(checked, crate::integration_catalog::declarations().len());
+        assert_eq!(checked, declarations().len());
     }
 
     #[gpui::test]

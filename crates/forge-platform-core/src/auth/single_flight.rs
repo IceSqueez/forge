@@ -7,6 +7,7 @@ use tokio::sync::{Mutex, MutexGuard};
 
 use super::pkce_flow::REFRESH_BUFFER_SECS;
 use crate::credential_errors::reauth_required;
+use crate::credential_state::{CredentialState, CredentialStateTracker};
 use crate::error::PlatformError;
 
 pub type TokenSource =
@@ -48,6 +49,7 @@ enum RefreshTrigger {
 pub struct SingleFlightRefresh<R> {
     rotation: Arc<R>,
     guard: Arc<Mutex<()>>,
+    credential_state: CredentialStateTracker,
 }
 
 impl<R: TokenRotation> SingleFlightRefresh<R> {
@@ -55,11 +57,16 @@ impl<R: TokenRotation> SingleFlightRefresh<R> {
         Self {
             rotation: Arc::new(rotation),
             guard: Arc::new(Mutex::new(())),
+            credential_state: CredentialStateTracker::new(),
         }
     }
 
     pub fn rotation(&self) -> &R {
         &self.rotation
+    }
+
+    pub fn credential_state(&self) -> &CredentialStateTracker {
+        &self.credential_state
     }
 
     pub async fn exclusive(&self) -> MutexGuard<'_, ()> {
@@ -92,9 +99,10 @@ impl<R: TokenRotation> SingleFlightRefresh<R> {
     ) -> Result<R::Credential, PlatformError> {
         let rotation = Arc::clone(&self.rotation);
         let guard = Arc::clone(&self.guard);
+        let credential_state = self.credential_state.clone();
         tokio::spawn(async move {
             let _guard = guard.lock().await;
-            refresh_under_guard(rotation.as_ref(), trigger).await
+            refresh_under_guard(rotation.as_ref(), trigger, &credential_state).await
         })
         .await
         .map_err(|e| self.rotation.task_lost(e.to_string()))?
@@ -111,6 +119,7 @@ async fn require<R: TokenRotation>(rotation: &R) -> Result<R::Credential, Platfo
 async fn refresh_under_guard<R: TokenRotation>(
     rotation: &R,
     trigger: RefreshTrigger,
+    credential_state: &CredentialStateTracker,
 ) -> Result<R::Credential, PlatformError> {
     let existing = require(rotation).await?;
     let already_rotated = match &trigger {
@@ -124,7 +133,15 @@ async fn refresh_under_guard<R: TokenRotation>(
         );
         return Ok(existing);
     }
-    rotation.rotate(existing).await
+    let rotated = rotation.rotate(existing).await;
+    match &rotated {
+        Ok(_) => credential_state.report(CredentialState::Valid),
+        Err(PlatformError::ReauthRequired { .. }) => {
+            credential_state.report(CredentialState::ReauthRequired);
+        }
+        Err(_) => {}
+    }
+    rotated
 }
 
 #[cfg(test)]
@@ -188,6 +205,74 @@ mod tests {
             *self.stored() = Some(renewed.clone());
             Ok(renewed)
         }
+    }
+
+    struct FailingRotation {
+        failure: fn() -> PlatformError,
+    }
+
+    #[async_trait]
+    impl TokenRotation for FailingRotation {
+        type Credential = Pair;
+
+        fn platform(&self) -> &'static str {
+            "fake"
+        }
+
+        async fn load(&self) -> Result<Option<Pair>, PlatformError> {
+            Ok(pair("old", true))
+        }
+
+        fn access_token<'a>(&self, credential: &'a Pair) -> &'a str {
+            &credential.access
+        }
+
+        fn near_expiry(&self, credential: &Pair) -> bool {
+            credential.stale
+        }
+
+        async fn rotate(&self, _existing: Pair) -> Result<Pair, PlatformError> {
+            Err((self.failure)())
+        }
+    }
+
+    #[tokio::test]
+    async fn a_failed_rotation_marks_reauth_only_when_the_grant_itself_was_refused() {
+        let refused: fn() -> PlatformError = || reauth_required("fake");
+        let transport: fn() -> PlatformError = || PlatformError::Network {
+            reason: "offline".to_owned(),
+        };
+        for (failure, expected) in [
+            (refused, CredentialState::ReauthRequired),
+            (transport, CredentialState::Valid),
+        ] {
+            let refresh = SingleFlightRefresh::new(FailingRotation { failure });
+
+            assert!(refresh.valid_credential().await.is_err());
+
+            assert_eq!(refresh.credential_state().current(), expected);
+        }
+    }
+
+    #[tokio::test]
+    async fn a_successful_rotation_clears_a_reported_reauth() {
+        let refresh = SingleFlightRefresh::new(FakeRotation::holding(pair("old", true)));
+        refresh
+            .credential_state()
+            .report(CredentialState::ReauthRequired);
+
+        refresh.valid_credential().await.unwrap();
+
+        assert_eq!(refresh.credential_state().current(), CredentialState::Valid);
+    }
+
+    #[tokio::test]
+    async fn a_signed_out_rejection_is_not_a_reauth() {
+        let refresh = SingleFlightRefresh::new(FakeRotation::holding(None));
+
+        assert!(refresh.replace_rejected("old").await.is_err());
+
+        assert_eq!(refresh.credential_state().current(), CredentialState::Valid);
     }
 
     fn pair(access: &str, stale: bool) -> Option<Pair> {

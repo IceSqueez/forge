@@ -6,7 +6,7 @@ use forge_events::{Delivery, EventPublisher, EventSubscription};
 use forge_platform_core::{
     BanListSource, BuiltinCollections, BuiltinContent, BuiltinControl, BuiltinHealth,
     BuiltinOptionSource, BuiltinStatus, ChatPlatform, FollowLookup, PlatformEndpoints,
-    QuickActions, SectionIcon,
+    QuickActions,
 };
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::{DonationIngest, EventBus};
@@ -27,7 +27,6 @@ use forge_runtime::{IntegrationFactory, IntegrationObjects};
 
 #[derive(Clone)]
 pub struct BuiltinObject {
-    pub icon: SectionIcon,
     pub status: Arc<dyn BuiltinStatus>,
     pub health: Arc<dyn BuiltinHealth>,
     pub content: Arc<dyn BuiltinContent>,
@@ -249,7 +248,6 @@ impl VTubeInstallSeed {
 
 pub fn vtube_builtin_object(client: Arc<forge_vtube::VTubeClient>) -> BuiltinObject {
     BuiltinObject {
-        icon: SectionIcon::new("mood-smile"),
         status: client.clone(),
         health: client.clone(),
         content: client.clone(),
@@ -264,7 +262,6 @@ pub fn vtube_builtin_object(client: Arc<forge_vtube::VTubeClient>) -> BuiltinObj
 
 pub fn obs_builtin_object(client: Arc<forge_obs::ObsClient>) -> BuiltinObject {
     BuiltinObject {
-        icon: SectionIcon::new("broadcast"),
         status: client.clone(),
         health: client.clone(),
         content: client.clone(),
@@ -281,7 +278,6 @@ pub fn twitch_builtin_object(
     bundle: Arc<forge_platform_twitch::TwitchIntegrationBundle>,
 ) -> BuiltinObject {
     BuiltinObject {
-        icon: SectionIcon::new("brand-twitch"),
         status: bundle.clone(),
         health: bundle.clone(),
         content: bundle.clone(),
@@ -298,7 +294,6 @@ pub fn youtube_builtin_object(
     bundle: Arc<forge_platform_youtube::YoutubeIntegrationBundle>,
 ) -> BuiltinObject {
     BuiltinObject {
-        icon: SectionIcon::new("brand-youtube"),
         status: bundle.clone(),
         health: bundle.clone(),
         content: bundle.clone(),
@@ -315,7 +310,6 @@ pub fn kick_builtin_object(
     bundle: Arc<forge_platform_kick::KickIntegrationBundle>,
 ) -> BuiltinObject {
     BuiltinObject {
-        icon: SectionIcon::new("brand-kick"),
         status: bundle.clone(),
         health: bundle.clone(),
         content: bundle.clone(),

@@ -1,9 +1,18 @@
 use std::error::Error;
 use std::io::ErrorKind;
 
+use forge_platform_core::CredentialState;
 use forge_types::MessageRef;
 
 use crate::vocabulary::messages;
+
+pub(crate) fn credential_state_after(failure: Option<&MessageRef>) -> CredentialState {
+    if failure == Some(&messages::password_rejected()) {
+        CredentialState::Rejected
+    } else {
+        CredentialState::Valid
+    }
+}
 
 pub(crate) fn connect_failure_message(error: &obws::error::Error) -> MessageRef {
     match error {
@@ -42,7 +51,29 @@ mod tests {
     use obws::client::HandshakeError;
     use obws::error::Error;
 
-    use super::connect_failure_message;
+    use forge_platform_core::CredentialState;
+
+    use super::{connect_failure_message, credential_state_after};
+    use crate::vocabulary::messages;
+
+    #[test]
+    fn only_a_rejected_password_counts_as_a_rejected_credential() {
+        for (failure, expected) in [
+            (None, CredentialState::Valid),
+            (Some(messages::unreachable()), CredentialState::Valid),
+            (Some(messages::connection_lost()), CredentialState::Valid),
+            (
+                Some(messages::password_rejected()),
+                CredentialState::Rejected,
+            ),
+        ] {
+            assert_eq!(
+                credential_state_after(failure.as_ref()),
+                expected,
+                "{failure:?}"
+            );
+        }
+    }
 
     #[test]
     fn errors_that_carry_no_connect_cause_map_to_their_user_facing_code() {

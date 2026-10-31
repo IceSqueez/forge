@@ -8,6 +8,7 @@ mod donation_factories;
 pub mod donation_services;
 pub mod host;
 pub mod host_handles;
+pub mod integration_catalog;
 pub mod integration_factories;
 mod integration_start_errors;
 pub mod integrations;

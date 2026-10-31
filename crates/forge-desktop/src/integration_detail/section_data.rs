@@ -1,5 +1,6 @@
 use super::header::hero_badge_elem;
 use super::{IntegrationDetail, VIEWER_DELTA_WINDOW_MINUTES};
+use crate::integration_catalog::chat_platform_of;
 use crate::user_text::user_text_string;
 use forge_components::{ForgePalette, tr};
 use forge_platform_core::{HealthMetric, HealthMetricId, HealthText, HealthValue};
@@ -52,10 +53,7 @@ impl IntegrationDetail {
     }
 
     pub(super) fn is_oauth_platform(&self) -> bool {
-        matches!(
-            self.ports.status.id().as_str(),
-            "twitch" | "youtube" | "kick"
-        )
+        chat_platform_of(self.ports.status.id()).is_some()
     }
 
     pub(super) fn hero_subtitle(&self) -> String {

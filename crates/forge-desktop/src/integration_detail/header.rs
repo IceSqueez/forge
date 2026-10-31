@@ -1,6 +1,6 @@
 use super::IntegrationDetail;
 use crate::health_text::connection_label;
-use crate::integration_catalog::{is_donation_service, look_of};
+use crate::integration_catalog::{identity_of, tint_color};
 use crate::user_text::user_text_string;
 use forge_components::{
     ActivePresentation, BORDER_THIN, Density, FONT_XS, ForgePalette, Icon, Radius, Spacing, badge,
@@ -10,34 +10,19 @@ use forge_platform_core::{ConnectionState, HeaderAction, HeroBadge, HeroBadgeTon
 use forge_types::IntegrationId;
 use gpui::{AnyElement, ClickEvent, Context, FontWeight, Rgba, div, prelude::*, px};
 
-fn hero_identity(
-    id: &IntegrationId,
-    icon_str: &str,
-    display_name: &str,
-    palette: &ForgePalette,
-) -> (String, Rgba) {
-    let look = look_of(id, palette);
-    if let Some(letter) = look.letter.filter(|_| is_donation_service(id)) {
-        return (letter.to_owned(), look.tint);
+fn hero_identity(id: &IntegrationId, display_name: &str, palette: &ForgePalette) -> (String, Rgba) {
+    if let Some(identity) = identity_of(id) {
+        return (
+            identity.monogram.to_owned(),
+            tint_color(identity.hero_tint, palette),
+        );
     }
-    match icon_str {
-        "brand-twitch" => ("T".to_owned(), palette.theme_brand),
-        "brand-youtube" => ("Y".to_owned(), palette.danger),
-        "brand-kick" => ("K".to_owned(), palette.info),
-        "broadcast" => ("O".to_owned(), palette.success),
-        "mood-smile" => ("V".to_owned(), palette.warning),
-        "brand-discord" => ("D".to_owned(), palette.theme_brand),
-        "piano" => ("M".to_owned(), palette.accent_teal),
-        "keyboard" => ("H".to_owned(), palette.info),
-        _ => {
-            let initial = display_name
-                .chars()
-                .next()
-                .map(|c| c.to_ascii_uppercase().to_string())
-                .unwrap_or_else(|| "?".to_owned());
-            (initial, palette.brand)
-        }
-    }
+    let initial = display_name
+        .chars()
+        .next()
+        .map(|c| c.to_ascii_uppercase().to_string())
+        .unwrap_or_else(|| "?".to_owned());
+    (initial, palette.brand)
 }
 
 fn header_action_label(action: &HeaderAction) -> String {
@@ -154,12 +139,8 @@ impl IntegrationDetail {
         density: Density,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let (letter, brand) = hero_identity(
-            self.ports.status.id(),
-            self.shown.icon.as_str(),
-            &self.shown.display_name,
-            palette,
-        );
+        let (letter, brand) =
+            hero_identity(self.ports.status.id(), &self.shown.display_name, palette);
         let hero_name = self
             .ports
             .status
@@ -249,5 +230,48 @@ impl IntegrationDetail {
                     .child(label),
             )
             .into_any_element()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn each_hero_keeps_its_letter_and_tint() {
+        let palette = forge_components::FORGE_DEFAULT;
+        for (id, letter, tint) in [
+            ("twitch", "T", palette.theme_brand),
+            ("youtube", "Y", palette.danger),
+            ("kick", "K", palette.info),
+            ("donatello", "D", palette.accent_pink_light),
+            ("monobank", "M", palette.text_secondary),
+            ("obs", "O", palette.success),
+            ("vtube", "V", palette.warning),
+            ("discord", "D", palette.theme_brand),
+            ("midi", "M", palette.accent_teal),
+            ("hotkey", "H", palette.info),
+        ] {
+            assert_eq!(
+                hero_identity(&IntegrationId::new(id), "ignored", &palette),
+                (letter.to_owned(), tint),
+                "{id}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_undeclared_hero_falls_back_to_the_display_initial() {
+        let palette = forge_components::FORGE_DEFAULT;
+        let unknown = IntegrationId::new("trovo");
+
+        assert_eq!(
+            hero_identity(&unknown, "trovo", &palette),
+            ("T".to_owned(), palette.brand)
+        );
+        assert_eq!(
+            hero_identity(&unknown, "", &palette),
+            ("?".to_owned(), palette.brand)
+        );
     }
 }

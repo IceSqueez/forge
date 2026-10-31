@@ -3,8 +3,8 @@ use std::time::{Duration, SystemTime};
 
 use async_trait::async_trait;
 use forge_platform_core::{
-    PlatformError, REFRESH_BUFFER_SECS, SingleFlightRefresh, TokenRotation,
-    credential_storage_error, reauth_required,
+    CredentialState, CredentialStateTracker, PlatformError, REFRESH_BUFFER_SECS,
+    SingleFlightRefresh, TokenRotation, credential_storage_error, reauth_required,
 };
 use forge_storage::{CredentialId, CredentialsRepo};
 use forge_types::OAuthToken;
@@ -57,6 +57,10 @@ impl TwitchCredentialsManager {
         self.refresh.rotation().expiry_tx.subscribe()
     }
 
+    pub(crate) fn credential_state(&self) -> &CredentialStateTracker {
+        self.refresh.credential_state()
+    }
+
     pub async fn load(&self) -> Result<Option<StoredCredential>, PlatformError> {
         self.refresh.rotation().load().await
     }
@@ -79,7 +83,7 @@ impl TwitchCredentialsManager {
 
     pub async fn clear(&self) -> Result<(), PlatformError> {
         let _guard = self.refresh.exclusive().await;
-        self.refresh.rotation().delete_stored().await
+        self.forget_stored().await
     }
 
     pub(crate) async fn revoke_and_clear<F, Fut>(&self, revoke: F) -> Result<(), PlatformError>
@@ -91,7 +95,13 @@ impl TwitchCredentialsManager {
         if let Some(stored) = self.load().await? {
             revoke(stored).await;
         }
-        self.refresh.rotation().delete_stored().await
+        self.forget_stored().await
+    }
+
+    async fn forget_stored(&self) -> Result<(), PlatformError> {
+        self.refresh.rotation().delete_stored().await?;
+        self.credential_state().report(CredentialState::Valid);
+        Ok(())
     }
 }
 

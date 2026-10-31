@@ -2,6 +2,7 @@ use std::collections::BTreeSet;
 use std::time::Duration;
 
 use forge_components::{PushToast, ToastKind, duplicate_message_ids, tr};
+use forge_host::integration_catalog::INTEGRATION_MESSAGE_CATALOGS;
 use forge_registry::{CONDITION_MESSAGES, CONFIG_MESSAGES};
 use forge_runtime::{CORE_MESSAGES, LIFECYCLE_MESSAGES};
 use forge_storage::Language;
@@ -10,31 +11,24 @@ use gpui::{AppContext, Context};
 
 use crate::i18n::{app_catalogs, catalog_language};
 
-pub(crate) const REGISTERED_CATALOGS: &[MessageCatalog] = &[
+const APP_CATALOGS: &[MessageCatalog] = &[
     COMMON_MESSAGES,
     CONDITION_MESSAGES,
     CONFIG_MESSAGES,
     CORE_MESSAGES,
     LIFECYCLE_MESSAGES,
-    forge_platform_twitch::vocabulary::messages::TWITCH_MESSAGES,
-    forge_platform_youtube::vocabulary::messages::YOUTUBE_MESSAGES,
-    forge_platform_kick::vocabulary::messages::KICK_MESSAGES,
-    forge_obs::vocabulary::messages::OBS_MESSAGES,
-    forge_vtube::vocabulary::messages::VTUBE_MESSAGES,
-    forge_midi::vocabulary::messages::MIDI_MESSAGES,
-    forge_hotkey::vocabulary::messages::HOTKEY_MESSAGES,
     forge_soundboard::vocabulary::messages::SOUNDBOARD_MESSAGES,
-    forge_discord::vocabulary::messages::DISCORD_MESSAGES,
-    forge_platform_core::TEST_DONATION_MESSAGES,
     forge_transfer::TRANSFER_MESSAGES,
-    forge_donatello::DONATELLO_MESSAGES,
-    forge_monobank::MONOBANK_MESSAGES,
     forge_speak_queue::vocabulary::messages::SPEAK_MESSAGES,
     forge_awake::AWAKE_MESSAGES,
     forge_audio::AUDIO_MESSAGES,
     forge_overlay::OVERLAY_MESSAGES,
     crate::repo_failure::REPO_MESSAGES,
 ];
+
+pub(crate) fn registered_catalogs() -> Vec<MessageCatalog> {
+    [APP_CATALOGS, INTEGRATION_MESSAGE_CATALOGS].concat()
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum CatalogProblem {
@@ -56,10 +50,12 @@ impl CatalogProblem {
 }
 
 pub(crate) fn fragments(lang: Language) -> impl Iterator<Item = &'static str> {
-    REGISTERED_CATALOGS.iter().map(move |catalog| match lang {
-        Language::En => catalog.en_ftl,
-        Language::Uk => catalog.uk_ftl,
-    })
+    registered_catalogs()
+        .into_iter()
+        .map(move |catalog| match lang {
+            Language::En => catalog.en_ftl,
+            Language::Uk => catalog.uk_ftl,
+        })
 }
 
 pub(crate) fn catalog_problems(catalogs: &[MessageCatalog]) -> Vec<CatalogProblem> {
@@ -79,7 +75,7 @@ pub(crate) fn catalog_problems(catalogs: &[MessageCatalog]) -> Vec<CatalogProble
 }
 
 pub(crate) fn registered_catalog_problems() -> Vec<CatalogProblem> {
-    let mut problems = catalog_problems(REGISTERED_CATALOGS);
+    let mut problems = catalog_problems(&registered_catalogs());
     for lang in [Language::En, Language::Uk] {
         problems.extend(
             duplicate_message_ids(catalog_language(lang), &app_catalogs(lang))
@@ -214,13 +210,13 @@ mod tests {
     #[test]
     fn every_registered_catalog_declares_in_both_languages_exactly_its_codes() {
         for code in produced_codes() {
-            let catalog = REGISTERED_CATALOGS
-                .iter()
+            let catalog = registered_catalogs()
+                .into_iter()
                 .find(|catalog| catalog.namespace == code.namespace())
                 .unwrap_or_else(|| panic!("no registered catalog for {code}"));
             assert!(catalog.codes.contains(&code), "{code} is not catalogued");
         }
-        for catalog in REGISTERED_CATALOGS {
+        for catalog in registered_catalogs() {
             let expected: BTreeSet<String> = catalog.ftl_keys().collect();
             assert_eq!(
                 ftl_ids(catalog.en_ftl),
@@ -297,15 +293,15 @@ mod tests {
         assert_eq!(
             (en, uk),
             (
-                REGISTERED_CATALOGS.iter().map(|c| c.en_ftl).collect(),
-                REGISTERED_CATALOGS.iter().map(|c| c.uk_ftl).collect(),
+                registered_catalogs().iter().map(|c| c.en_ftl).collect(),
+                registered_catalogs().iter().map(|c| c.uk_ftl).collect(),
             )
         );
     }
 
     #[test]
     fn every_registered_catalog_parses_without_syntax_errors_in_both_languages() {
-        for catalog in REGISTERED_CATALOGS {
+        for catalog in registered_catalogs() {
             for (language, source) in [("en", catalog.en_ftl), ("uk", catalog.uk_ftl)] {
                 assert!(
                     FluentResource::try_new(source.to_owned()).is_ok(),

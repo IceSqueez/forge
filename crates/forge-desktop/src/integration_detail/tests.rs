@@ -217,7 +217,6 @@ mod quick_action_bridge {
 
         pub(super) fn object(self: &Arc<Self>) -> BuiltinObject {
             BuiltinObject {
-                icon: SectionIcon::new("bug"),
                 status: self.clone(),
                 health: self.clone(),
                 content: self.clone(),
@@ -249,6 +248,9 @@ mod quick_action_bridge {
     impl BuiltinStatus for ShiftingActions {
         fn id(&self) -> &IntegrationId {
             &self.id
+        }
+        fn credential_state(&self) -> forge_platform_core::CredentialState {
+            forge_platform_core::CredentialState::Valid
         }
         fn display_name(&self) -> &str {
             "Discord"
@@ -1283,7 +1285,7 @@ mod detail_lifetime {
     use forge_platform_core::{
         BuiltinContent, BuiltinHealth, BuiltinStatus, CapabilityFlags, ConnectionState,
         DetailSection, HeaderAction, HealthDelta, HealthMetric, HealthMetricId, HealthStream,
-        HealthValue, QuickAction, QuickActions, SectionIcon,
+        HealthValue, QuickAction, QuickActions,
     };
     use forge_runtime::{ActionCancelRegistry, spawn_action_engine};
     use forge_types::{IntegrationId, MessageCode};
@@ -1309,6 +1311,9 @@ mod detail_lifetime {
     impl BuiltinStatus for HeldStreamBuiltin {
         fn id(&self) -> &IntegrationId {
             &self.id
+        }
+        fn credential_state(&self) -> forge_platform_core::CredentialState {
+            forge_platform_core::CredentialState::Valid
         }
         fn display_name(&self) -> &str {
             "OBS"
@@ -1396,7 +1401,6 @@ mod detail_lifetime {
             deltas: Mutex::new(Some(deltas_rx)),
         });
         let object = BuiltinObject {
-            icon: SectionIcon::new("bug"),
             status: probe.clone(),
             health: probe.clone(),
             content: probe.clone(),

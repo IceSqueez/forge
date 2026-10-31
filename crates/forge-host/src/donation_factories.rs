@@ -4,7 +4,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use forge_platform_core::{
     BuiltinContent, BuiltinControl, BuiltinHealth, BuiltinStatus, DonationProvider,
-    PlatformEndpoints, QuickActions, SectionIcon,
+    PlatformEndpoints, QuickActions,
 };
 use forge_runtime::{
     DEFAULT_TEARDOWN_GRACE, DonationIngest, EventBus, IntegrationFactory, IntegrationStartError,
@@ -14,8 +14,6 @@ use forge_storage::{CredentialsRepo, DataProvider, StorageError, has_credentials
 use forge_types::IntegrationId;
 
 use crate::integrations::{BuiltinObject, creds_of, publisher};
-
-const DONATION_ICON: &str = "coin";
 
 pub(crate) trait DonationIntegration:
     DonationProvider + BuiltinStatus + BuiltinHealth + BuiltinContent + QuickActions + BuiltinControl
@@ -69,7 +67,6 @@ impl<P: DonationIntegration + 'static> IntegrationFactory<BuiltinObject> for Don
         tasks.track(tokio::spawn(async move { ingest.drain(id, stream).await }));
         let provider = Arc::clone(&self.provider);
         let object = BuiltinObject {
-            icon: SectionIcon::new(DONATION_ICON),
             status: provider.clone(),
             health: provider.clone(),
             content: provider.clone(),
@@ -189,6 +186,9 @@ mod tests {
     impl BuiltinStatus for FakeService {
         fn id(&self) -> &IntegrationId {
             &self.id
+        }
+        fn credential_state(&self) -> forge_platform_core::CredentialState {
+            forge_platform_core::CredentialState::Valid
         }
         fn display_name(&self) -> &str {
             "Fake"

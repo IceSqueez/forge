@@ -1,5 +1,6 @@
 use super::{DonationSettingsLink, IntegrationDetail};
 use crate::donation_settings::{DonationSettingsLaunch, DonationSettingsView};
+use crate::integration_extensions::{DetailExtension, has_extension};
 use crate::twitch_bot_presence::TwitchBotPresence;
 use crate::twitch_bot_section::{StreamerSignInRequested, TwitchBotSection};
 use forge_host::donation_services::DonationService;
@@ -36,7 +37,7 @@ impl IntegrationDetail {
         presence: Entity<TwitchBotPresence>,
         cx: &mut Context<Self>,
     ) {
-        if !self.shown.is_twitch {
+        if !has_extension(self.ports.status.id(), DetailExtension::TwitchBotSection) {
             return;
         }
         let rt_handle = self.services.rt_handle.clone();

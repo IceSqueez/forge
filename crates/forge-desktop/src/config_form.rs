@@ -1166,6 +1166,7 @@ fn render_slide<V: 'static>(
             div().flex_1().min_w(px(0.0)).child(
                 slider(value as f32, min as f32, max as f32, palette)
                     .accent(palette.brand)
+                    .whole_numbers()
                     .on_change(
                         SharedString::from(format!("{id_prefix}-{key}")),
                         move |next: &f32, _window: &mut Window, cx: &mut App| {

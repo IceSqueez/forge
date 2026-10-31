@@ -10,8 +10,8 @@ use forge_components::{
 use forge_platform_core::{BanListSource, BanPageToken};
 use forge_runtime::{ActionEngineHandle, EventBus, LifecycleState};
 use gpui::{
-    AnyElement, App, Context, Entity, FocusHandle, ScrollHandle, Subscription, Task, Window, div,
-    prelude::*, px,
+    AnyElement, App, Context, Entity, FocusHandle, Pixels, ScrollHandle, Subscription, Task,
+    Window, div, prelude::*, px,
 };
 
 use super::ban_labels::changed_platforms;
@@ -33,6 +33,8 @@ use row_keys::{BanCursor, RowMenu};
 
 const BAN_RELIST_DEBOUNCE: Duration = Duration::from_millis(750);
 const UNBAN_RELIST_SUPPRESSION: Duration = Duration::from_secs(5);
+const ROWS_ALWAYS_SHOWN: usize = 6;
+const LONG_GROUP_MIN_H: Pixels = px(240.0);
 const PLATFORM_ORDER: [PlatformId; 3] = [PlatformId::Twitch, PlatformId::YouTube, PlatformId::Kick];
 
 pub(crate) struct BannedPanel {
@@ -329,31 +331,29 @@ impl Render for BannedPanel {
         self.row_keys.claim_focus_once(window, cx);
         let palette = cx.palette();
         let density = cx.density();
-        let mut content = div()
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Md, density))
-            .p(spacing(Spacing::Md, density));
-        if self.groups.is_empty() {
-            content = content.child(
-                empty_state(tr!("chat_banned_no_platform"), &palette)
-                    .density(density)
-                    .glyph(Icon::Ban),
-            );
-        }
+        let no_platform = self.groups.is_empty().then(|| {
+            empty_state(tr!("chat_banned_no_platform"), &palette)
+                .density(density)
+                .glyph(Icon::Ban)
+        });
         let groups: Vec<AnyElement> = self
             .groups
             .iter()
             .map(|group| {
-                div()
+                let card = div()
                     .flex()
                     .flex_col()
                     .rounded(radius(Radius::Md))
                     .border(BORDER_THIN)
                     .border_color(palette.border_regular)
                     .bg(palette.shell)
-                    .overflow_hidden()
-                    .child(Self::render_group_header(group, &palette, density))
+                    .overflow_hidden();
+                let card = if group.rows.len() > ROWS_ALWAYS_SHOWN {
+                    card.min_h(LONG_GROUP_MIN_H)
+                } else {
+                    card.flex_none()
+                };
+                card.child(Self::render_group_header(group, &palette, density))
                     .children(Self::render_group_notes(
                         group.platform,
                         group.rows.len(),
@@ -371,7 +371,12 @@ impl Render for BannedPanel {
             .flex_1()
             .min_h(px(0.0))
             .overflow_y_scroll()
-            .child(content.children(groups));
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Md, density))
+            .p(spacing(Spacing::Md, density))
+            .children(no_platform)
+            .children(groups);
         div()
             .flex_1()
             .min_h(px(0.0))

@@ -1,6 +1,9 @@
 use forge_components::{ForgePalette, Icon, context_menu, menu_header, menu_item, tr};
 use forge_types::PlatformId;
-use gpui::{AnyElement, ClickEvent, Context, Pixels, Point, SharedString, Window, prelude::*};
+use gpui::{
+    AnyElement, ClickEvent, Context, Pixels, Point, ScrollStrategy, SharedString, Window,
+    prelude::*,
+};
 
 use super::BannedPanel;
 use super::ban_group::{BanRow, GroupStatus};
@@ -26,11 +29,13 @@ impl NavigableList for BannedPanel {
     fn step_list(&mut self, step: ListStep, cx: &mut Context<Self>) {
         let rows = self.cursor_rows();
         if self.row_keys.step(&rows, None, step).is_some() {
+            self.scroll_cursor_row_into_view();
             cx.notify();
         }
     }
 
     fn activate_list(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        self.scroll_cursor_row_into_view();
         match self.row_keys.activation_target(&self.cursor_rows()) {
             Some(BanCursor::Viewer {
                 platform,
@@ -43,6 +48,7 @@ impl NavigableList for BannedPanel {
     }
 
     fn open_list_menu(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        self.scroll_cursor_row_into_view();
         if let Some(BanCursor::Viewer {
             platform,
             viewer_id,
@@ -73,6 +79,28 @@ impl BannedPanel {
             }
         }
         rows
+    }
+
+    fn scroll_cursor_row_into_view(&self) {
+        let Some(BanCursor::Viewer {
+            platform,
+            viewer_id,
+        }) = self.row_keys.current()
+        else {
+            return;
+        };
+        let Some(group) = self.groups.iter().find(|group| group.platform == *platform) else {
+            return;
+        };
+        if let Some(row) = group
+            .rows
+            .iter()
+            .position(|row| row.entry.viewer_id == *viewer_id)
+        {
+            group
+                .row_scroll
+                .scroll_to_item(row, ScrollStrategy::Nearest);
+        }
     }
 
     #[cfg(test)]

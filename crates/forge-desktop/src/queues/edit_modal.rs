@@ -211,6 +211,7 @@ impl EditQueueModal {
                                 MAX_CONCURRENCY as f32,
                                 palette,
                             )
+                            .whole_numbers()
                             .on_change(
                                 "q-modal-concurrency",
                                 cx.listener(|this, value: &f32, _, cx| {

@@ -2,7 +2,8 @@ use forge_platform_core::{
     BanEntry, BanListOutcome, BanListSource, BanListUnavailable, BanPageToken, UnbanAbility,
 };
 use forge_types::PlatformId;
-use gpui::Task;
+use gpui::{Task, UniformListScrollHandle};
+use std::collections::{HashMap, HashSet};
 use std::time::Instant;
 
 use crate::chat::viewer_actions::{ViewerAction, ViewerTarget};
@@ -84,15 +85,13 @@ pub(crate) async fn list_pages(
     depth: usize,
 ) -> ListResult {
     let mut rows: Vec<BanRow> = Vec::new();
+    let mut listed: HashSet<String> = HashSet::new();
     let mut token = after;
     for fetched in 0..depth.max(1) {
         match ListResult::of(source.list_bans(token.as_ref()).await) {
             ListResult::Page { rows: page, next } => {
                 for row in page {
-                    if !rows
-                        .iter()
-                        .any(|known| known.entry.viewer_id == row.entry.viewer_id)
-                    {
+                    if listed.insert(row.entry.viewer_id.clone()) {
                         rows.push(row);
                     }
                 }
@@ -120,6 +119,7 @@ pub(crate) struct BanGroup {
     pub stale: bool,
     pub pages: usize,
     pub recently_unbanned: Vec<(String, Instant)>,
+    pub(super) row_scroll: UniformListScrollHandle,
     pub(super) request_id: u64,
     pub(super) _request: Option<Task<()>>,
     pub(super) _relist: Option<Task<()>>,
@@ -137,6 +137,7 @@ impl BanGroup {
             stale: false,
             pages: 1,
             recently_unbanned: Vec::new(),
+            row_scroll: UniformListScrollHandle::new(),
             request_id: 0,
             _request: None,
             _relist: None,
@@ -150,15 +151,15 @@ impl BanGroup {
     }
 
     fn replace_rows(&mut self, rows: Vec<BanRow>) {
-        let previous = std::mem::take(&mut self.rows);
+        let mut previous: HashMap<String, UnbanState> = std::mem::take(&mut self.rows)
+            .into_iter()
+            .map(|row| (row.entry.viewer_id, row.unban))
+            .collect();
         self.rows = rows
             .into_iter()
             .map(|mut row| {
-                if let Some(old) = previous
-                    .iter()
-                    .find(|old| old.entry.viewer_id == row.entry.viewer_id)
-                {
-                    row.unban = old.unban.clone();
+                if let Some(unban) = previous.remove(&row.entry.viewer_id) {
+                    row.unban = unban;
                 }
                 row
             })
@@ -166,15 +167,15 @@ impl BanGroup {
     }
 
     fn append_rows(&mut self, rows: Vec<BanRow>) {
-        for row in rows {
-            if !self
-                .rows
-                .iter()
-                .any(|known| known.entry.viewer_id == row.entry.viewer_id)
-            {
-                self.rows.push(row);
-            }
-        }
+        let mut listed: HashSet<String> = self
+            .rows
+            .iter()
+            .map(|row| row.entry.viewer_id.clone())
+            .collect();
+        self.rows.extend(
+            rows.into_iter()
+                .filter(|row| listed.insert(row.entry.viewer_id.clone())),
+        );
     }
 
     pub(crate) fn without_recent_unbans(&mut self, result: ListResult, now: Instant) -> ListResult {

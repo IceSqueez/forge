@@ -30,6 +30,7 @@ use crate::home_stats::Integration;
 use crate::i18n::{install_language, message_in};
 use crate::integration_disabled::disclaimer_line;
 use crate::integration_lifecycle::IntegrationLifecycle;
+use crate::repo_failure::RepoFailure;
 use crate::test_support::{
     ClickArea, StubActions, StubEventLog, click_outside_the_list, click_until, open_under_root,
     pump, runtime, switch_lifecycle,
@@ -1525,4 +1526,140 @@ fn a_row_menu_closes_when_a_relist_drops_its_viewer(cx: &mut TestAppContext) {
     crate::test_support::settle_focus(vcx);
 
     assert!(!menu_open(vcx, &panel));
+}
+
+fn row_selector(viewer_id: &str) -> String {
+    format!("chat-banned-row-{:?}-{viewer_id}", PlatformId::Twitch)
+}
+
+fn numbered_ids(count: usize) -> Vec<String> {
+    (0..count).map(|index| index.to_string()).collect()
+}
+
+fn long_list(next: Option<&str>) -> BanListOutcome {
+    let ids = numbered_ids(LONG_LIST);
+    let ids: Vec<&str> = ids.iter().map(String::as_str).collect();
+    outcome(&ids, next)
+}
+
+fn painted(vcx: &mut VisualTestContext, viewer_id: &str) -> bool {
+    let selector = row_selector(viewer_id);
+    vcx.debug_bounds(selector.leak()).is_some()
+}
+
+fn press_times(vcx: &mut VisualTestContext, key: &str, times: usize) {
+    for _ in 0..times {
+        vcx.simulate_keystrokes(key);
+    }
+}
+
+const LONG_LIST: usize = 500;
+const STEPS_PAST_THE_FOLD: usize = 200;
+
+#[gpui::test]
+fn a_long_list_paints_only_the_rows_in_view(cx: &mut TestAppContext) {
+    let rt = runtime();
+    let (_panel, _seen, _twitch, vcx) = keyed_panel(cx, &rt, vec![long_list(None)]);
+
+    assert!(painted(vcx, "0"));
+    assert!(!painted(vcx, "499"));
+}
+
+#[gpui::test]
+fn stepping_past_the_fold_scrolls_the_cursor_row_into_view(cx: &mut TestAppContext) {
+    let rt = runtime();
+    let (panel, _seen, _twitch, vcx) = keyed_panel(cx, &rt, vec![long_list(None)]);
+    click_outside_the_list(vcx);
+
+    press_times(vcx, "down", STEPS_PAST_THE_FOLD);
+    vcx.run_until_parked();
+
+    let target = (STEPS_PAST_THE_FOLD - 1).to_string();
+    assert!(cursor_at(vcx, &panel, &at_viewer(&target)));
+    assert!(painted(vcx, &target));
+    assert!(!painted(vcx, "0"));
+    let window_height = vcx.update(|window, _| window.viewport_size().height);
+    let selector = row_selector(&target);
+    let row = vcx
+        .debug_bounds(selector.leak())
+        .expect("the cursor row paints");
+    assert!(row.bottom() <= window_height);
+}
+
+#[gpui::test]
+fn enter_on_a_cursor_row_scrolled_away_brings_it_back_with_its_menu(cx: &mut TestAppContext) {
+    let rt = runtime();
+    let (panel, _seen, _twitch, vcx) = keyed_panel(cx, &rt, vec![long_list(None)]);
+    click_outside_the_list(vcx);
+    press_times(vcx, "down", STEPS_PAST_THE_FOLD);
+    vcx.run_until_parked();
+    panel.read_with(vcx, |panel, _| {
+        panel.groups[0]
+            .row_scroll
+            .0
+            .borrow()
+            .base_handle
+            .set_offset(gpui::Point::default());
+    });
+    vcx.update(|window, _| window.refresh());
+    vcx.run_until_parked();
+    let target = (STEPS_PAST_THE_FOLD - 1).to_string();
+    assert!(!painted(vcx, &target));
+
+    vcx.simulate_keystrokes("enter");
+    vcx.run_until_parked();
+
+    assert!(menu_open(vcx, &panel));
+    assert!(painted(vcx, &target));
+}
+
+#[gpui::test]
+fn load_more_stays_reachable_under_a_long_list_and_appends_the_next_page(cx: &mut TestAppContext) {
+    let rt = runtime();
+    let (panel, _seen, twitch, vcx) = keyed_panel(
+        cx,
+        &rt,
+        vec![long_list(Some("page-2")), outcome(&["fresh"], None)],
+    );
+    click_outside_the_list(vcx);
+
+    press_times(vcx, "down", LONG_LIST + 1);
+    assert!(cursor_at(
+        vcx,
+        &panel,
+        &BanCursor::LoadMore(PlatformId::Twitch)
+    ));
+    vcx.simulate_keystrokes("enter");
+    settle(vcx, &rt);
+
+    assert_eq!(twitch.asked(), [None, Some("page-2".to_owned())]);
+    assert_eq!(twitch_ids(vcx, &panel).len(), LONG_LIST + 1);
+}
+
+#[gpui::test]
+fn a_failed_unban_keeps_the_row_height_and_shows_its_note_on_the_row(cx: &mut TestAppContext) {
+    let rt = runtime();
+    let (panel, _seen, _twitch, vcx) = keyed_panel(cx, &rt, vec![long_list(None)]);
+    let row_before = vcx
+        .debug_bounds(row_selector("1").leak())
+        .expect("the row paints");
+
+    panel.update(vcx, |panel, cx| {
+        panel.apply_unban(
+            PlatformId::Twitch,
+            "1",
+            Err(RepoFailure::localized("refused".to_owned())),
+            cx,
+        );
+    });
+    vcx.run_until_parked();
+
+    let row_after = vcx
+        .debug_bounds(row_selector("1").leak())
+        .expect("the row paints");
+    let note = vcx
+        .debug_bounds("chat-banned-note-Twitch-1")
+        .expect("the failure note paints");
+    assert_eq!(row_after, row_before);
+    assert!(row_after.contains(&note.center()));
 }

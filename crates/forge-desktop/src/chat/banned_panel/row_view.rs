@@ -1,12 +1,13 @@
 use forge_components::{
     BORDER_THIN, Density, FONT_XS, FONT_XXS, ForgePalette, Spacing, body_family, empty_state,
-    ghost_button, mono_family, secondary_button, spacing, status_dot, tr,
+    ghost_button, mono_family, scaled, secondary_button, spacing, status_dot, tooltip_builder, tr,
 };
 use forge_platform_core::{BanDuration, UnbanAbility};
 use forge_storage::BAN_LEDGER_LIST_CAP;
 use forge_types::PlatformId;
 use gpui::{
     AnyElement, ClickEvent, Context, FontWeight, Pixels, SharedString, div, prelude::*, px,
+    uniform_list,
 };
 
 use super::BannedPanel;
@@ -21,6 +22,7 @@ use crate::integration_disabled::disclaimer_line;
 use crate::platform_visuals::platform_color;
 
 const GROUP_DOT: Pixels = px(6.0);
+const ROW_HEIGHT: Pixels = px(38.0);
 const NAME_COLUMN_W: Pixels = px(160.0);
 const MODERATOR_COLUMN_W: Pixels = px(130.0);
 const BANNED_AT_COLUMN_W: Pixels = px(90.0);
@@ -155,6 +157,27 @@ impl BannedPanel {
             .into_any_element()
     }
 
+    fn render_row_note(
+        id: SharedString,
+        text: String,
+        color: gpui::Rgba,
+        palette: &ForgePalette,
+    ) -> AnyElement {
+        let selector = id.to_string();
+        div()
+            .id(id)
+            .debug_selector(|| selector)
+            .flex_1()
+            .min_w(px(0.0))
+            .font_family(body_family())
+            .text_size(FONT_XS)
+            .text_color(color)
+            .truncate()
+            .tooltip(tooltip_builder(SharedString::from(text.clone()), palette))
+            .child(text)
+            .into_any_element()
+    }
+
     fn render_row(
         &self,
         platform: PlatformId,
@@ -171,6 +194,7 @@ impl BannedPanel {
         let at_cursor = self.row_keys.is_at(&cursor);
         let row_id =
             SharedString::from(format!("chat-banned-row-{platform:?}-{}", entry.viewer_id));
+        let row_selector = row_id.to_string();
         let text_cell = |text: String, color: gpui::Rgba, width: Option<Pixels>| {
             let base = div()
                 .font_family(body_family())
@@ -194,26 +218,34 @@ impl BannedPanel {
                     this.unban(platform, viewer_id.clone(), cx);
                 }),
             );
+        let note_id =
+            SharedString::from(format!("chat-banned-note-{platform:?}-{}", entry.viewer_id));
         let note = match (&entry.unban, &row.unban) {
-            (_, UnbanState::Failed(error)) => Some(Self::render_note(
+            (_, UnbanState::Failed(error)) => Some(Self::render_row_note(
+                note_id,
                 tr!("chat_banned_unban_failed", error = error.clone()),
                 palette.danger,
+                palette,
             )),
-            (UnbanAbility::Refused(refusal), _) => Some(Self::render_note(
+            (UnbanAbility::Refused(refusal), _) => Some(Self::render_row_note(
+                note_id,
                 refusal_label(*refusal),
                 palette.text_faint,
+                palette,
             )),
             (UnbanAbility::Allowed, _) => None,
         };
 
         let mut shown = div()
             .id(row_id)
+            .debug_selector(|| row_selector)
             .relative()
             .flex()
             .flex_col()
-            .gap(spacing(Spacing::Xxs, density))
+            .justify_center()
+            .w_full()
+            .h(scaled(ROW_HEIGHT, density))
             .px(spacing(Spacing::Sm, density))
-            .py(spacing(Spacing::Xs, density))
             .border_t(BORDER_THIN)
             .border_color(palette.border_regular)
             .on_click(
@@ -229,11 +261,20 @@ impl BannedPanel {
                         palette.text_primary,
                         Some(NAME_COLUMN_W),
                     ))
-                    .child(text_cell(
-                        optional_label(entry.reason.as_deref()),
-                        palette.text_secondary,
-                        None,
-                    ))
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w(px(0.0))
+                            .flex()
+                            .items_center()
+                            .gap(spacing(Spacing::Xs, density))
+                            .child(text_cell(
+                                optional_label(entry.reason.as_deref()),
+                                palette.text_secondary,
+                                None,
+                            ))
+                            .children(note),
+                    )
                     .child(text_cell(
                         optional_label(entry.moderator.as_deref()),
                         palette.text_secondary,
@@ -260,8 +301,7 @@ impl BannedPanel {
                             .justify_end()
                             .child(unban_button),
                     ),
-            )
-            .children(note);
+            );
         if at_cursor {
             shown = shown
                 .bg(palette.elevated)
@@ -338,11 +378,27 @@ impl BannedPanel {
             ))
             .into_any_element(),
             GroupStatus::Loaded => {
-                let rows: Vec<AnyElement> = group
-                    .rows
-                    .iter()
-                    .map(|row| self.render_row(platform, row, palette, density, cx))
-                    .collect();
+                let row_palette = *palette;
+                let rows = uniform_list(
+                    SharedString::from(format!("chat-banned-rows-{platform:?}")),
+                    group.rows.len(),
+                    cx.processor(move |this, range: std::ops::Range<usize>, _window, cx| {
+                        let Some(group) = this.groups.iter().find(|g| g.platform == platform)
+                        else {
+                            return Vec::new();
+                        };
+                        group
+                            .rows
+                            .get(range)
+                            .into_iter()
+                            .flatten()
+                            .map(|row| this.render_row(platform, row, &row_palette, density, cx))
+                            .collect()
+                    }),
+                )
+                .track_scroll(&group.row_scroll)
+                .h(scaled(ROW_HEIGHT, density) * group.rows.len())
+                .min_h(px(0.0));
                 let more = group.next.as_ref().map(|_| {
                     let failed = group
                         .more_failed
@@ -370,8 +426,9 @@ impl BannedPanel {
                 div()
                     .flex()
                     .flex_col()
+                    .min_h(px(0.0))
                     .child(Self::render_column_header(palette, density))
-                    .children(rows)
+                    .child(rows)
                     .children(more)
                     .into_any_element()
             }

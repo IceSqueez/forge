@@ -1,6 +1,6 @@
 use gpui::{
     App, BoxShadow, InteractiveElement, KeyBinding, NoAction, ParentElement, Pixels, Rgba,
-    StatefulInteractiveElement, Styled, point, px,
+    StatefulInteractiveElement, Styled, actions, point, px,
 };
 
 use crate::focus_reveal::ReportsRevealBounds;
@@ -8,13 +8,21 @@ use crate::text_input::CommitFocusedField;
 use crate::tokens::{ENTER_KEY, SPACE_KEY};
 
 const KEY_CONTEXT: &str = "ForgeKeyActivated";
+const STEPPED_CONTEXT: &str = "ForgeKeyStepped";
+const STEPPED_KEY_CONTEXTS: &str = "ForgeKeyActivated ForgeKeyStepped";
 const FOCUS_RING_WIDTH: Pixels = px(2.0);
 const TAB_ORDER_BY_PAINT: isize = 0;
+
+actions!(forge_key_activation, [StepUp, StepDown]);
 
 pub fn bind_key_activation(cx: &mut App) {
     cx.bind_keys([
         KeyBinding::new(ENTER_KEY, NoAction, Some(KEY_CONTEXT)),
         KeyBinding::new(SPACE_KEY, NoAction, Some(KEY_CONTEXT)),
+        KeyBinding::new("right", StepUp, Some(STEPPED_CONTEXT)),
+        KeyBinding::new("up", StepUp, Some(STEPPED_CONTEXT)),
+        KeyBinding::new("left", StepDown, Some(STEPPED_CONTEXT)),
+        KeyBinding::new("down", StepDown, Some(STEPPED_CONTEXT)),
     ]);
 }
 
@@ -32,8 +40,16 @@ pub fn with_focus_ring<E: InteractiveElement>(element: E, ring: Rgba) -> E {
 
 pub trait KeyActivated: StatefulInteractiveElement + Styled + ParentElement {
     fn key_activated(self, ring: Rgba) -> Self {
+        self.tab_stop_in(KEY_CONTEXT, ring)
+    }
+
+    fn key_stepped(self, ring: Rgba) -> Self {
+        self.tab_stop_in(STEPPED_KEY_CONTEXTS, ring)
+    }
+
+    fn tab_stop_in(self, contexts: &'static str, ring: Rgba) -> Self {
         let tab_stop = self
-            .key_context(KEY_CONTEXT)
+            .key_context(contexts)
             .tab_index(TAB_ORDER_BY_PAINT)
             .on_any_mouse_down(|_, window, cx| {
                 window.prevent_default();

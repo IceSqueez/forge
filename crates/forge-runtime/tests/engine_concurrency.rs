@@ -1140,7 +1140,10 @@ async fn clearing_discards_withheld_alongside_runs() {
         rig.sched.dispatch(admitted(&beside)).await.unwrap();
     }
     settle(&rig.sched, queue_id, "two runs held", |s| s.pending == 2).await;
-    rig.sched.clear(queue_id, forge_runtime::ClearMode::KeepCurrent).await.unwrap();
+    rig.sched
+        .clear(queue_id, forge_runtime::ClearMode::KeepCurrent)
+        .await
+        .unwrap();
     rig.sched
         .set_mode(queue_id, QueueMode::RUNNING)
         .await
@@ -1163,7 +1166,10 @@ async fn clearing_without_keeping_current_cancels_a_running_alongside_run() {
 
     rig.sched.dispatch(admitted(&waiting)).await.unwrap();
     events_until(&mut sub, start_of(&waiting)).await;
-    rig.sched.clear(queue_id, forge_runtime::ClearMode::CancelCurrent).await.unwrap();
+    rig.sched
+        .clear(queue_id, forge_runtime::ClearMode::CancelCurrent)
+        .await
+        .unwrap();
 
     assert_eq!(rig.next_saved().await.outcome, ExecutionOutcome::Cancelled);
     rig.sched.shutdown();

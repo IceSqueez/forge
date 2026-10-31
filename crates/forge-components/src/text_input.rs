@@ -24,7 +24,13 @@ const COMPACT_LINE_HEIGHT_RATIO: f32 = 1.2;
 
 actions!(
     forge_text_input,
-    [Submit, Cancel, FocusNextField, FocusPreviousField]
+    [
+        Submit,
+        Cancel,
+        FocusNextField,
+        FocusPreviousField,
+        CommitFocusedField
+    ]
 );
 
 pub fn bind_text_input_keys(cx: &mut App) {
@@ -286,6 +292,15 @@ impl TextInput {
         }
         self.committed = self.buffer.text().into();
         cx.emit(InputEvent::Blurred(self.committed.clone()));
+    }
+
+    fn commit_focused_field(
+        &mut self,
+        _: &CommitFocusedField,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.commit_on_leave(cx);
     }
 
     fn focus_next_field(
@@ -696,6 +711,7 @@ impl Render for TextInput {
             .on_action(cx.listener(Self::cancel))
             .on_action(cx.listener(Self::focus_next_field))
             .on_action(cx.listener(Self::focus_previous_field))
+            .on_action(cx.listener(Self::commit_focused_field))
             .on_action(cx.listener(Self::paste));
         let mut field = with_editing_actions(field, cx)
             .w_full()

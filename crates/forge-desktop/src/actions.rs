@@ -1,12 +1,13 @@
 use std::collections::HashMap;
 
-use forge_components::FocusNextField;
+use forge_components::{FocusNextField, FocusPreviousField};
 use gpui::{App, KeyBinding, Keystroke, actions};
 
 pub(crate) const SHELL_CONTEXT: &str = "ForgeShell";
 pub(crate) const LIST_CONTEXT: &str = "ForgeList";
 pub(crate) const STEP_DRAG_CONTEXT: &str = "ForgeStepDrag";
 const NEXT_FIELD_CHORD: &str = "tab";
+const PREVIOUS_FIELD_CHORD: &str = "shift-tab";
 const QUIT_CHORD: &str = "cmd-q";
 
 actions!(
@@ -264,11 +265,14 @@ fn keymap_chord(overrides: &HashMap<String, String>, entry: &ShortcutEntry) -> O
 }
 
 fn bind_shell(cx: &mut App, overrides: &HashMap<String, String>) {
-    let mut bindings = vec![KeyBinding::new(
-        NEXT_FIELD_CHORD,
-        FocusNextField,
-        Some(SHELL_CONTEXT),
-    )];
+    let mut bindings = vec![
+        KeyBinding::new(NEXT_FIELD_CHORD, FocusNextField, Some(SHELL_CONTEXT)),
+        KeyBinding::new(
+            PREVIOUS_FIELD_CHORD,
+            FocusPreviousField,
+            Some(SHELL_CONTEXT),
+        ),
+    ];
     for entry in SHORTCUTS {
         if let Some(chord) = keymap_chord(overrides, entry) {
             bindings.extend(make_binding(entry.id, &chord));
@@ -292,6 +296,7 @@ pub(crate) fn reapply_key_bindings(cx: &mut App, overrides: &HashMap<String, Str
 fn bind_all(cx: &mut App, overrides: &HashMap<String, String>) {
     forge_components::bind_text_input_keys(cx);
     forge_components::bind_confirm_keys(cx);
+    forge_components::bind_key_activation(cx);
     forge_components::bind_text_area_keys(cx);
     forge_components::bind_code_editor_keys(cx);
     forge_components::bind_picker_keys(cx);

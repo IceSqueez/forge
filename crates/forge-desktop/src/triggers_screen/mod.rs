@@ -24,7 +24,7 @@ use std::sync::Arc;
 
 use crate::actions_screen::config_problem_text::config_problem_text;
 use crate::async_bridge::Generation;
-use crate::async_bridge::{self, KeyedSnapshotWriters, WriteOutcome};
+use crate::async_bridge::{self, KeyedSnapshotWriters, Loadable, WriteOutcome};
 use crate::collection_options::ChoiceOptions;
 use crate::config_form::{CollectionChoices, ConfigField};
 use crate::integration_switch::{IntegrationSwitch, SwitchWatch};
@@ -260,7 +260,7 @@ pub(crate) struct TriggersRegistryView {
     favorites: Entity<StoredFavorites>,
     rt_handle: tokio::runtime::Handle,
     detail_width: Pixels,
-    loading: bool,
+    list_load: Loadable<()>,
     reload_generation: async_bridge::Generation,
     detail_writers: KeyedSnapshotWriters<TriggerInstanceId>,
     enabled_writers: KeyedSnapshotWriters<TriggerInstanceId>,
@@ -325,7 +325,7 @@ impl TriggersRegistryView {
             favorites,
             rt_handle,
             detail_width: detail::DETAIL_SHEET_W,
-            loading: true,
+            list_load: Loadable::Loading,
             reload_generation: async_bridge::Generation::default(),
             detail_writers,
             enabled_writers,
@@ -415,10 +415,24 @@ impl TriggersRegistryView {
             move |this, result, cx| match result {
                 _ if !this.reload_generation.is_current(ticket) => {}
                 Ok(rows) => this.apply_rows(rows, cx),
-                Err(failure) => this.on_repo_error(&failure, cx),
+                Err(failure) => this.on_list_load_failed(failure, cx),
             },
             cx,
         );
+    }
+
+    fn on_list_load_failed(&mut self, failure: RepoFailure, cx: &mut Context<Self>) {
+        if !self.instances.is_empty() {
+            self.on_repo_error(&failure, cx);
+        }
+        self.list_load = Loadable::Failed(failure);
+        cx.notify();
+    }
+
+    fn retry_list_load(&mut self, cx: &mut Context<Self>) {
+        self.list_load = Loadable::Loading;
+        self.reload(cx);
+        cx.notify();
     }
 
     fn spawn_write<T: Send + 'static>(
@@ -453,7 +467,7 @@ impl TriggersRegistryView {
             self.selected = None;
             self.detail = None;
         }
-        self.loading = false;
+        self.list_load = Loadable::Loaded(());
         if let Some(id) = self.selected
             && !self.adopt_row_into_detail(id)
         {
@@ -496,7 +510,6 @@ impl TriggersRegistryView {
     fn on_repo_error(&mut self, failure: &RepoFailure, cx: &mut Context<Self>) {
         tracing::error!(error = %failure, "triggers operation failed");
         let message = failure.text();
-        self.loading = false;
         cx.push_toast(
             ToastKind::Error,
             tr!("triggers_toast_error", message = message.as_str()),
@@ -894,7 +907,7 @@ mod tests {
         });
         pump_until(&rt, || {
             cx.run_until_parked();
-            view.read_with(cx, |view, _| !view.loading)
+            view.read_with(cx, |view, _| !matches!(view.list_load, Loadable::Loading))
         });
         TriggerList { view, rows, rt }
     }
@@ -935,6 +948,50 @@ mod tests {
         let list = open_trigger_list(cx, vec![row_named("Greeter")]);
 
         assert_eq!(list.names(cx), ["Greeter"]);
+    }
+
+    impl TriggerList {
+        fn fail_next_read(&self, cx: &mut gpui::TestAppContext) {
+            self.view.update(cx, |view, cx| {
+                view.spawn_reload(async { Err(RepoFailure::localized("locked")) }, cx);
+            });
+            pump_until(&self.rt, || {
+                cx.run_until_parked();
+                self.view
+                    .read_with(cx, |view, _| matches!(view.list_load, Loadable::Failed(_)))
+            });
+        }
+    }
+
+    #[gpui::test]
+    fn a_failed_read_of_an_empty_list_reports_inline_and_retry_recovers(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let list = open_trigger_list(cx, Vec::new());
+
+        list.fail_next_read(cx);
+        assert_eq!(list.errors(cx), 0);
+
+        list.view.update(cx, |view, cx| view.retry_list_load(cx));
+        let reading = list
+            .view
+            .read_with(cx, |view, _| matches!(view.list_load, Loadable::Loading));
+        pump_until(&list.rt, || {
+            cx.run_until_parked();
+            list.view
+                .read_with(cx, |view, _| view.list_load.is_loaded())
+        });
+        assert!(reading);
+    }
+
+    #[gpui::test]
+    fn a_failed_read_over_shown_rows_keeps_them_and_toasts(cx: &mut gpui::TestAppContext) {
+        let list = open_trigger_list(cx, vec![row_named("Greeter")]);
+
+        list.fail_next_read(cx);
+
+        assert_eq!(list.names(cx), ["Greeter"]);
+        assert_eq!(list.errors(cx), 1);
     }
 
     #[gpui::test]

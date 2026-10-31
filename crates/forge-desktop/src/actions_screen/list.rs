@@ -1,6 +1,7 @@
 use super::action_writes::{ActionSettings, ActionWrite};
 use super::*;
 use crate::async_bridge;
+use crate::load_notice::{LoadNotice, NoticeWidth, load_notice};
 use crate::navigable_list::{ListStep, NavigableList, navigable_list};
 use crate::repo_failure::RepoFailure;
 use forge_components::ActivePresentation;
@@ -96,7 +97,7 @@ impl ScreenActionsView {
             .find(|a| a.id == id)
     }
 
-    fn total_actions(&self) -> usize {
+    pub(super) fn total_actions(&self) -> usize {
         self.groups.iter().map(|g| g.actions.len()).sum()
     }
 
@@ -625,15 +626,25 @@ impl ScreenActionsView {
         let mut rows: Vec<AnyElement> = Vec::new();
 
         if self.total_actions() == 0 {
-            let caption = if self.loading {
-                tr!("actions_tree_loading")
-            } else {
-                tr!("actions_empty")
-            };
-            rows.push(
-                tree_notice(SharedString::from(caption), palette.text_faint, density)
-                    .into_any_element(),
+            let notice = load_notice(
+                &self.list_load,
+                LoadNotice {
+                    id: "actions-load",
+                    loading: tr!("actions_tree_loading"),
+                    width: NoticeWidth::NarrowColumn,
+                },
+                cx.listener(|this, _: &ClickEvent, _, cx| this.retry_list_load(cx)),
+                palette,
+                density,
             );
+            rows.push(notice.unwrap_or_else(|| {
+                tree_notice(
+                    SharedString::from(tr!("actions_empty")),
+                    palette.text_faint,
+                    density,
+                )
+                .into_any_element()
+            }));
         } else {
             for (index, group) in self.groups.iter().enumerate() {
                 let surviving: Vec<&ActionSummary> = group

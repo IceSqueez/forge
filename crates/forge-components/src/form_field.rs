@@ -3,6 +3,7 @@ use crate::FONT_LABEL;
 use crate::FONT_META;
 use crate::cards::field_label;
 use crate::icons::{Icon, icon};
+use crate::key_activation::key_activated;
 use crate::palette::ForgePalette;
 use crate::toggle::toggle;
 use crate::tokens::Density;
@@ -147,8 +148,7 @@ pub fn failure_with_retry(
         .gap(spacing(Spacing::Xs, density))
         .child(failure_note(reason, palette, density))
         .child(
-            div()
-                .id(id)
+            key_activated(div().id(id), palette.info)
                 .flex()
                 .items_center()
                 .gap(scaled(RETRY_GAP, density))

@@ -6,6 +6,7 @@ use gpui::{
 };
 
 use crate::icons::{Icon, icon, spinner};
+use crate::key_activation::key_activated;
 use crate::palette::ForgePalette;
 use crate::presentation::ActivePresentation;
 use crate::tokens::{
@@ -597,7 +598,7 @@ impl RenderOnce for RowCard {
 
         match (self.id, self.on_click) {
             (Some(id), Some(handler)) => {
-                let mut r = root.id(id).cursor_pointer();
+                let mut r = key_activated(root.id(id), colors.text).cursor_pointer();
                 if !selected {
                     if rest_border.is_some() {
                         let hover_border = colors.hover_border;

@@ -26,6 +26,7 @@ mod highlight;
 mod icons;
 mod inline_edit;
 mod integration_gating;
+mod key_activation;
 mod locale;
 mod menu;
 mod modal;
@@ -109,6 +110,7 @@ pub use integration_gating::{
     health_tile, integration_disabled_notice, integration_disabled_reason,
     integration_inactive_badge,
 };
+pub use key_activation::bind_key_activation;
 pub use locale::{
     ArgsBuilder, CatalogLanguage, catalog_source, duplicate_message_ids, fmt_bytes, fmt_clock,
     fmt_number, fmt_uptime, fmt_uptime_short, ftl_id, install_bundle, install_process_language,
@@ -146,7 +148,8 @@ pub use status::{badge, pulse_dot, status_dot};
 pub use syntax_color::highlighted_text;
 pub use text_area::{TextArea, bind_text_area_keys};
 pub use text_input::{
-    FocusNextField, InputEvent, SEARCH_FIELD_WIDTH, TextInput, bind_text_input_keys, search_input,
+    FocusNextField, FocusPreviousField, InputEvent, SEARCH_FIELD_WIDTH, TextInput,
+    bind_text_input_keys, search_input,
 };
 pub use toast::{ToastAction, ToastData, ToastKind};
 pub use toast_queue::{PushToast, Toasts, toast_layer};

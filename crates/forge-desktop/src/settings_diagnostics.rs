@@ -18,12 +18,13 @@ use gpui::{
 };
 use tracing::Level;
 
-use crate::async_bridge;
+use crate::async_bridge::{self, Loadable};
 use crate::boot_warnings::BootWarnings;
 use crate::bundle_preview::{export_statement, statement_row};
 use crate::diagnostic_bundle::{self, BUNDLE_FILE_NAME, Bundle};
 use crate::error::DesktopError;
 use crate::integrations::BuiltinRegistry;
+use crate::load_notice::{LoadNotice, NoticeWidth, load_notice};
 use crate::log_archive;
 use crate::log_tail::{LogLine, LogTail};
 use crate::navigation::SettingsSection;
@@ -50,6 +51,7 @@ pub(crate) struct SettingsDiagnosticsView {
     rt_handle: tokio::runtime::Handle,
     lines: Vec<LogLine>,
     level: LogLevel,
+    level_load: Loadable<()>,
     level_picked: bool,
     env_overridden: bool,
     scroll: ScrollHandle,
@@ -79,6 +81,7 @@ impl SettingsDiagnosticsView {
             rt_handle,
             lines: Vec::new(),
             level: DEFAULT_DIAGNOSTIC_LOG_LEVEL,
+            level_load: Loadable::Loading,
             level_picked: false,
             env_overridden: crate::log_level::env_overridden(),
             scroll: ScrollHandle::new(),
@@ -110,6 +113,7 @@ impl SettingsDiagnosticsView {
     }
 
     fn load_level(&mut self, cx: &mut Context<Self>) {
+        self.level_load = Loadable::Loading;
         let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
         async_bridge::run_async(
             &self.rt_handle,
@@ -120,10 +124,15 @@ impl SettingsDiagnosticsView {
             },
             |this, result, cx| {
                 match result {
-                    Ok(_) if this.level_picked => return,
-                    Ok(level) => this.level = level,
+                    Ok(level) => {
+                        this.level_load = Loadable::Loaded(());
+                        if !this.level_picked {
+                            this.level = level;
+                        }
+                    }
                     Err(message) => {
                         tracing::warn!(error = %message, "could not read the diagnostics log level");
+                        this.level_load = Loadable::Failed(message);
                     }
                 }
                 cx.notify();
@@ -438,7 +447,7 @@ impl SettingsDiagnosticsView {
                         this.select_level(choice.clone(), cx)
                     }),
                 )
-                .disabled(self.env_overridden)
+                .disabled(self.env_overridden || !self.level_load.is_loaded())
             })
             .collect();
 
@@ -448,10 +457,30 @@ impl SettingsDiagnosticsView {
             tr!("settings_diagnostics_level_hint")
         };
 
+        let level_failure = matches!(self.level_load, Loadable::Failed(_))
+            .then(|| {
+                load_notice(
+                    &self.level_load,
+                    LoadNotice {
+                        id: "settings-diagnostics-level-load",
+                        loading: tr!("settings_diagnostics_level_loading"),
+                        width: NoticeWidth::Pane,
+                    },
+                    cx.listener(|this, _: &ClickEvent, _, cx| {
+                        this.load_level(cx);
+                        cx.notify();
+                    }),
+                    palette,
+                    density,
+                )
+            })
+            .flatten();
+
         let body = div()
             .flex()
             .flex_col()
             .gap(spacing(Spacing::Sm, density))
+            .children(level_failure)
             .child(setting_row(
                 tr!("settings_diagnostics_level_label"),
                 Some(hint.into()),

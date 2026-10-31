@@ -16,7 +16,7 @@ use crate::palette::{FORGE_DEFAULT, ForgePalette};
 use crate::presentation::ActivePresentation;
 use crate::text_buffer::TextBuffer;
 use crate::text_editing::*;
-use crate::text_input::{FocusNextField, FocusPreviousField, InputEvent};
+use crate::text_input::{CommitFocusedField, FocusNextField, FocusPreviousField, InputEvent};
 use crate::tokens::{BORDER_THIN, Density, FONT_XS, Radius, Spacing, mono_family, radius, spacing};
 
 use element::{CodeEditorElement, PAD_Y};
@@ -273,6 +273,15 @@ impl CodeEditor {
         true
     }
 
+    fn commit_focused_field(
+        &mut self,
+        _: &CommitFocusedField,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.on_blur(window, cx);
+    }
+
     fn on_blur(&mut self, _: &mut Window, cx: &mut Context<Self>) {
         if self.committed.as_ref() == self.buffer.as_str() {
             return;
@@ -412,6 +421,7 @@ impl Render for CodeEditor {
             .on_action(cx.listener(Self::indent))
             .on_action(cx.listener(Self::outdent))
             .on_action(cx.listener(Self::paste))
+            .on_action(cx.listener(Self::commit_focused_field))
             .on_action(move |_: &LeaveEditor, window, cx| {
                 let composing = editor_handle
                     .update(cx, |editor, cx| editor.cancel_composition(cx))

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::mem::Discriminant;
 use std::sync::Arc;
 
-use forge_components::{FocusNextField, Toasts, toast_layer};
+use forge_components::{FocusNextField, FocusPreviousField, Toasts, toast_layer};
 use forge_events::EventPublisher;
 use forge_registry::TriggerRegistry;
 use forge_runtime::compute_stats;
@@ -1203,6 +1203,15 @@ impl AppShell {
         }
     }
 
+    fn focus_previous_stop(
+        &mut self,
+        _: &FocusPreviousField,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        window.focus_prev(cx);
+    }
+
     fn leave_confirm(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         if !self.router.guard.is_asking() {
             return None;
@@ -1309,6 +1318,7 @@ impl Render for AppShell {
             .on_action(cx.listener(Self::toggle_live_chat))
             .on_action(cx.listener(Self::toggle_event_feed))
             .on_action(cx.listener(Self::focus_next_stop))
+            .on_action(cx.listener(Self::focus_previous_stop))
             .size_full()
             .relative()
             .flex()

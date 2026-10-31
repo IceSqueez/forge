@@ -23,8 +23,9 @@ use gpui::{
     px,
 };
 
-use crate::async_bridge;
+use crate::async_bridge::{self, Loadable};
 use crate::backup_schedule::BackupScheduleView;
+use crate::load_notice::{LoadNotice, NoticeWidth, load_notice};
 use crate::navigation::SettingsSection;
 use crate::repo_failure::RepoFailure;
 use crate::safety_copies::SafetyCopiesView;
@@ -66,6 +67,7 @@ pub(crate) struct SettingsStorageView {
     rt_handle: tokio::runtime::Handle,
     retention: ChatHistoryRetentionHandle,
 
+    limits_load: Loadable<()>,
     per_viewer_limit: u32,
     custom_selected: bool,
     display_limit: u32,
@@ -149,6 +151,7 @@ impl SettingsStorageView {
             backend,
             rt_handle,
             retention,
+            limits_load: Loadable::Loading,
             per_viewer_limit: DEFAULT_CHAT_HISTORY_PER_VIEWER_LIMIT,
             custom_selected: false,
             display_limit: DEFAULT_CHAT_HISTORY_DISPLAY_LIMIT,
@@ -219,6 +222,7 @@ impl SettingsStorageView {
     }
 
     fn load(&mut self, cx: &mut Context<Self>) {
+        self.limits_load = Loadable::Loading;
         let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
         async_bridge::run_async(
             &self.rt_handle,
@@ -231,6 +235,7 @@ impl SettingsStorageView {
     fn apply_loaded(&mut self, result: Result<StoredLimits, RepoFailure>, cx: &mut Context<Self>) {
         match result {
             Ok(limits) => {
+                self.limits_load = Loadable::Loaded(());
                 self.per_viewer_limit = limits.per_viewer;
                 self.custom_selected = false;
                 self.display_limit = limits.display;
@@ -246,6 +251,7 @@ impl SettingsStorageView {
             }
             Err(message) => {
                 tracing::warn!(error = %message, "failed to load storage settings");
+                self.limits_load = Loadable::Failed(message);
             }
         }
         cx.notify();
@@ -590,11 +596,31 @@ impl Render for SettingsStorageView {
             ))
             .in_card(&palette);
 
+        let limits_failure = matches!(self.limits_load, Loadable::Failed(_))
+            .then(|| {
+                load_notice(
+                    &self.limits_load,
+                    LoadNotice {
+                        id: "settings-storage-limits-load",
+                        loading: tr!("settings_storage_limits_loading"),
+                        width: NoticeWidth::Pane,
+                    },
+                    cx.listener(|this, _: &ClickEvent, _, cx| {
+                        this.load(cx);
+                        cx.notify();
+                    }),
+                    &palette,
+                    density,
+                )
+            })
+            .flatten();
+
         div()
             .min_h_full()
             .flex()
             .flex_col()
             .child(SettingsPaneHeader::new(SettingsSection::Storage))
+            .children(limits_failure)
             .child(setting_groups(
                 [
                     Some(backup_rows.into_any_element()),

@@ -1,6 +1,6 @@
 use super::console::LogTag;
 use super::{OpenScript, PendingNav, ScriptEditorView, ScriptEntry, find_linked_action};
-use crate::async_bridge;
+use crate::async_bridge::{self, Loadable};
 use crate::repo_failure::RepoFailure;
 use forge_components::tr;
 use forge_script::{EngineConfig, validate_syntax};
@@ -40,7 +40,7 @@ impl ScriptEditorView {
     }
 
     pub(super) fn load_scripts(&mut self, cx: &mut Context<Self>) {
-        self.loading = true;
+        self.list_load = Loadable::Loading;
         let repo = Arc::clone(&self.backend) as Arc<dyn ScriptRepo>;
         let action_repo = self.backend.action_repo();
         async_bridge::run_async(
@@ -70,9 +70,9 @@ impl ScriptEditorView {
         result: Result<Vec<ScriptEntry>, RepoFailure>,
         cx: &mut Context<Self>,
     ) {
-        self.loading = false;
         match result {
             Ok(entries) => {
+                self.list_load = Loadable::Loaded(());
                 let first = entries.first().map(|e| e.id);
                 self.scripts = entries;
                 if let Some(id) = first
@@ -87,6 +87,7 @@ impl ScriptEditorView {
                     LogTag::Err,
                     tr!("script_console_load_failed", error = e.text()),
                 );
+                self.list_load = Loadable::Failed(e);
             }
         }
         cx.notify();

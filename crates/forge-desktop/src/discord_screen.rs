@@ -24,13 +24,14 @@ use gpui::{
 };
 use time::OffsetDateTime;
 
-use crate::async_bridge::{self, BridgeFlow, drain_events};
+use crate::async_bridge::{self, BridgeFlow, Loadable, drain_events};
 use crate::discord_webhook_modal::{
     DiscordWebhookModal, DiscordWebhookModalEvent, WebhookDraft, WebhookModalLaunch,
 };
 use crate::discord_webhooks::{WebhookRow, distinct_linked_actions, load_webhooks, name_is_taken};
 use crate::hub_crumb::hub_crumb;
 use crate::integrations::BuiltinObject;
+use crate::load_notice::{LoadNotice, NoticeWidth, load_notice};
 use crate::navigation::NavRequested;
 use crate::repo_failure::RepoFailure;
 use crate::runtime_event;
@@ -111,6 +112,7 @@ pub(crate) struct DiscordScreenView {
     action_repo: Arc<dyn ActionRepo>,
     rt_handle: tokio::runtime::Handle,
     webhooks: Vec<WebhookRow>,
+    webhooks_load: Loadable<()>,
     posts: Vec<WebhookPost>,
     health: DiscordSendHealth,
     menu_open: Option<String>,
@@ -140,6 +142,7 @@ impl DiscordScreenView {
             action_repo,
             rt_handle,
             webhooks: Vec::new(),
+            webhooks_load: Loadable::Loading,
             menu_open: None,
             menu_click_pos: None,
             saving: false,
@@ -184,10 +187,24 @@ impl DiscordScreenView {
         cx: &mut Context<Self>,
     ) {
         match result {
-            Ok(rows) => self.webhooks = rows,
-            Err(message) => self.on_error(&message.text(), cx),
+            Ok(rows) => {
+                self.webhooks = rows;
+                self.webhooks_load = Loadable::Loaded(());
+            }
+            Err(failure) => {
+                if !self.webhooks.is_empty() {
+                    self.on_error(&failure.text(), cx);
+                }
+                self.webhooks_load = Loadable::Failed(failure);
+            }
         }
         self.refresh_from_client(cx);
+    }
+
+    fn retry_webhooks_load(&mut self, cx: &mut Context<Self>) {
+        self.webhooks_load = Loadable::Loading;
+        self.load(cx);
+        cx.notify();
     }
 
     fn refresh_from_client(&mut self, cx: &mut Context<Self>) {
@@ -677,7 +694,20 @@ impl DiscordScreenView {
             .flex_col()
             .gap(spacing(Spacing::Xs, density));
         if self.webhooks.is_empty() {
-            list = list.child(empty_row(tr!("discord_bindings_empty"), palette, density));
+            let notice = load_notice(
+                &self.webhooks_load,
+                LoadNotice {
+                    id: "discord-webhooks-load",
+                    loading: tr!("discord_bindings_loading"),
+                    width: NoticeWidth::Pane,
+                },
+                cx.listener(|this, _: &ClickEvent, _, cx| this.retry_webhooks_load(cx)),
+                palette,
+                density,
+            );
+            list = list.child(notice.unwrap_or_else(|| {
+                empty_row(tr!("discord_bindings_empty"), palette, density).into_any_element()
+            }));
         }
         for (index, row) in self.webhooks.iter().enumerate() {
             list = list.child(self.render_binding(index, row, palette, cx));

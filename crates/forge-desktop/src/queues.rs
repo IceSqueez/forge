@@ -32,7 +32,8 @@ use gpui::{
     Rgba, SharedString, Stateful, Subscription, Task, Window, div, prelude::*, px,
 };
 
-use crate::async_bridge;
+use crate::async_bridge::{self, Loadable};
+use crate::load_notice::{LoadNotice, NoticeWidth, load_notice};
 use crate::navigation::NavRequested;
 use crate::queue_health::QueueHealth;
 use crate::repo_failure::RepoFailure;
@@ -554,7 +555,7 @@ impl Render for EditQueueModal {
 
 pub(crate) struct QueuesView {
     queues: Vec<QueueRow>,
-    loading: bool,
+    list_load: Loadable<()>,
     modal: Option<Entity<EditQueueModal>>,
     _modal_sub: Option<Subscription>,
     pending_delete: Confirm<QueueId>,
@@ -603,7 +604,7 @@ impl QueuesView {
         let search_sub = cx.subscribe(search.field(), Self::on_search_event);
         let view = Self {
             queues: vec![],
-            loading: true,
+            list_load: Loadable::Loading,
             modal: None,
             _modal_sub: None,
             pending_delete: Confirm::default(),
@@ -769,7 +770,7 @@ impl QueuesView {
                     this.action_names = listing.action_names;
                     this.apply_rows(listing.rows, cx);
                 }
-                Err(message) => this.on_load_error(&message.text(), cx),
+                Err(failure) => this.on_load_error(failure, cx),
             },
             cx,
         );
@@ -778,16 +779,27 @@ impl QueuesView {
     fn apply_rows(&mut self, rows: Vec<QueueRow>, cx: &mut Context<Self>) {
         self.diverged = rows.iter().filter(|r| !r.live).map(|r| r.id).collect();
         self.queues = rows;
-        self.loading = false;
+        self.list_load = Loadable::Loaded(());
         let health = self.queue_health.clone();
         self.apply_depths(health.read(cx));
         self.sync_elapsed_tick(cx);
         cx.notify();
     }
 
-    fn on_load_error(&mut self, message: &str, cx: &mut Context<Self>) {
-        self.loading = false;
-        cx.push_toast(ToastKind::Error, tr!("queues_load_failed", error = message));
+    fn on_load_error(&mut self, failure: RepoFailure, cx: &mut Context<Self>) {
+        if !self.queues.is_empty() {
+            cx.push_toast(
+                ToastKind::Error,
+                tr!("queues_load_failed", error = failure.text()),
+            );
+        }
+        self.list_load = Loadable::Failed(failure);
+        cx.notify();
+    }
+
+    fn retry_list_load(&mut self, cx: &mut Context<Self>) {
+        self.list_load = Loadable::Loading;
+        self.reload(cx);
         cx.notify();
     }
 
@@ -1644,16 +1656,22 @@ impl Render for QueuesView {
 
         let visible_count = self.visible_indices().len();
         let body = if self.queues.is_empty() {
-            let caption = if self.loading {
-                SharedString::from(tr!("queues_loading"))
-            } else {
-                SharedString::from(tr!("queues_empty"))
-            };
-            let mut state = empty_state(caption, &palette).density(density);
-            if self.loading {
-                state = state.loading("queues-loading");
-            }
-            state.into_any_element()
+            load_notice(
+                &self.list_load,
+                LoadNotice {
+                    id: "queues-load",
+                    loading: tr!("queues_loading"),
+                    width: NoticeWidth::Pane,
+                },
+                cx.listener(|this, _: &ClickEvent, _, cx| this.retry_list_load(cx)),
+                &palette,
+                density,
+            )
+            .unwrap_or_else(|| {
+                empty_state(tr!("queues_empty"), &palette)
+                    .density(density)
+                    .into_any_element()
+            })
         } else if visible_count == 0 {
             empty_state(tr!("queues_no_filter_match"), &palette)
                 .density(density)

@@ -313,6 +313,9 @@ impl OverlaysView {
                 return self.render_design_stage(definition, palette, cx);
             }
             Some(definition) => return self.render_code_stage(definition, palette, cx),
+            None if !self.registry.list_load.is_loaded() => {
+                return div().flex_1().into_any_element();
+            }
             None if self.registry.overlays.is_empty() => {
                 (tr!("overlays_stage_empty"), Icon::Browser)
             }

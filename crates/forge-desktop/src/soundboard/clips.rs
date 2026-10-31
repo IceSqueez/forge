@@ -7,8 +7,8 @@ use gpui::Context;
 
 use super::categories::category_glyph;
 use super::{SoundClip, SoundboardView};
-use crate::async_bridge;
-use crate::clip_messages::failure_message;
+use crate::async_bridge::{self, Loadable};
+use crate::repo_failure::RepoFailure;
 
 impl SoundboardView {
     pub(super) fn reload(&self, cx: &mut Context<Self>) {
@@ -23,7 +23,7 @@ impl SoundboardView {
                 }
                 match result {
                     Ok(clips) => this.apply_clips(clips, cx),
-                    Err(error) => this.on_load_error(failure_message(&error), cx),
+                    Err(error) => this.on_load_error(RepoFailure::operation(error), cx),
                 }
             },
             cx,
@@ -35,7 +35,7 @@ impl SoundboardView {
         self.keys.refresh_live();
         self.refresh_availability(clips.clone(), cx);
         self.clips = clips.into_iter().map(stored_to_clip).collect();
-        self.loading = false;
+        self.list_load = Loadable::Loaded(());
         self.error = None;
         self.adopt_summary = None;
         if self
@@ -50,9 +50,15 @@ impl SoundboardView {
         cx.notify();
     }
 
-    pub(super) fn on_load_error(&mut self, message: String, cx: &mut Context<Self>) {
-        self.loading = false;
-        self.error = Some(message.into());
+    pub(super) fn on_load_error(&mut self, failure: RepoFailure, cx: &mut Context<Self>) {
+        self.error = Some(failure.text().into());
+        self.list_load = Loadable::Failed(failure);
+        cx.notify();
+    }
+
+    pub(super) fn retry_list_load(&mut self, cx: &mut Context<Self>) {
+        self.list_load = Loadable::Loading;
+        self.reload(cx);
         cx.notify();
     }
 

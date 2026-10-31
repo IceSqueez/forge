@@ -1,6 +1,7 @@
 use super::*;
 use crate::async_bridge;
 use crate::integration_switch::{category_inactive_badge, inactive_badge};
+use crate::load_notice::{LoadNotice, NoticeWidth, load_notice};
 use crate::navigable_list::{ListStep, NavigableList, stepped_index};
 use crate::repo_failure::RepoFailure;
 use forge_components::ActivePresentation;
@@ -616,7 +617,19 @@ impl TriggersRegistryView {
     pub(super) fn render_list(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
         let density = cx.density();
         if self.visible.is_empty() {
-            let empty = self.render_empty(palette, cx);
+            let notice = load_notice(
+                &self.list_load,
+                LoadNotice {
+                    id: "triggers-load",
+                    loading: tr!("triggers_loading"),
+                    width: NoticeWidth::Pane,
+                },
+                cx.listener(|this, _: &ClickEvent, _, cx| this.retry_list_load(cx)),
+                palette,
+                density,
+            )
+            .filter(|_| self.instances.is_empty());
+            let empty = notice.unwrap_or_else(|| self.render_empty(palette, cx));
             return div()
                 .id("triggers-list")
                 .flex_1()

@@ -304,7 +304,7 @@ mod unsaved_work {
 
         pump_until(&rt, || {
             cx.run_until_parked();
-            !view.read_with(cx, |view, _| view.loading)
+            !view.read_with(cx, |view, _| matches!(view.list_load, Loadable::Loading))
         });
 
         let failures = view.read_with(cx, |view, _| {

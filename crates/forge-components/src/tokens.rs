@@ -131,6 +131,7 @@ pub const FONT_XXL: Pixels = px(24.0);
 
 pub const ESCAPE_KEY: &str = "escape";
 pub(crate) const ENTER_KEY: &str = "enter";
+pub(crate) const SPACE_KEY: &str = "space";
 pub const DRAG_SOURCE_OPACITY: f32 = 0.4;
 pub const DISABLED_OPACITY: f32 = 0.5;
 pub const ROW_OFF_OPACITY: f32 = 0.55;

@@ -1,4 +1,5 @@
 use super::{GLYPH_ACTION, ScriptEditorView, ScriptEntry};
+use crate::load_notice::{LoadNotice, NoticeWidth, load_notice};
 use crate::navigable_list::{ListStep, NavigableList, navigable_list};
 use forge_components::{
     ActivePresentation, BORDER_THIN, Density, FONT_FIELD, FONT_XS, FONT_XXS, ForgePalette, Icon,
@@ -151,7 +152,18 @@ impl ScriptEditorView {
 
         let mut rows: Vec<AnyElement> = Vec::new();
         if self.scripts.is_empty() {
-            rows.push(
+            let notice = load_notice(
+                &self.list_load,
+                LoadNotice {
+                    id: "scripts-load",
+                    loading: tr!("script_editor_loading"),
+                    width: NoticeWidth::NarrowColumn,
+                },
+                cx.listener(|this, _: &ClickEvent, _, cx| this.load_scripts(cx)),
+                palette,
+                density,
+            );
+            rows.push(notice.unwrap_or_else(|| {
                 div()
                     .py(spacing(Spacing::Xxs, density))
                     .px(spacing(Spacing::Xs, density))
@@ -159,8 +171,8 @@ impl ScriptEditorView {
                     .text_size(FONT_XS)
                     .text_color(palette.text_faint)
                     .child(tr!("script_editor_no_scripts"))
-                    .into_any_element(),
-            );
+                    .into_any_element()
+            }));
         } else {
             let (action, standalone) = self.grouped_scripts();
 

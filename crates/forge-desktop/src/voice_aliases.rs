@@ -30,6 +30,7 @@ use gpui::{
 };
 
 use crate::async_bridge::{self, Loadable, SnapshotWriter, WriteOutcome};
+use crate::load_notice::{LoadNotice, NoticeWidth, load_notice};
 use crate::voice_alias_form::{
     AliasForm, AliasFormEvent, AliasIdentity, AliasScope, AliasValues, alias_key_scope, fmt_field,
 };
@@ -127,8 +128,7 @@ pub(crate) struct VoiceAliasesView {
     viewer_repo: Arc<dyn ViewerRepo>,
     speak: Option<SpeakQueueHandle>,
     rt_handle: tokio::runtime::Handle,
-    loading: bool,
-    load_failed: bool,
+    list_load: Loadable<()>,
     strategy: Loadable<StrategyChoice>,
     strategy_writer: SnapshotWriter,
     strategy_error: Option<String>,
@@ -169,8 +169,7 @@ impl VoiceAliasesView {
             viewer_repo,
             speak,
             rt_handle,
-            loading: true,
-            load_failed: false,
+            list_load: Loadable::Loading,
             strategy: Loadable::Loading,
             strategy_writer,
             strategy_error: None,
@@ -230,9 +229,16 @@ impl VoiceAliasesView {
     }
 
     fn retry_load(&mut self, cx: &mut Context<Self>) {
-        self.load_failed = false;
-        self.loading = true;
+        self.list_load = Loadable::Loading;
         self.reload(cx);
+        cx.notify();
+    }
+
+    fn on_list_load_failed(&mut self, failure: RepoFailure, cx: &mut Context<Self>) {
+        if !self.aliases.is_empty() {
+            self.on_repo_error(&failure, cx);
+        }
+        self.list_load = Loadable::Failed(failure);
         cx.notify();
     }
 
@@ -247,14 +253,8 @@ impl VoiceAliasesView {
                 Ok::<_, RepoFailure>((aliases, viewers))
             },
             |this, result, cx| match result {
-                Ok((aliases, viewers)) => {
-                    this.load_failed = false;
-                    this.apply_loaded(aliases, viewers, cx);
-                }
-                Err(failure) => {
-                    this.load_failed = true;
-                    this.on_repo_error(&failure, cx);
-                }
+                Ok((aliases, viewers)) => this.apply_loaded(aliases, viewers, cx),
+                Err(failure) => this.on_list_load_failed(failure, cx),
             },
             cx,
         );
@@ -291,7 +291,7 @@ impl VoiceAliasesView {
         self.total_count = aliases.len();
         self.aliases = aliases.into_iter().map(row_from_alias).collect();
         self.rebuild_visible();
-        self.loading = false;
+        self.list_load = Loadable::Loaded(());
     }
 
     fn row_by_id(&self, id: &AliasId) -> Option<&AliasRow> {
@@ -311,7 +311,6 @@ impl VoiceAliasesView {
     fn on_repo_error(&mut self, failure: &RepoFailure, cx: &mut Context<Self>) {
         tracing::warn!(error = %failure, "voice aliases operation failed");
         let message = failure.text();
-        self.loading = false;
         cx.push_toast(
             ToastKind::Error,
             tr!("tts_aliases_operation_failed", error = message.as_str()),
@@ -526,7 +525,6 @@ impl VoiceAliasesView {
                     }
                     if matches!(error, StorageError::AliasViewerTaken) {
                         tracing::warn!(error = %error, "voice alias viewer already taken");
-                        this.loading = false;
                         cx.push_toast(ToastKind::Error, tr!("tts_aliases_viewer_taken"));
                         cx.notify();
                     } else {
@@ -799,29 +797,23 @@ impl VoiceAliasesView {
 
         let shown = self.visible.len();
         if self.visible.is_empty() {
-            let caption = if self.loading {
-                tr!("tts_aliases_loading")
-            } else {
-                tr!("tts_aliases_empty")
-            };
-            let state = if self.load_failed {
-                div()
-                    .p(spacing(Spacing::Md, density))
-                    .child(error_row_with_retry(
-                        "va-load-retry",
-                        tr!("tts_aliases_load_failed"),
-                        palette,
-                        cx.listener(|this, _: &ClickEvent, _, cx| this.retry_load(cx)),
-                        density,
-                    ))
+            let notice = load_notice(
+                &self.list_load,
+                LoadNotice {
+                    id: "va-load-retry",
+                    loading: tr!("tts_aliases_loading"),
+                    width: NoticeWidth::Pane,
+                },
+                cx.listener(|this, _: &ClickEvent, _, cx| this.retry_load(cx)),
+                palette,
+                density,
+            )
+            .filter(|_| self.aliases.is_empty());
+            let state = notice.unwrap_or_else(|| {
+                empty_state(tr!("tts_aliases_empty"), palette)
+                    .density(density)
                     .into_any_element()
-            } else {
-                let mut state = empty_state(caption, palette).density(density);
-                if self.loading {
-                    state = state.loading("voice-aliases-loading");
-                }
-                state.into_any_element()
-            };
+            });
             let header_only = data_table(palette, columns, Vec::new())
                 .density(density)
                 .header_padding(scaled(HEADER_PAD_V, density), scaled(HEADER_PAD_H, density))
@@ -2163,7 +2155,8 @@ mod tests {
         }
 
         fn load_failed(&self, cx: &mut TestAppContext) -> bool {
-            self.view.read_with(cx, |view, _| view.load_failed)
+            self.view
+                .read_with(cx, |view, _| view.list_load.failure().is_some())
         }
 
         fn rows(&self, cx: &mut TestAppContext) -> usize {
@@ -2172,7 +2165,7 @@ mod tests {
     }
 
     #[gpui::test]
-    fn a_failed_list_load_shows_the_retry_state_with_one_toast(cx: &mut TestAppContext) {
+    fn a_failed_list_load_shows_the_retry_state_without_a_toast(cx: &mut TestAppContext) {
         let listing = aliases_listing(cx, true, None, runtime());
 
         listing.wait_for(cx, |cx| listing.load_failed(cx));
@@ -2180,9 +2173,11 @@ mod tests {
         assert_eq!(
             (
                 cx.update(|cx| error_toasts(cx)),
-                listing.view.read_with(cx, |view, _| view.loading),
+                listing
+                    .view
+                    .read_with(cx, |view, _| matches!(view.list_load, Loadable::Loading)),
             ),
-            (1, false)
+            (0, false)
         );
     }
 
@@ -2209,7 +2204,7 @@ mod tests {
         listing.view.update(cx, |view, cx| view.retry_load(cx));
         listing.wait_for(cx, |cx| listing.load_failed(cx));
 
-        assert_eq!(cx.update(|cx| error_toasts(cx)), 2);
+        assert_eq!(cx.update(|cx| error_toasts(cx)), 0);
     }
 
     #[gpui::test]

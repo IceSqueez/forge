@@ -17,7 +17,8 @@ use gpui::{
     prelude::*, px, relative,
 };
 
-use crate::async_bridge;
+use crate::async_bridge::{self, Loadable};
+use crate::load_notice::{LoadNotice, NoticeWidth, load_notice};
 use crate::repo_failure::RepoFailure;
 use crate::settings_audio::DeviceRow;
 use crate::voice_gate::VoiceGateOwner;
@@ -49,8 +50,7 @@ pub(crate) struct SettingsVoiceGateView {
     hold_invalid: bool,
     level: f32,
     gate_state: Option<VoiceGateState>,
-    loading: bool,
-    devices_error: Option<String>,
+    devices_load: Loadable<()>,
     persist_error: Option<String>,
     picker_open: bool,
     overlay_focus: FocusHandle,
@@ -103,8 +103,7 @@ impl SettingsVoiceGateView {
             hold_invalid: false,
             level: 0.0,
             gate_state: None,
-            loading: false,
-            devices_error: None,
+            devices_load: Loadable::Loading,
             persist_error: None,
             picker_open: false,
             overlay_focus: cx.focus_handle(),
@@ -139,8 +138,7 @@ impl SettingsVoiceGateView {
     }
 
     fn load(&mut self, uncached: bool, cx: &mut Context<Self>) {
-        self.loading = true;
-        self.devices_error = None;
+        self.devices_load = Loadable::Loading;
         let ticket = self.devices_gen.next();
         let settings = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
         async_bridge::run_async(
@@ -161,7 +159,7 @@ impl SettingsVoiceGateView {
         result: Result<(Vec<DeviceRow>, VoiceGateSettings), RepoFailure>,
         cx: &mut Context<Self>,
     ) {
-        self.loading = false;
+        self.devices_load = Loadable::settled(result.as_ref().map(|_| ()).map_err(Clone::clone));
         match result {
             Ok((devices, settings)) => {
                 self.devices = devices;
@@ -179,7 +177,6 @@ impl SettingsVoiceGateView {
             }
             Err(message) => {
                 tracing::warn!(error = %message, "failed to load voice gate settings");
-                self.devices_error = Some(message.text());
             }
         }
         self.read_gate(cx);
@@ -355,21 +352,19 @@ impl SettingsVoiceGateView {
         density: Density,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        if self.loading {
-            return div()
-                .font_family(body_family())
-                .text_size(FONT_SM)
-                .text_color(palette.text_muted)
-                .child(tr!("settings_voice_gate_scanning"))
-                .into_any_element();
-        }
-        if let Some(message) = &self.devices_error {
-            return div()
-                .font_family(body_family())
-                .text_size(FONT_SM)
-                .text_color(palette.danger)
-                .child(message.clone())
-                .into_any_element();
+        let notice = load_notice(
+            &self.devices_load,
+            LoadNotice {
+                id: "settings-voice-gate-devices-load",
+                loading: tr!("settings_voice_gate_scanning"),
+                width: NoticeWidth::Pane,
+            },
+            cx.listener(|this, _: &ClickEvent, _, cx| this.load(true, cx)),
+            palette,
+            density,
+        );
+        if let Some(notice) = notice {
+            return notice;
         }
         self.picker_row(palette, density, cx)
     }

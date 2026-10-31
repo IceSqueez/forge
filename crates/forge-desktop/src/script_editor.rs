@@ -22,6 +22,7 @@ use self::diagnostics::EditorProblem;
 use self::file_list::RowMenu;
 use self::run_modal::RunModal;
 use self::script_rename::{PendingRename, RenameState};
+use crate::async_bridge::Loadable;
 use crate::navigable_list::ListCursor;
 use crate::navigation::NavRequested;
 use crate::screen_shortcuts::ScreenShortcuts;
@@ -102,7 +103,7 @@ pub(crate) struct ScriptEditorView {
     selected: Option<ScriptId>,
     open: Option<OpenScript>,
     telemetry: Option<ScriptTelemetry>,
-    loading: bool,
+    list_load: Loadable<()>,
     saving: bool,
     run_in_flight: bool,
     engine_timeout_ms: Option<u64>,
@@ -260,7 +261,7 @@ impl ScriptEditorView {
             selected: None,
             open: None,
             telemetry: None,
-            loading: false,
+            list_load: Loadable::Loading,
             saving: false,
             run_in_flight: false,
             engine_timeout_ms: None,

@@ -33,9 +33,10 @@ use gpui::{
 };
 use gpui::{FocusHandle, ScrollStrategy};
 
-use crate::async_bridge::{self, KeyedSnapshotWriters, WriteOutcome};
+use crate::async_bridge::{self, KeyedSnapshotWriters, Loadable, WriteOutcome};
 use crate::error::DesktopError;
 use crate::globals::{Global, Globals, GlobalsFilter, variant_kind_color};
+use crate::load_notice::{LoadNotice, NoticeWidth, load_notice};
 use crate::repo_failure::RepoFailure;
 use forge_components::ActivePresentation;
 use forge_components::PushToast;
@@ -349,7 +350,7 @@ pub(crate) struct GlobalsView {
     globals: Entity<Globals>,
     backend: Arc<dyn GlobalsRepo>,
     rt_handle: tokio::runtime::Handle,
-    loading: bool,
+    list_load: Loadable<()>,
     filter: GlobalsFilter,
     search: SearchState,
     visible: Vec<Global>,
@@ -396,7 +397,7 @@ impl GlobalsView {
             globals,
             backend,
             rt_handle,
-            loading: true,
+            list_load: Loadable::Loading,
             filter: GlobalsFilter::default(),
             search,
             visible: Vec::new(),
@@ -459,7 +460,7 @@ impl GlobalsView {
             move |this, result, cx| match result {
                 _ if !this.reload_generation.is_current(ticket) => {}
                 Ok(entries) => this.apply_entries(entries, cx),
-                Err(failure) => this.on_repo_error(&failure, cx),
+                Err(failure) => this.on_list_load_failed(failure, cx),
             },
             cx,
         );
@@ -491,14 +492,27 @@ impl GlobalsView {
             g.set_all(rows);
             cx.notify();
         });
-        self.loading = false;
+        self.list_load = Loadable::Loaded(());
+        cx.notify();
+    }
+
+    fn on_list_load_failed(&mut self, failure: RepoFailure, cx: &mut Context<Self>) {
+        if self.globals.read(cx).total() > 0 {
+            self.on_repo_error(&failure, cx);
+        }
+        self.list_load = Loadable::Failed(failure);
+        cx.notify();
+    }
+
+    fn retry_list_load(&mut self, cx: &mut Context<Self>) {
+        self.list_load = Loadable::Loading;
+        self.reload(cx);
         cx.notify();
     }
 
     fn on_repo_error(&mut self, failure: &RepoFailure, cx: &mut Context<Self>) {
         tracing::error!(error = %failure, "globals operation failed");
         let message = failure.text();
-        self.loading = false;
         cx.push_toast(
             ToastKind::Error,
             tr!("globals_toast_error", message = message.as_str()),
@@ -967,15 +981,23 @@ impl GlobalsView {
 
         let count = rows.len();
         let body = if count == 0 {
-            let caption: SharedString = if self.loading {
-                tr!("globals_loading").into()
-            } else {
-                tr!(self.empty_caption_key(cx)).into()
-            };
-            let mut state = empty_state(caption, palette).density(density);
-            if self.loading {
-                state = state.loading("globals-loading");
-            }
+            let notice = load_notice(
+                &self.list_load,
+                LoadNotice {
+                    id: "globals-load",
+                    loading: tr!("globals_loading"),
+                    width: NoticeWidth::Pane,
+                },
+                cx.listener(|this, _: &ClickEvent, _, cx| this.retry_list_load(cx)),
+                palette,
+                density,
+            )
+            .filter(|_| self.globals.read(cx).total() == 0);
+            let state = notice.unwrap_or_else(|| {
+                empty_state(tr!(self.empty_caption_key(cx)), palette)
+                    .density(density)
+                    .into_any_element()
+            });
             div()
                 .w_full()
                 .flex_1()
@@ -2081,7 +2103,7 @@ mod tests {
         });
         pump_until(rt, || {
             cx.run_until_parked();
-            view.read_with(cx, |view, _| !view.loading)
+            view.read_with(cx, |view, _| !matches!(view.list_load, Loadable::Loading))
         });
         (globals, view)
     }

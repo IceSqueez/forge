@@ -10,7 +10,7 @@ use std::time::Instant;
 use forge_audio::DeviceInfo;
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, Confirm, FONT_XS, Icon, Radius, SearchState, Spacing,
-    body_family, empty_state, icon, page_frame, radius, scaled, spacing, tr, with_alpha,
+    body_family, icon, page_frame, radius, scaled, spacing, tr, with_alpha,
 };
 use forge_events::Event;
 use forge_runtime::EventBus;
@@ -21,14 +21,15 @@ use forge_soundboard::{
 use forge_storage::SettingsRepo;
 use forge_types::ClipId;
 use gpui::{
-    Context, Entity, EventEmitter, Pixels, SharedString, Subscription, Task, Window, div,
-    prelude::*, px,
+    ClickEvent, Context, Entity, EventEmitter, Pixels, SharedString, Subscription, Task, Window,
+    div, prelude::*, px,
 };
 
-use crate::async_bridge::{self, BridgeFlow, drain_events};
+use crate::async_bridge::{self, BridgeFlow, Loadable, drain_events};
 use crate::clip_editor::ClipEditor;
 use crate::clip_key_state::ClipKeyState;
 use crate::hub_crumb::{core_category, hub_crumb};
+use crate::load_notice::{LoadNotice, NoticeWidth, load_notice};
 use crate::navigation::NavRequested;
 use crate::navigation::Screen;
 use crate::runtime_event::{self, ClipPlayback, RuntimeEvent};
@@ -84,7 +85,7 @@ struct PlaybackProgress {
 
 pub(crate) struct SoundboardView {
     clips: Vec<SoundClip>,
-    loading: bool,
+    list_load: Loadable<()>,
     error: Option<SharedString>,
     devices: Vec<DeviceInfo>,
     importable: Vec<BuiltinSoundEntry>,
@@ -149,7 +150,7 @@ impl SoundboardView {
         let library = Arc::clone(player.library());
         let view = Self {
             clips: Vec::new(),
-            loading: true,
+            list_load: Loadable::Loading,
             error: None,
             devices: Vec::new(),
             importable: Vec::new(),
@@ -259,11 +260,20 @@ impl Render for SoundboardView {
         let subheader_left = self.render_subheader_left(&palette, density, cx);
         let subheader_right = self.render_subheader_right(&palette, density, cx);
 
-        let inner = if self.loading {
-            empty_state(tr!("soundboard_loading"), &palette)
-                .loading("soundboard-loading")
-                .density(density)
-                .into_any_element()
+        let notice = load_notice(
+            &self.list_load,
+            LoadNotice {
+                id: "soundboard-load",
+                loading: tr!("soundboard_loading"),
+                width: NoticeWidth::Pane,
+            },
+            cx.listener(|this, _: &ClickEvent, _, cx| this.retry_list_load(cx)),
+            &palette,
+            density,
+        )
+        .filter(|_| self.clips.is_empty());
+        let inner = if let Some(notice) = notice {
+            notice
         } else {
             let error_banner = self.error.clone().map(|message| {
                 div()

@@ -15,7 +15,8 @@ use forge_storage::settings::core_settings;
 use forge_storage::{DataProvider, SettingsRepo, read_setting, write_setting};
 use gpui::{AnyElement, ClickEvent, Context, Entity, FocusHandle, Window, div, prelude::*, px};
 
-use crate::async_bridge;
+use crate::async_bridge::{self, Loadable};
+use crate::load_notice::{LoadNotice, NoticeWidth, load_notice};
 use crate::navigation::SettingsSection;
 use crate::repo_failure::RepoFailure;
 use crate::runtime_handles::RuntimeHandles;
@@ -60,8 +61,7 @@ pub(crate) struct SettingsAudioView {
     devices: Vec<DeviceRow>,
     selected_idx: usize,
     selected_id: Option<String>,
-    loading: bool,
-    devices_error: Option<String>,
+    devices_load: Loadable<()>,
     persist_error: Option<String>,
     test_playing: bool,
     test_error: Option<String>,
@@ -109,8 +109,7 @@ impl SettingsAudioView {
             devices: Vec::new(),
             selected_idx: 0,
             selected_id: None,
-            loading: false,
-            devices_error: None,
+            devices_load: Loadable::Loading,
             persist_error: None,
             test_playing: false,
             test_error: None,
@@ -131,8 +130,7 @@ impl SettingsAudioView {
     }
 
     fn load_devices(&mut self, uncached: bool, cx: &mut Context<Self>) {
-        self.loading = true;
-        self.devices_error = None;
+        self.devices_load = Loadable::Loading;
         let ticket = self.devices_gen.next();
         let settings = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
         async_bridge::run_async(
@@ -153,7 +151,7 @@ impl SettingsAudioView {
         result: Result<(Vec<DeviceRow>, Option<String>), RepoFailure>,
         cx: &mut Context<Self>,
     ) {
-        self.loading = false;
+        self.devices_load = Loadable::settled(result.as_ref().map(|_| ()).map_err(Clone::clone));
         match result {
             Ok((devices, persisted)) => {
                 self.devices = devices;
@@ -163,7 +161,6 @@ impl SettingsAudioView {
             }
             Err(message) => {
                 tracing::warn!(error = %message, "failed to enumerate audio output devices");
-                self.devices_error = Some(message.text());
             }
         }
         cx.notify();
@@ -258,21 +255,19 @@ impl SettingsAudioView {
         density: Density,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        if self.loading {
-            return div()
-                .font_family(body_family())
-                .text_size(FONT_SM)
-                .text_color(palette.text_muted)
-                .child(tr!("settings_audio_scanning"))
-                .into_any_element();
-        }
-        if let Some(message) = &self.devices_error {
-            return div()
-                .font_family(body_family())
-                .text_size(FONT_SM)
-                .text_color(palette.danger)
-                .child(message.clone())
-                .into_any_element();
+        let notice = load_notice(
+            &self.devices_load,
+            LoadNotice {
+                id: "settings-audio-devices-load",
+                loading: tr!("settings_audio_scanning"),
+                width: NoticeWidth::Pane,
+            },
+            cx.listener(|this, _: &ClickEvent, _, cx| this.load_devices(true, cx)),
+            palette,
+            density,
+        );
+        if let Some(notice) = notice {
+            return notice;
         }
         self.picker_row(palette, density, cx)
     }

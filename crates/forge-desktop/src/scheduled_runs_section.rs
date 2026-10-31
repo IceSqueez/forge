@@ -18,8 +18,9 @@ use gpui::{
 };
 use time::OffsetDateTime;
 
-use crate::async_bridge;
+use crate::async_bridge::{self, Loadable};
 use crate::hub_card::hub_section_header;
+use crate::load_notice::{LoadNotice, NoticeWidth, load_notice};
 use crate::navigation::NavRequested;
 use crate::navigation::Screen;
 use crate::queues::running_pill;
@@ -69,17 +70,12 @@ struct ScheduledSnapshot {
     recent: Vec<ScheduledRow>,
 }
 
-enum Scheduled {
-    Loading,
-    Ready(ScheduledSnapshot),
-}
-
 pub(crate) struct ScheduledRunsView {
     repo: Arc<dyn ScheduledRunRepo>,
     action_repo: Arc<dyn ActionRepo>,
     runs: ScheduledRunsHandle,
     rt_handle: tokio::runtime::Handle,
-    state: Scheduled,
+    state: Loadable<ScheduledSnapshot>,
     recent_open: bool,
     busy: HashSet<ScheduledRunId>,
     waiting_for_queue: WaitingRuns,
@@ -108,7 +104,7 @@ impl ScheduledRunsView {
             action_repo,
             runs,
             rt_handle,
-            state: Scheduled::Loading,
+            state: Loadable::Loading,
             recent_open: false,
             busy: HashSet::new(),
             waiting_for_queue: waiting.current(),
@@ -168,10 +164,9 @@ impl ScheduledRunsView {
     }
 
     fn pending_count(&self) -> usize {
-        match &self.state {
-            Scheduled::Loading => 0,
-            Scheduled::Ready(snapshot) => snapshot.pending.len(),
-        }
+        self.state
+            .loaded()
+            .map_or(0, |snapshot| snapshot.pending.len())
     }
 
     fn reload(&self, cx: &mut Context<Self>) {
@@ -182,7 +177,7 @@ impl ScheduledRunsView {
             load_snapshot(repo, action_repo),
             |this, result, cx| match result {
                 Ok(snapshot) => this.apply_snapshot(snapshot, OffsetDateTime::now_utc(), cx),
-                Err(message) => this.on_load_error(&message.text(), cx),
+                Err(failure) => this.on_load_error(failure, cx),
             },
             cx,
         );
@@ -196,22 +191,20 @@ impl ScheduledRunsView {
     ) {
         self.busy
             .retain(|id| snapshot.pending.iter().any(|row| row.run.id == *id));
-        self.state = Scheduled::Ready(snapshot);
+        self.state = Loadable::Loaded(snapshot);
         self.now = now;
         cx.notify();
     }
 
-    fn on_load_error(&mut self, message: &str, cx: &mut Context<Self>) {
-        if matches!(self.state, Scheduled::Loading) {
-            self.state = Scheduled::Ready(ScheduledSnapshot {
-                pending: Vec::new(),
-                recent: Vec::new(),
-            });
+    fn on_load_error(&mut self, failure: RepoFailure, cx: &mut Context<Self>) {
+        if self.state.is_loaded() {
+            cx.push_toast(
+                ToastKind::Error,
+                tr!("queues_scheduled_load_failed", error = failure.text()),
+            );
+        } else {
+            self.state = Loadable::Failed(failure);
         }
-        cx.push_toast(
-            ToastKind::Error,
-            tr!("queues_scheduled_load_failed", error = message),
-        );
         cx.notify();
     }
 
@@ -607,15 +600,25 @@ impl Render for ScheduledRunsView {
         );
 
         let mut list = div().w_full().flex().flex_col();
-        match &self.state {
-            Scheduled::Loading => {
-                list = list.child(empty_strip(
-                    tr!("queues_scheduled_loading"),
-                    &palette,
-                    density,
-                ));
-            }
-            Scheduled::Ready(snapshot) => {
+        let notice = load_notice(
+            &self.state,
+            LoadNotice {
+                id: "scheduled-runs-load",
+                loading: tr!("queues_scheduled_loading"),
+                width: NoticeWidth::Pane,
+            },
+            cx.listener(|this, _: &ClickEvent, _, cx| {
+                this.state = Loadable::Loading;
+                this.reload(cx);
+                cx.notify();
+            }),
+            &palette,
+            density,
+        );
+        list = list.children(notice);
+        match self.state.loaded() {
+            None => {}
+            Some(snapshot) => {
                 if snapshot.pending.is_empty() {
                     list = list.child(empty_strip(
                         tr!("queues_scheduled_empty"),

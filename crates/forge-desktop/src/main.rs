@@ -94,6 +94,7 @@ mod integrations;
 mod integrations_hub;
 mod issue_link;
 mod kind_copy;
+mod load_notice;
 mod local_tts_engines;
 mod log_archive;
 mod log_level;

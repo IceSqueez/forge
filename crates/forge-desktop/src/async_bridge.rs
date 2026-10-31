@@ -466,7 +466,9 @@ pub(crate) fn optimistic<V, S, F, E>(
     .detach();
 }
 
+#[derive(Default)]
 pub(crate) enum Loadable<T> {
+    #[default]
     Loading,
     Loaded(T),
     Failed(RepoFailure),

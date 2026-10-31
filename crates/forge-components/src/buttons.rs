@@ -7,6 +7,7 @@ use gpui::{
 };
 
 use crate::icons::{Icon, icon, spinner};
+use crate::key_activation::key_activated;
 use crate::palette::{ForgePalette, with_alpha};
 use crate::presentation::ActivePresentation;
 use crate::tokens::{
@@ -295,12 +296,12 @@ impl RenderOnce for Button {
         });
 
         match (self.id, self.on_click) {
-            (Some(id), Some(handler)) => root
-                .debug_selector(|| id.to_string())
-                .id(id)
-                .cursor_pointer()
-                .on_click(handler)
-                .into_any_element(),
+            (Some(id), Some(handler)) => {
+                key_activated(root.debug_selector(|| id.to_string()).id(id), text)
+                    .cursor_pointer()
+                    .on_click(handler)
+                    .into_any_element()
+            }
             _ => root.into_any_element(),
         }
     }

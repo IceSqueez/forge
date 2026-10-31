@@ -1550,7 +1550,6 @@ tts_aliases_strategy_single_current = Every viewer without a manual alias speaks
 tts_aliases_strategy_load_failed = Could not load the voice assignment strategy, so changing it is off to protect it: { $reason }
 tts_aliases_strategy_save_failed = Could not save the voice assignment strategy: { $reason }
 tts_aliases_operation_failed = Voice alias change failed: { $error }
-tts_aliases_load_failed = Could not load voice aliases.
 tts_aliases_strategy_deterministic = Deterministic by name
 tts_aliases_strategy_random = Random
 tts_aliases_strategy_single = Single voice
@@ -2539,7 +2538,6 @@ settings_audio_persist_error = Failed to save device selection: { $error }
 
 settings_audio_routing_title = Routing
 settings_audio_routing_loading = Reading routing settings
-settings_audio_routing_load_error = Failed to read routing settings: { $error }
 settings_audio_routing_speech_label = Speech plays on
 settings_audio_routing_speech_hint = Where synthesized speech is heard.
 settings_audio_routing_clips_label = Sound clips play on
@@ -3037,7 +3035,6 @@ overlays_header_summary_stopped = { $enabled }/{ $total } active - server stoppe
 overlays_pane_title = Overlays
 overlays_pane_loading = Loading overlays...
 overlays_pane_empty = No overlays yet.
-overlays_pane_load_failed = Could not load the overlays: { $reason }
 overlays_add_overlay = New overlay
 overlays_menu_rename = Rename...
 overlays_menu_copy_url = Copy URL
@@ -5106,3 +5103,12 @@ viewer_step_timeout = Timeout { $name }
 viewer_step_ban = Ban { $name }
 viewer_step_unban = Unban { $name }
 viewer_step_reply = Reply to { $name }
+
+## Shared load notice
+
+load_notice_failed = Could not load: { $reason }
+triggers_loading = Loading triggers...
+script_editor_loading = Loading scripts...
+discord_bindings_loading = Loading webhooks...
+settings_storage_limits_loading = Loading storage limits...
+settings_diagnostics_level_loading = Loading the log level...

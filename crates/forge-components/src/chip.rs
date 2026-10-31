@@ -6,6 +6,7 @@ use gpui::{
 };
 
 use crate::icons::{Icon, icon};
+use crate::key_activation::key_activated;
 use crate::palette::ForgePalette;
 use crate::status::status_dot;
 use crate::tokens::{body_family, scaled};
@@ -112,8 +113,7 @@ impl RenderOnce for Chip {
         );
 
         match (self.id, self.on_click) {
-            (Some(id), Some(handler)) => root
-                .id(id)
+            (Some(id), Some(handler)) => key_activated(root.id(id), text_color)
                 .cursor_pointer()
                 .on_click(handler)
                 .into_any_element(),

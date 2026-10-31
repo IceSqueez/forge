@@ -9,7 +9,7 @@ use gpui::{Context, Pixels, Point};
 use super::OverlaysView;
 use super::code_pane::LeaveIntent;
 use super::sound_choice;
-use crate::async_bridge;
+use crate::async_bridge::{self, Loadable};
 use crate::repo_failure::RepoFailure;
 use crate::toasts::copy_to_clipboard;
 use forge_components::PushToast;
@@ -18,8 +18,7 @@ use forge_components::PushToast;
 pub(super) struct RegistryState {
     pub(super) overlays: Vec<OverlayDefinition>,
     pub(super) selected: Option<OverlayId>,
-    pub(super) loading: bool,
-    pub(super) load_failure: Option<String>,
+    pub(super) list_load: Loadable<()>,
     media_issues: HashMap<OverlayId, Vec<MediaIssue>>,
     pub(super) menu_open: Option<OverlayId>,
     pub(super) menu_click_pos: Option<Point<Pixels>>,
@@ -95,7 +94,7 @@ impl OverlaysView {
     }
 
     pub(super) fn load(&mut self, cx: &mut Context<Self>) {
-        self.registry.loading = true;
+        self.registry.list_load = Loadable::Loading;
         let repo = Arc::clone(&self.handles.repo);
         async_bridge::run_async(
             &self.handles.rt_handle,
@@ -111,10 +110,9 @@ impl OverlaysView {
         result: Result<Vec<OverlayDefinition>, RepoFailure>,
         cx: &mut Context<Self>,
     ) {
-        self.registry.loading = false;
         match result {
             Ok(rows) => {
-                self.registry.load_failure = None;
+                self.registry.list_load = Loadable::Loaded(());
                 self.registry.overlays = rows;
                 let live = &self.registry.overlays;
                 self.registry
@@ -136,8 +134,10 @@ impl OverlaysView {
                 self.sync_wiring(cx);
             }
             Err(message) => {
-                self.registry.load_failure = Some(message.text());
-                self.report(&message.text(), cx);
+                if !self.registry.overlays.is_empty() {
+                    self.report(&message.text(), cx);
+                }
+                self.registry.list_load = Loadable::Failed(message);
             }
         }
         cx.notify();

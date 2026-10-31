@@ -1,3 +1,4 @@
+use crate::load_notice::{LoadNotice, NoticeWidth, load_notice};
 use forge_components::ActivePresentation;
 use forge_components::Density;
 use forge_components::FONT_FIELD;
@@ -107,15 +108,21 @@ impl OverlaysView {
             .pb(scaled(LIST_PAD_BOTTOM, density));
 
         if self.registry.overlays.is_empty() {
-            let message = if self.registry.loading {
-                tr!("overlays_pane_loading")
-            } else if let Some(reason) = &self.registry.load_failure {
-                tr!("overlays_pane_load_failed", reason = reason.as_str())
-            } else {
-                tr!("overlays_pane_empty")
-            };
+            let notice = load_notice(
+                &self.registry.list_load,
+                LoadNotice {
+                    id: "overlays-load",
+                    loading: tr!("overlays_pane_loading"),
+                    width: NoticeWidth::NarrowColumn,
+                },
+                cx.listener(|this, _: &ClickEvent, _, cx| this.load(cx)),
+                palette,
+                density,
+            );
             return list
-                .child(empty_note(message, palette, density))
+                .child(notice.unwrap_or_else(|| {
+                    empty_note(tr!("overlays_pane_empty"), palette, density).into_any_element()
+                }))
                 .into_any_element();
         }
 

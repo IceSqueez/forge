@@ -1581,7 +1581,6 @@ tts_aliases_strategy_single_current = Кожен глядач без власн�
 tts_aliases_strategy_load_failed = Не вдалося завантажити стратегію призначення голосу, тому її зміну вимкнено, щоб її зберегти: { $reason }
 tts_aliases_strategy_save_failed = Не вдалося зберегти стратегію призначення голосу: { $reason }
 tts_aliases_operation_failed = Не вдалося змінити голосовий псевдонім: { $error }
-tts_aliases_load_failed = Не вдалося завантажити голосові псевдоніми.
 tts_aliases_strategy_deterministic = Детерміновано за ім'ям
 tts_aliases_strategy_random = Випадково
 tts_aliases_strategy_single = Один голос
@@ -2592,7 +2591,6 @@ settings_audio_persist_error = Не вдалося зберегти вибір �
 
 settings_audio_routing_title = Маршрутизація
 settings_audio_routing_loading = Читання налаштувань маршрутизації
-settings_audio_routing_load_error = Не вдалося прочитати налаштування маршрутизації: { $error }
 settings_audio_routing_speech_label = Мовлення відтворюється на
 settings_audio_routing_speech_hint = Де чути синтезоване мовлення.
 settings_audio_routing_clips_label = Звукові кліпи відтворюються на
@@ -3115,7 +3113,6 @@ overlays_header_summary_stopped = { $enabled }/{ $total } активних - с�
 overlays_pane_title = Оверлеї
 overlays_pane_loading = Завантаження оверлеїв...
 overlays_pane_empty = Оверлеїв ще немає.
-overlays_pane_load_failed = Не вдалося завантажити оверлеї: { $reason }
 overlays_add_overlay = Новий оверлей
 overlays_menu_rename = Перейменувати...
 overlays_menu_copy_url = Копіювати URL
@@ -5213,3 +5210,12 @@ viewer_step_timeout = Тайм-аут { $name }
 viewer_step_ban = Бан { $name }
 viewer_step_unban = Розбан { $name }
 viewer_step_reply = Відповідь { $name }
+
+## Shared load notice
+
+load_notice_failed = Не вдалося завантажити: { $reason }
+triggers_loading = Завантаження тригерів...
+script_editor_loading = Завантаження скриптів...
+discord_bindings_loading = Завантаження вебхуків...
+settings_storage_limits_loading = Завантаження лімітів сховища...
+settings_diagnostics_level_loading = Завантаження рівня журналу...

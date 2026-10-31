@@ -13,12 +13,13 @@ use gpui::{
     AnyElement, ClickEvent, Context, FocusHandle, SharedString, Window, div, prelude::*, px,
 };
 
-use crate::async_bridge;
+use crate::async_bridge::{self, Loadable};
 use crate::audio_router::{AppliedRoutes, AudioRouter};
 use crate::audio_routes::{
     AudioDomain, RouteFallback, RoutePlan, load_audio_routes, plan_route, resolve_destination,
     set_destination, set_route,
 };
+use crate::load_notice::{LoadNotice, NoticeWidth, load_notice};
 use crate::repo_failure::RepoFailure;
 use crate::settings_audio::test_tone;
 use forge_components::ActivePresentation;
@@ -58,8 +59,7 @@ pub(crate) struct SettingsAudioRoutingView {
     speech_sink: Arc<dyn AudioSink>,
     router: Arc<AudioRouter>,
     server_available: bool,
-    loading: bool,
-    load_error: Option<String>,
+    routes_load: Loadable<()>,
     speech: AudioRoute,
     clips: AudioRoute,
     destination: Option<OverlayId>,
@@ -94,8 +94,7 @@ impl SettingsAudioRoutingView {
             speech_sink: router.speech_sink(),
             router,
             server_available,
-            loading: true,
-            load_error: None,
+            routes_load: Loadable::Loading,
             speech: AudioRoute::default(),
             clips: AudioRoute::default(),
             destination: None,
@@ -129,9 +128,9 @@ impl SettingsAudioRoutingView {
     }
 
     fn apply_loaded(&mut self, result: Result<Loaded, RepoFailure>, cx: &mut Context<Self>) {
-        self.loading = false;
         match result {
             Ok(loaded) => {
+                self.routes_load = Loadable::Loaded(());
                 self.speech = loaded.speech;
                 self.clips = loaded.clips;
                 self.destination = loaded.destination;
@@ -144,7 +143,7 @@ impl SettingsAudioRoutingView {
             }
             Err(message) => {
                 tracing::warn!(error = %message, "failed to read the audio routing settings");
-                self.load_error = Some(message.text());
+                self.routes_load = Loadable::Failed(message);
             }
         }
         cx.notify();
@@ -581,20 +580,23 @@ impl Render for SettingsAudioRoutingView {
 
         let mut content = div().flex().flex_col().gap(spacing(Spacing::Xs, density));
 
-        if self.loading {
-            content = content.child(
-                div()
-                    .font_family(body_family())
-                    .text_size(FONT_SM)
-                    .text_color(palette.text_muted)
-                    .child(tr!("settings_audio_routing_loading")),
-            );
-        } else if let Some(message) = &self.load_error {
-            content = content.child(self.error_text(
-                "settings_audio_routing_load_error",
-                message,
-                &palette,
-            ));
+        let notice = load_notice(
+            &self.routes_load,
+            LoadNotice {
+                id: "settings-audio-routing-load",
+                loading: tr!("settings_audio_routing_loading"),
+                width: NoticeWidth::Pane,
+            },
+            cx.listener(|this, _: &ClickEvent, _, cx| {
+                this.routes_load = Loadable::Loading;
+                this.load(cx);
+                cx.notify();
+            }),
+            &palette,
+            density,
+        );
+        if let Some(notice) = notice {
+            content = content.child(notice);
         } else {
             let rows = setting_rows(&palette)
                 .row(setting_row(

@@ -12,7 +12,7 @@ use gpui::{
 
 use crate::buttons::secondary_button;
 use crate::icons::{Icon, icon};
-use crate::overlay::{ModalFocusClaim, modal_focus};
+use crate::overlay::{ModalFocusClaim, confine_tab, modal_focus};
 use crate::palette::{ForgePalette, with_alpha};
 use crate::tokens::{
     BORDER_THIN, Density, ENTER_KEY, FONT_MD, FONT_META, FONT_SM, FONT_XS, ModalSize, Radius,
@@ -314,14 +314,14 @@ impl RenderOnce for ConfirmModal {
         }
 
         card.when_some(enter_binding, |card, (focus, confirm)| {
-            card.key_context(KEY_CONTEXT)
-                .track_focus(&focus)
-                .on_key_down(move |event: &KeyDownEvent, window, cx| {
+            confine_tab(card.key_context(KEY_CONTEXT).track_focus(&focus), &focus).on_key_down(
+                move |event: &KeyDownEvent, window, cx| {
                     if plain_enter_press(event) {
                         cx.stop_propagation();
                         confirm(&keyboard_click(), window, cx);
                     }
-                })
+                },
+            )
         })
     }
 }

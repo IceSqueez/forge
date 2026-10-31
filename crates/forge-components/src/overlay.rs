@@ -9,6 +9,7 @@ use gpui::{
 };
 
 use crate::palette::{ForgePalette, with_alpha};
+use crate::text_input::{FocusNextField, FocusPreviousField};
 use crate::tokens::ESCAPE_KEY;
 
 pub fn drive_overlay_focus(
@@ -145,6 +146,36 @@ pub(crate) fn modal_focus(
         state.note_held_focus(window, cx);
         state.handle.clone()
     })
+}
+
+const MAX_TAB_STOPS: usize = 512;
+
+fn cycle_focus_within(scope: &FocusHandle, forward: bool, window: &mut Window, cx: &mut App) {
+    for _ in 0..MAX_TAB_STOPS {
+        if forward {
+            window.focus_next(cx);
+        } else {
+            window.focus_prev(cx);
+        }
+        if scope.contains_focused(window, cx) {
+            return;
+        }
+    }
+    window.focus(scope, cx);
+}
+
+pub(crate) fn confine_tab<E: InteractiveElement>(element: E, scope: &FocusHandle) -> E {
+    let forward_scope = scope.clone();
+    let backward_scope = scope.clone();
+    element
+        .capture_action(move |_: &FocusNextField, window, cx| {
+            cycle_focus_within(&forward_scope, true, window, cx);
+            cx.stop_propagation();
+        })
+        .capture_action(move |_: &FocusPreviousField, window, cx| {
+            cycle_focus_within(&backward_scope, false, window, cx);
+            cx.stop_propagation();
+        })
 }
 
 const ENTER_MS: u64 = 200;
@@ -339,9 +370,8 @@ impl RenderOnce for Overlay {
         let mut root = root;
         if let (Some(handle), Some(handler)) = (escape_focus.as_ref(), self.on_dismiss.clone()) {
             let busy = self.busy;
-            root = root
-                .track_focus(handle)
-                .on_key_down(move |event: &KeyDownEvent, window, cx| {
+            root = confine_tab(root.track_focus(handle), handle).on_key_down(
+                move |event: &KeyDownEvent, window, cx| {
                     if event.keystroke.key.as_str() != ESCAPE_KEY {
                         return;
                     }
@@ -349,7 +379,8 @@ impl RenderOnce for Overlay {
                     if !busy {
                         handler(window, cx);
                     }
-                });
+                },
+            );
         }
 
         let layer = match position {
@@ -435,14 +466,14 @@ impl RenderOnce for AnchoredPopover {
         let mut root = div().child(backdrop_layer).child(panel_layer);
         if let (Some(handle), Some(dismiss)) = (self.escape_focus.as_ref(), self.on_dismiss.clone())
         {
-            root = root
-                .track_focus(handle)
-                .on_key_down(move |event: &KeyDownEvent, window, cx| {
+            root = confine_tab(root.track_focus(handle), handle).on_key_down(
+                move |event: &KeyDownEvent, window, cx| {
                     if event.keystroke.key.as_str() == ESCAPE_KEY {
                         cx.stop_propagation();
                         dismiss(window, cx);
                     }
-                });
+                },
+            );
         }
 
         deferred(root).with_priority(OVERLAY_PRIORITY)

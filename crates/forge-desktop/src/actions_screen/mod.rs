@@ -1,4 +1,4 @@
-use crate::async_bridge;
+use crate::async_bridge::{self, Loadable};
 use crate::collection_options::{ChoiceOptions, CollectionChoiceField};
 use crate::config_form::CollectionChoices;
 use crate::integration_switch::SwitchWatch;
@@ -210,7 +210,7 @@ pub(crate) struct ScreenActionsView {
     tree_width: Pixels,
     tree_keys: ListCursor<ActionId>,
     tree_scroll: ScrollHandle,
-    loading: bool,
+    list_load: Loadable<()>,
     list_reads: Arc<AtomicU64>,
     landed_list_read: u64,
     groups: Vec<ActionGroup>,
@@ -330,7 +330,7 @@ impl ScreenActionsView {
             tree_width: LEFT_PANEL_W,
             tree_keys: ListCursor::new(cx),
             tree_scroll: ScrollHandle::new(),
-            loading: true,
+            list_load: Loadable::Loading,
             list_reads: Arc::new(AtomicU64::new(0)),
             landed_list_read: 0,
             groups: Vec::new(),
@@ -417,10 +417,24 @@ impl ScreenActionsView {
         match result {
             Ok(actions) => self.apply_actions(actions, cx),
             Err(failure) => {
-                self.on_repo_error(&failure, cx);
+                self.on_list_load_failed(failure, cx);
                 self.reload_detail(cx);
             }
         }
+    }
+
+    fn on_list_load_failed(&mut self, failure: RepoFailure, cx: &mut Context<Self>) {
+        if self.total_actions() > 0 {
+            self.on_repo_error(&failure, cx);
+        }
+        self.list_load = Loadable::Failed(failure);
+        cx.notify();
+    }
+
+    fn retry_list_load(&mut self, cx: &mut Context<Self>) {
+        self.list_load = Loadable::Loading;
+        self.reload(cx);
+        cx.notify();
     }
 
     fn apply_actions(&mut self, actions: Vec<Action>, cx: &mut Context<Self>) {
@@ -451,7 +465,7 @@ impl ScreenActionsView {
                 self.case_fields.clear();
             }
         }
-        self.loading = false;
+        self.list_load = Loadable::Loaded(());
         cx.notify();
     }
 
@@ -514,7 +528,6 @@ impl ScreenActionsView {
     fn on_repo_error(&mut self, failure: &RepoFailure, cx: &mut Context<Self>) {
         tracing::error!(error = %failure, "actions operation failed");
         let message = failure.text();
-        self.loading = false;
         cx.push_toast(
             ToastKind::Error,
             tr!("actions_toast_error", message = message.as_str()),

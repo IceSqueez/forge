@@ -3,6 +3,7 @@ use crate::async_bridge;
 use crate::navigation::{NavRequested, Screen};
 use crate::obs_credentials_form::ObsConnected;
 use crate::obs_settings_modal::{ObsSettingsModal, ObsSettingsModalEvent};
+use forge_components::focus_inside_modal;
 use forge_components::{PushToast, ToastKind, tr};
 use forge_platform_core::{ControlFailure, HeaderAction};
 use gpui::{Context, Entity, Window, prelude::*};
@@ -58,7 +59,9 @@ impl IntegrationDetail {
         let seed = self.obs_install_seed.clone();
         let modal =
             cx.new(|cx| ObsSettingsModal::new(rt_handle, credentials, settings, bus, seed, cx));
-        modal.update(cx, |m, cx| m.focus(window, cx));
+        focus_inside_modal(window, cx, |window, cx| {
+            modal.update(cx, |m, cx| m.focus(window, cx))
+        });
         self._obs_modal_sub = Some(cx.subscribe(&modal, Self::on_obs_settings_event));
         self.obs_settings_modal = Some(modal);
         cx.notify();

@@ -14,6 +14,7 @@ use gpui::{
 };
 
 use crate::home_stats::HomeStats;
+use crate::navigable_list::forward_root_focus_to_list;
 
 use crate::actions::{
     GoActions, GoChat, GoHome, GoSettings, GoTriggers, GoTwitch, NewAction, Quit, RunFocused,
@@ -208,6 +209,7 @@ impl AppShell {
 
         window.focus(&focus, cx);
         cx.on_focus_lost(window, Self::restore_focus).detach();
+        forward_root_focus_to_list(&focus, window, cx).detach();
 
         let shell = cx.weak_entity();
         window.on_window_should_close(cx, move |_window, cx| {

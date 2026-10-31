@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
+use forge_components::focus_inside_modal;
 use forge_components::{
     GridPicker, GridPickerArt, GridPickerConfig, GridPickerEvent, GridPickerSubtitle, Icon,
     OverlayPosition, ToastAction, ToastKind, overlay, tr,
@@ -238,7 +239,9 @@ impl EventWiringView {
         let picker = cx.new(|cx| GridPicker::new(config, groups, favorites, palette, cx));
         let favorites_sub = bind_picker(&self.favorites, &picker, cx);
         let sub = cx.subscribe(&picker, Self::on_picker_event);
-        picker.update(cx, |picker, cx| picker.focus(window, cx));
+        focus_inside_modal(window, cx, |window, cx| {
+            picker.update(cx, |picker, cx| picker.focus(window, cx))
+        });
         self.stage = Some(WiringStage::Pick(PickStage {
             picker,
             picks,

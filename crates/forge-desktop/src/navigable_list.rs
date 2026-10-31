@@ -1,4 +1,6 @@
-use gpui::{App, Context, FocusHandle, InteractiveElement, Window};
+use gpui::{
+    App, Context, FocusHandle, Global, InteractiveElement, Subscription, WeakFocusHandle, Window,
+};
 
 use crate::actions::{LIST_CONTEXT, ListActivate, ListSelectNext, ListSelectPrev};
 
@@ -23,11 +25,35 @@ pub(crate) trait NavigableList: Sized + 'static {
     fn activate_list(&mut self, window: &mut Window, cx: &mut Context<Self>);
 }
 
+#[derive(Default)]
+struct RestingList(Option<WeakFocusHandle>);
+
+impl Global for RestingList {}
+
+pub(crate) fn forward_root_focus_to_list<V: 'static>(
+    root: &FocusHandle,
+    window: &mut Window,
+    cx: &mut Context<V>,
+) -> Subscription {
+    let forwarded_from = root.clone();
+    cx.on_focus(root, window, move |_, window, cx| {
+        let list = cx
+            .default_global::<RestingList>()
+            .0
+            .as_ref()
+            .and_then(WeakFocusHandle::upgrade);
+        if let Some(list) = list.filter(|list| forwarded_from.contains(list, window)) {
+            window.focus(&list, cx);
+        }
+    })
+}
+
 pub(crate) fn navigable_list<V: NavigableList, E: InteractiveElement>(
     list: E,
     focus: &FocusHandle,
     cx: &mut Context<V>,
 ) -> E {
+    cx.default_global::<RestingList>().0 = Some(focus.downgrade());
     list.track_focus(focus)
         .key_context(LIST_CONTEXT)
         .on_action(
@@ -106,7 +132,12 @@ impl<Id: Clone + PartialEq> ListCursor<Id> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use gpui::{IntoElement, ParentElement, Render, Styled, TestAppContext, div};
+    use crate::test_support::install_presentation;
+    use forge_components::{FORGE_DEFAULT, TextInput, focus_inside_modal, overlay};
+    use gpui::{
+        AppContext, Entity, IntoElement, Modifiers, ParentElement, Render,
+        StatefulInteractiveElement, Styled, TestAppContext, VisualTestContext, div, point, px,
+    };
 
     struct KeyedList {
         focus: FocusHandle,
@@ -129,6 +160,105 @@ mod tests {
             let focus = self.focus.clone();
             navigable_list(div(), &focus, cx).size_full().child("row")
         }
+    }
+
+    const TOOLBAR_HEIGHT: f32 = 40.0;
+    const FOCUS_HOPS_AFTER_A_CLOSE: usize = 3;
+
+    struct ToolbarScreen {
+        root: FocusHandle,
+        list: Entity<KeyedList>,
+        field: Entity<TextInput>,
+        modal_open: bool,
+        _forward: Subscription,
+    }
+
+    impl ToolbarScreen {
+        fn open_modal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+            let field = self.field.clone();
+            focus_inside_modal(window, cx, |window, cx| {
+                field.update(cx, |field, cx| field.focus(window, cx))
+            });
+            self.modal_open = true;
+            cx.notify();
+        }
+    }
+
+    impl Render for ToolbarScreen {
+        fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            let view = cx.entity();
+            let toolbar = div()
+                .id("toolbar-button")
+                .h(px(TOOLBAR_HEIGHT))
+                .w_full()
+                .on_click(cx.listener(|this, _, window, cx| this.open_modal(window, cx)));
+            div()
+                .track_focus(&self.root)
+                .size_full()
+                .child(toolbar)
+                .child(self.list.clone())
+                .children(self.modal_open.then(|| {
+                    overlay(div().child(self.field.clone()), &FORGE_DEFAULT).on_dismiss(
+                        "toolbar-modal",
+                        move |_, cx| {
+                            view.update(cx, |this, cx| {
+                                this.modal_open = false;
+                                cx.notify();
+                            })
+                        },
+                    )
+                }))
+        }
+    }
+
+    fn settle(vcx: &mut VisualTestContext) {
+        for _ in 0..FOCUS_HOPS_AFTER_A_CLOSE {
+            vcx.run_until_parked();
+            vcx.update(|_, _| {});
+        }
+        vcx.run_until_parked();
+    }
+
+    #[gpui::test]
+    fn arrows_reach_the_list_after_a_modal_opened_by_a_click_outside_it(cx: &mut TestAppContext) {
+        cx.update(crate::actions::register_key_bindings);
+        cx.update(forge_components::bind_text_input_keys);
+        install_presentation(cx);
+        let (screen, vcx) = cx.add_window_view(|window, cx| {
+            let root = cx.focus_handle();
+            let forward = forward_root_focus_to_list(&root, window, cx);
+            ToolbarScreen {
+                root,
+                list: cx.new(|cx| KeyedList {
+                    focus: cx.focus_handle(),
+                    steps: Vec::new(),
+                    activations: 0,
+                }),
+                field: cx.new(|cx| TextInput::new("name", cx)),
+                modal_open: false,
+                _forward: forward,
+            }
+        });
+        vcx.update(|window, _| window.activate_window());
+        settle(vcx);
+        let list = screen.read_with(vcx, |screen, _| screen.list.clone());
+        let focus = list.read_with(vcx, |list, _| list.focus.clone());
+        vcx.update(|window, cx| window.focus(&focus, cx));
+        settle(vcx);
+
+        vcx.simulate_click(
+            point(px(TOOLBAR_HEIGHT), px(TOOLBAR_HEIGHT / 2.0)),
+            Modifiers::none(),
+        );
+        settle(vcx);
+        assert!(screen.read_with(vcx, |screen, _| screen.modal_open));
+        vcx.simulate_keystrokes("escape");
+        settle(vcx);
+        assert!(!screen.read_with(vcx, |screen, _| screen.modal_open));
+
+        vcx.simulate_keystrokes("down");
+
+        list.read_with(vcx, |list, _| assert_eq!(list.steps, [ListStep::Next]));
     }
 
     #[gpui::test]

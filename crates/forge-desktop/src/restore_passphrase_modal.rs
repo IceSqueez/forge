@@ -1,3 +1,4 @@
+use forge_components::focus_inside_modal;
 use forge_components::{
     ActivePresentation, Density, FONT_XS, ForgePalette, Icon, InputEvent, ModalSize,
     OverlayPosition, Spacing, TextInput, field_column, field_frame, ghost_button, modal,
@@ -137,8 +138,10 @@ impl Render for RestorePassphraseModal {
         let density = cx.density();
         if self.focus_pending {
             self.focus_pending = false;
-            self.passphrase
-                .update(cx, |input, cx| input.focus(window, cx));
+            focus_inside_modal(window, cx, |window, cx| {
+                self.passphrase
+                    .update(cx, |input, cx| input.focus(window, cx))
+            });
         }
         let problem = self.problem.as_ref().map(RestoreProblem::message);
 

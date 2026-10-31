@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use forge_components::focus_inside_modal;
 use forge_components::{ForgePalette, Icon, ToastKind, icon, pad_tile, tr};
 use forge_soundboard::SoundboardError;
 use forge_storage::{MediaFormat, MediaKind, StoredClip};
@@ -66,7 +67,9 @@ impl SoundboardView {
                 None => editor,
             }
         });
-        modal.update(cx, |m, cx| m.focus(window, cx));
+        focus_inside_modal(window, cx, |window, cx| {
+            modal.update(cx, |m, cx| m.focus(window, cx))
+        });
         self._modal_sub = Some(cx.subscribe(&modal, Self::on_modal_event));
         self.modal = Some(modal);
         self.reload_key_holders(cx);

@@ -5,6 +5,7 @@ use crate::repo_failure::RepoFailure;
 use crate::triggers_screen::platform_dot_color;
 use forge_components::ActivePresentation;
 use forge_components::LEADING_SCOPE;
+use forge_components::focus_inside_modal;
 use forge_components::{
     ForgePalette, GlyphArt, GridPicker, GridPickerArt, GridPickerConfig, GridPickerEvent,
     GridPickerGroup, GridPickerItem, GridPickerItemState, GridPickerSubtitle, Icon,
@@ -167,7 +168,9 @@ impl ScreenActionsView {
         let picker = cx.new(|cx| GridPicker::new(config, groups, favorites, palette, cx));
         let sub = cx.subscribe(&picker, Self::on_trigger_picker_event);
         let favorites_sub = bind_picker(&self.trigger_favorites, &picker, cx);
-        picker.update(cx, |f, cx| f.focus(window, cx));
+        focus_inside_modal(window, cx, |window, cx| {
+            picker.update(cx, |f, cx| f.focus(window, cx))
+        });
         self.add_trigger = Some(AddTriggerStage::Pick(AddTriggerPicker {
             picker,
             picks_kind,

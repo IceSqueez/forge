@@ -1,5 +1,6 @@
 use forge_components::Density;
 use forge_components::Spacing;
+use forge_components::focus_inside_modal;
 use forge_components::spacing;
 use forge_components::{
     FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, OverlayPosition, TextInput, body_family,
@@ -282,7 +283,9 @@ impl Render for OverlayFormModal {
         let palette = cx.palette();
         if self.focus_pending {
             self.focus_pending = false;
-            self.name.update(cx, |input, cx| input.focus(window, cx));
+            focus_inside_modal(window, cx, |window, cx| {
+                self.name.update(cx, |input, cx| input.focus(window, cx))
+            });
         }
 
         let type_section = if self.is_rename() {

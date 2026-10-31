@@ -516,11 +516,7 @@ mod tests {
         let mut rig = open(cx, CONFIRMING);
         rig.press("enter");
         rig.set_open(false);
-        let list = rig.list.clone();
-        rig.vcx.update(|window, cx| {
-            let focus = list.read(cx).focus.clone();
-            window.focus(&focus, cx);
-        });
+        rig.vcx.update(|_, _| {});
         rig.vcx.run_until_parked();
 
         rig.press("enter");

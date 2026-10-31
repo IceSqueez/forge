@@ -2,6 +2,7 @@ use std::future::Future;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use forge_components::focus_inside_modal;
 use forge_components::{
     BORDER_THIN, BulletItem, BulletKind, ConfirmTone, DISABLED_OPACITY, Density, FONT_SM, FONT_XS,
     FONT_XXS, ForgePalette, Icon, InputEvent, OverlayPosition, Radius, SaveState, Spacing,
@@ -544,7 +545,9 @@ impl SettingsWebSocketView {
                 TypeToConfirmEvent::Cancelled => this.cancel_lan(cx),
             },
         );
-        modal.update(cx, |m, cx| m.focus_input(window, cx));
+        focus_inside_modal(window, cx, |window, cx| {
+            modal.update(cx, |m, cx| m.focus_input(window, cx))
+        });
         self.lan_modal = Some(modal);
         self.lan_sub = Some(sub);
         cx.notify();

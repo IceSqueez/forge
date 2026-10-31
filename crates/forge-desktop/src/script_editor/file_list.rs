@@ -703,14 +703,6 @@ mod tests {
             self.settle();
         }
 
-        fn focus_list(&mut self) {
-            let focus = self
-                .view
-                .read_with(&self.vcx, |view, _| view.list_keys.focus().clone());
-            self.vcx.update(|window, cx| window.focus(&focus, cx));
-            self.vcx.run_until_parked();
-        }
-
         fn discard_prompted(&mut self) -> bool {
             self.view
                 .read_with(&self.vcx, |view, _| view.pending_nav.is_some())
@@ -898,7 +890,8 @@ mod tests {
         assert!(!rig.discard_prompted());
         assert_eq!(rig.opened().as_deref(), Some("zeta"));
 
-        rig.focus_list();
+        rig.vcx.update(|_, _| {});
+        rig.vcx.run_until_parked();
         rig.press("down");
         assert_eq!(rig.cursor().as_deref(), Some("gamma"));
     }

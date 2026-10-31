@@ -1,4 +1,5 @@
 use forge_components::LEADING_SCOPE;
+use forge_components::focus_inside_modal;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -551,7 +552,9 @@ impl OverlaysView {
         };
         open.focused = true;
         let picker = open.view.clone();
-        picker.update(cx, |picker, cx| picker.focus(window, cx));
+        focus_inside_modal(window, cx, |window, cx| {
+            picker.update(cx, |picker, cx| picker.focus(window, cx))
+        });
     }
 }
 

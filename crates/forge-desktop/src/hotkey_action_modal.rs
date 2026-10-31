@@ -4,6 +4,7 @@ use forge_components::FONT_META;
 use forge_components::FONT_XS;
 use forge_components::Radius;
 use forge_components::Spacing;
+use forge_components::focus_inside_modal;
 use forge_components::radius;
 use forge_components::spacing;
 use std::sync::Arc;
@@ -614,9 +615,11 @@ impl Render for HotkeyActionModal {
         let palette = cx.palette();
         if self.focus_pending {
             self.focus_pending = false;
-            self.filter
-                .field()
-                .update(cx, |field, cx| field.focus(window, cx));
+            focus_inside_modal(window, cx, |window, cx| {
+                self.filter
+                    .field()
+                    .update(cx, |field, cx| field.focus(window, cx))
+            });
         }
 
         let body = div()

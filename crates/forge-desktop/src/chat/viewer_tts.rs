@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use forge_components::focus_inside_modal;
 use forge_components::{ToastKind, tr};
 use forge_speech_types::VoiceAlias;
 use forge_storage::StorageError;
@@ -112,7 +113,9 @@ impl ChatView {
         let editing = existing.as_ref().map(|alias| alias.id.clone());
         let values = existing.as_ref().map(AliasValues::of).unwrap_or_default();
         let view = cx.new(|cx| AliasForm::new(editing, Some(identity), true, values, cx));
-        view.update(cx, |form, cx| form.focus(window, cx));
+        focus_inside_modal(window, cx, |window, cx| {
+            view.update(cx, |form, cx| form.focus(window, cx))
+        });
         let events = cx.subscribe(&view, Self::on_tts_voice_event);
         self.tts_voice = Some(TtsVoiceHost {
             view,

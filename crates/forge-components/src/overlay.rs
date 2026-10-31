@@ -3,9 +3,9 @@ use std::sync::Arc;
 
 use gpui::{
     Anchor, AnchoredPositionMode, Animation, AnimationExt, AnyElement, App, Div, ElementId, Entity,
-    FocusHandle, InteractiveElement, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent,
-    ParentElement, Pixels, Point, RenderOnce, Rgba, SharedString, Styled, WeakFocusHandle, Window,
-    anchored, deferred, div, point, px,
+    FocusHandle, Global, InteractiveElement, IntoElement, KeyDownEvent, MouseButton,
+    MouseDownEvent, ParentElement, Pixels, Point, RenderOnce, Rgba, SharedString, Styled,
+    WeakFocusHandle, Window, anchored, deferred, div, point, px,
 };
 
 use crate::palette::{ForgePalette, with_alpha};
@@ -30,9 +30,46 @@ pub fn drive_overlay_focus(
     }
 }
 
+struct FocusEntrusted {
+    entered: WeakFocusHandle,
+    prior: WeakFocusHandle,
+}
+
+#[derive(Default)]
+struct PendingFocusReturn(Option<FocusEntrusted>);
+
+impl Global for PendingFocusReturn {}
+
+pub fn focus_inside_modal(
+    window: &mut Window,
+    cx: &mut App,
+    focus: impl FnOnce(&mut Window, &mut App),
+) {
+    let prior = window.focused(cx);
+    focus(window, cx);
+    if let (Some(prior), Some(entered)) = (prior, window.focused(cx)) {
+        cx.default_global::<PendingFocusReturn>().0 = Some(FocusEntrusted {
+            entered: entered.downgrade(),
+            prior: prior.downgrade(),
+        });
+    }
+}
+
+fn take_entrusted_focus(window: &Window, cx: &mut App) -> Option<FocusEntrusted> {
+    let focused = window.focused(cx)?;
+    let pending = &mut cx.default_global::<PendingFocusReturn>().0;
+    let entered = pending.as_ref()?.entered.upgrade()?;
+    if entered == focused {
+        pending.take()
+    } else {
+        None
+    }
+}
+
 struct ModalFocus {
     handle: FocusHandle,
     restore: Option<WeakFocusHandle>,
+    held: Option<WeakFocusHandle>,
 }
 
 impl ModalFocus {
@@ -43,8 +80,26 @@ impl ModalFocus {
         }
     }
 
+    fn note_held_focus(&mut self, window: &Window, cx: &App) {
+        if self.handle.contains_focused(window, cx) {
+            self.held = window.focused(cx).map(|held| held.downgrade());
+        }
+    }
+
+    fn focus_is_stranded(&self, window: &Window, cx: &App) -> bool {
+        let Some(focused) = window.focused(cx) else {
+            return true;
+        };
+        focused == self.handle
+            || self
+                .held
+                .as_ref()
+                .and_then(WeakFocusHandle::upgrade)
+                .is_some_and(|held| held == focused)
+    }
+
     fn give_back(&mut self, window: &mut Window, cx: &mut App) {
-        if self.handle.is_focused(window)
+        if self.focus_is_stranded(window, cx)
             && let Some(prior) = self.restore.take().and_then(|weak| weak.upgrade())
         {
             window.focus(&prior, cx);
@@ -76,12 +131,20 @@ pub(crate) fn modal_focus(
             ModalFocusClaim::AfterThisFrame => window.defer(cx, take_focus),
             ModalFocusClaim::OnNextFrame => window.on_next_frame(take_focus),
         }
+        let (restore, held) = match take_entrusted_focus(window, cx) {
+            Some(entrusted) => (Some(entrusted.prior), Some(entrusted.entered)),
+            None => (None, None),
+        };
         ModalFocus {
             handle: cx.focus_handle(),
-            restore: None,
+            restore,
+            held,
         }
     });
-    state.read(cx).handle.clone()
+    state.update(cx, |state, cx| {
+        state.note_held_focus(window, cx);
+        state.handle.clone()
+    })
 }
 
 const ENTER_MS: u64 = 200;
@@ -392,11 +455,12 @@ mod tests {
     use std::rc::Rc;
 
     use gpui::{
-        AppContext, Context, Entity, EntityInputHandler, IntoElement, Modifiers, MouseButton,
-        Render, TestAppContext, VisualTestContext, Window, div, point, px,
+        AppContext, Context, Entity, EntityInputHandler, FocusHandle, Focusable,
+        InteractiveElement, IntoElement, Modifiers, MouseButton, Render, TestAppContext,
+        VisualTestContext, Window, div, point, px,
     };
 
-    use super::{ease_out_cubic, overlay};
+    use super::{ease_out_cubic, focus_inside_modal, overlay};
     use crate::palette::FORGE_DEFAULT;
     use crate::test_support::install_presentation;
     use crate::text_input::{TextInput, bind_text_input_keys};
@@ -514,6 +578,112 @@ mod tests {
 
             assert_eq!(opened.outer.get(), dismissals, "busy={busy}");
         }
+    }
+
+    struct ModalHost {
+        list: FocusHandle,
+        field: Entity<TextInput>,
+        other: FocusHandle,
+        open: bool,
+    }
+
+    impl Render for ModalHost {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            let screen = div().track_focus(&self.list);
+            let outside = div().track_focus(&self.other);
+            let card = div().child(self.field.clone());
+            div().child(screen).child(outside).children(
+                self.open
+                    .then(|| overlay(card, &FORGE_DEFAULT).on_dismiss("focus-return", |_, _| {})),
+            )
+        }
+    }
+
+    struct ModalRig<'a> {
+        host: Entity<ModalHost>,
+        vcx: &'a mut VisualTestContext,
+    }
+
+    fn mount_modal_rig(cx: &mut TestAppContext) -> ModalRig<'_> {
+        cx.update(bind_text_input_keys);
+        install_presentation(cx);
+        let (host, vcx) = cx.add_window_view(|_window, cx| ModalHost {
+            list: cx.focus_handle(),
+            field: cx.new(|cx| TextInput::new("placeholder", cx)),
+            other: cx.focus_handle(),
+            open: false,
+        });
+        vcx.update(|window, cx| window.focus(&host.read(cx).list.clone(), cx));
+        vcx.run_until_parked();
+        ModalRig { host, vcx }
+    }
+
+    impl ModalRig<'_> {
+        fn open_with_the_field_focused(&mut self) {
+            let host = self.host.clone();
+            self.vcx.update(|window, cx| {
+                let field = host.read(cx).field.clone();
+                focus_inside_modal(window, cx, |window, cx| {
+                    field.update(cx, |field, cx| field.focus(window, cx))
+                });
+                host.update(cx, |host, cx| {
+                    host.open = true;
+                    cx.notify();
+                });
+            });
+            self.settle();
+        }
+
+        fn close(&mut self) {
+            self.host.update(self.vcx, |host, cx| {
+                host.open = false;
+                cx.notify();
+            });
+            self.settle();
+        }
+
+        fn settle(&mut self) {
+            self.vcx.run_until_parked();
+            self.vcx.update(|_, _| {});
+            self.vcx.run_until_parked();
+        }
+
+        fn focused(&mut self, handle: impl Fn(&ModalHost) -> FocusHandle) -> bool {
+            let host = self.host.clone();
+            self.vcx
+                .update(|window, cx| handle(host.read(cx)).is_focused(window))
+        }
+    }
+
+    #[gpui::test]
+    fn a_field_focused_while_opening_stays_focused_and_returns_focus_on_close(
+        cx: &mut TestAppContext,
+    ) {
+        let mut rig = mount_modal_rig(cx);
+
+        rig.open_with_the_field_focused();
+        let field = rig.host.read_with(rig.vcx, |host, _| host.field.clone());
+        assert!(
+            rig.vcx
+                .update(|window, cx| { field.read(cx).focus_handle(cx).is_focused(window) })
+        );
+
+        rig.close();
+        assert!(rig.focused(|host| host.list.clone()));
+    }
+
+    #[gpui::test]
+    fn focus_moved_outside_before_the_close_is_left_alone(cx: &mut TestAppContext) {
+        let mut rig = mount_modal_rig(cx);
+        rig.open_with_the_field_focused();
+        let host = rig.host.clone();
+        rig.vcx
+            .update(|window, cx| window.focus(&host.read(cx).other.clone(), cx));
+        rig.settle();
+
+        rig.close();
+
+        assert!(rig.focused(|host| host.other.clone()));
     }
 
     #[test]

@@ -118,7 +118,9 @@ pub use menu::{
     MenuItem, MenuPlacement, context_menu, menu_button, menu_divider, menu_header, menu_item,
 };
 pub use modal::{Modal, busy_modal, modal};
-pub use overlay::{Overlay, OverlayPosition, anchored_popover, drive_overlay_focus, overlay};
+pub use overlay::{
+    Overlay, OverlayPosition, anchored_popover, drive_overlay_focus, focus_inside_modal, overlay,
+};
 pub use page_frame::{header_stat, header_stats, header_status, page_frame};
 pub use palette::{AccentColor, FORGE_DEFAULT, ForgePalette, ThemeId, accent_swatch, with_alpha};
 pub use picker::{Picker, PickerEvent, PickerItem, PickerLabels, bind_picker_keys};

@@ -5,6 +5,7 @@ use forge_components::FONT_META;
 use forge_components::FONT_ROLE_BADGE;
 use forge_components::FONT_ROW;
 use forge_components::SEARCH_FIELD_WIDTH;
+use forge_components::focus_inside_modal;
 use std::future::Future;
 use std::sync::Arc;
 
@@ -470,7 +471,9 @@ impl VoiceAliasesView {
     }
 
     fn mount_form(&mut self, form: Entity<AliasForm>, window: &mut Window, cx: &mut Context<Self>) {
-        form.update(cx, |f, cx| f.focus(window, cx));
+        focus_inside_modal(window, cx, |window, cx| {
+            form.update(cx, |f, cx| f.focus(window, cx))
+        });
         self._form_sub = Some(cx.subscribe(&form, Self::on_form_event));
         self.form = Some(form);
         cx.notify();

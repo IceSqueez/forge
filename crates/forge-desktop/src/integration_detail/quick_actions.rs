@@ -7,6 +7,7 @@ use crate::integration_quick_actions::accent_color;
 use crate::navigation::Screen;
 use crate::repo_failure::RepoFailure;
 use crate::run_history_modal::{RunHistoryDismissed, RunHistoryModal, RunHistoryOpenIntegration};
+use forge_components::focus_inside_modal;
 use forge_components::{ActivePresentation, InputEvent, PushToast, TextInput, ToastKind, tr};
 use forge_platform_core::{BuiltinCollections, CollectionId, QuickAction, QuickActions};
 use forge_types::SubActionStep;
@@ -73,7 +74,9 @@ impl IntegrationDetail {
         let option_source = self.option_source.clone();
         let rt_handle = self.rt_handle.clone();
         let modal = cx.new(|cx| QuickActionModal::new(action, option_source, rt_handle, cx));
-        modal.update(cx, |m, cx| m.focus(window, cx));
+        focus_inside_modal(window, cx, |window, cx| {
+            modal.update(cx, |m, cx| m.focus(window, cx))
+        });
         self._qa_modal_sub = Some(cx.subscribe(&modal, Self::on_quick_action_modal_event));
         self.quick_action_modal = Some(modal);
         cx.notify();

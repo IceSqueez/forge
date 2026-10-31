@@ -7,6 +7,7 @@ use forge_components::ActivePresentation;
 use forge_components::NAME_FIELD_LIMIT;
 use forge_components::PushToast;
 use forge_components::SEARCH_FIELD_WIDTH;
+use forge_components::focus_inside_modal;
 use forge_components::{
     BORDER_THIN, ChipGlyph, ConfirmTone, Density, FONT_XS, FONT_XXS, ForgePalette, Icon,
     InlineEditEvent, InputEvent, ModalSize, OverlayPosition, ResizeEdge, ResizeRange, Spacing,
@@ -313,7 +314,9 @@ impl ScreenActionsView {
             area.set_content(seed_desc, cx);
             area
         });
-        name.update(cx, |f, cx| f.focus(window, cx));
+        focus_inside_modal(window, cx, |window, cx| {
+            name.update(cx, |f, cx| f.focus(window, cx))
+        });
         let name_sub = cx.subscribe(&name, |_this, _f, _e: &InputEvent, cx| cx.notify());
         let (editing, enabled, concurrent, bypass_pause, random_pick, preselect_queue) = match &base
         {

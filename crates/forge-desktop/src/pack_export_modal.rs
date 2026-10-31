@@ -1,5 +1,6 @@
 use std::collections::BTreeSet;
 
+use forge_components::focus_inside_modal;
 use forge_components::{
     ActivePresentation, BORDER_THIN, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent,
     ModalSize, OverlayPosition, Radius, SearchState, Spacing, TextInput, body_family, checkbox,
@@ -694,7 +695,9 @@ impl Render for PackExportModal {
         let density = cx.density();
         if self.focus_pending {
             self.focus_pending = false;
-            self.name.update(cx, |input, cx| input.focus(window, cx));
+            focus_inside_modal(window, cx, |window, cx| {
+                self.name.update(cx, |input, cx| input.focus(window, cx))
+            });
         }
 
         let body = div()

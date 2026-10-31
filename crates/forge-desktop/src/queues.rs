@@ -5,6 +5,7 @@ use forge_components::ROW_HOVER_WASH_ALPHA;
 use forge_components::SEARCH_FIELD_WIDTH;
 use forge_components::TINT_BORDER_ALPHA;
 use forge_components::TINT_STRONG_FILL_ALPHA;
+use forge_components::focus_inside_modal;
 use std::collections::{HashMap, HashSet};
 use std::num::NonZeroU32;
 use std::sync::Arc;
@@ -989,7 +990,9 @@ impl QueuesView {
 
     fn open_new(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let modal = cx.new(|cx| EditQueueModal::new(None, "", "", PARALLEL_CONCURRENCY, cx));
-        modal.update(cx, |m, cx| m.focus(window, cx));
+        focus_inside_modal(window, cx, |window, cx| {
+            modal.update(cx, |m, cx| m.focus(window, cx))
+        });
         self._modal_sub = Some(cx.subscribe(&modal, Self::on_modal_event));
         self.modal = Some(modal);
         cx.notify();
@@ -1004,7 +1007,9 @@ impl QueuesView {
         let concurrency = q.concurrency;
         let modal =
             cx.new(|cx| EditQueueModal::new(Some(id), &name, &description, concurrency, cx));
-        modal.update(cx, |m, cx| m.focus(window, cx));
+        focus_inside_modal(window, cx, |window, cx| {
+            modal.update(cx, |m, cx| m.focus(window, cx))
+        });
         self._modal_sub = Some(cx.subscribe(&modal, Self::on_modal_event));
         self.modal = Some(modal);
         cx.notify();

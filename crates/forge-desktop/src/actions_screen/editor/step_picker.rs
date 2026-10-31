@@ -3,6 +3,7 @@ use super::*;
 use crate::actions_screen::sub_action_modal::{SubFormLaunch, SubFormTarget};
 use crate::picker_favorites::{bind_picker, follow_picker_event};
 use forge_components::ActivePresentation;
+use forge_components::focus_inside_modal;
 use forge_components::{
     ForgePalette, GlyphArt, GridPicker, GridPickerArt, GridPickerConfig, GridPickerEvent,
     GridPickerGroup, GridPickerItem, GridPickerItemState, GridPickerSubtitle, Icon, tr,
@@ -103,7 +104,9 @@ impl ScreenActionsView {
         let picker = cx.new(|cx| GridPicker::new(config, groups, favorites, palette, cx));
         let sub = cx.subscribe(&picker, Self::on_grid_picker_event);
         let favorites_sub = bind_picker(&self.sub_action_favorites, &picker, cx);
-        picker.update(cx, |f, cx| f.focus(window, cx));
+        focus_inside_modal(window, cx, |window, cx| {
+            picker.update(cx, |f, cx| f.focus(window, cx))
+        });
         self.step_menu_open = None;
         self.grid_picker = Some(GridPickerForm {
             picker,

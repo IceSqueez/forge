@@ -1,5 +1,6 @@
 use forge_components::Density;
 use forge_components::Spacing;
+use forge_components::focus_inside_modal;
 use forge_components::spacing;
 use forge_components::{
     BORDER_THIN, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, ModalSize, OverlayPosition,
@@ -347,9 +348,13 @@ impl Render for DiscordWebhookModal {
         if self.focus_pending {
             self.focus_pending = false;
             if self.original_name.is_some() {
-                self.url.update(cx, |input, cx| input.focus(window, cx));
+                focus_inside_modal(window, cx, |window, cx| {
+                    self.url.update(cx, |input, cx| input.focus(window, cx))
+                });
             } else {
-                self.name.update(cx, |input, cx| input.focus(window, cx));
+                focus_inside_modal(window, cx, |window, cx| {
+                    self.name.update(cx, |input, cx| input.focus(window, cx))
+                });
             }
         }
 

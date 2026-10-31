@@ -1,3 +1,4 @@
+use forge_components::focus_inside_modal;
 use forge_components::{
     Density, FONT_XS, ForgePalette, Icon, InputEvent, ModalSize, OverlayPosition, Spacing,
     TextInput, body_family, field_column, field_frame, ghost_button, icon, modal, modal_width,
@@ -309,7 +310,9 @@ impl Render for BackupPassphraseModal {
         if self.focus_pending {
             self.focus_pending = false;
             let first = self.current.as_ref().unwrap_or(&self.passphrase);
-            first.update(cx, |input, cx| input.focus(window, cx));
+            focus_inside_modal(window, cx, |window, cx| {
+                first.update(cx, |input, cx| input.focus(window, cx))
+            });
         }
         let check = self.check(cx);
         let ready = self.ready(cx);

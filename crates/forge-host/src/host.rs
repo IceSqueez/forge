@@ -211,6 +211,9 @@ pub async fn build_host(inputs: HostInputs) -> Host {
         Arc::new(integrations.builtins.clone()),
         live_viewers.clone(),
     );
+    let sign_out = integrations
+        .sign_out_routes
+        .over(Arc::new(supervisor.clone()));
     donations.recover_unannounced().await;
     supervisor.boot().await;
     let integration_states = supervisor.watch().current();
@@ -321,7 +324,7 @@ pub async fn build_host(inputs: HostInputs) -> Host {
             twitch_sign_in: integrations.twitch_sign_in,
             youtube_sign_in: integrations.youtube_sign_in,
             kick_sign_in: integrations.kick_sign_in,
-            platform_credentials: integrations.platform_credentials,
+            sign_out,
         },
         speech: SpeechHandles {
             speak,

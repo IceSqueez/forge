@@ -12,7 +12,7 @@ use forge_midi::vocabulary::event_kinds as midi_kinds;
 use forge_obs::vocabulary::event_kinds as obs_kinds;
 use forge_platform_kick::vocabulary::event_kinds as kick_kinds;
 use forge_platform_twitch::vocabulary::{
-    BotStatusChanged, PlatformReauthRequired, SenderFallback, event_kinds as twitch_kinds,
+    BotStatusChanged, SenderFallback, event_kinds as twitch_kinds,
 };
 use forge_platform_youtube::vocabulary::event_kinds as youtube_kinds;
 use forge_runtime::OVERLAY_SPEECH_FAILED_KIND;
@@ -83,7 +83,6 @@ pub(crate) enum ObsConnection {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum RuntimeEvent {
     PlatformConnection(PlatformConnectionChanged),
-    ReauthRequired(PlatformReauthRequired),
     TwitchBotStatus(BotStatusChanged),
     SenderFallback(SenderFallback),
     ObsConnection(ObsConnection),
@@ -123,9 +122,6 @@ pub(crate) fn decode(event: &Event) -> Option<RuntimeEvent> {
     match (event.source, kind) {
         (_, PlatformConnectionChanged::KIND) => {
             PlatformConnectionChanged::from_event(event).map(RuntimeEvent::PlatformConnection)
-        }
-        (EventSource::Twitch, PlatformReauthRequired::KIND) => {
-            PlatformReauthRequired::from_event(event).map(RuntimeEvent::ReauthRequired)
         }
         (EventSource::Twitch, BotStatusChanged::KIND) => {
             BotStatusChanged::from_event(event).map(RuntimeEvent::TwitchBotStatus)
@@ -452,9 +448,6 @@ mod tests {
             state: ConnectionState::Connected,
             expected: false,
         };
-        let reauth = PlatformReauthRequired {
-            platform_id: PlatformId::Twitch,
-        };
         let chat_sent = ChatSent {
             channel: "twitch".to_owned(),
             message: "hi".to_owned(),
@@ -547,10 +540,6 @@ mod tests {
             (
                 typed(connection.clone(), EventSource::Kick),
                 RuntimeEvent::PlatformConnection(connection),
-            ),
-            (
-                typed(reauth.clone(), EventSource::Twitch),
-                RuntimeEvent::ReauthRequired(reauth),
             ),
             (
                 typed(bot_status(), EventSource::Twitch),
@@ -738,12 +727,6 @@ mod tests {
     #[test]
     fn decode_ignores_source_gated_kinds_published_by_another_source() {
         for event in [
-            typed(
-                PlatformReauthRequired {
-                    platform_id: PlatformId::Kick,
-                },
-                EventSource::Kick,
-            ),
             typed(bot_status(), EventSource::Kick),
             bare(EventSource::Core, obs_kinds::CONNECTION_CONNECTED),
             bare(EventSource::VTube, obs_kinds::CONNECTION_AUTH_FAILED),

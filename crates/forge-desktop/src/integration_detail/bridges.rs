@@ -1,13 +1,10 @@
 use super::state::BuiltinPorts;
 use super::{IntegrationDetail, VIEWER_DELTA_WINDOW_MINUTES};
-use crate::async_bridge;
-use crate::runtime_event::{self, RuntimeEvent};
 use crate::window_presence::PresenceGate;
 use forge_platform_core::{
     BuiltinHealth, CollectionRevisions, ConnectionState, HealthDelta, HealthMetricId, HealthText,
     HealthValue, RevisionWait,
 };
-use forge_runtime::EventBus;
 use futures_util::{Stream, StreamExt as _, stream};
 use gpui::{Context, Task};
 use std::sync::Arc;
@@ -148,32 +145,6 @@ impl IntegrationDetail {
                 let alive = this.update(cx, |this, cx| {
                     cx.notify();
                     this.sync_token_countdown(cx);
-                });
-                if alive.is_err() {
-                    break;
-                }
-            }
-        })
-    }
-
-    pub(super) fn spawn_reauth_watch(bus: &Arc<EventBus>, cx: &mut Context<Self>) -> Task<()> {
-        let mut sub = bus.subscribe();
-        cx.spawn(async move |this, cx| {
-            while let async_bridge::EventBatch::Ready(batch) =
-                async_bridge::recv_event_batch(&mut sub).await
-            {
-                let reauth = batch.iter().any(|event| {
-                    matches!(
-                        runtime_event::decode(event),
-                        Some(RuntimeEvent::ReauthRequired(_))
-                    )
-                });
-                if !reauth {
-                    continue;
-                }
-                let alive = this.update(cx, |this, cx| {
-                    this.shown.twitch_reauth_required = true;
-                    cx.notify();
                 });
                 if alive.is_err() {
                     break;

@@ -17,8 +17,8 @@ use forge_types::Shared;
 use crate::audio_router::AudioRouter;
 use crate::boot_warnings::BootWarnings;
 use crate::donation_services::DonationServices;
+use crate::integration_sign_out::IntegrationSignOut;
 use crate::integrations::{BuiltinObject, BuiltinRegistry, ObsInstallSeed, VTubeInstallSeed};
-use crate::platform_credentials::PlatformCredentialManagers;
 use crate::server_boot::ServerUnavailable;
 use crate::stop::OrderedStop;
 use crate::voice_gate::VoiceGateOwner;
@@ -60,7 +60,7 @@ pub struct IntegrationHandles {
     pub twitch_sign_in: Option<forge_platform_twitch::TwitchSignIn>,
     pub youtube_sign_in: Option<forge_platform_youtube::YoutubeSignIn>,
     pub kick_sign_in: Option<forge_platform_kick::KickSignIn>,
-    pub platform_credentials: PlatformCredentialManagers,
+    pub sign_out: IntegrationSignOut,
 }
 
 pub struct SpeechHandles {

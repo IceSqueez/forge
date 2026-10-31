@@ -5,9 +5,31 @@ use forge_components::{
     KeyActivated, OverlayPosition, Radius, Spacing, body_family, confirm_modal, icon, overlay,
     radius, spacing, tr, with_alpha,
 };
-use forge_platform_core::ConnectionState;
-use forge_types::PlatformId;
-use gpui::{AnyElement, ClickEvent, Context, Rgba, div, prelude::*, px};
+use forge_host::integration_catalog::declaration_of;
+use forge_platform_core::{ConnectionState, CredentialState, HeaderAction, SignInRoute};
+use gpui::{AnyElement, ClickEvent, Context, Rgba, Window, div, prelude::*, px};
+
+pub(super) const CREDENTIAL_RECOVERY_SELECTOR: &str = "credential-recovery";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum CredentialRecovery {
+    SignInAgain,
+    ReplaceCredentials,
+}
+
+pub(super) fn credential_recovery(
+    route: SignInRoute,
+    state: CredentialState,
+) -> Option<CredentialRecovery> {
+    if state == CredentialState::Valid {
+        return None;
+    }
+    match route {
+        SignInRoute::ChatPlatform(_) => Some(CredentialRecovery::SignInAgain),
+        SignInRoute::CredentialForm => Some(CredentialRecovery::ReplaceCredentials),
+        SignInRoute::NotNeeded => None,
+    }
+}
 
 impl IntegrationDetail {
     pub(super) fn disconnect_overlay(
@@ -42,14 +64,54 @@ impl IntegrationDetail {
             })
     }
 
-    pub(super) fn twitch_reauth_banner(
+    pub(super) fn needed_credential_recovery(&self) -> Option<CredentialRecovery> {
+        let route = declaration_of(self.ports.status.id())?.sign_in;
+        credential_recovery(route, self.shown.credential)
+    }
+
+    fn recover_credentials(
+        &mut self,
+        recovery: CredentialRecovery,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match recovery {
+            CredentialRecovery::ReplaceCredentials
+                if self.shown.header_actions.contains(&HeaderAction::Settings) =>
+            {
+                self.on_header_action(HeaderAction::Settings, window, cx)
+            }
+            CredentialRecovery::ReplaceCredentials | CredentialRecovery::SignInAgain => {
+                self.sign_out(cx)
+            }
+        }
+    }
+
+    pub(super) fn credential_banner(
         &self,
+        recovery: CredentialRecovery,
         palette: &ForgePalette,
         density: Density,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let name = self.shown.display_name.clone();
+        let title = match self.shown.credential {
+            CredentialState::Rejected => tr!("integration_credential_rejected_title", name = name),
+            CredentialState::ReauthRequired | CredentialState::Valid => {
+                tr!("integration_reauth_title", name = name)
+            }
+        };
+        let detail = self.ports.status.connect_failure().map_or_else(
+            || tr!("integration_reauth_detail"),
+            |failure| resolve_message(&failure).inline(),
+        );
+        let cta_label = match recovery {
+            CredentialRecovery::SignInAgain => tr!("integration_reauth_btn"),
+            CredentialRecovery::ReplaceCredentials => tr!("integration_credential_update_btn"),
+        };
         let cta = div()
-            .id("twitch-reauth")
+            .id(CREDENTIAL_RECOVERY_SELECTOR)
+            .debug_selector(|| CREDENTIAL_RECOVERY_SELECTOR.to_owned())
             .flex_none()
             .py(spacing(Spacing::Xs, density))
             .px(spacing(Spacing::Sm, density))
@@ -58,13 +120,15 @@ impl IntegrationDetail {
             .cursor_pointer()
             .hover(|s| s.bg(with_alpha(palette.warning, CTA_HOVER_ALPHA)))
             .key_activated(palette.text_primary)
-            .on_click(cx.listener(|this, _, _, cx| this.reset_to_connect(PlatformId::Twitch, cx)))
+            .on_click(cx.listener(move |this, _, window, cx| {
+                this.recover_credentials(recovery, window, cx)
+            }))
             .child(
                 div()
                     .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.shell)
-                    .child(tr!("twitch_reauth_btn")),
+                    .child(cta_label),
             );
         div()
             .w_full()
@@ -90,14 +154,14 @@ impl IntegrationDetail {
                             .font_family(body_family())
                             .text_size(FONT_SM)
                             .text_color(palette.text_primary)
-                            .child(tr!("twitch_reauth_title")),
+                            .child(title),
                     )
                     .child(
                         div()
                             .font_family(body_family())
                             .text_size(FONT_XS)
                             .text_color(palette.text_muted)
-                            .child(tr!("twitch_reauth_detail")),
+                            .child(detail),
                     ),
             )
             .child(cta)
@@ -109,10 +173,13 @@ impl IntegrationDetail {
         palette: &ForgePalette,
         density: Density,
     ) -> Option<AnyElement> {
+        let recovery_pending = self.needed_credential_recovery().is_some();
         let (accent, glyph, title, detail): (Rgba, Icon, String, String) =
             match self.shown.connection {
                 ConnectionState::Connected => return None,
-                ConnectionState::Disconnected if self.sign_in.donation_settings.is_some() => {
+                ConnectionState::Disconnected
+                    if self.sign_in.donation_settings.is_some() || recovery_pending =>
+                {
                     return None;
                 }
                 ConnectionState::Connecting => (
@@ -127,12 +194,6 @@ impl IntegrationDetail {
                     tr!("integration_state_reconnecting_title"),
                     tr!("integration_state_reconnecting_detail"),
                 ),
-                ConnectionState::Disconnected if self.shown.obs_password_rejected => (
-                    palette.warning,
-                    Icon::AlertTriangle,
-                    tr!("obs_state_password_rejected_title"),
-                    tr!("obs_state_password_rejected_detail"),
-                ),
                 ConnectionState::Disconnected => (
                     palette.text_muted,
                     Icon::PlugConnected,
@@ -141,7 +202,7 @@ impl IntegrationDetail {
                 ),
             };
 
-        let failure_reason = if self.shown.obs_password_rejected {
+        let failure_reason = if recovery_pending {
             None
         } else {
             self.ports

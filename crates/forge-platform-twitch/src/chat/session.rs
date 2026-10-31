@@ -299,10 +299,7 @@ impl ChatSession {
                                 .and_then(|mut handoff| handoff.try_recv().ok())
                                 .and_then(TopicRetries::into_run);
                             self.backoff.reset();
-                            self.config
-                                .manager
-                                .credential_state()
-                                .report(CredentialState::Valid);
+                            self.apply_pass_live();
                             self.set_state(ChatConnectionState::Connected);
                             self.publish_connection_event();
                             info!(broadcaster_id = %self.config.broadcaster_id, "chat connected");
@@ -1848,6 +1845,13 @@ impl ChatSession {
         ));
     }
 
+    fn apply_pass_live(&self) {
+        self.config
+            .manager
+            .credential_state()
+            .report(CredentialState::Valid);
+    }
+
     fn publish_reauth_required(&self) {
         self.config
             .manager
@@ -2309,6 +2313,7 @@ impl SubscriptionPassContext {
                     warn!(
                         "some eventsub topics were rejected for a missing scope; chat stays live"
                     );
+                    self.manager.credential_state().status_signal().bump();
                     PlatformReauthRequired {
                         platform_id: vocabulary::PLATFORM,
                     }
@@ -5522,6 +5527,90 @@ mod tests {
             (distinct(&stale), renewed.len(), distinct(&renewed)),
             (stale.len(), stale.len(), stale.len()),
             "the pass must restart once on the renewed token, each topic posted once per token"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_reauth_prompt_marks_the_credential_and_the_next_live_pass_clears_it() {
+        let api = wiremock::MockServer::start().await;
+        mount_accept_every_other_topic(&api).await;
+        let bus = Arc::new(RecordingBus::default());
+        let (mut session, _state, _shutdown) = session_over(
+            bus.clone(),
+            Arc::new(MockCreds::with_identity()),
+            None,
+            SubscriptionTracker::default(),
+            socket_and_api("ws://127.0.0.1:1", &api.uri()),
+        );
+        let manager = Arc::clone(&session.config.manager);
+        let credential = || manager.credential_state().current();
+
+        session.publish_reauth_required();
+        let after_prompt = credential();
+
+        let pass = match session
+            .handle_frame(&welcome_frame("sess-1"), &mut None)
+            .await
+        {
+            FrameAction::Subscribe(pass) => Some(pass),
+            _ => None,
+        }
+        .expect("a welcome with a usable token must start a subscription pass");
+        let verdict = Verdict::from(pass.await);
+        session.apply_pass_live();
+
+        assert_eq!(
+            (
+                after_prompt,
+                verdict,
+                credential(),
+                bus.kinds_published()
+                    .contains(&"platform.reauth_required".to_owned())
+            ),
+            (
+                CredentialState::ReauthRequired,
+                Verdict::Live,
+                CredentialState::Valid,
+                true
+            )
+        );
+    }
+
+    #[tokio::test]
+    async fn a_scope_gap_beside_live_topics_moves_the_status_revision_and_stays_reported() {
+        let api = wiremock::MockServer::start().await;
+        topic_post("channel.follow")
+            .respond_with(status_reply(reqwest::StatusCode::FORBIDDEN))
+            .with_priority(1)
+            .mount(&api)
+            .await;
+        mount_accept_every_other_topic(&api).await;
+        let tracker = SubscriptionTracker::default();
+        let (mut session, _state, _shutdown) = session_over(
+            Arc::new(RecordingBus::default()),
+            Arc::new(MockCreds::with_identity()),
+            None,
+            tracker.clone(),
+            socket_and_api("ws://127.0.0.1:1", &api.uri()),
+        );
+        let mut revisions = session.config.manager.credential_state().revisions();
+        let pass = match session
+            .handle_frame(&welcome_frame("sess-1"), &mut None)
+            .await
+        {
+            FrameAction::Subscribe(pass) => Some(pass),
+            _ => None,
+        }
+        .expect("a welcome with a usable token must start a subscription pass");
+
+        let verdict = Verdict::from(pass.await);
+
+        let moved = within_hang_guard(FAKE_WAIT, revisions.changed())
+            .await
+            .is_ok();
+        assert_eq!(
+            (verdict, tracker.lacks_a_scope(), moved),
+            (Verdict::Live, true, true)
         );
     }
 

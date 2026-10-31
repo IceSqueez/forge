@@ -10,6 +10,7 @@ pub mod host;
 pub mod host_handles;
 pub mod integration_catalog;
 pub mod integration_factories;
+pub mod integration_sign_out;
 mod integration_start_errors;
 pub mod integrations;
 mod overlay_boot;

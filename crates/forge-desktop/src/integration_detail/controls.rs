@@ -1,6 +1,5 @@
 use super::IntegrationDetail;
 use crate::async_bridge;
-use crate::integration_catalog::chat_platform_of;
 use crate::integration_extensions::{DetailExtension, has_extension};
 use crate::navigation::{NavRequested, Screen};
 use crate::obs_credentials_form::ObsConnected;
@@ -102,34 +101,7 @@ impl IntegrationDetail {
         let Some(ctrl) = self.ports.control.clone() else {
             return;
         };
-        if self.shown.is_twitch && matches!(verb, ControlVerb::RefreshToken) {
-            let task = self
-                .services
-                .rt_handle
-                .spawn(async move { ctrl.refresh_token().await });
-            cx.spawn(async move |this, cx| {
-                let Ok(result) = task.await else {
-                    return;
-                };
-                this.update(cx, |this, cx| match result {
-                    Ok(()) => {
-                        this.shown.twitch_reauth_required = false;
-                        cx.notify();
-                    }
-                    Err(ControlFailure::Unauthorized) => {
-                        this.shown.twitch_reauth_required = true;
-                        cx.notify();
-                    }
-                    Err(err) => {
-                        tracing::warn!(error = %err, "twitch token refresh failed");
-                        cx.push_toast(ToastKind::Error, tr!("integration_control_failed"));
-                    }
-                })
-                .ok();
-            })
-            .detach();
-            return;
-        }
+        let refreshing = matches!(verb, ControlVerb::RefreshToken);
         async_bridge::run_async(
             &self.services.rt_handle,
             async move {
@@ -141,6 +113,7 @@ impl IntegrationDetail {
             },
             move |this, result, cx| match result {
                 Ok(()) => this.reload(cx),
+                Err(ControlFailure::Unauthorized) if refreshing => this.reload(cx),
                 Err(err) => {
                     tracing::warn!(error = %err, "integration control failed");
                     cx.push_toast(ToastKind::Error, tr!("integration_control_failed"));
@@ -158,12 +131,13 @@ impl IntegrationDetail {
 
     pub(super) fn confirm_disconnect(&mut self, cx: &mut Context<Self>) {
         if self.modals.pending_disconnect.take().is_some() {
-            if self.shown.is_obs {
-                self.sign_out_obs(cx);
-            } else if self.shown.is_vtube {
-                self.sign_out_vtube(cx);
-            } else if let Some(platform) = chat_platform_of(self.ports.status.id()) {
-                self.reset_to_connect(platform, cx);
+            if self
+                .services
+                .sign_out
+                .entry(self.ports.status.id())
+                .is_some()
+            {
+                self.sign_out(cx);
             } else {
                 self.dispatch_control(ControlVerb::Disconnect, cx);
             }

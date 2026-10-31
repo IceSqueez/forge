@@ -19,6 +19,7 @@ use forge_types::{IntegrationId, PlatformId};
 use forge_vtube::{VTUBE_AUTO_RECONNECT, VTUBE_CONNECT_ON_LAUNCH};
 use tokio::sync::mpsc;
 
+use crate::integration_sign_out::SignOutRoute;
 use crate::integration_start_errors::{
     hotkey_start_error, kick_start_error, midi_start_error, twitch_start_error, youtube_start_error,
 };
@@ -468,6 +469,10 @@ impl ObsFactory {
     pub(crate) fn seed(&self) -> ObsInstallSeed {
         self.seed.clone()
     }
+
+    pub(crate) fn sign_out_route(&self) -> SignOutRoute {
+        SignOutRoute::obs(Arc::clone(&self.creds), self.seed.clone())
+    }
 }
 
 async fn connects_on_launch(settings: &dyn SettingsRepo, setting: &Setting<Flag>) -> bool {
@@ -555,6 +560,10 @@ pub(crate) fn wire_vtube(
 impl VTubeFactory {
     pub(crate) fn seed(&self) -> VTubeInstallSeed {
         self.seed.clone()
+    }
+
+    pub(crate) fn sign_out_route(&self) -> SignOutRoute {
+        SignOutRoute::vtube(Arc::clone(&self.creds), self.seed.clone())
     }
 }
 

@@ -1927,8 +1927,6 @@ soundboard_file_filter_audio = Audio
 
 ## Twitch panel
 
-twitch_reauth_title = Twitch token is missing required scopes
-twitch_reauth_detail = EventSub rejected the chat subscription. Re-authorize to refresh the token with all current scopes.
 twitch_reauth_btn = Re-authorize
 
 ## OBS panel
@@ -2436,8 +2434,11 @@ integration_state_connecting_detail = Establishing a session with this integrati
 integration_state_reconnecting_title = Reconnecting...
 integration_state_reconnecting_detail = The session dropped; forge is re-establishing it.
 integration_state_disconnected_detail = Use Reconnect above to link this integration.
-obs_state_password_rejected_title = OBS rejected the saved password
-obs_state_password_rejected_detail = Enter the current WebSocket password in the OBS connection settings, then reconnect.
+integration_reauth_title = { $name } needs you to sign in again
+integration_credential_rejected_title = { $name } rejected the saved credentials
+integration_reauth_detail = The saved sign-in no longer works. Sign in again to restore the connection.
+integration_reauth_btn = Sign in again
+integration_credential_update_btn = Update credentials
 
 ## OAuth / authentication errors
 

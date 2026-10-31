@@ -4,9 +4,7 @@ use crate::integration_extensions::{DetailExtension, has_extension};
 use crate::twitch_bot_presence::TwitchBotPresence;
 use crate::twitch_bot_section::{StreamerSignInRequested, TwitchBotSection};
 use forge_host::donation_services::DonationService;
-use forge_host::platform_credentials::PlatformCredentialManagers;
 use forge_platform_twitch::TwitchBotAccount;
-use forge_types::PlatformId;
 use gpui::{Context, Entity, prelude::*};
 use std::sync::Arc;
 
@@ -47,9 +45,7 @@ impl IntegrationDetail {
         self.sign_in._twitch_bot_subs = vec![
             cx.subscribe(
                 &section,
-                |this, _section, _: &StreamerSignInRequested, cx| {
-                    this.reset_to_connect(PlatformId::Twitch, cx)
-                },
+                |this, _section, _: &StreamerSignInRequested, cx| this.sign_out(cx),
             ),
             cx.observe(&section, |_, _, cx| cx.notify()),
         ];
@@ -70,9 +66,5 @@ impl IntegrationDetail {
 
     pub(crate) fn attach_kick_sign_in(&mut self, sign_in: forge_platform_kick::KickSignIn) {
         self.sign_in.kick_sign_in = Some(sign_in);
-    }
-
-    pub(crate) fn attach_platform_credentials(&mut self, managers: PlatformCredentialManagers) {
-        self.sign_in.platform_credentials = managers;
     }
 }

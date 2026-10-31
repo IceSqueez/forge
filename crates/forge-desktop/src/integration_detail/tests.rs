@@ -1,6 +1,9 @@
 use super::quick_actions::reachable_quick_actions;
 use super::*;
 use forge_events::EventPublisher;
+use forge_host::integration_sign_out::{
+    IntegrationSignOut, SignOutRoute, SignOutRoutes, SlotRebuild,
+};
 use forge_host::integrations::{ObsInstallSeed, VTubeInstallSeed};
 use forge_host::platform_credentials::PlatformCredentialManagers;
 use forge_platform_core::CollectionId;
@@ -10,10 +13,45 @@ use forge_platform_core::{
 };
 use forge_registry::TriggerRegistry;
 use forge_runtime::EventBus;
-use forge_runtime::IntegrationSlot;
 use forge_storage::{CredentialsRepo, SettingsRepo};
 use forge_types::VerbatimText;
 use std::sync::Arc;
+
+struct NoSlots;
+
+#[async_trait::async_trait]
+impl SlotRebuild for NoSlots {
+    async fn rebuild(&self, _: &forge_types::IntegrationId) {}
+}
+
+fn sign_out_over(
+    credentials: Arc<dyn CredentialsRepo>,
+    managers: PlatformCredentialManagers,
+    slots: Arc<dyn SlotRebuild>,
+) -> IntegrationSignOut {
+    let mut routes = SignOutRoutes::default();
+    for platform in [PlatformId::Twitch, PlatformId::YouTube, PlatformId::Kick] {
+        routes.register(
+            forge_types::IntegrationId::new(platform.as_str()),
+            SignOutRoute::platform(platform, managers.clone(), Arc::clone(&credentials)),
+        );
+    }
+    routes.register(
+        forge_obs::OBS_INTEGRATION.id,
+        SignOutRoute::obs(
+            Arc::clone(&credentials),
+            ObsInstallSeed::new(forge_obs::SwitchableObsSink::new(), Default::default()),
+        ),
+    );
+    routes.register(
+        forge_vtube::VTUBE_INTEGRATION.id,
+        SignOutRoute::vtube(
+            credentials,
+            VTubeInstallSeed::new(forge_vtube::SwitchableVTubeSink::new(), Default::default()),
+        ),
+    );
+    routes.over(slots)
+}
 
 struct DeclaredActions(Vec<QuickAction>);
 
@@ -145,7 +183,9 @@ mod quick_action_bridge {
     use std::sync::Mutex;
 
     use forge_components::{Density, ThemeId};
-    use forge_platform_core::{CollectionRevisionSignal, CollectionRevisions, HealthStream};
+    use forge_platform_core::{
+        CollectionRevisionSignal, CollectionRevisions, CredentialState, HealthStream,
+    };
     use forge_registry::SubActionRegistry;
     use forge_runtime::{ActionCancelRegistry, spawn_action_engine};
     use forge_types::{IntegrationId, MessageCode, RecoverMutex, VerbatimText};
@@ -153,7 +193,6 @@ mod quick_action_bridge {
 
     use super::action;
     use super::*;
-    use crate::platforms::PlatformConnectivity;
     use crate::test_support::{StubActions, StubEventLog, StubHistory, runtime, test_backend};
     use crate::twitch_bot_presence::TwitchBotPresence;
     use crate::twitch_bot_section::StreamerSignInRequested;
@@ -174,6 +213,8 @@ mod quick_action_bridge {
         banner: Mutex<&'static str>,
         content_signal: CollectionRevisionSignal,
         token_expiry: Mutex<Option<std::time::SystemTime>>,
+        credential: Mutex<CredentialState>,
+        header_actions: Mutex<Vec<HeaderAction>>,
     }
 
     impl ShiftingActions {
@@ -181,7 +222,7 @@ mod quick_action_bridge {
             Self::for_integration("discord", label)
         }
 
-        pub(super) fn for_integration(id: &'static str, label: &'static str) -> Arc<Self> {
+        pub(super) fn for_integration(id: &str, label: &'static str) -> Arc<Self> {
             Arc::new(Self {
                 id: IntegrationId::new(id),
                 label: Mutex::new(label),
@@ -192,6 +233,8 @@ mod quick_action_bridge {
                 banner: Mutex::new(""),
                 content_signal: CollectionRevisionSignal::new(),
                 token_expiry: Mutex::new(None),
+                credential: Mutex::new(CredentialState::Valid),
+                header_actions: Mutex::new(Vec::new()),
             })
         }
 
@@ -203,6 +246,16 @@ mod quick_action_bridge {
         fn set_banner(&self, banner: &'static str) {
             *self.banner.lock_recover() = banner;
             self.content_signal.bump();
+        }
+
+        pub(super) fn report_credential(&self, state: CredentialState) {
+            *self.credential.lock_recover() = state;
+            self.status_signal.bump();
+        }
+
+        pub(super) fn offer_header_action(&self, action: HeaderAction) {
+            self.header_actions.lock_recover().push(action);
+            self.status_signal.bump();
         }
 
         fn set_token_expiry(&self, expiry: Option<std::time::SystemTime>) {
@@ -249,8 +302,8 @@ mod quick_action_bridge {
         fn id(&self) -> &IntegrationId {
             &self.id
         }
-        fn credential_state(&self) -> forge_platform_core::CredentialState {
-            forge_platform_core::CredentialState::Valid
+        fn credential_state(&self) -> CredentialState {
+            *self.credential.lock_recover()
         }
         fn display_name(&self) -> &str {
             "Discord"
@@ -274,7 +327,7 @@ mod quick_action_bridge {
             }
         }
         fn header_actions(&self) -> Vec<HeaderAction> {
-            Vec::new()
+            self.header_actions.lock_recover().clone()
         }
 
         fn token_expiry(&self) -> Option<std::time::SystemTime> {
@@ -353,7 +406,12 @@ mod quick_action_bridge {
         object: BuiltinObject,
         credentials: Arc<dyn CredentialsRepo>,
     ) -> Entity<IntegrationDetail> {
-        open_detail_over(cx, rt, object, credentials, None)
+        let sign_out = sign_out_over(
+            Arc::clone(&credentials),
+            PlatformCredentialManagers::default(),
+            Arc::new(NoSlots),
+        );
+        open_detail_over(cx, rt, object, credentials, sign_out)
     }
 
     pub(super) fn open_detail_over(
@@ -361,7 +419,7 @@ mod quick_action_bridge {
         rt: &tokio::runtime::Runtime,
         object: BuiltinObject,
         credentials: Arc<dyn CredentialsRepo>,
-        kick_slot: Option<IntegrationSlot<BuiltinObject>>,
+        sign_out: IntegrationSignOut,
     ) -> Entity<IntegrationDetail> {
         cx.update(|cx| {
             cx.set_global(Presentation::new(ThemeId::ForgeDefault, Density::Cozy));
@@ -376,7 +434,6 @@ mod quick_action_bridge {
             Arc::new(ActionCancelRegistry::new()),
         );
         let (backend, _writes) = test_backend();
-        let connectivity = cx.new(|_| PlatformConnectivity::new());
         let view = cx.new(|cx| {
             IntegrationDetail::new(
                 object,
@@ -389,20 +446,13 @@ mod quick_action_bridge {
                     trigger_registry: Arc::new(TriggerRegistry::new()),
                     bus: Arc::clone(&bus) as Arc<dyn EventPublisher>,
                     twitch_slot: None,
-                    kick_slot,
+                    kick_slot: None,
                     youtube_slot: None,
                     obs_install_seed: ObsInstallSeed::new(
                         forge_obs::SwitchableObsSink::new(),
                         Default::default(),
                     ),
-                    vtube_install_seed: VTubeInstallSeed::new(
-                        forge_vtube::SwitchableVTubeSink::new(),
-                        Default::default(),
-                    ),
-                },
-                DetailFeeds {
-                    event_bus: Arc::clone(&bus),
-                    connectivity,
+                    sign_out,
                 },
                 cx,
             )
@@ -848,13 +898,16 @@ mod sign_out {
     use gpui::TestAppContext;
     use time::OffsetDateTime;
 
+    use super::super::banners::{CREDENTIAL_RECOVERY_SELECTOR, CredentialRecovery};
     use super::quick_action_bridge::{
         LiveControl, ShiftingActions, open_detail_over, open_detail_with,
     };
     use super::*;
-    use crate::test_support::{error_toasts, pump, runtime};
+    use crate::test_support::{click_selector, error_toasts, open_under_root, pump, runtime};
     use forge_components::ToastKind;
     use forge_components::Toasts;
+    use forge_host::integration_catalog::declarations;
+    use forge_platform_core::{ControlFailure, ControlOutcome, CredentialState};
     use std::time::Duration;
 
     struct ScriptedCredentials {
@@ -933,23 +986,49 @@ mod sign_out {
         object.control = Some(Arc::new(LiveControl));
         let view = open_detail_with(cx, rt, object, credentials);
         let signed_out_events = Rc::new(RefCell::new(0));
-        let obs_events = Rc::clone(&signed_out_events);
-        let vtube_events = Rc::clone(&signed_out_events);
+        let events = Rc::clone(&signed_out_events);
         let subs = cx.update(|cx| {
-            vec![
-                cx.subscribe(&view, move |_, _: &ObsSignedOut, _| {
-                    *obs_events.borrow_mut() += 1;
-                }),
-                cx.subscribe(&view, move |_, _: &VTubeSignedOut, _| {
-                    *vtube_events.borrow_mut() += 1;
-                }),
-            ]
+            vec![cx.subscribe(&view, move |_, _: &IntegrationSignedOut, _| {
+                *events.borrow_mut() += 1;
+            })]
         });
         SignedInDetail {
             view,
             signed_out_events,
             _subs: subs,
         }
+    }
+
+    fn detail_with_credentials(
+        cx: &mut TestAppContext,
+        rt: &tokio::runtime::Runtime,
+        actions: &Arc<ShiftingActions>,
+        credentials: Arc<ScriptedCredentials>,
+    ) -> SignedInDetail {
+        cx.update(|cx| cx.set_global(Toasts::new()));
+        let mut object = actions.object();
+        object.control = Some(Arc::new(LiveControl));
+        let view = open_detail_with(cx, rt, object, credentials as Arc<dyn CredentialsRepo>);
+        let signed_out_events = Rc::new(RefCell::new(0));
+        let events = Rc::clone(&signed_out_events);
+        let subs = cx.update(|cx| {
+            vec![cx.subscribe(&view, move |_, _: &IntegrationSignedOut, _| {
+                *events.borrow_mut() += 1;
+            })]
+        });
+        SignedInDetail {
+            view,
+            signed_out_events,
+            _subs: subs,
+        }
+    }
+
+    fn signed_in_detail_over(
+        cx: &mut TestAppContext,
+        rt: &tokio::runtime::Runtime,
+        actions: &Arc<ShiftingActions>,
+    ) -> SignedInDetail {
+        detail_with_credentials(cx, rt, actions, ScriptedCredentials::new(false, None))
     }
 
     struct UnreachableControl;
@@ -1009,7 +1088,7 @@ mod sign_out {
     ) {
         let rt = runtime();
         let _enter = rt.enter();
-        for id in ["kick", "obs", "vtube"] {
+        for id in ["twitch", "youtube", "kick", "obs", "vtube"] {
             let detail = signed_in_detail(cx, &rt, id, ScriptedCredentials::new(true, None));
 
             confirm_sign_out(cx, &detail);
@@ -1122,7 +1201,7 @@ mod sign_out {
         confirm_sign_out(cx, &detail);
         settle(cx, &rt);
         confirm_sign_out(cx, &detail);
-        detail.view.update(cx, |this, cx| this.sign_out_obs(cx));
+        detail.view.update(cx, |this, cx| this.sign_out(cx));
         settle(cx, &rt);
         release.notify_one();
         settle(cx, &rt);
@@ -1134,6 +1213,230 @@ mod sign_out {
             ),
             (1, 1)
         );
+    }
+
+    fn expected_recovery(id: &str) -> Option<CredentialRecovery> {
+        match id {
+            "twitch" | "youtube" | "kick" => Some(CredentialRecovery::SignInAgain),
+            "obs" | "vtube" | "donatello" | "monobank" => {
+                Some(CredentialRecovery::ReplaceCredentials)
+            }
+            "discord" | "midi" | "hotkey" => None,
+            other => panic!("{other} has no expected recovery"),
+        }
+    }
+
+    #[gpui::test]
+    fn each_credential_state_renders_the_recovery_its_declaration_routes_to(
+        cx: &mut TestAppContext,
+    ) {
+        let rt = runtime();
+        let _enter = rt.enter();
+        for declaration in declarations() {
+            let id = declaration.id.as_str().to_owned();
+            let expected = expected_recovery(&id);
+            let actions = ShiftingActions::for_integration(&id, "x");
+            let detail = signed_in_detail_over(cx, &rt, &actions);
+            let view = detail.view.clone();
+            let (_, vcx) = open_under_root(cx, |_| view.clone());
+
+            let mut seen = Vec::new();
+            for state in [
+                CredentialState::Valid,
+                CredentialState::ReauthRequired,
+                CredentialState::Rejected,
+                CredentialState::Valid,
+            ] {
+                actions.report_credential(state);
+                vcx.run_until_parked();
+                seen.push((
+                    state,
+                    view.read_with(vcx, |this, _| this.needed_credential_recovery()),
+                    vcx.debug_bounds(CREDENTIAL_RECOVERY_SELECTOR).is_some(),
+                ));
+            }
+
+            assert_eq!(
+                seen,
+                vec![
+                    (CredentialState::Valid, None, false),
+                    (
+                        CredentialState::ReauthRequired,
+                        expected,
+                        expected.is_some()
+                    ),
+                    (CredentialState::Rejected, expected, expected.is_some()),
+                    (CredentialState::Valid, None, false),
+                ],
+                "{id}"
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn a_page_opened_after_the_credential_failed_still_offers_the_recovery(
+        cx: &mut TestAppContext,
+    ) {
+        let rt = runtime();
+        let _enter = rt.enter();
+        let actions = ShiftingActions::for_integration("twitch", "x");
+        actions.report_credential(CredentialState::ReauthRequired);
+
+        let detail = signed_in_detail_over(cx, &rt, &actions);
+
+        assert_eq!(
+            detail
+                .view
+                .read_with(cx, |this, _| this.needed_credential_recovery()),
+            Some(CredentialRecovery::SignInAgain)
+        );
+    }
+
+    #[gpui::test]
+    fn the_recovery_button_opens_the_flow_the_page_can_finish(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let _enter = rt.enter();
+        for (id, offers_settings, state, connect_flow, signed_out, settings_modal, deletes) in [
+            (
+                "twitch",
+                false,
+                CredentialState::ReauthRequired,
+                true,
+                0,
+                false,
+                1,
+            ),
+            (
+                "vtube",
+                false,
+                CredentialState::Rejected,
+                false,
+                1,
+                false,
+                1,
+            ),
+            ("obs", true, CredentialState::Rejected, false, 0, true, 0),
+        ] {
+            let credentials = ScriptedCredentials::new(false, None);
+            let actions = ShiftingActions::for_integration(id, "x");
+            if offers_settings {
+                actions.offer_header_action(HeaderAction::Settings);
+            }
+            actions.report_credential(state);
+            let mut object = actions.object();
+            object.control = Some(Arc::new(LiveControl));
+            cx.update(|cx| cx.set_global(Toasts::new()));
+            let view = open_detail_with(
+                cx,
+                &rt,
+                object,
+                Arc::clone(&credentials) as Arc<dyn CredentialsRepo>,
+            );
+            let events = Rc::new(RefCell::new(0));
+            let counted = Rc::clone(&events);
+            let _sub = cx.update(|cx| {
+                cx.subscribe(&view, move |_, _: &IntegrationSignedOut, _| {
+                    *counted.borrow_mut() += 1;
+                })
+            });
+            let shown = view.clone();
+            let (_, vcx) = open_under_root(cx, |_| shown.clone());
+
+            click_selector(vcx, CREDENTIAL_RECOVERY_SELECTOR);
+            vcx.run_until_parked();
+            pump(&rt);
+            vcx.run_until_parked();
+
+            assert_eq!(
+                (
+                    view.read_with(vcx, |this, _| this.sign_in.connect.is_some()),
+                    *events.borrow(),
+                    view.read_with(vcx, |this, _| this.modals.obs_settings_modal.is_some()),
+                    credentials.deletes.load(Ordering::SeqCst),
+                ),
+                (connect_flow, signed_out, settings_modal, deletes),
+                "{id}"
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn disconnecting_on_rejected_credentials_keeps_the_sign_in_reachable(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let _enter = rt.enter();
+        for (id, connect_flow_open, signed_out_events) in
+            [("kick", true, 0), ("obs", false, 1), ("vtube", false, 1)]
+        {
+            let actions = ShiftingActions::for_integration(id, "x");
+            actions.report_credential(CredentialState::Rejected);
+            let detail =
+                detail_with_credentials(cx, &rt, &actions, ScriptedCredentials::new(false, None));
+
+            confirm_sign_out(cx, &detail);
+            settle(cx, &rt);
+
+            assert_eq!(
+                observe(cx, &detail),
+                SignOutView {
+                    control_kept: false,
+                    connect_flow_open,
+                    signed_out_events,
+                    error_toasts: 0,
+                },
+                "{id}"
+            );
+        }
+    }
+
+    struct ScriptedRefresh(ControlOutcome);
+
+    #[async_trait]
+    impl BuiltinControl for ScriptedRefresh {
+        async fn reconnect(&self) -> ControlOutcome {
+            Ok(())
+        }
+        async fn disconnect(&self) -> ControlOutcome {
+            Ok(())
+        }
+        async fn refresh_token(&self) -> ControlOutcome {
+            self.0.clone()
+        }
+    }
+
+    #[gpui::test]
+    fn a_refused_refresh_leaves_recovery_to_the_banner_and_any_other_failure_toasts(
+        cx: &mut TestAppContext,
+    ) {
+        let rt = runtime();
+        let _enter = rt.enter();
+        for (id, outcome, toasts) in [
+            ("twitch", Err(ControlFailure::Unauthorized), 0),
+            ("youtube", Err(ControlFailure::Unauthorized), 0),
+            ("kick", Err(ControlFailure::Unauthorized), 0),
+            ("twitch", Err(ControlFailure::Transport), 1),
+            ("kick", Ok(()), 0),
+        ] {
+            let actions = ShiftingActions::for_integration(id, "x");
+            let mut object = actions.object();
+            object.control = Some(Arc::new(ScriptedRefresh(outcome.clone())));
+            cx.update(|cx| cx.set_global(Toasts::new()));
+            let view = open_detail_with(cx, &rt, object, ScriptedCredentials::new(false, None));
+            let shown = view.clone();
+            let (_, vcx) = open_under_root(cx, |_| shown.clone());
+
+            view.update_in(vcx, |this, window, cx| {
+                this.on_header_action(HeaderAction::RefreshToken, window, cx)
+            });
+            vcx.run_until_parked();
+            pump(&rt);
+            vcx.run_until_parked();
+
+            assert_eq!(
+                vcx.update(|_, cx| error_toasts(cx)),
+                toasts,
+                "{id} {outcome:?}"
+            );
+        }
     }
 
     type Journal = Arc<std::sync::Mutex<Vec<&'static str>>>;
@@ -1206,10 +1509,10 @@ mod sign_out {
         }
     }
 
-    fn running_kick_slot(
+    fn running_kick_supervisor(
         rt: &tokio::runtime::Runtime,
         journal: &Journal,
-    ) -> IntegrationSlot<BuiltinObject> {
+    ) -> forge_runtime::IntegrationSupervisor<BuiltinObject> {
         let (settings, _writes) = crate::test_support::test_backend();
         let supervisor = forge_runtime::IntegrationSupervisor::launch(
             vec![Arc::new(JournalingKick {
@@ -1223,7 +1526,7 @@ mod sign_out {
         );
         let slot = supervisor.slot(&IntegrationId::new("kick")).unwrap();
         rt.block_on(slot.set_enabled(true)).unwrap();
-        slot
+        supervisor
     }
 
     #[gpui::test]
@@ -1235,7 +1538,7 @@ mod sign_out {
             (true, vec!["start", "forget"]),
         ] {
             let journal: Journal = Arc::default();
-            let slot = running_kick_slot(&rt, &journal);
+            let supervisor = running_kick_supervisor(&rt, &journal);
             let managed = Arc::new(JournalingRows {
                 journal: Arc::clone(&journal),
                 delete_fails,
@@ -1250,14 +1553,10 @@ mod sign_out {
             cx.update(|cx| cx.set_global(Toasts::new()));
             let mut object = ShiftingActions::for_integration("kick", "x").object();
             object.control = Some(Arc::new(LiveControl));
-            let view = open_detail_over(
-                cx,
-                &rt,
-                object,
-                Arc::clone(&unmanaged) as Arc<dyn CredentialsRepo>,
-                Some(slot),
-            );
-            view.update(cx, |this, _| this.attach_platform_credentials(managers));
+            let unmanaged_repo = Arc::clone(&unmanaged) as Arc<dyn CredentialsRepo>;
+            let sign_out =
+                sign_out_over(Arc::clone(&unmanaged_repo), managers, Arc::new(supervisor));
+            let view = open_detail_over(cx, &rt, object, unmanaged_repo, sign_out);
 
             view.update(cx, |this, cx| {
                 this.request_disconnect(cx);
@@ -1291,11 +1590,10 @@ mod detail_lifetime {
     use forge_types::{IntegrationId, MessageCode};
     use gpui::{AppContext as _, TestAppContext};
 
-    use crate::integration_detail::{DetailFeeds, DetailServices, IntegrationDetail};
-    use crate::platforms::PlatformConnectivity;
+    use crate::integration_detail::{DetailServices, IntegrationDetail};
     use crate::test_support::{StubActions, StubEventLog, StubHistory, runtime, test_backend};
     use forge_components::Presentation;
-    use forge_host::integrations::{BuiltinObject, ObsInstallSeed, VTubeInstallSeed};
+    use forge_host::integrations::{BuiltinObject, ObsInstallSeed};
     use forge_registry::{SubActionRegistry, TriggerRegistry};
     use forge_runtime::EventBus;
     use forge_storage::{CredentialsRepo, SettingsRepo};
@@ -1421,7 +1719,6 @@ mod detail_lifetime {
             Arc::new(ActionCancelRegistry::new()),
         );
         let (backend, _writes) = test_backend();
-        let connectivity = cx.new(|_| PlatformConnectivity::new());
         let view = cx.new(|cx| {
             IntegrationDetail::new(
                 object,
@@ -1440,14 +1737,7 @@ mod detail_lifetime {
                         forge_obs::SwitchableObsSink::new(),
                         Default::default(),
                     ),
-                    vtube_install_seed: VTubeInstallSeed::new(
-                        forge_vtube::SwitchableVTubeSink::new(),
-                        Default::default(),
-                    ),
-                },
-                DetailFeeds {
-                    event_bus: Arc::clone(&bus),
-                    connectivity,
+                    sign_out: super::SignOutRoutes::default().over(Arc::new(super::NoSlots)),
                 },
                 cx,
             )

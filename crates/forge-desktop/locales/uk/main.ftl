@@ -1964,8 +1964,6 @@ soundboard_file_filter_audio = Аудіо
 
 ## Панель Twitch
 
-twitch_reauth_title = Токен Twitch не має необхідних областей
-twitch_reauth_detail = EventSub відхилив підписку на чат. Виконайте повторну авторизацію, щоб оновити токен із поточними областями.
 twitch_reauth_btn = Повторна авторизація
 
 ## Панель OBS
@@ -2488,8 +2486,11 @@ integration_state_connecting_detail = Встановлення сеансу з �
 integration_state_reconnecting_title = Повторне підключення...
 integration_state_reconnecting_detail = Сеанс розірвано; forge відновлює його.
 integration_state_disconnected_detail = Натисніть «Підключитися» вгорі, щоб зв'язати цю інтеграцію.
-obs_state_password_rejected_title = OBS відхилив збережений пароль
-obs_state_password_rejected_detail = Введіть актуальний пароль WebSocket у налаштуваннях підключення OBS і підключіться знову.
+integration_reauth_title = { $name } потребує повторного входу
+integration_credential_rejected_title = { $name } відхиляє збережені облікові дані
+integration_reauth_detail = Збережений вхід більше не дійсний. Увійдіть знову, щоб відновити підключення.
+integration_reauth_btn = Увійти знову
+integration_credential_update_btn = Оновити облікові дані
 
 ## OAuth / authentication errors
 

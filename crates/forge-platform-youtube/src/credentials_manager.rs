@@ -775,6 +775,48 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_refresh_google_refuses_ends_unauthorized_with_reauth_on_the_status() {
+        use forge_platform_core::{BuiltinControl, BuiltinStatus, ControlFailure, CredentialState};
+
+        let rig = rig(&near_expiry()).await;
+        rig.server.reply_always(
+            TOKEN_PATH,
+            StubReply::json(
+                reqwest::StatusCode::BAD_REQUEST.as_u16(),
+                &json!({ "error": "invalid_grant" }),
+            ),
+        );
+        let platform = Arc::new(crate::chat_platform::YoutubePlatform::new(
+            data_api_with(&rig.server.uri(), rig.quota.clone(), rig.bus.clone()),
+            "UCtest123".to_owned(),
+            Arc::clone(&rig.manager),
+            crate::live_chat_id::LiveChatIdHandle::new(),
+            crate::active_broadcast_id::ActiveBroadcastIdHandle::new(),
+            crate::ban_ledger_test_support::MemoryBanLedger::shared(),
+        ));
+        let bundle = crate::builtin::YoutubeIntegrationBundle::new(
+            "UCtest123".to_owned(),
+            platform,
+            Arc::clone(&rig.manager),
+        );
+        let mut revisions = bundle.status_revisions().unwrap();
+
+        let outcome = bundle.refresh_token().await;
+
+        let moved = tokio::time::timeout(std::time::Duration::from_secs(30), revisions.changed())
+            .await
+            .is_ok();
+        assert_eq!(
+            (outcome, bundle.credential_state(), moved),
+            (
+                Err(ControlFailure::Unauthorized),
+                CredentialState::ReauthRequired,
+                true
+            )
+        );
+    }
+
+    #[tokio::test]
     async fn forgetting_the_account_clears_a_reported_reauth() {
         let rig = rig(&fresh()).await;
         rig.manager

@@ -16,10 +16,12 @@ use tokio::task::JoinHandle;
 
 use crate::donation_factories::{wire_donatello, wire_monobank};
 use crate::donation_services::{DonationServices, restore_donatello_poll_interval};
+use crate::integration_catalog::declarations;
 use crate::integration_factories::{
     wire_discord, wire_hotkey, wire_kick, wire_midi, wire_obs, wire_twitch, wire_vtube,
     wire_youtube,
 };
+use crate::integration_sign_out::{SignOutRoute, SignOutRoutes};
 use crate::platform_credentials::PlatformCredentialManagers;
 use crate::platform_identities::PlatformIdentities;
 use forge_hotkey::HotkeyReconciler;
@@ -121,7 +123,7 @@ pub struct Integrations {
     pub twitch_sign_in: Option<forge_platform_twitch::TwitchSignIn>,
     pub youtube_sign_in: Option<forge_platform_youtube::YoutubeSignIn>,
     pub kick_sign_in: Option<forge_platform_kick::KickSignIn>,
-    pub platform_credentials: PlatformCredentialManagers,
+    pub sign_out_routes: SignOutRoutes,
 }
 
 #[derive(Clone)]
@@ -361,9 +363,12 @@ pub async fn build_integrations(
     let builtins = BuiltinRegistry::default();
     let obs = wire_obs(sub_actions, backend, bus, builtins.clone());
     let obs_install_seed = obs.seed();
+    let mut sign_out_routes = SignOutRoutes::default();
+    sign_out_routes.register(forge_obs::OBS_INTEGRATION.id, obs.sign_out_route());
     factories.push(Arc::new(obs));
     let vtube = wire_vtube(sub_actions, backend, bus, builtins.clone());
     let vtube_install_seed = vtube.seed();
+    sign_out_routes.register(forge_vtube::VTUBE_INTEGRATION.id, vtube.sign_out_route());
     factories.push(Arc::new(vtube));
     let mut discord_client = None;
     if let Some(discord) = wire_discord(sub_actions, backend, bus, endpoints) {
@@ -394,6 +399,14 @@ pub async fn build_integrations(
         platform_credentials.kick = Some(kick.credentials_manager());
         factories.push(Arc::new(kick));
     }
+    for declaration in declarations() {
+        if let Some(platform) = declaration.chat_platform() {
+            sign_out_routes.register(
+                declaration.id,
+                SignOutRoute::platform(platform, platform_credentials.clone(), creds_of(backend)),
+            );
+        }
+    }
     let mut donation_services = DonationServices::default();
     if let Some(donatello) = wire_donatello(backend, endpoints, donations, bus) {
         let provider = donatello.provider();
@@ -420,7 +433,7 @@ pub async fn build_integrations(
         twitch_sign_in,
         youtube_sign_in,
         kick_sign_in,
-        platform_credentials,
+        sign_out_routes,
     }
 }
 

@@ -635,7 +635,12 @@ impl BuiltinStatus for TwitchIntegrationBundle {
     }
 
     fn credential_state(&self) -> CredentialState {
-        self.credentials_manager.credential_state().current()
+        match self.credentials_manager.credential_state().current() {
+            CredentialState::Valid if self.tracker.lacks_a_scope() => {
+                CredentialState::ReauthRequired
+            }
+            state => state,
+        }
     }
 
     fn status_revisions(&self) -> Option<CollectionRevisions> {
@@ -780,7 +785,9 @@ mod tests {
     use tokio::sync::watch;
 
     use super::*;
-    use crate::subscriptions::{SubStatus, SubscriptionRecord, SubscriptionTracker};
+    use crate::subscriptions::{
+        SubStatus, SubscriptionFailure, SubscriptionRecord, SubscriptionTracker,
+    };
 
     fn make_bundle(state: ChatConnectionState) -> Arc<TwitchIntegrationBundle> {
         make_bundle_with_tracker(state, SubscriptionTracker::default())
@@ -835,6 +842,38 @@ mod tests {
 
         bundle.on_chat_state_changed(ChatConnectionState::Reconnecting { attempt: 2 });
         assert!(!moved(&mut revisions), "only the attempt number moved");
+    }
+
+    #[tokio::test]
+    async fn a_topic_missing_a_scope_asks_for_sign_in_until_the_subscriptions_are_reset() {
+        let bundle = make_bundle(ChatConnectionState::Connected);
+        let rejected_topic = |status| SubscriptionRecord {
+            kind: "channel.follow".to_owned(),
+            direction: None,
+            version: "2".to_owned(),
+            status,
+            subscription_id: None,
+        };
+
+        bundle.tracker.reset(vec![rejected_topic(SubStatus::Failed(
+            SubscriptionFailure::MissingScope,
+        ))]);
+        assert_eq!(bundle.credential_state(), CredentialState::ReauthRequired);
+
+        bundle
+            .credentials_manager
+            .credential_state()
+            .report(CredentialState::Valid);
+        assert_eq!(
+            bundle.credential_state(),
+            CredentialState::ReauthRequired,
+            "a refreshed token still lacks the scope"
+        );
+
+        bundle
+            .tracker
+            .reset(vec![rejected_topic(SubStatus::Active)]);
+        assert_eq!(bundle.credential_state(), CredentialState::Valid);
     }
 
     #[tokio::test]

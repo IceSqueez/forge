@@ -829,6 +829,57 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_refresh_kick_refuses_ends_unauthorized_with_reauth_on_the_status() {
+        use forge_platform_core::{
+            BuiltinControl, BuiltinStatus, ControlFailure, CredentialState, ViewerReport,
+        };
+
+        use crate::api::poller::PollerAuth;
+
+        let rig = rig(&near_expiry()).await;
+        rig.answer_always(
+            ResponseTemplate::new(reqwest::StatusCode::BAD_REQUEST.as_u16())
+                .set_body_json(json!({ "error": "invalid_grant" })),
+        )
+        .await;
+        let platform = Arc::new(crate::platform::KickPlatform::new(
+            &crate::test_support::unreachable_endpoints(),
+            Arc::clone(&rig.manager),
+            Arc::new(crate::api::chat_messages::KickSendChat::new(
+                unreachable_api(),
+            )),
+            crate::test_support::unreachable_channel_info(),
+            crate::test_support::MemoryBanLedger::shared(),
+        ));
+        let (_viewers, viewer_rx) = tokio::sync::watch::channel(ViewerReport::Absent);
+        let (_poller, auth_rx) = tokio::sync::watch::channel(PollerAuth::Authorized);
+        let (bundle, _) = crate::builtin::KickIntegrationBundle::with_feeds(
+            "test_channel".to_owned(),
+            777,
+            platform,
+            Arc::clone(&rig.manager),
+            crate::test_support::granting_limiter(),
+            viewer_rx,
+            auth_rx,
+        );
+        let mut revisions = bundle.status_revisions().unwrap();
+
+        let outcome = bundle.refresh_token().await;
+
+        let moved = tokio::time::timeout(std::time::Duration::from_secs(30), revisions.changed())
+            .await
+            .is_ok();
+        assert_eq!(
+            (outcome, bundle.credential_state(), moved),
+            (
+                Err(ControlFailure::Unauthorized),
+                CredentialState::ReauthRequired,
+                true
+            )
+        );
+    }
+
+    #[tokio::test]
     async fn clear_removes_credentials_row() {
         let rig = rig(&fresh()).await;
 

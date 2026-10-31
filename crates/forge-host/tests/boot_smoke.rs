@@ -8,6 +8,7 @@ use std::sync::Arc;
 
 use forge_events::{ActionDone, Delivery, Event, EventSource, EventSubscription, TypedEvent};
 use forge_host::host_handles::Host;
+use forge_host::integration_catalog::declarations;
 use forge_host::platform_identities::PlatformIdentities;
 use forge_host::test_support::{
     ALL_INTEGRATIONS, RecordingSinkFactory, boot_host, fake_identities, guarded, on_app_runtime,
@@ -138,6 +139,35 @@ fn missing_steps(host: &Host, kind_ids: &[&'static str]) -> Vec<&'static str> {
         .copied()
         .filter(|kind_id| host.automation.sub_action_registry.get(kind_id).is_none())
         .collect()
+}
+
+#[test]
+fn every_integration_with_stored_sign_in_gets_a_sign_out_route_at_boot() {
+    if !runs_here_in_isolation(
+        "every_integration_with_stored_sign_in_gets_a_sign_out_route_at_boot",
+    ) {
+        return;
+    }
+    on_app_runtime(async {
+        let booted = boot(fake_identities()).await;
+
+        let routed: Vec<String> = declarations()
+            .into_iter()
+            .filter(|declaration| {
+                booted
+                    .host
+                    .integrations
+                    .sign_out
+                    .entry(&declaration.id)
+                    .is_some()
+            })
+            .map(|declaration| declaration.id.to_string())
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .collect();
+
+        assert_eq!(routed, ["kick", "obs", "twitch", "vtube", "youtube"]);
+    });
 }
 
 #[test]

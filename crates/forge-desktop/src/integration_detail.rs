@@ -11,10 +11,10 @@ mod state;
 mod tests;
 
 use self::quick_actions::reachable_quick_actions;
+pub(crate) use self::state::DetailServices;
 use self::state::{
     BuiltinPorts, DetailBackground, DetailModals, LiveTallies, ShownState, SignInState,
 };
-pub(crate) use self::state::{DetailFeeds, DetailServices};
 use crate::builtin_sections::{
     SectionHooks, SectionRefresh, SectionStepRun, StepClick, content_sections, health_grid,
 };
@@ -57,33 +57,19 @@ pub(crate) struct IntegrationDetail {
 
 const VIEWER_DELTA_WINDOW_MINUTES: u64 = 15;
 
-pub(crate) struct ObsSignedOut;
-pub(crate) struct VTubeSignedOut;
+pub(crate) struct IntegrationSignedOut;
 
 impl EventEmitter<NavRequested> for IntegrationDetail {}
 impl EventEmitter<ObsConnected> for IntegrationDetail {}
-impl EventEmitter<ObsSignedOut> for IntegrationDetail {}
-impl EventEmitter<VTubeSignedOut> for IntegrationDetail {}
+impl EventEmitter<IntegrationSignedOut> for IntegrationDetail {}
 
 impl IntegrationDetail {
     pub(crate) fn new(
         object: BuiltinObject,
         services: DetailServices,
-        feeds: DetailFeeds,
         cx: &mut Context<Self>,
     ) -> Self {
-        let DetailFeeds {
-            event_bus,
-            connectivity,
-        } = feeds;
         let ports = BuiltinPorts::from_object(object);
-        let is_obs_detail = ports.status.id().as_str() == "obs";
-        let obs_password_rejected = is_obs_detail && connectivity.read(cx).obs_password_rejected();
-        let conn_obs = cx.observe(&connectivity, move |this, connectivity, cx| {
-            this.shown.obs_password_rejected =
-                this.shown.is_obs && connectivity.read(cx).obs_password_rejected();
-            this.reload(cx)
-        });
 
         let palette = cx.palette();
         let qa_search = SearchState::from_field(cx.new(|cx| {
@@ -93,14 +79,11 @@ impl IntegrationDetail {
         }));
         let qa_search_sub = cx.subscribe(qa_search.field(), Self::on_qa_search);
         let connect_platform = connect_platform_for(ports.status.id(), ports.control.is_some());
-        let shown = ShownState::read(obs_password_rejected, &ports);
+        let shown = ShownState::read(&ports);
         let quick_actions = reachable_quick_actions(&*ports.quick, ports.collections.as_deref());
 
         let health_bridge = Self::spawn_health_bridge(&ports.health, cx);
         let change_bridge = Self::spawn_change_bridge(&ports, cx);
-        let reauth_watch = shown
-            .is_twitch
-            .then(|| Self::spawn_reauth_watch(&event_bus, cx));
 
         let mut this = Self {
             ports,
@@ -112,11 +95,9 @@ impl IntegrationDetail {
             live: LiveTallies::default(),
             modals: DetailModals::default(),
             background: DetailBackground {
-                _conn_obs: conn_obs,
                 _qa_search_sub: qa_search_sub,
                 _health_bridge: health_bridge,
                 _change_bridge: change_bridge,
-                _reauth_watch: reauth_watch,
                 _token_countdown_repaint: None,
             },
         };
@@ -158,8 +139,9 @@ impl Render for IntegrationDetail {
                     ConnectionState::Connecting | ConnectionState::Reconnecting
                 );
                 let state_banner = self.state_banner(&palette, density);
-                let reauth_banner = (self.shown.is_twitch && self.shown.twitch_reauth_required)
-                    .then(|| self.twitch_reauth_banner(&palette, density, cx));
+                let credential_banner = self
+                    .needed_credential_recovery()
+                    .map(|recovery| self.credential_banner(recovery, &palette, density, cx));
                 let health = health_grid(&self.augmented_health(), reconnecting, &palette, density);
                 let refresh: SectionRefresh =
                     Rc::new(cx.listener(|this, _: &ClickEvent, _, cx| this.resync_content(cx)));
@@ -184,7 +166,7 @@ impl Render for IntegrationDetail {
                     .flex()
                     .flex_col()
                     .gap(scaled(px(14.0), density))
-                    .children(reauth_banner)
+                    .children(credential_banner)
                     .children(state_banner)
                     .child(header_card)
                     .child(health)

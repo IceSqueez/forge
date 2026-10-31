@@ -3,21 +3,20 @@ use crate::collection_manager::CollectionManager;
 use crate::in_flight_steps::InFlightSteps;
 use crate::integration_quick_action_modal::QuickActionModal;
 use crate::obs_settings_modal::ObsSettingsModal;
-use crate::platforms::PlatformConnectivity;
 use crate::run_history_modal::RunHistoryModal;
 use crate::twitch_bot_section::TwitchBotSection;
 use forge_components::Confirm;
 use forge_events::EventPublisher;
+use forge_host::integration_sign_out::IntegrationSignOut;
 use forge_host::integrations::BuiltinObject;
-use forge_host::integrations::{ObsInstallSeed, VTubeInstallSeed};
-use forge_host::platform_credentials::PlatformCredentialManagers;
+use forge_host::integrations::ObsInstallSeed;
 use forge_platform_core::{
     BuiltinCollections, BuiltinContent, BuiltinControl, BuiltinHealth, BuiltinOptionSource,
-    BuiltinStatus, CapabilityFlags, ConnectionState, DetailSection, HeaderAction, HealthMetric,
-    QuickActions,
+    BuiltinStatus, CapabilityFlags, ConnectionState, CredentialState, DetailSection, HeaderAction,
+    HealthMetric, QuickActions,
 };
 use forge_registry::TriggerRegistry;
-use forge_runtime::{ActionEngineHandle, EventBus, IntegrationSlot};
+use forge_runtime::{ActionEngineHandle, IntegrationSlot};
 use forge_storage::{CredentialsRepo, HistoryRepo, SettingsRepo};
 use gpui::{Entity, Subscription, Task};
 use std::collections::VecDeque;
@@ -36,12 +35,7 @@ pub(crate) struct DetailServices {
     pub(crate) kick_slot: Option<IntegrationSlot<BuiltinObject>>,
     pub(crate) youtube_slot: Option<IntegrationSlot<BuiltinObject>>,
     pub(crate) obs_install_seed: ObsInstallSeed,
-    pub(crate) vtube_install_seed: VTubeInstallSeed,
-}
-
-pub(crate) struct DetailFeeds {
-    pub(crate) event_bus: Arc<EventBus>,
-    pub(crate) connectivity: Entity<PlatformConnectivity>,
+    pub(crate) sign_out: IntegrationSignOut,
 }
 
 pub(super) struct BuiltinPorts {
@@ -87,16 +81,11 @@ pub(super) struct SignInState {
     pub(super) twitch_sign_in: Option<forge_platform_twitch::TwitchSignIn>,
     pub(super) youtube_sign_in: Option<forge_platform_youtube::YoutubeSignIn>,
     pub(super) kick_sign_in: Option<forge_platform_kick::KickSignIn>,
-    pub(super) platform_credentials: PlatformCredentialManagers,
     pub(super) _twitch_bot_subs: Vec<Subscription>,
 }
 
 pub(super) struct ShownState {
-    pub(super) is_twitch: bool,
-    pub(super) is_obs: bool,
-    pub(super) is_vtube: bool,
-    pub(super) twitch_reauth_required: bool,
-    pub(super) obs_password_rejected: bool,
+    pub(super) credential: CredentialState,
     pub(super) display_name: String,
     pub(super) version: Option<String>,
     pub(super) connection: ConnectionState,
@@ -107,14 +96,9 @@ pub(super) struct ShownState {
 }
 
 impl ShownState {
-    pub(super) fn read(obs_password_rejected: bool, ports: &BuiltinPorts) -> Self {
-        let id = ports.status.id();
+    pub(super) fn read(ports: &BuiltinPorts) -> Self {
         Self {
-            is_twitch: id.as_str() == "twitch",
-            is_obs: id.as_str() == "obs",
-            is_vtube: id.as_str() == "vtube",
-            twitch_reauth_required: false,
-            obs_password_rejected,
+            credential: ports.status.credential_state(),
             display_name: ports.status.display_name().to_owned(),
             version: ports.status.version(),
             connection: ports.status.connection(),
@@ -147,10 +131,8 @@ pub(super) struct DetailModals {
 }
 
 pub(super) struct DetailBackground {
-    pub(super) _conn_obs: Subscription,
     pub(super) _qa_search_sub: Subscription,
     pub(super) _health_bridge: Task<()>,
     pub(super) _change_bridge: Task<()>,
-    pub(super) _reauth_watch: Option<Task<()>>,
     pub(super) _token_countdown_repaint: Option<Task<()>>,
 }

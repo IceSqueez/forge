@@ -82,7 +82,6 @@ mod integration_failed;
 mod integration_lifecycle;
 mod integration_quick_action_modal;
 mod integration_quick_actions;
-mod integration_sign_out;
 mod integration_switch;
 mod integrations_hub;
 mod issue_link;

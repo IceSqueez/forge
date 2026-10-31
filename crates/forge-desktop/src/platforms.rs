@@ -2,7 +2,7 @@ use forge_platform_core::ConnectionState;
 use forge_types::IntegrationId;
 
 use crate::home_stats::Integration;
-use crate::runtime_event::{ObsConnection, RuntimeEvent};
+use crate::runtime_event::RuntimeEvent;
 use forge_host::integrations::BuiltinRegistry;
 
 const ROSTER: [Integration; 5] = [
@@ -16,7 +16,6 @@ const ROSTER: [Integration; 5] = [
 pub(crate) struct PlatformConnectivity {
     connections: Vec<(Integration, bool)>,
     services: Vec<(IntegrationId, bool)>,
-    obs_password_rejected: bool,
 }
 
 impl Default for PlatformConnectivity {
@@ -30,20 +29,11 @@ impl PlatformConnectivity {
         Self {
             connections: ROSTER.iter().map(|integ| (*integ, false)).collect(),
             services: Vec::new(),
-            obs_password_rejected: false,
         }
-    }
-
-    pub(crate) fn obs_password_rejected(&self) -> bool {
-        self.obs_password_rejected
     }
 
     pub(crate) fn apply_runtime_event(&mut self, event: &RuntimeEvent) -> bool {
         match event {
-            RuntimeEvent::ObsConnection(connection) => {
-                let rejected = *connection == ObsConnection::PasswordRejected;
-                std::mem::replace(&mut self.obs_password_rejected, rejected) != rejected
-            }
             RuntimeEvent::PlatformConnection(change) => Integration::from_id(&change.platform_id)
                 .is_some_and(|integ| {
                     self.set_connected(integ, change.state.is_connected());

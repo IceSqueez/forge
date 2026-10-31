@@ -29,9 +29,7 @@ use crate::detail_route::{DetailRoute, is_detail_of};
 use crate::discord_screen::DiscordScreenView;
 use crate::first_run;
 use crate::hotkeys_screen::HotkeysScreenView;
-use crate::integration_detail::{
-    DetailFeeds, DetailServices, IntegrationDetail, ObsSignedOut, VTubeSignedOut,
-};
+use crate::integration_detail::{DetailServices, IntegrationDetail, IntegrationSignedOut};
 use crate::integration_disabled::{DisabledLaunch, IntegrationDisabledView};
 use crate::integration_failed::{IntegrationFailedView, LiveDetailRequested};
 use crate::integration_lifecycle::IntegrationLifecycle;
@@ -382,13 +380,11 @@ impl AppShell {
         };
         let object = builtin.unwrap_or_else(|| unavailable_builtin(id));
 
-        let connectivity = topics.platforms.clone();
         let credentials = Arc::clone(&handles.backend) as Arc<dyn CredentialsRepo>;
         let settings = Arc::clone(&handles.backend) as Arc<dyn SettingsRepo>;
         let history = handles.backend.history_repo();
         let trigger_registry = handles.automation.trigger_registry.clone();
         let bus = Arc::clone(&handles.core.bus) as Arc<dyn EventPublisher>;
-        let event_bus = Arc::clone(&handles.core.bus);
         let rt_handle = handles.rt_handle.clone();
         let action_engine = handles.automation.action_engine.clone();
         let twitch_slot = handles
@@ -404,7 +400,7 @@ impl AppShell {
             .supervisor
             .slot(&forge_platform_youtube::YOUTUBE_INTEGRATION.id);
         let obs_install_seed = handles.integrations.obs_install_seed.clone();
-        let vtube_install_seed = handles.integrations.vtube_install_seed.clone();
+        let sign_out = handles.integrations.sign_out.clone();
         let detail = cx.new(|cx| {
             IntegrationDetail::new(
                 object,
@@ -420,11 +416,7 @@ impl AppShell {
                     kick_slot,
                     youtube_slot,
                     obs_install_seed,
-                    vtube_install_seed,
-                },
-                DetailFeeds {
-                    event_bus,
-                    connectivity,
+                    sign_out,
                 },
                 cx,
             )
@@ -443,10 +435,6 @@ impl AppShell {
         if let Some(sign_in) = handles.integrations.kick_sign_in.clone() {
             detail.update(cx, |detail, _| detail.attach_kick_sign_in(sign_in));
         }
-        let platform_credentials = handles.integrations.platform_credentials.clone();
-        detail.update(cx, |detail, _| {
-            detail.attach_platform_credentials(platform_credentials)
-        });
         if let Some(bot) = handles.integrations.twitch_bot.clone() {
             let presence = topics.twitch_bot.clone();
             detail.update(cx, |detail, cx| detail.attach_twitch_bot(bot, presence, cx));
@@ -457,11 +445,7 @@ impl AppShell {
             this.rebuild_current(cx);
         })
         .detach();
-        cx.subscribe(&detail, |this, _view, _: &ObsSignedOut, cx| {
-            this.rebuild_current(cx);
-        })
-        .detach();
-        cx.subscribe(&detail, |this, _view, _: &VTubeSignedOut, cx| {
+        cx.subscribe(&detail, |this, _view, _: &IntegrationSignedOut, cx| {
             this.rebuild_current(cx);
         })
         .detach();

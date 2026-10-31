@@ -88,6 +88,12 @@ impl SubscriptionTracker {
         self.0.changes.subscribe()
     }
 
+    pub(crate) fn lacks_a_scope(&self) -> bool {
+        self.read()
+            .iter()
+            .any(|record| record.status == SubStatus::Failed(SubscriptionFailure::MissingScope))
+    }
+
     pub(crate) fn record_event(&self, subscription_type: &str) {
         {
             let mut counts = self.0.event_counts.write_recover();

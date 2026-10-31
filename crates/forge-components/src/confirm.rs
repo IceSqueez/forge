@@ -5,13 +5,14 @@ use std::sync::Arc;
 
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    App, ClickEvent, ElementId, Entity, FocusHandle, FontWeight, InteractiveElement, IntoElement,
+    App, ClickEvent, ElementId, FocusHandle, FontWeight, InteractiveElement, IntoElement,
     KeyBinding, KeyDownEvent, KeyboardClickEvent, NoAction, ParentElement, Pixels, RenderOnce,
     Rgba, SharedString, StatefulInteractiveElement, Styled, Window, div, px,
 };
 
 use crate::buttons::secondary_button;
 use crate::icons::{Icon, icon};
+use crate::overlay::{ModalFocusClaim, modal_focus};
 use crate::palette::{ForgePalette, with_alpha};
 use crate::tokens::{
     BORDER_THIN, Density, ENTER_KEY, FONT_MD, FONT_META, FONT_SM, FONT_XS, ModalSize, Radius,
@@ -179,24 +180,15 @@ fn accent_confirm_button(
 }
 
 fn enter_focus(id: &ElementId, window: &mut Window, cx: &mut App) -> FocusHandle {
-    let handle: Entity<FocusHandle> = window.use_keyed_state(
+    modal_focus(
         ElementId::NamedChild(
             Arc::new(id.clone()),
             SharedString::new_static(ENTER_FOCUS_KEY),
         ),
+        ModalFocusClaim::AfterThisFrame,
+        window,
         cx,
-        |window, cx| {
-            let handle = cx.focus_handle();
-            let claim = handle.clone();
-            window.defer(cx, move |window, cx| {
-                if !claim.contains_focused(window, cx) {
-                    window.focus(&claim, cx);
-                }
-            });
-            handle
-        },
-    );
-    handle.read(cx).clone()
+    )
 }
 
 impl RenderOnce for ConfirmModal {
@@ -338,7 +330,9 @@ impl RenderOnce for ConfirmModal {
 mod tests {
     use std::cell::Cell;
 
-    use gpui::{Bounds, Context, Keystroke, Render, TestAppContext, VisualTestContext, actions};
+    use gpui::{
+        Bounds, Context, Entity, Keystroke, Render, TestAppContext, VisualTestContext, actions,
+    };
 
     use super::*;
     use crate::overlay::overlay;

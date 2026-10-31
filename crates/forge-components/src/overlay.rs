@@ -4,8 +4,8 @@ use std::sync::Arc;
 use gpui::{
     Anchor, AnchoredPositionMode, Animation, AnimationExt, AnyElement, App, Div, ElementId, Entity,
     FocusHandle, InteractiveElement, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent,
-    ParentElement, Pixels, Point, RenderOnce, Rgba, SharedString, Styled, Window, anchored,
-    deferred, div, point, px,
+    ParentElement, Pixels, Point, RenderOnce, Rgba, SharedString, Styled, WeakFocusHandle, Window,
+    anchored, deferred, div, point, px,
 };
 
 use crate::palette::{ForgePalette, with_alpha};
@@ -28,6 +28,60 @@ pub fn drive_overlay_focus(
     {
         window.focus(&prev, cx);
     }
+}
+
+struct ModalFocus {
+    handle: FocusHandle,
+    restore: Option<WeakFocusHandle>,
+}
+
+impl ModalFocus {
+    fn claim(&mut self, window: &mut Window, cx: &mut App) {
+        if !self.handle.contains_focused(window, cx) {
+            self.restore = window.focused(cx).map(|prior| prior.downgrade());
+            window.focus(&self.handle, cx);
+        }
+    }
+
+    fn give_back(&mut self, window: &mut Window, cx: &mut App) {
+        if self.handle.is_focused(window)
+            && let Some(prior) = self.restore.take().and_then(|weak| weak.upgrade())
+        {
+            window.focus(&prior, cx);
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum ModalFocusClaim {
+    AfterThisFrame,
+    OnNextFrame,
+}
+
+pub(crate) fn modal_focus(
+    key: ElementId,
+    claim: ModalFocusClaim,
+    window: &mut Window,
+    cx: &mut App,
+) -> FocusHandle {
+    let state: Entity<ModalFocus> = window.use_keyed_state(key, cx, |window, cx| {
+        cx.on_release_in(window, ModalFocus::give_back).detach();
+        let state = cx.weak_entity();
+        let take_focus = move |window: &mut Window, cx: &mut App| {
+            if let Some(state) = state.upgrade() {
+                state.update(cx, |state, cx| state.claim(window, cx));
+            }
+        };
+        match claim {
+            ModalFocusClaim::AfterThisFrame => window.defer(cx, take_focus),
+            ModalFocusClaim::OnNextFrame => window.on_next_frame(take_focus),
+        }
+        ModalFocus {
+            handle: cx.focus_handle(),
+            restore: None,
+        }
+    });
+    state.read(cx).handle.clone()
 }
 
 const ENTER_MS: u64 = 200;
@@ -97,24 +151,15 @@ impl Overlay {
     }
 
     fn escape_focus(&self, window: &mut Window, cx: &mut App) -> FocusHandle {
-        let handle: Entity<FocusHandle> = window.use_keyed_state(
+        modal_focus(
             ElementId::NamedChild(
                 Arc::new(self.dismiss_id.clone()),
                 SharedString::new_static(ESCAPE_KEY),
             ),
+            ModalFocusClaim::OnNextFrame,
+            window,
             cx,
-            |window, cx| {
-                let handle = cx.focus_handle();
-                let claim = handle.clone();
-                window.on_next_frame(move |window, cx| {
-                    if !claim.contains_focused(window, cx) {
-                        window.focus(&claim, cx);
-                    }
-                });
-                handle
-            },
-        );
-        handle.read(cx).clone()
+        )
     }
 
     fn render_scrim(&self, animate_alpha: bool) -> gpui::AnyElement {

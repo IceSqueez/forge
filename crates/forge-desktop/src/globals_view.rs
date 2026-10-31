@@ -360,6 +360,7 @@ pub(crate) struct GlobalsView {
     row_menu: Option<RowMenu>,
     menu_focus: FocusHandle,
     menu_focus_restore: Option<FocusHandle>,
+    editor_focus_restore: Option<FocusHandle>,
     table_keys: ListCursor<SharedString>,
     table_scroll: UniformListScrollHandle,
     _globals_obs: Subscription,
@@ -407,6 +408,7 @@ impl GlobalsView {
             row_menu: None,
             menu_focus: cx.focus_handle(),
             menu_focus_restore: None,
+            editor_focus_restore: None,
             table_keys: ListCursor::new(cx),
             table_scroll: UniformListScrollHandle::new(),
             _globals_obs: globals_obs,
@@ -734,6 +736,7 @@ impl GlobalsView {
                 cx,
             )
         });
+        self.editor_focus_restore = window.focused(cx);
         editor.update(cx, |e, cx| e.focus(window, cx));
         self._editor_sub = Some(cx.subscribe(&editor, Self::on_editor_event));
         self.editor = Some(editor);
@@ -764,10 +767,19 @@ impl GlobalsView {
                 cx,
             )
         });
+        self.editor_focus_restore = window.focused(cx);
         editor.update(cx, |e, cx| e.focus(window, cx));
         self._editor_sub = Some(cx.subscribe(&editor, Self::on_editor_event));
         self.editor = Some(editor);
         cx.notify();
+    }
+
+    fn return_focus_from_closed_editor(&mut self, window: &mut Window, cx: &mut App) {
+        if self.editor.is_none()
+            && let Some(prior) = self.editor_focus_restore.take()
+        {
+            window.focus(&prior, cx);
+        }
     }
 
     fn cancel_editor(&mut self, cx: &mut Context<Self>) {
@@ -1764,6 +1776,7 @@ impl Render for GlobalsView {
             window,
             cx,
         );
+        self.return_focus_from_closed_editor(window, cx);
         self.table_keys.claim_focus_once(window, cx);
         let palette = cx.palette();
         let density = cx.density();

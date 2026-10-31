@@ -235,7 +235,12 @@ impl AppShell {
         let target = window
             .focus_lost_restore_target(cx)
             .unwrap_or_else(|| self.focus.clone());
-        window.focus(&target, cx);
+        let lost = window.focused(cx);
+        cx.defer_in(window, move |_, window, cx| {
+            if window.focused(cx) == lost {
+                window.focus(&target, cx);
+            }
+        });
     }
 
     fn content_for(

@@ -926,6 +926,7 @@ impl DiscordScreenView {
             palette,
         )
         .item_name(prompt.name.clone())
+        .esc_hint(tr!("widget_confirm_esc_to_cancel"))
         .on_cancel(
             "discord-delete-cancel",
             tr!("common_cancel"),

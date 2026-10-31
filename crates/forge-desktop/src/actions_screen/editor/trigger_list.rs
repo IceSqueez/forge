@@ -4,8 +4,9 @@ use crate::async_bridge;
 use crate::integration_switch::{category_inactive_badge, inactive_badge};
 use crate::repo_failure::RepoFailure;
 use forge_components::{
-    BORDER_THIN, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, Spacing, body_family,
-    icon, mono_family, radius, row_card, spacing, status_dot, tr,
+    BORDER_THIN, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, PushToast, Radius, Spacing,
+    ToastAction, ToastKind, UNDO_TOAST_DURATION, body_family, icon, mono_family, radius, row_card,
+    spacing, status_dot, tr,
 };
 use forge_registry::TriggerKindDescriptor;
 use forge_types::{TriggerInstance, TriggerInstanceId};
@@ -45,6 +46,56 @@ impl ScreenActionsView {
             async move {
                 service
                     .unlink_trigger_instance(action_id, instance_id)
+                    .await
+                    .map_err(RepoFailure::from)
+            },
+            move |this, result, cx| match result {
+                Ok(()) => {
+                    this.reload_detail(cx);
+                    this.raise_unlink_undo_toast(action_id, instance_id, cx);
+                }
+                Err(failure) => this.on_repo_error(&failure, cx),
+            },
+            cx,
+        );
+        cx.notify();
+    }
+
+    fn raise_unlink_undo_toast(
+        &self,
+        action_id: ActionId,
+        instance_id: TriggerInstanceId,
+        cx: &mut Context<Self>,
+    ) {
+        let view = cx.entity();
+        cx.push_toast_full(
+            ToastKind::Undo,
+            tr!("actions_trigger_unlinked_toast"),
+            None,
+            Some(ToastAction::new(
+                tr!("common_undo"),
+                move |_window, app: &mut App| {
+                    view.update(app, |this, cx| {
+                        this.relink_trigger(action_id, instance_id, cx)
+                    });
+                },
+            )),
+            UNDO_TOAST_DURATION,
+        );
+    }
+
+    fn relink_trigger(
+        &mut self,
+        action_id: ActionId,
+        instance_id: TriggerInstanceId,
+        cx: &mut Context<Self>,
+    ) {
+        let service = Arc::clone(&self.actions_service);
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move {
+                service
+                    .link_trigger_instance(action_id, instance_id)
                     .await
                     .map_err(RepoFailure::from)
             },
@@ -232,5 +283,168 @@ impl ScreenActionsView {
             .when(dimmed, |row| row.opacity(TRIGGER_DIMMED_OPACITY))
             .child(card)
             .into_any_element()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Mutex;
+
+    use forge_components::{ToastKind, Toasts};
+    use forge_storage::queue::MockQueueRepo;
+    use forge_storage::{MockTriggerInstanceRepo, StorageError};
+    use gpui::TestAppContext;
+
+    use super::super::super::action_writes::tests::Screen;
+    use super::*;
+    use crate::test_support::{StubHistory, blank_window, error_toasts, press_undo};
+
+    type Links = Arc<Mutex<Vec<(ActionId, TriggerInstanceId)>>>;
+
+    fn refused() -> StorageError {
+        StorageError::NotFound {
+            key: "link".to_owned(),
+        }
+    }
+
+    #[derive(Clone, Copy)]
+    struct Outcomes {
+        unlink_works: bool,
+        link_works: bool,
+    }
+
+    const BOTH_WORK: Outcomes = Outcomes {
+        unlink_works: true,
+        link_works: true,
+    };
+
+    fn links_recorded(screen: &Screen, cx: &mut TestAppContext, outcomes: Outcomes) -> Links {
+        let linked = Links::default();
+        let recorded = Arc::clone(&linked);
+        let mut triggers = MockTriggerInstanceRepo::new();
+        triggers.expect_list_all().returning(|| Ok(Vec::new()));
+        triggers
+            .expect_list_for_action()
+            .returning(|_| Ok(Vec::new()));
+        triggers
+            .expect_actions_by_instance()
+            .returning(|| Ok(Default::default()));
+        triggers.expect_unlink_action().returning(move |_, _| {
+            if outcomes.unlink_works {
+                Ok(true)
+            } else {
+                Err(refused())
+            }
+        });
+        triggers
+            .expect_link_action()
+            .returning(move |action, instance| {
+                recorded.lock().unwrap().push((action, instance));
+                if outcomes.link_works {
+                    Ok(())
+                } else {
+                    Err(refused())
+                }
+            });
+        let mut queues = MockQueueRepo::new();
+        queues.expect_list().returning(|| Ok(Vec::new()));
+        let actions = Arc::clone(&screen.store) as Arc<dyn forge_storage::action::ActionRepo>;
+        screen.view.update(cx, |view, _| {
+            view.actions_service = Arc::new(ActionsService::new(
+                actions,
+                Arc::new(queues),
+                Arc::new(StubHistory),
+                Arc::new(triggers),
+            ));
+        });
+        linked
+    }
+
+    fn unlink(screen: &Screen, cx: &mut TestAppContext, instance: TriggerInstanceId) {
+        screen
+            .view
+            .update(cx, |view, cx| view.unlink_trigger(instance, cx));
+        screen.settle(cx);
+    }
+
+    fn undo_messages(cx: &mut TestAppContext) -> Vec<String> {
+        cx.update(|cx| {
+            cx.global::<Toasts>()
+                .items()
+                .iter()
+                .filter(|toast| toast.kind == ToastKind::Undo)
+                .map(|toast| toast.message.to_string())
+                .collect()
+        })
+    }
+
+    #[gpui::test]
+    fn undo_links_the_trigger_back_to_the_action_it_left(cx: &mut TestAppContext) {
+        let screen = Screen::open(cx);
+        blank_window(cx);
+        let linked = links_recorded(&screen, cx, BOTH_WORK);
+        let instance = TriggerInstanceId::new();
+        unlink(&screen, cx, instance);
+        assert_eq!(undo_messages(cx), [tr!("actions_trigger_unlinked_toast")]);
+
+        press_undo(cx);
+        screen.settle(cx);
+
+        assert_eq!(*linked.lock().unwrap(), [(screen.alpha, instance)]);
+    }
+
+    #[gpui::test]
+    fn undo_after_selecting_another_action_still_targets_the_first(cx: &mut TestAppContext) {
+        let screen = Screen::open(cx);
+        blank_window(cx);
+        let linked = links_recorded(&screen, cx, BOTH_WORK);
+        let instance = TriggerInstanceId::new();
+        unlink(&screen, cx, instance);
+        let bravo = screen.bravo;
+        screen.view.update(cx, |view, cx| view.select(bravo, cx));
+        screen.settle(cx);
+
+        press_undo(cx);
+        screen.settle(cx);
+
+        assert_eq!(*linked.lock().unwrap(), [(screen.alpha, instance)]);
+    }
+
+    #[gpui::test]
+    fn a_refused_unlink_offers_no_undo_and_reports_the_error(cx: &mut TestAppContext) {
+        let screen = Screen::open(cx);
+        links_recorded(
+            &screen,
+            cx,
+            Outcomes {
+                unlink_works: false,
+                link_works: true,
+            },
+        );
+
+        unlink(&screen, cx, TriggerInstanceId::new());
+
+        assert!(undo_messages(cx).is_empty());
+        assert_eq!(cx.update(|cx| error_toasts(cx)), 1);
+    }
+
+    #[gpui::test]
+    fn a_refused_relink_reports_the_error(cx: &mut TestAppContext) {
+        let screen = Screen::open(cx);
+        blank_window(cx);
+        links_recorded(
+            &screen,
+            cx,
+            Outcomes {
+                unlink_works: true,
+                link_works: false,
+            },
+        );
+        unlink(&screen, cx, TriggerInstanceId::new());
+
+        press_undo(cx);
+        screen.settle(cx);
+
+        assert_eq!(cx.update(|cx| error_toasts(cx)), 1);
     }
 }

@@ -14,9 +14,9 @@ use crate::bundle::manifest::{ContentEntry, MANIFEST_ENTRY_NAME};
 use crate::bundle::naming::partial_path;
 use crate::bundle::outer::{open_outer, read_bounded};
 use crate::bundle::payload::{PayloadFile, append_bytes, append_verified};
-use crate::bundle::private_file::create_private;
 use crate::documents::model::{ClipSourceDocument, PackDocuments};
 use crate::error::TransferError;
+use forge_durable::create_private;
 
 pub(crate) trait DocumentManifest: Sized {
     fn contents(&self) -> &[ContentEntry];

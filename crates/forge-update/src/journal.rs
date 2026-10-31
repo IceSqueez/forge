@@ -3,7 +3,6 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::UpdateError;
-use crate::atomic_file::write_atomically_blocking;
 use crate::record::remove_record;
 
 const JOURNAL_FILE: &str = "update-journal.json";
@@ -26,7 +25,10 @@ impl UpdateJournal {
     }
 
     pub(crate) fn write_blocking(&self, data_dir: &Path) -> Result<(), UpdateError> {
-        write_atomically_blocking(&Self::path_in(data_dir), &self.encode()?)
+        Ok(forge_durable::write_atomically(
+            &Self::path_in(data_dir),
+            &self.encode()?,
+        )?)
     }
 
     pub(crate) fn read_blocking(data_dir: &Path) -> Result<Option<Self>, UpdateError> {

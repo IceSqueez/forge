@@ -585,6 +585,7 @@ impl SettingsDiagnosticsView {
             ConfirmTone::Destructive,
             palette,
         )
+        .esc_hint(tr!("widget_confirm_esc_to_cancel"))
         .on_cancel(
             "settings-diagnostics-clear-cancel",
             tr!("common_cancel"),

@@ -60,6 +60,7 @@ impl ScriptEditorView {
             palette,
         )
         .item_name(format!("{} -> {}", pending.old_name, pending.new_name))
+        .esc_hint(tr!("widget_confirm_esc_to_cancel"))
         .on_cancel(
             "script-rename-cancel",
             tr!("widget_confirm_cancel"),

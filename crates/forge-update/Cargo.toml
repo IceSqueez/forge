@@ -12,6 +12,7 @@ workspace = true
 
 [dependencies]
 flate2 = { workspace = true }
+forge-durable = { path = "../forge-durable" }
 forge-net = { path = "../forge-net" }
 minisign-verify = { workspace = true }
 serde = { workspace = true }

@@ -20,7 +20,7 @@ use gpui::{
     Window, div, prelude::*, px,
 };
 
-use crate::async_bridge;
+use crate::async_bridge::{self, Loadable};
 use crate::repo_failure::RepoFailure;
 use forge_components::ActivePresentation;
 use forge_hotkey::{HotkeyEdge, combo_keys};
@@ -88,12 +88,6 @@ struct ActionChoice {
     name: String,
 }
 
-enum ActionsState {
-    Loading,
-    Ready(Vec<ActionChoice>),
-    Failed(String),
-}
-
 pub struct HotkeyActionModal {
     instance_id: Option<TriggerInstanceId>,
     combo: String,
@@ -101,7 +95,7 @@ pub struct HotkeyActionModal {
     locked_edge: Option<HotkeyEdge>,
     capturing: bool,
     filter: SearchState,
-    actions: ActionsState,
+    actions: Loadable<Vec<ActionChoice>>,
     selected_action: Option<ActionId>,
     focus_pending: bool,
     _subs: Vec<Subscription>,
@@ -155,7 +149,7 @@ impl HotkeyActionModal {
             locked_edge,
             capturing: false,
             filter,
-            actions: ActionsState::Loading,
+            actions: Loadable::Loading,
             selected_action: linked_action,
             focus_pending: true,
             _subs: subs,
@@ -192,9 +186,9 @@ impl HotkeyActionModal {
         self.actions = match result {
             Ok(mut actions) => {
                 actions.sort_by_key(|a| a.name.to_lowercase());
-                ActionsState::Ready(actions)
+                Loadable::Loaded(actions)
             }
-            Err(message) => ActionsState::Failed(message.text()),
+            Err(failure) => Loadable::Failed(failure),
         };
         cx.notify();
     }
@@ -400,18 +394,21 @@ impl HotkeyActionModal {
             );
 
         let list = match &self.actions {
-            ActionsState::Loading => {
+            Loadable::Loading => {
                 list_message(tr!("hotkeys_modal_actions_loading"), palette, density)
             }
-            ActionsState::Failed(message) => list_message(
-                tr!("hotkeys_toast_error", message = message.as_str()),
-                palette,
-                density,
-            ),
-            ActionsState::Ready(actions) if actions.is_empty() => {
+            Loadable::Failed(failure) => {
+                let reason = failure.text();
+                list_message(
+                    tr!("hotkeys_toast_error", message = reason.as_str()),
+                    palette,
+                    density,
+                )
+            }
+            Loadable::Loaded(actions) if actions.is_empty() => {
                 list_message(tr!("hotkeys_modal_actions_none"), palette, density)
             }
-            ActionsState::Ready(actions) => {
+            Loadable::Loaded(actions) => {
                 let matched: Vec<&ActionChoice> = actions
                     .iter()
                     .filter(|choice| self.filter.matches(&choice.name))
@@ -659,5 +656,105 @@ impl Render for HotkeyActionModal {
                     view.update(cx, |this, cx| this.cancel(cx));
                 }),
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use forge_storage::action::MockActionRepo;
+    use forge_storage::{Language, StorageError};
+    use gpui::{Entity, TestAppContext};
+
+    use super::*;
+    use crate::i18n::install_language;
+    use crate::test_support::{
+        action_running, install_presentation, pump, runtime, shown_in_english,
+    };
+
+    fn outage() -> StorageError {
+        StorageError::Connection {
+            reason: "disk gone".to_owned(),
+        }
+    }
+
+    fn opened(
+        cx: &mut TestAppContext,
+        rt: &tokio::runtime::Runtime,
+        listed: fn() -> Result<Vec<forge_types::Action>, StorageError>,
+    ) -> Entity<HotkeyActionModal> {
+        install_language(Language::En);
+        install_presentation(cx);
+        let mut repo = MockActionRepo::new();
+        repo.expect_list().returning(listed);
+        cx.update(|cx| {
+            cx.new(|cx| {
+                HotkeyActionModal::new(
+                    ActionModalLaunch {
+                        instance_id: None,
+                        combo: String::new(),
+                        edge: HotkeyEdge::Press,
+                        locked_edge: None,
+                        linked_action: None,
+                    },
+                    Arc::new(repo),
+                    rt.handle().clone(),
+                    cx,
+                )
+            })
+        })
+    }
+
+    fn settled(cx: &mut TestAppContext, rt: &tokio::runtime::Runtime) {
+        pump(rt);
+        cx.run_until_parked();
+    }
+
+    #[gpui::test]
+    fn the_list_is_loading_until_the_repository_answers(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let modal = opened(cx, &rt, || Ok(Vec::new()));
+
+        let before = modal.read_with(cx, |modal, _| matches!(modal.actions, Loadable::Loading));
+        settled(cx, &rt);
+        let after = modal.read_with(
+            cx,
+            |modal, _| matches!(&modal.actions, Loadable::Loaded(listed) if listed.is_empty()),
+        );
+
+        assert_eq!((before, after), (true, true));
+    }
+
+    #[gpui::test]
+    fn loaded_actions_are_listed_ignoring_case(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let modal = opened(cx, &rt, || {
+            Ok(["beta", "Alpha", "Gamma"]
+                .map(|name| action_running(name, Vec::new()))
+                .to_vec())
+        });
+        settled(cx, &rt);
+
+        let names: Vec<String> = modal.read_with(cx, |modal, _| {
+            modal
+                .actions
+                .loaded()
+                .expect("the list loaded")
+                .iter()
+                .map(|choice| choice.name.clone())
+                .collect()
+        });
+
+        assert_eq!(names, ["Alpha", "beta", "Gamma"]);
+    }
+
+    #[gpui::test]
+    fn a_repository_failure_keeps_the_text_shown_to_the_user(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let modal = opened(cx, &rt, || Err(outage()));
+        settled(cx, &rt);
+
+        let failure = modal.read_with(cx, |modal, _| modal.actions.failure());
+
+        assert_eq!(failure, Some(shown_in_english(outage())));
     }
 }

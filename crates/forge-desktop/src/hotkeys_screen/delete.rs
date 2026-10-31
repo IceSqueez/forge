@@ -99,6 +99,7 @@ impl HotkeysScreenView {
             palette,
         )
         .item_name(prompt.combo.clone())
+        .esc_hint(tr!("widget_confirm_esc_to_cancel"))
         .on_cancel(
             "hotkeys-delete-cancel",
             tr!("common_cancel"),

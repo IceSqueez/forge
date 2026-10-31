@@ -649,6 +649,7 @@ impl SafetyCopiesView {
             ConfirmTone::Destructive,
             palette,
         )
+        .esc_hint(tr!("widget_confirm_esc_to_cancel"))
         .on_cancel(
             "safety-copies-clean-up-cancel",
             tr!("common_cancel"),

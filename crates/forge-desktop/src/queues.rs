@@ -554,6 +554,7 @@ pub struct QueuesView {
     modal: Option<Entity<EditQueueModal>>,
     _modal_sub: Option<Subscription>,
     pending_delete: Confirm<QueueId>,
+    pending_free: Confirm<QueueId>,
     menu_open: Option<QueueId>,
     menu_click_pos: Option<Point<Pixels>>,
     diverged: HashSet<QueueId>,
@@ -602,6 +603,7 @@ impl QueuesView {
             modal: None,
             _modal_sub: None,
             pending_delete: Confirm::default(),
+            pending_free: Confirm::default(),
             menu_open: None,
             menu_click_pos: None,
             diverged: HashSet::new(),
@@ -894,6 +896,23 @@ impl QueuesView {
 
     fn resume(&mut self, id: QueueId, cx: &mut Context<Self>) {
         self.set_mode(id, QueueMode::RUNNING, cx);
+    }
+
+    fn request_free(&mut self, id: QueueId, cx: &mut Context<Self>) {
+        self.pending_free.request(id);
+        cx.notify();
+    }
+
+    fn cancel_free(&mut self, cx: &mut Context<Self>) {
+        self.pending_free.cancel();
+        cx.notify();
+    }
+
+    fn confirm_free(&mut self, cx: &mut Context<Self>) {
+        if let Some(id) = self.pending_free.take() {
+            self.free(id, cx);
+        }
+        cx.notify();
     }
 
     fn free(&mut self, id: QueueId, cx: &mut Context<Self>) {
@@ -1223,7 +1242,7 @@ impl QueuesView {
                 menu_item(
                     ("q-menu-free", index),
                     tr!("queues_menu_free"),
-                    cx.listener(move |this, _: &ClickEvent, _, cx| this.free(id, cx)),
+                    cx.listener(move |this, _: &ClickEvent, _, cx| this.request_free(id, cx)),
                 )
                 .icon(Icon::Eraser)
                 .into(),
@@ -1363,7 +1382,7 @@ impl QueuesView {
             palette.text_secondary,
             None,
             palette,
-            cx.listener(move |this, _: &ClickEvent, _, cx| this.free(id, cx)),
+            cx.listener(move |this, _: &ClickEvent, _, cx| this.request_free(id, cx)),
             density,
         )
         .tooltip(tooltip_builder(tr!("queues_free_tooltip"), palette));
@@ -1462,6 +1481,39 @@ impl QueuesView {
             .position(OverlayPosition::Center)
             .on_dismiss("queues-delete-scrim", move |_window, cx| {
                 view.update(cx, |this, cx| this.cancel_delete(cx));
+            })
+    }
+
+    fn render_free_confirm(
+        &self,
+        name: SharedString,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement + use<> {
+        let card = confirm_modal(
+            tr!("queues_free_confirm_title"),
+            tr!("queues_free_confirm_body"),
+            ConfirmTone::Destructive,
+            palette,
+        )
+        .item_name(name)
+        .esc_hint(tr!("widget_confirm_esc_to_cancel"))
+        .on_cancel(
+            "queues-free-cancel",
+            tr!("common_cancel"),
+            cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_free(cx)),
+        )
+        .on_confirm(
+            "queues-free-confirm",
+            tr!("queues_free_btn"),
+            cx.listener(|this, _: &ClickEvent, _, cx| this.confirm_free(cx)),
+        );
+
+        let view = cx.entity();
+        overlay(card, palette)
+            .position(OverlayPosition::Center)
+            .on_dismiss("queues-free-scrim", move |_window, cx| {
+                view.update(cx, |this, cx| this.cancel_free(cx));
             })
     }
 }
@@ -1641,6 +1693,10 @@ impl Render for QueuesView {
             let name = self.queues.iter().find(|q| q.id == id)?.name.clone();
             Some(self.render_delete_confirm(SharedString::from(name), &palette, cx))
         });
+        let free_overlay = self.pending_free.get().copied().and_then(|id| {
+            let name = self.queues.iter().find(|q| q.id == id)?.name.clone();
+            Some(self.render_free_confirm(SharedString::from(name), &palette, cx))
+        });
 
         div()
             .size_full()
@@ -1650,6 +1706,7 @@ impl Render for QueuesView {
             .child(frame)
             .children(modal_overlay)
             .children(delete_overlay)
+            .children(free_overlay)
     }
 }
 
@@ -2160,7 +2217,7 @@ mod tests {
     use forge_runtime::{QueueDepth, QueueDepths};
     use forge_storage::Language;
     use forge_storage::queue::MockQueueRepo;
-    use gpui::TestAppContext;
+    use gpui::{Modifiers, TestAppContext, VisualTestContext, point, size};
 
     use super::*;
     use crate::i18n::install_language;
@@ -2169,6 +2226,12 @@ mod tests {
     };
     use forge_components::Presentation;
     use forge_components::Toasts;
+
+    const FREE_WINDOW_W: f32 = 1000.0;
+    const FREE_WINDOW_H: f32 = 700.0;
+    const FREE_BUTTONS_W: f32 = 640.0;
+    const FREE_BUTTONS_H: f32 = 48.0;
+    const FREE_SCAN_STEP: f32 = 8.0;
 
     fn queue(id: QueueId) -> Queue {
         Queue {
@@ -2219,6 +2282,177 @@ mod tests {
         pump(rt);
         cx.run_until_parked();
         view
+    }
+
+    struct Shown {
+        view: Entity<QueuesView>,
+    }
+
+    impl Render for Shown {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            div().size_full().child(self.view.clone())
+        }
+    }
+
+    fn on_screen<'a>(
+        cx: &'a mut TestAppContext,
+        view: &Entity<QueuesView>,
+    ) -> &'a mut VisualTestContext {
+        cx.update(forge_components::bind_confirm_keys);
+        let view = view.clone();
+        let (_, vcx) = cx.add_window_view(move |_, _| Shown { view });
+        vcx.simulate_resize(size(px(FREE_WINDOW_W), px(FREE_WINDOW_H)));
+        vcx.run_until_parked();
+        vcx
+    }
+
+    fn staged_free(view: &Entity<QueuesView>, cx: &mut TestAppContext) -> Option<QueueId> {
+        view.read_with(cx, |view, _| view.pending_free.get().copied())
+    }
+
+    fn free_feedback() -> (ToastKind, String) {
+        (
+            ToastKind::Info,
+            tr!("queues_free_feedback", name = "Default"),
+        )
+    }
+
+    fn mounted(
+        cx: &mut TestAppContext,
+        rt: &tokio::runtime::Runtime,
+        id: QueueId,
+    ) -> Entity<QueuesView> {
+        let health = cx.new(|_| QueueHealth::new());
+        mount(cx, rt, id, health)
+    }
+
+    struct CardButtons {
+        view: Entity<QueuesView>,
+    }
+
+    impl Render for CardButtons {
+        fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            let palette = cx.palette();
+            let density = cx.density();
+            let buttons = self.view.update(cx, |view, cx| {
+                let view = &*view;
+                view.queues
+                    .first()
+                    .map(|row| view.card_buttons(0, row, &palette, density, cx))
+            });
+            div().w(px(FREE_BUTTONS_W)).children(buttons)
+        }
+    }
+
+    #[gpui::test]
+    fn the_free_button_only_asks_and_drops_nothing_until_confirmed(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let id = QueueId::new();
+        let view = mounted(cx, &rt, id);
+        let mut reached = None;
+        {
+            let shown = view.clone();
+            let (_, vcx) = cx.add_window_view(move |_, _| CardButtons { view: shown });
+            vcx.run_until_parked();
+            let mut y = FREE_SCAN_STEP / 2.0;
+            'scan: while y < FREE_BUTTONS_H {
+                let mut x = FREE_SCAN_STEP / 2.0;
+                while x < FREE_BUTTONS_W {
+                    vcx.simulate_click(point(px(x), px(y)), Modifiers::none());
+                    reached = view.read_with(vcx, |view, _| view.pending_free.get().copied());
+                    if reached.is_some() {
+                        break 'scan;
+                    }
+                    x += FREE_SCAN_STEP;
+                }
+                y += FREE_SCAN_STEP;
+            }
+        }
+        settle(cx, &rt);
+
+        assert_eq!(reached, Some(id));
+        assert!(!toasts(cx).contains(&free_feedback()));
+    }
+
+    #[gpui::test]
+    fn escape_on_the_free_prompt_cancels_without_dropping(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let id = QueueId::new();
+        let view = mounted(cx, &rt, id);
+        view.update(cx, |view, cx| view.request_free(id, cx));
+        {
+            let vcx = on_screen(cx, &view);
+            vcx.simulate_keystrokes("escape");
+            vcx.run_until_parked();
+        }
+        settle(cx, &rt);
+
+        assert_eq!((staged_free(&view, cx), toasts(cx)), (None, Vec::new()));
+    }
+
+    #[gpui::test]
+    fn enter_on_the_free_prompt_frees_the_queue_it_named(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let id = QueueId::new();
+        let view = mounted(cx, &rt, id);
+        view.update(cx, |view, cx| view.request_free(id, cx));
+        {
+            let vcx = on_screen(cx, &view);
+            vcx.simulate_keystrokes("enter");
+            vcx.run_until_parked();
+        }
+        settle(cx, &rt);
+
+        assert_eq!(
+            (staged_free(&view, cx), toasts(cx)),
+            (None, vec![free_feedback()])
+        );
+    }
+
+    #[gpui::test]
+    fn a_cancelled_free_cannot_be_confirmed_afterwards(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let id = QueueId::new();
+        let view = mounted(cx, &rt, id);
+
+        view.update(cx, |view, cx| {
+            view.request_free(id, cx);
+            view.cancel_free(cx);
+            view.confirm_free(cx);
+        });
+        settle(cx, &rt);
+
+        assert_eq!(toasts(cx), Vec::new());
+    }
+
+    #[gpui::test]
+    fn confirming_twice_frees_once(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let id = QueueId::new();
+        let view = mounted(cx, &rt, id);
+
+        view.update(cx, |view, cx| {
+            view.request_free(id, cx);
+            view.confirm_free(cx);
+            view.confirm_free(cx);
+        });
+        settle(cx, &rt);
+
+        assert_eq!(toasts(cx), vec![free_feedback()]);
+    }
+
+    #[gpui::test]
+    fn confirming_a_free_of_a_queue_that_is_gone_does_nothing(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let view = mounted(cx, &rt, QueueId::new());
+
+        view.update(cx, |view, cx| {
+            view.request_free(QueueId::new(), cx);
+            view.confirm_free(cx);
+        });
+        settle(cx, &rt);
+
+        assert_eq!((staged_free(&view, cx), toasts(cx)), (None, Vec::new()));
     }
 
     #[test]

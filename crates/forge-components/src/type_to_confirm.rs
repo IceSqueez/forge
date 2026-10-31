@@ -1,5 +1,6 @@
 use crate::HOVER_FILL_ALPHA;
 use crate::presentation::ActivePresentation;
+use gpui::prelude::FluentBuilder as _;
 use gpui::{
     App, AppContext, ClickEvent, Context, ElementId, Entity, EventEmitter, FontWeight,
     InteractiveElement, IntoElement, ParentElement, Pixels, Render, Rgba, SharedString,
@@ -7,6 +8,7 @@ use gpui::{
 };
 
 use crate::buttons::secondary_button;
+use crate::confirm::esc_hint_label;
 use crate::icons::{Icon, icon};
 use crate::palette::{ForgePalette, with_alpha};
 use crate::text_input::{InputEvent, TextInput};
@@ -85,6 +87,7 @@ pub struct TypeToConfirm {
     bullets: Vec<BulletItem>,
     confirm_label: SharedString,
     cancel_label: SharedString,
+    esc_hint: Option<SharedString>,
     palette: ForgePalette,
     matched: bool,
     _input_sub: Subscription,
@@ -141,6 +144,7 @@ pub fn type_to_confirm(
         bullets: Vec::new(),
         confirm_label: SharedString::default(),
         cancel_label: SharedString::default(),
+        esc_hint: None,
         palette,
         matched,
         _input_sub: sub,
@@ -190,7 +194,8 @@ impl TypeToConfirm {
     }
 
     #[must_use]
-    pub fn esc_hint(self, _phrase: impl Into<SharedString>) -> Self {
+    pub fn esc_hint(mut self, phrase: impl Into<SharedString>) -> Self {
+        self.esc_hint = Some(phrase.into());
         self
     }
 
@@ -391,7 +396,10 @@ impl Render for TypeToConfirm {
             .w_full()
             .flex()
             .items_center()
-            .justify_end()
+            .when_some(self.esc_hint.clone(), |footer, phrase| {
+                footer.child(esc_hint_label(phrase, &p))
+            })
+            .child(div().flex_1())
             .py(spacing(Spacing::Sm, density))
             .px(spacing(Spacing::Lg, density))
             .bg(p.shell)

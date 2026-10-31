@@ -282,6 +282,7 @@ pub fn reapply_key_bindings(cx: &mut App, overrides: &HashMap<String, String>) {
 
 fn bind_all(cx: &mut App, overrides: &HashMap<String, String>) {
     forge_components::bind_text_input_keys(cx);
+    forge_components::bind_confirm_keys(cx);
     forge_components::bind_text_area_keys(cx);
     forge_components::bind_code_editor_keys(cx);
     forge_components::bind_picker_keys(cx);

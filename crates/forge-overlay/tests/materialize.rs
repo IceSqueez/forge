@@ -16,6 +16,8 @@ use tempfile::TempDir;
 const ALERT_KIND: &str = "overlay.alert";
 const IDENTITY: &str = "sub-alert-1";
 const IDENTITY_LEN_LIMIT: usize = 64;
+#[cfg(unix)]
+const STAGING_NAMES_PLANTED: u32 = 4096;
 
 const UNSAFE_IDENTITIES: &[(&str, &str)] = &[
     ("..", "parent traversal"),
@@ -427,8 +429,31 @@ fn a_generated_file_that_is_a_symbolic_link_is_refused_and_its_target_is_untouch
 }
 
 #[cfg(unix)]
+fn plant_links_on_every_staging_name(directory: &Path, name: &str, target: &Path) {
+    let process = std::process::id();
+    for writer in 0..STAGING_NAMES_PLANTED {
+        std::os::unix::fs::symlink(
+            target,
+            directory.join(format!(".{name}.{process}.{writer}.tmp")),
+        )
+        .unwrap();
+    }
+}
+
+#[cfg(unix)]
+fn assert_refused_as_existing(failure: &OverlayError) {
+    assert!(
+        matches!(
+            failure,
+            OverlayError::Io { source, .. } if source.kind() == std::io::ErrorKind::AlreadyExists
+        ),
+        "{failure:?}"
+    );
+}
+
+#[cfg(unix)]
 #[test]
-fn a_symbolic_link_on_the_staging_path_is_not_written_through() {
+fn a_link_on_the_real_staging_name_is_refused_and_never_written_through() {
     let home = TempDir::new().unwrap();
     let root = unborn_root(&home);
     let reg = registry();
@@ -436,17 +461,17 @@ fn a_symbolic_link_on_the_staging_path_is_not_written_through() {
     fs::write(&outside, "victim content").unwrap();
 
     let first = materialize_overlay(&root, &instance(&[]), &reg).expect("first materialize");
-    let staged = first.directory.join(format!(".{STYLE_FILE}.tmp"));
-    std::os::unix::fs::symlink(&outside, &staged).unwrap();
+    plant_links_on_every_staging_name(&first.directory, STYLE_FILE, &outside);
 
-    let result = materialize_overlay(&root, &instance(&[]), &reg);
+    let failure = materialize_overlay(&root, &instance(&[]), &reg)
+        .expect_err("a link on the staging name must be refused");
 
+    assert_refused_as_existing(&failure);
     assert_eq!(
         fs::read_to_string(&outside).unwrap(),
         "victim content",
         "the staging write followed a link out of the overlay root"
     );
-    assert!(result.is_ok(), "{result:?}");
 }
 
 #[test]
@@ -991,18 +1016,23 @@ fn refreshing_a_config_that_is_a_symbolic_link_is_refused_and_its_target_untouch
 
 #[cfg(unix)]
 #[test]
-fn refreshing_never_writes_through_a_link_on_the_config_staging_path() {
+fn refreshing_is_refused_by_a_link_on_the_real_config_staging_name() {
     let home = TempDir::new().unwrap();
     let root = unborn_root(&home);
     let page = materialize_overlay(&root, &credentialed(Some(STALE_CREDENTIAL)), &registry())
         .expect("materialize");
     let outside = home.path().join("victim.json");
     fs::write(&outside, "victim content").unwrap();
-    std::os::unix::fs::symlink(&outside, page.directory.join(format!(".{CONFIG_FILE}.tmp")))
-        .unwrap();
+    plant_links_on_every_staging_name(&page.directory, CONFIG_FILE, &outside);
 
-    let result = refresh_config_credential(&root, IDENTITY, FRESH_CREDENTIAL);
+    let failure = refresh_config_credential(&root, IDENTITY, FRESH_CREDENTIAL)
+        .expect_err("a link on the staging name must be refused");
 
-    assert!(result.is_ok(), "{result:?}");
+    assert_refused_as_existing(&failure);
     assert_eq!(fs::read_to_string(&outside).unwrap(), "victim content");
+    assert_eq!(
+        config_of(&page.directory)[CREDENTIAL_KEY].as_str(),
+        Some(STALE_CREDENTIAL),
+        "a refused refresh must leave the published config whole"
+    );
 }

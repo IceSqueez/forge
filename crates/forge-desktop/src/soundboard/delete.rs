@@ -57,6 +57,7 @@ impl SoundboardView {
             palette,
         )
         .item_name(name)
+        .esc_hint(tr!("widget_confirm_esc_to_cancel"))
         .on_cancel(
             "sb-del-cancel",
             tr!("common_cancel"),

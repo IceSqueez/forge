@@ -23,11 +23,11 @@ use crate::bundle::passphrase::Passphrase;
 use crate::bundle::payload::{
     PayloadFile, append_bytes, append_file, append_verified, collect_payload,
 };
-use crate::bundle::private_file::create_private;
 use crate::bundle::protection::Protection;
 use crate::bundle::schedule_key::ScheduleKey;
 use crate::error::TransferError;
 use crate::full::snapshot::with_database_snapshot;
+use forge_durable::create_private;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BackupDestination {

@@ -15,7 +15,6 @@ pub(crate) mod naming;
 pub(crate) mod outer;
 pub(crate) mod passphrase;
 pub(crate) mod payload;
-pub(crate) mod private_file;
 pub(crate) mod protection;
 pub(crate) mod reader;
 pub(crate) mod schedule_key;

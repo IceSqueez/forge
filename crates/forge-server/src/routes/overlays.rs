@@ -401,6 +401,96 @@ mod tests {
         handle.stop().await.expect("stop");
     }
 
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn an_overlay_written_owner_only_is_served_whole_over_http() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        const OWNER_ONLY: u32 = 0o600;
+        const PERMISSION_BITS: u32 = 0o777;
+        const IDENTITY: &str = "sub-alert-1";
+        const CLIP: &[u8] = b"RIFF\x04\x00\x00\x00WAVE";
+        const CLIP_IDENTITY: &str =
+            "sha256-1fe5a351bf0314c8a1840b023fd1e4cab3f0f123468940c241bd7bf20e989ab8";
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path().join("overlays");
+        let mut kinds = forge_overlay::OverlayKindRegistry::new();
+        forge_overlay::register_builtin_kinds(&mut kinds).expect("the builtin kinds register");
+        let shared = forge_overlay::ensure_shared_directory(&root).expect("shared directory");
+        let clip = forge_overlay::ResolvedMedia::new(
+            forge_overlay::config::SOUND,
+            CLIP_IDENTITY,
+            "wav",
+            CLIP.to_vec(),
+        )
+        .expect("a content id is a safe token");
+        let report = forge_overlay::materialize_overlay(
+            &root,
+            &forge_overlay::OverlayInstance {
+                id: IDENTITY.to_owned(),
+                display_name: "Sub alert".to_owned(),
+                kind_id: "overlay.alert".to_owned(),
+                config: forge_overlay::OverlayConfig::new(),
+                source_overrides: Vec::new().into_iter().collect(),
+                credential: None,
+                media: forge_overlay::OverlayMedia {
+                    resolved: vec![clip],
+                    issues: Vec::new(),
+                },
+                sample: forge_overlay::SampleContext::neutral(),
+            },
+            &kinds,
+        )
+        .expect("materialize");
+        let canon_root = root.canonicalize().expect("canonical root");
+        let files = [
+            report.directory.join(forge_overlay::MARKUP_FILE),
+            report.directory.join(forge_overlay::STYLE_FILE),
+            report.directory.join(forge_overlay::BEHAVIOR_FILE),
+            report.directory.join(forge_overlay::CONFIG_FILE),
+            report.directory.join(forge_overlay::SAMPLE_FILE),
+            report
+                .directory
+                .join(forge_overlay::GENERATED_MEDIA_DIRECTORY)
+                .join(format!("{CLIP_IDENTITY}.wav")),
+            shared.join(forge_overlay::RUNTIME_ASSET),
+            shared.join(forge_overlay::MOTION_ASSET),
+        ];
+
+        let (handle, addr) = make_overlay_server(root.clone(), true, MemCreds::new()).await;
+
+        for file in files {
+            let mode = std::fs::metadata(&file)
+                .expect("the generated file exists")
+                .permissions()
+                .mode();
+            assert_eq!(mode & PERMISSION_BITS, OWNER_ONLY, "{file:?}");
+            let relative = file
+                .strip_prefix(&canon_root)
+                .expect("under the root")
+                .display();
+
+            let resp = reqwest::get(format!("http://{addr}/overlays/fgo_fixture/{relative}"))
+                .await
+                .expect("request");
+
+            assert_eq!(resp.status(), reqwest::StatusCode::OK, "{relative}");
+            assert_eq!(
+                resp.bytes().await.expect("body")[..],
+                std::fs::read(&file).expect("the file reads back")[..],
+                "{relative}"
+            );
+        }
+
+        let page = reqwest::get(format!("http://{addr}/overlays/fgo_fixture/{IDENTITY}/"))
+            .await
+            .expect("request");
+        assert_eq!(page.status(), reqwest::StatusCode::OK);
+
+        handle.stop().await.expect("stop");
+    }
+
     #[tokio::test]
     async fn serve_overlay_returns_404_for_missing_file() {
         let dir = tempfile::tempdir().expect("tempdir");

@@ -13,7 +13,7 @@ use gpui::{
     Window, div, prelude::*, px,
 };
 
-use crate::async_bridge::{self, Generation};
+use crate::async_bridge::{self, Generation, Loadable};
 use crate::integration_switch::integration_name;
 use crate::pack_services::{PackServices, PackSource};
 use crate::repo_failure::RepoFailure;
@@ -117,15 +117,9 @@ struct Ready {
     choices: Vec<ActionChoice>,
 }
 
-enum SourceState {
-    Loading,
-    Failed(String),
-    Ready(Ready),
-}
-
 pub struct PackExportModal {
     services: PackServices,
-    source: SourceState,
+    source: Loadable<Ready>,
     selected: BTreeSet<ActionId>,
     closure: Option<PackSelection>,
     closure_failure: Option<String>,
@@ -171,7 +165,7 @@ impl PackExportModal {
         );
         Self {
             services,
-            source: SourceState::Loading,
+            source: Loadable::Loading,
             selected: preselected.into_iter().collect(),
             closure: None,
             closure_failure: None,
@@ -192,11 +186,11 @@ impl PackExportModal {
                 let choices = action_choices(&source.inventory);
                 self.selected
                     .retain(|id| choices.iter().any(|choice| choice.id == *id));
-                SourceState::Ready(Ready { source, choices })
+                Loadable::Loaded(Ready { source, choices })
             }
             Err(message) => {
                 tracing::warn!(error = %message, "pack inventory failed to load");
-                SourceState::Failed(message.text())
+                Loadable::Failed(message)
             }
         };
         self.resolve(cx);
@@ -214,7 +208,7 @@ impl PackExportModal {
     fn resolve(&mut self, cx: &mut Context<Self>) {
         let ticket = self.generation.next();
         self.closure_failure = None;
-        let SourceState::Ready(ready) = &self.source else {
+        let Loadable::Loaded(ready) = &self.source else {
             self.closure = None;
             self.resolving = false;
             return;
@@ -271,7 +265,7 @@ impl PackExportModal {
         if !self.can_export(cx) {
             return None;
         }
-        let SourceState::Ready(ready) = &self.source else {
+        let Loadable::Loaded(ready) = &self.source else {
             return None;
         };
         let selection = self.closure.clone()?;
@@ -332,16 +326,19 @@ impl PackExportModal {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let list = match &self.source {
-            SourceState::Loading => list_message(tr!("pack_export_loading"), palette, density),
-            SourceState::Failed(message) => list_message(
-                tr!("pack_export_load_failed", error = message.as_str()),
-                palette,
-                density,
-            ),
-            SourceState::Ready(ready) if ready.choices.is_empty() => {
+            Loadable::Loading => list_message(tr!("pack_export_loading"), palette, density),
+            Loadable::Failed(failure) => {
+                let reason = failure.text();
+                list_message(
+                    tr!("pack_export_load_failed", error = reason.as_str()),
+                    palette,
+                    density,
+                )
+            }
+            Loadable::Loaded(ready) if ready.choices.is_empty() => {
                 list_message(tr!("pack_export_no_actions"), palette, density)
             }
-            SourceState::Ready(ready) => {
+            Loadable::Loaded(ready) => {
                 let rows: Vec<AnyElement> = ready
                     .choices
                     .iter()
@@ -729,12 +726,12 @@ impl Render for PackExportModal {
 mod tests {
     use std::collections::BTreeSet;
 
-    use forge_storage::Language;
+    use forge_storage::{Language, StorageError};
     use forge_transfer::{PackSelection, load_pack_inventory, resolve_pack_closure};
     use forge_types::ActionId;
     use gpui::{AppContext, Entity, TestAppContext};
 
-    use super::{PackExportModal, SourceState, action_choices, ordered_roots};
+    use super::{Loadable, PackExportModal, action_choices, ordered_roots};
     use crate::i18n::install_language;
     use crate::test_support::pack_flow::{PackWorld, pack_world, queue_named, seed_queued_action};
     use crate::test_support::{install_presentation, runtime};
@@ -780,7 +777,7 @@ mod tests {
 
     fn deliver_closure(cx: &mut TestAppContext, rig: &Rig) {
         let (ticket, roots) = rig.modal.read_with(cx, |modal, _| {
-            let SourceState::Ready(ready) = &modal.source else {
+            let Loadable::Loaded(ready) = &modal.source else {
                 panic!("the inventory is not loaded");
             };
             (
@@ -849,6 +846,41 @@ mod tests {
         assert_eq!(
             closure_actions(cx, &rig),
             Some(BTreeSet::from([rig.greeter]))
+        );
+    }
+
+    fn failed_source(cx: &mut TestAppContext, rig: &Rig) {
+        let failure = crate::repo_failure::RepoFailure::from(StorageError::Connection {
+            reason: "disk gone".to_owned(),
+        });
+        rig.modal
+            .update(cx, |modal, cx| modal.source_loaded(Err(failure), cx));
+    }
+
+    #[gpui::test]
+    fn an_inventory_that_fails_to_load_cannot_be_exported(cx: &mut TestAppContext) {
+        let rig = rig(cx, |greeter| vec![greeter]);
+        name_pack(cx, &rig, "Pack");
+        assert!(can_export(cx, &rig));
+
+        failed_source(cx, &rig);
+
+        assert_eq!(closure_actions(cx, &rig), None);
+        assert!(!can_export(cx, &rig));
+    }
+
+    #[gpui::test]
+    fn a_failed_inventory_keeps_the_text_shown_to_the_user(cx: &mut TestAppContext) {
+        let rig = rig(cx, |greeter| vec![greeter]);
+
+        failed_source(cx, &rig);
+
+        let shown = crate::test_support::shown_in_english(StorageError::Connection {
+            reason: "disk gone".to_owned(),
+        });
+        assert_eq!(
+            rig.modal.read_with(cx, |modal, _| modal.source.failure()),
+            Some(shown)
         );
     }
 

@@ -163,6 +163,37 @@ pub(super) fn set_chain(
     write_nested(slot, rest, new_chain)
 }
 
+pub(super) fn owner_kinds(root: &[SubActionStep], path: &[NavFrame]) -> Option<Vec<String>> {
+    let Some((first, rest)) = path.split_first() else {
+        return Some(Vec::new());
+    };
+    let step = root.get(first.step_index)?;
+    let mut kinds = vec![step.kind_id.clone()];
+    let mut value = chain_value_at(&step.config, &first.chain_key, first.case_index).cloned();
+    for frame in rest {
+        let raw = value.as_ref()?.as_array()?.get(frame.step_index)?;
+        let owner = decode_step(raw).ok()?;
+        kinds.push(owner.kind_id.clone());
+        value = chain_value_at(&owner.config, &frame.chain_key, frame.case_index).cloned();
+    }
+    Some(kinds)
+}
+
+pub(super) fn insert_item(
+    root: &mut Vec<SubActionStep>,
+    path: &[NavFrame],
+    owners: &[String],
+    index: usize,
+    item: &ChainItem,
+) -> bool {
+    if owner_kinds(root, path).as_deref() != Some(owners) {
+        return false;
+    }
+    let mut chain = resolve_chain(root, path);
+    chain.insert(index.min(chain.len()), item.clone());
+    set_chain(root, path, &chain)
+}
+
 fn write_nested(slot: &mut Variant, path: &[NavFrame], new_chain: &[ChainItem]) -> bool {
     let Some((frame, rest)) = path.split_first() else {
         *slot = encode_items(new_chain);

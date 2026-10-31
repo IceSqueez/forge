@@ -766,6 +766,7 @@ impl OverlaysView {
             palette,
         )
         .item_name(file.to_owned())
+        .esc_hint(tr!("widget_confirm_esc_to_cancel"))
         .on_cancel(
             "overlays-code-revert-cancel",
             tr!("common_cancel"),
@@ -798,6 +799,7 @@ impl OverlaysView {
             palette,
         )
         .item_name(self.editor.code.file.to_owned())
+        .esc_hint(tr!("widget_confirm_esc_to_cancel"))
         .on_cancel(
             "overlays-code-discard-cancel",
             tr!("overlays_code_discard_cancel"),

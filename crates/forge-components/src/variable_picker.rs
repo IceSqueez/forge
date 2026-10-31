@@ -13,9 +13,8 @@ use crate::palette::ForgePalette;
 use crate::picker::{PICKER_CONTEXT, SelectNext, SelectPrev, item_matches, message_row};
 use crate::search_state::SearchState;
 use crate::text_input::{InputEvent, TextInput};
-use crate::tokens::{ESCAPE_KEY, body_family, mono_family};
+use crate::tokens::{ENTER_KEY, ESCAPE_KEY, body_family, mono_family};
 
-const ENTER_KEY: &str = "enter";
 const LEFT_KEY: &str = "left";
 
 #[derive(Clone, Debug, PartialEq)]

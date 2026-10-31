@@ -532,6 +532,7 @@ impl SettingsWebSocketView {
                 .bullets(lan_bind_bullets())
                 .confirm_label(tr!("settings_ws_lan_modal_confirm_label"))
                 .cancel_label(tr!("common_cancel"))
+                .esc_hint(tr!("widget_confirm_esc_to_cancel"))
         });
         let sub = cx.subscribe(
             &modal,
@@ -1467,6 +1468,7 @@ impl SettingsWebSocketView {
             ConfirmTone::Warning,
             palette,
         )
+        .esc_hint(tr!("widget_confirm_esc_to_cancel"))
         .on_cancel(
             "settings-ws-overlay-token-regen-cancel",
             tr!("common_cancel"),

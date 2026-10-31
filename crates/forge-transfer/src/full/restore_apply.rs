@@ -1,12 +1,12 @@
 use std::path::Path;
 
+use forge_durable::{sync_dir, sync_parent};
 use forge_paths::credentials_key_path_in;
 use forge_storage::DATABASE_FILE_NAME;
 use forge_update::update_in_flight;
 
 use crate::bundle::durable_fs::{
-    copy_atomically, exists, remove_dir_all_if_present, remove_file_if_present, sync_dir,
-    sync_parent,
+    copy_atomically, exists, remove_dir_all_if_present, remove_file_if_present,
 };
 use crate::bundle::layout::ARCHIVE_ROOT;
 use crate::bundle::naming::fresh_pre_restore_dir;

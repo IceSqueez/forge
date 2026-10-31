@@ -4,11 +4,7 @@ use std::path::Path;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
-use crate::bundle::naming::sibling_with_extension;
-use crate::bundle::private_file::create_private;
 use crate::error::TransferError;
-
-const WRITING_EXTENSION: &str = "writing";
 
 pub(crate) fn exists(path: &Path) -> io::Result<bool> {
     match std::fs::symlink_metadata(path) {
@@ -32,65 +28,17 @@ pub(crate) fn remove_dir_all_if_present(path: &Path) -> io::Result<()> {
     }
 }
 
-pub(crate) fn sync_parent(path: &Path) -> io::Result<()> {
-    match path.parent() {
-        Some(parent) => sync_dir(parent),
-        None => Ok(()),
-    }
-}
-
-#[cfg(unix)]
-pub(crate) fn sync_dir(dir: &Path) -> io::Result<()> {
-    std::fs::File::open(dir)?.sync_all()
-}
-
-#[cfg(not(unix))]
-pub(crate) fn sync_dir(_dir: &Path) -> io::Result<()> {
-    Ok(())
-}
-
 pub(crate) fn copy_atomically(source: &Path, destination: &Path) -> io::Result<()> {
-    let mut source = std::fs::File::open(source)?;
-    replace_privately(destination, |target| {
-        io::copy(&mut source, target).map(drop)
-    })
-}
-
-fn replace_privately(
-    destination: &Path,
-    fill: impl FnOnce(&mut std::fs::File) -> io::Result<()>,
-) -> io::Result<()> {
-    if let Some(parent) = destination.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    let temp = sibling_with_extension(destination, WRITING_EXTENSION);
-    remove_file_if_present(&temp)?;
-    if let Err(e) = fill_then_rename(&temp, destination, fill) {
-        if let Err(error) = std::fs::remove_file(&temp) {
-            tracing::debug!(%error, path = %temp.display(), "temporary file could not be removed");
-        }
-        return Err(e);
-    }
-    sync_parent(destination)
-}
-
-fn fill_then_rename(
-    temp: &Path,
-    destination: &Path,
-    fill: impl FnOnce(&mut std::fs::File) -> io::Result<()>,
-) -> io::Result<()> {
-    let mut target = create_private(temp)?;
-    fill(&mut target)?;
-    target.sync_all()?;
-    drop(target);
-    std::fs::rename(temp, destination)
+    forge_durable::discard_leftovers_as_sole_writer(destination)?;
+    forge_durable::copy_atomically(source, destination)
 }
 
 pub(crate) fn write_record<T: Serialize>(path: &Path, record: &T) -> Result<(), TransferError> {
     let bytes = serde_json::to_vec_pretty(record).map_err(|e| TransferError::MalformedRecord {
         reason: e.to_string(),
     })?;
-    replace_privately(path, |file| io::Write::write_all(file, &bytes))?;
+    forge_durable::discard_leftovers_as_sole_writer(path)?;
+    forge_durable::write_atomically(path, &bytes)?;
     Ok(())
 }
 
@@ -109,5 +57,5 @@ pub(crate) fn read_record<T: DeserializeOwned>(path: &Path) -> Result<Option<T>,
 
 pub(crate) fn remove_record(path: &Path) -> Result<(), TransferError> {
     remove_file_if_present(path)?;
-    Ok(sync_parent(path)?)
+    Ok(forge_durable::sync_parent(path)?)
 }

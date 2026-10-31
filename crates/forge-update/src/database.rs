@@ -2,8 +2,8 @@ use std::fs::OpenOptions;
 use std::path::Path;
 
 use crate::UpdateError;
-use crate::atomic_file::sync_dir;
 use crate::record::remove_record;
+use forge_durable::sync_dir;
 
 const RESTORE_SUFFIX: &str = ".restore";
 

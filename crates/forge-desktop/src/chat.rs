@@ -857,6 +857,7 @@ impl ChatView {
             ConfirmTone::Destructive,
             palette,
         )
+        .esc_hint(tr!("widget_confirm_esc_to_cancel"))
         .on_cancel(
             "chat-ban-cancel",
             tr!("common_cancel"),

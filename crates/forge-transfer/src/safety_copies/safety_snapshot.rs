@@ -10,10 +10,10 @@ use forge_storage::DataProvider;
 use crate::bundle::category::BackupCategory;
 use crate::bundle::naming::{LEGACY_ARCHIVE_EXTENSION, backups_dir, partial_path};
 use crate::bundle::payload::{append_verified, collect_payload};
-use crate::bundle::private_file::create_private;
 use crate::error::TransferError;
 use crate::full::snapshot::with_database_snapshot;
 use crate::safety_copies::prune_after_safety_copy;
+use forge_durable::create_private;
 
 pub(crate) async fn write_safety_snapshot(
     provider: &Arc<dyn DataProvider>,

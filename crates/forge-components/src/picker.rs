@@ -13,11 +13,10 @@ use crate::icons::Icon;
 use crate::palette::ForgePalette;
 use crate::search_state::SearchState;
 use crate::text_input::{InputEvent, TextInput};
-use crate::tokens::{ESCAPE_KEY, Radius, body_family};
+use crate::tokens::{ENTER_KEY, ESCAPE_KEY, Radius, body_family};
 
 const SEARCH_THRESHOLD: usize = 10;
 const MESSAGE_FONT: Pixels = FONT_ROW;
-const ENTER_KEY: &str = "enter";
 
 pub const PICKER_CONTEXT: &str = "ForgePicker";
 

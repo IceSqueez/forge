@@ -137,6 +137,7 @@ where
         ConfirmTone::Warning,
         palette,
     )
+    .esc_hint(tr!("widget_confirm_esc_to_cancel"))
     .on_cancel(
         "shell-unsaved-leave-cancel",
         tr!("shell_unsaved_leave_cancel"),

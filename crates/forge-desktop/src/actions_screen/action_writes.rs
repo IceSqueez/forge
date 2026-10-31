@@ -22,6 +22,12 @@ pub(super) enum ActionWrite {
         path: Vec<nav::NavFrame>,
         chain: Vec<nav::ChainItem>,
     },
+    InsertStep {
+        path: Vec<nav::NavFrame>,
+        owners: Vec<String>,
+        index: usize,
+        item: nav::ChainItem,
+    },
     Duplicate {
         new_id: ActionId,
         copy_suffix: String,
@@ -36,7 +42,11 @@ impl ActionWrite {
     fn is_edit(&self) -> bool {
         matches!(
             self,
-            Self::Settings(_) | Self::SetEnabled(_) | Self::Rename(_) | Self::SetChain { .. }
+            Self::Settings(_)
+                | Self::SetEnabled(_)
+                | Self::Rename(_)
+                | Self::SetChain { .. }
+                | Self::InsertStep { .. }
         )
     }
 }
@@ -105,6 +115,12 @@ pub(super) fn apply_action_edit(action: &mut Action, write: &ActionWrite) -> boo
         ActionWrite::SetChain { path, chain } => {
             nav::set_chain(&mut action.sub_actions, path, chain)
         }
+        ActionWrite::InsertStep {
+            path,
+            owners,
+            index,
+            item,
+        } => nav::insert_item(&mut action.sub_actions, path, owners, *index, item),
         ActionWrite::Create(_)
         | ActionWrite::Duplicate { .. }
         | ActionWrite::Archive { .. }
@@ -153,7 +169,8 @@ async fn perform_operation(
         ActionWrite::Settings(_)
         | ActionWrite::SetEnabled(_)
         | ActionWrite::Rename(_)
-        | ActionWrite::SetChain { .. } => Ok(None),
+        | ActionWrite::SetChain { .. }
+        | ActionWrite::InsertStep { .. } => Ok(None),
     }
 }
 
@@ -251,12 +268,45 @@ async fn perform_writes(
 }
 
 impl ScreenActionsView {
+    fn settled_against_known_action(
+        &self,
+        id: ActionId,
+        write: ActionWrite,
+    ) -> Option<ActionWrite> {
+        let ActionWrite::InsertStep {
+            path,
+            owners,
+            index,
+            item,
+        } = &write
+        else {
+            return Some(write);
+        };
+        let shown = self
+            .detail
+            .as_ref()
+            .filter(|detail| detail.action.id == id)
+            .map(|detail| &detail.action);
+        let Some(known) = shown.or_else(|| self.latest_written_action(id)) else {
+            return Some(write);
+        };
+        let mut steps = known.sub_actions.clone();
+        nav::insert_item(&mut steps, path, owners, *index, item).then(|| ActionWrite::SetChain {
+            path: path.clone(),
+            chain: nav::resolve_chain(&steps, path),
+        })
+    }
+
     pub(super) fn write_action(
         &mut self,
         id: ActionId,
         write: ActionWrite,
         cx: &mut Context<Self>,
     ) {
+        let Some(write) = self.settled_against_known_action(id, write) else {
+            self.on_repo_error(&RepoFailure::steps_gone(), cx);
+            return;
+        };
         let mut shown: Option<Action> = None;
         if let Some(detail) = self.detail.as_mut()
             && detail.action.id == id
@@ -355,7 +405,7 @@ impl ScreenActionsView {
 }
 
 #[cfg(test)]
-mod tests {
+pub(in crate::actions_screen) mod tests {
     use std::collections::HashSet;
     use std::sync::Mutex;
 
@@ -369,9 +419,9 @@ mod tests {
     use super::*;
     use crate::test_support::{action_running, error_toasts, pump, pump_until, runtime, step};
 
-    const FIRST: &str = "test.first";
-    const SECOND: &str = "test.second";
-    const THIRD: &str = "test.third";
+    pub(in crate::actions_screen) const FIRST: &str = "test.first";
+    pub(in crate::actions_screen) const SECOND: &str = "test.second";
+    pub(in crate::actions_screen) const THIRD: &str = "test.third";
     const ALPHA: &str = "Alpha";
     const BRAVO: &str = "Bravo";
     const RENAMED: &str = "Renamed";
@@ -383,7 +433,7 @@ mod tests {
         vec![step(FIRST, true), step(SECOND, true), step(THIRD, true)]
     }
 
-    fn kinds(steps: &[SubActionStep]) -> Vec<String> {
+    pub(in crate::actions_screen) fn kinds(steps: &[SubActionStep]) -> Vec<String> {
         steps.iter().map(|step| step.kind_id.clone()).collect()
     }
 
@@ -521,7 +571,7 @@ mod tests {
     }
 
     #[derive(Default)]
-    struct MemActions {
+    pub(in crate::actions_screen) struct MemActions {
         actions: Mutex<HashMap<ActionId, Action>>,
         archived: Mutex<HashSet<ActionId>>,
         failing_saves: Mutex<HashMap<ActionId, usize>>,
@@ -531,7 +581,7 @@ mod tests {
     }
 
     impl MemActions {
-        fn stored(&self, id: ActionId) -> Action {
+        pub(in crate::actions_screen) fn stored(&self, id: ActionId) -> Action {
             self.actions.lock().unwrap().get(&id).cloned().unwrap()
         }
 
@@ -615,16 +665,16 @@ mod tests {
         }
     }
 
-    struct Screen {
-        view: Entity<ScreenActionsView>,
-        store: Arc<MemActions>,
-        alpha: ActionId,
-        bravo: ActionId,
-        rt: tokio::runtime::Runtime,
+    pub(in crate::actions_screen) struct Screen {
+        pub(in crate::actions_screen) view: Entity<ScreenActionsView>,
+        pub(in crate::actions_screen) store: Arc<MemActions>,
+        pub(in crate::actions_screen) alpha: ActionId,
+        pub(in crate::actions_screen) bravo: ActionId,
+        pub(in crate::actions_screen) rt: tokio::runtime::Runtime,
     }
 
     impl Screen {
-        fn open(cx: &mut TestAppContext) -> Self {
+        pub(in crate::actions_screen) fn open(cx: &mut TestAppContext) -> Self {
             crate::i18n::install_language(forge_storage::Language::En);
             cx.update(|cx| cx.set_global(forge_components::Toasts::new()));
             let rt = runtime();
@@ -657,25 +707,30 @@ mod tests {
             screen
         }
 
-        fn settle(&self, cx: &mut TestAppContext) {
+        pub(in crate::actions_screen) fn settle(&self, cx: &mut TestAppContext) {
             for _ in 0..SETTLE_ROUNDS {
                 pump(&self.rt);
                 cx.run_until_parked();
             }
         }
 
-        fn write(&self, cx: &mut TestAppContext, id: ActionId, write: ActionWrite) {
+        pub(in crate::actions_screen) fn write(
+            &self,
+            cx: &mut TestAppContext,
+            id: ActionId,
+            write: ActionWrite,
+        ) {
             self.view
                 .update(cx, |view, cx| view.write_action(id, write, cx));
         }
 
-        fn reorder_shown(&self, cx: &mut TestAppContext) {
+        pub(in crate::actions_screen) fn reorder_shown(&self, cx: &mut TestAppContext) {
             self.view.update(cx, |view, cx| {
                 view.persist_chain_mutation(|chain| chain.rotate_left(1), cx)
             });
         }
 
-        fn shown(&self, cx: &mut TestAppContext) -> Action {
+        pub(in crate::actions_screen) fn shown(&self, cx: &mut TestAppContext) -> Action {
             self.view
                 .read_with(cx, |view, _| view.detail.as_ref().unwrap().action.clone())
         }

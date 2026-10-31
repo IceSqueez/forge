@@ -1130,6 +1130,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "forge-durable"
+version = "0.6.3"
+
+[[package]]
 name = "forge-emulator"
 version = "0.0.0"
 dependencies = [
@@ -1250,6 +1254,7 @@ dependencies = [
 name = "forge-overlay"
 version = "0.6.3"
 dependencies = [
+ "forge-durable",
  "forge-registry",
  "forge-types",
  "serde",

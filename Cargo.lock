@@ -2775,6 +2775,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "forge-durable"
+version = "0.6.3"
+dependencies = [
+ "tempfile",
+]
+
+[[package]]
 name = "forge-events"
 version = "0.6.3"
 dependencies = [
@@ -2900,6 +2907,7 @@ dependencies = [
 name = "forge-overlay"
 version = "0.6.3"
 dependencies = [
+ "forge-durable",
  "forge-platform-kick",
  "forge-platform-twitch",
  "forge-platform-youtube",
@@ -3236,6 +3244,7 @@ dependencies = [
  "age",
  "base64 0.23.1",
  "flate2",
+ "forge-durable",
  "forge-overlay",
  "forge-paths",
  "forge-registry",
@@ -3377,6 +3386,7 @@ version = "0.6.3"
 dependencies = [
  "async-trait",
  "flate2",
+ "forge-durable",
  "forge-net",
  "minisign-verify",
  "serde",

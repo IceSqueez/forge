@@ -1,8 +1,17 @@
 use super::*;
 use forge_components::{
-    ForgePalette, Icon, MenuPlacement, Spacing, menu_button, menu_divider, menu_item, spacing, tr,
+    ForgePalette, Icon, MenuPlacement, PushToast, Spacing, ToastAction, ToastKind,
+    UNDO_TOAST_DURATION, menu_button, menu_divider, menu_item, spacing, tr,
 };
-use gpui::{AnyElement, ClickEvent, Context, SharedString, div};
+use gpui::{AnyElement, App, ClickEvent, Context, SharedString, div};
+
+struct RemovedStep {
+    action: ActionId,
+    path: Vec<nav::NavFrame>,
+    owners: Vec<String>,
+    index: usize,
+    item: nav::ChainItem,
+}
 
 impl ScreenActionsView {
     fn move_step_up(&mut self, i: usize, cx: &mut Context<Self>) {
@@ -78,11 +87,64 @@ impl ScreenActionsView {
 
     fn remove_step(&mut self, i: usize, cx: &mut Context<Self>) {
         self.step_menu_open = None;
+        let removed = self.detail.as_ref().and_then(|detail| {
+            let chain = nav::resolve_chain(&detail.action.sub_actions, &self.nav_path);
+            Some(RemovedStep {
+                action: detail.action.id,
+                path: self.nav_path.clone(),
+                owners: nav::owner_kinds(&detail.action.sub_actions, &self.nav_path)?,
+                index: i,
+                item: chain.get(i)?.clone(),
+            })
+        });
         self.persist_chain_mutation(
             move |chain| {
                 if i < chain.len() {
                     chain.remove(i);
                 }
+            },
+            cx,
+        );
+        if let Some(removed) = removed {
+            self.raise_step_undo_toast(removed, cx);
+        }
+        cx.notify();
+    }
+
+    fn raise_step_undo_toast(&self, removed: RemovedStep, cx: &mut Context<Self>) {
+        let view = cx.entity();
+        let removed = std::cell::Cell::new(Some(removed));
+        cx.push_toast_full(
+            ToastKind::Undo,
+            tr!("actions_step_removed_toast"),
+            None,
+            Some(ToastAction::new(
+                tr!("common_undo"),
+                move |_window, app: &mut App| {
+                    if let Some(removed) = removed.take() {
+                        view.update(app, |this, cx| this.restore_step(removed, cx));
+                    }
+                },
+            )),
+            UNDO_TOAST_DURATION,
+        );
+    }
+
+    fn restore_step(&mut self, removed: RemovedStep, cx: &mut Context<Self>) {
+        let RemovedStep {
+            action,
+            path,
+            owners,
+            index,
+            item,
+        } = removed;
+        self.write_action(
+            action,
+            action_writes::ActionWrite::InsertStep {
+                path,
+                owners,
+                index,
+                item,
             },
             cx,
         );
@@ -225,5 +287,217 @@ impl ScreenActionsView {
             .child(move_down)
             .child(menu)
             .into_any_element()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use forge_components::{ToastAction, Toasts};
+    use gpui::TestAppContext;
+
+    use super::super::super::action_writes::tests::{FIRST, SECOND, Screen, THIRD, kinds};
+    use super::*;
+    use crate::test_support::{blank_window, press_undo, step};
+
+    const INNER_KEY: &str = "then";
+
+    fn stored(screen: &Screen, id: ActionId) -> Vec<String> {
+        kinds(&screen.store.stored(id).sub_actions)
+    }
+
+    fn remove(screen: &Screen, cx: &mut TestAppContext, index: usize) {
+        screen
+            .view
+            .update(cx, |view, cx| view.remove_step(index, cx));
+        screen.settle(cx);
+    }
+
+    fn undo(screen: &Screen, cx: &mut TestAppContext) {
+        press_undo(cx);
+        screen.settle(cx);
+    }
+
+    fn undo_toasts(cx: &mut TestAppContext) -> usize {
+        cx.update(|cx| {
+            cx.global::<Toasts>()
+                .items()
+                .iter()
+                .filter(|toast| toast.kind == ToastKind::Undo)
+                .count()
+        })
+    }
+
+    fn take_undo(cx: &mut TestAppContext) -> ToastAction {
+        cx.update(|cx| {
+            let toasts = cx.global_mut::<Toasts>();
+            let id = toasts.items().first().expect("an undo toast").id;
+            toasts
+                .take(id)
+                .and_then(|toast| toast.action)
+                .expect("an undo action")
+        })
+    }
+
+    fn expected(steps: &[&str]) -> Vec<String> {
+        steps.iter().map(|kind| (*kind).to_owned()).collect()
+    }
+
+    #[gpui::test]
+    fn undo_puts_a_removed_step_back_where_it_was(cx: &mut TestAppContext) {
+        let screen = Screen::open(cx);
+        blank_window(cx);
+        remove(&screen, cx, 1);
+        assert_eq!(stored(&screen, screen.alpha), expected(&[FIRST, THIRD]));
+
+        undo(&screen, cx);
+
+        assert_eq!(
+            stored(&screen, screen.alpha),
+            expected(&[FIRST, SECOND, THIRD])
+        );
+    }
+
+    #[gpui::test]
+    fn undo_run_twice_restores_the_step_once(cx: &mut TestAppContext) {
+        let screen = Screen::open(cx);
+        remove(&screen, cx, 0);
+        let undo = take_undo(cx);
+        let vcx = cx.add_empty_window();
+
+        for _ in 0..2 {
+            vcx.update(|window, cx| (undo.on_action)(window, cx));
+            screen.settle(vcx);
+        }
+
+        assert_eq!(
+            stored(&screen, screen.alpha),
+            expected(&[FIRST, SECOND, THIRD])
+        );
+    }
+
+    #[gpui::test]
+    fn undo_inserts_into_a_chain_that_changed_after_the_removal(cx: &mut TestAppContext) {
+        let screen = Screen::open(cx);
+        blank_window(cx);
+        remove(&screen, cx, 1);
+        screen.reorder_shown(cx);
+        screen.settle(cx);
+
+        undo(&screen, cx);
+
+        assert_eq!(
+            stored(&screen, screen.alpha),
+            expected(&[THIRD, SECOND, FIRST])
+        );
+    }
+
+    #[gpui::test]
+    fn undo_into_a_chain_shorter_than_the_old_position_appends(cx: &mut TestAppContext) {
+        let screen = Screen::open(cx);
+        remove(&screen, cx, 2);
+        let older_undo = take_undo(cx);
+        remove(&screen, cx, 0);
+        remove(&screen, cx, 0);
+
+        let vcx = cx.add_empty_window();
+        vcx.update(|window, cx| (older_undo.on_action)(window, cx));
+        screen.settle(vcx);
+
+        assert_eq!(stored(&screen, screen.alpha), expected(&[THIRD]));
+    }
+
+    #[gpui::test]
+    fn undo_after_moving_to_another_action_restores_the_first_and_leaves_the_second(
+        cx: &mut TestAppContext,
+    ) {
+        let screen = Screen::open(cx);
+        blank_window(cx);
+        remove(&screen, cx, 1);
+        let bravo = screen.bravo;
+        screen.view.update(cx, |view, cx| view.select(bravo, cx));
+        screen.settle(cx);
+
+        undo(&screen, cx);
+
+        assert_eq!(
+            (
+                stored(&screen, screen.alpha),
+                stored(&screen, screen.bravo),
+                screen.shown(cx).id
+            ),
+            (
+                expected(&[FIRST, SECOND, THIRD]),
+                expected(&[FIRST, SECOND, THIRD]),
+                bravo
+            )
+        );
+    }
+
+    #[gpui::test]
+    fn undo_after_moving_away_keeps_edits_made_after_the_removal(cx: &mut TestAppContext) {
+        let screen = Screen::open(cx);
+        blank_window(cx);
+        remove(&screen, cx, 1);
+        screen.reorder_shown(cx);
+        screen.settle(cx);
+        let bravo = screen.bravo;
+        screen.view.update(cx, |view, cx| view.select(bravo, cx));
+        screen.settle(cx);
+
+        undo(&screen, cx);
+
+        assert_eq!(
+            stored(&screen, screen.alpha),
+            expected(&[THIRD, SECOND, FIRST])
+        );
+    }
+
+    #[gpui::test]
+    fn undo_restores_a_nested_step_after_navigating_back_to_the_root(cx: &mut TestAppContext) {
+        let screen = Screen::open(cx);
+        blank_window(cx);
+        let path = vec![nav::NavFrame {
+            step_index: 0,
+            chain_key: INNER_KEY.to_owned(),
+            case_index: None,
+        }];
+        let inner = [SECOND, THIRD]
+            .map(|kind| nav::ChainItem::fresh(step(kind, true)))
+            .to_vec();
+        screen.write(
+            cx,
+            screen.alpha,
+            action_writes::ActionWrite::SetChain {
+                path: path.clone(),
+                chain: inner,
+            },
+        );
+        screen.settle(cx);
+        let nested = path.clone();
+        screen.view.update(cx, |view, _| view.nav_path = nested);
+        remove(&screen, cx, 0);
+        screen.view.update(cx, |view, _| view.nav_path = Vec::new());
+
+        undo(&screen, cx);
+
+        let chain = nav::resolve_chain(&screen.store.stored(screen.alpha).sub_actions, &path);
+        let restored: Vec<&str> = chain
+            .iter()
+            .filter_map(nav::ChainItem::step)
+            .map(|step| step.kind_id.as_str())
+            .collect();
+        assert_eq!(restored, [SECOND, THIRD]);
+    }
+
+    #[gpui::test]
+    fn removing_past_the_end_of_the_chain_offers_no_undo(cx: &mut TestAppContext) {
+        let screen = Screen::open(cx);
+
+        remove(&screen, cx, 3);
+
+        assert_eq!(
+            (undo_toasts(cx), stored(&screen, screen.alpha)),
+            (0, expected(&[FIRST, SECOND, THIRD]))
+        );
     }
 }

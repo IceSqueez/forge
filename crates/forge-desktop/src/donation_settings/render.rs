@@ -364,6 +364,7 @@ pub(crate) fn remove_confirm(
         palette,
     )
     .item_name(name)
+    .esc_hint(tr!("widget_confirm_esc_to_cancel"))
     .on_cancel(
         "donation-token-remove-cancel",
         tr!("widget_confirm_cancel"),

@@ -76,7 +76,7 @@ pub use cards::{
 pub use checkbox::{Checkbox, checkbox};
 pub use chip::{Chip, ChipGlyph, chip};
 pub use code_editor::{CodeEditor, SaveCode, bind_code_editor_keys};
-pub use confirm::{ConfirmModal, ConfirmTone, confirm_modal};
+pub use confirm::{ConfirmModal, ConfirmTone, bind_confirm_keys, confirm_modal};
 pub use confirm_state::Confirm;
 pub use data::{
     Column, ColumnWidth, DataRow, DataTable, HeaderAlign, VirtualTable, column, data_table,

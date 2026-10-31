@@ -4,7 +4,6 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 
 use crate::UpdateError;
-use crate::atomic_file::write_atomically_blocking;
 
 pub(crate) fn read_record<T: DeserializeOwned>(path: &Path) -> Result<Option<T>, UpdateError> {
     let bytes = match std::fs::read(path) {
@@ -20,7 +19,7 @@ pub(crate) fn read_record<T: DeserializeOwned>(path: &Path) -> Result<Option<T>,
 pub(crate) fn write_record<T: Serialize>(path: &Path, record: &T) -> Result<(), UpdateError> {
     let bytes = serde_json::to_vec_pretty(record)
         .map_err(|error| UpdateError::MalformedRecord(error.to_string()))?;
-    write_atomically_blocking(path, &bytes)
+    Ok(forge_durable::write_atomically(path, &bytes)?)
 }
 
 pub(crate) fn remove_record(path: &Path) -> Result<(), UpdateError> {

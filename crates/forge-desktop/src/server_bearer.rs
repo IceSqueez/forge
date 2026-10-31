@@ -46,6 +46,7 @@ pub(crate) fn regenerate_confirm<V: 'static>(
         ConfirmTone::Destructive,
         palette,
     )
+    .esc_hint(tr!("widget_confirm_esc_to_cancel"))
     .on_cancel(
         "server-token-regen-cancel",
         tr!("common_cancel"),

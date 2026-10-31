@@ -488,6 +488,7 @@ impl CollectionManager {
             palette,
         )
         .item_name(title)
+        .esc_hint(tr!("widget_confirm_esc_to_cancel"))
         .on_cancel(
             "collection-delete-cancel",
             tr!("widget_confirm_cancel"),

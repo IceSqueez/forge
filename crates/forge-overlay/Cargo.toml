@@ -11,6 +11,7 @@ rust-version.workspace = true
 workspace = true
 
 [dependencies]
+forge-durable = { path = "../forge-durable" }
 forge-types = { path = "../forge-types" }
 forge-registry = { path = "../forge-registry" }
 serde = { workspace = true }

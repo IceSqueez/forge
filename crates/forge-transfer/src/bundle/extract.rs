@@ -5,8 +5,8 @@ use std::path::{Path, PathBuf};
 use crate::bundle::digest::DigestingReader;
 use crate::bundle::layout::{ArchiveScope, EntryShape, confined_relative_path, entry_name};
 use crate::bundle::manifest::ContentEntry;
-use crate::bundle::private_file::create_private;
 use crate::error::TransferError;
+use forge_durable::create_private;
 
 pub(crate) struct Extractor {
     root: PathBuf,

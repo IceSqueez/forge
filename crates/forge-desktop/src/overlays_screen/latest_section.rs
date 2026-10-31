@@ -425,6 +425,7 @@ impl OverlaysView {
             palette,
         )
         .item_name(slot)
+        .esc_hint(tr!("widget_confirm_esc_to_cancel"))
         .on_cancel(
             "overlays-latest-reset-cancel",
             tr!("common_cancel"),

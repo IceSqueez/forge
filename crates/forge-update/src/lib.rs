@@ -1,6 +1,5 @@
 mod apply;
 mod apply_state;
-mod atomic_file;
 mod check;
 mod database;
 mod digest;

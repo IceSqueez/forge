@@ -20,7 +20,7 @@ use gpui::{
     Window, div, prelude::*, px,
 };
 
-use crate::async_bridge;
+use crate::async_bridge::{self, Loadable};
 use crate::midi_signal::{
     MIDI_CHANNELS, MidiSignal, kind_label, selector_key, shown_channel, stored_channel,
 };
@@ -92,12 +92,6 @@ struct ActionChoice {
     name: String,
 }
 
-enum ActionsState {
-    Loading,
-    Ready(Vec<ActionChoice>),
-    Failed(String),
-}
-
 enum OpenPanel {
     Type,
     Device,
@@ -138,7 +132,7 @@ pub struct MidiMappingModal {
     listening: bool,
     open_panel: Option<OpenPanel>,
     filter: SearchState,
-    actions: ActionsState,
+    actions: Loadable<Vec<ActionChoice>>,
     selected_action: Option<ActionId>,
     focus_pending: bool,
     _subs: Vec<Subscription>,
@@ -214,7 +208,7 @@ impl MidiMappingModal {
             listening: false,
             open_panel: None,
             filter,
-            actions: ActionsState::Loading,
+            actions: Loadable::Loading,
             selected_action: linked_action,
             focus_pending: true,
             _subs: subs,
@@ -240,9 +234,9 @@ impl MidiMappingModal {
         self.actions = match result {
             Ok(mut actions) => {
                 actions.sort_by_key(|a| a.name.to_lowercase());
-                ActionsState::Ready(actions)
+                Loadable::Loaded(actions)
             }
-            Err(message) => ActionsState::Failed(message.text()),
+            Err(failure) => Loadable::Failed(failure),
         };
         cx.notify();
     }
@@ -665,18 +659,21 @@ impl MidiMappingModal {
             );
 
         let list = match &self.actions {
-            ActionsState::Loading => {
+            Loadable::Loading => {
                 self.list_message(tr!("midi_modal_actions_loading"), palette, density)
             }
-            ActionsState::Failed(message) => self.list_message(
-                tr!("midi_toast_error", message = message.as_str()),
-                palette,
-                density,
-            ),
-            ActionsState::Ready(actions) if actions.is_empty() => {
+            Loadable::Failed(failure) => {
+                let reason = failure.text();
+                self.list_message(
+                    tr!("midi_toast_error", message = reason.as_str()),
+                    palette,
+                    density,
+                )
+            }
+            Loadable::Loaded(actions) if actions.is_empty() => {
                 self.list_message(tr!("midi_modal_actions_none"), palette, density)
             }
-            ActionsState::Ready(actions) => {
+            Loadable::Loaded(actions) => {
                 let matched: Vec<&ActionChoice> = actions
                     .iter()
                     .filter(|choice| self.filter.matches(&choice.name))
@@ -913,7 +910,15 @@ impl Render for MidiMappingModal {
 
 #[cfg(test)]
 mod tests {
+    use forge_storage::action::MockActionRepo;
+    use forge_storage::{Language, StorageError};
+    use gpui::{Entity, TestAppContext};
+
     use super::*;
+    use crate::i18n::install_language;
+    use crate::test_support::{
+        action_running, install_presentation, pump, runtime, shown_in_english,
+    };
 
     #[test]
     fn channel_entry_reads_blank_as_any_and_keeps_only_the_midi_channel_range() {
@@ -931,5 +936,97 @@ mod tests {
         ] {
             assert_eq!(ChannelEntry::parse(raw), expected, "{raw:?}");
         }
+    }
+
+    fn outage() -> StorageError {
+        StorageError::Connection {
+            reason: "disk gone".to_owned(),
+        }
+    }
+
+    fn opened(
+        cx: &mut TestAppContext,
+        rt: &tokio::runtime::Runtime,
+        listed: fn() -> Result<Vec<forge_types::Action>, StorageError>,
+    ) -> Entity<MidiMappingModal> {
+        install_language(Language::En);
+        install_presentation(cx);
+        let mut repo = MockActionRepo::new();
+        repo.expect_list().returning(listed);
+        cx.update(|cx| {
+            cx.new(|cx| {
+                MidiMappingModal::new(
+                    MappingModalLaunch {
+                        instance_id: None,
+                        signal: MidiSignal {
+                            kind_id: String::new(),
+                            selector: None,
+                            channel: None,
+                            device: None,
+                        },
+                        linked_action: None,
+                        devices: Vec::new(),
+                        input_enabled: true,
+                    },
+                    Arc::new(repo),
+                    rt.handle().clone(),
+                    cx,
+                )
+            })
+        })
+    }
+
+    fn settled(cx: &mut TestAppContext, rt: &tokio::runtime::Runtime) {
+        pump(rt);
+        cx.run_until_parked();
+    }
+
+    #[gpui::test]
+    fn the_list_is_loading_until_the_repository_answers(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let modal = opened(cx, &rt, || Ok(Vec::new()));
+
+        let before = modal.read_with(cx, |modal, _| matches!(modal.actions, Loadable::Loading));
+        settled(cx, &rt);
+        let after = modal.read_with(
+            cx,
+            |modal, _| matches!(&modal.actions, Loadable::Loaded(listed) if listed.is_empty()),
+        );
+
+        assert_eq!((before, after), (true, true));
+    }
+
+    #[gpui::test]
+    fn loaded_actions_are_listed_ignoring_case(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let modal = opened(cx, &rt, || {
+            Ok(["beta", "Alpha", "Gamma"]
+                .map(|name| action_running(name, Vec::new()))
+                .to_vec())
+        });
+        settled(cx, &rt);
+
+        let names: Vec<String> = modal.read_with(cx, |modal, _| {
+            modal
+                .actions
+                .loaded()
+                .expect("the list loaded")
+                .iter()
+                .map(|choice| choice.name.clone())
+                .collect()
+        });
+
+        assert_eq!(names, ["Alpha", "beta", "Gamma"]);
+    }
+
+    #[gpui::test]
+    fn a_repository_failure_keeps_the_text_shown_to_the_user(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let modal = opened(cx, &rt, || Err(outage()));
+        settled(cx, &rt);
+
+        let failure = modal.read_with(cx, |modal, _| modal.actions.failure());
+
+        assert_eq!(failure, Some(shown_in_english(outage())));
     }
 }

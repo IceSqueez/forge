@@ -138,6 +138,7 @@ pub fn conflict_prompt<V: 'static>(
         palette,
     )
     .item_name(item_name)
+    .esc_hint(tr!("widget_confirm_esc_to_cancel"))
     .on_cancel(
         SharedString::from(format!("{scope}-conflict-cancel")),
         tr!("common_cancel"),

@@ -171,7 +171,7 @@ mod tests {
     use super::*;
     use crate::helix::HelixError;
     use crate::sub_actions::test_support::{
-        MockTransport, SELF_USER_ID, assert_request_refused, make_ctx,
+        MockTransport, SELF_USER_ID, TOKEN_SENTINEL, assert_request_refused, make_ctx,
     };
     use forge_types::Variant;
     use std::collections::BTreeMap;
@@ -295,7 +295,7 @@ mod tests {
     async fn helix_failure_maps_to_failed_without_token() {
         let (_transport, runner) = lock_runner_with(Err(HelixError::Http {
             status: 401,
-            body: "unauthorized".to_owned(),
+            body: format!("unauthorized {TOKEN_SENTINEL}"),
         }));
 
         let (telemetry, _) = runner

@@ -14,8 +14,8 @@ use forge_runtime::{
 use forge_storage::DataProvider;
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::{
-    Action, ActionId, ArgStack, ExecutionMode, PermissionRung, Queue, QueueId, SubActionOutcome,
-    SubActionStep, SubActionTelemetry, TriggerInstance, TriggerInstanceId, Variant,
+    Action, ActionId, ArgStack, PermissionRung, Queue, QueueId, SubActionOutcome, SubActionStep,
+    SubActionTelemetry, TriggerInstance, TriggerInstanceId, Variant,
 };
 use serde_json::json;
 use tempfile::TempDir;
@@ -217,17 +217,11 @@ async fn sub_action_runner_sees_merged_default_and_override() {
     let a_id = ActionId::new();
     let captured: Arc<Mutex<Option<BTreeMap<String, Variant>>>> = Arc::new(Mutex::new(None));
 
-    let action = Action {
-        id: a_id,
-        name: "recording-action".to_string(),
-        group: None,
-        queue_id: q_id,
-        enabled: true,
-        concurrent: false,
-        bypass_pause: false,
-        execution_mode: ExecutionMode::Sequential,
-        description: None,
-        sub_actions: vec![SubActionStep {
+    let action = common::sequential_action(
+        a_id,
+        "recording-action",
+        q_id,
+        vec![SubActionStep {
             kind_id: "test.record".to_owned(),
             config: {
                 let mut c = BTreeMap::new();
@@ -239,7 +233,7 @@ async fn sub_action_runner_sees_merged_default_and_override() {
             condition: None,
             label: None,
         }],
-    };
+    );
 
     dp.queue_repo().save(&make_queue(q_id)).await.unwrap();
     dp.action_repo().save(&action).await.unwrap();

@@ -17,8 +17,8 @@ use forge_runtime::{CANCEL_SCHEDULED_KIND_ID, SCHEDULE_ACTION_KIND_ID};
 use forge_runtime::{MAX_SCHEDULED_ARGS_BYTES, MIN_LATE_TOLERANCE};
 use forge_storage::{DataProvider, MissedRunPolicy, ScheduledRun};
 use forge_types::{
-    Action, ActionId, ArgStack, EventId, ExecutionContext, ExecutionMode, Queue, QueueId,
-    SubActionConfig, SubActionOutcome, SubActionStep, Variant,
+    Action, ActionId, ArgStack, EventId, ExecutionContext, Queue, QueueId, SubActionConfig,
+    SubActionOutcome, SubActionStep, Variant,
 };
 use tempfile::TempDir;
 use time::OffsetDateTime;
@@ -124,16 +124,8 @@ impl Harness {
 
     async fn action(&self, concurrent: bool, sub_actions: Vec<SubActionStep>) -> Action {
         let action = Action {
-            id: ActionId::new(),
-            name: "scheduling".to_owned(),
-            group: None,
-            queue_id: self.queue_id,
-            enabled: true,
             concurrent,
-            bypass_pause: false,
-            execution_mode: ExecutionMode::Sequential,
-            description: None,
-            sub_actions,
+            ..common::sequential_action(ActionId::new(), "scheduling", self.queue_id, sub_actions)
         };
         self.dp.action_repo().save(&action).await.unwrap();
         action

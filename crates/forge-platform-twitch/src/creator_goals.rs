@@ -65,7 +65,7 @@ pub(crate) async fn publish_current_goals(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Mutex;
+    use crate::bot_account::test_support::RecordingBus;
 
     use serde_json::{Value, json};
 
@@ -74,23 +74,6 @@ mod tests {
 
     const BROADCASTER: &str = "4242";
     const UNAVAILABLE: u16 = reqwest::StatusCode::SERVICE_UNAVAILABLE.as_u16();
-
-    #[derive(Default)]
-    struct RecordingBus {
-        events: Mutex<Vec<Event>>,
-    }
-
-    impl EventPublisher for RecordingBus {
-        fn publish(&self, event: Event) {
-            self.events.lock().unwrap().push(event);
-        }
-    }
-
-    impl RecordingBus {
-        fn taken(&self) -> Vec<Event> {
-            std::mem::take(&mut *self.events.lock().unwrap())
-        }
-    }
 
     fn helix_row(id: &str, current: i64) -> Value {
         json!({

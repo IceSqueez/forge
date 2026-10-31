@@ -115,7 +115,8 @@ mod tests {
     use super::*;
     use crate::helix::HelixError;
     use crate::sub_actions::test_support::{
-        MockTransport, SELF_USER_ID, assert_request_refused, make_ctx, users_fixture,
+        MockTransport, SELF_USER_ID, TOKEN_SENTINEL, assert_request_refused, make_ctx,
+        users_fixture,
     };
     use forge_types::Variant;
     use std::collections::BTreeMap;
@@ -256,7 +257,7 @@ mod tests {
     async fn resolve_failure_skips_the_invite_call() {
         let (transport, runner) = runner_with(vec![Err(HelixError::Http {
             status: 404,
-            body: "user not found".to_owned(),
+            body: format!("user not found {TOKEN_SENTINEL}"),
         })]);
         let stack = stack_with_session("SESSION-XYZ");
 
@@ -281,7 +282,7 @@ mod tests {
             users_fixture("55"),
             Err(HelixError::Http {
                 status: 429,
-                body: "invite ratelimited".to_owned(),
+                body: format!("invite ratelimited {TOKEN_SENTINEL}"),
             }),
         ]);
         let stack = stack_with_session("SESSION-XYZ");

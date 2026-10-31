@@ -135,8 +135,8 @@ mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     use super::*;
-    use crate::endpoints_test_support::{channel_info_at, gateway_waiting_at_most};
     use crate::gateway::{KICK_CHANNEL_INFO_BUDGET_CAPACITY, KICK_CHANNEL_INFO_BUDGET_WINDOW};
+    use crate::test_support::{channel_info_at, gateway_waiting_at_most};
 
     const SLUG: &str = "streamer_slug";
     const SLUG_PATH: &str = "/channels/streamer_slug";

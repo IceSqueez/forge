@@ -112,14 +112,14 @@ impl SubActionRunner for LookupStreamStatsRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sub_actions::test_support::{make_ctx, token_source};
+    use crate::test_support::{make_ctx, token_source};
     use forge_types::SubActionOutcome;
     use std::collections::BTreeMap;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     fn runner_on(server: &MockServer) -> LookupStreamStatsRunner {
-        let channel = KickChannel::new(crate::endpoints_test_support::api_at(&server.uri()));
+        let channel = KickChannel::new(crate::test_support::api_at(&server.uri()));
         LookupStreamStatsRunner::new(Arc::new(channel), token_source())
     }
 

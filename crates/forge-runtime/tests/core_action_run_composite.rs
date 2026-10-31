@@ -109,17 +109,11 @@ impl ChainExecutor for MockChainExecutor {
 }
 
 fn target_with_steps(kinds: &[&str]) -> Action {
-    Action {
-        id: ActionId::new(),
-        name: "target".to_owned(),
-        group: None,
-        queue_id: QueueId::new(),
-        enabled: true,
-        concurrent: false,
-        bypass_pause: false,
-        execution_mode: ExecutionMode::Sequential,
-        description: None,
-        sub_actions: kinds
+    common::sequential_action(
+        ActionId::new(),
+        "target",
+        QueueId::new(),
+        kinds
             .iter()
             .map(|k| SubActionStep {
                 kind_id: (*k).to_owned(),
@@ -130,7 +124,7 @@ fn target_with_steps(kinds: &[&str]) -> Action {
                 label: None,
             })
             .collect(),
-    }
+    )
 }
 
 fn cfg(action_id: &str) -> SubActionConfig {

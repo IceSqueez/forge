@@ -16,7 +16,7 @@ use forge_runtime::{
 };
 use forge_storage::{ActionRepo, StorageError, TriggerInstanceRepo};
 use forge_types::{
-    Action, ActionId, ArgStack, EventId, ExecutionMode, PermissionRung, QueueId, SubActionConfig,
+    Action, ActionId, ArgStack, EventId, PermissionRung, QueueId, SubActionConfig,
     SubActionOutcome, TriggerInstance, TriggerInstanceId, Variant,
 };
 
@@ -135,16 +135,8 @@ impl TriggerInstanceRepo for MockTriggerInstanceRepo {
 
 fn make_action(enabled: bool) -> Action {
     Action {
-        id: ActionId::new(),
-        name: "act".to_owned(),
-        group: None,
-        queue_id: QueueId::new(),
         enabled,
-        concurrent: false,
-        bypass_pause: false,
-        execution_mode: ExecutionMode::Sequential,
-        description: None,
-        sub_actions: vec![],
+        ..common::sequential_action(ActionId::new(), "act", QueueId::new(), vec![])
     }
 }
 

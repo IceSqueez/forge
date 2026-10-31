@@ -184,7 +184,7 @@ impl SubActionRunner for UpdateRewardRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sub_actions::test_support::{make_ctx, token_source};
+    use crate::test_support::{make_ctx, token_source};
 
     use forge_registry::RegistryError;
 
@@ -194,12 +194,12 @@ mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     fn runner_on(server: &MockServer) -> UpdateRewardRunner {
-        let client = KickRewards::new(crate::endpoints_test_support::api_at(&server.uri()));
+        let client = KickRewards::new(crate::test_support::api_at(&server.uri()));
         UpdateRewardRunner::new(Arc::new(client), token_source())
     }
 
     fn runner_offline() -> UpdateRewardRunner {
-        let client = KickRewards::new(crate::endpoints_test_support::unreachable_api());
+        let client = KickRewards::new(crate::test_support::unreachable_api());
         UpdateRewardRunner::new(Arc::new(client), token_source())
     }
 

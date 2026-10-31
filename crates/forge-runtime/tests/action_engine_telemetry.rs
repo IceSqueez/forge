@@ -22,9 +22,9 @@ use forge_storage::{
     StorageError,
 };
 use forge_types::{
-    Action, ActionId, ArgStack, EventId, ExecutionContext, ExecutionMode, ExecutionOutcome,
-    IntegrationId, QueueId, SubActionConfig, SubActionOutcome, SubActionStep, SubActionTelemetry,
-    Variant, integration_disabled_message,
+    Action, ActionId, ArgStack, EventId, ExecutionContext, ExecutionOutcome, IntegrationId,
+    QueueId, SubActionConfig, SubActionOutcome, SubActionStep, SubActionTelemetry, Variant,
+    integration_disabled_message,
 };
 use time::OffsetDateTime;
 use tokio::sync::{Notify, watch};
@@ -230,17 +230,11 @@ impl SubActionRunner for FailRunner {
 }
 
 fn action_with(steps: Vec<&str>) -> Action {
-    Action {
-        id: ActionId::new(),
-        name: "target".to_owned(),
-        group: None,
-        queue_id: QueueId::new(),
-        enabled: true,
-        concurrent: false,
-        bypass_pause: false,
-        execution_mode: ExecutionMode::Sequential,
-        description: None,
-        sub_actions: steps
+    common::sequential_action(
+        ActionId::new(),
+        "target",
+        QueueId::new(),
+        steps
             .into_iter()
             .map(|k| SubActionStep {
                 kind_id: k.to_owned(),
@@ -251,7 +245,7 @@ fn action_with(steps: Vec<&str>) -> Action {
                 label: None,
             })
             .collect(),
-    }
+    )
 }
 
 fn request(action_id: ActionId) -> ExecutionRequest {

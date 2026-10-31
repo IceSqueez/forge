@@ -89,7 +89,7 @@ impl SubActionRunner for RejectRedemptionRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sub_actions::test_support::{make_ctx, token_source};
+    use crate::test_support::{make_ctx, token_source};
 
     use forge_types::Variant;
     use std::collections::BTreeMap;
@@ -97,7 +97,7 @@ mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     fn runner_on(server: &MockServer) -> RejectRedemptionRunner {
-        let client = KickRewards::new(crate::endpoints_test_support::api_at(&server.uri()));
+        let client = KickRewards::new(crate::test_support::api_at(&server.uri()));
         RejectRedemptionRunner::new(Arc::new(client), token_source())
     }
 
@@ -165,7 +165,7 @@ mod tests {
 
         assert_eq!(
             telemetry.outcome,
-            SubActionOutcome::Failed(super::super::test_support::step_problem(
+            SubActionOutcome::Failed(crate::test_support::step_problem(
                 "kick.reward.redemption_reject",
                 &forge_registry::ConfigProblem::field(
                     "redemption_ids",

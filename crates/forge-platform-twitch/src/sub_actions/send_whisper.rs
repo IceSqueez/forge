@@ -162,7 +162,8 @@ mod tests {
     use super::*;
     use crate::helix::HelixError;
     use crate::sub_actions::test_support::{
-        MockTransport, SELF_USER_ID, assert_request_refused, make_ctx, users_fixture,
+        MockTransport, SELF_USER_ID, TOKEN_SENTINEL, assert_request_refused, make_ctx,
+        users_fixture,
     };
     use forge_platform_core::SENDER_FIELD;
 
@@ -226,7 +227,7 @@ mod tests {
             users_fixture("555"),
             Err(HelixError::Http {
                 status: 403,
-                body: "missing whisper scope".to_owned(),
+                body: format!("missing whisper scope {TOKEN_SENTINEL}"),
             }),
         ]);
         let stack = ArgStack::new();

@@ -102,7 +102,8 @@ mod tests {
     use crate::sub_actions::remove_moderator::RemoveModeratorRunner;
     use crate::sub_actions::remove_vip::RemoveVipRunner;
     use crate::sub_actions::test_support::{
-        MockTransport, SELF_USER_ID, assert_request_refused, make_ctx, users_fixture,
+        MockTransport, SELF_USER_ID, TOKEN_SENTINEL, assert_request_refused, make_ctx,
+        users_fixture,
     };
 
     fn runner_with(
@@ -274,7 +275,7 @@ mod tests {
             users_fixture("555"),
             Err(HelixError::Http {
                 status: 422,
-                body: "user is already a moderator".to_owned(),
+                body: format!("user is already a moderator {TOKEN_SENTINEL}"),
             }),
         ]);
         let stack = ArgStack::new();

@@ -95,7 +95,7 @@ mod tests {
     use super::*;
     use crate::helix::HelixError;
     use crate::sub_actions::test_support::{
-        MockCreds, MockTransport, SELF_USER_ID, assert_request_refused, make_ctx,
+        MockCreds, MockTransport, SELF_USER_ID, TOKEN_SENTINEL, assert_request_refused, make_ctx,
     };
     use std::collections::BTreeMap;
 
@@ -145,7 +145,7 @@ mod tests {
         let (_transport, runner) = runner_with(
             Err(HelixError::Http {
                 status: 403,
-                body: "moderator scope missing".to_owned(),
+                body: format!("moderator scope missing {TOKEN_SENTINEL}"),
             }),
             MockCreds::with_identity(),
         );

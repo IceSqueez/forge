@@ -146,39 +146,13 @@ impl SubActionRunner for SendMessageRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sub_actions::test_support::{make_ctx, token_source};
+    use crate::test_support::{RecordingPublisher, broadcaster_id_source, make_ctx, token_source};
 
-    use forge_events::{Event, EventPublisher};
     use forge_types::EventId;
     use forge_types::Variant;
     use std::collections::BTreeMap;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
-
-    #[derive(Default)]
-    struct RecordingPublisher(std::sync::Mutex<Vec<Event>>);
-    impl EventPublisher for RecordingPublisher {
-        fn publish(&self, event: Event) {
-            self.0.lock().unwrap().push(event);
-        }
-    }
-
-    impl RecordingPublisher {
-        fn published(&self) -> Vec<(EventSource, String, serde_json::Value, Option<EventId>)> {
-            self.0
-                .lock()
-                .unwrap()
-                .iter()
-                .map(|e| (e.source, e.kind.clone(), e.payload.clone(), e.caused_by))
-                .collect()
-        }
-    }
-
-    fn broadcaster_id_source(
-        id: u64,
-    ) -> Arc<dyn Fn() -> BoxFuture<'static, Result<u64, PlatformError>> + Send + Sync> {
-        Arc::new(move || Box::pin(async move { Ok(id) }))
-    }
 
     fn failing_broadcaster_id_source()
     -> Arc<dyn Fn() -> BoxFuture<'static, Result<u64, PlatformError>> + Send + Sync> {
@@ -192,7 +166,7 @@ mod tests {
     }
 
     fn runner_on(server: &MockServer) -> SendMessageRunner {
-        let client = KickSendChat::new(crate::endpoints_test_support::api_at(&server.uri()));
+        let client = KickSendChat::new(crate::test_support::api_at(&server.uri()));
         SendMessageRunner::new(Arc::new(client), token_source(), broadcaster_id_source(42))
     }
 
@@ -235,7 +209,7 @@ mod tests {
 
         assert!(
             matches!(&telemetry.outcome, SubActionOutcome::Failed(reason)
-                if super::super::test_support::rejected_field(reason) == Some(config_keys::MESSAGE))
+                if crate::test_support::rejected_field(reason) == Some(config_keys::MESSAGE))
         );
         assert!(
             server.received_requests().await.unwrap().is_empty(),
@@ -253,7 +227,7 @@ mod tests {
             .mount(&server)
             .await;
 
-        let client = KickSendChat::new(crate::endpoints_test_support::api_at(&server.uri()));
+        let client = KickSendChat::new(crate::test_support::api_at(&server.uri()));
         let runner = SendMessageRunner::new(
             Arc::new(client),
             token_source(),
@@ -269,7 +243,7 @@ mod tests {
     #[tokio::test]
     async fn user_mode_reports_a_broadcaster_id_failure_without_sending() {
         let server = MockServer::start().await;
-        let client = KickSendChat::new(crate::endpoints_test_support::api_at(&server.uri()));
+        let client = KickSendChat::new(crate::test_support::api_at(&server.uri()));
         let runner = SendMessageRunner::new(
             Arc::new(client),
             token_source(),
@@ -295,9 +269,7 @@ mod tests {
     #[test]
     fn validate_config_accepts_non_empty_and_rejects_empty_missing_non_string() {
         let runner = SendMessageRunner::new(
-            Arc::new(KickSendChat::new(
-                crate::endpoints_test_support::unreachable_api(),
-            )),
+            Arc::new(KickSendChat::new(crate::test_support::unreachable_api())),
             token_source(),
             broadcaster_id_source(42),
         );
@@ -381,7 +353,7 @@ mod tests {
                 .respond_with(ResponseTemplate::new(status))
                 .mount(&server)
                 .await;
-            let client = KickSendChat::new(crate::endpoints_test_support::api_at(&server.uri()));
+            let client = KickSendChat::new(crate::test_support::api_at(&server.uri()));
             let runner = SendMessageRunner::new(Arc::new(client), token_source(), broadcaster_ids);
             let stack = ArgStack::new().set("u".to_owned(), Variant::String(String::new()));
             let publisher = RecordingPublisher::default();

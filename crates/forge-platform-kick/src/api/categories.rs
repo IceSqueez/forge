@@ -70,7 +70,7 @@ mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     fn categories_on(server: &MockServer) -> KickCategories {
-        KickCategories::new(crate::endpoints_test_support::api_at(&server.uri()))
+        KickCategories::new(crate::test_support::api_at(&server.uri()))
     }
 
     async fn mount_categories(server: &MockServer, template: ResponseTemplate) {

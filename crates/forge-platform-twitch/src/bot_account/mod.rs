@@ -461,23 +461,31 @@ pub(crate) mod test_support {
     }
 
     #[derive(Default)]
-    pub(crate) struct RecordingBus(Mutex<Vec<Event>>);
+    pub(crate) struct RecordingBus {
+        pub(crate) events: Mutex<Vec<Event>>,
+        pub(crate) published: tokio::sync::Notify,
+    }
 
     impl EventPublisher for RecordingBus {
         fn publish(&self, event: Event) {
-            self.0.lock().unwrap().push(event);
+            self.events.lock().unwrap().push(event);
+            self.published.notify_one();
         }
     }
 
     impl RecordingBus {
         pub(crate) fn of_kind(&self, kind: &str) -> Vec<Event> {
-            self.0
+            self.events
                 .lock()
                 .unwrap()
                 .iter()
                 .filter(|event| event.kind == kind)
                 .cloned()
                 .collect()
+        }
+
+        pub(crate) fn taken(&self) -> Vec<Event> {
+            std::mem::take(&mut *self.events.lock().unwrap())
         }
     }
 

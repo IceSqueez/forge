@@ -573,11 +573,11 @@ mod tests {
     }
 
     fn channel_on(server: &MockServer) -> KickChannel {
-        KickChannel::new(crate::endpoints_test_support::api_at(&server.uri()))
+        KickChannel::new(crate::test_support::api_at(&server.uri()))
     }
 
     fn rewards_on(server: &MockServer) -> KickRewards {
-        KickRewards::new(crate::endpoints_test_support::api_at(&server.uri()))
+        KickRewards::new(crate::test_support::api_at(&server.uri()))
     }
 
     fn channel_body(
@@ -1135,7 +1135,7 @@ mod tests {
 
     #[test]
     fn a_failing_channel_poll_logs_no_byte_of_the_response_body() {
-        let (result, lines) = crate::log_capture::capture_blocking(tracing::Level::TRACE, async {
+        let (result, lines) = crate::test_support::capture_blocking(tracing::Level::TRACE, async {
             let server = MockServer::start().await;
             Mock::given(method("GET"))
                 .and(path("/channels"))
@@ -1161,7 +1161,7 @@ mod tests {
         });
 
         assert!(result.is_ok(), "a failed poll must not stop the loop");
-        let forge_lines: Vec<_> = crate::log_capture::forge_lines(&lines)
+        let forge_lines: Vec<_> = crate::test_support::forge_lines(&lines)
             .into_iter()
             .filter(|line| !line.target.starts_with("forge_net"))
             .collect();
@@ -1181,8 +1181,8 @@ mod tests {
         }
     }
 
-    fn auth_lost_warnings(lines: &[crate::log_capture::CapturedLine]) -> usize {
-        crate::log_capture::forge_lines(lines)
+    fn auth_lost_warnings(lines: &[crate::test_support::CapturedLine]) -> usize {
+        crate::test_support::forge_lines(lines)
             .iter()
             .filter(|line| {
                 line.level == tracing::Level::WARN && line.message() == AUTH_LOST_MESSAGE
@@ -1193,7 +1193,7 @@ mod tests {
     #[test]
     fn each_endpoint_losing_authorization_warns_once_across_repeated_failing_polls() {
         let ((auth, uri), lines) =
-            crate::log_capture::capture_blocking(tracing::Level::TRACE, async {
+            crate::test_support::capture_blocking(tracing::Level::TRACE, async {
                 let server = MockServer::start().await;
                 mount_status(&server, CHANNELS_ROUTE, reqwest::StatusCode::UNAUTHORIZED).await;
                 mount_status(
@@ -1232,7 +1232,7 @@ mod tests {
         let mut endpoints = auth_lost_endpoints(&lines);
         endpoints.sort();
         assert_eq!(endpoints, vec!["channel", "redemptions"], "{lines:?}");
-        for line in crate::log_capture::forge_lines(&lines) {
+        for line in crate::test_support::forge_lines(&lines) {
             assert!(
                 !line.mentions(TOKEN_SENTINEL) && !line.mentions(&uri),
                 "token or URL reached a {} line: {:?}",
@@ -1242,8 +1242,8 @@ mod tests {
         }
     }
 
-    fn auth_lost_endpoints(lines: &[crate::log_capture::CapturedLine]) -> Vec<String> {
-        crate::log_capture::forge_lines(lines)
+    fn auth_lost_endpoints(lines: &[crate::test_support::CapturedLine]) -> Vec<String> {
+        crate::test_support::forge_lines(lines)
             .iter()
             .filter(|line| {
                 line.level == tracing::Level::WARN && line.message() == AUTH_LOST_MESSAGE
@@ -1290,7 +1290,7 @@ mod tests {
     #[test]
     fn one_healthy_endpoint_does_not_mask_the_other_losing_authorization() {
         let ((states, tracker_state), lines) =
-            crate::log_capture::capture_blocking(tracing::Level::TRACE, async {
+            crate::test_support::capture_blocking(tracing::Level::TRACE, async {
                 let healthy = MockServer::start().await;
                 mount_live_channel(&healthy).await;
                 let rejected = MockServer::start().await;
@@ -1315,7 +1315,7 @@ mod tests {
 
     #[test]
     fn auth_stays_required_until_every_lost_endpoint_recovers() {
-        let (states, _) = crate::log_capture::capture_blocking(tracing::Level::TRACE, async {
+        let (states, _) = crate::test_support::capture_blocking(tracing::Level::TRACE, async {
             let healthy = MockServer::start().await;
             mount_live_channel(&healthy).await;
             mount_no_redemptions(&healthy).await;
@@ -1361,7 +1361,7 @@ mod tests {
 
     #[test]
     fn auth_loss_after_recovery_warns_again() {
-        let (_, lines) = crate::log_capture::capture_blocking(tracing::Level::TRACE, async {
+        let (_, lines) = crate::test_support::capture_blocking(tracing::Level::TRACE, async {
             let rejected = MockServer::start().await;
             mount_status(&rejected, CHANNELS_ROUTE, reqwest::StatusCode::UNAUTHORIZED).await;
             let healthy = MockServer::start().await;
@@ -1388,7 +1388,7 @@ mod tests {
 
     #[test]
     fn recovering_from_auth_required_logs_no_warning() {
-        let (auth, lines) = crate::log_capture::capture_blocking(tracing::Level::TRACE, async {
+        let (auth, lines) = crate::test_support::capture_blocking(tracing::Level::TRACE, async {
             let server = MockServer::start().await;
             mount_live_channel(&server).await;
             let (tx, _rx) = mpsc::channel(4);
@@ -1408,7 +1408,7 @@ mod tests {
 
         assert_eq!(auth, PollerAuth::Authorized);
         assert!(
-            crate::log_capture::forge_lines(&lines)
+            crate::test_support::forge_lines(&lines)
                 .iter()
                 .all(|line| line.level != tracing::Level::WARN),
             "{lines:?}"
@@ -1422,7 +1422,7 @@ mod tests {
             ("network", network_down),
         ] {
             let ((auth, viewers), lines) =
-                crate::log_capture::capture_blocking(tracing::Level::TRACE, async move {
+                crate::test_support::capture_blocking(tracing::Level::TRACE, async move {
                     let server = MockServer::start().await;
                     let (tx, _rx) = mpsc::channel(4);
                     let viewer_tx = live_viewer_sender();
@@ -1444,7 +1444,7 @@ mod tests {
             assert_eq!(viewers, ViewerReport::Live { count: 5 }, "{case}");
             assert_eq!(auth_lost_warnings(&lines), 0, "{case}");
             assert!(
-                crate::log_capture::forge_lines(&lines).iter().any(|line| {
+                crate::test_support::forge_lines(&lines).iter().any(|line| {
                     line.level == tracing::Level::WARN && line.message() == "kick token unavailable"
                 }),
                 "{case}: {lines:?}"
@@ -1456,12 +1456,8 @@ mod tests {
     async fn stopping_the_poller_ends_its_task_and_closes_both_of_its_outputs() {
         let (event_tx, mut event_rx) = mpsc::channel(8);
         let (source, poller) = spawn_kick_poller(
-            Arc::new(KickChannel::new(
-                crate::endpoints_test_support::unreachable_api(),
-            )),
-            Arc::new(KickRewards::new(
-                crate::endpoints_test_support::unreachable_api(),
-            )),
+            Arc::new(KickChannel::new(crate::test_support::unreachable_api())),
+            Arc::new(KickRewards::new(crate::test_support::unreachable_api())),
             err_token(),
             event_tx,
         );
@@ -1490,7 +1486,7 @@ mod tests {
         server_uri: &str,
     ) -> (Arc<KickChannel>, Arc<KickRewards>, mpsc::Sender<Event>) {
         let (event_tx, _events) = mpsc::channel(4);
-        let api = crate::endpoints_test_support::api_at(server_uri);
+        let api = crate::test_support::api_at(server_uri);
         (
             Arc::new(KickChannel::new(api.clone())),
             Arc::new(KickRewards::new(api)),

@@ -169,7 +169,7 @@ mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     fn channel_on(server: &MockServer) -> KickChannel {
-        KickChannel::new(crate::endpoints_test_support::api_at(&server.uri()))
+        KickChannel::new(crate::test_support::api_at(&server.uri()))
     }
 
     async fn last_body(server: &MockServer) -> serde_json::Value {

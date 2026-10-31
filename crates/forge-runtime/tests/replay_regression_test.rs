@@ -12,7 +12,7 @@ use forge_runtime::{
     spawn_action_engine,
 };
 use forge_storage::DataProvider;
-use forge_types::{Action, ActionId, ArgStack, SubActionStep};
+use forge_types::{ActionId, ArgStack, SubActionStep};
 use tempfile::TempDir;
 
 const PIPELINE_TIMEOUT_MS: u64 = 30_000;
@@ -81,17 +81,11 @@ async fn spawn_pipeline() -> PipelineFixture {
 
     let queue_id = queue.id;
     let action_id = ActionId::new();
-    let action = Action {
-        id: action_id,
-        name: "replay-test action".into(),
-        group: None,
+    let action = common::sequential_action(
+        action_id,
+        "replay-test action",
         queue_id,
-        enabled: true,
-        concurrent: false,
-        bypass_pause: false,
-        execution_mode: forge_types::ExecutionMode::Sequential,
-        description: None,
-        sub_actions: vec![SubActionStep {
+        vec![SubActionStep {
             kind_id: "core.log.write".to_owned(),
             config: {
                 let mut c = std::collections::BTreeMap::new();
@@ -106,7 +100,7 @@ async fn spawn_pipeline() -> PipelineFixture {
             condition: None,
             label: None,
         }],
-    };
+    );
     dp.action_repo().save(&action).await.unwrap();
 
     let bus = EventBus::new(Arc::new(NullEventLogRepo));

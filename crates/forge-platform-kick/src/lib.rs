@@ -1,8 +1,6 @@
 mod api;
 mod auth;
 mod ban_ledger;
-#[cfg(test)]
-mod ban_ledger_test_support;
 mod ban_list;
 mod builtin;
 mod capabilities;
@@ -10,16 +8,14 @@ pub(crate) mod control;
 #[cfg(test)]
 #[path = "../../forge-platform-core/test_support/emitted_codes.rs"]
 mod emitted_codes;
-#[cfg(test)]
-mod endpoints_test_support;
 mod gateway;
 mod integration;
-#[cfg(test)]
-mod log_capture;
 mod platform;
 mod pusher;
 mod quick_actions;
 mod sub_actions;
+#[cfg(test)]
+mod test_support;
 mod timestamp;
 mod triggers;
 pub mod vocabulary;

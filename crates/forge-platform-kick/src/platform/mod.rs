@@ -254,13 +254,13 @@ pub(crate) mod tests {
     }
 
     fn platform(repo: Arc<MemoryCredentials>, api: forge_net::Gateway) -> KickPlatform {
-        let manager = Arc::new(crate::endpoints_test_support::offline_manager(repo));
+        let manager = Arc::new(crate::test_support::offline_manager(repo));
         KickPlatform::new(
-            &crate::endpoints_test_support::unreachable_endpoints(),
+            &crate::test_support::unreachable_endpoints(),
             manager,
             Arc::new(KickSendChat::new(api)),
-            crate::endpoints_test_support::unreachable_channel_info(),
-            crate::ban_ledger_test_support::MemoryBanLedger::shared(),
+            crate::test_support::unreachable_channel_info(),
+            crate::test_support::MemoryBanLedger::shared(),
         )
     }
 
@@ -268,7 +268,7 @@ pub(crate) mod tests {
     fn connection_state_is_disconnected_before_connect() {
         let p = platform(
             Arc::new(MemoryCredentials::default()),
-            crate::endpoints_test_support::unreachable_api(),
+            crate::test_support::unreachable_api(),
         );
         assert_eq!(p.connection_state(), ConnectionState::Disconnected);
     }
@@ -277,7 +277,7 @@ pub(crate) mod tests {
     async fn connect_without_credentials_requires_reauth_and_stays_disconnected() {
         let p = platform(
             Arc::new(MemoryCredentials::default()),
-            crate::endpoints_test_support::unreachable_api(),
+            crate::test_support::unreachable_api(),
         );
         let err = p.connect().await.unwrap_err();
         assert!(
@@ -291,7 +291,7 @@ pub(crate) mod tests {
     async fn send_message_without_credentials_requires_reauth() {
         let p = platform(
             Arc::new(MemoryCredentials::default()),
-            crate::endpoints_test_support::unreachable_api(),
+            crate::test_support::unreachable_api(),
         );
         let err = p.send_message("chan", "hello").await.unwrap_err();
         assert!(
@@ -304,9 +304,9 @@ pub(crate) mod tests {
     async fn send_message_with_valid_credentials_delegates_to_rate_limited_sender() {
         let p = platform(
             repo_with_valid_creds(),
-            crate::endpoints_test_support::api_limited_by(
+            crate::test_support::api_limited_by(
                 "http://127.0.0.1:0",
-                crate::endpoints_test_support::exhausted_limiter(),
+                crate::test_support::exhausted_limiter(),
             ),
         );
         let err = p.send_message("chan", "hello").await.unwrap_err();
@@ -325,7 +325,7 @@ pub(crate) mod tests {
             .await;
         let p = platform(
             repo_with_valid_creds(),
-            crate::endpoints_test_support::api_at(&server.uri()),
+            crate::test_support::api_at(&server.uri()),
         );
 
         p.send_reply("chan", "parent-7", "hello").await.unwrap();
@@ -485,8 +485,8 @@ pub(crate) mod tests {
         let channel_info = ChannelInfoFetcher::new(
             crate::gateway::kick_channel_info_gateway(
                 &endpoints,
-                crate::endpoints_test_support::granting_limiter(),
-                Arc::new(crate::endpoints_test_support::RecordingPublisher::default()),
+                crate::test_support::granting_limiter(),
+                Arc::new(crate::test_support::RecordingPublisher::default()),
             )
             .unwrap(),
         );
@@ -500,18 +500,16 @@ pub(crate) mod tests {
     ) -> KickPlatform {
         let manager = Arc::new(KickCredentialsManager::new(
             repo_with_valid_creds(),
-            crate::endpoints_test_support::oauth_client_over(
+            crate::test_support::oauth_client_over(
                 endpoints,
-                crate::endpoints_test_support::granting_limiter(),
+                crate::test_support::granting_limiter(),
             ),
-            crate::endpoints_test_support::unreachable_api(),
+            crate::test_support::unreachable_api(),
         ));
         KickPlatform::new(
             endpoints,
             manager,
-            Arc::new(KickSendChat::new(
-                crate::endpoints_test_support::unreachable_api(),
-            )),
+            Arc::new(KickSendChat::new(crate::test_support::unreachable_api())),
             channel_info,
             ledger,
         )
@@ -567,7 +565,7 @@ pub(crate) mod tests {
         for (duration_secs, expected_term) in
             [(None, None), (Some(600), Some(Duration::minutes(10)))]
         {
-            let ledger = Arc::new(crate::ban_ledger_test_support::MemoryBanLedger::default());
+            let ledger = Arc::new(crate::test_support::MemoryBanLedger::default());
             let (platform, _server) = platform_on_chat(
                 user_banned_frame(duration_secs),
                 Arc::clone(&ledger) as Arc<dyn BanLedgerRepo>,
@@ -603,8 +601,8 @@ pub(crate) mod tests {
     async fn observed_ban_is_published_when_the_ledger_write_fails() {
         let (platform, _server) = platform_on_chat(
             user_banned_frame(None),
-            Arc::new(crate::ban_ledger_test_support::MemoryBanLedger::failing_on(
-                crate::ban_ledger_test_support::LedgerOp::Upsert,
+            Arc::new(crate::test_support::MemoryBanLedger::failing_on(
+                crate::test_support::LedgerOp::Upsert,
             )),
         )
         .await;
@@ -778,7 +776,7 @@ pub(crate) mod tests {
         let platform = Arc::new(platform_on(
             pusher_peer_ending(PeerEnding::Holds).await,
             api_base,
-            crate::ban_ledger_test_support::MemoryBanLedger::shared(),
+            crate::test_support::MemoryBanLedger::shared(),
         ));
         let connecting = Arc::clone(&platform);
         let in_flight = tokio::spawn(async move { connecting.connect().await });
@@ -809,7 +807,7 @@ pub(crate) mod tests {
         let platform = platform_on(
             pusher_peer_dropping_only_the_first_link().await,
             channel_api.uri(),
-            crate::ban_ledger_test_support::MemoryBanLedger::shared(),
+            crate::test_support::MemoryBanLedger::shared(),
         )
         .with_pusher_timing(PusherTiming {
             reconnect_backoff_base: RETIRED_LOOP_BACKOFF,
@@ -843,7 +841,7 @@ pub(crate) mod tests {
      {
         let (platform, _server) = platform_on_socket(
             pusher_peer_ending(PeerEnding::DropsTheSocket).await,
-            crate::ban_ledger_test_support::MemoryBanLedger::shared(),
+            crate::test_support::MemoryBanLedger::shared(),
         )
         .await;
         let platform = platform.with_pusher_timing(PusherTiming {
@@ -928,11 +926,8 @@ pub(crate) mod tests {
     #[tokio::test]
     async fn the_link_stays_connecting_until_the_subscription_is_acknowledged() {
         let (socket_base, subscribed) = pusher_peer_that_never_acknowledges().await;
-        let (platform, _server) = platform_on_socket(
-            socket_base,
-            crate::ban_ledger_test_support::MemoryBanLedger::shared(),
-        )
-        .await;
+        let (platform, _server) =
+            platform_on_socket(socket_base, crate::test_support::MemoryBanLedger::shared()).await;
         platform.connect().await.unwrap();
         tokio::time::timeout(BANNED_STEP_DEADLINE, subscribed.notified())
             .await
@@ -948,11 +943,8 @@ pub(crate) mod tests {
     async fn an_unacknowledged_subscription_reconnects_at_the_ack_deadline_without_ever_announcing_connected()
      {
         let (socket_base, subscribed) = pusher_peer_that_never_acknowledges().await;
-        let (platform, _server) = platform_on_socket(
-            socket_base,
-            crate::ban_ledger_test_support::MemoryBanLedger::shared(),
-        )
-        .await;
+        let (platform, _server) =
+            platform_on_socket(socket_base, crate::test_support::MemoryBanLedger::shared()).await;
         let platform = platform.with_pusher_timing(PusherTiming {
             subscription_ack_timeout: ACK_BOUND,
             ..PusherTiming::default()
@@ -984,7 +976,7 @@ pub(crate) mod tests {
     async fn platform_state_is_readable_by_a_receiver_subscribed_after_the_change() {
         let (platform, _server) = platform_on_socket(
             pusher_peer_ending(PeerEnding::Holds).await,
-            crate::ban_ledger_test_support::MemoryBanLedger::shared(),
+            crate::test_support::MemoryBanLedger::shared(),
         )
         .await;
         let mut stream = platform.events();
@@ -1014,11 +1006,9 @@ pub(crate) mod tests {
             (PeerEnding::DropsTheSocket, "reconnecting", false),
         ] {
             let (socket_base, release) = pusher_peer_ending_on_release(ending).await;
-            let (platform, _server) = platform_on_socket(
-                socket_base,
-                crate::ban_ledger_test_support::MemoryBanLedger::shared(),
-            )
-            .await;
+            let (platform, _server) =
+                platform_on_socket(socket_base, crate::test_support::MemoryBanLedger::shared())
+                    .await;
             let mut stream = platform.events();
             platform.connect().await.unwrap();
             await_link_state(&mut stream, "connected").await;
@@ -1047,9 +1037,7 @@ pub(crate) mod tests {
             .respond_with(channel_found())
             .mount(&server)
             .await;
-        let fetcher = Arc::new(crate::endpoints_test_support::channel_info_at(
-            &server.uri(),
-        ));
+        let fetcher = Arc::new(crate::test_support::channel_info_at(&server.uri()));
         fetcher.fetch("streamer").await.unwrap();
         (fetcher, server)
     }
@@ -1117,7 +1105,7 @@ pub(crate) mod tests {
         let platform = platform_sharing(
             &endpoints,
             channel_info,
-            crate::ban_ledger_test_support::MemoryBanLedger::shared(),
+            crate::test_support::MemoryBanLedger::shared(),
         )
         .with_pusher_timing(PusherTiming {
             connect_timeout: PUSHER_CONNECT_BOUND,
@@ -1146,7 +1134,7 @@ pub(crate) mod tests {
             let platform = platform_sharing(
                 &endpoints,
                 channel_info,
-                crate::ban_ledger_test_support::MemoryBanLedger::shared(),
+                crate::test_support::MemoryBanLedger::shared(),
             )
             .with_pusher_timing(PusherTiming {
                 connect_timeout: connect_bound,

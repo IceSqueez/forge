@@ -108,7 +108,7 @@ impl SubActionRunner for DeleteMessageRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sub_actions::test_support::{make_ctx, token_source};
+    use crate::test_support::{make_ctx, token_source};
     use forge_events::Event;
 
     use forge_types::Variant;
@@ -117,7 +117,7 @@ mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     fn runner_on(server: &MockServer) -> DeleteMessageRunner {
-        let client = KickSendChat::new(crate::endpoints_test_support::api_at(&server.uri()));
+        let client = KickSendChat::new(crate::test_support::api_at(&server.uri()));
         DeleteMessageRunner::new(Arc::new(client), token_source())
     }
 
@@ -208,9 +208,7 @@ mod tests {
     #[test]
     fn validate_config_accepts_an_id_or_a_missing_key_and_rejects_blank_or_non_string_ids() {
         let runner = DeleteMessageRunner::new(
-            Arc::new(KickSendChat::new(
-                crate::endpoints_test_support::unreachable_api(),
-            )),
+            Arc::new(KickSendChat::new(crate::test_support::unreachable_api())),
             token_source(),
         );
 

@@ -1,10 +1,11 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use forge_events::{Event, EventPublisher};
+use forge_events::{Event, EventPublisher, EventSource};
 use forge_net::{Gateway, GatewayTimings, RateLimiter};
 use forge_platform_core::{EndpointSurface, PlatformEndpoints};
 use forge_storage::CredentialsRepo;
+use forge_types::EventId;
 
 use crate::auth::credentials_manager::KickCredentialsManager;
 use crate::auth::oauth_client::{KickOAuthClient, kick_oauth_gateway};
@@ -161,6 +162,17 @@ pub(crate) struct RecordingPublisher {
 }
 
 impl RecordingPublisher {
+    pub(crate) fn published(
+        &self,
+    ) -> Vec<(EventSource, String, serde_json::Value, Option<EventId>)> {
+        self.events
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|e| (e.source, e.kind.clone(), e.payload.clone(), e.caused_by))
+            .collect()
+    }
+
     pub(crate) fn events_of_kind(&self, kind: &str) -> Vec<Event> {
         self.events
             .lock()

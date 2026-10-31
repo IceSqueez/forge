@@ -780,8 +780,8 @@ pub(crate) mod tests {
         }
     }
 
-    fn pusher_error_warnings(raw: &str) -> Vec<crate::log_capture::CapturedLine> {
-        let (health, lines) = crate::log_capture::capture_blocking(tracing::Level::TRACE, async {
+    fn pusher_error_warnings(raw: &str) -> Vec<crate::test_support::CapturedLine> {
+        let (health, lines) = crate::test_support::capture_blocking(tracing::Level::TRACE, async {
             let (tx, _rx) = mpsc::channel(8);
             handle_ws_text(raw, &tx).await
         });
@@ -789,7 +789,7 @@ pub(crate) mod tests {
             health == WsFrameHealth::Error,
             "frame must report unhealthy"
         );
-        crate::log_capture::forge_lines(&lines)
+        crate::test_support::forge_lines(&lines)
             .into_iter()
             .filter(|line| line.level == tracing::Level::WARN)
             .cloned()

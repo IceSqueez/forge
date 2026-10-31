@@ -165,7 +165,7 @@ impl SubActionRunner for UpdateInfoRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sub_actions::test_support::{make_ctx, token_source};
+    use crate::test_support::{make_ctx, token_source};
 
     use forge_registry::RegistryError;
 
@@ -175,12 +175,12 @@ mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     fn runner_on(server: &MockServer) -> UpdateInfoRunner {
-        let client = KickChannel::new(crate::endpoints_test_support::api_at(&server.uri()));
+        let client = KickChannel::new(crate::test_support::api_at(&server.uri()));
         UpdateInfoRunner::new(Arc::new(client), token_source())
     }
 
     fn runner_offline() -> UpdateInfoRunner {
-        let client = KickChannel::new(crate::endpoints_test_support::unreachable_api());
+        let client = KickChannel::new(crate::test_support::unreachable_api());
         UpdateInfoRunner::new(Arc::new(client), token_source())
     }
 

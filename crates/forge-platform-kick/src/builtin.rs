@@ -505,7 +505,7 @@ mod tests {
         use crate::platform::KickPlatform;
 
         fn empty_manager() -> Arc<KickCredentialsManager> {
-            Arc::new(crate::endpoints_test_support::offline_manager(Arc::new(
+            Arc::new(crate::test_support::offline_manager(Arc::new(
                 MemoryCredentials::default(),
             )))
         }
@@ -517,13 +517,13 @@ mod tests {
         ) {
             let manager = empty_manager();
             let platform = Arc::new(KickPlatform::new(
-                &crate::endpoints_test_support::unreachable_endpoints(),
+                &crate::test_support::unreachable_endpoints(),
                 manager.clone(),
                 Arc::new(crate::api::chat_messages::KickSendChat::new(
-                    crate::endpoints_test_support::unreachable_api(),
+                    crate::test_support::unreachable_api(),
                 )),
-                crate::endpoints_test_support::unreachable_channel_info(),
-                crate::ban_ledger_test_support::MemoryBanLedger::shared(),
+                crate::test_support::unreachable_channel_info(),
+                crate::test_support::MemoryBanLedger::shared(),
             ));
             bundle_on(platform, manager)
         }
@@ -543,7 +543,7 @@ mod tests {
                 777,
                 platform,
                 manager,
-                crate::endpoints_test_support::granting_limiter(),
+                crate::test_support::granting_limiter(),
                 viewer_rx,
                 auth_rx,
             );
@@ -605,7 +605,7 @@ mod tests {
         ) {
             let (platform, server) = crate::platform::tests::platform_on_chat(
                 "{}".to_owned(),
-                crate::ban_ledger_test_support::MemoryBanLedger::shared(),
+                crate::test_support::MemoryBanLedger::shared(),
             )
             .await;
             let platform = Arc::new(platform);
@@ -773,8 +773,8 @@ mod tests {
         use crate::api::chat_messages::KickSendChat;
         use crate::api::moderation::KickModeration;
         use crate::api::rewards::KickRewards;
-        use crate::endpoints_test_support::granting_limiter;
         use crate::sub_actions::{KickSubActionDeps, register_kick_sub_actions};
+        use crate::test_support::granting_limiter;
 
         fn runner_registry() -> SubActionRegistry {
             let limiter: Arc<dyn RateLimiter> = granting_limiter();
@@ -782,12 +782,10 @@ mod tests {
             register_kick_sub_actions(
                 &mut registry,
                 KickSubActionDeps {
-                    client: Arc::new(KickSendChat::new(
-                        crate::endpoints_test_support::api_limited_by(
-                            "http://127.0.0.1:0",
-                            Arc::clone(&limiter),
-                        ),
-                    )),
+                    client: Arc::new(KickSendChat::new(crate::test_support::api_limited_by(
+                        "http://127.0.0.1:0",
+                        Arc::clone(&limiter),
+                    ))),
                     token_source: Arc::new(|| {
                         Box::pin(async { Ok("tok".to_owned()) })
                             as BoxFuture<'static, Result<String, PlatformError>>
@@ -797,30 +795,24 @@ mod tests {
                             as BoxFuture<'static, Result<u64, PlatformError>>
                     }),
                     moderation: Arc::new(KickModeration::new(
-                        crate::endpoints_test_support::api_limited_by(
+                        crate::test_support::api_limited_by(
                             "http://127.0.0.1:0",
                             Arc::clone(&limiter),
                         ),
-                        crate::ban_ledger_test_support::MemoryBanLedger::shared(),
+                        crate::test_support::MemoryBanLedger::shared(),
                     )),
-                    channel: Arc::new(KickChannel::new(
-                        crate::endpoints_test_support::api_limited_by(
-                            "http://127.0.0.1:0",
-                            Arc::clone(&limiter),
-                        ),
-                    )),
-                    rewards: Arc::new(KickRewards::new(
-                        crate::endpoints_test_support::api_limited_by(
-                            "http://127.0.0.1:0",
-                            Arc::clone(&limiter),
-                        ),
-                    )),
-                    categories: Arc::new(KickCategories::new(
-                        crate::endpoints_test_support::api_limited_by(
-                            "http://127.0.0.1:0",
-                            limiter,
-                        ),
-                    )),
+                    channel: Arc::new(KickChannel::new(crate::test_support::api_limited_by(
+                        "http://127.0.0.1:0",
+                        Arc::clone(&limiter),
+                    ))),
+                    rewards: Arc::new(KickRewards::new(crate::test_support::api_limited_by(
+                        "http://127.0.0.1:0",
+                        Arc::clone(&limiter),
+                    ))),
+                    categories: Arc::new(KickCategories::new(crate::test_support::api_limited_by(
+                        "http://127.0.0.1:0",
+                        limiter,
+                    ))),
                 },
             )
             .unwrap();

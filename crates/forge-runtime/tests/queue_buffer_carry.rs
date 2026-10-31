@@ -1,6 +1,8 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod common;
+use common::repos::InMemoryActionRepo;
 use std::collections::{BTreeMap, HashMap};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -16,13 +18,10 @@ use forge_runtime::{
     SchedulerRequest, spawn_action_engine,
 };
 use forge_storage::MockTriggerInstanceRepo;
-use forge_storage::{
-    ActionRepo, ActionStats, ActionTelemetry, CatalogRevision, ExecutionStatus, HistoryRepo,
-    StorageError,
-};
+use forge_storage::{ActionRepo, ActionStats, CatalogRevision, HistoryRepo, StorageError};
 use forge_types::{
-    Action, ActionId, ArgStack, EventId, ExecutionContext, ExecutionMode, Queue, QueueId,
-    SubActionConfig, SubActionStep, SubActionTelemetry,
+    Action, ActionId, ArgStack, EventId, ExecutionContext, Queue, QueueId, SubActionConfig,
+    SubActionStep, SubActionTelemetry,
 };
 use time::OffsetDateTime;
 use tokio::sync::watch;
@@ -31,46 +30,6 @@ const GATE_KIND_ID: &str = "test.gate";
 const SETTLE_ROUNDS: usize = 200;
 const QUIET_STEP: Duration = Duration::from_secs(5);
 const QUIET_ROUNDS: usize = 4;
-
-#[derive(Default)]
-struct MemoryActionRepo {
-    actions: Mutex<HashMap<ActionId, Action>>,
-}
-
-#[async_trait]
-impl ActionRepo for MemoryActionRepo {
-    async fn list(&self) -> Result<Vec<Action>, StorageError> {
-        Ok(self.actions.lock().unwrap().values().cloned().collect())
-    }
-    async fn get(&self, id: ActionId) -> Result<Option<Action>, StorageError> {
-        Ok(self.actions.lock().unwrap().get(&id).cloned())
-    }
-    async fn save(&self, action: &Action) -> Result<(), StorageError> {
-        self.actions
-            .lock()
-            .unwrap()
-            .insert(action.id, action.clone());
-        Ok(())
-    }
-    async fn delete(&self, id: ActionId) -> Result<bool, StorageError> {
-        Ok(self.actions.lock().unwrap().remove(&id).is_some())
-    }
-    async fn telemetry(&self, _id: ActionId) -> Result<ActionTelemetry, StorageError> {
-        Ok(ActionTelemetry::default())
-    }
-    async fn record_execution(
-        &self,
-        _action_id: ActionId,
-        _started_at: OffsetDateTime,
-        _duration_ms: u64,
-        _status: ExecutionStatus,
-    ) -> Result<(), StorageError> {
-        Ok(())
-    }
-    async fn prune_executions_before(&self, _cutoff: OffsetDateTime) -> Result<u64, StorageError> {
-        Ok(0)
-    }
-}
 
 struct NullHistoryRepo;
 
@@ -182,17 +141,11 @@ fn queue_with(id: QueueId, concurrency: u32) -> Queue {
 }
 
 fn gated_action(id: ActionId, queue_id: QueueId) -> Action {
-    Action {
+    common::sequential_action(
         id,
-        name: "gated".to_string(),
-        group: None,
+        "gated",
         queue_id,
-        enabled: true,
-        concurrent: false,
-        bypass_pause: false,
-        execution_mode: ExecutionMode::Sequential,
-        description: None,
-        sub_actions: vec![SubActionStep {
+        vec![SubActionStep {
             kind_id: GATE_KIND_ID.to_owned(),
             config: BTreeMap::new(),
             enabled: true,
@@ -200,7 +153,7 @@ fn gated_action(id: ActionId, queue_id: QueueId) -> Action {
             condition: None,
             label: None,
         }],
-    }
+    )
 }
 
 fn req(queue_id: QueueId, action_id: ActionId) -> SchedulerRequest {
@@ -217,7 +170,7 @@ fn req(queue_id: QueueId, action_id: ActionId) -> SchedulerRequest {
 
 async fn gated_queue(concurrency: u32, actions: &[ActionId]) -> GatedQueue {
     let q_id = QueueId::new();
-    let repo = MemoryActionRepo::default();
+    let repo = InMemoryActionRepo::new();
     for id in actions {
         repo.save(&gated_action(*id, q_id)).await.unwrap();
     }

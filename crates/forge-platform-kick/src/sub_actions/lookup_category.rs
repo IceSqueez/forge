@@ -127,13 +127,13 @@ impl SubActionRunner for LookupCategoryRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sub_actions::test_support::{make_ctx, token_source};
+    use crate::test_support::{make_ctx, token_source};
     use forge_types::SubActionOutcome;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     fn runner_on(server: &MockServer) -> LookupCategoryRunner {
-        let categories = KickCategories::new(crate::endpoints_test_support::api_at(&server.uri()));
+        let categories = KickCategories::new(crate::test_support::api_at(&server.uri()));
         LookupCategoryRunner::new(Arc::new(categories), token_source())
     }
 

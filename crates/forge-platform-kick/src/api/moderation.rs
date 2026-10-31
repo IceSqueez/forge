@@ -174,7 +174,7 @@ impl KickModeration {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ban_ledger_test_support::{LedgerOp, MemoryBanLedger};
+    use crate::test_support::{LedgerOp, MemoryBanLedger};
     use forge_storage::{BanLedgerEntry, BanOrigin};
     use forge_types::PlatformId;
     use wiremock::matchers::{body_string_contains, method, path};
@@ -182,8 +182,8 @@ mod tests {
 
     fn moderation_on(server: &MockServer) -> KickModeration {
         KickModeration::new(
-            crate::endpoints_test_support::api_at(&server.uri()),
-            crate::ban_ledger_test_support::MemoryBanLedger::shared(),
+            crate::test_support::api_at(&server.uri()),
+            crate::test_support::MemoryBanLedger::shared(),
         )
     }
 
@@ -258,7 +258,7 @@ mod tests {
 
     fn moderation_over(server: &MockServer, ledger: &Arc<MemoryBanLedger>) -> KickModeration {
         KickModeration::new(
-            crate::endpoints_test_support::api_at(&server.uri()),
+            crate::test_support::api_at(&server.uri()),
             Arc::clone(ledger) as Arc<dyn BanLedgerRepo>,
         )
     }

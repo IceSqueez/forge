@@ -15,8 +15,8 @@ use forge_runtime::{
 use forge_storage::{ActionRepo, DataProvider, GlobalsRepo, TriggerInstanceRepo};
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::{
-    Action, ActionId, ArgStack, EventId, ExecutionMode, Queue, QueueId, SubActionConfig,
-    SubActionOutcome, SubActionStep, TriggerInstanceId, Variant,
+    Action, ActionId, ArgStack, EventId, Queue, QueueId, SubActionConfig, SubActionOutcome,
+    SubActionStep, TriggerInstanceId, Variant,
 };
 use tempfile::TempDir;
 
@@ -77,23 +77,20 @@ fn action(id: ActionId, queue_id: QueueId, enabled: bool, set_global: &str) -> A
     config.insert("name".to_owned(), Variant::String(set_global.to_owned()));
     config.insert("value".to_owned(), Variant::String("%out_key%".to_owned()));
     Action {
-        id,
-        name: "bound".to_owned(),
-        group: None,
-        queue_id,
         enabled,
-        concurrent: false,
-        bypass_pause: false,
-        execution_mode: ExecutionMode::Sequential,
-        description: None,
-        sub_actions: vec![SubActionStep {
-            kind_id: "core.globals.set".to_owned(),
-            config,
-            enabled: true,
-            continue_on_error: false,
-            condition: None,
-            label: None,
-        }],
+        ..common::sequential_action(
+            id,
+            "bound",
+            queue_id,
+            vec![SubActionStep {
+                kind_id: "core.globals.set".to_owned(),
+                config,
+                enabled: true,
+                continue_on_error: false,
+                condition: None,
+                label: None,
+            }],
+        )
     }
 }
 

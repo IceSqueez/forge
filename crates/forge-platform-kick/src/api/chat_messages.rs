@@ -105,7 +105,7 @@ mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     fn sender_on(server: &MockServer) -> KickSendChat {
-        KickSendChat::new(crate::endpoints_test_support::api_at(&server.uri()))
+        KickSendChat::new(crate::test_support::api_at(&server.uri()))
     }
 
     async fn chat_server() -> MockServer {

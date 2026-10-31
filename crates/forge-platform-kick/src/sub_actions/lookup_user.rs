@@ -136,14 +136,14 @@ impl SubActionRunner for LookupUserRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sub_actions::test_support::{make_ctx, token_source};
+    use crate::test_support::{make_ctx, token_source};
     use forge_types::SubActionOutcome;
     use std::collections::BTreeMap;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     fn runner_on(server: &MockServer) -> LookupUserRunner {
-        let channel = KickChannel::new(crate::endpoints_test_support::api_at(&server.uri()));
+        let channel = KickChannel::new(crate::test_support::api_at(&server.uri()));
         LookupUserRunner::new(Arc::new(channel), token_source())
     }
 
@@ -211,9 +211,7 @@ mod tests {
     #[test]
     fn validate_config_requires_a_non_empty_slug() {
         let runner = LookupUserRunner::new(
-            Arc::new(KickChannel::new(
-                crate::endpoints_test_support::unreachable_api(),
-            )),
+            Arc::new(KickChannel::new(crate::test_support::unreachable_api())),
             token_source(),
         );
         let cases: Vec<(&str, SubActionConfig, bool)> = vec![

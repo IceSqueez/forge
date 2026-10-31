@@ -2458,6 +2458,7 @@ struct SessionInfo {
 mod tests {
     use std::time::Duration;
 
+    use crate::bot_account::test_support::RecordingBus;
     use crate::chat_platform::EVENT_CHANNEL_CAPACITY;
     use crate::sub_actions::test_support::MockCreds;
     use forge_events::EventChannel;
@@ -4363,19 +4364,6 @@ mod tests {
                 Ok(0) | Err(_) => return None,
                 Ok(read) => buffered.extend_from_slice(&chunk[..read]),
             }
-        }
-    }
-
-    #[derive(Default)]
-    struct RecordingBus {
-        events: std::sync::Mutex<Vec<Event>>,
-        published: tokio::sync::Notify,
-    }
-
-    impl EventPublisher for RecordingBus {
-        fn publish(&self, event: Event) {
-            self.events.lock().unwrap().push(event);
-            self.published.notify_one();
         }
     }
 

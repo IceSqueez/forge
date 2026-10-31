@@ -191,8 +191,8 @@ mod tests {
     use super::*;
     use crate::helix::{HelixError, HelixMethod};
     use crate::sub_actions::test_support::{
-        MockCreds, MockTransport, SELF_USER_ID, assert_failed_with_code, assert_failed_with_detail,
-        make_ctx,
+        MockCreds, MockTransport, SELF_USER_ID, TOKEN_SENTINEL, assert_failed_with_code,
+        assert_failed_with_detail, make_ctx,
     };
     use forge_platform_core::SENDER_FIELD;
     use forge_storage::test_support::MemoryCredentials;
@@ -267,7 +267,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn helix_http_failure_maps_to_failed_outcome_without_token_or_url() {
+    async fn helix_http_failure_surfaces_its_status_in_the_failure_detail() {
         let (_transport, runner) = runner_with(
             Err(HelixError::Http {
                 status: 403,
@@ -410,7 +410,7 @@ mod tests {
             (
                 Err(HelixError::Http {
                     status: 400,
-                    body: "channel is offline".to_owned(),
+                    body: format!("channel is offline {TOKEN_SENTINEL}"),
                 }),
                 None,
             ),

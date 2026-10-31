@@ -103,23 +103,17 @@ impl SubActionRunner for UnbanUserRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sub_actions::test_support::{make_ctx, token_source};
+    use crate::test_support::{broadcaster_id_source, make_ctx, token_source};
 
     use forge_types::Variant;
     use std::collections::BTreeMap;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
-    fn broadcaster_id_source(
-        id: u64,
-    ) -> Arc<dyn Fn() -> BoxFuture<'static, Result<u64, PlatformError>> + Send + Sync> {
-        Arc::new(move || Box::pin(async move { Ok(id) }))
-    }
-
     fn runner_on(server: &MockServer) -> UnbanUserRunner {
         let client = KickModeration::new(
-            crate::endpoints_test_support::api_at(&server.uri()),
-            crate::ban_ledger_test_support::MemoryBanLedger::shared(),
+            crate::test_support::api_at(&server.uri()),
+            crate::test_support::MemoryBanLedger::shared(),
         );
         UnbanUserRunner::new(Arc::new(client), token_source(), broadcaster_id_source(42))
     }
@@ -165,8 +159,8 @@ mod tests {
     fn validate_config_accepts_non_empty_and_rejects_empty_missing_non_string() {
         let runner = UnbanUserRunner::new(
             Arc::new(KickModeration::new(
-                crate::endpoints_test_support::unreachable_api(),
-                crate::ban_ledger_test_support::MemoryBanLedger::shared(),
+                crate::test_support::unreachable_api(),
+                crate::test_support::MemoryBanLedger::shared(),
             )),
             token_source(),
             broadcaster_id_source(42),

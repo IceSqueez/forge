@@ -1,8 +1,8 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod common;
+use common::repos::InMemoryActionRepo;
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -21,10 +21,7 @@ use forge_runtime::{
 };
 use forge_runtime::{CoreLogicWaitRunner, WAIT_KIND_ID, WAIT_MS_KEY};
 use forge_storage::MockTriggerInstanceRepo;
-use forge_storage::{
-    ActionRepo, ActionStats, ActionTelemetry, CatalogRevision, ExecutionStatus, HistoryRepo,
-    StorageError,
-};
+use forge_storage::{ActionRepo, ActionStats, CatalogRevision, HistoryRepo, StorageError};
 use forge_types::{
     Action, ActionId, ArgStack, DEFAULT_QUEUE_ID, EventId, ExecutionContext, ExecutionMetadata,
     ExecutionOutcome, Queue, QueueId, SubActionConfig, SubActionOutcome, SubActionStep,
@@ -46,65 +43,6 @@ const SETTLE_ROUNDS: usize = 200;
 const QUIET_STEP: Duration = Duration::from_secs(5);
 const QUIET_ROUNDS: usize = 4;
 const SAVE_DEADLINE: Duration = Duration::from_secs(2);
-
-#[derive(Default)]
-struct MemoryActionRepo {
-    actions: Mutex<HashMap<ActionId, Action>>,
-    unreadable: ActionsUnreadable,
-}
-
-#[derive(Clone, Default)]
-struct ActionsUnreadable {
-    list: Arc<AtomicBool>,
-    get: Arc<AtomicBool>,
-}
-
-fn storage_gone() -> StorageError {
-    StorageError::Connection {
-        reason: "disk gone".to_owned(),
-    }
-}
-
-#[async_trait]
-impl ActionRepo for MemoryActionRepo {
-    async fn list(&self) -> Result<Vec<Action>, StorageError> {
-        if self.unreadable.list.load(Ordering::SeqCst) {
-            return Err(storage_gone());
-        }
-        Ok(self.actions.lock().unwrap().values().cloned().collect())
-    }
-    async fn get(&self, id: ActionId) -> Result<Option<Action>, StorageError> {
-        if self.unreadable.get.load(Ordering::SeqCst) {
-            return Err(storage_gone());
-        }
-        Ok(self.actions.lock().unwrap().get(&id).cloned())
-    }
-    async fn save(&self, action: &Action) -> Result<(), StorageError> {
-        self.actions
-            .lock()
-            .unwrap()
-            .insert(action.id, action.clone());
-        Ok(())
-    }
-    async fn delete(&self, id: ActionId) -> Result<bool, StorageError> {
-        Ok(self.actions.lock().unwrap().remove(&id).is_some())
-    }
-    async fn telemetry(&self, _id: ActionId) -> Result<ActionTelemetry, StorageError> {
-        Ok(ActionTelemetry::default())
-    }
-    async fn record_execution(
-        &self,
-        _action_id: ActionId,
-        _started_at: OffsetDateTime,
-        _duration_ms: u64,
-        _status: ExecutionStatus,
-    ) -> Result<(), StorageError> {
-        Ok(())
-    }
-    async fn prune_executions_before(&self, _cutoff: OffsetDateTime) -> Result<u64, StorageError> {
-        Ok(0)
-    }
-}
 
 struct CapturingHistoryRepo {
     saved: mpsc::UnboundedSender<ExecutionContext>,
@@ -234,7 +172,7 @@ struct Rig {
     slow_gate: watch::Sender<bool>,
     save_gate: watch::Sender<bool>,
     saved: mpsc::UnboundedReceiver<ExecutionContext>,
-    unreadable: ActionsUnreadable,
+    repo: Arc<InMemoryActionRepo>,
     until_cancelled_running: Arc<Notify>,
 }
 
@@ -292,8 +230,7 @@ fn long_wait_then_instant(queue_id: QueueId) -> Action {
 }
 
 async fn rig(queues: Vec<Queue>, actions: &[&Action]) -> Rig {
-    let repo = MemoryActionRepo::default();
-    let unreadable = repo.unreadable.clone();
+    let repo = Arc::new(InMemoryActionRepo::new());
     for a in actions {
         repo.save(a).await.unwrap();
     }
@@ -330,7 +267,8 @@ async fn rig(queues: Vec<Queue>, actions: &[&Action]) -> Rig {
     let (saved_tx, saved) = mpsc::unbounded_channel();
     let (save_gate, save_open) = watch::channel(true);
     let bus = EventBus::new(Arc::new(NullEventLogRepo));
-    let repo: Arc<dyn ActionRepo> = Arc::new(repo);
+    let repo_handle = Arc::clone(&repo);
+    let repo: Arc<dyn ActionRepo> = repo;
     let mut instances = MockTriggerInstanceRepo::new();
     instances
         .expect_list_for_action()
@@ -358,7 +296,7 @@ async fn rig(queues: Vec<Queue>, actions: &[&Action]) -> Rig {
         slow_gate,
         save_gate,
         saved,
-        unreadable,
+        repo: repo_handle,
         until_cancelled_running,
     }
 }
@@ -873,7 +811,7 @@ async fn a_run_is_skipped_and_saved_as_failed_when_actions_cannot_be_read() {
     let q = QueueId::new();
     let wanted = single(q, INSTANT_KIND_ID);
     let mut r = rig(vec![queue(q, 1)], &[&wanted]).await;
-    r.unreadable.list.store(true, Ordering::SeqCst);
+    r.repo.set_list_unreadable(true);
     let mut sub = r.bus.subscribe();
 
     let (skipped, saved) = refused_run(&mut r, &wanted, &mut sub).await;
@@ -891,7 +829,7 @@ async fn a_lookup_failure_for_an_action_outside_the_catalog_is_saved_as_a_storag
         ..single(q, INSTANT_KIND_ID)
     };
     let mut r = rig(vec![queue(q, 1)], &[&disabled]).await;
-    r.unreadable.get.store(true, Ordering::SeqCst);
+    r.repo.set_get_unreadable(true);
     let mut sub = r.bus.subscribe();
 
     let (skipped, saved) = refused_run(&mut r, &disabled, &mut sub).await;

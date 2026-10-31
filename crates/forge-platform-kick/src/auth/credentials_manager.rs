@@ -210,7 +210,7 @@ mod tests {
     use super::KickCredentialsManager;
     use crate::auth::KickAuthBundle;
     use crate::auth::credentials::{CREDENTIAL_KEY, KickCredentials};
-    use crate::endpoints_test_support::{oauth_client_at, offline_manager, unreachable_api};
+    use crate::test_support::{oauth_client_at, offline_manager, unreachable_api};
 
     const TOKEN_PATH: &str = "/token";
     const EXISTING_ACCESS: &str = "kick_access_existing";

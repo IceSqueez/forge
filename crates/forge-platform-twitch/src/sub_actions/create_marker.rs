@@ -154,7 +154,7 @@ mod tests {
     use super::*;
     use crate::helix::HelixError;
     use crate::sub_actions::test_support::{
-        MockTransport, SELF_USER_ID, assert_request_refused, make_ctx,
+        MockTransport, SELF_USER_ID, TOKEN_SENTINEL, assert_request_refused, make_ctx,
     };
     use crate::timestamp::tests::instant;
     use std::collections::BTreeMap;
@@ -316,7 +316,7 @@ mod tests {
     async fn helix_failure_maps_to_failed_outcome_without_token() {
         let (_transport, runner) = runner_with(Err(HelixError::Http {
             status: 404,
-            body: "stream offline".to_owned(),
+            body: format!("stream offline {TOKEN_SENTINEL}"),
         }));
         let stack = ArgStack::new();
 

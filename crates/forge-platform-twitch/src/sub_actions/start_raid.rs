@@ -116,7 +116,8 @@ mod tests {
     use super::*;
     use crate::helix::HelixError;
     use crate::sub_actions::test_support::{
-        MockTransport, SELF_USER_ID, assert_request_refused, make_ctx, users_fixture,
+        MockTransport, SELF_USER_ID, TOKEN_SENTINEL, assert_request_refused, make_ctx,
+        users_fixture,
     };
     use forge_platform_core::QuickActionLiveness;
     use forge_types::Variant;
@@ -214,7 +215,7 @@ mod tests {
     async fn resolve_failure_skips_the_raid_call() {
         let (transport, runner) = runner_with(vec![Err(HelixError::Http {
             status: 404,
-            body: "user not found".to_owned(),
+            body: format!("user not found {TOKEN_SENTINEL}"),
         })]);
         let stack = ArgStack::new();
 
@@ -234,7 +235,7 @@ mod tests {
             users_fixture("555"),
             Err(HelixError::Http {
                 status: 409,
-                body: "raid already pending".to_owned(),
+                body: format!("raid already pending {TOKEN_SENTINEL}"),
             }),
         ]);
         let stack = ArgStack::new();
@@ -274,7 +275,7 @@ mod tests {
                 users_fixture("555"),
                 Err(HelixError::Http {
                     status: 409,
-                    body: "raid already pending".to_owned(),
+                    body: format!("raid already pending {TOKEN_SENTINEL}"),
                 }),
             ],
             lifecycle.clone(),

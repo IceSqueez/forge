@@ -92,7 +92,7 @@ mod tests {
     use super::*;
     use crate::helix::{HelixError, HelixMethod};
     use crate::sub_actions::test_support::{
-        MockTransport, SELF_USER_ID, assert_request_refused, make_ctx,
+        MockTransport, SELF_USER_ID, TOKEN_SENTINEL, assert_request_refused, make_ctx,
     };
 
     fn delete_runner_with(
@@ -186,7 +186,7 @@ mod tests {
     async fn helix_failure_maps_to_failed_without_token() {
         let (_transport, runner) = delete_runner_with(Err(HelixError::Http {
             status: 404,
-            body: "not found".to_owned(),
+            body: format!("not found {TOKEN_SENTINEL}"),
         }));
         let stack = ArgStack::new().set("reward.id".to_owned(), Variant::String("rw7".to_owned()));
 

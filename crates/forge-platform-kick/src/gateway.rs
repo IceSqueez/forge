@@ -164,11 +164,11 @@ mod tests {
     use crate::api::chat_messages::KickSendChat;
     use crate::api::moderation::KickModeration;
     use crate::api::rewards::{CreateRewardParams, KickRewards};
-    use crate::endpoints_test_support::{
+    use crate::pusher::error::KickError;
+    use crate::test_support::{
         RecordingPublisher, api_at, api_limited_by, api_with, channel_info_with, exhausted_limiter,
         gateway_waiting_at_most,
     };
-    use crate::pusher::error::KickError;
 
     const TOKEN: &str = "kick-secret-token-9f3a";
 
@@ -190,7 +190,7 @@ mod tests {
                 channel: KickChannel::new(api.clone()),
                 moderation: KickModeration::new(
                     api.clone(),
-                    crate::ban_ledger_test_support::MemoryBanLedger::shared(),
+                    crate::test_support::MemoryBanLedger::shared(),
                 ),
                 rewards: KickRewards::new(api.clone()),
             }
@@ -569,7 +569,7 @@ mod tests {
             let bus = Arc::new(RecordingPublisher::default());
             let send = KickSendChat::new(api_with(
                 &server.uri(),
-                crate::endpoints_test_support::granting_limiter(),
+                crate::test_support::granting_limiter(),
                 bus.clone(),
             ));
 
@@ -591,7 +591,7 @@ mod tests {
             let bus = Arc::new(RecordingPublisher::default());
             let clients = Clients::over(&api_with(
                 &server.uri(),
-                crate::endpoints_test_support::granting_limiter(),
+                crate::test_support::granting_limiter(),
                 bus.clone(),
             ));
 
@@ -610,7 +610,7 @@ mod tests {
         let bus = Arc::new(RecordingPublisher::default());
         let unreachable = KickSendChat::new(api_with(
             "http://127.0.0.1:0",
-            crate::endpoints_test_support::granting_limiter(),
+            crate::test_support::granting_limiter(),
             bus.clone(),
         ));
         let exhausted = KickSendChat::new(api_with(
@@ -621,7 +621,7 @@ mod tests {
         let server = answering(ResponseTemplate::new(reqwest::StatusCode::OK)).await;
         let succeeding = KickSendChat::new(api_with(
             &server.uri(),
-            crate::endpoints_test_support::granting_limiter(),
+            crate::test_support::granting_limiter(),
             bus.clone(),
         ));
 
@@ -650,7 +650,7 @@ mod tests {
             let bus = Arc::new(RecordingPublisher::default());
             let send = KickSendChat::new(api_with(
                 &server.uri(),
-                crate::endpoints_test_support::granting_limiter(),
+                crate::test_support::granting_limiter(),
                 bus.clone(),
             ));
 
@@ -675,7 +675,7 @@ mod tests {
             let bus = Arc::new(RecordingPublisher::default());
             let clients = Clients::over(&api_with(
                 &server.uri(),
-                crate::endpoints_test_support::granting_limiter(),
+                crate::test_support::granting_limiter(),
                 bus.clone(),
             ));
 

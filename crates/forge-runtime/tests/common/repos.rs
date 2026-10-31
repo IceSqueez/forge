@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use async_trait::async_trait;
 use forge_storage::{ActionRepo, ActionTelemetry, ExecutionStatus, StorageError};
@@ -11,7 +11,8 @@ pub(crate) struct InMemoryActionRepo {
     map: Mutex<HashMap<ActionId, Action>>,
     writes: AtomicUsize,
     fail_writes: bool,
-    fail_get: bool,
+    fail_get: AtomicBool,
+    fail_list: AtomicBool,
 }
 
 impl InMemoryActionRepo {
@@ -20,7 +21,8 @@ impl InMemoryActionRepo {
             map: Mutex::new(HashMap::new()),
             writes: AtomicUsize::new(0),
             fail_writes: false,
-            fail_get: false,
+            fail_get: AtomicBool::new(false),
+            fail_list: AtomicBool::new(false),
         }
     }
 
@@ -32,10 +34,17 @@ impl InMemoryActionRepo {
     }
 
     pub(crate) fn failing_get() -> Self {
-        Self {
-            fail_get: true,
-            ..Self::new()
-        }
+        let repo = Self::new();
+        repo.set_get_unreadable(true);
+        repo
+    }
+
+    pub(crate) fn set_get_unreadable(&self, unreadable: bool) {
+        self.fail_get.store(unreadable, Ordering::SeqCst);
+    }
+
+    pub(crate) fn set_list_unreadable(&self, unreadable: bool) {
+        self.fail_list.store(unreadable, Ordering::SeqCst);
     }
 
     pub(crate) fn seed(&self, action: Action) {
@@ -54,10 +63,15 @@ impl InMemoryActionRepo {
 #[async_trait]
 impl ActionRepo for InMemoryActionRepo {
     async fn list(&self) -> Result<Vec<Action>, StorageError> {
+        if self.fail_list.load(Ordering::SeqCst) {
+            return Err(StorageError::Connection {
+                reason: "forced list failure".to_owned(),
+            });
+        }
         Ok(self.map.lock().unwrap().values().cloned().collect())
     }
     async fn get(&self, id: ActionId) -> Result<Option<Action>, StorageError> {
-        if self.fail_get {
+        if self.fail_get.load(Ordering::SeqCst) {
             return Err(StorageError::Connection {
                 reason: "forced get failure".to_owned(),
             });

@@ -222,7 +222,7 @@ mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     use super::*;
-    use crate::endpoints_test_support::{
+    use crate::test_support::{
         OAUTH_CLIENT_SECRET, RecordingPublisher, api_at, api_limited_by, api_with, endpoints_at,
         exhausted_limiter, granting_limiter, oauth_client_at, oauth_client_over, unreachable_api,
         unreachable_oauth_client,

@@ -72,8 +72,8 @@ mod tests {
     use super::*;
     use crate::api::poller::PollerAuth;
     use crate::auth::credentials::KickCredentials;
-    use crate::ban_ledger_test_support::{LedgerOp, MemoryBanLedger};
     use crate::platform::KickPlatform;
+    use crate::test_support::{LedgerOp, MemoryBanLedger};
 
     enum StoredCredentials {
         Absent,
@@ -136,15 +136,15 @@ mod tests {
         credentials: Arc<SwitchableCredentials>,
         ledger: Arc<dyn BanLedgerRepo>,
     ) -> Arc<KickIntegrationBundle> {
-        let endpoints = crate::endpoints_test_support::unreachable_endpoints();
-        let manager = Arc::new(crate::endpoints_test_support::offline_manager(credentials));
+        let endpoints = crate::test_support::unreachable_endpoints();
+        let manager = Arc::new(crate::test_support::offline_manager(credentials));
         let platform = Arc::new(KickPlatform::new(
             &endpoints,
             Arc::clone(&manager),
             Arc::new(crate::api::chat_messages::KickSendChat::new(
-                crate::endpoints_test_support::unreachable_api(),
+                crate::test_support::unreachable_api(),
             )),
-            crate::endpoints_test_support::unreachable_channel_info(),
+            crate::test_support::unreachable_channel_info(),
             ledger,
         ));
         let (_viewer_tx, viewer_rx) = watch::channel(ViewerReport::Absent);
@@ -154,7 +154,7 @@ mod tests {
             42,
             platform,
             manager,
-            crate::endpoints_test_support::granting_limiter(),
+            crate::test_support::granting_limiter(),
             viewer_rx,
             auth_rx,
         )

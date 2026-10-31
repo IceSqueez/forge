@@ -146,7 +146,8 @@ mod tests {
     use super::*;
     use crate::helix::{HelixError, HelixMethod};
     use crate::sub_actions::test_support::{
-        MockTransport, SELF_USER_ID, assert_failed_with_detail, make_ctx, users_fixture,
+        MockTransport, SELF_USER_ID, TOKEN_SENTINEL, assert_failed_with_detail, make_ctx,
+        users_fixture,
     };
     use forge_platform_core::SENDER_FIELD;
     use forge_types::SubActionOutcome;
@@ -226,7 +227,7 @@ mod tests {
     async fn resolve_failure_skips_the_shoutout_call() {
         let (transport, runner) = runner_with(vec![Err(HelixError::Http {
             status: 404,
-            body: "user not found".to_owned(),
+            body: format!("user not found {TOKEN_SENTINEL}"),
         })]);
         let stack = ArgStack::new();
 
@@ -241,7 +242,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn shoutout_http_failure_maps_to_failed_without_token_or_url() {
+    async fn shoutout_http_failure_surfaces_its_status_in_the_failure_detail() {
         let (transport, runner) = runner_with(vec![
             users_fixture("555"),
             Err(HelixError::Http {

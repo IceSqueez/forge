@@ -247,8 +247,8 @@ impl HelixTransport for HelixHttpTransport {
 
 #[cfg(test)]
 mod tests {
+    use crate::bot_account::test_support::RecordingBus;
     use std::collections::BTreeSet;
-    use std::sync::Mutex;
     use std::sync::atomic::{AtomicU32, Ordering};
     use std::time::Duration;
 
@@ -298,31 +298,14 @@ mod tests {
         }
     }
 
-    #[derive(Default)]
-    struct RecordingBus(Mutex<Vec<Event>>);
-
-    impl EventPublisher for RecordingBus {
-        fn publish(&self, event: Event) {
-            self.0.lock().unwrap().push(event);
-        }
+    fn request_fails(bus: &RecordingBus) -> Vec<Event> {
+        bus.of_kind("request.fail")
     }
 
-    impl RecordingBus {
-        fn request_fails(&self) -> Vec<Event> {
-            self.0
-                .lock()
-                .unwrap()
-                .iter()
-                .filter(|event| event.kind == "request.fail")
-                .cloned()
-                .collect()
-        }
-
-        fn single_request_fail(&self) -> Event {
-            let mut events = self.request_fails();
-            assert_eq!(events.len(), 1, "expected exactly one request.fail");
-            events.remove(0)
-        }
+    fn single_request_fail(bus: &RecordingBus) -> Event {
+        let mut events = request_fails(bus);
+        assert_eq!(events.len(), 1, "expected exactly one request.fail");
+        events.remove(0)
     }
 
     struct Harness {
@@ -525,7 +508,7 @@ mod tests {
 
         h.transport.execute(users()).await.unwrap_err();
 
-        let event = h.bus.single_request_fail();
+        let event = single_request_fail(&h.bus);
         let keys: BTreeSet<&str> = event
             .payload
             .as_object()
@@ -565,7 +548,7 @@ mod tests {
 
         h.transport.execute(users()).await.unwrap_err();
 
-        let event = h.bus.single_request_fail();
+        let event = single_request_fail(&h.bus);
         let snippet = event.payload["body_snippet"].as_str().unwrap();
         assert_eq!(snippet.chars().count(), 200);
     }
@@ -589,7 +572,7 @@ mod tests {
 
         for h in cases {
             h.transport.execute(users()).await.unwrap_err();
-            assert!(h.bus.request_fails().is_empty());
+            assert!(request_fails(&h.bus).is_empty());
         }
     }
 
@@ -620,7 +603,7 @@ mod tests {
                 vec![Duration::from_secs(expected_secs)],
                 "{headers:?}"
             );
-            let event = h.bus.single_request_fail();
+            let event = single_request_fail(&h.bus);
             assert_eq!(event.payload["status_code"], 429);
             assert_eq!(
                 event.payload["retry_after_secs"], expected_secs,
@@ -663,7 +646,7 @@ mod tests {
             "got {err:?}"
         );
         assert_eq!(h.limiter.observed_throttles(), vec![Duration::from_secs(7)]);
-        assert_eq!(h.bus.single_request_fail().payload["retry_after_secs"], 7);
+        assert_eq!(single_request_fail(&h.bus).payload["retry_after_secs"], 7);
     }
 
     #[tokio::test]

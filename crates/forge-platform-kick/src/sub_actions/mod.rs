@@ -13,8 +13,6 @@ mod lookup_user;
 mod reject_redemption;
 mod send_message;
 mod step_failure;
-#[cfg(test)]
-mod test_support;
 mod timeout_user;
 mod unban_user;
 mod update_info;
@@ -144,7 +142,7 @@ mod tests {
     use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, Variant};
 
     use super::*;
-    use crate::endpoints_test_support::unreachable_api;
+    use crate::test_support::unreachable_api;
 
     fn offline_registry() -> SubActionRegistry {
         let mut registry = SubActionRegistry::new();
@@ -152,11 +150,11 @@ mod tests {
             &mut registry,
             KickSubActionDeps {
                 client: Arc::new(KickSendChat::new(unreachable_api())),
-                token_source: test_support::token_source(),
+                token_source: crate::test_support::token_source(),
                 broadcaster_id_source: Arc::new(|| Box::pin(async { Ok(1) })),
                 moderation: Arc::new(KickModeration::new(
                     unreachable_api(),
-                    crate::ban_ledger_test_support::MemoryBanLedger::shared(),
+                    crate::test_support::MemoryBanLedger::shared(),
                 )),
                 channel: Arc::new(KickChannel::new(unreachable_api())),
                 rewards: Arc::new(KickRewards::new(unreachable_api())),
@@ -371,13 +369,13 @@ mod tests {
             .unwrap()
             .execute(
                 &config_of(&[("user_id", "alice")]),
-                &test_support::make_ctx(&stack),
+                &crate::test_support::make_ctx(&stack),
             )
             .await;
 
         assert_eq!(
             telemetry.outcome,
-            SubActionOutcome::Failed(test_support::step_problem(
+            SubActionOutcome::Failed(crate::test_support::step_problem(
                 "kick.moderation.ban",
                 &forge_registry::ConfigProblem::field(
                     "user_id",

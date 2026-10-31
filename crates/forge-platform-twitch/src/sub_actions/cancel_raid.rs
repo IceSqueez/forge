@@ -105,7 +105,7 @@ mod tests {
     use super::*;
     use crate::helix::HelixError;
     use crate::sub_actions::test_support::{
-        MockTransport, SELF_USER_ID, assert_request_refused, make_ctx,
+        MockTransport, SELF_USER_ID, TOKEN_SENTINEL, assert_request_refused, make_ctx,
     };
     use forge_platform_core::QuickActionLiveness;
     use forge_types::ArgStack;
@@ -158,7 +158,7 @@ mod tests {
     async fn cancel_http_failure_maps_to_failed_without_token_or_url() {
         let (transport, runner) = runner_with(vec![Err(HelixError::Http {
             status: 404,
-            body: "no raid in progress".to_owned(),
+            body: format!("no raid in progress {TOKEN_SENTINEL}"),
         })]);
         let stack = ArgStack::new();
 
@@ -190,7 +190,7 @@ mod tests {
         let (_, runner) = runner_tracking(
             vec![Err(HelixError::Http {
                 status: 404,
-                body: "no raid in progress".to_owned(),
+                body: format!("no raid in progress {TOKEN_SENTINEL}"),
             })],
             lifecycle.clone(),
         );

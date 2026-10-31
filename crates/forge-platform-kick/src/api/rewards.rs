@@ -298,7 +298,7 @@ mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     fn rewards_on(server: &MockServer) -> KickRewards {
-        KickRewards::new(crate::endpoints_test_support::api_at(&server.uri()))
+        KickRewards::new(crate::test_support::api_at(&server.uri()))
     }
 
     async fn last_body(server: &MockServer) -> serde_json::Value {

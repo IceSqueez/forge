@@ -16,9 +16,8 @@ use forge_runtime::{
 };
 use forge_storage::DataProvider;
 use forge_types::{
-    Action, ArgStack, ChatPayload, ChatSegment, ExecutionMode, ModerationMarks, PermissionRung,
-    Queue, QueueId, SubActionConfig, SubActionStep, TriggerConfig, TriggerInstance,
-    TriggerInstanceId, Variant,
+    Action, ArgStack, ChatPayload, ChatSegment, ModerationMarks, PermissionRung, Queue, QueueId,
+    SubActionConfig, SubActionStep, TriggerConfig, TriggerInstance, TriggerInstanceId, Variant,
 };
 use serde_json::{Value, json};
 use tempfile::TempDir;
@@ -125,17 +124,11 @@ fn text(value: &str) -> Variant {
 }
 
 fn golden_action(queue_id: QueueId) -> Action {
-    Action {
-        id: ACTION_ID.parse().unwrap(),
-        name: "Golden run".to_owned(),
-        group: None,
+    common::sequential_action(
+        ACTION_ID.parse().unwrap(),
+        "Golden run",
         queue_id,
-        enabled: true,
-        concurrent: false,
-        bypass_pause: false,
-        execution_mode: ExecutionMode::Sequential,
-        description: None,
-        sub_actions: vec![
+        vec![
             step(
                 "core.globals.set",
                 &[("name", text("golden_set")), ("value", text("42"))],
@@ -153,7 +146,7 @@ fn golden_action(queue_id: QueueId) -> Action {
                 &[("body", text(r#"throw "golden boom""#))],
             ),
         ],
-    }
+    )
 }
 
 fn command_event() -> Event {

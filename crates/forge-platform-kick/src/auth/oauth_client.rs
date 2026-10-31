@@ -148,7 +148,7 @@ mod tests {
 
     use super::{KickOAuthClient, TOKEN_PATH, TokenGrant};
     use crate::auth::{KICK_AUTHORIZE_ENDPOINT, KICK_TOKEN_ENDPOINT};
-    use crate::endpoints_test_support::{
+    use crate::test_support::{
         OAUTH_CLIENT_ID, OAUTH_CLIENT_SECRET, endpoints_at, exhausted_limiter, granting_limiter,
         oauth_client_at, oauth_client_limited_by, oauth_client_over,
     };

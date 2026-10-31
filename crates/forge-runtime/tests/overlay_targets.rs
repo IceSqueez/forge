@@ -16,8 +16,8 @@ use forge_storage::MockQueueRepo;
 use forge_storage::MockTriggerInstanceRepo;
 use forge_storage::OverlayId;
 use forge_types::{
-    Action, ActionId, ExecutionMode, PermissionRung, PlatformScope, QueueId, SubActionConfig,
-    SubActionStep, TriggerConfig, TriggerInstance, TriggerInstanceId, Variant,
+    Action, ActionId, PermissionRung, PlatformScope, QueueId, SubActionConfig, SubActionStep,
+    TriggerConfig, TriggerInstance, TriggerInstanceId, Variant,
 };
 
 const OVERLAY: &str = "goal-box";
@@ -354,16 +354,8 @@ fn collect_rust_sources(dir: &Path, out: &mut Vec<PathBuf>) {
 
 fn action(name: &str, enabled: bool, sub_actions: Vec<SubActionStep>) -> Action {
     Action {
-        id: ActionId::new(),
-        name: name.to_owned(),
-        group: None,
-        queue_id: QueueId::new(),
         enabled,
-        concurrent: false,
-        bypass_pause: false,
-        execution_mode: ExecutionMode::Sequential,
-        description: None,
-        sub_actions,
+        ..common::sequential_action(ActionId::new(), name, QueueId::new(), sub_actions)
     }
 }
 

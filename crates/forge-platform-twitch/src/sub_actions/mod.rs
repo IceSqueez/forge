@@ -408,7 +408,6 @@ pub(crate) mod test_support {
             .detail()
             .expect("detail carries the upstream reason");
         assert!(detail.as_str().contains(detail_fragment), "{detail:?}");
-        assert_no_secret_in(message);
     }
 
     pub(crate) fn assert_no_secret_in(message: &forge_types::MessageRef) {

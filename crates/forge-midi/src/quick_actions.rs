@@ -1,8 +1,6 @@
-use forge_platform_core::{
-    QuickAction, QuickActionAccent, QuickActionLiveness, QuickActions, SectionIcon,
-};
+use forge_platform_core::{QuickAction, QuickActionAccent, QuickActions};
 use forge_registry::{ConfigChoice, SubActionConfig};
-use forge_types::{MessageCode, RecoverMutex, SubActionStep, Variant};
+use forge_types::{MessageCode, RecoverMutex, Variant};
 
 use crate::client::MidiClient;
 use crate::decode::NOTE_ON_STATUS;
@@ -29,26 +27,9 @@ fn send_action(
     enabled: bool,
     config: SubActionConfig,
 ) -> QuickAction {
-    QuickAction {
-        label: label.into(),
-        icon: SectionIcon::new(icon),
-        enabled,
-        locked_reason: None,
-        liveness: QuickActionLiveness::Unknown,
-        group: None,
-        destructive: false,
-        accent: QuickActionAccent::Brand,
-        subaction_template: SubActionStep {
-            kind_id: sub_action_ids::SEND.to_owned(),
-            config,
-            enabled: true,
-            continue_on_error: false,
-            condition: None,
-            label: None,
-        },
-        fields: Vec::new(),
-        collection: None,
-    }
+    QuickAction::new(label, icon, QuickActionAccent::Brand, sub_action_ids::SEND)
+        .enabled_if(enabled)
+        .with_config(config)
 }
 
 impl QuickActions for MidiClient {

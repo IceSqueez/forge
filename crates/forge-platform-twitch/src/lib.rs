@@ -28,7 +28,6 @@ mod integration;
 mod lifecycle;
 mod live_item_options;
 mod oauth_client;
-mod quick_action_fields;
 mod reward_collection;
 mod step_failure;
 mod sub_actions;

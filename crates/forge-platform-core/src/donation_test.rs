@@ -2,10 +2,7 @@ use std::collections::BTreeMap;
 
 use forge_types::{IntegrationId, MessageCatalog, MessageCode, SubActionStep, Variant};
 
-use crate::builtin::{
-    QuickAction, QuickActionAccent, QuickActionField, QuickActionFieldKind, QuickActionFieldValue,
-    QuickActionLiveness, SectionIcon,
-};
+use crate::builtin::{QuickAction, QuickActionAccent, QuickActionField};
 
 pub const TEST_DONATION_SUB_ACTION: &str = "donations.test_donation";
 
@@ -80,55 +77,23 @@ pub fn test_donation_step(provider: &IntegrationId) -> SubActionStep {
 }
 
 pub fn test_donation_quick_action(provider: &IntegrationId) -> QuickAction {
-    let field = |key: &str, label: MessageCode, kind: QuickActionFieldKind, default: &str| {
-        QuickActionField {
-            key: key.to_owned(),
-            label: label.into(),
-            kind,
-            default: Some(QuickActionFieldValue::Text(default.to_owned())),
-            placeholder: None,
-            hint: None,
-            required: false,
-        }
-    };
-    QuickAction {
-        label: SEND_TEST_DONATION_LABEL.into(),
-        icon: SectionIcon::new("coin"),
-        enabled: true,
-        locked_reason: None,
-        liveness: QuickActionLiveness::Unknown,
-        group: None,
-        destructive: false,
-        accent: QuickActionAccent::Bits,
-        subaction_template: test_donation_step(provider),
-        fields: vec![
-            field(
-                TEST_DONATION_DONOR_KEY,
-                DONOR_FIELD_LABEL,
-                QuickActionFieldKind::Text,
-                TEST_DONATION_DONOR,
-            ),
-            field(
-                TEST_DONATION_AMOUNT_KEY,
-                AMOUNT_FIELD_LABEL,
-                QuickActionFieldKind::Text,
-                TEST_DONATION_AMOUNT,
-            )
+    QuickAction::for_step(
+        SEND_TEST_DONATION_LABEL,
+        "coin",
+        QuickActionAccent::Bits,
+        test_donation_step(provider),
+    )
+    .enabled_if(true)
+    .with_fields(vec![
+        QuickActionField::text(TEST_DONATION_DONOR_KEY, DONOR_FIELD_LABEL)
+            .with_default_text(TEST_DONATION_DONOR),
+        QuickActionField::text(TEST_DONATION_AMOUNT_KEY, AMOUNT_FIELD_LABEL)
+            .with_default_text(TEST_DONATION_AMOUNT)
             .required(),
-            field(
-                TEST_DONATION_CURRENCY_KEY,
-                CURRENCY_FIELD_LABEL,
-                QuickActionFieldKind::Text,
-                TEST_DONATION_CURRENCY,
-            )
+        QuickActionField::text(TEST_DONATION_CURRENCY_KEY, CURRENCY_FIELD_LABEL)
+            .with_default_text(TEST_DONATION_CURRENCY)
             .required(),
-            field(
-                TEST_DONATION_MESSAGE_KEY,
-                MESSAGE_FIELD_LABEL,
-                QuickActionFieldKind::Multiline,
-                TEST_DONATION_MESSAGE,
-            ),
-        ],
-        collection: None,
-    }
+        QuickActionField::multiline(TEST_DONATION_MESSAGE_KEY, MESSAGE_FIELD_LABEL)
+            .with_default_text(TEST_DONATION_MESSAGE),
+    ])
 }

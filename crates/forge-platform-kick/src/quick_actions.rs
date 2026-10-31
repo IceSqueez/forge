@@ -1,10 +1,7 @@
-use std::collections::BTreeMap;
-
 use forge_platform_core::{
-    BuiltinStatus, QuickAction, QuickActionAccent, QuickActionField, QuickActionFieldKind,
-    QuickActionFieldValue, QuickActionGroup, QuickActionLiveness, QuickActions, SectionIcon,
+    BuiltinStatus, QuickAction, QuickActionAccent, QuickActionField, QuickActionGroup, QuickActions,
 };
-use forge_types::{MessageCode, SubActionStep, UserText, VerbatimText};
+use forge_types::{MessageCode, VerbatimText};
 
 use crate::builtin::KickIntegrationBundle;
 use crate::vocabulary::variables::references;
@@ -28,60 +25,7 @@ impl Group {
             Self::Rewards => (labels::REWARDS, "gift", QuickActionAccent::Bits),
             Self::Lookups => (labels::LOOKUPS, "search", QuickActionAccent::Info),
         };
-        QuickActionGroup {
-            label: label.into(),
-            icon: SectionIcon::new(icon),
-            accent,
-        }
-    }
-}
-
-fn bare_text_field(key: &str, label: MessageCode) -> QuickActionField {
-    QuickActionField {
-        key: key.to_owned(),
-        label: label.into(),
-        kind: QuickActionFieldKind::Text,
-        default: None,
-        placeholder: None,
-        hint: None,
-        required: false,
-    }
-}
-
-fn text_field(key: &str, label: MessageCode, placeholder: impl Into<UserText>) -> QuickActionField {
-    QuickActionField {
-        placeholder: Some(placeholder.into()),
-        ..bare_text_field(key, label)
-    }
-}
-
-fn text_field_hint(key: &str, label: MessageCode, hint: impl Into<UserText>) -> QuickActionField {
-    QuickActionField {
-        hint: Some(hint.into()),
-        ..bare_text_field(key, label)
-    }
-}
-
-fn multiline_field(
-    key: &str,
-    label: MessageCode,
-    placeholder: impl Into<UserText>,
-) -> QuickActionField {
-    QuickActionField {
-        kind: QuickActionFieldKind::Multiline,
-        ..text_field(key, label, placeholder)
-    }
-}
-
-fn toggle_field(key: &str, label: MessageCode, default: bool) -> QuickActionField {
-    QuickActionField {
-        key: key.to_owned(),
-        label: label.into(),
-        kind: QuickActionFieldKind::Toggle,
-        default: Some(QuickActionFieldValue::Toggle(default)),
-        placeholder: None,
-        hint: None,
-        required: false,
+        QuickActionGroup::new(label, icon, accent)
     }
 }
 
@@ -93,33 +37,9 @@ fn quick_action(
     kind_id: &str,
     fields: Vec<QuickActionField>,
 ) -> QuickAction {
-    QuickAction {
-        label: label.into(),
-        icon: SectionIcon::new(icon),
-        enabled: false,
-        locked_reason: None,
-        liveness: QuickActionLiveness::Unknown,
-        group: Some(group.badge()),
-        destructive: false,
-        accent,
-        subaction_template: SubActionStep {
-            kind_id: kind_id.to_owned(),
-            config: BTreeMap::new(),
-            enabled: true,
-            continue_on_error: false,
-            condition: None,
-            label: None,
-        },
-        fields,
-        collection: None,
-    }
-}
-
-fn destructive(action: QuickAction) -> QuickAction {
-    QuickAction {
-        destructive: true,
-        ..action
-    }
+    QuickAction::new(label, icon, accent, kind_id)
+        .in_group(group.badge())
+        .with_fields(fields)
 }
 
 fn catalog() -> Vec<QuickAction> {
@@ -131,12 +51,9 @@ fn catalog() -> Vec<QuickAction> {
             Group::StreamInfo,
             sub_action_ids::CHANNEL_UPDATE_INFO,
             vec![
-                text_field(
-                    config_keys::TITLE,
-                    labels::STREAM_TITLE_FIELD,
-                    labels::STREAM_TITLE,
-                )
-                .required(),
+                QuickActionField::text(config_keys::TITLE, labels::STREAM_TITLE_FIELD)
+                    .with_placeholder(labels::STREAM_TITLE)
+                    .required(),
             ],
         ),
         quick_action(
@@ -146,12 +63,9 @@ fn catalog() -> Vec<QuickAction> {
             Group::StreamInfo,
             sub_action_ids::CHANNEL_UPDATE_INFO,
             vec![
-                text_field_hint(
-                    config_keys::CATEGORY_ID,
-                    labels::CATEGORY_ID,
-                    labels::CATEGORY_ID_HINT,
-                )
-                .required(),
+                QuickActionField::text(config_keys::CATEGORY_ID, labels::CATEGORY_ID)
+                    .with_hint(labels::CATEGORY_ID_HINT)
+                    .required(),
             ],
         ),
         quick_action(
@@ -161,12 +75,9 @@ fn catalog() -> Vec<QuickAction> {
             Group::StreamInfo,
             sub_action_ids::CHANNEL_UPDATE_INFO,
             vec![
-                text_field(
-                    config_keys::TAGS,
-                    labels::TAGS_COMMA_SEPARATED,
-                    labels::TAGS_PLACEHOLDER,
-                )
-                .required(),
+                QuickActionField::text(config_keys::TAGS, labels::TAGS_COMMA_SEPARATED)
+                    .with_placeholder(labels::TAGS_PLACEHOLDER)
+                    .required(),
             ],
         ),
         quick_action(
@@ -176,25 +87,25 @@ fn catalog() -> Vec<QuickAction> {
             Group::Chat,
             sub_action_ids::CHAT_SEND_MESSAGE,
             vec![
-                multiline_field(config_keys::MESSAGE, labels::MESSAGE, labels::MESSAGE).required(),
-                toggle_field(config_keys::AS_BOT, labels::SEND_AS_BOT, false),
+                QuickActionField::multiline(config_keys::MESSAGE, labels::MESSAGE)
+                    .with_placeholder(labels::MESSAGE)
+                    .required(),
+                QuickActionField::toggle(config_keys::AS_BOT, labels::SEND_AS_BOT, false),
             ],
         ),
-        destructive(quick_action(
+        quick_action(
             labels::DELETE_MESSAGE,
             "trash",
             QuickActionAccent::Danger,
             Group::Chat,
             sub_action_ids::CHAT_DELETE_MESSAGE,
             vec![
-                text_field(
-                    config_keys::MESSAGE_ID,
-                    labels::MESSAGE_ID_FIELD,
-                    VerbatimText::new(references::MESSAGE_ID),
-                )
-                .required(),
+                QuickActionField::text(config_keys::MESSAGE_ID, labels::MESSAGE_ID_FIELD)
+                    .with_placeholder(VerbatimText::new(references::MESSAGE_ID))
+                    .required(),
             ],
-        )),
+        )
+        .destructive(),
         quick_action(
             labels::TIMEOUT_USER,
             "clock-pause",
@@ -202,29 +113,24 @@ fn catalog() -> Vec<QuickAction> {
             Group::Moderation,
             sub_action_ids::MODERATION_TIMEOUT,
             vec![
-                text_field(
-                    config_keys::USER_ID,
-                    labels::TARGET_USER_ID,
-                    VerbatimText::new(references::USER_ID),
-                )
-                .required(),
+                QuickActionField::text(config_keys::USER_ID, labels::TARGET_USER_ID)
+                    .with_placeholder(VerbatimText::new(references::USER_ID))
+                    .required(),
             ],
         ),
-        destructive(quick_action(
+        quick_action(
             labels::BAN_USER,
             "ban",
             QuickActionAccent::Danger,
             Group::Moderation,
             sub_action_ids::MODERATION_BAN,
             vec![
-                text_field(
-                    config_keys::USER_ID,
-                    labels::TARGET_USER_ID,
-                    VerbatimText::new(references::USER_ID),
-                )
-                .required(),
+                QuickActionField::text(config_keys::USER_ID, labels::TARGET_USER_ID)
+                    .with_placeholder(VerbatimText::new(references::USER_ID))
+                    .required(),
             ],
-        )),
+        )
+        .destructive(),
         quick_action(
             labels::UNBAN_USER,
             "unban",
@@ -232,12 +138,9 @@ fn catalog() -> Vec<QuickAction> {
             Group::Moderation,
             sub_action_ids::MODERATION_UNBAN,
             vec![
-                text_field(
-                    config_keys::USER_ID,
-                    labels::TARGET_USER_ID,
-                    VerbatimText::new(references::USER_ID),
-                )
-                .required(),
+                QuickActionField::text(config_keys::USER_ID, labels::TARGET_USER_ID)
+                    .with_placeholder(VerbatimText::new(references::USER_ID))
+                    .required(),
             ],
         ),
         quick_action(
@@ -247,18 +150,12 @@ fn catalog() -> Vec<QuickAction> {
             Group::Rewards,
             sub_action_ids::REWARD_CREATE,
             vec![
-                text_field(
-                    config_keys::TITLE,
-                    labels::REWARD_TITLE,
-                    labels::REWARD_TITLE_EXAMPLE,
-                )
-                .required(),
-                text_field(
-                    config_keys::COST,
-                    labels::COST_CHANNEL_POINTS,
-                    labels::COST_EXAMPLE,
-                )
-                .required(),
+                QuickActionField::text(config_keys::TITLE, labels::REWARD_TITLE)
+                    .with_placeholder(labels::REWARD_TITLE_EXAMPLE)
+                    .required(),
+                QuickActionField::text(config_keys::COST, labels::COST_CHANNEL_POINTS)
+                    .with_placeholder(labels::COST_EXAMPLE)
+                    .required(),
             ],
         ),
         quick_action(
@@ -268,39 +165,28 @@ fn catalog() -> Vec<QuickAction> {
             Group::Rewards,
             sub_action_ids::REWARD_UPDATE,
             vec![
-                text_field(
-                    config_keys::REWARD_ID,
-                    labels::REWARD_ID,
-                    VerbatimText::new(references::REWARD_ID),
-                )
-                .required(),
-                text_field(
-                    config_keys::TITLE,
-                    labels::NEW_TITLE_OPTIONAL,
-                    labels::LEAVE_EMPTY_TO_KEEP_CURRENT,
-                ),
-                text_field(
-                    config_keys::COST,
-                    labels::NEW_COST_OPTIONAL,
-                    labels::LEAVE_EMPTY_TO_KEEP_CURRENT,
-                ),
+                QuickActionField::text(config_keys::REWARD_ID, labels::REWARD_ID)
+                    .with_placeholder(VerbatimText::new(references::REWARD_ID))
+                    .required(),
+                QuickActionField::text(config_keys::TITLE, labels::NEW_TITLE_OPTIONAL)
+                    .with_placeholder(labels::LEAVE_EMPTY_TO_KEEP_CURRENT),
+                QuickActionField::text(config_keys::COST, labels::NEW_COST_OPTIONAL)
+                    .with_placeholder(labels::LEAVE_EMPTY_TO_KEEP_CURRENT),
             ],
         ),
-        destructive(quick_action(
+        quick_action(
             labels::DELETE_REWARD,
             "trash",
             QuickActionAccent::Danger,
             Group::Rewards,
             sub_action_ids::REWARD_DELETE,
             vec![
-                text_field(
-                    config_keys::REWARD_ID,
-                    labels::REWARD_ID,
-                    VerbatimText::new(references::REWARD_ID),
-                )
-                .required(),
+                QuickActionField::text(config_keys::REWARD_ID, labels::REWARD_ID)
+                    .with_placeholder(VerbatimText::new(references::REWARD_ID))
+                    .required(),
             ],
-        )),
+        )
+        .destructive(),
         quick_action(
             labels::ACCEPT_REDEMPTION,
             "check",
@@ -308,12 +194,9 @@ fn catalog() -> Vec<QuickAction> {
             Group::Rewards,
             sub_action_ids::REWARD_REDEMPTION_ACCEPT,
             vec![
-                text_field(
-                    config_keys::REDEMPTION_IDS,
-                    labels::REDEMPTION_ID_S,
-                    labels::REDEMPTION_IDS_HINT,
-                )
-                .required(),
+                QuickActionField::text(config_keys::REDEMPTION_IDS, labels::REDEMPTION_ID_S)
+                    .with_placeholder(labels::REDEMPTION_IDS_HINT)
+                    .required(),
             ],
         ),
         quick_action(
@@ -323,12 +206,9 @@ fn catalog() -> Vec<QuickAction> {
             Group::Rewards,
             sub_action_ids::REWARD_REDEMPTION_REJECT,
             vec![
-                text_field(
-                    config_keys::REDEMPTION_IDS,
-                    labels::REDEMPTION_ID_S,
-                    labels::REDEMPTION_IDS_HINT,
-                )
-                .required(),
+                QuickActionField::text(config_keys::REDEMPTION_IDS, labels::REDEMPTION_ID_S)
+                    .with_placeholder(labels::REDEMPTION_IDS_HINT)
+                    .required(),
             ],
         ),
         quick_action(
@@ -338,12 +218,9 @@ fn catalog() -> Vec<QuickAction> {
             Group::Lookups,
             sub_action_ids::LOOKUP_USER,
             vec![
-                text_field(
-                    config_keys::SLUG,
-                    labels::CHANNEL_SLUG,
-                    labels::CHANNEL_SLUG_PLACEHOLDER,
-                )
-                .required(),
+                QuickActionField::text(config_keys::SLUG, labels::CHANNEL_SLUG)
+                    .with_placeholder(labels::CHANNEL_SLUG_PLACEHOLDER)
+                    .required(),
             ],
         ),
         quick_action(
@@ -361,12 +238,9 @@ fn catalog() -> Vec<QuickAction> {
             Group::Lookups,
             sub_action_ids::LOOKUP_CATEGORY,
             vec![
-                text_field(
-                    config_keys::QUERY,
-                    labels::SEARCH_QUERY,
-                    labels::CATEGORY_SEARCH_PLACEHOLDER,
-                )
-                .required(),
+                QuickActionField::text(config_keys::QUERY, labels::SEARCH_QUERY)
+                    .with_placeholder(labels::CATEGORY_SEARCH_PLACEHOLDER)
+                    .required(),
             ],
         ),
     ]

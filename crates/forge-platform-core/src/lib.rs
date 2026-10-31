@@ -20,6 +20,8 @@ mod follow_lookup;
 mod integration;
 mod live_viewers;
 mod option_source;
+mod quick_action_builders;
+mod reconnect;
 mod sender;
 pub use auth::AuthFlow;
 pub use ban_list::{
@@ -68,6 +70,10 @@ pub use integration::{ConnectionAffordance, IntegrationCategory, IntegrationDecl
 pub use live_viewers::{LiveViewerSource, ViewerReport, ViewerReportStream};
 pub use option_source::{
     BuiltinOptionSource, OptionEntry, OptionHint, OptionListId, OptionListMetadata,
+};
+pub use reconnect::{
+    AutoReconnectSwitch, AutoReconnectWatch, ReconnectingSession, SessionEnd,
+    record_connection_failure, run_reconnect_loop,
 };
 pub use sender::{
     ActingSender, SENDER_FIELD, SENT_AS_FIELD, SenderPreference, SenderRole, unknown_sender_reason,

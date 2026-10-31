@@ -4,14 +4,14 @@ use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
 use time::OffsetDateTime;
-use tokio::sync::{Notify, broadcast, mpsc, oneshot, watch};
+use tokio::sync::{Notify, broadcast, mpsc, oneshot};
 use tokio::time::Instant;
 
 use forge_events::{Event, EventPublisher, EventSource, TypedEvent};
 use forge_net::{Backoff, DEFAULT_BACKOFF_BASE};
 use forge_platform_core::{
-    AtomicConnectionState, ConnectionState, ConnectionTransition, HealthDelta,
-    connection_state_changed_event,
+    AtomicConnectionState, AutoReconnectWatch, ConnectionState, ConnectionTransition, HealthDelta,
+    ReconnectingSession, SessionEnd, record_connection_failure, run_reconnect_loop,
 };
 use forge_storage::CredentialsRepo;
 
@@ -276,23 +276,13 @@ async fn run_auth(
     Ok(())
 }
 
-fn connection_state_transition(
-    previous: ConnectionState,
-    next: ConnectionState,
-    transition: ConnectionTransition,
-) -> Option<Event> {
-    (previous != next).then(|| connection_state_changed_event(VTUBE_PLATFORM_ID, next, transition))
-}
-
 pub(crate) fn set_connection_state(
     state: &AtomicConnectionState,
     publisher: &dyn EventPublisher,
     new_state: ConnectionState,
     transition: ConnectionTransition,
 ) {
-    let previous = state.load();
-    state.store(new_state);
-    if let Some(event) = connection_state_transition(previous, new_state, transition) {
+    if let Some(event) = state.advance(VTUBE_PLATFORM_ID, new_state, transition) {
         publisher.publish(event);
     }
 }
@@ -311,49 +301,14 @@ pub(crate) struct SupervisorContext {
     pub(crate) content_notifier: crate::content::ContentNotifier,
     pub(crate) catalog_signal: crate::catalog::CatalogSignal,
     pub(crate) connected_notifier: mpsc::UnboundedSender<()>,
-    pub(crate) auto_reconnect: watch::Receiver<bool>,
+    pub(crate) auto_reconnect: AutoReconnectWatch,
     pub(crate) last_failure: Arc<RwLock<Option<MessageRef>>>,
     pub(crate) timing: VTubeTiming,
     pub(crate) transport_layer: TransportLayer,
 }
 
-enum RetryWait {
-    Elapsed,
-    Disabled,
-    Shutdown,
-}
-
-async fn wait_before_retry(
-    delay: Duration,
-    shutdown: &Notify,
-    auto_reconnect: &mut watch::Receiver<bool>,
-) -> RetryWait {
-    tokio::select! {
-        () = tokio::time::sleep(delay) => RetryWait::Elapsed,
-        () = shutdown.notified() => RetryWait::Shutdown,
-        _ = auto_reconnect.wait_for(|enabled| !*enabled) => RetryWait::Disabled,
-    }
-}
-
-async fn park_until_auto_reconnect(
-    shutdown: &Notify,
-    auto_reconnect: &mut watch::Receiver<bool>,
-) -> bool {
-    tokio::select! {
-        () = shutdown.notified() => false,
-        resumed = auto_reconnect.wait_for(|enabled| *enabled) => resumed.is_ok(),
-    }
-}
-
-pub(crate) fn record_failure(slot: &RwLock<Option<MessageRef>>, failure: Option<MessageRef>) {
-    {
-        let mut g = slot.write_recover();
-        *g = failure;
-    }
-}
-
 fn record_reason(slot: &RwLock<Option<MessageRef>>, reason: VTubeDisconnectReason) {
-    record_failure(slot, messages::for_disconnect_reason(reason));
+    record_connection_failure(slot, messages::for_disconnect_reason(reason));
 }
 
 fn settle_unless_retrying(
@@ -372,80 +327,69 @@ fn settle_unless_retrying(
     );
 }
 
-pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
-    let SupervisorContext {
-        endpoint,
-        state,
-        auth_state,
-        shutdown,
-        connected_at,
-        publisher,
-        creds,
-        mut req_rx,
-        health_state,
-        health_tx,
-        content_notifier,
-        catalog_signal,
-        connected_notifier,
-        mut auto_reconnect,
-        last_failure,
-        timing,
-        transport_layer,
-    } = ctx;
+impl ReconnectingSession for SupervisorContext {
+    async fn stop_requested(&self) {
+        self.shutdown.notified().await;
+    }
 
-    let mut backoff = Backoff::new(timing.reconnect_base_delay, timing.reconnect_max_delay);
-    let mut reconnecting = false;
+    fn retry_scheduled(&self, delay: Duration) {
+        tracing::info!(
+            endpoint = %self.endpoint,
+            delay_ms = delay.as_millis(),
+            "reconnecting to VTube Studio"
+        );
+    }
 
-    loop {
-        if reconnecting {
-            let delay = backoff.next_delay();
-            let wait = if *auto_reconnect.borrow_and_update() {
-                tracing::info!(
-                    endpoint = %endpoint,
-                    delay_ms = delay.as_millis(),
-                    "reconnecting to VTube Studio"
-                );
-                wait_before_retry(delay, &shutdown, &mut auto_reconnect).await
-            } else {
-                RetryWait::Disabled
-            };
-            match wait {
-                RetryWait::Elapsed => {}
-                RetryWait::Shutdown => {
-                    set_connection_state(
-                        &state,
-                        &*publisher,
-                        ConnectionState::Disconnected,
-                        ConnectionTransition::Expected,
-                    );
-                    emit_connection_changed(&*publisher, &endpoint, false, None, None);
-                    return;
-                }
-                RetryWait::Disabled => {
-                    tracing::info!(
-                        endpoint = %endpoint,
-                        "VTube Studio auto-reconnect is off; waiting for a manual connect"
-                    );
-                    if state.load() != ConnectionState::Disconnected {
-                        set_connection_state(
-                            &state,
-                            &*publisher,
-                            ConnectionState::Disconnected,
-                            ConnectionTransition::Expected,
-                        );
-                        emit_connection_changed(&*publisher, &endpoint, false, None, None);
-                    }
-                    if !park_until_auto_reconnect(&shutdown, &mut auto_reconnect).await {
-                        return;
-                    }
-                    backoff.reset();
-                }
-            }
+    fn stopped_while_retrying(&self) {
+        set_connection_state(
+            &self.state,
+            &*self.publisher,
+            ConnectionState::Disconnected,
+            ConnectionTransition::Expected,
+        );
+        emit_connection_changed(&*self.publisher, &self.endpoint, false, None, None);
+    }
+
+    fn auto_reconnect_turned_off(&self) {
+        tracing::info!(
+            endpoint = %self.endpoint,
+            "VTube Studio auto-reconnect is off; waiting for a manual connect"
+        );
+        if self.state.load() != ConnectionState::Disconnected {
+            set_connection_state(
+                &self.state,
+                &*self.publisher,
+                ConnectionState::Disconnected,
+                ConnectionTransition::Expected,
+            );
+            emit_connection_changed(&*self.publisher, &self.endpoint, false, None, None);
         }
+    }
+
+    async fn attempt(&mut self, reconnecting: bool) -> SessionEnd {
+        let Self {
+            ref endpoint,
+            ref state,
+            ref auth_state,
+            ref shutdown,
+            ref connected_at,
+            ref publisher,
+            ref creds,
+            ref mut req_rx,
+            ref health_state,
+            ref health_tx,
+            ref content_notifier,
+            ref catalog_signal,
+            ref connected_notifier,
+            ref mut auto_reconnect,
+            ref last_failure,
+            timing,
+            ref transport_layer,
+        } = *self;
 
         set_connection_state(
-            &state,
-            &*publisher,
+            state,
+            &**publisher,
             if reconnecting {
                 ConnectionState::Reconnecting
             } else {
@@ -456,11 +400,11 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
         tracing::debug!(endpoint = %endpoint, "attempting VTube Studio connection");
 
         let connect_attempt = tokio::select! {
-            outcome = dial_within(&endpoint, timing.connect_timeout) => outcome,
+            outcome = dial_within(endpoint, timing.connect_timeout) => outcome,
             () = shutdown.notified() => {
-                set_connection_state(&state, &*publisher, ConnectionState::Disconnected, ConnectionTransition::Expected);
-                emit_connection_changed(&*publisher, &endpoint, false, None, None);
-                return;
+                set_connection_state(state, &**publisher, ConnectionState::Disconnected, ConnectionTransition::Expected);
+                emit_connection_changed(&**publisher, endpoint, false, None, None);
+                return SessionEnd::Stopped;
             }
         };
 
@@ -472,25 +416,24 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
                     error = %failed.detail,
                     "VTube Studio connection attempt failed"
                 );
-                record_failure(&last_failure, Some(failed.message));
-                settle_unless_retrying(*auto_reconnect.borrow_and_update(), &state, &*publisher);
+                record_connection_failure(last_failure, Some(failed.message));
+                settle_unless_retrying(auto_reconnect.is_enabled(), state, &**publisher);
                 emit_connection_changed(
-                    &*publisher,
-                    &endpoint,
+                    &**publisher,
+                    endpoint,
                     false,
                     Some(VTubeDisconnectReason::ConnectFailed),
                     Some(failed.detail),
                 );
-                reconnecting = true;
-                continue;
+                return SessionEnd::AttemptFailed;
             }
         };
 
         let auth_outcome = tokio::select! {
-            outcome = run_auth(&mut ws, &*creds, &endpoint, &auth_state, &*publisher, timing) => outcome,
+            outcome = run_auth(&mut ws, &**creds, endpoint, auth_state, &**publisher, timing) => outcome,
             () = shutdown.notified() => {
-                announce_stopped(&state, &*publisher, &auth_state, &endpoint);
-                return;
+                announce_stopped(state, &**publisher, auth_state, endpoint);
+                return SessionEnd::Stopped;
             }
         };
         match auth_outcome {
@@ -500,63 +443,63 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
                     let mut g = auth_state.write_recover();
                     *g = AuthState::AuthRequired;
                 }
-                record_reason(&last_failure, VTubeDisconnectReason::AuthRequired);
+                record_reason(last_failure, VTubeDisconnectReason::AuthRequired);
                 set_connection_state(
-                    &state,
-                    &*publisher,
+                    state,
+                    &**publisher,
                     ConnectionState::Disconnected,
                     ConnectionTransition::Unexpected,
                 );
                 emit_connection_changed(
-                    &*publisher,
-                    &endpoint,
+                    &**publisher,
+                    endpoint,
                     false,
                     Some(VTubeDisconnectReason::AuthRequired),
                     None,
                 );
-                return;
+                return SessionEnd::Stopped;
             }
             Err(VTubeError::TokenDenied) => {
                 {
                     let mut g = auth_state.write_recover();
                     *g = AuthState::AuthRequired;
                 }
-                record_reason(&last_failure, VTubeDisconnectReason::AuthDenied);
+                record_reason(last_failure, VTubeDisconnectReason::AuthDenied);
                 set_connection_state(
-                    &state,
-                    &*publisher,
+                    state,
+                    &**publisher,
                     ConnectionState::Disconnected,
                     ConnectionTransition::Unexpected,
                 );
                 emit_connection_changed(
-                    &*publisher,
-                    &endpoint,
+                    &**publisher,
+                    endpoint,
                     false,
                     Some(VTubeDisconnectReason::AuthDenied),
                     None,
                 );
-                return;
+                return SessionEnd::Stopped;
             }
             Err(VTubeError::TokenTimeout) => {
                 {
                     let mut g = auth_state.write_recover();
                     *g = AuthState::AuthRequired;
                 }
-                record_reason(&last_failure, VTubeDisconnectReason::AuthTimeout);
+                record_reason(last_failure, VTubeDisconnectReason::AuthTimeout);
                 set_connection_state(
-                    &state,
-                    &*publisher,
+                    state,
+                    &**publisher,
                     ConnectionState::Disconnected,
                     ConnectionTransition::Unexpected,
                 );
                 emit_connection_changed(
-                    &*publisher,
-                    &endpoint,
+                    &**publisher,
+                    endpoint,
                     false,
                     Some(VTubeDisconnectReason::AuthTimeout),
                     None,
                 );
-                return;
+                return SessionEnd::Stopped;
             }
             Err(e) => {
                 tracing::debug!(
@@ -565,17 +508,16 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
                     "auth failed, will retry"
                 );
                 let detail = e.to_string();
-                record_reason(&last_failure, VTubeDisconnectReason::AuthFailed);
-                settle_unless_retrying(*auto_reconnect.borrow_and_update(), &state, &*publisher);
+                record_reason(last_failure, VTubeDisconnectReason::AuthFailed);
+                settle_unless_retrying(auto_reconnect.is_enabled(), state, &**publisher);
                 emit_connection_changed(
-                    &*publisher,
-                    &endpoint,
+                    &**publisher,
+                    endpoint,
                     false,
                     Some(VTubeDisconnectReason::AuthFailed),
                     Some(detail),
                 );
-                reconnecting = true;
-                continue;
+                return SessionEnd::AttemptFailed;
             }
         }
 
@@ -584,8 +526,8 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
                 outcome.unwrap_or(Err(VTubeError::Timeout))
             }
             () = shutdown.notified() => {
-                announce_stopped(&state, &*publisher, &auth_state, &endpoint);
-                return;
+                announce_stopped(state, &**publisher, auth_state, endpoint);
+                return SessionEnd::Stopped;
             }
         };
         let mut subscriptions = match subscribe_outcome {
@@ -593,17 +535,16 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
             Err(e) => {
                 tracing::debug!(endpoint = %endpoint, error = %e, "event subscription failed, will retry");
                 let detail = e.to_string();
-                record_reason(&last_failure, VTubeDisconnectReason::SubscribeFailed);
-                settle_unless_retrying(*auto_reconnect.borrow_and_update(), &state, &*publisher);
+                record_reason(last_failure, VTubeDisconnectReason::SubscribeFailed);
+                settle_unless_retrying(auto_reconnect.is_enabled(), state, &**publisher);
                 emit_connection_changed(
-                    &*publisher,
-                    &endpoint,
+                    &**publisher,
+                    endpoint,
                     false,
                     Some(VTubeDisconnectReason::SubscribeFailed),
                     Some(detail),
                 );
-                reconnecting = true;
-                continue;
+                return SessionEnd::AttemptFailed;
             }
         };
 
@@ -615,14 +556,14 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
             let mut g = auth_state.write_recover();
             *g = AuthState::Connected;
         }
-        record_failure(&last_failure, None);
+        record_connection_failure(last_failure, None);
         set_connection_state(
-            &state,
-            &*publisher,
+            state,
+            &**publisher,
             ConnectionState::Connected,
             ConnectionTransition::Unexpected,
         );
-        emit_connection_changed(&*publisher, &endpoint, true, None, None);
+        emit_connection_changed(&**publisher, endpoint, true, None, None);
         #[expect(
             clippy::let_underscore_must_use,
             reason = "the connect waiter may already have stopped listening"
@@ -643,8 +584,8 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
         let mut seeds = tokio::select! {
             sent = send_seed_queries(&mut ws, timing.request_timeout) => sent,
             () = shutdown.notified() => {
-                announce_stopped(&state, &*publisher, &auth_state, &endpoint);
-                return;
+                announce_stopped(state, &**publisher, auth_state, endpoint);
+                return SessionEnd::Stopped;
             }
         };
         content_notifier.notify_model_changed();
@@ -653,10 +594,10 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
         loop {
             tokio::select! {
                 () = shutdown.notified() => {
-                    clear_session_state(&health_state, &health_tx);
+                    clear_session_state(health_state, health_tx);
                     catalog_signal.bump_options();
-                    announce_stopped(&state, &*publisher, &auth_state, &endpoint);
-                    return;
+                    announce_stopped(state, &**publisher, auth_state, endpoint);
+                    return SessionEnd::Stopped;
                 }
                 Some(req) = req_rx.recv() => {
                     match tokio::time::timeout(timing.request_timeout, send_text(&mut ws, req.payload)).await {
@@ -701,8 +642,8 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
                                 &query,
                                 &val["data"],
                                 &mut last_face_found,
-                                &health_state,
-                                &health_tx,
+                                health_state,
+                                health_tx,
                             );
                         } else if let Some(event_name) = subscriptions.remove(req_id) {
                             if msg_type == API_ERROR_MESSAGE_TYPE {
@@ -733,9 +674,9 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
                             content_notifier.notify_items_changed();
                         }
                         if !is_repeated_face_state(&event, &mut last_face_found) {
-                            crate::events::dispatch_vts_event(&event, &*publisher);
+                            crate::events::dispatch_vts_event(&event, &**publisher);
                         }
-                        update_from_event(&event, &health_state, &health_tx);
+                        update_from_event(&event, health_state, health_tx);
                     }
                 }
                 _ = expr_tick.tick(), if expr_poll.is_none() => {
@@ -761,7 +702,7 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
                     if let Some(data) = result {
                         unanswered_polls = 0;
                         if check_response(&data).is_ok()
-                            && diff_and_emit_expressions(&data, &mut expr_baseline, &*publisher)
+                            && diff_and_emit_expressions(&data, &mut expr_baseline, &**publisher)
                         {
                             content_notifier.notify_items_changed();
                         }
@@ -793,7 +734,7 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
             }
         }
         pending.clear();
-        clear_session_state(&health_state, &health_tx);
+        clear_session_state(health_state, health_tx);
         catalog_signal.bump_options();
 
         {
@@ -804,21 +745,29 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
             let mut g = auth_state.write_recover();
             *g = AuthState::Cold;
         }
-        record_reason(&last_failure, close_reason);
-        let retry = *auto_reconnect.borrow_and_update();
-        settle_unless_retrying(retry, &state, &*publisher);
+        record_reason(last_failure, close_reason);
+        let retry = auto_reconnect.is_enabled();
+        settle_unless_retrying(retry, state, &**publisher);
         if retry {
             set_connection_state(
-                &state,
-                &*publisher,
+                state,
+                &**publisher,
                 ConnectionState::Reconnecting,
                 ConnectionTransition::Unexpected,
             );
         }
-        emit_connection_changed(&*publisher, &endpoint, false, Some(close_reason), None);
-        backoff.reset();
-        reconnecting = true;
+        emit_connection_changed(&**publisher, endpoint, false, Some(close_reason), None);
+        SessionEnd::SessionLost
     }
+}
+
+pub(crate) async fn run_supervisor(mut ctx: SupervisorContext) {
+    let backoff = Backoff::new(
+        ctx.timing.reconnect_base_delay,
+        ctx.timing.reconnect_max_delay,
+    );
+    let auto_reconnect = ctx.auto_reconnect.clone();
+    run_reconnect_loop(&mut ctx, backoff, auto_reconnect).await;
 }
 
 async fn send_seed_queries(ws: &mut VtsWs, limit: Duration) -> HashMap<String, SeedQuery> {
@@ -902,10 +851,7 @@ mod tests {
     use forge_events::{PlatformConnectionChanged, TypedEvent};
     use forge_platform_core::{AtomicConnectionState, ConnectionState, ConnectionTransition};
 
-    use super::{
-        connection_state_transition, diff_and_emit_expressions, emit_connection_changed,
-        set_connection_state,
-    };
+    use super::{diff_and_emit_expressions, emit_connection_changed, set_connection_state};
     use crate::client::VTUBE_PLATFORM_ID;
     use crate::client::tests::MockPublisher;
     use crate::vocabulary::VTubeDisconnectReason;
@@ -938,7 +884,11 @@ mod tests {
                     ConnectionTransition::Expected,
                     ConnectionTransition::Unexpected,
                 ] {
-                    match connection_state_transition(previous, next, transition) {
+                    match AtomicConnectionState::new(previous).advance(
+                        VTUBE_PLATFORM_ID,
+                        next,
+                        transition,
+                    ) {
                         None => assert_eq!(
                             previous, next,
                             "{previous:?} -> {next:?} never reached the bus"

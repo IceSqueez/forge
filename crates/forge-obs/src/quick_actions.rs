@@ -1,11 +1,7 @@
-use std::collections::BTreeMap;
-
 use forge_platform_core::{
-    OptionListId, QuickAction, QuickActionAccent, QuickActionChoiceSource, QuickActionField,
-    QuickActionFieldKind, QuickActionFieldValue, QuickActionGroup, QuickActionLiveness,
-    QuickActions, SectionIcon,
+    QuickAction, QuickActionAccent, QuickActionField, QuickActionGroup, QuickActions,
 };
-use forge_types::{MessageCode, SubActionStep, UserText, VerbatimText};
+use forge_types::{MessageCode, VerbatimText};
 
 use crate::client::ObsClient;
 use crate::option_source::SCENE_FIELD;
@@ -40,61 +36,7 @@ impl Group {
             ),
             Self::Profiles => (labels::PROFILES, "settings", QuickActionAccent::Success),
         };
-        QuickActionGroup {
-            label: label.into(),
-            icon: SectionIcon::new(icon),
-            accent,
-        }
-    }
-}
-
-fn text_field(key: &str, label: MessageCode, default: &str) -> QuickActionField {
-    QuickActionField {
-        key: key.to_owned(),
-        label: label.into(),
-        kind: QuickActionFieldKind::Text,
-        default: Some(QuickActionFieldValue::Text(default.to_owned())),
-        placeholder: None,
-        hint: None,
-        required: false,
-    }
-}
-
-fn text_field_placeholder(
-    key: &str,
-    label: MessageCode,
-    default: &str,
-    placeholder: impl Into<UserText>,
-) -> QuickActionField {
-    QuickActionField {
-        placeholder: Some(placeholder.into()),
-        ..text_field(key, label, default)
-    }
-}
-
-fn toggle_field(key: &str, label: MessageCode, default: bool) -> QuickActionField {
-    QuickActionField {
-        key: key.to_owned(),
-        label: label.into(),
-        kind: QuickActionFieldKind::Toggle,
-        default: Some(QuickActionFieldValue::Toggle(default)),
-        placeholder: None,
-        hint: None,
-        required: false,
-    }
-}
-
-fn choice_field(key: &str, label: MessageCode, list: &str) -> QuickActionField {
-    QuickActionField {
-        key: key.to_owned(),
-        label: label.into(),
-        kind: QuickActionFieldKind::Choice(QuickActionChoiceSource::OptionList(OptionListId::new(
-            list,
-        ))),
-        default: None,
-        placeholder: None,
-        hint: None,
-        required: false,
+        QuickActionGroup::new(label, icon, accent)
     }
 }
 
@@ -112,26 +54,11 @@ fn quick_action(
     kind_id: &str,
     fields: Vec<QuickActionField>,
 ) -> QuickAction {
-    QuickAction {
-        label: label.into(),
-        icon: SectionIcon::new(icon),
-        enabled,
-        locked_reason: None,
-        liveness: QuickActionLiveness::Unknown,
-        group: Some(group.badge()),
-        destructive,
-        accent,
-        subaction_template: SubActionStep {
-            kind_id: kind_id.to_owned(),
-            config: BTreeMap::new(),
-            enabled: true,
-            continue_on_error: false,
-            condition: None,
-            label: None,
-        },
-        fields,
-        collection: None,
-    }
+    QuickAction::new(label, icon, accent, kind_id)
+        .enabled_if(enabled)
+        .in_group(group.badge())
+        .destructive_if(destructive)
+        .with_fields(fields)
 }
 
 impl QuickActions for ObsClient {
@@ -147,7 +74,10 @@ impl QuickActions for ObsClient {
                 Group::Scenes,
                 false,
                 sub_action_ids::SCENE_SWITCH_CURRENT,
-                vec![choice_field(SCENE_FIELD, labels::SCENE, SCENE_LIST).required()],
+                vec![
+                    QuickActionField::option_list(SCENE_FIELD, labels::SCENE, SCENE_LIST)
+                        .required(),
+                ],
             ),
             quick_action(
                 labels::SET_PREVIEW_SCENE,
@@ -157,7 +87,10 @@ impl QuickActions for ObsClient {
                 Group::Scenes,
                 false,
                 sub_action_ids::SCENE_SET_PREVIEW,
-                vec![choice_field(SCENE_FIELD, labels::SCENE, SCENE_LIST).required()],
+                vec![
+                    QuickActionField::option_list(SCENE_FIELD, labels::SCENE, SCENE_LIST)
+                        .required(),
+                ],
             ),
             quick_action(
                 labels::TRIGGER_TRANSITION,
@@ -168,8 +101,12 @@ impl QuickActions for ObsClient {
                 false,
                 sub_action_ids::SCENE_SET_TRANSITION,
                 vec![
-                    choice_field(config_keys::TRANSITION, labels::TRANSITION, TRANSITION_LIST)
-                        .required(),
+                    QuickActionField::option_list(
+                        config_keys::TRANSITION,
+                        labels::TRANSITION,
+                        TRANSITION_LIST,
+                    )
+                    .required(),
                 ],
             ),
             quick_action(
@@ -180,7 +117,11 @@ impl QuickActions for ObsClient {
                 Group::Scenes,
                 false,
                 sub_action_ids::STUDIO_SET_ENABLED,
-                vec![toggle_field(config_keys::ON, labels::ENABLED, true)],
+                vec![QuickActionField::toggle(
+                    config_keys::ON,
+                    labels::ENABLED,
+                    true,
+                )],
             ),
             quick_action(
                 labels::TOGGLE_SOURCE,
@@ -191,9 +132,11 @@ impl QuickActions for ObsClient {
                 false,
                 sub_action_ids::SOURCE_SET_VISIBLE,
                 vec![
-                    choice_field(SCENE_FIELD, labels::SCENE, SCENE_LIST).required(),
-                    choice_field(config_keys::SOURCE, labels::SOURCE, SOURCE_LIST).required(),
-                    toggle_field(config_keys::VISIBLE, labels::VISIBLE, true),
+                    QuickActionField::option_list(SCENE_FIELD, labels::SCENE, SCENE_LIST)
+                        .required(),
+                    QuickActionField::option_list(config_keys::SOURCE, labels::SOURCE, SOURCE_LIST)
+                        .required(),
+                    QuickActionField::toggle(config_keys::VISIBLE, labels::VISIBLE, true),
                 ],
             ),
             quick_action(
@@ -205,8 +148,13 @@ impl QuickActions for ObsClient {
                 false,
                 sub_action_ids::AUDIO_SET_MUTE,
                 vec![
-                    choice_field(config_keys::SOURCE, labels::AUDIO_SOURCE, INPUT_LIST).required(),
-                    toggle_field(config_keys::MUTED, labels::MUTED, false),
+                    QuickActionField::option_list(
+                        config_keys::SOURCE,
+                        labels::AUDIO_SOURCE,
+                        INPUT_LIST,
+                    )
+                    .required(),
+                    QuickActionField::toggle(config_keys::MUTED, labels::MUTED, false),
                 ],
             ),
             quick_action(
@@ -218,14 +166,12 @@ impl QuickActions for ObsClient {
                 false,
                 sub_action_ids::AUDIO_SET_VOLUME,
                 vec![
-                    choice_field(config_keys::SOURCE, labels::SOURCE, INPUT_LIST).required(),
-                    text_field_placeholder(
-                        config_keys::VOLUME_DB,
-                        labels::GAIN_DB,
-                        "-18",
-                        labels::VOLUME_EXAMPLE,
-                    )
-                    .required(),
+                    QuickActionField::option_list(config_keys::SOURCE, labels::SOURCE, INPUT_LIST)
+                        .required(),
+                    QuickActionField::text(config_keys::VOLUME_DB, labels::GAIN_DB)
+                        .with_default_text("-18")
+                        .with_placeholder(labels::VOLUME_EXAMPLE)
+                        .required(),
                 ],
             ),
             quick_action(
@@ -237,9 +183,12 @@ impl QuickActions for ObsClient {
                 false,
                 sub_action_ids::FILTER_SET_ENABLED,
                 vec![
-                    choice_field(config_keys::SOURCE, labels::SOURCE, SOURCE_LIST).required(),
-                    text_field(config_keys::FILTER, labels::FILTER, "Chroma Key").required(),
-                    toggle_field(config_keys::ENABLED, labels::ENABLED, true),
+                    QuickActionField::option_list(config_keys::SOURCE, labels::SOURCE, SOURCE_LIST)
+                        .required(),
+                    QuickActionField::text(config_keys::FILTER, labels::FILTER)
+                        .with_default_text("Chroma Key")
+                        .required(),
+                    QuickActionField::toggle(config_keys::ENABLED, labels::ENABLED, true),
                 ],
             ),
             quick_action(
@@ -250,7 +199,10 @@ impl QuickActions for ObsClient {
                 Group::SourcesAudio,
                 false,
                 sub_action_ids::BROWSER_REFRESH,
-                vec![choice_field(config_keys::SOURCE, labels::SOURCE, SOURCE_LIST).required()],
+                vec![
+                    QuickActionField::option_list(config_keys::SOURCE, labels::SOURCE, SOURCE_LIST)
+                        .required(),
+                ],
             ),
             quick_action(
                 labels::RESTART_MEDIA,
@@ -260,7 +212,10 @@ impl QuickActions for ObsClient {
                 Group::SourcesAudio,
                 false,
                 sub_action_ids::MEDIA_RESTART,
-                vec![choice_field(config_keys::SOURCE, labels::SOURCE, SOURCE_LIST).required()],
+                vec![
+                    QuickActionField::option_list(config_keys::SOURCE, labels::SOURCE, SOURCE_LIST)
+                        .required(),
+                ],
             ),
             quick_action(
                 labels::TOGGLE_STREAM,
@@ -270,7 +225,11 @@ impl QuickActions for ObsClient {
                 Group::StreamRecord,
                 true,
                 sub_action_ids::STREAMING_SET_ACTIVE,
-                vec![toggle_field(config_keys::ON, labels::STREAMING, true)],
+                vec![QuickActionField::toggle(
+                    config_keys::ON,
+                    labels::STREAMING,
+                    true,
+                )],
             ),
             quick_action(
                 labels::TOGGLE_RECORDING,
@@ -280,7 +239,11 @@ impl QuickActions for ObsClient {
                 Group::StreamRecord,
                 false,
                 sub_action_ids::RECORDING_SET_ACTIVE,
-                vec![toggle_field(config_keys::ON, labels::RECORDING, false)],
+                vec![QuickActionField::toggle(
+                    config_keys::ON,
+                    labels::RECORDING,
+                    false,
+                )],
             ),
             quick_action(
                 labels::TOGGLE_RECORDING_PAUSE,
@@ -300,7 +263,11 @@ impl QuickActions for ObsClient {
                 Group::StreamRecord,
                 false,
                 sub_action_ids::VIRTUALCAM_SET_ACTIVE,
-                vec![toggle_field(config_keys::ON, labels::ENABLED, false)],
+                vec![QuickActionField::toggle(
+                    config_keys::ON,
+                    labels::ENABLED,
+                    false,
+                )],
             ),
             quick_action(
                 labels::TOGGLE_REPLAY_BUFFER,
@@ -310,7 +277,11 @@ impl QuickActions for ObsClient {
                 Group::ReplayCapture,
                 false,
                 sub_action_ids::REPLAY_SET_ACTIVE,
-                vec![toggle_field(config_keys::ON, labels::ENABLED, true)],
+                vec![QuickActionField::toggle(
+                    config_keys::ON,
+                    labels::ENABLED,
+                    true,
+                )],
             ),
             quick_action(
                 labels::SAVE_REPLAY_BUFFER,
@@ -331,14 +302,12 @@ impl QuickActions for ObsClient {
                 false,
                 sub_action_ids::CAPTURE_SCREENSHOT,
                 vec![
-                    choice_field(config_keys::SOURCE, labels::SOURCE, SOURCE_LIST).required(),
-                    text_field_placeholder(
-                        config_keys::PATH,
-                        labels::SAVE_TO,
-                        "",
-                        VerbatimText::new("D:/Pictures/screenshot.png"),
-                    )
-                    .required(),
+                    QuickActionField::option_list(config_keys::SOURCE, labels::SOURCE, SOURCE_LIST)
+                        .required(),
+                    QuickActionField::text(config_keys::PATH, labels::SAVE_TO)
+                        .with_default_text("")
+                        .with_placeholder(VerbatimText::new("D:/Pictures/screenshot.png"))
+                        .required(),
                 ],
             ),
             quick_action(
@@ -350,13 +319,10 @@ impl QuickActions for ObsClient {
                 false,
                 sub_action_ids::RECORDING_SET_DIRECTORY,
                 vec![
-                    text_field_placeholder(
-                        config_keys::PATH,
-                        labels::FOLDER,
-                        "",
-                        VerbatimText::new("D:/Recordings"),
-                    )
-                    .required(),
+                    QuickActionField::text(config_keys::PATH, labels::FOLDER)
+                        .with_default_text("")
+                        .with_placeholder(VerbatimText::new("D:/Recordings"))
+                        .required(),
                 ],
             ),
             quick_action(
@@ -367,7 +333,10 @@ impl QuickActions for ObsClient {
                 Group::Profiles,
                 false,
                 sub_action_ids::PROFILE_SWITCH,
-                vec![choice_field(config_keys::NAME, labels::PROFILE, PROFILE_LIST).required()],
+                vec![
+                    QuickActionField::option_list(config_keys::NAME, labels::PROFILE, PROFILE_LIST)
+                        .required(),
+                ],
             ),
             quick_action(
                 labels::SWITCH_SCENE_COLLECTION,
@@ -378,8 +347,12 @@ impl QuickActions for ObsClient {
                 false,
                 sub_action_ids::COLLECTION_SWITCH,
                 vec![
-                    choice_field(config_keys::NAME, labels::COLLECTION, SCENE_COLLECTION_LIST)
-                        .required(),
+                    QuickActionField::option_list(
+                        config_keys::NAME,
+                        labels::COLLECTION,
+                        SCENE_COLLECTION_LIST,
+                    )
+                    .required(),
                 ],
             ),
         ]
@@ -398,6 +371,10 @@ mod tests {
     use crate::client::ObsClient;
     use crate::runners::register_obs_sub_actions;
     use crate::sink::ObsSink;
+    use forge_platform_core::{
+        QuickActionChoiceSource, QuickActionFieldKind, QuickActionFieldValue,
+    };
+    use std::collections::BTreeMap;
 
     fn roster() -> Vec<QuickAction> {
         ObsClient::new_for_test("localhost:4455".to_owned()).actions()

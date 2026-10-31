@@ -1,8 +1,6 @@
-use forge_platform_core::{
-    ConnectionState, QuickAction, QuickActionAccent, QuickActionLiveness, QuickActions, SectionIcon,
-};
+use forge_platform_core::{ConnectionState, QuickAction, QuickActionAccent, QuickActions};
 use forge_registry::SubActionConfig;
-use forge_types::{MessageCode, RecoverMutex, SubActionStep, Variant};
+use forge_types::{MessageCode, RecoverMutex, Variant};
 
 use crate::client::DiscordClient;
 use crate::vocabulary::{config_keys, labels, sub_action_ids};
@@ -16,26 +14,9 @@ fn webhook_action(
     kind_id: &str,
     config: SubActionConfig,
 ) -> QuickAction {
-    QuickAction {
-        label: label.into(),
-        icon: SectionIcon::new(icon),
-        enabled,
-        locked_reason: None,
-        liveness: QuickActionLiveness::Unknown,
-        group: None,
-        destructive: false,
-        accent: QuickActionAccent::Brand,
-        subaction_template: SubActionStep {
-            kind_id: kind_id.to_owned(),
-            config,
-            enabled: true,
-            continue_on_error: false,
-            condition: None,
-            label: None,
-        },
-        fields: Vec::new(),
-        collection: None,
-    }
+    QuickAction::new(label, icon, QuickActionAccent::Brand, kind_id)
+        .enabled_if(enabled)
+        .with_config(config)
 }
 
 impl QuickActions for DiscordClient {

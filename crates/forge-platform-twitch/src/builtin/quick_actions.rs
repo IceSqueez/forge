@@ -2,19 +2,15 @@ use std::collections::BTreeMap;
 
 use forge_platform_core::{
     CollectionId, CollectionRevisions, QuickAction, QuickActionAccent, QuickActionField,
-    QuickActionGroup, QuickActionLiveness, QuickActions, SectionIcon,
+    QuickActionGroup, QuickActionLiveness, QuickActions,
 };
 use forge_registry::{ChoiceField, ConfigChoice, DurationField};
-use forge_types::{MessageCode, SubActionStep, UserText, Variant};
+use forge_types::{MessageCode, UserText, Variant};
 
 use super::TwitchIntegrationBundle;
 use crate::account::identity::BroadcasterTier;
 use crate::collection_keys::REWARDS_COLLECTION;
 use crate::lifecycle::{LifecycleSnapshot, ShieldPhase};
-use crate::quick_action_fields::{
-    choice_field, choice_field_hint, int_field, live_item_field, multiline_field, text_field,
-    toggle_field,
-};
 use crate::sub_actions::{
     AD_LENGTH, ANNOUNCEMENT_COLOR, AdLength, AnnouncementColor, EMOTE_ONLY, FOLLOWER_MODE_MIN_AGE,
     ModeToggle, POLL_DURATION, PREDICTION_WINDOW, PollEndStatus, SLOW_MODE_WAIT, TIMEOUT_DURATION,
@@ -53,7 +49,7 @@ fn choice_options<T: ConfigChoice>(
 }
 
 fn duration_field(field: &DurationField, label: MessageCode, default: i64) -> QuickActionField {
-    int_field(
+    QuickActionField::int(
         field.key,
         label,
         default,
@@ -96,11 +92,7 @@ impl Group {
                 QuickActionAccent::AccentPinkLight,
             ),
         };
-        QuickActionGroup {
-            label: label.into(),
-            icon: SectionIcon::new(icon),
-            accent,
-        }
+        QuickActionGroup::new(label, icon, accent)
     }
 }
 
@@ -121,24 +113,13 @@ fn quick_action(
     fields: Vec<QuickActionField>,
 ) -> QuickAction {
     QuickAction {
-        label: label.into(),
-        icon: SectionIcon::new(icon),
-        enabled,
         locked_reason,
-        liveness: QuickActionLiveness::Unknown,
-        group: Some(group.badge()),
-        destructive,
-        accent,
-        subaction_template: SubActionStep {
-            kind_id: kind_id.to_owned(),
-            config,
-            enabled: true,
-            continue_on_error: false,
-            condition: None,
-            label: None,
-        },
-        fields,
-        collection: None,
+        ..QuickAction::new(label, icon, accent, kind_id)
+            .enabled_if(enabled)
+            .in_group(group.badge())
+            .destructive_if(destructive)
+            .with_config(config)
+            .with_fields(fields)
     }
 }
 
@@ -168,32 +149,33 @@ fn manage_collection_action(
 }
 
 fn active_poll_field() -> QuickActionField {
-    live_item_field(config_keys::POLL_ID, labels::POLL, ACTIVE_POLL_LIST)
+    QuickActionField::option_list(config_keys::POLL_ID, labels::POLL, ACTIVE_POLL_LIST).required()
 }
 
 fn prediction_field(list: &str) -> QuickActionField {
-    live_item_field(config_keys::PREDICTION_ID, labels::PREDICTION, list)
+    QuickActionField::option_list(config_keys::PREDICTION_ID, labels::PREDICTION, list).required()
 }
 
 fn winning_outcome_field() -> QuickActionField {
-    live_item_field(
+    QuickActionField::option_list(
         config_keys::WINNING_OUTCOME_ID,
         labels::WINNING_OUTCOME,
         PREDICTION_OUTCOME_LIST,
     )
+    .required()
 }
 
 fn redemption_fields() -> Vec<QuickActionField> {
     vec![
-        QuickActionField {
-            hint: Some(labels::QUEUED_REWARD_HINT.into()),
-            ..live_item_field(config_keys::REWARD_ID, labels::REWARD, QUEUED_REWARD_LIST)
-        },
-        live_item_field(
+        QuickActionField::option_list(config_keys::REWARD_ID, labels::REWARD, QUEUED_REWARD_LIST)
+            .required()
+            .with_hint(labels::QUEUED_REWARD_HINT),
+        QuickActionField::option_list(
             config_keys::REDEMPTION_ID,
             labels::REDEMPTION,
             UNFULFILLED_REDEMPTION_LIST,
-        ),
+        )
+        .required(),
     ]
 }
 
@@ -258,12 +240,9 @@ impl QuickActions for TwitchIntegrationBundle {
                 sub_action_ids::CHANNEL_UPDATE_TITLE,
                 BTreeMap::new(),
                 vec![
-                    text_field(
-                        config_keys::TITLE,
-                        labels::STREAM_TITLE,
-                        labels::STREAM_TITLE,
-                    )
-                    .required(),
+                    QuickActionField::text(config_keys::TITLE, labels::STREAM_TITLE)
+                        .with_placeholder(labels::STREAM_TITLE)
+                        .required(),
                 ],
             ),
             quick_action(
@@ -277,12 +256,9 @@ impl QuickActions for TwitchIntegrationBundle {
                 sub_action_ids::CHANNEL_UPDATE_CATEGORY,
                 BTreeMap::new(),
                 vec![
-                    text_field(
-                        config_keys::CATEGORY_NAME,
-                        labels::CATEGORY,
-                        labels::CATEGORY_EXAMPLE,
-                    )
-                    .required(),
+                    QuickActionField::text(config_keys::CATEGORY_NAME, labels::CATEGORY)
+                        .with_placeholder(labels::CATEGORY_EXAMPLE)
+                        .required(),
                 ],
             ),
             quick_action(
@@ -295,11 +271,10 @@ impl QuickActions for TwitchIntegrationBundle {
                 false,
                 sub_action_ids::CHANNEL_UPDATE_TAGS,
                 BTreeMap::new(),
-                vec![text_field(
-                    config_keys::TAGS,
-                    labels::TAGS_COMMA_SEP,
-                    labels::TAGS_EXAMPLE,
-                )],
+                vec![
+                    QuickActionField::text(config_keys::TAGS, labels::TAGS_COMMA_SEP)
+                        .with_placeholder(labels::TAGS_EXAMPLE),
+                ],
             ),
             quick_action(
                 labels::CREATE_STREAM_MARKER,
@@ -311,11 +286,10 @@ impl QuickActions for TwitchIntegrationBundle {
                 false,
                 sub_action_ids::CHANNEL_CREATE_MARKER,
                 BTreeMap::new(),
-                vec![text_field(
-                    config_keys::DESCRIPTION,
-                    labels::MARKER_NOTE,
-                    labels::OPTIONAL,
-                )],
+                vec![
+                    QuickActionField::text(config_keys::DESCRIPTION, labels::MARKER_NOTE)
+                        .with_placeholder(labels::OPTIONAL),
+                ],
             ),
             gated_on(
                 quick_action(
@@ -329,15 +303,16 @@ impl QuickActions for TwitchIntegrationBundle {
                     sub_action_ids::POLL_START,
                     BTreeMap::new(),
                     vec![
-                        text_field(config_keys::TITLE, labels::QUESTION, labels::POLL_QUESTION)
+                        QuickActionField::text(config_keys::TITLE, labels::QUESTION)
+                            .with_placeholder(labels::POLL_QUESTION)
                             .required(),
-                        multiline_field(
+                        QuickActionField::multiline(
                             config_keys::CHOICES,
                             labels::CHOICES_ONE_PER_LINE,
-                            labels::ONE_CHOICE_PER_LINE,
                         )
+                        .with_placeholder(labels::ONE_CHOICE_PER_LINE)
                         .required(),
-                        toggle_field(
+                        QuickActionField::toggle(
                             config_keys::CHANNEL_POINTS_VOTING_ENABLED,
                             labels::CHANNEL_POINTS_VOTING,
                             false,
@@ -393,17 +368,14 @@ impl QuickActions for TwitchIntegrationBundle {
                     sub_action_ids::PREDICTION_START,
                     BTreeMap::new(),
                     vec![
-                        text_field(
-                            config_keys::TITLE,
-                            labels::TITLE,
-                            labels::PREDICTION_QUESTION,
-                        )
-                        .required(),
-                        multiline_field(
+                        QuickActionField::text(config_keys::TITLE, labels::TITLE)
+                            .with_placeholder(labels::PREDICTION_QUESTION)
+                            .required(),
+                        QuickActionField::multiline(
                             config_keys::OUTCOMES,
                             labels::OUTCOMES_ONE_PER_LINE,
-                            labels::ONE_OUTCOME_PER_LINE,
                         )
+                        .with_placeholder(labels::ONE_OUTCOME_PER_LINE)
                         .required(),
                         duration_field(
                             &PREDICTION_WINDOW,
@@ -479,7 +451,8 @@ impl QuickActions for TwitchIntegrationBundle {
                     ),
                 ]),
                 vec![
-                    multiline_field(config_keys::MESSAGE, labels::MESSAGE, labels::MESSAGE)
+                    QuickActionField::multiline(config_keys::MESSAGE, labels::MESSAGE)
+                        .with_placeholder(labels::MESSAGE)
                         .required(),
                 ],
             ),
@@ -494,13 +467,10 @@ impl QuickActions for TwitchIntegrationBundle {
                 sub_action_ids::CHAT_SEND_ANNOUNCEMENT,
                 BTreeMap::new(),
                 vec![
-                    multiline_field(
-                        config_keys::MESSAGE,
-                        labels::ANNOUNCEMENT,
-                        labels::ANNOUNCEMENT_TEXT,
-                    )
-                    .required(),
-                    choice_field(
+                    QuickActionField::multiline(config_keys::MESSAGE, labels::ANNOUNCEMENT)
+                        .with_placeholder(labels::ANNOUNCEMENT_TEXT)
+                        .required(),
+                    QuickActionField::static_choice(
                         ANNOUNCEMENT_COLOR.key,
                         labels::COLOR,
                         default_choice(&ANNOUNCEMENT_COLOR),
@@ -562,7 +532,7 @@ impl QuickActions for TwitchIntegrationBundle {
                 false,
                 sub_action_ids::CHAT_SET_MODE,
                 BTreeMap::new(),
-                vec![choice_field(
+                vec![QuickActionField::static_choice(
                     EMOTE_ONLY.key,
                     labels::EMOTE_ONLY_MODE,
                     ModeToggle::On.wire_name(),
@@ -580,18 +550,16 @@ impl QuickActions for TwitchIntegrationBundle {
                 sub_action_ids::MODERATION_TIMEOUT_USER,
                 BTreeMap::new(),
                 vec![
-                    text_field(
-                        config_keys::TARGET_USER_LOGIN,
-                        labels::USERNAME,
-                        labels::USERNAME_PLACEHOLDER,
-                    )
-                    .required(),
+                    QuickActionField::text(config_keys::TARGET_USER_LOGIN, labels::USERNAME)
+                        .with_placeholder(labels::USERNAME_PLACEHOLDER)
+                        .required(),
                     duration_field(
                         &TIMEOUT_DURATION,
                         labels::DURATION_SECONDS,
                         TIMEOUT_DURATION.default,
                     ),
-                    text_field(config_keys::REASON, labels::REASON, labels::OPTIONAL),
+                    QuickActionField::text(config_keys::REASON, labels::REASON)
+                        .with_placeholder(labels::OPTIONAL),
                 ],
             ),
             quick_action(
@@ -605,13 +573,11 @@ impl QuickActions for TwitchIntegrationBundle {
                 sub_action_ids::MODERATION_BAN_USER,
                 BTreeMap::new(),
                 vec![
-                    text_field(
-                        config_keys::TARGET_USER_LOGIN,
-                        labels::USERNAME,
-                        labels::USERNAME_PLACEHOLDER,
-                    )
-                    .required(),
-                    text_field(config_keys::REASON, labels::REASON, labels::OPTIONAL),
+                    QuickActionField::text(config_keys::TARGET_USER_LOGIN, labels::USERNAME)
+                        .with_placeholder(labels::USERNAME_PLACEHOLDER)
+                        .required(),
+                    QuickActionField::text(config_keys::REASON, labels::REASON)
+                        .with_placeholder(labels::OPTIONAL),
                 ],
             ),
             quick_action(
@@ -625,12 +591,9 @@ impl QuickActions for TwitchIntegrationBundle {
                 sub_action_ids::MODERATION_UNBAN_USER,
                 BTreeMap::new(),
                 vec![
-                    text_field(
-                        config_keys::TARGET_USER_LOGIN,
-                        labels::USERNAME,
-                        labels::USERNAME_PLACEHOLDER,
-                    )
-                    .required(),
+                    QuickActionField::text(config_keys::TARGET_USER_LOGIN, labels::USERNAME)
+                        .with_placeholder(labels::USERNAME_PLACEHOLDER)
+                        .required(),
                 ],
             ),
             shield_mode_toggle(connected, self.lifecycle.shield_phase()),
@@ -645,12 +608,9 @@ impl QuickActions for TwitchIntegrationBundle {
                 sub_action_ids::MODERATION_ADD_VIP,
                 BTreeMap::new(),
                 vec![
-                    text_field(
-                        config_keys::TARGET_USER_LOGIN,
-                        labels::USERNAME,
-                        labels::USERNAME_PLACEHOLDER,
-                    )
-                    .required(),
+                    QuickActionField::text(config_keys::TARGET_USER_LOGIN, labels::USERNAME)
+                        .with_placeholder(labels::USERNAME_PLACEHOLDER)
+                        .required(),
                 ],
             ),
             quick_action(
@@ -664,12 +624,9 @@ impl QuickActions for TwitchIntegrationBundle {
                 sub_action_ids::MODERATION_REMOVE_VIP,
                 BTreeMap::new(),
                 vec![
-                    text_field(
-                        config_keys::TARGET_USER_LOGIN,
-                        labels::USERNAME,
-                        labels::USERNAME_PLACEHOLDER,
-                    )
-                    .required(),
+                    QuickActionField::text(config_keys::TARGET_USER_LOGIN, labels::USERNAME)
+                        .with_placeholder(labels::USERNAME_PLACEHOLDER)
+                        .required(),
                 ],
             ),
             quick_action(
@@ -683,12 +640,9 @@ impl QuickActions for TwitchIntegrationBundle {
                 sub_action_ids::MODERATION_ADD_MODERATOR,
                 BTreeMap::new(),
                 vec![
-                    text_field(
-                        config_keys::TARGET_USER_LOGIN,
-                        labels::USERNAME,
-                        labels::USERNAME_PLACEHOLDER,
-                    )
-                    .required(),
+                    QuickActionField::text(config_keys::TARGET_USER_LOGIN, labels::USERNAME)
+                        .with_placeholder(labels::USERNAME_PLACEHOLDER)
+                        .required(),
                 ],
             ),
             quick_action(
@@ -702,12 +656,9 @@ impl QuickActions for TwitchIntegrationBundle {
                 sub_action_ids::MODERATION_REMOVE_MODERATOR,
                 BTreeMap::new(),
                 vec![
-                    text_field(
-                        config_keys::TARGET_USER_LOGIN,
-                        labels::USERNAME,
-                        labels::USERNAME_PLACEHOLDER,
-                    )
-                    .required(),
+                    QuickActionField::text(config_keys::TARGET_USER_LOGIN, labels::USERNAME)
+                        .with_placeholder(labels::USERNAME_PLACEHOLDER)
+                        .required(),
                 ],
             ),
             gated_on(
@@ -722,11 +673,11 @@ impl QuickActions for TwitchIntegrationBundle {
                     sub_action_ids::CHANNEL_START_RAID,
                     BTreeMap::new(),
                     vec![
-                        text_field(
+                        QuickActionField::text(
                             config_keys::TO_BROADCASTER_LOGIN,
                             labels::RAID_TARGET,
-                            labels::CHANNEL_NAME,
                         )
+                        .with_placeholder(labels::CHANNEL_NAME)
                         .required(),
                     ],
                 ),
@@ -758,12 +709,9 @@ impl QuickActions for TwitchIntegrationBundle {
                 sub_action_ids::CHANNEL_SEND_SHOUTOUT,
                 BTreeMap::new(),
                 vec![
-                    text_field(
-                        config_keys::TO_BROADCASTER_LOGIN,
-                        labels::CHANNEL,
-                        labels::CHANNEL_NAME,
-                    )
-                    .required(),
+                    QuickActionField::text(config_keys::TO_BROADCASTER_LOGIN, labels::CHANNEL)
+                        .with_placeholder(labels::CHANNEL_NAME)
+                        .required(),
                 ],
             ),
             quick_action(
@@ -777,13 +725,13 @@ impl QuickActions for TwitchIntegrationBundle {
                 sub_action_ids::CHANNEL_RUN_AD,
                 BTreeMap::new(),
                 vec![
-                    choice_field_hint(
+                    QuickActionField::static_choice(
                         AD_LENGTH.key,
                         labels::DURATION,
                         QUICK_AD_LENGTH.wire_name(),
                         &choice_options(AdLength::label),
-                        labels::AD_COOLDOWN_HINT,
                     )
+                    .with_hint(labels::AD_COOLDOWN_HINT)
                     .required(),
                 ],
             ),

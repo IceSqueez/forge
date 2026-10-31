@@ -1,11 +1,9 @@
 use std::collections::BTreeMap;
 
 use forge_platform_core::{
-    OptionListId, QuickAction, QuickActionAccent, QuickActionChoiceSource, QuickActionField,
-    QuickActionFieldKind, QuickActionFieldValue, QuickActionGroup, QuickActionLiveness,
-    QuickActions, SectionIcon,
+    QuickAction, QuickActionAccent, QuickActionField, QuickActionGroup, QuickActions,
 };
-use forge_types::{MessageCode, SubActionStep, Variant};
+use forge_types::{MessageCode, Variant};
 
 use crate::client::VTubeClient;
 use crate::vocabulary::option_lists::{
@@ -47,37 +45,7 @@ impl Group {
             Self::Items => (labels::ITEMS, "confetti", QuickActionAccent::Info),
             Self::ModelScene => (labels::MODEL_SCENE, "user-square", QuickActionAccent::Bits),
         };
-        QuickActionGroup {
-            label: label.into(),
-            icon: SectionIcon::new(icon),
-            accent,
-        }
-    }
-}
-
-fn toggle_field(key: &str, label: MessageCode, default: bool) -> QuickActionField {
-    QuickActionField {
-        key: key.to_owned(),
-        label: label.into(),
-        kind: QuickActionFieldKind::Toggle,
-        default: Some(QuickActionFieldValue::Toggle(default)),
-        placeholder: None,
-        hint: None,
-        required: false,
-    }
-}
-
-fn choice_field(key: &str, label: MessageCode, list: &str) -> QuickActionField {
-    QuickActionField {
-        key: key.to_owned(),
-        label: label.into(),
-        kind: QuickActionFieldKind::Choice(QuickActionChoiceSource::OptionList(OptionListId::new(
-            list,
-        ))),
-        default: None,
-        placeholder: None,
-        hint: None,
-        required: true,
+        QuickActionGroup::new(label, icon, accent)
     }
 }
 
@@ -96,26 +64,12 @@ fn quick_action(
     config: BTreeMap<String, Variant>,
     fields: Vec<QuickActionField>,
 ) -> QuickAction {
-    QuickAction {
-        label: label.into(),
-        icon: SectionIcon::new(icon),
-        enabled,
-        locked_reason: None,
-        liveness: QuickActionLiveness::Unknown,
-        group: Some(group.badge()),
-        destructive,
-        accent,
-        subaction_template: SubActionStep {
-            kind_id: kind_id.to_owned(),
-            config,
-            enabled: true,
-            continue_on_error: false,
-            condition: None,
-            label: None,
-        },
-        fields,
-        collection: None,
-    }
+    QuickAction::new(label, icon, accent, kind_id)
+        .enabled_if(enabled)
+        .in_group(group.badge())
+        .destructive_if(destructive)
+        .with_config(config)
+        .with_fields(fields)
 }
 
 impl QuickActions for VTubeClient {
@@ -132,11 +86,14 @@ impl QuickActions for VTubeClient {
                 false,
                 sub_action_ids::EXPRESSION_SET,
                 BTreeMap::new(),
-                vec![choice_field(
-                    EXPRESSION_FIELD,
-                    labels::EXPRESSION,
-                    EXPRESSION_LIST,
-                )],
+                vec![
+                    QuickActionField::option_list(
+                        EXPRESSION_FIELD,
+                        labels::EXPRESSION,
+                        EXPRESSION_LIST,
+                    )
+                    .required(),
+                ],
             ),
             quick_action(
                 labels::TOGGLE_EXPRESSION,
@@ -147,11 +104,14 @@ impl QuickActions for VTubeClient {
                 false,
                 sub_action_ids::EXPRESSION_SET,
                 config([(config_keys::ACTIVE, Variant::Bool(false))]),
-                vec![choice_field(
-                    EXPRESSION_FIELD,
-                    labels::EXPRESSION,
-                    EXPRESSION_LIST,
-                )],
+                vec![
+                    QuickActionField::option_list(
+                        EXPRESSION_FIELD,
+                        labels::EXPRESSION,
+                        EXPRESSION_LIST,
+                    )
+                    .required(),
+                ],
             ),
             quick_action(
                 labels::RESET_TO_IDLE,
@@ -173,7 +133,10 @@ impl QuickActions for VTubeClient {
                 false,
                 sub_action_ids::HOTKEY_TRIGGER,
                 BTreeMap::new(),
-                vec![choice_field(HOTKEY_FIELD, labels::HOTKEY, HOTKEY_LIST)],
+                vec![
+                    QuickActionField::option_list(HOTKEY_FIELD, labels::HOTKEY, HOTKEY_LIST)
+                        .required(),
+                ],
             ),
             quick_action(
                 labels::PLAY_ANIMATION,
@@ -184,7 +147,10 @@ impl QuickActions for VTubeClient {
                 false,
                 sub_action_ids::HOTKEY_TRIGGER,
                 BTreeMap::new(),
-                vec![choice_field(HOTKEY_FIELD, labels::HOTKEY, HOTKEY_LIST)],
+                vec![
+                    QuickActionField::option_list(HOTKEY_FIELD, labels::HOTKEY, HOTKEY_LIST)
+                        .required(),
+                ],
             ),
             quick_action(
                 labels::THROW_ITEM,
@@ -195,11 +161,14 @@ impl QuickActions for VTubeClient {
                 false,
                 sub_action_ids::ITEM_THROW,
                 BTreeMap::new(),
-                vec![choice_field(
-                    ITEM_FILE_FIELD,
-                    labels::ITEM_FILE,
-                    ITEM_FILE_LIST,
-                )],
+                vec![
+                    QuickActionField::option_list(
+                        ITEM_FILE_FIELD,
+                        labels::ITEM_FILE,
+                        ITEM_FILE_LIST,
+                    )
+                    .required(),
+                ],
             ),
             quick_action(
                 labels::PIN_ITEM_TO_MODEL,
@@ -210,11 +179,14 @@ impl QuickActions for VTubeClient {
                 false,
                 sub_action_ids::ITEM_PIN,
                 BTreeMap::new(),
-                vec![choice_field(
-                    ITEM_INSTANCE_FIELD,
-                    labels::ITEM,
-                    ITEM_INSTANCE_LIST,
-                )],
+                vec![
+                    QuickActionField::option_list(
+                        ITEM_INSTANCE_FIELD,
+                        labels::ITEM,
+                        ITEM_INSTANCE_LIST,
+                    )
+                    .required(),
+                ],
             ),
             quick_action(
                 labels::LOAD_ITEM,
@@ -225,11 +197,14 @@ impl QuickActions for VTubeClient {
                 false,
                 sub_action_ids::ITEM_LOAD,
                 BTreeMap::new(),
-                vec![choice_field(
-                    ITEM_FILE_FIELD,
-                    labels::ITEM_FILE,
-                    ITEM_FILE_LIST,
-                )],
+                vec![
+                    QuickActionField::option_list(
+                        ITEM_FILE_FIELD,
+                        labels::ITEM_FILE,
+                        ITEM_FILE_LIST,
+                    )
+                    .required(),
+                ],
             ),
             quick_action(
                 labels::REMOVE_ALL_ITEMS,
@@ -251,7 +226,10 @@ impl QuickActions for VTubeClient {
                 false,
                 sub_action_ids::MODEL_LOAD,
                 BTreeMap::new(),
-                vec![choice_field(MODEL_FIELD, labels::MODEL, MODEL_LIST)],
+                vec![
+                    QuickActionField::option_list(MODEL_FIELD, labels::MODEL, MODEL_LIST)
+                        .required(),
+                ],
             ),
             quick_action(
                 labels::MOVE_SCALE_MODEL,
@@ -294,7 +272,11 @@ impl QuickActions for VTubeClient {
                 false,
                 sub_action_ids::MODEL_SET_PHYSICS,
                 BTreeMap::new(),
-                vec![toggle_field(config_keys::ENABLED, labels::ENABLED, true)],
+                vec![QuickActionField::toggle(
+                    config_keys::ENABLED,
+                    labels::ENABLED,
+                    true,
+                )],
             ),
         ]
     }
@@ -312,6 +294,9 @@ mod tests {
     use crate::runners::register_vtube_sub_actions;
     use crate::runners::test_support::MockSink;
     use crate::sink::VTubeSink;
+    use forge_platform_core::{
+        QuickActionChoiceSource, QuickActionFieldKind, QuickActionFieldValue,
+    };
     use forge_types::UserText;
 
     fn roster() -> Vec<QuickAction> {

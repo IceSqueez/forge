@@ -6,6 +6,7 @@ use tokio::sync::Notify;
 
 use forge_platform_core::{
     BuiltinControl, ConnectionState, ConnectionTransition, ControlFailure, ControlOutcome,
+    record_connection_failure,
 };
 
 use crate::client::VTubeClient;
@@ -40,7 +41,7 @@ impl BuiltinControl for VTubeClient {
             let mut g = self.connected_at.write_recover();
             *g = None;
         }
-        crate::supervisor::record_failure(&self.last_failure, None);
+        record_connection_failure(&self.last_failure, None);
 
         let (new_req_tx, new_req_rx) = tokio::sync::mpsc::unbounded_channel();
         {
@@ -62,7 +63,7 @@ impl BuiltinControl for VTubeClient {
             content_notifier: self.content_notifier.clone(),
             catalog_signal: self.catalog_signal(),
             connected_notifier: self.connected_notifier.clone(),
-            auto_reconnect: self.auto_reconnect.subscribe(),
+            auto_reconnect: self.auto_reconnect.watch(),
             last_failure: Arc::clone(&self.last_failure),
             timing: self.timing,
             transport_layer: Arc::clone(&self.transport_layer),
@@ -89,7 +90,7 @@ impl BuiltinControl for VTubeClient {
         {
             tracing::warn!(%error, "vtube supervisor task ended abnormally");
         }
-        crate::supervisor::record_failure(&self.last_failure, None);
+        record_connection_failure(&self.last_failure, None);
         crate::supervisor::set_connection_state(
             &self.state,
             &*self.reconnect_publisher,

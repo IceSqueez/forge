@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use forge_platform_core::{
     BuiltinCollections, CollectionFailure, CollectionField, CollectionId, CollectionItem,
     CollectionItemAccess, CollectionItemId, CollectionMetadata, CollectionOutcome,
-    CollectionRevisions, CollectionToggle, QuickActionFieldValue, SectionIcon,
+    CollectionRevisions, CollectionToggle, QuickActionField, QuickActionFieldValue, SectionIcon,
 };
 
 use crate::account::identity::BroadcasterTier;
@@ -19,7 +19,6 @@ use crate::custom_rewards::{
 };
 use crate::helix::{HelixError, HelixRequest};
 use crate::helix_envelope::{first_row, rows};
-use crate::quick_action_fields::{int_field, text_field, toggle_field};
 use crate::vocabulary::{labels, messages};
 use forge_net::status::NOT_FOUND;
 use forge_types::{MessageCode, MessageRef, VerbatimText};
@@ -342,12 +341,13 @@ fn rewards_metadata() -> CollectionMetadata {
         capacity: Some(MAX_CUSTOM_REWARDS),
         fields: vec![
             CollectionField {
-                field: text_field(TITLE_KEY, labels::TITLE, labels::REWARD_TITLE_PLACEHOLDER)
+                field: QuickActionField::text(TITLE_KEY, labels::TITLE)
+                    .with_placeholder(labels::REWARD_TITLE_PLACEHOLDER)
                     .required(),
                 max_chars: Some(MAX_TITLE_CHARS),
             },
             CollectionField {
-                field: int_field(
+                field: QuickActionField::int(
                     COST_KEY,
                     labels::REWARD_COST,
                     DEFAULT_REWARD_COST,
@@ -358,11 +358,12 @@ fn rewards_metadata() -> CollectionMetadata {
                 max_chars: None,
             },
             CollectionField {
-                field: text_field(PROMPT_KEY, labels::PROMPT, labels::OPTIONAL),
+                field: QuickActionField::text(PROMPT_KEY, labels::PROMPT)
+                    .with_placeholder(labels::OPTIONAL),
                 max_chars: Some(MAX_PROMPT_CHARS),
             },
             CollectionField {
-                field: toggle_field(
+                field: QuickActionField::toggle(
                     IS_USER_INPUT_REQUIRED_KEY,
                     labels::REQUIRE_VIEWER_INPUT,
                     false,
@@ -370,15 +371,12 @@ fn rewards_metadata() -> CollectionMetadata {
                 max_chars: None,
             },
             CollectionField {
-                field: text_field(
-                    BACKGROUND_COLOR_KEY,
-                    labels::BACKGROUND_COLOR,
-                    VerbatimText::new("#9147FF"),
-                ),
+                field: QuickActionField::text(BACKGROUND_COLOR_KEY, labels::BACKGROUND_COLOR)
+                    .with_placeholder(VerbatimText::new("#9147FF")),
                 max_chars: Some(HEX_COLOR_LEN),
             },
             CollectionField {
-                field: int_field(
+                field: QuickActionField::int(
                     MAX_PER_STREAM_KEY,
                     labels::MAX_PER_STREAM,
                     UNLIMITED,
@@ -388,7 +386,7 @@ fn rewards_metadata() -> CollectionMetadata {
                 max_chars: None,
             },
             CollectionField {
-                field: int_field(
+                field: QuickActionField::int(
                     MAX_PER_USER_PER_STREAM_KEY,
                     labels::MAX_PER_VIEWER,
                     UNLIMITED,
@@ -398,7 +396,7 @@ fn rewards_metadata() -> CollectionMetadata {
                 max_chars: None,
             },
             CollectionField {
-                field: int_field(
+                field: QuickActionField::int(
                     GLOBAL_COOLDOWN_SECONDS_KEY,
                     labels::GLOBAL_COOLDOWN,
                     UNLIMITED,

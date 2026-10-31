@@ -39,6 +39,17 @@ impl AtomicConnectionState {
     pub fn store(&self, state: ConnectionState) {
         self.0.store(encode_state(state), Ordering::Relaxed);
     }
+
+    pub fn advance(
+        &self,
+        platform_id: &str,
+        next: ConnectionState,
+        transition: ConnectionTransition,
+    ) -> Option<Event> {
+        let previous = self.load();
+        self.store(next);
+        (previous != next).then(|| connection_state_changed_event(platform_id, next, transition))
+    }
 }
 
 #[async_trait]

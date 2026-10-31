@@ -13,16 +13,6 @@ use gpui::{
     App, ClickEvent, Context, Entity, EventEmitter, SharedString, Subscription, Window, div,
 };
 
-const EDITOR_KINDS: [VariantKind; 7] = [
-    VariantKind::Int,
-    VariantKind::Float,
-    VariantKind::Bool,
-    VariantKind::String,
-    VariantKind::Datetime,
-    VariantKind::Array,
-    VariantKind::Object,
-];
-
 const VALUE_AREA_ROWS: std::ops::RangeInclusive<usize> = 3..=12;
 
 #[derive(Clone)]
@@ -344,7 +334,7 @@ impl GlobalEditor {
     ) -> impl IntoElement {
         let locked = matches!(self.mode, EditorMode::Edit(_));
         let mut chips = div().flex().flex_wrap().gap(spacing(Spacing::Xxs, density));
-        for (i, &kind) in EDITOR_KINDS.iter().enumerate() {
+        for (i, &kind) in VariantKind::ALL.iter().enumerate() {
             let active = self.kind == kind;
             let mut c = chip(
                 kind.contract_name(),

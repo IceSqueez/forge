@@ -1,5 +1,4 @@
-use super::ScriptEditorView;
-use crate::navigation::{NavRequested, Screen};
+use super::{ScriptDocument, ScriptDocumentEvent};
 use forge_components::{
     BORDER_THIN, Density, FONT_SECTION_LABEL, FONT_XS, FONT_XXS, ForgePalette, HOVER_FILL_ALPHA,
     Icon, KeyActivated, Radius, Spacing, body_family, fmt_display_relative, icon, mono_family,
@@ -11,65 +10,17 @@ use gpui::{
 };
 
 const GLYPH_FILE: Pixels = px(12.0);
-const GLYPH_STATUS: Pixels = px(12.0);
 const GLYPH_TOOLBAR: Pixels = px(13.0);
 const GLYPH_RUN: Pixels = px(11.0);
-const SCRIPT_LANGUAGE_LABEL: &str = "Rhai";
+const GLYPH_LINK_CHIP: Pixels = px(10.0);
+const TOOLBAR_GLYPH_GAP: Pixels = px(5.0);
+const LINK_CHIP_PAD_Y: Pixels = px(1.0);
+const LINK_CHIP_RADIUS: Pixels = px(8.0);
 const FILE_BAR_STATUS_DOT: Pixels = px(6.0);
 const FILE_BAR_DIRTY_DOT: Pixels = px(5.0);
 const DIVIDER_H: Pixels = px(16.0);
 
-impl ScriptEditorView {
-    pub(super) fn render_header_right(
-        &self,
-        palette: &ForgePalette,
-        density: Density,
-    ) -> AnyElement {
-        let total = self.scripts.len();
-        let ok = self.scripts.iter().filter(|e| e.status_ok).count();
-
-        let mut right = div()
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Sm, density));
-
-        if total > 0 {
-            let health = div()
-                .flex()
-                .items_center()
-                .gap(spacing(Spacing::Xxs, density))
-                .child(icon(Icon::CircleCheck, GLYPH_STATUS, palette.success))
-                .child(
-                    div()
-                        .font_family(body_family())
-                        .text_size(FONT_XXS)
-                        .text_color(palette.text_muted)
-                        .child(tr!(
-                            "script_editor_health",
-                            ok = i64::try_from(ok).unwrap_or(i64::MAX),
-                            total = i64::try_from(total).unwrap_or(i64::MAX)
-                        )),
-                );
-            right = right.child(health).child(
-                div()
-                    .font_family(body_family())
-                    .text_size(FONT_XXS)
-                    .text_color(palette.text_faint)
-                    .child("·"),
-            );
-        }
-
-        let right = right.child(
-            div()
-                .font_family(mono_family())
-                .text_size(FONT_XXS)
-                .text_color(palette.text_muted)
-                .child(SCRIPT_LANGUAGE_LABEL),
-        );
-
-        right.into_any_element()
-    }
-
+impl ScriptDocument {
     pub(super) fn file_bar(
         &self,
         palette: &ForgePalette,
@@ -102,17 +53,17 @@ impl ScriptEditorView {
                     .text_color(palette.text_primary)
                     .child(name),
             );
-        if let Some(linked) = self.find_entry(open.id).and_then(|e| e.linked.as_ref()) {
+        if let Some(linked) = self.linked.as_ref() {
             name_row = name_row.child(
                 div()
                     .flex()
                     .items_center()
                     .gap(spacing(Spacing::Xxs, density))
-                    .py(scaled(px(1.0), density))
+                    .py(scaled(LINK_CHIP_PAD_Y, density))
                     .px(spacing(Spacing::Xs, density))
-                    .rounded(px(8.0))
+                    .rounded(LINK_CHIP_RADIUS)
                     .bg(palette.surface_overlay)
-                    .child(icon(Icon::ExternalLink, px(10.0), palette.brand))
+                    .child(icon(Icon::ExternalLink, GLYPH_LINK_CHIP, palette.brand))
                     .child(
                         div()
                             .font_family(mono_family())
@@ -176,7 +127,7 @@ impl ScriptEditorView {
             .id("script-run")
             .flex()
             .items_center()
-            .gap(scaled(px(5.0), density))
+            .gap(scaled(TOOLBAR_GLYPH_GAP, density))
             .py(spacing(Spacing::Xxs, density))
             .px(spacing(Spacing::Sm, density))
             .rounded(radius(Radius::Sm))
@@ -227,37 +178,32 @@ impl ScriptEditorView {
             cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_api_docs(cx)),
         );
 
-        let open_action = self
-            .open
-            .as_ref()
-            .and_then(|o| self.find_entry(o.id))
-            .and_then(|e| e.linked.as_ref())
-            .map(|linked| {
-                let action_id = linked.id;
-                let hover = palette.elevated;
-                div()
-                    .id("script-open-action")
-                    .flex()
-                    .items_center()
-                    .gap(scaled(px(5.0), density))
-                    .py(spacing(Spacing::Xxs, density))
-                    .px(spacing(Spacing::Xs, density))
-                    .rounded(radius(Radius::Sm))
-                    .cursor_pointer()
-                    .hover(move |s| s.bg(hover))
-                    .key_activated(palette.text_primary)
-                    .on_click(cx.listener(move |_this, _: &ClickEvent, _, cx| {
-                        cx.emit(NavRequested(Screen::Actions(Some(action_id))));
-                    }))
-                    .child(icon(Icon::ExternalLink, GLYPH_TOOLBAR, palette.brand))
-                    .child(
-                        div()
-                            .font_family(body_family())
-                            .text_size(FONT_XS)
-                            .text_color(palette.brand)
-                            .child(tr!("script_editor_open_action")),
-                    )
-            });
+        let open_action = self.open.as_ref().and(self.linked.as_ref()).map(|linked| {
+            let action_id = linked.id;
+            let hover = palette.elevated;
+            div()
+                .id("script-open-action")
+                .flex()
+                .items_center()
+                .gap(scaled(TOOLBAR_GLYPH_GAP, density))
+                .py(spacing(Spacing::Xxs, density))
+                .px(spacing(Spacing::Xs, density))
+                .rounded(radius(Radius::Sm))
+                .cursor_pointer()
+                .hover(move |s| s.bg(hover))
+                .key_activated(palette.text_primary)
+                .on_click(cx.listener(move |_this, _: &ClickEvent, _, cx| {
+                    cx.emit(ScriptDocumentEvent::OpenAction(action_id));
+                }))
+                .child(icon(Icon::ExternalLink, GLYPH_TOOLBAR, palette.brand))
+                .child(
+                    div()
+                        .font_family(body_family())
+                        .text_size(FONT_XS)
+                        .text_color(palette.brand)
+                        .child(tr!("script_editor_open_action")),
+                )
+        });
 
         let divider = div()
             .w(BORDER_THIN)
@@ -339,7 +285,7 @@ impl ScriptEditorView {
             .id(id)
             .flex()
             .items_center()
-            .gap(scaled(px(5.0), density))
+            .gap(scaled(TOOLBAR_GLYPH_GAP, density))
             .py(spacing(Spacing::Xxs, density))
             .px(spacing(Spacing::Xs, density))
             .rounded(radius(Radius::Sm))
@@ -368,7 +314,7 @@ impl ScriptEditorView {
         div()
             .flex()
             .items_center()
-            .gap(scaled(px(5.0), density))
+            .gap(scaled(TOOLBAR_GLYPH_GAP, density))
             .py(spacing(Spacing::Xxs, density))
             .px(spacing(Spacing::Xs, density))
             .rounded(radius(Radius::Sm))

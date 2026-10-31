@@ -1,4 +1,3 @@
-use super::quick_actions::reachable_quick_actions;
 use super::state::BuiltinPorts;
 use super::{ActiveConnect, IntegrationDetail, IntegrationSignedOut};
 use crate::async_bridge;
@@ -57,18 +56,18 @@ impl IntegrationDetail {
         self.shown.header_actions = self.ports.status.header_actions();
         self.shown.health_metrics = self.ports.health.metrics();
         self.shown.sections = self.ports.content.sections();
-        self.quick_actions =
-            reachable_quick_actions(&*self.ports.quick, self.ports.collections.as_deref());
-        if let Some(manager) = self.modals.collection_manager.clone() {
-            let connected = self.shown.connection == ConnectionState::Connected;
-            manager.update(cx, |manager, cx| manager.set_connected(connected, cx));
-        }
+        let display_name = self.shown.display_name.clone();
+        let connected = self.shown.connection == ConnectionState::Connected;
+        self.quick.update(cx, |panel, cx| {
+            panel.sync(display_name, connected, cx);
+        });
         if let Some(section) = self.sign_in.twitch_bot.clone() {
             let streamer_login = self.ports.status.hero_name();
             section.update(cx, |section, cx| {
                 section.set_streamer_login(streamer_login, cx)
             });
         }
+        self.refresh_health_display();
         self.sync_token_countdown(cx);
         cx.notify();
     }
@@ -76,7 +75,8 @@ impl IntegrationDetail {
     pub(super) fn adopt_builtin(&mut self, object: BuiltinObject, cx: &mut Context<Self>) {
         self.ports = BuiltinPorts::from_object(object);
         self.sign_in.connect = None;
-        self.close_collection_manager();
+        let source = self.ports.quick_action_source();
+        self.quick.update(cx, |panel, cx| panel.rebind(source, cx));
         self.live.viewer_samples.clear();
         self.background._health_bridge = Self::spawn_health_bridge(&self.ports.health, cx);
         self.background._change_bridge = Self::spawn_change_bridge(&self.ports, cx);
@@ -135,7 +135,10 @@ impl IntegrationDetail {
 
     fn apply_signed_out(&mut self, cx: &mut Context<Self>) {
         self.ports.control = None;
-        self.close_collection_manager();
+        self.quick.update(cx, |panel, cx| {
+            panel.close_collection_manager();
+            cx.notify();
+        });
         self.live.viewer_samples.clear();
         match chat_platform_of(self.ports.status.id()) {
             Some(platform) => self.open_connect_flow(platform, cx),

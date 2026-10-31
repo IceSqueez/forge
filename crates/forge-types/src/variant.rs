@@ -22,6 +22,16 @@ pub enum VariantKind {
 }
 
 impl VariantKind {
+    pub const ALL: [Self; 7] = [
+        Self::Int,
+        Self::Float,
+        Self::Bool,
+        Self::String,
+        Self::Datetime,
+        Self::Array,
+        Self::Object,
+    ];
+
     pub fn from_variant(v: &Variant) -> Self {
         match v {
             Variant::Int(_) => Self::Int,
@@ -43,6 +53,18 @@ impl VariantKind {
             Self::Datetime => "TIME",
             Self::Array => "ARR",
             Self::Object => "OBJ",
+        }
+    }
+
+    pub fn display_name(self) -> &'static str {
+        match self {
+            Self::Int => "Int",
+            Self::Float => "Float",
+            Self::Bool => "Bool",
+            Self::String => "String",
+            Self::Datetime => "Datetime",
+            Self::Array => "Array",
+            Self::Object => "Object",
         }
     }
 
@@ -385,16 +407,6 @@ pub fn variant_preview(value: &Variant) -> String {
 mod tests {
     use super::*;
     use serde_json::json;
-
-    const ALL_KINDS: [VariantKind; 7] = [
-        VariantKind::Int,
-        VariantKind::Float,
-        VariantKind::Bool,
-        VariantKind::String,
-        VariantKind::Datetime,
-        VariantKind::Array,
-        VariantKind::Object,
-    ];
 
     fn nested_arrays(depth: u8) -> serde_json::Value {
         let mut value = json!("leaf");
@@ -743,7 +755,7 @@ mod tests {
 
     #[test]
     fn variant_kind_display_and_from_str_round_trip_through_its_serde_name() {
-        for kind in ALL_KINDS {
+        for kind in VariantKind::ALL {
             let serde_name = serde_json::to_value(kind).unwrap();
 
             assert_eq!(

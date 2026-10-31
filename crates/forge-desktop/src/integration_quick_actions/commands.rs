@@ -1,22 +1,37 @@
-use super::IntegrationDetail;
+use super::{QuickActionSource, QuickActionsPanel, QuickActionsPanelEvent, accent_color};
 use crate::async_bridge;
-use crate::builtin_sections::StepClick;
 use crate::collection_manager::{CollectionManager, CollectionManagerEvent};
 use crate::integration_quick_action_modal::{QuickActionModal, QuickActionModalEvent};
-use crate::integration_quick_actions::accent_color;
 use crate::navigation::Screen;
 use crate::repo_failure::RepoFailure;
 use crate::run_history_modal::{RunHistoryDismissed, RunHistoryModal, RunHistoryOpenIntegration};
 use forge_components::focus_inside_modal;
 use forge_components::{ActivePresentation, InputEvent, PushToast, TextInput, ToastKind, tr};
 use forge_platform_core::{BuiltinCollections, CollectionId, QuickAction, QuickActions};
+use forge_runtime::{ActionEngineHandle, QuickActionOrigin};
 use forge_types::SubActionStep;
 use gpui::{Context, Entity, Rgba, Window, prelude::*};
 use std::sync::Arc;
 
 const HISTORY_LIMIT: u32 = 50;
 
-pub(super) fn reachable_quick_actions(
+pub(crate) fn enqueue_builtin_step<V: 'static>(
+    origin: QuickActionOrigin,
+    engine: ActionEngineHandle,
+    rt_handle: &tokio::runtime::Handle,
+    step: SubActionStep,
+    settled: impl FnOnce(&mut V, Result<(), RepoFailure>, &mut Context<V>) + Send + 'static,
+    cx: &mut Context<V>,
+) {
+    async_bridge::run_async(
+        rt_handle,
+        async_bridge::run_quick_step(engine, step, origin),
+        settled,
+        cx,
+    );
+}
+
+pub(crate) fn reachable_quick_actions(
     quick: &dyn QuickActions,
     collections: Option<&dyn BuiltinCollections>,
 ) -> Vec<QuickAction> {
@@ -41,14 +56,30 @@ pub(super) fn reachable_quick_actions(
         .collect()
 }
 
-impl IntegrationDetail {
-    pub(super) fn on_qa_search(
+impl QuickActionsPanel {
+    pub(crate) fn sync(&mut self, display_name: String, connected: bool, cx: &mut Context<Self>) {
+        self.display_name = display_name;
+        self.actions =
+            reachable_quick_actions(&*self.source.quick, self.source.collections.as_deref());
+        if let Some(manager) = self.modals.collection_manager.clone() {
+            manager.update(cx, |manager, cx| manager.set_connected(connected, cx));
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn rebind(&mut self, source: QuickActionSource, cx: &mut Context<Self>) {
+        self.source = source;
+        self.close_collection_manager();
+        cx.notify();
+    }
+
+    pub(super) fn on_search(
         &mut self,
         _field: Entity<TextInput>,
         event: &InputEvent,
         cx: &mut Context<Self>,
     ) {
-        if self.qa_search.on_changed(event) {
+        if self.search.on_changed(event) {
             cx.notify();
         }
     }
@@ -59,7 +90,7 @@ impl IntegrationDetail {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(action) = self.quick_actions.get(idx) else {
+        let Some(action) = self.actions.get(idx) else {
             return;
         };
         if !action.is_runnable() {
@@ -71,14 +102,15 @@ impl IntegrationDetail {
             return;
         }
         let action = action.clone();
-        let option_source = self.ports.option_source.clone();
+        let option_source = self.source.option_source.clone();
         let rt_handle = self.services.rt_handle.clone();
         let modal = cx.new(|cx| QuickActionModal::new(action, option_source, rt_handle, cx));
         focus_inside_modal(window, cx, |window, cx| {
             modal.update(cx, |m, cx| m.focus(window, cx))
         });
-        self.modals._qa_modal_sub = Some(cx.subscribe(&modal, Self::on_quick_action_modal_event));
-        self.modals.quick_action_modal = Some(modal);
+        self.modals._quick_action_sub =
+            Some(cx.subscribe(&modal, Self::on_quick_action_modal_event));
+        self.modals.quick_action = Some(modal);
         cx.notify();
     }
 
@@ -97,33 +129,18 @@ impl IntegrationDetail {
         }
     }
 
-    fn enqueue_builtin_step(
-        &mut self,
-        step: SubActionStep,
-        label: String,
-        settled: impl FnOnce(&mut Self, Result<(), RepoFailure>, &mut Context<Self>) + Send + 'static,
-        cx: &mut Context<Self>,
-    ) {
-        let builtin_id = self.ports.status.id().as_str().to_owned();
-        let engine = self.services.action_engine.clone();
-        async_bridge::run_async(
-            &self.services.rt_handle,
-            async_bridge::run_quick_step(
-                engine,
-                step,
-                forge_runtime::QuickActionOrigin { builtin_id, label },
-            ),
-            settled,
-            cx,
-        );
-    }
-
     fn run_quick_action(&mut self, step: SubActionStep, label: String, cx: &mut Context<Self>) {
         let toast_label = label.clone();
-        self.enqueue_builtin_step(
-            step,
+        let origin = QuickActionOrigin {
+            builtin_id: self.source.id.as_str().to_owned(),
             label,
-            move |detail, result, cx| {
+        };
+        enqueue_builtin_step(
+            origin,
+            self.services.action_engine.clone(),
+            &self.services.rt_handle,
+            step,
+            move |_panel: &mut Self, result, cx| {
                 match result {
                     Ok(()) => cx.push_toast(
                         ToastKind::Success,
@@ -134,32 +151,7 @@ impl IntegrationDetail {
                         cx.push_toast(ToastKind::Error, tr!("integration_quick_action_failed"));
                     }
                 }
-                detail.reload(cx);
-            },
-            cx,
-        );
-    }
-
-    pub(super) fn run_row_step(&mut self, click: &StepClick, cx: &mut Context<Self>) {
-        let row = click.row.to_string();
-        let kind = click.step.kind_id.clone();
-        if !self.live.row_steps_in_flight.try_begin(&row, &kind) {
-            return;
-        }
-        cx.notify();
-        self.enqueue_builtin_step(
-            click.step.clone(),
-            row.clone(),
-            move |detail, result, cx| {
-                detail.live.row_steps_in_flight.finish(&row, &kind);
-                if let Err(err) = result {
-                    tracing::warn!(error = %err, "content row action failed");
-                    cx.push_toast(
-                        ToastKind::Error,
-                        tr!("integration_row_action_failed", error = err.text()),
-                    );
-                }
-                cx.notify();
+                cx.emit(QuickActionsPanelEvent::Ran);
             },
             cx,
         );
@@ -171,7 +163,7 @@ impl IntegrationDetail {
         accent: Rgba,
         cx: &mut Context<Self>,
     ) {
-        let Some(capability) = self.ports.collections.clone() else {
+        let Some(capability) = self.source.collections.clone() else {
             return;
         };
         let Some(metadata) = capability
@@ -204,28 +196,28 @@ impl IntegrationDetail {
         }
     }
 
-    pub(super) fn close_collection_manager(&mut self) {
+    pub(crate) fn close_collection_manager(&mut self) {
         self.modals.collection_manager = None;
         self.modals._collection_manager_sub = None;
     }
 
     fn close_quick_action_modal(&mut self, cx: &mut Context<Self>) {
-        self.modals.quick_action_modal = None;
-        self.modals._qa_modal_sub = None;
+        self.modals.quick_action = None;
+        self.modals._quick_action_sub = None;
         cx.notify();
     }
 
     pub(crate) fn open_run_history(&mut self, cx: &mut Context<Self>) {
         let registry = Arc::clone(&self.services.trigger_registry);
-        let modal = cx.new(|_| RunHistoryModal::new(self.shown.display_name.clone(), registry));
-        self.modals._history_modal_subs = vec![
+        let modal = cx.new(|_| RunHistoryModal::new(self.display_name.clone(), registry));
+        self.modals._history_subs = vec![
             cx.subscribe(&modal, Self::on_run_history_event),
             cx.subscribe(&modal, Self::on_run_history_open_integration),
         ];
-        self.modals.history_modal = Some(modal.clone());
+        self.modals.history = Some(modal.clone());
 
         let history = Arc::clone(&self.services.history);
-        let builtin_id = self.ports.status.id().as_str().to_owned();
+        let builtin_id = self.source.id.as_str().to_owned();
         async_bridge::run_async(
             &self.services.rt_handle,
             async move {
@@ -234,7 +226,7 @@ impl IntegrationDetail {
                     .await
                     .map_err(RepoFailure::from)
             },
-            move |_detail, result, cx| match result {
+            move |_panel: &mut Self, result, cx| match result {
                 Ok(runs) => modal.update(cx, |modal, cx| modal.set_runs(runs, cx)),
                 Err(message) => {
                     tracing::warn!(error = %message, "quick action run history load failed");
@@ -258,8 +250,8 @@ impl IntegrationDetail {
         _event: &RunHistoryDismissed,
         cx: &mut Context<Self>,
     ) {
-        self.modals.history_modal = None;
-        self.modals._history_modal_subs.clear();
+        self.modals.history = None;
+        self.modals._history_subs.clear();
         cx.notify();
     }
 
@@ -269,9 +261,11 @@ impl IntegrationDetail {
         event: &RunHistoryOpenIntegration,
         cx: &mut Context<Self>,
     ) {
-        self.modals.history_modal = None;
-        self.modals._history_modal_subs.clear();
-        self.navigate_to(Screen::BuiltinDetail(event.0.clone()), cx);
+        self.modals.history = None;
+        self.modals._history_subs.clear();
+        cx.emit(QuickActionsPanelEvent::Navigate(Screen::BuiltinDetail(
+            event.0.clone(),
+        )));
         cx.notify();
     }
 }

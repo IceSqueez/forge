@@ -1,27 +1,41 @@
-use super::console::LogTag;
-use super::input_parsing::{
+use super::console::{LogTag, ScriptConsole};
+use super::document::ScriptDocument;
+use super::document::input_parsing::{
     ARRAY_INPUT_EXAMPLE, DATETIME_INPUT_EXAMPLE, OBJECT_INPUT_EXAMPLE, ScriptInputReason,
     ScriptInputRejection, input_syntax_example, parse_input_to_variant,
 };
+use super::list::{PendingRename, RowMenu, ScriptList};
 use super::*;
+use crate::async_bridge::Loadable;
 use crate::navigation::Screen;
 use crate::repo_failure::RepoFailure;
 use crate::script_lifecycle::delete_hint;
 use forge_components::ToastKind;
-use forge_storage::ScriptRepo;
-use forge_types::{Variant, VariantKind};
+use forge_storage::{ScriptRecord, ScriptReferences, ScriptRepo};
+use forge_types::{ActionId, ScriptContract, ScriptId, Variant, VariantKind};
+use gpui::TestAppContext;
 use std::collections::BTreeMap;
 use time::OffsetDateTime;
 
-const ALL_KINDS: [VariantKind; 7] = [
-    VariantKind::Int,
-    VariantKind::Float,
-    VariantKind::Bool,
-    VariantKind::String,
-    VariantKind::Datetime,
-    VariantKind::Array,
-    VariantKind::Object,
-];
+fn list_of(view: &Entity<ScriptEditorView>, cx: &TestAppContext) -> Entity<ScriptList> {
+    view.read_with(cx, |view, _| view.parts().0)
+}
+
+fn document_of(view: &Entity<ScriptEditorView>, cx: &TestAppContext) -> Entity<ScriptDocument> {
+    view.read_with(cx, |view, _| view.parts().1)
+}
+
+fn console_lines(
+    view: &Entity<ScriptEditorView>,
+    tag: fn(&LogTag) -> bool,
+    cx: &TestAppContext,
+) -> usize {
+    let console: Entity<ScriptConsole> =
+        document_of(view, cx).read_with(cx, |document, _| document.console());
+    console.read_with(cx, |console, _| {
+        console.lines.iter().filter(|line| tag(&line.tag)).count()
+    })
+}
 
 fn parse(kind: VariantKind, raw: &str) -> Result<Variant, String> {
     crate::i18n::install_language(forge_storage::Language::En);
@@ -162,7 +176,7 @@ fn a_tagged_looking_object_input_stays_an_object_rather_than_decoding_to_its_tag
 
 #[test]
 fn the_syntax_example_offered_for_a_kind_parses_back_into_that_kind() {
-    for kind in ALL_KINDS {
+    for kind in VariantKind::ALL {
         let Some(example) = input_syntax_example(kind) else {
             continue;
         };
@@ -304,15 +318,10 @@ mod unsaved_work {
 
         pump_until(&rt, || {
             cx.run_until_parked();
-            !view.read_with(cx, |view, _| matches!(view.list_load, Loadable::Loading))
+            !list_of(&view, cx).read_with(cx, |list, _| matches!(list.list_load, Loadable::Loading))
         });
 
-        let failures = view.read_with(cx, |view, _| {
-            view.console
-                .iter()
-                .filter(|line| matches!(line.tag, LogTag::Err))
-                .count()
-        });
+        let failures = console_lines(&view, |tag| matches!(tag, LogTag::Err), cx);
         assert_eq!(failures, 1);
     }
 
@@ -345,7 +354,9 @@ mod unsaved_work {
                     cx,
                 )
             });
-            view.update(cx, |view, cx| view.apply_script_opened(Ok(record()), cx));
+            document_of(&view, cx).update(cx, |document, cx| {
+                document.apply_script_opened(Ok(record()), cx);
+            });
             let window: AnyWindowHandle = cx.add_window(|_, _| Blank).into();
             let mut guard = NavigationGuard::new(window);
             guard.watch(Some(UnsavedWorkHandle::new(view.clone())));
@@ -364,7 +375,7 @@ mod unsaved_work {
 
         fn type_body(&self, body: &str, cx: &mut TestAppContext) {
             let body = body.to_owned();
-            self.view.update(cx, |view, cx| {
+            document_of(&self.view, cx).update(cx, |view, cx| {
                 view.code_input
                     .update(cx, |area, cx| area.set_content(body, cx));
             });
@@ -372,7 +383,7 @@ mod unsaved_work {
         }
 
         fn body(&self, cx: &mut TestAppContext) -> String {
-            self.view
+            document_of(&self.view, cx)
                 .read_with(cx, |view, cx| view.code_input.read(cx).content().to_owned())
         }
 
@@ -383,7 +394,7 @@ mod unsaved_work {
 
         fn saving(&self, cx: &mut TestAppContext) -> bool {
             self.view
-                .read_with(cx, |view, _| view.is_saving_unsaved_work())
+                .read_with(cx, |view, cx| view.is_saving_unsaved_work(cx))
         }
 
         fn save_and_leave(&mut self, cx: &mut TestAppContext) -> Option<LeaveTarget> {
@@ -514,7 +525,8 @@ mod unsaved_work {
         let vcx = &mut gpui::VisualTestContext::from_window(window.into(), cx);
         vcx.update(|window, cx| {
             if in_code_editor {
-                let editor = rig.view.read(cx).code_input.clone();
+                let document = rig.view.read(cx).parts().1;
+                let editor = document.read(cx).code_input.clone();
                 editor.update(cx, |editor, cx| editor.focus(window, cx));
             } else {
                 let focus = window
@@ -569,8 +581,8 @@ mod unsaved_work {
             let rig = Rig::mount(cx, Store::Counted(Arc::clone(&stores)));
             rig.type_body(EDITED_BODY, cx);
             if delete_prompt {
-                rig.view
-                    .update(cx, |view, _| view.pending_delete.request(ScriptId::new()));
+                list_of(&rig.view, cx)
+                    .update(cx, |list, _| list.pending_delete.request(ScriptId::new()));
             }
 
             rig.view.update(cx, |view, cx| view.save_shortcut(cx));
@@ -587,29 +599,18 @@ mod unsaved_work {
         {
             let rig = Rig::mount(cx, Store::NeverCalled);
             if delete_prompt {
-                rig.view
-                    .update(cx, |view, _| view.pending_delete.request(ScriptId::new()));
+                list_of(&rig.view, cx)
+                    .update(cx, |list, _| list.pending_delete.request(ScriptId::new()));
             }
 
             rig.view.update(cx, |view, cx| view.run_shortcut(cx));
 
-            let runs = rig.view.read_with(cx, |view, _| {
-                view.console
-                    .iter()
-                    .filter(|line| matches!(line.tag, LogTag::Run))
-                    .count()
-            });
-            assert_eq!(runs, expected, "{case}");
+            assert_eq!(started_runs(&rig, cx), expected, "{case}");
         }
     }
 
     fn started_runs(rig: &Rig, cx: &mut TestAppContext) -> usize {
-        rig.view.read_with(cx, |view, _| {
-            view.console
-                .iter()
-                .filter(|line| matches!(line.tag, LogTag::Run))
-                .count()
-        })
+        console_lines(&rig.view, |tag| matches!(tag, LogTag::Run), cx)
     }
 
     #[gpui::test]
@@ -624,10 +625,10 @@ mod unsaved_work {
         });
         let while_running = started_runs(&rig, cx);
 
-        rig.view.update(cx, |view, cx| {
-            view.apply_run_finished(Err(RepoFailure::operation("stopped")), cx);
-            view.run_shortcut(cx);
+        document_of(&rig.view, cx).update(cx, |document, cx| {
+            document.apply_run_finished(Err(RepoFailure::operation("stopped")), cx);
         });
+        rig.view.update(cx, |view, cx| view.run_shortcut(cx));
 
         assert_eq!((while_running, started_runs(&rig, cx)), (1, 2));
     }
@@ -746,7 +747,8 @@ mod lifecycle {
             let hosted = self.view.clone();
             let window = cx.add_window(|_, _| EditorHost(hosted));
             let mut vcx = gpui::VisualTestContext::from_window(window.into(), cx);
-            self.view.update(&mut vcx, |view, cx| {
+            let list = self.view.read_with(&vcx, |view, _| view.parts().0);
+            list.update(&mut vcx, |view, cx| {
                 view.row_menu = Some(RowMenu {
                     id: self.id,
                     position: gpui::Point::default(),
@@ -758,7 +760,7 @@ mod lifecycle {
         }
 
         fn row_menu_is_open(&self, cx: &mut TestAppContext) -> bool {
-            self.view.read_with(cx, |view, _| view.row_menu.is_some())
+            list_of(&self.view, cx).read_with(cx, |view, _| view.row_menu.is_some())
         }
 
         fn runnable(&self, name: &str) -> bool {
@@ -766,14 +768,14 @@ mod lifecycle {
         }
 
         fn listed(&self, cx: &mut TestAppContext) -> Vec<String> {
-            self.view.read_with(cx, |view, _| {
+            list_of(&self.view, cx).read_with(cx, |view, _| {
                 view.scripts.iter().map(|e| e.name.clone()).collect()
             })
         }
 
         fn stage(&self, found: ScriptReferences, cx: &mut TestAppContext) {
             let id = self.id;
-            self.view.update(cx, |view, cx| {
+            list_of(&self.view, cx).update(cx, |view, cx| {
                 view.stage_rename(
                     PendingRename {
                         id,
@@ -789,8 +791,7 @@ mod lifecycle {
         }
 
         fn prompting_rename(&self, cx: &mut TestAppContext) -> bool {
-            self.view
-                .read_with(cx, |view, _| view.pending_rename.is_some())
+            list_of(&self.view, cx).read_with(cx, |view, _| view.pending_rename.is_some())
         }
     }
 
@@ -842,7 +843,8 @@ mod lifecycle {
         let command_focus = vcx.update(|_, cx| cx.focus_handle());
 
         vcx.update(|window, cx| window.focus(&command_focus, cx));
-        rig.view.update(&mut vcx, |view, cx| {
+        let list = rig.view.read_with(&vcx, |view, _| view.parts().0);
+        list.update(&mut vcx, |view, cx| {
             view.row_menu = None;
             cx.notify();
         });
@@ -890,8 +892,7 @@ mod lifecycle {
         let rig = Rig::mount(cx, uses.clone());
         rig.stage(uses, cx);
 
-        rig.view
-            .update(cx, |view, cx| view.confirm_pending_rename(cx));
+        list_of(&rig.view, cx).update(cx, |view, cx| view.confirm_pending_rename(cx));
         rig.settle(cx);
 
         let raised = toasts(cx);
@@ -923,8 +924,7 @@ mod lifecycle {
         let rig = Rig::mount(cx, uses.clone());
         rig.stage(uses, cx);
 
-        rig.view
-            .update(cx, |view, cx| view.cancel_pending_rename(cx));
+        list_of(&rig.view, cx).update(cx, |view, cx| view.cancel_pending_rename(cx));
         rig.settle(cx);
 
         assert_eq!(
@@ -942,11 +942,10 @@ mod lifecycle {
         let rig = Rig::mount(cx, references(&["Greeter", "Welcomer"], &["Picker"]));
         let id = rig.id;
 
-        rig.view.update(cx, |view, cx| view.request_delete(id, cx));
+        list_of(&rig.view, cx).update(cx, |view, cx| view.request_delete(id, cx));
         rig.settle(cx);
 
-        let hint = rig
-            .view
+        let hint = list_of(&rig.view, cx)
             .read_with(cx, |view, _| delete_hint(view.delete_referrers.as_ref()));
         for name in ["Greeter", "Welcomer", "Picker"] {
             assert!(hint.contains(name), "{name} missing from {hint:?}");
@@ -957,10 +956,10 @@ mod lifecycle {
     fn deleting_archives_the_script_out_of_reach_and_undo_brings_it_back(cx: &mut TestAppContext) {
         let rig = Rig::mount(cx, ScriptReferences::default());
         let id = rig.id;
-        rig.view.update(cx, |view, cx| view.request_delete(id, cx));
+        list_of(&rig.view, cx).update(cx, |view, cx| view.request_delete(id, cx));
         rig.settle(cx);
 
-        rig.view.update(cx, |view, cx| view.confirm_delete(cx));
+        list_of(&rig.view, cx).update(cx, |view, cx| view.confirm_delete(cx));
         rig.settle(cx);
         let deleted = (
             rig.scripts.archived_ids(),

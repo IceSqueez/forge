@@ -1,19 +1,22 @@
-use super::details_pane::muted_line;
-use super::diagnostics::ProblemLevel;
-use super::{GLYPH_ACTION, ScriptEditorView};
+use super::GLYPH_ACTION;
+use super::document::diagnostics::{EditorProblem, ProblemLevel};
 use crate::async_bridge::{BridgeFlow, drain_events};
 use crate::runtime_event;
 use crate::runtime_event::RuntimeEvent;
 use forge_components::{
-    BORDER_THIN, DateShape, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, KeyActivated,
-    ResizeEdge, ResizeRange, Spacing, badge, body_family, fmt_display, icon, install_resize,
-    mono_family, scaled, spacing, tr,
+    ActivePresentation, BORDER_THIN, DateShape, Density, FONT_XS, FONT_XXS, ForgePalette, Icon,
+    KeyActivated, ResizeEdge, ResizeRange, Spacing, badge, body_family, fmt_display, icon,
+    install_resize, mono_family, scaled, spacing, tr,
 };
 use forge_events::{ScriptLogLevel, ScriptLogged};
+use forge_runtime::EventBus;
+use forge_types::ScriptId;
 use gpui::prelude::*;
 use gpui::{
-    AnyElement, ClickEvent, Context, FontWeight, Pixels, Rgba, SharedString, div, px, uniform_list,
+    AnyElement, App, ClickEvent, Context, Entity, FontWeight, Pixels, Rgba, SharedString,
+    UniformListScrollHandle, Window, div, px, uniform_list,
 };
+use std::collections::VecDeque;
 use std::sync::Arc;
 use time::OffsetDateTime;
 
@@ -21,11 +24,13 @@ const GLYPH_TAB: Pixels = px(12.0);
 const CONSOLE_LOG_CAP: usize = 1000;
 const CONSOLE_MAX_H: Pixels = px(400.0);
 const CONSOLE_MIN_H: Pixels = px(80.0);
+const CONSOLE_INIT_H: Pixels = px(160.0);
+const TAB_GLYPH_GAP: Pixels = px(5.0);
 
 struct ConsoleResizeDrag;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(super) enum ConsoleTab {
+enum ConsoleTab {
     Output,
     Problems,
 }
@@ -70,9 +75,58 @@ pub(super) struct ConsoleLine {
     pub(super) text: SharedString,
 }
 
-impl ScriptEditorView {
-    pub(super) fn start_log_bridge(&self, cx: &mut Context<Self>) {
-        let bus = Arc::clone(&self.bus);
+pub(super) struct ScriptConsole {
+    watched: Option<ScriptId>,
+    pub(super) lines: VecDeque<ConsoleLine>,
+    scroll: UniformListScrollHandle,
+    tab: ConsoleTab,
+    collapsed: bool,
+    height: Pixels,
+    problems: Vec<EditorProblem>,
+}
+
+pub(super) fn push_line(
+    console: &Entity<ScriptConsole>,
+    tag: LogTag,
+    text: impl Into<SharedString>,
+    cx: &mut App,
+) {
+    console.update(cx, |console, cx| console.push(tag, text, cx));
+}
+
+impl ScriptConsole {
+    pub(super) fn new(bus: &Arc<EventBus>, cx: &mut Context<Self>) -> Self {
+        let console = Self {
+            watched: None,
+            lines: VecDeque::new(),
+            scroll: UniformListScrollHandle::new(),
+            tab: ConsoleTab::Output,
+            collapsed: false,
+            height: CONSOLE_INIT_H,
+            problems: Vec::new(),
+        };
+        console.start_log_bridge(bus, cx);
+        console
+    }
+
+    pub(super) fn watch_script(&mut self, id: Option<ScriptId>, cx: &mut Context<Self>) {
+        self.watched = id;
+        cx.notify();
+    }
+
+    pub(super) fn set_problems(&mut self, problems: Vec<EditorProblem>, cx: &mut Context<Self>) {
+        self.problems = problems;
+        cx.notify();
+    }
+
+    pub(super) fn reveal_output(&mut self, cx: &mut Context<Self>) {
+        self.tab = ConsoleTab::Output;
+        self.collapsed = false;
+        cx.notify();
+    }
+
+    fn start_log_bridge(&self, bus: &Arc<EventBus>, cx: &mut Context<Self>) {
+        let bus = Arc::clone(bus);
         cx.spawn(async move |this, cx| {
             drain_events(&bus, cx, move |batch, cx| {
                 match this.update(cx, |this, cx| {
@@ -94,10 +148,7 @@ impl ScriptEditorView {
     }
 
     fn on_script_log(&mut self, logged: ScriptLogged, cx: &mut Context<Self>) {
-        let Some(open_id) = self.open.as_ref().map(|o| o.id) else {
-            return;
-        };
-        if logged.script_id != Some(open_id) {
+        if self.watched.is_none() || logged.script_id != self.watched {
             return;
         }
         let tag = match logged.level {
@@ -105,46 +156,46 @@ impl ScriptEditorView {
             ScriptLogLevel::Warn => LogTag::Warn,
             ScriptLogLevel::Info => LogTag::Log,
         };
-        self.push_console(tag, logged.message);
-        cx.notify();
+        self.push(tag, logged.message, cx);
     }
 
-    pub(super) fn push_console(&mut self, tag: LogTag, text: impl Into<SharedString>) {
-        if self.console.len() >= CONSOLE_LOG_CAP {
-            self.console.pop_front();
+    fn push(&mut self, tag: LogTag, text: impl Into<SharedString>, cx: &mut Context<Self>) {
+        if self.lines.len() >= CONSOLE_LOG_CAP {
+            self.lines.pop_front();
         }
-        self.console.push_back(ConsoleLine {
+        self.lines.push_back(ConsoleLine {
             at: OffsetDateTime::now_utc(),
             tag,
             text: text.into(),
         });
+        cx.notify();
     }
 
     fn set_console_tab(&mut self, tab: ConsoleTab, cx: &mut Context<Self>) {
-        self.console_tab = tab;
-        self.console_collapsed = false;
+        self.tab = tab;
+        self.collapsed = false;
         cx.notify();
     }
 
     fn clear_console(&mut self, cx: &mut Context<Self>) {
-        self.console.clear();
+        self.lines.clear();
         cx.notify();
     }
 
     fn toggle_console(&mut self, cx: &mut Context<Self>) {
-        self.console_collapsed = !self.console_collapsed;
+        self.collapsed = !self.collapsed;
         cx.notify();
     }
 
     fn set_console_height(&mut self, height: Pixels, cx: &mut Context<Self>) {
         let clamped = height.clamp(CONSOLE_MIN_H, CONSOLE_MAX_H);
-        if self.console_height != clamped {
-            self.console_height = clamped;
+        if self.height != clamped {
+            self.height = clamped;
             cx.notify();
         }
     }
 
-    pub(super) fn console(
+    fn render_console(
         &self,
         palette: &ForgePalette,
         density: Density,
@@ -162,7 +213,7 @@ impl ScriptEditorView {
             .border_color(palette.surface_overlay)
             .child(header);
 
-        if self.console_collapsed {
+        if self.collapsed {
             return console.into_any_element();
         }
 
@@ -189,12 +240,12 @@ impl ScriptEditorView {
         density: Density,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let output_active = self.console_tab == ConsoleTab::Output;
+        let output_active = self.tab == ConsoleTab::Output;
         let output = div()
             .id("console-tab-output")
             .flex()
             .items_center()
-            .gap(scaled(px(5.0), density))
+            .gap(scaled(TAB_GLYPH_GAP, density))
             .cursor_pointer()
             .key_activated(palette.text_primary)
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
@@ -226,7 +277,7 @@ impl ScriptEditorView {
                     .child(tr!("script_editor_output_header")),
             );
 
-        let problems_active = self.console_tab == ConsoleTab::Problems;
+        let problems_active = self.tab == ConsoleTab::Problems;
         let problems = (!self.problems.is_empty()).then(|| {
             div()
                 .id("console-tab-problems")
@@ -265,7 +316,7 @@ impl ScriptEditorView {
             .child(output)
             .children(problems);
 
-        let collapse_glyph = if self.console_collapsed {
+        let collapse_glyph = if self.collapsed {
             Icon::ChevronUp
         } else {
             Icon::X
@@ -316,19 +367,19 @@ impl ScriptEditorView {
             .w_full()
             .flex()
             .flex_col()
-            .h(self.console_height)
+            .h(self.height)
             .py(spacing(Spacing::Xs, density))
             .px(spacing(Spacing::Md, density))
             .font_family(mono_family())
             .text_size(FONT_XXS);
 
-        match self.console_tab {
+        match self.tab {
             ConsoleTab::Output => {
-                if self.console.is_empty() {
+                if self.lines.is_empty() {
                     base.overflow_y_scroll()
                         .child(muted_line(tr!("script_editor_console_cleared"), palette))
                 } else {
-                    let count = self.console.len();
+                    let count = self.lines.len();
                     let pal = *palette;
                     let rows = uniform_list(
                         "script-console-rows",
@@ -336,7 +387,7 @@ impl ScriptEditorView {
                         cx.processor(move |this, range: std::ops::Range<usize>, _window, _cx| {
                             let mut rows = Vec::with_capacity(range.len());
                             for ix in range {
-                                let Some(line) = this.console.get(ix) else {
+                                let Some(line) = this.lines.get(ix) else {
                                     continue;
                                 };
                                 rows.push(console_row(line, &pal, density).into_any_element());
@@ -344,7 +395,7 @@ impl ScriptEditorView {
                             rows
                         }),
                     )
-                    .track_scroll(&self.console_scroll)
+                    .track_scroll(&self.scroll)
                     .gap(spacing(Spacing::Xxs, density))
                     .flex_1()
                     .min_h(px(0.0));
@@ -381,6 +432,18 @@ impl ScriptEditorView {
         }
         .into_any_element()
     }
+}
+
+impl Render for ScriptConsole {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let palette = cx.palette();
+        let density = cx.density();
+        self.render_console(&palette, density, cx)
+    }
+}
+
+fn muted_line(text: impl Into<SharedString>, palette: &ForgePalette) -> impl IntoElement {
+    div().text_color(palette.text_faint).child(text.into())
 }
 
 fn console_row(line: &ConsoleLine, palette: &ForgePalette, density: Density) -> impl IntoElement {

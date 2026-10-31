@@ -1,11 +1,11 @@
 use forge_components::tr;
 use forge_types::{Variant, VariantKind};
 
-pub(super) const ARRAY_INPUT_EXAMPLE: &str = "[12, 13, 14]";
-pub(super) const OBJECT_INPUT_EXAMPLE: &str = r#"{"key": "value"}"#;
-pub(super) const DATETIME_INPUT_EXAMPLE: &str = "2026-01-31T18:04:00Z";
+pub(in super::super) const ARRAY_INPUT_EXAMPLE: &str = "[12, 13, 14]";
+pub(in super::super) const OBJECT_INPUT_EXAMPLE: &str = r#"{"key": "value"}"#;
+pub(in super::super) const DATETIME_INPUT_EXAMPLE: &str = "2026-01-31T18:04:00Z";
 
-pub(super) fn input_syntax_example(kind: VariantKind) -> Option<&'static str> {
+pub(in super::super) fn input_syntax_example(kind: VariantKind) -> Option<&'static str> {
     match kind {
         VariantKind::Array => Some(ARRAY_INPUT_EXAMPLE),
         VariantKind::Object => Some(OBJECT_INPUT_EXAMPLE),
@@ -15,13 +15,13 @@ pub(super) fn input_syntax_example(kind: VariantKind) -> Option<&'static str> {
 }
 
 #[derive(Debug)]
-pub(super) struct ScriptInputRejection {
+pub(in super::super) struct ScriptInputRejection {
     pub(super) name: String,
     pub(super) reason: ScriptInputReason,
 }
 
 #[derive(Debug)]
-pub(super) enum ScriptInputReason {
+pub(in super::super) enum ScriptInputReason {
     NotInteger,
     NotFloat,
     NotBool,
@@ -34,14 +34,14 @@ pub(super) enum ScriptInputReason {
 }
 
 impl ScriptInputRejection {
-    pub(super) fn new(name: &str, reason: ScriptInputReason) -> Self {
+    pub(in super::super) fn new(name: &str, reason: ScriptInputReason) -> Self {
         Self {
             name: name.to_owned(),
             reason,
         }
     }
 
-    pub(super) fn user_message(&self) -> String {
+    pub(in super::super) fn user_message(&self) -> String {
         let name = self.name.as_str();
         match &self.reason {
             ScriptInputReason::NotInteger => tr!("script_input_must_be_integer", name = name),
@@ -92,7 +92,7 @@ fn invalid_input(name: &str, reason: &dyn std::fmt::Display) -> ScriptInputRejec
     ScriptInputRejection::new(name, ScriptInputReason::Invalid(reason.to_string()))
 }
 
-pub(super) fn parse_input_to_variant(
+pub(in super::super) fn parse_input_to_variant(
     name: &str,
     kind: VariantKind,
     raw: &str,

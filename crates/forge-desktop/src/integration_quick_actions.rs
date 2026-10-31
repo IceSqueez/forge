@@ -1,20 +1,160 @@
+mod commands;
+
+pub(crate) use self::commands::{enqueue_builtin_step, reachable_quick_actions};
 use forge_components::FONT_LABEL;
 use forge_components::{
     ActivePresentation, BORDER_THIN, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon,
-    KeyActivated, Radius, Spacing, body_family, icon, mono_family, pulse_dot, radius, scaled,
-    spacing, tooltip_builder, tr, with_alpha,
+    KeyActivated, Radius, SearchState, Spacing, body_family, icon, mono_family, pulse_dot, radius,
+    scaled, spacing, tooltip_builder, tr, with_alpha,
 };
-use forge_platform_core::{QuickAction, QuickActionAccent, QuickActionGroup, QuickActionLiveness};
-use gpui::{AnyElement, ClickEvent, Context, Pixels, Rgba, div, prelude::*, px};
+use forge_platform_core::{
+    BuiltinCollections, BuiltinOptionSource, QuickAction, QuickActionAccent, QuickActionGroup,
+    QuickActionLiveness, QuickActions,
+};
+use forge_registry::TriggerRegistry;
+use forge_runtime::ActionEngineHandle;
+use forge_storage::HistoryRepo;
+use forge_types::IntegrationId;
+use gpui::{
+    AnyElement, ClickEvent, Context, Entity, EventEmitter, Pixels, Rgba, Stateful, Subscription,
+    Window, div, prelude::*, px,
+};
+use std::sync::Arc;
 
-use crate::integration_detail::IntegrationDetail;
+use crate::collection_manager::CollectionManager;
+use crate::integration_quick_action_modal::QuickActionModal;
+use crate::navigation::Screen;
+use crate::run_history_modal::RunHistoryModal;
 use crate::user_text::user_text_string;
 
 const GRID_COLUMNS: u16 = 3;
 const LIVE_DOT: Pixels = px(5.0);
+const SEARCH_FONT: Pixels = px(11.5);
+const SEARCH_W: Pixels = px(240.0);
+const CARD_GAP: Pixels = px(12.0);
+const CARD_PAD_X: Pixels = px(14.0);
+const TITLE_GAP: Pixels = px(7.0);
+const GRID_GAP: Pixels = px(7.0);
+const BUTTON_GAP: Pixels = px(7.0);
+const BUTTON_PAD_Y: Pixels = px(7.0);
+const BUTTON_LINE_H: Pixels = px(14.0);
+const OUTLINE_BUTTON_GAP: Pixels = px(5.0);
+const OUTLINE_BUTTON_PAD_Y: Pixels = px(5.0);
+const OUTLINE_BUTTON_PAD_X: Pixels = px(11.0);
 
-impl IntegrationDetail {
-    pub(crate) fn quick_actions_card(
+pub(crate) fn outline_button(
+    id: impl Into<gpui::ElementId>,
+    palette: &ForgePalette,
+    density: Density,
+) -> Stateful<gpui::Div> {
+    div()
+        .id(id)
+        .flex()
+        .items_center()
+        .gap(scaled(OUTLINE_BUTTON_GAP, density))
+        .py(scaled(OUTLINE_BUTTON_PAD_Y, density))
+        .px(scaled(OUTLINE_BUTTON_PAD_X, density))
+        .rounded(radius(Radius::Sm))
+        .border(BORDER_THIN)
+        .border_color(palette.border_regular)
+}
+
+#[derive(Clone)]
+pub(crate) struct QuickActionServices {
+    pub(crate) rt_handle: tokio::runtime::Handle,
+    pub(crate) action_engine: ActionEngineHandle,
+    pub(crate) history: Arc<dyn HistoryRepo>,
+    pub(crate) trigger_registry: Arc<TriggerRegistry>,
+}
+
+pub(crate) struct QuickActionSource {
+    pub(crate) id: IntegrationId,
+    pub(crate) quick: Arc<dyn QuickActions>,
+    pub(crate) collections: Option<Arc<dyn BuiltinCollections>>,
+    pub(crate) option_source: Option<Arc<dyn BuiltinOptionSource>>,
+}
+
+pub(crate) enum QuickActionsPanelEvent {
+    Ran,
+    Navigate(Screen),
+}
+
+#[derive(Default)]
+struct PanelModals {
+    quick_action: Option<Entity<QuickActionModal>>,
+    collection_manager: Option<Entity<CollectionManager>>,
+    history: Option<Entity<RunHistoryModal>>,
+    _quick_action_sub: Option<Subscription>,
+    _collection_manager_sub: Option<Subscription>,
+    _history_subs: Vec<Subscription>,
+}
+
+pub(crate) struct QuickActionsPanel {
+    services: QuickActionServices,
+    source: QuickActionSource,
+    display_name: String,
+    pub(crate) actions: Vec<QuickAction>,
+    search: SearchState,
+    modals: PanelModals,
+    _search_sub: Subscription,
+}
+
+impl EventEmitter<QuickActionsPanelEvent> for QuickActionsPanel {}
+
+impl QuickActionsPanel {
+    pub(crate) fn new(
+        services: QuickActionServices,
+        source: QuickActionSource,
+        display_name: String,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        let palette = cx.palette();
+        let search = SearchState::from_field(cx.new(|cx| {
+            forge_components::search_input(tr!("integration_qa_filter_placeholder"), palette, cx)
+                .compact()
+                .with_font_size(SEARCH_FONT)
+        }));
+        let search_sub = cx.subscribe(search.field(), Self::on_search);
+        let actions = reachable_quick_actions(&*source.quick, source.collections.as_deref());
+        Self {
+            services,
+            source,
+            display_name,
+            actions,
+            search,
+            modals: PanelModals::default(),
+            _search_sub: search_sub,
+        }
+    }
+
+    pub(crate) fn modal_layers(&self) -> Vec<AnyElement> {
+        let quick = self.modals.quick_action.clone();
+        let manager = self.modals.collection_manager.clone();
+        quick
+            .map(IntoElement::into_any_element)
+            .into_iter()
+            .chain(manager.map(IntoElement::into_any_element))
+            .collect()
+    }
+
+    pub(crate) fn history_layer(&self) -> Option<AnyElement> {
+        self.modals
+            .history
+            .clone()
+            .map(IntoElement::into_any_element)
+    }
+}
+
+impl Render for QuickActionsPanel {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let palette = cx.palette();
+        let density = cx.density();
+        self.quick_actions_card(&palette, density, cx)
+    }
+}
+
+impl QuickActionsPanel {
+    fn quick_actions_card(
         &self,
         palette: &ForgePalette,
         density: Density,
@@ -24,15 +164,15 @@ impl IntegrationDetail {
             .w_full()
             .flex()
             .items_center()
-            .gap(scaled(px(12.0), density))
+            .gap(scaled(CARD_GAP, density))
             .py(spacing(Spacing::Sm, density))
-            .px(scaled(px(14.0), density))
+            .px(scaled(CARD_PAD_X, density))
             .child(
                 div()
                     .flex_none()
                     .flex()
                     .items_center()
-                    .gap(scaled(px(7.0), density))
+                    .gap(scaled(TITLE_GAP, density))
                     .child(icon(Icon::Bolt, FONT_SM, palette.warning))
                     .child(
                         div()
@@ -46,28 +186,28 @@ impl IntegrationDetail {
             .child(
                 div()
                     .flex_none()
-                    .w(px(240.0))
-                    .child(self.qa_search.field().clone()),
+                    .w(SEARCH_W)
+                    .child(self.search.field().clone()),
             )
             .child(self.history_button(palette, cx));
 
         let divider = div().w_full().h(BORDER_THIN).bg(palette.border_regular);
 
         let matches: Vec<(usize, &QuickAction)> = self
-            .quick_actions
+            .actions
             .iter()
             .enumerate()
-            .filter(|(_, a)| self.qa_search.matches(&user_text_string(&a.label)))
+            .filter(|(_, a)| self.search.matches(&user_text_string(&a.label)))
             .collect();
 
         let mut body = div()
             .w_full()
             .flex()
             .flex_col()
-            .gap(scaled(px(12.0), density))
+            .gap(scaled(CARD_GAP, density))
             .pt(spacing(Spacing::Xxs, density))
-            .pb(scaled(px(12.0), density))
-            .px(scaled(px(14.0), density));
+            .pb(scaled(CARD_GAP, density))
+            .px(scaled(CARD_PAD_X, density));
 
         if matches.is_empty() {
             body = body.child(
@@ -109,17 +249,8 @@ impl IntegrationDetail {
         let density = cx.density();
         let text_color = palette.text_secondary;
         let hover_border = palette.border_input;
-        div()
-            .id("integration-run-history")
+        outline_button("integration-run-history", palette, density)
             .flex_none()
-            .flex()
-            .items_center()
-            .gap(scaled(px(5.0), density))
-            .py(scaled(px(5.0), density))
-            .px(scaled(px(11.0), density))
-            .rounded(radius(Radius::Sm))
-            .border(BORDER_THIN)
-            .border_color(palette.border_regular)
             .cursor_pointer()
             .hover(move |s| s.border_color(hover_border))
             .key_activated(palette.text_primary)
@@ -153,7 +284,7 @@ impl IntegrationDetail {
             .w_full()
             .flex()
             .flex_col()
-            .gap(scaled(px(7.0), density));
+            .gap(scaled(GRID_GAP, density));
         if let Some(group) = group {
             let mut label_row = div()
                 .flex_1()
@@ -239,7 +370,7 @@ impl IntegrationDetail {
             .w_full()
             .flex()
             .items_center()
-            .gap(scaled(px(7.0), density))
+            .gap(scaled(BUTTON_GAP, density))
             .child(icon(
                 Icon::from_name(action.icon.as_str()),
                 FONT_XS,
@@ -251,7 +382,7 @@ impl IntegrationDetail {
                     .min_w(px(0.0))
                     .font_family(body_family())
                     .text_size(FONT_LABEL)
-                    .line_height(px(14.0))
+                    .line_height(BUTTON_LINE_H)
                     .text_color(label_color)
                     .child(user_text_string(&action.label)),
             );
@@ -269,7 +400,7 @@ impl IntegrationDetail {
         let mut btn = div()
             .id(("quick-action", idx))
             .min_w(px(0.0))
-            .py(scaled(px(7.0), density))
+            .py(scaled(BUTTON_PAD_Y, density))
             .px(spacing(Spacing::Sm, density))
             .rounded(radius(Radius::Sm))
             .border(BORDER_THIN)

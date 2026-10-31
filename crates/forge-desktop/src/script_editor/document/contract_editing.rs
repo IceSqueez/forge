@@ -1,4 +1,4 @@
-use super::ScriptEditorView;
+use super::{ScriptDocument, ScriptDocumentEvent};
 use forge_components::{ActivePresentation, FONT_XS, InlineEdit, InlineEditEvent, inline_edit, tr};
 use forge_script::is_engine_bound_name;
 use forge_types::{ScriptContract, ScriptInput, VariantKind};
@@ -85,7 +85,7 @@ fn next_input_name(inputs: &[ScriptInput]) -> String {
     }
 }
 
-impl ScriptEditorView {
+impl ScriptDocument {
     pub(super) fn reset_contract_editing(&mut self) {
         self.input_rename = None;
         self.kind_menu = None;
@@ -148,12 +148,12 @@ impl ScriptEditorView {
         position: Point<Pixels>,
         cx: &mut Context<Self>,
     ) {
-        self.row_menu = None;
         self.kind_menu = Some(KindMenu { target, position });
+        cx.emit(ScriptDocumentEvent::KindMenuOpened);
         cx.notify();
     }
 
-    pub(super) fn close_kind_menu(&mut self, cx: &mut Context<Self>) {
+    pub(in super::super) fn close_kind_menu(&mut self, cx: &mut Context<Self>) {
         self.kind_menu = None;
         cx.notify();
     }

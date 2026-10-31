@@ -1,6 +1,6 @@
-use super::ScriptEditorView;
+use super::ScriptDocument;
 use super::contract_editing::KindTarget;
-use super::details_pane::{details_heading, variant_kind_display};
+use super::details_pane::details_heading;
 use crate::globals::variant_kind_color;
 use forge_components::{
     ActivePresentation, BORDER_THIN, FONT_XS, FONT_XXS, ForgePalette, Icon, KeyActivated, MenuItem,
@@ -10,26 +10,16 @@ use forge_components::{
 use forge_types::{ScriptInput, VariantKind};
 use gpui::prelude::*;
 use gpui::{
-    AnyElement, App, ClickEvent, Context, ElementId, MouseButton, MouseDownEvent, Pixels, Rgba,
-    SharedString, Window, div, px,
+    AnyElement, App, ClickEvent, Context, ElementId, FocusHandle, MouseButton, MouseDownEvent,
+    Pixels, Rgba, SharedString, Window, div, px,
 };
-
-const CONTRACT_KINDS: [VariantKind; 7] = [
-    VariantKind::Int,
-    VariantKind::Float,
-    VariantKind::Bool,
-    VariantKind::String,
-    VariantKind::Datetime,
-    VariantKind::Array,
-    VariantKind::Object,
-];
 
 const SIGNATURE_NAME_MIN_W: Pixels = px(56.0);
 const SIGNATURE_ACTION_PAD: Pixels = px(3.0);
 const GLYPH_SIGNATURE_ACTION: Pixels = px(11.0);
 const GLYPH_RETURNS: Pixels = px(11.0);
 
-impl ScriptEditorView {
+impl ScriptDocument {
     pub(super) fn signature_section(
         &self,
         palette: &ForgePalette,
@@ -163,7 +153,7 @@ impl ScriptEditorView {
                     this.open_kind_menu(KindTarget::Input(index), position, cx);
                 }),
             )
-            .child(variant_kind_display(kind));
+            .child(kind.display_name());
 
         let move_up: AnyElement = if index == 0 {
             signature_action_disabled(Icon::ArrowUp, palette).into_any_element()
@@ -228,7 +218,7 @@ impl ScriptEditorView {
         let hover_bg = palette.surface_overlay;
         let (value, value_color): (SharedString, Rgba) = match returns {
             Some(kind) => (
-                variant_kind_display(kind).into(),
+                kind.display_name().into(),
                 variant_kind_color(kind, palette),
             ),
             None => (
@@ -277,9 +267,10 @@ impl ScriptEditorView {
             .into_any_element()
     }
 
-    pub(super) fn render_kind_menu(
+    pub(in super::super) fn render_kind_menu(
         &self,
         palette: &ForgePalette,
+        menu_focus: &FocusHandle,
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
         let menu = self.kind_menu.as_ref()?;
@@ -300,11 +291,11 @@ impl ScriptEditorView {
             );
             items.push(menu_divider());
         }
-        for kind in CONTRACT_KINDS {
+        for kind in VariantKind::ALL {
             items.push(
                 menu_item(
                     SharedString::from(format!("script-contract-kind-{}", kind.contract_name())),
-                    variant_kind_display(kind),
+                    kind.display_name(),
                     cx.listener(move |this, _: &ClickEvent, _, cx| {
                         this.set_contract_kind(target, kind, cx)
                     }),
@@ -317,7 +308,7 @@ impl ScriptEditorView {
         Some(
             context_menu(position, palette)
                 .items(items)
-                .dismiss_on_escape(&self.menu_focus)
+                .dismiss_on_escape(menu_focus)
                 .on_dismiss(move |_window, cx| {
                     view.update(cx, |this, cx| this.close_kind_menu(cx));
                 })

@@ -71,6 +71,7 @@ impl IntegrationDetail {
         if delta.metric == HealthMetricId::VIEWERS {
             self.sample_viewers();
         }
+        self.refresh_health_display();
         self.shown.connection = self.ports.status.connection();
         self.shown.header_actions = self.ports.status.header_actions();
         self.sync_token_countdown(cx);
@@ -121,6 +122,7 @@ impl IntegrationDetail {
     }
 
     pub(super) fn sync_token_countdown(&mut self, cx: &mut Context<Self>) {
+        self.shown.token_countdown = self.token_countdown();
         if !self.token_countdown_shown() {
             self.background._token_countdown_repaint = None;
             return;
@@ -143,8 +145,8 @@ impl IntegrationDetail {
                     .await;
                 presence.until_visible().await;
                 let alive = this.update(cx, |this, cx| {
-                    cx.notify();
                     this.sync_token_countdown(cx);
+                    cx.notify();
                 });
                 if alive.is_err() {
                     break;
@@ -163,6 +165,7 @@ impl IntegrationDetail {
         if let Some(count) = reading {
             self.push_viewer_sample(count, Instant::now());
         }
+        self.refresh_health_display();
     }
 
     pub(super) fn push_viewer_sample(&mut self, count: u64, now: Instant) {

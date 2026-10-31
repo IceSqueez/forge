@@ -113,7 +113,8 @@ impl IntegrationDisabledView {
         let sub_actions = Arc::clone(&self.launch.sub_actions);
         let triggers = Arc::clone(&self.launch.triggers);
         let id = self.id.clone();
-        let reply = crate::async_bridge::on_runtime(&self.launch.rt_handle, async move {
+        let rt_handle = self.launch.rt_handle.clone();
+        let load = async move {
             let references = match load_references(backend.as_ref(), &sub_actions, &triggers).await
             {
                 Ok(mut all) => all.remove(&id).unwrap_or_default(),
@@ -131,21 +132,16 @@ impl IntegrationDisabledView {
                 }
             };
             (references, has_credentials)
-        });
-        cx.spawn(async move |this, cx| {
-            let Ok((references, has_credentials)) = reply.await else {
-                return;
-            };
-            #[expect(
-                clippy::let_underscore_must_use,
-                reason = "the view may close before the result arrives"
-            )]
-            let _ = this.update(cx, |view, cx| {
+        };
+        crate::async_bridge::run_async(
+            &rt_handle,
+            load,
+            |view, (references, has_credentials), cx| {
                 view.apply_loaded(references, has_credentials);
                 cx.notify();
-            });
-        })
-        .detach();
+            },
+            cx,
+        );
     }
 
     pub(crate) fn apply_loaded(

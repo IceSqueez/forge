@@ -5,11 +5,11 @@ use gpui::{App, Context, Entity, SharedString};
 pub(crate) trait UnsavedWork: Sized + 'static {
     fn has_unsaved_work(&self, cx: &App) -> bool;
 
-    fn unsaved_work_name(&self) -> Option<SharedString>;
+    fn unsaved_work_name(&self, cx: &App) -> Option<SharedString>;
 
     fn start_saving_unsaved_work(&mut self, cx: &mut Context<Self>) -> bool;
 
-    fn is_saving_unsaved_work(&self) -> bool;
+    fn is_saving_unsaved_work(&self, cx: &App) -> bool;
 
     fn discard_unsaved_work(&mut self, cx: &mut Context<Self>);
 }
@@ -28,7 +28,7 @@ impl<V: UnsavedWork> ErasedUnsavedWork for Entity<V> {
     }
 
     fn name(&self, cx: &App) -> Option<SharedString> {
-        self.read(cx).unsaved_work_name()
+        self.read(cx).unsaved_work_name(cx)
     }
 
     fn start_saving(&self, cx: &mut App) -> bool {
@@ -36,7 +36,7 @@ impl<V: UnsavedWork> ErasedUnsavedWork for Entity<V> {
     }
 
     fn is_saving(&self, cx: &App) -> bool {
-        self.read(cx).is_saving_unsaved_work()
+        self.read(cx).is_saving_unsaved_work(cx)
     }
 
     fn discard(&self, cx: &mut App) {

@@ -9,6 +9,10 @@ use gpui::{AnyElement, prelude::*};
 use std::time::{Duration, SystemTime};
 
 impl IntegrationDetail {
+    pub(super) fn refresh_health_display(&mut self) {
+        self.shown.health_display = self.augmented_health();
+    }
+
     pub(super) fn augmented_health(&self) -> [HealthMetric; 4] {
         let mut metrics = self.shown.health_metrics.clone();
         if let Some(metric) = metrics.iter_mut().find(|m| m.id == HealthMetricId::VIEWERS)

@@ -1,21 +1,25 @@
-use super::ScriptEditorView;
+use super::ScriptDocument;
 use forge_components::OverflowRevealingFocus;
 use forge_components::{
     ActivePresentation, BORDER_THIN, Density, FONT_BADGE, FONT_XS, FONT_XXS, ForgePalette,
     ResizeEdge, ResizeRange, Spacing, body_family, fmt_display_relative, install_resize,
     mono_family, scaled, spacing, tr,
 };
-use forge_types::VariantKind;
 use gpui::prelude::*;
 use gpui::{AnyElement, Context, FontWeight, Pixels, Rgba, SharedString, div, px};
 
 const DETAILS_PANE_PAD: Pixels = px(14.0);
 const DETAILS_MAX_W: Pixels = px(420.0);
 const DETAILS_MIN_W: Pixels = px(200.0);
+const MINI_STAT_GAP: Pixels = px(8.0);
+const MINI_STAT_RADIUS: Pixels = px(7.0);
+const MINI_STAT_PAD_Y: Pixels = px(7.0);
+const MINI_STAT_PAD_X: Pixels = px(9.0);
+const MINI_STAT_LABEL_GAP: Pixels = px(3.0);
 
 struct ScriptDetailsResizeDrag;
 
-impl ScriptEditorView {
+impl ScriptDocument {
     fn set_details_width(&mut self, width: Pixels, cx: &mut Context<Self>) {
         let clamped = width.clamp(DETAILS_MIN_W, DETAILS_MAX_W);
         if self.details_width != clamped {
@@ -37,7 +41,7 @@ impl ScriptEditorView {
         let line_count = self.code_input.read(cx).content().lines().count();
         let edited = fmt_display_relative(Some(record.last_modified));
 
-        let linked = self.find_entry(open.id).and_then(|e| e.linked.as_ref());
+        let linked = self.linked.as_ref();
         let (type_label, type_color): (SharedString, Rgba) = match linked {
             Some(_) => (tr!("script_editor_type_action").into(), palette.theme_brand),
             None => (
@@ -125,7 +129,7 @@ impl ScriptEditorView {
             .child(
                 div()
                     .flex()
-                    .gap(scaled(px(8.0), density))
+                    .gap(scaled(MINI_STAT_GAP, density))
                     .child(mini_stat(
                         tr!("script_editor_stat_runs"),
                         runs_value,
@@ -169,18 +173,6 @@ impl ScriptEditorView {
     }
 }
 
-pub(super) fn variant_kind_display(kind: VariantKind) -> &'static str {
-    match kind {
-        VariantKind::Int => "Int",
-        VariantKind::Float => "Float",
-        VariantKind::Bool => "Bool",
-        VariantKind::String => "String",
-        VariantKind::Datetime => "Datetime",
-        VariantKind::Array => "Array",
-        VariantKind::Object => "Object",
-    }
-}
-
 pub(super) fn details_heading(
     label: impl Into<SharedString>,
     signature: bool,
@@ -215,15 +207,15 @@ fn mini_stat(
         .bg(palette.base)
         .border(BORDER_THIN)
         .border_color(palette.surface_overlay)
-        .rounded(px(7.0))
-        .py(scaled(px(7.0), density))
-        .px(scaled(px(9.0), density))
+        .rounded(MINI_STAT_RADIUS)
+        .py(scaled(MINI_STAT_PAD_Y, density))
+        .px(scaled(MINI_STAT_PAD_X, density))
         .child(
             div()
                 .font_family(mono_family())
                 .text_size(FONT_BADGE)
                 .text_color(palette.text_faint)
-                .pb(scaled(px(3.0), density))
+                .pb(scaled(MINI_STAT_LABEL_GAP, density))
                 .child(label.into()),
         )
         .child(
@@ -261,11 +253,4 @@ fn detail_row(
                 .text_color(palette.text_secondary)
                 .child(value),
         )
-}
-
-pub(super) fn muted_line(
-    text: impl Into<SharedString>,
-    palette: &ForgePalette,
-) -> impl IntoElement {
-    div().text_color(palette.text_faint).child(text.into())
 }

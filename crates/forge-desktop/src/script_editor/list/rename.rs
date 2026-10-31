@@ -1,5 +1,5 @@
-use super::ScriptEditorView;
-use super::console::LogTag;
+use super::super::console::{LogTag, push_line};
+use super::{ScriptList, ScriptListEvent};
 use crate::async_bridge;
 use crate::repo_failure::RepoFailure;
 use crate::script_lifecycle::{ScriptRenamed, counted_names, has_referrers, referrer_count};
@@ -11,11 +11,11 @@ use forge_storage::ScriptReferences;
 use forge_types::ScriptId;
 use gpui::{Context, Entity, Subscription, Window};
 
-pub(super) struct PendingRename {
-    pub(super) id: ScriptId,
-    pub(super) old_name: String,
-    pub(super) new_name: String,
-    pub(super) references: ScriptReferences,
+pub(in super::super) struct PendingRename {
+    pub(in super::super) id: ScriptId,
+    pub(in super::super) old_name: String,
+    pub(in super::super) new_name: String,
+    pub(in super::super) references: ScriptReferences,
 }
 
 pub(super) struct RenameState {
@@ -24,8 +24,8 @@ pub(super) struct RenameState {
     pub(super) _sub: Subscription,
 }
 
-impl ScriptEditorView {
-    pub(super) fn start_rename(
+impl ScriptList {
+    pub(in super::super) fn start_rename(
         &mut self,
         id: ScriptId,
         window: &mut Window,
@@ -70,17 +70,19 @@ impl ScriptEditorView {
             .iter()
             .any(|e| e.id != id && e.name.to_lowercase() == name.to_lowercase());
         if taken {
-            self.push_console(
+            push_line(
+                &self.console,
                 LogTag::Err,
                 tr!("script_console_name_taken", name = name.as_str()),
+                cx,
             );
             return;
         }
 
-        let lifecycle = self.lifecycle();
+        let lifecycle = self.deps.lifecycle();
         let lookup = old_name.clone();
         async_bridge::run_async(
-            &self.rt_handle,
+            &self.deps.rt_handle,
             async move { lifecycle.referrers(lookup).await },
             move |this, result, cx| {
                 this.stage_rename(
@@ -98,7 +100,7 @@ impl ScriptEditorView {
         );
     }
 
-    pub(super) fn stage_rename(
+    pub(in super::super) fn stage_rename(
         &mut self,
         pending: PendingRename,
         result: Result<ScriptReferences, RepoFailure>,
@@ -117,12 +119,12 @@ impl ScriptEditorView {
         }
     }
 
-    pub(super) fn cancel_pending_rename(&mut self, cx: &mut Context<Self>) {
+    pub(in super::super) fn cancel_pending_rename(&mut self, cx: &mut Context<Self>) {
         self.pending_rename = None;
         cx.notify();
     }
 
-    pub(super) fn confirm_pending_rename(&mut self, cx: &mut Context<Self>) {
+    pub(in super::super) fn confirm_pending_rename(&mut self, cx: &mut Context<Self>) {
         let Some(pending) = self.pending_rename.take() else {
             return;
         };
@@ -131,9 +133,9 @@ impl ScriptEditorView {
     }
 
     fn run_rename(&mut self, id: ScriptId, name: String, cx: &mut Context<Self>) {
-        let lifecycle = self.lifecycle();
+        let lifecycle = self.deps.lifecycle();
         async_bridge::run_async(
-            &self.rt_handle,
+            &self.deps.rt_handle,
             async move { lifecycle.rename(id, name).await },
             |this, result, cx| this.apply_renamed(result, cx),
             cx,
@@ -157,11 +159,10 @@ impl ScriptEditorView {
                 entry.name = renamed.name.clone();
             }
         }
-        if let Some(open) = self.open.as_mut()
-            && open.id == renamed.id
-        {
-            open.record.name = renamed.name.clone();
-        }
+        cx.emit(ScriptListEvent::Renamed {
+            id: renamed.id,
+            name: renamed.name.clone(),
+        });
         let literal = &renamed.references.literal;
         cx.push_toast(
             ToastKind::Success,

@@ -1,5 +1,5 @@
-use super::quick_actions::reachable_quick_actions;
 use super::*;
+use crate::integration_quick_actions::reachable_quick_actions;
 use forge_events::EventPublisher;
 use forge_host::integration_sign_out::{
     IntegrationSignOut, SignOutRoute, SignOutRoutes, SlotRebuild,
@@ -7,6 +7,7 @@ use forge_host::integration_sign_out::{
 use forge_host::integrations::{ObsInstallSeed, VTubeInstallSeed};
 use forge_host::platform_credentials::PlatformCredentialManagers;
 use forge_platform_core::CollectionId;
+use forge_platform_core::QuickAction;
 use forge_platform_core::{
     BuiltinCollections, BuiltinContent, BuiltinControl, BuiltinHealth, BuiltinStatus,
     CapabilityFlags, DetailSection, HeaderAction, HealthMetric, QuickActions, SectionIcon,
@@ -463,9 +464,10 @@ mod quick_action_bridge {
     }
 
     fn shown_labels(cx: &mut TestAppContext, view: &Entity<IntegrationDetail>) -> Vec<String> {
-        view.read_with(cx, |detail, _| {
-            detail
-                .quick_actions
+        let panel = view.read_with(cx, |detail, _| detail.quick.clone());
+        panel.read_with(cx, |panel, _| {
+            panel
+                .actions
                 .iter()
                 .map(|action| action.label.code_or_text())
                 .collect()

@@ -1,5 +1,5 @@
-use super::ScriptEditorView;
-use super::console::{ConsoleTab, LogTag};
+use super::super::console::{LogTag, push_line};
+use super::ScriptDocument;
 use super::run_modal::{RunDraft, RunModal, RunModalEvent};
 use crate::async_bridge;
 use crate::repo_failure::RepoFailure;
@@ -23,8 +23,8 @@ fn format_run_stats(duration_ms: f64, error_count: usize) -> String {
     )
 }
 
-impl ScriptEditorView {
-    pub(super) fn run(&mut self, cx: &mut Context<Self>) {
+impl ScriptDocument {
+    pub(in super::super) fn run(&mut self, cx: &mut Context<Self>) {
         if self.run_in_flight {
             return;
         }
@@ -37,12 +37,14 @@ impl ScriptEditorView {
         };
         let body = self.code_input.read(cx).content().to_owned();
         if contract.inputs.is_empty() {
-            self.push_console(
+            push_line(
+                &self.console,
                 LogTag::Run,
                 tr!("script_console_running", name = name.as_str()),
+                cx,
             );
-            self.console_tab = ConsoleTab::Output;
-            self.console_collapsed = false;
+            self.console
+                .update(cx, |console, cx| console.reveal_output(cx));
             self.run_inline_exec(body, ArgStack::new(), script_id, cx);
             cx.notify();
         } else {
@@ -75,23 +77,24 @@ impl ScriptEditorView {
             .unwrap_or_default();
         let host = ScriptHost {
             globals: Arc::new(RuntimeScriptGlobals::new(
-                Arc::clone(&self.backend) as Arc<dyn GlobalsRepo>,
-                Arc::clone(&self.bus) as Arc<dyn EventPublisher>,
+                Arc::clone(&self.deps.backend) as Arc<dyn GlobalsRepo>,
+                Arc::clone(&self.deps.bus) as Arc<dyn EventPublisher>,
             )),
-            settings: Arc::clone(&self.backend) as Arc<dyn SettingsRepo>,
-            bus: Arc::clone(&self.bus) as Arc<dyn EventPublisher>,
+            settings: Arc::clone(&self.deps.backend) as Arc<dyn SettingsRepo>,
+            bus: Arc::clone(&self.deps.bus) as Arc<dyn EventPublisher>,
             capabilities: ScriptCapabilities {
-                speak: self.script_registry.speak_requester(),
-                integrations: Some(Arc::clone(&self.integrations)),
-                latest_values: self.script_registry.latest_values(),
+                speak: self.deps.script_registry.speak_requester(),
+                integrations: Some(Arc::clone(&self.deps.integrations)),
+                latest_values: self.deps.script_registry.latest_values(),
                 scheduler: self
+                    .deps
                     .script_registry
                     .action_scheduler(SchedulingContext::outside_any_run(args.clone())),
             },
         };
-        let scripts = Arc::clone(&self.backend) as Arc<dyn ScriptRepo>;
+        let scripts = Arc::clone(&self.deps.backend) as Arc<dyn ScriptRepo>;
         async_bridge::run_async(
-            &self.rt_handle,
+            &self.deps.rt_handle,
             async move {
                 let started_at = OffsetDateTime::now_utc();
                 let result = run_inline(body, contract, args, host, script_id)
@@ -117,7 +120,7 @@ impl ScriptEditorView {
         );
     }
 
-    pub(super) fn apply_run_finished(
+    pub(in super::super) fn apply_run_finished(
         &mut self,
         result: Result<RunResult, RepoFailure>,
         cx: &mut Context<Self>,
@@ -130,13 +133,17 @@ impl ScriptEditorView {
                 let value = r
                     .output_display
                     .unwrap_or_else(|| tr!("script_console_no_value"));
-                self.push_console(
+                push_line(
+                    &self.console,
                     LogTag::Ok,
                     tr!("script_console_returned", value = value.as_str()),
+                    cx,
                 );
-                self.push_console(
+                push_line(
+                    &self.console,
                     LogTag::Stats,
                     format_run_stats(r.duration_ms, r.error_count),
+                    cx,
                 );
                 if let Some(id) = self.open.as_ref().map(|o| o.id) {
                     self.load_telemetry(id, cx);
@@ -150,9 +157,11 @@ impl ScriptEditorView {
                         cx.notify();
                     });
                 }
-                self.push_console(
+                push_line(
+                    &self.console,
                     LogTag::Err,
                     tr!("script_console_run_failed", error = e.text()),
+                    cx,
                 );
             }
         }
@@ -186,12 +195,14 @@ impl ScriptEditorView {
                 cx.notify();
             });
         }
-        self.push_console(
+        push_line(
+            &self.console,
             LogTag::Run,
             tr!("script_console_running_with_inputs", name = name.as_str()),
+            cx,
         );
-        self.console_tab = ConsoleTab::Output;
-        self.console_collapsed = false;
+        self.console
+            .update(cx, |console, cx| console.reveal_output(cx));
         self.run_inline_exec(body, args, script_id, cx);
         cx.notify();
     }

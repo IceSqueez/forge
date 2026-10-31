@@ -207,7 +207,7 @@ mod tests {
             self.dirty
         }
 
-        fn unsaved_work_name(&self) -> Option<SharedString> {
+        fn unsaved_work_name(&self, _cx: &App) -> Option<SharedString> {
             Some("greet.rhai".into())
         }
 
@@ -220,7 +220,7 @@ mod tests {
             self.saving
         }
 
-        fn is_saving_unsaved_work(&self) -> bool {
+        fn is_saving_unsaved_work(&self, _cx: &App) -> bool {
             self.saving
         }
 

@@ -1,4 +1,5 @@
-use super::{GLYPH_ACTION, ScriptEditorView, ScriptEntry};
+use super::super::GLYPH_ACTION;
+use super::{ScriptEntry, ScriptList, ScriptListEvent};
 use crate::load_notice::{LoadNotice, NoticeWidth, load_notice};
 use crate::navigable_list::{ListStep, NavigableList, navigable_list};
 use forge_components::RevealsFocusIn;
@@ -11,19 +12,27 @@ use forge_components::{
 use forge_types::ScriptId;
 use gpui::prelude::*;
 use gpui::{
-    AnyElement, ClickEvent, Context, FontWeight, MouseButton, MouseDownEvent, Pixels, Point, Rgba,
-    SharedString, Window, div, px,
+    AnyElement, ClickEvent, Context, FocusHandle, FontWeight, MouseButton, MouseDownEvent, Pixels,
+    Point, Rgba, SharedString, Window, div, px,
 };
 
 const STRIPE_W: Pixels = px(2.0);
 const LIST_MAX_W: Pixels = px(360.0);
 const LIST_MIN_W: Pixels = px(180.0);
+const NEW_BUTTON_RADIUS: Pixels = px(8.0);
+const GROUP_HEADER_PAD_TOP: Pixels = px(2.0);
+const GLYPH_GROUP: Pixels = px(11.0);
+const GLYPH_FILE_ROW: Pixels = px(13.0);
+const ROW_STATUS_DOT: Pixels = px(6.0);
+const ROW_GAP: Pixels = px(9.0);
+const ROW_PAD_Y: Pixels = px(7.0);
+const ROW_PAD_X: Pixels = px(8.0);
 
 struct ScriptsListResizeDrag;
 
-pub(super) struct RowMenu {
-    pub(super) id: ScriptId,
-    pub(super) position: Point<Pixels>,
+pub(in super::super) struct RowMenu {
+    pub(in super::super) id: ScriptId,
+    pub(in super::super) position: Point<Pixels>,
 }
 
 struct ScriptRow {
@@ -38,7 +47,7 @@ fn group_gap(density: Density) -> AnyElement {
     div().h(spacing(Spacing::Sm, density)).into_any_element()
 }
 
-impl NavigableList for ScriptEditorView {
+impl NavigableList for ScriptList {
     fn step_list(&mut self, step: ListStep, cx: &mut Context<Self>) {
         if self.rename.is_some() {
             return;
@@ -59,19 +68,24 @@ impl NavigableList for ScriptEditorView {
         }
         let ids: Vec<ScriptId> = self.script_rows().iter().map(|row| row.id).collect();
         if let Some(id) = self.list_keys.activation_target(&ids) {
-            self.select(id, cx);
+            self.choose_row(id, cx);
         }
     }
 }
 
-impl ScriptEditorView {
-    fn open_row_menu(&mut self, id: ScriptId, position: Point<Pixels>, cx: &mut Context<Self>) {
-        self.kind_menu = None;
+impl ScriptList {
+    pub(in super::super) fn open_row_menu(
+        &mut self,
+        id: ScriptId,
+        position: Point<Pixels>,
+        cx: &mut Context<Self>,
+    ) {
         self.row_menu = Some(RowMenu { id, position });
+        cx.emit(ScriptListEvent::RowMenuOpened);
         cx.notify();
     }
 
-    fn close_row_menu(&mut self, cx: &mut Context<Self>) {
+    pub(in super::super) fn close_row_menu(&mut self, cx: &mut Context<Self>) {
         self.row_menu = None;
         cx.notify();
     }
@@ -273,14 +287,16 @@ impl ScriptEditorView {
                     .gap(spacing(Spacing::Xs, density))
                     .py(spacing(Spacing::Xs, density))
                     .px(spacing(Spacing::Sm, density))
-                    .rounded(px(8.0))
+                    .rounded(NEW_BUTTON_RADIUS)
                     .border(BORDER_THIN)
                     .border_color(palette.border_input)
                     .bg(palette.base)
                     .cursor_pointer()
                     .hover(move |s| s.border_color(brand).bg(hover_bg))
                     .key_activated(palette.text_primary)
-                    .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.new_script(cx)))
+                    .on_click(cx.listener(|_this, _: &ClickEvent, _, cx| {
+                        cx.emit(ScriptListEvent::NewRequested);
+                    }))
                     .child(icon(Icon::Plus, GLYPH_ACTION, palette.brand))
                     .child(
                         div()
@@ -307,13 +323,13 @@ impl ScriptEditorView {
             .flex()
             .items_center()
             .gap(spacing(Spacing::Xs, density))
-            .pt(scaled(px(2.0), density))
+            .pt(scaled(GROUP_HEADER_PAD_TOP, density))
             .px(spacing(Spacing::Xs, density))
             .pb(spacing(Spacing::Xs, density))
             .font_family(mono_family())
             .text_size(FONT_XXS)
             .text_color(palette.text_muted)
-            .child(icon(group_icon, px(11.0), color))
+            .child(icon(group_icon, GLYPH_GROUP, color))
             .child(div().child(label.into()))
             .child(div().flex_1())
             .child(
@@ -407,15 +423,15 @@ impl ScriptEditorView {
             .flex()
             .items_center()
             .gap(spacing(Spacing::Xxs, density))
-            .child(status_dot(status_color, px(6.0)));
+            .child(status_dot(status_color, ROW_STATUS_DOT));
 
         let mut row = div()
             .id(SharedString::from(format!("script-file-{id}")))
             .flex()
             .items_center()
-            .gap(scaled(px(9.0), density))
-            .py(scaled(px(7.0), density))
-            .px(scaled(px(8.0), density))
+            .gap(scaled(ROW_GAP, density))
+            .py(scaled(ROW_PAD_Y, density))
+            .px(scaled(ROW_PAD_X, density))
             .rounded(radius(Radius::Sm))
             .border_l(STRIPE_W)
             .border_color(stripe)
@@ -428,7 +444,7 @@ impl ScriptEditorView {
                     this.open_row_menu(id, position, cx);
                 }),
             )
-            .child(icon(Icon::FileCode, px(13.0), icon_color))
+            .child(icon(Icon::FileCode, GLYPH_FILE_ROW, icon_color))
             .child(middle)
             .child(trailing);
 
@@ -437,15 +453,16 @@ impl ScriptEditorView {
             row = row
                 .cursor_pointer()
                 .when(!selected, |d| d.hover(move |s| s.bg(hover_bg)))
-                .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.select(id, cx)));
+                .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.choose_row(id, cx)));
         }
 
         row.into_any_element()
     }
 
-    pub(super) fn render_row_context_menu(
+    pub(in super::super) fn render_row_context_menu(
         &self,
         palette: &ForgePalette,
+        menu_focus: &FocusHandle,
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
         let menu = self.row_menu.as_ref()?;
@@ -492,7 +509,7 @@ impl ScriptEditorView {
         Some(
             context_menu(position, palette)
                 .items(items)
-                .dismiss_on_escape(&self.menu_focus)
+                .dismiss_on_escape(menu_focus)
                 .on_dismiss(move |_window, cx| {
                     view.update(cx, |this, cx| this.close_row_menu(cx));
                 })
@@ -515,12 +532,14 @@ mod tests {
     use std::sync::Arc;
     use time::OffsetDateTime;
 
-    use super::super::{IntegrationAvailability, ScriptRegistry};
+    use super::super::super::{ScriptDocument, ScriptEditorView};
     use super::*;
     use crate::i18n::install_language;
     use crate::test_support::{
         StubEventLog, action_running, runtime, step, test_backend_with_scripts_and_actions,
     };
+    use forge_runtime::ScriptRegistry;
+    use forge_types::IntegrationAvailability;
 
     const STORED: [&str; 4] = ["zeta", "beta", "gamma", "alpha"];
     const LINKED: [&str; 2] = ["beta", "alpha"];
@@ -566,6 +585,8 @@ mod tests {
     struct Rig {
         rt: tokio::runtime::Runtime,
         view: Entity<ScriptEditorView>,
+        list: Entity<ScriptList>,
+        document: Entity<ScriptDocument>,
         records: Vec<ScriptRecord>,
         vcx: VisualTestContext,
     }
@@ -617,9 +638,12 @@ mod tests {
             let hosted = view.clone();
             let window = cx.add_window(|_, _| Hosting(hosted));
             let vcx = VisualTestContext::from_window(window.into(), cx);
+            let (list, document) = view.read_with(cx, |view, _| view.parts());
             let mut rig = Self {
                 rt,
                 view,
+                list,
+                document,
                 records,
                 vcx,
             };
@@ -642,7 +666,7 @@ mod tests {
 
         fn search(&mut self, query: &str) {
             let changed = InputEvent::Changed(query.to_owned().into());
-            self.view.update(&mut self.vcx, |view, cx| {
+            self.list.update(&mut self.vcx, |view, cx| {
                 view.search.on_changed(&changed);
                 cx.notify();
             });
@@ -655,7 +679,7 @@ mod tests {
         }
 
         fn row_count(&mut self) -> usize {
-            self.view
+            self.list
                 .read_with(&self.vcx, |view, _| view.script_rows().len())
         }
 
@@ -667,7 +691,7 @@ mod tests {
 
         fn cursor(&mut self) -> Option<String> {
             let names = STORED.map(|name| (self.id_of(name), name));
-            self.view.read_with(&self.vcx, |view, _| {
+            self.list.read_with(&self.vcx, |view, _| {
                 names
                     .iter()
                     .find(|(id, _)| view.list_keys.is_at(id))
@@ -676,14 +700,12 @@ mod tests {
         }
 
         fn selected(&mut self) -> Option<String> {
-            let selected = self.view.read_with(&self.vcx, |view, _| view.selected);
+            let selected = self.list.read_with(&self.vcx, |view, _| view.selected);
             selected.map(|id| self.name_of(id))
         }
 
         fn opened(&mut self) -> Option<String> {
-            let open = self
-                .view
-                .read_with(&self.vcx, |view, _| view.open.as_ref().map(|open| open.id));
+            let open = self.document.read_with(&self.vcx, |view, _| view.open_id());
             open.map(|id| self.name_of(id))
         }
 
@@ -699,7 +721,7 @@ mod tests {
         }
 
         fn click_row(&mut self, position: usize) {
-            let bounds = self.view.read_with(&self.vcx, |view, _| {
+            let bounds = self.list.read_with(&self.vcx, |view, _| {
                 let child = view.script_rows()[position].child_index;
                 view.list_scroll.bounds_for_item(child).unwrap()
             });
@@ -708,7 +730,7 @@ mod tests {
         }
 
         fn edit_open_script(&mut self) {
-            self.view.update(&mut self.vcx, |view, cx| {
+            self.document.update(&mut self.vcx, |view, cx| {
                 view.code_input.update(cx, |area, cx| {
                     area.set_content("let edited = 2;".to_owned(), cx)
                 });
@@ -782,7 +804,7 @@ mod tests {
         let mut rig = Rig::mount(cx);
         rig.climb_to_the_top();
         let renamed = rig.id_of("gamma");
-        rig.view.update_in(&mut rig.vcx, |view, window, cx| {
+        rig.list.update_in(&mut rig.vcx, |view, window, cx| {
             view.start_rename(renamed, window, cx);
             view.step_list(ListStep::Next, cx);
             view.activate_list(window, cx);
@@ -823,13 +845,13 @@ mod tests {
     fn a_new_script_takes_the_cursor_with_the_selection(cx: &mut TestAppContext) {
         let mut rig = Rig::mount(cx);
         rig.climb_to_the_top();
-        let opened_before = rig.view.read_with(&rig.vcx, |view, _| view.selected);
+        let opened_before = rig.list.read_with(&rig.vcx, |view, _| view.selected);
 
         rig.view
             .update(&mut rig.vcx, |view, cx| view.new_script(cx));
         rig.settle();
 
-        let (selected, on_it) = rig.view.read_with(&rig.vcx, |view, _| {
+        let (selected, on_it) = rig.list.read_with(&rig.vcx, |view, _| {
             let selected = view.selected.unwrap();
             (selected, view.list_keys.is_at(&selected))
         });
@@ -855,7 +877,7 @@ mod tests {
         let mut rig = Rig::mount(cx);
         rig.climb_to_the_top();
         let target = rig.id_of("alpha");
-        rig.view.update(&mut rig.vcx, |view, cx| {
+        rig.list.update(&mut rig.vcx, |view, cx| {
             view.open_row_menu(target, gpui::Point::default(), cx)
         });
         rig.settle();

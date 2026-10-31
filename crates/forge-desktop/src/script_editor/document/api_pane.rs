@@ -1,4 +1,4 @@
-use super::ScriptEditorView;
+use super::ScriptDocument;
 use forge_components::OverflowRevealingFocus;
 use forge_components::{
     BORDER_THIN, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, Spacing, badge, body_family, icon,
@@ -11,7 +11,7 @@ use gpui::{AnyElement, Context, FontWeight, Pixels, div, px};
 const GLYPH_PIN: Pixels = px(12.0);
 const RIGHT_PANE_W: Pixels = px(220.0);
 
-impl ScriptEditorView {
+impl ScriptDocument {
     pub(super) fn toggle_api_docs(&mut self, cx: &mut Context<Self>) {
         self.api_docs_open = !self.api_docs_open;
         self.reset_contract_editing();

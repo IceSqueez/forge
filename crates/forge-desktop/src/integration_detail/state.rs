@@ -1,9 +1,7 @@
 use super::{ActiveConnect, DonationSettingsLink};
-use crate::collection_manager::CollectionManager;
 use crate::in_flight_steps::InFlightSteps;
-use crate::integration_quick_action_modal::QuickActionModal;
+use crate::integration_quick_actions::QuickActionSource;
 use crate::obs_settings_modal::ObsSettingsModal;
-use crate::run_history_modal::RunHistoryModal;
 use crate::twitch_bot_section::TwitchBotSection;
 use forge_components::Confirm;
 use forge_events::EventPublisher;
@@ -73,6 +71,17 @@ impl BuiltinPorts {
     }
 }
 
+impl BuiltinPorts {
+    pub(super) fn quick_action_source(&self) -> QuickActionSource {
+        QuickActionSource {
+            id: self.status.id().clone(),
+            quick: Arc::clone(&self.quick),
+            collections: self.collections.clone(),
+            option_source: self.option_source.clone(),
+        }
+    }
+}
+
 #[derive(Default)]
 pub(super) struct SignInState {
     pub(super) connect: Option<ActiveConnect>,
@@ -92,11 +101,14 @@ pub(super) struct ShownState {
     pub(super) capability_flags: CapabilityFlags,
     pub(super) header_actions: Vec<HeaderAction>,
     pub(super) health_metrics: [HealthMetric; 4],
+    pub(super) health_display: [HealthMetric; 4],
+    pub(super) token_countdown: Option<String>,
     pub(super) sections: Vec<DetailSection>,
 }
 
 impl ShownState {
     pub(super) fn read(ports: &BuiltinPorts) -> Self {
+        let health_metrics = ports.health.metrics();
         Self {
             credential: ports.status.credential_state(),
             display_name: ports.status.display_name().to_owned(),
@@ -104,7 +116,9 @@ impl ShownState {
             connection: ports.status.connection(),
             capability_flags: ports.status.capability_flags(),
             header_actions: ports.status.header_actions(),
-            health_metrics: ports.health.metrics(),
+            health_display: health_metrics.clone(),
+            health_metrics,
+            token_countdown: None,
             sections: ports.content.sections(),
         }
     }
@@ -120,18 +134,12 @@ pub(super) struct LiveTallies {
 #[derive(Default)]
 pub(super) struct DetailModals {
     pub(super) pending_disconnect: Confirm<()>,
-    pub(super) quick_action_modal: Option<Entity<QuickActionModal>>,
-    pub(super) collection_manager: Option<Entity<CollectionManager>>,
     pub(super) obs_settings_modal: Option<Entity<ObsSettingsModal>>,
-    pub(super) history_modal: Option<Entity<RunHistoryModal>>,
-    pub(super) _qa_modal_sub: Option<Subscription>,
-    pub(super) _collection_manager_sub: Option<Subscription>,
     pub(super) _obs_modal_sub: Option<Subscription>,
-    pub(super) _history_modal_subs: Vec<Subscription>,
 }
 
 pub(super) struct DetailBackground {
-    pub(super) _qa_search_sub: Subscription,
+    pub(super) _quick_sub: Subscription,
     pub(super) _health_bridge: Task<()>,
     pub(super) _change_bridge: Task<()>,
     pub(super) _token_countdown_repaint: Option<Task<()>>,

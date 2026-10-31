@@ -820,7 +820,7 @@ impl UnsavedWork for OverlaysView {
         self.code_dirty(cx)
     }
 
-    fn unsaved_work_name(&self) -> Option<SharedString> {
+    fn unsaved_work_name(&self, _cx: &App) -> Option<SharedString> {
         Some(SharedString::from(self.editor.code.file))
     }
 
@@ -829,7 +829,7 @@ impl UnsavedWork for OverlaysView {
         self.editor.code.saving
     }
 
-    fn is_saving_unsaved_work(&self) -> bool {
+    fn is_saving_unsaved_work(&self, _cx: &App) -> bool {
         self.editor.code.saving
     }
 

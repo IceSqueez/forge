@@ -1,90 +1,51 @@
-mod api_pane;
 mod console;
-mod contract_editing;
-mod details_pane;
-mod diagnostics;
-mod file_list;
-mod input_parsing;
-mod overlays;
-mod run_modal;
-mod script_commands;
-mod script_loading;
-mod script_rename;
-mod script_running;
-mod signature;
+mod document;
+mod list;
 #[cfg(test)]
 mod tests;
-mod toolbar;
 
-use self::console::{ConsoleLine, ConsoleTab};
-use self::contract_editing::{InputRename, KindMenu};
-use self::diagnostics::EditorProblem;
-use self::file_list::RowMenu;
-use self::run_modal::RunModal;
-use self::script_rename::{PendingRename, RenameState};
-use crate::async_bridge::Loadable;
-use crate::navigable_list::ListCursor;
-use crate::navigation::NavRequested;
+use self::document::{ScriptDocument, ScriptDocumentEvent};
+use self::list::{ScriptList, ScriptListEvent};
+use crate::navigation::{NavRequested, Screen};
 use crate::screen_shortcuts::ScreenShortcuts;
+use crate::script_lifecycle::ScriptLifecycle;
 use crate::unsaved_work::UnsavedWork;
-use forge_components::Language;
-use forge_components::drive_overlay_focus;
 use forge_components::{
-    ActivePresentation, BreadcrumbCrumb, CodeEditor, Confirm, FONT_XS, ForgePalette, Icon,
-    InputEvent, Radius, SaveCode, SearchState, TextInput, page_frame, tr,
+    ActivePresentation, BreadcrumbCrumb, ConfirmTone, Density, FONT_XXS, ForgePalette, Icon,
+    OverlayPosition, Spacing, body_family, confirm_modal, drive_overlay_focus, icon, mono_family,
+    overlay, page_frame, spacing, tr,
 };
 use forge_runtime::{EventBus, ScriptRegistry};
-use forge_storage::{
-    DataProvider, SCRIPT_NAME_KEY, SCRIPT_RUN_NAMED_KIND, ScriptRecord, ScriptReferences,
-    ScriptTelemetry,
-};
-use forge_types::{Action, ActionId, IntegrationAvailability, ScriptContract, ScriptId};
+use forge_storage::{DataProvider, ScriptRepo};
+use forge_types::{IntegrationAvailability, ScriptId};
 use gpui::prelude::*;
 use gpui::{
-    AnyElement, App, Context, Entity, EventEmitter, Pixels, SharedString, Subscription, Task,
-    UniformListScrollHandle, Window, div, px,
+    AnyElement, App, ClickEvent, Context, Entity, EventEmitter, FocusHandle, Pixels, SharedString,
+    Subscription, Window, div, px,
 };
-use gpui::{FocusHandle, ScrollHandle};
-use std::collections::VecDeque;
 use std::sync::Arc;
 
-const LEFT_PANE_W: Pixels = px(200.0);
-const CODE_LINE_HEIGHT: Pixels = px(19.8);
-const DETAILS_PANE_W: Pixels = px(232.0);
-const CONSOLE_INIT_H: Pixels = px(160.0);
 const GLYPH_ACTION: Pixels = px(12.0);
+const GLYPH_STATUS: Pixels = px(12.0);
+const SCRIPT_LANGUAGE_LABEL: &str = "Rhai";
 
-struct LinkedAction {
-    id: ActionId,
-    name: String,
+#[derive(Clone)]
+struct ScriptDeps {
+    backend: Arc<dyn DataProvider>,
+    script_registry: Arc<ScriptRegistry>,
+    bus: Arc<EventBus>,
+    integrations: Arc<dyn IntegrationAvailability>,
+    rt_handle: tokio::runtime::Handle,
 }
 
-struct ScriptEntry {
-    id: ScriptId,
-    name: String,
-    status_ok: bool,
-    enabled: bool,
-    linked: Option<LinkedAction>,
-}
-
-fn find_linked_action(actions: &[Action], script_name: &str) -> Option<LinkedAction> {
-    actions.iter().find_map(|action| {
-        let links = action.sub_actions.iter().any(|step| {
-            step.kind_id == SCRIPT_RUN_NAMED_KIND
-                && step.config.get(SCRIPT_NAME_KEY).and_then(|v| v.as_str()) == Some(script_name)
-        });
-        links.then(|| LinkedAction {
-            id: action.id,
-            name: action.name.clone(),
-        })
-    })
-}
-
-struct OpenScript {
-    id: ScriptId,
-    record: ScriptRecord,
-    original_body: String,
-    original_contract: ScriptContract,
+impl ScriptDeps {
+    fn lifecycle(&self) -> ScriptLifecycle {
+        ScriptLifecycle::new(
+            Arc::clone(&self.backend) as Arc<dyn ScriptRepo>,
+            Arc::clone(&self.script_registry),
+            Arc::clone(&self.bus),
+        )
+    }
 }
 
 enum PendingNav {
@@ -93,114 +54,59 @@ enum PendingNav {
 }
 
 pub(crate) struct ScriptEditorView {
-    backend: Arc<dyn DataProvider>,
-    script_registry: Arc<ScriptRegistry>,
-    bus: Arc<EventBus>,
-    integrations: Arc<dyn IntegrationAvailability>,
-    rt_handle: tokio::runtime::Handle,
-
-    scripts: Vec<ScriptEntry>,
-    selected: Option<ScriptId>,
-    open: Option<OpenScript>,
-    telemetry: Option<ScriptTelemetry>,
-    list_load: Loadable<()>,
-    saving: bool,
-    run_in_flight: bool,
-    engine_timeout_ms: Option<u64>,
-
-    list_width: Pixels,
-    list_keys: ListCursor<ScriptId>,
-    list_scroll: ScrollHandle,
-    details_width: Pixels,
-    console_height: Pixels,
-
-    search: SearchState,
-    _search_sub: Subscription,
-
-    rename: Option<RenameState>,
-    row_menu: Option<RowMenu>,
+    list: Entity<ScriptList>,
+    document: Entity<ScriptDocument>,
+    pending_nav: Option<PendingNav>,
     menu_focus: FocusHandle,
     menu_focus_restore: Option<FocusHandle>,
-    pending_delete: Confirm<ScriptId>,
-    delete_referrers: Option<ScriptReferences>,
-    pending_rename: Option<PendingRename>,
-    pending_nav: Option<PendingNav>,
-
-    input_rename: Option<InputRename>,
-    kind_menu: Option<KindMenu>,
-    contract_error: Option<SharedString>,
-
-    code_input: Entity<CodeEditor>,
-    _code_sub: Subscription,
-
-    console: VecDeque<ConsoleLine>,
-    console_scroll: UniformListScrollHandle,
-    console_tab: ConsoleTab,
-    console_collapsed: bool,
-    problems: Vec<EditorProblem>,
-    problem_lines: Vec<usize>,
-    compile_error: Option<SharedString>,
-    _compile_check: Option<Task<()>>,
-
-    api_docs_open: bool,
-    api_search: SearchState,
-    _api_search_sub: Subscription,
-
-    run_modal: Option<Entity<RunModal>>,
-    _run_sub: Option<Subscription>,
+    _subscriptions: [Subscription; 2],
 }
 
 impl EventEmitter<NavRequested> for ScriptEditorView {}
 
 impl UnsavedWork for ScriptEditorView {
     fn has_unsaved_work(&self, cx: &App) -> bool {
-        self.current_dirty(cx)
+        self.document.read(cx).current_dirty(cx)
     }
 
-    fn unsaved_work_name(&self) -> Option<SharedString> {
-        self.open
-            .as_ref()
-            .map(|open| SharedString::from(open.record.name.clone()))
+    fn unsaved_work_name(&self, cx: &App) -> Option<SharedString> {
+        self.document.read(cx).open_name()
     }
 
     fn start_saving_unsaved_work(&mut self, cx: &mut Context<Self>) -> bool {
-        self.save(cx);
-        self.saving
+        self.document.update(cx, |document, cx| {
+            document.save(cx);
+            document.is_saving()
+        })
     }
 
-    fn is_saving_unsaved_work(&self) -> bool {
-        self.saving
+    fn is_saving_unsaved_work(&self, cx: &App) -> bool {
+        self.document.read(cx).is_saving()
     }
 
     fn discard_unsaved_work(&mut self, cx: &mut Context<Self>) {
         self.pending_nav = None;
-        self.revert_current(cx);
+        self.document
+            .update(cx, |document, cx| document.revert_current(cx));
         cx.notify();
     }
 }
 
 impl ScreenShortcuts for ScriptEditorView {
     fn save_shortcut(&mut self, cx: &mut Context<Self>) {
-        if !self.prompt_open() {
+        if !self.prompt_open(cx) {
             self.start_saving_unsaved_work(cx);
         }
     }
 
     fn run_shortcut(&mut self, cx: &mut Context<Self>) {
-        if !self.prompt_open() {
-            self.run(cx);
+        if !self.prompt_open(cx) {
+            self.document.update(cx, |document, cx| document.run(cx));
         }
     }
 }
 
 impl ScriptEditorView {
-    fn prompt_open(&self) -> bool {
-        self.run_modal.is_some()
-            || self.pending_delete.get().is_some()
-            || self.pending_rename.is_some()
-            || self.pending_nav.is_some()
-    }
-
     pub(crate) fn new(
         backend: Arc<dyn DataProvider>,
         script_registry: Arc<ScriptRegistry>,
@@ -209,156 +115,253 @@ impl ScriptEditorView {
         rt_handle: tokio::runtime::Handle,
         cx: &mut Context<Self>,
     ) -> Self {
-        let palette = cx.palette();
-
-        let code_input = cx.new(|cx| {
-            CodeEditor::new(Language::Rhai, "// write your rhai script", cx)
-                .with_palette(palette)
-                .with_font_size(FONT_XS)
-                .with_line_height(CODE_LINE_HEIGHT)
-        });
-        let code_sub = cx.subscribe(&code_input, |this, _area, event: &InputEvent, cx| {
-            if let InputEvent::Changed(_) = event {
-                this.on_code_changed(cx);
-            }
-        });
-
-        let search = SearchState::from_field(cx.new(|cx| {
-            TextInput::new(tr!("script_editor_search_placeholder"), cx)
-                .with_palette(palette)
-                .with_font_size(FONT_XS)
-                .leading_icon(Icon::Search, palette.text_faint)
-                .on_surface()
-                .static_chrome(palette.surface_overlay, Radius::Sm)
-        }));
-        let search_sub = cx.subscribe(search.field(), |this: &mut Self, _f, event, cx| {
-            if this.search.on_changed(event) {
-                cx.notify();
-            }
-        });
-
-        let api_search = SearchState::from_field(cx.new(|cx| {
-            TextInput::new(tr!("script_editor_api_search_placeholder"), cx)
-                .with_palette(palette)
-                .with_font_size(FONT_XS)
-                .leading_icon(Icon::Search, palette.text_faint)
-                .on_surface()
-                .static_chrome(palette.surface_overlay, Radius::Sm)
-        }));
-        let api_search_sub = cx.subscribe(api_search.field(), |this: &mut Self, _f, event, cx| {
-            if this.api_search.on_changed(event) {
-                cx.notify();
-            }
-        });
-
-        let mut view = Self {
+        let deps = ScriptDeps {
             backend,
             script_registry,
             bus,
             integrations,
             rt_handle,
-            scripts: Vec::new(),
-            selected: None,
-            open: None,
-            telemetry: None,
-            list_load: Loadable::Loading,
-            saving: false,
-            run_in_flight: false,
-            engine_timeout_ms: None,
-            list_width: LEFT_PANE_W,
-            list_keys: ListCursor::new(cx),
-            list_scroll: ScrollHandle::new(),
-            details_width: DETAILS_PANE_W,
-            console_height: CONSOLE_INIT_H,
-            search,
-            _search_sub: search_sub,
-            rename: None,
-            row_menu: None,
+        };
+        let console = cx.new(|cx| console::ScriptConsole::new(&deps.bus, cx));
+        let list = cx.new(|cx| ScriptList::new(deps.clone(), console.clone(), cx));
+        let document = cx.new(|cx| ScriptDocument::new(deps, console, cx));
+        let subscriptions = [
+            cx.subscribe(&list, Self::on_list_event),
+            cx.subscribe(&document, Self::on_document_event),
+        ];
+        Self {
+            list,
+            document,
+            pending_nav: None,
             menu_focus: cx.focus_handle(),
             menu_focus_restore: None,
-            pending_delete: Confirm::default(),
-            delete_referrers: None,
-            pending_rename: None,
-            pending_nav: None,
-            input_rename: None,
-            kind_menu: None,
-            contract_error: None,
-            code_input,
-            _code_sub: code_sub,
-            console: VecDeque::new(),
-            console_scroll: UniformListScrollHandle::new(),
-            console_tab: ConsoleTab::Output,
-            console_collapsed: false,
-            problems: Vec::new(),
-            problem_lines: Vec::new(),
-            compile_error: None,
-            _compile_check: None,
-            api_docs_open: false,
-            api_search,
-            _api_search_sub: api_search_sub,
-            run_modal: None,
-            _run_sub: None,
-        };
-        view.start_log_bridge(cx);
-        view.load_scripts(cx);
-        view.load_engine_timeout(cx);
-        view
+            _subscriptions: subscriptions,
+        }
     }
 
-    fn code_area(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
-        div()
-            .on_action(cx.listener(|this, _: &SaveCode, _, cx| {
-                this.start_saving_unsaved_work(cx);
-            }))
-            .flex_1()
-            .min_h_0()
+    #[cfg(test)]
+    fn parts(&self) -> (Entity<ScriptList>, Entity<ScriptDocument>) {
+        (self.list.clone(), self.document.clone())
+    }
+
+    fn prompt_open(&self, cx: &App) -> bool {
+        self.document.read(cx).run_modal_open()
+            || self.list.read(cx).prompt_open()
+            || self.pending_nav.is_some()
+    }
+
+    fn on_list_event(
+        &mut self,
+        _list: Entity<ScriptList>,
+        event: &ScriptListEvent,
+        cx: &mut Context<Self>,
+    ) {
+        match event {
+            ScriptListEvent::RowChosen(id) => self.select(*id, cx),
+            ScriptListEvent::NewRequested => self.new_script(cx),
+            ScriptListEvent::Loaded { first } => {
+                if let Some(id) = *first
+                    && !self.document.read(cx).has_open()
+                {
+                    self.open_script(id, cx);
+                }
+                self.sync_linked(cx);
+            }
+            ScriptListEvent::Created(record) => {
+                let record = record.clone();
+                self.document.update(cx, |document, cx| {
+                    document.apply_script_opened(Ok(record), cx);
+                });
+            }
+            ScriptListEvent::SelectionLost => {
+                self.document.update(cx, |document, cx| document.close(cx));
+            }
+            ScriptListEvent::Renamed { id, name } => {
+                self.document.update(cx, |document, cx| {
+                    document.apply_renamed(*id, name.clone(), cx);
+                });
+            }
+            ScriptListEvent::RowMenuOpened => {
+                self.document
+                    .update(cx, |document, cx| document.close_kind_menu(cx));
+            }
+        }
+    }
+
+    fn on_document_event(
+        &mut self,
+        _document: Entity<ScriptDocument>,
+        event: &ScriptDocumentEvent,
+        cx: &mut Context<Self>,
+    ) {
+        match event {
+            ScriptDocumentEvent::Opened => self.sync_linked(cx),
+            ScriptDocumentEvent::Saved(id) => {
+                self.list.update(cx, |list, cx| list.mark_valid(*id, cx));
+            }
+            ScriptDocumentEvent::KindMenuOpened => {
+                self.list.update(cx, |list, cx| list.close_row_menu(cx));
+            }
+            ScriptDocumentEvent::OpenAction(action_id) => {
+                cx.emit(NavRequested(Screen::Actions(Some(*action_id))));
+            }
+        }
+    }
+
+    fn sync_linked(&mut self, cx: &mut Context<Self>) {
+        let linked = self
+            .document
+            .read(cx)
+            .open_id()
+            .and_then(|id| self.list.read(cx).linked_action(id));
+        self.document
+            .update(cx, |document, cx| document.set_linked(linked, cx));
+    }
+
+    fn select(&mut self, id: ScriptId, cx: &mut Context<Self>) {
+        if self.document.read(cx).current_dirty(cx) {
+            self.pending_nav = Some(PendingNav::SelectScript(id));
+            cx.notify();
+            return;
+        }
+        self.open_script(id, cx);
+    }
+
+    fn open_script(&mut self, id: ScriptId, cx: &mut Context<Self>) {
+        self.list.update(cx, |list, cx| list.mark_selected(id, cx));
+        self.document
+            .update(cx, |document, cx| document.open_script(id, cx));
+    }
+
+    fn new_script(&mut self, cx: &mut Context<Self>) {
+        if self.document.read(cx).current_dirty(cx) {
+            self.pending_nav = Some(PendingNav::NewScript);
+            cx.notify();
+            return;
+        }
+        self.list.update(cx, |list, cx| list.create_script(cx));
+    }
+
+    fn confirm_discard(&mut self, cx: &mut Context<Self>) {
+        let Some(nav) = self.pending_nav.take() else {
+            return;
+        };
+        self.document
+            .update(cx, |document, cx| document.revert_current(cx));
+        match nav {
+            PendingNav::SelectScript(id) => self.open_script(id, cx),
+            PendingNav::NewScript => self.new_script(cx),
+        }
+        cx.notify();
+    }
+
+    fn cancel_discard(&mut self, cx: &mut Context<Self>) {
+        self.pending_nav = None;
+        cx.notify();
+    }
+
+    fn discard_overlay(
+        &self,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
+        self.pending_nav.as_ref()?;
+
+        let card = confirm_modal(
+            tr!("script_editor_discard_title"),
+            tr!("script_editor_discard_body"),
+            ConfirmTone::Warning,
+            palette,
+        )
+        .esc_hint(tr!("script_editor_discard_esc_hint"))
+        .on_cancel(
+            "script-discard-cancel",
+            tr!("script_editor_discard_cancel"),
+            cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_discard(cx)),
+        )
+        .on_confirm(
+            "script-discard-confirm",
+            tr!("script_editor_discard_confirm"),
+            cx.listener(|this, _: &ClickEvent, _, cx| this.confirm_discard(cx)),
+        );
+
+        let view = cx.entity();
+        Some(
+            overlay(card, palette)
+                .position(OverlayPosition::Center)
+                .on_dismiss("script-discard-scrim", move |_window, cx| {
+                    view.update(cx, |this, cx| this.cancel_discard(cx));
+                })
+                .into_any_element(),
+        )
+    }
+
+    fn render_header_right(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &App,
+    ) -> AnyElement {
+        let (ok, total) = self.list.read(cx).health();
+
+        let mut right = div()
             .flex()
-            .flex_col()
-            .bg(palette.base)
-            .child(self.code_input.clone())
+            .items_center()
+            .gap(spacing(Spacing::Sm, density));
+
+        if total > 0 {
+            let health = div()
+                .flex()
+                .items_center()
+                .gap(spacing(Spacing::Xxs, density))
+                .child(icon(Icon::CircleCheck, GLYPH_STATUS, palette.success))
+                .child(
+                    div()
+                        .font_family(body_family())
+                        .text_size(FONT_XXS)
+                        .text_color(palette.text_muted)
+                        .child(tr!(
+                            "script_editor_health",
+                            ok = i64::try_from(ok).unwrap_or(i64::MAX),
+                            total = i64::try_from(total).unwrap_or(i64::MAX)
+                        )),
+                );
+            right = right.child(health).child(
+                div()
+                    .font_family(body_family())
+                    .text_size(FONT_XXS)
+                    .text_color(palette.text_faint)
+                    .child("·"),
+            );
+        }
+
+        right
+            .child(
+                div()
+                    .font_family(mono_family())
+                    .text_size(FONT_XXS)
+                    .text_color(palette.text_muted)
+                    .child(SCRIPT_LANGUAGE_LABEL),
+            )
             .into_any_element()
     }
 }
 
 impl Render for ScriptEditorView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let menu_open =
+            self.list.read(cx).row_menu_open() || self.document.read(cx).kind_menu_open();
         drive_overlay_focus(
-            self.row_menu.is_some() || self.kind_menu.is_some(),
+            menu_open,
             &self.menu_focus,
             &mut self.menu_focus_restore,
             window,
             cx,
         );
-        self.list_keys.claim_focus_once(window, cx);
         let palette = cx.palette();
         let density = cx.density();
 
-        let header_right = self.render_header_right(&palette, density);
-        let file_bar = self.file_bar(&palette, density, cx);
-        let toolbar = self.toolbar(&palette, density, cx);
-        let left = self.left_pane(&palette, density, cx);
-        let code = self.code_area(&palette, cx);
-        let console = self.console(&palette, density, cx);
-
-        let centre = div()
-            .flex_1()
-            .min_w_0()
-            .h_full()
-            .flex()
-            .flex_col()
-            .bg(palette.base)
-            .children(file_bar)
-            .child(toolbar)
-            .child(code)
-            .child(console);
-
-        let right = if self.api_docs_open {
-            Some(self.right_pane(&palette, density))
-        } else if self.open.is_some() {
-            Some(self.details_pane(&palette, cx))
-        } else {
-            None
-        };
+        let header_right = self.render_header_right(&palette, density, cx);
 
         let body = div()
             .w_full()
@@ -366,9 +369,8 @@ impl Render for ScriptEditorView {
             .min_h_0()
             .flex()
             .flex_row()
-            .child(left)
-            .child(centre)
-            .children(right);
+            .child(self.list.clone())
+            .child(self.document.clone());
 
         let frame = page_frame(
             vec![
@@ -380,20 +382,23 @@ impl Render for ScriptEditorView {
         .header_right(header_right)
         .body(body);
 
-        let overlay = if let Some(modal) = self.run_modal.clone() {
-            Some(modal.into_any_element())
-        } else if self.pending_delete.is_pending() {
-            self.delete_overlay(&palette, cx)
-        } else if self.pending_rename.is_some() {
-            self.rename_overlay(&palette, cx)
-        } else if self.pending_nav.is_some() {
-            self.discard_overlay(&palette, cx)
-        } else {
-            None
-        };
+        let overlay = self
+            .document
+            .read(cx)
+            .run_modal_layer()
+            .or_else(|| {
+                self.list
+                    .update(cx, |list, cx| list.render_prompt_layer(&palette, cx))
+            })
+            .or_else(|| self.discard_overlay(&palette, cx));
 
-        let row_menu = self.render_row_context_menu(&palette, cx);
-        let kind_menu = self.render_kind_menu(&palette, cx);
+        let menu_focus = self.menu_focus.clone();
+        let row_menu = self.list.update(cx, |list, cx| {
+            list.render_row_context_menu(&palette, &menu_focus, cx)
+        });
+        let kind_menu = self.document.update(cx, |document, cx| {
+            document.render_kind_menu(&palette, &menu_focus, cx)
+        });
 
         div()
             .size_full()

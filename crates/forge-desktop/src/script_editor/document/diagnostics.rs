@@ -1,4 +1,4 @@
-use super::ScriptEditorView;
+use super::ScriptDocument;
 use forge_components::tr;
 use forge_script::{ScriptError, inert_annotation_lines, validate_syntax};
 use gpui::prelude::*;
@@ -6,14 +6,14 @@ use gpui::{Context, SharedString};
 use std::time::Duration;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(super) enum ProblemLevel {
+pub(in super::super) enum ProblemLevel {
     Error,
     Info,
 }
 
-pub(super) struct EditorProblem {
-    pub(super) level: ProblemLevel,
-    pub(super) text: SharedString,
+pub(in super::super) struct EditorProblem {
+    pub(in super::super) level: ProblemLevel,
+    pub(in super::super) text: SharedString,
 }
 
 fn compile_problem(body: &str) -> Option<String> {
@@ -24,7 +24,7 @@ fn compile_problem(body: &str) -> Option<String> {
     }
 }
 
-impl ScriptEditorView {
+impl ScriptDocument {
     pub(super) fn recompute_diagnostics(&mut self, body: &str, cx: &mut Context<Self>) {
         self.compile_error = None;
         self.refresh_annotations(body, cx);
@@ -48,7 +48,7 @@ impl ScriptEditorView {
             )]
             let _ = this.update(cx, |this, cx| {
                 this.compile_error = compile_error.map(SharedString::from);
-                this.rebuild_problems();
+                this.rebuild_problems(cx);
                 cx.notify();
             });
         }));
@@ -56,14 +56,14 @@ impl ScriptEditorView {
 
     pub(super) fn refresh_annotations(&mut self, body: &str, cx: &mut Context<Self>) {
         self.problem_lines = inert_annotation_lines(body);
-        self.rebuild_problems();
+        self.rebuild_problems(cx);
 
         let marks = self.problem_lines.clone();
         self.code_input
             .update(cx, |area, cx| area.set_gutter_marks(marks, cx));
     }
 
-    fn rebuild_problems(&mut self) {
+    fn rebuild_problems(&mut self, cx: &mut Context<Self>) {
         let mut problems = Vec::with_capacity(self.problem_lines.len() + 1);
         if let Some(reason) = &self.compile_error {
             problems.push(EditorProblem {
@@ -82,6 +82,7 @@ impl ScriptEditorView {
                 .into(),
             }
         }));
-        self.problems = problems;
+        self.console
+            .update(cx, |console, cx| console.set_problems(problems, cx));
     }
 }

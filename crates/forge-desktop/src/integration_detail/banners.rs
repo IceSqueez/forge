@@ -141,7 +141,7 @@ impl IntegrationDetail {
             .border(BORDER_THIN)
             .border_color(palette.warning)
             .bg(palette.shell)
-            .child(icon(Icon::AlertTriangle, px(14.0), palette.warning))
+            .child(icon(Icon::AlertTriangle, FONT_SM, palette.warning))
             .child(
                 div()
                     .flex_1()

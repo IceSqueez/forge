@@ -16,8 +16,8 @@ use forge_platform_core::{
 };
 use forge_types::SubActionStep;
 use gpui::{
-    AnyElement, ClickEvent, Context, Entity, EventEmitter, Rgba, SharedString, Subscription, Task,
-    Window, div, prelude::*, px,
+    AnyElement, ClickEvent, Context, Entity, EventEmitter, Pixels, Rgba, SharedString,
+    Subscription, Task, Window, div, prelude::*, px,
 };
 use tokio::runtime::Handle;
 
@@ -32,6 +32,10 @@ use forge_components::{
 };
 
 const TEXT_DEPENDENCY_DEBOUNCE: Duration = Duration::from_millis(400);
+const MULTILINE_H: Pixels = px(80.0);
+const MODAL_W: Pixels = px(440.0);
+const CHOICE_GAP: Pixels = px(8.0);
+const BODY_GAP: Pixels = px(12.0);
 
 pub(crate) enum QuickActionModalEvent {
     Run { step: SubActionStep, label: String },
@@ -134,105 +138,7 @@ impl QuickActionModal {
                 QuickActionFieldKind::Int { min, max } => Some(int_range_hint(*min, *max)),
                 _ => None,
             };
-            let control = match &spec.kind {
-                QuickActionFieldKind::Text => {
-                    let content = default_text(&spec.default);
-                    let placeholder = spec
-                        .placeholder
-                        .as_ref()
-                        .map(user_text_string)
-                        .unwrap_or_default();
-                    let blank = spec.required && content.trim().is_empty();
-                    let input = cx.new(|cx| {
-                        let mut ti = TextInput::new(placeholder, cx).with_palette(palette);
-                        if !content.is_empty() {
-                            ti.set_content(content, cx);
-                        }
-                        ti.set_invalid(blank, cx);
-                        ti
-                    });
-                    subs.push(cx.subscribe(&input, move |this, _, event, cx| {
-                        this.on_field_event(i, event, cx)
-                    }));
-                    FieldControl::Text(input)
-                }
-                QuickActionFieldKind::Multiline | QuickActionFieldKind::MultilineList => {
-                    let content = default_text(&spec.default);
-                    let placeholder = spec
-                        .placeholder
-                        .as_ref()
-                        .map(user_text_string)
-                        .unwrap_or_default();
-                    let blank = spec.required && content.trim().is_empty();
-                    let area = cx.new(|cx| {
-                        let mut ta = TextArea::new(placeholder, cx)
-                            .with_palette(palette)
-                            .with_height(px(80.0));
-                        if !content.is_empty() {
-                            ta.set_content(content, cx);
-                        }
-                        ta.set_invalid(blank, cx);
-                        ta
-                    });
-                    subs.push(cx.subscribe(&area, move |this, _, event, cx| {
-                        this.on_field_event(i, event, cx)
-                    }));
-                    FieldControl::Multiline(area)
-                }
-                QuickActionFieldKind::Toggle => FieldControl::Toggle(default_toggle(&spec.default)),
-                QuickActionFieldKind::Int { min, max } => {
-                    let fallback = default_int(&spec.default).max(*min).min(*max);
-                    let placeholder = spec
-                        .placeholder
-                        .as_ref()
-                        .map(user_text_string)
-                        .unwrap_or_default();
-                    let input = cx.new(|cx| {
-                        let mut ti = TextInput::new(placeholder, cx).with_palette(palette);
-                        ti.set_content(fallback.to_string(), cx);
-                        ti
-                    });
-                    subs.push(cx.subscribe(&input, move |this, _, event, cx| {
-                        this.on_field_event(i, event, cx)
-                    }));
-                    FieldControl::Int {
-                        input,
-                        min: *min,
-                        max: *max,
-                        fallback,
-                    }
-                }
-                QuickActionFieldKind::Choice(source) => match source {
-                    QuickActionChoiceSource::Static(opts) => {
-                        let items = opts.iter().map(static_item).collect();
-                        FieldControl::Choice(ChoiceControl {
-                            option_list: None,
-                            state: ChoiceState::Ready(items),
-                            selected: choice_default(&spec.default, opts),
-                        })
-                    }
-                    QuickActionChoiceSource::OptionList(list) => {
-                        let binding = declared_lists
-                            .iter()
-                            .find(|metadata| &metadata.id == list)
-                            .map(|metadata| OptionListBinding {
-                                list: metadata.id.clone(),
-                                depends_on: metadata.depends_on.clone(),
-                                default: option_default(&spec.default),
-                                ticket: 0,
-                            });
-                        let state = match binding {
-                            Some(_) => ChoiceState::Loading,
-                            None => ChoiceState::Failed(tr!("integration_qa_field_unavailable")),
-                        };
-                        FieldControl::Choice(ChoiceControl {
-                            option_list: binding,
-                            state,
-                            selected: None,
-                        })
-                    }
-                },
-            };
+            let control = Self::build_control(&spec, i, &declared_lists, &mut subs, cx);
             fields.push(ModalField {
                 key: spec.key,
                 label: user_text_string(&spec.label),
@@ -276,6 +182,117 @@ impl QuickActionModal {
         };
         modal.resolve_option_lists(ResolveMode::Load, cx);
         modal
+    }
+
+    fn build_control(
+        spec: &forge_platform_core::QuickActionField,
+        i: usize,
+        declared_lists: &[forge_platform_core::OptionListMetadata],
+        subs: &mut Vec<Subscription>,
+        cx: &mut Context<Self>,
+    ) -> FieldControl {
+        let palette = cx.palette();
+        match &spec.kind {
+            QuickActionFieldKind::Text => {
+                let content = default_text(spec.default.as_ref());
+                let placeholder = spec
+                    .placeholder
+                    .as_ref()
+                    .map(user_text_string)
+                    .unwrap_or_default();
+                let blank = spec.required && content.trim().is_empty();
+                let input = cx.new(|cx| {
+                    let mut ti = TextInput::new(placeholder, cx).with_palette(palette);
+                    if !content.is_empty() {
+                        ti.set_content(content, cx);
+                    }
+                    ti.set_invalid(blank, cx);
+                    ti
+                });
+                subs.push(cx.subscribe(&input, move |this, _, event, cx| {
+                    this.on_field_event(i, event, cx)
+                }));
+                FieldControl::Text(input)
+            }
+            QuickActionFieldKind::Multiline | QuickActionFieldKind::MultilineList => {
+                let content = default_text(spec.default.as_ref());
+                let placeholder = spec
+                    .placeholder
+                    .as_ref()
+                    .map(user_text_string)
+                    .unwrap_or_default();
+                let blank = spec.required && content.trim().is_empty();
+                let area = cx.new(|cx| {
+                    let mut ta = TextArea::new(placeholder, cx)
+                        .with_palette(palette)
+                        .with_height(MULTILINE_H);
+                    if !content.is_empty() {
+                        ta.set_content(content, cx);
+                    }
+                    ta.set_invalid(blank, cx);
+                    ta
+                });
+                subs.push(cx.subscribe(&area, move |this, _, event, cx| {
+                    this.on_field_event(i, event, cx)
+                }));
+                FieldControl::Multiline(area)
+            }
+            QuickActionFieldKind::Toggle => {
+                FieldControl::Toggle(default_toggle(spec.default.as_ref()))
+            }
+            QuickActionFieldKind::Int { min, max } => {
+                let fallback = default_int(spec.default.as_ref()).max(*min).min(*max);
+                let placeholder = spec
+                    .placeholder
+                    .as_ref()
+                    .map(user_text_string)
+                    .unwrap_or_default();
+                let input = cx.new(|cx| {
+                    let mut ti = TextInput::new(placeholder, cx).with_palette(palette);
+                    ti.set_content(fallback.to_string(), cx);
+                    ti
+                });
+                subs.push(cx.subscribe(&input, move |this, _, event, cx| {
+                    this.on_field_event(i, event, cx)
+                }));
+                FieldControl::Int {
+                    input,
+                    min: *min,
+                    max: *max,
+                    fallback,
+                }
+            }
+            QuickActionFieldKind::Choice(source) => match source {
+                QuickActionChoiceSource::Static(opts) => {
+                    let items = opts.iter().map(static_item).collect();
+                    FieldControl::Choice(ChoiceControl {
+                        option_list: None,
+                        state: ChoiceState::Ready(items),
+                        selected: choice_default(spec.default.as_ref(), opts),
+                    })
+                }
+                QuickActionChoiceSource::OptionList(list) => {
+                    let binding = declared_lists
+                        .iter()
+                        .find(|metadata| &metadata.id == list)
+                        .map(|metadata| OptionListBinding {
+                            list: metadata.id.clone(),
+                            depends_on: metadata.depends_on.clone(),
+                            default: option_default(spec.default.as_ref()),
+                            ticket: 0,
+                        });
+                    let state = match binding {
+                        Some(_) => ChoiceState::Loading,
+                        None => ChoiceState::Failed(tr!("integration_qa_field_unavailable")),
+                    };
+                    FieldControl::Choice(ChoiceControl {
+                        option_list: binding,
+                        state,
+                        selected: None,
+                    })
+                }
+            },
+        }
     }
 
     fn resolve_option_lists(&mut self, mode: ResolveMode, cx: &mut Context<Self>) {
@@ -701,7 +718,7 @@ impl QuickActionModal {
         let density = cx.density();
         match &choice.state {
             ChoiceState::Loading => field_frame(palette, density)
-                .gap(scaled(px(8.0), density))
+                .gap(scaled(CHOICE_GAP, density))
                 .child(spinner(
                     ("qa-choice-spin", index),
                     Icon::Refresh,
@@ -740,7 +757,7 @@ impl QuickActionModal {
                     .into_any_element()
             }
             ChoiceState::Ready(items) => {
-                let selected = selected_label(items, &choice.selected);
+                let selected = selected_label(items, choice.selected.as_ref());
                 let popover = self
                     .open_choice
                     .as_ref()
@@ -781,7 +798,7 @@ impl Render for QuickActionModal {
             .w_full()
             .flex()
             .flex_col()
-            .gap(scaled(px(12.0), density));
+            .gap(scaled(BODY_GAP, density));
         if self.fields.is_empty() {
             body = body.child(
                 div()
@@ -831,7 +848,7 @@ impl Render for QuickActionModal {
             .flex()
             .items_center()
             .justify_between()
-            .gap(scaled(px(12.0), density))
+            .gap(scaled(BODY_GAP, density))
             .child(
                 div()
                     .font_family(body_family())
@@ -843,7 +860,7 @@ impl Render for QuickActionModal {
                 div()
                     .flex()
                     .items_center()
-                    .gap(scaled(px(8.0), density))
+                    .gap(scaled(CHOICE_GAP, density))
                     .child(cancel_button)
                     .child(run_button),
             );
@@ -851,7 +868,7 @@ impl Render for QuickActionModal {
         let card = modal(self.label.clone(), body, &palette)
             .header_icon(self.glyph, self.accent)
             .subtitle(tr!("integration_qa_modal_subtitle"))
-            .width(px(440.0))
+            .width(MODAL_W)
             .footer(footer)
             .on_close(
                 "qa-modal-close",
@@ -929,7 +946,7 @@ fn static_item(opt: &QuickActionChoiceOption) -> PickerItem {
 }
 
 fn choice_default(
-    default: &Option<QuickActionFieldValue>,
+    default: Option<&QuickActionFieldValue>,
     opts: &[QuickActionChoiceOption],
 ) -> Option<SharedString> {
     match default {
@@ -953,7 +970,7 @@ fn option_item(entry: &OptionEntry) -> PickerItem {
     }
 }
 
-fn option_default(default: &Option<QuickActionFieldValue>) -> Option<SharedString> {
+fn option_default(default: Option<&QuickActionFieldValue>) -> Option<SharedString> {
     match default {
         Some(QuickActionFieldValue::Text(value)) if !value.is_empty() => Some(value.clone().into()),
         _ => None,
@@ -976,7 +993,7 @@ fn option_preselect(
     default.filter(listed).cloned()
 }
 
-fn selected_label(items: &[PickerItem], selected: &Option<SharedString>) -> SharedString {
+fn selected_label(items: &[PickerItem], selected: Option<&SharedString>) -> SharedString {
     match selected {
         Some(id) => items
             .iter()
@@ -987,18 +1004,18 @@ fn selected_label(items: &[PickerItem], selected: &Option<SharedString>) -> Shar
     }
 }
 
-fn default_text(default: &Option<QuickActionFieldValue>) -> String {
+fn default_text(default: Option<&QuickActionFieldValue>) -> String {
     match default {
         Some(QuickActionFieldValue::Text(value)) => value.clone(),
         _ => String::new(),
     }
 }
 
-fn default_toggle(default: &Option<QuickActionFieldValue>) -> bool {
+fn default_toggle(default: Option<&QuickActionFieldValue>) -> bool {
     matches!(default, Some(QuickActionFieldValue::Toggle(true)))
 }
 
-fn default_int(default: &Option<QuickActionFieldValue>) -> i64 {
+fn default_int(default: Option<&QuickActionFieldValue>) -> i64 {
     match default {
         Some(QuickActionFieldValue::Int(value)) => *value,
         _ => 0,

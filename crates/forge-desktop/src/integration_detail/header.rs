@@ -1,14 +1,21 @@
 use super::IntegrationDetail;
 use crate::health_text::connection_label;
 use crate::integration_catalog::{identity_of, tint_color};
+use crate::integration_quick_actions::outline_button;
 use crate::user_text::user_text_string;
 use forge_components::{
-    ActivePresentation, BORDER_THIN, Density, FONT_XS, ForgePalette, Icon, Radius, Spacing, badge,
-    body_family, icon, mono_family, platform_hero, radius, scaled, spacing, status_dot, tr,
+    ActivePresentation, Density, FONT_XS, ForgePalette, Icon, Radius, Spacing, badge, body_family,
+    icon, mono_family, platform_hero, radius, scaled, spacing, status_dot, tr,
 };
 use forge_platform_core::{ConnectionState, HeaderAction, HeroBadge, HeroBadgeTone};
 use forge_types::IntegrationId;
-use gpui::{AnyElement, ClickEvent, Context, FontWeight, Rgba, div, prelude::*, px};
+use gpui::{AnyElement, ClickEvent, Context, FontWeight, Pixels, Rgba, div, prelude::*, px};
+
+const BADGE_PAD_X: Pixels = px(2.0);
+const BADGE_PAD_Y: Pixels = px(6.0);
+const STATUS_ROW_GAP: Pixels = px(8.0);
+const STATUS_DOT_GAP: Pixels = px(5.0);
+const STATUS_DOT: Pixels = px(7.0);
 
 fn hero_identity(id: &IntegrationId, display_name: &str, palette: &ForgePalette) -> (String, Rgba) {
     if let Some(identity) = identity_of(id) {
@@ -37,7 +44,7 @@ fn header_action_label(action: &HeaderAction) -> String {
 fn pill(label: String, text_color: Rgba, palette: &ForgePalette) -> impl IntoElement {
     badge(palette.surface_overlay, text_color, label, true, FONT_XS)
         .weight(FontWeight::NORMAL)
-        .padding_xy(px(0.0), px(6.0))
+        .padding_xy(px(0.0), BADGE_PAD_Y)
         .radius(radius(Radius::Md))
         .flex_none()
 }
@@ -58,7 +65,7 @@ pub(super) fn hero_badge_elem(
         FONT_XS,
     )
     .weight(FontWeight::NORMAL)
-    .padding_xy(px(2.0), px(6.0))
+    .padding_xy(BADGE_PAD_X, BADGE_PAD_Y)
     .radius(radius(Radius::Sm))
     .flex_none()
 }
@@ -72,13 +79,13 @@ impl IntegrationDetail {
         let mut row = div()
             .flex()
             .items_center()
-            .gap(scaled(px(8.0), density))
+            .gap(scaled(STATUS_ROW_GAP, density))
             .child(
                 div()
                     .flex()
                     .items_center()
-                    .gap(scaled(px(5.0), density))
-                    .child(status_dot(palette.success, px(7.0)))
+                    .gap(scaled(STATUS_DOT_GAP, density))
+                    .child(status_dot(palette.success, STATUS_DOT))
                     .child(
                         div()
                             .font_family(body_family())
@@ -87,7 +94,7 @@ impl IntegrationDetail {
                             .child(tr!("integration_status_authenticated")),
                     ),
             );
-        if let Some(suffix) = self.token_countdown() {
+        if let Some(suffix) = self.shown.token_countdown.clone() {
             row = row
                 .child(
                     div()
@@ -121,8 +128,8 @@ impl IntegrationDetail {
         div()
             .flex()
             .items_center()
-            .gap(scaled(px(5.0), density))
-            .child(status_dot(dot, px(7.0)))
+            .gap(scaled(STATUS_DOT_GAP, density))
+            .child(status_dot(dot, STATUS_DOT))
             .child(
                 div()
                     .font_family(body_family())
@@ -202,16 +209,7 @@ impl IntegrationDetail {
             HeaderAction::Settings => Icon::Settings,
         };
         let hover_border = palette.border_input;
-        div()
-            .id(("header-action", idx))
-            .flex()
-            .items_center()
-            .gap(scaled(px(5.0), density))
-            .py(scaled(px(5.0), density))
-            .px(scaled(px(11.0), density))
-            .rounded(radius(Radius::Sm))
-            .border(BORDER_THIN)
-            .border_color(palette.border_regular)
+        outline_button(("header-action", idx), palette, density)
             .when(!signing_out, |button| {
                 button
                     .cursor_pointer()

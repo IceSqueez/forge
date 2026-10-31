@@ -1,15 +1,25 @@
-use super::ScriptEditorView;
+use super::ScriptList;
 use crate::script_lifecycle::{delete_hint, rename_hint};
 use forge_components::{ConfirmTone, ForgePalette, OverlayPosition, confirm_modal, overlay, tr};
 use gpui::prelude::*;
 use gpui::{AnyElement, ClickEvent, Context};
 
-impl ScriptEditorView {
-    pub(super) fn delete_overlay(
+impl ScriptList {
+    pub(in super::super) fn render_prompt_layer(
         &self,
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
+        if self.pending_delete.is_pending() {
+            self.delete_overlay(palette, cx)
+        } else if self.pending_rename.is_some() {
+            self.rename_overlay(palette, cx)
+        } else {
+            None
+        }
+    }
+
+    fn delete_overlay(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> Option<AnyElement> {
         let id = *self.pending_delete.get()?;
         let name = self
             .find_entry(id)
@@ -47,11 +57,7 @@ impl ScriptEditorView {
         )
     }
 
-    pub(super) fn rename_overlay(
-        &self,
-        palette: &ForgePalette,
-        cx: &mut Context<Self>,
-    ) -> Option<AnyElement> {
+    fn rename_overlay(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> Option<AnyElement> {
         let pending = self.pending_rename.as_ref()?;
         let card = confirm_modal(
             tr!("script_editor_rename_title"),
@@ -78,42 +84,6 @@ impl ScriptEditorView {
                 .position(OverlayPosition::Center)
                 .on_dismiss("script-rename-scrim", move |_window, cx| {
                     view.update(cx, |this, cx| this.cancel_pending_rename(cx));
-                })
-                .into_any_element(),
-        )
-    }
-
-    pub(super) fn discard_overlay(
-        &self,
-        palette: &ForgePalette,
-        cx: &mut Context<Self>,
-    ) -> Option<AnyElement> {
-        self.pending_nav.as_ref()?;
-
-        let card = confirm_modal(
-            tr!("script_editor_discard_title"),
-            tr!("script_editor_discard_body"),
-            ConfirmTone::Warning,
-            palette,
-        )
-        .esc_hint(tr!("script_editor_discard_esc_hint"))
-        .on_cancel(
-            "script-discard-cancel",
-            tr!("script_editor_discard_cancel"),
-            cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_discard(cx)),
-        )
-        .on_confirm(
-            "script-discard-confirm",
-            tr!("script_editor_discard_confirm"),
-            cx.listener(|this, _: &ClickEvent, _, cx| this.confirm_discard(cx)),
-        );
-
-        let view = cx.entity();
-        Some(
-            overlay(card, palette)
-                .position(OverlayPosition::Center)
-                .on_dismiss("script-discard-scrim", move |_window, cx| {
-                    view.update(cx, |this, cx| this.cancel_discard(cx));
                 })
                 .into_any_element(),
         )

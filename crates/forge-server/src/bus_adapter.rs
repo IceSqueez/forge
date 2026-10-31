@@ -25,9 +25,8 @@ const BUS_CONSUMER: &str = "ws_server";
 pub struct ClientId(pub(crate) u64);
 
 impl ClientId {
-    pub fn next() -> Self {
-        static COUNTER: AtomicU64 = AtomicU64::new(0);
-        Self(COUNTER.fetch_add(1, Ordering::Relaxed))
+    pub fn new(raw: u64) -> Self {
+        Self(raw)
     }
 }
 
@@ -117,6 +116,7 @@ pub(crate) struct BusAdapter {
     observer: Arc<dyn EventObserver>,
     registry: Arc<RwLock<Vec<ConnectedClient>>>,
     overlay_connect: OnceLock<Arc<dyn OverlayConnectListener>>,
+    next_client_id: AtomicU64,
 }
 
 #[derive(Serialize)]
@@ -277,6 +277,7 @@ impl BusAdapter {
             observer,
             registry: Arc::new(RwLock::new(Vec::new())),
             overlay_connect: OnceLock::new(),
+            next_client_id: AtomicU64::new(0),
         })
     }
 
@@ -346,11 +347,15 @@ impl BusAdapter {
         reached.sources + reached.preview_tabs
     }
 
+    pub(crate) fn allocate_client_id(&self) -> ClientId {
+        ClientId(self.next_client_id.fetch_add(1, Ordering::Relaxed))
+    }
+
     pub(crate) async fn register_client(
         &self,
         filters: ClientFilterSet,
     ) -> (ClientHandle, broadcast::Receiver<WsFrame>) {
-        let id = ClientId::next();
+        let id = self.allocate_client_id();
         let drop_counter = Arc::new(AtomicU64::new(0));
         let (sender, receiver) = broadcast::channel(CLIENT_CHANNEL_CAP);
         self.registry.write().await.push(ConnectedClient {
@@ -641,7 +646,7 @@ mod tests {
 
         let (_client, mut rx) = adapter.register_client(wildcard_filter()).await;
 
-        assert!(!adapter.kick_client(ClientId::next()).await);
+        assert!(!adapter.kick_client(ClientId::new(u64::MAX)).await);
 
         bus.publish(Event::new(
             EventSource::Twitch,

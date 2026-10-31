@@ -5,6 +5,7 @@ use crate::error::ObsError;
 
 const PROBE_TIMEOUT: Duration = Duration::from_secs(5);
 
+#[derive(Debug)]
 pub struct ObsProbeResult {
     pub obs_version: String,
     pub obs_websocket_version: String,

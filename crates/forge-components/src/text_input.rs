@@ -679,9 +679,11 @@ impl Render for TextInput {
             self.blur_sub = Some(cx.on_blur(&handle, window, Self::on_blur));
         }
         let focus = self.focus_handle.clone();
-        self.caret.watch(&focus, window, cx);
+        let newly_watched = self.caret.watch(&focus, window, cx);
         let focused = focus.is_focused(window);
-        set_caret_blinking(self, focused && window.is_visible(), cx);
+        if newly_watched {
+            set_caret_blinking(self, focused && window.is_visible(), cx);
+        }
         let (border_color, corner) = match self.static_chrome {
             Some((border, corner)) => (border, corner),
             None => {

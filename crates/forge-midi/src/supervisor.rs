@@ -38,7 +38,7 @@ struct PortState {
 
 impl PortState {
     fn publish(&self, client: &MidiClient) {
-        client.content_state.lock_recover().set_ports(
+        client.content_state().lock_recover().set_ports(
             self.inputs.clone(),
             self.outputs.clone(),
             self.handles.keys().cloned().collect(),
@@ -113,11 +113,11 @@ async fn handle_supervisor_command(
         SupervisorCommand::Disable => {
             ports.handles.clear();
             ports.publish(client);
-            client.enabled.store(false, Ordering::Relaxed);
+            client.enabled().store(false, Ordering::Relaxed);
             emit_engine_state_change(client, false);
         }
         SupervisorCommand::Enable => {
-            client.enabled.store(true, Ordering::Relaxed);
+            client.enabled().store(true, Ordering::Relaxed);
             for port in &ports.inputs {
                 if !ports.handles.contains_key(&port.name) {
                     open_input_port(client, merged_tx, &mut ports.handles, port);
@@ -137,11 +137,11 @@ fn emit_engine_state_change(client: &Arc<MidiClient>, enabled: bool) {
         event_kinds::ENGINE_DISABLED
     };
     client
-        .publisher
+        .publisher()
         .publish(Event::new(EventSource::Midi, kind, serde_json::json!({})));
 
     let input_count = {
-        let snap = client.health_state.lock_recover();
+        let snap = client.health_state().lock_recover();
         snap.input_count
     };
     let delta = HealthDelta {
@@ -152,12 +152,12 @@ fn emit_engine_state_change(client: &Arc<MidiClient>, enabled: bool) {
         clippy::let_underscore_must_use,
         reason = "having no subscribers is a normal state"
     )]
-    let _ = client.health_tx.send(delta);
+    let _ = client.health_tx().send(delta);
 }
 
 fn decay_events_per_minute(client: &Arc<MidiClient>) {
     let delta = {
-        let mut snap = client.health_state.lock_recover();
+        let mut snap = client.health_state().lock_recover();
         let before = snap.event_timestamps.len();
         let epm = events_per_minute(&mut snap.event_timestamps);
         (snap.event_timestamps.len() != before).then(|| HealthDelta {
@@ -170,12 +170,12 @@ fn decay_events_per_minute(client: &Arc<MidiClient>) {
             clippy::let_underscore_must_use,
             reason = "having no subscribers is a normal state"
         )]
-        let _ = client.health_tx.send(delta);
+        let _ = client.health_tx().send(delta);
     }
 }
 
 async fn list_ports(client: &Arc<MidiClient>) -> (Vec<MidiPortInfo>, Vec<MidiPortInfo>) {
-    let backend = Arc::clone(&client.backend);
+    let backend = Arc::clone(client.backend());
     tokio::task::spawn_blocking(move || (backend.list_input_ports(), backend.list_output_ports()))
         .await
         .unwrap_or_default()
@@ -205,7 +205,7 @@ async fn do_port_discovery(
     let output_count = ports.outputs.len();
 
     let deltas = {
-        let mut snap = client.health_state.lock_recover();
+        let mut snap = client.health_state().lock_recover();
         build_port_count_deltas(client, &mut snap, input_count, output_count)
     };
     for d in deltas {
@@ -213,7 +213,7 @@ async fn do_port_discovery(
             clippy::let_underscore_must_use,
             reason = "having no subscribers is a normal state"
         )]
-        let _ = client.health_tx.send(d);
+        let _ = client.health_tx().send(d);
     }
 }
 
@@ -228,7 +228,7 @@ fn diff_input_ports(
     let new_names: std::collections::HashSet<&str> = new.iter().map(|p| p.name.as_str()).collect();
 
     for port in new {
-        if client.enabled.load(Ordering::Relaxed) && !handles.contains_key(&port.name) {
+        if client.enabled().load(Ordering::Relaxed) && !handles.contains_key(&port.name) {
             open_input_port(client, merged_tx, handles, port);
         }
         if !old_names.contains(port.name.as_str()) {
@@ -256,7 +256,7 @@ fn diff_output_ports(client: &Arc<MidiClient>, old: &[MidiPortInfo], new: &[Midi
 
     for port in old {
         if !new_names.contains(port.name.as_str()) {
-            client.backend.release_output(&port.name);
+            client.backend().release_output(&port.name);
             emit_port_event(client, &port.name, PortDirection::Output, false);
         }
     }
@@ -269,7 +269,7 @@ fn open_input_port(
     port: &MidiPortInfo,
 ) {
     let (port_tx, mut port_rx) = mpsc::channel::<(u64, Vec<u8>)>(64);
-    match client.backend.open_input(&port.name, port_tx) {
+    match client.backend().open_input(&port.name, port_tx) {
         Ok(handle) => {
             handles.insert(port.name.clone(), handle);
             let merged = merged_tx.clone();
@@ -299,7 +299,7 @@ fn emit_port_event(client: &Arc<MidiClient>, name: &str, direction: PortDirectio
         kind,
         serde_json::json!({ (port_fields::PORT_NAME): name, (port_fields::DIRECTION): direction.as_str() }),
     );
-    client.publisher.publish(event);
+    client.publisher().publish(event);
 }
 
 fn handle_raw_event(client: &Arc<MidiClient>, _ts: u64, data: &[u8], port_name: &str) {
@@ -314,7 +314,7 @@ fn handle_raw_event(client: &Arc<MidiClient>, _ts: u64, data: &[u8], port_name: 
 
 fn emit_midi_event(client: &Arc<MidiClient>, port_name: &str, event: MidiEvent) {
     let signal = to_monitor_event(&event, port_name);
-    client.publisher.publish(Event::new(
+    client.publisher().publish(Event::new(
         EventSource::Midi,
         signal.kind.event_kind(),
         bus_payload(&signal),
@@ -324,13 +324,13 @@ fn emit_midi_event(client: &Arc<MidiClient>, port_name: &str, event: MidiEvent) 
         clippy::let_underscore_must_use,
         reason = "having no subscribers is a normal state"
     )]
-    let _ = client.monitor_tx.send(signal);
+    let _ = client.monitor_tx().send(signal);
 
     let now = Instant::now();
     let is_note_on = matches!(event, MidiEvent::NoteOn { .. });
 
     let deltas: Vec<HealthDelta> = {
-        let mut snap = client.health_state.lock_recover();
+        let mut snap = client.health_state().lock_recover();
         snap.event_timestamps.push_back(now);
         if is_note_on {
             snap.last_note_on_at = Some(OffsetDateTime::now_utc());
@@ -342,11 +342,11 @@ fn emit_midi_event(client: &Arc<MidiClient>, port_name: &str, event: MidiEvent) 
             clippy::let_underscore_must_use,
             reason = "having no subscribers is a normal state"
         )]
-        let _ = client.health_tx.send(d);
+        let _ = client.health_tx().send(d);
     }
 
     {
-        let mut snap = client.content_state.lock_recover();
+        let mut snap = client.content_state().lock_recover();
         record_midi_event(&mut snap, port_name);
     }
 }
@@ -360,7 +360,7 @@ fn build_port_count_deltas(
     let mut deltas = Vec::new();
     if snap.input_count != input_count {
         snap.input_count = input_count;
-        let enabled = client.enabled.load(Ordering::Relaxed);
+        let enabled = client.enabled().load(Ordering::Relaxed);
         deltas.push(HealthDelta {
             metric: INPUT_PORTS_METRIC,
             new_value: input_port_health_value(enabled, input_count),
@@ -764,7 +764,7 @@ mod tests {
 
     fn seed_note_timestamp(client: &MidiClient, at: Instant) {
         client
-            .health_state
+            .health_state()
             .lock()
             .unwrap()
             .event_timestamps
@@ -812,7 +812,7 @@ mod tests {
 
         super::decay_events_per_minute(&client);
         client
-            .health_tx
+            .health_tx()
             .send(HealthDelta {
                 metric: crate::health::INPUT_PORTS_METRIC,
                 new_value: crate::health::input_port_health_value(true, 0),

@@ -5,8 +5,8 @@ use forge_components::{
     icon, radius, scaled, spacing,
 };
 use gpui::{
-    AnyElement, Bounds, ClickEvent, Context, CursorStyle, DragMoveEvent, FocusHandle, FontWeight,
-    Half, Pixels, Rgba, SharedString, Window, div,
+    AnyElement, Bounds, ClickEvent, Context, CursorStyle, DispatchPhase, DragMoveEvent,
+    FocusHandle, FontWeight, Half, MouseUpEvent, Pixels, Rgba, SharedString, Window, canvas, div,
 };
 
 pub(super) struct StepDrag {
@@ -190,14 +190,37 @@ impl ScreenActionsView {
         self.finish_step_drag(window, cx);
     }
 
-    pub(in crate::actions_screen) fn release_step_drag(
-        &mut self,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    fn release_step_drag(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.editor.step_drag.is_some() && !cx.has_active_drag() {
             self.finish_step_drag(window, cx);
         }
+    }
+
+    pub(in crate::actions_screen) fn step_drag_release_watch(
+        &self,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
+        self.editor.step_drag.as_ref()?;
+        let view = cx.entity().downgrade();
+        let watch = canvas(
+            |_, _, _| {},
+            move |_, _, window, _| {
+                window.on_mouse_event(move |_: &MouseUpEvent, phase, window, cx| {
+                    if phase != DispatchPhase::Capture {
+                        return;
+                    }
+                    let released = view.update(cx, |_, cx| {
+                        cx.defer_in(window, Self::release_step_drag);
+                    });
+                    if released.is_err() {
+                        tracing::debug!("the actions view closed during a step drag");
+                    }
+                });
+            },
+        )
+        .absolute()
+        .size_0();
+        Some(watch.into_any_element())
     }
 
     pub(super) fn render_step_grip(

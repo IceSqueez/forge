@@ -7,6 +7,7 @@ const PLAYBACK_PROGRESS_TICK: Duration = Duration::from_secs(1);
 const PLAYBACK_START_BOUND: Duration = Duration::from_secs(5);
 
 use forge_audio::{AudioError, AudioSink};
+use forge_net::TaskOwner;
 use forge_speech_types::{EngineId, TtsVoice, VoiceId};
 use forge_speech_types::{LanguageCode, PcmBuffer};
 use forge_tts_core::{SynthesisRequest, TtsRegistry, engine_display_name};
@@ -34,6 +35,7 @@ pub(crate) struct ActorDeps {
     pub(crate) event_bus: Arc<dyn forge_events::EventPublisher>,
     pub(crate) disabled_engines: HashSet<EngineId>,
     pub(crate) engine_gains: HashMap<EngineId, f32>,
+    pub(crate) tasks: TaskOwner,
 }
 
 fn update_registry(registry: &Shared<TtsRegistry>, change: impl FnOnce(&mut TtsRegistry)) {
@@ -417,7 +419,7 @@ pub(crate) async fn run_actor(
     let (catalog_tx, mut catalog_rx) =
         tokio::sync::mpsc::channel::<CatalogUpdate>(CATALOG_UPDATE_CAPACITY);
     let (detector_tx, mut detector_rx) = tokio::sync::mpsc::channel::<DetectorBuild>(1);
-    let mut detector_builds = DetectorBuilds::new(detector_tx, detector_ready);
+    let mut detector_builds = DetectorBuilds::new(detector_tx, detector_ready, deps.tasks.clone());
 
     update_registry(&deps.registry, |registry| {
         for engine_id in &deps.disabled_engines {
@@ -426,7 +428,7 @@ pub(crate) async fn run_actor(
     });
     disabled_engines.store(deps.disabled_engines.clone());
     engine_gains.store(deps.engine_gains.clone());
-    let mut catalog = VoiceCatalogState::default();
+    let mut catalog = VoiceCatalogState::owned_by(deps.tasks.clone());
     let initial_catalog =
         catalog.rebuild(&deps.registry.load(), &deps.disabled_engines, &catalog_tx);
     voices.store_arc(initial_catalog.clone());
@@ -514,20 +516,20 @@ pub(crate) async fn run_actor(
             recent_messages.push_back(req.text.clone());
             let timeout = config.timeout_per_item;
             let request_id = req.request_id.clone();
-            let task = tokio::spawn(async move {
+            let task = deps.tasks.spawn_until_stopped(async move {
                 let result =
                     run_synthesis_bounded(req, task_deps_clone, recent_snapshot, timeout).await;
                 if tx.send(result).await.is_err() {
                     tracing::debug!("speak queue stopped before the synthesis result arrived");
                 }
             });
-            synthesis_task = Some((request_id, task.abort_handle()));
+            synthesis_task = Some((request_id, task));
         }
 
         tokio::select! {
             cmd = cmd_rx.recv() => {
                 match cmd {
-                    None => break,
+                    None | Some(SpeakCommand::Shutdown) => break,
                     Some(SpeakCommand::RefreshVoiceCatalog) => {
                         update_registry(&deps.registry, TtsRegistry::invalidate_all);
                         let rebuilt = catalog.rebuild(
@@ -896,8 +898,8 @@ fn device_failure(error: &AudioError) -> Outcome {
     }
 }
 
-fn stop_when_started(start: PlaybackStart) {
-    tokio::spawn(async move {
+fn stop_when_started(tasks: &TaskOwner, start: PlaybackStart) {
+    tasks.spawn(async move {
         if let Ok(Ok(playback)) = start.await {
             playback.stop();
         }
@@ -921,7 +923,7 @@ fn stop_active(
             Some(current.request)
         }
         Some(CurrentPlayback::Starting(clip)) => {
-            stop_when_started(clip.start);
+            stop_when_started(&deps.tasks, clip.start);
             Some(clip.request)
         }
         Some(CurrentPlayback::Held(held)) => Some(held.request),
@@ -1054,6 +1056,7 @@ fn handle_command(
     voice_catalog: &[TtsVoice],
 ) {
     match cmd {
+        SpeakCommand::Shutdown => {}
         SpeakCommand::Enqueue(req) => {
             admit_request(
                 req,
@@ -1334,17 +1337,20 @@ struct DetectorBuilds {
     generation: u64,
     tx: tokio::sync::mpsc::Sender<DetectorBuild>,
     ready: tokio::sync::watch::Sender<bool>,
+    tasks: TaskOwner,
 }
 
 impl DetectorBuilds {
     fn new(
         tx: tokio::sync::mpsc::Sender<DetectorBuild>,
         ready: tokio::sync::watch::Sender<bool>,
+        tasks: TaskOwner,
     ) -> Self {
         Self {
             generation: 0,
             tx,
             ready,
+            tasks,
         }
     }
 
@@ -1366,7 +1372,7 @@ impl DetectorBuilds {
         let generation = self.generation;
         let candidates = candidate_languages(catalog);
         let tx = self.tx.clone();
-        tokio::spawn(async move {
+        self.tasks.spawn_until_stopped(async move {
             let built = tokio::task::spawn_blocking(move || {
                 LanguageDetector::new(&candidates).map(Arc::new)
             })
@@ -1467,6 +1473,7 @@ mod tests {
             event_bus: Arc::new(NullPublisher),
             disabled_engines: HashSet::new(),
             engine_gains: HashMap::new(),
+            tasks: TaskOwner::new(),
         }
     }
 
@@ -2398,7 +2405,8 @@ mod tests {
     #[tokio::test]
     async fn a_detector_build_is_current_until_a_newer_build_or_invalidation_supersedes_it() {
         let (tx, mut rx) = tokio::sync::mpsc::channel::<DetectorBuild>(4);
-        let mut builds = DetectorBuilds::new(tx, tokio::sync::watch::Sender::new(false));
+        let mut builds =
+            DetectorBuilds::new(tx, tokio::sync::watch::Sender::new(false), TaskOwner::new());
 
         builds.rebuild(&[]);
         let first = rx.recv().await.expect("first build result");
@@ -2417,7 +2425,8 @@ mod tests {
     #[tokio::test]
     async fn a_build_finished_after_a_newer_rebuild_was_started_is_reported_stale() {
         let (tx, mut rx) = tokio::sync::mpsc::channel::<DetectorBuild>(4);
-        let mut builds = DetectorBuilds::new(tx, tokio::sync::watch::Sender::new(false));
+        let mut builds =
+            DetectorBuilds::new(tx, tokio::sync::watch::Sender::new(false), TaskOwner::new());
 
         builds.rebuild(&[]);
         builds.rebuild(&[]);

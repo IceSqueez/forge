@@ -152,15 +152,8 @@ pub(crate) async fn run_update_check(
     reported_this_launch: Option<String>,
     flow: &Entity<UpdateFlow>,
 ) -> CheckResult {
-    let (tx, rx) = tokio::sync::oneshot::channel();
-    rt_handle.spawn(async move {
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the view may close before the result arrives"
-        )]
-        let _ = tx.send(probe(backend).await);
-    });
-    let Ok(probe) = rx.await else {
+    let reply = crate::async_bridge::on_runtime(rt_handle, async move { probe(backend).await });
+    let Ok(probe) = reply.await else {
         return CheckResult::Failed;
     };
     let found = match probe.outcome {

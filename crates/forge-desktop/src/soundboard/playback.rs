@@ -79,16 +79,12 @@ impl SoundboardView {
         let player_dur = Arc::clone(&self.player);
         let rt = self.rt_handle.clone();
         cx.spawn(async move |this, cx| {
-            let (tx, rx) = tokio::sync::oneshot::channel();
-            rt.spawn(async move {
-                let result = player_play.play(id, None).await;
-                #[expect(
-                    clippy::let_underscore_must_use,
-                    reason = "the view may close before the result arrives"
-                )]
-                let _ = tx.send(result);
-            });
-            let Ok(result) = rx.await else {
+            let reply =
+                crate::async_bridge::on_runtime(
+                    &rt,
+                    async move { player_play.play(id, None).await },
+                );
+            let Ok(result) = reply.await else {
                 return;
             };
             let settled_silently = play_settled_without_outcome(&result);

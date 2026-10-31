@@ -6,6 +6,7 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 
 use forge_events::EventPublisher;
+use forge_net::{TaskOwner, TaskShutdown};
 
 use crate::backend::{MidiBackend, MidirBackend};
 use crate::config::MidiConfig;
@@ -18,21 +19,59 @@ use crate::monitor::{MidiMonitorStream, MonitorTx, make_monitor_state};
 use crate::supervisor::{SupervisorCommand, run_supervisor};
 
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(2);
+const SUPERVISOR_STOP_GRACE: Duration = Duration::from_millis(20);
 
 pub struct MidiClient {
-    pub(crate) id: IntegrationId,
-    pub(crate) config: MidiConfig,
-    pub(crate) backend: Arc<dyn MidiBackend>,
-    pub(crate) publisher: Arc<dyn EventPublisher>,
-    pub(crate) health_state: Arc<Mutex<MidiHealthSnapshot>>,
-    pub(crate) health_tx: HealthTx,
-    pub(crate) content_state: Arc<Mutex<MidiContentSnapshot>>,
-    pub(crate) enabled: Arc<AtomicBool>,
-    pub(crate) control_tx: mpsc::Sender<SupervisorCommand>,
-    pub(crate) monitor_tx: MonitorTx,
+    id: IntegrationId,
+    config: MidiConfig,
+    backend: Arc<dyn MidiBackend>,
+    publisher: Arc<dyn EventPublisher>,
+    health_state: Arc<Mutex<MidiHealthSnapshot>>,
+    health_tx: HealthTx,
+    content_state: Arc<Mutex<MidiContentSnapshot>>,
+    enabled: Arc<AtomicBool>,
+    control_tx: mpsc::Sender<SupervisorCommand>,
+    monitor_tx: MonitorTx,
+    tasks: TaskOwner,
 }
 
 impl MidiClient {
+    pub(crate) fn integration_id(&self) -> &IntegrationId {
+        &self.id
+    }
+
+    pub(crate) fn config(&self) -> &MidiConfig {
+        &self.config
+    }
+
+    pub(crate) fn backend(&self) -> &Arc<dyn MidiBackend> {
+        &self.backend
+    }
+
+    pub(crate) fn publisher(&self) -> &Arc<dyn EventPublisher> {
+        &self.publisher
+    }
+
+    pub(crate) fn health_state(&self) -> &Arc<Mutex<MidiHealthSnapshot>> {
+        &self.health_state
+    }
+
+    pub(crate) fn health_tx(&self) -> &HealthTx {
+        &self.health_tx
+    }
+
+    pub(crate) fn content_state(&self) -> &Arc<Mutex<MidiContentSnapshot>> {
+        &self.content_state
+    }
+
+    pub(crate) fn enabled(&self) -> &Arc<AtomicBool> {
+        &self.enabled
+    }
+
+    pub(crate) fn monitor_tx(&self) -> &MonitorTx {
+        &self.monitor_tx
+    }
+
     pub(crate) fn start(
         config: MidiConfig,
         publisher: Arc<dyn EventPublisher>,
@@ -53,11 +92,12 @@ impl MidiClient {
             enabled: Arc::new(AtomicBool::new(true)),
             control_tx,
             monitor_tx: make_monitor_state(),
+            tasks: TaskOwner::new(),
         });
 
         let (merged_tx, merged_rx) = mpsc::channel::<crate::supervisor::RawEvent>(256);
         let client_ref = Arc::downgrade(&client);
-        tokio::spawn(async move {
+        client.tasks.spawn(async move {
             run_supervisor(client_ref, merged_tx, merged_rx, control_rx).await;
         });
 
@@ -94,7 +134,14 @@ impl MidiClient {
     }
 
     pub async fn shutdown(&self) -> Result<(), MidiError> {
-        self.send_command(SupervisorCommand::Shutdown).await
+        let requested = self.send_command(SupervisorCommand::Shutdown).await;
+        if let TaskShutdown::Aborted { tasks } = self.tasks.shutdown(SUPERVISOR_STOP_GRACE).await {
+            tracing::warn!(
+                tasks,
+                "midi supervisor did not stop in time and was aborted"
+            );
+        }
+        requested
     }
 
     pub async fn rescan_ports(&self) -> Result<(), MidiError> {
@@ -149,6 +196,7 @@ impl MidiClient {
             enabled: Arc::new(AtomicBool::new(true)),
             control_tx,
             monitor_tx: make_monitor_state(),
+            tasks: TaskOwner::new(),
         })
     }
 }

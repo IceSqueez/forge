@@ -55,17 +55,12 @@ pub(crate) fn start_leftover_install_notice(
     if !cfg!(target_os = "windows") {
         return;
     }
-    let (tx, rx) = tokio::sync::oneshot::channel();
     let detection_backend = Arc::clone(&backend);
-    rt_handle.spawn(async move {
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the view may close before the result arrives"
-        )]
-        let _ = tx.send(unnoticed_leftover(detection_backend).await);
+    let reply = crate::async_bridge::on_runtime(&rt_handle, async move {
+        unnoticed_leftover(detection_backend).await
     });
     cx.spawn(async move |cx| {
-        let Ok(Some(notice)) = rx.await else {
+        let Ok(Some(notice)) = reply.await else {
             return;
         };
         tracing::info!(path = %notice.install_dir.display(), "leftover all-users install found");

@@ -26,8 +26,8 @@ pub(crate) fn make_content_state() -> Arc<Mutex<MidiContentSnapshot>> {
 
 impl BuiltinContent for MidiClient {
     fn sections(&self) -> Vec<DetailSection> {
-        let snap = self.content_state.lock_recover();
-        let client_name = self.config.client_name.clone();
+        let snap = self.content_state().lock_recover();
+        let client_name = self.config().client_name.clone();
         let total = snap.total_events;
         let engine_enabled = self.is_enabled();
 

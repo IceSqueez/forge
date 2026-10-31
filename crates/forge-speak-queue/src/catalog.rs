@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 
+use forge_net::TaskOwner;
 use forge_speech_types::{EngineId, TtsVoice};
 use forge_tts_core::{EngineSlot, TtsRegistry};
 
@@ -18,8 +19,8 @@ pub(crate) struct CatalogUpdate {
 
 pub(crate) type CatalogUpdateSender = tokio::sync::mpsc::Sender<CatalogUpdate>;
 
-#[derive(Default)]
 pub(crate) struct VoiceCatalogState {
+    tasks: TaskOwner,
     generation: u64,
     expected: HashSet<EngineId>,
     settled: HashMap<EngineId, Vec<TtsVoice>>,
@@ -27,6 +28,16 @@ pub(crate) struct VoiceCatalogState {
 }
 
 impl VoiceCatalogState {
+    pub(crate) fn owned_by(tasks: TaskOwner) -> Self {
+        Self {
+            tasks,
+            generation: 0,
+            expected: HashSet::new(),
+            settled: HashMap::new(),
+            startup_complete: false,
+        }
+    }
+
     pub(crate) fn rebuild(
         &mut self,
         registry: &TtsRegistry,
@@ -48,7 +59,7 @@ impl VoiceCatalogState {
         self.settled
             .retain(|engine_id, _| expected.contains(engine_id));
         for (engine_id, slot) in slots {
-            spawn_engine_listing(self.generation, engine_id, slot, tx.clone());
+            spawn_engine_listing(&self.tasks, self.generation, engine_id, slot, tx.clone());
         }
         self.note_startup_progress();
         self.merged()
@@ -105,12 +116,13 @@ impl VoiceCatalogState {
 }
 
 fn spawn_engine_listing(
+    tasks: &TaskOwner,
     generation: u64,
     engine_id: EngineId,
     slot: Arc<EngineSlot>,
     tx: CatalogUpdateSender,
 ) {
-    tokio::spawn(async move {
+    tasks.spawn_until_stopped(async move {
         let listing_id = engine_id.clone();
         let mut listing = tokio::spawn(async move { list_engine_voices(&listing_id, &slot).await });
         let voices = match tokio::time::timeout(ENGINE_CATALOG_TIMEOUT, &mut listing).await {

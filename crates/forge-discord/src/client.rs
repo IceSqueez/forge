@@ -8,7 +8,6 @@ use forge_net::{
     GatewayTimings, HeaderLookup, Method, MultipartBody, RequestBody, ThrottleHintFamily,
     ThrottleScope,
 };
-use forge_platform_core::ConnectionState;
 use forge_storage::{CredentialId, CredentialsRepo};
 use tokio::sync::broadcast;
 
@@ -57,18 +56,42 @@ struct Delivered {
 }
 
 pub struct DiscordClient {
-    pub(crate) id: IntegrationId,
-    pub(crate) publisher: Arc<dyn EventPublisher>,
-    pub(crate) creds: Arc<dyn CredentialsRepo>,
-    pub(crate) gateway: Gateway,
-    pub(crate) health_tx: HealthTx,
-    pub(crate) health_state: Arc<Mutex<DiscordHealthSnapshot>>,
-    pub(crate) content_state: Arc<Mutex<DiscordContentSnapshot>>,
-    pub(crate) rate_limiter: SharedDiscordRateLimiter,
-    pub(crate) webhook_registry_serial: tokio::sync::Mutex<()>,
+    id: IntegrationId,
+    publisher: Arc<dyn EventPublisher>,
+    creds: Arc<dyn CredentialsRepo>,
+    gateway: Gateway,
+    health_tx: HealthTx,
+    health_state: Arc<Mutex<DiscordHealthSnapshot>>,
+    content_state: Arc<Mutex<DiscordContentSnapshot>>,
+    rate_limiter: SharedDiscordRateLimiter,
+    webhook_registry_serial: tokio::sync::Mutex<()>,
 }
 
 impl DiscordClient {
+    pub(crate) fn integration_id(&self) -> &IntegrationId {
+        &self.id
+    }
+
+    pub(crate) fn creds(&self) -> &Arc<dyn CredentialsRepo> {
+        &self.creds
+    }
+
+    pub(crate) fn health_tx(&self) -> &HealthTx {
+        &self.health_tx
+    }
+
+    pub(crate) fn health_state(&self) -> &Arc<Mutex<DiscordHealthSnapshot>> {
+        &self.health_state
+    }
+
+    pub(crate) fn content_state(&self) -> &Arc<Mutex<DiscordContentSnapshot>> {
+        &self.content_state
+    }
+
+    pub(crate) fn webhook_registry_serial(&self) -> &tokio::sync::Mutex<()> {
+        &self.webhook_registry_serial
+    }
+
     pub fn new(
         api_base: &str,
         publisher: Arc<dyn EventPublisher>,
@@ -117,13 +140,8 @@ impl DiscordClient {
         Ok(client)
     }
 
-    pub(crate) fn connection_state(&self) -> ConnectionState {
-        let snap = self.content_state.lock_recover();
-        if snap.webhook_names.is_empty() {
-            ConnectionState::Disconnected
-        } else {
-            ConnectionState::Connected
-        }
+    pub(crate) fn has_webhooks(&self) -> bool {
+        !self.content_state.lock_recover().webhook_names.is_empty()
     }
 
     pub(crate) async fn load_webhook(&self, name: &str) -> Result<WebhookCredential, DiscordError> {

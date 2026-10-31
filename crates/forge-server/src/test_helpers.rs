@@ -47,7 +47,7 @@ use time::OffsetDateTime;
 use crate::ServerTiming;
 use crate::audio_clips::AudioClipStore;
 use crate::auth::AuthState;
-use crate::bus_adapter::{BusAdapter, ClientFilterSet, ClientId};
+use crate::bus_adapter::{BusAdapter, ClientFilterSet};
 use crate::config::ServerConfig;
 use crate::origin::build_allowed_origins;
 use crate::protocol::DispatchContext;
@@ -698,7 +698,7 @@ pub(crate) fn dispatch_ctx(
     let bus = EventBus::new(Arc::new(NullEventLogRepo));
     let bus_adapter = BusAdapter::new(bus.clone());
     let client = Arc::new(WsClient::new(
-        ClientId::next(),
+        bus_adapter.allocate_client_id(),
         TEST_PEER_ADDR.parse().expect("addr"),
         Arc::new(AtomicU64::new(0)),
     ));

@@ -191,7 +191,7 @@ impl StopSequence {
             integrations.shutdown(INTEGRATIONS_STOP_BUDGET).await;
         }
 
-        if let Some(speak) = self.speak {
+        if let Some(speak) = &self.speak {
             match tokio::time::timeout(SPEAK_STOP_BUDGET, speak.send(SpeakCommand::Clear)).await {
                 Ok(Ok(())) => {}
                 Ok(Err(error)) => tracing::warn!(%error, "speak queue could not be cleared"),
@@ -201,10 +201,24 @@ impl StopSequence {
             }
         }
 
-        report_stop(
-            "runtime services",
-            self.services.shutdown(SERVICES_STOP_BUDGET).await,
+        let (services, hotkey, speak) = tokio::join!(
+            self.services.shutdown(SERVICES_STOP_BUDGET),
+            async {
+                match &self.hotkey {
+                    Some(hotkey) => hotkey.shutdown(SERVICES_STOP_BUDGET).await,
+                    None => TaskShutdown::Drained,
+                }
+            },
+            async {
+                match &self.speak {
+                    Some(speak) => speak.shutdown(SERVICES_STOP_BUDGET).await,
+                    None => TaskShutdown::Drained,
+                }
+            },
         );
+        report_stop("runtime services", services);
+        report_stop("hotkey engine", hotkey);
+        report_stop("speak queue", speak);
 
         self.bus.shutdown();
         if tokio::time::timeout(FLUSH_BUDGET, self.bus.await_flush())

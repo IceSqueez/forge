@@ -391,7 +391,7 @@ impl GlobalsView {
 
     pub(super) fn open_inspect(&mut self, g: Global, cx: &mut Context<Self>) {
         self.table_keys.move_to(g.name.clone());
-        self.inspecting = Some(g);
+        self.inspecting = Some(super::inspect::InspectedGlobal::new(g));
         cx.notify();
     }
 

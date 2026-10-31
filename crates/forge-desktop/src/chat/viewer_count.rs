@@ -111,23 +111,18 @@ impl ChatView {
                 };
                 let repo = Arc::clone(&repo);
                 let chat_history = Arc::clone(&chat_history);
-                let (tx, rx) = tokio::sync::oneshot::channel();
                 let queries: Vec<_> = keys.iter().filter_map(stored_author).collect();
                 let lookups: Vec<_> = stale.iter().filter_map(|s| stored_author(&s.key)).collect();
-                rt_handle.spawn(async move {
+                let reply = crate::async_bridge::on_runtime(&rt_handle, async move {
                     let viewers = read_viewers(repo.as_ref(), &lookups).await;
                     let tallies = if queries.is_empty() {
                         Ok(Vec::new())
                     } else {
                         chat_history.author_tallies(&queries).await
                     };
-                    #[expect(
-                        clippy::let_underscore_must_use,
-                        reason = "the view may close before the result arrives"
-                    )]
-                    let _ = tx.send((viewers, tallies));
+                    (viewers, tallies)
                 });
-                if let Ok((viewers, tallies)) = rx.await {
+                if let Ok((viewers, tallies)) = reply.await {
                     let viewers = viewers
                         .inspect_err(|err| {
                             tracing::warn!(error = %err, "viewer snapshot load failed");

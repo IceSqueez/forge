@@ -168,30 +168,23 @@ impl TestRunModal {
 
         let dispatch_root = super::test_trigger::manual_test_root(action_id);
         let dispatched = dispatch_root.id;
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        rt_handle.spawn(async move {
-            #[expect(
-                clippy::let_underscore_must_use,
-                reason = "the view may close before the result arrives"
-            )]
-            let _ = tx.send(
-                super::test_trigger::dispatch_test_run(
-                    &scheduler,
-                    &bus,
-                    super::test_trigger::TestRunRequest {
-                        root: dispatch_root,
-                        action_id,
-                        queue_id,
-                        admission,
-                        trigger_kind,
-                        initial_args,
-                    },
-                )
-                .await,
-            );
+        let reply = crate::async_bridge::on_runtime(&rt_handle, async move {
+            super::test_trigger::dispatch_test_run(
+                &scheduler,
+                &bus,
+                super::test_trigger::TestRunRequest {
+                    root: dispatch_root,
+                    action_id,
+                    queue_id,
+                    admission,
+                    trigger_kind,
+                    initial_args,
+                },
+            )
+            .await
         });
         let fire = cx.spawn(async move |this, cx| {
-            if let Ok(result) = rx.await {
+            if let Ok(result) = reply.await {
                 #[expect(
                     clippy::let_underscore_must_use,
                     reason = "the view may close before the result arrives"

@@ -49,7 +49,7 @@ static DEVICE_CACHE: Mutex<Option<(Instant, Vec<DeviceInfo>)>> = Mutex::new(None
 static INPUT_DEVICE_CACHE: Mutex<Option<(Instant, Vec<DeviceInfo>)>> = Mutex::new(None);
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct DeviceId(pub String);
+pub struct DeviceId(String);
 
 impl DeviceId {
     pub fn new(s: impl Into<String>) -> Self {

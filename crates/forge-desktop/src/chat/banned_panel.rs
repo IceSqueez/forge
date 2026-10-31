@@ -245,17 +245,11 @@ impl BannedPanel {
             _ => 1,
         };
 
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        self.rt_handle.spawn(async move {
-            let result = list_pages(source.as_ref(), after, depth).await;
-            #[expect(
-                clippy::let_underscore_must_use,
-                reason = "the view may close before the result arrives"
-            )]
-            let _ = tx.send(result);
+        let reply = crate::async_bridge::on_runtime(&self.rt_handle, async move {
+            list_pages(source.as_ref(), after, depth).await
         });
         let request = cx.spawn(async move |this, cx| {
-            if let Ok(result) = rx.await {
+            if let Ok(result) = reply.await {
                 #[expect(
                     clippy::let_underscore_must_use,
                     reason = "the view may close before the result arrives"

@@ -91,7 +91,7 @@ impl CpalSink {
     ) -> Result<Option<PlaybackTask>, AudioError> {
         let (started_tx, started_rx) = oneshot::channel();
         let request = PlaybackRequest {
-            device_id: self.device_id.0.clone(),
+            device_id: self.device_id.as_str().to_owned(),
             buffer,
             target_sr: self.target_sample_rate,
             target_ch: self.target_channels,

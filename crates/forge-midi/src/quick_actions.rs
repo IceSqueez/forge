@@ -34,7 +34,7 @@ fn send_action(
 
 impl QuickActions for MidiClient {
     fn actions(&self) -> Vec<QuickAction> {
-        let snap = self.content_state.lock_recover();
+        let snap = self.content_state().lock_recover();
         let first_port = snap.output_ports.first().map(|p| p.name.clone());
         drop(snap);
 
@@ -163,7 +163,7 @@ mod tests {
     fn client_with_output_port() -> Arc<MidiClient> {
         let c = MidiClient::new_for_test();
         {
-            let mut snap = c.content_state.lock().unwrap();
+            let mut snap = c.content_state().lock().unwrap();
             snap.output_ports.push(output_port("Synth"));
         }
         c

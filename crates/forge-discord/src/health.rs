@@ -165,7 +165,7 @@ pub struct DiscordSendHealth {
 
 impl DiscordClient {
     pub fn send_health(&self) -> DiscordSendHealth {
-        let mut snap = self.health_state.lock_recover();
+        let mut snap = self.health_state().lock_recover();
         DiscordSendHealth {
             latency_p50_ms: compute_p50(&snap.latencies_ms),
             latency_samples: snap.latencies_ms.len(),
@@ -199,7 +199,7 @@ fn compute_p50(latencies: &VecDeque<u64>) -> Option<u64> {
 
 impl BuiltinHealth for DiscordClient {
     fn metrics(&self) -> [HealthMetric; 4] {
-        let mut snap = self.health_state.lock_recover();
+        let mut snap = self.health_state().lock_recover();
 
         let latency = latency_value(&snap.latencies_ms);
         let budget = budget_value(
@@ -231,7 +231,7 @@ impl BuiltinHealth for DiscordClient {
     }
 
     fn stream(&self) -> HealthStream {
-        let rx = self.health_tx.subscribe();
+        let rx = self.health_tx().subscribe();
         Box::pin(BroadcastStream::new(rx).filter_map(|r| r.ok()))
     }
 }
@@ -243,7 +243,7 @@ mod tests {
     use forge_storage::test_support::MemoryCredentials;
 
     fn record(client: &DiscordClient, latency_ms: u64, ok: bool, remaining: u64, total: u64) {
-        let mut snap = client.health_state.lock().unwrap();
+        let mut snap = client.health_state().lock().unwrap();
         update_on_send(&mut snap, latency_ms, ok, remaining, total, None);
     }
 

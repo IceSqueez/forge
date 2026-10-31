@@ -88,16 +88,11 @@ pub(crate) fn start_twitch_bot_seed(
     bot: Arc<TwitchBotAccount>,
     rt_handle: &tokio::runtime::Handle,
 ) {
-    let (tx, rx) = tokio::sync::oneshot::channel();
-    rt_handle.spawn(async move {
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the view may close before the result arrives"
-        )]
-        let _ = tx.send((bot.status(), bot.moderator_status()));
+    let reply = crate::async_bridge::on_runtime(rt_handle, async move {
+        (bot.status(), bot.moderator_status())
     });
     cx.spawn(async move |cx| {
-        if let Ok((status, moderator)) = rx.await {
+        if let Ok((status, moderator)) = reply.await {
             presence.update(cx, |presence, cx| {
                 if presence.apply_seed(status, moderator) {
                     cx.notify();

@@ -412,9 +412,11 @@ impl Render for CodeEditor {
         }
         self.density = cx.density();
         let focus = self.focus_handle.clone();
-        self.caret.watch(&focus, window, cx);
+        let newly_watched = self.caret.watch(&focus, window, cx);
         let focused = focus.is_focused(window);
-        set_caret_blinking(self, focused && window.is_visible(), cx);
+        if newly_watched {
+            set_caret_blinking(self, focused && window.is_visible(), cx);
+        }
         let editor_handle = cx.entity().downgrade();
         let leave_focus = focus.clone();
         let stuck_focus = focus.clone();

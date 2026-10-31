@@ -493,14 +493,13 @@ mod tests {
         cx: &mut gpui::TestAppContext,
     ) {
         let clip = Variant::String(ClipId::new().to_string());
-        for (stored, closes, saves, case) in [
-            (SubActionConfig::new(), false, 0, "no clip picked"),
+        for (stored, closes, case) in [
+            (SubActionConfig::new(), false, "no clip picked"),
             (
                 [(CLIP_FIELD.to_owned(), clip.clone())]
                     .into_iter()
                     .collect(),
                 true,
-                1,
                 "clip picked",
             ),
         ] {
@@ -509,11 +508,8 @@ mod tests {
             editor.view.update(cx, |view, cx| view.save_shortcut(cx));
             settle(&editor, cx);
 
-            assert_eq!(
-                (editor.form(cx).is_none(), editor.saves.saved().len()),
-                (closes, saves),
-                "{case}"
-            );
+            assert_eq!(editor.form(cx).is_none(), closes, "{case}");
+            assert!(editor.saves.saved().is_empty(), "{case}: nothing changed");
         }
     }
 

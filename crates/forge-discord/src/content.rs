@@ -44,12 +44,12 @@ pub struct WebhookPost {
 
 impl DiscordClient {
     pub fn webhook_names(&self) -> Vec<String> {
-        let snap = self.content_state.lock_recover();
+        let snap = self.content_state().lock_recover();
         snap.webhook_names.clone()
     }
 
     pub fn recent_posts(&self) -> Vec<WebhookPost> {
-        let snap = self.content_state.lock_recover();
+        let snap = self.content_state().lock_recover();
         snap.recent_posts
             .iter()
             .map(|record| WebhookPost {
@@ -84,7 +84,7 @@ pub(crate) fn record_send(
 
 impl BuiltinContent for DiscordClient {
     fn sections(&self) -> Vec<DetailSection> {
-        let snap = self.content_state.lock_recover();
+        let snap = self.content_state().lock_recover();
 
         let webhook_items: Vec<ContentListItem> = snap
             .webhook_names
@@ -190,7 +190,7 @@ mod tests {
     fn recent_posts_projects_the_history_newest_first() {
         let client = DiscordClient::new_for_test();
         {
-            let mut snap = client.content_state.lock().unwrap();
+            let mut snap = client.content_state().lock().unwrap();
             record_send(&mut snap, "oldest", None, false, true);
             record_send(&mut snap, "middle", None, true, true);
             record_send(&mut snap, "newest", None, false, false);
@@ -209,7 +209,7 @@ mod tests {
     fn recent_posts_carries_the_embed_and_outcome_flags_of_each_send() {
         let client = DiscordClient::new_for_test();
         {
-            let mut snap = client.content_state.lock().unwrap();
+            let mut snap = client.content_state().lock().unwrap();
             record_send(&mut snap, "alerts", None, true, false);
         }
 

@@ -253,21 +253,14 @@ impl UpdateFlow {
         let artifact = target.artifact;
         let downloader = Arc::clone(&self.downloader);
         let download = async move { downloader.download(&artifact, &staging_dir, &cancel).await };
-        let (done_tx, done_rx) = tokio::sync::oneshot::channel();
-        self.rt_handle.spawn(async move {
-            #[expect(
-                clippy::let_underscore_must_use,
-                reason = "the view may close before the result arrives"
-            )]
-            let _ = done_tx.send(download.await);
-        });
+        let reply = crate::async_bridge::on_runtime(&self.rt_handle, download);
 
         cx.spawn(async move |this: WeakEntity<Self>, cx| {
             #[expect(
                 clippy::let_underscore_must_use,
                 reason = "the view may close before the result arrives"
             )]
-            let _ = match done_rx.await {
+            let _ = match reply.await {
                 Ok(result) => this.update(cx, |flow, cx| flow.finish_download(ticket, result, cx)),
                 Err(_) => this.update(cx, |flow, cx| flow.download_task_lost(ticket, cx)),
             };

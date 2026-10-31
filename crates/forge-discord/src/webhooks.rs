@@ -17,9 +17,9 @@ fn credential_id(name: &str) -> CredentialId {
 
 impl DiscordClient {
     pub async fn list_webhooks(&self) -> Result<Vec<String>, DiscordError> {
-        let _serial = self.webhook_registry_serial.lock().await;
+        let _serial = self.webhook_registry_serial().lock().await;
         let ids = self
-            .creds
+            .creds()
             .list_ids()
             .await
             .map_err(|e| DiscordError::Credential(e.to_string()))?;
@@ -31,7 +31,7 @@ impl DiscordClient {
             .collect();
         names.sort_unstable();
 
-        let mut snap = self.content_state.lock_recover();
+        let mut snap = self.content_state().lock_recover();
         snap.webhook_names.clone_from(&names);
         drop(snap);
 
@@ -46,17 +46,17 @@ impl DiscordClient {
         let url = url.trim();
         validate_webhook_url(url)?;
 
-        let _serial = self.webhook_registry_serial.lock().await;
+        let _serial = self.webhook_registry_serial().lock().await;
         let payload = serde_json::to_string(&WebhookCredential {
             name: name.to_owned(),
             url: Secret::new(url),
         })?;
-        self.creds
+        self.creds()
             .store(&credential_id(name), &payload)
             .await
             .map_err(|e| DiscordError::Credential(e.to_string()))?;
 
-        let mut snap = self.content_state.lock_recover();
+        let mut snap = self.content_state().lock_recover();
         if !snap.webhook_names.iter().any(|known| known == name) {
             snap.webhook_names.push(name.to_owned());
             snap.webhook_names.sort_unstable();
@@ -66,14 +66,14 @@ impl DiscordClient {
     }
 
     pub async fn delete_webhook(&self, name: &str) -> Result<bool, DiscordError> {
-        let _serial = self.webhook_registry_serial.lock().await;
+        let _serial = self.webhook_registry_serial().lock().await;
         let removed = self
-            .creds
+            .creds()
             .delete(&credential_id(name))
             .await
             .map_err(|e| DiscordError::Credential(e.to_string()))?;
 
-        let mut snap = self.content_state.lock_recover();
+        let mut snap = self.content_state().lock_recover();
         snap.webhook_names.retain(|known| known != name);
         snap.webhook_last_ok.remove(name);
 
@@ -260,7 +260,7 @@ mod tests {
         let creds = Arc::new(MemoryCredentials::default());
         let client = client_with(&creds);
         {
-            let mut snap = client.content_state.lock().unwrap();
+            let mut snap = client.content_state().lock().unwrap();
             record_send(&mut snap, "ghost", None, false, true);
         }
 

@@ -243,27 +243,22 @@ impl ChatComposer {
         let fallback = pending.clone();
         self.in_flight = Some(plan.message);
 
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        self.rt_handle.spawn(async move {
+        let reply = crate::async_bridge::on_runtime(&self.rt_handle, async move {
             let subscription = bus.subscribe();
             for request in requests {
                 bus.publish(request);
             }
-            let report = collect_delivery(
+
+            collect_delivery(
                 subscription,
                 request_ids,
                 pending,
                 CHAT_SEND_RESPONSE_TIMEOUT,
             )
-            .await;
-            #[expect(
-                clippy::let_underscore_must_use,
-                reason = "the view may close before the result arrives"
-            )]
-            let _ = tx.send(report);
+            .await
         });
         cx.spawn(async move |this, cx| {
-            let report = rx.await.unwrap_or(fallback);
+            let report = reply.await.unwrap_or(fallback);
             #[expect(
                 clippy::let_underscore_must_use,
                 reason = "the view may close before the result arrives"

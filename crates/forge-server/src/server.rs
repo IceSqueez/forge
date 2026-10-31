@@ -1028,7 +1028,7 @@ pub(crate) mod tests {
         let (handle, state) = make_server_exposing_state().await;
         let (_client, mut rx) = attach_client(&state, "dashboard-a").await;
 
-        assert!(!handle.kick_client(ClientId::next()).await);
+        assert!(!handle.kick_client(ClientId::new(u64::MAX)).await);
 
         assert_eq!(handle.snapshot().await.connected_clients.len(), 1);
         assert!(

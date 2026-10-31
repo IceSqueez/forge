@@ -59,22 +59,16 @@ impl ChatView {
         cx: &mut Context<Self>,
     ) {
         let engine = self.services.action_engine.clone();
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        self.services.rt_handle.spawn(async move {
-            let outcome = async_bridge::run_quick_step(
+        let reply = crate::async_bridge::on_runtime(&self.services.rt_handle, async move {
+            async_bridge::run_quick_step(
                 engine,
                 step,
                 forge_runtime::QuickActionOrigin { builtin_id, label },
             )
-            .await;
-            #[expect(
-                clippy::let_underscore_must_use,
-                reason = "the view may close before the result arrives"
-            )]
-            let _ = tx.send(outcome);
+            .await
         });
         cx.spawn(async move |this, cx| {
-            let outcome = rx
+            let outcome = reply
                 .await
                 .unwrap_or_else(|_| Err(RepoFailure::localized(tr!("chat_dispatch_cancelled"))));
             #[expect(

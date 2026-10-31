@@ -181,19 +181,12 @@ impl ViewerHistory {
         cx: &mut Context<Self>,
     ) {
         let repo = Arc::clone(&self.repo);
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        self.rt_handle.spawn(async move {
-            #[expect(
-                clippy::let_underscore_must_use,
-                reason = "the view may close before the result arrives"
-            )]
-            let _ = tx.send(
-                repo.author_page(&query, older_than, HISTORY_PAGE_SIZE)
-                    .await,
-            );
+        let reply = crate::async_bridge::on_runtime(&self.rt_handle, async move {
+            repo.author_page(&query, older_than, HISTORY_PAGE_SIZE)
+                .await
         });
         self._load = Some(cx.spawn(async move |this, cx| {
-            let page = match rx.await {
+            let page = match reply.await {
                 Ok(Ok(page)) => Some(page),
                 Ok(Err(err)) => {
                     tracing::warn!(error = %err, "viewer history load failed");

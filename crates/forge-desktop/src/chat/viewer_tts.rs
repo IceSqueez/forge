@@ -64,16 +64,11 @@ impl ChatView {
         };
         let repo = Arc::clone(&self.services.voice_alias_repo);
         let lookup_key = key.clone();
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        self.services.rt_handle.spawn(async move {
-            #[expect(
-                clippy::let_underscore_must_use,
-                reason = "the view may close before the result arrives"
-            )]
-            let _ = tx.send(repo.find_by_viewer(&lookup_key).await);
+        let reply = crate::async_bridge::on_runtime(&self.services.rt_handle, async move {
+            repo.find_by_viewer(&lookup_key).await
         });
         cx.spawn_in(window, async move |this, cx| {
-            let Ok(found) = rx.await else {
+            let Ok(found) = reply.await else {
                 return;
             };
             #[expect(

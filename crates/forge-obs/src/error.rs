@@ -54,15 +54,40 @@ pub(crate) fn map_request_error(request_type: &str, e: obws::error::Error) -> Ob
         } => ObsError::StudioModeInactive,
         obws::error::Error::Api { code, message } => ObsError::Request {
             request_type: request_type.to_owned(),
-            message: match message {
-                Some(detail) => format!("{code:?}: {detail}"),
-                None => format!("{code:?}"),
-            },
+            message: message.unwrap_or_else(|| rejection_reason(code).to_owned()),
         },
         _ => ObsError::Request {
             request_type: request_type.to_owned(),
             message: e.to_string(),
         },
+    }
+}
+
+fn rejection_reason(code: obws::responses::StatusCode) -> &'static str {
+    use obws::responses::StatusCode;
+    match code {
+        StatusCode::NotReady => "OBS is not ready yet",
+        StatusCode::OutputRunning => "the output is already running",
+        StatusCode::OutputNotRunning => "the output is not running",
+        StatusCode::OutputPaused => "the output is already paused",
+        StatusCode::OutputNotPaused => "the output is not paused",
+        StatusCode::OutputDisabled => "the output is disabled in OBS",
+        StatusCode::StudioModeActive => "Studio Mode is on",
+        StatusCode::ResourceNotFound => "not found in OBS",
+        StatusCode::ResourceAlreadyExists => "already exists in OBS",
+        StatusCode::InvalidResourceType | StatusCode::InvalidInputKind => {
+            "OBS does not accept this kind of item here"
+        }
+        StatusCode::InvalidResourceState => "the item is in the wrong state for this request",
+        StatusCode::ResourceNotConfigurable => "this item cannot be changed",
+        StatusCode::MissingRequestField
+        | StatusCode::MissingRequestData
+        | StatusCode::InvalidRequestField
+        | StatusCode::InvalidRequestFieldType
+        | StatusCode::RequestFieldOutOfRange
+        | StatusCode::RequestFieldEmpty
+        | StatusCode::TooManyRequestFields => "OBS rejected a value in the request",
+        _ => "OBS rejected the request",
     }
 }
 
@@ -95,7 +120,7 @@ mod tests {
     }
 
     #[test]
-    fn api_errors_keep_their_code_and_obs_message_except_studio_mode_which_gets_a_reason() {
+    fn api_errors_show_the_obs_message_or_a_readable_reason_for_the_code() {
         let api = |code, message: Option<&str>| obws::error::Error::Api {
             code,
             message: message.map(str::to_owned),
@@ -115,11 +140,11 @@ mod tests {
         for (message, expected) in [
             (
                 Some("No source was found"),
-                "request failed: SetCurrentPreviewScene - ResourceNotFound: No source was found",
+                "request failed: SetCurrentPreviewScene - No source was found",
             ),
             (
                 None,
-                "request failed: SetCurrentPreviewScene - ResourceNotFound",
+                "request failed: SetCurrentPreviewScene - not found in OBS",
             ),
         ] {
             let mapped = map_request_error(

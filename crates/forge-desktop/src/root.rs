@@ -562,8 +562,7 @@ async fn seed_chat_history(
     backend: Arc<dyn forge_storage::DataProvider>,
     rt_handle: tokio::runtime::Handle,
 ) {
-    let (tx, rx) = tokio::sync::oneshot::channel();
-    rt_handle.spawn(async move {
+    let reply = crate::async_bridge::on_runtime(&rt_handle, async move {
         let settings = Arc::clone(&backend) as Arc<dyn forge_storage::SettingsRepo>;
         let limit = forge_storage::chat_history_display_limit(settings.as_ref())
             .await
@@ -573,13 +572,9 @@ async fn seed_chat_history(
             .list_recent(limit as usize)
             .await
             .unwrap_or_default();
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the view may close before the result arrives"
-        )]
-        let _ = tx.send((limit, rows));
+        (limit, rows)
     });
-    let Ok((limit, mut rows)) = rx.await else {
+    let Ok((limit, mut rows)) = reply.await else {
         return;
     };
     rows.reverse();
@@ -823,15 +818,10 @@ fn apply_persisted_shortcuts(
 ) {
     cx.spawn(async move |cx| {
         let repo = backend as Arc<dyn forge_storage::SettingsRepo>;
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        rt_handle.spawn(async move {
-            #[expect(
-                clippy::let_underscore_must_use,
-                reason = "the view may close before the result arrives"
-            )]
-            let _ = tx.send(crate::shortcut_overrides::load_overrides(repo).await);
+        let reply = crate::async_bridge::on_runtime(&rt_handle, async move {
+crate::shortcut_overrides::load_overrides(repo).await
         });
-        let overrides = match rx.await {
+        let overrides = match reply.await {
             Ok(Ok(overrides)) => overrides,
             Ok(Err(e)) => {
                 tracing::warn!(error = %e, "stored keyboard shortcuts unreadable; defaults stay active");

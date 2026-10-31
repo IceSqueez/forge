@@ -97,21 +97,16 @@ impl OverlaysView {
         cx.spawn(async move |this, cx| {
             loop {
                 let running = run_state.latest();
-                let (tx, rx) = tokio::sync::oneshot::channel();
                 let probe = handle.clone();
-                rt_handle.spawn(async move {
+                let reply = crate::async_bridge::on_runtime(&rt_handle, async move {
                     let bind_address = probe.bind_addr().await.to_string();
                     let routable_host = resolve_routable_host(&bind_address);
-                    #[expect(
-                        clippy::let_underscore_must_use,
-                        reason = "the view may close before the result arrives"
-                    )]
-                    let _ = tx.send(ServedEndpoint {
+                    ServedEndpoint {
                         bind_address,
                         routable_host,
-                    });
+                    }
                 });
-                let endpoint = rx.await.ok();
+                let endpoint = reply.await.ok();
                 if this
                     .update(cx, |this, cx| {
                         this.apply_server_state(running, endpoint, cx)

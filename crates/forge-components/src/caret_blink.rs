@@ -36,9 +36,9 @@ impl CaretBlink {
         focus: &FocusHandle,
         window: &mut Window,
         cx: &mut Context<T>,
-    ) {
+    ) -> bool {
         if !self.watchers.is_empty() {
-            return;
+            return false;
         }
         let on_focus = cx.on_focus(focus, window, |host: &mut T, window, cx| {
             if set_caret_blinking(host, window.is_visible(), cx) {
@@ -59,6 +59,7 @@ impl CaretBlink {
                 }
             });
         self.watchers = vec![on_focus, on_blur, on_visibility];
+        true
     }
 }
 

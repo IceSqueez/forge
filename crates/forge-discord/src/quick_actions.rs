@@ -1,4 +1,4 @@
-use forge_platform_core::{ConnectionState, QuickAction, QuickActionAccent, QuickActions};
+use forge_platform_core::{QuickAction, QuickActionAccent, QuickActions};
 use forge_registry::SubActionConfig;
 use forge_types::{MessageCode, RecoverMutex, Variant};
 
@@ -21,12 +21,13 @@ fn webhook_action(
 
 impl QuickActions for DiscordClient {
     fn actions(&self) -> Vec<QuickAction> {
-        let snap = self.content_state.lock_recover();
-        let first_webhook = snap.webhook_names.first().cloned();
-        drop(snap);
-
-        let enabled =
-            first_webhook.is_some() && self.connection_state() != ConnectionState::Disconnected;
+        let first_webhook = self
+            .content_state()
+            .lock_recover()
+            .webhook_names
+            .first()
+            .cloned();
+        let enabled = first_webhook.is_some();
         let preset = |overrides: Vec<(&str, Variant)>| -> SubActionConfig {
             first_webhook
                 .clone()
@@ -98,7 +99,7 @@ mod tests {
     fn actions_enabled_after_webhook_registered() {
         let c = DiscordClient::new_for_test();
         {
-            let mut snap = c.content_state.lock().unwrap();
+            let mut snap = c.content_state().lock().unwrap();
             snap.webhook_names.push("alerts".to_owned());
         }
         let actions = c.actions();
@@ -117,7 +118,7 @@ mod tests {
 
         let c = DiscordClient::new_for_test();
         {
-            let mut snap = c.content_state.lock().unwrap();
+            let mut snap = c.content_state().lock().unwrap();
             snap.webhook_names.push("alerts".to_owned());
         }
         let actions = c.actions();
@@ -145,7 +146,7 @@ mod tests {
         let bare = DiscordClient::new_for_test();
         let configured = DiscordClient::new_for_test();
         configured
-            .content_state
+            .content_state()
             .lock()
             .unwrap()
             .webhook_names

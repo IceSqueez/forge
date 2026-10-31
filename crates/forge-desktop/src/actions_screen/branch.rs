@@ -159,6 +159,15 @@ impl ScreenActionsView {
         value: String,
         cx: &mut Context<Self>,
     ) {
+        let stored = self
+            .current_chain()
+            .get(step_index)
+            .and_then(nav::ChainItem::step)
+            .and_then(|step| nav::case_match_display(step, &cases_key, case_index))
+            .unwrap_or_default();
+        if stored == value.trim() {
+            return;
+        }
         self.mutate_switch_step(
             step_index,
             move |step| nav::set_case_match(&mut step.config, &cases_key, case_index, value.trim()),
@@ -188,13 +197,23 @@ impl ScreenActionsView {
         }
 
         let palette = cx.palette();
+        let mut previous = std::mem::take(&mut self.editor.case_fields);
         let mut fields = BTreeMap::new();
         for (si, cases_key, ci, seed) in specs {
+            if let Some(kept) = previous.remove(&(si, ci))
+                && kept.cases_key == cases_key
+                && kept.seed == seed
+            {
+                kept.field
+                    .update(cx, |input, cx| input.set_palette(palette, cx));
+                fields.insert((si, ci), kept);
+                continue;
+            }
             let field = cx.new(|cx| {
                 let mut input = TextInput::new(tr!("action_editor_case_match_placeholder"), cx)
                     .with_palette(palette);
                 if !seed.is_empty() {
-                    input.set_content(seed, cx);
+                    input.set_content(seed.clone(), cx);
                 }
                 input
             });
@@ -203,7 +222,15 @@ impl ScreenActionsView {
                     this.commit_case_match(si, cases_key.to_owned(), ci, text.to_string(), cx);
                 }
             });
-            fields.insert((si, ci), CaseField { field, _sub: sub });
+            fields.insert(
+                (si, ci),
+                CaseField {
+                    field,
+                    cases_key,
+                    seed,
+                    _sub: sub,
+                },
+            );
         }
         self.editor.case_fields = fields;
     }

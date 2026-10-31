@@ -180,9 +180,8 @@ impl ServerConsoleView {
                 let run_state_changed = run_state.take_changed();
                 let want_serving_facts = serving_facts_stale || run_state_changed;
                 serving_facts_stale = false;
-                let (tx, rx) = tokio::sync::oneshot::channel::<ServerPoll>();
                 let handle = handle.clone();
-                rt_handle.spawn(async move {
+                let reply = crate::async_bridge::on_runtime(&rt_handle, async move {
                     let snapshot = handle.snapshot().await;
                     let (bind_address, overlay) = if want_serving_facts {
                         let root = handle.overlay_root().await;
@@ -193,17 +192,13 @@ impl ServerConsoleView {
                     } else {
                         (None, None)
                     };
-                    #[expect(
-                        clippy::let_underscore_must_use,
-                        reason = "the view may close before the result arrives"
-                    )]
-                    let _ = tx.send(ServerPoll {
+                    ServerPoll {
                         snapshot,
                         bind_address,
                         overlay,
-                    });
+                    }
                 });
-                if let Ok(poll) = rx.await
+                if let Ok(poll) = reply.await
                     && this
                         .update(cx, |this, cx| {
                             if let Some(bind_address) = this.apply_poll(poll) {

@@ -10,7 +10,7 @@ use crate::client::MidiClient;
 
 impl BuiltinStatus for MidiClient {
     fn id(&self) -> &IntegrationId {
-        &self.id
+        self.integration_id()
     }
 
     fn display_name(&self) -> &str {
@@ -22,10 +22,10 @@ impl BuiltinStatus for MidiClient {
     }
 
     fn connection(&self) -> ConnectionState {
-        if !self.enabled.load(Ordering::Relaxed) {
+        if !self.enabled().load(Ordering::Relaxed) {
             return ConnectionState::Disconnected;
         }
-        let snap = self.content_state.lock_recover();
+        let snap = self.content_state().lock_recover();
         if snap.input_ports.is_empty() && snap.output_ports.is_empty() {
             ConnectionState::Disconnected
         } else {
@@ -49,7 +49,7 @@ impl BuiltinStatus for MidiClient {
     }
 
     fn activity_count(&self) -> Option<usize> {
-        let snap = self.content_state.lock_recover();
+        let snap = self.content_state().lock_recover();
         Some(snap.input_ports.len())
     }
 
@@ -74,12 +74,12 @@ mod tests {
     #[test]
     fn connection_is_disconnected_while_input_is_disabled_despite_open_ports() {
         let client = MidiClient::new_for_test();
-        client.content_state.lock_recover().input_ports = vec![input_port("Piano")];
+        client.content_state().lock_recover().input_ports = vec![input_port("Piano")];
 
         let status: &dyn BuiltinStatus = &*client;
         assert_eq!(status.connection(), ConnectionState::Connected);
 
-        client.enabled.store(false, Ordering::Relaxed);
+        client.enabled().store(false, Ordering::Relaxed);
         assert_eq!(status.connection(), ConnectionState::Disconnected);
     }
 }

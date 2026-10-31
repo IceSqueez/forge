@@ -6,6 +6,7 @@ use std::future::Future;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use forge_net::{TaskOwner, TaskShutdown};
 use tokio::sync::{mpsc, oneshot};
 use tokio_stream::StreamExt;
 use zbus::Connection;
@@ -68,6 +69,7 @@ pub(crate) trait ShortcutsPortal: Send + Sync {
 
     fn listen_until_portal_restart(
         &self,
+        tasks: &TaskOwner,
         edges: mpsc::Sender<ShortcutEdge>,
         restarts: mpsc::Sender<()>,
     );
@@ -75,6 +77,7 @@ pub(crate) trait ShortcutsPortal: Send + Sync {
 
 pub(crate) struct PortalBackend {
     cmd_tx: mpsc::Sender<PortalCmd>,
+    tasks: TaskOwner,
     fired_rx_slot: Mutex<Option<mpsc::Receiver<HotkeyFiredEvent>>>,
     restart_rx_slot: Mutex<Option<mpsc::Receiver<()>>>,
     session_rx_slot: Mutex<Option<mpsc::Receiver<BackendSessionEvent>>>,
@@ -141,8 +144,10 @@ impl PortalBackend {
         let (edge_tx, edge_rx) = mpsc::channel::<ShortcutEdge>(EDGE_QUEUE_CAPACITY);
         let (restart_tx, restart_rx) = mpsc::channel::<()>(NOTICE_QUEUE_CAPACITY);
 
+        let tasks = TaskOwner::new();
         let session = PortalSession {
             portal,
+            tasks: tasks.clone(),
             session: Some(session_path),
             session_bound: false,
             registered: HashMap::new(),
@@ -161,10 +166,11 @@ impl PortalBackend {
                 session_tx,
             },
         };
-        tokio::spawn(session.run(cmd_rx));
+        tasks.spawn_until_stopped(session.run(cmd_rx));
 
         Ok(Self {
             cmd_tx,
+            tasks,
             fired_rx_slot: Mutex::new(Some(fired_rx)),
             restart_rx_slot: Mutex::new(Some(restart_notice_rx)),
             session_rx_slot: Mutex::new(Some(session_rx)),
@@ -191,6 +197,10 @@ impl HotkeyBackend for PortalBackend {
             .map_err(|e| HotkeyError::Backend(e.to_string()))
     }
 
+    async fn shutdown(&self, grace: Duration) -> TaskShutdown {
+        self.tasks.shutdown(grace).await
+    }
+
     fn fired_rx(&self) -> Option<mpsc::Receiver<HotkeyFiredEvent>> {
         self.fired_rx_slot.lock_recover().take()
     }
@@ -210,6 +220,7 @@ impl HotkeyBackend for PortalBackend {
 
 struct PortalSession {
     portal: Arc<dyn ShortcutsPortal>,
+    tasks: TaskOwner,
     session: Option<String>,
     session_bound: bool,
     registered: HashMap<HotkeyId, HotkeyCombo>,
@@ -256,6 +267,7 @@ impl PortalSession {
 
     fn listen(&self) {
         self.portal.listen_until_portal_restart(
+            &self.tasks,
             self.signals.edge_tx.clone(),
             self.signals.restart_tx.clone(),
         );
@@ -504,10 +516,11 @@ impl ShortcutsPortal for DbusShortcutsPortal {
 
     fn listen_until_portal_restart(
         &self,
+        tasks: &TaskOwner,
         edges: mpsc::Sender<ShortcutEdge>,
         restarts: mpsc::Sender<()>,
     ) {
-        tokio::spawn(signal_listener_task(self.conn.clone(), edges, restarts));
+        tasks.spawn_until_stopped(signal_listener_task(self.conn.clone(), edges, restarts));
     }
 }
 
@@ -1075,6 +1088,7 @@ mod tests {
 
         fn listen_until_portal_restart(
             &self,
+            _tasks: &TaskOwner,
             edges: mpsc::Sender<ShortcutEdge>,
             restarts: mpsc::Sender<()>,
         ) {

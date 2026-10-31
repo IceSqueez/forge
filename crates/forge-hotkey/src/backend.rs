@@ -1,4 +1,7 @@
+use std::time::Duration;
+
 use async_trait::async_trait;
+use forge_net::TaskShutdown;
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 
@@ -67,6 +70,10 @@ pub(crate) trait HotkeyBackend: Send + Sync {
 
     fn session_events_rx(&self) -> Option<mpsc::Receiver<BackendSessionEvent>> {
         None
+    }
+
+    async fn shutdown(&self, _grace: Duration) -> TaskShutdown {
+        TaskShutdown::Drained
     }
 }
 

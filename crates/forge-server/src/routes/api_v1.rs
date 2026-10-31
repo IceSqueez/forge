@@ -9,7 +9,6 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use serde::Deserialize;
 
-use crate::bus_adapter::ClientId;
 use crate::protocol::{
     DispatchContext, WsResponse, handle_do_action, handle_get_actions, handle_get_active_viewers,
     handle_get_events, handle_get_global, handle_get_globals, handle_get_info,
@@ -22,7 +21,7 @@ use crate::ws_client::WsClient;
 fn ephemeral_ctx(state: &AppState) -> DispatchContext {
     let drop_counter = Arc::new(AtomicU64::new(0));
     let client = Arc::new(WsClient::new(
-        ClientId::next(),
+        state.bus_adapter.allocate_client_id(),
         std::net::SocketAddr::from(([127, 0, 0, 1], 0)),
         drop_counter,
     ));

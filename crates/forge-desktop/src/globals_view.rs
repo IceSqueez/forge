@@ -48,7 +48,7 @@ pub(crate) struct GlobalsView {
     editor: Option<Entity<GlobalEditor>>,
     _editor_sub: Option<Subscription>,
     pending_delete: Confirm<SharedString>,
-    inspecting: Option<Global>,
+    inspecting: Option<inspect::InspectedGlobal>,
     renaming: Option<RenameState>,
     row_menu: Option<RowMenu>,
     menu_focus: FocusHandle,
@@ -612,8 +612,8 @@ impl Render for GlobalsView {
         let editor_overlay = self.editor.clone();
         let inspect_overlay = self
             .inspecting
-            .clone()
-            .map(|g| self.render_inspect(&g, &palette, cx));
+            .as_ref()
+            .map(|inspected| self.render_inspect(inspected, &palette, cx));
 
         div()
             .size_full()

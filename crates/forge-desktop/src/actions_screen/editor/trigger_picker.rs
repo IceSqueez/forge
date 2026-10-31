@@ -81,20 +81,13 @@ impl ScreenActionsView {
         }
         self.menus.step_open = None;
         let service = Arc::clone(&self.deps.actions_service);
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        self.deps.rt_handle.spawn(async move {
-            #[expect(
-                clippy::let_underscore_must_use,
-                reason = "the view may close before the result arrives"
-            )]
-            let _ = tx.send(
-                service
-                    .list_linkable_triggers(action_id)
-                    .await
-                    .map_err(RepoFailure::from),
-            );
+        let reply = crate::async_bridge::on_runtime(&self.deps.rt_handle, async move {
+            service
+                .list_linkable_triggers(action_id)
+                .await
+                .map_err(RepoFailure::from)
         });
-        cx.spawn_in(window, async move |this, cx| match rx.await {
+        cx.spawn_in(window, async move |this, cx| match reply.await {
             Ok(Ok(instances)) => {
                 #[expect(
                     clippy::let_underscore_must_use,

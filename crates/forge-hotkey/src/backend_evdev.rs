@@ -7,7 +7,9 @@ use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::sync::{Arc, RwLock};
+use std::time::Duration;
 
+use forge_net::{TaskOwner, TaskShutdown};
 use tokio::io::unix::AsyncFd;
 use tokio::sync::mpsc;
 
@@ -38,6 +40,7 @@ const FIRED_QUEUE_CAPACITY: usize = 64;
 pub(crate) struct EvdevBackend {
     registered: Registered,
     fired_rx_slot: Mutex<Option<mpsc::Receiver<HotkeyFiredEvent>>>,
+    tasks: TaskOwner,
 }
 
 type HeldKeys = Arc<Mutex<HashMap<u16, (HotkeyId, HotkeyCombo)>>>;
@@ -62,16 +65,19 @@ impl EvdevBackend {
             }
         };
 
+        let tasks = TaskOwner::new();
         let pool = DevicePool {
             open: HashSet::new(),
             registered: Arc::clone(&registered),
             fired_tx,
+            tasks: tasks.clone(),
         };
-        tokio::spawn(pool.run(devices, watcher));
+        tasks.spawn_until_stopped(pool.run(devices, watcher));
 
         Ok(Self {
             registered,
             fired_rx_slot: Mutex::new(Some(fired_rx)),
+            tasks,
         })
     }
 }
@@ -88,6 +94,10 @@ impl HotkeyBackend for EvdevBackend {
         Ok(())
     }
 
+    async fn shutdown(&self, grace: Duration) -> TaskShutdown {
+        self.tasks.shutdown(grace).await
+    }
+
     fn fired_rx(&self) -> Option<mpsc::Receiver<HotkeyFiredEvent>> {
         self.fired_rx_slot.lock_recover().take()
     }
@@ -97,6 +107,7 @@ struct DevicePool {
     open: HashSet<PathBuf>,
     registered: Registered,
     fired_tx: mpsc::Sender<HotkeyFiredEvent>,
+    tasks: TaskOwner,
 }
 
 impl DevicePool {
@@ -161,7 +172,7 @@ impl DevicePool {
         let registered = Arc::clone(&self.registered);
         let fired_tx = self.fired_tx.clone();
         let closed_tx = closed_tx.clone();
-        tokio::spawn(async move {
+        self.tasks.spawn_until_stopped(async move {
             let modifier_state = Mutex::new(HashSet::new());
             let held_keys: HeldKeys = Arc::new(Mutex::new(HashMap::new()));
             let end = read_device_events(
@@ -715,6 +726,7 @@ mod tests {
             open: HashSet::new(),
             registered,
             fired_tx,
+            tasks: TaskOwner::new(),
         };
         (pool, fired_rx, closed_tx, closed_rx)
     }

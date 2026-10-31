@@ -9,7 +9,7 @@ use crate::client::DiscordClient;
 
 impl BuiltinStatus for DiscordClient {
     fn id(&self) -> &IntegrationId {
-        &self.id
+        self.integration_id()
     }
 
     fn display_name(&self) -> &str {
@@ -21,11 +21,10 @@ impl BuiltinStatus for DiscordClient {
     }
 
     fn connection(&self) -> ConnectionState {
-        let snap = self.content_state.lock_recover();
-        if snap.webhook_names.is_empty() {
-            ConnectionState::Disconnected
-        } else {
+        if self.has_webhooks() {
             ConnectionState::Connected
+        } else {
+            ConnectionState::Disconnected
         }
     }
 
@@ -45,7 +44,7 @@ impl BuiltinStatus for DiscordClient {
     }
 
     fn activity_count(&self) -> Option<usize> {
-        let snap = self.content_state.lock_recover();
+        let snap = self.content_state().lock_recover();
         (!snap.webhook_names.is_empty()).then_some(snap.webhook_names.len())
     }
 

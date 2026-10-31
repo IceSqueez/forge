@@ -11,6 +11,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::time::Duration;
 
+use forge_net::{TaskOwner, TaskShutdown};
 use serde::{Deserialize, Serialize};
 
 pub use filters::{
@@ -67,6 +68,7 @@ pub struct SpeakRequest {
 #[derive(Debug)]
 pub enum SpeakCommand {
     Enqueue(SpeakRequest),
+    Shutdown,
     Skip,
     PlayNow(RequestId),
     RemoveQueued(RequestId),
@@ -235,11 +237,19 @@ pub struct SpeakQueueHandle {
     registry: Shared<TtsRegistry>,
     targeted_legs: TargetedLegs,
     language_detector_ready: tokio::sync::watch::Receiver<bool>,
+    tasks: TaskOwner,
 }
 
 pub(crate) type TargetedLegs = Shared<Option<Arc<dyn TargetedSinkFactory>>>;
 
 impl SpeakQueueHandle {
+    pub async fn shutdown(&self, grace: Duration) -> TaskShutdown {
+        if let Err(error) = self.tx.try_send(SpeakCommand::Shutdown) {
+            tracing::debug!(%error, "speak queue could not take the stop command");
+        }
+        self.tasks.shutdown(grace).await
+    }
+
     pub async fn language_detector_ready(&self) -> Result<(), SpeakError> {
         self.language_detector_ready
             .clone()
@@ -344,6 +354,7 @@ pub fn spawn(config: QueueConfig, deps: QueueDeps) -> (SpeakQueueHandle, SpeakEv
     let (detector_ready_tx, language_detector_ready) = tokio::sync::watch::channel(false);
     let resolver = Shared::new(deps.resolver);
     let registry = Shared::new(deps.registry);
+    let tasks = TaskOwner::new();
     let actor_deps = actor::ActorDeps {
         registry: registry.clone(),
         resolver: resolver.clone(),
@@ -352,6 +363,7 @@ pub fn spawn(config: QueueConfig, deps: QueueDeps) -> (SpeakQueueHandle, SpeakEv
         event_bus: deps.event_bus,
         disabled_engines: deps.disabled_engines,
         engine_gains: deps.engine_gains,
+        tasks: tasks.clone(),
     };
 
     let event_tx_clone = event_tx.clone();
@@ -361,7 +373,7 @@ pub fn spawn(config: QueueConfig, deps: QueueDeps) -> (SpeakQueueHandle, SpeakEv
     let master_volume_bits_clone = master_volume_bits.clone();
     let engine_gains_clone = engine_gains.clone();
     let targeted_legs_clone = targeted_legs.clone();
-    tokio::spawn(async move {
+    tasks.spawn(async move {
         actor::run_actor(
             config,
             actor_deps,
@@ -391,6 +403,7 @@ pub fn spawn(config: QueueConfig, deps: QueueDeps) -> (SpeakQueueHandle, SpeakEv
             registry,
             targeted_legs,
             language_detector_ready,
+            tasks,
         },
         SpeakEventStream(event_rx),
     )
@@ -423,6 +436,7 @@ mod tests {
             registry: Shared::new(TtsRegistry::new()),
             targeted_legs: Shared::new(None),
             language_detector_ready: tokio::sync::watch::channel(false).1,
+            tasks: TaskOwner::new(),
         }
     }
 

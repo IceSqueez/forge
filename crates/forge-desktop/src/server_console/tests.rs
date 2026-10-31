@@ -11,6 +11,7 @@ use forge_overlay::RESERVED_DIRECTORY;
 use forge_server::BandwidthSnapshot;
 use forge_server::{ConnectedClientSnapshot, EventFilterSnapshot, ServerSnapshot};
 use gpui::{Entity, TestAppContext};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::i18n::install_language;
 use crate::test_support::{
@@ -331,13 +332,16 @@ fn no_browser_source_url_is_offered_before_the_overlay_token_is_known(cx: &mut T
     assert_eq!(url, None);
 }
 
+const FIRST_UNREGISTERED_CLIENT: u64 = 1 << 32;
+static NEXT_CLIENT: AtomicU64 = AtomicU64::new(FIRST_UNREGISTERED_CLIENT);
+
 fn snapshot_client(
     identification: &str,
     events_per_second: f32,
     uptime_seconds: i64,
 ) -> ConnectedClientSnapshot {
     ConnectedClientSnapshot {
-        id: ClientId::next(),
+        id: ClientId::new(NEXT_CLIENT.fetch_add(1, Ordering::Relaxed)),
         identification: identification.to_owned(),
         remote_addr: "203.0.113.10".to_owned(),
         client_type: "obs_browser".to_owned(),

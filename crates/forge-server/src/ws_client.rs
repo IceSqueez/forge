@@ -133,7 +133,7 @@ mod tests {
     fn make_client() -> WsClient {
         let drop_counter = Arc::new(AtomicU64::new(0));
         WsClient::new(
-            ClientId::next(),
+            ClientId::new(0),
             "127.0.0.1:0".parse().unwrap(),
             drop_counter,
         )

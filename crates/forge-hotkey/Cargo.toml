@@ -15,6 +15,7 @@ testing = []
 
 [dependencies]
 forge-events = { path = "../forge-events" }
+forge-net = { path = "../forge-net" }
 forge-platform-core = { path = "../forge-platform-core" }
 forge-registry = { path = "../forge-registry" }
 forge-storage = { path = "../forge-storage" }

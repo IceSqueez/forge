@@ -41,16 +41,10 @@ fn load_once(server: Option<&ServerHandle>, rt_handle: &tokio::runtime::Handle, 
         return;
     };
     cx.set_global(OverlayLinkToken(None));
-    let (tx, rx) = tokio::sync::oneshot::channel();
-    rt_handle.spawn(async move {
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the view may close before the result arrives"
-        )]
-        let _ = tx.send(handle.overlay_token().await);
-    });
+    let reply =
+        crate::async_bridge::on_runtime(rt_handle, async move { handle.overlay_token().await });
     cx.spawn(async move |cx| {
-        if let Ok(token) = rx.await {
+        if let Ok(token) = reply.await {
             cx.update(|cx| publish(token, cx));
         }
     })

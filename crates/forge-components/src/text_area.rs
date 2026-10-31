@@ -578,9 +578,11 @@ impl Render for TextArea {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let density = cx.density();
         let focus = self.focus_handle.clone();
-        self.caret.watch(&focus, window, cx);
+        let newly_watched = self.caret.watch(&focus, window, cx);
         let focused = focus.is_focused(window);
-        set_caret_blinking(self, focused && window.is_visible(), cx);
+        if newly_watched {
+            set_caret_blinking(self, focused && window.is_visible(), cx);
+        }
         let border_color = if focused {
             self.palette.border_active
         } else {

@@ -148,24 +148,19 @@ impl ChatView {
             return;
         }
         let builtins = self.drawer.follows.builtins.clone();
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        self.services.rt_handle.spawn(async move {
+        let reply = crate::async_bridge::on_runtime(&self.services.rt_handle, async move {
             let lookup = builtins
                 .get(&request.builtin)
                 .and_then(|object| object.follow);
-            let status = match lookup {
+
+            match lookup {
                 Some(lookup) => lookup.follow_status(&request.viewer_id).await,
                 None => FollowStatus::Unavailable,
-            };
-            #[expect(
-                clippy::let_underscore_must_use,
-                reason = "the view may close before the result arrives"
-            )]
-            let _ = tx.send(status);
+            }
         });
         let pending = key.clone();
         let task = cx.spawn(async move |this, cx| {
-            let status = rx.await.unwrap_or(FollowStatus::Unavailable);
+            let status = reply.await.unwrap_or(FollowStatus::Unavailable);
             #[expect(
                 clippy::let_underscore_must_use,
                 reason = "the view may close before the result arrives"

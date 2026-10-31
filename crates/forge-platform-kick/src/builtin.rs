@@ -4,7 +4,7 @@ use forge_types::{IntegrationId, MessageRef, RecoverRwLock, UserText, VerbatimTe
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, SystemTime};
 
-use forge_net::RateLimiter;
+use forge_net::{RateLimiter, TaskOwner, TaskShutdown};
 use forge_platform_core::{
     BannerLevel, BuiltinContent, BuiltinHealth, BuiltinStatus, CapabilityFlags, ChatPlatform,
     ConnectionState, DetailSection, HeaderAction, HealthDelta, HealthMetric, HealthMetricId,
@@ -14,7 +14,6 @@ use forge_registry::{RegistryError, TriggerRegistry};
 use tokio::sync::{broadcast, watch};
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::BroadcastStream;
-use tokio_util::sync::CancellationToken;
 
 use crate::api::poller::{CHANNEL_POLL_INTERVAL, PollerAuth, REDEMPTION_POLL_INTERVAL};
 use crate::auth::credentials_manager::KickCredentialsManager;
@@ -32,6 +31,7 @@ use crate::triggers::sub_gift::SubGiftDescriptor;
 use crate::vocabulary::messages;
 use crate::vocabulary::messages::KICK_COMMUNITY_NOTE;
 
+const BRIDGE_DRAIN_GRACE: Duration = Duration::from_millis(5);
 const LIVE_CHAT_METRIC: HealthMetricId = HealthMetricId::new(messages::HEALTH_LIVE_CHAT);
 const EVENTS_METRIC: HealthMetricId = HealthMetricId::new(messages::HEALTH_EVENTS);
 const API_CALLS_METRIC: HealthMetricId = HealthMetricId::new(messages::HEALTH_API_CALLS);
@@ -63,7 +63,7 @@ pub struct KickIntegrationBundle {
     viewer_report_rx: watch::Receiver<ViewerReport>,
     poller_auth_rx: watch::Receiver<PollerAuth>,
     state_rx: watch::Receiver<ConnectionState>,
-    retired: CancellationToken,
+    tasks: TaskOwner,
 }
 
 impl KickIntegrationBundle {
@@ -109,7 +109,7 @@ impl KickIntegrationBundle {
             viewer_report_rx,
             poller_auth_rx,
             state_rx,
-            retired: CancellationToken::new(),
+            tasks: TaskOwner::new(),
         });
         Self::spawn_health_bridge(&bundle);
         Self::spawn_viewer_health_bridge(&bundle);
@@ -156,15 +156,14 @@ impl KickIntegrationBundle {
             tracing::warn!("kick health bridge not started: no tokio runtime");
             return;
         };
+        let tasks = bundle.tasks.clone();
         let bundle = Arc::clone(bundle);
         let mut state_rx = bundle.state_rx.clone();
-        handle.spawn(async move {
+        tasks.spawn_until_stopped_on(&handle, async move {
             let mut previous = *state_rx.borrow();
             loop {
-                tokio::select! {
-                    biased;
-                    () = bundle.retired.cancelled() => break,
-                    changed = state_rx.changed() => if changed.is_err() { break },
+                if state_rx.changed().await.is_err() {
+                    break;
                 }
                 let current = *state_rx.borrow();
 
@@ -201,14 +200,13 @@ impl KickIntegrationBundle {
             tracing::warn!("kick health bridge not started: no tokio runtime");
             return;
         };
+        let tasks = bundle.tasks.clone();
         let bundle = Arc::clone(bundle);
         let mut reports_rx = bundle.viewer_report_rx.clone();
-        handle.spawn(async move {
+        tasks.spawn_until_stopped_on(&handle, async move {
             loop {
-                tokio::select! {
-                    biased;
-                    () = bundle.retired.cancelled() => break,
-                    changed = reports_rx.changed() => if changed.is_err() { break },
+                if reports_rx.changed().await.is_err() {
+                    break;
                 }
                 let viewers_delta = HealthDelta {
                     metric: HealthMetricId::VIEWERS,
@@ -238,14 +236,13 @@ impl KickIntegrationBundle {
             tracing::warn!("kick health bridge not started: no tokio runtime");
             return;
         };
+        let tasks = bundle.tasks.clone();
         let bundle = Arc::clone(bundle);
         let mut auth_rx = bundle.poller_auth_rx.clone();
-        handle.spawn(async move {
+        tasks.spawn_until_stopped_on(&handle, async move {
             loop {
-                tokio::select! {
-                    biased;
-                    () = bundle.retired.cancelled() => break,
-                    changed = auth_rx.changed() => if changed.is_err() { break },
+                if auth_rx.changed().await.is_err() {
+                    break;
                 }
                 let events_delta = HealthDelta {
                     metric: EVENTS_METRIC,
@@ -270,14 +267,13 @@ impl KickIntegrationBundle {
             tracing::warn!("kick health bridge not started: no tokio runtime");
             return;
         };
+        let tasks = bundle.tasks.clone();
         let bundle = Arc::clone(bundle);
         let mut expiry_rx = bundle.credentials_manager.subscribe_expiry();
-        handle.spawn(async move {
+        tasks.spawn_until_stopped_on(&handle, async move {
             loop {
-                tokio::select! {
-                    biased;
-                    () = bundle.retired.cancelled() => break,
-                    changed = expiry_rx.changed() => if changed.is_err() { break },
+                if expiry_rx.changed().await.is_err() {
+                    break;
                 }
                 let expiry = *expiry_rx.borrow_and_update();
                 {
@@ -293,8 +289,9 @@ impl KickIntegrationBundle {
             tracing::warn!("kick health bridge not started: no tokio runtime");
             return;
         };
+        let tasks = bundle.tasks.clone();
         let bundle = Arc::clone(bundle);
-        handle.spawn(async move {
+        tasks.spawn_until_stopped_on(&handle, async move {
             bundle.refresh_identity().await;
         });
     }
@@ -311,9 +308,12 @@ impl KickIntegrationBundle {
     }
 
     pub async fn shutdown(&self) {
-        self.retired.cancel();
+        self.tasks.request_stop();
         if let Err(error) = self.platform.disconnect().await {
             tracing::warn!(%error, "kick chat disconnect failed at shutdown");
+        }
+        if let TaskShutdown::Aborted { tasks } = self.tasks.shutdown(BRIDGE_DRAIN_GRACE).await {
+            tracing::warn!(tasks, "kick health bridges did not stop in time");
         }
     }
 

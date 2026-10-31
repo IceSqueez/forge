@@ -23,7 +23,7 @@ use forge_platform_core::{
 };
 use forge_registry::{IntegrationReferences, SubActionRegistry, TriggerRegistry, tally_references};
 use forge_storage::{DataProvider, StorageError};
-use forge_types::{Action, IntegrationId, MessageRef, TriggerInstance, TriggerInstanceId};
+use forge_types::{Action, IntegrationId, MessageRef, TriggerInstance};
 use gpui::{
     AnyElement, ClickEvent, Context, ElementId, Entity, EventEmitter, FontWeight, Pixels,
     SharedString, Subscription, Window, div, prelude::*, px,
@@ -153,8 +153,7 @@ impl IntegrationsHubView {
         let sub_actions = Arc::clone(&self.launch.sub_actions);
         let triggers = Arc::clone(&self.launch.triggers);
         let builtins = self.launch.builtins.clone();
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        self.launch.rt_handle.spawn(async move {
+        let reply = crate::async_bridge::on_runtime(&self.launch.rt_handle, async move {
             let references = match load_references(backend.as_ref(), &sub_actions, &triggers).await
             {
                 Ok(references) => Some(references),
@@ -171,14 +170,10 @@ impl IntegrationsHubView {
                     Some((object.status.id().clone(), count))
                 })
                 .collect();
-            #[expect(
-                clippy::let_underscore_must_use,
-                reason = "the view may close before the result arrives"
-            )]
-            let _ = tx.send((references, activity));
+            (references, activity)
         });
         cx.spawn(async move |this, cx| {
-            let Ok((references, activity)) = rx.await else {
+            let Ok((references, activity)) = reply.await else {
                 return;
             };
             #[expect(
@@ -823,13 +818,14 @@ async fn wired_triggers(
 ) -> Result<(Vec<Action>, Vec<TriggerInstance>), StorageError> {
     let actions = backend.action_repo().list().await?;
     let instances = backend.trigger_instance_repo();
-    let mut wired: HashMap<TriggerInstanceId, TriggerInstance> = HashMap::new();
-    for action in &actions {
-        for instance in instances.list_for_action(action.id).await? {
-            wired.entry(instance.id).or_insert(instance);
-        }
-    }
-    Ok((actions, wired.into_values().collect()))
+    let links = instances.actions_by_instance().await?;
+    let wired = instances
+        .list_all()
+        .await?
+        .into_iter()
+        .filter(|instance| links.contains_key(&instance.id))
+        .collect();
+    Ok((actions, wired))
 }
 
 fn welcome_footer_note(status: &CardStatus, palette: &ForgePalette) -> AnyElement {
@@ -1010,7 +1006,8 @@ mod tests {
 
         let (_, wired) = wired_triggers(storage.as_ref()).await.unwrap();
 
-        let ids: Vec<TriggerInstanceId> = wired.iter().map(|instance| instance.id).collect();
+        let ids: Vec<forge_types::TriggerInstanceId> =
+            wired.iter().map(|instance| instance.id).collect();
         assert_eq!(ids.len(), 2);
         assert_eq!(
             ids.into_iter().collect::<HashSet<_>>(),
@@ -1181,9 +1178,13 @@ mod tests {
             .expect_list()
             .returning(move || Ok(listed.lock().unwrap().clone()));
         let mut trigger_repo = MockTriggerInstanceRepo::new();
+        let chat_id = chat.id;
         trigger_repo
-            .expect_list_for_action()
-            .returning(move |_| Ok(vec![chat.clone()]));
+            .expect_list_all()
+            .returning(move || Ok(vec![chat.clone()]));
+        trigger_repo
+            .expect_actions_by_instance()
+            .returning(move || Ok(HashMap::from([(chat_id, Vec::new())])));
         let storage = sandboxed_over(test_backend_with_actions_and_triggers(
             Arc::new(action_repo),
             Arc::new(trigger_repo),

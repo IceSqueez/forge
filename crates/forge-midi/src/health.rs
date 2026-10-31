@@ -91,10 +91,10 @@ pub(crate) fn events_per_minute(timestamps: &mut VecDeque<Instant>) -> usize {
 
 impl BuiltinHealth for MidiClient {
     fn metrics(&self) -> [HealthMetric; 4] {
-        let mut snap = self.health_state.lock_recover();
+        let mut snap = self.health_state().lock_recover();
 
         let input_value =
-            input_port_health_value(self.enabled.load(Ordering::Relaxed), snap.input_count);
+            input_port_health_value(self.enabled().load(Ordering::Relaxed), snap.input_count);
         let output_value = output_port_health_value(snap.output_count);
         let last_note_value = last_note_health_value(snap.last_note_on_at);
         let events_value =
@@ -121,7 +121,7 @@ impl BuiltinHealth for MidiClient {
     }
 
     fn stream(&self) -> HealthStream {
-        let rx = self.health_tx.subscribe();
+        let rx = self.health_tx().subscribe();
         Box::pin(BroadcastStream::new(rx).filter_map(|r| r.ok()))
     }
 }
@@ -171,8 +171,8 @@ mod tests {
     #[test]
     fn metrics_report_the_input_port_slot_as_disabled_when_input_is_off() {
         let c = MidiClient::new_for_test();
-        c.health_state.lock_recover().input_count = 2;
-        c.enabled.store(false, Ordering::Relaxed);
+        c.health_state().lock_recover().input_count = 2;
+        c.enabled().store(false, Ordering::Relaxed);
 
         let h: &dyn BuiltinHealth = &*c;
         let metrics = h.metrics();

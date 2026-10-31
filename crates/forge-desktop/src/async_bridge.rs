@@ -233,6 +233,34 @@ pub(crate) async fn save_file(
         .map(|handle| handle.path().to_path_buf())
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[error("the runtime stopped before the work finished")]
+pub(crate) struct RuntimeGone;
+
+pub(crate) fn on_runtime<Fut>(
+    handle: &Handle,
+    fut: Fut,
+) -> impl Future<Output = Result<Fut::Output, RuntimeGone>> + use<Fut>
+where
+    Fut: Future + Send + 'static,
+    Fut::Output: Send + 'static,
+{
+    let task = handle.spawn(fut);
+    async move { task.await.map_err(|_| RuntimeGone) }
+}
+
+pub(crate) fn on_runtime_blocking<Work, T>(
+    handle: &Handle,
+    work: Work,
+) -> impl Future<Output = Result<T, RuntimeGone>> + use<Work, T>
+where
+    Work: FnOnce() -> T + Send + 'static,
+    T: Send + 'static,
+{
+    let task = handle.spawn_blocking(work);
+    async move { task.await.map_err(|_| RuntimeGone) }
+}
+
 pub(crate) fn run_async<V, Fut, T>(
     handle: &Handle,
     fut: Fut,
@@ -243,16 +271,9 @@ pub(crate) fn run_async<V, Fut, T>(
     T: Send + 'static,
     Fut: Future<Output = T> + Send + 'static,
 {
-    let (tx, rx) = tokio::sync::oneshot::channel();
-    handle.spawn(async move {
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the view may close before the result arrives"
-        )]
-        let _ = tx.send(fut.await);
-    });
+    let reply = on_runtime(handle, fut);
     cx.spawn(async move |this, cx| {
-        if let Ok(result) = rx.await {
+        if let Ok(result) = reply.await {
             #[expect(
                 clippy::let_underscore_must_use,
                 reason = "the view may close before the result arrives"
@@ -292,16 +313,9 @@ pub(crate) fn run_async_entity<V, Fut, T>(
     T: Send + 'static,
     Fut: Future<Output = T> + Send + 'static,
 {
-    let (tx, rx) = tokio::sync::oneshot::channel();
-    handle.spawn(async move {
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the view may close before the result arrives"
-        )]
-        let _ = tx.send(fut.await);
-    });
+    let reply = on_runtime(handle, fut);
     app.spawn(async move |cx| {
-        if let Ok(result) = rx.await {
+        if let Ok(result) = reply.await {
             view.update(cx, |this, cx| apply(this, result, cx));
         }
     })
@@ -318,16 +332,9 @@ pub(crate) fn run_blocking<V, Work, T>(
     T: Send + 'static,
     Work: FnOnce() -> T + Send + 'static,
 {
-    let (tx, rx) = tokio::sync::oneshot::channel();
-    handle.spawn_blocking(move || {
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the view may close before the result arrives"
-        )]
-        let _ = tx.send(work());
-    });
+    let reply = on_runtime_blocking(handle, work);
     cx.spawn(async move |this, cx| {
-        if let Ok(result) = rx.await {
+        if let Ok(result) = reply.await {
             #[expect(
                 clippy::let_underscore_must_use,
                 reason = "the view may close before the result arrives"
@@ -443,16 +450,9 @@ pub(crate) fn optimistic<V, S, F, E>(
     F: Future<Output = Result<(), E>> + Send + 'static,
     E: Into<RepoFailure> + Send + 'static,
 {
-    let (tx, rx) = tokio::sync::oneshot::channel();
-    handle.spawn(async move {
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the view may close before the result arrives"
-        )]
-        let _ = tx.send(fut.await.map_err(Into::into));
-    });
+    let reply = on_runtime(handle, async move { fut.await.map_err(Into::into) });
     cx.spawn(async move |this, cx| {
-        if let Ok(Err(failure)) = rx.await {
+        if let Ok(Err(failure)) = reply.await {
             tracing::warn!(context, error = %failure, "optimistic persist failed");
             #[expect(
                 clippy::let_underscore_must_use,

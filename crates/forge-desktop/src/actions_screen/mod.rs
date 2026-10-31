@@ -521,7 +521,11 @@ impl ScreenActionsView {
         let id = detail.action.id;
         let path = self.editor.nav_path.clone();
         let mut chain = nav::resolve_chain(&detail.action.sub_actions, &path);
+        let unchanged = chain.clone();
         mutate(&mut chain);
+        if chain == unchanged {
+            return;
+        }
         self.write_action(id, action_writes::ActionWrite::SetChain { path, chain }, cx);
     }
 }
@@ -539,7 +543,6 @@ impl Render for ScreenActionsView {
         );
         self.tree.keys.claim_focus_once(window, cx);
         let density = cx.density();
-        self.release_step_drag(window, cx);
         let palette = cx.palette();
 
         let stats = self.render_stats(&palette, density);
@@ -618,6 +621,7 @@ impl Render for ScreenActionsView {
                     .map(|host| host.flow.clone()),
             )
             .children(row_menu)
+            .children(self.step_drag_release_watch(cx))
     }
 }
 
@@ -705,6 +709,8 @@ struct AddTriggerFill {
 
 struct CaseField {
     field: Entity<TextInput>,
+    cases_key: &'static str,
+    seed: String,
     _sub: Subscription,
 }
 

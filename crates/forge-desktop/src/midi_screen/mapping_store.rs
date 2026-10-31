@@ -9,8 +9,9 @@ use forge_storage::{
     ActionRepo, JsonDocument, Setting, StorageError, TriggerInstanceRepo, read_stored_setting,
     write_setting,
 };
-use forge_types::{PermissionRung, PlatformScope, TriggerInstance, TriggerInstanceId};
+use forge_types::{ActionId, PermissionRung, PlatformScope, TriggerInstance, TriggerInstanceId};
 use gpui::Context;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 pub(crate) const MIDI_KNOWN_DEVICES: Setting<JsonDocument<Vec<String>>> = Setting::new(
@@ -25,31 +26,36 @@ pub(super) async fn load_mappings(
     actions: &dyn ActionRepo,
 ) -> Result<Vec<MappingRow>, RepoFailure> {
     let instances = triggers.list_all().await.map_err(RepoFailure::from)?;
-    let mut rows = Vec::new();
-    for instance in instances {
-        if !instance.kind_id.starts_with(INPUT_PREFIX) {
-            continue;
-        }
-        let linked = triggers
-            .actions_using(instance.id)
-            .await
-            .map_err(RepoFailure::from)?;
-        if !instance.user_defined && linked.is_empty() {
-            continue;
-        }
-        let mut action = None;
-        if let Some(first) = linked.first()
-            && let Some(found) = actions.get(*first).await.map_err(RepoFailure::from)?
-        {
-            action = Some((found.id, found.name));
-        }
-        rows.push(MappingRow {
-            signal: MidiSignal::from_instance(&instance.kind_id, &instance.overrides),
-            id: instance.id,
-            name: instance.name,
-            action,
-        });
-    }
+    let links = triggers
+        .actions_by_instance()
+        .await
+        .map_err(RepoFailure::from)?;
+    let names: HashMap<ActionId, String> = actions
+        .list()
+        .await
+        .map_err(RepoFailure::from)?
+        .into_iter()
+        .map(|action| (action.id, action.name))
+        .collect();
+    let rows = instances
+        .into_iter()
+        .filter(|instance| instance.kind_id.starts_with(INPUT_PREFIX))
+        .filter_map(|instance| {
+            let linked = links.get(&instance.id).map_or(&[][..], Vec::as_slice);
+            if !instance.user_defined && linked.is_empty() {
+                return None;
+            }
+            let action = linked
+                .first()
+                .and_then(|id| names.get(id).map(|name| (*id, name.clone())));
+            Some(MappingRow {
+                signal: MidiSignal::from_instance(&instance.kind_id, &instance.overrides),
+                id: instance.id,
+                name: instance.name,
+                action,
+            })
+        })
+        .collect();
     Ok(rows)
 }
 

@@ -17,6 +17,7 @@ forge-tts-pipeline = { path = "../forge-tts-pipeline" }
 forge-storage = { path = "../forge-storage" }
 forge-audio = { path = "../forge-audio" }
 forge-events = { path = "../forge-events" }
+forge-net = { path = "../forge-net" }
 forge-types = { path = "../forge-types" }
 async-trait = { workspace = true }
 rand = { workspace = true }

@@ -939,25 +939,18 @@ pub(crate) async fn refresh_dashboard_stats(
     let globals: Arc<dyn GlobalsRepo> = Arc::clone(&backend) as Arc<dyn GlobalsRepo>;
     let history = backend.history_repo();
     let triggers = backend.trigger_instance_repo();
-    let (tx, rx) = tokio::sync::oneshot::channel();
-    rt_handle.spawn(async move {
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the view may close before the result arrives"
-        )]
-        let _ = tx.send(
-            compute_stats(
-                &*actions,
-                &*globals,
-                &*history,
-                &*triggers,
-                &trigger_registry,
-                time::OffsetDateTime::now_utc() - DASHBOARD_RUN_WINDOW,
-            )
-            .await,
-        );
+    let reply = crate::async_bridge::on_runtime(&rt_handle, async move {
+        compute_stats(
+            &*actions,
+            &*globals,
+            &*history,
+            &*triggers,
+            &trigger_registry,
+            time::OffsetDateTime::now_utc() - DASHBOARD_RUN_WINDOW,
+        )
+        .await
     });
-    match rx.await {
+    match reply.await {
         Ok(Ok(stats)) => {
             home_stats.update(cx, |stats_topic, cx| {
                 if stats_topic.set_stats(stats) {

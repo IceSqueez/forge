@@ -33,22 +33,16 @@ impl BannedPanel {
         let engine = self.action_engine.clone();
         let builtin_id = target.builtin_id();
         let label = target.label(&ViewerAction::Unban);
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        self.rt_handle.spawn(async move {
-            let outcome = async_bridge::run_quick_step(
+        let reply = crate::async_bridge::on_runtime(&self.rt_handle, async move {
+            async_bridge::run_quick_step(
                 engine,
                 step,
                 forge_runtime::QuickActionOrigin { builtin_id, label },
             )
-            .await;
-            #[expect(
-                clippy::let_underscore_must_use,
-                reason = "the view may close before the result arrives"
-            )]
-            let _ = tx.send(outcome);
+            .await
         });
         cx.spawn(async move |this, cx| {
-            let outcome = rx
+            let outcome = reply
                 .await
                 .unwrap_or_else(|_| Err(RepoFailure::localized(tr!("chat_dispatch_cancelled"))));
             #[expect(

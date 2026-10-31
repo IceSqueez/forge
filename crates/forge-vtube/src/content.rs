@@ -441,9 +441,10 @@ async fn send_internal(
     msg_type: &str,
     data: serde_json::Value,
 ) -> Result<serde_json::Value, VTubeError> {
-    let data = round_trip(req_tx, msg_type, data, CATALOG_REQUEST_TIMEOUT).await?;
-    check_response(&data)?;
-    Ok(data)
+    round_trip(req_tx, msg_type, data, CATALOG_REQUEST_TIMEOUT)
+        .await
+        .and_then(|reply| check_response(&reply).map(|()| reply))
+        .inspect_err(|error| tracing::debug!(msg_type, %error, "catalog refresh failed"))
 }
 
 impl BuiltinContent for VTubeClient {

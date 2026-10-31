@@ -8,11 +8,11 @@ use forge_events::{
     ActionDone, ActionSkipped, ActionStarted, ChatSendFailed, CommandMatched, EventSource,
     TypedEvent,
 };
+use forge_net::TaskOwner;
 use forge_storage::DATABASE_FILE_NAME;
 use serde::Serialize;
 use sqlx::sqlite::SqliteConnectOptions;
 use sqlx::{ConnectOptions as _, Connection as _};
-use tokio::task::JoinHandle;
 use tokio::time::Instant;
 
 use super::load::{Delivery, FloodMix, delivery, due};
@@ -251,9 +251,9 @@ async fn drive(
         }
     }
 
-    let mut background: Vec<JoinHandle<()>> = Vec::new();
+    let background = TaskOwner::new();
     let pump_tracker = Arc::clone(&tracker);
-    background.push(tokio::spawn(async move {
+    background.spawn(async move {
         while let Some(observation) = events.next().await {
             let arrived = Instant::now();
             let mut tracker = lock(&pump_tracker);
@@ -263,10 +263,10 @@ async fn drive(
                 Observation::Undecodable { .. } => tracker.uncorrelated += 1,
             }
         }
-    }));
+    });
     let frame_tracker = Arc::clone(&tracker);
     let frame_pages = opened.clone();
-    background.push(tokio::spawn(async move {
+    background.spawn(async move {
         loop {
             tokio::time::sleep(FRAME_POLL).await;
             for (index, page) in frame_pages.iter().enumerate() {
@@ -280,21 +280,21 @@ async fn drive(
                 }
             }
         }
-    }));
+    });
     let mut replies = fake.tap_requests();
     let reply_tracker = Arc::clone(&tracker);
-    background.push(tokio::spawn(async move {
+    background.spawn(async move {
         while let Some(tapped) = replies.recv().await {
             if tapped.request.path.ends_with("/chat/messages") {
                 lock(&reply_tracker).on_reply(tapped.request.body.as_ref(), tapped.arrived);
             }
         }
-    }));
+    });
 
     let phase_now: Shared<usize> = Arc::new(Mutex::new(0));
     let samples: Shared<Vec<Sample>> = Arc::new(Mutex::new(Vec::new()));
     let warnings_total: Shared<BTreeMap<String, u64>> = Arc::new(Mutex::new(BTreeMap::new()));
-    background.push(tokio::spawn(sample_loop(SampleLoop {
+    background.spawn(sample_loop(SampleLoop {
         every: Duration::from_millis(profile.sample_ms),
         probe: ProcessProbe::new(pid),
         data_dir: data_dir.clone(),
@@ -305,7 +305,7 @@ async fn drive(
         samples: Arc::clone(&samples),
         warnings_total: Arc::clone(&warnings_total),
         actions: actions.clone(),
-    })));
+    }));
 
     let generator = Generator {
         profile,
@@ -316,11 +316,10 @@ async fn drive(
         mix: FloodMix::new(&profile.stimuli),
         clock,
     };
-    let phases = generator.run_all(&phase_now, &data_dir).await?;
+    let phases = generator.run_all(&phase_now, &data_dir).await;
+    background.shutdown(Duration::ZERO).await;
+    let phases = phases?;
 
-    for task in &background {
-        task.abort();
-    }
     pages.close();
     drop(opened);
     let mut process = process;

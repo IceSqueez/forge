@@ -98,7 +98,7 @@ impl SoundboardView {
             Some(id) => self
                 .devices
                 .iter()
-                .find(|d| &d.id.0 == id)
+                .find(|d| d.id.as_str() == id)
                 .map(|d| d.name.clone())
                 .unwrap_or_else(|| tr!("soundboard_device_system_default")),
             None => tr!("soundboard_device_system_default"),
@@ -107,7 +107,7 @@ impl SoundboardView {
 
     pub(super) fn output_ready(&self) -> bool {
         match &self.settings.output_device_id {
-            Some(id) => self.devices.iter().any(|d| &d.id.0 == id),
+            Some(id) => self.devices.iter().any(|d| d.id.as_str() == id),
             None => true,
         }
     }
@@ -249,8 +249,8 @@ impl SoundboardView {
             ));
             for (idx, device) in self.devices.iter().enumerate() {
                 let selected =
-                    self.settings.output_device_id.as_deref() == Some(device.id.0.as_str());
-                let id = device.id.0.clone();
+                    self.settings.output_device_id.as_deref() == Some(device.id.as_str());
+                let id = device.id.as_str().to_owned();
                 list = list.child(self.device_option(
                     ("sb-dev", idx),
                     device.name.clone(),

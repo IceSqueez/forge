@@ -87,17 +87,11 @@ pub(crate) fn start_scheduled_backup_notices(
 }
 
 async fn load_preference(rt: &Handle, settings: Arc<dyn SettingsRepo>) -> bool {
-    let (tx, rx) = tokio::sync::oneshot::channel();
-    rt.spawn(async move {
-        let enabled =
-            read_setting_or_default(settings.as_ref(), &SCHEDULED_BACKUP_FAILURE_OS_NOTICE).await;
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the view may close before the result arrives"
-        )]
-        let _ = tx.send(enabled);
+    let reply = crate::async_bridge::on_runtime(rt, async move {
+        read_setting_or_default(settings.as_ref(), &SCHEDULED_BACKUP_FAILURE_OS_NOTICE).await
     });
-    rx.await
+    reply
+        .await
         .unwrap_or(DEFAULT_NOTIFICATIONS_SCHEDULED_BACKUP_FAILURE_OS_NOTICE)
 }
 

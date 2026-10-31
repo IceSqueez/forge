@@ -113,16 +113,15 @@ impl IntegrationDisabledView {
         let sub_actions = Arc::clone(&self.launch.sub_actions);
         let triggers = Arc::clone(&self.launch.triggers);
         let id = self.id.clone();
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        self.launch.rt_handle.spawn(async move {
-            let references =
-                match load_references(backend.as_ref(), &sub_actions, &triggers).await {
-                    Ok(mut all) => all.remove(&id).unwrap_or_default(),
-                    Err(e) => {
-                        tracing::warn!(integration = %id, error = %e, "could not count integration references");
-                        IntegrationReferences::default()
-                    }
-                };
+        let reply = crate::async_bridge::on_runtime(&self.launch.rt_handle, async move {
+            let references = match load_references(backend.as_ref(), &sub_actions, &triggers).await
+            {
+                Ok(mut all) => all.remove(&id).unwrap_or_default(),
+                Err(e) => {
+                    tracing::warn!(integration = %id, error = %e, "could not count integration references");
+                    IntegrationReferences::default()
+                }
+            };
             let credentials = Arc::clone(&backend) as Arc<dyn CredentialsRepo>;
             let has_credentials = match has_credentials_for(credentials.as_ref(), &id).await {
                 Ok(present) => present,
@@ -131,14 +130,10 @@ impl IntegrationDisabledView {
                     false
                 }
             };
-            #[expect(
-                clippy::let_underscore_must_use,
-                reason = "the view may close before the result arrives"
-            )]
-            let _ = tx.send((references, has_credentials));
+            (references, has_credentials)
         });
         cx.spawn(async move |this, cx| {
-            let Ok((references, has_credentials)) = rx.await else {
+            let Ok((references, has_credentials)) = reply.await else {
                 return;
             };
             #[expect(

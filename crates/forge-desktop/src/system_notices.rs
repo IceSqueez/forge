@@ -155,15 +155,8 @@ pub(crate) async fn show_off_thread(
     port: Arc<dyn NotifyPort>,
     notice: DesktopNotice,
 ) -> Result<(), RuntimeError> {
-    let (tx, rx) = tokio::sync::oneshot::channel();
-    rt.spawn_blocking(move || {
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the view may close before the result arrives"
-        )]
-        let _ = tx.send(port.show(notice));
-    });
-    rx.await.unwrap_or_else(|_| {
+    let reply = crate::async_bridge::on_runtime_blocking(rt, move || port.show(notice));
+    reply.await.unwrap_or_else(|_| {
         Err(RuntimeError::OsOperationFailed(
             "notice task ended".to_owned(),
         ))

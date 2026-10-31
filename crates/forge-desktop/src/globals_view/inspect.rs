@@ -10,6 +10,21 @@ use forge_types::Variant;
 use gpui::prelude::*;
 use gpui::{ClickEvent, Context, SharedString, div, px};
 
+pub(super) struct InspectedGlobal {
+    global: Global,
+    json_lines: Vec<String>,
+}
+
+impl InspectedGlobal {
+    pub(super) fn new(global: Global) -> Self {
+        let json = serde_json::to_string_pretty(&global.value.to_plain_json()).unwrap_or_default();
+        Self {
+            json_lines: json.lines().map(str::to_owned).collect(),
+            global,
+        }
+    }
+}
+
 impl GlobalsView {
     pub(super) fn render_delete_confirm(
         &self,
@@ -46,11 +61,12 @@ impl GlobalsView {
 
     pub(super) fn render_inspect(
         &self,
-        g: &Global,
+        inspected: &InspectedGlobal,
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
         let density = cx.density();
+        let g = &inspected.global;
         let kind = g.kind();
         let (count_key, count) = inspect_count(&g.value);
         let subtitle = tr!(
@@ -59,9 +75,8 @@ impl GlobalsView {
             count = i64::try_from(count).unwrap_or(i64::MAX)
         );
 
-        let json = serde_json::to_string_pretty(&g.value.to_plain_json()).unwrap_or_default();
         let mut listing = div().flex().flex_col();
-        for (i, line) in json.lines().enumerate() {
+        for (i, line) in inspected.json_lines.iter().enumerate() {
             let mut code_line = div().flex_1().flex();
             if line.is_empty() {
                 code_line = code_line.child(
@@ -77,7 +92,7 @@ impl GlobalsView {
                         .font_family(mono_family())
                         .text_size(FONT_XS)
                         .whitespace_nowrap()
-                        .child(highlighted_text(Language::Json, line.to_owned(), palette)),
+                        .child(highlighted_text(Language::Json, line.clone(), palette)),
                 );
             }
             listing = listing.child(

@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 
 use forge_events::EventPublisher;
+use forge_net::{TaskOwner, TaskShutdown};
 use tokio::sync::{mpsc, oneshot};
 
 use crate::backend::{HotkeyBackend, HotkeyId, NullBackend};
@@ -43,6 +44,7 @@ pub struct HotkeyClient {
     hold_ceiling_secs: AtomicU64,
     control_tx: mpsc::Sender<SupervisorCommand>,
     registration_serial: tokio::sync::Mutex<()>,
+    tasks: TaskOwner,
 }
 
 impl HotkeyClient {
@@ -73,13 +75,14 @@ impl HotkeyClient {
             hold_ceiling_secs,
             control_tx,
             registration_serial: tokio::sync::Mutex::new(()),
+            tasks: TaskOwner::new(),
         });
 
         let fired_rx = client.backend.fired_rx();
         let restart_rx = client.backend.restart_rx();
         let session_rx = client.backend.session_events_rx();
         let c = Arc::clone(&client);
-        tokio::spawn(async move {
+        client.tasks.spawn_until_stopped(async move {
             supervisor::run_supervisor(c, fired_rx, restart_rx, session_rx, control_rx).await;
         });
 
@@ -92,6 +95,23 @@ impl HotkeyClient {
         main_thread: MainThreadLink,
     ) -> Arc<Self> {
         select_and_start(config, publisher, main_thread).await
+    }
+
+    pub async fn shutdown(&self, grace: Duration) -> TaskShutdown {
+        let (supervisor, backend) =
+            tokio::join!(self.tasks.shutdown(grace), self.backend.shutdown(grace));
+        match (supervisor, backend) {
+            (TaskShutdown::Drained, TaskShutdown::Drained) => TaskShutdown::Drained,
+            (TaskShutdown::Aborted { tasks }, TaskShutdown::Drained)
+            | (TaskShutdown::Drained, TaskShutdown::Aborted { tasks }) => {
+                TaskShutdown::Aborted { tasks }
+            }
+            (TaskShutdown::Aborted { tasks: left }, TaskShutdown::Aborted { tasks: right }) => {
+                TaskShutdown::Aborted {
+                    tasks: left + right,
+                }
+            }
+        }
     }
 
     pub async fn register(&self, combo: HotkeyCombo) -> Result<HotkeyId, HotkeyError> {
@@ -278,6 +298,7 @@ impl HotkeyClient {
             ),
             control_tx,
             registration_serial: tokio::sync::Mutex::new(()),
+            tasks: TaskOwner::new(),
         })
     }
 }

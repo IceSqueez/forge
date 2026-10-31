@@ -186,7 +186,7 @@ mod quick_action_bridge {
     use forge_components::{Density, ThemeId};
     use forge_platform_core::{CollectionRevisionSignal, CollectionRevisions, HealthStream};
     use forge_registry::SubActionRegistry;
-    use forge_runtime::{ActionCancelRegistry, spawn_action_engine, spawn_live_viewer_aggregator};
+    use forge_runtime::{ActionCancelRegistry, spawn_action_engine};
     use forge_types::{IntegrationId, MessageCode, RecoverMutex, VerbatimText};
     use gpui::TestAppContext;
 
@@ -199,6 +199,7 @@ mod quick_action_bridge {
     use forge_components::Presentation;
     use forge_platform_core::HealthDelta;
     use forge_platform_core::HealthMetricId;
+    use forge_platform_core::HealthText;
     use forge_platform_core::HealthValue;
     use std::time::Duration;
 
@@ -206,6 +207,7 @@ mod quick_action_bridge {
         id: IntegrationId,
         label: Mutex<&'static str>,
         signal: CollectionRevisionSignal,
+        refreshes: std::sync::atomic::AtomicUsize,
     }
 
     impl ShiftingActions {
@@ -218,6 +220,7 @@ mod quick_action_bridge {
                 id: IntegrationId::new(id),
                 label: Mutex::new(label),
                 signal: CollectionRevisionSignal::new(),
+                refreshes: std::sync::atomic::AtomicUsize::new(0),
             })
         }
 
@@ -236,8 +239,6 @@ mod quick_action_bridge {
                 control: None,
                 collections: None,
                 option_source: None,
-                obs_client: None,
-                vtube_client: None,
                 follow: None,
                 ban_list: None,
             }
@@ -315,6 +316,11 @@ mod quick_action_bridge {
         fn sections(&self) -> Vec<DetailSection> {
             Vec::new()
         }
+
+        fn request_refresh(&self) {
+            self.refreshes
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        }
     }
 
     impl QuickActions for ShiftingActions {
@@ -380,14 +386,17 @@ mod quick_action_bridge {
                     twitch_slot: None,
                     kick_slot,
                     youtube_slot: None,
-                    obs_install_seed: ObsInstallSeed::new(forge_obs::SwitchableObsSink::new()),
+                    obs_install_seed: ObsInstallSeed::new(
+                        forge_obs::SwitchableObsSink::new(),
+                        Default::default(),
+                    ),
                     vtube_install_seed: VTubeInstallSeed::new(
                         forge_vtube::SwitchableVTubeSink::new(),
+                        Default::default(),
                     ),
                 },
                 DetailFeeds {
                     event_bus: Arc::clone(&bus),
-                    live_viewers: spawn_live_viewer_aggregator(&forge_net::TaskOwner::new()),
                     connectivity,
                 },
                 cx,
@@ -508,6 +517,175 @@ mod quick_action_bridge {
             })
             .collect();
         assert_eq!(trends, [false, true, false, false]);
+    }
+
+    #[gpui::test]
+    fn the_section_refresh_asks_the_adopted_integration_to_fetch_again(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let _enter = rt.enter();
+        let opened = ShiftingActions::labelled("opened");
+        let view = open_detail(cx, &rt, opened.object());
+        let adopted = ShiftingActions::labelled("adopted");
+        view.update(cx, |detail, cx| detail.adopt_builtin(adopted.object(), cx));
+
+        view.update(cx, |detail, cx| detail.resync_content(cx));
+
+        let refreshes =
+            |builtin: &ShiftingActions| builtin.refreshes.load(std::sync::atomic::Ordering::SeqCst);
+        assert_eq!((refreshes(&opened), refreshes(&adopted)), (0, 1));
+    }
+
+    struct LiveOptionSource(CollectionRevisionSignal);
+
+    #[async_trait::async_trait]
+    impl forge_platform_core::BuiltinOptionSource for LiveOptionSource {
+        fn option_lists(&self) -> Vec<forge_platform_core::OptionListMetadata> {
+            vec![forge_platform_core::OptionListMetadata::new(
+                forge_platform_core::OptionListId::new("twitch.live"),
+            )]
+        }
+
+        fn revisions(&self) -> CollectionRevisions {
+            self.0.subscribe()
+        }
+
+        async fn resolve(
+            &self,
+            _: &forge_platform_core::OptionListId,
+            _: &std::collections::BTreeMap<String, forge_platform_core::QuickActionFieldValue>,
+        ) -> forge_platform_core::CollectionOutcome<Vec<forge_platform_core::OptionEntry>> {
+            Ok(Vec::new())
+        }
+    }
+
+    fn adopted_option_lists(
+        cx: &mut TestAppContext,
+        view: &Entity<IntegrationDetail>,
+    ) -> Option<Vec<forge_platform_core::OptionListMetadata>> {
+        view.read_with(cx, |detail, _| {
+            detail
+                .ports
+                .option_source
+                .as_ref()
+                .map(|source| source.option_lists())
+        })
+    }
+
+    #[gpui::test]
+    fn a_page_opened_signed_out_gets_its_pickers_from_the_object_it_adopts_on_sign_in(
+        cx: &mut TestAppContext,
+    ) {
+        let rt = runtime();
+        let _enter = rt.enter();
+        let signed_out = ShiftingActions::labelled("signed out").object();
+        let view = open_detail(cx, &rt, signed_out.clone());
+        let mut signed_in = ShiftingActions::labelled("signed in").object();
+        signed_in.option_source = Some(Arc::new(LiveOptionSource(CollectionRevisionSignal::new())));
+        let declared = signed_in
+            .option_source
+            .as_ref()
+            .map(|source| source.option_lists());
+
+        view.update(cx, |detail, cx| detail.adopt_builtin(signed_in, cx));
+        let after_sign_in = adopted_option_lists(cx, &view);
+        view.update(cx, |detail, cx| detail.adopt_builtin(signed_out, cx));
+
+        assert_eq!(
+            (after_sign_in, adopted_option_lists(cx, &view)),
+            (declared, None)
+        );
+    }
+
+    fn viewer_metric(count: u64) -> HealthDelta {
+        HealthDelta {
+            metric: HealthMetricId::VIEWERS,
+            new_value: HealthValue::Text {
+                primary: HealthText::Count(count),
+                secondary: None,
+            },
+        }
+    }
+
+    fn open_viewer_page(
+        cx: &mut TestAppContext,
+        rt: &tokio::runtime::Runtime,
+    ) -> Entity<IntegrationDetail> {
+        let view = open_detail(cx, rt, ShiftingActions::labelled("idle").object());
+        view.update(cx, |detail, _| {
+            detail.shown.health_metrics[1].id = HealthMetricId::VIEWERS;
+        });
+        view
+    }
+
+    fn feed(
+        cx: &mut TestAppContext,
+        view: &Entity<IntegrationDetail>,
+        deltas: impl IntoIterator<Item = HealthDelta>,
+    ) -> Option<i64> {
+        view.update(cx, |detail, cx| {
+            for delta in deltas {
+                detail.apply_health_delta(delta, cx);
+            }
+            detail.viewer_delta()
+        })
+    }
+
+    #[gpui::test]
+    fn the_viewer_delta_comes_from_the_pages_own_metric_not_from_other_platforms(
+        cx: &mut TestAppContext,
+    ) {
+        let rt = runtime();
+        let _enter = rt.enter();
+        let twitch = open_viewer_page(cx, &rt);
+        let kick = open_viewer_page(cx, &rt);
+
+        let twitch_delta = feed(cx, &twitch, [viewer_metric(100), viewer_metric(130)]);
+        let kick_delta = feed(cx, &kick, [viewer_metric(40), viewer_metric(35)]);
+
+        assert_eq!((twitch_delta, kick_delta), (Some(30), Some(-5)));
+    }
+
+    #[gpui::test]
+    fn the_viewer_delta_ignores_offline_zeroes_and_other_metrics(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let _enter = rt.enter();
+        let view = open_viewer_page(cx, &rt);
+        let other = HealthDelta {
+            metric: view.read_with(cx, |detail, _| detail.shown.health_metrics[0].id.clone()),
+            new_value: HealthValue::Text {
+                primary: HealthText::Count(9_999),
+                secondary: None,
+            },
+        };
+
+        let before_any_reading = feed(cx, &view, [viewer_metric(0), other.clone()]);
+        let after_stream_end = feed(
+            cx,
+            &view,
+            [
+                viewer_metric(50),
+                other,
+                viewer_metric(0),
+                viewer_metric(60),
+            ],
+        );
+
+        assert_eq!((before_any_reading, after_stream_end), (None, Some(10)));
+    }
+
+    #[gpui::test]
+    fn a_page_opened_on_a_live_stream_measures_from_the_count_it_opened_on(
+        cx: &mut TestAppContext,
+    ) {
+        let rt = runtime();
+        let _enter = rt.enter();
+        let view = open_viewer_page(cx, &rt);
+        view.update(cx, |detail, _| {
+            detail.shown.health_metrics[1].value = viewer_metric(70).new_value;
+            detail.sample_viewers();
+        });
+
+        assert_eq!(feed(cx, &view, [viewer_metric(75)]), Some(5));
     }
 
     #[gpui::test]
@@ -1023,7 +1201,7 @@ mod detail_lifetime {
         DetailSection, HeaderAction, HealthDelta, HealthMetric, HealthMetricId, HealthStream,
         HealthValue, QuickAction, QuickActions, SectionIcon,
     };
-    use forge_runtime::{ActionCancelRegistry, spawn_action_engine, spawn_live_viewer_aggregator};
+    use forge_runtime::{ActionCancelRegistry, spawn_action_engine};
     use forge_types::{IntegrationId, MessageCode};
     use gpui::{AppContext as _, TestAppContext};
 
@@ -1134,8 +1312,6 @@ mod detail_lifetime {
             control: None,
             collections: None,
             option_source: None,
-            obs_client: None,
-            vtube_client: None,
             follow: None,
             ban_list: None,
         };
@@ -1164,14 +1340,17 @@ mod detail_lifetime {
                     twitch_slot: None,
                     kick_slot: None,
                     youtube_slot: None,
-                    obs_install_seed: ObsInstallSeed::new(forge_obs::SwitchableObsSink::new()),
+                    obs_install_seed: ObsInstallSeed::new(
+                        forge_obs::SwitchableObsSink::new(),
+                        Default::default(),
+                    ),
                     vtube_install_seed: VTubeInstallSeed::new(
                         forge_vtube::SwitchableVTubeSink::new(),
+                        Default::default(),
                     ),
                 },
                 DetailFeeds {
                     event_bus: Arc::clone(&bus),
-                    live_viewers: spawn_live_viewer_aggregator(&forge_net::TaskOwner::new()),
                     connectivity,
                 },
                 cx,

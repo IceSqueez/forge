@@ -30,8 +30,6 @@ mod vts;
 pub const PLUGIN_NAME: &str = "Forge";
 
 pub use auth::AuthState;
-pub use catalog::VTubeCatalogChanges;
-pub use catalog::{VTubeCatalog, VTubeChoice};
 pub use client::{VTubeClient, VTubeConfig};
 pub use connect_attempt::{VTubeAttemptPhase, VTubeConnectAttempt};
 pub use connect_settings::{VTUBE_AUTO_RECONNECT, VTUBE_CONNECT_ON_LAUNCH};

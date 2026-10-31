@@ -236,6 +236,10 @@ impl BuiltinContent for ObsClient {
         self.mirror
             .read(|catalog| catalog_sections(catalog, actionable))
     }
+
+    fn request_refresh(&self) {
+        self.request_catalog_resync();
+    }
 }
 
 fn catalog_sections(catalog: &ObsCatalog, actionable: bool) -> Vec<DetailSection> {

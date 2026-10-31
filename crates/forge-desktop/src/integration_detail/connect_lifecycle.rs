@@ -1,4 +1,5 @@
 use super::quick_actions::reachable_quick_actions;
+use super::state::BuiltinPorts;
 use super::{ActiveConnect, IntegrationDetail, ObsSignedOut, VTubeSignedOut};
 use crate::async_bridge;
 use crate::connect_flow::{ConnectFlow, ConnectFlowEvent, ConnectFlowLaunch};
@@ -76,13 +77,9 @@ impl IntegrationDetail {
     }
 
     pub(super) fn adopt_builtin(&mut self, object: BuiltinObject, cx: &mut Context<Self>) {
-        self.shown.icon = object.icon;
-        self.ports.status = object.status;
-        self.ports.health = object.health;
-        self.ports.content = object.content;
-        self.ports.quick = object.quick;
-        self.ports.control = object.control;
-        self.ports.collections = object.collections;
+        let (icon, ports) = BuiltinPorts::from_object(object);
+        self.shown.icon = icon;
+        self.ports = ports;
         self.sign_in.connect = None;
         self.close_collection_manager();
         self.live.eventsub_tally.clear();
@@ -91,6 +88,7 @@ impl IntegrationDetail {
         self.background._quick_action_bridge =
             Self::spawn_quick_action_bridge(&*self.ports.quick, cx);
         self.reload(cx);
+        self.sample_viewers();
     }
 
     pub(super) fn reset_to_connect(&mut self, platform: PlatformId, cx: &mut Context<Self>) {
@@ -194,7 +192,6 @@ impl IntegrationDetail {
             |this, cx| {
                 this.ports.control = None;
                 this.services.obs_install_seed.clear();
-                this.ports.obs_source = None;
                 cx.emit(ObsSignedOut);
             },
             cx,
@@ -219,9 +216,7 @@ impl IntegrationDetail {
     }
 
     pub(super) fn resync_content(&mut self, cx: &mut Context<Self>) {
-        if let Some(obs) = &self.ports.obs_source {
-            obs.request_catalog_resync();
-        }
+        self.ports.content.request_refresh();
         self.reload(cx);
     }
 }

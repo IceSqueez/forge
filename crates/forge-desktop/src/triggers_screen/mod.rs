@@ -10,7 +10,6 @@ use forge_components::{
     ToastKind, page_frame, tr,
 };
 use forge_registry::TriggerRegistry;
-use forge_runtime::EventBus;
 use forge_storage::{ActionRepo, SettingsRepo, TriggerInstanceRepo};
 use forge_types::{
     ActionId, PermissionRung, PlatformId, TriggerConfig, TriggerInstance, TriggerInstanceId,
@@ -25,12 +24,12 @@ use std::sync::Arc;
 use crate::actions_screen::config_problem_text::config_problem_text;
 use crate::async_bridge::Generation;
 use crate::async_bridge::{self, KeyedSnapshotWriters, Loadable, WriteOutcome};
-use crate::collection_options::ChoiceOptions;
 use crate::config_form::{CollectionChoices, ConfigField};
 use crate::integration_switch::{IntegrationSwitch, SwitchWatch};
 use crate::navigable_list::navigable_list;
 use crate::navigation::NavRequested;
 use crate::navigation::Screen;
+use crate::option_choices::ChoiceOptions;
 use crate::picker_favorites::{StoredFavorites, TRIGGER_FAVORITES};
 use forge_components::ActivePresentation;
 use forge_components::PushToast;
@@ -285,12 +284,10 @@ pub(crate) struct TriggersRegistryView {
     confirm_disable: Confirm<TriggerInstanceId>,
     create: Option<CreateStage>,
     builtins: BuiltinRegistry,
-    bus: Option<Arc<EventBus>>,
     integrations: Option<SwitchWatch>,
-    collection_options: ChoiceOptions,
-    collection_options_gen: Generation,
-    obs_catalog_options_gen: Generation,
-    _collection_watch: Vec<gpui::Task<()>>,
+    integration_options: ChoiceOptions,
+    option_choices_gen: Generation,
+    _option_watch: Option<gpui::Task<()>>,
     _search_sub: Subscription,
     _release: Subscription,
 }
@@ -350,12 +347,10 @@ impl TriggersRegistryView {
             confirm_disable: Confirm::default(),
             create: None,
             builtins: BuiltinRegistry::default(),
-            bus: None,
             integrations: None,
-            collection_options: ChoiceOptions::new(),
-            collection_options_gen: Generation::default(),
-            obs_catalog_options_gen: Generation::default(),
-            _collection_watch: Vec::new(),
+            integration_options: ChoiceOptions::new(),
+            option_choices_gen: Generation::default(),
+            _option_watch: None,
             _search_sub: search_sub,
             _release: release,
         };

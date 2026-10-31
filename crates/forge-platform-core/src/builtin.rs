@@ -560,6 +560,8 @@ pub trait BuiltinHealth: Send + Sync {
 
 pub trait BuiltinContent: Send + Sync {
     fn sections(&self) -> Vec<DetailSection>;
+
+    fn request_refresh(&self) {}
 }
 
 pub trait QuickActions: Send + Sync {

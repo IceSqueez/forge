@@ -363,7 +363,6 @@ impl AppShell {
         let settings_repo = Arc::clone(&handles.backend) as Arc<dyn SettingsRepo>;
         let rt_handle = handles.rt_handle.clone();
         let builtins = handles.integrations.builtins.clone();
-        let bus = Arc::clone(&handles.core.bus);
         let switch = Self::integration_switch(topics, handles);
         let view = cx.new(|cx| {
             TriggersRegistryView::new(
@@ -376,7 +375,6 @@ impl AppShell {
                 cx,
             )
             .with_builtins(builtins)
-            .with_event_bus(bus)
             .with_integration_switch(switch, cx)
         });
         Self::follow_nav(&view, cx);

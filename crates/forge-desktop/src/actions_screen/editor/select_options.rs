@@ -252,7 +252,7 @@ impl ScreenActionsView {
         self.choices.select_options = options;
         self.choices
             .select_options
-            .extend(self.choices.collection_options.clone());
+            .extend(self.choices.integration_options.clone());
         if let Some(form) = self.modals.sub_form.clone() {
             let schema = Arc::clone(&self.overlay_schema) as Arc<dyn FormSchemaSource>;
             let merged = self.choices.select_options.clone();

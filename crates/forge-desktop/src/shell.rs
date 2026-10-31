@@ -391,7 +391,6 @@ impl AppShell {
         let event_bus = Arc::clone(&handles.core.bus);
         let rt_handle = handles.rt_handle.clone();
         let action_engine = handles.automation.action_engine.clone();
-        let live_viewers = handles.automation.live_viewers.clone();
         let twitch_slot = handles
             .integrations
             .supervisor
@@ -425,7 +424,6 @@ impl AppShell {
                 },
                 DetailFeeds {
                     event_bus,
-                    live_viewers,
                     connectivity,
                 },
                 cx,

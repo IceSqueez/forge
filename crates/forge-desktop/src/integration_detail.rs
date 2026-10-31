@@ -28,7 +28,7 @@ use forge_components::OverflowRevealingFocus;
 use forge_components::{ActivePresentation, BreadcrumbCrumb, SearchState, page_frame, scaled, tr};
 use forge_host::integrations::BuiltinObject;
 use forge_platform_core::{ConnectionState, QuickAction};
-use forge_runtime::{EventBus, LiveViewerAggregatorHandle};
+use forge_runtime::EventBus;
 use forge_types::PlatformId;
 use gpui::{
     ClickEvent, Context, Entity, EventEmitter, Subscription, Task, Window, div, prelude::*, px,
@@ -77,33 +77,9 @@ impl IntegrationDetail {
     ) -> Self {
         let DetailFeeds {
             event_bus,
-            live_viewers,
             connectivity,
         } = feeds;
-        let BuiltinObject {
-            icon,
-            status,
-            health,
-            content,
-            quick,
-            control,
-            collections,
-            option_source,
-            obs_client: obs_source,
-            vtube_client: _,
-            follow: _,
-            ban_list: _,
-        } = object;
-        let ports = BuiltinPorts {
-            status,
-            health,
-            content,
-            quick,
-            control,
-            collections,
-            option_source,
-            obs_source,
-        };
+        let (icon, ports) = BuiltinPorts::from_object(object);
         let is_obs_detail = ports.status.id().as_str() == "obs";
         let obs_password_rejected = is_obs_detail && connectivity.read(cx).obs_password_rejected();
         let conn_obs = cx.observe(&connectivity, move |this, connectivity, cx| {
@@ -126,7 +102,7 @@ impl IntegrationDetail {
 
         let health_bridge = Self::spawn_health_bridge(&ports.health, cx);
         let quick_action_bridge = Self::spawn_quick_action_bridge(&*ports.quick, cx);
-        let bridges = Self::spawn_platform_bridges(&ports, &shown, &event_bus, &live_viewers, cx);
+        let bridges = Self::spawn_platform_bridges(&ports, &shown, &event_bus, cx);
 
         let mut this = Self {
             ports,
@@ -146,6 +122,7 @@ impl IntegrationDetail {
             },
         };
 
+        this.sample_viewers();
         if let Some(platform) = connect_platform {
             this.open_connect_flow(platform, cx);
         }
@@ -156,7 +133,6 @@ impl IntegrationDetail {
         ports: &BuiltinPorts,
         shown: &ShownState,
         event_bus: &Arc<EventBus>,
-        live_viewers: &LiveViewerAggregatorHandle,
         cx: &mut Context<Self>,
     ) -> Vec<Task<()>> {
         let mut bridges = Vec::new();
@@ -170,7 +146,6 @@ impl IntegrationDetail {
             bridges.push(Self::spawn_obs_content_watch(event_bus, cx));
         }
         if shown.is_twitch || matches!(ports.status.id().as_str(), "youtube" | "kick") {
-            bridges.push(Self::spawn_viewer_sampler(live_viewers, cx));
             bridges.push(Self::spawn_detail_ticker(cx));
         }
         bridges

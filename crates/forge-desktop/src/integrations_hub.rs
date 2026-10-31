@@ -1083,8 +1083,14 @@ mod tests {
             sub_actions: Arc::new(owned_sub_actions(&[(OBS_SCENE, "obs")])),
             triggers: Arc::new(owned_triggers(&[(TWITCH_CHAT, "twitch")])),
             rt_handle: rt.handle().clone(),
-            obs_install_seed: ObsInstallSeed::new(forge_obs::SwitchableObsSink::new()),
-            vtube_install_seed: VTubeInstallSeed::new(forge_vtube::SwitchableVTubeSink::new()),
+            obs_install_seed: ObsInstallSeed::new(
+                forge_obs::SwitchableObsSink::new(),
+                Default::default(),
+            ),
+            vtube_install_seed: VTubeInstallSeed::new(
+                forge_vtube::SwitchableVTubeSink::new(),
+                Default::default(),
+            ),
         };
         let view = cx.update(|cx| {
             let lifecycle = cx.new(|_| IntegrationLifecycle::new(LifecycleStates::new()));
@@ -1420,8 +1426,14 @@ mod tests {
             sub_actions: Arc::new(owned_sub_actions(&[])),
             triggers: Arc::new(owned_triggers(&[])),
             rt_handle: rt.handle().clone(),
-            obs_install_seed: ObsInstallSeed::new(forge_obs::SwitchableObsSink::new()),
-            vtube_install_seed: VTubeInstallSeed::new(forge_vtube::SwitchableVTubeSink::new()),
+            obs_install_seed: ObsInstallSeed::new(
+                forge_obs::SwitchableObsSink::new(),
+                Default::default(),
+            ),
+            vtube_install_seed: VTubeInstallSeed::new(
+                forge_vtube::SwitchableVTubeSink::new(),
+                Default::default(),
+            ),
         };
         let focus = declaration_of(&kick()).map(|declaration| declaration.category);
         assert_eq!(
@@ -1475,7 +1487,7 @@ mod tests {
     }
 
     fn refused_obs_seed(rt: &tokio::runtime::Runtime) -> ObsInstallSeed {
-        let seed = ObsInstallSeed::new(forge_obs::SwitchableObsSink::new());
+        let seed = ObsInstallSeed::new(forge_obs::SwitchableObsSink::new(), Default::default());
         rt.block_on(async {
             let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
             let port = listener.local_addr().unwrap().port();
@@ -1511,7 +1523,10 @@ mod tests {
             triggers: Arc::new(owned_triggers(&[])),
             rt_handle: rt.handle().clone(),
             obs_install_seed: refused_obs_seed(&rt),
-            vtube_install_seed: VTubeInstallSeed::new(forge_vtube::SwitchableVTubeSink::new()),
+            vtube_install_seed: VTubeInstallSeed::new(
+                forge_vtube::SwitchableVTubeSink::new(),
+                Default::default(),
+            ),
         };
         let view = cx.update(|cx| {
             let lifecycle = cx.new(|_| IntegrationLifecycle::new(LifecycleStates::new()));

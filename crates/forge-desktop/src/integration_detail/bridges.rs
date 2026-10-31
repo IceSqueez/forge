@@ -2,8 +2,10 @@ use super::{IntegrationDetail, VIEWER_DELTA_WINDOW_MINUTES};
 use crate::async_bridge;
 use crate::runtime_event::{self, RuntimeEvent};
 use crate::window_presence::PresenceGate;
-use forge_platform_core::{BuiltinHealth, HealthDelta, QuickActions, RevisionWait};
-use forge_runtime::{EventBus, LiveViewerAggregatorHandle, LiveViewerCount};
+use forge_platform_core::{
+    BuiltinHealth, HealthDelta, HealthMetricId, HealthText, HealthValue, QuickActions, RevisionWait,
+};
+use forge_runtime::EventBus;
 use futures_util::StreamExt as _;
 use gpui::{Context, Task};
 use std::sync::Arc;
@@ -18,6 +20,16 @@ const VIEWER_RING_CAP: usize = 256;
 const VIEWER_RING_SLACK: Duration = Duration::from_secs(60);
 const DETAIL_TICK: Duration = Duration::from_secs(30);
 
+fn viewer_reading(value: &HealthValue) -> Option<u64> {
+    match value {
+        HealthValue::Text {
+            primary: HealthText::Count(count),
+            ..
+        } if *count > 0 => Some(*count),
+        _ => None,
+    }
+}
+
 impl IntegrationDetail {
     pub(super) fn apply_health_delta(&mut self, delta: HealthDelta, cx: &mut Context<Self>) {
         let Some(metric) = self
@@ -30,6 +42,9 @@ impl IntegrationDetail {
             return;
         };
         metric.value = delta.new_value;
+        if delta.metric == HealthMetricId::VIEWERS {
+            self.sample_viewers();
+        }
         self.shown.connection = self.ports.status.connection();
         self.shown.header_actions = self.ports.status.header_actions();
         self.refresh_content(cx);
@@ -143,27 +158,6 @@ impl IntegrationDetail {
         })
     }
 
-    pub(super) fn spawn_viewer_sampler(
-        live_viewers: &LiveViewerAggregatorHandle,
-        cx: &mut Context<Self>,
-    ) -> Task<()> {
-        let mut stream = live_viewers.subscribe();
-        cx.spawn(async move |this, cx| {
-            while let Some(count) = stream.next().await {
-                let n = match count {
-                    LiveViewerCount::Reporting(n) => n,
-                    LiveViewerCount::Empty => continue,
-                };
-                if this
-                    .update(cx, |this, cx| this.push_viewer_sample(n, cx))
-                    .is_err()
-                {
-                    break;
-                }
-            }
-        })
-    }
-
     pub(super) fn spawn_detail_ticker(cx: &mut Context<Self>) -> Task<()> {
         let mut presence = PresenceGate::of(cx);
         cx.spawn(async move |this, cx| {
@@ -188,8 +182,19 @@ impl IntegrationDetail {
         cx.notify();
     }
 
-    fn push_viewer_sample(&mut self, count: u64, cx: &mut Context<Self>) {
-        let now = Instant::now();
+    pub(super) fn sample_viewers(&mut self) {
+        let reading = self
+            .shown
+            .health_metrics
+            .iter()
+            .find(|metric| metric.id == HealthMetricId::VIEWERS)
+            .and_then(|metric| viewer_reading(&metric.value));
+        if let Some(count) = reading {
+            self.push_viewer_sample(count, Instant::now());
+        }
+    }
+
+    pub(super) fn push_viewer_sample(&mut self, count: u64, now: Instant) {
         self.live.viewer_samples.push_back((now, count));
         while self.live.viewer_samples.len() > VIEWER_RING_CAP {
             self.live.viewer_samples.pop_front();
@@ -205,7 +210,6 @@ impl IntegrationDetail {
                 self.live.viewer_samples.pop_front();
             }
         }
-        cx.notify();
     }
 
     pub(super) fn viewer_delta(&self) -> Option<i64> {

@@ -280,19 +280,9 @@ pub(crate) fn is_midi_port_event(event: &Event) -> bool {
     event.kind.starts_with(midi_kinds::PORT_PREFIX)
 }
 
-pub(crate) fn changes_vtube_connection(event: &Event) -> bool {
-    event.source == EventSource::VTube && event.kind == VTubeConnectionChanged::KIND
-}
-
 pub(crate) fn changes_obs_content(event: &Event) -> bool {
     event.source == EventSource::Obs
         && obs_kinds::CATALOG_CHANGING_KINDS.contains(&event.kind.as_str())
-}
-
-pub(crate) fn changes_obs_catalog(event: &Event) -> bool {
-    event.source == EventSource::Obs
-        && (event.kind.starts_with(obs_kinds::CONNECTION_PREFIX)
-            || obs_kinds::NAME_LIST_CHANGING_KINDS.contains(&event.kind.as_str()))
 }
 
 pub(crate) fn rebuilds_descriptors(event: &Event) -> bool {
@@ -1077,44 +1067,6 @@ mod tests {
             assert!(
                 !changes_obs_content(&bare(source, kind)),
                 "{source:?} / {kind} must not refresh the OBS content rows"
-            );
-        }
-    }
-
-    #[test]
-    fn only_obs_connection_and_name_list_events_change_the_obs_catalog() {
-        for (source, kind, expected) in [
-            (EventSource::Obs, "obs.connection.connected", true),
-            (EventSource::Obs, "obs.connection.disconnected", true),
-            (EventSource::Obs, "obs.scene.created", true),
-            (EventSource::Obs, "obs.scene.renamed", true),
-            (EventSource::Obs, "obs.source.input_removed", true),
-            (EventSource::Obs, "obs.source.scene_item_created", true),
-            (EventSource::Obs, "obs.scene.changed", false),
-            (EventSource::Obs, "obs.recording.started", false),
-            (EventSource::Twitch, "obs.scene.created", false),
-            (EventSource::VTube, "obs.connection.connected", false),
-        ] {
-            assert_eq!(
-                changes_obs_catalog(&bare(source, kind)),
-                expected,
-                "{source:?} {kind}"
-            );
-        }
-    }
-
-    #[test]
-    fn only_the_vtube_connection_event_changes_the_vtube_catalog() {
-        for (source, kind, expected) in [
-            (EventSource::VTube, "vtube.connection.changed", true),
-            (EventSource::VTube, "vtube.model.loaded", false),
-            (EventSource::VTube, "vtube.hotkey.triggered", false),
-            (EventSource::Obs, "vtube.connection.changed", false),
-        ] {
-            assert_eq!(
-                changes_vtube_connection(&bare(source, kind)),
-                expected,
-                "{source:?} {kind}"
             );
         }
     }

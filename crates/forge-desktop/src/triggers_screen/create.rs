@@ -1,12 +1,12 @@
 use super::{TriggersRegistryView, load_rows, platform_dot_color, timer_field_hints};
 use crate::async_bridge;
-use crate::collection_options::ChoiceOptions;
 use crate::config_field_label::{config_field_labels, row_label};
 use crate::config_form::{
     ChoiceDropdown, ChoiceSupport, CollectionChoices, ConfigField, ConfigFieldHandlers,
     FILL_VAL_FS, FoldContext, collect_field_values, fold_config_field, render_config_row,
     set_picked_value, sparse_overrides,
 };
+use crate::option_choices::ChoiceOptions;
 use crate::picker_favorites::{bind_picker, follow_picker_event};
 use crate::repo_failure::RepoFailure;
 use crate::trigger_form_shape::{trigger_form_defaults, trigger_form_specs};
@@ -167,7 +167,7 @@ impl TriggersRegistryView {
             saving: false,
             _name_sub: name_sub,
         }));
-        self.start_collection_options(cx);
+        self.start_option_choices(cx);
         cx.notify();
     }
 

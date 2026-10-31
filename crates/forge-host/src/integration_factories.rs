@@ -23,8 +23,9 @@ use crate::integration_start_errors::{
     hotkey_start_error, kick_start_error, midi_start_error, twitch_start_error, youtube_start_error,
 };
 use crate::integrations::{
-    BuiltinObject, ObsInstallSeed, VTubeInstallSeed, creds_of, kick_builtin_object, publisher,
-    spawn_connect, spawn_event_bridge, twitch_builtin_object, youtube_builtin_object,
+    BuiltinObject, BuiltinRegistry, ObsInstallSeed, VTubeInstallSeed, creds_of,
+    kick_builtin_object, publisher, spawn_connect, spawn_event_bridge, twitch_builtin_object,
+    youtube_builtin_object,
 };
 use crate::platform_identities::OAuthClientIdentity;
 use forge_hotkey::HotkeyReconciler;
@@ -446,6 +447,7 @@ pub(crate) fn wire_obs(
     sub_actions: &mut SubActionRegistry,
     backend: &Arc<dyn DataProvider>,
     bus: &Arc<EventBus>,
+    builtins: BuiltinRegistry,
 ) -> ObsFactory {
     let sink = forge_obs::SwitchableObsSink::new();
     if let Err(e) = forge_obs::register_obs_sub_actions(
@@ -458,7 +460,7 @@ pub(crate) fn wire_obs(
         bus: Arc::clone(bus),
         creds: creds_of(backend),
         settings: Arc::clone(backend) as Arc<dyn SettingsRepo>,
-        seed: ObsInstallSeed::new(sink),
+        seed: ObsInstallSeed::new(sink, builtins),
     }
 }
 
@@ -533,6 +535,7 @@ pub(crate) fn wire_vtube(
     sub_actions: &mut SubActionRegistry,
     backend: &Arc<dyn DataProvider>,
     bus: &Arc<EventBus>,
+    builtins: BuiltinRegistry,
 ) -> VTubeFactory {
     let sink = forge_vtube::SwitchableVTubeSink::new();
     if let Err(e) = forge_vtube::register_vtube_sub_actions(
@@ -545,7 +548,7 @@ pub(crate) fn wire_vtube(
         bus: Arc::clone(bus),
         creds: creds_of(backend),
         settings: Arc::clone(backend) as Arc<dyn SettingsRepo>,
-        seed: VTubeInstallSeed::new(sink),
+        seed: VTubeInstallSeed::new(sink, builtins),
     }
 }
 
@@ -657,8 +660,6 @@ impl IntegrationFactory<BuiltinObject> for DiscordFactory {
             control: None,
             collections: None,
             option_source: None,
-            obs_client: None,
-            vtube_client: None,
             follow: None,
             ban_list: None,
         }))
@@ -734,8 +735,6 @@ impl IntegrationFactory<BuiltinObject> for MidiFactory {
             control: Some(client),
             collections: None,
             option_source: None,
-            obs_client: None,
-            vtube_client: None,
             follow: None,
             ban_list: None,
         };
@@ -833,8 +832,6 @@ impl IntegrationFactory<BuiltinObject> for HotkeyFactory {
             control: Some(client.clone()),
             collections: None,
             option_source: None,
-            obs_client: None,
-            vtube_client: None,
             follow: None,
             ban_list: None,
         };

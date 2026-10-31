@@ -16,13 +16,9 @@ use forge_registry::{CodeKind, CodeLanguage, FormField};
 
 use crate::amount_scale::{AmountScale, AmountSeed};
 
-use crate::collection_options::{
-    ChoiceOptions, CollectionChoiceField, CollectionSource, collection_choice_fields,
-};
 use crate::config_field_label::field_placeholder;
 use crate::donation_services::donation_provider_options;
-use crate::obs_catalog_options::{ObsCatalogField, ObsCatalogList};
-use crate::vtube_catalog_options::{VTubeCatalogField, VTubeCatalogList};
+use crate::option_choices::{ChoiceOptions, names_integration_data};
 use forge_components::ActivePresentation;
 use forge_components::int_entry_invalid;
 use forge_runtime::DONATION_PROVIDER_OPTIONS_KEY;
@@ -491,10 +487,7 @@ fn static_choice_options(options_key: &str) -> Option<Vec<(String, String)>> {
 }
 
 fn has_options_provider(options_key: &str) -> bool {
-    static_choice_options(options_key).is_some()
-        || CollectionSource::parse(options_key).is_some()
-        || ObsCatalogList::parse(options_key).is_some()
-        || VTubeCatalogList::parse(options_key).is_some()
+    static_choice_options(options_key).is_some() || names_integration_data(options_key)
 }
 
 struct ChoiceOptionsKey {
@@ -525,7 +518,6 @@ fn push_choice_options_key(spec: &FormField, out: &mut Vec<ChoiceOptionsKey>) {
 
 #[derive(Default)]
 pub(crate) struct CollectionChoices {
-    fields: Vec<CollectionChoiceField>,
     options_keys: Vec<ChoiceOptionsKey>,
     popover: Option<ChoicePopover>,
 }
@@ -533,37 +525,16 @@ pub(crate) struct CollectionChoices {
 impl CollectionChoices {
     pub(crate) fn for_specs(specs: &[FormField]) -> Self {
         Self {
-            fields: collection_choice_fields(specs),
             options_keys: choice_options_keys(specs),
             popover: None,
         }
     }
 
-    pub(crate) fn fields(&self) -> &[CollectionChoiceField] {
-        &self.fields
-    }
-
-    pub(crate) fn obs_fields(&self) -> Vec<ObsCatalogField> {
+    pub(crate) fn option_keys(&self) -> Vec<String> {
         self.options_keys
             .iter()
-            .filter_map(|keys| {
-                ObsCatalogList::parse(&keys.options_key).map(|list| ObsCatalogField {
-                    options_key: keys.options_key.clone(),
-                    list,
-                })
-            })
-            .collect()
-    }
-
-    pub(crate) fn vtube_fields(&self) -> Vec<VTubeCatalogField> {
-        self.options_keys
-            .iter()
-            .filter_map(|keys| {
-                VTubeCatalogList::parse(&keys.options_key).map(|list| VTubeCatalogField {
-                    options_key: keys.options_key.clone(),
-                    list,
-                })
-            })
+            .map(|keys| keys.options_key.clone())
+            .filter(|key| names_integration_data(key))
             .collect()
     }
 
@@ -2049,14 +2020,15 @@ mod tests {
     }
 
     #[gpui::test]
-    fn only_a_collection_select_becomes_a_choice_when_the_form_has_no_option_map(
+    fn only_an_integration_select_becomes_a_choice_when_the_form_has_no_option_map(
         cx: &mut gpui::TestAppContext,
     ) {
         for (options_key, expect_choice) in [
             ("collections.twitch.rewards", true),
             ("obs.scene_names", true),
             ("vtube.model_ids", true),
-            ("custom.names", false),
+            ("action.ids", false),
+            ("tts.engine_ids", false),
         ] {
             let (_host, fields) = build(
                 cx,

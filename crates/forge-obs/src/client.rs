@@ -178,7 +178,7 @@ impl ObsClient {
         self.state.load()
     }
 
-    pub fn request_catalog_resync(&self) {
+    pub(crate) fn request_catalog_resync(&self) {
         self.resync_nudge.notify_one();
     }
 

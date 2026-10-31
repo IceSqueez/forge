@@ -13,7 +13,7 @@ use common::{
 };
 use forge_events::{Event, EventPublisher};
 use forge_events::{PlatformConnectionChanged, TypedEvent};
-use forge_obs::{EVENT_BUFFER_CAPACITY, ObsClient, ObsError, ObsSink, ObsSource, ObsTiming};
+use forge_obs::{EVENT_BUFFER_CAPACITY, ObsClient, ObsError, ObsSink, ObsTiming};
 use forge_platform_core::{BuiltinControl, BuiltinStatus, ConnectionState};
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
@@ -436,7 +436,7 @@ async fn drive_a_drop_during_the_catalog_load() -> (Recorder, Arc<ObsClient>, Fa
     let recorder = Recorder::default();
     let client = connect_to(&fake, &recorder).await;
     connected(&client).await;
-    assert_eq!(client.scenes().await.unwrap(), [SCENE], "precondition");
+    assert_eq!(client.scene_names(), [SCENE], "precondition");
 
     let lost = client.set_scene(SCENE).await;
     assert!(matches!(lost, Err(ObsError::Disconnected)), "got {lost:?}");
@@ -471,8 +471,8 @@ async fn a_connection_lost_during_the_catalog_load_is_retried_without_announcing
 async fn a_connection_lost_during_the_catalog_load_keeps_the_last_good_catalog() {
     let (_recorder, client, _fake) = drive_a_drop_during_the_catalog_load().await;
 
-    assert_eq!(client.scenes().await.unwrap(), [SCENE]);
-    assert_eq!(client.sources(SCENE).await.unwrap().len(), 1);
+    assert_eq!(client.scene_names(), [SCENE]);
+    assert_eq!(client.scene_items(SCENE).len(), 1);
 }
 
 #[tokio::test]
@@ -537,7 +537,7 @@ async fn a_scene_item_toggled_during_the_catalog_load_lands_in_the_catalog_and_o
     })
     .await;
 
-    let rows = client.sources(SCENE).await.unwrap();
+    let rows = client.scene_items(SCENE);
     assert!(
         rows.iter().any(|row| row.name == SOURCE && !row.visible),
         "the catalog kept the snapshot's stale visibility: {rows:?}"
@@ -557,7 +557,7 @@ fn scene_list(names: &[&str]) -> Reply {
 
 async fn wait_for_scene(client: &ObsClient, scene: &str) {
     settle_until_async("the created scene appeared", || async {
-        client.scenes().await.unwrap().iter().any(|s| s == scene)
+        client.scene_names().iter().any(|s| s == scene)
     })
     .await;
 }
@@ -591,15 +591,15 @@ async fn a_scene_created_during_a_held_topology_fetch_survives_the_resync() {
     let client = connect_to(&fake, &recorder).await;
     connected(&client).await;
 
-    client.request_catalog_resync();
+    forge_platform_core::BuiltinContent::request_refresh(&*client);
     wait_for_scene(&client, INTRO).await;
     release.notify_one();
 
     settle_until_async("a refetch replaced the stale fetch", || async {
-        !client.sources(INTRO).await.unwrap().is_empty()
+        !client.scene_items(INTRO).is_empty()
     })
     .await;
-    assert_eq!(client.scenes().await.unwrap(), vec![SCENE, INTRO]);
+    assert_eq!(client.scene_names(), vec![SCENE, INTRO]);
 }
 
 #[tokio::test]
@@ -713,7 +713,12 @@ async fn an_event_burst_that_overflows_the_buffer_resyncs_the_catalog_on_the_sam
     connected(&client).await;
     assert_eq!(fake.log.count(0, "GetSceneItemEnabled"), 1, "precondition");
 
-    let probe = client.transitions().await;
+    let probe = forge_platform_core::BuiltinOptionSource::resolve(
+        &client,
+        &forge_platform_core::OptionListId::new("obs.transitions"),
+        &std::collections::BTreeMap::new(),
+    )
+    .await;
     assert!(probe.is_err(), "precondition: the fake rejects the probe");
     drop(release);
 

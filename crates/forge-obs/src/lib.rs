@@ -20,7 +20,6 @@ mod session;
 mod sink;
 mod sink_impl;
 mod source;
-mod source_impl;
 mod stream_output;
 mod switchable_sink;
 mod timing;
@@ -34,11 +33,11 @@ pub use integration::OBS_INTEGRATION;
 pub use probe::probe_connection;
 pub use runners::register_obs_sub_actions;
 pub use sink::{InputSettings, ObsSink, RecordStatus, SceneList, StreamStatus};
-pub use source::{ObsSource, SourceInfo};
+pub use source::SourceInfo;
 pub use stream_output::{ObsStatsWatch, ObsStreamStats, StreamOutputActive};
 pub use switchable_sink::SwitchableObsSink;
 pub use timing::ObsTiming;
 pub use triggers::register_obs_triggers;
 
-fn _assert_object_safe(_: &dyn ObsSink, _: &dyn ObsSource) {}
+fn _assert_object_safe(_: &dyn ObsSink) {}
 pub use probe::ObsProbeResult;

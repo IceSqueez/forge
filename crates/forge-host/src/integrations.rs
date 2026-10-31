@@ -35,8 +35,6 @@ pub struct BuiltinObject {
     pub control: Option<Arc<dyn BuiltinControl>>,
     pub collections: Option<Arc<dyn BuiltinCollections>>,
     pub option_source: Option<Arc<dyn BuiltinOptionSource>>,
-    pub obs_client: Option<Arc<forge_obs::ObsClient>>,
-    pub vtube_client: Option<Arc<forge_vtube::VTubeClient>>,
     pub follow: Option<Arc<dyn FollowLookup>>,
     pub ban_list: Option<Arc<dyn BanListSource>>,
 }
@@ -46,6 +44,15 @@ type BuiltinEntries = HashMap<IntegrationId, BuiltinObject>;
 #[derive(Clone)]
 pub struct BuiltinRegistry {
     entries: Arc<watch::Sender<Arc<BuiltinEntries>>>,
+}
+
+#[derive(Clone)]
+pub struct BuiltinRegistryChanges(watch::Receiver<Arc<BuiltinEntries>>);
+
+impl BuiltinRegistryChanges {
+    pub async fn changed(&mut self) -> bool {
+        self.0.changed().await.is_ok()
+    }
 }
 
 impl Default for BuiltinRegistry {
@@ -67,6 +74,10 @@ impl BuiltinRegistry {
 
     pub fn snapshot(&self) -> Vec<BuiltinObject> {
         self.current().values().cloned().collect()
+    }
+
+    pub fn changes(&self) -> BuiltinRegistryChanges {
+        BuiltinRegistryChanges(self.entries.subscribe())
     }
 
     pub fn install(&self, object: BuiltinObject) {
@@ -118,14 +129,20 @@ pub struct Integrations {
 pub struct ObsInstallSeed {
     sink: Arc<forge_obs::SwitchableObsSink>,
     live: Arc<std::sync::RwLock<Option<Arc<forge_obs::ObsClient>>>>,
+    builtins: BuiltinRegistry,
 }
 
 impl ObsInstallSeed {
-    pub fn new(sink: Arc<forge_obs::SwitchableObsSink>) -> Self {
+    pub fn new(sink: Arc<forge_obs::SwitchableObsSink>, builtins: BuiltinRegistry) -> Self {
         Self {
             sink,
             live: Arc::new(std::sync::RwLock::new(None)),
+            builtins,
         }
+    }
+
+    fn forget_object(&self) {
+        self.builtins.remove(&forge_obs::OBS_INTEGRATION.id);
     }
 
     pub fn stream_output(&self) -> forge_obs::StreamOutputActive {
@@ -138,16 +155,20 @@ impl ObsInstallSeed {
 
     pub fn install(&self, client: Arc<forge_obs::ObsClient>) {
         self.sink.install(Arc::clone(&client));
+        self.builtins
+            .install(obs_builtin_object(Arc::clone(&client)));
         let mut guard = self.live.write_recover();
         *guard = Some(client);
     }
 
     pub fn clear(&self) {
+        self.forget_object();
         let mut guard = self.live.write_recover();
         *guard = None;
     }
 
     pub async fn disconnect_live(&self) {
+        self.forget_object();
         let previous = {
             let mut guard = self.live.write_recover();
             guard.take()
@@ -173,28 +194,38 @@ impl ObsInstallSeed {
 pub struct VTubeInstallSeed {
     sink: Arc<forge_vtube::SwitchableVTubeSink>,
     live: Arc<std::sync::RwLock<Option<Arc<forge_vtube::VTubeClient>>>>,
+    builtins: BuiltinRegistry,
 }
 
 impl VTubeInstallSeed {
-    pub fn new(sink: Arc<forge_vtube::SwitchableVTubeSink>) -> Self {
+    pub fn new(sink: Arc<forge_vtube::SwitchableVTubeSink>, builtins: BuiltinRegistry) -> Self {
         Self {
             sink,
             live: Arc::new(std::sync::RwLock::new(None)),
+            builtins,
         }
+    }
+
+    fn forget_object(&self) {
+        self.builtins.remove(&forge_vtube::VTUBE_INTEGRATION.id);
     }
 
     pub fn install(&self, client: Arc<forge_vtube::VTubeClient>) {
         self.sink.install(Arc::clone(&client));
+        self.builtins
+            .install(vtube_builtin_object(Arc::clone(&client)));
         let mut guard = self.live.write_recover();
         *guard = Some(client);
     }
 
     pub fn clear(&self) {
+        self.forget_object();
         let mut guard = self.live.write_recover();
         *guard = None;
     }
 
     pub async fn disconnect_live(&self) {
+        self.forget_object();
         let previous = {
             let mut guard = self.live.write_recover();
             guard.take()
@@ -225,9 +256,7 @@ pub fn vtube_builtin_object(client: Arc<forge_vtube::VTubeClient>) -> BuiltinObj
         quick: client.clone(),
         control: Some(Arc::clone(&client) as Arc<dyn BuiltinControl>),
         collections: None,
-        option_source: Some(Arc::clone(&client) as Arc<dyn BuiltinOptionSource>),
-        obs_client: None,
-        vtube_client: Some(client),
+        option_source: Some(client as Arc<dyn BuiltinOptionSource>),
         follow: None,
         ban_list: None,
     }
@@ -242,9 +271,7 @@ pub fn obs_builtin_object(client: Arc<forge_obs::ObsClient>) -> BuiltinObject {
         quick: client.clone(),
         control: Some(Arc::clone(&client) as Arc<dyn BuiltinControl>),
         collections: None,
-        option_source: Some(Arc::clone(&client) as Arc<dyn BuiltinOptionSource>),
-        obs_client: Some(client),
-        vtube_client: None,
+        option_source: Some(client as Arc<dyn BuiltinOptionSource>),
         follow: None,
         ban_list: None,
     }
@@ -262,8 +289,6 @@ pub fn twitch_builtin_object(
         control: Some(Arc::clone(&bundle) as Arc<dyn BuiltinControl>),
         collections: Some(Arc::clone(&bundle) as Arc<dyn BuiltinCollections>),
         option_source: Some(Arc::clone(&bundle) as Arc<dyn BuiltinOptionSource>),
-        obs_client: None,
-        vtube_client: None,
         follow: Some(Arc::clone(&bundle) as Arc<dyn FollowLookup>),
         ban_list: Some(bundle as Arc<dyn BanListSource>),
     }
@@ -281,8 +306,6 @@ pub fn youtube_builtin_object(
         control: Some(Arc::clone(&bundle) as Arc<dyn BuiltinControl>),
         collections: None,
         option_source: None,
-        obs_client: None,
-        vtube_client: None,
         follow: Some(Arc::clone(&bundle) as Arc<dyn FollowLookup>),
         ban_list: Some(bundle as Arc<dyn BanListSource>),
     }
@@ -300,8 +323,6 @@ pub fn kick_builtin_object(
         control: Some(Arc::clone(&bundle) as Arc<dyn BuiltinControl>),
         collections: None,
         option_source: None,
-        obs_client: None,
-        vtube_client: None,
         follow: None,
         ban_list: Some(bundle as Arc<dyn BanListSource>),
     }
@@ -343,10 +364,11 @@ pub async fn build_integrations(
         platform_credentials.twitch = Some(twitch.credentials_manager());
         factories.push(Arc::new(twitch));
     }
-    let obs = wire_obs(sub_actions, backend, bus);
+    let builtins = BuiltinRegistry::default();
+    let obs = wire_obs(sub_actions, backend, bus, builtins.clone());
     let obs_install_seed = obs.seed();
     factories.push(Arc::new(obs));
-    let vtube = wire_vtube(sub_actions, backend, bus);
+    let vtube = wire_vtube(sub_actions, backend, bus, builtins.clone());
     let vtube_install_seed = vtube.seed();
     factories.push(Arc::new(vtube));
     let mut discord_client = None;
@@ -391,7 +413,7 @@ pub async fn build_integrations(
     }
 
     Integrations {
-        builtins: BuiltinRegistry::default(),
+        builtins,
         factories,
         obs_install_seed,
         vtube_install_seed,
@@ -499,10 +521,93 @@ mod tests {
         (listener, port)
     }
 
+    async fn silent_client(port: u16) -> Arc<forge_obs::ObsClient> {
+        let client = forge_obs::ObsClient::connect(
+            &format!("127.0.0.1:{port}"),
+            None,
+            Arc::new(crate::test_support::SilentPublisher),
+        )
+        .await
+        .unwrap();
+        Arc::new(client)
+    }
+
+    async fn installable_object(port: u16) -> BuiltinObject {
+        obs_builtin_object(silent_client(port).await)
+    }
+
+    fn wakes_now(changes: &mut BuiltinRegistryChanges) -> Option<bool> {
+        let mut context = std::task::Context::from_waker(std::task::Waker::noop());
+        match std::pin::pin!(changes.changed()).poll(&mut context) {
+            std::task::Poll::Ready(open) => Some(open),
+            std::task::Poll::Pending => None,
+        }
+    }
+
+    #[tokio::test]
+    async fn a_change_follower_wakes_on_install_and_removal_and_coalesces_a_burst() {
+        let (_listener, port) = listening_but_silent_port().await;
+        let object = installable_object(port).await;
+        let id = object.status.id().clone();
+        let registry = BuiltinRegistry::default();
+        let mut changes = registry.changes();
+
+        let before_any_change = wakes_now(&mut changes);
+        registry.install(object.clone());
+        registry.install(object);
+        let after_burst = (wakes_now(&mut changes), wakes_now(&mut changes));
+        registry.remove(&id);
+        let after_removal = wakes_now(&mut changes);
+
+        assert_eq!(
+            (before_any_change, after_burst, after_removal),
+            (None, (Some(true), None), Some(true))
+        );
+    }
+
+    #[test]
+    fn a_change_follower_learns_when_the_registry_is_gone() {
+        let registry = BuiltinRegistry::default();
+        let mut changes = registry.changes();
+
+        drop(registry);
+
+        assert_eq!(wakes_now(&mut changes), Some(false));
+    }
+
+    #[tokio::test]
+    async fn a_live_obs_client_is_a_registry_object_until_the_seed_lets_go_of_it() {
+        let (_listener, port) = listening_but_silent_port().await;
+        let registry = BuiltinRegistry::default();
+        let seed = ObsInstallSeed::new(forge_obs::SwitchableObsSink::new(), registry.clone());
+        let id = forge_obs::OBS_INTEGRATION.id;
+        let serves_options = |registry: &BuiltinRegistry| {
+            registry
+                .get(&id)
+                .is_some_and(|object| object.option_source.is_some())
+        };
+
+        let before = serves_options(&registry);
+        seed.install(silent_client(port).await);
+        let installed = serves_options(&registry);
+        seed.clear();
+        let cleared = serves_options(&registry);
+        seed.install(silent_client(port).await);
+        seed.disconnect_live().await;
+
+        assert_eq!(
+            (before, installed, cleared, serves_options(&registry)),
+            (false, true, false, false)
+        );
+    }
+
     #[tokio::test]
     async fn retiring_the_live_client_empties_the_slot_and_leaves_it_disconnected() {
         let (_listener, port) = listening_but_silent_port().await;
-        let seed = ObsInstallSeed::new(forge_obs::SwitchableObsSink::new());
+        let seed = ObsInstallSeed::new(
+            forge_obs::SwitchableObsSink::new(),
+            BuiltinRegistry::default(),
+        );
         let client = Arc::new(
             forge_obs::ObsClient::connect(
                 &format!("127.0.0.1:{port}"),
@@ -535,7 +640,10 @@ mod tests {
 
     #[tokio::test]
     async fn an_obs_seed_reports_the_live_clients_connect_failure_until_cleared() {
-        let seed = ObsInstallSeed::new(forge_obs::SwitchableObsSink::new());
+        let seed = ObsInstallSeed::new(
+            forge_obs::SwitchableObsSink::new(),
+            BuiltinRegistry::default(),
+        );
         assert!(seed.connect_failure().is_none());
         let port = closed_port().await;
         let client = Arc::new(
@@ -562,7 +670,10 @@ mod tests {
 
     #[tokio::test]
     async fn a_vtube_seed_reports_the_live_clients_connect_failure_until_cleared() {
-        let seed = VTubeInstallSeed::new(forge_vtube::SwitchableVTubeSink::new());
+        let seed = VTubeInstallSeed::new(
+            forge_vtube::SwitchableVTubeSink::new(),
+            BuiltinRegistry::default(),
+        );
         assert!(seed.connect_failure().is_none());
         let port = closed_port().await;
         let (backend, _writes) = crate::test_support::test_backend();

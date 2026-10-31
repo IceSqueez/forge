@@ -315,7 +315,7 @@ async fn refresh_models_and_hotkeys(
             s.current_model_id = current_id;
             s.current_model_param_count = param_count;
             if changed {
-                s.signal.bump_options();
+                s.signal.bump();
             }
         }
     }
@@ -404,7 +404,7 @@ async fn refresh_items(
         let changed = s.item_count != item_count;
         s.item_count = item_count;
         if changed {
-            s.signal.bump_options();
+            s.signal.bump();
         }
     }
 }
@@ -1083,10 +1083,10 @@ mod tests {
         );
     }
 
-    async fn signalled(changes: &mut crate::catalog::VTubeCatalogChanges) -> bool {
+    async fn signalled(changes: &mut forge_platform_core::CollectionRevisions) -> bool {
         tokio::time::timeout(tokio::time::Duration::from_secs(1), changes.changed())
             .await
-            .unwrap_or(false)
+            .is_ok()
     }
 
     fn model(id: &str, name: &str) -> ModelItem {
@@ -1135,8 +1135,9 @@ mod tests {
                 let mut s = c.content_state.write().unwrap();
                 s.models = vec![model("m1", "Avatar")];
                 s.hotkeys = vec![hotkey("h1", "Wave")];
+                s.current_model_id = Some("m1".to_owned());
             }
-            let mut changes = c.catalog_changes();
+            let mut changes = forge_platform_core::BuiltinOptionSource::revisions(&c);
             let (req_tx, req_rx) = mpsc::unbounded_channel::<PendingRequest>();
             let done = serve(
                 req_rx,
@@ -1175,7 +1176,7 @@ mod tests {
                 file: "blush.exp3.json".to_owned(),
                 active: false,
             }];
-            let mut changes = c.catalog_changes();
+            let mut changes = forge_platform_core::BuiltinOptionSource::revisions(&c);
             let (req_tx, req_rx) = mpsc::unbounded_channel::<PendingRequest>();
             let done = serve(
                 req_rx,
@@ -1207,12 +1208,13 @@ mod tests {
         refresh_models_and_hotkeys(&c.content_state, &req_tx).await;
         await_served(done).await;
 
+        let offered = crate::option_source::hotkey_entries(&c.content_state.read().unwrap());
         assert_eq!(
-            c.catalog().hotkeys,
-            vec![crate::catalog::VTubeChoice {
-                value: "6f2a-wave".to_owned(),
-                label: "Wave".to_owned(),
-            }]
+            offered
+                .iter()
+                .map(|entry| (entry.value.as_str(), entry.label.as_str()))
+                .collect::<Vec<_>>(),
+            [("6f2a-wave", "Wave")]
         );
     }
 
@@ -1221,7 +1223,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_current_model_change_moves_the_option_revision_but_not_the_catalog_signal() {
+    async fn a_current_model_change_moves_the_option_revision() {
         for (case, current, expected) in [
             (
                 "model switched",
@@ -1245,7 +1247,6 @@ mod tests {
                 s.models = vec![model("m1", "Avatar"), model("m2", "Other")];
                 s.current_model_id = Some("m1".to_owned());
             }
-            let mut changes = c.catalog_changes();
             let mut revisions = forge_platform_core::BuiltinOptionSource::revisions(&c);
             let (req_tx, req_rx) = mpsc::unbounded_channel::<PendingRequest>();
             let done = serve(
@@ -1263,14 +1264,7 @@ mod tests {
             refresh_models_and_hotkeys(&c.content_state, &req_tx).await;
             await_served(done).await;
 
-            assert_eq!(
-                (
-                    futures_util::FutureExt::now_or_never(changes.changed()),
-                    revision_moved(&mut revisions)
-                ),
-                (None, expected),
-                "{case}"
-            );
+            assert_eq!(revision_moved(&mut revisions), expected, "{case}");
         }
     }
 

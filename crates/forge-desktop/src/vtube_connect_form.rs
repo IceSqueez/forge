@@ -552,7 +552,7 @@ mod tests {
                 Arc::clone(&backend) as Arc<dyn CredentialsRepo>,
                 backend as Arc<dyn SettingsRepo>,
                 Arc::clone(&bus) as Arc<dyn EventPublisher>,
-                VTubeInstallSeed::new(forge_vtube::SwitchableVTubeSink::new()),
+                VTubeInstallSeed::new(forge_vtube::SwitchableVTubeSink::new(), Default::default()),
                 cx,
             )
         });

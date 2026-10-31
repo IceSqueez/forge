@@ -3,18 +3,7 @@ use gpui::Context;
 
 use super::{AddTriggerStage, ScreenActionsView};
 use crate::async_bridge;
-use crate::collection_options::{
-    ChoiceOptions, CollectionSource, distinct_sources, load_collection_options,
-    watch_collection_revisions,
-};
-use crate::obs_catalog_options::{
-    ObsCatalogField, distinct_obs_fields, live_obs_client, load_obs_catalog_options,
-    watch_obs_catalog,
-};
-use crate::vtube_catalog_options::{
-    VTubeCatalogField, current_vtube_catalog_options, distinct_vtube_fields, live_vtube_client,
-    watch_vtube_catalog,
-};
+use crate::option_choices::{ChoiceOptions, distinct_keys, resolve_options, watch_option_changes};
 use forge_host::integrations::BuiltinRegistry;
 
 impl ScreenActionsView {
@@ -24,112 +13,49 @@ impl ScreenActionsView {
         self
     }
 
-    fn collection_sources(&self) -> Vec<CollectionSource> {
+    fn option_keys(&self) -> Vec<String> {
         let trigger_fill = match self.modals.add_trigger.as_ref() {
-            Some(AddTriggerStage::Fill(form)) => form.choices.fields(),
-            _ => &[],
-        };
-        distinct_sources(self.choices.choice_fields.iter().chain(trigger_fill))
-    }
-
-    fn obs_catalog_fields(&self) -> Vec<ObsCatalogField> {
-        let trigger_fill = match self.modals.add_trigger.as_ref() {
-            Some(AddTriggerStage::Fill(form)) => form.choices.obs_fields(),
+            Some(AddTriggerStage::Fill(form)) => form.choices.option_keys(),
             _ => Vec::new(),
         };
-        distinct_obs_fields(self.choices.obs_fields.iter().chain(&trigger_fill))
+        distinct_keys(self.choices.option_keys.iter().chain(&trigger_fill))
     }
 
-    fn vtube_catalog_fields(&self) -> Vec<VTubeCatalogField> {
-        let trigger_fill = match self.modals.add_trigger.as_ref() {
-            Some(AddTriggerStage::Fill(form)) => form.choices.vtube_fields(),
-            _ => Vec::new(),
-        };
-        distinct_vtube_fields(self.choices.vtube_fields.iter().chain(&trigger_fill))
-    }
-
-    pub(super) fn start_collection_options(&mut self, cx: &mut Context<Self>) {
+    pub(super) fn start_option_choices(&mut self, cx: &mut Context<Self>) {
         self.refresh_trigger_fill_choices();
-        let sources = self.collection_sources();
-        self.choices._collection_watch = watch_collection_revisions(
+        self.choices._option_watch = watch_option_changes(
             &self.choices.builtins,
-            &sources,
-            Self::reload_collection_options,
+            self.option_keys(),
+            Self::reload_option_choices,
             cx,
         );
-        if !self.obs_catalog_fields().is_empty() {
-            self.choices._collection_watch.push(watch_obs_catalog(
-                &self.deps.bus,
-                Self::reload_obs_catalog_options,
-                cx,
-            ));
-        }
-        if !self.vtube_catalog_fields().is_empty() {
-            self.choices._collection_watch.push(watch_vtube_catalog(
-                &self.deps.bus,
-                self.choices.builtins.clone(),
-                Self::reload_vtube_catalog_options,
-                cx,
-            ));
-        }
-        self.reload_collection_options(cx);
-        self.reload_obs_catalog_options(cx);
-        self.reload_vtube_catalog_options(cx);
+        self.reload_option_choices(cx);
     }
 
-    fn reload_vtube_catalog_options(&mut self, cx: &mut Context<Self>) {
-        let fields = self.vtube_catalog_fields();
-        if fields.is_empty() {
-            return;
-        }
-        let client = live_vtube_client(&self.choices.builtins);
-        let options = current_vtube_catalog_options(client.as_deref(), &fields);
-        self.apply_collection_options(options, cx);
-    }
-
-    fn reload_obs_catalog_options(&mut self, cx: &mut Context<Self>) {
-        let fields = self.obs_catalog_fields();
-        if fields.is_empty() {
-            return;
-        }
-        let client = live_obs_client(&self.choices.builtins);
-        let ticket = self.choices.obs_catalog_options_gen.next();
-        async_bridge::run_async(
-            &self.deps.rt_handle,
-            load_obs_catalog_options(client, fields),
-            move |this, options, cx| {
-                if this.choices.obs_catalog_options_gen.is_current(ticket) {
-                    this.apply_collection_options(options, cx);
-                }
-            },
-            cx,
-        );
-    }
-
-    fn reload_collection_options(&mut self, cx: &mut Context<Self>) {
-        let sources = self.collection_sources();
-        if sources.is_empty() {
+    fn reload_option_choices(&mut self, cx: &mut Context<Self>) {
+        let keys = self.option_keys();
+        if keys.is_empty() {
             return;
         }
         let builtins = self.choices.builtins.clone();
-        let ticket = self.choices.collection_options_gen.next();
+        let ticket = self.choices.option_choices_gen.next();
         async_bridge::run_async(
             &self.deps.rt_handle,
-            load_collection_options(builtins, sources),
+            resolve_options(builtins, keys),
             move |this, options, cx| {
-                if this.choices.collection_options_gen.is_current(ticket) {
-                    this.apply_collection_options(options, cx);
+                if this.choices.option_choices_gen.is_current(ticket) {
+                    this.apply_option_choices(options, cx);
                 }
             },
             cx,
         );
     }
 
-    fn apply_collection_options(&mut self, options: ChoiceOptions, cx: &mut Context<Self>) {
-        self.choices.collection_options.extend(options);
+    fn apply_option_choices(&mut self, options: ChoiceOptions, cx: &mut Context<Self>) {
+        self.choices.integration_options.extend(options);
         self.choices
             .select_options
-            .extend(self.choices.collection_options.clone());
+            .extend(self.choices.integration_options.clone());
         self.refresh_trigger_fill_choices();
         if let Some(form) = self.modals.sub_form.clone() {
             let merged = self.choices.select_options.clone();
@@ -143,7 +69,7 @@ impl ScreenActionsView {
             let blank = tr!("config_form_choice_any");
             form.choices.refresh(
                 &mut form.fields,
-                &self.choices.collection_options,
+                &self.choices.integration_options,
                 Some(&blank),
             );
         }
@@ -160,14 +86,11 @@ mod tests {
 
     use crate::actions_screen::ScreenActionsView;
     use crate::actions_screen::editor::tests::view_with;
-    use crate::collection_options::{CollectionChoiceField, CollectionSource};
     use crate::test_support::{FakeCollections, StubActions, owned_reward, pump_until, runtime};
 
     use forge_registry::{FormField, SubActionRegistry};
 
-    use crate::collection_options::collection_choice_fields;
-    use crate::obs_catalog_options::obs_catalog_fields;
-    use crate::vtube_catalog_options::vtube_catalog_fields;
+    use crate::option_choices::names_integration_data;
 
     fn integration_sub_actions() -> SubActionRegistry {
         let mut reg = SubActionRegistry::new();
@@ -185,30 +108,23 @@ mod tests {
         }
     }
 
-    fn served(field: &FormField) -> bool {
-        let specs = std::slice::from_ref(field);
-        !obs_catalog_fields(specs).is_empty()
-            || !vtube_catalog_fields(specs).is_empty()
-            || !collection_choice_fields(specs).is_empty()
-    }
-
     #[test]
-    fn every_obs_and_vtube_sub_action_picker_has_an_options_provider() {
+    fn every_obs_and_vtube_sub_action_picker_reaches_the_integration_resolver() {
         let reg = integration_sub_actions();
         let mut declared = Vec::new();
-        let mut unserved = Vec::new();
         for runner in reg.all() {
             for field in runner.config_fields() {
-                let before = declared.len();
                 dynamic_select_keys(&field, &mut declared, runner.id());
-                if declared.len() > before && !served(&field) {
-                    unserved.extend(declared[before..].iter().cloned());
-                }
             }
         }
 
         assert!(!declared.is_empty());
-        assert_eq!(unserved, Vec::<(String, &str)>::new());
+        let internal_or_unserved: Vec<&(String, &str)> = declared
+            .iter()
+            .filter(|(_, key)| !key.starts_with("forge.") && !names_integration_data(key))
+            .filter(|(_, key)| forge_registry::InternalNamespace::from_options_key(key).is_none())
+            .collect();
+        assert_eq!(internal_or_unserved, Vec::<&(String, &str)>::new());
     }
 
     const REWARD_OPTIONS: &str = "collections.twitch.rewards";
@@ -223,7 +139,7 @@ mod tests {
     ) -> Option<Vec<String>> {
         view.read_with(cx, |view, _| {
             view.choices
-                .collection_options
+                .integration_options
                 .get(REWARD_OPTIONS)
                 .map(|choices| {
                     choices
@@ -255,12 +171,9 @@ mod tests {
         let builtins = fake.installed_as("twitch");
         view.update(cx, |view, cx| {
             view.choices.builtins = builtins;
-            view.choices.choice_fields = vec![CollectionChoiceField {
-                field_key: "reward".to_owned(),
-                source: CollectionSource::parse(REWARD_OPTIONS).expect("a collection key"),
-            }];
-            view.reload_collection_options(cx);
-            view.reload_collection_options(cx);
+            view.choices.option_keys = vec![REWARD_OPTIONS.to_owned()];
+            view.reload_option_choices(cx);
+            view.reload_option_choices(cx);
         });
         pump_until(&rt, || fake.list_calls() == 2);
 

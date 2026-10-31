@@ -1125,8 +1125,8 @@ pub async fn every_registry_entry() -> (Arc<TriggerRegistry>, Arc<SubActionRegis
     forge_runtime::register_core_triggers(wiring.triggers_mut()).unwrap();
     let (sub_actions, triggers) = wiring.registries_mut();
     register_platform_triggers(triggers);
-    wire_obs(&mut *sub_actions, &backend, &bus);
-    wire_vtube(&mut *sub_actions, &backend, &bus);
+    wire_obs(&mut *sub_actions, &backend, &bus, Default::default());
+    wire_vtube(&mut *sub_actions, &backend, &bus, Default::default());
     wire_discord(
         &mut *sub_actions,
         &backend,

@@ -1,6 +1,4 @@
-use async_trait::async_trait;
-
-use crate::ObsError;
+use crate::client::ObsClient;
 
 #[derive(Debug, Clone)]
 pub struct SourceInfo {
@@ -11,19 +9,54 @@ pub struct SourceInfo {
     pub kind: Option<String>,
 }
 
-#[async_trait]
-pub trait ObsSource: Send + Sync {
-    async fn scenes(&self) -> Result<Vec<String>, ObsError>;
+impl ObsClient {
+    pub fn scene_names(&self) -> Vec<String> {
+        self.mirror.read(|catalog| catalog.scenes.clone())
+    }
 
-    async fn current_scene(&self) -> Result<Option<String>, ObsError>;
+    pub fn scene_items(&self, scene: &str) -> Vec<SourceInfo> {
+        self.mirror
+            .read(|catalog| catalog.sources.get(scene).cloned())
+            .unwrap_or_default()
+    }
+}
 
-    async fn sources(&self, scene: &str) -> Result<Vec<SourceInfo>, ObsError>;
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    async fn audio_inputs(&self) -> Result<Vec<String>, ObsError>;
+    #[test]
+    fn scene_names_read_the_mirror() {
+        let client = ObsClient::new_for_test("localhost:4455".to_owned());
+        client.mirror.write_for_test().scenes = vec!["Gameplay".to_owned(), "BRB".to_owned()];
 
-    async fn transitions(&self) -> Result<Vec<String>, ObsError>;
+        assert_eq!(client.scene_names(), ["Gameplay", "BRB"]);
+    }
 
-    async fn profiles(&self) -> Result<Vec<String>, ObsError>;
+    #[test]
+    fn scene_items_are_empty_for_an_unknown_scene() {
+        let client = ObsClient::new_for_test("localhost:4455".to_owned());
 
-    async fn scene_collections(&self) -> Result<Vec<String>, ObsError>;
+        assert!(client.scene_items("NonExistent").is_empty());
+    }
+
+    #[test]
+    fn scene_items_read_the_mirrored_rows() {
+        let client = ObsClient::new_for_test("localhost:4455".to_owned());
+        client.mirror.write_for_test().sources.insert(
+            "Gameplay".to_owned(),
+            vec![SourceInfo {
+                name: "Game Capture".to_owned(),
+                visible: true,
+                locked: false,
+                audio_db: None,
+                kind: None,
+            }],
+        );
+
+        let rows = client.scene_items("Gameplay");
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].name, "Game Capture");
+    }
 }

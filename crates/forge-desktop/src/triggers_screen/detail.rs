@@ -94,7 +94,7 @@ impl TriggersRegistryView {
             choices: CollectionChoices::for_specs(&specs),
             _cooldown_sub: cooldown_sub,
         });
-        self.start_collection_options(cx);
+        self.start_option_choices(cx);
         cx.notify();
     }
 

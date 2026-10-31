@@ -4,10 +4,8 @@ use super::{
     HistoryModalHost, LEFT_PANEL_W, Renaming, action_writes, nav, sub_action_modal, test_run,
 };
 use crate::async_bridge::{self, Loadable};
-use crate::collection_options::{ChoiceOptions, CollectionChoiceField};
 use crate::navigable_list::ListCursor;
-use crate::obs_catalog_options::ObsCatalogField;
-use crate::vtube_catalog_options::VTubeCatalogField;
+use crate::option_choices::ChoiceOptions;
 use forge_components::{Confirm, SearchState};
 use forge_host::integrations::BuiltinRegistry;
 use forge_registry::{SubActionRegistry, TriggerRegistry};
@@ -116,13 +114,10 @@ pub(super) struct StepChoices {
     pub(super) select_options: HashMap<String, Vec<(String, String)>>,
     pub(super) select_options_failed: bool,
     pub(super) builtins: BuiltinRegistry,
-    pub(super) collection_options: ChoiceOptions,
-    pub(super) collection_options_gen: async_bridge::Generation,
-    pub(super) obs_catalog_options_gen: async_bridge::Generation,
-    pub(super) choice_fields: Vec<CollectionChoiceField>,
-    pub(super) obs_fields: Vec<ObsCatalogField>,
-    pub(super) vtube_fields: Vec<VTubeCatalogField>,
-    pub(super) _collection_watch: Vec<Task<()>>,
+    pub(super) integration_options: ChoiceOptions,
+    pub(super) option_choices_gen: async_bridge::Generation,
+    pub(super) option_keys: Vec<String>,
+    pub(super) _option_watch: Option<Task<()>>,
 }
 
 impl StepChoices {
@@ -131,13 +126,10 @@ impl StepChoices {
             select_options: HashMap::new(),
             select_options_failed: false,
             builtins: BuiltinRegistry::default(),
-            collection_options: ChoiceOptions::new(),
-            collection_options_gen: async_bridge::Generation::default(),
-            obs_catalog_options_gen: async_bridge::Generation::default(),
-            choice_fields: Vec::new(),
-            obs_fields: Vec::new(),
-            vtube_fields: Vec::new(),
-            _collection_watch: Vec::new(),
+            integration_options: ChoiceOptions::new(),
+            option_choices_gen: async_bridge::Generation::default(),
+            option_keys: Vec::new(),
+            _option_watch: None,
         }
     }
 }

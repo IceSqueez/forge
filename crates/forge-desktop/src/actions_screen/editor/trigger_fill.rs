@@ -66,7 +66,7 @@ impl ScreenActionsView {
             saving: false,
             _name_sub: name_sub,
         }));
-        self.start_collection_options(cx);
+        self.start_option_choices(cx);
         cx.notify();
     }
 

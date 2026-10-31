@@ -14,6 +14,7 @@ use crate::error::VTubeError;
 use crate::vocabulary::option_lists::{
     EXPRESSION_LIST, HOTKEY_LIST, ITEM_FILE_LIST, ITEM_INSTANCE_LIST, MODEL_LIST,
 };
+use crate::vocabulary::picker_keys::{EXPRESSION_FILES, HOTKEY_IDS, MODEL_IDS};
 use crate::vts::message_type::ITEM_LIST_REQUEST;
 use crate::vts::protocol::check_response;
 
@@ -162,6 +163,9 @@ impl BuiltinOptionSource for VTubeClient {
             EXPRESSION_LIST,
             ITEM_FILE_LIST,
             ITEM_INSTANCE_LIST,
+            MODEL_IDS,
+            HOTKEY_IDS,
+            EXPRESSION_FILES,
         ]
         .into_iter()
         .map(|id| OptionListMetadata::new(OptionListId::new(id)))
@@ -178,9 +182,9 @@ impl BuiltinOptionSource for VTubeClient {
         _: &BTreeMap<String, QuickActionFieldValue>,
     ) -> CollectionOutcome<Vec<OptionEntry>> {
         match list.as_str() {
-            MODEL_LIST => self.read_content(model_entries),
-            HOTKEY_LIST => self.read_content(hotkey_entries),
-            EXPRESSION_LIST => self.read_content(expression_entries),
+            MODEL_LIST | MODEL_IDS => self.read_content(model_entries),
+            HOTKEY_LIST | HOTKEY_IDS => self.read_content(hotkey_entries),
+            EXPRESSION_LIST | EXPRESSION_FILES => self.read_content(expression_entries),
             ITEM_FILE_LIST => self.fetch_item_lists().await.map(|lists| lists.files),
             ITEM_INSTANCE_LIST => self.fetch_item_lists().await.map(|lists| lists.instances),
             _ => Err(CollectionFailure::NotEligible),
@@ -193,7 +197,6 @@ mod tests {
     use std::time::Duration;
 
     use forge_platform_core::{ConnectionState, RevisionWait};
-    use futures_util::FutureExt;
     use tokio::sync::mpsc;
 
     use super::*;
@@ -441,7 +444,14 @@ mod tests {
     async fn resolve_on_a_disconnected_client_ignores_a_stale_mirror() {
         let client = client();
         *client.content_state.write().unwrap() = snapshot();
-        for list in [MODEL_LIST, HOTKEY_LIST, EXPRESSION_LIST] {
+        for list in [
+            MODEL_LIST,
+            HOTKEY_LIST,
+            EXPRESSION_LIST,
+            MODEL_IDS,
+            HOTKEY_IDS,
+            EXPRESSION_FILES,
+        ] {
             assert_eq!(
                 resolve(&client, list).await,
                 Err(CollectionFailure::NotConnected),
@@ -468,6 +478,52 @@ mod tests {
         }
     }
 
+    fn select_keys(field: &forge_registry::FormField, out: &mut Vec<&'static str>) {
+        match field {
+            forge_registry::FormField::DynamicSelect { options_key, .. } => out.push(options_key),
+            forge_registry::FormField::Optional { inner, .. } => select_keys(inner, out),
+            _ => {}
+        }
+    }
+
+    #[test]
+    fn every_picker_vtube_declares_in_a_form_is_a_list_it_serves() {
+        let mut sub_actions = forge_registry::SubActionRegistry::new();
+        crate::register_vtube_sub_actions(&mut sub_actions, crate::SwitchableVTubeSink::new())
+            .unwrap();
+        let mut triggers = forge_registry::TriggerRegistry::new();
+        crate::register_vtube_triggers(&mut triggers).unwrap();
+        let mut declared = Vec::new();
+        for runner in sub_actions.all() {
+            for field in runner.config_fields() {
+                select_keys(&field, &mut declared);
+            }
+        }
+        for descriptor in triggers.all() {
+            for field in descriptor.config_fields() {
+                select_keys(&field, &mut declared);
+            }
+        }
+        let served = client().option_lists();
+
+        assert!(!declared.is_empty());
+        for key in declared {
+            assert!(served.iter().any(|list| list.id.as_str() == key), "{key}");
+        }
+    }
+
+    #[test]
+    fn editor_keys_keep_the_exact_strings_packs_reference() {
+        assert_eq!(
+            [MODEL_IDS, HOTKEY_IDS, EXPRESSION_FILES],
+            [
+                "vtube.model_ids",
+                "vtube.hotkey_ids",
+                "vtube.expression_files"
+            ]
+        );
+    }
+
     #[tokio::test]
     async fn a_connected_client_resolves_mirror_lists_from_the_content_snapshot() {
         let (client, _requests) = connected_client();
@@ -477,6 +533,9 @@ mod tests {
             (MODEL_LIST, model_entries(&snap)),
             (HOTKEY_LIST, hotkey_entries(&snap)),
             (EXPRESSION_LIST, expression_entries(&snap)),
+            (MODEL_IDS, model_entries(&snap)),
+            (HOTKEY_IDS, hotkey_entries(&snap)),
+            (EXPRESSION_FILES, expression_entries(&snap)),
         ] {
             assert_eq!(resolve(&client, list).await, Ok(expected), "{list}");
         }
@@ -613,39 +672,5 @@ mod tests {
 
         peer.close();
         assert!(bumped(&mut revisions).await, "session lost");
-    }
-
-    #[test]
-    fn bump_options_moves_the_option_revision_but_not_the_catalog_signal() {
-        let client = client();
-        let mut catalog = client.catalog_changes();
-        let mut revisions = client.revisions();
-
-        client.catalog_signal().bump_options();
-
-        assert_eq!(
-            (
-                catalog.changed().now_or_never(),
-                revisions.changed().now_or_never()
-            ),
-            (None, Some(RevisionWait::Changed))
-        );
-    }
-
-    #[test]
-    fn bump_moves_both_the_catalog_signal_and_the_option_revision() {
-        let client = client();
-        let mut catalog = client.catalog_changes();
-        let mut revisions = client.revisions();
-
-        client.catalog_signal().bump();
-
-        assert_eq!(
-            (
-                catalog.changed().now_or_never(),
-                revisions.changed().now_or_never()
-            ),
-            (Some(true), Some(RevisionWait::Changed))
-        );
     }
 }

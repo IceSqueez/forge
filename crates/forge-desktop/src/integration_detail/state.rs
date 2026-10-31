@@ -11,14 +11,13 @@ use forge_events::EventPublisher;
 use forge_host::integrations::BuiltinObject;
 use forge_host::integrations::{ObsInstallSeed, VTubeInstallSeed};
 use forge_host::platform_credentials::PlatformCredentialManagers;
-use forge_obs::ObsClient;
 use forge_platform_core::{
     BuiltinCollections, BuiltinContent, BuiltinControl, BuiltinHealth, BuiltinOptionSource,
     BuiltinStatus, CapabilityFlags, ConnectionState, DetailSection, HeaderAction, HealthMetric,
     QuickActions, SectionIcon,
 };
 use forge_registry::TriggerRegistry;
-use forge_runtime::{ActionEngineHandle, EventBus, IntegrationSlot, LiveViewerAggregatorHandle};
+use forge_runtime::{ActionEngineHandle, EventBus, IntegrationSlot};
 use forge_storage::{CredentialsRepo, HistoryRepo, SettingsRepo};
 use gpui::{Entity, Subscription, Task};
 use std::collections::{HashMap, VecDeque};
@@ -42,7 +41,6 @@ pub(crate) struct DetailServices {
 
 pub(crate) struct DetailFeeds {
     pub(crate) event_bus: Arc<EventBus>,
-    pub(crate) live_viewers: LiveViewerAggregatorHandle,
     pub(crate) connectivity: Entity<PlatformConnectivity>,
 }
 
@@ -54,7 +52,33 @@ pub(super) struct BuiltinPorts {
     pub(super) control: Option<Arc<dyn BuiltinControl>>,
     pub(super) collections: Option<Arc<dyn BuiltinCollections>>,
     pub(super) option_source: Option<Arc<dyn BuiltinOptionSource>>,
-    pub(super) obs_source: Option<Arc<ObsClient>>,
+}
+
+impl BuiltinPorts {
+    pub(super) fn from_object(object: BuiltinObject) -> (SectionIcon, Self) {
+        let BuiltinObject {
+            icon,
+            status,
+            health,
+            content,
+            quick,
+            control,
+            collections,
+            option_source,
+            follow: _,
+            ban_list: _,
+        } = object;
+        let ports = Self {
+            status,
+            health,
+            content,
+            quick,
+            control,
+            collections,
+            option_source,
+        };
+        (icon, ports)
+    }
 }
 
 #[derive(Default)]

@@ -1,5 +1,5 @@
 use forge_types::MessageCode;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 
 use async_trait::async_trait;
 use forge_platform_core::{
@@ -13,6 +13,9 @@ use crate::error::ObsError;
 use crate::vocabulary::messages;
 use crate::vocabulary::option_lists::{
     INPUT_LIST, PROFILE_LIST, SCENE_COLLECTION_LIST, SCENE_LIST, SOURCE_LIST, TRANSITION_LIST,
+};
+use crate::vocabulary::picker_keys::{
+    AUDIO_INPUT_NAMES, AUDIO_INPUTS, INPUT_NAMES, SCENE_NAMES, SOURCE_NAMES,
 };
 
 pub(crate) const SCENE_FIELD: &str = crate::vocabulary::config_keys::SCENE;
@@ -120,6 +123,42 @@ pub(crate) fn input_entries(catalog: &ObsCatalog) -> Vec<OptionEntry> {
     named_entries(catalog.audio_inputs.clone(), None, INPUT_ICON)
 }
 
+fn name_entries<'a>(names: impl Iterator<Item = &'a String>) -> Vec<OptionEntry> {
+    let mut seen = HashSet::new();
+    names
+        .filter(|name| seen.insert(name.as_str()))
+        .map(|name| OptionEntry::new(name.clone(), name.clone()))
+        .collect()
+}
+
+fn scene_item_names(catalog: &ObsCatalog) -> impl Iterator<Item = &String> {
+    catalog
+        .scenes
+        .iter()
+        .filter_map(|scene| catalog.sources.get(scene))
+        .flatten()
+        .map(|item| &item.name)
+}
+
+pub(crate) fn scene_name_entries(catalog: &ObsCatalog) -> Vec<OptionEntry> {
+    name_entries(catalog.scenes.iter())
+}
+
+pub(crate) fn source_name_entries(catalog: &ObsCatalog) -> Vec<OptionEntry> {
+    name_entries(scene_item_names(catalog))
+}
+
+pub(crate) fn audio_input_name_entries(catalog: &ObsCatalog) -> Vec<OptionEntry> {
+    name_entries(catalog.audio_inputs.iter())
+}
+
+pub(crate) fn input_name_entries(catalog: &ObsCatalog) -> Vec<OptionEntry> {
+    let inputs = scene_item_names(catalog)
+        .filter(|name| !catalog.scenes.contains(name))
+        .chain(catalog.audio_inputs.iter());
+    name_entries(inputs)
+}
+
 impl ObsClient {
     fn read_catalog<T>(&self, read: impl FnOnce(&ObsCatalog) -> T) -> CollectionOutcome<T> {
         if !self.connection_state().is_connected() {
@@ -176,6 +215,11 @@ impl BuiltinOptionSource for ObsClient {
             OptionListMetadata::new(OptionListId::new(TRANSITION_LIST)),
             OptionListMetadata::new(OptionListId::new(PROFILE_LIST)),
             OptionListMetadata::new(OptionListId::new(SCENE_COLLECTION_LIST)),
+            OptionListMetadata::new(OptionListId::new(SCENE_NAMES)),
+            OptionListMetadata::new(OptionListId::new(SOURCE_NAMES)),
+            OptionListMetadata::new(OptionListId::new(INPUT_NAMES)),
+            OptionListMetadata::new(OptionListId::new(AUDIO_INPUTS)),
+            OptionListMetadata::new(OptionListId::new(AUDIO_INPUT_NAMES)),
         ]
     }
 
@@ -206,6 +250,10 @@ impl BuiltinOptionSource for ObsClient {
                 .scene_collection_entries()
                 .await
                 .map_err(|e| listing_failure(&e)),
+            SCENE_NAMES => self.read_catalog(scene_name_entries),
+            SOURCE_NAMES => self.read_catalog(source_name_entries),
+            INPUT_NAMES => self.read_catalog(input_name_entries),
+            AUDIO_INPUTS | AUDIO_INPUT_NAMES => self.read_catalog(audio_input_name_entries),
             _ => Err(CollectionFailure::NotEligible),
         }
     }
@@ -262,6 +310,138 @@ mod tests {
 
     fn hint_key(entry: &OptionEntry) -> Option<&'static str> {
         entry.hint.as_ref().map(|h| h.key)
+    }
+
+    fn stored_values(entries: &[OptionEntry]) -> Vec<(&str, &str)> {
+        entries
+            .iter()
+            .map(|e| (e.value.as_str(), e.label.as_str()))
+            .collect()
+    }
+
+    fn studio() -> ObsCatalog {
+        ObsCatalog {
+            scenes: vec!["Main".to_owned(), "Intro".to_owned(), "Empty".to_owned()],
+            sources: HashMap::from([
+                (
+                    "Main".to_owned(),
+                    vec![
+                        item("Camera", true, None),
+                        item("Intro", true, None),
+                        item("Mic", true, None),
+                    ],
+                ),
+                (
+                    "Intro".to_owned(),
+                    vec![item("Camera", false, None), item("Logo", true, None)],
+                ),
+                ("Deleted".to_owned(), vec![item("Stale", true, None)]),
+            ]),
+            audio_inputs: vec!["Mic".to_owned(), "Desktop Audio".to_owned()],
+            ..fixture()
+        }
+    }
+
+    #[test]
+    fn each_editor_list_offers_its_names_once_in_first_seen_order() {
+        let catalog = studio();
+        for (entries, expected) in [
+            (scene_name_entries(&catalog), vec!["Main", "Intro", "Empty"]),
+            (
+                source_name_entries(&catalog),
+                vec!["Camera", "Intro", "Mic", "Logo"],
+            ),
+            (
+                audio_input_name_entries(&catalog),
+                vec!["Mic", "Desktop Audio"],
+            ),
+            (
+                input_name_entries(&catalog),
+                vec!["Camera", "Mic", "Logo", "Desktop Audio"],
+            ),
+        ] {
+            assert_eq!(values(&entries), expected);
+        }
+    }
+
+    #[test]
+    fn an_editor_choice_stores_and_shows_the_obs_name() {
+        assert_eq!(
+            stored_values(&audio_input_name_entries(&studio())),
+            [("Mic", "Mic"), ("Desktop Audio", "Desktop Audio")]
+        );
+    }
+
+    #[test]
+    fn editor_lists_declare_no_scene_dependency() {
+        let editor_keys = [
+            SCENE_NAMES,
+            SOURCE_NAMES,
+            INPUT_NAMES,
+            AUDIO_INPUTS,
+            AUDIO_INPUT_NAMES,
+        ];
+        let declared: Vec<OptionListMetadata> = disconnected()
+            .option_lists()
+            .into_iter()
+            .filter(|list| editor_keys.contains(&list.id.as_str()))
+            .collect();
+
+        assert_eq!(declared.len(), editor_keys.len());
+        assert!(declared.iter().all(|list| list.depends_on.is_empty()));
+    }
+
+    fn select_keys(field: &forge_registry::FormField, out: &mut Vec<&'static str>) {
+        match field {
+            forge_registry::FormField::DynamicSelect { options_key, .. } => out.push(options_key),
+            forge_registry::FormField::Optional { inner, .. } => select_keys(inner, out),
+            _ => {}
+        }
+    }
+
+    #[test]
+    fn every_picker_obs_declares_in_a_form_is_a_list_it_serves() {
+        let mut sub_actions = forge_registry::SubActionRegistry::new();
+        crate::register_obs_sub_actions(&mut sub_actions, crate::SwitchableObsSink::new()).unwrap();
+        let mut triggers = forge_registry::TriggerRegistry::new();
+        crate::register_obs_triggers(&mut triggers).unwrap();
+        let mut declared = Vec::new();
+        for runner in sub_actions.all() {
+            for field in runner.config_fields() {
+                select_keys(&field, &mut declared);
+            }
+        }
+        for descriptor in triggers.all() {
+            for field in descriptor.config_fields() {
+                select_keys(&field, &mut declared);
+            }
+        }
+        let served = disconnected().option_lists();
+
+        assert!(!declared.is_empty());
+        for key in declared {
+            assert!(served.iter().any(|list| list.id.as_str() == key), "{key}");
+        }
+    }
+
+    #[test]
+    fn editor_keys_keep_the_exact_strings_packs_reference() {
+        assert_eq!(
+            [
+                SCENE_NAMES,
+                SOURCE_NAMES,
+                INPUT_NAMES,
+                AUDIO_INPUTS,
+                AUDIO_INPUT_NAMES,
+            ],
+            [
+                "obs.scene_names",
+                "obs.source_names",
+                "obs.input_names",
+                "obs.audio_inputs",
+                "obs.audio_input_names",
+            ]
+        );
     }
 
     #[test]

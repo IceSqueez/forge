@@ -3,9 +3,7 @@ use crate::actions_screen::step_validation::{StepRejection, step_rejection};
 use crate::actions_screen::sub_action_modal::{
     EditSubActionForm, SubFormCommit, SubFormEvent, SubFormLaunch, SubFormTarget,
 };
-use crate::collection_options::collection_choice_fields;
-use crate::obs_catalog_options::obs_catalog_fields;
-use crate::vtube_catalog_options::vtube_catalog_fields;
+use crate::option_choices::integration_option_keys;
 use forge_registry::{FormField, FormSchemaSource, SubActionRunner};
 use forge_types::{SubActionConfig, SubActionStep};
 use gpui::{Context, Entity};
@@ -20,9 +18,7 @@ impl ScreenActionsView {
     }
 
     pub(super) fn open_sub_form(&mut self, launch: SubFormLaunch, cx: &mut Context<Self>) {
-        self.choices.choice_fields = collection_choice_fields(&launch.specs);
-        self.choices.obs_fields = obs_catalog_fields(&launch.specs);
-        self.choices.vtube_fields = vtube_catalog_fields(&launch.specs);
+        self.choices.option_keys = integration_option_keys(&launch.specs);
         let scope = self.step_scope(launch.target);
         let form = cx.new(|cx| {
             EditSubActionForm::new(launch, self.deps.rt_handle.clone(), cx)
@@ -31,16 +27,14 @@ impl ScreenActionsView {
         self.modals._sub_form_sub = Some(cx.subscribe(&form, Self::on_sub_form_event));
         self.modals.sub_form = Some(form);
         self.fetch_select_options(cx);
-        self.start_collection_options(cx);
+        self.start_option_choices(cx);
         cx.notify();
     }
 
     fn close_sub_form(&mut self) {
         self.modals.sub_form = None;
         self.modals._sub_form_sub = None;
-        self.choices.choice_fields.clear();
-        self.choices.obs_fields.clear();
-        self.choices.vtube_fields.clear();
+        self.choices.option_keys.clear();
     }
 
     fn on_sub_form_event(

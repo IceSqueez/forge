@@ -569,7 +569,7 @@ impl ReconnectingSession for SupervisorContext {
             reason = "the connect waiter may already have stopped listening"
         )]
         let _ = connected_notifier.send(());
-        catalog_signal.bump_options();
+        catalog_signal.bump();
         tracing::info!(endpoint = %endpoint, "connected and authenticated to VTube Studio");
 
         let mut pending: HashMap<String, InFlight> = HashMap::new();
@@ -595,7 +595,7 @@ impl ReconnectingSession for SupervisorContext {
             tokio::select! {
                 () = shutdown.notified() => {
                     clear_session_state(health_state, health_tx);
-                    catalog_signal.bump_options();
+                    catalog_signal.bump();
                     announce_stopped(state, &**publisher, auth_state, endpoint);
                     return SessionEnd::Stopped;
                 }
@@ -670,7 +670,7 @@ impl ReconnectingSession for SupervisorContext {
                             content_notifier.notify_model_changed();
                         }
                         if event.changes_scene_items() {
-                            catalog_signal.bump_options();
+                            catalog_signal.bump();
                             content_notifier.notify_items_changed();
                         }
                         if !is_repeated_face_state(&event, &mut last_face_found) {
@@ -735,7 +735,7 @@ impl ReconnectingSession for SupervisorContext {
         }
         pending.clear();
         clear_session_state(health_state, health_tx);
-        catalog_signal.bump_options();
+        catalog_signal.bump();
 
         {
             let mut g = connected_at.write_recover();

@@ -10,7 +10,7 @@ use common::{
     FakeObs, Recorder, Reply, SCENE, SCENE_UUID, SNAPSHOT_ITEM_ID, SOURCE, Seen,
     completes_every_handshake, connect_to, connected, spawn_fake_obs, standard_reply,
 };
-use forge_obs::{ObsClient, ObsError, ObsSink, ObsSource};
+use forge_obs::{ObsClient, ObsError, ObsSink};
 use forge_types::Variant;
 use serde_json::{Map, Value, json};
 
@@ -443,7 +443,7 @@ async fn a_volume_change_obs_accepted_lands_in_the_catalog() {
 
     client.set_input_volume_db(SOURCE, VOLUME_DB).await.unwrap();
 
-    let rows = client.sources(SCENE).await.unwrap();
+    let rows = client.scene_items(SCENE);
     assert_eq!(rows[0].audio_db, Some(VOLUME_DB as f32));
 }
 
@@ -532,12 +532,12 @@ async fn studio_mode_rejections_map_to_the_studio_mode_error() {
 #[tokio::test]
 async fn a_rejected_volume_change_leaves_the_catalog_alone() {
     let (_fake, client) = session_answering(rejecting).await;
-    let before = client.sources(SCENE).await.unwrap()[0].audio_db;
+    let before = client.scene_items(SCENE)[0].audio_db;
 
     let outcome = client.set_input_volume_db(SOURCE, VOLUME_DB).await;
 
     assert!(outcome.is_err());
-    assert_eq!(client.sources(SCENE).await.unwrap()[0].audio_db, before);
+    assert_eq!(client.scene_items(SCENE)[0].audio_db, before);
 }
 
 #[tokio::test]

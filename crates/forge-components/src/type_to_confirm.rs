@@ -1,7 +1,6 @@
 use crate::HOVER_FILL_ALPHA;
 use crate::key_activation::KeyActivated;
 use crate::presentation::ActivePresentation;
-use gpui::prelude::FluentBuilder as _;
 use gpui::{
     App, AppContext, ClickEvent, Context, ElementId, Entity, EventEmitter, FontWeight,
     InteractiveElement, IntoElement, ParentElement, Pixels, Render, Rgba, SharedString,
@@ -9,7 +8,7 @@ use gpui::{
 };
 
 use crate::buttons::secondary_button;
-use crate::confirm::esc_hint_label;
+use crate::confirm::{confirm_actions_row, confirm_footer};
 use crate::icons::{Icon, icon};
 use crate::palette::{ForgePalette, with_alpha};
 use crate::text_input::{InputEvent, TextInput};
@@ -24,7 +23,6 @@ const ICON_TILE_GLYPH: Pixels = px(20.0);
 const ICON_TILE_ALPHA: f32 = 0.12;
 const SECTION_STACK_GAP: Pixels = px(8.0);
 const BULLET_GLYPH: Pixels = px(14.0);
-const ACTIONS_GAP: Pixels = px(8.0);
 const CHIP_PAD_Y: Pixels = px(1.0);
 const CARD_WIDTH: Pixels = px(520.0);
 
@@ -323,6 +321,7 @@ impl Render for TypeToConfirm {
                     .child(
                         div()
                             .flex_1()
+                            .min_w_0()
                             .font_family(body_family())
                             .text_size(FONT_SM)
                             .text_color(p.text_primary)
@@ -394,27 +393,8 @@ impl Render for TypeToConfirm {
             density,
         );
 
-        let footer = div()
-            .w_full()
-            .flex()
-            .items_center()
-            .when_some(self.esc_hint.clone(), |footer, phrase| {
-                footer.child(esc_hint_label(phrase, &p))
-            })
-            .child(div().flex_1())
-            .py(spacing(Spacing::Sm, density))
-            .px(spacing(Spacing::Lg, density))
-            .bg(p.shell)
-            .border_t(BORDER_THIN)
-            .border_color(p.border_regular)
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(scaled(ACTIONS_GAP, density))
-                    .child(cancel)
-                    .child(confirm),
-            );
+        let actions = confirm_actions_row(density).child(cancel).child(confirm);
+        let footer = confirm_footer(self.esc_hint.clone(), actions, &p, density).bg(p.shell);
 
         div()
             .flex()

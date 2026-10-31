@@ -1708,6 +1708,7 @@ impl GlobalsView {
             .id("globals-inspect-scroll")
             .w_full()
             .max_h(px(400.0))
+            .min_h_0()
             .overflow_y_revealing_focus()
             .child(code);
 
@@ -1748,6 +1749,7 @@ impl GlobalsView {
             .subtitle(subtitle)
             .header_icon(Icon::Code, variant_kind_color(kind, palette))
             .size(ModalSize::Md)
+            .body_scrolls_itself()
             .footer(footer)
             .on_close(
                 "globals-inspect-close",

@@ -122,6 +122,7 @@ impl EditSubActionForm {
             .px(spacing(Spacing::Md, density))
             .py(spacing(Spacing::Sm, density))
             .max_h(SUB_MODAL_MAX_H)
+            .min_h_0()
             .overflow_y_revealing_focus()
             .when(self.category == Some(SubActionCategory::Files), |body| {
                 body.child(files_root_note(palette, density))
@@ -180,6 +181,7 @@ impl EditSubActionForm {
             .header_tile_size(STEP_TILE, STEP_TILE_GLYPH)
             .title_slot(title_slot)
             .flush_body()
+            .body_scrolls_itself()
             .footer(footer)
             .on_close(
                 "actions-sub-close",

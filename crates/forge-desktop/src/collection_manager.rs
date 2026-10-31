@@ -534,6 +534,7 @@ impl Render for CollectionManager {
             .id("collection-manager-body")
             .w_full()
             .max_h(BODY_MAX_HEIGHT)
+            .min_h_0()
             .overflow_y_revealing_focus()
             .child(content);
 
@@ -541,6 +542,7 @@ impl Render for CollectionManager {
             .header_icon(Icon::from_name(self.metadata.icon.as_str()), self.accent)
             .subtitle(subtitle)
             .width(MANAGER_WIDTH)
+            .body_scrolls_itself()
             .footer(footer)
             .on_close(
                 "collection-manager-close",

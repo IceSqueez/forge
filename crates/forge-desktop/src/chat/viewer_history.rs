@@ -425,6 +425,7 @@ impl ViewerHistory {
                 .flex()
                 .flex_col()
                 .max_h(HISTORY_MAX_H)
+                .min_h_0()
                 .child(
                     list(
                         self.list_state.clone(),
@@ -452,6 +453,7 @@ impl Render for ViewerHistory {
             &palette,
         )
         .size(ModalSize::Md)
+        .body_scrolls_itself()
         .header_icon(Icon::History, palette.brand)
         .subtitle(platform_display_name(self.key.platform))
         .on_close(

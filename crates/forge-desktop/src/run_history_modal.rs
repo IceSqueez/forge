@@ -251,6 +251,7 @@ impl RunHistoryModal {
         div()
             .w_full()
             .h(BODY_H)
+            .min_h_0()
             .flex()
             .child(rail)
             .child(detail)
@@ -756,7 +757,7 @@ impl Render for RunHistoryModal {
                 cx.listener(|this, _: &ClickEvent, _, cx| this.dismiss(cx)),
             );
         if has_runs {
-            card = card.width(MODAL_W);
+            card = card.width(MODAL_W).body_scrolls_itself();
         }
 
         let view = cx.entity();

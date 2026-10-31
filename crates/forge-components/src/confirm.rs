@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    App, ClickEvent, ElementId, FocusHandle, FontWeight, InteractiveElement, IntoElement,
+    App, ClickEvent, Div, ElementId, FocusHandle, FontWeight, InteractiveElement, IntoElement,
     KeyBinding, KeyDownEvent, KeyboardClickEvent, NoAction, ParentElement, Pixels, RenderOnce,
     Rgba, SharedString, StatefulInteractiveElement, Styled, Window, div, px,
 };
@@ -193,6 +193,39 @@ fn enter_focus(id: &ElementId, window: &mut Window, cx: &mut App) -> FocusHandle
     )
 }
 
+pub(crate) fn confirm_actions_row(density: Density) -> Div {
+    div()
+        .ml_auto()
+        .flex()
+        .flex_wrap()
+        .justify_end()
+        .items_center()
+        .gap(scaled(ACTIONS_GAP, density))
+}
+
+pub(crate) fn confirm_footer(
+    esc_hint: Option<SharedString>,
+    actions: Div,
+    palette: &ForgePalette,
+    density: Density,
+) -> Div {
+    div()
+        .w_full()
+        .flex()
+        .flex_wrap()
+        .items_center()
+        .gap_x(spacing(Spacing::Xxs, density))
+        .gap_y(scaled(ACTIONS_GAP, density))
+        .when_some(esc_hint, |footer, phrase| {
+            footer.child(esc_hint_label(phrase, palette))
+        })
+        .py(spacing(Spacing::Sm, density))
+        .px(spacing(Spacing::Lg, density))
+        .border_t(BORDER_THIN)
+        .border_color(palette.border_regular)
+        .child(actions)
+}
+
 impl RenderOnce for ConfirmModal {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let density = cx.density();
@@ -265,13 +298,7 @@ impl RenderOnce for ConfirmModal {
             .child(hint);
 
         let has_actions = cancel.is_some() || alternate.is_some() || confirm.is_some();
-        let mut actions = div()
-            .ml_auto()
-            .flex()
-            .flex_wrap()
-            .justify_end()
-            .items_center()
-            .gap(scaled(ACTIONS_GAP, density));
+        let mut actions = confirm_actions_row(density);
         for (id, label, handler) in [cancel, alternate].into_iter().flatten() {
             actions = actions.child(secondary_button(label, &palette).on_click(id, handler));
         }
@@ -301,23 +328,7 @@ impl RenderOnce for ConfirmModal {
             .child(body);
 
         if has_actions {
-            card = card.child(
-                div()
-                    .w_full()
-                    .flex()
-                    .flex_wrap()
-                    .items_center()
-                    .gap_x(spacing(Spacing::Xxs, density))
-                    .gap_y(scaled(ACTIONS_GAP, density))
-                    .when_some(esc_hint, |footer, phrase| {
-                        footer.child(esc_hint_label(phrase, &palette))
-                    })
-                    .py(spacing(Spacing::Sm, density))
-                    .px(spacing(Spacing::Lg, density))
-                    .border_t(BORDER_THIN)
-                    .border_color(palette.border_regular)
-                    .child(actions),
-            );
+            card = card.child(confirm_footer(esc_hint, actions, &palette, density));
         }
 
         card.when_some(enter_binding, |card, (focus, confirm)| {

@@ -4,8 +4,9 @@ use std::sync::Arc;
 use gpui::{
     Anchor, AnchoredPositionMode, Animation, AnimationExt, AnyElement, App, Div, ElementId, Entity,
     FocusHandle, Global, InteractiveElement, IntoElement, KeyDownEvent, MouseButton,
-    MouseDownEvent, ParentElement, Pixels, Point, RenderOnce, Rgba, SharedString, Styled,
-    WeakFocusHandle, Window, anchored, deferred, div, point, px,
+    MouseDownEvent, MouseMoveEvent, ParentElement, Pixels, PlatformInput, Point, RenderOnce, Rgba,
+    ScrollDelta, ScrollEvent, SharedString, Styled, WeakFocusHandle, Window, anchored, deferred,
+    div, point, px,
 };
 
 use crate::palette::{ForgePalette, with_alpha};
@@ -178,6 +179,31 @@ pub(crate) fn confine_tab<E: InteractiveElement>(element: E, scope: &FocusHandle
         })
 }
 
+fn dismiss_covered_tooltips(window: &mut Window, cx: &mut App) {
+    if window.last_input_was_keyboard() {
+        return;
+    }
+    let position = window.mouse_position();
+    let modifiers = window.modifiers();
+    window.dispatch_event(
+        PlatformInput::MouseMove(MouseMoveEvent {
+            position,
+            pressed_button: None,
+            modifiers,
+        }),
+        cx,
+    );
+    window.dispatch_event(
+        PlatformInput::Scroll(ScrollEvent {
+            position,
+            delta: ScrollDelta::Pixels(Point::default()),
+            modifiers,
+            ..ScrollEvent::default()
+        }),
+        cx,
+    );
+}
+
 const ENTER_MS: u64 = 200;
 
 const OVERLAY_PRIORITY: usize = 1;
@@ -256,6 +282,16 @@ impl Overlay {
         )
     }
 
+    fn dismiss_tooltips_once_mounted(&self, window: &mut Window, cx: &mut App) {
+        let key = ElementId::NamedChild(
+            Arc::new(self.dismiss_id.clone()),
+            SharedString::new_static("tooltips"),
+        );
+        window.use_keyed_state(key, cx, |window, _| {
+            window.on_next_frame(dismiss_covered_tooltips);
+        });
+    }
+
     fn render_scrim(&self, animate_alpha: bool) -> gpui::AnyElement {
         let scrim = self.scrim;
         let mut layer = div().absolute().top_0().left_0().size_full().occlude();
@@ -294,6 +330,7 @@ impl Overlay {
 
 impl RenderOnce for Overlay {
     fn render(mut self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        self.dismiss_tooltips_once_mounted(window, cx);
         let escape_focus = self
             .on_dismiss
             .is_some()

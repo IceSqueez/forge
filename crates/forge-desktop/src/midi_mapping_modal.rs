@@ -875,6 +875,7 @@ impl Render for MidiMappingModal {
             .id("midi-modal-body")
             .w_full()
             .max_h(BODY_MAX_H)
+            .min_h_0()
             .overflow_y_revealing_focus()
             .py(spacing(Spacing::Md, density))
             .px(scaled(BODY_PAD_H, density))
@@ -897,6 +898,7 @@ impl Render for MidiMappingModal {
             .subtitle(subtitle)
             .width(MODAL_W)
             .flush_body()
+            .body_scrolls_itself()
             .footer(self.render_footer(&palette, cx))
             .on_close(
                 "midi-modal-close",

@@ -27,6 +27,7 @@ pub struct Modal {
     title_slot: Option<AnyElement>,
     body: AnyElement,
     pad_body: bool,
+    body_scrolls_itself: bool,
     footer: Option<AnyElement>,
     header_icon: Option<(Icon, Rgba)>,
     tile_size: Option<(Pixels, Pixels)>,
@@ -55,6 +56,7 @@ pub fn modal(
         title_slot: None,
         body: body.into_any_element(),
         pad_body: true,
+        body_scrolls_itself: false,
         footer: None,
         header_icon: None,
         tile_size: None,
@@ -101,6 +103,12 @@ impl Modal {
     #[must_use]
     pub fn flush_body(mut self) -> Self {
         self.pad_body = false;
+        self
+    }
+
+    #[must_use]
+    pub fn body_scrolls_itself(mut self) -> Self {
+        self.body_scrolls_itself = true;
         self
     }
 
@@ -238,17 +246,16 @@ impl RenderOnce for Modal {
         let header = self.render_header(density);
         let footer = self.render_footer(density);
 
-        let mut body = div()
-            .id(BODY_ID)
-            .w_full()
-            .min_h_0()
-            .overflow_y_revealing_focus()
-            .flex()
-            .flex_col();
+        let mut body = div().id(BODY_ID).w_full().min_h_0().flex().flex_col();
         if self.pad_body {
             body = body.p(spacing(Spacing::Md, density));
         }
         let body = body.child(std::mem::replace(&mut self.body, div().into_any_element()));
+        let body = if self.body_scrolls_itself {
+            body.overflow_hidden().into_any_element()
+        } else {
+            body.overflow_y_revealing_focus().into_any_element()
+        };
 
         confine_tab(div().track_focus(&scope), &scope)
             .flex()

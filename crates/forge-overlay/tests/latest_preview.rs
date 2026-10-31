@@ -37,7 +37,7 @@ fn the_latest_preview_draws_a_card_with_label_headline_and_subline_expanded_from
         vec![
             (PreviewLineRole::Label, "Last donation"),
             (PreviewLineRole::Headline, "PixelPal"),
-            (PreviewLineRole::Subline, "100.00 UAH"),
+            (PreviewLineRole::Subline, "\u{20b4}100"),
         ]
     );
 }

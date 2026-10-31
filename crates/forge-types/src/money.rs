@@ -10,6 +10,13 @@ const SHOWN_FRACTION_DIGITS: usize = 2;
 const CURRENCY_CODE_LEN: usize = 3;
 const DECIMAL_SEPARATOR: char = '.';
 const DECIMAL_BASE: u64 = 10;
+const CURRENCY_SYMBOLS: [(&str, &str); 5] = [
+    ("EUR", "\u{20ac}"),
+    ("GBP", "\u{a3}"),
+    ("JPY", "\u{a5}"),
+    ("UAH", "\u{20b4}"),
+    ("USD", "$"),
+];
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
@@ -113,19 +120,36 @@ impl MoneyAmount {
     }
 
     pub fn formatted(&self) -> String {
-        format!("{} {}", self.major_units_text(), self.currency)
+        format_money(self.micros, self.currency.as_str())
     }
+}
 
-    fn major_units_text(&self) -> String {
-        let whole = self.micros / MICROS_PER_MAJOR_UNIT;
-        let fraction = self.micros % MICROS_PER_MAJOR_UNIT;
-        if fraction == 0 {
-            return whole.to_string();
-        }
-        let digits = format!("{fraction:0>width$}", width = MICRO_DIGITS as usize);
-        let significant = digits.trim_end_matches('0');
-        format!("{whole}.{significant:0<SHOWN_FRACTION_DIGITS$}")
+pub fn format_money(micros: u64, currency: &str) -> String {
+    let code = currency.trim().to_ascii_uppercase();
+    let units = major_units_text(micros);
+    match currency_symbol(&code) {
+        Some(symbol) => format!("{symbol}{units}"),
+        None if code.is_empty() => units,
+        None => format!("{units} {code}"),
     }
+}
+
+fn currency_symbol(code: &str) -> Option<&'static str> {
+    CURRENCY_SYMBOLS
+        .iter()
+        .find(|(known, _)| *known == code)
+        .map(|(_, symbol)| *symbol)
+}
+
+fn major_units_text(micros: u64) -> String {
+    let whole = micros / MICROS_PER_MAJOR_UNIT;
+    let fraction = micros % MICROS_PER_MAJOR_UNIT;
+    if fraction == 0 {
+        return whole.to_string();
+    }
+    let digits = format!("{fraction:0>width$}", width = MICRO_DIGITS as usize);
+    let significant = digits.trim_end_matches('0');
+    format!("{whole}.{significant:0<SHOWN_FRACTION_DIGITS$}")
 }
 
 impl fmt::Display for MoneyAmount {
@@ -266,19 +290,37 @@ mod tests {
     #[test]
     fn formatted_drops_an_integral_fraction_and_shows_at_least_two_fraction_digits() {
         for (micros, shown) in [
-            (100_000_000, "100 UAH"),
-            (0, "0 UAH"),
-            (12_500_000, "12.50 UAH"),
-            (12_050_000, "12.05 UAH"),
-            (125_000, "0.125 UAH"),
-            (1, "0.000001 UAH"),
-            (1_123_456, "1.123456 UAH"),
+            (100_000_000, "\u{20b4}100"),
+            (0, "\u{20b4}0"),
+            (12_500_000, "\u{20b4}12.50"),
+            (12_050_000, "\u{20b4}12.05"),
+            (125_000, "\u{20b4}0.125"),
+            (1, "\u{20b4}0.000001"),
+            (1_123_456, "\u{20b4}1.123456"),
         ] {
             assert_eq!(
                 MoneyAmount::from_micros(micros, uah()).formatted(),
                 shown,
                 "micros {micros}"
             );
+        }
+    }
+
+    #[test]
+    fn format_money_shows_the_currency_the_amount_came_in() {
+        for (micros, currency, shown) in [
+            (10_000_000, "USD", "$10"),
+            (12_500_000, "USD", "$12.50"),
+            (100_000_000, "UAH", "\u{20b4}100"),
+            (5_000_000, "EUR", "\u{20ac}5"),
+            (5_000_000, "GBP", "\u{a3}5"),
+            (1_000_000_000, "JPY", "\u{a5}1000"),
+            (1_250_000, "KWD", "1.25 KWD"),
+            (10_000_000, "CAD", "10 CAD"),
+            (10_000_000, " usd ", "$10"),
+            (10_000_000, "", "10"),
+        ] {
+            assert_eq!(format_money(micros, currency), shown, "{currency}");
         }
     }
 

@@ -270,7 +270,7 @@ mod tests {
             ("user_platform", "donatello"),
             ("message_text", "keep it up"),
             ("currency", "UAH"),
-            ("amount_formatted", "12.50 UAH"),
+            ("amount_formatted", "\u{20b4}12.50"),
             ("donation_provider", "donatello"),
             ("donation_id", "d-42"),
             ("donor_visibility", "named"),
@@ -332,7 +332,7 @@ mod tests {
                 Some(&Variant::Int(505_000_000)),
                 Some(&Variant::Float(505.0)),
                 Some(&Variant::String("UAH".to_owned())),
-                Some(&Variant::String("505 UAH".to_owned())),
+                Some(&Variant::String("\u{20b4}505".to_owned())),
             ]
         );
     }

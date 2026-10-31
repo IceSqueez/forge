@@ -301,7 +301,7 @@ mod tests {
                 (
                     "donatello",
                     "Olena",
-                    "12.50 UAH",
+                    "\u{20b4}12.50",
                     "UAH",
                     "donation",
                     12_500_000_i64,
@@ -314,7 +314,7 @@ mod tests {
                 (
                     "youtube",
                     "Mykola",
-                    "5 USD",
+                    "$5",
                     "USD",
                     "super_chat",
                     5_000_000,
@@ -327,7 +327,7 @@ mod tests {
                 (
                     "youtube",
                     "Mykola",
-                    "2 EUR",
+                    "\u{20ac}2",
                     "EUR",
                     "super_sticker",
                     2_000_000,

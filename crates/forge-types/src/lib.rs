@@ -62,7 +62,7 @@ pub use message::{
     NO_CHAT_PLATFORM_ENABLED, NO_WHISPER_PLATFORM_ENABLED, UNKNOWN_CHAT_TARGET, UPSTREAM_FAILURE,
     UpstreamDetail, UserText, VerbatimText, WHISPERS_UNSUPPORTED,
 };
-pub use money::{CurrencyCode, MICROS_PER_MAJOR_UNIT, MoneyAmount};
+pub use money::{CurrencyCode, MICROS_PER_MAJOR_UNIT, MoneyAmount, format_money};
 pub use output_device::OutputDevice;
 pub use permission_rung::PermissionRung;
 pub use platform::{

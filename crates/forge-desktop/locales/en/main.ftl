@@ -2459,7 +2459,7 @@ chat_event_subscribed = subscribed (Tier { $tier })
 chat_event_raided = raided with
 chat_event_cheered = cheered
 chat_event_viewers = { $viewers } viewers
-chat_event_super_chat = sent a Super Chat ({ $amount } { $currency })
+chat_event_super_chat = sent a Super Chat ({ $amount })
 chat_event_new_member = became a member
 chat_event_member_milestone = member milestone
 

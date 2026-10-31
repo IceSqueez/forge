@@ -5,7 +5,7 @@ use forge_components::tr;
 use forge_events::Event;
 use forge_types::{
     ChatEventDetail, ChatModerationAction, ChatModerationPayload, ChatPayload, ChatReply,
-    ChatViewer, EventId, PlatformId, UnifiedChatRow, UserBadge,
+    ChatViewer, EventId, PlatformId, UnifiedChatRow, UserBadge, format_money,
 };
 use gpui::{Rgba, SharedString};
 use time::OffsetDateTime;
@@ -506,8 +506,7 @@ fn event_body(row: &UnifiedChatRow) -> ChatBody {
         }) => ChatBody::Subscription {
             descriptor: descriptor(tr!(
                 "chat_event_super_chat",
-                amount = format_amount(*amount_micros),
-                currency = currency.clone()
+                amount = format_money(*amount_micros, currency)
             )),
             months: None,
             message: message.clone().map(SharedString::from),
@@ -530,12 +529,6 @@ fn event_body(row: &UnifiedChatRow) -> ChatBody {
 
 fn descriptor(text: String) -> SharedString {
     format!(" {text}").into()
-}
-
-fn format_amount(micros: u64) -> String {
-    let whole = micros / 1_000_000;
-    let cents = (micros % 1_000_000) / 10_000;
-    format!("{whole}.{cents:02}")
 }
 
 #[cfg(test)]
@@ -711,6 +704,7 @@ mod tests {
             _ => panic!("Cheer without a message must still map to ChatBody::Cheer"),
         }
 
+        crate::i18n::install_language(forge_storage::Language::En);
         let super_chat = row(
             Some(ChatEventDetail::SuperChat {
                 amount_micros: 5_000_000,
@@ -722,10 +716,15 @@ mod tests {
         );
         match event_body(&super_chat) {
             ChatBody::Subscription {
-                months, message, ..
+                months,
+                message,
+                descriptor,
+                ..
             } => {
                 assert_eq!(months, None);
                 assert_eq!(message, Some("thx".into()));
+                assert!(descriptor.contains("$5"), "{descriptor}");
+                assert!(!descriptor.contains("USD"), "{descriptor}");
             }
             _ => panic!("SuperChat must map to ChatBody::Subscription"),
         }

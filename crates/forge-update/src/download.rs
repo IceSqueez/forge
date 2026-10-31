@@ -126,6 +126,10 @@ pub async fn download_artifact(
         return Err(UpdateError::ArtifactHashMismatch);
     }
 
+    if cancel.is_cancelled() {
+        return Err(UpdateError::Cancelled);
+    }
+
     file.flush().await?;
     file.sync_all().await?;
     drop(file);

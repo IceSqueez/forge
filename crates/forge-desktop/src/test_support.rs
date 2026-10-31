@@ -345,6 +345,7 @@ impl crate::update_flow::ArtifactDownloader for StalledDownloader {
         &self,
         _artifact: &forge_update::Artifact,
         _staging_dir: &std::path::Path,
+        _cancel: &forge_update::CancelSignal,
     ) -> Result<forge_update::StagedArtifact, forge_update::UpdateError> {
         std::future::pending().await
     }

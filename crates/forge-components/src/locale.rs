@@ -56,6 +56,7 @@ struct ProcessCatalog {
 static PROCESS_CATALOG: RwLock<Option<Arc<ProcessCatalog>>> = RwLock::new(None);
 
 static PROCESS_WARNED_KEYS: Mutex<BTreeSet<String>> = Mutex::new(BTreeSet::new());
+static PROCESS_FORMAT_FAILED_KEYS: Mutex<BTreeSet<String>> = Mutex::new(BTreeSet::new());
 
 thread_local! {
     static BUNDLE: RefCell<Option<Rc<ThreadBundle>>> = const { RefCell::new(None) };
@@ -148,6 +149,7 @@ pub fn install_process_language(language: CatalogLanguage, app_sources: &[&str])
     let catalog = Arc::new(ProcessCatalog { bundle, language });
     *PROCESS_CATALOG.write_recover() = Some(catalog);
     PROCESS_WARNED_KEYS.lock_recover().clear();
+    PROCESS_FORMAT_FAILED_KEYS.lock_recover().clear();
 }
 
 pub fn install_thread_language(language: CatalogLanguage, app_sources: &[&str]) {
@@ -457,36 +459,31 @@ fn format_message<M: MemoizerKind>(
     let pattern = bundle.get_message(key)?.value()?;
     let mut errors = vec![];
     let formatted = bundle.format_pattern(pattern, args, &mut errors);
-    if !errors.is_empty() {
-        #[cfg(debug_assertions)]
-        tracing::warn!(key, "fluent format errors: {:?}", errors);
+    if !errors.is_empty() && first_sighting(&PROCESS_FORMAT_FAILED_KEYS, key) {
+        tracing::warn!(key, ?errors, "tr!: fluent format errors");
     }
     Some(formatted.into_owned())
 }
 
 fn warn_missing_once_on_thread(key: &str) {
-    #[cfg(not(debug_assertions))]
-    let _ = key;
-    #[cfg(debug_assertions)]
-    {
-        WARNED_KEYS.with(|cell| {
-            if cell.borrow_mut().insert(key.to_owned()) {
-                tracing::warn!(key, "tr!: key not found in active bundle");
-            }
-        });
+    let first_miss = WARNED_KEYS.with(|cell| {
+        let mut warned = cell.borrow_mut();
+        !warned.contains(key) && warned.insert(key.to_owned())
+    });
+    if first_miss {
+        tracing::warn!(key, "tr!: key not found in active bundle");
     }
 }
 
 fn warn_missing_once_in_process(key: &str) {
-    #[cfg(not(debug_assertions))]
-    let _ = key;
-    #[cfg(debug_assertions)]
-    {
-        let first_miss = PROCESS_WARNED_KEYS.lock_recover().insert(key.to_owned());
-        if first_miss {
-            tracing::warn!(key, "tr!: key not found in active bundle");
-        }
+    if first_sighting(&PROCESS_WARNED_KEYS, key) {
+        tracing::warn!(key, "tr!: key not found in active bundle");
     }
+}
+
+fn first_sighting(seen: &Mutex<BTreeSet<String>>, key: &str) -> bool {
+    let mut seen = seen.lock_recover();
+    !seen.contains(key) && seen.insert(key.to_owned())
 }
 
 pub struct ArgsBuilder<'a>(FluentArgs<'a>);
@@ -618,7 +615,6 @@ mod tests {
         assert!(!warned("absent_key"));
     }
 
-    #[cfg(debug_assertions)]
     #[test]
     fn tr_lookup_records_the_missing_key_warning_that_tr_find_skips() {
         install_source("present = Here\n");
@@ -839,6 +835,24 @@ mod tests {
 
     fn warning(key: &str, thread: &str) -> Warning {
         (Some(key.to_owned()), Some(thread.to_owned()))
+    }
+
+    #[test]
+    fn first_sighting_is_true_once_per_key() {
+        let seen = Mutex::new(BTreeSet::new());
+        let sightings = ["a", "a", "b", "a"].map(|key| first_sighting(&seen, key));
+        assert_eq!(sightings, [true, false, true, false]);
+    }
+
+    #[test]
+    fn a_pattern_missing_its_argument_is_recorded_as_a_format_failure() {
+        install_source("format_failure_probe = Hi { $name }\n");
+        tr_lookup("format_failure_probe", None);
+        assert!(
+            PROCESS_FORMAT_FAILED_KEYS
+                .lock_recover()
+                .contains("format_failure_probe")
+        );
     }
 
     #[test]

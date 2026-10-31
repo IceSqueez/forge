@@ -83,7 +83,7 @@ pub fn sample_latest_value(slot: &str) -> LatestValue {
     }
     let mut fields = texts(&[
         (latest_fields::USER_NAME, "PixelPal"),
-        (latest_fields::AMOUNT_FORMATTED, "100.00 UAH"),
+        (latest_fields::AMOUNT_FORMATTED, "\u{20b4}100"),
         (latest_fields::CURRENCY, "UAH"),
         (latest_fields::DONATION_KIND, "donation"),
     ]);

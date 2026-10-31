@@ -52,7 +52,7 @@ const EXPECTED_SAMPLE_CONTENT: &[(&str, &[(&str, &str)])] = &[
         &[
             (HEADLINE, "PixelPal"),
             (LABEL, "Last donation"),
-            (SUBLINE, "100.00 UAH"),
+            (SUBLINE, "\u{20b4}100"),
         ],
     ),
     (

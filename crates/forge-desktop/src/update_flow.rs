@@ -87,6 +87,7 @@ pub(crate) trait ArtifactDownloader: Send + Sync {
         &self,
         artifact: &Artifact,
         staging_dir: &Path,
+        cancel: &CancelSignal,
     ) -> Result<StagedArtifact, UpdateError>;
 }
 
@@ -98,17 +99,11 @@ impl ArtifactDownloader for GithubArtifactDownloader {
         &self,
         artifact: &Artifact,
         staging_dir: &Path,
+        cancel: &CancelSignal,
     ) -> Result<StagedArtifact, UpdateError> {
         let client = UpdateClient::for_github()?;
         let (progress, _) = progress_channel();
-        download_artifact(
-            &client,
-            artifact,
-            staging_dir,
-            &progress,
-            &CancelSignal::new(),
-        )
-        .await
+        download_artifact(&client, artifact, staging_dir, &progress, cancel).await
     }
 }
 
@@ -162,6 +157,7 @@ pub(crate) struct UpdateFlow {
     restart_requested: bool,
     ticket: u64,
     silent_retry_spent: bool,
+    running_download: Option<CancelSignal>,
     toast: Option<u64>,
     backend: Arc<dyn DataProvider>,
     downloader: Arc<dyn ArtifactDownloader>,
@@ -188,6 +184,7 @@ impl UpdateFlow {
             restart_requested: false,
             ticket: 0,
             silent_retry_spent: false,
+            running_download: None,
             toast: None,
             backend,
             downloader,
@@ -246,13 +243,16 @@ impl UpdateFlow {
             return;
         };
 
+        self.cancel_running_download();
+        let cancel = CancelSignal::new();
+        self.running_download = Some(cancel.clone());
         self.ticket = self.ticket.wrapping_add(1);
         let ticket = self.ticket;
         self.stage = UpdateStage::Downloading(candidate);
 
         let artifact = target.artifact;
         let downloader = Arc::clone(&self.downloader);
-        let download = async move { downloader.download(&artifact, &staging_dir).await };
+        let download = async move { downloader.download(&artifact, &staging_dir, &cancel).await };
         let (done_tx, done_rx) = tokio::sync::oneshot::channel();
         self.rt_handle.spawn(async move {
             #[expect(
@@ -292,6 +292,7 @@ impl UpdateFlow {
         else {
             return;
         };
+        self.running_download = None;
         match result {
             Ok(staged) => {
                 tracing::info!(version = %candidate.version, "update downloaded and verified");
@@ -315,8 +316,22 @@ impl UpdateFlow {
         else {
             return;
         };
+        self.running_download = None;
         tracing::warn!(version = %candidate.version, "update download task ended without a result");
         self.download_failed(candidate, UpdateFailure::Download, cx);
+    }
+
+    fn cancel_running_download(&mut self) {
+        if let Some(download) = self.running_download.take() {
+            download.cancel();
+        }
+    }
+
+    fn abandon_download(&mut self, cx: &mut Context<Self>) -> CloseDecision {
+        self.cancel_running_download();
+        self.stage = UpdateStage::Idle;
+        cx.notify();
+        CloseDecision::Proceed
     }
 
     fn download_failed(
@@ -343,6 +358,7 @@ impl UpdateFlow {
             "open the release page",
             open_path(candidate.release_page.clone()),
         );
+        self.cancel_running_download();
         self.stage = UpdateStage::Idle;
         self.hide_toast(cx);
         cx.notify();
@@ -399,6 +415,7 @@ impl UpdateFlow {
             UpdateStage::HandingOff { .. } => CloseDecision::Hold,
             UpdateStage::WaitingForTransfer { .. } => self.close_while_waiting(cx),
             UpdateStage::Ready { .. } => self.begin_handoff(cx),
+            UpdateStage::Downloading(_) => self.abandon_download(cx),
             _ => CloseDecision::Proceed,
         }
     }
@@ -797,10 +814,46 @@ mod tests {
             &self,
             _artifact: &Artifact,
             _staging_dir: &Path,
+            _cancel: &CancelSignal,
         ) -> Result<StagedArtifact, UpdateError> {
             self.requests.fetch_add(1, Ordering::SeqCst);
             (self.answer)()
         }
+    }
+
+    #[derive(Default)]
+    struct SignalKeepingDownloader {
+        signals: std::sync::Mutex<Vec<CancelSignal>>,
+    }
+
+    impl SignalKeepingDownloader {
+        fn signals(&self) -> Vec<CancelSignal> {
+            self.signals.lock().unwrap().clone()
+        }
+    }
+
+    #[async_trait]
+    impl ArtifactDownloader for SignalKeepingDownloader {
+        async fn download(
+            &self,
+            _artifact: &Artifact,
+            _staging_dir: &Path,
+            cancel: &CancelSignal,
+        ) -> Result<StagedArtifact, UpdateError> {
+            self.signals.lock().unwrap().push(cancel.clone());
+            std::future::pending().await
+        }
+    }
+
+    fn started_download(cx: &mut TestAppContext) -> (Harness, Arc<SignalKeepingDownloader>) {
+        let downloader = Arc::new(SignalKeepingDownloader::default());
+        let h = harness_downloading_with(cx, Arc::clone(&downloader) as _);
+        download(cx, &h, installable());
+        settle_until(cx, &h.rt, |cx| {
+            drive(cx, &h);
+            !downloader.signals().is_empty()
+        });
+        (h, downloader)
     }
 
     struct Waiting {
@@ -1286,6 +1339,48 @@ mod tests {
             finish(cx, &h, running, network_error());
         }
         assert_eq!(close(cx, &h), CloseDecision::Proceed, "failed");
+    }
+
+    #[gpui::test]
+    fn close_during_a_download_cancels_it_and_a_late_result_changes_nothing(
+        cx: &mut TestAppContext,
+    ) {
+        let (h, downloader) = started_download(cx);
+        let running = ticket(cx, &h);
+
+        assert_eq!(close(cx, &h), CloseDecision::Proceed);
+
+        assert!(downloader.signals()[0].is_cancelled());
+        assert!(matches!(stage(cx, &h), UpdateStage::Idle));
+        finish(cx, &h, running, Err(UpdateError::Cancelled));
+        assert_eq!(ticket(cx, &h), running);
+        assert!(matches!(stage(cx, &h), UpdateStage::Idle));
+    }
+
+    #[gpui::test]
+    fn a_download_after_a_cancelled_one_starts_with_a_fresh_signal(cx: &mut TestAppContext) {
+        let (h, downloader) = started_download(cx);
+        close(cx, &h);
+
+        download(cx, &h, installable());
+        settle_until(cx, &h.rt, |cx| {
+            drive(cx, &h);
+            downloader.signals().len() == 2
+        });
+
+        assert!(matches!(stage(cx, &h), UpdateStage::Downloading(_)));
+        assert!(!downloader.signals()[1].is_cancelled());
+    }
+
+    #[gpui::test]
+    fn close_after_the_download_finished_keeps_the_staged_update(cx: &mut TestAppContext) {
+        let (h, downloader) = started_download(cx);
+        let running = ticket(cx, &h);
+        finish(cx, &h, running, Ok(staged()));
+
+        assert_eq!(close(cx, &h), CloseDecision::Hold);
+
+        assert!(!downloader.signals()[0].is_cancelled());
     }
 
     #[gpui::test]

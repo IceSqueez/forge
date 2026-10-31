@@ -28,7 +28,10 @@ impl HotkeysScreenView {
         } else {
             (
                 palette.warning,
-                tr!("hotkeys_footer_conflicts", count = self.conflicts as i64),
+                tr!(
+                    "hotkeys_footer_conflicts",
+                    count = i64::try_from(self.conflicts).unwrap_or(i64::MAX)
+                ),
             )
         };
         let synthesized = self.last_synthesized.map(|at| {
@@ -67,7 +70,10 @@ impl HotkeysScreenView {
                     .items_center()
                     .gap(spacing(Spacing::Xs, density))
                     .child(footer_text(
-                        tr!("hotkeys_footer_bindings", count = self.total_count() as i64),
+                        tr!(
+                            "hotkeys_footer_bindings",
+                            count = i64::try_from(self.total_count()).unwrap_or(i64::MAX)
+                        ),
                         palette,
                     ))
                     .child(footer_text(FOOTER_SEPARATOR.to_owned(), palette))

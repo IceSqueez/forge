@@ -2,7 +2,7 @@ use forge_types::Variant;
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
-pub const CURRENT_FORMAT_VERSION: u32 = 1;
+pub(crate) const CURRENT_FORMAT_VERSION: u32 = 1;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GlobalTransit {

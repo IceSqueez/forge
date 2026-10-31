@@ -2,24 +2,24 @@ use forge_awake::{Aspect, AspectState, AwakeStatus};
 use forge_components::tr;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AwakeTone {
+pub(crate) enum AwakeTone {
     Normal,
     Warning,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AwakeIndicator {
+pub(crate) struct AwakeIndicator {
     pub tone: AwakeTone,
     pub details: Vec<String>,
 }
 
 #[derive(Default)]
-pub struct AwakeState {
+pub(crate) struct AwakeState {
     status: Option<AwakeStatus>,
 }
 
 impl AwakeState {
-    pub fn apply(&mut self, status: AwakeStatus) -> bool {
+    pub(crate) fn apply(&mut self, status: AwakeStatus) -> bool {
         if self.status.as_ref() == Some(&status) {
             return false;
         }
@@ -27,11 +27,11 @@ impl AwakeState {
         true
     }
 
-    pub fn enabled(&self) -> Option<bool> {
+    pub(crate) fn enabled(&self) -> Option<bool> {
         self.status.as_ref().map(|status| status.enabled)
     }
 
-    pub fn indicator(&self) -> Option<AwakeIndicator> {
+    pub(crate) fn indicator(&self) -> Option<AwakeIndicator> {
         let status = self.status.as_ref().filter(|status| status.enabled)?;
         let held: Vec<Aspect> = Aspect::ALL
             .into_iter()

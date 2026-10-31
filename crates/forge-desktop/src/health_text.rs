@@ -3,11 +3,11 @@ use forge_platform_core::{ConnectionState, HealthMetricId, HealthText};
 
 use crate::user_text::{resolve_message, resolve_user_text};
 
-pub fn health_metric_label(id: &HealthMetricId) -> String {
+pub(crate) fn health_metric_label(id: &HealthMetricId) -> String {
     resolve_message(&id.label()).primary
 }
 
-pub fn health_text(text: &HealthText) -> String {
+pub(crate) fn health_text(text: &HealthText) -> String {
     match text {
         HealthText::Text(text) => resolve_user_text(text).inline(),
         HealthText::Count(count) => count.to_string(),
@@ -16,7 +16,7 @@ pub fn health_text(text: &HealthText) -> String {
     }
 }
 
-pub fn connection_label(state: ConnectionState) -> String {
+pub(crate) fn connection_label(state: ConnectionState) -> String {
     match state {
         ConnectionState::Connected => tr!("common_status_connected"),
         ConnectionState::Connecting => tr!("integration_state_connecting_title"),

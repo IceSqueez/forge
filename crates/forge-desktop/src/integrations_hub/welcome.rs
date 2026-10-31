@@ -223,15 +223,15 @@ fn progress(
             palette.success,
             tr!(
                 "integration_welcome_some_on",
-                count = enabled.len() as i64,
+                count = i64::try_from(enabled.len()).unwrap_or(i64::MAX),
                 names = enabled.join(", ")
             ),
         )
     };
     let count = tr!(
         "integration_welcome_progress",
-        on = enabled.len() as i64,
-        total = total as i64
+        on = i64::try_from(enabled.len()).unwrap_or(i64::MAX),
+        total = i64::try_from(total).unwrap_or(i64::MAX)
     );
     div()
         .w_full()

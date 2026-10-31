@@ -19,13 +19,13 @@ const MODAL_WIDTH: Pixels = px(460.0);
 const FOOTER_GAP: Pixels = px(12.0);
 const HINT_SIZE: Pixels = FONT_META;
 
-pub enum ObsSettingsModalEvent {
+pub(crate) enum ObsSettingsModalEvent {
     Close,
     Saved,
     Disconnect,
 }
 
-pub struct ObsSettingsModal {
+pub(crate) struct ObsSettingsModal {
     form: Entity<ObsCredentialsForm>,
     _form_sub: Subscription,
 }
@@ -33,7 +33,7 @@ pub struct ObsSettingsModal {
 impl EventEmitter<ObsSettingsModalEvent> for ObsSettingsModal {}
 
 impl ObsSettingsModal {
-    pub fn new(
+    pub(crate) fn new(
         rt_handle: tokio::runtime::Handle,
         credentials: Arc<dyn CredentialsRepo>,
         settings: Arc<dyn SettingsRepo>,
@@ -62,7 +62,7 @@ impl ObsSettingsModal {
         }
     }
 
-    pub fn focus(&self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn focus(&self, window: &mut Window, cx: &mut Context<Self>) {
         self.form.update(cx, |form, cx| form.focus(window, cx));
     }
 

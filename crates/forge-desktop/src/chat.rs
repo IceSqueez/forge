@@ -32,7 +32,7 @@ use crate::chat_viewer_messages::ViewerMessages;
 use crate::home_stats::HomeStats;
 use crate::integration_lifecycle::IntegrationLifecycle;
 use crate::navigable_list::ListCursor;
-pub use composer::ChatComposer;
+pub(crate) use composer::ChatComposer;
 use forge_components::drive_overlay_focus;
 use forge_components::{
     ActivePresentation, BreadcrumbCrumb, Confirm, ForgePalette, SearchState, Spacing, TextInput,
@@ -81,7 +81,7 @@ struct ReplyTarget {
 
 struct DrawerResizeDrag;
 
-pub struct ChatView {
+pub(crate) struct ChatView {
     menu_focus: FocusHandle,
     menu_focus_restore: Option<FocusHandle>,
     feed: Entity<ChatFeed>,
@@ -151,7 +151,7 @@ impl ChatView {
         clippy::too_many_arguments,
         reason = "constructor receives each shared handle it wires"
     )]
-    pub fn new(
+    pub(crate) fn new(
         feed: Entity<ChatFeed>,
         home_stats: Entity<HomeStats>,
         rt_handle: tokio::runtime::Handle,

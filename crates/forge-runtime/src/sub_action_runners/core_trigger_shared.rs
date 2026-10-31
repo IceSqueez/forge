@@ -1,4 +1,4 @@
-use forge_registry::references::TRIGGER_INSTANCE_OPTIONS_KEY;
+use forge_registry::TRIGGER_INSTANCE_OPTIONS_KEY;
 use forge_registry::{ConfigSpec, DynamicSelectField};
 use forge_types::TriggerInstanceId;
 

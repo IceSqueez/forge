@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use async_trait::async_trait;
-use forge_registry::runner::SubActionConfig;
+use forge_registry::SubActionConfig;
 use forge_registry::{RunContext, SubActionCategory, SubActionRunner};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 use time::OffsetDateTime;
@@ -30,13 +30,13 @@ async fn set_shield(
 
 const ON_KIND_ID: &str = sub_action_ids::MODERATION_SHIELD_MODE_ON;
 
-pub struct ShieldModeOnRunner {
+pub(crate) struct ShieldModeOnRunner {
     transport: Arc<dyn HelixTransport>,
     identity: Arc<SelfIdentity>,
 }
 
 impl ShieldModeOnRunner {
-    pub fn new(transport: Arc<dyn HelixTransport>, identity: Arc<SelfIdentity>) -> Self {
+    pub(crate) fn new(transport: Arc<dyn HelixTransport>, identity: Arc<SelfIdentity>) -> Self {
         Self {
             transport,
             identity,
@@ -86,7 +86,7 @@ impl SubActionRunner for ShieldModeOnRunner {
                 produced: ::std::collections::BTreeMap::new(),
                 kind: ON_KIND_ID.to_owned(),
                 started_at,
-                duration_ms: start.elapsed().as_millis() as u64,
+                duration_ms: u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX),
                 outcome,
                 index: ctx.index,
             },
@@ -97,13 +97,13 @@ impl SubActionRunner for ShieldModeOnRunner {
 
 const OFF_KIND_ID: &str = sub_action_ids::MODERATION_SHIELD_MODE_OFF;
 
-pub struct ShieldModeOffRunner {
+pub(crate) struct ShieldModeOffRunner {
     transport: Arc<dyn HelixTransport>,
     identity: Arc<SelfIdentity>,
 }
 
 impl ShieldModeOffRunner {
-    pub fn new(transport: Arc<dyn HelixTransport>, identity: Arc<SelfIdentity>) -> Self {
+    pub(crate) fn new(transport: Arc<dyn HelixTransport>, identity: Arc<SelfIdentity>) -> Self {
         Self {
             transport,
             identity,
@@ -153,7 +153,7 @@ impl SubActionRunner for ShieldModeOffRunner {
                 produced: ::std::collections::BTreeMap::new(),
                 kind: OFF_KIND_ID.to_owned(),
                 started_at,
-                duration_ms: start.elapsed().as_millis() as u64,
+                duration_ms: u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX),
                 outcome,
                 index: ctx.index,
             },

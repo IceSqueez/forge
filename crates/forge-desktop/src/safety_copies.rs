@@ -220,7 +220,7 @@ struct NumberField {
     invalid: bool,
 }
 
-pub struct SafetyCopiesView {
+pub(crate) struct SafetyCopiesView {
     backend: Arc<dyn DataProvider>,
     rt_handle: tokio::runtime::Handle,
     exclusivity: TransferExclusivity,
@@ -239,7 +239,7 @@ pub struct SafetyCopiesView {
 }
 
 impl SafetyCopiesView {
-    pub fn new(
+    pub(crate) fn new(
         backend: Arc<dyn DataProvider>,
         rt_handle: tokio::runtime::Handle,
         exclusivity: TransferExclusivity,

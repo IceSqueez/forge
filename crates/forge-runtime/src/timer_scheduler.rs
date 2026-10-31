@@ -257,8 +257,8 @@ mod tests {
 
     use forge_events::{ChatSent, EventSource, TypedEvent};
     use forge_platform_core::ViewerReport;
-    use forge_storage::action::MockActionRepo;
-    use forge_storage::trigger_instance::MockTriggerInstanceRepo;
+    use forge_storage::MockActionRepo;
+    use forge_storage::MockTriggerInstanceRepo;
     use forge_storage::{ActionRepo, CatalogRevision, TriggerInstanceRepo};
     use forge_types::{
         Action, ActionId, ChatPayload, ChatSegment, ModerationMarks, PermissionRung, PlatformId,

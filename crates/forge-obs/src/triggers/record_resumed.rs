@@ -10,7 +10,7 @@ use super::record_starting::{build_record_arg_stack, record_variables};
 
 use crate::vocabulary::{event_kinds, messages, trigger_ids};
 
-pub struct RecordResumedDescriptor;
+pub(crate) struct RecordResumedDescriptor;
 
 impl TriggerKindDescriptor for RecordResumedDescriptor {
     fn id(&self) -> &str {

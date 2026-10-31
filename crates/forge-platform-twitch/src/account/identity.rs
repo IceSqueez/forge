@@ -7,16 +7,16 @@ use forge_storage::CredentialsRepo;
 use crate::credentials;
 use crate::helix::{HelixError, HelixMethod, HelixRequest, HelixTransport};
 
-pub struct SelfIdentity {
+pub(crate) struct SelfIdentity {
     creds: Arc<dyn CredentialsRepo>,
 }
 
 impl SelfIdentity {
-    pub fn new(creds: Arc<dyn CredentialsRepo>) -> Self {
+    pub(crate) fn new(creds: Arc<dyn CredentialsRepo>) -> Self {
         Self { creds }
     }
 
-    pub async fn user_id(&self) -> Result<String, HelixError> {
+    pub(crate) async fn user_id(&self) -> Result<String, HelixError> {
         Ok(self.stored().await?.user_id)
     }
 
@@ -37,7 +37,7 @@ pub(crate) fn normalize_login(raw: &str) -> String {
     login_handle(raw).to_lowercase()
 }
 
-pub async fn resolve_user_id(
+pub(crate) async fn resolve_user_id(
     transport: &dyn HelixTransport,
     login: &str,
 ) -> Result<String, HelixError> {
@@ -82,7 +82,7 @@ impl BroadcasterTier {
     }
 }
 
-pub async fn resolve_broadcaster_tier(
+pub(crate) async fn resolve_broadcaster_tier(
     transport: &dyn HelixTransport,
     user_id: &str,
 ) -> Result<BroadcasterTier, HelixError> {

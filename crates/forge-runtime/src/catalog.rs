@@ -153,7 +153,7 @@ mod tests {
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
     use async_trait::async_trait;
-    use forge_storage::trigger_instance::MockTriggerInstanceRepo;
+    use forge_storage::MockTriggerInstanceRepo;
     use forge_storage::{ActionTelemetry, ExecutionStatus};
     use forge_types::{PermissionRung, QueueId, TriggerConfig, TriggerInstanceId};
     use time::OffsetDateTime;

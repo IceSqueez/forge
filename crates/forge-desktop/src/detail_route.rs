@@ -5,14 +5,14 @@ use crate::navigation::Screen;
 use forge_runtime::LifecycleState;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DetailRoute {
+pub(crate) enum DetailRoute {
     Disabled,
     Failed,
     Live,
 }
 
 impl DetailRoute {
-    pub fn resolve(lifecycle: &IntegrationLifecycle, id: &IntegrationId) -> Self {
+    pub(crate) fn resolve(lifecycle: &IntegrationLifecycle, id: &IntegrationId) -> Self {
         if lifecycle.is_switched_off(id) {
             Self::Disabled
         } else if matches!(lifecycle.state_of(id), LifecycleState::Failed(_)) {
@@ -23,7 +23,7 @@ impl DetailRoute {
     }
 }
 
-pub fn is_detail_of(current: &Screen, id: &IntegrationId) -> bool {
+pub(crate) fn is_detail_of(current: &Screen, id: &IntegrationId) -> bool {
     matches!(current, Screen::BuiltinDetail(shown) if shown == id)
 }
 

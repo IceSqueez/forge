@@ -7,7 +7,7 @@ use forge_types::{ActionId, TriggerInstanceId};
 use super::sections::{SettingsSection, TtsSection};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Screen {
+pub(crate) enum Screen {
     Welcome,
     Home,
     Chat,
@@ -27,7 +27,7 @@ pub enum Screen {
 }
 
 impl Screen {
-    pub fn same_nav(&self, other: &Screen) -> bool {
+    pub(crate) fn same_nav(&self, other: &Screen) -> bool {
         matches!(
             (self, other),
             (Screen::Triggers(_), Screen::Triggers(_))
@@ -59,7 +59,7 @@ const SCREEN_CLI_NAMES: &[&str] = &[
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ScreenArgError {
+pub(crate) enum ScreenArgError {
     UnknownScreen(String),
     UnknownSection {
         screen: &'static str,
@@ -97,11 +97,11 @@ impl fmt::Display for ScreenArgError {
 }
 
 impl Screen {
-    pub fn accepted_cli_names() -> &'static [&'static str] {
+    pub(crate) fn accepted_cli_names() -> &'static [&'static str] {
         SCREEN_CLI_NAMES
     }
 
-    pub fn parse_cli(arg: &str) -> Result<Screen, ScreenArgError> {
+    pub(crate) fn parse_cli(arg: &str) -> Result<Screen, ScreenArgError> {
         let (name, param) = match arg.split_once(':') {
             Some((name, param)) => (name, Some(param)),
             None => (arg, None),
@@ -153,7 +153,7 @@ impl Screen {
         }
     }
 
-    pub fn with_selected_entity(self, raw: &str) -> Result<Screen, ScreenArgError> {
+    pub(crate) fn with_selected_entity(self, raw: &str) -> Result<Screen, ScreenArgError> {
         match self {
             Screen::Actions(_) => raw
                 .parse::<ActionId>()

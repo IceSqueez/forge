@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::ops::RangeInclusive;
 use std::rc::Rc;
 
-use forge_components::highlight::Language;
+use forge_components::Language;
 use forge_components::{
     BORDER_THIN, CodeEditor, Density, ForgePalette, Icon, InputEvent, Picker, PickerEvent,
     PickerItem, PickerLabels, Radius, Spacing, TextInput, accent_swatch, body_family, dropdown,
@@ -25,7 +25,7 @@ use crate::obs_catalog_options::{ObsCatalogField, ObsCatalogList};
 use crate::vtube_catalog_options::{VTubeCatalogField, VTubeCatalogList};
 use forge_components::ActivePresentation;
 use forge_components::int_entry_invalid;
-use forge_runtime::triggers::DONATION_PROVIDER_OPTIONS_KEY;
+use forge_runtime::DONATION_PROVIDER_OPTIONS_KEY;
 use forge_types::Variant;
 use gpui::{
     AnyElement, App, ClickEvent, Context, Entity, Pixels, SharedString, Subscription, Window, div,
@@ -2075,7 +2075,7 @@ mod tests {
     fn the_donation_service_choice_offers_any_then_every_shipped_service() {
         use forge_registry::TriggerKindDescriptor as _;
 
-        let specs = forge_runtime::triggers::DonationReceivedDescriptor.config_fields();
+        let specs = forge_runtime::DonationReceivedDescriptor.config_fields();
         let choices = CollectionChoices::for_specs(&specs);
         let mut fields = vec![choice("provider", "", None)];
 
@@ -2433,7 +2433,7 @@ mod tests {
 
     fn timer_interval_spec() -> FormField {
         use forge_registry::TriggerKindDescriptor;
-        forge_runtime::triggers::TimerTickDescriptor
+        forge_runtime::TimerTickDescriptor
             .config_fields()
             .into_iter()
             .find(|field| field.key() == TIMER_INTERVAL_KEY)

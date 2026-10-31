@@ -6,7 +6,7 @@ use forge_types::{ArgStack, TriggerConfig, UserText, Variant};
 
 use crate::core_messages;
 
-pub struct ScriptEventCustomDescriptor;
+pub(crate) struct ScriptEventCustomDescriptor;
 
 impl TriggerKindDescriptor for ScriptEventCustomDescriptor {
     fn id(&self) -> &str {

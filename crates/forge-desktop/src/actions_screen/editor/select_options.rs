@@ -4,14 +4,14 @@ use crate::config_form::dependent_options_key;
 use crate::donation_services::donation_provider_options;
 use crate::engine_voice_choices::engine_voice_options;
 use forge_components::tr;
-pub(super) use forge_registry::references::SOUNDBOARD_CLIP_OPTIONS_KEY as CLIP_OPTIONS_KEY;
-use forge_registry::references::{
+pub(super) use forge_registry::SOUNDBOARD_CLIP_OPTIONS_KEY as CLIP_OPTIONS_KEY;
+use forge_registry::{
     ACTION_OPTIONS_KEY, GLOBAL_OPTIONS_KEY, OVERLAY_OPTIONS_KEY, QUEUE_OPTIONS_KEY,
     SCRIPT_OPTIONS_KEY, TRIGGER_INSTANCE_OPTIONS_KEY,
 };
 use forge_registry::{ENGINE_VOICE_OPTIONS_KEY, FormSchemaSource};
-use forge_runtime::audio_runners::{ENGINE_OPTIONS_KEY, VOICE_OPTIONS_PREFIX};
-use forge_runtime::triggers::DONATION_PROVIDER_OPTIONS_KEY;
+use forge_runtime::DONATION_PROVIDER_OPTIONS_KEY;
+use forge_runtime::{ENGINE_OPTIONS_KEY, VOICE_OPTIONS_PREFIX};
 use gpui::Context;
 use std::collections::HashMap;
 
@@ -277,7 +277,7 @@ mod tests {
     use super::super::tests::view_with;
     use super::*;
     use crate::test_support::{StubActions, error_toasts, pump_until, runtime};
-    use forge_storage::action::MockActionRepo;
+    use forge_storage::MockActionRepo;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 

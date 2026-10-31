@@ -13,6 +13,30 @@ pub(crate) struct RunState {
     current: Arc<Mutex<u64>>,
 }
 
+#[derive(Debug, Clone)]
+pub struct ServerRunWatch(watch::Receiver<bool>);
+
+impl ServerRunWatch {
+    pub fn is_running(&self) -> bool {
+        *self.0.borrow()
+    }
+
+    pub fn latest(&mut self) -> bool {
+        *self.0.borrow_and_update()
+    }
+
+    pub fn take_changed(&mut self) -> bool {
+        let changed = self.0.has_changed().unwrap_or(false);
+        self.0.mark_unchanged();
+        changed
+    }
+
+    pub async fn changed(&mut self) -> Option<bool> {
+        self.0.changed().await.ok()?;
+        Some(*self.0.borrow_and_update())
+    }
+}
+
 impl RunState {
     pub(crate) fn new(running: watch::Sender<bool>) -> Self {
         Self {
@@ -21,8 +45,8 @@ impl RunState {
         }
     }
 
-    pub(crate) fn subscribe(&self) -> watch::Receiver<bool> {
-        self.running.subscribe()
+    pub(crate) fn subscribe(&self) -> ServerRunWatch {
+        ServerRunWatch(self.running.subscribe())
     }
 
     pub(crate) fn claim(&self) -> Generation {

@@ -207,7 +207,7 @@ impl ForgeApi {
                 if now >= deadline {
                     return Err("script execution deadline exceeded".into());
                 }
-                let remaining_ms = (deadline - now).as_millis() as u64;
+                let remaining_ms = u64::try_from((deadline - now).as_millis()).unwrap_or(u64::MAX);
                 let clamped = (ms.max(0) as u64).min(5_000).min(remaining_ms);
                 std::thread::sleep(Duration::from_millis(clamped));
                 Ok(())
@@ -341,7 +341,7 @@ fn http_response_to_rhai_map(resp: HttpResponse) -> rhai::Map {
     map.insert("truncated".into(), rhai::Dynamic::from(resp.truncated));
     map.insert(
         "duration_ms".into(),
-        rhai::Dynamic::from(resp.duration_ms as i64),
+        rhai::Dynamic::from(i64::try_from(resp.duration_ms).unwrap_or(i64::MAX)),
     );
     let mut headers_map = rhai::Map::new();
     for (k, v) in resp.headers {

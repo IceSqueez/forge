@@ -10,7 +10,7 @@ use super::stream_starting::{build_stream_arg_stack, stream_variables};
 
 use crate::vocabulary::{event_kinds, messages, trigger_ids};
 
-pub struct StreamStatusChangedDescriptor;
+pub(crate) struct StreamStatusChangedDescriptor;
 
 impl TriggerKindDescriptor for StreamStatusChangedDescriptor {
     fn id(&self) -> &str {

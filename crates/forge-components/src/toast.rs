@@ -52,7 +52,7 @@ impl ToastKind {
 
 type ToastHandler = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
 
-pub type ActionCallback = Box<dyn Fn(&mut Window, &mut App) + 'static>;
+pub(crate) type ActionCallback = Box<dyn Fn(&mut Window, &mut App) + 'static>;
 
 pub struct ToastAction {
     pub label: SharedString,
@@ -96,7 +96,7 @@ impl ToastData {
 }
 
 #[derive(IntoElement)]
-pub struct ToastCard {
+pub(crate) struct ToastCard {
     anim_id: ElementId,
     kind: ToastKind,
     message: SharedString,
@@ -120,7 +120,7 @@ pub struct ToastCard {
     accent: Rgba,
 }
 
-pub fn toast_card(
+pub(crate) fn toast_card(
     id: impl Into<ElementId>,
     kind: ToastKind,
     message: impl Into<SharedString>,
@@ -153,13 +153,13 @@ pub fn toast_card(
 
 impl ToastCard {
     #[must_use]
-    pub fn icon(mut self, glyph: Icon) -> Self {
+    pub(crate) fn icon(mut self, glyph: Icon) -> Self {
         self.icon = Some(glyph);
         self
     }
 
     #[must_use]
-    pub fn action(
+    pub(crate) fn action(
         mut self,
         id: impl Into<ElementId>,
         label: impl Into<SharedString>,
@@ -172,7 +172,7 @@ impl ToastCard {
     }
 
     #[must_use]
-    pub fn secondary_action(
+    pub(crate) fn secondary_action(
         mut self,
         id: impl Into<ElementId>,
         label: impl Into<SharedString>,
@@ -185,13 +185,13 @@ impl ToastCard {
     }
 
     #[must_use]
-    pub fn progress(mut self, fraction: f32) -> Self {
+    pub(crate) fn progress(mut self, fraction: f32) -> Self {
         self.progress = Some(fraction);
         self
     }
 
     #[must_use]
-    pub fn on_dismiss(
+    pub(crate) fn on_dismiss(
         mut self,
         id: impl Into<ElementId>,
         handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,

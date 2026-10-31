@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_registry::runner::SubActionConfig;
+use forge_registry::SubActionConfig;
 use forge_registry::{
     ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TextEditor, TextField,
     TypedField,
@@ -26,12 +26,12 @@ const NAME: TextField = TextField {
 
 const CONFIG: ConfigSpec = ConfigSpec::new(&[&NAME]);
 
-pub struct SceneCollectionSwitchRunner {
+pub(crate) struct SceneCollectionSwitchRunner {
     sink: Arc<dyn ObsSink>,
 }
 
 impl SceneCollectionSwitchRunner {
-    pub fn new(sink: Arc<dyn ObsSink>) -> Self {
+    pub(crate) fn new(sink: Arc<dyn ObsSink>) -> Self {
         Self { sink }
     }
 }

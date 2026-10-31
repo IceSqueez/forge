@@ -30,7 +30,7 @@ const FOOTER_GAP: gpui::Pixels = px(12.0);
 const BUTTON_GAP: gpui::Pixels = px(8.0);
 const FOOTER_FONT: gpui::Pixels = px(11.0);
 
-pub enum CollectionManagerEvent {
+pub(crate) enum CollectionManagerEvent {
     Closed,
 }
 
@@ -39,7 +39,7 @@ struct OpenForm {
     _sub: Subscription,
 }
 
-pub struct CollectionManager {
+pub(crate) struct CollectionManager {
     capability: Arc<dyn BuiltinCollections>,
     metadata: CollectionMetadata,
     title: String,
@@ -57,7 +57,7 @@ pub struct CollectionManager {
 impl EventEmitter<CollectionManagerEvent> for CollectionManager {}
 
 impl CollectionManager {
-    pub fn new(
+    pub(crate) fn new(
         capability: Arc<dyn BuiltinCollections>,
         metadata: CollectionMetadata,
         accent: Rgba,
@@ -138,7 +138,7 @@ impl CollectionManager {
         cx.notify();
     }
 
-    pub fn set_connected(&mut self, connected: bool, cx: &mut Context<Self>) {
+    pub(crate) fn set_connected(&mut self, connected: bool, cx: &mut Context<Self>) {
         if self.connected == connected {
             return;
         }

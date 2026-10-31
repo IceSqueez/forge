@@ -12,18 +12,18 @@ use crate::navigation::{Navigator, Screen};
 const STICKY: Duration = Duration::ZERO;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct IdReplacement {
+pub(crate) struct IdReplacement {
     pub retired: String,
     pub current: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RetiredIdUse {
+pub(crate) struct RetiredIdUse {
     pub script: String,
     pub replacements: Vec<IdReplacement>,
 }
 
-pub fn retired_successions(
+pub(crate) fn retired_successions(
     triggers: &TriggerRegistry,
     sub_actions: &SubActionRegistry,
 ) -> Vec<IdReplacement> {
@@ -60,13 +60,16 @@ fn extends_id_backwards(before: &str) -> bool {
         .is_some_and(|c| is_id_char(c) || c == '.')
 }
 
-pub fn mentions_id(source: &str, id: &str) -> bool {
+pub(crate) fn mentions_id(source: &str, id: &str) -> bool {
     source.match_indices(id).any(|(start, _)| {
         !extends_id_backwards(&source[..start]) && !continues_id(&source[start + id.len()..])
     })
 }
 
-pub fn retired_id_uses(scripts: &[ScriptRecord], retired: &[IdReplacement]) -> Vec<RetiredIdUse> {
+pub(crate) fn retired_id_uses(
+    scripts: &[ScriptRecord],
+    retired: &[IdReplacement],
+) -> Vec<RetiredIdUse> {
     let mut uses: Vec<RetiredIdUse> = scripts
         .iter()
         .filter_map(|script| {
@@ -85,7 +88,7 @@ pub fn retired_id_uses(scripts: &[ScriptRecord], retired: &[IdReplacement]) -> V
     uses
 }
 
-pub fn notice_message(uses: &[RetiredIdUse]) -> String {
+pub(crate) fn notice_message(uses: &[RetiredIdUse]) -> String {
     let entries: Vec<String> = uses
         .iter()
         .map(|entry| {
@@ -110,7 +113,7 @@ pub fn notice_message(uses: &[RetiredIdUse]) -> String {
     tr!("script_retired_ids_notice", uses = entries.join("; "))
 }
 
-pub fn start_script_retired_id_notice(
+pub(crate) fn start_script_retired_id_notice(
     cx: &mut AsyncApp,
     scripts: Arc<dyn ScriptRepo>,
     retired: Vec<IdReplacement>,

@@ -15,7 +15,7 @@ use crate::actions::{
 };
 use crate::repo_failure::RepoFailure;
 
-pub enum ChordVerdict {
+pub(crate) enum ChordVerdict {
     Unusable,
     NeedsModifier,
     Taken {
@@ -30,7 +30,7 @@ fn enabled_by_default() -> bool {
 }
 
 #[derive(Clone, Serialize, Deserialize)]
-pub struct OverrideEntry {
+pub(crate) struct OverrideEntry {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     chord: Option<String>,
     #[serde(default = "enabled_by_default")]
@@ -84,13 +84,13 @@ impl StoredOverrides {
 }
 
 #[derive(Default)]
-pub struct StoredShortcuts {
+pub(crate) struct StoredShortcuts {
     entries: HashMap<String, OverrideEntry>,
     unreadable: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ShortcutsCodec;
+pub(crate) struct ShortcutsCodec;
 
 impl SettingCodec for ShortcutsCodec {
     type Value = StoredShortcuts;
@@ -118,10 +118,10 @@ impl SettingCodec for ShortcutsCodec {
     }
 }
 
-pub const KEYBOARD_SHORTCUTS: Setting<ShortcutsCodec> =
+pub(crate) const KEYBOARD_SHORTCUTS: Setting<ShortcutsCodec> =
     Setting::new("app.keyboard_shortcuts", ShortcutsCodec, Portable, Kind);
 
-pub async fn load_overrides(
+pub(crate) async fn load_overrides(
     repo: Arc<dyn SettingsRepo>,
 ) -> Result<ShortcutOverrides, StorageError> {
     let stored = read_setting(repo.as_ref(), &KEYBOARD_SHORTCUTS).await?;
@@ -136,16 +136,16 @@ pub async fn load_overrides(
 }
 
 #[derive(Default)]
-pub struct ShortcutOverrides {
+pub(crate) struct ShortcutOverrides {
     map: HashMap<String, OverrideEntry>,
 }
 
 impl ShortcutOverrides {
-    pub fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.map.is_empty()
     }
 
-    pub fn chord_of(&self, entry: &'static ShortcutEntry) -> Option<&str> {
+    pub(crate) fn chord_of(&self, entry: &'static ShortcutEntry) -> Option<&str> {
         match self
             .map
             .get(entry.id)
@@ -157,7 +157,7 @@ impl ShortcutOverrides {
         }
     }
 
-    pub fn resolved_chord_of(&self, entry: &'static ShortcutEntry) -> Option<String> {
+    pub(crate) fn resolved_chord_of(&self, entry: &'static ShortcutEntry) -> Option<String> {
         if self.is_overridden(entry.id) {
             self.chord_of(entry).map(str::to_owned)
         } else {
@@ -165,11 +165,11 @@ impl ShortcutOverrides {
         }
     }
 
-    pub fn is_enabled(&self, id: &str) -> bool {
+    pub(crate) fn is_enabled(&self, id: &str) -> bool {
         self.map.get(id).is_none_or(|stored| stored.enabled)
     }
 
-    pub fn is_overridden(&self, id: &str) -> bool {
+    pub(crate) fn is_overridden(&self, id: &str) -> bool {
         self.map
             .get(id)
             .is_some_and(|stored| stored.chord.is_some())
@@ -188,7 +188,7 @@ impl ShortcutOverrides {
             .collect()
     }
 
-    pub fn bound_count(&self) -> usize {
+    pub(crate) fn bound_count(&self) -> usize {
         let keymap = self.keymap_overrides();
         SHORTCUTS
             .iter()
@@ -196,7 +196,7 @@ impl ShortcutOverrides {
             .count()
     }
 
-    pub fn owner_of(&self, chord: &str, exclude: &str) -> Option<&'static str> {
+    pub(crate) fn owner_of(&self, chord: &str, exclude: &str) -> Option<&'static str> {
         SHORTCUTS
             .iter()
             .find(|entry| {
@@ -205,7 +205,7 @@ impl ShortcutOverrides {
             .map(|entry| entry.id)
     }
 
-    pub fn verdict(&self, keystroke: &Keystroke, target_id: &str) -> ChordVerdict {
+    pub(crate) fn verdict(&self, keystroke: &Keystroke, target_id: &str) -> ChordVerdict {
         let Some(chord) = canonical_chord(keystroke) else {
             return ChordVerdict::Unusable;
         };
@@ -228,7 +228,7 @@ impl ShortcutOverrides {
         }
     }
 
-    pub fn bind(&mut self, id: &str, chord: String) {
+    pub(crate) fn bind(&mut self, id: &str, chord: String) {
         let default = shortcut_entry(id).map(platform_default_chord);
         self.entry_mut(id).chord = if default.as_deref() == Some(chord.as_str()) {
             None
@@ -238,34 +238,34 @@ impl ShortcutOverrides {
         self.prune(id);
     }
 
-    pub fn unbind(&mut self, id: &str) {
+    pub(crate) fn unbind(&mut self, id: &str) {
         self.entry_mut(id).chord = Some(String::new());
     }
 
-    pub fn set_enabled(&mut self, id: &str, enabled: bool) {
+    pub(crate) fn set_enabled(&mut self, id: &str, enabled: bool) {
         self.entry_mut(id).enabled = enabled;
         self.prune(id);
     }
 
-    pub fn reset(&mut self, id: &str) {
+    pub(crate) fn reset(&mut self, id: &str) {
         self.entry_mut(id).chord = None;
         self.prune(id);
     }
 
-    pub fn reset_all(&mut self) {
+    pub(crate) fn reset_all(&mut self) {
         self.map.clear();
     }
 
-    pub fn apply(&self, cx: &mut App) {
+    pub(crate) fn apply(&self, cx: &mut App) {
         reapply_key_bindings(cx, &self.keymap_overrides());
     }
 
-    pub fn snapshot(&self) -> HashMap<String, OverrideEntry> {
+    pub(crate) fn snapshot(&self) -> HashMap<String, OverrideEntry> {
         self.map.clone()
     }
 }
 
-pub async fn save_overrides(
+pub(crate) async fn save_overrides(
     repo: Arc<dyn SettingsRepo>,
     map: HashMap<String, OverrideEntry>,
 ) -> Result<(), RepoFailure> {

@@ -45,7 +45,7 @@ const CARD_PAD: Pixels = px(14.0);
 const CARD_MB: Pixels = px(18.0);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CloudEngineKind {
+pub(crate) enum CloudEngineKind {
     Azure,
     ElevenLabs,
     OpenAI,
@@ -53,14 +53,14 @@ pub enum CloudEngineKind {
 }
 
 impl CloudEngineKind {
-    pub const ALL: [CloudEngineKind; 4] = [
+    pub(crate) const ALL: [CloudEngineKind; 4] = [
         CloudEngineKind::Azure,
         CloudEngineKind::ElevenLabs,
         CloudEngineKind::OpenAI,
         CloudEngineKind::Polly,
     ];
 
-    pub fn key(self) -> &'static str {
+    pub(crate) fn key(self) -> &'static str {
         match self {
             CloudEngineKind::Azure => forge_tts_core::ENGINE_ID_AZURE,
             CloudEngineKind::ElevenLabs => forge_tts_core::ENGINE_ID_ELEVENLABS,
@@ -69,11 +69,11 @@ impl CloudEngineKind {
         }
     }
 
-    pub fn display_name(self) -> &'static str {
+    pub(crate) fn display_name(self) -> &'static str {
         forge_tts_core::engine_display_name(self.key())
     }
 
-    pub fn from_engine_id(id: &str) -> Option<CloudEngineKind> {
+    pub(crate) fn from_engine_id(id: &str) -> Option<CloudEngineKind> {
         match id {
             forge_tts_core::ENGINE_ID_AZURE => Some(CloudEngineKind::Azure),
             forge_tts_core::ENGINE_ID_ELEVENLABS => Some(CloudEngineKind::ElevenLabs),
@@ -83,7 +83,7 @@ impl CloudEngineKind {
         }
     }
 
-    pub fn credential_id(self) -> &'static str {
+    pub(crate) fn credential_id(self) -> &'static str {
         match self {
             CloudEngineKind::Azure => AZURE_CREDENTIAL_ID,
             CloudEngineKind::ElevenLabs => ELEVENLABS_CREDENTIAL_ID,
@@ -106,7 +106,7 @@ enum SecureField {
     PollySecret,
 }
 
-pub struct CloudEngineRegistered(pub EngineId);
+pub(crate) struct CloudEngineRegistered(pub EngineId);
 
 enum CloudCreds {
     Azure(AzureCredentials),
@@ -185,7 +185,7 @@ struct PollyForm {
     is_registered: bool,
 }
 
-pub struct CloudCredentialsView {
+pub(crate) struct CloudCredentialsView {
     registry: Option<Arc<RwLock<TtsRegistry>>>,
     gateways: CloudGateways,
     credentials: Arc<dyn CredentialsRepo>,
@@ -202,7 +202,7 @@ pub struct CloudCredentialsView {
 impl EventEmitter<CloudEngineRegistered> for CloudCredentialsView {}
 
 impl CloudCredentialsView {
-    pub fn new(
+    pub(crate) fn new(
         registry: Option<Arc<RwLock<TtsRegistry>>>,
         gateways: CloudGateways,
         credentials: Arc<dyn CredentialsRepo>,
@@ -312,7 +312,7 @@ impl CloudCredentialsView {
         }
     }
 
-    pub fn set_active(&mut self, kind: Option<CloudEngineKind>, cx: &mut Context<Self>) {
+    pub(crate) fn set_active(&mut self, kind: Option<CloudEngineKind>, cx: &mut Context<Self>) {
         if self.active != kind {
             self.active = kind;
             cx.notify();

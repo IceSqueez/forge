@@ -43,7 +43,7 @@ async fn run_probe(
     let req = new_request(API_STATE_REQUEST, serde_json::json!({}));
     send_ws_msg(&mut ws, &req).await?;
     let msg = recv_next_text(&mut ws).await?;
-    let round_trip_ms = started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
+    let round_trip_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
 
     if let Err(error) = send_close(&mut ws).await {
         tracing::debug!(%error, "probe socket close failed");

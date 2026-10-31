@@ -5,14 +5,14 @@ use forge_storage::{CredentialId, CredentialsRepo};
 use forge_types::PlatformId;
 
 #[derive(Clone, Default)]
-pub struct PlatformCredentialManagers {
+pub(crate) struct PlatformCredentialManagers {
     pub twitch: Option<Arc<forge_platform_twitch::TwitchCredentialsManager>>,
     pub youtube: Option<Arc<forge_platform_youtube::YoutubeCredentialsManager>>,
     pub kick: Option<Arc<forge_platform_kick::KickCredentialsManager>>,
 }
 
 impl PlatformCredentialManagers {
-    pub async fn forget(
+    pub(crate) async fn forget(
         &self,
         platform: PlatformId,
         unmanaged: &dyn CredentialsRepo,

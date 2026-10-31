@@ -9,7 +9,7 @@ use forge_speech_types::PcmBuffer;
 
 const ROUTE_REASON_SEPARATOR: &str = "; ";
 
-pub async fn fan_out_stoppable(
+pub(crate) async fn fan_out_stoppable(
     buffer: PcmBuffer,
     sinks: &[Arc<dyn AudioSink>],
 ) -> (PlaybackHandle, Vec<Result<(), AudioError>>) {

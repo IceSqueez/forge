@@ -1,9 +1,9 @@
 use forge_events::Event;
 use forge_types::{ArgStack, ChatPayload, ChatSegment, DeclaredVariable, Variant, VariantKind};
 
-pub const MESSAGE_EMOTES_VARIABLE: &str = "message_emotes";
+pub(crate) const MESSAGE_EMOTES_VARIABLE: &str = "message_emotes";
 
-pub fn message_emotes_declaration() -> DeclaredVariable {
+pub(crate) fn message_emotes_declaration() -> DeclaredVariable {
     DeclaredVariable {
         name: MESSAGE_EMOTES_VARIABLE.to_owned(),
         kind: VariantKind::Array,

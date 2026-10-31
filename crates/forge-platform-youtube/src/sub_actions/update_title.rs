@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_registry::runner::SubActionConfig;
+use forge_registry::SubActionConfig;
 use forge_registry::{
     ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TextEditor, TextField,
     TypedField,
@@ -26,12 +26,12 @@ const TITLE: TextField = TextField {
 
 const CONFIG: ConfigSpec = ConfigSpec::new(&[&TITLE]);
 
-pub struct UpdateTitleRunner {
+pub(crate) struct UpdateTitleRunner {
     metadata: Arc<YoutubeStreamMetadata>,
 }
 
 impl UpdateTitleRunner {
-    pub fn new(metadata: Arc<YoutubeStreamMetadata>) -> Self {
+    pub(crate) fn new(metadata: Arc<YoutubeStreamMetadata>) -> Self {
         Self { metadata }
     }
 }

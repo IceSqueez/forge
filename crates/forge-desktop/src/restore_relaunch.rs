@@ -8,7 +8,7 @@ use forge_update::{
 };
 use sysinfo::{Pid, ProcessRefreshKind, ProcessStatus, ProcessesToUpdate, System};
 
-pub const PREVIOUS_INSTANCE_FLAG: &str = "--forge-restore-after";
+pub(crate) const PREVIOUS_INSTANCE_FLAG: &str = "--forge-restore-after";
 
 const PREVIOUS_EXIT_BUDGET: Duration = Duration::from_secs(10);
 const PREVIOUS_EXIT_POLL: Duration = Duration::from_millis(100);
@@ -22,7 +22,7 @@ enum RelaunchTarget {
     Executable(PathBuf),
 }
 
-pub fn relaunch_after_exit() {
+pub(crate) fn relaunch_after_exit() {
     let Some(target) = relaunch_target() else {
         tracing::warn!("forge could not find its own executable; restart it by hand");
         return;
@@ -74,7 +74,7 @@ fn relaunch_target() -> Option<RelaunchTarget> {
     })
 }
 
-pub fn previous_instance(args: impl IntoIterator<Item = String>) -> Option<u32> {
+pub(crate) fn previous_instance(args: impl IntoIterator<Item = String>) -> Option<u32> {
     let mut args = args.into_iter();
     while let Some(arg) = args.next() {
         if arg == PREVIOUS_INSTANCE_FLAG {
@@ -84,7 +84,7 @@ pub fn previous_instance(args: impl IntoIterator<Item = String>) -> Option<u32> 
     None
 }
 
-pub fn await_previous_exit(previous: u32) -> bool {
+pub(crate) fn await_previous_exit(previous: u32) -> bool {
     let pid = Pid::from_u32(previous);
     let started = Instant::now();
     while is_running(pid) {

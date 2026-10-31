@@ -6,7 +6,6 @@ pub(crate) mod safety_snapshot;
 mod selection;
 mod settings;
 
-pub use kind::SafetyCopyKind;
 pub(crate) use prune::prune_after_safety_copy;
 pub use prune::{
     SafetyCopyFailure, SafetyCopyReport, SafetyCopyUsage, change_safety_copy_settings,

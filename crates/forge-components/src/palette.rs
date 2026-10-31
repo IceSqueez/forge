@@ -225,7 +225,7 @@ pub const FORGE_DEFAULT: ForgePalette = ForgePalette {
     },
 };
 
-pub const TOKYO_NIGHT: ForgePalette = ForgePalette {
+pub(crate) const TOKYO_NIGHT: ForgePalette = ForgePalette {
     base: hex(0x1a, 0x1b, 0x26),
     shell: hex(0x16, 0x16, 0x1e),
     elevated: hex(0x24, 0x28, 0x3b),
@@ -273,7 +273,7 @@ pub const TOKYO_NIGHT: ForgePalette = ForgePalette {
     },
 };
 
-pub const LATTE: ForgePalette = ForgePalette {
+pub(crate) const LATTE: ForgePalette = ForgePalette {
     base: hex(0xef, 0xf1, 0xf5),
     shell: hex(0xe6, 0xe9, 0xef),
     elevated: hex(0xff, 0xff, 0xff),

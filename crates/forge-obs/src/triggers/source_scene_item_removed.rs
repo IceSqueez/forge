@@ -12,7 +12,7 @@ use crate::vocabulary::fields::source as fields;
 use crate::vocabulary::messages;
 use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
-pub struct SourceSceneItemRemovedDescriptor;
+pub(crate) struct SourceSceneItemRemovedDescriptor;
 
 impl TriggerKindDescriptor for SourceSceneItemRemovedDescriptor {
     fn id(&self) -> &str {

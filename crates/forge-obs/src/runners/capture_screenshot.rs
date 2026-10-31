@@ -2,7 +2,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_registry::runner::SubActionConfig;
+use forge_registry::SubActionConfig;
 use forge_registry::{
     ConfigProblem, ConfigSpec, Interpolation, PickedTextField, RunContext, StepTimer,
     SubActionCategory, SubActionRunner, TextPicker, TypedField,
@@ -36,12 +36,12 @@ fn read_config(
     ))
 }
 
-pub struct CaptureScreenshotRunner {
+pub(crate) struct CaptureScreenshotRunner {
     sink: Arc<dyn ObsSink>,
 }
 
 impl CaptureScreenshotRunner {
-    pub fn new(sink: Arc<dyn ObsSink>) -> Self {
+    pub(crate) fn new(sink: Arc<dyn ObsSink>) -> Self {
         Self { sink }
     }
 }

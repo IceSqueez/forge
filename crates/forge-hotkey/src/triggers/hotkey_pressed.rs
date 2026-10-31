@@ -11,7 +11,7 @@ use forge_types::{
 
 use crate::vocabulary::{event_kinds, fields, trigger_ids, variables};
 
-pub struct HotkeyPressedDescriptor;
+pub(crate) struct HotkeyPressedDescriptor;
 
 impl TriggerKindDescriptor for HotkeyPressedDescriptor {
     fn id(&self) -> &str {
@@ -84,14 +84,20 @@ impl TriggerKindDescriptor for HotkeyPressedDescriptor {
             );
         }
         if let Some(id) = event.payload.get(fields::ID).and_then(|v| v.as_u64()) {
-            stack = stack.set(variables::ID.to_owned(), Variant::Int(id as i64));
+            stack = stack.set(
+                variables::ID.to_owned(),
+                Variant::Int(i64::try_from(id).unwrap_or(i64::MAX)),
+            );
         }
         if let Some(ts) = event
             .payload
             .get(fields::TIMESTAMP_US)
             .and_then(|v| v.as_u64())
         {
-            stack = stack.set(variables::TIMESTAMP_US.to_owned(), Variant::Int(ts as i64));
+            stack = stack.set(
+                variables::TIMESTAMP_US.to_owned(),
+                Variant::Int(i64::try_from(ts).unwrap_or(i64::MAX)),
+            );
         }
         stack
     }

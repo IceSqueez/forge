@@ -14,7 +14,7 @@ use crate::vocabulary::fields::audio as fields;
 use crate::vocabulary::messages;
 use crate::vocabulary::{event_kinds, picker_keys, trigger_ids, variables};
 
-pub struct AudioSourceSyncOffsetChangedDescriptor;
+pub(crate) struct AudioSourceSyncOffsetChangedDescriptor;
 
 impl TriggerKindDescriptor for AudioSourceSyncOffsetChangedDescriptor {
     fn id(&self) -> &str {

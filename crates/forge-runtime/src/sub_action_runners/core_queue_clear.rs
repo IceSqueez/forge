@@ -24,12 +24,12 @@ fn read_config(
     Ok((QUEUE.read(config, args)?, KEEP_CURRENT.read(config, args)?))
 }
 
-pub struct CoreQueueClearRunner {
+pub(crate) struct CoreQueueClearRunner {
     scheduler: QueueSchedulerHandle,
 }
 
 impl CoreQueueClearRunner {
-    pub fn new(scheduler: QueueSchedulerHandle) -> Self {
+    pub(crate) fn new(scheduler: QueueSchedulerHandle) -> Self {
         Self { scheduler }
     }
 

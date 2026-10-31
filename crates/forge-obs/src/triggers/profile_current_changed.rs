@@ -12,7 +12,7 @@ use crate::vocabulary::fields::profile as fields;
 use crate::vocabulary::messages;
 use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
-pub struct ProfileCurrentChangedDescriptor;
+pub(crate) struct ProfileCurrentChangedDescriptor;
 
 impl TriggerKindDescriptor for ProfileCurrentChangedDescriptor {
     fn id(&self) -> &str {

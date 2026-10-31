@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_registry::runner::SubActionConfig;
+use forge_registry::SubActionConfig;
 use forge_registry::{
     ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionIo, SubActionRunner, TextEditor,
     TextField, TypedField,
@@ -10,7 +10,6 @@ use forge_types::{ArgStack, SubActionTelemetry, Variant};
 
 use super::step_failure;
 use crate::ObsSink;
-use crate::vocabulary::fields::query;
 use crate::vocabulary::{config_keys, sub_action_ids, variables};
 
 const KIND_ID: &str = sub_action_ids::SOURCE_GET_INPUT_SETTINGS;
@@ -27,12 +26,12 @@ const SOURCE: TextField = TextField {
 
 const CONFIG: ConfigSpec = ConfigSpec::new(&[&SOURCE]);
 
-pub struct QueryInputSettingsRunner {
+pub(crate) struct QueryInputSettingsRunner {
     sink: Arc<dyn ObsSink>,
 }
 
 impl QueryInputSettingsRunner {
-    pub fn new(sink: Arc<dyn ObsSink>) -> Self {
+    pub(crate) fn new(sink: Arc<dyn ObsSink>) -> Self {
         Self { sink }
     }
 }
@@ -89,16 +88,15 @@ impl SubActionRunner for QueryInputSettingsRunner {
         };
 
         match self.sink.get_input_settings(&source).await {
-            Ok(variant) => {
-                let mut stack = ctx.arg_stack.clone();
-                if let Variant::Object(ref map) = variant {
-                    if let Some(v) = map.get(query::SETTINGS) {
-                        stack = stack.set(variables::input_query::SETTINGS.to_owned(), v.clone());
-                    }
-                    if let Some(v) = map.get(query::KIND) {
-                        stack = stack.set(variables::input_query::KIND.to_owned(), v.clone());
-                    }
-                }
+            Ok(input) => {
+                let stack = ctx
+                    .arg_stack
+                    .clone()
+                    .set(variables::input_query::SETTINGS.to_owned(), input.settings)
+                    .set(
+                        variables::input_query::KIND.to_owned(),
+                        Variant::String(input.kind),
+                    );
                 (timer.success(), Some(stack))
             }
             Err(e) => (timer.finish(step_failure::failed(&e)), None),

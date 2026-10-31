@@ -34,145 +34,160 @@ const COMPONENT_ARG: &str = "component";
 const POSITION_ARG: &str = "position";
 const WEIGHTS_ARG: &str = "weights";
 
-pub const UNKNOWN_ACTION: MessageCode = MessageCode::from_static(CORE_NAMESPACE, "unknown_action");
-pub const UNKNOWN_TRIGGER_INSTANCE: MessageCode =
+pub(crate) const UNKNOWN_ACTION: MessageCode =
+    MessageCode::from_static(CORE_NAMESPACE, "unknown_action");
+pub(crate) const UNKNOWN_TRIGGER_INSTANCE: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "unknown_trigger_instance");
-pub const ACTION_NESTING_TOO_DEEP: MessageCode =
+pub(crate) const ACTION_NESTING_TOO_DEEP: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "action_nesting_too_deep");
-pub const ACTION_RUN_CANCELLED: MessageCode =
+pub(crate) const ACTION_RUN_CANCELLED: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "action_run_cancelled");
-pub const ACTION_RUN_DISABLED: MessageCode =
+pub(crate) const ACTION_RUN_DISABLED: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "action_run_disabled");
-pub const ACTION_RUN_FAILED: MessageCode =
+pub(crate) const ACTION_RUN_FAILED: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "action_run_failed");
-pub const SCHEDULER_NOT_READY: MessageCode =
+pub(crate) const SCHEDULER_NOT_READY: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "scheduler_not_ready");
-pub const SCHEDULER_STOPPED: MessageCode =
+pub(crate) const SCHEDULER_STOPPED: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "scheduler_stopped");
-pub const SCHEDULER_FAILED: MessageCode =
+pub(crate) const SCHEDULER_FAILED: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "scheduler_failed");
-pub const SCHEDULE_FAILED: MessageCode =
+pub(crate) const SCHEDULE_FAILED: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "schedule_failed");
-pub const STORAGE_FAILED: MessageCode = MessageCode::from_static(CORE_NAMESPACE, "storage_failed");
-pub const SYSTEM_SERVICE_FAILED: MessageCode =
+pub(crate) const STORAGE_FAILED: MessageCode =
+    MessageCode::from_static(CORE_NAMESPACE, "storage_failed");
+pub(crate) const SYSTEM_SERVICE_FAILED: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "system_service_failed");
-pub const TASK_FAILED: MessageCode = MessageCode::from_static(CORE_NAMESPACE, "task_failed");
-pub const HTTP_FAILED: MessageCode = MessageCode::from_static(CORE_NAMESPACE, "http_failed");
-pub const CONDITION_FAILED: MessageCode =
+pub(crate) const TASK_FAILED: MessageCode = MessageCode::from_static(CORE_NAMESPACE, "task_failed");
+pub(crate) const HTTP_FAILED: MessageCode = MessageCode::from_static(CORE_NAMESPACE, "http_failed");
+pub(crate) const CONDITION_FAILED: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "condition_failed");
-pub const FIELD_REQUIRED: MessageCode = MessageCode::from_static(CORE_NAMESPACE, "field_required");
-pub const FILE_PATH_EMPTY: MessageCode =
+pub(crate) const FIELD_REQUIRED: MessageCode =
+    MessageCode::from_static(CORE_NAMESPACE, "field_required");
+pub(crate) const FILE_PATH_EMPTY: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "file_path_empty");
-pub const FILE_PATH_ABSOLUTE: MessageCode =
+pub(crate) const FILE_PATH_ABSOLUTE: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "file_path_absolute");
-pub const FILE_PATH_PARENT: MessageCode =
+pub(crate) const FILE_PATH_PARENT: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "file_path_parent");
-pub const FILE_PATH_ESCAPES: MessageCode =
+pub(crate) const FILE_PATH_ESCAPES: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "file_path_escapes");
-pub const FILE_NOT_FOUND: MessageCode = MessageCode::from_static(CORE_NAMESPACE, "file_not_found");
-pub const DIRECTORY_TOO_LARGE: MessageCode =
+pub(crate) const FILE_NOT_FOUND: MessageCode =
+    MessageCode::from_static(CORE_NAMESPACE, "file_not_found");
+pub(crate) const DIRECTORY_TOO_LARGE: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "directory_too_large");
-pub const ACTION_DISABLED: MessageCode =
+pub(crate) const ACTION_DISABLED: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "action_disabled");
-pub const NESTED_STEPS_UNAVAILABLE: MessageCode =
+pub(crate) const NESTED_STEPS_UNAVAILABLE: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "nested_steps_unavailable");
-pub const DIRECTORY_NOT_FOUND: MessageCode =
+pub(crate) const DIRECTORY_NOT_FOUND: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "directory_not_found");
-pub const PATH_NOT_DIRECTORY: MessageCode =
+pub(crate) const PATH_NOT_DIRECTORY: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "path_not_directory");
-pub const PATH_NOT_FILE: MessageCode = MessageCode::from_static(CORE_NAMESPACE, "path_not_file");
-pub const FILE_TOO_LARGE: MessageCode = MessageCode::from_static(CORE_NAMESPACE, "file_too_large");
-pub const FILE_IO_FAILED: MessageCode = MessageCode::from_static(CORE_NAMESPACE, "file_io_failed");
-pub const FILE_NOT_JSON: MessageCode = MessageCode::from_static(CORE_NAMESPACE, "file_not_json");
-pub const FILE_NOT_BASE64: MessageCode =
+pub(crate) const PATH_NOT_FILE: MessageCode =
+    MessageCode::from_static(CORE_NAMESPACE, "path_not_file");
+pub(crate) const FILE_TOO_LARGE: MessageCode =
+    MessageCode::from_static(CORE_NAMESPACE, "file_too_large");
+pub(crate) const FILE_IO_FAILED: MessageCode =
+    MessageCode::from_static(CORE_NAMESPACE, "file_io_failed");
+pub(crate) const FILE_NOT_JSON: MessageCode =
+    MessageCode::from_static(CORE_NAMESPACE, "file_not_json");
+pub(crate) const FILE_NOT_BASE64: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "file_not_base64");
-pub const FILE_CHAR_NOT_LATIN1: MessageCode =
+pub(crate) const FILE_CHAR_NOT_LATIN1: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "file_char_not_latin1");
-pub const GLOBAL_MISSING: MessageCode = MessageCode::from_static(CORE_NAMESPACE, "global_missing");
-pub const GLOBAL_NOT_ARRAY: MessageCode =
+pub(crate) const GLOBAL_MISSING: MessageCode =
+    MessageCode::from_static(CORE_NAMESPACE, "global_missing");
+pub(crate) const GLOBAL_NOT_ARRAY: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "global_not_array");
-pub const GLOBAL_NOT_BOOL: MessageCode =
+pub(crate) const GLOBAL_NOT_BOOL: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "global_not_bool");
-pub const AMOUNT_NOT_NEGATABLE: MessageCode =
+pub(crate) const AMOUNT_NOT_NEGATABLE: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "amount_not_negatable");
-pub const USER_VARIABLE_NOT_NUMERIC: MessageCode =
+pub(crate) const USER_VARIABLE_NOT_NUMERIC: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "user_variable_not_numeric");
-pub const USER_LOGIN_UNSET: MessageCode =
+pub(crate) const USER_LOGIN_UNSET: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "user_login_unset");
-pub const USER_LOGIN_EMPTY: MessageCode =
+pub(crate) const USER_LOGIN_EMPTY: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "user_login_empty");
-pub const LOOP_ITERATION_LIMIT: MessageCode =
+pub(crate) const LOOP_ITERATION_LIMIT: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "loop_iteration_limit");
-pub const LOOP_ITERATIONS_UNRECORDED: MessageCode =
+pub(crate) const LOOP_ITERATIONS_UNRECORDED: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "loop_iterations_unrecorded");
-pub const SUBSTRING_START_OUT_OF_RANGE: MessageCode =
+pub(crate) const SUBSTRING_START_OUT_OF_RANGE: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "substring_start_out_of_range");
-pub const SUBSTRING_END_OUT_OF_RANGE: MessageCode =
+pub(crate) const SUBSTRING_END_OUT_OF_RANGE: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "substring_end_out_of_range");
-pub const SUBSTRING_START_AFTER_END: MessageCode =
+pub(crate) const SUBSTRING_START_AFTER_END: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "substring_start_after_end");
-pub const TIME_OUT_OF_RANGE: MessageCode =
+pub(crate) const TIME_OUT_OF_RANGE: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "time_out_of_range");
-pub const TIME_PATTERN_INVALID: MessageCode =
+pub(crate) const TIME_PATTERN_INVALID: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "time_pattern_invalid");
-pub const TIME_TEXT_UNREADABLE: MessageCode =
+pub(crate) const TIME_TEXT_UNREADABLE: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "time_text_unreadable");
-pub const SEARCH_PATTERN_INVALID: MessageCode =
+pub(crate) const SEARCH_PATTERN_INVALID: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "search_pattern_invalid");
-pub const EXPRESSION_UNDEFINED_VARIABLES: MessageCode =
+pub(crate) const EXPRESSION_UNDEFINED_VARIABLES: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "expression_undefined_variables");
-pub const EXPRESSION_FAILED: MessageCode =
+pub(crate) const EXPRESSION_FAILED: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "expression_failed");
-pub const URL_NOT_HTTP: MessageCode = MessageCode::from_static(CORE_NAMESPACE, "url_not_http");
-pub const OVERLAY_SERVICE_NOT_RUNNING: MessageCode =
+pub(crate) const URL_NOT_HTTP: MessageCode =
+    MessageCode::from_static(CORE_NAMESPACE, "url_not_http");
+pub(crate) const OVERLAY_SERVICE_NOT_RUNNING: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "overlay_service_not_running");
-pub const OVERLAY_SHOW_CLEARED: MessageCode =
+pub(crate) const OVERLAY_SHOW_CLEARED: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "overlay_show_cleared");
-pub const OVERLAY_SHOW_WITHDRAWN: MessageCode =
+pub(crate) const OVERLAY_SHOW_WITHDRAWN: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "overlay_show_withdrawn");
-pub const OVERLAY_SEND_FAILED: MessageCode =
+pub(crate) const OVERLAY_SEND_FAILED: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "overlay_send_failed");
-pub const SCRIPT_NOT_FOUND: MessageCode =
+pub(crate) const SCRIPT_NOT_FOUND: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "script_not_found");
-pub const SCRIPT_FAILED: MessageCode = MessageCode::from_static(CORE_NAMESPACE, "script_failed");
-pub const INLINE_SCRIPT_FAILED: MessageCode =
+pub(crate) const SCRIPT_FAILED: MessageCode =
+    MessageCode::from_static(CORE_NAMESPACE, "script_failed");
+pub(crate) const INLINE_SCRIPT_FAILED: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "inline_script_failed");
-pub const SCRIPT_PANICKED: MessageCode =
+pub(crate) const SCRIPT_PANICKED: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "script_panicked");
-pub const TEST_DONATION_NOT_ANNOUNCED: MessageCode =
+pub(crate) const TEST_DONATION_NOT_ANNOUNCED: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "test_donation_not_announced");
-pub const VOICE_NOT_ENGINE_VOICE: MessageCode =
+pub(crate) const VOICE_NOT_ENGINE_VOICE: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "voice_not_engine_voice");
-pub const VOICE_NOT_INSTALLED: MessageCode =
+pub(crate) const VOICE_NOT_INSTALLED: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "voice_not_installed");
-pub const RUN_DEPTH_EXCEEDED: MessageCode =
+pub(crate) const RUN_DEPTH_EXCEEDED: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "run_depth_exceeded");
-pub const ACTION_STOPPED: MessageCode = MessageCode::from_static(CORE_NAMESPACE, "action_stopped");
-pub const UNKNOWN_STEP_KIND: MessageCode =
+pub(crate) const ACTION_STOPPED: MessageCode =
+    MessageCode::from_static(CORE_NAMESPACE, "action_stopped");
+pub(crate) const UNKNOWN_STEP_KIND: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "unknown_step_kind");
-pub const STEP_DISABLED: MessageCode = MessageCode::from_static(CORE_NAMESPACE, "step_disabled");
-pub const CONDITION_NOT_MET: MessageCode =
+pub(crate) const STEP_DISABLED: MessageCode =
+    MessageCode::from_static(CORE_NAMESPACE, "step_disabled");
+pub(crate) const CONDITION_NOT_MET: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "condition_not_met");
-pub const REGEX_INVALID: MessageCode = MessageCode::from_static(CORE_NAMESPACE, "regex_invalid");
-pub const TIME_PATTERN_LEGACY: MessageCode =
+pub(crate) const REGEX_INVALID: MessageCode =
+    MessageCode::from_static(CORE_NAMESPACE, "regex_invalid");
+pub(crate) const TIME_PATTERN_LEGACY: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "time_pattern_legacy");
-pub const ENTRY_WITHOUT_VALUE: MessageCode =
+pub(crate) const ENTRY_WITHOUT_VALUE: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "entry_without_value");
-pub const RANDOM_MAX_BELOW_MIN: MessageCode =
+pub(crate) const RANDOM_MAX_BELOW_MIN: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "random_max_below_min");
-pub const RANDOM_RANGE_TOO_WIDE: MessageCode =
+pub(crate) const RANDOM_RANGE_TOO_WIDE: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "random_range_too_wide");
-pub const WEIGHT_NOT_A_NUMBER: MessageCode =
+pub(crate) const WEIGHT_NOT_A_NUMBER: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "weight_not_a_number");
-pub const WEIGHT_COUNT_MISMATCH: MessageCode =
+pub(crate) const WEIGHT_COUNT_MISMATCH: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "weight_count_mismatch");
-pub const WEIGHTS_UNUSABLE: MessageCode =
+pub(crate) const WEIGHTS_UNUSABLE: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "weights_unusable");
-pub const OUTPUT_NOT_CONVERTIBLE: MessageCode =
+pub(crate) const OUTPUT_NOT_CONVERTIBLE: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "output_not_convertible");
-pub const CURRENCY_INVALID: MessageCode =
+pub(crate) const CURRENCY_INVALID: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "currency_invalid");
-pub const AMOUNT_INVALID: MessageCode = MessageCode::from_static(CORE_NAMESPACE, "amount_invalid");
+pub(crate) const AMOUNT_INVALID: MessageCode =
+    MessageCode::from_static(CORE_NAMESPACE, "amount_invalid");
 
 pub(crate) const CONDITION_ANY_DONATION_SERVICE: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "condition_any_donation_service");

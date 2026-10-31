@@ -61,7 +61,7 @@ fn migration_failed(e: sqlx::migrate::MigrateError) -> SqliteStorageError {
     }
 }
 
-pub async fn applied_version(pool: &sqlx::SqlitePool) -> Result<u32, SqliteStorageError> {
+pub(crate) async fn applied_version(pool: &sqlx::SqlitePool) -> Result<u32, SqliteStorageError> {
     let version: Option<i64> = sqlx::query_scalar("SELECT MAX(version) FROM _sqlx_migrations")
         .fetch_optional(pool)
         .await
@@ -70,7 +70,7 @@ pub async fn applied_version(pool: &sqlx::SqlitePool) -> Result<u32, SqliteStora
     Ok(version.unwrap_or(0) as u32)
 }
 
-pub async fn prepare_journal(pool: &sqlx::SqlitePool) -> Result<(), SqliteStorageError> {
+pub(crate) async fn prepare_journal(pool: &sqlx::SqlitePool) -> Result<(), SqliteStorageError> {
     let state = {
         let mut conn = pool.acquire().await.map_err(SqliteStorageError::Sqlx)?;
         classify(&mut conn).await?

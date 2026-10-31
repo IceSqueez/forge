@@ -706,7 +706,7 @@ impl TriggersRegistryView {
         if instance.override_count > 0 {
             let label = tr!(
                 "triggers_override_badge",
-                count = instance.override_count as i64
+                count = i64::try_from(instance.override_count).unwrap_or(i64::MAX)
             );
             kind = kind.child(badge(
                 palette.surface_overlay,
@@ -1012,7 +1012,10 @@ impl TriggersRegistryView {
         let count = self.find(id).map(|i| i.used_in_count).unwrap_or_default();
         let card = confirm_modal(
             tr!("triggers_confirm_disable_title"),
-            tr!("triggers_confirm_disable_body", count = count as i64),
+            tr!(
+                "triggers_confirm_disable_body",
+                count = i64::try_from(count).unwrap_or(i64::MAX)
+            ),
             ConfirmTone::Warning,
             palette,
         )

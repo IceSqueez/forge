@@ -29,10 +29,11 @@ mod vts;
 pub const PLUGIN_NAME: &str = "Forge";
 
 pub use auth::AuthState;
-pub use catalog::{VTubeCatalog, VTubeCatalogChanges, VTubeChoice};
+pub use catalog::VTubeCatalogChanges;
+pub use catalog::{VTubeCatalog, VTubeChoice};
 pub use client::{VTubeClient, VTubeConfig};
 pub use connect_attempt::{VTubeAttemptPhase, VTubeConnectAttempt};
-pub use credentials::{VTUBE_CREDENTIAL_ID, VTubeConnectError, VTubeCredentials};
+pub use credentials::VTUBE_CREDENTIAL_ID;
 pub use error::VTubeError;
 pub use integration::VTUBE_INTEGRATION;
 pub use probe::{VTubeProbeResult, probe_connection, probe_connection_with_timing};

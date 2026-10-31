@@ -578,7 +578,10 @@ impl TestRunModal {
                     "\u{2713}".to_owned(),
                     palette.success,
                     palette.shell,
-                    tr!("action_editor_test_run_status_ms", ms = *ms as i64),
+                    tr!(
+                        "action_editor_test_run_status_ms",
+                        ms = i64::try_from(*ms).unwrap_or(i64::MAX)
+                    ),
                     palette.success,
                     palette.border_regular,
                     palette.shell,
@@ -695,8 +698,8 @@ impl TestRunModal {
                 palette.warning,
                 tr!(
                     "action_editor_test_run_completed",
-                    count = self.rows.len() as i64,
-                    errors = *errors as i64
+                    count = i64::try_from(self.rows.len()).unwrap_or(i64::MAX),
+                    errors = i64::try_from(*errors).unwrap_or(i64::MAX)
                 ),
                 None,
                 palette,
@@ -707,7 +710,7 @@ impl TestRunModal {
                 palette.success,
                 tr!(
                     "action_editor_test_run_completed",
-                    count = self.rows.len() as i64,
+                    count = i64::try_from(self.rows.len()).unwrap_or(i64::MAX),
                     errors = 0
                 ),
                 None,

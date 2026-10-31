@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use forge_registry::runner::SubActionConfig;
+use forge_registry::SubActionConfig;
 use forge_registry::{
     ConfigProblem, ConfigSpec, NumberField, RunContext, StepTimer, StoredNumber, SubActionCategory,
     SubActionRunner, TextEditor, TextField, TypedField, ValueBounds,
@@ -59,7 +59,7 @@ fn read_config(
     ))
 }
 
-pub struct ParamSetRunner {
+pub(crate) struct ParamSetRunner {
     sink: Arc<dyn VTubeSink>,
     holds: Arc<HoldRegistry>,
 }

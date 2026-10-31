@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_registry::runner::SubActionConfig;
+use forge_registry::SubActionConfig;
 use forge_registry::{
     ConfigSpec, PickedTextField, RunContext, StepTimer, SubActionCategory, SubActionRunner,
     TextPicker, TypedField,
@@ -26,12 +26,12 @@ const SOURCE: PickedTextField = PickedTextField {
 
 const CONFIG: ConfigSpec = ConfigSpec::new(&[&SOURCE]);
 
-pub struct MediaRestartRunner {
+pub(crate) struct MediaRestartRunner {
     sink: Arc<dyn ObsSink>,
 }
 
 impl MediaRestartRunner {
-    pub fn new(sink: Arc<dyn ObsSink>) -> Self {
+    pub(crate) fn new(sink: Arc<dyn ObsSink>) -> Self {
         Self { sink }
     }
 }

@@ -15,10 +15,10 @@ use tokio::time::Instant;
 use crate::repo_failure::RepoFailure;
 use crate::update_check::CURRENT_VERSION;
 
-pub const HANDOFF_PREPARE_BUDGET: Duration = Duration::from_secs(30);
+pub(crate) const HANDOFF_PREPARE_BUDGET: Duration = Duration::from_secs(30);
 
 #[derive(Debug, Clone)]
-pub struct HandoffInput {
+pub(crate) struct HandoffInput {
     pub install: UpdatableInstall,
     pub staged: StagedArtifact,
     pub to_version: String,
@@ -27,7 +27,7 @@ pub struct HandoffInput {
     pub exclusivity: TransferExclusivity,
 }
 
-pub fn update_snapshot_path(data_dir: &Path, now: OffsetDateTime, suffix: &str) -> PathBuf {
+pub(crate) fn update_snapshot_path(data_dir: &Path, now: OffsetDateTime, suffix: &str) -> PathBuf {
     backups_dir(data_dir).join(format!(
         "{}.{PRE_UPDATE_SNAPSHOT_EXTENSION}",
         backup_file_stem(now, suffix)
@@ -35,12 +35,12 @@ pub fn update_snapshot_path(data_dir: &Path, now: OffsetDateTime, suffix: &str) 
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub enum HandoffError {
+pub(crate) enum HandoffError {
     Busy,
     Failed(RepoFailure),
 }
 
-pub async fn prepare_handoff(
+pub(crate) async fn prepare_handoff(
     backend: Arc<dyn DataProvider>,
     input: HandoffInput,
 ) -> Result<(), HandoffError> {
@@ -52,7 +52,7 @@ pub async fn prepare_handoff(
         .map_err(HandoffError::Failed)
 }
 
-pub async fn prepare_handoff_holding(
+pub(crate) async fn prepare_handoff_holding(
     backend: Arc<dyn DataProvider>,
     input: HandoffInput,
     guard: TransferGuard,

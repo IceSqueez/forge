@@ -1,22 +1,22 @@
-pub mod backend;
+mod backend;
 mod binding;
 mod binding_store;
-pub mod client;
+mod client;
 mod clip_bindings;
-pub mod combo;
-pub mod config;
+mod combo;
+mod config;
 pub(crate) mod content;
 pub(crate) mod control;
 #[cfg(test)]
 #[path = "../../forge-platform-core/test_support/emitted_codes.rs"]
 mod emitted_codes;
-pub mod error;
+mod error;
 pub(crate) mod health;
 pub(crate) mod hold;
 mod hold_ceiling;
-pub mod integration;
+mod integration;
 mod main_thread;
-pub mod quick_actions;
+mod quick_actions;
 mod reconciler;
 pub(crate) mod status;
 pub(crate) mod supervisor;
@@ -24,7 +24,7 @@ mod synced_clips;
 mod synced_triggers;
 #[cfg(feature = "testing")]
 pub mod testing;
-pub mod triggers;
+mod triggers;
 pub mod vocabulary;
 
 #[cfg(target_os = "linux")]
@@ -52,22 +52,20 @@ pub use binding_store::{
     delete_binding_half, do_bind, load_bindings, persisted_hotkey_combos, rebind_combo,
     set_binding_enabled, update_binding,
 };
-pub use client::{EnableFailure, HotkeyClient};
+pub use client::EnableFailure;
+pub use client::HotkeyClient;
 pub use clip_bindings::{
-    CLIP_COMBO_FIELD, ClipBindings, canonical_clip, clear_clip_combo, clip_bindings_of,
-    stored_combo,
+    CLIP_COMBO_FIELD, ClipBindings, ClipBindingsSource, ClipBindingsWatch, clear_clip_combo,
+    clip_bindings_of, stored_combo,
 };
 pub use combo::HotkeyCombo;
 pub use config::{DEFAULT_HOLD_CEILING_SECS, HotkeyConfig};
 pub use error::HotkeyError;
-pub use hold_ceiling::{
-    HOLD_CEILING, HOTKEY_HOLD_CEILING_KEY, SETTING_SPECS, load_hold_ceiling, save_hold_ceiling,
-};
+pub use hold_ceiling::HoldCeilingCodec;
+pub use hold_ceiling::{HOLD_CEILING, SETTING_SPECS, load_hold_ceiling, save_hold_ceiling};
 pub use integration::HOTKEY_INTEGRATION;
-pub use main_thread::{
-    MAIN_THREAD_TIMEOUT, MainThreadHost, MainThreadLink, main_thread_channel,
-    main_thread_channel_with_timeout,
-};
+pub use main_thread::MainThreadHost;
+pub use main_thread::{MainThreadLink, main_thread_channel};
 pub use reconciler::HotkeyReconciler;
 pub use synced_clips::HotkeySyncedClipsRepo;
 pub use synced_triggers::HotkeySyncedTriggerRepo;

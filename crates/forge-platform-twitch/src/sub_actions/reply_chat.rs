@@ -3,7 +3,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_events::EventPublisher;
 use forge_platform_core::SenderPreference;
-use forge_registry::runner::SubActionConfig;
+use forge_registry::SubActionConfig;
 use forge_registry::{
     ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner,
     TextEditor, TextField, TypedField,
@@ -50,18 +50,18 @@ fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<ReplyConfig,
     })
 }
 
-pub struct ReplyChatRunner {
+pub(crate) struct ReplyChatRunner {
     senders: ChatSenders,
 }
 
 impl ReplyChatRunner {
-    pub fn new(transport: Arc<dyn HelixTransport>, identity: Arc<SelfIdentity>) -> Self {
+    pub(crate) fn new(transport: Arc<dyn HelixTransport>, identity: Arc<SelfIdentity>) -> Self {
         Self {
             senders: ChatSenders::new(transport, identity),
         }
     }
 
-    pub fn with_bot(mut self, bot: Option<Arc<TwitchBotAccount>>) -> Self {
+    pub(crate) fn with_bot(mut self, bot: Option<Arc<TwitchBotAccount>>) -> Self {
         self.senders = self.senders.with_bot(bot);
         self
     }

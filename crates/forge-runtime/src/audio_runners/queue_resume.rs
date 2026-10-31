@@ -8,12 +8,12 @@ use crate::speak_dispatcher::SpeakDispatcher;
 
 const QUEUE_RESUME_KIND_ID: &str = "tts.queue.resume";
 
-pub struct QueueResumeRunner {
+pub(crate) struct QueueResumeRunner {
     speak: Arc<dyn SpeakDispatcher>,
 }
 
 impl QueueResumeRunner {
-    pub fn new(speak: Arc<dyn SpeakDispatcher>) -> Self {
+    pub(crate) fn new(speak: Arc<dyn SpeakDispatcher>) -> Self {
         Self { speak }
     }
 }

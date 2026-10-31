@@ -36,12 +36,12 @@ fn read_config(
     ))
 }
 
-pub struct ScriptEmitEventRunner {
+pub(crate) struct ScriptEmitEventRunner {
     publisher: Arc<dyn EventPublisher>,
 }
 
 impl ScriptEmitEventRunner {
-    pub fn new(publisher: Arc<dyn EventPublisher>) -> Self {
+    pub(crate) fn new(publisher: Arc<dyn EventPublisher>) -> Self {
         Self { publisher }
     }
 }

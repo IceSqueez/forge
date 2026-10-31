@@ -65,7 +65,7 @@ const EMPTY_PAD_V: Pixels = px(20.0);
 const FOOTER_GAP: Pixels = px(8.0);
 const FOOTER_HINT_FS: Pixels = FONT_META;
 
-pub struct MappingModalLaunch {
+pub(crate) struct MappingModalLaunch {
     pub instance_id: Option<TriggerInstanceId>,
     pub signal: MidiSignal,
     pub linked_action: Option<ActionId>,
@@ -73,14 +73,14 @@ pub struct MappingModalLaunch {
     pub input_enabled: bool,
 }
 
-pub struct MappingDraft {
+pub(crate) struct MappingDraft {
     pub instance_id: Option<TriggerInstanceId>,
     pub signal: MidiSignal,
     pub action_id: ActionId,
     pub name: String,
 }
 
-pub enum MidiMappingModalEvent {
+pub(crate) enum MidiMappingModalEvent {
     Save(Box<MappingDraft>),
     Delete(TriggerInstanceId),
     Relearn,
@@ -121,7 +121,7 @@ impl ChannelEntry {
     }
 }
 
-pub struct MidiMappingModal {
+pub(crate) struct MidiMappingModal {
     instance_id: Option<TriggerInstanceId>,
     kind_id: String,
     selector: Option<i64>,
@@ -141,7 +141,7 @@ pub struct MidiMappingModal {
 impl EventEmitter<MidiMappingModalEvent> for MidiMappingModal {}
 
 impl MidiMappingModal {
-    pub fn new(
+    pub(crate) fn new(
         launch: MappingModalLaunch,
         action_repo: Arc<dyn ActionRepo>,
         rt_handle: tokio::runtime::Handle,
@@ -215,7 +215,7 @@ impl MidiMappingModal {
         }
     }
 
-    pub fn apply_capture(&mut self, signal: MidiSignal, cx: &mut Context<Self>) {
+    pub(crate) fn apply_capture(&mut self, signal: MidiSignal, cx: &mut Context<Self>) {
         self.listening = false;
         self.kind_id = signal.kind_id;
         self.selector = signal.selector;
@@ -910,7 +910,7 @@ impl Render for MidiMappingModal {
 
 #[cfg(test)]
 mod tests {
-    use forge_storage::action::MockActionRepo;
+    use forge_storage::MockActionRepo;
     use forge_storage::{Language, StorageError};
     use gpui::{Entity, TestAppContext};
 

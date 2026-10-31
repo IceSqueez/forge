@@ -9,33 +9,33 @@ use crate::latest::feeds::{
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SlotRetention {
+pub(crate) enum SlotRetention {
     SurvivesRestart,
     LiveOnly,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum SlotReading {
+pub(crate) enum SlotReading {
     Value(LatestValue),
     Ended { platform: String },
 }
 
-pub struct FeedContext<'a> {
+pub(crate) struct FeedContext<'a> {
     pub anonymous_name: &'a str,
 }
 
-pub struct SlotFeed {
+pub(crate) struct SlotFeed {
     pub kind: &'static str,
     pub read: fn(&Event, &FeedContext<'_>) -> Option<SlotReading>,
 }
 
-pub struct LatestSlotDeclaration {
+pub(crate) struct LatestSlotDeclaration {
     pub slot: &'static str,
     pub retention: SlotRetention,
     pub feeds: &'static [SlotFeed],
 }
 
-pub static LATEST_SLOTS: &[LatestSlotDeclaration] = &[
+pub(crate) static LATEST_SLOTS: &[LatestSlotDeclaration] = &[
     LatestSlotDeclaration {
         slot: LATEST_DONATION_SLOT,
         retention: SlotRetention::SurvivesRestart,
@@ -75,11 +75,11 @@ static SLOT_IDS: LazyLock<Vec<&'static str>> = LazyLock::new(|| {
         .collect()
 });
 
-pub fn latest_slot_ids() -> &'static [&'static str] {
+pub(crate) fn latest_slot_ids() -> &'static [&'static str] {
     SLOT_IDS.as_slice()
 }
 
-pub fn slot_declaration(slot: &str) -> Option<&'static LatestSlotDeclaration> {
+pub(crate) fn slot_declaration(slot: &str) -> Option<&'static LatestSlotDeclaration> {
     LATEST_SLOTS
         .iter()
         .find(|declaration| declaration.slot == slot)

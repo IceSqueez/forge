@@ -15,7 +15,7 @@ use crate::error::TransferError;
 use crate::setup::documents::{SETUP_DOCUMENTS_VERSION, SetupDocuments};
 use crate::setup::manifest::{SetupManifest, parse_setup};
 
-pub const SETUP_STAGING_DIR_NAME: &str = "setup-staging";
+pub(crate) const SETUP_STAGING_DIR_NAME: &str = "setup-staging";
 
 #[derive(Debug, Clone)]
 pub struct StagedSetup {

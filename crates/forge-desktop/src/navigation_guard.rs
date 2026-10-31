@@ -6,7 +6,7 @@ use crate::screen_shortcuts::ToggleReturn;
 use crate::unsaved_work::UnsavedWorkHandle;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum LeaveTarget {
+pub(crate) enum LeaveTarget {
     Screen(Screen),
     ToggledScreen(ToggleReturn),
     CloseWindow,
@@ -17,14 +17,14 @@ enum PendingLeave {
     Saving(LeaveTarget),
 }
 
-pub struct NavigationGuard {
+pub(crate) struct NavigationGuard {
     window: AnyWindowHandle,
     work: Option<UnsavedWorkHandle>,
     pending: Option<PendingLeave>,
 }
 
 impl NavigationGuard {
-    pub fn new(window: AnyWindowHandle) -> Self {
+    pub(crate) fn new(window: AnyWindowHandle) -> Self {
         Self {
             window,
             work: None,
@@ -32,30 +32,30 @@ impl NavigationGuard {
         }
     }
 
-    pub fn watch(&mut self, work: Option<UnsavedWorkHandle>) {
+    pub(crate) fn watch(&mut self, work: Option<UnsavedWorkHandle>) {
         self.work = work;
         self.pending = None;
     }
 
-    pub fn blocks(&self, cx: &App) -> bool {
+    pub(crate) fn blocks(&self, cx: &App) -> bool {
         self.work
             .as_ref()
             .is_some_and(|work| work.has_unsaved_work(cx))
     }
 
-    pub fn ask(&mut self, target: LeaveTarget) {
+    pub(crate) fn ask(&mut self, target: LeaveTarget) {
         self.pending = Some(PendingLeave::Asking(target));
     }
 
-    pub fn is_asking(&self) -> bool {
+    pub(crate) fn is_asking(&self) -> bool {
         matches!(self.pending, Some(PendingLeave::Asking(_)))
     }
 
-    pub fn work_name(&self, cx: &App) -> Option<SharedString> {
+    pub(crate) fn work_name(&self, cx: &App) -> Option<SharedString> {
         self.work.as_ref().and_then(|work| work.name(cx))
     }
 
-    pub fn cancel(&mut self) {
+    pub(crate) fn cancel(&mut self) {
         self.pending = None;
     }
 
@@ -69,7 +69,7 @@ impl NavigationGuard {
         }
     }
 
-    pub fn discard(&mut self, cx: &mut App) -> Option<LeaveTarget> {
+    pub(crate) fn discard(&mut self, cx: &mut App) -> Option<LeaveTarget> {
         let target = self.take_asked()?;
         if let Some(work) = self.work.clone() {
             work.discard(cx);
@@ -77,7 +77,7 @@ impl NavigationGuard {
         Some(target)
     }
 
-    pub fn save(&mut self, cx: &mut App) -> Option<LeaveTarget> {
+    pub(crate) fn save(&mut self, cx: &mut App) -> Option<LeaveTarget> {
         let target = self.take_asked()?;
         let Some(work) = self.work.clone() else {
             return Some(target);
@@ -89,7 +89,7 @@ impl NavigationGuard {
         (!work.has_unsaved_work(cx)).then_some(target)
     }
 
-    pub fn settle(&mut self, cx: &App) -> Option<LeaveTarget> {
+    pub(crate) fn settle(&mut self, cx: &App) -> Option<LeaveTarget> {
         let work = self.work.as_ref()?;
         if !matches!(self.pending, Some(PendingLeave::Saving(_))) || work.is_saving(cx) {
             return None;
@@ -101,7 +101,7 @@ impl NavigationGuard {
         }
     }
 
-    pub fn close_window(&self, cx: &mut App) {
+    pub(crate) fn close_window(&self, cx: &mut App) {
         let window = self.window;
         cx.defer(move |cx| {
             #[expect(
@@ -113,14 +113,14 @@ impl NavigationGuard {
     }
 }
 
-pub struct LeaveDialogHandlers<C, S, D, X> {
+pub(crate) struct LeaveDialogHandlers<C, S, D, X> {
     pub cancel: C,
     pub save: S,
     pub discard: D,
     pub dismiss: X,
 }
 
-pub fn leave_dialog<C, S, D, X>(
+pub(crate) fn leave_dialog<C, S, D, X>(
     name: Option<SharedString>,
     palette: &ForgePalette,
     handlers: LeaveDialogHandlers<C, S, D, X>,

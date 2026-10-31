@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_registry::runner::SubActionConfig;
+use forge_registry::SubActionConfig;
 use forge_registry::{
     ChoiceField, ConfigProblem, ConfigSpec, DurationBounds, DurationField, RunContext, StepTimer,
     SubActionCategory, SubActionRunner, TypedField,
@@ -110,13 +110,13 @@ impl ChatModes {
     }
 }
 
-pub struct SetModeRunner {
+pub(crate) struct SetModeRunner {
     transport: Arc<dyn HelixTransport>,
     identity: Arc<SelfIdentity>,
 }
 
 impl SetModeRunner {
-    pub fn new(transport: Arc<dyn HelixTransport>, identity: Arc<SelfIdentity>) -> Self {
+    pub(crate) fn new(transport: Arc<dyn HelixTransport>, identity: Arc<SelfIdentity>) -> Self {
         Self {
             transport,
             identity,

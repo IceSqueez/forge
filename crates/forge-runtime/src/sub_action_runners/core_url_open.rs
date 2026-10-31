@@ -22,12 +22,12 @@ const URL: TextField = TextField {
 
 const CONFIG: ConfigSpec = ConfigSpec::new(&[&URL]);
 
-pub struct CoreUrlOpenRunner {
+pub(crate) struct CoreUrlOpenRunner {
     opener: Arc<dyn UrlOpenPort>,
 }
 
 impl CoreUrlOpenRunner {
-    pub fn new(opener: Arc<dyn UrlOpenPort>) -> Self {
+    pub(crate) fn new(opener: Arc<dyn UrlOpenPort>) -> Self {
         Self { opener }
     }
 }

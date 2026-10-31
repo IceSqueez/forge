@@ -34,20 +34,20 @@ pub(crate) struct ViewerMessages {
 }
 
 impl ViewerMessages {
-    pub fn count(&self, key: &AuthorKey) -> u64 {
+    pub(crate) fn count(&self, key: &AuthorKey) -> u64 {
         let stored = self.stored.get(key).map_or(0, |tally| tally.messages);
         stored.saturating_add(self.unsaved(key).len() as u64)
     }
 
-    pub fn stored_tally(&self, key: &AuthorKey) -> Option<ChatAuthorTally> {
+    pub(crate) fn stored_tally(&self, key: &AuthorKey) -> Option<ChatAuthorTally> {
         self.stored.get(key).copied()
     }
 
-    pub fn unsaved(&self, key: &AuthorKey) -> &[ChatMessage] {
+    pub(crate) fn unsaved(&self, key: &AuthorKey) -> &[ChatMessage] {
         self.unsaved.get(key).map_or(&[], Vec::as_slice)
     }
 
-    pub fn absorb(&mut self, feed: &ChatFeed) -> bool {
+    pub(crate) fn absorb(&mut self, feed: &ChatFeed) -> bool {
         let from = self.scanned_through.max(feed.start_seq());
         self.scanned_through = feed.end_seq();
         let mut changed = false;
@@ -57,7 +57,7 @@ impl ViewerMessages {
         changed
     }
 
-    pub fn replace_tallies(
+    pub(crate) fn replace_tallies(
         &mut self,
         tallies: impl IntoIterator<Item = (AuthorKey, ChatAuthorTally)>,
         feed: &ChatFeed,
@@ -82,7 +82,7 @@ impl ViewerMessages {
         self.scanned_through = feed.end_seq();
     }
 
-    pub fn adopt(&mut self, key: &AuthorKey, tally: ChatAuthorTally, feed: &ChatFeed) {
+    pub(crate) fn adopt(&mut self, key: &AuthorKey, tally: ChatAuthorTally, feed: &ChatFeed) {
         self.unsaved.remove(key);
         self.stored.insert(key.clone(), tally);
         for message in (feed.start_seq()..feed.end_seq()).filter_map(|seq| feed.get(seq)) {
@@ -92,11 +92,11 @@ impl ViewerMessages {
         }
     }
 
-    pub fn hold(&mut self, key: AuthorKey) {
+    pub(crate) fn hold(&mut self, key: AuthorKey) {
         self.held = Some(key);
     }
 
-    pub fn release(&mut self) {
+    pub(crate) fn release(&mut self) {
         self.held = None;
     }
 

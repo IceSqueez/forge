@@ -32,12 +32,12 @@ pub trait NotifyPort: Send + Sync {
     fn show(&self, notice: DesktopNotice) -> Result<(), OsPortError>;
 }
 
-pub trait ClipboardPort: Send + Sync {
+pub(crate) trait ClipboardPort: Send + Sync {
     fn copy(&self, text: String) -> Result<(), OsPortError>;
     fn read(&self) -> Result<String, OsPortError>;
 }
 
-pub trait UrlOpenPort: Send + Sync {
+pub(crate) trait UrlOpenPort: Send + Sync {
     fn open(&self, url: String) -> Result<(), OsPortError>;
 }
 
@@ -88,7 +88,7 @@ impl NotifyPort for SystemNotifyPort {
 }
 
 #[derive(Default)]
-pub struct SystemClipboardPort;
+pub(crate) struct SystemClipboardPort;
 
 impl ClipboardPort for SystemClipboardPort {
     fn copy(&self, text: String) -> Result<(), OsPortError> {
@@ -111,7 +111,7 @@ fn clipboard() -> Result<arboard::Clipboard, OsPortError> {
 }
 
 #[derive(Default)]
-pub struct SystemUrlOpenPort;
+pub(crate) struct SystemUrlOpenPort;
 
 impl UrlOpenPort for SystemUrlOpenPort {
     fn open(&self, url: String) -> Result<(), OsPortError> {

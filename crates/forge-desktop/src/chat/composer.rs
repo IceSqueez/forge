@@ -22,7 +22,7 @@ use forge_runtime::LifecycleState;
 
 const BOT_SWITCH_OPTION: usize = 1;
 
-pub struct ChatComposer {
+pub(crate) struct ChatComposer {
     input: Entity<InputBar>,
     rt_handle: tokio::runtime::Handle,
     bus: Option<Arc<EventBus>>,
@@ -35,7 +35,7 @@ pub struct ChatComposer {
 }
 
 impl ChatComposer {
-    pub fn new(
+    pub(crate) fn new(
         home_stats: Entity<HomeStats>,
         rt_handle: tokio::runtime::Handle,
         palette: ForgePalette,
@@ -68,12 +68,12 @@ impl ChatComposer {
         this
     }
 
-    pub fn set_bus(&mut self, bus: Arc<EventBus>, cx: &mut Context<Self>) {
+    pub(crate) fn set_bus(&mut self, bus: Arc<EventBus>, cx: &mut Context<Self>) {
         self.bus = Some(bus);
         cx.notify();
     }
 
-    pub fn set_lifecycle(
+    pub(crate) fn set_lifecycle(
         &mut self,
         lifecycle: Entity<IntegrationLifecycle>,
         cx: &mut Context<Self>,
@@ -84,7 +84,11 @@ impl ChatComposer {
         self.refresh_reach(cx);
     }
 
-    pub fn set_twitch_bot(&mut self, presence: Entity<TwitchBotPresence>, cx: &mut Context<Self>) {
+    pub(crate) fn set_twitch_bot(
+        &mut self,
+        presence: Entity<TwitchBotPresence>,
+        cx: &mut Context<Self>,
+    ) {
         self._subscriptions
             .push(cx.observe(&presence, |this, _, cx| this.refresh_sender_switch(cx)));
         self.twitch_bot = Some(presence);

@@ -3,7 +3,7 @@ use forge_storage::{
     AUTHORLESS_CHAT_HISTORY_RETAINED, ChatAuthorKey, ChatAuthorPage, ChatAuthorTally,
     ChatHistoryCursor, ChatHistoryRepo, ChatModerationTarget, StorageError,
 };
-use forge_types::unified_chat::{
+use forge_types::{
     ChatEventDetail, ChatSegment, ModerationMarks, UnifiedChatRow, UserBadge, UserRemoval,
 };
 use forge_types::{EventId, PlatformId};
@@ -263,7 +263,7 @@ impl ChatHistoryRepo for SqliteChatHistoryRepo {
              ORDER BY seq DESC
              LIMIT ?",
         )
-        .bind(limit as i64)
+        .bind(i64::try_from(limit).unwrap_or(i64::MAX))
         .fetch_all(self.db.reader())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
@@ -367,7 +367,7 @@ impl ChatHistoryRepo for SqliteChatHistoryRepo {
             )
             .bind(source)
             .bind(author_id)
-            .bind(per_author as i64)
+            .bind(i64::try_from(per_author).unwrap_or(i64::MAX))
             .execute(&mut *tx)
             .await
             .map_err(SqliteStorageError::Sqlx)?
@@ -383,7 +383,7 @@ impl ChatHistoryRepo for SqliteChatHistoryRepo {
                    LIMIT 1 OFFSET ?
                )",
         )
-        .bind(AUTHORLESS_CHAT_HISTORY_RETAINED as i64)
+        .bind(i64::try_from(AUTHORLESS_CHAT_HISTORY_RETAINED).unwrap_or(i64::MAX))
         .execute(&mut *tx)
         .await
         .map_err(SqliteStorageError::Sqlx)?
@@ -462,7 +462,7 @@ mod tests {
     use forge_storage::ChatHistoryRepo;
     use forge_types::EventId;
     use forge_types::PlatformId;
-    use forge_types::unified_chat::{
+    use forge_types::{
         ChatEventDetail, ChatSegment, ModerationMarks, UnifiedChatRow, UserBadge, UserRemoval,
     };
     use time::OffsetDateTime;

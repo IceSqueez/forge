@@ -5,7 +5,7 @@ use crate::condition_messages::{any_condition, first_time_chatters_condition};
 use crate::form::FormField;
 
 pub const FIRST_CHATTERS_ONLY: &str = "first_chatters_only";
-pub const FIRST_MESSAGE_VARIABLE: &str = "first_message";
+pub(crate) const FIRST_MESSAGE_VARIABLE: &str = "first_message";
 
 pub fn first_chatters_only_field() -> FormField {
     FormField::Toggle {
@@ -14,7 +14,7 @@ pub fn first_chatters_only_field() -> FormField {
     }
 }
 
-pub fn first_message_declaration() -> DeclaredVariable {
+pub(crate) fn first_message_declaration() -> DeclaredVariable {
     DeclaredVariable {
         name: FIRST_MESSAGE_VARIABLE.to_owned(),
         kind: VariantKind::Bool,
@@ -23,11 +23,11 @@ pub fn first_message_declaration() -> DeclaredVariable {
     }
 }
 
-pub fn is_first_chat_message(event: &Event) -> bool {
+pub(crate) fn is_first_chat_message(event: &Event) -> bool {
     ChatViewer::read(&event.payload).is_some_and(|viewer| viewer.first_message)
 }
 
-pub fn first_chatters_only(config: &TriggerConfig) -> bool {
+pub(crate) fn first_chatters_only(config: &TriggerConfig) -> bool {
     config
         .get(FIRST_CHATTERS_ONLY)
         .and_then(Variant::as_bool)

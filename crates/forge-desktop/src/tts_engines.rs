@@ -63,7 +63,7 @@ enum Selection {
     Adding(CloudEngineKind),
 }
 
-pub struct TtsEnginesView {
+pub(crate) struct TtsEnginesView {
     registry: Option<Arc<RwLock<TtsRegistry>>>,
     credentials: Arc<dyn CredentialsRepo>,
     settings: Arc<dyn SettingsRepo>,
@@ -83,7 +83,7 @@ pub struct TtsEnginesView {
 }
 
 impl TtsEnginesView {
-    pub fn new(
+    pub(crate) fn new(
         registry: Option<Arc<RwLock<TtsRegistry>>>,
         cloud_gateways: CloudGateways,
         credentials: Arc<dyn CredentialsRepo>,
@@ -626,7 +626,7 @@ impl TtsEnginesView {
                     .child(tr!(
                         "tts_engines_rail_sub",
                         kind = engine_class_label(engine.class),
-                        count = voice_count as i64
+                        count = i64::try_from(voice_count).unwrap_or(i64::MAX)
                     )),
             );
 
@@ -876,12 +876,12 @@ impl TtsEnginesView {
                 "tts_engines_detail_sub_region",
                 kind = kind,
                 region = region,
-                count = voice_count as i64
+                count = i64::try_from(voice_count).unwrap_or(i64::MAX)
             ),
             None => tr!(
                 "tts_engines_detail_sub",
                 kind = kind,
-                count = voice_count as i64
+                count = i64::try_from(voice_count).unwrap_or(i64::MAX)
             ),
         };
 
@@ -963,7 +963,7 @@ impl TtsEnginesView {
                     .text_color(palette.text_faint)
                     .child(tr!(
                         "tts_engines_voices_available",
-                        count = voices.len() as i64
+                        count = i64::try_from(voices.len()).unwrap_or(i64::MAX)
                     )),
             );
 

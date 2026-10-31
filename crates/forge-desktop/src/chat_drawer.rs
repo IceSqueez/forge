@@ -57,7 +57,7 @@ pub(crate) struct ViewerDirectory {
 
 impl ViewerDirectory {
     #[cfg(test)]
-    pub fn new(viewers: Vec<Viewer>) -> Self {
+    pub(crate) fn new(viewers: Vec<Viewer>) -> Self {
         let mut by_key = HashMap::with_capacity(viewers.len());
         for (ix, viewer) in viewers.iter().enumerate() {
             let platform = viewer.platform;
@@ -71,7 +71,7 @@ impl ViewerDirectory {
         Self { viewers, by_key }
     }
 
-    pub fn absorb(&mut self, fresh: Vec<Viewer>) -> bool {
+    pub(crate) fn absorb(&mut self, fresh: Vec<Viewer>) -> bool {
         let mut changed = false;
         for viewer in fresh {
             let id_key = AuthorKey::by_viewer_id(viewer.platform, &viewer.viewer_id);
@@ -96,7 +96,7 @@ impl ViewerDirectory {
         changed
     }
 
-    pub fn get(&self, key: &AuthorKey) -> Option<&Viewer> {
+    pub(crate) fn get(&self, key: &AuthorKey) -> Option<&Viewer> {
         self.by_key.get(key).and_then(|ix| self.viewers.get(*ix))
     }
 }

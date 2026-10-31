@@ -160,7 +160,7 @@ impl Render for QueueRowGhost {
     }
 }
 
-pub struct TtsDashboardView {
+pub(crate) struct TtsDashboardView {
     speak_state: Entity<SpeakState>,
     speak: Option<SpeakQueueHandle>,
     settings: Arc<dyn SettingsRepo>,
@@ -177,7 +177,7 @@ pub struct TtsDashboardView {
 }
 
 impl TtsDashboardView {
-    pub fn new(
+    pub(crate) fn new(
         speak_state: Entity<SpeakState>,
         speak: Option<SpeakQueueHandle>,
         settings: Arc<dyn SettingsRepo>,

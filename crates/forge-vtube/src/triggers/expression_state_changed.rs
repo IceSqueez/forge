@@ -12,7 +12,7 @@ use crate::vocabulary::fields::expression as fields;
 use crate::vocabulary::messages;
 use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
-pub struct ExpressionStateChangedDescriptor;
+pub(crate) struct ExpressionStateChangedDescriptor;
 
 impl TriggerKindDescriptor for ExpressionStateChangedDescriptor {
     fn id(&self) -> &str {

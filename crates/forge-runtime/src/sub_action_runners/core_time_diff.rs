@@ -95,7 +95,7 @@ fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<DiffConfig, 
     })
 }
 
-pub struct CoreTimeDiffRunner;
+pub(crate) struct CoreTimeDiffRunner;
 
 #[async_trait]
 impl SubActionRunner for CoreTimeDiffRunner {

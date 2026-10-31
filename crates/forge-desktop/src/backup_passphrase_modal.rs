@@ -43,7 +43,7 @@ impl PassphraseCheck {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum PassphrasePurpose {
+pub(crate) enum PassphrasePurpose {
     FullBackup,
     ScheduleSetup,
     ScheduleChange,
@@ -94,12 +94,12 @@ impl PassphrasePurpose {
     }
 }
 
-pub enum BackupPassphraseEvent {
+pub(crate) enum BackupPassphraseEvent {
     Confirmed,
     Cancelled,
 }
 
-pub struct BackupPassphraseModal {
+pub(crate) struct BackupPassphraseModal {
     purpose: PassphrasePurpose,
     current: Option<Entity<TextInput>>,
     current_error: Option<String>,
@@ -113,11 +113,11 @@ pub struct BackupPassphraseModal {
 impl EventEmitter<BackupPassphraseEvent> for BackupPassphraseModal {}
 
 impl BackupPassphraseModal {
-    pub fn new(cx: &mut Context<Self>) -> Self {
+    pub(crate) fn new(cx: &mut Context<Self>) -> Self {
         Self::with_purpose(PassphrasePurpose::FullBackup, cx)
     }
 
-    pub fn with_purpose(purpose: PassphrasePurpose, cx: &mut Context<Self>) -> Self {
+    pub(crate) fn with_purpose(purpose: PassphrasePurpose, cx: &mut Context<Self>) -> Self {
         let palette = cx.palette();
         let current = purpose.asks_current().then(|| {
             cx.new(|cx| {

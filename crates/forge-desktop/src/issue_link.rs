@@ -2,15 +2,15 @@ use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
 
 use crate::crash_record::CrashRecord;
 
-pub const ISSUE_URL_MAX_BYTES: usize = 8 * 1024;
-pub const CRASH_TEMPLATE: &str = "crash.yml";
-pub const BUG_TEMPLATE: &str = "bug_report.yml";
-pub const FIELD_VERSION: &str = "version";
-pub const FIELD_CRASH: &str = "crash";
-pub const FIELD_SYSTEM_INFO: &str = "system-info";
-pub const FIELD_BACKTRACE: &str = "backtrace";
-pub const CRASH_REPORT_FILE_NAME: &str = "crash.txt";
-pub const SYSTEM_INFO_FILE_NAME: &str = "system-info.txt";
+pub(crate) const ISSUE_URL_MAX_BYTES: usize = 8 * 1024;
+pub(crate) const CRASH_TEMPLATE: &str = "crash.yml";
+pub(crate) const BUG_TEMPLATE: &str = "bug_report.yml";
+pub(crate) const FIELD_VERSION: &str = "version";
+pub(crate) const FIELD_CRASH: &str = "crash";
+pub(crate) const FIELD_SYSTEM_INFO: &str = "system-info";
+pub(crate) const FIELD_BACKTRACE: &str = "backtrace";
+pub(crate) const CRASH_REPORT_FILE_NAME: &str = "crash.txt";
+pub(crate) const SYSTEM_INFO_FILE_NAME: &str = "system-info.txt";
 
 const CRASH_TITLE_PREFIX: &str = "Crash: ";
 const TRIM_ORDER: [(&str, &str); 2] = [
@@ -19,20 +19,20 @@ const TRIM_ORDER: [(&str, &str); 2] = [
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct IssueField {
+pub(crate) struct IssueField {
     pub id: &'static str,
     pub value: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct IssueForm {
+pub(crate) struct IssueForm {
     pub template: &'static str,
     pub title: Option<String>,
     pub fields: Vec<IssueField>,
 }
 
 impl IssueForm {
-    pub fn crash(record: &CrashRecord, system_info: &str) -> Self {
+    pub(crate) fn crash(record: &CrashRecord, system_info: &str) -> Self {
         Self {
             template: CRASH_TEMPLATE,
             title: Some(format!("{CRASH_TITLE_PREFIX}{}", record.summary())),
@@ -57,7 +57,7 @@ impl IssueForm {
         }
     }
 
-    pub fn problem(version_line: String, system_info: &str) -> Self {
+    pub(crate) fn problem(version_line: String, system_info: &str) -> Self {
         Self {
             template: BUG_TEMPLATE,
             title: None,
@@ -74,7 +74,7 @@ impl IssueForm {
         }
     }
 
-    pub fn url(&self, repo_url: &str) -> String {
+    pub(crate) fn url(&self, repo_url: &str) -> String {
         let mut url = format!(
             "{}/issues/new?template={}",
             repo_url.trim_end_matches('/'),
@@ -93,7 +93,7 @@ impl IssueForm {
         url
     }
 
-    pub fn fitted(self, repo_url: &str, max_bytes: usize) -> Self {
+    pub(crate) fn fitted(self, repo_url: &str, max_bytes: usize) -> Self {
         let mut form = self.with_fitted_backtrace(repo_url, max_bytes);
         for (id, full_text_file) in TRIM_ORDER {
             let url_len = form.url(repo_url).len();
@@ -140,7 +140,7 @@ impl IssueForm {
         with_lines(fits)
     }
 
-    pub fn preview_text(&self) -> String {
+    pub(crate) fn preview_text(&self) -> String {
         let mut sections = Vec::with_capacity(self.fields.len() + 1);
         if let Some(title) = &self.title {
             sections.push(format!("title:\n{title}"));
@@ -179,17 +179,17 @@ fn trim_to_free(value: &mut String, excess_encoded_bytes: usize, full_text_file:
     value.push_str(&marker);
 }
 
-pub fn field_truncated_marker(full_text_file: &str) -> String {
+pub(crate) fn field_truncated_marker(full_text_file: &str) -> String {
     format!("... [truncated - the full text is in {full_text_file} in the saved report folder]")
 }
 
-pub fn backtrace_truncated_marker() -> String {
+pub(crate) fn backtrace_truncated_marker() -> String {
     format!(
         "... [backtrace truncated - the full text is in {CRASH_REPORT_FILE_NAME} in the saved report folder]"
     )
 }
 
-pub fn encode(text: &str) -> String {
+pub(crate) fn encode(text: &str) -> String {
     utf8_percent_encode(text, NON_ALPHANUMERIC).to_string()
 }
 

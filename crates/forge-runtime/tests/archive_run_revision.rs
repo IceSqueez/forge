@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use forge_storage::action::MockActionRepo;
+use forge_storage::MockActionRepo;
 use forge_storage::{CatalogRevision, RevisingActionRepo};
 use forge_types::ActionId;
 

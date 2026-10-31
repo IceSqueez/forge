@@ -14,8 +14,7 @@ pub use restore_marker::{
 };
 pub use restore_outcome::{RestoreDeferral, RestoreOutcome, RestoreRollback};
 pub use stage::{
-    RESTORE_STAGING_DIR_NAME, StageRequest, StagedRestore, discard_staged_restore,
-    restore_staging_root, stage_full_restore,
+    StageRequest, StagedRestore, discard_staged_restore, restore_staging_root, stage_full_restore,
 };
 pub use writer::{
     BackupDestination, FullBackupRequest, ScheduledBackupRequest, ScheduledWrite,

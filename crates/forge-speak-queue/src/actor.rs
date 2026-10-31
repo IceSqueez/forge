@@ -776,7 +776,7 @@ fn start_clip(
         engine_id,
         language,
     } = clip;
-    let duration_secs = (pcm.duration_ms() / 1000) as u32;
+    let duration_secs = u32::try_from(pcm.duration_ms() / 1000).unwrap_or(u32::MAX);
     let emit = SpeakEmitter::new(event_tx, deps.event_bus.as_ref());
     emit.started(
         &request,

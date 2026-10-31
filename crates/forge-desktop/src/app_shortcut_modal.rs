@@ -30,13 +30,13 @@ const DISPLAY_FS: Pixels = FONT_XS;
 
 const FOOTER_GAP: Pixels = px(8.0);
 
-pub enum AppShortcutModalEvent {
+pub(crate) enum AppShortcutModalEvent {
     Save(Option<String>),
     Recapture,
     Cancel,
 }
 
-pub struct AppShortcutModal {
+pub(crate) struct AppShortcutModal {
     entry: &'static ShortcutEntry,
     chord: Option<String>,
     capturing: bool,
@@ -45,7 +45,7 @@ pub struct AppShortcutModal {
 impl EventEmitter<AppShortcutModalEvent> for AppShortcutModal {}
 
 impl AppShortcutModal {
-    pub fn new(entry: &'static ShortcutEntry, chord: Option<String>) -> Self {
+    pub(crate) fn new(entry: &'static ShortcutEntry, chord: Option<String>) -> Self {
         Self {
             entry,
             chord,
@@ -53,13 +53,13 @@ impl AppShortcutModal {
         }
     }
 
-    pub fn apply_capture(&mut self, chord: String, cx: &mut Context<Self>) {
+    pub(crate) fn apply_capture(&mut self, chord: String, cx: &mut Context<Self>) {
         self.capturing = false;
         self.chord = Some(chord);
         cx.notify();
     }
 
-    pub fn cancel_capture(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn cancel_capture(&mut self, cx: &mut Context<Self>) {
         if !self.capturing {
             return;
         }

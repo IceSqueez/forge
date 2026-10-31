@@ -121,7 +121,7 @@ pub fn ensure_public_ip_literal(host: &str) -> Result<(), HostRejection> {
     }
 }
 
-pub fn is_private_or_special(addr: IpAddr) -> bool {
+pub(crate) fn is_private_or_special(addr: IpAddr) -> bool {
     match addr {
         IpAddr::V4(ip) => is_private_or_special_v4(ip),
         IpAddr::V6(ip) => is_private_or_special_v6(ip),
@@ -175,7 +175,7 @@ fn retain_public(
 }
 
 #[derive(Debug, Default, Clone, Copy)]
-pub struct PublicAddressResolver;
+pub(crate) struct PublicAddressResolver;
 
 impl reqwest::dns::Resolve for PublicAddressResolver {
     fn resolve(&self, name: reqwest::dns::Name) -> reqwest::dns::Resolving {
@@ -191,7 +191,7 @@ impl reqwest::dns::Resolve for PublicAddressResolver {
     }
 }
 
-pub fn host_rejection_cause(error: &(dyn Error + 'static)) -> Option<HostRejection> {
+pub(crate) fn host_rejection_cause(error: &(dyn Error + 'static)) -> Option<HostRejection> {
     let mut current = Some(error);
     while let Some(cause) = current {
         if let Some(rejection) = cause.downcast_ref::<HostRejection>() {

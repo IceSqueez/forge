@@ -1,5 +1,5 @@
 #![allow(clippy::expect_used)]
-use forge_storage_sqlite::{connect, registry_migration};
+use forge_storage_sqlite::{connect, migrate_registry_format};
 use forge_types::{ActionId, SubActionStep, Variant};
 use sqlx::SqlitePool;
 
@@ -60,9 +60,7 @@ async fn legacy_discord_kind_ids_are_rewritten_to_webhook_ids() {
     let id = ActionId::new();
     insert_format1_action(&pool, &id, &blob).await;
 
-    registry_migration::migrate_registry_format(&pool)
-        .await
-        .expect("migrate");
+    migrate_registry_format(&pool).await.expect("migrate");
 
     let (steps, version) = read_action(&pool, &id).await;
 
@@ -99,9 +97,7 @@ async fn non_discord_step_is_byte_identical_after_discord_remap() {
     )
     .await;
 
-    registry_migration::migrate_registry_format(&pool)
-        .await
-        .expect("migrate");
+    migrate_registry_format(&pool).await.expect("migrate");
 
     let (steps, version) = read_action(&pool, &id).await;
 
@@ -126,9 +122,7 @@ async fn already_canonical_discord_ids_are_left_untouched_but_bumped() {
     )
     .await;
 
-    registry_migration::migrate_registry_format(&pool)
-        .await
-        .expect("migrate");
+    migrate_registry_format(&pool).await.expect("migrate");
 
     let (steps, version) = read_action(&pool, &id).await;
 
@@ -148,10 +142,8 @@ async fn second_migration_call_is_a_noop_for_discord_remap() {
     )
     .await;
 
-    registry_migration::migrate_registry_format(&pool)
-        .await
-        .expect("first migrate");
-    registry_migration::migrate_registry_format(&pool)
+    migrate_registry_format(&pool).await.expect("first migrate");
+    migrate_registry_format(&pool)
         .await
         .expect("second migrate must not error");
 

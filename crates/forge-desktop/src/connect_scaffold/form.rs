@@ -66,7 +66,7 @@ pub(crate) struct ConnectFlagSpec {
 }
 
 impl ConnectFlagSpec {
-    pub fn declaration(&self, flag: ConnectFlag) -> &'static Setting<Flag> {
+    pub(crate) fn declaration(&self, flag: ConnectFlag) -> &'static Setting<Flag> {
         match flag {
             ConnectFlag::AutoReconnect => self.auto_reconnect,
             ConnectFlag::ConnectOnLaunch => self.connect_on_launch,
@@ -97,14 +97,14 @@ impl Default for ConnectFlags {
 }
 
 impl ConnectFlags {
-    pub async fn load(settings: &dyn SettingsRepo, spec: &ConnectFlagSpec) -> Self {
+    pub(crate) async fn load(settings: &dyn SettingsRepo, spec: &ConnectFlagSpec) -> Self {
         Self {
             auto_reconnect: read_setting_or_default(settings, spec.auto_reconnect).await,
             connect_on_launch: read_setting_or_default(settings, spec.connect_on_launch).await,
         }
     }
 
-    pub fn flip(&mut self, flag: ConnectFlag) -> bool {
+    pub(crate) fn flip(&mut self, flag: ConnectFlag) -> bool {
         let slot = match flag {
             ConnectFlag::AutoReconnect => &mut self.auto_reconnect,
             ConnectFlag::ConnectOnLaunch => &mut self.connect_on_launch,
@@ -405,7 +405,7 @@ pub(crate) struct StripContent {
 }
 
 impl AttemptStatus {
-    pub fn strip(
+    pub(crate) fn strip(
         &self,
         spinner_id: &'static str,
         look: StripLook,

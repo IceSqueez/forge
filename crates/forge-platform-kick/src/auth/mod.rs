@@ -6,8 +6,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use forge_net::{Gateway, GatewayRequest};
-use forge_platform_core::auth::{CALLBACK_PATH, PkceAuthorizeConfig, PkceLoopback};
-use forge_platform_core::{AuthFlow, PlatformError};
+use forge_platform_core::PlatformError;
+#[cfg(test)]
+use forge_platform_core::{AuthFlow, CALLBACK_PATH};
+use forge_platform_core::{PkceAuthorizeConfig, PkceLoopback};
 use forge_types::{OAuthToken, Secret};
 use serde::Deserialize;
 use time::OffsetDateTime;
@@ -18,9 +20,10 @@ use crate::gateway::{authorized, gateway_error, malformed};
 
 pub const KICK_AUTHORIZE_ENDPOINT: &str = "https://id.kick.com/oauth/authorize";
 const DEFAULT_ACCESS_TOKEN_LIFETIME_SECS: u64 = 3600;
-pub const KICK_TOKEN_ENDPOINT: &str = "https://id.kick.com/oauth/token";
+#[cfg(test)]
+pub(crate) const KICK_TOKEN_ENDPOINT: &str = "https://id.kick.com/oauth/token";
 
-pub const KICK_OAUTH_CALLBACK_PORT: u16 = 53127;
+pub(crate) const KICK_OAUTH_CALLBACK_PORT: u16 = 53127;
 
 const KICK_USERS_PATH: &str = "/users";
 const EMPTY_USERS: &str = "users endpoint returned empty data array";
@@ -38,7 +41,8 @@ const KICK_SCOPES: &[&str] = &[
     "moderation:ban",
 ];
 
-pub fn kick_auth_flow() -> AuthFlow {
+#[cfg(test)]
+pub(crate) fn kick_auth_flow() -> AuthFlow {
     AuthFlow::LocalCallback {
         authorize_url: KICK_AUTHORIZE_ENDPOINT.to_owned(),
         token_endpoint: KICK_TOKEN_ENDPOINT.to_owned(),

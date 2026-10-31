@@ -19,14 +19,14 @@ use crate::connect_scaffold::{
 };
 use crate::integrations::ObsInstallSeed;
 
-pub const OBS_AUTO_RECONNECT: Setting<Flag> = Setting::new(
+pub(crate) const OBS_AUTO_RECONNECT: Setting<Flag> = Setting::new(
     "obs.auto_reconnect",
     Flag { default: true },
     Portable,
     Withheld,
 );
 
-pub const OBS_CONNECT_ON_LAUNCH: Setting<Flag> = Setting::new(
+pub(crate) const OBS_CONNECT_ON_LAUNCH: Setting<Flag> = Setting::new(
     "obs.connect_on_launch",
     Flag { default: true },
     Portable,
@@ -56,10 +56,10 @@ const FLAGS: ConnectFlagSpec = ConnectFlagSpec {
     save_failed_key: "obs_connect_settings_save_failed",
 };
 
-pub struct ObsConnected;
+pub(crate) struct ObsConnected;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub enum ObsSubmit {
+pub(crate) enum ObsSubmit {
     Connect,
     SaveAndReconnect,
 }
@@ -99,7 +99,7 @@ struct FormValues {
     password: Secret,
 }
 
-pub struct ObsCredentialsForm {
+pub(crate) struct ObsCredentialsForm {
     rt_handle: tokio::runtime::Handle,
     credentials: Arc<dyn CredentialsRepo>,
     settings: Arc<dyn SettingsRepo>,
@@ -119,7 +119,7 @@ pub struct ObsCredentialsForm {
 impl EventEmitter<ObsConnected> for ObsCredentialsForm {}
 
 impl ObsCredentialsForm {
-    pub fn new(
+    pub(crate) fn new(
         rt_handle: tokio::runtime::Handle,
         credentials: Arc<dyn CredentialsRepo>,
         settings: Arc<dyn SettingsRepo>,
@@ -159,7 +159,7 @@ impl ObsCredentialsForm {
         form
     }
 
-    pub fn focus(&self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn focus(&self, window: &mut Window, cx: &mut Context<Self>) {
         self.host.update(cx, |input, cx| input.focus(window, cx));
     }
 
@@ -263,8 +263,8 @@ impl ObsCredentialsForm {
                 detail: tr!(
                     "obs_connect_test_detail",
                     version = report.websocket_version,
-                    scenes = report.scene_count as i64,
-                    rtt = report.round_trip_ms as i64
+                    scenes = i64::try_from(report.scene_count).unwrap_or(i64::MAX),
+                    rtt = i64::try_from(report.round_trip_ms).unwrap_or(i64::MAX)
                 ),
             },
             Err(error) => AttemptStatus::Failure {

@@ -8,7 +8,7 @@ use forge_storage::{
 };
 use forge_types::{ClipId, Shared};
 
-pub use forge_storage::clip_source_referrer;
+pub(crate) use forge_storage::clip_source_referrer;
 
 use crate::error::SoundboardError;
 use crate::vocabulary::{ClipAdoptionSettled, SettledVerdict};
@@ -105,12 +105,12 @@ pub enum AdoptionVerdict {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum AdoptionStep {
+pub(crate) enum AdoptionStep {
     Import(PathBuf),
     Settled(AdoptionVerdict),
 }
 
-pub fn plan_adoption(source: ClipSource) -> AdoptionStep {
+pub(crate) fn plan_adoption(source: ClipSource) -> AdoptionStep {
     match source {
         ClipSource::Managed(_) => AdoptionStep::Settled(AdoptionVerdict::AlreadyManaged),
         ClipSource::Legacy(path) => AdoptionStep::Import(path),
@@ -118,7 +118,7 @@ pub fn plan_adoption(source: ClipSource) -> AdoptionStep {
     }
 }
 
-pub fn choose_source(managed: Option<PathBuf>, legacy: Option<PathBuf>) -> ClipSource {
+pub(crate) fn choose_source(managed: Option<PathBuf>, legacy: Option<PathBuf>) -> ClipSource {
     match (managed, legacy) {
         (Some(path), _) => ClipSource::Managed(path),
         (None, Some(path)) => ClipSource::Legacy(path),
@@ -127,13 +127,13 @@ pub fn choose_source(managed: Option<PathBuf>, legacy: Option<PathBuf>) -> ClipS
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SourcePlan {
+pub(crate) enum SourcePlan {
     ImportChosen,
     ImportAdopted,
     Keep,
 }
 
-pub fn plan_source(previous: Option<&Path>, next: &Path, resolvable: bool) -> SourcePlan {
+pub(crate) fn plan_source(previous: Option<&Path>, next: &Path, resolvable: bool) -> SourcePlan {
     match previous {
         None => SourcePlan::ImportChosen,
         Some(previous) if previous != next => SourcePlan::ImportChosen,
@@ -142,7 +142,7 @@ pub fn plan_source(previous: Option<&Path>, next: &Path, resolvable: bool) -> So
     }
 }
 
-pub fn final_refusal(error: &StorageError) -> Option<ClipRefusal> {
+pub(crate) fn final_refusal(error: &StorageError) -> Option<ClipRefusal> {
     match error {
         StorageError::MediaUnsupported { label } => Some(ClipRefusal::Unsupported {
             label: label.clone(),
@@ -171,7 +171,7 @@ pub fn final_refusal(error: &StorageError) -> Option<ClipRefusal> {
     }
 }
 
-pub fn refusal_is_final(error: &StorageError) -> bool {
+pub(crate) fn refusal_is_final(error: &StorageError) -> bool {
     final_refusal(error).is_some()
 }
 

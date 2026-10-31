@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_registry::runner::SubActionConfig;
+use forge_registry::SubActionConfig;
 use forge_registry::{
     ConfigProblem, ConfigReason, ConfigSpec, FieldLiteral, FormField, RunContext, StepTimer,
     SubActionCategory, SubActionRunner, TextEditor, TextField, TypedField, ValueBounds,
@@ -94,12 +94,12 @@ fn read_config(
     Ok((QUESTION.read(config, args)?, OPTIONS.read(config, args)?))
 }
 
-pub struct CreatePollRunner {
+pub(crate) struct CreatePollRunner {
     sender: Arc<YoutubeSendChat>,
 }
 
 impl CreatePollRunner {
-    pub fn new(sender: Arc<YoutubeSendChat>) -> Self {
+    pub(crate) fn new(sender: Arc<YoutubeSendChat>) -> Self {
         Self { sender }
     }
 }

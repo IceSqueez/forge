@@ -6,7 +6,7 @@ use tokio::sync::{Mutex, watch};
 
 use crate::binding_store::{bound_hotkey_combos, persisted_hotkey_combos};
 use crate::client::HotkeyClient;
-use crate::clip_bindings::{ClipBindings, clip_bindings_of};
+use crate::clip_bindings::{ClipBindings, ClipBindingsWatch, clip_bindings_of};
 use crate::combo::HotkeyCombo;
 use crate::error::HotkeyError;
 
@@ -59,8 +59,8 @@ impl HotkeyReconciler {
         &self.client
     }
 
-    pub fn clip_bindings(&self) -> watch::Receiver<Arc<ClipBindings>> {
-        self.clip_bindings.subscribe()
+    pub fn clip_bindings(&self) -> ClipBindingsWatch {
+        ClipBindingsWatch::new(self.clip_bindings.subscribe())
     }
 
     pub async fn reconcile(&self) {

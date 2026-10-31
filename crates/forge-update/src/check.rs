@@ -8,7 +8,7 @@ use crate::version::{Version, is_newer};
 const MANIFEST_SIZE_LIMIT: u64 = 256 * 1024;
 const SIGNATURE_SIZE_LIMIT: u64 = 4 * 1024;
 
-pub async fn fetch_offer(
+pub(crate) async fn fetch_offer(
     client: &UpdateClient,
     source: &ManifestSource,
     keys: &TrustedKeys,

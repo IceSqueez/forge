@@ -273,7 +273,7 @@ async fn stored_per_viewer_limit(settings: &dyn SettingsRepo) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use forge_storage::chat_history::MockChatHistoryRepo;
+    use forge_storage::MockChatHistoryRepo;
     use forge_storage::{DataProvider, StorageError};
     use forge_types::{ModerationMarks, UnifiedChatRow};
 

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_registry::runner::SubActionConfig;
+use forge_registry::SubActionConfig;
 use forge_registry::{
     ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TypedField,
 };
@@ -23,13 +23,13 @@ const MESSAGE_ID: ResolvedIdField = ResolvedIdField {
 
 const CONFIG: ConfigSpec = ConfigSpec::new(&[&MESSAGE_ID]);
 
-pub struct DeleteMessageRunner {
+pub(crate) struct DeleteMessageRunner {
     transport: Arc<dyn HelixTransport>,
     identity: Arc<SelfIdentity>,
 }
 
 impl DeleteMessageRunner {
-    pub fn new(transport: Arc<dyn HelixTransport>, identity: Arc<SelfIdentity>) -> Self {
+    pub(crate) fn new(transport: Arc<dyn HelixTransport>, identity: Arc<SelfIdentity>) -> Self {
         Self {
             transport,
             identity,

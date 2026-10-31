@@ -10,7 +10,7 @@ use crate::bandwidth::BandwidthTracker;
 use crate::bus_adapter::ClientId;
 use crate::ws_client::WsClient;
 
-pub struct ServerInfo {
+pub(crate) struct ServerInfo {
     pub version: &'static str,
     pub started_at: OffsetDateTime,
     pub available_platforms: BTreeSet<PlatformId>,
@@ -22,7 +22,7 @@ pub struct ServerInfo {
 }
 
 impl ServerInfo {
-    pub fn serving(available_platforms: BTreeSet<PlatformId>) -> Arc<Self> {
+    pub(crate) fn serving(available_platforms: BTreeSet<PlatformId>) -> Arc<Self> {
         Arc::new(Self {
             version: env!("CARGO_PKG_VERSION"),
             started_at: OffsetDateTime::now_utc(),
@@ -35,40 +35,40 @@ impl ServerInfo {
         })
     }
 
-    pub fn record_http_request(&self) {
+    pub(crate) fn record_http_request(&self) {
         self.http_requests_total.fetch_add(1, Ordering::Relaxed);
     }
 
-    pub fn record_event_out(&self) {
+    pub(crate) fn record_event_out(&self) {
         self.events_out_total.fetch_add(1, Ordering::Relaxed);
     }
 
-    pub fn record_dropped_events(&self, count: u64) {
+    pub(crate) fn record_dropped_events(&self, count: u64) {
         self.dropped_events_total
             .fetch_add(count, Ordering::Relaxed);
     }
 
-    pub fn http_requests(&self) -> u64 {
+    pub(crate) fn http_requests(&self) -> u64 {
         self.http_requests_total.load(Ordering::Relaxed)
     }
 
-    pub fn events_out(&self) -> u64 {
+    pub(crate) fn events_out(&self) -> u64 {
         self.events_out_total.load(Ordering::Relaxed)
     }
 
-    pub fn dropped_events(&self) -> u64 {
+    pub(crate) fn dropped_events(&self) -> u64 {
         self.dropped_events_total.load(Ordering::Relaxed)
     }
 
-    pub fn uptime_seconds(&self) -> i64 {
+    pub(crate) fn uptime_seconds(&self) -> i64 {
         (OffsetDateTime::now_utc() - self.started_at).whole_seconds()
     }
 
-    pub async fn register(&self, id: ClientId, client: Arc<WsClient>) {
+    pub(crate) async fn register(&self, id: ClientId, client: Arc<WsClient>) {
         self.connected_clients.write().await.insert(id, client);
     }
 
-    pub async fn unregister(&self, id: ClientId) {
+    pub(crate) async fn unregister(&self, id: ClientId) {
         self.connected_clients.write().await.remove(&id);
     }
 }

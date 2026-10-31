@@ -32,7 +32,7 @@ pub use globals::{
     GlobalSet, GlobalToggled,
 };
 pub use lane::DeliveryLane;
-pub use latest::{LATEST_CHANGED_KIND, LatestChanged, NOW_PLAYING_KIND, NowPlaying, PlaybackState};
+pub use latest::{LatestChanged, NOW_PLAYING_KIND, NowPlaying, PlaybackState};
 pub use publisher::EventPublisher;
 pub use request::RequestFailed;
 pub use run::{

@@ -1,4 +1,4 @@
-use forge_registry::runner::SubActionConfig;
+use forge_registry::SubActionConfig;
 use forge_registry::{
     ConfigProblem, ConfigReason, Interpolation, SubActionConfigExt, TextField, TypedField,
 };

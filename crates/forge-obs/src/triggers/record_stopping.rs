@@ -10,7 +10,7 @@ use super::record_starting::{build_record_arg_stack, record_variables};
 
 use crate::vocabulary::{event_kinds, messages, trigger_ids};
 
-pub struct RecordStoppingDescriptor;
+pub(crate) struct RecordStoppingDescriptor;
 
 impl TriggerKindDescriptor for RecordStoppingDescriptor {
     fn id(&self) -> &str {

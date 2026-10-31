@@ -4,18 +4,18 @@ use async_trait::async_trait;
 use forge_audio::{AudioError, AudioSink, ControlledPlayback, PlaybackHandle};
 use forge_speech_types::PcmBuffer;
 
-pub struct RoutedSink {
+pub(crate) struct RoutedSink {
     current: RwLock<Arc<dyn AudioSink>>,
 }
 
 impl RoutedSink {
-    pub fn new(initial: Arc<dyn AudioSink>) -> Self {
+    pub(crate) fn new(initial: Arc<dyn AudioSink>) -> Self {
         Self {
             current: RwLock::new(initial),
         }
     }
 
-    pub fn install(&self, sink: Arc<dyn AudioSink>) {
+    pub(crate) fn install(&self, sink: Arc<dyn AudioSink>) {
         *self.current.write().unwrap_or_else(PoisonError::into_inner) = sink;
     }
 

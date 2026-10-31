@@ -73,7 +73,7 @@ pub enum GridPickerItemState {
     Disabled,
 }
 
-pub type GridItemQuery = Box<dyn Fn(&str) -> bool>;
+pub(crate) type GridItemQuery = Box<dyn Fn(&str) -> bool>;
 
 pub struct GridPickerItem {
     pub id: SharedString,

@@ -6,13 +6,14 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::Duration;
 
 use async_trait::async_trait;
+use forge_hotkey::ClipBindingsSource as _;
 use forge_hotkey::testing::{RecordedCall, RecordingBackend};
 use forge_hotkey::vocabulary::event_kinds;
 use forge_hotkey::{
     CLIP_COMBO_FIELD, HotkeyClient, HotkeyCombo, HotkeyReconciler, HotkeySyncedClipsRepo,
     HotkeySyncedTriggerRepo,
 };
-use forge_storage::soundboard::MockSoundboardClipsRepo;
+use forge_storage::MockSoundboardClipsRepo;
 use forge_storage::{
     MediaBlobId, MockTriggerInstanceRepo, SoundboardClipsRepo, StorageError, StoredClip,
     TriggerChanges, TriggerInstanceRepo, TriggerWiring,
@@ -581,7 +582,7 @@ async fn a_clip_write_publishes_the_combo_to_clip_snapshot_the_dispatcher_reads(
 
     synced.clips.save(&bound).await.unwrap();
 
-    assert_eq!(snapshot.borrow().get("F9"), Some(&vec![bound.id]));
+    assert_eq!(snapshot.current().get("F9"), Some(&vec![bound.id]));
 }
 
 #[tokio::test]

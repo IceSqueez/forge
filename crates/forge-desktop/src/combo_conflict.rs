@@ -10,13 +10,13 @@ use forge_hotkey::{BindingRow, HotkeyError, delete_binding};
 use forge_hotkey::{HotkeySyncedClipsRepo, clear_clip_combo, stored_combo};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ClipKey {
+pub(crate) struct ClipKey {
     pub id: ClipId,
     pub name: String,
     pub combo: String,
 }
 
-pub fn clip_keys(clips: &[StoredClip]) -> Vec<ClipKey> {
+pub(crate) fn clip_keys(clips: &[StoredClip]) -> Vec<ClipKey> {
     clips
         .iter()
         .filter_map(|clip| {
@@ -30,20 +30,20 @@ pub fn clip_keys(clips: &[StoredClip]) -> Vec<ClipKey> {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Claimant {
+pub(crate) enum Claimant {
     NewTrigger,
     Trigger(TriggerInstanceId),
     Clip(Option<ClipId>),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum ComboHolder {
+pub(crate) enum ComboHolder {
     Action(Option<String>),
     Clip { id: ClipId, name: String },
 }
 
 impl ComboHolder {
-    pub fn label(&self) -> String {
+    pub(crate) fn label(&self) -> String {
         match self {
             ComboHolder::Action(Some(name)) => name.clone(),
             ComboHolder::Action(None) => tr!("hotkeys_conflict_holder_unassigned"),
@@ -54,7 +54,7 @@ impl ComboHolder {
     }
 }
 
-pub fn combo_holder<'a>(
+pub(crate) fn combo_holder<'a>(
     rows: &'a [BindingRow],
     combo: &str,
     target: Option<TriggerInstanceId>,
@@ -67,7 +67,7 @@ pub fn combo_holder<'a>(
     })
 }
 
-pub fn holder_of_combo(
+pub(crate) fn holder_of_combo(
     rows: &[BindingRow],
     clips: &[ClipKey],
     combo: &str,
@@ -95,18 +95,18 @@ pub fn holder_of_combo(
 }
 
 #[derive(Clone, Default)]
-pub struct ComboHolders {
+pub(crate) struct ComboHolders {
     pub rows: Arc<Vec<BindingRow>>,
     pub clips: Vec<ClipKey>,
 }
 
 impl ComboHolders {
-    pub fn holder_of(&self, combo: &str, claimant: Claimant) -> Option<ComboHolder> {
+    pub(crate) fn holder_of(&self, combo: &str, claimant: Claimant) -> Option<ComboHolder> {
         holder_of_combo(&self.rows, &self.clips, combo, claimant)
     }
 }
 
-pub async fn release_holder(
+pub(crate) async fn release_holder(
     holder: ComboHolder,
     combo: String,
     reconciler: Arc<HotkeyReconciler>,
@@ -122,7 +122,7 @@ pub async fn release_holder(
     }
 }
 
-pub fn conflict_prompt<V: 'static>(
+pub(crate) fn conflict_prompt<V: 'static>(
     scope: &'static str,
     item_name: impl Into<SharedString>,
     holder: &str,

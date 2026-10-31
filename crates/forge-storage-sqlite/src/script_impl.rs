@@ -234,7 +234,7 @@ impl ScriptRepo for SqliteScriptRepo {
     ) -> Result<(), StorageError> {
         let id_str = script_id.to_string();
         let started_at_secs = started_at.unix_timestamp();
-        let duration_i64 = duration_ms as i64;
+        let duration_i64 = i64::try_from(duration_ms).unwrap_or(i64::MAX);
         let status_str = match status {
             ExecutionStatus::Success => "ok",
             ExecutionStatus::Error => "err",

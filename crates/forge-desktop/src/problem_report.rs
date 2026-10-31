@@ -38,7 +38,7 @@ const PREVIEW_WIDTH: Pixels = px(600.0);
 const ISSUE_TEXT_MAX_HEIGHT: Pixels = px(220.0);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ReportSubject {
+pub(crate) enum ReportSubject {
     Crash(Box<PendingCrash>),
     Problem,
 }
@@ -52,7 +52,7 @@ impl ReportSubject {
     }
 }
 
-pub struct ReportDraft {
+pub(crate) struct ReportDraft {
     pub subject: ReportSubject,
     pub bundle: Bundle,
     pub level: LogLevel,
@@ -61,7 +61,12 @@ pub struct ReportDraft {
 }
 
 impl ReportDraft {
-    pub fn new(subject: ReportSubject, bundle: Bundle, level: LogLevel, info: &SystemInfo) -> Self {
+    pub(crate) fn new(
+        subject: ReportSubject,
+        bundle: Bundle,
+        level: LogLevel,
+        info: &SystemInfo,
+    ) -> Self {
         let system_info = info.to_report_text();
         let form = match &subject {
             ReportSubject::Crash(pending) => IssueForm::crash(&pending.record, &system_info),
@@ -90,7 +95,7 @@ enum ReportStage {
     },
 }
 
-pub struct ProblemReport {
+pub(crate) struct ProblemReport {
     backend: Arc<dyn DataProvider>,
     builtins: BuiltinRegistry,
     rt_handle: Handle,
@@ -98,7 +103,7 @@ pub struct ProblemReport {
 }
 
 impl ProblemReport {
-    pub fn new(
+    pub(crate) fn new(
         backend: Arc<dyn DataProvider>,
         builtins: BuiltinRegistry,
         rt_handle: Handle,
@@ -111,11 +116,16 @@ impl ProblemReport {
         }
     }
 
-    pub fn is_busy(&self) -> bool {
+    pub(crate) fn is_busy(&self) -> bool {
         !matches!(self.stage, ReportStage::Idle)
     }
 
-    pub fn start(&mut self, subject: ReportSubject, window: &Window, cx: &mut Context<Self>) {
+    pub(crate) fn start(
+        &mut self,
+        subject: ReportSubject,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) {
         if self.is_busy() {
             return;
         }
@@ -420,13 +430,13 @@ async fn gather(
     .map_err(RepoFailure::from)?
 }
 
-pub struct ReportFolderContents {
+pub(crate) struct ReportFolderContents {
     pub bundle_text: String,
     pub system_info: String,
     pub crash_text: Option<String>,
 }
 
-pub fn report_folder_name(now: OffsetDateTime) -> String {
+pub(crate) fn report_folder_name(now: OffsetDateTime) -> String {
     format!(
         "{REPORT_FOLDER_PREFIX}{:04}{:02}{:02}-{:02}{:02}{:02}",
         now.year(),
@@ -438,7 +448,10 @@ pub fn report_folder_name(now: OffsetDateTime) -> String {
     )
 }
 
-pub fn write_report_folder(folder: &Path, contents: &ReportFolderContents) -> io::Result<PathBuf> {
+pub(crate) fn write_report_folder(
+    folder: &Path,
+    contents: &ReportFolderContents,
+) -> io::Result<PathBuf> {
     fs::create_dir_all(folder)?;
     fs::write(folder.join(BUNDLE_FILE_NAME), &contents.bundle_text)?;
     fs::write(folder.join(SYSTEM_INFO_FILE_NAME), &contents.system_info)?;
@@ -458,7 +471,11 @@ fn mark_crashes_handled(rt_handle: &Handle) {
     });
 }
 
-pub fn start_crash_notice(cx: &mut AsyncApp, report: Entity<ProblemReport>, rt_handle: Handle) {
+pub(crate) fn start_crash_notice(
+    cx: &mut AsyncApp,
+    report: Entity<ProblemReport>,
+    rt_handle: Handle,
+) {
     let crashes_dir = crate::app_paths::app_paths().crashes_dir();
     let process_id = std::process::id();
     let pending =

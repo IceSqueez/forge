@@ -183,7 +183,7 @@ pub(crate) fn build_resubscribe_chat_payload(
     let months = event_data
         .get("cumulative_months")
         .and_then(|v| v.as_u64())
-        .map(|n| n as u32);
+        .map(|n| u32::try_from(n).unwrap_or(u32::MAX));
     let sub_message = event_data
         .get("message")
         .and_then(|m| m.get("text"))

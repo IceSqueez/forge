@@ -1,7 +1,7 @@
 #![allow(clippy::expect_used, clippy::panic)]
 
 mod common;
-use forge_storage_sqlite::migrations::apply;
+use forge_storage_sqlite::apply_migrations as apply;
 use forge_storage_sqlite::{MIGRATIONS, connect};
 use sqlx::SqlitePool;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};

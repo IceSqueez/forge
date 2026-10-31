@@ -43,15 +43,18 @@ pub mod vocabulary;
 
 pub use active_broadcast_id::ActiveBroadcastIdHandle;
 pub use ad_break::YoutubeAdBreak;
-pub use assembly::{YoutubeAssembly, YoutubeSession};
+pub use assembly::YoutubeAssembly;
+pub use assembly::YoutubeSession;
+pub use auth::LoopbackCode;
 pub use auth::{
-    GOOGLE_AUTHORIZE_ENDPOINT, GoogleAuthFlow, LoopbackCode, YOUTUBE_BROADCASTER_SCOPES,
-    YoutubeAuthBundle, YoutubeSignIn, client_credentials,
+    GOOGLE_AUTHORIZE_ENDPOINT, GoogleAuthFlow, YoutubeAuthBundle, YoutubeSignIn, client_credentials,
 };
 pub use builtin::{YoutubeIntegrationBundle, register_youtube_triggers};
-pub use channel_lookup::{YoutubeChannelLookup, YoutubeChannelProfile};
+pub use channel_lookup::YoutubeChannelLookup;
+pub use channel_lookup::YoutubeChannelProfile;
 pub use chat_platform::YoutubePlatform;
-pub use chat_poller::{ChatPollTimings, YoutubeChatPoller};
+pub use chat_poller::ChatPollTimings;
+pub use chat_poller::YoutubeChatPoller;
 pub use credentials::{CREDENTIAL_KEY, YoutubeBroadcaster, YoutubeCredentials};
 pub use credentials_manager::YoutubeCredentialsManager;
 pub use data_api::YoutubeDataApi;
@@ -59,18 +62,14 @@ pub use integration::YOUTUBE_INTEGRATION;
 pub use live_chat_id::LiveChatIdHandle;
 pub use moderation::YoutubeModeration;
 pub use oauth_client::{
-    GOOGLE_OAUTH_BUDGET_CAPACITY, GOOGLE_OAUTH_BUDGET_WINDOW, GOOGLE_OAUTH_GATEWAY_PROFILE,
-    GoogleOAuthClient, google_oauth_gateway,
+    GOOGLE_OAUTH_BUDGET_CAPACITY, GOOGLE_OAUTH_BUDGET_WINDOW, GoogleOAuthClient,
+    google_oauth_gateway,
 };
 pub use quota_state::SharedQuota;
 pub use send_chat::YoutubeSendChat;
 pub use stream_metadata::YoutubeStreamMetadata;
-pub use stream_stats::{YoutubeStreamDetails, YoutubeStreamStats};
-pub use sub_actions::{
-    BanUserRunner, CreatePollRunner, InsertAdBreakRunner, LookupStreamStatsRunner,
-    LookupViewerRunner, SendMessageRunner, SetThumbnailRunner, TimeoutUserRunner, UnbanUserRunner,
-    UpdateCategoryRunner, UpdateDescriptionRunner, UpdatePrivacyRunner, UpdateTitleRunner,
-    register_youtube_sub_actions,
-};
+pub use stream_stats::YoutubeStreamDetails;
+pub use stream_stats::YoutubeStreamStats;
+pub use sub_actions::register_youtube_sub_actions;
 pub use thumbnail::YoutubeThumbnail;
-pub use viewer_poll::{YoutubeViewerPoll, YoutubeViewerSource};
+pub use viewer_poll::YoutubeViewerPoll;

@@ -80,7 +80,7 @@ fn read_config(
     ))
 }
 
-pub struct CoreLogWriteRunner;
+pub(crate) struct CoreLogWriteRunner;
 
 #[async_trait]
 impl SubActionRunner for CoreLogWriteRunner {

@@ -1,4 +1,4 @@
-pub mod api_v1;
-pub mod audio;
-pub mod overlays;
-pub mod ws;
+pub(crate) mod api_v1;
+pub(crate) mod audio;
+pub(crate) mod overlays;
+pub(crate) mod ws;

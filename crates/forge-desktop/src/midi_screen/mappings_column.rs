@@ -50,7 +50,10 @@ impl MidiScreenView {
             .font_family(mono_family())
             .text_size(BINDINGS_FS)
             .text_color(palette.text_faint)
-            .child(tr!("midi_bindings_count", count = visible.len() as i64))
+            .child(tr!(
+                "midi_bindings_count",
+                count = i64::try_from(visible.len()).unwrap_or(i64::MAX)
+            ))
             .into_any_element();
 
         let mut list = div()
@@ -351,8 +354,8 @@ impl MidiScreenView {
                     .text_color(palette.text_faint)
                     .child(tr!(
                         "midi_footer_left",
-                        devices = self.live_ports.len() as i64,
-                        mappings = self.mappings.len() as i64
+                        devices = i64::try_from(self.live_ports.len()).unwrap_or(i64::MAX),
+                        mappings = i64::try_from(self.mappings.len()).unwrap_or(i64::MAX)
                     )),
             )
             .child(

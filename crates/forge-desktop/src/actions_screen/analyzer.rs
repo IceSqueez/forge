@@ -16,7 +16,7 @@ pub(super) fn sends_order_sensitive_overlay(
 mod tests {
     use std::sync::Arc;
 
-    use forge_runtime::sub_action_runners::CoreLogicIfThenElseRunner;
+    use forge_runtime::CoreLogicIfThenElseRunner;
     use forge_runtime::{ConditionGate, Config};
     use forge_types::{SubActionConfig, Variant};
 

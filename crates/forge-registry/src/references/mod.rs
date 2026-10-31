@@ -6,7 +6,7 @@ mod namespace;
 mod remap;
 mod rewrite;
 
-pub use catalog::{ACTION_QUEUE_KEY, ACTION_STEPS_KEY, ReferenceCatalog, TRIGGER_OVERRIDES_KEY};
+pub use catalog::ReferenceCatalog;
 pub use codec::{
     CLIP_REFERENCE_PREFIX, IMAGE_REFERENCE_PREFIX, OVERLAY_ICON_OPTIONS_KEY,
     OVERLAY_SOUND_OPTIONS_KEY,

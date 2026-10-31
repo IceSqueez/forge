@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_registry::runner::SubActionConfig;
+use forge_registry::SubActionConfig;
 use forge_registry::{
     ConfigProblem, ConfigReason, ConfigSpec, DeclaredField, Interpolation, OptionalField,
     RunContext, StepTimer, SubActionCategory, SubActionIo, SubActionRunner, TextEditor, TextField,
@@ -78,12 +78,12 @@ fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<EmbedPost, C
     })
 }
 
-pub struct PostEmbedRunner {
+pub(crate) struct PostEmbedRunner {
     sink: Arc<dyn DiscordSink>,
 }
 
 impl PostEmbedRunner {
-    pub fn new(sink: Arc<dyn DiscordSink>) -> Self {
+    pub(crate) fn new(sink: Arc<dyn DiscordSink>) -> Self {
         Self { sink }
     }
 }

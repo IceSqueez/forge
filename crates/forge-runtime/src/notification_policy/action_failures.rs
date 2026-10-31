@@ -6,9 +6,9 @@ use tokio::time::Instant;
 
 use super::intent::{ActionFailureNotice, NotificationIntent};
 
-pub const ACTION_FAILURE_REARM: Duration = Duration::from_secs(30 * 60);
-pub const ACTION_NOTICE_WINDOW: Duration = Duration::from_secs(60);
-pub const MAX_ACTION_NOTICES_PER_WINDOW: u32 = 3;
+pub(crate) const ACTION_FAILURE_REARM: Duration = Duration::from_secs(30 * 60);
+pub(crate) const ACTION_NOTICE_WINDOW: Duration = Duration::from_secs(60);
+pub(crate) const MAX_ACTION_NOTICES_PER_WINDOW: u32 = 3;
 
 struct NoticeWindow {
     opened_at: Instant,

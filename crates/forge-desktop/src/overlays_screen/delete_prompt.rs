@@ -114,7 +114,10 @@ impl OverlaysView {
         match self.wiring.view.read(cx).delete_feed_count(id) {
             Some(count) => format!(
                 "{base} {}",
-                tr!("overlays_confirm_delete_feeds", count = count as i64)
+                tr!(
+                    "overlays_confirm_delete_feeds",
+                    count = i64::try_from(count).unwrap_or(i64::MAX)
+                )
             ),
             None => base,
         }

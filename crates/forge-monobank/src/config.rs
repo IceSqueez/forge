@@ -12,7 +12,7 @@ const ERROR_BACKOFF_BASE: Duration = Duration::from_secs(5);
 const ERROR_BACKOFF_CAP: Duration = Duration::from_secs(300);
 
 pub const STATEMENT_CALL_INTERVAL: Duration = Duration::from_secs(SECONDS_PER_MINUTE);
-pub const MAX_STATEMENT_WINDOW: Duration =
+pub(crate) const MAX_STATEMENT_WINDOW: Duration =
     Duration::from_secs(MAX_STATEMENT_WINDOW_DAYS * SECONDS_PER_DAY + SECONDS_PER_HOUR);
 pub const DEFAULT_HISTORY_LOOKBACK: Duration =
     Duration::from_secs(HISTORY_LOOKBACK_HOURS * SECONDS_PER_HOUR);

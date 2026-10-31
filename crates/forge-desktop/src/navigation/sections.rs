@@ -1,5 +1,5 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TtsSection {
+pub(crate) enum TtsSection {
     Dashboard,
     Engines,
     Aliases,
@@ -7,14 +7,14 @@ pub enum TtsSection {
 }
 
 impl TtsSection {
-    pub const ALL: [TtsSection; 4] = [
+    pub(crate) const ALL: [TtsSection; 4] = [
         TtsSection::Dashboard,
         TtsSection::Engines,
         TtsSection::Aliases,
         TtsSection::Filters,
     ];
 
-    pub fn key(self) -> &'static str {
+    pub(crate) fn key(self) -> &'static str {
         match self {
             TtsSection::Dashboard => "dashboard",
             TtsSection::Engines => "engines",
@@ -23,13 +23,13 @@ impl TtsSection {
         }
     }
 
-    pub fn from_key(key: &str) -> Option<Self> {
+    pub(crate) fn from_key(key: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|section| section.key() == key)
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SettingsSection {
+pub(crate) enum SettingsSection {
     General,
     Appearance,
     Language,
@@ -44,7 +44,7 @@ pub enum SettingsSection {
 }
 
 impl SettingsSection {
-    pub const ALL: [SettingsSection; 11] = [
+    pub(crate) const ALL: [SettingsSection; 11] = [
         SettingsSection::General,
         SettingsSection::Appearance,
         SettingsSection::Language,
@@ -58,7 +58,7 @@ impl SettingsSection {
         SettingsSection::Diagnostics,
     ];
 
-    pub fn key(self) -> &'static str {
+    pub(crate) fn key(self) -> &'static str {
         match self {
             SettingsSection::General => "general",
             SettingsSection::Appearance => "appearance",
@@ -74,7 +74,7 @@ impl SettingsSection {
         }
     }
 
-    pub fn from_key(key: &str) -> Option<Self> {
+    pub(crate) fn from_key(key: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|section| section.key() == key)
     }
 }

@@ -873,10 +873,7 @@ impl ConnectFlow {
                     .text_size(FONT_XXS)
                     .text_color(palette.text_muted)
                     .child(
-                        resolve_message(
-                            &forge_platform_kick::capabilities::KICK_COMMUNITY_NOTE.into(),
-                        )
-                        .primary,
+                        resolve_message(&forge_platform_kick::KICK_COMMUNITY_NOTE.into()).primary,
                     ),
             );
         div()
@@ -918,7 +915,7 @@ fn step_state(phase: LocalCallbackFlowPhase, index: usize) -> StepState {
 fn authorize_endpoint(platform: PlatformId) -> &'static str {
     match platform {
         PlatformId::YouTube => forge_platform_youtube::GOOGLE_AUTHORIZE_ENDPOINT,
-        PlatformId::Kick => forge_platform_kick::auth::KICK_AUTHORIZE_ENDPOINT,
+        PlatformId::Kick => forge_platform_kick::KICK_AUTHORIZE_ENDPOINT,
         PlatformId::Twitch => "",
     }
 }

@@ -10,7 +10,7 @@ use super::studio_enabled::{build_studio_arg_stack, studio_variables};
 
 use crate::vocabulary::{event_kinds, messages, trigger_ids};
 
-pub struct StudioDisabledDescriptor;
+pub(crate) struct StudioDisabledDescriptor;
 
 impl TriggerKindDescriptor for StudioDisabledDescriptor {
     fn id(&self) -> &str {

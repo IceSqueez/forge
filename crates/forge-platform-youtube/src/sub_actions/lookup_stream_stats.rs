@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_registry::runner::SubActionConfig;
+use forge_registry::SubActionConfig;
 use forge_registry::{RunContext, StepTimer, SubActionCategory, SubActionRunner};
 use forge_types::{ArgStack, SubActionTelemetry, Variant};
 
@@ -13,12 +13,12 @@ use crate::vocabulary::variables::stream_stats as variables;
 
 const KIND_ID: &str = sub_action_ids::LOOKUP_STREAM_STATS;
 
-pub struct LookupStreamStatsRunner {
+pub(crate) struct LookupStreamStatsRunner {
     stats: Arc<YoutubeStreamStats>,
 }
 
 impl LookupStreamStatsRunner {
-    pub fn new(stats: Arc<YoutubeStreamStats>) -> Self {
+    pub(crate) fn new(stats: Arc<YoutubeStreamStats>) -> Self {
         Self { stats }
     }
 }

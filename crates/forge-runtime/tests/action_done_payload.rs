@@ -8,11 +8,11 @@ use std::time::Duration;
 use forge_events::Event;
 use forge_events::EventSubscription;
 use forge_registry::SubActionRegistry;
-use forge_runtime::sub_action_runners::{CoreLogicWaitRunner, WAIT_KIND_ID, WAIT_MS_KEY};
 use forge_runtime::{
     ActionCancelRegistry, Catalog, EventBus, NullEventLogRepo, QueueAdmission, QueueScheduler,
     QueueSchedulerHandle, SchedulerRequest, spawn_action_engine,
 };
+use forge_runtime::{CoreLogicWaitRunner, WAIT_KIND_ID, WAIT_MS_KEY};
 use forge_storage::DataProvider;
 use forge_types::{
     Action, ActionId, ArgStack, DEFAULT_QUEUE_ID, EventId, Queue, SubActionConfig,

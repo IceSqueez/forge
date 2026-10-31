@@ -3,7 +3,7 @@ use forge_types::MessageCode;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_registry::runner::SubActionConfig;
+use forge_registry::SubActionConfig;
 use forge_registry::{
     ConfigChoice, ConfigReason, ConfigSpec, FieldLiteral, FormField, RunContext, StepTimer,
     SubActionCategory, SubActionRunner, TypedField,
@@ -93,12 +93,12 @@ impl TypedField for PrivacyStatusField {
 
 const CONFIG: ConfigSpec = ConfigSpec::new(&[&PRIVACY_STATUS]);
 
-pub struct UpdatePrivacyRunner {
+pub(crate) struct UpdatePrivacyRunner {
     metadata: Arc<YoutubeStreamMetadata>,
 }
 
 impl UpdatePrivacyRunner {
-    pub fn new(metadata: Arc<YoutubeStreamMetadata>) -> Self {
+    pub(crate) fn new(metadata: Arc<YoutubeStreamMetadata>) -> Self {
         Self { metadata }
     }
 }

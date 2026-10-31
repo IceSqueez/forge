@@ -240,7 +240,7 @@ impl fmt::Debug for UnifiedChatRow {
     }
 }
 
-pub const KNOWN_BOT_ACCOUNTS: &[&str] = &[
+pub(crate) const KNOWN_BOT_ACCOUNTS: &[&str] = &[
     "nightbot",
     "streamelements",
     "moobot",

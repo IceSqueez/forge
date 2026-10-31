@@ -8,15 +8,15 @@ mod speak;
 mod speak_stop;
 mod speak_with_engine;
 
-pub use alias_set::AliasSetRunner;
-pub use alias_switch::AliasSwitchRunner;
-pub use queue_clear::QueueClearRunner;
-pub use queue_pause::QueuePauseRunner;
-pub use queue_resume::QueueResumeRunner;
-pub use queue_skip::QueueSkipRunner;
+pub(crate) use alias_set::AliasSetRunner;
+pub(crate) use alias_switch::AliasSwitchRunner;
+pub(crate) use queue_clear::QueueClearRunner;
+pub(crate) use queue_pause::QueuePauseRunner;
+pub(crate) use queue_resume::QueueResumeRunner;
+pub(crate) use queue_skip::QueueSkipRunner;
 pub use speak::{SPEAK_KIND_ID, SpeakRunner};
-pub use speak_stop::SpeakStopRunner;
-pub use speak_with_engine::SpeakWithEngineRunner;
+pub(crate) use speak_stop::SpeakStopRunner;
+pub(crate) use speak_with_engine::SpeakWithEngineRunner;
 
 use std::sync::Arc;
 

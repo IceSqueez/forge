@@ -13,7 +13,7 @@ use time::OffsetDateTime;
 
 pub const PACK_DOCUMENTS_VERSION: u32 = 1;
 
-pub type DocumentConfig = BTreeMap<String, Variant>;
+pub(crate) type DocumentConfig = BTreeMap<String, Variant>;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PackDocuments {

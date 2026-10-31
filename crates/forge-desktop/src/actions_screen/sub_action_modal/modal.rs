@@ -146,8 +146,8 @@ impl EditSubActionForm {
                     .text_color(palette.text_faint)
                     .child(tr!(
                         "actions_step_subtitle",
-                        index = step_index as i64,
-                        total = step_total as i64
+                        index = i64::try_from(step_index).unwrap_or(i64::MAX),
+                        total = i64::try_from(step_total).unwrap_or(i64::MAX)
                     )),
             );
 

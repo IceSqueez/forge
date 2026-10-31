@@ -24,7 +24,7 @@ const REASON_GAP: gpui::Pixels = px(5.0);
 const REASON_FONT: gpui::Pixels = px(11.0);
 const EMPTY_FONT: gpui::Pixels = px(12.5);
 
-pub enum CollectionListEvent {
+pub(crate) enum CollectionListEvent {
     Edit(CollectionItemId),
     Delete(CollectionItemId),
     Toggle {
@@ -36,7 +36,7 @@ pub enum CollectionListEvent {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ListLoad {
+pub(crate) enum ListLoad {
     Loading,
     Ready,
     Failed(String),
@@ -48,7 +48,7 @@ struct ToggleColumn {
     label: String,
 }
 
-pub struct CollectionList {
+pub(crate) struct CollectionList {
     toggles: Vec<ToggleColumn>,
     items: Vec<CollectionItem>,
     load: ListLoad,
@@ -58,7 +58,7 @@ pub struct CollectionList {
 impl EventEmitter<CollectionListEvent> for CollectionList {}
 
 impl CollectionList {
-    pub fn new(toggles: impl IntoIterator<Item = (String, String)>) -> Self {
+    pub(crate) fn new(toggles: impl IntoIterator<Item = (String, String)>) -> Self {
         Self {
             toggles: toggles
                 .into_iter()
@@ -70,26 +70,26 @@ impl CollectionList {
         }
     }
 
-    pub fn load(&self) -> &ListLoad {
+    pub(crate) fn load(&self) -> &ListLoad {
         &self.load
     }
 
-    pub fn count(&self) -> usize {
+    pub(crate) fn count(&self) -> usize {
         self.items.len()
     }
 
-    pub fn item(&self, id: &CollectionItemId) -> Option<&CollectionItem> {
+    pub(crate) fn item(&self, id: &CollectionItemId) -> Option<&CollectionItem> {
         self.items.iter().find(|item| &item.id == id)
     }
 
-    pub fn begin_loading(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn begin_loading(&mut self, cx: &mut Context<Self>) {
         if self.load != ListLoad::Ready {
             self.load = ListLoad::Loading;
             cx.notify();
         }
     }
 
-    pub fn apply_listing(
+    pub(crate) fn apply_listing(
         &mut self,
         listing: Result<Vec<CollectionItem>, RepoFailure>,
         cx: &mut Context<Self>,
@@ -106,14 +106,14 @@ impl CollectionList {
         cx.notify();
     }
 
-    pub fn mark_unavailable(&mut self, reason: String, cx: &mut Context<Self>) {
+    pub(crate) fn mark_unavailable(&mut self, reason: String, cx: &mut Context<Self>) {
         self.items.clear();
         self.busy.clear();
         self.load = ListLoad::Unavailable(reason);
         cx.notify();
     }
 
-    pub fn upsert(&mut self, item: CollectionItem, cx: &mut Context<Self>) {
+    pub(crate) fn upsert(&mut self, item: CollectionItem, cx: &mut Context<Self>) {
         match self
             .items
             .iter_mut()
@@ -125,13 +125,13 @@ impl CollectionList {
         cx.notify();
     }
 
-    pub fn remove(&mut self, id: &CollectionItemId, cx: &mut Context<Self>) {
+    pub(crate) fn remove(&mut self, id: &CollectionItemId, cx: &mut Context<Self>) {
         self.items.retain(|item| &item.id != id);
         self.busy.remove(id);
         cx.notify();
     }
 
-    pub fn set_busy(&mut self, id: &CollectionItemId, busy: bool, cx: &mut Context<Self>) {
+    pub(crate) fn set_busy(&mut self, id: &CollectionItemId, busy: bool, cx: &mut Context<Self>) {
         if busy {
             self.busy.insert(id.clone());
         } else {

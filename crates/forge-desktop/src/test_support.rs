@@ -25,11 +25,11 @@ use forge_runtime::{
 };
 use forge_server::{ServerConfig, ServerHandle, stopped_server};
 use forge_speech_types::PcmBuffer;
+use forge_storage::MockTriggerInstanceRepo;
 use forge_storage::settings::core_settings::{
     BACKUP_SCHEDULE_ENABLED, BACKUP_SCHEDULE_KEY, BACKUP_SCHEDULE_LAST_SUCCESS_AT,
 };
 use forge_storage::test_support::{MemorySettings, StoredSettingRow};
-use forge_storage::trigger_instance::MockTriggerInstanceRepo;
 use forge_storage::{
     ActionRepo, ActionStats, ActionTelemetry, BanLedgerRepo, CatalogRevision, ChatHistoryRepo,
     CredentialId, CredentialsRepo, DataProvider, DonationRepo, EventLogRepo, ExecutionStatus,

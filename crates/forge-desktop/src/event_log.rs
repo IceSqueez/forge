@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use forge_events::{Event, EventSource};
 use forge_registry::TriggerCategory;
-use forge_runtime::triggers::timer_every_message;
+use forge_runtime::timer_every_message;
 use forge_types::{ChatPayload, ChatSegment};
 use gpui::SharedString;
 use serde::Serialize;
@@ -16,7 +16,7 @@ use crate::user_text::resolve_message;
 const RING_CAP: usize = 500;
 
 #[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
-pub enum EventFilter {
+pub(crate) enum EventFilter {
     #[default]
     All,
     Chat,
@@ -28,7 +28,7 @@ pub enum EventFilter {
 }
 
 #[derive(Clone, Debug, Serialize)]
-pub struct EventItem {
+pub(crate) struct EventItem {
     pub id: SharedString,
     #[serde(with = "time::serde::rfc3339")]
     pub timestamp: OffsetDateTime,
@@ -50,7 +50,7 @@ pub struct EventItem {
 }
 
 impl EventItem {
-    pub fn matches(&self, filter: EventFilter) -> bool {
+    pub(crate) fn matches(&self, filter: EventFilter) -> bool {
         match filter {
             EventFilter::All => true,
             EventFilter::Chat => self.is_chat_activity(),
@@ -70,11 +70,11 @@ impl EventItem {
         }
     }
 
-    pub fn has_category(&self, category: TriggerCategory) -> bool {
+    pub(crate) fn has_category(&self, category: TriggerCategory) -> bool {
         self.categories.contains(&category)
     }
 
-    pub fn is_warning(&self) -> bool {
+    pub(crate) fn is_warning(&self) -> bool {
         !self.is_error && self.typed.as_ref().is_some_and(RuntimeEvent::is_warning)
     }
 
@@ -95,17 +95,17 @@ impl EventItem {
 }
 
 #[derive(Default)]
-pub struct EventCausation {
+pub(crate) struct EventCausation {
     downstream: HashMap<SharedString, u32>,
     matched: HashMap<SharedString, u32>,
 }
 
 impl EventCausation {
-    pub fn downstream_of(&self, id: &SharedString) -> u32 {
+    pub(crate) fn downstream_of(&self, id: &SharedString) -> u32 {
         self.downstream.get(id).copied().unwrap_or(0)
     }
 
-    pub fn is_matched(&self, id: &SharedString) -> bool {
+    pub(crate) fn is_matched(&self, id: &SharedString) -> bool {
         self.matched.contains_key(id)
     }
 
@@ -139,7 +139,7 @@ impl EventCausation {
     }
 }
 
-pub struct EventLog {
+pub(crate) struct EventLog {
     items: VecDeque<Arc<EventItem>>,
     first_seq: u64,
     causation: EventCausation,
@@ -148,7 +148,7 @@ pub struct EventLog {
 }
 
 impl EventLog {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             items: VecDeque::new(),
             first_seq: 0,
@@ -158,11 +158,11 @@ impl EventLog {
         }
     }
 
-    pub fn set_categories(&mut self, categories: EventCategories) {
+    pub(crate) fn set_categories(&mut self, categories: EventCategories) {
         self.categories = categories;
     }
 
-    pub fn record(&mut self, event: &Event, typed: Option<RuntimeEvent>) {
+    pub(crate) fn record(&mut self, event: &Event, typed: Option<RuntimeEvent>) {
         if self.paused {
             return;
         }
@@ -170,38 +170,38 @@ impl EventLog {
         self.push(Self::item_from_event(event, typed, categories));
     }
 
-    pub fn items(&self) -> &VecDeque<Arc<EventItem>> {
+    pub(crate) fn items(&self) -> &VecDeque<Arc<EventItem>> {
         &self.items
     }
 
-    pub fn first_seq(&self) -> u64 {
+    pub(crate) fn first_seq(&self) -> u64 {
         self.first_seq
     }
 
-    pub fn end_seq(&self) -> u64 {
+    pub(crate) fn end_seq(&self) -> u64 {
         self.first_seq + self.items.len() as u64
     }
 
-    pub fn causation(&self) -> &EventCausation {
+    pub(crate) fn causation(&self) -> &EventCausation {
         &self.causation
     }
 
-    pub fn is_paused(&self) -> bool {
+    pub(crate) fn is_paused(&self) -> bool {
         self.paused
     }
 
-    pub fn toggle_paused(&mut self) -> bool {
+    pub(crate) fn toggle_paused(&mut self) -> bool {
         self.paused = !self.paused;
         self.paused
     }
 
-    pub fn clear(&mut self) {
+    pub(crate) fn clear(&mut self) {
         self.first_seq = self.end_seq();
         self.items.clear();
         self.causation = EventCausation::default();
     }
 
-    pub fn push(&mut self, item: EventItem) {
+    pub(crate) fn push(&mut self, item: EventItem) {
         if self.paused {
             return;
         }
@@ -215,7 +215,7 @@ impl EventLog {
         self.items.push_back(Arc::new(item));
     }
 
-    pub fn item_from_event(
+    pub(crate) fn item_from_event(
         event: &Event,
         typed: Option<RuntimeEvent>,
         mut categories: Vec<TriggerCategory>,

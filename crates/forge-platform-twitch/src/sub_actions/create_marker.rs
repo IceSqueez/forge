@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_registry::runner::SubActionConfig;
+use forge_registry::SubActionConfig;
 use forge_registry::{
     BoundedTextField, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner,
     TextEditor, TypedField, ValueBounds,
@@ -36,13 +36,13 @@ struct Marker {
     created_at: Option<Variant>,
 }
 
-pub struct CreateMarkerRunner {
+pub(crate) struct CreateMarkerRunner {
     transport: Arc<dyn HelixTransport>,
     identity: Arc<SelfIdentity>,
 }
 
 impl CreateMarkerRunner {
-    pub fn new(transport: Arc<dyn HelixTransport>, identity: Arc<SelfIdentity>) -> Self {
+    pub(crate) fn new(transport: Arc<dyn HelixTransport>, identity: Arc<SelfIdentity>) -> Self {
         Self {
             transport,
             identity,

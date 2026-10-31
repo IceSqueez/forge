@@ -14,7 +14,7 @@ use crate::auth::AuthState;
 use crate::bus_adapter::ClientId;
 use crate::config::ServerSettings;
 use crate::origin::build_allowed_origins;
-use crate::run_state::{Generation, RunState};
+use crate::run_state::{Generation, RunState, ServerRunWatch};
 use crate::server::AppState;
 use crate::{ServerError, server};
 
@@ -82,7 +82,7 @@ impl ServerHandle {
         generation
     }
 
-    pub fn run_state(&self) -> watch::Receiver<bool> {
+    pub fn run_state(&self) -> ServerRunWatch {
         self.run_state.subscribe()
     }
 

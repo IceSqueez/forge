@@ -126,12 +126,12 @@ mod tests {
     #[test]
     fn keep_newest_condemns_only_the_copies_beyond_the_newest_n_of_each_kind() {
         let copies = vec![
-            copy("pack-a", SafetyCopyKind::PrePack, Duration::hours(1)),
-            copy("pack-b", SafetyCopyKind::PrePack, Duration::hours(2)),
-            copy("pack-c", SafetyCopyKind::PrePack, Duration::hours(3)),
-            copy("pack-d", SafetyCopyKind::PrePack, Duration::hours(4)),
-            copy("setup-a", SafetyCopyKind::PreSetup, Duration::days(400)),
-            copy("setup-b", SafetyCopyKind::PreSetup, Duration::days(500)),
+            copy("pack-a", SafetyCopyKind::Pack, Duration::hours(1)),
+            copy("pack-b", SafetyCopyKind::Pack, Duration::hours(2)),
+            copy("pack-c", SafetyCopyKind::Pack, Duration::hours(3)),
+            copy("pack-d", SafetyCopyKind::Pack, Duration::hours(4)),
+            copy("setup-a", SafetyCopyKind::Setup, Duration::days(400)),
+            copy("setup-b", SafetyCopyKind::Setup, Duration::days(500)),
         ];
 
         let condemned = doomed(
@@ -147,9 +147,9 @@ mod tests {
     #[test]
     fn keep_newest_ranks_by_the_stamp_not_by_the_listing_order() {
         let copies = vec![
-            copy("oldest", SafetyCopyKind::PreUpdate, Duration::hours(9)),
-            copy("newest", SafetyCopyKind::PreUpdate, Duration::hours(1)),
-            copy("middle", SafetyCopyKind::PreUpdate, Duration::hours(5)),
+            copy("oldest", SafetyCopyKind::Update, Duration::hours(9)),
+            copy("newest", SafetyCopyKind::Update, Duration::hours(1)),
+            copy("middle", SafetyCopyKind::Update, Duration::hours(5)),
         ];
 
         let condemned = doomed(
@@ -165,8 +165,8 @@ mod tests {
     #[test]
     fn keep_newest_at_exactly_n_copies_condemns_nothing() {
         let copies = vec![
-            copy("a", SafetyCopyKind::PrePack, Duration::hours(1)),
-            copy("b", SafetyCopyKind::PrePack, Duration::hours(2)),
+            copy("a", SafetyCopyKind::Pack, Duration::hours(1)),
+            copy("b", SafetyCopyKind::Pack, Duration::hours(2)),
         ];
 
         let condemned = doomed(
@@ -183,18 +183,14 @@ mod tests {
     fn delete_after_days_condemns_one_second_past_the_cutoff_but_keeps_the_cutoff_itself() {
         let one_second = Duration::seconds(1);
         let copies = vec![
-            copy("fresh", SafetyCopyKind::PrePack, Duration::hours(1)),
-            copy("at-cutoff", SafetyCopyKind::PrePack, cutoff_age()),
+            copy("fresh", SafetyCopyKind::Pack, Duration::hours(1)),
+            copy("at-cutoff", SafetyCopyKind::Pack, cutoff_age()),
             copy(
                 "just-inside",
-                SafetyCopyKind::PrePack,
+                SafetyCopyKind::Pack,
                 cutoff_age() - one_second,
             ),
-            copy(
-                "just-past",
-                SafetyCopyKind::PrePack,
-                cutoff_age() + one_second,
-            ),
+            copy("just-past", SafetyCopyKind::Pack, cutoff_age() + one_second),
         ];
 
         let condemned = doomed(
@@ -210,21 +206,9 @@ mod tests {
     #[test]
     fn delete_after_days_keeps_the_newest_copy_of_each_kind_even_when_it_has_expired() {
         let copies = vec![
-            copy(
-                "restore-new",
-                SafetyCopyKind::PreRestore,
-                Duration::days(90),
-            ),
-            copy(
-                "restore-old",
-                SafetyCopyKind::PreRestore,
-                Duration::days(91),
-            ),
-            copy(
-                "update-only",
-                SafetyCopyKind::PreUpdate,
-                Duration::days(365),
-            ),
+            copy("restore-new", SafetyCopyKind::Restore, Duration::days(90)),
+            copy("restore-old", SafetyCopyKind::Restore, Duration::days(91)),
+            copy("update-only", SafetyCopyKind::Update, Duration::days(365)),
         ];
 
         let condemned = doomed(
@@ -243,7 +227,7 @@ mod tests {
             .map(|day| {
                 copy(
                     &format!("pack-{day}"),
-                    SafetyCopyKind::PrePack,
+                    SafetyCopyKind::Pack,
                     Duration::days(1000 + day),
                 )
             })
@@ -263,26 +247,18 @@ mod tests {
     fn a_protected_name_or_kind_survives_a_policy_that_would_condemn_it() {
         let protection = Protection {
             names: [OsString::from("restore-referenced")].into_iter().collect(),
-            kinds: [SafetyCopyKind::PreUpdate].into_iter().collect(),
+            kinds: [SafetyCopyKind::Update].into_iter().collect(),
         };
         let copies = vec![
-            copy(
-                "restore-new",
-                SafetyCopyKind::PreRestore,
-                Duration::hours(1),
-            ),
+            copy("restore-new", SafetyCopyKind::Restore, Duration::hours(1)),
             copy(
                 "restore-referenced",
-                SafetyCopyKind::PreRestore,
+                SafetyCopyKind::Restore,
                 Duration::hours(2),
             ),
-            copy(
-                "restore-old",
-                SafetyCopyKind::PreRestore,
-                Duration::hours(3),
-            ),
-            copy("update-new", SafetyCopyKind::PreUpdate, Duration::hours(1)),
-            copy("update-old", SafetyCopyKind::PreUpdate, Duration::hours(2)),
+            copy("restore-old", SafetyCopyKind::Restore, Duration::hours(3)),
+            copy("update-new", SafetyCopyKind::Update, Duration::hours(1)),
+            copy("update-old", SafetyCopyKind::Update, Duration::hours(2)),
         ];
 
         let condemned = doomed(copies, SafetyRetention::KeepNewest(1), now(), &protection);
@@ -294,22 +270,18 @@ mod tests {
     fn everything_unprotected_includes_the_newest_of_each_kind_but_spares_protected_copies() {
         let protection = Protection {
             names: [OsString::from("restore-referenced")].into_iter().collect(),
-            kinds: [SafetyCopyKind::PreUpdate].into_iter().collect(),
+            kinds: [SafetyCopyKind::Update].into_iter().collect(),
         };
         let copies = vec![
-            copy("pack-only", SafetyCopyKind::PrePack, Duration::seconds(1)),
-            copy("setup-only", SafetyCopyKind::PreSetup, Duration::seconds(1)),
-            copy(
-                "restore-new",
-                SafetyCopyKind::PreRestore,
-                Duration::hours(1),
-            ),
+            copy("pack-only", SafetyCopyKind::Pack, Duration::seconds(1)),
+            copy("setup-only", SafetyCopyKind::Setup, Duration::seconds(1)),
+            copy("restore-new", SafetyCopyKind::Restore, Duration::hours(1)),
             copy(
                 "restore-referenced",
-                SafetyCopyKind::PreRestore,
+                SafetyCopyKind::Restore,
                 Duration::hours(2),
             ),
-            copy("update-new", SafetyCopyKind::PreUpdate, Duration::hours(1)),
+            copy("update-new", SafetyCopyKind::Update, Duration::hours(1)),
         ];
 
         let condemned = everything_unprotected(copies, &protection);

@@ -7,24 +7,24 @@ use forge_runtime::{ConsumerLoss, DeliveryTier, LossCount};
 
 use crate::chat_feed_bridge::UI_CHAT_FEED;
 
-pub const UI_EVENTS: &str = "ui_events";
+pub(crate) const UI_EVENTS: &str = "ui_events";
 const UI_CHAT_DISPLAY: &str = "ui_chat_display";
-pub const TWITCH_EVENT_RELAY: &str = "twitch_event_relay";
-pub const YOUTUBE_EVENT_RELAY: &str = "youtube_event_relay";
-pub const KICK_EVENT_RELAY: &str = "kick_event_relay";
+pub(crate) const TWITCH_EVENT_RELAY: &str = "twitch_event_relay";
+pub(crate) const YOUTUBE_EVENT_RELAY: &str = "youtube_event_relay";
+pub(crate) const KICK_EVENT_RELAY: &str = "kick_event_relay";
 
 #[derive(Default)]
-pub struct EventLoss {
+pub(crate) struct EventLoss {
     consumers: Vec<ConsumerLoss>,
     display_dropped: u64,
 }
 
 impl EventLoss {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self::default()
     }
 
-    pub fn apply_report(&mut self, report: Vec<ConsumerLoss>) -> bool {
+    pub(crate) fn apply_report(&mut self, report: Vec<ConsumerLoss>) -> bool {
         if self.consumers == report {
             return false;
         }
@@ -32,7 +32,7 @@ impl EventLoss {
         true
     }
 
-    pub fn record_display_dropped(&mut self, messages: u64) -> bool {
+    pub(crate) fn record_display_dropped(&mut self, messages: u64) -> bool {
         if messages == 0 {
             return false;
         }
@@ -40,7 +40,7 @@ impl EventLoss {
         true
     }
 
-    pub fn rows(&self) -> Vec<ConsumerLoss> {
+    pub(crate) fn rows(&self) -> Vec<ConsumerLoss> {
         let display = (self.display_dropped > 0).then(|| ConsumerLoss {
             consumer: UI_CHAT_DISPLAY,
             tier: DeliveryTier::Observer,
@@ -66,7 +66,7 @@ impl EventLoss {
         rows
     }
 
-    pub fn total(&self) -> u64 {
+    pub(crate) fn total(&self) -> u64 {
         self.consumers
             .iter()
             .fold(self.display_dropped, |sum, row| {
@@ -74,14 +74,14 @@ impl EventLoss {
             })
     }
 
-    pub fn priority_dropped(&self) -> u64 {
+    pub(crate) fn priority_dropped(&self) -> u64 {
         self.consumers.iter().fold(0, |sum: u64, row| {
             sum.saturating_add(row.loss.priority_dropped)
         })
     }
 }
 
-pub fn consumer_label(consumer: &str) -> String {
+pub(crate) fn consumer_label(consumer: &str) -> String {
     match consumer {
         TRIGGER_EVALUATOR => tr!("event_loss_consumer_trigger_evaluator"),
         EVENT_LOG => tr!("event_loss_consumer_event_log"),
@@ -102,14 +102,14 @@ pub fn consumer_label(consumer: &str) -> String {
     }
 }
 
-pub fn tier_label(tier: DeliveryTier) -> String {
+pub(crate) fn tier_label(tier: DeliveryTier) -> String {
     match tier {
         DeliveryTier::Critical => tr!("event_loss_tier_critical"),
         DeliveryTier::Observer => tr!("event_loss_tier_observer"),
     }
 }
 
-pub fn breakdown(loss: &LossCount) -> String {
+pub(crate) fn breakdown(loss: &LossCount) -> String {
     let count = |n: u64| i64::try_from(n).unwrap_or(i64::MAX);
     let mut parts = Vec::new();
     if loss.priority_dropped > 0 {

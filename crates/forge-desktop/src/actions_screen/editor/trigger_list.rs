@@ -114,7 +114,7 @@ impl ScreenActionsView {
             .text_color(palette.text_muted)
             .child(tr!(
                 "action_editor_section_triggers_count",
-                count = detail.trigger_instances.len() as i64
+                count = i64::try_from(detail.trigger_instances.len()).unwrap_or(i64::MAX)
             ));
 
         let mut col = div().flex().flex_col().gap(spacing(Spacing::Xs, density));
@@ -284,7 +284,7 @@ mod tests {
     use std::sync::Mutex;
 
     use forge_components::{ToastKind, Toasts};
-    use forge_storage::queue::MockQueueRepo;
+    use forge_storage::MockQueueRepo;
     use forge_storage::{MockTriggerInstanceRepo, StorageError};
     use gpui::TestAppContext;
 
@@ -341,7 +341,7 @@ mod tests {
             });
         let mut queues = MockQueueRepo::new();
         queues.expect_list().returning(|| Ok(Vec::new()));
-        let actions = Arc::clone(&screen.store) as Arc<dyn forge_storage::action::ActionRepo>;
+        let actions = Arc::clone(&screen.store) as Arc<dyn forge_storage::ActionRepo>;
         screen.view.update(cx, |view, _| {
             view.actions_service = Arc::new(ActionsService::new(
                 actions,

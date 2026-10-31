@@ -256,7 +256,10 @@ impl ChatView {
             let label = if self.unread == 1 {
                 tr!("chat_new_message")
             } else {
-                tr!("chat_new_messages", count = self.unread as i64)
+                tr!(
+                    "chat_new_messages",
+                    count = i64::try_from(self.unread).unwrap_or(i64::MAX)
+                )
             };
             let pill = div()
                 .id("chat-unread-pill")

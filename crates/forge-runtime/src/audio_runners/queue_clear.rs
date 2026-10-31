@@ -18,12 +18,12 @@ const KEEP_CURRENT: ToggleField = ToggleField {
 
 const CONFIG: ConfigSpec = ConfigSpec::new(&[&KEEP_CURRENT]);
 
-pub struct QueueClearRunner {
+pub(crate) struct QueueClearRunner {
     speak: Arc<dyn SpeakDispatcher>,
 }
 
 impl QueueClearRunner {
-    pub fn new(speak: Arc<dyn SpeakDispatcher>) -> Self {
+    pub(crate) fn new(speak: Arc<dyn SpeakDispatcher>) -> Self {
         Self { speak }
     }
 

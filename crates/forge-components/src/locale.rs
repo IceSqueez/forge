@@ -186,7 +186,8 @@ pub fn install_bundle(bundle: Rc<ThreadBundle>) {
     });
 }
 
-pub fn set_thread_language(language: CatalogLanguage) {
+#[cfg(test)]
+pub(crate) fn set_thread_language(language: CatalogLanguage) {
     THREAD_LANGUAGE.set(Some(language));
 }
 
@@ -287,19 +288,27 @@ pub(crate) fn relative_within_week(elapsed: time::Duration) -> Option<String> {
     let secs = elapsed.whole_seconds().max(0) as u64;
 
     if secs < 60 {
-        let args = ArgsBuilder::new().set("count", secs as i64).build();
+        let args = ArgsBuilder::new()
+            .set("count", i64::try_from(secs).unwrap_or(i64::MAX))
+            .build();
         Some(tr_lookup("fmt_relative_seconds", Some(&args)))
     } else if secs < 3_600 {
         let mins = secs / 60;
-        let args = ArgsBuilder::new().set("count", mins as i64).build();
+        let args = ArgsBuilder::new()
+            .set("count", i64::try_from(mins).unwrap_or(i64::MAX))
+            .build();
         Some(tr_lookup("fmt_relative_minutes", Some(&args)))
     } else if secs < 86_400 {
         let hours = secs / 3_600;
-        let args = ArgsBuilder::new().set("count", hours as i64).build();
+        let args = ArgsBuilder::new()
+            .set("count", i64::try_from(hours).unwrap_or(i64::MAX))
+            .build();
         Some(tr_lookup("fmt_relative_hours", Some(&args)))
     } else if secs < 7 * 86_400 {
         let days = secs / 86_400;
-        let args = ArgsBuilder::new().set("count", days as i64).build();
+        let args = ArgsBuilder::new()
+            .set("count", i64::try_from(days).unwrap_or(i64::MAX))
+            .build();
         Some(tr_lookup("fmt_relative_days", Some(&args)))
     } else {
         None
@@ -517,13 +526,13 @@ impl<'a> ArgsBuilder<'a> {
 #[macro_export]
 macro_rules! tr {
     ($key:expr) => {
-        $crate::locale::tr_lookup($key, None)
+        $crate::tr_lookup($key, None)
     };
     ($key:expr, $($name:ident = $val:expr),+ $(,)?) => {{
-        let args = $crate::locale::ArgsBuilder::new()
+        let args = $crate::ArgsBuilder::new()
             $(.set(stringify!($name), $val))+
             .build();
-        $crate::locale::tr_lookup($key, Some(&args))
+        $crate::tr_lookup($key, Some(&args))
     }};
 }
 

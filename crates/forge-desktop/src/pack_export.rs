@@ -27,7 +27,7 @@ enum PackExportStep {
     Writing,
 }
 
-pub struct PackExportFlow {
+pub(crate) struct PackExportFlow {
     services: PackServices,
     step: PackExportStep,
 }
@@ -53,18 +53,18 @@ pub(crate) fn pack_file_name(pack_name: &str) -> String {
 }
 
 impl PackExportFlow {
-    pub fn new(services: PackServices) -> Self {
+    pub(crate) fn new(services: PackServices) -> Self {
         Self {
             services,
             step: PackExportStep::Idle,
         }
     }
 
-    pub fn is_busy(&self) -> bool {
+    pub(crate) fn is_busy(&self) -> bool {
         !matches!(self.step, PackExportStep::Idle)
     }
 
-    pub fn start(&mut self, preselected: Vec<ActionId>, cx: &mut Context<Self>) {
+    pub(crate) fn start(&mut self, preselected: Vec<ActionId>, cx: &mut Context<Self>) {
         if self.is_busy() {
             return;
         }

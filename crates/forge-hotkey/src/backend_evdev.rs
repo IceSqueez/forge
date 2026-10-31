@@ -391,10 +391,13 @@ async fn release_key(code: u16, held_keys: &HeldKeys, fired_tx: &mpsc::Sender<Ho
 }
 
 fn current_timestamp_us() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_micros() as u64
+    u64::try_from(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_micros(),
+    )
+    .unwrap_or(u64::MAX)
 }
 
 fn held_modifiers(codes: &HashSet<u16>) -> Modifiers {

@@ -46,7 +46,7 @@ fn negotiate_os_locale() -> Option<Language> {
     }
 }
 
-pub async fn resolve_startup_language(
+pub(crate) async fn resolve_startup_language(
     settings: Arc<dyn SettingsRepo>,
 ) -> (Language, Option<Language>) {
     match read_stored_setting(settings.as_ref(), &LANGUAGE).await {
@@ -65,20 +65,20 @@ pub async fn resolve_startup_language(
     }
 }
 
-pub fn catalog_language(lang: Language) -> CatalogLanguage {
+pub(crate) fn catalog_language(lang: Language) -> CatalogLanguage {
     match lang {
         Language::En => CatalogLanguage::En,
         Language::Uk => CatalogLanguage::Uk,
     }
 }
 
-pub fn startup_region(os_locale: Option<&str>, lang: Language) -> Region {
+pub(crate) fn startup_region(os_locale: Option<&str>, lang: Language) -> Region {
     os_locale
         .and_then(Region::from_locale_tag)
         .unwrap_or_else(|| Region::for_language(catalog_language(lang)))
 }
 
-pub async fn resolve_startup_display_formats(
+pub(crate) async fn resolve_startup_display_formats(
     settings: &dyn SettingsRepo,
     lang: Language,
 ) -> DisplayFormatChoices {
@@ -111,32 +111,32 @@ pub async fn resolve_startup_display_formats(
     )
 }
 
-pub const ANONYMOUS_DONOR_KEY: &str = "donation_anonymous_donor";
+pub(crate) const ANONYMOUS_DONOR_KEY: &str = "donation_anonymous_donor";
 
-pub fn date_names_language(lang: Language) -> NamesLanguage {
+pub(crate) fn date_names_language(lang: Language) -> NamesLanguage {
     catalog_language(lang).names_language()
 }
 
-pub fn message_in(lang: Language, key: &str) -> String {
+pub(crate) fn message_in(lang: Language, key: &str) -> String {
     forge_components::resolve_in_language(catalog_language(lang), &app_catalogs(lang), key)
 }
 
-pub fn install_os_default() {
+pub(crate) fn install_os_default() {
     install_process_language(negotiate_os_locale().unwrap_or(Language::En));
 }
 
-pub fn install_process_language(lang: Language) {
+pub(crate) fn install_process_language(lang: Language) {
     forge_components::install_process_language(catalog_language(lang), &app_catalogs(lang));
 }
 
 #[cfg(test)]
-pub fn install_language(lang: Language) {
+pub(crate) fn install_language(lang: Language) {
     forge_components::install_thread_language(catalog_language(lang), &app_catalogs(lang));
 }
 
 #[cfg(test)]
 mod tests {
-    use forge_components::locale::{ArgsBuilder, tr_lookup};
+    use forge_components::{ArgsBuilder, tr_lookup};
     use forge_components::{
         ClockStyle, DateFormatChoice, FirstWeekday, FormatChoice, FormatOption,
     };

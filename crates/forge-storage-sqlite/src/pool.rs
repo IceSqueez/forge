@@ -6,7 +6,7 @@ use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, S
 
 use crate::error::SqliteStorageError;
 
-pub const DEFAULT_BUSY_TIMEOUT: Duration = Duration::from_secs(5);
+pub(crate) const DEFAULT_BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 const JOURNAL_SIZE_LIMIT_BYTES: &str = "67108864";
 const SHUTDOWN_CHECKPOINT_WAIT: Duration = Duration::from_millis(8);
 const WRITER_CONNECTIONS: u32 = 1;

@@ -6,8 +6,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::AudioError;
 
-pub const CANONICAL_OUTPUT_CHAIN: &[&str] = &["default", "pipewire", "pulse"];
-pub const CANONICAL_INPUT_CHAIN: &[&str] = &["default", "pipewire", "pulse"];
+pub(crate) const CANONICAL_OUTPUT_CHAIN: &[&str] = &["default", "pipewire", "pulse"];
+pub(crate) const CANONICAL_INPUT_CHAIN: &[&str] = &["default", "pipewire", "pulse"];
 
 const NOISE_ID_PREFIXES: &[&str] = &[
     "sysdefault",

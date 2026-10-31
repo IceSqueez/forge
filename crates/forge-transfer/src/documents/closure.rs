@@ -4,7 +4,7 @@ use forge_overlay::{
     MediaSlot, MediaValue, OverlayKindRegistry, clip_references, image_references, media_slot,
     read_media_value,
 };
-use forge_registry::references::LOCAL_FILE_NAMESPACE;
+use forge_registry::LOCAL_FILE_NAMESPACE;
 use forge_registry::{
     FormSchemaSource, InternalNamespace, ReferenceCatalog, ReferenceListing, ReferenceNamespace,
     StepNode, StepReach, SubActionRegistry, TriggerRegistry, walk_steps,

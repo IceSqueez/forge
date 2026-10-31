@@ -11,7 +11,7 @@ use forge_platform_core::{EndpointSurface, PlatformEndpoints};
 const BODY_SNIPPET_MAX_CHARS: usize = 200;
 const NO_RESET_HEADER_WAIT: Duration = Duration::from_secs(5);
 
-pub const HELIX_GATEWAY_PROFILE: GatewayProfile = GatewayProfile::platform_api(
+pub(crate) const HELIX_GATEWAY_PROFILE: GatewayProfile = GatewayProfile::platform_api(
     CallClass::Interactive,
     ThrottleHintFamily::ResetEpochSeconds,
     NO_RESET_HEADER_WAIT,

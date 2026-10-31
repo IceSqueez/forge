@@ -683,7 +683,7 @@ impl TriggersRegistryView {
                 .text_color(palette.accent_peach)
                 .child(tr!(
                     "triggers_sheet_config_overridden",
-                    count = override_count as i64
+                    count = i64::try_from(override_count).unwrap_or(i64::MAX)
                 ))
                 .into_any_element()
         } else {
@@ -999,7 +999,10 @@ impl TriggersRegistryView {
         let density = cx.density();
         let count = detail.used_in.len();
         let label = if count > 0 {
-            tr!("triggers_sheet_section_used_in_count", count = count as i64)
+            tr!(
+                "triggers_sheet_section_used_in_count",
+                count = i64::try_from(count).unwrap_or(i64::MAX)
+            )
         } else {
             tr!("triggers_sheet_section_used_in")
         };

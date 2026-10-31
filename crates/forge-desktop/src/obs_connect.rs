@@ -10,7 +10,7 @@ use crate::integrations::ObsInstallSeed;
 use crate::navigation::NavRequested;
 use crate::obs_credentials_form::{DEFAULT_PORT, ObsConnected, ObsCredentialsForm, ObsSubmit};
 
-pub struct ObsConnectView {
+pub(crate) struct ObsConnectView {
     form: Entity<ObsCredentialsForm>,
     _form_sub: Subscription,
 }
@@ -19,7 +19,7 @@ impl EventEmitter<NavRequested> for ObsConnectView {}
 impl EventEmitter<ObsConnected> for ObsConnectView {}
 
 impl ObsConnectView {
-    pub fn new(
+    pub(crate) fn new(
         rt_handle: tokio::runtime::Handle,
         credentials: Arc<dyn CredentialsRepo>,
         settings: Arc<dyn SettingsRepo>,

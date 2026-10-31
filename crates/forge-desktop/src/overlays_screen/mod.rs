@@ -37,7 +37,7 @@ use forge_components::{
 };
 use forge_overlay::OverlayKindRegistry;
 use forge_registry::{SubActionRegistry, TriggerRegistry};
-use forge_runtime::actions::ActionsService;
+use forge_runtime::ActionsService;
 use forge_runtime::{
     EventBus, LatestValues, OverlaySampleSource, OverlayServiceHandle, QueueSchedulerHandle,
 };
@@ -93,7 +93,7 @@ struct OverlayHandles {
     icon_favorites: Entity<StoredFavorites>,
 }
 
-pub struct OverlaysView {
+pub(crate) struct OverlaysView {
     handles: OverlayHandles,
     registry: RegistryState,
     served: ServerStatus,
@@ -107,7 +107,7 @@ pub struct OverlaysView {
     latest: LatestSource,
 }
 
-pub struct OverlaysLaunch {
+pub(crate) struct OverlaysLaunch {
     pub repo: Arc<dyn OverlayRepo>,
     pub server: Option<ServerHandle>,
     pub rt_handle: tokio::runtime::Handle,
@@ -128,11 +128,11 @@ pub struct OverlaysLaunch {
 }
 
 impl OverlaysView {
-    pub fn new(launch: OverlaysLaunch, cx: &mut Context<Self>) -> Self {
+    pub(crate) fn new(launch: OverlaysLaunch, cx: &mut Context<Self>) -> Self {
         let server_running = launch
             .server
             .as_ref()
-            .is_some_and(|handle| *handle.run_state().borrow());
+            .is_some_and(|handle| handle.run_state().is_running());
 
         let editor = EditorState::new(cx);
         let wiring = cx.new(|cx| {
@@ -224,17 +224,17 @@ impl OverlaysView {
                 palette.success,
                 tr!(
                     "overlays_header_summary",
-                    enabled = self.enabled_count() as i64,
-                    total = self.registry.overlays.len() as i64,
-                    port = forge_server::overlay_url::extract_port(address)
+                    enabled = i64::try_from(self.enabled_count()).unwrap_or(i64::MAX),
+                    total = i64::try_from(self.registry.overlays.len()).unwrap_or(i64::MAX),
+                    port = forge_server::extract_port(address)
                 ),
             ),
             None => (
                 palette.text_faint,
                 tr!(
                     "overlays_header_summary_stopped",
-                    enabled = self.enabled_count() as i64,
-                    total = self.registry.overlays.len() as i64
+                    enabled = i64::try_from(self.enabled_count()).unwrap_or(i64::MAX),
+                    total = i64::try_from(self.registry.overlays.len()).unwrap_or(i64::MAX)
                 ),
             ),
         };

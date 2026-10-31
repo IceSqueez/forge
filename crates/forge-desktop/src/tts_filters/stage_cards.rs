@@ -304,7 +304,7 @@ impl TtsFiltersView {
                             .text_color(palette.text_faint)
                             .child(tr!(
                                 "tts_filters_blocklist_more",
-                                count = (total - 3) as i64
+                                count = i64::try_from(total - 3).unwrap_or(i64::MAX)
                             )),
                     ),
             );

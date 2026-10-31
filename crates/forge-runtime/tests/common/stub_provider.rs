@@ -3,27 +3,26 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_storage::CatalogRevision;
-use forge_storage::action::MockActionRepo;
-use forge_storage::ban_ledger::MockBanLedgerRepo;
-use forge_storage::chat_history::MockChatHistoryRepo;
+use forge_storage::MockActionRepo;
+use forge_storage::MockBanLedgerRepo;
+use forge_storage::MockChatHistoryRepo;
+use forge_storage::MockDonationRepo;
+use forge_storage::MockEventLogRepo;
+use forge_storage::MockGlobalsRepo;
+use forge_storage::MockHistoryRepo;
+use forge_storage::MockLatestValueRepo;
+use forge_storage::MockMediaRepo;
+use forge_storage::MockQueueRepo;
+use forge_storage::MockScheduledRunRepo;
+use forge_storage::MockScriptRepo;
+use forge_storage::MockSoundboardClipsRepo;
+use forge_storage::MockTriggerInstanceRepo;
+use forge_storage::MockTtsFiltersRepo;
+use forge_storage::MockUserGlobalsRepo;
+use forge_storage::MockViewerRepo;
+use forge_storage::MockVoiceAliasRepo;
 use forge_storage::credentials::MockCredentialsRepo;
-use forge_storage::donation::MockDonationRepo;
-use forge_storage::event_log::MockEventLogRepo;
-use forge_storage::globals::MockGlobalsRepo;
-use forge_storage::history::MockHistoryRepo;
-use forge_storage::latest_value::MockLatestValueRepo;
-use forge_storage::media::MockMediaRepo;
-use forge_storage::overlay::{MockOverlayRepo, OverlayRepo};
-use forge_storage::queue::MockQueueRepo;
-use forge_storage::scheduled_run::MockScheduledRunRepo;
-use forge_storage::script::MockScriptRepo;
-use forge_storage::soundboard::MockSoundboardClipsRepo;
 use forge_storage::test_support::MemorySettings;
-use forge_storage::trigger_instance::MockTriggerInstanceRepo;
-use forge_storage::tts_filters::MockTtsFiltersRepo;
-use forge_storage::user_globals::MockUserGlobalsRepo;
-use forge_storage::viewer::MockViewerRepo;
-use forge_storage::voice_aliases::MockVoiceAliasRepo;
 use forge_storage::{
     ActionRepo, BanLedgerRepo, ChatHistoryRepo, CredentialId, CredentialsRepo, DataProvider,
     DonationRepo, EventLogRepo, ExecutionStatus, GlobalEntry, GlobalsRepo, HistoryRepo,
@@ -32,10 +31,11 @@ use forge_storage::{
     StorageError, TriggerInstanceRepo, TtsFiltersRepo, UserGlobalEntry, UserGlobalsRepo,
     ViewerRepo, VoiceAliasRepo,
 };
+use forge_storage::{MockOverlayRepo, OverlayRepo};
 use forge_types::{ScriptId, TriggerInstanceId, Variant};
 use time::OffsetDateTime;
 
-pub struct StubProvider {
+pub(crate) struct StubProvider {
     pub action_repo: Arc<MockActionRepo>,
     pub trigger_instance_repo: Arc<MockTriggerInstanceRepo>,
     pub queue_repo: Arc<MockQueueRepo>,
@@ -62,7 +62,7 @@ pub struct StubProvider {
 }
 
 impl StubProvider {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             catalog_revision: CatalogRevision::new(),
             action_repo: Arc::new(MockActionRepo::new()),
@@ -90,61 +90,61 @@ impl StubProvider {
         }
     }
 
-    pub fn action(&mut self) -> &mut MockActionRepo {
+    pub(crate) fn action(&mut self) -> &mut MockActionRepo {
         Arc::get_mut(&mut self.action_repo).expect("action_repo already shared")
     }
 
-    pub fn trigger_instance(&mut self) -> &mut MockTriggerInstanceRepo {
+    pub(crate) fn trigger_instance(&mut self) -> &mut MockTriggerInstanceRepo {
         Arc::get_mut(&mut self.trigger_instance_repo).expect("trigger_instance_repo already shared")
     }
 
-    pub fn queue(&mut self) -> &mut MockQueueRepo {
+    pub(crate) fn queue(&mut self) -> &mut MockQueueRepo {
         Arc::get_mut(&mut self.queue_repo).expect("queue_repo already shared")
     }
 
-    pub fn history(&mut self) -> &mut MockHistoryRepo {
+    pub(crate) fn history(&mut self) -> &mut MockHistoryRepo {
         Arc::get_mut(&mut self.history_repo).expect("history_repo already shared")
     }
 
-    pub fn event_log(&mut self) -> &mut MockEventLogRepo {
+    pub(crate) fn event_log(&mut self) -> &mut MockEventLogRepo {
         Arc::get_mut(&mut self.event_log_repo).expect("event_log_repo already shared")
     }
 
-    pub fn soundboard(&mut self) -> &mut MockSoundboardClipsRepo {
+    pub(crate) fn soundboard(&mut self) -> &mut MockSoundboardClipsRepo {
         Arc::get_mut(&mut self.soundboard_clips_repo).expect("soundboard_clips_repo already shared")
     }
 
-    pub fn voice_alias(&mut self) -> &mut MockVoiceAliasRepo {
+    pub(crate) fn voice_alias(&mut self) -> &mut MockVoiceAliasRepo {
         Arc::get_mut(&mut self.voice_alias_repo).expect("voice_alias_repo already shared")
     }
 
-    pub fn viewer(&mut self) -> &mut MockViewerRepo {
+    pub(crate) fn viewer(&mut self) -> &mut MockViewerRepo {
         Arc::get_mut(&mut self.viewer_repo).expect("viewer_repo already shared")
     }
 
-    pub fn overlay(&mut self) -> &mut MockOverlayRepo {
+    pub(crate) fn overlay(&mut self) -> &mut MockOverlayRepo {
         Arc::get_mut(&mut self.overlay_repo).expect("overlay_repo already shared")
     }
 
-    pub fn globals(&mut self) -> &mut MockGlobalsRepo {
+    pub(crate) fn globals(&mut self) -> &mut MockGlobalsRepo {
         Arc::get_mut(&mut self.globals_repo).expect("globals_repo already shared")
     }
 
-    pub fn user_globals(&mut self) -> &mut MockUserGlobalsRepo {
+    pub(crate) fn user_globals(&mut self) -> &mut MockUserGlobalsRepo {
         Arc::get_mut(&mut self.user_globals_repo).expect("user_globals_repo already shared")
     }
 
-    pub fn script(&mut self) -> &mut MockScriptRepo {
+    pub(crate) fn script(&mut self) -> &mut MockScriptRepo {
         Arc::get_mut(&mut self.script_repo).expect("script_repo already shared")
     }
 
-    pub fn credentials(&mut self) -> &mut MockCredentialsRepo {
+    pub(crate) fn credentials(&mut self) -> &mut MockCredentialsRepo {
         Arc::get_mut(&mut self.credentials_repo).expect("credentials_repo already shared")
     }
 }
 
 impl StubProvider {
-    pub fn idle() -> Self {
+    pub(crate) fn idle() -> Self {
         let mut provider = Self::new();
         provider.action().expect_list().returning(|| Ok(Vec::new()));
         provider

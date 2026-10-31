@@ -9,7 +9,7 @@ use crate::events::{MidiEvent, MidiMonitorEvent};
 use crate::vocabulary::MidiSignalKind;
 use crate::vocabulary::fields::input as fields;
 
-pub type MidiMonitorStream =
+pub(crate) type MidiMonitorStream =
     Pin<Box<dyn tokio_stream::Stream<Item = MidiMonitorEvent> + Send + 'static>>;
 
 pub(crate) type MonitorTx = broadcast::Sender<MidiMonitorEvent>;

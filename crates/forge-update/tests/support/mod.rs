@@ -11,10 +11,10 @@ use forge_update::UpdateClient;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
-pub const SECRET: &str = "s3cret-query-token";
+pub(crate) const SECRET: &str = "s3cret-query-token";
 
 #[derive(Clone)]
-pub enum Reply {
+pub(crate) enum Reply {
     Full(Vec<u8>),
     CloseDelimited(Vec<u8>),
     Declared {
@@ -30,14 +30,14 @@ pub enum Reply {
     Silent,
 }
 
-pub struct TestServer {
+pub(crate) struct TestServer {
     addr: SocketAddr,
     hits: Arc<AtomicUsize>,
     heads: Arc<Mutex<Vec<String>>>,
 }
 
 impl TestServer {
-    pub async fn start(routes: Vec<(&str, Reply)>) -> Self {
+    pub(crate) async fn start(routes: Vec<(&str, Reply)>) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         let hits = Arc::new(AtomicUsize::new(0));
@@ -62,19 +62,19 @@ impl TestServer {
         Self { addr, hits, heads }
     }
 
-    pub fn plain_url(&self, host: &str, path: &str) -> String {
+    pub(crate) fn plain_url(&self, host: &str, path: &str) -> String {
         format!("http://{host}:{}{path}", self.addr.port())
     }
 
-    pub fn heads(&self) -> Vec<String> {
+    pub(crate) fn heads(&self) -> Vec<String> {
         self.heads.lock().unwrap().clone()
     }
 
-    pub fn url(&self, path: &str) -> String {
+    pub(crate) fn url(&self, path: &str) -> String {
         format!("http://{}{path}?token={SECRET}", self.addr)
     }
 
-    pub fn hits(&self) -> usize {
+    pub(crate) fn hits(&self) -> usize {
         self.hits.load(Ordering::SeqCst)
     }
 }
@@ -160,7 +160,7 @@ async fn write_all(stream: &mut TcpStream, header: &[u8], body: &[u8]) {
     }
 }
 
-pub fn client() -> UpdateClient {
+pub(crate) fn client() -> UpdateClient {
     UpdateClient::new(Arc::new(TokenBucketRateLimiter::new(
         1_000,
         Duration::from_secs(1),
@@ -168,6 +168,6 @@ pub fn client() -> UpdateClient {
     .unwrap()
 }
 
-pub async fn refused_url() -> String {
+pub(crate) async fn refused_url() -> String {
     format!("http://127.0.0.1:0/forge.AppImage?token={SECRET}")
 }

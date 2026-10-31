@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_registry::runner::SubActionConfig;
+use forge_registry::SubActionConfig;
 use forge_registry::{
     ConfigSpec, PickedTextField, RunContext, StepTimer, SubActionCategory, SubActionRunner,
     TextPicker, TypedField,
@@ -24,12 +24,12 @@ const MODEL_ID: PickedTextField = PickedTextField {
 
 const CONFIG: ConfigSpec = ConfigSpec::new(&[&MODEL_ID]);
 
-pub struct ModelLoadRunner {
+pub(crate) struct ModelLoadRunner {
     sink: Arc<dyn VTubeSink>,
 }
 
 impl ModelLoadRunner {
-    pub fn new(sink: Arc<dyn VTubeSink>) -> Self {
+    pub(crate) fn new(sink: Arc<dyn VTubeSink>) -> Self {
         Self { sink }
     }
 }

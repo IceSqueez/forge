@@ -10,7 +10,7 @@ use forge_overlay::{
     AudioAnnouncement, CONFIG_FILE, GENERATOR_VERSION, MARKUP_FILE, OverlayKindRegistry,
     RESERVED_DIRECTORY, STYLE_FILE, announcement_content, register_builtin_kinds,
 };
-use forge_runtime::overlay_service::OVERLAY_TEST_FIRE_KIND;
+use forge_runtime::OVERLAY_TEST_FIRE_KIND;
 use forge_runtime::{
     EventBus, MaterializePass, NullEventLogRepo, OverlayConnectFanout, OverlayConnectListener,
     OverlayDefinitionChanges, OverlayDelivery, OverlayDispatch, OverlayFrameSink, OverlayReceivers,

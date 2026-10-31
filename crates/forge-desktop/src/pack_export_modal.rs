@@ -21,12 +21,12 @@ use crate::repo_failure::RepoFailure;
 const ACTION_LIST_H: Pixels = px(320.0);
 const COUNT_COLUMNS: usize = 2;
 
-pub enum PackExportModalEvent {
+pub(crate) enum PackExportModalEvent {
     Confirmed,
     Cancelled,
 }
 
-pub struct PackDraft {
+pub(crate) struct PackDraft {
     pub inventory: PackInventory,
     pub selection: PackSelection,
     pub metadata: PackMetadata,
@@ -117,7 +117,7 @@ struct Ready {
     choices: Vec<ActionChoice>,
 }
 
-pub struct PackExportModal {
+pub(crate) struct PackExportModal {
     services: PackServices,
     source: Loadable<Ready>,
     selected: BTreeSet<ActionId>,
@@ -136,7 +136,11 @@ pub struct PackExportModal {
 impl EventEmitter<PackExportModalEvent> for PackExportModal {}
 
 impl PackExportModal {
-    pub fn new(services: PackServices, preselected: Vec<ActionId>, cx: &mut Context<Self>) -> Self {
+    pub(crate) fn new(
+        services: PackServices,
+        preselected: Vec<ActionId>,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let palette = cx.palette();
         let search = SearchState::new(cx, palette, tr!("pack_export_search_placeholder"));
         let text_field = |placeholder: String, cx: &mut Context<Self>| {
@@ -261,7 +265,7 @@ impl PackExportModal {
         !self.resolving && self.closure.is_some() && !self.pack_name(cx).is_empty()
     }
 
-    pub fn take_draft(&mut self, cx: &mut Context<Self>) -> Option<PackDraft> {
+    pub(crate) fn take_draft(&mut self, cx: &mut Context<Self>) -> Option<PackDraft> {
         if !self.can_export(cx) {
             return None;
         }

@@ -33,7 +33,7 @@ const MAX_RESOLVED_EVENT_SHAPES: usize = 4096;
 
 pub type TriggerEvaluatorHandle = TaskStop;
 
-pub struct TriggerEvaluator {
+pub(crate) struct TriggerEvaluator {
     bus: Arc<EventBus>,
     registry: Arc<TriggerRegistry>,
     catalog: Arc<Catalog>,
@@ -51,7 +51,7 @@ struct ResolvedBindings {
 }
 
 impl TriggerEvaluator {
-    pub fn spawn(
+    pub(crate) fn spawn(
         bus: Arc<EventBus>,
         registry: Arc<TriggerRegistry>,
         catalog: Arc<Catalog>,
@@ -458,7 +458,7 @@ impl BlockReason {
                 "instance_id": instance.id,
                 "kind_id": instance.kind_id,
                 "reason": "cooldown",
-                "remaining_ms": remaining.as_millis() as u64,
+                "remaining_ms": u64::try_from(remaining.as_millis()).unwrap_or(u64::MAX),
             }),
         }
     }

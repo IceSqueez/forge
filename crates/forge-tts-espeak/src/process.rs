@@ -40,11 +40,11 @@ pub(crate) fn check_espeak_version(binary: &Path) -> Result<(), EspeakError> {
     }
 }
 
-pub fn rate_wpm_from_multiplier(rate_multiplier: f32) -> u32 {
+pub(crate) fn rate_wpm_from_multiplier(rate_multiplier: f32) -> u32 {
     (175.0_f32 * rate_multiplier).round().clamp(50.0, 450.0) as u32
 }
 
-pub fn pitch_from_semitones(pitch_semitones: f32) -> u32 {
+pub(crate) fn pitch_from_semitones(pitch_semitones: f32) -> u32 {
     (50.0_f32 + pitch_semitones * (50.0 / 12.0_f32))
         .round()
         .clamp(0.0, 99.0) as u32

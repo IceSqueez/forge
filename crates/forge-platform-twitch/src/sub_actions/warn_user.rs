@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_registry::runner::SubActionConfig;
+use forge_registry::SubActionConfig;
 use forge_registry::{
     BoundedTextField, ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory,
     SubActionRunner, TextEditor, TypedField, ValueBounds,
@@ -37,13 +37,13 @@ fn read_config(
     Ok((TARGET_LOGIN.read(config, args)?, REASON.read(config, args)?))
 }
 
-pub struct WarnUserRunner {
+pub(crate) struct WarnUserRunner {
     transport: Arc<dyn HelixTransport>,
     identity: Arc<SelfIdentity>,
 }
 
 impl WarnUserRunner {
-    pub fn new(transport: Arc<dyn HelixTransport>, identity: Arc<SelfIdentity>) -> Self {
+    pub(crate) fn new(transport: Arc<dyn HelixTransport>, identity: Arc<SelfIdentity>) -> Self {
         Self {
             transport,
             identity,

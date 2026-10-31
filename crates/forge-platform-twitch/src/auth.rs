@@ -68,7 +68,7 @@ pub const TWITCH_BROADCASTER_SCOPES: &[&str] = &[
     "channel:manage:guest_star",
 ];
 
-pub const TWITCH_BOT_SCOPES: &[&str] = &[
+pub(crate) const TWITCH_BOT_SCOPES: &[&str] = &[
     "user:write:chat",
     "user:manage:whispers",
     "moderator:manage:announcements",

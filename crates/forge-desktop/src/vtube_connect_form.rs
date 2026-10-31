@@ -25,14 +25,14 @@ use crate::connect_scaffold::{
 use crate::integrations::VTubeInstallSeed;
 use crate::runtime_event::VTubeDisconnect;
 
-pub const VTUBE_AUTO_RECONNECT: Setting<Flag> = Setting::new(
+pub(crate) const VTUBE_AUTO_RECONNECT: Setting<Flag> = Setting::new(
     "vtube.auto_reconnect",
     Flag { default: true },
     forge_storage::SettingPortability::Portable,
     forge_storage::SettingDisclosure::Withheld,
 );
 
-pub const VTUBE_CONNECT_ON_LAUNCH: Setting<Flag> = Setting::new(
+pub(crate) const VTUBE_CONNECT_ON_LAUNCH: Setting<Flag> = Setting::new(
     "vtube.connect_on_launch",
     Flag { default: true },
     forge_storage::SettingPortability::Portable,
@@ -68,7 +68,7 @@ const FLAGS: ConnectFlagSpec = ConnectFlagSpec {
     save_failed_key: "vtube_connect_settings_save_failed",
 };
 
-pub struct VTubeConnected;
+pub(crate) struct VTubeConnected;
 
 struct Prefill {
     host: String,
@@ -87,7 +87,7 @@ enum Status {
     Attempt(AttemptStatus),
 }
 
-pub struct VTubeConnectForm {
+pub(crate) struct VTubeConnectForm {
     rt_handle: tokio::runtime::Handle,
     credentials: Arc<dyn CredentialsRepo>,
     settings: Arc<dyn SettingsRepo>,
@@ -105,7 +105,7 @@ pub struct VTubeConnectForm {
 impl EventEmitter<VTubeConnected> for VTubeConnectForm {}
 
 impl VTubeConnectForm {
-    pub fn new(
+    pub(crate) fn new(
         rt_handle: tokio::runtime::Handle,
         credentials: Arc<dyn CredentialsRepo>,
         settings: Arc<dyn SettingsRepo>,
@@ -244,7 +244,7 @@ impl VTubeConnectForm {
                 detail: tr!(
                     "vtube_connect_test_detail",
                     version = report.api_version,
-                    rtt = report.round_trip_ms as i64,
+                    rtt = i64::try_from(report.round_trip_ms).unwrap_or(i64::MAX),
                     auth = authorization_label(report.already_authenticated)
                 ),
             },

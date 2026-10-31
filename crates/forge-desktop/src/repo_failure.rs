@@ -56,7 +56,7 @@ const OVERLAY_KIND_UNAVAILABLE: MessageCode =
 const OVERLAY_QUEUE_FULL: MessageCode = MessageCode::from_static(NAMESPACE, "overlay_queue_full");
 const OVERLAY_SLOT_BOUND: MessageCode = MessageCode::from_static(NAMESPACE, "overlay_slot_bound");
 
-pub const REPO_MESSAGES: MessageCatalog = MessageCatalog {
+pub(crate) const REPO_MESSAGES: MessageCatalog = MessageCatalog {
     namespace: NAMESPACE,
     codes: &[
         STORAGE_FAILED,
@@ -84,7 +84,7 @@ pub const REPO_MESSAGES: MessageCatalog = MessageCatalog {
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RepoFailure {
+pub(crate) struct RepoFailure {
     message: Box<UserText>,
     diagnostic: String,
     shows_detail: bool,
@@ -92,7 +92,7 @@ pub struct RepoFailure {
 }
 
 impl RepoFailure {
-    pub fn trigger_gone() -> Self {
+    pub(crate) fn trigger_gone() -> Self {
         Self {
             message: Box::new(MessageRef::new(TRIGGER_GONE).into()),
             diagnostic: "trigger instance not found".to_owned(),
@@ -101,7 +101,7 @@ impl RepoFailure {
         }
     }
 
-    pub fn action_gone() -> Self {
+    pub(crate) fn action_gone() -> Self {
         Self {
             message: Box::new(MessageRef::new(ACTION_GONE).into()),
             diagnostic: "action not found".to_owned(),
@@ -110,7 +110,7 @@ impl RepoFailure {
         }
     }
 
-    pub fn steps_gone() -> Self {
+    pub(crate) fn steps_gone() -> Self {
         Self {
             message: Box::new(MessageRef::new(STEPS_GONE).into()),
             diagnostic: "step list not found".to_owned(),
@@ -119,7 +119,7 @@ impl RepoFailure {
         }
     }
 
-    pub fn operation(diagnostic: impl ToString) -> Self {
+    pub(crate) fn operation(diagnostic: impl ToString) -> Self {
         Self {
             message: Box::new(MessageRef::new(OPERATION_FAILED).into()),
             diagnostic: diagnostic.to_string(),
@@ -128,7 +128,7 @@ impl RepoFailure {
         }
     }
 
-    pub fn data_dir_unavailable(path: &Path, cause: &std::io::Error) -> Self {
+    pub(crate) fn data_dir_unavailable(path: &Path, cause: &std::io::Error) -> Self {
         let shown = path.display().to_string();
         Self {
             message: Box::new(
@@ -142,7 +142,7 @@ impl RepoFailure {
         }
     }
 
-    pub fn startup_stopped(diagnostic: impl ToString) -> Self {
+    pub(crate) fn startup_stopped(diagnostic: impl ToString) -> Self {
         Self {
             message: Box::new(MessageRef::new(STARTUP_STOPPED).into()),
             diagnostic: diagnostic.to_string(),
@@ -151,7 +151,7 @@ impl RepoFailure {
         }
     }
 
-    pub fn hotkey(error: &HotkeyError) -> Self {
+    pub(crate) fn hotkey(error: &HotkeyError) -> Self {
         Self {
             message: Box::new(failure(error).into()),
             diagnostic: error.to_string(),
@@ -160,7 +160,7 @@ impl RepoFailure {
         }
     }
 
-    pub fn localized(text: impl Into<String>) -> Self {
+    pub(crate) fn localized(text: impl Into<String>) -> Self {
         let text = text.into();
         Self {
             message: Box::new(VerbatimText::new(text.as_str()).into()),
@@ -170,7 +170,7 @@ impl RepoFailure {
         }
     }
 
-    pub fn shown(message: impl Into<UserText>, diagnostic: impl ToString) -> Self {
+    pub(crate) fn shown(message: impl Into<UserText>, diagnostic: impl ToString) -> Self {
         Self {
             message: Box::new(message.into()),
             diagnostic: diagnostic.to_string(),
@@ -179,7 +179,7 @@ impl RepoFailure {
         }
     }
 
-    pub fn text(&self) -> String {
+    pub(crate) fn text(&self) -> String {
         if let Some(problem) = &self.problem {
             return problem.message();
         }
@@ -392,7 +392,7 @@ impl From<StorageError> for RepoFailure {
 }
 
 impl RepoFailure {
-    pub fn from_storage_ref(error: &StorageError) -> Self {
+    pub(crate) fn from_storage_ref(error: &StorageError) -> Self {
         let message = match error {
             StorageError::NotFound { .. } => MessageRef::new(ITEM_GONE),
             StorageError::NameCollision { name } => {

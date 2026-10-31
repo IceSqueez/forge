@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use async_trait::async_trait;
-use forge_registry::runner::SubActionConfig;
+use forge_registry::SubActionConfig;
 use forge_registry::{RunContext, SubActionCategory, SubActionRunner};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
@@ -15,13 +15,13 @@ use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
 
 const KIND_ID: &str = sub_action_ids::GOAL_GET_CURRENT;
 
-pub struct GetCurrentGoalRunner {
+pub(crate) struct GetCurrentGoalRunner {
     transport: Arc<dyn HelixTransport>,
     identity: Arc<SelfIdentity>,
 }
 
 impl GetCurrentGoalRunner {
-    pub fn new(transport: Arc<dyn HelixTransport>, identity: Arc<SelfIdentity>) -> Self {
+    pub(crate) fn new(transport: Arc<dyn HelixTransport>, identity: Arc<SelfIdentity>) -> Self {
         Self {
             transport,
             identity,
@@ -149,7 +149,7 @@ impl SubActionRunner for GetCurrentGoalRunner {
                         produced: ::std::collections::BTreeMap::new(),
                         kind: KIND_ID.to_owned(),
                         started_at,
-                        duration_ms: start.elapsed().as_millis() as u64,
+                        duration_ms: u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX),
                         outcome: SubActionOutcome::Success,
                         index: ctx.index,
                     },
@@ -167,7 +167,7 @@ impl SubActionRunner for GetCurrentGoalRunner {
                         produced: ::std::collections::BTreeMap::new(),
                         kind: KIND_ID.to_owned(),
                         started_at,
-                        duration_ms: start.elapsed().as_millis() as u64,
+                        duration_ms: u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX),
                         outcome: SubActionOutcome::Success,
                         index: ctx.index,
                     },
@@ -180,7 +180,7 @@ impl SubActionRunner for GetCurrentGoalRunner {
                     produced: ::std::collections::BTreeMap::new(),
                     kind: KIND_ID.to_owned(),
                     started_at,
-                    duration_ms: start.elapsed().as_millis() as u64,
+                    duration_ms: u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX),
                     outcome,
                     index: ctx.index,
                 },

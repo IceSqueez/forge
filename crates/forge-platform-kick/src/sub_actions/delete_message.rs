@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_platform_core::PlatformError;
-use forge_registry::runner::SubActionConfig;
+use forge_registry::SubActionConfig;
 use forge_registry::{
     ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TextEditor, TextField,
     TypedField,
@@ -31,13 +31,13 @@ const MESSAGE_ID: TextField = TextField {
 
 const CONFIG: ConfigSpec = ConfigSpec::new(&[&MESSAGE_ID]);
 
-pub struct DeleteMessageRunner {
+pub(crate) struct DeleteMessageRunner {
     client: Arc<KickSendChat>,
     token_source: Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync>,
 }
 
 impl DeleteMessageRunner {
-    pub fn new(
+    pub(crate) fn new(
         client: Arc<KickSendChat>,
         token_source: Arc<
             dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync,

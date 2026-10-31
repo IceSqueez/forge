@@ -21,17 +21,17 @@ use forge_tts_core::{
 };
 use forge_types::EventId;
 
-pub const HANG_GUARD: Duration = Duration::from_secs(30);
+pub(crate) const HANG_GUARD: Duration = Duration::from_secs(30);
 const PAUSED_CLOCK_SETTLE: Duration = Duration::from_millis(1);
 
-pub static PLAIN_CAPABILITIES: EngineCapabilities = EngineCapabilities {
+pub(crate) static PLAIN_CAPABILITIES: EngineCapabilities = EngineCapabilities {
     ssml: false,
     neural_voices: false,
     streaming: false,
     custom_lexicons: false,
 };
 
-pub fn voice(id: &str, engine: &str) -> TtsVoice {
+pub(crate) fn voice(id: &str, engine: &str) -> TtsVoice {
     TtsVoice {
         id: VoiceId(id.into()),
         name: id.into(),
@@ -64,7 +64,7 @@ impl TtsEngine for FakeEngine {
     }
 }
 
-pub struct FakeFactory {
+pub(crate) struct FakeFactory {
     pub id: String,
     pub voices: Vec<TtsVoice>,
 }
@@ -82,7 +82,7 @@ impl TtsEngineFactory for FakeFactory {
     }
 }
 
-pub fn standard_registry() -> TtsRegistry {
+pub(crate) fn standard_registry() -> TtsRegistry {
     let mut reg = TtsRegistry::new();
     reg.register(
         EngineId("alpha".into()),
@@ -101,7 +101,7 @@ pub fn standard_registry() -> TtsRegistry {
     reg
 }
 
-pub struct RecordingSink {
+pub(crate) struct RecordingSink {
     plays: Arc<std::sync::Mutex<usize>>,
 }
 
@@ -113,7 +113,7 @@ impl AudioSink for RecordingSink {
     }
 }
 
-pub fn recording_sink() -> (Arc<dyn AudioSink>, Arc<std::sync::Mutex<usize>>) {
+pub(crate) fn recording_sink() -> (Arc<dyn AudioSink>, Arc<std::sync::Mutex<usize>>) {
     let plays = Arc::new(std::sync::Mutex::new(0usize));
     (
         Arc::new(RecordingSink {
@@ -124,7 +124,7 @@ pub fn recording_sink() -> (Arc<dyn AudioSink>, Arc<std::sync::Mutex<usize>>) {
 }
 
 #[derive(Default)]
-pub struct RecordingPublisher {
+pub(crate) struct RecordingPublisher {
     events: Mutex<Vec<Event>>,
 }
 
@@ -135,7 +135,7 @@ impl EventPublisher for RecordingPublisher {
 }
 
 impl RecordingPublisher {
-    pub fn of_kind(&self, kind: &str) -> Vec<Event> {
+    pub(crate) fn of_kind(&self, kind: &str) -> Vec<Event> {
         self.events
             .lock()
             .unwrap()
@@ -145,7 +145,11 @@ impl RecordingPublisher {
             .collect()
     }
 
-    pub fn payload_of(&self, kind: &str, request_id: &RequestId) -> Option<serde_json::Value> {
+    pub(crate) fn payload_of(
+        &self,
+        kind: &str,
+        request_id: &RequestId,
+    ) -> Option<serde_json::Value> {
         self.of_kind(kind)
             .into_iter()
             .find(|event| event.payload["request_id"] == request_id.0.as_str())
@@ -153,13 +157,13 @@ impl RecordingPublisher {
     }
 }
 
-pub fn recording_bus(deps: QueueDeps) -> (QueueDeps, Arc<RecordingPublisher>) {
+pub(crate) fn recording_bus(deps: QueueDeps) -> (QueueDeps, Arc<RecordingPublisher>) {
     let bus = Arc::new(RecordingPublisher::default());
     let event_bus: Arc<dyn EventPublisher> = bus.clone();
     (QueueDeps { event_bus, ..deps }, bus)
 }
 
-pub fn make_deps(
+pub(crate) fn make_deps(
     registry: TtsRegistry,
     sink: Arc<dyn AudioSink>,
     strategy: AssignmentStrategy,
@@ -182,7 +186,7 @@ pub fn make_deps(
     }
 }
 
-pub fn standard_deps(sink: Arc<dyn AudioSink>) -> QueueDeps {
+pub(crate) fn standard_deps(sink: Arc<dyn AudioSink>) -> QueueDeps {
     make_deps(
         standard_registry(),
         sink,
@@ -191,7 +195,7 @@ pub fn standard_deps(sink: Arc<dyn AudioSink>) -> QueueDeps {
     )
 }
 
-pub fn alias(viewer_id: &str, engine: &str, voice_id: &str) -> VoiceAlias {
+pub(crate) fn alias(viewer_id: &str, engine: &str, voice_id: &str) -> VoiceAlias {
     VoiceAlias {
         id: AliasId::new(),
         viewer_id: viewer_id.into(),
@@ -204,7 +208,7 @@ pub fn alias(viewer_id: &str, engine: &str, voice_id: &str) -> VoiceAlias {
     }
 }
 
-pub fn request(viewer: &str, text: &str) -> SpeakRequest {
+pub(crate) fn request(viewer: &str, text: &str) -> SpeakRequest {
     SpeakRequest {
         request_id: RequestId::new(),
         viewer_id: viewer.into(),
@@ -220,14 +224,14 @@ pub fn request(viewer: &str, text: &str) -> SpeakRequest {
     }
 }
 
-pub fn request_with_priority(viewer: &str, text: &str, priority: Priority) -> SpeakRequest {
+pub(crate) fn request_with_priority(viewer: &str, text: &str, priority: Priority) -> SpeakRequest {
     SpeakRequest {
         priority,
         ..request(viewer, text)
     }
 }
 
-pub fn request_with_overrides(
+pub(crate) fn request_with_overrides(
     viewer: &str,
     engine_override: Option<&str>,
     voice_override: Option<&str>,
@@ -239,7 +243,7 @@ pub fn request_with_overrides(
     }
 }
 
-pub async fn next_event(stream: &mut SpeakEventStream) -> SpeakEvent {
+pub(crate) async fn next_event(stream: &mut SpeakEventStream) -> SpeakEvent {
     match tokio::time::timeout(HANG_GUARD, stream.recv()).await {
         Ok(Ok(event)) => event,
         Ok(Err(error)) => panic!("speak event stream ended: {error:?}"),
@@ -247,7 +251,7 @@ pub async fn next_event(stream: &mut SpeakEventStream) -> SpeakEvent {
     }
 }
 
-pub async fn next_matching<F>(stream: &mut SpeakEventStream, pred: F) -> SpeakEvent
+pub(crate) async fn next_matching<F>(stream: &mut SpeakEventStream, pred: F) -> SpeakEvent
 where
     F: Fn(&SpeakEvent) -> bool,
 {
@@ -259,14 +263,14 @@ where
     }
 }
 
-pub async fn wait_for<F>(stream: &mut SpeakEventStream, pred: F)
+pub(crate) async fn wait_for<F>(stream: &mut SpeakEventStream, pred: F)
 where
     F: Fn(&SpeakEvent) -> bool,
 {
     next_matching(stream, pred).await;
 }
 
-pub fn is_outcome_of(event: &SpeakEvent, id: &RequestId) -> bool {
+pub(crate) fn is_outcome_of(event: &SpeakEvent, id: &RequestId) -> bool {
     match event {
         SpeakEvent::Finished { request_id }
         | SpeakEvent::Failed { request_id, .. }
@@ -275,11 +279,11 @@ pub fn is_outcome_of(event: &SpeakEvent, id: &RequestId) -> bool {
     }
 }
 
-pub async fn outcome_of(stream: &mut SpeakEventStream, id: &RequestId) -> SpeakEvent {
+pub(crate) async fn outcome_of(stream: &mut SpeakEventStream, id: &RequestId) -> SpeakEvent {
     next_matching(stream, |event| is_outcome_of(event, id)).await
 }
 
-pub async fn enqueue_proving_nothing_started(
+pub(crate) async fn enqueue_proving_nothing_started(
     handle: &forge_speak_queue::SpeakQueueHandle,
     stream: &mut SpeakEventStream,
 ) {
@@ -298,7 +302,10 @@ pub async fn enqueue_proving_nothing_started(
     }
 }
 
-pub async fn first_started_ids(stream: &mut SpeakEventStream, count: usize) -> Vec<RequestId> {
+pub(crate) async fn first_started_ids(
+    stream: &mut SpeakEventStream,
+    count: usize,
+) -> Vec<RequestId> {
     let mut seen: Vec<RequestId> = Vec::new();
     while seen.len() < count {
         if let SpeakEvent::Started { request_id, .. } = next_event(stream).await
@@ -310,7 +317,7 @@ pub async fn first_started_ids(stream: &mut SpeakEventStream, count: usize) -> V
     seen
 }
 
-pub async fn wait_for_resolved_voice(stream: &mut SpeakEventStream) -> (String, String) {
+pub(crate) async fn wait_for_resolved_voice(stream: &mut SpeakEventStream) -> (String, String) {
     loop {
         if let SpeakEvent::Started {
             voice_id: Some(voice_id),
@@ -323,11 +330,13 @@ pub async fn wait_for_resolved_voice(stream: &mut SpeakEventStream) -> (String, 
     }
 }
 
-pub async fn settle_on_paused_clock() {
+pub(crate) async fn settle_on_paused_clock() {
     tokio::time::sleep(PAUSED_CLOCK_SETTLE).await;
 }
 
-pub async fn drain_once_settled_on_paused_clock(stream: &mut SpeakEventStream) -> Vec<SpeakEvent> {
+pub(crate) async fn drain_once_settled_on_paused_clock(
+    stream: &mut SpeakEventStream,
+) -> Vec<SpeakEvent> {
     let mut drained = Vec::new();
     while let Ok(received) = tokio::time::timeout(PAUSED_CLOCK_SETTLE, stream.recv()).await {
         drained.push(received.unwrap());
@@ -335,8 +344,10 @@ pub async fn drain_once_settled_on_paused_clock(stream: &mut SpeakEventStream) -
     drained
 }
 
-pub async fn assert_no_event_once_settled_on_paused_clock<F>(stream: &mut SpeakEventStream, pred: F)
-where
+pub(crate) async fn assert_no_event_once_settled_on_paused_clock<F>(
+    stream: &mut SpeakEventStream,
+    pred: F,
+) where
     F: Fn(&SpeakEvent) -> bool,
 {
     let drained = drain_once_settled_on_paused_clock(stream).await;
@@ -344,7 +355,7 @@ where
     assert!(unexpected.is_empty(), "unexpected events: {unexpected:?}");
 }
 
-pub fn neutral_output() -> forge_tts_pipeline::OutputConfig {
+pub(crate) fn neutral_output() -> forge_tts_pipeline::OutputConfig {
     forge_tts_pipeline::OutputConfig {
         read_display_name_first: false,
         emote_treatment: forge_tts_pipeline::EmoteTreatment::Keep,
@@ -355,7 +366,7 @@ pub fn neutral_output() -> forge_tts_pipeline::OutputConfig {
     }
 }
 
-pub fn neutral_pipeline() -> forge_tts_pipeline::PipelineConfig {
+pub(crate) fn neutral_pipeline() -> forge_tts_pipeline::PipelineConfig {
     forge_tts_pipeline::PipelineConfig {
         emote_tokens: forge_tts_pipeline::EmoteTokenSet::default(),
         skip_rules: forge_tts_pipeline::SkipRulesConfig::default(),

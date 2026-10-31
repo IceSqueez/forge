@@ -1,9 +1,9 @@
 use forge_components::Density;
 use forge_components::FONT_LABEL;
 use forge_components::FONT_ROW;
+use forge_components::Language;
 use forge_components::Radius;
 use forge_components::Spacing;
-use forge_components::highlight::Language;
 use forge_components::radius;
 use forge_components::spacing;
 use forge_components::{
@@ -528,7 +528,7 @@ impl OverlaysView {
             .text_color(palette.text_faint)
             .child(tr!(
                 "overlays_code_meta",
-                lines = lines as i64,
+                lines = i64::try_from(lines).unwrap_or(i64::MAX),
                 state = state.as_str()
             ))
             .into_any_element()

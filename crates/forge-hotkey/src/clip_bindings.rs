@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use forge_storage::{SoundboardClipsRepo, StorageError, StoredClip};
 use forge_types::ClipId;
+use tokio::sync::watch;
 
 use crate::combo::HotkeyCombo;
 use crate::error::HotkeyError;
@@ -10,6 +11,25 @@ use crate::error::HotkeyError;
 pub const CLIP_COMBO_FIELD: &str = "hotkey";
 
 pub type ClipBindings = BTreeMap<String, Vec<ClipId>>;
+
+pub trait ClipBindingsSource: Send + 'static {
+    fn current(&self) -> Arc<ClipBindings>;
+}
+
+#[derive(Debug, Clone)]
+pub struct ClipBindingsWatch(watch::Receiver<Arc<ClipBindings>>);
+
+impl ClipBindingsWatch {
+    pub(crate) fn new(receiver: watch::Receiver<Arc<ClipBindings>>) -> Self {
+        Self(receiver)
+    }
+}
+
+impl ClipBindingsSource for ClipBindingsWatch {
+    fn current(&self) -> Arc<ClipBindings> {
+        Arc::clone(&self.0.borrow())
+    }
+}
 
 pub fn clip_bindings_of(clips: &[StoredClip]) -> ClipBindings {
     let mut bindings = ClipBindings::new();
@@ -44,7 +64,7 @@ pub async fn clear_clip_combo(
     repo.save(&clip).await.map_err(HotkeyError::from)
 }
 
-pub fn canonical_clip(clip: &StoredClip) -> Result<StoredClip, StorageError> {
+pub(crate) fn canonical_clip(clip: &StoredClip) -> Result<StoredClip, StorageError> {
     let mut canonical = clip.clone();
     canonical.hotkey = match clip.hotkey.as_deref().map(str::trim) {
         None | Some("") => None,

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_registry::runner::SubActionConfig;
+use forge_registry::SubActionConfig;
 use forge_registry::{
     ConfigProblem, ConfigSpec, PickedTextField, RunContext, StepTimer, SubActionCategory,
     SubActionRunner, TextPicker, ToggleField, TypedField,
@@ -36,12 +36,12 @@ fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<(String, boo
     Ok((SOURCE.read(config, args)?, MUTED.read(config, args)?))
 }
 
-pub struct SetMuteRunner {
+pub(crate) struct SetMuteRunner {
     sink: Arc<dyn ObsSink>,
 }
 
 impl SetMuteRunner {
-    pub fn new(sink: Arc<dyn ObsSink>) -> Self {
+    pub(crate) fn new(sink: Arc<dyn ObsSink>) -> Self {
         Self { sink }
     }
 }

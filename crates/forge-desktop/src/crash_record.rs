@@ -26,7 +26,7 @@ const PANIC_MACHINERY_FRAMES: [&str; 8] = [
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct CrashRecord {
+pub(crate) struct CrashRecord {
     pub message: String,
     pub location: Option<String>,
     pub thread: Option<String>,
@@ -39,7 +39,7 @@ pub struct CrashRecord {
 }
 
 impl CrashRecord {
-    pub fn scrubbed(self, scrubber: &IdentityScrubber) -> Self {
+    pub(crate) fn scrubbed(self, scrubber: &IdentityScrubber) -> Self {
         Self {
             message: scrubber.scrub(&self.message),
             location: self.location.map(|location| scrubber.scrub(&location)),
@@ -50,18 +50,18 @@ impl CrashRecord {
         }
     }
 
-    pub fn summary(&self) -> String {
+    pub(crate) fn summary(&self) -> String {
         capped(
             self.message.lines().next().unwrap_or_default().trim(),
             SUMMARY_MAX_CHARS,
         )
     }
 
-    pub fn version_line(&self) -> String {
+    pub(crate) fn version_line(&self) -> String {
         format!("v{} ({})", self.forge_version, self.build_commit)
     }
 
-    pub fn details_text(&self) -> String {
+    pub(crate) fn details_text(&self) -> String {
         self.details(&capped(&self.message, DETAILS_MESSAGE_MAX_CHARS))
     }
 
@@ -75,7 +75,7 @@ impl CrashRecord {
         .join("\n")
     }
 
-    pub fn to_text(&self) -> String {
+    pub(crate) fn to_text(&self) -> String {
         let system_info = self.system_info.as_deref().unwrap_or(UNKNOWN);
         format!(
             "forge {}\n\n{}\n\nSystem info at crash time:\n{system_info}\n\nBacktrace:\n{}\n",
@@ -95,7 +95,7 @@ fn frame_symbol(line: &str) -> Option<&str> {
         .filter(|_| !index.is_empty())
 }
 
-pub fn without_panic_machinery(backtrace: &str) -> String {
+pub(crate) fn without_panic_machinery(backtrace: &str) -> String {
     let lines: Vec<&str> = backtrace.lines().collect();
     let first_kept_frame = lines.iter().position(|line| {
         frame_symbol(line).is_some_and(|symbol| {
@@ -110,7 +110,7 @@ pub fn without_panic_machinery(backtrace: &str) -> String {
     }
 }
 
-pub fn capped(text: &str, max_chars: usize) -> String {
+pub(crate) fn capped(text: &str, max_chars: usize) -> String {
     if text.chars().count() <= max_chars {
         return text.to_owned();
     }
@@ -120,23 +120,27 @@ pub fn capped(text: &str, max_chars: usize) -> String {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PendingCrash {
+pub(crate) struct PendingCrash {
     pub path: PathBuf,
     pub record: CrashRecord,
 }
 
-pub fn crash_file_name(unix_millis: u128, process_id: u32) -> String {
+pub(crate) fn crash_file_name(unix_millis: u128, process_id: u32) -> String {
     format!("{CRASH_FILE_PREFIX}{unix_millis:020}-{process_id}.{CRASH_FILE_EXTENSION}")
 }
 
-pub fn is_crash_file_name(name: &str) -> bool {
+pub(crate) fn is_crash_file_name(name: &str) -> bool {
     name.starts_with(CRASH_FILE_PREFIX)
         && Path::new(name)
             .extension()
             .is_some_and(|extension| extension == CRASH_FILE_EXTENSION)
 }
 
-pub fn write_crash(dir: &Path, file_name: &str, record: &CrashRecord) -> io::Result<PathBuf> {
+pub(crate) fn write_crash(
+    dir: &Path,
+    file_name: &str,
+    record: &CrashRecord,
+) -> io::Result<PathBuf> {
     fs::create_dir_all(dir)?;
     let path = dir.join(file_name);
     let bytes = serde_json::to_vec_pretty(record).map_err(io::Error::other)?;
@@ -183,14 +187,14 @@ fn earlier_process_files(
         .collect()
 }
 
-pub fn latest_pending(dir: &Path, current_process_id: u32) -> Option<PendingCrash> {
+pub(crate) fn latest_pending(dir: &Path, current_process_id: u32) -> Option<PendingCrash> {
     earlier_process_files(dir, current_process_id)
         .into_iter()
         .rev()
         .find_map(|(path, record)| record.map(|record| PendingCrash { path, record }))
 }
 
-pub fn mark_handled(dir: &Path, current_process_id: u32) -> io::Result<()> {
+pub(crate) fn mark_handled(dir: &Path, current_process_id: u32) -> io::Result<()> {
     let handled_dir = dir.join(HANDLED_DIR_NAME);
     fs::create_dir_all(&handled_dir)?;
     let mut first_failure = Ok(());

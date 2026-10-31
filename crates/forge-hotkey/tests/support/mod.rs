@@ -14,15 +14,15 @@ use forge_types::{
 use tempfile::TempDir;
 use time::OffsetDateTime;
 
-pub const OTHER_KIND: &str = "midi.note_on";
+pub(crate) const OTHER_KIND: &str = "midi.note_on";
 const TEST_KEY: [u8; 32] = [0x11; 32];
 
-pub struct Store {
+pub(crate) struct Store {
     pub provider: Arc<dyn DataProvider>,
     _media_root: TempDir,
 }
 
-pub async fn store() -> Store {
+pub(crate) async fn store() -> Store {
     let media_root = tempfile::tempdir().expect("a temporary media root");
     let backend = forge_storage_sqlite::SqliteBackend::open_for_test(
         "sqlite::memory:",
@@ -38,7 +38,7 @@ pub async fn store() -> Store {
     }
 }
 
-pub async fn seed_action(backend: &Arc<dyn DataProvider>, name: &str) -> ActionId {
+pub(crate) async fn seed_action(backend: &Arc<dyn DataProvider>, name: &str) -> ActionId {
     let queue_id = backend
         .queue_repo()
         .get_by_name("Default")
@@ -62,7 +62,7 @@ pub async fn seed_action(backend: &Arc<dyn DataProvider>, name: &str) -> ActionI
     action.id
 }
 
-pub fn instance(kind_id: &str, combo: Option<&str>) -> TriggerInstance {
+pub(crate) fn instance(kind_id: &str, combo: Option<&str>) -> TriggerInstance {
     let overrides = combo
         .map(|combo| BTreeMap::from([(COMBO_FIELD.to_owned(), Variant::String(combo.to_owned()))]))
         .unwrap_or_default();
@@ -80,14 +80,14 @@ pub fn instance(kind_id: &str, combo: Option<&str>) -> TriggerInstance {
     }
 }
 
-pub fn with_combo(mut instance: TriggerInstance, combo: &str) -> TriggerInstance {
+pub(crate) fn with_combo(mut instance: TriggerInstance, combo: &str) -> TriggerInstance {
     instance
         .overrides
         .insert(COMBO_FIELD.to_owned(), Variant::String(combo.to_owned()));
     instance
 }
 
-pub async fn seed_instance(
+pub(crate) async fn seed_instance(
     backend: &Arc<dyn DataProvider>,
     kind_id: &str,
     combo: Option<&str>,
@@ -101,7 +101,7 @@ pub async fn seed_instance(
     instance.id
 }
 
-pub async fn seed_disabled_instance(
+pub(crate) async fn seed_disabled_instance(
     backend: &Arc<dyn DataProvider>,
     kind_id: &str,
     combo: &str,
@@ -115,7 +115,7 @@ pub async fn seed_disabled_instance(
     id
 }
 
-pub fn clip(hotkey: Option<&str>) -> StoredClip {
+pub(crate) fn clip(hotkey: Option<&str>) -> StoredClip {
     StoredClip {
         id: ClipId::new(),
         name: "airhorn".to_owned(),
@@ -131,14 +131,14 @@ pub fn clip(hotkey: Option<&str>) -> StoredClip {
     }
 }
 
-pub fn stored_combo(instance: &TriggerInstance) -> Option<&str> {
+pub(crate) fn stored_combo(instance: &TriggerInstance) -> Option<&str> {
     match instance.overrides.get(COMBO_FIELD) {
         Some(Variant::String(combo)) => Some(combo),
         _ => None,
     }
 }
 
-pub fn stored_combos(instances: &[TriggerInstance]) -> Vec<(String, Option<String>)> {
+pub(crate) fn stored_combos(instances: &[TriggerInstance]) -> Vec<(String, Option<String>)> {
     let mut combos: Vec<(String, Option<String>)> = instances
         .iter()
         .map(|instance| {
@@ -152,11 +152,11 @@ pub fn stored_combos(instances: &[TriggerInstance]) -> Vec<(String, Option<Strin
     combos
 }
 
-pub fn recording_client() -> (Arc<HotkeyClient>, Arc<RecordingBackend>) {
+pub(crate) fn recording_client() -> (Arc<HotkeyClient>, Arc<RecordingBackend>) {
     test_client(HotkeyConfig::default(), Arc::new(NullPublisher))
 }
 
-pub fn registered(client: &HotkeyClient) -> Vec<String> {
+pub(crate) fn registered(client: &HotkeyClient) -> Vec<String> {
     let mut combos: Vec<String> = client
         .registered_combos()
         .into_iter()

@@ -24,12 +24,12 @@ mod io;
 mod kind_platform_contract;
 mod merge;
 mod message_emotes;
-pub mod references;
+mod references;
 mod refinement;
 mod registry;
 mod retired_ids;
 mod run_context;
-pub mod runner;
+mod runner;
 mod scope;
 mod step_tree;
 mod synthesis;
@@ -69,13 +69,12 @@ pub use descriptor::{
 };
 pub use duration_bounds::{
     DURATION_UNIT_DAYS, DURATION_UNIT_HOURS, DURATION_UNIT_MILLISECONDS, DURATION_UNIT_MINUTES,
-    DURATION_UNIT_SECONDS, DurationBase, DurationBounds,
+    DURATION_UNIT_SECONDS, DurationBounds,
 };
 pub use error::RegistryError;
 pub use evaluator::{EventFilter, kind_matches_prefix};
 pub use first_chatter::{
-    FIRST_CHATTERS_ONLY, FIRST_MESSAGE_VARIABLE, admits_chatter, chat_message_condition,
-    first_chatters_only_field, is_first_chat_message,
+    FIRST_CHATTERS_ONLY, admits_chatter, chat_message_condition, first_chatters_only_field,
 };
 pub use flow_kinds::{BREAK_LOOP_KIND_ID, CONTINUE_LOOP_KIND_ID, LOOP_KIND_ID, STOP_KIND_ID};
 pub use form::{
@@ -85,26 +84,22 @@ pub use integration_references::{IntegrationReferences, ReferencingAction, tally
 pub use io::{ProducedVariable, SubActionIo};
 pub use kind_platform_contract::KindPlatformContract;
 pub use merge::effective_config;
-pub use message_emotes::{MESSAGE_EMOTES_VARIABLE, chat_emote_codes, message_emote_codes};
+pub use message_emotes::{chat_emote_codes, message_emote_codes};
 pub use references::{
-    ConfigReference, ExternalNamespace, InternalNamespace, LocationSegment, ReferenceCatalog,
-    ReferenceField, ReferenceListing, ReferenceLocation, ReferenceNamespace, ReferenceRemap,
-    ReferenceScope, UnknownKind,
+    ConfigReference, InternalNamespace, ReferenceCatalog, ReferenceField, ReferenceListing,
+    ReferenceNamespace, ReferenceRemap, ReferenceScope, UnknownKind,
 };
 pub use refinement::{FormRefinement, FormSchemaSource, refined_fields};
-pub use registry::{
-    OwnedSubActionRegistration, OwnedTriggerRegistration, SubActionRegistry, TriggerRegistry,
-};
+pub use registry::{SubActionRegistry, TriggerRegistry};
 pub use retired_ids::IdSuccession;
 pub use run_context::RunContext;
 pub use runner::{SubActionConfig, SubActionRunner, validate_declared_config};
 pub use scope::{ScopeLevel, ScopeOrigin, ScopedVariable, variables_in_scope};
 pub use step_tree::{
-    CASE_CHAIN_KEY, CASE_MATCH_KEY, ChainEntry, DecodedChain, STEP_CONDITION_KEY, STEP_CONFIG_KEY,
-    STEP_CONTINUE_ON_ERROR_KEY, STEP_ENABLED_KEY, STEP_KIND_KEY, STEP_LABEL_KEY, StepNode,
-    StepReach, UndecodableReason, UndecodableStep, decode_chain, decode_step, decode_steps,
-    encode_chain, encode_step, encode_step_onto, nested_chains, rename_step_kinds, rewrite_steps,
-    walk_steps,
+    CASE_CHAIN_KEY, CASE_MATCH_KEY, ChainEntry, STEP_CONDITION_KEY, STEP_CONFIG_KEY, STEP_KIND_KEY,
+    StepNode, StepReach, UndecodableReason, UndecodableStep, decode_chain, decode_step,
+    decode_steps, encode_chain, encode_step, encode_step_onto, nested_chains, rename_step_kinds,
+    rewrite_steps, walk_steps,
 };
 pub use synthesis::{SynthesisSample, synthesize_args};
 pub use telemetry::StepTimer;
@@ -117,3 +112,17 @@ pub use vocabulary::{
     ActorRole, ActorSlot, CanonicalCount, CanonicalVariable, MoneySlot, SlotPresence,
     VariableStanding,
 };
+
+pub use duration_bounds::DurationBase;
+pub use references::ExternalNamespace;
+pub use references::LocationSegment;
+pub use references::ReferenceLocation;
+pub use references::{
+    ACTION_OPTIONS_KEY, CLIP_REFERENCE_PREFIX, GLOBAL_OPTIONS_KEY, IMAGE_REFERENCE_PREFIX,
+    LOCAL_FILE_NAMESPACE, MANAGED_MEDIA_NAMESPACE, OVERLAY_ICON_OPTIONS_KEY, OVERLAY_OPTIONS_KEY,
+    OVERLAY_SOUND_OPTIONS_KEY, QUEUE_OPTIONS_KEY, SCRIPT_OPTIONS_KEY, SOUNDBOARD_CLIP_OPTIONS_KEY,
+    TRIGGER_INSTANCE_OPTIONS_KEY,
+};
+pub use registry::OwnedSubActionRegistration;
+pub use registry::OwnedTriggerRegistration;
+pub use step_tree::DecodedChain;

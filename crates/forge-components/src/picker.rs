@@ -18,7 +18,7 @@ use crate::tokens::{ENTER_KEY, ESCAPE_KEY, Radius, body_family};
 const SEARCH_THRESHOLD: usize = 10;
 const MESSAGE_FONT: Pixels = FONT_ROW;
 
-pub const PICKER_CONTEXT: &str = "ForgePicker";
+pub(crate) const PICKER_CONTEXT: &str = "ForgePicker";
 
 actions!(forge_picker, [SelectNext, SelectPrev]);
 

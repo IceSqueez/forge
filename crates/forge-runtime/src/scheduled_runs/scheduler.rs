@@ -35,7 +35,7 @@ pub struct ScheduledRunsParts {
     pub catch_up: CatchUpSettle,
 }
 
-pub struct ScheduledRunsStartParts {
+pub(crate) struct ScheduledRunsStartParts {
     pub revision: CatalogRevision,
     pub catalog: Arc<Catalog>,
     pub actions: Arc<dyn ActionRepo>,
@@ -44,7 +44,7 @@ pub struct ScheduledRunsStartParts {
     pub catch_up: CatchUpSettle,
 }
 
-pub struct ScheduledRunsStart {
+pub(crate) struct ScheduledRunsStart {
     repo: Arc<dyn ScheduledRunRepo>,
     clock: Arc<dyn WallClock>,
     commands: mpsc::Receiver<Command>,
@@ -62,7 +62,7 @@ struct ScheduledRunsTask {
     waiting: watch::Sender<WaitingRuns>,
 }
 
-pub fn reserve_scheduled_runs(
+pub(crate) fn reserve_scheduled_runs(
     repo: Arc<dyn ScheduledRunRepo>,
     clock: Arc<dyn WallClock>,
 ) -> (ScheduledRunsHandle, ScheduledRunsStart) {
@@ -87,7 +87,7 @@ pub fn reserve_scheduled_runs(
 }
 
 impl ScheduledRunsStart {
-    pub fn start(self, parts: ScheduledRunsStartParts) {
+    pub(crate) fn start(self, parts: ScheduledRunsStartParts) {
         let Self {
             repo,
             clock,

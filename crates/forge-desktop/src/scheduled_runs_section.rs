@@ -74,7 +74,7 @@ enum Scheduled {
     Ready(ScheduledSnapshot),
 }
 
-pub struct ScheduledRunsView {
+pub(crate) struct ScheduledRunsView {
     repo: Arc<dyn ScheduledRunRepo>,
     action_repo: Arc<dyn ActionRepo>,
     runs: ScheduledRunsHandle,
@@ -93,7 +93,7 @@ pub struct ScheduledRunsView {
 impl EventEmitter<NavRequested> for ScheduledRunsView {}
 
 impl ScheduledRunsView {
-    pub fn new(
+    pub(crate) fn new(
         repo: Arc<dyn ScheduledRunRepo>,
         changes: CatalogChanges,
         catalog_changes: CatalogChanges,
@@ -564,7 +564,10 @@ impl ScheduledRunsView {
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_recent(cx)))
             .child(icon(chevron, BADGE_GLYPH, palette.text_muted))
             .child(section_label(
-                tr!("queues_scheduled_recent", count = recent.len() as i64),
+                tr!(
+                    "queues_scheduled_recent",
+                    count = i64::try_from(recent.len()).unwrap_or(i64::MAX)
+                ),
                 palette,
             ));
 
@@ -593,7 +596,7 @@ impl Render for ScheduledRunsView {
 
         let count = SharedString::from(tr!(
             "queues_scheduled_count",
-            count = self.pending_count() as i64
+            count = i64::try_from(self.pending_count()).unwrap_or(i64::MAX)
         ));
         let header = hub_section_header(
             tr!("queues_scheduled_title"),

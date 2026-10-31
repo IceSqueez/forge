@@ -17,7 +17,7 @@ use crate::bus_adapter::ClientId;
 const EVENTS_WINDOW_SECS: u64 = 10;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ClientType {
+pub(crate) enum ClientType {
     Unknown,
     ObsBrowser,
     Ios,
@@ -26,7 +26,7 @@ pub enum ClientType {
 }
 
 impl ClientType {
-    pub fn type_str(&self) -> &'static str {
+    pub(crate) fn type_str(&self) -> &'static str {
         match self {
             ClientType::Unknown => "unknown",
             ClientType::ObsBrowser => "obs_browser",
@@ -37,7 +37,7 @@ impl ClientType {
     }
 }
 
-pub fn detect_from_user_agent(ua: Option<&str>) -> ClientType {
+pub(crate) fn detect_from_user_agent(ua: Option<&str>) -> ClientType {
     let Some(ua) = ua else {
         return ClientType::Unknown;
     };
@@ -54,7 +54,7 @@ pub fn detect_from_user_agent(ua: Option<&str>) -> ClientType {
     }
 }
 
-pub struct WsClient {
+pub(crate) struct WsClient {
     pub id: ClientId,
     pub identification: ArcSwap<String>,
     pub remote_addr: SocketAddr,
@@ -68,7 +68,7 @@ pub struct WsClient {
 }
 
 impl WsClient {
-    pub fn new(id: ClientId, remote_addr: SocketAddr, drop_counter: Arc<AtomicU64>) -> Self {
+    pub(crate) fn new(id: ClientId, remote_addr: SocketAddr, drop_counter: Arc<AtomicU64>) -> Self {
         Self {
             identification: ArcSwap::from_pointee(remote_addr.to_string()),
             id,
@@ -83,29 +83,29 @@ impl WsClient {
         }
     }
 
-    pub fn mark_bearer_authenticated(&self, generation: u64) {
+    pub(crate) fn mark_bearer_authenticated(&self, generation: u64) {
         self.bearer_generation.store(generation, Ordering::SeqCst);
         self.authenticated.store(true, Ordering::SeqCst);
     }
 
-    pub fn bearer_generation(&self) -> Option<u64> {
+    pub(crate) fn bearer_generation(&self) -> Option<u64> {
         self.authenticated
             .load(Ordering::SeqCst)
             .then(|| self.bearer_generation.load(Ordering::SeqCst))
     }
 
-    pub fn uptime(&self) -> time::Duration {
+    pub(crate) fn uptime(&self) -> time::Duration {
         (OffsetDateTime::now_utc() - self.connected_at).abs()
     }
 
-    pub fn events_per_second(&self) -> f32 {
+    pub(crate) fn events_per_second(&self) -> f32 {
         let Ok(guard) = self.recent_events.lock() else {
             return 0.0;
         };
         Self::compute_eps(&guard)
     }
 
-    pub fn record_event(&self) -> f32 {
+    pub(crate) fn record_event(&self) -> f32 {
         let now = Instant::now();
         let Ok(mut guard) = self.recent_events.lock() else {
             return 0.0;

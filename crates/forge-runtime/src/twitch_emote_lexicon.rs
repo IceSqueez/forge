@@ -8,7 +8,7 @@ use tokio::task::JoinHandle;
 use crate::bus::EventBus;
 use forge_events::Delivery;
 
-pub const LEARNED_TWITCH_EMOTE_CAPACITY: usize = 4096;
+pub(crate) const LEARNED_TWITCH_EMOTE_CAPACITY: usize = 4096;
 const LEXICON_OBSERVER: &str = "twitch-emote-lexicon";
 
 #[derive(Default)]

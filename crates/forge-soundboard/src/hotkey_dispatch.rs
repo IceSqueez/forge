@@ -1,11 +1,10 @@
 use std::sync::Arc;
 
 use forge_events::{Event, EventObserver, EventSource, EventsError};
-use forge_hotkey::ClipBindings;
 use forge_hotkey::vocabulary::event_kinds;
 use forge_hotkey::vocabulary::fields::COMBO;
+use forge_hotkey::{ClipBindings, ClipBindingsSource};
 use forge_types::ClipId;
-use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
 use crate::player::SoundboardPlayer;
@@ -19,13 +18,13 @@ pub fn pressed_combo(event: &Event) -> Option<&str> {
     event.payload.get(COMBO)?.as_str()
 }
 
-pub fn clips_bound_to(bindings: &ClipBindings, combo: &str) -> Vec<ClipId> {
+pub(crate) fn clips_bound_to(bindings: &ClipBindings, combo: &str) -> Vec<ClipId> {
     bindings.get(combo).cloned().unwrap_or_default()
 }
 
 pub fn spawn_clip_hotkey_dispatcher(
     observer: &dyn EventObserver,
-    bindings: watch::Receiver<Arc<ClipBindings>>,
+    bindings: impl ClipBindingsSource,
     player: Arc<SoundboardPlayer>,
 ) -> JoinHandle<()> {
     let mut events = observer.observe(CLIP_HOTKEY_DISPATCHER);
@@ -42,7 +41,7 @@ pub fn spawn_clip_hotkey_dispatcher(
             let Some(combo) = pressed_combo(&event) else {
                 continue;
             };
-            let clips = clips_bound_to(&bindings.borrow(), combo);
+            let clips = clips_bound_to(&bindings.current(), combo);
             for clip_id in clips {
                 let player = Arc::clone(&player);
                 tokio::spawn(async move {

@@ -22,7 +22,7 @@ const CLOCK_ICON_SIZE: Pixels = px(10.0);
 const ALERT_ICON_SIZE: Pixels = CLOCK_ICON_SIZE;
 const ALERT_GAP: Pixels = UPTIME_GAP;
 
-pub fn split_version_stage(version: &str) -> (&str, Option<&str>) {
+pub(crate) fn split_version_stage(version: &str) -> (&str, Option<&str>) {
     match version.split_once('-') {
         Some((base, stage)) => (base, Some(stage)),
         None => (version, None),

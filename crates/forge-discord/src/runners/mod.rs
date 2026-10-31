@@ -17,11 +17,11 @@ use crate::error::DiscordError;
 use crate::sink::DiscordSink;
 use crate::vocabulary::variables;
 
-pub use delete_message::DeleteMessageRunner;
-pub use edit_message::EditMessageRunner;
-pub use post_embed::PostEmbedRunner;
-pub use post_text::PostTextRunner;
-pub use send_file::SendFileRunner;
+pub(crate) use delete_message::DeleteMessageRunner;
+pub(crate) use edit_message::EditMessageRunner;
+pub(crate) use post_embed::PostEmbedRunner;
+pub(crate) use post_text::PostTextRunner;
+pub(crate) use send_file::SendFileRunner;
 
 pub(crate) fn message_id_scope_io() -> SubActionIo {
     SubActionIo {

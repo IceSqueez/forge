@@ -11,9 +11,9 @@ use crate::refinement::{FormRefinement, FormSchemaSource, refined_fields};
 use crate::registry::{SubActionRegistry, TriggerRegistry};
 use crate::step_tree::{CASE_CHAIN_KEY, STEP_CONFIG_KEY, STEP_KIND_KEY};
 
-pub const ACTION_QUEUE_KEY: &str = "queue_id";
-pub const ACTION_STEPS_KEY: &str = "sub_actions";
-pub const TRIGGER_OVERRIDES_KEY: &str = "overrides";
+pub(crate) const ACTION_QUEUE_KEY: &str = "queue_id";
+pub(crate) const ACTION_STEPS_KEY: &str = "sub_actions";
+pub(crate) const TRIGGER_OVERRIDES_KEY: &str = "overrides";
 
 type ConfigMap = BTreeMap<String, Variant>;
 

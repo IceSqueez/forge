@@ -4,7 +4,7 @@ use gpui::{Context, Subscription};
 
 use super::OverlaysView;
 use crate::overlay_link_token;
-use forge_server::overlay_url::{overlay_origin, overlay_page_url, resolve_routable_host};
+use forge_server::{overlay_origin, overlay_page_url, resolve_routable_host};
 
 struct ServedEndpoint {
     bind_address: String,
@@ -96,7 +96,7 @@ impl OverlaysView {
         let mut run_state = handle.run_state();
         cx.spawn(async move |this, cx| {
             loop {
-                let running = *run_state.borrow_and_update();
+                let running = run_state.latest();
                 let (tx, rx) = tokio::sync::oneshot::channel();
                 let probe = handle.clone();
                 rt_handle.spawn(async move {
@@ -117,7 +117,7 @@ impl OverlaysView {
                         this.apply_server_state(running, endpoint, cx)
                     })
                     .is_err()
-                    || run_state.changed().await.is_err()
+                    || run_state.changed().await.is_none()
                 {
                     break;
                 }

@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_platform_core::PlatformError;
-use forge_registry::runner::SubActionConfig;
+use forge_registry::SubActionConfig;
 use forge_registry::{
     ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TextEditor, TextField,
     TypedField,
@@ -30,13 +30,13 @@ const QUERY: TextField = TextField {
 
 const CONFIG: ConfigSpec = ConfigSpec::new(&[&QUERY]);
 
-pub struct LookupCategoryRunner {
+pub(crate) struct LookupCategoryRunner {
     client: Arc<KickCategories>,
     token_source: Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync>,
 }
 
 impl LookupCategoryRunner {
-    pub fn new(
+    pub(crate) fn new(
         client: Arc<KickCategories>,
         token_source: Arc<
             dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync,
@@ -104,7 +104,7 @@ impl SubActionRunner for LookupCategoryRunner {
                         Variant::Object(BTreeMap::from([
                             (
                                 variables::category::MATCH_ID.to_owned(),
-                                Variant::Int(m.id as i64),
+                                Variant::Int(i64::try_from(m.id).unwrap_or(i64::MAX)),
                             ),
                             (
                                 variables::category::MATCH_NAME.to_owned(),

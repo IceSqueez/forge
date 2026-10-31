@@ -9,13 +9,13 @@ use forge_components::PushToast;
 
 use crate::repo_failure::RepoFailure;
 
-pub enum OverlayBuildFailure {
+pub(crate) enum OverlayBuildFailure {
     Pages(usize),
     Pass(RepoFailure),
 }
 
 impl OverlayBuildFailure {
-    pub fn from_outcome<E: Display>(outcome: &Result<MaterializePass, E>) -> Option<Self> {
+    pub(crate) fn from_outcome<E: Display>(outcome: &Result<MaterializePass, E>) -> Option<Self> {
         match outcome {
             Ok(pass) if pass.failed > 0 => Some(Self::Pages(pass.failed)),
             Ok(_) => None,
@@ -23,7 +23,7 @@ impl OverlayBuildFailure {
         }
     }
 
-    pub fn message(&self) -> String {
+    pub(crate) fn message(&self) -> String {
         match self {
             Self::Pages(failed) => tr!(
                 "overlays_toast_build_failed_pages",
@@ -35,7 +35,7 @@ impl OverlayBuildFailure {
         }
     }
 
-    pub fn raise(&self, cx: &mut App) {
+    pub(crate) fn raise(&self, cx: &mut App) {
         cx.push_toast_full(ToastKind::Error, self.message(), None, None, Duration::ZERO);
     }
 }

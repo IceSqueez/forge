@@ -39,11 +39,11 @@ impl LiveViewerSource for KickViewerSource {
 }
 
 impl KickViewerSource {
-    pub fn subscribe(&self) -> watch::Receiver<ViewerReport> {
+    pub(crate) fn subscribe(&self) -> watch::Receiver<ViewerReport> {
         self.reports.clone()
     }
 
-    pub fn subscribe_auth(&self) -> watch::Receiver<PollerAuth> {
+    pub(crate) fn subscribe_auth(&self) -> watch::Receiver<PollerAuth> {
         self.auth.clone()
     }
 }

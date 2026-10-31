@@ -3,7 +3,7 @@ mod common;
 use common::{code_of, failure_message, verbatim_arg};
 use forge_events::test_support::NullPublisher;
 use forge_registry::{RunContext, SubActionRunner};
-use forge_runtime::sub_action_runners::{
+use forge_runtime::{
     CoreMathEvaluateRunner, CoreStringConcatRunner, CoreStringFormatRunner, CoreStringLengthRunner,
     CoreStringLowercaseRunner, CoreStringRegexMatchRunner, CoreStringReplaceRunner,
     CoreStringSplitRunner, CoreStringSubstringRunner, CoreStringTitlecaseRunner,

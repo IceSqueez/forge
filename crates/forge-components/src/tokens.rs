@@ -130,7 +130,7 @@ pub const FONT_XL: Pixels = px(22.0);
 pub const FONT_XXL: Pixels = px(24.0);
 
 pub const ESCAPE_KEY: &str = "escape";
-pub const ENTER_KEY: &str = "enter";
+pub(crate) const ENTER_KEY: &str = "enter";
 pub const DRAG_SOURCE_OPACITY: f32 = 0.4;
 pub const DISABLED_OPACITY: f32 = 0.5;
 pub const ROW_OFF_OPACITY: f32 = 0.55;
@@ -142,14 +142,14 @@ pub const TINT_BORDER_ALPHA: f32 = 0.30;
 pub const ROW_HOVER_WASH_ALPHA: f32 = 0.06;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Elevation {
+pub(crate) enum Elevation {
     Popover,
     Toast,
 }
 
 const ELEVATION_SHADOW_ALPHA: f32 = 0.4;
 
-pub fn elevation_shadow(e: Elevation) -> Vec<BoxShadow> {
+pub(crate) fn elevation_shadow(e: Elevation) -> Vec<BoxShadow> {
     let (offset_y, blur) = match e {
         Elevation::Popover => (px(10.0), px(30.0)),
         Elevation::Toast => (px(8.0), px(24.0)),
@@ -163,8 +163,8 @@ pub fn elevation_shadow(e: Elevation) -> Vec<BoxShadow> {
     }]
 }
 
-pub const DEFAULT_BODY_FAMILY: &str = "Inter";
-pub const DEFAULT_MONO_FAMILY: &str = "JetBrains Mono";
+pub(crate) const DEFAULT_BODY_FAMILY: &str = "Inter";
+pub(crate) const DEFAULT_MONO_FAMILY: &str = "JetBrains Mono";
 
 static BODY_FAMILY_OVERRIDE: RwLock<Option<SharedString>> = RwLock::new(None);
 static MONO_FAMILY_OVERRIDE: RwLock<Option<SharedString>> = RwLock::new(None);

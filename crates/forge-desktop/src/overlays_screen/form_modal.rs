@@ -23,21 +23,21 @@ const LOCKED_GAP: Pixels = px(8.0);
 const LOCKED_GLYPH: Pixels = px(15.0);
 const FOOTER_GAP: Pixels = px(8.0);
 
-pub struct OverlayTypeChoice {
+pub(crate) struct OverlayTypeChoice {
     pub kind_id: String,
     pub label: String,
     pub summary: String,
     pub icon: Icon,
 }
 
-pub struct OverlayFormLaunch {
+pub(crate) struct OverlayFormLaunch {
     pub target: Option<OverlayId>,
     pub display_name: String,
     pub kind_id: String,
     pub types: Vec<OverlayTypeChoice>,
 }
 
-pub enum OverlayFormEvent {
+pub(crate) enum OverlayFormEvent {
     Submit {
         target: Option<OverlayId>,
         display_name: String,
@@ -46,7 +46,7 @@ pub enum OverlayFormEvent {
     Cancel,
 }
 
-pub struct OverlayFormModal {
+pub(crate) struct OverlayFormModal {
     target: Option<OverlayId>,
     name: Entity<TextInput>,
     types: Vec<OverlayTypeChoice>,
@@ -58,7 +58,7 @@ pub struct OverlayFormModal {
 impl EventEmitter<OverlayFormEvent> for OverlayFormModal {}
 
 impl OverlayFormModal {
-    pub fn new(launch: OverlayFormLaunch, cx: &mut Context<Self>) -> Self {
+    pub(crate) fn new(launch: OverlayFormLaunch, cx: &mut Context<Self>) -> Self {
         let palette = cx.palette();
         let OverlayFormLaunch {
             target,

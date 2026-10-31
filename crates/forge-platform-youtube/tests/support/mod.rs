@@ -12,21 +12,21 @@ use futures::future::BoxFuture;
 use time::OffsetDateTime;
 use wiremock::MockServer;
 
-pub const DATA_API_PREFIX: &str = "/youtube/v3";
+pub(crate) const DATA_API_PREFIX: &str = "/youtube/v3";
 
-pub type TokenSource =
+pub(crate) type TokenSource =
     Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync>;
-pub type BroadcasterSource =
+pub(crate) type BroadcasterSource =
     Arc<dyn Fn() -> BoxFuture<'static, Result<YoutubeBroadcaster, PlatformError>> + Send + Sync>;
 
-pub struct SilentBus;
+pub(crate) struct SilentBus;
 
 impl EventPublisher for SilentBus {
     fn publish(&self, _event: Event) {}
 }
 
 #[derive(Default)]
-pub struct MemoryRepo {
+pub(crate) struct MemoryRepo {
     rows: Mutex<BTreeMap<String, String>>,
 }
 
@@ -64,7 +64,7 @@ impl CredentialsRepo for MemoryRepo {
     }
 }
 
-pub fn endpoints(overrides: &[(EndpointSurface, String)]) -> PlatformEndpoints {
+pub(crate) fn endpoints(overrides: &[(EndpointSurface, String)]) -> PlatformEndpoints {
     let table: BTreeMap<&'static str, String> = overrides
         .iter()
         .map(|(surface, url)| (surface.env_var(), url.clone()))
@@ -72,18 +72,18 @@ pub fn endpoints(overrides: &[(EndpointSurface, String)]) -> PlatformEndpoints {
     PlatformEndpoints::resolve(|variable| table.get(variable).map(OsString::from)).unwrap()
 }
 
-pub fn data_api_override(server: &MockServer) -> PlatformEndpoints {
+pub(crate) fn data_api_override(server: &MockServer) -> PlatformEndpoints {
     endpoints(&[(
         EndpointSurface::YouTubeDataApi,
         format!("{}{DATA_API_PREFIX}", server.uri()),
     )])
 }
 
-pub fn fixed_token(token: &'static str) -> TokenSource {
+pub(crate) fn fixed_token(token: &'static str) -> TokenSource {
     Arc::new(move || Box::pin(async move { Ok(token.to_owned()) }))
 }
 
-pub fn fixed_broadcaster(
+pub(crate) fn fixed_broadcaster(
     channel_id: &'static str,
     channel_title: &'static str,
 ) -> BroadcasterSource {

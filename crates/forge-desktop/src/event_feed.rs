@@ -77,7 +77,7 @@ fn filter_tab_key(filter: EventFilter) -> &'static str {
     }
 }
 
-pub struct EventFeedView {
+pub(crate) struct EventFeedView {
     log: Entity<EventLog>,
     active_filter: EventFilter,
     search: SearchState,
@@ -174,7 +174,7 @@ impl NavigableList for EventFeedView {
 }
 
 impl EventFeedView {
-    pub fn new(
+    pub(crate) fn new(
         log: Entity<EventLog>,
         rt_handle: tokio::runtime::Handle,
         bus: Arc<EventBus>,

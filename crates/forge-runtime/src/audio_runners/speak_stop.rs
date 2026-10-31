@@ -8,12 +8,12 @@ use crate::speak_dispatcher::SpeakDispatcher;
 
 const SPEAK_STOP_KIND_ID: &str = "tts.speak.stop";
 
-pub struct SpeakStopRunner {
+pub(crate) struct SpeakStopRunner {
     speak: Arc<dyn SpeakDispatcher>,
 }
 
 impl SpeakStopRunner {
-    pub fn new(speak: Arc<dyn SpeakDispatcher>) -> Self {
+    pub(crate) fn new(speak: Arc<dyn SpeakDispatcher>) -> Self {
         Self { speak }
     }
 }

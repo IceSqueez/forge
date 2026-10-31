@@ -176,14 +176,14 @@ fn read_call(
     })
 }
 
-pub struct CoreHttpRunner {
+pub(crate) struct CoreHttpRunner {
     method: HttpMethod,
     settings: Arc<dyn SettingsRepo>,
     client: Arc<EgressClient>,
 }
 
 impl CoreHttpRunner {
-    pub fn new(
+    pub(crate) fn new(
         method: HttpMethod,
         settings: Arc<dyn SettingsRepo>,
         client: Arc<EgressClient>,

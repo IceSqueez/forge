@@ -24,12 +24,12 @@ const INTO_VAR: VariableField = VariableField {
 
 const CONFIG: ConfigSpec = ConfigSpec::new(&[&INTO_VAR]);
 
-pub struct CoreClipboardReadRunner {
+pub(crate) struct CoreClipboardReadRunner {
     clipboard: Arc<dyn ClipboardPort>,
 }
 
 impl CoreClipboardReadRunner {
-    pub fn new(clipboard: Arc<dyn ClipboardPort>) -> Self {
+    pub(crate) fn new(clipboard: Arc<dyn ClipboardPort>) -> Self {
         Self { clipboard }
     }
 }

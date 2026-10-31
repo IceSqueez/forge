@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_registry::runner::SubActionConfig;
+use forge_registry::SubActionConfig;
 use forge_registry::{
     ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner,
     TextEditor, TextField, TypedField,
@@ -28,13 +28,13 @@ pub(crate) const PREDICTION_ID: TextField = TextField {
 
 pub(crate) const PREDICTION_CONFIG: ConfigSpec = ConfigSpec::new(&[&PREDICTION_ID]);
 
-pub struct LockPredictionRunner {
+pub(crate) struct LockPredictionRunner {
     transport: Arc<dyn HelixTransport>,
     identity: Arc<SelfIdentity>,
 }
 
 impl LockPredictionRunner {
-    pub fn new(transport: Arc<dyn HelixTransport>, identity: Arc<SelfIdentity>) -> Self {
+    pub(crate) fn new(transport: Arc<dyn HelixTransport>, identity: Arc<SelfIdentity>) -> Self {
         Self {
             transport,
             identity,

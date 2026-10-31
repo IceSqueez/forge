@@ -27,7 +27,7 @@ fn readable_flag(result: Result<Option<bool>, StorageError>) -> Result<Option<bo
     }
 }
 
-pub async fn stored_integration_enabled(
+pub(crate) async fn stored_integration_enabled(
     settings: &dyn SettingsRepo,
     id: &IntegrationId,
 ) -> Result<Option<bool>, StorageError> {

@@ -4,7 +4,7 @@ use crate::vocabulary::MidiSignalKind;
 use crate::vocabulary::fields::port::direction;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum MidiEvent {
+pub(crate) enum MidiEvent {
     NoteOn {
         note: u8,
         velocity: u8,
@@ -51,14 +51,14 @@ pub enum MidiOutMessage {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct MidiPortInfo {
+pub(crate) struct MidiPortInfo {
     pub name: String,
     pub direction: PortDirection,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum PortDirection {
+pub(crate) enum PortDirection {
     Input,
     Output,
 }

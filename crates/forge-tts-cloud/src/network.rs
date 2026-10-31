@@ -15,7 +15,7 @@ const MAX_DNS_LABEL_LEN: usize = 63;
 const LABEL_HYPHEN: char = '-';
 const SEGMENT_UNDERSCORE: char = '_';
 
-pub const CLOUD_TTS_PROFILE: GatewayProfile = GatewayProfile::platform_api(
+pub(crate) const CLOUD_TTS_PROFILE: GatewayProfile = GatewayProfile::platform_api(
     CallClass::Media,
     ThrottleHintFamily::RetryAfter,
     NO_HINT_THROTTLE_WAIT,
@@ -141,14 +141,14 @@ impl ProviderLink {
     }
 }
 
-pub fn is_plain_path_segment(value: &str) -> bool {
+pub(crate) fn is_plain_path_segment(value: &str) -> bool {
     !value.is_empty()
         && value
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || c == LABEL_HYPHEN || c == SEGMENT_UNDERSCORE)
 }
 
-pub fn is_dns_label(value: &str) -> bool {
+pub(crate) fn is_dns_label(value: &str) -> bool {
     value.len() <= MAX_DNS_LABEL_LEN
         && !value.starts_with(LABEL_HYPHEN)
         && !value.ends_with(LABEL_HYPHEN)

@@ -19,7 +19,7 @@ const DEBUG_PANIC_OFF_MAIN_THREAD: &str = "background";
 static CRASH_RECORDED: AtomicBool = AtomicBool::new(false);
 static SYSTEM_INFO_SNAPSHOT: Mutex<Option<String>> = Mutex::new(None);
 
-pub fn install(crash_dir: PathBuf) {
+pub(crate) fn install(crash_dir: PathBuf) {
     let scrubber = IdentityScrubber::current();
     let previous = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
@@ -28,13 +28,13 @@ pub fn install(crash_dir: PathBuf) {
     }));
 }
 
-pub fn remember_system_info(report_text: String) {
+pub(crate) fn remember_system_info(report_text: String) {
     if let Ok(mut snapshot) = SYSTEM_INFO_SNAPSHOT.lock() {
         *snapshot = Some(report_text);
     }
 }
 
-pub async fn snapshot_system_info(window: WindowFacts, rt_handle: &tokio::runtime::Handle) {
+pub(crate) async fn snapshot_system_info(window: WindowFacts, rt_handle: &tokio::runtime::Handle) {
     let collected = rt_handle.spawn_blocking(move || {
         SystemInfo::assemble(window, HostFacts::collect_static()).to_report_text()
     });
@@ -104,7 +104,7 @@ fn record_first_crash(
     clippy::panic,
     reason = "debug hook crashes on request to exercise crash reporting"
 )]
-pub fn panic_if_requested() {
+pub(crate) fn panic_if_requested() {
     let Some(request) = std::env::var_os(DEBUG_PANIC_ENV).filter(|value| !value.is_empty()) else {
         return;
     };

@@ -11,7 +11,7 @@ use crate::materialize::GENERATOR_VERSION;
 use crate::media::{EmittedIcon, MediaSlot, emitted_icon, emitted_media_value, media_slot};
 use crate::sample::sample_content;
 
-pub const DOCUMENT_VERSION: u32 = 1;
+pub(crate) const DOCUMENT_VERSION: u32 = 1;
 
 pub const ICON_FILE_FIELD: &str = "file";
 pub const ICON_TINTABLE_FIELD: &str = "tintable";

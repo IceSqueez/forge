@@ -133,7 +133,10 @@ impl ScreenActionsView {
                     .font_family(mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_muted)
-                    .child(tr!("action_editor_sub_actions_count", count = total as i64)),
+                    .child(tr!(
+                        "action_editor_sub_actions_count",
+                        count = i64::try_from(total).unwrap_or(i64::MAX)
+                    )),
             )
         } else {
             div()

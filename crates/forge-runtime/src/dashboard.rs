@@ -46,10 +46,10 @@ mod tests {
         TriggerKindDescriptor,
     };
     use forge_storage::ActionStats;
-    use forge_storage::action::MockActionRepo;
-    use forge_storage::globals::MockGlobalsRepo;
-    use forge_storage::history::MockHistoryRepo;
-    use forge_storage::trigger_instance::MockTriggerInstanceRepo;
+    use forge_storage::MockActionRepo;
+    use forge_storage::MockGlobalsRepo;
+    use forge_storage::MockHistoryRepo;
+    use forge_storage::MockTriggerInstanceRepo;
     use forge_types::{ActionId, ArgStack, TriggerConfig};
 
     use super::*;

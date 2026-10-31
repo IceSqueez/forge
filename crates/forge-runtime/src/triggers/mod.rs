@@ -3,7 +3,7 @@ mod script_event_custom;
 mod timer_tick;
 
 pub use donation_received::{DONATION_PROVIDER_OPTIONS_KEY, DonationReceivedDescriptor};
-pub use script_event_custom::ScriptEventCustomDescriptor;
+pub(crate) use script_event_custom::ScriptEventCustomDescriptor;
 pub use timer_tick::{TIMER_TICK_KIND, TimerSchedule, TimerTickDescriptor, timer_every_message};
 
 use forge_registry::{RegistryError, TriggerRegistry};

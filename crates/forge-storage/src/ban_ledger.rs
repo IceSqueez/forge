@@ -1,7 +1,7 @@
 use std::fmt;
 
 use async_trait::async_trait;
-use forge_types::redaction::Redacted;
+use forge_types::Redacted;
 use time::{Duration, OffsetDateTime};
 
 use forge_types::PlatformId;
@@ -10,7 +10,7 @@ use crate::StorageError;
 
 pub const BAN_LEDGER_LIST_CAP: usize = 500;
 
-pub const BAN_TERM_MATCH_TOLERANCE: Duration = Duration::SECOND;
+pub(crate) const BAN_TERM_MATCH_TOLERANCE: Duration = Duration::SECOND;
 
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct BanLedgerKey {

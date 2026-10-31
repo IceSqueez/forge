@@ -28,7 +28,7 @@ const MAX_MESSAGE_BYTES: usize = 256 * 1024;
 const PRE_AUTH_MAX_MESSAGE_BYTES: usize = 16 * 1024;
 pub(crate) const PRE_AUTH_WINDOW: Duration = Duration::from_secs(10);
 
-pub async fn ws_handler(
+pub(crate) async fn ws_handler(
     upgrade: WebSocketUpgrade,
     State(state): State<AppState>,
     Extension(shutdown): Extension<watch::Receiver<bool>>,

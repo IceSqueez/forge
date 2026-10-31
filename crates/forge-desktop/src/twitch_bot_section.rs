@@ -50,7 +50,7 @@ pub(crate) enum BotProblem {
     StreamerSignIn(String),
 }
 
-pub struct StreamerSignInRequested;
+pub(crate) struct StreamerSignInRequested;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SentAs {
@@ -58,7 +58,7 @@ pub(crate) struct SentAs {
     pub as_bot: bool,
 }
 
-pub struct TwitchBotSection {
+pub(crate) struct TwitchBotSection {
     bot: Arc<TwitchBotAccount>,
     rt_handle: tokio::runtime::Handle,
     presence: Entity<TwitchBotPresence>,
@@ -71,7 +71,7 @@ pub struct TwitchBotSection {
 }
 
 impl TwitchBotSection {
-    pub fn new(
+    pub(crate) fn new(
         bot: Arc<TwitchBotAccount>,
         presence: Entity<TwitchBotPresence>,
         rt_handle: tokio::runtime::Handle,
@@ -106,7 +106,7 @@ impl TwitchBotSection {
         }
     }
 
-    pub fn has_bot_account(&self, cx: &App) -> bool {
+    pub(crate) fn has_bot_account(&self, cx: &App) -> bool {
         *self.presence.read(cx).status() != BotStatus::NotConnected
             || self.login != BotLogin::Idle
             || self.busy.is_some()
@@ -138,7 +138,7 @@ impl TwitchBotSection {
         self.refresh_presence(cx);
     }
 
-    pub fn set_streamer_login(&mut self, login: Option<String>, cx: &mut Context<Self>) {
+    pub(crate) fn set_streamer_login(&mut self, login: Option<String>, cx: &mut Context<Self>) {
         if self.streamer_login != login {
             self.streamer_login = login;
             cx.notify();

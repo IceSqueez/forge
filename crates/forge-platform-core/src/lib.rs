@@ -1,15 +1,15 @@
 #![doc = "ChatPlatform trait, AuthFlow taxonomy, Integration page traits."]
 
-pub mod auth;
+mod auth;
 mod ban_list;
 mod builtin;
 mod capabilities;
-pub mod chat;
+mod chat;
 mod collections;
 mod connection_announcer;
 mod credential_errors;
 mod donation;
-pub mod donation_test;
+mod donation_test;
 #[cfg(test)]
 #[path = "../test_support/emitted_codes.rs"]
 mod emitted_codes;
@@ -65,4 +65,9 @@ pub use option_source::{
 };
 pub use sender::{
     ActingSender, SENDER_FIELD, SENT_AS_FIELD, SenderPreference, SenderRole, unknown_sender_reason,
+};
+
+pub use auth::pkce_flow::PkceAuthorizeUrl;
+pub use auth::{
+    CALLBACK_PATH, PkceAuthorization, PkceAuthorizeConfig, PkceLoopback, REFRESH_BUFFER_SECS,
 };

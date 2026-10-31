@@ -2,7 +2,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_registry::runner::SubActionConfig;
+use forge_registry::SubActionConfig;
 use forge_registry::{
     ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionIo,
     SubActionRunner, TextEditor, TextField, TypedField,
@@ -57,12 +57,12 @@ fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<FileUpload, 
     })
 }
 
-pub struct SendFileRunner {
+pub(crate) struct SendFileRunner {
     sink: Arc<dyn DiscordSink>,
 }
 
 impl SendFileRunner {
-    pub fn new(sink: Arc<dyn DiscordSink>) -> Self {
+    pub(crate) fn new(sink: Arc<dyn DiscordSink>) -> Self {
         Self { sink }
     }
 }

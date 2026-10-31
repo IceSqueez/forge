@@ -11,7 +11,7 @@ use crate::record::{read_record, remove_record, require_format, write_record};
 
 const APPLY_STATE_FILE: &str = "update-apply.json";
 const APPLY_STATE_FORMAT: u32 = 1;
-pub const PREVIOUS_BUILD_PREFIX: &str = ".forge-previous-";
+pub(crate) const PREVIOUS_BUILD_PREFIX: &str = ".forge-previous-";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -112,11 +112,11 @@ impl HandoffPlan {
     }
 }
 
-pub fn previous_build_path(target: &Path) -> Result<PathBuf, UpdateError> {
+pub(crate) fn previous_build_path(target: &Path) -> Result<PathBuf, UpdateError> {
     prefixed_sibling(target, PREVIOUS_BUILD_PREFIX)
 }
 
-pub fn launch_executable(
+pub(crate) fn launch_executable(
     layout: InstallLayout,
     target: &Path,
     running_executable: &Path,

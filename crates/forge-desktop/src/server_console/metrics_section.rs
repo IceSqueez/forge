@@ -4,7 +4,7 @@ use forge_components::{
     card, fmt_bytes, fmt_number, header_status, icon, metric_card, mono_family, scaled, spacing,
     sparkline, status_dot, tr,
 };
-use forge_server::overlay_url::extract_port;
+use forge_server::extract_port;
 use gpui::{AnyElement, FontWeight, Pixels, Rgba, SharedString, div, prelude::*, px};
 
 const EVENT_RATE_WINDOW_SECONDS: i64 = 10;
@@ -40,7 +40,7 @@ impl ServerConsoleView {
                     fmt_number(self.connected_clients.len() as f64, 0),
                     Some(tr!(
                         "server_stat_clients_sub",
-                        count = self.recent_clients as i64,
+                        count = i64::try_from(self.recent_clients).unwrap_or(i64::MAX),
                         minutes = RECENT_CLIENT_WINDOW_MINUTES
                     )),
                     recent_color,
@@ -127,7 +127,7 @@ impl ServerConsoleView {
                     .text_color(palette.text_faint)
                     .child(tr!(
                         "server_throughput_meta",
-                        seconds = sample_count as i64,
+                        seconds = i64::try_from(sample_count).unwrap_or(i64::MAX),
                         max = fmt_number(max as f64, 0)
                     )),
             );
@@ -161,7 +161,7 @@ impl ServerConsoleView {
             (
                 tr!(
                     "server_footer_health_degraded",
-                    dropped = self.stats.dropped_events as i64
+                    dropped = i64::try_from(self.stats.dropped_events).unwrap_or(i64::MAX)
                 ),
                 palette.warning,
             )
@@ -175,7 +175,7 @@ impl ServerConsoleView {
                 tr!(
                     "server_footer_totals",
                     sent = fmt_bytes(self.stats.total_bytes_sent),
-                    events = self.stats.total_events_out as i64
+                    events = i64::try_from(self.stats.total_events_out).unwrap_or(i64::MAX)
                 ),
                 palette.text_faint,
             ))
@@ -223,7 +223,7 @@ impl ServerConsoleView {
                 palette.success,
                 tr!(
                     "server_status_listening",
-                    clients = self.connected_clients.len() as i64
+                    clients = i64::try_from(self.connected_clients.len()).unwrap_or(i64::MAX)
                 ),
                 density,
             )

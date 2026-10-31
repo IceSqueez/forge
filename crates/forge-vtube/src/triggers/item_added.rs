@@ -12,7 +12,7 @@ use crate::vocabulary::fields::item as fields;
 use crate::vocabulary::messages;
 use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
-pub struct ItemAddedDescriptor;
+pub(crate) struct ItemAddedDescriptor;
 
 impl TriggerKindDescriptor for ItemAddedDescriptor {
     fn id(&self) -> &str {

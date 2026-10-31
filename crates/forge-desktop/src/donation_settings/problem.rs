@@ -3,7 +3,7 @@ use forge_donatello::DonatelloError;
 use forge_monobank::MonobankError;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum TokenProblem {
+pub(crate) enum TokenProblem {
     Missing,
     Malformed,
     Rejected,
@@ -19,7 +19,7 @@ pub enum TokenProblem {
 }
 
 impl TokenProblem {
-    pub fn of_donatello(error: &DonatelloError) -> Self {
+    pub(crate) fn of_donatello(error: &DonatelloError) -> Self {
         match error {
             DonatelloError::MissingToken => Self::Missing,
             DonatelloError::MalformedToken => Self::Malformed,
@@ -41,7 +41,7 @@ impl TokenProblem {
         }
     }
 
-    pub fn of_monobank(error: &MonobankError) -> Self {
+    pub(crate) fn of_monobank(error: &MonobankError) -> Self {
         match error {
             MonobankError::MissingToken => Self::Missing,
             MonobankError::MalformedToken => Self::Malformed,
@@ -62,7 +62,7 @@ impl TokenProblem {
         }
     }
 
-    pub fn message(&self, service: &str) -> String {
+    pub(crate) fn message(&self, service: &str) -> String {
         match self {
             Self::Missing => tr!("donation_token_problem_missing"),
             Self::Malformed => tr!("donation_token_problem_malformed"),

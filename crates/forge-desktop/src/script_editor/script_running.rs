@@ -19,7 +19,7 @@ fn format_run_stats(duration_ms: f64, error_count: usize) -> String {
     tr!(
         "script_console_run_stats",
         duration = duration.as_str(),
-        errors = error_count as i64
+        errors = i64::try_from(error_count).unwrap_or(i64::MAX)
     )
 }
 

@@ -1,7 +1,7 @@
 use crate::github::GithubRepo;
 
-pub const MANIFEST_ASSET: &str = "forge-update.json";
-pub const SIGNATURE_ASSET: &str = "forge-update.json.minisig";
+pub(crate) const MANIFEST_ASSET: &str = "forge-update.json";
+pub(crate) const SIGNATURE_ASSET: &str = "forge-update.json.minisig";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ManifestSource {

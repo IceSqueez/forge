@@ -22,7 +22,7 @@ use forge_components::{
 const FORM_GAP: gpui::Pixels = px(12.0);
 const MULTILINE_HEIGHT: gpui::Pixels = px(80.0);
 
-pub enum CollectionFormEvent {
+pub(crate) enum CollectionFormEvent {
     Cancelled,
 }
 
@@ -64,7 +64,7 @@ struct OpenChoice {
     _sub: Subscription,
 }
 
-pub struct CollectionForm {
+pub(crate) struct CollectionForm {
     editing: Option<CollectionItemId>,
     editing_title: Option<String>,
     fields: Vec<FormField>,
@@ -76,7 +76,7 @@ pub struct CollectionForm {
 impl EventEmitter<CollectionFormEvent> for CollectionForm {}
 
 impl CollectionForm {
-    pub fn new(
+    pub(crate) fn new(
         schema: &[CollectionField],
         item: Option<&CollectionItem>,
         cx: &mut Context<Self>,
@@ -197,24 +197,29 @@ impl CollectionForm {
         form
     }
 
-    pub fn editing(&self) -> Option<&CollectionItemId> {
+    pub(crate) fn editing(&self) -> Option<&CollectionItemId> {
         self.editing.as_ref()
     }
 
-    pub fn editing_title(&self) -> Option<&str> {
+    pub(crate) fn editing_title(&self) -> Option<&str> {
         self.editing_title.as_deref()
     }
 
-    pub fn is_submitting(&self) -> bool {
+    pub(crate) fn is_submitting(&self) -> bool {
         self.submitting
     }
 
-    pub fn set_submitting(&mut self, submitting: bool, cx: &mut Context<Self>) {
+    pub(crate) fn set_submitting(&mut self, submitting: bool, cx: &mut Context<Self>) {
         self.submitting = submitting;
         cx.notify();
     }
 
-    pub fn show_field_error(&mut self, key: &str, message: String, cx: &mut Context<Self>) -> bool {
+    pub(crate) fn show_field_error(
+        &mut self,
+        key: &str,
+        message: String,
+        cx: &mut Context<Self>,
+    ) -> bool {
         let Some(index) = self.fields.iter().position(|field| field.key == key) else {
             return false;
         };
@@ -226,7 +231,7 @@ impl CollectionForm {
         true
     }
 
-    pub fn focus(&self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn focus(&self, window: &mut Window, cx: &mut Context<Self>) {
         for field in &self.fields {
             match &field.control {
                 FormControl::Text { input, .. } | FormControl::Int { input, .. } => {
@@ -242,7 +247,7 @@ impl CollectionForm {
         }
     }
 
-    pub fn can_submit(&self, cx: &App) -> bool {
+    pub(crate) fn can_submit(&self, cx: &App) -> bool {
         !self.submitting
             && self
                 .fields
@@ -250,7 +255,7 @@ impl CollectionForm {
                 .all(|field| !entry_invalid(field, &raw_entry(&field.control, cx)))
     }
 
-    pub fn values(&self, cx: &App) -> BTreeMap<String, QuickActionFieldValue> {
+    pub(crate) fn values(&self, cx: &App) -> BTreeMap<String, QuickActionFieldValue> {
         self.fields
             .iter()
             .filter_map(|field| {

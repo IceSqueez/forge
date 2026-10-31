@@ -449,7 +449,7 @@ impl TtsFiltersView {
                     *m = mode;
                 }
             } else {
-                let position = filters.rules.len() as u32;
+                let position = u32::try_from(filters.rules.len()).unwrap_or(u32::MAX);
                 filters.rules.push(FilterRule {
                     id: ulid::Ulid::generate().to_string(),
                     name: String::new(),
@@ -481,7 +481,7 @@ impl TtsFiltersView {
                     replacement: to,
                 },
             };
-            let position = filters.rules.len() as u32;
+            let position = u32::try_from(filters.rules.len()).unwrap_or(u32::MAX);
             filters.rules.push(FilterRule {
                 id: ulid::Ulid::generate().to_string(),
                 name: String::new(),
@@ -495,6 +495,6 @@ impl TtsFiltersView {
 
 pub(super) fn renumber(rules: &mut [FilterRule]) {
     for (i, rule) in rules.iter_mut().enumerate() {
-        rule.position = i as u32;
+        rule.position = u32::try_from(i).unwrap_or(u32::MAX);
     }
 }

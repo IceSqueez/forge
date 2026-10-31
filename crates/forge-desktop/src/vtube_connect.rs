@@ -10,7 +10,7 @@ use crate::integrations::VTubeInstallSeed;
 use crate::navigation::NavRequested;
 use crate::vtube_connect_form::{DEFAULT_PORT, VTubeConnectForm, VTubeConnected};
 
-pub struct VTubeConnectView {
+pub(crate) struct VTubeConnectView {
     form: Entity<VTubeConnectForm>,
     _form_sub: Subscription,
 }
@@ -19,7 +19,7 @@ impl EventEmitter<NavRequested> for VTubeConnectView {}
 impl EventEmitter<VTubeConnected> for VTubeConnectView {}
 
 impl VTubeConnectView {
-    pub fn new(
+    pub(crate) fn new(
         rt_handle: tokio::runtime::Handle,
         credentials: Arc<dyn CredentialsRepo>,
         settings: Arc<dyn SettingsRepo>,

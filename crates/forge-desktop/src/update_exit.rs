@@ -19,41 +19,41 @@ struct ExitState {
 }
 
 #[derive(Clone)]
-pub struct ExitHandoff(Rc<RefCell<ExitState>>);
+pub(crate) struct ExitHandoff(Rc<RefCell<ExitState>>);
 
 impl Global for ExitHandoff {}
 
 impl ExitHandoff {
-    pub fn new(instance_lock: Option<InstanceLock>) -> Self {
+    pub(crate) fn new(instance_lock: Option<InstanceLock>) -> Self {
         Self(Rc::new(RefCell::new(ExitState {
             instance_lock,
             armed: None,
         })))
     }
 
-    pub fn adopt_lock(&self, instance_lock: Option<InstanceLock>) {
+    pub(crate) fn adopt_lock(&self, instance_lock: Option<InstanceLock>) {
         self.0.borrow_mut().instance_lock = instance_lock;
     }
 
-    pub fn arm_update(&self, data_dir: PathBuf) {
+    pub(crate) fn arm_update(&self, data_dir: PathBuf) {
         self.0.borrow_mut().armed = Some(ExitRelaunch::UpdateSupervisor(data_dir));
     }
 
-    pub fn arm_restore(&self) {
+    pub(crate) fn arm_restore(&self) {
         let mut state = self.0.borrow_mut();
         if state.armed.is_none() {
             state.armed = Some(ExitRelaunch::RestoredInstance);
         }
     }
 
-    pub fn disarm_restore(&self) {
+    pub(crate) fn disarm_restore(&self) {
         let mut state = self.0.borrow_mut();
         if matches!(state.armed, Some(ExitRelaunch::RestoredInstance)) {
             state.armed = None;
         }
     }
 
-    pub fn claim_at_quit(cx: &App) -> Option<Self> {
+    pub(crate) fn claim_at_quit(cx: &App) -> Option<Self> {
         if cfg!(target_os = "macos") {
             cx.try_global::<Self>().cloned()
         } else {
@@ -61,7 +61,7 @@ impl ExitHandoff {
         }
     }
 
-    pub fn finish(&self) {
+    pub(crate) fn finish(&self) {
         let (instance_lock, armed) = {
             let mut state = self.0.borrow_mut();
             (state.instance_lock.take(), state.armed.take())

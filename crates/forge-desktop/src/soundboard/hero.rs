@@ -43,7 +43,7 @@ impl SoundboardView {
         let summary = tr!(
             "soundboard_header_summary",
             device = device.as_str(),
-            count = self.clips.len() as i64
+            count = i64::try_from(self.clips.len()).unwrap_or(i64::MAX)
         );
         div()
             .flex()

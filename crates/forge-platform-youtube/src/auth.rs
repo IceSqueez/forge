@@ -3,7 +3,7 @@ use std::time::{Duration, SystemTime};
 
 use forge_net::GatewayRequest;
 use forge_platform_core::PlatformError;
-use forge_platform_core::auth::{PkceAuthorizeConfig, PkceLoopback};
+use forge_platform_core::{PkceAuthorizeConfig, PkceLoopback};
 use forge_types::OAuthToken;
 use forge_types::Secret;
 use serde::Deserialize;
@@ -20,7 +20,7 @@ const OWN_CHANNEL_COST: u32 = 1;
 const OWN_CHANNEL_MISSING_SCOPE: &str = "channel identity scope missing";
 const NO_CHANNEL_FOUND: &str = "no channel found";
 
-pub const YOUTUBE_BROADCASTER_SCOPES: &[&str] =
+pub(crate) const YOUTUBE_BROADCASTER_SCOPES: &[&str] =
     &["https://www.googleapis.com/auth/youtube.force-ssl"];
 
 #[derive(Debug, Clone)]

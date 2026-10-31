@@ -73,7 +73,7 @@ struct WebSocketSnapshot {
     additional_origins_unreadable: bool,
 }
 
-pub struct SettingsWebSocketView {
+pub(crate) struct SettingsWebSocketView {
     backend: Arc<dyn DataProvider>,
     rt_handle: tokio::runtime::Handle,
     server: Option<ServerHandle>,
@@ -115,7 +115,7 @@ pub struct SettingsWebSocketView {
 }
 
 impl SettingsWebSocketView {
-    pub fn new(
+    pub(crate) fn new(
         backend: Arc<dyn DataProvider>,
         rt_handle: tokio::runtime::Handle,
         server: Option<ServerHandle>,
@@ -165,7 +165,7 @@ impl SettingsWebSocketView {
 
         let running = server
             .as_ref()
-            .is_some_and(|handle| *handle.run_state().borrow());
+            .is_some_and(|handle| handle.run_state().is_running());
         let mut view = Self {
             backend,
             rt_handle,
@@ -219,11 +219,11 @@ impl SettingsWebSocketView {
         let mut run_state = handle.run_state();
         cx.spawn(async move |this, cx| {
             loop {
-                let running = *run_state.borrow_and_update();
+                let running = run_state.latest();
                 if this
                     .update(cx, |this, cx| this.apply_run_state(running, cx))
                     .is_err()
-                    || run_state.changed().await.is_err()
+                    || run_state.changed().await.is_none()
                 {
                     break;
                 }
@@ -2105,7 +2105,7 @@ mod tests {
                 .expect("connect to the running server");
             let request = format!(
                 "GET /{}/{OVERLAY_PAGE} HTTP/1.1\r\nHost: {addr}\r\nConnection: close\r\n\r\n",
-                forge_server::overlay_url::OVERLAY_ROUTE
+                forge_server::OVERLAY_ROUTE
             );
             stream
                 .write_all(request.as_bytes())

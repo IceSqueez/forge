@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::SystemTime;
 
 use forge_net::Gateway;
-use forge_platform_core::auth::REFRESH_BUFFER_SECS;
+use forge_platform_core::REFRESH_BUFFER_SECS;
 use forge_platform_core::{PlatformError, credential_storage_error, reauth_required};
 use forge_storage::{CredentialId, CredentialsRepo};
 use time::{Duration, OffsetDateTime};

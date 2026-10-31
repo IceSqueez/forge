@@ -38,12 +38,12 @@ fn read_config(
     ))
 }
 
-pub struct CoreGlobalsGetRunner {
+pub(crate) struct CoreGlobalsGetRunner {
     globals: Arc<dyn GlobalsRepo>,
 }
 
 impl CoreGlobalsGetRunner {
-    pub fn new(globals: Arc<dyn GlobalsRepo>) -> Self {
+    pub(crate) fn new(globals: Arc<dyn GlobalsRepo>) -> Self {
         Self { globals }
     }
 }

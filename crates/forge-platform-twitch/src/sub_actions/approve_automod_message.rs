@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_registry::runner::SubActionConfig;
+use forge_registry::SubActionConfig;
 use forge_registry::{
     ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TextEditor, TextField,
     TypedField,
@@ -28,13 +28,13 @@ const MESSAGE_ID: TextField = TextField {
 
 pub(crate) const AUTOMOD_CONFIG: ConfigSpec = ConfigSpec::new(&[&MESSAGE_ID]);
 
-pub struct ApproveAutomodMessageRunner {
+pub(crate) struct ApproveAutomodMessageRunner {
     transport: Arc<dyn HelixTransport>,
     identity: Arc<SelfIdentity>,
 }
 
 impl ApproveAutomodMessageRunner {
-    pub fn new(transport: Arc<dyn HelixTransport>, identity: Arc<SelfIdentity>) -> Self {
+    pub(crate) fn new(transport: Arc<dyn HelixTransport>, identity: Arc<SelfIdentity>) -> Self {
         Self {
             transport,
             identity,

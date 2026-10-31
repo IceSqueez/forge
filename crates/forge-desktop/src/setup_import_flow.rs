@@ -58,9 +58,9 @@ enum SetupImportStep {
     Confirming(Box<Confirming>),
 }
 
-pub struct SetupImported;
+pub(crate) struct SetupImported;
 
-pub struct SetupImportFlow {
+pub(crate) struct SetupImportFlow {
     services: PackServices,
     live: SetupLiveHandles,
     data_dir: PathBuf,
@@ -74,7 +74,7 @@ pub(crate) fn needs_restart(outcome: &SetupImportOutcome, live: LiveRefresh) -> 
 }
 
 impl SetupImportFlow {
-    pub fn new(services: PackServices, data_dir: PathBuf) -> Self {
+    pub(crate) fn new(services: PackServices, data_dir: PathBuf) -> Self {
         Self {
             services,
             live: SetupLiveHandles::default(),
@@ -83,15 +83,15 @@ impl SetupImportFlow {
         }
     }
 
-    pub fn set_live(&mut self, live: SetupLiveHandles) {
+    pub(crate) fn set_live(&mut self, live: SetupLiveHandles) {
         self.live = live;
     }
 
-    pub fn is_busy(&self) -> bool {
+    pub(crate) fn is_busy(&self) -> bool {
         !matches!(self.step, SetupImportStep::Idle)
     }
 
-    pub fn open(&mut self, bundle: PathBuf, cx: &mut Context<Self>) {
+    pub(crate) fn open(&mut self, bundle: PathBuf, cx: &mut Context<Self>) {
         if self.is_busy() {
             refuse_while_busy(cx);
             return;

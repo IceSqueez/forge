@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use forge_overlay::config::{DURATION_MAX_SECS, DURATION_MIN_SECS};
-use forge_registry::references::OVERLAY_OPTIONS_KEY;
+use forge_registry::OVERLAY_OPTIONS_KEY;
 use forge_registry::{
     ConfigProblem, ConfigSpec, DynamicSelectField, FormRefinement, IntegerEditor, IntegerField,
     OptionalField, RunContext, StepTimer, SubActionCategory, SubActionRunner, ToggleField,
@@ -60,12 +60,12 @@ fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<SendConfig, 
     })
 }
 
-pub struct OverlaySendRunner {
+pub(crate) struct OverlaySendRunner {
     overlays: OverlayServiceHandle,
 }
 
 impl OverlaySendRunner {
-    pub fn new(overlays: OverlayServiceHandle) -> Self {
+    pub(crate) fn new(overlays: OverlayServiceHandle) -> Self {
         Self { overlays }
     }
 

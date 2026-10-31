@@ -7,7 +7,7 @@ mod selection;
 #[cfg(test)]
 mod tests;
 
-pub use self::mapping_store::MIDI_KNOWN_DEVICES;
+pub(crate) use self::mapping_store::MIDI_KNOWN_DEVICES;
 use crate::async_bridge::{Loadable, SnapshotWriter};
 use crate::hub_crumb::hub_crumb;
 use crate::integrations::BuiltinObject;
@@ -52,7 +52,7 @@ struct OpenModal {
     _sub: Subscription,
 }
 
-pub struct MidiScreenView {
+pub(crate) struct MidiScreenView {
     sink: Arc<SwitchableMidiSink>,
     client: Option<Arc<MidiClient>>,
     integration: Option<IntegrationSlot<BuiltinObject>>,
@@ -82,7 +82,7 @@ impl MidiScreenView {
         clippy::too_many_arguments,
         reason = "constructor receives each shared handle it wires"
     )]
-    pub fn new(
+    pub(crate) fn new(
         sink: Arc<SwitchableMidiSink>,
         integration: Option<IntegrationSlot<BuiltinObject>>,
         trigger_repo: Arc<dyn TriggerInstanceRepo>,
@@ -148,8 +148,8 @@ impl Render for MidiScreenView {
             header_ink,
             tr!(
                 "midi_header_summary",
-                devices = self.live_ports.len() as i64,
-                mappings = self.mappings.len() as i64
+                devices = i64::try_from(self.live_ports.len()).unwrap_or(i64::MAX),
+                mappings = i64::try_from(self.mappings.len()).unwrap_or(i64::MAX)
             ),
             density,
         );

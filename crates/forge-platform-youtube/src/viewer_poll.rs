@@ -19,7 +19,7 @@ const MISSING_SCOPE: &str = "viewer read scope missing";
 
 type TokenSource = Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync>;
 
-pub struct YoutubeViewerSource {
+pub(crate) struct YoutubeViewerSource {
     reports: watch::Receiver<ViewerReport>,
 }
 

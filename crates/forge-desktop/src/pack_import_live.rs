@@ -130,7 +130,7 @@ async fn refresh_overlays(services: &PackServices, ids: &[OverlayId]) -> bool {
 }
 
 #[derive(Clone, Default)]
-pub struct SetupLiveHandles {
+pub(crate) struct SetupLiveHandles {
     pub hotkeys: Option<Arc<HotkeyReconciler>>,
     pub speak: Option<SpeakQueueHandle>,
     pub pipeline_config: Option<PipelineConfigHandle>,
@@ -138,7 +138,7 @@ pub struct SetupLiveHandles {
 }
 
 impl SetupLiveHandles {
-    pub fn of(handles: &RuntimeHandles) -> Self {
+    pub(crate) fn of(handles: &RuntimeHandles) -> Self {
         Self {
             hotkeys: handles.hotkey_reconciler.clone(),
             speak: handles.speak.clone(),
@@ -707,9 +707,11 @@ mod tests {
         let outcome = setup_outcome(&[SetupLivePart::Hotkeys], SetupQueueChanges::default());
 
         let refreshed = refresh_setup(&rt, &world, &live, &outcome, None);
+        use forge_hotkey::ClipBindingsSource as _;
+
         let bound: Vec<ClipId> = reconciler
             .clip_bindings()
-            .borrow()
+            .current()
             .values()
             .flatten()
             .copied()

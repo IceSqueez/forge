@@ -95,12 +95,12 @@ fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<TestDonation
     })
 }
 
-pub struct TestDonationRunner {
+pub(crate) struct TestDonationRunner {
     ingest: Arc<DonationIngest>,
 }
 
 impl TestDonationRunner {
-    pub fn new(ingest: Arc<DonationIngest>) -> Self {
+    pub(crate) fn new(ingest: Arc<DonationIngest>) -> Self {
         Self { ingest }
     }
 

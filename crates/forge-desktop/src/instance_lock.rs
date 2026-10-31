@@ -4,17 +4,17 @@ use std::path::Path;
 
 const LOCK_FILE_NAME: &str = "forge.lock";
 
-pub struct InstanceLock {
+pub(crate) struct InstanceLock {
     _file: File,
 }
 
-pub enum LockOutcome {
+pub(crate) enum LockOutcome {
     Acquired(InstanceLock),
     AlreadyRunning,
     Unavailable(io::Error),
 }
 
-pub fn acquire(data_dir: &Path) -> LockOutcome {
+pub(crate) fn acquire(data_dir: &Path) -> LockOutcome {
     if let Err(err) = std::fs::create_dir_all(data_dir) {
         return LockOutcome::Unavailable(err);
     }

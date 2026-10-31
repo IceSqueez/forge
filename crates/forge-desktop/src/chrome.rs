@@ -11,14 +11,14 @@ use crate::shell::AppShell;
 use crate::sidebar::SidebarNav;
 use crate::titlebar::TitleBar;
 
-pub struct Chrome {
+pub(crate) struct Chrome {
     pub titlebar: Entity<TitleBar>,
     pub sidebar: Entity<SidebarNav>,
     pub footer: Entity<Footer>,
 }
 
 impl Chrome {
-    pub fn new(
+    pub(crate) fn new(
         status: Entity<RuntimeStatus>,
         connectivity: Entity<PlatformConnectivity>,
         event_loss: Entity<EventLoss>,

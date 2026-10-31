@@ -20,7 +20,7 @@ use forge_components::{ActivePresentation, Presentation};
 
 const SIDEBAR_WIDTH: Pixels = px(210.0);
 const SIDEBAR_MIN: Pixels = px(170.0);
-pub const SIDEBAR_MAX: Pixels = px(320.0);
+pub(crate) const SIDEBAR_MAX: Pixels = px(320.0);
 const SIDEBAR_PAD_H: Pixels = px(8.0);
 const SIDEBAR_PAD_TOP: Pixels = px(12.0);
 const SIDEBAR_PAD_BOTTOM: Pixels = px(12.0);
@@ -96,7 +96,7 @@ enum NavEntry {
     },
 }
 
-pub struct SidebarNav {
+pub(crate) struct SidebarNav {
     current: Screen,
     width: Pixels,
     connectivity: Entity<PlatformConnectivity>,
@@ -106,7 +106,7 @@ pub struct SidebarNav {
 impl EventEmitter<NavRequested> for SidebarNav {}
 
 impl SidebarNav {
-    pub fn new(
+    pub(crate) fn new(
         current: Screen,
         connectivity: Entity<PlatformConnectivity>,
         lifecycle: Entity<IntegrationLifecycle>,
@@ -124,7 +124,7 @@ impl SidebarNav {
         }
     }
 
-    pub fn set_current(&mut self, screen: Screen) {
+    pub(crate) fn set_current(&mut self, screen: Screen) {
         self.current = screen;
     }
 

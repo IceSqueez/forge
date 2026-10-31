@@ -24,12 +24,12 @@ fn decode_row(row: LatestRow) -> Result<LatestRecord, StorageError> {
     })
 }
 
-pub struct SqliteLatestValueRepo {
+pub(crate) struct SqliteLatestValueRepo {
     db: SqlitePools,
 }
 
 impl SqliteLatestValueRepo {
-    pub fn new(db: impl Into<SqlitePools>) -> Self {
+    pub(crate) fn new(db: impl Into<SqlitePools>) -> Self {
         Self { db: db.into() }
     }
 }

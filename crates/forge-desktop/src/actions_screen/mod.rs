@@ -23,8 +23,8 @@ use forge_components::{
 };
 use forge_overlay::OverlayKindRegistry;
 use forge_registry::{SubActionRegistry, TriggerCategory, TriggerRegistry};
-use forge_runtime::actions::{ActionDetail, ActionsService};
-use forge_runtime::sub_action_runners::translate_legacy_time_steps;
+use forge_runtime::translate_legacy_time_steps;
+use forge_runtime::{ActionDetail, ActionsService};
 use forge_runtime::{EventBus, QueueSchedulerHandle};
 use forge_soundboard::ClipLibrary;
 use forge_speak_queue::SpeakQueueHandle;
@@ -177,7 +177,7 @@ struct HistoryModalHost {
     _subs: [Subscription; 2],
 }
 
-pub struct ScreenActionsView {
+pub(crate) struct ScreenActionsView {
     action_repo: Arc<dyn ActionRepo>,
     queue_repo: Arc<dyn QueueRepo>,
     actions_service: Arc<ActionsService>,
@@ -260,7 +260,7 @@ impl ScreenActionsView {
         clippy::too_many_arguments,
         reason = "constructor receives each shared handle it wires"
     )]
-    pub fn new(
+    pub(crate) fn new(
         action_repo: Arc<dyn ActionRepo>,
         queue_repo: Arc<dyn QueueRepo>,
         actions_service: Arc<ActionsService>,

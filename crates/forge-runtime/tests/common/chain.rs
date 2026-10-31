@@ -4,7 +4,7 @@ use forge_registry::CancelSignal;
 use forge_runtime::{ChainEngine, ChainRun};
 use forge_types::{ArgStack, EventId, SubActionConfig, SubActionStep, Variant};
 
-pub async fn run_top(engine: &Arc<ChainEngine>, steps: Vec<SubActionStep>) -> ChainRun {
+pub(crate) async fn run_top(engine: &Arc<ChainEngine>, steps: Vec<SubActionStep>) -> ChainRun {
     engine
         .run_sequential(
             &steps,
@@ -15,7 +15,7 @@ pub async fn run_top(engine: &Arc<ChainEngine>, steps: Vec<SubActionStep>) -> Ch
         .await
 }
 
-pub fn step(kind: &str, config: SubActionConfig) -> SubActionStep {
+pub(crate) fn step(kind: &str, config: SubActionConfig) -> SubActionStep {
     SubActionStep {
         kind_id: kind.to_owned(),
         config,
@@ -26,7 +26,7 @@ pub fn step(kind: &str, config: SubActionConfig) -> SubActionStep {
     }
 }
 
-pub fn chain_step(kind: &str, config: SubActionConfig) -> Variant {
+pub(crate) fn chain_step(kind: &str, config: SubActionConfig) -> Variant {
     let mut m = SubActionConfig::new();
     m.insert("kind_id".to_owned(), Variant::String(kind.to_owned()));
     m.insert("config".to_owned(), Variant::Object(config));
@@ -34,18 +34,18 @@ pub fn chain_step(kind: &str, config: SubActionConfig) -> Variant {
     Variant::Object(m)
 }
 
-pub fn inline(steps: Vec<Variant>) -> Variant {
+pub(crate) fn inline(steps: Vec<Variant>) -> Variant {
     Variant::Array(steps)
 }
 
-pub fn args_set(name: &str, value: &str) -> SubActionConfig {
+pub(crate) fn args_set(name: &str, value: &str) -> SubActionConfig {
     let mut c = SubActionConfig::new();
     c.insert("name".to_owned(), Variant::String(name.to_owned()));
     c.insert("value".to_owned(), Variant::String(value.to_owned()));
     c
 }
 
-pub fn loop_cfg(count: i64, body: Variant) -> SubActionConfig {
+pub(crate) fn loop_cfg(count: i64, body: Variant) -> SubActionConfig {
     let mut c = SubActionConfig::new();
     c.insert("mode".to_owned(), Variant::String("count".to_owned()));
     c.insert("count".to_owned(), Variant::Int(count));
@@ -53,7 +53,7 @@ pub fn loop_cfg(count: i64, body: Variant) -> SubActionConfig {
     c
 }
 
-pub fn if_cfg(condition: &str, then_chain: Variant, else_chain: Variant) -> SubActionConfig {
+pub(crate) fn if_cfg(condition: &str, then_chain: Variant, else_chain: Variant) -> SubActionConfig {
     let mut c = SubActionConfig::new();
     c.insert(
         "condition".to_owned(),
@@ -64,14 +64,14 @@ pub fn if_cfg(condition: &str, then_chain: Variant, else_chain: Variant) -> SubA
     c
 }
 
-pub fn case(match_val: Variant, chain: Variant) -> Variant {
+pub(crate) fn case(match_val: Variant, chain: Variant) -> Variant {
     let mut m = SubActionConfig::new();
     m.insert("match".to_owned(), match_val);
     m.insert("chain".to_owned(), chain);
     Variant::Object(m)
 }
 
-pub fn switch_cfg(
+pub(crate) fn switch_cfg(
     expression: &str,
     cases: Vec<Variant>,
     default_chain: Variant,

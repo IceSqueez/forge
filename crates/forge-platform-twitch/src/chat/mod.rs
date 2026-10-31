@@ -7,7 +7,8 @@ mod subscriber;
 mod topic_catalog;
 mod whisper;
 
-pub use send::{ChatSendError, SentMessageId, send_chat, send_chat_reply};
+pub(crate) use send::send_chat_reply;
+pub use send::{ChatSendError, SentMessageId, send_chat};
 pub(crate) use send::{MAX_MESSAGE_LEN, refusal_text};
 pub use session::ChatConnectionState;
 pub(crate) use whisper::{MAX_WHISPER_CHARS, WhisperError, send_whisper, send_whisper_to};

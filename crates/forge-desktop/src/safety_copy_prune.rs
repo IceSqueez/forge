@@ -4,7 +4,7 @@ use std::sync::Arc;
 use forge_storage::DataProvider;
 use forge_transfer::{SafetyCopyReport, TransferError, TransferExclusivity, prune_safety_copies};
 
-pub fn spawn_boot_prune(
+pub(crate) fn spawn_boot_prune(
     backend: Arc<dyn DataProvider>,
     data_dir: PathBuf,
     exclusivity: TransferExclusivity,

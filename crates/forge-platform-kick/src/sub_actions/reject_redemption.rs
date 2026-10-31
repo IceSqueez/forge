@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_platform_core::PlatformError;
-use forge_registry::runner::SubActionConfig;
+use forge_registry::SubActionConfig;
 use forge_registry::{
     ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TypedField,
 };
@@ -18,13 +18,13 @@ const KIND_ID: &str = sub_action_ids::REWARD_REDEMPTION_REJECT;
 
 const CONFIG: ConfigSpec = ConfigSpec::new(&[&REDEMPTION_IDS]);
 
-pub struct RejectRedemptionRunner {
+pub(crate) struct RejectRedemptionRunner {
     client: Arc<KickRewards>,
     token_source: Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync>,
 }
 
 impl RejectRedemptionRunner {
-    pub fn new(
+    pub(crate) fn new(
         client: Arc<KickRewards>,
         token_source: Arc<
             dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync,

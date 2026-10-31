@@ -410,7 +410,7 @@ pub(in crate::actions_screen) mod tests {
     use std::sync::Mutex;
 
     use forge_storage::{
-        ActionTelemetry, ExecutionStatus, MockMediaRepo, StorageError, action::ActionRepo,
+        ActionRepo, ActionTelemetry, ExecutionStatus, MockMediaRepo, StorageError,
     };
     use gpui::TestAppContext;
     use time::OffsetDateTime;

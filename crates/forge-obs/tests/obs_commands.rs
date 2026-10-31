@@ -276,10 +276,22 @@ fn text(value: &str) -> Variant {
     Variant::String(value.to_owned())
 }
 
+fn names(values: Vec<String>) -> Variant {
+    Variant::Array(values.into_iter().map(Variant::String).collect())
+}
+
 fn query_table() -> Vec<(Query, &'static str, Value, Variant)> {
     vec![
         (
-            |c| c.get_scene_list(),
+            |c| {
+                Box::pin(async move {
+                    let scenes = c.get_scene_list().await?;
+                    Ok(object([
+                        ("all_names", names(scenes.names)),
+                        ("current", Variant::String(scenes.current)),
+                    ]))
+                })
+            },
             "GetSceneList",
             Value::Null,
             object([
@@ -288,13 +300,26 @@ fn query_table() -> Vec<(Query, &'static str, Value, Variant)> {
             ]),
         ),
         (
-            |c| c.get_input_list(),
+            |c| {
+                Box::pin(
+                    async move { Ok(object([("all_names", names(c.get_input_list().await?))])) },
+                )
+            },
             "GetInputList",
             json!({}),
             object([("all_names", Variant::Array(vec![text(INPUT)]))]),
         ),
         (
-            |c| c.get_record_status(),
+            |c| {
+                Box::pin(async move {
+                    let status = c.get_record_status().await?;
+                    Ok(object([
+                        ("is_active", Variant::Bool(status.active)),
+                        ("is_paused", Variant::Bool(status.paused)),
+                        ("duration_ms", Variant::Int(status.duration_ms)),
+                    ]))
+                })
+            },
             "GetRecordStatus",
             Value::Null,
             object([
@@ -304,7 +329,15 @@ fn query_table() -> Vec<(Query, &'static str, Value, Variant)> {
             ]),
         ),
         (
-            |c| c.get_stream_status(),
+            |c| {
+                Box::pin(async move {
+                    let status = c.get_stream_status().await?;
+                    Ok(object([
+                        ("is_active", Variant::Bool(status.active)),
+                        ("duration_ms", Variant::Int(status.duration_ms)),
+                    ]))
+                })
+            },
             "GetStreamStatus",
             Value::Null,
             object([
@@ -324,7 +357,15 @@ fn query_table() -> Vec<(Query, &'static str, Value, Variant)> {
             text(SCENE),
         ),
         (
-            |c| c.get_input_settings(INPUT),
+            |c| {
+                Box::pin(async move {
+                    let input = c.get_input_settings(INPUT).await?;
+                    Ok(object([
+                        ("settings", input.settings),
+                        ("kind", Variant::String(input.kind)),
+                    ]))
+                })
+            },
             "GetInputSettings",
             json!({ "inputName": INPUT }),
             object([

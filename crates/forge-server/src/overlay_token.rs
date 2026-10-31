@@ -19,7 +19,7 @@ use crate::settings;
 
 const OVERLAY_TOKEN_BYTE_LEN: usize = 32;
 
-pub struct OverlayTokenState {
+pub(crate) struct OverlayTokenState {
     token: ArcSwap<Secret>,
     required: AtomicBool,
 }
@@ -59,20 +59,20 @@ impl OverlayTokenState {
         }
     }
 
-    pub fn verify(&self, candidate: &str) -> bool {
+    pub(crate) fn verify(&self, candidate: &str) -> bool {
         let current = self.token.load();
         bool::from(current.expose().as_bytes().ct_eq(candidate.as_bytes()))
     }
 
-    pub fn current(&self) -> Secret {
+    pub(crate) fn current(&self) -> Secret {
         self.token.load().as_ref().clone()
     }
 
-    pub fn required(&self) -> bool {
+    pub(crate) fn required(&self) -> bool {
         self.required.load(Ordering::SeqCst)
     }
 
-    pub fn set_required(&self, required: bool) {
+    pub(crate) fn set_required(&self, required: bool) {
         self.required.store(required, Ordering::SeqCst);
     }
 
@@ -99,7 +99,7 @@ impl OverlayTokenState {
     }
 }
 
-pub fn generate_overlay_token() -> String {
+pub(crate) fn generate_overlay_token() -> String {
     let mut bytes = [0u8; OVERLAY_TOKEN_BYTE_LEN];
     rand::rng().fill_bytes(&mut bytes);
     format!("{OVERLAY_TOKEN_PREFIX}{}", URL_SAFE_NO_PAD.encode(bytes))

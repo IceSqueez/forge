@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_net::status::BAD_REQUEST;
-use forge_registry::runner::SubActionConfig;
+use forge_registry::SubActionConfig;
 use forge_registry::{
     ConfigProblem, ConfigSpec, Interpolation, RunContext, StepTimer, SubActionCategory,
     SubActionRunner,
@@ -30,13 +30,13 @@ fn already_unbanned(error: &HelixError) -> bool {
     }
 }
 
-pub struct UnbanUserRunner {
+pub(crate) struct UnbanUserRunner {
     transport: Arc<dyn HelixTransport>,
     identity: Arc<SelfIdentity>,
 }
 
 impl UnbanUserRunner {
-    pub fn new(transport: Arc<dyn HelixTransport>, identity: Arc<SelfIdentity>) -> Self {
+    pub(crate) fn new(transport: Arc<dyn HelixTransport>, identity: Arc<SelfIdentity>) -> Self {
         Self {
             transport,
             identity,

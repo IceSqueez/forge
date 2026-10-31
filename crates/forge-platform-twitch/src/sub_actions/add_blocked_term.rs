@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_registry::runner::SubActionConfig;
+use forge_registry::SubActionConfig;
 use forge_registry::{
     BoundedTextField, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner,
     TextEditor, TypedField, ValueBounds,
@@ -33,13 +33,13 @@ const TEXT: BoundedTextField = BoundedTextField {
 
 const CONFIG: ConfigSpec = ConfigSpec::new(&[&TEXT]);
 
-pub struct AddBlockedTermRunner {
+pub(crate) struct AddBlockedTermRunner {
     transport: Arc<dyn HelixTransport>,
     identity: Arc<SelfIdentity>,
 }
 
 impl AddBlockedTermRunner {
-    pub fn new(transport: Arc<dyn HelixTransport>, identity: Arc<SelfIdentity>) -> Self {
+    pub(crate) fn new(transport: Arc<dyn HelixTransport>, identity: Arc<SelfIdentity>) -> Self {
         Self {
             transport,
             identity,

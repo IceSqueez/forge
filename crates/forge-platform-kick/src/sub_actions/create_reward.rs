@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_platform_core::PlatformError;
-use forge_registry::runner::SubActionConfig;
+use forge_registry::SubActionConfig;
 use forge_registry::{
     ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionIo,
     SubActionRunner, TextEditor, TextField, TypedField, ValueBounds,
@@ -66,13 +66,13 @@ fn read_config(
     })
 }
 
-pub struct CreateRewardRunner {
+pub(crate) struct CreateRewardRunner {
     client: Arc<KickRewards>,
     token_source: Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync>,
 }
 
 impl CreateRewardRunner {
-    pub fn new(
+    pub(crate) fn new(
         client: Arc<KickRewards>,
         token_source: Arc<
             dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync,

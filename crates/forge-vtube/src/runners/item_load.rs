@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_registry::runner::SubActionConfig;
+use forge_registry::SubActionConfig;
 use forge_registry::{
     ConfigProblem, ConfigSpec, IntegerField, NumberField, OptionalField, RunContext, StepTimer,
     SubActionCategory, SubActionRunner, ToggleField, TypedField, ValueBounds,
@@ -69,12 +69,12 @@ fn read_placement(config: &SubActionConfig, args: &ArgStack) -> Result<Placement
     })
 }
 
-pub struct ItemLoadRunner {
+pub(crate) struct ItemLoadRunner {
     sink: Arc<dyn VTubeSink>,
 }
 
 impl ItemLoadRunner {
-    pub fn new(sink: Arc<dyn VTubeSink>) -> Self {
+    pub(crate) fn new(sink: Arc<dyn VTubeSink>) -> Self {
         Self { sink }
     }
 }

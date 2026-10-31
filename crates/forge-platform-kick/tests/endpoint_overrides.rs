@@ -14,7 +14,7 @@ use forge_platform_kick::{
     KickCredentialsManager, KickModeration, KickOAuthClient, KickPlatform, KickRewards,
     KickSendChat, kick_api_gateway, kick_channel_info_gateway, kick_oauth_gateway,
 };
-use forge_storage::ban_ledger::MockBanLedgerRepo;
+use forge_storage::MockBanLedgerRepo;
 use forge_storage::{BanLedgerRepo, CredentialId, CredentialsRepo, StorageError};
 use futures_util::StreamExt;
 use serde_json::{Value, json};

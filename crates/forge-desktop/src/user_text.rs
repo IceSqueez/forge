@@ -8,13 +8,13 @@ use crate::integration_switch::integration_name;
 const LIST_JOINER: &str = ", ";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ResolvedText {
+pub(crate) struct ResolvedText {
     pub primary: String,
     pub secondary: Option<String>,
 }
 
 impl ResolvedText {
-    pub fn inline(self) -> String {
+    pub(crate) fn inline(self) -> String {
         match self.secondary {
             Some(secondary) => format!("{} ({secondary})", self.primary),
             None => self.primary,
@@ -22,7 +22,7 @@ impl ResolvedText {
     }
 }
 
-pub fn resolve_user_text(text: &UserText) -> ResolvedText {
+pub(crate) fn resolve_user_text(text: &UserText) -> ResolvedText {
     match text {
         UserText::Message(message) => resolve_message(message),
         UserText::Verbatim(verbatim) => ResolvedText {
@@ -32,11 +32,11 @@ pub fn resolve_user_text(text: &UserText) -> ResolvedText {
     }
 }
 
-pub fn user_text_string(text: &UserText) -> String {
+pub(crate) fn user_text_string(text: &UserText) -> String {
     resolve_user_text(text).inline()
 }
 
-pub fn resolve_message(message: &MessageRef) -> ResolvedText {
+pub(crate) fn resolve_message(message: &MessageRef) -> ResolvedText {
     let detail = message.detail().map(|detail| detail.as_str().to_owned());
     let args = message
         .args()

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_platform_core::PlatformError;
-use forge_registry::runner::SubActionConfig;
+use forge_registry::SubActionConfig;
 use forge_registry::{RunContext, StepTimer, SubActionCategory, SubActionRunner};
 use forge_types::{ArgStack, SubActionTelemetry, Variant};
 use futures::future::BoxFuture;
@@ -14,13 +14,13 @@ use crate::vocabulary::variables;
 
 const KIND_ID: &str = sub_action_ids::LOOKUP_STREAM_STATS;
 
-pub struct LookupStreamStatsRunner {
+pub(crate) struct LookupStreamStatsRunner {
     client: Arc<KickChannel>,
     token_source: Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync>,
 }
 
 impl LookupStreamStatsRunner {
-    pub fn new(
+    pub(crate) fn new(
         client: Arc<KickChannel>,
         token_source: Arc<
             dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync,
@@ -82,7 +82,7 @@ impl SubActionRunner for LookupStreamStatsRunner {
                     )
                     .set(
                         variables::stream_stats::VIEWER_COUNT.to_owned(),
-                        Variant::Int(snapshot.viewer_count as i64),
+                        Variant::Int(i64::try_from(snapshot.viewer_count).unwrap_or(i64::MAX)),
                     );
                 if let Some(started) = crate::timestamp::variant(snapshot.started_at) {
                     stack = stack.set(variables::stream_stats::STARTED_AT.to_owned(), started);
@@ -90,7 +90,7 @@ impl SubActionRunner for LookupStreamStatsRunner {
                 if let Some(category_id) = snapshot.category_id {
                     stack = stack.set(
                         variables::stream_stats::CATEGORY_ID.to_owned(),
-                        Variant::Int(category_id as i64),
+                        Variant::Int(i64::try_from(category_id).unwrap_or(i64::MAX)),
                     );
                 }
                 let stack = stack

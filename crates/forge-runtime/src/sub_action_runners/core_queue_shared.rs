@@ -1,4 +1,4 @@
-use forge_registry::references::QUEUE_OPTIONS_KEY;
+use forge_registry::QUEUE_OPTIONS_KEY;
 use forge_registry::{ConfigSpec, DynamicSelectField};
 use forge_types::QueueId;
 

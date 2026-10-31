@@ -105,9 +105,12 @@ fn publish_release(
     timestamp_us: u64,
     synthesized: bool,
 ) {
-    let hold_ms = Instant::now()
-        .saturating_duration_since(hold.started_at)
-        .as_millis() as u64;
+    let hold_ms = u64::try_from(
+        Instant::now()
+            .saturating_duration_since(hold.started_at)
+            .as_millis(),
+    )
+    .unwrap_or(u64::MAX);
 
     client.publisher.publish(Event::caused_by(
         EventSource::Hotkey,
@@ -132,10 +135,13 @@ fn publish_release(
 }
 
 fn now_us() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_micros() as u64
+    u64::try_from(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_micros(),
+    )
+    .unwrap_or(u64::MAX)
 }
 
 #[cfg(test)]

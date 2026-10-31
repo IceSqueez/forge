@@ -8,7 +8,7 @@ use forge_emulator::harness::control::{
     ClientTimeouts, ControlClient, ControlEndpoint, EventFilter, EventStream, Observation,
 };
 use forge_events::{Event, EventSource};
-use forge_server::protocol::{WsEnvelope, WsRequest};
+use forge_server::{WsEnvelope, WsRequest};
 use forge_types::ActionId;
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Map, Value, json};

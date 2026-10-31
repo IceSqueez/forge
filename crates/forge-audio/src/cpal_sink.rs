@@ -27,14 +27,14 @@ enum OutputCandidate {
 const OUTPUT_CANDIDATES: [OutputCandidate; 2] =
     [OutputCandidate::Requested, OutputCandidate::HostDefault];
 
-pub struct CpalSink {
+pub(crate) struct CpalSink {
     device_id: DeviceId,
     target_sample_rate: Option<u32>,
     target_channels: Option<u16>,
 }
 
 impl CpalSink {
-    pub fn new(
+    pub(crate) fn new(
         device_id: DeviceId,
         target_sample_rate: Option<u32>,
         target_channels: Option<u16>,

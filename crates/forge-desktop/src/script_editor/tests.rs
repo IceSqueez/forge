@@ -179,7 +179,7 @@ mod unsaved_work {
     use forge_components::{Density, ThemeId};
     use std::sync::atomic::{AtomicUsize, Ordering};
 
-    use forge_storage::script::MockScriptRepo;
+    use forge_storage::MockScriptRepo;
     use forge_storage::{Language, StorageError};
     use forge_types::IntegrationId;
     use gpui::{AnyWindowHandle, AppContext, TestAppContext};
@@ -280,7 +280,7 @@ mod unsaved_work {
             let _entered = rt.enter();
             EventBus::new(Arc::new(StubEventLog))
         };
-        let mut actions = forge_storage::action::MockActionRepo::new();
+        let mut actions = forge_storage::MockActionRepo::new();
         actions.expect_list().returning(|| {
             Err(StorageError::Connection {
                 reason: "disk full".to_owned(),

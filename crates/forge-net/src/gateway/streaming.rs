@@ -11,8 +11,8 @@ use super::{Gateway, collect_headers, send_failure};
 use crate::body_read::{BodyProgress, BodySink, StreamReadError, read_streaming};
 use crate::header_lookup::HeaderLookup;
 
-pub const STREAMING_CONNECT_BUDGET: Duration = Duration::from_secs(10);
-pub const STREAMING_READ_IDLE_BUDGET: Duration = Duration::from_secs(30);
+pub(crate) const STREAMING_CONNECT_BUDGET: Duration = Duration::from_secs(10);
+pub(crate) const STREAMING_READ_IDLE_BUDGET: Duration = Duration::from_secs(30);
 
 const BODY_IDLE_ELAPSED: &str = "response body stalled past the read-idle time budget";
 

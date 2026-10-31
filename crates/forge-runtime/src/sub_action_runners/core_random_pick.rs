@@ -112,7 +112,7 @@ fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<PickConfig, 
     })
 }
 
-pub struct CoreRandomPickRunner;
+pub(crate) struct CoreRandomPickRunner;
 
 #[async_trait]
 impl SubActionRunner for CoreRandomPickRunner {

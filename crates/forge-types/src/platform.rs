@@ -40,10 +40,6 @@ impl PlatformId {
     }
 }
 
-pub const WHISPER_RECIPIENT_FIELD: &str = "whisper_to_login";
-
-pub const REPLY_PARENT_FIELD: &str = "reply_to_message_id";
-
 pub fn requested_chat_target(raw: &str) -> Option<&str> {
     let target = raw.trim();
     (!target.is_empty()).then_some(target)

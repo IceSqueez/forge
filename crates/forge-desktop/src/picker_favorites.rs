@@ -12,26 +12,26 @@ use tokio::runtime::Handle;
 use crate::async_bridge::{self, Loadable, SnapshotWriter, WriteOutcome};
 
 #[derive(Clone, Copy)]
-pub struct FavoritesList {
+pub(crate) struct FavoritesList {
     pub setting: &'static Setting<JsonDocument<Vec<String>>>,
     pub from_stored: fn(Vec<String>) -> HashSet<SharedString>,
 }
 
-pub const SUB_ACTION_FAVORITES: FavoritesList = FavoritesList {
+pub(crate) const SUB_ACTION_FAVORITES: FavoritesList = FavoritesList {
     setting: &PICKER_FAVORITES_SUB_ACTIONS,
     from_stored: to_set,
 };
 
-pub const TRIGGER_FAVORITES: FavoritesList = FavoritesList {
+pub(crate) const TRIGGER_FAVORITES: FavoritesList = FavoritesList {
     setting: &PICKER_FAVORITES_TRIGGERS,
     from_stored: to_set,
 };
 
-pub fn to_set(ids: Vec<String>) -> HashSet<SharedString> {
+pub(crate) fn to_set(ids: Vec<String>) -> HashSet<SharedString> {
     ids.into_iter().map(SharedString::from).collect()
 }
 
-pub fn to_ids(favorites: &HashSet<SharedString>) -> Vec<String> {
+pub(crate) fn to_ids(favorites: &HashSet<SharedString>) -> Vec<String> {
     favorites.iter().map(|s| s.to_string()).collect()
 }
 
@@ -40,7 +40,7 @@ struct SharedFavorites(HashMap<&'static str, Entity<StoredFavorites>>);
 
 impl Global for SharedFavorites {}
 
-pub struct StoredFavorites {
+pub(crate) struct StoredFavorites {
     list: FavoritesList,
     repo: Arc<dyn SettingsRepo>,
     rt_handle: Handle,
@@ -49,7 +49,7 @@ pub struct StoredFavorites {
 }
 
 impl StoredFavorites {
-    pub fn shared(
+    pub(crate) fn shared(
         list: FavoritesList,
         repo: Arc<dyn SettingsRepo>,
         rt_handle: &Handle,
@@ -84,7 +84,7 @@ impl StoredFavorites {
         store
     }
 
-    pub fn load(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn load(&mut self, cx: &mut Context<Self>) {
         self.ids = Loadable::Loading;
         let repo = Arc::clone(&self.repo);
         let list = self.list;
@@ -107,11 +107,11 @@ impl StoredFavorites {
         cx.notify();
     }
 
-    pub fn ids(&self) -> Option<&HashSet<SharedString>> {
+    pub(crate) fn ids(&self) -> Option<&HashSet<SharedString>> {
         self.ids.loaded()
     }
 
-    pub fn status(&self) -> FavoritesStatus {
+    pub(crate) fn status(&self) -> FavoritesStatus {
         match &self.ids {
             Loadable::Loaded(_) => FavoritesStatus::Ready,
             Loadable::Loading => FavoritesStatus::Pending,
@@ -121,7 +121,7 @@ impl StoredFavorites {
         }
     }
 
-    pub fn toggle(&mut self, id: &SharedString, cx: &mut Context<Self>) {
+    pub(crate) fn toggle(&mut self, id: &SharedString, cx: &mut Context<Self>) {
         let Some(ids) = self.ids.loaded_mut() else {
             return;
         };
@@ -150,7 +150,11 @@ impl StoredFavorites {
     }
 }
 
-pub fn follow_picker_event(store: &Entity<StoredFavorites>, event: &GridPickerEvent, cx: &mut App) {
+pub(crate) fn follow_picker_event(
+    store: &Entity<StoredFavorites>,
+    event: &GridPickerEvent,
+    cx: &mut App,
+) {
     match event {
         GridPickerEvent::FavoriteToggled(id) => store.update(cx, |store, cx| store.toggle(id, cx)),
         GridPickerEvent::FavoritesRetry => store.update(cx, |store, cx| store.load(cx)),
@@ -158,7 +162,7 @@ pub fn follow_picker_event(store: &Entity<StoredFavorites>, event: &GridPickerEv
     }
 }
 
-pub fn bind_picker(
+pub(crate) fn bind_picker(
     store: &Entity<StoredFavorites>,
     picker: &Entity<GridPicker>,
     cx: &mut App,

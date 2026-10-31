@@ -24,7 +24,7 @@ const SUCCESS_HEADING: &str = "Authentication successful";
 const SUCCESS_DETAIL: &str = "You may close this tab and return to forge.";
 const FAILURE_HEADING: &str = "Authentication failed";
 
-pub struct LocalCallbackDriver {
+pub(crate) struct LocalCallbackDriver {
     listener: TcpListener,
     state: String,
     code_verifier: Secret,
@@ -33,12 +33,12 @@ pub struct LocalCallbackDriver {
 }
 
 #[derive(Debug, Clone)]
-pub struct CallbackCode {
+pub(crate) struct CallbackCode {
     pub code: Secret,
 }
 
 impl LocalCallbackDriver {
-    pub async fn bind(preferred_port: Option<u16>) -> Result<Self, PlatformError> {
+    pub(crate) async fn bind(preferred_port: Option<u16>) -> Result<Self, PlatformError> {
         let listener =
             match preferred_port {
                 Some(port) => TcpListener::bind(("127.0.0.1", port))
@@ -65,23 +65,23 @@ impl LocalCallbackDriver {
         })
     }
 
-    pub fn redirect_uri(&self) -> &str {
+    pub(crate) fn redirect_uri(&self) -> &str {
         &self.redirect_uri
     }
 
-    pub fn state(&self) -> &str {
+    pub(crate) fn state(&self) -> &str {
         &self.state
     }
 
-    pub fn code_challenge(&self) -> &str {
+    pub(crate) fn code_challenge(&self) -> &str {
         &self.code_challenge
     }
 
-    pub fn code_verifier(&self) -> &Secret {
+    pub(crate) fn code_verifier(&self) -> &Secret {
         &self.code_verifier
     }
 
-    pub async fn await_callback(self, dur: Duration) -> Result<CallbackCode, PlatformError> {
+    pub(crate) async fn await_callback(self, dur: Duration) -> Result<CallbackCode, PlatformError> {
         let deadline = tokio::time::Instant::now() + dur;
         timeout_at(deadline, self.serve_until_callback())
             .await

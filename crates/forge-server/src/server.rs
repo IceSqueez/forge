@@ -29,7 +29,7 @@ use crate::settings;
 use crate::{ServerConfig, ServerError, ServerHandle, ServerTiming};
 
 #[derive(Clone)]
-pub struct AppState {
+pub(crate) struct AppState {
     pub(crate) auth: Arc<AuthState>,
     pub bus: Arc<dyn EventHistory>,
     pub bus_adapter: Arc<BusAdapter>,
@@ -242,7 +242,7 @@ fn build_router(state: AppState, shutdown: tokio::sync::watch::Receiver<bool>) -
         .with_state(state)
 }
 
-pub fn serve_on_with_shutdown(
+pub(crate) fn serve_on_with_shutdown(
     listener: TcpListener,
     state: AppState,
     run_state_tx: tokio::sync::watch::Sender<bool>,
@@ -1049,7 +1049,7 @@ pub(crate) mod tests {
     #[tokio::test]
     async fn run_state_reports_running_right_after_bind() {
         let (handle, _addr) = make_server(false, MemCreds::new()).await;
-        assert!(*handle.run_state().borrow());
+        assert!(handle.run_state().is_running());
         handle.stop().await.expect("stop");
     }
 
@@ -1066,8 +1066,8 @@ pub(crate) mod tests {
         tokio::time::timeout(HANG_GUARD, run_state.changed())
             .await
             .expect("run state must flip without waiting for the drain")
-            .expect("watch sender alive");
-        assert!(!*run_state.borrow());
+            .expect("server handle alive");
+        assert!(!run_state.is_running());
 
         stopper.await.expect("stop task").expect("stop");
     }
@@ -1077,7 +1077,7 @@ pub(crate) mod tests {
         let (handle, _addr) = make_server(false, MemCreds::new()).await;
         handle.stop().await.expect("stop");
         assert!(
-            !*handle.run_state().borrow(),
+            !handle.run_state().is_running(),
             "a late subscriber must read the live state, not a fresh channel"
         );
     }
@@ -1090,7 +1090,7 @@ pub(crate) mod tests {
         handle.restart().await.expect("restart");
 
         assert!(
-            *run_state.borrow_and_update(),
+            run_state.latest(),
             "a restarted server must report running again"
         );
 
@@ -1118,7 +1118,7 @@ pub(crate) mod tests {
             .await
             .expect("save port");
         let mut config = loopback_config(settings, port, Vec::new());
-        let mut overlays = forge_storage::overlay::MockOverlayRepo::new();
+        let mut overlays = forge_storage::MockOverlayRepo::new();
         overlays.expect_get_by_credential().returning(|credential| {
             Ok((credential.expose() == OVERLAY_PAGE_CREDENTIAL).then(served_overlay))
         });
@@ -1254,9 +1254,9 @@ pub(crate) mod tests {
             *old_listener_reports.borrow(),
             "the old listener must still be serving the unfinished request after the drain"
         );
-        let run_state = handle.run_state();
+        let mut run_state = handle.run_state();
         assert!(
-            *run_state.borrow(),
+            run_state.latest(),
             "the restarted listener is serving and must report running"
         );
 
@@ -1266,7 +1266,7 @@ pub(crate) mod tests {
             .expect("the old listener never reported its end");
 
         assert!(
-            *run_state.borrow(),
+            run_state.latest(),
             "the previous listener finishing reported the live server stopped"
         );
         handle.stop().await.expect("stop after restart");
@@ -1278,7 +1278,7 @@ pub(crate) mod tests {
         let mut run_state = handle.run_state();
 
         assert!(
-            !*run_state.borrow_and_update(),
+            !run_state.latest(),
             "a handle built without a listener must not report running"
         );
         assert!(
@@ -1288,7 +1288,7 @@ pub(crate) mod tests {
 
         handle.restart().await.expect("restart");
 
-        assert!(*run_state.borrow_and_update());
+        assert!(run_state.latest());
         assert_eq!(handle.bind_addr().await.port(), port);
         assert_eq!(info_status(port).await, reqwest::StatusCode::OK);
 
@@ -1304,7 +1304,7 @@ pub(crate) mod tests {
             .await
             .expect("stop must not fail with no listener");
 
-        assert!(!*handle.run_state().borrow());
+        assert!(!handle.run_state().is_running());
     }
 
     #[tokio::test]
@@ -1322,7 +1322,7 @@ pub(crate) mod tests {
 
         assert!(matches!(err, ServerError::Bind { .. }));
         assert!(
-            !*handle.run_state().borrow(),
+            !handle.run_state().is_running(),
             "a refused bind must leave the handle stopped, not half started"
         );
         drop(squatter);
@@ -1347,7 +1347,7 @@ pub(crate) mod tests {
 
             assert!(matches!(err, ServerError::Disabled), "{case}");
             assert!(
-                !*handle.run_state().borrow(),
+                !handle.run_state().is_running(),
                 "{case} must report stopped after the refusal"
             );
             assert!(!accepts_on(port).await, "{case} left a listener behind");
@@ -1371,7 +1371,7 @@ pub(crate) mod tests {
             .expect("save enabled");
         handle.restart().await.expect("restart once switched on");
 
-        assert!(*handle.run_state().borrow());
+        assert!(handle.run_state().is_running());
         assert_eq!(info_status(port).await, reqwest::StatusCode::OK);
 
         handle.stop().await.expect("stop after restart");
@@ -1481,7 +1481,7 @@ pub(crate) mod tests {
         let creds_dyn: Arc<dyn CredentialsRepo> = creds;
         let mut state = app_state(auth, creds_dyn);
 
-        let mut overlays = forge_storage::overlay::MockOverlayRepo::new();
+        let mut overlays = forge_storage::MockOverlayRepo::new();
         overlays.expect_get_by_credential().returning(|credential| {
             Ok((credential.expose() == OVERLAY_PAGE_CREDENTIAL).then(served_overlay))
         });
@@ -1581,7 +1581,7 @@ pub(crate) mod tests {
             .expect("config");
             std::fs::write(shared.join("runtime-v1.js"), OVERLAY_RUNTIME_BODY).expect("runtime");
 
-            let mut overlays = forge_storage::overlay::MockOverlayRepo::new();
+            let mut overlays = forge_storage::MockOverlayRepo::new();
             overlays
                 .expect_get()
                 .returning(|id| Ok((id.as_str() == OVERLAY_IDENTITY).then(served_overlay)));

@@ -45,10 +45,6 @@ pub async fn set_event_log_retention_days(
     write_setting(repo, &core_settings::EVENT_LOG_RETENTION_DAYS, &days).await
 }
 
-pub fn clamp_event_log_retention_days(days: u32) -> u32 {
-    core_settings::EVENT_LOG_RETENTION_DAYS.codec().clamp(days)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

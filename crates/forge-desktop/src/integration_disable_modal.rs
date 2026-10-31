@@ -45,7 +45,7 @@ const CONFIRM_GAP: Pixels = px(5.0);
 const CONFIRM_SIZE: Pixels = FONT_XS;
 const CONFIRM_ICON: Pixels = px(12.0);
 
-pub struct DisablePrompt {
+pub(crate) struct DisablePrompt {
     pub name: &'static str,
     pub references: IntegrationReferences,
     pub references_known: bool,
@@ -92,12 +92,24 @@ fn lead(prompt: &DisablePrompt, palette: &ForgePalette) -> AnyElement {
         text.plain(&tr!("integration_disable_lead_prefix", name = prompt.name));
         match (actions > 0, triggers > 0) {
             (true, true) => {
-                text.strong(&tr!("integration_refs_actions", count = actions as i64));
+                text.strong(&tr!(
+                    "integration_refs_actions",
+                    count = i64::try_from(actions).unwrap_or(i64::MAX)
+                ));
                 text.plain(&tr!("integration_disable_lead_and"));
-                text.strong(&tr!("integration_refs_triggers", count = triggers as i64));
+                text.strong(&tr!(
+                    "integration_refs_triggers",
+                    count = i64::try_from(triggers).unwrap_or(i64::MAX)
+                ));
             }
-            (true, false) => text.strong(&tr!("integration_refs_actions", count = actions as i64)),
-            _ => text.strong(&tr!("integration_refs_triggers", count = triggers as i64)),
+            (true, false) => text.strong(&tr!(
+                "integration_refs_actions",
+                count = i64::try_from(actions).unwrap_or(i64::MAX)
+            )),
+            _ => text.strong(&tr!(
+                "integration_refs_triggers",
+                count = i64::try_from(triggers).unwrap_or(i64::MAX)
+            )),
         }
         text.plain(&tr!("integration_disable_lead_suffix"));
     } else {
@@ -214,7 +226,10 @@ fn used_by(prompt: &DisablePrompt, palette: &ForgePalette, density: Density) -> 
                 .font_family(mono_family())
                 .text_size(CHIP_SIZE)
                 .text_color(palette.text_faint)
-                .child(tr!("integration_disable_more", count = more as i64)),
+                .child(tr!(
+                    "integration_disable_more",
+                    count = i64::try_from(more).unwrap_or(i64::MAX)
+                )),
         );
     }
     Some(
@@ -232,7 +247,7 @@ fn used_by(prompt: &DisablePrompt, palette: &ForgePalette, density: Density) -> 
     )
 }
 
-pub fn render_disable_modal(
+pub(crate) fn render_disable_modal(
     prompt: &DisablePrompt,
     palette: &ForgePalette,
     cx: &mut Context<IntegrationsHubView>,

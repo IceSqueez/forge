@@ -11,9 +11,9 @@ use forge_registry::{
 use forge_runtime::{
     ActionCancelRegistry, Catalog, EventBus, ExecutionRequest, spawn_action_engine,
 };
-use forge_storage::action::MockActionRepo;
-use forge_storage::history::MockHistoryRepo;
-use forge_storage::trigger_instance::MockTriggerInstanceRepo;
+use forge_storage::MockActionRepo;
+use forge_storage::MockHistoryRepo;
+use forge_storage::MockTriggerInstanceRepo;
 use forge_storage::{CatalogRevision, EventLogRepo, StorageError};
 use forge_types::{Action, ActionId, ArgStack, EventId, ExecutionMetadata, QueueId, TriggerConfig};
 

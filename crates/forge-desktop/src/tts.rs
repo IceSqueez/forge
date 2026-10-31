@@ -42,7 +42,7 @@ impl TtsSection {
     }
 }
 
-pub struct TtsView {
+pub(crate) struct TtsView {
     section: TtsSection,
     dashboard: Entity<TtsDashboardView>,
     engines: Entity<TtsEnginesView>,
@@ -57,7 +57,7 @@ impl TtsView {
         clippy::too_many_arguments,
         reason = "constructor receives each shared handle it wires"
     )]
-    pub fn new(
+    pub(crate) fn new(
         speak_state: Entity<SpeakState>,
         speak: Option<SpeakQueueHandle>,
         backend: Arc<dyn DataProvider>,
@@ -260,7 +260,10 @@ fn engine_readiness(engine_count: usize, palette: &ForgePalette) -> (Rgba, Strin
     } else {
         (
             palette.success,
-            tr!("tts_header_engines_ready", count = engine_count as i64),
+            tr!(
+                "tts_header_engines_ready",
+                count = i64::try_from(engine_count).unwrap_or(i64::MAX)
+            ),
         )
     }
 }

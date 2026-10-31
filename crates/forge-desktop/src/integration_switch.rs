@@ -13,12 +13,12 @@ use crate::integrations::BuiltinObject;
 use forge_runtime::IntegrationSupervisor;
 
 #[derive(Clone)]
-pub struct IntegrationSwitch {
+pub(crate) struct IntegrationSwitch {
     lifecycle: Entity<IntegrationLifecycle>,
     supervisor: IntegrationSupervisor<BuiltinObject>,
 }
 
-pub struct SwitchWatch {
+pub(crate) struct SwitchWatch {
     switch: IntegrationSwitch,
     off: HashSet<IntegrationId>,
     failed: HashSet<IntegrationId>,
@@ -26,13 +26,13 @@ pub struct SwitchWatch {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ClosedGate {
+pub(crate) enum ClosedGate {
     SwitchedOff(IntegrationId),
     Failed(IntegrationId),
 }
 
 impl ClosedGate {
-    pub fn owner(&self) -> &IntegrationId {
+    pub(crate) fn owner(&self) -> &IntegrationId {
         match self {
             ClosedGate::SwitchedOff(owner) | ClosedGate::Failed(owner) => owner,
         }
@@ -40,7 +40,7 @@ impl ClosedGate {
 }
 
 impl IntegrationSwitch {
-    pub fn new(
+    pub(crate) fn new(
         lifecycle: Entity<IntegrationLifecycle>,
         supervisor: IntegrationSupervisor<BuiltinObject>,
     ) -> Self {
@@ -50,13 +50,13 @@ impl IntegrationSwitch {
         }
     }
 
-    pub fn enable(&self, id: &IntegrationId) {
+    pub(crate) fn enable(&self, id: &IntegrationId) {
         if let Some(slot) = self.supervisor.slot(id) {
             slot.request_enable();
         }
     }
 
-    pub fn watch<V: 'static>(
+    pub(crate) fn watch<V: 'static>(
         self,
         cx: &mut Context<V>,
         apply: impl Fn(&mut V, HashSet<IntegrationId>, &mut Context<V>) + 'static,
@@ -78,36 +78,42 @@ impl IntegrationSwitch {
 }
 
 impl SwitchWatch {
-    pub fn replace(&mut self, off: HashSet<IntegrationId>, cx: &App) {
+    pub(crate) fn replace(&mut self, off: HashSet<IntegrationId>, cx: &App) {
         self.off = off;
         self.sync_failed(cx);
     }
 
-    pub fn sync_failed(&mut self, cx: &App) {
+    pub(crate) fn sync_failed(&mut self, cx: &App) {
         self.failed = self.switch.lifecycle.read(cx).failed();
     }
 
-    pub fn failed(&self) -> &HashSet<IntegrationId> {
+    pub(crate) fn failed(&self) -> &HashSet<IntegrationId> {
         &self.failed
     }
 
-    pub fn failed_owner<'a>(&self, owner: Option<&'a IntegrationId>) -> Option<&'a IntegrationId> {
+    pub(crate) fn failed_owner<'a>(
+        &self,
+        owner: Option<&'a IntegrationId>,
+    ) -> Option<&'a IntegrationId> {
         owner.filter(|id| self.failed.contains(*id))
     }
 
-    pub fn off(&self) -> &HashSet<IntegrationId> {
+    pub(crate) fn off(&self) -> &HashSet<IntegrationId> {
         &self.off
     }
 
-    pub fn switch(&self) -> IntegrationSwitch {
+    pub(crate) fn switch(&self) -> IntegrationSwitch {
         self.switch.clone()
     }
 
-    pub fn off_owner<'a>(&self, owner: Option<&'a IntegrationId>) -> Option<&'a IntegrationId> {
+    pub(crate) fn off_owner<'a>(
+        &self,
+        owner: Option<&'a IntegrationId>,
+    ) -> Option<&'a IntegrationId> {
         owner.filter(|id| self.off.contains(*id))
     }
 
-    pub fn uncovered_category(&self, kind_id: &str) -> Option<IntegrationCategory> {
+    pub(crate) fn uncovered_category(&self, kind_id: &str) -> Option<IntegrationCategory> {
         let category = required_category(kind_id)?;
         let mut providers = declarations()
             .into_iter()
@@ -117,23 +123,23 @@ impl SwitchWatch {
             .then_some(category)
     }
 
-    pub fn is_off(&self, id: &IntegrationId) -> bool {
+    pub(crate) fn is_off(&self, id: &IntegrationId) -> bool {
         self.off.contains(id)
     }
 
-    pub fn enable(&self, id: &IntegrationId) {
+    pub(crate) fn enable(&self, id: &IntegrationId) {
         self.switch.enable(id);
     }
 }
 
-pub fn integration_name(id: &IntegrationId) -> SharedString {
+pub(crate) fn integration_name(id: &IntegrationId) -> SharedString {
     match declaration_of(id) {
         Some(declaration) => SharedString::new_static(declaration.brand_name),
         None => SharedString::from(id.as_str().to_owned()),
     }
 }
 
-pub fn inactive_badge(
+pub(crate) fn inactive_badge(
     owner: &IntegrationId,
     palette: &ForgePalette,
     density: Density,
@@ -148,11 +154,11 @@ pub fn inactive_badge(
     )
 }
 
-pub fn required_category(kind_id: &str) -> Option<IntegrationCategory> {
+pub(crate) fn required_category(kind_id: &str) -> Option<IntegrationCategory> {
     (kind_id == DONATION_RECEIVED_KIND).then_some(IntegrationCategory::DONATIONS)
 }
 
-pub fn category_members(kind_id: &str) -> Vec<IntegrationId> {
+pub(crate) fn category_members(kind_id: &str) -> Vec<IntegrationId> {
     let Some(category) = required_category(kind_id) else {
         return Vec::new();
     };
@@ -163,7 +169,7 @@ pub fn category_members(kind_id: &str) -> Vec<IntegrationId> {
         .collect()
 }
 
-pub fn category_inactive_badge(
+pub(crate) fn category_inactive_badge(
     category: IntegrationCategory,
     palette: &ForgePalette,
     density: Density,

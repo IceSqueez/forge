@@ -26,8 +26,8 @@ use crate::navigable_list::ListCursor;
 use crate::navigation::NavRequested;
 use crate::screen_shortcuts::ScreenShortcuts;
 use crate::unsaved_work::UnsavedWork;
+use forge_components::Language;
 use forge_components::drive_overlay_focus;
-use forge_components::highlight::Language;
 use forge_components::{
     ActivePresentation, BreadcrumbCrumb, CodeEditor, Confirm, FONT_XS, ForgePalette, Icon,
     InputEvent, Radius, SaveCode, SearchState, TextInput, page_frame, tr,
@@ -91,7 +91,7 @@ enum PendingNav {
     NewScript,
 }
 
-pub struct ScriptEditorView {
+pub(crate) struct ScriptEditorView {
     backend: Arc<dyn DataProvider>,
     script_registry: Arc<ScriptRegistry>,
     bus: Arc<EventBus>,
@@ -200,7 +200,7 @@ impl ScriptEditorView {
             || self.pending_nav.is_some()
     }
 
-    pub fn new(
+    pub(crate) fn new(
         backend: Arc<dyn DataProvider>,
         script_registry: Arc<ScriptRegistry>,
         bus: Arc<EventBus>,

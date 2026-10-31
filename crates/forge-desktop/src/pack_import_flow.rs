@@ -103,9 +103,9 @@ enum PackImportStep {
     Previewing(Box<Preview>),
 }
 
-pub struct PackImported;
+pub(crate) struct PackImported;
 
-pub struct PackImportFlow {
+pub(crate) struct PackImportFlow {
     services: PackServices,
     data_dir: PathBuf,
     step: PackImportStep,
@@ -114,7 +114,7 @@ pub struct PackImportFlow {
 impl EventEmitter<PackImported> for PackImportFlow {}
 
 impl PackImportFlow {
-    pub fn new(services: PackServices, data_dir: PathBuf) -> Self {
+    pub(crate) fn new(services: PackServices, data_dir: PathBuf) -> Self {
         Self {
             services,
             data_dir,
@@ -122,11 +122,11 @@ impl PackImportFlow {
         }
     }
 
-    pub fn is_busy(&self) -> bool {
+    pub(crate) fn is_busy(&self) -> bool {
         !matches!(self.step, PackImportStep::Idle)
     }
 
-    pub fn open(&mut self, bundle: PathBuf, cx: &mut Context<Self>) {
+    pub(crate) fn open(&mut self, bundle: PathBuf, cx: &mut Context<Self>) {
         if self.is_busy() {
             refuse_while_busy(cx);
             return;

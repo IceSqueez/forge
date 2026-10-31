@@ -217,6 +217,9 @@ impl IntegrationDetail {
             .find(|(t, _)| *t <= target)
             .copied()
             .unwrap_or(oldest);
-        Some(newest as i64 - baseline.1 as i64)
+        Some(
+            i64::try_from(newest).unwrap_or(i64::MAX)
+                - i64::try_from(baseline.1).unwrap_or(i64::MAX),
+        )
     }
 }

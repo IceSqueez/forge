@@ -43,7 +43,7 @@ const FOLLOW_SLACK: Pixels = px(24.0);
 const NOTE_GLYPH: Pixels = px(14.0);
 const PREVIEW_WIDTH: Pixels = px(600.0);
 
-pub struct SettingsDiagnosticsView {
+pub(crate) struct SettingsDiagnosticsView {
     tail: LogTail,
     backend: Arc<dyn DataProvider>,
     builtins: BuiltinRegistry,
@@ -63,7 +63,7 @@ pub struct SettingsDiagnosticsView {
 }
 
 impl SettingsDiagnosticsView {
-    pub fn new(
+    pub(crate) fn new(
         tail: LogTail,
         backend: Arc<dyn DataProvider>,
         builtins: BuiltinRegistry,
@@ -98,13 +98,13 @@ impl SettingsDiagnosticsView {
     }
 
     #[must_use]
-    pub fn with_storage_changes(mut self, scheduled: ScheduledBackupHandle) -> Self {
+    pub(crate) fn with_storage_changes(mut self, scheduled: ScheduledBackupHandle) -> Self {
         self.storage_changes = Some(scheduled);
         self
     }
 
     #[must_use]
-    pub fn with_boot_warnings(mut self, warnings: BootWarnings) -> Self {
+    pub(crate) fn with_boot_warnings(mut self, warnings: BootWarnings) -> Self {
         self.boot_warnings = warnings;
         self
     }
@@ -154,7 +154,7 @@ impl SettingsDiagnosticsView {
         cx.notify();
     }
 
-    pub fn set_active(&mut self, active: bool, cx: &mut Context<Self>) {
+    pub(crate) fn set_active(&mut self, active: bool, cx: &mut Context<Self>) {
         if self.active == active {
             return;
         }

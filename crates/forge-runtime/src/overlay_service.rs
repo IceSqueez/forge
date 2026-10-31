@@ -853,7 +853,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use forge_storage::overlay::MockOverlayRepo;
+    use forge_storage::MockOverlayRepo;
     use forge_storage::test_support::MemorySettings;
 
     use super::*;

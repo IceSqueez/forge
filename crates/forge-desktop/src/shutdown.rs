@@ -42,7 +42,7 @@ const _: () = assert!(GRACEFUL_BUDGET.as_millis() < gpui::SHUTDOWN_TIMEOUT.as_mi
 
 const SCHEDULED_BACKUP_STOP_BUDGET: Duration = GRACEFUL_BUDGET;
 
-pub async fn stop_scheduled_backups(scheduled: ScheduledBackupHandle) {
+pub(crate) async fn stop_scheduled_backups(scheduled: ScheduledBackupHandle) {
     scheduled.cancel_in_flight();
     scheduled.shutdown();
     let mut status = scheduled.status();
@@ -55,31 +55,31 @@ pub async fn stop_scheduled_backups(scheduled: ScheduledBackupHandle) {
     }
 }
 
-pub const RUNTIME_SHUTDOWN_BUDGET: Duration = Duration::from_secs(1);
+pub(crate) const RUNTIME_SHUTDOWN_BUDGET: Duration = Duration::from_secs(1);
 
 #[derive(Clone)]
-pub struct RuntimeSlot(Rc<RefCell<Option<Runtime>>>);
+pub(crate) struct RuntimeSlot(Rc<RefCell<Option<Runtime>>>);
 
 impl Global for RuntimeSlot {}
 
 impl RuntimeSlot {
-    pub fn new(runtime: Runtime) -> Self {
+    pub(crate) fn new(runtime: Runtime) -> Self {
         Self(Rc::new(RefCell::new(Some(runtime))))
     }
 
-    pub fn take(&self) -> Option<Runtime> {
+    pub(crate) fn take(&self) -> Option<Runtime> {
         self.0.borrow_mut().take()
     }
 }
 
-pub fn silence_logging() {
+pub(crate) fn silence_logging() {
     log::set_max_level(log::LevelFilter::Off);
 }
 
-pub struct QuitTeardown(Option<Runtime>);
+pub(crate) struct QuitTeardown(Option<Runtime>);
 
 impl QuitTeardown {
-    pub fn claim(cx: &App) -> Self {
+    pub(crate) fn claim(cx: &App) -> Self {
         if cfg!(target_os = "macos") {
             Self(cx.try_global::<RuntimeSlot>().and_then(RuntimeSlot::take))
         } else {
@@ -87,7 +87,7 @@ impl QuitTeardown {
         }
     }
 
-    pub fn finish(self) {
+    pub(crate) fn finish(self) {
         let Some(runtime) = self.0 else {
             return;
         };
@@ -101,7 +101,7 @@ impl QuitTeardown {
     }
 }
 
-pub struct ShutdownHandles {
+pub(crate) struct ShutdownHandles {
     bus: Arc<EventBus>,
     action_engine: ActionEngineHandle,
     scheduler: QueueSchedulerHandle,
@@ -116,7 +116,7 @@ pub struct ShutdownHandles {
 }
 
 impl ShutdownHandles {
-    pub fn from_handles(handles: &RuntimeHandles) -> Self {
+    pub(crate) fn from_handles(handles: &RuntimeHandles) -> Self {
         Self {
             bus: Arc::clone(&handles.bus),
             action_engine: handles.action_engine.clone(),
@@ -132,7 +132,7 @@ impl ShutdownHandles {
         }
     }
 
-    pub async fn run_graceful(self) {
+    pub(crate) async fn run_graceful(self) {
         if tokio::time::timeout(GRACEFUL_BUDGET, self.sequence())
             .await
             .is_err()
@@ -232,16 +232,16 @@ mod tests {
 
     use forge_events::{Event, EventSource};
     use forge_registry::{SubActionRegistry, TriggerRegistry};
-    use forge_runtime::triggers::TIMER_TICK_KIND;
+    use forge_runtime::TIMER_TICK_KIND;
     use forge_runtime::{
         ActionCancelRegistry, Catalog, CatchUpSettle, Config, HandOff, QueueScheduler,
         ScheduleError, ScheduledRunsParts, spawn_action_engine, spawn_live_viewer_aggregator,
         spawn_scheduled_runs, spawn_stream_live_signal, spawn_timer_scheduler,
         spawn_trigger_evaluator,
     };
-    use forge_storage::action::MockActionRepo;
-    use forge_storage::history::MockHistoryRepo;
-    use forge_storage::trigger_instance::MockTriggerInstanceRepo;
+    use forge_storage::MockActionRepo;
+    use forge_storage::MockHistoryRepo;
+    use forge_storage::MockTriggerInstanceRepo;
     use forge_storage::{
         ActionRepo, ActionTelemetry, CatalogRevision, EventLogRepo, ExecutionStatus,
         MockScheduledRunRepo, ScheduledRun, ScheduledRunId, ScheduledRunPlacement,

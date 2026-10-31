@@ -15,10 +15,10 @@ use crate::update_report::ROLLED_BACK_VERSION;
 use crate::vtube_connect_form::{VTUBE_AUTO_RECONNECT, VTUBE_CONNECT_ON_LAUNCH};
 use crate::window_placement::WINDOW_PLACEMENT;
 
-pub const DENSITY: Setting<OptionalText> =
+pub(crate) const DENSITY: Setting<OptionalText> =
     Setting::new("density", OptionalText, Portable, Verbatim);
 
-pub const SCHEDULED_BACKUP_FAILURE_OS_NOTICE: Setting<Flag> = Setting::new(
+pub(crate) const SCHEDULED_BACKUP_FAILURE_OS_NOTICE: Setting<Flag> = Setting::new(
     "notifications.scheduled_backup_failure_os_notice",
     Flag {
         default: DEFAULT_NOTIFICATIONS_SCHEDULED_BACKUP_FAILURE_OS_NOTICE,
@@ -27,7 +27,7 @@ pub const SCHEDULED_BACKUP_FAILURE_OS_NOTICE: Setting<Flag> = Setting::new(
     Withheld,
 );
 
-pub const SETTING_SPECS: &[SettingSpec] = &[
+pub(crate) const SETTING_SPECS: &[SettingSpec] = &[
     DENSITY.spec(),
     KEYBOARD_SHORTCUTS.spec(),
     SPEECH_ROUTE.spec(),
@@ -55,7 +55,7 @@ const OWNER_SPECS: &[&[SettingSpec]] = &[
     SETTING_SPECS,
 ];
 
-pub fn registered_settings_catalog() -> SettingsCatalog {
+pub(crate) fn registered_settings_catalog() -> SettingsCatalog {
     let mut catalog = SettingsCatalog::core();
     for specs in OWNER_SPECS {
         if let Err(error) = catalog.register(specs) {

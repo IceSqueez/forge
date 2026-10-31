@@ -3,7 +3,7 @@ use crate::integration_switch::integration_name;
 use crate::user_text::{ResolvedText, resolve_user_text};
 use forge_components::ActivePresentation;
 use forge_components::BORDER_THIN;
-use forge_components::highlight::Language;
+use forge_components::Language;
 use forge_components::{
     Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, ModalSize, OverlayPosition, Radius,
     Spacing, body_family, error_row, fmt_display_relative, highlighted_text, icon,
@@ -36,11 +36,11 @@ const EMPTY_GLYPH: Pixels = px(26.0);
 const CHIP_RADIUS: Pixels = radius(Radius::Sm);
 const RAIL_DISABLED_GLYPH: Pixels = px(10.0);
 
-pub struct RunHistoryDismissed;
+pub(crate) struct RunHistoryDismissed;
 
-pub struct RunHistoryOpenIntegration(pub IntegrationId);
+pub(crate) struct RunHistoryOpenIntegration(pub IntegrationId);
 
-pub fn disabled_integration_of(ctx: &ExecutionContext) -> Option<&IntegrationId> {
+pub(crate) fn disabled_integration_of(ctx: &ExecutionContext) -> Option<&IntegrationId> {
     ctx.telemetry.iter().find_map(|step| match &step.outcome {
         SubActionOutcome::IntegrationDisabled(integration) => Some(integration),
         _ => None,
@@ -88,7 +88,7 @@ enum Load {
     Ready(Vec<ExecutionContext>),
 }
 
-pub struct RunHistoryModal {
+pub(crate) struct RunHistoryModal {
     subtitle: SharedString,
     trigger_registry: Arc<TriggerRegistry>,
     action_names: HashMap<ActionId, SharedString>,
@@ -101,7 +101,10 @@ impl EventEmitter<RunHistoryDismissed> for RunHistoryModal {}
 impl EventEmitter<RunHistoryOpenIntegration> for RunHistoryModal {}
 
 impl RunHistoryModal {
-    pub fn new(subtitle: impl Into<SharedString>, trigger_registry: Arc<TriggerRegistry>) -> Self {
+    pub(crate) fn new(
+        subtitle: impl Into<SharedString>,
+        trigger_registry: Arc<TriggerRegistry>,
+    ) -> Self {
         Self {
             subtitle: subtitle.into(),
             trigger_registry,
@@ -111,7 +114,7 @@ impl RunHistoryModal {
         }
     }
 
-    pub fn with_action_names(mut self, names: HashMap<ActionId, SharedString>) -> Self {
+    pub(crate) fn with_action_names(mut self, names: HashMap<ActionId, SharedString>) -> Self {
         self.action_names = names;
         self
     }
@@ -130,13 +133,13 @@ impl RunHistoryModal {
         }
     }
 
-    pub fn set_runs(&mut self, runs: Vec<ExecutionContext>, cx: &mut Context<Self>) {
+    pub(crate) fn set_runs(&mut self, runs: Vec<ExecutionContext>, cx: &mut Context<Self>) {
         self.load = Load::Ready(runs);
         self.selected = 0;
         cx.notify();
     }
 
-    pub fn set_error(&mut self, message: impl Into<SharedString>, cx: &mut Context<Self>) {
+    pub(crate) fn set_error(&mut self, message: impl Into<SharedString>, cx: &mut Context<Self>) {
         self.load = Load::Failed(message.into());
         self.selected = 0;
         cx.notify();
@@ -151,7 +154,7 @@ impl RunHistoryModal {
         cx.emit(RunHistoryDismissed);
     }
 
-    pub fn open_integration(&mut self, integration: IntegrationId, cx: &mut Context<Self>) {
+    pub(crate) fn open_integration(&mut self, integration: IntegrationId, cx: &mut Context<Self>) {
         cx.emit(RunHistoryOpenIntegration(integration));
     }
 
@@ -574,7 +577,7 @@ impl RunHistoryModal {
                     .text_color(palette.text_muted)
                     .child(tr!(
                         "action_editor_run_history_duration_ms",
-                        count = step.duration_ms as i64
+                        count = i64::try_from(step.duration_ms).unwrap_or(i64::MAX)
                     )),
             )
             .child(match &step.outcome {

@@ -61,7 +61,7 @@ struct StoredLimits {
     action_history_retention: u32,
 }
 
-pub struct SettingsStorageView {
+pub(crate) struct SettingsStorageView {
     backend: Arc<dyn DataProvider>,
     rt_handle: tokio::runtime::Handle,
     retention: ChatHistoryRetentionHandle,
@@ -84,7 +84,7 @@ pub struct SettingsStorageView {
 }
 
 impl SettingsStorageView {
-    pub fn new(
+    pub(crate) fn new(
         backend: Arc<dyn DataProvider>,
         rt_handle: tokio::runtime::Handle,
         retention: ChatHistoryRetentionHandle,
@@ -168,7 +168,7 @@ impl SettingsStorageView {
         view
     }
 
-    pub fn attach_schedule(
+    pub(crate) fn attach_schedule(
         &mut self,
         schedule: Entity<BackupScheduleView>,
         cx: &mut Context<Self>,
@@ -179,7 +179,7 @@ impl SettingsStorageView {
         cx.notify();
     }
 
-    pub fn attach_safety_copies(
+    pub(crate) fn attach_safety_copies(
         &mut self,
         safety_copies: Entity<SafetyCopiesView>,
         cx: &mut Context<Self>,
@@ -188,7 +188,7 @@ impl SettingsStorageView {
         cx.notify();
     }
 
-    pub fn follow_transfer_lock(
+    pub(crate) fn follow_transfer_lock(
         &mut self,
         exclusivity: &TransferExclusivity,
         cx: &mut Context<Self>,
@@ -672,7 +672,7 @@ mod tests {
 
     use forge_events::{Event, EventSource};
     use forge_runtime::{EventBus, spawn_chat_history_persistence};
-    use forge_storage::chat_history::MockChatHistoryRepo;
+    use forge_storage::MockChatHistoryRepo;
     use forge_storage::{
         DataProvider, SettingsRepo, chat_history_per_viewer_limit,
         set_action_history_retention_days,

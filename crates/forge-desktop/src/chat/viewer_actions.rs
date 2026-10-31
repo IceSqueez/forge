@@ -51,7 +51,7 @@ pub(crate) struct ViewerTarget {
 }
 
 impl ViewerTarget {
-    pub fn new(key: &AuthorKey, name: impl Into<String>) -> Self {
+    pub(crate) fn new(key: &AuthorKey, name: impl Into<String>) -> Self {
         let viewer_id = match &key.handle {
             AuthorHandle::ViewerId(id) => Some(id.to_string()),
             AuthorHandle::Name(_) => None,
@@ -63,7 +63,7 @@ impl ViewerTarget {
         }
     }
 
-    pub fn tts_alias_key(&self) -> Option<String> {
+    pub(crate) fn tts_alias_key(&self) -> Option<String> {
         let id = self
             .viewer_id
             .as_deref()
@@ -72,15 +72,15 @@ impl ViewerTarget {
         Some(AliasKey::new(Some(self.platform), id).to_stored())
     }
 
-    pub fn builtin_id(&self) -> String {
+    pub(crate) fn builtin_id(&self) -> String {
         platform_integration(self.platform).id_str().to_owned()
     }
 
-    pub fn supports(&self, action: &ViewerAction) -> bool {
+    pub(crate) fn supports(&self, action: &ViewerAction) -> bool {
         self.step(action).is_some()
     }
 
-    pub fn label(&self, action: &ViewerAction) -> String {
+    pub(crate) fn label(&self, action: &ViewerAction) -> String {
         let name = self.name.as_str();
         match action {
             ViewerAction::Shoutout => tr!("viewer_step_shoutout", name = name),
@@ -91,7 +91,7 @@ impl ViewerTarget {
         }
     }
 
-    pub fn step(&self, action: &ViewerAction) -> Option<SubActionStep> {
+    pub(crate) fn step(&self, action: &ViewerAction) -> Option<SubActionStep> {
         let (kind_id, config) = match self.platform {
             PlatformId::Twitch => self.twitch_step(action)?,
             PlatformId::YouTube => self.youtube_step(action)?,

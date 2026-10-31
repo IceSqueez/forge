@@ -8,7 +8,7 @@ use crate::error::SqliteStorageError;
 
 const NONCE_LEN: usize = 12;
 
-pub fn load_or_create_key() -> Result<CredentialsKey, SqliteStorageError> {
+pub(crate) fn load_or_create_key() -> Result<CredentialsKey, SqliteStorageError> {
     let path = forge_paths::credentials_key_path();
     let (key, minted) = load_or_create_file_key(&path)?;
     Ok(CredentialsKey {
@@ -17,7 +17,7 @@ pub fn load_or_create_key() -> Result<CredentialsKey, SqliteStorageError> {
     })
 }
 
-pub struct CredentialsKey {
+pub(crate) struct CredentialsKey {
     pub key: Zeroizing<[u8; 32]>,
     pub minted: bool,
 }
@@ -103,11 +103,14 @@ fn sync_directory(_dir: &std::path::Path) -> Result<(), SqliteStorageError> {
 }
 
 #[cfg(test)]
-pub fn encrypt(key: &[u8; 32], plaintext: &str) -> Result<(Vec<u8>, Vec<u8>), SqliteStorageError> {
+pub(crate) fn encrypt(
+    key: &[u8; 32],
+    plaintext: &str,
+) -> Result<(Vec<u8>, Vec<u8>), SqliteStorageError> {
     encrypt_for(key, "", plaintext)
 }
 
-pub fn encrypt_for(
+pub(crate) fn encrypt_for(
     key: &[u8; 32],
     credential_id: &str,
     plaintext: &str,
@@ -138,7 +141,7 @@ pub fn encrypt_for(
     Ok((ciphertext, nonce_bytes.to_vec()))
 }
 
-pub fn decrypt(
+pub(crate) fn decrypt(
     key: &[u8; 32],
     ciphertext: &[u8],
     nonce: &[u8],
@@ -146,7 +149,7 @@ pub fn decrypt(
     decrypt_for(key, "", ciphertext, nonce)
 }
 
-pub fn decrypt_for(
+pub(crate) fn decrypt_for(
     key: &[u8; 32],
     credential_id: &str,
     ciphertext: &[u8],

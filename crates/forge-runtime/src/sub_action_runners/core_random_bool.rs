@@ -35,7 +35,7 @@ fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<(f64, String
     ))
 }
 
-pub struct CoreRandomBoolRunner;
+pub(crate) struct CoreRandomBoolRunner;
 
 #[async_trait]
 impl SubActionRunner for CoreRandomBoolRunner {

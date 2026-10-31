@@ -26,13 +26,11 @@ pub use provenance::{
     SCHEDULED_AT_VARIABLE, SCHEDULED_DUE_AT_VARIABLE, SCHEDULED_KEY_VARIABLE,
     SCHEDULED_LATE_SECONDS_VARIABLE,
 };
-pub use request::{
-    ScheduleDue, ScheduleError, ScheduleRequest, ScheduledPlacement, skip_if_late_by_minutes,
-};
-pub use scheduler::{
-    ScheduledRunsParts, ScheduledRunsStart, ScheduledRunsStartParts, reserve_scheduled_runs,
-    spawn_scheduled_runs,
-};
-pub use scheduling_context::{ScheduleIntent, SchedulingContext};
+pub use request::ScheduledPlacement;
+pub use request::{ScheduleDue, ScheduleError, ScheduleRequest};
+pub use scheduler::{ScheduledRunsParts, spawn_scheduled_runs};
+pub(crate) use scheduler::{ScheduledRunsStart, ScheduledRunsStartParts, reserve_scheduled_runs};
+pub use scheduling_context::ScheduleIntent;
+pub use scheduling_context::SchedulingContext;
 pub use script_scheduler::ScriptScheduling;
 pub use waiting::{WaitingForQueueWatch, WaitingRuns};

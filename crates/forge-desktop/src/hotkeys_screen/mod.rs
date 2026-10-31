@@ -64,7 +64,7 @@ struct LastFired {
     at: OffsetDateTime,
 }
 
-pub struct HotkeysScreenView {
+pub(crate) struct HotkeysScreenView {
     client: Arc<HotkeyClient>,
     reconciler: Arc<HotkeyReconciler>,
     engine: Option<IntegrationSlot<BuiltinObject>>,
@@ -92,7 +92,7 @@ pub struct HotkeysScreenView {
 }
 
 impl HotkeysScreenView {
-    pub fn new(
+    pub(crate) fn new(
         reconciler: Arc<HotkeyReconciler>,
         engine: Option<IntegrationSlot<BuiltinObject>>,
         backend: Arc<dyn DataProvider>,
@@ -179,7 +179,7 @@ impl HotkeysScreenView {
                         ToastKind::Warn,
                         tr!(
                             "hotkeys_toast_enable_partial",
-                            count = failed.combos.len() as i64
+                            count = i64::try_from(failed.combos.len()).unwrap_or(i64::MAX)
                         ),
                     );
                 }
@@ -363,7 +363,7 @@ impl Render for HotkeysScreenView {
                     .text_color(palette.text_muted)
                     .child(tr!(
                         "hotkeys_header_summary",
-                        count = self.active_count() as i64
+                        count = i64::try_from(self.active_count()).unwrap_or(i64::MAX)
                     )),
             );
 

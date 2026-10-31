@@ -5,7 +5,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_events::EventPublisher;
 use forge_platform_core::SenderPreference;
-use forge_registry::runner::SubActionConfig;
+use forge_registry::SubActionConfig;
 use forge_registry::{
     ChoiceField, ConfigChoice, ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory,
     SubActionRunner, TextEditor, TextField, TypedField,
@@ -98,18 +98,18 @@ fn read_config(
     })
 }
 
-pub struct SendAnnouncementRunner {
+pub(crate) struct SendAnnouncementRunner {
     senders: ChatSenders,
 }
 
 impl SendAnnouncementRunner {
-    pub fn new(transport: Arc<dyn HelixTransport>, identity: Arc<SelfIdentity>) -> Self {
+    pub(crate) fn new(transport: Arc<dyn HelixTransport>, identity: Arc<SelfIdentity>) -> Self {
         Self {
             senders: ChatSenders::new(transport, identity),
         }
     }
 
-    pub fn with_bot(mut self, bot: Option<Arc<TwitchBotAccount>>) -> Self {
+    pub(crate) fn with_bot(mut self, bot: Option<Arc<TwitchBotAccount>>) -> Self {
         self.senders = self.senders.with_bot(bot);
         self
     }

@@ -62,7 +62,7 @@ const EMPTY_PAD_V: Pixels = px(20.0);
 const FOOTER_GAP: Pixels = px(8.0);
 const FOOTER_HINT_FS: Pixels = FONT_META;
 
-pub struct ActionModalLaunch {
+pub(crate) struct ActionModalLaunch {
     pub instance_id: Option<TriggerInstanceId>,
     pub combo: String,
     pub edge: HotkeyEdge,
@@ -70,14 +70,14 @@ pub struct ActionModalLaunch {
     pub linked_action: Option<ActionId>,
 }
 
-pub struct BindingDraft {
+pub(crate) struct BindingDraft {
     pub instance_id: Option<TriggerInstanceId>,
     pub combo: String,
     pub edge: HotkeyEdge,
     pub action_id: ActionId,
 }
 
-pub enum HotkeyActionModalEvent {
+pub(crate) enum HotkeyActionModalEvent {
     Save(Box<BindingDraft>),
     Recapture,
     Cancel,
@@ -88,7 +88,7 @@ struct ActionChoice {
     name: String,
 }
 
-pub struct HotkeyActionModal {
+pub(crate) struct HotkeyActionModal {
     instance_id: Option<TriggerInstanceId>,
     combo: String,
     edge: HotkeyEdge,
@@ -104,7 +104,7 @@ pub struct HotkeyActionModal {
 impl EventEmitter<HotkeyActionModalEvent> for HotkeyActionModal {}
 
 impl HotkeyActionModal {
-    pub fn new(
+    pub(crate) fn new(
         launch: ActionModalLaunch,
         action_repo: Arc<dyn ActionRepo>,
         rt_handle: tokio::runtime::Handle,
@@ -156,13 +156,17 @@ impl HotkeyActionModal {
         }
     }
 
-    pub fn apply_capture(&mut self, combo: String, cx: &mut Context<Self>) {
+    pub(crate) fn apply_capture(&mut self, combo: String, cx: &mut Context<Self>) {
         self.capturing = false;
         self.combo = combo;
         cx.notify();
     }
 
-    pub fn set_edge_lock(&mut self, locked_edge: Option<HotkeyEdge>, cx: &mut Context<Self>) {
+    pub(crate) fn set_edge_lock(
+        &mut self,
+        locked_edge: Option<HotkeyEdge>,
+        cx: &mut Context<Self>,
+    ) {
         self.locked_edge = locked_edge;
         if locked_edge == Some(self.edge) {
             self.edge = self.edge.opposite();
@@ -170,7 +174,7 @@ impl HotkeyActionModal {
         cx.notify();
     }
 
-    pub fn cancel_capture(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn cancel_capture(&mut self, cx: &mut Context<Self>) {
         if !self.capturing {
             return;
         }
@@ -555,7 +559,7 @@ impl HotkeyActionModal {
     }
 }
 
-pub fn keycaps(combo: &str, palette: &ForgePalette, density: Density) -> impl IntoElement {
+pub(crate) fn keycaps(combo: &str, palette: &ForgePalette, density: Density) -> impl IntoElement {
     let mut row = div()
         .flex()
         .items_center()
@@ -661,7 +665,7 @@ impl Render for HotkeyActionModal {
 
 #[cfg(test)]
 mod tests {
-    use forge_storage::action::MockActionRepo;
+    use forge_storage::MockActionRepo;
     use forge_storage::{Language, StorageError};
     use gpui::{Entity, TestAppContext};
 

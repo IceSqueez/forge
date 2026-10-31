@@ -814,7 +814,7 @@ impl ScreenActionsView {
             .text_color(palette.text_faint)
             .child(tr!(
                 "action_editor_sub_count",
-                count = action.sub_action_count as i64
+                count = i64::try_from(action.sub_action_count).unwrap_or(i64::MAX)
             ))
             .into_any_element();
         let right_slot = div().pr(ROW_GUTTER).child(
@@ -1206,13 +1206,13 @@ mod tests {
     use std::collections::HashMap;
 
     use forge_components::ThemeId;
-    use forge_runtime::triggers::{TIMER_TICK_KIND, TimerTickDescriptor};
     use forge_runtime::{ActionCancelRegistry, QueueScheduler, spawn_action_engine};
+    use forge_runtime::{TIMER_TICK_KIND, TimerTickDescriptor};
     use forge_soundboard::ClipLibrary;
+    use forge_storage::MockActionRepo;
+    use forge_storage::MockQueueRepo;
+    use forge_storage::MockSoundboardClipsRepo;
     use forge_storage::MockTriggerInstanceRepo;
-    use forge_storage::action::MockActionRepo;
-    use forge_storage::queue::MockQueueRepo;
-    use forge_storage::soundboard::MockSoundboardClipsRepo;
     use forge_storage::{DataProvider, SoundboardClipsRepo};
     use forge_types::{PermissionRung, PlatformScope, TriggerInstance, TriggerInstanceId};
 

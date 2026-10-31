@@ -11,8 +11,8 @@ use crate::hub_crumb::{core_category, hub_crumb};
 use crate::navigation::{NavRequested, Screen};
 use crate::server_bearer;
 use forge_components::{
-    ActivePresentation, Confirm, FONT_XXS, ForgePalette, Spacing, breadcrumb::BreadcrumbCrumb,
-    grow_cell, mono_family, page_frame, spacing, tr,
+    ActivePresentation, BreadcrumbCrumb, Confirm, FONT_XXS, ForgePalette, Spacing, grow_cell,
+    mono_family, page_frame, spacing, tr,
 };
 use forge_events::EventSource;
 use forge_server::{ClientId, ServerHandle};
@@ -112,7 +112,7 @@ struct ServerStats {
     dropped_events: u64,
 }
 
-pub struct ServerConsoleView {
+pub(crate) struct ServerConsoleView {
     server: Option<ServerHandle>,
     rt_handle: tokio::runtime::Handle,
     credentials: Arc<dyn CredentialsRepo>,
@@ -140,7 +140,7 @@ pub struct ServerConsoleView {
 }
 
 impl ServerConsoleView {
-    pub fn new(
+    pub(crate) fn new(
         server: Option<ServerHandle>,
         rt_handle: tokio::runtime::Handle,
         credentials: Arc<dyn CredentialsRepo>,
@@ -149,7 +149,7 @@ impl ServerConsoleView {
     ) -> Self {
         let running = server
             .as_ref()
-            .is_some_and(|handle| *handle.run_state().borrow());
+            .is_some_and(|handle| handle.run_state().is_running());
         let overlay_token = crate::overlay_link_token::current(cx);
         let overlay_token_watch = crate::overlay_link_token::follow(
             server.as_ref(),

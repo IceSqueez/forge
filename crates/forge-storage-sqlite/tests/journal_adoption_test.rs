@@ -6,7 +6,7 @@ mod legacy_fixture;
 use std::path::PathBuf;
 
 use forge_storage::{StorageError, TtsFiltersRepo};
-use forge_storage_sqlite::migrations::classify;
+use forge_storage_sqlite::classify_journal as classify;
 use forge_storage_sqlite::{
     BASELINE_VERSION, JournalState, MIGRATIONS, SqliteBackend, SqliteStorageError,
     SqliteTtsFiltersRepo,

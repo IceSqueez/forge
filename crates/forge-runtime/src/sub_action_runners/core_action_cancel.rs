@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_registry::references::ACTION_OPTIONS_KEY;
+use forge_registry::ACTION_OPTIONS_KEY;
 use forge_registry::{
     BlankableSelectField, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner,
     TypedField,

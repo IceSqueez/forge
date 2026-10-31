@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_platform_core::PlatformError;
-use forge_registry::runner::SubActionConfig;
+use forge_registry::SubActionConfig;
 use forge_registry::{
     ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TextEditor, TextField,
     TypedField,
@@ -29,13 +29,13 @@ const SLUG: TextField = TextField {
 
 const CONFIG: ConfigSpec = ConfigSpec::new(&[&SLUG]);
 
-pub struct LookupUserRunner {
+pub(crate) struct LookupUserRunner {
     client: Arc<KickChannel>,
     token_source: Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync>,
 }
 
 impl LookupUserRunner {
-    pub fn new(
+    pub(crate) fn new(
         client: Arc<KickChannel>,
         token_source: Arc<
             dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync,
@@ -102,7 +102,9 @@ impl SubActionRunner for LookupUserRunner {
                     .clone()
                     .set(
                         variables::viewer::ID.to_owned(),
-                        Variant::Int(snapshot.broadcaster_user_id as i64),
+                        Variant::Int(
+                            i64::try_from(snapshot.broadcaster_user_id).unwrap_or(i64::MAX),
+                        ),
                     )
                     .set(
                         variables::viewer::USERNAME.to_owned(),
@@ -122,7 +124,7 @@ impl SubActionRunner for LookupUserRunner {
                     )
                     .set(
                         variables::viewer::VIEWER_COUNT.to_owned(),
-                        Variant::Int(snapshot.viewer_count as i64),
+                        Variant::Int(i64::try_from(snapshot.viewer_count).unwrap_or(i64::MAX)),
                     );
                 (timer.success(), Some(stack))
             }

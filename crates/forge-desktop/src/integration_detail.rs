@@ -60,7 +60,7 @@ struct DonationSettingsLink {
     _repaint: Subscription,
 }
 
-pub struct IntegrationDetail {
+pub(crate) struct IntegrationDetail {
     status: Arc<dyn BuiltinStatus>,
     health: Arc<dyn BuiltinHealth>,
     content: Arc<dyn BuiltinContent>,
@@ -126,8 +126,8 @@ pub struct IntegrationDetail {
 
 const VIEWER_DELTA_WINDOW_MINUTES: u64 = 15;
 
-pub struct ObsSignedOut;
-pub struct VTubeSignedOut;
+pub(crate) struct ObsSignedOut;
+pub(crate) struct VTubeSignedOut;
 
 impl EventEmitter<NavRequested> for IntegrationDetail {}
 impl EventEmitter<ObsConnected> for IntegrationDetail {}
@@ -139,7 +139,7 @@ impl IntegrationDetail {
         clippy::too_many_arguments,
         reason = "constructor receives each shared handle it wires"
     )]
-    pub fn new(
+    pub(crate) fn new(
         object: BuiltinObject,
         rt_handle: tokio::runtime::Handle,
         action_engine: ActionEngineHandle,

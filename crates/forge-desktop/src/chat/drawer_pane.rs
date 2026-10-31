@@ -101,8 +101,8 @@ impl ChatView {
     ) -> impl IntoElement + use<> {
         let count = tr!(
             "chat_drawer_active_count",
-            total = total as i64,
-            shown = shown as i64
+            total = i64::try_from(total).unwrap_or(i64::MAX),
+            shown = i64::try_from(shown).unwrap_or(i64::MAX)
         );
         let title = div()
             .flex()
@@ -249,7 +249,10 @@ impl ChatView {
             .font_family(mono_family())
             .text_size(FONT_XXS)
             .text_color(palette.text_faint)
-            .child(tr!("chat_drawer_section_active", count = shown as i64));
+            .child(tr!(
+                "chat_drawer_section_active",
+                count = i64::try_from(shown).unwrap_or(i64::MAX)
+            ));
 
         let body = if shown == 0 {
             div()

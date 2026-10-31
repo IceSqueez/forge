@@ -183,8 +183,8 @@ mod tests {
     use forge_components::{ToastKind, tr};
     use forge_speech_types::{AliasId, VoiceAlias};
     use forge_speech_types::{AliasState, EngineId, VoiceId};
+    use forge_storage::MockVoiceAliasRepo;
     use forge_storage::StorageError;
-    use forge_storage::voice_aliases::MockVoiceAliasRepo;
     use forge_types::PlatformId;
     use gpui::{Entity, TestAppContext, VisualTestContext};
 

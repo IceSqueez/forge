@@ -16,11 +16,11 @@ pub(crate) fn protection_for(data_dir: &Path) -> Protection {
             }
         }
         Err(_) => {
-            protection.kinds.insert(SafetyCopyKind::PreRestore);
+            protection.kinds.insert(SafetyCopyKind::Restore);
         }
     }
     if update_in_flight(data_dir).unwrap_or(true) {
-        protection.kinds.insert(SafetyCopyKind::PreUpdate);
+        protection.kinds.insert(SafetyCopyKind::Update);
     }
     protection
 }
@@ -81,7 +81,7 @@ mod tests {
             let protection = protection_for(data.path());
 
             assert!(
-                protection.kinds.contains(&SafetyCopyKind::PreRestore),
+                protection.kinds.contains(&SafetyCopyKind::Restore),
                 "{}",
                 String::from_utf8_lossy(garbage)
             );
@@ -99,7 +99,7 @@ mod tests {
 
             assert_eq!(
                 protection.kinds.into_iter().collect::<Vec<_>>(),
-                vec![SafetyCopyKind::PreUpdate],
+                vec![SafetyCopyKind::Update],
                 "{}",
                 path.display()
             );
@@ -115,6 +115,6 @@ mod tests {
 
         let protection = protection_for(&file.join("data"));
 
-        assert!(protection.kinds.contains(&SafetyCopyKind::PreUpdate));
+        assert!(protection.kinds.contains(&SafetyCopyKind::Update));
     }
 }

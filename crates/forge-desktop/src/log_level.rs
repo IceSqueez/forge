@@ -28,7 +28,7 @@ const SYMPHONIA_TARGETS: &[&str] = &[
     "symphonia_format_riff",
 ];
 
-pub const SELECTABLE: [LogLevel; 5] = [
+pub(crate) const SELECTABLE: [LogLevel; 5] = [
     LogLevel::Trace,
     LogLevel::Debug,
     LogLevel::Info,
@@ -52,11 +52,14 @@ fn filter_for(level: &LogLevel) -> EnvFilter {
     EnvFilter::new(directives)
 }
 
-pub fn default_filter() -> EnvFilter {
+pub(crate) fn default_filter() -> EnvFilter {
     filter_for(&DEFAULT_DIAGNOSTIC_LOG_LEVEL)
 }
 
-pub fn reloadable(filter: EnvFilter, env_overridden: bool) -> reload::Layer<EnvFilter, Registry> {
+pub(crate) fn reloadable(
+    filter: EnvFilter,
+    env_overridden: bool,
+) -> reload::Layer<EnvFilter, Registry> {
     ENV_OVERRIDDEN.store(env_overridden, Ordering::Relaxed);
     let (layer, handle) = reload::Layer::new(filter);
     #[expect(
@@ -67,11 +70,11 @@ pub fn reloadable(filter: EnvFilter, env_overridden: bool) -> reload::Layer<EnvF
     layer
 }
 
-pub fn env_overridden() -> bool {
+pub(crate) fn env_overridden() -> bool {
     ENV_OVERRIDDEN.load(Ordering::Relaxed)
 }
 
-pub fn apply(level: &LogLevel) -> bool {
+pub(crate) fn apply(level: &LogLevel) -> bool {
     if env_overridden() {
         return false;
     }

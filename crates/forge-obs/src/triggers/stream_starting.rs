@@ -12,7 +12,7 @@ use crate::vocabulary::fields::streaming as fields;
 use crate::vocabulary::messages;
 use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
-pub struct StreamStartingDescriptor;
+pub(crate) struct StreamStartingDescriptor;
 
 impl TriggerKindDescriptor for StreamStartingDescriptor {
     fn id(&self) -> &str {

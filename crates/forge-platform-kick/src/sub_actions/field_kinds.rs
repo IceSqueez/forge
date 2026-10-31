@@ -1,4 +1,4 @@
-use forge_registry::runner::SubActionConfig;
+use forge_registry::SubActionConfig;
 use forge_registry::{ConfigReason, FieldLiteral, FormField, TypedField, ValueBounds};
 use forge_types::Variant;
 

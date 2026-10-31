@@ -4,14 +4,14 @@ use forge_runtime::{IntegrationStartError, StartFailureCategory};
 use crate::user_text::{ResolvedText, resolve_message};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum StartRemedy {
+pub(crate) enum StartRemedy {
     SignIn,
     OpenSettings,
     Retry,
 }
 
 impl StartRemedy {
-    pub fn of(error: &IntegrationStartError) -> Self {
+    pub(crate) fn of(error: &IntegrationStartError) -> Self {
         match error.category() {
             StartFailureCategory::Credentials => Self::SignIn,
             StartFailureCategory::NotConfigured => Self::OpenSettings,
@@ -22,11 +22,11 @@ impl StartRemedy {
         }
     }
 
-    pub fn opens_detail(self) -> bool {
+    pub(crate) fn opens_detail(self) -> bool {
         !matches!(self, Self::Retry)
     }
 
-    pub fn label(self) -> String {
+    pub(crate) fn label(self) -> String {
         match self {
             Self::SignIn => tr!("integration_failed_sign_in"),
             Self::OpenSettings => tr!("integration_failed_open_settings"),
@@ -34,7 +34,7 @@ impl StartRemedy {
         }
     }
 
-    pub fn icon(self) -> Icon {
+    pub(crate) fn icon(self) -> Icon {
         match self {
             Self::SignIn => Icon::Plug,
             Self::OpenSettings => Icon::Settings,
@@ -43,11 +43,11 @@ impl StartRemedy {
     }
 }
 
-pub fn start_failure_text(error: &IntegrationStartError) -> ResolvedText {
+pub(crate) fn start_failure_text(error: &IntegrationStartError) -> ResolvedText {
     resolve_message(error.message())
 }
 
-pub fn start_failure_tooltip(error: &IntegrationStartError) -> String {
+pub(crate) fn start_failure_tooltip(error: &IntegrationStartError) -> String {
     let text = start_failure_text(error);
     match text.secondary {
         Some(secondary) => format!("{}\n{secondary}", text.primary),

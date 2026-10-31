@@ -11,16 +11,16 @@ use crate::run_disclosure::{
 use forge_platform_core::HealthValue;
 use forge_runtime::COMMAND_LINE_TARGET;
 use forge_storage::{DataProvider, SettingsRepo, disclose_rows, load_setting_rows};
-use forge_types::redaction::STAMP;
+use forge_types::STAMP;
 use forge_types::{INTEGRATION_DISABLED, LogLevel, SCRIPT_LOG_TARGET};
 use time::OffsetDateTime;
 
 use crate::integrations::BuiltinRegistry;
 use crate::log_archive;
 
-pub const RUN_HISTORY_LIMIT: u32 = 25;
+pub(crate) const RUN_HISTORY_LIMIT: u32 = 25;
 
-pub const BUNDLE_FILE_NAME: &str = "forge-diagnostics.txt";
+pub(crate) const BUNDLE_FILE_NAME: &str = "forge-diagnostics.txt";
 
 const TOTAL_BUDGET: usize = 4 * 1024 * 1024;
 
@@ -31,7 +31,7 @@ const FRAMING_RESERVE: usize = 4096;
 const RULE: &str =
     "================================================================================";
 
-pub struct IntegrationFacts {
+pub(crate) struct IntegrationFacts {
     pub id: String,
     pub connection: &'static str,
     pub limited: bool,
@@ -43,7 +43,7 @@ pub struct IntegrationFacts {
     pub quick_actions: usize,
 }
 
-pub struct BundleInput {
+pub(crate) struct BundleInput {
     pub log_dir: PathBuf,
     pub level: LogLevel,
     pub env_overridden: bool,
@@ -52,14 +52,14 @@ pub struct BundleInput {
     pub runs: Vec<DisclosedRun>,
 }
 
-pub struct Bundle {
+pub(crate) struct Bundle {
     pub text: String,
     pub script_lines: usize,
     pub command_lines: usize,
     pub elided_bytes: u64,
 }
 
-pub fn integration_facts(builtins: &BuiltinRegistry) -> Vec<IntegrationFacts> {
+pub(crate) fn integration_facts(builtins: &BuiltinRegistry) -> Vec<IntegrationFacts> {
     let now = std::time::SystemTime::now();
     let mut facts: Vec<IntegrationFacts> = builtins
         .snapshot()
@@ -73,7 +73,7 @@ pub fn integration_facts(builtins: &BuiltinRegistry) -> Vec<IntegrationFacts> {
             endpoint_present: object.status.endpoint().is_some(),
             token_expires_in_secs: object.status.token_expiry().map(|at| {
                 match at.duration_since(now) {
-                    Ok(left) => left.as_secs() as i64,
+                    Ok(left) => i64::try_from(left.as_secs()).unwrap_or(i64::MAX),
                     Err(past) => -(past.duration().as_secs() as i64),
                 }
             }),
@@ -99,11 +99,11 @@ fn health_shape(value: &HealthValue) -> String {
     }
 }
 
-pub fn log_dir() -> PathBuf {
+pub(crate) fn log_dir() -> PathBuf {
     crate::app_paths::app_paths().logs_dir()
 }
 
-pub async fn gather_input(
+pub(crate) async fn gather_input(
     backend: Arc<dyn DataProvider>,
     integrations: Vec<IntegrationFacts>,
     level: LogLevel,
@@ -128,7 +128,7 @@ pub async fn gather_input(
     })
 }
 
-pub fn assemble(input: &BundleInput) -> Result<Bundle, RepoFailure> {
+pub(crate) fn assemble(input: &BundleInput) -> Result<Bundle, RepoFailure> {
     let mut out = String::new();
     write_header(&mut out, input);
     write_integrations(&mut out, &input.integrations);

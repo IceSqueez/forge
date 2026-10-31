@@ -3,19 +3,19 @@ use forge_types::PlatformId;
 use gpui::SharedString;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub enum AuthorHandle {
+pub(crate) enum AuthorHandle {
     ViewerId(SharedString),
     Name(SharedString),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct AuthorKey {
+pub(crate) struct AuthorKey {
     pub platform: PlatformId,
     pub handle: AuthorHandle,
 }
 
 impl AuthorKey {
-    pub fn resolve(
+    pub(crate) fn resolve(
         platform: PlatformId,
         viewer_id: Option<&SharedString>,
         name: &SharedString,
@@ -30,28 +30,28 @@ impl AuthorKey {
         Some(Self { platform, handle })
     }
 
-    pub fn by_viewer_id(platform: PlatformId, viewer_id: &str) -> Self {
+    pub(crate) fn by_viewer_id(platform: PlatformId, viewer_id: &str) -> Self {
         Self {
             platform,
             handle: AuthorHandle::ViewerId(SharedString::from(viewer_id.to_owned())),
         }
     }
 
-    pub fn by_name(platform: PlatformId, name: &str) -> Self {
+    pub(crate) fn by_name(platform: PlatformId, name: &str) -> Self {
         Self {
             platform,
             handle: AuthorHandle::Name(SharedString::from(name.to_owned())),
         }
     }
 
-    pub fn fallback_name(&self) -> Option<&SharedString> {
+    pub(crate) fn fallback_name(&self) -> Option<&SharedString> {
         match &self.handle {
             AuthorHandle::Name(name) => Some(name),
             AuthorHandle::ViewerId(_) => None,
         }
     }
 
-    pub fn element_id(&self, prefix: &str) -> SharedString {
+    pub(crate) fn element_id(&self, prefix: &str) -> SharedString {
         let (kind, value) = match &self.handle {
             AuthorHandle::ViewerId(id) => ("id", id),
             AuthorHandle::Name(name) => ("name", name),

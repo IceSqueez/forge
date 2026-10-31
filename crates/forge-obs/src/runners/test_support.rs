@@ -6,7 +6,7 @@ use forge_events::{Event, EventPublisher};
 use forge_registry::RunContext;
 use forge_types::{ArgStack, EventId, MessageArg, UserText, Variant};
 
-use crate::{ObsError, ObsSink};
+use crate::{InputSettings, ObsError, ObsSink, RecordStatus, SceneList, StreamStatus};
 
 pub(crate) struct MockSink;
 
@@ -80,55 +80,38 @@ impl ObsSink for MockSink {
     async fn trigger_studio_transition(&self) -> Result<(), ObsError> {
         Ok(())
     }
-    async fn get_scene_list(&self) -> Result<Variant, ObsError> {
-        let mut obj = BTreeMap::new();
-        obj.insert(
-            "all_names".to_owned(),
-            Variant::Array(vec![
-                Variant::String("Intro".to_owned()),
-                Variant::String("Gameplay".to_owned()),
-            ]),
-        );
-        obj.insert("current".to_owned(), Variant::String("Gameplay".to_owned()));
-        Ok(Variant::Object(obj))
+    async fn get_scene_list(&self) -> Result<SceneList, ObsError> {
+        Ok(SceneList {
+            names: vec!["Intro".to_owned(), "Gameplay".to_owned()],
+            current: "Gameplay".to_owned(),
+        })
     }
-    async fn get_input_list(&self) -> Result<Variant, ObsError> {
-        let mut obj = BTreeMap::new();
-        obj.insert(
-            "all_names".to_owned(),
-            Variant::Array(vec![
-                Variant::String("Mic".to_owned()),
-                Variant::String("Desktop Audio".to_owned()),
-            ]),
-        );
-        Ok(Variant::Object(obj))
+    async fn get_input_list(&self) -> Result<Vec<String>, ObsError> {
+        Ok(vec!["Mic".to_owned(), "Desktop Audio".to_owned()])
     }
-    async fn get_record_status(&self) -> Result<Variant, ObsError> {
-        let mut obj = BTreeMap::new();
-        obj.insert("is_active".to_owned(), Variant::Bool(true));
-        obj.insert("is_paused".to_owned(), Variant::Bool(false));
-        obj.insert("duration_ms".to_owned(), Variant::Int(12_000));
-        Ok(Variant::Object(obj))
+    async fn get_record_status(&self) -> Result<RecordStatus, ObsError> {
+        Ok(RecordStatus {
+            active: true,
+            paused: false,
+            duration_ms: 12_000,
+        })
     }
-    async fn get_stream_status(&self) -> Result<Variant, ObsError> {
-        let mut obj = BTreeMap::new();
-        obj.insert("is_active".to_owned(), Variant::Bool(true));
-        obj.insert("duration_ms".to_owned(), Variant::Int(45_000));
-        Ok(Variant::Object(obj))
+    async fn get_stream_status(&self) -> Result<StreamStatus, ObsError> {
+        Ok(StreamStatus {
+            active: true,
+            duration_ms: 45_000,
+        })
     }
     async fn get_current_scene(&self) -> Result<Option<String>, ObsError> {
         Ok(Some("Gameplay".to_owned()))
     }
-    async fn get_input_settings(&self, _: &str) -> Result<Variant, ObsError> {
+    async fn get_input_settings(&self, _: &str) -> Result<InputSettings, ObsError> {
         let mut settings = BTreeMap::new();
         settings.insert("text".to_owned(), Variant::String("hello".to_owned()));
-        let mut obj = BTreeMap::new();
-        obj.insert(
-            "kind".to_owned(),
-            Variant::String("text_ft2_source_v2".to_owned()),
-        );
-        obj.insert("settings".to_owned(), Variant::Object(settings));
-        Ok(Variant::Object(obj))
+        Ok(InputSettings {
+            settings: Variant::Object(settings),
+            kind: "text_ft2_source_v2".to_owned(),
+        })
     }
     async fn set_source_filter_enabled(&self, _: &str, _: &str, _: bool) -> Result<(), ObsError> {
         Ok(())
@@ -207,9 +190,9 @@ impl RecordingSink {
         }
     }
 
-    fn record_query(&self, call: String) -> Result<Variant, ObsError> {
+    fn record_query<T: Default>(&self, call: String) -> Result<T, ObsError> {
         self.record(call)?;
-        Ok(Variant::Object(BTreeMap::new()))
+        Ok(T::default())
     }
 }
 
@@ -297,24 +280,28 @@ impl ObsSink for RecordingSink {
     async fn trigger_studio_transition(&self) -> Result<(), ObsError> {
         self.record("trigger_studio_transition".to_owned())
     }
-    async fn get_scene_list(&self) -> Result<Variant, ObsError> {
+    async fn get_scene_list(&self) -> Result<SceneList, ObsError> {
         self.record_query("get_scene_list".to_owned())
     }
-    async fn get_input_list(&self) -> Result<Variant, ObsError> {
+    async fn get_input_list(&self) -> Result<Vec<String>, ObsError> {
         self.record_query("get_input_list".to_owned())
     }
-    async fn get_record_status(&self) -> Result<Variant, ObsError> {
+    async fn get_record_status(&self) -> Result<RecordStatus, ObsError> {
         self.record_query("get_record_status".to_owned())
     }
-    async fn get_stream_status(&self) -> Result<Variant, ObsError> {
+    async fn get_stream_status(&self) -> Result<StreamStatus, ObsError> {
         self.record_query("get_stream_status".to_owned())
     }
     async fn get_current_scene(&self) -> Result<Option<String>, ObsError> {
         self.record("get_current_scene".to_owned())?;
         Ok(Some("Gameplay".to_owned()))
     }
-    async fn get_input_settings(&self, input: &str) -> Result<Variant, ObsError> {
-        self.record_query(format!("get_input_settings({input})"))
+    async fn get_input_settings(&self, input: &str) -> Result<InputSettings, ObsError> {
+        self.record(format!("get_input_settings({input})"))?;
+        Ok(InputSettings {
+            settings: Variant::Object(BTreeMap::new()),
+            kind: String::new(),
+        })
     }
     async fn set_source_filter_enabled(
         &self,

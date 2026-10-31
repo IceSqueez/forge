@@ -6,7 +6,7 @@ use thiserror::Error;
 use crate::repo_failure::RepoFailure;
 
 #[derive(Debug, Error)]
-pub enum DesktopError {
+pub(crate) enum DesktopError {
     #[error("storage failed: {0}")]
     Storage(#[from] StorageError),
     #[error("file operation failed: {0}")]
@@ -24,7 +24,7 @@ pub enum DesktopError {
 }
 
 impl DesktopError {
-    pub fn user_message(&self) -> String {
+    pub(crate) fn user_message(&self) -> String {
         match self {
             Self::Storage(error) => RepoFailure::from_storage_ref(error).text(),
             Self::Io(_) => tr!("desktop_error_file"),

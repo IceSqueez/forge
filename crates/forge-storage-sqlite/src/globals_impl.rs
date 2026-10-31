@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_storage::globals::{append_bounded, remove_matching, type_mismatch};
-use forge_storage::user_globals::incremented;
+use forge_storage::incremented;
 use forge_storage::{GlobalEntry, GlobalsRepo, StorageError};
+use forge_storage::{append_bounded, remove_matching, type_mismatch};
 use forge_types::Variant;
 use time::OffsetDateTime;
 

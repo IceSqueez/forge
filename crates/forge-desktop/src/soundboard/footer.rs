@@ -45,8 +45,8 @@ impl SoundboardView {
                     .text_color(palette.text_faint)
                     .child(tr!(
                         "soundboard_footer_left",
-                        sounds = self.clips.len() as i64,
-                        categories = category_count as i64,
+                        sounds = i64::try_from(self.clips.len()).unwrap_or(i64::MAX),
+                        categories = i64::try_from(category_count).unwrap_or(i64::MAX),
                         size = size_label.as_str()
                     )),
             )

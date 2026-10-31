@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use forge_components::{Icon, PushToast, ToastKind};
-use forge_soundboard::builtin_library::BUILTIN_SOUNDS;
+use forge_soundboard::BUILTIN_SOUNDS;
 use forge_storage::StoredClip;
 use gpui::Context;
 

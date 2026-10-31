@@ -3,6 +3,31 @@ use forge_types::Variant;
 
 use crate::ObsError;
 
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SceneList {
+    pub names: Vec<String>,
+    pub current: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RecordStatus {
+    pub active: bool,
+    pub paused: bool,
+    pub duration_ms: i64,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct StreamStatus {
+    pub active: bool,
+    pub duration_ms: i64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct InputSettings {
+    pub settings: Variant,
+    pub kind: String,
+}
+
 #[async_trait]
 pub trait ObsSink: Send + Sync {
     async fn set_scene(&self, scene: &str) -> Result<(), ObsError>;
@@ -62,17 +87,17 @@ pub trait ObsSink: Send + Sync {
 
     async fn trigger_studio_transition(&self) -> Result<(), ObsError>;
 
-    async fn get_scene_list(&self) -> Result<Variant, ObsError>;
+    async fn get_scene_list(&self) -> Result<SceneList, ObsError>;
 
-    async fn get_input_list(&self) -> Result<Variant, ObsError>;
+    async fn get_input_list(&self) -> Result<Vec<String>, ObsError>;
 
-    async fn get_record_status(&self) -> Result<Variant, ObsError>;
+    async fn get_record_status(&self) -> Result<RecordStatus, ObsError>;
 
-    async fn get_stream_status(&self) -> Result<Variant, ObsError>;
+    async fn get_stream_status(&self) -> Result<StreamStatus, ObsError>;
 
     async fn get_current_scene(&self) -> Result<Option<String>, ObsError>;
 
-    async fn get_input_settings(&self, input: &str) -> Result<Variant, ObsError>;
+    async fn get_input_settings(&self, input: &str) -> Result<InputSettings, ObsError>;
 
     async fn set_source_filter_enabled(
         &self,

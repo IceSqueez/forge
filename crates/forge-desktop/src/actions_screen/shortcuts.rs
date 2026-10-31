@@ -61,8 +61,8 @@ impl ScreenShortcuts for ScreenActionsView {
 mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
+    use forge_storage::MockActionRepo;
     use forge_storage::MockMediaRepo;
-    use forge_storage::action::MockActionRepo;
     use gpui::{TestAppContext, VisualTestContext};
 
     use super::super::editor::tests::view_with;

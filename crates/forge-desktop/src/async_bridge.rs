@@ -22,14 +22,14 @@ use forge_components::PushToast;
 
 const BRIDGE_DRAIN_CAP: usize = 128;
 
-pub const SLIDER_PERSIST_DEBOUNCE: Duration = Duration::from_millis(400);
+pub(crate) const SLIDER_PERSIST_DEBOUNCE: Duration = Duration::from_millis(400);
 
-pub enum EventBatch {
+pub(crate) enum EventBatch {
     Ready(Vec<Event>),
     Closed,
 }
 
-pub async fn recv_event_batch(sub: &mut EventSubscription) -> EventBatch {
+pub(crate) async fn recv_event_batch(sub: &mut EventSubscription) -> EventBatch {
     let first = loop {
         match sub.recv().await {
             Ok(event) => break event,
@@ -51,7 +51,7 @@ pub async fn recv_event_batch(sub: &mut EventSubscription) -> EventBatch {
     EventBatch::Ready(batch)
 }
 
-pub async fn run_quick_step(
+pub(crate) async fn run_quick_step(
     engine: ActionEngineHandle,
     step: SubActionStep,
     builtin_id: String,
@@ -74,20 +74,23 @@ pub async fn run_quick_step(
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub enum BridgeFlow {
+pub(crate) enum BridgeFlow {
     Continue,
     Stop,
 }
 
-pub async fn drain_events<F>(bus: &EventBus, cx: &mut AsyncApp, apply: F)
+pub(crate) async fn drain_events<F>(bus: &EventBus, cx: &mut AsyncApp, apply: F)
 where
     F: FnMut(&[Event], &mut AsyncApp) -> BridgeFlow,
 {
     drain_subscription(bus.subscribe(), cx, apply).await;
 }
 
-pub async fn drain_subscription<F>(mut sub: EventSubscription, cx: &mut AsyncApp, mut apply: F)
-where
+pub(crate) async fn drain_subscription<F>(
+    mut sub: EventSubscription,
+    cx: &mut AsyncApp,
+    mut apply: F,
+) where
     F: FnMut(&[Event], &mut AsyncApp) -> BridgeFlow,
 {
     while let EventBatch::Ready(batch) = recv_event_batch(&mut sub).await {
@@ -98,20 +101,20 @@ where
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub enum ErrorSink {
+pub(crate) enum ErrorSink {
     Toast,
     Silent,
 }
 
 impl ErrorSink {
-    pub fn report(self, message: String, cx: &mut App) {
+    pub(crate) fn report(self, message: String, cx: &mut App) {
         if self == ErrorSink::Toast {
             cx.push_toast(ToastKind::Error, message);
         }
     }
 }
 
-pub fn report_failure<V, F, E>(
+pub(crate) fn report_failure<V, F, E>(
     handle: &Handle,
     fut: F,
     sink: ErrorSink,
@@ -144,7 +147,7 @@ pub fn report_failure<V, F, E>(
     .detach();
 }
 
-pub fn detached<F, E>(handle: &Handle, context: &'static str, fut: F)
+pub(crate) fn detached<F, E>(handle: &Handle, context: &'static str, fut: F)
 where
     F: Future<Output = Result<(), E>> + Send + 'static,
     E: Display + Send + 'static,
@@ -156,7 +159,7 @@ where
     });
 }
 
-pub async fn open_path(
+pub(crate) async fn open_path(
     target: impl AsRef<std::ffi::OsStr> + Send + 'static,
 ) -> Result<(), DesktopError> {
     tokio::task::spawn_blocking(move || open::that(target))
@@ -165,7 +168,7 @@ pub async fn open_path(
         .map_err(DesktopError::from)
 }
 
-pub fn open_external<V>(
+pub(crate) fn open_external<V>(
     handle: &Handle,
     target: impl Into<String>,
     sink: ErrorSink,
@@ -178,7 +181,7 @@ pub fn open_external<V>(
     report_failure(handle, open_path(target), sink, context, cx);
 }
 
-pub struct DialogFilter {
+pub(crate) struct DialogFilter {
     pub name: String,
     pub extensions: Vec<&'static str>,
 }
@@ -198,22 +201,25 @@ async fn pick_with(dialog: rfd::AsyncFileDialog) -> Option<PathBuf> {
         .map(|handle| handle.path().to_path_buf())
 }
 
-pub async fn pick_file(filter: Option<DialogFilter>) -> Option<PathBuf> {
+pub(crate) async fn pick_file(filter: Option<DialogFilter>) -> Option<PathBuf> {
     pick_with(file_dialog(filter)).await
 }
 
-pub async fn pick_file_in(filter: Option<DialogFilter>, directory: PathBuf) -> Option<PathBuf> {
+pub(crate) async fn pick_file_in(
+    filter: Option<DialogFilter>,
+    directory: PathBuf,
+) -> Option<PathBuf> {
     pick_with(file_dialog(filter).set_directory(directory)).await
 }
 
-pub async fn pick_folder() -> Option<PathBuf> {
+pub(crate) async fn pick_folder() -> Option<PathBuf> {
     rfd::AsyncFileDialog::new()
         .pick_folder()
         .await
         .map(|handle| handle.path().to_path_buf())
 }
 
-pub async fn save_file(
+pub(crate) async fn save_file(
     filter: Option<DialogFilter>,
     default_name: Option<String>,
 ) -> Option<PathBuf> {
@@ -227,7 +233,7 @@ pub async fn save_file(
         .map(|handle| handle.path().to_path_buf())
 }
 
-pub fn run_async<V, Fut, T>(
+pub(crate) fn run_async<V, Fut, T>(
     handle: &Handle,
     fut: Fut,
     apply: impl FnOnce(&mut V, T, &mut Context<V>) + Send + 'static,
@@ -257,7 +263,7 @@ pub fn run_async<V, Fut, T>(
     .detach();
 }
 
-pub fn attach_to_window<V: 'static>(
+pub(crate) fn attach_to_window<V: 'static>(
     attach: impl FnOnce(&mut V, &mut Window, &mut Context<V>) + 'static,
     cx: &mut Context<V>,
 ) {
@@ -275,7 +281,7 @@ pub fn attach_to_window<V: 'static>(
     .detach();
 }
 
-pub fn run_async_entity<V, Fut, T>(
+pub(crate) fn run_async_entity<V, Fut, T>(
     handle: &Handle,
     view: Entity<V>,
     fut: Fut,
@@ -302,7 +308,7 @@ pub fn run_async_entity<V, Fut, T>(
     .detach();
 }
 
-pub fn run_blocking<V, Work, T>(
+pub(crate) fn run_blocking<V, Work, T>(
     handle: &Handle,
     work: Work,
     apply: impl FnOnce(&mut V, T, &mut Context<V>) + Send + 'static,
@@ -332,20 +338,20 @@ pub fn run_blocking<V, Work, T>(
     .detach();
 }
 
-pub struct Debounced {
+pub(crate) struct Debounced {
     generation: Arc<AtomicU64>,
     delay: Duration,
 }
 
 impl Debounced {
-    pub fn new(delay: Duration) -> Self {
+    pub(crate) fn new(delay: Duration) -> Self {
         Self {
             generation: Arc::new(AtomicU64::new(0)),
             delay,
         }
     }
 
-    pub fn schedule<F, E>(&self, handle: &Handle, context: impl Into<SharedString>, fut: F)
+    pub(crate) fn schedule<F, E>(&self, handle: &Handle, context: impl Into<SharedString>, fut: F)
     where
         F: Future<Output = Result<(), E>> + Send + 'static,
         E: Display + Send + 'static,
@@ -353,7 +359,7 @@ impl Debounced {
         self.spawn_debounced(handle, context.into(), fut, |_| {});
     }
 
-    pub fn schedule_reporting<V, F, E>(
+    pub(crate) fn schedule_reporting<V, F, E>(
         &self,
         handle: &Handle,
         context: impl Into<SharedString>,
@@ -410,21 +416,21 @@ impl Debounced {
 }
 
 #[derive(Default)]
-pub struct Generation(Cell<u64>);
+pub(crate) struct Generation(Cell<u64>);
 
 impl Generation {
-    pub fn next(&self) -> u64 {
+    pub(crate) fn next(&self) -> u64 {
         let next = self.0.get().wrapping_add(1);
         self.0.set(next);
         next
     }
 
-    pub fn is_current(&self, ticket: u64) -> bool {
+    pub(crate) fn is_current(&self, ticket: u64) -> bool {
         self.0.get() == ticket
     }
 }
 
-pub fn optimistic<V, S, F, E>(
+pub(crate) fn optimistic<V, S, F, E>(
     handle: &Handle,
     snapshot: S,
     fut: F,
@@ -460,39 +466,39 @@ pub fn optimistic<V, S, F, E>(
     .detach();
 }
 
-pub enum Loadable<T> {
+pub(crate) enum Loadable<T> {
     Loading,
     Loaded(T),
     Failed(RepoFailure),
 }
 
 impl<T> Loadable<T> {
-    pub fn settled<E: Into<RepoFailure>>(result: Result<T, E>) -> Self {
+    pub(crate) fn settled<E: Into<RepoFailure>>(result: Result<T, E>) -> Self {
         match result {
             Ok(value) => Loadable::Loaded(value),
             Err(e) => Loadable::Failed(e.into()),
         }
     }
 
-    pub fn loaded(&self) -> Option<&T> {
+    pub(crate) fn loaded(&self) -> Option<&T> {
         match self {
             Loadable::Loaded(value) => Some(value),
             Loadable::Loading | Loadable::Failed(_) => None,
         }
     }
 
-    pub fn loaded_mut(&mut self) -> Option<&mut T> {
+    pub(crate) fn loaded_mut(&mut self) -> Option<&mut T> {
         match self {
             Loadable::Loaded(value) => Some(value),
             Loadable::Loading | Loadable::Failed(_) => None,
         }
     }
 
-    pub fn is_loaded(&self) -> bool {
+    pub(crate) fn is_loaded(&self) -> bool {
         matches!(self, Loadable::Loaded(_))
     }
 
-    pub fn failure(&self) -> Option<String> {
+    pub(crate) fn failure(&self) -> Option<String> {
         match self {
             Loadable::Failed(reason) => Some(reason.text()),
             Loadable::Loading | Loadable::Loaded(_) => None,
@@ -501,7 +507,7 @@ impl<T> Loadable<T> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum WriteOutcome {
+pub(crate) enum WriteOutcome {
     Written,
     Superseded,
     Failed(RepoFailure),
@@ -514,13 +520,13 @@ struct SnapshotJob {
     settled: tokio::sync::oneshot::Sender<WriteOutcome>,
 }
 
-pub struct SnapshotWriter {
+pub(crate) struct SnapshotWriter {
     jobs: tokio::sync::mpsc::UnboundedSender<SnapshotJob>,
     generation: Arc<AtomicU64>,
 }
 
 impl SnapshotWriter {
-    pub fn new(handle: &Handle) -> Self {
+    pub(crate) fn new(handle: &Handle) -> Self {
         let (jobs, queue) = tokio::sync::mpsc::unbounded_channel();
         handle.spawn(run_snapshot_queue(queue));
         Self {
@@ -529,7 +535,7 @@ impl SnapshotWriter {
         }
     }
 
-    pub fn write<V, F, E>(
+    pub(crate) fn write<V, F, E>(
         &self,
         write: F,
         on_settled: impl FnOnce(&mut V, WriteOutcome, &mut Context<V>) + 'static,
@@ -570,8 +576,12 @@ impl SnapshotWriter {
         .detach();
     }
 
-    pub fn write_on_release<F, E>(&self, write: F, failure: impl Into<SharedString>, cx: &mut App)
-    where
+    pub(crate) fn write_on_release<F, E>(
+        &self,
+        write: F,
+        failure: impl Into<SharedString>,
+        cx: &mut App,
+    ) where
         F: Future<Output = Result<(), E>> + Send + 'static,
         E: Into<RepoFailure> + Send + 'static,
     {
@@ -595,27 +605,27 @@ impl SnapshotWriter {
     }
 }
 
-pub struct KeyedSnapshotWriters<K> {
+pub(crate) struct KeyedSnapshotWriters<K> {
     handle: Handle,
     writers: HashMap<K, SnapshotWriter>,
 }
 
 impl<K: Eq + Hash> KeyedSnapshotWriters<K> {
-    pub fn new(handle: &Handle) -> Self {
+    pub(crate) fn new(handle: &Handle) -> Self {
         Self {
             handle: handle.clone(),
             writers: HashMap::new(),
         }
     }
 
-    pub fn writer(&mut self, key: K) -> &SnapshotWriter {
+    pub(crate) fn writer(&mut self, key: K) -> &SnapshotWriter {
         let handle = &self.handle;
         self.writers
             .entry(key)
             .or_insert_with(|| SnapshotWriter::new(handle))
     }
 
-    pub fn write_reporting<V, F, E>(
+    pub(crate) fn write_reporting<V, F, E>(
         &mut self,
         key: K,
         write: F,
@@ -674,7 +684,7 @@ mod tests {
     use std::rc::Rc;
 
     use forge_runtime::{ActionCancelRegistry, DispatchError, spawn_action_engine};
-    use forge_storage::history::MockHistoryRepo;
+    use forge_storage::MockHistoryRepo;
     use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry};
     use gpui::{AppContext, TestAppContext};
 

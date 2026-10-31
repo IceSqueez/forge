@@ -21,7 +21,9 @@ use forge_types::MonotonicClock;
 mod launch;
 mod startup;
 
-pub use launch::{CANDIDATE_FLAG, LaunchRole, SUPERVISOR_FLAG, launch_role, launch_supervisor};
+#[cfg(test)]
+pub(crate) use launch::SUPERVISOR_FLAG;
+pub use launch::{CANDIDATE_FLAG, LaunchRole, launch_role, launch_supervisor};
 pub use startup::{StartAction, pending_start_action};
 
 const DEFAULT_HEALTH_TIMEOUT: Duration = Duration::from_secs(60);

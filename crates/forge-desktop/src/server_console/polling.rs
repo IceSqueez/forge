@@ -12,7 +12,7 @@ use forge_components::fmt_uptime_short;
 use forge_events::EventSource;
 use forge_server::{
     ConnectedClientSnapshot, EventFilterSnapshot, ServerSettings, ServerSnapshot,
-    overlay_url::resolve_routable_host,
+    resolve_routable_host,
 };
 use forge_types::Secret;
 use gpui::Context;
@@ -177,9 +177,8 @@ impl ServerConsoleView {
             let mut serving_facts_stale = true;
             loop {
                 presence.until_visible().await;
-                let want_serving_facts =
-                    serving_facts_stale || run_state.has_changed().unwrap_or(false);
-                run_state.mark_unchanged();
+                let run_state_changed = run_state.take_changed();
+                let want_serving_facts = serving_facts_stale || run_state_changed;
                 serving_facts_stale = false;
                 let (tx, rx) = tokio::sync::oneshot::channel::<ServerPoll>();
                 let handle = handle.clone();

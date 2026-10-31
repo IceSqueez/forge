@@ -4,12 +4,12 @@ use common::{ALERT_KIND, BLANK_KIND, GOAL_KIND, TICKER_KIND};
 
 use std::collections::BTreeSet;
 
+use forge_overlay::PreviewComposition;
 use forge_overlay::config::{HEADLINE, SUBLINE};
-use forge_overlay::descriptor::{
+use forge_overlay::kinds::alert::AlertOverlayKind;
+use forge_overlay::{
     ConfigSection, DeliveryDisposition, OverlayConfig, OverlayKindDescriptor, SectionedField,
 };
-use forge_overlay::kinds::alert::AlertOverlayKind;
-use forge_overlay::preview::PreviewComposition;
 use forge_overlay::{
     EventWiringTrigger, OverlayKindRegistry, PageAssets, accepts_event_wiring, is_curated,
     order_curated_first, register_builtin_kinds, suggested_content,
@@ -101,7 +101,7 @@ fn every_platform_trigger() -> TriggerRegistry {
     forge_platform_kick::register_kick_triggers(&mut reg).expect("the kick triggers register");
     forge_platform_youtube::register_youtube_triggers(&mut reg)
         .expect("the youtube triggers register");
-    forge_runtime::triggers::register_core_triggers(&mut reg).expect("the core triggers register");
+    forge_runtime::register_core_triggers(&mut reg).expect("the core triggers register");
     reg
 }
 

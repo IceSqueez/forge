@@ -10,7 +10,7 @@ use tracing::{debug, warn};
 
 use crate::donations::catch_up::{CatchUpHold, CatchUpWaker, DonationAudience};
 
-pub const DONATION_CATCH_UP: Duration = Duration::minutes(30);
+pub(crate) const DONATION_CATCH_UP: Duration = Duration::minutes(30);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Verdict {

@@ -10,12 +10,12 @@ use tokio::sync::Notify;
 use crate::chat_feed::{ChatFeed, FeedGap};
 use crate::event_loss::EventLoss;
 
-pub const UI_CHAT_FEED: &str = "ui_chat_feed";
+pub(crate) const UI_CHAT_FEED: &str = "ui_chat_feed";
 
 const INBOX_CAPACITY: usize = 4096;
 const REPAINT_INTERVAL: Duration = Duration::from_millis(50);
 
-pub enum FeedItem {
+pub(crate) enum FeedItem {
     Message(Arc<Event>),
     Annotation(Arc<Event>),
     Gap(FeedGap),
@@ -33,14 +33,14 @@ impl FeedItem {
     }
 }
 
-pub struct FeedInbox {
+pub(crate) struct FeedInbox {
     items: VecDeque<FeedItem>,
     queued: usize,
     capacity: usize,
 }
 
 impl FeedInbox {
-    pub fn new(capacity: usize) -> Self {
+    pub(crate) fn new(capacity: usize) -> Self {
         Self {
             items: VecDeque::new(),
             queued: 0,
@@ -48,7 +48,7 @@ impl FeedInbox {
         }
     }
 
-    pub fn push(&mut self, item: FeedItem) {
+    pub(crate) fn push(&mut self, item: FeedItem) {
         match item {
             FeedItem::Gap(gap) => self.push_gap(gap),
             event => {
@@ -61,7 +61,7 @@ impl FeedInbox {
         }
     }
 
-    pub fn take(&mut self) -> Vec<FeedItem> {
+    pub(crate) fn take(&mut self) -> Vec<FeedItem> {
         self.queued = 0;
         self.items.drain(..).collect()
     }
@@ -148,12 +148,12 @@ impl FeedChannel {
     }
 }
 
-pub struct ChatFeedBridge {
+pub(crate) struct ChatFeedBridge {
     channel: Arc<FeedChannel>,
 }
 
 impl ChatFeedBridge {
-    pub fn subscribe(bus: &EventBus, rt_handle: &tokio::runtime::Handle) -> Self {
+    pub(crate) fn subscribe(bus: &EventBus, rt_handle: &tokio::runtime::Handle) -> Self {
         let channel = Arc::new(FeedChannel {
             inbox: Mutex::new(FeedInbox::new(INBOX_CAPACITY)),
             wake: Notify::new(),
@@ -165,7 +165,7 @@ impl ChatFeedBridge {
         Self { channel }
     }
 
-    pub fn start(self, cx: &mut AsyncApp, feed: Entity<ChatFeed>, loss: Entity<EventLoss>) {
+    pub(crate) fn start(self, cx: &mut AsyncApp, feed: Entity<ChatFeed>, loss: Entity<EventLoss>) {
         let channel = self.channel;
         cx.spawn(async move |cx| {
             loop {

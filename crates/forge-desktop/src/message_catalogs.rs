@@ -10,7 +10,7 @@ use gpui::{AppContext, Context};
 
 use crate::i18n::{app_catalogs, catalog_language};
 
-pub const REGISTERED_CATALOGS: &[MessageCatalog] = &[
+pub(crate) const REGISTERED_CATALOGS: &[MessageCatalog] = &[
     COMMON_MESSAGES,
     CONDITION_MESSAGES,
     CONFIG_MESSAGES,
@@ -34,14 +34,14 @@ pub const REGISTERED_CATALOGS: &[MessageCatalog] = &[
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CatalogProblem {
+pub(crate) enum CatalogProblem {
     Malformed(MessageCatalogError),
     DuplicateNamespace(&'static str),
     DuplicateMessageId { language: Language, id: String },
 }
 
 impl CatalogProblem {
-    pub fn diagnostic(&self) -> String {
+    pub(crate) fn diagnostic(&self) -> String {
         match self {
             Self::Malformed(error) => error.to_string(),
             Self::DuplicateNamespace(namespace) => {
@@ -52,14 +52,14 @@ impl CatalogProblem {
     }
 }
 
-pub fn fragments(lang: Language) -> impl Iterator<Item = &'static str> {
+pub(crate) fn fragments(lang: Language) -> impl Iterator<Item = &'static str> {
     REGISTERED_CATALOGS.iter().map(move |catalog| match lang {
         Language::En => catalog.en_ftl,
         Language::Uk => catalog.uk_ftl,
     })
 }
 
-pub fn catalog_problems(catalogs: &[MessageCatalog]) -> Vec<CatalogProblem> {
+pub(crate) fn catalog_problems(catalogs: &[MessageCatalog]) -> Vec<CatalogProblem> {
     let mut problems: Vec<CatalogProblem> = catalogs
         .iter()
         .filter_map(|catalog| catalog.check().err())
@@ -75,7 +75,7 @@ pub fn catalog_problems(catalogs: &[MessageCatalog]) -> Vec<CatalogProblem> {
     problems
 }
 
-pub fn registered_catalog_problems() -> Vec<CatalogProblem> {
+pub(crate) fn registered_catalog_problems() -> Vec<CatalogProblem> {
     let mut problems = catalog_problems(REGISTERED_CATALOGS);
     for lang in [Language::En, Language::Uk] {
         problems.extend(
@@ -87,7 +87,7 @@ pub fn registered_catalog_problems() -> Vec<CatalogProblem> {
     problems
 }
 
-pub fn report_catalog_problems<T: 'static>(cx: &mut Context<T>) {
+pub(crate) fn report_catalog_problems<T: 'static>(cx: &mut Context<T>) {
     cx.spawn(async move |_, cx| {
         let problems = cx
             .background_spawn(async { registered_catalog_problems() })
@@ -117,7 +117,7 @@ pub fn report_catalog_problems<T: 'static>(cx: &mut Context<T>) {
 mod tests {
     use fluent::FluentResource;
     use forge_registry::TriggerRegistry;
-    use forge_runtime::triggers::TIMER_TICK_KIND;
+    use forge_runtime::TIMER_TICK_KIND;
     use forge_types::{DatePattern, MessageCode, MessageRef, TriggerConfig, Variant, VerbatimText};
 
     use super::*;

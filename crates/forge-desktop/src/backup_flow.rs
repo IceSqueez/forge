@@ -19,7 +19,7 @@ use crate::repo_failure::RepoFailure;
 const BACKUP_TOAST_DURATION: Duration = Duration::from_secs(10);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum BackupTarget {
+pub(crate) enum BackupTarget {
     BackupsDir,
     ChosenFile,
 }
@@ -36,7 +36,7 @@ enum BackupStep {
     Writing,
 }
 
-pub struct BackupFlow {
+pub(crate) struct BackupFlow {
     backend: Arc<dyn DataProvider>,
     rt_handle: Handle,
     data_dir: PathBuf,
@@ -49,7 +49,11 @@ pub(crate) fn default_bundle_name(now: OffsetDateTime, suffix: &str) -> String {
 }
 
 impl BackupFlow {
-    pub fn new(backend: Arc<dyn DataProvider>, rt_handle: Handle, data_dir: PathBuf) -> Self {
+    pub(crate) fn new(
+        backend: Arc<dyn DataProvider>,
+        rt_handle: Handle,
+        data_dir: PathBuf,
+    ) -> Self {
         Self {
             backend,
             rt_handle,
@@ -59,15 +63,15 @@ impl BackupFlow {
         }
     }
 
-    pub fn is_busy(&self) -> bool {
+    pub(crate) fn is_busy(&self) -> bool {
         !matches!(self.step, BackupStep::Idle)
     }
 
-    pub fn is_writing(&self) -> bool {
+    pub(crate) fn is_writing(&self) -> bool {
         matches!(self.step, BackupStep::ChoosingFile | BackupStep::Writing)
     }
 
-    pub fn start(&mut self, target: BackupTarget, cx: &mut Context<Self>) {
+    pub(crate) fn start(&mut self, target: BackupTarget, cx: &mut Context<Self>) {
         if self.is_busy() {
             return;
         }

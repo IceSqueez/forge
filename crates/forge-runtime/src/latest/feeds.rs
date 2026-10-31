@@ -9,11 +9,11 @@ use time::OffsetDateTime;
 
 use crate::latest::slots::{FeedContext, SlotReading};
 
-pub const SUPER_CHAT_KIND: &str = "youtube.chat.super_chat";
-pub const SUPER_STICKER_KIND: &str = "youtube.chat.super_sticker";
-pub const CHEER_KIND: &str = "twitch.channel.cheer";
+pub(crate) const SUPER_CHAT_KIND: &str = "youtube.chat.super_chat";
+pub(crate) const SUPER_STICKER_KIND: &str = "youtube.chat.super_sticker";
+pub(crate) const CHEER_KIND: &str = "twitch.channel.cheer";
 
-pub const BITS_UNIT: &str = "BITS";
+pub(crate) const BITS_UNIT: &str = "BITS";
 
 const DONATION_KIND_DONATION: &str = "donation";
 const DONATION_KIND_SUPER_CHAT: &str = "super_chat";
@@ -99,7 +99,7 @@ fn shown_name(name: Option<&str>, context: &FeedContext<'_>) -> String {
         .to_owned()
 }
 
-pub fn read_donation(event: &Event, _context: &FeedContext<'_>) -> Option<SlotReading> {
+pub(crate) fn read_donation(event: &Event, _context: &FeedContext<'_>) -> Option<SlotReading> {
     let donation = DonationReceived::from_event(event)?;
     if donation.test || donation.amount_micros == 0 {
         return None;
@@ -139,15 +139,15 @@ fn read_youtube_support(
     ))
 }
 
-pub fn read_super_chat(event: &Event, context: &FeedContext<'_>) -> Option<SlotReading> {
+pub(crate) fn read_super_chat(event: &Event, context: &FeedContext<'_>) -> Option<SlotReading> {
     read_youtube_support(event, context, DONATION_KIND_SUPER_CHAT)
 }
 
-pub fn read_super_sticker(event: &Event, context: &FeedContext<'_>) -> Option<SlotReading> {
+pub(crate) fn read_super_sticker(event: &Event, context: &FeedContext<'_>) -> Option<SlotReading> {
     read_youtube_support(event, context, DONATION_KIND_SUPER_STICKER)
 }
 
-pub fn read_cheer(event: &Event, context: &FeedContext<'_>) -> Option<SlotReading> {
+pub(crate) fn read_cheer(event: &Event, context: &FeedContext<'_>) -> Option<SlotReading> {
     let payload = &event.payload;
     let bits = payload
         .get(TWITCH_BITS)?
@@ -176,7 +176,7 @@ pub fn read_cheer(event: &Event, context: &FeedContext<'_>) -> Option<SlotReadin
     ))
 }
 
-pub fn read_now_playing(event: &Event, _context: &FeedContext<'_>) -> Option<SlotReading> {
+pub(crate) fn read_now_playing(event: &Event, _context: &FeedContext<'_>) -> Option<SlotReading> {
     let now_playing = NowPlaying::from_event(event)?;
     let platform = now_playing.producer.as_str().to_owned();
     if now_playing.state == PlaybackState::Stopped {

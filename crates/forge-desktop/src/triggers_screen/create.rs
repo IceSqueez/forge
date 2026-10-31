@@ -70,10 +70,18 @@ impl TriggersRegistryView {
             header_icon: Icon::Bolt,
             title: tr!("triggers_new_trigger").into(),
             subtitle: GridPickerSubtitle::Plain(
-                tr!("triggers_create_type_count", count = count as i64).into(),
+                tr!(
+                    "triggers_create_type_count",
+                    count = i64::try_from(count).unwrap_or(i64::MAX)
+                )
+                .into(),
             ),
             footer_hint: tr!("triggers_create_footer_hint").into(),
-            search_placeholder: tr!("triggers_create_search_types", count = count as i64).into(),
+            search_placeholder: tr!(
+                "triggers_create_search_types",
+                count = i64::try_from(count).unwrap_or(i64::MAX)
+            )
+            .into(),
             favorites_label: tr!("picker_favorites").into(),
             favorites_empty: tr!("picker_favorites_empty").into(),
         };

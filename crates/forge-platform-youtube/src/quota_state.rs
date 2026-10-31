@@ -28,7 +28,7 @@ impl Default for QuotaState {
 }
 
 impl QuotaState {
-    pub fn charge(&mut self, cost: u32, today: time::Date) -> Result<(), PlatformError> {
+    pub(crate) fn charge(&mut self, cost: u32, today: time::Date) -> Result<(), PlatformError> {
         self.roll_over(today);
         let used_after = self.used_today.saturating_add(cost);
         if used_after > QUOTA_DAILY_LIMIT {
@@ -38,13 +38,13 @@ impl QuotaState {
         Ok(())
     }
 
-    pub fn refund(&mut self, cost: u32, charged_on: time::Date) {
+    pub(crate) fn refund(&mut self, cost: u32, charged_on: time::Date) {
         if self.last_reset_date == charged_on {
             self.used_today = self.used_today.saturating_sub(cost);
         }
     }
 
-    pub fn used_on(&self, today: time::Date) -> u32 {
+    pub(crate) fn used_on(&self, today: time::Date) -> u32 {
         if self.last_reset_date == today {
             self.used_today
         } else {
@@ -52,7 +52,7 @@ impl QuotaState {
         }
     }
 
-    pub fn long_interval_mode(&self, today: time::Date) -> bool {
+    pub(crate) fn long_interval_mode(&self, today: time::Date) -> bool {
         self.used_on(today) >= QUOTA_HIGH_WATER
     }
 

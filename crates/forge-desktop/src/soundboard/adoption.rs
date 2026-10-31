@@ -201,7 +201,10 @@ impl SoundboardView {
                         .font_family(mono_family())
                         .text_size(FOOTER_FS)
                         .text_color(palette.text_muted)
-                        .child(tr!("soundboard_footer_unadopted", count = pending as i64)),
+                        .child(tr!(
+                            "soundboard_footer_unadopted",
+                            count = i64::try_from(pending).unwrap_or(i64::MAX)
+                        )),
                 );
         }
         if let Some(summary) = self.adopt_summary.clone() {
@@ -223,7 +226,10 @@ impl SoundboardView {
             let label = if self.adopting_all {
                 tr!("soundboard_footer_adopt_busy")
             } else {
-                tr!("soundboard_footer_adopt_action", count = pending as i64)
+                tr!(
+                    "soundboard_footer_adopt_action",
+                    count = i64::try_from(pending).unwrap_or(i64::MAX)
+                )
             };
             row = row.child(
                 secondary_button(label, palette)
@@ -345,24 +351,27 @@ fn tally_adoption<'a>(
 fn adoption_summary(tally: &AdoptionTally) -> String {
     let mut parts: Vec<String> = Vec::new();
     if tally.copied > 0 {
-        parts.push(tr!("soundboard_adopt_copied", count = tally.copied as i64));
+        parts.push(tr!(
+            "soundboard_adopt_copied",
+            count = i64::try_from(tally.copied).unwrap_or(i64::MAX)
+        ));
     }
     if tally.refused > 0 {
         parts.push(tr!(
             "soundboard_adopt_refused",
-            count = tally.refused as i64
+            count = i64::try_from(tally.refused).unwrap_or(i64::MAX)
         ));
     }
     if tally.missing > 0 {
         parts.push(tr!(
             "soundboard_adopt_missing",
-            count = tally.missing as i64
+            count = i64::try_from(tally.missing).unwrap_or(i64::MAX)
         ));
     }
     if tally.unfinished > 0 {
         parts.push(tr!(
             "soundboard_adopt_unfinished",
-            count = tally.unfinished as i64
+            count = i64::try_from(tally.unfinished).unwrap_or(i64::MAX)
         ));
     }
     if parts.is_empty() {

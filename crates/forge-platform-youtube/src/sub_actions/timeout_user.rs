@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_registry::runner::SubActionConfig;
+use forge_registry::SubActionConfig;
 use forge_registry::{
     ConfigProblem, ConfigReason, ConfigSpec, DurationBounds, DurationField, RunContext, StepTimer,
     SubActionCategory, SubActionRunner, TypedField, ValueBounds,
@@ -41,12 +41,12 @@ fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<(String, u32
     Ok((CHANNEL_ID.read(config, args)?, seconds))
 }
 
-pub struct TimeoutUserRunner {
+pub(crate) struct TimeoutUserRunner {
     moderation: Arc<YoutubeModeration>,
 }
 
 impl TimeoutUserRunner {
-    pub fn new(moderation: Arc<YoutubeModeration>) -> Self {
+    pub(crate) fn new(moderation: Arc<YoutubeModeration>) -> Self {
         Self { moderation }
     }
 }

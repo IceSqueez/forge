@@ -80,7 +80,7 @@ async fn sit_out_cooldown(cfg: &RetryConfig, deadline: Instant) -> Result<(), Tt
     Ok(())
 }
 
-pub async fn retry_synthesize<F, Fut>(
+pub(crate) async fn retry_synthesize<F, Fut>(
     engine_id: EngineId,
     cfg: RetryConfig,
     call: F,

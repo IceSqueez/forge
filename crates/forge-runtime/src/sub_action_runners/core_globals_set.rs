@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_events::EventSource;
-use forge_registry::references::GLOBAL_OPTIONS_KEY;
+use forge_registry::GLOBAL_OPTIONS_KEY;
 use forge_registry::{
     ConfigProblem, ConfigSpec, ReferenceField, RunContext, StepTimer, SubActionCategory,
     SubActionRunner, TextEditor, TextField, ToggleField, TypedField,
@@ -56,12 +56,12 @@ fn read_config(
     ))
 }
 
-pub struct CoreGlobalsSetRunner {
+pub(crate) struct CoreGlobalsSetRunner {
     globals: Arc<dyn GlobalsRepo>,
 }
 
 impl CoreGlobalsSetRunner {
-    pub fn new(globals: Arc<dyn GlobalsRepo>) -> Self {
+    pub(crate) fn new(globals: Arc<dyn GlobalsRepo>) -> Self {
         Self { globals }
     }
 }

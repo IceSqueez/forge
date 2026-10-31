@@ -10,7 +10,7 @@ use forge_platform_youtube::vocabulary::{config_keys, sub_action_ids};
 use forge_platform_youtube::{YoutubeAssembly, YoutubeAuthBundle, YoutubeSession};
 use forge_registry::{RunContext, SubActionConfig, SubActionRegistry};
 use forge_storage::BanLedgerRepo;
-use forge_storage::ban_ledger::MockBanLedgerRepo;
+use forge_storage::MockBanLedgerRepo;
 use forge_types::{ArgStack, EventId, OAuthToken, Secret, SubActionOutcome, Variant};
 use serde_json::{Value, json};
 use support::{DATA_API_PREFIX, MemoryRepo, SilentBus, data_api_override};

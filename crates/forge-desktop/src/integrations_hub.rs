@@ -50,14 +50,14 @@ use forge_runtime::{IntegrationSupervisor, LifecycleState};
 mod welcome;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ConnectFollowUp {
+pub(crate) enum ConnectFollowUp {
     Done,
     OpenSignIn,
     Report,
 }
 
 impl ConnectFollowUp {
-    pub fn resolve(connect: bool, outcome: &ControlOutcome) -> Self {
+    pub(crate) fn resolve(connect: bool, outcome: &ControlOutcome) -> Self {
         match outcome {
             Ok(()) => Self::Done,
             Err(ControlFailure::NotConnected) if connect => Self::OpenSignIn,
@@ -81,7 +81,7 @@ const FOOTER_GAP: Pixels = px(5.0);
 const OPEN_GAP: Pixels = px(3.0);
 const OPEN_CHEVRON: Pixels = px(12.0);
 
-pub struct HubLaunch {
+pub(crate) struct HubLaunch {
     pub supervisor: IntegrationSupervisor<BuiltinObject>,
     pub builtins: BuiltinRegistry,
     pub backend: Arc<dyn DataProvider>,
@@ -92,7 +92,7 @@ pub struct HubLaunch {
     pub vtube_install_seed: VTubeInstallSeed,
 }
 
-pub struct IntegrationsHubView {
+pub(crate) struct IntegrationsHubView {
     focus: Option<IntegrationCategory>,
     lifecycle: Entity<IntegrationLifecycle>,
     connectivity: Entity<PlatformConnectivity>,
@@ -111,7 +111,7 @@ impl EventEmitter<NavRequested> for IntegrationsHubView {}
 impl EventEmitter<LiveDetailRequested> for IntegrationsHubView {}
 
 impl IntegrationsHubView {
-    pub fn new(
+    pub(crate) fn new(
         focus: Option<IntegrationCategory>,
         lifecycle: Entity<IntegrationLifecycle>,
         connectivity: Entity<PlatformConnectivity>,
@@ -140,7 +140,7 @@ impl IntegrationsHubView {
         view
     }
 
-    pub fn welcome(mut self) -> Self {
+    pub(crate) fn welcome(mut self) -> Self {
         self.welcome = true;
         self
     }
@@ -193,7 +193,7 @@ impl IntegrationsHubView {
         .detach();
     }
 
-    pub fn apply_refresh(
+    pub(crate) fn apply_refresh(
         &mut self,
         references: Option<HashMap<IntegrationId, IntegrationReferences>>,
         activity: HashMap<IntegrationId, usize>,
@@ -205,11 +205,16 @@ impl IntegrationsHubView {
         self.activity = activity;
     }
 
-    pub fn references_of(&self, id: &IntegrationId) -> IntegrationReferences {
+    pub(crate) fn references_of(&self, id: &IntegrationId) -> IntegrationReferences {
         self.references.get(id).cloned().unwrap_or_default()
     }
 
-    pub fn request_enabled(&mut self, id: IntegrationId, enabled: bool, cx: &mut Context<Self>) {
+    pub(crate) fn request_enabled(
+        &mut self,
+        id: IntegrationId,
+        enabled: bool,
+        cx: &mut Context<Self>,
+    ) {
         let may_be_referenced = !self.references_loaded || self.references_of(&id).total() > 0;
         if !enabled && !self.welcome && may_be_referenced {
             self.pending_disable = Some(id);
@@ -219,14 +224,14 @@ impl IntegrationsHubView {
         self.dispatch_enabled(&id, enabled);
     }
 
-    pub fn confirm_disable(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn confirm_disable(&mut self, cx: &mut Context<Self>) {
         if let Some(id) = self.pending_disable.take() {
             self.dispatch_enabled(&id, false);
         }
         cx.notify();
     }
 
-    pub fn cancel_disable(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn cancel_disable(&mut self, cx: &mut Context<Self>) {
         if self.pending_disable.take().is_some() {
             cx.notify();
         }
@@ -272,7 +277,7 @@ impl IntegrationsHubView {
         );
     }
 
-    pub fn apply_connect_outcome(
+    pub(crate) fn apply_connect_outcome(
         &mut self,
         id: IntegrationId,
         connect: bool,
@@ -470,7 +475,10 @@ impl IntegrationsHubView {
                 hub_note(
                     Icon::CircleCheck,
                     palette.success,
-                    tr!(&activity_key(&id), count = *count as i64),
+                    tr!(
+                        &activity_key(&id),
+                        count = i64::try_from(*count).unwrap_or(i64::MAX)
+                    ),
                 )
             }),
             _ => None,
@@ -661,8 +669,8 @@ impl IntegrationsHubView {
                 .on_count(members.iter().map(|declaration| &declaration.id));
             SharedString::from(tr!(
                 "integration_category_on_count",
-                on = on as i64,
-                total = members.len() as i64
+                on = i64::try_from(on).unwrap_or(i64::MAX),
+                total = i64::try_from(members.len()).unwrap_or(i64::MAX)
             ))
         });
         let mut cards: Vec<AnyElement> = members
@@ -712,7 +720,7 @@ impl IntegrationsHubView {
             )
             .child(SharedString::from(tr!(
                 "integration_enabled_of_total",
-                total = hub.len() as i64
+                total = i64::try_from(hub.len()).unwrap_or(i64::MAX)
             )))
             .into_any_element()
     }
@@ -843,13 +851,13 @@ fn reference_summary(references: &IntegrationReferences) -> String {
     if !references.actions.is_empty() {
         parts.push(tr!(
             "integration_refs_actions",
-            count = references.actions.len() as i64
+            count = i64::try_from(references.actions.len()).unwrap_or(i64::MAX)
         ));
     }
     if references.triggers > 0 {
         parts.push(tr!(
             "integration_refs_triggers",
-            count = references.triggers as i64
+            count = i64::try_from(references.triggers).unwrap_or(i64::MAX)
         ));
     }
     tr!("integration_refs_used_by", parts = parts.join(" · "))

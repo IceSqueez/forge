@@ -46,8 +46,8 @@ impl ScriptEditorView {
                         .text_color(palette.text_muted)
                         .child(tr!(
                             "script_editor_health",
-                            ok = ok as i64,
-                            total = total as i64
+                            ok = i64::try_from(ok).unwrap_or(i64::MAX),
+                            total = i64::try_from(total).unwrap_or(i64::MAX)
                         )),
                 );
             right = right.child(health).child(
@@ -302,7 +302,10 @@ impl ScriptEditorView {
                     .font_family(mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
-                    .child(tr!("script_editor_timeout_ms", ms = ms as i64))
+                    .child(tr!(
+                        "script_editor_timeout_ms",
+                        ms = i64::try_from(ms).unwrap_or(i64::MAX)
+                    ))
             }));
 
         div()

@@ -105,7 +105,7 @@ struct DeletePrompt {
     linked: usize,
 }
 
-pub struct DiscordScreenView {
+pub(crate) struct DiscordScreenView {
     client: Arc<DiscordClient>,
     integration: Option<IntegrationSlot<BuiltinObject>>,
     action_repo: Arc<dyn ActionRepo>,
@@ -123,7 +123,7 @@ pub struct DiscordScreenView {
 }
 
 impl DiscordScreenView {
-    pub fn new(
+    pub(crate) fn new(
         client: Arc<DiscordClient>,
         integration: Option<IntegrationSlot<BuiltinObject>>,
         action_repo: Arc<dyn ActionRepo>,
@@ -230,7 +230,7 @@ impl DiscordScreenView {
         } else {
             tr!(
                 "discord_binding_action_count",
-                count = row.linked_actions.len() as i64
+                count = i64::try_from(row.linked_actions.len()).unwrap_or(i64::MAX)
             )
         }
     }
@@ -491,7 +491,10 @@ impl DiscordScreenView {
                             .font_family(body_family())
                             .text_size(COUNT_VALUE_FS)
                             .text_color(palette.text_primary)
-                            .child(tr!("discord_hero_webhooks", count = count as i64)),
+                            .child(tr!(
+                                "discord_hero_webhooks",
+                                count = i64::try_from(count).unwrap_or(i64::MAX)
+                            )),
                     )
                     .child(
                         div()
@@ -559,10 +562,13 @@ impl DiscordScreenView {
 
         let (latency_value, latency_hint) = match health.latency_p50_ms {
             Some(ms) => (
-                tr!("discord_stat_latency_value", ms = ms as i64),
+                tr!(
+                    "discord_stat_latency_value",
+                    ms = i64::try_from(ms).unwrap_or(i64::MAX)
+                ),
                 tr!(
                     "discord_stat_latency_hint",
-                    count = health.latency_samples as i64
+                    count = i64::try_from(health.latency_samples).unwrap_or(i64::MAX)
                 ),
             ),
             None => (NO_VALUE.to_owned(), tr!("discord_stat_no_sends")),
@@ -579,8 +585,8 @@ impl DiscordScreenView {
             (
                 tr!(
                     "discord_stat_budget_value",
-                    used = health.rate_limit_used as i64,
-                    total = health.rate_limit_total as i64
+                    used = i64::try_from(health.rate_limit_used).unwrap_or(i64::MAX),
+                    total = i64::try_from(health.rate_limit_total).unwrap_or(i64::MAX)
                 ),
                 tr!("discord_stat_budget_hint"),
                 if exhausted {
@@ -661,7 +667,7 @@ impl DiscordScreenView {
             .text_color(palette.text_faint)
             .child(tr!(
                 "discord_section_bindings_count",
-                count = self.webhooks.len() as i64
+                count = i64::try_from(self.webhooks.len()).unwrap_or(i64::MAX)
             ))
             .into_any_element();
 
@@ -884,13 +890,16 @@ impl DiscordScreenView {
                     .child(footer_text(
                         tr!(
                             "discord_footer_webhooks",
-                            count = self.webhooks.len() as i64
+                            count = i64::try_from(self.webhooks.len()).unwrap_or(i64::MAX)
                         ),
                         palette,
                     ))
                     .child(footer_text(FOOTER_SEPARATOR.to_owned(), palette))
                     .child(footer_text(
-                        tr!("discord_footer_linked", count = self.linked_total() as i64),
+                        tr!(
+                            "discord_footer_linked",
+                            count = i64::try_from(self.linked_total()).unwrap_or(i64::MAX)
+                        ),
                         palette,
                     )),
             )
@@ -916,7 +925,7 @@ impl DiscordScreenView {
         } else {
             tr!(
                 "discord_confirm_delete_body_linked",
-                count = prompt.linked as i64
+                count = i64::try_from(prompt.linked).unwrap_or(i64::MAX)
             )
         };
         let card = confirm_modal(
@@ -1059,8 +1068,8 @@ impl Render for DiscordScreenView {
                     .text_color(palette.text_muted)
                     .child(tr!(
                         "discord_header_summary",
-                        webhooks = self.webhooks.len() as i64,
-                        actions = self.linked_total() as i64
+                        webhooks = i64::try_from(self.webhooks.len()).unwrap_or(i64::MAX),
+                        actions = i64::try_from(self.linked_total()).unwrap_or(i64::MAX)
                     )),
             );
 

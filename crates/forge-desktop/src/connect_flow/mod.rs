@@ -18,12 +18,12 @@ use forge_runtime::IntegrationSlot;
 use device_code::{TwitchDeviceState, TwitchFlowHandle};
 use local_callback::{KickFlowHandle, LocalCallbackFlowPhase, YoutubeFlowHandle};
 
-pub enum ConnectFlowEvent {
+pub(crate) enum ConnectFlowEvent {
     Connected(BuiltinObject),
     Leave,
 }
 
-pub struct ConnectFlowLaunch {
+pub(crate) struct ConnectFlowLaunch {
     pub platform: PlatformId,
     pub display_name: String,
     pub rt_handle: tokio::runtime::Handle,
@@ -36,7 +36,7 @@ pub struct ConnectFlowLaunch {
     pub kick_sign_in: Option<forge_platform_kick::KickSignIn>,
 }
 
-pub struct ConnectFlow {
+pub(crate) struct ConnectFlow {
     platform: PlatformId,
     display_name: String,
     rt_handle: tokio::runtime::Handle,
@@ -69,7 +69,7 @@ impl Drop for ConnectFlow {
 }
 
 impl ConnectFlow {
-    pub fn new(launch: ConnectFlowLaunch, cx: &mut Context<Self>) -> Self {
+    pub(crate) fn new(launch: ConnectFlowLaunch, cx: &mut Context<Self>) -> Self {
         let ConnectFlowLaunch {
             platform,
             display_name,

@@ -42,7 +42,10 @@ impl HotkeysScreenView {
                 tr!("hotkeys_stat_bindings"),
                 self.total_count().to_string(),
                 palette.text_primary,
-                tr!("hotkeys_stat_bindings_hint", count = active as i64),
+                tr!(
+                    "hotkeys_stat_bindings_hint",
+                    count = i64::try_from(active).unwrap_or(i64::MAX)
+                ),
                 palette.success,
                 palette,
                 density,

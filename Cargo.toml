@@ -197,6 +197,8 @@ sysinfo = { version = "0.39.6", default-features = false, features = [
 
 [workspace.lints.rust]
 unsafe_code = "deny"
+unreachable_pub = "warn"
+unnameable_types = "warn"
 
 [workspace.lints.clippy]
 unwrap_used = "warn"

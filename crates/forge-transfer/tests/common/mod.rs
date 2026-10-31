@@ -17,21 +17,21 @@ use forge_transfer::{
 };
 use sha2::{Digest, Sha256};
 
-pub const SQLITE_KEY: [u8; 32] = [0x42; 32];
+pub(crate) const SQLITE_KEY: [u8; 32] = [0x42; 32];
 const BUNDLE_MODE: u32 = 0o600;
 
-pub type Tree = BTreeMap<String, Vec<u8>>;
+pub(crate) type Tree = BTreeMap<String, Vec<u8>>;
 
 const KEY_FILE_ENV: &str = "FORGE_CREDENTIAL_KEY_FILE";
 const CHILD_RUN_ENV: &str = "FORGE_TRANSFER_KEY_OVERRIDE_CHILD_RUN";
 const ONE_TEST_PASSED: &str = "1 passed";
 
-pub fn key_file_of_this_child_run() -> Option<PathBuf> {
+pub(crate) fn key_file_of_this_child_run() -> Option<PathBuf> {
     std::env::var_os(CHILD_RUN_ENV)?;
     std::env::var_os(KEY_FILE_ENV).map(PathBuf::from)
 }
 
-pub fn rerun_in_child_with_key_file(test_name: &str, key_file: &Path) {
+pub(crate) fn rerun_in_child_with_key_file(test_name: &str, key_file: &Path) {
     let test_binary = std::env::current_exe().unwrap_or_else(|e| panic!("test binary: {e}"));
     let child = Command::new(test_binary)
         .args(["--exact", test_name])
@@ -47,11 +47,11 @@ pub fn rerun_in_child_with_key_file(test_name: &str, key_file: &Path) {
     );
 }
 
-pub fn database_url(data_dir: &Path) -> String {
+pub(crate) fn database_url(data_dir: &Path) -> String {
     format!("sqlite://{}", data_dir.join(DATABASE_FILE_NAME).display())
 }
 
-pub async fn open_backend(data_dir: &Path) -> SqliteBackend {
+pub(crate) async fn open_backend(data_dir: &Path) -> SqliteBackend {
     SqliteBackend::open_for_test(
         &database_url(data_dir),
         SQLITE_KEY,
@@ -62,14 +62,14 @@ pub async fn open_backend(data_dir: &Path) -> SqliteBackend {
     .unwrap()
 }
 
-pub fn sha256_hex(bytes: &[u8]) -> String {
+pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
     Sha256::digest(bytes)
         .iter()
         .map(|b| format!("{b:02x}"))
         .collect()
 }
 
-pub fn entry(path: &str, bytes: &[u8]) -> ContentEntry {
+pub(crate) fn entry(path: &str, bytes: &[u8]) -> ContentEntry {
     ContentEntry {
         path: path.to_owned(),
         size: bytes.len() as u64,
@@ -77,7 +77,7 @@ pub fn entry(path: &str, bytes: &[u8]) -> ContentEntry {
     }
 }
 
-pub fn header(name: &str, size: usize) -> tar::Header {
+pub(crate) fn header(name: &str, size: usize) -> tar::Header {
     let mut header = tar::Header::new_gnu();
     header.as_gnu_mut().unwrap().name[..name.len()].copy_from_slice(name.as_bytes());
     header.set_entry_type(tar::EntryType::Regular);
@@ -87,13 +87,13 @@ pub fn header(name: &str, size: usize) -> tar::Header {
     header
 }
 
-pub fn gzip(bytes: &[u8]) -> Vec<u8> {
+pub(crate) fn gzip(bytes: &[u8]) -> Vec<u8> {
     let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
     gz.write_all(bytes).unwrap();
     gz.finish().unwrap()
 }
 
-pub fn write_bundle_file(dir: &Path, entries: &[(&str, &[u8])]) -> PathBuf {
+pub(crate) fn write_bundle_file(dir: &Path, entries: &[(&str, &[u8])]) -> PathBuf {
     let mut builder = tar::Builder::new(Vec::new());
     for (name, bytes) in entries {
         builder.append(&header(name, bytes.len()), *bytes).unwrap();
@@ -103,12 +103,12 @@ pub fn write_bundle_file(dir: &Path, entries: &[(&str, &[u8])]) -> PathBuf {
     path
 }
 
-pub fn write_file(path: &Path, bytes: &[u8]) {
+pub(crate) fn write_file(path: &Path, bytes: &[u8]) {
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     std::fs::write(path, bytes).unwrap();
 }
 
-pub fn files_under(root: &Path) -> Tree {
+pub(crate) fn files_under(root: &Path) -> Tree {
     fn walk(root: &Path, dir: &Path, out: &mut Tree) {
         for child in std::fs::read_dir(dir).unwrap() {
             let path = child.unwrap().path();
@@ -131,7 +131,7 @@ pub fn files_under(root: &Path) -> Tree {
     out
 }
 
-pub fn file_named_anywhere(root: &Path, name: &str) -> bool {
+pub(crate) fn file_named_anywhere(root: &Path, name: &str) -> bool {
     let mut pending = vec![root.to_path_buf()];
     while let Some(dir) = pending.pop() {
         for entry in std::fs::read_dir(&dir).into_iter().flatten() {
@@ -147,7 +147,7 @@ pub fn file_named_anywhere(root: &Path, name: &str) -> bool {
     false
 }
 
-pub fn empty_documents() -> PackDocuments {
+pub(crate) fn empty_documents() -> PackDocuments {
     PackDocuments {
         version: PACK_DOCUMENTS_VERSION,
         actions: Vec::new(),
@@ -161,7 +161,7 @@ pub fn empty_documents() -> PackDocuments {
     }
 }
 
-pub fn overlay_carrying(id: &str, file: &str, name: &str) -> OverlayDocument {
+pub(crate) fn overlay_carrying(id: &str, file: &str, name: &str) -> OverlayDocument {
     OverlayDocument {
         id: id.to_owned(),
         display_name: "Escaper".to_owned(),

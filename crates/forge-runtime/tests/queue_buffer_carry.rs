@@ -15,7 +15,7 @@ use forge_runtime::{
     QueueAdmission, QueueMode, QueueRuntimeState, QueueScheduler, QueueSchedulerHandle,
     SchedulerRequest, spawn_action_engine,
 };
-use forge_storage::trigger_instance::MockTriggerInstanceRepo;
+use forge_storage::MockTriggerInstanceRepo;
 use forge_storage::{
     ActionRepo, ActionStats, ActionTelemetry, CatalogRevision, ExecutionStatus, HistoryRepo,
     StorageError,

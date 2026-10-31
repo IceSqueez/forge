@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 
 use forge_types::{EventId, TriggerInstanceId};
 
-pub type CooldownKey = (TriggerInstanceId, Option<String>);
+pub(crate) type CooldownKey = (TriggerInstanceId, Option<String>);
 
 struct CooldownEntry {
     stamped_at: Instant,
@@ -17,20 +17,20 @@ impl CooldownEntry {
     }
 }
 
-pub struct CooldownMap {
+pub(crate) struct CooldownMap {
     entries: HashMap<CooldownKey, CooldownEntry>,
     capacity: usize,
 }
 
 impl CooldownMap {
-    pub fn new(capacity: usize) -> Self {
+    pub(crate) fn new(capacity: usize) -> Self {
         Self {
             entries: HashMap::new(),
             capacity: capacity.max(1),
         }
     }
 
-    pub fn remaining_or_stamp(
+    pub(crate) fn remaining_or_stamp(
         &mut self,
         key: CooldownKey,
         window: Duration,
@@ -63,7 +63,7 @@ impl CooldownMap {
         None
     }
 
-    pub fn release(&mut self, key: &CooldownKey, event_id: EventId) {
+    pub(crate) fn release(&mut self, key: &CooldownKey, event_id: EventId) {
         if self
             .entries
             .get(key)

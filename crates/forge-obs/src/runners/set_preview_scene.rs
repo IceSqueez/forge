@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_registry::runner::SubActionConfig;
+use forge_registry::SubActionConfig;
 use forge_registry::{
     ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TypedField,
 };
@@ -16,12 +16,12 @@ const KIND_ID: &str = sub_action_ids::SCENE_SET_PREVIEW;
 
 const CONFIG: ConfigSpec = ConfigSpec::new(&[&SCENE]);
 
-pub struct SetPreviewSceneRunner {
+pub(crate) struct SetPreviewSceneRunner {
     sink: Arc<dyn ObsSink>,
 }
 
 impl SetPreviewSceneRunner {
-    pub fn new(sink: Arc<dyn ObsSink>) -> Self {
+    pub(crate) fn new(sink: Arc<dyn ObsSink>) -> Self {
         Self { sink }
     }
 }

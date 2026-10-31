@@ -6,7 +6,7 @@ use forge_update::{InstallKind, InstallLayout, ManualReason, detect_install, is_
 use gpui::{App, Window};
 use sysinfo::{CpuRefreshKind, MemoryRefreshKind, RefreshKind, System};
 
-pub const BUILD_COMMIT: &str = env!("FORGE_BUILD_COMMIT");
+pub(crate) const BUILD_COMMIT: &str = env!("FORGE_BUILD_COMMIT");
 
 const BYTES_PER_KIB: u64 = 1024;
 const BYTE_UNITS: [&str; 5] = ["B", "KiB", "MiB", "GiB", "TiB"];
@@ -24,7 +24,7 @@ const GPU_BACKEND: &str = "DirectX 11";
 const GPU_BACKEND: &str = "wgpu (Vulkan or OpenGL)";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct GpuFacts {
+pub(crate) struct GpuFacts {
     pub device: String,
     pub driver: String,
     pub driver_info: String,
@@ -32,20 +32,20 @@ pub struct GpuFacts {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct DisplaySize {
+pub(crate) struct DisplaySize {
     pub width: u32,
     pub height: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
-pub struct WindowFacts {
+pub(crate) struct WindowFacts {
     pub gpu: Option<GpuFacts>,
     pub displays: Vec<DisplaySize>,
     pub scale_factor: Option<f32>,
 }
 
 impl WindowFacts {
-    pub fn read(window: &Window, cx: &App) -> Self {
+    pub(crate) fn read(window: &Window, cx: &App) -> Self {
         let gpu = window.gpu_specs().map(|specs| GpuFacts {
             device: specs.device_name,
             driver: specs.driver_name,
@@ -72,7 +72,7 @@ impl WindowFacts {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SpeechOutput {
+pub(crate) enum SpeechOutput {
     SystemDefault { device: Option<String> },
     Chosen { device: String },
     ChosenMissing { fallback: Option<String> },
@@ -80,7 +80,7 @@ pub enum SpeechOutput {
 }
 
 impl SpeechOutput {
-    pub fn resolve(preference: Option<&OutputDevice>, devices: &[DeviceInfo]) -> Self {
+    pub(crate) fn resolve(preference: Option<&OutputDevice>, devices: &[DeviceInfo]) -> Self {
         let Some(preference) = preference else {
             return SpeechOutput::Unknown;
         };
@@ -132,13 +132,13 @@ fn system_default_label(device: Option<&str>) -> String {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AudioOutputs {
+pub(crate) struct AudioOutputs {
     pub device_count: usize,
     pub speech: SpeechOutput,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct HostFacts {
+pub(crate) struct HostFacts {
     pub install: Option<InstallKind>,
     pub os_name: Option<String>,
     pub os_version: Option<String>,
@@ -152,7 +152,7 @@ pub struct HostFacts {
 }
 
 impl HostFacts {
-    pub fn collect(data_dir: &Path, speech_preference: Option<OutputDevice>) -> Self {
+    pub(crate) fn collect(data_dir: &Path, speech_preference: Option<OutputDevice>) -> Self {
         let audio_outputs = forge_audio::list_output_devices()
             .ok()
             .map(|devices| AudioOutputs {
@@ -166,7 +166,7 @@ impl HostFacts {
         }
     }
 
-    pub fn collect_static() -> Self {
+    pub(crate) fn collect_static() -> Self {
         let system = System::new_with_specifics(
             RefreshKind::nothing()
                 .with_cpu(CpuRefreshKind::nothing())
@@ -195,12 +195,12 @@ impl HostFacts {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct IdentityScrubber {
+pub(crate) struct IdentityScrubber {
     needles: Vec<String>,
 }
 
 impl IdentityScrubber {
-    pub fn new(identities: impl IntoIterator<Item = String>) -> Self {
+    pub(crate) fn new(identities: impl IntoIterator<Item = String>) -> Self {
         let mut needles: Vec<String> = identities
             .into_iter()
             .map(|identity| identity.trim().to_ascii_lowercase())
@@ -211,7 +211,7 @@ impl IdentityScrubber {
         Self { needles }
     }
 
-    pub fn current() -> Self {
+    pub(crate) fn current() -> Self {
         let user_names = USER_NAME_ENVS
             .iter()
             .filter_map(|name| std::env::var(name).ok());
@@ -224,7 +224,7 @@ impl IdentityScrubber {
         )
     }
 
-    pub fn scrub(&self, text: &str) -> String {
+    pub(crate) fn scrub(&self, text: &str) -> String {
         let lowered = text.to_ascii_lowercase();
         let mut scrubbed = String::with_capacity(text.len());
         let mut copied_until = 0;
@@ -253,7 +253,7 @@ impl IdentityScrubber {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum InfoField {
+pub(crate) enum InfoField {
     Forge,
     Build,
     Os,
@@ -268,7 +268,7 @@ pub enum InfoField {
 }
 
 impl InfoField {
-    pub const ALL: [InfoField; 11] = [
+    pub(crate) const ALL: [InfoField; 11] = [
         InfoField::Forge,
         InfoField::Build,
         InfoField::Os,
@@ -282,7 +282,7 @@ impl InfoField {
         InfoField::DataDir,
     ];
 
-    pub fn report_label(self) -> &'static str {
+    pub(crate) fn report_label(self) -> &'static str {
         match self {
             InfoField::Forge => "forge",
             InfoField::Build => "Build",
@@ -300,7 +300,7 @@ impl InfoField {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct SystemInfo {
+pub(crate) struct SystemInfo {
     pub forge_version: String,
     pub build_commit: String,
     pub release_build: bool,
@@ -309,7 +309,7 @@ pub struct SystemInfo {
 }
 
 impl SystemInfo {
-    pub fn assemble(window: WindowFacts, host: HostFacts) -> Self {
+    pub(crate) fn assemble(window: WindowFacts, host: HostFacts) -> Self {
         Self {
             forge_version: env!("CARGO_PKG_VERSION").to_owned(),
             build_commit: BUILD_COMMIT.to_owned(),
@@ -319,7 +319,7 @@ impl SystemInfo {
         }
     }
 
-    pub fn value(&self, field: InfoField) -> Option<String> {
+    pub(crate) fn value(&self, field: InfoField) -> Option<String> {
         let raw = match field {
             InfoField::Forge => Some(format!("v{} ({})", self.forge_version, self.build_commit)),
             InfoField::Build => Some(self.build_value()),
@@ -336,7 +336,7 @@ impl SystemInfo {
         Some(self.host.identity.scrub(&raw))
     }
 
-    pub fn to_report_text(&self) -> String {
+    pub(crate) fn to_report_text(&self) -> String {
         let mut lines = Vec::with_capacity(InfoField::ALL.len());
         for field in InfoField::ALL {
             let value = self.value(field).unwrap_or_else(|| UNKNOWN.to_owned());
@@ -425,7 +425,7 @@ fn gpu_value(gpu: &GpuFacts) -> String {
     value
 }
 
-pub fn install_label(install: &InstallKind) -> &'static str {
+pub(crate) fn install_label(install: &InstallKind) -> &'static str {
     match install {
         InstallKind::Updatable(updatable) => match updatable.layout {
             InstallLayout::MacAppBundle => "macOS app bundle",
@@ -445,7 +445,7 @@ pub fn install_label(install: &InstallKind) -> &'static str {
     }
 }
 
-pub fn format_bytes(bytes: u64) -> String {
+pub(crate) fn format_bytes(bytes: u64) -> String {
     let divisor = BYTES_PER_KIB as f64;
     let mut value = bytes as f64;
     let mut unit = 0;
@@ -464,7 +464,7 @@ fn rounded_to_one_decimal(value: f64) -> f64 {
     (value * ONE_DECIMAL_SCALE).round() / ONE_DECIMAL_SCALE
 }
 
-pub fn directory_size(root: &Path) -> Option<u64> {
+pub(crate) fn directory_size(root: &Path) -> Option<u64> {
     if !fs::metadata(root).ok()?.is_dir() {
         return None;
     }

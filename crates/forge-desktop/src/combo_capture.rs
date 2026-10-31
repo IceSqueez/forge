@@ -8,13 +8,13 @@ use forge_components::PushToast;
 use forge_components::ESCAPE_KEY;
 
 #[derive(Debug, PartialEq, Eq)]
-pub enum CapturedKey {
+pub(crate) enum CapturedKey {
     Cancel,
     Combo(String),
     Unusable,
 }
 
-pub fn captured_key(keystroke: &Keystroke) -> CapturedKey {
+pub(crate) fn captured_key(keystroke: &Keystroke) -> CapturedKey {
     if keystroke.key == ESCAPE_KEY && !keystroke.modifiers.modified() {
         return CapturedKey::Cancel;
     }
@@ -25,12 +25,12 @@ pub fn captured_key(keystroke: &Keystroke) -> CapturedKey {
 }
 
 #[derive(Default)]
-pub struct ComboCapture {
+pub(crate) struct ComboCapture {
     intercept: Option<Subscription>,
 }
 
 impl ComboCapture {
-    pub fn start<V: 'static>(
+    pub(crate) fn start<V: 'static>(
         &mut self,
         cx: &mut Context<V>,
         on_key: impl Fn(&mut V, Keystroke, &mut Context<V>) -> bool + 'static,
@@ -47,16 +47,16 @@ impl ComboCapture {
         }));
     }
 
-    pub fn stop(&mut self) {
+    pub(crate) fn stop(&mut self) {
         self.intercept = None;
     }
 
-    pub fn is_active(&self) -> bool {
+    pub(crate) fn is_active(&self) -> bool {
         self.intercept.is_some()
     }
 }
 
-pub fn warn_if_typing_key(combo: &str, cx: &mut App) {
+pub(crate) fn warn_if_typing_key(combo: &str, cx: &mut App) {
     if HotkeyCombo::parse(combo).is_ok_and(|parsed| parsed.swallows_typing()) {
         cx.push_toast(
             ToastKind::Warn,

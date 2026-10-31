@@ -13,7 +13,7 @@ use forge_tts_cloud::openai::OpenAiEngineFactory;
 use forge_tts_cloud::polly::PollyEngineFactory;
 use forge_tts_core::TtsRegistry;
 
-pub async fn register_cloud_engines(
+pub(crate) async fn register_cloud_engines(
     registry: &RwLock<TtsRegistry>,
     creds: &dyn CredentialsRepo,
     gateways: &CloudGateways,
@@ -24,7 +24,7 @@ pub async fn register_cloud_engines(
     try_register_polly(registry, creds, gateways).await;
 }
 
-pub fn register_azure(
+pub(crate) fn register_azure(
     registry: &RwLock<TtsRegistry>,
     creds: AzureCredentials,
     gateways: &CloudGateways,
@@ -40,7 +40,7 @@ pub fn register_azure(
     id
 }
 
-pub fn register_elevenlabs(
+pub(crate) fn register_elevenlabs(
     registry: &RwLock<TtsRegistry>,
     creds: ElevenLabsCredentials,
     gateways: &CloudGateways,
@@ -56,7 +56,7 @@ pub fn register_elevenlabs(
     id
 }
 
-pub fn register_openai(
+pub(crate) fn register_openai(
     registry: &RwLock<TtsRegistry>,
     creds: OpenAiCredentials,
     gateways: &CloudGateways,
@@ -72,7 +72,7 @@ pub fn register_openai(
     id
 }
 
-pub fn register_polly(
+pub(crate) fn register_polly(
     registry: &RwLock<TtsRegistry>,
     creds: PollyCredentials,
     gateways: &CloudGateways,

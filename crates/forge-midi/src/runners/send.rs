@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_registry::runner::SubActionConfig;
+use forge_registry::SubActionConfig;
 use forge_registry::{
     ChoiceField, ConfigProblem, ConfigReason, ConfigSpec, Interpolation, RunContext, StepTimer,
     SubActionCategory, SubActionRunner, TextEditor, TextField, TypedField, ValueBounds,
@@ -142,12 +142,12 @@ fn read_raw_bytes(config: &SubActionConfig) -> Result<Vec<u8>, ConfigProblem> {
         .collect()
 }
 
-pub struct MidiSendRunner {
+pub(crate) struct MidiSendRunner {
     sink: Arc<dyn MidiSink>,
 }
 
 impl MidiSendRunner {
-    pub fn new(sink: Arc<dyn MidiSink>) -> Self {
+    pub(crate) fn new(sink: Arc<dyn MidiSink>) -> Self {
         Self { sink }
     }
 }

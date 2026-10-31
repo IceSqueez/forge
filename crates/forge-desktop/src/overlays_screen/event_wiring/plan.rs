@@ -6,7 +6,7 @@ use forge_overlay::{
     is_curated, order_curated_first, sample_context,
 };
 use forge_registry::{TriggerKindDescriptor, TriggerRegistry, declared_variables};
-use forge_runtime::actions::{OverlayFeed, OverlayWiringRefusal, plan_overlay_wiring};
+use forge_runtime::{OverlayFeed, OverlayWiringRefusal, plan_overlay_wiring};
 use forge_storage::OverlayDefinition;
 use forge_types::{ActionId, Variant};
 use gpui::SharedString;

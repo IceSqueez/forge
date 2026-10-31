@@ -10,7 +10,7 @@ pub(in crate::actions_screen) struct PackExportHost {
 
 impl ScreenActionsView {
     #[must_use]
-    pub fn with_pack_export(mut self, cx: &mut Context<Self>) -> Self {
+    pub(crate) fn with_pack_export(mut self, cx: &mut Context<Self>) -> Self {
         if let Some(transfers) = TransferFlows::route(cx) {
             let flow = transfers.read(cx).pack_export.clone();
             let observe = cx.observe(&flow, |_, _, cx| cx.notify());

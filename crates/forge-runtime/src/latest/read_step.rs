@@ -14,7 +14,7 @@ use forge_types::{
 
 use crate::latest::slots::latest_slot_ids;
 
-pub const LATEST_GET_SUB_ACTION: &str = "core.latest.get";
+pub(crate) const LATEST_GET_SUB_ACTION: &str = "core.latest.get";
 
 const INTO_VAR_KEY: &str = "into_var";
 const DEFAULT_INTO_VAR: &str = "latest";
@@ -57,12 +57,12 @@ fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<LatestRead, 
     })
 }
 
-pub struct LatestGetRunner {
+pub(crate) struct LatestGetRunner {
     values: Arc<dyn LatestValueReader>,
 }
 
 impl LatestGetRunner {
-    pub fn new(values: Arc<dyn LatestValueReader>) -> Self {
+    pub(crate) fn new(values: Arc<dyn LatestValueReader>) -> Self {
         Self { values }
     }
 }

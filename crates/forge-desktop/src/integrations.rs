@@ -25,7 +25,7 @@ use forge_hotkey::HotkeyReconciler;
 use forge_runtime::{IntegrationFactory, IntegrationObjects};
 
 #[derive(Clone)]
-pub struct BuiltinObject {
+pub(crate) struct BuiltinObject {
     pub icon: SectionIcon,
     pub status: Arc<dyn BuiltinStatus>,
     pub health: Arc<dyn BuiltinHealth>,
@@ -41,28 +41,28 @@ pub struct BuiltinObject {
 }
 
 #[derive(Clone, Default)]
-pub struct BuiltinRegistry {
+pub(crate) struct BuiltinRegistry {
     entries: Arc<std::sync::RwLock<HashMap<IntegrationId, BuiltinObject>>>,
 }
 
 impl BuiltinRegistry {
-    pub fn get(&self, id: &IntegrationId) -> Option<BuiltinObject> {
+    pub(crate) fn get(&self, id: &IntegrationId) -> Option<BuiltinObject> {
         let guard = self.entries.read().unwrap_or_else(|e| e.into_inner());
         guard.get(id).cloned()
     }
 
-    pub fn snapshot(&self) -> Vec<BuiltinObject> {
+    pub(crate) fn snapshot(&self) -> Vec<BuiltinObject> {
         let guard = self.entries.read().unwrap_or_else(|e| e.into_inner());
         guard.values().cloned().collect()
     }
 
-    pub fn install(&self, object: BuiltinObject) {
+    pub(crate) fn install(&self, object: BuiltinObject) {
         let id = object.status.id().clone();
         let mut guard = self.entries.write().unwrap_or_else(|e| e.into_inner());
         guard.insert(id, object);
     }
 
-    pub fn remove(&self, id: &IntegrationId) {
+    pub(crate) fn remove(&self, id: &IntegrationId) {
         let mut guard = self.entries.write().unwrap_or_else(|e| e.into_inner());
         guard.remove(id);
     }
@@ -82,7 +82,7 @@ impl IntegrationObjects<BuiltinObject> for BuiltinRegistry {
     }
 }
 
-pub struct Integrations {
+pub(crate) struct Integrations {
     pub builtins: BuiltinRegistry,
     pub factories: Vec<Arc<dyn IntegrationFactory<BuiltinObject>>>,
     pub obs_install_seed: ObsInstallSeed,
@@ -100,7 +100,7 @@ pub struct Integrations {
 }
 
 #[derive(Clone)]
-pub struct ObsInstallSeed {
+pub(crate) struct ObsInstallSeed {
     sink: Arc<forge_obs::SwitchableObsSink>,
     live: Arc<std::sync::RwLock<Option<Arc<forge_obs::ObsClient>>>>,
 }
@@ -113,26 +113,26 @@ impl ObsInstallSeed {
         }
     }
 
-    pub fn stream_output(&self) -> forge_obs::StreamOutputActive {
+    pub(crate) fn stream_output(&self) -> forge_obs::StreamOutputActive {
         self.sink.stream_output()
     }
 
-    pub fn stream_stats(&self) -> forge_obs::ObsStatsWatch {
+    pub(crate) fn stream_stats(&self) -> forge_obs::ObsStatsWatch {
         self.sink.stream_stats()
     }
 
-    pub fn install(&self, client: Arc<forge_obs::ObsClient>) {
+    pub(crate) fn install(&self, client: Arc<forge_obs::ObsClient>) {
         self.sink.install(Arc::clone(&client));
         let mut guard = self.live.write().unwrap_or_else(|e| e.into_inner());
         *guard = Some(client);
     }
 
-    pub fn clear(&self) {
+    pub(crate) fn clear(&self) {
         let mut guard = self.live.write().unwrap_or_else(|e| e.into_inner());
         *guard = None;
     }
 
-    pub async fn disconnect_live(&self) {
+    pub(crate) async fn disconnect_live(&self) {
         let previous = {
             let mut guard = self.live.write().unwrap_or_else(|e| e.into_inner());
             guard.take()
@@ -144,18 +144,18 @@ impl ObsInstallSeed {
         }
     }
 
-    pub fn live(&self) -> Option<Arc<forge_obs::ObsClient>> {
+    pub(crate) fn live(&self) -> Option<Arc<forge_obs::ObsClient>> {
         let guard = self.live.read().unwrap_or_else(|e| e.into_inner());
         guard.clone()
     }
 
-    pub fn connect_failure(&self) -> Option<MessageRef> {
+    pub(crate) fn connect_failure(&self) -> Option<MessageRef> {
         self.live()?.connect_failure()
     }
 }
 
 #[derive(Clone)]
-pub struct VTubeInstallSeed {
+pub(crate) struct VTubeInstallSeed {
     sink: Arc<forge_vtube::SwitchableVTubeSink>,
     live: Arc<std::sync::RwLock<Option<Arc<forge_vtube::VTubeClient>>>>,
 }
@@ -168,18 +168,18 @@ impl VTubeInstallSeed {
         }
     }
 
-    pub fn install(&self, client: Arc<forge_vtube::VTubeClient>) {
+    pub(crate) fn install(&self, client: Arc<forge_vtube::VTubeClient>) {
         self.sink.install(Arc::clone(&client));
         let mut guard = self.live.write().unwrap_or_else(|e| e.into_inner());
         *guard = Some(client);
     }
 
-    pub fn clear(&self) {
+    pub(crate) fn clear(&self) {
         let mut guard = self.live.write().unwrap_or_else(|e| e.into_inner());
         *guard = None;
     }
 
-    pub async fn disconnect_live(&self) {
+    pub(crate) async fn disconnect_live(&self) {
         let previous = {
             let mut guard = self.live.write().unwrap_or_else(|e| e.into_inner());
             guard.take()
@@ -191,17 +191,17 @@ impl VTubeInstallSeed {
         }
     }
 
-    pub fn live(&self) -> Option<Arc<forge_vtube::VTubeClient>> {
+    pub(crate) fn live(&self) -> Option<Arc<forge_vtube::VTubeClient>> {
         let guard = self.live.read().unwrap_or_else(|e| e.into_inner());
         guard.clone()
     }
 
-    pub fn connect_failure(&self) -> Option<MessageRef> {
+    pub(crate) fn connect_failure(&self) -> Option<MessageRef> {
         self.live()?.connect_failure()
     }
 }
 
-pub fn vtube_builtin_object(client: Arc<forge_vtube::VTubeClient>) -> BuiltinObject {
+pub(crate) fn vtube_builtin_object(client: Arc<forge_vtube::VTubeClient>) -> BuiltinObject {
     BuiltinObject {
         icon: SectionIcon::new("mood-smile"),
         status: client.clone(),
@@ -218,7 +218,7 @@ pub fn vtube_builtin_object(client: Arc<forge_vtube::VTubeClient>) -> BuiltinObj
     }
 }
 
-pub fn obs_builtin_object(client: Arc<forge_obs::ObsClient>) -> BuiltinObject {
+pub(crate) fn obs_builtin_object(client: Arc<forge_obs::ObsClient>) -> BuiltinObject {
     BuiltinObject {
         icon: SectionIcon::new("broadcast"),
         status: client.clone(),
@@ -235,7 +235,7 @@ pub fn obs_builtin_object(client: Arc<forge_obs::ObsClient>) -> BuiltinObject {
     }
 }
 
-pub fn twitch_builtin_object(
+pub(crate) fn twitch_builtin_object(
     bundle: Arc<forge_platform_twitch::TwitchIntegrationBundle>,
 ) -> BuiltinObject {
     BuiltinObject {
@@ -254,7 +254,7 @@ pub fn twitch_builtin_object(
     }
 }
 
-pub fn youtube_builtin_object(
+pub(crate) fn youtube_builtin_object(
     bundle: Arc<forge_platform_youtube::YoutubeIntegrationBundle>,
 ) -> BuiltinObject {
     BuiltinObject {
@@ -273,7 +273,7 @@ pub fn youtube_builtin_object(
     }
 }
 
-pub fn kick_builtin_object(
+pub(crate) fn kick_builtin_object(
     bundle: Arc<forge_platform_kick::KickIntegrationBundle>,
 ) -> BuiltinObject {
     BuiltinObject {
@@ -292,13 +292,13 @@ pub fn kick_builtin_object(
     }
 }
 
-pub struct IntegrationInputs {
+pub(crate) struct IntegrationInputs {
     pub endpoints: PlatformEndpoints,
     pub hotkey_main_thread: forge_hotkey::MainThreadLink,
     pub platform_identities: PlatformIdentities,
 }
 
-pub async fn build_integrations(
+pub(crate) async fn build_integrations(
     sub_actions: &mut SubActionRegistry,
     triggers: &mut TriggerRegistry,
     backend: &Arc<dyn DataProvider>,
@@ -959,7 +959,7 @@ pub(crate) mod tests {
                     })
                 }),
                 chat,
-                Arc::new(forge_storage::ban_ledger::MockBanLedgerRepo::new()),
+                Arc::new(forge_storage::MockBanLedgerRepo::new()),
             )),
             Arc::new(yt::YoutubeStreamMetadata::new(
                 api.clone(),
@@ -1002,7 +1002,7 @@ pub(crate) mod tests {
                 broadcaster_id_source: Arc::new(|| Box::pin(async { Ok(1) })),
                 moderation: Arc::new(kick::KickModeration::new(
                     api.clone(),
-                    Arc::new(forge_storage::ban_ledger::MockBanLedgerRepo::new()),
+                    Arc::new(forge_storage::MockBanLedgerRepo::new()),
                 )),
                 channel: Arc::new(kick::KickChannel::new(api.clone())),
                 rewards: Arc::new(kick::KickRewards::new(api.clone())),

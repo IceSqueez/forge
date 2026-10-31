@@ -10,7 +10,7 @@ use forge_hotkey::HotkeyReconciler;
 use forge_hotkey::{BindingRow, HotkeyError, load_bindings, registered_combos};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum PadKey {
+pub(crate) enum PadKey {
     Live,
     NotLive,
     EngineUnavailable,
@@ -18,12 +18,12 @@ pub enum PadKey {
 }
 
 impl PadKey {
-    pub fn is_warning(&self) -> bool {
+    pub(crate) fn is_warning(&self) -> bool {
         *self != PadKey::Live
     }
 }
 
-pub fn pad_key(
+pub(crate) fn pad_key(
     available: bool,
     live: &HashSet<String>,
     holders: &ComboHolders,
@@ -42,13 +42,13 @@ pub fn pad_key(
     }
 }
 
-pub fn canonical_combo(raw: &str) -> String {
+pub(crate) fn canonical_combo(raw: &str) -> String {
     HotkeyCombo::parse(raw)
         .map(|parsed| parsed.as_str().to_owned())
         .unwrap_or_else(|_| raw.to_owned())
 }
 
-pub struct ClipKeyState {
+pub(crate) struct ClipKeyState {
     reconciler: Option<Arc<HotkeyReconciler>>,
     backend: Arc<dyn DataProvider>,
     live: HashSet<String>,
@@ -56,7 +56,10 @@ pub struct ClipKeyState {
 }
 
 impl ClipKeyState {
-    pub fn new(reconciler: Option<Arc<HotkeyReconciler>>, backend: Arc<dyn DataProvider>) -> Self {
+    pub(crate) fn new(
+        reconciler: Option<Arc<HotkeyReconciler>>,
+        backend: Arc<dyn DataProvider>,
+    ) -> Self {
         let mut state = Self {
             reconciler,
             backend,
@@ -67,23 +70,23 @@ impl ClipKeyState {
         state
     }
 
-    pub fn available(&self) -> bool {
+    pub(crate) fn available(&self) -> bool {
         self.reconciler.is_some()
     }
 
-    pub fn reconciler(&self) -> Option<&Arc<HotkeyReconciler>> {
+    pub(crate) fn reconciler(&self) -> Option<&Arc<HotkeyReconciler>> {
         self.reconciler.as_ref()
     }
 
-    pub fn backend(&self) -> &Arc<dyn DataProvider> {
+    pub(crate) fn backend(&self) -> &Arc<dyn DataProvider> {
         &self.backend
     }
 
-    pub fn holders(&self) -> ComboHolders {
+    pub(crate) fn holders(&self) -> ComboHolders {
         self.holders.clone()
     }
 
-    pub fn refresh_live(&mut self) {
+    pub(crate) fn refresh_live(&mut self) {
         self.live = match &self.reconciler {
             Some(reconciler) => registered_combos(reconciler.client())
                 .into_iter()
@@ -93,15 +96,15 @@ impl ClipKeyState {
         };
     }
 
-    pub fn set_clips(&mut self, clips: &[StoredClip]) {
+    pub(crate) fn set_clips(&mut self, clips: &[StoredClip]) {
         self.holders.clips = clip_keys(clips);
     }
 
-    pub fn set_rows(&mut self, rows: Vec<BindingRow>) {
+    pub(crate) fn set_rows(&mut self, rows: Vec<BindingRow>) {
         self.holders.rows = Arc::new(rows);
     }
 
-    pub fn pad_key(&self, clip_id: ClipId, combo: &str) -> PadKey {
+    pub(crate) fn pad_key(&self, clip_id: ClipId, combo: &str) -> PadKey {
         pad_key(
             self.available(),
             &self.live,
@@ -111,7 +114,7 @@ impl ClipKeyState {
         )
     }
 
-    pub fn load_rows(
+    pub(crate) fn load_rows(
         &self,
     ) -> Option<impl Future<Output = Result<Vec<BindingRow>, HotkeyError>> + Send + 'static> {
         let reconciler = self.reconciler.as_ref()?;

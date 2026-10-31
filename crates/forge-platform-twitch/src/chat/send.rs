@@ -94,7 +94,7 @@ pub async fn send_chat(
     post_chat_message(transport, broadcaster_id, sender_id, message, None).await
 }
 
-pub async fn send_chat_reply(
+pub(crate) async fn send_chat_reply(
     transport: &dyn HelixTransport,
     broadcaster_id: &str,
     sender_id: &str,

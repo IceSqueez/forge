@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use forge_components::{ToastAction, ToastData, ToastKind, Toasts, tr};
-use forge_runtime::sub_action_runners::NotifyPort;
+use forge_runtime::NotifyPort;
 use forge_storage::settings::DEFAULT_NOTIFICATIONS_SCHEDULED_BACKUP_FAILURE_OS_NOTICE;
 use forge_storage::{SettingsRepo, read_setting_or_default};
 use forge_transfer::{FailureStreak, ScheduledBackupHandle, ScheduledBackupStatus};
@@ -17,7 +17,7 @@ use crate::navigation::{Navigator, Screen, SettingsSection};
 use crate::system_notices::{FallbackLog, NoticeText, show_off_thread};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct BackupFailureNoticePreference(pub bool);
+pub(crate) struct BackupFailureNoticePreference(pub bool);
 
 impl Default for BackupFailureNoticePreference {
     fn default() -> Self {
@@ -28,25 +28,25 @@ impl Default for BackupFailureNoticePreference {
 impl Global for BackupFailureNoticePreference {}
 
 impl BackupFailureNoticePreference {
-    pub fn current(cx: &App) -> bool {
+    pub(crate) fn current(cx: &App) -> bool {
         cx.try_global::<Self>().copied().unwrap_or_default().0
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum StreakChange {
+pub(crate) enum StreakChange {
     Started(FailureStreak),
     Ended,
     Unchanged,
 }
 
 #[derive(Debug, Default)]
-pub struct FailureStreakWatch {
+pub(crate) struct FailureStreakWatch {
     announced: Option<OffsetDateTime>,
 }
 
 impl FailureStreakWatch {
-    pub fn observe(&mut self, failure: Option<FailureStreak>) -> StreakChange {
+    pub(crate) fn observe(&mut self, failure: Option<FailureStreak>) -> StreakChange {
         match failure {
             Some(streak) if self.announced != Some(streak.since) => {
                 self.announced = Some(streak.since);
@@ -59,7 +59,7 @@ impl FailureStreakWatch {
     }
 }
 
-pub fn failure_notice_text(streak: &FailureStreak) -> NoticeText {
+pub(crate) fn failure_notice_text(streak: &FailureStreak) -> NoticeText {
     NoticeText {
         title: tr!("system_notice_backup_failed_title"),
         body: tr!(
@@ -69,7 +69,7 @@ pub fn failure_notice_text(streak: &FailureStreak) -> NoticeText {
     }
 }
 
-pub fn start_scheduled_backup_notices(
+pub(crate) fn start_scheduled_backup_notices(
     cx: &mut AsyncApp,
     scheduled: &ScheduledBackupHandle,
     settings: Arc<dyn SettingsRepo>,
@@ -101,7 +101,7 @@ async fn load_preference(rt: &Handle, settings: Arc<dyn SettingsRepo>) -> bool {
         .unwrap_or(DEFAULT_NOTIFICATIONS_SCHEDULED_BACKUP_FAILURE_OS_NOTICE)
 }
 
-pub async fn drain_failures(
+pub(crate) async fn drain_failures(
     mut status: watch::Receiver<ScheduledBackupStatus>,
     port: Arc<dyn NotifyPort>,
     rt: Handle,
@@ -183,7 +183,7 @@ mod tests {
     use std::sync::Mutex;
 
     use forge_components::{ToastKind, Toasts};
-    use forge_runtime::sub_action_runners::{DesktopNotice, OsPortError};
+    use forge_runtime::{DesktopNotice, OsPortError};
     use forge_storage::Language;
     use forge_transfer::{FailureCategory, ScheduleState};
     use gpui::TestAppContext;

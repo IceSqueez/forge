@@ -37,7 +37,7 @@ const NO_RETRY_AFTER_WAIT: Duration = Duration::from_secs(5);
 pub const TWITCH_OAUTH_BUDGET_CAPACITY: u32 = 120;
 pub const TWITCH_OAUTH_BUDGET_WINDOW: Duration = Duration::from_secs(60);
 
-pub const TWITCH_OAUTH_GATEWAY_PROFILE: GatewayProfile = GatewayProfile::platform_api(
+pub(crate) const TWITCH_OAUTH_GATEWAY_PROFILE: GatewayProfile = GatewayProfile::platform_api(
     CallClass::OAuth,
     ThrottleHintFamily::RetryAfter,
     NO_RETRY_AFTER_WAIT,

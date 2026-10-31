@@ -1,12 +1,11 @@
 use std::sync::Mutex;
 use std::time::Duration;
 
-use forge_audio::{DeviceId, VoiceGateConfig, VoiceGateMonitor, VoiceGateState};
+use forge_audio::{DeviceId, VoiceGateConfig, VoiceGateMonitor, VoiceGateState, VoiceGateWatch};
 use forge_speak_queue::SpeakQueueHandle;
 use forge_storage::VoiceGateSettings;
-use tokio::sync::watch;
 
-pub fn config_from_settings(settings: &VoiceGateSettings) -> VoiceGateConfig {
+pub(crate) fn config_from_settings(settings: &VoiceGateSettings) -> VoiceGateConfig {
     VoiceGateConfig {
         device: settings.input_device_id.clone().map(DeviceId::new),
         threshold: settings.threshold,
@@ -19,14 +18,14 @@ struct Running {
     pump: tokio::task::JoinHandle<()>,
 }
 
-pub struct VoiceGateOwner {
+pub(crate) struct VoiceGateOwner {
     rt_handle: tokio::runtime::Handle,
     speak: Option<SpeakQueueHandle>,
     running: Mutex<Option<Running>>,
 }
 
 impl VoiceGateOwner {
-    pub fn new(rt_handle: tokio::runtime::Handle, speak: Option<SpeakQueueHandle>) -> Self {
+    pub(crate) fn new(rt_handle: tokio::runtime::Handle, speak: Option<SpeakQueueHandle>) -> Self {
         Self {
             rt_handle,
             speak,
@@ -34,16 +33,16 @@ impl VoiceGateOwner {
         }
     }
 
-    pub fn is_running(&self) -> bool {
+    pub(crate) fn is_running(&self) -> bool {
         matches!(self.running.lock(), Ok(guard) if guard.is_some())
     }
 
-    pub fn state(&self) -> Option<VoiceGateState> {
+    pub(crate) fn state(&self) -> Option<VoiceGateState> {
         let guard = self.running.lock().ok()?;
         guard.as_ref().map(|running| running.monitor.state())
     }
 
-    pub fn level(&self) -> f32 {
+    pub(crate) fn level(&self) -> f32 {
         match self.running.lock() {
             Ok(guard) => guard
                 .as_ref()
@@ -53,7 +52,7 @@ impl VoiceGateOwner {
         }
     }
 
-    pub fn start(&self, config: VoiceGateConfig) {
+    pub(crate) fn start(&self, config: VoiceGateConfig) {
         let Ok(mut guard) = self.running.lock() else {
             return;
         };
@@ -68,7 +67,7 @@ impl VoiceGateOwner {
         *guard = Some(Running { monitor, pump });
     }
 
-    pub fn reconfigure(&self, config: VoiceGateConfig) {
+    pub(crate) fn reconfigure(&self, config: VoiceGateConfig) {
         if let Ok(guard) = self.running.lock()
             && let Some(running) = guard.as_ref()
         {
@@ -76,7 +75,7 @@ impl VoiceGateOwner {
         }
     }
 
-    pub fn stop(&self) {
+    pub(crate) fn stop(&self) {
         let taken = match self.running.lock() {
             Ok(mut guard) => guard.take(),
             Err(_) => None,
@@ -95,12 +94,12 @@ impl VoiceGateOwner {
     }
 }
 
-async fn pump_states(mut rx: watch::Receiver<VoiceGateState>, speak: Option<SpeakQueueHandle>) {
+async fn pump_states(mut rx: VoiceGateWatch, speak: Option<SpeakQueueHandle>) {
     let Some(speak) = speak else {
         return;
     };
     loop {
-        let state = rx.borrow_and_update().clone();
+        let state = rx.latest();
         match state {
             VoiceGateState::Active => notify_active(&speak).await,
             VoiceGateState::Inactive => notify_inactive(&speak).await,
@@ -112,7 +111,7 @@ async fn pump_states(mut rx: watch::Receiver<VoiceGateState>, speak: Option<Spea
                 notify_inactive(&speak).await;
             }
         }
-        if rx.changed().await.is_err() {
+        if rx.changed().await.is_none() {
             break;
         }
     }

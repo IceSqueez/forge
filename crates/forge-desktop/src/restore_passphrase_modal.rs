@@ -10,12 +10,12 @@ use gpui::{
 
 use crate::restore_problem::RestoreProblem;
 
-pub enum RestorePassphraseEvent {
+pub(crate) enum RestorePassphraseEvent {
     Submitted,
     Cancelled,
 }
 
-pub struct RestorePassphraseModal {
+pub(crate) struct RestorePassphraseModal {
     passphrase: Entity<TextInput>,
     problem: Option<RestoreProblem>,
     busy: bool,
@@ -26,7 +26,7 @@ pub struct RestorePassphraseModal {
 impl EventEmitter<RestorePassphraseEvent> for RestorePassphraseModal {}
 
 impl RestorePassphraseModal {
-    pub fn new(cx: &mut Context<Self>) -> Self {
+    pub(crate) fn new(cx: &mut Context<Self>) -> Self {
         let palette = cx.palette();
         let passphrase = cx.new(|cx| {
             TextInput::new(tr!("restore_passphrase_placeholder"), cx)

@@ -106,12 +106,12 @@ fn read_notice(config: &SubActionConfig, args: &ArgStack) -> Result<DesktopNotic
     })
 }
 
-pub struct CoreNotifyShowRunner {
+pub(crate) struct CoreNotifyShowRunner {
     notify: Arc<dyn NotifyPort>,
 }
 
 impl CoreNotifyShowRunner {
-    pub fn new(notify: Arc<dyn NotifyPort>) -> Self {
+    pub(crate) fn new(notify: Arc<dyn NotifyPort>) -> Self {
         Self { notify }
     }
 }

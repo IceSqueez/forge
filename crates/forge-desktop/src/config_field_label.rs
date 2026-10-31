@@ -1,7 +1,7 @@
 use forge_components::{ftl_id, tr, tr_find};
 use forge_platform_core::SENDER_FIELD;
 use forge_registry::FormField;
-use forge_runtime::sub_action_runners::CHAT_SEND_KIND_ID;
+use forge_runtime::CHAT_SEND_KIND_ID;
 use gpui::SharedString;
 
 use crate::config_form::ConfigField;

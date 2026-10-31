@@ -96,7 +96,7 @@ fn quiet_row(palette: &ForgePalette, density: Density) -> AnyElement {
         .into_any_element()
 }
 
-pub fn event_loss_card(
+pub(crate) fn event_loss_card(
     loss: &EventLoss,
     palette: &ForgePalette,
     density: Density,

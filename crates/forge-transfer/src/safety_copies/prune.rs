@@ -137,7 +137,7 @@ fn remove_all(condemned: Vec<SafetyCopy>) -> SafetyCopyReport {
     let mut report = SafetyCopyReport::default();
     for copy in condemned {
         let existed = exists(&copy.path).unwrap_or(true);
-        let removed = if copy.kind == SafetyCopyKind::PreRestore {
+        let removed = if copy.kind == SafetyCopyKind::Restore {
             remove_dir_all_if_present(&copy.path)
         } else {
             remove_file_if_present(&copy.path)
@@ -195,8 +195,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
 
         let report = remove_all(vec![
-            copy(&dir.path().join("vanished-dir"), SafetyCopyKind::PreRestore),
-            copy(&dir.path().join("vanished.tar.gz"), SafetyCopyKind::PrePack),
+            copy(&dir.path().join("vanished-dir"), SafetyCopyKind::Restore),
+            copy(&dir.path().join("vanished.tar.gz"), SafetyCopyKind::Pack),
         ]);
 
         assert_eq!((report.removed, report.failures.len()), (2, 0));
@@ -209,8 +209,8 @@ mod tests {
         std::fs::write(&present, b"x").unwrap();
 
         let report = remove_all(vec![
-            copy(&present, SafetyCopyKind::PrePack),
-            copy(&dir.path().join("vanished.tar.gz"), SafetyCopyKind::PrePack),
+            copy(&present, SafetyCopyKind::Pack),
+            copy(&dir.path().join("vanished.tar.gz"), SafetyCopyKind::Pack),
         ]);
 
         assert_eq!((report.removed, report.freed_bytes), (2, 1));
@@ -274,8 +274,8 @@ mod tests {
         std::fs::write(&loose, b"x").unwrap();
 
         let report = remove_all(vec![
-            copy(&stuck, SafetyCopyKind::PreRestore),
-            copy(&loose, SafetyCopyKind::PrePack),
+            copy(&stuck, SafetyCopyKind::Restore),
+            copy(&loose, SafetyCopyKind::Pack),
         ]);
         std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(OWNER_FULL_ACCESS))
             .unwrap();

@@ -11,14 +11,14 @@ use crate::schedule::{
     ActionScheduler, ScriptScheduleDue, ScriptSchedulePlacement, ScriptScheduleRequest,
 };
 
-pub const SCHEDULE_KEY_OPTION: &str = "key";
-pub const SCHEDULE_INHERIT_ARGS_OPTION: &str = "inherit_args";
-pub const SCHEDULE_SKIP_IF_LATE_MINUTES_OPTION: &str = "skip_if_late_minutes";
+pub(crate) const SCHEDULE_KEY_OPTION: &str = "key";
+pub(crate) const SCHEDULE_INHERIT_ARGS_OPTION: &str = "inherit_args";
+pub(crate) const SCHEDULE_SKIP_IF_LATE_MINUTES_OPTION: &str = "skip_if_late_minutes";
 
-pub const PLACEMENT_ID_FIELD: &str = "id";
-pub const PLACEMENT_DUE_AT_FIELD: &str = "due_at";
+pub(crate) const PLACEMENT_ID_FIELD: &str = "id";
+pub(crate) const PLACEMENT_DUE_AT_FIELD: &str = "due_at";
 
-pub const SCHEDULING_UNAVAILABLE_REASON: &str =
+pub(crate) const SCHEDULING_UNAVAILABLE_REASON: &str =
     "scheduled runs are not available where this script runs";
 
 const NEGATIVE_DELAY_REASON: &str = "the delay in seconds cannot be negative";

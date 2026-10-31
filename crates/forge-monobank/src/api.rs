@@ -18,7 +18,7 @@ const CLIENT_INFO_PATH: &str = "/personal/client-info";
 const STATEMENT_PATH: &str = "/personal/statement";
 const CALLS_PER_INTERVAL: u32 = 1;
 
-pub const MONOBANK_GATEWAY_PROFILE: GatewayProfile = GatewayProfile::platform_api(
+pub(crate) const MONOBANK_GATEWAY_PROFILE: GatewayProfile = GatewayProfile::platform_api(
     CallClass::Interactive,
     ThrottleHintFamily::RetryAfter,
     STATEMENT_CALL_INTERVAL,

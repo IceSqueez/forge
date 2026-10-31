@@ -11,7 +11,7 @@ use crate::digest::StreamingSha256;
 use crate::http::{StreamError, UpdateClient};
 use crate::manifest::{Artifact, is_plain_file_name};
 
-pub const STAGING_PREFIX: &str = ".forge-update-";
+pub(crate) const STAGING_PREFIX: &str = ".forge-update-";
 const PARTIAL_SUFFIX: &str = ".part";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -71,7 +71,7 @@ pub struct StagedArtifact {
     pub size: u64,
 }
 
-pub fn staged_path(staging_dir: &Path, artifact: &Artifact) -> PathBuf {
+pub(crate) fn staged_path(staging_dir: &Path, artifact: &Artifact) -> PathBuf {
     staging_dir.join(format!("{STAGING_PREFIX}{}", artifact.name))
 }
 

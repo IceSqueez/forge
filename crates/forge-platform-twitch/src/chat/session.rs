@@ -259,7 +259,7 @@ impl ChatSession {
             let delay = self.backoff.next_delay();
             info!(
                 attempt = retry_attempt,
-                retry_in_ms = delay.as_millis() as u64,
+                retry_in_ms = u64::try_from(delay.as_millis()).unwrap_or(u64::MAX),
                 "twitch chat session ended; reconnecting after backoff"
             );
             tokio::select! {

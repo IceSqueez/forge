@@ -21,10 +21,11 @@ mod token;
 mod window;
 mod wire;
 
-pub use api::{MONOBANK_GATEWAY_PROFILE, MonobankGateways, MonobankRateLimits, monobank_gateways};
+pub use api::MonobankGateways;
+pub use api::{MonobankRateLimits, monobank_gateways};
 pub use config::{
-    DEFAULT_HISTORY_LOOKBACK, DEFAULT_WINDOW_OVERLAP, MAX_STATEMENT_WINDOW, MonobankConfig,
-    MonobankTiming, STATEMENT_CALL_INTERVAL,
+    DEFAULT_HISTORY_LOOKBACK, DEFAULT_WINDOW_OVERLAP, MonobankConfig, MonobankTiming,
+    STATEMENT_CALL_INTERVAL,
 };
 pub use credentials::MONOBANK_CREDENTIAL_ID;
 pub use error::MonobankError;

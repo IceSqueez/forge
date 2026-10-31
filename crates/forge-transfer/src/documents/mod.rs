@@ -13,9 +13,11 @@ pub(crate) mod undo;
 
 pub use closure::{ClosureRegistries, PackSelection, resolve_pack_closure};
 pub use inventory::{PackInventory, load_pack_inventory};
+pub use model::GlobalDocument;
+pub use model::ScriptDocument;
 pub use model::{
-    ActionDocument, ClipDocument, ClipSourceDocument, DocumentConfig, GlobalDocument,
-    MediaDocument, OverlayDocument, OverlayFileDocument, PACK_DOCUMENTS_VERSION, PackDocuments,
-    QueueDocument, ScriptDocument, StepDocument, TriggerDocument,
+    ActionDocument, ClipDocument, ClipSourceDocument, MediaDocument, OverlayDocument,
+    OverlayFileDocument, PACK_DOCUMENTS_VERSION, PackDocuments, QueueDocument, StepDocument,
+    TriggerDocument,
 };
 pub use reference::PackReference;

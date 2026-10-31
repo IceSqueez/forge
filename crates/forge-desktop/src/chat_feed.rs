@@ -14,10 +14,10 @@ use crate::chat_author::AuthorKey;
 use crate::chat_row::ChatBody;
 use crate::runtime_event::{self, RuntimeEvent};
 
-pub use forge_storage::DEFAULT_CHAT_HISTORY_DISPLAY_LIMIT as DEFAULT_DISPLAY_LIMIT;
+pub(crate) use forge_storage::DEFAULT_CHAT_HISTORY_DISPLAY_LIMIT as DEFAULT_DISPLAY_LIMIT;
 
 #[derive(Clone, Debug)]
-pub struct ChatMessage {
+pub(crate) struct ChatMessage {
     pub id: SharedString,
     pub event_id: EventId,
     pub received_at: OffsetDateTime,
@@ -34,11 +34,11 @@ pub struct ChatMessage {
 }
 
 impl ChatMessage {
-    pub fn author_key(&self) -> Option<AuthorKey> {
+    pub(crate) fn author_key(&self) -> Option<AuthorKey> {
         AuthorKey::resolve(self.platform, self.author_id.as_ref(), &self.username)
     }
 
-    pub fn matches_query(&self, query: &str) -> bool {
+    pub(crate) fn matches_query(&self, query: &str) -> bool {
         let body_text = match &self.body {
             ChatBody::Message(text) => text.as_ref(),
             ChatBody::Command { command, .. } => command.as_ref(),
@@ -54,7 +54,7 @@ impl ChatMessage {
             || forge_components::contains_folded(body_text, query)
     }
 
-    pub fn from_row(row: &UnifiedChatRow) -> ChatMessage {
+    pub(crate) fn from_row(row: &UnifiedChatRow) -> ChatMessage {
         let moderation = &row.moderation;
         ChatMessage {
             id: row.id.clone().into(),
@@ -75,7 +75,7 @@ impl ChatMessage {
 }
 
 #[derive(Clone, Debug)]
-pub struct AuthorActivity {
+pub(crate) struct AuthorActivity {
     pub name: SharedString,
     pub message_count: usize,
     pub last_seq: u64,
@@ -84,28 +84,28 @@ pub struct AuthorActivity {
 }
 
 #[derive(Default)]
-pub struct AuthorIndex {
+pub(crate) struct AuthorIndex {
     by_key: HashMap<AuthorKey, AuthorActivity>,
     by_recency: BTreeMap<u64, AuthorKey>,
 }
 
 impl AuthorIndex {
-    pub fn get(&self, key: &AuthorKey) -> Option<&AuthorActivity> {
+    pub(crate) fn get(&self, key: &AuthorKey) -> Option<&AuthorActivity> {
         self.by_key.get(key)
     }
 
-    pub fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.by_key.len()
     }
 
-    pub fn newest_first(&self) -> impl Iterator<Item = (&AuthorKey, &AuthorActivity)> {
+    pub(crate) fn newest_first(&self) -> impl Iterator<Item = (&AuthorKey, &AuthorActivity)> {
         self.by_recency
             .values()
             .rev()
             .filter_map(|key| self.by_key.get(key).map(|activity| (key, activity)))
     }
 
-    pub fn newest(&self) -> Option<(&AuthorKey, &AuthorActivity)> {
+    pub(crate) fn newest(&self) -> Option<(&AuthorKey, &AuthorActivity)> {
         self.newest_first().next()
     }
 
@@ -155,22 +155,22 @@ impl AuthorIndex {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct FeedGap {
+pub(crate) struct FeedGap {
     pub messages: u64,
     pub events: u64,
 }
 
 impl FeedGap {
-    pub fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.messages == 0 && self.events == 0
     }
 
-    pub fn absorb(&mut self, other: FeedGap) {
+    pub(crate) fn absorb(&mut self, other: FeedGap) {
         self.messages = self.messages.saturating_add(other.messages);
         self.events = self.events.saturating_add(other.events);
     }
 
-    pub fn label(&self) -> String {
+    pub(crate) fn label(&self) -> String {
         let messages = i64::try_from(self.messages).unwrap_or(i64::MAX);
         let events = i64::try_from(self.events).unwrap_or(i64::MAX);
         match (self.messages, self.events) {
@@ -181,7 +181,7 @@ impl FeedGap {
     }
 }
 
-pub struct ChatFeed {
+pub(crate) struct ChatFeed {
     messages: VecDeque<ChatMessage>,
     capacity: usize,
     start_seq: u64,
@@ -190,7 +190,7 @@ pub struct ChatFeed {
 }
 
 impl ChatFeed {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             messages: VecDeque::new(),
             capacity: DEFAULT_DISPLAY_LIMIT as usize,
@@ -200,40 +200,40 @@ impl ChatFeed {
         }
     }
 
-    pub fn messages(&self) -> &VecDeque<ChatMessage> {
+    pub(crate) fn messages(&self) -> &VecDeque<ChatMessage> {
         &self.messages
     }
 
-    pub fn authors(&self) -> &AuthorIndex {
+    pub(crate) fn authors(&self) -> &AuthorIndex {
         &self.authors
     }
 
-    pub fn start_seq(&self) -> u64 {
+    pub(crate) fn start_seq(&self) -> u64 {
         self.start_seq
     }
 
-    pub fn end_seq(&self) -> u64 {
+    pub(crate) fn end_seq(&self) -> u64 {
         self.start_seq + self.messages.len() as u64
     }
 
-    pub fn get(&self, seq: u64) -> Option<&ChatMessage> {
+    pub(crate) fn get(&self, seq: u64) -> Option<&ChatMessage> {
         let offset = usize::try_from(seq.checked_sub(self.start_seq)?).ok()?;
         self.messages.get(offset)
     }
 
-    pub fn set_capacity(&mut self, capacity: usize) {
+    pub(crate) fn set_capacity(&mut self, capacity: usize) {
         self.capacity = capacity.max(1);
         self.evict_overflow();
     }
 
-    pub fn push(&mut self, message: ChatMessage) {
+    pub(crate) fn push(&mut self, message: ChatMessage) {
         let seq = self.end_seq();
         self.authors.record(seq, &message);
         self.messages.push_back(message);
         self.evict_overflow();
     }
 
-    pub fn seed(&mut self, history: Vec<ChatMessage>) {
+    pub(crate) fn seed(&mut self, history: Vec<ChatMessage>) {
         let live = std::mem::take(&mut self.messages);
         let shift = (live.len() + history.len()) as u64;
         let gaps = std::mem::take(&mut self.gaps);
@@ -264,7 +264,7 @@ impl ChatFeed {
         }
     }
 
-    pub fn record_gap(&mut self, gap: FeedGap) -> bool {
+    pub(crate) fn record_gap(&mut self, gap: FeedGap) -> bool {
         if gap.is_empty() {
             return false;
         }
@@ -273,7 +273,7 @@ impl ChatFeed {
         true
     }
 
-    pub fn gap_before(&self, after: Option<u64>, seq: u64) -> FeedGap {
+    pub(crate) fn gap_before(&self, after: Option<u64>, seq: u64) -> FeedGap {
         let from = after.map_or(self.start_seq, |after| after.saturating_add(1));
         let mut total = FeedGap::default();
         if from > seq {
@@ -285,7 +285,7 @@ impl ChatFeed {
         total
     }
 
-    pub fn apply_event(&mut self, event: &Event) -> bool {
+    pub(crate) fn apply_event(&mut self, event: &Event) -> bool {
         if let Some(message) = Self::message_from_event(event) {
             self.push(message);
             return true;
@@ -318,18 +318,18 @@ impl ChatFeed {
         }
     }
 
-    pub fn annotates_rows(event: &Event) -> bool {
+    pub(crate) fn annotates_rows(event: &Event) -> bool {
         let moderation = event.source.to_platform_id().is_some()
             && event.payload.get(ChatModerationPayload::KEY).is_some();
         let run_mark = event.caused_by.is_some() && runtime_event::marks_chat_run(event);
         moderation || run_mark
     }
 
-    pub fn is_message(event: &Event) -> bool {
+    pub(crate) fn is_message(event: &Event) -> bool {
         event.source.to_platform_id().is_some() && event.payload.get(ChatPayload::KEY).is_some()
     }
 
-    pub fn set_triggered(&mut self, event_id: EventId, action_name: &str) -> bool {
+    pub(crate) fn set_triggered(&mut self, event_id: EventId, action_name: &str) -> bool {
         let Some(message) = self
             .messages
             .iter_mut()
@@ -349,7 +349,7 @@ impl ChatFeed {
         }
     }
 
-    pub fn mark_command(&mut self, event_id: EventId, command: &str) -> bool {
+    pub(crate) fn mark_command(&mut self, event_id: EventId, command: &str) -> bool {
         let Some(message) = self
             .messages
             .iter_mut()
@@ -369,20 +369,24 @@ impl ChatFeed {
         true
     }
 
-    pub fn mark_deleted(&mut self, platform: PlatformId, msg_id: &str) -> bool {
+    pub(crate) fn mark_deleted(&mut self, platform: PlatformId, msg_id: &str) -> bool {
         if msg_id.is_empty() {
             return false;
         }
         self.moderate_where(|m| m.platform == platform && m.id == msg_id)
     }
 
-    pub fn mark_user(&mut self, platform: PlatformId, removal: &ChatModerationAction) -> bool {
+    pub(crate) fn mark_user(
+        &mut self,
+        platform: PlatformId,
+        removal: &ChatModerationAction,
+    ) -> bool {
         self.moderate_where(|m| {
             m.platform == platform && removal.removes_author(m.author_id.as_deref(), &m.username)
         })
     }
 
-    pub fn clear_platform(&mut self, platform: PlatformId) -> bool {
+    pub(crate) fn clear_platform(&mut self, platform: PlatformId) -> bool {
         self.moderate_where(|m| m.platform == platform)
     }
 
@@ -397,7 +401,7 @@ impl ChatFeed {
         changed
     }
 
-    pub fn message_from_event(event: &Event) -> Option<ChatMessage> {
+    pub(crate) fn message_from_event(event: &Event) -> Option<ChatMessage> {
         let source = event.source.to_platform_id()?;
         let chat_value = event.payload.get(ChatPayload::KEY)?;
         let payload: ChatPayload = serde_json::from_value(chat_value.clone()).ok()?;
@@ -475,7 +479,11 @@ fn event_body(row: &UnifiedChatRow) -> ChatBody {
         },
         Some(ChatEventDetail::Raid { viewer_count }) => ChatBody::Raid {
             descriptor: descriptor(tr!("chat_event_raided")),
-            viewers: tr!("chat_event_viewers", viewers = *viewer_count as i64).into(),
+            viewers: tr!(
+                "chat_event_viewers",
+                viewers = i64::try_from(*viewer_count).unwrap_or(i64::MAX)
+            )
+            .into(),
             triggered: None,
         },
         Some(ChatEventDetail::Cheer { bits, message }) => ChatBody::Cheer {

@@ -32,12 +32,12 @@ fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<EngineSpeech
     })
 }
 
-pub struct SpeakWithEngineRunner {
+pub(crate) struct SpeakWithEngineRunner {
     speak: Arc<dyn SpeakDispatcher>,
 }
 
 impl SpeakWithEngineRunner {
-    pub fn new(speak: Arc<dyn SpeakDispatcher>) -> Self {
+    pub(crate) fn new(speak: Arc<dyn SpeakDispatcher>) -> Self {
         Self { speak }
     }
 }

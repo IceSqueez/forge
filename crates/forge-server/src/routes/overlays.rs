@@ -27,7 +27,7 @@ const DAYS_PER_YEAR: u64 = 365;
 const GENERATED_MEDIA_CACHE_MAX_AGE_SECONDS: u64 =
     SECONDS_PER_MINUTE * MINUTES_PER_HOUR * HOURS_PER_DAY * DAYS_PER_YEAR;
 
-pub async fn serve_overlay_file(
+pub(crate) async fn serve_overlay_file(
     State(state): State<AppState>,
     headers: HeaderMap,
     axum::extract::Path(requested): axum::extract::Path<String>,
@@ -100,7 +100,7 @@ fn strip_overlay_token<'a>(state: &AppState, requested: &'a str) -> Option<&'a s
     (!token_gate.required()).then_some(requested)
 }
 
-pub async fn serve_empty_favicon() -> Response {
+pub(crate) async fn serve_empty_favicon() -> Response {
     (
         StatusCode::NO_CONTENT,
         [(header::CACHE_CONTROL, immutable_cache_control())],

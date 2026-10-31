@@ -13,7 +13,7 @@ const ALLOWED_SCHEMES: [&str; 2] = ["http", "https"];
 const CONTENT_TYPE_HEADER: &str = "content-type";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum HttpMethod {
+pub(crate) enum HttpMethod {
     Get,
     Post,
     Put,
@@ -21,7 +21,7 @@ pub enum HttpMethod {
     Delete,
 }
 
-pub struct EgressRequest {
+pub(crate) struct EgressRequest {
     pub method: HttpMethod,
     pub url: String,
     pub headers: BTreeMap<String, String>,
@@ -33,7 +33,7 @@ pub struct EgressRequest {
     pub allow_local: bool,
 }
 
-pub struct EgressResponse {
+pub(crate) struct EgressResponse {
     pub status: u16,
     pub body: String,
     pub headers: BTreeMap<String, String>,
@@ -41,7 +41,7 @@ pub struct EgressResponse {
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum EgressError {
+pub(crate) enum EgressError {
     #[error("invalid url")]
     InvalidUrl,
     #[error("only http and https urls are allowed")]
@@ -58,14 +58,14 @@ pub enum EgressError {
     Network(String),
 }
 
-pub struct EgressClient {
+pub(crate) struct EgressClient {
     public_only: Gateway,
     local_allowed: Gateway,
     concurrency: Semaphore,
 }
 
 impl EgressClient {
-    pub fn new() -> Result<Self, EgressError> {
+    pub(crate) fn new() -> Result<Self, EgressError> {
         let build = |allow_local| {
             Gateway::user_directed(allow_local)
                 .map_err(|error| EgressError::Network(error.to_string()))
@@ -77,7 +77,7 @@ impl EgressClient {
         })
     }
 
-    pub async fn send(&self, req: EgressRequest) -> Result<EgressResponse, EgressError> {
+    pub(crate) async fn send(&self, req: EgressRequest) -> Result<EgressResponse, EgressError> {
         let _permit = self
             .concurrency
             .acquire()

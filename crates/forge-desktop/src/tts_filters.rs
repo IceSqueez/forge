@@ -31,7 +31,7 @@ struct FilterSet {
 
 static BLANK_FILTERS: LazyLock<FilterSet> = LazyLock::new(FilterSet::default);
 
-pub struct TtsFiltersView {
+pub(crate) struct TtsFiltersView {
     repo: Arc<dyn TtsFiltersRepo>,
     pipeline_config: Option<PipelineConfigHandle>,
     bot_accounts: Shared<Vec<String>>,
@@ -49,7 +49,7 @@ pub struct TtsFiltersView {
 }
 
 impl TtsFiltersView {
-    pub fn new(
+    pub(crate) fn new(
         repo: Arc<dyn TtsFiltersRepo>,
         pipeline_config: Option<PipelineConfigHandle>,
         bot_accounts: Shared<Vec<String>>,

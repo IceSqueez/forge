@@ -13,7 +13,7 @@ const ROSTER: [Integration; 5] = [
     Integration::VTube,
 ];
 
-pub struct PlatformConnectivity {
+pub(crate) struct PlatformConnectivity {
     connections: Vec<(Integration, bool)>,
     services: Vec<(IntegrationId, bool)>,
     obs_password_rejected: bool,
@@ -26,7 +26,7 @@ impl Default for PlatformConnectivity {
 }
 
 impl PlatformConnectivity {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             connections: ROSTER.iter().map(|integ| (*integ, false)).collect(),
             services: Vec::new(),
@@ -34,11 +34,11 @@ impl PlatformConnectivity {
         }
     }
 
-    pub fn obs_password_rejected(&self) -> bool {
+    pub(crate) fn obs_password_rejected(&self) -> bool {
         self.obs_password_rejected
     }
 
-    pub fn apply_runtime_event(&mut self, event: &RuntimeEvent) -> bool {
+    pub(crate) fn apply_runtime_event(&mut self, event: &RuntimeEvent) -> bool {
         match event {
             RuntimeEvent::ObsConnection(connection) => {
                 let rejected = *connection == ObsConnection::PasswordRejected;
@@ -53,11 +53,11 @@ impl PlatformConnectivity {
         }
     }
 
-    pub fn connections(&self) -> &[(Integration, bool)] {
+    pub(crate) fn connections(&self) -> &[(Integration, bool)] {
         &self.connections
     }
 
-    pub fn is_connected(&self, integ: Integration) -> bool {
+    pub(crate) fn is_connected(&self, integ: Integration) -> bool {
         self.connections
             .iter()
             .find(|(i, _)| *i == integ)
@@ -65,7 +65,7 @@ impl PlatformConnectivity {
             .unwrap_or(false)
     }
 
-    pub fn is_integration_connected(&self, id: &IntegrationId) -> bool {
+    pub(crate) fn is_integration_connected(&self, id: &IntegrationId) -> bool {
         match Integration::from_id(id.as_str()) {
             Some(integ) => self.is_connected(integ),
             None => self
@@ -75,7 +75,7 @@ impl PlatformConnectivity {
         }
     }
 
-    pub fn set_service_connected(&mut self, id: &IntegrationId, connected: bool) -> bool {
+    pub(crate) fn set_service_connected(&mut self, id: &IntegrationId, connected: bool) -> bool {
         match self.services.iter_mut().find(|(service, _)| service == id) {
             Some(entry) if entry.1 == connected => false,
             Some(entry) => {
@@ -89,7 +89,7 @@ impl PlatformConnectivity {
         }
     }
 
-    pub fn set_connected(&mut self, integ: Integration, connected: bool) -> bool {
+    pub(crate) fn set_connected(&mut self, integ: Integration, connected: bool) -> bool {
         if let Some(entry) = self.connections.iter_mut().find(|(i, _)| *i == integ)
             && entry.1 != connected
         {
@@ -99,7 +99,7 @@ impl PlatformConnectivity {
         false
     }
 
-    pub fn tally_enabled(&self, is_enabled: impl Fn(Integration) -> bool) -> (usize, usize) {
+    pub(crate) fn tally_enabled(&self, is_enabled: impl Fn(Integration) -> bool) -> (usize, usize) {
         self.connections
             .iter()
             .filter(|(integ, _)| is_enabled(*integ))
@@ -108,7 +108,7 @@ impl PlatformConnectivity {
             })
     }
 
-    pub fn seed_from_builtins(&mut self, builtins: &BuiltinRegistry) {
+    pub(crate) fn seed_from_builtins(&mut self, builtins: &BuiltinRegistry) {
         for (integ, connected) in self.connections.iter_mut() {
             *connected = builtins
                 .get(&integ.builtin_id())

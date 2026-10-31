@@ -20,7 +20,7 @@ use crate::presentation::ActiveDisplayFormats;
 const SELECT_WIDTH: Pixels = px(240.0);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RegionRow {
+pub(crate) enum RegionRow {
     Region,
     DateFormat,
     TimeFormat,
@@ -55,7 +55,7 @@ impl RegionRow {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RegionPick {
+pub(crate) enum RegionPick {
     Region(Region),
     DateFormat(FormatChoice<DateFormatChoice>),
     TimeFormat(FormatChoice<ClockStyle>),
@@ -63,13 +63,13 @@ pub enum RegionPick {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RegionOption {
+pub(crate) struct RegionOption {
     pub label: String,
     pub sample: Option<String>,
     pub pick: RegionPick,
 }
 
-pub struct SettingsRegionView {
+pub(crate) struct SettingsRegionView {
     settings: Arc<dyn SettingsRepo>,
     writers: KeyedSnapshotWriters<std::mem::Discriminant<RegionPick>>,
     choices: DisplayFormatChoices,
@@ -79,7 +79,7 @@ pub struct SettingsRegionView {
 }
 
 impl SettingsRegionView {
-    pub fn new(
+    pub(crate) fn new(
         settings: Arc<dyn SettingsRepo>,
         rt_handle: tokio::runtime::Handle,
         choices: DisplayFormatChoices,
@@ -110,7 +110,7 @@ impl SettingsRegionView {
         }
     }
 
-    pub fn apply_pick(
+    pub(crate) fn apply_pick(
         &mut self,
         pick: RegionPick,
     ) -> Option<(&'static Setting<OptionalText>, &'static str)> {
@@ -223,7 +223,7 @@ impl SettingsRegionView {
         }
     }
 
-    pub fn options(&self, row: RegionRow, now: OffsetDateTime) -> Vec<RegionOption> {
+    pub(crate) fn options(&self, row: RegionRow, now: OffsetDateTime) -> Vec<RegionOption> {
         Self::picks(row)
             .into_iter()
             .map(|pick| RegionOption {

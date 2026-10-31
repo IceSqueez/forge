@@ -17,8 +17,8 @@ use crate::routes::audio::{clip_path, report_path};
 const CAPABILITY_BYTE_LEN: usize = 32;
 const WAVE_MEDIA_TYPE: &str = "audio/wav";
 
-pub const MAX_CLIP_BYTES: usize = 24 * 1024 * 1024;
-pub const MAX_TOTAL_CLIP_BYTES: usize = 4 * MAX_CLIP_BYTES;
+pub(crate) const MAX_CLIP_BYTES: usize = 24 * 1024 * 1024;
+pub(crate) const MAX_TOTAL_CLIP_BYTES: usize = 4 * MAX_CLIP_BYTES;
 
 const FETCH_WINDOW: Duration = Duration::from_secs(30);
 const VERDICT_SLACK: Duration = Duration::from_secs(15);
@@ -122,7 +122,7 @@ struct StoreInner {
     sweeping: bool,
 }
 
-pub struct AudioClipStore {
+pub(crate) struct AudioClipStore {
     inner: Mutex<StoreInner>,
     deadline_moved: Notify,
 }

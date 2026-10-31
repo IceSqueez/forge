@@ -3,9 +3,9 @@ use std::collections::HashMap;
 use forge_components::FocusNextField;
 use gpui::{App, KeyBinding, Keystroke, actions};
 
-pub const SHELL_CONTEXT: &str = "ForgeShell";
-pub const LIST_CONTEXT: &str = "ForgeList";
-pub const STEP_DRAG_CONTEXT: &str = "ForgeStepDrag";
+pub(crate) const SHELL_CONTEXT: &str = "ForgeShell";
+pub(crate) const LIST_CONTEXT: &str = "ForgeList";
+pub(crate) const STEP_DRAG_CONTEXT: &str = "ForgeStepDrag";
 const NEXT_FIELD_CHORD: &str = "tab";
 const QUIT_CHORD: &str = "cmd-q";
 
@@ -40,13 +40,13 @@ fn bind_list_keys(cx: &mut App) {
     ]);
 }
 
-pub struct ShortcutEntry {
+pub(crate) struct ShortcutEntry {
     pub id: &'static str,
     pub default_chord: &'static str,
     pub label_key: &'static str,
 }
 
-pub const SHORTCUTS: &[ShortcutEntry] = &[
+pub(crate) const SHORTCUTS: &[ShortcutEntry] = &[
     ShortcutEntry {
         id: "nav.home",
         default_chord: "ctrl-1",
@@ -131,7 +131,7 @@ fn has_strong_modifier(chord: &str) -> bool {
         .any(|token| matches!(*token, "ctrl" | "alt" | "cmd" | "super" | "win"))
 }
 
-pub fn chord_is_bindable(chord: &str) -> bool {
+pub(crate) fn chord_is_bindable(chord: &str) -> bool {
     let Some(key) = chord.rsplit('-').next() else {
         return false;
     };
@@ -145,7 +145,7 @@ pub fn chord_is_bindable(chord: &str) -> bool {
     has_strong_modifier(chord) || is_f_key
 }
 
-pub fn canonical_chord(keystroke: &Keystroke) -> Option<String> {
+pub(crate) fn canonical_chord(keystroke: &Keystroke) -> Option<String> {
     let key = keystroke.key.as_str();
     if key.is_empty() || is_modifier_token(key) {
         return None;
@@ -190,7 +190,7 @@ fn cap_token(token: &str) -> String {
     }
 }
 
-pub fn chord_caps(chord: &str) -> String {
+pub(crate) fn chord_caps(chord: &str) -> String {
     let mut caps: Vec<String> = Vec::new();
     let mut rest = chord;
     while let Some((head, tail)) = rest.split_once('-') {
@@ -204,7 +204,7 @@ pub fn chord_caps(chord: &str) -> String {
     caps.join("+")
 }
 
-pub fn platform_default_chord(entry: &ShortcutEntry) -> String {
+pub(crate) fn platform_default_chord(entry: &ShortcutEntry) -> String {
     let primary = if cfg!(target_os = "macos") {
         "cmd-"
     } else {
@@ -213,11 +213,11 @@ pub fn platform_default_chord(entry: &ShortcutEntry) -> String {
     entry.default_chord.replacen("ctrl-", primary, 1)
 }
 
-pub fn shortcut_entry(id: &str) -> Option<&'static ShortcutEntry> {
+pub(crate) fn shortcut_entry(id: &str) -> Option<&'static ShortcutEntry> {
     SHORTCUTS.iter().find(|entry| entry.id == id)
 }
 
-pub fn effective_chord<'a>(
+pub(crate) fn effective_chord<'a>(
     overrides: &'a HashMap<String, String>,
     entry: &'a ShortcutEntry,
 ) -> Option<&'a str> {
@@ -275,11 +275,11 @@ fn bind_shell(cx: &mut App, overrides: &HashMap<String, String>) {
     cx.bind_keys(bindings);
 }
 
-pub fn register_key_bindings(cx: &mut App) {
+pub(crate) fn register_key_bindings(cx: &mut App) {
     bind_all(cx, &HashMap::new());
 }
 
-pub fn reapply_key_bindings(cx: &mut App, overrides: &HashMap<String, String>) {
+pub(crate) fn reapply_key_bindings(cx: &mut App, overrides: &HashMap<String, String>) {
     cx.clear_key_bindings();
     bind_all(cx, overrides);
 }

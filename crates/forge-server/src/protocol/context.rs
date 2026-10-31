@@ -13,7 +13,7 @@ use crate::ws_client::WsClient;
 
 use super::envelope::WsResponse;
 
-pub struct DispatchContext {
+pub(crate) struct DispatchContext {
     pub bus: Arc<dyn EventHistory>,
     pub bus_adapter: Arc<BusAdapter>,
     pub actions: Arc<dyn ActionRepo>,

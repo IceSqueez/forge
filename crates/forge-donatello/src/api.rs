@@ -24,7 +24,7 @@ const NO_RETRY_AFTER_WAIT: Duration = Duration::from_secs(DEFAULT_RETRY_AFTER_SE
 
 pub(crate) const PAGE_SIZE: u64 = 20;
 
-pub const DONATELLO_GATEWAY_PROFILE: GatewayProfile = GatewayProfile::platform_api(
+pub(crate) const DONATELLO_GATEWAY_PROFILE: GatewayProfile = GatewayProfile::platform_api(
     CallClass::Interactive,
     ThrottleHintFamily::RetryAfter,
     NO_RETRY_AFTER_WAIT,

@@ -10,7 +10,7 @@ use super::transition_started::{build_transition_arg_stack, transition_variables
 
 use crate::vocabulary::{event_kinds, messages, trigger_ids};
 
-pub struct TransitionEndedDescriptor;
+pub(crate) struct TransitionEndedDescriptor;
 
 impl TriggerKindDescriptor for TransitionEndedDescriptor {
     fn id(&self) -> &str {

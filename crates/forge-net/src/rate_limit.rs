@@ -35,15 +35,19 @@ pub trait RateLimiter: Send + Sync {
     }
 }
 
-pub const MAX_THROTTLE_WAIT: Duration = Duration::from_secs(10);
-pub const MAX_ACQUIRE_ATTEMPTS: u32 = 3;
+pub(crate) const MAX_THROTTLE_WAIT: Duration = Duration::from_secs(10);
+pub(crate) const MAX_ACQUIRE_ATTEMPTS: u32 = 3;
 pub const DEFAULT_RETRY_AFTER_SECS: u32 = 30;
 
-pub async fn acquire_or_wait(limiter: &dyn RateLimiter, weight: u32) -> Result<(), RateLimitError> {
+#[cfg(test)]
+pub(crate) async fn acquire_or_wait(
+    limiter: &dyn RateLimiter,
+    weight: u32,
+) -> Result<(), RateLimitError> {
     acquire_or_wait_within(limiter, weight, MAX_THROTTLE_WAIT).await
 }
 
-pub async fn acquire_or_wait_within(
+pub(crate) async fn acquire_or_wait_within(
     limiter: &dyn RateLimiter,
     weight: u32,
     max_wait: Duration,

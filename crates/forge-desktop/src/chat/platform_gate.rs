@@ -15,7 +15,7 @@ pub(crate) fn platform_integration(platform: PlatformId) -> Integration {
 
 impl ChatView {
     #[must_use]
-    pub fn with_lifecycle(
+    pub(crate) fn with_lifecycle(
         mut self,
         lifecycle: Entity<IntegrationLifecycle>,
         cx: &mut Context<Self>,
@@ -32,14 +32,18 @@ impl ChatView {
     }
 
     #[must_use]
-    pub fn with_chat_bus(self, bus: Arc<forge_runtime::EventBus>, cx: &mut Context<Self>) -> Self {
+    pub(crate) fn with_chat_bus(
+        self,
+        bus: Arc<forge_runtime::EventBus>,
+        cx: &mut Context<Self>,
+    ) -> Self {
         self.composer
             .update(cx, |composer, cx| composer.set_bus(bus, cx));
         self
     }
 
     #[must_use]
-    pub fn with_twitch_bot(
+    pub(crate) fn with_twitch_bot(
         self,
         presence: Entity<crate::twitch_bot_presence::TwitchBotPresence>,
         cx: &mut Context<Self>,

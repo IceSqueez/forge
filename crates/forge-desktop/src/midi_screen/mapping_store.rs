@@ -13,7 +13,7 @@ use forge_types::{PermissionRung, PlatformScope, TriggerInstance, TriggerInstanc
 use gpui::Context;
 use std::sync::Arc;
 
-pub const MIDI_KNOWN_DEVICES: Setting<JsonDocument<Vec<String>>> = Setting::new(
+pub(crate) const MIDI_KNOWN_DEVICES: Setting<JsonDocument<Vec<String>>> = Setting::new(
     "midi.known_devices",
     JsonDocument::new(),
     forge_storage::SettingPortability::MachineLocal,

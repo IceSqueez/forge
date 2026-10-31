@@ -77,7 +77,7 @@ static RULES: LazyLock<Option<Vec<(Regex, &'static str)>>> = LazyLock::new(|| {
     Some(rules)
 });
 
-pub fn scrub(input: &str) -> Cow<'_, str> {
+pub(crate) fn scrub(input: &str) -> Cow<'_, str> {
     let Some(rules) = RULES.as_ref() else {
         return match input.ends_with('\n') {
             true => Cow::Owned(format!("{UNAVAILABLE}\n")),
@@ -98,11 +98,11 @@ pub fn scrub(input: &str) -> Cow<'_, str> {
     out
 }
 
-pub fn scrubbed<M>(inner: M) -> ScrubbingMakeWriter<M> {
+pub(crate) fn scrubbed<M>(inner: M) -> ScrubbingMakeWriter<M> {
     ScrubbingMakeWriter { inner }
 }
 
-pub struct ScrubbingMakeWriter<M> {
+pub(crate) struct ScrubbingMakeWriter<M> {
     inner: M,
 }
 
@@ -121,7 +121,7 @@ where
     }
 }
 
-pub struct ScrubbingWriter<W: io::Write> {
+pub(crate) struct ScrubbingWriter<W: io::Write> {
     inner: W,
     pending: Vec<u8>,
 }

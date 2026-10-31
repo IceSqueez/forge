@@ -56,39 +56,39 @@ impl EventFilter {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ClientFilterSet {
+pub(crate) struct ClientFilterSet {
     pub subscriptions: HashSet<EventFilter>,
 }
 
 impl ClientFilterSet {
-    pub fn new(subscriptions: HashSet<EventFilter>) -> Self {
+    pub(crate) fn new(subscriptions: HashSet<EventFilter>) -> Self {
         Self { subscriptions }
     }
 
-    pub fn matches(&self, event: &Event) -> bool {
+    pub(crate) fn matches(&self, event: &Event) -> bool {
         self.subscriptions.iter().any(|f| f.matches(event))
     }
 }
 
 #[derive(Debug, Clone)]
-pub enum WsFrame {
+pub(crate) enum WsFrame {
     Text(String),
     Close,
 }
 
-pub struct ClientHandle {
+pub(crate) struct ClientHandle {
     pub id: ClientId,
     pub drop_counter: Arc<AtomicU64>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum OverlayClientClass {
+pub(crate) enum OverlayClientClass {
     BrowserSource,
     PreviewTab,
 }
 
 impl OverlayClientClass {
-    pub fn from_frame_flag(preview_connection: bool) -> Self {
+    pub(crate) fn from_frame_flag(preview_connection: bool) -> Self {
         if preview_connection {
             Self::PreviewTab
         } else {
@@ -109,7 +109,7 @@ struct ConnectedClient {
     overlay: Option<OverlayConnection>,
 }
 
-pub struct BusAdapter {
+pub(crate) struct BusAdapter {
     observer: Arc<dyn EventObserver>,
     registry: Arc<RwLock<Vec<ConnectedClient>>>,
     overlay_connect: OnceLock<Arc<dyn OverlayConnectListener>>,
@@ -268,7 +268,7 @@ async fn count_overlay(
 }
 
 impl BusAdapter {
-    pub fn new(observer: Arc<dyn EventObserver>) -> Arc<Self> {
+    pub(crate) fn new(observer: Arc<dyn EventObserver>) -> Arc<Self> {
         Arc::new(Self {
             observer,
             registry: Arc::new(RwLock::new(Vec::new())),
@@ -276,7 +276,7 @@ impl BusAdapter {
         })
     }
 
-    pub fn set_overlay_connect_listener(&self, listener: Arc<dyn OverlayConnectListener>) {
+    pub(crate) fn set_overlay_connect_listener(&self, listener: Arc<dyn OverlayConnectListener>) {
         #[expect(
             clippy::let_underscore_must_use,
             reason = "the first attached listener wins"
@@ -288,7 +288,7 @@ impl BusAdapter {
         self.overlay_connect.get().cloned()
     }
 
-    pub fn spawn(self: &Arc<Self>) {
+    pub(crate) fn spawn(self: &Arc<Self>) {
         let registry = Arc::clone(&self.registry);
         let subscription = self.observer.observe(BUS_CONSUMER);
         tokio::spawn(async move {
@@ -306,7 +306,7 @@ impl BusAdapter {
         });
     }
 
-    pub async fn deliver_overlay_content(
+    pub(crate) async fn deliver_overlay_content(
         &self,
         identity: &OverlayId,
         content: &serde_json::Value,
@@ -318,11 +318,11 @@ impl BusAdapter {
         send_to_overlay(&self.registry, Some(identity), WsFrame::Text(json)).await
     }
 
-    pub async fn overlay_receivers(&self, identity: &OverlayId) -> OverlayReceivers {
+    pub(crate) async fn overlay_receivers(&self, identity: &OverlayId) -> OverlayReceivers {
         count_overlay(&self.registry, identity).await
     }
 
-    pub async fn deliver_overlay_reload(&self, identity: Option<&OverlayId>) {
+    pub(crate) async fn deliver_overlay_reload(&self, identity: Option<&OverlayId>) {
         send_to_overlay(
             &self.registry,
             identity,
@@ -331,7 +331,7 @@ impl BusAdapter {
         .await;
     }
 
-    pub async fn revoke_overlay(&self, identity: &OverlayId) -> usize {
+    pub(crate) async fn revoke_overlay(&self, identity: &OverlayId) -> usize {
         let reached = send_to_overlay(
             &self.registry,
             Some(identity),
@@ -342,7 +342,7 @@ impl BusAdapter {
         reached.sources + reached.preview_tabs
     }
 
-    pub async fn register_client(
+    pub(crate) async fn register_client(
         &self,
         filters: ClientFilterSet,
     ) -> (ClientHandle, broadcast::Receiver<WsFrame>) {
@@ -359,7 +359,7 @@ impl BusAdapter {
         (handle, receiver)
     }
 
-    pub async fn promote_to_overlay(
+    pub(crate) async fn promote_to_overlay(
         &self,
         id: ClientId,
         identity: OverlayId,
@@ -374,7 +374,7 @@ impl BusAdapter {
         Some(receiver)
     }
 
-    pub async fn preview_tabs(&self) -> HashSet<ClientId> {
+    pub(crate) async fn preview_tabs(&self) -> HashSet<ClientId> {
         self.registry
             .read()
             .await
@@ -388,11 +388,11 @@ impl BusAdapter {
             .collect()
     }
 
-    pub async fn unregister_client(&self, id: ClientId) {
+    pub(crate) async fn unregister_client(&self, id: ClientId) {
         self.registry.write().await.retain(|c| c.id != id);
     }
 
-    pub async fn kick_client(&self, id: ClientId) -> bool {
+    pub(crate) async fn kick_client(&self, id: ClientId) -> bool {
         let mut reg = self.registry.write().await;
         let Some(pos) = reg.iter().position(|c| c.id == id) else {
             return false;
@@ -406,14 +406,14 @@ impl BusAdapter {
         true
     }
 
-    pub async fn update_subscriptions(&self, id: ClientId, filters: ClientFilterSet) {
+    pub(crate) async fn update_subscriptions(&self, id: ClientId, filters: ClientFilterSet) {
         let mut reg = self.registry.write().await;
         if let Some(client) = reg.iter_mut().find(|c| c.id == id) {
             client.filters = filters;
         }
     }
 
-    pub async fn current_subscriptions(&self, id: ClientId) -> HashSet<EventFilter> {
+    pub(crate) async fn current_subscriptions(&self, id: ClientId) -> HashSet<EventFilter> {
         self.registry
             .read()
             .await
@@ -423,7 +423,7 @@ impl BusAdapter {
             .unwrap_or_default()
     }
 
-    pub async fn broadcast_close(&self) {
+    pub(crate) async fn broadcast_close(&self) {
         let reg = self.registry.read().await;
         for client in reg.iter() {
             #[expect(

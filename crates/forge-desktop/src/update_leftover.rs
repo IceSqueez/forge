@@ -16,9 +16,9 @@ use crate::async_bridge::{detached, open_path};
 use crate::error::DesktopError;
 use forge_components::PushToast;
 
-pub const INSTALLED_APPS_SETTINGS: &str = "ms-settings:appsfeatures";
+pub(crate) const INSTALLED_APPS_SETTINGS: &str = "ms-settings:appsfeatures";
 
-pub const LEFTOVER_INSTALL_NOTICED: Setting<Flag> = Setting::new(
+pub(crate) const LEFTOVER_INSTALL_NOTICED: Setting<Flag> = Setting::new(
     "updates.leftover_install_noticed",
     Flag { default: false },
     MachineLocal,
@@ -26,11 +26,11 @@ pub const LEFTOVER_INSTALL_NOTICED: Setting<Flag> = Setting::new(
 );
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LeftoverNotice {
+pub(crate) struct LeftoverNotice {
     pub install_dir: PathBuf,
 }
 
-pub fn leftover_notice(leftover: Option<PathBuf>, noticed: bool) -> Option<LeftoverNotice> {
+pub(crate) fn leftover_notice(leftover: Option<PathBuf>, noticed: bool) -> Option<LeftoverNotice> {
     let install_dir = leftover?;
     (!noticed).then_some(LeftoverNotice { install_dir })
 }
@@ -47,7 +47,7 @@ async fn unnoticed_leftover(backend: Arc<dyn DataProvider>) -> Option<LeftoverNo
     leftover_notice(Some(leftover), noticed)
 }
 
-pub fn start_leftover_install_notice(
+pub(crate) fn start_leftover_install_notice(
     cx: &mut AsyncApp,
     backend: Arc<dyn DataProvider>,
     rt_handle: Handle,

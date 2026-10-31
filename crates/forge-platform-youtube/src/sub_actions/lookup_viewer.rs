@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_registry::runner::SubActionConfig;
+use forge_registry::SubActionConfig;
 use forge_registry::{
     ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TextEditor, TextField,
     TypedField,
@@ -27,12 +27,12 @@ const IDENTIFIER: TextField = TextField {
 
 const CONFIG: ConfigSpec = ConfigSpec::new(&[&IDENTIFIER]);
 
-pub struct LookupViewerRunner {
+pub(crate) struct LookupViewerRunner {
     lookup: Arc<YoutubeChannelLookup>,
 }
 
 impl LookupViewerRunner {
-    pub fn new(lookup: Arc<YoutubeChannelLookup>) -> Self {
+    pub(crate) fn new(lookup: Arc<YoutubeChannelLookup>) -> Self {
         Self { lookup }
     }
 }

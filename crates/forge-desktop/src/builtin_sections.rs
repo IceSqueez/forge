@@ -42,16 +42,16 @@ const ROW_TINTED_LABEL_FONT: Pixels = FONT_MICRO;
 const ROW_PAD_X: Pixels = px(14.0);
 const LINE_HEIGHT_RATIO: f32 = std::f32::consts::GOLDEN_RATIO;
 
-pub type SectionRefresh = Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
+pub(crate) type SectionRefresh = Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
 
-pub struct StepClick {
+pub(crate) struct StepClick {
     pub row: SharedString,
     pub step: SubActionStep,
 }
 
-pub type SectionStepRun = Rc<dyn Fn(&StepClick, &mut Window, &mut App)>;
+pub(crate) type SectionStepRun = Rc<dyn Fn(&StepClick, &mut Window, &mut App)>;
 
-pub struct SectionHooks {
+pub(crate) struct SectionHooks {
     pub refresh: Option<SectionRefresh>,
     pub run_step: Option<SectionStepRun>,
 }
@@ -100,7 +100,7 @@ fn body(s: impl Into<SharedString>, size: gpui::Pixels, color: Rgba) -> Div {
         .child(s.into())
 }
 
-pub fn content_sections(
+pub(crate) fn content_sections(
     sections: &[DetailSection],
     hooks: &SectionHooks,
     palette: &ForgePalette,
@@ -349,7 +349,10 @@ fn render_subscription_list(
     palette: &ForgePalette,
     density: Density,
 ) -> AnyElement {
-    let count = tr!("widget_builtin_active_count", count = items.len() as i64);
+    let count = tr!(
+        "widget_builtin_active_count",
+        count = i64::try_from(items.len()).unwrap_or(i64::MAX)
+    );
     let list_region: AnyElement = if panel_overflows(items.len()) {
         let owned: Vec<SubscriptionRow> = items.to_vec();
         let pal = *palette;
@@ -928,7 +931,10 @@ fn subscription_row_elem(
         body(user_text_string(err), FONT_XXS, palette.danger).into_any_element()
     } else if let Some(count) = item.event_count {
         body(
-            tr!("widget_builtin_event_count", count = count as i64),
+            tr!(
+                "widget_builtin_event_count",
+                count = i64::try_from(count).unwrap_or(i64::MAX)
+            ),
             FONT_XXS,
             palette.text_muted,
         )
@@ -1336,7 +1342,7 @@ fn health_level_color(level: &HealthLevel, palette: &ForgePalette) -> Rgba {
     }
 }
 
-pub fn health_grid(
+pub(crate) fn health_grid(
     metrics: &[HealthMetric; 4],
     loading: bool,
     palette: &ForgePalette,

@@ -14,18 +14,18 @@ use tokio::runtime::Handle;
 
 use crate::update_flow::{InstallTarget, UpdateCandidate, UpdateFlow};
 
-pub const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
-pub const REPO_URL: &str = env!("CARGO_PKG_REPOSITORY");
+pub(crate) const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
+pub(crate) const REPO_URL: &str = env!("CARGO_PKG_REPOSITORY");
 
 const BOOT_SETTLE_DELAY: Duration = Duration::from_secs(15);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum UpdatePlan {
+pub(crate) enum UpdatePlan {
     Download,
     Offer,
 }
 
-pub fn plan_update(
+pub(crate) fn plan_update(
     current: &str,
     latest: &str,
     installable: bool,
@@ -52,19 +52,19 @@ pub fn plan_update(
     })
 }
 
-pub fn display_version(raw: &str) -> String {
+pub(crate) fn display_version(raw: &str) -> String {
     let trimmed = raw.trim();
     trimmed.strip_prefix('v').unwrap_or(trimmed).to_owned()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum FoundUpdate {
+pub(crate) enum FoundUpdate {
     Signed(UpdateOffer),
     Unsigned(PublishedRelease),
 }
 
 impl FoundUpdate {
-    pub fn version(&self) -> String {
+    pub(crate) fn version(&self) -> String {
         match self {
             FoundUpdate::Signed(offer) => offer.version.to_string(),
             FoundUpdate::Unsigned(release) => display_version(&release.tag),
@@ -72,7 +72,7 @@ impl FoundUpdate {
     }
 }
 
-pub fn update_candidate(
+pub(crate) fn update_candidate(
     found: FoundUpdate,
     install: &InstallKind,
     platform: Option<Platform>,
@@ -109,14 +109,14 @@ enum SignedCheck {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CheckOutcome {
+pub(crate) enum CheckOutcome {
     Found(FoundUpdate),
     UpToDate,
     Failed,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CheckResult {
+pub(crate) enum CheckResult {
     NothingNew { checked_at: OffsetDateTime },
     Found { version: String, plan: UpdatePlan },
     Failed,
@@ -130,7 +130,7 @@ struct Probe {
     checked_at: OffsetDateTime,
 }
 
-pub fn start_update_check(
+pub(crate) fn start_update_check(
     cx: &mut AsyncApp,
     backend: Arc<dyn DataProvider>,
     rt_handle: Handle,
@@ -145,7 +145,7 @@ pub fn start_update_check(
     .detach();
 }
 
-pub async fn run_update_check(
+pub(crate) async fn run_update_check(
     cx: &mut AsyncApp,
     backend: Arc<dyn DataProvider>,
     rt_handle: &Handle,

@@ -1,6 +1,6 @@
 use forge_speech_types::{EngineId, TtsVoice, VoiceGender, VoiceId};
 
-pub fn parse_voices_output(raw: &str, engine_id: &EngineId) -> Vec<TtsVoice> {
+pub(crate) fn parse_voices_output(raw: &str, engine_id: &EngineId) -> Vec<TtsVoice> {
     raw.lines()
         .filter(|line| {
             let trimmed = line.trim_start();

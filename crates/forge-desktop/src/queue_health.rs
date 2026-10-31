@@ -6,14 +6,14 @@ use forge_runtime::{
 };
 use forge_types::QueueId;
 
-pub struct QueueHealth {
+pub(crate) struct QueueHealth {
     modes: HashMap<QueueId, QueueMode>,
     depths: QueueDepths,
     running: QueueRunning,
 }
 
 impl QueueHealth {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             modes: HashMap::new(),
             depths: QueueDepths::new(),
@@ -21,7 +21,7 @@ impl QueueHealth {
         }
     }
 
-    pub fn apply_depths(&mut self, depths: QueueDepths) -> bool {
+    pub(crate) fn apply_depths(&mut self, depths: QueueDepths) -> bool {
         if self.depths == depths {
             return false;
         }
@@ -30,11 +30,11 @@ impl QueueHealth {
         true
     }
 
-    pub fn depth(&self, id: QueueId) -> Option<QueueDepth> {
+    pub(crate) fn depth(&self, id: QueueId) -> Option<QueueDepth> {
         self.depths.get(&id).copied()
     }
 
-    pub fn apply_running(&mut self, running: QueueRunning) -> bool {
+    pub(crate) fn apply_running(&mut self, running: QueueRunning) -> bool {
         if self.running == running {
             return false;
         }
@@ -42,18 +42,18 @@ impl QueueHealth {
         true
     }
 
-    pub fn running(&self, id: QueueId) -> &[RunningAction] {
+    pub(crate) fn running(&self, id: QueueId) -> &[RunningAction] {
         self.running.get(&id).map_or(&[], Vec::as_slice)
     }
 
-    pub fn apply_event(&mut self, event: &Event) -> bool {
+    pub(crate) fn apply_event(&mut self, event: &Event) -> bool {
         let Some(changed) = QueueModeChanged::from_event(event) else {
             return false;
         };
         self.modes.insert(changed.queue_id, changed.mode) != Some(changed.mode)
     }
 
-    pub fn mode(&self, id: QueueId) -> Option<QueueMode> {
+    pub(crate) fn mode(&self, id: QueueId) -> Option<QueueMode> {
         self.modes.get(&id).copied()
     }
 }

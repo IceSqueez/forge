@@ -8,20 +8,20 @@ const QUEUE_ASSIGNED_ID: u64 = 0;
 const PREPARING_PROGRESS: f32 = 1.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum UpdateCommand {
+pub(crate) enum UpdateCommand {
     OpenReleasePage,
     Restart,
     Retry,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct ToastButton {
+pub(crate) struct ToastButton {
     pub label: String,
     pub command: UpdateCommand,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct UpdateToast {
+pub(crate) struct UpdateToast {
     pub kind: ToastKind,
     pub message: String,
     pub icon: Option<Icon>,
@@ -59,7 +59,7 @@ fn failure_message(failure: UpdateFailure, version: &str) -> String {
     }
 }
 
-pub fn update_toast(stage: &UpdateStage) -> Option<UpdateToast> {
+pub(crate) fn update_toast(stage: &UpdateStage) -> Option<UpdateToast> {
     match stage {
         UpdateStage::Idle | UpdateStage::Downloading(_) => None,
         UpdateStage::Offered(candidate) => Some(offered(candidate)),
@@ -122,7 +122,7 @@ pub fn update_toast(stage: &UpdateStage) -> Option<UpdateToast> {
     }
 }
 
-pub fn toast_data(
+pub(crate) fn toast_data(
     toast: UpdateToast,
     flow: WeakEntity<UpdateFlow>,
     run: fn(&WeakEntity<UpdateFlow>, UpdateCommand, &mut App),

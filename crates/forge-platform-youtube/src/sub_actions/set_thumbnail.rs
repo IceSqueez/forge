@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_registry::runner::SubActionConfig;
+use forge_registry::SubActionConfig;
 use forge_registry::{
     ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TextEditor, TextField,
     TypedField,
@@ -26,12 +26,12 @@ const IMAGE_PATH: TextField = TextField {
 
 const CONFIG: ConfigSpec = ConfigSpec::new(&[&IMAGE_PATH]);
 
-pub struct SetThumbnailRunner {
+pub(crate) struct SetThumbnailRunner {
     thumbnail: Arc<YoutubeThumbnail>,
 }
 
 impl SetThumbnailRunner {
-    pub fn new(thumbnail: Arc<YoutubeThumbnail>) -> Self {
+    pub(crate) fn new(thumbnail: Arc<YoutubeThumbnail>) -> Self {
         Self { thumbnail }
     }
 }

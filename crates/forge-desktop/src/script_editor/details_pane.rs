@@ -96,10 +96,20 @@ impl ScriptEditorView {
 
         let (runs_value, avg_value): (SharedString, SharedString) = match &self.telemetry {
             Some(t) => (
-                tr!("script_editor_stat_runs_value", n = t.runs_today as i64).into(),
+                tr!(
+                    "script_editor_stat_runs_value",
+                    n = i64::try_from(t.runs_today).unwrap_or(i64::MAX)
+                )
+                .into(),
                 t.avg_duration_ms.map_or_else(
                     || "-".into(),
-                    |ms| tr!("script_editor_stat_avg_value", n = ms as i64).into(),
+                    |ms| {
+                        tr!(
+                            "script_editor_stat_avg_value",
+                            n = i64::try_from(ms).unwrap_or(i64::MAX)
+                        )
+                        .into()
+                    },
                 ),
             ),
             None => ("-".into(), "-".into()),

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_registry::runner::SubActionConfig;
+use forge_registry::SubActionConfig;
 use forge_registry::{
     ConfigProblem, ConfigSpec, NumberField, OptionalField, RunContext, StepTimer,
     SubActionCategory, SubActionRunner, ToggleField, TypedField,
@@ -38,12 +38,12 @@ fn read_config(
     ))
 }
 
-pub struct ModelSetPhysicsRunner {
+pub(crate) struct ModelSetPhysicsRunner {
     sink: Arc<dyn VTubeSink>,
 }
 
 impl ModelSetPhysicsRunner {
-    pub fn new(sink: Arc<dyn VTubeSink>) -> Self {
+    pub(crate) fn new(sink: Arc<dyn VTubeSink>) -> Self {
         Self { sink }
     }
 }

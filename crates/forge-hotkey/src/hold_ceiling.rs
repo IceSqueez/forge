@@ -37,8 +37,6 @@ pub const HOLD_CEILING: Setting<HoldCeilingCodec> = Setting::new(
     Withheld,
 );
 
-pub const HOTKEY_HOLD_CEILING_KEY: &str = HOLD_CEILING.name();
-
 pub const SETTING_SPECS: &[SettingSpec] = &[HOLD_CEILING.spec()];
 
 pub async fn load_hold_ceiling(repo: &dyn SettingsRepo) -> Option<u64> {

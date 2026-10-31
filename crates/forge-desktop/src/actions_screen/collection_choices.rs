@@ -19,7 +19,7 @@ use crate::vtube_catalog_options::{
 
 impl ScreenActionsView {
     #[must_use]
-    pub fn with_builtins(mut self, builtins: BuiltinRegistry) -> Self {
+    pub(crate) fn with_builtins(mut self, builtins: BuiltinRegistry) -> Self {
         self.builtins = builtins;
         self
     }

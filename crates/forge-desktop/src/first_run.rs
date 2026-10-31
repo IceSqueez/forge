@@ -10,7 +10,7 @@ use crate::integration_lifecycle::is_desired_on;
 use crate::navigation::Screen;
 use forge_runtime::LifecycleStates;
 
-pub const FIRST_RUN_COMPLETED: Setting<Flag> = Setting::new(
+pub(crate) const FIRST_RUN_COMPLETED: Setting<Flag> = Setting::new(
     "integrations.first_run_completed",
     Flag { default: false },
     MachineLocal,
@@ -18,13 +18,13 @@ pub const FIRST_RUN_COMPLETED: Setting<Flag> = Setting::new(
 );
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FirstRun {
+pub(crate) enum FirstRun {
     Welcome,
     Completed,
 }
 
 impl FirstRun {
-    pub fn decide(completed: bool, any_enabled: bool) -> (Self, bool) {
+    pub(crate) fn decide(completed: bool, any_enabled: bool) -> (Self, bool) {
         match (completed, any_enabled) {
             (true, _) => (FirstRun::Completed, false),
             (false, true) => (FirstRun::Completed, true),
@@ -32,7 +32,7 @@ impl FirstRun {
         }
     }
 
-    pub fn opening_screen(self, requested: Screen) -> Screen {
+    pub(crate) fn opening_screen(self, requested: Screen) -> Screen {
         match (self, &requested) {
             (FirstRun::Welcome, Screen::Home) => Screen::Welcome,
             _ => requested,
@@ -40,11 +40,14 @@ impl FirstRun {
     }
 }
 
-pub fn any_enabled(states: &LifecycleStates) -> bool {
+pub(crate) fn any_enabled(states: &LifecycleStates) -> bool {
     states.values().any(is_desired_on)
 }
 
-pub async fn resolve_first_run(settings: &dyn SettingsRepo, states: &LifecycleStates) -> FirstRun {
+pub(crate) async fn resolve_first_run(
+    settings: &dyn SettingsRepo,
+    states: &LifecycleStates,
+) -> FirstRun {
     let completed = match read_stored_setting(settings, &FIRST_RUN_COMPLETED).await {
         Ok(stored) => stored.is_some(),
         Err(e) => {
@@ -59,11 +62,14 @@ pub async fn resolve_first_run(settings: &dyn SettingsRepo, states: &LifecycleSt
     first_run
 }
 
-pub async fn record_completed(settings: &dyn SettingsRepo) -> Result<(), StorageError> {
+pub(crate) async fn record_completed(settings: &dyn SettingsRepo) -> Result<(), StorageError> {
     write_setting(settings, &FIRST_RUN_COMPLETED, &true).await
 }
 
-pub fn spawn_record_completed(settings: Arc<dyn SettingsRepo>, rt_handle: &tokio::runtime::Handle) {
+pub(crate) fn spawn_record_completed(
+    settings: Arc<dyn SettingsRepo>,
+    rt_handle: &tokio::runtime::Handle,
+) {
     rt_handle.spawn(async move {
         if let Err(e) = record_completed(settings.as_ref()).await {
             tracing::warn!(error = %e, "could not record that first run was completed");

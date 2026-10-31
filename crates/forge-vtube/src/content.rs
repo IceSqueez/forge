@@ -308,7 +308,7 @@ async fn refresh_models_and_hotkeys(
         let param_count = loaded
             .then(|| data["numberOfLive2DParameters"].as_u64())
             .flatten()
-            .map(|n| n as u32);
+            .map(|n| u32::try_from(n).unwrap_or(u32::MAX));
         if let Ok(mut s) = snap.write() {
             let changed = s.current_model_id != current_id;
             s.current_model_id = current_id;
@@ -393,7 +393,9 @@ async fn refresh_items(
     else {
         return;
     };
-    let item_count = data["itemsInSceneCount"].as_u64().map(|n| n as u32);
+    let item_count = data["itemsInSceneCount"]
+        .as_u64()
+        .map(|n| u32::try_from(n).unwrap_or(u32::MAX));
     if let Ok(mut s) = snap.write() {
         let changed = s.item_count != item_count;
         s.item_count = item_count;

@@ -8,12 +8,12 @@ use crate::speak_dispatcher::SpeakDispatcher;
 
 const QUEUE_PAUSE_KIND_ID: &str = "tts.queue.pause";
 
-pub struct QueuePauseRunner {
+pub(crate) struct QueuePauseRunner {
     speak: Arc<dyn SpeakDispatcher>,
 }
 
 impl QueuePauseRunner {
-    pub fn new(speak: Arc<dyn SpeakDispatcher>) -> Self {
+    pub(crate) fn new(speak: Arc<dyn SpeakDispatcher>) -> Self {
         Self { speak }
     }
 }

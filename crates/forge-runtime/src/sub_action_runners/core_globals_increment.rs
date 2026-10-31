@@ -24,12 +24,12 @@ fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<(String, i64
     ))
 }
 
-pub struct CoreGlobalsIncrementRunner {
+pub(crate) struct CoreGlobalsIncrementRunner {
     globals: Arc<dyn GlobalsRepo>,
 }
 
 impl CoreGlobalsIncrementRunner {
-    pub fn new(globals: Arc<dyn GlobalsRepo>) -> Self {
+    pub(crate) fn new(globals: Arc<dyn GlobalsRepo>) -> Self {
         Self { globals }
     }
 }

@@ -2,7 +2,7 @@ use forge_components::{
     Density, FONT_XS, ForgePalette, Icon, Spacing, body_family, icon, spacing, tr,
 };
 use forge_types::LogLevel;
-use forge_types::redaction::STAMP;
+use forge_types::STAMP;
 use gpui::{Pixels, SharedString, div, prelude::*, px};
 
 use crate::diagnostic_bundle::{Bundle, RUN_HISTORY_LIMIT};
@@ -11,12 +11,12 @@ const PREVIEW_GLYPH: Pixels = px(15.0);
 const BYTES_PER_KIB: u64 = 1024;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub enum StatementTone {
+pub(crate) enum StatementTone {
     Plain,
     Alert,
 }
 
-pub struct Statement {
+pub(crate) struct Statement {
     pub text: SharedString,
     pub tone: StatementTone,
 }
@@ -36,10 +36,10 @@ fn alert(text: impl Into<SharedString>) -> Statement {
 }
 
 fn kib(bytes: u64) -> i64 {
-    bytes.div_ceil(BYTES_PER_KIB) as i64
+    i64::try_from(bytes.div_ceil(BYTES_PER_KIB)).unwrap_or(i64::MAX)
 }
 
-pub fn export_statement(bundle: &Bundle, level: &LogLevel) -> Vec<Statement> {
+pub(crate) fn export_statement(bundle: &Bundle, level: &LogLevel) -> Vec<Statement> {
     let mut notes = vec![
         plain(tr!(
             "settings_diagnostics_export_preview_includes",
@@ -57,14 +57,14 @@ pub fn export_statement(bundle: &Bundle, level: &LogLevel) -> Vec<Statement> {
     } else {
         alert(tr!(
             "settings_diagnostics_export_preview_script",
-            count = bundle.script_lines as i64
+            count = i64::try_from(bundle.script_lines).unwrap_or(i64::MAX)
         ))
     });
 
     if bundle.command_lines > 0 {
         notes.push(alert(tr!(
             "settings_diagnostics_export_preview_trace",
-            count = bundle.command_lines as i64
+            count = i64::try_from(bundle.command_lines).unwrap_or(i64::MAX)
         )));
     } else if *level == LogLevel::Trace {
         notes.push(alert(tr!("settings_diagnostics_export_preview_trace_none")));
@@ -83,7 +83,7 @@ pub fn export_statement(bundle: &Bundle, level: &LogLevel) -> Vec<Statement> {
     notes
 }
 
-pub fn statement_row(
+pub(crate) fn statement_row(
     note: Statement,
     palette: &ForgePalette,
     density: Density,

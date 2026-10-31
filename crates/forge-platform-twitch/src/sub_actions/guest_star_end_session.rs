@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_registry::runner::SubActionConfig;
+use forge_registry::SubActionConfig;
 use forge_registry::{
     ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TypedField,
 };
@@ -17,13 +17,13 @@ const KIND_ID: &str = sub_action_ids::GUEST_STAR_END_SESSION;
 
 const CONFIG: ConfigSpec = ConfigSpec::new(&[&SESSION_ID]);
 
-pub struct GuestStarEndSessionRunner {
+pub(crate) struct GuestStarEndSessionRunner {
     transport: Arc<dyn HelixTransport>,
     identity: Arc<SelfIdentity>,
 }
 
 impl GuestStarEndSessionRunner {
-    pub fn new(transport: Arc<dyn HelixTransport>, identity: Arc<SelfIdentity>) -> Self {
+    pub(crate) fn new(transport: Arc<dyn HelixTransport>, identity: Arc<SelfIdentity>) -> Self {
         Self {
             transport,
             identity,

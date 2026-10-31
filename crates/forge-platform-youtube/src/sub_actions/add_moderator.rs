@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_registry::runner::SubActionConfig;
+use forge_registry::SubActionConfig;
 use forge_registry::{
     ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TypedField,
 };
@@ -16,12 +16,12 @@ const KIND_ID: &str = sub_action_ids::MODERATION_ADD_MODERATOR;
 
 const CONFIG: ConfigSpec = ConfigSpec::new(&[&CHANNEL_ID]);
 
-pub struct AddModeratorRunner {
+pub(crate) struct AddModeratorRunner {
     moderation: Arc<YoutubeModeration>,
 }
 
 impl AddModeratorRunner {
-    pub fn new(moderation: Arc<YoutubeModeration>) -> Self {
+    pub(crate) fn new(moderation: Arc<YoutubeModeration>) -> Self {
         Self { moderation }
     }
 }

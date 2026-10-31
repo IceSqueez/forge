@@ -116,11 +116,11 @@ impl ServerConsoleView {
         let mut run_state = handle.run_state();
         cx.spawn(async move |this, cx| {
             loop {
-                let running = *run_state.borrow_and_update();
+                let running = run_state.latest();
                 if this
                     .update(cx, |this, cx| this.apply_run_state(running, cx))
                     .is_err()
-                    || run_state.changed().await.is_err()
+                    || run_state.changed().await.is_none()
                 {
                     break;
                 }

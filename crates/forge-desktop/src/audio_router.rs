@@ -15,12 +15,12 @@ use crate::remote_audio::OverlayAudioDestination;
 use crate::routed_sink::RoutedSink;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AppliedRoutes {
+pub(crate) struct AppliedRoutes {
     pub speech: RoutePlan,
     pub clips: RoutePlan,
 }
 
-pub struct AudioRouterParts {
+pub(crate) struct AudioRouterParts {
     pub backend: Arc<dyn DataProvider>,
     pub server: Option<ServerHandle>,
     pub overlays: OverlayServiceHandle,
@@ -30,14 +30,14 @@ pub struct AudioRouterParts {
     pub speak: Option<SpeakQueueHandle>,
 }
 
-pub struct AudioRouter {
+pub(crate) struct AudioRouter {
     parts: AudioRouterParts,
     remote: Option<Arc<dyn RemoteAudioDestination>>,
     latest: Mutex<u64>,
 }
 
 impl AudioRouter {
-    pub fn new(parts: AudioRouterParts) -> Self {
+    pub(crate) fn new(parts: AudioRouterParts) -> Self {
         let remote = parts.server.clone().map(|handle| {
             Arc::new(OverlayAudioDestination::new(handle, parts.overlays.clone()))
                 as Arc<dyn RemoteAudioDestination>
@@ -49,11 +49,11 @@ impl AudioRouter {
         }
     }
 
-    pub fn speech_sink(&self) -> Arc<dyn AudioSink> {
+    pub(crate) fn speech_sink(&self) -> Arc<dyn AudioSink> {
         Arc::clone(&self.parts.speech_sink) as Arc<dyn AudioSink>
     }
 
-    pub async fn apply(&self) -> Option<AppliedRoutes> {
+    pub(crate) async fn apply(&self) -> Option<AppliedRoutes> {
         let ticket = {
             let mut latest = self.latest.lock().unwrap_or_else(PoisonError::into_inner);
             *latest += 1;
@@ -128,7 +128,7 @@ mod tests {
     use forge_runtime::{EventBus, OverlayFrameSink, OverlayReceivers};
     use forge_soundboard::NullAudioEventSink;
     use forge_soundboard::{ClipLibrary, SoundboardSettingsHandle};
-    use forge_storage::soundboard::MockSoundboardClipsRepo;
+    use forge_storage::MockSoundboardClipsRepo;
     use forge_storage::{
         MockMediaRepo, OverlayConfig, OverlayDefinition, OverlayId, OverlayRepo, StorageError,
     };

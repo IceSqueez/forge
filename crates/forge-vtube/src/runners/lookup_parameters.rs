@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use async_trait::async_trait;
-use forge_registry::runner::SubActionConfig;
+use forge_registry::SubActionConfig;
 use forge_registry::{RunContext, SubActionCategory, SubActionRunner};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
@@ -11,12 +11,12 @@ use crate::runners::step_failure;
 use crate::sink::{VTubeSink, result_keys};
 use crate::vocabulary::{sub_action_ids, variables};
 
-pub struct LookupParametersRunner {
+pub(crate) struct LookupParametersRunner {
     sink: Arc<dyn VTubeSink>,
 }
 
 impl LookupParametersRunner {
-    pub fn new(sink: Arc<dyn VTubeSink>) -> Self {
+    pub(crate) fn new(sink: Arc<dyn VTubeSink>) -> Self {
         Self { sink }
     }
 }
@@ -72,7 +72,7 @@ impl SubActionRunner for LookupParametersRunner {
                         produced: ::std::collections::BTreeMap::new(),
                         kind: sub_action_ids::LOOKUP_PARAMETERS.to_owned(),
                         started_at,
-                        duration_ms: start.elapsed().as_millis() as u64,
+                        duration_ms: u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX),
                         outcome: SubActionOutcome::Success,
                         index: ctx.index,
                     },
@@ -85,7 +85,7 @@ impl SubActionRunner for LookupParametersRunner {
                     produced: ::std::collections::BTreeMap::new(),
                     kind: sub_action_ids::LOOKUP_PARAMETERS.to_owned(),
                     started_at,
-                    duration_ms: start.elapsed().as_millis() as u64,
+                    duration_ms: u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX),
                     outcome: step_failure::failed(&e),
                     index: ctx.index,
                 },

@@ -14,7 +14,7 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 
 pub use filters::{
-    BuiltConfig, FilterMappingError, PipelineConfigHandle, ReplacementSource, build_config,
+    FilterMappingError, PipelineConfigHandle, ReplacementSource, build_config,
     configured_skip_prefix, effective_skip_prefix, emote_treatment, repeat_window,
     store_emote_treatment,
 };
@@ -334,6 +334,8 @@ pub fn spawn(config: QueueConfig, deps: QueueDeps) -> (SpeakQueueHandle, SpeakEv
         SpeakEventStream(event_rx),
     )
 }
+
+pub use filters::BuiltConfig;
 
 #[cfg(test)]
 mod tests {

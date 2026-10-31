@@ -15,14 +15,14 @@ use forge_storage::{
     write_setting,
 };
 
-pub const SPEECH_ROUTE: Setting<OptionalText> =
+pub(crate) const SPEECH_ROUTE: Setting<OptionalText> =
     Setting::new("audio.speech_route", OptionalText, Portable, Verbatim);
 
-pub const CLIPS_ROUTE: Setting<OptionalText> =
+pub(crate) const CLIPS_ROUTE: Setting<OptionalText> =
     Setting::new("audio.clips_route", OptionalText, Portable, Verbatim);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AudioDomain {
+pub(crate) enum AudioDomain {
     Speech,
     Clips,
 }
@@ -35,7 +35,7 @@ impl AudioDomain {
         }
     }
 
-    pub fn as_str(self) -> &'static str {
+    pub(crate) fn as_str(self) -> &'static str {
         match self {
             Self::Speech => "speech",
             Self::Clips => "clips",
@@ -44,13 +44,13 @@ impl AudioDomain {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct AudioRoutes {
+pub(crate) struct AudioRoutes {
     pub speech: AudioRoute,
     pub clips: AudioRoute,
     pub destination: Option<OverlayId>,
 }
 
-pub async fn load_audio_routes(repo: &dyn SettingsRepo) -> AudioRoutes {
+pub(crate) async fn load_audio_routes(repo: &dyn SettingsRepo) -> AudioRoutes {
     AudioRoutes {
         speech: stored_route(repo, AudioDomain::Speech).await,
         clips: stored_route(repo, AudioDomain::Clips).await,
@@ -58,7 +58,7 @@ pub async fn load_audio_routes(repo: &dyn SettingsRepo) -> AudioRoutes {
     }
 }
 
-pub async fn set_route(
+pub(crate) async fn set_route(
     repo: &dyn SettingsRepo,
     domain: AudioDomain,
     route: AudioRoute,
@@ -66,7 +66,7 @@ pub async fn set_route(
     write_setting(repo, domain.declaration(), &Some(route.as_str().to_owned())).await
 }
 
-pub async fn set_destination(
+pub(crate) async fn set_destination(
     repo: &dyn SettingsRepo,
     destination: Option<&OverlayId>,
 ) -> Result<(), StorageError> {
@@ -109,7 +109,7 @@ async fn stored_destination(repo: &dyn SettingsRepo) -> Option<OverlayId> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum AudioDestination {
+pub(crate) enum AudioDestination {
     Unset,
     ServerOff,
     Unreadable,
@@ -118,7 +118,7 @@ pub enum AudioDestination {
 }
 
 impl AudioDestination {
-    pub fn ready(&self) -> Option<&OverlayId> {
+    pub(crate) fn ready(&self) -> Option<&OverlayId> {
         match self {
             Self::Ready(id) => Some(id),
             _ => None,
@@ -126,7 +126,7 @@ impl AudioDestination {
     }
 }
 
-pub async fn resolve_destination(
+pub(crate) async fn resolve_destination(
     repo: &dyn OverlayRepo,
     server_available: bool,
     destination: Option<&OverlayId>,
@@ -148,7 +148,7 @@ pub async fn resolve_destination(
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RouteFallback {
+pub(crate) enum RouteFallback {
     NoDestinationChosen,
     ServerUnavailable,
     DestinationUnreadable,
@@ -167,13 +167,13 @@ impl fmt::Display for RouteFallback {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RoutePlan {
+pub(crate) struct RoutePlan {
     pub route: AudioRoute,
     pub destination: Option<OverlayId>,
     pub fallback: Option<RouteFallback>,
 }
 
-pub fn plan_route(requested: AudioRoute, destination: &AudioDestination) -> RoutePlan {
+pub(crate) fn plan_route(requested: AudioRoute, destination: &AudioDestination) -> RoutePlan {
     if !requested.plays_overlay() {
         return RoutePlan {
             route: requested,
@@ -202,7 +202,7 @@ fn fall_back(fallback: RouteFallback) -> RoutePlan {
     }
 }
 
-pub fn compose_sink(
+pub(crate) fn compose_sink(
     plan: &RoutePlan,
     local: Arc<dyn AudioSink>,
     overlay: Option<Arc<dyn AudioSink>>,
@@ -216,12 +216,12 @@ pub fn compose_sink(
     }
 }
 
-pub struct RoutesInstall {
+pub(crate) struct RoutesInstall {
     pub speech_sink: Arc<dyn AudioSink>,
     pub clip_route: ClipRoute,
 }
 
-pub fn compose_routes(
+pub(crate) fn compose_routes(
     speech_plan: &RoutePlan,
     clips_plan: &RoutePlan,
     destination: &AudioDestination,
@@ -239,7 +239,7 @@ pub fn compose_routes(
     }
 }
 
-pub fn show_speech_legs(
+pub(crate) fn show_speech_legs(
     speech_plan: &RoutePlan,
     remote: Arc<dyn RemoteAudioDestination>,
     local: Arc<dyn AudioSink>,
@@ -248,7 +248,7 @@ pub fn show_speech_legs(
     Arc::new(RemoteLegFactory::new(remote, local))
 }
 
-pub fn report_plan(domain: AudioDomain, plan: &RoutePlan) {
+pub(crate) fn report_plan(domain: AudioDomain, plan: &RoutePlan) {
     match plan.fallback {
         Some(fallback) => tracing::warn!(
             domain = domain.as_str(),

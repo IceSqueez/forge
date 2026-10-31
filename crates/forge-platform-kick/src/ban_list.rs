@@ -160,7 +160,7 @@ mod tests {
         ));
         let (_viewer_tx, viewer_rx) = watch::channel(ViewerReport::Absent);
         let (_auth_tx, auth_rx) = watch::channel(PollerAuth::Authorized);
-        KickIntegrationBundle::new(
+        KickIntegrationBundle::with_feeds(
             "streamer".to_owned(),
             42,
             platform,

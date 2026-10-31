@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use gpui::{App, Context, Entity, SharedString};
 
-pub trait UnsavedWork: Sized + 'static {
+pub(crate) trait UnsavedWork: Sized + 'static {
     fn has_unsaved_work(&self, cx: &App) -> bool;
 
     fn unsaved_work_name(&self) -> Option<SharedString>;
@@ -45,30 +45,30 @@ impl<V: UnsavedWork> ErasedUnsavedWork for Entity<V> {
 }
 
 #[derive(Clone)]
-pub struct UnsavedWorkHandle(Rc<dyn ErasedUnsavedWork>);
+pub(crate) struct UnsavedWorkHandle(Rc<dyn ErasedUnsavedWork>);
 
 impl UnsavedWorkHandle {
-    pub fn new<V: UnsavedWork>(view: Entity<V>) -> Self {
+    pub(crate) fn new<V: UnsavedWork>(view: Entity<V>) -> Self {
         Self(Rc::new(view))
     }
 
-    pub fn has_unsaved_work(&self, cx: &App) -> bool {
+    pub(crate) fn has_unsaved_work(&self, cx: &App) -> bool {
         self.0.has_unsaved_work(cx)
     }
 
-    pub fn name(&self, cx: &App) -> Option<SharedString> {
+    pub(crate) fn name(&self, cx: &App) -> Option<SharedString> {
         self.0.name(cx)
     }
 
-    pub fn start_saving(&self, cx: &mut App) -> bool {
+    pub(crate) fn start_saving(&self, cx: &mut App) -> bool {
         self.0.start_saving(cx)
     }
 
-    pub fn is_saving(&self, cx: &App) -> bool {
+    pub(crate) fn is_saving(&self, cx: &App) -> bool {
         self.0.is_saving(cx)
     }
 
-    pub fn discard(&self, cx: &mut App) {
+    pub(crate) fn discard(&self, cx: &mut App) {
         self.0.discard(cx);
     }
 }

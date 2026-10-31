@@ -19,21 +19,21 @@ use tokio_stream::StreamExt;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, Request, Respond, ResponseTemplate};
 
-pub const TOKEN: &str = "dn-test-token-7f3a9c";
-pub const OTHER_TOKEN: &str = "dn-other-token-41be02";
-pub const WAIT: Duration = Duration::from_secs(30);
-pub const TICK: Duration = Duration::from_millis(10);
-pub const LATER_ARRIVAL_ID: &str = "LATER-ARRIVAL";
+pub(crate) const TOKEN: &str = "dn-test-token-7f3a9c";
+pub(crate) const OTHER_TOKEN: &str = "dn-other-token-41be02";
+pub(crate) const WAIT: Duration = Duration::from_secs(30);
+pub(crate) const TICK: Duration = Duration::from_millis(10);
+pub(crate) const LATER_ARRIVAL_ID: &str = "LATER-ARRIVAL";
 const LATER_ARRIVAL_CREATED_AT: &str = "2026-08-01 10:00:00";
 const REFERENCE_POLLS: usize = 8;
 
 #[derive(Default)]
-pub struct MemCreds {
+pub(crate) struct MemCreds {
     entries: Mutex<HashMap<String, String>>,
 }
 
 impl MemCreds {
-    pub fn with_token(token: &str) -> Arc<Self> {
+    pub(crate) fn with_token(token: &str) -> Arc<Self> {
         let creds = Self::default();
         creds.entries.lock().unwrap().insert(
             DONATELLO_CREDENTIAL_ID.to_owned(),
@@ -42,7 +42,7 @@ impl MemCreds {
         Arc::new(creds)
     }
 
-    pub fn stored(&self) -> Option<String> {
+    pub(crate) fn stored(&self) -> Option<String> {
         self.entries
             .lock()
             .unwrap()
@@ -91,7 +91,7 @@ impl CredentialsRepo for MemCreds {
     }
 }
 
-pub struct ScriptedLimiter {
+pub(crate) struct ScriptedLimiter {
     exhausted: bool,
     first_wait: Mutex<Option<Duration>>,
     acquires: Mutex<usize>,
@@ -108,23 +108,23 @@ impl ScriptedLimiter {
         })
     }
 
-    pub fn open() -> Arc<Self> {
+    pub(crate) fn open() -> Arc<Self> {
         Self::build(false, None)
     }
 
-    pub fn exhausted() -> Arc<Self> {
+    pub(crate) fn exhausted() -> Arc<Self> {
         Self::build(true, None)
     }
 
-    pub fn throttled_once(wait: Duration) -> Arc<Self> {
+    pub(crate) fn throttled_once(wait: Duration) -> Arc<Self> {
         Self::build(false, Some(wait))
     }
 
-    pub fn acquires(&self) -> usize {
+    pub(crate) fn acquires(&self) -> usize {
         *self.acquires.lock().unwrap()
     }
 
-    pub fn throttles(&self) -> Vec<Duration> {
+    pub(crate) fn throttles(&self) -> Vec<Duration> {
         self.throttles.lock().unwrap().clone()
     }
 }
@@ -148,14 +148,14 @@ impl RateLimiter for ScriptedLimiter {
     }
 }
 
-pub fn config(base_url: &str) -> DonatelloConfig {
+pub(crate) fn config(base_url: &str) -> DonatelloConfig {
     DonatelloConfig {
         base_url: base_url.to_owned(),
         poll_interval: MAX_POLL_INTERVAL,
     }
 }
 
-pub fn provider_on(
+pub(crate) fn provider_on(
     base_url: &str,
     creds: Arc<dyn CredentialsRepo>,
     limiter: Arc<dyn RateLimiter>,
@@ -186,7 +186,7 @@ fn ticking_provider_on(
     DonatelloProvider::new(config, creds, gateway).with_timing(ticking_timing())
 }
 
-pub fn donate(id: &str, created_at: &str) -> Value {
+pub(crate) fn donate(id: &str, created_at: &str) -> Value {
     json!({
         "pubId": id,
         "clientName": format!("donor {id}"),
@@ -199,7 +199,7 @@ pub fn donate(id: &str, created_at: &str) -> Value {
     })
 }
 
-pub fn donates(count: usize) -> Vec<Value> {
+pub(crate) fn donates(count: usize) -> Vec<Value> {
     (0..count)
         .map(|index| {
             let minute = index % 60;
@@ -213,7 +213,7 @@ pub fn donates(count: usize) -> Vec<Value> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Order {
+pub(crate) enum Order {
     NewestFirst,
     OldestFirst,
 }
@@ -228,7 +228,7 @@ struct ListState {
 }
 
 #[derive(Clone)]
-pub struct DonatesList {
+pub(crate) struct DonatesList {
     state: Arc<Mutex<ListState>>,
 }
 
@@ -246,15 +246,15 @@ impl DonatesList {
         }
     }
 
-    pub fn add(&self, item: Value) {
+    pub(crate) fn add(&self, item: Value) {
         self.state.lock().unwrap().oldest_first.push(item);
     }
 
-    pub fn add_after_page(&self, page: u64, item: Value) {
+    pub(crate) fn add_after_page(&self, page: u64, item: Value) {
         self.state.lock().unwrap().arrival_after_page = Some((page, item));
     }
 
-    pub fn remove(&self, id: &str) {
+    pub(crate) fn remove(&self, id: &str) {
         self.state
             .lock()
             .unwrap()
@@ -262,19 +262,19 @@ impl DonatesList {
             .retain(|item| item["pubId"] != id);
     }
 
-    pub fn fail_next(&self, response: ResponseTemplate) {
+    pub(crate) fn fail_next(&self, response: ResponseTemplate) {
         self.state.lock().unwrap().faults.push_back(response);
     }
 
-    pub fn fail_after(&self, passing_requests: usize, response: ResponseTemplate) {
+    pub(crate) fn fail_after(&self, passing_requests: usize, response: ResponseTemplate) {
         self.state.lock().unwrap().delayed_fault = Some((passing_requests, response));
     }
 
-    pub fn requested_pages(&self) -> Vec<u64> {
+    pub(crate) fn requested_pages(&self) -> Vec<u64> {
         self.state.lock().unwrap().requested_pages.clone()
     }
 
-    pub fn forget_requests(&self) {
+    pub(crate) fn forget_requests(&self) {
         self.state.lock().unwrap().requested_pages.clear();
     }
 }
@@ -329,7 +329,7 @@ impl Respond for DonatesList {
     }
 }
 
-pub async fn mount_me(server: &MockServer) {
+pub(crate) async fn mount_me(server: &MockServer) {
     Mock::given(method("GET"))
         .and(path("/me"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
@@ -345,7 +345,7 @@ pub async fn mount_me(server: &MockServer) {
         .await;
 }
 
-pub async fn mount_donates(server: &MockServer, list: &DonatesList) {
+pub(crate) async fn mount_donates(server: &MockServer, list: &DonatesList) {
     Mock::given(method("GET"))
         .and(path("/donates"))
         .respond_with(list.clone())
@@ -353,7 +353,7 @@ pub async fn mount_donates(server: &MockServer, list: &DonatesList) {
         .await;
 }
 
-pub struct Harness {
+pub(crate) struct Harness {
     pub server: MockServer,
     pub list: DonatesList,
     pub creds: Arc<MemCreds>,
@@ -363,7 +363,7 @@ pub struct Harness {
 }
 
 impl Harness {
-    pub async fn start(order: Order, initial: Vec<Value>) -> Self {
+    pub(crate) async fn start(order: Order, initial: Vec<Value>) -> Self {
         let server = MockServer::start().await;
         let list = DonatesList::new(order, initial);
         mount_me(&server).await;
@@ -371,7 +371,7 @@ impl Harness {
         Self::with_server(server, list, MemCreds::with_token(TOKEN))
     }
 
-    pub async fn start_with_arrival(
+    pub(crate) async fn start_with_arrival(
         order: Order,
         initial: Vec<Value>,
         (after_page, item): (u64, Value),
@@ -384,7 +384,7 @@ impl Harness {
         Self::with_server(server, list, MemCreds::with_token(TOKEN))
     }
 
-    pub async fn ticking(order: Order, initial: Vec<Value>) -> Self {
+    pub(crate) async fn ticking(order: Order, initial: Vec<Value>) -> Self {
         let server = MockServer::start().await;
         let list = DonatesList::new(order, initial);
         mount_me(&server).await;
@@ -392,12 +392,12 @@ impl Harness {
         Self::ticking_with_server(server, list, MemCreds::with_token(TOKEN))
     }
 
-    pub fn with_server(server: MockServer, list: DonatesList, creds: Arc<MemCreds>) -> Self {
+    pub(crate) fn with_server(server: MockServer, list: DonatesList, creds: Arc<MemCreds>) -> Self {
         let provider = provider_on(&server.uri(), creds.clone(), ScriptedLimiter::open());
         Self::around(server, list, creds, provider)
     }
 
-    pub fn ticking_with_server(
+    pub(crate) fn ticking_with_server(
         server: MockServer,
         list: DonatesList,
         creds: Arc<MemCreds>,
@@ -423,18 +423,18 @@ impl Harness {
         }
     }
 
-    pub fn empty_list(order: Order) -> DonatesList {
+    pub(crate) fn empty_list(order: Order) -> DonatesList {
         DonatesList::new(order, Vec::new())
     }
 
-    pub async fn next(&mut self) -> Result<Donation, PlatformError> {
+    pub(crate) async fn next(&mut self) -> Result<Donation, PlatformError> {
         tokio::time::timeout(WAIT, self.stream.next())
             .await
             .expect("no item from the donation stream in time")
             .expect("donation stream ended")
     }
 
-    pub async fn donations(&mut self, count: usize) -> Vec<Donation> {
+    pub(crate) async fn donations(&mut self, count: usize) -> Vec<Donation> {
         let mut donations = Vec::with_capacity(count);
         for _ in 0..count {
             donations.push(
@@ -446,7 +446,7 @@ impl Harness {
         donations
     }
 
-    pub async fn assert_only_a_later_arrival_is_reported_next(&mut self) {
+    pub(crate) async fn assert_only_a_later_arrival_is_reported_next(&mut self) {
         self.list
             .add(donate(LATER_ARRIVAL_ID, LATER_ARRIVAL_CREATED_AT));
         self.poll_now().await;
@@ -454,7 +454,7 @@ impl Harness {
         assert_eq!(next.donation_id, LATER_ARRIVAL_ID);
     }
 
-    pub async fn wait_for_requests(&self, count: usize) {
+    pub(crate) async fn wait_for_requests(&self, count: usize) {
         let deadline = tokio::time::Instant::now() + WAIT;
         while self.list.requested_pages().len() < count {
             assert!(
@@ -465,12 +465,12 @@ impl Harness {
         }
     }
 
-    pub async fn outlast_several_ticks() {
+    pub(crate) async fn outlast_several_ticks() {
         let reference = Self::ticking(Order::NewestFirst, Vec::new()).await;
         reference.wait_for_requests(REFERENCE_POLLS).await;
     }
 
-    pub async fn wait_for(&self, what: &str, probe: impl Fn(&PollStatus) -> bool) {
+    pub(crate) async fn wait_for(&self, what: &str, probe: impl Fn(&PollStatus) -> bool) {
         let deadline = tokio::time::Instant::now() + WAIT;
         while !probe(&self.provider.poll_status()) {
             assert!(tokio::time::Instant::now() < deadline, "timed out: {what}");
@@ -478,7 +478,7 @@ impl Harness {
         }
     }
 
-    pub fn wake_poller(&mut self) {
+    pub(crate) fn wake_poller(&mut self) {
         self.flip = !self.flip;
         let interval = if self.flip {
             MAX_POLL_INTERVAL - Duration::from_secs(1)
@@ -488,7 +488,7 @@ impl Harness {
         self.provider.set_poll_interval(interval);
     }
 
-    pub async fn poll_now(&mut self) {
+    pub(crate) async fn poll_now(&mut self) {
         let before = self.provider.poll_status().last_poll_at;
         self.wake_poller();
         self.wait_for("next completed poll", |status| {
@@ -497,7 +497,7 @@ impl Harness {
         .await;
     }
 
-    pub async fn me_requests(&self) -> usize {
+    pub(crate) async fn me_requests(&self) -> usize {
         self.server
             .received_requests()
             .await

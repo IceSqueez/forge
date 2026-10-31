@@ -7,9 +7,9 @@ use forge_audio::{AudioError, AudioSink, AudioSinkFactory};
 use forge_events::{
     Event, EventChannel, EventObserver, EventPublisher, EventSource, EventSubscription,
 };
-use forge_hotkey::ClipBindings;
 use forge_hotkey::vocabulary::event_kinds;
 use forge_hotkey::vocabulary::fields::COMBO;
+use forge_hotkey::{ClipBindings, ClipBindingsSource};
 use forge_soundboard::NullAudioEventSink;
 use forge_soundboard::{
     ClipLibrary, SoundboardPlayer, SoundboardSettingsHandle, pressed_combo,
@@ -23,6 +23,14 @@ use tokio::sync::watch;
 
 const EVENT_DEADLINE: Duration = Duration::from_secs(30);
 const EVENT_CAPACITY: usize = 16;
+
+struct Snapshot(watch::Receiver<Arc<ClipBindings>>);
+
+impl ClipBindingsSource for Snapshot {
+    fn current(&self) -> Arc<ClipBindings> {
+        Arc::clone(&self.0.borrow())
+    }
+}
 
 struct ChannelObserver<'a>(&'a EventChannel);
 
@@ -84,7 +92,7 @@ impl Dispatching {
         ));
         let bus = EventChannel::new(EVENT_CAPACITY);
         let (bindings, snapshot) = watch::channel(Arc::new(bindings));
-        spawn_clip_hotkey_dispatcher(&ChannelObserver(&bus), snapshot, player);
+        spawn_clip_hotkey_dispatcher(&ChannelObserver(&bus), Snapshot(snapshot), player);
         Self {
             bus,
             bindings,

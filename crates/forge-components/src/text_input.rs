@@ -412,7 +412,7 @@ pub fn search_input(
         .static_chrome(palette.border_regular, Radius::Sm)
 }
 
-pub fn search_input_on_surface(
+pub(crate) fn search_input_on_surface(
     placeholder: impl Into<SharedString>,
     palette: ForgePalette,
     cx: &mut Context<TextInput>,

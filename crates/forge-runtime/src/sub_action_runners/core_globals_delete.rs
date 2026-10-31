@@ -12,12 +12,12 @@ use crate::global_mutation::GlobalMutation;
 
 const CONFIG: ConfigSpec = ConfigSpec::new(&[&GLOBAL_BY_NAME]);
 
-pub struct CoreGlobalsDeleteRunner {
+pub(crate) struct CoreGlobalsDeleteRunner {
     globals: Arc<dyn GlobalsRepo>,
 }
 
 impl CoreGlobalsDeleteRunner {
-    pub fn new(globals: Arc<dyn GlobalsRepo>) -> Self {
+    pub(crate) fn new(globals: Arc<dyn GlobalsRepo>) -> Self {
         Self { globals }
     }
 }

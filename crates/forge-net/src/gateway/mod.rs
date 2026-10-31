@@ -36,9 +36,7 @@ pub use request::{
 };
 pub use resolved_target::ResolvedTarget;
 pub use response::{DecodeCategory, GatewayResponse, ResponseDecodeError};
-pub use streaming::{
-    STREAMING_CONNECT_BUDGET, STREAMING_READ_IDLE_BUDGET, StreamFailure, StreamedResponse,
-};
+pub use streaming::{StreamFailure, StreamedResponse};
 pub use target::GatewayBuildError;
 pub use timings::GatewayTimings;
 

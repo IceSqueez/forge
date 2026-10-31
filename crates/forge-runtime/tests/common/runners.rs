@@ -9,7 +9,7 @@ use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetr
 use time::OffsetDateTime;
 use tokio::sync::Notify;
 
-pub struct GateRunner {
+pub(crate) struct GateRunner {
     pub running: Arc<Notify>,
 }
 
@@ -66,7 +66,7 @@ impl SubActionRunner for GateRunner {
     }
 }
 
-pub struct CancelsItsRunRunner;
+pub(crate) struct CancelsItsRunRunner;
 
 #[async_trait]
 impl SubActionRunner for CancelsItsRunRunner {
@@ -110,7 +110,7 @@ impl SubActionRunner for CancelsItsRunRunner {
     }
 }
 
-pub struct FixedOutcomeRunner {
+pub(crate) struct FixedOutcomeRunner {
     pub id: &'static str,
     pub outcome: SubActionOutcome,
 }
@@ -164,7 +164,7 @@ impl SubActionRunner for FixedOutcomeRunner {
     }
 }
 
-pub fn always_failing_runner(id: &'static str) -> FixedOutcomeRunner {
+pub(crate) fn always_failing_runner(id: &'static str) -> FixedOutcomeRunner {
     FixedOutcomeRunner {
         id,
         outcome: SubActionOutcome::Failed(VerbatimText::new("boom").into()),

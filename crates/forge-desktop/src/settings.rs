@@ -43,8 +43,8 @@ use forge_components::{ActivePresentation, Presentation};
 
 const RELEASES_URL: &str = concat!(env!("CARGO_PKG_REPOSITORY"), "/releases");
 
-pub const NAV_WIDTH: Pixels = px(210.0);
-pub const PANE_MIN_WIDTH: Pixels = px(360.0);
+pub(crate) const NAV_WIDTH: Pixels = px(210.0);
+pub(crate) const PANE_MIN_WIDTH: Pixels = px(360.0);
 
 const NAV_PAD_V: Pixels = px(12.0);
 const NAV_PAD_H: Pixels = px(8.0);
@@ -153,7 +153,7 @@ fn density_meta(density: Density) -> (String, String) {
     }
 }
 
-pub struct SettingsView {
+pub(crate) struct SettingsView {
     section: SettingsSection,
     handles: Arc<RuntimeHandles>,
     awake: Entity<AwakeState>,
@@ -189,7 +189,7 @@ struct FontPicker {
 const FONT_DEFAULT_ID: &str = "__forge_default_font__";
 
 impl SettingsView {
-    pub fn new(
+    pub(crate) fn new(
         handles: Arc<RuntimeHandles>,
         awake: Entity<AwakeState>,
         update_flow: Entity<UpdateFlow>,

@@ -7,7 +7,7 @@ use gpui::Rgba;
 use crate::hub_card::HubTileGlyph;
 use crate::navigation::Screen;
 
-pub fn declarations() -> [IntegrationDeclaration; 10] {
+pub(crate) fn declarations() -> [IntegrationDeclaration; 10] {
     [
         forge_platform_twitch::TWITCH_INTEGRATION,
         forge_platform_youtube::YOUTUBE_INTEGRATION,
@@ -22,14 +22,14 @@ pub fn declarations() -> [IntegrationDeclaration; 10] {
     ]
 }
 
-pub fn declaration_of(id: &IntegrationId) -> Option<IntegrationDeclaration> {
+pub(crate) fn declaration_of(id: &IntegrationId) -> Option<IntegrationDeclaration> {
     declarations()
         .into_iter()
         .find(|declaration| &declaration.id == id)
 }
 
 #[derive(Clone)]
-pub struct CoreFeature {
+pub(crate) struct CoreFeature {
     pub key: &'static str,
     pub category: IntegrationCategory,
     pub name_key: &'static str,
@@ -38,7 +38,7 @@ pub struct CoreFeature {
     pub screen: Screen,
 }
 
-pub fn core_features() -> [CoreFeature; 4] {
+pub(crate) fn core_features() -> [CoreFeature; 4] {
     [
         CoreFeature {
             key: "tts",
@@ -75,7 +75,7 @@ pub fn core_features() -> [CoreFeature; 4] {
     ]
 }
 
-pub fn core_tint(key: &str, palette: &ForgePalette) -> Rgba {
+pub(crate) fn core_tint(key: &str, palette: &ForgePalette) -> Rgba {
     match key {
         "tts" => palette.accent_teal,
         "soundboard" => palette.accent_peach,
@@ -84,14 +84,14 @@ pub fn core_tint(key: &str, palette: &ForgePalette) -> Rgba {
     }
 }
 
-pub struct IntegrationLook {
+pub(crate) struct IntegrationLook {
     pub letter: Option<&'static str>,
     pub glyph: Icon,
     pub tint: Rgba,
 }
 
 impl IntegrationLook {
-    pub fn tile_glyph(&self) -> HubTileGlyph {
+    pub(crate) fn tile_glyph(&self) -> HubTileGlyph {
         match self.letter {
             Some(letter) => HubTileGlyph::Letter(letter.into()),
             None => HubTileGlyph::Icon(self.glyph),
@@ -99,7 +99,7 @@ impl IntegrationLook {
     }
 }
 
-pub fn look_of(id: &IntegrationId, palette: &ForgePalette) -> IntegrationLook {
+pub(crate) fn look_of(id: &IntegrationId, palette: &ForgePalette) -> IntegrationLook {
     let (letter, glyph, tint) = match id.as_str() {
         "twitch" => (
             Some("T"),
@@ -132,24 +132,24 @@ pub fn look_of(id: &IntegrationId, palette: &ForgePalette) -> IntegrationLook {
     }
 }
 
-pub fn is_donation_service(id: &IntegrationId) -> bool {
+pub(crate) fn is_donation_service(id: &IntegrationId) -> bool {
     declaration_of(id)
         .is_some_and(|declaration| declaration.category == IntegrationCategory::DONATIONS)
 }
 
-pub struct Disclaimer {
+pub(crate) struct Disclaimer {
     pub short_key: &'static str,
     pub full_key: &'static str,
 }
 
-pub fn disclaimer_of(id: &IntegrationId) -> Option<Disclaimer> {
+pub(crate) fn disclaimer_of(id: &IntegrationId) -> Option<Disclaimer> {
     (id.as_str() == "kick").then_some(Disclaimer {
         short_key: "integration_kick_disclaimer_short",
         full_key: "integration_kick_disclaimer",
     })
 }
 
-pub fn activity_key(id: &IntegrationId) -> String {
+pub(crate) fn activity_key(id: &IntegrationId) -> String {
     format!("integration_activity_{id}")
 }
 

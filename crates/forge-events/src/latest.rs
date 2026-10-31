@@ -4,7 +4,7 @@ use time::OffsetDateTime;
 
 use crate::TypedEvent;
 
-pub const LATEST_CHANGED_KIND: &str = "latest.changed";
+pub(crate) const LATEST_CHANGED_KIND: &str = "latest.changed";
 pub const NOW_PLAYING_KIND: &str = "music.now_playing";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

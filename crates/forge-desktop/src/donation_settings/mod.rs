@@ -15,7 +15,7 @@ use forge_components::ActivePresentation;
 mod problem;
 mod render;
 
-pub use problem::TokenProblem;
+pub(crate) use problem::TokenProblem;
 pub(crate) use render::remove_confirm;
 
 const TOKEN_FONT_SIZE: gpui::Pixels = px(12.0);
@@ -23,7 +23,7 @@ const DONATELLO_TOKEN_PAGE: &str = "https://donatello.to/panel/doc-api";
 const MONOBANK_TOKEN_PAGE: &str = "https://api.monobank.ua/";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Busy {
+pub(crate) enum Busy {
     Checking,
     Saving,
     LoadingJars,
@@ -31,25 +31,25 @@ pub enum Busy {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Outcome {
+pub(crate) enum Outcome {
     Success(String),
     Problem(String),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum JarSource {
+pub(crate) enum JarSource {
     Pasted,
     Stored,
 }
 
-pub struct DonationSettingsLaunch {
+pub(crate) struct DonationSettingsLaunch {
     pub service: DonationService,
     pub credentials: Arc<dyn CredentialsRepo>,
     pub settings: Arc<dyn SettingsRepo>,
     pub rt_handle: tokio::runtime::Handle,
 }
 
-pub struct DonationSettingsView {
+pub(crate) struct DonationSettingsView {
     launch: DonationSettingsLaunch,
     token: Entity<TextInput>,
     token_revealed: bool,
@@ -66,7 +66,7 @@ pub struct DonationSettingsView {
 }
 
 impl DonationSettingsView {
-    pub fn new(launch: DonationSettingsLaunch, cx: &mut Context<Self>) -> Self {
+    pub(crate) fn new(launch: DonationSettingsLaunch, cx: &mut Context<Self>) -> Self {
         let palette = cx.palette();
         let token = cx.new(|cx| {
             TextInput::new(tr!("donation_token_placeholder"), cx)
@@ -100,18 +100,18 @@ impl DonationSettingsView {
         view
     }
 
-    pub fn service_name(&self) -> &'static str {
+    pub(crate) fn service_name(&self) -> &'static str {
         match self.launch.service {
             DonationService::Donatello(_) => forge_donatello::DONATELLO_INTEGRATION.brand_name,
             DonationService::Monobank(_) => forge_monobank::MONOBANK_INTEGRATION.brand_name,
         }
     }
 
-    pub fn is_monobank(&self) -> bool {
+    pub(crate) fn is_monobank(&self) -> bool {
         matches!(self.launch.service, DonationService::Monobank(_))
     }
 
-    pub fn focus_token(&self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn focus_token(&self, window: &mut Window, cx: &mut Context<Self>) {
         self.token.update(cx, |input, cx| input.focus(window, cx));
     }
 
@@ -159,11 +159,11 @@ impl DonationSettingsView {
         );
     }
 
-    pub fn draft_token(&self, cx: &gpui::App) -> String {
+    pub(crate) fn draft_token(&self, cx: &gpui::App) -> String {
         self.token.read(cx).content().trim().to_owned()
     }
 
-    pub fn can_check(&self, cx: &gpui::App) -> bool {
+    pub(crate) fn can_check(&self, cx: &gpui::App) -> bool {
         if self.busy.is_some() {
             return false;
         }
@@ -175,7 +175,7 @@ impl DonationSettingsView {
         }
     }
 
-    pub fn can_save(&self, cx: &gpui::App) -> bool {
+    pub(crate) fn can_save(&self, cx: &gpui::App) -> bool {
         if self.busy.is_some() {
             return false;
         }
@@ -195,7 +195,7 @@ impl DonationSettingsView {
         }
     }
 
-    pub fn shown_jar(&self) -> Option<&String> {
+    pub(crate) fn shown_jar(&self) -> Option<&String> {
         self.picked_jar.as_ref().or(self.saved_jar.as_ref())
     }
 
@@ -302,7 +302,7 @@ impl DonationSettingsView {
         }
     }
 
-    pub fn apply_jars(
+    pub(crate) fn apply_jars(
         &mut self,
         source: JarSource,
         jars: Vec<MonobankJar>,
@@ -416,12 +416,12 @@ impl DonationSettingsView {
         cx.notify();
     }
 
-    pub fn cancel_remove(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn cancel_remove(&mut self, cx: &mut Context<Self>) {
         self.remove_pending = false;
         cx.notify();
     }
 
-    pub fn confirm_remove(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn confirm_remove(&mut self, cx: &mut Context<Self>) {
         if !self.remove_pending {
             return;
         }
@@ -477,12 +477,12 @@ impl DonationSettingsView {
         cx.notify();
     }
 
-    pub fn is_remove_pending(&self) -> bool {
+    pub(crate) fn is_remove_pending(&self) -> bool {
         self.remove_pending
     }
 }
 
-pub fn jar_title(jar: &MonobankJar) -> String {
+pub(crate) fn jar_title(jar: &MonobankJar) -> String {
     jar.title
         .clone()
         .unwrap_or_else(|| tr!("donation_jar_untitled"))

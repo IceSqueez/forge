@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_platform_core::PlatformError;
-use forge_registry::runner::SubActionConfig;
+use forge_registry::SubActionConfig;
 use forge_registry::{
     ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner,
     TypedField,
@@ -28,7 +28,7 @@ fn read_config(
     Ok((USER_ID.read(config, args)?, REASON.read(config, args)?))
 }
 
-pub struct BanUserRunner {
+pub(crate) struct BanUserRunner {
     client: Arc<KickModeration>,
     token_source: Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync>,
     broadcaster_id_source:
@@ -36,7 +36,7 @@ pub struct BanUserRunner {
 }
 
 impl BanUserRunner {
-    pub fn new(
+    pub(crate) fn new(
         client: Arc<KickModeration>,
         token_source: Arc<
             dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync,

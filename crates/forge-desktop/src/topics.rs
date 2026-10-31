@@ -14,7 +14,7 @@ use crate::speak_state::SpeakState;
 use crate::twitch_bot_presence::TwitchBotPresence;
 use crate::update_flow::UpdateFlow;
 
-pub struct Topics {
+pub(crate) struct Topics {
     pub chat_feed: Entity<ChatFeed>,
     pub home_stats: Entity<HomeStats>,
     pub event_log: Entity<EventLog>,
@@ -35,7 +35,7 @@ impl Topics {
         clippy::too_many_arguments,
         reason = "constructor receives each shared handle it wires"
     )]
-    pub fn new(
+    pub(crate) fn new(
         chat_feed: Entity<ChatFeed>,
         home_stats: Entity<HomeStats>,
         event_log: Entity<EventLog>,

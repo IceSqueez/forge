@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_registry::runner::SubActionConfig;
+use forge_registry::SubActionConfig;
 use forge_registry::{
     ChoiceField, ConfigChoice, ConfigProblem, ConfigSpec, NumberField, OptionalField, RunContext,
     StepTimer, SubActionCategory, SubActionRunner, TextField, ToggleField, TypedField,
@@ -92,12 +92,12 @@ fn read_request(config: &SubActionConfig, args: &ArgStack) -> Result<PinRequest,
     })
 }
 
-pub struct ItemPinRunner {
+pub(crate) struct ItemPinRunner {
     sink: Arc<dyn VTubeSink>,
 }
 
 impl ItemPinRunner {
-    pub fn new(sink: Arc<dyn VTubeSink>) -> Self {
+    pub(crate) fn new(sink: Arc<dyn VTubeSink>) -> Self {
         Self { sink }
     }
 }

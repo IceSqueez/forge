@@ -61,12 +61,12 @@ fn decode_row(row: InstanceRow) -> Result<TriggerInstance, SqliteStorageError> {
     })
 }
 
-pub struct SqliteTriggerInstanceRepo {
+pub(crate) struct SqliteTriggerInstanceRepo {
     db: SqlitePools,
 }
 
 impl SqliteTriggerInstanceRepo {
-    pub fn new(db: impl Into<SqlitePools>) -> Self {
+    pub(crate) fn new(db: impl Into<SqlitePools>) -> Self {
         Self { db: db.into() }
     }
 }
@@ -367,7 +367,7 @@ impl TriggerInstanceRepo for SqliteTriggerInstanceRepo {
 
         if !live_users.is_empty() {
             return Err(StorageError::ReferenceBlock {
-                used_in_count: live_users.len() as u32,
+                used_in_count: u32::try_from(live_users.len()).unwrap_or(u32::MAX),
                 sample_action_names: live_users
                     .into_iter()
                     .take(REFERENCE_BLOCK_SAMPLE_NAMES)

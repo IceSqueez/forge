@@ -1,7 +1,7 @@
 #![allow(clippy::expect_used)]
 mod legacy_fixture;
 
-use forge_storage_sqlite::legacy_chain::LEGACY_CHAIN;
+use forge_storage_sqlite::LEGACY_CHAIN;
 use forge_storage_sqlite::{BASELINE_VERSION, MIGRATIONS};
 use legacy_fixture::{LEGACY_HEAD, fixture_texts, legacy_db, sha384_hex, table_rows, user_tables};
 use sqlx::SqlitePool;

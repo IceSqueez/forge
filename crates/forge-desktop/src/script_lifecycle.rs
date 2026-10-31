@@ -8,20 +8,20 @@ use forge_types::ScriptId;
 use crate::repo_failure::RepoFailure;
 
 #[derive(Clone)]
-pub struct ScriptLifecycle {
+pub(crate) struct ScriptLifecycle {
     repo: Arc<dyn ScriptRepo>,
     registry: Arc<ScriptRegistry>,
     bus: Arc<EventBus>,
 }
 
-pub struct ScriptRenamed {
+pub(crate) struct ScriptRenamed {
     pub id: ScriptId,
     pub name: String,
     pub references: ScriptReferences,
 }
 
 impl ScriptLifecycle {
-    pub fn new(
+    pub(crate) fn new(
         repo: Arc<dyn ScriptRepo>,
         registry: Arc<ScriptRegistry>,
         bus: Arc<EventBus>,
@@ -33,11 +33,15 @@ impl ScriptLifecycle {
         }
     }
 
-    pub async fn referrers(&self, name: String) -> Result<ScriptReferences, RepoFailure> {
+    pub(crate) async fn referrers(&self, name: String) -> Result<ScriptReferences, RepoFailure> {
         self.repo.referrers(&name).await.map_err(RepoFailure::from)
     }
 
-    pub async fn rename(&self, id: ScriptId, name: String) -> Result<ScriptRenamed, RepoFailure> {
+    pub(crate) async fn rename(
+        &self,
+        id: ScriptId,
+        name: String,
+    ) -> Result<ScriptRenamed, RepoFailure> {
         let references = self
             .repo
             .rename_cascading(id, &name)
@@ -53,7 +57,7 @@ impl ScriptLifecycle {
         })
     }
 
-    pub async fn archive(&self, id: ScriptId) -> Result<bool, RepoFailure> {
+    pub(crate) async fn archive(&self, id: ScriptId) -> Result<bool, RepoFailure> {
         let archived = self
             .repo
             .archive_script(id)
@@ -63,7 +67,7 @@ impl ScriptLifecycle {
         Ok(archived)
     }
 
-    pub async fn restore(&self, id: ScriptId) -> Result<bool, RepoFailure> {
+    pub(crate) async fn restore(&self, id: ScriptId) -> Result<bool, RepoFailure> {
         let restored = self
             .repo
             .restore_script(id)
@@ -86,15 +90,15 @@ impl ScriptLifecycle {
     }
 }
 
-pub fn has_referrers(references: &ScriptReferences) -> bool {
+pub(crate) fn has_referrers(references: &ScriptReferences) -> bool {
     !references.literal.is_empty() || !references.templated.is_empty()
 }
 
-pub fn referrer_count(referrers: &[ScriptReferrer]) -> i64 {
+pub(crate) fn referrer_count(referrers: &[ScriptReferrer]) -> i64 {
     i64::try_from(referrers.len()).unwrap_or(i64::MAX)
 }
 
-pub fn referrer_names(referrers: &[ScriptReferrer]) -> String {
+pub(crate) fn referrer_names(referrers: &[ScriptReferrer]) -> String {
     referrers
         .iter()
         .map(|r| r.action_name.as_str())
@@ -102,7 +106,7 @@ pub fn referrer_names(referrers: &[ScriptReferrer]) -> String {
         .join(", ")
 }
 
-pub fn delete_hint(references: Option<&ScriptReferences>) -> String {
+pub(crate) fn delete_hint(references: Option<&ScriptReferences>) -> String {
     let Some(references) = references else {
         return tr!("script_editor_delete_checking");
     };
@@ -126,7 +130,7 @@ pub fn delete_hint(references: Option<&ScriptReferences>) -> String {
     parts.join(" ")
 }
 
-pub fn rename_hint(references: &ScriptReferences) -> String {
+pub(crate) fn rename_hint(references: &ScriptReferences) -> String {
     let mut parts = Vec::new();
     if references.literal.is_empty() {
         parts.push(tr!("script_editor_rename_updates_none"));
@@ -145,7 +149,7 @@ pub fn rename_hint(references: &ScriptReferences) -> String {
     parts.join(" ")
 }
 
-pub fn counted_names(key: &str, referrers: &[ScriptReferrer]) -> String {
+pub(crate) fn counted_names(key: &str, referrers: &[ScriptReferrer]) -> String {
     let names = referrer_names(referrers);
     tr!(
         key,

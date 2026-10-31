@@ -50,7 +50,7 @@ struct InEffect {
     clips: RoutePlan,
 }
 
-pub struct SettingsAudioRoutingView {
+pub(crate) struct SettingsAudioRoutingView {
     settings: Arc<dyn SettingsRepo>,
     overlays: Arc<dyn OverlayRepo>,
     overlay_service: OverlayServiceHandle,
@@ -77,7 +77,7 @@ pub struct SettingsAudioRoutingView {
 }
 
 impl SettingsAudioRoutingView {
-    pub fn new(
+    pub(crate) fn new(
         settings: Arc<dyn SettingsRepo>,
         overlays: Arc<dyn OverlayRepo>,
         overlay_service: OverlayServiceHandle,
@@ -677,7 +677,7 @@ fn connected_pages_text(connected: usize) -> String {
     }
     tr!(
         "settings_audio_routing_pages_connected",
-        count = connected as i64
+        count = i64::try_from(connected).unwrap_or(i64::MAX)
     )
 }
 
@@ -685,7 +685,7 @@ fn duplicate_pages_text(connected: usize) -> Option<String> {
     (connected > SINGLE_PAGE).then(|| {
         tr!(
             "settings_audio_routing_pages_duplicate",
-            count = connected as i64
+            count = i64::try_from(connected).unwrap_or(i64::MAX)
         )
     })
 }
@@ -1041,7 +1041,7 @@ mod tests {
             Arc::new(forge_audio::CpalSinkFactory),
             Arc::new(forge_soundboard::NullAudioEventSink),
             Arc::new(forge_soundboard::ClipLibrary::new(
-                Arc::new(forge_storage::soundboard::MockSoundboardClipsRepo::new()),
+                Arc::new(forge_storage::MockSoundboardClipsRepo::new()),
                 Arc::new(forge_storage::MockMediaRepo::new()),
             )),
             forge_soundboard::SoundboardSettingsHandle::new(Default::default()),

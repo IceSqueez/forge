@@ -12,7 +12,7 @@ use crate::vocabulary::fields::recording as fields;
 use crate::vocabulary::messages;
 use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
-pub struct RecordFileChangedDescriptor;
+pub(crate) struct RecordFileChangedDescriptor;
 
 impl TriggerKindDescriptor for RecordFileChangedDescriptor {
     fn id(&self) -> &str {

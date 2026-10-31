@@ -13,7 +13,7 @@ use crate::vocabulary::fields::audio as fields;
 use crate::vocabulary::messages;
 use crate::vocabulary::{event_kinds, picker_keys, trigger_ids, variables};
 
-pub struct AudioSourceVolumeChangedDescriptor;
+pub(crate) struct AudioSourceVolumeChangedDescriptor;
 
 impl TriggerKindDescriptor for AudioSourceVolumeChangedDescriptor {
     fn id(&self) -> &str {

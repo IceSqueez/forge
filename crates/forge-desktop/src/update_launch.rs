@@ -21,12 +21,12 @@ const SUPERVISOR_LOG_FILE: &str = "update-supervisor.log";
 const SUPERVISOR_LOG_LIMIT_BYTES: u64 = 5 * 1024 * 1024;
 const RETIRED_LOG_EXTENSION: &str = "log.1";
 
-pub enum StartDecision {
+pub(crate) enum StartDecision {
     Boot { deferred_error: Option<UpdateError> },
     Exit(i32),
 }
 
-pub fn decide_start(args: impl IntoIterator<Item = OsString>) -> StartDecision {
+pub(crate) fn decide_start(args: impl IntoIterator<Item = OsString>) -> StartDecision {
     match launch_role(args) {
         LaunchRole::Supervisor { data_dir } => StartDecision::Exit(supervise(&data_dir)),
         LaunchRole::Candidate => StartDecision::Boot {
@@ -92,7 +92,7 @@ fn supervise(data_dir: &Path) -> i32 {
     }
 }
 
-pub fn supervisor_exit_code(outcome: SupervisorOutcome) -> i32 {
+pub(crate) fn supervisor_exit_code(outcome: SupervisorOutcome) -> i32 {
     match outcome {
         SupervisorOutcome::NothingPending
         | SupervisorOutcome::Updated

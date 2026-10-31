@@ -67,7 +67,9 @@ fn light_probe_duration_secs(path: &Path) -> Result<Option<f32>, AudioError> {
 
     Ok(match (track.time_base, track.duration) {
         (Some(time_base), Some(duration)) => time_base
-            .calc_time(symphonia::core::units::Timestamp::new(duration.get() as i64))
+            .calc_time(symphonia::core::units::Timestamp::new(
+                i64::try_from(duration.get()).unwrap_or(i64::MAX),
+            ))
             .map(|t| t.as_secs_f64() as f32),
         _ => None,
     })
@@ -101,7 +103,7 @@ fn decode_stream(mss: MediaSourceStream, hint: Hint) -> Result<PcmBuffer, AudioE
     let channels = codec_params
         .channels
         .as_ref()
-        .map(|c| c.count() as u16)
+        .map(|c| u16::try_from(c.count()).unwrap_or(u16::MAX))
         .ok_or_else(|| AudioError::Decode("track has no channel info".to_string()))?;
 
     let mut decoder = symphonia::default::get_codecs()

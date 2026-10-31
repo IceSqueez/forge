@@ -5,11 +5,11 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::sync::Arc;
 
-use forge_components::chip::ChipGlyph;
-use forge_components::confirm::ConfirmTone;
-use forge_components::highlight::Language;
+use forge_components::ChipGlyph;
+use forge_components::ConfirmTone;
+use forge_components::Language;
+use forge_components::ModalSize;
 use forge_components::highlighted_text;
-use forge_components::tokens::ModalSize;
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, CodeEditor, ColumnWidth, DataRow, Density, FONT_XS, FONT_XXS,
     ForgePalette, Icon, InlineEdit, InlineEditEvent, InputEvent, OverlayPosition, Radius, Spacing,
@@ -249,7 +249,7 @@ impl GlobalEditor {
             self.set_error(
                 tr!(
                     "globals_error_name_too_long",
-                    limit = NAME_FIELD_LIMIT as i64
+                    limit = i64::try_from(NAME_FIELD_LIMIT).unwrap_or(i64::MAX)
                 )
                 .into(),
                 cx,
@@ -344,7 +344,7 @@ struct RenameState {
     _sub: Subscription,
 }
 
-pub struct GlobalsView {
+pub(crate) struct GlobalsView {
     globals: Entity<Globals>,
     backend: Arc<dyn GlobalsRepo>,
     rt_handle: tokio::runtime::Handle,
@@ -378,7 +378,7 @@ struct RowMenu {
 const GLOBAL_EVENT_PREFIX: &str = "global.";
 
 impl GlobalsView {
-    pub fn new(
+    pub(crate) fn new(
         globals: Entity<Globals>,
         backend: Arc<dyn GlobalsRepo>,
         rt_handle: tokio::runtime::Handle,
@@ -420,7 +420,7 @@ impl GlobalsView {
         view
     }
 
-    pub fn follow_runtime_writes(&mut self, bus: Arc<EventBus>, cx: &mut Context<Self>) {
+    pub(crate) fn follow_runtime_writes(&mut self, bus: Arc<EventBus>, cx: &mut Context<Self>) {
         self._runtime_writes = Some(cx.spawn(async move |this, cx| {
             async_bridge::drain_events(&bus, cx, move |batch, cx| {
                 if !batch
@@ -1616,7 +1616,11 @@ impl GlobalsView {
         let density = cx.density();
         let kind = g.kind();
         let (count_key, count) = inspect_count(&g.value);
-        let subtitle = tr!(count_key, kind = kind_word(kind), count = count as i64);
+        let subtitle = tr!(
+            count_key,
+            kind = kind_word(kind),
+            count = i64::try_from(count).unwrap_or(i64::MAX)
+        );
 
         let json = serde_json::to_string_pretty(&g.value.to_plain_json()).unwrap_or_default();
         let mut listing = div().flex().flex_col();
@@ -1934,7 +1938,7 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     use forge_events::{EventSource, GlobalSet, ManualTestRun, TypedEvent};
-    use forge_storage::globals::MockGlobalsRepo;
+    use forge_storage::MockGlobalsRepo;
     use forge_types::ActionId;
     use gpui::TestAppContext;
     use time::OffsetDateTime;

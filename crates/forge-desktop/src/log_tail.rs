@@ -10,7 +10,7 @@ use tracing_subscriber::layer::Context;
 const CAPACITY: usize = 500;
 
 #[derive(Clone, Debug)]
-pub struct LogLine {
+pub(crate) struct LogLine {
     pub at: OffsetDateTime,
     pub level: Level,
     pub target: &'static str,
@@ -18,27 +18,27 @@ pub struct LogLine {
 }
 
 #[derive(Clone)]
-pub struct LogTail {
+pub(crate) struct LogTail {
     lines: Arc<Mutex<VecDeque<LogLine>>>,
 }
 
 impl LogTail {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             lines: Arc::new(Mutex::new(VecDeque::with_capacity(CAPACITY))),
         }
     }
 
-    pub fn layer(&self) -> LogTailLayer {
+    pub(crate) fn layer(&self) -> LogTailLayer {
         LogTailLayer { tail: self.clone() }
     }
 
-    pub fn snapshot(&self) -> Vec<LogLine> {
+    pub(crate) fn snapshot(&self) -> Vec<LogLine> {
         let lines = self.lines.lock().unwrap_or_else(PoisonError::into_inner);
         lines.iter().cloned().collect()
     }
 
-    pub fn clear(&self) {
+    pub(crate) fn clear(&self) {
         let mut lines = self.lines.lock().unwrap_or_else(PoisonError::into_inner);
         lines.clear();
     }
@@ -52,7 +52,7 @@ impl LogTail {
     }
 }
 
-pub struct LogTailLayer {
+pub(crate) struct LogTailLayer {
     tail: LogTail,
 }
 

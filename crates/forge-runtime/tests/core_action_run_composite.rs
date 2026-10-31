@@ -12,7 +12,7 @@ use forge_registry::{
     CancelSignal, ChainExecutor, ChainSignal, ChildChainOutcome, RegistryError, RunContext,
     SubActionRunner,
 };
-use forge_runtime::sub_action_runners::CoreActionRunRunner;
+use forge_runtime::CoreActionRunRunner;
 use forge_types::{
     Action, ActionId, ArgStack, EventId, ExecutionMode, QueueId, SubActionConfig, SubActionOutcome,
     SubActionStep, Variant,

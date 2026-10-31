@@ -36,20 +36,20 @@ const RESOLUTIONS: [PackResolution; 3] = [
     PackResolution::KeepBoth,
 ];
 
-pub enum PackImportModalEvent {
+pub(crate) enum PackImportModalEvent {
     Confirmed,
     Cancelled,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct PackHeader {
+pub(crate) struct PackHeader {
     pub name: String,
     pub author: String,
     pub description: String,
 }
 
 impl PackHeader {
-    pub fn of(manifest: &PackManifest) -> Self {
+    pub(crate) fn of(manifest: &PackManifest) -> Self {
         Self {
             name: manifest.name.clone(),
             author: manifest.author.clone(),
@@ -172,7 +172,7 @@ fn limit_text(limit: PackImportLimit) -> String {
     }
 }
 
-pub struct PackImportModal {
+pub(crate) struct PackImportModal {
     header: PackHeader,
     plan: PackImportPlan,
     applying: bool,
@@ -182,7 +182,7 @@ pub struct PackImportModal {
 impl EventEmitter<PackImportModalEvent> for PackImportModal {}
 
 impl PackImportModal {
-    pub fn new(header: PackHeader, plan: PackImportPlan) -> Self {
+    pub(crate) fn new(header: PackHeader, plan: PackImportPlan) -> Self {
         Self {
             header,
             plan,
@@ -191,11 +191,11 @@ impl PackImportModal {
         }
     }
 
-    pub fn plan(&self) -> &PackImportPlan {
+    pub(crate) fn plan(&self) -> &PackImportPlan {
         &self.plan
     }
 
-    pub fn is_applying(&self) -> bool {
+    pub(crate) fn is_applying(&self) -> bool {
         self.applying
     }
 
@@ -214,19 +214,19 @@ impl PackImportModal {
         }
     }
 
-    pub fn begin_apply(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn begin_apply(&mut self, cx: &mut Context<Self>) {
         self.applying = true;
         self.failure = None;
         cx.notify();
     }
 
-    pub fn replan(&mut self, plan: PackImportPlan, cx: &mut Context<Self>) {
+    pub(crate) fn replan(&mut self, plan: PackImportPlan, cx: &mut Context<Self>) {
         self.plan = plan;
         self.applying = false;
         cx.notify();
     }
 
-    pub fn fail(&mut self, message: String, cx: &mut Context<Self>) {
+    pub(crate) fn fail(&mut self, message: String, cx: &mut Context<Self>) {
         self.applying = false;
         self.failure = Some(message);
         cx.notify();

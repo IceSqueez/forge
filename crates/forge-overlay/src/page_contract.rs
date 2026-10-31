@@ -8,9 +8,9 @@ use crate::metrics::{
     TEXT_SIZE_PROPERTY,
 };
 
-pub const PAGE_NAMESPACE: &str = "forge";
-pub const BIND_ATTRIBUTE: &str = "data-bind";
-pub const HIDDEN_CLASS: &str = "hidden";
+pub(crate) const PAGE_NAMESPACE: &str = "forge";
+pub(crate) const BIND_ATTRIBUTE: &str = "data-bind";
+pub(crate) const HIDDEN_CLASS: &str = "hidden";
 
 pub const READY_FUNCTION: &str = "ready";
 pub const CONTENT_FUNCTION: &str = "content";

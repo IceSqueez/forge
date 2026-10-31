@@ -50,7 +50,7 @@ use forge_hotkey::HotkeySyncedClipsRepo;
 use forge_runtime::IntegrationSupervisor;
 use forge_soundboard::spawn_clip_hotkey_dispatcher;
 
-pub enum BootFailure {
+pub(crate) enum BootFailure {
     UpgradeRequired { expected: u32, found: u32 },
     PreBaseline { found: u32 },
     Retry { failure: RepoFailure },
@@ -65,7 +65,7 @@ fn default_db_path() -> PathBuf {
 const APPEARANCE_READ_BUDGET: Duration = Duration::from_secs(2);
 
 #[derive(Default)]
-pub struct PersistedAppearance {
+pub(crate) struct PersistedAppearance {
     pub theme: ThemeId,
     pub accent: AccentColor,
     pub density: Density,
@@ -74,16 +74,16 @@ pub struct PersistedAppearance {
 }
 
 #[derive(Default)]
-pub struct BootPresentation {
+pub(crate) struct BootPresentation {
     pub appearance: PersistedAppearance,
     pub window_placement: Option<WindowPlacement>,
     pub backend: Option<Arc<dyn DataProvider>>,
 }
 
-pub struct PresentationRead(tokio::task::JoinHandle<BootPresentation>);
+pub(crate) struct PresentationRead(tokio::task::JoinHandle<BootPresentation>);
 
 impl PresentationRead {
-    pub async fn arrived(self) -> BootPresentation {
+    pub(crate) async fn arrived(self) -> BootPresentation {
         let presentation = self.0.await.unwrap_or_else(|error| {
             tracing::warn!(error = %error, "persisted presentation read stopped");
             BootPresentation::default()
@@ -98,15 +98,17 @@ impl PresentationRead {
     }
 }
 
-pub struct BootStorage {
+pub(crate) struct BootStorage {
     pub presentation: PresentationRead,
     pub opening: BackendOpening,
 }
 
-pub struct BackendOpening(tokio::task::JoinHandle<Result<Arc<dyn DataProvider>, BootFailure>>);
+pub(crate) struct BackendOpening(
+    tokio::task::JoinHandle<Result<Arc<dyn DataProvider>, BootFailure>>,
+);
 
 impl BackendOpening {
-    pub async fn finished(self) -> Result<Arc<dyn DataProvider>, BootFailure> {
+    pub(crate) async fn finished(self) -> Result<Arc<dyn DataProvider>, BootFailure> {
         match self.0.await {
             Ok(opened) => opened,
             Err(e) => Err(BootFailure::Retry {
@@ -116,7 +118,7 @@ impl BackendOpening {
     }
 }
 
-pub fn open_boot_storage(rt_handle: &tokio::runtime::Handle) -> BootStorage {
+pub(crate) fn open_boot_storage(rt_handle: &tokio::runtime::Handle) -> BootStorage {
     open_boot_storage_with(rt_handle, open_backend())
 }
 
@@ -221,7 +223,7 @@ async fn apply_persisted_log_level(repo: &dyn SettingsRepo) {
     }
 }
 
-pub struct RuntimeInputs {
+pub(crate) struct RuntimeInputs {
     pub log_tail: LogTail,
     pub endpoints: PlatformEndpoints,
     pub hotkey_main_thread: forge_hotkey::MainThreadLink,
@@ -231,7 +233,7 @@ pub struct RuntimeInputs {
     pub platform_identities: PlatformIdentities,
 }
 
-pub async fn build_runtime(inputs: RuntimeInputs) -> Result<RuntimeHandles, BootFailure> {
+pub(crate) async fn build_runtime(inputs: RuntimeInputs) -> Result<RuntimeHandles, BootFailure> {
     let RuntimeInputs {
         log_tail,
         endpoints,
@@ -283,7 +285,7 @@ pub async fn build_runtime(inputs: RuntimeInputs) -> Result<RuntimeHandles, Boot
     let bus = EventBus::with_first_chats(backend.event_log_repo(), first_chats);
     EventBus::spawn_flush_task(Arc::clone(&bus));
     spawn_event_log_bridge(Arc::clone(&bus));
-    if let Err(e) = forge_runtime::sub_action_runners::SystemNotifyPort::adopt_app_identity() {
+    if let Err(e) = forge_runtime::SystemNotifyPort::adopt_app_identity() {
         tracing::warn!(error = %e, "desktop notifications keep the default app identity");
     }
     let notification_policy = spawn_notification_policy(
@@ -547,7 +549,7 @@ pub async fn build_runtime(inputs: RuntimeInputs) -> Result<RuntimeHandles, Boot
     )
     .await;
 
-    let overlay_actions = Arc::new(forge_runtime::actions::ActionsService::new(
+    let overlay_actions = Arc::new(forge_runtime::ActionsService::new(
         backend.action_repo(),
         backend.queue_repo(),
         backend.history_repo(),

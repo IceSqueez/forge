@@ -442,7 +442,7 @@ struct PassphrasePrompt {
     _sub: Subscription,
 }
 
-pub struct BackupScheduleView {
+pub(crate) struct BackupScheduleView {
     backend: Arc<dyn DataProvider>,
     rt_handle: tokio::runtime::Handle,
     service: ScheduledBackupHandle,
@@ -458,7 +458,7 @@ pub struct BackupScheduleView {
 }
 
 impl BackupScheduleView {
-    pub fn new(
+    pub(crate) fn new(
         backend: Arc<dyn DataProvider>,
         rt_handle: tokio::runtime::Handle,
         service: ScheduledBackupHandle,
@@ -593,28 +593,28 @@ impl BackupScheduleView {
         cx.notify();
     }
 
-    pub fn backs_up_unattended(&self) -> bool {
+    pub(crate) fn backs_up_unattended(&self) -> bool {
         self.settings
             .loaded()
             .is_some_and(|settings| settings.key.is_some() && settings.enabled)
             && self.status.state != ScheduleState::Suspended
     }
 
-    pub fn is_running(&self) -> bool {
+    pub(crate) fn is_running(&self) -> bool {
         self.status.state == ScheduleState::Running
     }
 
-    pub fn transfer_held(&self) -> bool {
+    pub(crate) fn transfer_held(&self) -> bool {
         self.exclusivity.is_held()
     }
 
-    pub fn run_now(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn run_now(&mut self, cx: &mut Context<Self>) {
         self.manual_run = Some(ManualRunWatch::since(self.status.last_success_at));
         self.service.run_now();
         cx.notify();
     }
 
-    pub fn prompt_view(&self) -> Option<AnyView> {
+    pub(crate) fn prompt_view(&self) -> Option<AnyView> {
         self.prompt
             .as_ref()
             .map(|prompt| AnyView::from(prompt.modal.clone()))

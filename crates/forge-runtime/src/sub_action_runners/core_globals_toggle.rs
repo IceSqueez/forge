@@ -11,12 +11,12 @@ use crate::core_messages;
 
 const CONFIG: ConfigSpec = ConfigSpec::new(&[&GLOBAL_BY_KEY]);
 
-pub struct CoreGlobalsToggleRunner {
+pub(crate) struct CoreGlobalsToggleRunner {
     globals: Arc<dyn GlobalsRepo>,
 }
 
 impl CoreGlobalsToggleRunner {
-    pub fn new(globals: Arc<dyn GlobalsRepo>) -> Self {
+    pub(crate) fn new(globals: Arc<dyn GlobalsRepo>) -> Self {
         Self { globals }
     }
 }

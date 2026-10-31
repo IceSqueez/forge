@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use forge_events::{Event, EventSource};
 use forge_net::{Backoff, DEFAULT_BACKOFF_BASE, DEFAULT_BACKOFF_CAP};
-use forge_platform_core::chat::ConnectionState;
+use forge_platform_core::ConnectionState;
 use forge_platform_core::{ConnectionTransition, EndpointSurface, PlatformEndpoints};
 use forge_types::ChatPayload;
 use futures::StreamExt;

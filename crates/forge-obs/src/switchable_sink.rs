@@ -4,12 +4,11 @@ use async_trait::async_trait;
 
 use crate::client::ObsClient;
 use crate::error::ObsError;
-use crate::sink::ObsSink;
+use crate::sink::{InputSettings, ObsSink, RecordStatus, SceneList, StreamStatus};
 use crate::stream_output::{
     ObsStatsWatch, StreamOutputActive, StreamOutputTarget, new_stream_output_target, subscribe,
     subscribe_stats,
 };
-use forge_types::Variant;
 
 pub struct SwitchableObsSink {
     inner: RwLock<Option<Arc<ObsClient>>>,
@@ -177,27 +176,27 @@ impl ObsSink for SwitchableObsSink {
         client.trigger_studio_transition().await
     }
 
-    async fn get_scene_list(&self) -> Result<Variant, ObsError> {
+    async fn get_scene_list(&self) -> Result<SceneList, ObsError> {
         let client = self.get()?;
         client.get_scene_list().await
     }
 
-    async fn get_input_list(&self) -> Result<Variant, ObsError> {
+    async fn get_input_list(&self) -> Result<Vec<String>, ObsError> {
         let client = self.get()?;
         client.get_input_list().await
     }
 
-    async fn get_record_status(&self) -> Result<Variant, ObsError> {
+    async fn get_record_status(&self) -> Result<RecordStatus, ObsError> {
         let client = self.get()?;
         client.get_record_status().await
     }
 
-    async fn get_stream_status(&self) -> Result<Variant, ObsError> {
+    async fn get_stream_status(&self) -> Result<StreamStatus, ObsError> {
         let client = self.get()?;
         client.get_stream_status().await
     }
 
-    async fn get_input_settings(&self, input: &str) -> Result<Variant, ObsError> {
+    async fn get_input_settings(&self, input: &str) -> Result<InputSettings, ObsError> {
         let client = self.get()?;
         client.get_input_settings(input).await
     }

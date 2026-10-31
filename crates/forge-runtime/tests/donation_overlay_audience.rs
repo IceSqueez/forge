@@ -12,9 +12,9 @@ use forge_runtime::{
     OVERLAY_SEND_KIND_ID, OVERLAY_TARGET_KEY, OverlayFrameSink, OverlayReceivers,
     OverlayServiceHandle, OverlayServiceParts,
 };
-use forge_storage::action::MockActionRepo;
+use forge_storage::MockActionRepo;
+use forge_storage::MockTriggerInstanceRepo;
 use forge_storage::test_support::MemorySettings;
-use forge_storage::trigger_instance::MockTriggerInstanceRepo;
 use forge_storage::{
     CatalogRevision, MockOverlayRepo, OverlayConfig, OverlayDefinition, OverlayId, OverlayRepo,
     SettingsRepo, StorageError,

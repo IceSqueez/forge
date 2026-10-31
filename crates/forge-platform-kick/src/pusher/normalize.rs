@@ -38,7 +38,7 @@ fn identity_badges(identity: Option<&Value>) -> Vec<UserBadge> {
             Some("moderator") => Some(UserBadge::Moderator),
             Some("vip") => Some(UserBadge::Vip),
             Some("subscriber") => Some(UserBadge::Subscriber {
-                months: u64_field(badge, "count").unwrap_or(0) as u32,
+                months: u32::try_from(u64_field(badge, "count").unwrap_or(0)).unwrap_or(u32::MAX),
             }),
             Some("founder") => Some(UserBadge::Founder),
             Some("bot") => Some(UserBadge::Bot),

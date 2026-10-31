@@ -4,10 +4,10 @@ use common::{CHAT_KIND, registry};
 
 use std::collections::BTreeSet;
 
+use forge_overlay::ConfigSection;
 use forge_overlay::config::{
     ACCENT, DESIGN_WIDTH, FONT, HEADLINE, MARGIN_LEFT, MARGIN_TOP, POSITION, TEXT_SIZE,
 };
-use forge_overlay::descriptor::ConfigSection;
 use forge_overlay::{
     LookConfigKey, OverlayConfig, PAGE_CONTRACT, RUNTIME_SOURCE, SampleContext, latest_binding,
     latest_content, look_contract, sample_content, sample_latest_value,

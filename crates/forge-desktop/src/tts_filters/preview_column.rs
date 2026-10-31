@@ -63,7 +63,7 @@ impl TtsFiltersView {
                     &preview.replacement_sources,
                 );
                 stages_section = stages_section.child(preview_stage_card(
-                    (i + 1) as u32,
+                    u32::try_from(i + 1).unwrap_or(u32::MAX),
                     stage_name_label(outcome.stage),
                     outcome,
                     &marks,
@@ -76,7 +76,7 @@ impl TtsFiltersView {
                 PipelineResult::Skip { .. } => Vec::new(),
             };
             stages_section = stages_section.child(final_output_card(
-                (preview.stages.len() + 1) as u32,
+                u32::try_from(preview.stages.len() + 1).unwrap_or(u32::MAX),
                 &preview.result,
                 &spoken_marks,
                 palette,

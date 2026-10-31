@@ -134,7 +134,7 @@ fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<AddConfig, C
     })
 }
 
-pub struct CoreTimeAddRunner;
+pub(crate) struct CoreTimeAddRunner;
 
 #[async_trait]
 impl SubActionRunner for CoreTimeAddRunner {

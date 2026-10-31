@@ -22,4 +22,8 @@ pub mod openai;
 #[cfg(feature = "polly")]
 pub mod polly;
 
-pub use network::{CloudGateways, ProviderGateway, ProviderLink};
+pub use network::CloudGateways;
+pub use network::ProviderGateway;
+pub use network::ProviderLink;
+pub use policy::rate_limit::SynthesisRateLimiter;
+pub use policy::retry::RetryConfig;

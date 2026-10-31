@@ -13,7 +13,7 @@ use forge_overlay::config::{
     ACCENT, AUTHOR, AUTHOR_COLOR, BADGES, FONT, HEADLINE, ICON, LABEL, MESSAGE, PLACEHOLDER,
     PLATFORM, POSITION, SLOT, SUBLINE, TARGET, TEXT_SIZE, VALUE,
 };
-use forge_overlay::page_contract::{
+use forge_overlay::{
     CONTENT_FUNCTION, READY_FUNCTION, SET_FUNCTION, SHOW_FUNCTION, SOUND_FUNCTION,
 };
 use forge_overlay::{LookContract, PAGE_CONTRACT, PageContract, PageFunction};

@@ -169,7 +169,7 @@ struct ActionEngine {
 }
 
 impl ActionEngine {
-    pub fn spawn(
+    pub(crate) fn spawn(
         bus: Arc<EventBus>,
         catalog: Arc<Catalog>,
         actions: Arc<dyn ActionRepo>,
@@ -1086,7 +1086,7 @@ mod tests {
         tokio::sync::mpsc::UnboundedReceiver<ExecutionContext>,
     ) {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-        let mut mock = forge_storage::history::MockHistoryRepo::new();
+        let mut mock = forge_storage::MockHistoryRepo::new();
         mock.expect_save_batch()
             .times(1..)
             .returning(move |contexts| {

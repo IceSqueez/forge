@@ -1,7 +1,7 @@
 use crate::bundle::layout::{ARCHIVE_SEPARATOR, EntryShape, is_portable_segment};
 
-pub const PACK_ROOT: &str = "pack";
-pub const SETUP_ROOT: &str = "setup";
+pub(crate) const PACK_ROOT: &str = "pack";
+pub(crate) const SETUP_ROOT: &str = "setup";
 
 const DOCUMENTS_FILE: &str = "documents.json";
 const MEDIA_DIR: &str = "media";

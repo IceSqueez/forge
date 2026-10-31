@@ -9,27 +9,27 @@ use gpui::Rgba;
 
 const MIDI_NOTE_MAX: i64 = 127;
 const SEMITONES_PER_OCTAVE: i64 = 12;
-pub const MIDI_CHANNELS: i64 = 16;
+pub(crate) const MIDI_CHANNELS: i64 = 16;
 const NOTE_NAMES: [&str; SEMITONES_PER_OCTAVE as usize] = [
     "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B",
 ];
 
-pub fn note_name(note: i64) -> String {
+pub(crate) fn note_name(note: i64) -> String {
     let clamped = note.clamp(0, MIDI_NOTE_MAX);
     let octave = clamped / SEMITONES_PER_OCTAVE - 1;
     let name = NOTE_NAMES[(clamped % SEMITONES_PER_OCTAVE) as usize];
     format!("{name}{octave}")
 }
 
-pub fn shown_channel(stored: i64) -> i64 {
+pub(crate) fn shown_channel(stored: i64) -> i64 {
     stored.saturating_add(1)
 }
 
-pub fn stored_channel(shown: i64) -> i64 {
+pub(crate) fn stored_channel(shown: i64) -> i64 {
     shown - 1
 }
 
-pub fn selector_key(kind_id: &str) -> Option<&'static str> {
+pub(crate) fn selector_key(kind_id: &str) -> Option<&'static str> {
     match kind_id {
         NOTE_ON | NOTE_OFF => Some(NOTE),
         CONTROL_CHANGE => Some(CONTROLLER),
@@ -38,7 +38,7 @@ pub fn selector_key(kind_id: &str) -> Option<&'static str> {
     }
 }
 
-pub fn kind_label(kind_id: &str) -> &str {
+pub(crate) fn kind_label(kind_id: &str) -> &str {
     match kind_id {
         NOTE_ON => "Note On",
         NOTE_OFF => "Note Off",
@@ -49,7 +49,7 @@ pub fn kind_label(kind_id: &str) -> &str {
     }
 }
 
-pub fn short_kind_label(kind: MidiSignalKind) -> &'static str {
+pub(crate) fn short_kind_label(kind: MidiSignalKind) -> &'static str {
     match kind {
         MidiSignalKind::NoteOn => "Note On",
         MidiSignalKind::NoteOff => "Note Off",
@@ -59,7 +59,7 @@ pub fn short_kind_label(kind: MidiSignalKind) -> &'static str {
     }
 }
 
-pub fn kind_color(kind_id: &str, palette: &ForgePalette) -> Rgba {
+pub(crate) fn kind_color(kind_id: &str, palette: &ForgePalette) -> Rgba {
     match kind_id {
         NOTE_ON => palette.success,
         NOTE_OFF => palette.text_faint,
@@ -76,7 +76,7 @@ fn config_int(config: &TriggerConfig, key: &str) -> Option<i64> {
     }
 }
 
-pub fn config_text(config: &TriggerConfig, key: &str) -> Option<String> {
+pub(crate) fn config_text(config: &TriggerConfig, key: &str) -> Option<String> {
     match config.get(key) {
         Some(Variant::String(s)) if !s.is_empty() => Some(s.clone()),
         _ => None,
@@ -84,7 +84,7 @@ pub fn config_text(config: &TriggerConfig, key: &str) -> Option<String> {
 }
 
 #[derive(Clone, PartialEq, Eq)]
-pub struct MidiSignal {
+pub(crate) struct MidiSignal {
     pub kind_id: String,
     pub selector: Option<i64>,
     pub channel: Option<i64>,
@@ -92,7 +92,7 @@ pub struct MidiSignal {
 }
 
 impl MidiSignal {
-    pub fn from_monitor(event: &MidiMonitorEvent) -> Self {
+    pub(crate) fn from_monitor(event: &MidiMonitorEvent) -> Self {
         Self {
             kind_id: event.kind.event_kind().to_owned(),
             selector: event.number.map(i64::from),
@@ -101,7 +101,7 @@ impl MidiSignal {
         }
     }
 
-    pub fn from_instance(kind_id: &str, config: &TriggerConfig) -> Self {
+    pub(crate) fn from_instance(kind_id: &str, config: &TriggerConfig) -> Self {
         Self {
             kind_id: kind_id.to_owned(),
             selector: selector_key(kind_id).and_then(|key| config_int(config, key)),
@@ -110,11 +110,11 @@ impl MidiSignal {
         }
     }
 
-    pub fn is_complete(&self) -> bool {
+    pub(crate) fn is_complete(&self) -> bool {
         selector_key(&self.kind_id).is_none() || self.selector.is_some()
     }
 
-    pub fn overrides(&self) -> TriggerConfig {
+    pub(crate) fn overrides(&self) -> TriggerConfig {
         let mut config = TriggerConfig::new();
         if let (Some(key), Some(value)) = (selector_key(&self.kind_id), self.selector) {
             config.insert(key.to_owned(), Variant::Int(value));
@@ -128,7 +128,7 @@ impl MidiSignal {
         config
     }
 
-    pub fn label(&self) -> String {
+    pub(crate) fn label(&self) -> String {
         let value = match self.selector {
             Some(n) if self.kind_id == NOTE_ON || self.kind_id == NOTE_OFF => note_name(n),
             Some(n) => n.to_string(),
@@ -144,7 +144,7 @@ impl MidiSignal {
         }
     }
 
-    pub fn channel_label(&self) -> String {
+    pub(crate) fn channel_label(&self) -> String {
         let value = match self.channel {
             Some(channel) => shown_channel(channel).to_string(),
             None => tr!("midi_value_any"),

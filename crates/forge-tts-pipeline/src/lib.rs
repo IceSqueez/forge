@@ -10,7 +10,7 @@ mod spoken_words;
 mod trace;
 
 pub use language::{DetectionOutcome, LanguageDetector};
-pub use spoken_words::{SpokenWords, spoken_words};
+pub use spoken_words::spoken_words;
 pub use trace::{AppliedReplacement, ReplacementOrigin};
 
 use trace::{EditLog, Unlogged};
@@ -1012,6 +1012,8 @@ pub fn preview(
 
     (final_result, outcomes)
 }
+
+pub use spoken_words::SpokenWords;
 
 #[cfg(test)]
 mod tests {

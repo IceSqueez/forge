@@ -9,7 +9,7 @@ use forge_events::EventSubscription;
 use forge_events::{Event, EventSource};
 use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
 use forge_runtime::{
-    EventBus, FrozenRuntime, NullEventLogRepo, RuntimeWiring, triggers::register_core_triggers,
+    EventBus, FrozenRuntime, NullEventLogRepo, RuntimeWiring, register_core_triggers,
 };
 use forge_storage::DataProvider;
 use forge_storage_sqlite::SqliteBackend;

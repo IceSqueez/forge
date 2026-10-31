@@ -1,6 +1,6 @@
 use forge_components::{Density, ForgePalette, Spacing, body_family, spacing, tr};
 use forge_registry::{TriggerCategory, TriggerKindDescriptor};
-use forge_runtime::triggers::TIMER_TICK_KIND;
+use forge_runtime::TIMER_TICK_KIND;
 use forge_types::TriggerConfig;
 use gpui::{AnyElement, div, prelude::*};
 
@@ -53,7 +53,7 @@ pub(crate) fn timer_field_hints(
 
 #[cfg(test)]
 mod tests {
-    use forge_runtime::triggers::TimerTickDescriptor;
+    use forge_runtime::TimerTickDescriptor;
     use forge_storage::Language;
     use forge_types::Variant;
 

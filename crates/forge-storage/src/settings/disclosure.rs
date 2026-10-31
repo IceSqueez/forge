@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use forge_types::redaction::STAMP;
+use forge_types::STAMP;
 
 use super::row::SettingRow;
 

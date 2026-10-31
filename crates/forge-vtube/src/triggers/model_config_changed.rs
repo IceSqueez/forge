@@ -12,7 +12,7 @@ use crate::vocabulary::fields::model as fields;
 use crate::vocabulary::messages;
 use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
-pub struct ModelConfigChangedDescriptor;
+pub(crate) struct ModelConfigChangedDescriptor;
 
 impl TriggerKindDescriptor for ModelConfigChangedDescriptor {
     fn id(&self) -> &str {

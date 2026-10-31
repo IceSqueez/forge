@@ -13,7 +13,7 @@ use forge_components::PushToast;
 
 use crate::user_text::resolve_message;
 
-pub fn report_overlay_speech_failure(event: &Event, cx: &mut App) {
+pub(crate) fn report_overlay_speech_failure(event: &Event, cx: &mut App) {
     if let Some(message) = overlay_speech_failure_text(event) {
         cx.push_toast(ToastKind::Error, message);
     }

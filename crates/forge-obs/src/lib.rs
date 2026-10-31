@@ -28,9 +28,9 @@ pub mod vocabulary;
 pub use client::{ObsClient, parse_endpoint};
 pub use error::ObsError;
 pub use integration::OBS_INTEGRATION;
-pub use probe::{ObsProbeResult, probe_connection};
+pub use probe::probe_connection;
 pub use runners::register_obs_sub_actions;
-pub use sink::ObsSink;
+pub use sink::{InputSettings, ObsSink, RecordStatus, SceneList, StreamStatus};
 pub use source::{ObsSource, SourceInfo};
 pub use stream_output::{ObsStatsWatch, ObsStreamStats, StreamOutputActive};
 pub use switchable_sink::SwitchableObsSink;
@@ -38,3 +38,4 @@ pub use timing::ObsTiming;
 pub use triggers::register_obs_triggers;
 
 fn _assert_object_safe(_: &dyn ObsSink, _: &dyn ObsSource) {}
+pub use probe::ObsProbeResult;

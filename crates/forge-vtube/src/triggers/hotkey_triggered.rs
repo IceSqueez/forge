@@ -12,7 +12,7 @@ use crate::vocabulary::fields::hotkey as fields;
 use crate::vocabulary::messages;
 use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
-pub struct HotkeyTriggeredDescriptor;
+pub(crate) struct HotkeyTriggeredDescriptor;
 
 impl TriggerKindDescriptor for HotkeyTriggeredDescriptor {
     fn id(&self) -> &str {

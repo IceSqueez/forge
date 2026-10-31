@@ -2,33 +2,33 @@ use std::sync::Arc;
 
 use forge_audio::{alert_cue, play_on_default_output};
 use forge_components::{PushToast, ToastKind, tr};
-use forge_runtime::sub_action_runners::{DesktopNotice, NotifyPort, NotifyUrgency, OsPortError};
 use forge_runtime::{
     ActionFailureNotice, NotificationIntent, NotificationIntents, NotificationPolicyHandle,
 };
+use forge_runtime::{DesktopNotice, NotifyPort, NotifyUrgency, OsPortError};
 use gpui::AsyncApp;
 use tokio::runtime::Handle;
 
 use crate::user_text::resolve_user_text;
 
-pub const NOTICE_REASON_MAX_CHARS: usize = 160;
-pub const NOTICE_DISPLAY_MS: u32 = 8000;
+pub(crate) const NOTICE_REASON_MAX_CHARS: usize = 160;
+pub(crate) const NOTICE_DISPLAY_MS: u32 = 8000;
 const FLUENT_ISOLATE_START: char = '\u{2068}';
 const FLUENT_ISOLATE_END: char = '\u{2069}';
 const TRUNCATION_MARK: &str = "...";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct NoticeText {
+pub(crate) struct NoticeText {
     pub title: String,
     pub body: String,
 }
 
 impl NoticeText {
-    pub fn toast_message(&self) -> String {
+    pub(crate) fn toast_message(&self) -> String {
         format!("{} - {}", self.title, self.body)
     }
 
-    pub fn desktop_notice(&self) -> DesktopNotice {
+    pub(crate) fn desktop_notice(&self) -> DesktopNotice {
         DesktopNotice {
             title: without_isolates(&self.title),
             body: without_isolates(&self.body),
@@ -40,12 +40,12 @@ impl NoticeText {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum NoticePlan {
+pub(crate) enum NoticePlan {
     Show(NoticeText),
     PlayCue,
 }
 
-pub fn plan_for(intent: &NotificationIntent) -> NoticePlan {
+pub(crate) fn plan_for(intent: &NotificationIntent) -> NoticePlan {
     match intent {
         NotificationIntent::ActionFailed(notice) => NoticePlan::Show(action_failed_text(notice)),
         NotificationIntent::ActionFailuresFolded { count } => NoticePlan::Show(NoticeText {
@@ -79,7 +79,7 @@ fn action_failed_text(notice: &ActionFailureNotice) -> NoticeText {
     }
 }
 
-pub fn truncate_reason(reason: &str, max_chars: usize) -> String {
+pub(crate) fn truncate_reason(reason: &str, max_chars: usize) -> String {
     if reason.chars().count() <= max_chars {
         return reason.to_owned();
     }
@@ -98,17 +98,17 @@ fn without_isolates(text: &str) -> String {
 }
 
 #[derive(Default)]
-pub struct FallbackLog {
+pub(crate) struct FallbackLog {
     reported: bool,
 }
 
 impl FallbackLog {
-    pub fn first_failure(&mut self) -> bool {
+    pub(crate) fn first_failure(&mut self) -> bool {
         !std::mem::replace(&mut self.reported, true)
     }
 }
 
-pub fn start_system_notices(
+pub(crate) fn start_system_notices(
     cx: &mut AsyncApp,
     policy: &NotificationPolicyHandle,
     port: Arc<dyn NotifyPort>,
@@ -122,7 +122,7 @@ pub fn start_system_notices(
         .detach();
 }
 
-pub async fn drain_intents(
+pub(crate) async fn drain_intents(
     mut intents: NotificationIntents,
     port: Arc<dyn NotifyPort>,
     rt: Handle,

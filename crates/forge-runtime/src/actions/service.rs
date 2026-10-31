@@ -69,7 +69,7 @@ impl ActionsService {
                 group: action.group.clone(),
                 name: action.name,
                 enabled: action.enabled,
-                sub_action_count: action.sub_actions.len() as u16,
+                sub_action_count: u16::try_from(action.sub_actions.len()).unwrap_or(u16::MAX),
                 first_trigger_kind_id,
                 queue_name,
                 last_ran,
@@ -301,10 +301,10 @@ fn compute_last_step_outcomes(
 mod tests {
     use std::collections::HashMap;
 
-    use forge_storage::action::MockActionRepo;
-    use forge_storage::history::MockHistoryRepo;
-    use forge_storage::queue::MockQueueRepo;
-    use forge_storage::trigger_instance::MockTriggerInstanceRepo;
+    use forge_storage::MockActionRepo;
+    use forge_storage::MockHistoryRepo;
+    use forge_storage::MockQueueRepo;
+    use forge_storage::MockTriggerInstanceRepo;
     use forge_types::{
         Action, DEFAULT_QUEUE_ID, ExecutionContext, ExecutionMetadata, ExecutionMode,
         ExecutionOutcome, Queue, QueueId, SubActionOutcome, SubActionTelemetry, UserText,

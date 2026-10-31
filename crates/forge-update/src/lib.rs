@@ -26,38 +26,40 @@ mod version;
 #[cfg(test)]
 mod tests;
 
-pub use apply_state::{
-    ApplyMode, HandoffPlan, HandoffRequest, PREVIOUS_BUILD_PREFIX, launch_executable,
-    previous_build_path,
-};
-pub use check::{check_for_update, fetch_offer};
+pub use apply_state::{ApplyMode, HandoffPlan, HandoffRequest};
+pub use check::check_for_update;
 pub use database::{DatabaseUnit, SchemaProbe};
 pub use digest::Sha256Digest;
+pub use download::ProgressReceiver;
+pub use download::ProgressSender;
 pub use download::{
-    CancelSignal, DownloadProgress, ProgressReceiver, ProgressSender, STAGING_PREFIX,
-    StagedArtifact, download_artifact, progress_channel, staged_path,
+    CancelSignal, DownloadProgress, StagedArtifact, download_artifact, progress_channel,
 };
 pub use error::UpdateError;
 pub use github::{GithubRepo, PublishedRelease, fetch_latest_release, parse_latest_release};
-pub use health::{HEALTH_MARKER_FILE, HealthMarker, read_health_marker, write_health_marker};
+pub use health::write_health_marker;
 pub use http::UpdateClient;
 pub use in_flight::update_in_flight;
 pub use install::{
     InstallEnvironment, InstallKind, InstallLayout, ManualReason, UpdatableInstall,
     classify_install, detect_install, is_release_build, leftover_machine_install,
 };
-pub use manifest::{Artifact, MANIFEST_FORMAT, UpdateOffer, verify_manifest};
+pub use manifest::{Artifact, UpdateOffer, verify_manifest};
 pub use platform::{ArtifactKind, Platform};
 pub use process::{ChildExit, ChildProcess, ProcessHost, SystemProcessHost};
-pub use report::{
-    ApplyFailure, DatabaseRestore, OUTCOME_FILE, OUTCOME_FORMAT, RollbackReason, UpdateReport,
-    take_update_report,
-};
-pub use source::{MANIFEST_ASSET, ManifestSource, SIGNATURE_ASSET};
+pub use report::{ApplyFailure, DatabaseRestore, RollbackReason, UpdateReport, take_update_report};
+pub use source::ManifestSource;
 pub use supervisor::{
-    CANDIDATE_FLAG, LaunchRole, SUPERVISOR_FLAG, StartAction, SupervisorContext, SupervisorOutcome,
+    CANDIDATE_FLAG, LaunchRole, StartAction, SupervisorContext, SupervisorOutcome,
     SupervisorSettings, launch_role, launch_supervisor, pending_start_action, run_supervisor,
 };
-pub use supervisor_lock::SUPERVISOR_LOCK_FILE;
 pub use trust::TrustedKeys;
-pub use version::{Version, is_newer, parse_version};
+pub use version::Version;
+pub use version::{is_newer, parse_version};
+
+#[cfg(test)]
+pub(crate) use health::{HealthMarker, read_health_marker};
+#[cfg(test)]
+pub(crate) use report::{OUTCOME_FILE, OUTCOME_FORMAT};
+#[cfg(test)]
+pub(crate) use supervisor::SUPERVISOR_FLAG;

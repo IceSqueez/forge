@@ -210,7 +210,7 @@ impl ActionRepo for SqliteActionRepo {
         )
         .bind(action_id.to_string())
         .bind(started_at.unix_timestamp())
-        .bind(duration_ms as i64)
+        .bind(i64::try_from(duration_ms).unwrap_or(i64::MAX))
         .bind(status_label(status))
         .execute(self.db.writer())
         .await
@@ -238,7 +238,7 @@ impl ActionRepo for SqliteActionRepo {
                 values
                     .push_bind(execution.action_id.to_string())
                     .push_bind(execution.started_at.unix_timestamp())
-                    .push_bind(execution.duration_ms as i64)
+                    .push_bind(i64::try_from(execution.duration_ms).unwrap_or(i64::MAX))
                     .push_bind(status_label(execution.status));
             },
         )

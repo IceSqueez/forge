@@ -93,7 +93,8 @@ thread_local! {
     static ACTIVE_ZONE: RefCell<DisplayZone> = RefCell::new(DisplayZone::system());
 }
 
-pub fn install_display_zone(zone: DisplayZone) {
+#[cfg(test)]
+pub(crate) fn install_display_zone(zone: DisplayZone) {
     ACTIVE_ZONE.with(|cell| *cell.borrow_mut() = zone);
 }
 

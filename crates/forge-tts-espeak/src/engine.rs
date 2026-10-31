@@ -20,14 +20,14 @@ fn espeak_engine_id() -> EngineId {
     EngineId(ENGINE_ID_ESPEAK_NG.into())
 }
 
-pub struct EspeakEngine {
+pub(crate) struct EspeakEngine {
     id: EngineId,
     program: PathBuf,
     voice_cache: tokio::sync::Mutex<Option<Vec<TtsVoice>>>,
 }
 
 impl EspeakEngine {
-    pub fn new(program: PathBuf) -> Result<Self, TtsError> {
+    pub(crate) fn new(program: PathBuf) -> Result<Self, TtsError> {
         process::check_espeak_version(&program).map_err(TtsError::from)?;
         Ok(Self {
             id: espeak_engine_id(),

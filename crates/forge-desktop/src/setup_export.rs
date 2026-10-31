@@ -27,7 +27,7 @@ enum SetupExportStep {
     Writing,
 }
 
-pub struct SetupExportFlow {
+pub(crate) struct SetupExportFlow {
     services: PackServices,
     step: SetupExportStep,
 }
@@ -37,18 +37,18 @@ pub(crate) fn setup_file_name() -> String {
 }
 
 impl SetupExportFlow {
-    pub fn new(services: PackServices) -> Self {
+    pub(crate) fn new(services: PackServices) -> Self {
         Self {
             services,
             step: SetupExportStep::Idle,
         }
     }
 
-    pub fn is_busy(&self) -> bool {
+    pub(crate) fn is_busy(&self) -> bool {
         self.step != SetupExportStep::Idle
     }
 
-    pub fn start(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn start(&mut self, cx: &mut Context<Self>) {
         if self.is_busy() {
             return;
         }

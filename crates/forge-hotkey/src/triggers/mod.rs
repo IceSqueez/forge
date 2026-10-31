@@ -1,8 +1,8 @@
 mod hotkey_pressed;
 mod hotkey_released;
 
-pub use hotkey_pressed::HotkeyPressedDescriptor;
-pub use hotkey_released::HotkeyReleasedDescriptor;
+pub(crate) use hotkey_pressed::HotkeyPressedDescriptor;
+pub(crate) use hotkey_released::HotkeyReleasedDescriptor;
 
 use forge_events::Event;
 use forge_registry::{RegistryError, TriggerRegistry};

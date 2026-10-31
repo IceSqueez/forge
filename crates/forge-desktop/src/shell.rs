@@ -5,7 +5,7 @@ use std::sync::Arc;
 use forge_components::{FocusNextField, Toasts, toast_layer};
 use forge_events::EventPublisher;
 use forge_registry::TriggerRegistry;
-use forge_runtime::dashboard::compute_stats;
+use forge_runtime::compute_stats;
 use forge_storage::{CredentialsRepo, DataProvider, GlobalsRepo, ScriptRepo, SettingsRepo};
 use forge_types::{IntegrationAvailability, IntegrationId};
 use gpui::{
@@ -120,7 +120,7 @@ impl<V: Render> From<Entity<V>> for RoutedContent {
     }
 }
 
-pub struct AppShell {
+pub(crate) struct AppShell {
     router: Router,
     chrome: Chrome,
     focus: FocusHandle,
@@ -129,7 +129,7 @@ pub struct AppShell {
 }
 
 impl AppShell {
-    pub fn new(
+    pub(crate) fn new(
         status: Entity<RuntimeStatus>,
         topics: Topics,
         handles: Arc<RuntimeHandles>,
@@ -461,7 +461,7 @@ impl AppShell {
                 let preselect = *preselect;
                 let action_repo = handles.backend.action_repo();
                 let queue_repo = handles.backend.queue_repo();
-                let actions_service = Arc::new(forge_runtime::actions::ActionsService::new(
+                let actions_service = Arc::new(forge_runtime::ActionsService::new(
                     handles.backend.action_repo(),
                     handles.backend.queue_repo(),
                     handles.backend.history_repo(),
@@ -964,7 +964,7 @@ impl AppShell {
         self.router.shortcuts = content.shortcuts;
     }
 
-    pub fn navigator(shell: &Entity<Self>) -> Navigator {
+    pub(crate) fn navigator(shell: &Entity<Self>) -> Navigator {
         let shell = shell.downgrade();
         Navigator::new(move |screen, cx| {
             #[expect(
@@ -975,7 +975,7 @@ impl AppShell {
         })
     }
 
-    pub fn route_quit(shell: &Entity<Self>, cx: &mut App) {
+    pub(crate) fn route_quit(shell: &Entity<Self>, cx: &mut App) {
         let shell = shell.downgrade();
         cx.on_action(move |_: &Quit, cx| {
             if shell

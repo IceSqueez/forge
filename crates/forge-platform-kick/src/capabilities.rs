@@ -2,7 +2,7 @@ use forge_platform_core::PlatformCapabilities;
 
 pub use crate::vocabulary::messages::KICK_COMMUNITY_NOTE;
 
-pub fn kick_capabilities() -> PlatformCapabilities {
+pub(crate) fn kick_capabilities() -> PlatformCapabilities {
     PlatformCapabilities {
         can_send_chat: true,
         can_moderate: true,

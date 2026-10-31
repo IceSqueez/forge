@@ -14,7 +14,7 @@ use crate::repo_failure::RepoFailure;
 use crate::runtime_handles::RuntimeHandles;
 
 #[derive(Clone)]
-pub struct PackServices {
+pub(crate) struct PackServices {
     pub backend: Arc<dyn DataProvider>,
     pub settings_catalog: Arc<SettingsCatalog>,
     pub sub_actions: Arc<SubActionRegistry>,
@@ -28,13 +28,13 @@ pub struct PackServices {
 }
 
 #[derive(Clone)]
-pub struct PackSource {
+pub(crate) struct PackSource {
     pub inventory: Arc<PackInventory>,
     schema: Arc<OverlayContentSchema>,
 }
 
 impl PackServices {
-    pub fn of(handles: &RuntimeHandles) -> Self {
+    pub(crate) fn of(handles: &RuntimeHandles) -> Self {
         Self {
             backend: Arc::clone(&handles.backend),
             settings_catalog: Arc::clone(&handles.settings_catalog),
@@ -49,7 +49,7 @@ impl PackServices {
         }
     }
 
-    pub fn registries<'a>(&'a self, source: &'a PackSource) -> ClosureRegistries<'a> {
+    pub(crate) fn registries<'a>(&'a self, source: &'a PackSource) -> ClosureRegistries<'a> {
         ClosureRegistries {
             sub_actions: &self.sub_actions,
             triggers: &self.triggers,
@@ -58,7 +58,7 @@ impl PackServices {
         }
     }
 
-    pub async fn load_source(&self) -> Result<PackSource, RepoFailure> {
+    pub(crate) async fn load_source(&self) -> Result<PackSource, RepoFailure> {
         let inventory = load_pack_inventory(self.backend.as_ref())
             .await
             .map_err(RepoFailure::from)?;

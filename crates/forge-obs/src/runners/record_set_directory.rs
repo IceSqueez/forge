@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_registry::runner::SubActionConfig;
+use forge_registry::SubActionConfig;
 use forge_registry::{
     ConfigProblem, ConfigSpec, Interpolation, PickedTextField, RunContext, StepTimer,
     SubActionCategory, SubActionRunner, TextPicker,
@@ -24,12 +24,12 @@ const PATH: PickedTextField = PickedTextField {
 
 const CONFIG: ConfigSpec = ConfigSpec::new(&[&PATH]);
 
-pub struct RecordSetDirectoryRunner {
+pub(crate) struct RecordSetDirectoryRunner {
     sink: Arc<dyn ObsSink>,
 }
 
 impl RecordSetDirectoryRunner {
-    pub fn new(sink: Arc<dyn ObsSink>) -> Self {
+    pub(crate) fn new(sink: Arc<dyn ObsSink>) -> Self {
         Self { sink }
     }
 }

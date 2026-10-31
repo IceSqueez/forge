@@ -12,7 +12,7 @@ use crate::vocabulary::fields::tracking as fields;
 use crate::vocabulary::messages;
 use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
-pub struct FaceFoundDescriptor;
+pub(crate) struct FaceFoundDescriptor;
 
 impl TriggerKindDescriptor for FaceFoundDescriptor {
     fn id(&self) -> &str {

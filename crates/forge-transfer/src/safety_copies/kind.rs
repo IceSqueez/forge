@@ -8,11 +8,11 @@ use crate::bundle::naming::{
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum SafetyCopyKind {
-    PreRestore,
-    PrePack,
-    PreSetup,
-    PreUpdate,
+pub(crate) enum SafetyCopyKind {
+    Restore,
+    Pack,
+    Setup,
+    Update,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -27,19 +27,16 @@ pub(crate) fn classify(name: &OsStr, is_dir: bool) -> Option<Classified> {
     let update_suffix = format!(".{PRE_UPDATE_SNAPSHOT_EXTENSION}");
     let (kind, rest) = if is_dir {
         (
-            SafetyCopyKind::PreRestore,
+            SafetyCopyKind::Restore,
             name.strip_prefix(PRE_RESTORE_PREFIX)?,
         )
     } else if let Some(rest) = name.strip_prefix(PRE_PACK_PREFIX) {
-        (SafetyCopyKind::PrePack, rest.strip_suffix(&archive_suffix)?)
+        (SafetyCopyKind::Pack, rest.strip_suffix(&archive_suffix)?)
     } else if let Some(rest) = name.strip_prefix(PRE_SETUP_PREFIX) {
-        (
-            SafetyCopyKind::PreSetup,
-            rest.strip_suffix(&archive_suffix)?,
-        )
+        (SafetyCopyKind::Setup, rest.strip_suffix(&archive_suffix)?)
     } else {
         (
-            SafetyCopyKind::PreUpdate,
+            SafetyCopyKind::Update,
             name.strip_prefix(FILE_PREFIX)?
                 .strip_suffix(&update_suffix)?,
         )
@@ -70,22 +67,22 @@ mod tests {
             (
                 "forge-pre-restore-20261022-090507Z-a1b2c3",
                 true,
-                SafetyCopyKind::PreRestore,
+                SafetyCopyKind::Restore,
             ),
             (
                 "forge-pre-pack-20261022-090507Z-a1b2c3.tar.gz",
                 false,
-                SafetyCopyKind::PrePack,
+                SafetyCopyKind::Pack,
             ),
             (
                 "forge-pre-setup-20261022-090507Z-a1b2c3.tar.gz",
                 false,
-                SafetyCopyKind::PreSetup,
+                SafetyCopyKind::Setup,
             ),
             (
                 "forge-backup-20261022-090507Z-a1b2c3.pre-update.db",
                 false,
-                SafetyCopyKind::PreUpdate,
+                SafetyCopyKind::Update,
             ),
         ] {
             let classified = classify(OsStr::new(name), is_dir).unwrap();

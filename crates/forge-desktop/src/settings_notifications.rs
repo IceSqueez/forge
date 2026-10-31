@@ -15,18 +15,18 @@ use crate::settings_catalog::SCHEDULED_BACKUP_FAILURE_OS_NOTICE;
 use crate::settings_pane_header::SettingsPaneHeader;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum NotificationToggle {
+pub(crate) enum NotificationToggle {
     ActionFailureNotice,
     ConnectionLossCue,
 }
 
 impl NotificationToggle {
-    pub const ALL: [NotificationToggle; 2] = [
+    pub(crate) const ALL: [NotificationToggle; 2] = [
         NotificationToggle::ActionFailureNotice,
         NotificationToggle::ConnectionLossCue,
     ];
 
-    pub fn declaration(self) -> &'static Setting<Flag> {
+    pub(crate) fn declaration(self) -> &'static Setting<Flag> {
         match self {
             NotificationToggle::ActionFailureNotice => {
                 &forge_runtime::settings::ACTION_FAILURE_OS_NOTICE
@@ -37,14 +37,14 @@ impl NotificationToggle {
         }
     }
 
-    pub fn read(self, preferences: &NotificationPreferences) -> bool {
+    pub(crate) fn read(self, preferences: &NotificationPreferences) -> bool {
         match self {
             NotificationToggle::ActionFailureNotice => preferences.action_failure_notice,
             NotificationToggle::ConnectionLossCue => preferences.connection_loss_cue,
         }
     }
 
-    pub fn write(self, preferences: &mut NotificationPreferences, value: bool) {
+    pub(crate) fn write(self, preferences: &mut NotificationPreferences, value: bool) {
         match self {
             NotificationToggle::ActionFailureNotice => preferences.action_failure_notice = value,
             NotificationToggle::ConnectionLossCue => preferences.connection_loss_cue = value,
@@ -53,7 +53,7 @@ impl NotificationToggle {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum NotificationSetting {
+pub(crate) enum NotificationSetting {
     Policy(NotificationToggle),
     ScheduledBackupFailureNotice,
 }
@@ -65,14 +65,14 @@ impl From<NotificationToggle> for NotificationSetting {
 }
 
 impl NotificationSetting {
-    pub fn all() -> impl Iterator<Item = NotificationSetting> {
+    pub(crate) fn all() -> impl Iterator<Item = NotificationSetting> {
         NotificationToggle::ALL
             .into_iter()
             .map(NotificationSetting::from)
             .chain([NotificationSetting::ScheduledBackupFailureNotice])
     }
 
-    pub fn declaration(self) -> &'static Setting<Flag> {
+    pub(crate) fn declaration(self) -> &'static Setting<Flag> {
         match self {
             NotificationSetting::Policy(toggle) => toggle.declaration(),
             NotificationSetting::ScheduledBackupFailureNotice => {
@@ -134,7 +134,7 @@ impl NotificationSetting {
     }
 }
 
-pub struct SettingsNotificationsView {
+pub(crate) struct SettingsNotificationsView {
     settings: Arc<dyn SettingsRepo>,
     rt_handle: Handle,
     policy: NotificationPolicyHandle,
@@ -146,7 +146,7 @@ pub struct SettingsNotificationsView {
 }
 
 impl SettingsNotificationsView {
-    pub fn new(
+    pub(crate) fn new(
         settings: Arc<dyn SettingsRepo>,
         rt_handle: Handle,
         policy: NotificationPolicyHandle,
@@ -166,14 +166,14 @@ impl SettingsNotificationsView {
     }
 
     #[must_use]
-    pub fn with_backup_failure_notice(mut self, cx: &App) -> Self {
+    pub(crate) fn with_backup_failure_notice(mut self, cx: &App) -> Self {
         let enabled = BackupFailureNoticePreference::current(cx);
         self.backup_failure_notice = enabled;
         self.stored_backup_failure_notice = enabled;
         self
     }
 
-    pub fn shown(&self, setting: NotificationSetting) -> bool {
+    pub(crate) fn shown(&self, setting: NotificationSetting) -> bool {
         match setting {
             NotificationSetting::Policy(toggle) => toggle.read(&self.preferences),
             NotificationSetting::ScheduledBackupFailureNotice => self.backup_failure_notice,
@@ -209,7 +209,7 @@ impl SettingsNotificationsView {
         }
     }
 
-    pub fn flip(&mut self, setting: impl Into<NotificationSetting>, cx: &mut Context<Self>) {
+    pub(crate) fn flip(&mut self, setting: impl Into<NotificationSetting>, cx: &mut Context<Self>) {
         let setting = setting.into();
         let value = !self.shown(setting);
         self.show(setting, value);
@@ -231,7 +231,7 @@ impl SettingsNotificationsView {
         );
     }
 
-    pub fn finish_write(
+    pub(crate) fn finish_write(
         &mut self,
         setting: NotificationSetting,
         written: bool,

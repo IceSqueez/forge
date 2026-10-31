@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use async_trait::async_trait;
 use forge_events::Event;
 use forge_overlay::OverlayKindRegistry;
-use forge_registry::references::{
+use forge_registry::{
     ACTION_OPTIONS_KEY, GLOBAL_OPTIONS_KEY, MANAGED_MEDIA_NAMESPACE, SCRIPT_OPTIONS_KEY,
     SOUNDBOARD_CLIP_OPTIONS_KEY,
 };

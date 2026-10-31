@@ -1802,7 +1802,7 @@ fn forge_youtube_echo(fake: &FakeYouTube) -> tokio::task::JoinHandle<()> {
         fake.config().channel_id.clone(),
         live_chat.clone(),
         forge_platform_youtube::ActiveBroadcastIdHandle::new(),
-        Arc::new(forge_storage::ban_ledger::MockBanLedgerRepo::new()),
+        Arc::new(forge_storage::MockBanLedgerRepo::new()),
     );
     let sender = forge_platform_youtube::YoutubeSendChat::new(api, youtube_token(fake), live_chat);
     tokio::spawn(async move {

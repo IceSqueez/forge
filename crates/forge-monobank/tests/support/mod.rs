@@ -18,25 +18,25 @@ use time::OffsetDateTime;
 use tokio_stream::StreamExt;
 use wiremock::{Mock, MockServer, Request, Respond, ResponseTemplate};
 
-pub const TOKEN: &str = "uMono-test-token-7f3a9c";
-pub const OTHER_TOKEN: &str = "uMono-other-token-41be02";
-pub const JAR: &str = "jarAAA111";
-pub const OTHER_JAR: &str = "jarBBB222";
-pub const UAH: i64 = 980;
-pub const WAIT: Duration = Duration::from_secs(30);
-pub const TICK: Duration = Duration::from_millis(10);
-pub const LATER_ARRIVAL_ID: &str = "LATER-ARRIVAL";
+pub(crate) const TOKEN: &str = "uMono-test-token-7f3a9c";
+pub(crate) const OTHER_TOKEN: &str = "uMono-other-token-41be02";
+pub(crate) const JAR: &str = "jarAAA111";
+pub(crate) const OTHER_JAR: &str = "jarBBB222";
+pub(crate) const UAH: i64 = 980;
+pub(crate) const WAIT: Duration = Duration::from_secs(30);
+pub(crate) const TICK: Duration = Duration::from_millis(10);
+pub(crate) const LATER_ARRIVAL_ID: &str = "LATER-ARRIVAL";
 const REFERENCE_POLLS: usize = 8;
-pub const CLIENT_INFO: &str = "/personal/client-info";
-pub const STATEMENT_PREFIX: &str = "/personal/statement/";
+pub(crate) const CLIENT_INFO: &str = "/personal/client-info";
+pub(crate) const STATEMENT_PREFIX: &str = "/personal/statement/";
 
 #[derive(Default)]
-pub struct MemCreds {
+pub(crate) struct MemCreds {
     entries: Mutex<HashMap<String, String>>,
 }
 
 impl MemCreds {
-    pub fn with(token: &str, jar: Option<&str>) -> Arc<Self> {
+    pub(crate) fn with(token: &str, jar: Option<&str>) -> Arc<Self> {
         let creds = Self::default();
         creds.entries.lock().unwrap().insert(
             MONOBANK_CREDENTIAL_ID.to_owned(),
@@ -45,7 +45,7 @@ impl MemCreds {
         Arc::new(creds)
     }
 
-    pub fn stored(&self) -> Option<Value> {
+    pub(crate) fn stored(&self) -> Option<Value> {
         self.entries
             .lock()
             .unwrap()
@@ -94,14 +94,14 @@ impl CredentialsRepo for MemCreds {
     }
 }
 
-pub struct ScriptedLimiter {
+pub(crate) struct ScriptedLimiter {
     outcome: RateLimitOutcome,
     acquires: Mutex<usize>,
     throttles: Mutex<Vec<Duration>>,
 }
 
 impl ScriptedLimiter {
-    pub fn answering(outcome: RateLimitOutcome) -> Arc<Self> {
+    pub(crate) fn answering(outcome: RateLimitOutcome) -> Arc<Self> {
         Arc::new(Self {
             outcome,
             acquires: Mutex::new(0),
@@ -109,15 +109,15 @@ impl ScriptedLimiter {
         })
     }
 
-    pub fn open() -> Arc<Self> {
+    pub(crate) fn open() -> Arc<Self> {
         Self::answering(RateLimitOutcome::Granted)
     }
 
-    pub fn throttles(&self) -> Vec<Duration> {
+    pub(crate) fn throttles(&self) -> Vec<Duration> {
         self.throttles.lock().unwrap().clone()
     }
 
-    pub async fn wait_for_acquires(&self, count: usize) {
+    pub(crate) async fn wait_for_acquires(&self, count: usize) {
         let deadline = tokio::time::Instant::now() + WAIT;
         while *self.acquires.lock().unwrap() < count {
             assert!(
@@ -141,20 +141,20 @@ impl RateLimiter for ScriptedLimiter {
     }
 }
 
-pub struct Limits {
+pub(crate) struct Limits {
     pub client_info: Arc<ScriptedLimiter>,
     pub statement: Arc<ScriptedLimiter>,
 }
 
 impl Limits {
-    pub fn open() -> Self {
+    pub(crate) fn open() -> Self {
         Self {
             client_info: ScriptedLimiter::open(),
             statement: ScriptedLimiter::open(),
         }
     }
 
-    pub fn shared(&self) -> MonobankRateLimits {
+    pub(crate) fn shared(&self) -> MonobankRateLimits {
         MonobankRateLimits {
             client_info: self.client_info.clone(),
             statement: self.statement.clone(),
@@ -162,7 +162,7 @@ impl Limits {
     }
 }
 
-pub fn config(base_url: &str) -> MonobankConfig {
+pub(crate) fn config(base_url: &str) -> MonobankConfig {
     MonobankConfig {
         base_url: base_url.to_owned(),
         history_lookback: DEFAULT_HISTORY_LOOKBACK,
@@ -170,7 +170,7 @@ pub fn config(base_url: &str) -> MonobankConfig {
     }
 }
 
-pub fn provider_on(
+pub(crate) fn provider_on(
     base_url: &str,
     creds: Arc<dyn CredentialsRepo>,
     limits: MonobankRateLimits,
@@ -180,7 +180,7 @@ pub fn provider_on(
     MonobankProvider::new(config, creds, gateways)
 }
 
-pub fn ticking_timing() -> MonobankTiming {
+pub(crate) fn ticking_timing() -> MonobankTiming {
     MonobankTiming {
         statement_call_interval: TICK,
         error_backoff_base: TICK,
@@ -188,11 +188,11 @@ pub fn ticking_timing() -> MonobankTiming {
     }
 }
 
-pub fn now_unix() -> i64 {
+pub(crate) fn now_unix() -> i64 {
     OffsetDateTime::now_utc().unix_timestamp()
 }
 
-pub fn jar(id: &str) -> Value {
+pub(crate) fn jar(id: &str) -> Value {
     json!({
         "id": id,
         "sendId": format!("send-{id}"),
@@ -203,7 +203,7 @@ pub fn jar(id: &str) -> Value {
     })
 }
 
-pub fn top_up(id: &str, time: i64) -> Value {
+pub(crate) fn top_up(id: &str, time: i64) -> Value {
     json!({
         "id": id,
         "time": time,
@@ -222,7 +222,7 @@ pub fn top_up(id: &str, time: i64) -> Value {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct StatementCall {
+pub(crate) struct StatementCall {
     pub jar: String,
     pub from: i64,
     pub to: i64,
@@ -236,12 +236,12 @@ struct BankState {
 }
 
 #[derive(Clone)]
-pub struct Bank {
+pub(crate) struct Bank {
     state: Arc<Mutex<BankState>>,
 }
 
 impl Bank {
-    pub fn new(jars: &[&str]) -> Self {
+    pub(crate) fn new(jars: &[&str]) -> Self {
         Self {
             state: Arc::new(Mutex::new(BankState {
                 jars: jars.iter().map(|id| jar(id)).collect(),
@@ -252,7 +252,7 @@ impl Bank {
         }
     }
 
-    pub fn add(&self, jar: &str, item: Value) {
+    pub(crate) fn add(&self, jar: &str, item: Value) {
         self.state
             .lock()
             .unwrap()
@@ -262,7 +262,7 @@ impl Bank {
             .push(item);
     }
 
-    pub fn fail_next(&self, path_prefix: &str, response: ResponseTemplate) {
+    pub(crate) fn fail_next(&self, path_prefix: &str, response: ResponseTemplate) {
         self.state
             .lock()
             .unwrap()
@@ -270,7 +270,7 @@ impl Bank {
             .push_back((path_prefix.to_owned(), response));
     }
 
-    pub fn client_info_calls(&self) -> usize {
+    pub(crate) fn client_info_calls(&self) -> usize {
         self.state
             .lock()
             .unwrap()
@@ -280,7 +280,7 @@ impl Bank {
             .count()
     }
 
-    pub fn statement_calls(&self) -> Vec<StatementCall> {
+    pub(crate) fn statement_calls(&self) -> Vec<StatementCall> {
         self.state
             .lock()
             .unwrap()
@@ -298,7 +298,7 @@ impl Bank {
             .collect()
     }
 
-    pub fn request_count(&self) -> usize {
+    pub(crate) fn request_count(&self) -> usize {
         self.state.lock().unwrap().paths.len()
     }
 }
@@ -348,14 +348,14 @@ impl Respond for Bank {
     }
 }
 
-pub async fn mount(server: &MockServer, bank: &Bank) {
+pub(crate) async fn mount(server: &MockServer, bank: &Bank) {
     Mock::given(wiremock::matchers::any())
         .respond_with(bank.clone())
         .mount(server)
         .await;
 }
 
-pub struct Harness {
+pub(crate) struct Harness {
     pub server: MockServer,
     pub bank: Bank,
     pub creds: Arc<MemCreds>,
@@ -365,19 +365,19 @@ pub struct Harness {
 }
 
 impl Harness {
-    pub async fn start(bank: Bank) -> Self {
+    pub(crate) async fn start(bank: Bank) -> Self {
         Self::with_creds(bank, MemCreds::with(TOKEN, Some(JAR))).await
     }
 
-    pub async fn with_creds(bank: Bank, creds: Arc<MemCreds>) -> Self {
+    pub(crate) async fn with_creds(bank: Bank, creds: Arc<MemCreds>) -> Self {
         Self::with_timing(bank, creds, MonobankTiming::default()).await
     }
 
-    pub async fn ticking(bank: Bank) -> Self {
+    pub(crate) async fn ticking(bank: Bank) -> Self {
         Self::ticking_with_creds(bank, MemCreds::with(TOKEN, Some(JAR))).await
     }
 
-    pub async fn ticking_with_creds(bank: Bank, creds: Arc<MemCreds>) -> Self {
+    pub(crate) async fn ticking_with_creds(bank: Bank, creds: Arc<MemCreds>) -> Self {
         Self::with_timing(bank, creds, ticking_timing()).await
     }
 
@@ -398,14 +398,14 @@ impl Harness {
         }
     }
 
-    pub async fn next(&mut self) -> Result<Donation, PlatformError> {
+    pub(crate) async fn next(&mut self) -> Result<Donation, PlatformError> {
         tokio::time::timeout(WAIT, self.stream.next())
             .await
             .expect("no item from the donation stream in time")
             .expect("donation stream ended")
     }
 
-    pub async fn donations(&mut self, count: usize) -> Vec<Donation> {
+    pub(crate) async fn donations(&mut self, count: usize) -> Vec<Donation> {
         let mut donations = Vec::with_capacity(count);
         for _ in 0..count {
             donations.push(
@@ -417,19 +417,19 @@ impl Harness {
         donations
     }
 
-    pub async fn assert_only_a_later_arrival_is_reported_next(&mut self) {
+    pub(crate) async fn assert_only_a_later_arrival_is_reported_next(&mut self) {
         self.bank.add(JAR, top_up(LATER_ARRIVAL_ID, now_unix()));
         self.poll_now().await;
         let next = self.next().await.expect("the later arrival");
         assert_eq!(next.donation_id, LATER_ARRIVAL_ID);
     }
 
-    pub async fn outlast_several_ticks() {
+    pub(crate) async fn outlast_several_ticks() {
         let reference = Self::ticking(Bank::new(&[JAR])).await;
         reference.wait_for_statement_calls(REFERENCE_POLLS).await;
     }
 
-    pub async fn wait_for(&self, what: &str, probe: impl Fn(&PollStatus) -> bool) {
+    pub(crate) async fn wait_for(&self, what: &str, probe: impl Fn(&PollStatus) -> bool) {
         let deadline = tokio::time::Instant::now() + WAIT;
         while !probe(&self.provider.poll_status()) {
             assert!(tokio::time::Instant::now() < deadline, "timed out: {what}");
@@ -437,11 +437,11 @@ impl Harness {
         }
     }
 
-    pub async fn wake_poller(&self) {
+    pub(crate) async fn wake_poller(&self) {
         assert!(self.provider.reconnect().await.is_ok());
     }
 
-    pub async fn wait_for_statement_calls(&self, count: usize) {
+    pub(crate) async fn wait_for_statement_calls(&self, count: usize) {
         let deadline = tokio::time::Instant::now() + WAIT;
         while self.bank.statement_calls().len() < count {
             assert!(
@@ -452,7 +452,7 @@ impl Harness {
         }
     }
 
-    pub async fn poll_now(&mut self) {
+    pub(crate) async fn poll_now(&mut self) {
         let before = self.provider.poll_status().last_poll_at;
         self.wake_poller().await;
         self.wait_for("next completed poll", |status| {

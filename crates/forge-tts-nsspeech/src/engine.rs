@@ -16,7 +16,7 @@ static CAPABILITIES: EngineCapabilities = EngineCapabilities {
     custom_lexicons: false,
 };
 
-pub struct NsSpeechEngine {
+pub(crate) struct NsSpeechEngine {
     id: EngineId,
     worker_tx: mpsc::Sender<NsSpeechRequest>,
     voice_catalog: Arc<Vec<TtsVoice>>,

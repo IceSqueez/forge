@@ -93,7 +93,7 @@ struct JumpCard {
     target: Screen,
 }
 
-pub struct HomeView {
+pub(crate) struct HomeView {
     stats: Entity<HomeStats>,
     event_loss: Entity<EventLoss>,
     lifecycle: Option<Entity<IntegrationLifecycle>>,
@@ -112,7 +112,7 @@ pub struct HomeView {
 }
 
 impl HomeView {
-    pub fn new(
+    pub(crate) fn new(
         stats: Entity<HomeStats>,
         event_loss: Entity<EventLoss>,
         pack: PackServices,
@@ -156,7 +156,7 @@ impl HomeView {
     }
 
     #[must_use]
-    pub fn with_lifecycle(
+    pub(crate) fn with_lifecycle(
         mut self,
         lifecycle: Entity<IntegrationLifecycle>,
         cx: &mut Context<Self>,

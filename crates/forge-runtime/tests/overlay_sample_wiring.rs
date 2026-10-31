@@ -14,19 +14,19 @@ use forge_registry::{
     CancelSignal, EventFilter, FormField, KindPlatformContract, SubActionRegistry, TriggerCategory,
     TriggerKindDescriptor, TriggerRegistry, TriggerVariables,
 };
-use forge_runtime::actions::ActionsService;
+use forge_runtime::ActionsService;
 use forge_runtime::{
     EngineVoiceError, EventBus, NullEventLogRepo, OVERLAY_SEND_KIND_ID, OVERLAY_TARGET_KEY,
     OverlayDispatch, OverlayFrameSink, OverlayReceivers, OverlaySampleSource, OverlaySamples,
     OverlayServiceHandle, OverlayServiceParts, ShowSpeech, SpeakDispatchError, SpeakDispatcher,
     SpeechOrigin, SpeechStartSignal,
 };
-use forge_storage::action::MockActionRepo;
-use forge_storage::history::MockHistoryRepo;
-use forge_storage::queue::MockQueueRepo;
+use forge_storage::MockActionRepo;
+use forge_storage::MockHistoryRepo;
+use forge_storage::MockQueueRepo;
+use forge_storage::MockTriggerInstanceRepo;
 use forge_storage::settings::core_settings;
 use forge_storage::test_support::MemorySettings;
-use forge_storage::trigger_instance::MockTriggerInstanceRepo;
 use forge_storage::{
     MockOverlayRepo, OverlayConfig, OverlayDefinition, OverlayId, OverlayRepo, SettingsRepo,
     StorageError,

@@ -8,7 +8,7 @@ use std::time::Duration;
 use forge_events::EventSubscription;
 use forge_events::{Event, EventPublisher, EventSource};
 use forge_registry::SubActionRunner;
-use forge_runtime::sub_action_runners::ScriptRunInlineRunner;
+use forge_runtime::ScriptRunInlineRunner;
 use forge_runtime::{
     ActionEngineHandle, CatchUpSettle, EventBus, NullEventLogRepo, QueueAdmission,
     QueueSchedulerHandle, RuntimeWiringParts, ScheduledRunsHandle, SchedulerRequest,

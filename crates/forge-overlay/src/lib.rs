@@ -4,7 +4,7 @@ mod base;
 mod browser_preview;
 pub mod config;
 mod content;
-pub mod descriptor;
+mod descriptor;
 mod document;
 mod error;
 mod icons;
@@ -16,8 +16,8 @@ mod media;
 pub mod metrics;
 pub mod motion;
 mod motion_scan;
-pub mod page_contract;
-pub mod preview;
+mod page_contract;
+mod preview;
 mod registry;
 mod sample;
 mod source;
@@ -46,9 +46,7 @@ pub use descriptor::{
     ConfigSection, ContentFeed, DeliveryDisposition, OverlayConfig, OverlayKindDescriptor,
     SectionedField,
 };
-pub use document::{
-    DOCUMENT_VERSION, ICON_FILE_FIELD, ICON_TINTABLE_FIELD, config_document, sample_document,
-};
+pub use document::{ICON_FILE_FIELD, ICON_TINTABLE_FIELD, config_document, sample_document};
 pub use error::OverlayError;
 pub use icons::{CURATED_ICONS, CuratedIcon, IconCategory, curated_icon};
 pub use instance::OverlayInstance;
@@ -67,16 +65,14 @@ pub use media::{
     emitted_media_value, glyph_media, image_reference, image_references, media_slot,
     read_icon_value, read_media_value,
 };
-pub use metrics::{AxisBound, ElementSizing, StyleGuard, element_sizing, style_guards};
-pub use motion::{MotionAxes, MotionProfile};
+pub use metrics::{AxisBound, ElementSizing, element_sizing, style_guards};
 pub use motion_scan::{MotionIssue, OverriddenSources, motion_issues};
 pub use page_contract::{
-    BindRule, LookConfigKey, LookContract, PAGE_CONTRACT, PageContract, PageFunction,
-    RuntimeAttribute, RuntimeProperty, look_contract,
+    LookConfigKey, LookContract, PAGE_CONTRACT, PageContract, PageFunction, look_contract,
 };
 pub use preview::{
-    PreviewAccent, PreviewCanvas, PreviewComposition, PreviewElement, PreviewFont, PreviewLine,
-    PreviewLineRole, PreviewMark, PreviewPosition, PreviewShape,
+    PreviewAccent, PreviewCanvas, PreviewComposition, PreviewElement, PreviewFont, PreviewLineRole,
+    PreviewMark, PreviewPosition, PreviewShape,
 };
 pub use registry::OverlayKindRegistry;
 pub use sample::{SampleContext, SampleTrigger, sample_content, sample_context};
@@ -86,3 +82,11 @@ pub use upgrade::{acknowledge_sizing_notice, sizing_notice_pending, upgrade_conf
 pub use wiring::{
     EventWiringTrigger, accepts_event_wiring, is_curated, order_curated_first, suggested_content,
 };
+
+pub use page_contract::BindRule;
+pub use page_contract::RuntimeAttribute;
+pub use page_contract::RuntimeProperty;
+pub use page_contract::{
+    CONTENT_FUNCTION, READY_FUNCTION, SET_FUNCTION, SHOW_FUNCTION, SOUND_FUNCTION,
+};
+pub use preview::PreviewLine;

@@ -4,7 +4,7 @@ use crate::platform_visuals::platform_color;
 use forge_components::{ForgePalette, fmt_number, fmt_uptime, tr};
 use forge_events::{Event, EventSource};
 use forge_obs::ObsStreamStats;
-use forge_runtime::{LiveViewerCount, dashboard::DashboardStats};
+use forge_runtime::{DashboardStats, LiveViewerCount};
 use forge_types::{IntegrationId, PlatformId};
 use gpui::{Rgba, SharedString};
 use time::OffsetDateTime;
@@ -18,7 +18,7 @@ const NO_DATA: &str = "-";
 const RECENT_CAP: usize = 50;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Integration {
+pub(crate) enum Integration {
     Twitch,
     YouTube,
     Kick,
@@ -27,7 +27,7 @@ pub enum Integration {
 }
 
 impl Integration {
-    pub fn label(self) -> &'static str {
+    pub(crate) fn label(self) -> &'static str {
         match self {
             Integration::Twitch => "Twitch",
             Integration::YouTube => "YouTube",
@@ -37,11 +37,11 @@ impl Integration {
         }
     }
 
-    pub fn builtin_id(self) -> IntegrationId {
+    pub(crate) fn builtin_id(self) -> IntegrationId {
         IntegrationId::new(self.id_str())
     }
 
-    pub fn id_str(self) -> &'static str {
+    pub(crate) fn id_str(self) -> &'static str {
         match self {
             Integration::Twitch => "twitch",
             Integration::YouTube => "youtube",
@@ -51,7 +51,7 @@ impl Integration {
         }
     }
 
-    pub fn from_id(id: &str) -> Option<Self> {
+    pub(crate) fn from_id(id: &str) -> Option<Self> {
         match id {
             "twitch" => Some(Integration::Twitch),
             "youtube" => Some(Integration::YouTube),
@@ -62,11 +62,11 @@ impl Integration {
         }
     }
 
-    pub fn screen(self) -> Screen {
+    pub(crate) fn screen(self) -> Screen {
         Screen::BuiltinDetail(self.builtin_id())
     }
 
-    pub fn dot_color(self, palette: &ForgePalette) -> Rgba {
+    pub(crate) fn dot_color(self, palette: &ForgePalette) -> Rgba {
         match self {
             Integration::Twitch => platform_color(PlatformId::Twitch, palette),
             Integration::YouTube => platform_color(PlatformId::YouTube, palette),
@@ -78,7 +78,7 @@ impl Integration {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum SourceHue {
+pub(crate) enum SourceHue {
     Twitch,
     YouTube,
     Kick,
@@ -95,7 +95,7 @@ impl SourceHue {
         }
     }
 
-    pub fn color(self, palette: &ForgePalette) -> Rgba {
+    pub(crate) fn color(self, palette: &ForgePalette) -> Rgba {
         match self {
             SourceHue::Twitch => platform_color(PlatformId::Twitch, palette),
             SourceHue::YouTube => platform_color(PlatformId::YouTube, palette),
@@ -106,7 +106,7 @@ impl SourceHue {
 }
 
 #[derive(Clone, Debug)]
-pub struct HomeEvent {
+pub(crate) struct HomeEvent {
     pub id: SharedString,
     pub at: OffsetDateTime,
     pub source: SharedString,
@@ -173,7 +173,7 @@ impl ThroughputWindow {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct ObsHealth {
+pub(crate) struct ObsHealth {
     pub live_for: Option<String>,
     pub bitrate: String,
     pub bitrate_known: bool,
@@ -215,19 +215,19 @@ impl ObsHealth {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ConnectionsTally {
+pub(crate) struct ConnectionsTally {
     pub connections: Vec<(Integration, bool)>,
     pub connected: usize,
     pub total: usize,
 }
 
 impl ConnectionsTally {
-    pub fn warn(&self) -> bool {
+    pub(crate) fn warn(&self) -> bool {
         self.connected < self.total
     }
 }
 
-pub struct HomeStats {
+pub(crate) struct HomeStats {
     live_viewers: Option<u64>,
     actions_count: Option<usize>,
     commands_count: Option<usize>,
@@ -240,7 +240,7 @@ pub struct HomeStats {
 }
 
 impl HomeStats {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         let connections = vec![
             (Integration::Twitch, false),
             (Integration::YouTube, false),
@@ -262,12 +262,12 @@ impl HomeStats {
         }
     }
 
-    pub fn set_obs_stats(&mut self, stats: Option<ObsStreamStats>, now: OffsetDateTime) {
+    pub(crate) fn set_obs_stats(&mut self, stats: Option<ObsStreamStats>, now: OffsetDateTime) {
         let samples = self.throughput.samples(now.unix_timestamp());
         self.obs_health = stats.map(|stats| ObsHealth::from_stats(stats, samples));
     }
 
-    pub fn record_event(&mut self, event: &Event, typed: Option<&RuntimeEvent>) -> bool {
+    pub(crate) fn record_event(&mut self, event: &Event, typed: Option<&RuntimeEvent>) -> bool {
         self.throughput.record(event.timestamp.unix_timestamp());
         let Some(home_event) = HomeEvent::from_event(event, typed) else {
             return false;
@@ -279,11 +279,11 @@ impl HomeStats {
         true
     }
 
-    pub fn record_action_done(&mut self) {
+    pub(crate) fn record_action_done(&mut self) {
         self.triggers_fired = Some(self.triggers_fired.unwrap_or(0) + 1);
     }
 
-    pub fn set_stats(&mut self, stats: DashboardStats) -> bool {
+    pub(crate) fn set_stats(&mut self, stats: DashboardStats) -> bool {
         let next_actions = Some(stats.actions_count);
         let next_commands = Some(stats.commands_count);
         let next_fired = Some(stats.triggers_fired);
@@ -302,7 +302,7 @@ impl HomeStats {
         true
     }
 
-    pub fn set_live_viewers(&mut self, count: LiveViewerCount) -> bool {
+    pub(crate) fn set_live_viewers(&mut self, count: LiveViewerCount) -> bool {
         let next = match count {
             LiveViewerCount::Reporting(n) => Some(n),
             LiveViewerCount::Empty => None,
@@ -314,32 +314,32 @@ impl HomeStats {
         true
     }
 
-    pub fn viewers_display(&self) -> String {
+    pub(crate) fn viewers_display(&self) -> String {
         self.live_viewers
             .map_or_else(|| NO_DATA.to_owned(), |n| fmt_number(n as f64, 0))
     }
 
-    pub fn actions_display(&self) -> String {
+    pub(crate) fn actions_display(&self) -> String {
         self.actions_count
             .map_or_else(|| NO_DATA.to_owned(), |n| n.to_string())
     }
 
-    pub fn commands_display(&self) -> String {
+    pub(crate) fn commands_display(&self) -> String {
         self.commands_count
             .map_or_else(|| NO_DATA.to_owned(), |n| n.to_string())
     }
 
-    pub fn triggers_fired_display(&self) -> String {
+    pub(crate) fn triggers_fired_display(&self) -> String {
         self.triggers_fired
             .map_or_else(|| NO_DATA.to_owned(), |n| fmt_number(n as f64, 0))
     }
 
-    pub fn globals_display(&self) -> String {
+    pub(crate) fn globals_display(&self) -> String {
         self.globals_count
             .map_or_else(|| NO_DATA.to_owned(), |n| n.to_string())
     }
 
-    pub fn enabled_connections(
+    pub(crate) fn enabled_connections(
         &self,
         is_enabled: impl Fn(Integration) -> bool,
     ) -> ConnectionsTally {
@@ -356,13 +356,13 @@ impl HomeStats {
         }
     }
 
-    pub fn is_connected(&self, integration: Integration) -> bool {
+    pub(crate) fn is_connected(&self, integration: Integration) -> bool {
         self.connections
             .iter()
             .any(|(integ, connected)| *integ == integration && *connected)
     }
 
-    pub fn set_connections(&mut self, connections: &[(Integration, bool)]) -> bool {
+    pub(crate) fn set_connections(&mut self, connections: &[(Integration, bool)]) -> bool {
         if self.connections == connections {
             return false;
         }
@@ -370,11 +370,11 @@ impl HomeStats {
         true
     }
 
-    pub fn obs_health_snapshot(&self) -> Option<ObsHealth> {
+    pub(crate) fn obs_health_snapshot(&self) -> Option<ObsHealth> {
         self.obs_health.clone()
     }
 
-    pub fn recent(&self, limit: usize) -> Vec<HomeEvent> {
+    pub(crate) fn recent(&self, limit: usize) -> Vec<HomeEvent> {
         self.recent_events
             .iter()
             .rev()

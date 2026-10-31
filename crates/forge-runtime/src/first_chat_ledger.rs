@@ -48,8 +48,8 @@ impl FirstChatLedger {
 #[cfg(test)]
 mod tests {
     use forge_events::EventSource;
+    use forge_storage::MockViewerRepo;
     use forge_storage::Viewer;
-    use forge_storage::viewer::MockViewerRepo;
     use time::OffsetDateTime;
 
     use super::*;

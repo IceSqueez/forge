@@ -8,12 +8,12 @@ use super::core_queue_shared::{QUEUE, QUEUE_SPEC};
 use crate::core_messages;
 use crate::{QueueMode, QueueSchedulerHandle};
 
-pub struct CoreQueuePauseRunner {
+pub(crate) struct CoreQueuePauseRunner {
     scheduler: QueueSchedulerHandle,
 }
 
 impl CoreQueuePauseRunner {
-    pub fn new(scheduler: QueueSchedulerHandle) -> Self {
+    pub(crate) fn new(scheduler: QueueSchedulerHandle) -> Self {
         Self { scheduler }
     }
 

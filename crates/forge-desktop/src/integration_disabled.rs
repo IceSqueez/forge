@@ -58,7 +58,7 @@ const KEPT_PAD_BOTTOM: Pixels = px(12.0);
 const KEPT_ROW_GAP: Pixels = px(8.0);
 const KEPT_ICON: Pixels = px(12.0);
 
-pub struct DisabledLaunch {
+pub(crate) struct DisabledLaunch {
     pub slot: Option<IntegrationSlot<BuiltinObject>>,
     pub backend: Arc<dyn DataProvider>,
     pub sub_actions: Arc<SubActionRegistry>,
@@ -67,11 +67,11 @@ pub struct DisabledLaunch {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Kept {
+pub(crate) enum Kept {
     Credentials,
 }
 
-pub struct IntegrationDisabledView {
+pub(crate) struct IntegrationDisabledView {
     id: IntegrationId,
     declaration: Option<IntegrationDeclaration>,
     lifecycle: Entity<IntegrationLifecycle>,
@@ -84,7 +84,7 @@ pub struct IntegrationDisabledView {
 impl EventEmitter<NavRequested> for IntegrationDisabledView {}
 
 impl IntegrationDisabledView {
-    pub fn new(
+    pub(crate) fn new(
         id: IntegrationId,
         lifecycle: Entity<IntegrationLifecycle>,
         launch: DisabledLaunch,
@@ -149,7 +149,11 @@ impl IntegrationDisabledView {
         .detach();
     }
 
-    pub fn apply_loaded(&mut self, references: IntegrationReferences, has_credentials: bool) {
+    pub(crate) fn apply_loaded(
+        &mut self,
+        references: IntegrationReferences,
+        has_credentials: bool,
+    ) {
         self.references = references;
         self.kept = if has_credentials {
             vec![Kept::Credentials]
@@ -158,7 +162,7 @@ impl IntegrationDisabledView {
         };
     }
 
-    pub fn enable(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn enable(&mut self, cx: &mut Context<Self>) {
         let Some(slot) = self.launch.slot.clone() else {
             return;
         };
@@ -240,7 +244,7 @@ impl IntegrationDisabledView {
     }
 }
 
-pub fn hero_card(
+pub(crate) fn hero_card(
     id: &IntegrationId,
     title: String,
     lead: AnyElement,
@@ -286,7 +290,7 @@ pub fn hero_card(
         .into_any_element()
 }
 
-pub fn disclaimer_block(
+pub(crate) fn disclaimer_block(
     id: &IntegrationId,
     palette: &ForgePalette,
     density: Density,
@@ -295,7 +299,7 @@ pub fn disclaimer_block(
         .map(|line| div().mb(DISCLAIMER_MB).child(line).into_any_element())
 }
 
-pub fn disclaimer_line(
+pub(crate) fn disclaimer_line(
     id: &IntegrationId,
     palette: &ForgePalette,
     density: Density,
@@ -407,7 +411,8 @@ impl IntegrationDisabledView {
                                 .text_color(palette.text_secondary)
                                 .child(tr!(
                                     "integration_disabled_triggers_idle",
-                                    count = self.references.triggers as i64
+                                    count =
+                                        i64::try_from(self.references.triggers).unwrap_or(i64::MAX)
                                 )),
                         )
                         .child(icon(Icon::ChevronRight, ROW_CHEVRON, palette.text_faint))

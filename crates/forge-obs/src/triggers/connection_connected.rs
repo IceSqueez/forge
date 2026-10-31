@@ -8,7 +8,7 @@ use forge_types::{ArgStack, TriggerConfig, UserText, VariableSchema};
 
 use crate::vocabulary::{event_kinds, messages, trigger_ids};
 
-pub struct ConnectionConnectedDescriptor;
+pub(crate) struct ConnectionConnectedDescriptor;
 
 impl TriggerKindDescriptor for ConnectionConnectedDescriptor {
     fn id(&self) -> &str {

@@ -9,12 +9,12 @@ use crate::speak_dispatcher::{SpeakDispatcher, platform_scoped_alias_key};
 
 const ALIAS_SWITCH_KIND_ID: &str = "tts.alias.switch_active";
 
-pub struct AliasSwitchRunner {
+pub(crate) struct AliasSwitchRunner {
     speak: Arc<dyn SpeakDispatcher>,
 }
 
 impl AliasSwitchRunner {
-    pub fn new(speak: Arc<dyn SpeakDispatcher>) -> Self {
+    pub(crate) fn new(speak: Arc<dyn SpeakDispatcher>) -> Self {
         Self { speak }
     }
 }

@@ -17,7 +17,10 @@ impl ScreenActionsView {
         let last_fired = fmt_display_relative(telemetry.last_fired_at);
         let runs = fmt_number(telemetry.runs_today as f64, 0);
         let avg = match telemetry.avg_duration_ms {
-            Some(ms) => tr!("action_stat_avg_ms", count = ms as i64),
+            Some(ms) => tr!(
+                "action_stat_avg_ms",
+                count = i64::try_from(ms).unwrap_or(i64::MAX)
+            ),
             None => tr!("action_stat_avg_none"),
         };
         let errors = telemetry.errors_7d;

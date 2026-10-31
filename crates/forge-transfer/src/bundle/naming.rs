@@ -4,7 +4,7 @@ use forge_paths::BACKUPS_DIR_NAME;
 use time::OffsetDateTime;
 
 pub const BUNDLE_EXTENSION: &str = "forgebundle";
-pub const LEGACY_ARCHIVE_EXTENSION: &str = "tar.gz";
+pub(crate) const LEGACY_ARCHIVE_EXTENSION: &str = "tar.gz";
 pub const PRE_UPDATE_SNAPSHOT_EXTENSION: &str = "pre-update.db";
 
 pub(crate) const FILE_PREFIX: &str = "forge-backup";

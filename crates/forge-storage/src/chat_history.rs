@@ -2,8 +2,8 @@ use std::fmt;
 
 use async_trait::async_trait;
 use forge_types::PlatformId;
-use forge_types::redaction::Redacted;
-use forge_types::unified_chat::{UnifiedChatRow, UserRemoval};
+use forge_types::Redacted;
+use forge_types::{UnifiedChatRow, UserRemoval};
 use time::OffsetDateTime;
 
 use crate::StorageError;

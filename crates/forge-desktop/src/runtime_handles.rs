@@ -17,7 +17,7 @@ use crate::platform_credentials::PlatformCredentialManagers;
 use crate::voice_gate::VoiceGateOwner;
 use forge_runtime::IntegrationSupervisor;
 
-pub struct RuntimeHandles {
+pub(crate) struct RuntimeHandles {
     pub rt_handle: tokio::runtime::Handle,
     pub log_tail: LogTail,
     pub backend: Arc<dyn DataProvider>,
@@ -37,7 +37,7 @@ pub struct RuntimeHandles {
     pub overlay_kinds: Arc<OverlayKindRegistry>,
     pub overlays: OverlayServiceHandle,
     pub overlay_samples: Arc<dyn OverlaySampleSource>,
-    pub overlay_actions: Arc<forge_runtime::actions::ActionsService>,
+    pub overlay_actions: Arc<forge_runtime::ActionsService>,
     pub action_engine: ActionEngineHandle,
     pub scheduler: QueueSchedulerHandle,
     pub trigger_evaluator: TriggerEvaluatorHandle,

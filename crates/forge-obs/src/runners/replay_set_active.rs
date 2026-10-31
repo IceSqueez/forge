@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_registry::runner::SubActionConfig;
+use forge_registry::SubActionConfig;
 use forge_registry::{
     ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TypedField,
 };
@@ -16,12 +16,12 @@ const KIND_ID: &str = sub_action_ids::REPLAY_SET_ACTIVE;
 
 const CONFIG: ConfigSpec = ConfigSpec::new(&[&ACTIVE]);
 
-pub struct ReplaySetActiveRunner {
+pub(crate) struct ReplaySetActiveRunner {
     sink: Arc<dyn ObsSink>,
 }
 
 impl ReplaySetActiveRunner {
-    pub fn new(sink: Arc<dyn ObsSink>) -> Self {
+    pub(crate) fn new(sink: Arc<dyn ObsSink>) -> Self {
         Self { sink }
     }
 }

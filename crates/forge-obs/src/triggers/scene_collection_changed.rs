@@ -12,7 +12,7 @@ use crate::vocabulary::fields::collection as fields;
 use crate::vocabulary::messages;
 use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
-pub struct SceneCollectionChangedDescriptor;
+pub(crate) struct SceneCollectionChangedDescriptor;
 
 impl TriggerKindDescriptor for SceneCollectionChangedDescriptor {
     fn id(&self) -> &str {

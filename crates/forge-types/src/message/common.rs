@@ -1,7 +1,7 @@
 use crate::message::catalog::MessageCatalog;
 use crate::message::code::MessageCode;
 
-pub const COMMON_NAMESPACE: &str = "common";
+pub(crate) const COMMON_NAMESPACE: &str = "common";
 
 pub const UPSTREAM_FAILURE: MessageCode =
     MessageCode::from_static(COMMON_NAMESPACE, "upstream_failure");

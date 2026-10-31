@@ -16,7 +16,7 @@ static CAPABILITIES: EngineCapabilities = EngineCapabilities {
     custom_lexicons: false,
 };
 
-pub struct SapiEngine {
+pub(crate) struct SapiEngine {
     id: EngineId,
     sta_tx: mpsc::Sender<StaRequest>,
     voice_catalog: Arc<Vec<TtsVoice>>,

@@ -10,7 +10,11 @@ use gpui::{Context, Entity, prelude::*};
 use std::sync::Arc;
 
 impl IntegrationDetail {
-    pub fn attach_donation_settings(&mut self, service: DonationService, cx: &mut Context<Self>) {
+    pub(crate) fn attach_donation_settings(
+        &mut self,
+        service: DonationService,
+        cx: &mut Context<Self>,
+    ) {
         let launch = DonationSettingsLaunch {
             service,
             credentials: Arc::clone(&self.credentials),
@@ -26,7 +30,7 @@ impl IntegrationDetail {
         cx.notify();
     }
 
-    pub fn attach_twitch_bot(
+    pub(crate) fn attach_twitch_bot(
         &mut self,
         bot: Arc<TwitchBotAccount>,
         presence: Entity<TwitchBotPresence>,
@@ -52,19 +56,22 @@ impl IntegrationDetail {
         cx.notify();
     }
 
-    pub fn attach_twitch_sign_in(&mut self, sign_in: forge_platform_twitch::TwitchSignIn) {
+    pub(crate) fn attach_twitch_sign_in(&mut self, sign_in: forge_platform_twitch::TwitchSignIn) {
         self.twitch_sign_in = Some(sign_in);
     }
 
-    pub fn attach_youtube_sign_in(&mut self, sign_in: forge_platform_youtube::YoutubeSignIn) {
+    pub(crate) fn attach_youtube_sign_in(
+        &mut self,
+        sign_in: forge_platform_youtube::YoutubeSignIn,
+    ) {
         self.youtube_sign_in = Some(sign_in);
     }
 
-    pub fn attach_kick_sign_in(&mut self, sign_in: forge_platform_kick::KickSignIn) {
+    pub(crate) fn attach_kick_sign_in(&mut self, sign_in: forge_platform_kick::KickSignIn) {
         self.kick_sign_in = Some(sign_in);
     }
 
-    pub fn attach_platform_credentials(&mut self, managers: PlatformCredentialManagers) {
+    pub(crate) fn attach_platform_credentials(&mut self, managers: PlatformCredentialManagers) {
         self.platform_credentials = managers;
     }
 }

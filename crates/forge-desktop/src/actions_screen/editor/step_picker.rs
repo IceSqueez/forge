@@ -79,10 +79,18 @@ impl ScreenActionsView {
             subtitle: GridPickerSubtitle::Context {
                 lead: tr!("action_editor_picker_inserting_into").into(),
                 name: ctx_name.into(),
-                note: tr!("action_editor_picker_sub_count", count = count as i64).into(),
+                note: tr!(
+                    "action_editor_picker_sub_count",
+                    count = i64::try_from(count).unwrap_or(i64::MAX)
+                )
+                .into(),
             },
             footer_hint: tr!("action_editor_picker_footer_hint").into(),
-            search_placeholder: tr!("action_editor_picker_search", count = count as i64).into(),
+            search_placeholder: tr!(
+                "action_editor_picker_search",
+                count = i64::try_from(count).unwrap_or(i64::MAX)
+            )
+            .into(),
             favorites_label: tr!("picker_favorites").into(),
             favorites_empty: tr!("picker_favorites_empty").into(),
         };

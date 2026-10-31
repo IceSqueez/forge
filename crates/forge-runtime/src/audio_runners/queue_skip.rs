@@ -8,12 +8,12 @@ use crate::speak_dispatcher::SpeakDispatcher;
 
 const QUEUE_SKIP_KIND_ID: &str = "tts.queue.skip_current";
 
-pub struct QueueSkipRunner {
+pub(crate) struct QueueSkipRunner {
     speak: Arc<dyn SpeakDispatcher>,
 }
 
 impl QueueSkipRunner {
-    pub fn new(speak: Arc<dyn SpeakDispatcher>) -> Self {
+    pub(crate) fn new(speak: Arc<dyn SpeakDispatcher>) -> Self {
         Self { speak }
     }
 }

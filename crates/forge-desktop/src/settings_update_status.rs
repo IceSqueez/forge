@@ -6,7 +6,7 @@ use time::OffsetDateTime;
 use crate::update_check::{CheckResult, UpdatePlan};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum UpdateCheckStatus {
+pub(crate) enum UpdateCheckStatus {
     Idle,
     Checking,
     UpToDate { checked_at: OffsetDateTime },
@@ -15,7 +15,7 @@ pub enum UpdateCheckStatus {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum StatusTone {
+pub(crate) enum StatusTone {
     Muted,
     Success,
     Accent,
@@ -23,7 +23,7 @@ pub enum StatusTone {
 }
 
 impl UpdateCheckStatus {
-    pub fn from_result(result: CheckResult) -> Self {
+    pub(crate) fn from_result(result: CheckResult) -> Self {
         match result {
             CheckResult::NothingNew { checked_at } => UpdateCheckStatus::UpToDate { checked_at },
             CheckResult::Found { version, plan } => UpdateCheckStatus::Found {
@@ -34,15 +34,15 @@ impl UpdateCheckStatus {
         }
     }
 
-    pub fn is_checking(&self) -> bool {
+    pub(crate) fn is_checking(&self) -> bool {
         matches!(self, UpdateCheckStatus::Checking)
     }
 
-    pub fn offers_release_page(&self) -> bool {
+    pub(crate) fn offers_release_page(&self) -> bool {
         matches!(self, UpdateCheckStatus::Failed)
     }
 
-    pub fn tone(&self) -> StatusTone {
+    pub(crate) fn tone(&self) -> StatusTone {
         match self {
             UpdateCheckStatus::Idle | UpdateCheckStatus::Checking => StatusTone::Muted,
             UpdateCheckStatus::UpToDate { .. } => StatusTone::Success,
@@ -51,7 +51,7 @@ impl UpdateCheckStatus {
         }
     }
 
-    pub fn label(&self) -> Option<String> {
+    pub(crate) fn label(&self) -> Option<String> {
         match self {
             UpdateCheckStatus::Idle => None,
             UpdateCheckStatus::Checking => Some(tr!("settings_version_checking")),
@@ -87,7 +87,10 @@ fn tone_color(tone: StatusTone, palette: &ForgePalette) -> Rgba {
     }
 }
 
-pub fn status_line(status: &UpdateCheckStatus, palette: &ForgePalette) -> Option<impl IntoElement> {
+pub(crate) fn status_line(
+    status: &UpdateCheckStatus,
+    palette: &ForgePalette,
+) -> Option<impl IntoElement> {
     let label = status.label()?;
     Some(
         div()

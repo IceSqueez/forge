@@ -364,8 +364,10 @@ impl YoutubeChatPoller {
 
                 next_page_token = response.next_page_token;
 
-                let computed_sleep =
-                    sleep_duration(response.polling_interval_millis, floor.as_millis() as u64);
+                let computed_sleep = sleep_duration(
+                    response.polling_interval_millis,
+                    u64::try_from(floor.as_millis()).unwrap_or(u64::MAX),
+                );
 
                 tokio::select! {
                     () = tokio::time::sleep(computed_sleep) => {}
@@ -730,13 +732,16 @@ impl YoutubeChatPoller {
 
             "memberMilestoneChatEvent" => {
                 let details = snippet.get("memberMilestoneChatDetails");
-                let months = details
-                    .and_then(|d| d.get("memberMonth"))
-                    .and_then(|v| {
-                        v.as_u64()
-                            .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
-                    })
-                    .unwrap_or(0) as u32;
+                let months = u32::try_from(
+                    details
+                        .and_then(|d| d.get("memberMonth"))
+                        .and_then(|v| {
+                            v.as_u64()
+                                .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+                        })
+                        .unwrap_or(0),
+                )
+                .unwrap_or(u32::MAX);
                 let message = details
                     .and_then(|d| d.get("userComment"))
                     .and_then(|v| v.as_str())
@@ -809,7 +814,7 @@ impl YoutubeChatPoller {
                             v.as_u64()
                                 .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
                         })
-                        .map(|v| v as i64)
+                        .map(|v| i64::try_from(v).unwrap_or(i64::MAX))
                 } else {
                     None
                 };

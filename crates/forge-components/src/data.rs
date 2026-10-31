@@ -15,7 +15,7 @@ pub enum ColumnWidth {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum HeaderAlign {
+pub(crate) enum HeaderAlign {
     Start,
     End,
 }

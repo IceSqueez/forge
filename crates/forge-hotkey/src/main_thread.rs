@@ -3,7 +3,7 @@ use tokio::sync::mpsc;
 use std::time::Duration;
 
 const MAIN_THREAD_QUEUE: usize = 16;
-pub const MAIN_THREAD_TIMEOUT: Duration = Duration::from_secs(2);
+pub(crate) const MAIN_THREAD_TIMEOUT: Duration = Duration::from_secs(2);
 
 trait MainThreadJob: Send {
     fn is_cancelled(&self) -> bool;
@@ -71,7 +71,9 @@ pub fn main_thread_channel() -> (MainThreadHost, MainThreadLink) {
     main_thread_channel_with_timeout(MAIN_THREAD_TIMEOUT)
 }
 
-pub fn main_thread_channel_with_timeout(timeout: Duration) -> (MainThreadHost, MainThreadLink) {
+pub(crate) fn main_thread_channel_with_timeout(
+    timeout: Duration,
+) -> (MainThreadHost, MainThreadLink) {
     let (tx, rx) = mpsc::channel(MAIN_THREAD_QUEUE);
     (
         MainThreadHost { jobs: rx },

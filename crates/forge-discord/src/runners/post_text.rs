@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_registry::runner::SubActionConfig;
+use forge_registry::SubActionConfig;
 use forge_registry::{
     ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionIo,
     SubActionRunner, TextEditor, TextField, TypedField,
@@ -37,12 +37,12 @@ fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<TextPost, Co
     })
 }
 
-pub struct PostTextRunner {
+pub(crate) struct PostTextRunner {
     sink: Arc<dyn DiscordSink>,
 }
 
 impl PostTextRunner {
-    pub fn new(sink: Arc<dyn DiscordSink>) -> Self {
+    pub(crate) fn new(sink: Arc<dyn DiscordSink>) -> Self {
         Self { sink }
     }
 }

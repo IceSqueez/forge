@@ -121,7 +121,7 @@ struct AliasRow {
     blocked: bool,
 }
 
-pub struct VoiceAliasesView {
+pub(crate) struct VoiceAliasesView {
     repo: Arc<dyn VoiceAliasRepo>,
     viewer_repo: Arc<dyn ViewerRepo>,
     speak: Option<SpeakQueueHandle>,
@@ -146,7 +146,7 @@ pub struct VoiceAliasesView {
 }
 
 impl VoiceAliasesView {
-    pub fn new(
+    pub(crate) fn new(
         repo: Arc<dyn VoiceAliasRepo>,
         viewer_repo: Arc<dyn ViewerRepo>,
         speak: Option<SpeakQueueHandle>,
@@ -731,7 +731,10 @@ impl VoiceAliasesView {
             .font_family(body_family())
             .text_size(META_FS)
             .text_color(palette.text_muted)
-            .child(tr!("tts_aliases_count", count = self.total_count as i64));
+            .child(tr!(
+                "tts_aliases_count",
+                count = i64::try_from(self.total_count).unwrap_or(i64::MAX)
+            ));
 
         let assign = primary_button_with_icon(Icon::Plus, tr!("tts_aliases_assign_btn"), palette)
             .on_click(
@@ -859,9 +862,9 @@ impl VoiceAliasesView {
             .text_color(palette.text_faint)
             .child(tr!(
                 "tts_aliases_footer_caption",
-                shown = shown as i64,
-                total = self.total_count as i64,
-                auto = auto as i64
+                shown = i64::try_from(shown).unwrap_or(i64::MAX),
+                total = i64::try_from(self.total_count).unwrap_or(i64::MAX),
+                auto = i64::try_from(auto).unwrap_or(i64::MAX)
             ));
 
         div()
@@ -1722,7 +1725,7 @@ mod tests {
         }
 
         fn open(&self, cx: &mut TestAppContext) -> Entity<VoiceAliasesView> {
-            let mut viewers = forge_storage::viewer::MockViewerRepo::new();
+            let mut viewers = forge_storage::MockViewerRepo::new();
             viewers.expect_count().returning(|| Ok(0));
             let repo = Arc::clone(&self.repo) as Arc<dyn VoiceAliasRepo>;
             let handle = self.rt.handle().clone();
@@ -1884,7 +1887,7 @@ mod tests {
             speak: Option<SpeakQueueHandle>,
             cx: &'a mut TestAppContext,
         ) -> (Entity<VoiceAliasesView>, &'a mut VisualTestContext) {
-            let mut viewers = forge_storage::viewer::MockViewerRepo::new();
+            let mut viewers = forge_storage::MockViewerRepo::new();
             viewers.expect_count().returning(|| Ok(0));
             let repo = Arc::clone(&self.repo) as Arc<dyn VoiceAliasRepo>;
             let handle = self.rt.handle().clone();
@@ -2119,7 +2122,7 @@ mod tests {
         });
         let lists_fail = Arc::new(AtomicBool::new(lists_fail));
         let failing = Arc::clone(&lists_fail);
-        let mut repo = forge_storage::voice_aliases::MockVoiceAliasRepo::new();
+        let mut repo = forge_storage::MockVoiceAliasRepo::new();
         repo.expect_list().returning(move || {
             if failing.load(Ordering::SeqCst) {
                 Err(StorageError::Connection {
@@ -2131,7 +2134,7 @@ mod tests {
         });
         repo.expect_get_strategy()
             .returning(|| Ok(AssignmentStrategy::Random));
-        let mut viewers = forge_storage::viewer::MockViewerRepo::new();
+        let mut viewers = forge_storage::MockViewerRepo::new();
         viewers.expect_count().returning(|| Ok(0));
         let handle = rt.handle().clone();
         let view = cx.update(|cx| {

@@ -54,7 +54,7 @@ pub(crate) async fn store_credential_at(
     let expires_at_unix: Option<i64> = cred.expires_at.and_then(|t| {
         t.duration_since(std::time::UNIX_EPOCH)
             .ok()
-            .map(|d| d.as_secs() as i64)
+            .map(|d| i64::try_from(d.as_secs()).unwrap_or(i64::MAX))
     });
     let bundle = serde_json::json!({
         "access_token": cred.access_token.expose(),

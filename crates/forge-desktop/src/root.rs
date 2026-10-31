@@ -59,7 +59,7 @@ enum BootState {
     Failed(BootFailure),
 }
 
-pub struct RootView {
+pub(crate) struct RootView {
     state: BootState,
     rt_handle: tokio::runtime::Handle,
     log_tail: LogTail,
@@ -69,7 +69,7 @@ pub struct RootView {
 }
 
 impl RootView {
-    pub fn new(
+    pub(crate) fn new(
         rt_handle: tokio::runtime::Handle,
         log_tail: LogTail,
         endpoints: PlatformEndpoints,
@@ -94,7 +94,7 @@ impl RootView {
         }
     }
 
-    pub fn set_window(&mut self, window: WindowHandle<RootView>) {
+    pub(crate) fn set_window(&mut self, window: WindowHandle<RootView>) {
         self.window = Some(window);
     }
 
@@ -128,7 +128,7 @@ impl RootView {
     }
 }
 
-pub fn run_boot(
+pub(crate) fn run_boot(
     rt_handle: tokio::runtime::Handle,
     log_tail: LogTail,
     endpoints: PlatformEndpoints,
@@ -401,14 +401,14 @@ pub fn run_boot(
                     crate::system_notices::start_system_notices(
                         cx,
                         &notification_policy,
-                        Arc::new(forge_runtime::sub_action_runners::SystemNotifyPort),
+                        Arc::new(forge_runtime::SystemNotifyPort),
                         rt_handle_for_notices.clone(),
                     );
                     crate::scheduled_backup_notices::start_scheduled_backup_notices(
                         cx,
                         &scheduled_backups_for_notices,
                         settings_for_backup_notices,
-                        Arc::new(forge_runtime::sub_action_runners::SystemNotifyPort),
+                        Arc::new(forge_runtime::SystemNotifyPort),
                         rt_handle_for_notices.clone(),
                         navigator.clone(),
                     );
@@ -840,7 +840,7 @@ fn centered(child: impl IntoElement, palette: &ForgePalette, density: Density) -
         .into_any_element()
 }
 
-pub struct RestoreWaitView;
+pub(crate) struct RestoreWaitView;
 
 impl Render for RestoreWaitView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {

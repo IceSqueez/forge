@@ -76,18 +76,18 @@ pub(crate) struct FollowLookups {
 }
 
 impl FollowLookups {
-    pub fn new(builtins: BuiltinRegistry) -> Self {
+    pub(crate) fn new(builtins: BuiltinRegistry) -> Self {
         Self {
             builtins,
             ..Self::default()
         }
     }
 
-    pub fn status_of(&self, key: &AuthorKey) -> Option<FollowStatus> {
+    pub(crate) fn status_of(&self, key: &AuthorKey) -> Option<FollowStatus> {
         self.known.get(key).map(|known| known.status)
     }
 
-    pub fn needs_request(&self, key: &AuthorKey) -> bool {
+    pub(crate) fn needs_request(&self, key: &AuthorKey) -> bool {
         let fresh = self
             .known
             .get(key)
@@ -100,7 +100,7 @@ impl FollowLookups {
         self._request = Some(request);
     }
 
-    pub fn settle(&mut self, key: AuthorKey, status: FollowStatus) -> bool {
+    pub(crate) fn settle(&mut self, key: AuthorKey, status: FollowStatus) -> bool {
         if self.pending.as_ref() != Some(&key) {
             return false;
         }
@@ -120,7 +120,7 @@ impl FollowLookups {
 
 impl ChatView {
     #[must_use]
-    pub fn with_follow_lookups(mut self, builtins: BuiltinRegistry) -> Self {
+    pub(crate) fn with_follow_lookups(mut self, builtins: BuiltinRegistry) -> Self {
         self.follows = FollowLookups::new(builtins);
         self
     }
@@ -191,8 +191,8 @@ mod tests {
         DetailSection, FollowLookup, FollowStatus, HeaderAction, HealthMetric, HealthMetricId,
         HealthStream, HealthValue, QuickAction, QuickActions, SectionIcon,
     };
-    use forge_storage::chat_history::MockChatHistoryRepo;
-    use forge_storage::voice_aliases::MockVoiceAliasRepo;
+    use forge_storage::MockChatHistoryRepo;
+    use forge_storage::MockVoiceAliasRepo;
     use forge_types::{IntegrationId, MessageCode, PlatformId};
     use gpui::{AppContext as _, Entity, TestAppContext};
     use time::OffsetDateTime;

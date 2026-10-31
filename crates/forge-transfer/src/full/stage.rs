@@ -26,7 +26,7 @@ use crate::bundle::reader::{BundleSummary, summarize_first_entry};
 use crate::bundle::schedule_key::unwrap_identity;
 use crate::error::TransferError;
 
-pub const RESTORE_STAGING_DIR_NAME: &str = "restore-staging";
+pub(crate) const RESTORE_STAGING_DIR_NAME: &str = "restore-staging";
 const STAGED_CATEGORIES_FILE: &str = "staged-categories.json";
 
 pub struct StageRequest {

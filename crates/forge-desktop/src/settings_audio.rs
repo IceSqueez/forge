@@ -37,14 +37,14 @@ const TEST_TONE_CHANNELS: u16 = 1;
 const MILLIS_PER_SEC: u32 = 1_000;
 
 #[derive(Clone)]
-pub struct DeviceRow {
+pub(crate) struct DeviceRow {
     pub id: String,
     pub name: String,
     pub is_default: bool,
 }
 
 impl DeviceRow {
-    pub fn from_info(info: DeviceInfo) -> Self {
+    pub(crate) fn from_info(info: DeviceInfo) -> Self {
         Self {
             id: info.id.as_str().to_string(),
             name: info.name,
@@ -53,7 +53,7 @@ impl DeviceRow {
     }
 }
 
-pub struct SettingsAudioView {
+pub(crate) struct SettingsAudioView {
     backend: Arc<dyn DataProvider>,
     rt_handle: tokio::runtime::Handle,
     speech_output: Arc<DeviceSink>,
@@ -74,7 +74,11 @@ pub struct SettingsAudioView {
 }
 
 impl SettingsAudioView {
-    pub fn new(handles: &RuntimeHandles, initial_active: bool, cx: &mut Context<Self>) -> Self {
+    pub(crate) fn new(
+        handles: &RuntimeHandles,
+        initial_active: bool,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let backend = Arc::clone(&handles.backend);
         let rt_handle = handles.rt_handle.clone();
         let speech_output = Arc::clone(&handles.speech_output);
@@ -121,7 +125,7 @@ impl SettingsAudioView {
         view
     }
 
-    pub fn set_active(&mut self, active: bool, cx: &mut Context<Self>) {
+    pub(crate) fn set_active(&mut self, active: bool, cx: &mut Context<Self>) {
         self.voice_gate
             .update(cx, |view, cx| view.set_active(active, cx));
     }

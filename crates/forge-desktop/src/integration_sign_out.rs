@@ -4,12 +4,12 @@ use std::sync::Arc;
 use forge_platform_core::{BuiltinControl, ControlFailure};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SignOutOutcome {
+pub(crate) enum SignOutOutcome {
     Disconnected,
     StillConnected,
 }
 
-pub async fn forget_then_disconnect<F, T, E>(
+pub(crate) async fn forget_then_disconnect<F, T, E>(
     forget: F,
     control: Option<Arc<dyn BuiltinControl>>,
 ) -> Result<SignOutOutcome, E>

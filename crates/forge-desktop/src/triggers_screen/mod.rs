@@ -253,7 +253,7 @@ struct RenameForm {
     _sub: Subscription,
 }
 
-pub struct TriggersRegistryView {
+pub(crate) struct TriggersRegistryView {
     repo: Arc<dyn TriggerInstanceRepo>,
     action_repo: Arc<dyn ActionRepo>,
     registry: Arc<TriggerRegistry>,
@@ -296,7 +296,7 @@ pub struct TriggersRegistryView {
 }
 
 impl TriggersRegistryView {
-    pub fn new(
+    pub(crate) fn new(
         repo: Arc<dyn TriggerInstanceRepo>,
         action_repo: Arc<dyn ActionRepo>,
         registry: Arc<TriggerRegistry>,
@@ -364,7 +364,7 @@ impl TriggersRegistryView {
     }
 
     #[must_use]
-    pub fn with_integration_switch(
+    pub(crate) fn with_integration_switch(
         mut self,
         switch: IntegrationSwitch,
         cx: &mut Context<Self>,

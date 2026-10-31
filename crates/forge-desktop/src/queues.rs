@@ -10,7 +10,7 @@ use std::num::NonZeroU32;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use forge_components::confirm::ConfirmTone;
+use forge_components::ConfirmTone;
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, ChipGlyph, Confirm, Density, FONT_SM, FONT_XS, FONT_XXS,
     ForgePalette, Icon, InputEvent, MenuItem, MenuPlacement, ModalSize, OverlayPosition, Radius,
@@ -242,7 +242,10 @@ fn running_entries(
 fn elapsed_text(elapsed: Duration) -> String {
     let millis = elapsed.as_millis();
     if millis < 1_000 {
-        tr!("queues_elapsed_ms", ms = millis as i64)
+        tr!(
+            "queues_elapsed_ms",
+            ms = i64::try_from(millis).unwrap_or(i64::MAX)
+        )
     } else {
         fmt_uptime(elapsed.as_secs())
     }
@@ -548,7 +551,7 @@ impl Render for EditQueueModal {
     }
 }
 
-pub struct QueuesView {
+pub(crate) struct QueuesView {
     queues: Vec<QueueRow>,
     loading: bool,
     modal: Option<Entity<EditQueueModal>>,
@@ -578,7 +581,7 @@ pub struct QueuesView {
 impl EventEmitter<NavRequested> for QueuesView {}
 
 impl QueuesView {
-    pub fn new(
+    pub(crate) fn new(
         queue_health: Entity<QueueHealth>,
         scheduler: QueueSchedulerHandle,
         queue_repo: Arc<dyn QueueRepo>,
@@ -627,7 +630,7 @@ impl QueuesView {
         view
     }
 
-    pub fn with_scheduled(
+    pub(crate) fn with_scheduled(
         mut self,
         section: Entity<ScheduledRunsView>,
         cx: &mut Context<Self>,
@@ -1925,8 +1928,8 @@ fn overflow_badge(overflowed: u64, palette: &ForgePalette, density: Density) -> 
                 .text_color(palette.danger)
                 .child(SharedString::from(tr!(
                     "queues_overflow_badge",
-                    count = overflowed as i64,
-                    cap = MAX_PENDING_PER_QUEUE as i64
+                    count = i64::try_from(overflowed).unwrap_or(i64::MAX),
+                    cap = i64::try_from(MAX_PENDING_PER_QUEUE).unwrap_or(i64::MAX)
                 ))),
         )
         .into_any_element()
@@ -1983,7 +1986,10 @@ fn concurrent_panel(q: &QueueRow, palette: &ForgePalette, density: Density) -> A
     }
     if overflow > 0 {
         pills = pills.child(running_pill(
-            tr!("queues_overflow_more", count = overflow as i64),
+            tr!(
+                "queues_overflow_more",
+                count = i64::try_from(overflow).unwrap_or(i64::MAX)
+            ),
             palette,
             density,
         ));
@@ -2094,7 +2100,8 @@ async fn load_queues(
     let rows = queues
         .into_iter()
         .map(|q| {
-            let assigned = actions.iter().filter(|a| a.queue_id == q.id).count() as u32;
+            let assigned = u32::try_from(actions.iter().filter(|a| a.queue_id == q.id).count())
+                .unwrap_or(u32::MAX);
             let concurrency = q.concurrency.get();
             let mode = states.get(&q.id).map_or(QueueMode::RUNNING, |s| s.mode);
             let live = live_states.is_none() || states.contains_key(&q.id);
@@ -2216,7 +2223,7 @@ mod tests {
     use forge_components::{Density, ThemeId};
     use forge_runtime::{QueueDepth, QueueDepths};
     use forge_storage::Language;
-    use forge_storage::queue::MockQueueRepo;
+    use forge_storage::MockQueueRepo;
     use gpui::{Modifiers, TestAppContext, VisualTestContext, point, size};
 
     use super::*;
@@ -3255,7 +3262,7 @@ mod tests {
             counted.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             Ok(vec![queue(id)])
         });
-        let mut action_repo = forge_storage::action::MockActionRepo::new();
+        let mut action_repo = forge_storage::MockActionRepo::new();
         let stored = Arc::clone(&actions);
         action_repo
             .expect_list()

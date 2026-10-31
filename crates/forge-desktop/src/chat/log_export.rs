@@ -55,7 +55,7 @@ impl ChatView {
         let title = tr!(
             "chat_export_header",
             when = when.as_str(),
-            lines = lines.len() as i64
+            lines = i64::try_from(lines.len()).unwrap_or(i64::MAX)
         );
         let rule = "-".repeat(EXPORT_HEADER_RULE);
         let contents = format!("{title}\n{rule}\n{}", lines.join("\n"));

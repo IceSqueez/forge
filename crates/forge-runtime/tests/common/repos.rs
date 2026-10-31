@@ -7,7 +7,7 @@ use forge_storage::{ActionRepo, ActionTelemetry, ExecutionStatus, StorageError};
 use forge_types::{Action, ActionId};
 use time::OffsetDateTime;
 
-pub struct InMemoryActionRepo {
+pub(crate) struct InMemoryActionRepo {
     map: Mutex<HashMap<ActionId, Action>>,
     writes: AtomicUsize,
     fail_writes: bool,
@@ -15,7 +15,7 @@ pub struct InMemoryActionRepo {
 }
 
 impl InMemoryActionRepo {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             map: Mutex::new(HashMap::new()),
             writes: AtomicUsize::new(0),
@@ -24,29 +24,29 @@ impl InMemoryActionRepo {
         }
     }
 
-    pub fn failing() -> Self {
+    pub(crate) fn failing() -> Self {
         Self {
             fail_writes: true,
             ..Self::new()
         }
     }
 
-    pub fn failing_get() -> Self {
+    pub(crate) fn failing_get() -> Self {
         Self {
             fail_get: true,
             ..Self::new()
         }
     }
 
-    pub fn seed(&self, action: Action) {
+    pub(crate) fn seed(&self, action: Action) {
         self.map.lock().unwrap().insert(action.id, action);
     }
 
-    pub fn enabled_of(&self, id: ActionId) -> Option<bool> {
+    pub(crate) fn enabled_of(&self, id: ActionId) -> Option<bool> {
         self.map.lock().unwrap().get(&id).map(|a| a.enabled)
     }
 
-    pub fn write_count(&self) -> usize {
+    pub(crate) fn write_count(&self) -> usize {
         self.writes.load(Ordering::SeqCst)
     }
 }

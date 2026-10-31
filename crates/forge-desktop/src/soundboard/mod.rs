@@ -14,7 +14,7 @@ use forge_components::{
 };
 use forge_events::Event;
 use forge_runtime::EventBus;
-use forge_soundboard::builtin_library::BuiltinSoundEntry;
+use forge_soundboard::BuiltinSoundEntry;
 use forge_soundboard::{
     ClipAvailability, ClipLibrary, SoundboardPlayer, SoundboardSettings, SoundboardSettingsHandle,
 };
@@ -82,7 +82,7 @@ struct PlaybackProgress {
     looped: bool,
 }
 
-pub struct SoundboardView {
+pub(crate) struct SoundboardView {
     clips: Vec<SoundClip>,
     loading: bool,
     error: Option<SharedString>,
@@ -118,7 +118,7 @@ pub struct SoundboardView {
 }
 
 impl SoundboardView {
-    pub fn new(
+    pub(crate) fn new(
         player: Arc<SoundboardPlayer>,
         settings_repo: Arc<dyn SettingsRepo>,
         rt_handle: tokio::runtime::Handle,

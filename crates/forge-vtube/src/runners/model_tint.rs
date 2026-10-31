@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_registry::runner::SubActionConfig;
+use forge_registry::SubActionConfig;
 use forge_registry::{
     ConfigProblem, ConfigSpec, IntegerEditor, IntegerField, NumberField, OptionalField, RunContext,
     StepTimer, SubActionCategory, SubActionRunner, TypedField, ValueBounds,
@@ -84,12 +84,12 @@ fn read_tint(config: &SubActionConfig, args: &ArgStack) -> Result<Tint, ConfigPr
     })
 }
 
-pub struct ModelTintRunner {
+pub(crate) struct ModelTintRunner {
     sink: Arc<dyn VTubeSink>,
 }
 
 impl ModelTintRunner {
-    pub fn new(sink: Arc<dyn VTubeSink>) -> Self {
+    pub(crate) fn new(sink: Arc<dyn VTubeSink>) -> Self {
         Self { sink }
     }
 }

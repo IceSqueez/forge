@@ -10,7 +10,7 @@ use forge_components::{ActivePresentation, Presentation};
 
 const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 
-pub struct Footer {
+pub(crate) struct Footer {
     status: Entity<RuntimeStatus>,
     connectivity: Entity<PlatformConnectivity>,
     event_loss: Entity<EventLoss>,
@@ -19,7 +19,7 @@ pub struct Footer {
 }
 
 impl Footer {
-    pub fn new(
+    pub(crate) fn new(
         status: Entity<RuntimeStatus>,
         connectivity: Entity<PlatformConnectivity>,
         event_loss: Entity<EventLoss>,
@@ -115,8 +115,8 @@ impl Render for Footer {
             .tally_enabled(|integ| lifecycle.is_on(&integ.builtin_id()));
         let connected_label = tr!(
             "footer_connected",
-            connected = connected as i64,
-            total = total as i64
+            connected = i64::try_from(connected).unwrap_or(i64::MAX),
+            total = i64::try_from(total).unwrap_or(i64::MAX)
         );
         let uptime_label = tr!("footer_uptime", uptime = uptime.as_str());
         let trailing: Vec<AnyElement> = [

@@ -10,7 +10,7 @@ use forge_registry::{
     ChatTriggerFamily, EventFilter, FormField, KindPlatformContract, TriggerCategory,
     TriggerKindDescriptor,
 };
-use forge_runtime::triggers::TimerSchedule;
+use forge_runtime::TimerSchedule;
 use forge_runtime::{
     EventBus, FrozenRuntime, NullEventLogRepo, QueueMode, QueueSchedulerHandle, RuntimeWiring,
 };

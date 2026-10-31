@@ -5,16 +5,16 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use forge_registry::SubActionRegistry;
-use forge_runtime::actions::ActionsService;
+use forge_runtime::ActionsService;
 use forge_runtime::{
     OVERLAY_SEND_KIND_ID, OVERLAY_TARGET_KEY, OverlaySendTarget, feeds_overlay,
     overlay_send_targets,
 };
+use forge_storage::MockActionRepo;
+use forge_storage::MockHistoryRepo;
+use forge_storage::MockQueueRepo;
+use forge_storage::MockTriggerInstanceRepo;
 use forge_storage::OverlayId;
-use forge_storage::action::MockActionRepo;
-use forge_storage::history::MockHistoryRepo;
-use forge_storage::queue::MockQueueRepo;
-use forge_storage::trigger_instance::MockTriggerInstanceRepo;
 use forge_types::{
     Action, ActionId, ExecutionMode, PermissionRung, PlatformScope, QueueId, SubActionConfig,
     SubActionStep, TriggerConfig, TriggerInstance, TriggerInstanceId, Variant,

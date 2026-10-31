@@ -294,7 +294,10 @@ impl DonationSettingsView {
                 .child(mono_label(tr!("donation_poll_label"), palette))
                 .child(div().flex().child(segmented(segments, palette)))
                 .child(text(
-                    tr!("donation_poll_hint", seconds = current.as_secs() as i64),
+                    tr!(
+                        "donation_poll_hint",
+                        seconds = i64::try_from(current.as_secs()).unwrap_or(i64::MAX)
+                    ),
                     FONT_XS,
                     palette.text_muted,
                 ))
@@ -422,10 +425,13 @@ fn interval_label(secs: u64) -> String {
     if secs >= SECONDS_PER_MINUTE && secs.is_multiple_of(SECONDS_PER_MINUTE) {
         tr!(
             "donation_poll_minutes",
-            minutes = (secs / SECONDS_PER_MINUTE) as i64
+            minutes = i64::try_from(secs / SECONDS_PER_MINUTE).unwrap_or(i64::MAX)
         )
     } else {
-        tr!("donation_poll_seconds", seconds = secs as i64)
+        tr!(
+            "donation_poll_seconds",
+            seconds = i64::try_from(secs).unwrap_or(i64::MAX)
+        )
     }
 }
 

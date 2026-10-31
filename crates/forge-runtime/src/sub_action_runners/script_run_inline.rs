@@ -141,7 +141,7 @@ impl SubActionRunner for ScriptRunInlineRunner {
         })
         .await;
 
-        let duration_ms = wall_start.elapsed().as_millis() as u64;
+        let duration_ms = u64::try_from(wall_start.elapsed().as_millis()).unwrap_or(u64::MAX);
 
         let outcome = match exec_result {
             Ok(Ok(_)) => SubActionOutcome::Success,

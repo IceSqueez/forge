@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_platform_core::PlatformError;
-use forge_registry::runner::SubActionConfig;
+use forge_registry::SubActionConfig;
 use forge_registry::{
     ConfigProblem, ConfigReason, ConfigSpec, DurationBounds, DurationField, RunContext, StepTimer,
     SubActionCategory, SubActionRunner, TypedField, ValueBounds,
@@ -57,7 +57,7 @@ fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<TimeoutReque
     })
 }
 
-pub struct TimeoutUserRunner {
+pub(crate) struct TimeoutUserRunner {
     client: Arc<KickModeration>,
     token_source: Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync>,
     broadcaster_id_source:
@@ -65,7 +65,7 @@ pub struct TimeoutUserRunner {
 }
 
 impl TimeoutUserRunner {
-    pub fn new(
+    pub(crate) fn new(
         client: Arc<KickModeration>,
         token_source: Arc<
             dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync,

@@ -6,9 +6,10 @@ mod introspect;
 
 use crate::bus_adapter::ClientFilterSet;
 
-pub use context::DispatchContext;
+pub(crate) use context::DispatchContext;
 pub(crate) use envelope::merge_payload;
-pub use envelope::{WireEventFilter, WsEnvelope, WsRequest, WsResponse, serialize_response_frame};
+pub use envelope::{WireEventFilter, WsEnvelope, WsRequest};
+pub(crate) use envelope::{WsResponse, serialize_response_frame};
 pub(crate) use handlers::{
     handle_do_action, handle_get_actions, handle_get_active_viewers, handle_get_events,
     handle_get_global, handle_get_globals, handle_get_info, handle_get_overlay_files,
@@ -35,7 +36,10 @@ fn invalid_filter(refusal: helpers::UnknownEventSource) -> WsResponse {
     }
 }
 
-pub async fn dispatch(req: WsEnvelope<WsRequest>, ctx: &DispatchContext) -> WsEnvelope<WsResponse> {
+pub(crate) async fn dispatch(
+    req: WsEnvelope<WsRequest>,
+    ctx: &DispatchContext,
+) -> WsEnvelope<WsResponse> {
     let id = req.id.clone();
     let inner = route(req.inner, ctx).await;
     WsEnvelope { id, inner }

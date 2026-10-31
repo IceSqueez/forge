@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use forge_events::{Event, EventSource};
 use forge_runtime::{EventBus, NullEventLogRepo, spawn_viewer_tracker};
-use forge_storage::viewer::MockViewerRepo;
+use forge_storage::MockViewerRepo;
 use forge_types::PlatformId;
 use tokio::sync::mpsc;
 use tokio::time::{Duration, timeout};

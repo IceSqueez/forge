@@ -147,7 +147,11 @@ impl ScreenActionsView {
             subtitle: GridPickerSubtitle::Context {
                 lead: tr!("action_editor_picker_fires").into(),
                 name: action_name.into(),
-                note: tr!("action_editor_picker_available_count", count = count as i64).into(),
+                note: tr!(
+                    "action_editor_picker_available_count",
+                    count = i64::try_from(count).unwrap_or(i64::MAX)
+                )
+                .into(),
             },
             footer_hint: tr!("action_editor_trigger_picker_footer_hint").into(),
             search_placeholder: tr!("triggers_search_placeholder").into(),

@@ -3,7 +3,7 @@ use forge_types::{Variant, VariantKind};
 use gpui::{Rgba, SharedString};
 use time::OffsetDateTime;
 
-pub fn variant_kind_color(kind: VariantKind, palette: &ForgePalette) -> Rgba {
+pub(crate) fn variant_kind_color(kind: VariantKind, palette: &ForgePalette) -> Rgba {
     match kind {
         VariantKind::Int => palette.info,
         VariantKind::Float => palette.accent_peach,
@@ -16,7 +16,7 @@ pub fn variant_kind_color(kind: VariantKind, palette: &ForgePalette) -> Rgba {
 }
 
 #[derive(Clone, Debug)]
-pub struct Global {
+pub(crate) struct Global {
     pub name: SharedString,
     pub value: Variant,
     pub persisted: bool,
@@ -26,17 +26,17 @@ pub struct Global {
 }
 
 impl Global {
-    pub fn kind(&self) -> VariantKind {
+    pub(crate) fn kind(&self) -> VariantKind {
         VariantKind::from_variant(&self.value)
     }
 
-    pub fn modified_label(&self) -> String {
+    pub(crate) fn modified_label(&self) -> String {
         fmt_display_relative(Some(self.modified_at))
     }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
-pub enum GlobalsFilter {
+pub(crate) enum GlobalsFilter {
     #[default]
     All,
     Persisted,
@@ -44,7 +44,7 @@ pub enum GlobalsFilter {
 }
 
 impl GlobalsFilter {
-    pub fn keeps(self, global: &Global) -> bool {
+    pub(crate) fn keeps(self, global: &Global) -> bool {
         match self {
             GlobalsFilter::All => true,
             GlobalsFilter::Persisted => global.persisted,
@@ -53,39 +53,39 @@ impl GlobalsFilter {
     }
 }
 
-pub struct Globals {
+pub(crate) struct Globals {
     entries: Vec<Global>,
 }
 
 impl Globals {
-    pub fn empty() -> Self {
+    pub(crate) fn empty() -> Self {
         Self {
             entries: Vec::new(),
         }
     }
 
-    pub fn set_all(&mut self, mut entries: Vec<Global>) {
+    pub(crate) fn set_all(&mut self, mut entries: Vec<Global>) {
         entries.sort_by(|a, b| a.name.cmp(&b.name));
         self.entries = entries;
     }
 
-    pub fn entries(&self) -> &[Global] {
+    pub(crate) fn entries(&self) -> &[Global] {
         &self.entries
     }
 
-    pub fn total(&self) -> usize {
+    pub(crate) fn total(&self) -> usize {
         self.entries.len()
     }
 
-    pub fn persisted_count(&self) -> usize {
+    pub(crate) fn persisted_count(&self) -> usize {
         self.entries.iter().filter(|g| g.persisted).count()
     }
 
-    pub fn session_count(&self) -> usize {
+    pub(crate) fn session_count(&self) -> usize {
         self.total() - self.persisted_count()
     }
 
-    pub fn contains(&self, name: &str) -> bool {
+    pub(crate) fn contains(&self, name: &str) -> bool {
         self.entries.iter().any(|g| g.name.as_ref() == name)
     }
 }

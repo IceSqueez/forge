@@ -10,14 +10,14 @@ use crate::navigation::Screen;
 
 const WHOLE_HUB_ID: &str = "hub-crumb";
 
-pub fn core_category(screen: &Screen) -> Option<IntegrationCategory> {
+pub(crate) fn core_category(screen: &Screen) -> Option<IntegrationCategory> {
     core_features()
         .into_iter()
         .find(|feature| discriminant(&feature.screen) == discriminant(screen))
         .map(|feature| feature.category)
 }
 
-pub fn hub_crumb<V: EventEmitter<NavRequested>>(
+pub(crate) fn hub_crumb<V: EventEmitter<NavRequested>>(
     category: Option<IntegrationCategory>,
     cx: &mut Context<V>,
 ) -> BreadcrumbCrumb {

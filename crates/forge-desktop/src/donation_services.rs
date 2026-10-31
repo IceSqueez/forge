@@ -14,7 +14,7 @@ use gpui::{App, Entity};
 use crate::integration_catalog::declarations;
 use crate::platforms::PlatformConnectivity;
 
-pub const DONATELLO_POLL_INTERVAL_SECS: Setting<Tally> = Setting::new(
+pub(crate) const DONATELLO_POLL_INTERVAL_SECS: Setting<Tally> = Setting::new(
     "donations.donatello.poll_interval_secs",
     Tally { default: 0 },
     Portable,
@@ -22,19 +22,19 @@ pub const DONATELLO_POLL_INTERVAL_SECS: Setting<Tally> = Setting::new(
 );
 
 #[derive(Clone, Default)]
-pub struct DonationServices {
+pub(crate) struct DonationServices {
     pub donatello: Option<Arc<DonatelloProvider>>,
     pub monobank: Option<Arc<MonobankProvider>>,
 }
 
 #[derive(Clone)]
-pub enum DonationService {
+pub(crate) enum DonationService {
     Donatello(Arc<DonatelloProvider>),
     Monobank(Arc<MonobankProvider>),
 }
 
 impl DonationService {
-    pub fn id(&self) -> &IntegrationId {
+    pub(crate) fn id(&self) -> &IntegrationId {
         match self {
             Self::Donatello(provider) => BuiltinStatus::id(provider.as_ref()),
             Self::Monobank(provider) => BuiltinStatus::id(provider.as_ref()),
@@ -57,18 +57,20 @@ impl DonationService {
 }
 
 impl DonationServices {
-    pub fn all(&self) -> Vec<DonationService> {
+    pub(crate) fn all(&self) -> Vec<DonationService> {
         let donatello = self.donatello.clone().map(DonationService::Donatello);
         let monobank = self.monobank.clone().map(DonationService::Monobank);
         donatello.into_iter().chain(monobank).collect()
     }
 
-    pub fn service(&self, id: &IntegrationId) -> Option<DonationService> {
+    pub(crate) fn service(&self, id: &IntegrationId) -> Option<DonationService> {
         self.all().into_iter().find(|service| service.id() == id)
     }
 }
 
-pub async fn stored_donatello_poll_interval(settings: &dyn SettingsRepo) -> Option<Duration> {
+pub(crate) async fn stored_donatello_poll_interval(
+    settings: &dyn SettingsRepo,
+) -> Option<Duration> {
     match read_stored_setting(settings, &DONATELLO_POLL_INTERVAL_SECS).await {
         Ok(stored) => stored.map(Duration::from_secs),
         Err(error) => {
@@ -78,7 +80,7 @@ pub async fn stored_donatello_poll_interval(settings: &dyn SettingsRepo) -> Opti
     }
 }
 
-pub async fn restore_donatello_poll_interval(
+pub(crate) async fn restore_donatello_poll_interval(
     provider: &DonatelloProvider,
     settings: &dyn SettingsRepo,
 ) {
@@ -87,7 +89,7 @@ pub async fn restore_donatello_poll_interval(
     }
 }
 
-pub fn donation_provider_options() -> Vec<(String, String)> {
+pub(crate) fn donation_provider_options() -> Vec<(String, String)> {
     declarations()
         .into_iter()
         .filter(|declaration| declaration.category == IntegrationCategory::DONATIONS)
@@ -100,7 +102,7 @@ pub fn donation_provider_options() -> Vec<(String, String)> {
         .collect()
 }
 
-pub fn mirror_donation_connectivity(
+pub(crate) fn mirror_donation_connectivity(
     services: &DonationServices,
     connectivity: &Entity<PlatformConnectivity>,
     cx: &mut App,

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_registry::runner::SubActionConfig;
+use forge_registry::SubActionConfig;
 use forge_registry::{
     ConfigProblem, ConfigSpec, NumberField, PickedTextField, RunContext, StepTimer, StoredNumber,
     SubActionCategory, SubActionRunner, TextPicker, TypedField, ValueBounds,
@@ -38,12 +38,12 @@ fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<(String, f64
     Ok((SOURCE.read(config, args)?, VOLUME_DB.read(config, args)?))
 }
 
-pub struct SetVolumeRunner {
+pub(crate) struct SetVolumeRunner {
     sink: Arc<dyn ObsSink>,
 }
 
 impl SetVolumeRunner {
-    pub fn new(sink: Arc<dyn ObsSink>) -> Self {
+    pub(crate) fn new(sink: Arc<dyn ObsSink>) -> Self {
         Self { sink }
     }
 }

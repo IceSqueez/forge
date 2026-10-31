@@ -348,7 +348,7 @@ impl SqliteMediaRepo {
         )
         .bind(id.as_str())
         .bind(format.as_str())
-        .bind(byte_size as i64)
+        .bind(i64::try_from(byte_size).unwrap_or(i64::MAX))
         .bind(label)
         .bind(to_epoch_ms(OffsetDateTime::now_utc()))
         .execute(self.db.writer())
@@ -456,7 +456,7 @@ impl MediaRepo for SqliteMediaRepo {
         let holders = self.referrers(id).await?;
         if !holders.is_empty() {
             return Err(StorageError::MediaReferenced {
-                referrer_count: holders.len() as u32,
+                referrer_count: u32::try_from(holders.len()).unwrap_or(u32::MAX),
             });
         }
 

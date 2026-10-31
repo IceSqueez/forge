@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use forge_events::{Event, EventSource};
 use forge_runtime::{EventBus, NullEventLogRepo, spawn_chat_history_persistence};
-use forge_storage::chat_history::MockChatHistoryRepo;
+use forge_storage::MockChatHistoryRepo;
 use forge_storage::settings::core_settings::CHAT_HISTORY_PER_VIEWER_LIMIT;
 use forge_storage::test_support::MemorySettings;
 use forge_storage::{

@@ -1,3 +1,4 @@
+use crate::api::poller::KickViewerSource;
 use crate::vocabulary::labels;
 use forge_types::UserText;
 use std::sync::{Arc, RwLock};
@@ -68,6 +69,25 @@ pub struct KickIntegrationBundle {
 
 impl KickIntegrationBundle {
     pub fn new(
+        slug: String,
+        user_id: u64,
+        platform: Arc<KickPlatform>,
+        credentials_manager: Arc<KickCredentialsManager>,
+        rate_limiter: Arc<dyn RateLimiter>,
+        viewers: &KickViewerSource,
+    ) -> (Arc<Self>, broadcast::Sender<HealthDelta>) {
+        Self::with_feeds(
+            slug,
+            user_id,
+            platform,
+            credentials_manager,
+            rate_limiter,
+            viewers.subscribe(),
+            viewers.subscribe_auth(),
+        )
+    }
+
+    pub(crate) fn with_feeds(
         slug: String,
         user_id: u64,
         platform: Arc<KickPlatform>,
@@ -556,7 +576,7 @@ mod tests {
         ) {
             let (viewer_tx, viewer_rx) = watch::channel(ViewerReport::Absent);
             let (auth_tx, auth_rx) = watch::channel(PollerAuth::Authorized);
-            let (bundle, _) = KickIntegrationBundle::new(
+            let (bundle, _) = KickIntegrationBundle::with_feeds(
                 "test_channel".to_owned(),
                 777,
                 platform,

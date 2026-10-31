@@ -14,7 +14,7 @@ use tokio::runtime::Handle;
 use tokio::task::JoinHandle;
 
 const SAVE_DEBOUNCE: Duration = Duration::from_millis(250);
-pub const WINDOW_PLACEMENT: Setting<JsonDocument<Option<WindowPlacement>>> = Setting::new(
+pub(crate) const WINDOW_PLACEMENT: Setting<JsonDocument<Option<WindowPlacement>>> = Setting::new(
     "app.window_placement",
     JsonDocument::new(),
     MachineLocal,
@@ -26,7 +26,7 @@ const FIRST_LAUNCH_SIZE: gpui::Size<Pixels> = size(px(1080.0), px(720.0));
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum WindowMode {
+pub(crate) enum WindowMode {
     Windowed,
     Maximized,
     Fullscreen,
@@ -43,7 +43,7 @@ impl WindowMode {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct WindowPlacement {
+pub(crate) struct WindowPlacement {
     pub mode: WindowMode,
     pub x: f32,
     pub y: f32,
@@ -53,7 +53,7 @@ pub struct WindowPlacement {
 }
 
 impl WindowPlacement {
-    pub fn capture(bounds: WindowBounds, display_uuid: Option<String>) -> Self {
+    pub(crate) fn capture(bounds: WindowBounds, display_uuid: Option<String>) -> Self {
         let (mode, rect) = match bounds {
             WindowBounds::Windowed(rect) => (WindowMode::Windowed, rect),
             WindowBounds::Maximized(rect) => (WindowMode::Maximized, rect),
@@ -82,7 +82,7 @@ impl WindowPlacement {
     }
 }
 
-pub struct DisplayArea {
+pub(crate) struct DisplayArea {
     pub id: DisplayId,
     pub uuid: Option<String>,
     pub bounds: Bounds<Pixels>,
@@ -101,12 +101,12 @@ impl DisplayArea {
 }
 
 #[derive(Debug, PartialEq)]
-pub struct RestoredPlacement {
+pub(crate) struct RestoredPlacement {
     pub bounds: WindowBounds,
     pub display_id: Option<DisplayId>,
 }
 
-pub fn restore_placement(
+pub(crate) fn restore_placement(
     saved: &WindowPlacement,
     displays: &[DisplayArea],
     origin_honored: bool,
@@ -162,7 +162,7 @@ fn compositor_is_wayland(cx: &App) -> bool {
     cx.compositor_name() == WAYLAND_COMPOSITOR
 }
 
-pub fn initial_window_bounds(
+pub(crate) fn initial_window_bounds(
     saved: Option<&WindowPlacement>,
     cx: &App,
 ) -> (WindowBounds, Option<DisplayId>) {
@@ -187,7 +187,7 @@ struct WindowPlacementTracking {
 
 impl Global for WindowPlacementTracking {}
 
-pub fn track_window_placement(
+pub(crate) fn track_window_placement(
     window: &mut Window,
     settings: Arc<dyn SettingsRepo>,
     rt_handle: Handle,
@@ -201,7 +201,7 @@ pub fn track_window_placement(
     });
 }
 
-pub struct WindowPlacementRecorder {
+pub(crate) struct WindowPlacementRecorder {
     settings: Arc<dyn SettingsRepo>,
     rt_handle: Handle,
     latest: Option<WindowPlacement>,

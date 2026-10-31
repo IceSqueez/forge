@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_registry::runner::SubActionConfig;
+use forge_registry::SubActionConfig;
 use forge_registry::{
     ConfigProblem, ConfigReason, ConfigSpec, Interpolation, OptionalField, RunContext, StepTimer,
     SubActionCategory, SubActionRunner, TextEditor, TextField, TypedField,
@@ -66,12 +66,12 @@ fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<MessageEdit,
     })
 }
 
-pub struct EditMessageRunner {
+pub(crate) struct EditMessageRunner {
     sink: Arc<dyn DiscordSink>,
 }
 
 impl EditMessageRunner {
-    pub fn new(sink: Arc<dyn DiscordSink>) -> Self {
+    pub(crate) fn new(sink: Arc<dyn DiscordSink>) -> Self {
         Self { sink }
     }
 }

@@ -115,7 +115,7 @@ pub fn ui_names_language() -> NamesLanguage {
     active_language().names_language()
 }
 
-pub fn date_display() -> DateDisplay {
+pub(crate) fn date_display() -> DateDisplay {
     DateDisplay::new(
         active_display_formats(),
         ui_names_language(),
@@ -140,7 +140,7 @@ pub fn fmt_display_relative(value: Option<OffsetDateTime>) -> String {
     date_display().relative(value, OffsetDateTime::now_utc())
 }
 
-pub fn fmt_day_period(time_of_day: Time) -> String {
+pub(crate) fn fmt_day_period(time_of_day: Time) -> String {
     DateDisplay::new(
         active_display_formats(),
         ui_names_language(),

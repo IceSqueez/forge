@@ -35,7 +35,7 @@ const HTTP_TIMEOUT_MS_RANGE: RangeInclusive<u64> = 100..=30_000;
 const MAX_RESPONSE_KIB_RANGE: RangeInclusive<u64> = 1..=10_240;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum NumericSetting {
+pub(crate) enum NumericSetting {
     OpLimit,
     EngineTimeoutMs,
     MaxCalls,
@@ -52,7 +52,7 @@ impl NumericSetting {
         NumericSetting::MaxResponseKib,
     ];
 
-    pub fn range(self) -> RangeInclusive<u64> {
+    pub(crate) fn range(self) -> RangeInclusive<u64> {
         match self {
             NumericSetting::OpLimit => OP_LIMIT_RANGE,
             NumericSetting::EngineTimeoutMs => ENGINE_TIMEOUT_MS_RANGE,
@@ -62,7 +62,7 @@ impl NumericSetting {
         }
     }
 
-    pub fn declaration(self) -> &'static Setting<Count> {
+    pub(crate) fn declaration(self) -> &'static Setting<Count> {
         match self {
             NumericSetting::OpLimit => &forge_script::settings::OP_LIMIT,
             NumericSetting::EngineTimeoutMs => &forge_script::settings::TIMEOUT_MS,
@@ -72,7 +72,7 @@ impl NumericSetting {
         }
     }
 
-    pub fn stored_value_from_text(self, text: &str) -> Option<u64> {
+    pub(crate) fn stored_value_from_text(self, text: &str) -> Option<u64> {
         let value = text
             .trim()
             .parse::<u64>()
@@ -84,7 +84,7 @@ impl NumericSetting {
         })
     }
 
-    pub fn display_from_stored(self, stored: u64) -> u64 {
+    pub(crate) fn display_from_stored(self, stored: u64) -> u64 {
         match self {
             NumericSetting::MaxResponseKib => stored / BYTES_PER_KIB,
             _ => stored,
@@ -134,7 +134,7 @@ struct ScriptingSnapshot {
     stored_numbers: [(NumericSetting, u64); 5],
 }
 
-pub struct SettingsScriptingView {
+pub(crate) struct SettingsScriptingView {
     backend: Arc<dyn DataProvider>,
     rt_handle: tokio::runtime::Handle,
     allowed_domains: Loadable<Vec<String>>,
@@ -165,7 +165,7 @@ fn normalized_domain(raw: &str) -> Option<String> {
 }
 
 impl SettingsScriptingView {
-    pub fn new(
+    pub(crate) fn new(
         backend: Arc<dyn DataProvider>,
         rt_handle: tokio::runtime::Handle,
         cx: &mut Context<Self>,

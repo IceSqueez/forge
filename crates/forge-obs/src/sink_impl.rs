@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::PoisonError;
 
@@ -15,8 +14,7 @@ use crate::catalog::write_lock;
 use crate::client::ObsClient;
 use crate::error::ObsError;
 use crate::session::{CONFIG_SWITCH_TIMEOUT, LiveSession};
-use crate::sink::ObsSink;
-use crate::vocabulary::fields::query;
+use crate::sink::{InputSettings, ObsSink, RecordStatus, SceneList, StreamStatus};
 
 fn without_nulls(value: serde_json::Value) -> serde_json::Value {
     match value {
@@ -318,67 +316,48 @@ impl ObsSink for ObsClient {
             .await
     }
 
-    async fn get_scene_list(&self) -> Result<Variant, ObsError> {
+    async fn get_scene_list(&self) -> Result<SceneList, ObsError> {
         let session = self.active_session().await?;
         let scenes = session
             .request("GetSceneList", session.obs().scenes().list())
             .await?;
-        let all_names: Vec<Variant> = scenes
-            .scenes
-            .iter()
-            .map(|s| Variant::String(s.id.name.clone()))
-            .collect();
+        let names = scenes.scenes.iter().map(|s| s.id.name.clone()).collect();
         let current = scenes
             .current_program_scene
             .map(|id| id.name)
             .unwrap_or_default();
-        let mut obj = BTreeMap::new();
-        obj.insert(query::ALL_NAMES.to_owned(), Variant::Array(all_names));
-        obj.insert(query::CURRENT.to_owned(), Variant::String(current));
-        Ok(Variant::Object(obj))
+        Ok(SceneList { names, current })
     }
 
-    async fn get_input_list(&self) -> Result<Variant, ObsError> {
+    async fn get_input_list(&self) -> Result<Vec<String>, ObsError> {
         let session = self.active_session().await?;
         let inputs = session
             .request("GetInputList", session.obs().inputs().list(None))
             .await?;
-        let all_names: Vec<Variant> = inputs
-            .iter()
-            .map(|i| Variant::String(i.id.name.clone()))
-            .collect();
-        let mut obj = BTreeMap::new();
-        obj.insert(query::ALL_NAMES.to_owned(), Variant::Array(all_names));
-        Ok(Variant::Object(obj))
+        Ok(inputs.iter().map(|i| i.id.name.clone()).collect())
     }
 
-    async fn get_record_status(&self) -> Result<Variant, ObsError> {
+    async fn get_record_status(&self) -> Result<RecordStatus, ObsError> {
         let session = self.active_session().await?;
         let status = session
             .request("GetRecordStatus", session.obs().recording().status())
             .await?;
-        let mut obj = BTreeMap::new();
-        obj.insert(query::IS_ACTIVE.to_owned(), Variant::Bool(status.active));
-        obj.insert(query::IS_PAUSED.to_owned(), Variant::Bool(status.paused));
-        obj.insert(
-            query::DURATION_MS.to_owned(),
-            Variant::Int(status.duration.whole_milliseconds() as i64),
-        );
-        Ok(Variant::Object(obj))
+        Ok(RecordStatus {
+            active: status.active,
+            paused: status.paused,
+            duration_ms: duration_millis(status.duration),
+        })
     }
 
-    async fn get_stream_status(&self) -> Result<Variant, ObsError> {
+    async fn get_stream_status(&self) -> Result<StreamStatus, ObsError> {
         let session = self.active_session().await?;
         let status = session
             .request("GetStreamStatus", session.obs().streaming().status())
             .await?;
-        let mut obj = BTreeMap::new();
-        obj.insert(query::IS_ACTIVE.to_owned(), Variant::Bool(status.active));
-        obj.insert(
-            query::DURATION_MS.to_owned(),
-            Variant::Int(status.duration.whole_milliseconds() as i64),
-        );
-        Ok(Variant::Object(obj))
+        Ok(StreamStatus {
+            active: status.active,
+            duration_ms: duration_millis(status.duration),
+        })
     }
 
     async fn get_current_scene(&self) -> Result<Option<String>, ObsError> {
@@ -392,7 +371,7 @@ impl ObsSink for ObsClient {
         Ok(Some(current.id.name))
     }
 
-    async fn get_input_settings(&self, input: &str) -> Result<Variant, ObsError> {
+    async fn get_input_settings(&self, input: &str) -> Result<InputSettings, ObsError> {
         let session = self.active_session().await?;
         let result = session
             .request(
@@ -408,18 +387,16 @@ impl ObsSink for ObsClient {
                 "GetInputSettings returned settings that are not an object".to_owned(),
             ));
         };
-        let settings_variant = Variant::from_plain_json(without_nulls(serde_json::Value::Object(
+        let settings = Variant::from_plain_json(without_nulls(serde_json::Value::Object(settings)))
+            .map_err(|e| {
+                ObsError::Protocol(format!(
+                    "GetInputSettings returned unreadable settings: {e}"
+                ))
+            })?;
+        Ok(InputSettings {
             settings,
-        )))
-        .map_err(|e| {
-            ObsError::Protocol(format!(
-                "GetInputSettings returned unreadable settings: {e}"
-            ))
-        })?;
-        let mut obj = BTreeMap::new();
-        obj.insert(query::SETTINGS.to_owned(), settings_variant);
-        obj.insert(query::KIND.to_owned(), Variant::String(result.kind));
-        Ok(Variant::Object(obj))
+            kind: result.kind,
+        })
     }
 
     async fn set_source_filter_enabled(
@@ -536,6 +513,11 @@ impl ObsSink for ObsClient {
         self.forget_scene_item_ids();
         switched
     }
+}
+
+fn duration_millis(duration: time::Duration) -> i64 {
+    let millis = duration.whole_milliseconds();
+    i64::try_from(millis).unwrap_or(if millis < 0 { i64::MIN } else { i64::MAX })
 }
 
 #[cfg(test)]

@@ -14,6 +14,20 @@ pub struct VoiceGateConfig {
     pub hold: Duration,
 }
 
+#[derive(Debug, Clone)]
+pub struct VoiceGateWatch(watch::Receiver<VoiceGateState>);
+
+impl VoiceGateWatch {
+    pub fn latest(&mut self) -> VoiceGateState {
+        self.0.borrow_and_update().clone()
+    }
+
+    pub async fn changed(&mut self) -> Option<VoiceGateState> {
+        self.0.changed().await.ok()?;
+        Some(self.latest())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum VoiceGateState {
     Inactive,
@@ -46,7 +60,7 @@ impl VoiceGateMonitor {
         let shared = Arc::new(GateShared {
             level_bits: AtomicU32::new(0.0f32.to_bits()),
             threshold_bits: AtomicU32::new(config.threshold.to_bits()),
-            hold_nanos: AtomicU64::new(config.hold.as_nanos().min(u128::from(u64::MAX)) as u64),
+            hold_nanos: AtomicU64::new(u64::try_from(config.hold.as_nanos()).unwrap_or(u64::MAX)),
         });
         let (control_tx, control_rx) = crossbeam_channel::unbounded();
         let (state_tx, state_rx) = watch::channel(VoiceGateState::Inactive);
@@ -62,8 +76,8 @@ impl VoiceGateMonitor {
         }
     }
 
-    pub fn subscribe(&self) -> watch::Receiver<VoiceGateState> {
-        self.state_rx.clone()
+    pub fn subscribe(&self) -> VoiceGateWatch {
+        VoiceGateWatch(self.state_rx.clone())
     }
 
     pub fn state(&self) -> VoiceGateState {
@@ -79,7 +93,7 @@ impl VoiceGateMonitor {
             .threshold_bits
             .store(config.threshold.to_bits(), Ordering::Relaxed);
         self.shared.hold_nanos.store(
-            config.hold.as_nanos().min(u128::from(u64::MAX)) as u64,
+            u64::try_from(config.hold.as_nanos()).unwrap_or(u64::MAX),
             Ordering::Relaxed,
         );
         if self
@@ -167,7 +181,7 @@ fn gate_tick(
 ) {
     shared.level_bits.store(peak.to_bits(), Ordering::Relaxed);
     let threshold = f32::from_bits(shared.threshold_bits.load(Ordering::Relaxed));
-    let now_nanos = epoch.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64;
+    let now_nanos = u64::try_from(epoch.elapsed().as_nanos()).unwrap_or(u64::MAX);
 
     if peak >= threshold {
         last_active_nanos.store(now_nanos, Ordering::Relaxed);

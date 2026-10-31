@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_events::{ChatSent, EventSource, TypedEvent};
-use forge_registry::runner::SubActionConfig;
+use forge_registry::SubActionConfig;
 use forge_registry::{
     ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TextEditor, TextField,
     TypedField,
@@ -25,12 +25,12 @@ const MESSAGE: TextField = TextField {
 
 const CONFIG: ConfigSpec = ConfigSpec::new(&[&MESSAGE]);
 
-pub struct SendMessageRunner {
+pub(crate) struct SendMessageRunner {
     sender: Arc<YoutubeSendChat>,
 }
 
 impl SendMessageRunner {
-    pub fn new(sender: Arc<YoutubeSendChat>) -> Self {
+    pub(crate) fn new(sender: Arc<YoutubeSendChat>) -> Self {
         Self { sender }
     }
 }

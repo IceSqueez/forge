@@ -203,7 +203,10 @@ impl MidiScreenView {
             palette.text_faint
         };
         let port_line = match live_index {
-            Some(index) => tr!("midi_device_port", index = index as i64),
+            Some(index) => tr!(
+                "midi_device_port",
+                index = i64::try_from(index).unwrap_or(i64::MAX)
+            ),
             None => tr!("midi_device_offline"),
         };
         let row = div()
@@ -242,7 +245,7 @@ impl MidiScreenView {
                     badge_ink,
                     tr!(
                         "midi_device_maps",
-                        count = self.maps_for_device(name) as i64
+                        count = i64::try_from(self.maps_for_device(name)).unwrap_or(i64::MAX)
                     ),
                     true,
                     DEVICE_BADGE_FS,

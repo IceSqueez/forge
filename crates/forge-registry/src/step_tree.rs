@@ -7,10 +7,10 @@ pub const CASE_CHAIN_KEY: &str = "chain";
 pub const CASE_MATCH_KEY: &str = "match";
 pub const STEP_KIND_KEY: &str = "kind_id";
 pub const STEP_CONFIG_KEY: &str = "config";
-pub const STEP_ENABLED_KEY: &str = "enabled";
-pub const STEP_CONTINUE_ON_ERROR_KEY: &str = "continue_on_error";
+pub(crate) const STEP_ENABLED_KEY: &str = "enabled";
+pub(crate) const STEP_CONTINUE_ON_ERROR_KEY: &str = "continue_on_error";
 pub const STEP_CONDITION_KEY: &str = "condition";
-pub const STEP_LABEL_KEY: &str = "label";
+pub(crate) const STEP_LABEL_KEY: &str = "label";
 
 const DEFAULT_ENABLED: bool = true;
 const DEFAULT_CONTINUE_ON_ERROR: bool = false;

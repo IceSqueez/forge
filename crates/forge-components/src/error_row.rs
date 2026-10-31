@@ -46,7 +46,7 @@ pub fn error_row(
     error_frame(message.into(), palette, density)
 }
 
-pub fn compact_error_with_retry(
+pub(crate) fn compact_error_with_retry(
     id: impl Into<ElementId>,
     message: impl Into<SharedString>,
     palette: &ForgePalette,

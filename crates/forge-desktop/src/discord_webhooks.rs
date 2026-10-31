@@ -10,13 +10,13 @@ use crate::repo_failure::RepoFailure;
 const DISCORD_SUB_ACTION_PREFIX: &str = "discord.";
 const WEBHOOK_NAME_FIELD: &str = "webhook_name";
 
-pub struct WebhookRow {
+pub(crate) struct WebhookRow {
     pub name: String,
     pub linked_actions: Vec<String>,
     pub linked_action_ids: Vec<ActionId>,
 }
 
-pub async fn load_webhooks(
+pub(crate) async fn load_webhooks(
     client: Arc<DiscordClient>,
     actions: Arc<dyn ActionRepo>,
 ) -> Result<Vec<WebhookRow>, RepoFailure> {
@@ -32,7 +32,7 @@ pub async fn load_webhooks(
         .collect())
 }
 
-pub fn linked_action_names(actions: &[Action], webhook_name: &str) -> Vec<String> {
+pub(crate) fn linked_action_names(actions: &[Action], webhook_name: &str) -> Vec<String> {
     actions
         .iter()
         .filter(|action| posts_to(action, webhook_name))
@@ -48,14 +48,14 @@ fn linked_action_ids(actions: &[Action], webhook_name: &str) -> Vec<ActionId> {
         .collect()
 }
 
-pub fn distinct_linked_actions(rows: &[WebhookRow]) -> usize {
+pub(crate) fn distinct_linked_actions(rows: &[WebhookRow]) -> usize {
     rows.iter()
         .flat_map(|row| row.linked_action_ids.iter())
         .collect::<HashSet<&ActionId>>()
         .len()
 }
 
-pub fn name_is_taken(rows: &[WebhookRow], name: &str) -> bool {
+pub(crate) fn name_is_taken(rows: &[WebhookRow], name: &str) -> bool {
     rows.iter().any(|row| row.name == name)
 }
 

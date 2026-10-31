@@ -25,7 +25,7 @@ const RESIZE_HIT_W: Pixels = px(8.0);
 const RESIZE_GROUP: &str = "forge-side-sheet-resize";
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum SheetPosition {
+pub(crate) enum SheetPosition {
     Right,
 }
 

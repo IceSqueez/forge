@@ -7,17 +7,17 @@ struct WindowPresence {
 
 impl Global for WindowPresence {}
 
-pub struct PresenceGate(Option<watch::Receiver<bool>>);
+pub(crate) struct PresenceGate(Option<watch::Receiver<bool>>);
 
 impl PresenceGate {
-    pub fn of(cx: &App) -> Self {
+    pub(crate) fn of(cx: &App) -> Self {
         Self(
             cx.try_global::<WindowPresence>()
                 .map(|presence| presence.visible.subscribe()),
         )
     }
 
-    pub async fn until_visible(&mut self) {
+    pub(crate) async fn until_visible(&mut self) {
         if let Some(visible) = self.0.as_mut()
             && visible.wait_for(|visible| *visible).await.is_err()
         {
@@ -26,7 +26,7 @@ impl PresenceGate {
     }
 }
 
-pub fn track_window_presence(window: &Window, cx: &mut App) {
+pub(crate) fn track_window_presence(window: &Window, cx: &mut App) {
     let (visible, _) = watch::channel(window.is_visible());
     cx.set_global(WindowPresence { visible });
     window

@@ -8,19 +8,19 @@ use gpui::{
 
 use forge_components::{ActivePresentation, Presentation};
 
-pub const TITLEBAR_HEIGHT: Pixels = px(32.0);
+pub(crate) const TITLEBAR_HEIGHT: Pixels = px(32.0);
 const TITLEBAR_PAD_H: Pixels = px(14.0);
 const LOGO_SIZE: Pixels = px(16.0);
 const CLUSTER_GAP: Pixels = px(8.0);
 const DOUBLE_CLICK_COUNT: usize = 2;
 const BRAND_INITIAL: &str = "F";
 
-pub struct TitleBar {
+pub(crate) struct TitleBar {
     should_move: bool,
 }
 
 impl TitleBar {
-    pub fn new(cx: &mut Context<Self>) -> Self {
+    pub(crate) fn new(cx: &mut Context<Self>) -> Self {
         cx.observe_global::<Presentation>(|_, cx| cx.notify())
             .detach();
         Self { should_move: false }

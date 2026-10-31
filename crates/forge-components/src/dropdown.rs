@@ -147,7 +147,7 @@ impl DropdownRow {
     }
 }
 
-pub fn dropdown_group_header(
+pub(crate) fn dropdown_group_header(
     label: impl Into<SharedString>,
     palette: &ForgePalette,
     density: Density,

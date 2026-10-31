@@ -19,7 +19,7 @@ const HEADER_BYTES: usize = (CHUNK_HEADER_BYTES
     + FMT_BODY_BYTES
     + CHUNK_HEADER_BYTES) as usize;
 
-pub fn encode_wave(buffer: &PcmBuffer) -> Vec<u8> {
+pub(crate) fn encode_wave(buffer: &PcmBuffer) -> Vec<u8> {
     let data_len = buffer
         .samples
         .len()

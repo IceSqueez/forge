@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_registry::runner::SubActionConfig;
+use forge_registry::SubActionConfig;
 use forge_registry::{
     ConfigProblem, ConfigReason, ConfigSpec, Interpolation, RunContext, StepTimer,
     SubActionCategory, SubActionConfigExt, SubActionRunner, TextEditor, TextField, TypedField,
@@ -47,13 +47,13 @@ fn read_config(
     ))
 }
 
-pub struct UpdateCategoryRunner {
+pub(crate) struct UpdateCategoryRunner {
     transport: Arc<dyn HelixTransport>,
     identity: Arc<SelfIdentity>,
 }
 
 impl UpdateCategoryRunner {
-    pub fn new(transport: Arc<dyn HelixTransport>, identity: Arc<SelfIdentity>) -> Self {
+    pub(crate) fn new(transport: Arc<dyn HelixTransport>, identity: Arc<SelfIdentity>) -> Self {
         Self {
             transport,
             identity,

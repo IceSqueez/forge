@@ -5,7 +5,7 @@ use crate::bus::EventBus;
 use crate::delivery::EVENT_TRAIL;
 use forge_events::Delivery;
 use forge_events::Event;
-use forge_types::redaction::RedactedText;
+use forge_types::RedactedText;
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 

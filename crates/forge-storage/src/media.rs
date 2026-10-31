@@ -6,14 +6,13 @@ use time::OffsetDateTime;
 
 use crate::StorageError;
 
-pub const MEDIA_CONTENT_HASH: &str = "sha256";
+pub(crate) const MEDIA_CONTENT_HASH: &str = "sha256";
 pub const MEDIA_CONTENT_DIGEST_BYTES: usize = 32;
 const MEDIA_BLOB_ID_SEPARATOR: char = '-';
 
 const BYTES_PER_MIB: u64 = 1024 * 1024;
-pub const MAX_AUDIO_BLOB_BYTES: u64 = 50 * BYTES_PER_MIB;
-pub const MAX_IMAGE_BLOB_BYTES: u64 = 10 * BYTES_PER_MIB;
-pub const MEDIA_BLOB_HARD_CEILING_BYTES: u64 = MAX_AUDIO_BLOB_BYTES;
+pub(crate) const MAX_AUDIO_BLOB_BYTES: u64 = 50 * BYTES_PER_MIB;
+pub(crate) const MAX_IMAGE_BLOB_BYTES: u64 = 10 * BYTES_PER_MIB;
 
 const MEDIA_LABEL_MAX_CHARS: usize = 120;
 const MEDIA_LABEL_FALLBACK: &str = "untitled";

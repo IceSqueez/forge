@@ -591,12 +591,18 @@ impl OverlaysView {
             DeliveryHint::Delivered { sources } => (
                 Icon::CircleCheck,
                 palette.success,
-                tr!("overlays_test_delivered", count = sources as i64),
+                tr!(
+                    "overlays_test_delivered",
+                    count = i64::try_from(sources).unwrap_or(i64::MAX)
+                ),
             ),
             DeliveryHint::OnlyPreview { tabs } => (
                 Icon::InfoCircle,
                 palette.warning,
-                tr!("overlays_test_preview_only", count = tabs as i64),
+                tr!(
+                    "overlays_test_preview_only",
+                    count = i64::try_from(tabs).unwrap_or(i64::MAX)
+                ),
             ),
             DeliveryHint::NoBrowserSource => (
                 Icon::AlertTriangle,

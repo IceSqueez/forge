@@ -11,7 +11,7 @@ pub(crate) fn hotkeys_integration() -> IntegrationId {
 
 impl SoundboardView {
     #[must_use]
-    pub fn with_integration_switch(
+    pub(crate) fn with_integration_switch(
         mut self,
         switch: IntegrationSwitch,
         cx: &mut Context<Self>,
@@ -28,7 +28,7 @@ impl SoundboardView {
         self.integrations.as_ref().map(SwitchWatch::switch)
     }
 
-    pub fn hotkeys_switched_off(&self) -> bool {
+    pub(crate) fn hotkeys_switched_off(&self) -> bool {
         self.integrations
             .as_ref()
             .is_some_and(|integrations| integrations.is_off(&hotkeys_integration()))

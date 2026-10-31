@@ -2,7 +2,7 @@ use forge_tts_pipeline::{
     BlocklistMode, EmoteTokenSet, EmoteTreatment, OutputConfig, PipelineConfig, SkipRulesConfig,
 };
 
-pub fn neutral_output() -> OutputConfig {
+pub(crate) fn neutral_output() -> OutputConfig {
     OutputConfig {
         read_display_name_first: false,
         emote_treatment: EmoteTreatment::Keep,
@@ -13,7 +13,7 @@ pub fn neutral_output() -> OutputConfig {
     }
 }
 
-pub fn neutral_config() -> PipelineConfig {
+pub(crate) fn neutral_config() -> PipelineConfig {
     PipelineConfig {
         emote_tokens: EmoteTokenSet::default(),
         skip_rules: SkipRulesConfig::default(),

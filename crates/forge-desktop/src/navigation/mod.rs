@@ -2,6 +2,6 @@ mod navigator;
 mod screen;
 mod sections;
 
-pub use navigator::{NavRequested, Navigator};
-pub use screen::Screen;
-pub use sections::{SettingsSection, TtsSection};
+pub(crate) use navigator::{NavRequested, Navigator};
+pub(crate) use screen::Screen;
+pub(crate) use sections::{SettingsSection, TtsSection};

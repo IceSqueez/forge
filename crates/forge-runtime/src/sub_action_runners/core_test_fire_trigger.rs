@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_registry::references::TRIGGER_INSTANCE_OPTIONS_KEY;
+use forge_registry::TRIGGER_INSTANCE_OPTIONS_KEY;
 use forge_registry::{
     ConfigProblem, ConfigReason, ConfigSpec, DynamicSelectField, JsonObjectField, RunContext,
     StepTimer, SubActionCategory, SubActionRunner, TypedField,
@@ -57,14 +57,14 @@ fn synthetic_outputs(
         })
 }
 
-pub struct CoreTestFireTriggerRunner {
+pub(crate) struct CoreTestFireTriggerRunner {
     trigger_instances: Arc<dyn TriggerInstanceRepo>,
     actions: Arc<dyn ActionRepo>,
     scheduler: QueueSchedulerHandle,
 }
 
 impl CoreTestFireTriggerRunner {
-    pub fn new(
+    pub(crate) fn new(
         trigger_instances: Arc<dyn TriggerInstanceRepo>,
         actions: Arc<dyn ActionRepo>,
         scheduler: QueueSchedulerHandle,

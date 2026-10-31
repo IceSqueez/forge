@@ -64,7 +64,7 @@ pub(crate) struct ConnectPage {
 }
 
 impl ConnectPage {
-    pub fn render<V: EventEmitter<NavRequested>>(
+    pub(crate) fn render<V: EventEmitter<NavRequested>>(
         self,
         palette: &ForgePalette,
         density: Density,

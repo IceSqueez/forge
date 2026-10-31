@@ -41,14 +41,14 @@ enum RestoreStep {
     Confirming(ConfirmStep),
 }
 
-pub struct RestoreFlow {
+pub(crate) struct RestoreFlow {
     rt_handle: Handle,
     data_dir: PathBuf,
     step: RestoreStep,
 }
 
 impl RestoreFlow {
-    pub fn new(rt_handle: Handle, data_dir: PathBuf) -> Self {
+    pub(crate) fn new(rt_handle: Handle, data_dir: PathBuf) -> Self {
         Self {
             rt_handle,
             data_dir,
@@ -56,18 +56,18 @@ impl RestoreFlow {
         }
     }
 
-    pub fn is_busy(&self) -> bool {
+    pub(crate) fn is_busy(&self) -> bool {
         !matches!(self.step, RestoreStep::Idle)
     }
 
-    pub fn is_preparing(&self) -> bool {
+    pub(crate) fn is_preparing(&self) -> bool {
         matches!(
             self.step,
             RestoreStep::Picking | RestoreStep::Reading | RestoreStep::Staging
         )
     }
 
-    pub fn start(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn start(&mut self, cx: &mut Context<Self>) {
         if self.is_busy() {
             return;
         }
@@ -93,7 +93,7 @@ impl RestoreFlow {
         cx.notify();
     }
 
-    pub fn open(&mut self, bundle: PathBuf, cx: &mut Context<Self>) {
+    pub(crate) fn open(&mut self, bundle: PathBuf, cx: &mut Context<Self>) {
         if self.is_busy() {
             refuse_while_busy(cx);
             return;

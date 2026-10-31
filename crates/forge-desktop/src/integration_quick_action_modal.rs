@@ -33,7 +33,7 @@ use forge_components::{
 
 const TEXT_DEPENDENCY_DEBOUNCE: Duration = Duration::from_millis(400);
 
-pub enum QuickActionModalEvent {
+pub(crate) enum QuickActionModalEvent {
     Run { step: SubActionStep, label: String },
     Cancel,
 }
@@ -90,7 +90,7 @@ struct OpenChoice {
     _sub: Subscription,
 }
 
-pub struct QuickActionModal {
+pub(crate) struct QuickActionModal {
     label: String,
     glyph: Icon,
     accent: Rgba,
@@ -109,7 +109,7 @@ pub struct QuickActionModal {
 impl EventEmitter<QuickActionModalEvent> for QuickActionModal {}
 
 impl QuickActionModal {
-    pub fn new(
+    pub(crate) fn new(
         action: QuickAction,
         option_source: Option<Arc<dyn BuiltinOptionSource>>,
         rt_handle: Handle,
@@ -442,7 +442,7 @@ impl QuickActionModal {
         }
     }
 
-    pub fn focus(&self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn focus(&self, window: &mut Window, cx: &mut Context<Self>) {
         for field in &self.fields {
             match &field.control {
                 FieldControl::Text(input) => {

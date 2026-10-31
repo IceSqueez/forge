@@ -161,10 +161,10 @@ pub(super) mod tests {
     use forge_components::ThemeId;
     use forge_runtime::{ActionCancelRegistry, QueueScheduler, spawn_action_engine};
     use forge_soundboard::ClipLibrary;
-    use forge_storage::globals::MockGlobalsRepo;
-    use forge_storage::queue::MockQueueRepo;
-    use forge_storage::script::MockScriptRepo;
-    use forge_storage::soundboard::MockSoundboardClipsRepo;
+    use forge_storage::MockGlobalsRepo;
+    use forge_storage::MockQueueRepo;
+    use forge_storage::MockScriptRepo;
+    use forge_storage::MockSoundboardClipsRepo;
     use forge_storage::{
         DataProvider, MockMediaRepo, MockTriggerInstanceRepo, SoundboardClipsRepo, StoredClip,
     };

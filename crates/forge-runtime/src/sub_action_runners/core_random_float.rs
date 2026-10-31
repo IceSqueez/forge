@@ -62,7 +62,7 @@ fn read_config(
     Ok((min, max, INTO_VAR.read(config, args)?))
 }
 
-pub struct CoreRandomFloatRunner;
+pub(crate) struct CoreRandomFloatRunner;
 
 #[async_trait]
 impl SubActionRunner for CoreRandomFloatRunner {

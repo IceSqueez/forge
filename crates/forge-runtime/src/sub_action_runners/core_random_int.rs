@@ -58,7 +58,7 @@ fn read_config(
     Ok((min, max, TARGET_VAR.read(config, args)?))
 }
 
-pub struct CoreRandomIntRunner;
+pub(crate) struct CoreRandomIntRunner;
 
 #[async_trait]
 impl SubActionRunner for CoreRandomIntRunner {

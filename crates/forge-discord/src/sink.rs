@@ -5,7 +5,7 @@ use crate::error::DiscordError;
 use crate::mention::MentionPolicy;
 
 #[async_trait]
-pub trait DiscordSink: Send + Sync {
+pub(crate) trait DiscordSink: Send + Sync {
     async fn post_text(
         &self,
         webhook_name: &str,

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_registry::runner::SubActionConfig;
+use forge_registry::SubActionConfig;
 use forge_registry::{
     ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner,
     TypedField,
@@ -24,12 +24,12 @@ fn read_config(
     Ok((WEBHOOK.read(config, args)?, MESSAGE_ID.read(config, args)?))
 }
 
-pub struct DeleteMessageRunner {
+pub(crate) struct DeleteMessageRunner {
     sink: Arc<dyn DiscordSink>,
 }
 
 impl DeleteMessageRunner {
-    pub fn new(sink: Arc<dyn DiscordSink>) -> Self {
+    pub(crate) fn new(sink: Arc<dyn DiscordSink>) -> Self {
         Self { sink }
     }
 }

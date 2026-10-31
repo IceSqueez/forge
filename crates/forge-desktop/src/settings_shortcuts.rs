@@ -37,7 +37,7 @@ struct ShortcutConflict {
     chord: String,
 }
 
-pub struct SettingsShortcutsView {
+pub(crate) struct SettingsShortcutsView {
     backend: Arc<dyn DataProvider>,
     rt_handle: tokio::runtime::Handle,
     hotkey_client: Option<Arc<HotkeyClient>>,
@@ -57,7 +57,7 @@ pub struct SettingsShortcutsView {
 }
 
 impl SettingsShortcutsView {
-    pub fn new(
+    pub(crate) fn new(
         backend: Arc<dyn DataProvider>,
         rt_handle: tokio::runtime::Handle,
         hotkey_client: Option<Arc<HotkeyClient>>,
@@ -245,7 +245,7 @@ impl SettingsShortcutsView {
         self.capture_sub = None;
     }
 
-    pub fn set_active(&mut self, active: bool, cx: &mut Context<Self>) {
+    pub(crate) fn set_active(&mut self, active: bool, cx: &mut Context<Self>) {
         if !active && self.rebinding.is_some() {
             self.cancel_capture(cx);
         }
@@ -547,8 +547,8 @@ impl SettingsShortcutsView {
         if self.hold_ceiling_invalid {
             tr!(
                 "settings_hold_ceiling_invalid",
-                min = CEILING_MIN_SECS as i64,
-                max = CEILING_MAX_SECS as i64
+                min = i64::try_from(CEILING_MIN_SECS).unwrap_or(i64::MAX),
+                max = i64::try_from(CEILING_MAX_SECS).unwrap_or(i64::MAX)
             )
         } else {
             tr!("settings_hold_ceiling_hint")

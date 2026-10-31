@@ -67,7 +67,7 @@ pub struct NewOverlay {
     pub source_overrides: Vec<String>,
 }
 
-pub fn overlay_slug(input: &str) -> String {
+pub(crate) fn overlay_slug(input: &str) -> String {
     let mut slug = String::new();
     let mut prev_hyphen = true;
 

@@ -10,7 +10,7 @@ use forge_audio::{AudioError, AudioSink, AudioSinkFactory};
 use forge_events::{ActionDone, Delivery, Event, EventSource, EventSubscription, TypedEvent};
 use forge_platform_core::{EndpointSurface, IntegrationDeclaration, PlatformEndpoints};
 use forge_runtime::LifecycleState;
-use forge_runtime::sub_action_runners::{GLOBAL_SET_KIND_ID, GLOBAL_VALUE_KEY};
+use forge_runtime::{GLOBAL_SET_KIND_ID, GLOBAL_VALUE_KEY};
 use forge_storage::{
     DataProvider, GlobalsRepo, SettingsRepo, read_setting_or_default, set_integration_enabled,
     write_setting,
@@ -378,7 +378,7 @@ fn the_scheduler_and_the_stopped_server_answer_after_boot() {
         guarded("the server", server.snapshot()).await;
 
         assert!(queues.contains_key(&DEFAULT_QUEUE_ID));
-        assert!(!*server.run_state().borrow());
+        assert!(!server.run_state().is_running());
     });
 }
 

@@ -13,7 +13,5 @@ pub use import_plan::{
     PackPlanItem, PackResolution, PackWarning, plan_pack_import,
 };
 pub use manifest::PackManifest;
-pub use reader::{
-    PACK_STAGING_DIR_NAME, StagedPack, discard_staged_pack, pack_staging_root, stage_pack,
-};
+pub use reader::{StagedPack, discard_staged_pack, pack_staging_root, stage_pack};
 pub use writer::{PackExportRequest, PackMetadata, write_pack};

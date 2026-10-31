@@ -14,24 +14,24 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use wiremock::MockServer;
 
-pub const PLATFORM_NO_HINT_WAIT: Duration = Duration::from_secs(5);
-pub const HEADER_END: &[u8] = b"\r\n\r\n";
+pub(crate) const PLATFORM_NO_HINT_WAIT: Duration = Duration::from_secs(5);
+pub(crate) const HEADER_END: &[u8] = b"\r\n\r\n";
 
-pub fn platform() -> GatewayProfile {
+pub(crate) fn platform() -> GatewayProfile {
     platform_with(ThrottleHintFamily::RetryAfter)
 }
 
-pub fn platform_with(family: ThrottleHintFamily) -> GatewayProfile {
+pub(crate) fn platform_with(family: ThrottleHintFamily) -> GatewayProfile {
     GatewayProfile::platform_api(CallClass::Interactive, family, PLATFORM_NO_HINT_WAIT)
 }
 
 #[derive(Default)]
-pub struct RecordingObserver {
+pub(crate) struct RecordingObserver {
     seen: Mutex<Vec<(GatewayFailure, FailureContext)>>,
 }
 
 impl RecordingObserver {
-    pub fn seen(&self) -> Vec<(GatewayFailure, FailureContext)> {
+    pub(crate) fn seen(&self) -> Vec<(GatewayFailure, FailureContext)> {
         self.seen.lock().unwrap().clone()
     }
 }
@@ -42,18 +42,18 @@ impl FailureObserver for RecordingObserver {
     }
 }
 
-pub struct Harness {
+pub(crate) struct Harness {
     pub gateway: Gateway,
     pub limiter: Arc<RecordingRateLimiter>,
     pub observer: Arc<RecordingObserver>,
 }
 
 impl Harness {
-    pub fn new(base: &str, profile: GatewayProfile) -> Self {
+    pub(crate) fn new(base: &str, profile: GatewayProfile) -> Self {
         Self::with_limiter(base, profile, RecordingRateLimiter::granting())
     }
 
-    pub fn with_limiter(
+    pub(crate) fn with_limiter(
         base: &str,
         profile: GatewayProfile,
         limiter: RecordingRateLimiter,
@@ -74,20 +74,20 @@ impl Harness {
         }
     }
 
-    pub async fn ok(&self, request: GatewayRequest) -> GatewayResponse {
+    pub(crate) async fn ok(&self, request: GatewayRequest) -> GatewayResponse {
         self.gateway.send(request).await.unwrap()
     }
 
-    pub async fn fail(&self, request: GatewayRequest) -> GatewayFailure {
+    pub(crate) async fn fail(&self, request: GatewayRequest) -> GatewayFailure {
         self.gateway.send(request).await.unwrap_err()
     }
 }
 
-pub async fn received(server: &MockServer) -> Vec<wiremock::Request> {
+pub(crate) async fn received(server: &MockServer) -> Vec<wiremock::Request> {
     server.received_requests().await.unwrap_or_default()
 }
 
-pub async fn serve_raw_once(response: Vec<u8>) -> String {
+pub(crate) async fn serve_raw_once(response: Vec<u8>) -> String {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
     tokio::spawn(async move {
@@ -107,7 +107,7 @@ pub async fn serve_raw_once(response: Vec<u8>) -> String {
     format!("http://{address}")
 }
 
-pub fn chunked_ok(chunks: &[Vec<u8>]) -> Vec<u8> {
+pub(crate) fn chunked_ok(chunks: &[Vec<u8>]) -> Vec<u8> {
     let mut out =
         b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n".to_vec();
     for chunk in chunks {
@@ -119,13 +119,13 @@ pub fn chunked_ok(chunks: &[Vec<u8>]) -> Vec<u8> {
     out
 }
 
-pub fn silent_listener() -> (StdTcpListener, String) {
+pub(crate) fn silent_listener() -> (StdTcpListener, String) {
     let listener = StdTcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();
     (listener, format!("http://{address}"))
 }
 
-pub fn accept_request_head(listener: &StdTcpListener) -> StdTcpStream {
+pub(crate) fn accept_request_head(listener: &StdTcpListener) -> StdTcpStream {
     let (mut stream, _) = listener.accept().unwrap();
     let mut seen = Vec::new();
     let mut buffer = [0_u8; 1024];
@@ -138,7 +138,7 @@ pub fn accept_request_head(listener: &StdTcpListener) -> StdTcpStream {
     stream
 }
 
-pub fn refused_base() -> String {
+pub(crate) fn refused_base() -> String {
     let listener = StdTcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();
     drop(listener);

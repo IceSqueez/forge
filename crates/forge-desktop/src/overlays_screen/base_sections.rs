@@ -510,7 +510,10 @@ impl OverlayPropertyPanel {
                     } else {
                         palette.text_faint
                     })
-                    .child(tr!("overlays_queue_waiting", count = waiting as i64)),
+                    .child(tr!(
+                        "overlays_queue_waiting",
+                        count = i64::try_from(waiting).unwrap_or(i64::MAX)
+                    )),
             )
             .child(
                 ghost_button_with_icon(Icon::Trash, tr!("overlays_queue_clear"), palette)
@@ -613,12 +616,19 @@ fn display_note(look: &LookSummary) -> Option<String> {
 fn delivery_text(delivery: OverlayDelivery) -> (String, bool) {
     match delivery {
         OverlayDelivery::Delivered { sources } => (
-            tr!("overlays_show_delivered", count = sources as i64),
+            tr!(
+                "overlays_show_delivered",
+                count = i64::try_from(sources).unwrap_or(i64::MAX)
+            ),
             false,
         ),
-        OverlayDelivery::OnlyPreview { tabs } => {
-            (tr!("overlays_show_preview_only", count = tabs as i64), true)
-        }
+        OverlayDelivery::OnlyPreview { tabs } => (
+            tr!(
+                "overlays_show_preview_only",
+                count = i64::try_from(tabs).unwrap_or(i64::MAX)
+            ),
+            true,
+        ),
         OverlayDelivery::NoPage => (tr!("overlays_show_no_page"), true),
     }
 }

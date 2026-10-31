@@ -1,5 +1,5 @@
-pub mod rate_limit;
-pub mod retry;
+pub(crate) mod rate_limit;
+pub(crate) mod retry;
 
-pub use rate_limit::SynthesisRateLimiter;
-pub use retry::{RetryConfig, retry_synthesize};
+pub(crate) use rate_limit::SynthesisRateLimiter;
+pub(crate) use retry::{RetryConfig, retry_synthesize};

@@ -5,7 +5,7 @@ use std::process::{Command, Stdio};
 use crate::UpdateError;
 use crate::apply_state::ApplyState;
 
-pub const SUPERVISOR_FLAG: &str = "--forge-update-supervisor";
+pub(crate) const SUPERVISOR_FLAG: &str = "--forge-update-supervisor";
 pub const CANDIDATE_FLAG: &str = "--forge-update-candidate";
 
 const SUPERVISOR_DIR_PREFIX: &str = "forge-update-supervisor-";

@@ -12,7 +12,7 @@ use forge_components::{
 };
 use forge_overlay::{OverlayKindRegistry, accepts_event_wiring};
 use forge_registry::{SubActionRegistry, TriggerRegistry};
-use forge_runtime::actions::{
+use forge_runtime::{
     ActionsService, OverlayFeed, OverlayWiringOutcome, OverlayWiringRecords, OverlayWiringRefusal,
     WiredQueue,
 };
@@ -223,7 +223,11 @@ impl EventWiringView {
             subtitle: GridPickerSubtitle::Context {
                 lead: tr!("overlays_wire_picker_lead").into(),
                 name: definition.display_name.clone().into(),
-                note: tr!("overlays_wire_picker_count", count = count as i64).into(),
+                note: tr!(
+                    "overlays_wire_picker_count",
+                    count = i64::try_from(count).unwrap_or(i64::MAX)
+                )
+                .into(),
             },
             footer_hint: tr!("overlays_wire_picker_hint").into(),
             search_placeholder: tr!("overlays_wire_picker_search").into(),
@@ -547,14 +551,14 @@ mod tests {
     use forge_overlay::kinds::alert::{self, AlertOverlayKind};
     use forge_overlay::{OverlayConfig, OverlayKindRegistry};
     use forge_registry::TriggerCategory;
-    use forge_runtime::actions::WiredQueue;
+    use forge_runtime::WiredQueue;
     use forge_runtime::{ActionCancelRegistry, EventBus, QueueScheduler, spawn_action_engine};
     use forge_storage::Language;
-    use forge_storage::action::MockActionRepo;
-    use forge_storage::history::MockHistoryRepo;
-    use forge_storage::queue::MockQueueRepo;
+    use forge_storage::MockActionRepo;
+    use forge_storage::MockHistoryRepo;
+    use forge_storage::MockQueueRepo;
+    use forge_storage::MockTriggerInstanceRepo;
     use forge_storage::test_support::MemorySettings;
-    use forge_storage::trigger_instance::MockTriggerInstanceRepo;
     use forge_types::QueueId;
     use gpui::TestAppContext;
 

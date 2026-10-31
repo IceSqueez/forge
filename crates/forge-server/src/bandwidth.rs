@@ -10,7 +10,7 @@ use tokio::time::Instant;
 const RETENTION_SECS: u64 = 60;
 const CURRENT_WINDOW_SECS: u64 = 1;
 
-pub struct BandwidthTracker {
+pub(crate) struct BandwidthTracker {
     outbound_bytes_total: AtomicU64,
     outbound_window: Mutex<VecDeque<(Instant, u64)>>,
     peak_bps: AtomicU64,
@@ -23,7 +23,7 @@ impl Default for BandwidthTracker {
 }
 
 impl BandwidthTracker {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             outbound_bytes_total: AtomicU64::new(0),
             outbound_window: Mutex::new(VecDeque::new()),
@@ -31,7 +31,7 @@ impl BandwidthTracker {
         }
     }
 
-    pub fn record(&self, bytes: u64) {
+    pub(crate) fn record(&self, bytes: u64) {
         self.outbound_bytes_total
             .fetch_add(bytes, Ordering::Relaxed);
         let now = Instant::now();
@@ -66,7 +66,7 @@ impl BandwidthTracker {
         }
     }
 
-    pub fn current_bps(&self) -> u64 {
+    pub(crate) fn current_bps(&self) -> u64 {
         let now = Instant::now();
         let Ok(window) = self.outbound_window.lock() else {
             return 0;
@@ -74,11 +74,11 @@ impl BandwidthTracker {
         compute_bps(&window, now)
     }
 
-    pub fn peak(&self) -> u64 {
+    pub(crate) fn peak(&self) -> u64 {
         self.peak_bps.load(Ordering::Relaxed)
     }
 
-    pub fn total(&self) -> u64 {
+    pub(crate) fn total(&self) -> u64 {
         self.outbound_bytes_total.load(Ordering::Relaxed)
     }
 }

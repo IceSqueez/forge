@@ -35,7 +35,7 @@ const LEVEL_TICK: Duration = Duration::from_millis(100);
 const HOLD_MIN_MS: u32 = 0;
 const HOLD_MAX_MS: u32 = 10_000;
 
-pub struct SettingsVoiceGateView {
+pub(crate) struct SettingsVoiceGateView {
     backend: Arc<dyn DataProvider>,
     rt_handle: tokio::runtime::Handle,
     owner: Arc<VoiceGateOwner>,
@@ -64,7 +64,7 @@ pub struct SettingsVoiceGateView {
 }
 
 impl SettingsVoiceGateView {
-    pub fn new(
+    pub(crate) fn new(
         backend: Arc<dyn DataProvider>,
         rt_handle: tokio::runtime::Handle,
         owner: Arc<VoiceGateOwner>,
@@ -124,7 +124,7 @@ impl SettingsVoiceGateView {
         view
     }
 
-    pub fn set_active(&mut self, active: bool, cx: &mut Context<Self>) {
+    pub(crate) fn set_active(&mut self, active: bool, cx: &mut Context<Self>) {
         if self.active == active {
             return;
         }

@@ -7,7 +7,7 @@ use crate::palette::ForgePalette;
 use crate::presentation::ActivePresentation;
 use crate::tokens::{BORDER_THIN, Density, FONT_XS, Radius, Spacing, body_family, radius, spacing};
 
-pub fn tooltip_surface(
+pub(crate) fn tooltip_surface(
     label: impl Into<SharedString>,
     palette: &ForgePalette,
     density: Density,
@@ -61,12 +61,12 @@ pub fn tooltip_builder(
     move |_window, cx| tooltip(label.clone(), &palette).build(cx)
 }
 
-pub struct TooltipLines {
+pub(crate) struct TooltipLines {
     lines: Vec<SharedString>,
     palette: ForgePalette,
 }
 
-pub fn tooltip_lines(lines: Vec<SharedString>, palette: &ForgePalette) -> TooltipLines {
+pub(crate) fn tooltip_lines(lines: Vec<SharedString>, palette: &ForgePalette) -> TooltipLines {
     TooltipLines {
         lines,
         palette: *palette,
@@ -74,7 +74,7 @@ pub fn tooltip_lines(lines: Vec<SharedString>, palette: &ForgePalette) -> Toolti
 }
 
 impl TooltipLines {
-    pub fn build(self, cx: &mut App) -> AnyView {
+    pub(crate) fn build(self, cx: &mut App) -> AnyView {
         cx.new(|_| self).into()
     }
 }

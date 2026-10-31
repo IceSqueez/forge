@@ -12,7 +12,7 @@ use crate::vocabulary::fields::filter as fields;
 use crate::vocabulary::messages;
 use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
-pub struct FilterRemovedDescriptor;
+pub(crate) struct FilterRemovedDescriptor;
 
 impl TriggerKindDescriptor for FilterRemovedDescriptor {
     fn id(&self) -> &str {

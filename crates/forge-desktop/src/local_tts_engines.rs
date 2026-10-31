@@ -12,7 +12,7 @@ use crate::speak_boot::{LocalTtsEngine, TtsEngineAdmission};
 
 const PIPER_SYNTHESIS_TIMEOUT: Duration = Duration::from_secs(30);
 
-pub async fn discover_local_tts_engines() -> Vec<LocalTtsEngine> {
+pub(crate) async fn discover_local_tts_engines() -> Vec<LocalTtsEngine> {
     let mut engines = Vec::new();
     if let Some(piper_binary) = PiperEngine::locate().await {
         let voices_dir = PiperEngine::voices_dir(&crate::app_paths::app_paths().data_dir());

@@ -12,7 +12,7 @@ use crate::vocabulary::fields::transition as fields;
 use crate::vocabulary::messages;
 use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
-pub struct TransitionStartedDescriptor;
+pub(crate) struct TransitionStartedDescriptor;
 
 impl TriggerKindDescriptor for TransitionStartedDescriptor {
     fn id(&self) -> &str {

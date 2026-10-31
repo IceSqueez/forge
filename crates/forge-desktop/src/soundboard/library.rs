@@ -6,9 +6,7 @@ use forge_components::{
     pad_tile, scaled, spacing, tr,
 };
 use forge_soundboard::SoundboardError;
-use forge_soundboard::builtin_library::{
-    BuiltinSoundEntry, builtin_availability, resolve_builtin_path,
-};
+use forge_soundboard::{BuiltinSoundEntry, builtin_availability, resolve_builtin_path};
 use forge_storage::StoredClip;
 use forge_types::{ClipId, OutputDevice};
 use gpui::{AnyElement, ClickEvent, Context, SharedString, div, prelude::*, px};

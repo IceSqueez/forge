@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_registry::runner::SubActionConfig;
+use forge_registry::SubActionConfig;
 use forge_registry::{
     BoundedTextField, ConfigProblem, ConfigSpec, DurationBounds, DurationField, IntegerEditor,
     IntegerField, RunContext, StepTimer, SubActionCategory, SubActionRunner, TextEditor,
@@ -170,13 +170,13 @@ impl ResolvedConfig {
     }
 }
 
-pub struct CreateRewardRunner {
+pub(crate) struct CreateRewardRunner {
     transport: Arc<dyn HelixTransport>,
     identity: Arc<SelfIdentity>,
 }
 
 impl CreateRewardRunner {
-    pub fn new(transport: Arc<dyn HelixTransport>, identity: Arc<SelfIdentity>) -> Self {
+    pub(crate) fn new(transport: Arc<dyn HelixTransport>, identity: Arc<SelfIdentity>) -> Self {
         Self {
             transport,
             identity,

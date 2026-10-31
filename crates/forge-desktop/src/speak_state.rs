@@ -2,7 +2,7 @@ use forge_speak_queue::{QueuedOrderEntry, RequestId, SpeakEvent};
 use forge_types::UserText;
 
 #[derive(Clone)]
-pub struct NowSpeaking {
+pub(crate) struct NowSpeaking {
     pub request_id: RequestId,
     pub viewer_name: String,
     pub engine_id: String,
@@ -13,7 +13,7 @@ pub struct NowSpeaking {
 }
 
 #[derive(Clone)]
-pub struct QueueItem {
+pub(crate) struct QueueItem {
     pub request_id: RequestId,
     pub viewer_name: String,
     pub engine_voice: String,
@@ -24,14 +24,14 @@ pub struct QueueItem {
 }
 
 #[derive(Clone)]
-pub struct SessionStats {
+pub(crate) struct SessionStats {
     pub spoken: u32,
     pub skipped: u32,
     pub filtered: u32,
     pub avg_latency_ms: Option<u32>,
 }
 
-pub struct SpeakState {
+pub(crate) struct SpeakState {
     manual_paused: bool,
     gate_held: bool,
     now_speaking: Option<NowSpeaking>,
@@ -41,7 +41,7 @@ pub struct SpeakState {
 }
 
 impl SpeakState {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             manual_paused: false,
             gate_held: false,
@@ -57,11 +57,11 @@ impl SpeakState {
         }
     }
 
-    pub fn last_drop(&self) -> Option<&UserText> {
+    pub(crate) fn last_drop(&self) -> Option<&UserText> {
         self.last_drop.as_ref()
     }
 
-    pub fn apply_event(&mut self, event: SpeakEvent) -> bool {
+    pub(crate) fn apply_event(&mut self, event: SpeakEvent) -> bool {
         match event {
             SpeakEvent::Enqueued {
                 request_id,
@@ -194,32 +194,32 @@ impl SpeakState {
         changed
     }
 
-    pub fn set_manual_paused(&mut self, paused: bool) {
+    pub(crate) fn set_manual_paused(&mut self, paused: bool) {
         self.manual_paused = paused;
     }
 
-    pub fn clear_all(&mut self) {
+    pub(crate) fn clear_all(&mut self) {
         self.now_speaking = None;
         self.queue.clear();
     }
 
-    pub fn manual_paused(&self) -> bool {
+    pub(crate) fn manual_paused(&self) -> bool {
         self.manual_paused
     }
 
-    pub fn gate_held(&self) -> bool {
+    pub(crate) fn gate_held(&self) -> bool {
         self.gate_held
     }
 
-    pub fn now_speaking_snapshot(&self) -> Option<NowSpeaking> {
+    pub(crate) fn now_speaking_snapshot(&self) -> Option<NowSpeaking> {
         self.now_speaking.clone()
     }
 
-    pub fn queue_snapshot(&self) -> Vec<QueueItem> {
+    pub(crate) fn queue_snapshot(&self) -> Vec<QueueItem> {
         self.queue.clone()
     }
 
-    pub fn stats_snapshot(&self) -> SessionStats {
+    pub(crate) fn stats_snapshot(&self) -> SessionStats {
         self.stats.clone()
     }
 }

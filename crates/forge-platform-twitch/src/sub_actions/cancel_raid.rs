@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use async_trait::async_trait;
-use forge_registry::runner::SubActionConfig;
+use forge_registry::SubActionConfig;
 use forge_registry::{RunContext, SubActionCategory, SubActionRunner};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 use time::OffsetDateTime;
@@ -15,14 +15,14 @@ use crate::lifecycle::TwitchLifecycle;
 
 const KIND_ID: &str = sub_action_ids::CHANNEL_CANCEL_RAID;
 
-pub struct CancelRaidRunner {
+pub(crate) struct CancelRaidRunner {
     transport: Arc<dyn HelixTransport>,
     identity: Arc<SelfIdentity>,
     lifecycle: TwitchLifecycle,
 }
 
 impl CancelRaidRunner {
-    pub fn new(
+    pub(crate) fn new(
         transport: Arc<dyn HelixTransport>,
         identity: Arc<SelfIdentity>,
         lifecycle: TwitchLifecycle,
@@ -91,7 +91,7 @@ impl SubActionRunner for CancelRaidRunner {
                 produced: ::std::collections::BTreeMap::new(),
                 kind: KIND_ID.to_owned(),
                 started_at,
-                duration_ms: start.elapsed().as_millis() as u64,
+                duration_ms: u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX),
                 outcome,
                 index: ctx.index,
             },

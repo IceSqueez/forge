@@ -95,12 +95,12 @@ fn decode_rows(rows: Vec<DonationRow>) -> Result<Vec<StoredDonation>, StorageErr
         .collect::<Result<Vec<_>, _>>()?)
 }
 
-pub struct SqliteDonationRepo {
+pub(crate) struct SqliteDonationRepo {
     db: SqlitePools,
 }
 
 impl SqliteDonationRepo {
-    pub fn new(db: impl Into<SqlitePools>) -> Self {
+    pub(crate) fn new(db: impl Into<SqlitePools>) -> Self {
         Self { db: db.into() }
     }
 }

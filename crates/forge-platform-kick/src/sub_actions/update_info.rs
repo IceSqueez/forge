@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_platform_core::PlatformError;
-use forge_registry::runner::SubActionConfig;
+use forge_registry::SubActionConfig;
 use forge_registry::{
     ConfigProblem, ConfigReason, ConfigSpec, Interpolation, RunContext, StepTimer,
     SubActionCategory, SubActionRunner, TextEditor, TextField, TypedField, ValueBounds,
@@ -69,13 +69,13 @@ fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<ChannelUpdat
     })
 }
 
-pub struct UpdateInfoRunner {
+pub(crate) struct UpdateInfoRunner {
     client: Arc<KickChannel>,
     token_source: Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync>,
 }
 
 impl UpdateInfoRunner {
-    pub fn new(
+    pub(crate) fn new(
         client: Arc<KickChannel>,
         token_source: Arc<
             dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync,

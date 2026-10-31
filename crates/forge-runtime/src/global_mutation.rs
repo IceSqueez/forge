@@ -16,7 +16,7 @@ pub(crate) struct GlobalMutation<'a> {
 }
 
 impl GlobalMutation<'_> {
-    pub async fn set(
+    pub(crate) async fn set(
         &self,
         key: &str,
         value: Variant,
@@ -39,7 +39,11 @@ impl GlobalMutation<'_> {
         Ok(previous)
     }
 
-    pub async fn increment(&self, key: &str, delta: i64) -> Result<GlobalIncrement, StorageError> {
+    pub(crate) async fn increment(
+        &self,
+        key: &str,
+        delta: i64,
+    ) -> Result<GlobalIncrement, StorageError> {
         let previous = self.previous(key).await;
         let current = self.globals.incr(key, delta).await?;
         let new_value_json = match &current {
@@ -54,7 +58,7 @@ impl GlobalMutation<'_> {
         Ok(GlobalIncrement { previous, current })
     }
 
-    pub async fn delete(&self, key: &str) -> Result<GlobalDeletion, StorageError> {
+    pub(crate) async fn delete(&self, key: &str) -> Result<GlobalDeletion, StorageError> {
         let previous = self.previous(key).await;
         if !self.globals.delete(key).await? {
             return Ok(GlobalDeletion::Missing);

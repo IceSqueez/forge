@@ -19,27 +19,27 @@ use forge_components::Toasts;
 use forge_transfer::{ScheduleState, ScheduledBackupHandle, TransferExclusivity, TransferGuard};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct InstallTarget {
+pub(crate) struct InstallTarget {
     pub install: UpdatableInstall,
     pub artifact: Artifact,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct UpdateCandidate {
+pub(crate) struct UpdateCandidate {
     pub version: String,
     pub release_page: String,
     pub install: Option<InstallTarget>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum UpdateFailure {
+pub(crate) enum UpdateFailure {
     Download,
     Unverified,
     Handoff,
 }
 
 #[derive(Debug, Clone)]
-pub enum UpdateStage {
+pub(crate) enum UpdateStage {
     Idle,
     Offered(UpdateCandidate),
     Downloading(UpdateCandidate),
@@ -69,18 +69,18 @@ pub enum UpdateStage {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum UpdateFlowEvent {
+pub(crate) enum UpdateFlowEvent {
     RestartRequested,
     CloseApproved,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CloseDecision {
+pub(crate) enum CloseDecision {
     Proceed,
     Hold,
 }
 
-pub fn failure_of(error: &UpdateError) -> UpdateFailure {
+pub(crate) fn failure_of(error: &UpdateError) -> UpdateFailure {
     match error {
         UpdateError::ArtifactHashMismatch
         | UpdateError::ArtifactSizeMismatch { .. }
@@ -90,7 +90,7 @@ pub fn failure_of(error: &UpdateError) -> UpdateFailure {
     }
 }
 
-pub fn apply_mode(restart_requested: bool) -> ApplyMode {
+pub(crate) fn apply_mode(restart_requested: bool) -> ApplyMode {
     if restart_requested {
         ApplyMode::Restart
     } else {
@@ -98,7 +98,7 @@ pub fn apply_mode(restart_requested: bool) -> ApplyMode {
     }
 }
 
-pub struct UpdateFlow {
+pub(crate) struct UpdateFlow {
     stage: UpdateStage,
     restart_requested: bool,
     ticket: u64,
@@ -117,7 +117,11 @@ pub struct UpdateFlow {
 impl EventEmitter<UpdateFlowEvent> for UpdateFlow {}
 
 impl UpdateFlow {
-    pub fn new(backend: Arc<dyn DataProvider>, rt_handle: Handle, data_dir: PathBuf) -> Self {
+    pub(crate) fn new(
+        backend: Arc<dyn DataProvider>,
+        rt_handle: Handle,
+        data_dir: PathBuf,
+    ) -> Self {
         Self {
             stage: UpdateStage::Idle,
             restart_requested: false,
@@ -136,18 +140,18 @@ impl UpdateFlow {
     }
 
     #[must_use]
-    pub fn with_scheduled_backups(mut self, scheduled: ScheduledBackupHandle) -> Self {
+    pub(crate) fn with_scheduled_backups(mut self, scheduled: ScheduledBackupHandle) -> Self {
         self.scheduled = Some(scheduled);
         self
     }
 
     #[must_use]
-    pub fn with_exclusivity(mut self, exclusivity: TransferExclusivity) -> Self {
+    pub(crate) fn with_exclusivity(mut self, exclusivity: TransferExclusivity) -> Self {
         self.exclusivity = exclusivity;
         self
     }
 
-    pub fn offer(&mut self, candidate: UpdateCandidate, cx: &mut Context<Self>) {
+    pub(crate) fn offer(&mut self, candidate: UpdateCandidate, cx: &mut Context<Self>) {
         if !matches!(self.stage, UpdateStage::Idle | UpdateStage::Offered(_)) {
             return;
         }
@@ -156,14 +160,14 @@ impl UpdateFlow {
         cx.notify();
     }
 
-    pub fn download(&mut self, candidate: UpdateCandidate, cx: &mut Context<Self>) {
+    pub(crate) fn download(&mut self, candidate: UpdateCandidate, cx: &mut Context<Self>) {
         if !matches!(self.stage, UpdateStage::Idle | UpdateStage::Offered(_)) {
             return;
         }
         self.start_download(candidate, cx);
     }
 
-    pub fn run(&mut self, command: UpdateCommand, cx: &mut Context<Self>) {
+    pub(crate) fn run(&mut self, command: UpdateCommand, cx: &mut Context<Self>) {
         match command {
             UpdateCommand::OpenReleasePage => self.open_release_page(cx),
             UpdateCommand::Restart => self.request_restart(cx),
@@ -226,7 +230,7 @@ impl UpdateFlow {
         cx.notify();
     }
 
-    pub fn finish_download(
+    pub(crate) fn finish_download(
         &mut self,
         ticket: u64,
         result: Result<StagedArtifact, UpdateError>,
@@ -254,7 +258,7 @@ impl UpdateFlow {
         cx.notify();
     }
 
-    pub fn download_task_lost(&mut self, ticket: u64, cx: &mut Context<Self>) {
+    pub(crate) fn download_task_lost(&mut self, ticket: u64, cx: &mut Context<Self>) {
         if ticket != self.ticket {
             return;
         }
@@ -282,7 +286,7 @@ impl UpdateFlow {
         self.start_download(candidate, cx);
     }
 
-    pub fn open_release_page(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn open_release_page(&mut self, cx: &mut Context<Self>) {
         let Some(candidate) = self.candidate() else {
             return;
         };
@@ -296,7 +300,7 @@ impl UpdateFlow {
         cx.notify();
     }
 
-    pub fn has_staged_update(&self) -> bool {
+    pub(crate) fn has_staged_update(&self) -> bool {
         matches!(
             self.stage,
             UpdateStage::Ready { .. }
@@ -306,7 +310,7 @@ impl UpdateFlow {
         )
     }
 
-    pub fn request_restart(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn request_restart(&mut self, cx: &mut Context<Self>) {
         if !matches!(self.stage, UpdateStage::Ready { .. }) {
             return;
         }
@@ -315,7 +319,7 @@ impl UpdateFlow {
         cx.notify();
     }
 
-    pub fn abort_restart(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn abort_restart(&mut self, cx: &mut Context<Self>) {
         if !self.restart_requested {
             return;
         }
@@ -324,7 +328,7 @@ impl UpdateFlow {
         cx.notify();
     }
 
-    pub fn retry(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn retry(&mut self, cx: &mut Context<Self>) {
         let Some(UpdateStage::Failed {
             candidate, staged, ..
         }) = self.take_stage(|stage| matches!(stage, UpdateStage::Failed { .. }))
@@ -342,7 +346,7 @@ impl UpdateFlow {
         cx.notify();
     }
 
-    pub fn close_decision(&mut self, cx: &mut Context<Self>) -> CloseDecision {
+    pub(crate) fn close_decision(&mut self, cx: &mut Context<Self>) -> CloseDecision {
         match &self.stage {
             UpdateStage::HandingOff { .. } => CloseDecision::Hold,
             UpdateStage::WaitingForTransfer { .. } => self.close_while_waiting(cx),
@@ -507,7 +511,11 @@ impl UpdateFlow {
         }
     }
 
-    pub fn handoff_settled(&mut self, result: Result<(), RepoFailure>, cx: &mut Context<Self>) {
+    pub(crate) fn handoff_settled(
+        &mut self,
+        result: Result<(), RepoFailure>,
+        cx: &mut Context<Self>,
+    ) {
         let Some(UpdateStage::HandingOff {
             candidate,
             staged,

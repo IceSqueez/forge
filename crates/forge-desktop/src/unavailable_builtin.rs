@@ -123,7 +123,7 @@ fn identity(id: &IntegrationId) -> (String, &'static str) {
     }
 }
 
-pub fn unavailable_builtin(id: &IntegrationId) -> BuiltinObject {
+pub(crate) fn unavailable_builtin(id: &IntegrationId) -> BuiltinObject {
     let (display_name, icon) = identity(id);
     BuiltinObject {
         icon: SectionIcon::new(icon),

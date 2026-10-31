@@ -12,9 +12,9 @@ const RAISE_REQUEST: &[u8] = b"forge-raise\n";
 const REQUEST_DEADLINE: Duration = Duration::from_secs(2);
 const REQUEST_READ_TIMEOUT: Duration = Duration::from_secs(1);
 
-pub type RaiseRequests = mpsc::UnboundedReceiver<()>;
+pub(crate) type RaiseRequests = mpsc::UnboundedReceiver<()>;
 
-pub fn ask_running_instance(data_dir: &Path) -> io::Result<()> {
+pub(crate) fn ask_running_instance(data_dir: &Path) -> io::Result<()> {
     let data_dir = data_dir.to_owned();
     let (done_tx, done_rx) = thread_mpsc::channel();
     thread::Builder::new()
@@ -31,13 +31,13 @@ pub fn ask_running_instance(data_dir: &Path) -> io::Result<()> {
         .map_err(|_| io::Error::from(io::ErrorKind::TimedOut))?
 }
 
-pub fn listen(data_dir: &Path) -> io::Result<RaiseRequests> {
+pub(crate) fn listen(data_dir: &Path) -> io::Result<RaiseRequests> {
     let (requests_tx, requests_rx) = mpsc::unbounded_channel();
     endpoint::serve(data_dir, requests_tx)?;
     Ok(requests_rx)
 }
 
-pub fn follow_raise_requests(mut requests: RaiseRequests, cx: &mut App) {
+pub(crate) fn follow_raise_requests(mut requests: RaiseRequests, cx: &mut App) {
     cx.spawn(async move |cx| {
         while requests.recv().await.is_some() {
             cx.update(raise_windows);

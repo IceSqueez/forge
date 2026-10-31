@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_registry::runner::SubActionConfig;
+use forge_registry::SubActionConfig;
 use forge_registry::{
     ConfigProblem, ConfigSpec, DurationBounds, DurationField, Interpolation, RunContext, StepTimer,
     SubActionCategory, SubActionRunner, TypedField,
@@ -47,13 +47,13 @@ fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<TimeoutConfi
     })
 }
 
-pub struct TimeoutUserRunner {
+pub(crate) struct TimeoutUserRunner {
     transport: Arc<dyn HelixTransport>,
     identity: Arc<SelfIdentity>,
 }
 
 impl TimeoutUserRunner {
-    pub fn new(transport: Arc<dyn HelixTransport>, identity: Arc<SelfIdentity>) -> Self {
+    pub(crate) fn new(transport: Arc<dyn HelixTransport>, identity: Arc<SelfIdentity>) -> Self {
         Self {
             transport,
             identity,

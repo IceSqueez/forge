@@ -122,8 +122,8 @@ mod tests {
     use std::collections::BTreeMap;
     use std::sync::Mutex;
 
-    use forge_storage::action::MockActionRepo;
-    use forge_storage::history::MockHistoryRepo;
+    use forge_storage::MockActionRepo;
+    use forge_storage::MockHistoryRepo;
     use forge_storage::{ExecutionStatus, StorageError};
     use forge_types::{ActionId, ExecutionMetadata, ExecutionOutcome};
     use time::OffsetDateTime;

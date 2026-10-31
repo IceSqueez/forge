@@ -4,7 +4,7 @@ use forge_platform_twitch::vocabulary::BotStatusChanged;
 use forge_platform_twitch::{BotModerator, BotStatus, TwitchBotAccount};
 use gpui::{AsyncApp, Entity};
 
-pub struct TwitchBotPresence {
+pub(crate) struct TwitchBotPresence {
     status: BotStatus,
     moderator: BotModerator,
     composer_sends_as_bot: bool,
@@ -18,7 +18,7 @@ impl Default for TwitchBotPresence {
 }
 
 impl TwitchBotPresence {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             status: BotStatus::NotConnected,
             moderator: BotModerator::Unknown,
@@ -27,37 +27,37 @@ impl TwitchBotPresence {
         }
     }
 
-    pub fn status(&self) -> &BotStatus {
+    pub(crate) fn status(&self) -> &BotStatus {
         &self.status
     }
 
-    pub fn moderator(&self) -> BotModerator {
+    pub(crate) fn moderator(&self) -> BotModerator {
         self.moderator
     }
 
-    pub fn connected_login(&self) -> Option<&str> {
+    pub(crate) fn connected_login(&self) -> Option<&str> {
         match &self.status {
             BotStatus::Connected { login } => Some(login),
             BotStatus::NotConnected | BotStatus::ReauthRequired { .. } => None,
         }
     }
 
-    pub fn is_connected(&self) -> bool {
+    pub(crate) fn is_connected(&self) -> bool {
         self.connected_login().is_some()
     }
 
-    pub fn composer_sends_as_bot(&self) -> bool {
+    pub(crate) fn composer_sends_as_bot(&self) -> bool {
         self.composer_sends_as_bot && self.is_connected()
     }
 
-    pub fn set_composer_sends_as_bot(&mut self, as_bot: bool) -> bool {
+    pub(crate) fn set_composer_sends_as_bot(&mut self, as_bot: bool) -> bool {
         let next = as_bot && self.is_connected();
         let changed = self.composer_sends_as_bot != next;
         self.composer_sends_as_bot = next;
         changed
     }
 
-    pub fn apply(&mut self, status: BotStatus, moderator: BotModerator) -> bool {
+    pub(crate) fn apply(&mut self, status: BotStatus, moderator: BotModerator) -> bool {
         if self.status == status && self.moderator == moderator {
             return false;
         }
@@ -69,7 +69,7 @@ impl TwitchBotPresence {
         true
     }
 
-    pub fn apply_status_changed(&mut self, changed: &BotStatusChanged) -> bool {
+    pub(crate) fn apply_status_changed(&mut self, changed: &BotStatusChanged) -> bool {
         let Some(status) = changed.bot_status() else {
             return false;
         };
@@ -77,12 +77,12 @@ impl TwitchBotPresence {
         self.apply(status, changed.moderator)
     }
 
-    pub fn apply_seed(&mut self, status: BotStatus, moderator: BotModerator) -> bool {
+    pub(crate) fn apply_seed(&mut self, status: BotStatus, moderator: BotModerator) -> bool {
         !self.heard_live_status && self.apply(status, moderator)
     }
 }
 
-pub fn start_twitch_bot_seed(
+pub(crate) fn start_twitch_bot_seed(
     cx: &mut AsyncApp,
     presence: Entity<TwitchBotPresence>,
     bot: Arc<TwitchBotAccount>,

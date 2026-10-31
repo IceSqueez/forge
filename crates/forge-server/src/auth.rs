@@ -25,7 +25,7 @@ pub(crate) struct AuthState {
 }
 
 impl AuthState {
-    pub async fn load(
+    pub(crate) async fn load(
         auth_required_for_reads: bool,
         creds: &dyn CredentialsRepo,
     ) -> Result<Arc<Self>, ServerError> {
@@ -73,11 +73,14 @@ impl AuthState {
         }
     }
 
-    pub fn overlay_token(&self) -> &OverlayTokenState {
+    pub(crate) fn overlay_token(&self) -> &OverlayTokenState {
         &self.overlay_token
     }
 
-    pub async fn regenerate(&self, creds: &dyn CredentialsRepo) -> Result<Secret, ServerError> {
+    pub(crate) async fn regenerate(
+        &self,
+        creds: &dyn CredentialsRepo,
+    ) -> Result<Secret, ServerError> {
         let new_token = Secret::new(generate_token());
         let id = CredentialId::new(forge_storage::SERVER_BEARER_CREDENTIAL_ID);
         creds.store(&id, new_token.expose()).await?;
@@ -94,7 +97,7 @@ impl AuthState {
         self.bearer_token.read().await.clone()
     }
 
-    pub async fn verify(&self, candidate: &str) -> bool {
+    pub(crate) async fn verify(&self, candidate: &str) -> bool {
         self.verify_generation(candidate).await.is_some()
     }
 
@@ -104,15 +107,15 @@ impl AuthState {
         bool::from(current.expose().as_bytes().ct_eq(candidate.as_bytes())).then_some(generation)
     }
 
-    pub fn token_generation(&self) -> u64 {
+    pub(crate) fn token_generation(&self) -> u64 {
         self.token_generation.load(Ordering::SeqCst)
     }
 
-    pub fn reads_required(&self) -> bool {
+    pub(crate) fn reads_required(&self) -> bool {
         self.reads_required.load(Ordering::SeqCst) || self.lan_exposed.load(Ordering::SeqCst)
     }
 
-    pub fn set_reads_required(&self, required: bool) {
+    pub(crate) fn set_reads_required(&self, required: bool) {
         let before = self.reads_required();
         self.reads_required.store(required, Ordering::SeqCst);
         if before != self.reads_required() {
@@ -132,7 +135,11 @@ impl AuthState {
         self.policy_changed.subscribe()
     }
 
-    pub fn admits_session(&self, bearer_generation: Option<u64>, overlay_session: bool) -> bool {
+    pub(crate) fn admits_session(
+        &self,
+        bearer_generation: Option<u64>,
+        overlay_session: bool,
+    ) -> bool {
         match bearer_generation {
             Some(generation) => generation == self.token_generation(),
             None => overlay_session || !self.reads_required(),
@@ -140,7 +147,7 @@ impl AuthState {
     }
 
     #[cfg(test)]
-    pub fn for_test(auth_required_for_reads: bool, token: impl Into<String>) -> Arc<Self> {
+    pub(crate) fn for_test(auth_required_for_reads: bool, token: impl Into<String>) -> Arc<Self> {
         Arc::new(Self::with_tokens(
             token.into(),
             OverlayTokenState::with_token(crate::overlay_token::generate_overlay_token(), false),

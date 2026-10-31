@@ -13,7 +13,7 @@ use forge_platform_youtube::{
     YoutubePlatform, YoutubeSendChat, YoutubeStreamMetadata, YoutubeStreamStats, YoutubeThumbnail,
     YoutubeViewerPoll, google_oauth_gateway,
 };
-use forge_storage::ban_ledger::MockBanLedgerRepo;
+use forge_storage::MockBanLedgerRepo;
 use forge_types::OAuthToken;
 use serde_json::json;
 use support::{

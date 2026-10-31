@@ -172,7 +172,7 @@ impl VTubeSink for VTubeClient {
         let entries = resp["availableHotkeys"].as_array();
         let names = string_array(entries, "name");
         let ids = string_array(entries, "hotkeyID");
-        let count = names.len() as i64;
+        let count = i64::try_from(names.len()).unwrap_or(i64::MAX);
         let mut fields = BTreeMap::new();
         fields.insert(result_keys::NAMES.to_owned(), Variant::Array(names));
         fields.insert(result_keys::IDS.to_owned(), Variant::Array(ids));
@@ -188,7 +188,7 @@ impl VTubeSink for VTubeClient {
         let entries = resp["expressions"].as_array();
         let names = string_array(entries, "name");
         let active = bool_array(entries, "active");
-        let count = names.len() as i64;
+        let count = i64::try_from(names.len()).unwrap_or(i64::MAX);
         let mut fields = BTreeMap::new();
         fields.insert(result_keys::NAMES.to_owned(), Variant::Array(names));
         fields.insert(result_keys::ACTIVE.to_owned(), Variant::Array(active));
@@ -203,7 +203,7 @@ impl VTubeSink for VTubeClient {
         check_response(&resp)?;
         let mut names = string_array(resp["defaultParameters"].as_array(), "name");
         names.extend(string_array(resp["customParameters"].as_array(), "name"));
-        let count = names.len() as i64;
+        let count = i64::try_from(names.len()).unwrap_or(i64::MAX);
         let mut fields = BTreeMap::new();
         fields.insert(result_keys::NAMES.to_owned(), Variant::Array(names));
         fields.insert(result_keys::COUNT.to_owned(), Variant::Int(count));
@@ -221,7 +221,7 @@ impl VTubeSink for VTubeClient {
         let entries = resp["itemInstancesInScene"].as_array();
         let instance_ids = string_array(entries, "instanceID");
         let file_names = string_array(entries, "fileName");
-        let count = instance_ids.len() as i64;
+        let count = i64::try_from(instance_ids.len()).unwrap_or(i64::MAX);
         let mut fields = BTreeMap::new();
         fields.insert(
             result_keys::INSTANCE_IDS.to_owned(),

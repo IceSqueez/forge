@@ -80,7 +80,7 @@ impl SpeechOrigin {
     }
 }
 
-pub fn platform_scoped_alias_key(args: &ArgStack, alias_name: &str) -> String {
+pub(crate) fn platform_scoped_alias_key(args: &ArgStack, alias_name: &str) -> String {
     if alias_name.contains(':') {
         return alias_name.to_owned();
     }

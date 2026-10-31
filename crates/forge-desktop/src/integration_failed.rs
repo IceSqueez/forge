@@ -31,7 +31,7 @@ const REASON_ICON: Pixels = px(12.0);
 const REASON_ICON_MT: Pixels = px(2.0);
 const REASON_LINE_HEIGHT: f32 = 1.45;
 
-pub struct IntegrationFailedView {
+pub(crate) struct IntegrationFailedView {
     id: IntegrationId,
     declaration: Option<IntegrationDeclaration>,
     lifecycle: Entity<IntegrationLifecycle>,
@@ -40,14 +40,14 @@ pub struct IntegrationFailedView {
     _lifecycle_observer: Subscription,
 }
 
-pub struct LiveDetailRequested(pub IntegrationId);
+pub(crate) struct LiveDetailRequested(pub IntegrationId);
 
 impl EventEmitter<NavRequested> for IntegrationFailedView {}
 
 impl EventEmitter<LiveDetailRequested> for IntegrationFailedView {}
 
 impl IntegrationFailedView {
-    pub fn new(
+    pub(crate) fn new(
         id: IntegrationId,
         lifecycle: Entity<IntegrationLifecycle>,
         slot: Option<IntegrationSlot<BuiltinObject>>,
@@ -65,7 +65,7 @@ impl IntegrationFailedView {
         }
     }
 
-    pub fn retry(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn retry(&mut self, cx: &mut Context<Self>) {
         let Some(slot) = self.slot.clone() else {
             return;
         };
@@ -78,7 +78,7 @@ impl IntegrationFailedView {
         cx.notify();
     }
 
-    pub fn apply_retry_outcome(
+    pub(crate) fn apply_retry_outcome(
         &mut self,
         outcome: Result<LifecycleState, IntegrationStartError>,
         cx: &mut Context<Self>,
@@ -93,11 +93,11 @@ impl IntegrationFailedView {
         cx.notify();
     }
 
-    pub fn open_live_detail(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn open_live_detail(&mut self, cx: &mut Context<Self>) {
         cx.emit(LiveDetailRequested(self.id.clone()));
     }
 
-    pub fn offers_sign_in(&self) -> bool {
+    pub(crate) fn offers_sign_in(&self) -> bool {
         self.declaration
             .as_ref()
             .is_some_and(|d| d.connection == ConnectionAffordance::Connectable)

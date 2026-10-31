@@ -52,7 +52,10 @@ impl SoundboardView {
             .gap(spacing(Spacing::Xxs, density))
             .child(
                 chip(
-                    tr!("soundboard_category_all", count = self.clips.len() as i64),
+                    tr!(
+                        "soundboard_category_all",
+                        count = i64::try_from(self.clips.len()).unwrap_or(i64::MAX)
+                    ),
                     ChipGlyph::None,
                     self.category_filter.is_none(),
                     palette,

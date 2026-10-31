@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use async_trait::async_trait;
-use forge_registry::runner::SubActionConfig;
+use forge_registry::SubActionConfig;
 use forge_registry::{RunContext, SubActionCategory, SubActionRunner};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 use time::OffsetDateTime;
@@ -14,13 +14,13 @@ use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
 
 const KIND_ID: &str = sub_action_ids::CHANNEL_SNOOZE_AD;
 
-pub struct SnoozeAdRunner {
+pub(crate) struct SnoozeAdRunner {
     transport: Arc<dyn HelixTransport>,
     identity: Arc<SelfIdentity>,
 }
 
 impl SnoozeAdRunner {
-    pub fn new(transport: Arc<dyn HelixTransport>, identity: Arc<SelfIdentity>) -> Self {
+    pub(crate) fn new(transport: Arc<dyn HelixTransport>, identity: Arc<SelfIdentity>) -> Self {
         Self {
             transport,
             identity,
@@ -80,7 +80,7 @@ impl SubActionRunner for SnoozeAdRunner {
                 produced: ::std::collections::BTreeMap::new(),
                 kind: KIND_ID.to_owned(),
                 started_at,
-                duration_ms: start.elapsed().as_millis() as u64,
+                duration_ms: u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX),
                 outcome,
                 index: ctx.index,
             },

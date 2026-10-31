@@ -11,7 +11,7 @@ use forge_types::{
 
 use crate::vocabulary::{event_kinds, fields, trigger_ids, variables};
 
-pub struct HotkeyReleasedDescriptor;
+pub(crate) struct HotkeyReleasedDescriptor;
 
 impl TriggerKindDescriptor for HotkeyReleasedDescriptor {
     fn id(&self) -> &str {
@@ -84,17 +84,26 @@ impl TriggerKindDescriptor for HotkeyReleasedDescriptor {
             );
         }
         if let Some(id) = event.payload.get(fields::ID).and_then(|v| v.as_u64()) {
-            stack = stack.set(variables::ID.to_owned(), Variant::Int(id as i64));
+            stack = stack.set(
+                variables::ID.to_owned(),
+                Variant::Int(i64::try_from(id).unwrap_or(i64::MAX)),
+            );
         }
         if let Some(ts) = event
             .payload
             .get(fields::TIMESTAMP_US)
             .and_then(|v| v.as_u64())
         {
-            stack = stack.set(variables::TIMESTAMP_US.to_owned(), Variant::Int(ts as i64));
+            stack = stack.set(
+                variables::TIMESTAMP_US.to_owned(),
+                Variant::Int(i64::try_from(ts).unwrap_or(i64::MAX)),
+            );
         }
         if let Some(hold_ms) = event.payload.get(fields::HOLD_MS).and_then(|v| v.as_u64()) {
-            stack = stack.set(variables::HOLD_MS.to_owned(), Variant::Int(hold_ms as i64));
+            stack = stack.set(
+                variables::HOLD_MS.to_owned(),
+                Variant::Int(i64::try_from(hold_ms).unwrap_or(i64::MAX)),
+            );
         }
         stack
     }

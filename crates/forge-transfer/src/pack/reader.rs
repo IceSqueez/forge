@@ -15,7 +15,7 @@ use crate::documents::retired_ids::upgrade_pack_documents;
 use crate::error::TransferError;
 use crate::pack::manifest::{PackManifest, parse_pack};
 
-pub const PACK_STAGING_DIR_NAME: &str = "pack-staging";
+pub(crate) const PACK_STAGING_DIR_NAME: &str = "pack-staging";
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct StagedPack {

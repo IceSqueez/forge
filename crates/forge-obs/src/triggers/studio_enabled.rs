@@ -10,7 +10,7 @@ use forge_types::{
 
 use crate::vocabulary::{event_kinds, messages, trigger_ids, variables};
 
-pub struct StudioEnabledDescriptor;
+pub(crate) struct StudioEnabledDescriptor;
 
 impl TriggerKindDescriptor for StudioEnabledDescriptor {
     fn id(&self) -> &str {

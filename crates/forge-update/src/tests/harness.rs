@@ -15,20 +15,20 @@ use crate::{
 };
 use tempfile::TempDir;
 
-pub const FROM: &str = "0.6.1";
-pub const TO: &str = "0.6.2";
-pub const SCHEMA: u32 = 7;
-pub const OLD_BUILD: &[u8] = b"old build bytes";
-pub const NEW_BUILD: &[u8] = b"new build bytes";
-pub const LIVE_DB: &[u8] = b"migrated database";
-pub const SNAPSHOT_DB: &[u8] = b"pre-update snapshot";
-pub const DB_MAIN: &str = "forge.db";
-pub const DB_WAL: &str = "forge.db-wal";
-pub const DB_SHM: &str = "forge.db-shm";
+pub(crate) const FROM: &str = "0.6.1";
+pub(crate) const TO: &str = "0.6.2";
+pub(crate) const SCHEMA: u32 = 7;
+pub(crate) const OLD_BUILD: &[u8] = b"old build bytes";
+pub(crate) const NEW_BUILD: &[u8] = b"new build bytes";
+pub(crate) const LIVE_DB: &[u8] = b"migrated database";
+pub(crate) const SNAPSHOT_DB: &[u8] = b"pre-update snapshot";
+pub(crate) const DB_MAIN: &str = "forge.db";
+pub(crate) const DB_WAL: &str = "forge.db-wal";
+pub(crate) const DB_SHM: &str = "forge.db-shm";
 
-pub type Behavior = Box<dyn FnMut(u32) -> Option<ChildExit> + Send>;
+pub(crate) type Behavior = Box<dyn FnMut(u32) -> Option<ChildExit> + Send>;
 
-pub enum Spawn {
+pub(crate) enum Spawn {
     Child {
         behavior: Behavior,
         honours_kill: bool,
@@ -37,29 +37,29 @@ pub enum Spawn {
 }
 
 impl Spawn {
-    pub fn child(behavior: impl FnMut(u32) -> Option<ChildExit> + Send + 'static) -> Self {
+    pub(crate) fn child(behavior: impl FnMut(u32) -> Option<ChildExit> + Send + 'static) -> Self {
         Self::Child {
             behavior: Box::new(behavior),
             honours_kill: true,
         }
     }
 
-    pub fn exits(exit: ChildExit) -> Self {
+    pub(crate) fn exits(exit: ChildExit) -> Self {
         Self::child(move |_| Some(exit))
     }
 
-    pub fn hangs() -> Self {
+    pub(crate) fn hangs() -> Self {
         Self::child(|_| None)
     }
 
-    pub fn ignores_kill() -> Self {
+    pub(crate) fn ignores_kill() -> Self {
         Self::Child {
             behavior: Box::new(|_| None),
             honours_kill: false,
         }
     }
 
-    pub fn reports_healthy_at(data_dir: PathBuf, poll: u32) -> Self {
+    pub(crate) fn reports_healthy_at(data_dir: PathBuf, poll: u32) -> Self {
         Self::child(move |current| {
             if current == poll {
                 crate::write_health_marker(&data_dir, TO).unwrap();
@@ -70,7 +70,7 @@ impl Spawn {
 }
 
 #[derive(Debug, Clone)]
-pub struct Launch {
+pub(crate) struct Launch {
     pub program: PathBuf,
     pub args: Vec<OsString>,
     pub watched: Option<Vec<u8>>,
@@ -78,13 +78,13 @@ pub struct Launch {
 }
 
 #[derive(Debug, Default)]
-pub struct HostLog {
+pub(crate) struct HostLog {
     pub launches: Vec<Launch>,
     pub kills: u32,
     pub parent_waits: u32,
 }
 
-pub struct FakeHost {
+pub(crate) struct FakeHost {
     parent_exits: bool,
     queue: VecDeque<Spawn>,
     watched: Option<PathBuf>,
@@ -93,7 +93,7 @@ pub struct FakeHost {
 }
 
 impl FakeHost {
-    pub fn new(spawns: impl IntoIterator<Item = Spawn>) -> Self {
+    pub(crate) fn new(spawns: impl IntoIterator<Item = Spawn>) -> Self {
         Self {
             parent_exits: true,
             queue: spawns.into_iter().collect(),
@@ -103,30 +103,30 @@ impl FakeHost {
         }
     }
 
-    pub fn parent_never_exits(mut self) -> Self {
+    pub(crate) fn parent_never_exits(mut self) -> Self {
         self.parent_exits = false;
         self
     }
 
-    pub fn watching(mut self, path: &Path) -> Self {
+    pub(crate) fn watching(mut self, path: &Path) -> Self {
         self.watched = Some(path.to_path_buf());
         self
     }
 
-    pub fn probing_the_lock_in(mut self, data_dir: &Path) -> Self {
+    pub(crate) fn probing_the_lock_in(mut self, data_dir: &Path) -> Self {
         self.lock_probe = Some(data_dir.to_path_buf());
         self
     }
 
-    pub fn launches(&self) -> Vec<Launch> {
+    pub(crate) fn launches(&self) -> Vec<Launch> {
         self.log.lock().unwrap().launches.clone()
     }
 
-    pub fn kills(&self) -> u32 {
+    pub(crate) fn kills(&self) -> u32 {
         self.log.lock().unwrap().kills
     }
 
-    pub fn parent_waits(&self) -> u32 {
+    pub(crate) fn parent_waits(&self) -> u32 {
         self.log.lock().unwrap().parent_waits
     }
 }
@@ -222,14 +222,14 @@ impl ChildProcess for FakeChild {
     }
 }
 
-pub struct FakeClock {
+pub(crate) struct FakeClock {
     start: Instant,
     offset: Cell<Duration>,
     on_first_sleep: RefCell<Option<Box<dyn FnOnce()>>>,
 }
 
 impl FakeClock {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             start: Instant::now(),
             offset: Cell::new(Duration::ZERO),
@@ -238,12 +238,12 @@ impl FakeClock {
     }
 
     #[cfg(unix)]
-    pub fn on_first_sleep(self, fault: impl FnOnce() + 'static) -> Self {
+    pub(super) fn on_first_sleep(self, fault: impl FnOnce() + 'static) -> Self {
         self.on_first_sleep.replace(Some(Box::new(fault)));
         self
     }
 
-    pub fn elapsed(&self) -> Duration {
+    pub(crate) fn elapsed(&self) -> Duration {
         self.offset.get()
     }
 }
@@ -261,7 +261,7 @@ impl forge_types::MonotonicClock for FakeClock {
     }
 }
 
-pub struct FixedSchema(pub Option<u32>);
+pub(crate) struct FixedSchema(pub Option<u32>);
 
 impl SchemaProbe for FixedSchema {
     fn current_schema_version(&self, _data_dir: &Path) -> Option<u32> {
@@ -269,7 +269,7 @@ impl SchemaProbe for FixedSchema {
     }
 }
 
-pub fn settings() -> SupervisorSettings {
+pub(crate) fn settings() -> SupervisorSettings {
     SupervisorSettings {
         health_timeout: Duration::from_secs(10),
         parent_exit_timeout: Duration::from_secs(5),
@@ -281,11 +281,11 @@ pub fn settings() -> SupervisorSettings {
     }
 }
 
-pub fn database_unit() -> DatabaseUnit {
+pub(crate) fn database_unit() -> DatabaseUnit {
     DatabaseUnit::from_file_names([DB_MAIN, DB_WAL, DB_SHM].map(String::from)).unwrap()
 }
 
-pub struct Fixture {
+pub(crate) struct Fixture {
     pub root: TempDir,
     pub data_dir: PathBuf,
     pub install_dir: PathBuf,
@@ -297,7 +297,7 @@ pub struct Fixture {
 }
 
 impl Fixture {
-    pub fn file_layout(layout: InstallLayout, mode: ApplyMode) -> Self {
+    pub(crate) fn file_layout(layout: InstallLayout, mode: ApplyMode) -> Self {
         let name = match layout {
             InstallLayout::LinuxAppImage => "Forge.AppImage",
             InstallLayout::MacAppBundle => "Forge.app",
@@ -314,7 +314,7 @@ impl Fixture {
         })
     }
 
-    pub fn bundle(mode: ApplyMode, archive: &[u8]) -> Self {
+    pub(crate) fn bundle(mode: ApplyMode, archive: &[u8]) -> Self {
         Self::build(
             InstallLayout::MacAppBundle,
             mode,
@@ -385,13 +385,13 @@ impl Fixture {
         }
     }
 
-    pub fn enter_phase(&mut self, phase: ApplyPhase) {
+    pub(crate) fn enter_phase(&mut self, phase: ApplyPhase) {
         self.state.phase = phase;
         self.state.write(&self.data_dir).unwrap();
     }
 
     #[cfg(unix)]
-    pub fn relocate_staged(&mut self, dir: &Path) {
+    pub(super) fn relocate_staged(&mut self, dir: &Path) {
         std::fs::create_dir_all(dir).unwrap();
         let moved = dir.join(self.staged.file_name().unwrap());
         std::fs::rename(&self.staged, &moved).unwrap();
@@ -400,7 +400,8 @@ impl Fixture {
         self.state.write(&self.data_dir).unwrap();
     }
 
-    pub fn relocate_previous(&mut self, dir: &Path) {
+    #[cfg(unix)]
+    pub(crate) fn relocate_previous(&mut self, dir: &Path) {
         std::fs::create_dir_all(dir).unwrap();
         let moved = dir.join(self.journal.previous_build.file_name().unwrap());
         if self.journal.previous_build.exists() {
@@ -410,19 +411,19 @@ impl Fixture {
         self.journal.write_blocking(&self.data_dir).unwrap();
     }
 
-    pub fn launch_executable(&self) -> PathBuf {
+    pub(crate) fn launch_executable(&self) -> PathBuf {
         self.state.launch_executable.clone()
     }
 
-    pub fn previous(&self) -> PathBuf {
+    pub(crate) fn previous(&self) -> PathBuf {
         self.journal.previous_build.clone()
     }
 
-    pub fn host(&self, spawns: impl IntoIterator<Item = Spawn>) -> FakeHost {
+    pub(crate) fn host(&self, spawns: impl IntoIterator<Item = Spawn>) -> FakeHost {
         FakeHost::new(spawns).watching(&self.launch_executable())
     }
 
-    pub fn supervise(
+    pub(crate) fn supervise(
         &self,
         host: &mut FakeHost,
         schema: Option<u32>,
@@ -431,7 +432,7 @@ impl Fixture {
         self.supervise_with(host, &clock, schema)
     }
 
-    pub fn supervise_with(
+    pub(crate) fn supervise_with(
         &self,
         host: &mut FakeHost,
         clock: &FakeClock,
@@ -448,16 +449,17 @@ impl Fixture {
         })
     }
 
-    pub fn running_build(&self) -> Vec<u8> {
+    pub(crate) fn running_build(&self) -> Vec<u8> {
         std::fs::read(self.launch_executable()).unwrap()
     }
 
-    pub fn records_kept(&self) -> bool {
+    #[cfg(unix)]
+    pub(crate) fn records_kept(&self) -> bool {
         UpdateJournal::path_in(&self.data_dir).exists()
             && ApplyState::path_in(&self.data_dir).exists()
     }
 
-    pub fn records_cleared(&self) -> bool {
+    pub(crate) fn records_cleared(&self) -> bool {
         [
             UpdateJournal::path_in(&self.data_dir),
             ApplyState::path_in(&self.data_dir),
@@ -467,7 +469,7 @@ impl Fixture {
         .all(|path| !path.exists())
     }
 
-    pub fn phase(&self) -> Option<ApplyPhase> {
+    pub(crate) fn phase(&self) -> Option<ApplyPhase> {
         ApplyState::read(&self.data_dir)
             .unwrap()
             .map(|state| state.phase)
@@ -475,17 +477,17 @@ impl Fixture {
 }
 
 #[cfg(unix)]
-pub fn set_writable(dir: &Path, writable: bool) {
+pub(crate) fn set_writable(dir: &Path, writable: bool) {
     use std::os::unix::fs::PermissionsExt;
 
     let mode = if writable { 0o755 } else { 0o555 };
     std::fs::set_permissions(dir, std::fs::Permissions::from_mode(mode)).unwrap();
 }
 
-pub fn bundle_binary(bundle: &Path) -> PathBuf {
+pub(crate) fn bundle_binary(bundle: &Path) -> PathBuf {
     bundle.join("Contents").join("MacOS").join("forge")
 }
 
-pub fn candidate_args() -> Vec<OsString> {
+pub(crate) fn candidate_args() -> Vec<OsString> {
     vec![OsString::from(crate::CANDIDATE_FLAG)]
 }

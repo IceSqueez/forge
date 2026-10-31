@@ -7,7 +7,7 @@ use crate::palette::ForgePalette;
 const TRACK_HEIGHT: Pixels = px(3.0);
 const TRACK_RADIUS: Pixels = px(2.0);
 
-pub fn clamped_fraction(fraction: f32) -> f32 {
+pub(crate) fn clamped_fraction(fraction: f32) -> f32 {
     if fraction.is_finite() {
         fraction.clamp(0.0, 1.0)
     } else {

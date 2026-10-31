@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use async_trait::async_trait;
-use forge_registry::runner::SubActionConfig;
+use forge_registry::SubActionConfig;
 use forge_registry::{RunContext, SubActionCategory, SubActionRunner};
 use forge_types::{ArgStack, SubActionTelemetry};
 use time::OffsetDateTime;
@@ -12,7 +12,7 @@ use crate::runners::step_failure;
 use crate::sink::VTubeSink;
 use crate::vocabulary::sub_action_ids;
 
-pub struct ResetToIdleRunner {
+pub(crate) struct ResetToIdleRunner {
     sink: Arc<dyn VTubeSink>,
     holds: Arc<HoldRegistry>,
 }
@@ -66,7 +66,7 @@ impl SubActionRunner for ResetToIdleRunner {
                 produced: ::std::collections::BTreeMap::new(),
                 kind: sub_action_ids::RESET_TO_IDLE.to_owned(),
                 started_at,
-                duration_ms: start.elapsed().as_millis() as u64,
+                duration_ms: u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX),
                 outcome,
                 index: ctx.index,
             },

@@ -120,7 +120,7 @@ fn moderated_ids_by(feed: &ChatFeed, key: &AuthorKey) -> HashSet<SharedString> {
 }
 
 impl ViewerHistory {
-    pub fn new(
+    pub(crate) fn new(
         key: AuthorKey,
         feed: Entity<ChatFeed>,
         messages: Entity<ViewerMessages>,
@@ -169,7 +169,7 @@ impl ViewerHistory {
     }
 
     #[must_use]
-    pub fn titled(mut self, viewer_name: impl Into<SharedString>) -> Self {
+    pub(crate) fn titled(mut self, viewer_name: impl Into<SharedString>) -> Self {
         self.viewer_name = viewer_name.into();
         self
     }
@@ -484,7 +484,7 @@ mod tests {
 
     use crate::chat_row::ChatBody;
     use forge_components::FORGE_DEFAULT;
-    use forge_storage::chat_history::MockChatHistoryRepo;
+    use forge_storage::MockChatHistoryRepo;
     use forge_storage::{
         ChatAuthorKey, ChatAuthorPage, ChatAuthorTally, ChatHistoryCursor, StorageError,
     };

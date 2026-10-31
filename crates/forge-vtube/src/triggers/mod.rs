@@ -8,15 +8,15 @@ mod model_config_changed;
 mod model_loaded;
 mod model_unloaded;
 
-pub use expression_state_changed::ExpressionStateChangedDescriptor;
-pub use face_found::FaceFoundDescriptor;
-pub use face_lost::FaceLostDescriptor;
-pub use hotkey_triggered::HotkeyTriggeredDescriptor;
-pub use item_added::ItemAddedDescriptor;
-pub use item_removed::ItemRemovedDescriptor;
-pub use model_config_changed::ModelConfigChangedDescriptor;
-pub use model_loaded::ModelLoadedDescriptor;
-pub use model_unloaded::ModelUnloadedDescriptor;
+pub(crate) use expression_state_changed::ExpressionStateChangedDescriptor;
+pub(crate) use face_found::FaceFoundDescriptor;
+pub(crate) use face_lost::FaceLostDescriptor;
+pub(crate) use hotkey_triggered::HotkeyTriggeredDescriptor;
+pub(crate) use item_added::ItemAddedDescriptor;
+pub(crate) use item_removed::ItemRemovedDescriptor;
+pub(crate) use model_config_changed::ModelConfigChangedDescriptor;
+pub(crate) use model_loaded::ModelLoadedDescriptor;
+pub(crate) use model_unloaded::ModelUnloadedDescriptor;
 
 use forge_registry::{RegistryError, TriggerRegistry};
 

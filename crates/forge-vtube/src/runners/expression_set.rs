@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_registry::runner::SubActionConfig;
+use forge_registry::SubActionConfig;
 use forge_registry::{
     ConfigProblem, ConfigSpec, PickedTextField, RunContext, StepTimer, SubActionCategory,
     SubActionRunner, TextPicker, ToggleField, TypedField,
@@ -37,12 +37,12 @@ fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<(String, boo
     ))
 }
 
-pub struct ExpressionSetRunner {
+pub(crate) struct ExpressionSetRunner {
     sink: Arc<dyn VTubeSink>,
 }
 
 impl ExpressionSetRunner {
-    pub fn new(sink: Arc<dyn VTubeSink>) -> Self {
+    pub(crate) fn new(sink: Arc<dyn VTubeSink>) -> Self {
         Self { sink }
     }
 }

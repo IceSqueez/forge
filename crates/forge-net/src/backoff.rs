@@ -14,8 +14,8 @@ pub struct Backoff {
 impl Backoff {
     pub fn new(base: Duration, cap: Duration) -> Self {
         Self {
-            base_ms: base.as_millis().min(u128::from(u64::MAX)) as u64,
-            cap_ms: cap.as_millis().min(u128::from(u64::MAX)) as u64,
+            base_ms: u64::try_from(base.as_millis()).unwrap_or(u64::MAX),
+            cap_ms: u64::try_from(cap.as_millis()).unwrap_or(u64::MAX),
             attempt: 0,
         }
     }

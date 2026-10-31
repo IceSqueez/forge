@@ -87,7 +87,7 @@ impl IntegrationFactory<BuiltinObject> for TwitchFactory {
     }
 
     fn teardown_grace(&self) -> Duration {
-        forge_platform_twitch::chat::SHUTDOWN_GRACE
+        forge_platform_twitch::SHUTDOWN_GRACE
     }
 
     async fn is_configured(&self) -> Result<bool, StorageError> {
@@ -410,16 +410,13 @@ impl IntegrationFactory<BuiltinObject> for KickFactory {
             }),
             poller_tx,
         );
-        let viewer_report_rx = viewer_source.subscribe();
-        let poller_auth_rx = viewer_source.subscribe_auth();
         let (bundle, _health_tx) = forge_platform_kick::KickIntegrationBundle::new(
             stored.username,
             stored.user_id,
             Arc::clone(&self.platform),
             Arc::clone(&self.manager),
             Arc::clone(&self.rate_limiter),
-            viewer_report_rx,
-            poller_auth_rx,
+            &viewer_source,
         );
 
         let object = kick_builtin_object(Arc::clone(&bundle));
@@ -857,9 +854,9 @@ mod tests {
     use forge_hotkey::HotkeyConfig;
     use forge_hotkey::testing::test_client;
     use forge_hotkey::vocabulary::event_kinds;
-    use forge_storage::soundboard::MockSoundboardClipsRepo;
+    use forge_storage::MockSoundboardClipsRepo;
+    use forge_storage::MockTriggerInstanceRepo;
     use forge_storage::test_support::MemorySettings;
-    use forge_storage::trigger_instance::MockTriggerInstanceRepo;
     use forge_types::{PermissionRung, PlatformScope, TriggerInstance, TriggerInstanceId, Variant};
 
     use super::*;

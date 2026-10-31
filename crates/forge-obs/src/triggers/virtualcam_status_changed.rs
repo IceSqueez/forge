@@ -12,7 +12,7 @@ use crate::vocabulary::fields::virtualcam as fields;
 use crate::vocabulary::messages;
 use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
-pub struct VirtualcamStatusChangedDescriptor;
+pub(crate) struct VirtualcamStatusChangedDescriptor;
 
 impl TriggerKindDescriptor for VirtualcamStatusChangedDescriptor {
     fn id(&self) -> &str {

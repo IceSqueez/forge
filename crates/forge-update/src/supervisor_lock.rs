@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use crate::UpdateError;
 
-pub const SUPERVISOR_LOCK_FILE: &str = "update-supervisor.lock";
+pub(crate) const SUPERVISOR_LOCK_FILE: &str = "update-supervisor.lock";
 
 #[derive(Debug)]
 pub(crate) struct SupervisorLock {

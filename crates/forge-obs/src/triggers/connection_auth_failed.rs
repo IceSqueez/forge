@@ -12,7 +12,7 @@ use crate::vocabulary::fields::connection as fields;
 use crate::vocabulary::messages;
 use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
-pub struct ConnectionAuthFailedDescriptor;
+pub(crate) struct ConnectionAuthFailedDescriptor;
 
 impl TriggerKindDescriptor for ConnectionAuthFailedDescriptor {
     fn id(&self) -> &str {

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_registry::runner::SubActionConfig;
+use forge_registry::SubActionConfig;
 use forge_registry::{
     ConfigSpec, RunContext, SeparatedListField, StepTimer, SubActionCategory, SubActionRunner,
     TypedField, ValueBounds,
@@ -33,13 +33,13 @@ const TAGS: SeparatedListField = SeparatedListField {
 
 const CONFIG: ConfigSpec = ConfigSpec::new(&[&TAGS]);
 
-pub struct UpdateTagsRunner {
+pub(crate) struct UpdateTagsRunner {
     transport: Arc<dyn HelixTransport>,
     identity: Arc<SelfIdentity>,
 }
 
 impl UpdateTagsRunner {
-    pub fn new(transport: Arc<dyn HelixTransport>, identity: Arc<SelfIdentity>) -> Self {
+    pub(crate) fn new(transport: Arc<dyn HelixTransport>, identity: Arc<SelfIdentity>) -> Self {
         Self {
             transport,
             identity,

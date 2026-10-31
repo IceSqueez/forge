@@ -9,9 +9,7 @@ use forge_components::{
     card, empty_state, fmt_bytes, icon, mono_family, radius, spacing, tooltip_builder, tr,
 };
 use forge_overlay::MARKUP_FILE;
-use forge_server::{
-    overlay_url::overlay_file_url, overlay_url::overlay_origin, overlay_url::overlay_page_url,
-};
+use forge_server::{overlay_file_url, overlay_origin, overlay_page_url};
 use gpui::{AnyElement, ClickEvent, Context, ElementId, FontWeight, Pixels, div, prelude::*, px};
 use std::ffi::OsStr;
 

@@ -3,7 +3,7 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_events::{EventPublisher, EventSource, ScriptFailed, ScriptStarted, TypedEvent};
-use forge_registry::references::SCRIPT_OPTIONS_KEY;
+use forge_registry::SCRIPT_OPTIONS_KEY;
 use forge_registry::{
     ConfigProblem, ConfigSpec, DynamicSelectField, ProducedVariable, RunContext, StepTimer,
     SubActionCategory, SubActionIo, SubActionRunner, TextEditor, TextField, TypedField,
@@ -52,7 +52,7 @@ fn read_config(
     ))
 }
 
-pub struct ScriptRunNamedRunner {
+pub(crate) struct ScriptRunNamedRunner {
     registry: Arc<ScriptRegistry>,
     globals: Arc<dyn ScriptGlobals>,
     publisher: Arc<dyn EventPublisher>,
@@ -61,7 +61,7 @@ pub struct ScriptRunNamedRunner {
 }
 
 impl ScriptRunNamedRunner {
-    pub fn new(
+    pub(crate) fn new(
         registry: Arc<ScriptRegistry>,
         globals: Arc<dyn GlobalsRepo>,
         publisher: Arc<dyn EventPublisher>,
@@ -144,7 +144,8 @@ impl SubActionRunner for ScriptRunNamedRunner {
                     Err(e) => core_messages::storage_failed(e),
                     _ => core_messages::script_not_found(name.as_str()),
                 };
-                let duration_ms = wall_start.elapsed().as_millis() as u64;
+                let duration_ms =
+                    u64::try_from(wall_start.elapsed().as_millis()).unwrap_or(u64::MAX);
                 return (
                     SubActionTelemetry {
                         args_in: ::std::collections::BTreeMap::new(),
@@ -201,7 +202,7 @@ impl SubActionRunner for ScriptRunNamedRunner {
         })
         .await;
 
-        let duration_ms = wall_start.elapsed().as_millis() as u64;
+        let duration_ms = u64::try_from(wall_start.elapsed().as_millis()).unwrap_or(u64::MAX);
 
         let (outcome, updated_stack) = match exec_result {
             Ok(Ok(value)) => match value {
@@ -610,7 +611,7 @@ mod tests {
 
     #[tokio::test]
     async fn unreadable_script_storage_fails_as_a_storage_error_not_as_a_missing_script() {
-        let mut repo = forge_storage::script::MockScriptRepo::new();
+        let mut repo = forge_storage::MockScriptRepo::new();
         repo.expect_get_by_name().returning(|_| {
             Err(forge_storage::StorageError::Connection {
                 reason: "disk gone".to_owned(),

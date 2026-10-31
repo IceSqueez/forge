@@ -1,4 +1,4 @@
-use forge_registry::references::GLOBAL_OPTIONS_KEY;
+use forge_registry::GLOBAL_OPTIONS_KEY;
 use forge_registry::{
     ConfigProblem, DynamicSelectField, IntegerEditor, IntegerField, TypedField, ValueBounds,
 };

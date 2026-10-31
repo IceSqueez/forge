@@ -189,7 +189,7 @@ impl EventLogRepo for SqliteEventLogRepo {
              ORDER BY rowid DESC
              LIMIT ?",
         )
-        .bind(limit as i64)
+        .bind(i64::try_from(limit).unwrap_or(i64::MAX))
         .fetch_all(self.db.reader())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
@@ -215,7 +215,7 @@ impl EventLogRepo for SqliteEventLogRepo {
                      LIMIT ?",
                 )
                 .bind(&id_str)
-                .bind(limit as i64)
+                .bind(i64::try_from(limit).unwrap_or(i64::MAX))
                 .fetch_all(self.db.reader())
                 .await
                 .map_err(SqliteStorageError::Sqlx)?
@@ -226,7 +226,7 @@ impl EventLogRepo for SqliteEventLogRepo {
                      ORDER BY rowid DESC
                      LIMIT ?",
             )
-            .bind(limit as i64)
+            .bind(i64::try_from(limit).unwrap_or(i64::MAX))
             .fetch_all(self.db.reader())
             .await
             .map_err(SqliteStorageError::Sqlx)?,

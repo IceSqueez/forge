@@ -5,7 +5,7 @@ mod ban_list;
 mod bot_account;
 mod builtin;
 mod cadence;
-pub mod chat;
+mod chat;
 mod chat_platform;
 mod chat_sender;
 mod collection_keys;
@@ -40,34 +40,39 @@ mod triggers;
 pub mod vocabulary;
 
 pub use account::identity::BroadcasterTier;
-pub use assembly::{TwitchAssembly, TwitchSession};
+pub use assembly::TwitchAssembly;
 pub use auth::{
-    DeviceCodeInfo, DeviceTiming, TWITCH_BOT_SCOPES, TWITCH_BROADCASTER_SCOPES,
-    TWITCH_CLIENT_ID_ENV, TwitchAuthBundle, TwitchAuthFlow, TwitchSignIn, UserInfo, client_id,
-    twitch_auth_flow,
+    DeviceCodeInfo, TWITCH_BROADCASTER_SCOPES, TWITCH_CLIENT_ID_ENV, TwitchAuthFlow, TwitchSignIn,
+    UserInfo, client_id, twitch_auth_flow,
 };
 pub use bot_account::{
     BotLoginError, BotModerator, BotModeratorError, BotStatus, TwitchBotAccount,
 };
 pub use builtin::TwitchIntegrationBundle;
-pub use chat::{
-    ChatConnectionState, ChatSendError, SentMessageId, TwitchChat, TwitchChatHandle, send_chat,
-};
-pub use chat_platform::TwitchPlatform;
-pub use config::{ChatSessionConfig, ChatTiming, HELIX_BUDGET_CAPACITY, HELIX_BUDGET_WINDOW};
-pub use credentials::{TWITCH_BOT_CREDENTIAL_ID, TWITCH_CREDENTIAL_ID};
+pub use chat::{TwitchChat, TwitchChatHandle, send_chat};
+pub use config::{ChatSessionConfig, HELIX_BUDGET_CAPACITY, HELIX_BUDGET_WINDOW};
+pub use credentials::TWITCH_CREDENTIAL_ID;
 pub use credentials_manager::TwitchCredentialsManager;
-pub use helix::{
-    HelixError, HelixHttpTransport, HelixMethod, HelixRequest, HelixTokenRefresher,
-    HelixTokenSource, HelixTransport,
-};
-pub use helix_gateway::{HELIX_GATEWAY_PROFILE, helix_gateway};
+pub use helix::{HelixError, HelixHttpTransport, HelixRequest, HelixTokenSource, HelixTransport};
+pub use helix_gateway::helix_gateway;
 pub use integration::TWITCH_INTEGRATION;
 pub use lifecycle::TwitchLifecycle;
 pub use oauth_client::{
-    TWITCH_OAUTH_BUDGET_CAPACITY, TWITCH_OAUTH_BUDGET_WINDOW, TWITCH_OAUTH_GATEWAY_PROFILE,
-    TwitchOAuthClient, twitch_oauth_gateway,
+    TWITCH_OAUTH_BUDGET_CAPACITY, TWITCH_OAUTH_BUDGET_WINDOW, TwitchOAuthClient,
+    twitch_oauth_gateway,
 };
 pub use sub_actions::register_twitch_sub_actions;
-pub use subscriptions::{SubStatus, SubscriptionRecord, SubscriptionTracker};
+pub use subscriptions::{SubStatus, SubscriptionTracker};
 pub use triggers::register_twitch_triggers;
+
+pub use assembly::TwitchSession;
+pub use auth::DeviceTiming;
+pub use auth::TwitchAuthBundle;
+pub use chat::SHUTDOWN_GRACE;
+pub use chat::{ChatConnectionState, ChatSendError, SentMessageId};
+pub use chat_platform::TwitchPlatform;
+pub use config::ChatTiming;
+pub use helix::HelixMethod;
+pub use helix::HelixTokenRefresher;
+pub use subscriptions::SubscriptionFailure;
+pub use subscriptions::SubscriptionRecord;

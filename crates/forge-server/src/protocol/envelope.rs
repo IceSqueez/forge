@@ -73,7 +73,7 @@ pub enum WsRequest {
 }
 
 #[derive(Debug)]
-pub enum WsResponse {
+pub(crate) enum WsResponse {
     Ok(serde_json::Value),
     Error {
         code: Option<String>,
@@ -119,7 +119,7 @@ pub(crate) fn merge_payload(
     }
 }
 
-pub fn serialize_response_frame(envelope: &WsEnvelope<WsResponse>) -> serde_json::Value {
+pub(crate) fn serialize_response_frame(envelope: &WsEnvelope<WsResponse>) -> serde_json::Value {
     let mut map = serde_json::Map::new();
     map.insert(
         "id".into(),

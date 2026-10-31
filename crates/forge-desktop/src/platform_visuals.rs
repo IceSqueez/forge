@@ -6,7 +6,7 @@ use forge_types::PlatformId;
 use gpui::{Rgba, SharedString};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BadgeKind {
+pub(crate) enum BadgeKind {
     Moderator,
     Vip,
     Subscriber,
@@ -21,7 +21,7 @@ pub enum BadgeKind {
     BitsLeader,
 }
 
-pub fn platform_color(platform: PlatformId, palette: &ForgePalette) -> Rgba {
+pub(crate) fn platform_color(platform: PlatformId, palette: &ForgePalette) -> Rgba {
     match platform {
         PlatformId::Twitch => palette.platform_twitch,
         PlatformId::YouTube => palette.platform_youtube,
@@ -29,7 +29,7 @@ pub fn platform_color(platform: PlatformId, palette: &ForgePalette) -> Rgba {
     }
 }
 
-pub fn platform_letter(platform: PlatformId) -> &'static str {
+pub(crate) fn platform_letter(platform: PlatformId) -> &'static str {
     match platform {
         PlatformId::Twitch => "T",
         PlatformId::YouTube => "Y",
@@ -37,29 +37,29 @@ pub fn platform_letter(platform: PlatformId) -> &'static str {
     }
 }
 
-pub fn platform_mark(platform: PlatformId, palette: &ForgePalette) -> PlatformMark {
+pub(crate) fn platform_mark(platform: PlatformId, palette: &ForgePalette) -> PlatformMark {
     PlatformMark {
         letter: SharedString::new_static(platform_letter(platform)),
         color: platform_color(platform, palette),
     }
 }
 
-pub fn send_target(platform: PlatformId, palette: &ForgePalette) -> SendTarget {
+pub(crate) fn send_target(platform: PlatformId, palette: &ForgePalette) -> SendTarget {
     SendTarget {
         id: send_target_id(platform),
         mark: platform_mark(platform, palette),
     }
 }
 
-pub fn send_target_id(platform: PlatformId) -> SharedString {
+pub(crate) fn send_target_id(platform: PlatformId) -> SharedString {
     SharedString::new_static(platform.as_str())
 }
 
-pub fn send_target_platforms(ids: &[SharedString]) -> Vec<PlatformId> {
+pub(crate) fn send_target_platforms(ids: &[SharedString]) -> Vec<PlatformId> {
     ids.iter().filter_map(|id| PlatformId::parse(id)).collect()
 }
 
-pub fn badge_color(kind: BadgeKind, palette: &ForgePalette) -> Rgba {
+pub(crate) fn badge_color(kind: BadgeKind, palette: &ForgePalette) -> Rgba {
     match kind {
         BadgeKind::Broadcaster => palette.warning,
         BadgeKind::Moderator => palette.success,
@@ -76,7 +76,7 @@ pub fn badge_color(kind: BadgeKind, palette: &ForgePalette) -> Rgba {
     }
 }
 
-pub fn badge_label(kind: BadgeKind) -> String {
+pub(crate) fn badge_label(kind: BadgeKind) -> String {
     match kind {
         BadgeKind::Broadcaster => tr!("chat_badge_owner"),
         BadgeKind::Moderator => tr!("chat_badge_mod"),
@@ -93,7 +93,7 @@ pub fn badge_label(kind: BadgeKind) -> String {
     }
 }
 
-pub fn role_badge(kind: BadgeKind, palette: &ForgePalette) -> RoleBadge {
+pub(crate) fn role_badge(kind: BadgeKind, palette: &ForgePalette) -> RoleBadge {
     RoleBadge {
         label: badge_label(kind).into(),
         color: badge_color(kind, palette),

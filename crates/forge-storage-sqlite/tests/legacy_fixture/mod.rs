@@ -6,13 +6,13 @@ use sha2::{Digest, Sha384};
 use sqlx::SqlitePool;
 use sqlx::migrate::Migrator;
 
-pub const LEGACY_HEAD: i64 = 46;
+pub(crate) const LEGACY_HEAD: i64 = 46;
 
-pub fn fixture_dir() -> PathBuf {
+pub(crate) fn fixture_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/legacy_migrations")
 }
 
-pub fn fixture_texts() -> Vec<(i64, String)> {
+pub(crate) fn fixture_texts() -> Vec<(i64, String)> {
     let mut texts: Vec<(i64, String)> = std::fs::read_dir(fixture_dir())
         .expect("the legacy fixture directory")
         .map(|entry| {
@@ -37,24 +37,24 @@ pub fn fixture_texts() -> Vec<(i64, String)> {
     texts
 }
 
-pub fn sha384_hex(text: &str) -> String {
+pub(crate) fn sha384_hex(text: &str) -> String {
     Sha384::digest(text.as_bytes())
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect()
 }
 
-pub fn db_url(path: &Path) -> String {
+pub(crate) fn db_url(path: &Path) -> String {
     format!("sqlite://{}", path.display())
 }
 
-pub async fn legacy_migrator() -> Migrator {
+pub(crate) async fn legacy_migrator() -> Migrator {
     Migrator::new(fixture_dir())
         .await
         .expect("the legacy fixture chain resolves")
 }
 
-pub async fn legacy_db(path: &Path, up_to: i64) -> SqlitePool {
+pub(crate) async fn legacy_db(path: &Path, up_to: i64) -> SqlitePool {
     let pool = forge_storage_sqlite::connect(&db_url(path))
         .await
         .expect("a legacy database");
@@ -66,7 +66,7 @@ pub async fn legacy_db(path: &Path, up_to: i64) -> SqlitePool {
     pool
 }
 
-pub async fn rewrite_journal_to_crlf(pool: &SqlitePool) {
+pub(crate) async fn rewrite_journal_to_crlf(pool: &SqlitePool) {
     for (version, text) in fixture_texts() {
         let crlf = text.replace('\n', "\r\n");
         let digest: Vec<u8> = Sha384::digest(crlf.as_bytes()).to_vec();
@@ -79,9 +79,9 @@ pub async fn rewrite_journal_to_crlf(pool: &SqlitePool) {
     }
 }
 
-pub type JournalRow = (i64, String, String, bool, Vec<u8>, i64);
+pub(crate) type JournalRow = (i64, String, String, bool, Vec<u8>, i64);
 
-pub async fn journal(pool: &SqlitePool) -> Vec<JournalRow> {
+pub(crate) async fn journal(pool: &SqlitePool) -> Vec<JournalRow> {
     sqlx::query_as(
         "SELECT version, description, installed_on, success, checksum, execution_time
          FROM _sqlx_migrations ORDER BY version",
@@ -91,7 +91,7 @@ pub async fn journal(pool: &SqlitePool) -> Vec<JournalRow> {
     .expect("read the journal")
 }
 
-pub async fn user_tables(pool: &SqlitePool) -> Vec<String> {
+pub(crate) async fn user_tables(pool: &SqlitePool) -> Vec<String> {
     sqlx::query_scalar(
         "SELECT name FROM sqlite_master
          WHERE type = 'table' AND name NOT LIKE 'sqlite!_%' ESCAPE '!' AND name <> '_sqlx_migrations'
@@ -102,7 +102,7 @@ pub async fn user_tables(pool: &SqlitePool) -> Vec<String> {
     .expect("list tables")
 }
 
-pub async fn column_names(pool: &SqlitePool, table: &str) -> Vec<String> {
+pub(crate) async fn column_names(pool: &SqlitePool, table: &str) -> Vec<String> {
     sqlx::query_scalar("SELECT name FROM pragma_table_info(?) ORDER BY cid")
         .bind(table)
         .fetch_all(pool)
@@ -110,7 +110,11 @@ pub async fn column_names(pool: &SqlitePool, table: &str) -> Vec<String> {
         .expect("read columns")
 }
 
-pub async fn table_rows(pool: &SqlitePool, table: &str, mask_timestamps: bool) -> Vec<String> {
+pub(crate) async fn table_rows(
+    pool: &SqlitePool,
+    table: &str,
+    mask_timestamps: bool,
+) -> Vec<String> {
     let projection = column_names(pool, table)
         .await
         .iter()
@@ -131,7 +135,7 @@ pub async fn table_rows(pool: &SqlitePool, table: &str, mask_timestamps: bool) -
     .expect("read table rows")
 }
 
-pub async fn data_fingerprint(pool: &SqlitePool) -> Vec<(String, Vec<String>)> {
+pub(crate) async fn data_fingerprint(pool: &SqlitePool) -> Vec<(String, Vec<String>)> {
     let mut fingerprint = Vec::new();
     for table in user_tables(pool).await {
         let rows = table_rows(pool, &table, false).await;

@@ -212,7 +212,7 @@ async fn get_overlay_files(
     ws_response_to_http(handle_get_overlay_files(q.recursive.unwrap_or(false), &ctx).await)
 }
 
-pub fn router() -> Router<AppState> {
+pub(crate) fn router() -> Router<AppState> {
     Router::new()
         .route("/info", get(get_info))
         .route("/actions", get(get_actions))

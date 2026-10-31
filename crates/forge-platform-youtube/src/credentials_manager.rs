@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use forge_platform_core::auth::REFRESH_BUFFER_SECS;
+use forge_platform_core::REFRESH_BUFFER_SECS;
 use forge_platform_core::{PlatformError, credential_storage_error, reauth_required};
 use forge_storage::{CredentialId, CredentialsRepo};
 use time::{Duration, OffsetDateTime};
@@ -85,11 +85,11 @@ impl YoutubeCredentialsManager {
                 reason: e.to_string(),
             })?
             .as_secs();
-        let expires_at = OffsetDateTime::from_unix_timestamp(unix_secs as i64).map_err(|e| {
-            PlatformError::Auth {
-                reason: e.to_string(),
-            }
-        })?;
+        let expires_at =
+            OffsetDateTime::from_unix_timestamp(i64::try_from(unix_secs).unwrap_or(i64::MAX))
+                .map_err(|e| PlatformError::Auth {
+                    reason: e.to_string(),
+                })?;
         let creds = YoutubeCredentials {
             access_token: bundle.access_token,
             refresh_token: bundle.refresh_token,

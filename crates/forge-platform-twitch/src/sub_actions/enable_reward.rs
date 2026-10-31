@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_registry::runner::SubActionConfig;
+use forge_registry::SubActionConfig;
 use forge_registry::{
     ConfigSpec, PickedTextField, RunContext, StepTimer, SubActionCategory, SubActionRunner,
     TextPicker, TypedField,
@@ -29,13 +29,13 @@ pub(crate) const REWARD_ID: PickedTextField = PickedTextField {
 
 pub(crate) const REWARD_CONFIG: ConfigSpec = ConfigSpec::new(&[&REWARD_ID]);
 
-pub struct EnableRewardRunner {
+pub(crate) struct EnableRewardRunner {
     transport: Arc<dyn HelixTransport>,
     identity: Arc<SelfIdentity>,
 }
 
 impl EnableRewardRunner {
-    pub fn new(transport: Arc<dyn HelixTransport>, identity: Arc<SelfIdentity>) -> Self {
+    pub(crate) fn new(transport: Arc<dyn HelixTransport>, identity: Arc<SelfIdentity>) -> Self {
         Self {
             transport,
             identity,

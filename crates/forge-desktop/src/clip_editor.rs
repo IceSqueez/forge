@@ -36,7 +36,7 @@ const KEY_DISPLAY_GAP: Pixels = px(7.0);
 const KEY_LISTEN_GLYPH: Pixels = px(12.0);
 const KEY_BUTTON_HEIGHT: Pixels = px(32.0);
 
-pub struct ClipDraft {
+pub(crate) struct ClipDraft {
     pub edit_id: Option<ClipId>,
     pub name: String,
     pub file_path: PathBuf,
@@ -46,12 +46,12 @@ pub struct ClipDraft {
     pub release: Option<ComboHolder>,
 }
 
-pub enum ClipEditorEvent {
+pub(crate) enum ClipEditorEvent {
     Submit(ClipDraft),
     Cancel,
 }
 
-pub struct ClipEditorLaunch {
+pub(crate) struct ClipEditorLaunch {
     pub edit_id: Option<ClipId>,
     pub name: String,
     pub category: String,
@@ -73,7 +73,7 @@ struct KeyField {
     release: Option<ComboHolder>,
 }
 
-pub struct ClipEditor {
+pub(crate) struct ClipEditor {
     file_path: Option<PathBuf>,
     name_input: Entity<TextInput>,
     category: String,
@@ -91,7 +91,7 @@ pub struct ClipEditor {
 impl EventEmitter<ClipEditorEvent> for ClipEditor {}
 
 impl ClipEditor {
-    pub fn new(
+    pub(crate) fn new(
         launch: ClipEditorLaunch,
         holders: Option<ComboHolders>,
         rt_handle: tokio::runtime::Handle,
@@ -139,7 +139,7 @@ impl ClipEditor {
     }
 
     #[must_use]
-    pub fn with_integration_switch(
+    pub(crate) fn with_integration_switch(
         mut self,
         switch: IntegrationSwitch,
         cx: &mut Context<Self>,
@@ -179,24 +179,24 @@ impl ClipEditor {
         )
     }
 
-    pub fn focus(&self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn focus(&self, window: &mut Window, cx: &mut Context<Self>) {
         self.name_input.update(cx, |f, cx| f.focus(window, cx));
     }
 
-    pub fn set_holders(&mut self, holders: ComboHolders, cx: &mut Context<Self>) {
+    pub(crate) fn set_holders(&mut self, holders: ComboHolders, cx: &mut Context<Self>) {
         if let Some(key) = &mut self.key {
             key.holders = holders;
         }
         cx.notify();
     }
 
-    pub fn set_saving(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn set_saving(&mut self, cx: &mut Context<Self>) {
         self.saving = true;
         self.error = None;
         cx.notify();
     }
 
-    pub fn fail_save(&mut self, message: String, cx: &mut Context<Self>) {
+    pub(crate) fn fail_save(&mut self, message: String, cx: &mut Context<Self>) {
         self.saving = false;
         self.error = Some(message.into());
         cx.notify();

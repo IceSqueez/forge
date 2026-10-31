@@ -3,7 +3,7 @@ use forge_types::MessageCode;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_registry::runner::SubActionConfig;
+use forge_registry::SubActionConfig;
 use forge_registry::{
     ChoiceField, ConfigChoice, ConfigSpec, RunContext, StepTimer, SubActionCategory,
     SubActionRunner, TypedField,
@@ -82,13 +82,13 @@ pub(crate) const AD_LENGTH: ChoiceField<AdLength> = ChoiceField {
 
 const CONFIG: ConfigSpec = ConfigSpec::new(&[&AD_LENGTH]);
 
-pub struct RunAdRunner {
+pub(crate) struct RunAdRunner {
     transport: Arc<dyn HelixTransport>,
     identity: Arc<SelfIdentity>,
 }
 
 impl RunAdRunner {
-    pub fn new(transport: Arc<dyn HelixTransport>, identity: Arc<SelfIdentity>) -> Self {
+    pub(crate) fn new(transport: Arc<dyn HelixTransport>, identity: Arc<SelfIdentity>) -> Self {
         Self {
             transport,
             identity,

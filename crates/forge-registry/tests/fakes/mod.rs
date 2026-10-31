@@ -10,7 +10,7 @@ use forge_types::{
     TriggerInstanceId, Variant,
 };
 
-pub struct FakeRunner {
+pub(crate) struct FakeRunner {
     pub id: &'static str,
     pub fields: Vec<FormField>,
     pub io: SubActionIo,
@@ -18,7 +18,7 @@ pub struct FakeRunner {
     pub checks_while_editing: bool,
 }
 
-pub fn runner(id: &'static str) -> FakeRunner {
+pub(crate) fn runner(id: &'static str) -> FakeRunner {
     FakeRunner {
         id,
         fields: Vec::new(),
@@ -86,7 +86,7 @@ impl SubActionRunner for FakeRunner {
     }
 }
 
-pub struct FakeTrigger {
+pub(crate) struct FakeTrigger {
     pub id: &'static str,
     pub variables: Option<fn() -> TriggerVariables>,
 }
@@ -144,7 +144,7 @@ impl TriggerKindDescriptor for FakeTrigger {
     }
 }
 
-pub fn step(kind_id: &str, config: SubActionConfig, enabled: bool) -> SubActionStep {
+pub(crate) fn step(kind_id: &str, config: SubActionConfig, enabled: bool) -> SubActionStep {
     SubActionStep {
         kind_id: kind_id.to_owned(),
         config,
@@ -155,7 +155,7 @@ pub fn step(kind_id: &str, config: SubActionConfig, enabled: bool) -> SubActionS
     }
 }
 
-pub fn encode_chain(steps: &[SubActionStep]) -> Variant {
+pub(crate) fn encode_chain(steps: &[SubActionStep]) -> Variant {
     Variant::Array(
         steps
             .iter()
@@ -173,7 +173,7 @@ pub fn encode_chain(steps: &[SubActionStep]) -> Variant {
     )
 }
 
-pub fn action(name: &str, steps: Vec<SubActionStep>) -> Action {
+pub(crate) fn action(name: &str, steps: Vec<SubActionStep>) -> Action {
     Action {
         id: ActionId::new(),
         name: name.to_owned(),
@@ -188,7 +188,7 @@ pub fn action(name: &str, steps: Vec<SubActionStep>) -> Action {
     }
 }
 
-pub fn trigger_of(kind_id: &str) -> TriggerInstance {
+pub(crate) fn trigger_of(kind_id: &str) -> TriggerInstance {
     TriggerInstance {
         id: TriggerInstanceId::new(),
         kind_id: kind_id.to_owned(),

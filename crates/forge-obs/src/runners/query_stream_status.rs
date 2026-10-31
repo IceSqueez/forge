@@ -2,24 +2,23 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use async_trait::async_trait;
-use forge_registry::runner::SubActionConfig;
+use forge_registry::SubActionConfig;
 use forge_registry::{RunContext, SubActionCategory, SubActionIo, SubActionRunner};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
 use super::step_failure;
 use crate::ObsSink;
-use crate::vocabulary::fields::query;
 use crate::vocabulary::{sub_action_ids, variables};
 
 const KIND_ID: &str = sub_action_ids::STREAMING_GET_STATUS;
 
-pub struct QueryStreamStatusRunner {
+pub(crate) struct QueryStreamStatusRunner {
     sink: Arc<dyn ObsSink>,
 }
 
 impl QueryStreamStatusRunner {
-    pub fn new(sink: Arc<dyn ObsSink>) -> Self {
+    pub(crate) fn new(sink: Arc<dyn ObsSink>) -> Self {
         Self { sink }
     }
 }
@@ -69,23 +68,25 @@ impl SubActionRunner for QueryStreamStatusRunner {
         let start = Instant::now();
 
         match self.sink.get_stream_status().await {
-            Ok(variant) => {
-                let mut stack = ctx.arg_stack.clone();
-                if let Variant::Object(ref map) = variant {
-                    if let Some(v) = map.get(query::IS_ACTIVE) {
-                        stack = stack.set(variables::streaming::IS_ACTIVE.to_owned(), v.clone());
-                    }
-                    if let Some(v) = map.get(query::DURATION_MS) {
-                        stack = stack.set(variables::streaming::DURATION_MS.to_owned(), v.clone());
-                    }
-                }
+            Ok(status) => {
+                let stack = ctx
+                    .arg_stack
+                    .clone()
+                    .set(
+                        variables::streaming::IS_ACTIVE.to_owned(),
+                        Variant::Bool(status.active),
+                    )
+                    .set(
+                        variables::streaming::DURATION_MS.to_owned(),
+                        Variant::Int(status.duration_ms),
+                    );
                 (
                     SubActionTelemetry {
                         args_in: ::std::collections::BTreeMap::new(),
                         produced: ::std::collections::BTreeMap::new(),
                         kind: KIND_ID.to_owned(),
                         started_at,
-                        duration_ms: start.elapsed().as_millis() as u64,
+                        duration_ms: u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX),
                         outcome: SubActionOutcome::Success,
                         index: ctx.index,
                     },
@@ -98,7 +99,7 @@ impl SubActionRunner for QueryStreamStatusRunner {
                     produced: ::std::collections::BTreeMap::new(),
                     kind: KIND_ID.to_owned(),
                     started_at,
-                    duration_ms: start.elapsed().as_millis() as u64,
+                    duration_ms: u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX),
                     outcome: step_failure::failed(&e),
                     index: ctx.index,
                 },

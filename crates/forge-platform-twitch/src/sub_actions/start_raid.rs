@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_registry::runner::SubActionConfig;
+use forge_registry::SubActionConfig;
 use forge_registry::{
     ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TextField, TypedField,
 };
@@ -24,14 +24,14 @@ const TO_BROADCASTER_LOGIN: TextField = TextField {
 
 const CONFIG: ConfigSpec = ConfigSpec::new(&[&TO_BROADCASTER_LOGIN]);
 
-pub struct StartRaidRunner {
+pub(crate) struct StartRaidRunner {
     transport: Arc<dyn HelixTransport>,
     identity: Arc<SelfIdentity>,
     lifecycle: TwitchLifecycle,
 }
 
 impl StartRaidRunner {
-    pub fn new(
+    pub(crate) fn new(
         transport: Arc<dyn HelixTransport>,
         identity: Arc<SelfIdentity>,
         lifecycle: TwitchLifecycle,

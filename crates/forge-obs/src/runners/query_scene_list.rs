@@ -2,24 +2,23 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use async_trait::async_trait;
-use forge_registry::runner::SubActionConfig;
+use forge_registry::SubActionConfig;
 use forge_registry::{RunContext, SubActionCategory, SubActionIo, SubActionRunner};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
 use super::step_failure;
 use crate::ObsSink;
-use crate::vocabulary::fields::query;
 use crate::vocabulary::{sub_action_ids, variables};
 
 const KIND_ID: &str = sub_action_ids::SCENE_GET_LIST;
 
-pub struct QuerySceneListRunner {
+pub(crate) struct QuerySceneListRunner {
     sink: Arc<dyn ObsSink>,
 }
 
 impl QuerySceneListRunner {
-    pub fn new(sink: Arc<dyn ObsSink>) -> Self {
+    pub(crate) fn new(sink: Arc<dyn ObsSink>) -> Self {
         Self { sink }
     }
 }
@@ -69,25 +68,24 @@ impl SubActionRunner for QuerySceneListRunner {
         let start = Instant::now();
 
         match self.sink.get_scene_list().await {
-            Ok(variant) => {
-                let mut stack = ctx.arg_stack.clone();
-                if let Variant::Object(ref map) = variant {
-                    if let Some(names) = map.get(query::ALL_NAMES) {
-                        stack =
-                            stack.set(variables::scene_query::ALL_NAMES.to_owned(), names.clone());
-                    }
-                    if let Some(current) = map.get(query::CURRENT) {
-                        stack =
-                            stack.set(variables::scene_query::CURRENT.to_owned(), current.clone());
-                    }
-                }
+            Ok(scenes) => {
+                let all_names =
+                    Variant::Array(scenes.names.into_iter().map(Variant::String).collect());
+                let stack = ctx
+                    .arg_stack
+                    .clone()
+                    .set(variables::scene_query::ALL_NAMES.to_owned(), all_names)
+                    .set(
+                        variables::scene_query::CURRENT.to_owned(),
+                        Variant::String(scenes.current),
+                    );
                 (
                     SubActionTelemetry {
                         args_in: ::std::collections::BTreeMap::new(),
                         produced: ::std::collections::BTreeMap::new(),
                         kind: KIND_ID.to_owned(),
                         started_at,
-                        duration_ms: start.elapsed().as_millis() as u64,
+                        duration_ms: u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX),
                         outcome: SubActionOutcome::Success,
                         index: ctx.index,
                     },
@@ -100,7 +98,7 @@ impl SubActionRunner for QuerySceneListRunner {
                     produced: ::std::collections::BTreeMap::new(),
                     kind: KIND_ID.to_owned(),
                     started_at,
-                    duration_ms: start.elapsed().as_millis() as u64,
+                    duration_ms: u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX),
                     outcome: step_failure::failed(&e),
                     index: ctx.index,
                 },

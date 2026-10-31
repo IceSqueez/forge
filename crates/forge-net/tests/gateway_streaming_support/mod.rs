@@ -16,15 +16,15 @@ use tokio_util::sync::CancellationToken;
 const HEADER_END: &[u8] = b"\r\n\r\n";
 const READ_CHUNK: usize = 4096;
 const CHUNKED_END: &[u8] = b"0\r\n\r\n";
-pub const UNLIMITED: u64 = u64::MAX;
+pub(crate) const UNLIMITED: u64 = u64::MAX;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SinkRefused {
+pub(crate) struct SinkRefused {
     pub chunk: usize,
 }
 
 #[derive(Clone, Default)]
-pub struct MemorySink {
+pub(crate) struct MemorySink {
     bytes: Arc<Mutex<Vec<u8>>>,
     accepted_chunks: usize,
     refuse_chunk: Option<usize>,
@@ -33,22 +33,22 @@ pub struct MemorySink {
 }
 
 impl MemorySink {
-    pub fn refusing_chunk(index: usize) -> Self {
+    pub(crate) fn refusing_chunk(index: usize) -> Self {
         Self {
             refuse_chunk: Some(index),
             ..Self::default()
         }
     }
 
-    pub fn bytes(&self) -> Vec<u8> {
+    pub(crate) fn bytes(&self) -> Vec<u8> {
         self.bytes.lock().unwrap().clone()
     }
 
-    pub fn len(&self) -> u64 {
+    pub(crate) fn len(&self) -> u64 {
         u64::try_from(self.bytes.lock().unwrap().len()).unwrap()
     }
 
-    pub fn last_accepted_at(&self) -> Option<tokio::time::Instant> {
+    pub(crate) fn last_accepted_at(&self) -> Option<tokio::time::Instant> {
         *self.last_accepted.lock().unwrap()
     }
 }
@@ -71,23 +71,23 @@ impl BodySink for MemorySink {
     }
 }
 
-pub type StreamOutcome = Result<StreamedResponse, StreamFailure<SinkRefused>>;
+pub(crate) type StreamOutcome = Result<StreamedResponse, StreamFailure<SinkRefused>>;
 
-pub struct Streamed {
+pub(crate) struct Streamed {
     pub outcome: StreamOutcome,
     pub sink: MemorySink,
     pub progress: Vec<BodyProgress>,
 }
 
 impl Streamed {
-    pub fn failure(&self) -> GatewayFailure {
+    pub(crate) fn failure(&self) -> GatewayFailure {
         match &self.outcome {
             Err(StreamFailure::Gateway(failure)) => failure.clone(),
             other => panic!("expected a gateway failure, got {other:?}"),
         }
     }
 
-    pub fn response(&self) -> &StreamedResponse {
+    pub(crate) fn response(&self) -> &StreamedResponse {
         match &self.outcome {
             Ok(response) => response,
             Err(failure) => panic!("expected a streamed response, got {failure:?}"),
@@ -95,7 +95,7 @@ impl Streamed {
     }
 }
 
-pub async fn stream(gateway: &Gateway, request: GatewayRequest, cap: u64) -> Streamed {
+pub(crate) async fn stream(gateway: &Gateway, request: GatewayRequest, cap: u64) -> Streamed {
     stream_with(
         gateway,
         request,
@@ -106,7 +106,7 @@ pub async fn stream(gateway: &Gateway, request: GatewayRequest, cap: u64) -> Str
     .await
 }
 
-pub async fn stream_into(
+pub(crate) async fn stream_into(
     gateway: &Gateway,
     request: GatewayRequest,
     cap: u64,
@@ -115,7 +115,7 @@ pub async fn stream_into(
     stream_with(gateway, request, cap, sink, &CancellationToken::new()).await
 }
 
-pub async fn stream_with(
+pub(crate) async fn stream_with(
     gateway: &Gateway,
     request: GatewayRequest,
     cap: u64,
@@ -133,7 +133,7 @@ pub async fn stream_with(
     }
 }
 
-pub fn spawn_stream(
+pub(crate) fn spawn_stream(
     gateway: &Gateway,
     request: GatewayRequest,
     sink: MemorySink,
@@ -143,7 +143,7 @@ pub fn spawn_stream(
     tokio::spawn(async move { stream_with(&gateway, request, UNLIMITED, sink, &cancel).await })
 }
 
-pub fn transport_kind(failure: &GatewayFailure) -> TransportKind {
+pub(crate) fn transport_kind(failure: &GatewayFailure) -> TransportKind {
     match failure {
         GatewayFailure::Transport(transport) => transport.kind(),
         other => panic!("expected a transport failure, got {other:?}"),
@@ -151,7 +151,7 @@ pub fn transport_kind(failure: &GatewayFailure) -> TransportKind {
 }
 
 #[derive(Clone)]
-pub enum Step {
+pub(crate) enum Step {
     Send(Vec<u8>),
     Wait(Duration),
     Await(Arc<Notify>),
@@ -159,30 +159,30 @@ pub enum Step {
 }
 
 #[derive(Clone, Default)]
-pub struct Gate(Arc<Notify>);
+pub(crate) struct Gate(Arc<Notify>);
 
 impl Gate {
-    pub fn step(&self) -> Step {
+    pub(crate) fn step(&self) -> Step {
         Step::Await(Arc::clone(&self.0))
     }
 
-    pub fn open(&self) {
+    pub(crate) fn open(&self) {
         self.0.notify_one();
     }
 }
 
 #[derive(Clone, Default)]
-pub struct Pace(Arc<Notify>);
+pub(crate) struct Pace(Arc<Notify>);
 
 impl Pace {
-    pub fn sink(&self) -> MemorySink {
+    pub(crate) fn sink(&self) -> MemorySink {
         MemorySink {
             delivered: Some(Arc::clone(&self.0)),
             ..MemorySink::default()
         }
     }
 
-    pub fn chunked_body(&self, chunks: &[&[u8]]) -> Vec<Step> {
+    pub(crate) fn chunked_body(&self, chunks: &[&[u8]]) -> Vec<Step> {
         let mut steps = vec![chunked_head(200)];
         for (index, bytes) in chunks.iter().enumerate() {
             if index > 0 {
@@ -194,7 +194,7 @@ impl Pace {
         steps
     }
 
-    pub fn sized_body(&self, pieces: &[&[u8]]) -> Vec<Step> {
+    pub(crate) fn sized_body(&self, pieces: &[&[u8]]) -> Vec<Step> {
         let length = pieces.iter().map(|piece| piece.len()).sum();
         let mut steps = vec![sized_head(length)];
         for (index, piece) in pieces.iter().enumerate() {
@@ -211,7 +211,7 @@ impl Pace {
     }
 }
 
-pub fn chunked_head(status: u16) -> Step {
+pub(crate) fn chunked_head(status: u16) -> Step {
     Step::Send(
         format!(
             "HTTP/1.1 {status} Stub\r\nx-asset: build-7\r\ntransfer-encoding: chunked\r\nconnection: close\r\n\r\n"
@@ -220,7 +220,7 @@ pub fn chunked_head(status: u16) -> Step {
     )
 }
 
-pub fn sized_head(length: usize) -> Step {
+pub(crate) fn sized_head(length: usize) -> Step {
     Step::Send(
         format!(
             "HTTP/1.1 200 Stub\r\nx-asset: build-7\r\ncontent-length: {length}\r\nconnection: close\r\n\r\n"
@@ -229,7 +229,7 @@ pub fn sized_head(length: usize) -> Step {
     )
 }
 
-pub fn redirect_to(location: &str) -> Vec<Step> {
+pub(crate) fn redirect_to(location: &str) -> Vec<Step> {
     vec![Step::Send(
         format!(
             "HTTP/1.1 302 Stub\r\nlocation: {location}\r\ncontent-length: 0\r\nconnection: close\r\n\r\n"
@@ -238,31 +238,31 @@ pub fn redirect_to(location: &str) -> Vec<Step> {
     )]
 }
 
-pub fn chunk_frame(bytes: &[u8]) -> Step {
+pub(crate) fn chunk_frame(bytes: &[u8]) -> Step {
     let mut frame = format!("{:x}\r\n", bytes.len()).into_bytes();
     frame.extend_from_slice(bytes);
     frame.extend_from_slice(b"\r\n");
     Step::Send(frame)
 }
 
-pub fn chunked_end() -> Step {
+pub(crate) fn chunked_end() -> Step {
     Step::Send(CHUNKED_END.to_vec())
 }
 
-pub fn sized_body(pieces: &[&[u8]]) -> Vec<Step> {
+pub(crate) fn sized_body(pieces: &[&[u8]]) -> Vec<Step> {
     let length = pieces.iter().map(|piece| piece.len()).sum();
     let mut steps = vec![sized_head(length)];
     steps.extend(pieces.iter().map(|piece| Step::Send(piece.to_vec())));
     steps
 }
 
-pub struct StubServer {
+pub(crate) struct StubServer {
     address: SocketAddr,
     heads: Arc<Mutex<Vec<String>>>,
 }
 
 impl StubServer {
-    pub async fn serving(steps: Vec<Step>) -> Self {
+    pub(crate) async fn serving(steps: Vec<Step>) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
         let heads = Arc::new(Mutex::new(Vec::new()));
@@ -275,11 +275,11 @@ impl StubServer {
         Self { address, heads }
     }
 
-    pub fn uri(&self) -> String {
+    pub(crate) fn uri(&self) -> String {
         format!("http://{}", self.address)
     }
 
-    pub fn heads(&self) -> Vec<String> {
+    pub(crate) fn heads(&self) -> Vec<String> {
         self.heads.lock().unwrap().clone()
     }
 }
@@ -318,7 +318,7 @@ async fn answer(mut connection: TcpStream, steps: Vec<Step>, heads: Arc<Mutex<Ve
     connection.shutdown().await.ok();
 }
 
-pub async fn spin_until(mut reached: impl FnMut() -> bool, what: &str) {
+pub(crate) async fn spin_until(mut reached: impl FnMut() -> bool, what: &str) {
     for _ in 0..1_000_000 {
         if reached() {
             return;

@@ -17,12 +17,12 @@ use forge_tts_core::{TtsEngineFactory, TtsRegistry, build_engine};
 use crate::boot_warnings::{BootWarning, BootWarnings};
 use crate::cloud_tts_boot::register_cloud_engines;
 
-pub enum TtsEngineAdmission {
+pub(crate) enum TtsEngineAdmission {
     Unprobed,
     Probed,
 }
 
-pub struct LocalTtsEngine {
+pub(crate) struct LocalTtsEngine {
     pub id: EngineId,
     pub factory: Arc<dyn TtsEngineFactory>,
     pub admission: TtsEngineAdmission,
@@ -155,7 +155,7 @@ async fn load_filters(backend: &Arc<dyn DataProvider>) -> (Vec<FilterRule>, TtsP
     })
 }
 
-pub async fn build_speech_output(
+pub(crate) async fn build_speech_output(
     backend: &Arc<dyn DataProvider>,
     audio_sinks: Arc<dyn AudioSinkFactory>,
 ) -> Arc<DeviceSink> {
@@ -172,7 +172,7 @@ pub async fn build_speech_output(
     ))
 }
 
-pub async fn build_speak_queue(
+pub(crate) async fn build_speak_queue(
     bus: &Arc<EventBus>,
     backend: &Arc<dyn DataProvider>,
     audio_sink: Arc<dyn forge_audio::AudioSink>,

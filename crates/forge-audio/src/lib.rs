@@ -1,8 +1,8 @@
 #![doc = "Audio output abstraction: AudioSink trait, cpal device discovery, multi-sink fan-out, format conversion."]
 
-pub mod alert_cue;
+mod alert_cue;
 mod audio_route;
-pub mod convert;
+mod convert;
 mod cpal_sink;
 mod decode;
 mod default_output;
@@ -22,7 +22,6 @@ mod wave;
 
 pub use alert_cue::alert_cue;
 pub use audio_route::AudioRoute;
-pub use cpal_sink::CpalSink;
 pub use decode::{decode_bytes, decode_file, probe_duration_secs};
 pub use default_output::play_on_default_output;
 pub use device::{
@@ -32,16 +31,18 @@ pub use device::{
 };
 pub use device_sink::{DeviceSink, OutputDeviceHandle, stored_output_device};
 pub use error::AudioError;
-pub use fan_out::{FanOutSink, fan_out_stoppable};
+pub use fan_out::FanOutSink;
 pub use handle::{ControlledPlayback, PlaybackHandle};
 pub use remote::{
     ClipMediaType, PlaybackCorrelation, RemoteAudioDestination, RemoteClip, RemoteCommand,
     RemoteDelivery, RemoteDestinationId, RemoteVerdict,
 };
 pub use remote_sink::RemoteSink;
-pub use route::{DevicePreference, build_cpal_sink, resolve_device, resolve_output_device};
+pub use route::resolve_device;
 pub use sink::{AudioSink, NullSink};
 pub use sink_factory::{AudioSinkFactory, CpalSinkFactory};
 pub use targeted::{PlaybackTarget, RemoteLegFactory, TargetedSinkFactory};
-pub use voice_gate::{VoiceGateConfig, VoiceGateMonitor, VoiceGateState};
-pub use wave::encode_wave;
+pub use voice_gate::{VoiceGateConfig, VoiceGateMonitor, VoiceGateState, VoiceGateWatch};
+
+pub use convert::{remix, resample};
+pub use route::DevicePreference;

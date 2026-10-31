@@ -71,7 +71,7 @@ mod tests {
     use std::time::Duration;
 
     use forge_events::{Event, EventSource};
-    use forge_storage::viewer::MockViewerRepo;
+    use forge_storage::MockViewerRepo;
     use tokio::sync::mpsc;
 
     use super::*;

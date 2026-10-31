@@ -25,14 +25,14 @@ pub(crate) struct BannedHost {
 }
 
 impl BannedHost {
-    pub fn panel(&self) -> Option<&Entity<BannedPanel>> {
+    pub(crate) fn panel(&self) -> Option<&Entity<BannedPanel>> {
         self.panel.as_ref().filter(|_| self.tab == ChatTab::Banned)
     }
 }
 
 impl ChatView {
     #[must_use]
-    pub fn with_ban_list(mut self, builtins: BuiltinRegistry, bus: Arc<EventBus>) -> Self {
+    pub(crate) fn with_ban_list(mut self, builtins: BuiltinRegistry, bus: Arc<EventBus>) -> Self {
         self.banned.builtins = builtins;
         self.banned.bus = Some(bus);
         self
@@ -99,8 +99,8 @@ mod tests {
         SubActionRunner,
     };
     use forge_runtime::{ActionCancelRegistry, ActionEngineHandle, EventBus, spawn_action_engine};
-    use forge_storage::chat_history::MockChatHistoryRepo;
-    use forge_storage::history::MockHistoryRepo;
+    use forge_storage::MockChatHistoryRepo;
+    use forge_storage::MockHistoryRepo;
     use forge_types::PlatformId;
     use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry};
     use gpui::{Entity, TestAppContext};

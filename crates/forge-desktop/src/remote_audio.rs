@@ -49,14 +49,14 @@ impl Drop for PendingEntryGuard<'_> {
     }
 }
 
-pub struct OverlayAudioDestination {
+pub(crate) struct OverlayAudioDestination {
     server: ServerHandle,
     overlays: OverlayServiceHandle,
     pending: Mutex<HashMap<String, Pending>>,
 }
 
 impl OverlayAudioDestination {
-    pub fn new(server: ServerHandle, overlays: OverlayServiceHandle) -> Self {
+    pub(crate) fn new(server: ServerHandle, overlays: OverlayServiceHandle) -> Self {
         Self {
             server,
             overlays,

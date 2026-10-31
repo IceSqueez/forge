@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_registry::runner::SubActionConfig;
+use forge_registry::SubActionConfig;
 use forge_registry::{
     ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, ToggleField, TypedField,
 };
@@ -21,12 +21,12 @@ const ON: ToggleField = ToggleField {
 
 const CONFIG: ConfigSpec = ConfigSpec::new(&[&ON]);
 
-pub struct StudioSetEnabledRunner {
+pub(crate) struct StudioSetEnabledRunner {
     sink: Arc<dyn ObsSink>,
 }
 
 impl StudioSetEnabledRunner {
-    pub fn new(sink: Arc<dyn ObsSink>) -> Self {
+    pub(crate) fn new(sink: Arc<dyn ObsSink>) -> Self {
         Self { sink }
     }
 }

@@ -5,9 +5,9 @@ use tokio::time::Instant;
 
 use super::intent::NotificationIntent;
 
-pub const CONNECTION_LOSS_GRACE: Duration = Duration::from_secs(10);
-pub const CONNECTION_STABLE_REARM: Duration = Duration::from_secs(60);
-pub const MIN_CUE_SPACING: Duration = Duration::from_secs(30);
+pub(crate) const CONNECTION_LOSS_GRACE: Duration = Duration::from_secs(10);
+pub(crate) const CONNECTION_STABLE_REARM: Duration = Duration::from_secs(60);
+pub(crate) const MIN_CUE_SPACING: Duration = Duration::from_secs(30);
 
 struct LinkTrack {
     connected_since: Option<Instant>,

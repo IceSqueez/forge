@@ -5,7 +5,7 @@ use gpui::{HighlightStyle, Hsla, SharedString, StyledText};
 use crate::highlight::{Language, TokenClass, highlight};
 use crate::palette::ForgePalette;
 
-pub fn token_color(language: Language, class: TokenClass, palette: &ForgePalette) -> Hsla {
+pub(crate) fn token_color(language: Language, class: TokenClass, palette: &ForgePalette) -> Hsla {
     let color = match (language, class) {
         (Language::Json, TokenClass::Variable) => palette.info,
         (Language::Json, TokenClass::String) => palette.success,
@@ -23,7 +23,11 @@ pub fn token_color(language: Language, class: TokenClass, palette: &ForgePalette
     color.into()
 }
 
-pub fn syntax_runs(language: Language, text: &str, palette: &ForgePalette) -> Vec<(usize, Hsla)> {
+pub(crate) fn syntax_runs(
+    language: Language,
+    text: &str,
+    palette: &ForgePalette,
+) -> Vec<(usize, Hsla)> {
     highlight(language, text)
         .into_iter()
         .map(|span| (span.len, token_color(language, span.class, palette)))

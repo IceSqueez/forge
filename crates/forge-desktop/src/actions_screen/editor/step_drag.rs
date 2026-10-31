@@ -301,8 +301,8 @@ impl ScreenActionsView {
 mod tests {
     use std::sync::Mutex;
 
+    use forge_storage::MockActionRepo;
     use forge_storage::MockMediaRepo;
-    use forge_storage::action::MockActionRepo;
     use gpui::{
         Entity, Modifiers, MouseButton, Point, TestAppContext, VisualTestContext, point, px, size,
     };

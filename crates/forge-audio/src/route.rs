@@ -67,7 +67,7 @@ pub fn resolve_device(
     }
 }
 
-pub async fn resolve_output_device(
+pub(crate) async fn resolve_output_device(
     preference: impl Into<DevicePreference> + Send + 'static,
 ) -> Result<DeviceId, AudioError> {
     let preference = preference.into();
@@ -79,6 +79,6 @@ pub async fn resolve_output_device(
     .map_err(|e| AudioError::JoinFailed(e.to_string()))?
 }
 
-pub fn build_cpal_sink(device_id: DeviceId) -> Arc<dyn AudioSink> {
+pub(crate) fn build_cpal_sink(device_id: DeviceId) -> Arc<dyn AudioSink> {
     Arc::new(CpalSink::new(device_id, None, None))
 }

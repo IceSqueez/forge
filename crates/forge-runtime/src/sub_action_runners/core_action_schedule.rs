@@ -19,12 +19,12 @@ use crate::scheduled_runs::{
 
 pub const SCHEDULE_ACTION_KIND_ID: &str = "core.action.schedule";
 
-pub const UNIT_MINUTES: &str = "minutes";
-pub const UNIT_HOURS: &str = "hours";
-pub const UNIT_DAYS: &str = "days";
+pub(crate) const UNIT_MINUTES: &str = "minutes";
+pub(crate) const UNIT_HOURS: &str = "hours";
+pub(crate) const UNIT_DAYS: &str = "days";
 
-pub const DEFAULT_DUE_AT_VARIABLE: &str = "schedule.due_at";
-pub const DEFAULT_SCHEDULED_ID_VARIABLE: &str = "schedule.id";
+pub(crate) const DEFAULT_DUE_AT_VARIABLE: &str = "schedule.due_at";
+pub(crate) const DEFAULT_SCHEDULED_ID_VARIABLE: &str = "schedule.id";
 
 const DUE_AT_INTO_KEY: &str = "due_at_into_var";
 const ID_INTO_KEY: &str = "id_into_var";
@@ -177,12 +177,12 @@ fn read_config(
     })
 }
 
-pub struct CoreActionScheduleRunner {
+pub(crate) struct CoreActionScheduleRunner {
     scheduled_runs: ScheduledRunsHandle,
 }
 
 impl CoreActionScheduleRunner {
-    pub fn new(scheduled_runs: ScheduledRunsHandle) -> Self {
+    pub(crate) fn new(scheduled_runs: ScheduledRunsHandle) -> Self {
         Self { scheduled_runs }
     }
 }

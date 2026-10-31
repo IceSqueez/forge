@@ -1,14 +1,12 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use forge_overlay::{OverlayKindRegistry, register_builtin_kinds};
-use forge_registry::references::{
-    LOCAL_FILE_NAMESPACE, OVERLAY_ICON_OPTIONS_KEY, OVERLAY_SOUND_OPTIONS_KEY,
-};
 use forge_registry::{
     ConfigReference, FormField, FormSchemaSource, InternalNamespace, ReferenceCatalog,
     ReferenceListing, ReferenceNamespace, ReferenceRemap, ReferenceScope, RegistryError,
     SubActionRegistry, TriggerRegistry,
 };
+use forge_registry::{LOCAL_FILE_NAMESPACE, OVERLAY_ICON_OPTIONS_KEY, OVERLAY_SOUND_OPTIONS_KEY};
 use forge_types::{Action, ActionId, ExecutionMode, QueueId, SubActionStep, Variant};
 
 use crate::integrations::tests::every_registry_entry;

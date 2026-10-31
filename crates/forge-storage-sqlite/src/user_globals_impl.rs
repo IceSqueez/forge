@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use forge_storage::user_globals::incremented;
+use forge_storage::incremented;
 use forge_storage::{StorageError, UserGlobalEntry, UserGlobalsRepo};
 use forge_types::Variant;
 

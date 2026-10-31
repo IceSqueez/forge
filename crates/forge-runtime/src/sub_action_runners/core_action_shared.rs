@@ -1,4 +1,4 @@
-use forge_registry::references::ACTION_OPTIONS_KEY;
+use forge_registry::ACTION_OPTIONS_KEY;
 use forge_registry::{ConfigSpec, DynamicSelectField};
 use forge_types::ActionId;
 

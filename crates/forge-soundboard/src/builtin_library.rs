@@ -9,7 +9,7 @@ pub struct BuiltinSoundEntry {
     pub loop_playback: bool,
 }
 
-pub const BUILTIN_FILE_EXTENSIONS: &[&str] = &["mp3", "wav", "ogg", "flac"];
+pub(crate) const BUILTIN_FILE_EXTENSIONS: &[&str] = &["mp3", "wav", "ogg", "flac"];
 
 pub const BUILTIN_SOUNDS: &[BuiltinSoundEntry] = &[
     BuiltinSoundEntry {

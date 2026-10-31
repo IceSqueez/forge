@@ -40,7 +40,7 @@ async fn run_probe(host: &str, port: u16, password: &str) -> Result<ObsProbeResu
 
     let started = Instant::now();
     let version = client.general().version().await.map_err(map_obws_error)?;
-    let round_trip_ms = started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
+    let round_trip_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
 
     let scenes = client
         .scenes()

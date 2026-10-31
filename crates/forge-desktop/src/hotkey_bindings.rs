@@ -1,7 +1,7 @@
 use forge_hotkey::HotkeyCombo;
 use gpui::Keystroke;
 
-pub fn keystroke_to_combo(keystroke: &Keystroke) -> Option<String> {
+pub(crate) fn keystroke_to_combo(keystroke: &Keystroke) -> Option<String> {
     let key = keystroke.key.as_str();
     if key.is_empty() {
         return None;

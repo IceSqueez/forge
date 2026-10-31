@@ -11,7 +11,7 @@ use crate::repo_failure::RepoFailure;
 
 pub(crate) const ENABLED_BY_DEFAULT: bool = true;
 
-pub const STAY_AWAKE: Setting<Flag> = Setting::new(
+pub(crate) const STAY_AWAKE: Setting<Flag> = Setting::new(
     "app.stay_awake",
     Flag {
         default: ENABLED_BY_DEFAULT,
@@ -23,22 +23,22 @@ pub const STAY_AWAKE: Setting<Flag> = Setting::new(
 const HOLD_REASON: &str = "forge keeps the system and display awake while it runs";
 
 #[derive(Clone)]
-pub struct StayAwakeSetting {
+pub(crate) struct StayAwakeSetting {
     service: StayAwake,
     settings: Arc<dyn SettingsRepo>,
     writer: Arc<SnapshotWriter>,
 }
 
 impl StayAwakeSetting {
-    pub fn watch(&self) -> StatusWatch {
+    pub(crate) fn watch(&self) -> StatusWatch {
         self.service.watch()
     }
 
-    pub fn release(&self) {
+    pub(crate) fn release(&self) {
         self.service.release();
     }
 
-    pub fn set_enabled<V: 'static>(
+    pub(crate) fn set_enabled<V: 'static>(
         &self,
         enabled: bool,
         on_settled: impl FnOnce(&mut V, WriteOutcome, &mut Context<V>) + 'static,
@@ -59,7 +59,7 @@ impl StayAwakeSetting {
     }
 }
 
-pub async fn start_stay_awake(settings: Arc<dyn SettingsRepo>) -> StayAwakeSetting {
+pub(crate) async fn start_stay_awake(settings: Arc<dyn SettingsRepo>) -> StayAwakeSetting {
     let enabled = read_setting_or_default(settings.as_ref(), &STAY_AWAKE).await;
     let service = StayAwake::spawn(StayAwakeConfig {
         enabled,

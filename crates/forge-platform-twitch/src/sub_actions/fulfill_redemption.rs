@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_registry::runner::SubActionConfig;
+use forge_registry::SubActionConfig;
 use forge_registry::{
     ConfigProblem, ConfigSpec, PickedTextField, RunContext, StepTimer, SubActionCategory,
     SubActionRunner, TextEditor, TextField, TextPicker, TypedField,
@@ -50,13 +50,13 @@ fn read_config(
     ))
 }
 
-pub struct FulfillRedemptionRunner {
+pub(crate) struct FulfillRedemptionRunner {
     transport: Arc<dyn HelixTransport>,
     identity: Arc<SelfIdentity>,
 }
 
 impl FulfillRedemptionRunner {
-    pub fn new(transport: Arc<dyn HelixTransport>, identity: Arc<SelfIdentity>) -> Self {
+    pub(crate) fn new(transport: Arc<dyn HelixTransport>, identity: Arc<SelfIdentity>) -> Self {
         Self {
             transport,
             identity,

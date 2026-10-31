@@ -4,7 +4,7 @@ use gpui::{App, Context, Entity, Window};
 
 use crate::navigation::Screen;
 
-pub trait ScreenShortcuts: Sized + 'static {
+pub(crate) trait ScreenShortcuts: Sized + 'static {
     fn save_shortcut(&mut self, _cx: &mut Context<Self>) {}
 
     fn run_shortcut(&mut self, _cx: &mut Context<Self>) {}
@@ -33,33 +33,33 @@ impl<V: ScreenShortcuts> ErasedScreenShortcuts for Entity<V> {
 }
 
 #[derive(Clone)]
-pub struct ScreenShortcutsHandle(Rc<dyn ErasedScreenShortcuts>);
+pub(crate) struct ScreenShortcutsHandle(Rc<dyn ErasedScreenShortcuts>);
 
 impl ScreenShortcutsHandle {
-    pub fn new<V: ScreenShortcuts>(view: Entity<V>) -> Self {
+    pub(crate) fn new<V: ScreenShortcuts>(view: Entity<V>) -> Self {
         Self(Rc::new(view))
     }
 
-    pub fn save(&self, cx: &mut App) {
+    pub(crate) fn save(&self, cx: &mut App) {
         self.0.save(cx);
     }
 
-    pub fn run(&self, cx: &mut App) {
+    pub(crate) fn run(&self, cx: &mut App) {
         self.0.run(cx);
     }
 
-    pub fn new_action(&self, window: &mut Window, cx: &mut App) {
+    pub(crate) fn new_action(&self, window: &mut Window, cx: &mut App) {
         self.0.new_action(window, cx);
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ToggleReturn {
+pub(crate) struct ToggleReturn {
     pub toggled: Screen,
     pub back_to: Screen,
 }
 
-pub fn toggle_destination(
+pub(crate) fn toggle_destination(
     current: &Screen,
     target: &Screen,
     recorded: Option<&ToggleReturn>,

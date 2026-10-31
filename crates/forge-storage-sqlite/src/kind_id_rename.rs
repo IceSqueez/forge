@@ -12,8 +12,8 @@ use sqlx::migrate::Migration;
 use crate::error::SqliteStorageError;
 use crate::migrations::MIGRATIONS;
 
-pub const OBS_KIND_ID_RENAME_VERSION: i64 = 58;
-pub const VTUBE_KIND_ID_RENAME_VERSION: i64 = 67;
+pub(crate) const OBS_KIND_ID_RENAME_VERSION: i64 = 58;
+pub(crate) const VTUBE_KIND_ID_RENAME_VERSION: i64 = 67;
 
 const KIND_ID_RENAME_LABEL: &str = "kind id rename";
 const TRIGGER_STORE: &str = "trigger";
@@ -46,12 +46,15 @@ struct RenameCounts {
     skipped: u64,
 }
 
-pub async fn is_pending(pool: &sqlx::SqlitePool, version: i64) -> Result<bool, SqliteStorageError> {
+pub(crate) async fn is_pending(
+    pool: &sqlx::SqlitePool,
+    version: i64,
+) -> Result<bool, SqliteStorageError> {
     let mut conn = pool.acquire().await.map_err(SqliteStorageError::Sqlx)?;
     pending(&mut conn, version).await
 }
 
-pub async fn apply(pool: &sqlx::SqlitePool, version: i64) -> Result<(), SqliteStorageError> {
+pub(crate) async fn apply(pool: &sqlx::SqlitePool, version: i64) -> Result<(), SqliteStorageError> {
     let migration = MIGRATIONS
         .iter()
         .find(|migration| migration.version == version)

@@ -29,24 +29,24 @@ use forge_registry::{RegistryError, SubActionRegistry};
 
 use hold_registry::HoldRegistry;
 
-pub use expression_set::ExpressionSetRunner;
-pub use hotkey_trigger::HotkeyTriggerRunner;
-pub use item_load::ItemLoadRunner;
-pub use item_move::ItemMoveRunner;
-pub use item_pin::ItemPinRunner;
-pub use item_throw::ItemThrowRunner;
-pub use item_unload_all::ItemUnloadAllRunner;
-pub use lookup_current_model::LookupCurrentModelRunner;
-pub use lookup_expressions::LookupExpressionsRunner;
-pub use lookup_hotkeys::LookupHotkeysRunner;
-pub use lookup_items::LookupItemsRunner;
-pub use lookup_parameters::LookupParametersRunner;
-pub use model_load::ModelLoadRunner;
-pub use model_move::ModelMoveRunner;
-pub use model_set_physics::ModelSetPhysicsRunner;
-pub use model_tint::ModelTintRunner;
-pub use param_set::ParamSetRunner;
-pub use reset_to_idle::ResetToIdleRunner;
+pub(crate) use expression_set::ExpressionSetRunner;
+pub(crate) use hotkey_trigger::HotkeyTriggerRunner;
+pub(crate) use item_load::ItemLoadRunner;
+pub(crate) use item_move::ItemMoveRunner;
+pub(crate) use item_pin::ItemPinRunner;
+pub(crate) use item_throw::ItemThrowRunner;
+pub(crate) use item_unload_all::ItemUnloadAllRunner;
+pub(crate) use lookup_current_model::LookupCurrentModelRunner;
+pub(crate) use lookup_expressions::LookupExpressionsRunner;
+pub(crate) use lookup_hotkeys::LookupHotkeysRunner;
+pub(crate) use lookup_items::LookupItemsRunner;
+pub(crate) use lookup_parameters::LookupParametersRunner;
+pub(crate) use model_load::ModelLoadRunner;
+pub(crate) use model_move::ModelMoveRunner;
+pub(crate) use model_set_physics::ModelSetPhysicsRunner;
+pub(crate) use model_tint::ModelTintRunner;
+pub(crate) use param_set::ParamSetRunner;
+pub(crate) use reset_to_idle::ResetToIdleRunner;
 
 use crate::sink::VTubeSink;
 
@@ -93,7 +93,7 @@ mod tests {
     use super::*;
     use crate::client::VTubeClient;
     use crate::runners::test_support::{MockSink, make_ctx};
-    use forge_registry::runner::SubActionConfig;
+    use forge_registry::SubActionConfig;
     use forge_types::{ArgStack, SubActionOutcome, Variant};
 
     fn registry() -> SubActionRegistry {

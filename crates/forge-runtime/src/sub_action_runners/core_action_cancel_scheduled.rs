@@ -10,7 +10,7 @@ use crate::scheduled_runs::ScheduledRunsHandle;
 
 pub const CANCEL_SCHEDULED_KIND_ID: &str = "core.action.cancel_scheduled";
 
-pub const DEFAULT_CANCELLED_VARIABLE: &str = "schedule.cancelled";
+pub(crate) const DEFAULT_CANCELLED_VARIABLE: &str = "schedule.cancelled";
 
 const CANCELLED_INTO_KEY: &str = "into_var";
 
@@ -43,12 +43,12 @@ fn read_config(
     ))
 }
 
-pub struct CoreActionCancelScheduledRunner {
+pub(crate) struct CoreActionCancelScheduledRunner {
     scheduled_runs: ScheduledRunsHandle,
 }
 
 impl CoreActionCancelScheduledRunner {
-    pub fn new(scheduled_runs: ScheduledRunsHandle) -> Self {
+    pub(crate) fn new(scheduled_runs: ScheduledRunsHandle) -> Self {
         Self { scheduled_runs }
     }
 }

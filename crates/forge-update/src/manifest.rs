@@ -6,7 +6,7 @@ use crate::platform::{ArtifactKind, Platform};
 use crate::trust::TrustedKeys;
 use crate::version::{Version, parse_version};
 
-pub const MANIFEST_FORMAT: u32 = 1;
+pub(crate) const MANIFEST_FORMAT: u32 = 1;
 
 const SIGNED_VERSION_KEY: &str = "version:";
 

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_registry::runner::SubActionConfig;
+use forge_registry::SubActionConfig;
 use forge_registry::{
     ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner,
     TextEditor, TextField, ToggleField, TypedField,
@@ -44,12 +44,12 @@ fn read_config(
     ))
 }
 
-pub struct FilterSetEnabledRunner {
+pub(crate) struct FilterSetEnabledRunner {
     sink: Arc<dyn ObsSink>,
 }
 
 impl FilterSetEnabledRunner {
-    pub fn new(sink: Arc<dyn ObsSink>) -> Self {
+    pub(crate) fn new(sink: Arc<dyn ObsSink>) -> Self {
         Self { sink }
     }
 }

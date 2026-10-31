@@ -3,7 +3,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_events::{ChatSent, EventSource, TypedEvent};
 use forge_platform_core::PlatformError;
-use forge_registry::runner::SubActionConfig;
+use forge_registry::SubActionConfig;
 use forge_registry::{
     ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner,
     TextEditor, TextField, ToggleField, TypedField,
@@ -38,7 +38,7 @@ fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<(String, boo
     Ok((MESSAGE.read(config, args)?, AS_BOT.read(config, args)?))
 }
 
-pub struct SendMessageRunner {
+pub(crate) struct SendMessageRunner {
     client: Arc<KickSendChat>,
     token_source: Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync>,
     broadcaster_id_source:
@@ -46,7 +46,7 @@ pub struct SendMessageRunner {
 }
 
 impl SendMessageRunner {
-    pub fn new(
+    pub(crate) fn new(
         client: Arc<KickSendChat>,
         token_source: Arc<
             dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync,

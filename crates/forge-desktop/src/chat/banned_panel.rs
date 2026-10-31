@@ -72,7 +72,7 @@ impl BanRow {
         }
     }
 
-    pub fn can_unban(&self, platform: PlatformId) -> bool {
+    pub(crate) fn can_unban(&self, platform: PlatformId) -> bool {
         self.entry.unban == UnbanAbility::Allowed
             && self.unban != UnbanState::Running
             && self.target(platform).supports(&ViewerAction::Unban)
@@ -258,7 +258,7 @@ impl BanGroup {
     }
 }
 
-pub struct BannedPanel {
+pub(crate) struct BannedPanel {
     builtins: BuiltinRegistry,
     lifecycle: Option<Entity<IntegrationLifecycle>>,
     rt_handle: tokio::runtime::Handle,
@@ -271,7 +271,7 @@ pub struct BannedPanel {
 }
 
 impl BannedPanel {
-    pub fn new(
+    pub(crate) fn new(
         builtins: BuiltinRegistry,
         lifecycle: Option<Entity<IntegrationLifecycle>>,
         bus: Option<Arc<EventBus>>,
@@ -360,7 +360,7 @@ impl BannedPanel {
         cx.notify();
     }
 
-    pub fn set_visible(&mut self, visible: bool, cx: &mut Context<Self>) {
+    pub(crate) fn set_visible(&mut self, visible: bool, cx: &mut Context<Self>) {
         self.visible = visible;
         if visible {
             let stale: Vec<PlatformId> = self
@@ -970,7 +970,7 @@ pub(super) mod tests {
     };
     use forge_runtime::{ActionCancelRegistry, ActionEngineHandle, EventBus, spawn_action_engine};
     use forge_storage::Language;
-    use forge_storage::history::MockHistoryRepo;
+    use forge_storage::MockHistoryRepo;
     use forge_types::PlatformId;
     use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
     use gpui::{AppContext as _, Entity, TestAppContext};

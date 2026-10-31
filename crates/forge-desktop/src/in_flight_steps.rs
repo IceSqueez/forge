@@ -1,16 +1,16 @@
 use std::collections::HashSet;
 
 #[derive(Default)]
-pub struct InFlightSteps {
+pub(crate) struct InFlightSteps {
     running: HashSet<(String, String)>,
 }
 
 impl InFlightSteps {
-    pub fn try_begin(&mut self, row: &str, kind: &str) -> bool {
+    pub(crate) fn try_begin(&mut self, row: &str, kind: &str) -> bool {
         self.running.insert((row.to_owned(), kind.to_owned()))
     }
 
-    pub fn finish(&mut self, row: &str, kind: &str) {
+    pub(crate) fn finish(&mut self, row: &str, kind: &str) {
         self.running.remove(&(row.to_owned(), kind.to_owned()));
     }
 }

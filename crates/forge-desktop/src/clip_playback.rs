@@ -13,7 +13,7 @@ use crate::runtime_event::ClipPlayback;
 const PAD_CLAIM_LIFETIME: Duration = Duration::from_secs(30);
 
 #[derive(Default)]
-pub struct PadPlays {
+pub(crate) struct PadPlays {
     awaiting_outcome: HashMap<ClipId, Instant>,
 }
 
@@ -33,7 +33,7 @@ impl PadPlays {
 
 impl Global for PadPlays {}
 
-pub trait PadPlayClaims {
+pub(crate) trait PadPlayClaims {
     fn claim_pad_play(&mut self, clip: ClipId);
     fn release_pad_play(&mut self, clip: ClipId);
 }
@@ -50,7 +50,7 @@ impl PadPlayClaims for App {
     }
 }
 
-pub fn report_clip_playback(playback: &ClipPlayback, cx: &mut App) {
+pub(crate) fn report_clip_playback(playback: &ClipPlayback, cx: &mut App) {
     let claimed_by_pad = playback
         .clip_id()
         .is_some_and(|clip| cx.default_global::<PadPlays>().take_live_claim(&clip));

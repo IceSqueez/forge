@@ -31,12 +31,12 @@ fn queue_identity(viewer: Option<SpeakingViewer>) -> (String, String) {
     }
 }
 
-pub struct SpeakBridge {
+pub(crate) struct SpeakBridge {
     handle: Arc<SpeakQueueHandle>,
 }
 
 impl SpeakBridge {
-    pub fn new(handle: Arc<SpeakQueueHandle>) -> Self {
+    pub(crate) fn new(handle: Arc<SpeakQueueHandle>) -> Self {
         Self { handle }
     }
 
@@ -910,9 +910,8 @@ mod tests {
             ..Harness::default()
         }
         .spawn();
-        let runner =
-            forge_runtime::audio_runners::SpeakRunner::new(Arc::new(SpeakBridge::new(handle)))
-                .with_reward_emotes(lexicon);
+        let runner = forge_runtime::SpeakRunner::new(Arc::new(SpeakBridge::new(handle)))
+            .with_reward_emotes(lexicon);
         let stack = ArgStack::new()
             .set(
                 "user_id".to_owned(),

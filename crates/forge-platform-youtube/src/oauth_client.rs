@@ -6,7 +6,7 @@ use forge_net::{
     CallClass, DEFAULT_RETRY_AFTER_SECS, FormBody, Gateway, GatewayBuildError, GatewayFailure,
     GatewayProfile, GatewayRequest, GatewayResponse, RateLimiter, ThrottleHintFamily,
 };
-use forge_platform_core::auth::PkceAuthorization;
+use forge_platform_core::PkceAuthorization;
 use forge_platform_core::{EndpointSurface, PlatformEndpoints, PlatformError, reauth_required};
 use forge_types::{OAuthToken, Secret};
 use serde::Deserialize;
@@ -23,7 +23,7 @@ const NO_RETRY_AFTER_WAIT: Duration = Duration::from_secs(DEFAULT_RETRY_AFTER_SE
 pub const GOOGLE_OAUTH_BUDGET_CAPACITY: u32 = 10;
 pub const GOOGLE_OAUTH_BUDGET_WINDOW: Duration = Duration::from_secs(60);
 
-pub const GOOGLE_OAUTH_GATEWAY_PROFILE: GatewayProfile = GatewayProfile::platform_api(
+pub(crate) const GOOGLE_OAUTH_GATEWAY_PROFILE: GatewayProfile = GatewayProfile::platform_api(
     CallClass::OAuth,
     ThrottleHintFamily::RetryAfter,
     NO_RETRY_AFTER_WAIT,
@@ -151,8 +151,8 @@ mod tests {
 
     use async_trait::async_trait;
     use forge_net::{RateLimitError, RateLimitOutcome, RateLimiter};
+    use forge_platform_core::PkceAuthorization;
     use forge_platform_core::PlatformError;
-    use forge_platform_core::auth::PkceAuthorization;
     use reqwest::StatusCode;
     use serde_json::json;
 

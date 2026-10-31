@@ -22,7 +22,7 @@ pub(crate) const CHANNEL_INFO_REFRESH_INTERVAL: Duration = Duration::from_secs(3
 const NO_RETRY_AFTER_WAIT: Duration = Duration::from_secs(DEFAULT_RETRY_AFTER_SECS as u64);
 const BODY_SNIPPET_MAX_CHARS: usize = 200;
 
-pub const KICK_GATEWAY_PROFILE: GatewayProfile = GatewayProfile::platform_api(
+pub(crate) const KICK_GATEWAY_PROFILE: GatewayProfile = GatewayProfile::platform_api(
     CallClass::Interactive,
     ThrottleHintFamily::RetryAfter,
     NO_RETRY_AFTER_WAIT,

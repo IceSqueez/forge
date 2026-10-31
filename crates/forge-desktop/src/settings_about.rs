@@ -21,7 +21,7 @@ enum AboutState {
     Ready(Box<SystemInfo>),
 }
 
-pub struct SettingsAboutView {
+pub(crate) struct SettingsAboutView {
     backend: Arc<dyn DataProvider>,
     rt_handle: Handle,
     problem_report: Entity<ProblemReport>,
@@ -29,7 +29,7 @@ pub struct SettingsAboutView {
 }
 
 impl SettingsAboutView {
-    pub fn new(
+    pub(crate) fn new(
         backend: Arc<dyn DataProvider>,
         rt_handle: Handle,
         problem_report: Entity<ProblemReport>,
@@ -50,7 +50,7 @@ impl SettingsAboutView {
         });
     }
 
-    pub fn begin_collection(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn begin_collection(&mut self, cx: &mut Context<Self>) {
         if matches!(self.state, AboutState::NotStarted) {
             async_bridge::attach_to_window(
                 |this: &mut Self, window, cx| this.start_collection(window, cx),

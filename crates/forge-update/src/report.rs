@@ -10,8 +10,8 @@ use crate::journal::UpdateJournal;
 use crate::record::{read_record, remove_record, require_format, write_record};
 use crate::supervisor_lock::SupervisorLock;
 
-pub const OUTCOME_FILE: &str = "update-outcome.json";
-pub const OUTCOME_FORMAT: u32 = 1;
+pub(crate) const OUTCOME_FILE: &str = "update-outcome.json";
+pub(crate) const OUTCOME_FORMAT: u32 = 1;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]

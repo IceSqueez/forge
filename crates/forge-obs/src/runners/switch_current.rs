@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_registry::runner::SubActionConfig;
+use forge_registry::SubActionConfig;
 use forge_registry::{
     ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, TypedField,
 };
@@ -16,12 +16,12 @@ const KIND_ID: &str = sub_action_ids::SCENE_SWITCH_CURRENT;
 
 const CONFIG: ConfigSpec = ConfigSpec::new(&[&SCENE]);
 
-pub struct SwitchCurrentSceneRunner {
+pub(crate) struct SwitchCurrentSceneRunner {
     sink: Arc<dyn ObsSink>,
 }
 
 impl SwitchCurrentSceneRunner {
-    pub fn new(sink: Arc<dyn ObsSink>) -> Self {
+    pub(crate) fn new(sink: Arc<dyn ObsSink>) -> Self {
         Self { sink }
     }
 }

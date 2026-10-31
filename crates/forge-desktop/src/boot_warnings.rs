@@ -6,7 +6,7 @@ use gpui::App;
 use crate::navigation::{Navigator, Screen, SettingsSection};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum BootWarning {
+pub(crate) enum BootWarning {
     Scripts,
     CoreSubActions,
     ScheduledRunSubActions,
@@ -45,30 +45,30 @@ impl BootWarning {
         }
     }
 
-    pub fn message(self) -> String {
+    pub(crate) fn message(self) -> String {
         tr!(self.message_key())
     }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct BootWarnings(Vec<BootWarning>);
+pub(crate) struct BootWarnings(Vec<BootWarning>);
 
 impl BootWarnings {
-    pub fn record(&mut self, warning: BootWarning) {
+    pub(crate) fn record(&mut self, warning: BootWarning) {
         if !self.0.contains(&warning) {
             self.0.push(warning);
         }
     }
 
-    pub fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = BootWarning> + '_ {
+    pub(crate) fn iter(&self) -> impl Iterator<Item = BootWarning> + '_ {
         self.0.iter().copied()
     }
 
-    pub fn raise(&self, navigator: Navigator, cx: &mut App) {
+    pub(crate) fn raise(&self, navigator: Navigator, cx: &mut App) {
         if self.is_empty() {
             return;
         }
@@ -89,7 +89,7 @@ impl BootWarnings {
 #[cfg(test)]
 mod tests {
     use forge_components::Toasts;
-    use forge_components::locale::tr_find_warned;
+    use forge_components::tr_find_warned;
     use forge_storage::Language;
     use gpui::TestAppContext;
 

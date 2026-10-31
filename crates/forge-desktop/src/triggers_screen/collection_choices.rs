@@ -23,13 +23,13 @@ use crate::vtube_catalog_options::{
 
 impl TriggersRegistryView {
     #[must_use]
-    pub fn with_builtins(mut self, builtins: BuiltinRegistry) -> Self {
+    pub(crate) fn with_builtins(mut self, builtins: BuiltinRegistry) -> Self {
         self.builtins = builtins;
         self
     }
 
     #[must_use]
-    pub fn with_event_bus(mut self, bus: Arc<EventBus>) -> Self {
+    pub(crate) fn with_event_bus(mut self, bus: Arc<EventBus>) -> Self {
         self.bus = Some(bus);
         self
     }

@@ -10,7 +10,7 @@ use super::virtualcam_status_changed::{build_virtualcam_arg_stack, virtualcam_va
 
 use crate::vocabulary::{event_kinds, messages, trigger_ids};
 
-pub struct VirtualcamStartedDescriptor;
+pub(crate) struct VirtualcamStartedDescriptor;
 
 impl TriggerKindDescriptor for VirtualcamStartedDescriptor {
     fn id(&self) -> &str {

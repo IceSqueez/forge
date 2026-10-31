@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_registry::runner::SubActionConfig;
+use forge_registry::SubActionConfig;
 use forge_registry::{
     ConfigProblem, ConfigSpec, NumberField, OptionalField, RunContext, StepTimer,
     SubActionCategory, SubActionRunner, TypedField,
@@ -41,12 +41,12 @@ fn read_target(config: &SubActionConfig, args: &ArgStack) -> Result<MoveTarget, 
     })
 }
 
-pub struct ModelMoveRunner {
+pub(crate) struct ModelMoveRunner {
     sink: Arc<dyn VTubeSink>,
 }
 
 impl ModelMoveRunner {
-    pub fn new(sink: Arc<dyn VTubeSink>) -> Self {
+    pub(crate) fn new(sink: Arc<dyn VTubeSink>) -> Self {
         Self { sink }
     }
 }

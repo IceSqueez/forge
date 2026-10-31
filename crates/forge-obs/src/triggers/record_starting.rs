@@ -12,7 +12,7 @@ use crate::vocabulary::fields::recording as fields;
 use crate::vocabulary::messages;
 use crate::vocabulary::{event_kinds, trigger_ids, variables};
 
-pub struct RecordStartingDescriptor;
+pub(crate) struct RecordStartingDescriptor;
 
 impl TriggerKindDescriptor for RecordStartingDescriptor {
     fn id(&self) -> &str {

@@ -7,20 +7,20 @@ use crate::apply_state::{ApplyPhase, ApplyState};
 use crate::record::{read_record, remove_record, write_record};
 use crate::version::parse_version;
 
-pub const HEALTH_MARKER_FILE: &str = "update-health.json";
+pub(crate) const HEALTH_MARKER_FILE: &str = "update-health.json";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct HealthMarker {
+pub(crate) struct HealthMarker {
     pub pid: u32,
     pub version: String,
 }
 
 impl HealthMarker {
-    pub fn path_in(data_dir: &Path) -> PathBuf {
+    pub(crate) fn path_in(data_dir: &Path) -> PathBuf {
         data_dir.join(HEALTH_MARKER_FILE)
     }
 
-    pub fn is_for_version(&self, version: &str) -> bool {
+    pub(crate) fn is_for_version(&self, version: &str) -> bool {
         same_version(&self.version, version)
     }
 }
@@ -39,7 +39,7 @@ pub fn write_health_marker(data_dir: &Path, running_version: &str) -> Result<boo
     Ok(true)
 }
 
-pub fn read_health_marker(data_dir: &Path) -> Result<Option<HealthMarker>, UpdateError> {
+pub(crate) fn read_health_marker(data_dir: &Path) -> Result<Option<HealthMarker>, UpdateError> {
     read_record(&HealthMarker::path_in(data_dir))
 }
 

@@ -1,6 +1,6 @@
 #![allow(clippy::expect_used)]
 use forge_storage::{ActionRepo, DataProvider};
-use forge_storage_sqlite::{SqliteActionRepo, apply_migrations, connect, registry_migration};
+use forge_storage_sqlite::{SqliteActionRepo, apply_migrations, connect, migrate_registry_format};
 use forge_types::{Action, ActionId, QueueId, SubActionStep, Variant};
 use sqlx::SqlitePool;
 
@@ -23,9 +23,7 @@ async fn old_sub_action_spec_json_is_converted_to_sub_action_step() {
     .await
     .expect("insert action");
 
-    registry_migration::migrate_registry_format(&pool)
-        .await
-        .expect("migrate");
+    migrate_registry_format(&pool).await.expect("migrate");
 
     let (sub_actions_json, version): (String, i64) =
         sqlx::query_as("SELECT sub_actions, format_version FROM actions WHERE id = ?")
@@ -70,11 +68,9 @@ async fn migration_is_idempotent_on_second_call() {
     .await
     .expect("insert action");
 
-    registry_migration::migrate_registry_format(&pool)
-        .await
-        .expect("first migrate");
+    migrate_registry_format(&pool).await.expect("first migrate");
 
-    registry_migration::migrate_registry_format(&pool)
+    migrate_registry_format(&pool)
         .await
         .expect("second migrate - must not error");
 
@@ -201,7 +197,7 @@ async fn an_action_written_through_the_repo_is_not_converted_again_on_the_next_b
         .await
         .expect("duplicate");
 
-    registry_migration::migrate_registry_format(&pool)
+    migrate_registry_format(&pool)
         .await
         .expect("boot conversion");
 
@@ -228,7 +224,7 @@ async fn a_duplicate_of_an_unconverted_action_is_converted_with_its_source() {
     repo.duplicate(source, copy, "copy")
         .await
         .expect("duplicate");
-    registry_migration::migrate_registry_format(&pool)
+    migrate_registry_format(&pool)
         .await
         .expect("boot conversion");
 

@@ -19,7 +19,7 @@ pub enum Language {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub enum TokenClass {
+pub(crate) enum TokenClass {
     Keyword,
     Function,
     String,
@@ -31,13 +31,13 @@ pub enum TokenClass {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub struct HighlightSpan {
+pub(crate) struct HighlightSpan {
     pub len: usize,
     pub class: TokenClass,
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]
-pub struct LineState(LexerState);
+pub(crate) struct LineState(LexerState);
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 enum LexerState {
@@ -49,7 +49,7 @@ enum LexerState {
 }
 
 impl LineState {
-    pub fn new(language: Language) -> Self {
+    pub(crate) fn new(language: Language) -> Self {
         Self(match language {
             Language::Html => LexerState::Html(html::HtmlState::default()),
             Language::Css => LexerState::Css(css::CssState::default()),
@@ -58,19 +58,9 @@ impl LineState {
             Language::Rhai => LexerState::Rhai(rhai::RhaiState::default()),
         })
     }
-
-    pub fn language(&self) -> Language {
-        match self.0 {
-            LexerState::Html(_) => Language::Html,
-            LexerState::Css(_) => Language::Css,
-            LexerState::JavaScript(_) => Language::JavaScript,
-            LexerState::Json(_) => Language::Json,
-            LexerState::Rhai(_) => Language::Rhai,
-        }
-    }
 }
 
-pub fn line_ranges(text: &str) -> impl Iterator<Item = Range<usize>> + '_ {
+pub(crate) fn line_ranges(text: &str) -> impl Iterator<Item = Range<usize>> + '_ {
     let mut start = 0;
     text.split_inclusive('\n').map(move |line| {
         let range = start..start + line.len();
@@ -79,7 +69,7 @@ pub fn line_ranges(text: &str) -> impl Iterator<Item = Range<usize>> + '_ {
     })
 }
 
-pub fn highlight_line(
+pub(crate) fn highlight_line(
     text: &str,
     line: Range<usize>,
     state: &LineState,
@@ -96,7 +86,7 @@ pub fn highlight_line(
     (sink.into_spans(), next)
 }
 
-pub fn highlight(language: Language, text: &str) -> Vec<HighlightSpan> {
+pub(crate) fn highlight(language: Language, text: &str) -> Vec<HighlightSpan> {
     let mut state = LineState::new(language);
     let mut sink = SpanSink::default();
     for line in line_ranges(text) {

@@ -20,12 +20,12 @@ const TEXT: TextField = TextField {
 
 const CONFIG: ConfigSpec = ConfigSpec::new(&[&TEXT]);
 
-pub struct CoreClipboardCopyRunner {
+pub(crate) struct CoreClipboardCopyRunner {
     clipboard: Arc<dyn ClipboardPort>,
 }
 
 impl CoreClipboardCopyRunner {
-    pub fn new(clipboard: Arc<dyn ClipboardPort>) -> Self {
+    pub(crate) fn new(clipboard: Arc<dyn ClipboardPort>) -> Self {
         Self { clipboard }
     }
 }

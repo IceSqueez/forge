@@ -18,19 +18,19 @@ use crate::update_check::{CURRENT_VERSION, REPO_URL};
 use forge_components::PushToast;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ReportOffer {
+pub(crate) enum ReportOffer {
     Nothing,
     Download { version: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ReportNotice {
+pub(crate) struct ReportNotice {
     pub kind: ToastKind,
     pub message: String,
     pub offer: ReportOffer,
 }
 
-pub fn report_notice(report: &UpdateReport) -> ReportNotice {
+pub(crate) fn report_notice(report: &UpdateReport) -> ReportNotice {
     match report {
         UpdateReport::Updated { version, .. } => ReportNotice {
             kind: ToastKind::Info,
@@ -99,7 +99,7 @@ pub fn report_notice(report: &UpdateReport) -> ReportNotice {
     }
 }
 
-pub fn rolled_back_version(report: &UpdateReport) -> Option<&str> {
+pub(crate) fn rolled_back_version(report: &UpdateReport) -> Option<&str> {
     match report {
         UpdateReport::RolledBack { failed_version, .. }
         | UpdateReport::RollbackFailed { failed_version, .. } => Some(failed_version),
@@ -107,7 +107,7 @@ pub fn rolled_back_version(report: &UpdateReport) -> Option<&str> {
     }
 }
 
-pub const ROLLED_BACK_VERSION: Setting<OptionalText> = Setting::new(
+pub(crate) const ROLLED_BACK_VERSION: Setting<OptionalText> = Setting::new(
     "updates.rolled_back_version",
     OptionalText,
     MachineLocal,
@@ -151,7 +151,7 @@ fn settle_boot_update(data_dir: PathBuf) -> BootUpdateState {
     BootUpdateState { report, health }
 }
 
-pub fn start_update_report(
+pub(crate) fn start_update_report(
     cx: &mut AsyncApp,
     backend: Arc<dyn DataProvider>,
     rt_handle: Handle,

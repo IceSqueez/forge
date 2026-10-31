@@ -24,7 +24,7 @@ const RESPONSE_OP: u64 = 7;
 const RPC_VERSION: u64 = 1;
 const NOT_A_WEB_SOCKET_UPGRADE: &[u8] = b"BAD\r\n\r\n";
 
-pub struct ChannelPublisher(pub mpsc::UnboundedSender<Event>);
+pub(crate) struct ChannelPublisher(pub mpsc::UnboundedSender<Event>);
 
 impl EventPublisher for ChannelPublisher {
     fn publish(&self, event: Event) {
@@ -36,7 +36,7 @@ impl EventPublisher for ChannelPublisher {
     }
 }
 
-pub fn fast_retries() -> ObsTiming {
+pub(crate) fn fast_retries() -> ObsTiming {
     ObsTiming {
         reconnect_base_delay: Duration::from_millis(1),
         reconnect_max_delay: Duration::from_millis(5),
@@ -44,28 +44,28 @@ pub fn fast_retries() -> ObsTiming {
     }
 }
 
-pub async fn bind_loopback() -> (TcpListener, u16) {
+pub(crate) async fn bind_loopback() -> (TcpListener, u16) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
     (listener, port)
 }
 
-pub const WALL_BUDGET: Duration = Duration::from_secs(90);
+pub(crate) const WALL_BUDGET: Duration = Duration::from_secs(90);
 
-pub const REAL_CLOCK_POLL: Duration = Duration::from_millis(10);
+pub(crate) const REAL_CLOCK_POLL: Duration = Duration::from_millis(10);
 
-pub const SCENE: &str = "Main";
-pub const SCENE_UUID: &str = "6f1d3c1e-8a3b-4b8e-9d1a-0c2b3a4d5e6f";
-pub const SOURCE: &str = "Webcam";
-pub const SNAPSHOT_ITEM_ID: i64 = 7;
-pub const RELOOKED_ITEM_ID: i64 = 9;
+pub(crate) const SCENE: &str = "Main";
+pub(crate) const SCENE_UUID: &str = "6f1d3c1e-8a3b-4b8e-9d1a-0c2b3a4d5e6f";
+pub(crate) const SOURCE: &str = "Webcam";
+pub(crate) const SNAPSHOT_ITEM_ID: i64 = 7;
+pub(crate) const RELOOKED_ITEM_ID: i64 = 9;
 
-pub const REQUEST_OP: u64 = 6;
-pub const IDENTIFY_OP: u64 = 1;
-pub const OBS_SUCCESS: u16 = 100;
-pub const OBS_RESOURCE_NOT_FOUND: u16 = 600;
+pub(crate) const REQUEST_OP: u64 = 6;
+pub(crate) const IDENTIFY_OP: u64 = 1;
+pub(crate) const OBS_SUCCESS: u16 = 100;
+pub(crate) const OBS_RESOURCE_NOT_FOUND: u16 = 600;
 
-pub async fn settle_until(what: &str, mut done: impl FnMut() -> bool) {
+pub(crate) async fn settle_until(what: &str, mut done: impl FnMut() -> bool) {
     let started = Instant::now();
     while !done() {
         assert!(started.elapsed() < WALL_BUDGET, "never happened: {what}");
@@ -74,14 +74,14 @@ pub async fn settle_until(what: &str, mut done: impl FnMut() -> bool) {
 }
 
 #[derive(Clone, Copy)]
-pub enum Handshake {
+pub(crate) enum Handshake {
     Complete,
     CloseAfterIdentified,
     Stall,
     StallUpgrade,
 }
 
-pub enum Reply {
+pub(crate) enum Reply {
     Answer(Value),
     Reject,
     RejectWith(u16),
@@ -93,29 +93,29 @@ pub enum Reply {
 }
 
 #[derive(Clone, Copy)]
-pub struct Seen<'a> {
+pub(crate) struct Seen<'a> {
     pub conn: usize,
     pub request_type: &'a str,
     pub nth: usize,
 }
 
-pub type Script = Arc<dyn Fn(Seen<'_>) -> Reply + Send + Sync>;
+pub(crate) type Script = Arc<dyn Fn(Seen<'_>) -> Reply + Send + Sync>;
 
 #[derive(Clone, Default)]
-pub struct WireLog(Arc<Mutex<WireState>>);
+pub(crate) struct WireLog(Arc<Mutex<WireState>>);
 
 #[derive(Default)]
-pub struct WireState {
+pub(crate) struct WireState {
     accepted: usize,
     requests: Vec<(usize, String, Value)>,
 }
 
 impl WireLog {
-    pub fn accepted(&self) -> usize {
+    pub(crate) fn accepted(&self) -> usize {
         self.0.lock().unwrap().accepted
     }
 
-    pub fn count(&self, conn: usize, request_type: &str) -> usize {
+    pub(crate) fn count(&self, conn: usize, request_type: &str) -> usize {
         self.0
             .lock()
             .unwrap()
@@ -125,7 +125,7 @@ impl WireLog {
             .count()
     }
 
-    pub fn requests_of(&self, conn: usize, types: &[&str]) -> Vec<(String, Value)> {
+    pub(crate) fn requests_of(&self, conn: usize, types: &[&str]) -> Vec<(String, Value)> {
         self.0
             .lock()
             .unwrap()
@@ -138,7 +138,7 @@ impl WireLog {
 }
 
 #[derive(Clone, Default)]
-pub struct Recorder(Arc<Mutex<Vec<Event>>>);
+pub(crate) struct Recorder(Arc<Mutex<Vec<Event>>>);
 
 impl EventPublisher for Recorder {
     fn publish(&self, event: Event) {
@@ -147,7 +147,7 @@ impl EventPublisher for Recorder {
 }
 
 impl Recorder {
-    pub fn kinds(&self) -> Vec<String> {
+    pub(crate) fn kinds(&self) -> Vec<String> {
         self.0
             .lock()
             .unwrap()
@@ -156,7 +156,7 @@ impl Recorder {
             .collect()
     }
 
-    pub fn announcements(&self) -> Vec<(String, Option<bool>)> {
+    pub(crate) fn announcements(&self) -> Vec<(String, Option<bool>)> {
         self.0
             .lock()
             .unwrap()
@@ -174,7 +174,7 @@ impl Recorder {
             .collect()
     }
 
-    pub fn states(&self) -> Vec<String> {
+    pub(crate) fn states(&self) -> Vec<String> {
         self.0
             .lock()
             .unwrap()
@@ -190,7 +190,7 @@ impl Recorder {
     }
 }
 
-pub fn version_data() -> Value {
+pub(crate) fn version_data() -> Value {
     json!({
         "obsVersion": "31.0.0",
         "obsWebSocketVersion": "5.5.0",
@@ -202,7 +202,7 @@ pub fn version_data() -> Value {
     })
 }
 
-pub fn standard_reply(request_type: &str) -> Reply {
+pub(crate) fn standard_reply(request_type: &str) -> Reply {
     match request_type {
         "GetVersion" => Reply::Answer(version_data()),
         "GetSceneList" => Reply::Answer(json!({
@@ -225,11 +225,11 @@ pub fn standard_reply(request_type: &str) -> Reply {
     }
 }
 
-pub fn event_frame(event_type: &str, data: Value) -> Value {
+pub(crate) fn event_frame(event_type: &str, data: Value) -> Value {
     json!({ "op": EVENT_OP, "d": { "eventType": event_type, "eventData": data } })
 }
 
-pub struct FakeObs {
+pub(crate) struct FakeObs {
     pub port: u16,
     pub log: WireLog,
     server: tokio::task::JoinHandle<()>,
@@ -241,7 +241,7 @@ impl Drop for FakeObs {
     }
 }
 
-pub async fn spawn_fake_obs(handshake: fn(usize) -> Handshake, script: Script) -> FakeObs {
+pub(crate) async fn spawn_fake_obs(handshake: fn(usize) -> Handshake, script: Script) -> FakeObs {
     let (listener, port) = bind_loopback().await;
     let log = WireLog::default();
     let server = tokio::spawn(serve_fake_obs(listener, handshake, script, log.clone()));
@@ -405,15 +405,15 @@ async fn serve_fake_connection(
     }
 }
 
-pub fn completes_every_handshake(_: usize) -> Handshake {
+pub(crate) fn completes_every_handshake(_: usize) -> Handshake {
     Handshake::Complete
 }
 
-pub async fn connect_to(fake: &FakeObs, recorder: &Recorder) -> Arc<ObsClient> {
+pub(crate) async fn connect_to(fake: &FakeObs, recorder: &Recorder) -> Arc<ObsClient> {
     connect_with_timing(fake, recorder, fast_retries()).await
 }
 
-pub async fn connect_with_timing(
+pub(crate) async fn connect_with_timing(
     fake: &FakeObs,
     recorder: &Recorder,
     timing: ObsTiming,
@@ -429,14 +429,17 @@ pub async fn connect_with_timing(
     Arc::new(client)
 }
 
-pub async fn connected(client: &ObsClient) {
+pub(crate) async fn connected(client: &ObsClient) {
     settle_until("the client reached connected", || {
         client.connection_state() == ConnectionState::Connected
     })
     .await;
 }
 
-pub async fn settle_until_async<F: Future<Output = bool>>(what: &str, mut done: impl FnMut() -> F) {
+pub(crate) async fn settle_until_async<F: Future<Output = bool>>(
+    what: &str,
+    mut done: impl FnMut() -> F,
+) {
     let started = Instant::now();
     while !done().await {
         assert!(started.elapsed() < WALL_BUDGET, "never happened: {what}");
@@ -444,7 +447,7 @@ pub async fn settle_until_async<F: Future<Output = bool>>(what: &str, mut done: 
     }
 }
 
-pub async fn every_earlier_dial_was_accepted(port: u16) {
+pub(crate) async fn every_earlier_dial_was_accepted(port: u16) {
     let mut probe = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
     #[expect(
         clippy::let_underscore_must_use,
@@ -457,7 +460,7 @@ pub async fn every_earlier_dial_was_accepted(port: u16) {
 }
 
 impl FakeObs {
-    pub async fn dials_excluding_the_probe(&self) -> usize {
+    pub(crate) async fn dials_excluding_the_probe(&self) -> usize {
         every_earlier_dial_was_accepted(self.port).await;
         self.log.accepted() - 1
     }

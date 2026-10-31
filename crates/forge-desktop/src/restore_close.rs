@@ -13,7 +13,7 @@ use crate::repo_failure::RepoFailure;
 use crate::update_exit::ExitHandoff;
 use crate::update_flow::UpdateFlow;
 
-pub enum RestoreCloseEvent {
+pub(crate) enum RestoreCloseEvent {
     CloseRequested,
 }
 
@@ -22,7 +22,7 @@ enum PendingClose {
     Restart,
 }
 
-pub struct RestoreClose {
+pub(crate) struct RestoreClose {
     pending: Option<PendingClose>,
     update_flow: Entity<UpdateFlow>,
     data_dir: PathBuf,
@@ -30,14 +30,18 @@ pub struct RestoreClose {
     scheduled: Option<ScheduledBackupHandle>,
 }
 
-pub struct RestoreRoute(pub Entity<RestoreClose>);
+pub(crate) struct RestoreRoute(pub Entity<RestoreClose>);
 
 impl Global for RestoreRoute {}
 
 impl EventEmitter<RestoreCloseEvent> for RestoreClose {}
 
 impl RestoreClose {
-    pub fn new(update_flow: Entity<UpdateFlow>, data_dir: PathBuf, rt_handle: Handle) -> Self {
+    pub(crate) fn new(
+        update_flow: Entity<UpdateFlow>,
+        data_dir: PathBuf,
+        rt_handle: Handle,
+    ) -> Self {
         Self {
             pending: None,
             update_flow,
@@ -48,7 +52,7 @@ impl RestoreClose {
     }
 
     #[must_use]
-    pub fn with_scheduled_backups(mut self, scheduled: ScheduledBackupHandle) -> Self {
+    pub(crate) fn with_scheduled_backups(mut self, scheduled: ScheduledBackupHandle) -> Self {
         self.scheduled = Some(scheduled);
         self
     }
@@ -59,11 +63,11 @@ impl RestoreClose {
         }
     }
 
-    pub fn route(cx: &App) -> Option<Entity<RestoreClose>> {
+    pub(crate) fn route(cx: &App) -> Option<Entity<RestoreClose>> {
         cx.try_global::<RestoreRoute>().map(|route| route.0.clone())
     }
 
-    pub fn update_activity(&self, cx: &App) -> UpdateActivity {
+    pub(crate) fn update_activity(&self, cx: &App) -> UpdateActivity {
         if self.update_flow.read(cx).has_staged_update() {
             UpdateActivity::Staged
         } else {
@@ -71,11 +75,11 @@ impl RestoreClose {
         }
     }
 
-    pub fn request(&mut self, staged: StagedRestore, cx: &mut Context<Self>) {
+    pub(crate) fn request(&mut self, staged: StagedRestore, cx: &mut Context<Self>) {
         self.arm(PendingClose::Restore(staged), cx);
     }
 
-    pub fn restart(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn restart(&mut self, cx: &mut Context<Self>) {
         if matches!(self.pending, Some(PendingClose::Restore(_))) {
             return;
         }
@@ -94,11 +98,11 @@ impl RestoreClose {
         cx.notify();
     }
 
-    pub fn abort(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn abort(&mut self, cx: &mut Context<Self>) {
         self.withdraw(WithdrawNotice::Cancelled, cx);
     }
 
-    pub fn yield_to_update(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn yield_to_update(&mut self, cx: &mut Context<Self>) {
         if matches!(self.pending, Some(PendingClose::Restore(_))) {
             self.withdraw(WithdrawNotice::YieldedToUpdate, cx);
         }

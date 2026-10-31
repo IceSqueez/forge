@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use forge_events::{Event, EventSource};
 use forge_runtime::{EventBus, FirstChatLedger, NullEventLogRepo, spawn_viewer_tracker};
-use forge_storage::viewer::MockViewerRepo;
+use forge_storage::MockViewerRepo;
 use forge_storage::{DataProvider, ViewerRepo};
 use forge_types::ChatViewer;
 use tokio::time::timeout;

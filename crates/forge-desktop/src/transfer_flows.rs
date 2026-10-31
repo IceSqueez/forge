@@ -22,7 +22,7 @@ use crate::setup_export::SetupExportFlow;
 use crate::setup_import_flow::{SetupImportFlow, SetupImported};
 use crate::shell::refresh_dashboard_stats;
 
-pub struct TransferFlows {
+pub(crate) struct TransferFlows {
     pub restore: Entity<RestoreFlow>,
     pub backup: Entity<BackupFlow>,
     pub pack_export: Entity<PackExportFlow>,
@@ -37,12 +37,12 @@ pub struct TransferFlows {
     _subs: [Subscription; 8],
 }
 
-pub struct TransferRoute(pub Entity<TransferFlows>);
+pub(crate) struct TransferRoute(pub Entity<TransferFlows>);
 
 impl Global for TransferRoute {}
 
 impl TransferFlows {
-    pub fn new(
+    pub(crate) fn new(
         stats: Entity<HomeStats>,
         pack: PackServices,
         data_dir: PathBuf,
@@ -93,7 +93,7 @@ impl TransferFlows {
     }
 
     #[must_use]
-    pub fn with_shared_exclusivity(
+    pub(crate) fn with_shared_exclusivity(
         mut self,
         exclusivity: TransferExclusivity,
         scheduled: ScheduledBackupHandle,
@@ -104,7 +104,7 @@ impl TransferFlows {
     }
 
     #[must_use]
-    pub fn watching_scheduled(self, cx: &mut Context<Self>) -> Self {
+    pub(crate) fn watching_scheduled(self, cx: &mut Context<Self>) -> Self {
         if let Some(scheduled) = &self.scheduled {
             let mut status = scheduled.status();
             cx.spawn(async move |this, cx| {
@@ -126,13 +126,13 @@ impl TransferFlows {
     }
 
     #[must_use]
-    pub fn with_setup_live(self, live: SetupLiveHandles, cx: &mut Context<Self>) -> Self {
+    pub(crate) fn with_setup_live(self, live: SetupLiveHandles, cx: &mut Context<Self>) -> Self {
         self.setup_import
             .update(cx, |setup_import, _| setup_import.set_live(live));
         self
     }
 
-    pub fn route(cx: &App) -> Option<Entity<TransferFlows>> {
+    pub(crate) fn route(cx: &App) -> Option<Entity<TransferFlows>> {
         cx.try_global::<TransferRoute>()
             .map(|route| route.0.clone())
     }
@@ -163,7 +163,7 @@ impl TransferFlows {
         })
     }
 
-    pub fn is_busy(&self, cx: &App) -> bool {
+    pub(crate) fn is_busy(&self, cx: &App) -> bool {
         self.exclusivity.is_held() || self.routing || self.any_flow_busy(cx)
     }
 
@@ -176,7 +176,7 @@ impl TransferFlows {
             || self.setup_import.read(cx).is_busy()
     }
 
-    pub fn request_import(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn request_import(&mut self, cx: &mut Context<Self>) {
         if self.refused_while_busy(cx) {
             return;
         }
@@ -213,7 +213,7 @@ impl TransferFlows {
         self.settle_guard(cx);
     }
 
-    pub fn route_import(
+    pub(crate) fn route_import(
         &mut self,
         path: PathBuf,
         kind: Result<BundleKind, TransferError>,
@@ -241,11 +241,11 @@ impl TransferFlows {
         self.settle_guard(cx);
     }
 
-    pub fn export_full_backup(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn export_full_backup(&mut self, cx: &mut Context<Self>) {
         self.start_backup(BackupTarget::ChosenFile, cx);
     }
 
-    pub fn backup_to_backups_dir(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn backup_to_backups_dir(&mut self, cx: &mut Context<Self>) {
         self.start_backup(BackupTarget::BackupsDir, cx);
     }
 
@@ -258,11 +258,11 @@ impl TransferFlows {
         self.settle_guard(cx);
     }
 
-    pub fn export_pack(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn export_pack(&mut self, cx: &mut Context<Self>) {
         self.export_pack_of(Vec::new(), cx);
     }
 
-    pub fn export_pack_of(&mut self, preselected: Vec<ActionId>, cx: &mut Context<Self>) {
+    pub(crate) fn export_pack_of(&mut self, preselected: Vec<ActionId>, cx: &mut Context<Self>) {
         if self.refused_while_busy(cx) {
             return;
         }
@@ -271,7 +271,7 @@ impl TransferFlows {
         self.settle_guard(cx);
     }
 
-    pub fn export_setup(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn export_setup(&mut self, cx: &mut Context<Self>) {
         if self.refused_while_busy(cx) {
             return;
         }
@@ -280,7 +280,7 @@ impl TransferFlows {
         self.settle_guard(cx);
     }
 
-    pub fn start_restore(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn start_restore(&mut self, cx: &mut Context<Self>) {
         if self.refused_while_busy(cx) {
             return;
         }
@@ -288,7 +288,7 @@ impl TransferFlows {
         self.settle_guard(cx);
     }
 
-    pub fn views(&self) -> [AnyView; 6] {
+    pub(crate) fn views(&self) -> [AnyView; 6] {
         [
             self.backup.clone().into(),
             self.pack_export.clone().into(),

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_registry::runner::SubActionConfig;
+use forge_registry::SubActionConfig;
 use forge_registry::{ConfigSpec, RunContext, SubActionCategory, SubActionRunner};
 use forge_types::{ArgStack, SubActionTelemetry};
 
@@ -13,13 +13,13 @@ use crate::vocabulary::sub_action_ids;
 
 const KIND_ID: &str = sub_action_ids::CHANNEL_POINTS_PAUSE_REWARD;
 
-pub struct PauseRewardRunner {
+pub(crate) struct PauseRewardRunner {
     transport: Arc<dyn HelixTransport>,
     identity: Arc<SelfIdentity>,
 }
 
 impl PauseRewardRunner {
-    pub fn new(transport: Arc<dyn HelixTransport>, identity: Arc<SelfIdentity>) -> Self {
+    pub(crate) fn new(transport: Arc<dyn HelixTransport>, identity: Arc<SelfIdentity>) -> Self {
         Self {
             transport,
             identity,

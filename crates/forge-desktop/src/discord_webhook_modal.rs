@@ -27,25 +27,25 @@ const NAME_LOCK_FS: Pixels = FONT_XS;
 const FOOTER_GAP: Pixels = px(8.0);
 const TEST_HEIGHT: Pixels = px(32.0);
 
-pub struct WebhookModalLaunch {
+pub(crate) struct WebhookModalLaunch {
     pub original_name: Option<String>,
     pub name: String,
     pub url: String,
 }
 
-pub struct WebhookDraft {
+pub(crate) struct WebhookDraft {
     pub original_name: Option<String>,
     pub name: String,
     pub url: String,
 }
 
-pub enum DiscordWebhookModalEvent {
+pub(crate) enum DiscordWebhookModalEvent {
     Save(Box<WebhookDraft>),
     Test(Box<WebhookDraft>),
     Cancel,
 }
 
-pub struct DiscordWebhookModal {
+pub(crate) struct DiscordWebhookModal {
     original_name: Option<String>,
     name: Entity<TextInput>,
     url: Entity<TextInput>,
@@ -58,7 +58,7 @@ pub struct DiscordWebhookModal {
 impl EventEmitter<DiscordWebhookModalEvent> for DiscordWebhookModal {}
 
 impl DiscordWebhookModal {
-    pub fn new(launch: WebhookModalLaunch, cx: &mut Context<Self>) -> Self {
+    pub(crate) fn new(launch: WebhookModalLaunch, cx: &mut Context<Self>) -> Self {
         let palette = cx.palette();
         let WebhookModalLaunch {
             original_name,
@@ -101,7 +101,7 @@ impl DiscordWebhookModal {
         }
     }
 
-    pub fn set_testing(&mut self, testing: bool, cx: &mut Context<Self>) {
+    pub(crate) fn set_testing(&mut self, testing: bool, cx: &mut Context<Self>) {
         self.testing = testing;
         cx.notify();
     }

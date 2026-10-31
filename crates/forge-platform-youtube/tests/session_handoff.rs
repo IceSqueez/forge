@@ -11,9 +11,10 @@ use forge_platform_youtube::{YoutubeAssembly, YoutubeAuthBundle, YoutubeSession}
 use forge_registry::{RunContext, SubActionConfig, SubActionRegistry};
 use forge_storage::BanLedgerRepo;
 use forge_storage::MockBanLedgerRepo;
+use forge_storage::test_support::MemoryCredentials;
 use forge_types::{ArgStack, EventId, OAuthToken, Secret, SubActionOutcome, Variant};
 use serde_json::{Value, json};
-use support::{DATA_API_PREFIX, MemoryRepo, SilentBus, data_api_override};
+use support::{DATA_API_PREFIX, data_api_override};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, Request, Respond, ResponseTemplate};
 
@@ -116,8 +117,8 @@ async fn assembled_over(server: &MockServer) -> Assembled {
     let ledger: Arc<dyn BanLedgerRepo> = Arc::new(MockBanLedgerRepo::new());
     let assembly = YoutubeAssembly::new(
         &data_api_override(server),
-        Arc::new(SilentBus),
-        Arc::new(MemoryRepo::default()),
+        Arc::new(forge_events::test_support::NullPublisher),
+        Arc::new(MemoryCredentials::default()),
         Arc::clone(&ledger),
         ("client".to_owned(), Secret::new("secret")),
     )
@@ -163,7 +164,12 @@ async fn send_message(registry: &SubActionRegistry) -> SubActionOutcome {
         Variant::String("hello".to_owned()),
     )]);
     let stack = ArgStack::new();
-    let context = RunContext::leaf(&stack, 0, EventId::new(), &SilentBus);
+    let context = RunContext::leaf(
+        &stack,
+        0,
+        EventId::new(),
+        &forge_events::test_support::NullPublisher,
+    );
     runner.execute(&config, &context).await.0.outcome
 }
 

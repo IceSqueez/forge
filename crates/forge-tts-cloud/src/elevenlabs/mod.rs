@@ -191,7 +191,7 @@ mod tests {
 
     #[tokio::test]
     async fn synthesize_refuses_ssml_without_a_request() {
-        let server = serving(ResponseTemplate::new(200)).await;
+        let server = serving(ResponseTemplate::new(reqwest::StatusCode::OK)).await;
         let result = engine_at(&server.uri()).synthesize(request(true)).await;
         assert!(matches!(result, Err(TtsError::SsmlUnsupported { .. })));
         assert_eq!(request_count(&server).await, 0);
@@ -213,7 +213,10 @@ mod tests {
 
     #[tokio::test]
     async fn a_rejected_request_fails_at_once_without_a_retry() {
-        let server = serving(ResponseTemplate::new(400).set_body_string("malformed")).await;
+        let server = serving(
+            ResponseTemplate::new(reqwest::StatusCode::BAD_REQUEST).set_body_string("malformed"),
+        )
+        .await;
         let result = engine_at(&server.uri()).synthesize(request(false)).await;
         assert!(
             matches!(result, Err(TtsError::SynthesisFailed { .. })),
@@ -224,9 +227,11 @@ mod tests {
 
     #[tokio::test]
     async fn a_quota_429_fails_at_once_without_a_retry() {
-        let server =
-            serving(ResponseTemplate::new(429).set_body_string(r#"{"status":"quota_exceeded"}"#))
-                .await;
+        let server = serving(
+            ResponseTemplate::new(reqwest::StatusCode::TOO_MANY_REQUESTS)
+                .set_body_string(r#"{"status":"quota_exceeded"}"#),
+        )
+        .await;
         let result = engine_at(&server.uri()).synthesize(request(false)).await;
         assert!(
             matches!(result, Err(TtsError::QuotaExceeded { .. })),
@@ -251,7 +256,7 @@ mod tests {
     #[tokio::test]
     async fn rebuilt_and_re_registered_engines_inherit_the_provider_cool_down() {
         let throttling = serving(throttled(PAST_WAIT_THRESHOLD_SECS)).await;
-        let healthy = serving(ResponseTemplate::new(200)).await;
+        let healthy = serving(ResponseTemplate::new(reqwest::StatusCode::OK)).await;
         let gateways = CloudGateways::new();
         let factory =
             ElevenLabsEngineFactory::new(credentials(API_KEY, &throttling.uri()), &gateways);

@@ -128,7 +128,7 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/channels/rewards/redemptions/accept"))
-            .respond_with(ResponseTemplate::new(200))
+            .respond_with(ResponseTemplate::new(reqwest::StatusCode::OK))
             .expect(1)
             .mount(&server)
             .await;
@@ -149,7 +149,7 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/channels/rewards/redemptions/accept"))
-            .respond_with(ResponseTemplate::new(200))
+            .respond_with(ResponseTemplate::new(reqwest::StatusCode::OK))
             .expect(1)
             .mount(&server)
             .await;
@@ -167,7 +167,7 @@ mod tests {
     async fn execute_empty_after_interpolation_fails_without_request() {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
-            .respond_with(ResponseTemplate::new(200))
+            .respond_with(ResponseTemplate::new(reqwest::StatusCode::OK))
             .mount(&server)
             .await;
 

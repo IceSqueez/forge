@@ -16,19 +16,19 @@ use forge_vtube::{VTUBE_CREDENTIAL_ID, VTubeClient, VTubeSink, probe_connection}
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
 use tokio::net::TcpStream;
+use tokio::sync::Notify;
 use tokio::time::timeout;
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 
 mod support;
 
-use support::MemoryCredentials;
+use forge_storage::test_support::MemoryCredentials;
 
 type Socket = WebSocketStream<MaybeTlsStream<TcpStream>>;
 
 const TOKEN: &str = "vtube-fake-token-3f9a";
 const WAIT: Duration = Duration::from_secs(30);
-const POLL: Duration = Duration::from_millis(20);
 const LOCALHOST: &str = "127.0.0.1";
 const AVATAR: &str = "Avatar";
 const SPARE: &str = "Spare";
@@ -163,28 +163,40 @@ async fn wait_ledger<T>(
 }
 
 #[derive(Default)]
-struct Captured(Mutex<Vec<Event>>);
+struct Captured {
+    events: Mutex<Vec<Event>>,
+    published: Notify,
+}
 
 impl EventPublisher for Captured {
     fn publish(&self, event: Event) {
-        self.0.lock().unwrap().push(event);
+        self.events.lock().unwrap().push(event);
+        self.published.notify_waiters();
     }
 }
 
 impl Captured {
     fn find(&self, matches: impl Fn(&Event) -> bool) -> Option<Event> {
-        self.0.lock().unwrap().iter().find(|e| matches(e)).cloned()
+        self.events
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|e| matches(e))
+            .cloned()
     }
 
     async fn wait_for(&self, matches: impl Fn(&Event) -> bool) -> Option<Event> {
-        let deadline = tokio::time::Instant::now() + WAIT;
-        while tokio::time::Instant::now() < deadline {
-            if let Some(event) = self.find(&matches) {
-                return Some(event);
+        timeout(WAIT, async {
+            loop {
+                let published = self.published.notified();
+                if let Some(event) = self.find(&matches) {
+                    return event;
+                }
+                published.await;
             }
-            tokio::time::sleep(POLL).await;
-        }
-        None
+        })
+        .await
+        .ok()
     }
 }
 

@@ -19,7 +19,7 @@ use forge_storage::{DataProvider, OverlayDefinition, OverlayId};
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::{
     Action, ActionId, ExecutionMode, MessageArg, MessageRef, OverlayCredential, QueueId, Shared,
-    SubActionOutcome, SubActionStep, UserText, VerbatimText,
+    SubActionOutcome, SubActionStep, UserText, Variant, VerbatimText,
 };
 use forge_types::{SystemWallClock, WallClock};
 use stub_provider::StubProvider;
@@ -62,6 +62,20 @@ pub(crate) fn sequential_action(
         execution_mode: ExecutionMode::Sequential,
         description: None,
         sub_actions,
+    }
+}
+
+pub(crate) fn log_write_step(message: &str) -> SubActionStep {
+    SubActionStep {
+        kind_id: "core.log.write".to_owned(),
+        config: std::collections::BTreeMap::from([(
+            "message".to_owned(),
+            Variant::String(message.to_owned()),
+        )]),
+        enabled: true,
+        continue_on_error: false,
+        condition: None,
+        label: None,
     }
 }
 

@@ -42,7 +42,7 @@ use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 
 mod support;
 
-use support::MemoryCredentials;
+use forge_storage::test_support::MemoryCredentials;
 use support::{QuietPublisher, TokenSource, endpoints_from, static_token_source};
 
 type Socket = WebSocketStream<MaybeTlsStream<TcpStream>>;
@@ -698,11 +698,13 @@ async fn stop_interrupts_the_running_step_and_skips_the_rest() {
             { "do": { "pause": { "ms": 1, "reason": "must not run" } } }
         ]),
     );
-    let second_step_acted = harness.journal.wait_until(Instant::now() + DEADLINE, |view| {
-        view.entries.iter().any(|entry| {
+    let second_step_acted = harness
+        .journal
+        .wait_until(Instant::now() + DEADLINE, |view| {
+            view.entries.iter().any(|entry| {
             matches!(&entry.observation, Observation::Event(event) if event.kind == "action.start")
         })
-    });
+        });
 
     let steps = timeout(
         DEADLINE,
@@ -1499,20 +1501,6 @@ fn kick_endpoints(fake: &FakeKick) -> forge_platform_core::PlatformEndpoints {
     endpoints_from(&fake.endpoint_overrides())
 }
 
-struct KickGrant;
-
-#[async_trait::async_trait]
-impl forge_net::RateLimiter for KickGrant {
-    async fn acquire(
-        &self,
-        _weight: u32,
-    ) -> Result<forge_net::RateLimitOutcome, forge_net::RateLimitError> {
-        Ok(forge_net::RateLimitOutcome::Granted)
-    }
-
-    async fn observe_remote_throttle(&self, _retry_after: Duration) {}
-}
-
 struct KickDiscard;
 
 impl forge_events::EventPublisher for KickDiscard {
@@ -1520,8 +1508,12 @@ impl forge_events::EventPublisher for KickDiscard {
 }
 
 fn kick_api(endpoints: &forge_platform_core::PlatformEndpoints) -> forge_net::Gateway {
-    forge_platform_kick::kick_api_gateway(endpoints, Arc::new(KickGrant), Arc::new(KickDiscard))
-        .unwrap()
+    forge_platform_kick::kick_api_gateway(
+        endpoints,
+        Arc::new(forge_net::test_support::RecordingRateLimiter::granting()),
+        Arc::new(KickDiscard),
+    )
+    .unwrap()
 }
 
 fn kick_channel_info(
@@ -1530,7 +1522,7 @@ fn kick_channel_info(
     Arc::new(forge_platform_kick::ChannelInfoFetcher::new(
         forge_platform_kick::kick_channel_info_gateway(
             endpoints,
-            Arc::new(KickGrant),
+            Arc::new(forge_net::test_support::RecordingRateLimiter::granting()),
             Arc::new(KickDiscard),
         )
         .unwrap(),

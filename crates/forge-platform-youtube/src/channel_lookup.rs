@@ -136,7 +136,9 @@ mod tests {
             let server = MockServer::start().await;
             Mock::given(method("GET"))
                 .and(path("/channels"))
-                .respond_with(ResponseTemplate::new(200).set_body_json(one_channel()))
+                .respond_with(
+                    ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(one_channel()),
+                )
                 .mount(&server)
                 .await;
 
@@ -159,7 +161,9 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/channels"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(one_channel()))
+            .respond_with(
+                ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(one_channel()),
+            )
             .mount(&server)
             .await;
 
@@ -193,7 +197,7 @@ mod tests {
             let server = MockServer::start().await;
             Mock::given(method("GET"))
                 .and(path("/channels"))
-                .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                .respond_with(ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(json!({
                     "items": [{ "id": "UCx", "snippet": { "title": "T" }, "statistics": statistics }]
                 })))
                 .mount(&server)

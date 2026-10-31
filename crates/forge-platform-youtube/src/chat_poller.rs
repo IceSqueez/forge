@@ -1116,7 +1116,7 @@ mod tests {
     async fn mount_broadcast_mock(server: &MockServer, response: serde_json::Value) {
         Mock::given(method("GET"))
             .and(path("/liveBroadcasts"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(response))
+            .respond_with(ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(response))
             .mount(server)
             .await;
     }
@@ -1124,7 +1124,7 @@ mod tests {
     async fn mount_chat_mock(server: &MockServer, response: serde_json::Value) {
         Mock::given(method("GET"))
             .and(path("/liveChat/messages"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(response))
+            .respond_with(ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(response))
             .mount(server)
             .await;
     }
@@ -1529,7 +1529,8 @@ mod tests {
         Mock::given(method("GET"))
             .and(path("/liveBroadcasts"))
             .respond_with(
-                ResponseTemplate::new(200).set_body_json(broadcast_response("chat-dedup")),
+                ResponseTemplate::new(reqwest::StatusCode::OK)
+                    .set_body_json(broadcast_response("chat-dedup")),
             )
             .mount(&server)
             .await;
@@ -1537,14 +1538,16 @@ mod tests {
         Mock::given(method("GET"))
             .and(path("/liveChat/messages"))
             .respond_with(
-                ResponseTemplate::new(200).set_body_json(chat_response_with_page(
-                    json!([
-                        text_item("id1", "hello", "User1"),
-                        text_item("id2", "world", "User2")
-                    ]),
-                    0,
-                    "ptX",
-                )),
+                ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(
+                    chat_response_with_page(
+                        json!([
+                            text_item("id1", "hello", "User1"),
+                            text_item("id2", "world", "User2")
+                        ]),
+                        0,
+                        "ptX",
+                    ),
+                ),
             )
             .up_to_n_times(1)
             .mount(&server)
@@ -1553,20 +1556,25 @@ mod tests {
         Mock::given(method("GET"))
             .and(path("/liveChat/messages"))
             .and(query_param("pageToken", "ptX"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(chat_response(
-                json!([
-                    text_item("id2", "world", "User2"),
-                    text_item("id3", "again", "User3")
-                ]),
-                0,
-            )))
+            .respond_with(
+                ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(chat_response(
+                    json!([
+                        text_item("id2", "world", "User2"),
+                        text_item("id3", "again", "User3")
+                    ]),
+                    0,
+                )),
+            )
             .up_to_n_times(1)
             .mount(&server)
             .await;
 
         Mock::given(method("GET"))
             .and(path("/liveChat/messages"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(chat_response(json!([]), 0)))
+            .respond_with(
+                ResponseTemplate::new(reqwest::StatusCode::OK)
+                    .set_body_json(chat_response(json!([]), 0)),
+            )
             .mount(&server)
             .await;
 
@@ -2448,7 +2456,10 @@ mod tests {
     async fn undecodable_body_reports_a_malformed_response_stripped_of_the_request_url() {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
-            .respond_with(ResponseTemplate::new(200).set_body_string("<html>not json</html>"))
+            .respond_with(
+                ResponseTemplate::new(reqwest::StatusCode::OK)
+                    .set_body_string("<html>not json</html>"),
+            )
             .mount(&server)
             .await;
 

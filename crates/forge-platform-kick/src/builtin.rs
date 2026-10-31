@@ -496,46 +496,17 @@ mod tests {
     }
 
     mod lifecycle {
+        use forge_storage::test_support::MemoryCredentials;
         use std::time::Duration as StdDuration;
 
-        use async_trait::async_trait;
-
         use forge_platform_core::{BuiltinControl, ControlFailure, QuickActions};
-        use forge_storage::{CredentialId, CredentialsRepo, StorageError};
-        use time::OffsetDateTime;
 
         use super::super::*;
         use crate::platform::KickPlatform;
 
-        struct EmptyRepo;
-        #[async_trait]
-        impl CredentialsRepo for EmptyRepo {
-            async fn store(&self, _: &CredentialId, _: &str) -> Result<(), StorageError> {
-                Ok(())
-            }
-            async fn load(&self, _: &CredentialId) -> Result<Option<String>, StorageError> {
-                Ok(None)
-            }
-            async fn delete(&self, _: &CredentialId) -> Result<bool, StorageError> {
-                Ok(false)
-            }
-            async fn list_ids(&self) -> Result<Vec<CredentialId>, StorageError> {
-                Ok(Vec::new())
-            }
-            async fn last_refresh(
-                &self,
-                _: &CredentialId,
-            ) -> Result<Option<OffsetDateTime>, StorageError> {
-                Ok(None)
-            }
-            async fn mark_refreshed(&self, _: &CredentialId) -> Result<(), StorageError> {
-                Ok(())
-            }
-        }
-
         fn empty_manager() -> Arc<KickCredentialsManager> {
             Arc::new(crate::endpoints_test_support::offline_manager(Arc::new(
-                EmptyRepo,
+                MemoryCredentials::default(),
             )))
         }
 
@@ -572,7 +543,7 @@ mod tests {
                 777,
                 platform,
                 manager,
-                Arc::new(crate::endpoints_test_support::GrantingLimiter),
+                crate::endpoints_test_support::granting_limiter(),
                 viewer_rx,
                 auth_rx,
             );
@@ -802,11 +773,11 @@ mod tests {
         use crate::api::chat_messages::KickSendChat;
         use crate::api::moderation::KickModeration;
         use crate::api::rewards::KickRewards;
-        use crate::endpoints_test_support::GrantingLimiter;
+        use crate::endpoints_test_support::granting_limiter;
         use crate::sub_actions::{KickSubActionDeps, register_kick_sub_actions};
 
         fn runner_registry() -> SubActionRegistry {
-            let limiter: Arc<dyn RateLimiter> = Arc::new(GrantingLimiter);
+            let limiter: Arc<dyn RateLimiter> = granting_limiter();
             let mut registry = SubActionRegistry::new();
             register_kick_sub_actions(
                 &mut registry,

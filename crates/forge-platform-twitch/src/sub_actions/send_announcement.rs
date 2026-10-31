@@ -195,13 +195,14 @@ mod tests {
         make_ctx,
     };
     use forge_platform_core::SENDER_FIELD;
+    use forge_storage::test_support::MemoryCredentials;
     use forge_types::SubActionOutcome;
     use forge_types::Variant;
     use std::collections::BTreeMap;
 
     fn runner_with(
         response: Result<serde_json::Value, HelixError>,
-        creds: MockCreds,
+        creds: MemoryCredentials,
     ) -> (Arc<MockTransport>, SendAnnouncementRunner) {
         let transport = Arc::new(MockTransport::returning(response));
         let runner = SendAnnouncementRunner::new(

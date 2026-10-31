@@ -250,8 +250,9 @@ fn near_expiry(creds: &YoutubeCredentials) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
-    use std::sync::{Arc, Mutex};
+    use forge_storage::test_support::MemoryCredentials;
+
+    use std::sync::Arc;
     use std::time::{Duration as StdDuration, SystemTime};
 
     use async_trait::async_trait;
@@ -282,66 +283,16 @@ mod tests {
     const REQUEST_FAIL_KIND: &str = "request.fail";
     const CONCURRENT_CALLERS: usize = 4;
 
-    #[derive(Default)]
-    struct InMemRepo(Mutex<HashMap<String, String>>);
-
-    impl InMemRepo {
-        fn with_creds(creds: &YoutubeCredentials) -> Arc<Self> {
-            let repo = Self::default();
-            repo.0.lock().unwrap().insert(
-                CREDENTIAL_KEY.to_owned(),
-                serde_json::to_string(creds).unwrap(),
-            );
-            Arc::new(repo)
-        }
-
-        fn stored(&self) -> Option<YoutubeCredentials> {
-            self.0
-                .lock()
-                .unwrap()
-                .get(CREDENTIAL_KEY)
-                .and_then(|s| serde_json::from_str(s).ok())
-        }
+    fn repo_with_creds(creds: &YoutubeCredentials) -> Arc<MemoryCredentials> {
+        Arc::new(MemoryCredentials::holding(
+            CREDENTIAL_KEY,
+            &serde_json::to_string(creds).unwrap(),
+        ))
     }
 
-    #[async_trait]
-    impl CredentialsRepo for InMemRepo {
-        async fn store(&self, id: &CredentialId, plaintext: &str) -> Result<(), StorageError> {
-            self.0
-                .lock()
-                .unwrap()
-                .insert(id.as_str().to_owned(), plaintext.to_owned());
-            Ok(())
-        }
-
-        async fn load(&self, id: &CredentialId) -> Result<Option<String>, StorageError> {
-            Ok(self.0.lock().unwrap().get(id.as_str()).cloned())
-        }
-
-        async fn delete(&self, id: &CredentialId) -> Result<bool, StorageError> {
-            Ok(self.0.lock().unwrap().remove(id.as_str()).is_some())
-        }
-
-        async fn list_ids(&self) -> Result<Vec<CredentialId>, StorageError> {
-            Ok(self
-                .0
-                .lock()
-                .unwrap()
-                .keys()
-                .map(|k| CredentialId::new(k.clone()))
-                .collect())
-        }
-
-        async fn last_refresh(
-            &self,
-            _id: &CredentialId,
-        ) -> Result<Option<OffsetDateTime>, StorageError> {
-            Ok(None)
-        }
-
-        async fn mark_refreshed(&self, _id: &CredentialId) -> Result<(), StorageError> {
-            Ok(())
-        }
+    fn stored_creds(repo: &MemoryCredentials) -> Option<YoutubeCredentials> {
+        repo.stored(CREDENTIAL_KEY)
+            .and_then(|bundle| serde_json::from_str(&bundle).ok())
     }
 
     struct PanickingRepo;
@@ -445,7 +396,7 @@ mod tests {
 
     struct Rig {
         server: StubServer,
-        repo: Arc<InMemRepo>,
+        repo: Arc<MemoryCredentials>,
         quota: SharedQuota,
         bus: Arc<RecordingPublisher>,
         manager: Arc<YoutubeCredentialsManager>,
@@ -453,7 +404,7 @@ mod tests {
 
     async fn rig(creds: &YoutubeCredentials) -> Rig {
         let server = StubServer::start().await;
-        let repo = InMemRepo::with_creds(creds);
+        let repo = repo_with_creds(creds);
         let quota = SharedQuota::default();
         let bus = Arc::new(RecordingPublisher::default());
         let manager = Arc::new(YoutubeCredentialsManager::new(
@@ -473,7 +424,7 @@ mod tests {
     #[tokio::test]
     async fn load_returns_none_when_no_row() {
         let manager = YoutubeCredentialsManager::new(
-            Arc::new(InMemRepo::default()),
+            Arc::new(MemoryCredentials::default()),
             unreachable_oauth_client(),
             unreachable_data_api(),
         );
@@ -499,7 +450,7 @@ mod tests {
 
     #[tokio::test]
     async fn save_from_bundle_persists_credentials() {
-        let repo = Arc::new(InMemRepo::default());
+        let repo = Arc::new(MemoryCredentials::default());
         let manager = YoutubeCredentialsManager::new(
             repo.clone(),
             unreachable_oauth_client(),
@@ -517,7 +468,7 @@ mod tests {
 
         manager.save_from_bundle(bundle).await.unwrap();
 
-        let stored = repo.stored().unwrap();
+        let stored = stored_creds(&repo).unwrap();
         assert_eq!(
             (
                 stored.access_token.expose(),
@@ -531,7 +482,7 @@ mod tests {
 
     #[tokio::test]
     async fn the_expiry_watch_follows_a_persist_and_a_clear() {
-        let repo = Arc::new(InMemRepo::default());
+        let repo = Arc::new(MemoryCredentials::default());
         let manager = YoutubeCredentialsManager::new(
             repo.clone(),
             unreachable_oauth_client(),
@@ -552,7 +503,7 @@ mod tests {
             })
             .await
             .unwrap();
-        let persisted = repo.stored().unwrap().expires_at;
+        let persisted = stored_creds(&repo).unwrap().expires_at;
         let after_persist = *expiry.borrow();
         manager.clear().await.unwrap();
         let after_clear = *expiry.borrow();
@@ -572,7 +523,7 @@ mod tests {
 
         rig.manager.get_valid_access_token().await.unwrap();
 
-        let persisted = rig.repo.stored().unwrap().expires_at;
+        let persisted = stored_creds(&rig.repo).unwrap().expires_at;
         assert_eq!(*expiry.borrow(), Some(SystemTime::from(persisted)));
     }
 
@@ -589,7 +540,7 @@ mod tests {
         rig.manager.refresh(EXISTING_ACCESS).await.unwrap();
         let after = OffsetDateTime::now_utc();
 
-        let expires_at = rig.repo.stored().unwrap().expires_at;
+        let expires_at = stored_creds(&rig.repo).unwrap().expires_at;
         assert!(
             expires_at >= before + lifetime && expires_at <= after + lifetime,
             "expiry must be refresh time plus the default lifetime"
@@ -616,7 +567,7 @@ mod tests {
 
         let token = rig.manager.get_valid_access_token().await.unwrap();
 
-        let stored = rig.repo.stored().unwrap();
+        let stored = stored_creds(&rig.repo).unwrap();
         assert_eq!(
             (
                 token.as_str(),
@@ -630,7 +581,7 @@ mod tests {
     #[tokio::test]
     async fn get_valid_access_token_returns_reauth_required_when_no_creds() {
         let manager = YoutubeCredentialsManager::new(
-            Arc::new(InMemRepo::default()),
+            Arc::new(MemoryCredentials::default()),
             unreachable_oauth_client(),
             unreachable_data_api(),
         );
@@ -653,7 +604,7 @@ mod tests {
 
         rig.manager.refresh(EXISTING_ACCESS).await.unwrap();
 
-        let stored = rig.repo.stored().unwrap();
+        let stored = stored_creds(&rig.repo).unwrap();
         assert_eq!(
             (stored.access_token.expose(), stored.refresh_token.expose()),
             ("ya29.new_access", EXISTING_REFRESH)
@@ -685,7 +636,7 @@ mod tests {
 
         let outcome = rig.manager.get_valid_access_token().await;
 
-        let stored = rig.repo.stored().unwrap();
+        let stored = stored_creds(&rig.repo).unwrap();
         assert_eq!(
             (
                 matches!(outcome, Err(PlatformError::ReauthRequired { .. })),
@@ -763,7 +714,7 @@ mod tests {
 
         let token = survivor.await.unwrap().unwrap();
 
-        let stored = rig.repo.stored().unwrap();
+        let stored = stored_creds(&rig.repo).unwrap();
         assert_eq!(
             (
                 aborted,
@@ -794,14 +745,17 @@ mod tests {
             async move { manager.clear().await }
         });
         settle().await;
-        let row_while_refresh_in_flight = rig.repo.stored().is_some();
+        let row_while_refresh_in_flight = stored_creds(&rig.repo).is_some();
         gate.open();
 
         refreshing.await.unwrap().unwrap();
         clearing.await.unwrap().unwrap();
 
         assert_eq!(
-            (row_while_refresh_in_flight, rig.repo.stored().is_none()),
+            (
+                row_while_refresh_in_flight,
+                stored_creds(&rig.repo).is_none()
+            ),
             (true, true)
         );
     }
@@ -829,7 +783,7 @@ mod tests {
 
         rig.manager.clear().await.unwrap();
 
-        assert!(rig.repo.stored().is_none());
+        assert!(stored_creds(&rig.repo).is_none());
     }
 
     #[tokio::test]
@@ -843,7 +797,7 @@ mod tests {
         assert_eq!(
             (
                 creds.channel_handle.as_deref(),
-                rig.repo.stored().unwrap().channel_handle.as_deref(),
+                stored_creds(&rig.repo).unwrap().channel_handle.as_deref(),
                 used_today(&rig.quota).await
             ),
             (Some("@backfilled"), Some("@backfilled"), 1)
@@ -860,7 +814,7 @@ mod tests {
 
         rig.manager.ensure_channel_handle().await.unwrap();
 
-        let stored = rig.repo.stored().unwrap();
+        let stored = stored_creds(&rig.repo).unwrap();
         assert_eq!(
             (
                 stored.access_token.expose(),
@@ -888,7 +842,7 @@ mod tests {
             assert_eq!(
                 (
                     creds.channel_handle,
-                    rig.repo.stored().unwrap().channel_handle,
+                    stored_creds(&rig.repo).unwrap().channel_handle,
                     rig.bus.events_of_kind(REQUEST_FAIL_KIND).len(),
                     used_today(&rig.quota).await
                 ),
@@ -909,7 +863,7 @@ mod tests {
             assert_eq!(
                 (
                     creds.channel_handle,
-                    rig.repo.stored().unwrap().channel_handle,
+                    stored_creds(&rig.repo).unwrap().channel_handle,
                     rig.server.request_count(CHANNELS_PATH)
                 ),
                 (None, None, 1),

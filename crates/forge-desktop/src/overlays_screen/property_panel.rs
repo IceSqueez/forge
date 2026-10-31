@@ -1921,7 +1921,9 @@ pub(crate) mod tests {
     fn got_it_on_the_sizing_notice_saves_the_acknowledgement(cx: &mut gpui::TestAppContext) {
         let mut shown = show(cx, predating(&[]));
 
-        shown.click_first_until(|_, _, heard| !heard.saves.is_empty());
+        shown
+            .click_first_until(|_, _, heard| !heard.saves.is_empty())
+            .expect("the notice offers a button that acknowledges it");
 
         assert_eq!(
             shown.saves(),
@@ -1958,7 +1960,9 @@ pub(crate) mod tests {
                 (MARGIN_TOP, Variant::Int(30)),
             ]),
         );
-        shown.click_first_until(picker_focused);
+        shown
+            .click_first_until(picker_focused)
+            .expect("the look field opens the picker");
 
         shown.vcx.simulate_keystrokes("down enter");
 

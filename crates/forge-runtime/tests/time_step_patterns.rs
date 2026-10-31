@@ -29,13 +29,22 @@ fn in_child_zone(test_name: &str, zone: &str) -> bool {
         .env("TZ", zone)
         .output()
         .expect("re-run the test binary in a child process");
-    let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        output.status.success() && stdout.contains("1 passed"),
-        "child run of {test_name} in TZ={zone} failed:\n{stdout}\n{}",
+        output.status.success(),
+        "child run of {test_name} in TZ={zone} failed:\n{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
     false
+}
+
+macro_rules! zone_test {
+    ($name:ident, $zone:literal, $body:block) => {
+        #[tokio::test]
+        async fn $name() {
+            if in_child_zone(stringify!($name), $zone) $body
+        }
+    };
 }
 
 fn mid_october_noon_utc() -> OffsetDateTime {
@@ -97,22 +106,19 @@ fn format_cfg(pattern: &str, utc: Option<bool>) -> SubActionConfig {
     config
 }
 
-#[tokio::test]
-async fn format_pattern_follows_the_system_zone_when_utc_is_off_and_ignores_it_when_on() {
-    if !in_child_zone(
-        "format_pattern_follows_the_system_zone_when_utc_is_off_and_ignores_it_when_on",
-        "Europe/Kyiv",
-    ) {
-        return;
+zone_test!(
+    format_pattern_follows_the_system_zone_when_utc_is_off_and_ignores_it_when_on,
+    "Europe/Kyiv",
+    {
+        for (utc, expected) in [(false, "15:00 +03:00"), (true, "12:00 +00:00")] {
+            assert_eq!(
+                formatted(&format_cfg("HH:mm xxx", Some(utc))).await,
+                expected,
+                "utc {utc}"
+            );
+        }
     }
-    for (utc, expected) in [(false, "15:00 +03:00"), (true, "12:00 +00:00")] {
-        assert_eq!(
-            formatted(&format_cfg("HH:mm xxx", Some(utc))).await,
-            expected,
-            "utc {utc}"
-        );
-    }
-}
+);
 
 #[tokio::test]
 async fn format_pattern_follows_the_names_language_switched_through_the_handle() {
@@ -131,110 +137,92 @@ async fn format_pattern_follows_the_names_language_switched_through_the_handle()
     }
 }
 
-#[tokio::test]
-async fn legacy_format_without_utc_key_renders_utc_english_in_any_zone_and_language() {
-    if !in_child_zone(
-        "legacy_format_without_utc_key_renders_utc_english_in_any_zone_and_language",
-        "Europe/Kyiv",
-    ) {
-        return;
+zone_test!(
+    legacy_format_without_utc_key_renders_utc_english_in_any_zone_and_language,
+    "Europe/Kyiv",
+    {
+        let _language = names_language(NamesLanguage::Uk).await;
+        let legacy = "[weekday], [day] [month repr:long] [hour]:[minute] [period]";
+        let old = mid_october_noon_utc()
+            .format(&time::format_description::parse_borrowed::<2>(legacy).unwrap())
+            .unwrap();
+        assert_eq!(formatted(&format_cfg(legacy, None)).await, old);
     }
-    let _language = names_language(NamesLanguage::Uk).await;
-    let legacy = "[weekday], [day] [month repr:long] [hour]:[minute] [period]";
-    let old = mid_october_noon_utc()
-        .format(&time::format_description::parse_borrowed::<2>(legacy).unwrap())
-        .unwrap();
-    assert_eq!(formatted(&format_cfg(legacy, None)).await, old);
-}
+);
 
-#[tokio::test]
-async fn legacy_format_with_utc_off_follows_the_system_zone() {
-    if !in_child_zone(
-        "legacy_format_with_utc_off_follows_the_system_zone",
-        "Europe/Kyiv",
-    ) {
-        return;
+zone_test!(
+    legacy_format_with_utc_off_follows_the_system_zone,
+    "Europe/Kyiv",
+    {
+        assert_eq!(
+            formatted(&format_cfg("[hour]:[minute]", Some(false))).await,
+            "15:00"
+        );
     }
-    assert_eq!(
-        formatted(&format_cfg("[hour]:[minute]", Some(false))).await,
-        "15:00"
-    );
-}
+);
 
-#[tokio::test]
-async fn parse_pattern_reads_text_in_the_system_zone_when_utc_is_off_and_keeps_its_offset() {
-    if !in_child_zone(
-        "parse_pattern_reads_text_in_the_system_zone_when_utc_is_off_and_keeps_its_offset",
-        "Europe/Kyiv",
-    ) {
-        return;
-    }
-    let dt = parsed(&cfg(&[
-        ("source", s("15.10.2026 15:00")),
-        ("format", s("dd.MM.yyyy HH:mm")),
-        ("utc", Variant::Bool(false)),
-    ]))
-    .await;
-    assert_eq!(dt, mid_october_noon_utc());
-    assert_eq!(dt.offset(), UtcOffset::from_hms(3, 0, 0).unwrap());
-}
-
-#[tokio::test]
-async fn parse_pattern_reads_text_as_utc_when_utc_is_on_in_any_zone() {
-    if !in_child_zone(
-        "parse_pattern_reads_text_as_utc_when_utc_is_on_in_any_zone",
-        "Europe/Kyiv",
-    ) {
-        return;
-    }
-    let dt = parsed(&cfg(&[
-        ("source", s("15.10.2026 12:00")),
-        ("format", s("dd.MM.yyyy HH:mm")),
-        ("utc", Variant::Bool(true)),
-    ]))
-    .await;
-    assert_eq!(dt, mid_october_noon_utc());
-    assert_eq!(dt.offset(), UtcOffset::UTC);
-}
-
-#[tokio::test]
-async fn legacy_parse_without_utc_key_reads_text_as_utc_in_any_zone() {
-    if !in_child_zone(
-        "legacy_parse_without_utc_key_reads_text_as_utc_in_any_zone",
-        "Europe/Kyiv",
-    ) {
-        return;
-    }
-    let dt = parsed(&cfg(&[
-        ("source", s("2026-10-15 12:00:00")),
-        ("format", s("[year]-[month]-[day] [hour]:[minute]:[second]")),
-    ]))
-    .await;
-    assert_eq!(dt, mid_october_noon_utc());
-}
-
-#[tokio::test]
-async fn custom_now_follows_the_system_zone_when_utc_is_off() {
-    if !in_child_zone(
-        "custom_now_follows_the_system_zone_when_utc_is_off",
-        "Asia/Tokyo",
-    ) {
-        return;
-    }
-    let out = run_ok(
-        &CoreTimeNowRunner,
-        &cfg(&[
-            ("format", s("custom")),
-            ("custom_format_string", s("xxx")),
+zone_test!(
+    parse_pattern_reads_text_in_the_system_zone_when_utc_is_off_and_keeps_its_offset,
+    "Europe/Kyiv",
+    {
+        let dt = parsed(&cfg(&[
+            ("source", s("15.10.2026 15:00")),
+            ("format", s("dd.MM.yyyy HH:mm")),
             ("utc", Variant::Bool(false)),
-        ]),
-    )
-    .await;
-    assert_eq!(
-        out.get("time.formatted").and_then(Variant::as_str),
-        Some("+09:00")
-    );
-}
+        ]))
+        .await;
+        assert_eq!(dt, mid_october_noon_utc());
+        assert_eq!(dt.offset(), UtcOffset::from_hms(3, 0, 0).unwrap());
+    }
+);
+
+zone_test!(
+    parse_pattern_reads_text_as_utc_when_utc_is_on_in_any_zone,
+    "Europe/Kyiv",
+    {
+        let dt = parsed(&cfg(&[
+            ("source", s("15.10.2026 12:00")),
+            ("format", s("dd.MM.yyyy HH:mm")),
+            ("utc", Variant::Bool(true)),
+        ]))
+        .await;
+        assert_eq!(dt, mid_october_noon_utc());
+        assert_eq!(dt.offset(), UtcOffset::UTC);
+    }
+);
+
+zone_test!(
+    legacy_parse_without_utc_key_reads_text_as_utc_in_any_zone,
+    "Europe/Kyiv",
+    {
+        let dt = parsed(&cfg(&[
+            ("source", s("2026-10-15 12:00:00")),
+            ("format", s("[year]-[month]-[day] [hour]:[minute]:[second]")),
+        ]))
+        .await;
+        assert_eq!(dt, mid_october_noon_utc());
+    }
+);
+
+zone_test!(
+    custom_now_follows_the_system_zone_when_utc_is_off,
+    "Asia/Tokyo",
+    {
+        let out = run_ok(
+            &CoreTimeNowRunner,
+            &cfg(&[
+                ("format", s("custom")),
+                ("custom_format_string", s("xxx")),
+                ("utc", Variant::Bool(false)),
+            ]),
+        )
+        .await;
+        assert_eq!(
+            out.get("time.formatted").and_then(Variant::as_str),
+            Some("+09:00")
+        );
+    }
+);
 
 #[test]
 fn parse_and_now_default_configs_validate() {

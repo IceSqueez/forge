@@ -128,18 +128,20 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/channels"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "data": [{
-                    "broadcaster_user_id": 1,
-                    "stream_title": "Marathon",
-                    "category": {"id": 9, "name": "Retro"},
-                    "stream": {
-                        "is_live": true,
-                        "viewer_count": 1200,
-                        "start_time": "2026-07-25T09:00:00Z"
-                    }
-                }]
-            })))
+            .respond_with(
+                ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(serde_json::json!({
+                    "data": [{
+                        "broadcaster_user_id": 1,
+                        "stream_title": "Marathon",
+                        "category": {"id": 9, "name": "Retro"},
+                        "stream": {
+                            "is_live": true,
+                            "viewer_count": 1200,
+                            "start_time": "2026-07-25T09:00:00Z"
+                        }
+                    }]
+                })),
+            )
             .mount(&server)
             .await;
 
@@ -175,9 +177,11 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/channels"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "data": [{ "broadcaster_user_id": 1, "stream_title": "Offline" }]
-            })))
+            .respond_with(
+                ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(serde_json::json!({
+                    "data": [{ "broadcaster_user_id": 1, "stream_title": "Offline" }]
+                })),
+            )
             .mount(&server)
             .await;
 
@@ -224,14 +228,18 @@ mod tests {
             let server = MockServer::start().await;
             Mock::given(method("GET"))
                 .and(path("/channels"))
-                .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                    "data": [{
-                    "broadcaster_user_id": 1,
-                        "stream_title": "t",
-                        "category": {"id": 9, "name": "Retro"},
-                        "stream": stream
-                    }]
-                })))
+                .respond_with(
+                    ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(
+                        serde_json::json!({
+                            "data": [{
+                            "broadcaster_user_id": 1,
+                                "stream_title": "t",
+                                "category": {"id": 9, "name": "Retro"},
+                                "stream": stream
+                            }]
+                        }),
+                    ),
+                )
                 .mount(&server)
                 .await;
 
@@ -266,7 +274,10 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/channels"))
-            .respond_with(ResponseTemplate::new(500).set_body_string("boom"))
+            .respond_with(
+                ResponseTemplate::new(reqwest::StatusCode::INTERNAL_SERVER_ERROR)
+                    .set_body_string("boom"),
+            )
             .mount(&server)
             .await;
 
@@ -288,9 +299,13 @@ mod tests {
             let server = MockServer::start().await;
             Mock::given(method("GET"))
                 .and(path("/channels"))
-                .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                    "data": [{ "broadcaster_user_id": 1, "category": category }]
-                })))
+                .respond_with(
+                    ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(
+                        serde_json::json!({
+                            "data": [{ "broadcaster_user_id": 1, "category": category }]
+                        }),
+                    ),
+                )
                 .mount(&server)
                 .await;
 

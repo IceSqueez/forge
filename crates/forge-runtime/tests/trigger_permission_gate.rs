@@ -13,9 +13,8 @@ use forge_registry::{
 use forge_runtime::{EventBus, FrozenRuntime, NullEventLogRepo, RuntimeWiring};
 use forge_storage::DataProvider;
 use forge_types::{
-    Action, ActionId, ArgStack, ChatPayload, ChatSegment, ExecutionMode, ModerationMarks,
-    PermissionRung, Queue, QueueId, SubActionStep, TriggerConfig, TriggerInstance,
-    TriggerInstanceId, UserBadge, Variant,
+    Action, ActionId, ArgStack, ChatPayload, ChatSegment, ModerationMarks, PermissionRung, Queue,
+    QueueId, TriggerConfig, TriggerInstance, TriggerInstanceId, UserBadge, Variant,
 };
 use serde_json::json;
 use tempfile::TempDir;
@@ -115,29 +114,12 @@ fn instance(kind_id: &str, rung: PermissionRung, cooldown_secs: u32) -> TriggerI
 }
 
 fn log_action(id: ActionId, queue_id: QueueId) -> Action {
-    Action {
+    common::sequential_action(
         id,
-        name: "gated-action".to_owned(),
-        group: None,
+        "gated-action",
         queue_id,
-        enabled: true,
-        concurrent: false,
-        bypass_pause: false,
-        execution_mode: ExecutionMode::Sequential,
-        description: None,
-        sub_actions: vec![SubActionStep {
-            kind_id: "core.log.write".to_owned(),
-            config: {
-                let mut c = BTreeMap::new();
-                c.insert("message".to_owned(), Variant::String("fired".to_owned()));
-                c
-            },
-            enabled: true,
-            continue_on_error: false,
-            condition: None,
-            label: None,
-        }],
-    }
+        vec![common::log_write_step("fired")],
+    )
 }
 
 fn chat_event(user: &str, badges: Vec<UserBadge>) -> Event {

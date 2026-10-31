@@ -14,11 +14,11 @@ use forge_platform_youtube::{
     YoutubeViewerPoll, google_oauth_gateway,
 };
 use forge_storage::MockBanLedgerRepo;
+use forge_storage::test_support::MemoryCredentials;
 use forge_types::OAuthToken;
 use serde_json::json;
 use support::{
-    BroadcasterSource, MemoryRepo, SilentBus, TokenSource, data_api_override, endpoints,
-    fixed_broadcaster, fixed_token,
+    BroadcasterSource, TokenSource, data_api_override, endpoints, fixed_broadcaster, fixed_token,
 };
 use tokio::sync::watch;
 use wiremock::matchers::{body_string_contains, method, path};
@@ -37,7 +37,12 @@ fn token_source() -> TokenSource {
 }
 
 fn api(endpoints: &PlatformEndpoints) -> YoutubeDataApi {
-    YoutubeDataApi::new(endpoints, SharedQuota::default(), Arc::new(SilentBus)).unwrap()
+    YoutubeDataApi::new(
+        endpoints,
+        SharedQuota::default(),
+        Arc::new(forge_events::test_support::NullPublisher),
+    )
+    .unwrap()
 }
 
 fn live_chat() -> LiveChatIdHandle {
@@ -80,8 +85,11 @@ async fn manager_holding(
         "client".to_owned(),
         forge_types::Secret::new("secret"),
     );
-    let manager =
-        YoutubeCredentialsManager::new(Arc::new(MemoryRepo::default()), oauth, api(endpoints));
+    let manager = YoutubeCredentialsManager::new(
+        Arc::new(MemoryCredentials::default()),
+        oauth,
+        api(endpoints),
+    );
     manager.save_from_bundle(saved).await.unwrap();
     manager
 }
@@ -111,7 +119,9 @@ fn routes(expected: &[(&str, &str)]) -> Vec<(String, String)> {
 async fn data_api_override_carries_every_rest_client_to_the_override_host() {
     let server = MockServer::start().await;
     Mock::given(wiremock::matchers::any())
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "items": [] })))
+        .respond_with(
+            ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(json!({ "items": [] })),
+        )
         .mount(&server)
         .await;
     let endpoints = data_api_override(&server);
@@ -164,7 +174,9 @@ async fn data_api_override_carries_every_rest_client_to_the_override_host() {
 async fn upload_api_override_carries_the_thumbnail_upload_to_the_override_host() {
     let server = MockServer::start().await;
     Mock::given(wiremock::matchers::any())
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "items": [] })))
+        .respond_with(
+            ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(json!({ "items": [] })),
+        )
         .mount(&server)
         .await;
     let endpoints = endpoints(&[(
@@ -193,11 +205,13 @@ async fn oauth_override_carries_the_token_refresh_to_the_override_host() {
         .and(path("/google-oauth/token"))
         .and(body_string_contains("grant_type=refresh_token"))
         .and(body_string_contains("refresh_token=stale-refresh"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "access_token": "fresh-access",
-            "expires_in": 3599,
-            "token_type": "Bearer"
-        })))
+        .respond_with(
+            ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(json!({
+                "access_token": "fresh-access",
+                "expires_in": 3599,
+                "token_type": "Bearer"
+            })),
+        )
         .mount(&server)
         .await;
     let endpoints = endpoints(&[(
@@ -220,12 +234,14 @@ async fn data_api_override_carries_the_channel_handle_backfill_to_the_override_h
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/youtube/v3/channels"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "items": [{
-                "id": "UCoverride",
-                "snippet": { "title": "Override Channel", "customUrl": "@backfilled" }
-            }]
-        })))
+        .respond_with(
+            ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(json!({
+                "items": [{
+                    "id": "UCoverride",
+                    "snippet": { "title": "Override Channel", "customUrl": "@backfilled" }
+                }]
+            })),
+        )
         .mount(&server)
         .await;
     let manager = manager_holding(
@@ -244,12 +260,14 @@ async fn data_api_override_carries_the_viewer_poll_to_the_override_host() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/youtube/v3/videos"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "items": [{
-                "id": BROADCAST_ID,
-                "liveStreamingDetails": { "concurrentViewers": "42" }
-            }]
-        })))
+        .respond_with(
+            ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(json!({
+                "items": [{
+                    "id": BROADCAST_ID,
+                    "liveStreamingDetails": { "concurrentViewers": "42" }
+                }]
+            })),
+        )
         .mount(&server)
         .await;
     let (reports_tx, mut reports_rx) = watch::channel(ViewerReport::Absent);
@@ -275,29 +293,33 @@ async fn platform_carries_its_override_into_the_chat_poller_and_the_sender() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/youtube/v3/liveBroadcasts"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "items": [{
-                "id": BROADCAST_ID,
-                "snippet": { "liveChatId": LIVE_CHAT_ID, "title": "Override Stream" }
-            }]
-        })))
+        .respond_with(
+            ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(json!({
+                "items": [{
+                    "id": BROADCAST_ID,
+                    "snippet": { "liveChatId": LIVE_CHAT_ID, "title": "Override Stream" }
+                }]
+            })),
+        )
         .mount(&server)
         .await;
     Mock::given(method("GET"))
         .and(path("/youtube/v3/liveChat/messages"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "pollingIntervalMillis": 3000,
-            "items": [{
-                "id": "msg-override",
-                "snippet": { "type": "textMessageEvent", "displayMessage": "over here" },
-                "authorDetails": { "displayName": "Viewer", "channelId": "UCviewer" }
-            }]
-        })))
+        .respond_with(
+            ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(json!({
+                "pollingIntervalMillis": 3000,
+                "items": [{
+                    "id": "msg-override",
+                    "snippet": { "type": "textMessageEvent", "displayMessage": "over here" },
+                    "authorDetails": { "displayName": "Viewer", "channelId": "UCviewer" }
+                }]
+            })),
+        )
         .mount(&server)
         .await;
     Mock::given(method("POST"))
         .and(path("/youtube/v3/liveChat/messages"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({})))
+        .respond_with(ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(json!({})))
         .mount(&server)
         .await;
     let endpoints = data_api_override(&server);

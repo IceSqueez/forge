@@ -10,8 +10,8 @@ use forge_platform_core::{BuiltinControl, DonationProvider, PlatformError};
 use forge_types::DonationOrigin;
 use serde_json::json;
 use support::{
-    Bank, CLIENT_INFO, Harness, JAR, MemCreds, OTHER_JAR, STATEMENT_PREFIX, ScriptedLimiter, TOKEN,
-    now_unix, top_up,
+    Bank, CLIENT_INFO, Harness, JAR, MemoryCredentials, OTHER_JAR, STATEMENT_PREFIX,
+    ScriptedLimiter, TOKEN, creds_with, now_unix, top_up,
 };
 use tokio_stream::StreamExt;
 use wiremock::ResponseTemplate;
@@ -167,7 +167,10 @@ async fn unreadable_top_ups_are_reported_once_without_blocking_the_rest() {
 #[tokio::test]
 async fn server_error_is_reported_and_polling_recovers_on_the_next_timer() {
     let bank = Bank::new(&[JAR]);
-    bank.fail_next(STATEMENT_PREFIX, ResponseTemplate::new(503));
+    bank.fail_next(
+        STATEMENT_PREFIX,
+        ResponseTemplate::new(reqwest::StatusCode::SERVICE_UNAVAILABLE),
+    );
     bank.add(JAR, top_up("D-1", now_unix() - 10));
     let mut h = Harness::ticking(bank).await;
 
@@ -189,7 +192,8 @@ async fn statement_rate_limit_is_reported_and_cools_only_the_statement_endpoint(
     let bank = Bank::new(&[JAR]);
     bank.fail_next(
         STATEMENT_PREFIX,
-        ResponseTemplate::new(429).insert_header("Retry-After", "90"),
+        ResponseTemplate::new(reqwest::StatusCode::TOO_MANY_REQUESTS)
+            .insert_header("Retry-After", "90"),
     );
     let mut h = Harness::start(bank).await;
 
@@ -225,7 +229,7 @@ async fn local_cooldown_waits_silently_without_calling_the_bank() {
         client_info: ScriptedLimiter::open(),
         statement: cooling_down.clone(),
     };
-    let provider = support::provider_on(&server.uri(), MemCreds::with(TOKEN, Some(JAR)), limits);
+    let provider = support::provider_on(&server.uri(), creds_with(TOKEN, Some(JAR)), limits);
     let mut stream = provider.donations();
 
     cooling_down.wait_for_acquires(1).await;
@@ -244,7 +248,7 @@ async fn local_cooldown_waits_silently_without_calling_the_bank() {
 async fn errors_needing_the_user_stop_polling_until_the_user_acts() {
     struct Case {
         name: &'static str,
-        creds: Arc<MemCreds>,
+        creds: Arc<MemoryCredentials>,
         jars: &'static [&'static str],
         reject_token: bool,
         failure: PollFailure,
@@ -261,7 +265,7 @@ async fn errors_needing_the_user_stop_polling_until_the_user_acts() {
         },
         Case {
             name: "no jar",
-            creds: MemCreds::with(TOKEN, None),
+            creds: creds_with(TOKEN, None),
             jars: &[JAR],
             reject_token: false,
             failure: PollFailure::JarNotSelected,
@@ -269,7 +273,7 @@ async fn errors_needing_the_user_stop_polling_until_the_user_acts() {
         },
         Case {
             name: "jar gone",
-            creds: MemCreds::with(TOKEN, Some(OTHER_JAR)),
+            creds: creds_with(TOKEN, Some(OTHER_JAR)),
             jars: &[JAR],
             reject_token: false,
             failure: PollFailure::JarMissing,
@@ -277,7 +281,7 @@ async fn errors_needing_the_user_stop_polling_until_the_user_acts() {
         },
         Case {
             name: "token rejected",
-            creds: MemCreds::with(TOKEN, Some(JAR)),
+            creds: creds_with(TOKEN, Some(JAR)),
             jars: &[JAR],
             reject_token: true,
             failure: PollFailure::TokenRejected,
@@ -287,7 +291,10 @@ async fn errors_needing_the_user_stop_polling_until_the_user_acts() {
     for case in cases {
         let bank = Bank::new(case.jars);
         if case.reject_token {
-            bank.fail_next(CLIENT_INFO, ResponseTemplate::new(403));
+            bank.fail_next(
+                CLIENT_INFO,
+                ResponseTemplate::new(reqwest::StatusCode::FORBIDDEN),
+            );
         }
         let mut h = Harness::ticking_with_creds(bank, case.creds).await;
 
@@ -321,7 +328,7 @@ async fn errors_needing_the_user_stop_polling_until_the_user_acts() {
 async fn selecting_the_missing_jar_resumes_a_stopped_poller() {
     let bank = Bank::new(&[JAR]);
     bank.add(JAR, top_up("D-1", now_unix() - 10));
-    let mut h = Harness::with_creds(bank, MemCreds::with(TOKEN, None)).await;
+    let mut h = Harness::with_creds(bank, creds_with(TOKEN, None)).await;
     let _missing_jar = h.next().await;
 
     h.provider.select_jar(JAR).await.unwrap();
@@ -424,7 +431,7 @@ async fn pausing_or_reconnecting_abandons_a_stalled_statement_call_and_keeps_the
         let calls = h.bank.statement_calls().len();
         h.bank.fail_next(
             STATEMENT_PREFIX,
-            ResponseTemplate::new(200).set_delay(support::WAIT * 10),
+            ResponseTemplate::new(reqwest::StatusCode::OK).set_delay(support::WAIT * 10),
         );
         h.bank.add(JAR, top_up("NEW", now_unix()));
 

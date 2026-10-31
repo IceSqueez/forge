@@ -187,7 +187,7 @@ mod tests {
         if let Some(token) = next {
             body["NextToken"] = token.into();
         }
-        ResponseTemplate::new(200).set_body_json(body)
+        ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(body)
     }
 
     fn padded_page(next: Option<&str>, total_len: usize) -> ResponseTemplate {
@@ -198,7 +198,8 @@ mod tests {
         let pad = "x".repeat(total_len - shell("").len());
         let body = shell(&pad);
         assert_eq!(body.len(), total_len);
-        ResponseTemplate::new(200).set_body_raw(body.into_bytes(), "application/json")
+        ResponseTemplate::new(reqwest::StatusCode::OK)
+            .set_body_raw(body.into_bytes(), "application/json")
     }
 
     fn incoming_token(request: &wiremock::Request) -> Option<String> {
@@ -218,7 +219,7 @@ mod tests {
                 .iter()
                 .find(|(expected, _)| *expected == token)
                 .map(|(_, template)| template.clone())
-                .unwrap_or_else(|| ResponseTemplate::new(404))
+                .unwrap_or_else(|| ResponseTemplate::new(reqwest::StatusCode::NOT_FOUND))
         }
     }
 
@@ -260,7 +261,8 @@ mod tests {
         let body = serde_json::json!({
             "Voices": [voice("Joanna", "Female"), voice("Matthew", "Male"), voice("Other", "")]
         });
-        let server = serving(ResponseTemplate::new(200).set_body_json(body)).await;
+        let server =
+            serving(ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(body)).await;
 
         let voices = fetch_voices(&link_to(&server), &signer()).await.unwrap();
 
@@ -455,11 +457,20 @@ mod tests {
     async fn a_failing_middle_page_fails_the_whole_listing() {
         let no_hint = format!("RateLimited({NO_HINT_WAIT_SECS})");
         for (failure, expected) in [
-            (ResponseTemplate::new(500), "Http".to_owned()),
-            (ResponseTemplate::new(403), "Unauthorized".to_owned()),
-            (ResponseTemplate::new(429), no_hint.clone()),
             (
-                ResponseTemplate::new(200).set_body_string("{"),
+                ResponseTemplate::new(reqwest::StatusCode::INTERNAL_SERVER_ERROR),
+                "Http".to_owned(),
+            ),
+            (
+                ResponseTemplate::new(reqwest::StatusCode::FORBIDDEN),
+                "Unauthorized".to_owned(),
+            ),
+            (
+                ResponseTemplate::new(reqwest::StatusCode::TOO_MANY_REQUESTS),
+                no_hint.clone(),
+            ),
+            (
+                ResponseTemplate::new(reqwest::StatusCode::OK).set_body_string("{"),
                 "Decode".to_owned(),
             ),
         ] {

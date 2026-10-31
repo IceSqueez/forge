@@ -200,7 +200,7 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("PATCH"))
             .and(path("/channels"))
-            .respond_with(ResponseTemplate::new(200))
+            .respond_with(ResponseTemplate::new(reqwest::StatusCode::OK))
             .expect(1)
             .mount(&server)
             .await;
@@ -219,7 +219,7 @@ mod tests {
     async fn non_numeric_category_after_interpolation_fails_without_request() {
         let server = MockServer::start().await;
         Mock::given(method("PATCH"))
-            .respond_with(ResponseTemplate::new(200))
+            .respond_with(ResponseTemplate::new(reqwest::StatusCode::OK))
             .mount(&server)
             .await;
 
@@ -241,7 +241,7 @@ mod tests {
     async fn eleven_tags_at_runtime_fail_without_request() {
         let server = MockServer::start().await;
         Mock::given(method("PATCH"))
-            .respond_with(ResponseTemplate::new(200))
+            .respond_with(ResponseTemplate::new(reqwest::StatusCode::OK))
             .mount(&server)
             .await;
 
@@ -264,7 +264,7 @@ mod tests {
     async fn all_fields_empty_after_interpolation_fails_without_request() {
         let server = MockServer::start().await;
         Mock::given(method("PATCH"))
-            .respond_with(ResponseTemplate::new(200))
+            .respond_with(ResponseTemplate::new(reqwest::StatusCode::OK))
             .mount(&server)
             .await;
 

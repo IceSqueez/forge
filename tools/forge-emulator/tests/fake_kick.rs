@@ -3,7 +3,6 @@ use forge_platform_kick::vocabulary::event_kinds as kick_kinds;
 use std::sync::Arc;
 use std::time::Duration;
 
-use async_trait::async_trait;
 use forge_emulator::EmulatorError;
 use forge_emulator::fakes::kick::{
     FakeKick, FakeKickConfig, FakeKickSetup, KickChatter, KickCredentialCheck, KickLedger,
@@ -11,7 +10,7 @@ use forge_emulator::fakes::kick::{
 };
 use forge_emulator::fixture::KickAccount;
 use forge_events::Event;
-use forge_net::{Gateway, RateLimitError, RateLimitOutcome, RateLimiter};
+use forge_net::{Gateway, RateLimiter};
 use forge_platform_core::{EndpointSurface, PlatformEndpoints, PlatformError};
 use forge_platform_kick::error::KickError;
 use forge_platform_kick::protocol::PUSHER_APP_KEY;
@@ -31,24 +30,13 @@ use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 
 mod support;
 
-use support::MemoryCredentials;
+use forge_storage::test_support::MemoryCredentials;
 use support::endpoints_from;
 
 type Socket = WebSocketStream<MaybeTlsStream<TcpStream>>;
 
 const WAIT: Duration = Duration::from_secs(30);
 const FOREIGN_SLUG: &str = "someone_else";
-
-struct GrantLimiter;
-
-#[async_trait]
-impl RateLimiter for GrantLimiter {
-    async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, RateLimitError> {
-        Ok(RateLimitOutcome::Granted)
-    }
-
-    async fn observe_remote_throttle(&self, _retry_after: Duration) {}
-}
 
 async fn start(setup: FakeKickSetup) -> FakeKick {
     FakeKick::start(FakeKickConfig::for_account(&KickAccount::default(), &setup))
@@ -61,7 +49,7 @@ fn endpoints(fake: &FakeKick) -> PlatformEndpoints {
 }
 
 fn limiter() -> Arc<dyn RateLimiter> {
-    Arc::new(GrantLimiter)
+    Arc::new(forge_net::test_support::RecordingRateLimiter::granting())
 }
 
 fn api(fake: &FakeKick) -> Gateway {

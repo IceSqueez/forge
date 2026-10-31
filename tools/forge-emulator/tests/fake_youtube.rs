@@ -28,7 +28,7 @@ use tokio::time::timeout;
 
 mod support;
 
-use support::MemoryCredentials;
+use forge_storage::test_support::MemoryCredentials;
 use support::{QuietPublisher, endpoints_from, static_token_source};
 
 const WAIT: Duration = Duration::from_secs(30);

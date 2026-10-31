@@ -471,7 +471,7 @@ mod tests {
         mount(
             server,
             "/device",
-            ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(serde_json::json!({
                 "device_code": "DEV123",
                 "user_code": "WXYZ-1234",
                 "verification_uri": "https://www.twitch.tv/activate",
@@ -530,7 +530,7 @@ mod tests {
         mount(
             &server,
             "/device",
-            ResponseTemplate::new(400).set_body_string("bad client"),
+            ResponseTemplate::new(reqwest::StatusCode::BAD_REQUEST).set_body_string("bad client"),
         )
         .await;
 
@@ -558,7 +558,12 @@ mod tests {
     async fn wait_cancelled_before_first_poll_returns_promptly_without_polling() {
         let server = MockServer::start().await;
         mount_device(&server, 3600, 5).await;
-        mount(&server, "/token", ResponseTemplate::new(200)).await;
+        mount(
+            &server,
+            "/token",
+            ResponseTemplate::new(reqwest::StatusCode::OK),
+        )
+        .await;
         let mut flow = flow_at(&server);
         flow.start().await.unwrap();
 
@@ -588,7 +593,7 @@ mod tests {
         Mock::given(method("POST"))
             .and(path("/token"))
             .respond_with(
-                ResponseTemplate::new(400)
+                ResponseTemplate::new(reqwest::StatusCode::BAD_REQUEST)
                     .set_body_json(serde_json::json!({ "message": "authorization_pending" })),
             )
             .up_to_n_times(1)
@@ -597,7 +602,7 @@ mod tests {
         mount(
             &server,
             "/token",
-            ResponseTemplate::new(400)
+            ResponseTemplate::new(reqwest::StatusCode::BAD_REQUEST)
                 .set_body_json(serde_json::json!({ "message": "access_denied" })),
         )
         .await;
@@ -625,7 +630,10 @@ mod tests {
         Mock::given(method("GET"))
             .and(path("/validate"))
             .and(header("Authorization", format!("OAuth {ACCESS}")))
-            .respond_with(ResponseTemplate::new(200).set_body_json(validate_body(CLIENT, None)))
+            .respond_with(
+                ResponseTemplate::new(reqwest::StatusCode::OK)
+                    .set_body_json(validate_body(CLIENT, None)),
+            )
             .mount(&server)
             .await;
         Mock::given(method("GET"))
@@ -633,7 +641,9 @@ mod tests {
             .and(query_param("id", USER_ID))
             .and(header("Client-Id", CLIENT))
             .and(header("Authorization", format!("Bearer {ACCESS}")))
-            .respond_with(ResponseTemplate::new(200).set_body_json(users_body()))
+            .respond_with(
+                ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(users_body()),
+            )
             .mount(&server)
             .await;
 
@@ -652,37 +662,45 @@ mod tests {
 
     #[tokio::test]
     async fn finish_failure_reason_names_the_step_that_failed() {
-        let ok_validate = || ResponseTemplate::new(200).set_body_json(validate_body(CLIENT, None));
-        let ok_users = || ResponseTemplate::new(200).set_body_json(users_body());
+        let ok_validate = || {
+            ResponseTemplate::new(reqwest::StatusCode::OK)
+                .set_body_json(validate_body(CLIENT, None))
+        };
+        let ok_users =
+            || ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(users_body());
         let cases = [
             (
-                ResponseTemplate::new(401).set_body_string("invalid access token"),
+                ResponseTemplate::new(reqwest::StatusCode::UNAUTHORIZED)
+                    .set_body_string("invalid access token"),
                 ok_users(),
                 "token validate failed: HTTP 401",
             ),
             (
-                ResponseTemplate::new(200).set_body_string("not json"),
+                ResponseTemplate::new(reqwest::StatusCode::OK).set_body_string("not json"),
                 ok_users(),
                 "token validate failed: malformed response",
             ),
             (
-                ResponseTemplate::new(200).set_body_json(validate_body("other_client", None)),
+                ResponseTemplate::new(reqwest::StatusCode::OK)
+                    .set_body_json(validate_body("other_client", None)),
                 ok_users(),
                 "token client_id does not match configured client_id",
             ),
             (
                 ok_validate(),
-                ResponseTemplate::new(500).set_body_string(format!("Bearer {ACCESS} rejected")),
+                ResponseTemplate::new(reqwest::StatusCode::INTERNAL_SERVER_ERROR)
+                    .set_body_string(format!("Bearer {ACCESS} rejected")),
                 "helix get_user failed: HTTP 500",
             ),
             (
                 ok_validate(),
-                ResponseTemplate::new(200).set_body_string("not json"),
+                ResponseTemplate::new(reqwest::StatusCode::OK).set_body_string("not json"),
                 "helix get_user failed: malformed response",
             ),
             (
                 ok_validate(),
-                ResponseTemplate::new(200).set_body_json(serde_json::json!({ "data": [] })),
+                ResponseTemplate::new(reqwest::StatusCode::OK)
+                    .set_body_json(serde_json::json!({ "data": [] })),
                 "helix returned empty user list",
             ),
         ];
@@ -717,8 +735,9 @@ mod tests {
 
         for (granted, validated, expected) in cases {
             let server = sign_in_server(
-                ResponseTemplate::new(200).set_body_json(validate_body(CLIENT, validated)),
-                ResponseTemplate::new(200).set_body_json(users_body()),
+                ResponseTemplate::new(reqwest::StatusCode::OK)
+                    .set_body_json(validate_body(CLIENT, validated)),
+                ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(users_body()),
             )
             .await;
             let before = SystemTime::now();
@@ -744,7 +763,7 @@ mod tests {
     impl Respond for HeldAnswer {
         fn respond(&self, _: &Request) -> ResponseTemplate {
             self.0.notify_one();
-            ResponseTemplate::new(200).set_delay(HOLD)
+            ResponseTemplate::new(reqwest::StatusCode::OK).set_delay(HOLD)
         }
     }
 
@@ -765,11 +784,13 @@ mod tests {
             let server = MockServer::start().await;
             let reached = Arc::new(Notify::new());
             let held = || HeldAnswer(Arc::clone(&reached));
-            let token = ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "access_token": ACCESS,
-                "expires_in": 3600,
-            }));
-            let validate = ResponseTemplate::new(200).set_body_json(validate_body(CLIENT, None));
+            let token =
+                ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(serde_json::json!({
+                    "access_token": ACCESS,
+                    "expires_in": 3600,
+                }));
+            let validate = ResponseTemplate::new(reqwest::StatusCode::OK)
+                .set_body_json(validate_body(CLIENT, None));
             match stage {
                 InFlight::TokenPoll => mount(&server, "/token", held()).await,
                 InFlight::Validate => {
@@ -880,11 +901,13 @@ mod tests {
     }
 
     fn poll_answer(message: &str) -> ResponseTemplate {
-        ResponseTemplate::new(400).set_body_json(serde_json::json!({ "message": message }))
+        ResponseTemplate::new(reqwest::StatusCode::BAD_REQUEST)
+            .set_body_json(serde_json::json!({ "message": message }))
     }
 
     fn throttled(retry_after_secs: u64) -> ResponseTemplate {
-        ResponseTemplate::new(429).insert_header("Retry-After", retry_after_secs.to_string())
+        ResponseTemplate::new(reqwest::StatusCode::TOO_MANY_REQUESTS)
+            .insert_header("Retry-After", retry_after_secs.to_string())
     }
 
     fn timing(poll_interval: Duration, lifetime: Duration) -> DeviceTiming {

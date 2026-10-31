@@ -101,7 +101,10 @@ async fn refused_call(request: GatewayRequest) -> Vec<Fields> {
 
     let server = MockServer::start().await;
     Mock::given(any())
-        .respond_with(ResponseTemplate::new(400).set_body_string(format!("{BODY_MARKER} {BEARER}")))
+        .respond_with(
+            ResponseTemplate::new(reqwest::StatusCode::BAD_REQUEST)
+                .set_body_string(format!("{BODY_MARKER} {BEARER}")),
+        )
         .mount(&server)
         .await;
     let harness = Harness::new(&server.uri(), platform());

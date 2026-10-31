@@ -3254,66 +3254,6 @@ mod tests {
 
     const TOKEN_BODY_SENTINEL: &str = "SESSION_TOKEN_BODY_SENTINEL_m2";
 
-    struct NearExpiryCreds;
-
-    #[async_trait::async_trait]
-    impl forge_storage::CredentialsRepo for NearExpiryCreds {
-        async fn store(
-            &self,
-            _: &forge_storage::CredentialId,
-            _: &str,
-        ) -> Result<(), forge_storage::StorageError> {
-            Ok(())
-        }
-
-        async fn load(
-            &self,
-            _: &forge_storage::CredentialId,
-        ) -> Result<Option<String>, forge_storage::StorageError> {
-            let expires_at_unix = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_secs() as i64 + 60)
-                .unwrap_or(0);
-            Ok(Some(
-                serde_json::json!({
-                    "access_token": "stale_access",
-                    "refresh_token": "stale_refresh",
-                    "user_id": "user_1",
-                    "login": "streamer",
-                    "expires_at_unix": expires_at_unix,
-                })
-                .to_string(),
-            ))
-        }
-
-        async fn delete(
-            &self,
-            _: &forge_storage::CredentialId,
-        ) -> Result<bool, forge_storage::StorageError> {
-            Ok(false)
-        }
-
-        async fn list_ids(
-            &self,
-        ) -> Result<Vec<forge_storage::CredentialId>, forge_storage::StorageError> {
-            Ok(Vec::new())
-        }
-
-        async fn last_refresh(
-            &self,
-            _: &forge_storage::CredentialId,
-        ) -> Result<Option<time::OffsetDateTime>, forge_storage::StorageError> {
-            Ok(None)
-        }
-
-        async fn mark_refreshed(
-            &self,
-            _: &forge_storage::CredentialId,
-        ) -> Result<(), forge_storage::StorageError> {
-            Ok(())
-        }
-    }
-
     async fn welcome_verdict(session: &mut ChatSession) -> Verdict {
         match session.handle_frame(SESSION_WELCOME_FRAME, &mut None).await {
             FrameAction::Subscribe(pass) => Verdict::from(pass.await),
@@ -3327,23 +3267,30 @@ mod tests {
             let server = wiremock::MockServer::builder().start().await;
             wiremock::Mock::given(wiremock::matchers::method("POST"))
                 .and(wiremock::matchers::path("/token"))
-                .respond_with(wiremock::ResponseTemplate::new(503).set_body_json(
-                    serde_json::json!({
-                        "message": TOKEN_BODY_SENTINEL,
-                    }),
-                ))
+                .respond_with(
+                    wiremock::ResponseTemplate::new(reqwest::StatusCode::SERVICE_UNAVAILABLE)
+                        .set_body_json(serde_json::json!({
+                            "message": TOKEN_BODY_SENTINEL,
+                        })),
+                )
                 .mount(&server)
                 .await;
             wiremock::Mock::given(wiremock::matchers::method("POST"))
                 .and(wiremock::matchers::path(EVENTSUB_SUBSCRIPTIONS_PATH))
-                .respond_with(wiremock::ResponseTemplate::new(500))
+                .respond_with(wiremock::ResponseTemplate::new(
+                    reqwest::StatusCode::INTERNAL_SERVER_ERROR,
+                ))
                 .expect(0)
                 .mount(&server)
                 .await;
 
             let manager = Arc::new(TwitchCredentialsManager::new(
                 crate::sub_actions::test_support::oauth_client_at(&server.uri(), "client"),
-                Arc::new(NearExpiryCreds),
+                crate::credentials_manager::tests::seeded_repo(
+                    &crate::credentials_manager::tests::stub_cred(
+                        std::time::SystemTime::now() + Duration::from_secs(60),
+                    ),
+                ),
             ));
             let bus = Arc::new(EventChannel::new(EVENT_CHANNEL_CAPACITY));
             let publisher: Arc<dyn EventPublisher> = bus.clone();
@@ -3462,9 +3409,11 @@ mod tests {
         wiremock::Mock::given(wiremock::matchers::method("POST"))
             .and(wiremock::matchers::path(EVENTSUB_SUBSCRIPTIONS_PATH))
             .respond_with(
-                wiremock::ResponseTemplate::new(202).set_body_json(serde_json::json!({
-                    "data": [{ "id": "sub-1", "type": "generic", "condition": {} }]
-                })),
+                wiremock::ResponseTemplate::new(reqwest::StatusCode::ACCEPTED).set_body_json(
+                    serde_json::json!({
+                        "data": [{ "id": "sub-1", "type": "generic", "condition": {} }]
+                    }),
+                ),
             )
             .mount(&server)
             .await;
@@ -4646,7 +4595,7 @@ mod tests {
     }
 
     struct StoreSignallingRepo {
-        inner: Arc<crate::credentials_manager::tests::InMemRepo>,
+        inner: Arc<forge_storage::test_support::MemoryCredentials>,
         stored: tokio::sync::Notify,
     }
 
@@ -4727,7 +4676,7 @@ mod tests {
     ) -> (Arc<TwitchCredentialsManager>, Arc<StoreSignallingRepo>) {
         let near_expiry = std::time::SystemTime::now() + Duration::from_secs(60);
         let repo = Arc::new(StoreSignallingRepo {
-            inner: crate::credentials_manager::tests::InMemRepo::seeded(
+            inner: crate::credentials_manager::tests::seeded_repo(
                 &crate::credentials_manager::tests::stub_cred(near_expiry),
             ),
             stored: tokio::sync::Notify::new(),
@@ -5467,7 +5416,7 @@ mod tests {
         stored.access_token = forge_types::OAuthToken::new(STALE_ACCESS);
         let (mut session, _state, _shutdown) = session_over(
             Arc::new(RecordingBus::default()),
-            crate::credentials_manager::tests::InMemRepo::seeded(&stored),
+            crate::credentials_manager::tests::seeded_repo(&stored),
             Some(token_url),
             SubscriptionTracker::default(),
             socket_and_api("ws://127.0.0.1:1", &server.uri()),
@@ -5909,7 +5858,7 @@ mod tests {
         let tracker = SubscriptionTracker::default();
         let (mut session, _state, _shutdown) = session_over(
             Arc::new(RecordingBus::default()),
-            crate::credentials_manager::tests::InMemRepo::seeded(&stored),
+            crate::credentials_manager::tests::seeded_repo(&stored),
             Some(server.uri()),
             tracker.clone(),
             socket_and_api("ws://127.0.0.1:1", &server.uri()),

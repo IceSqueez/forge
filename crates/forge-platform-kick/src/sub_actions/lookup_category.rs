@@ -146,12 +146,14 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/categories"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "data": [
-                    {"id": 15, "name": "Just Chatting"},
-                    {"id": 21, "name": "Chess"}
-                ]
-            })))
+            .respond_with(
+                ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(serde_json::json!({
+                    "data": [
+                        {"id": 15, "name": "Just Chatting"},
+                        {"id": 21, "name": "Chess"}
+                    ]
+                })),
+            )
             .mount(&server)
             .await;
 
@@ -189,7 +191,10 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/categories"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({"data": []})))
+            .respond_with(
+                ResponseTemplate::new(reqwest::StatusCode::OK)
+                    .set_body_json(serde_json::json!({"data": []})),
+            )
             .mount(&server)
             .await;
 
@@ -224,7 +229,10 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/categories"))
-            .respond_with(ResponseTemplate::new(401).set_body_string("unauthorized"))
+            .respond_with(
+                ResponseTemplate::new(reqwest::StatusCode::UNAUTHORIZED)
+                    .set_body_string("unauthorized"),
+            )
             .mount(&server)
             .await;
 

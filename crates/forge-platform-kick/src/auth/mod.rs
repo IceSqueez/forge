@@ -223,9 +223,9 @@ mod tests {
 
     use super::*;
     use crate::endpoints_test_support::{
-        ExhaustedLimiter, GrantingLimiter, OAUTH_CLIENT_SECRET, RecordingPublisher, api_at,
-        api_limited_by, api_with, endpoints_at, oauth_client_at, oauth_client_over,
-        unreachable_api, unreachable_oauth_client,
+        OAUTH_CLIENT_SECRET, RecordingPublisher, api_at, api_limited_by, api_with, endpoints_at,
+        exhausted_limiter, granting_limiter, oauth_client_at, oauth_client_over, unreachable_api,
+        unreachable_oauth_client,
     };
 
     const ACCESS_TOKEN: &str = "kick-access-token-secret-5d";
@@ -288,7 +288,7 @@ mod tests {
             (EndpointSurface::KickPublicApi, &api.uri()),
         ]);
         let mut flow = KickAuthFlow::with_callback_port(
-            oauth_client_over(&endpoints, Arc::new(GrantingLimiter)),
+            oauth_client_over(&endpoints, granting_limiter()),
             api_at(&api.uri()),
             None,
         );
@@ -470,7 +470,7 @@ mod tests {
         let _port = CALLBACK_PORT_LOCK.lock().await;
         let defaults = PlatformEndpoints::default();
         let mut flow = KickAuthFlow::new(
-            oauth_client_over(&defaults, Arc::new(GrantingLimiter)),
+            oauth_client_over(&defaults, granting_limiter()),
             unreachable_api(),
         );
         let url = flow.start().await.unwrap().auth_url;
@@ -582,7 +582,7 @@ mod tests {
         mount(&server, "GET", "/users", one_user()).await;
 
         let outcome = fetch_user_info(
-            &api_limited_by(&server.uri(), Arc::new(ExhaustedLimiter)),
+            &api_limited_by(&server.uri(), exhausted_limiter()),
             ACCESS_TOKEN,
         )
         .await;
@@ -607,7 +607,7 @@ mod tests {
         )
         .await;
         let bus = Arc::new(RecordingPublisher::default());
-        let api = api_with(&server.uri(), Arc::new(GrantingLimiter), bus.clone());
+        let api = api_with(&server.uri(), granting_limiter(), bus.clone());
 
         let error = fetch_user_info(&api, ACCESS_TOKEN).await.unwrap_err();
 

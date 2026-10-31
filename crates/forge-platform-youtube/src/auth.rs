@@ -265,7 +265,7 @@ mod tests {
     async fn mount_channels(server: &MockServer, body: serde_json::Value) {
         Mock::given(method("GET"))
             .and(path("/channels"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(body))
+            .respond_with(ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(body))
             .mount(server)
             .await;
     }
@@ -389,7 +389,9 @@ mod tests {
             .and(body_string_contains(format!(
                 "client_secret={OAUTH_CLIENT_SECRET}"
             )))
-            .respond_with(ResponseTemplate::new(200).set_body_json(token_success_body()))
+            .respond_with(
+                ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(token_success_body()),
+            )
             .mount(&server)
             .await;
         mount_channels(&server, channel_body()).await;

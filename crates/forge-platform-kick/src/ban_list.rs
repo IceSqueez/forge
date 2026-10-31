@@ -154,7 +154,7 @@ mod tests {
             42,
             platform,
             manager,
-            Arc::new(crate::endpoints_test_support::GrantingLimiter),
+            crate::endpoints_test_support::granting_limiter(),
             viewer_rx,
             auth_rx,
         )

@@ -57,7 +57,9 @@ mod tests {
     use forge_platform_core::{BuiltinStatus, ConnectionState};
 
     use crate::client::DiscordClient;
-    use crate::client::tests::MockCreds;
+    use std::sync::Arc;
+
+    use forge_storage::test_support::MemoryCredentials;
 
     #[test]
     fn connection_disconnected_when_no_webhooks() {
@@ -69,11 +71,11 @@ mod tests {
     #[tokio::test]
     async fn the_activity_count_shows_configured_webhooks_and_hides_when_there_are_none() {
         for (webhooks, expected) in [(&[][..], None), (&["alerts", "clips"][..], Some(2))] {
-            let creds = MockCreds::new();
+            let creds = Arc::new(MemoryCredentials::default());
             for name in webhooks {
-                creds.insert(&format!("discord:{name}"), "{}");
+                creds.put(&format!("discord:{name}"), "{}");
             }
-            let client = DiscordClient::new_for_test_with_creds(creds.creds());
+            let client = DiscordClient::new_for_test_with_creds(creds.clone());
             client.list_webhooks().await.unwrap();
 
             let status: &dyn BuiltinStatus = &*client;

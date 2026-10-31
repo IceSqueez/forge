@@ -3,8 +3,6 @@ mod support;
 
 use std::sync::Arc;
 
-use async_trait::async_trait;
-use forge_net::{RateLimitError, RateLimitOutcome, RateLimiter};
 use forge_update::{
     ManifestSource, TrustedKeys, UpdateClient, UpdateError, check_for_update, parse_version,
 };
@@ -208,17 +206,6 @@ async fn an_unreachable_update_server_reports_a_network_error_without_the_url() 
     );
 }
 
-struct ExhaustedLimiter;
-
-#[async_trait]
-impl RateLimiter for ExhaustedLimiter {
-    async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, RateLimitError> {
-        Ok(RateLimitOutcome::Exhausted)
-    }
-
-    async fn observe_remote_throttle(&self, _retry_after: std::time::Duration) {}
-}
-
 #[tokio::test]
 async fn an_exhausted_rate_limiter_stops_the_check_before_any_request() {
     let (server, source) = serve(
@@ -226,7 +213,10 @@ async fn an_exhausted_rate_limiter_stops_the_check_before_any_request() {
         Reply::Full(SIGNATURE.to_vec()),
     )
     .await;
-    let limited = UpdateClient::new(Arc::new(ExhaustedLimiter)).unwrap();
+    let limited = UpdateClient::new(Arc::new(
+        forge_net::test_support::RecordingRateLimiter::exhausted(),
+    ))
+    .unwrap();
 
     let result = check_for_update(
         &limited,

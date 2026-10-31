@@ -1417,33 +1417,10 @@ mod tests {
         seed(&dp, &queue, &action).await;
 
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
-        let engine = spawn_action_engine(
-            Arc::clone(&bus),
-            crate::Catalog::new(
-                dp.action_repo(),
-                dp.trigger_instance_repo(),
-                dp.catalog_revision(),
-            ),
-            dp.action_repo(),
-            dp.history_repo(),
-            Arc::new(SubActionRegistry::new()),
-            Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
-        );
-        let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
+        let sched = spawn_sched(&dp, &bus, Arc::new(SubActionRegistry::new()), vec![queue]);
         let mut sub = bus.subscribe();
 
-        sched
-            .dispatch(SchedulerRequest {
-                queue_id: q_id,
-                action_id: a_id,
-                trigger_event_id: EventId::new(),
-                trigger_kind: None,
-                manual_test: false,
-                initial_args: ArgStack::new(),
-                admission: QueueAdmission::default(),
-            })
-            .await
-            .unwrap();
+        sched.dispatch(req(q_id, a_id)).await.unwrap();
 
         assert!(
             collect_events(&mut sub, "action.done").await,
@@ -1468,34 +1445,11 @@ mod tests {
         }
 
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
-        let engine = spawn_action_engine(
-            Arc::clone(&bus),
-            crate::Catalog::new(
-                dp.action_repo(),
-                dp.trigger_instance_repo(),
-                dp.catalog_revision(),
-            ),
-            dp.action_repo(),
-            dp.history_repo(),
-            Arc::new(SubActionRegistry::new()),
-            Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
-        );
-        let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
+        let sched = spawn_sched(&dp, &bus, Arc::new(SubActionRegistry::new()), vec![queue]);
         let mut sub = bus.subscribe();
 
         for a_id in &action_ids {
-            sched
-                .dispatch(SchedulerRequest {
-                    queue_id: q_id,
-                    action_id: *a_id,
-                    trigger_event_id: EventId::new(),
-                    trigger_kind: None,
-                    manual_test: false,
-                    initial_args: ArgStack::new(),
-                    admission: QueueAdmission::default(),
-                })
-                .await
-                .unwrap();
+            sched.dispatch(req(q_id, *a_id)).await.unwrap();
         }
 
         let dones = |seen: &[Event]| seen.iter().filter(|ev| ev.kind == "action.done").count();
@@ -1515,19 +1469,7 @@ mod tests {
         seed(&dp, &queue, &action).await;
 
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
-        let engine = spawn_action_engine(
-            Arc::clone(&bus),
-            crate::Catalog::new(
-                dp.action_repo(),
-                dp.trigger_instance_repo(),
-                dp.catalog_revision(),
-            ),
-            dp.action_repo(),
-            dp.history_repo(),
-            Arc::new(SubActionRegistry::new()),
-            Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
-        );
-        let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
+        let sched = spawn_sched(&dp, &bus, Arc::new(SubActionRegistry::new()), vec![queue]);
         let mut sub = bus.subscribe();
 
         sched.set_mode(q_id, QueueMode::PAUSED).await.unwrap();
@@ -1535,13 +1477,8 @@ mod tests {
         let trigger = EventId::new();
         sched
             .dispatch(SchedulerRequest {
-                queue_id: q_id,
-                action_id: a_id,
                 trigger_event_id: trigger,
-                trigger_kind: None,
-                manual_test: false,
-                initial_args: ArgStack::new(),
-                admission: QueueAdmission::default(),
+                ..req(q_id, a_id)
             })
             .await
             .unwrap();
@@ -1576,32 +1513,15 @@ mod tests {
         seed(&dp, &queue, &action).await;
 
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
-        let engine = spawn_action_engine(
-            Arc::clone(&bus),
-            crate::Catalog::new(
-                dp.action_repo(),
-                dp.trigger_instance_repo(),
-                dp.catalog_revision(),
-            ),
-            dp.action_repo(),
-            dp.history_repo(),
-            Arc::new(SubActionRegistry::new()),
-            Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
-        );
-        let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
+        let sched = spawn_sched(&dp, &bus, Arc::new(SubActionRegistry::new()), vec![queue]);
         let mut sub = bus.subscribe();
 
         sched.set_mode(q_id, QueueMode::PAUSED).await.unwrap();
 
         sched
             .dispatch(SchedulerRequest {
-                queue_id: q_id,
-                action_id: a_id,
-                trigger_event_id: EventId::new(),
-                trigger_kind: None,
-                manual_test: false,
-                initial_args: ArgStack::new(),
                 admission: BYPASS_PAUSE,
+                ..req(q_id, a_id)
             })
             .await
             .unwrap();
@@ -1623,36 +1543,13 @@ mod tests {
         seed(&dp, &queue, &action).await;
 
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
-        let engine = spawn_action_engine(
-            Arc::clone(&bus),
-            crate::Catalog::new(
-                dp.action_repo(),
-                dp.trigger_instance_repo(),
-                dp.catalog_revision(),
-            ),
-            dp.action_repo(),
-            dp.history_repo(),
-            Arc::new(SubActionRegistry::new()),
-            Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
-        );
-        let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
+        let sched = spawn_sched(&dp, &bus, Arc::new(SubActionRegistry::new()), vec![queue]);
         let mut sub = bus.subscribe();
 
         sched.set_mode(q_id, QueueMode::PAUSED).await.unwrap();
         sched.set_mode(q_id, QueueMode::RUNNING).await.unwrap();
 
-        sched
-            .dispatch(SchedulerRequest {
-                queue_id: q_id,
-                action_id: a_id,
-                trigger_event_id: EventId::new(),
-                trigger_kind: None,
-                manual_test: false,
-                initial_args: ArgStack::new(),
-                admission: QueueAdmission::default(),
-            })
-            .await
-            .unwrap();
+        sched.dispatch(req(q_id, a_id)).await.unwrap();
 
         assert!(
             collect_events(&mut sub, "action.done").await,
@@ -1730,31 +1627,14 @@ mod tests {
         seed(&dp, &queue, &action).await;
 
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
-        let engine = spawn_action_engine(
-            Arc::clone(&bus),
-            crate::Catalog::new(
-                dp.action_repo(),
-                dp.trigger_instance_repo(),
-                dp.catalog_revision(),
-            ),
-            dp.action_repo(),
-            dp.history_repo(),
-            Arc::new(SubActionRegistry::new()),
-            Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
-        );
-        let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
+        let sched = spawn_sched(&dp, &bus, Arc::new(SubActionRegistry::new()), vec![queue]);
         let mut sub = bus.subscribe();
 
         let trigger = EventId::new();
         sched
             .dispatch(SchedulerRequest {
-                queue_id: unknown_q,
-                action_id: a_id,
                 trigger_event_id: trigger,
-                trigger_kind: None,
-                manual_test: false,
-                initial_args: ArgStack::new(),
-                admission: QueueAdmission::default(),
+                ..req(unknown_q, a_id)
             })
             .await
             .unwrap();
@@ -1781,36 +1661,13 @@ mod tests {
         seed(&dp, &queue, &action).await;
 
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
-        let engine = spawn_action_engine(
-            Arc::clone(&bus),
-            crate::Catalog::new(
-                dp.action_repo(),
-                dp.trigger_instance_repo(),
-                dp.catalog_revision(),
-            ),
-            dp.action_repo(),
-            dp.history_repo(),
-            Arc::new(SubActionRegistry::new()),
-            Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
-        );
-        let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![]);
+        let sched = spawn_sched(&dp, &bus, Arc::new(SubActionRegistry::new()), vec![]);
         let mut sub = bus.subscribe();
 
         let outcome = sched.register(queue).await.unwrap();
         assert_eq!(outcome, MembershipOutcome::Applied);
 
-        sched
-            .dispatch(SchedulerRequest {
-                queue_id: q_id,
-                action_id: a_id,
-                trigger_event_id: EventId::new(),
-                trigger_kind: None,
-                manual_test: false,
-                initial_args: ArgStack::new(),
-                admission: QueueAdmission::default(),
-            })
-            .await
-            .unwrap();
+        sched.dispatch(req(q_id, a_id)).await.unwrap();
 
         assert!(
             collect_events(&mut sub, "action.done").await,
@@ -1829,37 +1686,19 @@ mod tests {
         seed(&dp, &queue, &action).await;
 
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
-        let engine = spawn_action_engine(
-            Arc::clone(&bus),
-            crate::Catalog::new(
-                dp.action_repo(),
-                dp.trigger_instance_repo(),
-                dp.catalog_revision(),
-            ),
-            dp.action_repo(),
-            dp.history_repo(),
+        let sched = spawn_sched(
+            &dp,
+            &bus,
             Arc::new(SubActionRegistry::new()),
-            Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
+            vec![nonblocking(q_id)],
         );
-        let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![nonblocking(q_id)]);
         let mut sub = bus.subscribe();
 
         sched.set_mode(q_id, QueueMode::PAUSED).await.unwrap();
         let outcome = sched.register(nonblocking(q_id)).await.unwrap();
         assert_eq!(outcome, MembershipOutcome::AlreadyRegistered);
 
-        sched
-            .dispatch(SchedulerRequest {
-                queue_id: q_id,
-                action_id: a_id,
-                trigger_event_id: EventId::new(),
-                trigger_kind: None,
-                manual_test: false,
-                initial_args: ArgStack::new(),
-                admission: QueueAdmission::default(),
-            })
-            .await
-            .unwrap();
+        sched.dispatch(req(q_id, a_id)).await.unwrap();
 
         let state = sched.queue_states().await.unwrap().remove(&q_id).unwrap();
         assert_eq!(
@@ -1884,36 +1723,13 @@ mod tests {
         seed(&dp, &queue, &action).await;
 
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
-        let engine = spawn_action_engine(
-            Arc::clone(&bus),
-            crate::Catalog::new(
-                dp.action_repo(),
-                dp.trigger_instance_repo(),
-                dp.catalog_revision(),
-            ),
-            dp.action_repo(),
-            dp.history_repo(),
-            Arc::new(SubActionRegistry::new()),
-            Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
-        );
-        let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
+        let sched = spawn_sched(&dp, &bus, Arc::new(SubActionRegistry::new()), vec![queue]);
         let mut sub = bus.subscribe();
 
         let outcome = sched.deregister(q_id).await.unwrap();
         assert_eq!(outcome, MembershipOutcome::Applied);
 
-        sched
-            .dispatch(SchedulerRequest {
-                queue_id: q_id,
-                action_id: a_id,
-                trigger_event_id: EventId::new(),
-                trigger_kind: None,
-                manual_test: false,
-                initial_args: ArgStack::new(),
-                admission: QueueAdmission::default(),
-            })
-            .await
-            .unwrap();
+        sched.dispatch(req(q_id, a_id)).await.unwrap();
 
         assert!(
             collect_events(&mut sub, "action.skipped").await,
@@ -1963,19 +1779,7 @@ mod tests {
     async fn deregister_unknown_queue_returns_not_found_without_panic() {
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let dp = make_dp().await;
-        let engine = spawn_action_engine(
-            Arc::clone(&bus),
-            crate::Catalog::new(
-                dp.action_repo(),
-                dp.trigger_instance_repo(),
-                dp.catalog_revision(),
-            ),
-            dp.action_repo(),
-            dp.history_repo(),
-            Arc::new(SubActionRegistry::new()),
-            Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
-        );
-        let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![]);
+        let sched = spawn_sched(&dp, &bus, Arc::new(SubActionRegistry::new()), vec![]);
 
         let outcome = sched.deregister(QueueId::new()).await.unwrap();
         assert_eq!(outcome, MembershipOutcome::NotFound);
@@ -1992,37 +1796,19 @@ mod tests {
         seed(&dp, &queue, &action).await;
 
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
-        let engine = spawn_action_engine(
-            Arc::clone(&bus),
-            crate::Catalog::new(
-                dp.action_repo(),
-                dp.trigger_instance_repo(),
-                dp.catalog_revision(),
-            ),
-            dp.action_repo(),
-            dp.history_repo(),
+        let sched = spawn_sched(
+            &dp,
+            &bus,
             Arc::new(SubActionRegistry::new()),
-            Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
+            vec![nonblocking(q_id)],
         );
-        let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![nonblocking(q_id)]);
         let mut sub = bus.subscribe();
 
         let flipped = blocking_q(q_id);
         let outcome = sched.reconfigure(flipped).await.unwrap();
         assert_eq!(outcome, MembershipOutcome::Applied);
 
-        sched
-            .dispatch(SchedulerRequest {
-                queue_id: q_id,
-                action_id: a_id,
-                trigger_event_id: EventId::new(),
-                trigger_kind: None,
-                manual_test: false,
-                initial_args: ArgStack::new(),
-                admission: QueueAdmission::default(),
-            })
-            .await
-            .unwrap();
+        sched.dispatch(req(q_id, a_id)).await.unwrap();
 
         assert!(
             collect_events(&mut sub, "action.done").await,
@@ -2041,37 +1827,19 @@ mod tests {
         seed(&dp, &queue, &action).await;
 
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
-        let engine = spawn_action_engine(
-            Arc::clone(&bus),
-            crate::Catalog::new(
-                dp.action_repo(),
-                dp.trigger_instance_repo(),
-                dp.catalog_revision(),
-            ),
-            dp.action_repo(),
-            dp.history_repo(),
+        let sched = spawn_sched(
+            &dp,
+            &bus,
             Arc::new(SubActionRegistry::new()),
-            Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
+            vec![nonblocking(q_id)],
         );
-        let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![nonblocking(q_id)]);
         let mut sub = bus.subscribe();
 
         sched.set_mode(q_id, QueueMode::PAUSED).await.unwrap();
         let outcome = sched.reconfigure(blocking_q(q_id)).await.unwrap();
         assert_eq!(outcome, MembershipOutcome::Applied);
 
-        sched
-            .dispatch(SchedulerRequest {
-                queue_id: q_id,
-                action_id: a_id,
-                trigger_event_id: EventId::new(),
-                trigger_kind: None,
-                manual_test: false,
-                initial_args: ArgStack::new(),
-                admission: QueueAdmission::default(),
-            })
-            .await
-            .unwrap();
+        sched.dispatch(req(q_id, a_id)).await.unwrap();
 
         let state = sched.queue_states().await.unwrap().remove(&q_id).unwrap();
         assert_eq!(
@@ -2090,19 +1858,7 @@ mod tests {
     async fn reconfigure_unknown_queue_returns_not_found() {
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let dp = make_dp().await;
-        let engine = spawn_action_engine(
-            Arc::clone(&bus),
-            crate::Catalog::new(
-                dp.action_repo(),
-                dp.trigger_instance_repo(),
-                dp.catalog_revision(),
-            ),
-            dp.action_repo(),
-            dp.history_repo(),
-            Arc::new(SubActionRegistry::new()),
-            Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
-        );
-        let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![]);
+        let sched = spawn_sched(&dp, &bus, Arc::new(SubActionRegistry::new()), vec![]);
 
         let outcome = sched
             .reconfigure(Queue {
@@ -2182,19 +1938,7 @@ mod tests {
         let (registry, held) = held_registry();
 
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
-        let engine = spawn_action_engine(
-            Arc::clone(&bus),
-            crate::Catalog::new(
-                dp.action_repo(),
-                dp.trigger_instance_repo(),
-                dp.catalog_revision(),
-            ),
-            dp.action_repo(),
-            dp.history_repo(),
-            registry,
-            Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
-        );
-        let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
+        let sched = spawn_sched(&dp, &bus, registry, vec![queue]);
         let mut sub = bus.subscribe();
 
         sched.dispatch(req(q_id, a)).await.unwrap();
@@ -2243,19 +1987,7 @@ mod tests {
         let (registry, mut held) = held_registry();
 
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
-        let engine = spawn_action_engine(
-            Arc::clone(&bus),
-            crate::Catalog::new(
-                dp.action_repo(),
-                dp.trigger_instance_repo(),
-                dp.catalog_revision(),
-            ),
-            dp.action_repo(),
-            dp.history_repo(),
-            registry,
-            Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
-        );
-        let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
+        let sched = spawn_sched(&dp, &bus, registry, vec![queue]);
         let mut sub = bus.subscribe();
 
         sched.dispatch(req(q_id, a)).await.unwrap();
@@ -2287,19 +2019,7 @@ mod tests {
         dp.queue_repo().save(&queue).await.unwrap();
 
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
-        let engine = spawn_action_engine(
-            Arc::clone(&bus),
-            crate::Catalog::new(
-                dp.action_repo(),
-                dp.trigger_instance_repo(),
-                dp.catalog_revision(),
-            ),
-            dp.action_repo(),
-            dp.history_repo(),
-            Arc::new(SubActionRegistry::new()),
-            Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
-        );
-        let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
+        let sched = spawn_sched(&dp, &bus, Arc::new(SubActionRegistry::new()), vec![queue]);
 
         sched.set_mode(q_id, QueueMode::PAUSED).await.unwrap();
         sched.clear(q_id, true).await.unwrap();
@@ -2317,19 +2037,7 @@ mod tests {
     async fn clear_unknown_queue_returns_queue_not_found() {
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let dp = make_dp().await;
-        let engine = spawn_action_engine(
-            Arc::clone(&bus),
-            crate::Catalog::new(
-                dp.action_repo(),
-                dp.trigger_instance_repo(),
-                dp.catalog_revision(),
-            ),
-            dp.action_repo(),
-            dp.history_repo(),
-            Arc::new(SubActionRegistry::new()),
-            Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
-        );
-        let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![]);
+        let sched = spawn_sched(&dp, &bus, Arc::new(SubActionRegistry::new()), vec![]);
 
         let err = sched.clear(QueueId::new(), true).await.unwrap_err();
         assert!(matches!(err, SchedulerError::QueueNotFound(_)));
@@ -2344,19 +2052,7 @@ mod tests {
         dp.queue_repo().save(&queue).await.unwrap();
 
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
-        let engine = spawn_action_engine(
-            Arc::clone(&bus),
-            crate::Catalog::new(
-                dp.action_repo(),
-                dp.trigger_instance_repo(),
-                dp.catalog_revision(),
-            ),
-            dp.action_repo(),
-            dp.history_repo(),
-            Arc::new(SubActionRegistry::new()),
-            Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
-        );
-        let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
+        let sched = spawn_sched(&dp, &bus, Arc::new(SubActionRegistry::new()), vec![queue]);
         let mut sub = bus.subscribe();
 
         sched.clear(q_id, true).await.unwrap();

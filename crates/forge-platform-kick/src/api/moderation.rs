@@ -223,7 +223,7 @@ mod tests {
         Mock::given(method("POST"))
             .and(path("/moderation/bans"))
             .and(body_string_contains("duration"))
-            .respond_with(ResponseTemplate::new(200))
+            .respond_with(ResponseTemplate::new(reqwest::StatusCode::OK))
             .expect(1)
             .mount(&server)
             .await;
@@ -244,7 +244,7 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("DELETE"))
             .and(path("/moderation/bans"))
-            .respond_with(ResponseTemplate::new(204))
+            .respond_with(ResponseTemplate::new(reqwest::StatusCode::NO_CONTENT))
             .expect(1)
             .mount(&server)
             .await;

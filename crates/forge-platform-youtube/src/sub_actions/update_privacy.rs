@@ -201,14 +201,18 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/videos"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "items": [{ "id": "vid-1", "snippet": {}, "status": {} }]
-            })))
+            .respond_with(
+                ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(json!({
+                    "items": [{ "id": "vid-1", "snippet": {}, "status": {} }]
+                })),
+            )
             .mount(&server)
             .await;
         Mock::given(method("PUT"))
             .and(path("/videos"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({"kind": "x"})))
+            .respond_with(
+                ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(json!({"kind": "x"})),
+            )
             .mount(&server)
             .await;
 
@@ -229,14 +233,18 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/videos"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "items": [{ "id": "vid-1", "snippet": {}, "status": {} }]
-            })))
+            .respond_with(
+                ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(json!({
+                    "items": [{ "id": "vid-1", "snippet": {}, "status": {} }]
+                })),
+            )
             .mount(&server)
             .await;
         Mock::given(method("PUT"))
             .and(path("/videos"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({"kind": "x"})))
+            .respond_with(
+                ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(json!({"kind": "x"})),
+            )
             .mount(&server)
             .await;
 

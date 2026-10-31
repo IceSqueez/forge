@@ -69,9 +69,10 @@ tokio-tungstenite = { version = "0.30" }
 rustix = { version = "1.1", features = ["process"] }
 
 [dev-dependencies]
+forge-net = { path = "../../crates/forge-net", features = ["test-support"] }
 async-trait = { version = "0.1" }
 axum = { version = "0.8", features = ["ws"] }
-forge-storage = { path = "../../crates/forge-storage", features = ["test-mocks"] }
+forge-storage = { path = "../../crates/forge-storage", features = ["test-mocks", "settings-test-support"] }
 forge-storage-sqlite = { path = "../../crates/forge-storage-sqlite", features = ["settings-test-support"] }
 tempfile = { version = "3.27" }
 time = { version = "0.3", features = ["macros"] }

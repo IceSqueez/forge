@@ -143,7 +143,7 @@ mod tests {
     const SHORT_THROTTLE_WAIT: Duration = Duration::from_millis(50);
 
     fn live_channel() -> ResponseTemplate {
-        ResponseTemplate::new(200).set_body_json(serde_json::json!({
+        ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(serde_json::json!({
             "chatroom": { "id": 12345 },
             "livestream": { "viewer_count": 500, "session_title": "Playing games" }
         }))
@@ -190,7 +190,10 @@ mod tests {
 
     #[tokio::test]
     async fn fetch_reports_an_error_status_as_http_with_its_code() {
-        let server = server_replying(ResponseTemplate::new(404).set_body_string("not found")).await;
+        let server = server_replying(
+            ResponseTemplate::new(reqwest::StatusCode::NOT_FOUND).set_body_string("not found"),
+        )
+        .await;
 
         let err = channel_info_at(&server.uri())
             .fetch(SLUG)
@@ -205,10 +208,12 @@ mod tests {
 
     #[tokio::test]
     async fn fetch_reports_a_missing_chatroom_as_chatroom_id_not_found() {
-        let server = server_replying(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "chatroom": null,
-            "livestream": null
-        })))
+        let server = server_replying(
+            ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(serde_json::json!({
+                "chatroom": null,
+                "livestream": null
+            })),
+        )
         .await;
 
         let err = channel_info_at(&server.uri())
@@ -224,7 +229,10 @@ mod tests {
 
     #[tokio::test]
     async fn fetch_reports_an_undecodable_success_body_as_channel_info_unavailable() {
-        let server = server_replying(ResponseTemplate::new(200).set_body_string("<html>")).await;
+        let server = server_replying(
+            ResponseTemplate::new(reqwest::StatusCode::OK).set_body_string("<html>"),
+        )
+        .await;
 
         let err = channel_info_at(&server.uri())
             .fetch(SLUG)
@@ -263,7 +271,7 @@ mod tests {
     #[tokio::test]
     async fn fetch_bounds_a_challenge_page_body_on_an_error_status() {
         let server = server_replying(
-            ResponseTemplate::new(403)
+            ResponseTemplate::new(reqwest::StatusCode::FORBIDDEN)
                 .set_body_string(format!("<html>{}</html>", "x".repeat(5_000))),
         )
         .await;
@@ -346,7 +354,9 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path(SLUG_PATH))
-            .respond_with(ResponseTemplate::new(500))
+            .respond_with(ResponseTemplate::new(
+                reqwest::StatusCode::INTERNAL_SERVER_ERROR,
+            ))
             .up_to_n_times(1)
             .mount(&server)
             .await;
@@ -369,7 +379,10 @@ mod tests {
 
     #[tokio::test]
     async fn a_retry_inside_the_budget_window_waits_then_reports_unavailable_without_a_request() {
-        let server = server_replying(ResponseTemplate::new(500)).await;
+        let server = server_replying(ResponseTemplate::new(
+            reqwest::StatusCode::INTERNAL_SERVER_ERROR,
+        ))
+        .await;
         let limiter: Arc<dyn RateLimiter> = Arc::new(TokenBucketRateLimiter::new(
             KICK_CHANNEL_INFO_BUDGET_CAPACITY,
             KICK_CHANNEL_INFO_BUDGET_WINDOW,

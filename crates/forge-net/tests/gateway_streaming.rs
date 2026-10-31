@@ -37,7 +37,7 @@ async fn redirect(server: &MockServer, from: &str, status: u16, location: &str) 
 
 async fn land(server: &MockServer, at: &str) {
     Mock::given(path(at))
-        .respond_with(ResponseTemplate::new(200).set_body_string("landed"))
+        .respond_with(ResponseTemplate::new(reqwest::StatusCode::OK).set_body_string("landed"))
         .mount(server)
         .await;
 }
@@ -59,7 +59,7 @@ fn header<'a>(request: &'a wiremock::Request, name: &str) -> Option<&'a str> {
 
 #[tokio::test]
 async fn invalid_targets_and_headers_are_refused_before_the_limiter_or_the_network() {
-    let server = serving(ResponseTemplate::new(200)).await;
+    let server = serving(ResponseTemplate::new(reqwest::StatusCode::OK)).await;
     let uri = server.uri();
     for (request, expected) in [
         (
@@ -89,7 +89,7 @@ async fn invalid_targets_and_headers_are_refused_before_the_limiter_or_the_netwo
 
 #[tokio::test]
 async fn a_refusing_limiter_fails_the_stream_with_budget_exhausted_and_sends_nothing() {
-    let server = serving(ResponseTemplate::new(200)).await;
+    let server = serving(ResponseTemplate::new(reqwest::StatusCode::OK)).await;
     let wait = Duration::from_millis(42_137);
     for (limiter, request, expected) in [
         (
@@ -240,20 +240,24 @@ async fn an_unfollowed_redirect_is_an_unexpected_status_and_the_sink_stays_empty
 #[tokio::test]
 async fn non_success_statuses_classify_exactly_as_the_buffered_send_does() {
     for template in [
-        ResponseTemplate::new(401).set_body_string("who are you"),
-        ResponseTemplate::new(403).set_body_string("rate limit exceeded"),
-        ResponseTemplate::new(404).set_body_string("no such asset"),
-        ResponseTemplate::new(422).set_body_string("bad input"),
-        ResponseTemplate::new(500).set_body_string("server exploded"),
-        ResponseTemplate::new(304),
-        ResponseTemplate::new(429)
+        ResponseTemplate::new(reqwest::StatusCode::UNAUTHORIZED).set_body_string("who are you"),
+        ResponseTemplate::new(reqwest::StatusCode::FORBIDDEN)
+            .set_body_string("rate limit exceeded"),
+        ResponseTemplate::new(reqwest::StatusCode::NOT_FOUND).set_body_string("no such asset"),
+        ResponseTemplate::new(reqwest::StatusCode::UNPROCESSABLE_ENTITY)
+            .set_body_string("bad input"),
+        ResponseTemplate::new(reqwest::StatusCode::INTERNAL_SERVER_ERROR)
+            .set_body_string("server exploded"),
+        ResponseTemplate::new(reqwest::StatusCode::NOT_MODIFIED),
+        ResponseTemplate::new(reqwest::StatusCode::TOO_MANY_REQUESTS)
             .insert_header("Retry-After", "12")
             .set_body_string("slow down"),
-        ResponseTemplate::new(429).set_body_string("slow down"),
-        ResponseTemplate::new(503)
+        ResponseTemplate::new(reqwest::StatusCode::TOO_MANY_REQUESTS).set_body_string("slow down"),
+        ResponseTemplate::new(reqwest::StatusCode::SERVICE_UNAVAILABLE)
             .insert_header("Retry-After", "7")
             .set_body_string("maintenance"),
-        ResponseTemplate::new(503).set_body_string("maintenance"),
+        ResponseTemplate::new(reqwest::StatusCode::SERVICE_UNAVAILABLE)
+            .set_body_string("maintenance"),
     ] {
         let server = serving(template).await;
         let buffered = Harness::new(&server.uri(), platform());
@@ -274,7 +278,11 @@ async fn non_success_statuses_classify_exactly_as_the_buffered_send_does() {
 
 #[tokio::test]
 async fn a_rate_limited_stream_feeds_the_hinted_wait_to_the_limiter() {
-    let server = serving(ResponseTemplate::new(429).insert_header("Retry-After", "12")).await;
+    let server = serving(
+        ResponseTemplate::new(reqwest::StatusCode::TOO_MANY_REQUESTS)
+            .insert_header("Retry-After", "12"),
+    )
+    .await;
     let harness = Harness::new(&server.uri(), platform());
 
     let streamed = stream(&harness.gateway, GatewayRequest::get("asset"), UNLIMITED).await;
@@ -292,7 +300,8 @@ async fn a_rate_limited_stream_feeds_the_hinted_wait_to_the_limiter() {
 #[tokio::test]
 async fn an_error_excerpt_masks_the_credential_and_every_masked_secret() {
     let server = serving(
-        ResponseTemplate::new(401).set_body_string("token asset-token rejected; key signed-key"),
+        ResponseTemplate::new(reqwest::StatusCode::UNAUTHORIZED)
+            .set_body_string("token asset-token rejected; key signed-key"),
     )
     .await;
     let harness = Harness::new(&server.uri(), platform());
@@ -315,7 +324,11 @@ async fn an_error_excerpt_masks_the_credential_and_every_masked_secret() {
 
 #[tokio::test]
 async fn an_error_excerpt_is_read_under_its_own_cap_not_the_caller_cap() {
-    let server = serving(ResponseTemplate::new(500).set_body_string("server exploded")).await;
+    let server = serving(
+        ResponseTemplate::new(reqwest::StatusCode::INTERNAL_SERVER_ERROR)
+            .set_body_string("server exploded"),
+    )
+    .await;
     let harness = Harness::new(&server.uri(), platform());
 
     let streamed = stream(&harness.gateway, GatewayRequest::get("asset"), 1).await;
@@ -330,8 +343,9 @@ async fn an_error_excerpt_is_read_under_its_own_cap_not_the_caller_cap() {
 
 #[tokio::test]
 async fn every_gateway_failure_reaches_the_observer_with_the_request_context() {
-    let not_found = serving(ResponseTemplate::new(404)).await;
-    let oversized = serving(ResponseTemplate::new(200).set_body_string("0123456789")).await;
+    let not_found = serving(ResponseTemplate::new(reqwest::StatusCode::NOT_FOUND)).await;
+    let oversized =
+        serving(ResponseTemplate::new(reqwest::StatusCode::OK).set_body_string("0123456789")).await;
     for (uri, limiter, cap, expected) in [
         (
             not_found.uri(),
@@ -378,7 +392,7 @@ async fn every_gateway_failure_reaches_the_observer_with_the_request_context() {
 
 #[tokio::test]
 async fn the_observer_context_falls_back_to_the_profile_default_class() {
-    let server = serving(ResponseTemplate::new(404)).await;
+    let server = serving(ResponseTemplate::new(reqwest::StatusCode::NOT_FOUND)).await;
     let harness = Harness::new(&server.uri(), platform());
 
     stream(&harness.gateway, GatewayRequest::get("asset"), UNLIMITED).await;
@@ -394,7 +408,10 @@ async fn the_observer_context_falls_back_to_the_profile_default_class() {
 
 #[tokio::test]
 async fn only_a_matching_expected_refusal_keeps_a_stream_failure_from_the_observer() {
-    let server = serving(ResponseTemplate::new(404).set_body_string("no such release")).await;
+    let server = serving(
+        ResponseTemplate::new(reqwest::StatusCode::NOT_FOUND).set_body_string("no such release"),
+    )
+    .await;
     for (refusal, observed) in [
         (ExpectedRefusal::status(404), 0),
         (ExpectedRefusal::status_with_excerpt(404, "RELEASE"), 0),
@@ -418,7 +435,8 @@ async fn only_a_matching_expected_refusal_keeps_a_stream_failure_from_the_observ
 
 #[tokio::test]
 async fn a_sink_rejection_is_returned_as_a_sink_failure_and_never_observed() {
-    let server = serving(ResponseTemplate::new(200).set_body_string("payload")).await;
+    let server =
+        serving(ResponseTemplate::new(reqwest::StatusCode::OK).set_body_string("payload")).await;
     let harness = Harness::new(&server.uri(), platform());
     let mut sink = MemorySink::refusing_chunk(0);
 

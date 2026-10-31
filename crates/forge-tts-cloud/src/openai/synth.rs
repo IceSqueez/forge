@@ -183,7 +183,10 @@ mod tests {
                 "authorization",
                 format!("Bearer {API_KEY}").as_str(),
             ))
-            .respond_with(ResponseTemplate::new(200).set_body_bytes(silent_wav(24_000, 2400)))
+            .respond_with(
+                ResponseTemplate::new(reqwest::StatusCode::OK)
+                    .set_body_bytes(silent_wav(24_000, 2400)),
+            )
             .mount(&server)
             .await;
 
@@ -199,7 +202,7 @@ mod tests {
 
     #[tokio::test]
     async fn synthesize_rejects_an_unknown_voice_before_any_request() {
-        let server = serving(ResponseTemplate::new(200)).await;
+        let server = serving(ResponseTemplate::new(reqwest::StatusCode::OK)).await;
         let result = synthesize(&link_to(&server), API_KEY, request_for("unknown-voice")).await;
         assert!(matches!(result, Err(OpenAiError::VoiceNotFound(_))));
         assert_eq!(request_count(&server).await, 0);
@@ -211,52 +214,61 @@ mod tests {
         let no_hint = format!("RateLimited({NO_HINT_WAIT_SECS})");
         for (template, expected) in [
             (
-                ResponseTemplate::new(401).set_body_string(echo.clone()),
+                ResponseTemplate::new(reqwest::StatusCode::UNAUTHORIZED)
+                    .set_body_string(echo.clone()),
                 "Unauthorized".to_owned(),
             ),
             (
-                ResponseTemplate::new(402).set_body_string(echo.clone()),
+                ResponseTemplate::new(reqwest::StatusCode::PAYMENT_REQUIRED)
+                    .set_body_string(echo.clone()),
                 "QuotaExceeded".to_owned(),
             ),
             (
-                ResponseTemplate::new(429).set_body_string("slow down"),
+                ResponseTemplate::new(reqwest::StatusCode::TOO_MANY_REQUESTS)
+                    .set_body_string("slow down"),
                 no_hint.clone(),
             ),
             (throttled(7), "RateLimited(7)".to_owned()),
             (
-                ResponseTemplate::new(429).set_body_string(format!(
-                    r#"{{"code":"insufficient_quota","key":"{API_KEY}"}}"#
-                )),
+                ResponseTemplate::new(reqwest::StatusCode::TOO_MANY_REQUESTS).set_body_string(
+                    format!(r#"{{"code":"insufficient_quota","key":"{API_KEY}"}}"#),
+                ),
                 "QuotaExceeded".to_owned(),
             ),
             (
-                ResponseTemplate::new(429).set_body_string("check your billing details"),
+                ResponseTemplate::new(reqwest::StatusCode::TOO_MANY_REQUESTS)
+                    .set_body_string("check your billing details"),
                 "QuotaExceeded".to_owned(),
             ),
             (
-                ResponseTemplate::new(429).set_body_string("INSUFFICIENT_QUOTA"),
+                ResponseTemplate::new(reqwest::StatusCode::TOO_MANY_REQUESTS)
+                    .set_body_string("INSUFFICIENT_QUOTA"),
                 "QuotaExceeded".to_owned(),
             ),
             (
-                ResponseTemplate::new(429).set_body_string("Billing hard limit reached"),
+                ResponseTemplate::new(reqwest::StatusCode::TOO_MANY_REQUESTS)
+                    .set_body_string("Billing hard limit reached"),
                 "QuotaExceeded".to_owned(),
             ),
             (
-                ResponseTemplate::new(429).set_body_string("Rate limit reached for requests"),
+                ResponseTemplate::new(reqwest::StatusCode::TOO_MANY_REQUESTS)
+                    .set_body_string("Rate limit reached for requests"),
                 no_hint.clone(),
             ),
             (
-                ResponseTemplate::new(503)
+                ResponseTemplate::new(reqwest::StatusCode::SERVICE_UNAVAILABLE)
                     .insert_header("Retry-After", "2")
                     .set_body_string("insufficient_quota"),
                 "RateLimited(2)".to_owned(),
             ),
             (
-                ResponseTemplate::new(503).set_body_string(echo.clone()),
+                ResponseTemplate::new(reqwest::StatusCode::SERVICE_UNAVAILABLE)
+                    .set_body_string(echo.clone()),
                 "Http".to_owned(),
             ),
             (
-                ResponseTemplate::new(500).set_body_string(echo.clone()),
+                ResponseTemplate::new(reqwest::StatusCode::INTERNAL_SERVER_ERROR)
+                    .set_body_string(echo.clone()),
                 "Http".to_owned(),
             ),
         ] {
@@ -273,8 +285,11 @@ mod tests {
     #[tokio::test]
     async fn synthesis_reads_replies_larger_than_the_catalog_cap() {
         let frames = usize::try_from(CallClass::Catalog.body_cap()).unwrap() / 2 + 1;
-        let server =
-            serving(ResponseTemplate::new(200).set_body_bytes(silent_wav(24_000, frames))).await;
+        let server = serving(
+            ResponseTemplate::new(reqwest::StatusCode::OK)
+                .set_body_bytes(silent_wav(24_000, frames)),
+        )
+        .await;
 
         let pcm = synthesize(&link_to(&server), API_KEY, request_for("alloy"))
             .await
@@ -288,14 +303,26 @@ mod tests {
         let no_hint = format!("RateLimited({NO_HINT_WAIT_SECS})");
         for (template, expected) in [
             (
-                ResponseTemplate::new(200).set_body_bytes(b"{}"),
+                ResponseTemplate::new(reqwest::StatusCode::OK).set_body_bytes(b"{}"),
                 "Ok".to_owned(),
             ),
-            (ResponseTemplate::new(401), "Unauthorized".to_owned()),
-            (ResponseTemplate::new(429), no_hint),
+            (
+                ResponseTemplate::new(reqwest::StatusCode::UNAUTHORIZED),
+                "Unauthorized".to_owned(),
+            ),
+            (
+                ResponseTemplate::new(reqwest::StatusCode::TOO_MANY_REQUESTS),
+                no_hint,
+            ),
             (throttled(9), "RateLimited(9)".to_owned()),
-            (ResponseTemplate::new(403), "Unauthorized".to_owned()),
-            (ResponseTemplate::new(500), "Http".to_owned()),
+            (
+                ResponseTemplate::new(reqwest::StatusCode::FORBIDDEN),
+                "Unauthorized".to_owned(),
+            ),
+            (
+                ResponseTemplate::new(reqwest::StatusCode::INTERNAL_SERVER_ERROR),
+                "Http".to_owned(),
+            ),
         ] {
             let server = MockServer::start().await;
             Mock::given(method("GET"))
@@ -315,8 +342,11 @@ mod tests {
 
     #[tokio::test]
     async fn probe_reports_the_status_without_the_body() {
-        let server =
-            serving(ResponseTemplate::new(500).set_body_string(format!("boom {API_KEY}"))).await;
+        let server = serving(
+            ResponseTemplate::new(reqwest::StatusCode::INTERNAL_SERVER_ERROR)
+                .set_body_string(format!("boom {API_KEY}")),
+        )
+        .await;
         let error = probe_connection(&link_to(&server), API_KEY)
             .await
             .unwrap_err();
@@ -328,7 +358,10 @@ mod tests {
 
     #[tokio::test]
     async fn probe_stops_reading_at_the_catalog_cap() {
-        let server = serving(ResponseTemplate::new(200).set_body_bytes(over_catalog_cap())).await;
+        let server = serving(
+            ResponseTemplate::new(reqwest::StatusCode::OK).set_body_bytes(over_catalog_cap()),
+        )
+        .await;
         let error = probe_connection(&link_to(&server), API_KEY)
             .await
             .unwrap_err();

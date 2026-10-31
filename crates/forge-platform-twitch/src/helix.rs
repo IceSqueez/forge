@@ -384,7 +384,9 @@ mod tests {
                 format!("Bearer {SENTINEL}").as_str(),
             ))
             .and(header("Client-Id", CLIENT_ID))
-            .respond_with(ResponseTemplate::new(200).set_body_json(payload.clone()))
+            .respond_with(
+                ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(payload.clone()),
+            )
             .mount(&server)
             .await;
         let h = harness(&server.uri());
@@ -405,7 +407,10 @@ mod tests {
         Mock::given(method("POST"))
             .and(path("/helix/moderation/bans"))
             .and(wiremock::matchers::body_json(body.clone()))
-            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({"ok": 1})))
+            .respond_with(
+                ResponseTemplate::new(reqwest::StatusCode::OK)
+                    .set_body_json(serde_json::json!({"ok": 1})),
+            )
             .mount(&server)
             .await;
         let h = harness(&server.uri());
@@ -424,7 +429,7 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("DELETE"))
             .and(path("/helix/moderation/bans"))
-            .respond_with(ResponseTemplate::new(204))
+            .respond_with(ResponseTemplate::new(reqwest::StatusCode::NO_CONTENT))
             .mount(&server)
             .await;
         let h = harness(&server.uri());
@@ -443,7 +448,10 @@ mod tests {
 
     #[tokio::test]
     async fn malformed_success_body_maps_to_undecodable_response() {
-        let server = server_answering(ResponseTemplate::new(200).set_body_string("not-json")).await;
+        let server = server_answering(
+            ResponseTemplate::new(reqwest::StatusCode::OK).set_body_string("not-json"),
+        )
+        .await;
         let h = harness(&server.uri());
 
         let err = h.transport.execute(users()).await.unwrap_err();
@@ -454,7 +462,10 @@ mod tests {
     #[tokio::test]
     async fn success_body_over_the_interactive_cap_maps_to_transport_error() {
         let oversized = vec![b' '; INTERACTIVE_BODY_CAP + 1];
-        let server = server_answering(ResponseTemplate::new(200).set_body_bytes(oversized)).await;
+        let server = server_answering(
+            ResponseTemplate::new(reqwest::StatusCode::OK).set_body_bytes(oversized),
+        )
+        .await;
         let h = harness(&server.uri());
 
         let err = h.transport.execute(users()).await.unwrap_err();
@@ -465,7 +476,8 @@ mod tests {
     #[tokio::test]
     async fn forbidden_response_maps_to_http_error_carrying_status_and_body() {
         let server = server_answering(
-            ResponseTemplate::new(403).set_body_string(r#"{"error":"Forbidden"}"#),
+            ResponseTemplate::new(reqwest::StatusCode::FORBIDDEN)
+                .set_body_string(r#"{"error":"Forbidden"}"#),
         )
         .await;
         let h = harness(&server.uri());
@@ -484,8 +496,11 @@ mod tests {
     #[tokio::test]
     async fn http_error_body_is_a_bounded_excerpt_with_the_bearer_masked() {
         let echoed = format!("{{\"echo\":\"{SENTINEL}\"}}{}", "x".repeat(2000));
-        let server =
-            server_answering(ResponseTemplate::new(500).set_body_string(echoed.clone())).await;
+        let server = server_answering(
+            ResponseTemplate::new(reqwest::StatusCode::INTERNAL_SERVER_ERROR)
+                .set_body_string(echoed.clone()),
+        )
+        .await;
         let h = harness(&server.uri());
 
         let err = h.transport.execute(users()).await.unwrap_err();
@@ -502,7 +517,8 @@ mod tests {
     #[tokio::test]
     async fn request_fail_payload_keeps_its_keys_and_carries_the_failure() {
         let server = server_answering(
-            ResponseTemplate::new(403).set_body_string(r#"{"error":"Forbidden"}"#),
+            ResponseTemplate::new(reqwest::StatusCode::FORBIDDEN)
+                .set_body_string(r#"{"error":"Forbidden"}"#),
         )
         .await;
         let h = harness(&server.uri());
@@ -540,8 +556,11 @@ mod tests {
 
     #[tokio::test]
     async fn request_fail_body_snippet_is_cut_at_200_chars_not_bytes() {
-        let server =
-            server_answering(ResponseTemplate::new(500).set_body_string("я".repeat(300))).await;
+        let server = server_answering(
+            ResponseTemplate::new(reqwest::StatusCode::INTERNAL_SERVER_ERROR)
+                .set_body_string("я".repeat(300)),
+        )
+        .await;
         let h = harness(&server.uri());
 
         h.transport.execute(users()).await.unwrap_err();
@@ -554,7 +573,10 @@ mod tests {
     #[tokio::test]
     async fn request_fail_is_not_published_for_failures_without_a_status() {
         let oversized = vec![b' '; INTERACTIVE_BODY_CAP + 1];
-        let server = server_answering(ResponseTemplate::new(200).set_body_bytes(oversized)).await;
+        let server = server_answering(
+            ResponseTemplate::new(reqwest::StatusCode::OK).set_body_bytes(oversized),
+        )
+        .await;
         let cases = [
             harness(&server.uri()),
             harness("http://127.0.0.1:1"),
@@ -580,7 +602,7 @@ mod tests {
             (&[], 5),
         ];
         for (headers, expected_secs) in cases {
-            let mut response = ResponseTemplate::new(429);
+            let mut response = ResponseTemplate::new(reqwest::StatusCode::TOO_MANY_REQUESTS);
             for (name, value) in headers {
                 response = response.insert_header(*name, *value);
             }
@@ -610,7 +632,8 @@ mod tests {
     #[tokio::test]
     async fn service_unavailable_with_only_ratelimit_reset_is_an_http_error_without_cooldown() {
         let server = server_answering(
-            ResponseTemplate::new(503).insert_header("Ratelimit-Reset", "4102444800"),
+            ResponseTemplate::new(reqwest::StatusCode::SERVICE_UNAVAILABLE)
+                .insert_header("Ratelimit-Reset", "4102444800"),
         )
         .await;
         let h = harness(&server.uri());
@@ -626,8 +649,11 @@ mod tests {
 
     #[tokio::test]
     async fn service_unavailable_with_retry_after_cools_the_limiter_but_stays_an_http_error() {
-        let server =
-            server_answering(ResponseTemplate::new(503).insert_header("Retry-After", "7")).await;
+        let server = server_answering(
+            ResponseTemplate::new(reqwest::StatusCode::SERVICE_UNAVAILABLE)
+                .insert_header("Retry-After", "7"),
+        )
+        .await;
         let h = harness(&server.uri());
 
         let err = h.transport.execute(users()).await.unwrap_err();
@@ -642,7 +668,8 @@ mod tests {
 
     #[tokio::test]
     async fn unauthorized_without_refresher_maps_to_reauth_required() {
-        let server = server_answering(ResponseTemplate::new(401)).await;
+        let server =
+            server_answering(ResponseTemplate::new(reqwest::StatusCode::UNAUTHORIZED)).await;
         let h = harness(&server.uri());
 
         let err = h.transport.execute(users()).await.unwrap_err();
@@ -658,12 +685,15 @@ mod tests {
                 "Authorization",
                 format!("Bearer {SENTINEL}").as_str(),
             ))
-            .respond_with(ResponseTemplate::new(401))
+            .respond_with(ResponseTemplate::new(reqwest::StatusCode::UNAUTHORIZED))
             .mount(&server)
             .await;
         Mock::given(method("GET"))
             .and(header("Authorization", format!("Bearer {FRESH}").as_str()))
-            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({"ok": 1})))
+            .respond_with(
+                ResponseTemplate::new(reqwest::StatusCode::OK)
+                    .set_body_json(serde_json::json!({"ok": 1})),
+            )
             .mount(&server)
             .await;
         let refresher = Arc::new(CountingRefresher::default());
@@ -680,7 +710,8 @@ mod tests {
 
     #[tokio::test]
     async fn unauthorized_after_the_refresh_gives_up_with_reauth_required() {
-        let server = server_answering(ResponseTemplate::new(401)).await;
+        let server =
+            server_answering(ResponseTemplate::new(reqwest::StatusCode::UNAUTHORIZED)).await;
         let refresher = Arc::new(CountingRefresher::default());
         let h = harness(&server.uri());
         let transport = h

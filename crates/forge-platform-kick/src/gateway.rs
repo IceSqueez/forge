@@ -165,7 +165,7 @@ mod tests {
     use crate::api::moderation::KickModeration;
     use crate::api::rewards::{CreateRewardParams, KickRewards};
     use crate::endpoints_test_support::{
-        ExhaustedLimiter, RecordingPublisher, api_at, api_limited_by, api_with, channel_info_with,
+        RecordingPublisher, api_at, api_limited_by, api_with, channel_info_with, exhausted_limiter,
         gateway_waiting_at_most,
     };
     use crate::pusher::error::KickError;
@@ -307,7 +307,7 @@ mod tests {
     #[tokio::test]
     async fn no_content_counts_as_success_for_every_call_that_reads_no_body() {
         let reads_a_body = ["categories", "channel get", "pending redemptions"];
-        let server = answering(ResponseTemplate::new(204)).await;
+        let server = answering(ResponseTemplate::new(reqwest::StatusCode::NO_CONTENT)).await;
         let clients = Clients::over(&api_at(&server.uri()));
 
         for (label, outcome) in clients.every_call().await {
@@ -322,7 +322,8 @@ mod tests {
         type Check = fn(&PlatformError) -> bool;
         let cases: [(ResponseTemplate, &str, Check); 6] = [
             (
-                ResponseTemplate::new(429).insert_header("retry-after", "42"),
+                ResponseTemplate::new(reqwest::StatusCode::TOO_MANY_REQUESTS)
+                    .insert_header("retry-after", "42"),
                 "429 with Retry-After",
                 |e| {
                     matches!(
@@ -334,12 +335,13 @@ mod tests {
                 },
             ),
             (
-                ResponseTemplate::new(429),
+                ResponseTemplate::new(reqwest::StatusCode::TOO_MANY_REQUESTS),
                 "429 without Retry-After",
                 |e| matches!(e, PlatformError::RateLimited { retry_after_secs } if *retry_after_secs == forge_net::DEFAULT_RETRY_AFTER_SECS),
             ),
             (
-                ResponseTemplate::new(503).insert_header("retry-after", "7"),
+                ResponseTemplate::new(reqwest::StatusCode::SERVICE_UNAVAILABLE)
+                    .insert_header("retry-after", "7"),
                 "503 with Retry-After",
                 |e| {
                     matches!(
@@ -351,18 +353,22 @@ mod tests {
                 },
             ),
             (
-                ResponseTemplate::new(503).set_body_string("down"),
+                ResponseTemplate::new(reqwest::StatusCode::SERVICE_UNAVAILABLE)
+                    .set_body_string("down"),
                 "503 without Retry-After",
                 |e| matches!(e, PlatformError::Http { status: 503, body } if body == "down"),
             ),
             (
-                ResponseTemplate::new(422).set_body_string("bad title"),
+                ResponseTemplate::new(reqwest::StatusCode::UNPROCESSABLE_ENTITY)
+                    .set_body_string("bad title"),
                 "422",
                 |e| matches!(e, PlatformError::Http { status: 422, body } if body == "bad title"),
             ),
-            (ResponseTemplate::new(404), "404", |e| {
-                matches!(e, PlatformError::Http { status: 404, .. })
-            }),
+            (
+                ResponseTemplate::new(reqwest::StatusCode::NOT_FOUND),
+                "404",
+                |e| matches!(e, PlatformError::Http { status: 404, .. }),
+            ),
         ];
 
         for (template, what, check) in cases {
@@ -378,7 +384,7 @@ mod tests {
 
     #[tokio::test]
     async fn unauthorized_is_auth_for_every_client() {
-        let server = answering(ResponseTemplate::new(401)).await;
+        let server = answering(ResponseTemplate::new(reqwest::StatusCode::UNAUTHORIZED)).await;
         let clients = Clients::over(&api_at(&server.uri()));
 
         for (label, outcome) in clients.every_call().await {
@@ -391,7 +397,10 @@ mod tests {
 
     #[tokio::test]
     async fn forbidden_is_auth_with_a_scope_hint_except_for_send_and_categories() {
-        let server = answering(ResponseTemplate::new(403).set_body_string("nope")).await;
+        let server = answering(
+            ResponseTemplate::new(reqwest::StatusCode::FORBIDDEN).set_body_string("nope"),
+        )
+        .await;
         let clients = Clients::over(&api_at(&server.uri()));
         let scope_hints = [
             ("delete chat", "moderation:chat_message:manage"),
@@ -420,8 +429,8 @@ mod tests {
 
     #[tokio::test]
     async fn an_exhausted_budget_fails_every_client_without_a_request() {
-        let server = answering(ResponseTemplate::new(200)).await;
-        let clients = Clients::over(&api_limited_by(&server.uri(), Arc::new(ExhaustedLimiter)));
+        let server = answering(ResponseTemplate::new(reqwest::StatusCode::OK)).await;
+        let clients = Clients::over(&api_limited_by(&server.uri(), exhausted_limiter()));
 
         for (label, outcome) in clients.every_call().await {
             assert!(
@@ -435,7 +444,8 @@ mod tests {
     #[tokio::test]
     async fn every_client_draws_from_the_one_official_budget() {
         let server = answering(
-            ResponseTemplate::new(200).set_body_string(r#"{"data":[{"broadcaster_user_id":1}]}"#),
+            ResponseTemplate::new(reqwest::StatusCode::OK)
+                .set_body_string(r#"{"data":[{"broadcaster_user_id":1}]}"#),
         )
         .await;
         let calls = Clients::over(&api_at(&server.uri()))
@@ -465,7 +475,10 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/chat"))
-            .respond_with(ResponseTemplate::new(429).insert_header("retry-after", "3600"))
+            .respond_with(
+                ResponseTemplate::new(reqwest::StatusCode::TOO_MANY_REQUESTS)
+                    .insert_header("retry-after", "3600"),
+            )
             .mount(&server)
             .await;
         let clients = Clients::over(&gateway_waiting_at_most(
@@ -499,16 +512,18 @@ mod tests {
     async fn a_channel_info_refusal_leaves_official_calls_unaffected() {
         for (refusal, what) in [
             (
-                ResponseTemplate::new(429).insert_header("retry-after", "600"),
+                ResponseTemplate::new(reqwest::StatusCode::TOO_MANY_REQUESTS)
+                    .insert_header("retry-after", "600"),
                 "429",
             ),
             (
-                ResponseTemplate::new(403).set_body_string("<html>Just a moment...</html>"),
+                ResponseTemplate::new(reqwest::StatusCode::FORBIDDEN)
+                    .set_body_string("<html>Just a moment...</html>"),
                 "cloudflare 403",
             ),
         ] {
             let channel_api = answering(refusal).await;
-            let official = answering(ResponseTemplate::new(200)).await;
+            let official = answering(ResponseTemplate::new(reqwest::StatusCode::OK)).await;
             let bus = Arc::new(RecordingPublisher::default());
             let fetcher = channel_info_with(&channel_api.uri(), channel_info_bucket(), bus.clone());
             let send = KickSendChat::new(api_with(&official.uri(), official_bucket(), bus));
@@ -529,7 +544,8 @@ mod tests {
     async fn a_status_failure_publishes_request_fail_with_the_endpoint_template() {
         for (template, expected) in [
             (
-                ResponseTemplate::new(500).set_body_string("boom"),
+                ResponseTemplate::new(reqwest::StatusCode::INTERNAL_SERVER_ERROR)
+                    .set_body_string("boom"),
                 serde_json::json!({
                     "endpoint": "/chat/{message_id}",
                     "status_code": 500,
@@ -538,7 +554,7 @@ mod tests {
                 }),
             ),
             (
-                ResponseTemplate::new(429)
+                ResponseTemplate::new(reqwest::StatusCode::TOO_MANY_REQUESTS)
                     .insert_header("retry-after", "42")
                     .set_body_string("slow down"),
                 serde_json::json!({
@@ -553,7 +569,7 @@ mod tests {
             let bus = Arc::new(RecordingPublisher::default());
             let send = KickSendChat::new(api_with(
                 &server.uri(),
-                Arc::new(crate::endpoints_test_support::GrantingLimiter),
+                crate::endpoints_test_support::granting_limiter(),
                 bus.clone(),
             ));
 
@@ -575,7 +591,7 @@ mod tests {
             let bus = Arc::new(RecordingPublisher::default());
             let clients = Clients::over(&api_with(
                 &server.uri(),
-                Arc::new(crate::endpoints_test_support::GrantingLimiter),
+                crate::endpoints_test_support::granting_limiter(),
                 bus.clone(),
             ));
 
@@ -594,18 +610,18 @@ mod tests {
         let bus = Arc::new(RecordingPublisher::default());
         let unreachable = KickSendChat::new(api_with(
             "http://127.0.0.1:0",
-            Arc::new(crate::endpoints_test_support::GrantingLimiter),
+            crate::endpoints_test_support::granting_limiter(),
             bus.clone(),
         ));
         let exhausted = KickSendChat::new(api_with(
             "http://127.0.0.1:0",
-            Arc::new(ExhaustedLimiter),
+            exhausted_limiter(),
             bus.clone(),
         ));
-        let server = answering(ResponseTemplate::new(200)).await;
+        let server = answering(ResponseTemplate::new(reqwest::StatusCode::OK)).await;
         let succeeding = KickSendChat::new(api_with(
             &server.uri(),
-            Arc::new(crate::endpoints_test_support::GrantingLimiter),
+            crate::endpoints_test_support::granting_limiter(),
             bus.clone(),
         ));
 
@@ -626,13 +642,15 @@ mod tests {
             (BODY_SNIPPET_MAX_CHARS, BODY_SNIPPET_MAX_CHARS),
             (BODY_SNIPPET_MAX_CHARS + 1, BODY_SNIPPET_MAX_CHARS),
         ] {
-            let server =
-                answering(ResponseTemplate::new(500).set_body_string("\u{456}".repeat(body_chars)))
-                    .await;
+            let server = answering(
+                ResponseTemplate::new(reqwest::StatusCode::INTERNAL_SERVER_ERROR)
+                    .set_body_string("\u{456}".repeat(body_chars)),
+            )
+            .await;
             let bus = Arc::new(RecordingPublisher::default());
             let send = KickSendChat::new(api_with(
                 &server.uri(),
-                Arc::new(crate::endpoints_test_support::GrantingLimiter),
+                crate::endpoints_test_support::granting_limiter(),
                 bus.clone(),
             ));
 
@@ -657,7 +675,7 @@ mod tests {
             let bus = Arc::new(RecordingPublisher::default());
             let clients = Clients::over(&api_with(
                 &server.uri(),
-                Arc::new(crate::endpoints_test_support::GrantingLimiter),
+                crate::endpoints_test_support::granting_limiter(),
                 bus.clone(),
             ));
 

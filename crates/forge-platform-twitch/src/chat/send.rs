@@ -167,42 +167,7 @@ async fn post_chat_message(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use async_trait::async_trait;
-    use std::sync::Mutex;
-
-    struct MockTransport {
-        calls: Mutex<Vec<HelixRequest>>,
-        response: Mutex<Option<Result<serde_json::Value, HelixError>>>,
-    }
-
-    impl MockTransport {
-        fn returning(response: Result<serde_json::Value, HelixError>) -> Self {
-            Self {
-                calls: Mutex::new(Vec::new()),
-                response: Mutex::new(Some(response)),
-            }
-        }
-
-        fn call_count(&self) -> usize {
-            self.calls.lock().unwrap().len()
-        }
-
-        fn last_request(&self) -> HelixRequest {
-            self.calls.lock().unwrap().last().unwrap().clone()
-        }
-    }
-
-    #[async_trait]
-    impl HelixTransport for MockTransport {
-        async fn execute(&self, request: HelixRequest) -> Result<serde_json::Value, HelixError> {
-            self.calls.lock().unwrap().push(request);
-            self.response
-                .lock()
-                .unwrap()
-                .take()
-                .unwrap_or(Ok(serde_json::Value::Null))
-        }
-    }
+    use crate::sub_actions::test_support::MockTransport;
 
     fn sent_fixture() -> serde_json::Value {
         serde_json::json!({"data": [{"message_id": "abc-123"}, {"message_id": "later"}]})

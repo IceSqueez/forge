@@ -2,20 +2,19 @@
 use forge_types::OAuthToken;
 use std::collections::BTreeMap;
 use std::ffi::OsString;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 
-use async_trait::async_trait;
-use forge_events::{Event, EventPublisher};
-use forge_net::{Gateway, RateLimitError, RateLimitOutcome, RateLimiter};
+use forge_net::{Gateway, RateLimiter};
 use forge_platform_core::{ChatPlatform, EndpointSurface, PlatformEndpoints};
 use forge_platform_kick::{
     ChannelInfoFetcher, KickAuthBundle, KickCategories, KickChannel, KickChat,
     KickCredentialsManager, KickModeration, KickOAuthClient, KickPlatform, KickRewards,
     KickSendChat, kick_api_gateway, kick_channel_info_gateway, kick_oauth_gateway,
 };
+use forge_storage::BanLedgerRepo;
 use forge_storage::MockBanLedgerRepo;
-use forge_storage::{BanLedgerRepo, CredentialId, CredentialsRepo, StorageError};
+use forge_storage::test_support::MemoryCredentials;
 use futures_util::StreamExt;
 use serde_json::{Value, json};
 use time::OffsetDateTime;
@@ -31,56 +30,6 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 const STEP_DEADLINE: Duration = Duration::from_secs(30);
 const CHATROOM_ID: u64 = 4242;
 
-struct GrantLimiter;
-
-#[async_trait]
-impl RateLimiter for GrantLimiter {
-    async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, RateLimitError> {
-        Ok(RateLimitOutcome::Granted)
-    }
-
-    async fn observe_remote_throttle(&self, _retry_after: Duration) {}
-}
-
-#[derive(Default)]
-struct MemoryRepo {
-    rows: Mutex<BTreeMap<String, String>>,
-}
-
-#[async_trait]
-impl CredentialsRepo for MemoryRepo {
-    async fn store(&self, id: &CredentialId, plaintext_bundle: &str) -> Result<(), StorageError> {
-        self.rows
-            .lock()
-            .unwrap()
-            .insert(id.to_string(), plaintext_bundle.to_owned());
-        Ok(())
-    }
-
-    async fn load(&self, id: &CredentialId) -> Result<Option<String>, StorageError> {
-        Ok(self.rows.lock().unwrap().get(&id.to_string()).cloned())
-    }
-
-    async fn delete(&self, id: &CredentialId) -> Result<bool, StorageError> {
-        Ok(self.rows.lock().unwrap().remove(&id.to_string()).is_some())
-    }
-
-    async fn list_ids(&self) -> Result<Vec<CredentialId>, StorageError> {
-        Ok(Vec::new())
-    }
-
-    async fn last_refresh(
-        &self,
-        _id: &CredentialId,
-    ) -> Result<Option<OffsetDateTime>, StorageError> {
-        Ok(None)
-    }
-
-    async fn mark_refreshed(&self, _id: &CredentialId) -> Result<(), StorageError> {
-        Ok(())
-    }
-}
-
 fn endpoints(overrides: &[(EndpointSurface, String)]) -> PlatformEndpoints {
     let table: BTreeMap<&'static str, String> = overrides
         .iter()
@@ -90,22 +39,26 @@ fn endpoints(overrides: &[(EndpointSurface, String)]) -> PlatformEndpoints {
 }
 
 fn limiter() -> Arc<dyn RateLimiter> {
-    Arc::new(GrantLimiter)
-}
-
-struct DiscardingPublisher;
-
-impl EventPublisher for DiscardingPublisher {
-    fn publish(&self, _event: Event) {}
+    Arc::new(forge_net::test_support::RecordingRateLimiter::granting())
 }
 
 fn api(endpoints: &PlatformEndpoints) -> Gateway {
-    kick_api_gateway(endpoints, limiter(), Arc::new(DiscardingPublisher)).unwrap()
+    kick_api_gateway(
+        endpoints,
+        limiter(),
+        Arc::new(forge_events::test_support::NullPublisher),
+    )
+    .unwrap()
 }
 
 fn channel_info(endpoints: &PlatformEndpoints) -> Arc<ChannelInfoFetcher> {
     Arc::new(ChannelInfoFetcher::new(
-        kick_channel_info_gateway(endpoints, limiter(), Arc::new(DiscardingPublisher)).unwrap(),
+        kick_channel_info_gateway(
+            endpoints,
+            limiter(),
+            Arc::new(forge_events::test_support::NullPublisher),
+        )
+        .unwrap(),
     ))
 }
 
@@ -116,7 +69,11 @@ fn manager(endpoints: &PlatformEndpoints) -> KickCredentialsManager {
         "client".to_owned(),
         forge_types::Secret::new("secret"),
     );
-    KickCredentialsManager::new(Arc::new(MemoryRepo::default()), oauth, api(endpoints))
+    KickCredentialsManager::new(
+        Arc::new(MemoryCredentials::default()),
+        oauth,
+        api(endpoints),
+    )
 }
 
 fn ban_ledger() -> Arc<dyn BanLedgerRepo> {

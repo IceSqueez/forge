@@ -250,7 +250,11 @@ mod tests {
         let (harness, _broadcaster) = connected_with(vec![listed()]).await;
         harness.bot.refresh_moderator_status().await;
         harness
-            .mount("POST", "/revoke", ResponseTemplate::new(200))
+            .mount(
+                "POST",
+                "/revoke",
+                ResponseTemplate::new(reqwest::StatusCode::OK),
+            )
             .await;
 
         harness.bot.logout().await.unwrap();

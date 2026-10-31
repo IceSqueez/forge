@@ -497,15 +497,13 @@ fn account_line(plain_key: &str, named_key: &str, nickname: Option<String>) -> S
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
-    use std::sync::Mutex;
+    use forge_storage::test_support::MemoryCredentials;
 
     use forge_donatello::{DONATELLO_CREDENTIAL_ID, DonatelloConfig, DonatelloProvider};
     use forge_monobank::{MonobankConfig, MonobankProvider, MonobankRateLimits};
     use forge_platform_core::PlatformEndpoints;
-    use forge_storage::{CredentialId, StorageError};
+
     use gpui::TestAppContext;
-    use time::OffsetDateTime;
 
     use super::*;
     use crate::test_support::{
@@ -517,81 +515,20 @@ mod tests {
     const OTHER_JAR: &str = "jar-other";
     const PASTED: &str = "pasted-token";
 
-    type Build = fn(&Arc<Vault>) -> DonationService;
+    type Build = fn(&Arc<MemoryCredentials>) -> DonationService;
 
-    #[derive(Default)]
-    struct Vault {
-        bundles: Mutex<HashMap<String, String>>,
-    }
-
-    impl Vault {
-        fn holding(id: &str, bundle: &str) -> Self {
-            let vault = Self::default();
-            vault
-                .bundles
-                .lock()
-                .unwrap()
-                .insert(id.to_owned(), bundle.to_owned());
-            vault
-        }
-
-        fn is_empty(&self) -> bool {
-            self.bundles.lock().unwrap().is_empty()
-        }
-    }
-
-    #[async_trait::async_trait]
-    impl CredentialsRepo for Vault {
-        async fn store(&self, id: &CredentialId, bundle: &str) -> Result<(), StorageError> {
-            self.bundles
-                .lock()
-                .unwrap()
-                .insert(id.as_str().to_owned(), bundle.to_owned());
-            Ok(())
-        }
-
-        async fn load(&self, id: &CredentialId) -> Result<Option<String>, StorageError> {
-            Ok(self.bundles.lock().unwrap().get(id.as_str()).cloned())
-        }
-
-        async fn delete(&self, id: &CredentialId) -> Result<bool, StorageError> {
-            Ok(self.bundles.lock().unwrap().remove(id.as_str()).is_some())
-        }
-
-        async fn list_ids(&self) -> Result<Vec<CredentialId>, StorageError> {
-            Ok(self
-                .bundles
-                .lock()
-                .unwrap()
-                .keys()
-                .map(CredentialId::new)
-                .collect())
-        }
-
-        async fn last_refresh(
-            &self,
-            _: &CredentialId,
-        ) -> Result<Option<OffsetDateTime>, StorageError> {
-            Ok(None)
-        }
-
-        async fn mark_refreshed(&self, _: &CredentialId) -> Result<(), StorageError> {
-            Ok(())
-        }
-    }
-
-    fn saved_monobank() -> Vault {
-        Vault::holding(
+    fn saved_monobank() -> MemoryCredentials {
+        MemoryCredentials::holding(
             forge_monobank::MONOBANK_CREDENTIAL_ID,
             &format!(r#"{{"token":"stored-token","jar_id":"{SAVED_JAR}"}}"#),
         )
     }
 
-    fn saved_donatello() -> Vault {
-        Vault::holding(DONATELLO_CREDENTIAL_ID, "stored-token")
+    fn saved_donatello() -> MemoryCredentials {
+        MemoryCredentials::holding(DONATELLO_CREDENTIAL_ID, "stored-token")
     }
 
-    fn monobank(vault: &Arc<Vault>) -> DonationService {
+    fn monobank(vault: &Arc<MemoryCredentials>) -> DonationService {
         let config = MonobankConfig::new(&PlatformEndpoints::default());
         let gateways = forge_monobank::monobank_gateways(&config, MonobankRateLimits::official())
             .expect("the gateways build offline");
@@ -602,7 +539,7 @@ mod tests {
         )))
     }
 
-    fn donatello(vault: &Arc<Vault>) -> DonationService {
+    fn donatello(vault: &Arc<MemoryCredentials>) -> DonationService {
         let config = DonatelloConfig::new(&PlatformEndpoints::default());
         let gateway =
             forge_donatello::donatello_gateway(&config, forge_donatello::default_rate_limiter())
@@ -618,7 +555,7 @@ mod tests {
         cx: &mut TestAppContext,
         rt: &tokio::runtime::Runtime,
         build: Build,
-        vault: &Arc<Vault>,
+        vault: &Arc<MemoryCredentials>,
     ) -> Entity<DonationSettingsView> {
         install_presentation(cx);
         let (settings, _writes) = test_backend();
@@ -663,7 +600,7 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         let rt = runtime();
-        let cases: [(Build, Vault, &str, bool, &str); 5] = [
+        let cases: [(Build, MemoryCredentials, &str, bool, &str); 5] = [
             (
                 monobank,
                 saved_monobank(),
@@ -673,14 +610,14 @@ mod tests {
             ),
             (
                 monobank,
-                Vault::default(),
+                MemoryCredentials::default(),
                 "",
                 false,
                 "monobank with nothing saved or pasted",
             ),
             (
                 monobank,
-                Vault::default(),
+                MemoryCredentials::default(),
                 PASTED,
                 true,
                 "monobank with a pasted token",
@@ -694,7 +631,7 @@ mod tests {
             ),
             (
                 donatello,
-                Vault::default(),
+                MemoryCredentials::default(),
                 "  ",
                 false,
                 "whitespace is not a token",
@@ -717,7 +654,7 @@ mod tests {
     #[gpui::test]
     fn nothing_can_be_checked_or_saved_while_a_request_runs(cx: &mut TestAppContext) {
         let rt = runtime();
-        let view = open(cx, &rt, donatello, &Arc::new(Vault::default()));
+        let view = open(cx, &rt, donatello, &Arc::new(MemoryCredentials::default()));
         type_token(cx, &view, PASTED);
 
         view.update(cx, |view, _| view.busy = Some(Busy::Checking));
@@ -797,7 +734,7 @@ mod tests {
     #[gpui::test]
     fn monobank_without_a_saved_token_cannot_save_a_stored_listing(cx: &mut TestAppContext) {
         let rt = runtime();
-        let view = open(cx, &rt, monobank, &Arc::new(Vault::default()));
+        let view = open(cx, &rt, monobank, &Arc::new(MemoryCredentials::default()));
 
         view.update(cx, |view, cx| {
             view.apply_jars(JarSource::Stored, jars(&[OTHER_JAR]), cx);
@@ -890,7 +827,7 @@ mod tests {
         view.update(cx, |view, cx| view.confirm_remove(cx));
         settle_until_tasks_drain_to(cx, &rt, background_tasks);
 
-        assert!(!vault.is_empty(), "the stored token was deleted");
+        assert!(!vault.ids().is_empty(), "the stored token was deleted");
         view.read_with(cx, |view, _| {
             assert_eq!(view.has_token, Some(true));
             assert_eq!(view.busy, None);
@@ -911,7 +848,7 @@ mod tests {
             view.read_with(cx, |view, _| view.has_token == Some(false))
         });
 
-        assert!(vault.is_empty());
+        assert!(vault.ids().is_empty());
         view.read_with(cx, |view, _| assert_eq!(view.shown_jar(), None));
     }
 }

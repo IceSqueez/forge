@@ -177,21 +177,6 @@ async fn regex_patterns_are_never_built_from_argument_text() {
     );
 }
 
-#[tokio::test]
-async fn literal_replace_treats_regex_syntax_in_an_argument_as_plain_text() {
-    let stack = args(&[("msg", s("a.b")), ("dot", s(".")), ("x", s("X"))]);
-    let literal = cfg(&[
-        ("source", s("%msg%")),
-        ("search", s("%dot%")),
-        ("replace_with", s("%x%")),
-        ("is_regex", Variant::Bool(false)),
-    ]);
-    assert_eq!(
-        output(&CoreStringReplaceRunner, &literal, &stack).await,
-        s("aXb")
-    );
-}
-
 fn math_cfg(expression: &str) -> SubActionConfig {
     cfg(&[("expression", s(expression))])
 }

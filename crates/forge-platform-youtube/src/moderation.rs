@@ -389,7 +389,7 @@ mod tests {
     async fn mount_insert_returning(server: &MockServer, body: serde_json::Value) {
         Mock::given(method("POST"))
             .and(path("/liveChat/bans"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(body))
+            .respond_with(ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(body))
             .mount(server)
             .await;
     }
@@ -410,7 +410,10 @@ mod tests {
         Mock::given(method("POST"))
             .and(path("/liveChat/bans"))
             .and(query_param("part", "snippet"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({"id": BAN_RESOURCE_ID})))
+            .respond_with(
+                ResponseTemplate::new(reqwest::StatusCode::OK)
+                    .set_body_json(json!({"id": BAN_RESOURCE_ID})),
+            )
             .mount(server)
     }
 
@@ -456,7 +459,7 @@ mod tests {
         Mock::given(method("DELETE"))
             .and(path("/liveChat/bans"))
             .and(query_param("id", BAN_RESOURCE_ID))
-            .respond_with(ResponseTemplate::new(204))
+            .respond_with(ResponseTemplate::new(reqwest::StatusCode::NO_CONTENT))
             .expect(1)
             .mount(&server)
             .await;
@@ -503,7 +506,8 @@ mod tests {
             .and(path("/liveChat/moderators"))
             .and(query_param("part", "snippet"))
             .respond_with(
-                ResponseTemplate::new(200).set_body_json(json!({"id": MODERATOR_RESOURCE_ID})),
+                ResponseTemplate::new(reqwest::StatusCode::OK)
+                    .set_body_json(json!({"id": MODERATOR_RESOURCE_ID})),
             )
             .expect(1)
             .mount(&server)
@@ -526,7 +530,8 @@ mod tests {
         Mock::given(method("POST"))
             .and(path("/liveChat/moderators"))
             .respond_with(
-                ResponseTemplate::new(200).set_body_json(json!({"id": MODERATOR_RESOURCE_ID})),
+                ResponseTemplate::new(reqwest::StatusCode::OK)
+                    .set_body_json(json!({"id": MODERATOR_RESOURCE_ID})),
             )
             .mount(&server)
             .await;
@@ -540,12 +545,14 @@ mod tests {
     async fn mount_list_single_page(server: &MockServer, channel_id: &str, resource_id: &str) {
         Mock::given(method("GET"))
             .and(path("/liveChat/moderators"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "items": [{
-                    "id": resource_id,
-                    "snippet": { "moderatorDetails": { "channelId": channel_id } },
-                }],
-            })))
+            .respond_with(
+                ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(json!({
+                    "items": [{
+                        "id": resource_id,
+                        "snippet": { "moderatorDetails": { "channelId": channel_id } },
+                    }],
+                })),
+            )
             .mount(server)
             .await;
     }
@@ -557,7 +564,7 @@ mod tests {
         Mock::given(method("DELETE"))
             .and(path("/liveChat/moderators"))
             .and(query_param("id", MODERATOR_RESOURCE_ID))
-            .respond_with(ResponseTemplate::new(204))
+            .respond_with(ResponseTemplate::new(reqwest::StatusCode::NO_CONTENT))
             .expect(1)
             .mount(&server)
             .await;
@@ -600,7 +607,10 @@ mod tests {
             let server = MockServer::start().await;
             Mock::given(method("GET"))
                 .and(path("/liveChat/moderators"))
-                .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "items": [entry] })))
+                .respond_with(
+                    ResponseTemplate::new(reqwest::StatusCode::OK)
+                        .set_body_json(json!({ "items": [entry] })),
+                )
                 .mount(&server)
                 .await;
             let (moderation, _quota) = moderation_on(&server);
@@ -632,30 +642,34 @@ mod tests {
         Mock::given(method("GET"))
             .and(path("/liveChat/moderators"))
             .and(query_param_is_missing("pageToken"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "items": [{
-                    "id": "mod-other",
-                    "snippet": { "moderatorDetails": { "channelId": "UC-someone-else" } },
-                }],
-                "nextPageToken": "PAGE2",
-            })))
+            .respond_with(
+                ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(json!({
+                    "items": [{
+                        "id": "mod-other",
+                        "snippet": { "moderatorDetails": { "channelId": "UC-someone-else" } },
+                    }],
+                    "nextPageToken": "PAGE2",
+                })),
+            )
             .mount(&server)
             .await;
         Mock::given(method("GET"))
             .and(path("/liveChat/moderators"))
             .and(query_param("pageToken", "PAGE2"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "items": [{
-                    "id": MODERATOR_RESOURCE_ID,
-                    "snippet": { "moderatorDetails": { "channelId": TARGET_CHANNEL } },
-                }],
-            })))
+            .respond_with(
+                ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(json!({
+                    "items": [{
+                        "id": MODERATOR_RESOURCE_ID,
+                        "snippet": { "moderatorDetails": { "channelId": TARGET_CHANNEL } },
+                    }],
+                })),
+            )
             .mount(&server)
             .await;
         Mock::given(method("DELETE"))
             .and(path("/liveChat/moderators"))
             .and(query_param("id", MODERATOR_RESOURCE_ID))
-            .respond_with(ResponseTemplate::new(204))
+            .respond_with(ResponseTemplate::new(reqwest::StatusCode::NO_CONTENT))
             .expect(1)
             .mount(&server)
             .await;
@@ -685,29 +699,33 @@ mod tests {
         Mock::given(method("GET"))
             .and(path("/liveChat/moderators"))
             .and(query_param_is_missing("pageToken"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "items": [{
-                    "id": "mod-a",
-                    "snippet": { "moderatorDetails": { "channelId": "UC-a" } },
-                }],
-                "nextPageToken": "PAGE2",
-            })))
+            .respond_with(
+                ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(json!({
+                    "items": [{
+                        "id": "mod-a",
+                        "snippet": { "moderatorDetails": { "channelId": "UC-a" } },
+                    }],
+                    "nextPageToken": "PAGE2",
+                })),
+            )
             .mount(&server)
             .await;
         Mock::given(method("GET"))
             .and(path("/liveChat/moderators"))
             .and(query_param("pageToken", "PAGE2"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "items": [{
-                    "id": "mod-b",
-                    "snippet": { "moderatorDetails": { "channelId": "UC-b" } },
-                }],
-            })))
+            .respond_with(
+                ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(json!({
+                    "items": [{
+                        "id": "mod-b",
+                        "snippet": { "moderatorDetails": { "channelId": "UC-b" } },
+                    }],
+                })),
+            )
             .mount(&server)
             .await;
         Mock::given(method("DELETE"))
             .and(path("/liveChat/moderators"))
-            .respond_with(ResponseTemplate::new(204))
+            .respond_with(ResponseTemplate::new(reqwest::StatusCode::NO_CONTENT))
             .mount(&server)
             .await;
         let (moderation, _quota) = moderation_on(&server);
@@ -738,7 +756,7 @@ mod tests {
         mount_list_single_page(&server, TARGET_CHANNEL, MODERATOR_RESOURCE_ID).await;
         Mock::given(method("DELETE"))
             .and(path("/liveChat/moderators"))
-            .respond_with(ResponseTemplate::new(204))
+            .respond_with(ResponseTemplate::new(reqwest::StatusCode::NO_CONTENT))
             .mount(&server)
             .await;
         let (moderation, quota) = moderation_on(&server);

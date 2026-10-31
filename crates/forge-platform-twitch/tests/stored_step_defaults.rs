@@ -7,9 +7,8 @@ use forge_platform_twitch::{
     HelixError, HelixRequest, HelixTransport, TwitchLifecycle, register_twitch_sub_actions,
 };
 use forge_registry::SubActionRegistry;
-use forge_storage::{CredentialId, CredentialsRepo, StorageError};
+use forge_storage::test_support::MemoryCredentials;
 use serde_json::Value;
-use time::OffsetDateTime;
 
 const STORED_DEFAULTS: &str = include_str!("fixtures/stored_step_defaults.json");
 
@@ -22,41 +21,12 @@ impl HelixTransport for UnreachableTransport {
     }
 }
 
-struct NoCredentials;
-
-#[async_trait]
-impl CredentialsRepo for NoCredentials {
-    async fn store(&self, _: &CredentialId, _: &str) -> Result<(), StorageError> {
-        Ok(())
-    }
-
-    async fn load(&self, _: &CredentialId) -> Result<Option<String>, StorageError> {
-        Ok(None)
-    }
-
-    async fn delete(&self, _: &CredentialId) -> Result<bool, StorageError> {
-        Ok(false)
-    }
-
-    async fn list_ids(&self) -> Result<Vec<CredentialId>, StorageError> {
-        Ok(Vec::new())
-    }
-
-    async fn last_refresh(&self, _: &CredentialId) -> Result<Option<OffsetDateTime>, StorageError> {
-        Ok(None)
-    }
-
-    async fn mark_refreshed(&self, _: &CredentialId) -> Result<(), StorageError> {
-        Ok(())
-    }
-}
-
 fn twitch_registry() -> SubActionRegistry {
     let mut registry = SubActionRegistry::new();
     register_twitch_sub_actions(
         &mut registry,
         Arc::new(UnreachableTransport),
-        Arc::new(NoCredentials),
+        Arc::new(MemoryCredentials::default()),
         TwitchLifecycle::new(),
         None,
     )

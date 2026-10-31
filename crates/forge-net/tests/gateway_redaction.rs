@@ -95,7 +95,7 @@ async fn failure_from(
 #[tokio::test]
 async fn request_response_body_credential_and_gateway_debug_never_print_values() {
     let server = serving(
-        ResponseTemplate::new(200)
+        ResponseTemplate::new(reqwest::StatusCode::OK)
             .insert_header("set-cookie", HEADER_VALUE)
             .set_body_string(JSON_VALUE),
     )
@@ -196,10 +196,12 @@ async fn every_failure_variant_renders_without_url_header_or_credential_text() {
             .await,
         );
     }
-    let leaky_location = serving(ResponseTemplate::new(302).insert_header(
-        "Location",
-        format!("http://192.0.2.1/webhooks/1234/{PATH_TOKEN}?wait={QUERY_SECRET}"),
-    ))
+    let leaky_location = serving(
+        ResponseTemplate::new(reqwest::StatusCode::FOUND).insert_header(
+            "Location",
+            format!("http://192.0.2.1/webhooks/1234/{PATH_TOKEN}?wait={QUERY_SECRET}"),
+        ),
+    )
     .await;
     failures.push(
         failure_from(
@@ -210,11 +212,16 @@ async fn every_failure_variant_renders_without_url_header_or_credential_text() {
         )
         .await,
     );
-    let large = serving(ResponseTemplate::new(200).set_body_bytes(vec![
-        b'x';
-        usize::try_from(CallClass::OAuth.body_cap()).unwrap()
-            + 1
-    ]))
+    let large = serving(
+        ResponseTemplate::new(reqwest::StatusCode::OK).set_body_bytes(vec![
+            b'x';
+            usize::try_from(
+                CallClass::OAuth.body_cap()
+            )
+            .unwrap()
+                + 1
+        ]),
+    )
     .await;
     failures.push(
         failure_from(
@@ -320,7 +327,9 @@ async fn response_decode_error_carries_no_body_text() {
         (format!("{JSON_VALUE} is not json"), DecodeCategory::Syntax),
         (format!(r#"{{"id":"{JSON_VALUE}"#), DecodeCategory::Eof),
     ] {
-        let server = serving(ResponseTemplate::new(200).set_body_string(body.clone())).await;
+        let server =
+            serving(ResponseTemplate::new(reqwest::StatusCode::OK).set_body_string(body.clone()))
+                .await;
         let response = Harness::new(&server.uri(), platform())
             .ok(GatewayRequest::get("x"))
             .await;

@@ -1,9 +1,8 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use async_trait::async_trait;
 use forge_events::{Event, EventPublisher};
-use forge_net::{Gateway, GatewayTimings, RateLimitError, RateLimitOutcome, RateLimiter};
+use forge_net::{Gateway, GatewayTimings, RateLimiter};
 use forge_platform_core::{EndpointSurface, PlatformEndpoints};
 use forge_storage::CredentialsRepo;
 
@@ -80,7 +79,7 @@ pub(crate) fn gateway_waiting_at_most(
 }
 
 pub(crate) fn api_at(base: &str) -> Gateway {
-    api_limited_by(base, Arc::new(GrantingLimiter))
+    api_limited_by(base, granting_limiter())
 }
 
 pub(crate) fn unreachable_api() -> Gateway {
@@ -105,7 +104,7 @@ pub(crate) fn channel_info_with(
 pub(crate) fn channel_info_at(base: &str) -> ChannelInfoFetcher {
     channel_info_with(
         base,
-        Arc::new(GrantingLimiter),
+        granting_limiter(),
         Arc::new(RecordingPublisher::default()),
     )
 }
@@ -137,7 +136,7 @@ pub(crate) fn oauth_client_limited_by(
 }
 
 pub(crate) fn oauth_client_at(base: &str) -> KickOAuthClient {
-    oauth_client_limited_by(base, Arc::new(GrantingLimiter))
+    oauth_client_limited_by(base, granting_limiter())
 }
 
 pub(crate) fn unreachable_oauth_client() -> KickOAuthClient {
@@ -148,26 +147,12 @@ pub(crate) fn offline_manager(repo: Arc<dyn CredentialsRepo>) -> KickCredentials
     KickCredentialsManager::new(repo, unreachable_oauth_client(), unreachable_api())
 }
 
-pub(crate) struct GrantingLimiter;
-
-#[async_trait]
-impl RateLimiter for GrantingLimiter {
-    async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, RateLimitError> {
-        Ok(RateLimitOutcome::Granted)
-    }
-
-    async fn observe_remote_throttle(&self, _retry_after: Duration) {}
+pub(crate) fn granting_limiter() -> Arc<dyn RateLimiter> {
+    Arc::new(forge_net::test_support::RecordingRateLimiter::granting())
 }
 
-pub(crate) struct ExhaustedLimiter;
-
-#[async_trait]
-impl RateLimiter for ExhaustedLimiter {
-    async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, RateLimitError> {
-        Ok(RateLimitOutcome::Exhausted)
-    }
-
-    async fn observe_remote_throttle(&self, _retry_after: Duration) {}
+pub(crate) fn exhausted_limiter() -> Arc<dyn RateLimiter> {
+    Arc::new(forge_net::test_support::RecordingRateLimiter::exhausted())
 }
 
 #[derive(Default)]

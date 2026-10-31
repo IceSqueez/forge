@@ -261,43 +261,18 @@ fn apply_transition(
 
 #[cfg(test)]
 mod tests {
-    use async_trait::async_trait;
+    use forge_storage::test_support::MemoryCredentials;
+
     use forge_events::Event;
     use forge_events::{PlatformConnectionChanged, TypedEvent};
-    use forge_storage::{CredentialId, CredentialsRepo, StorageError};
+
     use time::OffsetDateTime;
 
     use super::*;
 
-    struct EmptyRepo;
-    #[async_trait]
-    impl CredentialsRepo for EmptyRepo {
-        async fn store(&self, _: &CredentialId, _: &str) -> Result<(), StorageError> {
-            Ok(())
-        }
-        async fn load(&self, _: &CredentialId) -> Result<Option<String>, StorageError> {
-            Ok(None)
-        }
-        async fn delete(&self, _: &CredentialId) -> Result<bool, StorageError> {
-            Ok(false)
-        }
-        async fn list_ids(&self) -> Result<Vec<CredentialId>, StorageError> {
-            Ok(Vec::new())
-        }
-        async fn last_refresh(
-            &self,
-            _: &CredentialId,
-        ) -> Result<Option<OffsetDateTime>, StorageError> {
-            Ok(None)
-        }
-        async fn mark_refreshed(&self, _: &CredentialId) -> Result<(), StorageError> {
-            Ok(())
-        }
-    }
-
     fn platform() -> YoutubePlatform {
         let manager = Arc::new(YoutubeCredentialsManager::new(
-            Arc::new(EmptyRepo),
+            Arc::new(MemoryCredentials::default()),
             crate::endpoints_test_support::unreachable_oauth_client(),
             crate::endpoints_test_support::unreachable_data_api(),
         ));
@@ -357,32 +332,6 @@ mod tests {
         );
     }
 
-    struct StoredRepo(String);
-    #[async_trait]
-    impl CredentialsRepo for StoredRepo {
-        async fn store(&self, _: &CredentialId, _: &str) -> Result<(), StorageError> {
-            Ok(())
-        }
-        async fn load(&self, _: &CredentialId) -> Result<Option<String>, StorageError> {
-            Ok(Some(self.0.clone()))
-        }
-        async fn delete(&self, _: &CredentialId) -> Result<bool, StorageError> {
-            Ok(true)
-        }
-        async fn list_ids(&self) -> Result<Vec<CredentialId>, StorageError> {
-            Ok(Vec::new())
-        }
-        async fn last_refresh(
-            &self,
-            _: &CredentialId,
-        ) -> Result<Option<OffsetDateTime>, StorageError> {
-            Ok(None)
-        }
-        async fn mark_refreshed(&self, _: &CredentialId) -> Result<(), StorageError> {
-            Ok(())
-        }
-    }
-
     fn platform_polling(server: &crate::endpoints_test_support::StubServer) -> YoutubePlatform {
         let credentials = serde_json::to_string(&crate::credentials::YoutubeCredentials {
             access_token: forge_types::OAuthToken::new("access"),
@@ -395,7 +344,10 @@ mod tests {
         })
         .unwrap();
         let manager = Arc::new(YoutubeCredentialsManager::new(
-            Arc::new(StoredRepo(credentials)),
+            Arc::new(MemoryCredentials::holding(
+                crate::credentials::CREDENTIAL_KEY,
+                &credentials,
+            )),
             crate::endpoints_test_support::unreachable_oauth_client(),
             crate::endpoints_test_support::unreachable_data_api(),
         ));

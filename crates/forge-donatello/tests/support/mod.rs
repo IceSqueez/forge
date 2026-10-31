@@ -11,10 +11,9 @@ use forge_donatello::{
 };
 use forge_net::{RateLimitError, RateLimitOutcome, RateLimiter};
 use forge_platform_core::{DonationProvider, DonationStream, PlatformError};
-use forge_storage::{CredentialId, CredentialsRepo, StorageError};
+use forge_storage::CredentialsRepo;
 use forge_types::Donation;
 use serde_json::{Value, json};
-use time::OffsetDateTime;
 use tokio_stream::StreamExt;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, Request, Respond, ResponseTemplate};
@@ -22,74 +21,19 @@ use wiremock::{Mock, MockServer, Request, Respond, ResponseTemplate};
 pub(crate) const TOKEN: &str = "dn-test-token-7f3a9c";
 pub(crate) const OTHER_TOKEN: &str = "dn-other-token-41be02";
 pub(crate) const WAIT: Duration = Duration::from_secs(30);
+pub(crate) use forge_storage::test_support::MemoryCredentials;
+
+pub(crate) fn creds_with_token(token: &str) -> Arc<MemoryCredentials> {
+    Arc::new(MemoryCredentials::holding(
+        DONATELLO_CREDENTIAL_ID,
+        &json!({ "token": token }).to_string(),
+    ))
+}
+
 pub(crate) const TICK: Duration = Duration::from_millis(10);
 pub(crate) const LATER_ARRIVAL_ID: &str = "LATER-ARRIVAL";
 const LATER_ARRIVAL_CREATED_AT: &str = "2026-08-01 10:00:00";
 const REFERENCE_POLLS: usize = 8;
-
-#[derive(Default)]
-pub(crate) struct MemCreds {
-    entries: Mutex<HashMap<String, String>>,
-}
-
-impl MemCreds {
-    pub(crate) fn with_token(token: &str) -> Arc<Self> {
-        let creds = Self::default();
-        creds.entries.lock().unwrap().insert(
-            DONATELLO_CREDENTIAL_ID.to_owned(),
-            json!({ "token": token }).to_string(),
-        );
-        Arc::new(creds)
-    }
-
-    pub(crate) fn stored(&self) -> Option<String> {
-        self.entries
-            .lock()
-            .unwrap()
-            .get(DONATELLO_CREDENTIAL_ID)
-            .cloned()
-    }
-}
-
-#[async_trait]
-impl CredentialsRepo for MemCreds {
-    async fn store(&self, id: &CredentialId, plaintext_bundle: &str) -> Result<(), StorageError> {
-        self.entries
-            .lock()
-            .unwrap()
-            .insert(id.as_str().to_owned(), plaintext_bundle.to_owned());
-        Ok(())
-    }
-
-    async fn load(&self, id: &CredentialId) -> Result<Option<String>, StorageError> {
-        Ok(self.entries.lock().unwrap().get(id.as_str()).cloned())
-    }
-
-    async fn delete(&self, id: &CredentialId) -> Result<bool, StorageError> {
-        Ok(self.entries.lock().unwrap().remove(id.as_str()).is_some())
-    }
-
-    async fn list_ids(&self) -> Result<Vec<CredentialId>, StorageError> {
-        Ok(self
-            .entries
-            .lock()
-            .unwrap()
-            .keys()
-            .map(CredentialId::new)
-            .collect())
-    }
-
-    async fn last_refresh(
-        &self,
-        _id: &CredentialId,
-    ) -> Result<Option<OffsetDateTime>, StorageError> {
-        Ok(None)
-    }
-
-    async fn mark_refreshed(&self, _id: &CredentialId) -> Result<(), StorageError> {
-        Ok(())
-    }
-}
 
 pub(crate) struct ScriptedLimiter {
     exhausted: bool,
@@ -317,7 +261,7 @@ impl Respond for DonatesList {
         {
             state.oldest_first.push(item);
         }
-        ResponseTemplate::new(200).set_body_json(json!({
+        ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(json!({
             "content": content,
             "page": page,
             "size": size,
@@ -332,15 +276,17 @@ impl Respond for DonatesList {
 pub(crate) async fn mount_me(server: &MockServer) {
     Mock::given(method("GET"))
         .and(path("/me"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "nickname": "streamer",
-            "pubId": "U-1",
-            "page": "https://donatello.to/streamer",
-            "isActive": true,
-            "isPublic": true,
-            "donates": { "totalAmount": "0", "totalCount": "0" },
-            "createdAt": "2025-01-01 00:00:00",
-        })))
+        .respond_with(
+            ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(json!({
+                "nickname": "streamer",
+                "pubId": "U-1",
+                "page": "https://donatello.to/streamer",
+                "isActive": true,
+                "isPublic": true,
+                "donates": { "totalAmount": "0", "totalCount": "0" },
+                "createdAt": "2025-01-01 00:00:00",
+            })),
+        )
         .mount(server)
         .await;
 }
@@ -356,7 +302,7 @@ pub(crate) async fn mount_donates(server: &MockServer, list: &DonatesList) {
 pub(crate) struct Harness {
     pub server: MockServer,
     pub list: DonatesList,
-    pub creds: Arc<MemCreds>,
+    pub creds: Arc<MemoryCredentials>,
     pub provider: DonatelloProvider,
     pub stream: DonationStream,
     flip: bool,
@@ -368,7 +314,7 @@ impl Harness {
         let list = DonatesList::new(order, initial);
         mount_me(&server).await;
         mount_donates(&server, &list).await;
-        Self::with_server(server, list, MemCreds::with_token(TOKEN))
+        Self::with_server(server, list, creds_with_token(TOKEN))
     }
 
     pub(crate) async fn start_with_arrival(
@@ -381,7 +327,7 @@ impl Harness {
         list.add_after_page(after_page, item);
         mount_me(&server).await;
         mount_donates(&server, &list).await;
-        Self::with_server(server, list, MemCreds::with_token(TOKEN))
+        Self::with_server(server, list, creds_with_token(TOKEN))
     }
 
     pub(crate) async fn ticking(order: Order, initial: Vec<Value>) -> Self {
@@ -389,10 +335,14 @@ impl Harness {
         let list = DonatesList::new(order, initial);
         mount_me(&server).await;
         mount_donates(&server, &list).await;
-        Self::ticking_with_server(server, list, MemCreds::with_token(TOKEN))
+        Self::ticking_with_server(server, list, creds_with_token(TOKEN))
     }
 
-    pub(crate) fn with_server(server: MockServer, list: DonatesList, creds: Arc<MemCreds>) -> Self {
+    pub(crate) fn with_server(
+        server: MockServer,
+        list: DonatesList,
+        creds: Arc<MemoryCredentials>,
+    ) -> Self {
         let provider = provider_on(&server.uri(), creds.clone(), ScriptedLimiter::open());
         Self::around(server, list, creds, provider)
     }
@@ -400,7 +350,7 @@ impl Harness {
     pub(crate) fn ticking_with_server(
         server: MockServer,
         list: DonatesList,
-        creds: Arc<MemCreds>,
+        creds: Arc<MemoryCredentials>,
     ) -> Self {
         let provider = ticking_provider_on(&server.uri(), creds.clone(), ScriptedLimiter::open());
         Self::around(server, list, creds, provider)
@@ -409,7 +359,7 @@ impl Harness {
     fn around(
         server: MockServer,
         list: DonatesList,
-        creds: Arc<MemCreds>,
+        creds: Arc<MemoryCredentials>,
         provider: DonatelloProvider,
     ) -> Self {
         let stream = provider.donations();

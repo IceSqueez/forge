@@ -101,8 +101,8 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
-    use crate::client::tests::MockCreds;
     use crate::content::record_send;
+    use forge_storage::test_support::MemoryCredentials;
     use forge_storage::{CredentialsRepo, StorageError};
 
     const SECRET: &str = "S3CRET-WEBHOOK-TOKEN";
@@ -111,12 +111,12 @@ mod tests {
         format!("https://discord.com/api/webhooks/1234567890/{SECRET}")
     }
 
-    fn client_with(creds: &Arc<MockCreds>) -> Arc<DiscordClient> {
-        DiscordClient::new_for_test_with_creds(creds.creds())
+    fn client_with(creds: &Arc<MemoryCredentials>) -> Arc<DiscordClient> {
+        DiscordClient::new_for_test_with_creds(creds.clone())
     }
 
-    fn stored_url(creds: &Arc<MockCreds>, key: &str) -> Option<String> {
-        let raw = creds.peek(key)?;
+    fn stored_url(creds: &Arc<MemoryCredentials>, key: &str) -> Option<String> {
+        let raw = creds.stored(key)?;
         let blob: serde_json::Value = serde_json::from_str(&raw).unwrap();
         Some(blob["url"].as_str().unwrap().to_owned())
     }
@@ -191,8 +191,8 @@ mod tests {
 
     #[tokio::test]
     async fn no_webhook_api_error_ever_echoes_the_endpoint_secret() {
-        let creds = MockCreds::new();
-        creds.insert(
+        let creds = Arc::new(MemoryCredentials::default());
+        creds.put(
             "discord:broken",
             &serde_json::json!({ "url": 7 }).to_string(),
         );
@@ -222,7 +222,7 @@ mod tests {
 
     #[tokio::test]
     async fn post_test_rejects_a_non_discord_endpoint_before_any_request() {
-        let creds = MockCreds::new();
+        let creds = Arc::new(MemoryCredentials::default());
         let client = client_with(&creds);
 
         let err = client
@@ -235,17 +235,17 @@ mod tests {
 
     #[tokio::test]
     async fn list_webhooks_returns_sorted_names_and_ignores_foreign_credentials() {
-        let creds = MockCreds::new();
-        creds.insert(
+        let creds = Arc::new(MemoryCredentials::default());
+        creds.put(
             "discord:zulu",
             &serde_json::json!({ "url": "u" }).to_string(),
         );
-        creds.insert(
+        creds.put(
             "discord:alpha",
             &serde_json::json!({ "url": "u" }).to_string(),
         );
-        creds.insert("twitch:broadcaster", "{}");
-        creds.insert("obs:default", "{}");
+        creds.put("twitch:broadcaster", "{}");
+        creds.put("obs:default", "{}");
         let client = client_with(&creds);
 
         assert_eq!(client.list_webhooks().await.unwrap(), ["alpha", "zulu"]);
@@ -253,7 +253,7 @@ mod tests {
 
     #[tokio::test]
     async fn list_webhooks_drops_cached_names_that_storage_no_longer_has() {
-        let creds = MockCreds::new();
+        let creds = Arc::new(MemoryCredentials::default());
         let client = client_with(&creds);
         {
             let mut snap = client.content_state.lock().unwrap();
@@ -267,7 +267,7 @@ mod tests {
 
     #[tokio::test]
     async fn save_webhook_persists_the_credential_and_extends_the_cache() {
-        let creds = MockCreds::new();
+        let creds = Arc::new(MemoryCredentials::default());
         let client = client_with(&creds);
 
         client.save_webhook("alerts", &secret_url()).await.unwrap();
@@ -278,18 +278,18 @@ mod tests {
 
     #[tokio::test]
     async fn save_webhook_rejects_a_blank_name_without_touching_storage() {
-        let creds = MockCreds::new();
+        let creds = Arc::new(MemoryCredentials::default());
         let client = client_with(&creds);
 
         let err = client.save_webhook("   ", &secret_url()).await.unwrap_err();
 
         assert!(matches!(err, DiscordError::Validation(_)));
-        assert!(creds.keys().is_empty());
+        assert!(creds.ids().is_empty());
     }
 
     #[tokio::test]
     async fn save_webhook_refuses_every_url_a_send_would_refuse_without_touching_storage() {
-        let creds = MockCreds::new();
+        let creds = Arc::new(MemoryCredentials::default());
         let client = client_with(&creds);
 
         for bad in REFUSED_URLS {
@@ -300,13 +300,13 @@ mod tests {
                 "{bad:?}: {err:?}"
             );
         }
-        assert!(creds.keys().is_empty());
+        assert!(creds.ids().is_empty());
         assert!(client.webhook_names().is_empty());
     }
 
     #[tokio::test]
     async fn save_webhook_accepts_discord_and_discordapp_subdomains() {
-        let creds = MockCreds::new();
+        let creds = Arc::new(MemoryCredentials::default());
         let client = client_with(&creds);
 
         for (index, host) in ACCEPTED_HOSTS.into_iter().enumerate() {
@@ -325,7 +325,7 @@ mod tests {
 
     #[tokio::test]
     async fn save_webhook_replaces_the_endpoint_of_an_existing_name_without_duplicating_it() {
-        let creds = MockCreds::new();
+        let creds = Arc::new(MemoryCredentials::default());
         let client = client_with(&creds);
         let replacement = "https://discord.com/api/webhooks/999/replacement-token";
         client.save_webhook("alerts", &secret_url()).await.unwrap();
@@ -341,20 +341,20 @@ mod tests {
 
     #[tokio::test]
     async fn delete_webhook_removes_the_credential_and_the_cache_entry() {
-        let creds = MockCreds::new();
+        let creds = Arc::new(MemoryCredentials::default());
         let client = client_with(&creds);
         client.save_webhook("alerts", &secret_url()).await.unwrap();
         client.save_webhook("clips", &secret_url()).await.unwrap();
 
         assert!(client.delete_webhook("alerts").await.unwrap());
 
-        assert_eq!(creds.keys(), ["discord:clips"]);
+        assert_eq!(creds.ids(), ["discord:clips"]);
         assert_eq!(client.webhook_names(), ["clips"]);
     }
 
     #[tokio::test]
     async fn delete_webhook_reports_false_for_an_unknown_name() {
-        let creds = MockCreds::new();
+        let creds = Arc::new(MemoryCredentials::default());
         let client = client_with(&creds);
 
         assert!(!client.delete_webhook("absent").await.unwrap());
@@ -362,7 +362,7 @@ mod tests {
 
     #[tokio::test]
     async fn webhook_url_returns_the_stored_endpoint() {
-        let creds = MockCreds::new();
+        let creds = Arc::new(MemoryCredentials::default());
         let client = client_with(&creds);
         client.save_webhook("alerts", &secret_url()).await.unwrap();
 
@@ -371,7 +371,7 @@ mod tests {
 
     #[tokio::test]
     async fn webhook_url_for_an_unknown_name_reports_webhook_not_found() {
-        let creds = MockCreds::new();
+        let creds = Arc::new(MemoryCredentials::default());
         let client = client_with(&creds);
 
         let err = client.webhook_url("absent").await.unwrap_err();
@@ -382,13 +382,13 @@ mod tests {
     const INTERLEAVING_YIELDS: usize = 16;
 
     struct StalledListing {
-        inner: Arc<MockCreds>,
+        inner: Arc<MemoryCredentials>,
         entered: tokio::sync::Notify,
         release: tokio::sync::Notify,
     }
 
     impl StalledListing {
-        fn over(inner: &Arc<MockCreds>) -> Arc<Self> {
+        fn over(inner: &Arc<MemoryCredentials>) -> Arc<Self> {
             Arc::new(Self {
                 inner: Arc::clone(inner),
                 entered: tokio::sync::Notify::new(),
@@ -431,7 +431,7 @@ mod tests {
     }
 
     async fn while_a_listing_is_stalled<F, Fut, T>(
-        creds: &Arc<MockCreds>,
+        creds: &Arc<MemoryCredentials>,
         edit: F,
     ) -> (Arc<DiscordClient>, T)
     where
@@ -459,8 +459,8 @@ mod tests {
 
     #[tokio::test]
     async fn a_webhook_deleted_during_the_startup_listing_stays_deleted() {
-        let creds = MockCreds::new();
-        creds.insert(
+        let creds = Arc::new(MemoryCredentials::default());
+        creds.put(
             "discord:alerts",
             &serde_json::json!({ "url": secret_url() }).to_string(),
         );
@@ -480,7 +480,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_webhook_saved_during_the_startup_listing_stays_listed() {
-        let creds = MockCreds::new();
+        let creds = Arc::new(MemoryCredentials::default());
 
         let (client, ()) = while_a_listing_is_stalled(&creds, |client| async move {
             client.save_webhook("alerts", &secret_url()).await.unwrap()

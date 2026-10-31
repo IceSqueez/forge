@@ -447,12 +447,12 @@ impl BuiltinContent for YoutubeIntegrationBundle {
 
 #[cfg(test)]
 mod tests {
+    use forge_storage::test_support::MemoryCredentials;
     use forge_types::OAuthToken;
     use std::collections::{BTreeMap, BTreeSet};
 
-    use async_trait::async_trait;
     use forge_registry::{FormField, SubActionRegistry};
-    use forge_storage::{CredentialId, CredentialsRepo, StorageError};
+    use forge_storage::CredentialsRepo;
     use futures::future::BoxFuture;
     use time::OffsetDateTime;
     use tokio_stream::StreamExt;
@@ -470,58 +470,6 @@ mod tests {
         PlatformError, QuickActionChoiceSource, QuickActionFieldKind, QuickActionFieldValue,
         QuickActions,
     };
-
-    struct EmptyRepo;
-    #[async_trait]
-    impl CredentialsRepo for EmptyRepo {
-        async fn store(&self, _: &CredentialId, _: &str) -> Result<(), StorageError> {
-            Ok(())
-        }
-        async fn load(&self, _: &CredentialId) -> Result<Option<String>, StorageError> {
-            Ok(None)
-        }
-        async fn delete(&self, _: &CredentialId) -> Result<bool, StorageError> {
-            Ok(false)
-        }
-        async fn list_ids(&self) -> Result<Vec<CredentialId>, StorageError> {
-            Ok(Vec::new())
-        }
-        async fn last_refresh(
-            &self,
-            _: &CredentialId,
-        ) -> Result<Option<OffsetDateTime>, StorageError> {
-            Ok(None)
-        }
-        async fn mark_refreshed(&self, _: &CredentialId) -> Result<(), StorageError> {
-            Ok(())
-        }
-    }
-
-    struct StoredRepo(String);
-    #[async_trait]
-    impl CredentialsRepo for StoredRepo {
-        async fn store(&self, _: &CredentialId, _: &str) -> Result<(), StorageError> {
-            Ok(())
-        }
-        async fn load(&self, _: &CredentialId) -> Result<Option<String>, StorageError> {
-            Ok(Some(self.0.clone()))
-        }
-        async fn delete(&self, _: &CredentialId) -> Result<bool, StorageError> {
-            Ok(true)
-        }
-        async fn list_ids(&self) -> Result<Vec<CredentialId>, StorageError> {
-            Ok(Vec::new())
-        }
-        async fn last_refresh(
-            &self,
-            _: &CredentialId,
-        ) -> Result<Option<OffsetDateTime>, StorageError> {
-            Ok(None)
-        }
-        async fn mark_refreshed(&self, _: &CredentialId) -> Result<(), StorageError> {
-            Ok(())
-        }
-    }
 
     fn token_source()
     -> Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync> {
@@ -711,7 +659,7 @@ mod tests {
     #[tokio::test]
     async fn every_quick_action_key_is_backed_by_its_runner_config() {
         let reg = sub_action_registry();
-        let (bundle, _platform) = make_bundle(Arc::new(EmptyRepo));
+        let (bundle, _platform) = make_bundle(Arc::new(MemoryCredentials::default()));
 
         for action in QuickActions::actions(bundle.as_ref()) {
             let kind = &action.subaction_template.kind_id;
@@ -769,7 +717,7 @@ mod tests {
     #[tokio::test]
     async fn every_partial_quick_action_template_merged_with_its_field_values_validates() {
         let reg = sub_action_registry();
-        let (bundle, _platform) = make_bundle(Arc::new(EmptyRepo));
+        let (bundle, _platform) = make_bundle(Arc::new(MemoryCredentials::default()));
 
         for action in QuickActions::actions(bundle.as_ref()) {
             let step = action.merge_config(&filled_values(&action));
@@ -788,7 +736,11 @@ mod tests {
 
     #[tokio::test]
     async fn free_text_quick_action_fields_open_blank() {
-        for action in QuickActions::actions(make_bundle(Arc::new(EmptyRepo)).0.as_ref()) {
+        for action in QuickActions::actions(
+            make_bundle(Arc::new(MemoryCredentials::default()))
+                .0
+                .as_ref(),
+        ) {
             for field in &action.fields {
                 if !matches!(
                     field.kind,
@@ -822,7 +774,7 @@ mod tests {
     #[tokio::test]
     async fn static_choice_options_equal_runner_enum_and_include_default() {
         let reg = sub_action_registry();
-        let (bundle, _platform) = make_bundle(Arc::new(EmptyRepo));
+        let (bundle, _platform) = make_bundle(Arc::new(MemoryCredentials::default()));
 
         let mut checked = 0;
         for action in QuickActions::actions(bundle.as_ref()) {
@@ -871,7 +823,7 @@ mod tests {
 
     #[tokio::test]
     async fn quick_action_groups_are_contiguous_in_design_order() {
-        let (bundle, _platform) = make_bundle(Arc::new(EmptyRepo));
+        let (bundle, _platform) = make_bundle(Arc::new(MemoryCredentials::default()));
         let groups: Vec<String> = QuickActions::actions(bundle.as_ref())
             .into_iter()
             .filter_map(|a| a.group)
@@ -909,7 +861,7 @@ mod tests {
 
     #[tokio::test]
     async fn only_delete_message_and_ban_user_are_destructive() {
-        let (bundle, _platform) = make_bundle(Arc::new(EmptyRepo));
+        let (bundle, _platform) = make_bundle(Arc::new(MemoryCredentials::default()));
         let destructive: BTreeSet<String> = QuickActions::actions(bundle.as_ref())
             .into_iter()
             .filter(|a| a.destructive)
@@ -927,7 +879,7 @@ mod tests {
 
     #[tokio::test]
     async fn metrics_declare_unique_catalogued_ids() {
-        let (bundle, _platform) = make_bundle(Arc::new(EmptyRepo));
+        let (bundle, _platform) = make_bundle(Arc::new(MemoryCredentials::default()));
 
         let ids: std::collections::HashSet<_> = BuiltinHealth::metrics(bundle.as_ref())
             .into_iter()
@@ -953,7 +905,8 @@ mod tests {
             used_today: 9_500,
             last_reset_date: previous_day,
         });
-        let (bundle, _platform) = make_bundle_with_quota(Arc::new(EmptyRepo), quota);
+        let (bundle, _platform) =
+            make_bundle_with_quota(Arc::new(MemoryCredentials::default()), quota);
 
         let metric = bundle.quota_metric();
 
@@ -966,7 +919,7 @@ mod tests {
 
     #[tokio::test]
     async fn header_actions_offer_refresh_token_and_disconnect_only() {
-        let (bundle, _platform) = make_bundle(Arc::new(EmptyRepo));
+        let (bundle, _platform) = make_bundle(Arc::new(MemoryCredentials::default()));
         assert_eq!(
             BuiltinStatus::header_actions(bundle.as_ref()),
             vec![HeaderAction::RefreshToken, HeaderAction::Disconnect]
@@ -975,7 +928,7 @@ mod tests {
 
     #[tokio::test]
     async fn name_badges_is_single_neutral_monospace_channel_id() {
-        let (bundle, _platform) = make_bundle(Arc::new(EmptyRepo));
+        let (bundle, _platform) = make_bundle(Arc::new(MemoryCredentials::default()));
         assert_eq!(
             BuiltinStatus::name_badges(bundle.as_ref()),
             vec![HeroBadge {
@@ -988,7 +941,7 @@ mod tests {
 
     #[tokio::test]
     async fn identity_fields_are_absent_before_credential_loads() {
-        let (bundle, _platform) = make_bundle(Arc::new(EmptyRepo));
+        let (bundle, _platform) = make_bundle(Arc::new(MemoryCredentials::default()));
         assert_eq!(BuiltinStatus::hero_name(bundle.as_ref()), None);
         assert_eq!(BuiltinStatus::token_expiry(bundle.as_ref()), None);
     }
@@ -996,11 +949,10 @@ mod tests {
     #[tokio::test]
     async fn refresh_identity_populates_hero_name_and_token_expiry() {
         let expires_at = OffsetDateTime::from_unix_timestamp(1_800_000_000).unwrap();
-        let repo = Arc::new(StoredRepo(stored_credential_json(
-            "GTNH Live",
-            Some("@gtnhlive"),
-            expires_at,
-        )));
+        let repo = Arc::new(MemoryCredentials::holding(
+            crate::credentials::CREDENTIAL_KEY,
+            &stored_credential_json("GTNH Live", Some("@gtnhlive"), expires_at),
+        ));
         let (bundle, _platform) = make_bundle(repo);
 
         bundle.refresh_identity().await;
@@ -1017,7 +969,7 @@ mod tests {
 
     #[tokio::test]
     async fn health_stream_emits_chat_delta_inactive_connecting_when_platform_connects() {
-        let (bundle, platform) = make_bundle(Arc::new(EmptyRepo));
+        let (bundle, platform) = make_bundle(Arc::new(MemoryCredentials::default()));
         let mut health = BuiltinHealth::stream(bundle.as_ref());
 
         platform.connect().await.unwrap();
@@ -1044,7 +996,7 @@ mod tests {
 
     #[tokio::test]
     async fn health_stream_emits_events_delta_mirroring_connecting_state_on_connect() {
-        let (bundle, platform) = make_bundle(Arc::new(EmptyRepo));
+        let (bundle, platform) = make_bundle(Arc::new(MemoryCredentials::default()));
         let mut health = BuiltinHealth::stream(bundle.as_ref());
 
         platform.connect().await.unwrap();
@@ -1071,7 +1023,7 @@ mod tests {
 
     #[tokio::test]
     async fn shutting_down_twice_disconnects_and_stops_every_bridge_that_holds_the_bundle() {
-        let (bundle, platform) = make_bundle(Arc::new(EmptyRepo));
+        let (bundle, platform) = make_bundle(Arc::new(MemoryCredentials::default()));
         platform.connect().await.unwrap();
 
         bundle.shutdown().await;
@@ -1216,7 +1168,7 @@ mod tests {
         use crate::emitted_codes::{emitted_codes, uncatalogued};
         use crate::vocabulary::messages::YOUTUBE_MESSAGES;
 
-        let (bundle, _platform) = make_bundle(Arc::new(EmptyRepo));
+        let (bundle, _platform) = make_bundle(Arc::new(MemoryCredentials::default()));
         let emitted = emitted_codes(&serde_json::json!((
             QuickActions::actions(bundle.as_ref()),
             BuiltinContent::sections(bundle.as_ref()),
@@ -1229,41 +1181,13 @@ mod tests {
         );
     }
 
-    struct ChangingRepo(std::sync::Mutex<String>);
-
-    #[async_trait]
-    impl CredentialsRepo for ChangingRepo {
-        async fn store(&self, _: &CredentialId, _: &str) -> Result<(), StorageError> {
-            Ok(())
-        }
-        async fn load(&self, _: &CredentialId) -> Result<Option<String>, StorageError> {
-            Ok(Some(self.0.lock().unwrap().clone()))
-        }
-        async fn delete(&self, _: &CredentialId) -> Result<bool, StorageError> {
-            Ok(true)
-        }
-        async fn list_ids(&self) -> Result<Vec<CredentialId>, StorageError> {
-            Ok(Vec::new())
-        }
-        async fn last_refresh(
-            &self,
-            _: &CredentialId,
-        ) -> Result<Option<OffsetDateTime>, StorageError> {
-            Ok(None)
-        }
-        async fn mark_refreshed(&self, _: &CredentialId) -> Result<(), StorageError> {
-            Ok(())
-        }
-    }
-
     #[tokio::test]
     async fn each_identity_refresh_replaces_the_hero_name() {
         let expires_at = OffsetDateTime::from_unix_timestamp(1_800_000_000).unwrap();
-        let repo = Arc::new(ChangingRepo(std::sync::Mutex::new(stored_credential_json(
-            "Old Title",
-            Some("@old"),
-            expires_at,
-        ))));
+        let repo = Arc::new(MemoryCredentials::holding(
+            crate::credentials::CREDENTIAL_KEY,
+            &stored_credential_json("Old Title", Some("@old"), expires_at),
+        ));
         let (bundle, _platform) = make_bundle(Arc::clone(&repo) as Arc<dyn CredentialsRepo>);
         bundle.refresh_identity().await;
 
@@ -1271,7 +1195,10 @@ mod tests {
             ("Old Title", Some("@renamed"), "@renamed"),
             ("New Title", None, "New Title"),
         ] {
-            *repo.0.lock().unwrap() = stored_credential_json(title, handle, expires_at);
+            repo.put(
+                crate::credentials::CREDENTIAL_KEY,
+                &stored_credential_json(title, handle, expires_at),
+            );
             bundle.refresh_identity().await;
 
             assert_eq!(
@@ -1286,7 +1213,8 @@ mod tests {
         let quota = SharedQuota::default();
         let today = today_pacific();
         quota.lock().await.charge(7, today).unwrap();
-        let (bundle, _platform) = make_bundle_with_quota(Arc::new(EmptyRepo), quota.clone());
+        let (bundle, _platform) =
+            make_bundle_with_quota(Arc::new(MemoryCredentials::default()), quota.clone());
         bundle.quota_metric();
 
         let held = quota.lock().await;

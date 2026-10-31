@@ -197,13 +197,24 @@ async fn run<R: SubActionRunner>(
     (telemetry.outcome, new_stack)
 }
 
+fn var_config(user: &str, name: &str, extra: &[(&str, Variant)]) -> SubActionConfig {
+    let mut entries = vec![
+        ("user_login", Variant::String(user.to_owned())),
+        ("var_name", Variant::String(name.to_owned())),
+    ];
+    entries.extend(extra.iter().cloned());
+    cfg(&entries)
+}
+
 fn get_config() -> SubActionConfig {
-    cfg(&[
-        ("user_login", Variant::String("viewer".to_owned())),
-        ("var_name", Variant::String("points".to_owned())),
-        ("into_var", Variant::String("result".to_owned())),
-        ("default_value", Variant::String("0".to_owned())),
-    ])
+    var_config(
+        "viewer",
+        "points",
+        &[
+            ("into_var", Variant::String("result".to_owned())),
+            ("default_value", Variant::String("0".to_owned())),
+        ],
+    )
 }
 
 #[tokio::test]
@@ -237,12 +248,14 @@ async fn get_var_uses_default_when_variable_is_missing() {
 async fn get_var_queries_local_namespace_with_login_as_user_id() {
     let repo = Arc::new(MapUserGlobals::new());
     let runner = CoreUsersGetVarRunner::new(Arc::new(EmptyGlobals), repo.clone());
-    let config = cfg(&[
-        ("user_login", Variant::String("viewer1".to_owned())),
-        ("var_name", Variant::String("points".to_owned())),
-        ("into_var", Variant::String("result".to_owned())),
-        ("default_value", Variant::String("0".to_owned())),
-    ]);
+    let config = var_config(
+        "viewer1",
+        "points",
+        &[
+            ("into_var", Variant::String("result".to_owned())),
+            ("default_value", Variant::String("0".to_owned())),
+        ],
+    );
     run(&runner, &config, &ArgStack::new()).await;
     assert_eq!(
         repo.last_get(),
@@ -279,11 +292,11 @@ async fn get_var_reports_failed_on_repo_error() {
 async fn set_var_writes_value_under_broadcaster_user_and_name() {
     let repo = Arc::new(MapUserGlobals::new());
     let runner = CoreUsersSetVarRunner::new(Arc::new(EmptyGlobals), repo.clone());
-    let config = cfg(&[
-        ("user_login", Variant::String("viewer".to_owned())),
-        ("var_name", Variant::String("points".to_owned())),
-        ("value", Variant::String("42".to_owned())),
-    ]);
+    let config = var_config(
+        "viewer",
+        "points",
+        &[("value", Variant::String("42".to_owned()))],
+    );
     let (outcome, _) = run(&runner, &config, &ArgStack::new()).await;
     assert!(matches!(outcome, SubActionOutcome::Success));
     assert!(matches!(
@@ -298,11 +311,11 @@ async fn set_var_then_get_var_round_trips_the_value() {
     let globals: Arc<dyn GlobalsRepo> = Arc::new(EmptyGlobals);
     let setter = CoreUsersSetVarRunner::new(globals.clone(), repo.clone());
     let getter = CoreUsersGetVarRunner::new(globals, repo.clone());
-    let set_cfg = cfg(&[
-        ("user_login", Variant::String("viewer".to_owned())),
-        ("var_name", Variant::String("points".to_owned())),
-        ("value", Variant::String("7".to_owned())),
-    ]);
+    let set_cfg = var_config(
+        "viewer",
+        "points",
+        &[("value", Variant::String("7".to_owned()))],
+    );
     run(&setter, &set_cfg, &ArgStack::new()).await;
     let (outcome, stack) = run(&getter, &get_config(), &ArgStack::new()).await;
     assert!(matches!(outcome, SubActionOutcome::Success));
@@ -316,11 +329,7 @@ async fn set_var_then_get_var_round_trips_the_value() {
 async fn increment_starts_missing_variable_at_amount() {
     let repo = Arc::new(MapUserGlobals::new());
     let runner = CoreUsersIncrementVarRunner::new(Arc::new(EmptyGlobals), repo.clone());
-    let config = cfg(&[
-        ("user_login", Variant::String("viewer".to_owned())),
-        ("var_name", Variant::String("points".to_owned())),
-        ("amount", Variant::Int(5)),
-    ]);
+    let config = var_config("viewer", "points", &[("amount", Variant::Int(5))]);
     let (outcome, _) = run(&runner, &config, &ArgStack::new()).await;
     assert!(matches!(outcome, SubActionOutcome::Success));
     assert!(matches!(
@@ -343,11 +352,7 @@ async fn increment_saturating_adds_to_existing_int() {
             Variant::Int(start),
         ));
         let runner = CoreUsersIncrementVarRunner::new(Arc::new(EmptyGlobals), repo.clone());
-        let config = cfg(&[
-            ("user_login", Variant::String("viewer".to_owned())),
-            ("var_name", Variant::String("points".to_owned())),
-            ("amount", Variant::Int(amount)),
-        ]);
+        let config = var_config("viewer", "points", &[("amount", Variant::Int(amount))]);
         let (outcome, _) = run(&runner, &config, &ArgStack::new()).await;
         assert!(
             matches!(outcome, SubActionOutcome::Success),
@@ -369,11 +374,7 @@ async fn increment_adds_to_existing_float() {
         Variant::float(1.5).unwrap(),
     ));
     let runner = CoreUsersIncrementVarRunner::new(Arc::new(EmptyGlobals), repo.clone());
-    let config = cfg(&[
-        ("user_login", Variant::String("viewer".to_owned())),
-        ("var_name", Variant::String("ratio".to_owned())),
-        ("amount", Variant::Int(2)),
-    ]);
+    let config = var_config("viewer", "ratio", &[("amount", Variant::Int(2))]);
     let (outcome, _) = run(&runner, &config, &ArgStack::new()).await;
     assert!(matches!(outcome, SubActionOutcome::Success));
     assert!(matches!(
@@ -391,11 +392,7 @@ async fn increment_non_numeric_variable_fails_and_leaves_value_unchanged() {
         Variant::String("alice".to_owned()),
     ));
     let runner = CoreUsersIncrementVarRunner::new(Arc::new(EmptyGlobals), repo.clone());
-    let config = cfg(&[
-        ("user_login", Variant::String("viewer".to_owned())),
-        ("var_name", Variant::String("name".to_owned())),
-        ("amount", Variant::Int(1)),
-    ]);
+    let config = var_config("viewer", "name", &[("amount", Variant::Int(1))]);
     let (outcome, _) = run(&runner, &config, &ArgStack::new()).await;
     match outcome {
         SubActionOutcome::Failed(msg) => {

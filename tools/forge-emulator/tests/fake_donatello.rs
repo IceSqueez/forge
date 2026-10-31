@@ -18,7 +18,7 @@ use serde_json::{Value, json};
 
 mod support;
 
-use support::MemoryCredentials;
+use forge_storage::test_support::MemoryCredentials;
 
 const WAIT: Duration = Duration::from_secs(30);
 

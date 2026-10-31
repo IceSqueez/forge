@@ -194,13 +194,15 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/channels"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "items": [{
-                    "id": "UCchan",
-                    "snippet": { "title": "Creator" },
-                    "statistics": { "subscriberCount": "42", "viewCount": "999" }
-                }]
-            })))
+            .respond_with(
+                ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(json!({
+                    "items": [{
+                        "id": "UCchan",
+                        "snippet": { "title": "Creator" },
+                        "statistics": { "subscriberCount": "42", "viewCount": "999" }
+                    }]
+                })),
+            )
             .mount(&server)
             .await;
 
@@ -234,13 +236,15 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/channels"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "items": [{
-                    "id": "UCchan",
-                    "snippet": { "title": "Creator" },
-                    "statistics": { "hiddenSubscriberCount": true, "viewCount": "7" }
-                }]
-            })))
+            .respond_with(
+                ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(json!({
+                    "items": [{
+                        "id": "UCchan",
+                        "snippet": { "title": "Creator" },
+                        "statistics": { "hiddenSubscriberCount": true, "viewCount": "7" }
+                    }]
+                })),
+            )
             .mount(&server)
             .await;
 
@@ -267,7 +271,10 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/channels"))
-            .respond_with(ResponseTemplate::new(500).set_body_string(BODY_SENTINEL))
+            .respond_with(
+                ResponseTemplate::new(reqwest::StatusCode::INTERNAL_SERVER_ERROR)
+                    .set_body_string(BODY_SENTINEL),
+            )
             .mount(&server)
             .await;
 

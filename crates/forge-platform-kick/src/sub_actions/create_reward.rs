@@ -189,7 +189,10 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/channels/rewards"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({"id": "x"})))
+            .respond_with(
+                ResponseTemplate::new(reqwest::StatusCode::OK)
+                    .set_body_json(serde_json::json!({"id": "x"})),
+            )
             .expect(1)
             .mount(&server)
             .await;
@@ -229,9 +232,11 @@ mod tests {
             serde_json::json!({"id": "rw-9"}),
             serde_json::json!({"data": {"id": "rw-9"}}),
         ] {
-            let produced = created_with_response(ResponseTemplate::new(200).set_body_json(&body))
-                .await
-                .unwrap_or_else(|| panic!("no arg stack for {body}"));
+            let produced = created_with_response(
+                ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(&body),
+            )
+            .await
+            .unwrap_or_else(|| panic!("no arg stack for {body}"));
 
             assert_eq!(
                 produced.get("kick.reward.id"),
@@ -249,9 +254,10 @@ mod tests {
     #[tokio::test]
     async fn a_created_reward_without_a_readable_id_succeeds_without_an_arg_stack() {
         for body in [
-            ResponseTemplate::new(200).set_body_json(serde_json::json!({"data": {}})),
-            ResponseTemplate::new(200).set_body_string("not json"),
-            ResponseTemplate::new(204),
+            ResponseTemplate::new(reqwest::StatusCode::OK)
+                .set_body_json(serde_json::json!({"data": {}})),
+            ResponseTemplate::new(reqwest::StatusCode::OK).set_body_string("not json"),
+            ResponseTemplate::new(reqwest::StatusCode::NO_CONTENT),
         ] {
             assert!(created_with_response(body).await.is_none());
         }
@@ -261,7 +267,7 @@ mod tests {
     async fn non_numeric_cost_fails_without_request() {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
-            .respond_with(ResponseTemplate::new(200))
+            .respond_with(ResponseTemplate::new(reqwest::StatusCode::OK))
             .mount(&server)
             .await;
 
@@ -281,7 +287,7 @@ mod tests {
     async fn zero_cost_fails_the_minimum_guard_without_request() {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
-            .respond_with(ResponseTemplate::new(200))
+            .respond_with(ResponseTemplate::new(reqwest::StatusCode::OK))
             .mount(&server)
             .await;
 
@@ -301,7 +307,7 @@ mod tests {
     async fn empty_title_after_interpolation_fails_without_request() {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
-            .respond_with(ResponseTemplate::new(200))
+            .respond_with(ResponseTemplate::new(reqwest::StatusCode::OK))
             .mount(&server)
             .await;
 

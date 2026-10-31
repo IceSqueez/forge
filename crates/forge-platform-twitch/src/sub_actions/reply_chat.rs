@@ -154,7 +154,7 @@ mod tests {
 
     fn runner_with(
         response: Result<serde_json::Value, HelixError>,
-        creds: MockCreds,
+        creds: forge_storage::test_support::MemoryCredentials,
     ) -> (Arc<MockTransport>, ReplyChatRunner) {
         let transport = Arc::new(MockTransport::returning(response));
         let runner = ReplyChatRunner::new(

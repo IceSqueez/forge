@@ -696,10 +696,12 @@ mod tests {
             .mount(
                 "POST",
                 "/token",
-                ResponseTemplate::new(400).set_body_json(serde_json::json!({
-                    "status": 400,
-                    "message": "Invalid refresh token",
-                })),
+                ResponseTemplate::new(reqwest::StatusCode::BAD_REQUEST).set_body_json(
+                    serde_json::json!({
+                        "status": 400,
+                        "message": "Invalid refresh token",
+                    }),
+                ),
             )
             .await;
 

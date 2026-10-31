@@ -626,6 +626,26 @@ mod tests {
         Arc::new(triggers)
     }
 
+    fn spawn_pipeline(
+        bus: &Arc<EventBus>,
+        dp: &Arc<dyn DataProvider>,
+        queues: Vec<Queue>,
+    ) -> (Arc<Catalog>, QueueSchedulerHandle) {
+        let catalog = Catalog::from_provider(dp.as_ref());
+        let engine = crate::action_engine::spawn_action_engine(
+            Arc::clone(bus),
+            Arc::clone(&catalog),
+            dp.action_repo(),
+            dp.history_repo(),
+            log_step_registry(),
+            Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
+        );
+        (
+            catalog,
+            QueueScheduler::spawn(engine, Arc::clone(bus), queues),
+        )
+    }
+
     struct EvaluatorFixture {
         bus: Arc<EventBus>,
         registry: Arc<TriggerRegistry>,
@@ -657,16 +677,7 @@ mod tests {
             .await
             .unwrap();
 
-        let catalog = Catalog::from_provider(dp.as_ref());
-        let engine = crate::action_engine::spawn_action_engine(
-            Arc::clone(&bus),
-            Arc::clone(&catalog),
-            dp.action_repo(),
-            dp.history_repo(),
-            log_step_registry(),
-            Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
-        );
-        let scheduler = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
+        let (catalog, scheduler) = spawn_pipeline(&bus, &dp, vec![queue]);
 
         EvaluatorFixture {
             bus,
@@ -980,15 +991,44 @@ mod tests {
         }
     }
 
-    async fn decide_harness(descriptor: CommandDescriptor) -> (EvaluatorFixture, TriggerEvaluator) {
+    fn decide_harness(descriptor: CommandDescriptor) -> (Arc<EventBus>, TriggerEvaluator) {
         let mut registry = TriggerRegistry::new();
         registry.register(Box::new(descriptor)).unwrap();
-        decide_harness_with(registry).await
+        decide_harness_with(registry)
     }
 
-    async fn decide_harness_with(
-        registry: TriggerRegistry,
-    ) -> (EvaluatorFixture, TriggerEvaluator) {
+    fn decide_harness_with(registry: TriggerRegistry) -> (Arc<EventBus>, TriggerEvaluator) {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let actions: Arc<dyn forge_storage::ActionRepo> =
+            Arc::new(forge_storage::MockActionRepo::new());
+        let catalog = Catalog::new(
+            Arc::clone(&actions),
+            Arc::new(forge_storage::MockTriggerInstanceRepo::new()),
+            forge_storage::CatalogRevision::new(),
+        );
+        let engine = crate::action_engine::spawn_action_engine(
+            Arc::clone(&bus),
+            Arc::clone(&catalog),
+            actions,
+            Arc::new(forge_storage::MockHistoryRepo::new()),
+            Arc::new(SubActionRegistry::new()),
+            Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
+        );
+        let evaluator = TriggerEvaluator {
+            bus: Arc::clone(&bus),
+            registry: Arc::new(registry),
+            catalog,
+            scheduler: QueueScheduler::spawn(engine, Arc::clone(&bus), vec![]),
+            subscription: bus.subscribe_critical(TRIGGER_EVALUATOR),
+            cooldowns: CooldownMap::new(Config::default().max_cooldown_entries),
+            resolved: ResolvedBindings::default(),
+        };
+        (bus, evaluator)
+    }
+
+    async fn stored_harness(descriptor: CommandDescriptor) -> (EvaluatorFixture, TriggerEvaluator) {
+        let mut registry = TriggerRegistry::new();
+        registry.register(Box::new(descriptor)).unwrap();
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let fixture = fixture(Arc::clone(&bus)).await;
         let evaluator = TriggerEvaluator {
@@ -1005,11 +1045,10 @@ mod tests {
 
     #[tokio::test]
     async fn the_published_command_comes_from_the_phrase_the_instance_overrides() {
-        let (_fixture, mut evaluator) = decide_harness(CommandDescriptor {
+        let (_bus, mut evaluator) = decide_harness(CommandDescriptor {
             reads_the_command_line: true,
             ..CommandDescriptor::command()
-        })
-        .await;
+        });
         let mut instance = command_instance(PlatformScope::Any, PermissionRung::Everyone, 0);
         instance.overrides.insert(
             "phrase".to_owned(),
@@ -1033,7 +1072,7 @@ mod tests {
 
     #[tokio::test]
     async fn the_debug_command_summary_reports_the_phrase_viewer_and_argument_metadata() {
-        let (_fixture, mut evaluator) = decide_harness(CommandDescriptor::command()).await;
+        let (_bus, mut evaluator) = decide_harness(CommandDescriptor::command());
         let instance = command_instance(PlatformScope::Any, PermissionRung::Everyone, 0);
         let event = command_event(LINE, "alice", vec![]);
 
@@ -1053,7 +1092,7 @@ mod tests {
 
     #[tokio::test]
     async fn the_argument_tail_never_reaches_a_debug_field() {
-        let (_fixture, mut evaluator) = decide_harness(CommandDescriptor::command()).await;
+        let (_bus, mut evaluator) = decide_harness(CommandDescriptor::command());
         let instance = command_instance(PlatformScope::Any, PermissionRung::Everyone, 0);
         let event = command_event(LINE, "alice", vec![]);
 
@@ -1073,7 +1112,7 @@ mod tests {
 
     #[tokio::test]
     async fn the_full_command_line_is_raised_only_on_the_command_target_at_trace() {
-        let (_fixture, mut evaluator) = decide_harness(CommandDescriptor::command()).await;
+        let (_bus, mut evaluator) = decide_harness(CommandDescriptor::command());
         let instance = command_instance(PlatformScope::Any, PermissionRung::Everyone, 0);
         let event = command_event(LINE, "alice", vec![]);
 
@@ -1147,7 +1186,7 @@ mod tests {
                 matches: case.matches,
                 ..CommandDescriptor::command()
             };
-            let (_fixture, mut evaluator) = decide_harness(descriptor).await;
+            let (_bus, mut evaluator) = decide_harness(descriptor);
             let instance = command_instance(case.scope, case.rung, case.cooldown_secs);
             for _ in 1..case.invocations {
                 evaluator.decide(&instance, &command_event(LINE, "alice", vec![]));
@@ -1180,7 +1219,7 @@ mod tests {
                 matches: false,
                 ..CommandDescriptor::command()
             };
-            let (_fixture, mut evaluator) = decide_harness(descriptor).await;
+            let (_bus, mut evaluator) = decide_harness(descriptor);
             let instance = command_instance(PlatformScope::Any, PermissionRung::Everyone, 0);
             let event = command_event(LINE, "alice", vec![]);
 
@@ -1228,7 +1267,7 @@ mod tests {
                 family: Some(family),
                 ..CommandDescriptor::command()
             };
-            let (_fixture, mut evaluator) = decide_harness(descriptor).await;
+            let (_bus, mut evaluator) = decide_harness(descriptor);
             let event = flagged_command_event(json!(true));
 
             for (instance, fires) in [
@@ -1251,8 +1290,8 @@ mod tests {
 
     #[tokio::test]
     async fn a_skipped_bot_command_publishes_no_command_match() {
-        let (fixture, mut evaluator) = decide_harness(CommandDescriptor::command()).await;
-        let mut observer = fixture.bus.subscribe();
+        let (bus, mut evaluator) = decide_harness(CommandDescriptor::command());
+        let mut observer = bus.subscribe();
         let instance = command_instance(PlatformScope::Any, PermissionRung::Everyone, 0);
 
         evaluator.decide(&instance, &flagged_command_event(json!(true)));
@@ -1265,7 +1304,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_skipped_bot_command_names_the_bot_author_as_its_decision_point() {
-        let (_fixture, mut evaluator) = decide_harness(CommandDescriptor::command()).await;
+        let (_bus, mut evaluator) = decide_harness(CommandDescriptor::command());
         let instance = command_instance(PlatformScope::Any, PermissionRung::Everyone, 0);
         let event = flagged_command_event(json!(true));
 
@@ -1282,7 +1321,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_chat_trigger_fires_on_a_message_not_flagged_as_the_connected_bot() {
-        let (_fixture, mut evaluator) = decide_harness(CommandDescriptor::command()).await;
+        let (_bus, mut evaluator) = decide_harness(CommandDescriptor::command());
         let instance = command_instance(PlatformScope::Any, PermissionRung::Everyone, 0);
         for (label, event) in [
             ("absent", command_event(LINE, "alice", vec![])),
@@ -1300,7 +1339,7 @@ mod tests {
             family: None,
             ..CommandDescriptor::command()
         };
-        let (_fixture, mut evaluator) = decide_harness(descriptor).await;
+        let (_bus, mut evaluator) = decide_harness(descriptor);
         let instance = command_instance(PlatformScope::Any, PermissionRung::Everyone, 0);
 
         assert!(
@@ -1461,7 +1500,7 @@ mod tests {
         ),
     ];
 
-    async fn prefix_harness() -> (EvaluatorFixture, TriggerEvaluator) {
+    fn prefix_harness() -> (Arc<EventBus>, TriggerEvaluator) {
         let mut registry = TriggerRegistry::new();
         for (id, source, prefix, _) in PREFIX_CASES {
             registry
@@ -1472,7 +1511,7 @@ mod tests {
                 }))
                 .unwrap();
         }
-        decide_harness_with(registry).await
+        decide_harness_with(registry)
     }
 
     fn prefix_instance(kind_id: &str) -> TriggerInstance {
@@ -1484,7 +1523,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_platform_trigger_fires_on_the_exact_kind_its_prefix_names() {
-        let (_fixture, mut evaluator) = prefix_harness().await;
+        let (_bus, mut evaluator) = prefix_harness();
         for (id, source, prefix, _) in PREFIX_CASES {
             let event = Event::new(*source, *prefix, json!({}));
             assert!(
@@ -1496,7 +1535,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_platform_trigger_ignores_a_sibling_kind_sharing_its_prefix_text() {
-        let (_fixture, mut evaluator) = prefix_harness().await;
+        let (_bus, mut evaluator) = prefix_harness();
         for (id, source, _, siblings) in PREFIX_CASES {
             for sibling in *siblings {
                 let event = Event::new(*source, *sibling, json!({}));
@@ -1599,16 +1638,7 @@ mod tests {
                 .unwrap();
         }
 
-        let catalog = Catalog::from_provider(dp.as_ref());
-        let engine = crate::action_engine::spawn_action_engine(
-            Arc::clone(&bus),
-            Arc::clone(&catalog),
-            dp.action_repo(),
-            dp.history_repo(),
-            log_step_registry(),
-            Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
-        );
-        let scheduler = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue.clone()]);
+        let (catalog, scheduler) = spawn_pipeline(&bus, &dp, vec![queue.clone()]);
         let evaluator = spawn_trigger_evaluator(
             Arc::clone(&bus),
             core_trigger_registry(),
@@ -1752,7 +1782,7 @@ mod tests {
         crate::triggers::TimerSchedule::from_config(&config).tick_event(instance.id, 0)
     }
 
-    async fn timer_harness() -> (EvaluatorFixture, TriggerEvaluator) {
+    fn timer_harness() -> (Arc<EventBus>, TriggerEvaluator) {
         let mut registry = TriggerRegistry::new();
         registry
             .register(Box::new(crate::triggers::TimerTickDescriptor))
@@ -1764,12 +1794,12 @@ mod tests {
                 prefix: "twitch.channel.chat.message",
             }))
             .unwrap();
-        decide_harness_with(registry).await
+        decide_harness_with(registry)
     }
 
     #[tokio::test]
     async fn a_tick_fires_only_the_timer_instance_it_names() {
-        let (_fixture, mut evaluator) = timer_harness().await;
+        let (_bus, mut evaluator) = timer_harness();
         let named = timer_instance(PlatformScope::Any);
         let other = timer_instance(PlatformScope::Any);
         let tick = tick_for(&named);
@@ -1785,7 +1815,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_platform_scoped_timer_still_fires_on_its_own_tick() {
-        let (_fixture, mut evaluator) = timer_harness().await;
+        let (_bus, mut evaluator) = timer_harness();
         let kick_only = PlatformScope::Only(BTreeSet::from([PlatformId::Kick]));
         let named = timer_instance(kick_only);
 
@@ -1794,7 +1824,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_timer_ignores_a_tick_without_a_usable_instance_id() {
-        let (_fixture, mut evaluator) = timer_harness().await;
+        let (_bus, mut evaluator) = timer_harness();
         let named = timer_instance(PlatformScope::Any);
         for payload in [
             json!({}),
@@ -1812,7 +1842,7 @@ mod tests {
 
     #[tokio::test]
     async fn an_untargeted_trigger_ignores_an_instance_id_in_its_payload() {
-        let (_fixture, mut evaluator) = timer_harness().await;
+        let (_bus, mut evaluator) = timer_harness();
         let chat = prefix_instance("twitch.chat.message");
         let event = Event::new(
             EventSource::Twitch,
@@ -1831,7 +1861,7 @@ mod tests {
 
     impl CooldownRig {
         async fn new(cooldown_global: bool) -> Self {
-            let (fixture, evaluator) = decide_harness(CommandDescriptor::command()).await;
+            let (fixture, evaluator) = stored_harness(CommandDescriptor::command()).await;
             let instance = TriggerInstance {
                 cooldown_global,
                 ..command_instance(PlatformScope::Any, PermissionRung::Everyone, 60)

@@ -304,7 +304,7 @@ mod tests {
     async fn device_poll_grant_posts_the_device_code_urn_grant_without_scopes() {
         let server = answering(
             "/token",
-            ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(serde_json::json!({
                 "access_token": "ACCESS_XYZ",
                 "refresh_token": "REFRESH_XYZ",
                 "expires_in": 3600,
@@ -409,7 +409,8 @@ mod tests {
     async fn refresh_posts_a_public_client_refresh_grant() {
         let server = answering(
             "/token",
-            ResponseTemplate::new(200).set_body_json(serde_json::json!({ "access_token": "a" })),
+            ResponseTemplate::new(reqwest::StatusCode::OK)
+                .set_body_json(serde_json::json!({ "access_token": "a" })),
         )
         .await;
 
@@ -430,20 +431,24 @@ mod tests {
     async fn refresh_failures_map_to_their_platform_errors() {
         type Expectation = fn(&PlatformError) -> bool;
         let cases: [(ResponseTemplate, Expectation); 6] = [
-            (ResponseTemplate::new(400), |e| {
-                matches!(e, PlatformError::ReauthRequired { .. })
-            }),
-            (ResponseTemplate::new(401), |e| {
-                matches!(e, PlatformError::ReauthRequired { .. })
-            }),
-            (ResponseTemplate::new(403), |e| {
+            (
+                ResponseTemplate::new(reqwest::StatusCode::BAD_REQUEST),
+                |e| matches!(e, PlatformError::ReauthRequired { .. }),
+            ),
+            (
+                ResponseTemplate::new(reqwest::StatusCode::UNAUTHORIZED),
+                |e| matches!(e, PlatformError::ReauthRequired { .. }),
+            ),
+            (ResponseTemplate::new(reqwest::StatusCode::FORBIDDEN), |e| {
                 matches!(e, PlatformError::Http { status: 403, .. })
             }),
-            (ResponseTemplate::new(503), |e| {
-                matches!(e, PlatformError::Http { status: 503, .. })
-            }),
             (
-                ResponseTemplate::new(429).insert_header("Retry-After", "7"),
+                ResponseTemplate::new(reqwest::StatusCode::SERVICE_UNAVAILABLE),
+                |e| matches!(e, PlatformError::Http { status: 503, .. }),
+            ),
+            (
+                ResponseTemplate::new(reqwest::StatusCode::TOO_MANY_REQUESTS)
+                    .insert_header("Retry-After", "7"),
                 |e| {
                     matches!(
                         e,
@@ -454,7 +459,7 @@ mod tests {
                 },
             ),
             (
-                ResponseTemplate::new(200).set_body_string("not json"),
+                ResponseTemplate::new(reqwest::StatusCode::OK).set_body_string("not json"),
                 |e| matches!(e, PlatformError::MalformedResponse { .. }),
             ),
         ];
@@ -472,7 +477,8 @@ mod tests {
     async fn refresh_failure_excerpt_masks_the_refresh_token() {
         let server = answering(
             "/token",
-            ResponseTemplate::new(503).set_body_string(format!("upstream echoed {REFRESH_TOKEN}")),
+            ResponseTemplate::new(reqwest::StatusCode::SERVICE_UNAVAILABLE)
+                .set_body_string(format!("upstream echoed {REFRESH_TOKEN}")),
         )
         .await;
 
@@ -487,7 +493,8 @@ mod tests {
     async fn throttled_oauth_answer_cools_the_oauth_limiter() {
         let server = answering(
             "/token",
-            ResponseTemplate::new(429).insert_header("Retry-After", "7"),
+            ResponseTemplate::new(reqwest::StatusCode::TOO_MANY_REQUESTS)
+                .insert_header("Retry-After", "7"),
         )
         .await;
         let limiter = Arc::new(RecordingRateLimiter::granting());
@@ -504,7 +511,7 @@ mod tests {
 
     #[tokio::test]
     async fn exhausted_oauth_budget_fails_before_reaching_the_oauth_host() {
-        let server = answering("/token", ResponseTemplate::new(200)).await;
+        let server = answering("/token", ResponseTemplate::new(reqwest::StatusCode::OK)).await;
         let client = oauth_client_limited_by(
             &server.uri(),
             CLIENT,
@@ -538,10 +545,12 @@ mod tests {
         Mock::given(method("GET"))
             .and(path("/validate"))
             .and(header("Authorization", format!("OAuth {ACCESS_TOKEN}")))
-            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "client_id": CLIENT,
-                "user_id": "42",
-            })))
+            .respond_with(
+                ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(serde_json::json!({
+                    "client_id": CLIENT,
+                    "user_id": "42",
+                })),
+            )
             .mount(&server)
             .await;
 
@@ -560,13 +569,14 @@ mod tests {
     async fn throttled_device_polls_report_a_wait_instead_of_failing() {
         let cases = [
             (
-                ResponseTemplate::new(429).insert_header("Retry-After", "7"),
+                ResponseTemplate::new(reqwest::StatusCode::TOO_MANY_REQUESTS)
+                    .insert_header("Retry-After", "7"),
                 RecordingRateLimiter::granting(),
                 Duration::from_secs(7),
                 1,
             ),
             (
-                ResponseTemplate::new(200),
+                ResponseTemplate::new(reqwest::StatusCode::OK),
                 RecordingRateLimiter::exhausted(),
                 Duration::ZERO,
                 0,
@@ -597,7 +607,7 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/revoke"))
-            .respond_with(ResponseTemplate::new(200))
+            .respond_with(ResponseTemplate::new(reqwest::StatusCode::OK))
             .mount(&server)
             .await;
 
@@ -615,7 +625,8 @@ mod tests {
     async fn revoke_failure_excerpt_masks_the_token() {
         let server = answering(
             "/revoke",
-            ResponseTemplate::new(400).set_body_string(format!("invalid token {ACCESS_TOKEN}")),
+            ResponseTemplate::new(reqwest::StatusCode::BAD_REQUEST)
+                .set_body_string(format!("invalid token {ACCESS_TOKEN}")),
         )
         .await;
 

@@ -146,7 +146,7 @@ mod tests {
             .and(query_param("part", "liveStreamingDetails"))
             .and(query_param("id", "bc-live"))
             .respond_with(
-                ResponseTemplate::new(200).set_body_json(details_body(json!({
+                ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(details_body(json!({
                     "concurrentViewers": "1234",
                     "actualStartTime": "2026-07-24T10:00:00Z",
                     "scheduledStartTime": "2026-07-24T09:30:00Z",
@@ -206,7 +206,10 @@ mod tests {
             let server = MockServer::start().await;
             Mock::given(method("GET"))
                 .and(path("/videos"))
-                .respond_with(ResponseTemplate::new(200).set_body_json(details_body(details)))
+                .respond_with(
+                    ResponseTemplate::new(reqwest::StatusCode::OK)
+                        .set_body_json(details_body(details)),
+                )
                 .mount(&server)
                 .await;
 
@@ -224,7 +227,7 @@ mod tests {
         Mock::given(method("GET"))
             .and(path("/videos"))
             .respond_with(
-                ResponseTemplate::new(200).set_body_json(details_body(json!({
+                ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(details_body(json!({
                     "actualStartTime": "2026-07-24T10:00:00Z"
                 }))),
             )
@@ -241,7 +244,10 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/videos"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "items": [] })))
+            .respond_with(
+                ResponseTemplate::new(reqwest::StatusCode::OK)
+                    .set_body_json(json!({ "items": [] })),
+            )
             .mount(&server)
             .await;
 

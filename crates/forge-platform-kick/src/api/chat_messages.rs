@@ -112,7 +112,7 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/chat"))
-            .respond_with(ResponseTemplate::new(200))
+            .respond_with(ResponseTemplate::new(reqwest::StatusCode::OK))
             .mount(&server)
             .await;
         server
@@ -185,7 +185,7 @@ mod tests {
         Mock::given(method("POST"))
             .and(path("/chat"))
             .and(header("authorization", "Bearer tok-123"))
-            .respond_with(ResponseTemplate::new(200))
+            .respond_with(ResponseTemplate::new(reqwest::StatusCode::OK))
             .expect(1)
             .mount(&server)
             .await;
@@ -200,7 +200,7 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("DELETE"))
             .and(path("/chat/msg-77"))
-            .respond_with(ResponseTemplate::new(204))
+            .respond_with(ResponseTemplate::new(reqwest::StatusCode::NO_CONTENT))
             .expect(1)
             .mount(&server)
             .await;

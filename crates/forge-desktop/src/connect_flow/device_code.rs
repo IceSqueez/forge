@@ -1025,6 +1025,7 @@ fn step_card(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use forge_storage::test_support::MemoryCredentials;
 
     #[test]
     fn each_ended_device_flow_maps_to_its_own_wait_failure() {
@@ -1049,41 +1050,9 @@ mod tests {
     }
 
     use crate::connect_flow::ConnectFlowLaunch;
-    use forge_storage::{CredentialId, StorageError};
+
     use forge_types::PlatformId;
     use gpui::Entity;
-
-    struct NoCredentials;
-
-    #[async_trait::async_trait]
-    impl CredentialsRepo for NoCredentials {
-        async fn store(&self, _: &CredentialId, _: &str) -> Result<(), StorageError> {
-            Ok(())
-        }
-
-        async fn load(&self, _: &CredentialId) -> Result<Option<String>, StorageError> {
-            Ok(None)
-        }
-
-        async fn delete(&self, _: &CredentialId) -> Result<bool, StorageError> {
-            Ok(false)
-        }
-
-        async fn list_ids(&self) -> Result<Vec<CredentialId>, StorageError> {
-            Ok(Vec::new())
-        }
-
-        async fn last_refresh(
-            &self,
-            _: &CredentialId,
-        ) -> Result<Option<time::OffsetDateTime>, StorageError> {
-            Ok(None)
-        }
-
-        async fn mark_refreshed(&self, _: &CredentialId) -> Result<(), StorageError> {
-            Ok(())
-        }
-    }
 
     struct Mounted {
         flow: Entity<ConnectFlow>,
@@ -1099,7 +1068,7 @@ mod tests {
             platform: PlatformId::YouTube,
             display_name: "YouTube".to_owned(),
             rt_handle: runtime.handle().clone(),
-            credentials: Arc::new(NoCredentials),
+            credentials: Arc::new(MemoryCredentials::default()),
             twitch_slot: None,
             kick_slot: None,
             youtube_slot: None,

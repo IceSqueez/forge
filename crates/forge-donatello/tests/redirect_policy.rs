@@ -9,21 +9,21 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 async fn token_is_not_forwarded_across_a_cross_origin_redirect() {
     let elsewhere = MockServer::start().await;
     Mock::given(method("GET"))
-        .respond_with(ResponseTemplate::new(200).set_body_string("{}"))
+        .respond_with(ResponseTemplate::new(reqwest::StatusCode::OK).set_body_string("{}"))
         .mount(&elsewhere)
         .await;
     let donatello = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/me"))
         .respond_with(
-            ResponseTemplate::new(302)
+            ResponseTemplate::new(reqwest::StatusCode::FOUND)
                 .insert_header("Location", format!("{}/collect", elsewhere.uri())),
         )
         .mount(&donatello)
         .await;
     let provider = provider_on(
         &donatello.uri(),
-        Arc::new(support::MemCreds::default()),
+        Arc::new(support::MemoryCredentials::default()),
         ScriptedLimiter::open(),
     );
     assert!(provider.verify_token(TOKEN).await.is_err());
@@ -52,12 +52,12 @@ async fn a_redirect_answer_is_an_http_error_and_is_never_followed() {
             .await;
         Mock::given(method("GET"))
             .and(path("/moved"))
-            .respond_with(ResponseTemplate::new(200).set_body_string("{}"))
+            .respond_with(ResponseTemplate::new(reqwest::StatusCode::OK).set_body_string("{}"))
             .mount(&donatello)
             .await;
         let provider = provider_on(
             &donatello.uri(),
-            Arc::new(support::MemCreds::default()),
+            Arc::new(support::MemoryCredentials::default()),
             ScriptedLimiter::open(),
         );
 

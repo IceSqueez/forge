@@ -278,7 +278,9 @@ mod tests {
     async fn inline_script_http_call_runs_inside_the_runtime_and_reaches_an_allowlisted_server() {
         let server = wiremock::MockServer::start().await;
         wiremock::Mock::given(wiremock::matchers::any())
-            .respond_with(wiremock::ResponseTemplate::new(200).set_body_string("pong"))
+            .respond_with(
+                wiremock::ResponseTemplate::new(reqwest::StatusCode::OK).set_body_string("pong"),
+            )
             .mount(&server)
             .await;
         let backend = make_backend().await;

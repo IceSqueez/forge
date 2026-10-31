@@ -183,7 +183,7 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("PATCH"))
             .and(path("/channels"))
-            .respond_with(ResponseTemplate::new(200))
+            .respond_with(ResponseTemplate::new(reqwest::StatusCode::OK))
             .expect(1)
             .mount(&server)
             .await;
@@ -210,7 +210,7 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("PATCH"))
             .and(path("/channels"))
-            .respond_with(ResponseTemplate::new(200))
+            .respond_with(ResponseTemplate::new(reqwest::StatusCode::OK))
             .expect(1)
             .mount(&server)
             .await;
@@ -236,7 +236,7 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/channels"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            .respond_with(ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(serde_json::json!({
                 "data": [{
                     "broadcaster_user_id": 42,
                     "slug": "a-streamer",
@@ -289,7 +289,7 @@ mod tests {
             let server = MockServer::start().await;
             Mock::given(method("GET"))
                 .and(path("/channels"))
-                .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                .respond_with(ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(serde_json::json!({
                     "data": [{ "broadcaster_user_id": 1, "stream_title": "t", "stream": stream }]
                 })))
                 .mount(&server)
@@ -310,9 +310,11 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/channels"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "data": []
-            })))
+            .respond_with(
+                ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(serde_json::json!({
+                    "data": []
+                })),
+            )
             .mount(&server)
             .await;
 
@@ -336,7 +338,7 @@ mod tests {
             Mock::given(method("GET"))
                 .and(path("/channels"))
                 .respond_with(
-                    ResponseTemplate::new(200)
+                    ResponseTemplate::new(reqwest::StatusCode::OK)
                         .set_body_json(serde_json::json!({ "data": [entry] })),
                 )
                 .mount(&server)
@@ -356,12 +358,14 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/channels"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "data": [{
-                    "broadcaster_user_id": 1,
-                    "stream_title": "Offline"
-                }]
-            })))
+            .respond_with(
+                ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(serde_json::json!({
+                    "data": [{
+                        "broadcaster_user_id": 1,
+                        "stream_title": "Offline"
+                    }]
+                })),
+            )
             .mount(&server)
             .await;
 
@@ -378,13 +382,15 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/channels"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "data": [{
-                    "broadcaster_user_id": 1,
-                    "is_live": true,
-                    "stream": { "is_live": false, "viewer_count": 0 }
-                }]
-            })))
+            .respond_with(
+                ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(serde_json::json!({
+                    "data": [{
+                        "broadcaster_user_id": 1,
+                        "is_live": true,
+                        "stream": { "is_live": false, "viewer_count": 0 }
+                    }]
+                })),
+            )
             .mount(&server)
             .await;
 
@@ -398,9 +404,11 @@ mod tests {
         Mock::given(method("GET"))
             .and(path("/channels"))
             .and(query_param("slug", "other-streamer"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "data": [{ "broadcaster_user_id": 1, "slug": "other-streamer" }]
-            })))
+            .respond_with(
+                ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(serde_json::json!({
+                    "data": [{ "broadcaster_user_id": 1, "slug": "other-streamer" }]
+                })),
+            )
             .expect(1)
             .mount(&server)
             .await;
@@ -417,7 +425,9 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/channels"))
-            .respond_with(ResponseTemplate::new(200).set_body_string("not json"))
+            .respond_with(
+                ResponseTemplate::new(reqwest::StatusCode::OK).set_body_string("not json"),
+            )
             .mount(&server)
             .await;
 

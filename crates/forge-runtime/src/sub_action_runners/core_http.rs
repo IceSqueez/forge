@@ -537,7 +537,7 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .respond_with(
-                ResponseTemplate::new(200)
+                ResponseTemplate::new(reqwest::StatusCode::OK)
                     .insert_header("x-trace", "abc")
                     .set_body_string("body-text"),
             )
@@ -579,7 +579,7 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(body_string("the-payload"))
-            .respond_with(ResponseTemplate::new(201))
+            .respond_with(ResponseTemplate::new(reqwest::StatusCode::CREATED))
             .mount(&server)
             .await;
         let dp = backend().await;
@@ -611,7 +611,7 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .respond_with(
-                ResponseTemplate::new(404)
+                ResponseTemplate::new(reqwest::StatusCode::NOT_FOUND)
                     .insert_header("x-trace", "missing-1")
                     .set_body_string(r#"{"error":"not found"}"#),
             )
@@ -659,7 +659,7 @@ mod tests {
         ] {
             let server = MockServer::start().await;
             Mock::given(wiremock::matchers::any())
-                .respond_with(ResponseTemplate::new(200))
+                .respond_with(ResponseTemplate::new(reqwest::StatusCode::OK))
                 .mount(&server)
                 .await;
             let dp = local_backend().await;
@@ -758,7 +758,7 @@ mod tests {
         Mock::given(method("GET"))
             .and(header("x-key", "v1"))
             .and(query_param("q", "2"))
-            .respond_with(ResponseTemplate::new(200))
+            .respond_with(ResponseTemplate::new(reqwest::StatusCode::OK))
             .mount(&server)
             .await;
         let dp = local_backend().await;
@@ -783,7 +783,7 @@ mod tests {
     async fn invalid_headers_or_query_params_fail_without_sending_a_request() {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
-            .respond_with(ResponseTemplate::new(200))
+            .respond_with(ResponseTemplate::new(reqwest::StatusCode::OK))
             .mount(&server)
             .await;
         let dp = local_backend().await;
@@ -810,7 +810,7 @@ mod tests {
         for key in [HEADERS.key, QUERY_PARAMS.key] {
             let server = MockServer::start().await;
             Mock::given(method("GET"))
-                .respond_with(ResponseTemplate::new(200))
+                .respond_with(ResponseTemplate::new(reqwest::StatusCode::OK))
                 .mount(&server)
                 .await;
             let dp = local_backend().await;

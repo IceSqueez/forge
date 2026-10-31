@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
-use forge_events::{Event, EventPublisher};
+use forge_events::EventPublisher;
 use forge_platform_core::PlatformEndpoints;
 use forge_platform_twitch::credentials::{StoredCredential, store_credential};
 use forge_platform_twitch::{TWITCH_CREDENTIAL_ID, TwitchAssembly};
@@ -63,14 +63,8 @@ impl CredentialsRepo for CountingRepo {
     }
 }
 
-struct DiscardingBus;
-
-impl EventPublisher for DiscardingBus {
-    fn publish(&self, _: Event) {}
-}
-
 fn assembly_over(repo: &Arc<CountingRepo>) -> TwitchAssembly {
-    let bus: Arc<dyn EventPublisher> = Arc::new(DiscardingBus);
+    let bus: Arc<dyn EventPublisher> = Arc::new(forge_events::test_support::NullPublisher);
     TwitchAssembly::new(
         &mut SubActionRegistry::new(),
         Arc::clone(repo) as Arc<dyn CredentialsRepo>,

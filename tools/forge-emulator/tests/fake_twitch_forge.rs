@@ -33,7 +33,7 @@ use tokio::time::timeout;
 
 mod support;
 
-use support::MemoryCredentials;
+use forge_storage::test_support::MemoryCredentials;
 
 const DEADLINE: Duration = Duration::from_secs(30);
 const CHAT_MESSAGE_KIND: &str = twitch_kinds::CHANNEL_CHAT_MESSAGE;

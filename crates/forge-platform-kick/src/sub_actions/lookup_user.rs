@@ -152,15 +152,17 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/channels"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "data": [{
-                    "broadcaster_user_id": 7,
-                    "slug": "target-streamer",
-                    "stream_title": "Ranked",
-                    "category": {"id": 3, "name": "Chess"},
-                    "stream": {"is_live": true, "viewer_count": 88}
-                }]
-            })))
+            .respond_with(
+                ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(serde_json::json!({
+                    "data": [{
+                        "broadcaster_user_id": 7,
+                        "slug": "target-streamer",
+                        "stream_title": "Ranked",
+                        "category": {"id": 3, "name": "Chess"},
+                        "stream": {"is_live": true, "viewer_count": 88}
+                    }]
+                })),
+            )
             .mount(&server)
             .await;
 
@@ -247,7 +249,10 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/channels"))
-            .respond_with(ResponseTemplate::new(401).set_body_string("unauthorized"))
+            .respond_with(
+                ResponseTemplate::new(reqwest::StatusCode::UNAUTHORIZED)
+                    .set_body_string("unauthorized"),
+            )
             .mount(&server)
             .await;
 

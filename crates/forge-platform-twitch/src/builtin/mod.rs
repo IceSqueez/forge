@@ -723,45 +723,19 @@ impl BuiltinContent for TwitchIntegrationBundle {
 #[cfg(test)]
 mod tests {
     use crate::config::HELIX_BUDGET_CAPACITY;
-    use async_trait::async_trait;
+    use forge_storage::test_support::MemoryCredentials;
+
     use forge_platform_core::{
         BuiltinContent, BuiltinHealth, BuiltinStatus, CollectionId, QuickActionChoiceSource,
         QuickActionFieldKind, QuickActionFieldValue, QuickActionLiveness, QuickActions,
     };
-    use forge_storage::{CredentialId, StorageError};
+
     use std::collections::BTreeMap;
-    use time::OffsetDateTime;
+
     use tokio::sync::watch;
 
     use super::*;
     use crate::subscriptions::{SubStatus, SubscriptionRecord, SubscriptionTracker};
-
-    struct NullCreds;
-
-    #[async_trait]
-    impl CredentialsRepo for NullCreds {
-        async fn store(&self, _: &CredentialId, _: &str) -> Result<(), StorageError> {
-            Ok(())
-        }
-        async fn load(&self, _: &CredentialId) -> Result<Option<String>, StorageError> {
-            Ok(None)
-        }
-        async fn delete(&self, _: &CredentialId) -> Result<bool, StorageError> {
-            Ok(false)
-        }
-        async fn list_ids(&self) -> Result<Vec<CredentialId>, StorageError> {
-            Ok(Vec::new())
-        }
-        async fn last_refresh(
-            &self,
-            _: &CredentialId,
-        ) -> Result<Option<OffsetDateTime>, StorageError> {
-            Ok(None)
-        }
-        async fn mark_refreshed(&self, _: &CredentialId) -> Result<(), StorageError> {
-            Ok(())
-        }
-    }
 
     fn make_bundle(state: ChatConnectionState) -> Arc<TwitchIntegrationBundle> {
         make_bundle_with_tracker(state, SubscriptionTracker::default())
@@ -792,7 +766,7 @@ mod tests {
             Some("streamer".to_owned()),
             rx,
             tracker,
-            Arc::new(NullCreds),
+            Arc::new(MemoryCredentials::default()),
             tier,
         )
     }
@@ -1021,7 +995,7 @@ mod tests {
             Some("streamer".to_owned()),
             rx,
             SubscriptionTracker::default(),
-            Arc::new(NullCreds),
+            Arc::new(MemoryCredentials::default()),
             BroadcasterTier::Standard,
             Arc::clone(&transport) as Arc<dyn HelixTransport>,
             broadcaster_id,
@@ -1489,7 +1463,7 @@ mod tests {
             Some("streamer".to_owned()),
             rx,
             SubscriptionTracker::default(),
-            crate::credentials_manager::tests::InMemRepo::seeded(
+            crate::credentials_manager::tests::seeded_repo(
                 &crate::credentials_manager::tests::stub_cred(expiry),
             ),
             BroadcasterTier::Standard,
@@ -1747,7 +1721,7 @@ mod tests {
 
     #[tokio::test]
     async fn shutting_down_twice_stops_the_chat_session_and_every_task_holding_the_bundle() {
-        let creds: Arc<dyn CredentialsRepo> = Arc::new(NullCreds);
+        let creds: Arc<dyn CredentialsRepo> = Arc::new(MemoryCredentials::default());
         let platform = Arc::new(TwitchPlatform::new(
             ChatSessionConfig {
                 client_id: "test-client".to_owned(),
@@ -1803,7 +1777,7 @@ mod tests {
             .mount(&server)
             .await;
         let stale_expiry = SystemTime::now() + Duration::from_secs(10);
-        let repo: Arc<dyn CredentialsRepo> = crate::credentials_manager::tests::InMemRepo::seeded(
+        let repo: Arc<dyn CredentialsRepo> = crate::credentials_manager::tests::seeded_repo(
             &crate::credentials_manager::tests::stub_cred(stale_expiry),
         );
         let (_, state_rx) = watch::channel(ChatConnectionState::Disconnected);

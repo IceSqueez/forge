@@ -72,12 +72,14 @@ mod tests {
     }
 
     fn validated(client_id: &str, scopes: &[&str]) -> Answer {
-        Answer::Http(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "client_id": client_id,
-            "user_id": "4242",
-            "scopes": scopes,
-            "expires_in": 3600,
-        })))
+        Answer::Http(
+            ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(serde_json::json!({
+                "client_id": client_id,
+                "user_id": "4242",
+                "scopes": scopes,
+                "expires_in": 3600,
+            })),
+        )
     }
 
     fn status(code: u16) -> Answer {
@@ -110,55 +112,61 @@ mod tests {
         let mut with_extra = TWITCH_BOT_SCOPES.to_vec();
         with_extra.push("channel:bot");
         let missing_last = &TWITCH_BOT_SCOPES[..TWITCH_BOT_SCOPES.len() - 1];
-        let cases =
-            [
-                (
-                    "all bot scopes",
-                    validated(CLIENT, TWITCH_BOT_SCOPES),
-                    TokenVerdict::Valid,
-                ),
-                (
-                    "extra scopes",
-                    validated(CLIENT, &with_extra),
-                    TokenVerdict::Valid,
-                ),
-                (
-                    "foreign client",
-                    validated("other_client", TWITCH_BOT_SCOPES),
-                    TokenVerdict::Invalid,
-                ),
-                (
-                    "missing scope",
-                    validated(CLIENT, missing_last),
-                    TokenVerdict::Invalid,
-                ),
-                (
-                    "no scopes field",
-                    Answer::Http(ResponseTemplate::new(200).set_body_json(
+        let cases = [
+            (
+                "all bot scopes",
+                validated(CLIENT, TWITCH_BOT_SCOPES),
+                TokenVerdict::Valid,
+            ),
+            (
+                "extra scopes",
+                validated(CLIENT, &with_extra),
+                TokenVerdict::Valid,
+            ),
+            (
+                "foreign client",
+                validated("other_client", TWITCH_BOT_SCOPES),
+                TokenVerdict::Invalid,
+            ),
+            (
+                "missing scope",
+                validated(CLIENT, missing_last),
+                TokenVerdict::Invalid,
+            ),
+            (
+                "no scopes field",
+                Answer::Http(
+                    ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(
                         serde_json::json!({ "client_id": CLIENT, "user_id": "4242" }),
-                    )),
-                    TokenVerdict::Invalid,
+                    ),
                 ),
-                ("rejected", status(401), TokenVerdict::Invalid),
-                (
-                    "throttled",
-                    Answer::Http(ResponseTemplate::new(429).insert_header("Retry-After", "7")),
-                    TokenVerdict::Unknown,
+                TokenVerdict::Invalid,
+            ),
+            ("rejected", status(401), TokenVerdict::Invalid),
+            (
+                "throttled",
+                Answer::Http(
+                    ResponseTemplate::new(reqwest::StatusCode::TOO_MANY_REQUESTS)
+                        .insert_header("Retry-After", "7"),
                 ),
-                (
-                    "budget exhausted",
-                    Answer::BudgetExhausted,
-                    TokenVerdict::Unknown,
+                TokenVerdict::Unknown,
+            ),
+            (
+                "budget exhausted",
+                Answer::BudgetExhausted,
+                TokenVerdict::Unknown,
+            ),
+            ("forbidden", status(403), TokenVerdict::Unknown),
+            ("server error", status(503), TokenVerdict::Unknown),
+            ("unreachable", Answer::Unreachable, TokenVerdict::Unknown),
+            (
+                "unparseable body",
+                Answer::Http(
+                    ResponseTemplate::new(reqwest::StatusCode::OK).set_body_string("not json"),
                 ),
-                ("forbidden", status(403), TokenVerdict::Unknown),
-                ("server error", status(503), TokenVerdict::Unknown),
-                ("unreachable", Answer::Unreachable, TokenVerdict::Unknown),
-                (
-                    "unparseable body",
-                    Answer::Http(ResponseTemplate::new(200).set_body_string("not json")),
-                    TokenVerdict::Unknown,
-                ),
-            ];
+                TokenVerdict::Unknown,
+            ),
+        ];
 
         for (label, answer, expected) in cases {
             let limiter = match answer {
@@ -177,7 +185,10 @@ mod tests {
         let limiter = Arc::new(RecordingRateLimiter::granting());
 
         check_against(
-            Answer::Http(ResponseTemplate::new(429).insert_header("Retry-After", "7")),
+            Answer::Http(
+                ResponseTemplate::new(reqwest::StatusCode::TOO_MANY_REQUESTS)
+                    .insert_header("Retry-After", "7"),
+            ),
             Arc::clone(&limiter),
         )
         .await;

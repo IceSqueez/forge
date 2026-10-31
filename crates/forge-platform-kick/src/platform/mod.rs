@@ -224,74 +224,36 @@ fn map_connect_error(err: KickError) -> PlatformError {
 
 #[cfg(test)]
 pub(crate) mod tests {
+    use forge_storage::test_support::MemoryCredentials;
     use forge_types::OAuthToken;
-    use std::collections::HashMap;
+
     use std::sync::Mutex as StdMutex;
     use std::time::Duration as StdDuration;
 
     use forge_events::{PlatformConnectionChanged, TypedEvent};
-    use forge_storage::{CredentialId, CredentialsRepo, StorageError};
+    use forge_storage::StorageError;
     use time::{Duration, OffsetDateTime};
 
     use super::*;
     use crate::auth::credentials::{CREDENTIAL_KEY, KickCredentials};
     use crate::pusher::chatroom_lookup::ChannelInfoFetcher;
 
-    struct InMemRepo(StdMutex<HashMap<String, String>>);
-
-    impl InMemRepo {
-        fn empty() -> Arc<Self> {
-            Arc::new(Self(StdMutex::new(HashMap::new())))
-        }
-
-        fn with_valid_creds() -> Arc<Self> {
-            let creds = KickCredentials {
-                access_token: OAuthToken::new("tok"),
-                refresh_token: OAuthToken::new("ref"),
-                user_id: 42,
-                username: "streamer".to_owned(),
-                client_id: "cid".to_owned(),
-                expires_at: OffsetDateTime::now_utc() + Duration::hours(1),
-            };
-            let mut map = HashMap::new();
-            map.insert(
-                CREDENTIAL_KEY.to_owned(),
-                serde_json::to_string(&creds).unwrap(),
-            );
-            Arc::new(Self(StdMutex::new(map)))
-        }
+    fn repo_with_valid_creds() -> Arc<MemoryCredentials> {
+        let creds = KickCredentials {
+            access_token: OAuthToken::new("tok"),
+            refresh_token: OAuthToken::new("ref"),
+            user_id: 42,
+            username: "streamer".to_owned(),
+            client_id: "cid".to_owned(),
+            expires_at: OffsetDateTime::now_utc() + Duration::hours(1),
+        };
+        Arc::new(MemoryCredentials::holding(
+            CREDENTIAL_KEY,
+            &serde_json::to_string(&creds).unwrap(),
+        ))
     }
 
-    #[async_trait]
-    impl CredentialsRepo for InMemRepo {
-        async fn store(&self, id: &CredentialId, v: &str) -> Result<(), StorageError> {
-            self.0
-                .lock()
-                .unwrap()
-                .insert(id.as_str().to_owned(), v.to_owned());
-            Ok(())
-        }
-        async fn load(&self, id: &CredentialId) -> Result<Option<String>, StorageError> {
-            Ok(self.0.lock().unwrap().get(id.as_str()).cloned())
-        }
-        async fn delete(&self, id: &CredentialId) -> Result<bool, StorageError> {
-            Ok(self.0.lock().unwrap().remove(id.as_str()).is_some())
-        }
-        async fn list_ids(&self) -> Result<Vec<CredentialId>, StorageError> {
-            Ok(Vec::new())
-        }
-        async fn last_refresh(
-            &self,
-            _: &CredentialId,
-        ) -> Result<Option<OffsetDateTime>, StorageError> {
-            Ok(None)
-        }
-        async fn mark_refreshed(&self, _: &CredentialId) -> Result<(), StorageError> {
-            Ok(())
-        }
-    }
-
-    fn platform(repo: Arc<InMemRepo>, api: forge_net::Gateway) -> KickPlatform {
+    fn platform(repo: Arc<MemoryCredentials>, api: forge_net::Gateway) -> KickPlatform {
         let manager = Arc::new(crate::endpoints_test_support::offline_manager(repo));
         KickPlatform::new(
             &crate::endpoints_test_support::unreachable_endpoints(),
@@ -305,7 +267,7 @@ pub(crate) mod tests {
     #[test]
     fn connection_state_is_disconnected_before_connect() {
         let p = platform(
-            InMemRepo::empty(),
+            Arc::new(MemoryCredentials::default()),
             crate::endpoints_test_support::unreachable_api(),
         );
         assert_eq!(p.connection_state(), ConnectionState::Disconnected);
@@ -314,7 +276,7 @@ pub(crate) mod tests {
     #[tokio::test]
     async fn connect_without_credentials_requires_reauth_and_stays_disconnected() {
         let p = platform(
-            InMemRepo::empty(),
+            Arc::new(MemoryCredentials::default()),
             crate::endpoints_test_support::unreachable_api(),
         );
         let err = p.connect().await.unwrap_err();
@@ -328,7 +290,7 @@ pub(crate) mod tests {
     #[tokio::test]
     async fn send_message_without_credentials_requires_reauth() {
         let p = platform(
-            InMemRepo::empty(),
+            Arc::new(MemoryCredentials::default()),
             crate::endpoints_test_support::unreachable_api(),
         );
         let err = p.send_message("chan", "hello").await.unwrap_err();
@@ -341,10 +303,10 @@ pub(crate) mod tests {
     #[tokio::test]
     async fn send_message_with_valid_credentials_delegates_to_rate_limited_sender() {
         let p = platform(
-            InMemRepo::with_valid_creds(),
+            repo_with_valid_creds(),
             crate::endpoints_test_support::api_limited_by(
                 "http://127.0.0.1:0",
-                Arc::new(crate::endpoints_test_support::ExhaustedLimiter),
+                crate::endpoints_test_support::exhausted_limiter(),
             ),
         );
         let err = p.send_message("chan", "hello").await.unwrap_err();
@@ -358,11 +320,11 @@ pub(crate) mod tests {
 
         let server = MockServer::start().await;
         Mock::given(method("POST"))
-            .respond_with(ResponseTemplate::new(200))
+            .respond_with(ResponseTemplate::new(reqwest::StatusCode::OK))
             .mount(&server)
             .await;
         let p = platform(
-            InMemRepo::with_valid_creds(),
+            repo_with_valid_creds(),
             crate::endpoints_test_support::api_at(&server.uri()),
         );
 
@@ -486,10 +448,12 @@ pub(crate) mod tests {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/api/v2/channels/streamer"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "chatroom": { "id": 4242 },
-                "livestream": null
-            })))
+            .respond_with(
+                ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(serde_json::json!({
+                    "chatroom": { "id": 4242 },
+                    "livestream": null
+                })),
+            )
             .mount(&server)
             .await;
         let platform = platform_on(socket_base, format!("{}/api/v2", server.uri()), ledger);
@@ -521,7 +485,7 @@ pub(crate) mod tests {
         let channel_info = ChannelInfoFetcher::new(
             crate::gateway::kick_channel_info_gateway(
                 &endpoints,
-                Arc::new(crate::endpoints_test_support::GrantingLimiter),
+                crate::endpoints_test_support::granting_limiter(),
                 Arc::new(crate::endpoints_test_support::RecordingPublisher::default()),
             )
             .unwrap(),
@@ -535,10 +499,10 @@ pub(crate) mod tests {
         ledger: Arc<dyn BanLedgerRepo>,
     ) -> KickPlatform {
         let manager = Arc::new(KickCredentialsManager::new(
-            InMemRepo::with_valid_creds(),
+            repo_with_valid_creds(),
             crate::endpoints_test_support::oauth_client_over(
                 endpoints,
-                Arc::new(crate::endpoints_test_support::GrantingLimiter),
+                crate::endpoints_test_support::granting_limiter(),
             ),
             crate::endpoints_test_support::unreachable_api(),
         ));

@@ -324,7 +324,10 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/channels/rewards"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({"id": "x"})))
+            .respond_with(
+                ResponseTemplate::new(reqwest::StatusCode::OK)
+                    .set_body_json(serde_json::json!({"id": "x"})),
+            )
             .expect(1)
             .mount(&server)
             .await;
@@ -355,7 +358,8 @@ mod tests {
         Mock::given(method("POST"))
             .and(path("/channels/rewards"))
             .respond_with(
-                ResponseTemplate::new(201).set_body_json(serde_json::json!({"id": "rw_1"})),
+                ResponseTemplate::new(reqwest::StatusCode::CREATED)
+                    .set_body_json(serde_json::json!({"id": "rw_1"})),
             )
             .mount(&server)
             .await;
@@ -370,7 +374,7 @@ mod tests {
         Mock::given(method("POST"))
             .and(path("/channels/rewards"))
             .respond_with(
-                ResponseTemplate::new(201)
+                ResponseTemplate::new(reqwest::StatusCode::CREATED)
                     .set_body_json(serde_json::json!({"data": {"id": "rw_2"}})),
             )
             .mount(&server)
@@ -385,7 +389,9 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/channels/rewards"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({})))
+            .respond_with(
+                ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(serde_json::json!({})),
+            )
             .mount(&server)
             .await;
 
@@ -398,7 +404,7 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("PATCH"))
             .and(path("/channels/rewards/rw_9"))
-            .respond_with(ResponseTemplate::new(200))
+            .respond_with(ResponseTemplate::new(reqwest::StatusCode::OK))
             .expect(1)
             .mount(&server)
             .await;
@@ -431,7 +437,7 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("DELETE"))
             .and(path("/channels/rewards/rw_9"))
-            .respond_with(ResponseTemplate::new(204))
+            .respond_with(ResponseTemplate::new(reqwest::StatusCode::NO_CONTENT))
             .expect(1)
             .mount(&server)
             .await;
@@ -449,7 +455,7 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/channels/rewards/redemptions/accept"))
-            .respond_with(ResponseTemplate::new(200))
+            .respond_with(ResponseTemplate::new(reqwest::StatusCode::OK))
             .expect(1)
             .mount(&server)
             .await;
@@ -467,7 +473,7 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/channels/rewards/redemptions/reject"))
-            .respond_with(ResponseTemplate::new(200))
+            .respond_with(ResponseTemplate::new(reqwest::StatusCode::OK))
             .expect(1)
             .mount(&server)
             .await;
@@ -484,7 +490,7 @@ mod tests {
     async fn accept_redemptions_empty_ids_errors_without_reaching_server() {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
-            .respond_with(ResponseTemplate::new(200))
+            .respond_with(ResponseTemplate::new(reqwest::StatusCode::OK))
             .mount(&server)
             .await;
 
@@ -505,7 +511,7 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/channels/rewards/redemptions/accept"))
-            .respond_with(ResponseTemplate::new(200))
+            .respond_with(ResponseTemplate::new(reqwest::StatusCode::OK))
             .expect(1)
             .mount(&server)
             .await;
@@ -520,7 +526,7 @@ mod tests {
     async fn accept_redemptions_one_over_batch_limit_errors_without_reaching_server() {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
-            .respond_with(ResponseTemplate::new(200))
+            .respond_with(ResponseTemplate::new(reqwest::StatusCode::OK))
             .mount(&server)
             .await;
 
@@ -542,9 +548,11 @@ mod tests {
         Mock::given(method("GET"))
             .and(path("/channels/rewards/redemptions"))
             .and(query_param("status", "pending"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "data": []
-            })))
+            .respond_with(
+                ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(serde_json::json!({
+                    "data": []
+                })),
+            )
             .expect(1)
             .mount(&server)
             .await;
@@ -561,22 +569,24 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/channels/rewards/redemptions"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "data": [
-                    {
-                        "id": "rd_1",
-                        "reward": { "id": "rw_1", "title": "Hydrate" },
-                        "redeemer": { "user_id": 100, "username": "alice" },
-                        "user_input": "stay healthy"
-                    },
-                    {
-                        "id": "rd_2",
-                        "reward": { "id": "rw_2", "title": "Stretch" },
-                        "redeemer": { "user_id": 200, "username": "bob" },
-                        "user_input": "do it"
-                    }
-                ]
-            })))
+            .respond_with(
+                ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(serde_json::json!({
+                    "data": [
+                        {
+                            "id": "rd_1",
+                            "reward": { "id": "rw_1", "title": "Hydrate" },
+                            "redeemer": { "user_id": 100, "username": "alice" },
+                            "user_input": "stay healthy"
+                        },
+                        {
+                            "id": "rd_2",
+                            "reward": { "id": "rw_2", "title": "Stretch" },
+                            "redeemer": { "user_id": 200, "username": "bob" },
+                            "user_input": "do it"
+                        }
+                    ]
+                })),
+            )
             .mount(&server)
             .await;
 
@@ -606,13 +616,15 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/channels/rewards/redemptions"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "data": [{
-                    "id": "rd_1",
-                    "reward": { "id": "rw_1", "title": "Hydrate" },
-                    "user_input": "no redeemer block"
-                }]
-            })))
+            .respond_with(
+                ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(serde_json::json!({
+                    "data": [{
+                        "id": "rd_1",
+                        "reward": { "id": "rw_1", "title": "Hydrate" },
+                        "user_input": "no redeemer block"
+                    }]
+                })),
+            )
             .mount(&server)
             .await;
 
@@ -632,7 +644,9 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/channels/rewards"))
-            .respond_with(ResponseTemplate::new(201).set_body_string("created"))
+            .respond_with(
+                ResponseTemplate::new(reqwest::StatusCode::CREATED).set_body_string("created"),
+            )
             .mount(&server)
             .await;
 
@@ -646,7 +660,7 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/channels/rewards/redemptions"))
-            .respond_with(ResponseTemplate::new(200).set_body_string("[oops"))
+            .respond_with(ResponseTemplate::new(reqwest::StatusCode::OK).set_body_string("[oops"))
             .mount(&server)
             .await;
 

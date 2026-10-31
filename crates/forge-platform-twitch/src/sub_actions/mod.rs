@@ -343,6 +343,7 @@ pub fn register_twitch_sub_actions(
 
 #[cfg(test)]
 pub(crate) mod test_support {
+    use forge_storage::test_support::MemoryCredentials;
     pub(crate) fn rejected_field(text: &forge_types::UserText) -> Option<&str> {
         let forge_types::UserText::Message(message) = text else {
             return None;
@@ -365,9 +366,8 @@ pub(crate) mod test_support {
     use forge_net::{Gateway, RateLimiter, TokenBucketRateLimiter};
     use forge_platform_core::{EndpointSurface, PlatformEndpoints};
     use forge_registry::RunContext;
-    use forge_storage::{CredentialId, CredentialsRepo, StorageError};
+
     use forge_types::{ArgStack, EventId};
-    use time::OffsetDateTime;
 
     use crate::config::{HELIX_BUDGET_CAPACITY, HELIX_BUDGET_WINDOW};
     use crate::helix::{HelixError, HelixRequest, HelixTransport};
@@ -476,57 +476,24 @@ pub(crate) mod test_support {
         Ok(serde_json::json!({ "data": [{ "id": id, "login": "target" }] }))
     }
 
-    pub(crate) struct MockCreds {
-        bundle: Option<String>,
-    }
+    pub(crate) struct MockCreds;
 
     impl MockCreds {
-        pub(crate) fn with_identity() -> Self {
-            Self {
-                bundle: Some(
-                    serde_json::json!({
-                        "access_token": TOKEN_SENTINEL,
-                        "user_id": SELF_USER_ID,
-                        "login": "streamer",
-                        "expires_at_unix": null,
-                    })
-                    .to_string(),
-                ),
-            }
+        pub(crate) fn with_identity() -> MemoryCredentials {
+            MemoryCredentials::holding(
+                crate::credentials::TWITCH_CREDENTIAL_ID,
+                &serde_json::json!({
+                    "access_token": TOKEN_SENTINEL,
+                    "user_id": SELF_USER_ID,
+                    "login": "streamer",
+                    "expires_at_unix": null,
+                })
+                .to_string(),
+            )
         }
 
-        pub(crate) fn empty() -> Self {
-            Self { bundle: None }
-        }
-    }
-
-    #[async_trait]
-    impl CredentialsRepo for MockCreds {
-        async fn store(&self, _: &CredentialId, _: &str) -> Result<(), StorageError> {
-            Ok(())
-        }
-
-        async fn load(&self, _: &CredentialId) -> Result<Option<String>, StorageError> {
-            Ok(self.bundle.clone())
-        }
-
-        async fn delete(&self, _: &CredentialId) -> Result<bool, StorageError> {
-            Ok(false)
-        }
-
-        async fn list_ids(&self) -> Result<Vec<CredentialId>, StorageError> {
-            Ok(Vec::new())
-        }
-
-        async fn last_refresh(
-            &self,
-            _: &CredentialId,
-        ) -> Result<Option<OffsetDateTime>, StorageError> {
-            Ok(None)
-        }
-
-        async fn mark_refreshed(&self, _: &CredentialId) -> Result<(), StorageError> {
-            Ok(())
+        pub(crate) fn empty() -> MemoryCredentials {
+            MemoryCredentials::default()
         }
     }
 

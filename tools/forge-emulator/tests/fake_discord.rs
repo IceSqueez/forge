@@ -9,7 +9,7 @@ use serde_json::{Value, json};
 
 mod support;
 
-use support::MemoryCredentials;
+use forge_storage::test_support::MemoryCredentials;
 use support::QuietPublisher;
 
 const ALERTS: &str = "alerts";

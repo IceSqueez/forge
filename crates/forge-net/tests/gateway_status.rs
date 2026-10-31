@@ -30,7 +30,8 @@ async fn serving(template: ResponseTemplate) -> MockServer {
 }
 
 async fn excerpt_for(body: Vec<u8>, request: GatewayRequest) -> String {
-    let server = serving(ResponseTemplate::new(400).set_body_bytes(body)).await;
+    let server =
+        serving(ResponseTemplate::new(reqwest::StatusCode::BAD_REQUEST).set_body_bytes(body)).await;
     let harness = Harness::new(&server.uri(), platform());
     let failure = harness.fail(request).await;
     assert!(matches!(
@@ -61,7 +62,7 @@ fn variant(failure: &GatewayFailure) -> &'static str {
 #[tokio::test]
 async fn success_exposes_status_case_insensitive_headers_and_body() {
     let server = serving(
-        ResponseTemplate::new(201)
+        ResponseTemplate::new(reqwest::StatusCode::CREATED)
             .insert_header("X-Request-Id", "req-7")
             .set_body_string("created"),
     )
@@ -83,8 +84,10 @@ async fn success_body_decodes_into_the_caller_type() {
         id: u32,
         name: String,
     }
-    let server =
-        serving(ResponseTemplate::new(200).set_body_string(r#"{"id":4,"name":"x"}"#)).await;
+    let server = serving(
+        ResponseTemplate::new(reqwest::StatusCode::OK).set_body_string(r#"{"id":4,"name":"x"}"#),
+    )
+    .await;
     let harness = Harness::new(&server.uri(), platform());
     let response = harness.ok(GatewayRequest::get("items/4")).await;
     assert_eq!(
@@ -101,7 +104,9 @@ async fn declared_success_body_is_accepted_at_the_class_cap_and_refused_one_byte
     let cap = CallClass::OAuth.body_cap();
     let at_cap = usize::try_from(cap).unwrap();
     for (len, too_large) in [(at_cap - 1, false), (at_cap, false), (at_cap + 1, true)] {
-        let server = serving(ResponseTemplate::new(200).set_body_bytes(vec![b'x'; len])).await;
+        let server =
+            serving(ResponseTemplate::new(reqwest::StatusCode::OK).set_body_bytes(vec![b'x'; len]))
+                .await;
         let harness = Harness::new(&server.uri(), platform());
         let outcome = harness
             .gateway
@@ -147,8 +152,10 @@ async fn chunked_success_body_is_capped_by_cumulative_size() {
 #[tokio::test]
 async fn body_cap_follows_the_request_class_falling_back_to_the_profile_default() {
     let oauth_cap = usize::try_from(CallClass::OAuth.body_cap()).unwrap();
-    let server =
-        serving(ResponseTemplate::new(200).set_body_bytes(vec![b'x'; oauth_cap + 1])).await;
+    let server = serving(
+        ResponseTemplate::new(reqwest::StatusCode::OK).set_body_bytes(vec![b'x'; oauth_cap + 1]),
+    )
+    .await;
     let harness = Harness::new(&server.uri(), platform());
     let response = harness.ok(GatewayRequest::get("big")).await;
     assert_eq!(response.body().len(), oauth_cap + 1);
@@ -324,7 +331,11 @@ async fn throttle_excerpts_are_trimmed_masked_and_capped_like_other_error_bodies
 
 #[tokio::test]
 async fn unhinted_503_is_a_server_error_without_limiter_feedback() {
-    let server = serving(ResponseTemplate::new(503).set_body_string("maintenance")).await;
+    let server = serving(
+        ResponseTemplate::new(reqwest::StatusCode::SERVICE_UNAVAILABLE)
+            .set_body_string("maintenance"),
+    )
+    .await;
     let harness = Harness::new(&server.uri(), platform());
     let failure = harness.fail(GatewayRequest::get("x")).await;
     assert!(matches!(
@@ -343,7 +354,8 @@ async fn unusable_503_hints_are_a_server_error_without_limiter_feedback() {
         ),
         (platform(), vec![("Retry-After", "soon")]),
     ] {
-        let mut template = ResponseTemplate::new(503).set_body_string("down");
+        let mut template =
+            ResponseTemplate::new(reqwest::StatusCode::SERVICE_UNAVAILABLE).set_body_string("down");
         for (name, value) in &headers {
             template = template.insert_header(*name, *value);
         }
@@ -395,7 +407,7 @@ async fn non_throttle_statuses_map_to_their_failure_variant_with_an_excerpt() {
 
 #[tokio::test]
 async fn not_modified_is_an_unexpected_status_with_an_empty_excerpt() {
-    let server = serving(ResponseTemplate::new(304)).await;
+    let server = serving(ResponseTemplate::new(reqwest::StatusCode::NOT_MODIFIED)).await;
     let harness = Harness::new(&server.uri(), platform());
     let failure = harness.fail(GatewayRequest::get("x")).await;
     assert!(matches!(

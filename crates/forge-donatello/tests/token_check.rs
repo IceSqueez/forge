@@ -10,13 +10,13 @@ use forge_donatello::{
 use forge_net::RateLimitOutcome;
 use forge_platform_core::PlatformError;
 use serde_json::json;
-use support::{MemCreds, ScriptedLimiter, TOKEN};
+use support::{MemoryCredentials, ScriptedLimiter, TOKEN};
 use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, Request, Respond, ResponseTemplate};
 
 fn provider(
     base_url: &str,
-    creds: Arc<MemCreds>,
+    creds: Arc<MemoryCredentials>,
     limiter: Arc<ScriptedLimiter>,
 ) -> DonatelloProvider {
     support::provider_on(base_url, creds, limiter)
@@ -45,11 +45,13 @@ async fn verify_token_sends_the_token_header_and_reads_the_account() {
     Mock::given(method("GET"))
         .and(path("/me"))
         .and(header("X-Token", TOKEN))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "nickname": "streamer",
-            "page": "",
-            "isActive": true,
-        })))
+        .respond_with(
+            ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(json!({
+                "nickname": "streamer",
+                "page": "",
+                "isActive": true,
+            })),
+        )
         .expect(1)
         .mount(&server)
         .await;
@@ -72,14 +74,20 @@ async fn verify_token_sends_the_token_header_and_reads_the_account() {
 async fn verify_token_maps_each_failure_answer_to_its_error() {
     for (response, expected) in [
         (
-            ResponseTemplate::new(401)
+            ResponseTemplate::new(reqwest::StatusCode::UNAUTHORIZED)
                 .set_body_json(json!({ "success": false, "message": "Помилка авторизації" })),
             "unauthorized",
         ),
-        (ResponseTemplate::new(404), "profile incomplete"),
-        (ResponseTemplate::new(500), "http 500"),
         (
-            ResponseTemplate::new(200).set_body_string("<html>"),
+            ResponseTemplate::new(reqwest::StatusCode::NOT_FOUND),
+            "profile incomplete",
+        ),
+        (
+            ResponseTemplate::new(reqwest::StatusCode::INTERNAL_SERVER_ERROR),
+            "http 500",
+        ),
+        (
+            ResponseTemplate::new(reqwest::StatusCode::OK).set_body_string("<html>"),
             "malformed",
         ),
     ] {
@@ -98,7 +106,7 @@ async fn verify_token_maps_each_failure_answer_to_its_error() {
 async fn verify_token_rejects_a_blank_or_unsendable_token_without_a_request() {
     let server = MockServer::builder().start().await;
     Mock::given(method("GET"))
-        .respond_with(ResponseTemplate::new(200))
+        .respond_with(ResponseTemplate::new(reqwest::StatusCode::OK))
         .expect(0)
         .mount(&server)
         .await;
@@ -149,7 +157,7 @@ async fn token_problems_require_the_user_while_transient_failures_do_not() {
 #[tokio::test]
 async fn too_many_requests_answer_feeds_the_retry_after_into_the_shared_limiter() {
     for (retry_after, secs) in [(Some("7"), 7), (None, 30), (Some("soon"), 30)] {
-        let mut response = ResponseTemplate::new(429);
+        let mut response = ResponseTemplate::new(reqwest::StatusCode::TOO_MANY_REQUESTS);
         if let Some(value) = retry_after {
             response = response.insert_header("Retry-After", value);
         }
@@ -176,7 +184,7 @@ async fn too_many_requests_answer_feeds_the_retry_after_into_the_shared_limiter(
 async fn exhausted_client_budget_sends_no_request() {
     let server = MockServer::builder().start().await;
     Mock::given(method("GET"))
-        .respond_with(ResponseTemplate::new(200))
+        .respond_with(ResponseTemplate::new(reqwest::StatusCode::OK))
         .expect(0)
         .mount(&server)
         .await;
@@ -287,7 +295,7 @@ async fn no_failure_renders_a_token_the_server_echoes_back() {
 #[tokio::test]
 async fn service_unavailable_is_a_rate_limit_only_when_it_names_a_retry_after() {
     for (retry_after, expected) in [(Some("9"), "rate limited 9"), (None, "http 503")] {
-        let mut response = ResponseTemplate::new(503);
+        let mut response = ResponseTemplate::new(reqwest::StatusCode::SERVICE_UNAVAILABLE);
         if let Some(value) = retry_after {
             response = response.insert_header("Retry-After", value);
         }
@@ -307,8 +315,10 @@ async fn service_unavailable_is_a_rate_limit_only_when_it_names_a_retry_after() 
 
 #[tokio::test]
 async fn a_throttled_client_budget_is_waited_out_before_the_request() {
-    let server =
-        me_answering(ResponseTemplate::new(200).set_body_json(json!({ "nickname": "s" }))).await;
+    let server = me_answering(
+        ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(json!({ "nickname": "s" })),
+    )
+    .await;
     let limiter = ScriptedLimiter::throttled_once(Duration::from_millis(20));
 
     let result = provider(&server.uri(), Arc::default(), Arc::clone(&limiter))
@@ -343,8 +353,8 @@ async fn the_default_budget_grants_twenty_calls_then_paces_one_call_per_three_se
 
 #[tokio::test]
 async fn save_token_stores_nothing_when_donatello_rejects_it() {
-    let server = me_answering(ResponseTemplate::new(401)).await;
-    let creds = Arc::new(MemCreds::default());
+    let server = me_answering(ResponseTemplate::new(reqwest::StatusCode::UNAUTHORIZED)).await;
+    let creds = Arc::new(MemoryCredentials::default());
 
     let result = provider(&server.uri(), Arc::clone(&creds), ScriptedLimiter::open())
         .save_token(TOKEN)
@@ -354,14 +364,16 @@ async fn save_token_stores_nothing_when_donatello_rejects_it() {
         matches!(result, Err(DonatelloError::Unauthorized)),
         "{result:?}"
     );
-    assert_eq!(creds.stored(), None);
+    assert_eq!(creds.stored(forge_donatello::DONATELLO_CREDENTIAL_ID), None);
 }
 
 #[tokio::test]
 async fn save_token_persists_a_verified_token() {
-    let server =
-        me_answering(ResponseTemplate::new(200).set_body_json(json!({ "nickname": "s" }))).await;
-    let creds = Arc::new(MemCreds::default());
+    let server = me_answering(
+        ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(json!({ "nickname": "s" })),
+    )
+    .await;
+    let creds = Arc::new(MemoryCredentials::default());
 
     let result = provider(&server.uri(), Arc::clone(&creds), ScriptedLimiter::open())
         .save_token(&format!("{TOKEN}\n"))
@@ -370,7 +382,7 @@ async fn save_token_persists_a_verified_token() {
     assert!(result.is_ok(), "{result:?}");
     assert!(
         creds
-            .stored()
+            .stored(forge_donatello::DONATELLO_CREDENTIAL_ID)
             .is_some_and(|bundle| bundle.contains(TOKEN) && !bundle.contains('\n'))
     );
 }

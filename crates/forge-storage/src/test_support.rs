@@ -1,5 +1,7 @@
+mod credentials;
 mod memory;
 
+pub use credentials::MemoryCredentials;
 pub use memory::MemorySettings;
 
 use crate::RowClasses;

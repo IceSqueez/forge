@@ -524,7 +524,10 @@ mod tests {
     async fn mount_live_channel(server: &MockServer) {
         Mock::given(method("GET"))
             .and(path(CHANNELS_ROUTE))
-            .respond_with(ResponseTemplate::new(200).set_body_json(channel_body(true, "T", 1, "C")))
+            .respond_with(
+                ResponseTemplate::new(reqwest::StatusCode::OK)
+                    .set_body_json(channel_body(true, "T", 1, "C")),
+            )
             .mount(server)
             .await;
     }
@@ -533,7 +536,8 @@ mod tests {
         Mock::given(method("GET"))
             .and(path(REDEMPTIONS_ROUTE))
             .respond_with(
-                ResponseTemplate::new(200).set_body_json(serde_json::json!({ "data": [] })),
+                ResponseTemplate::new(reqwest::StatusCode::OK)
+                    .set_body_json(serde_json::json!({ "data": [] })),
             )
             .mount(server)
             .await;
@@ -672,7 +676,10 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/channels"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(channel_body(true, "T", 1, "C")))
+            .respond_with(
+                ResponseTemplate::new(reqwest::StatusCode::OK)
+                    .set_body_json(channel_body(true, "T", 1, "C")),
+            )
             .mount(&server)
             .await;
 
@@ -700,7 +707,10 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/channels"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(channel_body(true, "T", 1, "C")))
+            .respond_with(
+                ResponseTemplate::new(reqwest::StatusCode::OK)
+                    .set_body_json(channel_body(true, "T", 1, "C")),
+            )
             .mount(&server)
             .await;
 
@@ -727,7 +737,10 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/channels"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(channel_body(true, "T", 1, "C")))
+            .respond_with(
+                ResponseTemplate::new(reqwest::StatusCode::OK)
+                    .set_body_json(channel_body(true, "T", 1, "C")),
+            )
             .mount(&server)
             .await;
 
@@ -761,7 +774,8 @@ mod tests {
         Mock::given(method("GET"))
             .and(path("/channels"))
             .respond_with(
-                ResponseTemplate::new(200).set_body_json(channel_body(true, "New", 1, "C")),
+                ResponseTemplate::new(reqwest::StatusCode::OK)
+                    .set_body_json(channel_body(true, "New", 1, "C")),
             )
             .mount(&server)
             .await;
@@ -904,12 +918,14 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/channels/rewards/redemptions"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "data": [
-                    { "id": "rd_1", "reward": { "id": "rw_1", "title": "Hydrate" } },
-                    { "id": "rd_2", "reward": { "id": "rw_1", "title": "Hydrate" } }
-                ]
-            })))
+            .respond_with(
+                ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(serde_json::json!({
+                    "data": [
+                        { "id": "rd_1", "reward": { "id": "rw_1", "title": "Hydrate" } },
+                        { "id": "rd_2", "reward": { "id": "rw_1", "title": "Hydrate" } }
+                    ]
+                })),
+            )
             .mount(&server)
             .await;
 
@@ -940,14 +956,16 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/channels/rewards/redemptions"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "data": [
-                    { "id": "rd_1", "reward": { "id": "rw_1", "title": "Hydrate" },
-                      "redeemer": { "user_id": 42, "username": "alice" }, "user_input": "" },
-                    { "id": "rd_new", "reward": { "id": "rw_1", "title": "Hydrate" },
-                      "redeemer": { "user_id": 7, "username": "bob" }, "user_input": "hi" }
-                ]
-            })))
+            .respond_with(
+                ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(serde_json::json!({
+                    "data": [
+                        { "id": "rd_1", "reward": { "id": "rw_1", "title": "Hydrate" },
+                          "redeemer": { "user_id": 42, "username": "alice" }, "user_input": "" },
+                        { "id": "rd_new", "reward": { "id": "rw_1", "title": "Hydrate" },
+                          "redeemer": { "user_id": 7, "username": "bob" }, "user_input": "hi" }
+                    ]
+                })),
+            )
             .mount(&server)
             .await;
 
@@ -990,19 +1008,26 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/channels/rewards/redemptions"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(pending(&["a", "b"])))
+            .respond_with(
+                ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(pending(&["a", "b"])),
+            )
             .up_to_n_times(1)
             .mount(&server)
             .await;
         Mock::given(method("GET"))
             .and(path("/channels/rewards/redemptions"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(pending(&["a", "b", "c"])))
+            .respond_with(
+                ResponseTemplate::new(reqwest::StatusCode::OK)
+                    .set_body_json(pending(&["a", "b", "c"])),
+            )
             .up_to_n_times(1)
             .mount(&server)
             .await;
         Mock::given(method("GET"))
             .and(path("/channels/rewards/redemptions"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(pending(&["a"])))
+            .respond_with(
+                ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(pending(&["a"])),
+            )
             .up_to_n_times(1)
             .mount(&server)
             .await;
@@ -1115,7 +1140,8 @@ mod tests {
             Mock::given(method("GET"))
                 .and(path("/channels"))
                 .respond_with(
-                    ResponseTemplate::new(500).set_body_string(format!("<html>{BODY_SENTINEL}")),
+                    ResponseTemplate::new(reqwest::StatusCode::INTERNAL_SERVER_ERROR)
+                        .set_body_string(format!("<html>{BODY_SENTINEL}")),
                 )
                 .mount(&server)
                 .await;

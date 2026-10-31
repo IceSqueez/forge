@@ -644,7 +644,7 @@ mod tests {
             ),
         ];
         for (base, method, path, query, body, signed_headers, signature) in cases {
-            let server = serving(ResponseTemplate::new(200)).await;
+            let server = serving(ResponseTemplate::new(reqwest::StatusCode::OK)).await;
             let request = signer()
                 .request_at(
                     &link_at(base),
@@ -680,7 +680,7 @@ mod tests {
             ("", Method::Post, no_query, Some(SPEECH_BODY)),
             ("/prefix", Method::Post, no_query, Some(SPEECH_BODY)),
         ] {
-            let server = serving(ResponseTemplate::new(200)).await;
+            let server = serving(ResponseTemplate::new(reqwest::StatusCode::OK)).await;
             let link = link_at(&format!("{}{prefix}", server.uri()));
             let request = signer()
                 .request_at(&link, call(method, "/v1/voices", query, body), fixed_time())
@@ -705,7 +705,7 @@ mod tests {
 
     #[tokio::test]
     async fn next_token_travels_in_its_canonical_encoding() {
-        let server = serving(ResponseTemplate::new(200)).await;
+        let server = serving(ResponseTemplate::new(reqwest::StatusCode::OK)).await;
         let link = link_to(&server);
         let request = signer()
             .request_at(
@@ -727,7 +727,7 @@ mod tests {
 
     #[tokio::test]
     async fn the_json_body_is_sent_as_the_exact_bytes_that_were_hashed() {
-        let server = serving(ResponseTemplate::new(200)).await;
+        let server = serving(ResponseTemplate::new(reqwest::StatusCode::OK)).await;
         let link = link_to(&server);
         let request = signer()
             .request_at(
@@ -747,7 +747,7 @@ mod tests {
 
     #[tokio::test]
     async fn the_secret_key_never_travels_on_the_wire() {
-        let server = serving(ResponseTemplate::new(200)).await;
+        let server = serving(ResponseTemplate::new(reqwest::StatusCode::OK)).await;
         let link = link_to(&server);
         let request = signer()
             .request_at(

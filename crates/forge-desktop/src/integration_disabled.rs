@@ -580,12 +580,13 @@ mod tests {
 
     use forge_storage::{CredentialId, SettingsRepo, integration_enabled_key};
     use forge_types::ActionId;
-    use gpui::{Modifiers, TestAppContext, VisualTestContext, point, size};
+    use gpui::{TestAppContext, size};
 
     use super::*;
     use crate::test_support::{
-        Sandboxed, idle_supervisor, link, owned_sub_actions, owned_triggers, pump, runtime,
-        sandboxed_provider, seed_action, seed_trigger, settle_until, step, test_backend,
+        ClickArea, Sandboxed, click_until, idle_supervisor, link, owned_sub_actions,
+        owned_triggers, pump, runtime, sandboxed_provider, seed_action, seed_trigger, settle_until,
+        step, test_backend,
     };
     use forge_components::Presentation;
     use forge_registry::ReferencingAction;
@@ -596,6 +597,7 @@ mod tests {
     const WINDOW_W: f32 = 1000.0;
     const WINDOW_H: f32 = 800.0;
     const SCAN_X: f32 = 120.0;
+    const BELOW_THE_CRUMB: f32 = 64.0;
     const SCAN_STEP: f32 = 4.0;
 
     fn obs() -> IntegrationId {
@@ -752,30 +754,21 @@ mod tests {
         vcx.simulate_resize(size(px(WINDOW_W), px(WINDOW_H)));
         page_settles(vcx, &rt, &view, |view| !view.references.actions.is_empty());
 
-        scan_column(vcx);
-
-        let opened: Vec<Screen> = heard.read_with(vcx, |heard, _| {
-            heard
-                .screens
-                .iter()
-                .filter(|screen| matches!(screen, Screen::Actions(_)))
-                .cloned()
-                .collect()
-        });
-        assert!(!opened.is_empty(), "no click on the page opened an action");
-        assert!(
-            opened
-                .iter()
-                .all(|screen| *screen == Screen::Actions(Some(scene))),
-            "{opened:?}"
+        let clicked = click_until(
+            vcx,
+            &ClickArea {
+                x: SCAN_X..SCAN_X + SCAN_STEP,
+                y: BELOW_THE_CRUMB..WINDOW_H,
+                step_x: SCAN_STEP,
+                step_y: SCAN_STEP,
+            },
+            |vcx| heard.read_with(vcx, |heard, _| !heard.screens.is_empty()),
         );
-    }
 
-    fn scan_column(vcx: &mut VisualTestContext) {
-        let mut y = 0.0;
-        while y < WINDOW_H {
-            vcx.simulate_click(point(px(SCAN_X), px(y)), Modifiers::none());
-            y += SCAN_STEP;
-        }
+        assert!(clicked, "no click on the page opened anything");
+        assert_eq!(
+            heard.read_with(vcx, |heard, _| heard.screens.clone()),
+            vec![Screen::Actions(Some(scene))]
+        );
     }
 }

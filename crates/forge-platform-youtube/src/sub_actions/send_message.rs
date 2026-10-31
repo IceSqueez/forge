@@ -164,7 +164,9 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/liveChat/messages"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({"kind": "x"})))
+            .respond_with(
+                ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(json!({"kind": "x"})),
+            )
             .expect(1)
             .mount(&server)
             .await;
@@ -217,7 +219,8 @@ mod tests {
         Mock::given(method("POST"))
             .and(path("/liveChat/messages"))
             .respond_with(
-                ResponseTemplate::new(403).set_body_string("forbidden: insufficient scope"),
+                ResponseTemplate::new(reqwest::StatusCode::FORBIDDEN)
+                    .set_body_string("forbidden: insufficient scope"),
             )
             .mount(&server)
             .await;
@@ -293,7 +296,9 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/liveChat/messages"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({"kind": "x"})))
+            .respond_with(
+                ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(json!({"kind": "x"})),
+            )
             .mount(&server)
             .await;
         let runner = runner_on(&server);

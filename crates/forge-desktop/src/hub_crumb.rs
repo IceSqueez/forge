@@ -42,19 +42,13 @@ pub(crate) fn hub_crumb<V: EventEmitter<NavRequested>>(
 
 #[cfg(test)]
 mod tests {
-    use forge_components::{Density, ThemeId, breadcrumb};
-    use gpui::{
-        AppContext as _, IntoElement, Modifiers, Render, Subscription, TestAppContext,
-        VisualTestContext, Window, div, point, prelude::*, px, size,
-    };
+    use forge_components::breadcrumb;
+    use gpui::{IntoElement, Render, TestAppContext, Window, div, prelude::*};
 
     use super::*;
     use crate::navigation::TtsSection;
-    use forge_components::{ActivePresentation, Presentation};
-
-    const WINDOW_W: f32 = 600.0;
-    const WINDOW_H: f32 = 80.0;
-    const SCAN_STEP: f32 = 4.0;
+    use crate::test_support::hub_crumb_targets;
+    use forge_components::ActivePresentation;
 
     #[test]
     fn core_screens_map_to_their_hub_category_regardless_of_payload() {
@@ -87,46 +81,10 @@ mod tests {
         }
     }
 
-    struct Heard {
-        screens: Vec<Screen>,
-        _sub: Subscription,
-    }
-
-    fn clicked_screens(
-        category: Option<IntegrationCategory>,
-        cx: &mut TestAppContext,
-    ) -> Vec<Screen> {
-        cx.update(|cx| cx.set_global(Presentation::new(ThemeId::ForgeDefault, Density::Cozy)));
-        let (host, vcx) = cx.add_window_view(|_window, _cx| CrumbHost { category });
-        let heard = vcx.update(|_window, cx| {
-            cx.new(|cx| Heard {
-                screens: Vec::new(),
-                _sub: cx.subscribe(&host, |heard: &mut Heard, _, event: &NavRequested, _| {
-                    heard.screens.push(event.0.clone());
-                }),
-            })
-        });
-        vcx.simulate_resize(size(px(WINDOW_W), px(WINDOW_H)));
-        vcx.run_until_parked();
-        scan_rows(vcx);
-        heard.read_with(vcx, |heard, _| heard.screens.clone())
-    }
-
-    fn scan_rows(vcx: &mut VisualTestContext) {
-        let mut y = SCAN_STEP / 2.0;
-        while y < WINDOW_H {
-            let mut x = SCAN_STEP / 2.0;
-            while x < WINDOW_W {
-                vcx.simulate_click(point(px(x), px(y)), Modifiers::none());
-                x += SCAN_STEP;
-            }
-            y += SCAN_STEP;
-        }
-    }
-
     #[gpui::test]
     fn clicking_a_category_crumb_opens_the_hub_on_that_category(cx: &mut TestAppContext) {
-        let screens = clicked_screens(Some(IntegrationCategory::AUDIO), cx);
+        let category = Some(IntegrationCategory::AUDIO);
+        let screens = hub_crumb_targets(cx, |_, _| CrumbHost { category });
 
         assert!(!screens.is_empty(), "no click reached the crumb");
         assert!(
@@ -139,7 +97,7 @@ mod tests {
 
     #[gpui::test]
     fn clicking_the_uncategorised_crumb_opens_the_whole_hub(cx: &mut TestAppContext) {
-        let screens = clicked_screens(None, cx);
+        let screens = hub_crumb_targets(cx, |_, _| CrumbHost { category: None });
 
         assert!(!screens.is_empty(), "no click reached the crumb");
         assert!(

@@ -68,52 +68,15 @@ pub async fn load_and_connect(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Mutex;
-
-    use async_trait::async_trait;
-    use time::OffsetDateTime;
+    use forge_storage::test_support::MemoryCredentials;
 
     use super::*;
 
     const SAVED_BUNDLE: &str = r#"{"url":"ws://192.0.2.10:4455","password":"obs-pass-sentinel"}"#;
 
-    #[derive(Default)]
-    struct SingleSlot(Mutex<Option<String>>);
-
-    #[async_trait]
-    impl CredentialsRepo for SingleSlot {
-        async fn store(&self, _: &CredentialId, bundle: &str) -> Result<(), StorageError> {
-            *self.0.lock().unwrap() = Some(bundle.to_owned());
-            Ok(())
-        }
-
-        async fn load(&self, _: &CredentialId) -> Result<Option<String>, StorageError> {
-            Ok(self.0.lock().unwrap().clone())
-        }
-
-        async fn delete(&self, _: &CredentialId) -> Result<bool, StorageError> {
-            Ok(self.0.lock().unwrap().take().is_some())
-        }
-
-        async fn list_ids(&self) -> Result<Vec<CredentialId>, StorageError> {
-            Ok(Vec::new())
-        }
-
-        async fn last_refresh(
-            &self,
-            _: &CredentialId,
-        ) -> Result<Option<OffsetDateTime>, StorageError> {
-            Ok(None)
-        }
-
-        async fn mark_refreshed(&self, _: &CredentialId) -> Result<(), StorageError> {
-            Ok(())
-        }
-    }
-
     #[tokio::test]
     async fn a_saved_bundle_loads_its_url_and_password() {
-        let repo = SingleSlot(Mutex::new(Some(SAVED_BUNDLE.to_owned())));
+        let repo = MemoryCredentials::holding(OBS_CREDENTIAL_ID, SAVED_BUNDLE);
 
         let loaded = load(&repo).await.unwrap().expect("a saved credential");
 
@@ -125,13 +88,13 @@ mod tests {
 
     #[tokio::test]
     async fn store_writes_the_document_earlier_builds_saved() {
-        let repo = SingleSlot::default();
+        let repo = MemoryCredentials::default();
 
         store(&repo, "192.0.2.10", 4455, "obs-pass-sentinel")
             .await
             .unwrap();
 
-        let written = repo.0.lock().unwrap().clone().expect("a stored bundle");
+        let written = repo.stored(OBS_CREDENTIAL_ID).expect("a stored bundle");
         assert_eq!(
             serde_json::from_str::<serde_json::Value>(&written).unwrap(),
             serde_json::from_str::<serde_json::Value>(SAVED_BUNDLE).unwrap()

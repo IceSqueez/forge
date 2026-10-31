@@ -11,6 +11,7 @@ rust-version.workspace = true
 workspace = true
 
 [dev-dependencies]
+forge-storage = { path = "../forge-storage", features = ["settings-test-support"] }
 forge-events = { path = "../forge-events", features = ["test-support"] }
 reqwest = { workspace = true }
 forge-net = { path = "../forge-net", features = ["test-support"] }

@@ -126,16 +126,18 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/videos"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "items": [{
-                    "liveStreamingDetails": {
-                        "concurrentViewers": "1234",
-                        "actualStartTime": "2026-07-24T10:00:00Z",
-                        "scheduledStartTime": "2026-07-24T09:30:00Z",
-                        "activeLiveChatId": "lc-abc"
-                    }
-                }]
-            })))
+            .respond_with(
+                ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(json!({
+                    "items": [{
+                        "liveStreamingDetails": {
+                            "concurrentViewers": "1234",
+                            "actualStartTime": "2026-07-24T10:00:00Z",
+                            "scheduledStartTime": "2026-07-24T09:30:00Z",
+                            "activeLiveChatId": "lc-abc"
+                        }
+                    }]
+                })),
+            )
             .mount(&server)
             .await;
 
@@ -169,14 +171,16 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/videos"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "items": [{
-                    "liveStreamingDetails": {
-                        "scheduledStartTime": "2026-07-24T09:30:00Z",
-                        "activeLiveChatId": "lc-abc"
-                    }
-                }]
-            })))
+            .respond_with(
+                ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(json!({
+                    "items": [{
+                        "liveStreamingDetails": {
+                            "scheduledStartTime": "2026-07-24T09:30:00Z",
+                            "activeLiveChatId": "lc-abc"
+                        }
+                    }]
+                })),
+            )
             .mount(&server)
             .await;
 
@@ -199,9 +203,11 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/videos"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "items": [{ "liveStreamingDetails": {} }]
-            })))
+            .respond_with(
+                ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(json!({
+                    "items": [{ "liveStreamingDetails": {} }]
+                })),
+            )
             .mount(&server)
             .await;
 
@@ -242,7 +248,10 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/videos"))
-            .respond_with(ResponseTemplate::new(500).set_body_string(BODY_SENTINEL))
+            .respond_with(
+                ResponseTemplate::new(reqwest::StatusCode::INTERNAL_SERVER_ERROR)
+                    .set_body_string(BODY_SENTINEL),
+            )
             .mount(&server)
             .await;
 

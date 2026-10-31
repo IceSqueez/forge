@@ -110,68 +110,11 @@ pub(crate) async fn load_at(
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
-    use std::sync::Mutex;
+    use forge_storage::test_support::MemoryCredentials;
 
-    use async_trait::async_trait;
-    use forge_storage::{CredentialId, CredentialsRepo, StorageError};
-    use time::OffsetDateTime;
+    use forge_storage::{CredentialId, CredentialsRepo};
 
     use super::*;
-
-    struct InMemRepo(Mutex<HashMap<String, String>>);
-
-    impl InMemRepo {
-        fn empty() -> Self {
-            Self(Mutex::new(HashMap::new()))
-        }
-
-        fn with_raw(key: &str, value: &str) -> Self {
-            let mut map = HashMap::new();
-            map.insert(key.to_owned(), value.to_owned());
-            Self(Mutex::new(map))
-        }
-    }
-
-    #[async_trait]
-    impl CredentialsRepo for InMemRepo {
-        async fn store(&self, id: &CredentialId, plaintext: &str) -> Result<(), StorageError> {
-            self.0
-                .lock()
-                .unwrap()
-                .insert(id.as_str().to_owned(), plaintext.to_owned());
-            Ok(())
-        }
-
-        async fn load(&self, id: &CredentialId) -> Result<Option<String>, StorageError> {
-            Ok(self.0.lock().unwrap().get(id.as_str()).cloned())
-        }
-
-        async fn delete(&self, id: &CredentialId) -> Result<bool, StorageError> {
-            Ok(self.0.lock().unwrap().remove(id.as_str()).is_some())
-        }
-
-        async fn list_ids(&self) -> Result<Vec<CredentialId>, StorageError> {
-            Ok(self
-                .0
-                .lock()
-                .unwrap()
-                .keys()
-                .map(|k| CredentialId::new(k.clone()))
-                .collect())
-        }
-
-        async fn last_refresh(
-            &self,
-            _id: &CredentialId,
-        ) -> Result<Option<OffsetDateTime>, StorageError> {
-            Ok(None)
-        }
-
-        async fn mark_refreshed(&self, _id: &CredentialId) -> Result<(), StorageError> {
-            Ok(())
-        }
-    }
 
     fn cred_with_refresh(refresh: Option<&str>) -> StoredCredential {
         StoredCredential {
@@ -205,7 +148,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_saved_bundle_loads_and_store_writes_the_same_document_back() {
-        let repo = InMemRepo::with_raw(TWITCH_CREDENTIAL_ID, SAVED_BUNDLE);
+        let repo = MemoryCredentials::holding(TWITCH_CREDENTIAL_ID, SAVED_BUNDLE);
 
         let loaded = load(&repo).await.unwrap().expect("a saved credential");
         store_credential(&repo, &loaded).await.unwrap();
@@ -230,7 +173,7 @@ mod tests {
 
     #[tokio::test]
     async fn store_load_round_trip_preserves_refresh_token() {
-        let repo = InMemRepo::empty();
+        let repo = MemoryCredentials::default();
         let original = cred_with_refresh(Some("rt_secret_value"));
 
         store_credential(&repo, &original).await.unwrap();
@@ -245,7 +188,7 @@ mod tests {
 
     #[tokio::test]
     async fn store_load_round_trip_without_refresh_token_loads_as_none() {
-        let repo = InMemRepo::empty();
+        let repo = MemoryCredentials::default();
         let original = cred_with_refresh(None);
 
         store_credential(&repo, &original).await.unwrap();
@@ -260,7 +203,7 @@ mod tests {
     #[tokio::test]
     async fn legacy_blob_without_refresh_token_loads_as_none_not_error() {
         let legacy_json = r#"{"access_token":"old_access","user_id":"u1","login":"streamer","expires_at_unix":9999999999}"#;
-        let repo = InMemRepo::with_raw(TWITCH_CREDENTIAL_ID, legacy_json);
+        let repo = MemoryCredentials::holding(TWITCH_CREDENTIAL_ID, legacy_json);
 
         let loaded = load(&repo).await.unwrap().unwrap();
         assert!(
@@ -273,7 +216,7 @@ mod tests {
     #[tokio::test]
     async fn blob_with_null_refresh_token_loads_as_none() {
         let json = r#"{"access_token":"at","refresh_token":null,"user_id":"u1","login":"x","expires_at_unix":9999999999}"#;
-        let repo = InMemRepo::with_raw(TWITCH_CREDENTIAL_ID, json);
+        let repo = MemoryCredentials::holding(TWITCH_CREDENTIAL_ID, json);
 
         let loaded = load(&repo).await.unwrap().unwrap();
         assert!(loaded.refresh_token.is_none());
@@ -285,7 +228,7 @@ mod tests {
             let json = format!(
                 r#"{{"access_token":"at","user_id":"u1","login":"x","expires_at_unix":{expires}}}"#
             );
-            let repo = InMemRepo::with_raw(TWITCH_CREDENTIAL_ID, &json);
+            let repo = MemoryCredentials::holding(TWITCH_CREDENTIAL_ID, &json);
 
             let loaded = load(&repo).await.unwrap().unwrap();
 
@@ -299,14 +242,14 @@ mod tests {
             r#"{{"access_token":"at","user_id":"u1","login":"x","expires_at_unix":{}}}"#,
             i64::MAX
         );
-        let repo = InMemRepo::with_raw(TWITCH_CREDENTIAL_ID, &json);
+        let repo = MemoryCredentials::holding(TWITCH_CREDENTIAL_ID, &json);
 
         assert!(load(&repo).await.unwrap().is_some());
     }
 
     #[tokio::test]
     async fn load_returns_none_when_no_row_exists() {
-        let repo = InMemRepo::empty();
+        let repo = MemoryCredentials::default();
         let result = load(&repo).await.unwrap();
         assert!(result.is_none());
     }

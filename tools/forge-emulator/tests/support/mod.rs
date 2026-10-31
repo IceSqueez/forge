@@ -1,18 +1,14 @@
 #![allow(dead_code)]
 
-use std::collections::HashMap;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 
-use async_trait::async_trait;
 use forge_emulator::harness::launch::{ForgeCommand, GameGuard, HyprlandProbe, LivePaths};
 use forge_events::{Event, EventPublisher};
 use forge_platform_core::{PlatformEndpoints, PlatformError};
-use forge_storage::{CredentialId, CredentialsRepo, StorageError};
 use futures_util::future::BoxFuture;
-use time::OffsetDateTime;
 use tokio::time::timeout;
 
 pub const EMULATOR: &str = env!("CARGO_BIN_EXE_forge-emulator");
@@ -28,55 +24,6 @@ pub struct QuietPublisher;
 
 impl EventPublisher for QuietPublisher {
     fn publish(&self, _: Event) {}
-}
-
-#[derive(Default)]
-pub struct MemoryCredentials(Mutex<HashMap<String, String>>);
-
-impl MemoryCredentials {
-    pub fn holding(id: &str, plaintext: &str) -> Self {
-        Self(Mutex::new(HashMap::from([(
-            id.to_owned(),
-            plaintext.to_owned(),
-        )])))
-    }
-}
-
-#[async_trait]
-impl CredentialsRepo for MemoryCredentials {
-    async fn store(&self, id: &CredentialId, plaintext: &str) -> Result<(), StorageError> {
-        self.0
-            .lock()
-            .unwrap()
-            .insert(id.as_str().to_owned(), plaintext.to_owned());
-        Ok(())
-    }
-
-    async fn load(&self, id: &CredentialId) -> Result<Option<String>, StorageError> {
-        Ok(self.0.lock().unwrap().get(id.as_str()).cloned())
-    }
-
-    async fn delete(&self, id: &CredentialId) -> Result<bool, StorageError> {
-        Ok(self.0.lock().unwrap().remove(id.as_str()).is_some())
-    }
-
-    async fn list_ids(&self) -> Result<Vec<CredentialId>, StorageError> {
-        Ok(self
-            .0
-            .lock()
-            .unwrap()
-            .keys()
-            .map(|key| CredentialId::new(key.clone()))
-            .collect())
-    }
-
-    async fn last_refresh(&self, _: &CredentialId) -> Result<Option<OffsetDateTime>, StorageError> {
-        Ok(None)
-    }
-
-    async fn mark_refreshed(&self, _: &CredentialId) -> Result<(), StorageError> {
-        Ok(())
-    }
 }
 
 pub fn endpoints_from(overrides: &[(&'static str, String)]) -> PlatformEndpoints {

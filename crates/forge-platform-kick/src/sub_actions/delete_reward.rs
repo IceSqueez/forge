@@ -118,7 +118,7 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("DELETE"))
             .and(path("/channels/rewards/rw_7"))
-            .respond_with(ResponseTemplate::new(204))
+            .respond_with(ResponseTemplate::new(reqwest::StatusCode::NO_CONTENT))
             .expect(1)
             .mount(&server)
             .await;
@@ -134,7 +134,7 @@ mod tests {
     async fn empty_reward_id_after_interpolation_fails_without_request() {
         let server = MockServer::start().await;
         Mock::given(method("DELETE"))
-            .respond_with(ResponseTemplate::new(204))
+            .respond_with(ResponseTemplate::new(reqwest::StatusCode::NO_CONTENT))
             .mount(&server)
             .await;
 

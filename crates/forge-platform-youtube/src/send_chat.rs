@@ -263,7 +263,7 @@ mod tests {
         Mock::given(method("DELETE"))
             .and(path("/liveChat/messages"))
             .and(query_param("id", "msg-xyz"))
-            .respond_with(ResponseTemplate::new(204))
+            .respond_with(ResponseTemplate::new(reqwest::StatusCode::NO_CONTENT))
             .expect(1)
             .mount(&server)
             .await;
@@ -294,7 +294,9 @@ mod tests {
                     }
                 }
             })))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({"kind": "x"})))
+            .respond_with(
+                ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(json!({"kind": "x"})),
+            )
             .expect(1)
             .mount(&server)
             .await;

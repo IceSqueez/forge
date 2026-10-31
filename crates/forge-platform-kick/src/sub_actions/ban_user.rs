@@ -151,7 +151,7 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/moderation/bans"))
-            .respond_with(ResponseTemplate::new(200))
+            .respond_with(ResponseTemplate::new(reqwest::StatusCode::OK))
             .expect(1)
             .mount(&server)
             .await;
@@ -236,7 +236,7 @@ mod tests {
             let server = MockServer::start().await;
             Mock::given(method("POST"))
                 .and(path("/moderation/bans"))
-                .respond_with(ResponseTemplate::new(200))
+                .respond_with(ResponseTemplate::new(reqwest::StatusCode::OK))
                 .mount(&server)
                 .await;
             let stack =
@@ -267,7 +267,7 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/moderation/bans"))
-            .respond_with(ResponseTemplate::new(200))
+            .respond_with(ResponseTemplate::new(reqwest::StatusCode::OK))
             .mount(&server)
             .await;
         let ledger = Arc::new(MemoryBanLedger::default());

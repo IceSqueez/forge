@@ -8,7 +8,7 @@ use forge_platform_youtube::{LiveChatIdHandle, SharedQuota, YoutubeDataApi, Yout
 use forge_storage::{BanLedgerKey, DataProvider};
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::PlatformId;
-use support::{SilentBus, data_api_override, fixed_broadcaster, fixed_token};
+use support::{data_api_override, fixed_broadcaster, fixed_token};
 use time::OffsetDateTime;
 use wiremock::matchers::{method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -32,7 +32,7 @@ fn moderation_over(server: &MockServer, backend: &SqliteBackend) -> YoutubeModer
     let api = YoutubeDataApi::new(
         &data_api_override(server),
         SharedQuota::default(),
-        Arc::new(SilentBus),
+        Arc::new(forge_events::test_support::NullPublisher),
     )
     .unwrap();
     YoutubeModeration::new(
@@ -49,13 +49,16 @@ async fn forge_issued_ban_can_be_lifted_after_a_restart() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path(BANS_ROUTE))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({ "id": BAN_ID })))
+        .respond_with(
+            ResponseTemplate::new(reqwest::StatusCode::OK)
+                .set_body_json(serde_json::json!({ "id": BAN_ID })),
+        )
         .mount(&server)
         .await;
     Mock::given(method("DELETE"))
         .and(path(BANS_ROUTE))
         .and(query_param("id", BAN_ID))
-        .respond_with(ResponseTemplate::new(204))
+        .respond_with(ResponseTemplate::new(reqwest::StatusCode::NO_CONTENT))
         .expect(1)
         .mount(&server)
         .await;

@@ -222,7 +222,7 @@ mod tests {
     async fn execute_with_reward_id_and_one_field_reaches_server_and_succeeds() {
         let server = MockServer::start().await;
         Mock::given(method("PATCH"))
-            .respond_with(ResponseTemplate::new(200))
+            .respond_with(ResponseTemplate::new(reqwest::StatusCode::OK))
             .expect(1)
             .mount(&server)
             .await;
@@ -242,7 +242,7 @@ mod tests {
     async fn empty_reward_id_after_interpolation_fails_without_request() {
         let server = MockServer::start().await;
         Mock::given(method("PATCH"))
-            .respond_with(ResponseTemplate::new(200))
+            .respond_with(ResponseTemplate::new(reqwest::StatusCode::OK))
             .mount(&server)
             .await;
 
@@ -263,7 +263,7 @@ mod tests {
     async fn non_numeric_cost_fails_without_request() {
         let server = MockServer::start().await;
         Mock::given(method("PATCH"))
-            .respond_with(ResponseTemplate::new(200))
+            .respond_with(ResponseTemplate::new(reqwest::StatusCode::OK))
             .mount(&server)
             .await;
 
@@ -283,7 +283,7 @@ mod tests {
     async fn all_updatable_fields_empty_after_interpolation_fails_without_request() {
         let server = MockServer::start().await;
         Mock::given(method("PATCH"))
-            .respond_with(ResponseTemplate::new(200))
+            .respond_with(ResponseTemplate::new(reqwest::StatusCode::OK))
             .mount(&server)
             .await;
 

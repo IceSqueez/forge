@@ -11,7 +11,7 @@ use forge_monobank::{
 };
 use forge_net::{RateLimitError, RateLimitOutcome, RateLimiter};
 use forge_platform_core::{BuiltinControl, DonationProvider, DonationStream, PlatformError};
-use forge_storage::{CredentialId, CredentialsRepo, StorageError};
+use forge_storage::CredentialsRepo;
 use forge_types::Donation;
 use serde_json::{Value, json};
 use time::OffsetDateTime;
@@ -25,74 +25,25 @@ pub(crate) const OTHER_JAR: &str = "jarBBB222";
 pub(crate) const UAH: i64 = 980;
 pub(crate) const WAIT: Duration = Duration::from_secs(30);
 pub(crate) const TICK: Duration = Duration::from_millis(10);
+pub(crate) use forge_storage::test_support::MemoryCredentials;
+
+pub(crate) fn creds_with(token: &str, jar: Option<&str>) -> Arc<MemoryCredentials> {
+    Arc::new(MemoryCredentials::holding(
+        MONOBANK_CREDENTIAL_ID,
+        &json!({ "token": token, "jar_id": jar }).to_string(),
+    ))
+}
+
+pub(crate) fn stored_bundle(creds: &MemoryCredentials) -> Option<Value> {
+    creds
+        .stored(MONOBANK_CREDENTIAL_ID)
+        .map(|bundle| serde_json::from_str(&bundle).unwrap())
+}
+
 pub(crate) const LATER_ARRIVAL_ID: &str = "LATER-ARRIVAL";
 const REFERENCE_POLLS: usize = 8;
 pub(crate) const CLIENT_INFO: &str = "/personal/client-info";
 pub(crate) const STATEMENT_PREFIX: &str = "/personal/statement/";
-
-#[derive(Default)]
-pub(crate) struct MemCreds {
-    entries: Mutex<HashMap<String, String>>,
-}
-
-impl MemCreds {
-    pub(crate) fn with(token: &str, jar: Option<&str>) -> Arc<Self> {
-        let creds = Self::default();
-        creds.entries.lock().unwrap().insert(
-            MONOBANK_CREDENTIAL_ID.to_owned(),
-            json!({ "token": token, "jar_id": jar }).to_string(),
-        );
-        Arc::new(creds)
-    }
-
-    pub(crate) fn stored(&self) -> Option<Value> {
-        self.entries
-            .lock()
-            .unwrap()
-            .get(MONOBANK_CREDENTIAL_ID)
-            .map(|bundle| serde_json::from_str(bundle).unwrap())
-    }
-}
-
-#[async_trait]
-impl CredentialsRepo for MemCreds {
-    async fn store(&self, id: &CredentialId, plaintext_bundle: &str) -> Result<(), StorageError> {
-        self.entries
-            .lock()
-            .unwrap()
-            .insert(id.as_str().to_owned(), plaintext_bundle.to_owned());
-        Ok(())
-    }
-
-    async fn load(&self, id: &CredentialId) -> Result<Option<String>, StorageError> {
-        Ok(self.entries.lock().unwrap().get(id.as_str()).cloned())
-    }
-
-    async fn delete(&self, id: &CredentialId) -> Result<bool, StorageError> {
-        Ok(self.entries.lock().unwrap().remove(id.as_str()).is_some())
-    }
-
-    async fn list_ids(&self) -> Result<Vec<CredentialId>, StorageError> {
-        Ok(self
-            .entries
-            .lock()
-            .unwrap()
-            .keys()
-            .map(CredentialId::new)
-            .collect())
-    }
-
-    async fn last_refresh(
-        &self,
-        _id: &CredentialId,
-    ) -> Result<Option<OffsetDateTime>, StorageError> {
-        Ok(None)
-    }
-
-    async fn mark_refreshed(&self, _id: &CredentialId) -> Result<(), StorageError> {
-        Ok(())
-    }
-}
 
 pub(crate) struct ScriptedLimiter {
     outcome: RateLimitOutcome,
@@ -318,11 +269,11 @@ impl Respond for Bank {
         if request.headers.get("x-token").is_none_or(|v| {
             v.as_bytes() != TOKEN.as_bytes() && v.as_bytes() != OTHER_TOKEN.as_bytes()
         }) {
-            return ResponseTemplate::new(403)
+            return ResponseTemplate::new(reqwest::StatusCode::FORBIDDEN)
                 .set_body_json(json!({ "errorDescription": "Unknown 'X-Token'" }));
         }
         if path == CLIENT_INFO {
-            return ResponseTemplate::new(200).set_body_json(json!({
+            return ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(json!({
                 "clientId": "client",
                 "name": "Streamer",
                 "accounts": [],
@@ -330,7 +281,7 @@ impl Respond for Bank {
             }));
         }
         let Some(rest) = path.strip_prefix(STATEMENT_PREFIX) else {
-            return ResponseTemplate::new(404);
+            return ResponseTemplate::new(reqwest::StatusCode::NOT_FOUND);
         };
         let parts: Vec<&str> = rest.split('/').collect();
         let (from, to): (i64, i64) = (parts[1].parse().unwrap(), parts[2].parse().unwrap());
@@ -344,7 +295,7 @@ impl Respond for Bank {
             .collect();
         listed.sort_by_key(|item| std::cmp::Reverse(item["time"].as_i64().unwrap()));
         listed.truncate(500);
-        ResponseTemplate::new(200).set_body_json(listed)
+        ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(listed)
     }
 }
 
@@ -358,7 +309,7 @@ pub(crate) async fn mount(server: &MockServer, bank: &Bank) {
 pub(crate) struct Harness {
     pub server: MockServer,
     pub bank: Bank,
-    pub creds: Arc<MemCreds>,
+    pub creds: Arc<MemoryCredentials>,
     pub limits: Limits,
     pub provider: MonobankProvider,
     pub stream: DonationStream,
@@ -366,22 +317,26 @@ pub(crate) struct Harness {
 
 impl Harness {
     pub(crate) async fn start(bank: Bank) -> Self {
-        Self::with_creds(bank, MemCreds::with(TOKEN, Some(JAR))).await
+        Self::with_creds(bank, creds_with(TOKEN, Some(JAR))).await
     }
 
-    pub(crate) async fn with_creds(bank: Bank, creds: Arc<MemCreds>) -> Self {
+    pub(crate) async fn with_creds(bank: Bank, creds: Arc<MemoryCredentials>) -> Self {
         Self::with_timing(bank, creds, MonobankTiming::default()).await
     }
 
     pub(crate) async fn ticking(bank: Bank) -> Self {
-        Self::ticking_with_creds(bank, MemCreds::with(TOKEN, Some(JAR))).await
+        Self::ticking_with_creds(bank, creds_with(TOKEN, Some(JAR))).await
     }
 
-    pub(crate) async fn ticking_with_creds(bank: Bank, creds: Arc<MemCreds>) -> Self {
+    pub(crate) async fn ticking_with_creds(bank: Bank, creds: Arc<MemoryCredentials>) -> Self {
         Self::with_timing(bank, creds, ticking_timing()).await
     }
 
-    async fn with_timing(bank: Bank, creds: Arc<MemCreds>, timing: MonobankTiming) -> Self {
+    async fn with_timing(
+        bank: Bank,
+        creds: Arc<MemoryCredentials>,
+        timing: MonobankTiming,
+    ) -> Self {
         let server = MockServer::start().await;
         mount(&server, &bank).await;
         let limits = Limits::open();

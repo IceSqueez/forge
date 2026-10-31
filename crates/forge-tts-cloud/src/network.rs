@@ -320,7 +320,8 @@ pub(crate) mod test_support {
     }
 
     pub(crate) fn throttled(retry_after_secs: u64) -> ResponseTemplate {
-        ResponseTemplate::new(429).insert_header("Retry-After", retry_after_secs.to_string())
+        ResponseTemplate::new(reqwest::StatusCode::TOO_MANY_REQUESTS)
+            .insert_header("Retry-After", retry_after_secs.to_string())
     }
 
     pub(crate) fn over_catalog_cap() -> Vec<u8> {
@@ -403,7 +404,7 @@ mod tests {
     #[tokio::test]
     async fn a_provider_cool_down_reaches_every_link_of_that_provider() {
         let first = serving(throttled(PAST_WAIT_THRESHOLD_SECS)).await;
-        let second = serving(ResponseTemplate::new(200)).await;
+        let second = serving(ResponseTemplate::new(reqwest::StatusCode::OK)).await;
         let gateways = CloudGateways::new();
         let throttled_link = gateways.provider("p").link(&first.uri()).unwrap();
         assert!(matches!(
@@ -433,7 +434,7 @@ mod tests {
     #[tokio::test]
     async fn a_provider_cool_down_leaves_other_providers_untouched() {
         let throttling = serving(throttled(PAST_WAIT_THRESHOLD_SECS)).await;
-        let healthy = serving(ResponseTemplate::new(200)).await;
+        let healthy = serving(ResponseTemplate::new(reqwest::StatusCode::OK)).await;
         let gateways = CloudGateways::new();
         let throttled_link = gateways.provider("p").link(&throttling.uri()).unwrap();
         assert!(matches!(

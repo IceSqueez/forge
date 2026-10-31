@@ -7,7 +7,7 @@ use forge_donatello::PollPhase;
 use forge_platform_core::{BuiltinControl, DonationProvider, PlatformError};
 use forge_types::{Donation, DonationOrigin};
 use serde_json::json;
-use support::{Harness, MemCreds, OTHER_TOKEN, Order, donate, donates};
+use support::{Harness, MemoryCredentials, OTHER_TOKEN, Order, creds_with_token, donate, donates};
 use tokio_stream::StreamExt;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -133,7 +133,10 @@ async fn a_scan_cut_short_by_a_page_error_counts_what_it_found_so_the_retry_does
         ));
     }
     h.list.forget_requests();
-    h.list.fail_after(2, ResponseTemplate::new(503));
+    h.list.fail_after(
+        2,
+        ResponseTemplate::new(reqwest::StatusCode::SERVICE_UNAVAILABLE),
+    );
 
     h.wake_poller();
     let partial = h.next().await.unwrap();
@@ -202,7 +205,10 @@ async fn a_newest_first_walk_cut_short_resumes_past_the_pages_it_already_reporte
     let mut h = after_baseline(Order::NewestFirst, 45).await;
     let baseline_poll = h.provider.poll_status().last_poll_at;
     add_new(&h, 45);
-    h.list.fail_after(2, ResponseTemplate::new(503));
+    h.list.fail_after(
+        2,
+        ResponseTemplate::new(reqwest::StatusCode::SERVICE_UNAVAILABLE),
+    );
 
     h.wake_poller();
     let mut reported = h.donations(40).await;
@@ -390,12 +396,14 @@ async fn unreadable_donations_are_reported_once_without_blocking_the_rest() {
 #[tokio::test]
 async fn malformed_page_is_reported_and_polling_retries() {
     let list = Harness::empty_list(Order::NewestFirst);
-    list.fail_next(ResponseTemplate::new(200).set_body_string("{\"content\": [ not json"));
+    list.fail_next(
+        ResponseTemplate::new(reqwest::StatusCode::OK).set_body_string("{\"content\": [ not json"),
+    );
     list.add(donate("D-1", "2026-07-01 10:00:00"));
     let server = MockServer::start().await;
     support::mount_me(&server).await;
     support::mount_donates(&server, &list).await;
-    let mut h = Harness::with_server(server, list, MemCreds::with_token(support::TOKEN));
+    let mut h = Harness::with_server(server, list, creds_with_token(support::TOKEN));
 
     let failure = h.next().await;
     let phase = h.provider.poll_status().phase;
@@ -410,12 +418,14 @@ async fn malformed_page_is_reported_and_polling_retries() {
 #[tokio::test]
 async fn server_error_backs_off_then_recovers_on_the_next_timer() {
     let list = Harness::empty_list(Order::NewestFirst);
-    list.fail_next(ResponseTemplate::new(503));
+    list.fail_next(ResponseTemplate::new(
+        reqwest::StatusCode::SERVICE_UNAVAILABLE,
+    ));
     list.add(donate("D-1", "2026-07-01 10:00:00"));
     let server = MockServer::start().await;
     support::mount_me(&server).await;
     support::mount_donates(&server, &list).await;
-    let mut h = Harness::ticking_with_server(server, list, MemCreds::with_token(support::TOKEN));
+    let mut h = Harness::ticking_with_server(server, list, creds_with_token(support::TOKEN));
 
     let failure = h.next().await;
     assert!(
@@ -446,9 +456,9 @@ async fn errors_needing_the_user_stop_polling_until_the_user_acts() {
                     .respond_with(ResponseTemplate::new(status))
                     .mount(&server)
                     .await;
-                MemCreds::with_token(support::TOKEN)
+                creds_with_token(support::TOKEN)
             }
-            None => Arc::new(MemCreds::default()),
+            None => Arc::new(MemoryCredentials::default()),
         };
         let list = Harness::empty_list(Order::NewestFirst);
         support::mount_donates(&server, &list).await;
@@ -560,8 +570,10 @@ async fn pausing_during_a_stalled_page_still_reports_what_the_scan_collected_and
     let mut h = after_baseline(Order::NewestFirst, 45).await;
     add_new(&h, 21);
     h.list.forget_requests();
-    h.list
-        .fail_after(1, ResponseTemplate::new(200).set_delay(support::WAIT * 10));
+    h.list.fail_after(
+        1,
+        ResponseTemplate::new(reqwest::StatusCode::OK).set_delay(support::WAIT * 10),
+    );
 
     h.wake_poller();
     h.wait_for_requests(2).await;

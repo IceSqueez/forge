@@ -879,7 +879,7 @@ mod tests {
         );
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn the_version_fetch_waits_until_a_connection_announces_itself() {
         let (req_tx, mut req_rx) = mpsc::unbounded_channel::<PendingRequest>();
         let (connected_tx, connected_rx) = mpsc::unbounded_channel::<()>();

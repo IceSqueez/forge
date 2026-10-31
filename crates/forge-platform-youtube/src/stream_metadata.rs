@@ -173,7 +173,9 @@ mod tests {
     async fn mount_fetch(server: &MockServer) {
         Mock::given(method("GET"))
             .and(path("/videos"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(current_resource()))
+            .respond_with(
+                ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(current_resource()),
+            )
             .mount(server)
             .await;
     }
@@ -182,7 +184,8 @@ mod tests {
         Mock::given(method("PUT"))
             .and(path("/videos"))
             .respond_with(
-                ResponseTemplate::new(200).set_body_json(json!({"kind": "youtube#video"})),
+                ResponseTemplate::new(reqwest::StatusCode::OK)
+                    .set_body_json(json!({"kind": "youtube#video"})),
             )
             .mount(server)
             .await;

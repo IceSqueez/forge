@@ -138,7 +138,6 @@ fn decode(response: &GatewayResponse) -> Result<TokenGrant, PlatformError> {
 mod tests {
     use forge_types::Secret;
     use std::collections::BTreeMap;
-    use std::sync::Arc;
 
     use forge_platform_core::PkceAuthorization;
     use forge_platform_core::{EndpointSurface, PlatformEndpoints, PlatformError};
@@ -150,7 +149,7 @@ mod tests {
     use super::{KickOAuthClient, TOKEN_PATH, TokenGrant};
     use crate::auth::{KICK_AUTHORIZE_ENDPOINT, KICK_TOKEN_ENDPOINT};
     use crate::endpoints_test_support::{
-        ExhaustedLimiter, GrantingLimiter, OAUTH_CLIENT_ID, OAUTH_CLIENT_SECRET, endpoints_at,
+        OAUTH_CLIENT_ID, OAUTH_CLIENT_SECRET, endpoints_at, exhausted_limiter, granting_limiter,
         oauth_client_at, oauth_client_limited_by, oauth_client_over,
     };
 
@@ -246,7 +245,7 @@ mod tests {
         let defaults = PlatformEndpoints::default();
         let client = KickOAuthClient::new(
             &defaults,
-            super::kick_oauth_gateway(&defaults, Arc::new(GrantingLimiter)).unwrap(),
+            super::kick_oauth_gateway(&defaults, granting_limiter()).unwrap(),
             OAUTH_CLIENT_ID.to_owned(),
             forge_types::Secret::new(OAUTH_CLIENT_SECRET),
         );
@@ -415,7 +414,7 @@ mod tests {
     #[tokio::test]
     async fn an_exhausted_budget_refuses_both_grants_without_a_request() {
         let server = token_endpoint_answering(grant()).await;
-        let client = oauth_client_limited_by(&server.uri(), Arc::new(ExhaustedLimiter));
+        let client = oauth_client_limited_by(&server.uri(), exhausted_limiter());
 
         let refresh = client.refresh(REFRESH_TOKEN).await.err();
         let exchange = client.exchange_code(&authorization()).await.err();
@@ -489,7 +488,7 @@ mod tests {
             (EndpointSurface::KickOAuth, &oauth.uri()),
             (EndpointSurface::KickPublicApi, &api.uri()),
         ]);
-        let client = oauth_client_over(&endpoints, Arc::new(GrantingLimiter));
+        let client = oauth_client_over(&endpoints, granting_limiter());
 
         client.refresh(REFRESH_TOKEN).await.unwrap();
         client.exchange_code(&authorization()).await.unwrap();

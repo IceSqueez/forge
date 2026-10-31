@@ -161,7 +161,11 @@ mod tests {
     async fn logout_revokes_both_bot_tokens_and_deletes_only_the_bot_row() {
         let harness = BotHarness::connected().await;
         harness
-            .mount("POST", "/revoke", ResponseTemplate::new(200))
+            .mount(
+                "POST",
+                "/revoke",
+                ResponseTemplate::new(reqwest::StatusCode::OK),
+            )
             .await;
         let broadcaster_before = harness.repo.raw(TWITCH_CREDENTIAL_ID);
 
@@ -223,7 +227,11 @@ mod tests {
     async fn logout_still_forgets_the_bot_when_twitch_cannot_revoke() {
         let harness = BotHarness::connected().await;
         harness
-            .mount("POST", "/revoke", ResponseTemplate::new(503))
+            .mount(
+                "POST",
+                "/revoke",
+                ResponseTemplate::new(reqwest::StatusCode::SERVICE_UNAVAILABLE),
+            )
             .await;
 
         harness.bot.logout().await.unwrap();
@@ -271,7 +279,7 @@ mod tests {
     }
 
     fn device_response() -> ResponseTemplate {
-        ResponseTemplate::new(200).set_body_json(serde_json::json!({
+        ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(serde_json::json!({
             "device_code": "BOT_DEVICE",
             "user_code": "ABCD-EFGH",
             "verification_uri": "https://www.twitch.tv/activate",
@@ -319,7 +327,11 @@ mod tests {
     async fn adopting_a_grant_for_the_streamer_account_revokes_it_and_stores_nothing() {
         let harness = BotHarness::without_bot_row().await;
         harness
-            .mount("POST", "/revoke", ResponseTemplate::new(200))
+            .mount(
+                "POST",
+                "/revoke",
+                ResponseTemplate::new(reqwest::StatusCode::OK),
+            )
             .await;
         let broadcaster_before = harness.repo.raw(TWITCH_CREDENTIAL_ID);
 
@@ -363,7 +375,11 @@ mod tests {
         for fail_stage in stages {
             let harness = BotHarness::without_bot_row().await;
             harness
-                .mount("POST", "/revoke", ResponseTemplate::new(200))
+                .mount(
+                    "POST",
+                    "/revoke",
+                    ResponseTemplate::new(reqwest::StatusCode::OK),
+                )
                 .await;
             fail_stage(&harness.repo, offline_store);
 
@@ -440,7 +456,7 @@ mod tests {
             .mount(
                 "POST",
                 "/token",
-                ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(serde_json::json!({
                     "access_token": ROTATED_BOT_ACCESS,
                     "refresh_token": ROTATED_BOT_REFRESH,
                     "expires_in": 14400,
@@ -448,7 +464,11 @@ mod tests {
             )
             .await;
         harness
-            .mount("POST", "/revoke", ResponseTemplate::new(200))
+            .mount(
+                "POST",
+                "/revoke",
+                ResponseTemplate::new(reqwest::StatusCode::OK),
+            )
             .await;
         let refreshing = tokio::spawn({
             let bot = Arc::clone(&harness.bot);

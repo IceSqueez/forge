@@ -191,7 +191,9 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/liveBroadcasts/cuepoint"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({"kind": "x"})))
+            .respond_with(
+                ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(json!({"kind": "x"})),
+            )
             .mount(&server)
             .await;
 
@@ -228,7 +230,10 @@ mod tests {
             let server = MockServer::start().await;
             Mock::given(method("POST"))
                 .and(path("/liveBroadcasts/cuepoint"))
-                .respond_with(ResponseTemplate::new(200).set_body_json(json!({"kind": "x"})))
+                .respond_with(
+                    ResponseTemplate::new(reqwest::StatusCode::OK)
+                        .set_body_json(json!({"kind": "x"})),
+                )
                 .mount(&server)
                 .await;
 
@@ -248,7 +253,9 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/liveBroadcasts/cuepoint"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({"kind": "x"})))
+            .respond_with(
+                ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(json!({"kind": "x"})),
+            )
             .mount(&server)
             .await;
 

@@ -12,6 +12,7 @@ use forge_obs::{ObsClient, ObsError, ObsSink, probe_connection};
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
 use tokio::net::TcpStream;
+use tokio::sync::Notify;
 use tokio::time::timeout;
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
@@ -23,22 +24,31 @@ const WAIT: Duration = Duration::from_secs(30);
 const LOCALHOST: &str = "127.0.0.1";
 
 #[derive(Default)]
-struct Captured(Mutex<Vec<Event>>);
+struct Captured {
+    kinds: Mutex<Vec<String>>,
+    published: Notify,
+}
 
 impl EventPublisher for Captured {
     fn publish(&self, event: Event) {
-        self.0.lock().unwrap().push(event);
+        self.kinds.lock().unwrap().push(event.kind);
+        self.published.notify_waiters();
     }
 }
 
 impl Captured {
     fn kinds(&self) -> Vec<String> {
-        self.0
-            .lock()
-            .unwrap()
-            .iter()
-            .map(|e| e.kind.clone())
-            .collect()
+        self.kinds.lock().unwrap().clone()
+    }
+
+    async fn saw(&self, kind: &str) {
+        loop {
+            let published = self.published.notified();
+            if self.kinds().iter().any(|seen| seen == kind) {
+                return;
+            }
+            published.await;
+        }
     }
 }
 
@@ -178,16 +188,9 @@ async fn forge_client_primes_its_catalog_and_publishes_connected() {
     })
     .await
     .unwrap();
-    timeout(WAIT, async {
-        while !captured
-            .kinds()
-            .contains(&obs_kinds::CONNECTION_CONNECTED.to_owned())
-        {
-            tokio::time::sleep(Duration::from_millis(20)).await;
-        }
-    })
-    .await
-    .expect("forge's client reported the connection");
+    timeout(WAIT, captured.saw(obs_kinds::CONNECTION_CONNECTED))
+        .await
+        .expect("forge's client reported the connection");
     let unanswered: Vec<_> = fake
         .ledger()
         .requests
@@ -208,25 +211,15 @@ async fn forge_scene_switch_is_recorded_and_echoed_as_a_scene_changed_event() {
         .await
         .unwrap();
 
-    timeout(WAIT, async {
-        while client.set_scene("BRB").await.is_err() {
-            tokio::time::sleep(Duration::from_millis(20)).await;
-        }
-    })
-    .await
-    .unwrap();
+    timeout(WAIT, captured.saw(obs_kinds::CONNECTION_CONNECTED))
+        .await
+        .expect("forge's client reported the connection");
+    client.set_scene("BRB").await.unwrap();
 
     assert_eq!(fake.current_scene().as_deref(), Some("BRB"));
-    timeout(WAIT, async {
-        while !captured
-            .kinds()
-            .contains(&obs_kinds::SCENE_CHANGED.to_owned())
-        {
-            tokio::time::sleep(Duration::from_millis(20)).await;
-        }
-    })
-    .await
-    .expect("forge's client saw the scene change");
+    timeout(WAIT, captured.saw(obs_kinds::SCENE_CHANGED))
+        .await
+        .expect("forge's client saw the scene change");
 }
 
 #[tokio::test]

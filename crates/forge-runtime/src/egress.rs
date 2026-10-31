@@ -257,7 +257,7 @@ mod tests {
 
     #[tokio::test]
     async fn loopback_target_is_rejected_before_request_when_allow_local_false() {
-        let server = answering(ResponseTemplate::new(200)).await;
+        let server = answering(ResponseTemplate::new(reqwest::StatusCode::OK)).await;
         let client = EgressClient::new().unwrap();
 
         let err = expect_err(client.send(request(server.uri(), false)).await);
@@ -271,7 +271,7 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/ping"))
-            .respond_with(ResponseTemplate::new(200).set_body_string("pong"))
+            .respond_with(ResponseTemplate::new(reqwest::StatusCode::OK).set_body_string("pong"))
             .mount(&server)
             .await;
         let client = EgressClient::new().unwrap();
@@ -302,7 +302,7 @@ mod tests {
 
     #[tokio::test]
     async fn localhost_hostname_is_rejected_after_dns_resolution() {
-        let server = answering(ResponseTemplate::new(200)).await;
+        let server = answering(ResponseTemplate::new(reqwest::StatusCode::OK)).await;
         let port = server.address().port();
         let client = EgressClient::new().unwrap();
 
@@ -330,7 +330,7 @@ mod tests {
 
     #[tokio::test]
     async fn userinfo_or_unparseable_urls_are_invalid_and_never_sent() {
-        let server = answering(ResponseTemplate::new(200)).await;
+        let server = answering(ResponseTemplate::new(reqwest::StatusCode::OK)).await;
         let authority = server.address().to_string();
         let client = EgressClient::new().unwrap();
         for url in [
@@ -353,8 +353,11 @@ mod tests {
             ("http://user:pw@127.0.0.1/", "invalid"),
             ("http://[::1", "invalid"),
         ] {
-            let server =
-                answering(ResponseTemplate::new(302).insert_header("location", location)).await;
+            let server = answering(
+                ResponseTemplate::new(reqwest::StatusCode::FOUND)
+                    .insert_header("location", location),
+            )
+            .await;
             let client = EgressClient::new().unwrap();
             let mut req = request(server.uri(), true);
             req.follow_redirects = true;
@@ -375,12 +378,15 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/start"))
-            .respond_with(ResponseTemplate::new(302).insert_header("location", "/dest"))
+            .respond_with(
+                ResponseTemplate::new(reqwest::StatusCode::FOUND)
+                    .insert_header("location", "/dest"),
+            )
             .mount(&server)
             .await;
         Mock::given(method("GET"))
             .and(path("/dest"))
-            .respond_with(ResponseTemplate::new(200).set_body_string("arrived"))
+            .respond_with(ResponseTemplate::new(reqwest::StatusCode::OK).set_body_string("arrived"))
             .mount(&server)
             .await;
         let client = EgressClient::new().unwrap();
@@ -394,7 +400,10 @@ mod tests {
 
     #[tokio::test]
     async fn redirect_loop_past_hop_cap_returns_too_many_redirects() {
-        let server = answering(ResponseTemplate::new(302).insert_header("location", "/loop")).await;
+        let server = answering(
+            ResponseTemplate::new(reqwest::StatusCode::FOUND).insert_header("location", "/loop"),
+        )
+        .await;
         let client = EgressClient::new().unwrap();
         let mut req = request(format!("{}/loop", server.uri()), true);
         req.follow_redirects = true;
@@ -407,19 +416,20 @@ mod tests {
     async fn error_and_unfollowed_redirect_statuses_come_back_as_responses_with_their_body() {
         for (template, follow, status, body) in [
             (
-                ResponseTemplate::new(404).set_body_string("missing"),
+                ResponseTemplate::new(reqwest::StatusCode::NOT_FOUND).set_body_string("missing"),
                 true,
                 404,
                 "missing",
             ),
             (
-                ResponseTemplate::new(500).set_body_string("boom"),
+                ResponseTemplate::new(reqwest::StatusCode::INTERNAL_SERVER_ERROR)
+                    .set_body_string("boom"),
                 true,
                 500,
                 "boom",
             ),
             (
-                ResponseTemplate::new(429)
+                ResponseTemplate::new(reqwest::StatusCode::TOO_MANY_REQUESTS)
                     .insert_header("retry-after", "30")
                     .set_body_string("slow"),
                 true,
@@ -427,7 +437,7 @@ mod tests {
                 "slow",
             ),
             (
-                ResponseTemplate::new(300)
+                ResponseTemplate::new(reqwest::StatusCode::MULTIPLE_CHOICES)
                     .insert_header("location", "/elsewhere")
                     .set_body_string("choices"),
                 true,
@@ -435,7 +445,7 @@ mod tests {
                 "choices",
             ),
             (
-                ResponseTemplate::new(302)
+                ResponseTemplate::new(reqwest::StatusCode::FOUND)
                     .insert_header("location", "/elsewhere")
                     .set_body_string("moved"),
                 false,
@@ -463,8 +473,10 @@ mod tests {
     async fn body_is_truncated_only_past_the_cap() {
         let cap = usize::try_from(MAX_RESPONSE_BYTES).unwrap();
         for (length, truncated) in [(cap, false), (cap + 1, true), (cap + 4096, true)] {
-            let server =
-                answering(ResponseTemplate::new(200).set_body_string("x".repeat(length))).await;
+            let server = answering(
+                ResponseTemplate::new(reqwest::StatusCode::OK).set_body_string("x".repeat(length)),
+            )
+            .await;
             let client = EgressClient::new().unwrap();
 
             let resp = client.send(request(server.uri(), true)).await.unwrap();
@@ -510,7 +522,7 @@ mod tests {
     #[tokio::test]
     async fn get_captures_status_body_and_headers() {
         let server = answering(
-            ResponseTemplate::new(200)
+            ResponseTemplate::new(reqwest::StatusCode::OK)
                 .insert_header("x-custom", "marker")
                 .set_body_string("hello"),
         )
@@ -531,7 +543,7 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(body_string("payload-123"))
-            .respond_with(ResponseTemplate::new(201))
+            .respond_with(ResponseTemplate::new(reqwest::StatusCode::CREATED))
             .mount(&server)
             .await;
         let client = EgressClient::new().unwrap();
@@ -558,7 +570,7 @@ mod tests {
         ] {
             let server = MockServer::start().await;
             Mock::given(method("POST"))
-                .respond_with(ResponseTemplate::new(200))
+                .respond_with(ResponseTemplate::new(reqwest::StatusCode::OK))
                 .mount(&server)
                 .await;
             let client = EgressClient::new().unwrap();
@@ -653,7 +665,10 @@ mod tests {
     async fn mount_redirect(server: &MockServer, from: &str, to: String) {
         Mock::given(method("GET"))
             .and(path(from))
-            .respond_with(ResponseTemplate::new(302).insert_header("location", to.as_str()))
+            .respond_with(
+                ResponseTemplate::new(reqwest::StatusCode::FOUND)
+                    .insert_header("location", to.as_str()),
+            )
             .mount(server)
             .await;
     }
@@ -661,7 +676,7 @@ mod tests {
     async fn mount_final(server: &MockServer, at: &str) {
         Mock::given(method("GET"))
             .and(path(at))
-            .respond_with(ResponseTemplate::new(200).set_body_string("final"))
+            .respond_with(ResponseTemplate::new(reqwest::StatusCode::OK).set_body_string("final"))
             .mount(server)
             .await;
     }

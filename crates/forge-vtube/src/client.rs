@@ -906,7 +906,7 @@ pub(crate) mod tests {
         })
         .await;
 
-        assert!(result.is_ok(), "expected reconnect within 5 s");
+        assert!(result.is_ok(), "expected a reconnect");
         assert!(accept_count.load(AO::Acquire) >= 2);
     }
 
@@ -1650,7 +1650,7 @@ pub(crate) mod tests {
 
     const ATTEMPTS_BEFORE_VERDICT: usize = 3;
 
-    const PEER_SPEAKS_WINDOW: Duration = Duration::from_secs(2);
+    const PEER_SPEAKS_WINDOW: Duration = Duration::from_secs(30);
 
     async fn next_accept(accepted: &mut mpsc::UnboundedReceiver<()>, attempt: usize) {
         let next = tokio::time::timeout(RETRY_WALL_BUDGET, accepted.recv()).await;
@@ -1817,13 +1817,14 @@ pub(crate) mod tests {
             reason = "the receiver may already be gone"
         )]
         let _ = gate_tx.send(());
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "elapsing the window is an expected outcome"
-        )]
-        let _ = tokio::time::timeout(PEER_SPEAKS_WINDOW, settled_rx).await;
-        tokio::task::yield_now().await;
-        server.abort();
+        tokio::time::timeout(PEER_SPEAKS_WINDOW, settled_rx)
+            .await
+            .expect("the server spoke to the retired client")
+            .unwrap();
+        tokio::time::timeout(PEER_SPEAKS_WINDOW, server)
+            .await
+            .expect("the retired client let its socket go")
+            .unwrap();
 
         assert!(
             publisher.events.lock().unwrap().is_empty(),

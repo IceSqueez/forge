@@ -450,11 +450,11 @@ mod tests {
     }
 
     fn chat_accepted() -> ResponseTemplate {
-        ResponseTemplate::new(200).set_body_json(sent_body())
+        ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(sent_body())
     }
 
     fn rotated_tokens() -> ResponseTemplate {
-        ResponseTemplate::new(200).set_body_json(json!({
+        ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(json!({
             "access_token": "rotated_bot_access",
             "refresh_token": "rotated_bot_refresh",
             "expires_in": 14400,
@@ -623,16 +623,28 @@ mod tests {
                 Setup::ReauthRequired => rig.harness.bot.mark_reauth_required(),
                 Setup::RejectedAfterRefresh => {
                     rig.harness
-                        .mount("POST", CHAT_PATH, ResponseTemplate::new(401))
+                        .mount(
+                            "POST",
+                            CHAT_PATH,
+                            ResponseTemplate::new(reqwest::StatusCode::UNAUTHORIZED),
+                        )
                         .await;
                     rig.harness.mount("POST", "/token", rotated_tokens()).await;
                 }
                 Setup::RefreshRejected => {
                     rig.harness
-                        .mount("POST", CHAT_PATH, ResponseTemplate::new(401))
+                        .mount(
+                            "POST",
+                            CHAT_PATH,
+                            ResponseTemplate::new(reqwest::StatusCode::UNAUTHORIZED),
+                        )
                         .await;
                     rig.harness
-                        .mount("POST", "/token", ResponseTemplate::new(400))
+                        .mount(
+                            "POST",
+                            "/token",
+                            ResponseTemplate::new(reqwest::StatusCode::BAD_REQUEST),
+                        )
                         .await;
                 }
             }
@@ -678,7 +690,11 @@ mod tests {
             vec![Ok(sent_body()), Ok(sent_body())],
         );
         rig.harness
-            .mount("POST", CHAT_PATH, ResponseTemplate::new(401))
+            .mount(
+                "POST",
+                CHAT_PATH,
+                ResponseTemplate::new(reqwest::StatusCode::UNAUTHORIZED),
+            )
             .await;
         rig.harness.mount("POST", "/token", rotated_tokens()).await;
 
@@ -706,7 +722,11 @@ mod tests {
             vec![Ok(sent_body()), Ok(sent_body())],
         );
         rig.harness
-            .mount("POST", CHAT_PATH, ResponseTemplate::new(401))
+            .mount(
+                "POST",
+                CHAT_PATH,
+                ResponseTemplate::new(reqwest::StatusCode::UNAUTHORIZED),
+            )
             .await;
         rig.harness.mount("POST", "/token", rotated_tokens()).await;
 
@@ -769,7 +789,7 @@ mod tests {
             (
                 "is_sent=false",
                 || {
-                    ResponseTemplate::new(200).set_body_json(json!({"data": [{
+                    ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(json!({"data": [{
                         "message_id": "",
                         "is_sent": false,
                         "drop_reason": {"code": "user_banned", "message": "You are banned."}
@@ -780,7 +800,7 @@ mod tests {
             (
                 "403",
                 || {
-                    ResponseTemplate::new(403).set_body_json(json!({
+                    ResponseTemplate::new(reqwest::StatusCode::FORBIDDEN).set_body_json(json!({
                         "error": "Forbidden",
                         "status": 403,
                         "message": "The sender is banned from this channel."
@@ -790,7 +810,7 @@ mod tests {
             ),
             (
                 "429",
-                || ResponseTemplate::new(429),
+                || ResponseTemplate::new(reqwest::StatusCode::TOO_MANY_REQUESTS),
                 |f| matches!(f, SendFailure::Chat(ChatSendError::RateLimited)),
             ),
         ];
@@ -829,12 +849,16 @@ mod tests {
             .mount(
                 "GET",
                 "/helix/users",
-                ResponseTemplate::new(200)
+                ResponseTemplate::new(reqwest::StatusCode::OK)
                     .set_body_json(json!({"data": [{"id": "555", "login": "viewer"}]})),
             )
             .await;
         rig.harness
-            .mount("POST", WHISPER_PATH, ResponseTemplate::new(401))
+            .mount(
+                "POST",
+                WHISPER_PATH,
+                ResponseTemplate::new(reqwest::StatusCode::UNAUTHORIZED),
+            )
             .await;
         rig.harness.mount("POST", "/token", rotated_tokens()).await;
         rig.harness
@@ -928,7 +952,11 @@ mod tests {
             ] {
                 let rig = Rig::over(BotHarness::connected().await, vec![Ok(Value::Null)]);
                 rig.harness
-                    .mount("POST", path_of(&delivery), ResponseTemplate::new(204))
+                    .mount(
+                        "POST",
+                        path_of(&delivery),
+                        ResponseTemplate::new(reqwest::StatusCode::NO_CONTENT),
+                    )
                     .await;
 
                 rig.send(delivery, preference).await.unwrap();
@@ -997,7 +1025,7 @@ mod tests {
             .mount(
                 "POST",
                 ANNOUNCE_PATH,
-                ResponseTemplate::new(403)
+                ResponseTemplate::new(reqwest::StatusCode::FORBIDDEN)
                     .set_body_json(json!({"status": 403, "message": "not a moderator"})),
             )
             .await;
@@ -1058,10 +1086,18 @@ mod tests {
     async fn a_rejected_bot_token_on_a_moderator_action_falls_back_to_the_streamer() {
         let rig = Rig::over(BotHarness::connected().await, vec![Ok(Value::Null)]);
         rig.harness
-            .mount("POST", ANNOUNCE_PATH, ResponseTemplate::new(401))
+            .mount(
+                "POST",
+                ANNOUNCE_PATH,
+                ResponseTemplate::new(reqwest::StatusCode::UNAUTHORIZED),
+            )
             .await;
         rig.harness
-            .mount("POST", "/token", ResponseTemplate::new(400))
+            .mount(
+                "POST",
+                "/token",
+                ResponseTemplate::new(reqwest::StatusCode::BAD_REQUEST),
+            )
             .await;
 
         let acting = rig.send(ANNOUNCE, SenderPreference::Default).await.unwrap();
@@ -1305,7 +1341,7 @@ mod tests {
             .mount(
                 "GET",
                 "/helix/users",
-                ResponseTemplate::new(200)
+                ResponseTemplate::new(reqwest::StatusCode::OK)
                     .set_body_json(json!({"data": [{"id": "555", "login": "viewer"}]})),
             )
             .await;
@@ -1313,7 +1349,7 @@ mod tests {
             .mount(
                 "POST",
                 WHISPER_PATH,
-                ResponseTemplate::new(400).set_body_json(json!({
+                ResponseTemplate::new(reqwest::StatusCode::BAD_REQUEST).set_body_json(json!({
                     "status": 400,
                     "message": "The recipient doesn't allow whispers from strangers"
                 })),

@@ -70,7 +70,7 @@ async fn redirect(server: &MockServer, from: &str, status: u16, location: &str) 
 
 async fn land(server: &MockServer, at: &str) {
     Mock::given(path(at))
-        .respond_with(ResponseTemplate::new(200).set_body_string("landed"))
+        .respond_with(ResponseTemplate::new(reqwest::StatusCode::OK).set_body_string("landed"))
         .mount(server)
         .await;
 }
@@ -98,7 +98,7 @@ fn redirect_refusal(failure: &GatewayFailure) -> Option<RedirectRefusal> {
 
 #[tokio::test]
 async fn guarded_first_hop_refuses_loopback_mapped_nat64_and_privately_resolving_targets() {
-    let server = answering(ResponseTemplate::new(200)).await;
+    let server = answering(ResponseTemplate::new(reqwest::StatusCode::OK)).await;
     let port = server.address().port();
     for target in [
         format!("http://127.0.0.1:{port}/x"),
@@ -122,7 +122,8 @@ async fn guarded_first_hop_refuses_loopback_mapped_nat64_and_privately_resolving
 
 #[tokio::test]
 async fn local_allowed_first_hop_reaches_a_loopback_literal_and_a_loopback_name() {
-    let server = answering(ResponseTemplate::new(200).set_body_string("local")).await;
+    let server =
+        answering(ResponseTemplate::new(reqwest::StatusCode::OK).set_body_string("local")).await;
     let port = server.address().port();
     for target in [
         format!("http://127.0.0.1:{port}/x"),
@@ -226,19 +227,20 @@ async fn non_redirect_three_hundreds_come_back_as_data_without_following_the_loc
 async fn any_status_as_data_returns_every_final_status_with_its_body_and_no_feedback() {
     for (template, follow, status, body) in [
         (
-            ResponseTemplate::new(404).set_body_string("missing"),
+            ResponseTemplate::new(reqwest::StatusCode::NOT_FOUND).set_body_string("missing"),
             true,
             404,
             "missing",
         ),
         (
-            ResponseTemplate::new(500).set_body_string("boom"),
+            ResponseTemplate::new(reqwest::StatusCode::INTERNAL_SERVER_ERROR)
+                .set_body_string("boom"),
             true,
             500,
             "boom",
         ),
         (
-            ResponseTemplate::new(429)
+            ResponseTemplate::new(reqwest::StatusCode::TOO_MANY_REQUESTS)
                 .insert_header("Retry-After", "30")
                 .set_body_string("slow down"),
             true,
@@ -246,7 +248,7 @@ async fn any_status_as_data_returns_every_final_status_with_its_body_and_no_feed
             "slow down",
         ),
         (
-            ResponseTemplate::new(503)
+            ResponseTemplate::new(reqwest::StatusCode::SERVICE_UNAVAILABLE)
                 .insert_header("Retry-After", "30")
                 .set_body_string("maintenance"),
             true,
@@ -254,7 +256,7 @@ async fn any_status_as_data_returns_every_final_status_with_its_body_and_no_feed
             "maintenance",
         ),
         (
-            ResponseTemplate::new(302)
+            ResponseTemplate::new(reqwest::StatusCode::FOUND)
                 .insert_header("Location", "/elsewhere")
                 .set_body_string("moved"),
             false,
@@ -286,7 +288,9 @@ async fn any_status_as_data_returns_every_final_status_with_its_body_and_no_feed
 
 #[tokio::test]
 async fn any_status_as_data_streams_an_error_body_into_the_sink() {
-    let server = answering(ResponseTemplate::new(404).set_body_string("missing")).await;
+    let server =
+        answering(ResponseTemplate::new(reqwest::StatusCode::NOT_FOUND).set_body_string("missing"))
+            .await;
     let directed = directed(true);
 
     let streamed = stream(
@@ -306,7 +310,8 @@ async fn any_status_as_data_streams_an_error_body_into_the_sink() {
 async fn truncate_body_at_cap_keeps_the_first_cap_bytes_and_flags_only_real_overflow() {
     for (length, truncated) in [(9, false), (10, false), (11, true), (4096, true)] {
         let body = "x".repeat(length);
-        let server = answering(ResponseTemplate::new(200).set_body_string(body)).await;
+        let server =
+            answering(ResponseTemplate::new(reqwest::StatusCode::OK).set_body_string(body)).await;
 
         let response = directed(true)
             .gateway
@@ -414,7 +419,7 @@ async fn total_budget_also_bounds_the_body_read() {
 
 #[tokio::test]
 async fn user_headers_reach_the_server_including_credential_names_in_any_case() {
-    let server = answering(ResponseTemplate::new(200)).await;
+    let server = answering(ResponseTemplate::new(reqwest::StatusCode::OK)).await;
 
     directed(true)
         .gateway
@@ -445,7 +450,9 @@ async fn user_headers_reach_the_server_including_credential_names_in_any_case() 
 #[tokio::test]
 async fn credential_user_headers_are_masked_whole_and_as_the_bare_token_in_excerpts() {
     let echo = "whole=Bearer TOKEN-1 bare=TOKEN-1 cookie=sid=COOKIE-1 proxy=PROXY-1 plain=PLAIN-1";
-    let server = answering(ResponseTemplate::new(400).set_body_string(echo)).await;
+    let server =
+        answering(ResponseTemplate::new(reqwest::StatusCode::BAD_REQUEST).set_body_string(echo))
+            .await;
 
     let failure = directed(true)
         .gateway
@@ -520,7 +527,7 @@ async fn user_headers_follow_a_same_origin_hop_and_are_stripped_from_a_cross_ori
 
 #[tokio::test]
 async fn user_headers_are_refused_off_the_user_directed_profile_before_the_limiter() {
-    let server = answering(ResponseTemplate::new(200)).await;
+    let server = answering(ResponseTemplate::new(reqwest::StatusCode::OK)).await;
     for profile in [platform(), trusted()] {
         for streaming in [false, true] {
             let limiter = Arc::new(RecordingRateLimiter::granting());
@@ -546,7 +553,7 @@ async fn user_headers_are_refused_off_the_user_directed_profile_before_the_limit
 
 #[tokio::test]
 async fn plain_credential_headers_are_refused_on_every_profile() {
-    let server = answering(ResponseTemplate::new(200)).await;
+    let server = answering(ResponseTemplate::new(reqwest::StatusCode::OK)).await;
     for profile in [platform(), trusted(), GatewayProfile::user_directed(true)] {
         for name in ["Authorization", "proxy-authorization", "COOKIE"] {
             let gateway = Gateway::new(

@@ -10,12 +10,17 @@ use forge_net::{RateLimitOutcome, RateLimiter, TokenBucketRateLimiter};
 use forge_platform_core::PlatformError;
 use serde_json::json;
 use support::{
-    Bank, CLIENT_INFO, JAR, Limits, MemCreds, OTHER_JAR, OTHER_TOKEN, ScriptedLimiter, TOKEN,
+    Bank, CLIENT_INFO, JAR, Limits, MemoryCredentials, OTHER_JAR, OTHER_TOKEN, ScriptedLimiter,
+    TOKEN, creds_with,
 };
 use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, Request, Respond, ResponseTemplate};
 
-fn provider(base_url: &str, creds: Arc<MemCreds>, limits: MonobankRateLimits) -> MonobankProvider {
+fn provider(
+    base_url: &str,
+    creds: Arc<MemoryCredentials>,
+    limits: MonobankRateLimits,
+) -> MonobankProvider {
     support::provider_on(base_url, creds, limits)
 }
 
@@ -45,7 +50,7 @@ async fn verify_against(response: ResponseTemplate) -> Result<Vec<MonobankJar>, 
 async fn mute_server() -> MockServer {
     let server = MockServer::builder().start().await;
     Mock::given(method("GET"))
-        .respond_with(ResponseTemplate::new(200))
+        .respond_with(ResponseTemplate::new(reqwest::StatusCode::OK))
         .expect(0)
         .mount(&server)
         .await;
@@ -58,12 +63,14 @@ async fn verify_token_sends_the_token_header_and_lists_the_jars() {
     Mock::given(method("GET"))
         .and(path(CLIENT_INFO))
         .and(header("X-Token", TOKEN))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "clientId": "c",
-            "name": "Streamer",
-            "accounts": [{ "id": "acc-1", "balance": 1 }],
-            "jars": [support::jar(JAR), { "id": "../escape", "currencyCode": 980 }],
-        })))
+        .respond_with(
+            ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(json!({
+                "clientId": "c",
+                "name": "Streamer",
+                "accounts": [{ "id": "acc-1", "balance": 1 }],
+                "jars": [support::jar(JAR), { "id": "../escape", "currencyCode": 980 }],
+            })),
+        )
         .expect(1)
         .mount(&server)
         .await;
@@ -82,15 +89,21 @@ async fn verify_token_sends_the_token_header_and_lists_the_jars() {
 #[tokio::test]
 async fn verify_token_maps_each_failure_answer_to_its_error() {
     for (response, expected) in [
-        (ResponseTemplate::new(401), "unauthorized"),
         (
-            ResponseTemplate::new(403)
+            ResponseTemplate::new(reqwest::StatusCode::UNAUTHORIZED),
+            "unauthorized",
+        ),
+        (
+            ResponseTemplate::new(reqwest::StatusCode::FORBIDDEN)
                 .set_body_json(json!({ "errorDescription": "Unknown 'X-Token'" })),
             "unauthorized",
         ),
-        (ResponseTemplate::new(500), "http 500"),
         (
-            ResponseTemplate::new(200).set_body_string("<html>"),
+            ResponseTemplate::new(reqwest::StatusCode::INTERNAL_SERVER_ERROR),
+            "http 500",
+        ),
+        (
+            ResponseTemplate::new(reqwest::StatusCode::OK).set_body_string("<html>"),
             "malformed",
         ),
     ] {
@@ -106,7 +119,7 @@ async fn verify_token_maps_each_failure_answer_to_its_error() {
 
 #[tokio::test]
 async fn rejected_token_asks_the_user_to_log_in_again() {
-    let error = verify_against(ResponseTemplate::new(403))
+    let error = verify_against(ResponseTemplate::new(reqwest::StatusCode::FORBIDDEN))
         .await
         .unwrap_err();
     assert!(
@@ -142,7 +155,7 @@ async fn too_many_requests_reports_at_least_a_minute_and_feeds_the_hint_to_the_l
         (None, 60, 60),
         (Some("soon"), 60, 60),
     ] {
-        let mut response = ResponseTemplate::new(429);
+        let mut response = ResponseTemplate::new(reqwest::StatusCode::TOO_MANY_REQUESTS);
         if let Some(value) = retry_after {
             response = response.insert_header("Retry-After", value);
         }
@@ -167,7 +180,10 @@ async fn too_many_requests_reports_at_least_a_minute_and_feeds_the_hint_to_the_l
 
 #[tokio::test]
 async fn too_many_requests_without_a_hint_cools_a_spare_budget_for_the_full_call_interval() {
-    let server = client_info_answering(ResponseTemplate::new(429)).await;
+    let server = client_info_answering(ResponseTemplate::new(
+        reqwest::StatusCode::TOO_MANY_REQUESTS,
+    ))
+    .await;
     let spare: Arc<dyn RateLimiter> =
         Arc::new(TokenBucketRateLimiter::new(10, STATEMENT_CALL_INTERVAL));
     let limits = MonobankRateLimits {
@@ -202,7 +218,7 @@ async fn service_unavailable_is_a_rate_limit_only_when_it_names_a_retry_after() 
         (Some("7"), "rate limited 60"),
         (None, "http 503"),
     ] {
-        let mut response = ResponseTemplate::new(503);
+        let mut response = ResponseTemplate::new(reqwest::StatusCode::SERVICE_UNAVAILABLE);
         if let Some(value) = retry_after {
             response = response.insert_header("Retry-After", value);
         }
@@ -228,7 +244,10 @@ async fn service_unavailable_is_a_rate_limit_only_when_it_names_a_retry_after() 
 
 #[tokio::test]
 async fn throttle_lands_only_on_the_endpoint_that_was_throttled() {
-    let server = client_info_answering(ResponseTemplate::new(429)).await;
+    let server = client_info_answering(ResponseTemplate::new(
+        reqwest::StatusCode::TOO_MANY_REQUESTS,
+    ))
+    .await;
     let limits = Limits::open();
 
     assert!(
@@ -264,7 +283,7 @@ async fn a_local_cooldown_answers_at_once_with_the_remaining_wait_and_no_request
             client_info: ScriptedLimiter::answering(outcome),
             statement: ScriptedLimiter::open(),
         };
-        let provider = provider(&server.uri(), MemCreds::with(TOKEN, Some(JAR)), limits);
+        let provider = provider(&server.uri(), creds_with(TOKEN, Some(JAR)), limits);
 
         let (verified, listed) = tokio::time::timeout(SHORTEST_SCRIPTED_WAIT, async {
             (
@@ -309,7 +328,7 @@ async fn official_limits_allow_one_client_info_call_per_minute() {
 async fn saving_right_after_verifying_reuses_the_jar_list() {
     let bank = Bank::new(&[JAR]);
     let server = bank_server(&bank).await;
-    let creds = Arc::new(MemCreds::default());
+    let creds = Arc::new(MemoryCredentials::default());
     let provider = provider(&server.uri(), creds.clone(), MonobankRateLimits::official());
 
     provider.verify_token(TOKEN).await.unwrap();
@@ -335,7 +354,7 @@ async fn jar_list_of_one_token_is_not_reused_for_another() {
 async fn save_token_persists_the_token_and_the_selected_jar() {
     let bank = Bank::new(&[JAR, OTHER_JAR]);
     let server = bank_server(&bank).await;
-    let creds = Arc::new(MemCreds::default());
+    let creds = Arc::new(MemoryCredentials::default());
 
     let saved = provider(&server.uri(), creds.clone(), Limits::open().shared())
         .save_token(&format!("{TOKEN}\n"), &format!(" {OTHER_JAR} "))
@@ -343,7 +362,7 @@ async fn save_token_persists_the_token_and_the_selected_jar() {
 
     assert!(saved.is_ok(), "{saved:?}");
     assert_eq!(
-        creds.stored(),
+        support::stored_bundle(&creds),
         Some(json!({ "token": TOKEN, "jar_id": OTHER_JAR }))
     );
 }
@@ -352,7 +371,7 @@ async fn save_token_persists_the_token_and_the_selected_jar() {
 async fn save_token_stores_nothing_when_the_jar_is_not_among_the_tokens_jars() {
     let bank = Bank::new(&[JAR]);
     let server = bank_server(&bank).await;
-    let creds = Arc::new(MemCreds::default());
+    let creds = Arc::new(MemoryCredentials::default());
 
     let result = provider(&server.uri(), creds.clone(), Limits::open().shared())
         .save_token(TOKEN, OTHER_JAR)
@@ -362,13 +381,13 @@ async fn save_token_stores_nothing_when_the_jar_is_not_among_the_tokens_jars() {
         matches!(result, Err(MonobankError::JarNotFound)),
         "{result:?}"
     );
-    assert_eq!(creds.stored(), None);
+    assert_eq!(support::stored_bundle(&creds), None);
 }
 
 #[tokio::test]
 async fn save_token_stores_nothing_when_monobank_rejects_the_token() {
-    let server = client_info_answering(ResponseTemplate::new(403)).await;
-    let creds = Arc::new(MemCreds::default());
+    let server = client_info_answering(ResponseTemplate::new(reqwest::StatusCode::FORBIDDEN)).await;
+    let creds = Arc::new(MemoryCredentials::default());
 
     let result = provider(&server.uri(), creds.clone(), Limits::open().shared())
         .save_token(TOKEN, JAR)
@@ -378,7 +397,7 @@ async fn save_token_stores_nothing_when_monobank_rejects_the_token() {
         matches!(result, Err(MonobankError::Unauthorized)),
         "{result:?}"
     );
-    assert_eq!(creds.stored(), None);
+    assert_eq!(support::stored_bundle(&creds), None);
 }
 
 #[tokio::test]
@@ -414,7 +433,7 @@ async fn select_jar_needs_a_stored_token() {
 async fn select_jar_keeps_the_stored_token_and_switches_the_jar() {
     let bank = Bank::new(&[JAR, OTHER_JAR]);
     let server = bank_server(&bank).await;
-    let creds = MemCreds::with(TOKEN, Some(JAR));
+    let creds = creds_with(TOKEN, Some(JAR));
 
     let selected = provider(&server.uri(), creds.clone(), Limits::open().shared())
         .select_jar(OTHER_JAR)
@@ -422,7 +441,7 @@ async fn select_jar_keeps_the_stored_token_and_switches_the_jar() {
 
     assert!(selected.is_ok(), "{selected:?}");
     assert_eq!(
-        creds.stored(),
+        support::stored_bundle(&creds),
         Some(json!({ "token": TOKEN, "jar_id": OTHER_JAR }))
     );
 }

@@ -29,5 +29,6 @@ async-trait = { workspace = true }
 futures-util = { workspace = true }
 
 [dev-dependencies]
+forge-storage = { path = "../forge-storage", features = ["settings-test-support"] }
 tokio = { workspace = true, features = ["test-util"] }
 tokio-tungstenite = { workspace = true }

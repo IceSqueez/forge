@@ -13,7 +13,7 @@ const REQUEST_CAP: u64 = 32;
 async fn serving(body: Vec<u8>) -> MockServer {
     let server = MockServer::start().await;
     Mock::given(any())
-        .respond_with(ResponseTemplate::new(200).set_body_bytes(body))
+        .respond_with(ResponseTemplate::new(reqwest::StatusCode::OK).set_body_bytes(body))
         .mount(&server)
         .await;
     server

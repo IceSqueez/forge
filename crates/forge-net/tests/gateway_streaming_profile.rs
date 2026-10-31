@@ -61,7 +61,7 @@ fn base_less(profile: GatewayProfile) -> BaseLess {
 async fn ok_server() -> MockServer {
     let server = MockServer::start().await;
     Mock::given(any())
-        .respond_with(ResponseTemplate::new(200).set_body_string("asset"))
+        .respond_with(ResponseTemplate::new(reqwest::StatusCode::OK).set_body_string("asset"))
         .mount(&server)
         .await;
     server

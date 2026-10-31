@@ -253,12 +253,16 @@ mod tests {
             .mount(
                 "GET",
                 "/helix/users",
-                ResponseTemplate::new(200)
+                ResponseTemplate::new(reqwest::StatusCode::OK)
                     .set_body_json(serde_json::json!({"data": [{"id": "555", "login": "target"}]})),
             )
             .await;
         harness
-            .mount("POST", "/helix/whispers", ResponseTemplate::new(204))
+            .mount(
+                "POST",
+                "/helix/whispers",
+                ResponseTemplate::new(reqwest::StatusCode::NO_CONTENT),
+            )
             .await;
         let streamer = Arc::new(MockTransport::returning(Ok(serde_json::Value::Null)));
         let runner = SendWhisperRunner::new(

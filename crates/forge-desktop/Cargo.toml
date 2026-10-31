@@ -80,6 +80,7 @@ ulid = { workspace = true }
 unic-langid = { workspace = true }
 
 [dev-dependencies]
+forge-net = { path = "../forge-net", features = ["test-support"] }
 forge-runtime = { path = "../forge-runtime", features = ["test-support"] }
 flate2 = { workspace = true }
 fluent = { workspace = true }

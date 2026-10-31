@@ -14,7 +14,7 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 async fn sent(request: GatewayRequest) -> wiremock::Request {
     let server = MockServer::start().await;
     Mock::given(any())
-        .respond_with(ResponseTemplate::new(200))
+        .respond_with(ResponseTemplate::new(reqwest::StatusCode::OK))
         .mount(&server)
         .await;
     Harness::new(&server.uri(), platform()).ok(request).await;

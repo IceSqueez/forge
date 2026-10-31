@@ -16,7 +16,7 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 async fn ok_server() -> MockServer {
     let server = MockServer::start().await;
     Mock::given(any())
-        .respond_with(ResponseTemplate::new(200))
+        .respond_with(ResponseTemplate::new(reqwest::StatusCode::OK))
         .mount(&server)
         .await;
     server

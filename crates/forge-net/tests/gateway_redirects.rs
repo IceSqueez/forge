@@ -20,7 +20,7 @@ async fn redirect(server: &MockServer, from: &str, status: u16, location: &str) 
 
 async fn land(server: &MockServer, at: &str) {
     Mock::given(path(at))
-        .respond_with(ResponseTemplate::new(200).set_body_string("landed"))
+        .respond_with(ResponseTemplate::new(reqwest::StatusCode::OK).set_body_string("landed"))
         .mount(server)
         .await;
 }

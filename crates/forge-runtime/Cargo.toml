@@ -44,6 +44,7 @@ ulid = { workspace = true }
 test-support = []
 
 [dev-dependencies]
+reqwest = { workspace = true }
 forge-runtime = { path = ".", features = ["test-support"] }
 forge-events = { path = "../forge-events", features = ["test-support"] }
 forge-storage = { path = "../forge-storage", features = ["test-mocks", "settings-test-support"] }

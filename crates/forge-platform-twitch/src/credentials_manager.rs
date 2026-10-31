@@ -262,9 +262,10 @@ impl crate::helix::HelixTokenRefresher for TwitchCredentialsManager {
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use std::collections::HashMap;
+    use forge_storage::test_support::MemoryCredentials;
+
     use std::sync::Arc;
-    use std::sync::Mutex;
+
     use std::time::SystemTime;
 
     use async_trait::async_trait;
@@ -279,88 +280,37 @@ pub(crate) mod tests {
     use super::TwitchCredentialsManager;
     use crate::credentials::{StoredCredential, TWITCH_CREDENTIAL_ID};
 
-    pub(crate) struct InMemRepo(Mutex<HashMap<String, String>>);
-
-    impl InMemRepo {
-        fn empty() -> Arc<Self> {
-            Arc::new(Self(Mutex::new(HashMap::new())))
-        }
-
-        pub(crate) fn seeded(cred: &StoredCredential) -> Arc<Self> {
-            let expires_at_unix: Option<i64> = cred.expires_at.and_then(|t| {
-                t.duration_since(std::time::UNIX_EPOCH)
-                    .ok()
-                    .map(|d| d.as_secs() as i64)
-            });
-            let blob = json!({
-                "access_token": cred.access_token.expose(),
-                "refresh_token": cred.refresh_token.as_ref().map(OAuthToken::expose),
-                "user_id": cred.user_id,
-                "login": cred.login,
-                "expires_at_unix": expires_at_unix,
-            })
-            .to_string();
-            let mut map = HashMap::new();
-            map.insert(TWITCH_CREDENTIAL_ID.to_owned(), blob);
-            Arc::new(Self(Mutex::new(map)))
-        }
-
-        fn get_stored_cred(&self) -> Option<StoredCredential> {
-            let guard = self.0.lock().unwrap();
-            let json = guard.get(TWITCH_CREDENTIAL_ID)?;
-            let v: serde_json::Value = serde_json::from_str(json).ok()?;
-            let access_token = OAuthToken::new(v["access_token"].as_str()?.to_owned());
-            let refresh_token = v["refresh_token"]
-                .as_str()
-                .map(|s| OAuthToken::new(s.to_owned()));
-            Some(StoredCredential {
-                access_token,
-                refresh_token,
-                user_id: v["user_id"].as_str().unwrap_or("").to_owned(),
-                login: v["login"].as_str().unwrap_or("").to_owned(),
-                expires_at: None,
-            })
-        }
+    pub(crate) fn seeded_repo(cred: &StoredCredential) -> Arc<MemoryCredentials> {
+        let expires_at_unix: Option<i64> = cred.expires_at.and_then(|t| {
+            t.duration_since(std::time::UNIX_EPOCH)
+                .ok()
+                .map(|d| d.as_secs() as i64)
+        });
+        let blob = json!({
+            "access_token": cred.access_token.expose(),
+            "refresh_token": cred.refresh_token.as_ref().map(OAuthToken::expose),
+            "user_id": cred.user_id,
+            "login": cred.login,
+            "expires_at_unix": expires_at_unix,
+        })
+        .to_string();
+        Arc::new(MemoryCredentials::holding(TWITCH_CREDENTIAL_ID, &blob))
     }
 
-    #[async_trait]
-    impl CredentialsRepo for InMemRepo {
-        async fn store(&self, id: &CredentialId, plaintext: &str) -> Result<(), StorageError> {
-            self.0
-                .lock()
-                .unwrap()
-                .insert(id.as_str().to_owned(), plaintext.to_owned());
-            Ok(())
-        }
-
-        async fn load(&self, id: &CredentialId) -> Result<Option<String>, StorageError> {
-            Ok(self.0.lock().unwrap().get(id.as_str()).cloned())
-        }
-
-        async fn delete(&self, id: &CredentialId) -> Result<bool, StorageError> {
-            Ok(self.0.lock().unwrap().remove(id.as_str()).is_some())
-        }
-
-        async fn list_ids(&self) -> Result<Vec<CredentialId>, StorageError> {
-            Ok(self
-                .0
-                .lock()
-                .unwrap()
-                .keys()
-                .map(|k| CredentialId::new(k.clone()))
-                .collect())
-        }
-
-        async fn last_refresh(
-            &self,
-            _id: &CredentialId,
-        ) -> Result<Option<OffsetDateTime>, StorageError> {
-            Ok(None)
-        }
-
-        async fn mark_refreshed(&self, _id: &CredentialId) -> Result<(), StorageError> {
-            Ok(())
-        }
+    fn stored_cred(repo: &MemoryCredentials) -> Option<StoredCredential> {
+        let json = repo.stored(TWITCH_CREDENTIAL_ID)?;
+        let v: serde_json::Value = serde_json::from_str(&json).ok()?;
+        let access_token = OAuthToken::new(v["access_token"].as_str()?.to_owned());
+        let refresh_token = v["refresh_token"]
+            .as_str()
+            .map(|s| OAuthToken::new(s.to_owned()));
+        Some(StoredCredential {
+            access_token,
+            refresh_token,
+            user_id: v["user_id"].as_str().unwrap_or("").to_owned(),
+            login: v["login"].as_str().unwrap_or("").to_owned(),
+            expires_at: None,
+        })
     }
 
     pub(crate) fn stub_cred(expires_at: SystemTime) -> StoredCredential {
@@ -387,7 +337,7 @@ pub(crate) mod tests {
     async fn get_valid_access_token_returns_stored_token_without_refresh_when_far_from_expiry() {
         let server = MockServer::start().await;
         let cred = stub_cred(SystemTime::now() + std::time::Duration::from_secs(3600));
-        let mgr = manager_with_server(InMemRepo::seeded(&cred), &server);
+        let mgr = manager_with_server(seeded_repo(&cred), &server);
 
         let token = mgr.get_valid_access_token().await.unwrap();
         assert_eq!(token.expose(), "existing_access");
@@ -401,7 +351,7 @@ pub(crate) mod tests {
     #[tokio::test]
     async fn get_valid_access_token_returns_reauth_required_when_no_credential_stored() {
         let server = MockServer::start().await;
-        let mgr = manager_with_server(InMemRepo::empty(), &server);
+        let mgr = manager_with_server(Arc::new(MemoryCredentials::default()), &server);
 
         let err = mgr.get_valid_access_token().await.unwrap_err();
         assert!(
@@ -419,22 +369,24 @@ pub(crate) mod tests {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/token"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "access_token": "new_access",
-                "refresh_token": "rotated_refresh",
-                "expires_in": 14400,
-            })))
+            .respond_with(
+                ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(json!({
+                    "access_token": "new_access",
+                    "refresh_token": "rotated_refresh",
+                    "expires_in": 14400,
+                })),
+            )
             .mount(&server)
             .await;
 
         let cred = stub_cred(SystemTime::now() + std::time::Duration::from_secs(60));
-        let repo = InMemRepo::seeded(&cred);
+        let repo = seeded_repo(&cred);
         let mgr = manager_with_server(repo.clone(), &server);
 
         let stale_access = OAuthToken::new("existing_access");
         mgr.refresh(&stale_access).await.unwrap();
 
-        let stored = repo.get_stored_cred().unwrap();
+        let stored = stored_cred(&repo).unwrap();
         assert_eq!(
             stored.refresh_token.as_ref().map(OAuthToken::expose),
             Some("rotated_refresh"),
@@ -448,21 +400,23 @@ pub(crate) mod tests {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/token"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "access_token": "new_access_only",
-                "expires_in": 14400,
-            })))
+            .respond_with(
+                ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(json!({
+                    "access_token": "new_access_only",
+                    "expires_in": 14400,
+                })),
+            )
             .mount(&server)
             .await;
 
         let cred = stub_cred(SystemTime::now() + std::time::Duration::from_secs(60));
-        let repo = InMemRepo::seeded(&cred);
+        let repo = seeded_repo(&cred);
         let mgr = manager_with_server(repo.clone(), &server);
 
         let stale_access = OAuthToken::new("existing_access");
         mgr.refresh(&stale_access).await.unwrap();
 
-        let stored = repo.get_stored_cred().unwrap();
+        let stored = stored_cred(&repo).unwrap();
         assert_eq!(
             stored.refresh_token.as_ref().map(OAuthToken::expose),
             Some("existing_refresh"),
@@ -485,7 +439,7 @@ pub(crate) mod tests {
                 .await;
 
             let cred = stub_cred(SystemTime::now() + std::time::Duration::from_secs(60));
-            let mgr = manager_with_server(InMemRepo::seeded(&cred), &server);
+            let mgr = manager_with_server(seeded_repo(&cred), &server);
             mgr.refresh(&OAuthToken::new("existing_access"))
                 .await
                 .unwrap_err()
@@ -553,13 +507,17 @@ pub(crate) mod tests {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/token"))
-            .respond_with(ResponseTemplate::new(503).set_body_json(json!({
-                "message": BODY_SENTINEL,
-            })))
+            .respond_with(
+                ResponseTemplate::new(reqwest::StatusCode::SERVICE_UNAVAILABLE).set_body_json(
+                    json!({
+                        "message": BODY_SENTINEL,
+                    }),
+                ),
+            )
             .mount(&server)
             .await;
         let cred = stub_cred(SystemTime::now() + std::time::Duration::from_secs(60));
-        let mgr = manager_with_server(InMemRepo::seeded(&cred), &server);
+        let mgr = manager_with_server(seeded_repo(&cred), &server);
 
         let rendered = mgr.access_token().await.unwrap_err().to_string();
 
@@ -579,7 +537,7 @@ pub(crate) mod tests {
         use crate::helix::HelixTokenSource;
 
         let server = MockServer::start().await;
-        let mgr = manager_with_server(InMemRepo::empty(), &server);
+        let mgr = manager_with_server(Arc::new(MemoryCredentials::default()), &server);
 
         let err = mgr.access_token().await.unwrap_err();
         assert!(
@@ -615,7 +573,7 @@ pub(crate) mod tests {
             .mount(&server)
             .await;
         let cred = stub_cred(SystemTime::now() + std::time::Duration::from_secs(60));
-        let mgr = manager_with_server(InMemRepo::seeded(&cred), &server);
+        let mgr = manager_with_server(seeded_repo(&cred), &server);
         let stale = OAuthToken::new("existing_access");
 
         let (first, second) = tokio::join!(mgr.refresh(&stale), mgr.refresh(&stale));
@@ -639,7 +597,7 @@ pub(crate) mod tests {
             .mount(&server)
             .await;
         let cred = stub_cred(SystemTime::now() + std::time::Duration::from_secs(60));
-        let mgr = manager_with_server(InMemRepo::seeded(&cred), &server);
+        let mgr = manager_with_server(seeded_repo(&cred), &server);
         let stale = OAuthToken::new("existing_access");
 
         let (first, second, reactive) = tokio::join!(
@@ -673,7 +631,7 @@ pub(crate) mod tests {
             .mount(&server)
             .await;
         let cred = stub_cred(SystemTime::now() + std::time::Duration::from_secs(3600));
-        let repo: Arc<dyn CredentialsRepo> = InMemRepo::seeded(&cred);
+        let repo: Arc<dyn CredentialsRepo> = seeded_repo(&cred);
         let mgr = Arc::new(manager_with_server(Arc::clone(&repo), &server));
         let platform = Arc::new(crate::chat_platform::TwitchPlatform::new(
             crate::config::ChatSessionConfig {
@@ -729,7 +687,7 @@ pub(crate) mod tests {
             let cred = stub_cred(SystemTime::now() + std::time::Duration::from_secs(3600));
             let mgr = TwitchCredentialsManager::new(
                 crate::sub_actions::test_support::oauth_client_at(&oauth_base, "test_client_id"),
-                InMemRepo::seeded(&cred),
+                seeded_repo(&cred),
             );
 
             let err = HelixTokenRefresher::refresh(&mgr, &OAuthToken::new("existing_access"))
@@ -745,7 +703,7 @@ pub(crate) mod tests {
         }
     }
 
-    struct StoreFailsRepo(Arc<InMemRepo>);
+    struct StoreFailsRepo(Arc<MemoryCredentials>);
 
     #[async_trait]
     impl CredentialsRepo for StoreFailsRepo {
@@ -798,7 +756,7 @@ pub(crate) mod tests {
         for path_name in ["proactive", "retry_after_unauthorized"] {
             let server = MockServer::start().await;
             mount_token_endpoint(&server, rotating_token_endpoint()).await;
-            let mgr = manager_with_server(InMemRepo::seeded(&stub_cred(near_expiry)), &server);
+            let mgr = manager_with_server(seeded_repo(&stub_cred(near_expiry)), &server);
             let mut expiry_rx = mgr.subscribe_expiry();
             assert_eq!(
                 *expiry_rx.borrow(),
@@ -837,7 +795,7 @@ pub(crate) mod tests {
         )
         .await;
         let cred = stub_cred(SystemTime::now() + std::time::Duration::from_secs(10));
-        let mgr = manager_with_server(InMemRepo::seeded(&cred), &server);
+        let mgr = manager_with_server(seeded_repo(&cred), &server);
         let mut expiry_rx = mgr.subscribe_expiry();
 
         mgr.refresh(&OAuthToken::new("existing_access"))
@@ -860,7 +818,7 @@ pub(crate) mod tests {
         )
         .await;
         let cred = stub_cred(SystemTime::now() + std::time::Duration::from_secs(10));
-        let mgr = manager_with_server(InMemRepo::seeded(&cred), &server);
+        let mgr = manager_with_server(seeded_repo(&cred), &server);
 
         let renewed = mgr
             .refresh(&OAuthToken::new("existing_access"))
@@ -902,8 +860,8 @@ pub(crate) mod tests {
             };
             mount_token_endpoint(&server, response).await;
             let seeded = match case {
-                Case::FreshToken => InMemRepo::seeded(&stub_cred(far_expiry)),
-                _ => InMemRepo::seeded(&stub_cred(near_expiry)),
+                Case::FreshToken => seeded_repo(&stub_cred(far_expiry)),
+                _ => seeded_repo(&stub_cred(near_expiry)),
             };
             let repo: Arc<dyn CredentialsRepo> = match case {
                 Case::StoreFails => Arc::new(StoreFailsRepo(seeded)),
@@ -936,7 +894,7 @@ pub(crate) mod tests {
             let server = MockServer::start().await;
             mount_token_endpoint(&server, rotating_token_endpoint()).await;
             let cred = stub_cred(SystemTime::now() + std::time::Duration::from_secs(10));
-            let mgr = manager_with_server(InMemRepo::seeded(&cred), &server);
+            let mgr = manager_with_server(seeded_repo(&cred), &server);
             mgr.refresh(&OAuthToken::new("existing_access"))
                 .await
                 .unwrap();
@@ -972,11 +930,13 @@ pub(crate) mod tests {
             let server = MockServer::start().await;
             Mock::given(method("POST"))
                 .and(path("/token"))
-                .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                    "access_token": "rotated_access",
-                    "refresh_token": "rotated_refresh",
-                    "expires_in": 14400,
-                })))
+                .respond_with(
+                    ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(json!({
+                        "access_token": "rotated_access",
+                        "refresh_token": "rotated_refresh",
+                        "expires_in": 14400,
+                    })),
+                )
                 .mount(&server)
                 .await;
             let repo = Arc::new(KeyedRepo::default());

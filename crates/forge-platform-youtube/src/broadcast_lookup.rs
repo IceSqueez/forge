@@ -154,7 +154,10 @@ mod tests {
 
     #[tokio::test]
     async fn an_empty_cell_resolves_through_one_charged_lookup_to_each_handles_own_id() {
-        let server = answering(ResponseTemplate::new(200).set_body_json(live_broadcast())).await;
+        let server = answering(
+            ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(live_broadcast()),
+        )
+        .await;
         let quota = SharedQuota::default();
 
         let chat = chat_handle(lookup_on(&server, &quota)).resolve().await;
@@ -169,7 +172,7 @@ mod tests {
     async fn a_filled_cell_answers_without_a_request_or_a_charge() {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
-            .respond_with(ResponseTemplate::new(200))
+            .respond_with(ResponseTemplate::new(reqwest::StatusCode::OK))
             .expect(0)
             .mount(&server)
             .await;
@@ -205,8 +208,10 @@ mod tests {
 
     #[tokio::test]
     async fn no_active_broadcast_resolves_to_nothing_and_stays_charged() {
-        let server =
-            answering(ResponseTemplate::new(200).set_body_json(json!({ "items": [] }))).await;
+        let server = answering(
+            ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(json!({ "items": [] })),
+        )
+        .await;
         let quota = SharedQuota::default();
 
         let resolved = chat_handle(lookup_on(&server, &quota)).resolve().await;
@@ -249,7 +254,7 @@ mod tests {
             ),
             (
                 "unreadable body",
-                ResponseTemplate::new(200).set_body_string("not json"),
+                ResponseTemplate::new(reqwest::StatusCode::OK).set_body_string("not json"),
                 |e| matches!(e, PlatformError::MalformedResponse { .. }),
             ),
         ] {
@@ -316,13 +321,16 @@ mod tests {
 
     #[tokio::test]
     async fn sending_with_an_empty_cell_posts_to_the_looked_up_live_chat() {
-        let server = answering(ResponseTemplate::new(200).set_body_json(live_broadcast())).await;
+        let server = answering(
+            ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(live_broadcast()),
+        )
+        .await;
         Mock::given(method("POST"))
             .and(path("/liveChat/messages"))
             .and(wiremock::matchers::body_partial_json(
                 json!({ "snippet": { "liveChatId": "chat-1" } }),
             ))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({})))
+            .respond_with(ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(json!({})))
             .expect(1)
             .mount(&server)
             .await;
@@ -340,8 +348,10 @@ mod tests {
 
     #[tokio::test]
     async fn sending_with_no_active_broadcast_stays_unsupported_and_posts_nothing() {
-        let server =
-            answering(ResponseTemplate::new(200).set_body_json(json!({ "items": [] }))).await;
+        let server = answering(
+            ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(json!({ "items": [] })),
+        )
+        .await;
         let quota = SharedQuota::default();
         let sender = YoutubeSendChat::new(
             unreachable_data_api(),

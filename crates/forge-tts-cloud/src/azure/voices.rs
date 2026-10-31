@@ -102,7 +102,7 @@ mod tests {
         Mock::given(method("GET"))
             .and(path("/cognitiveservices/voices/list"))
             .and(header("Ocp-Apim-Subscription-Key", API_KEY))
-            .respond_with(ResponseTemplate::new(200).set_body_json(&body))
+            .respond_with(ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(&body))
             .mount(&server)
             .await;
 
@@ -125,28 +125,30 @@ mod tests {
         let cap = catalog_cap_text();
         for (template, expected) in [
             (
-                ResponseTemplate::new(401).set_body_string(echo.clone()),
+                ResponseTemplate::new(reqwest::StatusCode::UNAUTHORIZED)
+                    .set_body_string(echo.clone()),
                 "Unauthorized".to_owned(),
             ),
             (
-                ResponseTemplate::new(403).set_body_string(echo.clone()),
+                ResponseTemplate::new(reqwest::StatusCode::FORBIDDEN).set_body_string(echo.clone()),
                 "Unauthorized".to_owned(),
             ),
             (
-                ResponseTemplate::new(429),
+                ResponseTemplate::new(reqwest::StatusCode::TOO_MANY_REQUESTS),
                 format!("RateLimited({NO_HINT_WAIT_SECS})"),
             ),
             (throttled(4), "RateLimited(4)".to_owned()),
             (
-                ResponseTemplate::new(500).set_body_string(echo.clone()),
+                ResponseTemplate::new(reqwest::StatusCode::INTERNAL_SERVER_ERROR)
+                    .set_body_string(echo.clone()),
                 "Http".to_owned(),
             ),
             (
-                ResponseTemplate::new(200).set_body_string("[{"),
+                ResponseTemplate::new(reqwest::StatusCode::OK).set_body_string("[{"),
                 "Decode".to_owned(),
             ),
             (
-                ResponseTemplate::new(200).set_body_bytes(over_catalog_cap()),
+                ResponseTemplate::new(reqwest::StatusCode::OK).set_body_bytes(over_catalog_cap()),
                 format!("Rejected({cap})"),
             ),
         ] {

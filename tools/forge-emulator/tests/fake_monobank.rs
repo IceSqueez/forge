@@ -20,7 +20,7 @@ use time::OffsetDateTime;
 
 mod support;
 
-use support::MemoryCredentials;
+use forge_storage::test_support::MemoryCredentials;
 
 const WAIT: Duration = Duration::from_secs(30);
 const JAR: &str = "fakeJar001";

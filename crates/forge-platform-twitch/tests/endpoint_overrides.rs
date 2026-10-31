@@ -1,11 +1,8 @@
 #![allow(clippy::unwrap_used)]
-use std::collections::BTreeMap;
 use std::ffi::OsString;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::SystemTime;
 
-use async_trait::async_trait;
-use forge_events::{Event, EventPublisher};
 use forge_net::TokenBucketRateLimiter;
 use forge_platform_core::{AuthFlow, EndpointSurface, PlatformEndpoints};
 use forge_platform_twitch::credentials::{StoredCredential, store_credential};
@@ -14,52 +11,12 @@ use forge_platform_twitch::{
     TWITCH_OAUTH_BUDGET_WINDOW, TwitchAuthFlow, TwitchCredentialsManager, TwitchOAuthClient,
     helix_gateway, twitch_auth_flow, twitch_oauth_gateway,
 };
-use forge_storage::{CredentialId, CredentialsRepo, StorageError};
+use forge_storage::test_support::MemoryCredentials;
 use forge_types::OAuthToken;
 use serde_json::json;
-use time::OffsetDateTime;
 use tokio_util::sync::CancellationToken;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
-
-#[derive(Default)]
-struct MemoryRepo {
-    rows: Mutex<BTreeMap<String, String>>,
-}
-
-#[async_trait]
-impl CredentialsRepo for MemoryRepo {
-    async fn store(&self, id: &CredentialId, plaintext_bundle: &str) -> Result<(), StorageError> {
-        self.rows
-            .lock()
-            .unwrap()
-            .insert(id.to_string(), plaintext_bundle.to_owned());
-        Ok(())
-    }
-
-    async fn load(&self, id: &CredentialId) -> Result<Option<String>, StorageError> {
-        Ok(self.rows.lock().unwrap().get(&id.to_string()).cloned())
-    }
-
-    async fn delete(&self, id: &CredentialId) -> Result<bool, StorageError> {
-        Ok(self.rows.lock().unwrap().remove(&id.to_string()).is_some())
-    }
-
-    async fn list_ids(&self) -> Result<Vec<CredentialId>, StorageError> {
-        Ok(Vec::new())
-    }
-
-    async fn last_refresh(
-        &self,
-        _id: &CredentialId,
-    ) -> Result<Option<OffsetDateTime>, StorageError> {
-        Ok(None)
-    }
-
-    async fn mark_refreshed(&self, _id: &CredentialId) -> Result<(), StorageError> {
-        Ok(())
-    }
-}
 
 fn overrides(oauth_base: String, api_base: String) -> PlatformEndpoints {
     PlatformEndpoints::resolve(move |variable| {
@@ -89,12 +46,6 @@ fn oauth_client(endpoints: &PlatformEndpoints) -> TwitchOAuthClient {
     )
 }
 
-struct DiscardingBus;
-
-impl EventPublisher for DiscardingBus {
-    fn publish(&self, _: Event) {}
-}
-
 fn helix(endpoints: &PlatformEndpoints) -> forge_net::Gateway {
     helix_gateway(
         endpoints,
@@ -102,7 +53,7 @@ fn helix(endpoints: &PlatformEndpoints) -> forge_net::Gateway {
             HELIX_BUDGET_CAPACITY,
             HELIX_BUDGET_WINDOW,
         )),
-        Arc::new(DiscardingBus),
+        Arc::new(forge_events::test_support::NullPublisher),
     )
     .unwrap()
 }
@@ -139,7 +90,7 @@ async fn oauth_override_carries_the_token_refresh_to_the_override_host() {
         .mount(&server)
         .await;
     let endpoints = oauth_override(format!("{}/oauth2", server.uri()));
-    let repo = Arc::new(MemoryRepo::default());
+    let repo = Arc::new(MemoryCredentials::default());
     store_credential(
         repo.as_ref(),
         &StoredCredential {

@@ -312,7 +312,8 @@ mod tests {
             .and(header("content-type", "application/json"))
             .and(body_string(build_polly_body(&request)))
             .respond_with(
-                ResponseTemplate::new(200).set_body_bytes(raw_pcm_bytes(&[100, -100, 200, -200])),
+                ResponseTemplate::new(reqwest::StatusCode::OK)
+                    .set_body_bytes(raw_pcm_bytes(&[100, -100, 200, -200])),
             )
             .mount(&server)
             .await;

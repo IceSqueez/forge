@@ -36,29 +36,12 @@ fn make_queue(id: QueueId) -> Queue {
 }
 
 fn log_action(id: ActionId, queue_id: QueueId) -> Action {
-    Action {
+    common::sequential_action(
         id,
-        name: "e2e-log-action".to_string(),
-        group: None,
+        "e2e-log-action",
         queue_id,
-        enabled: true,
-        concurrent: false,
-        bypass_pause: false,
-        execution_mode: ExecutionMode::Sequential,
-        description: None,
-        sub_actions: vec![SubActionStep {
-            kind_id: "core.log.write".to_owned(),
-            config: {
-                let mut c = BTreeMap::new();
-                c.insert("message".to_owned(), Variant::String("e2e-ok".to_owned()));
-                c
-            },
-            enabled: true,
-            continue_on_error: false,
-            condition: None,
-            label: None,
-        }],
-    }
+        vec![common::log_write_step("e2e-ok")],
+    )
 }
 
 fn custom_instance(event_name: &str) -> TriggerInstance {

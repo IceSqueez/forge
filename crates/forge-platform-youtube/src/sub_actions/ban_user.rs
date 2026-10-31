@@ -171,7 +171,8 @@ mod tests {
         Mock::given(method("POST"))
             .and(path("/liveChat/bans"))
             .respond_with(
-                ResponseTemplate::new(200).set_body_json(serde_json::json!({"id": "ban-1"})),
+                ResponseTemplate::new(reqwest::StatusCode::OK)
+                    .set_body_json(serde_json::json!({"id": "ban-1"})),
             )
             .mount(&server)
             .await;

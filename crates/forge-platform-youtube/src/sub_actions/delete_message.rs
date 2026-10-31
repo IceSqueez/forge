@@ -142,7 +142,7 @@ mod tests {
         Mock::given(method("DELETE"))
             .and(path("/liveChat/messages"))
             .and(query_param("id", "abc-123"))
-            .respond_with(ResponseTemplate::new(204))
+            .respond_with(ResponseTemplate::new(reqwest::StatusCode::NO_CONTENT))
             .expect(1)
             .mount(&server)
             .await;
@@ -175,7 +175,7 @@ mod tests {
             Mock::given(method("DELETE"))
                 .and(path("/liveChat/messages"))
                 .and(query_param("id", "LCC.abc-123"))
-                .respond_with(ResponseTemplate::new(204))
+                .respond_with(ResponseTemplate::new(reqwest::StatusCode::NO_CONTENT))
                 .expect(1)
                 .mount(&server)
                 .await;

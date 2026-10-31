@@ -87,9 +87,11 @@ mod tests {
         Mock::given(method("GET"))
             .and(path("/categories"))
             .and(query_param("q", "just chatting"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "data": [{"id": 15, "name": "Just Chatting"}]
-            })))
+            .respond_with(
+                ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(serde_json::json!({
+                    "data": [{"id": 15, "name": "Just Chatting"}]
+                })),
+            )
             .expect(1)
             .mount(&server)
             .await;
@@ -116,7 +118,8 @@ mod tests {
             .collect();
         mount_categories(
             &server,
-            ResponseTemplate::new(200).set_body_json(serde_json::json!({ "data": data })),
+            ResponseTemplate::new(reqwest::StatusCode::OK)
+                .set_body_json(serde_json::json!({ "data": data })),
         )
         .await;
 
@@ -138,7 +141,8 @@ mod tests {
         );
         mount_categories(
             &server,
-            ResponseTemplate::new(200).set_body_json(serde_json::json!({ "data": data })),
+            ResponseTemplate::new(reqwest::StatusCode::OK)
+                .set_body_json(serde_json::json!({ "data": data })),
         )
         .await;
 
@@ -155,7 +159,8 @@ mod tests {
         let server = MockServer::start().await;
         mount_categories(
             &server,
-            ResponseTemplate::new(200).set_body_json(serde_json::json!({ "data": [] })),
+            ResponseTemplate::new(reqwest::StatusCode::OK)
+                .set_body_json(serde_json::json!({ "data": [] })),
         )
         .await;
 
@@ -172,7 +177,7 @@ mod tests {
         let server = MockServer::start().await;
         mount_categories(
             &server,
-            ResponseTemplate::new(200).set_body_string("<html>"),
+            ResponseTemplate::new(reqwest::StatusCode::OK).set_body_string("<html>"),
         )
         .await;
 

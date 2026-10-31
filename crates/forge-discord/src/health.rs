@@ -239,7 +239,7 @@ impl BuiltinHealth for DiscordClient {
 mod tests {
     use super::*;
     use crate::client::DiscordClient;
-    use crate::client::tests::MockCreds;
+    use forge_storage::test_support::MemoryCredentials;
 
     fn record(client: &DiscordClient, latency_ms: u64, ok: bool, remaining: u64, total: u64) {
         let mut snap = client.health_state.lock().unwrap();
@@ -264,7 +264,7 @@ mod tests {
 
     #[test]
     fn metrics_declare_unique_catalogued_ids() {
-        let client = DiscordClient::new_for_test_with_creds(MockCreds::new().creds());
+        let client = DiscordClient::new_for_test_with_creds(Arc::new(MemoryCredentials::default()));
 
         let ids: std::collections::HashSet<_> = client
             .metrics()
@@ -285,7 +285,7 @@ mod tests {
 
     #[test]
     fn every_emitted_delta_targets_a_declared_metric() {
-        let client = DiscordClient::new_for_test_with_creds(MockCreds::new().creds());
+        let client = DiscordClient::new_for_test_with_creds(Arc::new(MemoryCredentials::default()));
         let declared: Vec<_> = client
             .metrics()
             .into_iter()
@@ -424,7 +424,7 @@ mod tests {
 
     #[test]
     fn send_health_before_any_send_reports_no_samples() {
-        let client = DiscordClient::new_for_test_with_creds(MockCreds::new().creds());
+        let client = DiscordClient::new_for_test_with_creds(Arc::new(MemoryCredentials::default()));
 
         let health = client.send_health();
 
@@ -436,7 +436,7 @@ mod tests {
 
     #[test]
     fn send_health_projects_latency_budget_and_last_result_of_recorded_sends() {
-        let client = DiscordClient::new_for_test_with_creds(MockCreds::new().creds());
+        let client = DiscordClient::new_for_test_with_creds(Arc::new(MemoryCredentials::default()));
         record(&client, 10, true, 4, 5);
         record(&client, 90, true, 3, 5);
         record(&client, 50, false, 2, 5);
@@ -453,7 +453,7 @@ mod tests {
 
     #[test]
     fn send_health_rate_limit_used_stays_zero_when_remaining_exceeds_total() {
-        let client = DiscordClient::new_for_test_with_creds(MockCreds::new().creds());
+        let client = DiscordClient::new_for_test_with_creds(Arc::new(MemoryCredentials::default()));
         record(&client, 10, true, 9, 5);
 
         assert_eq!(client.send_health().rate_limit_used, 0);

@@ -362,7 +362,9 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/liveChat/messages"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({"kind": "x"})))
+            .respond_with(
+                ResponseTemplate::new(reqwest::StatusCode::OK).set_body_json(json!({"kind": "x"})),
+            )
             .expect(1)
             .mount(&server)
             .await;

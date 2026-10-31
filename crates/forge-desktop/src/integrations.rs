@@ -469,21 +469,10 @@ pub(crate) mod tests {
     use crate::event_loss::TWITCH_EVENT_RELAY;
     use crate::test_support::yield_until;
     use forge_events::{Event, EventChannel, EventSource};
-    use forge_net::{RateLimitError, RateLimitOutcome, RateLimiter};
+
     use forge_platform_core::{ConnectionState, PlatformError};
     use forge_runtime::NullEventLogRepo;
     use std::time::Duration;
-
-    struct NoopRateLimiter;
-
-    #[async_trait::async_trait]
-    impl RateLimiter for NoopRateLimiter {
-        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, RateLimitError> {
-            Ok(RateLimitOutcome::Granted)
-        }
-
-        async fn observe_remote_throttle(&self, _retry_after: Duration) {}
-    }
 
     fn test_bus() -> Arc<EventBus> {
         EventBus::new(Arc::new(NullEventLogRepo))
@@ -984,7 +973,7 @@ pub(crate) mod tests {
         use forge_platform_kick as kick;
         let api = kick::kick_api_gateway(
             &forge_platform_core::PlatformEndpoints::default(),
-            Arc::new(NoopRateLimiter),
+            Arc::new(forge_net::test_support::RecordingRateLimiter::granting()),
             publisher(bus),
         )
         .unwrap();

@@ -352,7 +352,7 @@ async fn select_and_start(
         match EvdevBackend::try_new().await {
             Ok(evdev) => {
                 tracing::info!(portal = %portal_reason, "global shortcuts: using evdev backend");
-                return HotkeyClient::start(config, publisher, Arc::new(evdev), Some(false));
+                HotkeyClient::start(config, publisher, Arc::new(evdev), Some(false))
             }
             Err(e) => {
                 tracing::warn!(
@@ -366,7 +366,7 @@ async fn select_and_start(
                     HotkeyClient::start(config, Arc::clone(&publisher), backend, None)
                 };
                 supervisor::emit_portal_unavailable(&client, &detail);
-                return client;
+                client
             }
         }
     }
@@ -376,9 +376,7 @@ async fn select_and_start(
         use crate::backend_global::GlobalHotkeyBackend;
 
         match GlobalHotkeyBackend::new(main_thread).await {
-            Ok(backend) => {
-                return HotkeyClient::start(config, publisher, Arc::new(backend), Some(true));
-            }
+            Ok(backend) => HotkeyClient::start(config, publisher, Arc::new(backend), Some(true)),
             Err(e) => {
                 tracing::error!(error = %e, "GlobalHotkeyBackend unavailable");
                 let client = HotkeyClient::start(
@@ -388,7 +386,7 @@ async fn select_and_start(
                     None,
                 );
                 supervisor::emit_portal_unavailable(&client, &e.to_string());
-                return client;
+                client
             }
         }
     }
@@ -396,18 +394,6 @@ async fn select_and_start(
     #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
     {
         drop(main_thread);
-        let backend = Arc::new(NullBackend::new());
-        return HotkeyClient::start(config, publisher, backend, None);
-    }
-
-    #[cfg_attr(
-        not(any(target_os = "windows", target_os = "macos")),
-        expect(
-            unreachable_code,
-            reason = "every backend branch above returns on this target"
-        )
-    )]
-    {
         let backend = Arc::new(NullBackend::new());
         HotkeyClient::start(config, publisher, backend, None)
     }

@@ -1,3 +1,4 @@
+use crate::error::RuntimeError;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
@@ -20,9 +21,7 @@ use crate::catalog::{Catalog, CatalogSnapshot};
 use crate::cooldown::{CooldownKey, CooldownMap};
 use crate::delivery::{CriticalSubscription, TRIGGER_EVALUATOR};
 use crate::event_log_bridge::identity_digest;
-use crate::{
-    Config, EventBus, QueueAdmission, QueueSchedulerHandle, SchedulerError, SchedulerRequest,
-};
+use crate::{Config, EventBus, QueueAdmission, QueueSchedulerHandle, SchedulerRequest};
 
 const DECISION_TARGET: &str = "forge::trigger";
 
@@ -144,7 +143,7 @@ impl TriggerEvaluator {
                 Ok(()) => {
                     admitted.insert(instance.id);
                 }
-                Err(SchedulerError::Refused(reason)) => {
+                Err(RuntimeError::QueueRefused(reason)) => {
                     debug!(
                         target: DECISION_TARGET,
                         event = %event.id,

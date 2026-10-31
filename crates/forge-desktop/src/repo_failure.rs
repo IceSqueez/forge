@@ -7,10 +7,7 @@ use forge_host::server_boot::ServerUnavailable;
 use forge_hotkey::HotkeyError;
 use forge_hotkey::vocabulary::messages::failure;
 use forge_overlay::OverlayError;
-use forge_runtime::{
-    DispatchError, IntegrationStartError, LatestResetError, OverlayServiceError, ScheduleError,
-    SchedulerError, ScriptRegistryError,
-};
+use forge_runtime::{IntegrationStartError, RuntimeError, script_input_failure};
 use forge_script::ScriptError;
 use forge_server::ServerError;
 use forge_speak_queue::vocabulary::messages::{audio_failure, queue_failure, tts_failure};
@@ -211,12 +208,6 @@ impl From<tokio::task::JoinError> for RepoFailure {
     }
 }
 
-impl From<DispatchError> for RepoFailure {
-    fn from(error: DispatchError) -> Self {
-        Self::operation(error)
-    }
-}
-
 impl From<UpdateError> for RepoFailure {
     fn from(error: UpdateError) -> Self {
         Self::operation(error)
@@ -318,72 +309,72 @@ impl From<FilterMappingError> for RepoFailure {
     }
 }
 
+impl From<&ScriptError> for RepoFailure {
+    fn from(error: &ScriptError) -> Self {
+        let message = script_input_failure(error).unwrap_or_else(|| {
+            MessageRef::new(SCRIPT_REJECTED)
+                .with_detail(UpstreamDetail::from_redacted(error.to_string()))
+        });
+        Self::shown(message, error)
+    }
+}
+
 impl From<ScriptError> for RepoFailure {
     fn from(error: ScriptError) -> Self {
-        Self::shown(
-            MessageRef::new(SCRIPT_REJECTED)
-                .with_detail(UpstreamDetail::from_redacted(error.to_string())),
-            error,
-        )
+        Self::from(&error)
     }
 }
 
-impl From<ScriptRegistryError> for RepoFailure {
-    fn from(error: ScriptRegistryError) -> Self {
-        match error {
-            ScriptRegistryError::Storage(storage) => storage.into(),
-            ScriptRegistryError::Compile(detail) => Self::shown(
-                MessageRef::new(SCRIPT_REJECTED)
-                    .with_detail(UpstreamDetail::from_redacted(detail.as_str())),
-                detail,
-            ),
-        }
-    }
-}
-
-impl From<SchedulerError> for RepoFailure {
-    fn from(error: SchedulerError) -> Self {
-        match error {
-            SchedulerError::QueueNotFound(_) => Self::shown(MessageRef::new(ITEM_GONE), error),
-            other => Self::operation(other),
-        }
-    }
-}
-
-impl From<ScheduleError> for RepoFailure {
-    fn from(error: ScheduleError) -> Self {
-        match error {
-            ScheduleError::UnknownAction => Self::action_gone(),
-            other => Self::shown(MessageRef::new(VALUE_REJECTED), other),
-        }
-    }
-}
-
-impl From<LatestResetError> for RepoFailure {
-    fn from(error: LatestResetError) -> Self {
-        match error {
-            LatestResetError::Storage(storage) => storage.into(),
-            other => Self::shown(MessageRef::new(ITEM_GONE), other),
-        }
-    }
-}
-
-impl From<OverlayServiceError> for RepoFailure {
-    fn from(error: OverlayServiceError) -> Self {
+impl From<RuntimeError> for RepoFailure {
+    fn from(error: RuntimeError) -> Self {
         let message = match &error {
-            OverlayServiceError::Storage(storage) => return Self::from_storage_ref(storage),
-            OverlayServiceError::Unknown(_) => MessageRef::new(ITEM_GONE),
-            OverlayServiceError::UnavailableKind { kind_id, .. } => {
+            RuntimeError::Storage(storage) => return Self::from_storage_ref(storage),
+            RuntimeError::Script(script) => return Self::from(script),
+            RuntimeError::Overlay(overlay) => return Self::from(overlay),
+            RuntimeError::ScheduleUnknownAction => return Self::action_gone(),
+            RuntimeError::ScriptCompile(detail) => MessageRef::new(SCRIPT_REJECTED)
+                .with_detail(UpstreamDetail::from_redacted(detail.as_str())),
+            RuntimeError::QueueNotFound(_)
+            | RuntimeError::UnknownOverlay(_)
+            | RuntimeError::UnknownLatestSlot(_) => MessageRef::new(ITEM_GONE),
+            RuntimeError::UnavailableOverlayKind { kind_id, .. } => {
                 MessageRef::new(OVERLAY_KIND_UNAVAILABLE)
                     .with_arg(KIND_ARG, VerbatimText::new(kind_id.as_str()))
             }
-            OverlayServiceError::Overlay(overlay) => return Self::from(overlay),
-            OverlayServiceError::Interrupted => MessageRef::new(OPERATION_FAILED),
-            OverlayServiceError::ShowQueueFull { capacity, .. } => {
-                MessageRef::new(OVERLAY_QUEUE_FULL)
-                    .with_arg(CAPACITY_ARG, i64::try_from(*capacity).unwrap_or(i64::MAX))
-            }
-            OverlayServiceError::SlotBound(_) => MessageRef::new(OVERLAY_SLOT_BOUND),
+            RuntimeError::ShowQueueFull { capacity, .. } => MessageRef::new(OVERLAY_QUEUE_FULL)
+                .with_arg(CAPACITY_ARG, i64::try_from(*capacity).unwrap_or(i64::MAX)),
+            RuntimeError::SlotBound(_) => MessageRef::new(OVERLAY_SLOT_BOUND),
+            RuntimeError::DelayTooShort
+            | RuntimeError::DueTooSoon
+            | RuntimeError::DelayTooLong
+            | RuntimeError::LateToleranceOutOfRange
+            | RuntimeError::KeyTooLong
+            | RuntimeError::ArgsTooLarge { .. }
+            | RuntimeError::ArgsNotStorable(_)
+            | RuntimeError::PendingCapReached
+            | RuntimeError::ActionPendingCapReached
+            | RuntimeError::SchedulerStopped => MessageRef::new(VALUE_REJECTED),
+            RuntimeError::ConditionCanceled
+            | RuntimeError::UndefinedVariables { .. }
+            | RuntimeError::EventNotFound(_)
+            | RuntimeError::SchedulerChannelClosed
+            | RuntimeError::QueueRefused(_)
+            | RuntimeError::EngineChannelClosed
+            | RuntimeError::EngineNoOutcome
+            | RuntimeError::InvalidUrl
+            | RuntimeError::SchemeNotAllowed
+            | RuntimeError::BlockedAddress
+            | RuntimeError::UnresolvableHost
+            | RuntimeError::TooManyRedirects
+            | RuntimeError::EgressTimeout
+            | RuntimeError::EgressNetwork(_)
+            | RuntimeError::OverlayWiringRefused(_)
+            | RuntimeError::OverlayWiringNothingWritten { .. }
+            | RuntimeError::OsServiceUnavailable(_)
+            | RuntimeError::OsOperationFailed(_)
+            | RuntimeError::TimestampOutOfRange(_)
+            | RuntimeError::UnreadableDatetime(_) => return Self::operation(&error),
+            RuntimeError::OverlayFileWorkInterrupted => MessageRef::new(OPERATION_FAILED),
         };
         Self::shown(message, error)
     }
@@ -709,7 +700,7 @@ mod tests {
         let disk = || std::io::Error::other("disk gone");
         let cases = [
             converted(disk(), FILE),
-            converted(forge_runtime::DispatchError::ChannelClosed, OPERATION),
+            converted(forge_runtime::RuntimeError::EngineChannelClosed, OPERATION),
             converted(UpdateError::RateLimited, OPERATION),
             converted(forge_awake::AwakeError::Stopped, OPERATION),
             converted(DesktopError::Storage(connection_lost()), STORAGE_FAILED_EN),
@@ -743,47 +734,38 @@ mod tests {
                 "The server is switched off in settings.",
             ),
             converted(ServerError::Io(disk()), OPERATION),
+            converted(RuntimeError::Storage(connection_lost()), STORAGE_FAILED_EN),
             converted(
-                ScriptRegistryError::Storage(connection_lost()),
-                STORAGE_FAILED_EN,
-            ),
-            converted(
-                SchedulerError::QueueNotFound(forge_types::QueueId::new()),
+                RuntimeError::QueueNotFound(forge_types::QueueId::new()),
                 GONE,
             ),
-            converted(SchedulerError::ChannelClosed, OPERATION),
-            converted(ScheduleError::DelayTooShort, REJECTED),
+            converted(RuntimeError::SchedulerChannelClosed, OPERATION),
+            converted(RuntimeError::DelayTooShort, REJECTED),
+            converted(RuntimeError::Storage(connection_lost()), STORAGE_FAILED_EN),
+            converted(RuntimeError::UnknownLatestSlot("follower".to_owned()), GONE),
+            converted(RuntimeError::Storage(connection_lost()), STORAGE_FAILED_EN),
+            converted(RuntimeError::UnknownOverlay(overlay_id()), GONE),
             converted(
-                LatestResetError::Storage(connection_lost()),
-                STORAGE_FAILED_EN,
-            ),
-            converted(LatestResetError::UnknownSlot("follower".to_owned()), GONE),
-            converted(
-                OverlayServiceError::Storage(connection_lost()),
-                STORAGE_FAILED_EN,
-            ),
-            converted(OverlayServiceError::Unknown(overlay_id()), GONE),
-            converted(
-                OverlayServiceError::UnavailableKind {
+                RuntimeError::UnavailableOverlayKind {
                     id: overlay_id(),
                     kind_id: "alert".to_owned(),
                 },
                 "This overlay needs the type alert, which this version of forge does not have.",
             ),
             converted(
-                OverlayServiceError::Overlay(OverlayError::UnknownKind("alert".to_owned())),
+                RuntimeError::Overlay(OverlayError::UnknownKind("alert".to_owned())),
                 REJECTED,
             ),
-            converted(OverlayServiceError::Interrupted, OPERATION),
+            converted(RuntimeError::OverlayFileWorkInterrupted, OPERATION),
             converted(
-                OverlayServiceError::ShowQueueFull {
+                RuntimeError::ShowQueueFull {
                     id: overlay_id(),
                     capacity: 8,
                 },
                 "This overlay already has 8 shows waiting, so this one was not queued.",
             ),
             converted(
-                OverlayServiceError::SlotBound(overlay_id()),
+                RuntimeError::SlotBound(overlay_id()),
                 "This overlay shows a latest value and takes no content from actions.",
             ),
         ];
@@ -797,7 +779,7 @@ mod tests {
     fn a_schedule_for_a_vanished_action_names_the_action() {
         install_language(Language::En);
 
-        let failure = RepoFailure::from(ScheduleError::UnknownAction);
+        let failure = RepoFailure::from(RuntimeError::ScheduleUnknownAction);
 
         assert_eq!(failure, RepoFailure::action_gone());
     }
@@ -854,7 +836,7 @@ mod tests {
                 "unexpected token",
             ),
             (
-                ScriptRegistryError::Compile("missing brace".to_owned()).into(),
+                RuntimeError::ScriptCompile("missing brace".to_owned()).into(),
                 "missing brace",
             ),
             (

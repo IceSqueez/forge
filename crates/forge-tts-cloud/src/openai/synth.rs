@@ -5,11 +5,11 @@ use forge_tts_core::SynthesisRequest;
 use forge_types::Secret;
 use serde_json::json;
 
+use crate::error::CloudTtsError;
 use crate::gateway_failure::{
     Classified, ProviderPolicy, VoiceSignal, classify, failure_detail, probe_failure_detail,
 };
 use crate::network::ProviderLink;
-use crate::openai::error::OpenAiError;
 
 const VALID_VOICES: &[&str] = &["alloy", "echo", "fable", "onyx", "nova", "shimmer"];
 const SPEECH_PATH: &str = "/v1/audio/speech";
@@ -17,12 +17,12 @@ const MODELS_PATH: &str = "/v1/models";
 const INVALID_API_KEY: &str = "invalid API key";
 const QUOTA_MARKERS: &[&str] = &["insufficient_quota", "billing"];
 
-fn map_voice_id(id: &VoiceId) -> Result<&'static str, OpenAiError> {
+fn map_voice_id(id: &VoiceId) -> Result<&'static str, CloudTtsError> {
     VALID_VOICES
         .iter()
         .find(|&&v| v == id.0.as_str())
         .copied()
-        .ok_or_else(|| OpenAiError::VoiceNotFound(id.clone()))
+        .ok_or_else(|| CloudTtsError::VoiceNotFound(id.clone()))
 }
 
 fn map_speed(rate_multiplier: f32) -> f64 {
@@ -40,18 +40,18 @@ pub(super) fn classify_with(
     link: &ProviderLink,
     voice: Option<&VoiceId>,
     detail: fn(&GatewayFailure) -> String,
-) -> OpenAiError {
+) -> CloudTtsError {
     match classify(failure, link, POLICY, voice, detail) {
-        Classified::Quota(excerpt) => OpenAiError::QuotaExceeded(excerpt),
-        Classified::Throttled(retry_after_secs) => OpenAiError::RateLimited { retry_after_secs },
-        Classified::Auth => OpenAiError::Unauthorized(INVALID_API_KEY.into()),
-        Classified::VoiceMissing(voice) => OpenAiError::VoiceNotFound(voice),
-        Classified::Rejected(detail) => OpenAiError::Rejected(detail),
-        Classified::Transient(detail) => OpenAiError::Http(detail),
+        Classified::Quota(excerpt) => CloudTtsError::QuotaExceeded(excerpt),
+        Classified::Throttled(retry_after_secs) => CloudTtsError::RateLimited { retry_after_secs },
+        Classified::Auth => CloudTtsError::Unauthorized(INVALID_API_KEY.into()),
+        Classified::VoiceMissing(voice) => CloudTtsError::VoiceNotFound(voice),
+        Classified::Rejected(detail) => CloudTtsError::Rejected(detail),
+        Classified::Transient(detail) => CloudTtsError::Http(detail),
     }
 }
 
-fn classify_error(failure: &GatewayFailure, link: &ProviderLink) -> OpenAiError {
+fn classify_error(failure: &GatewayFailure, link: &ProviderLink) -> CloudTtsError {
     classify_with(failure, link, None, failure_detail)
 }
 
@@ -59,7 +59,7 @@ pub(super) async fn synthesize(
     link: &ProviderLink,
     api_key: &str,
     req: SynthesisRequest,
-) -> Result<PcmBuffer, OpenAiError> {
+) -> Result<PcmBuffer, CloudTtsError> {
     let voice = map_voice_id(&req.voice_id)?;
     let speed = map_speed(req.rate_multiplier);
 
@@ -77,7 +77,7 @@ pub(super) async fn synthesize(
         "response_format": "wav",
         "speed": speed,
     }))
-    .map_err(|e| OpenAiError::Rejected(e.to_string()))?;
+    .map_err(|e| CloudTtsError::Rejected(e.to_string()))?;
 
     let request = GatewayRequest::post(SPEECH_PATH)
         .bearer(Secret::new(api_key))
@@ -87,13 +87,13 @@ pub(super) async fn synthesize(
         .await
         .map_err(|failure| classify_error(&failure, link))?;
     forge_audio::decode_bytes(response.body(), Some("wav"))
-        .map_err(|e| OpenAiError::Decode(e.to_string()))
+        .map_err(|e| CloudTtsError::Decode(e.to_string()))
 }
 
 pub(super) async fn probe_connection(
     link: &ProviderLink,
     api_key: &str,
-) -> Result<(), OpenAiError> {
+) -> Result<(), CloudTtsError> {
     let request = GatewayRequest::get(MODELS_PATH)
         .bearer(Secret::new(api_key))
         .class(CallClass::Catalog);
@@ -115,7 +115,6 @@ mod tests {
         over_catalog_cap, request_count, serving, throttled,
     };
     use forge_net::CallClass;
-    use forge_tts_core::TtsError;
     use wiremock::matchers::{header, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -159,18 +158,19 @@ mod tests {
         }
     }
 
-    fn outcome(error: &OpenAiError) -> String {
+    fn outcome(error: &CloudTtsError) -> String {
         match error {
-            OpenAiError::Http(_) => "Http".into(),
-            OpenAiError::Unauthorized(_) => "Unauthorized".into(),
-            OpenAiError::QuotaExceeded(_) => "QuotaExceeded".into(),
-            OpenAiError::RateLimited { retry_after_secs } => {
+            CloudTtsError::Http(_) => "Http".into(),
+            CloudTtsError::Unauthorized(_) => "Unauthorized".into(),
+            CloudTtsError::QuotaExceeded(_) => "QuotaExceeded".into(),
+            CloudTtsError::RateLimited { retry_after_secs } => {
                 format!("RateLimited({retry_after_secs})")
             }
-            OpenAiError::VoiceNotFound(_) => "VoiceNotFound".into(),
-            OpenAiError::Decode(_) => "Decode".into(),
-            OpenAiError::Rejected(_) => "Rejected".into(),
-            OpenAiError::Io(_) => "Io".into(),
+            CloudTtsError::VoiceNotFound(_) => "VoiceNotFound".into(),
+            CloudTtsError::Decode(_) => "Decode".into(),
+            CloudTtsError::Rejected(_) => "Rejected".into(),
+            CloudTtsError::Io(_) => "Io".into(),
+            CloudTtsError::InvalidEndpoint(_) | CloudTtsError::Signing(_) => "Signature".into(),
         }
     }
 
@@ -204,7 +204,7 @@ mod tests {
     async fn synthesize_rejects_an_unknown_voice_before_any_request() {
         let server = serving(ResponseTemplate::new(reqwest::StatusCode::OK)).await;
         let result = synthesize(&link_to(&server), API_KEY, request_for("unknown-voice")).await;
-        assert!(matches!(result, Err(OpenAiError::VoiceNotFound(_))));
+        assert!(matches!(result, Err(CloudTtsError::VoiceNotFound(_))));
         assert_eq!(request_count(&server).await, 0);
     }
 
@@ -278,7 +278,10 @@ mod tests {
                 .unwrap_err();
             assert_eq!(outcome(&error), expected, "{error}");
             assert_reveals_nothing(&error.to_string(), &server);
-            assert_reveals_nothing(&TtsError::from(error).to_string(), &server);
+            assert_reveals_nothing(
+                &error.into_tts(forge_tts_core::ENGINE_ID_OPENAI).to_string(),
+                &server,
+            );
         }
     }
 
@@ -351,7 +354,7 @@ mod tests {
             .await
             .unwrap_err();
         assert!(
-            matches!(&error, OpenAiError::Http(detail) if detail == "unexpected status 500"),
+            matches!(&error, CloudTtsError::Http(detail) if detail == "unexpected status 500"),
             "{error}"
         );
     }
@@ -366,7 +369,7 @@ mod tests {
             .await
             .unwrap_err();
         assert!(
-            matches!(&error, OpenAiError::Rejected(detail) if detail.contains(&catalog_cap_text())),
+            matches!(&error, CloudTtsError::Rejected(detail) if detail.contains(&catalog_cap_text())),
             "{error}"
         );
     }

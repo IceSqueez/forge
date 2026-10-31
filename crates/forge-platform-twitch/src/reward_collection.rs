@@ -1,3 +1,4 @@
+use crate::error::TwitchError;
 use std::collections::{BTreeMap, HashSet};
 
 use async_trait::async_trait;
@@ -17,7 +18,7 @@ use crate::custom_rewards::{
     RewardBody, TITLE_KEY, create_request, delete_request, is_valid_hex_color, list_request,
     update_request,
 };
-use crate::helix::{HelixError, HelixRequest};
+use crate::helix::HelixRequest;
 use crate::helix_envelope::{first_row, rows};
 use crate::vocabulary::{labels, messages};
 use forge_net::status::NOT_FOUND;
@@ -449,15 +450,12 @@ impl TwitchIntegrationBundle {
             .map_err(|e| self.reward_failure(e, call))
     }
 
-    fn reward_failure(&self, error: HelixError, call: RewardCall) -> CollectionFailure {
+    fn reward_failure(&self, error: TwitchError, call: RewardCall) -> CollectionFailure {
         match error {
-            HelixError::RateLimited => CollectionFailure::RateLimited,
-            HelixError::ReauthRequired => CollectionFailure::Unauthorized,
-            HelixError::Credentials(_) => CollectionFailure::NotConnected,
-            HelixError::Transport(_) | HelixError::UndecodableResponse(_) => {
-                CollectionFailure::Transport
-            }
-            HelixError::Http { status, body } => match status {
+            TwitchError::RateLimited => CollectionFailure::RateLimited,
+            TwitchError::ReauthRequired => CollectionFailure::Unauthorized,
+            TwitchError::Credentials(_) => CollectionFailure::NotConnected,
+            TwitchError::Http { status, body } => match status {
                 forge_net::status::BAD_REQUEST => bad_request_failure(&body),
                 forge_net::status::FORBIDDEN => forbidden_failure(&body, call, self.tier()),
                 NOT_FOUND if call == RewardCall::Modify => {
@@ -466,6 +464,7 @@ impl TwitchIntegrationBundle {
                 }
                 _ => CollectionFailure::Transport,
             },
+            _ => CollectionFailure::Transport,
         }
     }
 
@@ -605,7 +604,7 @@ mod tests {
     const LEAKY_URL: &str = "https://api.twitch.tv/helix/channel_points/custom_rewards";
 
     fn bundle_with(
-        responses: Vec<Result<Value, HelixError>>,
+        responses: Vec<Result<Value, TwitchError>>,
         tier: BroadcasterTier,
         broadcaster_id: &str,
     ) -> (Arc<MockTransport>, Arc<TwitchIntegrationBundle>) {
@@ -624,7 +623,7 @@ mod tests {
     }
 
     fn bundle_answering(
-        responses: Vec<Result<Value, HelixError>>,
+        responses: Vec<Result<Value, TwitchError>>,
     ) -> (Arc<MockTransport>, Arc<TwitchIntegrationBundle>) {
         bundle_with(responses, BroadcasterTier::Affiliate, SELF_USER_ID)
     }
@@ -649,12 +648,12 @@ mod tests {
         })
     }
 
-    fn rows_of(rows: Vec<Value>) -> Result<Value, HelixError> {
+    fn rows_of(rows: Vec<Value>) -> Result<Value, TwitchError> {
         Ok(json!({ "data": rows }))
     }
 
-    fn http(status: StatusCode, message: &str) -> Result<Value, HelixError> {
-        Err(HelixError::Http {
+    fn http(status: StatusCode, message: &str) -> Result<Value, TwitchError> {
+        Err(TwitchError::Http {
             status: status.as_u16(),
             body: json!({ "error": "x", "status": status.as_u16(), "message": message })
                 .to_string(),
@@ -1131,7 +1130,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_non_json_bad_request_body_still_maps_to_a_generic_invalid_input() {
-        let (_, bundle) = bundle_answering(vec![Err(HelixError::Http {
+        let (_, bundle) = bundle_answering(vec![Err(TwitchError::Http {
             status: StatusCode::BAD_REQUEST.as_u16(),
             body: "<html>duplicate</html>".to_owned(),
         })]);
@@ -1256,18 +1255,18 @@ mod tests {
     #[tokio::test]
     async fn transport_level_errors_map_to_their_coarse_failures() {
         for (error, expected) in [
-            (HelixError::RateLimited, CollectionFailure::RateLimited),
-            (HelixError::ReauthRequired, CollectionFailure::Unauthorized),
+            (TwitchError::RateLimited, CollectionFailure::RateLimited),
+            (TwitchError::ReauthRequired, CollectionFailure::Unauthorized),
             (
-                HelixError::Credentials("no token".to_owned()),
+                TwitchError::Credentials("no token".to_owned()),
                 CollectionFailure::NotConnected,
             ),
             (
-                HelixError::Transport("timed out".to_owned()),
+                TwitchError::Transport("timed out".to_owned()),
                 CollectionFailure::Transport,
             ),
             (
-                HelixError::Http {
+                TwitchError::Http {
                     status: StatusCode::INTERNAL_SERVER_ERROR.as_u16(),
                     body: String::new(),
                 },
@@ -1286,25 +1285,25 @@ mod tests {
     async fn no_failure_message_carries_the_token_the_url_or_the_raw_body() {
         let leaky = format!("{LEAKY_URL}?token={TOKEN_SENTINEL}");
         let errors = [
-            HelixError::Transport(leaky.clone()),
-            HelixError::Credentials(leaky.clone()),
-            HelixError::Http {
+            TwitchError::Transport(leaky.clone()),
+            TwitchError::Credentials(leaky.clone()),
+            TwitchError::Http {
                 status: StatusCode::BAD_REQUEST.as_u16(),
                 body: json!({ "message": format!("duplicate {leaky}") }).to_string(),
             },
-            HelixError::Http {
+            TwitchError::Http {
                 status: StatusCode::BAD_REQUEST.as_u16(),
                 body: json!({ "message": format!("title {leaky}") }).to_string(),
             },
-            HelixError::Http {
+            TwitchError::Http {
                 status: StatusCode::BAD_REQUEST.as_u16(),
                 body: json!({ "message": leaky.clone() }).to_string(),
             },
-            HelixError::Http {
+            TwitchError::Http {
                 status: StatusCode::FORBIDDEN.as_u16(),
                 body: leaky.clone(),
             },
-            HelixError::Http {
+            TwitchError::Http {
                 status: StatusCode::BAD_GATEWAY.as_u16(),
                 body: leaky.clone(),
             },

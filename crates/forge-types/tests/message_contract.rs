@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use forge_types::{
     COMMON_MESSAGES, FiniteFloat, IntegrationId, MAX_UPSTREAM_DETAIL_CHARS, MessageArg,
-    MessageCatalog, MessageCatalogError, MessageCode, MessageRef, PlatformId, UPSTREAM_FAILURE,
+    MessageCatalog, MessageCode, MessageRef, PlatformId, TypesError, UPSTREAM_FAILURE,
     UpstreamDetail, UserText, VariantKind, VerbatimText,
 };
 use serde_json::{Value, json};
@@ -411,26 +411,26 @@ fn catalog_check_accepts_valid_catalog() {
 fn catalog_check_reports_each_error_variant() {
     assert_eq!(
         catalog("Bad-Ns", GOOD).check(),
-        Err(MessageCatalogError::MalformedNamespace("Bad-Ns"))
+        Err(TypesError::MalformedNamespace("Bad-Ns"))
     );
     assert_eq!(
         catalog("", GOOD).check(),
-        Err(MessageCatalogError::MalformedNamespace(""))
+        Err(TypesError::MalformedNamespace(""))
     );
     assert_eq!(
         catalog("ns", BAD_CODE).check(),
-        Err(MessageCatalogError::MalformedCode(BAD_CODE[0].clone()))
+        Err(TypesError::MalformedCode(BAD_CODE[0].clone()))
     );
     assert_eq!(
         catalog("ns", FOREIGN).check(),
-        Err(MessageCatalogError::ForeignCode {
+        Err(TypesError::ForeignCode {
             namespace: "ns",
             code: FOREIGN[0].clone()
         })
     );
     assert_eq!(
         catalog("ns", DUPLICATED).check(),
-        Err(MessageCatalogError::DuplicateCode(DUPLICATED[0].clone()))
+        Err(TypesError::DuplicateCode(DUPLICATED[0].clone()))
     );
 }
 

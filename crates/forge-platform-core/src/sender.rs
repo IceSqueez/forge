@@ -1,5 +1,9 @@
+use std::str::FromStr;
+
 pub use forge_events::{ActingSender, SENT_AS_FIELD, SenderRole};
 use serde::{Deserialize, Serialize};
+
+use crate::error::PlatformError;
 
 pub const SENDER_FIELD: &str = "sender";
 
@@ -16,7 +20,11 @@ pub enum SenderPreference {
 impl SenderPreference {
     pub const ALL: [SenderPreference; 3] = [Self::Default, Self::Streamer, Self::BotOnly];
 
-    pub const WIRE_NAMES: &'static [&'static str] = &["default", "streamer", "bot"];
+    pub const WIRE_NAMES: &'static [&'static str] = &[
+        Self::ALL[0].as_str(),
+        Self::ALL[1].as_str(),
+        Self::ALL[2].as_str(),
+    ];
 
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -25,15 +33,19 @@ impl SenderPreference {
             Self::BotOnly => "bot",
         }
     }
-
-    pub fn parse(raw: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|sender| sender.as_str() == raw)
-    }
 }
 
-pub fn unknown_sender_reason(raw: &str) -> String {
-    let valid = SenderPreference::WIRE_NAMES.join(", ");
-    format!("unknown sender \"{raw}\"; valid senders: {valid}")
+impl FromStr for SenderPreference {
+    type Err = PlatformError;
+
+    fn from_str(raw: &str) -> Result<Self, Self::Err> {
+        Self::ALL
+            .into_iter()
+            .find(|sender| sender.as_str() == raw)
+            .ok_or_else(|| PlatformError::UnknownSender {
+                raw: raw.to_owned(),
+            })
+    }
 }
 
 #[cfg(test)]
@@ -53,13 +65,19 @@ mod tests {
             "bot_only",
             "broadcaster",
         ] {
-            assert_eq!(SenderPreference::parse(raw), None, "{raw:?}");
+            assert!(
+                matches!(
+                    raw.parse::<SenderPreference>(),
+                    Err(PlatformError::UnknownSender { raw: named }) if named == raw
+                ),
+                "{raw:?}"
+            );
         }
     }
 
     #[test]
-    fn unknown_sender_reason_names_the_value_and_every_valid_sender() {
-        let reason = unknown_sender_reason("robot");
+    fn unknown_sender_text_names_the_value_and_every_valid_sender() {
+        let reason = "robot".parse::<SenderPreference>().unwrap_err().to_string();
 
         assert!(reason.contains("\"robot\""), "{reason}");
         for valid in ["default", "streamer", "bot"] {
@@ -79,7 +97,7 @@ mod tests {
                 serde_json::to_value(sender).unwrap(),
                 json!(sender.as_str())
             );
-            assert_eq!(SenderPreference::parse(sender.as_str()), Some(sender));
+            assert_eq!(sender.as_str().parse::<SenderPreference>().unwrap(), sender);
         }
     }
 

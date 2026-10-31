@@ -5,7 +5,7 @@ use forge_tts_core::{SynthesisRequest, pitch_ratio_from_semitones, xml_escape};
 use forge_types::Secret;
 
 use crate::azure::SAMPLE_RATE_HZ;
-use crate::azure::error::AzureError;
+use crate::error::CloudTtsError;
 use crate::gateway_failure::{
     Classified, ProviderPolicy, VoiceSignal, classify, failure_detail, probe_failure_detail,
 };
@@ -106,18 +106,22 @@ pub(super) fn classify_with(
     link: &ProviderLink,
     voice: Option<&VoiceId>,
     detail: fn(&GatewayFailure) -> String,
-) -> AzureError {
+) -> CloudTtsError {
     match classify(failure, link, POLICY, voice, detail) {
-        Classified::Quota(excerpt) => AzureError::QuotaExceeded(excerpt),
-        Classified::Throttled(retry_after_secs) => AzureError::RateLimited { retry_after_secs },
-        Classified::Auth => AzureError::Unauthorized(INVALID_API_KEY.into()),
-        Classified::VoiceMissing(voice) => AzureError::VoiceNotFound(voice),
-        Classified::Rejected(detail) => AzureError::Rejected(detail),
-        Classified::Transient(detail) => AzureError::Http(detail),
+        Classified::Quota(excerpt) => CloudTtsError::QuotaExceeded(excerpt),
+        Classified::Throttled(retry_after_secs) => CloudTtsError::RateLimited { retry_after_secs },
+        Classified::Auth => CloudTtsError::Unauthorized(INVALID_API_KEY.into()),
+        Classified::VoiceMissing(voice) => CloudTtsError::VoiceNotFound(voice),
+        Classified::Rejected(detail) => CloudTtsError::Rejected(detail),
+        Classified::Transient(detail) => CloudTtsError::Http(detail),
     }
 }
 
-fn classify_error(failure: &GatewayFailure, link: &ProviderLink, voice_id: &VoiceId) -> AzureError {
+fn classify_error(
+    failure: &GatewayFailure,
+    link: &ProviderLink,
+    voice_id: &VoiceId,
+) -> CloudTtsError {
     classify_with(failure, link, Some(voice_id), failure_detail)
 }
 
@@ -125,7 +129,7 @@ pub(super) async fn synthesize(
     link: &ProviderLink,
     api_key: &str,
     req: SynthesisRequest,
-) -> Result<PcmBuffer, AzureError> {
+) -> Result<PcmBuffer, CloudTtsError> {
     let request = GatewayRequest::post(SYNTHESIS_PATH)
         .api_key(SUBSCRIPTION_KEY_HEADER, Secret::new(api_key))
         .header(OUTPUT_FORMAT_HEADER, OUTPUT_FORMAT)
@@ -138,7 +142,10 @@ pub(super) async fn synthesize(
     Ok(PcmBuffer::from_s16le(response.body(), SAMPLE_RATE_HZ, 1))
 }
 
-pub(super) async fn probe_connection(link: &ProviderLink, api_key: &str) -> Result<(), AzureError> {
+pub(super) async fn probe_connection(
+    link: &ProviderLink,
+    api_key: &str,
+) -> Result<(), CloudTtsError> {
     let request = GatewayRequest::get(VOICES_LIST_PATH)
         .api_key(SUBSCRIPTION_KEY_HEADER, Secret::new(api_key))
         .class(CallClass::Catalog);
@@ -155,7 +162,6 @@ mod tests {
         API_KEY, NO_HINT_WAIT_SECS, assert_reveals_nothing, catalog_cap_text, link_to,
         over_catalog_cap, serving, throttled,
     };
-    use forge_tts_core::TtsError;
     use wiremock::matchers::{body_string, header, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -268,18 +274,19 @@ mod tests {
         assert_eq!(build_ssml(&req), input);
     }
 
-    fn outcome(error: &AzureError) -> String {
+    fn outcome(error: &CloudTtsError) -> String {
         match error {
-            AzureError::Http(_) => "Http".into(),
-            AzureError::Unauthorized(_) => "Unauthorized".into(),
-            AzureError::QuotaExceeded(_) => "QuotaExceeded".into(),
-            AzureError::RateLimited { retry_after_secs } => {
+            CloudTtsError::Http(_) => "Http".into(),
+            CloudTtsError::Unauthorized(_) => "Unauthorized".into(),
+            CloudTtsError::QuotaExceeded(_) => "QuotaExceeded".into(),
+            CloudTtsError::RateLimited { retry_after_secs } => {
                 format!("RateLimited({retry_after_secs})")
             }
-            AzureError::VoiceNotFound(_) => "VoiceNotFound".into(),
-            AzureError::Decode(_) => "Decode".into(),
-            AzureError::Rejected(_) => "Rejected".into(),
-            AzureError::Io(_) => "Io".into(),
+            CloudTtsError::VoiceNotFound(_) => "VoiceNotFound".into(),
+            CloudTtsError::Decode(_) => "Decode".into(),
+            CloudTtsError::Rejected(_) => "Rejected".into(),
+            CloudTtsError::Io(_) => "Io".into(),
+            CloudTtsError::InvalidEndpoint(_) | CloudTtsError::Signing(_) => "Signature".into(),
         }
     }
 
@@ -391,7 +398,10 @@ mod tests {
                 .unwrap_err();
             assert_eq!(outcome(&error), expected, "{error}");
             assert_reveals_nothing(&error.to_string(), &server);
-            assert_reveals_nothing(&TtsError::from(error).to_string(), &server);
+            assert_reveals_nothing(
+                &error.into_tts(forge_tts_core::ENGINE_ID_AZURE).to_string(),
+                &server,
+            );
         }
     }
 
@@ -459,7 +469,7 @@ mod tests {
             .await
             .unwrap_err();
         assert!(
-            matches!(&error, AzureError::Http(detail) if detail == "unexpected status 500"),
+            matches!(&error, CloudTtsError::Http(detail) if detail == "unexpected status 500"),
             "{error}"
         );
     }
@@ -474,7 +484,7 @@ mod tests {
             .await
             .unwrap_err();
         assert!(
-            matches!(&error, AzureError::Rejected(detail) if detail.contains(&catalog_cap_text())),
+            matches!(&error, CloudTtsError::Rejected(detail) if detail.contains(&catalog_cap_text())),
             "{error}"
         );
     }

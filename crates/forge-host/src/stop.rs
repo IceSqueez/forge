@@ -256,7 +256,7 @@ mod tests {
     use forge_runtime::TIMER_TICK_KIND;
     use forge_runtime::{
         ActionCancelRegistry, Catalog, CatchUpSettle, Config, HandOff, QueueScheduler,
-        ScheduleError, ScheduledRunsParts, spawn_action_engine, spawn_live_viewer_aggregator,
+        RuntimeError, ScheduledRunsParts, spawn_action_engine, spawn_live_viewer_aggregator,
         spawn_scheduled_runs, spawn_stream_live_signal, spawn_timer_scheduler,
         spawn_trigger_evaluator,
     };
@@ -700,10 +700,7 @@ mod tests {
         assert!(
             matches!(
                 (during_timer_stop, after_timer_stop),
-                (
-                    Ok(HandOff::NotPending),
-                    Err(ScheduleError::SchedulerStopped)
-                )
+                (Ok(HandOff::NotPending), Err(RuntimeError::SchedulerStopped))
             ),
             "the scheduled runs were stopped before the timer scheduler"
         );

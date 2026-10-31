@@ -16,13 +16,7 @@ use forge_events::{PlatformConnectionChanged, TypedEvent};
 use forge_net::{Gateway, TokenBucketRateLimiter};
 use forge_platform_core::{BuiltinControl, ChatPlatform, EndpointSurface, PlatformEndpoints};
 use forge_platform_twitch::credentials::{StoredCredential, store_credential};
-use forge_platform_twitch::{
-    ChatConnectionState, ChatSessionConfig, HELIX_BUDGET_CAPACITY, HELIX_BUDGET_WINDOW, HelixError,
-    HelixHttpTransport, HelixTokenSource, SubscriptionTracker, TWITCH_OAUTH_BUDGET_CAPACITY,
-    TWITCH_OAUTH_BUDGET_WINDOW, TwitchAssembly, TwitchChat, TwitchChatHandle,
-    TwitchCredentialsManager, TwitchIntegrationBundle, TwitchLifecycle, TwitchOAuthClient,
-    helix_gateway, send_chat, twitch_oauth_gateway,
-};
+use forge_platform_twitch::{ChatConnectionState, ChatSessionConfig, HELIX_BUDGET_CAPACITY, HELIX_BUDGET_WINDOW, TwitchError, HelixHttpTransport, HelixTokenSource, SubscriptionTracker, TWITCH_OAUTH_BUDGET_CAPACITY, TWITCH_OAUTH_BUDGET_WINDOW, TwitchAssembly, TwitchChat, TwitchChatHandle, TwitchCredentialsManager, TwitchIntegrationBundle, TwitchLifecycle, TwitchOAuthClient, helix_gateway, send_chat, twitch_oauth_gateway};
 use forge_registry::SubActionRegistry;
 use forge_storage::CredentialsRepo;
 use forge_types::{ChatPayload, OAuthToken, PermissionRung};
@@ -43,7 +37,7 @@ struct FixedTokenSource(OAuthToken);
 
 #[async_trait]
 impl HelixTokenSource for FixedTokenSource {
-    async fn access_token(&self) -> Result<OAuthToken, HelixError> {
+    async fn access_token(&self) -> Result<OAuthToken, TwitchError> {
         Ok(self.0.clone())
     }
 }

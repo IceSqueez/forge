@@ -193,7 +193,7 @@ mod tests {
     use forge_events::{
         Event, EventChannel, EventObserver, EventPublisher, EventSource, EventSubscription,
     };
-    use forge_runtime::{BusError, EventHistory};
+    use forge_runtime::{EventHistory, RuntimeError};
     use forge_storage::{DataProvider, StorageError};
 
     use super::*;
@@ -602,11 +602,11 @@ mod tests {
     struct ScriptedHistory {
         channel: EventChannel,
         asked: std::sync::Mutex<Vec<(usize, Option<EventId>)>>,
-        replay_failure: std::sync::Mutex<Option<BusError>>,
+        replay_failure: std::sync::Mutex<Option<RuntimeError>>,
     }
 
     impl ScriptedHistory {
-        fn failing_replay_with(failure: Option<BusError>) -> Arc<Self> {
+        fn failing_replay_with(failure: Option<RuntimeError>) -> Arc<Self> {
             Arc::new(Self {
                 channel: EventChannel::new(16),
                 asked: std::sync::Mutex::new(Vec::new()),
@@ -638,7 +638,7 @@ mod tests {
             Vec::new()
         }
 
-        async fn replay_and_publish(&self, _event_id: EventId) -> Result<(), BusError> {
+        async fn replay_and_publish(&self, _event_id: EventId) -> Result<(), RuntimeError> {
             match self.replay_failure.lock().unwrap().take() {
                 Some(failure) => Err(failure),
                 None => Ok(()),
@@ -705,12 +705,12 @@ mod tests {
         let cases = [
             (
                 ghost.to_string(),
-                Some(BusError::EventNotFound(ghost)),
+                Some(RuntimeError::EventNotFound(ghost)),
                 "NOT_FOUND",
             ),
             (
                 EventId::new().to_string(),
-                Some(BusError::Storage(StorageError::Connection {
+                Some(RuntimeError::Storage(StorageError::Connection {
                     reason: "database is locked".to_owned(),
                 })),
                 "RUNTIME_ERROR",

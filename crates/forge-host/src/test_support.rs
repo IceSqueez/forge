@@ -1020,8 +1020,8 @@ impl forge_platform_twitch::HelixTransport for OfflineHelixTransport {
     async fn execute(
         &self,
         _: forge_platform_twitch::HelixRequest,
-    ) -> Result<serde_json::Value, forge_platform_twitch::HelixError> {
-        Err(forge_platform_twitch::HelixError::Transport(
+    ) -> Result<serde_json::Value, forge_platform_twitch::TwitchError> {
+        Err(forge_platform_twitch::TwitchError::Transport(
             "offline".to_owned(),
         ))
     }
@@ -1077,7 +1077,7 @@ impl forge_runtime::SpeakDispatcher for SilentSpeaker {
         _text: String,
         _voice: Option<String>,
         _origin: forge_runtime::SpeechOrigin,
-    ) -> Result<(), forge_runtime::SpeakDispatchError> {
+    ) -> Result<(), forge_types::MessageRef> {
         Ok(())
     }
 }

@@ -1,5 +1,6 @@
-use forge_net::{GatewayFailure, InvalidRequest, ResponseDecodeError, canonical_status_reason};
+use forge_net::{GatewayFailure, InvalidRequest, ResponseDecodeError};
 use forge_platform_core::PlatformError;
+use forge_storage::StorageError;
 use thiserror::Error;
 
 use crate::integration::DONATELLO_INTEGRATION;
@@ -36,8 +37,11 @@ pub enum DonatelloError {
     #[error("donation {donation_id} could not be read: {reason}")]
     InvalidDonation { donation_id: String, reason: String },
 
-    #[error("credential storage failure: {reason}")]
-    Credential { reason: String },
+    #[error("credential storage failure: {0}")]
+    Credential(#[from] StorageError),
+
+    #[error("stored credential is unreadable: {reason}")]
+    CredentialBundle { reason: String },
 
     #[error("HTTP client could not be built: {reason}")]
     ClientInit { reason: String },
@@ -65,6 +69,10 @@ impl DonatelloError {
             ),
         }
     }
+}
+
+pub(crate) fn redacted_serde_reason(error: &serde_json::Error) -> String {
+    format!("{:?} error", error.classify())
 }
 
 impl From<GatewayFailure> for DonatelloError {
@@ -108,9 +116,7 @@ impl From<DonatelloError> for PlatformError {
             DonatelloError::RateLimitExhausted => PlatformError::RateLimitExhausted,
             DonatelloError::Http { status } => PlatformError::Http {
                 status,
-                body: canonical_status_reason(status)
-                    .unwrap_or_default()
-                    .to_owned(),
+                body: String::new(),
             },
             DonatelloError::Network { reason } => PlatformError::Network { reason },
             DonatelloError::MalformedResponse { .. } | DonatelloError::InvalidDonation { .. } => {
@@ -118,7 +124,8 @@ impl From<DonatelloError> for PlatformError {
                     reason: error.to_string(),
                 }
             }
-            DonatelloError::Credential { .. }
+            DonatelloError::Credential(_)
+            | DonatelloError::CredentialBundle { .. }
             | DonatelloError::ClientInit { .. }
             | DonatelloError::NoRuntime => {
                 PlatformError::Io(std::io::Error::other(error.to_string()))

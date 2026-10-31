@@ -38,7 +38,8 @@ impl PollFailure {
             DonatelloError::Network { .. } => Self::Network,
             DonatelloError::MalformedResponse { .. } => Self::MalformedResponse,
             DonatelloError::InvalidDonation { .. } => Self::InvalidDonation,
-            DonatelloError::Credential { .. }
+            DonatelloError::Credential(_)
+            | DonatelloError::CredentialBundle { .. }
             | DonatelloError::ClientInit { .. }
             | DonatelloError::NoRuntime => Self::Local,
         }

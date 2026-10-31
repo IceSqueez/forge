@@ -1,3 +1,4 @@
+use crate::error::TwitchError;
 use crate::vocabulary::labels;
 use forge_types::MessageCode;
 use std::sync::Arc;
@@ -5,7 +6,7 @@ use std::sync::Arc;
 use forge_storage::CredentialsRepo;
 
 use crate::credentials;
-use crate::helix::{HelixError, HelixMethod, HelixRequest, HelixTransport};
+use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
 
 pub(crate) struct SelfIdentity {
     creds: Arc<dyn CredentialsRepo>,
@@ -16,22 +17,22 @@ impl SelfIdentity {
         Self { creds }
     }
 
-    pub(crate) async fn user_id(&self) -> Result<String, HelixError> {
+    pub(crate) async fn user_id(&self) -> Result<String, TwitchError> {
         Ok(self.stored().await?.user_id)
     }
 
-    pub(crate) async fn stored(&self) -> Result<credentials::StoredCredential, HelixError> {
+    pub(crate) async fn stored(&self) -> Result<credentials::StoredCredential, TwitchError> {
         self.stored_if_signed_in()
             .await?
-            .ok_or_else(|| HelixError::Credentials("no twitch credentials stored".to_owned()))
+            .ok_or_else(|| TwitchError::Credentials("no twitch credentials stored".to_owned()))
     }
 
     pub(crate) async fn stored_if_signed_in(
         &self,
-    ) -> Result<Option<credentials::StoredCredential>, HelixError> {
+    ) -> Result<Option<credentials::StoredCredential>, TwitchError> {
         credentials::load(self.creds.as_ref())
             .await
-            .map_err(|e| HelixError::Credentials(e.to_string()))
+            .map_err(|e| TwitchError::Credentials(e.to_string()))
     }
 }
 
@@ -47,7 +48,7 @@ pub(crate) fn normalize_login(raw: &str) -> String {
 pub(crate) async fn resolve_user_id(
     transport: &dyn HelixTransport,
     login: &str,
-) -> Result<String, HelixError> {
+) -> Result<String, TwitchError> {
     let login = normalize_login(login);
     let request =
         HelixRequest::new(HelixMethod::Get, "/helix/users").query("login", login.as_str());
@@ -57,7 +58,7 @@ pub(crate) async fn resolve_user_id(
         .and_then(|arr| arr.first())
         .and_then(|u| u["id"].as_str())
         .map(|s| s.to_owned())
-        .ok_or_else(|| HelixError::Http {
+        .ok_or_else(|| TwitchError::Http {
             status: 404,
             body: format!("user not found: {login}"),
         })
@@ -92,7 +93,7 @@ impl BroadcasterTier {
 pub(crate) async fn resolve_broadcaster_tier(
     transport: &dyn HelixTransport,
     user_id: &str,
-) -> Result<BroadcasterTier, HelixError> {
+) -> Result<BroadcasterTier, TwitchError> {
     let request = HelixRequest::new(HelixMethod::Get, "/helix/users").query("id", user_id);
     let resp = transport.execute(request).await?;
     let raw = resp["data"]
@@ -176,7 +177,7 @@ mod tests {
         let err = resolve_user_id(&transport, "ghost").await.unwrap_err();
 
         assert!(
-            matches!(err, HelixError::Http { status: 404, .. }),
+            matches!(err, TwitchError::Http { status: 404, .. }),
             "empty data array must map to a not-found error, got: {err}"
         );
     }

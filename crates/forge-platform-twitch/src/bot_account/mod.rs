@@ -19,8 +19,7 @@ use crate::oauth_client::TwitchOAuthClient;
 use crate::vocabulary::BotStatusChanged;
 use validate::{TokenValidator, TokenVerdict};
 
-pub use login::BotLoginError;
-pub use moderator::{BotModerator, BotModeratorError};
+pub use moderator::BotModerator;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BotStatus {
@@ -39,7 +38,7 @@ impl BotStatus {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum BotUnavailable {
+pub enum BotUnavailable {
     NotConnected,
     ReauthRequired,
     StorageFailure,
@@ -514,7 +513,7 @@ pub(crate) mod test_support {
         async fn execute(
             &self,
             request: crate::helix::HelixRequest,
-        ) -> Result<serde_json::Value, crate::helix::HelixError> {
+        ) -> Result<serde_json::Value, crate::error::TwitchError> {
             let transport = Arc::clone(&self.0.lock().unwrap());
             transport.execute(request).await
         }
@@ -527,8 +526,8 @@ pub(crate) mod test_support {
         async fn execute(
             &self,
             _: crate::helix::HelixRequest,
-        ) -> Result<serde_json::Value, crate::helix::HelixError> {
-            Err(crate::helix::HelixError::Transport("offline".to_owned()))
+        ) -> Result<serde_json::Value, crate::error::TwitchError> {
+            Err(crate::error::TwitchError::Transport("offline".to_owned()))
         }
     }
 

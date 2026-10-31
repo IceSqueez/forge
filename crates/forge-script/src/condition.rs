@@ -1,8 +1,8 @@
+use crate::error::ScriptError;
 use std::time::{Duration, Instant};
 
 use rhai::Dynamic;
 
-use crate::ScriptError;
 use crate::arg_binding::BoundExpression;
 use crate::engine::{EngineConfig, map_eval_error, register_sandbox_base};
 use crate::script_thread::on_script_stack;

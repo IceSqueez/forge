@@ -2320,6 +2320,7 @@ script_console_save_failed = Save failed: { $error }
 script_console_running = Running { $name }
 script_console_running_with_inputs = Running { $name } with inputs
 script_console_returned = Returned: { $value }
+script_console_no_value = (no value)
 script_console_run_failed = Run error: { $error }
 script_console_name_taken = Name "{ $name }" is already taken
 script_input_invalid = `{ $name }`: { $reason }

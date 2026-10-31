@@ -34,9 +34,12 @@ const SCENE_COLLECTION_ICON: &str = "layout-2";
 
 fn listing_failure(error: &ObsError) -> CollectionFailure {
     match error {
-        ObsError::Disconnected | ObsError::Connect(_) => CollectionFailure::NotConnected,
+        ObsError::Disconnected | ObsError::Connect(_) | ObsError::NotStored => {
+            CollectionFailure::NotConnected
+        }
         ObsError::Authentication => CollectionFailure::Unauthorized,
         ObsError::Timeout
+        | ObsError::Storage(_)
         | ObsError::Protocol(_)
         | ObsError::Payload(_)
         | ObsError::StudioModeInactive

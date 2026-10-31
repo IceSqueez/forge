@@ -6,7 +6,7 @@ use forge_overlay::{
     effective_overlay_config, suggested_content,
 };
 use forge_registry::{TriggerKindDescriptor, declared_variables};
-use forge_storage::{OVERLAY_ALERT_QUEUE_NAME, OverlayDefinition, StorageError};
+use forge_storage::{OVERLAY_ALERT_QUEUE_NAME, OverlayDefinition};
 use forge_types::{
     Action, ActionId, ExecutionMode, PermissionRung, PlatformScope, Queue, QueueId,
     SubActionConfig, SubActionStep, TriggerConfig, TriggerInstance, TriggerInstanceId, Variant,
@@ -96,13 +96,10 @@ pub struct OverlayWiringPlan {
     pub trigger: TriggerInstance,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OverlayWiringRefusal {
-    #[error("a '{overlay_kind_id}' overlay does not take event wiring")]
     OverlayKindNotEligible { overlay_kind_id: String },
-    #[error("'{trigger_kind_id}' declares no variables an overlay could show")]
     TriggerDeclaresNoVariables { trigger_kind_id: String },
-    #[error("the overlay or the trigger '{trigger_kind_id}' no longer exists")]
     TargetMissing { trigger_kind_id: String },
 }
 
@@ -118,17 +115,6 @@ pub struct OverlayWiringRecords {
 pub enum OverlayWiringOutcome {
     AlreadyWired { action_id: ActionId },
     Wired(OverlayWiringRecords),
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum OverlayWiringError {
-    #[error(transparent)]
-    Refused(#[from] OverlayWiringRefusal),
-    #[error("nothing was written: {source}")]
-    NothingWritten {
-        #[source]
-        source: StorageError,
-    },
 }
 
 pub fn plan_overlay_wiring(

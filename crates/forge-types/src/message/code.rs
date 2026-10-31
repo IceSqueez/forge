@@ -1,20 +1,14 @@
+use crate::error::TypesError;
 use std::borrow::Cow;
 use std::fmt;
 
 use serde::{Deserialize, Serialize};
-use thiserror::Error;
 
 pub const MESSAGE_KEY_PREFIX: &str = "msg-";
 
 const CODE_SEPARATOR: char = '.';
 const KEY_SEPARATOR: char = '-';
 const SEGMENT_JOINER: char = '_';
-
-#[derive(Debug, Clone, PartialEq, Eq, Error)]
-pub enum MessageCodeError {
-    #[error("message code must be `namespace.name` of lowercase snake_case segments: {0:?}")]
-    Malformed(String),
-}
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
@@ -31,8 +25,8 @@ impl MessageCode {
         }
     }
 
-    pub fn parse(raw: &str) -> Result<Self, MessageCodeError> {
-        let malformed = || MessageCodeError::Malformed(raw.to_owned());
+    pub fn parse(raw: &str) -> Result<Self, TypesError> {
+        let malformed = || TypesError::MalformedMessageCode(raw.to_owned());
         let (namespace, name) = raw.split_once(CODE_SEPARATOR).ok_or_else(malformed)?;
         if !is_code_segment(namespace) || !is_code_segment(name) {
             return Err(malformed());
@@ -76,7 +70,7 @@ impl fmt::Display for MessageCode {
 }
 
 impl TryFrom<String> for MessageCode {
-    type Error = MessageCodeError;
+    type Error = TypesError;
 
     fn try_from(raw: String) -> Result<Self, Self::Error> {
         Self::parse(&raw)

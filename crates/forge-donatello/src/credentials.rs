@@ -2,7 +2,7 @@ use forge_storage::{CredentialId, CredentialsRepo};
 use forge_types::Secret;
 use serde::{Deserialize, Serialize};
 
-use crate::error::DonatelloError;
+use crate::error::{DonatelloError, redacted_serde_reason};
 use crate::token::parse_token;
 
 pub const DONATELLO_CREDENTIAL_ID: &str = "donatello:default";
@@ -17,22 +17,18 @@ fn credential_id() -> CredentialId {
     CredentialId::new(DONATELLO_CREDENTIAL_ID)
 }
 
-fn storage_failure(error: impl ToString) -> DonatelloError {
-    DonatelloError::Credential {
-        reason: error.to_string(),
+fn unreadable_bundle(error: &serde_json::Error) -> DonatelloError {
+    DonatelloError::CredentialBundle {
+        reason: redacted_serde_reason(error),
     }
 }
 
 pub(crate) async fn load(creds: &dyn CredentialsRepo) -> Result<Option<Secret>, DonatelloError> {
-    let Some(bundle) = creds
-        .load(&credential_id())
-        .await
-        .map_err(storage_failure)?
-    else {
+    let Some(bundle) = creds.load(&credential_id()).await? else {
         return Ok(None);
     };
-    let stored: StoredToken = serde_json::from_str(&bundle)
-        .map_err(|error| storage_failure(format!("{:?} error", error.classify())))?;
+    let stored: StoredToken =
+        serde_json::from_str(&bundle).map_err(|error| unreadable_bundle(&error))?;
     parse_token(stored.token.expose()).map(Some)
 }
 
@@ -43,18 +39,12 @@ pub(crate) async fn store(
     let bundle = serde_json::to_string(&StoredToken {
         token: token.clone(),
     })
-    .map_err(|error| storage_failure(format!("{:?} error", error.classify())))?;
-    creds
-        .store(&credential_id(), &bundle)
-        .await
-        .map_err(storage_failure)
+    .map_err(|error| unreadable_bundle(&error))?;
+    Ok(creds.store(&credential_id(), &bundle).await?)
 }
 
 pub(crate) async fn delete(creds: &dyn CredentialsRepo) -> Result<bool, DonatelloError> {
-    creds
-        .delete(&credential_id())
-        .await
-        .map_err(storage_failure)
+    Ok(creds.delete(&credential_id()).await?)
 }
 
 #[cfg(test)]

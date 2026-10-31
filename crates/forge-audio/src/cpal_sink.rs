@@ -225,8 +225,11 @@ fn locate_device(
     requested: &str,
 ) -> Result<cpal::Device, AudioError> {
     match candidate {
-        OutputCandidate::Requested => find_device(host, requested)
-            .ok_or_else(|| AudioError::Host(format!("device '{}' not found", requested))),
+        OutputCandidate::Requested => {
+            find_device(host, requested).ok_or_else(|| AudioError::DeviceNotFound {
+                id: requested.to_owned(),
+            })
+        }
         OutputCandidate::HostDefault => host
             .default_output_device()
             .ok_or(AudioError::NoDefaultDevice),
@@ -352,10 +355,7 @@ fn build_output_stream(
         SampleFormat::F32 => typed_output_stream::<f32>(device, stream_config, feed, failure),
         SampleFormat::F64 => typed_output_stream::<f64>(device, stream_config, feed, failure),
         other => {
-            return Err(AudioError::Host(format!(
-                "unsupported sample format {:?}",
-                other
-            )));
+            return Err(AudioError::UnsupportedSampleFormat(format!("{other:?}")));
         }
     };
 

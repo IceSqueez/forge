@@ -1,7 +1,7 @@
 use super::{
     SubscribeCtx, TOPICS, TopicOutcome, TopicSpec, classify_failure, mark_active, record_created,
 };
-use crate::helix::HelixError;
+use crate::error::TwitchError;
 use crate::subscriptions::{SubStatus, SubscriptionTracker};
 use forge_net::Backoff;
 use forge_types::RecoverMutex;
@@ -168,7 +168,7 @@ fn record_retry_failure(
     tracker: &SubscriptionTracker,
     index: usize,
     topic: &TopicSpec,
-    error: &HelixError,
+    error: &TwitchError,
     session_moved: bool,
 ) -> TopicOutcome {
     let (reason, outcome) = classify_failure(error);
@@ -191,7 +191,8 @@ mod tests {
     use super::super::{TOPICS, subscribe_all};
     use super::TopicRetryRun;
     use crate::bot_account::test_support::RecordingBus;
-    use crate::helix::{HelixError, HelixRequest, HelixTransport};
+    use crate::error::TwitchError;
+    use crate::helix::{HelixRequest, HelixTransport};
     use crate::subscriptions::{SubStatus, SubscriptionFailure, SubscriptionTracker};
     use crate::vocabulary::event_kinds::EVENTSUB_SUBSCRIPTION_CREATED;
     use async_trait::async_trait;
@@ -320,7 +321,7 @@ mod tests {
 
     #[async_trait]
     impl HelixTransport for ScriptedHelix {
-        async fn execute(&self, request: HelixRequest) -> Result<serde_json::Value, HelixError> {
+        async fn execute(&self, request: HelixRequest) -> Result<serde_json::Value, TwitchError> {
             let body = request.body.unwrap_or_default();
             let topic = body["type"].as_str().unwrap_or_default().to_owned();
             let mut answer = self.next_answer(&topic);
@@ -353,21 +354,21 @@ mod tests {
                     }
                     Answer::NoData => return Ok(serde_json::json!({ "data": [] })),
                     Answer::Status(status) => {
-                        return Err(HelixError::Http {
+                        return Err(TwitchError::Http {
                             status: status.as_u16(),
                             body: "rejected".to_owned(),
                         });
                     }
-                    Answer::RateLimited => return Err(HelixError::RateLimited),
+                    Answer::RateLimited => return Err(TwitchError::RateLimited),
                     Answer::Transport => {
-                        return Err(HelixError::Transport("connection refused".to_owned()));
+                        return Err(TwitchError::Transport("connection refused".to_owned()));
                     }
                     Answer::Undecodable => {
-                        return Err(HelixError::UndecodableResponse(
+                        return Err(TwitchError::UndecodableResponse(
                             "expected value at line 1 column 1".to_owned(),
                         ));
                     }
-                    Answer::Reauth => return Err(HelixError::ReauthRequired),
+                    Answer::Reauth => return Err(TwitchError::ReauthRequired),
                 };
             }
         }

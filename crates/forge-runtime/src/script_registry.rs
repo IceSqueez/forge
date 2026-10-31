@@ -1,3 +1,4 @@
+use crate::error::RuntimeError;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -28,14 +29,6 @@ pub struct ScriptRegistryParts {
     pub speak_requester: Option<Arc<dyn SpeakRequester>>,
     pub latest_values: Option<Arc<dyn LatestValueReader>>,
     pub scheduling: Option<ScriptScheduling>,
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum ScriptRegistryError {
-    #[error("storage: {0}")]
-    Storage(#[from] StorageError),
-    #[error("compile: {0}")]
-    Compile(String),
 }
 
 impl ScriptRegistry {
@@ -76,11 +69,8 @@ impl ScriptRegistry {
             .map(|scheduling| scheduling.for_context(context))
     }
 
-    pub async fn load_all(&self, repo: &dyn ScriptRepo) -> Result<(), ScriptRegistryError> {
-        let records = repo
-            .list_enabled()
-            .await
-            .map_err(ScriptRegistryError::Storage)?;
+    pub async fn load_all(&self, repo: &dyn ScriptRepo) -> Result<(), RuntimeError> {
+        let records = repo.list_enabled().await.map_err(RuntimeError::Storage)?;
 
         let mut new_map = HashMap::new();
         for record in records {
@@ -95,13 +85,9 @@ impl ScriptRegistry {
         Ok(())
     }
 
-    pub async fn reload(
-        &self,
-        record: ScriptRecord,
-        bus: &EventBus,
-    ) -> Result<(), ScriptRegistryError> {
+    pub async fn reload(&self, record: ScriptRecord, bus: &EventBus) -> Result<(), RuntimeError> {
         forge_script::validate_syntax(&record.body)
-            .map_err(|e| ScriptRegistryError::Compile(e.to_string()))?;
+            .map_err(|e| RuntimeError::ScriptCompile(e.to_string()))?;
 
         let script_id = record.id;
         let script_name = record.name.clone();
@@ -410,7 +396,7 @@ mod tests {
         let bad = make_record("broken", "@@@invalid@@@", true);
         let result = registry.reload(bad, &bus).await;
         assert!(
-            matches!(result, Err(ScriptRegistryError::Compile(_))),
+            matches!(result, Err(RuntimeError::ScriptCompile(_))),
             "invalid syntax must return Compile error"
         );
         assert!(registry.get_by_name("broken").await.is_none());

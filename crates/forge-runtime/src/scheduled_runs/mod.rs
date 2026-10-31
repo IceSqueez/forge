@@ -1,10 +1,10 @@
 mod catch_up;
 mod hand_off;
 mod handle;
-mod limits;
+pub(crate) mod limits;
 mod origin;
 mod provenance;
-mod request;
+pub(crate) mod request;
 mod scheduler;
 mod scheduling_context;
 mod script_scheduler;
@@ -27,7 +27,7 @@ pub use provenance::{
     SCHEDULED_LATE_SECONDS_VARIABLE,
 };
 pub use request::ScheduledPlacement;
-pub use request::{ScheduleDue, ScheduleError, ScheduleRequest};
+pub use request::{ScheduleDue, ScheduleRequest};
 pub use scheduler::{ScheduledRunsParts, spawn_scheduled_runs};
 pub(crate) use scheduler::{ScheduledRunsStart, ScheduledRunsStartParts, reserve_scheduled_runs};
 pub use scheduling_context::ScheduleIntent;

@@ -5,8 +5,8 @@ use forge_types::Secret;
 use serde::Deserialize;
 
 use crate::azure::SAMPLE_RATE_HZ;
-use crate::azure::error::AzureError;
 use crate::azure::synth::{SUBSCRIPTION_KEY_HEADER, VOICES_LIST_PATH, classify_with};
+use crate::error::CloudTtsError;
 use crate::gateway_failure::failure_detail;
 use crate::network::ProviderLink;
 
@@ -30,14 +30,14 @@ fn gender_from_str(s: &str) -> VoiceGender {
     }
 }
 
-fn classify_error(failure: &GatewayFailure, link: &ProviderLink) -> AzureError {
+fn classify_error(failure: &GatewayFailure, link: &ProviderLink) -> CloudTtsError {
     classify_with(failure, link, None, failure_detail)
 }
 
 pub(super) async fn fetch_voices(
     link: &ProviderLink,
     api_key: &str,
-) -> Result<Vec<TtsVoice>, AzureError> {
+) -> Result<Vec<TtsVoice>, CloudTtsError> {
     let request = GatewayRequest::get(VOICES_LIST_PATH)
         .api_key(SUBSCRIPTION_KEY_HEADER, Secret::new(api_key))
         .class(CallClass::Catalog);
@@ -48,7 +48,7 @@ pub(super) async fn fetch_voices(
 
     let raw: Vec<AzureVoice> = response
         .json()
-        .map_err(|e| AzureError::Decode(e.to_string()))?;
+        .map_err(|e| CloudTtsError::Decode(e.to_string()))?;
 
     let engine_id = EngineId(ENGINE_ID_AZURE.into());
     Ok(raw
@@ -155,13 +155,15 @@ mod tests {
             let server = serving(template).await;
             let error = fetch_voices(&link_to(&server), API_KEY).await.unwrap_err();
             let got = match &error {
-                AzureError::Unauthorized(_) => "Unauthorized".to_owned(),
-                AzureError::RateLimited { retry_after_secs } => {
+                CloudTtsError::Unauthorized(_) => "Unauthorized".to_owned(),
+                CloudTtsError::RateLimited { retry_after_secs } => {
                     format!("RateLimited({retry_after_secs})")
                 }
-                AzureError::Rejected(detail) if detail.contains(&cap) => format!("Rejected({cap})"),
-                AzureError::Http(_) => "Http".to_owned(),
-                AzureError::Decode(_) => "Decode".to_owned(),
+                CloudTtsError::Rejected(detail) if detail.contains(&cap) => {
+                    format!("Rejected({cap})")
+                }
+                CloudTtsError::Http(_) => "Http".to_owned(),
+                CloudTtsError::Decode(_) => "Decode".to_owned(),
                 other => format!("{other:?}"),
             };
             assert_eq!(got, expected, "{error}");

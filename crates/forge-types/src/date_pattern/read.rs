@@ -1,6 +1,6 @@
+use crate::error::TypesError;
 use jiff::civil;
 use jiff::tz::TimeZone;
-use thiserror::Error;
 use time::{Date, Month, OffsetDateTime, PrimitiveDateTime, Time, UtcOffset};
 
 use super::names::{self, NameForm, NameWidth, NamesLanguage};
@@ -23,22 +23,6 @@ const OFFSET_SEPARATOR: char = ':';
 const UTC_DESIGNATORS: [char; 2] = ['Z', 'z'];
 const NAME_FORMS: [NameForm; 2] = [NameForm::Format, NameForm::StandAlone];
 const NAME_WIDTHS: [NameWidth; 2] = [NameWidth::Wide, NameWidth::Abbreviated];
-
-#[derive(Debug, Clone, PartialEq, Eq, Error)]
-pub enum DateTextError {
-    #[error("expected {expected} at position {position}")]
-    Mismatch { expected: String, position: usize },
-    #[error("unexpected text at position {position} after the end of the pattern")]
-    TrailingText { position: usize },
-    #[error("the pattern must contain a year, a month and a day")]
-    MissingDate,
-    #[error("a 12-hour field needs a day period ('a') in the same pattern")]
-    HourWithoutPeriod,
-    #[error("the text names a date or time that does not exist")]
-    OutOfRange,
-    #[error("the weekday does not match the date")]
-    WeekdayMismatch,
-}
 
 #[derive(Default)]
 struct ReadFields {
@@ -69,14 +53,14 @@ impl<'a> Cursor<'a> {
         self.text[..self.byte].chars().count()
     }
 
-    fn mismatch(&self, expected: impl Into<String>) -> DateTextError {
-        DateTextError::Mismatch {
+    fn mismatch(&self, expected: impl Into<String>) -> TypesError {
+        TypesError::DateTextMismatch {
             expected: expected.into(),
             position: self.position(),
         }
     }
 
-    fn digits(&mut self, min: usize, max: usize, expected: &str) -> Result<u32, DateTextError> {
+    fn digits(&mut self, min: usize, max: usize, expected: &str) -> Result<u32, TypesError> {
         let run: String = self
             .rest()
             .chars()
@@ -91,20 +75,20 @@ impl<'a> Cursor<'a> {
         Ok(value)
     }
 
-    fn padded(&mut self, padding: Padding, expected: &str) -> Result<u8, DateTextError> {
+    fn padded(&mut self, padding: Padding, expected: &str) -> Result<u8, TypesError> {
         let min = match padding {
             Padding::Minimal => ONE_DIGIT,
             Padding::TwoDigits => TWO_DIGITS,
         };
         let value = self.digits(min, TWO_DIGITS, expected)?;
-        u8::try_from(value).map_err(|_| DateTextError::OutOfRange)
+        u8::try_from(value).map_err(|_| TypesError::DateOutOfRange)
     }
 
     fn longest_name<T: Copy>(
         &mut self,
         candidates: &[(T, &str)],
         expected: &str,
-    ) -> Result<T, DateTextError> {
+    ) -> Result<T, TypesError> {
         let best = candidates
             .iter()
             .filter(|(_, name)| !name.is_empty())
@@ -121,7 +105,7 @@ impl<'a> Cursor<'a> {
         }
     }
 
-    fn literal(&mut self, literal: &str) -> Result<(), DateTextError> {
+    fn literal(&mut self, literal: &str) -> Result<(), TypesError> {
         match prefix_len_ignoring_case(self.rest(), literal) {
             Some(len) => {
                 self.byte += len;
@@ -131,7 +115,7 @@ impl<'a> Cursor<'a> {
         }
     }
 
-    fn offset(&mut self) -> Result<UtcOffset, DateTextError> {
+    fn offset(&mut self) -> Result<UtcOffset, TypesError> {
         const EXPECTED: &str = "a UTC offset such as +02:00";
         let Some(sign) = self.rest().chars().next() else {
             return Err(self.mismatch(EXPECTED));
@@ -156,9 +140,9 @@ impl<'a> Cursor<'a> {
             .ok()
             .zip(i32::try_from(minutes).ok())
             .map(|(h, m)| h * SECONDS_PER_HOUR + m * SECONDS_PER_MINUTE)
-            .ok_or(DateTextError::OutOfRange)?;
+            .ok_or(TypesError::DateOutOfRange)?;
         let seconds = if negative { -magnitude } else { magnitude };
-        UtcOffset::from_whole_seconds(seconds).map_err(|_| DateTextError::OutOfRange)
+        UtcOffset::from_whole_seconds(seconds).map_err(|_| TypesError::DateOutOfRange)
     }
 }
 
@@ -225,7 +209,7 @@ pub(super) fn read(
     text: &str,
     zone: PatternZone,
     language: NamesLanguage,
-) -> Result<OffsetDateTime, DateTextError> {
+) -> Result<OffsetDateTime, TypesError> {
     let mut cursor = Cursor { text, byte: 0 };
     let mut fields = ReadFields::default();
     for piece in pieces {
@@ -235,7 +219,7 @@ pub(super) fn read(
         }
     }
     if !cursor.rest().is_empty() {
-        return Err(DateTextError::TrailingText {
+        return Err(TypesError::TrailingText {
             position: cursor.position(),
         });
     }
@@ -247,7 +231,7 @@ fn read_field(
     cursor: &mut Cursor<'_>,
     fields: &mut ReadFields,
     language: NamesLanguage,
-) -> Result<(), DateTextError> {
+) -> Result<(), TypesError> {
     const YEAR: &str = "a year";
     const MONTH: &str = "a month";
     const DAY: &str = "a day";
@@ -286,7 +270,7 @@ fn read_field(
             let value = cursor.digits(digits, digits, "fractional seconds")?;
             let scale = u32::try_from(NANOSECOND_DIGITS.saturating_sub(digits))
                 .map(|exponent| DECIMAL_BASE.pow(exponent))
-                .map_err(|_| DateTextError::OutOfRange)?;
+                .map_err(|_| TypesError::DateOutOfRange)?;
             fields.nanosecond = value * scale;
         }
         DateField::OffsetHoursMinutes => fields.offset = Some(cursor.offset()?),
@@ -294,20 +278,20 @@ fn read_field(
     Ok(())
 }
 
-fn year(digits: u32) -> Result<i32, DateTextError> {
-    i32::try_from(digits).map_err(|_| DateTextError::OutOfRange)
+fn year(digits: u32) -> Result<i32, TypesError> {
+    i32::try_from(digits).map_err(|_| TypesError::DateOutOfRange)
 }
 
-fn hour_of_day(fields: &ReadFields) -> Result<u8, DateTextError> {
+fn hour_of_day(fields: &ReadFields) -> Result<u8, TypesError> {
     if let Some(hour) = fields.hour24 {
         return Ok(hour);
     }
     let Some(on_clock) = fields.hour12 else {
         return Ok(0);
     };
-    let after_noon = fields.after_noon.ok_or(DateTextError::HourWithoutPeriod)?;
+    let after_noon = fields.after_noon.ok_or(TypesError::HourWithoutPeriod)?;
     if on_clock == 0 || on_clock > HOURS_PER_HALF_DAY {
-        return Err(DateTextError::OutOfRange);
+        return Err(TypesError::DateOutOfRange);
     }
     let morning_hour = on_clock % HOURS_PER_HALF_DAY;
     Ok(if after_noon {
@@ -317,22 +301,22 @@ fn hour_of_day(fields: &ReadFields) -> Result<u8, DateTextError> {
     })
 }
 
-fn assemble(fields: &ReadFields, zone: PatternZone) -> Result<OffsetDateTime, DateTextError> {
+fn assemble(fields: &ReadFields, zone: PatternZone) -> Result<OffsetDateTime, TypesError> {
     let (Some(year), Some(month), Some(day)) = (fields.year, fields.month, fields.day) else {
-        return Err(DateTextError::MissingDate);
+        return Err(TypesError::MissingDate);
     };
     let hour = hour_of_day(fields)?;
-    let month_of_year = Month::try_from(month).map_err(|_| DateTextError::OutOfRange)?;
+    let month_of_year = Month::try_from(month).map_err(|_| TypesError::DateOutOfRange)?;
     let date = Date::from_calendar_date(year, month_of_year, day)
-        .map_err(|_| DateTextError::OutOfRange)?;
+        .map_err(|_| TypesError::DateOutOfRange)?;
     if fields
         .days_from_monday
         .is_some_and(|named| named != date.weekday().number_days_from_monday())
     {
-        return Err(DateTextError::WeekdayMismatch);
+        return Err(TypesError::WeekdayMismatch);
     }
     let time = Time::from_hms_nano(hour, fields.minute, fields.second, fields.nanosecond)
-        .map_err(|_| DateTextError::OutOfRange)?;
+        .map_err(|_| TypesError::DateOutOfRange)?;
     let civil_time = PrimitiveDateTime::new(date, time);
     match (fields.offset, zone) {
         (Some(offset), _) => Ok(civil_time.assume_offset(offset)),
@@ -341,11 +325,11 @@ fn assemble(fields: &ReadFields, zone: PatternZone) -> Result<OffsetDateTime, Da
     }
 }
 
-fn in_system_zone(civil_time: PrimitiveDateTime) -> Result<OffsetDateTime, DateTextError> {
-    let narrow = |value: u8| i8::try_from(value).map_err(|_| DateTextError::OutOfRange);
-    let year = i16::try_from(civil_time.year()).map_err(|_| DateTextError::OutOfRange)?;
+fn in_system_zone(civil_time: PrimitiveDateTime) -> Result<OffsetDateTime, TypesError> {
+    let narrow = |value: u8| i8::try_from(value).map_err(|_| TypesError::DateOutOfRange);
+    let year = i16::try_from(civil_time.year()).map_err(|_| TypesError::DateOutOfRange)?;
     let nanosecond =
-        i32::try_from(civil_time.nanosecond()).map_err(|_| DateTextError::OutOfRange)?;
+        i32::try_from(civil_time.nanosecond()).map_err(|_| TypesError::DateOutOfRange)?;
     let zoned = civil::DateTime::new(
         year,
         narrow(u8::from(civil_time.month()))?,
@@ -356,19 +340,19 @@ fn in_system_zone(civil_time: PrimitiveDateTime) -> Result<OffsetDateTime, DateT
         nanosecond,
     )
     .and_then(|civil| civil.to_zoned(TimeZone::system()))
-    .map_err(|_| DateTextError::OutOfRange)?;
+    .map_err(|_| TypesError::DateOutOfRange)?;
     let offset = UtcOffset::from_whole_seconds(zoned.offset().seconds())
-        .map_err(|_| DateTextError::OutOfRange)?;
+        .map_err(|_| TypesError::DateOutOfRange)?;
     OffsetDateTime::from_unix_timestamp_nanos(zoned.timestamp().as_nanosecond())
         .map(|instant| instant.to_offset(offset))
-        .map_err(|_| DateTextError::OutOfRange)
+        .map_err(|_| TypesError::DateOutOfRange)
 }
 
 #[cfg(test)]
 mod tests {
     use time::{Date, Month, OffsetDateTime, UtcOffset};
 
-    use crate::date_pattern::{DatePattern, DateTextError, NamesLanguage, PatternZone};
+    use crate::date_pattern::{DatePattern, NamesLanguage, PatternZone, TypesError};
 
     fn at(year: i32, month: Month, day: u8, hms: (u8, u8, u8), nanos: u32) -> OffsetDateTime {
         Date::from_calendar_date(year, month, day)
@@ -386,13 +370,13 @@ mod tests {
         pattern: &str,
         text: &str,
         language: NamesLanguage,
-    ) -> Result<OffsetDateTime, DateTextError> {
+    ) -> Result<OffsetDateTime, TypesError> {
         DatePattern::parse(pattern)
             .unwrap()
             .parse_text(text, PatternZone::Utc, language)
     }
 
-    fn read(pattern: &str, text: &str) -> Result<OffsetDateTime, DateTextError> {
+    fn read(pattern: &str, text: &str) -> Result<OffsetDateTime, TypesError> {
         read_in(pattern, text, NamesLanguage::En)
     }
 
@@ -431,7 +415,7 @@ mod tests {
             ("yyyy", "202", 0),
         ] {
             assert!(
-                matches!(read(pattern, text), Err(DateTextError::Mismatch { position: p, .. }) if p == position),
+                matches!(read(pattern, text), Err(TypesError::DateTextMismatch { position: p, .. }) if p == position),
                 "{pattern:?} on {text:?}: {:?}",
                 read(pattern, text)
             );
@@ -472,7 +456,7 @@ mod tests {
     fn fraction_with_fewer_digits_than_letters_is_a_mismatch() {
         assert!(matches!(
             read("yyyy-MM-dd.SSS", "2026-03-07.12"),
-            Err(DateTextError::Mismatch { position: 11, .. })
+            Err(TypesError::DateTextMismatch { position: 11, .. })
         ));
     }
 
@@ -505,7 +489,7 @@ mod tests {
             ("2026-03-07 ", 11),
         ] {
             assert!(
-                matches!(read("yyyy-MM-dd xxx", text), Err(DateTextError::Mismatch { position: p, .. }) if p == position),
+                matches!(read("yyyy-MM-dd xxx", text), Err(TypesError::DateTextMismatch { position: p, .. }) if p == position),
                 "{text:?}: {:?}",
                 read("yyyy-MM-dd xxx", text)
             );
@@ -575,7 +559,7 @@ mod tests {
         ] {
             assert_eq!(
                 read_in("EEE, dd.MM.yyyy", text, language),
-                Err(DateTextError::WeekdayMismatch),
+                Err(TypesError::WeekdayMismatch),
                 "{text:?}"
             );
         }
@@ -585,7 +569,7 @@ mod tests {
     fn a_weekday_is_compared_only_after_the_date_is_known_to_exist() {
         assert_eq!(
             read("EEE, dd.MM.yyyy", "Mon, 31.02.2026"),
-            Err(DateTextError::OutOfRange)
+            Err(TypesError::DateOutOfRange)
         );
     }
 
@@ -610,7 +594,10 @@ mod tests {
     fn english_month_field_rejects_ukrainian_names() {
         let result = read_in("d MMMM yyyy", "15 жовтня 2026", NamesLanguage::En);
         assert!(
-            matches!(result, Err(DateTextError::Mismatch { position: 3, .. })),
+            matches!(
+                result,
+                Err(TypesError::DateTextMismatch { position: 3, .. })
+            ),
             "{result:?}"
         );
     }
@@ -731,7 +718,7 @@ mod tests {
         for text in ["2026-03-07 0:30 AM", "2026-03-07 13:30 PM"] {
             assert_eq!(
                 read("yyyy-MM-dd h:mm a", text),
-                Err(DateTextError::OutOfRange),
+                Err(TypesError::DateOutOfRange),
                 "{text}"
             );
         }
@@ -741,7 +728,7 @@ mod tests {
     fn twelve_hour_field_without_a_day_period_is_rejected() {
         assert_eq!(
             read("yyyy-MM-dd h:mm", "2026-03-07 3:00"),
-            Err(DateTextError::HourWithoutPeriod)
+            Err(TypesError::HourWithoutPeriod)
         );
     }
 
@@ -763,7 +750,7 @@ mod tests {
         ] {
             assert_eq!(
                 read(pattern, text),
-                Err(DateTextError::MissingDate),
+                Err(TypesError::MissingDate),
                 "{pattern}"
             );
         }
@@ -785,7 +772,7 @@ mod tests {
         ] {
             assert_eq!(
                 read(pattern, text),
-                Err(DateTextError::OutOfRange),
+                Err(TypesError::DateOutOfRange),
                 "{text}"
             );
         }
@@ -811,7 +798,7 @@ mod tests {
         ] {
             assert_eq!(
                 read_in(pattern, text, language),
-                Err(DateTextError::TrailingText { position }),
+                Err(TypesError::TrailingText { position }),
                 "{text:?}"
             );
         }
@@ -821,7 +808,7 @@ mod tests {
     fn mismatch_reports_the_char_position_and_what_was_expected() {
         assert_eq!(
             read("yyyy-MM-dd", "2026/03/07"),
-            Err(DateTextError::Mismatch {
+            Err(TypesError::DateTextMismatch {
                 expected: "'-'".to_owned(),
                 position: 4,
             })
@@ -832,7 +819,7 @@ mod tests {
     fn mismatch_position_counts_chars_after_cyrillic_text() {
         assert!(matches!(
             read_in("d MMMM yyyy", "15 жовтня x026", NamesLanguage::Uk),
-            Err(DateTextError::Mismatch { position: 10, .. })
+            Err(TypesError::DateTextMismatch { position: 10, .. })
         ));
     }
 
@@ -845,7 +832,7 @@ mod tests {
             ("yyyy-MM-dd", "", 0),
         ] {
             assert!(
-                matches!(read(pattern, text), Err(DateTextError::Mismatch { position: p, .. }) if p == position),
+                matches!(read(pattern, text), Err(TypesError::DateTextMismatch { position: p, .. }) if p == position),
                 "{pattern:?} on {text:?}: {:?}",
                 read(pattern, text)
             );

@@ -1,3 +1,5 @@
+use crate::chat::chat_failure;
+use crate::error::TwitchError;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -12,8 +14,8 @@ use tokio::sync::{Mutex, OnceCell, watch};
 
 use crate::account::identity::SelfIdentity;
 use crate::bot_account::TwitchBotAccount;
-use crate::chat::{ChatConnectionState, ChatSendError, TwitchChat, TwitchChatHandle, WhisperError};
-use crate::chat_sender::{ChatDelivery, ChatSenders, SendFailure};
+use crate::chat::{ChatConnectionState, TwitchChat, TwitchChatHandle};
+use crate::chat_sender::{ChatDelivery, ChatSenders};
 use crate::config::ChatSessionConfig;
 use crate::credentials::load;
 use crate::credentials_manager::TwitchCredentialsManager;
@@ -279,58 +281,43 @@ impl ChatPlatform for TwitchPlatform {
     }
 }
 
-fn map_send_failure(failure: SendFailure) -> PlatformError {
-    match failure {
-        SendFailure::BotNotConnected(_) => PlatformError::Auth {
-            reason: failure.to_string(),
+fn map_send_failure(failure: TwitchError) -> PlatformError {
+    match chat_failure(failure) {
+        error @ TwitchError::BotNotConnected(_) => PlatformError::Auth {
+            reason: error.to_string(),
         },
-        SendFailure::BotPhoneUnverified
-        | SendFailure::BotNotModerator
-        | SendFailure::PermissionDenied(_)
-        | SendFailure::Refused(_)
-        | SendFailure::ShoutoutCooldown { .. }
-        | SendFailure::ModerationThrottled => PlatformError::Refused {
-            reason: failure.to_string(),
+        error @ (TwitchError::BotPhoneUnverified
+        | TwitchError::BotNotModerator
+        | TwitchError::PermissionDenied(_)
+        | TwitchError::ShoutoutCooldown { .. }
+        | TwitchError::ModerationThrottled
+        | TwitchError::WhisperRecipientEmpty
+        | TwitchError::WhisperMessageEmpty
+        | TwitchError::WhisperTooLong
+        | TwitchError::RecipientRejectsWhispers) => PlatformError::Refused {
+            reason: error.to_string(),
         },
-        SendFailure::Helix(err) => map_send_error(ChatSendError::from(err)),
-        SendFailure::Chat(err) => map_send_error(err),
-        SendFailure::Whisper(err) => map_whisper_error(err),
-        SendFailure::Credentials(reason) => PlatformError::Network { reason },
-        SendFailure::NotSignedIn => PlatformError::ReauthRequired {
+        TwitchError::SendRefused(reason) | TwitchError::SendFailed(reason) => {
+            PlatformError::Refused { reason }
+        }
+        TwitchError::RateLimited => PlatformError::RateLimitExhausted,
+        TwitchError::ReauthRequired | TwitchError::NotSignedIn => PlatformError::ReauthRequired {
             platform: PLATFORM_ID.to_owned(),
         },
-    }
-}
-
-fn map_whisper_error(err: WhisperError) -> PlatformError {
-    match err {
-        WhisperError::Helix(helix) => map_send_error(ChatSendError::from(helix)),
-        rejected => PlatformError::Refused {
-            reason: rejected.to_string(),
-        },
-    }
-}
-
-fn map_send_error(err: ChatSendError) -> PlatformError {
-    match err {
-        ChatSendError::RateLimited => PlatformError::RateLimitExhausted,
-        ChatSendError::ReauthRequired => PlatformError::ReauthRequired {
-            platform: PLATFORM_ID.to_owned(),
-        },
-        ChatSendError::NotConnected => PlatformError::Network {
-            reason: "not connected".to_owned(),
-        },
-        ChatSendError::MessageTooLong => PlatformError::Http {
+        error @ TwitchError::MessageTooLong => PlatformError::Http {
             status: 413,
-            body: err.to_string(),
+            body: error.to_string(),
         },
-        ChatSendError::Http(reason) => PlatformError::Refused { reason },
-        ChatSendError::Dropped { code, message } => PlatformError::Refused {
+        TwitchError::MessageDropped { code, message } => PlatformError::Refused {
             reason: format!("{code}: {message}"),
         },
-        ChatSendError::Forbidden(reason) => PlatformError::Http {
+        TwitchError::MessageForbidden(reason) => PlatformError::Http {
             status: forge_net::status::FORBIDDEN,
             body: reason,
+        },
+        TwitchError::SendCredentials(reason) => PlatformError::Network { reason },
+        other => PlatformError::Network {
+            reason: other.to_string(),
         },
     }
 }
@@ -338,7 +325,7 @@ fn map_send_error(err: ChatSendError) -> PlatformError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::helix::HelixError;
+    use crate::error::TwitchError;
     use crate::sub_actions::test_support::{
         MockCreds, MockTransport, SELF_USER_ID, TOKEN_SENTINEL, unreachable_twitch_endpoints,
         users_fixture,
@@ -437,7 +424,7 @@ mod tests {
     async fn helix_whisper_failure_surfaces_status_without_token_or_url() {
         let transport = Arc::new(MockTransport::returning_sequence(vec![
             users_fixture("555"),
-            Err(HelixError::Http {
+            Err(TwitchError::Http {
                 status: 403,
                 body: "missing user:manage:whispers".to_owned(),
             }),
@@ -474,7 +461,7 @@ mod tests {
 
     #[test]
     fn dropped_send_surfaces_code_and_message_in_the_platform_error() {
-        let err = map_send_error(ChatSendError::Dropped {
+        let err = map_send_failure(TwitchError::MessageDropped {
             code: "channel_settings".to_owned(),
             message: "Followers-only mode is on.".to_owned(),
         });
@@ -494,20 +481,20 @@ mod tests {
         use crate::bot_account::BotUnavailable;
 
         type Expectation = fn(&PlatformError) -> bool;
-        let cases: [(SendFailure, Expectation); 4] = [
+        let cases: [(TwitchError, Expectation); 4] = [
             (
-                SendFailure::BotNotConnected(BotUnavailable::NotConnected),
+                TwitchError::BotNotConnected(BotUnavailable::NotConnected),
                 |e| matches!(e, PlatformError::Auth { reason } if reason.starts_with("bot not connected")),
             ),
             (
-                SendFailure::BotPhoneUnverified,
+                TwitchError::BotPhoneUnverified,
                 |e| matches!(e, PlatformError::Refused { reason } if reason.contains("verified phone")),
             ),
             (
-                SendFailure::Chat(ChatSendError::Forbidden("banned".to_owned())),
+                TwitchError::MessageForbidden("banned".to_owned()),
                 |e| matches!(e, PlatformError::Http { status: 403, body } if body == "banned"),
             ),
-            (SendFailure::Chat(ChatSendError::RateLimited), |e| {
+            (TwitchError::RateLimited, |e| {
                 matches!(e, PlatformError::RateLimitExhausted)
             }),
         ];

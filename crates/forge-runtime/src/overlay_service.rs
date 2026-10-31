@@ -1,3 +1,4 @@
+use crate::error::RuntimeError;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -14,8 +15,8 @@ use forge_overlay::{
 };
 use forge_registry::CancelSignal;
 use forge_storage::{
-    OverlayConfig, OverlayDefinition, OverlayId, OverlayRepo, SettingsRepo, StorageError,
-    read_setting, settings::core_settings,
+    OverlayConfig, OverlayDefinition, OverlayId, OverlayRepo, SettingsRepo, read_setting,
+    settings::core_settings,
 };
 use forge_types::{ArgStack, EventId, LatestValueReader};
 use serde_json::json;
@@ -30,9 +31,7 @@ use crate::overlay_shows::{
     QueueFull, SHOW_CEILING, SHOW_QUEUE_CAPACITY, Show, ShowDepthWatch, ShowEnd, ShowSequencer,
     ShowTicket,
 };
-use crate::speak_dispatcher::{
-    ShowSpeech, SpeakDispatchError, SpeakDispatcher, SpeechOrigin, SpeechStartSignal,
-};
+use crate::speak_dispatcher::{ShowSpeech, SpeakDispatcher, SpeechOrigin, SpeechStartSignal};
 
 pub const OVERLAY_TEST_FIRE_KIND: &str = "overlay.test_fire";
 
@@ -49,30 +48,6 @@ const SPEECH_FAILURE_VOICE_KEY: &str = "voice";
 const OVERLAY_ID_KEY: &str = "overlayId";
 
 const LATEST_PREVIEW_HOLD: Duration = Duration::from_secs(DEFAULT_DISPLAY_SECS.unsigned_abs());
-
-#[derive(Debug, thiserror::Error)]
-pub enum OverlayServiceError {
-    #[error("no overlay is stored as '{0}'")]
-    Unknown(OverlayId),
-
-    #[error("overlay '{id}' needs an overlay type this build does not carry: {kind_id}")]
-    UnavailableKind { id: OverlayId, kind_id: String },
-
-    #[error(transparent)]
-    Storage(#[from] StorageError),
-
-    #[error(transparent)]
-    Overlay(#[from] forge_overlay::OverlayError),
-
-    #[error("overlay file work did not finish")]
-    Interrupted,
-
-    #[error("overlay '{id}' already has {capacity} shows waiting, so this one was not queued")]
-    ShowQueueFull { id: OverlayId, capacity: usize },
-
-    #[error("overlay '{0}' shows a latest value and takes no content from actions")]
-    SlotBound(OverlayId),
-}
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct OverlayReceivers {
@@ -235,7 +210,7 @@ impl OverlayServiceHandle {
         self.inner.definitions.subscribe()
     }
 
-    pub async fn enabled_overlays(&self) -> Result<Vec<EnabledOverlay>, OverlayServiceError> {
+    pub async fn enabled_overlays(&self) -> Result<Vec<EnabledOverlay>, RuntimeError> {
         let definitions = self.inner.repo.list().await?;
         Ok(definitions
             .into_iter()
@@ -274,7 +249,7 @@ impl OverlayServiceHandle {
     pub async fn materialize_all(
         &self,
         samples: &dyn OverlaySampleSource,
-    ) -> Result<MaterializePass, OverlayServiceError> {
+    ) -> Result<MaterializePass, RuntimeError> {
         let root = self.root().await;
         blocking(move || ensure_shared_directory(&root)).await??;
 
@@ -309,10 +284,7 @@ impl OverlayServiceHandle {
         Ok(pass)
     }
 
-    async fn refresh_credential(
-        &self,
-        definition: &OverlayDefinition,
-    ) -> Result<(), OverlayServiceError> {
+    async fn refresh_credential(&self, definition: &OverlayDefinition) -> Result<(), RuntimeError> {
         let root = self.root().await;
         let identity = definition.id.as_str().to_owned();
         let credential = definition.credential.expose().to_owned();
@@ -324,10 +296,10 @@ impl OverlayServiceHandle {
         &self,
         id: &OverlayId,
         samples: &dyn OverlaySampleSource,
-    ) -> Result<MaterializeReport, OverlayServiceError> {
+    ) -> Result<MaterializeReport, RuntimeError> {
         let definition = self.load(id).await?;
         if self.inner.kinds.get(&definition.kind_id).is_none() {
-            return Err(OverlayServiceError::UnavailableKind {
+            return Err(RuntimeError::UnavailableOverlayKind {
                 id: definition.id,
                 kind_id: definition.kind_id,
             });
@@ -343,7 +315,7 @@ impl OverlayServiceHandle {
         &self,
         id: &OverlayId,
         file: &str,
-    ) -> Result<Option<String>, OverlayServiceError> {
+    ) -> Result<Option<String>, RuntimeError> {
         let root = self.root().await;
         let identity = id.as_str().to_owned();
         let name = file.to_owned();
@@ -355,27 +327,27 @@ impl OverlayServiceHandle {
         id: &OverlayId,
         file: &str,
         body: String,
-    ) -> Result<(), OverlayServiceError> {
+    ) -> Result<(), RuntimeError> {
         let root = self.root().await;
         let identity = id.as_str().to_owned();
         let name = file.to_owned();
         Ok(blocking(move || write_overlay_source(&root, &identity, &name, &body)).await??)
     }
 
-    pub async fn release_media(&self, id: &OverlayId) -> Result<u64, OverlayServiceError> {
+    pub async fn release_media(&self, id: &OverlayId) -> Result<u64, RuntimeError> {
         let Some(library) = &self.inner.media else {
             return Ok(0);
         };
         Ok(library.release(id).await?)
     }
 
-    pub async fn remove_folder(&self, id: &OverlayId) -> Result<bool, OverlayServiceError> {
+    pub async fn remove_folder(&self, id: &OverlayId) -> Result<bool, RuntimeError> {
         let root = self.root().await;
         let identity = id.as_str().to_owned();
         Ok(blocking(move || remove_overlay_directory(&root, &identity)).await??)
     }
 
-    pub async fn delete(&self, id: &OverlayId) -> Result<bool, OverlayServiceError> {
+    pub async fn delete(&self, id: &OverlayId) -> Result<bool, RuntimeError> {
         let removed = self.inner.repo.delete(id).await?;
         if removed {
             self.inner.definitions.advance();
@@ -385,7 +357,7 @@ impl OverlayServiceHandle {
         Ok(removed)
     }
 
-    pub async fn save(&self, definition: &OverlayDefinition) -> Result<(), OverlayServiceError> {
+    pub async fn save(&self, definition: &OverlayDefinition) -> Result<(), RuntimeError> {
         self.inner.kinds.validate_stored(
             &definition.kind_id,
             definition.config_schema_version,
@@ -398,7 +370,7 @@ impl OverlayServiceHandle {
         &self,
         id: &OverlayId,
         config: &OverlayConfig,
-    ) -> Result<bool, OverlayServiceError> {
+    ) -> Result<bool, RuntimeError> {
         let Some(definition) = self.inner.repo.get(id).await? else {
             return Ok(false);
         };
@@ -410,19 +382,11 @@ impl OverlayServiceHandle {
         Ok(self.inner.repo.update_config(id, config).await?)
     }
 
-    pub async fn rename(
-        &self,
-        id: &OverlayId,
-        display_name: &str,
-    ) -> Result<bool, OverlayServiceError> {
+    pub async fn rename(&self, id: &OverlayId, display_name: &str) -> Result<bool, RuntimeError> {
         Ok(self.inner.repo.rename(id, display_name).await?)
     }
 
-    pub async fn set_enabled(
-        &self,
-        id: &OverlayId,
-        enabled: bool,
-    ) -> Result<bool, OverlayServiceError> {
+    pub async fn set_enabled(&self, id: &OverlayId, enabled: bool) -> Result<bool, RuntimeError> {
         let changed = self.inner.repo.set_enabled(id, enabled).await?;
         if changed {
             self.inner.definitions.advance();
@@ -446,7 +410,7 @@ impl OverlayServiceHandle {
         &self,
         id: &OverlayId,
         content: OverlayConfig,
-    ) -> Result<OverlayDelivery, OverlayServiceError> {
+    ) -> Result<OverlayDelivery, RuntimeError> {
         let definition = self.load(id).await?;
         Ok(self.send(&definition.id, &content, None).await)
     }
@@ -458,16 +422,16 @@ impl OverlayServiceHandle {
         args: &ArgStack,
         duration_ms: Option<u64>,
         caused_by: Option<EventId>,
-    ) -> Result<OverlayDispatch, OverlayServiceError> {
+    ) -> Result<OverlayDispatch, RuntimeError> {
         let definition = self.load(id).await?;
         let Some(descriptor) = self.inner.kinds.get(&definition.kind_id) else {
-            return Err(OverlayServiceError::UnavailableKind {
+            return Err(RuntimeError::UnavailableOverlayKind {
                 id: definition.id,
                 kind_id: definition.kind_id,
             });
         };
         if latest_binding(descriptor, &definition.config).is_some() {
-            return Err(OverlayServiceError::SlotBound(definition.id));
+            return Err(RuntimeError::SlotBound(definition.id));
         }
         let mut content = delivered_content(descriptor, &definition.config, supplied, args);
         let speech = take_speech(descriptor, &definition.config, &mut content)
@@ -507,7 +471,7 @@ impl OverlayServiceHandle {
             .shows
             .enqueue(&definition.id, show)
             .map(OverlayDispatch::Queued)
-            .map_err(|QueueFull| OverlayServiceError::ShowQueueFull {
+            .map_err(|QueueFull| RuntimeError::ShowQueueFull {
                 id: definition.id,
                 capacity: SHOW_QUEUE_CAPACITY,
             })
@@ -528,16 +492,15 @@ impl OverlayServiceHandle {
         };
         tracing::info!(
             overlay = %definition.id,
-            reason = %error,
+            reason = %error.code(),
             "show speech skipped; the show is shown without it"
         );
-        let failure = SpeakDispatchError::from(error);
         let payload = json!({
             OVERLAY_ID_KEY: definition.id.as_str(),
             OVERLAY_NAME_KEY: definition.display_name,
             SPEECH_FAILURE_VOICE_KEY: voice,
-            SPEECH_FAILURE_ERROR_KEY: failure.message().code().to_string(),
-            SPEECH_FAILURE_MESSAGE_KEY: failure.message(),
+            SPEECH_FAILURE_ERROR_KEY: error.code().to_string(),
+            SPEECH_FAILURE_MESSAGE_KEY: error,
         });
         let event = match caused_by {
             Some(parent) => Event::caused_by(
@@ -562,7 +525,7 @@ impl OverlayServiceHandle {
                 .speak_for_show(speech, CancelSignal::new(), SpeechStartSignal::new())
                 .await
             {
-                tracing::info!(overlay = %overlay, reason = %e, "overlay speech did not play in full");
+                tracing::info!(overlay = %overlay, reason = %e.code(), "overlay speech did not play in full");
             }
         });
     }
@@ -590,10 +553,10 @@ impl OverlayServiceHandle {
         &self,
         id: &OverlayId,
         samples: &dyn OverlaySampleSource,
-    ) -> Result<TestFire, OverlayServiceError> {
+    ) -> Result<TestFire, RuntimeError> {
         let definition = self.load(id).await?;
         let Some(descriptor) = self.inner.kinds.get(&definition.kind_id) else {
-            return Err(OverlayServiceError::UnavailableKind {
+            return Err(RuntimeError::UnavailableOverlayKind {
                 id: definition.id,
                 kind_id: definition.kind_id,
             });
@@ -680,7 +643,7 @@ impl OverlayServiceHandle {
         ))
     }
 
-    async fn replay_retained(&self, id: &OverlayId) -> Result<(), OverlayServiceError> {
+    async fn replay_retained(&self, id: &OverlayId) -> Result<(), RuntimeError> {
         let _lane = self.inner.lanes.enter(id).await;
         let definition = self.load(id).await?;
         let Some(descriptor) = self.inner.kinds.get(&definition.kind_id) else {
@@ -706,7 +669,7 @@ impl OverlayServiceHandle {
         disposition: DeliveryDisposition,
         content: &OverlayConfig,
         duration_ms: Option<u64>,
-    ) -> Result<OverlayDelivery, OverlayServiceError> {
+    ) -> Result<OverlayDelivery, RuntimeError> {
         if !disposition.retains_last_content() {
             return Ok(self.send(id, content, duration_ms).await);
         }
@@ -728,19 +691,19 @@ impl OverlayServiceHandle {
             .outcome()
     }
 
-    async fn load(&self, id: &OverlayId) -> Result<OverlayDefinition, OverlayServiceError> {
+    async fn load(&self, id: &OverlayId) -> Result<OverlayDefinition, RuntimeError> {
         self.inner
             .repo
             .get(id)
             .await?
-            .ok_or_else(|| OverlayServiceError::Unknown(id.clone()))
+            .ok_or_else(|| RuntimeError::UnknownOverlay(id.clone()))
     }
 
     async fn write_files(
         &self,
         stored: &OverlayDefinition,
         samples: &dyn OverlaySampleSource,
-    ) -> Result<MaterializeReport, OverlayServiceError> {
+    ) -> Result<MaterializeReport, RuntimeError> {
         let definition = &self.upgraded(stored);
         let root = self.root().await;
         let instance = instance_of(
@@ -850,14 +813,14 @@ fn instance_of(
     }
 }
 
-async fn blocking<T, F>(work: F) -> Result<T, OverlayServiceError>
+async fn blocking<T, F>(work: F) -> Result<T, RuntimeError>
 where
     F: FnOnce() -> T + Send + 'static,
     T: Send + 'static,
 {
     tokio::task::spawn_blocking(work)
         .await
-        .map_err(|_| OverlayServiceError::Interrupted)
+        .map_err(|_| RuntimeError::OverlayFileWorkInterrupted)
 }
 
 #[cfg(test)]

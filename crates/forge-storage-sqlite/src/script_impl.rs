@@ -108,9 +108,7 @@ pub(crate) async fn upsert_script<'e>(
     let now_ms = epoch_ms_now();
     let enabled_int: i64 = i64::from(record.enabled);
     let contract_json =
-        serde_json::to_string(&record.contract).map_err(|e| StorageError::Connection {
-            reason: e.to_string(),
-        })?;
+        serde_json::to_string(&record.contract).map_err(StorageError::Serialization)?;
 
     sqlx::query(
         "INSERT INTO scripts \

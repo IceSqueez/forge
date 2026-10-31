@@ -235,11 +235,12 @@ mod tests {
     use crate::account::identity::BroadcasterTier;
     use crate::chat::ChatConnectionState;
     use crate::custom_rewards::{CUSTOM_REWARD_REDEMPTIONS_PATH, CUSTOM_REWARDS_PATH};
-    use crate::helix::{HelixError, HelixMethod, HelixRequest, HelixTransport};
+    use crate::error::TwitchError;
+    use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
     use crate::sub_actions::test_support::{MockCreds, MockTransport, SELF_USER_ID};
     use crate::subscriptions::SubscriptionTracker;
 
-    type Reply = Result<Value, HelixError>;
+    type Reply = Result<Value, TwitchError>;
 
     fn bundle_answering(
         replies: Vec<Reply>,
@@ -642,7 +643,7 @@ mod tests {
 
     #[tokio::test]
     async fn helix_refusals_reach_every_list_as_typed_failures() {
-        let forbidden = || HelixError::Http {
+        let forbidden = || TwitchError::Http {
             status: StatusCode::FORBIDDEN.as_u16(),
             body: "{}".to_owned(),
         };
@@ -662,9 +663,9 @@ mod tests {
         ];
         for (list, values) in &lists {
             for (error, expected) in [
-                (HelixError::ReauthRequired, CollectionFailure::Unauthorized),
+                (TwitchError::ReauthRequired, CollectionFailure::Unauthorized),
                 (forbidden(), CollectionFailure::NotEligible),
-                (HelixError::RateLimited, CollectionFailure::RateLimited),
+                (TwitchError::RateLimited, CollectionFailure::RateLimited),
             ] {
                 let (_, bundle) = bundle_answering(vec![Err(error)], SELF_USER_ID);
 

@@ -1,14 +1,5 @@
-use forge_storage::StorageError;
+use crate::error::ScriptError;
 use forge_types::{EventId, Variant};
-
-#[derive(Debug, thiserror::Error)]
-pub enum ScriptGlobalsError {
-    #[error(transparent)]
-    Storage(#[from] StorageError),
-
-    #[error("the script catalog never runs script functions")]
-    DescribeOnly,
-}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct GlobalIncrement {
@@ -24,7 +15,7 @@ pub enum GlobalDeletion {
 
 #[async_trait::async_trait]
 pub trait ScriptGlobals: Send + Sync {
-    async fn get(&self, key: &str) -> Result<Option<Variant>, ScriptGlobalsError>;
+    async fn get(&self, key: &str) -> Result<Option<Variant>, ScriptError>;
 
     async fn set(
         &self,
@@ -32,34 +23,32 @@ pub trait ScriptGlobals: Send + Sync {
         value: Variant,
         persisted: bool,
         caused_by: EventId,
-    ) -> Result<Option<Variant>, ScriptGlobalsError>;
+    ) -> Result<Option<Variant>, ScriptError>;
 
     async fn increment(
         &self,
         key: &str,
         delta: i64,
         caused_by: EventId,
-    ) -> Result<GlobalIncrement, ScriptGlobalsError>;
+    ) -> Result<GlobalIncrement, ScriptError>;
 
-    async fn delete(
-        &self,
-        key: &str,
-        caused_by: EventId,
-    ) -> Result<GlobalDeletion, ScriptGlobalsError>;
+    async fn delete(&self, key: &str, caused_by: EventId) -> Result<GlobalDeletion, ScriptError>;
 }
 
 #[cfg(test)]
 mod tests {
+    use forge_storage::StorageError;
+
     use super::*;
 
     #[test]
     fn a_storage_failure_reaches_the_script_verbatim() {
-        let error = ScriptGlobalsError::from(StorageError::TypeMismatch {
+        let error = ScriptError::from(StorageError::TypeMismatch {
             name: "hits".to_owned(),
             actual: "string".to_owned(),
         });
 
-        assert!(matches!(error, ScriptGlobalsError::Storage(_)));
+        assert!(matches!(error, ScriptError::Storage(_)));
         assert_eq!(
             error.to_string(),
             "global 'hits' has type string, expected numeric"

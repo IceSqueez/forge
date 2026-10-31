@@ -164,7 +164,7 @@ mod tests {
     const OFF: &str = "off";
     const UNCHANGED: &str = "unchanged";
 
-    use crate::helix::HelixError;
+    use crate::error::TwitchError;
     use crate::sub_actions::test_support::{
         MockTransport, SELF_USER_ID, TOKEN_SENTINEL, assert_request_refused, make_ctx,
     };
@@ -172,7 +172,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     fn runner_with(
-        response: Result<serde_json::Value, HelixError>,
+        response: Result<serde_json::Value, TwitchError>,
     ) -> (Arc<MockTransport>, GuestStarUpdateSlotRunner) {
         let transport = Arc::new(MockTransport::returning(response));
         let runner = GuestStarUpdateSlotRunner::new(
@@ -415,7 +415,7 @@ mod tests {
 
     #[tokio::test]
     async fn helix_failure_maps_to_failed_without_token() {
-        let (_transport, runner) = runner_with(Err(HelixError::Http {
+        let (_transport, runner) = runner_with(Err(TwitchError::Http {
             status: 400,
             body: format!("bad slot {TOKEN_SENTINEL}"),
         }));

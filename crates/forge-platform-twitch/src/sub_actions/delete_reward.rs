@@ -88,13 +88,14 @@ mod tests {
     use forge_types::{ArgStack, SubActionOutcome, Variant};
 
     use super::*;
-    use crate::helix::{HelixError, HelixMethod};
+    use crate::error::TwitchError;
+    use crate::helix::HelixMethod;
     use crate::sub_actions::test_support::{
         MockTransport, SELF_USER_ID, TOKEN_SENTINEL, assert_request_refused, make_ctx,
     };
 
     fn delete_runner_with(
-        response: Result<serde_json::Value, HelixError>,
+        response: Result<serde_json::Value, TwitchError>,
     ) -> (Arc<MockTransport>, DeleteRewardRunner) {
         let transport = Arc::new(MockTransport::returning(response));
         let runner = DeleteRewardRunner::new(
@@ -182,7 +183,7 @@ mod tests {
 
     #[tokio::test]
     async fn helix_failure_maps_to_failed_without_token() {
-        let (_transport, runner) = delete_runner_with(Err(HelixError::Http {
+        let (_transport, runner) = delete_runner_with(Err(TwitchError::Http {
             status: 404,
             body: format!("not found {TOKEN_SENTINEL}"),
         }));

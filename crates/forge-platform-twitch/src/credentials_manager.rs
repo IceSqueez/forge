@@ -157,6 +157,18 @@ impl TokenRotation for TwitchRotation {
     }
 }
 
+macro_rules! warn_token_failure {
+    ($context:literal, $error:expr) => {
+        match $error {
+            forge_platform_core::PlatformError::Http { status, .. } => {
+                tracing::warn!(status = *status, $context);
+            }
+            other => tracing::warn!(error = %other, $context),
+        }
+    };
+}
+pub(crate) use warn_token_failure;
+
 async fn rotate_credential(
     oauth: &TwitchOAuthClient,
     repo: &dyn CredentialsRepo,
@@ -167,17 +179,10 @@ async fn rotate_credential(
     let parsed = match oauth.refresh(refresh_token).await {
         Ok(parsed) => parsed,
         Err(e) => {
-            match &e {
-                PlatformError::ReauthRequired { .. } => {
-                    warn!("twitch token refresh rejected; re-authorization required");
-                }
-                PlatformError::Http { status, .. } => {
-                    warn!(status = *status, "twitch token refresh failed");
-                }
-                PlatformError::Network { reason } => {
-                    warn!(error = %reason, "twitch token refresh failed");
-                }
-                _ => warn!("twitch token refresh failed"),
+            if matches!(e, PlatformError::ReauthRequired { .. }) {
+                warn!("twitch token refresh rejected; re-authorization required");
+            } else {
+                warn_token_failure!("twitch token refresh failed", &e);
             }
             return Err(e);
         }
@@ -210,24 +215,24 @@ async fn rotate_credential(
 
 #[async_trait]
 impl crate::helix::HelixTokenSource for TwitchCredentialsManager {
-    async fn access_token(&self) -> Result<OAuthToken, crate::helix::HelixError> {
+    async fn access_token(&self) -> Result<OAuthToken, crate::error::TwitchError> {
         self.get_valid_access_token()
             .await
             .map_err(token_error_to_helix)
     }
 }
 
-fn token_error_to_helix(e: PlatformError) -> crate::helix::HelixError {
+fn token_error_to_helix(e: PlatformError) -> crate::error::TwitchError {
     match e {
-        PlatformError::ReauthRequired { .. } => crate::helix::HelixError::ReauthRequired,
-        PlatformError::Io(io) => crate::helix::HelixError::Credentials(io.to_string()),
-        PlatformError::Http { status, .. } => crate::helix::HelixError::Credentials(format!(
+        PlatformError::ReauthRequired { .. } => crate::error::TwitchError::ReauthRequired,
+        PlatformError::Io(io) => crate::error::TwitchError::Credentials(io.to_string()),
+        PlatformError::Http { status, .. } => crate::error::TwitchError::Credentials(format!(
             "twitch token refresh failed: HTTP {status}"
         )),
         PlatformError::Network { reason } => {
-            crate::helix::HelixError::Credentials(format!("twitch token refresh failed: {reason}"))
+            crate::error::TwitchError::Credentials(format!("twitch token refresh failed: {reason}"))
         }
-        _ => crate::helix::HelixError::Credentials("twitch token refresh failed".to_owned()),
+        _ => crate::error::TwitchError::Credentials("twitch token refresh failed".to_owned()),
     }
 }
 
@@ -236,7 +241,7 @@ impl crate::helix::HelixTokenRefresher for TwitchCredentialsManager {
     async fn refresh(
         &self,
         failed_token: &OAuthToken,
-    ) -> Result<OAuthToken, crate::helix::HelixError> {
+    ) -> Result<OAuthToken, crate::error::TwitchError> {
         self.refresh(failed_token)
             .await
             .map(|renewed| renewed.access_token)
@@ -512,7 +517,7 @@ pub(crate) mod tests {
 
         assert!(
             !rendered.contains(BODY_SENTINEL),
-            "token-endpoint response body reached the HelixError string: {rendered}"
+            "token-endpoint response body reached the TwitchError string: {rendered}"
         );
         assert!(
             rendered.contains("HTTP 503"),
@@ -530,8 +535,8 @@ pub(crate) mod tests {
 
         let err = mgr.access_token().await.unwrap_err();
         assert!(
-            matches!(err, crate::helix::HelixError::ReauthRequired),
-            "HelixTokenSource must map missing credential to HelixError::ReauthRequired, got: {err:?}"
+            matches!(err, crate::error::TwitchError::ReauthRequired),
+            "HelixTokenSource must map missing credential to TwitchError::ReauthRequired, got: {err:?}"
         );
     }
 
@@ -652,7 +657,8 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn the_helix_refresher_asks_for_reauth_only_when_the_refresh_is_rejected() {
-        use crate::helix::{HelixError, HelixTokenRefresher};
+        use crate::error::TwitchError;
+        use crate::helix::HelixTokenRefresher;
 
         let cases = [
             (Some(reqwest::StatusCode::BAD_REQUEST), false),
@@ -684,7 +690,7 @@ pub(crate) mod tests {
                 .unwrap_err();
 
             assert_eq!(
-                matches!(err, HelixError::ReauthRequired),
+                matches!(err, TwitchError::ReauthRequired),
                 !transient,
                 "status {status:?}: only a rejected refresh may ask for reauth, a transient \
                  failure must stay retryable; got {err:?}"

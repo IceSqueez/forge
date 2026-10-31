@@ -7,9 +7,7 @@ use forge_registry::{
     CodeField, CodeKind, CodeLanguage, ConfigSpec, RunContext, StepTimer, SubActionCategory,
     SubActionRunner, TypedField,
 };
-use forge_script::{
-    ScriptCapabilities, ScriptError, ScriptGlobals, ScriptSession, build_scope_for_contract,
-};
+use forge_script::{ScriptCapabilities, ScriptGlobals, ScriptSession, build_scope_for_contract};
 use forge_storage::{GlobalsRepo, SettingsRepo};
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry};
 use time::OffsetDateTime;
@@ -131,11 +129,7 @@ impl SubActionRunner for ScriptRunInlineRunner {
 
         let exec_result = tokio::task::spawn_blocking(move || {
             let contract = forge_types::ScriptContract::default();
-            let mut scope = build_scope_for_contract(&contract, &arg_stack_clone).map_err(|e| {
-                ScriptError::Runtime {
-                    reason: e.to_string(),
-                }
-            })?;
+            let mut scope = build_scope_for_contract(&contract, &arg_stack_clone)?;
             let engine = session.into_engine()?;
             engine.eval_script_with_scope(&body, &mut scope)
         })

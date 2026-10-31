@@ -1,10 +1,10 @@
 use crate::bot_account::TwitchBotAccount;
-use crate::chat::subscriber::{
-    SubscribeError, SubscribePass, TopicRetries, TopicRetryRun, subscribe_all,
-};
+use crate::chat::subscriber::{SubscribePass, TopicRetries, TopicRetryRun, subscribe_all};
 use crate::chat::topic_catalog::raid_direction;
 use crate::config::{ChatSessionConfig, ChatTiming};
 use crate::credentials_manager::TwitchCredentialsManager;
+use crate::credentials_manager::warn_token_failure;
+use crate::error::TwitchError;
 use crate::helix::{FixedTokenSource, HelixHttpTransport, HelixTransport};
 use crate::lifecycle::TwitchLifecycle;
 use crate::subscriptions::SubscriptionTracker;
@@ -85,25 +85,7 @@ type EventSubSocket =
     tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
 type SuccessorDial =
-    Pin<Box<dyn Future<Output = Result<(EventSubSocket, String), DialFailure>> + Send>>;
-
-#[derive(Debug, thiserror::Error)]
-enum DialFailure {
-    #[error("{0}")]
-    Socket(String),
-
-    #[error("connect timed out")]
-    ConnectTimedOut,
-
-    #[error("timed out before session_welcome")]
-    WelcomeTimedOut,
-
-    #[error("session_welcome missing session.id")]
-    WelcomeWithoutSession,
-
-    #[error("closed before session_welcome")]
-    ClosedBeforeWelcome,
-}
+    Pin<Box<dyn Future<Output = Result<(EventSubSocket, String), TwitchError>> + Send>>;
 
 type SubscriptionPassRun = Pin<Box<dyn Future<Output = PassVerdict> + Send>>;
 
@@ -2174,11 +2156,11 @@ fn extract_roles_from_badges(badges: Option<&serde_json::Value>) -> Vec<String> 
         .unwrap_or_default()
 }
 
-async fn connect_socket(url: &str) -> Result<EventSubSocket, DialFailure> {
+async fn connect_socket(url: &str) -> Result<EventSubSocket, TwitchError> {
     match tokio::time::timeout(CONNECT_TIMEOUT, tokio_tungstenite::connect_async(url)).await {
         Ok(Ok((socket, _))) => Ok(socket),
-        Ok(Err(e)) => Err(DialFailure::Socket(ws_error_reason(&e))),
-        Err(_) => Err(DialFailure::ConnectTimedOut),
+        Ok(Err(e)) => Err(TwitchError::DialSocket(ws_error_reason(&e))),
+        Err(_) => Err(TwitchError::DialConnectTimedOut),
     }
 }
 
@@ -2193,25 +2175,26 @@ async fn next_message(
 
 async fn await_successor(
     dial: &mut Option<SuccessorDial>,
-) -> Result<(EventSubSocket, String), DialFailure> {
+) -> Result<(EventSubSocket, String), TwitchError> {
     match dial {
         Some(dial) => dial.await,
         None => std::future::pending().await,
     }
 }
 
-async fn dial_successor(url: String) -> Result<(EventSubSocket, String), DialFailure> {
+async fn dial_successor(url: String) -> Result<(EventSubSocket, String), TwitchError> {
     match tokio::time::timeout(SUCCESSOR_TIMEOUT, welcome_on_successor(url)).await {
         Ok(welcomed) => welcomed,
-        Err(_) => Err(DialFailure::WelcomeTimedOut),
+        Err(_) => Err(TwitchError::WelcomeTimedOut),
     }
 }
 
-async fn welcome_on_successor(url: String) -> Result<(EventSubSocket, String), DialFailure> {
+async fn welcome_on_successor(url: String) -> Result<(EventSubSocket, String), TwitchError> {
     let mut socket = connect_socket(&url).await?;
 
     while let Some(frame) = socket.next().await {
-        let Message::Text(text) = frame.map_err(|e| DialFailure::Socket(ws_error_reason(&e)))?
+        let Message::Text(text) =
+            frame.map_err(|e| TwitchError::DialSocket(ws_error_reason(&e)))?
         else {
             continue;
         };
@@ -2227,11 +2210,11 @@ async fn welcome_on_successor(url: String) -> Result<(EventSubSocket, String), D
         }
         return match parsed.payload.and_then(|payload| payload.session) {
             Some(session) => Ok((socket, session.id)),
-            None => Err(DialFailure::WelcomeWithoutSession),
+            None => Err(TwitchError::WelcomeWithoutSession),
         };
     }
 
-    Err(DialFailure::ClosedBeforeWelcome)
+    Err(TwitchError::ClosedBeforeWelcome)
 }
 
 fn arm_successor(successor: &mut Option<SuccessorDial>, url: String) {
@@ -2269,24 +2252,6 @@ fn close_in_background(socket: EventSubSocket) {
     tokio::spawn(close_socket(socket));
 }
 
-fn warn_token_failure(e: &PlatformError) {
-    match e {
-        PlatformError::Http { status, .. } => {
-            warn!(
-                status = *status,
-                "chat token fetch failed; treating as disconnect"
-            );
-        }
-        PlatformError::Network { reason } => {
-            warn!(
-                error = %reason,
-                "chat token fetch failed; treating as disconnect"
-            );
-        }
-        _ => warn!("chat token fetch failed; treating as disconnect"),
-    }
-}
-
 struct SubscriptionPassContext {
     manager: Arc<TwitchCredentialsManager>,
     helix: Gateway,
@@ -2308,12 +2273,12 @@ impl SubscriptionPassContext {
                 return PassVerdict::ReauthRequired;
             }
             Err(e) => {
-                warn_token_failure(&e);
+                warn_token_failure!("chat token fetch failed; treating as disconnect", &e);
                 return PassVerdict::TokenUnavailable;
             }
         };
         let result = match self.subscribe(&token).await {
-            Err(SubscribeError::Unauthorized) => {
+            Err(TwitchError::TokenRejected) => {
                 debug!("eventsub subscription rejected the access token; refreshing once");
                 match self.manager.refresh(&token).await {
                     Ok(renewed) => self.subscribe(&renewed.access_token).await,
@@ -2322,7 +2287,7 @@ impl SubscriptionPassContext {
                         return PassVerdict::ReauthRequired;
                     }
                     Err(e) => {
-                        warn_token_failure(&e);
+                        warn_token_failure!("chat token fetch failed; treating as disconnect", &e);
                         return PassVerdict::TokenUnavailable;
                     }
                 }
@@ -2348,18 +2313,18 @@ impl SubscriptionPassContext {
                 PassVerdict::Live
             }
             Ok(_) => PassVerdict::NothingLive,
-            Err(SubscribeError::ScopeMissing) => {
+            Err(TwitchError::ScopeMissing) => {
                 warn!("chat subscription rejected: scope missing (reauth required)");
                 PassVerdict::ReauthRequired
             }
-            Err(SubscribeError::Unauthorized) => {
+            Err(_) => {
                 warn!("chat subscription rejected the renewed token (reauth required)");
                 PassVerdict::ReauthRequired
             }
         }
     }
 
-    async fn subscribe(&self, token: &OAuthToken) -> Result<SubscribePass, SubscribeError> {
+    async fn subscribe(&self, token: &OAuthToken) -> Result<SubscribePass, TwitchError> {
         let helix: Arc<dyn HelixTransport> = Arc::new(HelixHttpTransport::new(
             self.helix.clone(),
             self.client_id.clone(),
@@ -5953,20 +5918,20 @@ mod tests {
     fn a_failed_successor_dial_reads_the_same_as_the_reason_the_log_has_always_shown() {
         for (failure, expected) in [
             (
-                DialFailure::Socket("tls handshake eof".to_owned()),
+                TwitchError::DialSocket("tls handshake eof".to_owned()),
                 "tls handshake eof",
             ),
-            (DialFailure::ConnectTimedOut, "connect timed out"),
+            (TwitchError::DialConnectTimedOut, "connect timed out"),
             (
-                DialFailure::WelcomeTimedOut,
+                TwitchError::WelcomeTimedOut,
                 "timed out before session_welcome",
             ),
             (
-                DialFailure::WelcomeWithoutSession,
+                TwitchError::WelcomeWithoutSession,
                 "session_welcome missing session.id",
             ),
             (
-                DialFailure::ClosedBeforeWelcome,
+                TwitchError::ClosedBeforeWelcome,
                 "closed before session_welcome",
             ),
         ] {

@@ -7,8 +7,8 @@ use forge_types::Secret;
 use serde::Deserialize;
 
 use crate::elevenlabs::SAMPLE_RATE_HZ;
-use crate::elevenlabs::error::ElevenLabsError;
 use crate::elevenlabs::synth::{API_KEY_HEADER, classify_with};
+use crate::error::CloudTtsError;
 use crate::gateway_failure::failure_detail;
 use crate::network::ProviderLink;
 
@@ -35,14 +35,14 @@ fn gender_from_labels(labels: &HashMap<String, String>) -> VoiceGender {
     }
 }
 
-fn classify_error(failure: &GatewayFailure, link: &ProviderLink) -> ElevenLabsError {
+fn classify_error(failure: &GatewayFailure, link: &ProviderLink) -> CloudTtsError {
     classify_with(failure, link, None, failure_detail)
 }
 
 pub(super) async fn fetch_voices(
     link: &ProviderLink,
     api_key: &str,
-) -> Result<Vec<TtsVoice>, ElevenLabsError> {
+) -> Result<Vec<TtsVoice>, CloudTtsError> {
     let request = GatewayRequest::get(VOICES_PATH)
         .api_key(API_KEY_HEADER, Secret::new(api_key))
         .class(CallClass::Catalog);
@@ -53,7 +53,7 @@ pub(super) async fn fetch_voices(
 
     let list: VoiceList = response
         .json()
-        .map_err(|e| ElevenLabsError::Decode(e.to_string()))?;
+        .map_err(|e| CloudTtsError::Decode(e.to_string()))?;
 
     let engine_id = EngineId(ENGINE_ID_ELEVENLABS.into());
     Ok(list
@@ -165,15 +165,15 @@ mod tests {
             let server = serving(template).await;
             let error = fetch_voices(&link_to(&server), API_KEY).await.unwrap_err();
             let got = match &error {
-                ElevenLabsError::Unauthorized(_) => "Unauthorized".to_owned(),
-                ElevenLabsError::RateLimited { retry_after_secs } => {
+                CloudTtsError::Unauthorized(_) => "Unauthorized".to_owned(),
+                CloudTtsError::RateLimited { retry_after_secs } => {
                     format!("RateLimited({retry_after_secs})")
                 }
-                ElevenLabsError::Rejected(detail) if detail.contains(&cap) => {
+                CloudTtsError::Rejected(detail) if detail.contains(&cap) => {
                     format!("Rejected({cap})")
                 }
-                ElevenLabsError::Http(_) => "Http".to_owned(),
-                ElevenLabsError::Decode(_) => "Decode".to_owned(),
+                CloudTtsError::Http(_) => "Http".to_owned(),
+                CloudTtsError::Decode(_) => "Decode".to_owned(),
                 other => format!("{other:?}"),
             };
             assert_eq!(got, expected, "{error}");

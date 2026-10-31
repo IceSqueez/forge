@@ -1,3 +1,4 @@
+use crate::error::ScriptError;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, Instant};
@@ -6,7 +7,7 @@ use forge_events::{
     ChatSendRequest, EventPublisher, EventSource, ScriptHttpCall, ScriptHttpMethod, ScriptLogLevel,
     ScriptLogged, TypedEvent,
 };
-use forge_platform_core::{SenderPreference, unknown_sender_reason};
+use forge_platform_core::{PlatformError, SenderPreference};
 use forge_types::{
     EventId, IntegrationAvailability, IntegrationId, LatestScope, LatestValueReader, MessageRef,
     NO_CHAT_PLATFORM_ENABLED, NO_WHISPER_PLATFORM_ENABLED, SCRIPT_LOG_TARGET, ScriptId,
@@ -19,7 +20,7 @@ use crate::catalog::MethodDescriptor;
 use crate::coded_text::coded_text;
 use crate::convert::{dynamic_to_variant, variant_to_dynamic};
 use crate::globals_port::{GlobalDeletion, ScriptGlobals};
-use crate::http_client::{HttpError, HttpResponse, ScriptHttpClient};
+use crate::http_client::{HttpResponse, ScriptHttpClient};
 use crate::registration::{ApiModule, ScriptFn};
 use crate::schedule::ActionScheduler;
 use crate::schedule_api::build_schedule_module;
@@ -33,17 +34,9 @@ const SPEAK_UNAVAILABLE_REASON: &str = "text-to-speech is not available where th
 const HTTP_UNAVAILABLE_REASON: &str = "HTTP requests are not available where this script runs";
 const LATEST_UNAVAILABLE_REASON: &str = "latest values are not available where this script runs";
 
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum ScriptSpeakError {
-    #[error("{}", coded_text(.0))]
-    UnknownVoice(MessageRef),
-    #[error("the speak queue is unavailable: {}", coded_text(.0))]
-    QueueUnavailable(MessageRef),
-}
-
 #[async_trait::async_trait]
 pub trait SpeakRequester: Send + Sync {
-    async fn speak(&self, text: String, voice: Option<String>) -> Result<(), ScriptSpeakError>;
+    async fn speak(&self, text: String, voice: Option<String>) -> Result<(), ScriptError>;
     async fn skip(&self);
     async fn clear(&self);
 }
@@ -351,7 +344,7 @@ fn http_response_to_rhai_map(resp: HttpResponse) -> rhai::Map {
     map
 }
 
-fn http_error_to_rhai_error(e: HttpError) -> Box<EvalAltResult> {
+fn http_error_to_rhai_error(e: ScriptError) -> Box<EvalAltResult> {
     Box::new(EvalAltResult::ErrorRuntime(
         e.to_string().into(),
         Position::NONE,
@@ -564,7 +557,8 @@ fn admit_whisper_target(
 }
 
 fn script_sender(raw: &str) -> Result<SenderPreference, Box<EvalAltResult>> {
-    SenderPreference::parse(raw).ok_or_else(|| unknown_sender_reason(raw).into())
+    raw.parse()
+        .map_err(|error: PlatformError| error.to_string().into())
 }
 
 fn chat_text(text: &str) -> ChatSendRequest {
@@ -1531,7 +1525,11 @@ mod tests {
         ] {
             let (result, sent) = eval_gated(SwitchableAvailability::default(), call).await;
 
-            assert_runtime_error_mentions(call, result, &unknown_sender_reason(raw));
+            assert_runtime_error_mentions(
+                call,
+                result,
+                &raw.parse::<SenderPreference>().unwrap_err().to_string(),
+            );
             assert!(sent.is_empty(), "{call} published {sent:?}");
         }
     }
@@ -1973,15 +1971,15 @@ mod tests {
     }
 
     struct ScriptedRequester {
-        outcome: Result<(), ScriptSpeakError>,
+        outcome: Mutex<Result<(), ScriptError>>,
         asked: Mutex<Vec<(String, Option<String>)>>,
     }
 
     #[async_trait::async_trait]
     impl SpeakRequester for ScriptedRequester {
-        async fn speak(&self, text: String, voice: Option<String>) -> Result<(), ScriptSpeakError> {
+        async fn speak(&self, text: String, voice: Option<String>) -> Result<(), ScriptError> {
             self.asked.lock().unwrap().push((text, voice));
-            self.outcome.clone()
+            std::mem::replace(&mut *self.outcome.lock().unwrap(), Ok(()))
         }
 
         async fn skip(&self) {}
@@ -1990,14 +1988,14 @@ mod tests {
     }
 
     async fn eval_speaking(
-        outcome: Result<(), ScriptSpeakError>,
+        outcome: Result<(), ScriptError>,
         script: &'static str,
     ) -> (
         Result<rhai::Dynamic, crate::ScriptError>,
         Vec<(String, Option<String>)>,
     ) {
         let requester = Arc::new(ScriptedRequester {
-            outcome,
+            outcome: Mutex::new(outcome),
             asked: Mutex::new(Vec::new()),
         });
         let dp = open_dp().await;
@@ -2038,7 +2036,7 @@ mod tests {
         for (script, refusal, expected) in [
             (
                 r#"forge::tts::speak_as("piper/ghost", "hi")"#,
-                ScriptSpeakError::UnknownVoice(
+                ScriptError::UnknownVoice(
                     MessageRef::new(MessageCode::from_static("core", "voice_not_installed"))
                         .with_arg("voice", VerbatimText::new("piper/ghost")),
                 ),
@@ -2046,7 +2044,7 @@ mod tests {
             ),
             (
                 r#"forge::tts::speak("hi")"#,
-                ScriptSpeakError::QueueUnavailable(MessageRef::new(MessageCode::from_static(
+                ScriptError::SpeakQueueUnavailable(MessageRef::new(MessageCode::from_static(
                     "speak",
                     "queue_gone",
                 ))),
@@ -2054,7 +2052,7 @@ mod tests {
             ),
             (
                 r#"forge::tts::speak_as("piper/amy", "hi")"#,
-                ScriptSpeakError::QueueUnavailable(MessageRef::new(MessageCode::from_static(
+                ScriptError::SpeakQueueUnavailable(MessageRef::new(MessageCode::from_static(
                     "speak",
                     "queue_gone",
                 ))),

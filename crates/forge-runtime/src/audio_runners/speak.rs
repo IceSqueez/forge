@@ -10,8 +10,7 @@ use forge_types::{
 };
 
 use super::{SPEECH_TEXT, WAIT_FOR_COMPLETION};
-use crate::core_messages;
-use crate::engine_voice_ref::{EngineVoiceError, EngineVoiceRef};
+use crate::engine_voice_ref::EngineVoiceRef;
 use crate::speak_dispatcher::{SpeakDispatcher, SpeechOrigin};
 use crate::twitch_emote_lexicon::TwitchEmoteLexicon;
 
@@ -66,17 +65,6 @@ impl SpeakRunner {
         };
         EngineVoiceRef::installed(&stored, &self.speak.get_available_voices().await)
             .map(|voice| Some(voice.to_string()))
-            .map_err(|reason| match reason {
-                EngineVoiceError::NotAnEngineVoice(voice) => {
-                    core_messages::voice_not_engine_voice(&voice)
-                }
-                EngineVoiceError::NotInstalled {
-                    engine_id,
-                    voice_id,
-                } => core_messages::voice_not_installed(
-                    &EngineVoiceRef::new(engine_id, voice_id).to_string(),
-                ),
-            })
     }
 
     fn add_learned_reward_emotes(&self, origin: &mut SpeechOrigin, text: &str) {
@@ -168,6 +156,7 @@ impl SubActionRunner for SpeakRunner {
 
 #[cfg(test)]
 mod tests {
+    use crate::core_messages;
     use forge_events::test_support::NullPublisher;
     use std::sync::Mutex;
 
@@ -175,7 +164,7 @@ mod tests {
     use forge_types::{EventId, MessageCode, MessageRef, SubActionOutcome};
 
     use super::*;
-    use crate::speak_dispatcher::{SpeakDispatchError, SpeakDispatcher, SpeakingViewer};
+    use crate::speak_dispatcher::{SpeakDispatcher, SpeakingViewer};
     use crate::test_support::failure::{failure_message, verbatim_arg};
     use forge_events::Event;
     use forge_types::Variant;
@@ -213,7 +202,7 @@ mod tests {
             text: String,
             _voice_id_override: Option<String>,
             origin: SpeechOrigin,
-        ) -> Result<(), SpeakDispatchError> {
+        ) -> Result<(), MessageRef> {
             self.heard.lock().unwrap().push(Heard {
                 text,
                 path: Path::Speak,
@@ -227,7 +216,7 @@ mod tests {
             text: String,
             _voice_id_override: Option<String>,
             origin: SpeechOrigin,
-        ) -> Result<(), SpeakDispatchError> {
+        ) -> Result<(), MessageRef> {
             self.heard.lock().unwrap().push(Heard {
                 text,
                 path: Path::Reward,
@@ -246,9 +235,10 @@ mod tests {
             _text: String,
             _voice_id_override: Option<String>,
             _origin: SpeechOrigin,
-        ) -> Result<(), SpeakDispatchError> {
-            Err(SpeakDispatchError::Dispatch(MessageRef::new(
-                MessageCode::from_static("speak", "queue_stopped"),
+        ) -> Result<(), MessageRef> {
+            Err(MessageRef::new(MessageCode::from_static(
+                "speak",
+                "queue_stopped",
             )))
         }
     }
@@ -485,7 +475,7 @@ mod tests {
             _text: String,
             voice: Option<String>,
             _origin: SpeechOrigin,
-        ) -> Result<(), SpeakDispatchError> {
+        ) -> Result<(), MessageRef> {
             self.dispatched.lock().unwrap().push((Path::Speak, voice));
             Ok(())
         }
@@ -495,7 +485,7 @@ mod tests {
             _text: String,
             voice: Option<String>,
             _origin: SpeechOrigin,
-        ) -> Result<(), SpeakDispatchError> {
+        ) -> Result<(), MessageRef> {
             self.dispatched.lock().unwrap().push((Path::Reward, voice));
             Ok(())
         }
@@ -611,7 +601,7 @@ mod tests {
             _text: String,
             _voice_id_override: Option<String>,
             _origin: SpeechOrigin,
-        ) -> Result<(), SpeakDispatchError> {
+        ) -> Result<(), MessageRef> {
             panic!("a queued step must stay tied to its run");
         }
 
@@ -622,7 +612,7 @@ mod tests {
             is_reward: bool,
             _origin: SpeechOrigin,
             run: forge_registry::CancelSignal,
-        ) -> Result<(), SpeakDispatchError> {
+        ) -> Result<(), MessageRef> {
             *self.queued.lock().unwrap() = Some((is_reward, run));
             Ok(())
         }

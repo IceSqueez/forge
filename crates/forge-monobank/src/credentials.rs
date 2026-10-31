@@ -2,7 +2,7 @@ use forge_storage::{CredentialId, CredentialsRepo};
 use forge_types::Secret;
 use serde::{Deserialize, Serialize};
 
-use crate::error::MonobankError;
+use crate::error::{MonobankError, redacted_serde_reason};
 use crate::jar::JarId;
 use crate::token::parse_token;
 
@@ -43,7 +43,7 @@ pub(crate) async fn load(
         return Ok(None);
     };
     let stored: StoredCredential = serde_json::from_str(&bundle)
-        .map_err(|error| storage_failure(format!("{:?} error", error.classify())))?;
+        .map_err(|error| storage_failure(redacted_serde_reason(&error)))?;
     let token = parse_token(stored.token.expose())?;
     let jar_id = stored.jar_id.as_deref().map(JarId::parse).transpose()?;
     Ok(Some(MonobankCredential { token, jar_id }))
@@ -60,7 +60,7 @@ pub(crate) async fn store(
             .as_ref()
             .map(|jar| jar.as_str().to_owned()),
     })
-    .map_err(|error| storage_failure(format!("{:?} error", error.classify())))?;
+    .map_err(|error| storage_failure(redacted_serde_reason(&error)))?;
     creds
         .store(&credential_id(), &bundle)
         .await

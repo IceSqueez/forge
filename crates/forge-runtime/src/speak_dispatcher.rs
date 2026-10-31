@@ -7,41 +7,10 @@ use forge_types::{
 };
 use tokio::sync::watch;
 
-use crate::engine_voice_ref::EngineVoiceError;
-
-#[derive(Debug, thiserror::Error)]
-pub enum SpeakDispatchError {
-    #[error("{}", .0.code())]
-    Dispatch(MessageRef),
-}
-
-impl SpeakDispatchError {
-    pub fn message(&self) -> &MessageRef {
-        let Self::Dispatch(message) = self;
-        message
-    }
-}
-
-impl From<EngineVoiceError> for SpeakDispatchError {
-    fn from(error: EngineVoiceError) -> Self {
-        Self::Dispatch(match error {
-            EngineVoiceError::NotAnEngineVoice(voice) => {
-                crate::core_messages::voice_not_engine_voice(&voice)
-            }
-            EngineVoiceError::NotInstalled {
-                engine_id,
-                voice_id,
-            } => crate::core_messages::voice_not_installed(
-                &crate::engine_voice_ref::EngineVoiceRef::new(engine_id, voice_id).to_string(),
-            ),
-        })
-    }
-}
-
-pub(crate) fn dispatch_outcome<T>(result: &Result<T, SpeakDispatchError>) -> SubActionOutcome {
+pub(crate) fn dispatch_outcome<T>(result: &Result<T, MessageRef>) -> SubActionOutcome {
     match result {
         Ok(_) => SubActionOutcome::Success,
-        Err(error) => SubActionOutcome::Failed(UserText::Message(error.message().clone())),
+        Err(error) => SubActionOutcome::Failed(UserText::Message(error.clone())),
     }
 }
 
@@ -156,14 +125,14 @@ pub trait SpeakDispatcher: Send + Sync {
         text: String,
         voice: Option<String>,
         origin: SpeechOrigin,
-    ) -> Result<(), SpeakDispatchError>;
+    ) -> Result<(), MessageRef>;
 
     async fn speak_with_engine(
         &self,
         text: String,
         engine_id: String,
         origin: SpeechOrigin,
-    ) -> Result<(), SpeakDispatchError> {
+    ) -> Result<(), MessageRef> {
         let _ = (text, engine_id, origin);
         Ok(())
     }
@@ -173,7 +142,7 @@ pub trait SpeakDispatcher: Send + Sync {
         text: String,
         voice: Option<String>,
         origin: SpeechOrigin,
-    ) -> Result<(), SpeakDispatchError> {
+    ) -> Result<(), MessageRef> {
         self.speak(text, voice, origin).await
     }
 
@@ -184,7 +153,7 @@ pub trait SpeakDispatcher: Send + Sync {
         is_reward: bool,
         origin: SpeechOrigin,
         run: CancelSignal,
-    ) -> Result<(), SpeakDispatchError> {
+    ) -> Result<(), MessageRef> {
         let _ = run;
         if is_reward {
             self.speak_reward_sourced(text, voice, origin).await
@@ -199,7 +168,7 @@ pub trait SpeakDispatcher: Send + Sync {
         engine_id: String,
         origin: SpeechOrigin,
         run: CancelSignal,
-    ) -> Result<(), SpeakDispatchError> {
+    ) -> Result<(), MessageRef> {
         let _ = run;
         self.speak_with_engine(text, engine_id, origin).await
     }
@@ -211,7 +180,7 @@ pub trait SpeakDispatcher: Send + Sync {
         is_reward: bool,
         origin: SpeechOrigin,
         cancel: CancelSignal,
-    ) -> Result<(), SpeakDispatchError> {
+    ) -> Result<(), MessageRef> {
         let _ = cancel;
         if is_reward {
             self.speak_reward_sourced(text, voice, origin).await
@@ -226,7 +195,7 @@ pub trait SpeakDispatcher: Send + Sync {
         engine_id: String,
         origin: SpeechOrigin,
         cancel: CancelSignal,
-    ) -> Result<(), SpeakDispatchError> {
+    ) -> Result<(), MessageRef> {
         let _ = cancel;
         self.speak_with_engine(text, engine_id, origin).await
     }
@@ -236,30 +205,28 @@ pub trait SpeakDispatcher: Send + Sync {
         speech: ShowSpeech,
         cancel: CancelSignal,
         started: SpeechStartSignal,
-    ) -> Result<(), SpeakDispatchError> {
+    ) -> Result<(), MessageRef> {
         let _ = (speech, cancel, started);
-        Err(SpeakDispatchError::Dispatch(MessageRef::new(
-            SHOW_SPEECH_UNAVAILABLE,
-        )))
+        Err(MessageRef::new(SHOW_SPEECH_UNAVAILABLE))
     }
 
-    async fn stop_current(&self) -> Result<(), SpeakDispatchError> {
+    async fn stop_current(&self) -> Result<(), MessageRef> {
         Ok(())
     }
 
-    async fn pause(&self) -> Result<(), SpeakDispatchError> {
+    async fn pause(&self) -> Result<(), MessageRef> {
         Ok(())
     }
 
-    async fn resume(&self) -> Result<(), SpeakDispatchError> {
+    async fn resume(&self) -> Result<(), MessageRef> {
         Ok(())
     }
 
-    async fn skip_current(&self) -> Result<(), SpeakDispatchError> {
+    async fn skip_current(&self) -> Result<(), MessageRef> {
         Ok(())
     }
 
-    async fn clear_keep_current(&self) -> Result<(), SpeakDispatchError> {
+    async fn clear_keep_current(&self) -> Result<(), MessageRef> {
         Ok(())
     }
 
@@ -271,7 +238,7 @@ pub trait SpeakDispatcher: Send + Sync {
         Vec::new()
     }
 
-    fn check_voice(&self, encoded: &str) -> Result<(), EngineVoiceError> {
+    fn check_voice(&self, encoded: &str) -> Result<(), MessageRef> {
         let _ = encoded;
         Ok(())
     }
@@ -286,7 +253,7 @@ pub trait SpeakDispatcher: Send + Sync {
         viewer_name: String,
         engine_id: String,
         voice_id: String,
-    ) -> Result<(), SpeakDispatchError> {
+    ) -> Result<(), MessageRef> {
         let _ = (viewer_id, viewer_name, engine_id, voice_id);
         Ok(())
     }
@@ -296,7 +263,7 @@ pub trait SpeakDispatcher: Send + Sync {
         viewer_id: String,
         engine_id: String,
         voice_id: String,
-    ) -> Result<(), SpeakDispatchError> {
+    ) -> Result<(), MessageRef> {
         let _ = (viewer_id, engine_id, voice_id);
         Ok(())
     }
@@ -413,34 +380,11 @@ mod tests {
         assert_eq!(
             (
                 dispatch_outcome(&Ok(())),
-                dispatch_outcome::<()>(&Err(SpeakDispatchError::Dispatch(queue_stopped()))),
+                dispatch_outcome::<()>(&Err(queue_stopped())),
             ),
             (
                 SubActionOutcome::Success,
                 SubActionOutcome::Failed(UserText::Message(queue_stopped())),
-            )
-        );
-    }
-
-    #[test]
-    fn engine_voice_errors_become_catalogued_messages_naming_the_voice() {
-        let not_engine: SpeakDispatchError =
-            EngineVoiceError::NotAnEngineVoice("plain".into()).into();
-        let not_installed: SpeakDispatchError = EngineVoiceError::NotInstalled {
-            engine_id: "piper".into(),
-            voice_id: "amy".into(),
-        }
-        .into();
-        assert_eq!(
-            (
-                not_engine.message().clone(),
-                not_installed.message().clone()
-            ),
-            (
-                crate::core_messages::voice_not_engine_voice("plain"),
-                crate::core_messages::voice_not_installed(
-                    &crate::engine_voice_ref::EngineVoiceRef::new("piper", "amy").to_string()
-                ),
             )
         );
     }
@@ -455,7 +399,7 @@ mod tests {
                 _text: String,
                 _voice_id_override: Option<String>,
                 _origin: SpeechOrigin,
-            ) -> Result<(), SpeakDispatchError> {
+            ) -> Result<(), MessageRef> {
                 Ok(())
             }
         }
@@ -471,7 +415,7 @@ mod tests {
             .await
             .unwrap_err();
         assert_eq!(
-            error.message(),
+            &error,
             &MessageRef::new(MessageCode::from_static("speak", "show_speech_unavailable"))
         );
     }

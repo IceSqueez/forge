@@ -4,12 +4,12 @@ use forge_speech_types::VoiceId;
 use forge_tts_core::{SynthesisRequest, xml_escape};
 use serde_json::json;
 
+use crate::error::CloudTtsError;
 use crate::gateway_failure::{
     Classified, ProviderPolicy, VoiceSignal, classify, failure_detail, probe_failure_detail,
 };
 use crate::network::ProviderLink;
 use crate::polly::SAMPLE_RATE_HZ;
-use crate::polly::error::PollyError;
 use crate::polly::signer::{PollySigner, SignedCall};
 
 pub(crate) const VOICES_PATH: &str = "/v1/voices";
@@ -77,18 +77,22 @@ pub(super) fn classify_with(
     link: &ProviderLink,
     voice: Option<&VoiceId>,
     detail: fn(&GatewayFailure) -> String,
-) -> PollyError {
+) -> CloudTtsError {
     match classify(failure, link, POLICY, voice, detail) {
-        Classified::Quota(excerpt) => PollyError::QuotaExceeded(excerpt),
-        Classified::Throttled(retry_after_secs) => PollyError::RateLimited { retry_after_secs },
-        Classified::Auth => PollyError::Unauthorized(INVALID_CREDENTIALS.into()),
-        Classified::VoiceMissing(voice) => PollyError::VoiceNotFound(voice.0),
-        Classified::Rejected(detail) => PollyError::Rejected(detail),
-        Classified::Transient(detail) => PollyError::Http(detail),
+        Classified::Quota(excerpt) => CloudTtsError::QuotaExceeded(excerpt),
+        Classified::Throttled(retry_after_secs) => CloudTtsError::RateLimited { retry_after_secs },
+        Classified::Auth => CloudTtsError::Unauthorized(INVALID_CREDENTIALS.into()),
+        Classified::VoiceMissing(voice) => CloudTtsError::VoiceNotFound(voice),
+        Classified::Rejected(detail) => CloudTtsError::Rejected(detail),
+        Classified::Transient(detail) => CloudTtsError::Http(detail),
     }
 }
 
-fn classify_error(failure: &GatewayFailure, link: &ProviderLink, voice_id: &VoiceId) -> PollyError {
+fn classify_error(
+    failure: &GatewayFailure,
+    link: &ProviderLink,
+    voice_id: &VoiceId,
+) -> CloudTtsError {
     classify_with(failure, link, Some(voice_id), failure_detail)
 }
 
@@ -96,7 +100,7 @@ pub(super) async fn synthesize(
     link: &ProviderLink,
     signer: &PollySigner,
     req: SynthesisRequest,
-) -> Result<PcmBuffer, PollyError> {
+) -> Result<PcmBuffer, CloudTtsError> {
     let body = build_polly_body(&req);
     let request = signer.request(
         link,
@@ -117,7 +121,7 @@ pub(super) async fn synthesize(
 pub(super) async fn probe_connection(
     link: &ProviderLink,
     signer: &PollySigner,
-) -> Result<(), PollyError> {
+) -> Result<(), CloudTtsError> {
     let request = signer
         .request(
             link,
@@ -142,7 +146,6 @@ mod tests {
     use crate::polly::signer::test_support::{
         assert_reveals_no_credential, credentials, echo_server, echoing, outcome,
     };
-    use forge_tts_core::TtsError;
     use wiremock::matchers::{body_string, header, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -363,7 +366,10 @@ mod tests {
                 .await
                 .unwrap_err();
             assert_eq!(outcome(&error), expected, "{status} {text}: {error}");
-            for shown in [error.to_string(), TtsError::from(error).to_string()] {
+            for shown in [
+                error.to_string(),
+                error.into_tts(forge_tts_core::ENGINE_ID_POLLY).to_string(),
+            ] {
                 assert_reveals_no_credential(&shown, &server).await;
                 assert_reveals_nothing(&shown, &server);
             }
@@ -385,7 +391,7 @@ mod tests {
             let result = probe_connection(&link_to(&server), &signer()).await;
             let seen = match &result {
                 Ok(()) => "Ok".to_owned(),
-                Err(PollyError::Http(detail)) => format!("Http({detail})"),
+                Err(CloudTtsError::Http(detail)) => format!("Http({detail})"),
                 Err(error) => outcome(error),
             };
             assert_eq!(seen, expected, "{status}");

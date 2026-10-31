@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_platform_twitch::{
-    HelixError, HelixRequest, HelixTransport, TwitchLifecycle, register_twitch_sub_actions,
+    HelixRequest, HelixTransport, TwitchError, TwitchLifecycle, register_twitch_sub_actions,
 };
 use forge_registry::SubActionRegistry;
 use forge_storage::test_support::MemoryCredentials;
@@ -16,7 +16,7 @@ struct UnreachableTransport;
 
 #[async_trait]
 impl HelixTransport for UnreachableTransport {
-    async fn execute(&self, _: HelixRequest) -> Result<Value, HelixError> {
+    async fn execute(&self, _: HelixRequest) -> Result<Value, TwitchError> {
         Ok(Value::Null)
     }
 }

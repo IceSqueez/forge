@@ -19,6 +19,7 @@ pub(super) fn platform_message(error: &PlatformError) -> MessageRef {
         PlatformError::Serialization(error) => messages::response_unreadable(&error.to_string()),
         PlatformError::Network { reason } => messages::request_failed(reason),
         PlatformError::Io(_)
+        | PlatformError::UnknownSender { .. }
         | PlatformError::LoopbackPortInUse { .. }
         | PlatformError::Unsupported { .. }
         | PlatformError::EndpointOverrideRefused { .. } => {

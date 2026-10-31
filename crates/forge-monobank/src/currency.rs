@@ -1,4 +1,4 @@
-use forge_types::{CurrencyCode, MoneyAmount, MoneyError};
+use forge_types::{CurrencyCode, MoneyAmount, TypesError};
 
 const CENTS_EXPONENT: u32 = 2;
 const ISO_NUMERIC_UAH: i64 = 980;
@@ -18,7 +18,7 @@ pub(crate) struct KnownCurrency {
 }
 
 impl KnownCurrency {
-    pub(crate) fn amount(&self, minor_units: u64) -> Result<MoneyAmount, MoneyError> {
+    pub(crate) fn amount(&self, minor_units: u64) -> Result<MoneyAmount, TypesError> {
         MoneyAmount::from_minor_units(minor_units, self.exponent, self.code.clone())
     }
 }

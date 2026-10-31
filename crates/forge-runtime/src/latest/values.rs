@@ -1,3 +1,4 @@
+use crate::error::RuntimeError;
 use forge_types::{
     EventId, LatestScope, LatestValue, LatestValueReader, RecoverRwLock, Shared, Variant,
 };
@@ -28,14 +29,6 @@ pub struct LatestValues {
     publisher: Arc<dyn EventPublisher>,
     anonymous_name: Shared<String>,
     store_writes: Arc<AsyncMutex<()>>,
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum LatestResetError {
-    #[error("unknown latest slot '{0}'")]
-    UnknownSlot(String),
-    #[error("latest slot could not be reset: {0}")]
-    Storage(#[from] StorageError),
 }
 
 impl LatestValues {
@@ -71,9 +64,9 @@ impl LatestValues {
         }
     }
 
-    pub async fn reset(&self, slot: &str) -> Result<(), LatestResetError> {
-        let declaration =
-            slot_declaration(slot).ok_or_else(|| LatestResetError::UnknownSlot(slot.to_owned()))?;
+    pub async fn reset(&self, slot: &str) -> Result<(), RuntimeError> {
+        let declaration = slot_declaration(slot)
+            .ok_or_else(|| RuntimeError::UnknownLatestSlot(slot.to_owned()))?;
         let _store_write = self.store_writes.lock().await;
         if declaration.retention == SlotRetention::SurvivesRestart {
             with_timeout(self.repo.reset_slot(declaration.slot)).await?;
@@ -821,7 +814,7 @@ mod tests {
         let result = values.reset("no_such_slot").await;
 
         assert!(
-            matches!(result, Err(LatestResetError::UnknownSlot(slot)) if slot == "no_such_slot")
+            matches!(result, Err(RuntimeError::UnknownLatestSlot(slot)) if slot == "no_such_slot")
         );
         assert!(store.resets.lock().unwrap().is_empty());
     }
@@ -931,7 +924,7 @@ mod tests {
 
         let result = values.reset(LATEST_DONATION_SLOT).await;
 
-        assert!(matches!(result, Err(LatestResetError::Storage(_))));
+        assert!(matches!(result, Err(RuntimeError::Storage(_))));
         assert_eq!(merged_donor(&values).as_deref(), Some("Olena"));
         assert_eq!(recorder.events().len(), 1);
     }

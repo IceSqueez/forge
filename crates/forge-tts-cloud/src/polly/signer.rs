@@ -7,8 +7,8 @@ use sha2::{Digest, Sha256};
 use time::OffsetDateTime;
 
 use crate::credentials::PollyCredentials;
+use crate::error::CloudTtsError;
 use crate::network::ProviderLink;
-use crate::polly::error::PollyError;
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -44,7 +44,7 @@ impl PollySigner {
         &self,
         link: &ProviderLink,
         call: SignedCall<'_>,
-    ) -> Result<GatewayRequest, PollyError> {
+    ) -> Result<GatewayRequest, CloudTtsError> {
         self.request_at(link, call, OffsetDateTime::now_utc())
     }
 
@@ -53,7 +53,7 @@ impl PollySigner {
         link: &ProviderLink,
         call: SignedCall<'_>,
         now: OffsetDateTime,
-    ) -> Result<GatewayRequest, PollyError> {
+    ) -> Result<GatewayRequest, CloudTtsError> {
         let SignedCall {
             method,
             path,
@@ -62,7 +62,7 @@ impl PollySigner {
         } = call;
         let target = link
             .resolve_path(path)
-            .map_err(|failure| PollyError::SignatureError(failure.to_string()))?;
+            .map_err(|failure| CloudTtsError::InvalidEndpoint(failure.to_string()))?;
         let canonical_uri = uri_encode(target.path(), true);
         let canonical_query = canonical_query(query);
         let date_time = format_datetime(&now);
@@ -185,14 +185,14 @@ fn hex_sha256(data: &[u8]) -> String {
     hex_encode(&Sha256::digest(data))
 }
 
-fn hmac_sha256(key: &[u8], data: &[u8]) -> Result<Vec<u8>, PollyError> {
+fn hmac_sha256(key: &[u8], data: &[u8]) -> Result<Vec<u8>, CloudTtsError> {
     let mut mac =
-        HmacSha256::new_from_slice(key).map_err(|e| PollyError::SignatureError(e.to_string()))?;
+        HmacSha256::new_from_slice(key).map_err(|e| CloudTtsError::Signing(e.to_string()))?;
     mac.update(data);
     Ok(mac.finalize().into_bytes().to_vec())
 }
 
-fn derive_signing_key(secret: &[u8], date: &str, region: &str) -> Result<Vec<u8>, PollyError> {
+fn derive_signing_key(secret: &[u8], date: &str, region: &str) -> Result<Vec<u8>, CloudTtsError> {
     let k_date_key: Vec<u8> = [SECRET_KEY_PREFIX.as_bytes(), secret].concat();
     let k_date = hmac_sha256(&k_date_key, date.as_bytes())?;
     let k_region = hmac_sha256(&k_date, region.as_bytes())?;
@@ -241,7 +241,7 @@ pub(crate) mod test_support {
     use wiremock::{Mock, MockServer, Respond, ResponseTemplate};
 
     use crate::credentials::PollyCredentials;
-    use crate::polly::error::PollyError;
+    use crate::error::CloudTtsError;
 
     pub(crate) const ACCESS_KEY_ID: &str = "AKIAIOSFODNN7EXAMPLE";
     pub(crate) const SECRET_ACCESS_KEY: &str = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY";
@@ -453,19 +453,19 @@ pub(crate) mod test_support {
         assert!(!text.contains(SECRET_ACCESS_KEY), "secret leaked: {text}");
     }
 
-    pub(crate) fn outcome(error: &PollyError) -> String {
+    pub(crate) fn outcome(error: &CloudTtsError) -> String {
         match error {
-            PollyError::Http(_) => "Http".into(),
-            PollyError::Unauthorized(_) => "Unauthorized".into(),
-            PollyError::QuotaExceeded(_) => "QuotaExceeded".into(),
-            PollyError::RateLimited { retry_after_secs } => {
+            CloudTtsError::Http(_) => "Http".into(),
+            CloudTtsError::Unauthorized(_) => "Unauthorized".into(),
+            CloudTtsError::QuotaExceeded(_) => "QuotaExceeded".into(),
+            CloudTtsError::RateLimited { retry_after_secs } => {
                 format!("RateLimited({retry_after_secs})")
             }
-            PollyError::SignatureError(_) => "SignatureError".into(),
-            PollyError::VoiceNotFound(_) => "VoiceNotFound".into(),
-            PollyError::Rejected(_) => "Rejected".into(),
-            PollyError::Decode(_) => "Decode".into(),
-            PollyError::Io(_) => "Io".into(),
+            CloudTtsError::InvalidEndpoint(_) | CloudTtsError::Signing(_) => "Signature".into(),
+            CloudTtsError::VoiceNotFound(_) => "VoiceNotFound".into(),
+            CloudTtsError::Rejected(_) => "Rejected".into(),
+            CloudTtsError::Decode(_) => "Decode".into(),
+            CloudTtsError::Io(_) => "Io".into(),
         }
     }
 
@@ -770,12 +770,12 @@ mod tests {
     }
 
     #[test]
-    fn a_path_the_gateway_cannot_resolve_is_a_signature_error() {
+    fn a_path_the_gateway_cannot_resolve_is_an_invalid_endpoint() {
         let link = link_at("https://polly.us-east-1.amazonaws.com");
         for path in ["/v1/voices?NextToken=x", "/v1/voices#frag"] {
             let result = signer().request(&link, call(Method::Get, path, &[], None));
             assert!(
-                matches!(&result, Err(PollyError::SignatureError(detail))
+                matches!(&result, Err(CloudTtsError::InvalidEndpoint(detail))
                     if *detail == GatewayFailure::InvalidRequest(InvalidRequest::QueryInPath).to_string()),
                 "{path}"
             );

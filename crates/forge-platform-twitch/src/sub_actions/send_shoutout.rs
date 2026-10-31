@@ -142,7 +142,8 @@ impl SubActionRunner for SendShoutoutRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::helix::{HelixError, HelixMethod};
+    use crate::error::TwitchError;
+    use crate::helix::HelixMethod;
     use crate::sub_actions::test_support::{
         MockTransport, SELF_USER_ID, TOKEN_SENTINEL, assert_failed_with_detail, make_ctx,
         users_fixture,
@@ -153,7 +154,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     fn runner_with(
-        responses: Vec<Result<serde_json::Value, HelixError>>,
+        responses: Vec<Result<serde_json::Value, TwitchError>>,
     ) -> (Arc<MockTransport>, SendShoutoutRunner) {
         let transport = Arc::new(MockTransport::returning_sequence(responses));
         let runner = SendShoutoutRunner::new(
@@ -223,7 +224,7 @@ mod tests {
 
     #[tokio::test]
     async fn resolve_failure_skips_the_shoutout_call() {
-        let (transport, runner) = runner_with(vec![Err(HelixError::Http {
+        let (transport, runner) = runner_with(vec![Err(TwitchError::Http {
             status: 404,
             body: format!("user not found {TOKEN_SENTINEL}"),
         })]);
@@ -243,7 +244,7 @@ mod tests {
     async fn shoutout_http_failure_surfaces_its_status_in_the_failure_detail() {
         let (transport, runner) = runner_with(vec![
             users_fixture("555"),
-            Err(HelixError::Http {
+            Err(TwitchError::Http {
                 status: 429,
                 body: "shoutout ratelimited".to_owned(),
             }),

@@ -183,7 +183,7 @@ mod tests {
     use std::sync::Mutex;
 
     use forge_components::{ToastKind, Toasts};
-    use forge_runtime::{DesktopNotice, OsPortError};
+    use forge_runtime::{DesktopNotice, RuntimeError};
     use forge_storage::Language;
     use forge_transfer::{FailureCategory, ScheduleState};
     use gpui::TestAppContext;
@@ -286,7 +286,7 @@ mod tests {
     }
 
     impl NotifyPort for RecordingPort {
-        fn show(&self, notice: DesktopNotice) -> Result<(), OsPortError> {
+        fn show(&self, notice: DesktopNotice) -> Result<(), RuntimeError> {
             self.shown.lock().unwrap().push(notice.title);
             Ok(())
         }

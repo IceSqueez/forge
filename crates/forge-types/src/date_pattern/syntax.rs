@@ -1,4 +1,4 @@
-use thiserror::Error;
+use crate::error::TypesError;
 
 use super::names::{NameForm, NameWidth};
 
@@ -8,30 +8,6 @@ const FRACTION_LETTER: char = 'S';
 const SUPPORTED_LETTERS: &str = "yMLdEcHhamsSx";
 
 const DOT_NET_SPELLINGS: [(&str, &str); 3] = [("dddd", "EEEE"), ("ddd", "EEE"), ("tt", "a")];
-
-#[derive(Debug, Clone, PartialEq, Eq, Error)]
-pub enum DatePatternError {
-    #[error("the date pattern is empty")]
-    Empty,
-    #[error("quoted text starting at position {position} is never closed with '")]
-    UnterminatedQuote { position: usize },
-    #[error(
-        "'{letter}' at position {position} is not a date pattern letter; put literal text in single quotes"
-    )]
-    UnsupportedLetter { letter: char, position: usize },
-    #[error("'{spelling}' at position {position} is not a supported length for '{letter}'")]
-    UnsupportedLength {
-        letter: char,
-        spelling: String,
-        position: usize,
-    },
-    #[error("'{spelling}' at position {position} is not supported; use '{replacement}'")]
-    DotNetSpelling {
-        spelling: String,
-        replacement: &'static str,
-        position: usize,
-    },
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum Padding {
@@ -63,9 +39,9 @@ pub(super) enum PatternPiece {
     Field(DateField),
 }
 
-pub(super) fn parse_pieces(pattern: &str) -> Result<Vec<PatternPiece>, DatePatternError> {
+pub(super) fn parse_pieces(pattern: &str) -> Result<Vec<PatternPiece>, TypesError> {
     if pattern.is_empty() {
-        return Err(DatePatternError::Empty);
+        return Err(TypesError::EmptyDatePattern);
     }
     let chars: Vec<char> = pattern.chars().collect();
     let mut pieces = Vec::new();
@@ -96,11 +72,7 @@ pub(super) fn parse_pieces(pattern: &str) -> Result<Vec<PatternPiece>, DatePatte
     Ok(pieces)
 }
 
-fn read_quoted(
-    chars: &[char],
-    open: usize,
-    literal: &mut String,
-) -> Result<usize, DatePatternError> {
+fn read_quoted(chars: &[char], open: usize, literal: &mut String) -> Result<usize, TypesError> {
     if chars.get(open + 1) == Some(&QUOTE) {
         literal.push(QUOTE);
         return Ok(open + 2);
@@ -108,7 +80,7 @@ fn read_quoted(
     let mut index = open + 1;
     loop {
         match chars.get(index) {
-            None => return Err(DatePatternError::UnterminatedQuote { position: open }),
+            None => return Err(TypesError::UnterminatedQuote { position: open }),
             Some(&QUOTE) if chars.get(index + 1) == Some(&QUOTE) => {
                 literal.push(QUOTE);
                 index += 2;
@@ -122,11 +94,7 @@ fn read_quoted(
     }
 }
 
-fn field_for_run(
-    letter: char,
-    length: usize,
-    position: usize,
-) -> Result<DateField, DatePatternError> {
+fn field_for_run(letter: char, length: usize, position: usize) -> Result<DateField, TypesError> {
     let spelling: String = std::iter::repeat_n(letter, length).collect();
     if let Some(field) = field_for_spelling(&spelling) {
         return Ok(field);
@@ -138,20 +106,20 @@ fn field_for_run(
         .iter()
         .find(|(dot_net, _)| *dot_net == spelling)
     {
-        return Err(DatePatternError::DotNetSpelling {
+        return Err(TypesError::DotNetSpelling {
             spelling,
             replacement,
             position,
         });
     }
     if SUPPORTED_LETTERS.contains(letter) {
-        Err(DatePatternError::UnsupportedLength {
+        Err(TypesError::UnsupportedLength {
             letter,
             spelling,
             position,
         })
     } else {
-        Err(DatePatternError::UnsupportedLetter { letter, position })
+        Err(TypesError::UnsupportedLetter { letter, position })
     }
 }
 
@@ -193,7 +161,7 @@ fn field_for_spelling(spelling: &str) -> Option<DateField> {
 mod tests {
     use time::{Date, Month, UtcOffset};
 
-    use super::DatePatternError::{self, *};
+    use super::TypesError::{self, *};
     use crate::date_pattern::{DatePattern, NamesLanguage, PatternZone};
 
     fn render_utc(pattern: &str) -> String {
@@ -207,7 +175,7 @@ mod tests {
             .format(value, PatternZone::Utc, NamesLanguage::En)
     }
 
-    fn length(letter: char, spelling: &str, position: usize) -> DatePatternError {
+    fn length(letter: char, spelling: &str, position: usize) -> TypesError {
         UnsupportedLength {
             letter,
             spelling: spelling.to_owned(),
@@ -215,7 +183,7 @@ mod tests {
         }
     }
 
-    fn dot_net(spelling: &str, replacement: &'static str, position: usize) -> DatePatternError {
+    fn dot_net(spelling: &str, replacement: &'static str, position: usize) -> TypesError {
         DotNetSpelling {
             spelling: spelling.to_owned(),
             replacement,
@@ -245,7 +213,7 @@ mod tests {
     #[test]
     fn parse_rejects_with_exact_variant_and_char_position() {
         for (pattern, expected) in [
-            ("", Empty),
+            ("", EmptyDatePattern),
             (
                 "Q",
                 UnsupportedLetter {

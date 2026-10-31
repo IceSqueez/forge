@@ -1,3 +1,4 @@
+use crate::error::RuntimeError;
 use std::collections::BTreeMap;
 use std::time::Duration;
 
@@ -40,24 +41,6 @@ pub(crate) struct EgressResponse {
     pub truncated: bool,
 }
 
-#[derive(Debug, thiserror::Error)]
-pub(crate) enum EgressError {
-    #[error("invalid url")]
-    InvalidUrl,
-    #[error("only http and https urls are allowed")]
-    SchemeNotAllowed,
-    #[error("blocked: target resolves to a private or local address")]
-    BlockedAddress,
-    #[error("host did not resolve")]
-    UnresolvableHost,
-    #[error("too many redirects")]
-    TooManyRedirects,
-    #[error("request timed out")]
-    Timeout,
-    #[error("network error: {0}")]
-    Network(String),
-}
-
 pub(crate) struct EgressClient {
     public_only: Gateway,
     local_allowed: Gateway,
@@ -65,10 +48,10 @@ pub(crate) struct EgressClient {
 }
 
 impl EgressClient {
-    pub(crate) fn new() -> Result<Self, EgressError> {
+    pub(crate) fn new() -> Result<Self, RuntimeError> {
         let build = |allow_local| {
             Gateway::user_directed(allow_local)
-                .map_err(|error| EgressError::Network(error.to_string()))
+                .map_err(|error| RuntimeError::EgressNetwork(error.to_string()))
         };
         Ok(Self {
             public_only: build(false)?,
@@ -77,16 +60,16 @@ impl EgressClient {
         })
     }
 
-    pub(crate) async fn send(&self, req: EgressRequest) -> Result<EgressResponse, EgressError> {
+    pub(crate) async fn send(&self, req: EgressRequest) -> Result<EgressResponse, RuntimeError> {
         let _permit = self
             .concurrency
             .acquire()
             .await
-            .map_err(|_| EgressError::Network("egress pool closed".to_owned()))?;
+            .map_err(|_| RuntimeError::EgressNetwork("egress pool closed".to_owned()))?;
 
         let target = ResolvedTarget::absolute(&req.url).map_err(invalid_request_error)?;
         if !ALLOWED_SCHEMES.contains(&target.scheme()) {
-            return Err(EgressError::SchemeNotAllowed);
+            return Err(RuntimeError::SchemeNotAllowed);
         }
         let gateway = if req.allow_local {
             &self.local_allowed
@@ -155,35 +138,35 @@ fn egress_response(response: GatewayResponse) -> EgressResponse {
     }
 }
 
-fn failure_error(failure: GatewayFailure) -> EgressError {
+fn failure_error(failure: GatewayFailure) -> RuntimeError {
     match failure {
         GatewayFailure::InvalidRequest(reason) => invalid_request_error(reason),
         GatewayFailure::AddressRefused(HostRejection::PrivateOrSpecial) => {
-            EgressError::BlockedAddress
+            RuntimeError::BlockedAddress
         }
         GatewayFailure::AddressRefused(HostRejection::Unresolvable) => {
-            EgressError::UnresolvableHost
+            RuntimeError::UnresolvableHost
         }
         GatewayFailure::Transport(transport) => match transport.redirect_refusal() {
-            Some(RedirectRefusal::TooManyHops) => EgressError::TooManyRedirects,
-            Some(RedirectRefusal::UnsupportedScheme) => EgressError::SchemeNotAllowed,
+            Some(RedirectRefusal::TooManyHops) => RuntimeError::TooManyRedirects,
+            Some(RedirectRefusal::UnsupportedScheme) => RuntimeError::SchemeNotAllowed,
             Some(RedirectRefusal::MalformedTarget | RedirectRefusal::EmbeddedCredentials) => {
-                EgressError::InvalidUrl
+                RuntimeError::InvalidUrl
             }
-            None if transport.kind() == TransportKind::Timeout => EgressError::Timeout,
-            None => EgressError::Network(transport.cause().to_owned()),
+            None if transport.kind() == TransportKind::Timeout => RuntimeError::EgressTimeout,
+            None => RuntimeError::EgressNetwork(transport.cause().to_owned()),
         },
-        other => EgressError::Network(other.to_string()),
+        other => RuntimeError::EgressNetwork(other.to_string()),
     }
 }
 
-fn invalid_request_error(reason: InvalidRequest) -> EgressError {
+fn invalid_request_error(reason: InvalidRequest) -> RuntimeError {
     match reason {
         InvalidRequest::MalformedUrl | InvalidRequest::EmbeddedCredentials => {
-            EgressError::InvalidUrl
+            RuntimeError::InvalidUrl
         }
-        InvalidRequest::UnsupportedScheme => EgressError::SchemeNotAllowed,
-        other => EgressError::Network(other.to_string()),
+        InvalidRequest::UnsupportedScheme => RuntimeError::SchemeNotAllowed,
+        other => RuntimeError::EgressNetwork(other.to_string()),
     }
 }
 
@@ -213,7 +196,7 @@ mod tests {
     const CLOSING_OK: &[u8] =
         b"HTTP/1.1 200 OK\r\ncontent-length: 2\r\nconnection: close\r\n\r\nok";
 
-    fn expect_err(result: Result<EgressResponse, EgressError>) -> EgressError {
+    fn expect_err(result: Result<EgressResponse, RuntimeError>) -> RuntimeError {
         match result {
             Ok(_) => panic!("expected an egress error, got an Ok response"),
             Err(e) => e,
@@ -262,7 +245,7 @@ mod tests {
 
         let err = expect_err(client.send(request(server.uri(), false)).await);
 
-        assert!(matches!(err, EgressError::BlockedAddress));
+        assert!(matches!(err, RuntimeError::BlockedAddress));
         assert!(server.received_requests().await.unwrap().is_empty());
     }
 
@@ -296,7 +279,10 @@ mod tests {
             "http://[64:ff9b::a9fe:a9fe]/",
         ] {
             let err = expect_err(client.send(request(url.to_owned(), false)).await);
-            assert!(matches!(err, EgressError::BlockedAddress), "{url}: {err:?}");
+            assert!(
+                matches!(err, RuntimeError::BlockedAddress),
+                "{url}: {err:?}"
+            );
         }
     }
 
@@ -312,7 +298,7 @@ mod tests {
                 .await,
         );
 
-        assert!(matches!(err, EgressError::BlockedAddress));
+        assert!(matches!(err, RuntimeError::BlockedAddress));
         assert!(server.received_requests().await.unwrap().is_empty());
     }
 
@@ -322,7 +308,7 @@ mod tests {
         for url in ["ftp://example.com/file", "file:///etc/passwd"] {
             let err = expect_err(client.send(request(url.to_owned(), true)).await);
             assert!(
-                matches!(err, EgressError::SchemeNotAllowed),
+                matches!(err, RuntimeError::SchemeNotAllowed),
                 "{url}: {err:?}"
             );
         }
@@ -340,7 +326,7 @@ mod tests {
             String::new(),
         ] {
             let err = expect_err(client.send(request(url.clone(), true)).await);
-            assert!(matches!(err, EgressError::InvalidUrl), "{url}: {err:?}");
+            assert!(matches!(err, RuntimeError::InvalidUrl), "{url}: {err:?}");
         }
         assert!(server.received_requests().await.unwrap().is_empty());
     }
@@ -365,8 +351,8 @@ mod tests {
             let err = expect_err(client.send(req).await);
 
             let mapped = match err {
-                EgressError::SchemeNotAllowed => "scheme",
-                EgressError::InvalidUrl => "invalid",
+                RuntimeError::SchemeNotAllowed => "scheme",
+                RuntimeError::InvalidUrl => "invalid",
                 other => panic!("{location}: unexpected {other:?}"),
             };
             assert_eq!(mapped, expected, "{location}");
@@ -409,7 +395,7 @@ mod tests {
         req.follow_redirects = true;
 
         let err = expect_err(client.send(req).await);
-        assert!(matches!(err, EgressError::TooManyRedirects));
+        assert!(matches!(err, RuntimeError::TooManyRedirects));
     }
 
     #[tokio::test]
@@ -515,7 +501,7 @@ mod tests {
                 .await
                 .expect("the request timeout never fired");
 
-            assert!(matches!(expect_err(result), EgressError::Timeout));
+            assert!(matches!(expect_err(result), RuntimeError::EgressTimeout));
         }
     }
 

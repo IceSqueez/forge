@@ -6,15 +6,16 @@ use async_trait::async_trait;
 use forge_audio::{PlaybackCorrelation, RemoteDestinationId};
 use forge_registry::CancelSignal;
 use forge_runtime::{
-    EngineVoiceError, EngineVoiceRef, ShowSpeech, SpeakDispatchError, SpeakDispatcher,
-    SpeakingViewer, SpeechOrigin, SpeechStartSignal, VoiceDescriptor,
+    EngineVoiceRef, ShowSpeech, SpeakDispatcher, SpeakingViewer, SpeechOrigin, SpeechStartSignal,
+    VoiceDescriptor,
 };
-use forge_script::{ScriptSpeakError, SpeakRequester};
+use forge_script::{ScriptError, SpeakRequester};
 use forge_speak_queue::{
     PlaybackTarget, Priority, RequestId, SpeakCommand, SpeakEvent, SpeakQueueHandle, SpeakRequest,
 };
 use forge_speech_types::{AliasId, AliasState, VoiceAlias};
 use forge_speech_types::{EngineId, VoiceId};
+use forge_types::MessageRef;
 use tokio::sync::broadcast;
 use tokio::sync::broadcast::error::RecvError;
 
@@ -47,7 +48,7 @@ impl SpeakBridge {
         is_reward: bool,
         target: Option<PlaybackTarget>,
         origin: SpeechOrigin,
-    ) -> Result<RequestId, SpeakDispatchError> {
+    ) -> Result<RequestId, MessageRef> {
         let request_id = RequestId::new();
         let (viewer_id, viewer_name) = queue_identity(origin.viewer);
         let request = SpeakRequest {
@@ -66,7 +67,7 @@ impl SpeakBridge {
         self.handle
             .send(SpeakCommand::Enqueue(request))
             .await
-            .map_err(|e| SpeakDispatchError::Dispatch(messages::queue_failure(&e)))?;
+            .map_err(|e| messages::queue_failure(&e))?;
         Ok(request_id)
     }
 
@@ -86,7 +87,7 @@ impl SpeakBridge {
     fn installed_voice_overrides(
         &self,
         voice: Option<&str>,
-    ) -> Result<(Option<EngineId>, Option<VoiceId>), EngineVoiceError> {
+    ) -> Result<(Option<EngineId>, Option<VoiceId>), MessageRef> {
         let Some(encoded) = voice else {
             return Ok((None, None));
         };
@@ -100,20 +101,19 @@ impl SpeakBridge {
     fn dispatch_voice_overrides(
         &self,
         voice: Option<&str>,
-    ) -> Result<(Option<EngineId>, Option<VoiceId>), SpeakDispatchError> {
+    ) -> Result<(Option<EngineId>, Option<VoiceId>), MessageRef> {
         self.installed_voice_overrides(voice)
-            .map_err(SpeakDispatchError::from)
     }
 
     async fn withdraw_unfinished(
         &self,
         withdrawal: SpeakCommand,
-        outcome: Result<(), SpeakDispatchError>,
-    ) -> Result<(), SpeakDispatchError> {
+        outcome: Result<(), MessageRef>,
+    ) -> Result<(), MessageRef> {
         if outcome.is_err()
             && let Err(error) = self.dispatch(withdrawal).await
         {
-            tracing::warn!(error = %error, "abandoned speech could not be withdrawn");
+            tracing::warn!(error = %error.code(), "abandoned speech could not be withdrawn");
         }
         outcome
     }
@@ -137,11 +137,11 @@ impl SpeakBridge {
         });
     }
 
-    async fn dispatch(&self, cmd: SpeakCommand) -> Result<(), SpeakDispatchError> {
+    async fn dispatch(&self, cmd: SpeakCommand) -> Result<(), MessageRef> {
         self.handle
             .send(cmd)
             .await
-            .map_err(|e| SpeakDispatchError::Dispatch(messages::queue_failure(&e)))
+            .map_err(|e| messages::queue_failure(&e))
     }
 }
 
@@ -189,7 +189,7 @@ async fn wait_for_terminal(
     events: &mut broadcast::Receiver<SpeakEvent>,
     request_id: &RequestId,
     cancel: CancelSignal,
-) -> Result<(), SpeakDispatchError> {
+) -> Result<(), MessageRef> {
     wait_marking_start(events, request_id, cancel, None).await
 }
 
@@ -198,13 +198,13 @@ async fn wait_marking_start(
     request_id: &RequestId,
     cancel: CancelSignal,
     started: Option<&SpeechStartSignal>,
-) -> Result<(), SpeakDispatchError> {
+) -> Result<(), MessageRef> {
     let mut events_lost = false;
     let wait = async {
         loop {
             tokio::select! {
                 () = cancel.cancelled() => {
-                    return Err(SpeakDispatchError::Dispatch(messages::wait_cancelled()));
+                    return Err(messages::wait_cancelled());
                 }
                 event = events.recv() => {
                     match event {
@@ -219,16 +219,16 @@ async fn wait_marking_start(
                             return Ok(());
                         }
                         Ok(SpeakEvent::Failed { request_id: rid, message }) if &rid == request_id => {
-                            return Err(SpeakDispatchError::Dispatch(message));
+                            return Err(message);
                         }
                         Ok(SpeakEvent::Skipped { request_id: rid, message }) if &rid == request_id => {
-                            return Err(SpeakDispatchError::Dispatch(message));
+                            return Err(message);
                         }
                         Ok(SpeakEvent::Removed { request_id: rid }) if &rid == request_id => {
-                            return Err(SpeakDispatchError::Dispatch(messages::removed_from_queue()));
+                            return Err(messages::removed_from_queue());
                         }
                         Ok(SpeakEvent::Rejected { request_id: rid, message }) if &rid == request_id => {
-                            return Err(SpeakDispatchError::Dispatch(message));
+                            return Err(message);
                         }
                         Ok(_) => continue,
                         Err(RecvError::Lagged(missed)) => {
@@ -240,7 +240,7 @@ async fn wait_marking_start(
                             );
                         }
                         Err(RecvError::Closed) => {
-                            return Err(SpeakDispatchError::Dispatch(messages::event_stream_closed()));
+                            return Err(messages::event_stream_closed());
                         }
                     }
                 }
@@ -249,8 +249,8 @@ async fn wait_marking_start(
     };
     match tokio::time::timeout(SPEAK_WAIT_HARD_CAP, wait).await {
         Ok(result) => result,
-        Err(_) if events_lost => Err(SpeakDispatchError::Dispatch(messages::outcome_unknown())),
-        Err(_) => Err(SpeakDispatchError::Dispatch(messages::wait_timed_out())),
+        Err(_) if events_lost => Err(messages::outcome_unknown()),
+        Err(_) => Err(messages::wait_timed_out()),
     }
 }
 
@@ -261,7 +261,7 @@ impl SpeakDispatcher for SpeakBridge {
         text: String,
         voice: Option<String>,
         origin: SpeechOrigin,
-    ) -> Result<(), SpeakDispatchError> {
+    ) -> Result<(), MessageRef> {
         let (engine, voice) = self.dispatch_voice_overrides(voice.as_deref())?;
         self.enqueue(text, engine, voice, false, None, origin)
             .await
@@ -273,7 +273,7 @@ impl SpeakDispatcher for SpeakBridge {
         text: String,
         voice: Option<String>,
         origin: SpeechOrigin,
-    ) -> Result<(), SpeakDispatchError> {
+    ) -> Result<(), MessageRef> {
         let (engine, voice) = self.dispatch_voice_overrides(voice.as_deref())?;
         self.enqueue(text, engine, voice, true, None, origin)
             .await
@@ -285,7 +285,7 @@ impl SpeakDispatcher for SpeakBridge {
         text: String,
         engine_id: String,
         origin: SpeechOrigin,
-    ) -> Result<(), SpeakDispatchError> {
+    ) -> Result<(), MessageRef> {
         self.enqueue(text, Some(EngineId(engine_id)), None, false, None, origin)
             .await
             .map(|_| ())
@@ -298,7 +298,7 @@ impl SpeakDispatcher for SpeakBridge {
         is_reward: bool,
         origin: SpeechOrigin,
         run: CancelSignal,
-    ) -> Result<(), SpeakDispatchError> {
+    ) -> Result<(), MessageRef> {
         let (engine, voice) = self.dispatch_voice_overrides(voice.as_deref())?;
         let events = self.handle.subscribe();
         let request_id = self
@@ -314,7 +314,7 @@ impl SpeakDispatcher for SpeakBridge {
         engine_id: String,
         origin: SpeechOrigin,
         run: CancelSignal,
-    ) -> Result<(), SpeakDispatchError> {
+    ) -> Result<(), MessageRef> {
         let events = self.handle.subscribe();
         let request_id = self
             .enqueue(text, Some(EngineId(engine_id)), None, false, None, origin)
@@ -330,7 +330,7 @@ impl SpeakDispatcher for SpeakBridge {
         is_reward: bool,
         origin: SpeechOrigin,
         cancel: CancelSignal,
-    ) -> Result<(), SpeakDispatchError> {
+    ) -> Result<(), MessageRef> {
         let (engine, voice) = self.dispatch_voice_overrides(voice.as_deref())?;
         let mut events = self.handle.subscribe();
         let request_id = self
@@ -347,7 +347,7 @@ impl SpeakDispatcher for SpeakBridge {
         engine_id: String,
         origin: SpeechOrigin,
         cancel: CancelSignal,
-    ) -> Result<(), SpeakDispatchError> {
+    ) -> Result<(), MessageRef> {
         let mut events = self.handle.subscribe();
         let request_id = self
             .enqueue(text, Some(EngineId(engine_id)), None, false, None, origin)
@@ -362,7 +362,7 @@ impl SpeakDispatcher for SpeakBridge {
         speech: ShowSpeech,
         cancel: CancelSignal,
         started: SpeechStartSignal,
-    ) -> Result<(), SpeakDispatchError> {
+    ) -> Result<(), MessageRef> {
         let target = PlaybackTarget {
             destination: RemoteDestinationId::new(speech.overlay),
             correlation: PlaybackCorrelation::new(speech.show),
@@ -384,23 +384,23 @@ impl SpeakDispatcher for SpeakBridge {
             .await
     }
 
-    async fn stop_current(&self) -> Result<(), SpeakDispatchError> {
+    async fn stop_current(&self) -> Result<(), MessageRef> {
         self.dispatch(SpeakCommand::Skip).await
     }
 
-    async fn pause(&self) -> Result<(), SpeakDispatchError> {
+    async fn pause(&self) -> Result<(), MessageRef> {
         self.dispatch(SpeakCommand::Pause).await
     }
 
-    async fn resume(&self) -> Result<(), SpeakDispatchError> {
+    async fn resume(&self) -> Result<(), MessageRef> {
         self.dispatch(SpeakCommand::Resume).await
     }
 
-    async fn skip_current(&self) -> Result<(), SpeakDispatchError> {
+    async fn skip_current(&self) -> Result<(), MessageRef> {
         self.dispatch(SpeakCommand::Skip).await
     }
 
-    async fn clear_keep_current(&self) -> Result<(), SpeakDispatchError> {
+    async fn clear_keep_current(&self) -> Result<(), MessageRef> {
         self.dispatch(SpeakCommand::ClearPending).await
     }
 
@@ -412,7 +412,7 @@ impl SpeakDispatcher for SpeakBridge {
         self.voice_descriptors()
     }
 
-    fn check_voice(&self, encoded: &str) -> Result<(), EngineVoiceError> {
+    fn check_voice(&self, encoded: &str) -> Result<(), MessageRef> {
         self.installed_voice_overrides(Some(encoded)).map(|_| ())
     }
 
@@ -426,7 +426,7 @@ impl SpeakDispatcher for SpeakBridge {
         viewer_name: String,
         engine_id: String,
         voice_id: String,
-    ) -> Result<(), SpeakDispatchError> {
+    ) -> Result<(), MessageRef> {
         let alias = VoiceAlias {
             id: AliasId::new(),
             viewer_id,
@@ -445,7 +445,7 @@ impl SpeakDispatcher for SpeakBridge {
         viewer_id: String,
         engine_id: String,
         voice_id: String,
-    ) -> Result<(), SpeakDispatchError> {
+    ) -> Result<(), MessageRef> {
         self.dispatch(SpeakCommand::SwitchAlias {
             viewer_id,
             engine_id: EngineId(engine_id),
@@ -457,16 +457,14 @@ impl SpeakDispatcher for SpeakBridge {
 
 #[async_trait]
 impl SpeakRequester for SpeakBridge {
-    async fn speak(&self, text: String, voice: Option<String>) -> Result<(), ScriptSpeakError> {
+    async fn speak(&self, text: String, voice: Option<String>) -> Result<(), ScriptError> {
         let (engine, voice) = self
             .installed_voice_overrides(voice.as_deref())
-            .map_err(|e| {
-                ScriptSpeakError::UnknownVoice(SpeakDispatchError::from(e).message().clone())
-            })?;
+            .map_err(ScriptError::UnknownVoice)?;
         self.enqueue(text, engine, voice, false, None, SpeechOrigin::default())
             .await
             .map(|_| ())
-            .map_err(|e| ScriptSpeakError::QueueUnavailable(e.message().clone()))
+            .map_err(ScriptError::SpeakQueueUnavailable)
     }
 
     async fn skip(&self) {
@@ -484,6 +482,8 @@ impl SpeakRequester for SpeakBridge {
 
 #[cfg(test)]
 mod tests {
+    use forge_types::{MessageCode, VerbatimText};
+
     use super::*;
 
     const CAPACITY: usize = 2;
@@ -502,9 +502,9 @@ mod tests {
         }
     }
 
-    fn reason(result: Result<(), SpeakDispatchError>) -> String {
+    fn reason(result: Result<(), MessageRef>) -> String {
         match result {
-            Err(SpeakDispatchError::Dispatch(message)) => message.code().to_string(),
+            Err(message) => message.code().to_string(),
             Ok(()) => panic!("the wait resolved as a finished speech"),
         }
     }
@@ -1436,20 +1436,17 @@ mod tests {
             SpeakRequester::speak(&bridge, "hi".to_owned(), Some("cap-a".to_owned())).await;
 
         assert_eq!(
-            step.as_ref().err().map(SpeakDispatchError::message),
+            step.as_ref().err(),
             Some(
-                &forge_types::MessageRef::new(forge_types::MessageCode::from_static(
-                    "core",
-                    "voice_not_installed"
-                ))
-                .with_arg("voice", forge_types::VerbatimText::new("cap/ghost"))
+                &MessageRef::new(MessageCode::from_static("core", "voice_not_installed"))
+                    .with_arg("voice", forge_types::VerbatimText::new("cap/ghost"))
             ),
             "a step with an uninstalled voice got {step:?}"
         );
         assert!(
             matches!(
                 &script,
-                Err(ScriptSpeakError::UnknownVoice(reason))
+                Err(ScriptError::UnknownVoice(reason))
                     if reason.code().name() == "voice_not_engine_voice"
             ),
             "a script with a bare voice id got {script:?}"
@@ -1466,14 +1463,17 @@ mod tests {
             ("cap/en/b", Ok(())),
             (
                 "cap/ghost",
-                Err(EngineVoiceError::NotInstalled {
-                    engine_id: "cap".to_owned(),
-                    voice_id: "ghost".to_owned(),
-                }),
+                Err(
+                    MessageRef::new(MessageCode::from_static("core", "voice_not_installed"))
+                        .with_arg("voice", VerbatimText::new("cap/ghost")),
+                ),
             ),
             (
                 "cap-a",
-                Err(EngineVoiceError::NotAnEngineVoice("cap-a".to_owned())),
+                Err(
+                    MessageRef::new(MessageCode::from_static("core", "voice_not_engine_voice"))
+                        .with_arg("voice", VerbatimText::new("cap-a")),
+                ),
             ),
         ] {
             assert_eq!(bridge.check_voice(encoded), expected, "{encoded:?}");
@@ -1681,7 +1681,7 @@ mod tests {
         bridge: &SpeakBridge,
         path: Unwaited,
         run: CancelSignal,
-    ) -> Result<(), SpeakDispatchError> {
+    ) -> Result<(), MessageRef> {
         let (text, origin) = ("hi".to_owned(), SpeechOrigin::default());
         match path {
             Unwaited::Voice => {

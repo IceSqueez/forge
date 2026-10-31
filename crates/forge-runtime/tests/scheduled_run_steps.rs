@@ -10,8 +10,8 @@ use forge_registry::{
     FormField, RunContext, SubActionRegistry, SubActionRunner, UnitAmountBounds, effective_config,
 };
 use forge_runtime::{
-    ActionEngineHandle, CatchUpSettle, EventBus, ExecutionRequest, NullEventLogRepo,
-    RuntimeWiringParts, ScheduleError, ScheduledRunsHandle,
+    ActionEngineHandle, CatchUpSettle, EventBus, ExecutionRequest, NullEventLogRepo, RuntimeError,
+    RuntimeWiringParts, ScheduledRunsHandle,
 };
 use forge_runtime::{CANCEL_SCHEDULED_KIND_ID, SCHEDULE_ACTION_KIND_ID};
 use forge_runtime::{MAX_SCHEDULED_ARGS_BYTES, MIN_LATE_TOLERANCE};
@@ -428,7 +428,7 @@ async fn schedule_step_fails_on_a_due_time_it_cannot_read() {
 async fn schedule_step_refuses_a_due_time_that_is_not_ahead_of_now() {
     let harness = Harness::new().await;
     let target = harness.target().await;
-    let too_soon = ScheduleError::DueTooSoon.to_string();
+    let too_soon = RuntimeError::DueTooSoon.to_string();
 
     for due in [base() - DAY, base()] {
         let mut pairs = due_at(Variant::Datetime(due)).to_vec();
@@ -445,7 +445,7 @@ async fn schedule_step_refuses_a_due_time_that_is_not_ahead_of_now() {
 #[tokio::test]
 async fn schedule_step_without_a_known_action_fails_without_placing_a_run() {
     let harness = Harness::new().await;
-    let unknown = ScheduleError::UnknownAction.to_string();
+    let unknown = RuntimeError::ScheduleUnknownAction.to_string();
 
     for (action_id, expected, expected_problem, expected_detail) in [
         (

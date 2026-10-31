@@ -165,7 +165,7 @@ pub(crate) use core_url_open::CoreUrlOpenRunner;
 pub use core_users_get_var::CoreUsersGetVarRunner;
 pub use core_users_increment_var::CoreUsersIncrementVarRunner;
 pub use core_users_set_var::CoreUsersSetVarRunner;
-pub use os_ports::{DesktopNotice, NotifyPort, NotifyUrgency, OsPortError, SystemNotifyPort};
+pub use os_ports::{DesktopNotice, NotifyPort, NotifyUrgency, SystemNotifyPort};
 pub(crate) use os_ports::{SystemClipboardPort, SystemUrlOpenPort};
 pub use overlay_send::CONTENT_SCHEMA_KEY;
 pub(crate) use overlay_send::OverlaySendRunner;

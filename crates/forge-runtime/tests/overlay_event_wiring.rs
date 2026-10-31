@@ -14,8 +14,8 @@ use forge_registry::{
     TriggerCategory, TriggerKindDescriptor, TriggerVariables, declared_variables,
 };
 use forge_runtime::{
-    ActionsService, OVERLAY_ALERT_QUEUE, OverlayWiringError, OverlayWiringOutcome,
-    OverlayWiringPlan, OverlayWiringRecords, OverlayWiringRefusal, WiredQueue, plan_overlay_wiring,
+    ActionsService, OVERLAY_ALERT_QUEUE, OverlayWiringOutcome, OverlayWiringPlan,
+    OverlayWiringRecords, OverlayWiringRefusal, RuntimeError, WiredQueue, plan_overlay_wiring,
 };
 use forge_runtime::{OVERLAY_SEND_KIND_ID, OVERLAY_TARGET_KEY};
 use forge_runtime::{WAIT_KIND_ID, WAIT_MS_KEY};
@@ -659,7 +659,7 @@ impl Wiring {
 async fn wire_to(
     service: &ActionsService,
     trigger: &StubTrigger,
-) -> Result<OverlayWiringOutcome, OverlayWiringError> {
+) -> Result<OverlayWiringOutcome, RuntimeError> {
     service
         .wire_overlay_to_event(
             &definition(ALERT_KIND, OverlayConfig::new()),
@@ -670,7 +670,7 @@ async fn wire_to(
         .await
 }
 
-async fn wire(service: &ActionsService) -> Result<OverlayWiringOutcome, OverlayWiringError> {
+async fn wire(service: &ActionsService) -> Result<OverlayWiringOutcome, RuntimeError> {
     wire_to(service, &follow()).await
 }
 
@@ -794,7 +794,7 @@ async fn a_failure_at_each_step_reports_that_nothing_was_written() {
             .expect_err("the store failed mid-wiring");
 
         assert!(
-            matches!(error, OverlayWiringError::NothingWritten { .. }),
+            matches!(error, RuntimeError::OverlayWiringNothingWritten { .. }),
             "{stop:?}: {error}"
         );
     }

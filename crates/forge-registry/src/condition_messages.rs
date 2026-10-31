@@ -1,7 +1,6 @@
 use crate::command_phrase::COMMAND_PHRASE_KEY;
 use forge_types::{
-    DatePatternError, MessageCatalog, MessageCode, MessageRef, TriggerConfig, UserText,
-    VerbatimText,
+    MessageCatalog, MessageCode, MessageRef, TriggerConfig, TypesError, UserText, VerbatimText,
 };
 
 const CONDITION_NAMESPACE: &str = "condition";
@@ -19,6 +18,8 @@ const FIRST_TIME_CHATTERS: MessageCode =
     MessageCode::from_static(CONDITION_NAMESPACE, "first_time_chatters");
 const COMMAND_PHRASE: MessageCode = MessageCode::from_static(CONDITION_NAMESPACE, "command_phrase");
 const JOINED: MessageCode = MessageCode::from_static(CONDITION_NAMESPACE, "joined");
+const DATE_PATTERN_INVALID: MessageCode =
+    MessageCode::from_static(CONDITION_NAMESPACE, "date_pattern_invalid");
 const DATE_PATTERN_EMPTY: MessageCode =
     MessageCode::from_static(CONDITION_NAMESPACE, "date_pattern_empty");
 const DATE_PATTERN_UNTERMINATED_QUOTE: MessageCode =
@@ -37,6 +38,7 @@ pub const CONDITION_MESSAGES: MessageCatalog = MessageCatalog {
         FIRST_TIME_CHATTERS,
         COMMAND_PHRASE,
         JOINED,
+        DATE_PATTERN_INVALID,
         DATE_PATTERN_EMPTY,
         DATE_PATTERN_UNTERMINATED_QUOTE,
         DATE_PATTERN_UNSUPPORTED_LETTER,
@@ -78,18 +80,18 @@ pub fn joined_condition(parts: impl IntoIterator<Item = MessageRef>) -> UserText
         .map_or_else(any_condition, UserText::from)
 }
 
-pub(crate) fn date_pattern_message(error: &DatePatternError) -> MessageRef {
+pub(crate) fn date_pattern_message(error: &TypesError) -> MessageRef {
     match error {
-        DatePatternError::Empty => MessageRef::new(DATE_PATTERN_EMPTY),
-        DatePatternError::UnterminatedQuote { position } => {
+        TypesError::EmptyDatePattern => MessageRef::new(DATE_PATTERN_EMPTY),
+        TypesError::UnterminatedQuote { position } => {
             MessageRef::new(DATE_PATTERN_UNTERMINATED_QUOTE).with_arg(POSITION_ARG, *position)
         }
-        DatePatternError::UnsupportedLetter { letter, position } => {
+        TypesError::UnsupportedLetter { letter, position } => {
             MessageRef::new(DATE_PATTERN_UNSUPPORTED_LETTER)
                 .with_arg(LETTER_ARG, VerbatimText::new(letter.to_string()))
                 .with_arg(POSITION_ARG, *position)
         }
-        DatePatternError::UnsupportedLength {
+        TypesError::UnsupportedLength {
             letter,
             spelling,
             position,
@@ -97,7 +99,7 @@ pub(crate) fn date_pattern_message(error: &DatePatternError) -> MessageRef {
             .with_arg(LETTER_ARG, VerbatimText::new(letter.to_string()))
             .with_arg(SPELLING_ARG, VerbatimText::new(spelling.as_str()))
             .with_arg(POSITION_ARG, *position),
-        DatePatternError::DotNetSpelling {
+        TypesError::DotNetSpelling {
             spelling,
             replacement,
             position,
@@ -105,6 +107,7 @@ pub(crate) fn date_pattern_message(error: &DatePatternError) -> MessageRef {
             .with_arg(SPELLING_ARG, VerbatimText::new(spelling.as_str()))
             .with_arg(REPLACEMENT_ARG, VerbatimText::new(*replacement))
             .with_arg(POSITION_ARG, *position),
+        _ => MessageRef::new(DATE_PATTERN_INVALID),
     }
 }
 
@@ -150,12 +153,12 @@ mod tests {
     }
 
     fn every_constructor() -> Vec<MessageRef> {
-        let length = DatePatternError::UnsupportedLength {
+        let length = TypesError::UnsupportedLength {
             letter: 'H',
             spelling: "HHH".to_owned(),
             position: 2,
         };
-        let spelling = DatePatternError::DotNetSpelling {
+        let spelling = TypesError::DotNetSpelling {
             spelling: "tt".to_owned(),
             replacement: "a",
             position: 2,
@@ -170,9 +173,10 @@ mod tests {
                 MessageRef::new(ANY),
                 MessageRef::new(ANY),
             ])),
-            date_pattern_message(&DatePatternError::Empty),
-            date_pattern_message(&DatePatternError::UnterminatedQuote { position: 2 }),
-            date_pattern_message(&DatePatternError::UnsupportedLetter {
+            date_pattern_message(&TypesError::MissingDate),
+            date_pattern_message(&TypesError::EmptyDatePattern),
+            date_pattern_message(&TypesError::UnterminatedQuote { position: 2 }),
+            date_pattern_message(&TypesError::UnsupportedLetter {
                 letter: 'q',
                 position: 2,
             }),

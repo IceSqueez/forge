@@ -6,9 +6,9 @@ use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::{
     ActionEngineHandle, ActionsService, ChatHistoryRetentionHandle, EventBus,
     IntegrationSupervisor, LatestValues, LifecycleStates, LiveViewerAggregatorHandle,
-    MaterializePass, NotificationPolicyHandle, OverlaySampleSource, OverlayServiceError,
-    OverlayServiceHandle, QueueSchedulerHandle, ScheduledRunsHandle, ScriptRegistry,
-    TimerSchedulerHandle, TriggerEvaluatorHandle,
+    MaterializePass, NotificationPolicyHandle, OverlaySampleSource, OverlayServiceHandle,
+    QueueSchedulerHandle, RuntimeError, ScheduledRunsHandle, ScriptRegistry, TimerSchedulerHandle,
+    TriggerEvaluatorHandle,
 };
 use forge_server::ServerHandle;
 use forge_transfer::{ScheduledBackupHandle, TransferExclusivity};
@@ -87,7 +87,7 @@ pub struct OverlayHandles {
 pub struct BootOutcomes {
     pub warnings: BootWarnings,
     pub server_unavailable: Option<ServerUnavailable>,
-    pub overlay_pass: Result<MaterializePass, OverlayServiceError>,
+    pub overlay_pass: Result<MaterializePass, RuntimeError>,
     pub integration_states: LifecycleStates,
 }
 

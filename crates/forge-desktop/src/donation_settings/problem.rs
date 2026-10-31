@@ -36,7 +36,9 @@ impl TokenProblem {
             DonatelloError::MalformedResponse { .. } | DonatelloError::InvalidDonation { .. } => {
                 Self::UnreadableAnswer
             }
-            DonatelloError::Credential { .. } => Self::StorageFailed,
+            DonatelloError::Credential(_) | DonatelloError::CredentialBundle { .. } => {
+                Self::StorageFailed
+            }
             DonatelloError::ClientInit { .. } | DonatelloError::NoRuntime => Self::Local,
         }
     }
@@ -156,7 +158,7 @@ mod tests {
                 TokenProblem::UnreadableAnswer,
             ),
             (
-                DonatelloError::Credential { reason: reason() },
+                DonatelloError::CredentialBundle { reason: reason() },
                 TokenProblem::StorageFailed,
             ),
             (

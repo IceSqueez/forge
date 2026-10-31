@@ -188,7 +188,8 @@ impl SubActionRunner for SendAnnouncementRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::helix::{HelixError, HelixMethod};
+    use crate::error::TwitchError;
+    use crate::helix::HelixMethod;
     use crate::sub_actions::test_support::{
         MockCreds, MockTransport, SELF_USER_ID, TOKEN_SENTINEL, assert_failed_with_code,
         assert_failed_with_detail, make_ctx,
@@ -200,7 +201,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     fn runner_with(
-        response: Result<serde_json::Value, HelixError>,
+        response: Result<serde_json::Value, TwitchError>,
         creds: MemoryCredentials,
     ) -> (Arc<MockTransport>, SendAnnouncementRunner) {
         let transport = Arc::new(MockTransport::returning(response));
@@ -268,7 +269,7 @@ mod tests {
     #[tokio::test]
     async fn helix_http_failure_surfaces_its_status_in_the_failure_detail() {
         let (_transport, runner) = runner_with(
-            Err(HelixError::Http {
+            Err(TwitchError::Http {
                 status: 403,
                 body: "moderator scope missing".to_owned(),
             }),
@@ -407,7 +408,7 @@ mod tests {
                 Some(serde_json::json!({"role": "streamer", "login": "streamer"})),
             ),
             (
-                Err(HelixError::Http {
+                Err(TwitchError::Http {
                     status: 400,
                     body: format!("channel is offline {TOKEN_SENTINEL}"),
                 }),

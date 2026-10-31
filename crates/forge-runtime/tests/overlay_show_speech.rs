@@ -13,12 +13,11 @@ use forge_overlay::motion::{EXIT, EXIT_MS, NO_MOTION};
 use forge_overlay::{OverlayKindRegistry, register_builtin_kinds};
 use forge_registry::{CancelSignal, RunContext, SubActionRunner};
 use forge_runtime::{
-    EngineVoiceError, EventBus, FrozenRuntime, NullEventLogRepo, OVERLAY_NAME_KEY,
-    OVERLAY_SEND_KIND_ID, OVERLAY_SPEECH_FAILED_KIND, OVERLAY_TARGET_KEY, OverlayDispatch,
-    OverlayFrameSink, OverlayReceivers, OverlayServiceHandle, OverlayServiceParts,
-    RuntimeWiringParts, SHOW_CEILING, SHOW_SPEECH_START_WAIT, SPEECH_FAILURE_ERROR_KEY,
-    SPEECH_FAILURE_MESSAGE_KEY, ShowEnd, ShowSpeech, ShowTicket, SpeakDispatchError,
-    SpeakDispatcher, SpeakingViewer, SpeechOrigin, SpeechStartSignal,
+    EventBus, FrozenRuntime, NullEventLogRepo, OVERLAY_NAME_KEY, OVERLAY_SEND_KIND_ID,
+    OVERLAY_SPEECH_FAILED_KIND, OVERLAY_TARGET_KEY, OverlayDispatch, OverlayFrameSink,
+    OverlayReceivers, OverlayServiceHandle, OverlayServiceParts, RuntimeWiringParts, SHOW_CEILING,
+    SHOW_SPEECH_START_WAIT, SPEECH_FAILURE_ERROR_KEY, SPEECH_FAILURE_MESSAGE_KEY, ShowEnd,
+    ShowSpeech, ShowTicket, SpeakDispatcher, SpeakingViewer, SpeechOrigin, SpeechStartSignal,
 };
 use forge_storage::test_support::MemorySettings;
 use forge_storage::{
@@ -134,7 +133,7 @@ struct Spoken {
 struct ScriptedSpeaker {
     started: Instant,
     speaks: Speaks,
-    voice_check: Option<EngineVoiceError>,
+    voice_check: Option<MessageRef>,
     spoken: Mutex<Vec<Spoken>>,
     abandoned: Arc<AtomicUsize>,
 }
@@ -147,16 +146,11 @@ impl ScriptedSpeaker {
 
 #[async_trait]
 impl SpeakDispatcher for ScriptedSpeaker {
-    async fn speak(
-        &self,
-        _: String,
-        _: Option<String>,
-        _: SpeechOrigin,
-    ) -> Result<(), SpeakDispatchError> {
+    async fn speak(&self, _: String, _: Option<String>, _: SpeechOrigin) -> Result<(), MessageRef> {
         panic!("show speech took the global speak path")
     }
 
-    fn check_voice(&self, _: &str) -> Result<(), EngineVoiceError> {
+    fn check_voice(&self, _: &str) -> Result<(), MessageRef> {
         self.voice_check.clone().map_or(Ok(()), Err)
     }
 
@@ -165,7 +159,7 @@ impl SpeakDispatcher for ScriptedSpeaker {
         speech: ShowSpeech,
         cancel: CancelSignal,
         started: SpeechStartSignal,
-    ) -> Result<(), SpeakDispatchError> {
+    ) -> Result<(), MessageRef> {
         let index = {
             let mut spoken = self.spoken.lock().unwrap();
             spoken.push(Spoken {
@@ -177,8 +171,9 @@ impl SpeakDispatcher for ScriptedSpeaker {
         };
         let (after, lasts) = match self.speaks {
             Speaks::FailsAtOnce => {
-                return Err(SpeakDispatchError::Dispatch(MessageRef::new(
-                    MessageCode::from_static("speak", "skipped_word_filter"),
+                return Err(MessageRef::new(MessageCode::from_static(
+                    "speak",
+                    "skipped_word_filter",
                 )));
             }
             Speaks::IgnoresCancel { starts } => {
@@ -203,13 +198,14 @@ impl ScriptedSpeaker {
         index: usize,
         span: Duration,
         cancel: &CancelSignal,
-    ) -> Result<(), SpeakDispatchError> {
+    ) -> Result<(), MessageRef> {
         let ends = Instant::now() + span;
         while Instant::now() < ends {
             if cancel.is_cancelled() {
                 self.spoken.lock().unwrap()[index].cancelled = true;
-                return Err(SpeakDispatchError::Dispatch(MessageRef::new(
-                    MessageCode::from_static("speak", "skipped_cancelled"),
+                return Err(MessageRef::new(MessageCode::from_static(
+                    "speak",
+                    "skipped_cancelled",
                 )));
             }
             tokio::time::sleep(CANCEL_POLL).await;
@@ -250,7 +246,7 @@ fn harness_checking_voice(
     kind_id: &str,
     speaks: Speaks,
     motion: OverlayConfig,
-    voice_check: Option<EngineVoiceError>,
+    voice_check: Option<MessageRef>,
 ) -> Harness {
     let stored = definition(kind_id, "  amy  ", motion);
     let mut repo = MockOverlayRepo::new();
@@ -681,10 +677,8 @@ async fn a_look_that_applies_on_arrival_speaks_at_once_without_holding_the_page(
 
 #[tokio::test(start_paused = true)]
 async fn a_show_whose_voice_is_not_installed_is_shown_silently_and_its_failure_is_reported() {
-    let missing = EngineVoiceError::NotInstalled {
-        engine_id: "piper".to_owned(),
-        voice_id: "amy".to_owned(),
-    };
+    let missing = MessageRef::new(MessageCode::from_static("core", "voice_not_installed"))
+        .with_arg("voice", VerbatimText::new("piper/amy"));
     for kind in [ALERT_KIND, CHAT_KIND] {
         let harness = harness_checking_voice(
             kind,

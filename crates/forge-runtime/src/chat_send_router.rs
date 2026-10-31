@@ -4,7 +4,7 @@ use forge_events::{
     ActingSender, ChatSendFailed, ChatSendRequest, ChatSent, Event, EventSource, EventsError,
     TypedEvent, WhisperSent,
 };
-use forge_platform_core::{ChatPlatform, SenderPreference, unknown_sender_reason};
+use forge_platform_core::{ChatPlatform, PlatformError, SenderPreference};
 use forge_types::{EventId, PlatformId, requested_chat_target};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
@@ -106,14 +106,10 @@ fn whispers_unsupported_reason(channel: &str) -> String {
 
 const BLANK_WHISPER_RECIPIENT: &str = "a whisper needs a recipient login";
 
-#[derive(Debug, thiserror::Error)]
-#[error("{}", unknown_sender_reason(.0))]
-struct UnknownSender(String);
-
-fn sender_of(request: &ChatSendRequest) -> Result<SenderPreference, UnknownSender> {
+fn sender_of(request: &ChatSendRequest) -> Result<SenderPreference, PlatformError> {
     match request.sender.as_deref() {
         None => Ok(SenderPreference::Default),
-        Some(raw) => SenderPreference::parse(raw).ok_or_else(|| UnknownSender(raw.to_owned())),
+        Some(raw) => raw.parse(),
     }
 }
 
@@ -1004,7 +1000,7 @@ mod tests {
             ),
             (
                 Some(req_id),
-                Some(unknown_sender_reason("Bot")),
+                Some("Bot".parse::<SenderPreference>().unwrap_err().to_string(),),
                 plain("twitch", "sentinel"),
             )
         );

@@ -20,6 +20,7 @@ mod custom_rewards;
 mod emitted_codes;
 #[cfg(test)]
 mod endpoints_test_support;
+mod error;
 mod follow_lookup;
 mod helix;
 mod helix_envelope;
@@ -42,15 +43,14 @@ pub use auth::{
     DeviceCodeInfo, TWITCH_BROADCASTER_SCOPES, TWITCH_CLIENT_ID_ENV, TwitchAuthFlow, TwitchSignIn,
     UserInfo, client_id, twitch_auth_flow,
 };
-pub use bot_account::{
-    BotLoginError, BotModerator, BotModeratorError, BotStatus, TwitchBotAccount,
-};
+pub use bot_account::{BotModerator, BotStatus, BotUnavailable, TwitchBotAccount};
 pub use builtin::TwitchIntegrationBundle;
 pub use chat::{TwitchChat, TwitchChatHandle, send_chat};
 pub use config::{ChatSessionConfig, HELIX_BUDGET_CAPACITY, HELIX_BUDGET_WINDOW};
 pub use credentials::TWITCH_CREDENTIAL_ID;
 pub use credentials_manager::TwitchCredentialsManager;
-pub use helix::{HelixError, HelixHttpTransport, HelixRequest, HelixTokenSource, HelixTransport};
+pub use error::TwitchError;
+pub use helix::{HelixHttpTransport, HelixRequest, HelixTokenSource, HelixTransport};
 pub use helix_gateway::helix_gateway;
 pub use integration::TWITCH_INTEGRATION;
 pub use lifecycle::TwitchLifecycle;
@@ -66,7 +66,7 @@ pub use assembly::TwitchSession;
 pub use auth::DeviceTiming;
 pub use auth::TwitchAuthBundle;
 pub use chat::SHUTDOWN_GRACE;
-pub use chat::{ChatConnectionState, ChatSendError, SentMessageId};
+pub use chat::{ChatConnectionState, SentMessageId};
 pub use chat_platform::TwitchPlatform;
 pub use config::ChatTiming;
 pub use helix::HelixMethod;

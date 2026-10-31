@@ -158,7 +158,7 @@ mod tests {
     use forge_types::{ArgStack, SubActionOutcome, Variant};
 
     use super::*;
-    use crate::helix::HelixError;
+    use crate::error::TwitchError;
     use crate::sub_actions::test_support::{
         MockTransport, SELF_USER_ID, TOKEN_SENTINEL, assert_request_refused, make_ctx,
         users_fixture,
@@ -166,7 +166,7 @@ mod tests {
     use forge_platform_core::SENDER_FIELD;
 
     fn runner_with(
-        responses: Vec<Result<serde_json::Value, HelixError>>,
+        responses: Vec<Result<serde_json::Value, TwitchError>>,
     ) -> (Arc<MockTransport>, SendWhisperRunner) {
         let transport = Arc::new(MockTransport::returning_sequence(responses));
         let runner = SendWhisperRunner::new(
@@ -223,7 +223,7 @@ mod tests {
     async fn whisper_call_http_failure_maps_to_failed_without_token_or_url() {
         let (transport, runner) = runner_with(vec![
             users_fixture("555"),
-            Err(HelixError::Http {
+            Err(TwitchError::Http {
                 status: 403,
                 body: format!("missing whisper scope {TOKEN_SENTINEL}"),
             }),

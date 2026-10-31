@@ -1,8 +1,8 @@
+use crate::error::TypesError;
 use std::fmt;
 use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
-use thiserror::Error;
 
 use crate::unified_chat::UserBadge;
 
@@ -17,12 +17,6 @@ pub enum PermissionRung {
     Vip,
     Moderator,
     Broadcaster,
-}
-
-#[derive(Debug, Error, PartialEq, Eq)]
-pub enum PermissionRungError {
-    #[error("unknown permission rung: {0}")]
-    Unknown(String),
 }
 
 impl PermissionRung {
@@ -70,7 +64,7 @@ impl fmt::Display for PermissionRung {
 }
 
 impl FromStr for PermissionRung {
-    type Err = PermissionRungError;
+    type Err = TypesError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
@@ -79,7 +73,7 @@ impl FromStr for PermissionRung {
             "vip" => Ok(Self::Vip),
             "moderator" => Ok(Self::Moderator),
             "broadcaster" => Ok(Self::Broadcaster),
-            _ => Err(PermissionRungError::Unknown(s.to_owned())),
+            _ => Err(TypesError::UnknownPermissionRung(s.to_owned())),
         }
     }
 }
@@ -233,7 +227,7 @@ mod tests {
         for bad in ["Everyone", "VIP", "mods", "", "vip ", "owner", "regular"] {
             assert_eq!(
                 bad.parse::<PermissionRung>().unwrap_err(),
-                PermissionRungError::Unknown(bad.to_owned())
+                TypesError::UnknownPermissionRung(bad.to_owned())
             );
         }
     }

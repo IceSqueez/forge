@@ -7,8 +7,17 @@ pub enum AudioError {
     #[error("no default output device available")]
     NoDefaultDevice,
 
-    #[error("cpal host error: {0}")]
+    #[error("audio device error: {0}")]
     Host(String),
+
+    #[error("audio device '{id}' not found")]
+    DeviceNotFound { id: String },
+
+    #[error("no matching audio input device found")]
+    NoInputDevice,
+
+    #[error("unsupported audio sample format: {0}")]
+    UnsupportedSampleFormat(String),
 
     #[error("output device stopped during playback: {0}")]
     DeviceLost(String),

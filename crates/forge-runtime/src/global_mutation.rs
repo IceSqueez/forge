@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use forge_events::{
     EventPublisher, EventSource, GlobalDeleted, GlobalIncremented, GlobalSet, TypedEvent,
 };
-use forge_script::{GlobalDeletion, GlobalIncrement, ScriptGlobals, ScriptGlobalsError};
+use forge_script::{GlobalDeletion, GlobalIncrement, ScriptError, ScriptGlobals};
 use forge_storage::{GlobalsRepo, StorageError};
 use forge_types::{EventId, Variant};
 
@@ -106,7 +106,7 @@ impl RuntimeScriptGlobals {
 
 #[async_trait]
 impl ScriptGlobals for RuntimeScriptGlobals {
-    async fn get(&self, key: &str) -> Result<Option<Variant>, ScriptGlobalsError> {
+    async fn get(&self, key: &str) -> Result<Option<Variant>, ScriptError> {
         Ok(self.globals.get(key).await?)
     }
 
@@ -116,7 +116,7 @@ impl ScriptGlobals for RuntimeScriptGlobals {
         value: Variant,
         persisted: bool,
         caused_by: EventId,
-    ) -> Result<Option<Variant>, ScriptGlobalsError> {
+    ) -> Result<Option<Variant>, ScriptError> {
         Ok(self.mutation(caused_by).set(key, value, persisted).await?)
     }
 
@@ -125,15 +125,11 @@ impl ScriptGlobals for RuntimeScriptGlobals {
         key: &str,
         delta: i64,
         caused_by: EventId,
-    ) -> Result<GlobalIncrement, ScriptGlobalsError> {
+    ) -> Result<GlobalIncrement, ScriptError> {
         Ok(self.mutation(caused_by).increment(key, delta).await?)
     }
 
-    async fn delete(
-        &self,
-        key: &str,
-        caused_by: EventId,
-    ) -> Result<GlobalDeletion, ScriptGlobalsError> {
+    async fn delete(&self, key: &str, caused_by: EventId) -> Result<GlobalDeletion, ScriptError> {
         Ok(self.mutation(caused_by).delete(key).await?)
     }
 }
@@ -421,7 +417,7 @@ mod tests {
         let refused = port.increment("ghost", 1, EventId::new()).await;
 
         assert!(
-            matches!(refused, Err(ScriptGlobalsError::Storage(_))),
+            matches!(refused, Err(ScriptError::Storage(_))),
             "{refused:?}"
         );
     }

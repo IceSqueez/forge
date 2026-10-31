@@ -1,3 +1,4 @@
+use crate::error::RuntimeError;
 use std::collections::HashSet;
 use std::sync::Arc;
 
@@ -11,7 +12,7 @@ use tracing::warn;
 
 use crate::catalog::Catalog;
 use crate::donations::catch_up::{CatchUpWaker, DonationAudience};
-use crate::overlay_service::{OverlayServiceError, OverlayServiceHandle};
+use crate::overlay_service::OverlayServiceHandle;
 use crate::sub_action_runners::{OverlaySendTarget, overlay_send_targets};
 
 pub struct DonationOverlayAudience {
@@ -50,7 +51,7 @@ impl DonationOverlayAudience {
         });
     }
 
-    async fn donation_overlays(&self) -> Result<Vec<OverlayId>, OverlayServiceError> {
+    async fn donation_overlays(&self) -> Result<Vec<OverlayId>, RuntimeError> {
         let snapshot = self.catalog.current().await?;
         let targeted: HashSet<String> = snapshot
             .binding_indexes_for_kinds([DONATION_RECEIVED_KIND])

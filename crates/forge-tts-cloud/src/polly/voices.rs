@@ -4,10 +4,10 @@ use forge_tts_core::ENGINE_ID_POLLY;
 use serde::Deserialize;
 use tokio::time::{Instant, timeout_at};
 
+use crate::error::CloudTtsError;
 use crate::gateway_failure::failure_detail;
 use crate::network::ProviderLink;
 use crate::polly::SAMPLE_RATE_HZ;
-use crate::polly::error::PollyError;
 use crate::polly::signer::{PollySigner, SignedCall};
 use crate::polly::synth::{NEURAL_ENGINE, VOICES_PATH, classify_with};
 
@@ -56,24 +56,24 @@ fn gender_from_str(s: &str) -> VoiceGender {
     }
 }
 
-fn classify_error(failure: &GatewayFailure, link: &ProviderLink) -> PollyError {
+fn classify_error(failure: &GatewayFailure, link: &ProviderLink) -> CloudTtsError {
     classify_with(failure, link, None, failure_detail)
 }
 
 pub(super) async fn fetch_voices(
     link: &ProviderLink,
     signer: &PollySigner,
-) -> Result<Vec<TtsVoice>, PollyError> {
+) -> Result<Vec<TtsVoice>, CloudTtsError> {
     let deadline = Instant::now() + link.catalog_budget();
     timeout_at(deadline, fetch_all_pages(link, signer))
         .await
-        .unwrap_or_else(|_| Err(PollyError::Http(LISTING_BUDGET_ELAPSED.into())))
+        .unwrap_or_else(|_| Err(CloudTtsError::Http(LISTING_BUDGET_ELAPSED.into())))
 }
 
 async fn fetch_all_pages(
     link: &ProviderLink,
     signer: &PollySigner,
-) -> Result<Vec<TtsVoice>, PollyError> {
+) -> Result<Vec<TtsVoice>, CloudTtsError> {
     let body_cap = CallClass::Catalog.body_cap();
     let mut received: u64 = 0;
     let mut voices = Vec::new();
@@ -82,7 +82,7 @@ async fn fetch_all_pages(
         let page = fetch_page(link, signer, next_token.as_deref()).await?;
         received = received.saturating_add(page.body_len);
         if received > body_cap {
-            return Err(PollyError::Http(failure_detail(
+            return Err(CloudTtsError::Http(failure_detail(
                 &GatewayFailure::ResponseTooLarge { cap: body_cap },
             )));
         }
@@ -92,7 +92,7 @@ async fn fetch_all_pages(
             None => return Ok(into_tts_voices(voices)),
         }
     }
-    Err(PollyError::Http(LISTING_PAGE_LIMIT.into()))
+    Err(CloudTtsError::Http(LISTING_PAGE_LIMIT.into()))
 }
 
 struct VoicePage {
@@ -104,7 +104,7 @@ async fn fetch_page(
     link: &ProviderLink,
     signer: &PollySigner,
     next_token: Option<&str>,
-) -> Result<VoicePage, PollyError> {
+) -> Result<VoicePage, CloudTtsError> {
     let query: Vec<(&str, &str)> = next_token
         .map(|token| (NEXT_TOKEN_PARAM, token))
         .into_iter()
@@ -126,7 +126,7 @@ async fn fetch_page(
         .map_err(|failure| classify_error(&failure, link))?;
     let list: PollyVoiceList = response
         .json()
-        .map_err(|e| PollyError::Decode(e.to_string()))?;
+        .map_err(|e| CloudTtsError::Decode(e.to_string()))?;
     Ok(VoicePage {
         list,
         body_len: u64::try_from(response.body().len()).unwrap_or(u64::MAX),
@@ -410,7 +410,7 @@ mod tests {
                 Err(error) => {
                     assert!(!expected_ok, "{total_pages}: {error}");
                     assert!(
-                        matches!(&error, PollyError::Http(detail) if detail == LISTING_PAGE_LIMIT),
+                        matches!(&error, CloudTtsError::Http(detail) if detail == LISTING_PAGE_LIMIT),
                         "{error}"
                     );
                 }
@@ -444,7 +444,7 @@ mod tests {
                 Err(error) => {
                     assert!(!expected_ok, "{second_len}: {error}");
                     assert!(
-                        matches!(&error, PollyError::Http(detail) if detail.contains(&cap.to_string())),
+                        matches!(&error, CloudTtsError::Http(detail) if detail.contains(&cap.to_string())),
                         "{error}"
                     );
                 }
@@ -539,7 +539,7 @@ mod tests {
             let waited = started.elapsed();
             if request_count(&server).await == 2 && waited < budget * 3 / 2 {
                 assert!(
-                    matches!(&result, Err(PollyError::Http(detail)) if detail == LISTING_BUDGET_ELAPSED),
+                    matches!(&result, Err(CloudTtsError::Http(detail)) if detail == LISTING_BUDGET_ELAPSED),
                     "{result:?}"
                 );
                 assert!(waited >= budget, "waited {waited:?}");

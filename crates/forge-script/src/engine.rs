@@ -1,3 +1,4 @@
+use crate::error::ScriptError;
 use forge_types::{RecoverMutex, VARIANT_MAX_COLLECTION_LEN, Variant};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -6,7 +7,6 @@ use forge_storage::{SettingsRepo, read_setting_or_default};
 use rhai::Dynamic;
 use rhai::packages::{BasicArrayPackage, BasicMapPackage, CorePackage, LogicPackage, Package};
 
-use crate::ScriptError;
 use crate::api::ForgeApi;
 use crate::convert::{dynamic_to_variant, register_variant_types};
 use crate::data_audit::{ensure_result_fits, install_data_audit};

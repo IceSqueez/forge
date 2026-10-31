@@ -1,17 +1,9 @@
-use thiserror::Error;
+use crate::error::RuntimeError;
 
 #[cfg(target_os = "windows")]
 const WINDOWS_APP_USER_MODEL_ID: &str = "IceSqueez.Forge";
 #[cfg(all(unix, not(target_os = "macos")))]
 const DESKTOP_APP_NAME: &str = "forge";
-
-#[derive(Debug, Error)]
-pub enum OsPortError {
-    #[error("os service unavailable: {0}")]
-    Unavailable(String),
-    #[error("os operation failed: {0}")]
-    Failed(String),
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NotifyUrgency {
@@ -29,16 +21,16 @@ pub struct DesktopNotice {
 }
 
 pub trait NotifyPort: Send + Sync {
-    fn show(&self, notice: DesktopNotice) -> Result<(), OsPortError>;
+    fn show(&self, notice: DesktopNotice) -> Result<(), RuntimeError>;
 }
 
 pub(crate) trait ClipboardPort: Send + Sync {
-    fn copy(&self, text: String) -> Result<(), OsPortError>;
-    fn read(&self) -> Result<String, OsPortError>;
+    fn copy(&self, text: String) -> Result<(), RuntimeError>;
+    fn read(&self) -> Result<String, RuntimeError>;
 }
 
 pub(crate) trait UrlOpenPort: Send + Sync {
-    fn open(&self, url: String) -> Result<(), OsPortError>;
+    fn open(&self, url: String) -> Result<(), RuntimeError>;
 }
 
 #[derive(Default)]
@@ -46,19 +38,19 @@ pub struct SystemNotifyPort;
 
 impl SystemNotifyPort {
     #[cfg(target_os = "macos")]
-    pub fn adopt_app_identity() -> Result<(), OsPortError> {
+    pub fn adopt_app_identity() -> Result<(), RuntimeError> {
         notify_rust::set_application(forge_paths::MACOS_BUNDLE_ID)
-            .map_err(|e| OsPortError::Unavailable(e.to_string()))
+            .map_err(|e| RuntimeError::OsServiceUnavailable(e.to_string()))
     }
 
     #[cfg(not(target_os = "macos"))]
-    pub fn adopt_app_identity() -> Result<(), OsPortError> {
+    pub fn adopt_app_identity() -> Result<(), RuntimeError> {
         Ok(())
     }
 }
 
 impl NotifyPort for SystemNotifyPort {
-    fn show(&self, notice: DesktopNotice) -> Result<(), OsPortError> {
+    fn show(&self, notice: DesktopNotice) -> Result<(), RuntimeError> {
         let mut builder = notify_rust::Notification::new();
         #[cfg(target_os = "windows")]
         builder.app_id(WINDOWS_APP_USER_MODEL_ID);
@@ -83,7 +75,7 @@ impl NotifyPort for SystemNotifyPort {
         builder
             .show()
             .map(|_| ())
-            .map_err(|e| OsPortError::Unavailable(e.to_string()))
+            .map_err(|e| RuntimeError::OsServiceUnavailable(e.to_string()))
     }
 }
 
@@ -91,41 +83,41 @@ impl NotifyPort for SystemNotifyPort {
 pub(crate) struct SystemClipboardPort;
 
 impl ClipboardPort for SystemClipboardPort {
-    fn copy(&self, text: String) -> Result<(), OsPortError> {
+    fn copy(&self, text: String) -> Result<(), RuntimeError> {
         clipboard()?
             .set_text(text)
-            .map_err(|e| OsPortError::Failed(e.to_string()))
+            .map_err(|e| RuntimeError::OsOperationFailed(e.to_string()))
     }
 
-    fn read(&self) -> Result<String, OsPortError> {
+    fn read(&self) -> Result<String, RuntimeError> {
         match clipboard()?.get_text() {
             Ok(text) => Ok(text),
             Err(arboard::Error::ContentNotAvailable) => Ok(String::new()),
-            Err(e) => Err(OsPortError::Failed(e.to_string())),
+            Err(e) => Err(RuntimeError::OsOperationFailed(e.to_string())),
         }
     }
 }
 
-fn clipboard() -> Result<arboard::Clipboard, OsPortError> {
-    arboard::Clipboard::new().map_err(|e| OsPortError::Unavailable(e.to_string()))
+fn clipboard() -> Result<arboard::Clipboard, RuntimeError> {
+    arboard::Clipboard::new().map_err(|e| RuntimeError::OsServiceUnavailable(e.to_string()))
 }
 
 #[derive(Default)]
 pub(crate) struct SystemUrlOpenPort;
 
 impl UrlOpenPort for SystemUrlOpenPort {
-    fn open(&self, url: String) -> Result<(), OsPortError> {
+    fn open(&self, url: String) -> Result<(), RuntimeError> {
         open::that_detached(url).map_err(|e| launcher_failure(&e))
     }
 }
 
-fn launcher_failure(error: &std::io::Error) -> OsPortError {
-    OsPortError::Failed(format!("launcher failed: {}", error.kind()))
+fn launcher_failure(error: &std::io::Error) -> RuntimeError {
+    RuntimeError::OsOperationFailed(format!("launcher failed: {}", error.kind()))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{OsPortError, launcher_failure};
+    use super::{RuntimeError, launcher_failure};
 
     #[test]
     fn url_open_failure_text_carries_only_the_error_kind() {
@@ -135,7 +127,7 @@ mod tests {
 
         let err = launcher_failure(&cause);
 
-        let OsPortError::Failed(msg) = err else {
+        let RuntimeError::OsOperationFailed(msg) = err else {
             panic!("expected a Failed launcher error, got {err:?}");
         };
         assert!(
@@ -154,7 +146,7 @@ mod tests {
 pub(crate) mod test_ports {
     use std::sync::Mutex;
 
-    use super::{ClipboardPort, DesktopNotice, NotifyPort, OsPortError, UrlOpenPort};
+    use super::{ClipboardPort, DesktopNotice, NotifyPort, RuntimeError, UrlOpenPort};
 
     #[derive(Clone, Copy)]
     pub(crate) enum MockErr {
@@ -163,10 +155,12 @@ pub(crate) mod test_ports {
     }
 
     impl MockErr {
-        fn into_error(self) -> OsPortError {
+        fn into_error(self) -> RuntimeError {
             match self {
-                MockErr::Unavailable => OsPortError::Unavailable("mock unavailable".to_owned()),
-                MockErr::Failed => OsPortError::Failed("mock failed".to_owned()),
+                MockErr::Unavailable => {
+                    RuntimeError::OsServiceUnavailable("mock unavailable".to_owned())
+                }
+                MockErr::Failed => RuntimeError::OsOperationFailed("mock failed".to_owned()),
             }
         }
     }
@@ -201,7 +195,7 @@ pub(crate) mod test_ports {
     }
 
     impl UrlOpenPort for RecordingUrlOpenPort {
-        fn open(&self, url: String) -> Result<(), OsPortError> {
+        fn open(&self, url: String) -> Result<(), RuntimeError> {
             self.opened.lock().unwrap().push(url);
             match self.err {
                 Some(e) => Err(e.into_error()),
@@ -246,7 +240,7 @@ pub(crate) mod test_ports {
     }
 
     impl ClipboardPort for RecordingClipboardPort {
-        fn copy(&self, text: String) -> Result<(), OsPortError> {
+        fn copy(&self, text: String) -> Result<(), RuntimeError> {
             self.written.lock().unwrap().push(text);
             match self.copy_err {
                 Some(e) => Err(e.into_error()),
@@ -254,7 +248,7 @@ pub(crate) mod test_ports {
             }
         }
 
-        fn read(&self) -> Result<String, OsPortError> {
+        fn read(&self) -> Result<String, RuntimeError> {
             self.read.clone().map_err(MockErr::into_error)
         }
     }
@@ -289,7 +283,7 @@ pub(crate) mod test_ports {
     }
 
     impl NotifyPort for RecordingNotifyPort {
-        fn show(&self, notice: DesktopNotice) -> Result<(), OsPortError> {
+        fn show(&self, notice: DesktopNotice) -> Result<(), RuntimeError> {
             self.shown.lock().unwrap().push(notice);
             match self.err {
                 Some(e) => Err(e.into_error()),

@@ -87,7 +87,7 @@ impl SubActionRunner for CancelRaidRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::helix::HelixError;
+    use crate::error::TwitchError;
     use crate::sub_actions::test_support::{
         MockTransport, SELF_USER_ID, TOKEN_SENTINEL, assert_request_refused, make_ctx,
     };
@@ -96,13 +96,13 @@ mod tests {
     use std::collections::BTreeMap;
 
     fn runner_with(
-        responses: Vec<Result<serde_json::Value, HelixError>>,
+        responses: Vec<Result<serde_json::Value, TwitchError>>,
     ) -> (Arc<MockTransport>, CancelRaidRunner) {
         runner_tracking(responses, TwitchLifecycle::new())
     }
 
     fn runner_tracking(
-        responses: Vec<Result<serde_json::Value, HelixError>>,
+        responses: Vec<Result<serde_json::Value, TwitchError>>,
         lifecycle: TwitchLifecycle,
     ) -> (Arc<MockTransport>, CancelRaidRunner) {
         let transport = Arc::new(MockTransport::returning_sequence(responses));
@@ -140,7 +140,7 @@ mod tests {
 
     #[tokio::test]
     async fn cancel_http_failure_maps_to_failed_without_token_or_url() {
-        let (transport, runner) = runner_with(vec![Err(HelixError::Http {
+        let (transport, runner) = runner_with(vec![Err(TwitchError::Http {
             status: 404,
             body: format!("no raid in progress {TOKEN_SENTINEL}"),
         })]);
@@ -172,7 +172,7 @@ mod tests {
         let lifecycle = TwitchLifecycle::new();
         lifecycle.raid_started();
         let (_, runner) = runner_tracking(
-            vec![Err(HelixError::Http {
+            vec![Err(TwitchError::Http {
                 status: 404,
                 body: format!("no raid in progress {TOKEN_SENTINEL}"),
             })],

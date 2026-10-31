@@ -14,7 +14,7 @@ use forge_runtime::OVERLAY_TEST_FIRE_KIND;
 use forge_runtime::{
     EventBus, MaterializePass, NullEventLogRepo, OverlayConnectFanout, OverlayConnectListener,
     OverlayDefinitionChanges, OverlayDelivery, OverlayDispatch, OverlayFrameSink, OverlayReceivers,
-    OverlayServiceError, OverlayServiceHandle, OverlayServiceParts,
+    OverlayServiceHandle, OverlayServiceParts, RuntimeError,
 };
 
 use forge_storage::settings::core_settings;
@@ -474,17 +474,16 @@ async fn test_fire_refuses_and_delivers_nothing_when_no_sample_can_be_built() {
     let harness = harness(vec![unshipped.clone()], true);
     let mut subscription = harness.bus.subscribe();
 
-    type Check = fn(&OverlayServiceError) -> bool;
+    type Check = fn(&RuntimeError) -> bool;
     for (id, matches_expected, label) in [
         (
             OverlayId::new("nobody"),
-            (|e: &OverlayServiceError| matches!(e, OverlayServiceError::Unknown(_))) as Check,
+            (|e: &RuntimeError| matches!(e, RuntimeError::UnknownOverlay(_))) as Check,
             "an identity no record carries",
         ),
         (
             unshipped.id.clone(),
-            (|e: &OverlayServiceError| matches!(e, OverlayServiceError::UnavailableKind { .. }))
-                as Check,
+            (|e: &RuntimeError| matches!(e, RuntimeError::UnavailableOverlayKind { .. })) as Check,
             "an overlay type this build lacks",
         ),
     ] {
@@ -976,17 +975,16 @@ async fn sending_content_refuses_an_unknown_identity_or_an_overlay_type_this_bui
     let unshipped = definition_of_kind("vendor-box", UNSHIPPED_KIND);
     let harness = harness(vec![unshipped.clone()], true);
 
-    type Check = fn(&OverlayServiceError) -> bool;
+    type Check = fn(&RuntimeError) -> bool;
     for (id, matches_expected, label) in [
         (
             OverlayId::new("nobody"),
-            (|e: &OverlayServiceError| matches!(e, OverlayServiceError::Unknown(_))) as Check,
+            (|e: &RuntimeError| matches!(e, RuntimeError::UnknownOverlay(_))) as Check,
             "an identity no record carries",
         ),
         (
             unshipped.id.clone(),
-            (|e: &OverlayServiceError| matches!(e, OverlayServiceError::UnavailableKind { .. }))
-                as Check,
+            (|e: &RuntimeError| matches!(e, RuntimeError::UnavailableOverlayKind { .. })) as Check,
             "an overlay type this build lacks",
         ),
     ] {
@@ -1099,7 +1097,7 @@ async fn audio_to_an_identity_no_record_carries_is_refused_without_a_frame() {
         .expect_err("an unknown receiver must be refused");
 
     assert!(
-        matches!(err, OverlayServiceError::Unknown(_)) && harness.sink.frames().is_empty(),
+        matches!(err, RuntimeError::UnknownOverlay(_)) && harness.sink.frames().is_empty(),
         "an unknown receiver produced {err:?} or still pushed a frame"
     );
 }
@@ -1382,10 +1380,10 @@ async fn saving_an_overlay_refuses_settings_its_look_rejects_and_writes_nothing(
         matches!(
             &refusals,
             [
-                Err(OverlayServiceError::Overlay(
+                Err(RuntimeError::Overlay(
                     forge_overlay::OverlayError::UnknownChoice { .. }
                 )),
-                Err(OverlayServiceError::Overlay(
+                Err(RuntimeError::Overlay(
                     forge_overlay::OverlayError::UnknownKind(_)
                 )),
             ]

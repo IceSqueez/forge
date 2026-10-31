@@ -1,6 +1,6 @@
-use crate::helix::{HelixError, HelixMethod, HelixRequest, HelixTransport};
+use crate::error::TwitchError;
+use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
 use serde::Deserialize;
-use thiserror::Error;
 use tracing::debug;
 
 const SEND_CHAT_PATH: &str = "/helix/chat/messages";
@@ -11,38 +11,19 @@ pub struct SentMessageId(pub String);
 
 const EMPTY_SEND_RESPONSE: &str = "empty send response";
 
-#[derive(Debug, Error)]
-pub enum ChatSendError {
-    #[error("rate limited")]
-    RateLimited,
-    #[error("message exceeds 500-character limit")]
-    MessageTooLong,
-    #[error("not connected")]
-    NotConnected,
-    #[error("send failed: {0}")]
-    Http(String),
-    #[error("reauth required")]
-    ReauthRequired,
-    #[error("message dropped by twitch ({code}): {message}")]
-    Dropped { code: String, message: String },
-    #[error("twitch refused the message: {0}")]
-    Forbidden(String),
-}
-
-impl From<HelixError> for ChatSendError {
-    fn from(err: HelixError) -> Self {
-        match err {
-            HelixError::RateLimited => Self::RateLimited,
-            HelixError::ReauthRequired => Self::ReauthRequired,
-            HelixError::Http { status, body } if status == forge_net::status::FORBIDDEN => {
-                Self::Forbidden(refusal_text(&body))
-            }
-            HelixError::Http { status, body } => {
-                Self::Http(format!("HTTP {status}: {}", refusal_text(&body)))
-            }
-            HelixError::Credentials(_) => Self::NotConnected,
-            HelixError::Transport(msg) | HelixError::UndecodableResponse(msg) => Self::Http(msg),
+pub(crate) fn chat_failure(error: TwitchError) -> TwitchError {
+    match error {
+        TwitchError::Http { status, body } if status == forge_net::status::FORBIDDEN => {
+            TwitchError::MessageForbidden(refusal_text(&body))
         }
+        TwitchError::Http { status, body } => {
+            TwitchError::SendFailed(format!("HTTP {status}: {}", refusal_text(&body)))
+        }
+        TwitchError::Credentials(_) => TwitchError::NotConnected,
+        TwitchError::Transport(msg) | TwitchError::UndecodableResponse(msg) => {
+            TwitchError::SendFailed(msg)
+        }
+        other => other,
     }
 }
 
@@ -90,7 +71,7 @@ pub async fn send_chat(
     broadcaster_id: &str,
     sender_id: &str,
     message: &str,
-) -> Result<SentMessageId, ChatSendError> {
+) -> Result<SentMessageId, TwitchError> {
     post_chat_message(transport, broadcaster_id, sender_id, message, None).await
 }
 
@@ -100,7 +81,7 @@ pub(crate) async fn send_chat_reply(
     sender_id: &str,
     message: &str,
     reply_parent_message_id: &str,
-) -> Result<SentMessageId, ChatSendError> {
+) -> Result<SentMessageId, TwitchError> {
     post_chat_message(
         transport,
         broadcaster_id,
@@ -117,10 +98,10 @@ async fn post_chat_message(
     sender_id: &str,
     message: &str,
     reply_parent_message_id: Option<&str>,
-) -> Result<SentMessageId, ChatSendError> {
+) -> Result<SentMessageId, TwitchError> {
     let chars = message.chars().count();
     if chars > MAX_MESSAGE_LEN {
-        return Err(ChatSendError::MessageTooLong);
+        return Err(TwitchError::MessageTooLong);
     }
 
     debug!(
@@ -139,23 +120,24 @@ async fn post_chat_message(
 
     let response = transport
         .execute(HelixRequest::new(HelixMethod::Post, SEND_CHAT_PATH).body(body))
-        .await?;
+        .await
+        .map_err(chat_failure)?;
 
     let parsed: SendChatResponse =
-        serde_json::from_value(response).map_err(|e| ChatSendError::Http(e.to_string()))?;
+        serde_json::from_value(response).map_err(|e| TwitchError::SendFailed(e.to_string()))?;
 
     let sent = parsed
         .data
         .into_iter()
         .next()
-        .ok_or_else(|| ChatSendError::Http(EMPTY_SEND_RESPONSE.to_owned()))?;
+        .ok_or_else(|| TwitchError::SendFailed(EMPTY_SEND_RESPONSE.to_owned()))?;
 
     if !sent.is_sent {
         let drop_reason = sent.drop_reason.unwrap_or(DropReason {
             code: UNKNOWN_DROP_CODE.to_owned(),
             message: String::new(),
         });
-        return Err(ChatSendError::Dropped {
+        return Err(TwitchError::MessageDropped {
             code: drop_reason.code,
             message: drop_reason.message,
         });
@@ -247,7 +229,7 @@ mod tests {
         assert!(
             matches!(
                 &err,
-                ChatSendError::Dropped { code, message }
+                TwitchError::MessageDropped { code, message }
                     if code == "msg_duplicate"
                         && message == "Your message is identical to the previous one."
             ),
@@ -265,47 +247,47 @@ mod tests {
         let err = send_chat(&transport, "100", "100", "hi").await.unwrap_err();
 
         assert!(
-            matches!(&err, ChatSendError::Dropped { code, .. } if code == "unknown"),
+            matches!(&err, TwitchError::MessageDropped { code, .. } if code == "unknown"),
             "got {err:?}"
         );
     }
 
-    type ErrorExpectation = fn(&ChatSendError) -> bool;
+    type ErrorExpectation = fn(&TwitchError) -> bool;
 
     #[tokio::test]
     async fn helix_failures_map_to_matching_chat_send_errors() {
-        let cases: Vec<(HelixError, ErrorExpectation)> = vec![
-            (HelixError::ReauthRequired, |e| {
-                matches!(e, ChatSendError::ReauthRequired)
+        let cases: Vec<(TwitchError, ErrorExpectation)> = vec![
+            (TwitchError::ReauthRequired, |e| {
+                matches!(e, TwitchError::ReauthRequired)
             }),
-            (HelixError::RateLimited, |e| {
-                matches!(e, ChatSendError::RateLimited)
+            (TwitchError::RateLimited, |e| {
+                matches!(e, TwitchError::RateLimited)
             }),
             (
-                HelixError::Http {
+                TwitchError::Http {
                     status: 403,
                     body: r#"{"error":"Forbidden","status":403,"message":"The sender is banned."}"#
                         .to_owned(),
                 },
-                |e| matches!(e, ChatSendError::Forbidden(msg) if msg == "The sender is banned."),
+                |e| matches!(e, TwitchError::MessageForbidden(msg) if msg == "The sender is banned."),
             ),
             (
-                HelixError::Http {
+                TwitchError::Http {
                     status: 403,
                     body: " denied \n".to_owned(),
                 },
-                |e| matches!(e, ChatSendError::Forbidden(msg) if msg == "denied"),
+                |e| matches!(e, TwitchError::MessageForbidden(msg) if msg == "denied"),
             ),
             (
-                HelixError::Http {
+                TwitchError::Http {
                     status: 400,
                     body: "bad request".to_owned(),
                 },
-                |e| matches!(e, ChatSendError::Http(msg) if msg.contains("400")),
+                |e| matches!(e, TwitchError::SendFailed(msg) if msg.contains("400")),
             ),
             (
-                HelixError::Credentials("token store offline".to_owned()),
-                |e| matches!(e, ChatSendError::NotConnected),
+                TwitchError::Credentials("token store offline".to_owned()),
+                |e| matches!(e, TwitchError::NotConnected),
             ),
         ];
 
@@ -323,7 +305,7 @@ mod tests {
 
         let err = send_chat(&transport, "100", "100", "hi").await.unwrap_err();
 
-        assert!(matches!(err, ChatSendError::Http(msg) if msg == EMPTY_SEND_RESPONSE));
+        assert!(matches!(err, TwitchError::SendFailed(msg) if msg == EMPTY_SEND_RESPONSE));
     }
 
     #[tokio::test]
@@ -332,7 +314,7 @@ mod tests {
 
         let err = send_chat(&transport, "100", "100", "hi").await.unwrap_err();
 
-        assert!(matches!(err, ChatSendError::Http(_)));
+        assert!(matches!(err, TwitchError::SendFailed(_)));
     }
 
     fn send_debug_line(message: &str) -> forge_test_support::log_capture::CapturedLine {
@@ -400,7 +382,7 @@ mod tests {
                 );
             } else {
                 assert!(
-                    matches!(result, Err(ChatSendError::MessageTooLong)),
+                    matches!(result, Err(TwitchError::MessageTooLong)),
                     "{char_count}-char message should be rejected with MessageTooLong"
                 );
                 assert_eq!(

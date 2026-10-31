@@ -5,7 +5,7 @@ use forge_components::{PushToast, ToastKind, tr};
 use forge_runtime::{
     ActionFailureNotice, NotificationIntent, NotificationIntents, NotificationPolicyHandle,
 };
-use forge_runtime::{DesktopNotice, NotifyPort, NotifyUrgency, OsPortError};
+use forge_runtime::{DesktopNotice, NotifyPort, NotifyUrgency, RuntimeError};
 use gpui::AsyncApp;
 use tokio::runtime::Handle;
 
@@ -154,7 +154,7 @@ pub(crate) async fn show_off_thread(
     rt: &Handle,
     port: Arc<dyn NotifyPort>,
     notice: DesktopNotice,
-) -> Result<(), OsPortError> {
+) -> Result<(), RuntimeError> {
     let (tx, rx) = tokio::sync::oneshot::channel();
     rt.spawn_blocking(move || {
         #[expect(
@@ -163,8 +163,11 @@ pub(crate) async fn show_off_thread(
         )]
         let _ = tx.send(port.show(notice));
     });
-    rx.await
-        .unwrap_or_else(|_| Err(OsPortError::Failed("notice task ended".to_owned())))
+    rx.await.unwrap_or_else(|_| {
+        Err(RuntimeError::OsOperationFailed(
+            "notice task ended".to_owned(),
+        ))
+    })
 }
 
 fn play_cue_detached(rt: &Handle) {
@@ -197,12 +200,12 @@ mod tests {
     };
 
     struct ScriptedPort {
-        results: Mutex<VecDeque<Result<(), OsPortError>>>,
+        results: Mutex<VecDeque<Result<(), RuntimeError>>>,
         seen: Mutex<Vec<DesktopNotice>>,
     }
 
     impl ScriptedPort {
-        fn new(results: Vec<Result<(), OsPortError>>) -> Arc<Self> {
+        fn new(results: Vec<Result<(), RuntimeError>>) -> Arc<Self> {
             Arc::new(Self {
                 results: Mutex::new(results.into()),
                 seen: Mutex::new(Vec::new()),
@@ -220,13 +223,13 @@ mod tests {
     }
 
     impl NotifyPort for ScriptedPort {
-        fn show(&self, notice: DesktopNotice) -> Result<(), OsPortError> {
+        fn show(&self, notice: DesktopNotice) -> Result<(), RuntimeError> {
             self.seen.lock().unwrap().push(notice);
             self.results
                 .lock()
                 .unwrap()
                 .pop_front()
-                .unwrap_or_else(|| Err(OsPortError::Failed("unscripted".to_owned())))
+                .unwrap_or_else(|| Err(RuntimeError::OsOperationFailed("unscripted".to_owned())))
         }
     }
 
@@ -303,7 +306,9 @@ mod tests {
     fn a_desktop_notice_the_os_rejects_falls_back_to_exactly_one_error_toast(
         cx: &mut TestAppContext,
     ) {
-        let port = ScriptedPort::new(vec![Err(OsPortError::Unavailable("no daemon".to_owned()))]);
+        let port = ScriptedPort::new(vec![Err(RuntimeError::OsServiceUnavailable(
+            "no daemon".to_owned(),
+        ))]);
         let (event, intent) = run_failed("Shoutout");
 
         let shown = drain_events_through(cx, Arc::clone(&port), vec![event], 1);
@@ -318,7 +323,7 @@ mod tests {
     fn a_desktop_notice_the_os_shows_raises_no_toast(cx: &mut TestAppContext) {
         let port = ScriptedPort::new(vec![
             Ok(()),
-            Err(OsPortError::Failed("daemon gone".to_owned())),
+            Err(RuntimeError::OsOperationFailed("daemon gone".to_owned())),
         ]);
         let (shown_event, _) = run_failed("Alpha");
         let (rejected_event, rejected) = run_failed("Beta");

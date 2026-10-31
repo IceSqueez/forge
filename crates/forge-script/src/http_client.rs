@@ -1,3 +1,4 @@
+use crate::error::ScriptError;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -17,22 +18,6 @@ const WILDCARD_PREFIX: &str = "*.";
 const SCRIPT_CALL_CLASS: CallClass = CallClass::Media;
 const NO_RUNTIME: &str = "no async runtime is available to run the request";
 
-#[derive(Debug, thiserror::Error)]
-pub enum HttpError {
-    #[error("http: domain not allowed")]
-    DomainNotAllowed,
-    #[error("http: HTTPS required")]
-    HttpsRequired,
-    #[error("http: local addresses blocked")]
-    PrivateAddress,
-    #[error("http: rate limit exceeded")]
-    RateLimitExceeded,
-    #[error("http: timeout")]
-    Timeout,
-    #[error("http: {0}")]
-    Network(String),
-}
-
 pub struct HttpResponse {
     pub status: u16,
     pub body: String,
@@ -48,13 +33,17 @@ pub struct ScriptHttpClient {
 }
 
 impl ScriptHttpClient {
-    pub fn new(config: Arc<ScriptHttpConfig>) -> Result<Self, HttpError> {
+    pub fn new(config: Arc<ScriptHttpConfig>) -> Result<Self, ScriptError> {
         let gateway = Gateway::user_directed(config.allow_local)
-            .map_err(|error| HttpError::Network(error.to_string()))?;
+            .map_err(|error| ScriptError::HttpNetwork(error.to_string()))?;
         Ok(Self { config, gateway })
     }
 
-    pub fn get(&self, url_str: &str, counter: &Arc<AtomicU32>) -> Result<HttpResponse, HttpError> {
+    pub fn get(
+        &self,
+        url_str: &str,
+        counter: &Arc<AtomicU32>,
+    ) -> Result<HttpResponse, ScriptError> {
         self.call(
             GatewayRequest::absolute(Method::Get, url_str),
             url_str,
@@ -67,7 +56,7 @@ impl ScriptHttpClient {
         url_str: &str,
         body: &str,
         counter: &Arc<AtomicU32>,
-    ) -> Result<HttpResponse, HttpError> {
+    ) -> Result<HttpResponse, ScriptError> {
         let request = GatewayRequest::absolute(Method::Post, url_str)
             .body(RequestBody::untyped(body.as_bytes().to_vec()));
         self.call(request, url_str, counter)
@@ -78,10 +67,10 @@ impl ScriptHttpClient {
         request: GatewayRequest,
         url_str: &str,
         counter: &Arc<AtomicU32>,
-    ) -> Result<HttpResponse, HttpError> {
+    ) -> Result<HttpResponse, ScriptError> {
         let target = self.validate(url_str, counter)?;
         let runtime =
-            Handle::try_current().map_err(|_| HttpError::Network(NO_RUNTIME.to_owned()))?;
+            Handle::try_current().map_err(|_| ScriptError::HttpNetwork(NO_RUNTIME.to_owned()))?;
         counter.fetch_add(1, Ordering::SeqCst);
         let request = request
             .class(SCRIPT_CALL_CLASS)
@@ -101,13 +90,13 @@ impl ScriptHttpClient {
         &self,
         url_str: &str,
         counter: &Arc<AtomicU32>,
-    ) -> Result<ResolvedTarget, HttpError> {
+    ) -> Result<ResolvedTarget, ScriptError> {
         if counter.load(Ordering::SeqCst) >= self.config.max_calls_per_script {
-            return Err(HttpError::RateLimitExceeded);
+            return Err(ScriptError::HttpRateLimitExceeded);
         }
 
         let target = ResolvedTarget::absolute(url_str)
-            .map_err(|reason| HttpError::Network(reason.to_string()))?;
+            .map_err(|reason| ScriptError::HttpNetwork(reason.to_string()))?;
         let host = target.host();
         let scheme_permitted = match target.scheme() {
             HTTPS_SCHEME => true,
@@ -115,11 +104,11 @@ impl ScriptHttpClient {
             _ => false,
         };
         if !scheme_permitted {
-            return Err(HttpError::HttpsRequired);
+            return Err(ScriptError::HttpsRequired);
         }
 
         if !domain_allowed(host, &self.config.allowed_domains) {
-            return Err(HttpError::DomainNotAllowed);
+            return Err(ScriptError::HttpDomainNotAllowed);
         }
 
         if !self.config.allow_local {
@@ -145,21 +134,23 @@ fn script_response(
     }
 }
 
-fn rejection_error(rejection: HostRejection) -> HttpError {
+fn rejection_error(rejection: HostRejection) -> ScriptError {
     match rejection {
-        HostRejection::PrivateOrSpecial => HttpError::PrivateAddress,
-        HostRejection::Unresolvable => HttpError::Network(rejection.to_string()),
+        HostRejection::PrivateOrSpecial => ScriptError::HttpPrivateAddress,
+        HostRejection::Unresolvable => ScriptError::HttpNetwork(rejection.to_string()),
     }
 }
 
-fn failure_error(failure: GatewayFailure) -> HttpError {
+fn failure_error(failure: GatewayFailure) -> ScriptError {
     match failure {
         GatewayFailure::AddressRefused(rejection) => rejection_error(rejection),
         GatewayFailure::Transport(transport) if transport.kind() == TransportKind::Timeout => {
-            HttpError::Timeout
+            ScriptError::HttpTimeout
         }
-        GatewayFailure::Transport(transport) => HttpError::Network(transport.cause().to_owned()),
-        other => HttpError::Network(other.to_string()),
+        GatewayFailure::Transport(transport) => {
+            ScriptError::HttpNetwork(transport.cause().to_owned())
+        }
+        other => ScriptError::HttpNetwork(other.to_string()),
     }
 }
 
@@ -209,7 +200,7 @@ mod tests {
         Arc::new(AtomicU32::new(0))
     }
 
-    fn validate_url(client: &ScriptHttpClient, url: &str) -> Result<(), HttpError> {
+    fn validate_url(client: &ScriptHttpClient, url: &str) -> Result<(), ScriptError> {
         client.validate(url, &fresh_counter()).map(|_| ())
     }
 
@@ -231,7 +222,7 @@ mod tests {
         let client = ScriptHttpClient::new(allowlisted(&["example.com"])).unwrap();
         assert!(matches!(
             client.get("http://example.com/path", &fresh_counter()),
-            Err(HttpError::HttpsRequired)
+            Err(ScriptError::HttpsRequired)
         ));
     }
 
@@ -240,7 +231,7 @@ mod tests {
         let client = ScriptHttpClient::new(allowlisted(&["example.com"])).unwrap();
         assert!(matches!(
             client.get("https://other.com/", &fresh_counter()),
-            Err(HttpError::DomainNotAllowed)
+            Err(ScriptError::HttpDomainNotAllowed)
         ));
     }
 
@@ -249,7 +240,7 @@ mod tests {
         let client = ScriptHttpClient::new(allowlisted(&[])).unwrap();
         assert!(matches!(
             client.get("https://example.com/", &fresh_counter()),
-            Err(HttpError::DomainNotAllowed)
+            Err(ScriptError::HttpDomainNotAllowed)
         ));
     }
 
@@ -265,7 +256,7 @@ mod tests {
         ] {
             let outcome = validate_url(&client, url);
             assert_eq!(
-                !matches!(outcome, Err(HttpError::DomainNotAllowed)),
+                !matches!(outcome, Err(ScriptError::HttpDomainNotAllowed)),
                 allowed,
                 "{url}: {outcome:?}"
             );
@@ -284,7 +275,7 @@ mod tests {
             let counter = Arc::new(AtomicU32::new(used));
             let outcome = client.validate("https://example.com/", &counter);
             assert_eq!(
-                matches!(outcome, Err(HttpError::RateLimitExceeded)),
+                matches!(outcome, Err(ScriptError::HttpRateLimitExceeded)),
                 refused,
                 "{used} used"
             );
@@ -324,7 +315,7 @@ mod tests {
             ),
         ] {
             match client.get(url, &fresh_counter()).err() {
-                Some(HttpError::Network(message)) => {
+                Some(ScriptError::HttpNetwork(message)) => {
                     assert_eq!(message, reason.to_string(), "{url}");
                     assert!(!message.contains("hunter2"), "{message}");
                 }
@@ -346,7 +337,7 @@ mod tests {
                 "https://169.254.169.254/latest/meta-data/",
                 &fresh_counter()
             ),
-            Err(HttpError::PrivateAddress)
+            Err(ScriptError::HttpPrivateAddress)
         ));
     }
 
@@ -355,7 +346,7 @@ mod tests {
         let client = ScriptHttpClient::new(allowlisted_local(&["localhost"])).unwrap();
         assert!(matches!(
             validate_url(&client, "ftp://localhost/file"),
-            Err(HttpError::HttpsRequired)
+            Err(ScriptError::HttpsRequired)
         ));
     }
 
@@ -377,7 +368,7 @@ mod tests {
             assert!(
                 matches!(
                     validate_url(&client, &format!("http://{host}/")),
-                    Err(HttpError::HttpsRequired)
+                    Err(ScriptError::HttpsRequired)
                 ),
                 "plain http to {host} must require https"
             );
@@ -391,7 +382,7 @@ mod tests {
             assert!(
                 matches!(
                     validate_url(&client, &format!("https://{host}/")),
-                    Err(HttpError::PrivateAddress)
+                    Err(ScriptError::HttpPrivateAddress)
                 ),
                 "{host}"
             );
@@ -406,7 +397,7 @@ mod tests {
         let outcome = client.get("https://example.com/", &counter).err();
 
         assert!(
-            matches!(&outcome, Some(HttpError::Network(message)) if message == NO_RUNTIME),
+            matches!(&outcome, Some(ScriptError::HttpNetwork(message)) if message == NO_RUNTIME),
             "{outcome:?}"
         );
         assert_eq!(counter.load(Ordering::SeqCst), 0);
@@ -421,7 +412,7 @@ mod tests {
         .await;
 
         assert!(
-            matches!(outcome, Some(HttpError::PrivateAddress)),
+            matches!(outcome, Some(ScriptError::HttpPrivateAddress)),
             "{outcome:?}"
         );
     }
@@ -563,9 +554,12 @@ mod tests {
         })
         .await;
 
-        assert!(matches!(first, Some(HttpError::Network(_))), "{first:?}");
         assert!(
-            matches!(second, Some(HttpError::RateLimitExceeded)),
+            matches!(first, Some(ScriptError::HttpNetwork(_))),
+            "{first:?}"
+        );
+        assert!(
+            matches!(second, Some(ScriptError::HttpRateLimitExceeded)),
             "{second:?}"
         );
     }
@@ -595,7 +589,10 @@ mod tests {
         })
         .await;
 
-        assert!(matches!(outcome, Some(HttpError::Timeout)), "{outcome:?}");
+        assert!(
+            matches!(outcome, Some(ScriptError::HttpTimeout)),
+            "{outcome:?}"
+        );
     }
 
     #[tokio::test]

@@ -1,27 +1,47 @@
+use crate::error::TwitchError;
 use forge_types::{MessageRef, SubActionOutcome};
 
 use crate::bot_account::BotUnavailable;
-use crate::chat::{ChatSendError, MAX_MESSAGE_LEN, MAX_WHISPER_CHARS, WhisperError};
-use crate::chat_sender::SendFailure;
-use crate::helix::HelixError;
+use crate::chat::{MAX_MESSAGE_LEN, MAX_WHISPER_CHARS};
 use crate::vocabulary::messages;
 
-pub(crate) fn helix_message(error: &HelixError) -> MessageRef {
+pub(crate) fn helix_message(error: &TwitchError) -> MessageRef {
     match error {
-        HelixError::RateLimited => messages::rate_limited(),
-        HelixError::ReauthRequired => messages::reauth_required(),
-        HelixError::Credentials(detail) => messages::credentials_unavailable(detail),
-        HelixError::Http { status, .. } => messages::request_refused(*status),
-        HelixError::Transport(detail) => messages::request_failed(detail),
-        HelixError::UndecodableResponse(detail) => messages::response_unreadable(detail),
+        TwitchError::RateLimited | TwitchError::ModerationThrottled => messages::rate_limited(),
+        TwitchError::ReauthRequired => messages::reauth_required(),
+        TwitchError::Credentials(detail) | TwitchError::SendCredentials(detail) => {
+            messages::credentials_unavailable(detail)
+        }
+        TwitchError::Http { status, .. } => messages::request_refused(*status),
+        TwitchError::Transport(detail)
+        | TwitchError::SendFailed(detail)
+        | TwitchError::SendRefused(detail) => messages::request_failed(detail),
+        TwitchError::UndecodableResponse(detail) => messages::response_unreadable(detail),
+        TwitchError::MessageTooLong => messages::message_too_long(MAX_MESSAGE_LEN),
+        TwitchError::NotConnected => messages::chat_not_connected(),
+        TwitchError::MessageDropped { code, message } => messages::message_dropped(code, message),
+        TwitchError::MessageForbidden(detail) => messages::message_forbidden(detail),
+        TwitchError::WhisperRecipientEmpty => messages::recipient_empty(),
+        TwitchError::WhisperMessageEmpty => messages::message_empty(),
+        TwitchError::WhisperTooLong => messages::message_too_long(MAX_WHISPER_CHARS),
+        TwitchError::RecipientRejectsWhispers => messages::recipient_rejects_whispers(),
+        TwitchError::BotNotConnected(reason) => bot_unavailable_message(*reason),
+        TwitchError::BotPhoneUnverified => messages::bot_phone_unverified(),
+        TwitchError::BotNotModerator => messages::bot_not_moderator(),
+        TwitchError::PermissionDenied(detail) => messages::permission_denied(detail),
+        TwitchError::ShoutoutCooldown { retry_after_secs } => {
+            messages::shoutout_cooldown(*retry_after_secs)
+        }
+        TwitchError::NotSignedIn => messages::credentials_unavailable(&error.to_string()),
+        other => messages::request_failed(&other.to_string()),
     }
 }
 
-pub(crate) fn failed(error: &HelixError) -> SubActionOutcome {
+pub(crate) fn failed(error: &TwitchError) -> SubActionOutcome {
     SubActionOutcome::Failed(helix_message(error).into())
 }
 
-pub(crate) fn outcome<T>(result: &Result<T, HelixError>) -> SubActionOutcome {
+pub(crate) fn outcome<T>(result: &Result<T, TwitchError>) -> SubActionOutcome {
     match result {
         Ok(_) => SubActionOutcome::Success,
         Err(error) => failed(error),
@@ -33,47 +53,6 @@ fn bot_unavailable_message(reason: BotUnavailable) -> MessageRef {
         BotUnavailable::NotConnected => messages::bot_not_signed_in(),
         BotUnavailable::ReauthRequired => messages::bot_reauth_required(),
         BotUnavailable::StorageFailure => messages::bot_credentials_unreadable(),
-    }
-}
-
-fn chat_send_message(error: &ChatSendError) -> MessageRef {
-    match error {
-        ChatSendError::RateLimited => messages::rate_limited(),
-        ChatSendError::MessageTooLong => messages::message_too_long(MAX_MESSAGE_LEN),
-        ChatSendError::NotConnected => messages::chat_not_connected(),
-        ChatSendError::Http(detail) => messages::request_failed(detail),
-        ChatSendError::ReauthRequired => messages::reauth_required(),
-        ChatSendError::Dropped { code, message } => messages::message_dropped(code, message),
-        ChatSendError::Forbidden(detail) => messages::message_forbidden(detail),
-    }
-}
-
-fn whisper_message(error: &WhisperError) -> MessageRef {
-    match error {
-        WhisperError::EmptyRecipient => messages::recipient_empty(),
-        WhisperError::EmptyMessage => messages::message_empty(),
-        WhisperError::MessageTooLong => messages::message_too_long(MAX_WHISPER_CHARS),
-        WhisperError::RecipientRejectsWhispers => messages::recipient_rejects_whispers(),
-        WhisperError::Helix(error) => helix_message(error),
-    }
-}
-
-pub(crate) fn send_failure(failure: &SendFailure) -> MessageRef {
-    match failure {
-        SendFailure::BotNotConnected(reason) => bot_unavailable_message(*reason),
-        SendFailure::BotPhoneUnverified => messages::bot_phone_unverified(),
-        SendFailure::Chat(error) => chat_send_message(error),
-        SendFailure::Whisper(error) => whisper_message(error),
-        SendFailure::BotNotModerator => messages::bot_not_moderator(),
-        SendFailure::PermissionDenied(detail) => messages::permission_denied(detail),
-        SendFailure::Refused(detail) => messages::request_failed(detail),
-        SendFailure::ShoutoutCooldown { retry_after_secs } => {
-            messages::shoutout_cooldown(*retry_after_secs)
-        }
-        SendFailure::ModerationThrottled => messages::rate_limited(),
-        SendFailure::Helix(error) => helix_message(error),
-        SendFailure::Credentials(detail) => messages::credentials_unavailable(detail),
-        SendFailure::NotSignedIn => messages::credentials_unavailable(&failure.to_string()),
     }
 }
 
@@ -93,22 +72,22 @@ mod tests {
 
     #[test]
     fn each_helix_error_maps_to_its_own_code_with_status_and_detail_only_where_they_exist() {
-        let cases: [(HelixError, &str, Option<i64>, Option<&str>); 6] = [
-            (HelixError::RateLimited, "twitch.rate_limited", None, None),
+        let cases: [(TwitchError, &str, Option<i64>, Option<&str>); 6] = [
+            (TwitchError::RateLimited, "twitch.rate_limited", None, None),
             (
-                HelixError::ReauthRequired,
+                TwitchError::ReauthRequired,
                 "twitch.reauth_required",
                 None,
                 None,
             ),
             (
-                HelixError::Credentials("keyring locked".into()),
+                TwitchError::Credentials("keyring locked".into()),
                 "twitch.credentials_unavailable",
                 None,
                 Some("keyring locked"),
             ),
             (
-                HelixError::Http {
+                TwitchError::Http {
                     status: 418,
                     body: "teapot".into(),
                 },
@@ -117,13 +96,13 @@ mod tests {
                 None,
             ),
             (
-                HelixError::Transport("connection reset".into()),
+                TwitchError::Transport("connection reset".into()),
                 "twitch.request_failed",
                 None,
                 Some("connection reset"),
             ),
             (
-                HelixError::UndecodableResponse("expected object".into()),
+                TwitchError::UndecodableResponse("expected object".into()),
                 "twitch.response_unreadable",
                 None,
                 Some("expected object"),
@@ -139,7 +118,7 @@ mod tests {
 
     #[test]
     fn failed_wraps_the_mapped_message_and_outcome_is_success_only_for_ok() {
-        let error = || HelixError::Http {
+        let error = || TwitchError::Http {
             status: 500,
             body: "boom".into(),
         };
@@ -163,7 +142,7 @@ mod tests {
                 "twitch.bot_credentials_unreadable",
             ),
         ] {
-            let message = send_failure(&SendFailure::BotNotConnected(reason));
+            let message = helix_message(&TwitchError::BotNotConnected(reason));
             assert_eq!(code(&message), expected);
             assert_eq!(detail(&message), None);
         }
@@ -171,11 +150,11 @@ mod tests {
 
     #[test]
     fn chat_send_errors_map_to_codes_with_limit_and_detail_arguments() {
-        let too_long = send_failure(&SendFailure::Chat(ChatSendError::MessageTooLong));
-        let dropped = send_failure(&SendFailure::Chat(ChatSendError::Dropped {
+        let too_long = helix_message(&TwitchError::MessageTooLong);
+        let dropped = helix_message(&TwitchError::MessageDropped {
             code: "msg_duplicate".into(),
             message: "duplicate".into(),
-        }));
+        });
 
         assert_eq!(code(&too_long), "twitch.message_too_long");
         assert_eq!(
@@ -195,29 +174,21 @@ mod tests {
     #[test]
     fn remaining_chat_send_errors_map_to_their_codes() {
         for (error, expected, expected_detail) in [
-            (ChatSendError::RateLimited, "twitch.rate_limited", None),
+            (TwitchError::RateLimited, "twitch.rate_limited", None),
+            (TwitchError::NotConnected, "twitch.chat_not_connected", None),
+            (TwitchError::ReauthRequired, "twitch.reauth_required", None),
             (
-                ChatSendError::NotConnected,
-                "twitch.chat_not_connected",
-                None,
-            ),
-            (
-                ChatSendError::ReauthRequired,
-                "twitch.reauth_required",
-                None,
-            ),
-            (
-                ChatSendError::Http("socket closed".into()),
+                TwitchError::SendFailed("socket closed".into()),
                 "twitch.request_failed",
                 Some("socket closed"),
             ),
             (
-                ChatSendError::Forbidden("followers only".into()),
+                TwitchError::MessageForbidden("followers only".into()),
                 "twitch.message_forbidden",
                 Some("followers only"),
             ),
         ] {
-            let message = send_failure(&SendFailure::Chat(error));
+            let message = helix_message(&error);
             assert_eq!(code(&message), expected);
             assert_eq!(detail(&message), expected_detail);
         }
@@ -225,7 +196,7 @@ mod tests {
 
     #[test]
     fn whisper_errors_map_to_codes_and_helix_failures_delegate_to_the_helix_mapping() {
-        let whisper_limit = send_failure(&SendFailure::Whisper(WhisperError::MessageTooLong));
+        let whisper_limit = helix_message(&TwitchError::WhisperTooLong);
         assert_eq!(code(&whisper_limit), "twitch.message_too_long");
         assert_eq!(
             whisper_limit.arg("limit"),
@@ -233,29 +204,27 @@ mod tests {
         );
 
         for (error, expected) in [
-            (WhisperError::EmptyRecipient, "twitch.recipient_empty"),
-            (WhisperError::EmptyMessage, "twitch.message_empty"),
+            (TwitchError::WhisperRecipientEmpty, "twitch.recipient_empty"),
+            (TwitchError::WhisperMessageEmpty, "twitch.message_empty"),
             (
-                WhisperError::RecipientRejectsWhispers,
+                TwitchError::RecipientRejectsWhispers,
                 "twitch.recipient_rejects_whispers",
             ),
         ] {
-            assert_eq!(code(&send_failure(&SendFailure::Whisper(error))), expected);
+            assert_eq!(code(&helix_message(&error)), expected);
         }
 
-        let wrapped = send_failure(&SendFailure::Whisper(WhisperError::Helix(
-            HelixError::Http {
-                status: 403,
-                body: "scope".into(),
-            },
-        )));
+        let wrapped = helix_message(&TwitchError::Http {
+            status: 403,
+            body: "scope".into(),
+        });
         assert_eq!(wrapped.arg("status"), Some(&MessageArg::Int(403)));
         assert_eq!(code(&wrapped), "twitch.request_refused");
     }
 
     #[test]
     fn moderation_failures_map_to_throttle_cooldown_permission_and_refusal_codes() {
-        let cooldown = send_failure(&SendFailure::ShoutoutCooldown {
+        let cooldown = helix_message(&TwitchError::ShoutoutCooldown {
             retry_after_secs: 90,
         });
         assert_eq!(code(&cooldown), "twitch.shoutout_cooldown");
@@ -263,42 +232,38 @@ mod tests {
 
         for (failure, expected, expected_detail) in [
             (
-                SendFailure::ModerationThrottled,
+                TwitchError::ModerationThrottled,
                 "twitch.rate_limited",
                 None,
             ),
             (
-                SendFailure::BotPhoneUnverified,
+                TwitchError::BotPhoneUnverified,
                 "twitch.bot_phone_unverified",
                 None,
             ),
             (
-                SendFailure::BotNotModerator,
+                TwitchError::BotNotModerator,
                 "twitch.bot_not_moderator",
                 None,
             ),
             (
-                SendFailure::PermissionDenied("HTTP 403: no".into()),
+                TwitchError::PermissionDenied("HTTP 403: no".into()),
                 "twitch.permission_denied",
                 Some("HTTP 403: no"),
             ),
             (
-                SendFailure::Refused("HTTP 400: offline".into()),
+                TwitchError::SendRefused("HTTP 400: offline".into()),
                 "twitch.request_failed",
                 Some("HTTP 400: offline"),
             ),
             (
-                SendFailure::Credentials("unreadable".into()),
+                TwitchError::SendCredentials("unreadable".into()),
                 "twitch.credentials_unavailable",
                 Some("unreadable"),
             ),
-            (
-                SendFailure::Helix(HelixError::ReauthRequired),
-                "twitch.reauth_required",
-                None,
-            ),
+            (TwitchError::ReauthRequired, "twitch.reauth_required", None),
         ] {
-            let message = send_failure(&failure);
+            let message = helix_message(&failure);
             assert_eq!(code(&message), expected, "{failure:?}");
             assert_eq!(detail(&message), expected_detail, "{failure:?}");
         }

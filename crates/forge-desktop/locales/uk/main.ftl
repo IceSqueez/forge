@@ -2372,6 +2372,7 @@ script_console_save_failed = Не вдалося зберегти: { $error }
 script_console_running = Запуск { $name }
 script_console_running_with_inputs = Запуск { $name } із вхідними даними
 script_console_returned = Результат: { $value }
+script_console_no_value = (без значення)
 script_console_run_failed = Помилка запуску: { $error }
 script_console_name_taken = Назва "{ $name }" уже зайнята
 script_input_invalid = `{ $name }`: { $reason }

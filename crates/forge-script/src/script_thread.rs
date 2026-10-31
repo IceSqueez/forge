@@ -1,7 +1,6 @@
+use crate::error::ScriptError;
 use tokio::runtime::Handle;
 use tracing::dispatcher::{self, Dispatch};
-
-use crate::ScriptError;
 
 const SCRIPT_STACK_BYTES: usize = 256 << 20;
 const SCRIPT_THREAD_NAME: &str = "forge-script";

@@ -1,4 +1,8 @@
+use forge_storage::StorageError;
+use forge_types::{MessageRef, VARIANT_MAX_COLLECTION_LEN, VARIANT_MAX_DEPTH, VariantKind};
 use thiserror::Error;
+
+use crate::coded_text::coded_text;
 
 #[derive(Debug, Error)]
 pub enum ScriptError {
@@ -16,6 +20,73 @@ pub enum ScriptError {
 
     #[error("condition '{expr}' did not evaluate to a boolean (got {got})")]
     ConditionNotBoolean { expr: String, got: String },
+
+    #[error("missing input `{name}`")]
+    MissingInput { name: String },
+
+    #[error("input `{name}`: expected {}, got {}", .expected.contract_name(), .got.contract_name())]
+    InputTypeMismatch {
+        name: String,
+        expected: VariantKind,
+        got: VariantKind,
+    },
+
+    #[error("{}", coded_text(.0))]
+    UnknownVoice(MessageRef),
+
+    #[error("the speak queue is unavailable: {}", coded_text(.0))]
+    SpeakQueueUnavailable(MessageRef),
+
+    #[error("no action has the id or name '{0}'")]
+    UnknownScheduleTarget(String),
+
+    #[error("{count} actions are named '{name}', schedule it by id instead")]
+    AmbiguousScheduleTarget { name: String, count: usize },
+
+    #[error("actions cannot be listed: {0}")]
+    ActionsUnavailable(String),
+
+    #[error("{0}")]
+    ScheduleRejected(String),
+
+    #[error("http: domain not allowed")]
+    HttpDomainNotAllowed,
+
+    #[error("http: HTTPS required")]
+    HttpsRequired,
+
+    #[error("http: local addresses blocked")]
+    HttpPrivateAddress,
+
+    #[error("http: rate limit exceeded")]
+    HttpRateLimitExceeded,
+
+    #[error("http: timeout")]
+    HttpTimeout,
+
+    #[error("http: {0}")]
+    HttpNetwork(String),
+
+    #[error(transparent)]
+    Storage(#[from] StorageError),
+
+    #[error("the script catalog never runs script functions")]
+    DescribeOnly,
+
+    #[error("value nested deeper than {VARIANT_MAX_DEPTH} levels cannot be stored")]
+    NestedTooDeep,
+
+    #[error("{0}")]
+    NonFiniteFloat(String),
+
+    #[error("unsupported rhai type for Variant conversion: {0}")]
+    UnsupportedType(String),
+
+    #[error("array with more than {VARIANT_MAX_COLLECTION_LEN} items cannot be stored")]
+    ArrayTooLong,
+
+    #[error("map with more than {VARIANT_MAX_COLLECTION_LEN} keys cannot be stored")]
+    MapTooLong,
 }
 
 impl ScriptError {

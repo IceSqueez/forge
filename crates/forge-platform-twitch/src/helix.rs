@@ -1,3 +1,4 @@
+use crate::error::TwitchError;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -6,7 +7,6 @@ use forge_net::status::TOO_MANY_REQUESTS;
 use forge_net::{ExpectedRefusal, Gateway, GatewayFailure, GatewayRequest, Method, RequestBody};
 use forge_types::OAuthToken;
 use forge_types::Secret;
-use thiserror::Error;
 use tracing::{debug, warn};
 
 pub(crate) const CLIENT_ID_HEADER: &str = "Client-Id";
@@ -75,23 +75,7 @@ impl HelixRequest {
     }
 }
 
-#[derive(Debug, Error)]
-pub enum HelixError {
-    #[error("rate limited")]
-    RateLimited,
-    #[error("reauth required")]
-    ReauthRequired,
-    #[error("{0}")]
-    Credentials(String),
-    #[error("HTTP {status}: {body}")]
-    Http { status: u16, body: String },
-    #[error("{0}")]
-    Transport(String),
-    #[error("{0}")]
-    UndecodableResponse(String),
-}
-
-impl HelixError {
+impl TwitchError {
     pub(crate) fn is_already_exists(&self) -> bool {
         matches!(self, Self::Http { status, .. } if *status == CONFLICT)
     }
@@ -101,7 +85,7 @@ impl HelixError {
     }
 }
 
-impl From<GatewayFailure> for HelixError {
+impl From<GatewayFailure> for TwitchError {
     fn from(failure: GatewayFailure) -> Self {
         match failure {
             GatewayFailure::Unauthorized { .. } => Self::ReauthRequired,
@@ -125,12 +109,12 @@ impl From<GatewayFailure> for HelixError {
 
 #[async_trait]
 pub trait HelixTokenSource: Send + Sync {
-    async fn access_token(&self) -> Result<OAuthToken, HelixError>;
+    async fn access_token(&self) -> Result<OAuthToken, TwitchError>;
 }
 
 #[async_trait]
 pub trait HelixTokenRefresher: Send + Sync {
-    async fn refresh(&self, failed_token: &OAuthToken) -> Result<OAuthToken, HelixError>;
+    async fn refresh(&self, failed_token: &OAuthToken) -> Result<OAuthToken, TwitchError>;
 }
 
 pub(crate) struct FixedTokenSource(OAuthToken);
@@ -143,14 +127,14 @@ impl FixedTokenSource {
 
 #[async_trait]
 impl HelixTokenSource for FixedTokenSource {
-    async fn access_token(&self) -> Result<OAuthToken, HelixError> {
+    async fn access_token(&self) -> Result<OAuthToken, TwitchError> {
         Ok(self.0.clone())
     }
 }
 
 #[async_trait]
 pub trait HelixTransport: Send + Sync {
-    async fn execute(&self, request: HelixRequest) -> Result<serde_json::Value, HelixError>;
+    async fn execute(&self, request: HelixRequest) -> Result<serde_json::Value, TwitchError>;
 }
 
 pub struct HelixHttpTransport {
@@ -179,7 +163,7 @@ impl HelixHttpTransport {
         &self,
         request: &HelixRequest,
         token: &OAuthToken,
-    ) -> Result<GatewayRequest, HelixError> {
+    ) -> Result<GatewayRequest, TwitchError> {
         let mut outbound = GatewayRequest::new(request.method.into(), request.path)
             .label(request.path)
             .header(CLIENT_ID_HEADER, self.client_id.as_str())
@@ -192,7 +176,7 @@ impl HelixHttpTransport {
         }
         if let Some(body) = &request.body {
             let body = RequestBody::json(body)
-                .map_err(|error| HelixError::Transport(error.to_string()))?;
+                .map_err(|error| TwitchError::Transport(error.to_string()))?;
             outbound = outbound.body(body);
         }
         Ok(outbound)
@@ -202,7 +186,7 @@ impl HelixHttpTransport {
         &self,
         request: &HelixRequest,
         token: &OAuthToken,
-    ) -> Result<serde_json::Value, HelixError> {
+    ) -> Result<serde_json::Value, TwitchError> {
         let response = match self.gateway.send(self.outbound(request, token)?).await {
             Ok(response) => response,
             Err(failure @ GatewayFailure::Unauthorized { .. }) => {
@@ -220,16 +204,16 @@ impl HelixHttpTransport {
         }
         response
             .json()
-            .map_err(|error| HelixError::UndecodableResponse(error.to_string()))
+            .map_err(|error| TwitchError::UndecodableResponse(error.to_string()))
     }
 }
 
 #[async_trait]
 impl HelixTransport for HelixHttpTransport {
-    async fn execute(&self, request: HelixRequest) -> Result<serde_json::Value, HelixError> {
+    async fn execute(&self, request: HelixRequest) -> Result<serde_json::Value, TwitchError> {
         let token = self.tokens.access_token().await?;
         match self.attempt(&request, &token).await {
-            Err(HelixError::ReauthRequired) => match &self.refresher {
+            Err(TwitchError::ReauthRequired) => match &self.refresher {
                 Some(refresher) => {
                     debug!(
                         path = request.path,
@@ -238,7 +222,7 @@ impl HelixTransport for HelixHttpTransport {
                     let fresh = refresher.refresh(&token).await?;
                     self.attempt(&request, &fresh).await
                 }
-                None => Err(HelixError::ReauthRequired),
+                None => Err(TwitchError::ReauthRequired),
             },
             other => other,
         }
@@ -271,7 +255,7 @@ mod tests {
 
     #[async_trait]
     impl HelixTokenSource for StaticTokenSource {
-        async fn access_token(&self) -> Result<OAuthToken, HelixError> {
+        async fn access_token(&self) -> Result<OAuthToken, TwitchError> {
             Ok(OAuthToken::new(SENTINEL))
         }
     }
@@ -280,8 +264,8 @@ mod tests {
 
     #[async_trait]
     impl HelixTokenSource for FailingTokenSource {
-        async fn access_token(&self) -> Result<OAuthToken, HelixError> {
-            Err(HelixError::Credentials("no twitch credentials".to_owned()))
+        async fn access_token(&self) -> Result<OAuthToken, TwitchError> {
+            Err(TwitchError::Credentials("no twitch credentials".to_owned()))
         }
     }
 
@@ -292,7 +276,7 @@ mod tests {
 
     #[async_trait]
     impl HelixTokenRefresher for CountingRefresher {
-        async fn refresh(&self, _failed_token: &OAuthToken) -> Result<OAuthToken, HelixError> {
+        async fn refresh(&self, _failed_token: &OAuthToken) -> Result<OAuthToken, TwitchError> {
             self.calls.fetch_add(1, Ordering::SeqCst);
             Ok(OAuthToken::new(FRESH))
         }
@@ -439,7 +423,7 @@ mod tests {
 
         let err = h.transport.execute(users()).await.unwrap_err();
 
-        assert!(matches!(err, HelixError::UndecodableResponse(_)));
+        assert!(matches!(err, TwitchError::UndecodableResponse(_)));
     }
 
     #[tokio::test]
@@ -453,7 +437,7 @@ mod tests {
 
         let err = h.transport.execute(users()).await.unwrap_err();
 
-        assert!(matches!(err, HelixError::Transport(_)), "got {err:?}");
+        assert!(matches!(err, TwitchError::Transport(_)), "got {err:?}");
     }
 
     #[tokio::test]
@@ -468,7 +452,7 @@ mod tests {
         let err = h.transport.execute(users()).await.unwrap_err();
 
         match err {
-            HelixError::Http { status, body } => {
+            TwitchError::Http { status, body } => {
                 assert_eq!(status, 403);
                 assert!(body.contains("Forbidden"), "body: {body}");
             }
@@ -488,7 +472,7 @@ mod tests {
 
         let err = h.transport.execute(users()).await.unwrap_err();
 
-        let HelixError::Http { status, body } = err else {
+        let TwitchError::Http { status, body } = err else {
             panic!("expected Http error");
         };
         assert_eq!(status, 500);
@@ -595,7 +579,7 @@ mod tests {
             let err = h.transport.execute(users()).await.unwrap_err();
 
             assert!(
-                matches!(err, HelixError::RateLimited),
+                matches!(err, TwitchError::RateLimited),
                 "{headers:?}: {err:?}"
             );
             assert_eq!(
@@ -624,7 +608,7 @@ mod tests {
         let err = h.transport.execute(users()).await.unwrap_err();
 
         assert!(
-            matches!(err, HelixError::Http { status: 503, .. }),
+            matches!(err, TwitchError::Http { status: 503, .. }),
             "got {err:?}"
         );
         assert!(h.limiter.observed_throttles().is_empty());
@@ -642,7 +626,7 @@ mod tests {
         let err = h.transport.execute(users()).await.unwrap_err();
 
         assert!(
-            matches!(err, HelixError::Http { status: 503, .. }),
+            matches!(err, TwitchError::Http { status: 503, .. }),
             "got {err:?}"
         );
         assert_eq!(h.limiter.observed_throttles(), vec![Duration::from_secs(7)]);
@@ -657,7 +641,7 @@ mod tests {
 
         let err = h.transport.execute(users()).await.unwrap_err();
 
-        assert!(matches!(err, HelixError::ReauthRequired));
+        assert!(matches!(err, TwitchError::ReauthRequired));
     }
 
     #[tokio::test]
@@ -703,7 +687,7 @@ mod tests {
 
         let err = transport.execute(users()).await.unwrap_err();
 
-        assert!(matches!(err, HelixError::ReauthRequired));
+        assert!(matches!(err, TwitchError::ReauthRequired));
         assert_eq!(refresher.calls.load(Ordering::SeqCst), 1);
         assert_eq!(server.received_requests().await.unwrap().len(), 2);
     }
@@ -719,7 +703,7 @@ mod tests {
 
         let err = h.transport.execute(users()).await.unwrap_err();
 
-        assert!(matches!(err, HelixError::RateLimited));
+        assert!(matches!(err, TwitchError::RateLimited));
         assert!(server.received_requests().await.unwrap().is_empty());
     }
 
@@ -734,7 +718,7 @@ mod tests {
 
         let err = h.transport.execute(users()).await.unwrap_err();
 
-        assert!(matches!(err, HelixError::Credentials(_)));
+        assert!(matches!(err, TwitchError::Credentials(_)));
         assert!(server.received_requests().await.unwrap().is_empty());
     }
 
@@ -745,7 +729,7 @@ mod tests {
         let err = h.transport.execute(users()).await.unwrap_err();
 
         let display = err.to_string();
-        assert!(matches!(err, HelixError::Transport(_)));
+        assert!(matches!(err, TwitchError::Transport(_)));
         assert!(!display.contains("127.0.0.1"), "{display}");
         assert!(!display.contains(SENTINEL), "{display}");
     }

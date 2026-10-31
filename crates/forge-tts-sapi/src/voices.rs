@@ -9,8 +9,8 @@ const LANGUAGE_LIST_SEPARATOR: char = ';';
     not(any(target_os = "windows", test)),
     expect(dead_code, reason = "used only by the windows synthesis backend")
 )]
-pub(crate) fn lcid_to_bcp47(lcid: u32) -> &'static str {
-    match lcid {
+pub(crate) fn lcid_to_bcp47(lcid: u32) -> Option<&'static str> {
+    let tag = match lcid {
         0x0401 => "ar-SA",
         0x0402 => "bg-BG",
         0x0404 => "zh-TW",
@@ -55,8 +55,9 @@ pub(crate) fn lcid_to_bcp47(lcid: u32) -> &'static str {
         0x0427 => "lt-LT",
         0x0429 => "fa-IR",
         0x0804 => "zh-CN",
-        _ => UNDETERMINED_LOCALE,
-    }
+        _ => return None,
+    };
+    Some(tag)
 }
 
 #[cfg_attr(
@@ -69,8 +70,7 @@ pub(crate) fn primary_language_tag(language_attribute: &str) -> Option<&'static 
         .map(str::trim)
         .filter(|segment| !segment.is_empty())
         .filter_map(|segment| u32::from_str_radix(segment, 16).ok())
-        .map(lcid_to_bcp47)
-        .find(|tag| *tag != UNDETERMINED_LOCALE)
+        .find_map(lcid_to_bcp47)
 }
 
 #[cfg_attr(
@@ -128,12 +128,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn lcid_to_bcp47_maps_known_locales_and_falls_back_to_und() {
+    fn lcid_to_bcp47_maps_known_locales_and_reports_unknown_ones_as_none() {
         for (lcid, expected) in [
-            (0x0409, "en-US"),
-            (0x0419, "ru-RU"),
-            (0x0422, "uk-UA"),
-            (0xFFFF, "und"),
+            (0x0409, Some("en-US")),
+            (0x0419, Some("ru-RU")),
+            (0x0422, Some("uk-UA")),
+            (0xFFFF, None),
         ] {
             assert_eq!(lcid_to_bcp47(lcid), expected, "lcid={lcid:#x}");
         }

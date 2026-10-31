@@ -118,7 +118,34 @@ pub(crate) fn failure_of(error: &UpdateError) -> UpdateFailure {
         | UpdateError::ArtifactSizeMismatch { .. }
         | UpdateError::ArtifactOversized { .. }
         | UpdateError::InvalidArtifactName => UpdateFailure::Unverified,
-        _ => UpdateFailure::Download,
+        UpdateError::Client(_)
+        | UpdateError::RateLimited
+        | UpdateError::Network(_)
+        | UpdateError::Status(_)
+        | UpdateError::ResponseTooLarge { .. }
+        | UpdateError::InvalidTrustedKey
+        | UpdateError::MalformedSignature
+        | UpdateError::UntrustedSignature
+        | UpdateError::MalformedManifest(_)
+        | UpdateError::MalformedRelease(_)
+        | UpdateError::UnsupportedManifestFormat(_)
+        | UpdateError::MissingSignedVersion
+        | UpdateError::VersionMismatch { .. }
+        | UpdateError::InvalidVersion(_)
+        | UpdateError::Cancelled
+        | UpdateError::Io(_)
+        | UpdateError::MalformedJournal(_)
+        | UpdateError::MalformedRecord(_)
+        | UpdateError::NoPendingUpdate
+        | UpdateError::SupervisorBusy
+        | UpdateError::ParentStillRunning
+        | UpdateError::MalformedPayload
+        | UpdateError::InstallerFailed(_)
+        | UpdateError::InstallerTerminated
+        | UpdateError::InstallerTimedOut
+        | UpdateError::PreviousBuildMissing
+        | UpdateError::InstallDisplaced { .. }
+        | UpdateError::PathWithoutFileName => UpdateFailure::Download,
     }
 }
 

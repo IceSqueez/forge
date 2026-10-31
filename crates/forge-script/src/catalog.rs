@@ -1,3 +1,4 @@
+use crate::error::ScriptError;
 use std::sync::{Arc, LazyLock};
 use std::time::Instant;
 
@@ -5,7 +6,7 @@ use forge_events::{Event, EventPublisher};
 use forge_types::{EventId, Variant};
 
 use crate::api::ForgeApi;
-use crate::globals_port::{GlobalDeletion, GlobalIncrement, ScriptGlobals, ScriptGlobalsError};
+use crate::globals_port::{GlobalDeletion, GlobalIncrement, ScriptGlobals};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ParamDescriptor {
@@ -30,8 +31,8 @@ impl EventPublisher for DescribeOnly {
 
 #[async_trait::async_trait]
 impl ScriptGlobals for DescribeOnly {
-    async fn get(&self, _key: &str) -> Result<Option<Variant>, ScriptGlobalsError> {
-        Err(ScriptGlobalsError::DescribeOnly)
+    async fn get(&self, _key: &str) -> Result<Option<Variant>, ScriptError> {
+        Err(ScriptError::DescribeOnly)
     }
 
     async fn set(
@@ -40,8 +41,8 @@ impl ScriptGlobals for DescribeOnly {
         _value: Variant,
         _persisted: bool,
         _caused_by: EventId,
-    ) -> Result<Option<Variant>, ScriptGlobalsError> {
-        Err(ScriptGlobalsError::DescribeOnly)
+    ) -> Result<Option<Variant>, ScriptError> {
+        Err(ScriptError::DescribeOnly)
     }
 
     async fn increment(
@@ -49,16 +50,12 @@ impl ScriptGlobals for DescribeOnly {
         _key: &str,
         _delta: i64,
         _caused_by: EventId,
-    ) -> Result<GlobalIncrement, ScriptGlobalsError> {
-        Err(ScriptGlobalsError::DescribeOnly)
+    ) -> Result<GlobalIncrement, ScriptError> {
+        Err(ScriptError::DescribeOnly)
     }
 
-    async fn delete(
-        &self,
-        _key: &str,
-        _caused_by: EventId,
-    ) -> Result<GlobalDeletion, ScriptGlobalsError> {
-        Err(ScriptGlobalsError::DescribeOnly)
+    async fn delete(&self, _key: &str, _caused_by: EventId) -> Result<GlobalDeletion, ScriptError> {
+        Err(ScriptError::DescribeOnly)
     }
 }
 

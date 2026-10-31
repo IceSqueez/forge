@@ -6,6 +6,12 @@ pub enum ObsError {
     #[error("authentication rejected")]
     Authentication,
 
+    #[error(transparent)]
+    Storage(#[from] forge_storage::StorageError),
+
+    #[error("OBS credentials not stored")]
+    NotStored,
+
     #[error("not connected to OBS")]
     Disconnected,
 

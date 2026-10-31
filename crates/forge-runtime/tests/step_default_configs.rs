@@ -8,12 +8,12 @@ use async_trait::async_trait;
 use forge_events::EventPublisher;
 use forge_registry::SubActionRegistry;
 use forge_runtime::{
-    DonationIngest, EventBus, NullEventLogRepo, RuntimeWiring, SpeakDispatchError, SpeakDispatcher,
-    SpeechOrigin, TwitchEmoteLexicon, register_donation_sub_actions, register_latest_sub_actions,
+    DonationIngest, EventBus, NullEventLogRepo, RuntimeWiring, SpeakDispatcher, SpeechOrigin,
+    TwitchEmoteLexicon, register_donation_sub_actions, register_latest_sub_actions,
     register_speech_sub_actions,
 };
 use forge_storage::{DataProvider, MockDonationRepo};
-use forge_types::{LatestScope, LatestValue, LatestValueReader, Shared};
+use forge_types::{LatestScope, LatestValue, LatestValueReader, MessageRef, Shared};
 use serde_json::Value;
 use tempfile::TempDir;
 
@@ -26,7 +26,7 @@ impl SpeakDispatcher for SilentSpeaker {
         _text: String,
         _voice: Option<String>,
         _origin: SpeechOrigin,
-    ) -> Result<(), SpeakDispatchError> {
+    ) -> Result<(), MessageRef> {
         Ok(())
     }
 }

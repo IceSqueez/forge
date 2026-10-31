@@ -1,4 +1,3 @@
-pub mod error;
 pub mod synth;
 pub mod voices;
 
@@ -10,35 +9,9 @@ use forge_tts_core::{ENGINE_ID_AZURE, EngineCapabilities, SynthesisRequest, TtsE
 use crate::credentials::AzureCredentials;
 use crate::network::{CloudGateways, ProviderGateway, ProviderLink, is_dns_label};
 use crate::policy::{RetryConfig, retry_synthesize};
-use error::AzureError;
 
 pub(crate) const SAMPLE_RATE_HZ: u32 = 24_000;
 const INVALID_REGION: &str = "Azure region must be a single region name such as eastus";
-
-impl From<AzureError> for TtsError {
-    fn from(e: AzureError) -> Self {
-        let engine_id = EngineId(ENGINE_ID_AZURE.into());
-        match e {
-            AzureError::Http(msg) => TtsError::NetworkFailed(msg),
-            AzureError::Unauthorized(reason) => TtsError::AuthFailed { reason },
-            AzureError::QuotaExceeded(detail) => TtsError::QuotaExceeded {
-                id: engine_id,
-                detail,
-            },
-            AzureError::RateLimited { retry_after_secs } => {
-                TtsError::RateLimited { retry_after_secs }
-            }
-            AzureError::VoiceNotFound(id) => TtsError::InvalidVoice { id },
-            AzureError::Rejected(detail) | AzureError::Decode(detail) => {
-                TtsError::SynthesisFailed {
-                    id: engine_id,
-                    detail,
-                }
-            }
-            AzureError::Io(io_err) => TtsError::Io(io_err),
-        }
-    }
-}
 
 static CAPABILITIES: EngineCapabilities = EngineCapabilities {
     ssml: true,
@@ -129,7 +102,7 @@ impl TtsEngine for AzureEngine {
     async fn list_voices(&self) -> Result<Vec<TtsVoice>, TtsError> {
         voices::fetch_voices(&self.link, self.credentials.api_key.expose())
             .await
-            .map_err(TtsError::from)
+            .map_err(|error| error.into_tts(ENGINE_ID_AZURE))
     }
 
     async fn synthesize(&self, request: SynthesisRequest) -> Result<PcmBuffer, TtsError> {
@@ -144,7 +117,7 @@ impl TtsEngine for AzureEngine {
             async move {
                 synth::synthesize(&link, api_key.expose(), req)
                     .await
-                    .map_err(TtsError::from)
+                    .map_err(|error| error.into_tts(ENGINE_ID_AZURE))
             }
         })
         .await
@@ -153,7 +126,7 @@ impl TtsEngine for AzureEngine {
     async fn test_connection(&self) -> Result<(), TtsError> {
         synth::probe_connection(&self.link, self.credentials.api_key.expose())
             .await
-            .map_err(TtsError::from)
+            .map_err(|error| error.into_tts(ENGINE_ID_AZURE))
     }
 }
 

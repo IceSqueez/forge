@@ -95,7 +95,8 @@ mod tests {
     use forge_types::{ArgStack, SubActionOutcome, Variant};
 
     use super::*;
-    use crate::helix::{HelixError, HelixMethod};
+    use crate::error::TwitchError;
+    use crate::helix::HelixMethod;
     use crate::sub_actions::add_vip::AddVipRunner;
     use crate::sub_actions::remove_moderator::RemoveModeratorRunner;
     use crate::sub_actions::remove_vip::RemoveVipRunner;
@@ -105,7 +106,7 @@ mod tests {
     };
 
     fn runner_with(
-        responses: Vec<Result<serde_json::Value, HelixError>>,
+        responses: Vec<Result<serde_json::Value, TwitchError>>,
     ) -> (Arc<MockTransport>, AddModeratorRunner) {
         let transport = Arc::new(MockTransport::returning_sequence(responses));
         let runner = AddModeratorRunner::new(
@@ -271,7 +272,7 @@ mod tests {
     async fn action_call_http_error_maps_to_failed_without_token_or_url() {
         let (transport, runner) = runner_with(vec![
             users_fixture("555"),
-            Err(HelixError::Http {
+            Err(TwitchError::Http {
                 status: 422,
                 body: format!("user is already a moderator {TOKEN_SENTINEL}"),
             }),

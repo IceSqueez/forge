@@ -180,6 +180,11 @@ pub fn audio_failure(error: &AudioError) -> MessageRef {
     match error {
         AudioError::NoDefaultDevice => MessageRef::new(NO_OUTPUT_DEVICE),
         AudioError::Host(detail) => with_detail(MessageRef::new(AUDIO_HOST_FAILED), detail),
+        AudioError::DeviceNotFound { .. }
+        | AudioError::NoInputDevice
+        | AudioError::UnsupportedSampleFormat(_) => {
+            with_detail(MessageRef::new(AUDIO_HOST_FAILED), &error.to_string())
+        }
         AudioError::DeviceLost(detail) => with_detail(MessageRef::new(AUDIO_DEVICE_LOST), detail),
         AudioError::Resample(detail) => {
             with_detail(MessageRef::new(AUDIO_CONVERSION_FAILED), detail)

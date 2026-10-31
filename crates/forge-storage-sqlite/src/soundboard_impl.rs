@@ -130,8 +130,9 @@ pub(crate) async fn upsert_clip<'e>(
     let path_str = clip
         .file_path
         .to_str()
-        .ok_or_else(|| {
-            StorageError::from(SqliteStorageError::Decode("non-utf8 clip path".to_string()))
+        .ok_or_else(|| StorageError::ValidationFailed {
+            field: "file_path".to_owned(),
+            reason: "the path is not valid UTF-8".to_owned(),
         })?
         .to_string();
     let device_json =

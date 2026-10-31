@@ -1,3 +1,4 @@
+use crate::error::TypesError;
 mod cache;
 mod current_language;
 mod inline;
@@ -16,9 +17,7 @@ pub use current_language::{current_names_language, set_current_names_language};
 pub(crate) use inline::render_inline_pattern;
 pub use legacy::{LegacyTranslation, translate_legacy_pattern};
 pub use names::NamesLanguage;
-pub use read::DateTextError;
 pub use render::PatternZone;
-pub use syntax::DatePatternError;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DatePattern {
@@ -26,7 +25,7 @@ pub struct DatePattern {
 }
 
 impl DatePattern {
-    pub fn parse(pattern: &str) -> Result<Self, DatePatternError> {
+    pub fn parse(pattern: &str) -> Result<Self, TypesError> {
         syntax::parse_pieces(pattern).map(|pieces| Self { pieces })
     }
 
@@ -44,13 +43,13 @@ impl DatePattern {
         text: &str,
         zone: PatternZone,
         language: NamesLanguage,
-    ) -> Result<OffsetDateTime, DateTextError> {
+    ) -> Result<OffsetDateTime, TypesError> {
         read::read(&self.pieces, text, zone, language)
     }
 }
 
 impl FromStr for DatePattern {
-    type Err = DatePatternError;
+    type Err = TypesError;
 
     fn from_str(pattern: &str) -> Result<Self, Self::Err> {
         Self::parse(pattern)

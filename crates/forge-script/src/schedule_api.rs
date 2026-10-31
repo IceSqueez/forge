@@ -261,7 +261,6 @@ mod tests {
     use crate::ForgeApi;
     use crate::ScriptError;
     use crate::engine::{Engine, EngineConfig};
-    use crate::schedule::ScriptScheduleError;
     use crate::test_support::{repo_globals, sandboxed_backend};
 
     const DUE_UNIX_SECS: i64 = 1_791_118_800;
@@ -271,16 +270,16 @@ mod tests {
     struct RecordingScheduler {
         requests: Mutex<Vec<ScriptScheduleRequest>>,
         cancelled_keys: Mutex<Vec<String>>,
-        outcome: Result<(), ScriptScheduleError>,
+        outcome: Mutex<Result<(), ScriptError>>,
         key_was_pending: bool,
     }
 
     impl RecordingScheduler {
-        fn answering(outcome: Result<(), ScriptScheduleError>, key_was_pending: bool) -> Arc<Self> {
+        fn answering(outcome: Result<(), ScriptError>, key_was_pending: bool) -> Arc<Self> {
             Arc::new(Self {
                 requests: Mutex::new(Vec::new()),
                 cancelled_keys: Mutex::new(Vec::new()),
-                outcome,
+                outcome: Mutex::new(outcome),
                 key_was_pending,
             })
         }
@@ -299,17 +298,23 @@ mod tests {
         async fn schedule(
             &self,
             request: ScriptScheduleRequest,
-        ) -> Result<ScriptSchedulePlacement, ScriptScheduleError> {
+        ) -> Result<ScriptSchedulePlacement, ScriptError> {
             self.requests.lock().unwrap().push(request);
-            self.outcome.clone().map(|()| ScriptSchedulePlacement {
+            self.next_outcome().map(|()| ScriptSchedulePlacement {
                 id: PLACED_ID,
                 due_at: due(),
             })
         }
 
-        async fn cancel_by_key(&self, key: &str) -> Result<bool, ScriptScheduleError> {
+        async fn cancel_by_key(&self, key: &str) -> Result<bool, ScriptError> {
             self.cancelled_keys.lock().unwrap().push(key.to_owned());
-            self.outcome.clone().map(|()| self.key_was_pending)
+            self.next_outcome().map(|()| self.key_was_pending)
+        }
+    }
+
+    impl RecordingScheduler {
+        fn next_outcome(&self) -> Result<(), ScriptError> {
+            std::mem::replace(&mut *self.outcome.lock().unwrap(), Ok(()))
         }
     }
 
@@ -591,7 +596,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_scheduler_refusal_fails_the_script_with_its_message() {
-        let refusal = ScriptScheduleError::AmbiguousAction {
+        let refusal = || ScriptError::AmbiguousScheduleTarget {
             name: "Greet".to_owned(),
             count: 2,
         };
@@ -599,12 +604,12 @@ mod tests {
             r#"forge::schedule::after("Greet", 90)"#,
             r#"forge::schedule::cancel("raid-thanks")"#,
         ] {
-            let scheduler = RecordingScheduler::answering(Err(refusal.clone()), false);
+            let scheduler = RecordingScheduler::answering(Err(refusal()), false);
 
             let failure = runtime_reason(eval(Some(scheduler), script.to_owned()).await);
 
             assert!(
-                failure.contains(&refusal.to_string()),
+                failure.contains(&refusal().to_string()),
                 "{script}: {failure}"
             );
         }

@@ -1,3 +1,4 @@
+use crate::error::RuntimeError;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -8,8 +9,8 @@ use forge_registry::{
 use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant};
 
 use super::core_logic_shared::{chain_at, propagate, retag};
+use crate::ConditionGate;
 use crate::core_messages;
-use crate::{ConditionError, ConditionGate};
 
 const BRANCH_TAKEN_VAR: &str = "branch.taken";
 
@@ -109,7 +110,7 @@ impl SubActionRunner for CoreLogicIfThenElseRunner {
             .await
         {
             Ok(value) => value,
-            Err(ConditionError::Undefined { .. }) if undefined_is_false => false,
+            Err(RuntimeError::UndefinedVariables { .. }) if undefined_is_false => false,
             Err(e) => {
                 return (
                     timer.failed(core_messages::condition_failed(e).into()),

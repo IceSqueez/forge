@@ -15,10 +15,10 @@ use forge_registry::{
 };
 use forge_runtime::{ACTION_DISABLED_REASON, ACTION_NOT_FOUND_REASON, ACTIONS_UNAVAILABLE_REASON};
 use forge_runtime::{
-    ActionCancelRegistry, ActionEngineHandle, Catalog, DispatchError, ENGINE_STOPPED_REASON,
-    EventBus, ExecutionRequest, MAX_PENDING_PER_QUEUE, NullEventLogRepo, PendingQuickAction,
+    ActionCancelRegistry, ActionEngineHandle, Catalog, ENGINE_STOPPED_REASON, EventBus,
+    ExecutionRequest, MAX_PENDING_PER_QUEUE, NullEventLogRepo, PendingQuickAction,
     QUEUE_DRAINING_REASON, QUEUE_PAUSED_REASON, QueueAdmission, QueueMode, QueueRuntimeState,
-    QueueScheduler, QueueSchedulerHandle, SchedulerRequest, spawn_action_engine,
+    QueueScheduler, QueueSchedulerHandle, RuntimeError, SchedulerRequest, spawn_action_engine,
 };
 use forge_runtime::{CoreLogicWaitRunner, WAIT_KIND_ID, WAIT_MS_KEY};
 use forge_storage::MockTriggerInstanceRepo;
@@ -680,7 +680,7 @@ async fn a_quick_action_still_in_the_intake_at_shutdown_reports_no_outcome() {
 
     assert!(matches!(
         pending.outcome().await,
-        Err(DispatchError::NoOutcome)
+        Err(RuntimeError::EngineNoOutcome)
     ));
 }
 

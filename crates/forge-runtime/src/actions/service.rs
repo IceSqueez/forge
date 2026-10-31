@@ -1,3 +1,4 @@
+use crate::error::RuntimeError;
 use std::collections::HashSet;
 use std::sync::Arc;
 
@@ -11,8 +12,7 @@ use forge_types::{ActionId, ExecutionContext, TriggerInstance, TriggerInstanceId
 use time::OffsetDateTime;
 
 use super::overlay_wiring::{
-    OverlayWiringError, OverlayWiringOutcome, OverlayWiringRecords, QueuePlacement, WiredQueue,
-    plan_overlay_wiring,
+    OverlayWiringOutcome, OverlayWiringRecords, QueuePlacement, WiredQueue, plan_overlay_wiring,
 };
 use super::types::{ActionDetail, ActionSummary, OverlayFeed};
 use crate::sub_action_runners::feeds_overlay;
@@ -214,7 +214,7 @@ impl ActionsService {
         kind: &dyn OverlayKindDescriptor,
         trigger: &dyn TriggerKindDescriptor,
         sub_actions: &SubActionRegistry,
-    ) -> Result<OverlayWiringOutcome, OverlayWiringError> {
+    ) -> Result<OverlayWiringOutcome, RuntimeError> {
         let plan = plan_overlay_wiring(overlay, kind, trigger)?;
         let _one_wiring_at_a_time = self.wiring_turn.lock().await;
 
@@ -224,12 +224,12 @@ impl ActionsService {
         {
             Ok(Some(action_id)) => return Ok(OverlayWiringOutcome::AlreadyWired { action_id }),
             Ok(None) => {}
-            Err(source) => return Err(OverlayWiringError::NothingWritten { source }),
+            Err(source) => return Err(RuntimeError::OverlayWiringNothingWritten { source }),
         }
 
         let queue = match self.resolve_queue(plan.queue).await {
             Ok(queue) => queue,
-            Err(source) => return Err(OverlayWiringError::NothingWritten { source }),
+            Err(source) => return Err(RuntimeError::OverlayWiringNothingWritten { source }),
         };
 
         let action = plan.action.on_queue(queue.id());
@@ -243,7 +243,7 @@ impl ActionsService {
             .commit_overlay_wiring(&wiring, Arc::clone(&self.queues), Arc::clone(&self.actions))
             .await
         {
-            return Err(OverlayWiringError::NothingWritten { source });
+            return Err(RuntimeError::OverlayWiringNothingWritten { source });
         }
 
         Ok(OverlayWiringOutcome::Wired(OverlayWiringRecords {

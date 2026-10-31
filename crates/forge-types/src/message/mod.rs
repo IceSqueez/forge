@@ -8,8 +8,8 @@ mod user_text;
 mod verbatim;
 
 pub use arg::{FiniteFloat, MessageArg};
-pub use catalog::{MessageCatalog, MessageCatalogError};
-pub use code::{MESSAGE_KEY_PREFIX, MessageCode, MessageCodeError};
+pub use catalog::MessageCatalog;
+pub use code::{MESSAGE_KEY_PREFIX, MessageCode};
 pub use common::{
     COMMON_MESSAGES, HEALTH_VIEWERS, INTEGRATION_DISABLED, NO_CHAT_PLATFORM_ENABLED,
     NO_WHISPER_PLATFORM_ENABLED, UNKNOWN_CHAT_TARGET, UPSTREAM_FAILURE, WHISPERS_UNSUPPORTED,

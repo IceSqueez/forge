@@ -5,6 +5,7 @@ use crate::delivery::{
 use crate::delivery_loss::{
     ConsumerLoss, ConsumerLossCounters, DeliveryTier, LossLedger, LossWatch,
 };
+use crate::error::RuntimeError;
 use crate::event_log_writer::EventLogSink;
 use crate::event_ring::EventRing;
 use crate::first_chat_ledger::FirstChatLedger;
@@ -16,7 +17,7 @@ use forge_events::{
     LagRecorder,
 };
 use forge_registry::TriggerRegistry;
-use forge_storage::{EventLogRepo, StorageError};
+use forge_storage::EventLogRepo;
 use forge_types::{EventId, RecoverMutex};
 use futures_util::FutureExt;
 use futures_util::future::Shared;
@@ -27,14 +28,6 @@ use std::sync::{
 };
 use time::OffsetDateTime;
 use tokio::sync::{oneshot, watch};
-
-#[derive(Debug, thiserror::Error)]
-pub enum BusError {
-    #[error("event {0} not found in ring or persistent log")]
-    EventNotFound(EventId),
-    #[error("storage: {0}")]
-    Storage(#[from] StorageError),
-}
 
 pub struct EventBus {
     observers: EventChannel,
@@ -308,15 +301,15 @@ impl EventBus {
             .unwrap_or_default()
     }
 
-    pub async fn replay_and_publish(&self, event_id: EventId) -> Result<(), BusError> {
+    pub async fn replay_and_publish(&self, event_id: EventId) -> Result<(), RuntimeError> {
         let original = match self.lookup(event_id) {
             Some(e) => e,
             None => self
                 .event_log
                 .get(event_id)
                 .await
-                .map_err(BusError::Storage)?
-                .ok_or(BusError::EventNotFound(event_id))?,
+                .map_err(RuntimeError::Storage)?
+                .ok_or(RuntimeError::EventNotFound(event_id))?,
         };
 
         let replayed = Event {
@@ -411,7 +404,7 @@ impl EventPublisher for EventBus {
 #[async_trait]
 pub trait EventHistory: EventPublisher + EventObserver {
     async fn recent_since(&self, limit: usize, since: Option<EventId>) -> Vec<Event>;
-    async fn replay_and_publish(&self, event_id: EventId) -> Result<(), BusError>;
+    async fn replay_and_publish(&self, event_id: EventId) -> Result<(), RuntimeError>;
 }
 
 #[async_trait]
@@ -420,7 +413,7 @@ impl EventHistory for EventBus {
         EventBus::recent_since(self, limit, since).await
     }
 
-    async fn replay_and_publish(&self, event_id: EventId) -> Result<(), BusError> {
+    async fn replay_and_publish(&self, event_id: EventId) -> Result<(), RuntimeError> {
         EventBus::replay_and_publish(self, event_id).await
     }
 }
@@ -437,6 +430,7 @@ mod tests {
     use crate::test_support::{Sandboxed, sandboxed_backend};
     use forge_events::{Delivery, EventSource};
     use forge_storage::DataProvider;
+    use forge_storage::StorageError;
     use forge_storage_sqlite::SqliteBackend;
     use std::sync::Arc;
     use std::time::Duration;
@@ -670,7 +664,7 @@ mod tests {
         let ghost_id = EventId::new();
         let result = bus.replay_and_publish(ghost_id).await;
         assert!(
-            matches!(result, Err(BusError::EventNotFound(id)) if id == ghost_id),
+            matches!(result, Err(RuntimeError::EventNotFound(id)) if id == ghost_id),
             "must return EventNotFound for unknown id"
         );
     }

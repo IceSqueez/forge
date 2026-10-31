@@ -5,7 +5,7 @@ use forge_components::{PushToast, ToastKind, duplicate_message_ids, tr};
 use forge_registry::{CONDITION_MESSAGES, CONFIG_MESSAGES};
 use forge_runtime::{CORE_MESSAGES, LIFECYCLE_MESSAGES};
 use forge_storage::Language;
-use forge_types::{COMMON_MESSAGES, MessageCatalog, MessageCatalogError};
+use forge_types::{COMMON_MESSAGES, MessageCatalog, TypesError};
 use gpui::{AppContext, Context};
 
 use crate::i18n::{app_catalogs, catalog_language};
@@ -38,7 +38,7 @@ pub(crate) const REGISTERED_CATALOGS: &[MessageCatalog] = &[
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum CatalogProblem {
-    Malformed(MessageCatalogError),
+    Malformed(TypesError),
     DuplicateNamespace(&'static str),
     DuplicateMessageId { language: Language, id: String },
 }
@@ -246,9 +246,9 @@ mod tests {
     fn a_malformed_namespace_is_reported() {
         assert_eq!(
             catalog_problems(&[catalog("Bad-Space", GOOD_CODES)]),
-            vec![CatalogProblem::Malformed(
-                MessageCatalogError::MalformedNamespace("Bad-Space")
-            )]
+            vec![CatalogProblem::Malformed(TypesError::MalformedNamespace(
+                "Bad-Space"
+            ))]
         );
     }
 
@@ -256,12 +256,10 @@ mod tests {
     fn a_code_from_another_namespace_is_reported() {
         assert_eq!(
             catalog_problems(&[catalog("alpha", OTHER_CODES)]),
-            vec![CatalogProblem::Malformed(
-                MessageCatalogError::ForeignCode {
-                    namespace: "alpha",
-                    code: MessageCode::from_static("beta", "one"),
-                }
-            )]
+            vec![CatalogProblem::Malformed(TypesError::ForeignCode {
+                namespace: "alpha",
+                code: MessageCode::from_static("beta", "one"),
+            })]
         );
     }
 
@@ -269,9 +267,9 @@ mod tests {
     fn a_code_listed_twice_is_reported() {
         assert_eq!(
             catalog_problems(&[catalog("alpha", DUPLICATE_CODES)]),
-            vec![CatalogProblem::Malformed(
-                MessageCatalogError::DuplicateCode(MessageCode::from_static("alpha", "one"))
-            )]
+            vec![CatalogProblem::Malformed(TypesError::DuplicateCode(
+                MessageCode::from_static("alpha", "one")
+            ))]
         );
     }
 

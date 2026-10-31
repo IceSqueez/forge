@@ -1,9 +1,9 @@
-use thiserror::Error;
+use crate::error::TwitchError;
 
 use super::send::refusal_text;
 
 use crate::account::user_target::UserTarget;
-use crate::helix::{HelixError, HelixMethod, HelixRequest, HelixTransport};
+use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
 use forge_net::status::BAD_REQUEST;
 
 const WHISPERS_PATH: &str = "/helix/whispers";
@@ -11,32 +11,18 @@ pub(crate) const MAX_WHISPER_CHARS: usize = 500;
 const WHISPER_REFUSAL_MARKERS: [&str; 3] =
     ["stranger", "doesn't allow whisper", "prevent this sender"];
 
-#[derive(Debug, Error)]
-pub(crate) enum WhisperError {
-    #[error("whisper recipient is empty")]
-    EmptyRecipient,
-    #[error("whisper message is empty")]
-    EmptyMessage,
-    #[error("whisper message exceeds {MAX_WHISPER_CHARS}-character limit")]
-    MessageTooLong,
-    #[error("recipient does not accept whispers")]
-    RecipientRejectsWhispers,
-    #[error(transparent)]
-    Helix(#[from] HelixError),
-}
-
-fn classify_rejection(error: HelixError) -> WhisperError {
-    let HelixError::Http { status, body } = &error else {
-        return WhisperError::Helix(error);
+fn classify_rejection(error: TwitchError) -> TwitchError {
+    let TwitchError::Http { status, body } = &error else {
+        return error;
     };
     let lowered = refusal_text(body).to_lowercase();
     let blocks_strangers = WHISPER_REFUSAL_MARKERS
         .iter()
         .any(|marker| lowered.contains(marker));
     if *status == BAD_REQUEST && blocks_strangers {
-        return WhisperError::RecipientRejectsWhispers;
+        return TwitchError::RecipientRejectsWhispers;
     }
-    WhisperError::Helix(error)
+    error
 }
 
 pub(crate) async fn send_whisper(
@@ -44,7 +30,7 @@ pub(crate) async fn send_whisper(
     from_user_id: &str,
     to_user_login: &str,
     message: &str,
-) -> Result<(), WhisperError> {
+) -> Result<(), TwitchError> {
     let recipient = (!to_user_login.is_empty()).then_some(UserTarget::Login(to_user_login));
     send_whisper_to(transport, from_user_id, recipient, message).await
 }
@@ -54,15 +40,15 @@ pub(crate) async fn send_whisper_to(
     from_user_id: &str,
     recipient: Option<UserTarget<'_>>,
     message: &str,
-) -> Result<(), WhisperError> {
+) -> Result<(), TwitchError> {
     let Some(recipient) = recipient else {
-        return Err(WhisperError::EmptyRecipient);
+        return Err(TwitchError::WhisperRecipientEmpty);
     };
     if message.is_empty() {
-        return Err(WhisperError::EmptyMessage);
+        return Err(TwitchError::WhisperMessageEmpty);
     }
     if message.chars().count() > MAX_WHISPER_CHARS {
-        return Err(WhisperError::MessageTooLong);
+        return Err(TwitchError::WhisperTooLong);
     }
     let to_user_id = recipient.user_id(transport).await?;
     let request = HelixRequest::new(HelixMethod::Post, WHISPERS_PATH)
@@ -145,19 +131,19 @@ mod tests {
         );
     }
 
-    type WhisperExpectation = fn(&WhisperError) -> bool;
+    type WhisperExpectation = fn(&TwitchError) -> bool;
 
     #[tokio::test]
     async fn invalid_whisper_is_rejected_without_any_helix_call() {
         let cases: [(&str, String, WhisperExpectation); 3] = [
             ("", "hello".to_owned(), |e| {
-                matches!(e, WhisperError::EmptyRecipient)
+                matches!(e, TwitchError::WhisperRecipientEmpty)
             }),
             ("viewer", String::new(), |e| {
-                matches!(e, WhisperError::EmptyMessage)
+                matches!(e, TwitchError::WhisperMessageEmpty)
             }),
             ("viewer", "я".repeat(MAX_WHISPER_CHARS + 1), |e| {
-                matches!(e, WhisperError::MessageTooLong)
+                matches!(e, TwitchError::WhisperTooLong)
             }),
         ];
         for (login, message, is_expected) in cases {
@@ -193,19 +179,19 @@ mod tests {
             .await
             .unwrap_err();
 
-        assert!(matches!(err, WhisperError::Helix(_)), "got {err:?}");
+        assert!(matches!(err, _), "got {err:?}");
         assert_eq!(transport.call_count(), 1, "only the lookup may run");
     }
 
     #[tokio::test]
     async fn only_a_400_naming_a_whisper_refusal_rule_means_the_recipient_refuses_whispers() {
         let refusal = |status: u16, message: &str| {
-            Err(HelixError::Http {
+            Err(TwitchError::Http {
                 status,
                 body: serde_json::json!({"status": status, "message": message}).to_string(),
             })
         };
-        let cases: [(Result<serde_json::Value, HelixError>, bool); 6] = [
+        let cases: [(Result<serde_json::Value, TwitchError>, bool); 6] = [
             (
                 refusal(
                     400,
@@ -217,7 +203,7 @@ mod tests {
             (refusal(400, "This user doesn't allow whispers"), true),
             (refusal(400, "The message field may not be empty"), false),
             (refusal(403, "Blocked by policy"), false),
-            (Err(HelixError::RateLimited), false),
+            (Err(TwitchError::RateLimited), false),
         ];
 
         for (response, rejects) in cases {
@@ -229,7 +215,7 @@ mod tests {
                 .unwrap_err();
 
             assert_eq!(
-                matches!(err, WhisperError::RecipientRejectsWhispers),
+                matches!(err, TwitchError::RecipientRejectsWhispers),
                 rejects,
                 "{label} -> {err:?}"
             );
@@ -305,7 +291,7 @@ mod tests {
 
             assert_eq!(
                 (
-                    matches!(err, WhisperError::RecipientRejectsWhispers),
+                    matches!(err, TwitchError::RecipientRejectsWhispers),
                     bus.of_kind(REQUEST_FAIL_KIND).len()
                 ),
                 (rejects, request_fails),

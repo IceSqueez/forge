@@ -155,7 +155,7 @@ impl SubActionRunner for GetCurrentGoalRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::helix::HelixError;
+    use crate::error::TwitchError;
     use crate::sub_actions::test_support::TOKEN_SENTINEL;
     use crate::sub_actions::test_support::{
         MockCreds, MockTransport, SELF_USER_ID, assert_request_refused, make_ctx,
@@ -175,7 +175,7 @@ mod tests {
     }
 
     fn runner_with(
-        response: Result<serde_json::Value, HelixError>,
+        response: Result<serde_json::Value, TwitchError>,
         creds: forge_storage::test_support::MemoryCredentials,
     ) -> (Arc<MockTransport>, GetCurrentGoalRunner) {
         let transport = Arc::new(MockTransport::returning(response));
@@ -306,7 +306,7 @@ mod tests {
     #[tokio::test]
     async fn helix_failure_maps_to_failed_without_leaking_token() {
         let (_transport, runner) = runner_with(
-            Err(HelixError::Http {
+            Err(TwitchError::Http {
                 status: 401,
                 body: format!("unauthorized {TOKEN_SENTINEL}"),
             }),

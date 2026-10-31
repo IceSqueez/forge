@@ -21,7 +21,7 @@ use forge_runtime::{
 use forge_runtime::{
     ActionCancelRegistry, Catalog, CatchUpSettle, EventBus, HandOff, NullEventLogRepo,
     QUEUE_DRAINING_REASON, QUEUE_NOT_FOUND_REASON, QUEUE_PAUSED_REASON, QueueAdmission, QueueMode,
-    QueueScheduler, QueueSchedulerHandle, ScheduleDue, ScheduleError, ScheduleRequest,
+    QueueScheduler, QueueSchedulerHandle, RuntimeError, ScheduleDue, ScheduleRequest,
     ScheduledRunsHandle, ScheduledRunsParts, SchedulerRequest, WaitingRuns, spawn_action_engine,
     spawn_scheduled_runs,
 };
@@ -82,20 +82,21 @@ fn request(target: ActionId) -> ScheduleRequest {
     }
 }
 
-fn error_kind(error: &ScheduleError) -> &'static str {
+fn error_kind(error: &RuntimeError) -> &'static str {
     match error {
-        ScheduleError::UnknownAction => "unknown_action",
-        ScheduleError::DelayTooShort => "delay_too_short",
-        ScheduleError::DueTooSoon => "due_too_soon",
-        ScheduleError::DelayTooLong => "delay_too_long",
-        ScheduleError::LateToleranceOutOfRange => "late_tolerance_out_of_range",
-        ScheduleError::KeyTooLong => "key_too_long",
-        ScheduleError::ArgsTooLarge { .. } => "args_too_large",
-        ScheduleError::ArgsNotStorable(_) => "args_not_storable",
-        ScheduleError::PendingCapReached => "pending_cap_reached",
-        ScheduleError::ActionPendingCapReached => "action_pending_cap_reached",
-        ScheduleError::SchedulerStopped => "scheduler_stopped",
-        ScheduleError::Storage(_) => "storage",
+        RuntimeError::ScheduleUnknownAction => "unknown_action",
+        RuntimeError::DelayTooShort => "delay_too_short",
+        RuntimeError::DueTooSoon => "due_too_soon",
+        RuntimeError::DelayTooLong => "delay_too_long",
+        RuntimeError::LateToleranceOutOfRange => "late_tolerance_out_of_range",
+        RuntimeError::KeyTooLong => "key_too_long",
+        RuntimeError::ArgsTooLarge { .. } => "args_too_large",
+        RuntimeError::ArgsNotStorable(_) => "args_not_storable",
+        RuntimeError::PendingCapReached => "pending_cap_reached",
+        RuntimeError::ActionPendingCapReached => "action_pending_cap_reached",
+        RuntimeError::SchedulerStopped => "scheduler_stopped",
+        RuntimeError::Storage(_) => "storage",
+        _ => "other",
     }
 }
 
@@ -861,7 +862,7 @@ async fn schedule_refuses_captured_variables_one_byte_over_the_limit() {
             .await
             .map(|_| ())
             .map_err(|error| match error {
-                ScheduleError::ArgsTooLarge { bytes } => Some(bytes),
+                RuntimeError::ArgsTooLarge { bytes } => Some(bytes),
                 _ => None,
             });
         assert_eq!(placed, expected, "{len} filler bytes");

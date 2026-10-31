@@ -1,12 +1,13 @@
 use crate::RecoverRwLock;
+use crate::error::TypesError;
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, LazyLock, RwLock};
 
-use super::{DatePattern, DatePatternError};
+use super::DatePattern;
 
 const PATTERN_CACHE_CAPACITY: usize = 256;
 
-pub type ParsedPattern = Arc<Result<DatePattern, DatePatternError>>;
+pub type ParsedPattern = Arc<Result<DatePattern, TypesError>>;
 
 pub(super) struct CachedPattern {
     pub(super) parsed: ParsedPattern,

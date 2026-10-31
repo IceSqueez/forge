@@ -1,4 +1,3 @@
-pub mod error;
 pub mod synth;
 pub mod voices;
 
@@ -12,32 +11,6 @@ use forge_tts_core::{
 use crate::credentials::ElevenLabsCredentials;
 use crate::network::{CloudGateways, ProviderGateway, ProviderLink};
 use crate::policy::{RetryConfig, retry_synthesize};
-use error::ElevenLabsError;
-
-impl From<ElevenLabsError> for TtsError {
-    fn from(e: ElevenLabsError) -> Self {
-        let engine_id = EngineId(ENGINE_ID_ELEVENLABS.into());
-        match e {
-            ElevenLabsError::Http(msg) => TtsError::NetworkFailed(msg),
-            ElevenLabsError::Unauthorized(reason) => TtsError::AuthFailed { reason },
-            ElevenLabsError::QuotaExceeded(detail) => TtsError::QuotaExceeded {
-                id: engine_id,
-                detail,
-            },
-            ElevenLabsError::RateLimited { retry_after_secs } => {
-                TtsError::RateLimited { retry_after_secs }
-            }
-            ElevenLabsError::VoiceNotFound(id) => TtsError::InvalidVoice { id },
-            ElevenLabsError::Rejected(detail) | ElevenLabsError::Decode(detail) => {
-                TtsError::SynthesisFailed {
-                    id: engine_id,
-                    detail,
-                }
-            }
-            ElevenLabsError::Io(io_err) => TtsError::Io(io_err),
-        }
-    }
-}
 
 static CAPABILITIES: EngineCapabilities = EngineCapabilities {
     ssml: false,
@@ -118,7 +91,7 @@ impl TtsEngine for ElevenLabsEngine {
     async fn list_voices(&self) -> Result<Vec<TtsVoice>, TtsError> {
         voices::fetch_voices(&self.link, self.credentials.api_key.expose())
             .await
-            .map_err(TtsError::from)
+            .map_err(|error| error.into_tts(ENGINE_ID_ELEVENLABS))
     }
 
     async fn synthesize(&self, request: SynthesisRequest) -> Result<PcmBuffer, TtsError> {
@@ -139,7 +112,7 @@ impl TtsEngine for ElevenLabsEngine {
             async move {
                 synth::synthesize(&link, api_key.expose(), req)
                     .await
-                    .map_err(TtsError::from)
+                    .map_err(|error| error.into_tts(ENGINE_ID_ELEVENLABS))
             }
         })
         .await
@@ -148,7 +121,7 @@ impl TtsEngine for ElevenLabsEngine {
     async fn test_connection(&self) -> Result<(), TtsError> {
         synth::probe_connection(&self.link, self.credentials.api_key.expose())
             .await
-            .map_err(TtsError::from)
+            .map_err(|error| error.into_tts(ENGINE_ID_ELEVENLABS))
     }
 }
 

@@ -208,8 +208,7 @@ fn open_and_start(
     use cpal::traits::{DeviceTrait, StreamTrait};
 
     let host = cpal::default_host();
-    let device = find_input_device(&host, device_id.as_ref())
-        .ok_or_else(|| AudioError::Host("no matching input device found".to_string()))?;
+    let device = find_input_device(&host, device_id.as_ref()).ok_or(AudioError::NoInputDevice)?;
 
     let config = device
         .default_input_config()
@@ -325,10 +324,7 @@ fn build_input_stream(
             )
         }
         other => {
-            return Err(AudioError::Host(format!(
-                "unsupported input sample format {:?}",
-                other
-            )));
+            return Err(AudioError::UnsupportedSampleFormat(format!("{other:?}")));
         }
     };
 

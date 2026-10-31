@@ -4,8 +4,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use forge_script::{
-    Engine, EngineConfig, ForgeApi, GlobalDeletion, GlobalIncrement, ScriptGlobals,
-    ScriptGlobalsError,
+    Engine, EngineConfig, ForgeApi, GlobalDeletion, GlobalIncrement, ScriptError, ScriptGlobals,
 };
 use forge_test_support::log_capture::{CapturedLine, capture};
 use forge_types::{EventId, SCRIPT_LOG_TARGET, Variant};
@@ -13,13 +12,13 @@ use tracing::Level;
 
 struct UnusedGlobals;
 
-fn unused() -> ScriptGlobalsError {
-    ScriptGlobalsError::DescribeOnly
+fn unused() -> ScriptError {
+    ScriptError::DescribeOnly
 }
 
 #[async_trait::async_trait]
 impl ScriptGlobals for UnusedGlobals {
-    async fn get(&self, _key: &str) -> Result<Option<Variant>, ScriptGlobalsError> {
+    async fn get(&self, _key: &str) -> Result<Option<Variant>, ScriptError> {
         Err(unused())
     }
 
@@ -29,7 +28,7 @@ impl ScriptGlobals for UnusedGlobals {
         _value: Variant,
         _persisted: bool,
         _caused_by: EventId,
-    ) -> Result<Option<Variant>, ScriptGlobalsError> {
+    ) -> Result<Option<Variant>, ScriptError> {
         Err(unused())
     }
 
@@ -38,15 +37,11 @@ impl ScriptGlobals for UnusedGlobals {
         _key: &str,
         _delta: i64,
         _caused_by: EventId,
-    ) -> Result<GlobalIncrement, ScriptGlobalsError> {
+    ) -> Result<GlobalIncrement, ScriptError> {
         Err(unused())
     }
 
-    async fn delete(
-        &self,
-        _key: &str,
-        _caused_by: EventId,
-    ) -> Result<GlobalDeletion, ScriptGlobalsError> {
+    async fn delete(&self, _key: &str, _caused_by: EventId) -> Result<GlobalDeletion, ScriptError> {
         Err(unused())
     }
 }

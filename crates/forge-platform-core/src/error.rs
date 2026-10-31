@@ -2,6 +2,7 @@ use forge_net::RateLimitError;
 use thiserror::Error;
 
 use crate::endpoints::EndpointRefusal;
+use crate::sender::SenderPreference;
 
 pub const HTTP_UNAUTHORIZED: u16 = forge_net::status::UNAUTHORIZED;
 
@@ -22,6 +23,9 @@ pub enum PlatformError {
 
     #[error("{reason}")]
     Refused { reason: String },
+
+    #[error("unknown sender \"{raw}\"; valid senders: {}", SenderPreference::WIRE_NAMES.join(", "))]
+    UnknownSender { raw: String },
 
     #[error("authentication failure: {reason}")]
     Auth { reason: String },

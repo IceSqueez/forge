@@ -1,3 +1,4 @@
+use crate::error::ScriptError;
 use std::collections::BTreeMap;
 
 use forge_types::{
@@ -14,19 +15,6 @@ const COMMAND_MEMBERS: [(&str, &str); 3] = [
     ("tail", COMMAND_TAIL_VARIABLE),
 ];
 const ARGUMENTS_INPUT: &str = "args";
-
-#[derive(Debug, thiserror::Error)]
-pub enum InputMismatchError {
-    #[error("missing input `{name}` in ArgStack")]
-    Missing { name: String },
-
-    #[error("input `{name}`: expected {expected:?}, got {got:?}")]
-    TypeMismatch {
-        name: String,
-        expected: VariantKind,
-        got: VariantKind,
-    },
-}
 
 pub fn inert_annotation_lines(source: &str) -> Vec<usize> {
     source
@@ -46,7 +34,7 @@ pub fn inert_annotation_lines(source: &str) -> Vec<usize> {
 pub fn build_scope_for_contract(
     contract: &ScriptContract,
     arg_stack: &ArgStack,
-) -> Result<rhai::Scope<'static>, InputMismatchError> {
+) -> Result<rhai::Scope<'static>, ScriptError> {
     let mut scope = rhai::Scope::new();
     if let Some(command) = command_of(arg_stack) {
         scope.push_dynamic(COMMAND_SCRIPT_VARIABLE, variant_to_dynamic(command));
@@ -55,12 +43,12 @@ pub fn build_scope_for_contract(
         let value = arg_stack
             .get(&input.name)
             .or_else(|| command_arguments_for(input, arg_stack))
-            .ok_or_else(|| InputMismatchError::Missing {
+            .ok_or_else(|| ScriptError::MissingInput {
                 name: input.name.clone(),
             })?;
         let actual_kind = VariantKind::from_variant(value);
         if actual_kind != input.kind {
-            return Err(InputMismatchError::TypeMismatch {
+            return Err(ScriptError::InputTypeMismatch {
                 name: input.name.clone(),
                 expected: input.kind,
                 got: actual_kind,
@@ -166,7 +154,7 @@ mod tests {
         let err = build_scope_for_contract(&contract, &stack).unwrap_err();
         assert!(matches!(
             err,
-            InputMismatchError::TypeMismatch {
+            ScriptError::InputTypeMismatch {
                 ref name,
                 expected: VariantKind::Int,
                 got: VariantKind::String,
@@ -187,7 +175,7 @@ mod tests {
         let err = build_scope_for_contract(&contract, &stack).unwrap_err();
         assert!(matches!(
             err,
-            InputMismatchError::Missing { ref name } if name == "missing"
+            ScriptError::MissingInput { ref name } if name == "missing"
         ));
     }
 
@@ -303,7 +291,7 @@ mod tests {
         for contract in [arguments_input(VariantKind::Int), other_name] {
             assert!(matches!(
                 build_scope_for_contract(&contract, &command_stack()),
-                Err(InputMismatchError::Missing { .. })
+                Err(ScriptError::MissingInput { .. })
             ));
         }
     }

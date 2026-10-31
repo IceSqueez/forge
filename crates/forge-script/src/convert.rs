@@ -1,3 +1,4 @@
+use crate::error::ScriptError;
 use std::collections::BTreeMap;
 
 use forge_types::{VARIANT_MAX_COLLECTION_LEN, VARIANT_MAX_DEPTH, Variant, datetime_to_text};
@@ -38,31 +39,13 @@ pub(crate) fn variant_to_dynamic(v: Variant) -> rhai::Dynamic {
     }
 }
 
-#[derive(Debug, thiserror::Error)]
-pub(crate) enum VariantConversionError {
-    #[error("value nested deeper than {VARIANT_MAX_DEPTH} levels cannot be stored")]
-    NestedTooDeep,
-
-    #[error("{0}")]
-    NonFiniteFloat(String),
-
-    #[error("unsupported rhai type for Variant conversion: {0}")]
-    UnsupportedType(String),
-
-    #[error("array with more than {VARIANT_MAX_COLLECTION_LEN} items cannot be stored")]
-    ArrayTooLong,
-
-    #[error("map with more than {VARIANT_MAX_COLLECTION_LEN} keys cannot be stored")]
-    MapTooLong,
-}
-
-pub(crate) fn dynamic_to_variant(d: rhai::Dynamic) -> Result<Variant, VariantConversionError> {
+pub(crate) fn dynamic_to_variant(d: rhai::Dynamic) -> Result<Variant, ScriptError> {
     dynamic_to_variant_at(d, 0)
 }
 
-fn dynamic_to_variant_at(d: rhai::Dynamic, depth: u8) -> Result<Variant, VariantConversionError> {
+fn dynamic_to_variant_at(d: rhai::Dynamic, depth: u8) -> Result<Variant, ScriptError> {
     if depth > VARIANT_MAX_DEPTH {
-        return Err(VariantConversionError::NestedTooDeep);
+        return Err(ScriptError::NestedTooDeep);
     }
     let d = d.flatten();
     if d.is::<i64>() {
@@ -70,7 +53,7 @@ fn dynamic_to_variant_at(d: rhai::Dynamic, depth: u8) -> Result<Variant, Variant
     }
     if d.is::<f64>() {
         return Variant::float(d.cast::<f64>())
-            .map_err(|e| VariantConversionError::NonFiniteFloat(e.to_string()));
+            .map_err(|e| ScriptError::NonFiniteFloat(e.to_string()));
     }
     if d.is::<bool>() {
         return Ok(Variant::Bool(d.cast::<bool>()));
@@ -92,14 +75,12 @@ fn dynamic_to_variant_at(d: rhai::Dynamic, depth: u8) -> Result<Variant, Variant
     if d.is::<rhai::Map>() {
         return map_to_variant(d.cast::<rhai::Map>(), depth);
     }
-    Err(VariantConversionError::UnsupportedType(
-        d.type_name().to_owned(),
-    ))
+    Err(ScriptError::UnsupportedType(d.type_name().to_owned()))
 }
 
-fn array_to_variant(items: rhai::Array, depth: u8) -> Result<Variant, VariantConversionError> {
+fn array_to_variant(items: rhai::Array, depth: u8) -> Result<Variant, ScriptError> {
     if items.len() > VARIANT_MAX_COLLECTION_LEN {
-        return Err(VariantConversionError::ArrayTooLong);
+        return Err(ScriptError::ArrayTooLong);
     }
     items
         .into_iter()
@@ -108,9 +89,9 @@ fn array_to_variant(items: rhai::Array, depth: u8) -> Result<Variant, VariantCon
         .map(Variant::Array)
 }
 
-fn map_to_variant(entries: rhai::Map, depth: u8) -> Result<Variant, VariantConversionError> {
+fn map_to_variant(entries: rhai::Map, depth: u8) -> Result<Variant, ScriptError> {
     if entries.len() > VARIANT_MAX_COLLECTION_LEN {
-        return Err(VariantConversionError::MapTooLong);
+        return Err(ScriptError::MapTooLong);
     }
     entries
         .into_iter()
@@ -370,23 +351,23 @@ mod tests {
     fn a_refused_conversion_reads_as_the_script_author_has_always_seen_it() {
         for (error, expected) in [
             (
-                VariantConversionError::NestedTooDeep,
+                ScriptError::NestedTooDeep,
                 format!("value nested deeper than {VARIANT_MAX_DEPTH} levels cannot be stored"),
             ),
             (
-                VariantConversionError::NonFiniteFloat("float is not finite".to_owned()),
+                ScriptError::NonFiniteFloat("float is not finite".to_owned()),
                 "float is not finite".to_owned(),
             ),
             (
-                VariantConversionError::UnsupportedType("Fn".to_owned()),
+                ScriptError::UnsupportedType("Fn".to_owned()),
                 "unsupported rhai type for Variant conversion: Fn".to_owned(),
             ),
             (
-                VariantConversionError::ArrayTooLong,
+                ScriptError::ArrayTooLong,
                 format!("array with more than {VARIANT_MAX_COLLECTION_LEN} items cannot be stored"),
             ),
             (
-                VariantConversionError::MapTooLong,
+                ScriptError::MapTooLong,
                 format!("map with more than {VARIANT_MAX_COLLECTION_LEN} keys cannot be stored"),
             ),
         ] {

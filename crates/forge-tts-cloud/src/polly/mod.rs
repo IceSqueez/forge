@@ -1,47 +1,19 @@
-pub mod error;
 mod signer;
 pub mod synth;
 pub mod voices;
 
 use async_trait::async_trait;
 use forge_speech_types::PcmBuffer;
-use forge_speech_types::{EngineId, TtsVoice, VoiceId};
+use forge_speech_types::{EngineId, TtsVoice};
 use forge_tts_core::{ENGINE_ID_POLLY, EngineCapabilities, SynthesisRequest, TtsEngine, TtsError};
 
 use crate::credentials::PollyCredentials;
 use crate::network::{CloudGateways, ProviderGateway, ProviderLink, is_dns_label};
 use crate::policy::{RetryConfig, retry_synthesize};
-use error::PollyError;
 use signer::PollySigner;
 
 pub(crate) const SAMPLE_RATE_HZ: u32 = 16_000;
 const INVALID_REGION: &str = "AWS region must be a single region name such as us-east-1";
-
-impl From<PollyError> for TtsError {
-    fn from(e: PollyError) -> Self {
-        let engine_id = EngineId(ENGINE_ID_POLLY.into());
-        match e {
-            PollyError::Http(msg) => TtsError::NetworkFailed(msg),
-            PollyError::Unauthorized(reason) => TtsError::AuthFailed { reason },
-            PollyError::QuotaExceeded(detail) => TtsError::QuotaExceeded {
-                id: engine_id,
-                detail,
-            },
-            PollyError::RateLimited { retry_after_secs } => {
-                TtsError::RateLimited { retry_after_secs }
-            }
-            PollyError::SignatureError(msg) => TtsError::AuthFailed { reason: msg },
-            PollyError::VoiceNotFound(id) => TtsError::InvalidVoice { id: VoiceId(id) },
-            PollyError::Rejected(detail) | PollyError::Decode(detail) => {
-                TtsError::SynthesisFailed {
-                    id: engine_id,
-                    detail,
-                }
-            }
-            PollyError::Io(io_err) => TtsError::Io(io_err),
-        }
-    }
-}
 
 static CAPABILITIES: EngineCapabilities = EngineCapabilities {
     ssml: true,
@@ -133,7 +105,7 @@ impl TtsEngine for PollyEngine {
     async fn list_voices(&self) -> Result<Vec<TtsVoice>, TtsError> {
         voices::fetch_voices(&self.link, &self.signer)
             .await
-            .map_err(TtsError::from)
+            .map_err(|error| error.into_tts(ENGINE_ID_POLLY))
     }
 
     async fn synthesize(&self, request: SynthesisRequest) -> Result<PcmBuffer, TtsError> {
@@ -148,7 +120,7 @@ impl TtsEngine for PollyEngine {
             async move {
                 synth::synthesize(&link, &signer, req)
                     .await
-                    .map_err(TtsError::from)
+                    .map_err(|error| error.into_tts(ENGINE_ID_POLLY))
             }
         })
         .await
@@ -157,12 +129,14 @@ impl TtsEngine for PollyEngine {
     async fn test_connection(&self) -> Result<(), TtsError> {
         synth::probe_connection(&self.link, &self.signer)
             .await
-            .map_err(TtsError::from)
+            .map_err(|error| error.into_tts(ENGINE_ID_POLLY))
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use forge_speech_types::VoiceId;
+
     use super::*;
     use crate::network::test_support::{
         PAST_WAIT_THRESHOLD_SECS, is_the_provider_cool_down, request_count, serving, throttled,

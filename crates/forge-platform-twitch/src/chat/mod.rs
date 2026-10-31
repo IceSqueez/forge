@@ -8,10 +8,10 @@ mod topic_catalog;
 mod whisper;
 
 pub(crate) use send::send_chat_reply;
-pub use send::{ChatSendError, SentMessageId, send_chat};
-pub(crate) use send::{MAX_MESSAGE_LEN, refusal_text};
+pub(crate) use send::{MAX_MESSAGE_LEN, chat_failure, refusal_text};
+pub use send::{SentMessageId, send_chat};
 pub use session::ChatConnectionState;
-pub(crate) use whisper::{MAX_WHISPER_CHARS, WhisperError, send_whisper, send_whisper_to};
+pub(crate) use whisper::{MAX_WHISPER_CHARS, send_whisper, send_whisper_to};
 
 use crate::bot_account::TwitchBotAccount;
 use crate::config::{ChatSessionConfig, ChatTiming};

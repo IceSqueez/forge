@@ -119,13 +119,13 @@ impl SubActionRunner for GuestStarAssignSlotRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::helix::HelixError;
+    use crate::error::TwitchError;
     use crate::sub_actions::test_support::{MockTransport, SELF_USER_ID, make_ctx, users_fixture};
     use forge_types::Variant;
     use std::collections::BTreeMap;
 
     fn runner_with(
-        responses: Vec<Result<serde_json::Value, HelixError>>,
+        responses: Vec<Result<serde_json::Value, TwitchError>>,
     ) -> (Arc<MockTransport>, GuestStarAssignSlotRunner) {
         let transport = Arc::new(MockTransport::returning_sequence(responses));
         let runner = GuestStarAssignSlotRunner::new(

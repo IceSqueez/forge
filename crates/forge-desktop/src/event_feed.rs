@@ -18,7 +18,7 @@ use std::sync::Arc;
 
 use forge_events::{ActingSender, EventSource};
 use forge_registry::TriggerCategory;
-use forge_runtime::{BusError, EventBus};
+use forge_runtime::{EventBus, RuntimeError};
 use forge_types::{EventId, PlatformId};
 use gpui::{
     AnyElement, ClickEvent, Context, Div, Entity, FocusHandle, Pixels, Rgba, ScrollEvent,
@@ -107,12 +107,16 @@ fn parse_event_id(raw: &str) -> Option<EventId> {
     serde_json::from_value(serde_json::Value::String(raw.to_owned())).ok()
 }
 
-fn replay_failure_message(error: &BusError) -> String {
+fn replay_failure_message(error: &RuntimeError) -> String {
     match error {
-        BusError::EventNotFound(_) => tr!("event_feed_replay_not_found"),
-        BusError::Storage(e) => tr!(
+        RuntimeError::EventNotFound(_) => tr!("event_feed_replay_not_found"),
+        RuntimeError::Storage(e) => tr!(
             "event_feed_replay_failed",
             error = RepoFailure::from_storage_ref(e).text()
+        ),
+        other => tr!(
+            "event_feed_replay_failed",
+            error = RepoFailure::operation(other).text()
         ),
     }
 }
@@ -1475,8 +1479,8 @@ mod tests {
     #[test]
     fn replay_failure_message_distinguishes_a_missing_event_from_a_storage_error() {
         install_language(Language::En);
-        let missing = replay_failure_message(&BusError::EventNotFound(EventId::new()));
-        let storage = replay_failure_message(&BusError::Storage(StorageError::Connection {
+        let missing = replay_failure_message(&RuntimeError::EventNotFound(EventId::new()));
+        let storage = replay_failure_message(&RuntimeError::Storage(StorageError::Connection {
             reason: "disk gone".to_owned(),
         }));
 

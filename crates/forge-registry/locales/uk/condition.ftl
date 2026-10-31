@@ -2,6 +2,7 @@ msg-condition-any = будь-який
 msg-condition-first_time_chatters = нові глядачі чату
 msg-condition-command_phrase = "{ $phrase }"
 msg-condition-joined = { $first } · { $next }
+msg-condition-date_pattern_invalid = шаблон дати недійсний
 msg-condition-date_pattern_empty = шаблон дати порожній
 msg-condition-date_pattern_unterminated_quote = текст у лапках, що починається на позиції { $position }, не закрито символом '
 msg-condition-date_pattern_unsupported_letter = '{ $letter }' на позиції { $position } не є літерою шаблону дати; візьміть звичайний текст в одинарні лапки

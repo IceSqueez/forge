@@ -1,5 +1,6 @@
 use super::topic_catalog::{TOPICS, TopicSpec};
-use crate::helix::{CONFLICT, HelixError, HelixMethod, HelixRequest, HelixTransport};
+use crate::error::TwitchError;
+use crate::helix::{CONFLICT, HelixMethod, HelixRequest, HelixTransport};
 use crate::subscriptions::{
     SubStatus, SubscriptionFailure, SubscriptionRecord, SubscriptionTracker,
 };
@@ -9,7 +10,6 @@ use forge_net::status::FORBIDDEN;
 use futures_util::stream::{self, StreamExt};
 use serde::Deserialize;
 use std::sync::Arc;
-use thiserror::Error;
 use tracing::{debug, warn};
 
 mod retry;
@@ -19,14 +19,6 @@ pub(crate) use retry::{TopicRetries, TopicRetryRun};
 
 const EVENTSUB_PATH: &str = "/helix/eventsub/subscriptions";
 const SUBSCRIBE_CONCURRENCY: usize = 10;
-
-#[derive(Debug, Error)]
-pub(crate) enum SubscribeError {
-    #[error("scope missing; re-authentication required")]
-    ScopeMissing,
-    #[error("access token rejected")]
-    Unauthorized,
-}
 
 enum TopicOutcome {
     Active,
@@ -91,7 +83,7 @@ impl SubscribeCtx {
         (topic.condition_fn)(&self.broadcaster_id, &self.user_id)
     }
 
-    async fn create(&self, topic: &TopicSpec) -> Result<serde_json::Value, HelixError> {
+    async fn create(&self, topic: &TopicSpec) -> Result<serde_json::Value, TwitchError> {
         let body = serde_json::json!({
             "type": topic.kind,
             "version": topic.version,
@@ -115,7 +107,7 @@ pub(crate) async fn subscribe_all(
     user_id: &str,
     bus: &Arc<dyn EventPublisher>,
     tracker: &SubscriptionTracker,
-) -> Result<SubscribePass, SubscribeError> {
+) -> Result<SubscribePass, TwitchError> {
     tracker.reset(
         TOPICS
             .iter()
@@ -189,10 +181,10 @@ pub(crate) async fn subscribe_all(
     let retries = TopicRetries::new(ctx, settle);
 
     if unauthorized > 0 {
-        return Err(SubscribeError::Unauthorized);
+        return Err(TwitchError::TokenRejected);
     }
     if scope_rejected > 0 && active == 0 {
-        return Err(SubscribeError::ScopeMissing);
+        return Err(TwitchError::ScopeMissing);
     }
 
     Ok(SubscribePass {
@@ -236,13 +228,13 @@ async fn subscribe_one(
     outcome
 }
 
-fn classify_failure(error: &HelixError) -> (SubscriptionFailure, TopicOutcome) {
+fn classify_failure(error: &TwitchError) -> (SubscriptionFailure, TopicOutcome) {
     match error {
-        HelixError::ReauthRequired => (
+        TwitchError::ReauthRequired => (
             SubscriptionFailure::Unauthorized,
             TopicOutcome::Unauthorized,
         ),
-        HelixError::Http { status, .. } if *status == FORBIDDEN => (
+        TwitchError::Http { status, .. } if *status == FORBIDDEN => (
             SubscriptionFailure::MissingScope,
             TopicOutcome::ScopeRejected,
         ),
@@ -250,20 +242,21 @@ fn classify_failure(error: &HelixError) -> (SubscriptionFailure, TopicOutcome) {
             SubscriptionFailure::AlreadyExists,
             TopicOutcome::AlreadyExists,
         ),
-        HelixError::Http { status, .. } if error.is_server_error() => (
+        TwitchError::Http { status, .. } if error.is_server_error() => (
             SubscriptionFailure::Refused(*status),
             TopicOutcome::Retryable,
         ),
-        HelixError::Http { status, .. } => {
+        TwitchError::Http { status, .. } => {
             (SubscriptionFailure::Refused(*status), TopicOutcome::Failed)
         }
-        HelixError::UndecodableResponse(_) => (
+        TwitchError::UndecodableResponse(_) => (
             SubscriptionFailure::UnreadableResponse,
             TopicOutcome::Retryable,
         ),
-        HelixError::RateLimited => (SubscriptionFailure::RateLimited, TopicOutcome::Retryable),
-        HelixError::Transport(_) => (SubscriptionFailure::Transport, TopicOutcome::Retryable),
-        HelixError::Credentials(_) => (SubscriptionFailure::Credentials, TopicOutcome::Failed),
+        TwitchError::RateLimited => (SubscriptionFailure::RateLimited, TopicOutcome::Retryable),
+        TwitchError::Transport(_) => (SubscriptionFailure::Transport, TopicOutcome::Retryable),
+        TwitchError::Credentials(_) => (SubscriptionFailure::Credentials, TopicOutcome::Failed),
+        _ => (SubscriptionFailure::Transport, TopicOutcome::Failed),
     }
 }
 
@@ -413,8 +406,8 @@ mod tests {
     }
 
     use super::{
-        EVENTSUB_PATH, SubStatus, SubscribeError, SubscribePass, SubscriptionFailure,
-        SubscriptionTracker, subscribe_all,
+        EVENTSUB_PATH, SubStatus, SubscribePass, SubscriptionFailure, SubscriptionTracker,
+        TwitchError, subscribe_all,
     };
     use crate::bot_account::test_support::RecordingBus;
     use crate::helix::{FixedTokenSource, HelixHttpTransport, HelixTransport};
@@ -434,7 +427,7 @@ mod tests {
     const PROBED_TOPIC: &str = "stream.online";
 
     struct PassRun {
-        result: Result<SubscribePass, SubscribeError>,
+        result: Result<SubscribePass, TwitchError>,
         tracker: SubscriptionTracker,
         bus: Arc<RecordingBus>,
         limiter: Arc<RecordingRateLimiter>,
@@ -605,7 +598,7 @@ mod tests {
         let run = run_subscribe(&server).await;
 
         assert!(
-            matches!(run.result, Err(SubscribeError::Unauthorized)),
+            matches!(run.result, Err(TwitchError::TokenRejected)),
             "a rejected token outranks a partial scope gap: the refresh may cure both"
         );
 
@@ -814,7 +807,7 @@ mod tests {
         ))
         .await;
 
-        assert!(matches!(run.result, Err(SubscribeError::Unauthorized)));
+        assert!(matches!(run.result, Err(TwitchError::TokenRejected)));
     }
 
     #[tokio::test]
@@ -845,7 +838,7 @@ mod tests {
             let run = run_subscribe(&server).await;
 
             assert!(
-                matches!(run.result, Err(SubscribeError::ScopeMissing)),
+                matches!(run.result, Err(TwitchError::ScopeMissing)),
                 "rest of the topics answering {rest_of_topics}"
             );
         }

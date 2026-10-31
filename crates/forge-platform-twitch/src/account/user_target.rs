@@ -1,3 +1,4 @@
+use crate::error::TwitchError;
 use forge_registry::SubActionConfig;
 use forge_registry::{
     ConfigProblem, ConfigReason, Interpolation, SubActionConfigExt, TextField, TypedField,
@@ -5,7 +6,7 @@ use forge_registry::{
 use forge_types::ArgStack;
 
 use super::identity::{login_handle, resolve_user_id};
-use crate::helix::{HelixError, HelixTransport};
+use crate::helix::HelixTransport;
 use crate::vocabulary::messages;
 use forge_types::MessageRef;
 
@@ -31,7 +32,7 @@ impl<'a> UserTarget<'a> {
     pub(crate) async fn user_id(
         self,
         transport: &dyn HelixTransport,
-    ) -> Result<String, HelixError> {
+    ) -> Result<String, TwitchError> {
         match self {
             Self::Id(id) => Ok(id.to_owned()),
             Self::Login(login) => resolve_user_id(transport, login).await,
@@ -94,7 +95,8 @@ mod tests {
     use forge_types::{ArgStack, SubActionOutcome, Variant};
 
     use super::super::identity::SelfIdentity;
-    use crate::helix::{HelixError, HelixRequest, HelixTransport};
+    use crate::error::TwitchError;
+    use crate::helix::{HelixRequest, HelixTransport};
     use crate::sub_actions::test_support::{MockTransport, make_ctx, users_fixture};
     use crate::sub_actions::{
         BanUserRunner, SendShoutoutRunner, SendWhisperRunner, TimeoutUserRunner, UnbanUserRunner,
@@ -189,7 +191,7 @@ mod tests {
 
         fn runner_with(
             &self,
-            responses: Vec<Result<serde_json::Value, HelixError>>,
+            responses: Vec<Result<serde_json::Value, TwitchError>>,
         ) -> (Arc<MockTransport>, Box<dyn SubActionRunner>) {
             let transport = Arc::new(MockTransport::returning_sequence(responses));
             let runner = (self.build)(

@@ -1,7 +1,6 @@
+use crate::error::TwitchError;
 use forge_platform_core::{DeviceAuthEnd, PlatformError};
-use forge_storage::StorageError;
 use forge_types::{OAuthToken, RecoverMutex};
-use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 use tracing::debug;
 
@@ -9,39 +8,19 @@ use super::{BotStatus, TwitchBotAccount};
 use crate::auth::{DeviceCodeInfo, TwitchAuthBundle, TwitchAuthFlow};
 use crate::credentials::{TWITCH_BOT_CREDENTIAL_ID, load, store_at};
 
-#[derive(Debug, Error)]
-pub enum BotLoginError {
-    #[error("this is your streamer account; sign in as the bot account instead")]
-    SameAsBroadcaster,
-    #[error("bot sign-in was not started")]
-    NotStarted,
-    #[error("bot sign-in cancelled")]
-    Cancelled,
-    #[error("bot sign-in denied")]
-    Denied,
-    #[error("bot sign-in code expired")]
-    Expired,
-    #[error(transparent)]
-    Platform(PlatformError),
-    #[error("credential storage failed: {0}")]
-    Storage(StorageError),
-    #[error("the bot credentials could not be cleared: {0}")]
-    CredentialsNotCleared(PlatformError),
-}
-
-impl From<PlatformError> for BotLoginError {
+impl From<PlatformError> for TwitchError {
     fn from(error: PlatformError) -> Self {
         match error {
-            PlatformError::DeviceAuthEnded(DeviceAuthEnd::Cancelled) => Self::Cancelled,
-            PlatformError::DeviceAuthEnded(DeviceAuthEnd::Denied) => Self::Denied,
-            PlatformError::DeviceAuthEnded(DeviceAuthEnd::Expired) => Self::Expired,
+            PlatformError::DeviceAuthEnded(DeviceAuthEnd::Cancelled) => Self::BotLoginCancelled,
+            PlatformError::DeviceAuthEnded(DeviceAuthEnd::Denied) => Self::BotLoginDenied,
+            PlatformError::DeviceAuthEnded(DeviceAuthEnd::Expired) => Self::BotLoginExpired,
             other => Self::Platform(other),
         }
     }
 }
 
 impl TwitchBotAccount {
-    pub async fn begin_login(&self) -> Result<DeviceCodeInfo, BotLoginError> {
+    pub async fn begin_login(&self) -> Result<DeviceCodeInfo, TwitchError> {
         self.cancel_login();
         let mut flow = TwitchAuthFlow::for_bot(self.oauth.clone(), self.helix.clone());
         let info = flow.start().await?;
@@ -49,13 +28,13 @@ impl TwitchBotAccount {
         Ok(info)
     }
 
-    pub async fn await_login(&self) -> Result<BotStatus, BotLoginError> {
+    pub async fn await_login(&self) -> Result<BotStatus, TwitchError> {
         let mut flow = self
             .pending_flow
             .lock()
             .await
             .take()
-            .ok_or(BotLoginError::NotStarted)?;
+            .ok_or(TwitchError::BotLoginNotStarted)?;
         let cancel = self.login_cancel.lock_recover().clone();
         let bundle = flow.wait_for_authorization(cancel).await?;
         self.adopt_grant(bundle).await
@@ -64,25 +43,25 @@ impl TwitchBotAccount {
     pub(crate) async fn adopt_grant(
         &self,
         bundle: TwitchAuthBundle,
-    ) -> Result<BotStatus, BotLoginError> {
+    ) -> Result<BotStatus, TwitchError> {
         let broadcaster = match load(self.repo.as_ref()).await {
             Ok(broadcaster) => broadcaster,
             Err(e) => {
                 self.revoke_pair(&bundle.access_token, bundle.refresh_token.as_ref())
                     .await;
-                return Err(BotLoginError::Storage(e));
+                return Err(TwitchError::CredentialStorage(e));
             }
         };
         if broadcaster.is_some_and(|stored| stored.user_id == bundle.user_info.id) {
             self.revoke_pair(&bundle.access_token, bundle.refresh_token.as_ref())
                 .await;
-            return Err(BotLoginError::SameAsBroadcaster);
+            return Err(TwitchError::SameAsBroadcaster);
         }
 
         if let Err(e) = store_at(self.repo.as_ref(), TWITCH_BOT_CREDENTIAL_ID, &bundle).await {
             self.revoke_pair(&bundle.access_token, bundle.refresh_token.as_ref())
                 .await;
-            return Err(BotLoginError::Storage(e));
+            return Err(TwitchError::CredentialStorage(e));
         }
         let status = BotStatus::Connected {
             login: bundle.user_info.login,
@@ -98,7 +77,7 @@ impl TwitchBotAccount {
         *guard = CancellationToken::new();
     }
 
-    pub async fn logout(&self) -> Result<(), BotLoginError> {
+    pub async fn logout(&self) -> Result<(), TwitchError> {
         self.cancel_login();
         *self.pending_flow.lock().await = None;
         self.manager
@@ -107,7 +86,7 @@ impl TwitchBotAccount {
                     .await;
             })
             .await
-            .map_err(BotLoginError::CredentialsNotCleared)?;
+            .map_err(TwitchError::BotCredentialsNotCleared)?;
         self.set_state(BotStatus::NotConnected, None);
         Ok(())
     }
@@ -187,7 +166,7 @@ mod tests {
         let result = harness.bot.logout().await;
 
         assert!(
-            matches!(result, Err(BotLoginError::CredentialsNotCleared(_))),
+            matches!(result, Err(TwitchError::BotCredentialsNotCleared(_))),
             "{result:?}"
         );
         assert!(harness.repo.raw(TWITCH_BOT_CREDENTIAL_ID).is_some());
@@ -196,11 +175,11 @@ mod tests {
     #[test]
     fn each_device_auth_end_becomes_its_own_login_outcome() {
         for (end, expected) in [
-            (DeviceAuthEnd::Cancelled, BotLoginError::Cancelled),
-            (DeviceAuthEnd::Denied, BotLoginError::Denied),
-            (DeviceAuthEnd::Expired, BotLoginError::Expired),
+            (DeviceAuthEnd::Cancelled, TwitchError::BotLoginCancelled),
+            (DeviceAuthEnd::Denied, TwitchError::BotLoginDenied),
+            (DeviceAuthEnd::Expired, TwitchError::BotLoginExpired),
         ] {
-            let mapped = BotLoginError::from(PlatformError::DeviceAuthEnded(end));
+            let mapped = TwitchError::from(PlatformError::DeviceAuthEnded(end));
 
             assert_eq!(
                 std::mem::discriminant(&mapped),
@@ -212,11 +191,11 @@ mod tests {
 
     #[test]
     fn any_other_platform_failure_stays_a_platform_login_error() {
-        let mapped = BotLoginError::from(PlatformError::Auth {
+        let mapped = TwitchError::from(PlatformError::Auth {
             reason: "refused".to_owned(),
         });
 
-        assert!(matches!(mapped, BotLoginError::Platform(_)), "{mapped:?}");
+        assert!(matches!(mapped, TwitchError::Platform(_)), "{mapped:?}");
     }
 
     #[tokio::test]
@@ -253,7 +232,7 @@ mod tests {
 
         let result = harness.bot.await_login().await;
 
-        assert!(matches!(result, Err(BotLoginError::NotStarted)));
+        assert!(matches!(result, Err(TwitchError::BotLoginNotStarted)));
     }
 
     #[tokio::test]
@@ -297,7 +276,7 @@ mod tests {
         let result = pending.await.unwrap();
 
         assert!(
-            matches!(result, Err(BotLoginError::Cancelled)),
+            matches!(result, Err(TwitchError::BotLoginCancelled)),
             "got {result:?}"
         );
         assert!(harness.requests_to("/token").await.is_empty());
@@ -337,7 +316,7 @@ mod tests {
             .await;
 
         assert!(
-            matches!(result, Err(BotLoginError::SameAsBroadcaster)),
+            matches!(result, Err(TwitchError::SameAsBroadcaster)),
             "{result:?}"
         );
         assert!(harness.repo.raw(TWITCH_BOT_CREDENTIAL_ID).is_none());
@@ -385,7 +364,7 @@ mod tests {
                 .await;
 
             assert!(
-                matches!(result, Err(BotLoginError::Storage(_))),
+                matches!(result, Err(TwitchError::CredentialStorage(_))),
                 "{result:?}"
             );
             assert!(harness.repo.raw(TWITCH_BOT_CREDENTIAL_ID).is_none());

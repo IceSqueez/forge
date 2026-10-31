@@ -19,6 +19,7 @@ mod delivery_loss;
 mod donations;
 mod egress;
 mod engine_voice_ref;
+mod error;
 mod event_log_bridge;
 mod event_log_writer;
 mod event_ring;
@@ -62,23 +63,24 @@ mod viewer_tracker;
 
 pub use action_cancel::ActionCancelRegistry;
 pub use action_engine::{
-    ActionEngineHandle, DispatchError, ExecutionRequest, PendingQuickAction, spawn_action_engine,
+    ActionEngineHandle, ExecutionRequest, PendingQuickAction, spawn_action_engine,
 };
 pub use audio_runners::register_speech_sub_actions;
-pub use bus::{BusError, EventBus, EventHistory};
+pub use bus::{EventBus, EventHistory};
 pub use catalog::Catalog;
 pub use chain::{ChainEngine, ChainRun};
 pub use chat_history_persistence::{ChatHistoryRetentionHandle, spawn_chat_history_persistence};
 pub use chat_send_router::spawn_chat_send_router;
 pub use condition::ConditionGate;
 pub use config::Config;
-pub use core_messages::CORE_MESSAGES;
+pub use core_messages::{CORE_MESSAGES, script_input_failure};
 pub use date_names::DateNamesHandle;
 pub use delivery_loss::{ConsumerLoss, DeliveryTier, LossCount, LossWatch};
 pub use donations::{
     DonationAudience, DonationIngest, DonationOverlayAudience, register_donation_sub_actions,
 };
-pub use engine_voice_ref::{EngineVoiceError, EngineVoiceRef};
+pub use engine_voice_ref::EngineVoiceRef;
+pub use error::RuntimeError;
 pub use event_log_bridge::spawn_event_log_bridge;
 pub use first_chat_ledger::FirstChatLedger;
 pub use global_mutation::RuntimeScriptGlobals;
@@ -88,9 +90,7 @@ pub use integration_supervisor::{
     DEFAULT_TEARDOWN_GRACE, IntegrationFactory, IntegrationObjects, IntegrationSlot,
     IntegrationSupervisor, LifecycleState, LifecycleStates, RunningIntegration, TaskGroup,
 };
-pub use latest::{
-    LatestResetError, LatestValues, register_latest_sub_actions, spawn_latest_projector,
-};
+pub use latest::{LatestValues, register_latest_sub_actions, spawn_latest_projector};
 pub use latest_overlay_feed::spawn_latest_overlay_feed;
 pub use lifecycle_messages::LIFECYCLE_MESSAGES;
 pub use live_viewers::{LiveViewerAggregatorHandle, LiveViewerCount, spawn_live_viewer_aggregator};
@@ -106,7 +106,7 @@ pub use overlay_samples::{OverlaySampleSource, OverlaySamples};
 pub use overlay_service::{
     MaterializePass, OVERLAY_NAME_KEY, OVERLAY_SPEECH_FAILED_KIND, OverlayConnectFanout,
     OverlayConnectListener, OverlayDelivery, OverlayDispatch, OverlayFrameSink, OverlayReceivers,
-    OverlayServiceError, OverlayServiceHandle, OverlayServiceParts, SPEECH_FAILURE_ERROR_KEY,
+    OverlayServiceHandle, OverlayServiceParts, SPEECH_FAILURE_ERROR_KEY,
     SPEECH_FAILURE_MESSAGE_KEY, TestFire,
 };
 pub use overlay_shows::{
@@ -117,17 +117,16 @@ pub use queue_scheduler::{
     ENGINE_STOPPED_REASON, MAX_PENDING_PER_QUEUE, MembershipOutcome, QUEUE_DELETED_REASON,
     QUEUE_DRAINING_REASON, QUEUE_NOT_FOUND_REASON, QUEUE_OVERFLOW_REASON, QUEUE_PAUSED_REASON,
     QueueAdmission, QueueIntake, QueueMode, QueueModeChanged, QueueProcessing, QueueRuntimeState,
-    QueueScheduler, QueueSchedulerHandle, SchedulerError, SchedulerRequest,
+    QueueScheduler, QueueSchedulerHandle, SchedulerRequest,
 };
 pub use runtime_builder::{FrozenRuntime, RuntimeWiring, RuntimeWiringParts};
 pub use scheduled_runs::{
-    CatchUpSettle, HandOff, ScheduleDue, ScheduleError, ScheduleRequest, ScheduledRunsHandle,
-    ScheduledRunsParts, SchedulingContext, WaitingForQueueWatch, WaitingRuns, spawn_scheduled_runs,
+    CatchUpSettle, HandOff, ScheduleDue, ScheduleRequest, ScheduledRunsHandle, ScheduledRunsParts,
+    SchedulingContext, WaitingForQueueWatch, WaitingRuns, spawn_scheduled_runs,
 };
-pub use script_registry::{ScriptRegistry, ScriptRegistryError, ScriptRegistryParts};
+pub use script_registry::{ScriptRegistry, ScriptRegistryParts};
 pub use speak_dispatcher::{
-    ShowSpeech, SpeakDispatchError, SpeakDispatcher, SpeakingViewer, SpeechOrigin,
-    SpeechStartSignal, VoiceDescriptor,
+    ShowSpeech, SpeakDispatcher, SpeakingViewer, SpeechOrigin, SpeechStartSignal, VoiceDescriptor,
 };
 pub use stream_live::spawn_stream_live_signal;
 pub use sub_action_runners::{
@@ -146,9 +145,8 @@ pub use actions::overlay_wiring::PlannedAction;
 pub use actions::overlay_wiring::QueuePlacement;
 pub use actions::types::ActionSummary;
 pub use actions::{
-    ActionDetail, ActionsService, OVERLAY_ALERT_QUEUE, OverlayFeed, OverlayWiringError,
-    OverlayWiringOutcome, OverlayWiringPlan, OverlayWiringRecords, OverlayWiringRefusal,
-    WiredQueue, plan_overlay_wiring,
+    ActionDetail, ActionsService, OVERLAY_ALERT_QUEUE, OverlayFeed, OverlayWiringOutcome,
+    OverlayWiringPlan, OverlayWiringRecords, OverlayWiringRefusal, WiredQueue, plan_overlay_wiring,
 };
 pub use audio_runners::{
     ENGINE_OPTIONS_KEY, SPEAK_KIND_ID, SPEECH_TEXT_KEY, SpeakRunner, VOICE_OPTIONS_PREFIX,
@@ -156,7 +154,6 @@ pub use audio_runners::{
 pub use catalog::CatalogBinding;
 pub use catalog::CatalogSnapshot;
 pub use chain::ChainScope;
-pub use condition::ConditionError;
 pub use dashboard::{DashboardStats, compute_stats};
 pub use donations::CatchUpWaker;
 pub use integration_supervisor::LifecycleWatch;
@@ -196,7 +193,7 @@ pub use sub_action_runners::{
     CoreUsersSetVarRunner, DesktopNotice, FILE_READ_KIND_ID, FILE_READ_PATH_KEY,
     FILE_READ_TARGET_VAR_KEY, GLOBAL_AMOUNT_KEY, GLOBAL_DEFAULT_AMOUNT, GLOBAL_INCREMENT_KIND_ID,
     GLOBAL_NAME_KEY, GLOBAL_SET_KIND_ID, GLOBAL_VALUE_KEY, LOG_DEFAULT_LEVEL, LOG_LEVEL_KEY,
-    LOG_MESSAGE_KEY, LOG_WRITE_KIND_ID, NotifyPort, NotifyUrgency, OsPortError, RANDOM_INT_KIND_ID,
+    LOG_MESSAGE_KEY, LOG_WRITE_KIND_ID, NotifyPort, NotifyUrgency, RANDOM_INT_KIND_ID,
     RANDOM_INT_MAX_KEY, RANDOM_INT_MIN_KEY, RANDOM_INT_TARGET_VAR_KEY, SCHEDULE_ACTION_KIND_ID,
     SCRIPT_TARGET_VAR_KEY, ScriptRunInlineRunner, ServerBroadcastRunner, SystemNotifyPort,
     TwitchChatSendMessageRunner, WAIT_KIND_ID, WAIT_MS_KEY, translate_legacy_time_steps,

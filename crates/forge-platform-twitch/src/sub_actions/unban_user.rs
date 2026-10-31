@@ -1,3 +1,4 @@
+use crate::error::TwitchError;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -12,7 +13,7 @@ use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 use super::fields::MODERATION_TARGET;
 use crate::account::identity::SelfIdentity;
 use crate::account::user_target::UserTarget;
-use crate::helix::{HelixError, HelixMethod, HelixRequest, HelixTransport};
+use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
 use crate::step_failure;
 use crate::vocabulary::sub_action_ids;
 
@@ -20,9 +21,9 @@ const NOT_BANNED_MARKER: &str = "not banned";
 
 const CONFIG: ConfigSpec = ConfigSpec::new(&[&MODERATION_TARGET.login]);
 
-fn already_unbanned(error: &HelixError) -> bool {
+fn already_unbanned(error: &TwitchError) -> bool {
     match error {
-        HelixError::Http { status, body } => {
+        TwitchError::Http { status, body } => {
             *status == BAD_REQUEST && body.to_lowercase().contains(NOT_BANNED_MARKER)
         }
         _ => false,
@@ -121,7 +122,7 @@ impl SubActionRunner for UnbanUserRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::helix::HelixError;
+    use crate::error::TwitchError;
     use crate::sub_actions::test_support::{
         MockTransport, REQUEST_FAIL_KIND, SELF_USER_ID, make_ctx, observed_helix_at, users_fixture,
     };
@@ -131,7 +132,7 @@ mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     fn runner_with(
-        responses: Vec<Result<serde_json::Value, HelixError>>,
+        responses: Vec<Result<serde_json::Value, TwitchError>>,
     ) -> (Arc<MockTransport>, UnbanUserRunner) {
         let transport = Arc::new(MockTransport::returning_sequence(responses));
         let runner = UnbanUserRunner::new(
@@ -181,7 +182,7 @@ mod tests {
 
     #[tokio::test]
     async fn execute_counts_a_400_saying_the_user_is_not_banned_as_success() {
-        let bad_request = |body: &str| HelixError::Http {
+        let bad_request = |body: &str| TwitchError::Http {
             status: reqwest::StatusCode::BAD_REQUEST.as_u16(),
             body: body.to_owned(),
         };
@@ -205,7 +206,7 @@ mod tests {
 
     #[tokio::test]
     async fn execute_fails_on_any_other_unban_error() {
-        let http = |status: reqwest::StatusCode, body: &str| HelixError::Http {
+        let http = |status: reqwest::StatusCode, body: &str| TwitchError::Http {
             status: status.as_u16(),
             body: body.to_owned(),
         };
@@ -245,10 +246,10 @@ mod tests {
             ),
             (
                 "transport saying not banned",
-                HelixError::Transport("user is not banned".to_owned()),
+                TwitchError::Transport("user is not banned".to_owned()),
             ),
-            ("reauth required", HelixError::ReauthRequired),
-            ("rate limited", HelixError::RateLimited),
+            ("reauth required", TwitchError::ReauthRequired),
+            ("rate limited", TwitchError::RateLimited),
         ];
 
         for (label, error) in cases {

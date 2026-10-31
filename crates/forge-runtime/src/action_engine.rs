@@ -1,3 +1,4 @@
+use crate::error::RuntimeError;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -44,8 +45,8 @@ struct QuickActionRequest {
 pub struct PendingQuickAction(oneshot::Receiver<SubActionOutcome>);
 
 impl PendingQuickAction {
-    pub async fn outcome(self) -> Result<SubActionOutcome, DispatchError> {
-        self.0.await.map_err(|_| DispatchError::NoOutcome)
+    pub async fn outcome(self) -> Result<SubActionOutcome, RuntimeError> {
+        self.0.await.map_err(|_| RuntimeError::EngineNoOutcome)
     }
 }
 
@@ -72,16 +73,8 @@ struct EngineJob {
     on_complete: Option<oneshot::Sender<()>>,
 }
 
-#[derive(Debug, thiserror::Error)]
-pub enum DispatchError {
-    #[error("engine channel closed")]
-    ChannelClosed,
-    #[error("engine stopped before the step reported an outcome")]
-    NoOutcome,
-}
-
 impl ActionEngineHandle {
-    pub async fn dispatch(&self, req: ExecutionRequest) -> Result<(), DispatchError> {
+    pub async fn dispatch(&self, req: ExecutionRequest) -> Result<(), RuntimeError> {
         self.sender
             .send(EngineJob {
                 request: req,
@@ -90,7 +83,7 @@ impl ActionEngineHandle {
                 on_complete: None,
             })
             .await
-            .map_err(|_| DispatchError::ChannelClosed)
+            .map_err(|_| RuntimeError::EngineChannelClosed)
     }
 
     pub(crate) async fn dispatch_tracked(
@@ -98,7 +91,7 @@ impl ActionEngineHandle {
         req: ExecutionRequest,
         cancel: CancelSignal,
         on_complete: oneshot::Sender<()>,
-    ) -> Result<(), DispatchError> {
+    ) -> Result<(), RuntimeError> {
         self.send_tracked(req, None, cancel, on_complete).await
     }
 
@@ -108,7 +101,7 @@ impl ActionEngineHandle {
         origin: ScheduledOrigin,
         cancel: CancelSignal,
         on_complete: oneshot::Sender<()>,
-    ) -> Result<(), DispatchError> {
+    ) -> Result<(), RuntimeError> {
         self.send_tracked(req, Some(origin), cancel, on_complete)
             .await
     }
@@ -119,7 +112,7 @@ impl ActionEngineHandle {
         origin: Option<ScheduledOrigin>,
         cancel: CancelSignal,
         on_complete: oneshot::Sender<()>,
-    ) -> Result<(), DispatchError> {
+    ) -> Result<(), RuntimeError> {
         self.sender
             .send(EngineJob {
                 request: req,
@@ -128,7 +121,7 @@ impl ActionEngineHandle {
                 on_complete: Some(on_complete),
             })
             .await
-            .map_err(|_| DispatchError::ChannelClosed)
+            .map_err(|_| RuntimeError::EngineChannelClosed)
     }
 
     pub async fn execute_quick_action(
@@ -137,7 +130,7 @@ impl ActionEngineHandle {
         builtin_id: String,
         label: String,
         caused_by: Option<EventId>,
-    ) -> Result<PendingQuickAction, DispatchError> {
+    ) -> Result<PendingQuickAction, RuntimeError> {
         let (outcome, pending) = oneshot::channel();
         self.quick_sender
             .send(QuickActionRequest {
@@ -148,7 +141,7 @@ impl ActionEngineHandle {
                 outcome,
             })
             .await
-            .map_err(|_| DispatchError::ChannelClosed)?;
+            .map_err(|_| RuntimeError::EngineChannelClosed)?;
         Ok(PendingQuickAction(pending))
     }
 

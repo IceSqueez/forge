@@ -370,7 +370,8 @@ pub(crate) mod test_support {
     use forge_types::{ArgStack, EventId};
 
     use crate::config::{HELIX_BUDGET_CAPACITY, HELIX_BUDGET_WINDOW};
-    use crate::helix::{HelixError, HelixRequest, HelixTransport};
+    use crate::error::TwitchError;
+    use crate::helix::{HelixRequest, HelixTransport};
     use crate::helix_gateway::HELIX_GATEWAY_PROFILE;
     use crate::oauth_client::{
         TWITCH_OAUTH_BUDGET_CAPACITY, TWITCH_OAUTH_BUDGET_WINDOW, TwitchOAuthClient,
@@ -429,16 +430,16 @@ pub(crate) mod test_support {
 
     pub(crate) struct MockTransport {
         calls: Mutex<Vec<HelixRequest>>,
-        responses: Mutex<VecDeque<Result<serde_json::Value, HelixError>>>,
+        responses: Mutex<VecDeque<Result<serde_json::Value, TwitchError>>>,
     }
 
     impl MockTransport {
-        pub(crate) fn returning(response: Result<serde_json::Value, HelixError>) -> Self {
+        pub(crate) fn returning(response: Result<serde_json::Value, TwitchError>) -> Self {
             Self::returning_sequence(vec![response])
         }
 
         pub(crate) fn returning_sequence(
-            responses: Vec<Result<serde_json::Value, HelixError>>,
+            responses: Vec<Result<serde_json::Value, TwitchError>>,
         ) -> Self {
             Self {
                 calls: Mutex::new(Vec::new()),
@@ -461,7 +462,7 @@ pub(crate) mod test_support {
 
     #[async_trait]
     impl HelixTransport for MockTransport {
-        async fn execute(&self, request: HelixRequest) -> Result<serde_json::Value, HelixError> {
+        async fn execute(&self, request: HelixRequest) -> Result<serde_json::Value, TwitchError> {
             self.calls.lock().unwrap().push(request);
             self.responses
                 .lock()
@@ -471,7 +472,7 @@ pub(crate) mod test_support {
         }
     }
 
-    pub(crate) fn users_fixture(id: &str) -> Result<serde_json::Value, HelixError> {
+    pub(crate) fn users_fixture(id: &str) -> Result<serde_json::Value, TwitchError> {
         Ok(serde_json::json!({ "data": [{ "id": id, "login": "target" }] }))
     }
 

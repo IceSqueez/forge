@@ -8,9 +8,7 @@ use forge_registry::{
     ConfigProblem, ConfigSpec, DynamicSelectField, ProducedVariable, RunContext, StepTimer,
     SubActionCategory, SubActionIo, SubActionRunner, TextEditor, TextField, TypedField,
 };
-use forge_script::{
-    ScriptCapabilities, ScriptError, ScriptGlobals, ScriptSession, build_scope_for_contract,
-};
+use forge_script::{ScriptCapabilities, ScriptGlobals, ScriptSession, build_scope_for_contract};
 use forge_storage::{
     ExecutionStatus, GlobalsRepo, SCRIPT_NAME_KEY, SCRIPT_RUN_NAMED_KIND, ScriptRepo, SettingsRepo,
 };
@@ -192,11 +190,7 @@ impl SubActionRunner for ScriptRunNamedRunner {
         self.publisher.publish(exec_event);
 
         let exec_result = tokio::task::spawn_blocking(move || {
-            let mut scope = build_scope_for_contract(&contract, &arg_stack_clone).map_err(|e| {
-                ScriptError::Runtime {
-                    reason: e.to_string(),
-                }
-            })?;
+            let mut scope = build_scope_for_contract(&contract, &arg_stack_clone)?;
             let engine = session.into_engine()?;
             engine.eval_script_with_scope_as_variant(&body, &mut scope)
         })

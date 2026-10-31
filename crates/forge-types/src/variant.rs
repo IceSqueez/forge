@@ -1,3 +1,4 @@
+use crate::error::TypesError;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt;
@@ -78,32 +79,11 @@ impl fmt::Display for VariantKind {
 }
 
 impl std::str::FromStr for VariantKind {
-    type Err = VariantError;
+    type Err = TypesError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Self::from_contract_name(s).ok_or_else(|| VariantError::UnknownTypeTag(s.to_owned()))
+        Self::from_contract_name(s).ok_or_else(|| TypesError::UnknownTypeTag(s.to_owned()))
     }
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum VariantError {
-    #[error("type mismatch: expected {expected}, got {actual}")]
-    TypeMismatch {
-        expected: VariantKind,
-        actual: VariantKind,
-    },
-
-    #[error("invalid float: {reason}")]
-    InvalidFloat { reason: &'static str },
-
-    #[error("JSON conversion failed: {0}")]
-    JsonConversion(std::string::String),
-
-    #[error("null is not a supported Variant value")]
-    NullNotSupported,
-
-    #[error("unknown type tag: {0}")]
-    UnknownTypeTag(std::string::String),
 }
 
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
@@ -168,12 +148,12 @@ pub fn display_scalar(value: &Variant) -> String {
 }
 
 impl Variant {
-    pub fn float(f: f64) -> Result<Self, VariantError> {
+    pub fn float(f: f64) -> Result<Self, TypesError> {
         if f.is_nan() {
-            return Err(VariantError::InvalidFloat { reason: "NaN" });
+            return Err(TypesError::InvalidFloat { reason: "NaN" });
         }
         if f.is_infinite() {
-            return Err(VariantError::InvalidFloat { reason: "infinite" });
+            return Err(TypesError::InvalidFloat { reason: "infinite" });
         }
         Ok(Self::Float(f))
     }
@@ -250,11 +230,11 @@ impl Variant {
         }
     }
 
-    pub fn from_json(value: serde_json::Value) -> Result<Self, VariantError> {
+    pub fn from_json(value: serde_json::Value) -> Result<Self, TypesError> {
         from_json_inner(value, 0, JsonForm::Tagged)
     }
 
-    pub fn from_plain_json(value: serde_json::Value) -> Result<Self, VariantError> {
+    pub fn from_plain_json(value: serde_json::Value) -> Result<Self, TypesError> {
         from_json_inner(value, 0, JsonForm::Plain)
     }
 
@@ -293,15 +273,15 @@ fn from_json_inner(
     value: serde_json::Value,
     depth: u8,
     form: JsonForm,
-) -> Result<Variant, VariantError> {
+) -> Result<Variant, TypesError> {
     if depth > MAX_DEPTH {
-        return Err(VariantError::JsonConversion(
+        return Err(TypesError::JsonConversion(
             "depth limit exceeded".to_owned(),
         ));
     }
 
     match value {
-        serde_json::Value::Null => Err(VariantError::NullNotSupported),
+        serde_json::Value::Null => Err(TypesError::NullNotSupported),
 
         serde_json::Value::Bool(b) => Ok(Variant::Bool(b)),
 
@@ -311,7 +291,7 @@ fn from_json_inner(
             } else if let Some(f) = n.as_f64() {
                 Variant::float(f)
             } else {
-                Err(VariantError::JsonConversion(
+                Err(TypesError::JsonConversion(
                     "numeric value out of range".to_owned(),
                 ))
             }
@@ -321,7 +301,7 @@ fn from_json_inner(
 
         serde_json::Value::Array(arr) => {
             if arr.len() > MAX_COLLECTION_LEN {
-                return Err(VariantError::JsonConversion(
+                return Err(TypesError::JsonConversion(
                     "array element count limit exceeded".to_owned(),
                 ));
             }
@@ -341,7 +321,7 @@ fn from_json_inner(
                 return match (tag, map.get("value")) {
                     (Some("array"), Some(serde_json::Value::Array(_))) => map
                         .remove("value")
-                        .map_or(Err(VariantError::NullNotSupported), |items| {
+                        .map_or(Err(TypesError::NullNotSupported), |items| {
                             from_json_inner(items, depth, form)
                         }),
                     (Some("object"), Some(serde_json::Value::Object(_))) => {
@@ -349,11 +329,11 @@ fn from_json_inner(
                             Some(serde_json::Value::Object(entries)) => {
                                 object_entries(entries, depth, form)
                             }
-                            _ => Err(VariantError::NullNotSupported),
+                            _ => Err(TypesError::NullNotSupported),
                         }
                     }
                     _ => serde_json::from_value::<Variant>(serde_json::Value::Object(map))
-                        .map_err(|e| VariantError::JsonConversion(e.to_string())),
+                        .map_err(|e| TypesError::JsonConversion(e.to_string())),
                 };
             }
 
@@ -366,9 +346,9 @@ fn object_entries(
     map: serde_json::Map<String, serde_json::Value>,
     depth: u8,
     form: JsonForm,
-) -> Result<Variant, VariantError> {
+) -> Result<Variant, TypesError> {
     if map.len() > MAX_COLLECTION_LEN {
-        return Err(VariantError::JsonConversion(
+        return Err(TypesError::JsonConversion(
             "object key count limit exceeded".to_owned(),
         ));
     }
@@ -414,7 +394,7 @@ mod tests {
     fn float_rejects_nan() {
         assert!(matches!(
             Variant::float(f64::NAN),
-            Err(VariantError::InvalidFloat { reason: "NaN" })
+            Err(TypesError::InvalidFloat { reason: "NaN" })
         ));
     }
 
@@ -422,7 +402,7 @@ mod tests {
     fn float_rejects_positive_infinity() {
         assert!(matches!(
             Variant::float(f64::INFINITY),
-            Err(VariantError::InvalidFloat { reason: "infinite" })
+            Err(TypesError::InvalidFloat { reason: "infinite" })
         ));
     }
 
@@ -430,7 +410,7 @@ mod tests {
     fn float_rejects_negative_infinity() {
         assert!(matches!(
             Variant::float(f64::NEG_INFINITY),
-            Err(VariantError::InvalidFloat { reason: "infinite" })
+            Err(TypesError::InvalidFloat { reason: "infinite" })
         ));
     }
 
@@ -471,7 +451,7 @@ mod tests {
     fn from_json_null_returns_error() {
         assert!(matches!(
             Variant::from_json(json!(null)),
-            Err(VariantError::NullNotSupported)
+            Err(TypesError::NullNotSupported)
         ));
     }
 
@@ -506,7 +486,7 @@ mod tests {
             assert!(
                 matches!(
                     Variant::from_json(value),
-                    Err(VariantError::JsonConversion(_))
+                    Err(TypesError::JsonConversion(_))
                 ),
                 "{label} over the limit must fail"
             );
@@ -537,7 +517,7 @@ mod tests {
             assert!(
                 matches!(
                     Variant::from_plain_json(value),
-                    Err(VariantError::JsonConversion(_))
+                    Err(TypesError::JsonConversion(_))
                 ),
                 "{label} over the limit must fail in the plain form too"
             );
@@ -589,7 +569,7 @@ mod tests {
             assert!(
                 matches!(
                     Variant::from_json(over_limit),
-                    Err(VariantError::JsonConversion(_))
+                    Err(TypesError::JsonConversion(_))
                 ),
                 "{name} over the limit"
             );
@@ -600,7 +580,7 @@ mod tests {
     fn tagged_nesting_past_the_depth_limit_is_refused() {
         assert!(matches!(
             Variant::from_json(nested_tagged_arrays(MAX_DEPTH + 1)),
-            Err(VariantError::JsonConversion(_))
+            Err(TypesError::JsonConversion(_))
         ));
     }
 
@@ -631,7 +611,7 @@ mod tests {
             assert!(
                 matches!(
                     Variant::from_json(bad.clone()),
-                    Err(VariantError::JsonConversion(_))
+                    Err(TypesError::JsonConversion(_))
                 ),
                 "{bad}"
             );
@@ -675,7 +655,7 @@ mod tests {
             assert!(
                 matches!(
                     Variant::from_plain_json(value.clone()),
-                    Err(VariantError::NullNotSupported)
+                    Err(TypesError::NullNotSupported)
                 ),
                 "value {value}"
             );
@@ -770,7 +750,7 @@ mod tests {
             let parsed = name.parse::<VariantKind>();
 
             assert!(
-                matches!(&parsed, Err(VariantError::UnknownTypeTag(tag)) if tag == name),
+                matches!(&parsed, Err(TypesError::UnknownTypeTag(tag)) if tag == name),
                 "name {name:?}: {parsed:?}"
             );
         }

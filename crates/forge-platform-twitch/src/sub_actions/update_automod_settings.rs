@@ -1,3 +1,4 @@
+use crate::error::TwitchError;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -9,7 +10,7 @@ use forge_registry::{
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 
 use crate::account::identity::SelfIdentity;
-use crate::helix::{HelixError, HelixMethod, HelixRequest, HelixTransport};
+use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
 use crate::step_failure;
 use crate::vocabulary::{config_keys, messages, sub_action_ids};
 
@@ -170,7 +171,7 @@ impl UpdateAutomodSettingsRunner {
         step_failure::outcome(&self.transport.execute(request).await)
     }
 
-    async fn fetch_current(&self, user_id: &str) -> Result<serde_json::Value, HelixError> {
+    async fn fetch_current(&self, user_id: &str) -> Result<serde_json::Value, TwitchError> {
         let request = HelixRequest::new(HelixMethod::Get, PATH)
             .query("broadcaster_id", user_id.to_owned())
             .query("moderator_id", user_id.to_owned());
@@ -236,7 +237,7 @@ mod tests {
     use forge_types::{ArgStack, SubActionOutcome};
 
     use super::*;
-    use crate::helix::HelixError;
+    use crate::error::TwitchError;
     use crate::sub_actions::test_support::TOKEN_SENTINEL;
     use crate::sub_actions::test_support::{
         MockTransport, SELF_USER_ID, assert_failed_with_code, assert_request_refused, make_ctx,
@@ -449,7 +450,7 @@ mod tests {
     #[tokio::test]
     async fn individual_mode_get_failure_fails_without_issuing_put() {
         let transport = Arc::new(MockTransport::returning_sequence(vec![Err(
-            HelixError::Http {
+            TwitchError::Http {
                 status: 500,
                 body: "boom".to_owned(),
             },
@@ -508,7 +509,7 @@ mod tests {
 
     #[tokio::test]
     async fn failure_outcome_does_not_leak_token() {
-        let transport = Arc::new(MockTransport::returning(Err(HelixError::Http {
+        let transport = Arc::new(MockTransport::returning(Err(TwitchError::Http {
             status: 500,
             body: format!("server error {TOKEN_SENTINEL}"),
         })));

@@ -117,9 +117,7 @@ mod tests {
     };
 
     use super::*;
-    use crate::speak_dispatcher::{
-        SpeakDispatchError, SpeakDispatcher, SpeakingViewer, SpeechOrigin,
-    };
+    use crate::speak_dispatcher::{SpeakDispatcher, SpeakingViewer, SpeechOrigin};
 
     #[derive(Debug, Clone, PartialEq, Eq)]
     enum DispatchCall {
@@ -166,11 +164,12 @@ mod tests {
             })
         }
 
-        fn record(&self, call: DispatchCall) -> Result<(), SpeakDispatchError> {
+        fn record(&self, call: DispatchCall) -> Result<(), MessageRef> {
             self.calls.lock().unwrap().push(call);
             if self.fail {
-                Err(SpeakDispatchError::Dispatch(MessageRef::new(
-                    MessageCode::from_static("speak", "queue_stopped"),
+                Err(MessageRef::new(MessageCode::from_static(
+                    "speak",
+                    "queue_stopped",
                 )))
             } else {
                 Ok(())
@@ -189,7 +188,7 @@ mod tests {
             _text: String,
             _voice_id_override: Option<String>,
             _origin: SpeechOrigin,
-        ) -> Result<(), SpeakDispatchError> {
+        ) -> Result<(), MessageRef> {
             Ok(())
         }
 
@@ -198,7 +197,7 @@ mod tests {
             text: String,
             engine_id: String,
             origin: SpeechOrigin,
-        ) -> Result<(), SpeakDispatchError> {
+        ) -> Result<(), MessageRef> {
             self.record(DispatchCall::SpeakWithEngine {
                 text,
                 engine_id,
@@ -206,23 +205,23 @@ mod tests {
             })
         }
 
-        async fn stop_current(&self) -> Result<(), SpeakDispatchError> {
+        async fn stop_current(&self) -> Result<(), MessageRef> {
             self.record(DispatchCall::StopCurrent)
         }
 
-        async fn pause(&self) -> Result<(), SpeakDispatchError> {
+        async fn pause(&self) -> Result<(), MessageRef> {
             self.record(DispatchCall::Pause)
         }
 
-        async fn resume(&self) -> Result<(), SpeakDispatchError> {
+        async fn resume(&self) -> Result<(), MessageRef> {
             self.record(DispatchCall::Resume)
         }
 
-        async fn skip_current(&self) -> Result<(), SpeakDispatchError> {
+        async fn skip_current(&self) -> Result<(), MessageRef> {
             self.record(DispatchCall::SkipCurrent)
         }
 
-        async fn clear_keep_current(&self) -> Result<(), SpeakDispatchError> {
+        async fn clear_keep_current(&self) -> Result<(), MessageRef> {
             self.record(DispatchCall::ClearKeepCurrent)
         }
 
@@ -232,7 +231,7 @@ mod tests {
             viewer_name: String,
             engine_id: String,
             voice_id: String,
-        ) -> Result<(), SpeakDispatchError> {
+        ) -> Result<(), MessageRef> {
             self.record(DispatchCall::AliasSet {
                 viewer_id,
                 viewer_name,
@@ -246,7 +245,7 @@ mod tests {
             viewer_id: String,
             engine_id: String,
             voice_id: String,
-        ) -> Result<(), SpeakDispatchError> {
+        ) -> Result<(), MessageRef> {
             self.record(DispatchCall::AliasSwitch {
                 viewer_id,
                 engine_id,
@@ -629,7 +628,7 @@ mod tests {
             _text: String,
             _voice_id_override: Option<String>,
             _origin: SpeechOrigin,
-        ) -> Result<(), SpeakDispatchError> {
+        ) -> Result<(), MessageRef> {
             panic!("a queued step must stay tied to its run");
         }
 
@@ -639,7 +638,7 @@ mod tests {
             _engine_id: String,
             _origin: SpeechOrigin,
             run: forge_registry::CancelSignal,
-        ) -> Result<(), SpeakDispatchError> {
+        ) -> Result<(), MessageRef> {
             *self.queued.lock().unwrap() = Some(run);
             Ok(())
         }

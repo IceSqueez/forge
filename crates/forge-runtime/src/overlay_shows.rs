@@ -11,8 +11,10 @@ use tokio::sync::{oneshot, watch};
 use tokio::task::{JoinError, JoinHandle};
 use tokio::time::Instant;
 
+use forge_types::MessageRef;
+
 use crate::overlay_service::{OverlayDelivery, OverlayFrameSink, content_json};
-use crate::speak_dispatcher::{ShowSpeech, SpeakDispatchError, SpeakDispatcher, SpeechStartSignal};
+use crate::speak_dispatcher::{ShowSpeech, SpeakDispatcher, SpeechStartSignal};
 
 pub const SHOW_QUEUE_CAPACITY: usize = 1000;
 
@@ -77,10 +79,7 @@ fn depth_in(depths: &Depths, id: &OverlayId) -> usize {
     depths.get(id).copied().unwrap_or(0)
 }
 
-async fn release_cancelled_speech(
-    id: &OverlayId,
-    mut spoken: JoinHandle<Result<(), SpeakDispatchError>>,
-) {
+async fn release_cancelled_speech(id: &OverlayId, mut spoken: JoinHandle<Result<(), MessageRef>>) {
     match tokio::time::timeout(SHOW_SPEECH_CANCEL_GRACE, &mut spoken).await {
         Ok(Ok(_)) => {}
         Ok(Err(error)) => {
@@ -95,7 +94,7 @@ async fn release_cancelled_speech(
 
 enum SpeechOpening {
     Started,
-    Ended(Result<Result<(), SpeakDispatchError>, JoinError>),
+    Ended(Result<Result<(), MessageRef>, JoinError>),
     TooLate,
 }
 
@@ -299,7 +298,7 @@ async fn hold_with_speech(
     window: Duration,
     ceiling: Instant,
     cancel: CancelSignal,
-    mut spoken: JoinHandle<Result<(), SpeakDispatchError>>,
+    mut spoken: JoinHandle<Result<(), MessageRef>>,
 ) {
     let held = async {
         tokio::time::sleep(window).await;
@@ -309,7 +308,7 @@ async fn hold_with_speech(
         Ok(Ok(Ok(()))) => {}
         Ok(Ok(Err(e))) => tracing::info!(
             overlay = %id,
-            reason = %e,
+            reason = %e.code(),
             "show speech did not play in full; the show kept its display window"
         ),
         Ok(Err(e)) => {
@@ -327,10 +326,10 @@ async fn hold_with_speech(
     }
 }
 
-fn unspoken_reason(outcome: Result<Result<(), SpeakDispatchError>, JoinError>) -> Option<String> {
+fn unspoken_reason(outcome: Result<Result<(), MessageRef>, JoinError>) -> Option<String> {
     match outcome {
         Ok(Ok(())) => None,
-        Ok(Err(e)) => Some(e.to_string()),
+        Ok(Err(e)) => Some(e.code().to_string()),
         Err(e) => Some(e.to_string()),
     }
 }

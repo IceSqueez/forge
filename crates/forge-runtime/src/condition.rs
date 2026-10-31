@@ -1,21 +1,10 @@
+use crate::error::RuntimeError;
 use std::cmp::Ordering;
 
-use forge_script::{BoundExpression, ConditionEvaluator, EngineConfig, ScriptError};
+use forge_script::{BoundExpression, ConditionEvaluator, EngineConfig};
 use forge_types::ArgStack;
 
 use crate::config::Config;
-
-#[derive(Debug, thiserror::Error)]
-pub enum ConditionError {
-    #[error(transparent)]
-    Eval(#[from] ScriptError),
-
-    #[error("condition evaluation did not run to completion")]
-    Canceled,
-
-    #[error("condition references undefined variables: {}", .names.join(", "))]
-    Undefined { names: Vec<String> },
-}
 
 pub struct ConditionGate {
     evaluator: ConditionEvaluator,
@@ -36,7 +25,7 @@ impl ConditionGate {
         &self,
         condition: &str,
         args: &ArgStack,
-    ) -> Result<bool, ConditionError> {
+    ) -> Result<bool, RuntimeError> {
         let bound = BoundExpression::bind(condition, args);
         if let Some(verdict) = literal_compare(bound.source()) {
             return Ok(verdict);
@@ -47,13 +36,13 @@ impl ConditionGate {
             (outcome, bound.unresolved().to_vec())
         })
         .await
-        .map_err(|_| ConditionError::Canceled)?;
+        .map_err(|_| RuntimeError::ConditionCanceled)?;
         match outcome {
             Ok(verdict) => Ok(verdict),
             Err(_) if !unresolved.is_empty() => {
-                Err(ConditionError::Undefined { names: unresolved })
+                Err(RuntimeError::UndefinedVariables { names: unresolved })
             }
-            Err(e) => Err(ConditionError::Eval(e)),
+            Err(e) => Err(RuntimeError::Script(e)),
         }
     }
 }
@@ -174,6 +163,7 @@ fn is_digit_run(s: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use forge_script::ScriptError;
     use std::time::{Duration, Instant};
 
     fn unhurried() -> Config {
@@ -291,7 +281,7 @@ mod tests {
             assert!(
                 matches!(
                     err,
-                    ConditionError::Eval(ScriptError::ConditionNotBoolean { .. })
+                    RuntimeError::Script(ScriptError::ConditionNotBoolean { .. })
                 ),
                 "expr {expr} expected ConditionNotBoolean, got {err:?}",
             );
@@ -311,7 +301,7 @@ mod tests {
         assert!(
             matches!(
                 err,
-                ConditionError::Eval(ScriptError::OperationLimit { .. })
+                RuntimeError::Script(ScriptError::OperationLimit { .. })
             ),
             "expected OperationLimit, got {err:?}",
         );
@@ -327,7 +317,7 @@ mod tests {
             .unwrap_err();
         let elapsed = start.elapsed();
         assert!(
-            matches!(err, ConditionError::Eval(ScriptError::Timeout { .. })),
+            matches!(err, RuntimeError::Script(ScriptError::Timeout { .. })),
             "expected Timeout, got {err:?}",
         );
         assert!(
@@ -363,7 +353,7 @@ mod tests {
             .await
             .unwrap_err();
         assert!(
-            matches!(&err, ConditionError::Undefined { names } if names == &["missing".to_owned()]),
+            matches!(&err, RuntimeError::UndefinedVariables { names } if names == &["missing".to_owned()]),
             "got {err:?}",
         );
         assert!(err.to_string().contains("missing"));
@@ -392,7 +382,7 @@ mod tests {
         ] {
             let err = gate.evaluate_with_args(expr, &args).await.unwrap_err();
             assert!(
-                matches!(err, ConditionError::Eval(_)),
+                matches!(err, RuntimeError::Script(_)),
                 "{expr}: expected Eval, got {err:?}"
             );
         }

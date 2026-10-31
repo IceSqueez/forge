@@ -144,7 +144,8 @@ mod tests {
     use forge_types::{ArgStack, SubActionOutcome, Variant};
 
     use super::*;
-    use crate::helix::{HelixError, HelixMethod};
+    use crate::error::TwitchError;
+    use crate::helix::HelixMethod;
     use crate::sub_actions::test_support::{
         MockCreds, MockTransport, SELF_USER_ID, TOKEN_SENTINEL, assert_failed_with_detail,
         chat_trigger_args, make_ctx,
@@ -152,7 +153,7 @@ mod tests {
     use forge_platform_core::SENDER_FIELD;
 
     fn runner_with(
-        response: Result<serde_json::Value, HelixError>,
+        response: Result<serde_json::Value, TwitchError>,
         creds: forge_storage::test_support::MemoryCredentials,
     ) -> (Arc<MockTransport>, ReplyChatRunner) {
         let transport = Arc::new(MockTransport::returning(response));
@@ -163,7 +164,7 @@ mod tests {
         (transport, runner)
     }
 
-    fn sent() -> Result<serde_json::Value, HelixError> {
+    fn sent() -> Result<serde_json::Value, TwitchError> {
         Ok(serde_json::json!({ "data": [{ "message_id": "m-1", "is_sent": true }] }))
     }
 
@@ -279,7 +280,7 @@ mod tests {
     #[tokio::test]
     async fn helix_4xx_surfaces_its_status_in_the_failure_detail() {
         let (_transport, runner) = runner_with(
-            Err(HelixError::Http {
+            Err(TwitchError::Http {
                 status: 400,
                 body: "message_id not found".to_owned(),
             }),
@@ -297,7 +298,7 @@ mod tests {
     #[tokio::test]
     async fn execute_records_the_acting_sender_only_when_the_reply_is_sent() {
         let cases: [(
-            Result<serde_json::Value, HelixError>,
+            Result<serde_json::Value, TwitchError>,
             Option<serde_json::Value>,
         ); 2] = [
             (
@@ -305,7 +306,7 @@ mod tests {
                 Some(serde_json::json!({ "role": "streamer", "login": "streamer" })),
             ),
             (
-                Err(HelixError::Http {
+                Err(TwitchError::Http {
                     status: 400,
                     body: format!("message_id not found {TOKEN_SENTINEL}"),
                 }),

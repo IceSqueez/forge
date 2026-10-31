@@ -6,8 +6,8 @@ use forge_types::Secret;
 use serde_json::json;
 
 use crate::elevenlabs::SAMPLE_RATE_HZ;
-use crate::elevenlabs::error::ElevenLabsError;
 use crate::elevenlabs::voices::VOICES_PATH;
+use crate::error::CloudTtsError;
 use crate::gateway_failure::{
     Classified, ProviderPolicy, VoiceSignal, classify, failure_detail, probe_failure_detail,
 };
@@ -30,16 +30,14 @@ pub(super) fn classify_with(
     link: &ProviderLink,
     voice: Option<&VoiceId>,
     detail: fn(&GatewayFailure) -> String,
-) -> ElevenLabsError {
+) -> CloudTtsError {
     match classify(failure, link, POLICY, voice, detail) {
-        Classified::Quota(excerpt) => ElevenLabsError::QuotaExceeded(excerpt),
-        Classified::Throttled(retry_after_secs) => {
-            ElevenLabsError::RateLimited { retry_after_secs }
-        }
-        Classified::Auth => ElevenLabsError::Unauthorized(INVALID_API_KEY.into()),
-        Classified::VoiceMissing(voice) => ElevenLabsError::VoiceNotFound(voice),
-        Classified::Rejected(detail) => ElevenLabsError::Rejected(detail),
-        Classified::Transient(detail) => ElevenLabsError::Http(detail),
+        Classified::Quota(excerpt) => CloudTtsError::QuotaExceeded(excerpt),
+        Classified::Throttled(retry_after_secs) => CloudTtsError::RateLimited { retry_after_secs },
+        Classified::Auth => CloudTtsError::Unauthorized(INVALID_API_KEY.into()),
+        Classified::VoiceMissing(voice) => CloudTtsError::VoiceNotFound(voice),
+        Classified::Rejected(detail) => CloudTtsError::Rejected(detail),
+        Classified::Transient(detail) => CloudTtsError::Http(detail),
     }
 }
 
@@ -47,7 +45,7 @@ fn classify_error(
     failure: &GatewayFailure,
     link: &ProviderLink,
     voice_id: &VoiceId,
-) -> ElevenLabsError {
+) -> CloudTtsError {
     classify_with(failure, link, Some(voice_id), failure_detail)
 }
 
@@ -55,9 +53,9 @@ pub(super) async fn synthesize(
     link: &ProviderLink,
     api_key: &str,
     req: SynthesisRequest,
-) -> Result<PcmBuffer, ElevenLabsError> {
+) -> Result<PcmBuffer, CloudTtsError> {
     if !is_plain_path_segment(&req.voice_id.0) {
-        return Err(ElevenLabsError::VoiceNotFound(req.voice_id));
+        return Err(CloudTtsError::VoiceNotFound(req.voice_id));
     }
     if req.rate_multiplier != 1.0 {
         tracing::debug!(
@@ -80,7 +78,7 @@ pub(super) async fn synthesize(
             "similarity_boost": 0.75
         }
     }))
-    .map_err(|e| ElevenLabsError::Rejected(e.to_string()))?;
+    .map_err(|e| CloudTtsError::Rejected(e.to_string()))?;
 
     let request = GatewayRequest::post(format!("{SPEECH_PATH}/{}", req.voice_id.0))
         .query(OUTPUT_FORMAT_QUERY, format!("pcm_{SAMPLE_RATE_HZ}"))
@@ -97,7 +95,7 @@ pub(super) async fn synthesize(
 pub(super) async fn probe_connection(
     link: &ProviderLink,
     api_key: &str,
-) -> Result<(), ElevenLabsError> {
+) -> Result<(), CloudTtsError> {
     let request = GatewayRequest::get(VOICES_PATH)
         .api_key(API_KEY_HEADER, Secret::new(api_key))
         .class(CallClass::Catalog);
@@ -114,7 +112,6 @@ mod tests {
         API_KEY, NO_HINT_WAIT_SECS, assert_reveals_nothing, catalog_cap_text, link_to,
         over_catalog_cap, request_count, serving, throttled,
     };
-    use forge_tts_core::TtsError;
     use wiremock::matchers::{header, method, path, query_param};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -132,18 +129,19 @@ mod tests {
         samples.iter().flat_map(|s| s.to_le_bytes()).collect()
     }
 
-    fn outcome(error: &ElevenLabsError) -> String {
+    fn outcome(error: &CloudTtsError) -> String {
         match error {
-            ElevenLabsError::Http(_) => "Http".into(),
-            ElevenLabsError::Unauthorized(_) => "Unauthorized".into(),
-            ElevenLabsError::QuotaExceeded(_) => "QuotaExceeded".into(),
-            ElevenLabsError::RateLimited { retry_after_secs } => {
+            CloudTtsError::Http(_) => "Http".into(),
+            CloudTtsError::Unauthorized(_) => "Unauthorized".into(),
+            CloudTtsError::QuotaExceeded(_) => "QuotaExceeded".into(),
+            CloudTtsError::RateLimited { retry_after_secs } => {
                 format!("RateLimited({retry_after_secs})")
             }
-            ElevenLabsError::VoiceNotFound(_) => "VoiceNotFound".into(),
-            ElevenLabsError::Rejected(_) => "Rejected".into(),
-            ElevenLabsError::Decode(_) => "Decode".into(),
-            ElevenLabsError::Io(_) => "Io".into(),
+            CloudTtsError::VoiceNotFound(_) => "VoiceNotFound".into(),
+            CloudTtsError::Rejected(_) => "Rejected".into(),
+            CloudTtsError::Decode(_) => "Decode".into(),
+            CloudTtsError::Io(_) => "Io".into(),
+            CloudTtsError::InvalidEndpoint(_) | CloudTtsError::Signing(_) => "Signature".into(),
         }
     }
 
@@ -192,7 +190,7 @@ mod tests {
             let server = serving(ResponseTemplate::new(reqwest::StatusCode::OK)).await;
             let result = synthesize(&link_to(&server), API_KEY, request_for(voice)).await;
             assert!(
-                matches!(result, Err(ElevenLabsError::VoiceNotFound(_))),
+                matches!(result, Err(CloudTtsError::VoiceNotFound(_))),
                 "{voice}: {result:?}"
             );
             assert_eq!(
@@ -295,7 +293,12 @@ mod tests {
                 .unwrap_err();
             assert_eq!(outcome(&error), expected, "{error}");
             assert_reveals_nothing(&error.to_string(), &server);
-            assert_reveals_nothing(&TtsError::from(error).to_string(), &server);
+            assert_reveals_nothing(
+                &error
+                    .into_tts(forge_tts_core::ENGINE_ID_ELEVENLABS)
+                    .to_string(),
+                &server,
+            );
         }
     }
 
@@ -363,7 +366,7 @@ mod tests {
             .await
             .unwrap_err();
         assert!(
-            matches!(&error, ElevenLabsError::Http(detail) if detail == "unexpected status 500"),
+            matches!(&error, CloudTtsError::Http(detail) if detail == "unexpected status 500"),
             "{error}"
         );
     }
@@ -378,7 +381,7 @@ mod tests {
             .await
             .unwrap_err();
         assert!(
-            matches!(&error, ElevenLabsError::Rejected(detail) if detail.contains(&catalog_cap_text())),
+            matches!(&error, CloudTtsError::Rejected(detail) if detail.contains(&catalog_cap_text())),
             "{error}"
         );
     }

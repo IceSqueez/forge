@@ -9,13 +9,12 @@ use std::time::Duration;
 
 use forge_registry::{RunContext, SubActionRegistry};
 use forge_runtime::{
-    CatchUpSettle, EventBus, FrozenRuntime, NullEventLogRepo, RuntimeWiringParts, ScheduleError,
+    CatchUpSettle, EventBus, FrozenRuntime, NullEventLogRepo, RuntimeError, RuntimeWiringParts,
     ScheduledRunsHandle, SchedulingContext, ScriptRegistry,
 };
 use forge_runtime::{MAX_SCHEDULE_DELAY, MIN_LATE_TOLERANCE};
 use forge_script::{
-    ActionScheduler, ScriptScheduleDue, ScriptScheduleError, ScriptSchedulePlacement,
-    ScriptScheduleRequest,
+    ActionScheduler, ScriptError, ScriptScheduleDue, ScriptSchedulePlacement, ScriptScheduleRequest,
 };
 use forge_storage::MockActionRepo;
 use forge_storage::{DataProvider, MissedRunPolicy, ScheduledRun, StorageError};
@@ -49,8 +48,12 @@ fn in_an_hour(action: &str) -> ScriptScheduleRequest {
     )
 }
 
-fn rejected(error: ScheduleError) -> ScriptScheduleError {
-    ScriptScheduleError::Rejected(error.to_string())
+fn rejected(error: RuntimeError) -> String {
+    error.to_string()
+}
+
+fn shown<T>(result: Result<T, ScriptError>) -> Result<T, String> {
+    result.map_err(|error| error.to_string())
 }
 
 async fn fixed_clock_runtime(dp: Arc<dyn DataProvider>) -> FrozenRuntime {
@@ -123,7 +126,7 @@ impl Harness {
     async fn schedule(
         &self,
         request: ScriptScheduleRequest,
-    ) -> Result<ScriptSchedulePlacement, ScriptScheduleError> {
+    ) -> Result<ScriptSchedulePlacement, ScriptError> {
         self.scheduler(ArgStack::new()).schedule(request).await
     }
 
@@ -198,8 +201,8 @@ async fn a_name_matching_no_live_action_exactly_is_unknown_and_places_nothing() 
         let result = harness.schedule(in_an_hour(wanted)).await;
 
         assert_eq!(
-            result,
-            Err(ScriptScheduleError::UnknownAction(wanted.to_owned())),
+            shown(result),
+            Err(ScriptError::UnknownScheduleTarget(wanted.to_owned()).to_string()),
             "{wanted:?}"
         );
     }
@@ -220,7 +223,11 @@ async fn an_id_of_no_live_action_is_refused_by_the_scheduler() {
     for id in [ActionId::new(), archived] {
         let result = harness.schedule(in_an_hour(&id.to_string())).await;
 
-        assert_eq!(result, Err(rejected(ScheduleError::UnknownAction)), "{id}");
+        assert_eq!(
+            shown(result),
+            Err(rejected(RuntimeError::ScheduleUnknownAction)),
+            "{id}"
+        );
     }
 }
 
@@ -234,11 +241,12 @@ async fn a_name_shared_by_several_actions_is_ambiguous_with_their_count() {
     let result = harness.schedule(in_an_hour(" Dup ")).await;
 
     assert_eq!(
-        result,
-        Err(ScriptScheduleError::AmbiguousAction {
+        shown(result),
+        Err(ScriptError::AmbiguousScheduleTarget {
             name: "Dup".to_owned(),
             count: 3,
-        })
+        }
+        .to_string())
     );
     assert!(harness.pending().await.is_empty());
 }
@@ -257,10 +265,8 @@ async fn a_failing_action_list_makes_name_lookup_unavailable() {
     let result = scheduler.schedule(in_an_hour("Greet")).await;
 
     assert_eq!(
-        result,
-        Err(ScriptScheduleError::ActionsUnavailable(
-            StorageError::NotReady.to_string()
-        ))
+        shown(result),
+        Err(ScriptError::ActionsUnavailable(StorageError::NotReady.to_string()).to_string())
     );
 }
 
@@ -286,8 +292,8 @@ async fn a_stopped_scheduler_rejects_a_new_schedule_and_still_cancels_a_pending_
     let cancelled = scheduler.cancel_by_key(RAID_KEY).await;
 
     assert_eq!(
-        (scheduled, cancelled),
-        (Err(rejected(ScheduleError::SchedulerStopped)), Ok(true))
+        (shown(scheduled), shown(cancelled)),
+        (Err(rejected(RuntimeError::SchedulerStopped)), Ok(true))
     );
 }
 
@@ -295,8 +301,8 @@ async fn a_stopped_scheduler_rejects_a_new_schedule_and_still_cancels_a_pending_
 async fn a_delay_in_seconds_is_bounded_and_negative_delays_are_too_short() {
     let harness = Harness::new().await;
     harness.action_named("Greet").await;
-    let too_short = Err(rejected(ScheduleError::DelayTooShort));
-    let too_long = Err(rejected(ScheduleError::DelayTooLong));
+    let too_short = Err(rejected(RuntimeError::DelayTooShort));
+    let too_long = Err(rejected(RuntimeError::DelayTooLong));
     let max = i64::try_from(MAX_SCHEDULE_DELAY.as_secs()).unwrap();
 
     for (seconds, expected) in [
@@ -314,7 +320,7 @@ async fn a_delay_in_seconds_is_bounded_and_negative_delays_are_too_short() {
             .await
             .map(|placement| placement.due_at);
 
-        assert_eq!(result, expected, "{seconds} s");
+        assert_eq!(shown(result), expected, "{seconds} s");
     }
 }
 
@@ -359,7 +365,7 @@ async fn an_unreadable_due_time_is_refused_naming_the_due_date_time() {
             .await;
 
         assert!(
-            matches!(&result, Err(ScriptScheduleError::Rejected(reason)) if reason.starts_with("due date-time:")),
+            matches!(&result, Err(ScriptError::ScheduleRejected(reason)) if reason.starts_with("due date-time:")),
             "{when:?}: {result:?}"
         );
     }
@@ -379,7 +385,11 @@ async fn a_due_time_not_ahead_of_now_is_too_soon() {
             ))
             .await;
 
-        assert_eq!(result, Err(rejected(ScheduleError::DueTooSoon)), "{due}");
+        assert_eq!(
+            shown(result),
+            Err(rejected(RuntimeError::DueTooSoon)),
+            "{due}"
+        );
     }
 }
 
@@ -388,7 +398,7 @@ async fn skip_if_late_minutes_maps_to_the_stored_policy_within_its_bounds() {
     let harness = Harness::new().await;
     harness.action_named("Greet").await;
     let min_minutes = i64::try_from(MIN_LATE_TOLERANCE.as_secs() / 60).unwrap();
-    let out_of_range = Err(rejected(ScheduleError::LateToleranceOutOfRange));
+    let out_of_range = Err(rejected(RuntimeError::LateToleranceOutOfRange));
 
     for (minutes, expected) in [
         (None, Ok(MissedRunPolicy::RunLateOnce)),
@@ -411,7 +421,7 @@ async fn skip_if_late_minutes_maps_to_the_stored_policy_within_its_bounds() {
             Err(e) => Err(e),
         };
 
-        assert_eq!(policy, expected, "{minutes:?}");
+        assert_eq!(shown(policy), expected, "{minutes:?}");
     }
 }
 
@@ -464,7 +474,7 @@ async fn cancel_by_key_reports_whether_a_pending_run_held_the_key() {
     let first = scheduler.cancel_by_key(RAID_KEY).await;
     let second = scheduler.cancel_by_key(RAID_KEY).await;
 
-    assert_eq!((first, second), (Ok(true), Ok(false)));
+    assert_eq!((shown(first), shown(second)), (Ok(true), Ok(false)));
 }
 
 #[tokio::test]

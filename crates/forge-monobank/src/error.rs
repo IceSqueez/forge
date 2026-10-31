@@ -1,4 +1,4 @@
-use forge_net::{GatewayFailure, InvalidRequest, ResponseDecodeError, canonical_status_reason};
+use forge_net::{GatewayFailure, InvalidRequest, ResponseDecodeError};
 use forge_platform_core::PlatformError;
 use thiserror::Error;
 
@@ -77,6 +77,10 @@ impl MonobankError {
     }
 }
 
+pub(crate) fn redacted_serde_reason(error: &serde_json::Error) -> String {
+    format!("{:?} error", error.classify())
+}
+
 impl From<GatewayFailure> for MonobankError {
     fn from(failure: GatewayFailure) -> Self {
         match failure {
@@ -119,9 +123,7 @@ impl From<MonobankError> for PlatformError {
             }
             MonobankError::Http { status } => PlatformError::Http {
                 status,
-                body: canonical_status_reason(status)
-                    .unwrap_or_default()
-                    .to_owned(),
+                body: String::new(),
             },
             MonobankError::Network { reason } => PlatformError::Network { reason },
             MonobankError::MalformedResponse { .. } | MonobankError::InvalidDonation { .. } => {

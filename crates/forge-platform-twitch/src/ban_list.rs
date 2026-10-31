@@ -1,3 +1,4 @@
+use crate::error::TwitchError;
 use async_trait::async_trait;
 use forge_platform_core::{
     BanDuration, BanEntry, BanListOutcome, BanListSource, BanListUnavailable, BanPage,
@@ -8,7 +9,7 @@ use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 
 use crate::builtin::TwitchIntegrationBundle;
-use crate::helix::{HelixError, HelixMethod, HelixRequest};
+use crate::helix::{HelixMethod, HelixRequest};
 
 const BANNED_USERS_PATH: &str = "/helix/moderation/banned";
 const BROADCASTER_ID_PARAM: &str = "broadcaster_id";
@@ -110,17 +111,14 @@ fn page_from_response(response: serde_json::Value) -> BanListOutcome {
     })
 }
 
-fn unavailability_of(error: &HelixError) -> BanListUnavailable {
+fn unavailability_of(error: &TwitchError) -> BanListUnavailable {
     match error {
-        HelixError::Credentials(_) => BanListUnavailable::NotConnected,
-        HelixError::ReauthRequired => BanListUnavailable::MissingScope,
-        HelixError::Http { status, .. } if *status == forge_net::status::FORBIDDEN => {
+        TwitchError::Credentials(_) => BanListUnavailable::NotConnected,
+        TwitchError::ReauthRequired => BanListUnavailable::MissingScope,
+        TwitchError::Http { status, .. } if *status == forge_net::status::FORBIDDEN => {
             BanListUnavailable::MissingScope
         }
-        HelixError::Http { .. }
-        | HelixError::RateLimited
-        | HelixError::Transport(_)
-        | HelixError::UndecodableResponse(_) => BanListUnavailable::Transport,
+        _ => BanListUnavailable::Transport,
     }
 }
 
@@ -170,7 +168,7 @@ mod tests {
 
     #[async_trait]
     impl HelixTokenSource for StaleToken {
-        async fn access_token(&self) -> Result<OAuthToken, HelixError> {
+        async fn access_token(&self) -> Result<OAuthToken, TwitchError> {
             Ok(OAuthToken::new("stale-token"))
         }
     }
@@ -182,7 +180,7 @@ mod tests {
 
     #[async_trait]
     impl HelixTokenRefresher for CountingRefresher {
-        async fn refresh(&self, _failed_token: &OAuthToken) -> Result<OAuthToken, HelixError> {
+        async fn refresh(&self, _failed_token: &OAuthToken) -> Result<OAuthToken, TwitchError> {
             self.refreshes.fetch_add(1, Ordering::SeqCst);
             Ok(OAuthToken::new("fresh-token"))
         }
@@ -253,7 +251,7 @@ mod tests {
     }
 
     fn answering(
-        response: Result<Value, HelixError>,
+        response: Result<Value, TwitchError>,
     ) -> (Arc<MockTransport>, Arc<TwitchIntegrationBundle>) {
         let transport = Arc::new(MockTransport::returning(response));
         let bundle = bundle(
@@ -541,19 +539,19 @@ mod tests {
 
     #[tokio::test]
     async fn list_bans_maps_each_api_failure_to_its_unavailability() {
-        let http = |status: reqwest::StatusCode| HelixError::Http {
+        let http = |status: reqwest::StatusCode| TwitchError::Http {
             status: status.as_u16(),
             body: String::new(),
         };
         let cases = [
             (
                 "no credentials",
-                HelixError::Credentials("no twitch credentials".to_owned()),
+                TwitchError::Credentials("no twitch credentials".to_owned()),
                 BanListUnavailable::NotConnected,
             ),
             (
                 "rejected after refresh",
-                HelixError::ReauthRequired,
+                TwitchError::ReauthRequired,
                 BanListUnavailable::MissingScope,
             ),
             (
@@ -583,12 +581,12 @@ mod tests {
             ),
             (
                 "rate limited",
-                HelixError::RateLimited,
+                TwitchError::RateLimited,
                 BanListUnavailable::Transport,
             ),
             (
                 "transport",
-                HelixError::Transport("connection refused".to_owned()),
+                TwitchError::Transport("connection refused".to_owned()),
                 BanListUnavailable::Transport,
             ),
         ];

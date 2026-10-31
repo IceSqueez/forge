@@ -7,7 +7,7 @@ use forge_components::{
     scaled, secondary_button, spacing, spinner, status_dot, tr, with_alpha,
 };
 use forge_platform_twitch::{
-    BotLoginError, BotModerator, BotModeratorError, BotStatus, DeviceCodeInfo, TwitchBotAccount,
+    BotModerator, BotStatus, DeviceCodeInfo, TwitchBotAccount, TwitchError,
 };
 use gpui::{
     AnyElement, App, ClickEvent, Context, Div, Entity, EventEmitter, FontWeight, Pixels, Render,
@@ -170,7 +170,7 @@ impl TwitchBotSection {
     fn apply_login_code(
         &mut self,
         ticket: u64,
-        result: Result<DeviceCodeInfo, BotLoginError>,
+        result: Result<DeviceCodeInfo, TwitchError>,
         cx: &mut Context<Self>,
     ) {
         if ticket != self.login_ticket {
@@ -198,7 +198,7 @@ impl TwitchBotSection {
     fn apply_login_outcome(
         &mut self,
         ticket: u64,
-        result: Result<BotStatus, BotLoginError>,
+        result: Result<BotStatus, TwitchError>,
         cx: &mut Context<Self>,
     ) {
         if ticket != self.login_ticket {
@@ -238,7 +238,7 @@ impl TwitchBotSection {
         cx.notify();
     }
 
-    fn apply_disconnect(&mut self, result: Result<(), BotLoginError>, cx: &mut Context<Self>) {
+    fn apply_disconnect(&mut self, result: Result<(), TwitchError>, cx: &mut Context<Self>) {
         self.busy = None;
         match result {
             Ok(()) => self.adopt_status(BotStatus::NotConnected, cx),
@@ -268,17 +268,13 @@ impl TwitchBotSection {
         cx.notify();
     }
 
-    fn apply_make_moderator(
-        &mut self,
-        result: Result<(), BotModeratorError>,
-        cx: &mut Context<Self>,
-    ) {
+    fn apply_make_moderator(&mut self, result: Result<(), TwitchError>, cx: &mut Context<Self>) {
         self.busy = None;
         match result {
             Ok(()) => self.refresh_presence(cx),
-            Err(BotModeratorError::BroadcasterReauthRequired) => {
+            Err(TwitchError::BroadcasterReauthRequired) => {
                 self.problem = Some(BotProblem::StreamerSignIn(moderator_failure(
-                    &BotModeratorError::BroadcasterReauthRequired,
+                    &TwitchError::BroadcasterReauthRequired,
                 )));
             }
             Err(error) => {
@@ -685,34 +681,35 @@ pub(crate) fn default_sender(status: &BotStatus, streamer_login: Option<&str>) -
     }
 }
 
-pub(crate) fn login_failure(error: &BotLoginError) -> BotLogin {
+pub(crate) fn login_failure(error: &TwitchError) -> BotLogin {
     match error {
-        BotLoginError::Cancelled => BotLogin::Idle,
-        BotLoginError::SameAsBroadcaster => BotLogin::Failed(tr!("twitch_bot_error_same_account")),
-        BotLoginError::Denied => BotLogin::Failed(tr!("twitch_bot_error_denied")),
-        BotLoginError::Expired => BotLogin::Failed(tr!("twitch_bot_error_expired")),
-        BotLoginError::NotStarted
-        | BotLoginError::Platform(_)
-        | BotLoginError::Storage(_)
-        | BotLoginError::CredentialsNotCleared(_) => BotLogin::Failed(tr!(
+        TwitchError::BotLoginCancelled => BotLogin::Idle,
+        TwitchError::SameAsBroadcaster => BotLogin::Failed(tr!("twitch_bot_error_same_account")),
+        TwitchError::BotLoginDenied => BotLogin::Failed(tr!("twitch_bot_error_denied")),
+        TwitchError::BotLoginExpired => BotLogin::Failed(tr!("twitch_bot_error_expired")),
+        _ => BotLogin::Failed(tr!(
             "twitch_bot_error_failed",
             error = bot_failure_text(error)
         )),
     }
 }
 
-pub(crate) fn moderator_failure(error: &BotModeratorError) -> String {
+pub(crate) fn moderator_failure(error: &TwitchError) -> String {
     match error {
-        BotModeratorError::BotNotConnected => tr!("twitch_bot_mod_error_not_connected"),
-        BotModeratorError::BroadcasterReauthRequired => tr!("twitch_bot_mod_error_streamer_reauth"),
-        BotModeratorError::BotBanned => tr!("twitch_bot_mod_error_banned"),
-        BotModeratorError::BotIsVip => tr!("twitch_bot_mod_error_vip"),
-        BotModeratorError::Refused(reason) => {
+        TwitchError::BotNotSignedIn => tr!("twitch_bot_mod_error_not_connected"),
+        TwitchError::BroadcasterReauthRequired => tr!("twitch_bot_mod_error_streamer_reauth"),
+        TwitchError::BotBanned => tr!("twitch_bot_mod_error_banned"),
+        TwitchError::BotIsVip => tr!("twitch_bot_mod_error_vip"),
+        TwitchError::ModeratorRefused(reason) => {
             tr!("twitch_bot_mod_error_refused", reason = reason.clone())
         }
-        BotModeratorError::Unavailable(reason) => {
+        TwitchError::ModeratorUnavailable(reason) => {
             tr!("twitch_bot_mod_error_unavailable", reason = reason.clone())
         }
+        other => tr!(
+            "twitch_bot_mod_error_unavailable",
+            reason = other.to_string()
+        ),
     }
 }
 
@@ -822,7 +819,7 @@ fn copy_row(
         .into_any_element()
 }
 
-fn bot_failure_text(error: &BotLoginError) -> String {
+fn bot_failure_text(error: &TwitchError) -> String {
     tracing::warn!(error = %error, "twitch bot account operation failed");
     RepoFailure::operation(error).text()
 }
@@ -833,9 +830,7 @@ mod tests {
     use std::time::SystemTime;
 
     use forge_events::EventPublisher;
-    use forge_platform_twitch::{
-        BotLoginError, BotModerator, BotModeratorError, BotStatus, DeviceCodeInfo,
-    };
+    use forge_platform_twitch::{BotModerator, BotStatus, DeviceCodeInfo, TwitchError};
     use forge_runtime::{EventBus, NullEventLogRepo};
     use forge_storage::CredentialsRepo;
     use gpui::{AppContext as _, Entity, TestAppContext};
@@ -944,7 +939,7 @@ mod tests {
         let second = started(&m, cx);
 
         m.section.update(cx, |section, cx| {
-            section.apply_login_outcome(first, Err(BotLoginError::Denied), cx)
+            section.apply_login_outcome(first, Err(TwitchError::BotLoginDenied), cx)
         });
 
         assert_ne!(first, second);
@@ -955,8 +950,8 @@ mod tests {
     fn the_current_login_outcome_ends_the_flow(cx: &mut TestAppContext) {
         for (outcome, failed) in [
             (Ok(connected("forgebot")), false),
-            (Err(BotLoginError::Expired), true),
-            (Err(BotLoginError::Cancelled), false),
+            (Err(TwitchError::BotLoginExpired), true),
+            (Err(TwitchError::BotLoginCancelled), false),
         ] {
             let m = mount(cx);
             let ticket = started(&m, cx);
@@ -1028,7 +1023,7 @@ mod tests {
         let after_disconnect = m.section.update(cx, |section, cx| {
             section.disconnect(cx);
             section.apply_disconnect(
-                Err(BotLoginError::Storage(
+                Err(TwitchError::CredentialStorage(
                     forge_storage::StorageError::Connection {
                         reason: "disk full".to_owned(),
                     },
@@ -1039,7 +1034,7 @@ mod tests {
         });
         let after_promote = m.section.update(cx, |section, cx| {
             section.make_moderator(cx);
-            section.apply_make_moderator(Err(BotModeratorError::BotBanned), cx);
+            section.apply_make_moderator(Err(TwitchError::BotBanned), cx);
             (section.busy, section.problem.clone())
         });
 
@@ -1059,7 +1054,7 @@ mod tests {
 
         let problem = m.section.update(cx, |section, cx| {
             section.make_moderator(cx);
-            section.apply_make_moderator(Err(BotModeratorError::BotIsVip), cx);
+            section.apply_make_moderator(Err(TwitchError::BotIsVip), cx);
             section.start_login(cx);
             section.problem.clone()
         });
@@ -1122,17 +1117,20 @@ mod tests {
 
     #[test]
     fn a_cancelled_login_returns_to_idle_without_an_error() {
-        assert_eq!(login_failure(&BotLoginError::Cancelled), BotLogin::Idle);
+        assert_eq!(
+            login_failure(&TwitchError::BotLoginCancelled),
+            BotLogin::Idle
+        );
     }
 
     #[test]
     fn each_login_failure_reads_differently_and_generic_ones_hide_the_cause() {
         install_language(Language::En);
         let messages: Vec<String> = [
-            BotLoginError::SameAsBroadcaster,
-            BotLoginError::Denied,
-            BotLoginError::Expired,
-            BotLoginError::Storage(forge_storage::StorageError::Connection {
+            TwitchError::SameAsBroadcaster,
+            TwitchError::BotLoginDenied,
+            TwitchError::BotLoginExpired,
+            TwitchError::CredentialStorage(forge_storage::StorageError::Connection {
                 reason: "disk full".to_owned(),
             }),
         ]
@@ -1158,12 +1156,12 @@ mod tests {
     fn each_moderator_failure_reads_differently_and_twitch_reasons_are_kept() {
         install_language(Language::En);
         let messages: Vec<String> = [
-            BotModeratorError::BotNotConnected,
-            BotModeratorError::BroadcasterReauthRequired,
-            BotModeratorError::BotBanned,
-            BotModeratorError::BotIsVip,
-            BotModeratorError::Refused("user is already a mod".to_owned()),
-            BotModeratorError::Unavailable("timed out".to_owned()),
+            TwitchError::BotNotSignedIn,
+            TwitchError::BroadcasterReauthRequired,
+            TwitchError::BotBanned,
+            TwitchError::BotIsVip,
+            TwitchError::ModeratorRefused("user is already a mod".to_owned()),
+            TwitchError::ModeratorUnavailable("timed out".to_owned()),
         ]
         .iter()
         .map(moderator_failure)
@@ -1299,9 +1297,9 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         for (error, sign_in) in [
-            (BotModeratorError::BroadcasterReauthRequired, true),
-            (BotModeratorError::BotBanned, false),
-            (BotModeratorError::Refused("nope".to_owned()), false),
+            (TwitchError::BroadcasterReauthRequired, true),
+            (TwitchError::BotBanned, false),
+            (TwitchError::ModeratorRefused("nope".to_owned()), false),
         ] {
             let m = mount(cx);
 

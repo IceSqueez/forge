@@ -1,7 +1,8 @@
+use crate::error::TwitchError;
 use forge_registry::{TextEditor, TextField};
 
 use crate::account::identity::{SelfIdentity, resolve_user_id};
-use crate::helix::{HelixError, HelixTransport};
+use crate::helix::HelixTransport;
 use crate::vocabulary::config_keys;
 
 const SESSION_ID_TEMPLATE: &str = "%guest_star.session_id%";
@@ -44,7 +45,7 @@ impl GuestStarContext {
         transport: &dyn HelixTransport,
         identity: &SelfIdentity,
         target_login: &str,
-    ) -> Result<Self, HelixError> {
+    ) -> Result<Self, TwitchError> {
         let self_id = identity.user_id().await?;
         let guest_id = resolve_user_id(transport, target_login).await?;
         Ok(Self { self_id, guest_id })

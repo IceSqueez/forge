@@ -9,7 +9,7 @@ use forge_events::{Event, EventSource, LatestChanged, TypedEvent};
 use forge_overlay::{OverlayKindRegistry, register_builtin_kinds};
 use forge_runtime::{
     Config, EventBus, NullEventLogRepo, OverlayConnectListener, OverlayFrameSink, OverlayReceivers,
-    OverlayServiceError, OverlayServiceHandle, OverlayServiceParts, spawn_latest_overlay_feed,
+    OverlayServiceHandle, OverlayServiceParts, RuntimeError, spawn_latest_overlay_feed,
 };
 use forge_storage::test_support::MemorySettings;
 use forge_storage::{
@@ -314,7 +314,7 @@ async fn an_action_sending_content_to_a_latest_overlay_is_refused_and_nothing_re
     .await;
 
     assert!(
-        matches!(&refused, Err(OverlayServiceError::SlotBound(id)) if id.as_str() == "last-donation"),
+        matches!(&refused, Err(RuntimeError::SlotBound(id)) if id.as_str() == "last-donation"),
         "got {refused:?}"
     );
     assert_eq!(harness.sink.count(), 0);

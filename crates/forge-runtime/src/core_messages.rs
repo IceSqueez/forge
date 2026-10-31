@@ -1,5 +1,6 @@
 use std::fmt::Display;
 
+use forge_script::ScriptError;
 use forge_types::{
     ActionId, MessageArg, MessageCatalog, MessageCode, MessageRef, TriggerInstanceId,
     UpstreamDetail, VariantKind, VerbatimText,
@@ -12,6 +13,7 @@ const ACTION_ARG: &str = "action";
 const INSTANCE_ARG: &str = "instance";
 const NAME_ARG: &str = "name";
 const ACTUAL_ARG: &str = "actual";
+const EXPECTED_ARG: &str = "expected";
 const AMOUNT_ARG: &str = "amount";
 const LIMIT_ARG: &str = "limit";
 const ITEMS_ARG: &str = "items";
@@ -150,6 +152,10 @@ pub(crate) const INLINE_SCRIPT_FAILED: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "inline_script_failed");
 pub(crate) const SCRIPT_PANICKED: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "script_panicked");
+pub(crate) const SCRIPT_INPUT_MISSING: MessageCode =
+    MessageCode::from_static(CORE_NAMESPACE, "script_input_missing");
+pub(crate) const SCRIPT_INPUT_MISMATCH: MessageCode =
+    MessageCode::from_static(CORE_NAMESPACE, "script_input_mismatch");
 pub(crate) const TEST_DONATION_NOT_ANNOUNCED: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "test_donation_not_announced");
 pub(crate) const VOICE_NOT_ENGINE_VOICE: MessageCode =
@@ -269,6 +275,8 @@ pub const CORE_MESSAGES: MessageCatalog = MessageCatalog {
         SCRIPT_FAILED,
         INLINE_SCRIPT_FAILED,
         SCRIPT_PANICKED,
+        SCRIPT_INPUT_MISSING,
+        SCRIPT_INPUT_MISMATCH,
         TEST_DONATION_NOT_ANNOUNCED,
         VOICE_NOT_ENGINE_VOICE,
         VOICE_NOT_INSTALLED,
@@ -607,12 +615,32 @@ pub(crate) fn script_not_found(name: &str) -> MessageRef {
     MessageRef::new(SCRIPT_NOT_FOUND).with_arg(NAME_ARG, verbatim(name))
 }
 
-pub(crate) fn script_failed(name: &str, cause: impl Display) -> MessageRef {
-    with_cause(SCRIPT_FAILED, cause).with_arg(NAME_ARG, verbatim(name))
+pub(crate) fn script_failed(name: &str, error: &ScriptError) -> MessageRef {
+    script_input_failure(error)
+        .unwrap_or_else(|| with_cause(SCRIPT_FAILED, error).with_arg(NAME_ARG, verbatim(name)))
 }
 
-pub(crate) fn inline_script_failed(cause: impl Display) -> MessageRef {
-    with_cause(INLINE_SCRIPT_FAILED, cause)
+pub(crate) fn inline_script_failed(error: &ScriptError) -> MessageRef {
+    script_input_failure(error).unwrap_or_else(|| with_cause(INLINE_SCRIPT_FAILED, error))
+}
+
+pub fn script_input_failure(error: &ScriptError) -> Option<MessageRef> {
+    match error {
+        ScriptError::MissingInput { name } => {
+            Some(MessageRef::new(SCRIPT_INPUT_MISSING).with_arg(NAME_ARG, verbatim(name)))
+        }
+        ScriptError::InputTypeMismatch {
+            name,
+            expected,
+            got,
+        } => Some(
+            MessageRef::new(SCRIPT_INPUT_MISMATCH)
+                .with_arg(NAME_ARG, verbatim(name))
+                .with_arg(EXPECTED_ARG, *expected)
+                .with_arg(ACTUAL_ARG, *got),
+        ),
+        _ => None,
+    }
 }
 
 pub(crate) fn script_panicked(cause: impl Display) -> MessageRef {
@@ -734,8 +762,29 @@ mod tests {
             overlay_show_withdrawn(),
             overlay_send_failed("c"),
             script_not_found("s"),
-            script_failed("s", "c"),
-            inline_script_failed("c"),
+            script_failed(
+                "s",
+                &ScriptError::Runtime {
+                    reason: "c".to_owned(),
+                },
+            ),
+            script_failed(
+                "s",
+                &ScriptError::MissingInput {
+                    name: "n".to_owned(),
+                },
+            ),
+            script_failed(
+                "s",
+                &ScriptError::InputTypeMismatch {
+                    name: "n".to_owned(),
+                    expected: VariantKind::String,
+                    got: VariantKind::Int,
+                },
+            ),
+            inline_script_failed(&ScriptError::Runtime {
+                reason: "c".to_owned(),
+            }),
             script_panicked("c"),
             test_donation_not_announced(),
             voice_not_engine_voice("v"),
@@ -826,7 +875,12 @@ mod tests {
 
     #[test]
     fn upstream_cause_text_is_carried_as_detail_and_never_as_an_argument() {
-        let failure = script_failed("greet", "runtime error: boom");
+        let failure = script_failed(
+            "greet",
+            &ScriptError::Runtime {
+                reason: "boom".to_owned(),
+            },
+        );
 
         assert_eq!(
             failure.detail().map(|d| d.as_str()),

@@ -11,11 +11,11 @@ use forge_registry::RunContext;
 use forge_runtime::ScriptRunInlineRunner;
 use forge_runtime::{
     CatchUpSettle, EventBus, FrozenRuntime, NullEventLogRepo, QueueAdmission, QueueMode,
-    RuntimeWiring, ScheduleDue, ScheduleError, ScheduleRequest, ScheduledRunsHandle,
+    RuntimeError, RuntimeWiring, ScheduleDue, ScheduleRequest, ScheduledRunsHandle,
     SchedulerRequest, SchedulingContext, ScriptRegistry, ScriptRegistryParts,
     register_core_triggers,
 };
-use forge_script::{ScriptSpeakError, SpeakRequester};
+use forge_script::{ScriptError, SpeakRequester};
 use forge_storage::MockQueueRepo;
 use forge_storage::MockTriggerInstanceRepo;
 use forge_storage::{DataProvider, GlobalsRepo, MissedRunPolicy, SettingsRepo, StorageError};
@@ -331,7 +331,7 @@ async fn a_schedule_waiting_on_a_worker_that_never_starts_ends_as_stopped() {
 
     assert_eq!(
         timeout(HANG_GUARD, pending).await.unwrap().unwrap(),
-        Err(ScheduleError::SchedulerStopped.to_string()),
+        Err(RuntimeError::SchedulerStopped.to_string()),
     );
 }
 
@@ -354,7 +354,7 @@ struct RecordingVoice(Mutex<Vec<String>>);
 
 #[async_trait]
 impl SpeakRequester for RecordingVoice {
-    async fn speak(&self, text: String, _voice: Option<String>) -> Result<(), ScriptSpeakError> {
+    async fn speak(&self, text: String, _voice: Option<String>) -> Result<(), ScriptError> {
         self.0.lock().unwrap().push(text);
         Ok(())
     }

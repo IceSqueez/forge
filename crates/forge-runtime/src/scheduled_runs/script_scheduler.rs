@@ -1,16 +1,16 @@
+use crate::error::RuntimeError;
 use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
 use forge_script::{
-    ActionScheduler, ScriptScheduleDue, ScriptScheduleError, ScriptSchedulePlacement,
-    ScriptScheduleRequest,
+    ActionScheduler, ScriptError, ScriptScheduleDue, ScriptSchedulePlacement, ScriptScheduleRequest,
 };
 use forge_storage::{ActionRepo, MissedRunPolicy};
 use forge_types::ActionId;
 
 use super::handle::ScheduledRunsHandle;
-use super::request::{ScheduleDue, ScheduleError, skip_if_late_by_minutes};
+use super::request::{ScheduleDue, skip_if_late_by_minutes};
 use super::scheduling_context::{ScheduleIntent, SchedulingContext};
 use crate::sub_action_runners::datetime_input::resolve_datetime;
 
@@ -35,7 +35,7 @@ impl ScriptScheduling {
         })
     }
 
-    async fn resolve_action(&self, id_or_name: &str) -> Result<ActionId, ScriptScheduleError> {
+    async fn resolve_action(&self, id_or_name: &str) -> Result<ActionId, ScriptError> {
         let wanted = id_or_name.trim();
         if let Ok(id) = wanted.parse::<ActionId>() {
             return Ok(id);
@@ -44,15 +44,15 @@ impl ScriptScheduling {
             .actions
             .list()
             .await
-            .map_err(|e| ScriptScheduleError::ActionsUnavailable(e.to_string()))?;
+            .map_err(|e| ScriptError::ActionsUnavailable(e.to_string()))?;
         let mut named = actions.iter().filter(|action| action.name == wanted);
         match (named.next(), named.count()) {
             (Some(action), 0) => Ok(action.id),
-            (Some(_), others) => Err(ScriptScheduleError::AmbiguousAction {
+            (Some(_), others) => Err(ScriptError::AmbiguousScheduleTarget {
                 name: wanted.to_owned(),
                 count: others + 1,
             }),
-            (None, _) => Err(ScriptScheduleError::UnknownAction(wanted.to_owned())),
+            (None, _) => Err(ScriptError::UnknownScheduleTarget(wanted.to_owned())),
         }
     }
 }
@@ -67,7 +67,7 @@ impl ActionScheduler for ContextScheduler {
     async fn schedule(
         &self,
         request: ScriptScheduleRequest,
-    ) -> Result<ScriptSchedulePlacement, ScriptScheduleError> {
+    ) -> Result<ScriptSchedulePlacement, ScriptError> {
         let target_action_id = self
             .scheduling
             .resolve_action(&request.action_id_or_name)
@@ -93,7 +93,7 @@ impl ActionScheduler for ContextScheduler {
         })
     }
 
-    async fn cancel_by_key(&self, key: &str) -> Result<bool, ScriptScheduleError> {
+    async fn cancel_by_key(&self, key: &str) -> Result<bool, ScriptError> {
         self.scheduling
             .scheduled_runs
             .cancel_by_key(key)
@@ -102,17 +102,17 @@ impl ActionScheduler for ContextScheduler {
     }
 }
 
-fn schedule_due(due: ScriptScheduleDue) -> Result<ScheduleDue, ScriptScheduleError> {
+fn schedule_due(due: ScriptScheduleDue) -> Result<ScheduleDue, ScriptError> {
     match due {
         ScriptScheduleDue::AfterSeconds(seconds) => Ok(ScheduleDue::After(Duration::from_secs(
             u64::try_from(seconds).unwrap_or(0),
         ))),
         ScriptScheduleDue::At(when) => resolve_datetime(&when, when.as_str().unwrap_or(""))
             .map(ScheduleDue::At)
-            .map_err(|e| ScriptScheduleError::Rejected(format!("due date-time: {e}"))),
+            .map_err(|e| ScriptError::ScheduleRejected(format!("due date-time: {e}"))),
     }
 }
 
-fn rejected(error: ScheduleError) -> ScriptScheduleError {
-    ScriptScheduleError::Rejected(error.to_string())
+fn rejected(error: RuntimeError) -> ScriptError {
+    ScriptError::ScheduleRejected(error.to_string())
 }

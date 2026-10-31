@@ -8,6 +8,13 @@ mod policy;
     feature = "openai",
     feature = "polly"
 ))]
+mod error;
+#[cfg(any(
+    feature = "azure",
+    feature = "elevenlabs",
+    feature = "openai",
+    feature = "polly"
+))]
 mod gateway_failure;
 
 #[cfg(feature = "azure")]

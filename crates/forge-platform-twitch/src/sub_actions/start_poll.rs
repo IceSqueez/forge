@@ -215,7 +215,7 @@ impl SubActionRunner for StartPollRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::helix::HelixError;
+    use crate::error::TwitchError;
     use crate::sub_actions::test_support::TOKEN_SENTINEL;
     use crate::sub_actions::test_support::{
         MockCreds, MockTransport, SELF_USER_ID, assert_request_refused, make_ctx,
@@ -227,7 +227,7 @@ mod tests {
     }
 
     fn runner_with(
-        response: Result<serde_json::Value, HelixError>,
+        response: Result<serde_json::Value, TwitchError>,
     ) -> (Arc<MockTransport>, StartPollRunner) {
         let transport = Arc::new(MockTransport::returning(response));
         let runner = StartPollRunner::new(
@@ -409,7 +409,7 @@ mod tests {
 
     #[tokio::test]
     async fn http_failure_outcome_does_not_leak_token() {
-        let (_, runner) = runner_with(Err(HelixError::Http {
+        let (_, runner) = runner_with(Err(TwitchError::Http {
             status: 400,
             body: format!("invalid choices {TOKEN_SENTINEL}"),
         }));

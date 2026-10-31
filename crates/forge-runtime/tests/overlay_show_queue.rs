@@ -12,9 +12,9 @@ use forge_overlay::{OverlayKindRegistry, register_builtin_kinds};
 use forge_registry::{RunContext, SubActionRunner};
 use forge_runtime::{
     EventBus, FrozenRuntime, NullEventLogRepo, OVERLAY_SEND_KIND_ID, OVERLAY_TARGET_KEY,
-    OverlayDelivery, OverlayDispatch, OverlayFrameSink, OverlayReceivers, OverlayServiceError,
-    OverlayServiceHandle, OverlayServiceParts, RuntimeWiringParts, SHOW_CEILING,
-    SHOW_QUEUE_CAPACITY, ShowDepthWatch, ShowEnd, ShowTicket,
+    OverlayDelivery, OverlayDispatch, OverlayFrameSink, OverlayReceivers, OverlayServiceHandle,
+    OverlayServiceParts, RuntimeError, RuntimeWiringParts, SHOW_CEILING, SHOW_QUEUE_CAPACITY,
+    ShowDepthWatch, ShowEnd, ShowTicket,
 };
 use forge_storage::test_support::MemorySettings;
 use forge_storage::{
@@ -434,7 +434,7 @@ async fn a_burst_past_the_capacity_refuses_only_the_excess_and_shows_every_accep
     assert!(
         refused.iter().all(|(_, error)| matches!(
             error,
-            OverlayServiceError::ShowQueueFull { id, capacity }
+            RuntimeError::ShowQueueFull { id, capacity }
                 if id.as_str() == STAGE && *capacity == SHOW_QUEUE_CAPACITY
         )),
         "an overflow was reported as something other than a full show queue: {refused:?}"

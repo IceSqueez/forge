@@ -70,9 +70,8 @@ mod tests {
     use crate::chat::ChatConnectionState;
     use crate::chat_platform::EVENT_CHANNEL_CAPACITY;
     use crate::config::{HELIX_BUDGET_CAPACITY, HELIX_BUDGET_WINDOW};
-    use crate::helix::{
-        HelixError, HelixHttpTransport, HelixTokenRefresher, HelixTokenSource, HelixTransport,
-    };
+    use crate::error::TwitchError;
+    use crate::helix::{HelixHttpTransport, HelixTokenRefresher, HelixTokenSource, HelixTransport};
     use crate::helix_gateway::helix_gateway;
     use crate::sub_actions::test_support::{
         MockCreds, MockTransport, endpoints_with, unreachable_twitch_endpoints,
@@ -89,7 +88,7 @@ mod tests {
 
     #[async_trait]
     impl HelixTokenSource for StaleToken {
-        async fn access_token(&self) -> Result<OAuthToken, HelixError> {
+        async fn access_token(&self) -> Result<OAuthToken, TwitchError> {
             Ok(OAuthToken::new("stale-token"))
         }
     }
@@ -101,7 +100,7 @@ mod tests {
 
     #[async_trait]
     impl HelixTokenRefresher for CountingRefresher {
-        async fn refresh(&self, _failed_token: &OAuthToken) -> Result<OAuthToken, HelixError> {
+        async fn refresh(&self, _failed_token: &OAuthToken) -> Result<OAuthToken, TwitchError> {
             self.refreshes.fetch_add(1, Ordering::SeqCst);
             Ok(OAuthToken::new("fresh-token"))
         }

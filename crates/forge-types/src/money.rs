@@ -1,7 +1,7 @@
+use crate::error::TypesError;
 use std::fmt;
 
 use serde::{Deserialize, Serialize};
-use thiserror::Error;
 
 pub const MICROS_PER_MAJOR_UNIT: u64 = 1_000_000;
 
@@ -11,31 +11,17 @@ const CURRENCY_CODE_LEN: usize = 3;
 const DECIMAL_SEPARATOR: char = '.';
 const DECIMAL_BASE: u64 = 10;
 
-#[derive(Debug, Error, PartialEq, Eq)]
-pub enum MoneyError {
-    #[error("currency code must be three ASCII letters: {0:?}")]
-    InvalidCurrency(String),
-    #[error("amount is not a non-negative decimal number: {0:?}")]
-    InvalidAmount(String),
-    #[error("amount has more fractional digits than micros can hold: {0:?}")]
-    TooPrecise(String),
-    #[error("currency exponent {0} is finer than micros")]
-    UnsupportedExponent(u32),
-    #[error("amount does not fit the supported range")]
-    Overflow,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
 pub struct CurrencyCode(String);
 
 impl CurrencyCode {
-    pub fn parse(raw: &str) -> Result<Self, MoneyError> {
+    pub fn parse(raw: &str) -> Result<Self, TypesError> {
         let trimmed = raw.trim();
         if trimmed.len() == CURRENCY_CODE_LEN && trimmed.chars().all(|c| c.is_ascii_alphabetic()) {
             Ok(Self(trimmed.to_ascii_uppercase()))
         } else {
-            Err(MoneyError::InvalidCurrency(raw.to_owned()))
+            Err(TypesError::InvalidCurrency(raw.to_owned()))
         }
     }
 
@@ -45,7 +31,7 @@ impl CurrencyCode {
 }
 
 impl TryFrom<String> for CurrencyCode {
-    type Error = MoneyError;
+    type Error = TypesError;
 
     fn try_from(raw: String) -> Result<Self, Self::Error> {
         Self::parse(&raw)
@@ -79,38 +65,38 @@ impl MoneyAmount {
         minor_units: u64,
         exponent: u32,
         currency: CurrencyCode,
-    ) -> Result<Self, MoneyError> {
+    ) -> Result<Self, TypesError> {
         let scale = MICRO_DIGITS
             .checked_sub(exponent)
-            .ok_or(MoneyError::UnsupportedExponent(exponent))?;
+            .ok_or(TypesError::UnsupportedExponent(exponent))?;
         let micros = minor_units
             .checked_mul(DECIMAL_BASE.pow(scale))
-            .ok_or(MoneyError::Overflow)?;
+            .ok_or(TypesError::MoneyOverflow)?;
         Ok(Self { micros, currency })
     }
 
-    pub fn parse_decimal(text: &str, currency: CurrencyCode) -> Result<Self, MoneyError> {
+    pub fn parse_decimal(text: &str, currency: CurrencyCode) -> Result<Self, TypesError> {
         let trimmed = text.trim();
         let (whole, fraction) = trimmed
             .split_once(DECIMAL_SEPARATOR)
             .map_or((trimmed, None), |(whole, fraction)| (whole, Some(fraction)));
         let all_digits = |part: &str| !part.is_empty() && part.chars().all(|c| c.is_ascii_digit());
         if !all_digits(whole) || fraction.is_some_and(|part| !all_digits(part)) {
-            return Err(MoneyError::InvalidAmount(text.to_owned()));
+            return Err(TypesError::InvalidAmount(text.to_owned()));
         }
         let fraction = fraction.unwrap_or_default();
         if fraction.len() > MICRO_DIGITS as usize {
-            return Err(MoneyError::TooPrecise(text.to_owned()));
+            return Err(TypesError::TooPrecise(text.to_owned()));
         }
-        let whole_units: u64 = whole.parse().map_err(|_| MoneyError::Overflow)?;
+        let whole_units: u64 = whole.parse().map_err(|_| TypesError::MoneyOverflow)?;
         let padded = format!("{fraction:0<width$}", width = MICRO_DIGITS as usize);
         let fraction_micros: u64 = padded
             .parse()
-            .map_err(|_| MoneyError::InvalidAmount(text.to_owned()))?;
+            .map_err(|_| TypesError::InvalidAmount(text.to_owned()))?;
         let micros = whole_units
             .checked_mul(MICROS_PER_MAJOR_UNIT)
             .and_then(|scaled| scaled.checked_add(fraction_micros))
-            .ok_or(MoneyError::Overflow)?;
+            .ok_or(TypesError::MoneyOverflow)?;
         Ok(Self { micros, currency })
     }
 
@@ -156,7 +142,7 @@ mod tests {
         CurrencyCode::parse("UAH").unwrap()
     }
 
-    fn micros_of(text: &str) -> Result<u64, MoneyError> {
+    fn micros_of(text: &str) -> Result<u64, TypesError> {
         MoneyAmount::parse_decimal(text, uah()).map(|amount| amount.micros())
     }
 
@@ -181,7 +167,7 @@ mod tests {
         for raw in ["", "UA", "UAHH", "UAH1", "12A", "U A", "ÄBC", "грн"] {
             assert_eq!(
                 CurrencyCode::parse(raw),
-                Err(MoneyError::InvalidCurrency(raw.to_owned())),
+                Err(TypesError::InvalidCurrency(raw.to_owned())),
                 "raw {raw:?}"
             );
         }
@@ -220,7 +206,7 @@ mod tests {
         ] {
             assert_eq!(
                 micros_of(text),
-                Err(MoneyError::InvalidAmount(text.to_owned())),
+                Err(TypesError::InvalidAmount(text.to_owned())),
                 "text {text:?}"
             );
         }
@@ -231,7 +217,7 @@ mod tests {
         assert_eq!(micros_of("1.123456"), Ok(1_123_456));
         assert_eq!(
             micros_of("1.1234567"),
-            Err(MoneyError::TooPrecise("1.1234567".to_owned()))
+            Err(TypesError::TooPrecise("1.1234567".to_owned()))
         );
     }
 
@@ -242,7 +228,11 @@ mod tests {
             "18446744073710",
             "99999999999999999999999",
         ] {
-            assert_eq!(micros_of(text), Err(MoneyError::Overflow), "text {text:?}");
+            assert_eq!(
+                micros_of(text),
+                Err(TypesError::MoneyOverflow),
+                "text {text:?}"
+            );
         }
     }
 
@@ -261,7 +251,7 @@ mod tests {
     fn from_minor_units_rejects_an_exponent_finer_than_micros() {
         assert_eq!(
             MoneyAmount::from_minor_units(1, 7, uah()),
-            Err(MoneyError::UnsupportedExponent(7))
+            Err(TypesError::UnsupportedExponent(7))
         );
     }
 
@@ -269,7 +259,7 @@ mod tests {
     fn from_minor_units_reports_overflow_when_scaling_exceeds_u64() {
         assert_eq!(
             MoneyAmount::from_minor_units(u64::MAX, 2, uah()),
-            Err(MoneyError::Overflow)
+            Err(TypesError::MoneyOverflow)
         );
     }
 

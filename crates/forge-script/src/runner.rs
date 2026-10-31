@@ -1,3 +1,4 @@
+use crate::error::ScriptError;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, Instant};
@@ -8,7 +9,6 @@ use forge_types::{
     ArgStack, EventId, IntegrationAvailability, LatestValueReader, ScriptContract, ScriptId,
 };
 
-use crate::error::ScriptError;
 use crate::globals_port::ScriptGlobals;
 use crate::schedule::ActionScheduler;
 use crate::{
@@ -21,7 +21,7 @@ pub struct RunResult {
     pub script_id: ScriptId,
     pub duration_ms: f64,
     pub error_count: usize,
-    pub output_display: String,
+    pub output_display: Option<String>,
 }
 
 #[derive(Default)]
@@ -127,10 +127,7 @@ pub async fn run_inline(
         bus,
         capabilities,
     } = host;
-    let mut scope =
-        build_scope_for_contract(&contract, &arg_stack).map_err(|e| ScriptError::Runtime {
-            reason: e.to_string(),
-        })?;
+    let mut scope = build_scope_for_contract(&contract, &arg_stack)?;
     let session = ScriptSession::open(
         settings.as_ref(),
         bus,
@@ -151,16 +148,8 @@ pub async fn run_inline(
         reason: e.to_string(),
     })??;
     let duration_ms = start.elapsed().as_secs_f64() * 1000.0;
-    let output_display = match result {
-        Ok(dyn_val) => {
-            if dyn_val.is_unit() {
-                "(unit)".to_string()
-            } else {
-                dyn_val.to_string()
-            }
-        }
-        Err(e) => return Err(e),
-    };
+    let returned = result?;
+    let output_display = (!returned.is_unit()).then(|| returned.to_string());
     Ok(RunResult {
         script_id,
         duration_ms,
@@ -288,7 +277,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(result.output_display, "from-the-reader");
+        assert_eq!(result.output_display.as_deref(), Some("from-the-reader"));
     }
 
     #[tokio::test]
@@ -309,13 +298,13 @@ mod tests {
         async fn schedule(
             &self,
             _request: crate::ScriptScheduleRequest,
-        ) -> Result<crate::ScriptSchedulePlacement, crate::ScriptScheduleError> {
-            Err(crate::ScriptScheduleError::Rejected(
+        ) -> Result<crate::ScriptSchedulePlacement, crate::ScriptError> {
+            Err(crate::ScriptError::ScheduleRejected(
                 "not under test".to_owned(),
             ))
         }
 
-        async fn cancel_by_key(&self, key: &str) -> Result<bool, crate::ScriptScheduleError> {
+        async fn cancel_by_key(&self, key: &str) -> Result<bool, crate::ScriptError> {
             Ok(key == "raid-thanks")
         }
     }
@@ -343,7 +332,7 @@ mod tests {
         .await
         .unwrap();
 
-        assert_eq!(result.output_display, "true");
+        assert_eq!(result.output_display.as_deref(), Some("true"));
     }
 
     struct RecordingSpeaker(Mutex<Vec<String>>);
@@ -354,7 +343,7 @@ mod tests {
             &self,
             text: String,
             _voice: Option<String>,
-        ) -> Result<(), crate::ScriptSpeakError> {
+        ) -> Result<(), crate::ScriptError> {
             self.0.lock().unwrap().push(text);
             Ok(())
         }

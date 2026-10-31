@@ -1,14 +1,14 @@
+use crate::error::RuntimeError;
 use std::collections::BTreeMap;
 use std::time::Duration;
 
-use forge_storage::{MissedRunPolicy, ScheduledRunId, ScheduledRunSpec, StorageError};
+use forge_storage::{MissedRunPolicy, ScheduledRunId, ScheduledRunSpec};
 use forge_types::{ActionId, EventId, Variant};
 use time::OffsetDateTime;
 
 use super::limits::{
-    MAX_LATE_TOLERANCE, MAX_PENDING_SCHEDULED_RUNS, MAX_PENDING_SCHEDULED_RUNS_PER_ACTION,
-    MAX_SCHEDULE_DELAY, MAX_SCHEDULE_KEY_CHARS, MAX_SCHEDULED_ARGS_BYTES, MIN_LATE_TOLERANCE,
-    MIN_SCHEDULE_DELAY,
+    MAX_LATE_TOLERANCE, MAX_SCHEDULE_DELAY, MAX_SCHEDULE_KEY_CHARS, MAX_SCHEDULED_ARGS_BYTES,
+    MIN_LATE_TOLERANCE, MIN_SCHEDULE_DELAY,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -37,38 +37,8 @@ pub struct ScheduledPlacement {
     pub superseded: Option<ScheduledRunId>,
 }
 
-#[derive(Debug, thiserror::Error)]
-pub enum ScheduleError {
-    #[error("the target action does not exist")]
-    UnknownAction,
-    #[error("the delay must be at least {} s", MIN_SCHEDULE_DELAY.as_secs())]
-    DelayTooShort,
-    #[error("the date-time must be at least {} s from now", MIN_SCHEDULE_DELAY.as_secs())]
-    DueTooSoon,
-    #[error("the delay must be at most {} days", MAX_SCHEDULE_DELAY.as_secs() / SECONDS_PER_DAY)]
-    DelayTooLong,
-    #[error("the late tolerance must be between {} s and {} days", MIN_LATE_TOLERANCE.as_secs(), MAX_LATE_TOLERANCE.as_secs() / SECONDS_PER_DAY)]
-    LateToleranceOutOfRange,
-    #[error("the key is longer than {MAX_SCHEDULE_KEY_CHARS} characters")]
-    KeyTooLong,
-    #[error("the captured variables take {bytes} bytes, more than {MAX_SCHEDULED_ARGS_BYTES}")]
-    ArgsTooLarge { bytes: usize },
-    #[error("the captured variables cannot be stored: {0}")]
-    ArgsNotStorable(#[from] serde_json::Error),
-    #[error("{MAX_PENDING_SCHEDULED_RUNS} scheduled runs are already pending")]
-    PendingCapReached,
-    #[error(
-        "{MAX_PENDING_SCHEDULED_RUNS_PER_ACTION} scheduled runs of this action are already pending"
-    )]
-    ActionPendingCapReached,
-    #[error("the scheduler has stopped")]
-    SchedulerStopped,
-    #[error(transparent)]
-    Storage(#[from] StorageError),
-}
-
 const SECONDS_PER_MINUTE: u64 = 60;
-const SECONDS_PER_DAY: u64 = 24 * 60 * SECONDS_PER_MINUTE;
+pub(crate) const SECONDS_PER_DAY: u64 = 24 * 60 * SECONDS_PER_MINUTE;
 
 pub(crate) fn skip_if_late_by_minutes(minutes: i64) -> MissedRunPolicy {
     let minutes = u64::try_from(minutes).unwrap_or(0);
@@ -83,7 +53,7 @@ impl ScheduleRequest {
         now: OffsetDateTime,
         label: String,
         replay: bool,
-    ) -> Result<ScheduledRunSpec, ScheduleError> {
+    ) -> Result<ScheduledRunSpec, RuntimeError> {
         let due_at = match self.due {
             ScheduleDue::After(delay) => {
                 check_delay(delay)?;
@@ -91,7 +61,7 @@ impl ScheduleRequest {
             }
             ScheduleDue::At(instant) => {
                 match check_delay(Duration::try_from(instant - now).unwrap_or(Duration::ZERO)) {
-                    Err(ScheduleError::DelayTooShort) => return Err(ScheduleError::DueTooSoon),
+                    Err(RuntimeError::DelayTooShort) => return Err(RuntimeError::DueTooSoon),
                     checked => checked?,
                 }
                 instant
@@ -116,17 +86,17 @@ impl ScheduleRequest {
     }
 }
 
-fn check_delay(delay: Duration) -> Result<(), ScheduleError> {
+fn check_delay(delay: Duration) -> Result<(), RuntimeError> {
     if delay < MIN_SCHEDULE_DELAY {
-        return Err(ScheduleError::DelayTooShort);
+        return Err(RuntimeError::DelayTooShort);
     }
     if delay > MAX_SCHEDULE_DELAY {
-        return Err(ScheduleError::DelayTooLong);
+        return Err(RuntimeError::DelayTooLong);
     }
     Ok(())
 }
 
-fn check_policy(policy: MissedRunPolicy) -> Result<(), ScheduleError> {
+fn check_policy(policy: MissedRunPolicy) -> Result<(), RuntimeError> {
     match policy {
         MissedRunPolicy::RunLateOnce => Ok(()),
         MissedRunPolicy::SkipIfLateBy(tolerance)
@@ -134,11 +104,11 @@ fn check_policy(policy: MissedRunPolicy) -> Result<(), ScheduleError> {
         {
             Ok(())
         }
-        MissedRunPolicy::SkipIfLateBy(_) => Err(ScheduleError::LateToleranceOutOfRange),
+        MissedRunPolicy::SkipIfLateBy(_) => Err(RuntimeError::LateToleranceOutOfRange),
     }
 }
 
-pub(super) fn normalized_key(key: Option<String>) -> Result<Option<String>, ScheduleError> {
+pub(super) fn normalized_key(key: Option<String>) -> Result<Option<String>, RuntimeError> {
     let Some(key) = key else {
         return Ok(None);
     };
@@ -147,15 +117,15 @@ pub(super) fn normalized_key(key: Option<String>) -> Result<Option<String>, Sche
         return Ok(None);
     }
     if trimmed.chars().count() > MAX_SCHEDULE_KEY_CHARS {
-        return Err(ScheduleError::KeyTooLong);
+        return Err(RuntimeError::KeyTooLong);
     }
     Ok(Some(trimmed.to_owned()))
 }
 
-fn check_args_size(args: &BTreeMap<String, Variant>) -> Result<(), ScheduleError> {
+fn check_args_size(args: &BTreeMap<String, Variant>) -> Result<(), RuntimeError> {
     let bytes = serde_json::to_vec(args)?.len();
     if bytes > MAX_SCHEDULED_ARGS_BYTES {
-        return Err(ScheduleError::ArgsTooLarge { bytes });
+        return Err(RuntimeError::ArgsTooLarge { bytes });
     }
     Ok(())
 }

@@ -4,9 +4,9 @@ use async_trait::async_trait;
 use forge_registry::{
     ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner, ToggleField, TypedField,
 };
-use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry};
+use forge_types::{ArgStack, MessageRef, SubActionConfig, SubActionTelemetry};
 
-use crate::speak_dispatcher::{SpeakDispatchError, SpeakDispatcher};
+use crate::speak_dispatcher::SpeakDispatcher;
 
 const QUEUE_CLEAR_KIND_ID: &str = "tts.queue.clear";
 
@@ -27,7 +27,7 @@ impl QueueClearRunner {
         Self { speak }
     }
 
-    async fn clear(&self, keep_current: bool) -> Result<(), SpeakDispatchError> {
+    async fn clear(&self, keep_current: bool) -> Result<(), MessageRef> {
         if !keep_current {
             self.speak.stop_current().await?;
         }

@@ -10,7 +10,7 @@ use tracing::debug;
 
 use crate::api::{DonatelloAccount, DonatelloApi, PAGE_SIZE};
 use crate::credentials;
-use crate::error::DonatelloError;
+use crate::error::{DonatelloError, redacted_serde_reason};
 use crate::normalize::{created_at_instant, donation_from_wire};
 use crate::status::{PollFailure, PollPhase, StatusBoard};
 use crate::wire::{CREATED_AT_FIELD, DONATION_ID_FIELD, DonateWire, DonatesPageWire};
@@ -309,7 +309,7 @@ fn harvest(
         let parsed = serde_json::from_value::<DonateWire>(item)
             .map_err(|error| DonatelloError::InvalidDonation {
                 donation_id,
-                reason: format!("{:?} error in the donation record", error.classify()),
+                reason: format!("{} in the donation record", redacted_serde_reason(&error)),
             })
             .and_then(|wire| donation_from_wire(provider, wire, origin));
         match parsed {

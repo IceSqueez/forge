@@ -1,19 +1,11 @@
+use crate::error::RuntimeError;
 use forge_types::{Variant, datetime_from_text};
 use time::OffsetDateTime;
-
-#[derive(Debug, thiserror::Error)]
-pub(crate) enum DatetimeInputError {
-    #[error("unix timestamp out of range: {0}")]
-    TimestampOutOfRange(#[from] time::error::ComponentRange),
-
-    #[error("cannot parse '{0}' as a datetime or unix timestamp")]
-    Unreadable(String),
-}
 
 pub(crate) fn resolve_datetime(
     v: &Variant,
     stack_interp: &str,
-) -> Result<OffsetDateTime, DatetimeInputError> {
+) -> Result<OffsetDateTime, RuntimeError> {
     if let Some(dt) = v.as_datetime() {
         return Ok(*dt);
     }
@@ -27,7 +19,7 @@ pub(crate) fn resolve_datetime(
                 .ok()
                 .and_then(|ts| OffsetDateTime::from_unix_timestamp(ts).ok())
         })
-        .ok_or_else(|| DatetimeInputError::Unreadable(s.to_owned()))
+        .ok_or_else(|| RuntimeError::UnreadableDatetime(s.to_owned()))
 }
 
 #[cfg(test)]

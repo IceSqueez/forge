@@ -3,7 +3,7 @@ use std::hash::Hash;
 use std::sync::Arc;
 
 use forge_hotkey::HotkeyReconciler;
-use forge_runtime::{MembershipOutcome, OverlayServiceError};
+use forge_runtime::{MembershipOutcome, RuntimeError};
 use forge_speak_queue::{
     PipelineConfigHandle, SpeakCommand, SpeakQueueHandle, build_config, repeat_window,
 };
@@ -230,7 +230,7 @@ async fn materialize_stored_overlays(services: &PackServices) -> bool {
             .await
         {
             Ok(_) => {}
-            Err(OverlayServiceError::UnavailableKind { id, kind_id }) => {
+            Err(RuntimeError::UnavailableOverlayKind { id, kind_id }) => {
                 tracing::info!(overlay = %id, %kind_id, "imported overlay type is not in this build");
             }
             Err(error) => {

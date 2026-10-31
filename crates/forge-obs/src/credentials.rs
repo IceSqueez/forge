@@ -14,16 +14,6 @@ pub struct StoredCredential {
     pub password: Secret,
 }
 
-#[derive(Debug, thiserror::Error)]
-pub enum ObsConnectError {
-    #[error(transparent)]
-    Storage(#[from] StorageError),
-    #[error("OBS credentials not stored")]
-    NotStored,
-    #[error(transparent)]
-    Connect(#[from] ObsError),
-}
-
 pub async fn store(
     creds: &dyn CredentialsRepo,
     host: &str,
@@ -59,8 +49,8 @@ pub async fn clear(creds: &dyn CredentialsRepo) -> Result<bool, StorageError> {
 pub async fn load_and_connect(
     creds: &dyn CredentialsRepo,
     bus: Arc<dyn EventPublisher>,
-) -> Result<Arc<ObsClient>, ObsConnectError> {
-    let cred = load(creds).await?.ok_or(ObsConnectError::NotStored)?;
+) -> Result<Arc<ObsClient>, ObsError> {
+    let cred = load(creds).await?.ok_or(ObsError::NotStored)?;
     let pw = Some(cred.password.expose()).filter(|password| !password.is_empty());
     let client = ObsClient::connect(&cred.url, pw, bus).await?;
     Ok(Arc::new(client))

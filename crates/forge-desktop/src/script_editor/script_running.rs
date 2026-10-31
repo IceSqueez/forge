@@ -127,9 +127,12 @@ impl ScriptEditorView {
             Ok(r) => {
                 self.run_modal = None;
                 self._run_sub = None;
+                let value = r
+                    .output_display
+                    .unwrap_or_else(|| tr!("script_console_no_value"));
                 self.push_console(
                     LogTag::Ok,
-                    tr!("script_console_returned", value = r.output_display.as_str()),
+                    tr!("script_console_returned", value = value.as_str()),
                 );
                 self.push_console(
                     LogTag::Stats,

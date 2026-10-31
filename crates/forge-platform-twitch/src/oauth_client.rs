@@ -259,7 +259,7 @@ mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     use super::{DevicePoll, TwitchOAuthClient};
-    use crate::BotLoginError;
+    use crate::TwitchError;
     use crate::sub_actions::test_support::{oauth_client_at, oauth_client_limited_by};
 
     const CLIENT: &str = "test_client";
@@ -355,12 +355,16 @@ mod tests {
 
     #[tokio::test]
     async fn terminal_device_poll_answers_map_to_typed_bot_login_errors() {
-        type Expectation = fn(&BotLoginError) -> bool;
+        type Expectation = fn(&TwitchError) -> bool;
         let cases: [(&str, Expectation); 3] = [
-            ("access_denied", |e| matches!(e, BotLoginError::Denied)),
-            ("expired_token", |e| matches!(e, BotLoginError::Expired)),
+            ("access_denied", |e| {
+                matches!(e, TwitchError::BotLoginDenied)
+            }),
+            ("expired_token", |e| {
+                matches!(e, TwitchError::BotLoginExpired)
+            }),
             ("invalid device code", |e| {
-                matches!(e, BotLoginError::Expired)
+                matches!(e, TwitchError::BotLoginExpired)
             }),
         ];
 
@@ -370,7 +374,7 @@ mod tests {
             let Err(error) = poll(&server).await else {
                 panic!("{answer} must end the poll");
             };
-            let mapped = BotLoginError::from(error);
+            let mapped = TwitchError::from(error);
 
             assert!(expected(&mapped), "{answer} mapped to {mapped:?}");
         }

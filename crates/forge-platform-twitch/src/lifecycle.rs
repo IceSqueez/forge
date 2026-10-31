@@ -1,10 +1,11 @@
+use crate::error::TwitchError;
 use forge_types::RecoverRwLock;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 
 use forge_platform_core::{CollectionRevisionSignal, CollectionRevisions, QuickActionLiveness};
 
-use crate::helix::{HelixError, HelixMethod, HelixRequest, HelixTransport};
+use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
 use crate::vocabulary::topics;
 use forge_net::status::FORBIDDEN;
 
@@ -272,8 +273,8 @@ impl TwitchLifecycle {
                 Some(false) => Some(ShieldPhase::Inactive),
                 None => None,
             },
-            Err(HelixError::ReauthRequired) => Some(ShieldPhase::Unauthorized),
-            Err(HelixError::Http { status, .. }) if status == FORBIDDEN => {
+            Err(TwitchError::ReauthRequired) => Some(ShieldPhase::Unauthorized),
+            Err(TwitchError::Http { status, .. }) if status == FORBIDDEN => {
                 Some(ShieldPhase::Unauthorized)
             }
             Err(_) => None,
@@ -376,7 +377,7 @@ impl LifecycleSnapshot {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::helix::HelixError;
+    use crate::error::TwitchError;
     use crate::sub_actions::test_support::MockTransport;
     use serde_json::{Value, json};
 
@@ -605,8 +606,8 @@ mod tests {
         lifecycle.apply_notification("channel.poll.begin", &Value::Null, SELF_ID);
         lifecycle.apply_notification("channel.prediction.lock", &Value::Null, SELF_ID);
         let transport = MockTransport::returning_sequence(vec![
-            Err(HelixError::RateLimited),
-            Err(HelixError::Http {
+            Err(TwitchError::RateLimited),
+            Err(TwitchError::Http {
                 status: reqwest::StatusCode::UNAUTHORIZED.as_u16(),
                 body: "unauthorized".to_owned(),
             }),
@@ -907,11 +908,11 @@ mod tests {
 
     #[tokio::test]
     async fn shield_seed_maps_the_helix_answer_to_a_shield_phase() {
-        let forbidden = || HelixError::Http {
+        let forbidden = || TwitchError::Http {
             status: reqwest::StatusCode::FORBIDDEN.as_u16(),
             body: "Missing scope: moderator:read:shield_mode".to_owned(),
         };
-        let cases: Vec<(&str, Result<Value, HelixError>, ShieldPhase)> = vec![
+        let cases: Vec<(&str, Result<Value, TwitchError>, ShieldPhase)> = vec![
             ("active", Ok(shield_row(json!(true))), ShieldPhase::Active),
             (
                 "inactive",
@@ -920,7 +921,7 @@ mod tests {
             ),
             (
                 "401 still rejected after the refresh",
-                Err(HelixError::ReauthRequired),
+                Err(TwitchError::ReauthRequired),
                 ShieldPhase::Unauthorized,
             ),
             (
@@ -930,7 +931,7 @@ mod tests {
             ),
             (
                 "other HTTP failure",
-                Err(HelixError::Http {
+                Err(TwitchError::Http {
                     status: reqwest::StatusCode::BAD_REQUEST.as_u16(),
                     body: "bad request".to_owned(),
                 }),
@@ -938,12 +939,12 @@ mod tests {
             ),
             (
                 "rate limited",
-                Err(HelixError::RateLimited),
+                Err(TwitchError::RateLimited),
                 ShieldPhase::Unknown,
             ),
             (
                 "transport failure",
-                Err(HelixError::Transport("connection reset".to_owned())),
+                Err(TwitchError::Transport("connection reset".to_owned())),
                 ShieldPhase::Unknown,
             ),
             (
@@ -976,15 +977,15 @@ mod tests {
 
     #[tokio::test]
     async fn a_shield_phase_learned_from_a_notification_survives_a_failed_or_unreadable_seed() {
-        let failures: Vec<(&str, Result<Value, HelixError>)> = vec![
-            ("rate limited", Err(HelixError::RateLimited)),
+        let failures: Vec<(&str, Result<Value, TwitchError>)> = vec![
+            ("rate limited", Err(TwitchError::RateLimited)),
             (
                 "transport failure",
-                Err(HelixError::Transport("connection reset".to_owned())),
+                Err(TwitchError::Transport("connection reset".to_owned())),
             ),
             (
                 "other HTTP failure",
-                Err(HelixError::Http {
+                Err(TwitchError::Http {
                     status: reqwest::StatusCode::BAD_REQUEST.as_u16(),
                     body: "bad request".to_owned(),
                 }),
@@ -1072,15 +1073,15 @@ mod tests {
     async fn each_seeded_phase_bumps_the_quick_action_revision() {
         let cases = [
             (
-                vec![Ok(rows(&["ACTIVE"])), Err(HelixError::RateLimited)],
+                vec![Ok(rows(&["ACTIVE"])), Err(TwitchError::RateLimited)],
                 true,
             ),
             (
-                vec![Err(HelixError::RateLimited), Ok(rows(&["LOCKED"]))],
+                vec![Err(TwitchError::RateLimited), Ok(rows(&["LOCKED"]))],
                 true,
             ),
             (
-                vec![Err(HelixError::RateLimited), Err(HelixError::RateLimited)],
+                vec![Err(TwitchError::RateLimited), Err(TwitchError::RateLimited)],
                 false,
             ),
         ];

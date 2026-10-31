@@ -1,11 +1,11 @@
+use crate::error::TwitchError;
 use serde::{Deserialize, Serialize};
-use thiserror::Error;
 use tracing::debug;
 
 use super::TwitchBotAccount;
 use crate::chat::refusal_text;
 use crate::credentials::load;
-use crate::helix::{HelixError, HelixMethod, HelixRequest};
+use crate::helix::{HelixMethod, HelixRequest};
 use forge_net::status::BAD_REQUEST;
 
 const MODERATORS_PATH: &str = "/helix/moderation/moderators";
@@ -18,22 +18,6 @@ pub enum BotModerator {
     Unknown,
     Moderator,
     NotModerator,
-}
-
-#[derive(Debug, Error)]
-pub enum BotModeratorError {
-    #[error("no bot account is signed in")]
-    BotNotConnected,
-    #[error("sign in to the streamer account again to grant moderator management")]
-    BroadcasterReauthRequired,
-    #[error("the bot account is banned in this channel; unban it first")]
-    BotBanned,
-    #[error("the bot account is a VIP; remove its VIP status first")]
-    BotIsVip,
-    #[error("Twitch refused: {0}")]
-    Refused(String),
-    #[error("{0}")]
-    Unavailable(String),
 }
 
 impl TwitchBotAccount {
@@ -61,15 +45,15 @@ impl TwitchBotAccount {
         }
     }
 
-    pub async fn make_moderator(&self) -> Result<(), BotModeratorError> {
+    pub async fn make_moderator(&self) -> Result<(), TwitchError> {
         let transport = &self.broadcaster_transport;
         let bot_id = self
             .connected_user_id()
-            .ok_or(BotModeratorError::BotNotConnected)?;
+            .ok_or(TwitchError::BotNotSignedIn)?;
         let broadcaster = load(self.repo.as_ref())
             .await
-            .map_err(|e| BotModeratorError::Unavailable(e.to_string()))?
-            .ok_or(BotModeratorError::BroadcasterReauthRequired)?;
+            .map_err(|e| TwitchError::ModeratorUnavailable(e.to_string()))?
+            .ok_or(TwitchError::BroadcasterReauthRequired)?;
         let request = HelixRequest::new(HelixMethod::Post, MODERATORS_PATH)
             .query("broadcaster_id", broadcaster.user_id)
             .query("user_id", bot_id)
@@ -79,20 +63,20 @@ impl TwitchBotAccount {
                 self.set_moderator(BotModerator::Moderator);
                 Ok(())
             }
-            Err(HelixError::ReauthRequired) => Err(BotModeratorError::BroadcasterReauthRequired),
-            Err(HelixError::Http { status, body }) => self.classify_rejection(status, &body),
-            Err(HelixError::RateLimited) => Err(BotModeratorError::Refused(
+            Err(TwitchError::ReauthRequired) => Err(TwitchError::BroadcasterReauthRequired),
+            Err(TwitchError::Http { status, body }) => self.classify_rejection(status, &body),
+            Err(TwitchError::RateLimited) => Err(TwitchError::ModeratorRefused(
                 "Twitch is rate limiting moderator changes; try again shortly".to_owned(),
             )),
-            Err(other) => Err(BotModeratorError::Unavailable(other.to_string())),
+            Err(other) => Err(TwitchError::ModeratorUnavailable(other.to_string())),
         }
     }
 
-    fn classify_rejection(&self, status: u16, body: &str) -> Result<(), BotModeratorError> {
+    fn classify_rejection(&self, status: u16, body: &str) -> Result<(), TwitchError> {
         let reason = refusal_text(body);
         let lowered = reason.to_lowercase();
         if status == forge_net::status::UNPROCESSABLE_ENTITY {
-            return Err(BotModeratorError::BotIsVip);
+            return Err(TwitchError::BotIsVip);
         }
         if status == BAD_REQUEST {
             if lowered.contains(ALREADY_MODERATOR_MARKER) {
@@ -100,10 +84,10 @@ impl TwitchBotAccount {
                 return Ok(());
             }
             if lowered.contains(BOT_BANNED_MARKER) {
-                return Err(BotModeratorError::BotBanned);
+                return Err(TwitchError::BotBanned);
             }
         }
-        Err(BotModeratorError::Refused(reason))
+        Err(TwitchError::ModeratorRefused(reason))
     }
 }
 
@@ -122,16 +106,16 @@ mod tests {
     };
     use crate::vocabulary::event_kinds::BOT_STATUS_CHANGED as BOT_STATUS_CHANGED_KIND;
 
-    fn listed() -> Result<serde_json::Value, HelixError> {
+    fn listed() -> Result<serde_json::Value, TwitchError> {
         Ok(serde_json::json!({"data": [{"user_id": BOT_USER_ID, "user_login": BOT_LOGIN}]}))
     }
 
-    fn unlisted() -> Result<serde_json::Value, HelixError> {
+    fn unlisted() -> Result<serde_json::Value, TwitchError> {
         Ok(serde_json::json!({"data": []}))
     }
 
     async fn connected_with(
-        broadcaster_responses: Vec<Result<serde_json::Value, HelixError>>,
+        broadcaster_responses: Vec<Result<serde_json::Value, TwitchError>>,
     ) -> (BotHarness, Arc<MockTransport>) {
         let harness = BotHarness::connected().await;
         let broadcaster = Arc::new(MockTransport::returning_sequence(broadcaster_responses));
@@ -141,11 +125,11 @@ mod tests {
 
     #[tokio::test]
     async fn moderator_lookup_classifies_the_bot_from_the_broadcasters_moderator_list() {
-        let cases: [(Result<serde_json::Value, HelixError>, BotModerator); 3] = [
+        let cases: [(Result<serde_json::Value, TwitchError>, BotModerator); 3] = [
             (listed(), BotModerator::Moderator),
             (unlisted(), BotModerator::NotModerator),
             (
-                Err(HelixError::Http {
+                Err(TwitchError::Http {
                     status: 500,
                     body: "boom".to_owned(),
                 }),
@@ -263,8 +247,8 @@ mod tests {
         assert_eq!(harness.bot.status(), BotStatus::NotConnected);
     }
 
-    fn http(status: u16, message: &str) -> Result<serde_json::Value, HelixError> {
-        Err(HelixError::Http {
+    fn http(status: u16, message: &str) -> Result<serde_json::Value, TwitchError> {
+        Err(TwitchError::Http {
             status,
             body: serde_json::json!({"status": status, "message": message}).to_string(),
         })
@@ -272,9 +256,9 @@ mod tests {
 
     #[tokio::test]
     async fn make_moderator_maps_every_twitch_answer_to_a_typed_outcome() {
-        type Expectation = fn(&Result<(), BotModeratorError>) -> bool;
+        type Expectation = fn(&Result<(), TwitchError>) -> bool;
         let cases: [(
-            Result<serde_json::Value, HelixError>,
+            Result<serde_json::Value, TwitchError>,
             Expectation,
             BotModerator,
         ); 9] = [
@@ -290,37 +274,37 @@ mod tests {
             ),
             (
                 http(400, "The user is banned from this channel"),
-                |r| matches!(r, Err(BotModeratorError::BotBanned)),
+                |r| matches!(r, Err(TwitchError::BotBanned)),
                 BotModerator::Unknown,
             ),
             (
                 http(400, "Invalid urban_bot target"),
-                |r| matches!(r, Err(BotModeratorError::Refused(_))),
+                |r| matches!(r, Err(TwitchError::ModeratorRefused(_))),
                 BotModerator::Unknown,
             ),
             (
                 http(422, "user is a vip"),
-                |r| matches!(r, Err(BotModeratorError::BotIsVip)),
+                |r| matches!(r, Err(TwitchError::BotIsVip)),
                 BotModerator::Unknown,
             ),
             (
-                Err(HelixError::ReauthRequired),
-                |r| matches!(r, Err(BotModeratorError::BroadcasterReauthRequired)),
+                Err(TwitchError::ReauthRequired),
+                |r| matches!(r, Err(TwitchError::BroadcasterReauthRequired)),
                 BotModerator::Unknown,
             ),
             (
                 http(400, "Missing user_id"),
-                |r| matches!(r, Err(BotModeratorError::Refused(m)) if m == "Missing user_id"),
+                |r| matches!(r, Err(TwitchError::ModeratorRefused(m)) if m == "Missing user_id"),
                 BotModerator::Unknown,
             ),
             (
-                Err(HelixError::RateLimited),
-                |r| matches!(r, Err(BotModeratorError::Refused(_))),
+                Err(TwitchError::RateLimited),
+                |r| matches!(r, Err(TwitchError::ModeratorRefused(_))),
                 BotModerator::Unknown,
             ),
             (
-                Err(HelixError::Transport("offline".to_owned())),
-                |r| matches!(r, Err(BotModeratorError::Unavailable(_))),
+                Err(TwitchError::Transport("offline".to_owned())),
+                |r| matches!(r, Err(TwitchError::ModeratorUnavailable(_))),
                 BotModerator::Unknown,
             ),
         ];
@@ -352,16 +336,13 @@ mod tests {
 
         let without_bot = harness.bot.make_moderator().await;
 
-        assert!(matches!(
-            without_bot,
-            Err(BotModeratorError::BotNotConnected)
-        ));
+        assert!(matches!(without_bot, Err(TwitchError::BotNotSignedIn)));
         assert_eq!(broadcaster.call_count(), 0);
     }
 
     #[tokio::test]
     async fn only_a_400_saying_already_a_moderator_is_kept_out_of_request_fail() {
-        type Expectation = fn(&Result<(), BotModeratorError>) -> bool;
+        type Expectation = fn(&Result<(), TwitchError>) -> bool;
         let refusal = |status: StatusCode, message: &str| {
             ResponseTemplate::new(status.as_u16()).set_body_json(
                 serde_json::json!({"error": "x", "status": status.as_u16(), "message": message}),
@@ -383,12 +364,12 @@ mod tests {
                     StatusCode::BAD_REQUEST,
                     "The user is banned from this channel",
                 ),
-                |r| matches!(r, Err(BotModeratorError::BotBanned)),
+                |r| matches!(r, Err(TwitchError::BotBanned)),
                 1,
             ),
             (
                 refusal(StatusCode::UNPROCESSABLE_ENTITY, "user is already a vip"),
-                |r| matches!(r, Err(BotModeratorError::BotIsVip)),
+                |r| matches!(r, Err(TwitchError::BotIsVip)),
                 1,
             ),
         ];

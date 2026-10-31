@@ -4,6 +4,7 @@ mod data_flow;
 mod date_pattern;
 mod datetime_text;
 mod donation;
+mod error;
 mod execution;
 mod ids;
 mod integration;
@@ -31,14 +32,14 @@ mod variant;
 pub use action::{Action, ExecutionMode};
 pub use clock::{MonotonicClock, SystemMonotonicClock, SystemWallClock, WallClock};
 pub use data_flow::{DeclaredVariable, SynthesisHint, VariableSchema};
-pub use date_pattern::DateTextError;
 pub use date_pattern::{
-    DatePattern, DatePatternError, LegacyTranslation, NamesLanguage, ParsedPattern, PatternZone,
+    DatePattern, LegacyTranslation, NamesLanguage, ParsedPattern, PatternZone,
     current_names_language, set_current_names_language, shared_date_pattern,
     translate_legacy_pattern,
 };
 pub use datetime_text::{datetime_from_text, datetime_to_text};
 pub use donation::{Donation, DonationOrigin, Donor, DonorVisibility};
+pub use error::TypesError;
 pub use execution::{
     ArgStack, COMMAND_ARGS_VARIABLE, COMMAND_NAME_VARIABLE, COMMAND_TAIL_VARIABLE,
     ExecutionContext, ExecutionMetadata, ExecutionOutcome, SubActionOutcome, SubActionTelemetry,
@@ -52,16 +53,14 @@ pub use latest::{
     latest_fields,
 };
 pub use log_target::SCRIPT_LOG_TARGET;
-pub use message::MessageCodeError;
 pub use message::{
     COMMON_MESSAGES, FiniteFloat, HEALTH_VIEWERS, INTEGRATION_DISABLED, MAX_UPSTREAM_DETAIL_CHARS,
-    MESSAGE_KEY_PREFIX, MessageArg, MessageCatalog, MessageCatalogError, MessageCode, MessageRef,
+    MESSAGE_KEY_PREFIX, MessageArg, MessageCatalog, MessageCode, MessageRef,
     NO_CHAT_PLATFORM_ENABLED, NO_WHISPER_PLATFORM_ENABLED, UNKNOWN_CHAT_TARGET, UPSTREAM_FAILURE,
     UpstreamDetail, UserText, VerbatimText, WHISPERS_UNSUPPORTED,
 };
-pub use money::{CurrencyCode, MICROS_PER_MAJOR_UNIT, MoneyAmount, MoneyError};
+pub use money::{CurrencyCode, MICROS_PER_MAJOR_UNIT, MoneyAmount};
 pub use permission_rung::PermissionRung;
-pub use permission_rung::PermissionRungError;
 pub use platform::{
     PlatformId, requested_chat_target, resolve_chat_target, unknown_chat_target_message,
 };
@@ -82,7 +81,6 @@ pub use unified_chat::{
     ChatPayload, ChatReply, ChatSegment, ChatViewer, ChatViewerProfile, ModerationMarks,
     UnifiedChatRow, UserBadge, UserRemoval, authored_by_connected_bot, is_bot_account,
 };
-pub use variant::VariantError;
 pub use variant::{
     MAX_COLLECTION_LEN as VARIANT_MAX_COLLECTION_LEN, MAX_DEPTH as VARIANT_MAX_DEPTH, Variant,
     VariantKind, display_scalar,

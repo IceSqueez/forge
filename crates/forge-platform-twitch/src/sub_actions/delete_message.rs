@@ -94,7 +94,7 @@ impl SubActionRunner for DeleteMessageRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::helix::HelixError;
+    use crate::error::TwitchError;
     use crate::sub_actions::test_support::{
         MockCreds, MockTransport, SELF_USER_ID, TOKEN_SENTINEL, assert_request_refused,
         chat_trigger_args, make_ctx,
@@ -103,7 +103,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     fn runner_with(
-        response: Result<serde_json::Value, HelixError>,
+        response: Result<serde_json::Value, TwitchError>,
         creds: forge_storage::test_support::MemoryCredentials,
     ) -> (Arc<MockTransport>, DeleteMessageRunner) {
         let transport = Arc::new(MockTransport::returning(response));
@@ -185,7 +185,7 @@ mod tests {
     #[tokio::test]
     async fn helix_http_failure_maps_to_failed_outcome_without_token_or_url() {
         let (_transport, runner) = runner_with(
-            Err(HelixError::Http {
+            Err(TwitchError::Http {
                 status: 403,
                 body: format!("moderator scope missing {TOKEN_SENTINEL}"),
             }),

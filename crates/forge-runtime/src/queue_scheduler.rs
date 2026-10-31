@@ -1,3 +1,4 @@
+use crate::error::RuntimeError;
 use forge_types::{Action, ActionId, ArgStack, EventId, Queue, QueueId, RecoverMutex};
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
@@ -61,16 +62,6 @@ enum NextTask {
     Ready(QueueTask),
     Overcommitted,
     Closed,
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum SchedulerError {
-    #[error("scheduler channel closed")]
-    ChannelClosed,
-    #[error("queue not found: {0}")]
-    QueueNotFound(QueueId),
-    #[error("queue refused the run: {0}")]
-    Refused(&'static str),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -208,22 +199,19 @@ pub struct QueueSchedulerHandle {
 
 enum SchedulerCommand {
     Enqueue(SchedulerRequest),
-    Offer(
-        SchedulerRequest,
-        oneshot::Sender<Result<(), SchedulerError>>,
-    ),
+    Offer(SchedulerRequest, oneshot::Sender<Result<(), RuntimeError>>),
     Admit(
         SchedulerRequest,
         ScheduledOrigin,
-        oneshot::Sender<Result<(), SchedulerError>>,
+        oneshot::Sender<Result<(), RuntimeError>>,
     ),
     IntakeRefusal(QueueId, bool, oneshot::Sender<Option<&'static str>>),
     SetMode(
         QueueId,
         QueueMode,
-        oneshot::Sender<Result<(), SchedulerError>>,
+        oneshot::Sender<Result<(), RuntimeError>>,
     ),
-    Clear(QueueId, bool, oneshot::Sender<Result<(), SchedulerError>>),
+    Clear(QueueId, bool, oneshot::Sender<Result<(), RuntimeError>>),
     Register(Queue, oneshot::Sender<MembershipOutcome>),
     Deregister(QueueId, oneshot::Sender<MembershipOutcome>),
     Reconfigure(Queue, oneshot::Sender<MembershipOutcome>),
@@ -499,42 +487,42 @@ impl QueueTask {
 }
 
 impl QueueSchedulerHandle {
-    pub async fn dispatch(&self, req: SchedulerRequest) -> Result<(), SchedulerError> {
+    pub async fn dispatch(&self, req: SchedulerRequest) -> Result<(), RuntimeError> {
         self.sender
             .send(SchedulerCommand::Enqueue(req))
-            .map_err(|_| SchedulerError::ChannelClosed)
+            .map_err(|_| RuntimeError::SchedulerChannelClosed)
     }
 
-    pub(crate) async fn offer(&self, req: SchedulerRequest) -> Result<(), SchedulerError> {
+    pub(crate) async fn offer(&self, req: SchedulerRequest) -> Result<(), RuntimeError> {
         let (tx, rx) = oneshot::channel();
         self.sender
             .send(SchedulerCommand::Offer(req, tx))
-            .map_err(|_| SchedulerError::ChannelClosed)?;
-        rx.await.map_err(|_| SchedulerError::ChannelClosed)?
+            .map_err(|_| RuntimeError::SchedulerChannelClosed)?;
+        rx.await.map_err(|_| RuntimeError::SchedulerChannelClosed)?
     }
 
     pub(crate) async fn admit(
         &self,
         req: SchedulerRequest,
         origin: ScheduledOrigin,
-    ) -> Result<(), SchedulerError> {
+    ) -> Result<(), RuntimeError> {
         let (tx, rx) = oneshot::channel();
         self.sender
             .send(SchedulerCommand::Admit(req, origin, tx))
-            .map_err(|_| SchedulerError::ChannelClosed)?;
-        rx.await.map_err(|_| SchedulerError::ChannelClosed)?
+            .map_err(|_| RuntimeError::SchedulerChannelClosed)?;
+        rx.await.map_err(|_| RuntimeError::SchedulerChannelClosed)?
     }
 
     pub(crate) async fn intake_refusal(
         &self,
         queue_id: QueueId,
         bypass_pause: bool,
-    ) -> Result<Option<&'static str>, SchedulerError> {
+    ) -> Result<Option<&'static str>, RuntimeError> {
         let (tx, rx) = oneshot::channel();
         self.sender
             .send(SchedulerCommand::IntakeRefusal(queue_id, bypass_pause, tx))
-            .map_err(|_| SchedulerError::ChannelClosed)?;
-        rx.await.map_err(|_| SchedulerError::ChannelClosed)
+            .map_err(|_| RuntimeError::SchedulerChannelClosed)?;
+        rx.await.map_err(|_| RuntimeError::SchedulerChannelClosed)
     }
 
     pub(crate) fn intake_changes(&self) -> watch::Receiver<()> {
@@ -543,44 +531,44 @@ impl QueueSchedulerHandle {
         changes
     }
 
-    pub async fn set_mode(&self, queue_id: QueueId, mode: QueueMode) -> Result<(), SchedulerError> {
+    pub async fn set_mode(&self, queue_id: QueueId, mode: QueueMode) -> Result<(), RuntimeError> {
         let (tx, rx) = oneshot::channel();
         self.sender
             .send(SchedulerCommand::SetMode(queue_id, mode, tx))
-            .map_err(|_| SchedulerError::ChannelClosed)?;
-        rx.await.map_err(|_| SchedulerError::ChannelClosed)?
+            .map_err(|_| RuntimeError::SchedulerChannelClosed)?;
+        rx.await.map_err(|_| RuntimeError::SchedulerChannelClosed)?
     }
 
-    pub async fn clear(&self, queue_id: QueueId, keep_current: bool) -> Result<(), SchedulerError> {
+    pub async fn clear(&self, queue_id: QueueId, keep_current: bool) -> Result<(), RuntimeError> {
         let (tx, rx) = oneshot::channel();
         self.sender
             .send(SchedulerCommand::Clear(queue_id, keep_current, tx))
-            .map_err(|_| SchedulerError::ChannelClosed)?;
-        rx.await.map_err(|_| SchedulerError::ChannelClosed)?
+            .map_err(|_| RuntimeError::SchedulerChannelClosed)?;
+        rx.await.map_err(|_| RuntimeError::SchedulerChannelClosed)?
     }
 
-    pub async fn register(&self, queue: Queue) -> Result<MembershipOutcome, SchedulerError> {
+    pub async fn register(&self, queue: Queue) -> Result<MembershipOutcome, RuntimeError> {
         let (tx, rx) = oneshot::channel();
         self.sender
             .send(SchedulerCommand::Register(queue, tx))
-            .map_err(|_| SchedulerError::ChannelClosed)?;
-        rx.await.map_err(|_| SchedulerError::ChannelClosed)
+            .map_err(|_| RuntimeError::SchedulerChannelClosed)?;
+        rx.await.map_err(|_| RuntimeError::SchedulerChannelClosed)
     }
 
-    pub async fn deregister(&self, queue_id: QueueId) -> Result<MembershipOutcome, SchedulerError> {
+    pub async fn deregister(&self, queue_id: QueueId) -> Result<MembershipOutcome, RuntimeError> {
         let (tx, rx) = oneshot::channel();
         self.sender
             .send(SchedulerCommand::Deregister(queue_id, tx))
-            .map_err(|_| SchedulerError::ChannelClosed)?;
-        rx.await.map_err(|_| SchedulerError::ChannelClosed)
+            .map_err(|_| RuntimeError::SchedulerChannelClosed)?;
+        rx.await.map_err(|_| RuntimeError::SchedulerChannelClosed)
     }
 
-    pub async fn reconfigure(&self, queue: Queue) -> Result<MembershipOutcome, SchedulerError> {
+    pub async fn reconfigure(&self, queue: Queue) -> Result<MembershipOutcome, RuntimeError> {
         let (tx, rx) = oneshot::channel();
         self.sender
             .send(SchedulerCommand::Reconfigure(queue, tx))
-            .map_err(|_| SchedulerError::ChannelClosed)?;
-        rx.await.map_err(|_| SchedulerError::ChannelClosed)
+            .map_err(|_| RuntimeError::SchedulerChannelClosed)?;
+        rx.await.map_err(|_| RuntimeError::SchedulerChannelClosed)
     }
 
     pub fn watch_depths(&self) -> QueueDepthWatch {
@@ -600,14 +588,12 @@ impl QueueSchedulerHandle {
         self.tasks.shutdown(grace).await
     }
 
-    pub async fn queue_states(
-        &self,
-    ) -> Result<HashMap<QueueId, QueueRuntimeState>, SchedulerError> {
+    pub async fn queue_states(&self) -> Result<HashMap<QueueId, QueueRuntimeState>, RuntimeError> {
         let (tx, rx) = oneshot::channel();
         self.sender
             .send(SchedulerCommand::QueryStates(tx))
-            .map_err(|_| SchedulerError::ChannelClosed)?;
-        rx.await.map_err(|_| SchedulerError::ChannelClosed)
+            .map_err(|_| RuntimeError::SchedulerChannelClosed)?;
+        rx.await.map_err(|_| RuntimeError::SchedulerChannelClosed)
     }
 }
 
@@ -865,7 +851,7 @@ impl QueueScheduler {
                 }
                 SchedulerCommand::Offer(req, reply) => {
                     let admitted = Self::enqueue(req, Arrival::Triggered, &mut slots, &bus)
-                        .map_err(SchedulerError::Refused);
+                        .map_err(RuntimeError::QueueRefused);
                     #[expect(
                         clippy::let_underscore_must_use,
                         reason = "the requester may stop waiting for the reply"
@@ -874,7 +860,7 @@ impl QueueScheduler {
                 }
                 SchedulerCommand::Admit(req, origin, reply) => {
                     let admitted = Self::enqueue(req, Arrival::Scheduled(origin), &mut slots, &bus)
-                        .map_err(SchedulerError::Refused);
+                        .map_err(RuntimeError::QueueRefused);
                     #[expect(
                         clippy::let_underscore_must_use,
                         reason = "the requester may stop waiting for the reply"
@@ -1080,10 +1066,10 @@ impl QueueScheduler {
         mode: QueueMode,
         slots: &mut HashMap<QueueId, QueueSlot>,
         bus: &Arc<EventBus>,
-    ) -> Result<(), SchedulerError> {
+    ) -> Result<(), RuntimeError> {
         let slot = slots
             .get_mut(queue_id)
-            .ok_or(SchedulerError::QueueNotFound(*queue_id))?;
+            .ok_or(RuntimeError::QueueNotFound(*queue_id))?;
 
         if slot.mode == mode {
             return Ok(());
@@ -1130,10 +1116,10 @@ impl QueueScheduler {
         queue_id: &QueueId,
         keep_current: bool,
         bus: &Arc<EventBus>,
-    ) -> Result<(), SchedulerError> {
+    ) -> Result<(), RuntimeError> {
         let slot = slots
             .get(queue_id)
-            .ok_or(SchedulerError::QueueNotFound(*queue_id))?;
+            .ok_or(RuntimeError::QueueNotFound(*queue_id))?;
 
         if !keep_current {
             slot.inflight.cancel_all();
@@ -2069,7 +2055,7 @@ mod tests {
         let sched = spawn_sched(&dp, &bus, Arc::new(SubActionRegistry::new()), vec![]);
 
         let err = sched.clear(QueueId::new(), true).await.unwrap_err();
-        assert!(matches!(err, SchedulerError::QueueNotFound(_)));
+        assert!(matches!(err, RuntimeError::QueueNotFound(_)));
         sched.shutdown();
     }
 
@@ -2799,7 +2785,7 @@ mod tests {
             let offered = sched.offer(req(q_id, ActionId::new())).await;
 
             assert!(
-                matches!(offered, Err(SchedulerError::Refused(reason)) if reason == expected),
+                matches!(offered, Err(RuntimeError::QueueRefused(reason)) if reason == expected),
                 "mode {mode:?}: got {offered:?}"
             );
             sched.shutdown();
@@ -2815,7 +2801,7 @@ mod tests {
         assert!(
             matches!(
                 offered,
-                Err(SchedulerError::Refused(QUEUE_NOT_FOUND_REASON))
+                Err(RuntimeError::QueueRefused(QUEUE_NOT_FOUND_REASON))
             ),
             "got {offered:?}"
         );

@@ -1,5 +1,5 @@
 use forge_events::{Event, EventSource, GlobalSet, TypedEvent};
-use forge_runtime::{BusError, ExecutionRequest};
+use forge_runtime::{ExecutionRequest, RuntimeError};
 use forge_storage::{GlobalsRepo, MediaFormat, UserGlobalsRepo};
 use forge_types::{ActionId, EventId, PlatformId};
 
@@ -429,13 +429,13 @@ pub(crate) async fn handle_replay_event(event_id: String, ctx: &DispatchContext)
     };
     match ctx.bus.replay_and_publish(eid).await {
         Ok(()) => WsResponse::Ok(serde_json::json!({ "ok": true })),
-        Err(BusError::EventNotFound(_)) => WsResponse::Error {
+        Err(RuntimeError::EventNotFound(_)) => WsResponse::Error {
             code: Some("NOT_FOUND".to_owned()),
             message: "event not found".to_owned(),
         },
-        Err(BusError::Storage(e)) => WsResponse::Error {
+        Err(error) => WsResponse::Error {
             code: Some("RUNTIME_ERROR".to_owned()),
-            message: e.to_string(),
+            message: error.to_string(),
         },
     }
 }

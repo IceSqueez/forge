@@ -30,10 +30,7 @@ pub(crate) fn repo_globals(
 
 #[async_trait::async_trait]
 impl crate::ScriptGlobals for RepoGlobals {
-    async fn get(
-        &self,
-        key: &str,
-    ) -> Result<Option<forge_types::Variant>, crate::ScriptGlobalsError> {
+    async fn get(&self, key: &str) -> Result<Option<forge_types::Variant>, crate::ScriptError> {
         Ok(self.repo.get(key).await?)
     }
 
@@ -43,7 +40,7 @@ impl crate::ScriptGlobals for RepoGlobals {
         value: forge_types::Variant,
         persisted: bool,
         caused_by: forge_types::EventId,
-    ) -> Result<Option<forge_types::Variant>, crate::ScriptGlobalsError> {
+    ) -> Result<Option<forge_types::Variant>, crate::ScriptError> {
         self.record(caused_by);
         let previous = self.repo.get(key).await?;
         self.repo.set(key, value, persisted).await?;
@@ -55,7 +52,7 @@ impl crate::ScriptGlobals for RepoGlobals {
         key: &str,
         delta: i64,
         caused_by: forge_types::EventId,
-    ) -> Result<crate::GlobalIncrement, crate::ScriptGlobalsError> {
+    ) -> Result<crate::GlobalIncrement, crate::ScriptError> {
         self.record(caused_by);
         let previous = self.repo.get(key).await?;
         let current = self.repo.incr(key, delta).await?;
@@ -66,7 +63,7 @@ impl crate::ScriptGlobals for RepoGlobals {
         &self,
         key: &str,
         caused_by: forge_types::EventId,
-    ) -> Result<crate::GlobalDeletion, crate::ScriptGlobalsError> {
+    ) -> Result<crate::GlobalDeletion, crate::ScriptError> {
         self.record(caused_by);
         let previous = self.repo.get(key).await?;
         if self.repo.delete(key).await? {

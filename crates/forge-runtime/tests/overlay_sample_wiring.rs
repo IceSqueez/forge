@@ -16,10 +16,9 @@ use forge_registry::{
 };
 use forge_runtime::ActionsService;
 use forge_runtime::{
-    EngineVoiceError, EventBus, NullEventLogRepo, OVERLAY_SEND_KIND_ID, OVERLAY_TARGET_KEY,
-    OverlayDispatch, OverlayFrameSink, OverlayReceivers, OverlaySampleSource, OverlaySamples,
-    OverlayServiceHandle, OverlayServiceParts, ShowSpeech, SpeakDispatchError, SpeakDispatcher,
-    SpeechOrigin, SpeechStartSignal,
+    EventBus, NullEventLogRepo, OVERLAY_SEND_KIND_ID, OVERLAY_TARGET_KEY, OverlayDispatch,
+    OverlayFrameSink, OverlayReceivers, OverlaySampleSource, OverlaySamples, OverlayServiceHandle,
+    OverlayServiceParts, ShowSpeech, SpeakDispatcher, SpeechOrigin, SpeechStartSignal,
 };
 use forge_storage::MockActionRepo;
 use forge_storage::MockHistoryRepo;
@@ -32,8 +31,8 @@ use forge_storage::{
     StorageError,
 };
 use forge_types::{
-    Action, ActionId, ArgStack, PermissionRung, PlatformScope, QueueId, SubActionConfig,
-    SubActionStep, TriggerConfig, TriggerInstance, TriggerInstanceId, Variant,
+    Action, ActionId, ArgStack, MessageRef, PermissionRung, PlatformScope, QueueId,
+    SubActionConfig, SubActionStep, TriggerConfig, TriggerInstance, TriggerInstanceId, Variant,
 };
 use tempfile::TempDir;
 use tokio::sync::Notify;
@@ -153,16 +152,11 @@ impl ListeningSpeaker {
 
 #[async_trait]
 impl SpeakDispatcher for ListeningSpeaker {
-    async fn speak(
-        &self,
-        _: String,
-        _: Option<String>,
-        _: SpeechOrigin,
-    ) -> Result<(), SpeakDispatchError> {
+    async fn speak(&self, _: String, _: Option<String>, _: SpeechOrigin) -> Result<(), MessageRef> {
         panic!("show speech took the global speak path")
     }
 
-    fn check_voice(&self, _: &str) -> Result<(), EngineVoiceError> {
+    fn check_voice(&self, _: &str) -> Result<(), MessageRef> {
         Ok(())
     }
 
@@ -171,7 +165,7 @@ impl SpeakDispatcher for ListeningSpeaker {
         speech: ShowSpeech,
         _: CancelSignal,
         started: SpeechStartSignal,
-    ) -> Result<(), SpeakDispatchError> {
+    ) -> Result<(), MessageRef> {
         self.spoken.lock().unwrap().push(speech.text);
         started.mark_started();
         self.heard.notify_one();

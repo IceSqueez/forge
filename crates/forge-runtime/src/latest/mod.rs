@@ -6,4 +6,4 @@ mod values;
 
 pub use projector::spawn_latest_projector;
 pub use read_step::register_latest_sub_actions;
-pub use values::{LatestResetError, LatestValues};
+pub use values::LatestValues;

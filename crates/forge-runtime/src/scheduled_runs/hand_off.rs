@@ -1,3 +1,4 @@
+use crate::error::RuntimeError;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -15,7 +16,7 @@ use super::origin::ScheduledOrigin;
 use super::provenance::{initial_args, lateness};
 use crate::catalog::Catalog;
 use crate::queue_scheduler::QUEUE_NOT_FOUND_REASON;
-use crate::{EventBus, QueueAdmission, QueueSchedulerHandle, SchedulerError, SchedulerRequest};
+use crate::{EventBus, QueueAdmission, QueueSchedulerHandle, SchedulerRequest};
 use forge_types::WallClock;
 
 pub const SCHEDULED_RUN_DUE_KIND: &str = "scheduled_run.due";
@@ -227,10 +228,10 @@ impl HandOffPath {
     }
 }
 
-fn refusal_reason(refusal: &SchedulerError) -> &'static str {
+fn refusal_reason(refusal: &RuntimeError) -> &'static str {
     match refusal {
-        SchedulerError::Refused(reason) => reason,
-        SchedulerError::QueueNotFound(_) => QUEUE_NOT_FOUND_REASON,
-        SchedulerError::ChannelClosed => QUEUES_CLOSED_REASON,
+        RuntimeError::QueueRefused(reason) => reason,
+        RuntimeError::QueueNotFound(_) => QUEUE_NOT_FOUND_REASON,
+        _ => QUEUES_CLOSED_REASON,
     }
 }

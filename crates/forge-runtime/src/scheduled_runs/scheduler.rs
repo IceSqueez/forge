@@ -1,3 +1,4 @@
+use crate::error::RuntimeError;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -16,7 +17,7 @@ use super::limits::{
     CATCH_UP_SETTLE_LIMIT, MAX_PENDING_SCHEDULED_RUNS, MAX_PENDING_SCHEDULED_RUNS_PER_ACTION,
     WALL_CLOCK_RECHECK,
 };
-use super::request::{ScheduleError, ScheduleRequest, ScheduledPlacement};
+use super::request::{ScheduleRequest, ScheduledPlacement};
 use super::waiting::WaitingRuns;
 use crate::catalog::Catalog;
 use crate::{EventBus, QueueSchedulerHandle};
@@ -207,7 +208,7 @@ impl ScheduledRunsTask {
                 let _ = reply.send(self.schedule(*request).await);
             }
             Command::RunNow(id, reply) => {
-                let handed = self.path.now(id).await.map_err(ScheduleError::from);
+                let handed = self.path.now(id).await.map_err(RuntimeError::from);
                 #[expect(
                     clippy::let_underscore_must_use,
                     reason = "the requester may stop waiting for the reply"
@@ -220,9 +221,9 @@ impl ScheduledRunsTask {
     async fn schedule(
         &mut self,
         request: ScheduleRequest,
-    ) -> Result<ScheduledPlacement, ScheduleError> {
+    ) -> Result<ScheduledPlacement, RuntimeError> {
         let Some(target) = self.actions.get(request.target_action_id).await? else {
-            return Err(ScheduleError::UnknownAction);
+            return Err(RuntimeError::ScheduleUnknownAction);
         };
         let replay = [request.cause, request.trigger_event_id]
             .into_iter()
@@ -238,7 +239,7 @@ impl ScheduledRunsTask {
         })
     }
 
-    async fn check_caps(&self, spec: &ScheduledRunSpec) -> Result<(), ScheduleError> {
+    async fn check_caps(&self, spec: &ScheduledRunSpec) -> Result<(), RuntimeError> {
         let pending = self.repo.count_pending().await?;
         let for_action = self
             .repo
@@ -263,10 +264,10 @@ impl ScheduledRunsTask {
             replaced.is_some_and(|run| run.spec.target_action_id == spec.target_action_id),
         );
         if pending.saturating_sub(freed) >= MAX_PENDING_SCHEDULED_RUNS {
-            return Err(ScheduleError::PendingCapReached);
+            return Err(RuntimeError::PendingCapReached);
         }
         if for_action.saturating_sub(freed_for_action) >= MAX_PENDING_SCHEDULED_RUNS_PER_ACTION {
-            return Err(ScheduleError::ActionPendingCapReached);
+            return Err(RuntimeError::ActionPendingCapReached);
         }
         Ok(())
     }

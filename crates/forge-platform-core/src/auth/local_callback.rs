@@ -2,6 +2,8 @@ use std::time::Duration;
 
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use forge_net::canonical_status_reason;
+use forge_net::status::{BAD_REQUEST, NOT_FOUND, OK};
 use forge_types::Secret;
 use rand::TryRng;
 use sha2::{Digest, Sha256};
@@ -16,13 +18,30 @@ pub const CALLBACK_PATH: &str = "/oauth/callback";
 const VERIFIER_BYTES: usize = 32;
 const STATE_BYTES: usize = 32;
 const READ_BUFFER: usize = 8192;
-const STATUS_LINE_OK: &str = "200 OK";
-const STATUS_LINE_BAD_REQUEST: &str = "400 Bad Request";
-const STATUS_LINE_NOT_FOUND: &str = "404 Not Found";
 const CONNECTION_READ_TIMEOUT: Duration = Duration::from_secs(5);
-const SUCCESS_HEADING: &str = "Authentication successful";
-const SUCCESS_DETAIL: &str = "You may close this tab and return to forge.";
-const FAILURE_HEADING: &str = "Authentication failed";
+const ACCEPT_LANGUAGE_HEADER: &str = "accept-language";
+const UKRAINIAN_LANGUAGE: &str = "uk";
+
+struct CallbackPageText {
+    success_heading: &'static str,
+    success_detail: &'static str,
+    failure_heading: &'static str,
+    failure_detail: &'static str,
+}
+
+const ENGLISH_PAGE: CallbackPageText = CallbackPageText {
+    success_heading: "Authentication successful",
+    success_detail: "You may close this tab and return to forge.",
+    failure_heading: "Authentication failed",
+    failure_detail: "Return to forge and try again.",
+};
+
+const UKRAINIAN_PAGE: CallbackPageText = CallbackPageText {
+    success_heading: "Вхід виконано",
+    success_detail: "Цю вкладку можна закрити й повернутися до forge.",
+    failure_heading: "Не вдалося увійти",
+    failure_detail: "Поверніться до forge і спробуйте ще раз.",
+};
 
 pub(crate) struct LocalCallbackDriver {
     listener: TcpListener,
@@ -107,20 +126,18 @@ impl LocalCallbackDriver {
                 }
             };
             if !targets_callback_path(&request) {
-                if let Err(error) = write_response(&mut socket, STATUS_LINE_NOT_FOUND, "").await {
+                if let Err(error) = write_response(&mut socket, NOT_FOUND, "").await {
                     tracing::debug!(%error, "not-found response could not be written");
                 }
                 continue;
             }
             let result = process_request(&request, &self.state);
+            let text = page_text(&request);
             let (status, body) = match &result {
-                Ok(_) => (
-                    STATUS_LINE_OK,
-                    callback_page(SUCCESS_HEADING, SUCCESS_DETAIL),
-                ),
-                Err(err) => (
-                    STATUS_LINE_BAD_REQUEST,
-                    callback_page(FAILURE_HEADING, &err.to_string()),
+                Ok(_) => (OK, callback_page(text.success_heading, text.success_detail)),
+                Err(_) => (
+                    BAD_REQUEST,
+                    callback_page(text.failure_heading, text.failure_detail),
                 ),
             };
             if let Err(error) = write_response(&mut socket, status, &body).await {
@@ -139,6 +156,20 @@ fn targets_callback_path(request: &str) -> bool {
         .next()
         .and_then(|line| line.split_whitespace().nth(1))
         .is_some_and(|target| target.split('?').next() == Some(CALLBACK_PATH))
+}
+
+fn page_text(request: &str) -> &'static CallbackPageText {
+    let preferred_language = request
+        .lines()
+        .filter_map(|line| line.split_once(':'))
+        .find(|(name, _)| name.trim().eq_ignore_ascii_case(ACCEPT_LANGUAGE_HEADER))
+        .and_then(|(_, value)| value.split([',', ';', '-']).next())
+        .map(str::trim);
+    if preferred_language.is_some_and(|tag| tag.eq_ignore_ascii_case(UKRAINIAN_LANGUAGE)) {
+        &UKRAINIAN_PAGE
+    } else {
+        &ENGLISH_PAGE
+    }
 }
 
 fn callback_page(heading: &str, detail: &str) -> String {
@@ -226,11 +257,12 @@ fn process_request(request: &str, expected_state: &str) -> Result<String, Platfo
 
 async fn write_response(
     socket: &mut TcpStream,
-    status: &str,
+    status: u16,
     body: &str,
 ) -> Result<(), PlatformError> {
+    let reason = canonical_status_reason(status).unwrap_or_default();
     let response = format!(
-        "HTTP/1.1 {status}\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        "HTTP/1.1 {status} {reason}\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
         body.len()
     );
     socket.write_all(response.as_bytes()).await?;
@@ -520,11 +552,29 @@ mod tests {
         let (head, body) = browser_visit("error=%3Cscript%3Ealert(1)%3C%2Fscript%3E").await;
 
         assert!(head.starts_with("HTTP/1.1 400 Bad Request"), "{head}");
-        assert!(!body.contains("<script>"), "{body}");
-        assert!(
-            body.contains("&lt;script&gt;alert(1)&lt;/script&gt;"),
-            "{body}"
-        );
+        assert!(!body.contains("script"), "{body}");
+        assert!(body.contains("<h2>Authentication failed</h2>"), "{body}");
+    }
+
+    #[test]
+    fn the_callback_page_follows_the_first_browser_language() {
+        for (request, heading) in [
+            (
+                "GET / HTTP/1.1\r\nAccept-Language: uk-UA,uk;q=0.9,en;q=0.8\r\n\r\n",
+                UKRAINIAN_PAGE.success_heading,
+            ),
+            (
+                "GET / HTTP/1.1\r\naccept-language: uk\r\n\r\n",
+                UKRAINIAN_PAGE.success_heading,
+            ),
+            (
+                "GET / HTTP/1.1\r\nAccept-Language: en-US,uk;q=0.5\r\n\r\n",
+                ENGLISH_PAGE.success_heading,
+            ),
+            ("GET / HTTP/1.1\r\n\r\n", ENGLISH_PAGE.success_heading),
+        ] {
+            assert_eq!(page_text(request).success_heading, heading, "{request}");
+        }
     }
 
     #[tokio::test]

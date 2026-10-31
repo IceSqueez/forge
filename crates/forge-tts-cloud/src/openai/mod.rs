@@ -1,4 +1,3 @@
-pub mod error;
 pub mod synth;
 pub mod voices;
 
@@ -10,32 +9,6 @@ use forge_tts_core::{ENGINE_ID_OPENAI, EngineCapabilities, SynthesisRequest, Tts
 use crate::credentials::OpenAiCredentials;
 use crate::network::{CloudGateways, ProviderGateway, ProviderLink};
 use crate::policy::{RetryConfig, retry_synthesize};
-use error::OpenAiError;
-
-impl From<OpenAiError> for TtsError {
-    fn from(e: OpenAiError) -> Self {
-        let engine_id = EngineId(ENGINE_ID_OPENAI.into());
-        match e {
-            OpenAiError::Http(msg) => TtsError::NetworkFailed(msg),
-            OpenAiError::Unauthorized(reason) => TtsError::AuthFailed { reason },
-            OpenAiError::QuotaExceeded(detail) => TtsError::QuotaExceeded {
-                id: engine_id,
-                detail,
-            },
-            OpenAiError::RateLimited { retry_after_secs } => {
-                TtsError::RateLimited { retry_after_secs }
-            }
-            OpenAiError::VoiceNotFound(id) => TtsError::InvalidVoice { id },
-            OpenAiError::Rejected(detail) | OpenAiError::Decode(detail) => {
-                TtsError::SynthesisFailed {
-                    id: engine_id,
-                    detail,
-                }
-            }
-            OpenAiError::Io(io_err) => TtsError::Io(io_err),
-        }
-    }
-}
 
 static CAPABILITIES: EngineCapabilities = EngineCapabilities {
     ssml: false,
@@ -134,7 +107,7 @@ impl TtsEngine for OpenAiEngine {
             async move {
                 synth::synthesize(&link, api_key.expose(), req)
                     .await
-                    .map_err(TtsError::from)
+                    .map_err(|error| error.into_tts(ENGINE_ID_OPENAI))
             }
         })
         .await
@@ -143,7 +116,7 @@ impl TtsEngine for OpenAiEngine {
     async fn test_connection(&self) -> Result<(), TtsError> {
         synth::probe_connection(&self.link, self.credentials.api_key.expose())
             .await
-            .map_err(TtsError::from)
+            .map_err(|error| error.into_tts(ENGINE_ID_OPENAI))
     }
 }
 

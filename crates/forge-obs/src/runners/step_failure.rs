@@ -7,7 +7,8 @@ pub(crate) fn message(error: &ObsError) -> MessageRef {
     match error {
         ObsError::Connect(detail) => messages::connect_failed_with(detail),
         ObsError::Authentication => messages::password_rejected(),
-        ObsError::Disconnected => messages::not_connected(),
+        ObsError::Disconnected | ObsError::NotStored => messages::not_connected(),
+        ObsError::Storage(source) => messages::connect_failed_with(&source.to_string()),
         ObsError::Timeout => messages::request_timed_out(),
         ObsError::Protocol(detail) => messages::protocol_error(detail),
         ObsError::Payload(source) => messages::payload_invalid(&source.to_string()),

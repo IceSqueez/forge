@@ -10,7 +10,7 @@ use tracing::debug;
 
 use crate::api::MonobankApi;
 use crate::credentials;
-use crate::error::MonobankError;
+use crate::error::{MonobankError, redacted_serde_reason};
 use crate::jar::{JarDirectory, JarId, MonobankJar};
 use crate::normalize::donation_from_item;
 use crate::status::{PollFailure, PollPhase, StatusBoard};
@@ -181,7 +181,7 @@ fn harvest(
         let parsed = serde_json::from_value::<StatementItemWire>(item)
             .map_err(|error| MonobankError::InvalidDonation {
                 donation_id: transaction_id,
-                reason: format!("{:?} error in the statement item", error.classify()),
+                reason: format!("{} in the statement item", redacted_serde_reason(&error)),
             })
             .and_then(|wire| donation_from_item(provider, wire, window.origin));
         match parsed {

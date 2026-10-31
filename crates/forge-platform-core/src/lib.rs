@@ -75,9 +75,7 @@ pub use reconnect::{
     AutoReconnectSwitch, AutoReconnectWatch, ReconnectingSession, SessionEnd,
     record_connection_failure, run_reconnect_loop,
 };
-pub use sender::{
-    ActingSender, SENDER_FIELD, SENT_AS_FIELD, SenderPreference, SenderRole, unknown_sender_reason,
-};
+pub use sender::{ActingSender, SENDER_FIELD, SENT_AS_FIELD, SenderPreference, SenderRole};
 
 pub use auth::pkce_flow::PkceAuthorizeUrl;
 pub use auth::{

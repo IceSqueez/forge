@@ -685,7 +685,7 @@ mod tests {
     use std::cell::Cell;
     use std::rc::Rc;
 
-    use forge_runtime::{ActionCancelRegistry, DispatchError, spawn_action_engine};
+    use forge_runtime::{ActionCancelRegistry, RuntimeError, spawn_action_engine};
     use forge_storage::MockHistoryRepo;
     use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry};
     use gpui::{AppContext, TestAppContext};
@@ -820,7 +820,7 @@ mod tests {
             let exited = tokio::time::timeout(ENGINE_EXIT_HANG_GUARD, async {
                 loop {
                     let outcome = run(engine.clone(), SUCCEEDS).await;
-                    if outcome != Err(DispatchError::NoOutcome.to_string()) {
+                    if outcome != Err(RuntimeError::EngineNoOutcome.to_string()) {
                         return outcome;
                     }
                     tokio::task::yield_now().await;
@@ -838,8 +838,8 @@ mod tests {
         assert_eq!(
             (not_accepted, dropped_from_intake),
             (
-                Err(DispatchError::ChannelClosed.to_string()),
-                Err(DispatchError::NoOutcome.to_string()),
+                Err(RuntimeError::EngineChannelClosed.to_string()),
+                Err(RuntimeError::EngineNoOutcome.to_string()),
             )
         );
     }

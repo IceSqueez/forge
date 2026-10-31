@@ -1,7 +1,8 @@
+use crate::error::TwitchError;
 use forge_events::{Event, EventPublisher, EventSource, TypedEvent};
 use tracing::debug;
 
-use crate::helix::{HelixError, HelixMethod, HelixRequest, HelixTransport};
+use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
 use crate::vocabulary::events::engagement::{GoalProgress, GoalProgressed};
 
 const GOALS_PATH: &str = "/helix/goals";
@@ -50,7 +51,7 @@ pub(crate) async fn publish_current_goals(
     transport: &dyn HelixTransport,
     bus: &dyn EventPublisher,
     broadcaster_id: &str,
-) -> Result<usize, HelixError> {
+) -> Result<usize, TwitchError> {
     let request = HelixRequest::new(HelixMethod::Get, GOALS_PATH)
         .query(BROADCASTER_ID_PARAM, broadcaster_id.to_owned());
     let body = transport.execute(request).await?;
@@ -233,14 +234,14 @@ mod tests {
 
     #[tokio::test]
     async fn a_failed_goals_request_returns_the_error_and_publishes_nothing() {
-        let failures: [fn() -> HelixError; 4] = [
-            || HelixError::ReauthRequired,
-            || HelixError::RateLimited,
-            || HelixError::Http {
+        let failures: [fn() -> TwitchError; 4] = [
+            || TwitchError::ReauthRequired,
+            || TwitchError::RateLimited,
+            || TwitchError::Http {
                 status: UNAVAILABLE,
                 body: String::new(),
             },
-            || HelixError::Transport("connection reset".to_owned()),
+            || TwitchError::Transport("connection reset".to_owned()),
         ];
         for failure in failures {
             let transport = MockTransport::returning(Err(failure()));

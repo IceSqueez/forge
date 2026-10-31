@@ -1,10 +1,11 @@
+use crate::chat::chat_failure;
+use crate::error::TwitchError;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use forge_events::{EventPublisher, EventSource, TypedEvent};
 use forge_platform_core::{ActingSender, SENT_AS_FIELD, SenderPreference, SenderRole};
 use forge_types::SubActionOutcome;
-use thiserror::Error;
 use tracing::warn;
 
 use crate::account::identity::SelfIdentity;
@@ -12,10 +13,8 @@ use crate::account::user_target::UserTarget;
 use crate::bot_account::{BotIdentity, BotModerator, BotUnavailable, TwitchBotAccount};
 use crate::cadence::CadenceLedger;
 use crate::chat::refusal_text;
-use crate::chat::{
-    ChatSendError, WhisperError, send_chat, send_chat_reply, send_whisper, send_whisper_to,
-};
-use crate::helix::{HelixError, HelixMethod, HelixRequest, HelixTransport};
+use crate::chat::{send_chat, send_chat_reply, send_whisper, send_whisper_to};
+use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
 use crate::step_failure;
 use crate::vocabulary::{FallbackLevel, SenderFallback};
 use forge_types::MessageRef;
@@ -23,42 +22,9 @@ use forge_types::MessageRef;
 const ANNOUNCEMENTS_PATH: &str = "/helix/chat/announcements";
 const SHOUTOUTS_PATH: &str = "/helix/chat/shoutouts";
 
-#[derive(Debug, Error)]
-pub(crate) enum SendFailure {
-    #[error("bot not connected ({0})")]
-    BotNotConnected(BotUnavailable),
-    #[error("the bot account has no verified phone number, so Twitch refused the whisper")]
-    BotPhoneUnverified,
-    #[error(transparent)]
-    Chat(ChatSendError),
-    #[error(transparent)]
-    Whisper(WhisperError),
-    #[error("bot is not a moderator - make it one in Integrations -> Twitch")]
-    BotNotModerator,
-    #[error("Twitch refused: {0}")]
-    PermissionDenied(String),
-    #[error("{0}")]
-    Refused(String),
-    #[error("shoutout cooldown: try again in {retry_after_secs}s")]
-    ShoutoutCooldown { retry_after_secs: u64 },
-    #[error("Twitch rate limit or cooldown reached; try again later")]
-    ModerationThrottled,
-    #[error(transparent)]
-    Helix(HelixError),
-    #[error("{0}")]
-    Credentials(String),
-    #[error("no twitch credentials stored")]
-    NotSignedIn,
-}
-
-impl SendFailure {
+impl TwitchError {
     fn token_rejected(&self) -> bool {
-        matches!(
-            self,
-            Self::Chat(ChatSendError::ReauthRequired)
-                | Self::Whisper(WhisperError::Helix(HelixError::ReauthRequired))
-                | Self::Helix(HelixError::ReauthRequired)
-        )
+        matches!(self, Self::ReauthRequired)
     }
 }
 
@@ -168,16 +134,16 @@ impl ChatSenders {
         delivery: ChatDelivery<'_>,
         preference: SenderPreference,
         events: &dyn EventPublisher,
-    ) -> Result<ActingSender, SendFailure> {
+    ) -> Result<ActingSender, TwitchError> {
         let stored = self
             .identity
             .stored_if_signed_in()
             .await
             .map_err(|e| match e {
-                HelixError::Credentials(reason) => SendFailure::Credentials(reason),
-                other => SendFailure::Chat(ChatSendError::from(other)),
+                TwitchError::Credentials(reason) => TwitchError::SendCredentials(reason),
+                other => chat_failure(other),
             })?
-            .ok_or(SendFailure::NotSignedIn)?;
+            .ok_or(TwitchError::NotSignedIn)?;
         let broadcaster_id = stored.user_id.clone();
         let streamer = Actor {
             role: SenderRole::Streamer,
@@ -189,7 +155,7 @@ impl ChatSenders {
             SenderPreference::Streamer => self.post(&streamer, &broadcaster_id, delivery).await,
             SenderPreference::BotOnly => self.send_as_bot(&broadcaster_id, delivery).await,
             SenderPreference::Default => match self.send_as_bot(&broadcaster_id, delivery).await {
-                Err(SendFailure::BotNotConnected(reason)) => {
+                Err(TwitchError::BotNotConnected(reason)) => {
                     if reason != BotUnavailable::NotConnected {
                         announce_fallback(events, reason, &delivery);
                     }
@@ -204,32 +170,32 @@ impl ChatSenders {
         &self,
         broadcaster_id: &str,
         delivery: ChatDelivery<'_>,
-    ) -> Result<ActingSender, SendFailure> {
+    ) -> Result<ActingSender, TwitchError> {
         let Some(bot_account) = &self.bot else {
-            return Err(SendFailure::BotNotConnected(BotUnavailable::NotConnected));
+            return Err(TwitchError::BotNotConnected(BotUnavailable::NotConnected));
         };
         let bot = Actor::from_bot(
             bot_account
                 .identity()
                 .await
-                .map_err(SendFailure::BotNotConnected)?,
+                .map_err(TwitchError::BotNotConnected)?,
         );
         if delivery.needs_moderator()
             && bot_account.moderator_status() == BotModerator::NotModerator
         {
-            return Err(SendFailure::BotNotModerator);
+            return Err(TwitchError::BotNotModerator);
         }
         match self.post(&bot, broadcaster_id, delivery).await {
-            Err(SendFailure::PermissionDenied(reason)) if delivery.needs_moderator() => {
+            Err(TwitchError::PermissionDenied(reason)) if delivery.needs_moderator() => {
                 bot_account.refresh_moderator_status().await;
-                Err(SendFailure::PermissionDenied(reason))
+                Err(TwitchError::PermissionDenied(reason))
             }
             Err(failure) if failure.token_rejected() => {
                 if delivery.is_whisper() && !bot_account.token_confirmed_invalid().await {
-                    return Err(SendFailure::BotPhoneUnverified);
+                    return Err(TwitchError::BotPhoneUnverified);
                 }
                 bot_account.mark_reauth_required();
-                Err(SendFailure::BotNotConnected(BotUnavailable::ReauthRequired))
+                Err(TwitchError::BotNotConnected(BotUnavailable::ReauthRequired))
             }
             other => other,
         }
@@ -242,14 +208,13 @@ impl ChatSenders {
         actor: &Actor,
         broadcaster_id: &str,
         delivery: ChatDelivery<'_>,
-    ) -> Result<ActingSender, SendFailure> {
+    ) -> Result<ActingSender, TwitchError> {
         let transport = actor.transport.as_ref();
         match delivery {
             ChatDelivery::Message { text } => {
                 send_chat(transport, broadcaster_id, &actor.user_id, text)
                     .await
-                    .map(drop)
-                    .map_err(SendFailure::Chat)?;
+                    .map(drop)?;
             }
             ChatDelivery::Reply {
                 text,
@@ -263,8 +228,7 @@ impl ChatSenders {
                     parent_message_id,
                 )
                 .await
-                .map(drop)
-                .map_err(SendFailure::Chat)?;
+                .map(drop)?;
             }
             ChatDelivery::Announcement { text, color } => {
                 let reservation = self.cadence.reserve_announcement();
@@ -304,14 +268,10 @@ impl ChatSenders {
                 reservation.commit();
             }
             ChatDelivery::WhisperToLogin { login, text } => {
-                send_whisper(transport, &actor.user_id, login, text)
-                    .await
-                    .map_err(SendFailure::Whisper)?;
+                send_whisper(transport, &actor.user_id, login, text).await?;
             }
             ChatDelivery::WhisperToTarget { recipient, text } => {
-                send_whisper_to(transport, &actor.user_id, recipient, text)
-                    .await
-                    .map_err(SendFailure::Whisper)?;
+                send_whisper_to(transport, &actor.user_id, recipient, text).await?;
             }
         }
         Ok(actor.acting_sender())
@@ -325,23 +285,23 @@ fn target_key(target: UserTarget<'_>) -> String {
     }
 }
 
-fn shoutout_cooldown(remaining: std::time::Duration) -> SendFailure {
-    SendFailure::ShoutoutCooldown {
+fn shoutout_cooldown(remaining: std::time::Duration) -> TwitchError {
+    TwitchError::ShoutoutCooldown {
         retry_after_secs: remaining.as_secs().max(1),
     }
 }
 
-fn moderation_failure(error: HelixError) -> SendFailure {
+fn moderation_failure(error: TwitchError) -> TwitchError {
     match error {
-        HelixError::ReauthRequired => SendFailure::Helix(HelixError::ReauthRequired),
-        HelixError::RateLimited => SendFailure::ModerationThrottled,
-        HelixError::Http { status, body } if status == forge_net::status::FORBIDDEN => {
-            SendFailure::PermissionDenied(format!("HTTP {status}: {}", refusal_text(&body)))
+        TwitchError::ReauthRequired => TwitchError::ReauthRequired,
+        TwitchError::RateLimited => TwitchError::ModerationThrottled,
+        TwitchError::Http { status, body } if status == forge_net::status::FORBIDDEN => {
+            TwitchError::PermissionDenied(format!("HTTP {status}: {}", refusal_text(&body)))
         }
-        HelixError::Http { status, body } => {
-            SendFailure::Refused(format!("HTTP {status}: {}", refusal_text(&body)))
+        TwitchError::Http { status, body } => {
+            TwitchError::SendRefused(format!("HTTP {status}: {}", refusal_text(&body)))
         }
-        other => SendFailure::Credentials(other.to_string()),
+        other => TwitchError::SendCredentials(other.to_string()),
     }
 }
 
@@ -365,7 +325,7 @@ fn announce_fallback(
 
 pub(crate) type StepResult = (SubActionOutcome, BTreeMap<String, String>);
 
-pub(crate) fn step_result(result: Result<ActingSender, SendFailure>) -> StepResult {
+pub(crate) fn step_result(result: Result<ActingSender, TwitchError>) -> StepResult {
     match result {
         Ok(acting) => {
             let produced = serde_json::to_string(&acting)
@@ -374,7 +334,7 @@ pub(crate) fn step_result(result: Result<ActingSender, SendFailure>) -> StepResu
             (SubActionOutcome::Success, produced)
         }
         Err(failure) => (
-            SubActionOutcome::Failed(step_failure::send_failure(&failure).into()),
+            SubActionOutcome::Failed(step_failure::helix_message(&failure).into()),
             BTreeMap::new(),
         ),
     }
@@ -409,7 +369,7 @@ mod tests {
     }
 
     impl Rig {
-        fn over(harness: BotHarness, streamer_responses: Vec<Result<Value, HelixError>>) -> Self {
+        fn over(harness: BotHarness, streamer_responses: Vec<Result<Value, TwitchError>>) -> Self {
             let streamer = Arc::new(MockTransport::returning_sequence(streamer_responses));
             let senders = ChatSenders::new(
                 Arc::clone(&streamer) as Arc<dyn HelixTransport>,
@@ -427,7 +387,7 @@ mod tests {
             &self,
             delivery: ChatDelivery<'_>,
             preference: SenderPreference,
-        ) -> Result<ActingSender, SendFailure> {
+        ) -> Result<ActingSender, TwitchError> {
             self.senders
                 .deliver(delivery, preference, self.harness.bus.as_ref())
                 .await
@@ -498,7 +458,7 @@ mod tests {
     }
 
     impl StreamerRig {
-        fn over(streamer_responses: Vec<Result<Value, HelixError>>) -> Self {
+        fn over(streamer_responses: Vec<Result<Value, TwitchError>>) -> Self {
             let streamer = Arc::new(MockTransport::returning_sequence(streamer_responses));
             Self {
                 senders: streamer_senders(Arc::clone(&streamer) as Arc<dyn HelixTransport>),
@@ -511,7 +471,7 @@ mod tests {
             &self,
             delivery: ChatDelivery<'_>,
             preference: SenderPreference,
-        ) -> Result<ActingSender, SendFailure> {
+        ) -> Result<ActingSender, TwitchError> {
             self.senders.deliver(delivery, preference, &self.bus).await
         }
     }
@@ -780,7 +740,7 @@ mod tests {
                 .unwrap_err();
 
             assert!(
-                matches!(failure, SendFailure::BotNotConnected(reason) if reason == expected),
+                matches!(failure, TwitchError::BotNotConnected(reason) if reason == expected),
                 "{expected:?}: {failure:?}"
             );
             assert_eq!(rig.streamer.call_count(), 0, "{expected:?}");
@@ -790,7 +750,7 @@ mod tests {
 
     #[tokio::test]
     async fn bot_refusals_never_fall_back_or_resend() {
-        type Expectation = fn(&SendFailure) -> bool;
+        type Expectation = fn(&TwitchError) -> bool;
         type Refusal = (&'static str, fn() -> ResponseTemplate, Expectation);
         let refusals: [Refusal; 3] = [
             (
@@ -802,7 +762,7 @@ mod tests {
                         "drop_reason": {"code": "user_banned", "message": "You are banned."}
                     }]}))
                 },
-                |f| matches!(f, SendFailure::Chat(ChatSendError::Dropped { code, .. }) if code == "user_banned"),
+                |f| matches!(f, TwitchError::MessageDropped { code, .. } if code == "user_banned"),
             ),
             (
                 "403",
@@ -813,12 +773,12 @@ mod tests {
                         "message": "The sender is banned from this channel."
                     }))
                 },
-                |f| matches!(f, SendFailure::Chat(ChatSendError::Forbidden(m)) if m == "The sender is banned from this channel."),
+                |f| matches!(f, TwitchError::MessageForbidden(m) if m == "The sender is banned from this channel."),
             ),
             (
                 "429",
                 || ResponseTemplate::new(reqwest::StatusCode::TOO_MANY_REQUESTS),
-                |f| matches!(f, SendFailure::Chat(ChatSendError::RateLimited)),
+                |f| matches!(f, TwitchError::RateLimited),
             ),
         ];
 
@@ -885,7 +845,7 @@ mod tests {
                 .unwrap_err();
 
             assert!(
-                matches!(failure, SendFailure::BotPhoneUnverified),
+                matches!(failure, TwitchError::BotPhoneUnverified),
                 "validate {validate_status}: {failure:?}"
             );
             assert_eq!(rig.streamer.call_count(), 0, "validate {validate_status}");
@@ -1001,7 +961,7 @@ mod tests {
 
                 let label = format!("{preference:?} {}", delivery.operation());
                 assert!(
-                    matches!(failure, SendFailure::BotNotModerator),
+                    matches!(failure, TwitchError::BotNotModerator),
                     "{label}: {failure:?}"
                 );
                 assert!(
@@ -1043,7 +1003,7 @@ mod tests {
             .unwrap_err();
 
         assert!(
-            matches!(&failure, SendFailure::PermissionDenied(m) if m.contains("not a moderator")),
+            matches!(&failure, TwitchError::PermissionDenied(m) if m.contains("not a moderator")),
             "{failure:?}"
         );
         assert_eq!(
@@ -1074,8 +1034,8 @@ mod tests {
 
                 let label = format!("{} {status}", delivery.operation());
                 let expected_failure = match status {
-                    429 => matches!(failure, SendFailure::ModerationThrottled),
-                    _ => matches!(failure, SendFailure::Refused(_)),
+                    429 => matches!(failure, TwitchError::ModerationThrottled),
+                    _ => matches!(failure, TwitchError::SendRefused(_)),
                 };
                 assert!(expected_failure, "{label}: {failure:?}");
                 assert_eq!(rig.streamer.call_count(), 0, "{label}");
@@ -1120,10 +1080,10 @@ mod tests {
 
     const COOLDOWN_SLACK_SECS: u64 = 30;
 
-    fn cooldown_refusal(result: &Result<ActingSender, SendFailure>, interval_secs: u64) -> bool {
+    fn cooldown_refusal(result: &Result<ActingSender, TwitchError>, interval_secs: u64) -> bool {
         matches!(
             result,
-            Err(SendFailure::ShoutoutCooldown { retry_after_secs })
+            Err(TwitchError::ShoutoutCooldown { retry_after_secs })
                 if *retry_after_secs <= interval_secs
                     && *retry_after_secs + COOLDOWN_SLACK_SECS > interval_secs
         )
@@ -1220,7 +1180,7 @@ mod tests {
     #[tokio::test]
     async fn a_refused_shoutout_leaves_no_cooldown_behind() {
         let rig = StreamerRig::over(vec![
-            Err(HelixError::Http {
+            Err(TwitchError::Http {
                 status: 400,
                 body: json!({"message": "channel is offline"}).to_string(),
             }),
@@ -1230,7 +1190,7 @@ mod tests {
 
         let retried = rig.send(SHOUTOUT, SenderPreference::Streamer).await;
 
-        assert!(matches!(refused, Err(SendFailure::Refused(_))));
+        assert!(matches!(refused, Err(TwitchError::SendRefused(_))));
         assert_eq!(retried.unwrap(), as_streamer());
         assert_eq!(rig.streamer.call_count(), 2);
     }
@@ -1244,7 +1204,7 @@ mod tests {
 
     #[async_trait::async_trait]
     impl HelixTransport for HeldUserLookup {
-        async fn execute(&self, request: HelixRequest) -> Result<Value, HelixError> {
+        async fn execute(&self, request: HelixRequest) -> Result<Value, TwitchError> {
             if request.path == SHOUTOUT_PATH {
                 self.shoutouts
                     .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -1277,7 +1237,7 @@ mod tests {
         let (first, second) = tokio::join!(first, second);
 
         assert_eq!(first.unwrap(), as_streamer());
-        assert!(matches!(second, Err(SendFailure::ShoutoutCooldown { .. })));
+        assert!(matches!(second, Err(TwitchError::ShoutoutCooldown { .. })));
         assert_eq!(
             transport
                 .shoutouts
@@ -1289,7 +1249,7 @@ mod tests {
     #[tokio::test]
     async fn a_failed_user_lookup_releases_the_shoutout_slot() {
         let rig = StreamerRig::over(vec![
-            Err(HelixError::Transport("connection reset".to_owned())),
+            Err(TwitchError::Transport("connection reset".to_owned())),
             users_fixture("555"),
             Ok(Value::Null),
         ]);
@@ -1324,7 +1284,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn a_failed_announcement_does_not_delay_the_next_one() {
         let rig = StreamerRig::over(vec![
-            Err(HelixError::Http {
+            Err(TwitchError::Http {
                 status: 400,
                 body: json!({"message": "channel is offline"}).to_string(),
             }),
@@ -1337,7 +1297,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(matches!(failed, Err(SendFailure::Refused(_))));
+        assert!(matches!(failed, Err(TwitchError::SendRefused(_))));
         assert_eq!(started.elapsed(), std::time::Duration::ZERO);
     }
 
@@ -1369,10 +1329,7 @@ mod tests {
             .unwrap_err();
 
         assert!(
-            matches!(
-                failure,
-                SendFailure::Whisper(WhisperError::RecipientRejectsWhispers)
-            ),
+            matches!(failure, TwitchError::RecipientRejectsWhispers),
             "{failure:?}"
         );
         assert_eq!(rig.streamer.call_count(), 0);

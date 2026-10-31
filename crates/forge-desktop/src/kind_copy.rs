@@ -31,7 +31,11 @@ pub(crate) fn trigger_instance_name(
 }
 
 fn kind_copy(prefix: &str, kind_id: &str, english: &str) -> String {
-    tr_find(&format!("{prefix}{}", ftl_id(kind_id)), None).unwrap_or_else(|| english.to_owned())
+    tr_find(&kind_key(prefix, kind_id), None).unwrap_or_else(|| english.to_owned())
+}
+
+fn kind_key(prefix: &str, kind_id: &str) -> String {
+    format!("{prefix}{}", ftl_id(kind_id))
 }
 
 #[cfg(test)]
@@ -82,10 +86,6 @@ kind_summary_demo_chat_message = Хтось написав у чат
 
     fn stub(id: &str) -> StubTrigger {
         StubTrigger::new(id, STUB_LABEL, TriggerCategory::Chat, Declares::Nothing)
-    }
-
-    fn catalog_key(prefix: &str, kind_id: &str) -> String {
-        format!("{prefix}{}", ftl_id(kind_id))
     }
 
     #[test]
@@ -205,7 +205,7 @@ kind_summary_demo_chat_message = Хтось написав у чат
         let missing: Vec<String> = kinds
             .iter()
             .flat_map(|kind| {
-                [NAME_PREFIX, SUMMARY_PREFIX].map(|prefix| (kind, catalog_key(prefix, &kind.id)))
+                [NAME_PREFIX, SUMMARY_PREFIX].map(|prefix| (kind, kind_key(prefix, &kind.id)))
             })
             .filter(|(_, key)| tr_find(key, None).is_none_or(|value| value.trim().is_empty()))
             .map(|(kind, key)| format!("{}: {key}", kind.describe()))
@@ -241,7 +241,7 @@ kind_summary_demo_chat_message = Хтось написав у чат
             .map(|descriptor| descriptor.id().to_owned())
             .chain(sub_actions.all().map(|runner| runner.id().to_owned()))
             .flat_map(|kind_id| {
-                [NAME_PREFIX, SUMMARY_PREFIX].map(|prefix| catalog_key(prefix, &kind_id))
+                [NAME_PREFIX, SUMMARY_PREFIX].map(|prefix| kind_key(prefix, &kind_id))
             })
             .collect();
         let orphans: Vec<&str> = [EN_FTL, UK_FTL]

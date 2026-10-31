@@ -408,9 +408,9 @@ mod tests {
 
     use super::run_supervisor;
     use crate::backend::MidiBackend;
-    use crate::backend::tests::{MockMidiBackend, input_port, output_port};
     use crate::client::MidiClient;
     use crate::config::MidiConfig;
+    use crate::testing::{MockMidiBackend, input_port, output_port};
 
     const HANG_GUARD: Duration = Duration::from_secs(30);
 
@@ -425,7 +425,7 @@ mod tests {
     }
 
     fn open_ports(backend: &MockMidiBackend) -> usize {
-        backend.state.lock().unwrap().senders.len()
+        backend.open_input_count()
     }
 
     fn launch_client(

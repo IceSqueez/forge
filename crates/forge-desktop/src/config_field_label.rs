@@ -46,11 +46,15 @@ pub(crate) fn step_field_label(kind_id: &str, key: &str) -> String {
 }
 
 pub(crate) fn field_label(kind_id: &str, spec: &FormField) -> String {
-    let prefix = match spec {
+    scoped_copy(copy_prefix(spec), kind_id, spec.key())
+        .unwrap_or_else(|| descriptor_label(spec).to_owned())
+}
+
+fn copy_prefix(spec: &FormField) -> &'static str {
+    match spec {
         FormField::Optional { .. } => OPTIONAL_PREFIX,
         _ => LABEL_PREFIX,
-    };
-    scoped_copy(prefix, kind_id, spec.key()).unwrap_or_else(|| descriptor_label(spec).to_owned())
+    }
 }
 
 pub(crate) fn field_placeholder(kind_id: &str, key: &str, english: &str) -> String {
@@ -328,13 +332,6 @@ field_label_k3 = Global
             }
         }
         fields
-    }
-
-    fn copy_prefix(spec: &FormField) -> &'static str {
-        match spec {
-            FormField::Optional { .. } => OPTIONAL_PREFIX,
-            _ => LABEL_PREFIX,
-        }
     }
 
     fn field_entries(source: &str) -> Vec<(&str, &str)> {

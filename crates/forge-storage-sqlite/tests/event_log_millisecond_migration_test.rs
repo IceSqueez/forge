@@ -1,19 +1,20 @@
 #![expect(clippy::expect_used, reason = "test fixtures")]
 mod common;
 use forge_storage::EventLogRepo;
-use forge_storage_sqlite::{MIGRATIONS, SqliteEventLogRepo, apply_migrations, connect};
-use sqlx::SqlitePool;
+use forge_storage_sqlite::{
+    MIGRATIONS, SqliteEventLogRepo, SqlitePools, apply_migrations, connect_pools,
+};
 use tempfile::TempDir;
 
 const VERSION_BEFORE_MILLISECONDS: i64 = 60;
 const STORED_SECONDS: i64 = 1_700_000_000;
 
-async fn migrated_from_second_resolution() -> (SqlitePool, TempDir) {
+async fn migrated_from_second_resolution() -> (SqlitePools, TempDir) {
     let dir = tempfile::tempdir().expect("a temporary directory");
     let url = common::database_url(&dir);
-    let pool = connect(&url).await.expect("a database");
+    let pools = connect_pools(&url).await.expect("a database");
     MIGRATIONS
-        .run_to(VERSION_BEFORE_MILLISECONDS, &pool)
+        .run_to(VERSION_BEFORE_MILLISECONDS, pools.writer())
         .await
         .expect("the schema before the change");
     for (id, seconds) in [
@@ -26,20 +27,20 @@ async fn migrated_from_second_resolution() -> (SqlitePool, TempDir) {
         )
         .bind(id)
         .bind(seconds)
-        .execute(&pool)
+        .execute(pools.writer())
         .await
         .expect("an event row in seconds");
     }
-    apply_migrations(&pool).await.expect("migrate");
-    (pool, dir)
+    apply_migrations(pools.writer()).await.expect("migrate");
+    (pools, dir)
 }
 
 #[tokio::test]
 async fn migration_scales_every_stored_timestamp_from_seconds_to_milliseconds() {
-    let (pool, _dir) = migrated_from_second_resolution().await;
+    let (pools, _dir) = migrated_from_second_resolution().await;
 
     let stored: Vec<i64> = sqlx::query_scalar("SELECT timestamp FROM event_log ORDER BY timestamp")
-        .fetch_all(&pool)
+        .fetch_all(pools.writer())
         .await
         .expect("timestamps");
 
@@ -54,9 +55,9 @@ async fn migration_scales_every_stored_timestamp_from_seconds_to_milliseconds() 
 
 #[tokio::test]
 async fn migrated_rows_decode_to_the_original_instants() {
-    let (pool, _dir) = migrated_from_second_resolution().await;
+    let (pools, _dir) = migrated_from_second_resolution().await;
 
-    let events = SqliteEventLogRepo::new(pool)
+    let events = SqliteEventLogRepo::new(pools)
         .recent_since(10, None)
         .await
         .expect("recent");

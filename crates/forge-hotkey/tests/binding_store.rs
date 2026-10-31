@@ -666,6 +666,48 @@ async fn do_bind_registers_the_canonical_combo_of_a_hand_typed_spelling() {
     .unwrap();
 
     assert_eq!(rig.registered(), ["Ctrl+F3"]);
+    let stored = backend.trigger_instance_repo().list_all().await.unwrap();
+    assert_eq!(
+        stored_combos(&stored),
+        [(
+            event_kinds::GLOBAL_PRESSED.to_owned(),
+            Some("Ctrl+F3".to_owned())
+        )]
+    );
+}
+
+#[tokio::test]
+async fn do_bind_of_a_hand_typed_spelling_replaces_the_canonical_binding() {
+    let store = store().await;
+    let backend = Arc::clone(&store.provider);
+    let first = seed_action(&backend, "Scene swap").await;
+    let second = seed_action(&backend, "Mute mic").await;
+    let rig = reconciled(&backend).await;
+
+    for (spelling, action) in [("Ctrl+F3", first), (" ctrl + f3 ", second)] {
+        do_bind(
+            Arc::clone(&rig.reconciler),
+            Arc::clone(&backend),
+            spelling.to_owned(),
+            HotkeyEdge::Press,
+            action,
+        )
+        .await
+        .unwrap();
+    }
+
+    let stored = backend.trigger_instance_repo().list_all().await.unwrap();
+    let [instance] = stored.as_slice() else {
+        panic!("the second spelling left {} instances", stored.len());
+    };
+    assert_eq!(
+        backend
+            .trigger_instance_repo()
+            .actions_using(instance.id)
+            .await
+            .unwrap(),
+        [second]
+    );
 }
 
 #[tokio::test]

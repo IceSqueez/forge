@@ -34,6 +34,7 @@ mod lifecycle_messages;
 mod live_viewers;
 mod notification_policy;
 #[cfg(any(test, feature = "test-support"))]
+#[cfg(any(test, feature = "test-support"))]
 mod null_event_log;
 mod overlay_definition_revision;
 mod overlay_lanes;
@@ -98,6 +99,7 @@ pub use notification_policy::{
     ActionFailureNotice, NotificationIntent, NotificationIntents, NotificationPolicyHandle,
     NotificationPreferences, spawn_notification_policy,
 };
+#[cfg(any(test, feature = "test-support"))]
 #[cfg(any(test, feature = "test-support"))]
 pub use null_event_log::NullEventLogRepo;
 pub use overlay_definition_revision::OverlayDefinitionChanges;

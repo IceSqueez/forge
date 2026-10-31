@@ -104,12 +104,12 @@ mod tests {
     use forge_types::{ArgStack, EventId, SubActionOutcome, UserText};
 
     use super::*;
-    use crate::backend::tests::output_port;
     use crate::client::MidiClient;
     use crate::error::MidiError;
     use crate::events::MidiOutMessage;
     use crate::runners::MidiSendRunner;
     use crate::sink::MidiSink;
+    use crate::testing::output_port;
 
     const FULL_STORED_TEMPLATES: [(MessageCode, &str); 4] = [
         (

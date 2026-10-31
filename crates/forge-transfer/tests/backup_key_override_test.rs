@@ -32,12 +32,12 @@ async fn full_backup_packs_the_overridden_credentials_key_instead_of_the_data_di
     .unwrap();
     let url = common::database_url(data.path());
     let backend = common::open_backend(data.path()).await;
-    let pool = forge_storage_sqlite::connect(&url).await.unwrap();
-    SqliteCredentialsRepo::new_with_key(pool.clone(), SQLITE_KEY)
+    let pools = forge_storage_sqlite::connect_pools(&url).await.unwrap();
+    SqliteCredentialsRepo::new_with_key(pools.clone(), SQLITE_KEY)
         .store(&CredentialId::new("twitch:broadcaster"), "token")
         .await
         .unwrap();
-    pool.close().await;
+    pools.close().await;
     let provider: Arc<dyn DataProvider> = Arc::new(backend);
 
     let written = write_full_backup(FullBackupRequest {

@@ -10,7 +10,7 @@ use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use forge_paths::MEDIA_DIR_NAME;
+use forge_paths::{CREDENTIALS_KEY_FILE_ENV, MEDIA_DIR_NAME};
 use forge_storage::DATABASE_FILE_NAME;
 use forge_storage_sqlite::SqliteBackend;
 use forge_transfer::{
@@ -23,20 +23,19 @@ const BUNDLE_MODE: u32 = 0o600;
 
 pub(crate) type Tree = BTreeMap<String, Vec<u8>>;
 
-const KEY_FILE_ENV: &str = "FORGE_CREDENTIAL_KEY_FILE";
 const CHILD_RUN_ENV: &str = "FORGE_TRANSFER_KEY_OVERRIDE_CHILD_RUN";
 const ONE_TEST_PASSED: &str = "1 passed";
 
 pub(crate) fn key_file_of_this_child_run() -> Option<PathBuf> {
     std::env::var_os(CHILD_RUN_ENV)?;
-    std::env::var_os(KEY_FILE_ENV).map(PathBuf::from)
+    std::env::var_os(CREDENTIALS_KEY_FILE_ENV).map(PathBuf::from)
 }
 
 pub(crate) fn rerun_in_child_with_key_file(test_name: &str, key_file: &Path) {
     let test_binary = std::env::current_exe().unwrap_or_else(|e| panic!("test binary: {e}"));
     let child = Command::new(test_binary)
         .args(["--exact", test_name])
-        .env(KEY_FILE_ENV, key_file)
+        .env(CREDENTIALS_KEY_FILE_ENV, key_file)
         .env(CHILD_RUN_ENV, "1")
         .output()
         .unwrap_or_else(|e| panic!("child test run: {e}"));

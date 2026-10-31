@@ -172,14 +172,14 @@ fn inspect_reports_holding_credentials_once_one_is_stored() {
     let dir = tempfile::tempdir().unwrap();
     migrate_and_shut_down(&dir);
     runtime().block_on(async {
-        let pool = forge_storage_sqlite::connect(&url_of(&db_in(&dir)))
+        let pools = forge_storage_sqlite::connect_pools(&url_of(&db_in(&dir)))
             .await
             .unwrap();
-        SqliteCredentialsRepo::new_with_key(pool.clone(), TEST_KEY)
+        SqliteCredentialsRepo::new_with_key(pools.clone(), TEST_KEY)
             .store(&CredentialId::new("twitch:broadcaster"), "token")
             .await
             .unwrap();
-        pool.close().await;
+        pools.close().await;
     });
 
     assert!(inspected(&db_in(&dir)).holds_credentials);

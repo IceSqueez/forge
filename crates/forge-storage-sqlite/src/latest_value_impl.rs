@@ -29,8 +29,8 @@ pub(crate) struct SqliteLatestValueRepo {
 }
 
 impl SqliteLatestValueRepo {
-    pub(crate) fn new(db: impl Into<SqlitePools>) -> Self {
-        Self { db: db.into() }
+    pub(crate) fn new(db: SqlitePools) -> Self {
+        Self { db }
     }
 }
 

@@ -69,7 +69,7 @@ impl BuiltinStatus for MidiClient {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::backend::tests::input_port;
+    use crate::testing::input_port;
 
     #[test]
     fn connection_is_disconnected_while_input_is_disabled_despite_open_ports() {

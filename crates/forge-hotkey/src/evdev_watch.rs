@@ -19,6 +19,12 @@ pub(crate) enum InputDirChange {
     Rescan,
 }
 
+pub(crate) trait InputDirChanges {
+    fn dir(&self) -> &Path;
+
+    async fn next_change(&mut self) -> std::io::Result<InputDirChange>;
+}
+
 pub(crate) struct InputDirWatcher {
     dir: PathBuf,
     fd: AsyncFd<OwnedFd>,
@@ -39,12 +45,14 @@ impl InputDirWatcher {
             buf: vec![MaybeUninit::uninit(); WATCH_BUFFER_BYTES],
         })
     }
+}
 
-    pub(crate) fn dir(&self) -> &Path {
+impl InputDirChanges for InputDirWatcher {
+    fn dir(&self) -> &Path {
         &self.dir
     }
 
-    pub(crate) async fn next_change(&mut self) -> std::io::Result<InputDirChange> {
+    async fn next_change(&mut self) -> std::io::Result<InputDirChange> {
         loop {
             let mut guard = self.fd.readable().await?;
             let mut appeared = Vec::new();

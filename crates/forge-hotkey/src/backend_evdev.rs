@@ -16,7 +16,9 @@ use tokio::sync::mpsc;
 use crate::backend::{HotkeyBackend, HotkeyEdge, HotkeyFiredEvent, HotkeyId};
 use crate::combo::HotkeyCombo;
 use crate::error::HotkeyError;
-use crate::evdev_watch::{EVENT_NODE_PREFIX, INPUT_DIR, InputDirChange, InputDirWatcher};
+use crate::evdev_watch::{
+    EVENT_NODE_PREFIX, INPUT_DIR, InputDirChange, InputDirChanges, InputDirWatcher,
+};
 use crate::owned_fd_readiness::register_readiness;
 use crate::vocabulary::keys::{Key, Modifier, Modifiers};
 
@@ -111,7 +113,11 @@ struct DevicePool {
 }
 
 impl DevicePool {
-    async fn run(mut self, initial: Vec<PathBuf>, mut watcher: Option<InputDirWatcher>) {
+    async fn run<Changes: InputDirChanges>(
+        mut self,
+        initial: Vec<PathBuf>,
+        mut watcher: Option<Changes>,
+    ) {
         let (closed_tx, mut closed_rx) = mpsc::unbounded_channel::<PathBuf>();
         for path in initial {
             self.open_device(path, &closed_tx);
@@ -194,7 +200,9 @@ impl DevicePool {
     }
 }
 
-async fn next_dir_change(watcher: Option<&mut InputDirWatcher>) -> std::io::Result<InputDirChange> {
+async fn next_dir_change<Changes: InputDirChanges>(
+    watcher: Option<&mut Changes>,
+) -> std::io::Result<InputDirChange> {
     match watcher {
         Some(w) => w.next_change().await,
         None => std::future::pending().await,
@@ -778,6 +786,41 @@ mod tests {
         assert_eq!(device.open_fd_count(), 2);
     }
 
+    struct FedDirChanges {
+        dir: PathBuf,
+        changes: mpsc::UnboundedReceiver<std::io::Result<InputDirChange>>,
+    }
+
+    impl InputDirChanges for FedDirChanges {
+        fn dir(&self) -> &Path {
+            &self.dir
+        }
+
+        async fn next_change(&mut self) -> std::io::Result<InputDirChange> {
+            match self.changes.recv().await {
+                Some(change) => change,
+                None => std::future::pending().await,
+            }
+        }
+    }
+
+    type DirChangeFeed = mpsc::UnboundedSender<std::io::Result<InputDirChange>>;
+
+    fn spawn_fed_pool(
+        dir: &Path,
+        initial: Vec<PathBuf>,
+        combos: &[(HotkeyId, &str)],
+    ) -> (mpsc::Receiver<HotkeyFiredEvent>, DirChangeFeed) {
+        let (pool, fired_rx, _closed_tx, _closed_rx) = device_pool(combos);
+        let (feed, changes) = mpsc::unbounded_channel();
+        let source = FedDirChanges {
+            dir: dir.to_path_buf(),
+            changes,
+        };
+        tokio::spawn(pool.run(initial, Some(source)));
+        (fired_rx, feed)
+    }
+
     fn spawn_watched_pool(
         dir: &Path,
         initial: Vec<PathBuf>,
@@ -789,47 +832,46 @@ mod tests {
         fired_rx
     }
 
-    fn overflow_watch_queue(dir: &Path) {
-        use std::os::unix::fs::PermissionsExt;
-        let entries = [dir.join("mouse0"), dir.join("mouse1")];
-        for entry in &entries {
-            std::fs::File::create(entry).unwrap();
-        }
-        let limit: usize = std::fs::read_to_string("/proc/sys/fs/inotify/max_queued_events")
-            .unwrap()
-            .trim()
-            .parse()
-            .unwrap();
-        for change in 0..=limit {
-            std::fs::set_permissions(
-                &entries[change % entries.len()],
-                std::fs::Permissions::from_mode(0o600),
-            )
-            .unwrap();
-        }
-    }
-
     #[tokio::test]
-    async fn a_rescan_after_an_overflow_opens_new_nodes_without_reopening_open_ones() {
+    async fn a_rescan_opens_new_nodes_without_reopening_open_ones() {
         let id = HotkeyId(7);
         let dir = tempfile::tempdir().unwrap();
         let already_open = dir.path().join("event0");
         let missed = dir.path().join("event1");
         make_fifo(&already_open, 0o600);
         let _already_open_writer = fifo_writer(&already_open);
-        let mut fired_rx =
-            spawn_watched_pool(dir.path(), vec![already_open.clone()], &[(id, "F1")]);
+        let (mut fired_rx, feed) =
+            spawn_fed_pool(dir.path(), vec![already_open.clone()], &[(id, "F1")]);
 
-        overflow_watch_queue(dir.path());
         make_fifo(&missed, 0o600);
         let mut missed_writer = fifo_writer(&missed);
         write_keys(&mut missed_writer, &[(F1, KEY_DOWN)]);
+        feed.send(Ok(InputDirChange::Rescan)).unwrap();
         let press = recv_soon(fired_rx.recv()).await;
 
         assert_eq!(
             (edges(&[press]), open_fd_count(&already_open)),
             (vec![(id, "F1", HotkeyEdge::Press)], 2)
         );
+    }
+
+    #[tokio::test]
+    async fn a_failed_directory_watch_drops_the_watch_but_keeps_open_devices_firing() {
+        let id = HotkeyId(7);
+        let dir = tempfile::tempdir().unwrap();
+        let open = dir.path().join("event0");
+        make_fifo(&open, 0o600);
+        let mut open_writer = fifo_writer(&open);
+        let (mut fired_rx, feed) = spawn_fed_pool(dir.path(), vec![open.clone()], &[(id, "F1")]);
+
+        feed.send(Err(std::io::Error::other("watch lost"))).unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(30), feed.closed())
+            .await
+            .unwrap();
+        write_keys(&mut open_writer, &[(F1, KEY_DOWN)]);
+        let press = recv_soon(fired_rx.recv()).await;
+
+        assert_eq!(edges(&[press]), vec![(id, "F1", HotkeyEdge::Press)]);
     }
 
     #[tokio::test]

@@ -331,7 +331,7 @@ mod tests {
         let history = db_runtime.block_on(async {
             let pool = connect(":memory:").await.unwrap();
             apply_migrations(&pool).await.unwrap();
-            let history = Arc::new(SqliteHistoryRepo::new(pool));
+            let history = Arc::new(SqliteHistoryRepo::new(crate::pool::pools_sharing(pool)));
             history.save_batch(&runs).await.unwrap();
             history
         });

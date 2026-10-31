@@ -14,9 +14,9 @@ pub struct SqliteCredentialsRepo {
 }
 
 impl SqliteCredentialsRepo {
-    pub fn new_with_key(db: impl Into<SqlitePools>, key: impl Into<Zeroizing<[u8; 32]>>) -> Self {
+    pub fn new_with_key(db: SqlitePools, key: impl Into<Zeroizing<[u8; 32]>>) -> Self {
         Self {
-            db: db.into(),
+            db,
             key: key.into(),
         }
     }

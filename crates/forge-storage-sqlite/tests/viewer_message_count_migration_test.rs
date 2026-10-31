@@ -1,21 +1,22 @@
 #![expect(clippy::expect_used, reason = "test fixtures")]
 mod common;
 use forge_storage::{ViewerMessage, ViewerRepo};
-use forge_storage_sqlite::{MIGRATIONS, SqliteViewerRepo, apply_migrations, connect};
+use forge_storage_sqlite::{
+    MIGRATIONS, SqlitePools, SqliteViewerRepo, apply_migrations, connect_pools,
+};
 use forge_types::PlatformId;
-use sqlx::SqlitePool;
 use tempfile::TempDir;
 
 const VERSION_BEFORE_DROP: i64 = 52;
 const FIRST_SEEN_MS: i64 = 1_700_000_000_000;
 const LAST_SEEN_MS: i64 = 1_700_000_500_000;
 
-async fn migrated_from_previous_schema() -> (SqlitePool, TempDir) {
+async fn migrated_from_previous_schema() -> (SqlitePools, TempDir) {
     let dir = tempfile::tempdir().expect("a temporary directory");
     let url = common::database_url(&dir);
-    let pool = connect(&url).await.expect("a database");
+    let pools = connect_pools(&url).await.expect("a database");
     MIGRATIONS
-        .run_to(VERSION_BEFORE_DROP, &pool)
+        .run_to(VERSION_BEFORE_DROP, pools.writer())
         .await
         .expect("the schema before the drop");
     sqlx::query(
@@ -25,22 +26,22 @@ async fn migrated_from_previous_schema() -> (SqlitePool, TempDir) {
     )
     .bind(FIRST_SEEN_MS)
     .bind(LAST_SEEN_MS)
-    .execute(&pool)
+    .execute(pools.writer())
     .await
     .expect("a viewer row with a counter");
-    apply_migrations(&pool).await.expect("migrate");
-    (pool, dir)
+    apply_migrations(pools.writer()).await.expect("migrate");
+    (pools, dir)
 }
 
 #[tokio::test]
 async fn dropping_the_counter_removes_the_column_and_keeps_every_other_field() {
-    let (pool, _dir) = migrated_from_previous_schema().await;
+    let (pools, _dir) = migrated_from_previous_schema().await;
 
     let columns: Vec<String> = sqlx::query_scalar("SELECT name FROM pragma_table_info('viewers')")
-        .fetch_all(&pool)
+        .fetch_all(pools.writer())
         .await
         .expect("columns");
-    let viewer = SqliteViewerRepo::new(pool)
+    let viewer = SqliteViewerRepo::new(pools)
         .get(PlatformId::Twitch, "42")
         .await
         .expect("read")
@@ -66,8 +67,8 @@ async fn dropping_the_counter_removes_the_column_and_keeps_every_other_field() {
 
 #[tokio::test]
 async fn recording_messages_after_the_drop_updates_name_and_last_seen_but_not_first_seen() {
-    let (pool, _dir) = migrated_from_previous_schema().await;
-    let repo = SqliteViewerRepo::new(pool);
+    let (pools, _dir) = migrated_from_previous_schema().await;
+    let repo = SqliteViewerRepo::new(pools);
 
     repo.record_messages(&[ViewerMessage {
         platform: PlatformId::Twitch,

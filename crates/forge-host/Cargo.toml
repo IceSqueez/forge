@@ -21,6 +21,7 @@ test-support = [
   "forge-storage-sqlite/test-support",
   "forge-net/test-support",
   "forge-runtime/test-support",
+  "forge-server/test-support",
   "forge-storage/test-mocks",
   "forge-storage/settings-test-support",
 ]

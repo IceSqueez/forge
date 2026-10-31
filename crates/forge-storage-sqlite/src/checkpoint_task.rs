@@ -292,7 +292,7 @@ mod tests {
         }
         let generation_before = wal_generation(&db.path);
         spawn_checkpoint_task(
-            db.pools.checkpointer().unwrap().clone(),
+            db.pools.checkpointer().clone(),
             db.pools.writer().clone(),
             DEFAULT_BUSY_TIMEOUT,
         );
@@ -326,7 +326,7 @@ mod tests {
             .unwrap();
         assert!(wal_bytes(&db.path) > over_limit);
         spawn_checkpoint_task(
-            db.pools.checkpointer().unwrap().clone(),
+            db.pools.checkpointer().clone(),
             db.pools.writer().clone(),
             DEFAULT_BUSY_TIMEOUT,
         );

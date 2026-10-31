@@ -33,11 +33,12 @@ pub use documents::{
 pub use error::TransferError;
 pub use full::{
     BackupDestination, FullBackupRequest, RESTORE_JOURNAL_FILE, RESTORE_MARKER_FILE,
-    RestoreDeferral, RestoreOutcome, RestoreRollback, ScheduledBackupRequest, ScheduledWrite,
-    StageRequest, StagedRestore, UpdateActivity, apply_pending_restore, cancel_pending_restore,
-    discard_staged_restore, record_pending_restore, restore_in_flight, restore_pending,
-    restore_staging_root, stage_full_restore, write_full_backup, write_scheduled_backup,
-    write_scheduled_backup_cancellable, write_scheduled_backup_unless_unchanged,
+    RESTORE_STAGING_DIR_NAME, RestoreDeferral, RestoreOutcome, RestoreRollback,
+    ScheduledBackupRequest, ScheduledWrite, StageRequest, StagedRestore, UpdateActivity,
+    apply_pending_restore, cancel_pending_restore, discard_staged_restore, record_pending_restore,
+    restore_in_flight, restore_pending, restore_staging_root, stage_full_restore,
+    write_full_backup, write_scheduled_backup, write_scheduled_backup_cancellable,
+    write_scheduled_backup_unless_unchanged,
 };
 pub use messages::TRANSFER_MESSAGES;
 pub use overlay_import_sweep::sweep_abandoned_overlay_imports;

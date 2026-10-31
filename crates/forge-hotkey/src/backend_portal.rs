@@ -683,7 +683,12 @@ async fn signal_listener_task(
     edge_tx: mpsc::Sender<ShortcutEdge>,
     owner_restart_tx: mpsc::Sender<()>,
 ) {
-    if listen_for_signals(&conn, &edge_tx, &owner_restart_tx).await == ListenerExit::SignalsLost {
+    let exit = listen_for_signals(&conn, &edge_tx, &owner_restart_tx).await;
+    resubscribe_after(exit, &owner_restart_tx).await;
+}
+
+async fn resubscribe_after(exit: ListenerExit, owner_restart_tx: &mpsc::Sender<()>) {
+    if exit == ListenerExit::SignalsLost {
         tokio::time::sleep(RESUBSCRIBE_DELAY).await;
         if owner_restart_tx.send(()).await.is_err() {
             tracing::debug!("portal backend stopped; resubscribe request dropped");
@@ -799,6 +804,31 @@ mod tests {
     use super::*;
 
     const SESSION: &str = "/org/freedesktop/portal/desktop/session/1_42/forge_sess_0";
+
+    #[tokio::test(start_paused = true)]
+    async fn lost_signals_ask_for_a_resubscribe_only_after_the_delay() {
+        let (restart_tx, mut restart_rx) = mpsc::channel(1);
+
+        let waited = tokio::time::timeout(
+            RESUBSCRIBE_DELAY - Duration::from_millis(1),
+            resubscribe_after(ListenerExit::SignalsLost, &restart_tx),
+        )
+        .await;
+        assert!(waited.is_err());
+        assert!(restart_rx.try_recv().is_err());
+
+        resubscribe_after(ListenerExit::SignalsLost, &restart_tx).await;
+        assert_eq!(restart_rx.try_recv(), Ok(()));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_restarted_owner_asks_for_no_second_resubscribe() {
+        let (restart_tx, mut restart_rx) = mpsc::channel(1);
+
+        resubscribe_after(ListenerExit::OwnerRestarted, &restart_tx).await;
+
+        assert!(restart_rx.try_recv().is_err());
+    }
 
     fn message<B>(interface: &str, member: &str, body: &B) -> zbus::Message
     where

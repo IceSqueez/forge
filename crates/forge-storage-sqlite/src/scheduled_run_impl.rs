@@ -203,8 +203,8 @@ pub struct SqliteScheduledRunRepo {
 }
 
 impl SqliteScheduledRunRepo {
-    pub fn new(db: impl Into<SqlitePools>) -> Self {
-        Self { db: db.into() }
+    pub fn new(db: SqlitePools) -> Self {
+        Self { db }
     }
 
     async fn cancel_pending(

@@ -103,16 +103,14 @@ fn group(heading: String, palette: &ForgePalette, density: Density) -> Div {
 }
 
 fn intro(contract: &PageContract, palette: &ForgePalette, density: Density) -> AnyElement {
-    let marker = format!("{}=\"{EXAMPLE_NAME}\"", contract.bind.attribute);
-    let writer = format!("{}.{}", contract.namespace, contract.bind.writer);
-    let call = format!("{writer}({EXAMPLE_NAME}, {EXAMPLE_TEXT})");
+    let tokens = intro_tokens(contract);
     let text = strip_isolation(&tr!(
         "overlays_bindings_intro",
-        marker = marker.as_str(),
-        call = call.as_str(),
-        writer = writer.as_str()
+        marker = tokens.marker.as_str(),
+        call = tokens.call.as_str(),
+        writer = tokens.writer.as_str()
     ));
-    let ranges = code_ranges(&text, &[&call, &marker, &writer]);
+    let ranges = code_ranges(&text, &[&tokens.call, &tokens.marker, &tokens.writer]);
     let highlight = HighlightStyle {
         color: Some(Hsla::from(palette.brand)),
         ..HighlightStyle::default()
@@ -130,6 +128,23 @@ fn intro(contract: &PageContract, palette: &ForgePalette, density: Density) -> A
         .text_color(palette.text_secondary)
         .child(styled)
         .into_any_element()
+}
+
+struct IntroTokens {
+    marker: String,
+    call: String,
+    writer: String,
+}
+
+fn intro_tokens(contract: &PageContract) -> IntroTokens {
+    let marker = format!("{}=\"{EXAMPLE_NAME}\"", contract.bind.attribute);
+    let writer = format!("{}.{}", contract.namespace, contract.bind.writer);
+    let call = format!("{writer}({EXAMPLE_NAME}, {EXAMPLE_TEXT})");
+    IntroTokens {
+        marker,
+        call,
+        writer,
+    }
 }
 
 fn function_entry(function: &PageFunction, palette: &ForgePalette, density: Density) -> AnyElement {
@@ -328,14 +343,6 @@ mod tests {
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
     }
 
-    fn intro_tokens() -> (String, String, String) {
-        let contract = &PAGE_CONTRACT;
-        let marker = format!("{}=\"{EXAMPLE_NAME}\"", contract.bind.attribute);
-        let writer = format!("{}.{}", contract.namespace, contract.bind.writer);
-        let call = format!("{writer}({EXAMPLE_NAME}, {EXAMPLE_TEXT})");
-        (marker, call, writer)
-    }
-
     fn spans<'a>(text: &'a str, ranges: &[Range<usize>]) -> Vec<&'a str> {
         ranges
             .iter()
@@ -345,7 +352,11 @@ mod tests {
 
     #[test]
     fn localized_intro_highlights_marker_call_and_writer_once_each() {
-        let (marker, call, writer) = intro_tokens();
+        let IntroTokens {
+            marker,
+            call,
+            writer,
+        } = intro_tokens(&PAGE_CONTRACT);
         for locale in LOCALES {
             install_language(locale);
             let text = strip_isolation(&tr!(
@@ -364,7 +375,11 @@ mod tests {
 
     #[test]
     fn localized_intro_carries_no_isolation_marks_after_stripping() {
-        let (marker, call, writer) = intro_tokens();
+        let IntroTokens {
+            marker,
+            call,
+            writer,
+        } = intro_tokens(&PAGE_CONTRACT);
         for locale in LOCALES {
             install_language(locale);
             let raw = tr!(

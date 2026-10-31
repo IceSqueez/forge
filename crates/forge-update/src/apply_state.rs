@@ -9,7 +9,7 @@ use crate::install::{InstallLayout, UpdatableInstall};
 use crate::journal::{JOURNAL_FORMAT, UpdateJournal};
 use crate::record::{read_record, remove_record, require_format, write_record};
 
-const APPLY_STATE_FILE: &str = "update-apply.json";
+pub const APPLY_STATE_FILE: &str = "update-apply.json";
 const APPLY_STATE_FORMAT: u32 = 1;
 pub(crate) const PREVIOUS_BUILD_PREFIX: &str = ".forge-previous-";
 

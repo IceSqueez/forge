@@ -3,18 +3,11 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use forge_registry::SubActionRegistry;
-use forge_runtime::{
-    ActionCancelRegistry, Catalog, EventBus, NullEventLogRepo, spawn_action_engine,
-};
+use forge_server::test_support::ServerDeps;
 use forge_server::{ServerConfig, ServerHandle, ServerSettings, start_server, stopped_server};
+use forge_storage::CredentialsRepo;
 use forge_storage::credentials::MockCredentialsRepo;
 use forge_storage::test_support::{MemoryCredentials, MemorySettings};
-use forge_storage::{
-    ActionRepo, CatalogRevision, CredentialsRepo, GlobalsRepo, HistoryRepo, MockActionRepo,
-    MockGlobalsRepo, MockHistoryRepo, MockOverlayRepo, MockTriggerInstanceRepo,
-    MockUserGlobalsRepo, OverlayRepo, SettingsRepo, UserGlobalsRepo,
-};
 use reqwest::StatusCode;
 
 const LOOPBACK: &str = "127.0.0.1";
@@ -27,34 +20,10 @@ fn config(
     credentials: Arc<dyn CredentialsRepo>,
     overlay_root: &std::path::Path,
 ) -> ServerConfig {
-    let bus = EventBus::new(Arc::new(NullEventLogRepo));
-    let actions: Arc<dyn ActionRepo> = Arc::new(MockActionRepo::new());
-    let history: Arc<dyn HistoryRepo> = Arc::new(MockHistoryRepo::new());
-    let engine = Arc::new(spawn_action_engine(
-        Arc::clone(&bus),
-        Catalog::new(
-            Arc::clone(&actions),
-            Arc::new(MockTriggerInstanceRepo::new()),
-            CatalogRevision::new(),
-        ),
-        Arc::clone(&actions),
-        history,
-        Arc::new(SubActionRegistry::new()),
-        Arc::new(ActionCancelRegistry::new()),
-    ));
-    let mut config = ServerConfig::new(
-        settings as Arc<dyn SettingsRepo>,
-        credentials,
-        bus,
-        actions,
-        Arc::new(MockGlobalsRepo::new()) as Arc<dyn GlobalsRepo>,
-        Arc::new(MockUserGlobalsRepo::new()) as Arc<dyn UserGlobalsRepo>,
-        Arc::new(MockOverlayRepo::new()) as Arc<dyn OverlayRepo>,
-        engine,
-    );
-    config.bind_addr = SocketAddr::new(LOOPBACK.parse().unwrap(), 0);
-    config.overlay_root = overlay_root.to_path_buf();
-    config
+    ServerDeps::new(overlay_root)
+        .with_settings(settings)
+        .with_credentials(credentials)
+        .build()
 }
 
 struct Server {

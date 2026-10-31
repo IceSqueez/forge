@@ -180,8 +180,9 @@ pub async fn do_bind(
     action_id: ActionId,
 ) -> Result<(), HotkeyError> {
     let combo = HotkeyCombo::parse(&combo_str)?;
+    let canonical = combo.as_str().to_owned();
     reconciler.claim(combo).await?;
-    let stored = store_binding(&backend, combo_str, edge, action_id).await;
+    let stored = store_binding(&backend, canonical, edge, action_id).await;
     reconciler.reconcile().await;
     stored
 }

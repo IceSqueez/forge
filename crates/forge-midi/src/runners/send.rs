@@ -221,11 +221,11 @@ mod tests {
     use forge_types::{ArgStack, EventId, SubActionOutcome, Variant};
 
     use super::*;
-    use crate::backend::tests::{MockMidiBackend, output_port};
     use crate::client::MidiClient;
     use crate::config::MidiConfig;
     use crate::error::MidiError;
     use crate::sink::MidiSink;
+    use crate::testing::{MockMidiBackend, output_port};
 
     #[derive(Default)]
     struct RecordingSink {

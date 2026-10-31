@@ -463,12 +463,62 @@ impl TwitchIntegrationBundle {
         transport: Arc<dyn HelixTransport>,
         broadcaster_id: &str,
     ) -> Arc<Self> {
-        let (health_tx, _) = broadcast::channel(16);
-        let (viewer_report_tx, _) = watch::channel(ViewerReport::Absent);
         let credentials_manager = Arc::new(TwitchCredentialsManager::new(
             crate::sub_actions::test_support::unreachable_oauth_client("test-client"),
             Arc::clone(&creds),
         ));
+        Self::for_test_over(
+            login,
+            state_rx,
+            tracker,
+            creds,
+            tier,
+            transport,
+            broadcaster_id,
+            credentials_manager,
+        )
+    }
+
+    #[cfg(test)]
+    pub(crate) fn for_test_with_credentials_manager(
+        login: Option<String>,
+        state_rx: watch::Receiver<ChatConnectionState>,
+        tracker: SubscriptionTracker,
+        creds: Arc<dyn CredentialsRepo>,
+        tier: BroadcasterTier,
+        credentials_manager: Arc<TwitchCredentialsManager>,
+    ) -> Arc<Self> {
+        Self::for_test_over(
+            login,
+            state_rx,
+            tracker,
+            creds,
+            tier,
+            Arc::new(crate::sub_actions::test_support::MockTransport::returning(
+                Ok(serde_json::Value::Null),
+            )),
+            "1",
+            credentials_manager,
+        )
+    }
+
+    #[cfg(test)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "test constructor receives each collaborator it wires"
+    )]
+    fn for_test_over(
+        login: Option<String>,
+        state_rx: watch::Receiver<ChatConnectionState>,
+        tracker: SubscriptionTracker,
+        creds: Arc<dyn CredentialsRepo>,
+        tier: BroadcasterTier,
+        transport: Arc<dyn HelixTransport>,
+        broadcaster_id: &str,
+        credentials_manager: Arc<TwitchCredentialsManager>,
+    ) -> Arc<Self> {
+        let (health_tx, _) = broadcast::channel(16);
+        let (viewer_report_tx, _) = watch::channel(ViewerReport::Absent);
         let config = ChatSessionConfig {
             client_id: "test-client".to_owned(),
             broadcaster_id: broadcaster_id.to_owned(),
@@ -1971,19 +2021,18 @@ mod tests {
             &crate::credentials_manager::tests::stub_cred(stale_expiry),
         );
         let (_, state_rx) = watch::channel(ChatConnectionState::Disconnected);
-        let built = TwitchIntegrationBundle::for_test(
+        let credentials_manager = Arc::new(TwitchCredentialsManager::new(
+            crate::sub_actions::test_support::oauth_client_at(&server.uri(), "test-client"),
+            Arc::clone(&repo),
+        ));
+        let bundle = TwitchIntegrationBundle::for_test_with_credentials_manager(
             Some("streamer".to_owned()),
             state_rx,
             SubscriptionTracker::default(),
-            Arc::clone(&repo),
-            BroadcasterTier::Standard,
-        );
-        let mut inner = Arc::into_inner(built).unwrap();
-        inner.credentials_manager = Arc::new(TwitchCredentialsManager::new(
-            crate::sub_actions::test_support::oauth_client_at(&server.uri(), "test-client"),
             repo,
-        ));
-        let bundle = Arc::new(inner);
+            BroadcasterTier::Standard,
+            credentials_manager,
+        );
         TwitchIntegrationBundle::spawn_token_expiry_bridge(&bundle);
         let health = BuiltinHealth::stream(bundle.as_ref());
         ExpiryBridgeFixture {

@@ -182,13 +182,11 @@ impl SqliteBackend {
             scheduled_run_revision.clone(),
         );
 
-        if let Some(checkpointer) = pool.checkpointer() {
-            spawn_checkpoint_task(
-                checkpointer.clone(),
-                pool.writer().clone(),
-                pool.busy_timeout(),
-            );
-        }
+        spawn_checkpoint_task(
+            pool.checkpointer().clone(),
+            pool.writer().clone(),
+            pool.busy_timeout(),
+        );
         spawn_retention_task(
             RetentionTargets {
                 event_log: Arc::new(SqliteEventLogRepo::new(pool.clone())),

@@ -1515,14 +1515,21 @@ struct RacedOverlay {
     stored: Arc<dyn OverlayRepo>,
     id: OverlayId,
     credential_at_read: String,
+    _database_dir: tempfile::TempDir,
 }
 
 async fn raced_overlay() -> RacedOverlay {
-    let pool = forge_storage_sqlite::connect("sqlite::memory:")
+    let database_dir = tempfile::tempdir().unwrap();
+    let url = format!(
+        "sqlite://{}",
+        database_dir.path().join("forge.db").display()
+    );
+    let pools = forge_storage_sqlite::connect_pools(&url).await.unwrap();
+    forge_storage_sqlite::apply_migrations(pools.writer())
         .await
         .unwrap();
-    forge_storage_sqlite::apply_migrations(&pool).await.unwrap();
-    let stored: Arc<dyn OverlayRepo> = Arc::new(forge_storage_sqlite::SqliteOverlayRepo::new(pool));
+    let stored: Arc<dyn OverlayRepo> =
+        Arc::new(forge_storage_sqlite::SqliteOverlayRepo::new(pools));
     let created = stored
         .create("Sub alert", ALERT_KIND, current_schema(ALERT_KIND))
         .await
@@ -1545,6 +1552,7 @@ async fn raced_overlay() -> RacedOverlay {
         stored,
         id: created.id,
         credential_at_read: created.credential.expose().to_owned(),
+        _database_dir: database_dir,
     }
 }
 

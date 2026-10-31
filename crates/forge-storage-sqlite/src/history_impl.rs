@@ -87,8 +87,8 @@ impl SqliteHistoryRepo {
         Ok(result.rows_affected())
     }
 
-    pub fn new(db: impl Into<SqlitePools>) -> Self {
-        Self { db: db.into() }
+    pub fn new(db: SqlitePools) -> Self {
+        Self { db }
     }
 }
 
@@ -263,7 +263,7 @@ mod tests {
     async fn make_repo() -> SqliteHistoryRepo {
         let pool = connect(":memory:").await.unwrap();
         apply_migrations(&pool).await.unwrap();
-        SqliteHistoryRepo::new(pool)
+        SqliteHistoryRepo::new(crate::pool::pools_sharing(pool))
     }
 
     fn cutoff() -> OffsetDateTime {

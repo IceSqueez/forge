@@ -18,9 +18,9 @@ pub struct SqliteGlobalsRepo {
 }
 
 impl SqliteGlobalsRepo {
-    pub fn new(db: impl Into<SqlitePools>) -> Self {
+    pub fn new(db: SqlitePools) -> Self {
         Self {
-            db: db.into(),
+            db,
             read_tally: Arc::default(),
         }
     }

@@ -8,10 +8,11 @@ use std::path::{Path, PathBuf};
 use forge_storage::DATABASE_FILE_NAME;
 use forge_storage_sqlite::SqliteBackend;
 use forge_transfer::{
-    RESTORE_JOURNAL_FILE, SafetyCopyMode, SafetyCopyReport, SafetyCopySettings, SafetyCopyUsage,
-    TransferExclusivity, backup_file_stem, backups_dir, change_safety_copy_settings,
-    clean_up_safety_copies, prune_safety_copies, safety_copy_usage,
+    RESTORE_JOURNAL_FILE, RESTORE_STAGING_DIR_NAME, SafetyCopyMode, SafetyCopyReport,
+    SafetyCopySettings, SafetyCopyUsage, TransferExclusivity, backup_file_stem, backups_dir,
+    change_safety_copy_settings, clean_up_safety_copies, prune_safety_copies, safety_copy_usage,
 };
+use forge_update::APPLY_STATE_FILE;
 use tempfile::TempDir;
 use time::{Duration, OffsetDateTime};
 
@@ -21,8 +22,6 @@ const PRE_SETUP: &str = "forge-pre-setup";
 const PRE_RESTORE: &str = "forge-pre-restore";
 const ARCHIVE: &str = "tar.gz";
 const PRE_UPDATE: &str = "pre-update.db";
-const RESTORE_STAGING: &str = "restore-staging";
-const UPDATE_APPLY_STATE_FILE: &str = "update-apply.json";
 const COPY_BYTES: usize = 64;
 const KEEP: u32 = 2;
 const DAYS: u32 = 30;
@@ -195,7 +194,7 @@ async fn clean_up_never_touches_bundles_partials_foreign_entries_or_unparseable_
         )),
         store.file(&format!("{PRE_SETUP}-yesterday.{ARCHIVE}")),
         store.dir_copy(&format!("{PRE_RESTORE}-by-hand")),
-        store.dir_copy(RESTORE_STAGING),
+        store.dir_copy(RESTORE_STAGING_DIR_NAME),
         store.file("notes.txt"),
     ];
 
@@ -217,7 +216,7 @@ async fn clean_up_skips_a_symlink_named_like_a_safety_copy_and_leaves_its_target
     std::os::unix::fs::symlink(&outside, store.backups().join(&link)).unwrap();
     let dir_target = store.data_dir().join("precious-dir");
     std::fs::create_dir_all(&dir_target).unwrap();
-    std::fs::write(dir_target.join("forge.db"), b"keep me").unwrap();
+    std::fs::write(dir_target.join(DATABASE_FILE_NAME), b"keep me").unwrap();
     let dir_link = stamped(PRE_RESTORE, days(400), "fffff2");
     std::os::unix::fs::symlink(&dir_target, store.backups().join(&dir_link)).unwrap();
 
@@ -227,7 +226,7 @@ async fn clean_up_skips_a_symlink_named_like_a_safety_copy_and_leaves_its_target
         (
             store.remaining(),
             outside.is_file(),
-            dir_target.join("forge.db").is_file()
+            dir_target.join(DATABASE_FILE_NAME).is_file()
         ),
         (names([&link, &dir_link]), true, true)
     );
@@ -332,7 +331,7 @@ async fn clean_up_removes_every_unprotected_copy_even_in_never_mode() {
 #[tokio::test]
 async fn clean_up_spares_every_pre_update_copy_while_an_update_is_in_flight() {
     let store = Store::open().await;
-    std::fs::write(store.data_dir().join(UPDATE_APPLY_STATE_FILE), b"{}").unwrap();
+    std::fs::write(store.data_dir().join(APPLY_STATE_FILE), b"{}").unwrap();
     let update_new = store.pre_update(hours(1), "ddddd1");
     let update_old = store.pre_update(days(400), "ddddd2");
     store.pre_pack(hours(1), "aaaaa1");
@@ -433,7 +432,7 @@ async fn usage_counts_only_safety_copies_and_the_bytes_inside_them() {
         "{}.forgebundle",
         stamped(STEM_PREFIX, hours(1), "eeeee1")
     ));
-    store.dir_copy(RESTORE_STAGING);
+    store.dir_copy(RESTORE_STAGING_DIR_NAME);
 
     let usage = safety_copy_usage(store.data_dir()).await.unwrap();
 

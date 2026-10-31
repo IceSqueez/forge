@@ -51,14 +51,14 @@ pub enum MidiOutMessage {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct MidiPortInfo {
+pub struct MidiPortInfo {
     pub name: String,
     pub direction: PortDirection,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum PortDirection {
+pub enum PortDirection {
     Input,
     Output,
 }

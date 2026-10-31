@@ -10,8 +10,17 @@ rust-version.workspace = true
 [lints]
 workspace = true
 
+[features]
+test-support = [
+  "dep:forge-registry",
+  "forge-runtime/test-support",
+  "forge-storage/settings-test-support",
+  "forge-storage/test-mocks",
+]
+
 [dependencies]
 forge-types = { path = "../forge-types" }
+forge-registry = { path = "../forge-registry", optional = true }
 forge-events = { path = "../forge-events" }
 forge-runtime = { path = "../forge-runtime" }
 forge-storage = { path = "../forge-storage" }
@@ -32,6 +41,7 @@ arc-swap = { workspace = true }
 async-trait = { workspace = true }
 
 [dev-dependencies]
+forge-server = { path = ".", features = ["test-support"] }
 forge-test-support = { path = "../forge-test-support" }
 forge-net = { path = "../forge-net" }
 forge-runtime = { path = "../forge-runtime", features = ["test-support"] }

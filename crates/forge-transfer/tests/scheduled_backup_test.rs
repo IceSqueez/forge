@@ -45,12 +45,12 @@ impl Source {
         std::fs::create_dir_all(&data).unwrap();
         let url = common::database_url(&data);
         let backend = common::open_backend(&data).await;
-        let pool = forge_storage_sqlite::connect(&url).await.unwrap();
-        SqliteCredentialsRepo::new_with_key(pool.clone(), SQLITE_KEY)
+        let pools = forge_storage_sqlite::connect_pools(&url).await.unwrap();
+        SqliteCredentialsRepo::new_with_key(pools.clone(), SQLITE_KEY)
             .store(&CredentialId::new("twitch:broadcaster"), "token")
             .await
             .unwrap();
-        pool.close().await;
+        pools.close().await;
         write_file(&data.join(CREDENTIALS_KEY_FILE_NAME), KEY_BYTES);
         write_file(&data.join(MEDIA_DIR_NAME).join("clip.ogg"), SOURCE_MEDIA);
         write_file(

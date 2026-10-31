@@ -260,12 +260,12 @@ impl LiveData {
         let dir = tempfile::tempdir().unwrap();
         let url = common::database_url(dir.path());
         let backend = common::open_backend(dir.path()).await;
-        let pool = forge_storage_sqlite::connect(&url).await.unwrap();
-        SqliteCredentialsRepo::new_with_key(pool.clone(), SQLITE_KEY)
+        let pools = forge_storage_sqlite::connect_pools(&url).await.unwrap();
+        SqliteCredentialsRepo::new_with_key(pools.clone(), SQLITE_KEY)
             .store(&CredentialId::new("twitch:broadcaster"), "token")
             .await
             .unwrap();
-        pool.close().await;
+        pools.close().await;
         let data = dir.path();
         std::fs::write(data.join(CREDENTIALS_KEY_FILE_NAME), KEY_BYTES).unwrap();
         std::fs::create_dir_all(data.join(MEDIA_DIR_NAME).join("nested")).unwrap();

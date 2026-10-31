@@ -83,8 +83,8 @@ pub struct SqliteEventLogRepo {
 }
 
 impl SqliteEventLogRepo {
-    pub fn new(db: impl Into<SqlitePools>) -> Self {
-        Self { db: db.into() }
+    pub fn new(db: SqlitePools) -> Self {
+        Self { db }
     }
 
     pub(crate) async fn prune_chunk_before(
@@ -246,7 +246,7 @@ mod tests {
     async fn make_repo() -> SqliteEventLogRepo {
         let pool = connect(":memory:").await.unwrap();
         apply_migrations(&pool).await.unwrap();
-        SqliteEventLogRepo::new(pool)
+        SqliteEventLogRepo::new(crate::pool::pools_sharing(pool))
     }
 
     fn event_at(kind: &str, unix_secs: i64) -> Event {

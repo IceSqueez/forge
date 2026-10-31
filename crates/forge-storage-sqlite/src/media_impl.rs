@@ -288,11 +288,8 @@ pub struct SqliteMediaRepo {
 }
 
 impl SqliteMediaRepo {
-    pub fn new(db: impl Into<SqlitePools>, root: PathBuf) -> Self {
-        Self {
-            db: db.into(),
-            root,
-        }
+    pub fn new(db: SqlitePools, root: PathBuf) -> Self {
+        Self { db, root }
     }
 
     pub fn root(&self) -> &Path {

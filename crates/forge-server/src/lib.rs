@@ -23,6 +23,8 @@ mod ws_client;
 
 #[cfg(test)]
 pub mod test_helpers;
+#[cfg(feature = "test-support")]
+pub mod test_support;
 
 pub use audio_clips::{ClipMediaType, ClipOffer, ClipOutcome, ClipOutcomeHandle};
 pub use auth::{generate_token, masked_token};

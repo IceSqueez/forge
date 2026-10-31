@@ -19,7 +19,7 @@ const MAX_READER_CONNECTIONS: u32 = 8;
 pub struct SqlitePools {
     reader: SqlitePool,
     writer: SqlitePool,
-    checkpointer: Option<SqlitePool>,
+    checkpointer: SqlitePool,
     busy_timeout: Duration,
 }
 
@@ -36,19 +36,17 @@ impl SqlitePools {
         self.busy_timeout
     }
 
-    pub(crate) fn checkpointer(&self) -> Option<&SqlitePool> {
-        self.checkpointer.as_ref()
+    pub(crate) fn checkpointer(&self) -> &SqlitePool {
+        &self.checkpointer
     }
 
     pub(crate) fn snapshot_source(&self) -> &SqlitePool {
-        self.checkpointer.as_ref().unwrap_or(&self.writer)
+        &self.checkpointer
     }
 
     pub async fn close(&self) {
-        if let Some(checkpointer) = &self.checkpointer {
-            checkpointer.close().await;
-            self.reader.close().await;
-        }
+        self.checkpointer.close().await;
+        self.reader.close().await;
         self.truncate_wal().await;
         self.writer.close().await;
     }
@@ -92,14 +90,13 @@ impl SqlitePools {
     }
 }
 
-impl From<SqlitePool> for SqlitePools {
-    fn from(pool: SqlitePool) -> Self {
-        Self {
-            reader: pool.clone(),
-            writer: pool,
-            checkpointer: None,
-            busy_timeout: DEFAULT_BUSY_TIMEOUT,
-        }
+#[cfg(test)]
+pub(crate) fn pools_sharing(pool: SqlitePool) -> SqlitePools {
+    SqlitePools {
+        reader: pool.clone(),
+        checkpointer: pool.clone(),
+        writer: pool,
+        busy_timeout: DEFAULT_BUSY_TIMEOUT,
     }
 }
 
@@ -152,7 +149,7 @@ pub async fn connect_pools_with_busy_timeout(
     Ok(SqlitePools {
         reader,
         writer,
-        checkpointer: Some(checkpointer),
+        checkpointer,
         busy_timeout,
     })
 }

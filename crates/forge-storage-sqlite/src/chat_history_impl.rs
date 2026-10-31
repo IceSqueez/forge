@@ -174,8 +174,8 @@ pub struct SqliteChatHistoryRepo {
 }
 
 impl SqliteChatHistoryRepo {
-    pub fn new(db: impl Into<SqlitePools>) -> Self {
-        Self { db: db.into() }
+    pub fn new(db: SqlitePools) -> Self {
+        Self { db }
     }
 }
 
@@ -476,7 +476,7 @@ mod tests {
     async fn make_repo() -> SqliteChatHistoryRepo {
         let pool = connect(":memory:").await.unwrap();
         apply_migrations(&pool).await.unwrap();
-        SqliteChatHistoryRepo::new(pool)
+        SqliteChatHistoryRepo::new(crate::pool::pools_sharing(pool))
     }
 
     fn row_at(id: &str, unix_secs: i64) -> UnifiedChatRow {

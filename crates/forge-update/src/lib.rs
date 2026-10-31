@@ -26,7 +26,7 @@ mod version;
 #[cfg(test)]
 mod tests;
 
-pub use apply_state::{ApplyMode, HandoffPlan, HandoffRequest};
+pub use apply_state::{APPLY_STATE_FILE, ApplyMode, HandoffPlan, HandoffRequest};
 pub use check::check_for_update;
 pub use database::{DatabaseUnit, SchemaProbe};
 pub use digest::Sha256Digest;

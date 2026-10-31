@@ -103,8 +103,8 @@ pub struct SqliteVoiceAliasRepo {
 }
 
 impl SqliteVoiceAliasRepo {
-    pub fn new(db: impl Into<SqlitePools>) -> Self {
-        Self { db: db.into() }
+    pub fn new(db: SqlitePools) -> Self {
+        Self { db }
     }
 }
 

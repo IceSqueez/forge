@@ -82,8 +82,8 @@ pub(crate) mod tests {
     #[tokio::test]
     async fn switchable_sink_reaches_only_the_currently_installed_engine() {
         use crate::backend::MidiBackend;
-        use crate::backend::tests::{MockMidiBackend, output_port};
         use crate::config::MidiConfig;
+        use crate::testing::{MockMidiBackend, output_port};
         use forge_events::test_support::NullPublisher;
 
         let note = MidiOutMessage::NoteOn {

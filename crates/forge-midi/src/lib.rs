@@ -17,6 +17,8 @@ mod runners;
 mod sink;
 mod status;
 pub(crate) mod supervisor;
+#[cfg(any(test, feature = "testing"))]
+pub mod testing;
 mod triggers;
 pub mod vocabulary;
 

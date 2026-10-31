@@ -16,6 +16,7 @@ use forge_transfer::{
     apply_pending_restore, record_pending_restore, restore_pending, restore_staging_root,
     stage_full_restore,
 };
+use forge_update::APPLY_STATE_FILE;
 use serde_json::{Value, json};
 use tempfile::TempDir;
 
@@ -48,7 +49,6 @@ const UNTOUCHED: &[(&str, &[u8])] = &[
 ];
 
 type CrashState = fn(&Data);
-const UPDATE_APPLY_STATE_FILE: &str = "update-apply.json";
 const UPDATE_JOURNAL_FILE: &str = "update-journal.json";
 
 fn plant(root: &Path, files: &[(&str, &[u8])]) {
@@ -95,7 +95,7 @@ impl Data {
 
     fn with_update_state() -> Self {
         let data = Self::new();
-        write_file(&data.path().join(UPDATE_APPLY_STATE_FILE), b"{}");
+        write_file(&data.path().join(APPLY_STATE_FILE), b"{}");
         data
     }
 
@@ -220,7 +220,7 @@ fn failure_reason() -> Value {
 }
 
 fn update_state() -> &'static [(&'static str, &'static [u8])] {
-    &[(UPDATE_APPLY_STATE_FILE, b"{}")]
+    &[(APPLY_STATE_FILE, b"{}")]
 }
 
 fn original_tree(with_update_state: bool) -> Tree {
@@ -239,7 +239,7 @@ fn snapshot_of_original() -> Tree {
 fn restored_tree(with_update_state: bool) -> Tree {
     let mut expected = tree(&[RESTORED, UNTOUCHED, update_state()]);
     if !with_update_state {
-        expected.remove(UPDATE_APPLY_STATE_FILE);
+        expected.remove(APPLY_STATE_FILE);
     }
     expected.extend(snapshot_of_original());
     expected
@@ -544,7 +544,7 @@ fn blocked_placement_rolls_back_with_the_blocking_path_as_reason() {
 
 #[test]
 fn update_in_flight_defers_the_restore_and_keeps_everything_in_place() {
-    for update_file in [UPDATE_APPLY_STATE_FILE, UPDATE_JOURNAL_FILE] {
+    for update_file in [APPLY_STATE_FILE, UPDATE_JOURNAL_FILE] {
         let data = Data::new();
         interrupted_restore(&data);
         write_file(&data.path().join(update_file), b"{}");
@@ -669,7 +669,7 @@ async fn staged_in(data_dir: &Path) -> StagedRestore {
 async fn recording_a_restore_refuses_while_an_update_is_in_flight() {
     let cases: [(UpdateActivity, Option<&str>); 3] = [
         (UpdateActivity::Staged, None),
-        (UpdateActivity::Idle, Some(UPDATE_APPLY_STATE_FILE)),
+        (UpdateActivity::Idle, Some(APPLY_STATE_FILE)),
         (UpdateActivity::Idle, Some(UPDATE_JOURNAL_FILE)),
     ];
     for (activity, update_file) in cases {

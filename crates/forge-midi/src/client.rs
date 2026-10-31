@@ -104,6 +104,15 @@ impl MidiClient {
         client
     }
 
+    #[cfg(any(test, feature = "testing"))]
+    pub fn start_with_backend(
+        config: MidiConfig,
+        publisher: Arc<dyn EventPublisher>,
+        backend: Arc<crate::testing::MockMidiBackend>,
+    ) -> Arc<Self> {
+        Self::start(config, publisher, backend)
+    }
+
     pub fn start_with_midir(
         config: MidiConfig,
         publisher: Arc<dyn EventPublisher>,
@@ -181,7 +190,7 @@ impl MidiClient {
 
     #[cfg(test)]
     pub(crate) fn with_control_for_test(control_tx: mpsc::Sender<SupervisorCommand>) -> Arc<Self> {
-        use crate::backend::tests::MockMidiBackend;
+        use crate::testing::MockMidiBackend;
         use forge_events::test_support::NullPublisher;
 
         let (health_tx, health_state) = make_health_state();
@@ -204,7 +213,7 @@ impl MidiClient {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::backend::tests::{input_port, output_port};
+    use crate::testing::{input_port, output_port};
 
     fn client_holding_control_rx() -> (Arc<MidiClient>, mpsc::Receiver<SupervisorCommand>) {
         let (control_tx, control_rx) = mpsc::channel::<SupervisorCommand>(8);

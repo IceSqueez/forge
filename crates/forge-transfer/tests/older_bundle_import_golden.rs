@@ -16,7 +16,7 @@ use forge_storage::{
 };
 use forge_storage_sqlite::{
     MIGRATIONS, SqliteActionRepo, SqliteBackend, SqliteDatabaseFileSchema, SqliteGlobalsRepo,
-    SqliteQueueRepo, connect,
+    SqliteQueueRepo, connect_pools,
 };
 use forge_transfer::{
     BUNDLE_FORMAT_VERSION, BackupCategory, BundleKind, BundleOrigin, ClosureRegistries,
@@ -250,16 +250,16 @@ fn backup_seed() -> BackupSeed {
 }
 
 async fn older_database(path: &Path, seed: &BackupSeed) -> Vec<u8> {
-    let pool = connect(&database_url(path)).await.unwrap();
+    let pools = connect_pools(&database_url(path)).await.unwrap();
     MIGRATIONS
-        .run_to(OLDER_SCHEMA_VERSION, &pool)
+        .run_to(OLDER_SCHEMA_VERSION, pools.writer())
         .await
         .expect("the older schema applies");
-    SqliteQueueRepo::new(pool.clone())
+    SqliteQueueRepo::new(pools.clone())
         .save(&seed.queue)
         .await
         .unwrap();
-    SqliteActionRepo::new(pool.clone())
+    SqliteActionRepo::new(pools.clone())
         .save(&seed.action)
         .await
         .unwrap();
@@ -270,15 +270,15 @@ async fn older_database(path: &Path, seed: &BackupSeed) -> Vec<u8> {
         )
         .bind(key)
         .bind(value)
-        .execute(&pool)
+        .execute(pools.writer())
         .await
         .unwrap();
     }
-    let globals = SqliteGlobalsRepo::new(pool.clone());
+    let globals = SqliteGlobalsRepo::new(pools.clone());
     for (name, value) in &seed.globals {
         globals.set(name, value.clone(), true).await.unwrap();
     }
-    pool.close().await;
+    pools.close().await;
     std::fs::read(path).unwrap()
 }
 

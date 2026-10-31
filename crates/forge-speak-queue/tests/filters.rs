@@ -405,6 +405,25 @@ mod filters {
     }
 
     #[test]
+    fn longer_than_counts_characters_and_skips_from_one_past_the_cap() {
+        let mut settings = default_settings();
+        settings.skip_longer_than = true;
+        settings.longer_than_max_chars = 5;
+        let config = build_config_strict(&[], &settings).unwrap();
+        let too_long = PipelineResult::Skip {
+            reason: SkipReason::MatchedSkipRule(SkipRule::ExceedsMaxLength),
+        };
+
+        for (text, expected) in [
+            ("hello!", too_long.clone()),
+            ("привіт", too_long),
+            ("вітаю", PipelineResult::Speak("вітаю".into())),
+        ] {
+            assert_eq!(process(text, &config, &ctx()), expected, "{text}");
+        }
+    }
+
+    #[test]
     fn hot_reload_of_strip_emoji_changes_what_the_live_config_speaks() {
         let off = TtsPipelineSettings {
             strip_emoji: false,

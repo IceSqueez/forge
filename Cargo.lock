@@ -2912,6 +2912,7 @@ version = "0.6.3"
 dependencies = [
  "async-trait",
  "forge-events",
+ "forge-midi",
  "forge-net",
  "forge-platform-core",
  "forge-registry",
@@ -3215,6 +3216,7 @@ dependencies = [
  "forge-paths",
  "forge-registry",
  "forge-runtime",
+ "forge-server",
  "forge-storage",
  "forge-test-support",
  "forge-types",

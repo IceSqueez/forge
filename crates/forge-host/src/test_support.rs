@@ -20,8 +20,9 @@ use forge_platform_core::PlatformEndpoints;
 use forge_platform_core::PlatformError;
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::DonationIngest;
-use forge_runtime::{ActionCancelRegistry, Catalog, EventBus, spawn_action_engine};
-use forge_server::{ServerConfig, ServerHandle, stopped_server};
+use forge_runtime::{Catalog, EventBus};
+use forge_server::test_support::ServerDeps;
+use forge_server::{ServerHandle, stopped_server};
 use forge_speech_types::PcmBuffer;
 use forge_storage::MockTriggerInstanceRepo;
 use forge_storage::test_support::{MemorySettings, StoredSettingRow};
@@ -868,42 +869,24 @@ pub async fn yield_until(mut reached: impl FnMut() -> bool) {
 }
 
 pub async fn stopped_server_handle(backend: &Arc<TestBackend>) -> ServerHandle {
-    stopped_server(server_config(backend))
-        .await
-        .expect("a stopped server handle")
+    stopped_server_hosting(backend, forge_paths::overlays_dir()).await
 }
 
 pub async fn stopped_server_hosting(
     backend: &Arc<TestBackend>,
     overlay_root: std::path::PathBuf,
 ) -> ServerHandle {
-    let mut config = server_config(backend);
-    config.overlay_root = overlay_root;
+    let config = ServerDeps::new(overlay_root)
+        .with_settings(Arc::clone(backend) as Arc<dyn SettingsRepo>)
+        .with_credentials(Arc::clone(backend) as Arc<dyn CredentialsRepo>)
+        .with_actions(Arc::new(StubActions))
+        .with_globals(Arc::clone(backend) as Arc<dyn GlobalsRepo>)
+        .with_user_globals(Arc::clone(backend) as Arc<dyn UserGlobalsRepo>)
+        .with_overlays(Arc::new(StubOverlays))
+        .build();
     stopped_server(config)
         .await
         .expect("a stopped server handle")
-}
-
-fn server_config(backend: &Arc<TestBackend>) -> ServerConfig {
-    let bus = EventBus::new(Arc::new(StubEventLog));
-    let engine = Arc::new(spawn_action_engine(
-        Arc::clone(&bus),
-        stub_catalog(),
-        Arc::new(StubActions),
-        Arc::new(StubHistory),
-        Arc::new(SubActionRegistry::new()),
-        Arc::new(ActionCancelRegistry::new()),
-    ));
-    ServerConfig::new(
-        Arc::clone(backend) as Arc<dyn SettingsRepo>,
-        Arc::clone(backend) as Arc<dyn CredentialsRepo>,
-        bus,
-        Arc::new(StubActions),
-        Arc::clone(backend) as Arc<dyn GlobalsRepo>,
-        Arc::clone(backend) as Arc<dyn UserGlobalsRepo>,
-        Arc::new(StubOverlays),
-        engine,
-    )
 }
 
 pub fn stopped_handle(rt: &tokio::runtime::Runtime, backend: &Arc<TestBackend>) -> ServerHandle {

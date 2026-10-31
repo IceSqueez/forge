@@ -1,6 +1,9 @@
 #![expect(clippy::expect_used, reason = "test fixtures")]
 use forge_storage::{ActionRepo, DataProvider};
-use forge_storage_sqlite::{SqliteActionRepo, apply_migrations, connect, migrate_registry_format};
+use forge_storage_sqlite::test_support::Sandboxed;
+use forge_storage_sqlite::{
+    SqliteActionRepo, SqlitePools, apply_migrations, connect, migrate_registry_format,
+};
 use forge_types::{Action, ActionId, QueueId, SubActionStep, Variant};
 use sqlx::SqlitePool;
 
@@ -139,11 +142,10 @@ async fn open_with_key_applies_action_registry_migration_on_boot() {
 
 const KIND_THE_DISCORD_CONVERTER_REWRITES: &str = "discord.post_text";
 
-async fn migrated_pool() -> (SqlitePool, SqliteActionRepo) {
-    let pool = connect("sqlite::memory:").await.expect("connect");
-    apply_migrations(&pool).await.expect("apply migrations");
-    let repo = SqliteActionRepo::new(pool.clone());
-    (pool, repo)
+async fn migrated_repo() -> (Sandboxed<SqlitePools>, SqliteActionRepo) {
+    let pools = common::migrated_pools().await;
+    let repo = SqliteActionRepo::new((*pools).clone());
+    (pools, repo)
 }
 
 fn action_with_step(kind_id: &str) -> Action {
@@ -182,14 +184,14 @@ async fn first_kind_id(repo: &SqliteActionRepo, id: ActionId) -> String {
 
 #[tokio::test]
 async fn an_action_written_through_the_repo_is_not_converted_again_on_the_next_boot() {
-    let (pool, repo) = migrated_pool().await;
+    let (pools, repo) = migrated_repo().await;
 
     let inserted = action_with_step(KIND_THE_DISCORD_CONVERTER_REWRITES);
     repo.save(&inserted).await.expect("insert");
 
     let updated = action_with_step(KIND_THE_DISCORD_CONVERTER_REWRITES);
     let updated_json = serde_json::to_string(&updated.sub_actions).expect("steps json");
-    insert_legacy_row(&pool, updated.id, &updated_json).await;
+    insert_legacy_row(pools.writer(), updated.id, &updated_json).await;
     repo.save(&updated).await.expect("update over a legacy row");
 
     let duplicated = ActionId::new();
@@ -197,7 +199,7 @@ async fn an_action_written_through_the_repo_is_not_converted_again_on_the_next_b
         .await
         .expect("duplicate");
 
-    migrate_registry_format(&pool)
+    migrate_registry_format(pools.writer())
         .await
         .expect("boot conversion");
 
@@ -216,15 +218,15 @@ async fn an_action_written_through_the_repo_is_not_converted_again_on_the_next_b
 
 #[tokio::test]
 async fn a_duplicate_of_an_unconverted_action_is_converted_with_its_source() {
-    let (pool, repo) = migrated_pool().await;
+    let (pools, repo) = migrated_repo().await;
     let source = ActionId::new();
-    insert_legacy_row(&pool, source, r#"[{"Delay":{"ms":250}}]"#).await;
+    insert_legacy_row(pools.writer(), source, r#"[{"Delay":{"ms":250}}]"#).await;
     let copy = ActionId::new();
 
     repo.duplicate(source, copy, "copy")
         .await
         .expect("duplicate");
-    migrate_registry_format(&pool)
+    migrate_registry_format(pools.writer())
         .await
         .expect("boot conversion");
 

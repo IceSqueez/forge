@@ -95,16 +95,6 @@ async fn close_returns_in_bounded_time_while_a_reader_holds_a_snapshot_and_data_
 }
 
 #[tokio::test]
-async fn closing_a_single_pool_without_a_checkpointer_does_not_hang() {
-    let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
-    let pools = SqlitePools::from(pool);
-
-    tokio::time::timeout(HANG_GUARD, pools.close())
-        .await
-        .expect("in-memory close must finish");
-}
-
-#[tokio::test]
 async fn closing_twice_is_harmless() {
     let (pools, db, _dir) = populated().await;
 

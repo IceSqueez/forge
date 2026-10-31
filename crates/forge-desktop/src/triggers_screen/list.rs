@@ -2,19 +2,16 @@ use super::*;
 use crate::async_bridge;
 use crate::integration_switch::{category_inactive_badge, inactive_badge};
 use crate::load_notice::{LoadNotice, NoticeWidth, load_notice};
-use crate::navigable_list::{ListStep, NavigableList, stepped_index};
-use crate::repo_failure::RepoFailure;
-use forge_components::ActivePresentation;
+use crate::navigable_list::{ListStep, NavigableList, navigable_list, stepped_index};
 use forge_components::OverflowRevealingFocus;
-use forge_components::PushToast;
 use forge_components::ROW_OFF_OPACITY;
 use forge_components::SEARCH_FIELD_WIDTH;
 use forge_components::{
     BORDER_THIN, ChipGlyph, ConfirmTone, Density, FONT_XXS, ForgePalette, Icon, InlineEditEvent,
     InputEvent, KeyActivated, OverlayPosition, Spacing, TextInput, badge, body_family, chip,
     confirm_modal, context_menu, ghost_button_with_icon, header_stat, header_stats, icon,
-    inline_edit, menu_divider, menu_item, mono_family, overlay, primary_button_with_icon, scaled,
-    spacing, status_dot, toggle, tr,
+    inline_edit, menu_button, menu_divider, menu_item, mono_family, overlay,
+    primary_button_with_icon, scaled, spacing, status_dot, toggle, tr,
 };
 use gpui::{
     AnyElement, App, ClickEvent, Context, Div, Entity, FontWeight, MouseButton, MouseDownEvent,
@@ -22,38 +19,227 @@ use gpui::{
 };
 use std::sync::Arc;
 
-impl NavigableList for TriggersRegistryView {
-    fn step_list(&mut self, step: ListStep, cx: &mut Context<Self>) {
-        let current = self
-            .list_cursor
-            .and_then(|id| self.visible_position(id))
-            .or_else(|| self.selected.and_then(|id| self.visible_position(id)));
-        let Some(next) = stepped_index(current, self.visible.len(), step) else {
-            return;
-        };
-        if let Some(row) = self
-            .visible
-            .get(next)
-            .and_then(|&idx| self.instances.get(idx))
-        {
-            self.list_cursor = Some(row.id);
-            self.list_scroll
-                .scroll_to_item(next, ScrollStrategy::Nearest);
-            cx.notify();
-        }
-    }
+mod modal_layers;
+mod render;
+#[cfg(test)]
+mod tests;
 
-    fn activate_list(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(id) = self
-            .list_cursor
-            .filter(|&id| self.visible_position(id).is_some())
-        {
-            self.select(id, cx);
-        }
-    }
+#[derive(Clone)]
+pub(super) struct ListedRow {
+    pub(super) id: TriggerInstanceId,
+    pub(super) name: String,
+    pub(super) enabled: bool,
+    pub(super) used_in_count: usize,
 }
 
-impl TriggersRegistryView {
+pub(super) enum TriggerListEvent {
+    Selected(ListedRow),
+    SelectedListed(ListedRow),
+    SelectionLost,
+    EnabledShown(TriggerInstanceId, bool),
+    OpenCreate,
+}
+
+impl EventEmitter<TriggerListEvent> for TriggerList {}
+
+pub(super) struct TriggerList {
+    deps: TriggerScreenDeps,
+    list_load: Loadable<()>,
+    reload_generation: async_bridge::Generation,
+    enabled_writers: KeyedSnapshotWriters<TriggerInstanceId>,
+    instances: Vec<TriggerInstanceRow>,
+    visible: Vec<usize>,
+    list_scroll: UniformListScrollHandle,
+    list_focus: FocusHandle,
+    focused_once: bool,
+    pub(super) list_cursor: Option<TriggerInstanceId>,
+    pub(super) selected: Option<TriggerInstanceId>,
+    hovered: Option<TriggerInstanceId>,
+    menu_open: Option<TriggerInstanceId>,
+    menu_focus: FocusHandle,
+    menu_focus_restore: Option<FocusHandle>,
+    menu_click_pos: Option<Point<Pixels>>,
+    search: SearchState,
+    platforms: Vec<Platform>,
+    usage_filter: UsageFilter,
+    rename: Option<RenameForm>,
+    rename_requested: Option<TriggerInstanceId>,
+    pending_delete: Confirm<TriggerInstanceId>,
+    confirm_disable: Confirm<TriggerInstanceId>,
+    integrations: Option<SwitchWatch>,
+    _search_sub: Subscription,
+}
+
+impl TriggerList {
+    pub(super) fn new(
+        deps: TriggerScreenDeps,
+        preselect: Option<TriggerInstanceId>,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        let palette = cx.palette();
+        let search = SearchState::new(cx, palette, tr!("triggers_search_placeholder"));
+        let search_sub = cx.subscribe(search.field(), Self::on_search_event);
+        let enabled_writers = KeyedSnapshotWriters::new(&deps.rt_handle);
+        let list = Self {
+            deps,
+            list_load: Loadable::Loading,
+            reload_generation: async_bridge::Generation::default(),
+            enabled_writers,
+            instances: Vec::new(),
+            visible: Vec::new(),
+            list_scroll: UniformListScrollHandle::new(),
+            list_focus: cx.focus_handle(),
+            focused_once: false,
+            list_cursor: preselect,
+            selected: preselect,
+            hovered: None,
+            menu_open: None,
+            menu_focus: cx.focus_handle(),
+            menu_focus_restore: None,
+            menu_click_pos: None,
+            search,
+            platforms: Vec::new(),
+            usage_filter: UsageFilter::All,
+            rename: None,
+            rename_requested: None,
+            pending_delete: Confirm::default(),
+            confirm_disable: Confirm::default(),
+            integrations: None,
+            _search_sub: search_sub,
+        };
+        list.reload(cx);
+        list
+    }
+
+    pub(super) fn attach_switch(&mut self, switch: IntegrationSwitch, cx: &mut Context<Self>) {
+        self.integrations = Some(switch.watch(cx, |this: &mut Self, off, cx| {
+            if let Some(integrations) = &mut this.integrations {
+                integrations.replace(off, cx);
+            }
+        }));
+    }
+
+    fn switched_off_owner(&self, kind_id: &str) -> Option<IntegrationId> {
+        switched_off_owner(self.integrations.as_ref(), &self.deps.registry, kind_id)
+    }
+
+    fn uncovered_category(
+        &self,
+        kind_id: &str,
+    ) -> Option<forge_platform_core::IntegrationCategory> {
+        self.integrations.as_ref()?.uncovered_category(kind_id)
+    }
+
+    pub(super) fn delete_pending(&self) -> bool {
+        self.pending_delete.get().is_some()
+    }
+
+    pub(super) fn reload(&self, cx: &mut Context<Self>) {
+        let repo = Arc::clone(&self.deps.repo);
+        self.spawn_reload(async move { load_rows(&*repo).await }, cx);
+    }
+
+    fn spawn_reload(
+        &self,
+        work: impl Future<Output = Result<Vec<TriggerInstanceRow>, RepoFailure>> + Send + 'static,
+        cx: &mut Context<Self>,
+    ) {
+        let ticket = self.reload_generation.next();
+        async_bridge::run_async(
+            &self.deps.rt_handle,
+            work,
+            move |this, result, cx| match result {
+                _ if !this.reload_generation.is_current(ticket) => {}
+                Ok(rows) => this.apply_rows(rows, cx),
+                Err(failure) => this.on_list_load_failed(failure, cx),
+            },
+            cx,
+        );
+    }
+
+    fn on_list_load_failed(&mut self, failure: RepoFailure, cx: &mut Context<Self>) {
+        if !self.instances.is_empty() {
+            on_repo_error(&failure, cx);
+        }
+        self.list_load = Loadable::Failed(failure);
+        cx.notify();
+    }
+
+    fn retry_list_load(&mut self, cx: &mut Context<Self>) {
+        self.list_load = Loadable::Loading;
+        self.reload(cx);
+        cx.notify();
+    }
+
+    fn spawn_write<T: Send + 'static>(
+        &self,
+        write: impl Future<Output = Result<T, RepoFailure>> + Send + 'static,
+        cx: &mut Context<Self>,
+    ) {
+        async_bridge::run_async(
+            &self.deps.rt_handle,
+            write,
+            |this, written, cx| this.on_write_settled(written.map(drop), cx),
+            cx,
+        );
+    }
+
+    fn on_write_settled(&mut self, written: Result<(), RepoFailure>, cx: &mut Context<Self>) {
+        match written {
+            Ok(()) => self.reload(cx),
+            Err(failure) => {
+                on_repo_error(&failure, cx);
+                self.reload(cx);
+            }
+        }
+    }
+
+    fn listed_row(&self, id: TriggerInstanceId) -> Option<ListedRow> {
+        self.find(id).map(|row| ListedRow {
+            id,
+            name: row.name.clone(),
+            enabled: row.enabled,
+            used_in_count: row.used_in_count,
+        })
+    }
+
+    fn apply_rows(&mut self, rows: Vec<TriggerInstanceRow>, cx: &mut Context<Self>) {
+        self.instances = rows;
+        self.rebuild_visible();
+        self.list_load = Loadable::Loaded(());
+        match self.selected.map(|id| self.listed_row(id)) {
+            Some(Some(row)) => cx.emit(TriggerListEvent::SelectedListed(row)),
+            Some(None) => {
+                self.selected = None;
+                cx.emit(TriggerListEvent::SelectionLost);
+            }
+            None => {}
+        }
+        cx.notify();
+    }
+
+    pub(super) fn land_created(
+        &mut self,
+        id: TriggerInstanceId,
+        rows: Vec<TriggerInstanceRow>,
+        cx: &mut Context<Self>,
+    ) {
+        self.instances = rows;
+        self.rebuild_visible();
+        self.list_load = Loadable::Loaded(());
+        self.select(id, cx);
+    }
+
+    pub(super) fn clear_selection(&mut self, cx: &mut Context<Self>) {
+        self.selected = None;
+        cx.notify();
+    }
+
+    pub(super) fn request_rename(&mut self, id: TriggerInstanceId, cx: &mut Context<Self>) {
+        self.rename_requested = Some(id);
+        cx.notify();
+    }
+
     fn visible_position(&self, id: TriggerInstanceId) -> Option<usize> {
         self.visible
             .iter()
@@ -83,7 +269,7 @@ impl TriggersRegistryView {
                     .instances
                     .iter()
                     .filter(|i| {
-                        Platform::from_kind_id(&i.kind_id, &self.registry).as_ref() == Some(&p)
+                        Platform::from_kind_id(&i.kind_id, &self.deps.registry).as_ref() == Some(&p)
                     })
                     .count();
                 (count > 0).then_some((p, count))
@@ -98,7 +284,8 @@ impl TriggersRegistryView {
     }
 
     fn kind_label(&self, kind_id: &str) -> String {
-        self.registry
+        self.deps
+            .registry
             .get(kind_id)
             .map(crate::kind_copy::trigger_name)
             .unwrap_or_else(|| kind_id.to_owned())
@@ -117,7 +304,7 @@ impl TriggersRegistryView {
 
     fn passes(&self, instance: &TriggerInstanceRow) -> bool {
         if !self.platforms.is_empty()
-            && !Platform::from_kind_id(&instance.kind_id, &self.registry)
+            && !Platform::from_kind_id(&instance.kind_id, &self.deps.registry)
                 .is_some_and(|p| self.platforms.contains(&p))
         {
             return false;
@@ -182,12 +369,15 @@ impl TriggersRegistryView {
     }
 
     fn select(&mut self, id: TriggerInstanceId, cx: &mut Context<Self>) {
-        if self.selected != Some(id) {
-            self.detail = None;
-        }
         self.selected = Some(id);
         self.list_cursor = Some(id);
-        self.load_detail(id, cx);
+        match self.listed_row(id) {
+            Some(row) => cx.emit(TriggerListEvent::Selected(row)),
+            None => {
+                self.selected = None;
+                cx.emit(TriggerListEvent::SelectionLost);
+            }
+        }
         cx.notify();
     }
 
@@ -214,16 +404,16 @@ impl TriggersRegistryView {
         cx.notify();
     }
 
-    fn close_menu(&mut self, cx: &mut Context<Self>) {
+    pub(super) fn close_menu(&mut self, cx: &mut Context<Self>) {
         self.menu_open = None;
         cx.notify();
     }
 
     fn persist_enabled(&mut self, id: TriggerInstanceId, enabled: bool, cx: &mut Context<Self>) {
         self.menu_open = None;
-        self.show_enabled(id, enabled);
+        self.show_enabled(id, enabled, cx);
         cx.notify();
-        let repo = Arc::clone(&self.repo);
+        let repo = Arc::clone(&self.deps.repo);
         self.enabled_writers.writer(id).write(
             async move {
                 repo.set_enabled(id, enabled)
@@ -244,15 +434,13 @@ impl TriggersRegistryView {
         }
     }
 
-    fn show_enabled(&mut self, id: TriggerInstanceId, enabled: bool) {
+    fn show_enabled(&mut self, id: TriggerInstanceId, enabled: bool, cx: &mut Context<Self>) {
         self.reload_generation.next();
         if let Some(row) = self.instances.iter_mut().find(|row| row.id == id) {
             row.enabled = enabled;
         }
-        if let Some(detail) = self.detail.as_mut().filter(|d| d.instance.id == id) {
-            detail.instance.enabled = enabled;
-        }
         self.rebuild_visible();
+        cx.emit(TriggerListEvent::EnabledShown(id, enabled));
     }
 
     pub(super) fn toggle_enable(&mut self, id: TriggerInstanceId, cx: &mut Context<Self>) {
@@ -304,10 +492,10 @@ impl TriggersRegistryView {
         let name = instance.name.clone();
         cx.notify();
 
-        let repo = Arc::clone(&self.repo);
-        let restore_repo = Arc::clone(&self.repo);
+        let repo = Arc::clone(&self.deps.repo);
+        let restore_repo = Arc::clone(&self.deps.repo);
         async_bridge::run_async(
-            &self.rt_handle,
+            &self.deps.rt_handle,
             async move {
                 repo.archive(id).await.map_err(RepoFailure::from)?;
                 load_rows(&*repo).await
@@ -317,7 +505,7 @@ impl TriggersRegistryView {
                     this.apply_rows(rows, cx);
                     this.raise_undo_toast(id, name, restore_repo, cx);
                 }
-                Err(failure) => this.on_repo_error(&failure, cx),
+                Err(failure) => on_repo_error(&failure, cx),
             },
             cx,
         );
@@ -343,12 +531,7 @@ impl TriggersRegistryView {
         });
     }
 
-    pub(super) fn start_rename(
-        &mut self,
-        id: TriggerInstanceId,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    fn start_rename(&mut self, id: TriggerInstanceId, window: &mut Window, cx: &mut Context<Self>) {
         let Some(instance) = self.find(id) else {
             return;
         };
@@ -387,7 +570,7 @@ impl TriggersRegistryView {
             return;
         }
         let id = form.id;
-        let repo = Arc::clone(&self.repo);
+        let repo = Arc::clone(&self.deps.repo);
         self.spawn_write(
             async move {
                 let mut instance = repo
@@ -401,961 +584,35 @@ impl TriggersRegistryView {
             cx,
         );
     }
-
-    pub(super) fn render_stats(&self, palette: &ForgePalette, density: Density) -> AnyElement {
-        header_stats(
-            vec![
-                header_stat(
-                    self.instances.len().to_string(),
-                    palette.text_primary,
-                    tr!("triggers_stat_instances"),
-                ),
-                header_stat(
-                    self.used_count().to_string(),
-                    palette.success,
-                    tr!("triggers_stat_used"),
-                ),
-                header_stat(
-                    self.disabled_count().to_string(),
-                    palette.warning,
-                    tr!("triggers_stat_disabled"),
-                ),
-            ],
-            palette,
-            density,
-        )
-        .into_any_element()
-    }
-
-    fn divider(palette: &ForgePalette) -> AnyElement {
-        div()
-            .w(FILTER_DIV_W)
-            .h(FILTER_DIV_H)
-            .bg(palette.border_regular)
-            .into_any_element()
-    }
-
-    pub(super) fn render_filter_left(
-        &self,
-        palette: &ForgePalette,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let density = cx.density();
-        let mut platform_chips = div()
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Xxs, density));
-        for (platform, count) in self.platform_counts() {
-            let active = self.platforms.contains(&platform);
-            let label = format!("{} {}", platform.display(), count);
-            platform_chips = platform_chips.child(
-                chip(
-                    label,
-                    ChipGlyph::Dot(platform.dot(palette)),
-                    active,
-                    palette,
-                )
-                .on_click(
-                    SharedString::from(format!("triggers-platform-{}", platform.element_key())),
-                    cx.listener(move |this, _: &ClickEvent, _, cx| {
-                        this.toggle_platform(platform.clone(), cx)
-                    }),
-                ),
-            );
-        }
-        if !self.platforms.is_empty() {
-            platform_chips = platform_chips.child(
-                div()
-                    .id("triggers-platform-clear")
-                    .cursor_pointer()
-                    .px(spacing(Spacing::Xs, density))
-                    .font_family(body_family())
-                    .text_size(FONT_XXS)
-                    .text_color(palette.text_faint)
-                    .child(tr!("triggers_platform_clear"))
-                    .key_activated(palette.text_primary)
-                    .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.clear_platforms(cx))),
-            );
-        }
-
-        let usage_chips = div()
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Xxs, density))
-            .child(
-                chip(
-                    tr!("triggers_usage_used"),
-                    ChipGlyph::Dot(palette.success),
-                    self.usage_filter == UsageFilter::Used,
-                    palette,
-                )
-                .on_click(
-                    "triggers-usage-used",
-                    cx.listener(|this, _: &ClickEvent, _, cx| {
-                        this.set_usage_filter(UsageFilter::Used, cx)
-                    }),
-                ),
-            )
-            .child(
-                chip(
-                    tr!("triggers_usage_unused"),
-                    ChipGlyph::Dot(palette.text_faint),
-                    self.usage_filter == UsageFilter::Unused,
-                    palette,
-                )
-                .on_click(
-                    "triggers-usage-unused",
-                    cx.listener(|this, _: &ClickEvent, _, cx| {
-                        this.set_usage_filter(UsageFilter::Unused, cx)
-                    }),
-                ),
-            );
-
-        div()
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Sm, density))
-            .child(
-                div()
-                    .w(SEARCH_FIELD_WIDTH)
-                    .child(self.search.field().clone()),
-            )
-            .child(Self::divider(palette))
-            .child(platform_chips)
-            .child(Self::divider(palette))
-            .child(usage_chips)
-            .into_any_element()
-    }
-
-    pub(super) fn render_filter_right(
-        &self,
-        palette: &ForgePalette,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        primary_button_with_icon(Icon::Plus, tr!("triggers_new_trigger"), palette)
-            .on_click(
-                "triggers-new",
-                cx.listener(|this, _: &ClickEvent, window, cx| this.open_create(window, cx)),
-            )
-            .into_any_element()
-    }
-
-    fn columns(
-        dot: AnyElement,
-        name: AnyElement,
-        kind: AnyElement,
-        used: AnyElement,
-        on: AnyElement,
-        menu: AnyElement,
-    ) -> Div {
-        div()
-            .flex()
-            .items_center()
-            .w_full()
-            .child(
-                div()
-                    .w(COL_DOT)
-                    .flex_none()
-                    .flex()
-                    .items_center()
-                    .child(dot),
-            )
-            .child(div().w(COL_NAME).flex_none().overflow_hidden().child(name))
-            .child(div().flex_1().min_w(px(0.0)).child(kind))
-            .child(
-                div()
-                    .w(COL_USED)
-                    .flex_none()
-                    .flex()
-                    .justify_end()
-                    .child(used),
-            )
-            .child(
-                div()
-                    .w(COL_ON)
-                    .flex_none()
-                    .flex()
-                    .justify_center()
-                    .child(on),
-            )
-            .child(
-                div()
-                    .w(COL_MENU)
-                    .flex_none()
-                    .flex()
-                    .justify_end()
-                    .child(menu),
-            )
-    }
-
-    fn caption_cell(palette: &ForgePalette, label: impl Into<SharedString>) -> AnyElement {
-        div()
-            .font_family(mono_family())
-            .text_size(FONT_XXS)
-            .text_color(palette.text_faint)
-            .child(label.into())
-            .into_any_element()
-    }
-
-    fn render_caption(&self, palette: &ForgePalette, density: Density) -> AnyElement {
-        let cols = Self::columns(
-            div().into_any_element(),
-            Self::caption_cell(palette, tr!("triggers_col_name")),
-            Self::caption_cell(palette, tr!("triggers_col_kind")),
-            Self::caption_cell(palette, tr!("triggers_col_used")),
-            Self::caption_cell(palette, tr!("triggers_col_on")),
-            div().into_any_element(),
-        );
-        div()
-            .w_full()
-            .flex_none()
-            .py(scaled(CAPTION_PAD_V, density))
-            .px(scaled(CAPTION_PAD_H, density))
-            .bg(palette.shell)
-            .border_b(BORDER_THIN)
-            .border_color(palette.border_regular)
-            .child(cols)
-            .into_any_element()
-    }
-
-    pub(super) fn render_list(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
-        let density = cx.density();
-        if self.visible.is_empty() {
-            let notice = load_notice(
-                &self.list_load,
-                LoadNotice {
-                    id: "triggers-load",
-                    loading: tr!("triggers_loading"),
-                    width: NoticeWidth::Pane,
-                },
-                cx.listener(|this, _: &ClickEvent, _, cx| this.retry_list_load(cx)),
-                palette,
-                density,
-            )
-            .filter(|_| self.instances.is_empty());
-            let empty = notice.unwrap_or_else(|| self.render_empty(palette, cx));
-            return div()
-                .id("triggers-list")
-                .flex_1()
-                .h_full()
-                .overflow_y_revealing_focus()
-                .bg(palette.base)
-                .child(empty)
-                .into_any_element();
-        }
-
-        let count = self.visible.len();
-        let pal = *palette;
-        let rows = uniform_list(
-            "triggers-rows",
-            count,
-            cx.processor(move |this, range: std::ops::Range<usize>, _window, cx| {
-                let mut out = Vec::with_capacity(range.len());
-                for ix in range {
-                    let idx = this.visible[ix];
-                    if let Some(instance) = this.instances.get(idx) {
-                        out.push(this.render_row(instance, &pal, cx));
-                    }
-                }
-                out
-            }),
-        )
-        .track_scroll(&self.list_scroll)
-        .flex_1()
-        .min_h(px(0.0));
-
-        div()
-            .id("triggers-list")
-            .flex_1()
-            .h_full()
-            .flex()
-            .flex_col()
-            .bg(palette.base)
-            .child(self.render_caption(palette, density))
-            .child(rows)
-            .into_any_element()
-    }
-
-    fn render_row(
-        &self,
-        instance: &TriggerInstanceRow,
-        palette: &ForgePalette,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let density = cx.density();
-        let id = instance.id;
-        let selected = self.selected == Some(id);
-        let cursor = self.list_cursor == Some(id);
-        let hovered = self.hovered == Some(id);
-        let dot_color = platform_dot_color(&instance.kind_id, &self.registry, palette);
-        let descriptor = self.registry.get(&instance.kind_id);
-        let kind_glyph = descriptor
-            .map(|d| Icon::from_name(d.icon_name()))
-            .unwrap_or(Icon::Bolt);
-        let kind_label = descriptor
-            .map(crate::kind_copy::trigger_name)
-            .unwrap_or_else(|| instance.kind_id.clone());
-
-        let stripe_color = if selected || cursor {
-            dot_color
-        } else {
-            gpui::transparent_black().into()
-        };
-        let row_bg: Rgba = if selected || cursor || hovered {
-            palette.elevated
-        } else {
-            gpui::transparent_black().into()
-        };
-        let name_color = if !instance.enabled {
-            palette.text_muted
-        } else {
-            palette.text_primary
-        };
-
-        let mut kind = div()
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Xs, density))
-            .min_w(px(0.0))
-            .child(icon(kind_glyph, KIND_GLYPH, dot_color))
-            .child(
-                div()
-                    .flex_shrink(1.0)
-                    .min_w(px(0.0))
-                    .truncate()
-                    .font_family(mono_family())
-                    .text_size(KIND_FS)
-                    .text_color(palette.text_muted)
-                    .child(kind_label),
-            );
-        if instance.override_count > 0 {
-            let label = tr!(
-                "triggers_override_badge",
-                count = i64::try_from(instance.override_count).unwrap_or(i64::MAX)
-            );
-            kind = kind.child(badge(
-                palette.surface_overlay,
-                palette.accent_peach,
-                label,
-                true,
-                BADGE_FS,
-            ));
-        }
-        let switched_off_owner = self.switched_off_owner(&instance.kind_id);
-        if let Some(owner) = &switched_off_owner {
-            kind = kind.child(inactive_badge(owner, palette, density));
-        }
-        let uncovered_category = self.uncovered_category(&instance.kind_id);
-        if let Some(category) = uncovered_category {
-            kind = kind.child(category_inactive_badge(category, palette, density));
-        }
-        let gate = if cooldown_applies(descriptor) {
-            cooldown_suffix(instance.cooldown_secs, instance.cooldown_global)
-        } else {
-            let summary = condition_display(descriptor, &instance.overrides);
-            format!(" \u{b7} {summary}")
-        };
-        kind = kind.child(
-            div()
-                .flex_none()
-                .font_family(mono_family())
-                .text_size(KIND_FS)
-                .text_color(palette.accent_peach)
-                .child(gate),
-        );
-        if let Some(permission) = descriptor
-            .and_then(|d| d.chat_trigger_family())
-            .and_then(|_| permission_suffix(instance.permission_rung))
-        {
-            kind = kind.child(
-                div()
-                    .flex_none()
-                    .font_family(mono_family())
-                    .text_size(KIND_FS)
-                    .text_color(palette.info)
-                    .child(permission),
-            );
-        }
-
-        let used: AnyElement = if instance.used_in_count > 0 {
-            div()
-                .flex()
-                .items_center()
-                .gap(spacing(Spacing::Xxs, density))
-                .font_family(body_family())
-                .text_size(USED_FS)
-                .text_color(palette.text_primary)
-                .child(tr!("triggers_used_in_prefix"))
-                .child(
-                    div()
-                        .font_family(body_family())
-                        .font_weight(FontWeight::MEDIUM)
-                        .text_color(palette.success)
-                        .child(instance.used_in_count.to_string()),
-                )
-                .into_any_element()
-        } else {
-            div()
-                .italic()
-                .font_family(body_family())
-                .text_size(USED_FS)
-                .text_color(palette.text_faint)
-                .child(tr!("triggers_row_unused"))
-                .into_any_element()
-        };
-
-        let renaming = self.rename.as_ref().is_some_and(|r| r.id == id);
-        let name_cell: AnyElement = match self.rename.as_ref().filter(|r| r.id == id) {
-            Some(rename) => div()
-                .w(COL_NAME)
-                .flex_none()
-                .child(rename.editor.clone())
-                .into_any_element(),
-            None => div()
-                .w(COL_NAME)
-                .flex_none()
-                .truncate()
-                .font_family(mono_family())
-                .text_size(NAME_FS)
-                .text_color(name_color)
-                .cursor_pointer()
-                .on_mouse_down(
-                    MouseButton::Left,
-                    cx.listener(move |this, event: &MouseDownEvent, window, cx| {
-                        if event.click_count >= 2 {
-                            this.start_rename(id, window, cx);
-                        }
-                    }),
-                )
-                .child(instance.name.clone())
-                .into_any_element(),
-        };
-
-        let mut select_region = div()
-            .id(SharedString::from(format!("triggers-row-select-{id}")))
-            .flex_1()
-            .flex()
-            .items_center()
-            .pl(ROW_PAD_L)
-            .py(ROW_PAD_V)
-            .child(
-                div()
-                    .w(COL_DOT)
-                    .flex_none()
-                    .flex()
-                    .items_center()
-                    .child(status_dot(dot_color, ROW_DOT)),
-            )
-            .child(name_cell)
-            .child(div().flex_1().min_w(px(0.0)).child(kind))
-            .child(
-                div()
-                    .w(COL_USED)
-                    .flex_none()
-                    .flex()
-                    .justify_end()
-                    .pr(USED_CELL_GAP)
-                    .child(used),
-            );
-        if !renaming {
-            select_region = select_region.cursor_pointer().on_click(cx.listener(
-                move |this, _: &ClickEvent, window, cx| {
-                    window.focus(&this.list_focus, cx);
-                    this.select(id, cx);
-                },
-            ));
-        }
-
-        let on_cell = div().w(COL_ON).flex_none().flex().justify_center().child(
-            toggle(instance.enabled, palette).on_click(
-                SharedString::from(format!("triggers-toggle-{id}")),
-                cx.listener(move |this, _: &ClickEvent, _, cx| this.toggle_enable(id, cx)),
-            ),
-        );
-
-        let menu_cell = div().w(COL_MENU).flex_none();
-
-        let content = div()
-            .w_full()
-            .flex()
-            .items_center()
-            .pr(scaled(ROW_PAD_R, density))
-            .child(select_region)
-            .child(on_cell)
-            .child(menu_cell);
-
-        div()
-            .id(SharedString::from(format!("triggers-row-{id}")))
-            .w_full()
-            .flex()
-            .bg(row_bg)
-            .border_b(BORDER_THIN)
-            .border_color(palette.border_regular)
-            .when(
-                !instance.enabled || switched_off_owner.is_some() || uncovered_category.is_some(),
-                |row| row.opacity(ROW_OFF_OPACITY),
-            )
-            .on_hover(
-                cx.listener(move |this, hovered: &bool, _, cx| this.set_hover(id, *hovered, cx)),
-            )
-            .on_mouse_down(
-                MouseButton::Right,
-                cx.listener(move |this, ev: &MouseDownEvent, _, cx| {
-                    this.open_row_menu(id, ev.position, cx)
-                }),
-            )
-            .child(div().w(STRIPE_W).flex_none().bg(stripe_color))
-            .child(content)
-            .into_any_element()
-    }
-
-    pub(super) fn render_row_context_menu(
-        &self,
-        palette: &ForgePalette,
-        cx: &mut Context<Self>,
-    ) -> Option<AnyElement> {
-        let id = self.menu_open?;
-        let position = self.menu_click_pos?;
-        let instance = self.find(id)?;
-        let block_delete = instance.used_in_count > 0;
-        let view = cx.entity();
-
-        let items = vec![
-            menu_item(
-                SharedString::from(format!("triggers-menu-rename-{id}")),
-                tr!("triggers_menu_rename"),
-                cx.listener(move |this, _: &ClickEvent, window, cx| {
-                    this.start_rename(id, window, cx)
-                }),
-            )
-            .icon(Icon::Pencil)
-            .into(),
-            menu_divider(),
-            menu_item(
-                SharedString::from(format!("triggers-menu-delete-{id}")),
-                tr!("triggers_menu_delete"),
-                cx.listener(move |this, _: &ClickEvent, _, cx| this.request_delete(id, cx)),
-            )
-            .icon(Icon::Eraser)
-            .color(palette.danger)
-            .disabled(block_delete)
-            .into(),
-        ];
-
-        Some(
-            context_menu(position, palette)
-                .items(items)
-                .dismiss_on_escape(&self.menu_focus)
-                .on_dismiss(move |_window, cx| {
-                    view.update(cx, |this, cx| this.close_menu(cx));
-                })
-                .into_any_element(),
-        )
-    }
-
-    fn render_empty(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
-        let density = cx.density();
-        let has_filter = self.has_active_filter();
-        let (glyph, glyph_color) = if has_filter {
-            (Icon::MoodSmile, palette.text_faint)
-        } else {
-            (Icon::Bolt, palette.warning)
-        };
-        let title = if has_filter {
-            tr!("triggers_no_results_title")
-        } else {
-            tr!("triggers_empty_title")
-        };
-        let body = if has_filter {
-            tr!("triggers_no_results_hint")
-        } else {
-            tr!("triggers_empty_hint")
-        };
-
-        let action: AnyElement = if has_filter {
-            ghost_button_with_icon(Icon::X, tr!("triggers_clear_filters"), palette)
-                .on_click(
-                    "triggers-empty-clear",
-                    cx.listener(|this, _: &ClickEvent, _, cx| this.clear_filters(cx)),
-                )
-                .into_any_element()
-        } else {
-            primary_button_with_icon(Icon::Plus, tr!("triggers_empty_create_first"), palette)
-                .on_click(
-                    "triggers-empty-create",
-                    cx.listener(|this, _: &ClickEvent, window, cx| this.open_create(window, cx)),
-                )
-                .into_any_element()
-        };
-
-        let tile = div()
-            .flex_none()
-            .flex()
-            .items_center()
-            .justify_center()
-            .size(EMPTY_TILE)
-            .rounded(EMPTY_TILE_RADIUS)
-            .bg(palette.shell)
-            .child(icon(glyph, EMPTY_GLYPH, glyph_color));
-
-        div()
-            .w_full()
-            .flex()
-            .flex_col()
-            .items_center()
-            .gap(spacing(Spacing::Sm, density))
-            .py(scaled(EMPTY_PAD_V, density))
-            .px(scaled(EMPTY_PAD_H, density))
-            .child(tile)
-            .child(
-                div()
-                    .font_family(body_family())
-                    .font_weight(FontWeight::MEDIUM)
-                    .text_size(EMPTY_TITLE_FS)
-                    .text_color(palette.text_primary)
-                    .child(title),
-            )
-            .child(
-                div()
-                    .max_w(px(360.0))
-                    .text_center()
-                    .font_family(body_family())
-                    .text_size(EMPTY_BODY_FS)
-                    .text_color(palette.text_muted)
-                    .child(body),
-            )
-            .child(action)
-            .into_any_element()
-    }
-
-    pub(super) fn render_disable_confirm(
-        &self,
-        id: TriggerInstanceId,
-        palette: &ForgePalette,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let count = self.find(id).map(|i| i.used_in_count).unwrap_or_default();
-        let card = confirm_modal(
-            tr!("triggers_confirm_disable_title"),
-            tr!(
-                "triggers_confirm_disable_body",
-                count = i64::try_from(count).unwrap_or(i64::MAX)
-            ),
-            ConfirmTone::Warning,
-            palette,
-        )
-        .esc_hint(tr!("widget_confirm_esc_to_cancel"))
-        .on_cancel(
-            "triggers-disable-cancel",
-            tr!("triggers_confirm_disable_dismiss"),
-            cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_disable(cx)),
-        )
-        .on_confirm(
-            "triggers-disable-confirm",
-            tr!("triggers_confirm_disable_accept"),
-            cx.listener(|this, _: &ClickEvent, _, cx| this.confirm_disable_now(cx)),
-        );
-
-        let view = cx.entity();
-        overlay(card, palette)
-            .position(OverlayPosition::Center)
-            .on_dismiss("triggers-disable-scrim", move |_window, cx| {
-                view.update(cx, |this, cx| this.cancel_disable(cx));
-            })
-            .into_any_element()
-    }
-
-    pub(super) fn render_delete_confirm(
-        &self,
-        id: TriggerInstanceId,
-        palette: &ForgePalette,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let (name, used_in) = self
-            .find(id)
-            .map(|i| (i.name.clone(), i.used_in_count))
-            .unwrap_or_default();
-        let blocked = used_in > 0;
-        let message = if blocked {
-            tr!("triggers_delete_reference_block")
-        } else {
-            tr!("triggers_confirm_delete_body")
-        };
-        let mut card = confirm_modal(
-            tr!("triggers_confirm_delete_title"),
-            message,
-            ConfirmTone::Destructive,
-            palette,
-        )
-        .item_name(name)
-        .esc_hint(tr!("widget_confirm_esc_to_cancel"))
-        .on_cancel(
-            "triggers-delete-cancel",
-            tr!("common_cancel"),
-            cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_delete(cx)),
-        );
-        if !blocked {
-            card = card.on_confirm(
-                "triggers-delete-confirm",
-                tr!("common_delete"),
-                cx.listener(|this, _: &ClickEvent, _, cx| this.confirm_delete(cx)),
-            );
-        }
-
-        let view = cx.entity();
-        overlay(card, palette)
-            .position(OverlayPosition::Center)
-            .on_dismiss("triggers-delete-scrim", move |_window, cx| {
-                view.update(cx, |this, cx| this.cancel_delete(cx));
-            })
-            .into_any_element()
-    }
 }
 
-#[cfg(test)]
-mod tests {
-    use std::sync::{Arc, Mutex};
-
-    use forge_components::InputEvent;
-    use forge_types::TriggerInstanceId;
-    use gpui::{Context, Entity, IntoElement, Modifiers, MouseButton, ParentElement, Pixels};
-    use gpui::{Point, Render, Styled, VisualTestContext, Window, div, point, px};
-
-    use super::super::TriggersRegistryView;
-    use super::super::tests::{
-        TriggerList, open_list_recording_writes, open_trigger_list, row_named,
-    };
-    use crate::test_support::press_undo;
-
-    const LISTED: [&str; 3] = ["Alfa", "Alma", "Bravo"];
-
-    struct Hosting(Entity<TriggersRegistryView>);
-
-    impl Render for Hosting {
-        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-            div().size_full().child(self.0.clone())
+impl NavigableList for TriggerList {
+    fn step_list(&mut self, step: ListStep, cx: &mut Context<Self>) {
+        let current = self
+            .list_cursor
+            .and_then(|id| self.visible_position(id))
+            .or_else(|| self.selected.and_then(|id| self.visible_position(id)));
+        let Some(next) = stepped_index(current, self.visible.len(), step) else {
+            return;
+        };
+        if let Some(row) = self
+            .visible
+            .get(next)
+            .and_then(|&idx| self.instances.get(idx))
+        {
+            self.list_cursor = Some(row.id);
+            self.list_scroll
+                .scroll_to_item(next, ScrollStrategy::Nearest);
+            cx.notify();
         }
     }
 
-    struct KeyedList {
-        list: TriggerList,
-        vcx: VisualTestContext,
-    }
-
-    impl KeyedList {
-        fn mount(cx: &mut gpui::TestAppContext) -> Self {
-            let list = open_trigger_list(cx, LISTED.map(row_named).to_vec());
-            cx.update(crate::actions::register_key_bindings);
-            let hosted = list.view.clone();
-            let window = cx.add_window(|_, _| Hosting(hosted));
-            let vcx = VisualTestContext::from_window(window.into(), cx);
-            let mut keyed = Self { list, vcx };
-            keyed.settle();
-            keyed
+    fn activate_list(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(id) = self
+            .list_cursor
+            .filter(|&id| self.visible_position(id).is_some())
+        {
+            self.select(id, cx);
         }
-
-        fn settle(&mut self) {
-            self.list.settle(&mut self.vcx);
-        }
-
-        fn press(&mut self, keys: &str) {
-            self.vcx.simulate_keystrokes(keys);
-            self.settle();
-        }
-
-        fn search(&mut self, query: &str) {
-            let changed = InputEvent::Changed(query.to_owned().into());
-            self.list.view.update(&mut self.vcx, |view, cx| {
-                let field = view.search.field().clone();
-                view.on_search_event(field, &changed, cx);
-            });
-            self.vcx.run_until_parked();
-        }
-
-        fn row_point(&mut self, position: usize) -> Point<Pixels> {
-            let (bounds, row_height) = self.list.view.read_with(&self.vcx, |view, _| {
-                let scroll = view.list_scroll.0.borrow();
-                let contents = scroll.last_item_size.unwrap().contents;
-                let rows = view.visible.len() as f32;
-                (scroll.base_handle.bounds(), contents.height / rows)
-            });
-            point(
-                bounds.left() + px(60.0),
-                bounds.top() + row_height * (position as f32 + 0.5),
-            )
-        }
-
-        fn click_row(&mut self, position: usize) {
-            let row = self.row_point(position);
-            self.vcx.simulate_click(row, Modifiers::none());
-            self.settle();
-        }
-
-        fn right_click_row(&mut self, position: usize) {
-            let row = self.row_point(position);
-            self.vcx
-                .simulate_mouse_down(row, MouseButton::Right, Modifiers::none());
-            self.vcx
-                .simulate_mouse_up(row, MouseButton::Right, Modifiers::none());
-            self.vcx.run_until_parked();
-        }
-
-        fn name_of(&self, id: Option<TriggerInstanceId>) -> Option<String> {
-            self.list.view.read_with(&self.vcx, |view, _| {
-                id.and_then(|id| view.find(id).map(|row| row.name.clone()))
-            })
-        }
-
-        fn cursor(&self) -> Option<String> {
-            let at = self
-                .list
-                .view
-                .read_with(&self.vcx, |view, _| view.list_cursor);
-            self.name_of(at)
-        }
-
-        fn selected(&self) -> Option<String> {
-            let selected = self.list.view.read_with(&self.vcx, |view, _| view.selected);
-            self.name_of(selected)
-        }
-    }
-
-    #[gpui::test]
-    fn arrows_continue_from_the_row_a_click_selected(cx: &mut gpui::TestAppContext) {
-        let mut rig = KeyedList::mount(cx);
-        rig.press("down");
-
-        rig.click_row(1);
-        rig.press("down");
-
-        assert_eq!(rig.cursor().as_deref(), Some("Bravo"));
-    }
-
-    #[gpui::test]
-    fn enter_after_a_click_keeps_the_clicked_row_over_the_row_the_arrows_left_behind(
-        cx: &mut gpui::TestAppContext,
-    ) {
-        let mut rig = KeyedList::mount(cx);
-        rig.press("down");
-
-        rig.click_row(2);
-        rig.press("enter");
-
-        assert_eq!(rig.selected().as_deref(), Some("Bravo"));
-    }
-
-    #[gpui::test]
-    fn a_hidden_cursor_row_hands_the_arrows_to_the_visible_selection(
-        cx: &mut gpui::TestAppContext,
-    ) {
-        let mut rig = KeyedList::mount(cx);
-        rig.click_row(1);
-        rig.press("down");
-        assert_eq!(rig.cursor().as_deref(), Some("Bravo"));
-
-        rig.search("al");
-        rig.press("up");
-
-        assert_eq!(rig.cursor().as_deref(), Some("Alfa"));
-    }
-
-    #[gpui::test]
-    fn enter_on_a_cursor_row_the_search_hid_selects_nothing(cx: &mut gpui::TestAppContext) {
-        let mut rig = KeyedList::mount(cx);
-        rig.press("down down");
-
-        rig.search("bravo");
-        rig.press("enter");
-
-        assert_eq!(rig.selected(), None);
-    }
-
-    #[gpui::test]
-    fn an_open_row_menu_keeps_arrows_and_enter_from_the_list(cx: &mut gpui::TestAppContext) {
-        let mut rig = KeyedList::mount(cx);
-        rig.press("down");
-        rig.right_click_row(2);
-
-        rig.press("down enter");
-
-        assert_eq!(rig.cursor().as_deref(), Some("Alfa"));
-        assert_eq!(rig.selected(), None);
-    }
-
-    #[gpui::test]
-    fn undoing_a_delete_brings_the_trigger_back(cx: &mut gpui::TestAppContext) {
-        let seeded = row_named("Greeter");
-        let id = seeded.id;
-        let list = open_trigger_list(cx, vec![seeded]);
-
-        list.view.update(cx, |view, cx| {
-            view.request_delete(id, cx);
-            view.confirm_delete(cx);
-        });
-        list.wait_for_names(cx, &[]);
-        press_undo(cx);
-
-        list.wait_for_names(cx, &["Greeter".to_owned()]);
-    }
-
-    #[gpui::test]
-    fn toggling_twice_before_the_store_answers_stores_only_the_second_state(
-        cx: &mut gpui::TestAppContext,
-    ) {
-        let seeded = row_named("Greeter");
-        let id = seeded.id;
-        let writes = Arc::new(Mutex::new(Vec::new()));
-        let list = open_list_recording_writes(cx, vec![seeded], Arc::clone(&writes));
-
-        list.view.update(cx, |view, cx| {
-            view.toggle_enable(id, cx);
-            view.toggle_enable(id, cx);
-        });
-        list.settle(cx);
-
-        let shown = list.view.read_with(cx, |view, _| {
-            view.instances
-                .iter()
-                .find(|row| row.id == id)
-                .map(|row| row.enabled)
-        });
-        assert_eq!(
-            (writes.lock().unwrap().clone(), shown, list.errors(cx)),
-            (vec![true], Some(true), 0)
-        );
-    }
-
-    #[gpui::test]
-    fn toggling_twice_with_the_store_answering_between_writes_in_click_order(
-        cx: &mut gpui::TestAppContext,
-    ) {
-        let seeded = row_named("Greeter");
-        let id = seeded.id;
-        let writes = Arc::new(Mutex::new(Vec::new()));
-        let list = open_list_recording_writes(cx, vec![seeded], Arc::clone(&writes));
-
-        for _ in 0..2 {
-            list.view.update(cx, |view, cx| view.toggle_enable(id, cx));
-            list.settle(cx);
-        }
-
-        assert_eq!(writes.lock().unwrap().clone(), vec![false, true]);
-    }
-
-    #[gpui::test]
-    fn two_triggers_toggled_together_both_land(cx: &mut gpui::TestAppContext) {
-        let first = row_named("First");
-        let second = row_named("Second");
-        let (first_id, second_id) = (first.id, second.id);
-        let writes = Arc::new(Mutex::new(Vec::new()));
-        let list = open_list_recording_writes(cx, vec![first, second], Arc::clone(&writes));
-
-        list.view.update(cx, |view, cx| {
-            view.toggle_enable(first_id, cx);
-            view.toggle_enable(second_id, cx);
-        });
-        list.settle(cx);
-
-        assert_eq!(writes.lock().unwrap().clone(), vec![false, false]);
     }
 }

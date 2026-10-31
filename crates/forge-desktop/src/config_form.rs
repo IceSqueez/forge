@@ -423,6 +423,26 @@ pub(crate) fn optional_inner_seed<'a>(
     }
 }
 
+pub(crate) fn toggle_bool_field(fields: &mut [ConfigField], key: &str) {
+    for field in fields {
+        if let ConfigField::Bool { key: k, value, .. } = field
+            && k == key
+        {
+            *value = !*value;
+        }
+    }
+}
+
+pub(crate) fn set_slide_field(fields: &mut [ConfigField], key: &str, next: i64) {
+    for field in fields {
+        if let ConfigField::Slide { key: k, value, .. } = field
+            && k == key
+        {
+            *value = next;
+        }
+    }
+}
+
 pub(crate) fn set_picked_value(fields: &mut [ConfigField], key: &str, value: &str, cx: &mut App) {
     for field in fields {
         match field {

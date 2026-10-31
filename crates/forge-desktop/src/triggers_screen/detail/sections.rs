@@ -10,7 +10,7 @@ use forge_components::{
     row_card, scaled, segment, segmented, spacing, toggle, tr,
 };
 use gpui::{AnyElement, ClickEvent, SharedString};
-use std::collections::HashMap;
+use std::collections::HashSet;
 
 const ROW_GLYPH: Pixels = px(12.0);
 const CFG_KEY_FS: Pixels = FONT_META;
@@ -25,7 +25,7 @@ const USED_ROW_PAD_H: Pixels = px(10.0);
 const PLACEHOLDER_PAD_V: Pixels = px(14.0);
 const PLACEHOLDER_PAD_H: Pixels = px(12.0);
 
-impl TriggersRegistryView {
+impl TriggerDetailPane {
     fn section_label(
         &self,
         label: impl Into<SharedString>,
@@ -89,11 +89,11 @@ impl TriggersRegistryView {
                 .child(tr!("triggers_sheet_no_config"))
                 .into_any_element()
         } else {
-            let overridden: HashMap<&str, bool> = detail
+            let overridden: HashSet<&str> = detail
                 .instance
                 .overrides
                 .keys()
-                .map(|k| (k.as_str(), true))
+                .map(String::as_str)
                 .collect();
             let last = detail.fields.len().saturating_sub(1);
             let mut col = div().flex().flex_col();
@@ -131,8 +131,12 @@ impl TriggersRegistryView {
             ))
             .child(framed)
             .children(
-                timer_field_hints(&detail.instance.kind_id, palette, density)
-                    .map(|hints| div().pt(spacing(Spacing::Xs, density)).child(hints)),
+                timer_field_hints(
+                    self.deps.registry.get(&detail.instance.kind_id),
+                    palette,
+                    density,
+                )
+                .map(|hints| div().pt(spacing(Spacing::Xs, density)).child(hints)),
             )
             .into_any_element()
     }
@@ -141,14 +145,14 @@ impl TriggersRegistryView {
         &self,
         field: &ConfigField,
         label: SharedString,
-        overridden: &HashMap<&str, bool>,
+        overridden: &HashSet<&str>,
         last: bool,
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let density = cx.density();
         let key = field.key().to_owned();
-        let is_overridden = overridden.contains_key(key.as_str());
+        let is_overridden = overridden.contains(key.as_str());
         let key_color = if is_overridden {
             palette.accent_peach
         } else {
@@ -293,7 +297,7 @@ impl TriggersRegistryView {
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
         let density = cx.density();
-        let descriptor = self.registry.get(&detail.instance.kind_id)?;
+        let descriptor = self.deps.registry.get(&detail.instance.kind_id)?;
         descriptor.chat_trigger_family()?;
         let platforms = gated_platforms(
             descriptor.platform_contract(),
@@ -430,7 +434,7 @@ impl TriggersRegistryView {
                         .on_click(
                             SharedString::from(format!("triggers-used-in-{action_id}")),
                             cx.listener(move |_this, _: &ClickEvent, _, cx| {
-                                cx.emit(NavRequested(Screen::Actions(Some(action_id))))
+                                cx.emit(TriggerPaneEvent::OpenAction(action_id))
                             }),
                         )
                         .into_any_element(),

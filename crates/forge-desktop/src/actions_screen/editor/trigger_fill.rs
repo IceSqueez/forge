@@ -4,7 +4,7 @@ use crate::config_field_label::{config_field_labels, row_label};
 use crate::config_form::{
     ChoiceDropdown, ChoiceSupport, CollectionChoices, ConfigField, ConfigFieldHandlers,
     FILL_VAL_FS, FoldContext, collect_field_values, fold_config_field, render_config_row,
-    set_picked_value, sparse_overrides,
+    set_picked_value, set_slide_field, sparse_overrides, toggle_bool_field,
 };
 use crate::option_choices::ChoiceOptions;
 use crate::repo_failure::RepoFailure;
@@ -126,24 +126,12 @@ impl TriggerFillModal {
     }
 
     fn toggle_trigger_config_field(&mut self, key: String, cx: &mut Context<Self>) {
-        for field in &mut self.fields {
-            if let ConfigField::Bool { key: k, value, .. } = field
-                && *k == key
-            {
-                *value = !*value;
-            }
-        }
+        toggle_bool_field(&mut self.fields, &key);
         cx.notify();
     }
 
     fn slide_trigger_config_field(&mut self, key: String, next: i64, cx: &mut Context<Self>) {
-        for field in &mut self.fields {
-            if let ConfigField::Slide { key: k, value, .. } = field
-                && *k == key
-            {
-                *value = next;
-            }
-        }
+        set_slide_field(&mut self.fields, &key, next);
         cx.notify();
     }
 
@@ -330,7 +318,7 @@ impl TriggerFillModal {
             .child(self.fill_section_label(tr!("triggers_create_section_config"), palette))
             .child(config_card)
             .children(crate::triggers_screen::timer_field_hints(
-                &self.kind_id,
+                self.deps.trigger_registry.get(&self.kind_id),
                 palette,
                 density,
             ));

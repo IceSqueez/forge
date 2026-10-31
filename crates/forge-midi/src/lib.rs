@@ -9,6 +9,7 @@ pub(crate) mod decode;
 mod emitted_codes;
 mod error;
 mod events;
+pub use events::{MidiPortInfo, PortDirection};
 pub(crate) mod health;
 mod integration;
 pub(crate) mod monitor;

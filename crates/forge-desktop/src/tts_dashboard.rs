@@ -59,6 +59,9 @@ const EQ_BAR_MAX_H: Pixels = px(11.0);
 const EQ_BAR_HEIGHTS: [f32; 4] = [5.0, 11.0, 7.0, 9.0];
 const EQ_MIN_SCALE: f32 = 0.35;
 const EQ_BAR_FPS: f32 = 30.0;
+const EQ_BAR_RADIUS: Pixels = px(1.0);
+const EQ_BAR_BASE_PERIOD_SECS: f32 = 0.5;
+const EQ_BAR_PERIOD_STEP_SECS: f32 = 0.15;
 const VOLUME_GLYPH: Pixels = px(14.0);
 const STRIP_DIVIDER_H: Pixels = px(16.0);
 

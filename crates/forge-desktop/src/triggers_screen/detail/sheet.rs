@@ -24,7 +24,7 @@ struct TriggerDetailResizeDrag;
 const HEADER_PAD_V: Pixels = px(12.0);
 const BODY_PAD_V: Pixels = px(14.0);
 
-impl TriggersRegistryView {
+impl TriggerDetailPane {
     pub(in crate::triggers_screen) fn render_detail_sheet(
         &self,
         id: TriggerInstanceId,
@@ -101,8 +101,9 @@ impl TriggersRegistryView {
         let density = cx.density();
         let instance = &detail.instance;
         let id = instance.id;
-        let dot_color = platform_dot_color(&instance.kind_id, &self.registry, palette);
+        let dot_color = platform_dot_color(&instance.kind_id, &self.deps.registry, palette);
         let glyph = self
+            .deps
             .registry
             .get(&instance.kind_id)
             .map(|d| Icon::from_name(d.icon_name()))
@@ -127,8 +128,8 @@ impl TriggersRegistryView {
             .text_color(palette.text_primary)
             .child(instance.name.clone())
             .key_activated(palette.text_primary)
-            .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
-                this.start_rename(id, window, cx)
+            .on_click(cx.listener(move |_, _: &ClickEvent, _, cx| {
+                cx.emit(TriggerPaneEvent::StartRename(id))
             }));
         let kind_line = div()
             .flex()
@@ -161,7 +162,9 @@ impl TriggersRegistryView {
 
         let enable_toggle = toggle(instance.enabled, palette).on_click(
             SharedString::from(format!("triggers-detail-toggle-{id}")),
-            cx.listener(move |this, _: &ClickEvent, _, cx| this.toggle_enable(id, cx)),
+            cx.listener(move |_, _: &ClickEvent, _, cx| {
+                cx.emit(TriggerPaneEvent::ToggleEnable(id))
+            }),
         );
 
         let close = div()
@@ -207,7 +210,7 @@ impl TriggersRegistryView {
             .flex_col()
             .child(self.render_config_section(detail, palette, cx))
             .when(
-                cooldown_applies(self.registry.get(&detail.instance.kind_id)),
+                cooldown_applies(self.deps.registry.get(&detail.instance.kind_id)),
                 |body| body.child(self.render_cooldown_section(detail, palette, cx)),
             )
             .children(self.render_permission_section(detail, palette, cx))
@@ -223,8 +226,7 @@ impl TriggersRegistryView {
     ) -> AnyElement {
         let density = cx.density();
         let id = detail.instance.id;
-        let used_count = self.find(id).map(|r| r.used_in_count).unwrap_or(0);
-        let can_delete = used_count == 0;
+        let can_delete = self.listed_uses == 0;
 
         let template = ghost_button_with_icon(Icon::Copy, tr!("triggers_menu_template"), palette)
             .on_click(
@@ -259,9 +261,9 @@ impl TriggersRegistryView {
                 .id("triggers-detail-delete")
                 .cursor_pointer()
                 .key_activated(palette.text_primary)
-                .on_click(
-                    cx.listener(move |this, _: &ClickEvent, _, cx| this.request_delete(id, cx)),
-                )
+                .on_click(cx.listener(move |_, _: &ClickEvent, _, cx| {
+                    cx.emit(TriggerPaneEvent::RequestDelete(id))
+                }))
                 .into_any_element()
         } else {
             delete_base.opacity(ROW_OFF_OPACITY).into_any_element()

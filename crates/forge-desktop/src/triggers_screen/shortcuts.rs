@@ -1,20 +1,17 @@
 use gpui::Context;
 
 use super::TriggersRegistryView;
-use super::create::CreateStage;
 use crate::screen_shortcuts::ScreenShortcuts;
 
 impl ScreenShortcuts for TriggersRegistryView {
     fn save_shortcut(&mut self, cx: &mut Context<Self>) {
-        match self.create {
-            Some(CreateStage::Fill(_)) => self.submit_create(cx),
-            Some(_) => {}
-            None => {
-                if self.pending_delete.get().is_none() {
-                    self.commit_config(cx);
-                    cx.notify();
-                }
-            }
+        if self.create.read(cx).is_filling() {
+            self.create.update(cx, |flow, cx| flow.submit_create(cx));
+        } else if !self.create.read(cx).is_open() && !self.list.read(cx).delete_pending() {
+            self.pane.update(cx, |pane, cx| {
+                pane.commit_config(cx);
+                cx.notify();
+            });
         }
     }
 }

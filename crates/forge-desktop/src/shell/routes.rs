@@ -375,7 +375,7 @@ impl AppShell {
                 preselect,
                 cx,
             )
-            .with_builtins(builtins)
+            .with_builtins(builtins, cx)
             .with_integration_switch(switch, cx)
         });
         Self::follow_nav(&view, cx);

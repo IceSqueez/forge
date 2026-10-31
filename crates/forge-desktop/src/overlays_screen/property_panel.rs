@@ -34,7 +34,7 @@ use crate::async_bridge;
 use crate::config_form::{
     ChoiceDropdown, ChoiceSupport, ConfigField, ConfigFieldHandlers, FoldContext, choice_entries,
     collect_field_values, fold_config_field, render_config_control, resolve_dependent_choices,
-    set_picked_value, sparse_overrides,
+    set_picked_value, sparse_overrides, toggle_bool_field,
 };
 use crate::repo_failure::RepoFailure;
 use forge_components::ActivePresentation;
@@ -386,13 +386,7 @@ impl OverlayPropertyPanel {
     }
 
     fn toggle_field(&mut self, key: String, cx: &mut Context<Self>) {
-        for field in &mut self.fields {
-            if let ConfigField::Bool { key: k, value, .. } = field
-                && *k == key
-            {
-                *value = !*value;
-            }
-        }
+        toggle_bool_field(&mut self.fields, &key);
         self.emit_save(cx);
         cx.notify();
     }

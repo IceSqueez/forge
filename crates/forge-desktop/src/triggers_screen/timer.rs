@@ -1,18 +1,17 @@
 use forge_components::{Density, ForgePalette, Spacing, body_family, spacing, tr};
 use forge_registry::{TriggerCategory, TriggerKindDescriptor};
-use forge_runtime::TIMER_TICK_KIND;
 use forge_types::TriggerConfig;
 use gpui::{AnyElement, div, prelude::*};
 
 use crate::config_form::FILL_VAL_FS;
 use crate::user_text::resolve_user_text;
 
-pub(crate) fn is_timer_kind(kind_id: &str) -> bool {
-    kind_id == TIMER_TICK_KIND
+fn is_timer(descriptor: &dyn TriggerKindDescriptor) -> bool {
+    descriptor.category() == TriggerCategory::Timer
 }
 
 pub(crate) fn cooldown_applies(descriptor: Option<&dyn TriggerKindDescriptor>) -> bool {
-    descriptor.is_none_or(|d| d.category() != TriggerCategory::Timer)
+    !descriptor.is_some_and(is_timer)
 }
 
 pub(crate) fn condition_display(
@@ -25,11 +24,11 @@ pub(crate) fn condition_display(
 }
 
 pub(crate) fn timer_field_hints(
-    kind_id: &str,
+    descriptor: Option<&dyn TriggerKindDescriptor>,
     palette: &ForgePalette,
     density: Density,
 ) -> Option<AnyElement> {
-    if !is_timer_kind(kind_id) {
+    if !descriptor.is_some_and(is_timer) {
         return None;
     }
     let hints = [

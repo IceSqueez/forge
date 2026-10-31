@@ -1,15 +1,17 @@
-use super::{TriggersRegistryView, load_rows, platform_dot_color, timer_field_hints};
+use super::choice_feed::{ChoiceFeed, ChoiceHost, start_option_choices};
+use super::{
+    TriggerInstanceRow, TriggerScreenDeps, on_repo_error, platform_dot_color,
+    refuse_invalid_config, save_then_list, timer_field_hints,
+};
 use crate::async_bridge;
 use crate::config_field_label::{config_field_labels, row_label};
 use crate::config_form::{
     ChoiceDropdown, ChoiceSupport, CollectionChoices, ConfigField, ConfigFieldHandlers,
     FILL_VAL_FS, FoldContext, collect_field_values, fold_config_field, render_config_row,
-    set_picked_value, sparse_overrides,
+    set_picked_value, set_slide_field, sparse_overrides, toggle_bool_field,
 };
 use crate::integration_catalog::{catalog_text, tint_color};
-use crate::option_choices::ChoiceOptions;
-use crate::picker_favorites::{bind_picker, follow_picker_event};
-use crate::repo_failure::RepoFailure;
+use crate::picker_favorites::{StoredFavorites, bind_picker, follow_picker_event};
 use crate::trigger_form_shape::{trigger_form_defaults, trigger_form_specs};
 use forge_components::ActivePresentation;
 use forge_components::focus_inside_modal;
@@ -21,29 +23,31 @@ use forge_components::{
     radius, secondary_button, spacing, tr,
 };
 use forge_host::integration_catalog::{declaration_of, declarations};
+use forge_host::integrations::BuiltinRegistry;
 use forge_platform_core::IntegrationDeclaration;
 use forge_registry::{TriggerCategory, TriggerKindDescriptor, TriggerRegistry};
 use forge_types::{PermissionRung, PlatformScope, TriggerInstance, TriggerInstanceId};
 use gpui::Rgba;
 use gpui::{
-    AnyElement, ClickEvent, Context, Entity, SharedString, Subscription, Window, div, prelude::*,
+    AnyElement, ClickEvent, Context, Entity, EventEmitter, SharedString, Subscription, Window, div,
+    prelude::*,
 };
 use std::collections::HashMap;
 use std::sync::Arc;
 
-pub(super) enum CreateStage {
+enum CreateStage {
     PickKind(KindPickerForm),
     Fill(CreateFillForm),
 }
 
-pub(super) struct KindPickerForm {
+struct KindPickerForm {
     picker: Entity<GridPicker>,
     picks: HashMap<SharedString, String>,
     _sub: Subscription,
     _favorites: Subscription,
 }
 
-pub(super) struct CreateFillForm {
+struct CreateFillForm {
     kind_id: String,
     kind_label: String,
     name_field: Entity<TextInput>,
@@ -54,20 +58,50 @@ pub(super) struct CreateFillForm {
     _name_sub: Subscription,
 }
 
-impl CreateFillForm {
-    pub(super) fn choices(&self) -> &CollectionChoices {
-        &self.choices
-    }
-
-    pub(super) fn refresh_choices(&mut self, options: &ChoiceOptions, blank: &str) {
-        self.choices.refresh(&mut self.fields, options, Some(blank));
-    }
+pub(super) enum TriggerCreateEvent {
+    Created {
+        id: TriggerInstanceId,
+        rows: Vec<TriggerInstanceRow>,
+    },
 }
 
-impl TriggersRegistryView {
-    pub(super) fn open_create(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+impl EventEmitter<TriggerCreateEvent> for TriggerCreateFlow {}
+
+pub(super) struct TriggerCreateFlow {
+    deps: TriggerScreenDeps,
+    favorites: Entity<StoredFavorites>,
+    stage: Option<CreateStage>,
+    claims_focus: bool,
+    choice_feed: ChoiceFeed,
+}
+
+impl TriggerCreateFlow {
+    pub(super) fn new(deps: TriggerScreenDeps, favorites: Entity<StoredFavorites>) -> Self {
+        let choice_feed = ChoiceFeed::new(deps.rt_handle.clone());
+        Self {
+            deps,
+            favorites,
+            stage: None,
+            claims_focus: false,
+            choice_feed,
+        }
+    }
+
+    pub(super) fn set_builtins(&mut self, builtins: BuiltinRegistry) {
+        self.choice_feed.set_builtins(builtins);
+    }
+
+    pub(super) fn is_open(&self) -> bool {
+        self.stage.is_some()
+    }
+
+    pub(super) fn is_filling(&self) -> bool {
+        matches!(self.stage, Some(CreateStage::Fill(_)))
+    }
+
+    pub(super) fn open(&mut self, cx: &mut Context<Self>) {
         let palette = cx.palette();
-        let (groups, picks) = build_kind_groups(&self.registry, &palette);
+        let (groups, picks) = build_kind_groups(&self.deps.registry, &palette);
         let count: usize = groups.iter().map(|g| g.items.len()).sum();
         let config = GridPickerConfig {
             accent: palette.brand,
@@ -94,11 +128,8 @@ impl TriggersRegistryView {
         let picker = cx.new(|cx| GridPicker::new(config, groups, favorites, palette, cx));
         let sub = cx.subscribe(&picker, Self::on_create_picker_event);
         let favorites_sub = bind_picker(&self.favorites, &picker, cx);
-        focus_inside_modal(window, cx, |window, cx| {
-            picker.update(cx, |f, cx| f.focus(window, cx))
-        });
-        self.menu_open = None;
-        self.create = Some(CreateStage::PickKind(KindPickerForm {
+        self.claims_focus = true;
+        self.stage = Some(CreateStage::PickKind(KindPickerForm {
             picker,
             picks,
             _sub: sub,
@@ -115,7 +146,7 @@ impl TriggersRegistryView {
     ) {
         match event {
             GridPickerEvent::Picked(id) => {
-                let kind_id = match self.create.as_ref() {
+                let kind_id = match self.stage.as_ref() {
                     Some(CreateStage::PickKind(form)) => form.picks.get(id).cloned(),
                     _ => None,
                 };
@@ -132,7 +163,7 @@ impl TriggersRegistryView {
 
     fn enter_fill(&mut self, kind_id: String, cx: &mut Context<Self>) {
         let palette = cx.palette();
-        let descriptor = self.registry.get(&kind_id);
+        let descriptor = self.deps.registry.get(&kind_id);
         let kind_label = descriptor
             .map(crate::kind_copy::trigger_name)
             .unwrap_or_else(|| kind_id.clone());
@@ -161,7 +192,7 @@ impl TriggersRegistryView {
         });
         let name_sub = cx.subscribe(&name_field, Self::on_create_name_event);
 
-        self.create = Some(CreateStage::Fill(CreateFillForm {
+        self.stage = Some(CreateStage::Fill(CreateFillForm {
             kind_id,
             kind_label,
             name_field,
@@ -171,7 +202,7 @@ impl TriggersRegistryView {
             saving: false,
             _name_sub: name_sub,
         }));
-        self.start_option_choices(cx);
+        start_option_choices(self, cx);
         cx.notify();
     }
 
@@ -196,40 +227,28 @@ impl TriggersRegistryView {
     }
 
     fn toggle_create_config_field(&mut self, key: String, cx: &mut Context<Self>) {
-        if let Some(CreateStage::Fill(form)) = self.create.as_mut() {
-            for field in &mut form.fields {
-                if let ConfigField::Bool { key: k, value, .. } = field
-                    && *k == key
-                {
-                    *value = !*value;
-                }
-            }
+        if let Some(CreateStage::Fill(form)) = self.stage.as_mut() {
+            toggle_bool_field(&mut form.fields, &key);
         }
         cx.notify();
     }
 
     fn slide_create_config_field(&mut self, key: String, next: i64, cx: &mut Context<Self>) {
-        if let Some(CreateStage::Fill(form)) = self.create.as_mut() {
-            for field in &mut form.fields {
-                if let ConfigField::Slide { key: k, value, .. } = field
-                    && *k == key
-                {
-                    *value = next;
-                }
-            }
+        if let Some(CreateStage::Fill(form)) = self.stage.as_mut() {
+            set_slide_field(&mut form.fields, &key, next);
         }
         cx.notify();
     }
 
     fn pick_create_config_field(&mut self, key: String, choice: String, cx: &mut Context<Self>) {
-        if let Some(CreateStage::Fill(form)) = self.create.as_mut() {
+        if let Some(CreateStage::Fill(form)) = self.stage.as_mut() {
             set_picked_value(&mut form.fields, &key, &choice, cx);
         }
         cx.notify();
     }
 
     fn open_create_choice(&mut self, key: String, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(CreateStage::Fill(form)) = self.create.as_mut() {
+        if let Some(CreateStage::Fill(form)) = self.stage.as_mut() {
             form.choices
                 .toggle(&form.fields, key, Self::on_create_choice_event, window, cx);
         }
@@ -237,7 +256,7 @@ impl TriggersRegistryView {
     }
 
     fn close_create_choice(&mut self, cx: &mut Context<Self>) {
-        if let Some(CreateStage::Fill(form)) = self.create.as_mut() {
+        if let Some(CreateStage::Fill(form)) = self.stage.as_mut() {
             form.choices.close();
         }
         cx.notify();
@@ -249,7 +268,7 @@ impl TriggersRegistryView {
         event: &PickerEvent,
         cx: &mut Context<Self>,
     ) {
-        let Some(CreateStage::Fill(form)) = self.create.as_mut() else {
+        let Some(CreateStage::Fill(form)) = self.stage.as_mut() else {
             return;
         };
         match event {
@@ -276,17 +295,13 @@ impl TriggersRegistryView {
         }
     }
 
-    fn back_to_kind_picker(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.open_create(window, cx);
-    }
-
     pub(super) fn cancel_create(&mut self, cx: &mut Context<Self>) {
-        self.create = None;
+        self.stage = None;
         cx.notify();
     }
 
     pub(super) fn submit_create(&mut self, cx: &mut Context<Self>) {
-        let Some(CreateStage::Fill(form)) = self.create.as_ref() else {
+        let Some(CreateStage::Fill(form)) = self.stage.as_ref() else {
             return;
         };
         if form.saving {
@@ -297,10 +312,10 @@ impl TriggersRegistryView {
             return;
         }
         let kind_id = form.kind_id.clone();
-        let default = trigger_form_defaults(self.registry.get(&kind_id));
+        let default = trigger_form_defaults(self.deps.registry.get(&kind_id));
         let mut buffer = default.clone();
         collect_field_values(&form.fields, &mut buffer, cx);
-        if self.refuse_invalid_config(&kind_id, &buffer, cx) {
+        if refuse_invalid_config(&self.deps.registry, &kind_id, &buffer, cx) {
             return;
         }
         let overrides = sparse_overrides(&default, &buffer);
@@ -319,40 +334,51 @@ impl TriggersRegistryView {
             permission_rung: PermissionRung::Everyone,
         };
 
-        if let Some(CreateStage::Fill(form)) = self.create.as_mut() {
+        if let Some(CreateStage::Fill(form)) = self.stage.as_mut() {
             form.saving = true;
         }
         cx.notify();
 
-        let repo = Arc::clone(&self.repo);
+        let repo = Arc::clone(&self.deps.repo);
         async_bridge::run_async(
-            &self.rt_handle,
-            async move {
-                repo.save(&instance).await.map_err(RepoFailure::from)?;
-                load_rows(&*repo).await
-            },
+            &self.deps.rt_handle,
+            async move { save_then_list(&*repo, &instance).await },
             move |this, result, cx| match result {
                 Ok(rows) => {
-                    this.create = None;
-                    this.apply_rows(rows, cx);
-                    this.selected = Some(new_id);
-                    this.list_cursor = Some(new_id);
-                    this.detail = None;
-                    this.load_detail(new_id, cx);
+                    this.stage = None;
+                    cx.emit(TriggerCreateEvent::Created { id: new_id, rows });
                     cx.notify();
                 }
                 Err(message) => {
-                    if let Some(CreateStage::Fill(form)) = this.create.as_mut() {
+                    if let Some(CreateStage::Fill(form)) = this.stage.as_mut() {
                         form.saving = false;
                     }
-                    this.on_repo_error(&message, cx);
+                    on_repo_error(&message, cx);
                 }
             },
             cx,
         );
     }
 
-    pub(super) fn render_create(
+    pub(super) fn render_layer(
+        &mut self,
+        palette: &ForgePalette,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
+        if std::mem::take(&mut self.claims_focus)
+            && let Some(CreateStage::PickKind(form)) = self.stage.as_ref()
+        {
+            let picker = form.picker.clone();
+            focus_inside_modal(window, cx, |window, cx| {
+                picker.update(cx, |f, cx| f.focus(window, cx))
+            });
+        }
+        let stage = self.stage.as_ref()?;
+        Some(self.render_stage(stage, palette, cx))
+    }
+
+    fn render_stage(
         &self,
         stage: &CreateStage,
         palette: &ForgePalette,
@@ -379,8 +405,9 @@ impl TriggersRegistryView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let density = cx.density();
-        let dot_color = platform_dot_color(&form.kind_id, &self.registry, palette);
+        let dot_color = platform_dot_color(&form.kind_id, &self.deps.registry, palette);
         let glyph = self
+            .deps
             .registry
             .get(&form.kind_id)
             .map(|d| Icon::from_name(d.icon_name()))
@@ -435,7 +462,11 @@ impl TriggersRegistryView {
             .gap(spacing(Spacing::Xs, density))
             .child(self.fill_section_label(tr!("triggers_create_section_config"), palette))
             .child(config_card)
-            .children(timer_field_hints(&form.kind_id, palette, density));
+            .children(timer_field_hints(
+                self.deps.registry.get(&form.kind_id),
+                palette,
+                density,
+            ));
 
         let body = div()
             .flex()
@@ -449,9 +480,7 @@ impl TriggersRegistryView {
         let back = ghost_button_with_icon(Icon::ArrowBackUp, tr!("triggers_create_back"), palette)
             .on_click(
                 "triggers-create-back",
-                cx.listener(|this, _: &ClickEvent, window, cx| {
-                    this.back_to_kind_picker(window, cx)
-                }),
+                cx.listener(|this, _: &ClickEvent, _, cx| this.open(cx)),
             );
         let cancel = secondary_button(tr!("triggers_create_cancel"), palette).on_click(
             "triggers-create-cancel",
@@ -511,6 +540,26 @@ impl TriggersRegistryView {
             .text_color(palette.text_muted)
             .child(label.into())
             .into_any_element()
+    }
+}
+
+impl ChoiceHost for TriggerCreateFlow {
+    fn feed(&mut self) -> &mut ChoiceFeed {
+        &mut self.choice_feed
+    }
+
+    fn option_keys(&self) -> Vec<String> {
+        match self.stage.as_ref() {
+            Some(CreateStage::Fill(form)) => form.choices.option_keys(),
+            _ => Vec::new(),
+        }
+    }
+
+    fn refresh_choices(&mut self, blank: &str) {
+        if let Some(CreateStage::Fill(form)) = self.stage.as_mut() {
+            form.choices
+                .refresh(&mut form.fields, self.choice_feed.options(), Some(blank));
+        }
     }
 }
 
@@ -708,8 +757,15 @@ mod tests {
         Fixture, GREETING_FIELD, KIND, REFUSED_GREETING, refusing_registry,
     };
     use super::*;
-    use crate::test_support::{error_toasts, pump_until};
-    use forge_host::integrations::BuiltinRegistry;
+    use crate::picker_favorites::TRIGGER_FAVORITES;
+    use crate::test_support::{
+        StubActions, error_toasts, owned_triggers, pump_until, runtime, test_backend,
+    };
+    use crate::triggers_screen::TriggersRegistryView;
+    use forge_components::{Density, Presentation, ThemeId};
+    use forge_storage::{MockTriggerInstanceRepo, SettingsRepo};
+
+    const TWITCH_CHAT: &str = "twitch.chat";
 
     fn fill_form(cx: &mut TestAppContext, greeting: &str) -> Fixture {
         crate::i18n::install_language(forge_storage::Language::En);
@@ -721,9 +777,9 @@ mod tests {
             TriggerConfig::new(),
             BuiltinRegistry::default(),
         );
-        fixture.view().update(cx, |view, cx| {
+        fixture.flow().update(cx, |view, cx| {
             view.enter_fill(KIND.to_owned(), cx);
-            let Some(CreateStage::Fill(form)) = view.create.as_ref() else {
+            let Some(CreateStage::Fill(form)) = view.stage.as_ref() else {
                 panic!("the fill stage must be open");
             };
             let name = form.name_field.clone();
@@ -749,12 +805,12 @@ mod tests {
     ) {
         let mut fixture = fill_form(cx, REFUSED_GREETING);
 
-        fixture.view().update(cx, |view, cx| view.submit_create(cx));
+        fixture.flow().update(cx, |view, cx| view.submit_create(cx));
         fixture.settle(cx);
 
-        let still_filling = fixture.view().read_with(
+        let still_filling = fixture.flow().read_with(
             cx,
-            |view, _| matches!(&view.create, Some(CreateStage::Fill(form)) if !form.saving),
+            |view, _| matches!(&view.stage, Some(CreateStage::Fill(form)) if !form.saving),
         );
         assert_eq!(
             (
@@ -770,7 +826,7 @@ mod tests {
     fn creating_with_a_value_the_kind_accepts_saves_it(cx: &mut TestAppContext) {
         let mut fixture = fill_form(cx, "accepted");
 
-        fixture.view().update(cx, |view, cx| view.submit_create(cx));
+        fixture.flow().update(cx, |view, cx| view.submit_create(cx));
         pump_until(&fixture.rt, || {
             cx.run_until_parked();
             fixture.repo.last_saved_overrides().is_some()
@@ -790,19 +846,56 @@ mod tests {
     fn a_created_trigger_takes_the_cursor_with_the_selection(cx: &mut TestAppContext) {
         let mut fixture = fill_form(cx, "accepted");
 
-        fixture.view().update(cx, |view, cx| view.submit_create(cx));
+        fixture.flow().update(cx, |view, cx| view.submit_create(cx));
         pump_until(&fixture.rt, || {
             cx.run_until_parked();
-            fixture
-                .view()
-                .read_with(cx, |view, _| view.create.is_none())
+            fixture.flow().read_with(cx, |view, _| view.stage.is_none())
         });
         fixture.settle(cx);
 
         let (selected, cursor) = fixture
-            .view()
-            .read_with(cx, |view, _| (view.selected, view.list_cursor));
+            .list()
+            .read_with(cx, |list, _| (list.selected, list.list_cursor));
         assert_eq!(cursor, selected);
+    }
+
+    #[gpui::test]
+    fn the_create_picker_stars_into_the_app_wide_trigger_favorites(cx: &mut gpui::TestAppContext) {
+        cx.update(|cx| cx.set_global(Presentation::new(ThemeId::ForgeDefault, Density::Cozy)));
+        let rt = runtime();
+        let mut repo = MockTriggerInstanceRepo::new();
+        repo.expect_list_all().returning(|| Ok(Vec::new()));
+        let (settings, _writes) = test_backend();
+        let handle = rt.handle().clone();
+        let view = cx.update(|cx| {
+            cx.new(|cx| {
+                TriggersRegistryView::new(
+                    Arc::new(repo),
+                    Arc::new(StubActions),
+                    Arc::new(owned_triggers(&[(TWITCH_CHAT, "twitch")])),
+                    Arc::clone(&settings) as Arc<dyn SettingsRepo>,
+                    handle.clone(),
+                    None,
+                    cx,
+                )
+            })
+        });
+
+        let app_wide = cx.update(|cx| {
+            StoredFavorites::shared(
+                TRIGGER_FAVORITES,
+                settings as Arc<dyn SettingsRepo>,
+                &handle,
+                cx,
+            )
+            .entity_id()
+        });
+
+        let flow = view.read_with(cx, |view, _| view.create.clone());
+        assert_eq!(
+            flow.read_with(cx, |flow, _| flow.favorites.entity_id()),
+            app_wide
+        );
     }
 
     fn successor(category: TriggerCategory) -> Option<TriggerCategory> {

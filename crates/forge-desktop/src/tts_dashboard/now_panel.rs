@@ -12,14 +12,20 @@ pub(super) fn eq_bars(animate: bool, color: Rgba) -> impl IntoElement {
     let mut bars = div().flex().items_end().gap(EQ_BAR_GAP).h(EQ_BAR_MAX_H);
     for (i, base) in EQ_BAR_HEIGHTS.iter().enumerate() {
         let base = *base;
-        let bar = div().w(EQ_BAR_W).h(px(base)).rounded(px(1.0)).bg(color);
+        let bar = div()
+            .w(EQ_BAR_W)
+            .h(px(base))
+            .rounded(EQ_BAR_RADIUS)
+            .bg(color);
         let child: AnyElement = if animate {
             bar.with_animation(
                 ("tts-eq-bar", i),
-                Animation::new(Duration::from_secs_f32(0.5 + i as f32 * 0.15))
-                    .repeat()
-                    .with_easing(bounce(ease_in_out))
-                    .with_max_fps(EQ_BAR_FPS),
+                Animation::new(Duration::from_secs_f32(
+                    EQ_BAR_BASE_PERIOD_SECS + i as f32 * EQ_BAR_PERIOD_STEP_SECS,
+                ))
+                .repeat()
+                .with_easing(bounce(ease_in_out))
+                .with_max_fps(EQ_BAR_FPS),
                 move |el, delta| el.h(px(base * (EQ_MIN_SCALE + (1.0 - EQ_MIN_SCALE) * delta))),
             )
             .into_any_element()

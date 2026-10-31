@@ -5,7 +5,6 @@ use crate::error::StorageError;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StoredSchema {
     Current { version: u32 },
-    AdoptableLegacy { version: u32 },
     PreBaseline { found: u32 },
     Unrecognized,
 }

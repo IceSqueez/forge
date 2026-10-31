@@ -19,7 +19,6 @@ use forge_components::{
 use forge_overlay::OverlayKindRegistry;
 use forge_registry::{SubActionRegistry, TriggerCategory, TriggerRegistry};
 use forge_runtime::ActionDetail;
-use forge_runtime::translate_legacy_time_steps;
 use forge_runtime::{EventBus, QueueSchedulerHandle};
 use forge_storage::{ActionRepo, ActionTelemetry, SettingsRepo, StorageError, TriggerInstanceRepo};
 use forge_types::{Action, ActionId, ExecutionOutcome, QueueId, SubActionStep, TriggerInstanceId};
@@ -440,7 +439,6 @@ impl ScreenActionsView {
         if self.tree.selected != Some(id) {
             return;
         }
-        translate_legacy_time_steps(&mut detail.action.sub_actions);
         if let Some(latest) = self.latest_written_action(id) {
             detail.action = latest.clone();
         } else if self.has_pending_action_writes(id)

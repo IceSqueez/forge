@@ -49,7 +49,6 @@ pub struct FilterRule {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(from = "SkipRegexForm")]
 pub struct SkipRegex {
     pub pattern: String,
     pub enabled: bool,
@@ -64,30 +63,9 @@ impl SkipRegex {
     }
 }
 
-#[derive(Deserialize)]
-#[serde(untagged)]
-enum SkipRegexForm {
-    Bare(String),
-    Toggled {
-        pattern: String,
-        #[serde(default = "default_row_enabled")]
-        enabled: bool,
-    },
-}
-
-impl From<SkipRegexForm> for SkipRegex {
-    fn from(form: SkipRegexForm) -> Self {
-        match form {
-            SkipRegexForm::Bare(pattern) => Self::enabled(pattern),
-            SkipRegexForm::Toggled { pattern, enabled } => Self { pattern, enabled },
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TtsPipelineSettings {
     pub url_mode: UrlMode,
-    pub max_length: Option<u32>,
     pub blocklist_mode: BlocklistMode,
     pub strip_twitch_emotes: bool,
     pub strip_reward_emotes: bool,
@@ -149,7 +127,6 @@ impl Default for TtsPipelineSettings {
     fn default() -> Self {
         Self {
             url_mode: UrlMode::Speak,
-            max_length: None,
             blocklist_mode: BlocklistMode::Censor,
             strip_twitch_emotes: true,
             strip_reward_emotes: true,

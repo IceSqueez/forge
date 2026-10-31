@@ -258,11 +258,6 @@ fn a_time_step_with_an_unusable_pattern_reports_invalid_step_config() {
             "a format step with an invalid pattern",
         ),
         (
-            &CoreTimeFormatRunner,
-            vec![("format_string", text("[unix_timestamp]"))],
-            "a format step with an untranslatable legacy pattern",
-        ),
-        (
             &CoreTimeParseRunner,
             vec![("format", text("qq"))],
             "a parse step with an invalid pattern",
@@ -298,17 +293,14 @@ fn a_usable_or_unused_time_pattern_raises_no_step_finding() {
             &CoreTimeFormatRunner as &dyn SubActionRunner,
             vec![
                 ("source", text("2024-01-15T00:00:00Z")),
-                (
-                    "format_string",
-                    text("[day].[month].[year] [hour]:[minute]"),
-                ),
+                ("format_string", text("dd.MM.yyyy HH:mm")),
             ],
-            "a format step with a translatable legacy pattern",
+            "a format step with a valid pattern",
         ),
         (
             &CoreTimeParseRunner,
-            vec![("format", text("[year]-[month]-[day]"))],
-            "a parse step with a translatable legacy pattern",
+            vec![("format", text("yyyy-MM-dd"))],
+            "a parse step with a valid pattern",
         ),
         (
             &CoreTimeNowRunner,

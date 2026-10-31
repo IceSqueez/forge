@@ -138,30 +138,6 @@ async fn format_pattern_follows_the_names_language_switched_through_the_handle()
 }
 
 zone_test!(
-    legacy_format_without_utc_key_renders_utc_english_in_any_zone_and_language,
-    "Europe/Kyiv",
-    {
-        let _language = names_language(NamesLanguage::Uk).await;
-        let legacy = "[weekday], [day] [month repr:long] [hour]:[minute] [period]";
-        let old = mid_october_noon_utc()
-            .format(&time::format_description::parse_borrowed::<2>(legacy).unwrap())
-            .unwrap();
-        assert_eq!(formatted(&format_cfg(legacy, None)).await, old);
-    }
-);
-
-zone_test!(
-    legacy_format_with_utc_off_follows_the_system_zone,
-    "Europe/Kyiv",
-    {
-        assert_eq!(
-            formatted(&format_cfg("[hour]:[minute]", Some(false))).await,
-            "15:00"
-        );
-    }
-);
-
-zone_test!(
     parse_pattern_reads_text_in_the_system_zone_when_utc_is_off_and_keeps_its_offset,
     "Europe/Kyiv",
     {
@@ -188,19 +164,6 @@ zone_test!(
         .await;
         assert_eq!(dt, mid_october_noon_utc());
         assert_eq!(dt.offset(), UtcOffset::UTC);
-    }
-);
-
-zone_test!(
-    legacy_parse_without_utc_key_reads_text_as_utc_in_any_zone,
-    "Europe/Kyiv",
-    {
-        let dt = parsed(&cfg(&[
-            ("source", s("2026-10-15 12:00:00")),
-            ("format", s("[year]-[month]-[day] [hour]:[minute]:[second]")),
-        ]))
-        .await;
-        assert_eq!(dt, mid_october_noon_utc());
     }
 );
 

@@ -108,7 +108,6 @@ async fn pipeline_settings_url_and_blocklist_mode_round_trip() {
             let settings = TtsPipelineSettings {
                 url_mode,
                 blocklist_mode,
-                max_length: None,
                 strip_twitch_emotes: true,
                 strip_reward_emotes: false,
                 ..TtsPipelineSettings::default()
@@ -124,23 +123,6 @@ async fn pipeline_settings_url_and_blocklist_mode_round_trip() {
                 "blocklist_mode {blocklist_mode:?} did not survive round-trip"
             );
         }
-    }
-}
-
-#[tokio::test]
-async fn pipeline_settings_max_length_none_and_some_round_trip() {
-    let r = repo().await;
-
-    for cap in [None, Some(0), Some(u32::MAX)] {
-        let settings = TtsPipelineSettings {
-            max_length: cap,
-            ..TtsPipelineSettings::default()
-        };
-        r.set_pipeline_settings(&settings).await.expect("set");
-        assert_eq!(
-            r.get_pipeline_settings().await.expect("get").max_length,
-            cap
-        );
     }
 }
 
@@ -541,7 +523,6 @@ async fn data_provider_tts_filters_repo_accessor_round_trips_settings() {
 
     let s = TtsPipelineSettings {
         url_mode: UrlMode::Replace,
-        max_length: Some(500),
         blocklist_mode: BlocklistMode::Suppress,
         strip_twitch_emotes: false,
         strip_reward_emotes: true,

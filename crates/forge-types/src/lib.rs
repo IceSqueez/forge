@@ -35,9 +35,8 @@ pub use action::{Action, ExecutionMode};
 pub use clock::{MonotonicClock, SystemMonotonicClock, SystemWallClock, WallClock};
 pub use data_flow::{DeclaredVariable, SynthesisHint, VariableSchema};
 pub use date_pattern::{
-    DatePattern, LegacyTranslation, NamesLanguage, ParsedPattern, PatternZone,
-    current_names_language, set_current_names_language, shared_date_pattern,
-    translate_legacy_pattern,
+    DatePattern, NamesLanguage, ParsedPattern, PatternZone, current_names_language,
+    set_current_names_language, shared_date_pattern,
 };
 pub use datetime_text::{datetime_from_text, datetime_to_text};
 pub use donation::{Donation, DonationOrigin, Donor, DonorVisibility};

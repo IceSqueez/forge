@@ -895,25 +895,6 @@ async fn archived_database_state_gates_staging() {
 }
 
 #[tokio::test]
-async fn adoptable_legacy_database_is_staged() {
-    let fx = Fixture::new();
-
-    let staged = fx
-        .stage(
-            &legacy(|_| {}),
-            None,
-            schema_state(StoredSchema::AdoptableLegacy { version: 46 }, false),
-        )
-        .await
-        .expect("an adoptable database stages");
-
-    assert_eq!(
-        files_under(&staged.payload_dir()).get(DATABASE_FILE_NAME),
-        Some(&DB_BYTES.to_vec())
-    );
-}
-
-#[tokio::test]
 async fn database_holding_logins_without_its_key_is_refused() {
     let fx = Fixture::new();
     let probe = schema_state(

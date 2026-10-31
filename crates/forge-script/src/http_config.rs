@@ -83,21 +83,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn stored_allowlist_reads_json_falls_back_to_legacy_csv_and_keeps_blank_values_empty() {
+    async fn stored_allowlist_reads_json_and_an_absent_value_as_empty() {
         let json = serde_json::to_string(&["good.com", "also.com"]).unwrap();
         for (stored, expected) in [
             (None, Vec::<&str>::new()),
             (Some(json.as_str()), vec!["good.com", "also.com"]),
             (Some("[]"), Vec::new()),
-            (
-                Some("a.com, b.com ,c.com,"),
-                vec!["a.com", "b.com", "c.com"],
-            ),
-            (Some("solo.com"), vec!["solo.com"]),
-            (Some(""), Vec::new()),
-            (Some("   "), Vec::new()),
-            (Some(",,"), Vec::new()),
-            (Some(" , , "), Vec::new()),
         ] {
             let store = MemorySettings::new();
             if let Some(raw) = stored {

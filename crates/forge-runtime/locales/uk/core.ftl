@@ -84,7 +84,6 @@ msg-core-unknown_step_kind = Невідомий тип кроку: { $kind }
 msg-core-step_disabled = Крок вимкнено
 msg-core-condition_not_met = Умову не виконано
 msg-core-regex_invalid = Некоректний регулярний вираз
-msg-core-time_pattern_legacy = Застаріла частина шаблону { $component } не має відповідника в шаблонах дати. Перепишіть шаблон літерами, наприклад HH:mm dd.MM.yyyy
 msg-core-entry_without_value = { $name } не має значення
 msg-core-random_max_below_min = Не може бути меншим за мінімум
 msg-core-random_range_too_wide = Діапазон завеликий для вибірки

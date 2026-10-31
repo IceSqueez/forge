@@ -25,15 +25,10 @@ pub(crate) enum ChordVerdict {
     Free(String),
 }
 
-fn enabled_by_default() -> bool {
-    true
-}
-
 #[derive(Clone, Serialize, Deserialize)]
 pub(crate) struct OverrideEntry {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     chord: Option<String>,
-    #[serde(default = "enabled_by_default")]
     enabled: bool,
 }
 
@@ -52,35 +47,11 @@ impl OverrideEntry {
     }
 }
 
-#[derive(Deserialize)]
-#[serde(untagged)]
-enum StoredOverrides {
-    Entries(HashMap<String, OverrideEntry>),
-    ChordsOnly(HashMap<String, String>),
-}
-
-impl StoredOverrides {
-    fn into_known_entries(self) -> HashMap<String, OverrideEntry> {
-        let entries: HashMap<String, OverrideEntry> = match self {
-            Self::Entries(map) => map,
-            Self::ChordsOnly(chords) => chords
-                .into_iter()
-                .map(|(id, chord)| {
-                    (
-                        id,
-                        OverrideEntry {
-                            chord: Some(chord),
-                            enabled: true,
-                        },
-                    )
-                })
-                .collect(),
-        };
-        entries
-            .into_iter()
-            .filter(|(id, _)| SHORTCUTS.iter().any(|entry| entry.id == id))
-            .collect()
-    }
+fn known_entries(entries: HashMap<String, OverrideEntry>) -> HashMap<String, OverrideEntry> {
+    entries
+        .into_iter()
+        .filter(|(id, _)| SHORTCUTS.iter().any(|entry| entry.id == id))
+        .collect()
 }
 
 #[derive(Default)]
@@ -101,16 +72,18 @@ impl SettingCodec for ShortcutsCodec {
     }
 
     fn decode(&self, raw: &str) -> Option<StoredShortcuts> {
-        Some(match serde_json::from_str::<StoredOverrides>(raw) {
-            Ok(stored) => StoredShortcuts {
-                entries: stored.into_known_entries(),
-                unreadable: false,
+        Some(
+            match serde_json::from_str::<HashMap<String, OverrideEntry>>(raw) {
+                Ok(stored) => StoredShortcuts {
+                    entries: known_entries(stored),
+                    unreadable: false,
+                },
+                Err(_) => StoredShortcuts {
+                    entries: HashMap::new(),
+                    unreadable: true,
+                },
             },
-            Err(_) => StoredShortcuts {
-                entries: HashMap::new(),
-                unreadable: true,
-            },
-        })
+        )
     }
 
     fn encode(&self, value: &StoredShortcuts) -> Option<String> {
@@ -546,27 +519,15 @@ mod tests {
     }
 
     #[test]
-    fn load_overrides_decodes_the_current_form_and_reads_older_forms_as_enabled() {
+    fn load_overrides_decodes_the_stored_form_and_a_missing_store_as_defaults() {
         let cases = [
             (
                 "current form",
-                Some(r#"{"nav.home":{"chord":"ctrl-9","enabled":false},"nav.chat":{"chord":""}}"#),
+                Some(
+                    r#"{"nav.home":{"chord":"ctrl-9","enabled":false},"nav.chat":{"chord":"","enabled":true}}"#,
+                ),
                 Some("ctrl-9"),
                 false,
-                None,
-            ),
-            (
-                "flat map",
-                Some(r#"{"nav.home":"ctrl-9","nav.chat":""}"#),
-                Some("ctrl-9"),
-                true,
-                None,
-            ),
-            (
-                "object map without the toggle",
-                Some(r#"{"nav.home":{"chord":"ctrl-9"},"nav.chat":{"chord":""}}"#),
-                Some("ctrl-9"),
-                true,
                 None,
             ),
             (
@@ -595,22 +556,18 @@ mod tests {
     }
 
     #[test]
-    fn load_overrides_drops_ids_the_roster_no_longer_defines_in_either_form() {
-        for raw in [
-            r#"{"nav.home":"ctrl-9","nav.gone":"ctrl-8"}"#,
-            r#"{"nav.home":{"chord":"ctrl-9"},"nav.gone":{"chord":"ctrl-8"}}"#,
-        ] {
-            let overrides = stored_shortcut_overrides(Some(raw)).unwrap();
+    fn load_overrides_drops_ids_the_roster_no_longer_defines() {
+        let raw = r#"{"nav.home":{"chord":"ctrl-9","enabled":true},"nav.gone":{"chord":"ctrl-8","enabled":true}}"#;
 
-            assert_eq!(
-                (
-                    chord(&overrides, HOME).as_deref(),
-                    overrides.map.contains_key("nav.gone"),
-                ),
-                (Some("ctrl-9"), false),
-                "{raw}"
-            );
-        }
+        let overrides = stored_shortcut_overrides(Some(raw)).unwrap();
+
+        assert_eq!(
+            (
+                chord(&overrides, HOME).as_deref(),
+                overrides.map.contains_key("nav.gone"),
+            ),
+            (Some("ctrl-9"), false)
+        );
     }
 
     #[test]
@@ -627,14 +584,15 @@ mod tests {
     }
 
     #[test]
-    fn load_overrides_rejects_a_value_neither_stored_form_decodes_naming_the_key() {
+    fn load_overrides_rejects_a_value_the_stored_form_does_not_decode_naming_the_key() {
         for raw in [
             "",
             "not json",
             "[]",
             r#"{"nav.home":7}"#,
             r#"{"nav.home":{"chord":7}}"#,
-            r#"{"nav.home":"ctrl-9","nav.chat":{"chord":"ctrl-8"}}"#,
+            r#"{"nav.home":"ctrl-9"}"#,
+            r#"{"nav.home":{"chord":"ctrl-9"}}"#,
         ] {
             assert!(
                 matches!(
@@ -663,7 +621,7 @@ mod tests {
     #[test]
     fn the_codec_reads_a_stored_map_as_readable() {
         let decoded = ShortcutsCodec
-            .decode(r#"{"nav.home":"ctrl-9"}"#)
+            .decode(r#"{"nav.home":{"chord":"ctrl-9","enabled":true}}"#)
             .expect("a well-formed map decodes");
 
         assert!(!decoded.unreadable && decoded.entries.contains_key(HOME));

@@ -131,11 +131,8 @@ pub fn repeat_window(settings: &TtsPipelineSettings) -> NonZeroUsize {
 
 fn max_chars(settings: &TtsPipelineSettings) -> Option<usize> {
     settings
-        .max_length
-        .or(settings
-            .skip_longer_than
-            .then_some(settings.longer_than_max_chars))
-        .map(|chars| chars as usize)
+        .skip_longer_than
+        .then_some(settings.longer_than_max_chars as usize)
 }
 
 fn apply_url_mode(

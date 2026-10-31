@@ -90,11 +90,7 @@ async fn inspect_connection(
             Some(version) => StoredSchema::Current { version },
             None => StoredSchema::Unrecognized,
         },
-        Ok(JournalState::LegacyComplete) => match applied_version(&mut *conn).await? {
-            Some(version) => StoredSchema::AdoptableLegacy { version },
-            None => StoredSchema::Unrecognized,
-        },
-        Ok(JournalState::LegacyPartial { found }) => StoredSchema::PreBaseline { found },
+        Ok(JournalState::PreBaseline { found }) => StoredSchema::PreBaseline { found },
         Ok(JournalState::Empty) | Err(SqliteStorageError::UnrecognizedJournal { .. }) => {
             StoredSchema::Unrecognized
         }

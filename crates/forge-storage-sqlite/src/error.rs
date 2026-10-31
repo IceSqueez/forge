@@ -12,9 +12,6 @@ pub enum SqliteStorageError {
     #[error("unrecognized migration journal: {reason}")]
     UnrecognizedJournal { reason: String },
 
-    #[error("pre-baseline snapshot failed: {reason}")]
-    AdoptionSnapshot { reason: String },
-
     #[error(transparent)]
     Sqlx(#[from] sqlx::Error),
 
@@ -42,10 +39,6 @@ impl From<SqliteStorageError> for forge_storage::StorageError {
             }
             SqliteStorageError::PreBaselineSchema { found } => Self::PreBaselineSchema { found },
             SqliteStorageError::UnrecognizedJournal { reason } => Self::Migration {
-                migration: crate::migrations::JOURNAL_CHECK.to_owned(),
-                reason,
-            },
-            SqliteStorageError::AdoptionSnapshot { reason } => Self::Migration {
                 migration: crate::migrations::JOURNAL_CHECK.to_owned(),
                 reason,
             },

@@ -77,9 +77,6 @@ pub fn register_vtube_sub_actions(
     reg.register(Box::new(ItemThrowRunner::new(Arc::clone(&sink))))?;
     reg.register(Box::new(ModelTintRunner::new(Arc::clone(&sink))))?;
     reg.register(Box::new(ModelSetPhysicsRunner::new(sink)))?;
-    for succession in crate::vocabulary::retired_ids::RETIRED_SUB_ACTION_IDS {
-        reg.declare_retired(succession)?;
-    }
     Ok(())
 }
 
@@ -160,17 +157,6 @@ mod tests {
                 );
             }
         }
-    }
-
-    #[test]
-    fn the_retired_reset_id_resolves_to_a_registered_runner_and_is_no_runner_itself() {
-        let reg = registry();
-
-        let current = reg.current_id("vtube.params.reset");
-
-        assert_eq!(current, Some("vtube.expressions.reset"));
-        assert!(reg.get("vtube.expressions.reset").is_some());
-        assert!(reg.get("vtube.params.reset").is_none());
     }
 
     #[test]

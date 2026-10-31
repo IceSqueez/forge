@@ -59,25 +59,21 @@ fn settings_serialized_before_the_row_switches_existed_restore_with_every_row_on
 }
 
 #[test]
-fn a_skip_regex_list_reads_bare_strings_and_objects_in_their_stored_order() {
+fn a_skip_regex_list_reads_objects_in_their_stored_order() {
     let stored = serde_json::json!([
-        "^bare$",
         { "pattern": "^off$", "enabled": false },
-        { "pattern": "^unset$" },
         { "pattern": "^on$", "enabled": true },
     ]);
 
-    let read: Vec<SkipRegex> = serde_json::from_value(stored).expect("both forms deserialize");
+    let read: Vec<SkipRegex> = serde_json::from_value(stored).expect("objects deserialize");
 
     assert_eq!(
         read,
         [
-            SkipRegex::enabled("^bare$"),
             SkipRegex {
                 pattern: "^off$".to_owned(),
                 enabled: false,
             },
-            SkipRegex::enabled("^unset$"),
             SkipRegex::enabled("^on$"),
         ]
     );
@@ -99,9 +95,11 @@ fn a_skip_regex_is_written_as_an_object_that_keeps_its_switch() {
 }
 
 #[test]
-fn a_skip_regex_in_neither_form_is_refused() {
+fn a_skip_regex_that_is_not_a_complete_object_is_refused() {
     for malformed in [
         serde_json::json!(7),
+        serde_json::json!("^bare$"),
+        serde_json::json!({ "pattern": "^unset$" }),
         serde_json::json!({ "enabled": true }),
         serde_json::json!({ "pattern": 7 }),
         serde_json::json!(null),

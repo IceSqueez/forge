@@ -142,7 +142,6 @@ mod scheduled_runs_section;
 mod screen_shortcuts;
 mod script_editor;
 mod script_lifecycle;
-mod script_retired_ids;
 mod server_bearer;
 mod server_console;
 mod server_restart;

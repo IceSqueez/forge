@@ -38,7 +38,6 @@ use crate::repo_failure::RepoFailure;
 use crate::runtime_event::{self, RuntimeEvent};
 use crate::runtime_handles::RuntimeHandles;
 use crate::runtime_status::RuntimeStatus;
-use crate::script_retired_ids::IdReplacement;
 use crate::shell::AppShell;
 use crate::speak_state::SpeakState;
 use crate::system_info::WindowFacts;
@@ -173,7 +172,6 @@ struct BootCaptures {
     obs_stats_watch: forge_obs::ObsStatsWatch,
     awake_watch: StatusWatch,
     event_categories: EventCategories,
-    retired_ids: Vec<IdReplacement>,
 }
 
 impl BootCaptures {
@@ -190,10 +188,6 @@ impl BootCaptures {
             obs_stats_watch: handles.integrations.obs_install_seed.stream_stats(),
             awake_watch: handles.stay_awake.watch(),
             event_categories: EventCategories::from_registry(&handles.automation.trigger_registry),
-            retired_ids: crate::script_retired_ids::retired_successions(
-                &handles.automation.trigger_registry,
-                &handles.automation.sub_action_registry,
-            ),
         }
     }
 }
@@ -446,7 +440,6 @@ async fn start_boot_services(
         obs_stats_watch,
         awake_watch,
         event_categories,
-        retired_ids,
     } = captures;
     let InstalledShell {
         update_flow,
@@ -493,7 +486,7 @@ async fn start_boot_services(
     start_uptime_clock(cx, status);
     start_awake_bridge(cx, awake, awake_watch);
     start_live_viewers_bridge(cx, home_stats, handles.automation.live_viewers.clone());
-    start_boot_notices(handles, retired_ids, navigator, cx);
+    start_boot_notices(handles, navigator, cx);
     apply_persisted_shortcuts(cx, Arc::clone(&handles.backend), handles.rt_handle.clone());
     start_update_services(handles, update_flow, problem_report, window_facts, cx);
     if let Some(events) = speak_events {
@@ -501,12 +494,7 @@ async fn start_boot_services(
     }
 }
 
-fn start_boot_notices(
-    handles: &Arc<RuntimeHandles>,
-    retired_ids: Vec<IdReplacement>,
-    navigator: Navigator,
-    cx: &mut AsyncApp,
-) {
+fn start_boot_notices(handles: &Arc<RuntimeHandles>, navigator: Navigator, cx: &mut AsyncApp) {
     crate::system_notices::start_system_notices(
         cx,
         &handles.core.notification_policy,
@@ -519,13 +507,6 @@ fn start_boot_notices(
         Arc::clone(&handles.backend) as Arc<dyn forge_storage::SettingsRepo>,
         Arc::new(forge_runtime::SystemNotifyPort),
         handles.rt_handle.clone(),
-        navigator.clone(),
-    );
-    crate::script_retired_ids::start_script_retired_id_notice(
-        cx,
-        Arc::clone(&handles.backend) as Arc<dyn forge_storage::ScriptRepo>,
-        retired_ids,
-        &handles.rt_handle,
         navigator,
     );
 }

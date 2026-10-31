@@ -8,8 +8,8 @@ use forge_components::{
 };
 use forge_storage::SettingSkip;
 use forge_transfer::{
-    ClosureRegistries, SetupImportOutcome, SetupImportRequest, SkippedSetting, StagedSetup,
-    TransferError, apply_setup_import, discard_staged_setup, stage_setup,
+    SetupImportOutcome, SetupImportRequest, SkippedSetting, StagedSetup, TransferError,
+    apply_setup_import, discard_staged_setup, stage_setup,
 };
 use gpui::{App, ClickEvent, Context, EventEmitter, Window, div, prelude::*};
 
@@ -98,19 +98,13 @@ impl SetupImportFlow {
         }
         self.step = SetupImportStep::Staging;
         let data_dir = self.data_dir.clone();
-        let services = self.services.clone();
         async_bridge::run_async(
             &self.services.rt_handle,
             async move {
                 let mut staged = stage_setup(bundle, data_dir)
                     .await
                     .map_err(|error| RestoreProblem::of(&error))?;
-                staged.upgrade_retired_ids(ClosureRegistries {
-                    sub_actions: &services.sub_actions,
-                    triggers: &services.triggers,
-                    overlays: &services.overlay_kinds,
-                    schema: None,
-                });
+                staged.upgrade_command_arguments();
                 Ok::<_, RestoreProblem>(staged)
             },
             |this, result, cx| {

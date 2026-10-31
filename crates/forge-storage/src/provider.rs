@@ -9,7 +9,7 @@ use crate::{
     TriggerInstanceRepo, TtsFiltersRepo, UserGlobalsRepo, ViewerRepo, VoiceAliasRepo,
 };
 
-pub const EXPECTED_SCHEMA_VERSION: u32 = 68;
+pub const EXPECTED_SCHEMA_VERSION: u32 = 70;
 
 pub const DATABASE_FILE_NAME: &str = "forge.db";
 const WAL_SUFFIX: &str = "-wal";
@@ -23,7 +23,7 @@ pub fn database_unit_file_names() -> [String; 3] {
     ]
 }
 
-pub const LAST_PRE_BASELINE_RELEASE: &str = "0.5.5";
+pub const LAST_PRE_BASELINE_RELEASE: &str = "0.6.3";
 
 #[async_trait]
 pub trait DataProvider:

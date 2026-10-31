@@ -214,7 +214,6 @@ fn verify_staged_database(
         .ok_or(TransferError::MissingDatabase)?;
     match stored.schema {
         StoredSchema::Current { version } => check_schema(version)?,
-        StoredSchema::AdoptableLegacy { .. } => {}
         StoredSchema::PreBaseline { found } => {
             return Err(TransferError::SchemaNotAdoptable {
                 found,

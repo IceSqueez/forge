@@ -336,7 +336,7 @@ async fn stage_and_plan(
     match services.load_source().await {
         Ok(source) => {
             let registries = services.registries(&source);
-            staged.upgrade_retired_ids(registries);
+            staged.upgrade_command_arguments();
             match plan_pack_import(&staged, &source.inventory, registries) {
                 Ok(plan) => Ok(Planned { staged, plan }),
                 Err(error) => {

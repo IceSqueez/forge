@@ -32,7 +32,6 @@ const VARIABLE_ARG: &str = "variable";
 const VARIABLES_ARG: &str = "variables";
 const CHAR_ARG: &str = "char";
 const KIND_ARG: &str = "kind";
-const COMPONENT_ARG: &str = "component";
 const POSITION_ARG: &str = "position";
 const WEIGHTS_ARG: &str = "weights";
 
@@ -174,8 +173,6 @@ pub(crate) const CONDITION_NOT_MET: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "condition_not_met");
 pub(crate) const REGEX_INVALID: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "regex_invalid");
-pub(crate) const TIME_PATTERN_LEGACY: MessageCode =
-    MessageCode::from_static(CORE_NAMESPACE, "time_pattern_legacy");
 pub(crate) const ENTRY_WITHOUT_VALUE: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "entry_without_value");
 pub(crate) const RANDOM_MAX_BELOW_MIN: MessageCode =
@@ -286,7 +283,6 @@ pub const CORE_MESSAGES: MessageCatalog = MessageCatalog {
         STEP_DISABLED,
         CONDITION_NOT_MET,
         REGEX_INVALID,
-        TIME_PATTERN_LEGACY,
         ENTRY_WITHOUT_VALUE,
         RANDOM_MAX_BELOW_MIN,
         RANDOM_RANGE_TOO_WIDE,
@@ -338,10 +334,6 @@ pub(crate) fn condition_not_met() -> MessageRef {
 
 pub(crate) fn regex_invalid(cause: impl Display) -> MessageRef {
     with_cause(REGEX_INVALID, cause)
-}
-
-pub(crate) fn time_pattern_legacy(component: &str) -> MessageRef {
-    MessageRef::new(TIME_PATTERN_LEGACY).with_arg(COMPONENT_ARG, verbatim(component))
 }
 
 pub(crate) fn entry_without_value(name: &str) -> MessageRef {
@@ -795,7 +787,6 @@ mod tests {
             step_disabled(),
             condition_not_met(),
             regex_invalid("c"),
-            time_pattern_legacy("[x]"),
             entry_without_value("n"),
             random_max_below_min(),
             random_range_too_wide(),

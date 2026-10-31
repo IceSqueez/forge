@@ -143,7 +143,8 @@ async fn seed_source_extras(store: &Store, f: &Fixture) {
         .unwrap();
     let tts = p.tts_filters_repo();
     tts.set_pipeline_settings(&TtsPipelineSettings {
-        max_length: Some(120),
+        skip_longer_than: true,
+        longer_than_max_chars: 120,
         skip_starts_with_bang: true,
         ..TtsPipelineSettings::default()
     })

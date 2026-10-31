@@ -5,7 +5,6 @@ use forge_types::{ArgStack, IntegrationId, PlatformId, TriggerConfig};
 
 use crate::descriptor::TriggerKindDescriptor;
 use crate::error::RegistryError;
-use crate::retired_ids::{IdSuccession, RetiredIds};
 use crate::runner::SubActionRunner;
 use crate::variables::{DescriptorDeclaration, TriggerVariable};
 
@@ -18,7 +17,6 @@ struct RegisteredTrigger {
 pub struct TriggerRegistry {
     descriptors: HashMap<String, RegisteredTrigger>,
     owners: HashMap<String, IntegrationId>,
-    retired: RetiredIds,
 }
 
 impl TriggerRegistry {
@@ -87,18 +85,6 @@ impl TriggerRegistry {
             .filter_map(|descriptor| descriptor.platform_contract().platform())
             .collect()
     }
-
-    pub fn declare_retired(&mut self, succession: &IdSuccession) -> Result<(), RegistryError> {
-        self.retired.declare(succession)
-    }
-
-    pub fn current_id(&self, retired_id: &str) -> Option<&str> {
-        self.retired.current_id(retired_id)
-    }
-
-    pub fn retired_ids(&self) -> impl Iterator<Item = (&str, &str)> {
-        self.retired.successions()
-    }
 }
 
 pub struct OwnedTriggerRegistration<'a> {
@@ -116,17 +102,12 @@ impl OwnedTriggerRegistration<'_> {
         self.registry.owners.insert(id, self.owner.clone());
         Ok(())
     }
-
-    pub fn declare_retired(&mut self, succession: &IdSuccession) -> Result<(), RegistryError> {
-        self.registry.declare_retired(succession)
-    }
 }
 
 #[derive(Default)]
 pub struct SubActionRegistry {
     runners: HashMap<String, Box<dyn SubActionRunner>>,
     owners: HashMap<String, IntegrationId>,
-    retired: RetiredIds,
 }
 
 impl SubActionRegistry {
@@ -161,18 +142,6 @@ impl SubActionRegistry {
     pub fn owning_integration(&self, kind_id: &str) -> Option<&IntegrationId> {
         self.owners.get(kind_id)
     }
-
-    pub fn declare_retired(&mut self, succession: &IdSuccession) -> Result<(), RegistryError> {
-        self.retired.declare(succession)
-    }
-
-    pub fn current_id(&self, retired_id: &str) -> Option<&str> {
-        self.retired.current_id(retired_id)
-    }
-
-    pub fn retired_ids(&self) -> impl Iterator<Item = (&str, &str)> {
-        self.retired.successions()
-    }
 }
 
 pub struct OwnedSubActionRegistration<'a> {
@@ -186,10 +155,6 @@ impl OwnedSubActionRegistration<'_> {
         self.registry.register(runner)?;
         self.registry.owners.insert(id, self.owner.clone());
         Ok(())
-    }
-
-    pub fn declare_retired(&mut self, succession: &IdSuccession) -> Result<(), RegistryError> {
-        self.registry.declare_retired(succession)
     }
 }
 
@@ -476,63 +441,6 @@ mod tests {
         reg.register(Box::new(StubRunner { kind_id: "b" })).unwrap();
         reg.register(Box::new(StubRunner { kind_id: "c" })).unwrap();
         assert_eq!(reg.all().count(), 3);
-    }
-
-    const SUCCESSOR: IdSuccession = IdSuccession {
-        current: "obs.recording.start",
-        retired: &["obs.record.start", "obs.rec.start"],
-    };
-
-    #[test]
-    fn every_retired_id_of_a_declared_succession_resolves_to_its_current_id() {
-        let mut triggers = TriggerRegistry::new();
-        let mut sub_actions = SubActionRegistry::new();
-        triggers.declare_retired(&SUCCESSOR).unwrap();
-        sub_actions.declare_retired(&SUCCESSOR).unwrap();
-
-        let ids = ["obs.record.start", "obs.rec.start", "obs.recording.start"];
-        let current = Some("obs.recording.start");
-
-        assert_eq!(
-            (
-                ids.map(|id| triggers.current_id(id)),
-                ids.map(|id| sub_actions.current_id(id)),
-            ),
-            ([current, current, None], [current, current, None])
-        );
-    }
-
-    #[test]
-    fn a_succession_reusing_a_retired_id_is_rejected_whole() {
-        let mut reg = SubActionRegistry::new();
-        reg.declare_retired(&SUCCESSOR).unwrap();
-
-        let result = reg.declare_retired(&IdSuccession {
-            current: "obs.other",
-            retired: &["obs.fresh", "obs.record.start"],
-        });
-
-        assert!(matches!(result, Err(RegistryError::DuplicateId(id)) if id == "obs.record.start"));
-        assert_eq!(
-            reg.retired_ids().collect::<Vec<_>>(),
-            [
-                ("obs.rec.start", "obs.recording.start"),
-                ("obs.record.start", "obs.recording.start")
-            ]
-        );
-    }
-
-    #[test]
-    fn retired_ids_declared_through_an_owned_registration_reach_the_registry() {
-        let obs = forge_types::IntegrationId::from_static("obs");
-        let mut triggers = TriggerRegistry::new();
-
-        triggers.owned_by(obs).declare_retired(&SUCCESSOR).unwrap();
-
-        assert_eq!(
-            triggers.current_id("obs.record.start"),
-            Some("obs.recording.start")
-        );
     }
 
     #[test]

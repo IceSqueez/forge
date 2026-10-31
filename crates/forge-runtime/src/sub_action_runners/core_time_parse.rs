@@ -245,19 +245,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn parse_with_legacy_description_and_no_utc_key_reads_utc() {
-        let (outcome, out) = run(&cfg(
-            "2024-01-15 12:00:00",
-            "[year]-[month]-[day] [hour]:[minute]:[second]",
-        ))
-        .await;
-        assert!(matches!(outcome, SubActionOutcome::Success));
-        let dt = parsed(out);
-        assert_eq!(dt, utc(2024, Month::January, 15, 12, 0, 0));
-        assert_eq!(dt.offset(), time::UtcOffset::UTC);
-    }
-
-    #[tokio::test]
     async fn parse_interpolates_source_var_before_parsing() {
         let stack = ArgStack::new().set(
             "when".to_owned(),
@@ -292,51 +279,24 @@ mod tests {
         assert!(out.is_none());
     }
 
-    #[tokio::test]
-    async fn parse_with_untranslatable_legacy_component_fails_naming_it() {
-        let (outcome, out) = run(&cfg("1700000000", "[unix_timestamp]")).await;
-        let problem = pattern_problem(&outcome);
-        assert_eq!(problem.code(), &crate::core_messages::TIME_PATTERN_LEGACY);
-        assert_eq!(
-            crate::test_support::failure::verbatim_arg(&problem, "component"),
-            Some("[unix_timestamp]")
-        );
-        assert!(out.is_none());
-    }
-
     #[test]
-    fn validate_reports_invalid_and_untranslatable_patterns_as_format_problems_on_the_pattern_key()
-    {
-        for (fmt, code, arg, named) in [
-            (
-                "yyyy qqq",
-                core_messages::TIME_PATTERN_INVALID,
-                "pattern",
-                "yyyy qqq",
+    fn validate_reports_invalid_patterns_as_format_problems_on_the_pattern_key() {
+        let fmt = "yyyy qqq";
+        let result = CoreTimeParseRunner.validate_config(&cfg("", fmt));
+        assert!(
+            matches!(
+                &result,
+                Err(RegistryError::InvalidConfig(forge_registry::ConfigProblem {
+                    field: Some(field),
+                    reason: ConfigReason::Coded(message),
+                })) if field == PARSE_PATTERN_KEY
+                    && message.code() == &core_messages::TIME_PATTERN_INVALID
+                    && message.arg("pattern")
+                        == Some(&forge_types::MessageArg::Verbatim(
+                            forge_types::VerbatimText::new(fmt)
+                        ))
             ),
-            (
-                "[unix_timestamp]",
-                core_messages::TIME_PATTERN_LEGACY,
-                "component",
-                "[unix_timestamp]",
-            ),
-        ] {
-            let result = CoreTimeParseRunner.validate_config(&cfg("", fmt));
-            assert!(
-                matches!(
-                    &result,
-                    Err(RegistryError::InvalidConfig(forge_registry::ConfigProblem {
-                        field: Some(field),
-                        reason: ConfigReason::Coded(message),
-                    })) if field == PARSE_PATTERN_KEY
-                        && message.code() == &code
-                        && message.arg(arg)
-                            == Some(&forge_types::MessageArg::Verbatim(
-                                forge_types::VerbatimText::new(named)
-                            ))
-                ),
-                "{fmt}: {result:?}"
-            );
-        }
+            "{fmt}: {result:?}"
+        );
     }
 }

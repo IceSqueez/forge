@@ -38,21 +38,18 @@ pub(crate) async fn upsert_queue<'e>(
 ) -> Result<(), StorageError> {
     let id_str = queue.id.to_string();
     let concurrency = i64::from(queue.concurrency.get());
-    let blocking = i64::from(queue.is_serial());
 
     sqlx::query(
-        "INSERT INTO queues (id, name, description, blocking, concurrency)
-         VALUES (?, ?, ?, ?, ?)
+        "INSERT INTO queues (id, name, description, concurrency)
+         VALUES (?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
              name        = excluded.name,
              description = excluded.description,
-             blocking    = excluded.blocking,
              concurrency = excluded.concurrency",
     )
     .bind(&id_str)
     .bind(&queue.name)
     .bind(&queue.description)
-    .bind(blocking)
     .bind(concurrency)
     .execute(executor)
     .await

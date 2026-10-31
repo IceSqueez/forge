@@ -320,20 +320,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn now_custom_legacy_pattern_without_utc_key_renders_in_utc() {
-        let (outcome, out) = run(&custom_cfg(
-            "[offset_hour sign:mandatory]:[offset_minute]",
-            None,
-        ))
-        .await;
-        assert!(matches!(outcome, SubActionOutcome::Success));
-        assert_eq!(
-            out.unwrap().get("time.formatted").and_then(|v| v.as_str()),
-            Some("+00:00")
-        );
-    }
-
-    #[tokio::test]
     async fn now_custom_rejected_patterns_fail_the_run_naming_the_cause() {
         for (pattern, code, named) in [
             ("yyyy qqq", crate::core_messages::TIME_PATTERN_INVALID, None),
@@ -341,11 +327,6 @@ mod tests {
                 "",
                 crate::core_messages::TIME_PATTERN_INVALID,
                 Some("empty"),
-            ),
-            (
-                "[unix_timestamp]",
-                crate::core_messages::TIME_PATTERN_LEGACY,
-                None,
             ),
         ] {
             let (outcome, out) = run(&custom_cfg(pattern, None)).await;
@@ -368,7 +349,7 @@ mod tests {
 
     #[test]
     fn validate_rejects_custom_patterns_that_cannot_render() {
-        for pattern in ["yyyy qqq", "", "[unix_timestamp]"] {
+        for pattern in ["yyyy qqq", ""] {
             assert!(
                 matches!(
                     CoreTimeNowRunner.validate_config(&custom_cfg(pattern, None)),

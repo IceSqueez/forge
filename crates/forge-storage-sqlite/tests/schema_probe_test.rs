@@ -1,7 +1,6 @@
 #![expect(clippy::unwrap_used, reason = "test fixtures")]
 mod common;
 use common::TEST_KEY;
-mod legacy_fixture;
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -14,7 +13,6 @@ use forge_storage_sqlite::{
     SqliteBackend, SqliteCredentialsRepo, SqliteDatabaseFileSchema, SqliteStorageError,
     apply_migrations, connect_pools, inspect_database_file, read_applied_schema_version,
 };
-use legacy_fixture::{LEGACY_HEAD, legacy_db};
 use tempfile::TempDir;
 
 fn url_of(db: &Path) -> String {
@@ -188,31 +186,38 @@ fn inspect_reports_holding_credentials_once_one_is_stored() {
 }
 
 #[test]
-fn inspect_classifies_legacy_journals_by_completeness() {
-    for (up_to, expected) in [
-        (
-            LEGACY_HEAD - 2,
-            StoredSchema::PreBaseline {
-                found: u32::try_from(LEGACY_HEAD - 2).unwrap(),
-            },
-        ),
-        (
-            LEGACY_HEAD,
-            StoredSchema::AdoptableLegacy {
-                version: u32::try_from(LEGACY_HEAD).unwrap(),
-            },
-        ),
-    ] {
-        let dir = tempfile::tempdir().unwrap();
-        let db = db_in(&dir);
-        runtime().block_on(async { legacy_db(&db, up_to).await.close().await });
+fn inspect_reports_a_journal_without_the_baseline_as_pre_baseline() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = db_in(&dir);
+    runtime().block_on(async {
+        let pools = connect_pools(&url_of(&db)).await.unwrap();
+        sqlx::query(
+            "CREATE TABLE _sqlx_migrations (
+                version BIGINT PRIMARY KEY,
+                description TEXT NOT NULL,
+                installed_on TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                success BOOLEAN NOT NULL,
+                checksum BLOB NOT NULL,
+                execution_time BIGINT NOT NULL
+            )",
+        )
+        .execute(pools.writer())
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO _sqlx_migrations (version, description, success, checksum, execution_time)
+             VALUES (44, 'earlier', 1, X'00', 0)",
+        )
+        .execute(pools.writer())
+        .await
+        .unwrap();
+        pools.close().await;
+    });
 
-        assert_eq!(
-            inspected(&db).schema,
-            expected,
-            "legacy chain up to {up_to}"
-        );
-    }
+    assert_eq!(
+        inspected(&db).schema,
+        StoredSchema::PreBaseline { found: 44 }
+    );
 }
 
 #[test]

@@ -365,23 +365,24 @@ mod filters {
     }
 
     #[test]
-    fn max_length_none_disables_the_longer_than_skip_condition() {
+    fn longer_than_off_disables_the_longer_than_skip_condition() {
         let mut settings = default_settings();
-        settings.max_length = None;
+        settings.skip_longer_than = false;
         let config = build_config_strict(&[], &settings).unwrap();
         let long: String = "a".repeat(501);
         let result = process(&long, &config, &ctx());
         assert_eq!(
             result,
             PipelineResult::Speak(long),
-            "max_length=None must disable longer_than, not fall back to an implicit cap"
+            "longer_than off must not fall back to an implicit cap"
         );
     }
 
     #[test]
-    fn max_length_some_n_skips_messages_longer_than_n() {
+    fn longer_than_n_skips_messages_longer_than_n() {
         let mut settings = default_settings();
-        settings.max_length = Some(10);
+        settings.skip_longer_than = true;
+        settings.longer_than_max_chars = 10;
         let config = build_config_strict(&[], &settings).unwrap();
         let result = process("hello world this is too long", &config, &ctx());
         assert_eq!(
@@ -389,14 +390,15 @@ mod filters {
             PipelineResult::Skip {
                 reason: SkipReason::MatchedSkipRule(SkipRule::ExceedsMaxLength)
             },
-            "text longer than the migrated max_length must now be Skipped, not truncated"
+            "text longer than the cap must be Skipped, not truncated"
         );
     }
 
     #[test]
-    fn max_length_exactly_at_boundary_is_not_skipped() {
+    fn longer_than_exactly_at_boundary_is_not_skipped() {
         let mut settings = default_settings();
-        settings.max_length = Some(5);
+        settings.skip_longer_than = true;
+        settings.longer_than_max_chars = 5;
         let config = build_config_strict(&[], &settings).unwrap();
         let result = process("hello", &config, &ctx());
         assert_eq!(result, PipelineResult::Speak("hello".into()));
@@ -432,7 +434,8 @@ mod filters {
     #[test]
     fn handle_swap_replaces_active_config_observable_via_process() {
         let mut settings_v1 = default_settings();
-        settings_v1.max_length = Some(5);
+        settings_v1.skip_longer_than = true;
+        settings_v1.longer_than_max_chars = 5;
         let config_v1 = build_config_strict(&[], &settings_v1).unwrap();
         let handle = PipelineConfigHandle::new(config_v1);
 
@@ -446,7 +449,8 @@ mod filters {
         );
 
         let mut settings_v2 = default_settings();
-        settings_v2.max_length = Some(500);
+        settings_v2.skip_longer_than = true;
+        settings_v2.longer_than_max_chars = 500;
         let config_v2 = build_config_strict(&[], &settings_v2).unwrap();
         handle.swap(config_v2);
 
@@ -462,7 +466,8 @@ mod filters {
     #[test]
     fn cloned_handle_observes_swap_made_through_original() {
         let mut settings_a = default_settings();
-        settings_a.max_length = Some(3);
+        settings_a.skip_longer_than = true;
+        settings_a.longer_than_max_chars = 3;
         let config_a = build_config_strict(&[], &settings_a).unwrap();
         let handle_original = PipelineConfigHandle::new(config_a);
         let handle_clone = handle_original.clone();
@@ -474,7 +479,8 @@ mod filters {
         );
 
         let mut settings_b = default_settings();
-        settings_b.max_length = Some(500);
+        settings_b.skip_longer_than = true;
+        settings_b.longer_than_max_chars = 500;
         let config_b = build_config_strict(&[], &settings_b).unwrap();
         handle_original.swap(config_b);
 
@@ -837,7 +843,7 @@ mod filters {
             fn(&mut TtsPipelineSettings),
             [Option<&'static str>; 10],
         );
-        let cases: [Case; 19] = [
+        let cases: [Case; 17] = [
             (
                 "defaults",
                 |_| {},
@@ -954,23 +960,7 @@ mod filters {
                 ],
             ),
             (
-                "max length",
-                |s| s.max_length = Some(12),
-                [
-                    Some("hello chat"),
-                    None,
-                    None,
-                    Some("party \u{1F389} time"),
-                    Some("!command arg"),
-                    Some("?ask thing"),
-                    Some("repeat me"),
-                    None,
-                    None,
-                    Some("wow!!! ok??"),
-                ],
-            ),
-            (
-                "legacy longer-than toggle",
+                "longer-than",
                 |s| {
                     s.skip_longer_than = true;
                     s.longer_than_max_chars = 12;
@@ -984,26 +974,6 @@ mod filters {
                     Some("?ask thing"),
                     Some("repeat me"),
                     None,
-                    None,
-                    Some("wow!!! ok??"),
-                ],
-            ),
-            (
-                "max length wins over the legacy toggle",
-                |s| {
-                    s.max_length = Some(40);
-                    s.skip_longer_than = true;
-                    s.longer_than_max_chars = 12;
-                },
-                [
-                    Some("hello chat"),
-                    Some("check https://example.com now"),
-                    Some("nice :pog: play"),
-                    Some("party \u{1F389} time"),
-                    Some("!command arg"),
-                    Some("?ask thing"),
-                    Some("repeat me"),
-                    Some("this message is definitely long"),
                     None,
                     Some("wow!!! ok??"),
                 ],

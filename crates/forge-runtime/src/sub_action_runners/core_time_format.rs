@@ -227,76 +227,26 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn format_with_legacy_description_and_no_utc_key_matches_the_old_utc_english_output() {
-        let dt = utc(2024, Month::January, 15, 21, 4, 5)
-            .to_offset(time::UtcOffset::from_hms(5, 30, 0).unwrap());
-        for legacy in [
-            "[year]-[month]-[day] [hour]:[minute]:[second]",
-            "[day padding:none] [month repr:long] [year]",
-            "[weekday], [hour repr:12]:[minute] [period]",
-            "[offset_hour sign:mandatory]:[offset_minute]",
-        ] {
-            let old = dt
-                .to_offset(time::UtcOffset::UTC)
-                .format(&time::format_description::parse_borrowed::<2>(legacy).unwrap())
-                .unwrap();
-            assert_eq!(
-                formatted(&cfg(Variant::Datetime(dt), legacy)).await,
-                old,
-                "legacy {legacy}"
-            );
-        }
-    }
-
-    #[tokio::test]
-    async fn format_with_untranslatable_legacy_component_fails_naming_it() {
-        let dt = utc(2024, Month::January, 15, 0, 0, 0);
-        let (outcome, out) = run(&cfg(Variant::Datetime(dt), "[unix_timestamp]")).await;
-        let problem = pattern_problem(&outcome);
-        assert_eq!(problem.code(), &crate::core_messages::TIME_PATTERN_LEGACY);
-        assert_eq!(
-            crate::test_support::failure::verbatim_arg(&problem, "component"),
-            Some("[unix_timestamp]")
-        );
-        assert!(out.is_none());
-    }
-
     #[test]
-    fn validate_reports_invalid_and_untranslatable_patterns_as_format_problems_on_the_pattern_key()
-    {
-        for (fmt, code, arg, named) in [
-            (
-                "yyyy qqq",
-                crate::core_messages::TIME_PATTERN_INVALID,
-                "pattern",
-                "yyyy qqq",
+    fn validate_reports_invalid_patterns_as_format_problems_on_the_pattern_key() {
+        let fmt = "yyyy qqq";
+        let source = Variant::Datetime(utc(2024, Month::January, 15, 0, 0, 0));
+        let result = CoreTimeFormatRunner.validate_config(&cfg(source, fmt));
+        assert!(
+            matches!(
+                &result,
+                Err(RegistryError::InvalidConfig(forge_registry::ConfigProblem {
+                    field: Some(field),
+                    reason: ConfigReason::Coded(message),
+                })) if field == FORMAT_PATTERN_KEY
+                    && message.code() == &crate::core_messages::TIME_PATTERN_INVALID
+                    && message.arg("pattern")
+                        == Some(&forge_types::MessageArg::Verbatim(
+                            forge_types::VerbatimText::new(fmt)
+                        ))
             ),
-            (
-                "[unix_timestamp]",
-                crate::core_messages::TIME_PATTERN_LEGACY,
-                "component",
-                "[unix_timestamp]",
-            ),
-        ] {
-            let source = Variant::Datetime(utc(2024, Month::January, 15, 0, 0, 0));
-            let result = CoreTimeFormatRunner.validate_config(&cfg(source, fmt));
-            assert!(
-                matches!(
-                    &result,
-                    Err(RegistryError::InvalidConfig(forge_registry::ConfigProblem {
-                        field: Some(field),
-                        reason: ConfigReason::Coded(message),
-                    })) if field == FORMAT_PATTERN_KEY
-                        && message.code() == &code
-                        && message.arg(arg)
-                            == Some(&forge_types::MessageArg::Verbatim(
-                                forge_types::VerbatimText::new(named)
-                            ))
-                ),
-                "{fmt}: {result:?}"
-            );
-        }
+            "{fmt}: {result:?}"
+        );
     }
 
     #[tokio::test]

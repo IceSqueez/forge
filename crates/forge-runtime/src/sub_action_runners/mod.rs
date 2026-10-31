@@ -183,7 +183,6 @@ pub use script_run_inline::ScriptRunInlineRunner;
 pub(crate) use script_run_named::ScriptRunNamedRunner;
 pub use script_run_named::TARGET_VAR_KEY as SCRIPT_TARGET_VAR_KEY;
 pub use server_broadcast::ServerBroadcastRunner;
-pub use time_pattern::translate_legacy_time_steps;
 
 use std::sync::Arc;
 

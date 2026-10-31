@@ -144,7 +144,6 @@ fn encode_rule_kind(kind: &FilterRuleKind) -> Result<(&'static str, String), Sto
 #[derive(sqlx::FromRow)]
 struct SettingsRow {
     url_mode: String,
-    max_length: Option<i64>,
     blocklist_mode: String,
     strip_twitch_emotes: i64,
     strip_reward_emotes: i64,
@@ -199,7 +198,6 @@ fn decode_settings_row(row: SettingsRow) -> Result<TtsPipelineSettings, StorageE
 
     Ok(TtsPipelineSettings {
         url_mode,
-        max_length: row.max_length.map(|v| v as u32),
         blocklist_mode,
         strip_twitch_emotes: row.strip_twitch_emotes != 0,
         strip_reward_emotes: row.strip_reward_emotes != 0,
@@ -268,17 +266,16 @@ pub(crate) async fn write_pipeline_settings<'e>(
 
     sqlx::query(
         "INSERT INTO tts_pipeline_settings
-            (id, url_mode, max_length, blocklist_mode, strip_twitch_emotes, strip_reward_emotes,
+            (id, url_mode, blocklist_mode, strip_twitch_emotes, strip_reward_emotes,
              skip_contains_url, skip_starts_with_bang, skip_from_bot_accounts, bot_accounts,
              skip_longer_than, longer_than_max_chars, skip_repeat_of_recent,
              repeat_of_recent_window, output_read_display_name_first, output_emote_to_word,
              skip_prefix, skip_emote_only, skip_mostly_non_latin, skip_custom_regexes,
              output_sanitize_punctuation, output_max_duration_secs, output_language_aware_voice,
              strip_emoji, skip_prefix_enabled, output_max_duration_enabled)
-         VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
             url_mode                       = excluded.url_mode,
-            max_length                     = excluded.max_length,
             blocklist_mode                 = excluded.blocklist_mode,
             strip_twitch_emotes            = excluded.strip_twitch_emotes,
             strip_reward_emotes            = excluded.strip_reward_emotes,
@@ -304,7 +301,6 @@ pub(crate) async fn write_pipeline_settings<'e>(
             output_max_duration_enabled    = excluded.output_max_duration_enabled",
     )
     .bind(&url_mode_str)
-    .bind(settings.max_length.map(|v| v as i64))
     .bind(&blocklist_mode_str)
     .bind(settings.strip_twitch_emotes as i64)
     .bind(settings.strip_reward_emotes as i64)
@@ -362,7 +358,7 @@ impl TtsFiltersRepo for SqliteTtsFiltersRepo {
 
     async fn get_pipeline_settings(&self) -> Result<TtsPipelineSettings, StorageError> {
         let row: Option<SettingsRow> = sqlx::query_as(
-            "SELECT url_mode, max_length, blocklist_mode,
+            "SELECT url_mode, blocklist_mode,
                     strip_twitch_emotes, strip_reward_emotes,
                     skip_contains_url, skip_starts_with_bang, skip_from_bot_accounts,
                     bot_accounts, skip_longer_than, longer_than_max_chars,

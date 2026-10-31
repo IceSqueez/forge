@@ -200,7 +200,6 @@ pub use sub_action_runners::{
     NotifyPort, NotifyUrgency, RANDOM_INT_KIND_ID, RANDOM_INT_MAX_KEY, RANDOM_INT_MIN_KEY,
     RANDOM_INT_TARGET_VAR_KEY, SCHEDULE_ACTION_KIND_ID, SCRIPT_TARGET_VAR_KEY,
     ScriptRunInlineRunner, ServerBroadcastRunner, SystemNotifyPort, WAIT_KIND_ID, WAIT_MS_KEY,
-    translate_legacy_time_steps,
 };
 pub use sub_action_runners::{MAX_FOREACH_ITERATIONS, MAX_RECORDED_ITERATIONS};
 pub use triggers::{

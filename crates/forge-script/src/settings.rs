@@ -74,16 +74,6 @@ pub const HTTP_ALLOW_LOCAL: Setting<Flag> = Setting::new(
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AllowedDomains;
 
-impl AllowedDomains {
-    fn parse_comma_separated(raw: &str) -> Vec<String> {
-        raw.split(',')
-            .map(str::trim)
-            .filter(|domain| !domain.is_empty())
-            .map(str::to_owned)
-            .collect()
-    }
-}
-
 impl SettingCodec for AllowedDomains {
     type Value = Vec<String>;
     const ENCODING: SettingEncoding = SettingEncoding::Json;
@@ -93,7 +83,7 @@ impl SettingCodec for AllowedDomains {
     }
 
     fn decode(&self, raw: &str) -> Option<Vec<String>> {
-        Some(serde_json::from_str(raw).unwrap_or_else(|_| Self::parse_comma_separated(raw)))
+        serde_json::from_str(raw).ok()
     }
 
     fn encode(&self, value: &Vec<String>) -> Option<String> {
@@ -123,21 +113,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn allowed_domains_decode_json_then_legacy_csv_and_never_yield_blank_entries() {
+    fn allowed_domains_decode_a_json_list_and_reject_anything_else() {
         for (raw, expected) in [
-            (r#"["a.com","b.com"]"#, vec!["a.com", "b.com"]),
-            ("[]", vec![]),
-            ("a.com, b.com ,c.com,", vec!["a.com", "b.com", "c.com"]),
-            ("solo.com", vec!["solo.com"]),
-            ("", vec![]),
-            (" , ,, ", vec![]),
-            (r#"["a.com""#, vec![r#"["a.com""#]),
-            (r#"{"a":1}"#, vec![r#"{"a":1}"#]),
-            ("42", vec!["42"]),
+            (r#"["a.com","b.com"]"#, Some(vec!["a.com", "b.com"])),
+            ("[]", Some(vec![])),
+            ("a.com, b.com", None),
+            ("", None),
+            (r#"["a.com""#, None),
+            (r#"{"a":1}"#, None),
         ] {
             assert_eq!(
                 AllowedDomains.decode(raw),
-                Some(expected.iter().map(|d| (*d).to_owned()).collect()),
+                expected.map(|domains| domains.iter().map(|d| (*d).to_owned()).collect()),
                 "{raw:?}"
             );
         }

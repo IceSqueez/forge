@@ -16,7 +16,6 @@ mod globals_impl;
 mod history_impl;
 mod kind_id_rename;
 mod latest_value_impl;
-mod legacy_chain;
 mod media_impl;
 mod migrations;
 mod overlay_impl;
@@ -70,8 +69,6 @@ pub use user_globals_impl::SqliteUserGlobalsRepo;
 pub use viewer_impl::SqliteViewerRepo;
 pub use voice_alias_impl::SqliteVoiceAliasRepo;
 
-pub use legacy_chain::FrozenMigration;
-pub use legacy_chain::LEGACY_CHAIN;
 pub use migrations::classify as classify_journal;
 pub use registry_migration::migrate_registry_format;
 pub use soundboard_impl::SqliteSoundboardClipsRepo;

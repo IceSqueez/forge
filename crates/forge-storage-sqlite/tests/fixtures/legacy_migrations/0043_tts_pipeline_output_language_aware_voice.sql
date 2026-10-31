@@ -1,1 +1,0 @@
-ALTER TABLE tts_pipeline_settings ADD COLUMN output_language_aware_voice INTEGER;

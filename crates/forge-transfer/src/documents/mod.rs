@@ -7,7 +7,6 @@ pub(crate) mod model;
 pub(crate) mod overlay_configs;
 pub(crate) mod overlay_files;
 pub(crate) mod reference;
-pub(crate) mod retired_ids;
 pub(crate) mod source;
 pub(crate) mod undo;
 

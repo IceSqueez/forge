@@ -74,7 +74,6 @@ msg-core-unknown_step_kind = Unknown step type: { $kind }
 msg-core-step_disabled = Step is turned off
 msg-core-condition_not_met = Condition not met
 msg-core-regex_invalid = Not a valid regular expression
-msg-core-time_pattern_legacy = The old pattern part { $component } has no date pattern equivalent. Rewrite the pattern with letters such as HH:mm dd.MM.yyyy
 msg-core-entry_without_value = { $name } has no value
 msg-core-random_max_below_min = Must not be below the minimum
 msg-core-random_range_too_wide = The range is too wide to sample

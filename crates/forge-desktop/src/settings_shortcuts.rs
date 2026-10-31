@@ -674,7 +674,7 @@ mod tests {
     } else {
         "ctrl-2"
     };
-    const STORED: &str = r#"{"nav.chat":{"chord":"ctrl-8"}}"#;
+    const STORED: &str = r#"{"nav.chat":{"chord":"ctrl-8","enabled":true}}"#;
     const SETTLE_ROUNDS: usize = 3;
 
     struct Harness {

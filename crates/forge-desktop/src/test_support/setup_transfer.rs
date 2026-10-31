@@ -99,7 +99,7 @@ async fn stored_portable_settings_of(store: &Store) -> Settings {
 
 fn alias(viewer: &str, voice: &str) -> VoiceAlias {
     VoiceAlias {
-        id: AliasId::new(),
+        id: AliasId::generate(),
         viewer_id: viewer.to_owned(),
         viewer_name: format!("{viewer} name"),
         engine_id: EngineId("piper".to_owned()),
@@ -540,7 +540,7 @@ async fn config_of(store: &Store) -> ConfigView {
     let tts = p.tts_filters_repo();
     let voices = p.voice_alias_repo();
     let mut aliases = voices.list().await.unwrap();
-    aliases.sort_by(|a, b| a.id.0.cmp(&b.id.0));
+    aliases.sort_by(|a, b| a.id.as_str().cmp(b.id.as_str()));
     ConfigView {
         actions,
         links,

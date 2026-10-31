@@ -175,7 +175,7 @@ pub(crate) fn standard_deps(sink: Arc<dyn AudioSink>) -> QueueDeps {
 
 pub(crate) fn alias(viewer_id: &str, engine: &str, voice_id: &str) -> VoiceAlias {
     VoiceAlias {
-        id: AliasId::new(),
+        id: AliasId::generate(),
         viewer_id: viewer_id.into(),
         viewer_name: viewer_id.into(),
         engine_id: EngineId(engine.into()),

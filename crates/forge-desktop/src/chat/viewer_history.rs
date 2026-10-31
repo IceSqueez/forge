@@ -875,8 +875,9 @@ mod tests {
         cx: &mut TestAppContext,
         view: &Entity<ChatView>,
     ) -> Option<Entity<ViewerHistory>> {
-        view.read_with(cx, |view, _| {
+        view.read_with(cx, |view, cx| {
             view.drawer
+                .read(cx)
                 .viewer_history
                 .as_ref()
                 .map(|host| host.view.clone())
@@ -890,7 +891,9 @@ mod tests {
 
     fn open_history_for(cx: &mut TestAppContext, view: &Entity<ChatView>, viewer_id: &str) {
         view.update(cx, |view, cx| {
-            view.open_viewer_history(viewer(viewer_id), "user0".to_owned(), cx);
+            view.drawer.update(cx, |drawer, cx| {
+                drawer.open_viewer_history(viewer(viewer_id), "user0".to_owned(), cx)
+            });
         });
     }
 
@@ -927,8 +930,14 @@ mod tests {
         let (feed, view) = mount_with_chat_history(cx, &rt, repo);
 
         push_each(cx, &feed, vec![chatter(0, "10"), chatter(1, "11")]);
-        view.update(cx, |view, cx| view.open_viewer(viewer("10"), cx));
-        view.update(cx, |view, cx| view.select_viewer(viewer("11"), cx));
+        view.update(cx, |view, cx| {
+            view.drawer
+                .update(cx, |drawer, cx| drawer.open_viewer(viewer("10"), cx))
+        });
+        view.update(cx, |view, cx| {
+            view.drawer
+                .update(cx, |drawer, cx| drawer.select_viewer(viewer("11"), cx))
+        });
         push_each(cx, &feed, vec![chatter(2, "12")]);
         settle(cx, &rt);
 
@@ -973,7 +982,10 @@ mod tests {
         open_history_for(cx, &view, "10");
         settle(cx, &rt);
 
-        view.update(cx, |view, cx| view.select_viewer(viewer("11"), cx));
+        view.update(cx, |view, cx| {
+            view.drawer
+                .update(cx, |drawer, cx| drawer.select_viewer(viewer("11"), cx))
+        });
         push_each(cx, &feed, vec![chatter(1, "11")]);
         settle(cx, &rt);
 
@@ -1140,8 +1152,9 @@ mod tests {
     ) {
         settle(cx, rt);
         cx.executor().advance_clock(VIEWER_REFRESH);
-        view.update(cx, |view, _| {
-            view.feed_changed.send_replace(());
+        view.update(cx, |view, cx| {
+            view.drawer
+                .update(cx, |drawer, _| drawer.feed_changed.send_replace(()));
         });
         settle(cx, rt);
     }
@@ -1150,9 +1163,9 @@ mod tests {
         view.read_with(cx, |view, cx| {
             author_summary(
                 &key_of(ANN),
-                view.feed.read(cx).authors(),
-                &view.drawer.viewers,
-                view.drawer.viewer_messages.read(cx),
+                view.drawer.read(cx).feed.read(cx).authors(),
+                &view.drawer.read(cx).viewers,
+                view.drawer.read(cx).viewer_messages.read(cx),
                 &FORGE_DEFAULT,
             )
             .map(|summary| summary.message_count)
@@ -1166,7 +1179,9 @@ mod tests {
         view: &Entity<ChatView>,
     ) -> Entity<ViewerHistory> {
         view.update(cx, |view, cx| {
-            view.open_viewer_history(key_of(ANN), "ann".to_owned(), cx);
+            view.drawer.update(cx, |drawer, cx| {
+                drawer.open_viewer_history(key_of(ANN), "ann".to_owned(), cx)
+            });
         });
         settle(cx, rt);
         open_dialog(cx, view).unwrap()

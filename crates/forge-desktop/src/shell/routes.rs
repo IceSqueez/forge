@@ -84,7 +84,7 @@ impl AppShell {
                 palette,
                 cx,
             )
-            .with_follow_lookups(builtins.clone())
+            .with_follow_lookups(builtins.clone(), cx)
             .with_ban_list(builtins, Arc::clone(&bus))
             .with_lifecycle(topics.integration_lifecycle.clone(), cx)
             .with_chat_bus(bus, cx)

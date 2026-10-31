@@ -545,7 +545,7 @@ fn form_to_alias(form: &AliasForm, cx: &App) -> VoiceAlias {
     let pitch = parse_pitch(form.pitch.read(cx).content()).unwrap_or_default();
     let rate = parse_rate(form.rate.read(cx).content()).unwrap_or_default();
     VoiceAlias {
-        id: form.editing.clone().unwrap_or_else(AliasId::new),
+        id: form.editing.clone().unwrap_or_else(AliasId::generate),
         viewer_id: form
             .locked_key
             .clone()

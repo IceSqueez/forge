@@ -428,7 +428,7 @@ impl SpeakDispatcher for SpeakBridge {
         voice_id: String,
     ) -> Result<(), MessageRef> {
         let alias = VoiceAlias {
-            id: AliasId::new(),
+            id: AliasId::generate(),
             viewer_id,
             viewer_name,
             engine_id: EngineId(engine_id),
@@ -1008,7 +1008,7 @@ mod tests {
         for key in ["twitch:66", "grumpy"] {
             let (handle, mut stream) = Harness {
                 aliases: vec![forge_speech_types::VoiceAlias {
-                    id: forge_speech_types::AliasId::new(),
+                    id: forge_speech_types::AliasId::generate(),
                     viewer_id: key.to_owned(),
                     viewer_name: key.to_owned(),
                     engine_id: EngineId("piper".to_owned()),
@@ -1041,7 +1041,7 @@ mod tests {
     async fn a_donation_show_speaks_with_the_donors_alias() {
         let (handle, mut stream) = Harness {
             aliases: vec![forge_speech_types::VoiceAlias {
-                id: forge_speech_types::AliasId::new(),
+                id: forge_speech_types::AliasId::generate(),
                 viewer_id: "aurora".to_owned(),
                 viewer_name: "Aurora".to_owned(),
                 engine_id: EngineId("piper".to_owned()),

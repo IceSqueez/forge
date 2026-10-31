@@ -1,3 +1,4 @@
+use super::viewer_drawer::ViewerDrawer;
 use super::*;
 use crate::home_stats::Integration;
 use crate::integration_lifecycle::IntegrationLifecycle;
@@ -26,6 +27,8 @@ impl ChatView {
         self.composer.update(cx, |composer, cx| {
             composer.set_lifecycle(lifecycle.clone(), cx);
         });
+        self.drawer
+            .update(cx, |drawer, _| drawer.set_lifecycle(lifecycle.clone()));
         self.lifecycle = Some(lifecycle);
         self.on_lifecycle_changed(cx);
         self
@@ -62,18 +65,6 @@ impl ChatView {
         }
     }
 
-    pub(crate) fn platform_running(&self, platform: PlatformId, cx: &App) -> bool {
-        match &self.lifecycle {
-            Some(lifecycle) => {
-                lifecycle
-                    .read(cx)
-                    .state_of(&platform_integration(platform).builtin_id())
-                    == LifecycleState::Running
-            }
-            None => true,
-        }
-    }
-
     pub(crate) fn filter_offered(&self, filter: PlatformFilter, cx: &App) -> bool {
         match filter {
             PlatformFilter::All => true,
@@ -88,7 +79,22 @@ impl ChatView {
                 timeline.set_platform_filter(PlatformFilter::All, cx)
             });
         }
-        self.request_selected_follow(cx);
+        self.drawer
+            .update(cx, |drawer, cx| drawer.request_selected_follow(cx));
         cx.notify();
+    }
+}
+
+impl ViewerDrawer {
+    pub(super) fn platform_running(&self, platform: PlatformId, cx: &App) -> bool {
+        match &self.lifecycle {
+            Some(lifecycle) => {
+                lifecycle
+                    .read(cx)
+                    .state_of(&platform_integration(platform).builtin_id())
+                    == LifecycleState::Running
+            }
+            None => true,
+        }
     }
 }

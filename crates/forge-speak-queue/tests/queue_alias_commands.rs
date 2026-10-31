@@ -202,7 +202,7 @@ async fn remove_alias_with_absent_id_leaves_existing_alias_intact() {
     let (handle, mut stream) = forge_speak_queue::spawn(QueueConfig::default(), deps);
 
     handle
-        .send(SpeakCommand::RemoveAlias(AliasId::new()))
+        .send(SpeakCommand::RemoveAlias(AliasId::generate()))
         .await
         .unwrap();
     handle

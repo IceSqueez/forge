@@ -69,7 +69,9 @@ fn stale_keys(
     cx: &mut TestAppContext,
 ) -> Vec<(AuthorKey, OffsetDateTime)> {
     view.read_with(cx, |view, cx| {
-        view.stale_viewers(refreshed, cx)
+        view.drawer
+            .read(cx)
+            .stale_viewers(refreshed, cx)
             .into_iter()
             .map(|stale| (stale.key, stale.seen_at))
             .collect()
@@ -388,13 +390,21 @@ fn a_context_menu_ban_goes_out_only_after_it_is_confirmed(cx: &mut TestAppContex
     };
 
     request(vcx);
-    let asked = view.read_with(vcx, |view, _| view.drawer.pending_ban.get().is_some());
-    view.update(vcx, |view, cx| view.cancel_ban(cx));
+    let asked = view.read_with(vcx, |view, cx| {
+        view.moderation.read(cx).pending_ban.get().is_some()
+    });
+    view.update(vcx, |view, cx| {
+        view.moderation
+            .update(cx, |moderation, cx| moderation.cancel_ban(cx))
+    });
     pump(&rt);
     vcx.run_until_parked();
 
     request(vcx);
-    view.update(vcx, |view, cx| view.confirm_ban(cx));
+    view.update(vcx, |view, cx| {
+        view.moderation
+            .update(cx, |moderation, cx| moderation.confirm_ban(cx))
+    });
     pump_until(&rt, || {
         vcx.run_until_parked();
         vcx.update(|_, cx| !cx.global::<Toasts>().items().is_empty())
@@ -403,7 +413,12 @@ fn a_context_menu_ban_goes_out_only_after_it_is_confirmed(cx: &mut TestAppContex
     assert_eq!(
         (
             asked,
-            view.read_with(vcx, |view, _| view.drawer.pending_ban.get().is_some()),
+            view.read_with(vcx, |view, cx| view
+                .moderation
+                .read(cx)
+                .pending_ban
+                .get()
+                .is_some()),
             vcx.update(|_, cx| cx.global::<Toasts>().items().len()),
         ),
         (true, false, 1)
@@ -636,7 +651,7 @@ impl<'a> DrawerRig<'a> {
     fn mount(cx: &'a mut TestAppContext, rt: &tokio::runtime::Runtime) -> Self {
         let (view, vcx) = mount_in_window(cx, rt, MockVoiceAliasRepo::new());
         vcx.update(|_, cx| crate::actions::register_key_bindings(cx));
-        let feed = view.read_with(vcx, |view, _| view.feed.clone());
+        let feed = view.read_with(vcx, |view, cx| view.timeline.read(cx).feed.clone());
         push_each(
             vcx,
             &feed,
@@ -645,7 +660,9 @@ impl<'a> DrawerRig<'a> {
                 .map(|(name, unix)| line_by(&Self::key(name), unix))
                 .collect(),
         );
-        let focus = view.read_with(vcx, |view, _| view.drawer.drawer_list_keys.focus().clone());
+        let focus = view.read_with(vcx, |view, cx| {
+            view.drawer.read(cx).drawer_list_keys.focus().clone()
+        });
         vcx.update(|window, cx| window.focus(&focus, cx));
         vcx.run_until_parked();
         Self { view, vcx }
@@ -663,27 +680,32 @@ impl<'a> DrawerRig<'a> {
     fn search(&mut self, query: &str) {
         let changed = forge_components::InputEvent::Changed(query.to_owned().into());
         self.view.update(self.vcx, |view, cx| {
-            let field = view.drawer.drawer_search.field().clone();
-            view.on_drawer_search_event(field, &changed, cx);
+            let field = view.drawer.read(cx).drawer_search.field().clone();
+            view.drawer.update(cx, |drawer, cx| {
+                drawer.on_drawer_search_event(field, &changed, cx)
+            });
         });
         self.vcx.run_until_parked();
     }
 
     fn selected(&mut self) -> Option<AuthorKey> {
-        self.view
-            .read_with(self.vcx, |view, _| view.drawer.selected_viewer.clone())
+        self.view.read_with(self.vcx, |view, cx| {
+            view.drawer.read(cx).selected_viewer.clone()
+        })
     }
 
     fn add_viewer(&mut self, name: &str, unix: i64) {
-        let feed = self.view.read_with(self.vcx, |view, _| view.feed.clone());
+        let feed = self
+            .view
+            .read_with(self.vcx, |view, cx| view.timeline.read(cx).feed.clone());
         push_each(self.vcx, &feed, vec![line_by(&Self::key(name), unix)]);
     }
 
     fn click_row(&mut self, position: usize) {
-        let (bounds, row_height) = self.view.read_with(self.vcx, |view, _| {
-            let scroll = view.drawer.drawer_list_scroll.0.borrow();
+        let (bounds, row_height) = self.view.read_with(self.vcx, |view, cx| {
+            let scroll = view.drawer.read(cx).drawer_list_scroll.0.borrow();
             let contents = scroll.last_item_size.unwrap().contents;
-            let rows = view.drawer.drawer_keys.len() as f32;
+            let rows = view.drawer.read(cx).drawer_keys.len() as f32;
             (scroll.base_handle.bounds(), contents.height / rows)
         });
         let row_center = gpui::point(
@@ -695,8 +717,11 @@ impl<'a> DrawerRig<'a> {
     }
 
     fn at(&mut self, name: &str) -> bool {
-        self.view.read_with(self.vcx, |view, _| {
-            view.drawer.drawer_list_keys.is_at(&Self::key(name))
+        self.view.read_with(self.vcx, |view, cx| {
+            view.drawer
+                .read(cx)
+                .drawer_list_keys
+                .is_at(&Self::key(name))
         })
     }
 }
@@ -760,9 +785,13 @@ fn enter_after_a_click_keeps_the_clicked_viewer_over_the_row_the_arrows_left_beh
 fn opening_a_viewer_from_outside_the_list_moves_the_cursor_onto_them(cx: &mut TestAppContext) {
     type Open = fn(&mut ChatView, AuthorKey, &mut gpui::Window, &mut Context<ChatView>);
     let openings: [(&str, Open); 2] = [
-        ("open", |view, key, _, cx| view.open_viewer(key, cx)),
+        ("open", |view, key, _, cx| {
+            view.drawer
+                .update(cx, |drawer, cx| drawer.open_viewer(key, cx))
+        }),
         ("whisper", |view, key, window, cx| {
-            view.open_whisper(key, window, cx)
+            view.drawer
+                .update(cx, |drawer, cx| drawer.open_whisper(key, window, cx))
         }),
     ];
     for (how, open) in openings {
@@ -801,7 +830,7 @@ fn the_keyboard_opens_the_user_menu_on_the_drawer_cursor_and_replies_from_it(
 ) {
     let rt = runtime();
     let (view, vcx) = mount_under_root(cx, &rt, |view| view);
-    let feed = view.read_with(vcx, |view, _| view.feed.clone());
+    let feed = view.read_with(vcx, |view, cx| view.timeline.read(cx).feed.clone());
     let mut said = message(1, false);
     said.author_id = Some("42".into());
     feed.update(vcx, |feed, cx| {
@@ -873,7 +902,7 @@ impl<'a> FeedRig<'a> {
     fn mount(cx: &'a mut TestAppContext, rt: &tokio::runtime::Runtime) -> Self {
         let (view, vcx) = mount_in_window(cx, rt, MockVoiceAliasRepo::new());
         vcx.update(|_, cx| crate::actions::register_key_bindings(cx));
-        let feed = view.read_with(vcx, |view, _| view.feed.clone());
+        let feed = view.read_with(vcx, |view, cx| view.timeline.read(cx).feed.clone());
         push_each(
             vcx,
             &feed,
@@ -939,9 +968,9 @@ fn enter_opens_the_viewer_of_the_cursor_row(cx: &mut TestAppContext) {
 
     rig.press("up up enter");
 
-    let selected = rig
-        .view
-        .read_with(rig.vcx, |view, _| view.drawer.selected_viewer.clone());
+    let selected = rig.view.read_with(rig.vcx, |view, cx| {
+        view.drawer.read(cx).selected_viewer.clone()
+    });
     assert_eq!(selected, Some(FeedRig::key(FeedRig::SECOND)));
 }
 
@@ -952,9 +981,9 @@ fn enter_without_a_cursor_opens_nothing(cx: &mut TestAppContext) {
 
     rig.press("enter");
 
-    let selected = rig
-        .view
-        .read_with(rig.vcx, |view, _| view.drawer.selected_viewer.clone());
+    let selected = rig.view.read_with(rig.vcx, |view, cx| {
+        view.drawer.read(cx).selected_viewer.clone()
+    });
     assert_eq!(selected, None);
 }
 
@@ -965,7 +994,9 @@ fn a_cursor_stays_on_its_message_and_freezes_following_while_messages_arrive(
     let rt = runtime();
     let mut rig = FeedRig::mount(cx, &rt);
     rig.press("up up");
-    let feed = rig.view.read_with(rig.vcx, |view, _| view.feed.clone());
+    let feed = rig
+        .view
+        .read_with(rig.vcx, |view, cx| view.timeline.read(cx).feed.clone());
 
     push_each(
         rig.vcx,
@@ -1011,8 +1042,8 @@ fn a_filtered_out_cursor_row_activates_nothing(cx: &mut TestAppContext) {
     });
     rig.press("enter");
 
-    let selected = rig
-        .view
-        .read_with(rig.vcx, |view, _| view.drawer.selected_viewer.clone());
+    let selected = rig.view.read_with(rig.vcx, |view, cx| {
+        view.drawer.read(cx).selected_viewer.clone()
+    });
     assert_eq!(selected, None);
 }

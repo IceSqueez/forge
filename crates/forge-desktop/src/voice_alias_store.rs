@@ -38,7 +38,7 @@ pub(crate) async fn block_viewer(
             ..existing
         },
         None => VoiceAlias {
-            id: AliasId::new(),
+            id: AliasId::generate(),
             viewer_id: key,
             viewer_name,
             engine_id: EngineId(String::new()),

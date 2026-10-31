@@ -6,8 +6,8 @@ use forge_speech_types::VoiceAlias;
 use forge_storage::StorageError;
 use gpui::{AppContext, Context, Entity, Subscription, Window};
 
-use super::ChatView;
 use super::viewer_actions::ViewerTarget;
+use super::viewer_drawer::ViewerDrawer;
 use crate::async_bridge;
 use crate::repo_failure::RepoFailure;
 use crate::voice_alias_form::{
@@ -21,9 +21,9 @@ pub(super) struct TtsVoiceHost {
     _events: Subscription,
 }
 
-impl ChatView {
+impl ViewerDrawer {
     pub(super) fn block_tts_viewer(&mut self, target: ViewerTarget, cx: &mut Context<Self>) {
-        self.drawer.drawer_menu_open = None;
+        self.drawer_menu_open = None;
         cx.notify();
         let Some(key) = target.tts_alias_key() else {
             return;
@@ -54,9 +54,9 @@ impl ChatView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.drawer.drawer_menu_open = None;
+        self.drawer_menu_open = None;
         cx.notify();
-        if self.drawer.tts_voice.is_some() {
+        if self.tts_voice.is_some() {
             return;
         }
         let Some(key) = target.tts_alias_key() else {
@@ -97,7 +97,7 @@ impl ChatView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.drawer.tts_voice.is_some() {
+        if self.tts_voice.is_some() {
             return;
         }
         let identity = AliasIdentity {
@@ -112,7 +112,7 @@ impl ChatView {
             view.update(cx, |form, cx| form.focus(window, cx))
         });
         let events = cx.subscribe(&view, Self::on_tts_voice_event);
-        self.drawer.tts_voice = Some(TtsVoiceHost {
+        self.tts_voice = Some(TtsVoiceHost {
             view,
             _events: events,
         });
@@ -168,7 +168,7 @@ impl ChatView {
     }
 
     fn close_tts_voice(&mut self, cx: &mut Context<Self>) {
-        self.drawer.tts_voice = None;
+        self.tts_voice = None;
         cx.notify();
     }
 }
@@ -206,7 +206,7 @@ mod tests {
 
     fn stored_alias() -> VoiceAlias {
         VoiceAlias {
-            id: AliasId("a1".to_owned()),
+            id: AliasId::from_string("a1".to_owned()),
             viewer_id: VIEWER_KEY.to_owned(),
             viewer_name: "alice".to_owned(),
             engine_id: EngineId("piper".to_owned()),
@@ -226,7 +226,7 @@ mod tests {
     }
 
     fn form_open(cx: &mut TestAppContext, view: &Entity<ChatView>) -> bool {
-        view.read_with(cx, |view, _| view.drawer.tts_voice.is_some())
+        view.read_with(cx, |view, cx| view.drawer.read(cx).tts_voice.is_some())
     }
 
     fn toasts(cx: &mut TestAppContext) -> Vec<(ToastKind, String)> {
@@ -246,7 +246,9 @@ mod tests {
     ) {
         vcx.update(|window, cx| {
             view.update(cx, |view, cx| {
-                view.open_tts_voice(id_keyed_viewer(), window, cx)
+                view.drawer.update(cx, |drawer, cx| {
+                    drawer.open_tts_voice(id_keyed_viewer(), window, cx)
+                })
             })
         });
         settle_until(vcx, rt, |vcx| form_open(vcx, view));
@@ -341,7 +343,9 @@ mod tests {
 
         vcx.update(|window, cx| {
             view.update(cx, |view, cx| {
-                view.open_tts_voice(id_keyed_viewer(), window, cx)
+                view.drawer.update(cx, |drawer, cx| {
+                    drawer.open_tts_voice(id_keyed_viewer(), window, cx)
+                })
             })
         });
         settle_until(vcx, &rt, |vcx| !toasts(vcx).is_empty());
@@ -381,7 +385,11 @@ mod tests {
             let (view, vcx) = mount_in_window(cx, &rt, repo);
 
             vcx.update(|_window, cx| {
-                view.update(cx, |view, cx| view.block_tts_viewer(id_keyed_viewer(), cx))
+                view.update(cx, |view, cx| {
+                    view.drawer.update(cx, |drawer, cx| {
+                        drawer.block_tts_viewer(id_keyed_viewer(), cx)
+                    })
+                })
             });
             settle_until(vcx, &rt, |vcx| !toasts(vcx).is_empty());
 
@@ -418,8 +426,11 @@ mod tests {
 
         vcx.update(|window, cx| {
             view.update(cx, |view, cx| {
-                view.open_tts_voice(name_only.clone(), window, cx);
-                view.block_tts_viewer(name_only, cx);
+                view.drawer.update(cx, |drawer, cx| {
+                    drawer.open_tts_voice(name_only.clone(), window, cx)
+                });
+                view.drawer
+                    .update(cx, |drawer, cx| drawer.block_tts_viewer(name_only, cx));
             })
         });
         settle_until_tasks_drain_to(vcx, &rt, background_tasks);

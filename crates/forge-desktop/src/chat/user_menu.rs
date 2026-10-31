@@ -37,18 +37,20 @@ impl ChatView {
             cx.notify();
             return;
         };
-        self.run_viewer_action(
-            &target.viewer,
-            ViewerAction::Timeout { seconds },
-            |outcome| match outcome {
-                Ok(()) => (ToastKind::Success, tr!("chat_ctx_timeout_sent")),
-                Err(e) => (
-                    ToastKind::Error,
-                    tr!("chat_drawer_timeout_failed", error = e.text()),
-                ),
-            },
-            cx,
-        );
+        self.moderation.update(cx, |moderation, cx| {
+            moderation.run_viewer_action(
+                &target.viewer,
+                ViewerAction::Timeout { seconds },
+                |outcome| match outcome {
+                    Ok(()) => (ToastKind::Success, tr!("chat_ctx_timeout_sent")),
+                    Err(e) => (
+                        ToastKind::Error,
+                        tr!("chat_drawer_timeout_failed", error = e.text()),
+                    ),
+                },
+                cx,
+            );
+        });
         cx.notify();
     }
 
@@ -57,7 +59,10 @@ impl ChatView {
             cx.notify();
             return;
         };
-        self.request_ban(target.viewer, cx);
+        self.moderation.update(cx, |moderation, cx| {
+            moderation.request_ban(target.viewer, cx);
+        });
+        cx.notify();
     }
 
     pub(super) fn render_user_menu(

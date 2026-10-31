@@ -1304,7 +1304,7 @@ pub(crate) struct AliasShape {
 
 pub(crate) fn alias_shape(alias: &forge_speech_types::VoiceAlias) -> AliasShape {
     AliasShape {
-        id: alias.id.0.clone(),
+        id: alias.id.as_str().to_owned(),
         viewer_id: alias.viewer_id.clone(),
         viewer_name: alias.viewer_name.clone(),
         engine_id: alias.engine_id.0.clone(),

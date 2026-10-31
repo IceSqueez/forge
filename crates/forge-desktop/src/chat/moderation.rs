@@ -1,14 +1,39 @@
+use super::DRAWER_TIMEOUT_SECONDS;
 use super::viewer_actions::{ViewerAction, ViewerTarget};
-use super::{ChatView, DRAWER_TIMEOUT_SECONDS};
 use crate::async_bridge;
 use crate::repo_failure::RepoFailure;
 use forge_components::{
-    ConfirmTone, ForgePalette, OverlayPosition, PushToast, ToastKind, confirm_modal, overlay, tr,
+    Confirm, ConfirmTone, ForgePalette, OverlayPosition, PushToast, ToastKind, confirm_modal,
+    overlay, tr,
 };
-use forge_types::SubActionStep;
-use gpui::{AnyElement, ClickEvent, Context, prelude::*};
+use forge_runtime::ActionEngineHandle;
+use forge_types::{PlatformId, SubActionStep};
+use gpui::{AnyElement, ClickEvent, Context, EventEmitter, prelude::*};
 
-impl ChatView {
+pub(super) enum ChatModerationEvent {
+    Moderated(PlatformId),
+}
+
+pub(super) struct ChatModeration {
+    pub(super) action_engine: ActionEngineHandle,
+    rt_handle: tokio::runtime::Handle,
+    pub(super) pending_ban: Confirm<ViewerTarget>,
+}
+
+impl EventEmitter<ChatModerationEvent> for ChatModeration {}
+
+impl ChatModeration {
+    pub(super) fn new(
+        action_engine: ActionEngineHandle,
+        rt_handle: tokio::runtime::Handle,
+    ) -> Self {
+        Self {
+            action_engine,
+            rt_handle,
+            pending_ban: Confirm::default(),
+        }
+    }
+
     pub(super) fn run_viewer_action(
         &self,
         target: &ViewerTarget,
@@ -24,16 +49,12 @@ impl ChatView {
             ViewerAction::Ban | ViewerAction::Unban | ViewerAction::Timeout { .. }
         )
         .then_some(target.platform);
-        self.dispatch_quick_action_then(
+        self.dispatch(
             step,
             target.builtin_id(),
             target.label(&action),
             toast,
-            move |this, outcome_ok, cx| {
-                if let (true, Some(platform)) = (outcome_ok, moderated) {
-                    this.note_moderated(platform, cx);
-                }
-            },
+            moderated,
             cx,
         );
     }
@@ -46,20 +67,20 @@ impl ChatView {
         toast: impl FnOnce(Result<(), RepoFailure>) -> (ToastKind, String) + 'static,
         cx: &mut Context<Self>,
     ) {
-        self.dispatch_quick_action_then(step, builtin_id, label, toast, |_, _, _| {}, cx);
+        self.dispatch(step, builtin_id, label, toast, None, cx);
     }
 
-    fn dispatch_quick_action_then(
+    fn dispatch(
         &self,
         step: SubActionStep,
         builtin_id: String,
         label: String,
         toast: impl FnOnce(Result<(), RepoFailure>) -> (ToastKind, String) + 'static,
-        after: impl FnOnce(&mut Self, bool, &mut Context<Self>) + 'static,
+        moderated: Option<PlatformId>,
         cx: &mut Context<Self>,
     ) {
-        let engine = self.services.action_engine.clone();
-        let reply = crate::async_bridge::on_runtime(&self.services.rt_handle, async move {
+        let engine = self.action_engine.clone();
+        let reply = crate::async_bridge::on_runtime(&self.rt_handle, async move {
             async_bridge::run_quick_step(
                 engine,
                 step,
@@ -75,20 +96,21 @@ impl ChatView {
                 clippy::let_underscore_must_use,
                 reason = "the view may close before the result arrives"
             )]
-            let _ = this.update(cx, |this, cx| {
+            let _ = this.update(cx, |_, cx| {
                 let succeeded = outcome.is_ok();
                 let (kind, message) = toast(outcome);
                 cx.push_toast(kind, message);
-                after(this, succeeded, cx);
+                if let (true, Some(platform)) = (succeeded, moderated) {
+                    cx.emit(ChatModerationEvent::Moderated(platform));
+                }
             });
         })
         .detach();
     }
 
-    pub(super) fn shoutout_viewer(&mut self, target: ViewerTarget, cx: &mut Context<Self>) {
-        self.drawer.drawer_menu_open = None;
+    pub(super) fn shoutout_viewer(&self, target: &ViewerTarget, cx: &mut Context<Self>) {
         self.run_viewer_action(
-            &target,
+            target,
             ViewerAction::Shoutout,
             |outcome| match outcome {
                 Ok(()) => (ToastKind::Success, tr!("chat_drawer_shoutout_sent")),
@@ -99,13 +121,11 @@ impl ChatView {
             },
             cx,
         );
-        cx.notify();
     }
 
-    pub(super) fn timeout_viewer(&mut self, target: ViewerTarget, cx: &mut Context<Self>) {
-        self.drawer.drawer_menu_open = None;
+    pub(super) fn timeout_viewer(&self, target: &ViewerTarget, cx: &mut Context<Self>) {
         self.run_viewer_action(
-            &target,
+            target,
             ViewerAction::Timeout {
                 seconds: DRAWER_TIMEOUT_SECONDS,
             },
@@ -118,25 +138,38 @@ impl ChatView {
             },
             cx,
         );
-        cx.notify();
     }
 
     pub(super) fn request_ban(&mut self, target: ViewerTarget, cx: &mut Context<Self>) {
-        self.drawer.drawer_menu_open = None;
-        self.drawer.pending_ban.request(target);
+        self.pending_ban.request(target);
         cx.notify();
     }
 
     pub(super) fn cancel_ban(&mut self, cx: &mut Context<Self>) {
-        self.drawer.pending_ban.cancel();
+        self.pending_ban.cancel();
         cx.notify();
     }
 
     pub(super) fn confirm_ban(&mut self, cx: &mut Context<Self>) {
-        if let Some(target) = self.drawer.pending_ban.take() {
-            self.ban_viewer(target, cx);
+        if let Some(target) = self.pending_ban.take() {
+            self.ban_viewer(&target, cx);
         }
         cx.notify();
+    }
+
+    pub(super) fn ban_viewer(&self, target: &ViewerTarget, cx: &mut Context<Self>) {
+        self.run_viewer_action(
+            target,
+            ViewerAction::Ban,
+            |outcome| match outcome {
+                Ok(()) => (ToastKind::Success, tr!("chat_drawer_ban_sent")),
+                Err(e) => (
+                    ToastKind::Error,
+                    tr!("chat_drawer_ban_failed", error = e.text()),
+                ),
+            },
+            cx,
+        );
     }
 
     pub(super) fn render_ban_confirm(
@@ -144,7 +177,7 @@ impl ChatView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
-        let target = self.drawer.pending_ban.get()?;
+        let target = self.pending_ban.get()?;
         let card = confirm_modal(
             tr!("chat_ban_confirm_title"),
             tr!("chat_ban_confirm_message", name = target.name.as_str()),
@@ -171,22 +204,5 @@ impl ChatView {
                 })
                 .into_any_element(),
         )
-    }
-
-    pub(super) fn ban_viewer(&mut self, target: ViewerTarget, cx: &mut Context<Self>) {
-        self.drawer.drawer_menu_open = None;
-        self.run_viewer_action(
-            &target,
-            ViewerAction::Ban,
-            |outcome| match outcome {
-                Ok(()) => (ToastKind::Success, tr!("chat_drawer_ban_sent")),
-                Err(e) => (
-                    ToastKind::Error,
-                    tr!("chat_drawer_ban_failed", error = e.text()),
-                ),
-            },
-            cx,
-        );
-        cx.notify();
     }
 }

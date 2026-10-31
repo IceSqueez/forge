@@ -500,7 +500,7 @@ mod tests {
                 .provider()
                 .voice_alias_repo()
                 .upsert(&VoiceAlias {
-                    id: AliasId::new(),
+                    id: AliasId::generate(),
                     viewer_id: "twitch:viewer".to_owned(),
                     viewer_name: "viewer".to_owned(),
                     engine_id: EngineId("piper".to_owned()),

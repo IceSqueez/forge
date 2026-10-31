@@ -1,6 +1,7 @@
+use super::INFINITY_GLYPH;
 use super::viewer_actions::{ViewerAction, ViewerTarget};
+use super::viewer_drawer::ViewerDrawer;
 use super::viewer_follow::follow_display;
-use super::{ChatView, INFINITY_GLYPH};
 use crate::chat_drawer::{DASH, SubStatus, ViewerSummary};
 use crate::platform_visuals::{BadgeKind, badge_color, badge_label};
 use forge_components::{
@@ -132,7 +133,7 @@ fn drawer_ghost_button(
     }
 }
 
-impl ChatView {
+impl ViewerDrawer {
     pub(super) fn render_selected_detail(
         &self,
         detail: Option<ViewerSummary>,
@@ -212,7 +213,7 @@ impl ChatView {
         let follow = follow_display(
             summary.key.platform,
             summary.role,
-            self.drawer.follows.status_of(&summary.key),
+            self.follows.status_of(&summary.key),
             palette,
         );
         let tile_hover = palette.surface_overlay;
@@ -295,7 +296,7 @@ impl ChatView {
             ))
             .child(self.render_drawer_menu(&summary.key, &target, palette, cx));
 
-        let whisper = (self.drawer.whisper_open && can_whisper)
+        let whisper = (self.whisper_open && can_whisper)
             .then(|| self.render_whisper_compose(summary.username.clone(), palette, density, cx));
 
         frame

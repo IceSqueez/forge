@@ -3,14 +3,10 @@ use serde::{Deserialize, Serialize};
 use crate::voice::{EngineId, TtsVoice, VoiceId};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct AliasId(pub String);
+pub struct AliasId(String);
 
 impl AliasId {
-    #[expect(
-        clippy::new_without_default,
-        reason = "new mints a fresh identity, which a Default must not"
-    )]
-    pub fn new() -> Self {
+    pub fn generate() -> Self {
         Self(ulid::Ulid::generate().to_string())
     }
 

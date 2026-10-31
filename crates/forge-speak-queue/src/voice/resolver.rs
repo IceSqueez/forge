@@ -347,7 +347,7 @@ mod tests {
 
     fn alias(key: &str, voice: &str, state: AliasState) -> VoiceAlias {
         VoiceAlias {
-            id: AliasId::new(),
+            id: AliasId::generate(),
             viewer_id: key.into(),
             viewer_name: key.into(),
             engine_id: EngineId("piper".into()),

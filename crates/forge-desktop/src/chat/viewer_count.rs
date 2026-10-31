@@ -1,4 +1,5 @@
-use super::{ChatView, VIEWER_REFRESH};
+use super::VIEWER_REFRESH;
+use super::viewer_drawer::ViewerDrawer;
 use crate::chat_author::AuthorKey;
 use crate::chat_viewer_messages::stored_author;
 use crate::home_stats::HomeStats;
@@ -88,7 +89,7 @@ pub(super) fn note_refreshed(
     }
 }
 
-impl ChatView {
+impl ViewerDrawer {
     pub(super) fn spawn_viewer_refresh(
         repo: Arc<dyn ViewerRepo>,
         chat_history: Arc<dyn ChatHistoryRepo>,
@@ -158,7 +159,7 @@ impl ChatView {
     }
 
     fn apply_viewers(&mut self, viewers: Vec<Viewer>, cx: &mut Context<Self>) {
-        if self.drawer.viewers.absorb(viewers) {
+        if self.viewers.absorb(viewers) {
             cx.notify();
         }
     }
@@ -209,7 +210,7 @@ impl ChatView {
             return;
         }
         let feed = self.feed.clone();
-        self.drawer.viewer_messages.update(cx, |messages, cx| {
+        self.viewer_messages.update(cx, |messages, cx| {
             messages.replace_tallies(keys.into_iter().zip(tallies), feed.read(cx));
             cx.notify();
         });
@@ -217,7 +218,7 @@ impl ChatView {
 
     pub(super) fn absorb_viewer_messages(&mut self, cx: &mut Context<Self>) {
         let feed = self.feed.clone();
-        self.drawer.viewer_messages.update(cx, |messages, cx| {
+        self.viewer_messages.update(cx, |messages, cx| {
             if messages.absorb(feed.read(cx)) {
                 cx.notify();
             }

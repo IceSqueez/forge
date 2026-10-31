@@ -565,7 +565,7 @@ mod tests {
 
     fn voice_alias(viewer_id: &str) -> VoiceAlias {
         VoiceAlias {
-            id: AliasId::new(),
+            id: AliasId::generate(),
             viewer_id: viewer_id.to_owned(),
             viewer_name: viewer_id.to_owned(),
             engine_id: EngineId("piper".to_owned()),

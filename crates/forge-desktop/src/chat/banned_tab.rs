@@ -73,7 +73,8 @@ impl ChatView {
                     active == ChatTab::Feed,
                     cx.listener(|this, _: &ClickEvent, window, cx| {
                         this.set_tab(ChatTab::Feed, cx);
-                        window.focus(this.drawer.drawer_list_keys.focus(), cx);
+                        let focus = this.drawer.read(cx).list_focus();
+                        window.focus(&focus, cx);
                     }),
                 )
                 .icon(Icon::MessageCircle),
@@ -305,10 +306,12 @@ mod tests {
             (Integration::YouTube, Some(Arc::clone(&youtube))),
             (Integration::Kick, Some(Arc::clone(&kick))),
         ]);
-        view.update(cx, |view, _| {
+        view.update(cx, |view, cx| {
             view.banned.builtins = builtins;
             view.banned.bus = Some(EventBus::new(Arc::new(StubEventLog)));
-            view.services.action_engine = engine;
+            view.services.action_engine = engine.clone();
+            view.moderation
+                .update(cx, |moderation, _| moderation.action_engine = engine);
         });
         Moderated {
             view,
@@ -327,7 +330,11 @@ mod tests {
     }
 
     fn ban(cx: &mut TestAppContext, view: &Entity<ChatView>, platform: PlatformId) {
-        view.update(cx, |view, cx| view.ban_viewer(target(platform), cx));
+        view.update(cx, |view, cx| {
+            view.moderation.update(cx, |moderation, cx| {
+                moderation.ban_viewer(&target(platform), cx)
+            })
+        });
     }
 
     fn settle_past_debounce(cx: &mut TestAppContext, rt: &tokio::runtime::Runtime) {
@@ -365,7 +372,9 @@ mod tests {
         settle(cx, &rt);
 
         m.view.update(cx, |view, cx| {
-            view.timeout_viewer(target(PlatformId::Kick), cx)
+            view.drawer.update(cx, |drawer, cx| {
+                drawer.timeout_viewer(target(PlatformId::Kick), cx)
+            })
         });
         settle_past_debounce(cx, &rt);
 

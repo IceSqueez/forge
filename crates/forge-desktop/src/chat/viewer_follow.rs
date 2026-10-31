@@ -7,8 +7,9 @@ use forge_platform_core::FollowStatus;
 use forge_types::{IntegrationId, PlatformId};
 use gpui::{Context, Rgba, SharedString, Task};
 
+use super::INFINITY_GLYPH;
 use super::platform_gate::platform_integration;
-use super::{ChatView, INFINITY_GLYPH};
+use super::viewer_drawer::ViewerDrawer;
 use crate::chat_author::{AuthorHandle, AuthorKey};
 use crate::chat_drawer::DASH;
 use forge_host::integrations::BuiltinRegistry;
@@ -118,15 +119,9 @@ impl FollowLookups {
     }
 }
 
-impl ChatView {
-    #[must_use]
-    pub(crate) fn with_follow_lookups(mut self, builtins: BuiltinRegistry) -> Self {
-        self.drawer.follows = FollowLookups::new(builtins);
-        self
-    }
-
+impl ViewerDrawer {
     pub(super) fn request_selected_follow(&mut self, cx: &mut Context<Self>) {
-        if let Some(key) = self.drawer.selected_viewer.clone() {
+        if let Some(key) = self.selected_viewer.clone() {
             self.request_follow(&key, cx);
         }
     }
@@ -142,12 +137,12 @@ impl ChatView {
             .get(key)
             .and_then(|activity| activity.role);
         if role == Some(BadgeKind::Broadcaster)
-            || !self.drawer.follows.needs_request(key)
+            || !self.follows.needs_request(key)
             || !self.platform_running(key.platform, cx)
         {
             return;
         }
-        let builtins = self.drawer.follows.builtins.clone();
+        let builtins = self.follows.builtins.clone();
         let reply = crate::async_bridge::on_runtime(&self.services.rt_handle, async move {
             let lookup = builtins
                 .get(&request.builtin)
@@ -166,12 +161,12 @@ impl ChatView {
                 reason = "the view may close before the result arrives"
             )]
             let _ = this.update(cx, |this, cx| {
-                if this.drawer.follows.settle(pending, status) {
+                if this.follows.settle(pending, status) {
                     cx.notify();
                 }
             });
         });
-        self.drawer.follows.begin(key.clone(), task);
+        self.follows.begin(key.clone(), task);
     }
 }
 
@@ -347,15 +342,19 @@ mod tests {
     ) -> (Entity<crate::chat_feed::ChatFeed>, Entity<ChatView>) {
         let (feed, view) = mount_gated(cx, rt, lifecycle, MockChatHistoryRepo::new());
         let registry = registry_with(lookup);
-        view.update(cx, |view, _| {
-            view.drawer.follows = FollowLookups::new(registry);
+        view.update(cx, |view, cx| {
+            view.drawer
+                .update(cx, |drawer, _| drawer.set_follow_lookups(registry));
         });
         (feed, view)
     }
 
     fn open(cx: &mut TestAppContext, view: &Entity<ChatView>, key: &AuthorKey) {
         let key = key.clone();
-        view.update(cx, |view, cx| view.open_viewer(key, cx));
+        view.update(cx, |view, cx| {
+            view.drawer
+                .update(cx, |drawer, cx| drawer.open_viewer(key, cx))
+        });
     }
 
     fn known(
@@ -363,7 +362,7 @@ mod tests {
         view: &Entity<ChatView>,
         key: &AuthorKey,
     ) -> Option<FollowStatus> {
-        view.read_with(cx, |view, _| view.drawer.follows.status_of(key))
+        view.read_with(cx, |view, cx| view.drawer.read(cx).follows.status_of(key))
     }
 
     #[test]
@@ -741,18 +740,23 @@ mod tests {
         let lookup = RecordingLookup::answering(FollowStatus::NotFollowing);
         let (view, vcx) = mount_in_window(cx, &rt, MockVoiceAliasRepo::new());
         let registry = registry_with(&lookup);
-        view.update(vcx, |view, _| {
-            view.drawer.follows = FollowLookups::new(registry);
+        view.update(vcx, |view, cx| {
+            view.drawer
+                .update(cx, |drawer, _| drawer.set_follow_lookups(registry));
         });
 
         view.update(vcx, |view, cx| {
-            view.select_viewer(AuthorKey::by_viewer_id(PlatformId::Twitch, "1"), cx)
+            view.drawer.update(cx, |drawer, cx| {
+                drawer.select_viewer(AuthorKey::by_viewer_id(PlatformId::Twitch, "1"), cx)
+            })
         });
         vcx.run_until_parked();
         pump(&rt);
         vcx.run_until_parked();
         view.update_in(vcx, |view, window, cx| {
-            view.open_whisper(AuthorKey::by_viewer_id(PlatformId::Twitch, "2"), window, cx)
+            view.drawer.update(cx, |drawer, cx| {
+                drawer.open_whisper(AuthorKey::by_viewer_id(PlatformId::Twitch, "2"), window, cx)
+            })
         });
         vcx.run_until_parked();
         pump(&rt);

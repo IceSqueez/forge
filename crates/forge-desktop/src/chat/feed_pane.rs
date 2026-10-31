@@ -214,7 +214,7 @@ impl ChatView {
                         let viewer = menu_target.clone();
                         let message_id = menu_message_id.to_string();
                         menu_view.update(app, |this, cx| {
-                            this.open_user_menu(position, viewer, message_id, cx)
+                            this.open_user_menu(position, viewer, Some(message_id), cx)
                         });
                     },
                 );

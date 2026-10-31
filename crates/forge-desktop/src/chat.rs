@@ -70,7 +70,7 @@ pub(crate) enum PlatformFilter {
 struct UserMenuTarget {
     position: Point<Pixels>,
     viewer: ViewerTarget,
-    message_id: String,
+    message_id: Option<String>,
 }
 
 #[derive(Clone)]

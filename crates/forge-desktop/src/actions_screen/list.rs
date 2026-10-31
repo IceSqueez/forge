@@ -2010,7 +2010,7 @@ mod tests {
         let menu_row = fixture.view.read_with(vcx, |view, _| view.menu_open);
         assert_eq!(menu_row.map(|id| fixture.name_of(id)), Some("Lurk"));
 
-        fixture.press(vcx, "down enter");
+        fixture.press(vcx, "enter down");
         assert_eq!(fixture.cursor_name(vcx).as_deref(), Some("Free hug"));
         assert_eq!(fixture.selected_name(vcx), None);
 

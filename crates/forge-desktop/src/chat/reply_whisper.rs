@@ -37,13 +37,16 @@ impl ChatView {
             cx.notify();
             return;
         };
-        if target.viewer.platform != PlatformId::Twitch {
+        let Some(message_id) = target
+            .message_id
+            .filter(|_| target.viewer.platform == PlatformId::Twitch)
+        else {
             cx.notify();
             return;
-        }
+        };
         self.reply_target = Some(ReplyTarget {
             username: target.viewer.name,
-            message_id: target.message_id,
+            message_id,
         });
         self.reply_input.update(cx, |input, cx| {
             input.clear(cx);

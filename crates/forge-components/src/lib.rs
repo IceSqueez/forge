@@ -115,7 +115,8 @@ pub use locale::{
     install_thread_language, resolve_in_language, tr_find, tr_find_warned, tr_lookup,
 };
 pub use menu::{
-    MenuItem, MenuPlacement, context_menu, menu_button, menu_divider, menu_header, menu_item,
+    MenuItem, MenuPlacement, bind_menu_keys, context_menu, menu_button, menu_divider, menu_header,
+    menu_item,
 };
 pub use modal::{Modal, busy_modal, modal};
 pub use overlay::{

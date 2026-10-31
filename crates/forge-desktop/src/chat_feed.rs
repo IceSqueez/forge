@@ -204,6 +204,14 @@ impl ChatFeed {
         &self.messages
     }
 
+    pub(crate) fn latest_message_id_of(&self, key: &AuthorKey) -> Option<String> {
+        self.messages
+            .iter()
+            .rev()
+            .find(|message| message.author_key().as_ref() == Some(key))
+            .map(|message| message.id.to_string())
+    }
+
     pub(crate) fn authors(&self) -> &AuthorIndex {
         &self.authors
     }

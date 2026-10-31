@@ -71,7 +71,10 @@ impl ChatView {
                     "chat-tab-feed",
                     tr!("chat_tab_feed"),
                     active == ChatTab::Feed,
-                    cx.listener(|this, _: &ClickEvent, _, cx| this.set_tab(ChatTab::Feed, cx)),
+                    cx.listener(|this, _: &ClickEvent, window, cx| {
+                        this.set_tab(ChatTab::Feed, cx);
+                        window.focus(this.drawer_list_keys.focus(), cx);
+                    }),
                 )
                 .icon(Icon::MessageCircle),
                 segment(
@@ -103,15 +106,15 @@ mod tests {
     use forge_storage::MockHistoryRepo;
     use forge_types::PlatformId;
     use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry};
-    use gpui::{Entity, TestAppContext};
+    use gpui::{Entity, TestAppContext, VisualTestContext};
 
     use super::ChatTab;
     use crate::chat::ChatView;
-    use crate::chat::banned_panel::tests::{FakeBans, registry_with, settle};
-    use crate::chat::tests::mount_gated;
+    use crate::chat::banned_panel::tests::{FakeBans, outcome, registry_with, settle};
+    use crate::chat::tests::{mount_gated, mount_under_root};
     use crate::chat::viewer_actions::ViewerTarget;
     use crate::home_stats::Integration;
-    use crate::test_support::{StubActions, StubEventLog, runtime};
+    use crate::test_support::{ClickArea, StubActions, StubEventLog, click_until, runtime};
     use forge_components::Toasts;
 
     const PAST_ANY_RELIST_DEBOUNCE: Duration = Duration::from_secs(10);
@@ -433,5 +436,46 @@ mod tests {
 
         assert_eq!((m.youtube.calls(), m.kick.calls()), (0, 0));
         assert!(!panel_shown(cx, &m.view));
+    }
+
+    fn click_tab(vcx: &mut VisualTestContext, view: &Entity<ChatView>, tab: ChatTab) {
+        let area = ClickArea {
+            x: 40.0..500.0,
+            y: 40.0..160.0,
+            step_x: 12.0,
+            step_y: 8.0,
+        };
+        assert!(click_until(vcx, &area, |vcx| {
+            view.read_with(vcx, |view, _| view.banned.tab == tab)
+        }));
+    }
+
+    fn stepped_viewer(vcx: &mut VisualTestContext, view: &Entity<ChatView>) -> Vec<String> {
+        vcx.simulate_keystrokes("down");
+        let panel = view.read_with(vcx, |view, _| view.banned.panel().cloned());
+        let panel = panel.expect("the banned tab is shown");
+        panel.read_with(vcx, |panel, _| panel.viewers_at_cursor())
+    }
+
+    #[gpui::test]
+    fn the_arrows_reach_the_ban_list_each_time_its_tab_is_opened_by_a_click(
+        cx: &mut TestAppContext,
+    ) {
+        let rt = runtime();
+        let source = FakeBans::answering(vec![outcome(&["1", "2"], None)]);
+        let builtins = registry_with(&[(Integration::Twitch, Some(Arc::clone(&source)))]);
+        let bus = EventBus::new(Arc::new(StubEventLog));
+        let (view, vcx) = mount_under_root(cx, &rt, |view| view.with_ban_list(builtins, bus));
+
+        click_tab(vcx, &view, ChatTab::Banned);
+        settle(vcx, &rt);
+        assert_eq!(stepped_viewer(vcx, &view), ["1"]);
+
+        click_tab(vcx, &view, ChatTab::Feed);
+        settle(vcx, &rt);
+        click_tab(vcx, &view, ChatTab::Banned);
+        settle(vcx, &rt);
+
+        assert_eq!(stepped_viewer(vcx, &view), ["2"]);
     }
 }

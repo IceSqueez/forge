@@ -137,10 +137,15 @@ impl HotkeysScreenView {
             ))
             .child(self.render_row_menu(index, row, palette, cx));
 
-        let mut wrapper = div().w_full().child(
-            card(body, palette)
-                .padding_xy(scaled(ROW_PAD_V, density), scaled(ROW_PAD_H, density))
-                .full_width(),
+        let mut wrapper = self.with_row_keys(
+            RowKey::Global(key),
+            div().id(("hotkeys-row", index)).w_full().child(
+                card(body, palette)
+                    .padding_xy(scaled(ROW_PAD_V, density), scaled(ROW_PAD_H, density))
+                    .full_width(),
+            ),
+            palette,
+            cx,
         );
         if !enabled {
             wrapper = wrapper.opacity(ROW_OFF_OPACITY);

@@ -25,7 +25,10 @@ actions!(
     ]
 );
 
-actions!(forge_list, [ListSelectPrev, ListSelectNext, ListActivate]);
+actions!(
+    forge_list,
+    [ListSelectPrev, ListSelectNext, ListActivate, ListOpenMenu]
+);
 
 actions!(forge_step_drag, [StepDragCancel]);
 
@@ -36,6 +39,8 @@ fn bind_list_keys(cx: &mut App) {
         KeyBinding::new("up", ListSelectPrev, Some(LIST_CONTEXT)),
         KeyBinding::new("down", ListSelectNext, Some(LIST_CONTEXT)),
         KeyBinding::new("enter", ListActivate, Some(LIST_CONTEXT)),
+        KeyBinding::new("shift-f10", ListOpenMenu, Some(LIST_CONTEXT)),
+        KeyBinding::new("menu", ListOpenMenu, Some(LIST_CONTEXT)),
         KeyBinding::new("escape", StepDragCancel, Some(STEP_DRAG_CONTEXT)),
     ]);
 }
@@ -290,6 +295,7 @@ fn bind_all(cx: &mut App, overrides: &HashMap<String, String>) {
     forge_components::bind_text_area_keys(cx);
     forge_components::bind_code_editor_keys(cx);
     forge_components::bind_picker_keys(cx);
+    forge_components::bind_menu_keys(cx);
     bind_list_keys(cx);
     bind_shell(cx, overrides);
 }

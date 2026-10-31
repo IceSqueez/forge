@@ -2034,6 +2034,99 @@ pub(crate) fn install_presentation(cx: &mut gpui::TestAppContext) {
     });
 }
 
+const OUTSIDE_TOOLBAR_HEIGHT: f32 = 40.0;
+const FOCUS_HOPS_AFTER_A_CLICK: usize = 3;
+
+pub(crate) struct ScreenUnderRoot<V> {
+    root: gpui::FocusHandle,
+    screen: gpui::Entity<V>,
+    _forward: gpui::Subscription,
+}
+
+impl<V: gpui::Render> gpui::Render for ScreenUnderRoot<V> {
+    fn render(
+        &mut self,
+        _window: &mut gpui::Window,
+        _cx: &mut gpui::Context<Self>,
+    ) -> impl gpui::IntoElement {
+        use gpui::{InteractiveElement, ParentElement, Styled, div, px};
+        div()
+            .track_focus(&self.root)
+            .size_full()
+            .flex()
+            .flex_col()
+            .child(div().flex_none().w_full().h(px(OUTSIDE_TOOLBAR_HEIGHT)))
+            .child(
+                div()
+                    .flex_1()
+                    .min_h(px(0.0))
+                    .flex()
+                    .flex_col()
+                    .child(self.screen.clone()),
+            )
+    }
+}
+
+pub(crate) fn open_under_root<V: gpui::Render>(
+    cx: &mut gpui::TestAppContext,
+    screen: impl FnOnce(&mut gpui::App) -> gpui::Entity<V>,
+) -> (gpui::Entity<V>, &mut gpui::VisualTestContext) {
+    cx.update(crate::actions::register_key_bindings);
+    let (root, vcx) = cx.add_window_view(|window, cx| {
+        let root = cx.focus_handle();
+        let forward = crate::navigable_list::forward_root_focus_to_list(&root, window, cx);
+        ScreenUnderRoot {
+            root,
+            screen: screen(cx),
+            _forward: forward,
+        }
+    });
+    vcx.update(|window, _| window.activate_window());
+    settle_focus(vcx);
+    let screen = root.read_with(vcx, |root, _| root.screen.clone());
+    (screen, vcx)
+}
+
+pub(crate) fn settle_focus(vcx: &mut gpui::VisualTestContext) {
+    for _ in 0..FOCUS_HOPS_AFTER_A_CLICK {
+        vcx.run_until_parked();
+        vcx.update(|_, _| {});
+    }
+    vcx.run_until_parked();
+}
+
+pub(crate) fn click_outside_the_list(vcx: &mut gpui::VisualTestContext) {
+    vcx.simulate_click(
+        gpui::point(gpui::px(1.0), gpui::px(OUTSIDE_TOOLBAR_HEIGHT / 2.0)),
+        gpui::Modifiers::none(),
+    );
+    settle_focus(vcx);
+}
+
+pub(crate) fn click_until(
+    vcx: &mut gpui::VisualTestContext,
+    area: &ClickArea,
+    mut done: impl FnMut(&mut gpui::VisualTestContext) -> bool,
+) -> bool {
+    let mut y = area.y.start + area.step_y / 2.0;
+    while y < area.y.end {
+        let mut x = area.x.start + area.step_x / 2.0;
+        while x < area.x.end {
+            vcx.simulate_click(
+                gpui::point(gpui::px(x), gpui::px(y)),
+                gpui::Modifiers::none(),
+            );
+            settle_focus(vcx);
+            if done(vcx) {
+                return true;
+            }
+            x += area.step_x;
+        }
+        y += area.step_y;
+    }
+    false
+}
+
 pub(crate) struct ClickArea {
     pub(crate) x: std::ops::Range<f32>,
     pub(crate) y: std::ops::Range<f32>,

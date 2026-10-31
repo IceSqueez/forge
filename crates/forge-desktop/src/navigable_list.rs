@@ -1,8 +1,12 @@
+use std::cell::Cell;
+use std::rc::Rc;
+
 use gpui::{
-    App, Context, FocusHandle, Global, InteractiveElement, Subscription, WeakFocusHandle, Window,
+    App, Bounds, Context, FocusHandle, Global, InteractiveElement, IntoElement, Pixels, Point,
+    ScrollHandle, Styled, Subscription, WeakFocusHandle, Window, canvas,
 };
 
-use crate::actions::{LIST_CONTEXT, ListActivate, ListSelectNext, ListSelectPrev};
+use crate::actions::{LIST_CONTEXT, ListActivate, ListOpenMenu, ListSelectNext, ListSelectPrev};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum ListStep {
@@ -23,6 +27,7 @@ pub(crate) fn stepped_index(current: Option<usize>, len: usize, step: ListStep) 
 pub(crate) trait NavigableList: Sized + 'static {
     fn step_list(&mut self, step: ListStep, cx: &mut Context<Self>);
     fn activate_list(&mut self, window: &mut Window, cx: &mut Context<Self>);
+    fn open_list_menu(&mut self, _window: &mut Window, _cx: &mut Context<Self>) {}
 }
 
 #[derive(Default)]
@@ -54,8 +59,14 @@ pub(crate) fn navigable_list<V: NavigableList, E: InteractiveElement>(
     cx: &mut Context<V>,
 ) -> E {
     cx.default_global::<RestingList>().0 = Some(focus.downgrade());
-    list.track_focus(focus)
-        .key_context(LIST_CONTEXT)
+    list_keys(list.track_focus(focus), cx)
+}
+
+pub(crate) fn list_keys<V: NavigableList, E: InteractiveElement>(
+    list: E,
+    cx: &mut Context<V>,
+) -> E {
+    list.key_context(LIST_CONTEXT)
         .on_action(
             cx.listener(|this: &mut V, _: &ListSelectPrev, _, cx| {
                 this.step_list(ListStep::Prev, cx)
@@ -71,12 +82,35 @@ pub(crate) fn navigable_list<V: NavigableList, E: InteractiveElement>(
                 this.activate_list(window, cx)
             }),
         )
+        .on_action(
+            cx.listener(|this: &mut V, _: &ListOpenMenu, window, cx| {
+                this.open_list_menu(window, cx)
+            }),
+        )
+}
+
+fn offset_revealing(
+    offset: Point<Pixels>,
+    viewport: Bounds<Pixels>,
+    row: Bounds<Pixels>,
+) -> Point<Pixels> {
+    let above = viewport.top() - row.top();
+    let below = row.bottom() - viewport.bottom();
+    let mut revealed = offset;
+    if above > Pixels::ZERO {
+        revealed.y += above;
+    } else if below > Pixels::ZERO {
+        revealed.y -= below;
+    }
+    revealed
 }
 
 pub(crate) struct ListCursor<Id> {
     focus: FocusHandle,
     cursor: Option<Id>,
     focus_claimed: bool,
+    row_bounds: Rc<Cell<Option<Bounds<Pixels>>>>,
+    reveal_pending: Rc<Cell<bool>>,
 }
 
 impl<Id: Clone + PartialEq> ListCursor<Id> {
@@ -85,6 +119,8 @@ impl<Id: Clone + PartialEq> ListCursor<Id> {
             focus: cx.focus_handle(),
             cursor: None,
             focus_claimed: false,
+            row_bounds: Rc::default(),
+            reveal_pending: Rc::default(),
         }
     }
 
@@ -97,6 +133,39 @@ impl<Id: Clone + PartialEq> ListCursor<Id> {
             self.focus_claimed = true;
             window.focus(&self.focus, cx);
         }
+    }
+
+    pub(crate) fn reclaim_focus(&mut self) {
+        self.focus_claimed = false;
+    }
+
+    pub(crate) fn row_bounds(&self) -> Option<Bounds<Pixels>> {
+        self.row_bounds.get()
+    }
+
+    pub(crate) fn row_anchor(&self, scroll: Option<&ScrollHandle>) -> impl IntoElement + use<Id> {
+        let row_bounds = Rc::clone(&self.row_bounds);
+        let reveal_pending = Rc::clone(&self.reveal_pending);
+        let scroll = scroll.cloned();
+        canvas(
+            move |bounds, window, _| {
+                row_bounds.set(Some(bounds));
+                if let Some(scroll) = scroll
+                    && reveal_pending.replace(false)
+                {
+                    let revealed = offset_revealing(scroll.offset(), scroll.bounds(), bounds);
+                    if revealed != scroll.offset() {
+                        scroll.set_offset(revealed);
+                        window.request_animation_frame();
+                    }
+                }
+            },
+            |_, _, _, _| {},
+        )
+        .absolute()
+        .top_0()
+        .left_0()
+        .size_full()
     }
 
     pub(crate) fn is_at(&self, id: &Id) -> bool {
@@ -121,6 +190,7 @@ impl<Id: Clone + PartialEq> ListCursor<Id> {
             .or_else(|| selected.and_then(row_of));
         let next = stepped_index(current, rows.len(), step)?;
         self.cursor = rows.get(next).cloned();
+        self.reveal_pending.set(true);
         Some(next)
     }
 
@@ -135,14 +205,15 @@ mod tests {
     use crate::test_support::install_presentation;
     use forge_components::{FORGE_DEFAULT, TextInput, focus_inside_modal, overlay};
     use gpui::{
-        AppContext, Entity, IntoElement, Modifiers, ParentElement, Render,
-        StatefulInteractiveElement, Styled, TestAppContext, VisualTestContext, div, point, px,
+        AppContext, Entity, Modifiers, ParentElement, Render, StatefulInteractiveElement,
+        TestAppContext, VisualTestContext, div, point, px, size,
     };
 
     struct KeyedList {
         focus: FocusHandle,
         steps: Vec<ListStep>,
         activations: usize,
+        menus: usize,
     }
 
     impl NavigableList for KeyedList {
@@ -152,6 +223,10 @@ mod tests {
 
         fn activate_list(&mut self, _window: &mut Window, _cx: &mut Context<Self>) {
             self.activations += 1;
+        }
+
+        fn open_list_menu(&mut self, _window: &mut Window, _cx: &mut Context<Self>) {
+            self.menus += 1;
         }
     }
 
@@ -233,6 +308,7 @@ mod tests {
                     focus: cx.focus_handle(),
                     steps: Vec::new(),
                     activations: 0,
+                    menus: 0,
                 }),
                 field: cx.new(|cx| TextInput::new("name", cx)),
                 modal_open: false,
@@ -268,18 +344,40 @@ mod tests {
             focus: cx.focus_handle(),
             steps: Vec::new(),
             activations: 0,
+            menus: 0,
         });
         vcx.run_until_parked();
         let focus = list.read_with(vcx, |list, _| list.focus.clone());
         vcx.update(|window, cx| window.focus(&focus, cx));
         vcx.run_until_parked();
 
-        vcx.simulate_keystrokes("down up enter");
+        vcx.simulate_keystrokes("down up enter shift-f10 menu");
 
         list.read_with(vcx, |list, _| {
             assert_eq!(list.steps, [ListStep::Next, ListStep::Prev]);
             assert_eq!(list.activations, 1);
+            assert_eq!(list.menus, 2);
         });
+    }
+
+    #[test]
+    fn a_stepped_row_scrolls_just_far_enough_into_the_viewport() {
+        let viewport = Bounds::new(point(px(0.0), px(100.0)), size(px(300.0), px(200.0)));
+        let row_at = |top: f32| Bounds::new(point(px(0.0), px(top)), size(px(300.0), px(30.0)));
+        for (top, expected) in [
+            (150.0, -50.0),
+            (100.0, -50.0),
+            (270.0, -50.0),
+            (70.0, -20.0),
+            (280.0, -60.0),
+            (0.0, 50.0),
+        ] {
+            assert_eq!(
+                offset_revealing(point(px(0.0), px(-50.0)), viewport, row_at(top)).y,
+                px(expected),
+                "row at {top}"
+            );
+        }
     }
 
     #[test]

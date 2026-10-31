@@ -17,9 +17,11 @@ use forge_components::{
 use forge_storage::ActionRepo;
 use forge_types::{ActionId, TriggerInstanceId};
 use gpui::{
-    AnyElement, ClickEvent, Context, Entity, EventEmitter, Pixels, SharedString, Subscription,
-    Window, div, prelude::*, px,
+    AnyElement, ClickEvent, Context, Entity, EventEmitter, Pixels, ScrollHandle, SharedString,
+    Subscription, Window, div, prelude::*, px,
 };
+
+use crate::navigable_list::{ListCursor, ListStep, NavigableList, list_keys};
 
 use crate::async_bridge::{self, Loadable};
 use crate::repo_failure::RepoFailure;
@@ -98,6 +100,8 @@ pub(crate) struct HotkeyActionModal {
     filter: SearchState,
     actions: Loadable<Vec<ActionChoice>>,
     selected_action: Option<ActionId>,
+    list_keys: ListCursor<ActionId>,
+    list_scroll: ScrollHandle,
     focus_pending: bool,
     _subs: Vec<Subscription>,
 }
@@ -152,6 +156,8 @@ impl HotkeyActionModal {
             filter,
             actions: Loadable::Loading,
             selected_action: linked_action,
+            list_keys: ListCursor::new(cx),
+            list_scroll: ScrollHandle::new(),
             focus_pending: true,
             _subs: subs,
         }
@@ -208,6 +214,10 @@ impl HotkeyActionModal {
             self.cancel(cx);
             return;
         }
+        if matches!(event, InputEvent::Submitted(_)) {
+            self.pick_cursor_or_save(cx);
+            return;
+        }
         if self.filter.on_changed(event) {
             cx.notify();
         }
@@ -223,7 +233,27 @@ impl HotkeyActionModal {
 
     fn select_action(&mut self, id: ActionId, cx: &mut Context<Self>) {
         self.selected_action = Some(id);
+        self.list_keys.move_to(id);
         cx.notify();
+    }
+
+    fn matched_action_ids(&self) -> Vec<ActionId> {
+        match &self.actions {
+            Loadable::Loaded(actions) => actions
+                .iter()
+                .filter(|choice| self.filter.matches(&choice.name))
+                .map(|choice| choice.id)
+                .collect(),
+            Loadable::Loading | Loadable::Failed(_) => Vec::new(),
+        }
+    }
+
+    fn pick_cursor_or_save(&mut self, cx: &mut Context<Self>) {
+        match self.list_keys.activation_target(&self.matched_action_ids()) {
+            Some(id) if self.selected_action != Some(id) => self.select_action(id, cx),
+            _ if self.can_save() => self.save(cx),
+            _ => {}
+        }
     }
 
     fn recapture(&mut self, cx: &mut Context<Self>) {
@@ -431,7 +461,7 @@ impl HotkeyActionModal {
             }
         };
 
-        div()
+        list_keys(div(), cx)
             .w_full()
             .flex()
             .flex_col()
@@ -439,6 +469,7 @@ impl HotkeyActionModal {
             .child(
                 div()
                     .id("hotkeys-modal-actions")
+                    .track_scroll(&self.list_scroll)
                     .w_full()
                     .max_h(LIST_MAX_H)
                     .overflow_y_scroll()
@@ -474,6 +505,7 @@ impl HotkeyActionModal {
         let hover_bg = palette.base;
         let mut row = div()
             .id(("hotkeys-modal-action", index))
+            .relative()
             .w_full()
             .flex()
             .items_center()
@@ -504,6 +536,12 @@ impl HotkeyActionModal {
                     .text_color(ink)
                     .child(choice.name.clone()),
             );
+        if self.list_keys.is_at(&id) {
+            row = row.child(self.list_keys.row_anchor(Some(&self.list_scroll)));
+            if !selected {
+                row = row.bg(hover_bg);
+            }
+        }
         if selected {
             row = row.child(icon(Icon::Check, ROW_CHECK, palette.brand));
         } else {
@@ -609,6 +647,24 @@ fn section_caption(label: &str, palette: &ForgePalette) -> impl IntoElement {
         .child(SharedString::from(label.to_uppercase()))
 }
 
+impl NavigableList for HotkeyActionModal {
+    fn step_list(&mut self, step: ListStep, cx: &mut Context<Self>) {
+        let rows = self.matched_action_ids();
+        let selected = self.selected_action;
+        if self
+            .list_keys
+            .step(&rows, selected.as_ref(), step)
+            .is_some()
+        {
+            cx.notify();
+        }
+    }
+
+    fn activate_list(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        self.pick_cursor_or_save(cx);
+    }
+}
+
 impl Render for HotkeyActionModal {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let density = cx.density();
@@ -670,12 +726,15 @@ impl Render for HotkeyActionModal {
 mod tests {
     use forge_storage::MockActionRepo;
     use forge_storage::{Language, StorageError};
-    use gpui::{Entity, TestAppContext};
+    use gpui::{Entity, TestAppContext, VisualTestContext};
+    use std::cell::Cell;
+    use std::rc::Rc;
 
     use super::*;
     use crate::i18n::install_language;
     use crate::test_support::{
-        action_running, install_presentation, pump, runtime, shown_in_english,
+        action_running, install_presentation, open_under_root, pump, runtime, settle_focus,
+        shown_in_english,
     };
 
     fn outage() -> StorageError {
@@ -714,6 +773,98 @@ mod tests {
     fn settled(cx: &mut TestAppContext, rt: &tokio::runtime::Runtime) {
         pump(rt);
         cx.run_until_parked();
+    }
+
+    fn keyed<'a>(
+        cx: &'a mut TestAppContext,
+        rt: &tokio::runtime::Runtime,
+        combo: &str,
+    ) -> (Entity<HotkeyActionModal>, &'a mut VisualTestContext) {
+        install_language(Language::En);
+        install_presentation(cx);
+        let mut repo = MockActionRepo::new();
+        repo.expect_list().returning(|| {
+            Ok(["first", "second"]
+                .map(|name| action_running(name, Vec::new()))
+                .to_vec())
+        });
+        let launch = ActionModalLaunch {
+            instance_id: None,
+            combo: combo.to_owned(),
+            edge: HotkeyEdge::Press,
+            locked_edge: None,
+            linked_action: None,
+        };
+        let handle = rt.handle().clone();
+        let (modal, vcx) = open_under_root(cx, |cx| {
+            cx.new(|cx| HotkeyActionModal::new(launch, Arc::new(repo), handle, cx))
+        });
+        pump(rt);
+        settle_focus(vcx);
+        (modal, vcx)
+    }
+
+    fn selected_name(vcx: &mut VisualTestContext, modal: &Entity<HotkeyActionModal>) -> String {
+        modal.read_with(vcx, |modal, _| {
+            modal
+                .actions
+                .loaded()
+                .and_then(|actions| {
+                    actions
+                        .iter()
+                        .find(|choice| Some(choice.id) == modal.selected_action)
+                })
+                .map(|choice| choice.name.clone())
+                .unwrap_or_default()
+        })
+    }
+
+    #[gpui::test]
+    fn arrows_in_the_filter_pick_the_action_and_a_second_enter_saves(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let (modal, vcx) = keyed(cx, &rt, "ctrl+k");
+        let saved = Rc::new(Cell::new(0));
+        let heard = Rc::clone(&saved);
+        vcx.update(|_, cx| {
+            cx.subscribe(&modal, move |_, event: &HotkeyActionModalEvent, _| {
+                if matches!(event, HotkeyActionModalEvent::Save(_)) {
+                    heard.set(heard.get() + 1);
+                }
+            })
+            .detach();
+        });
+
+        vcx.simulate_keystrokes("down down enter");
+        assert_eq!(selected_name(vcx, &modal), "second");
+        assert_eq!(saved.get(), 0);
+
+        vcx.simulate_keystrokes("enter");
+        assert_eq!(saved.get(), 1);
+    }
+
+    #[gpui::test]
+    fn typing_a_space_in_the_filter_still_types_it(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let (modal, vcx) = keyed(cx, &rt, "ctrl+k");
+
+        vcx.simulate_input("a b");
+
+        let typed = modal.read_with(vcx, |modal, cx| {
+            modal.filter.field().read(cx).content().to_owned()
+        });
+        assert_eq!(typed, "a b");
+    }
+
+    #[gpui::test]
+    fn a_click_on_an_action_moves_the_cursor_to_it(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let (modal, vcx) = keyed(cx, &rt, "ctrl+k");
+        let first = modal.read_with(vcx, |modal, _| modal.matched_action_ids()[0]);
+
+        modal.update(vcx, |modal, cx| modal.select_action(first, cx));
+        vcx.simulate_keystrokes("down enter");
+
+        assert_eq!(selected_name(vcx, &modal), "second");
     }
 
     #[gpui::test]

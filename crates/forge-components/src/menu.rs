@@ -6,9 +6,10 @@ use std::sync::Arc;
 
 use gpui::{
     Anchor, AnchoredPositionMode, AnimationExt, AnyElement, App, ClickEvent, Div, ElementId,
-    Entity, FocusHandle, InteractiveElement, IntoElement, KeyDownEvent, MouseButton,
-    MouseDownEvent, ParentElement, Pixels, Point, RenderOnce, Rgba, SharedString,
-    StatefulInteractiveElement, Styled, Window, anchored, deferred, div, point, px,
+    Entity, FocusHandle, InteractiveElement, IntoElement, KeyBinding, KeyDownEvent,
+    KeyboardClickEvent, MouseButton, MouseDownEvent, ParentElement, Pixels, Point, RenderOnce,
+    Rgba, SharedString, StatefulInteractiveElement, Styled, Window, actions, anchored, deferred,
+    div, point, px,
 };
 
 use crate::icons::{Icon, icon};
@@ -35,8 +36,19 @@ const TRIGGER_ICON_SIZE: Pixels = px(14.0);
 const TRIGGER_RADIUS: Pixels = px(5.0);
 
 const MENU_PRIORITY: usize = 1;
+const MENU_KEY_CONTEXT: &str = "ForgeMenu";
 
-type ItemClick = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
+actions!(forge_menu, [MenuSelectPrev, MenuSelectNext, MenuConfirm]);
+
+pub fn bind_menu_keys(cx: &mut App) {
+    cx.bind_keys([
+        KeyBinding::new("up", MenuSelectPrev, Some(MENU_KEY_CONTEXT)),
+        KeyBinding::new("down", MenuSelectNext, Some(MENU_KEY_CONTEXT)),
+        KeyBinding::new("enter", MenuConfirm, Some(MENU_KEY_CONTEXT)),
+    ]);
+}
+
+type ItemClick = Rc<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
 
 type ToggleHandler = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
 
@@ -64,7 +76,7 @@ pub fn menu_item(
         shortcut: None,
         color: None,
         disabled: false,
-        on_click: Box::new(on_click),
+        on_click: Rc::new(on_click),
     }
 }
 
@@ -161,6 +173,7 @@ impl MenuInk {
     fn render_item(
         &self,
         entry: MenuEntry,
+        at_key_cursor: bool,
         dismiss: &Option<DismissHandler>,
         density: Density,
     ) -> AnyElement {
@@ -215,6 +228,9 @@ impl MenuInk {
         let hover_bg = self.item_hover_bg;
         let handler = entry.on_click;
         let dismiss = dismiss.clone();
+        if at_key_cursor {
+            row = row.bg(hover_bg);
+        }
         row.hover(move |style| style.bg(hover_bg))
             .id(entry.id)
             .cursor_pointer()
@@ -250,9 +266,10 @@ impl MenuInk {
     fn render_panel(
         &self,
         items: Vec<MenuItem>,
-        escape_focus: Option<&FocusHandle>,
+        keyboard: Option<MenuKeyboard>,
         dismiss: Option<DismissHandler>,
         density: Density,
+        cx: &App,
     ) -> Div {
         let mut panel = div()
             .flex()
@@ -265,27 +282,92 @@ impl MenuInk {
             .border_color(self.panel_border)
             .occlude();
 
+        let key_cursor = keyboard
+            .as_ref()
+            .and_then(|keyboard| keyboard.cursor.read(cx).0);
+        let mut pickable: Vec<Option<ItemClick>> = Vec::new();
         for item in items {
             panel = match item {
-                MenuItem::Item(entry) => panel.child(self.render_item(entry, &dismiss, density)),
+                MenuItem::Item(entry) => {
+                    let at_key_cursor = key_cursor == Some(pickable.len());
+                    pickable.push((!entry.disabled).then(|| Rc::clone(&entry.on_click)));
+                    panel.child(self.render_item(entry, at_key_cursor, &dismiss, density))
+                }
                 MenuItem::Divider => panel.child(self.render_divider(density)),
                 MenuItem::Header(label) => panel.child(self.render_header(label, density)),
             };
         }
 
-        if let (Some(focus), Some(dismiss)) = (escape_focus, dismiss) {
-            panel =
-                panel
-                    .track_focus(focus)
-                    .on_key_down(move |event: &KeyDownEvent, window, cx| {
-                        if event.keystroke.key.as_str() == crate::tokens::ESCAPE_KEY {
-                            cx.stop_propagation();
-                            dismiss(window, cx);
-                        }
-                    });
+        if let (Some(keyboard), Some(dismiss)) = (keyboard, dismiss) {
+            panel = keyboard.attach(panel, pickable, dismiss);
         }
 
         panel
+    }
+}
+
+#[derive(Default)]
+struct MenuKeyCursor(Option<usize>);
+
+impl MenuKeyCursor {
+    fn step(&mut self, pickable: &[bool], forward: bool) {
+        let count = pickable.len();
+        let start = match (self.0, forward) {
+            (Some(current), _) => current,
+            (None, true) => count.saturating_sub(1),
+            (None, false) => 0,
+        };
+        let distance = |hop: usize| if forward { hop } else { count - hop };
+        self.0 = (1..=count)
+            .map(|hop| (start + distance(hop)) % count)
+            .find(|index| pickable.get(*index).copied().unwrap_or(false));
+    }
+}
+
+struct MenuKeyboard {
+    focus: FocusHandle,
+    cursor: Entity<MenuKeyCursor>,
+}
+
+impl MenuKeyboard {
+    fn attach(self, panel: Div, pickable: Vec<Option<ItemClick>>, dismiss: DismissHandler) -> Div {
+        let enabled: Rc<[bool]> = pickable.iter().map(Option::is_some).collect();
+        let (prev_cursor, next_cursor, confirm_cursor) =
+            (self.cursor.clone(), self.cursor.clone(), self.cursor);
+        let dismiss_on_escape = Rc::clone(&dismiss);
+        let enabled_for_prev = Rc::clone(&enabled);
+        panel
+            .track_focus(&self.focus)
+            .key_context(MENU_KEY_CONTEXT)
+            .on_action(move |_: &MenuSelectPrev, _, cx| {
+                prev_cursor.update(cx, |cursor, cx| {
+                    cursor.step(&enabled_for_prev, false);
+                    cx.notify();
+                });
+            })
+            .on_action(move |_: &MenuSelectNext, _, cx| {
+                next_cursor.update(cx, |cursor, cx| {
+                    cursor.step(&enabled, true);
+                    cx.notify();
+                });
+            })
+            .on_action(move |_: &MenuConfirm, window, cx| {
+                let handler = confirm_cursor
+                    .read(cx)
+                    .0
+                    .and_then(|index| pickable.get(index).cloned().flatten());
+                if let Some(handler) = handler {
+                    let event = ClickEvent::Keyboard(KeyboardClickEvent::default());
+                    handler(&event, window, cx);
+                    dismiss(window, cx);
+                }
+            })
+            .on_key_down(move |event: &KeyDownEvent, window, cx| {
+                if event.keystroke.key.as_str() == crate::tokens::ESCAPE_KEY {
+                    cx.stop_propagation();
+                    dismiss_on_escape(window, cx);
+                }
+            })
     }
 }
 
@@ -437,13 +519,25 @@ impl RenderOnce for MenuButton {
             release_then_dismiss
         });
         let focus_handle = focus.read(cx).handle.clone();
+        let cursor = window.use_keyed_state(
+            ElementId::NamedChild(
+                Arc::new(self.trigger_id.clone()),
+                SharedString::new_static("key-cursor"),
+            ),
+            cx,
+            |_, _| MenuKeyCursor::default(),
+        );
         let panel = self
             .ink
             .render_panel(
                 std::mem::take(&mut self.items),
-                Some(&focus_handle),
+                Some(MenuKeyboard {
+                    focus: focus_handle,
+                    cursor,
+                }),
                 dismiss.clone(),
                 density,
+                cx,
             )
             .with_animation(panel_anim_id, enter_animation(), |el, delta| {
                 el.opacity(delta)
@@ -527,14 +621,15 @@ impl ContextMenu {
 impl RenderOnce for ContextMenu {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let density = cx.density();
+        let keyboard = self.escape_focus.map(|focus| MenuKeyboard {
+            focus,
+            cursor: window.use_keyed_state("forge-context-menu-key-cursor", cx, |_, _| {
+                MenuKeyCursor::default()
+            }),
+        });
         let panel = self
             .ink
-            .render_panel(
-                self.items,
-                self.escape_focus.as_ref(),
-                self.on_dismiss.clone(),
-                density,
-            )
+            .render_panel(self.items, keyboard, self.on_dismiss.clone(), density, cx)
             .with_animation(
                 ElementId::Name(SharedString::new_static("forge-context-menu-panel")),
                 enter_animation(),
@@ -567,5 +662,130 @@ impl RenderOnce for ContextMenu {
             .child(panel);
 
         deferred(div().child(backdrop_layer).child(panel_layer)).with_priority(MENU_PRIORITY)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::cell::RefCell;
+
+    use gpui::{Context, Render, TestAppContext, VisualTestContext};
+
+    use super::*;
+    use crate::palette::{FORGE_DEFAULT, ThemeId};
+    use crate::presentation::Presentation;
+
+    #[test]
+    fn the_key_cursor_wraps_and_skips_what_cannot_be_picked() {
+        const ROWS: [bool; 4] = [false, true, false, true];
+        for (start, forward, expected) in [
+            (None, true, Some(1)),
+            (None, false, Some(3)),
+            (Some(1), true, Some(3)),
+            (Some(3), true, Some(1)),
+            (Some(1), false, Some(3)),
+            (Some(3), false, Some(1)),
+        ] {
+            let mut cursor = MenuKeyCursor(start);
+            cursor.step(&ROWS, forward);
+            assert_eq!(cursor.0, expected, "{start:?} {forward}");
+        }
+    }
+
+    #[test]
+    fn a_menu_with_nothing_to_pick_keeps_no_key_cursor() {
+        for rows in [&[][..], &[false, false][..]] {
+            let mut cursor = MenuKeyCursor::default();
+            cursor.step(rows, true);
+            assert_eq!(cursor.0, None);
+        }
+    }
+
+    struct MenuHost {
+        focus: FocusHandle,
+        open: bool,
+        picked: Rc<RefCell<Vec<&'static str>>>,
+    }
+
+    impl Render for MenuHost {
+        fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            if self.open && !self.focus.is_focused(window) {
+                window.focus(&self.focus, cx);
+            }
+            let view = cx.entity();
+            let pick = |id: &'static str, picked: &Rc<RefCell<Vec<&'static str>>>| {
+                let picked = Rc::clone(picked);
+                move |_: &ClickEvent, _: &mut Window, _: &mut App| picked.borrow_mut().push(id)
+            };
+            let menu = self.open.then(|| {
+                context_menu(point(px(0.0), px(0.0)), &FORGE_DEFAULT)
+                    .items(vec![
+                        menu_header("Viewer"),
+                        menu_item("off", "Off", pick("off", &self.picked))
+                            .disabled(true)
+                            .into(),
+                        menu_divider(),
+                        menu_item("one", "One", pick("one", &self.picked)).into(),
+                        menu_item("two", "Two", pick("two", &self.picked)).into(),
+                    ])
+                    .dismiss_on_escape(&self.focus)
+                    .on_dismiss(move |_, cx| {
+                        view.update(cx, |host, cx| {
+                            host.open = false;
+                            cx.notify();
+                        });
+                    })
+            });
+            div().size_full().children(menu)
+        }
+    }
+
+    fn opened(cx: &mut TestAppContext) -> (Entity<MenuHost>, &mut VisualTestContext) {
+        cx.update(|cx| {
+            cx.set_global(Presentation::new(ThemeId::ForgeDefault, Density::Cozy));
+            bind_menu_keys(cx);
+        });
+        let (host, vcx) = cx.add_window_view(|_, cx| MenuHost {
+            focus: cx.focus_handle(),
+            open: true,
+            picked: Rc::default(),
+        });
+        vcx.update(|window, _| window.activate_window());
+        vcx.run_until_parked();
+        (host, vcx)
+    }
+
+    fn picked(vcx: &mut VisualTestContext, host: &Entity<MenuHost>) -> Vec<&'static str> {
+        host.read_with(vcx, |host, _| host.picked.borrow().clone())
+    }
+
+    #[gpui::test]
+    fn arrows_and_enter_run_the_item_at_the_key_cursor_and_close_the_menu(cx: &mut TestAppContext) {
+        let (host, vcx) = opened(cx);
+
+        vcx.simulate_keystrokes("down down enter");
+
+        assert_eq!(picked(vcx, &host), ["two"]);
+        assert!(!host.read_with(vcx, |host, _| host.open));
+    }
+
+    #[gpui::test]
+    fn enter_before_any_arrow_runs_nothing_and_keeps_the_menu(cx: &mut TestAppContext) {
+        let (host, vcx) = opened(cx);
+
+        vcx.simulate_keystrokes("enter");
+
+        assert!(picked(vcx, &host).is_empty());
+        assert!(host.read_with(vcx, |host, _| host.open));
+    }
+
+    #[gpui::test]
+    fn escape_still_closes_a_menu_with_a_key_cursor(cx: &mut TestAppContext) {
+        let (host, vcx) = opened(cx);
+
+        vcx.simulate_keystrokes("down escape");
+
+        assert!(picked(vcx, &host).is_empty());
+        assert!(!host.read_with(vcx, |host, _| host.open));
     }
 }

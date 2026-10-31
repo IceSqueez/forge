@@ -10,7 +10,7 @@ use forge_hotkey::HotkeyClient;
 use forge_runtime::EventBus;
 use forge_storage::{DataProvider, SettingsRepo, StorageError};
 use forge_types::TriggerInstanceId;
-use gpui::{Context, EventEmitter, Pixels, Point, Task, Window, div, prelude::*, px};
+use gpui::{Context, EventEmitter, Pixels, Point, ScrollHandle, Task, Window, div, prelude::*, px};
 use time::OffsetDateTime;
 
 use crate::actions::SHORTCUTS;
@@ -19,6 +19,7 @@ use crate::combo_capture::ComboCapture;
 use crate::combo_conflict::{ClipKey, clip_keys, combo_holder};
 use crate::hub_crumb::hub_crumb;
 use crate::integrations::BuiltinObject;
+use crate::navigable_list::ListCursor;
 use crate::navigation::NavRequested;
 use crate::repo_failure::RepoFailure;
 use crate::runtime_event::{self, RuntimeEvent};
@@ -87,6 +88,8 @@ pub(crate) struct HotkeysScreenView {
     app_modal: Option<OpenAppModal>,
     menu_open: Option<RowKey>,
     menu_click_pos: Option<Point<Pixels>>,
+    row_keys: ListCursor<RowKey>,
+    scroll: ScrollHandle,
     _bus_bridge: Task<()>,
     _relative_time_tick: Task<()>,
 }
@@ -126,6 +129,8 @@ impl HotkeysScreenView {
             app_modal: None,
             menu_open: None,
             menu_click_pos: None,
+            row_keys: ListCursor::new(cx),
+            scroll: ScrollHandle::new(),
             _bus_bridge: bus_bridge,
             _relative_time_tick: Self::spawn_relative_time_tick(cx),
         };
@@ -347,7 +352,8 @@ impl HotkeysScreenView {
 impl EventEmitter<NavRequested> for HotkeysScreenView {}
 
 impl Render for HotkeysScreenView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.row_keys.claim_focus_once(window, cx);
         let palette = cx.palette();
         let density = cx.density();
 
@@ -369,6 +375,7 @@ impl Render for HotkeysScreenView {
 
         let body = div()
             .id("hotkeys-scroll")
+            .track_scroll(&self.scroll)
             .flex_1()
             .h_full()
             .overflow_y_scroll()
@@ -420,15 +427,15 @@ impl Render for HotkeysScreenView {
 #[cfg(test)]
 mod tests {
     use forge_hotkey::HotkeyConfig;
-    use gpui::{Entity, TestAppContext};
+    use gpui::{Entity, TestAppContext, VisualTestContext};
 
     use super::*;
     use crate::navigation::Screen;
     use crate::shortcut_overrides::KEYBOARD_SHORTCUTS as SHORTCUTS_SETTING;
     use crate::test_support::{
-        ReadFault, SETTINGS_READ_FAILED, Sandboxed, SettingWrite, TestBackend, hub_crumb_targets,
-        install_presentation, pump, quiet_bus, runtime, sandboxed_provider, test_backend,
-        writes_to,
+        ReadFault, SETTINGS_READ_FAILED, Sandboxed, SettingWrite, TestBackend,
+        click_outside_the_list, hub_crumb_targets, install_presentation, open_under_root, pump,
+        quiet_bus, runtime, sandboxed_provider, settle_focus, test_backend, writes_to,
     };
     use capture::Capture;
     use forge_components::Toasts;
@@ -509,6 +516,27 @@ mod tests {
         fn open(&self, cx: &mut TestAppContext) -> Entity<HotkeysScreenView> {
             install_presentation(cx);
             cx.update(|cx| cx.set_global(Toasts::new()));
+            let parts = self.view_parts();
+            let view = cx.update(|cx| cx.new(parts));
+            self.settle(cx);
+            view
+        }
+
+        fn open_under_root<'a>(
+            &self,
+            cx: &'a mut TestAppContext,
+        ) -> (Entity<HotkeysScreenView>, &'a mut VisualTestContext) {
+            install_presentation(cx);
+            cx.update(|cx| cx.set_global(Toasts::new()));
+            let parts = self.view_parts();
+            let (view, vcx) = open_under_root(cx, |cx| cx.new(parts));
+            self.settle(vcx);
+            (view, vcx)
+        }
+
+        fn view_parts(
+            &self,
+        ) -> impl FnOnce(&mut Context<HotkeysScreenView>) -> HotkeysScreenView + use<> {
             let bus = quiet_bus(&self.rt);
             let reconciler = {
                 let _entered = self.rt.enter();
@@ -525,13 +553,7 @@ mod tests {
             let backend = Arc::clone(&*self.storage);
             let settings = Arc::clone(&self.settings) as Arc<dyn SettingsRepo>;
             let handle = self.rt.handle().clone();
-            let view = cx.update(|cx| {
-                cx.new(|cx| {
-                    HotkeysScreenView::new(reconciler, None, backend, settings, bus, handle, cx)
-                })
-            });
-            self.settle(cx);
-            view
+            move |cx| HotkeysScreenView::new(reconciler, None, backend, settings, bus, handle, cx)
         }
 
         fn settle(&self, cx: &mut TestAppContext) {
@@ -544,6 +566,109 @@ mod tests {
         fn shortcut_writes(&mut self) -> Vec<String> {
             writes_to(&mut self.writes, KEYBOARD_SHORTCUTS)
         }
+    }
+
+    #[gpui::test]
+    fn after_a_click_outside_enter_rebinds_the_row_at_the_cursor(cx: &mut TestAppContext) {
+        let harness = Harness::new("{}");
+        let (view, vcx) = harness.open_under_root(cx);
+
+        click_outside_the_list(vcx);
+        vcx.simulate_keystrokes("down down enter");
+
+        let second = SHORTCUTS[1].id;
+        view.read_with(vcx, |view, _| {
+            assert!(view.capture == Capture::App(second));
+        });
+
+        vcx.simulate_keystrokes("escape");
+        view.read_with(vcx, |view, _| assert!(view.capture == Capture::Off));
+    }
+
+    #[gpui::test]
+    fn the_arrows_stop_moving_the_cursor_while_a_row_captures(cx: &mut TestAppContext) {
+        let harness = Harness::new("{}");
+        let (view, vcx) = harness.open_under_root(cx);
+        click_outside_the_list(vcx);
+        vcx.simulate_keystrokes("down enter down");
+
+        let first = RowKey::App(SHORTCUTS[0].id);
+        view.read_with(vcx, |view, _| assert!(view.row_keys.is_at(&first)));
+    }
+
+    #[gpui::test]
+    fn space_toggles_the_row_at_the_cursor(cx: &mut TestAppContext) {
+        let mut harness = Harness::new("{}");
+        let (view, vcx) = harness.open_under_root(cx);
+        let id = SHORTCUTS[0].id;
+        click_outside_the_list(vcx);
+
+        vcx.simulate_keystrokes("down space");
+        harness.settle(vcx);
+
+        let enabled = view.read_with(vcx, |view, _| {
+            view.shortcuts
+                .loaded()
+                .map(|shortcuts| shortcuts.is_enabled(id))
+        });
+        assert_eq!(enabled, Some(false));
+        assert_eq!(harness.shortcut_writes().len(), 1);
+    }
+
+    #[gpui::test]
+    fn the_menu_key_opens_the_row_menu_and_its_arrows_stay_inside_it(cx: &mut TestAppContext) {
+        let harness = Harness::new("{}");
+        let (view, vcx) = harness.open_under_root(cx);
+        let first = RowKey::App(SHORTCUTS[0].id);
+        click_outside_the_list(vcx);
+
+        vcx.simulate_keystrokes("down shift-f10");
+        settle_focus(vcx);
+        view.read_with(vcx, |view, _| assert!(view.menu_open == Some(first)));
+
+        vcx.simulate_keystrokes("down down");
+        view.read_with(vcx, |view, _| assert!(view.row_keys.is_at(&first)));
+
+        vcx.simulate_keystrokes("escape");
+        settle_focus(vcx);
+        view.read_with(vcx, |view, _| assert!(view.menu_open.is_none()));
+
+        vcx.simulate_keystrokes("down");
+        let second = RowKey::App(SHORTCUTS[1].id);
+        view.read_with(vcx, |view, _| assert!(view.row_keys.is_at(&second)));
+    }
+
+    #[gpui::test]
+    fn stepping_past_the_fold_scrolls_the_row_into_view_and_back(cx: &mut TestAppContext) {
+        let harness = Harness::new("{}");
+        let (view, vcx) = harness.open_under_root(cx);
+        vcx.simulate_resize(gpui::size(px(900.0), px(300.0)));
+        settle_focus(vcx);
+        click_outside_the_list(vcx);
+        let offset =
+            |vcx: &mut VisualTestContext| view.read_with(vcx, |view, _| view.scroll.offset().y);
+
+        vcx.simulate_keystrokes("up");
+        settle_focus(vcx);
+        let at_the_last_row = offset(vcx);
+        assert!(at_the_last_row < px(0.0));
+
+        for _ in SHORTCUTS {
+            vcx.simulate_keystrokes("up");
+            settle_focus(vcx);
+        }
+        assert!(offset(vcx) > at_the_last_row);
+    }
+
+    #[gpui::test]
+    fn enter_on_the_last_row_starts_adding_a_binding(cx: &mut TestAppContext) {
+        let harness = Harness::new("{}");
+        let (view, vcx) = harness.open_under_root(cx);
+        click_outside_the_list(vcx);
+
+        vcx.simulate_keystrokes("up enter");
+
+        view.read_with(vcx, |view, _| assert!(view.capture == Capture::Add));
     }
 
     fn shown_chord(

@@ -2,7 +2,7 @@ use super::viewer_actions::{ViewerAction, ViewerTarget};
 use super::viewer_detail::{drawer_role_badge, viewer_avatar, with_transparent};
 use super::{ChatView, DRAWER_TIMEOUT_SECONDS, DrawerResizeDrag};
 use crate::chat_author::AuthorKey;
-use crate::chat_drawer::{ViewerSummary, author_summary, selected_summary};
+use crate::chat_drawer::{ViewerSummary, author_summary, current_name, selected_summary};
 use crate::navigable_list::{ListStep, NavigableList, navigable_list};
 use forge_components::{
     BORDER_THIN, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, MenuPlacement, Radius, ResizeEdge,
@@ -38,6 +38,24 @@ impl NavigableList for ChatView {
         if let Some(key) = self.drawer_list_keys.activation_target(&self.drawer_keys) {
             self.select_viewer(key, cx);
         }
+    }
+
+    fn open_list_menu(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        let Some(key) = self.drawer_list_keys.activation_target(&self.drawer_keys) else {
+            return;
+        };
+        let feed = self.feed.read(cx);
+        let Some(name) = current_name(&key, feed.authors(), &self.viewers) else {
+            return;
+        };
+        let viewer = ViewerTarget::new(&key, name.to_string());
+        let message_id = feed.latest_message_id_of(&key);
+        let position = self
+            .drawer_list_keys
+            .row_bounds()
+            .map(|row| row.bottom_left())
+            .unwrap_or_default();
+        self.open_user_menu(position, viewer, message_id, cx);
     }
 }
 
@@ -376,6 +394,7 @@ impl ChatView {
 
         let mut row = div()
             .id(row_id)
+            .relative()
             .w_full()
             .flex()
             .items_center()
@@ -392,6 +411,9 @@ impl ChatView {
             .child(name_col)
             .child(last_seen);
 
+        if is_cursor {
+            row = row.child(self.drawer_list_keys.row_anchor(None));
+        }
         if is_sel {
             row = row.bg(selected_bg);
         } else if is_cursor {

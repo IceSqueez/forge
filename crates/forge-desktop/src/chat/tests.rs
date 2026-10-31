@@ -241,7 +241,7 @@ pub(super) fn mount_with_chat_history(
     mount_gated(cx, rt, None, chat_history)
 }
 
-fn new_view(
+pub(super) fn new_view(
     feed: Entity<ChatFeed>,
     rt: &tokio::runtime::Runtime,
     chat_history: MockChatHistoryRepo,
@@ -326,6 +326,30 @@ pub(super) fn mount_in_window<'a>(
     (view, vcx)
 }
 
+pub(super) fn mount_under_root<'a>(
+    cx: &'a mut TestAppContext,
+    rt: &tokio::runtime::Runtime,
+    decorate: impl FnOnce(ChatView) -> ChatView,
+) -> (Entity<ChatView>, &'a mut VisualTestContext) {
+    install_language(Language::En);
+    install_presentation(cx);
+    cx.update(|cx| cx.set_global(Toasts::new()));
+    let _enter = rt.enter();
+    let feed = cx.update(capped_feed);
+    let (view, vcx) = crate::test_support::open_under_root(cx, |cx| {
+        cx.new(|cx| {
+            decorate(new_view(
+                feed,
+                rt,
+                MockChatHistoryRepo::new(),
+                MockVoiceAliasRepo::new(),
+                cx,
+            ))
+        })
+    });
+    (view, vcx)
+}
+
 pub(super) fn push_each(
     cx: &mut TestAppContext,
     feed: &Entity<ChatFeed>,
@@ -353,7 +377,7 @@ fn a_context_menu_ban_goes_out_only_after_it_is_confirmed(cx: &mut TestAppContex
                     name: "spammer".to_owned(),
                     viewer_id: Some("42".to_owned()),
                 },
-                "m1".to_owned(),
+                Some("m1".to_owned()),
                 cx,
             );
             view.ctx_ban_viewer(cx);
@@ -752,4 +776,67 @@ fn a_hidden_cursor_row_hands_the_arrows_to_the_visible_selected_viewer(cx: &mut 
     rig.press("up");
 
     assert!(rig.at("bea"));
+}
+
+#[gpui::test]
+fn the_keyboard_opens_the_user_menu_on_the_drawer_cursor_and_replies_from_it(
+    cx: &mut TestAppContext,
+) {
+    let rt = runtime();
+    let (view, vcx) = mount_under_root(cx, &rt, |view| view);
+    let feed = view.read_with(vcx, |view, _| view.feed.clone());
+    let mut said = message(1, false);
+    said.author_id = Some("42".into());
+    feed.update(vcx, |feed, cx| {
+        feed.push(said);
+        cx.notify();
+    });
+    pump(&rt);
+    crate::test_support::settle_focus(vcx);
+
+    crate::test_support::click_outside_the_list(vcx);
+    vcx.simulate_keystrokes("down shift-f10");
+
+    let opened = view.read_with(vcx, |view, _| {
+        view.user_menu
+            .as_ref()
+            .map(|menu| (menu.viewer.name.clone(), menu.message_id.clone()))
+    });
+    assert_eq!(opened, Some(("user1".to_owned(), Some("m1".to_owned()))));
+
+    crate::test_support::settle_focus(vcx);
+    vcx.simulate_keystrokes("down enter");
+    crate::test_support::settle_focus(vcx);
+
+    let reply = view.read_with(vcx, |view, _| {
+        view.reply_target
+            .as_ref()
+            .map(|target| target.message_id.clone())
+    });
+    assert_eq!(reply, Some("m1".to_owned()));
+}
+
+#[gpui::test]
+fn a_drawer_viewer_with_no_message_on_screen_gets_no_reply_entry(cx: &mut TestAppContext) {
+    let rt = runtime();
+    let (view, vcx) = mount_in_window(cx, &rt, MockVoiceAliasRepo::new());
+    let opened = |vcx: &mut VisualTestContext| {
+        view.update(vcx, |view, cx| {
+            view.open_user_menu(
+                gpui::point(gpui::px(0.0), gpui::px(0.0)),
+                ViewerTarget {
+                    platform: PlatformId::Twitch,
+                    name: "quiet".to_owned(),
+                    viewer_id: Some("7".to_owned()),
+                },
+                None,
+                cx,
+            );
+        });
+    };
+
+    opened(vcx);
+    vcx.update(|window, cx| view.update(cx, |view, cx| view.open_reply(window, cx)));
+
+    assert!(view.read_with(vcx, |view, _| view.reply_target.is_none()));
 }

@@ -14,7 +14,7 @@ impl ChatView {
         &mut self,
         position: Point<Pixels>,
         viewer: ViewerTarget,
-        message_id: String,
+        message_id: Option<String>,
         cx: &mut Context<Self>,
     ) {
         self.user_menu = Some(UserMenuTarget {
@@ -68,7 +68,7 @@ impl ChatView {
         let target = self.user_menu.as_ref()?;
         let position = target.position;
         let viewer = &target.viewer;
-        let can_reply = viewer.platform == PlatformId::Twitch;
+        let can_reply = viewer.platform == PlatformId::Twitch && target.message_id.is_some();
         let view = cx.entity();
 
         let mut items = vec![menu_header(SharedString::from(viewer.name.clone()))];

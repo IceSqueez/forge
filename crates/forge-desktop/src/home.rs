@@ -8,7 +8,7 @@ use forge_components::{
 };
 use gpui::{
     AnyElement, App, ClickEvent, Context, Entity, EventEmitter, FontWeight, Pixels, Rgba,
-    Subscription, Window, div, prelude::*, px,
+    ScrollHandle, SharedString, Subscription, Window, div, prelude::*, px,
 };
 
 use crate::backup_flow::BackupFlow;
@@ -16,6 +16,7 @@ use crate::event_loss::EventLoss;
 use crate::event_loss_card::event_loss_card;
 use crate::home_stats::{ConnectionsTally, HomeEvent, HomeStats, Integration, ObsHealth};
 use crate::integration_lifecycle::IntegrationLifecycle;
+use crate::navigable_list::{ListCursor, ListStep, NavigableList, navigable_list};
 use crate::navigation::NavRequested;
 use crate::navigation::Screen;
 use crate::pack_export::PackExportFlow;
@@ -27,6 +28,33 @@ use crate::setup_import_flow::SetupImportFlow;
 use crate::transfer_flows::TransferFlows;
 use forge_components::ActivePresentation;
 use forge_components::{ClockStyle, DateShape, active_display_formats, fmt_display};
+
+const RECENT_EVENT_ROWS: usize = 5;
+
+#[derive(Clone, Debug, PartialEq)]
+enum HomeRow {
+    Jump(Screen),
+    Connection(Integration),
+    Event(SharedString),
+}
+
+impl HomeRow {
+    fn target(&self) -> Screen {
+        match self {
+            Self::Jump(target) => target.clone(),
+            Self::Connection(integration) => integration.screen(),
+            Self::Event(_) => Screen::EventFeed,
+        }
+    }
+}
+
+fn jump_targets() -> [Screen; 3] {
+    [
+        Screen::Chat,
+        Screen::Actions(None),
+        Screen::Integrations(None),
+    ]
+}
 
 fn event_time_width() -> Pixels {
     match active_display_formats().clock {
@@ -105,6 +133,8 @@ pub(crate) struct HomeView {
     setup_export: Entity<SetupExportFlow>,
     setup_import: Entity<SetupImportFlow>,
     export_menu_open: bool,
+    row_keys: ListCursor<HomeRow>,
+    scroll: ScrollHandle,
     _transfer_obs: Subscription,
     _stats_obs: Subscription,
     _loss_obs: Subscription,
@@ -148,6 +178,8 @@ impl HomeView {
             setup_export,
             setup_import,
             export_menu_open: false,
+            row_keys: ListCursor::new(cx),
+            scroll: ScrollHandle::new(),
             _transfer_obs: transfer_obs,
             _stats_obs: stats_obs,
             _loss_obs: loss_obs,
@@ -179,6 +211,36 @@ impl HomeView {
 
     fn go(&mut self, screen: Screen, cx: &mut Context<Self>) {
         cx.emit(NavRequested(screen));
+    }
+
+    fn cursor_rows(&self, cx: &App) -> Vec<HomeRow> {
+        let mut rows: Vec<HomeRow> = jump_targets().into_iter().map(HomeRow::Jump).collect();
+        rows.extend(
+            self.connections(cx)
+                .connections
+                .into_iter()
+                .map(|(integration, _)| HomeRow::Connection(integration)),
+        );
+        rows.extend(
+            self.stats
+                .read(cx)
+                .recent(RECENT_EVENT_ROWS)
+                .into_iter()
+                .map(|event| HomeRow::Event(event.id)),
+        );
+        rows
+    }
+
+    fn with_row_anchor(
+        &self,
+        key: &HomeRow,
+        row: gpui::Stateful<gpui::Div>,
+    ) -> gpui::Stateful<gpui::Div> {
+        if self.row_keys.is_at(key) {
+            row.child(self.row_keys.row_anchor(Some(&self.scroll)))
+        } else {
+            row
+        }
     }
 
     fn transfer_busy(&self, cx: &App) -> bool {
@@ -425,8 +487,15 @@ impl HomeView {
         let border = palette.border_regular;
         let hover_border = palette.border_input;
         let target = spec.target;
-        div()
+        let key = HomeRow::Jump(target.clone());
+        let border = if self.row_keys.is_at(&key) {
+            palette.brand
+        } else {
+            border
+        };
+        let card = div()
             .id(spec.id)
+            .relative()
             .flex()
             .flex_1()
             .flex_col()
@@ -442,8 +511,8 @@ impl HomeView {
             .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.go(target.clone(), cx)))
             .child(head)
             .child(stat_row)
-            .child(hint_row)
-            .into_any_element()
+            .child(hint_row);
+        self.with_row_anchor(&key, card).into_any_element()
     }
 
     fn render_jump_cards(
@@ -684,22 +753,29 @@ impl HomeView {
 
         let hover_bg = palette.shell;
         let target = integ.screen();
-        div()
+        let key = HomeRow::Connection(integ);
+        let cell_bg = if self.row_keys.is_at(&key) {
+            hover_bg
+        } else {
+            palette.elevated
+        };
+        let cell = div()
             .id(("home-conn-cell", integ as usize))
+            .relative()
             .flex_1()
             .flex()
             .items_center()
             .gap(spacing(Spacing::Xs, density))
             .py(scaled(CONN_CELL_PAD_V, density))
             .px(scaled(CONN_CELL_PAD_H, density))
-            .bg(palette.elevated)
+            .bg(cell_bg)
             .cursor_pointer()
             .hover(move |s| s.bg(hover_bg))
             .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.go(target.clone(), cx)))
             .child(brand_dot)
             .child(label_col)
-            .child(status_dot(dot_color, CONN_STATUS_DOT))
-            .into_any_element()
+            .child(status_dot(dot_color, CONN_STATUS_DOT));
+        self.with_row_anchor(&key, cell).into_any_element()
     }
 
     fn render_connections(
@@ -837,6 +913,7 @@ impl HomeView {
         let hover_bg = palette.shell;
         let mut row = div()
             .id((gpui::ElementId::from("home-event"), ev.id.clone()))
+            .relative()
             .w_full()
             .rounded(radius(Radius::Sm))
             .cursor_pointer()
@@ -848,7 +925,11 @@ impl HomeView {
                 .border_b(BORDER_THIN)
                 .border_color(palette.border_regular);
         }
-        row.into_any_element()
+        let key = HomeRow::Event(ev.id.clone());
+        if self.row_keys.is_at(&key) {
+            row = row.bg(hover_bg);
+        }
+        self.with_row_anchor(&key, row).into_any_element()
     }
 
     fn render_recent_events(
@@ -1037,8 +1118,30 @@ impl HomeView {
 
 impl EventEmitter<NavRequested> for HomeView {}
 
+impl NavigableList for HomeView {
+    fn step_list(&mut self, step: ListStep, cx: &mut Context<Self>) {
+        if self.export_menu_open {
+            return;
+        }
+        let rows = self.cursor_rows(cx);
+        if self.row_keys.step(&rows, None, step).is_some() {
+            cx.notify();
+        }
+    }
+
+    fn activate_list(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        if self.export_menu_open {
+            return;
+        }
+        if let Some(row) = self.row_keys.activation_target(&self.cursor_rows(cx)) {
+            self.go(row.target(), cx);
+        }
+    }
+}
+
 impl Render for HomeView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.row_keys.claim_focus_once(window, cx);
         let palette = cx.palette();
         let density = cx.density();
 
@@ -1052,10 +1155,11 @@ impl Render for HomeView {
         let warn = tally.warn();
         let (connected, total) = (tally.connected, tally.total);
         let connections = tally.connections;
-        let recent = stats.recent(5);
+        let recent = stats.recent(RECENT_EVENT_ROWS);
         let obs_health = stats.obs_health_snapshot();
 
         let hero = self.render_hero(&palette, density, cx);
+        let [to_chat, to_actions, to_integrations] = jump_targets();
         let cards = [
             JumpCard {
                 id: "home-jump-chat",
@@ -1067,7 +1171,7 @@ impl Render for HomeView {
                 stat_label: tr!("home_card_audience_stat_label"),
                 hint: tr!("home_card_audience_hint"),
                 warn: false,
-                target: Screen::Chat,
+                target: to_chat,
             },
             JumpCard {
                 id: "home-jump-actions",
@@ -1079,7 +1183,7 @@ impl Render for HomeView {
                 stat_label: tr!("home_card_automation_stat_label", fired = fired.clone()),
                 hint: tr!("home_card_automation_hint"),
                 warn: false,
-                target: Screen::Actions(None),
+                target: to_actions,
             },
             JumpCard {
                 id: "home-jump-connections",
@@ -1091,7 +1195,7 @@ impl Render for HomeView {
                 stat_label: tr!("home_card_connections_stat_label"),
                 hint: tr!("home_card_connections_hint"),
                 warn,
-                target: Screen::Integrations(None),
+                target: to_integrations,
             },
         ];
         let jump_cards = self.render_jump_cards(cards, &palette, density, cx);
@@ -1120,8 +1224,9 @@ impl Render for HomeView {
             .child(connections_strip)
             .child(bottom);
 
-        let body = div()
-            .id("home-scroll")
+        let focus = self.row_keys.focus().clone();
+        let body = navigable_list(div().id("home-scroll"), &focus, cx)
+            .track_scroll(&self.scroll)
             .flex_1()
             .overflow_y_scroll()
             .bg(palette.base)
@@ -1144,5 +1249,100 @@ impl Render for HomeView {
             .child(self.setup_export.clone())
             .child(self.setup_import.clone())
             .child(self.restore.clone())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use forge_events::{Event, EventSource};
+    use gpui::{Entity, TestAppContext, VisualTestContext};
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    use super::*;
+    use crate::test_support::pack_flow::pack_world;
+    use crate::test_support::{
+        click_outside_the_list, install_presentation, open_under_root, runtime, settle_focus,
+    };
+
+    fn home<'a>(
+        cx: &'a mut TestAppContext,
+        rt: &tokio::runtime::Runtime,
+    ) -> (Entity<HomeView>, &'a mut VisualTestContext) {
+        install_presentation(cx);
+        let world = pack_world(rt);
+        let pack = world.with_runtime(rt);
+        let (view, vcx) = open_under_root(cx, |cx| {
+            let stats = cx.new(|_| HomeStats::new());
+            let loss = cx.new(|_| EventLoss::new());
+            cx.new(|cx| HomeView::new(stats, loss, pack, cx))
+        });
+        settle_focus(vcx);
+        (view, vcx)
+    }
+
+    fn navigation_log(
+        vcx: &mut VisualTestContext,
+        view: &Entity<HomeView>,
+    ) -> Rc<RefCell<Vec<Screen>>> {
+        let log = Rc::new(RefCell::new(Vec::new()));
+        let heard = Rc::clone(&log);
+        vcx.update(|_, cx| {
+            cx.subscribe(view, move |_, event: &NavRequested, _| {
+                heard.borrow_mut().push(event.0.clone());
+            })
+            .detach();
+        });
+        log
+    }
+
+    #[gpui::test]
+    fn after_a_click_outside_the_arrows_walk_the_cards_and_enter_opens_one(
+        cx: &mut TestAppContext,
+    ) {
+        let rt = runtime();
+        let (view, vcx) = home(cx, &rt);
+        let log = navigation_log(vcx, &view);
+
+        click_outside_the_list(vcx);
+        vcx.simulate_keystrokes("down down enter");
+
+        assert_eq!(*log.borrow(), [Screen::Actions(None)]);
+    }
+
+    #[gpui::test]
+    fn the_row_after_the_cards_is_the_first_connection(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let (view, vcx) = home(cx, &rt);
+        let log = navigation_log(vcx, &view);
+        let first = view.read_with(vcx, |view, cx| view.cursor_rows(cx)[3].target());
+
+        click_outside_the_list(vcx);
+        vcx.simulate_keystrokes("down down down down enter");
+
+        assert_eq!(*log.borrow(), [first]);
+    }
+
+    #[gpui::test]
+    fn a_recent_event_row_opens_the_event_feed(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let (view, vcx) = home(cx, &rt);
+        let log = navigation_log(vcx, &view);
+        let stats = view.read_with(vcx, |view, _| view.stats.clone());
+        stats.update(vcx, |stats, cx| {
+            let event = Event::new(
+                EventSource::Twitch,
+                "twitch.channel.follow",
+                serde_json::Value::Null,
+            );
+            stats.record_event(&event, None);
+            cx.notify();
+        });
+        settle_focus(vcx);
+
+        click_outside_the_list(vcx);
+        vcx.simulate_keystrokes("up enter");
+
+        assert_eq!(*log.borrow(), [Screen::EventFeed]);
     }
 }

@@ -399,6 +399,7 @@ pub(crate) async fn run_actor(
     master_volume_bits: Arc<AtomicU32>,
     engine_gains: Shared<HashMap<EngineId, f32>>,
     targeted_legs: TargetedLegs,
+    detector_ready: tokio::sync::watch::Sender<bool>,
 ) {
     let mut high_queue: VecDeque<SpeakRequest> = VecDeque::new();
     let mut normal_queue: VecDeque<SpeakRequest> = VecDeque::new();
@@ -416,7 +417,7 @@ pub(crate) async fn run_actor(
     let (catalog_tx, mut catalog_rx) =
         tokio::sync::mpsc::channel::<CatalogUpdate>(CATALOG_UPDATE_CAPACITY);
     let (detector_tx, mut detector_rx) = tokio::sync::mpsc::channel::<DetectorBuild>(1);
-    let mut detector_builds = DetectorBuilds::new(detector_tx);
+    let mut detector_builds = DetectorBuilds::new(detector_tx, detector_ready);
 
     update_registry(&deps.registry, |registry| {
         for engine_id in &deps.disabled_engines {
@@ -659,6 +660,7 @@ pub(crate) async fn run_actor(
                     && detector_builds.is_current(build.generation)
                 {
                     task_deps.detector = build.detector.filter(|_| language_aware);
+                    detector_builds.settle(task_deps.detector.is_some());
                 }
             }
             _ = tick_progress(&mut progress_ticker), if progress_ticker.is_some() => {
@@ -1331,15 +1333,28 @@ struct DetectorBuild {
 struct DetectorBuilds {
     generation: u64,
     tx: tokio::sync::mpsc::Sender<DetectorBuild>,
+    ready: tokio::sync::watch::Sender<bool>,
 }
 
 impl DetectorBuilds {
-    fn new(tx: tokio::sync::mpsc::Sender<DetectorBuild>) -> Self {
-        Self { generation: 0, tx }
+    fn new(
+        tx: tokio::sync::mpsc::Sender<DetectorBuild>,
+        ready: tokio::sync::watch::Sender<bool>,
+    ) -> Self {
+        Self {
+            generation: 0,
+            tx,
+            ready,
+        }
     }
 
     fn invalidate(&mut self) {
         self.generation = self.generation.wrapping_add(1);
+        self.ready.send_replace(false);
+    }
+
+    fn settle(&self, ready: bool) {
+        self.ready.send_replace(ready);
     }
 
     fn is_current(&self, generation: u64) -> bool {
@@ -2394,7 +2409,7 @@ mod tests {
     #[tokio::test]
     async fn a_detector_build_is_current_until_a_newer_build_or_invalidation_supersedes_it() {
         let (tx, mut rx) = tokio::sync::mpsc::channel::<DetectorBuild>(4);
-        let mut builds = DetectorBuilds::new(tx);
+        let mut builds = DetectorBuilds::new(tx, tokio::sync::watch::Sender::new(false));
 
         builds.rebuild(&[]);
         let first = rx.recv().await.expect("first build result");
@@ -2413,7 +2428,7 @@ mod tests {
     #[tokio::test]
     async fn a_build_finished_after_a_newer_rebuild_was_started_is_reported_stale() {
         let (tx, mut rx) = tokio::sync::mpsc::channel::<DetectorBuild>(4);
-        let mut builds = DetectorBuilds::new(tx);
+        let mut builds = DetectorBuilds::new(tx, tokio::sync::watch::Sender::new(false));
 
         builds.rebuild(&[]);
         builds.rebuild(&[]);

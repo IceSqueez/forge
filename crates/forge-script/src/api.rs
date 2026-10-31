@@ -24,6 +24,7 @@ use crate::http_client::{HttpResponse, ScriptHttpClient};
 use crate::registration::{ApiModule, ScriptFn};
 use crate::schedule::ActionScheduler;
 use crate::schedule_api::build_schedule_module;
+use crate::wall_budget::SandboxClock;
 
 const SENDER_DOC: &str =
     "sender is \"default\", \"streamer\" or \"bot\"; any other value is a script error.";
@@ -53,6 +54,7 @@ pub struct ForgeApi {
     latest: Option<Arc<dyn LatestValueReader>>,
     scheduler: Option<Arc<dyn ActionScheduler>>,
     pub deadline: Instant,
+    clock: SandboxClock,
 }
 
 impl ForgeApi {
@@ -74,7 +76,13 @@ impl ForgeApi {
             latest: None,
             scheduler: None,
             deadline,
+            clock: SandboxClock::default(),
         }
+    }
+
+    pub(crate) fn on_clock(mut self, clock: SandboxClock) -> Self {
+        self.clock = clock;
+        self
     }
 
     pub fn with_script_id(mut self, script_id: ScriptId) -> Self {
@@ -189,6 +197,7 @@ impl ForgeApi {
         );
 
         let deadline = self.deadline;
+        let clock = self.clock.clone();
         root.register(
             ScriptFn {
                 name: "sleep",
@@ -196,13 +205,13 @@ impl ForgeApi {
                 doc: Some("Clamped to the script's remaining wall-time budget."),
             },
             move |ms: i64| -> Result<(), Box<EvalAltResult>> {
-                let now = Instant::now();
+                let now = clock.now();
                 if now >= deadline {
                     return Err("script execution deadline exceeded".into());
                 }
                 let remaining_ms = u64::try_from((deadline - now).as_millis()).unwrap_or(u64::MAX);
                 let clamped = (ms.max(0) as u64).min(5_000).min(remaining_ms);
-                std::thread::sleep(Duration::from_millis(clamped));
+                clock.sleep(Duration::from_millis(clamped));
                 Ok(())
             },
         );

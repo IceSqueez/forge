@@ -1,5 +1,47 @@
 pub(crate) use forge_storage_sqlite::test_support::{Sandboxed, sandboxed_backend};
 
+pub(crate) struct ScriptedClock {
+    now: std::sync::Mutex<std::time::Instant>,
+    per_read: std::time::Duration,
+}
+
+impl ScriptedClock {
+    pub(crate) fn frozen() -> std::sync::Arc<Self> {
+        Self::ticking(std::time::Duration::ZERO)
+    }
+
+    pub(crate) fn ticking(per_read: std::time::Duration) -> std::sync::Arc<Self> {
+        std::sync::Arc::new(Self {
+            now: std::sync::Mutex::new(std::time::Instant::now()),
+            per_read,
+        })
+    }
+
+    pub(crate) fn advance(&self, by: std::time::Duration) {
+        *self.now.lock().unwrap() += by;
+    }
+
+    pub(crate) fn peek(&self) -> std::time::Instant {
+        *self.now.lock().unwrap()
+    }
+
+    pub(crate) fn sandbox(self: &std::sync::Arc<Self>) -> crate::wall_budget::SandboxClock {
+        crate::wall_budget::SandboxClock::new(self.clone())
+    }
+}
+
+impl forge_types::MonotonicClock for ScriptedClock {
+    fn now(&self) -> std::time::Instant {
+        let read = self.peek();
+        self.advance(self.per_read);
+        read
+    }
+
+    fn sleep(&self, duration: std::time::Duration) {
+        self.advance(duration);
+    }
+}
+
 pub(crate) struct RepoGlobals {
     repo: std::sync::Arc<dyn forge_storage::GlobalsRepo>,
     causes: std::sync::Mutex<Vec<forge_types::EventId>>,

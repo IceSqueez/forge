@@ -8,36 +8,74 @@ use tokio::sync::watch;
 
 use crate::chat::AtomicConnectionState;
 
-pub struct AutoReconnectSwitch(watch::Sender<bool>);
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RedialPhase {
+    Dialing,
+    BackingOff,
+    Parked,
+}
+
+pub struct AutoReconnectSwitch {
+    enabled: watch::Sender<bool>,
+    phase: watch::Sender<RedialPhase>,
+}
 
 impl AutoReconnectSwitch {
     pub fn new(enabled: bool) -> Self {
-        Self(watch::Sender::new(enabled))
+        Self {
+            enabled: watch::Sender::new(enabled),
+            phase: watch::Sender::new(RedialPhase::Dialing),
+        }
     }
 
     pub fn set(&self, enabled: bool) {
-        self.0.send_replace(enabled);
+        self.enabled.send_replace(enabled);
     }
 
     pub fn is_enabled(&self) -> bool {
-        *self.0.borrow()
+        *self.enabled.borrow()
     }
 
     pub fn watch(&self) -> AutoReconnectWatch {
-        AutoReconnectWatch(self.0.subscribe())
+        AutoReconnectWatch {
+            enabled: self.enabled.subscribe(),
+            phase: self.phase.clone(),
+        }
+    }
+
+    pub async fn reached_phase(&self, wanted: RedialPhase) {
+        if self
+            .phase
+            .subscribe()
+            .wait_for(|phase| *phase == wanted)
+            .await
+            .is_err()
+        {
+            tracing::debug!("the reconnect switch closed before reaching a redial phase");
+        }
     }
 }
 
 #[derive(Clone)]
-pub struct AutoReconnectWatch(watch::Receiver<bool>);
+pub struct AutoReconnectWatch {
+    enabled: watch::Receiver<bool>,
+    phase: watch::Sender<RedialPhase>,
+}
 
 impl AutoReconnectWatch {
     pub fn is_enabled(&mut self) -> bool {
-        *self.0.borrow_and_update()
+        *self.enabled.borrow_and_update()
     }
 
     async fn reaches(&mut self, wanted: bool) -> bool {
-        self.0.wait_for(|enabled| *enabled == wanted).await.is_ok()
+        self.enabled
+            .wait_for(|enabled| *enabled == wanted)
+            .await
+            .is_ok()
+    }
+
+    fn enter(&self, phase: RedialPhase) {
+        self.phase.send_replace(phase);
     }
 }
 
@@ -99,6 +137,7 @@ pub async fn run_reconnect_loop<S: ReconnectingSession>(
             let delay = backoff.next_delay();
             let wait = if auto_reconnect.is_enabled() {
                 session.retry_scheduled(delay);
+                auto_reconnect.enter(RedialPhase::BackingOff);
                 wait_before_retry(delay, session, &mut auto_reconnect).await
             } else {
                 RetryWait::Disabled
@@ -111,6 +150,7 @@ pub async fn run_reconnect_loop<S: ReconnectingSession>(
                 }
                 RetryWait::Disabled => {
                     session.auto_reconnect_turned_off();
+                    auto_reconnect.enter(RedialPhase::Parked);
                     if !park_until_auto_reconnect(session, &mut auto_reconnect).await {
                         return;
                     }
@@ -119,6 +159,7 @@ pub async fn run_reconnect_loop<S: ReconnectingSession>(
             }
         }
 
+        auto_reconnect.enter(RedialPhase::Dialing);
         match session.attempt(reconnecting).await {
             SessionEnd::Stopped => return,
             SessionEnd::AttemptFailed => reconnecting = true,

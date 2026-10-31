@@ -1,7 +1,8 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use forge_types::{EventId, TriggerInstanceId};
+use forge_types::{EventId, MonotonicClock, SystemMonotonicClock, TriggerInstanceId};
 
 pub(crate) type CooldownKey = (TriggerInstanceId, Option<String>);
 
@@ -12,21 +13,27 @@ struct CooldownEntry {
 }
 
 impl CooldownEntry {
-    fn is_expired(&self) -> bool {
-        self.stamped_at.elapsed() >= self.window
+    fn is_expired(&self, now: Instant) -> bool {
+        now.saturating_duration_since(self.stamped_at) >= self.window
     }
 }
 
 pub(crate) struct CooldownMap {
     entries: HashMap<CooldownKey, CooldownEntry>,
     capacity: usize,
+    clock: Arc<dyn MonotonicClock + Send + Sync>,
 }
 
 impl CooldownMap {
     pub(crate) fn new(capacity: usize) -> Self {
+        Self::on_clock(capacity, Arc::new(SystemMonotonicClock))
+    }
+
+    fn on_clock(capacity: usize, clock: Arc<dyn MonotonicClock + Send + Sync>) -> Self {
         Self {
             entries: HashMap::new(),
             capacity: capacity.max(1),
+            clock,
         }
     }
 
@@ -36,17 +43,18 @@ impl CooldownMap {
         window: Duration,
         event_id: EventId,
     ) -> Option<Duration> {
+        let now = self.clock.now();
         if let Some(entry) = self.entries.get(&key) {
             if entry.event_id == event_id {
                 return None;
             }
-            let elapsed = entry.stamped_at.elapsed();
+            let elapsed = now.saturating_duration_since(entry.stamped_at);
             if elapsed < window {
                 return Some(window - elapsed);
             }
         }
 
-        self.entries.retain(|_, entry| !entry.is_expired());
+        self.entries.retain(|_, entry| !entry.is_expired(now));
 
         if self.entries.len() >= self.capacity && !self.entries.contains_key(&key) {
             self.evict_oldest();
@@ -55,7 +63,7 @@ impl CooldownMap {
         self.entries.insert(
             key,
             CooldownEntry {
-                stamped_at: Instant::now(),
+                stamped_at: now,
                 window,
                 event_id,
             },
@@ -91,6 +99,34 @@ mod tests {
     use super::*;
 
     const WINDOW: Duration = Duration::from_secs(60);
+    const TICK: Duration = Duration::from_secs(1);
+
+    struct ManualClock(std::sync::Mutex<Instant>);
+
+    impl ManualClock {
+        fn started() -> Arc<Self> {
+            Arc::new(Self(std::sync::Mutex::new(Instant::now())))
+        }
+
+        fn advance(&self, by: Duration) {
+            *self.0.lock().unwrap() += by;
+        }
+    }
+
+    impl MonotonicClock for ManualClock {
+        fn now(&self) -> Instant {
+            *self.0.lock().unwrap()
+        }
+
+        fn sleep(&self, duration: Duration) {
+            self.advance(duration);
+        }
+    }
+
+    fn map_on_manual_clock(capacity: usize) -> (CooldownMap, Arc<ManualClock>) {
+        let clock = ManualClock::started();
+        (CooldownMap::on_clock(capacity, clock.clone()), clock)
+    }
 
     fn user_key(instance: TriggerInstanceId, user: &str) -> CooldownKey {
         (instance, Some(user.to_owned()))
@@ -98,7 +134,7 @@ mod tests {
 
     #[test]
     fn a_later_event_inside_the_window_reports_the_remaining_time() {
-        let mut map = CooldownMap::new(16);
+        let (mut map, clock) = map_on_manual_clock(16);
         let key = user_key(TriggerInstanceId::new(), "alice");
 
         assert!(
@@ -107,13 +143,27 @@ mod tests {
             "an unstamped key must pass and stamp"
         );
 
-        let remaining = map
-            .remaining_or_stamp(key, WINDOW, EventId::new())
-            .expect("a second event inside the window must be throttled");
-        assert!(
-            remaining <= WINDOW && remaining > WINDOW / 2,
-            "remaining {remaining:?} must be just under the full window"
+        clock.advance(TICK);
+        assert_eq!(
+            map.remaining_or_stamp(key, WINDOW, EventId::new()),
+            Some(WINDOW - TICK)
         );
+    }
+
+    #[test]
+    fn a_window_holds_until_its_last_tick_and_reopens_exactly_at_its_end() {
+        let (mut map, clock) = map_on_manual_clock(16);
+        let key = user_key(TriggerInstanceId::new(), "alice");
+        map.remaining_or_stamp(key.clone(), WINDOW, EventId::new());
+
+        clock.advance(WINDOW - TICK);
+        assert_eq!(
+            map.remaining_or_stamp(key.clone(), WINDOW, EventId::new()),
+            Some(TICK)
+        );
+
+        clock.advance(TICK);
+        assert_eq!(map.remaining_or_stamp(key, WINDOW, EventId::new()), None);
     }
 
     #[test]
@@ -134,7 +184,7 @@ mod tests {
 
     #[test]
     fn the_capacity_cap_evicts_oldest_first_and_only_that_key_fails_open() {
-        let mut map = CooldownMap::new(2);
+        let (mut map, clock) = map_on_manual_clock(2);
         let instance = TriggerInstanceId::new();
         let (first, second, third) = (
             user_key(instance, "first"),
@@ -148,10 +198,7 @@ mod tests {
                     .is_none(),
                 "a distinct chatter inside the window is never throttled on their first call"
             );
-            let stamped = Instant::now();
-            while stamped.elapsed().is_zero() {
-                std::hint::spin_loop();
-            }
+            clock.advance(TICK);
         }
 
         assert!(
@@ -168,13 +215,14 @@ mod tests {
 
     #[test]
     fn an_expired_entry_is_pruned_without_the_cap_being_reached() {
-        let mut map = CooldownMap::new(1024);
+        let (mut map, clock) = map_on_manual_clock(1024);
         let instance = TriggerInstanceId::new();
 
         assert!(
-            map.remaining_or_stamp(user_key(instance, "gone"), Duration::ZERO, EventId::new())
+            map.remaining_or_stamp(user_key(instance, "gone"), WINDOW, EventId::new())
                 .is_none()
         );
+        clock.advance(WINDOW);
 
         assert!(
             map.remaining_or_stamp(user_key(instance, "live"), WINDOW, EventId::new())

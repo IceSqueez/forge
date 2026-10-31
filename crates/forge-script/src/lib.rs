@@ -23,6 +23,7 @@ mod script_thread;
 pub mod settings;
 #[cfg(test)]
 mod test_support;
+mod wall_budget;
 
 pub use api::{ForgeApi, SpeakRequester};
 pub use arg_binding::BoundExpression;

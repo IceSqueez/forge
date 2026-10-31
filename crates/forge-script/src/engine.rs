@@ -1,10 +1,8 @@
 use crate::error::ScriptError;
-use forge_types::{RecoverMutex, VARIANT_MAX_COLLECTION_LEN, Variant};
-use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use forge_types::{VARIANT_MAX_COLLECTION_LEN, Variant};
+use std::time::Duration;
 
 use forge_storage::{SettingsRepo, read_setting_or_default};
-use rhai::Dynamic;
 use rhai::packages::{BasicArrayPackage, BasicMapPackage, CorePackage, LogicPackage, Package};
 
 use crate::api::ForgeApi;
@@ -12,6 +10,7 @@ use crate::convert::{dynamic_to_variant, register_variant_types};
 use crate::data_audit::{ensure_result_fits, install_data_audit};
 use crate::script_thread::on_script_stack;
 use crate::settings;
+use crate::wall_budget::{SandboxClock, WallBudget};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EngineConfig {
@@ -40,7 +39,7 @@ impl EngineConfig {
 pub struct Engine {
     config: EngineConfig,
     inner: rhai::Engine,
-    wall_timer: Arc<Mutex<Instant>>,
+    budget: WallBudget,
 }
 
 pub(crate) fn register_sandbox_base(inner: &mut rhai::Engine, cfg: &EngineConfig) {
@@ -63,35 +62,39 @@ pub(crate) fn register_sandbox_base(inner: &mut rhai::Engine, cfg: &EngineConfig
     inner.disable_symbol("curry");
 }
 
+pub(crate) fn budgeted_sandbox(
+    cfg: &EngineConfig,
+    clock: SandboxClock,
+) -> (rhai::Engine, WallBudget) {
+    let mut inner = rhai::Engine::new_raw();
+    register_sandbox_base(&mut inner, cfg);
+    let budget = WallBudget::start(clock, cfg.wall_time_ms);
+    budget.enforce_on(&mut inner);
+    (inner, budget)
+}
+
 impl Engine {
     pub fn with_config(cfg: EngineConfig) -> Self {
-        let mut inner = rhai::Engine::new_raw();
+        Self::on_clock(cfg, SandboxClock::default())
+    }
 
-        register_sandbox_base(&mut inner, &cfg);
-
-        let wall_timer = Arc::new(Mutex::new(Instant::now()));
-        let timer_for_closure = Arc::clone(&wall_timer);
-        let wall_time_ms = cfg.wall_time_ms;
-        inner.on_progress(move |_ops| {
-            let elapsed = timer_for_closure.lock_recover().elapsed();
-            if elapsed.as_millis() > wall_time_ms as u128 {
-                Some(Dynamic::UNIT)
-            } else {
-                None
-            }
-        });
-
+    pub(crate) fn on_clock(cfg: EngineConfig, clock: SandboxClock) -> Self {
+        let (inner, budget) = budgeted_sandbox(&cfg, clock);
         Self {
             config: cfg,
             inner,
-            wall_timer,
+            budget,
         }
     }
 
     pub fn with_api(cfg: EngineConfig, api: ForgeApi) -> Self {
-        let mut this = Self::with_config(cfg);
+        Self::with_api_on_clock(cfg, api, SandboxClock::default())
+    }
+
+    pub(crate) fn with_api_on_clock(cfg: EngineConfig, api: ForgeApi, clock: SandboxClock) -> Self {
+        let mut this = Self::on_clock(cfg, clock.clone());
         this.inner
-            .register_static_module("forge", api.into_module());
+            .register_static_module("forge", api.on_clock(clock).into_module());
         this
     }
 
@@ -105,12 +108,12 @@ impl Engine {
         scope: &mut rhai::Scope<'_>,
     ) -> Result<rhai::Dynamic, ScriptError> {
         on_script_stack(|| {
-            self.reset_timer();
+            self.budget.restart();
             let outcome = self
                 .inner
                 .eval_with_scope::<rhai::Dynamic>(scope, body)
                 .and_then(|value| ensure_result_fits(&value).map(|()| value))
-                .map_err(|e| map_eval_error(&self.config, *e, self.started_at()));
+                .map_err(|e| map_eval_error(&self.config, *e, self.budget.elapsed()));
             scope.clear();
             outcome
         })
@@ -131,14 +134,6 @@ impl Engine {
                 reason: e.to_string(),
             })
     }
-
-    pub(crate) fn reset_timer(&self) {
-        *self.wall_timer.lock_recover() = Instant::now();
-    }
-
-    fn started_at(&self) -> Instant {
-        *self.wall_timer.lock_recover()
-    }
 }
 
 pub fn validate_syntax(body: &str) -> Result<(), ScriptError> {
@@ -155,7 +150,7 @@ pub fn validate_syntax(body: &str) -> Result<(), ScriptError> {
 pub(crate) fn map_eval_error(
     cfg: &EngineConfig,
     err: rhai::EvalAltResult,
-    started_at: Instant,
+    elapsed: Duration,
 ) -> ScriptError {
     let reason = err.to_string();
     match err {
@@ -164,7 +159,7 @@ pub(crate) fn map_eval_error(
             ScriptError::OperationLimit { ops: cfg.op_limit }
         }
         rhai::EvalAltResult::ErrorTerminated(..) => ScriptError::Timeout {
-            elapsed_ms: u64::try_from(started_at.elapsed().as_millis()).unwrap_or(u64::MAX),
+            elapsed_ms: u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX),
             limit_ms: cfg.wall_time_ms,
         },
         _ => ScriptError::Runtime { reason },
@@ -180,9 +175,13 @@ mod tests {
     use forge_storage::test_support::MemorySettings;
     use forge_storage_sqlite::SqliteBackend;
 
-    use crate::test_support::{Sandboxed, repo_globals, sandboxed_backend};
+    use crate::test_support::{Sandboxed, ScriptedClock, repo_globals, sandboxed_backend};
     use forge_types::{EventId, Variant};
     use std::sync::Arc;
+    use std::time::Instant;
+
+    const WALL_LIMIT_MS: u64 = 1_000;
+    const WALL_LIMIT: Duration = Duration::from_millis(WALL_LIMIT_MS);
 
     fn unhurried() -> EngineConfig {
         EngineConfig {
@@ -210,13 +209,20 @@ mod tests {
         )
     }
 
-    fn make_api_with_wall_ms(dp: Arc<SqliteBackend>, wall_ms: u64) -> ForgeApi {
+    fn make_api_with_deadline(dp: Arc<SqliteBackend>, deadline: Instant) -> ForgeApi {
         ForgeApi::new(
             Arc::new(MockPublisher),
             repo_globals(dp.clone()),
             EventId::new(),
-            Instant::now() + std::time::Duration::from_millis(wall_ms),
+            deadline,
         )
+    }
+
+    fn bounded() -> EngineConfig {
+        EngineConfig {
+            op_limit: 10_000,
+            wall_time_ms: WALL_LIMIT_MS,
+        }
     }
 
     #[test]
@@ -283,9 +289,6 @@ mod tests {
 
     #[test]
     fn timeout_reports_measured_elapsed_not_the_limit() {
-        let started_at = Instant::now()
-            .checked_sub(std::time::Duration::from_secs(2))
-            .unwrap();
         let cfg = EngineConfig {
             wall_time_ms: 100,
             ..EngineConfig::default()
@@ -293,10 +296,16 @@ mod tests {
         let err = map_eval_error(
             &cfg,
             rhai::EvalAltResult::ErrorTerminated(rhai::Dynamic::UNIT, rhai::Position::NONE),
-            started_at,
+            Duration::from_secs(2),
         );
         assert!(
-            matches!(err, ScriptError::Timeout { elapsed_ms, limit_ms: 100 } if elapsed_ms >= 2_000),
+            matches!(
+                err,
+                ScriptError::Timeout {
+                    elapsed_ms: 2_000,
+                    limit_ms: 100
+                }
+            ),
             "{err:?}"
         );
     }
@@ -329,8 +338,13 @@ mod tests {
     async fn with_api_forge_sleep_waits_at_least_the_requested_time() {
         const REQUESTED_MS: u64 = 5;
         let dp = open_test_dp().await;
-        let engine = Engine::with_api(unhurried(), make_api(dp.clone()));
-        let before = std::time::Instant::now();
+        let clock = ScriptedClock::frozen();
+        let before = clock.peek();
+        let engine = Engine::with_api_on_clock(
+            unhurried(),
+            make_api_with_deadline(dp.clone(), before + WALL_LIMIT),
+            clock.sandbox(),
+        );
         tokio::task::spawn_blocking(move || {
             drop(
                 engine
@@ -340,14 +354,37 @@ mod tests {
         })
         .await
         .unwrap();
-        assert!(before.elapsed() >= std::time::Duration::from_millis(REQUESTED_MS));
+        assert_eq!(clock.peek() - before, Duration::from_millis(REQUESTED_MS));
+    }
+
+    #[tokio::test]
+    async fn sleep_is_clamped_to_what_is_left_of_the_budget() {
+        let dp = open_test_dp().await;
+        let clock = ScriptedClock::frozen();
+        let deadline = clock.peek() + Duration::from_millis(5);
+        let engine = Engine::with_api_on_clock(
+            unhurried(),
+            make_api_with_deadline(dp.clone(), deadline),
+            clock.sandbox(),
+        );
+        tokio::task::spawn_blocking(move || engine.eval_script("forge::sleep(1000)").map(|_| ()))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(clock.peek(), deadline);
     }
 
     #[tokio::test]
     async fn a_script_that_keeps_sleeping_is_refused_once_the_budget_is_spent() {
         const BUDGET_MS: u64 = 5;
         let dp = open_test_dp().await;
-        let engine = Engine::with_api(unhurried(), make_api_with_wall_ms(dp.clone(), BUDGET_MS));
+        let clock = ScriptedClock::frozen();
+        let deadline = clock.peek() + Duration::from_millis(BUDGET_MS);
+        let engine = Engine::with_api_on_clock(
+            unhurried(),
+            make_api_with_deadline(dp.clone(), deadline),
+            clock.sandbox(),
+        );
         let result =
             tokio::task::spawn_blocking(move || engine.eval_script("loop { forge::sleep(1) }"))
                 .await
@@ -356,12 +393,11 @@ mod tests {
             matches!(&result, Err(ScriptError::Runtime { reason }) if reason.contains("deadline exceeded")),
             "{result:?}"
         );
+        assert_eq!(clock.peek(), deadline);
     }
 
     #[tokio::test]
     async fn sleep_returns_err_when_deadline_already_passed() {
-        use std::time::Duration;
-
         let dp = open_test_dp().await;
         let expired_deadline = Instant::now()
             .checked_sub(Duration::from_millis(50))
@@ -463,26 +499,35 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn with_api_infinite_loop_terminates() {
-        let dp = open_test_dp().await;
-        let engine = Engine::with_api(
-            EngineConfig {
-                op_limit: 100_000,
-                wall_time_ms: 200,
-            },
-            make_api_with_wall_ms(dp.clone(), 200),
-        );
-        let result = tokio::task::spawn_blocking(move || engine.eval_script("loop {}"))
-            .await
-            .unwrap();
+    #[test]
+    fn a_runaway_script_is_stopped_at_the_wall_budget_with_the_time_it_took() {
+        let engine = Engine::on_clock(bounded(), ScriptedClock::ticking(WALL_LIMIT).sandbox());
+        let err = engine.eval_script("loop {}").unwrap_err();
         assert!(
             matches!(
-                result,
-                Err(ScriptError::Timeout { .. } | ScriptError::OperationLimit { .. })
+                err,
+                ScriptError::Timeout { elapsed_ms, limit_ms: WALL_LIMIT_MS }
+                    if elapsed_ms >= WALL_LIMIT_MS
             ),
-            "infinite loop must end at a sandbox limit, got: {result:?}"
+            "{err:?}"
         );
+    }
+
+    #[test]
+    fn a_stopped_clock_leaves_only_the_op_limit_to_end_a_runaway_script() {
+        let engine = Engine::on_clock(bounded(), ScriptedClock::frozen().sandbox());
+        let err = engine.eval_script("loop {}").unwrap_err();
+        assert!(matches!(err, ScriptError::OperationLimit { .. }), "{err:?}");
+    }
+
+    #[test]
+    fn each_evaluation_gets_a_fresh_wall_budget() {
+        let clock = ScriptedClock::frozen();
+        let engine = Engine::on_clock(bounded(), clock.sandbox());
+        for _ in 0..2 {
+            assert!(engine.eval_script("1 + 1").is_ok());
+            clock.advance(WALL_LIMIT);
+        }
     }
 
     #[tokio::test]

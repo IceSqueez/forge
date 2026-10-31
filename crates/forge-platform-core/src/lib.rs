@@ -77,7 +77,7 @@ pub use option_source::{
     BuiltinOptionSource, OptionEntry, OptionHint, OptionListId, OptionListMetadata,
 };
 pub use reconnect::{
-    AutoReconnectSwitch, AutoReconnectWatch, ReconnectingSession, SessionEnd,
+    AutoReconnectSwitch, AutoReconnectWatch, ReconnectingSession, RedialPhase, SessionEnd,
     record_connection_failure, run_reconnect_loop,
 };
 pub use sender::{ActingSender, SENDER_FIELD, SENT_AS_FIELD, SenderPreference, SenderRole};

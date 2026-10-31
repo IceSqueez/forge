@@ -1203,19 +1203,18 @@ mod tests {
         use std::time::{Duration, Instant};
 
         use forge_events::{PlatformConnectionChanged, TypedEvent};
-        use forge_platform_core::{BuiltinControl, BuiltinStatus, ConnectionState};
+        use forge_platform_core::{BuiltinControl, BuiltinStatus, ConnectionState, RedialPhase};
         use tokio::net::{TcpListener, TcpStream};
         use tokio::sync::mpsc;
         use tokio::task::JoinHandle;
 
-        use crate::client::tests::{MockCreds, MockPublisher, wait_until};
+        use crate::client::tests::{MockCreds, MockPublisher};
         use crate::client::{VTubeClient, VTubeConfig};
         use crate::timing::VTubeTiming;
 
         const HANG_GUARD: Duration = Duration::from_secs(30);
         const BEYOND_ANY_GUARD: Duration = Duration::from_secs(100 * 24 * 3600);
         const SHORT_CONNECT_TIMEOUT: Duration = Duration::from_millis(50);
-        const QUIET_WINDOW: Duration = Duration::from_millis(50);
 
         struct DialCounter {
             addr: SocketAddr,
@@ -1284,6 +1283,12 @@ mod tests {
             }
         }
 
+        async fn reach_phase(client: &VTubeClient, phase: RedialPhase) {
+            tokio::time::timeout(HANG_GUARD, client.auto_reconnect.reached_phase(phase))
+                .await
+                .expect("the supervisor never reached the redial phase");
+        }
+
         fn fast_redials() -> VTubeTiming {
             VTubeTiming {
                 reconnect_base_delay: Duration::from_millis(1),
@@ -1341,13 +1346,8 @@ mod tests {
             let client = port.connect(&MockPublisher::new(), fast_redials());
             client.set_auto_reconnect(false);
 
-            assert!(
-                wait_until(HANG_GUARD, || client.connection_state()
-                    == ConnectionState::Disconnected)
-                .await,
-                "the silent dial never settled"
-            );
-            tokio::time::sleep(QUIET_WINDOW).await;
+            reach_phase(&client, RedialPhase::Parked).await;
+            assert_eq!(client.connection_state(), ConnectionState::Disconnected);
             assert_eq!(failure_code(&client).as_deref(), Some("unreachable"));
             assert!(client.disconnect().await.is_ok());
 
@@ -1395,14 +1395,9 @@ mod tests {
                     ..fast_redials()
                 },
             );
-            assert!(
-                wait_until(HANG_GUARD, || publisher
-                    .disconnected_with_reason("connect_failed"))
-                .await,
-                "precondition: the first dial never failed"
-            );
 
-            tokio::time::sleep(QUIET_WINDOW).await;
+            reach_phase(&client, RedialPhase::BackingOff).await;
+            assert!(publisher.disconnected_with_reason("connect_failed"));
             assert!(client.disconnect().await.is_ok());
 
             assert_eq!(port.dials_before_a_sentinel().await, 1);

@@ -227,11 +227,21 @@ pub struct SpeakQueueHandle {
     resolver: Shared<VoiceAliasResolver>,
     registry: Shared<TtsRegistry>,
     targeted_legs: TargetedLegs,
+    language_detector_ready: tokio::sync::watch::Receiver<bool>,
 }
 
 pub(crate) type TargetedLegs = Shared<Option<Arc<dyn TargetedSinkFactory>>>;
 
 impl SpeakQueueHandle {
+    pub async fn language_detector_ready(&self) -> Result<(), SpeakError> {
+        self.language_detector_ready
+            .clone()
+            .wait_for(|ready| *ready)
+            .await
+            .map(|_| ())
+            .map_err(|_| SpeakError::ActorGone)
+    }
+
     pub async fn send(&self, cmd: SpeakCommand) -> Result<(), SpeakError> {
         self.tx.send(cmd).await.map_err(|_| SpeakError::ActorGone)
     }
@@ -324,6 +334,7 @@ pub fn spawn(config: QueueConfig, deps: QueueDeps) -> (SpeakQueueHandle, SpeakEv
     let master_volume_bits = Arc::new(AtomicU32::new(config.master_volume.to_bits()));
     let engine_gains = Shared::<HashMap<EngineId, f32>>::new(HashMap::new());
     let targeted_legs = TargetedLegs::new(None);
+    let (detector_ready_tx, language_detector_ready) = tokio::sync::watch::channel(false);
     let resolver = Shared::new(deps.resolver);
     let registry = Shared::new(deps.registry);
     let actor_deps = actor::ActorDeps {
@@ -355,6 +366,7 @@ pub fn spawn(config: QueueConfig, deps: QueueDeps) -> (SpeakQueueHandle, SpeakEv
             master_volume_bits_clone,
             engine_gains_clone,
             targeted_legs_clone,
+            detector_ready_tx,
         )
         .await;
     });
@@ -371,6 +383,7 @@ pub fn spawn(config: QueueConfig, deps: QueueDeps) -> (SpeakQueueHandle, SpeakEv
             resolver,
             registry,
             targeted_legs,
+            language_detector_ready,
         },
         SpeakEventStream(event_rx),
     )
@@ -403,6 +416,7 @@ mod tests {
             )),
             registry: Shared::new(TtsRegistry::new()),
             targeted_legs: Shared::new(None),
+            language_detector_ready: tokio::sync::watch::channel(false).1,
         };
         let result = handle.send(SpeakCommand::Skip).await;
         assert!(matches!(result, Err(SpeakError::ActorGone)));
@@ -428,6 +442,7 @@ mod tests {
             )),
             registry: Shared::new(TtsRegistry::new()),
             targeted_legs: Shared::new(None),
+            language_detector_ready: tokio::sync::watch::channel(false).1,
         };
         let mut sub = handle.subscribe();
         event_tx

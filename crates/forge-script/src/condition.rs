@@ -1,20 +1,25 @@
 use crate::error::ScriptError;
-use std::time::{Duration, Instant};
 
 use rhai::Dynamic;
 
 use crate::arg_binding::BoundExpression;
-use crate::engine::{EngineConfig, map_eval_error, register_sandbox_base};
+use crate::engine::{EngineConfig, budgeted_sandbox, map_eval_error};
 use crate::script_thread::on_script_stack;
+use crate::wall_budget::SandboxClock;
 
 #[derive(Debug, Clone)]
 pub struct ConditionEvaluator {
     config: EngineConfig,
+    clock: SandboxClock,
 }
 
 impl ConditionEvaluator {
     pub fn with_config(config: EngineConfig) -> Self {
-        Self { config }
+        Self::on_clock(config, SandboxClock::default())
+    }
+
+    pub(crate) fn on_clock(config: EngineConfig, clock: SandboxClock) -> Self {
+        Self { config, clock }
     }
 
     pub fn eval(&self, expr: &str) -> Result<bool, ScriptError> {
@@ -32,22 +37,11 @@ impl ConditionEvaluator {
         mut scope: rhai::Scope<'static>,
     ) -> Result<bool, ScriptError> {
         on_script_stack(move || {
-            let mut inner = rhai::Engine::new_raw();
-            register_sandbox_base(&mut inner, &self.config);
-
-            let started_at = Instant::now();
-            let deadline = started_at + Duration::from_millis(self.config.wall_time_ms);
-            inner.on_progress(move |_ops| {
-                if Instant::now() >= deadline {
-                    Some(Dynamic::UNIT)
-                } else {
-                    None
-                }
-            });
+            let (inner, budget) = budgeted_sandbox(&self.config, self.clock.clone());
 
             let value = inner
                 .eval_with_scope::<Dynamic>(&mut scope, source)
-                .map_err(|e| map_eval_error(&self.config, *e, started_at))?;
+                .map_err(|e| map_eval_error(&self.config, *e, budget.elapsed()))?;
 
             value
                 .as_bool()
@@ -62,6 +56,18 @@ impl ConditionEvaluator {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::ScriptedClock;
+    use std::time::Duration;
+
+    const WALL_LIMIT_MS: u64 = 1_000;
+    const WALL_LIMIT: Duration = Duration::from_millis(WALL_LIMIT_MS);
+
+    fn bounded() -> EngineConfig {
+        EngineConfig {
+            op_limit: 10_000,
+            wall_time_ms: WALL_LIMIT_MS,
+        }
+    }
 
     fn eval(expr: &str) -> Result<bool, ScriptError> {
         ConditionEvaluator::with_config(EngineConfig::default()).eval(expr)
@@ -122,14 +128,25 @@ mod tests {
 
     #[test]
     fn eval_exceeding_wall_budget_returns_typed_timeout() {
-        let evaluator = ConditionEvaluator::with_config(EngineConfig {
-            op_limit: 1_000_000_000,
-            wall_time_ms: 1,
-        });
+        let clock = ScriptedClock::ticking(WALL_LIMIT);
+        let evaluator = ConditionEvaluator::on_clock(bounded(), clock.sandbox());
         let err = evaluator.eval("loop {}").unwrap_err();
         assert!(
-            matches!(err, ScriptError::Timeout { .. }),
+            matches!(
+                err,
+                ScriptError::Timeout {
+                    limit_ms: WALL_LIMIT_MS,
+                    ..
+                }
+            ),
             "expected Timeout, got {err:?}",
         );
+    }
+
+    #[test]
+    fn a_stopped_clock_leaves_only_the_op_limit_to_end_a_runaway_condition() {
+        let evaluator = ConditionEvaluator::on_clock(bounded(), ScriptedClock::frozen().sandbox());
+        let err = evaluator.eval("loop {}").unwrap_err();
+        assert!(matches!(err, ScriptError::OperationLimit { .. }), "{err:?}");
     }
 }

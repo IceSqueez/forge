@@ -1,21 +1,26 @@
 use crate::error::ScriptError;
-use std::time::{Duration, Instant};
 
 use forge_types::Variant;
 use rhai::Dynamic;
 
 use crate::arg_binding::BoundExpression;
-use crate::engine::{EngineConfig, map_eval_error, register_sandbox_base};
+use crate::engine::{EngineConfig, budgeted_sandbox, map_eval_error};
 use crate::script_thread::on_script_stack;
+use crate::wall_budget::SandboxClock;
 
 #[derive(Debug, Clone)]
 pub struct MathEvaluator {
     config: EngineConfig,
+    clock: SandboxClock,
 }
 
 impl MathEvaluator {
     pub fn with_config(config: EngineConfig) -> Self {
-        Self { config }
+        Self::on_clock(config, SandboxClock::default())
+    }
+
+    pub(crate) fn on_clock(config: EngineConfig, clock: SandboxClock) -> Self {
+        Self { config, clock }
     }
 
     pub fn eval(&self, expr: &str) -> Result<Variant, ScriptError> {
@@ -28,22 +33,11 @@ impl MathEvaluator {
 
     fn run(&self, source: &str, mut scope: rhai::Scope<'static>) -> Result<Variant, ScriptError> {
         on_script_stack(move || {
-            let mut inner = rhai::Engine::new_raw();
-            register_sandbox_base(&mut inner, &self.config);
-
-            let started_at = Instant::now();
-            let deadline = started_at + Duration::from_millis(self.config.wall_time_ms);
-            inner.on_progress(move |_ops| {
-                if Instant::now() >= deadline {
-                    Some(Dynamic::UNIT)
-                } else {
-                    None
-                }
-            });
+            let (inner, budget) = budgeted_sandbox(&self.config, self.clock.clone());
 
             let value = inner
                 .eval_with_scope::<Dynamic>(&mut scope, source)
-                .map_err(|e| map_eval_error(&self.config, *e, started_at))?;
+                .map_err(|e| map_eval_error(&self.config, *e, budget.elapsed()))?;
 
             if let Ok(n) = value.as_int() {
                 Ok(Variant::Int(n))
@@ -63,6 +57,18 @@ impl MathEvaluator {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::ScriptedClock;
+    use std::time::Duration;
+
+    const WALL_LIMIT_MS: u64 = 1_000;
+    const WALL_LIMIT: Duration = Duration::from_millis(WALL_LIMIT_MS);
+
+    fn bounded() -> EngineConfig {
+        EngineConfig {
+            op_limit: 10_000,
+            wall_time_ms: WALL_LIMIT_MS,
+        }
+    }
 
     fn eval(expr: &str) -> Result<Variant, ScriptError> {
         MathEvaluator::with_config(EngineConfig::default()).eval(expr)
@@ -123,11 +129,25 @@ mod tests {
 
     #[test]
     fn eval_past_the_wall_budget_returns_the_typed_timeout() {
-        let evaluator = MathEvaluator::with_config(EngineConfig {
-            op_limit: 1_000_000_000,
-            wall_time_ms: 1,
-        });
+        let clock = ScriptedClock::ticking(WALL_LIMIT);
+        let evaluator = MathEvaluator::on_clock(bounded(), clock.sandbox());
         let err = evaluator.eval("loop {}").unwrap_err();
-        assert!(matches!(err, ScriptError::Timeout { .. }), "{err:?}");
+        assert!(
+            matches!(
+                err,
+                ScriptError::Timeout {
+                    limit_ms: WALL_LIMIT_MS,
+                    ..
+                }
+            ),
+            "{err:?}"
+        );
+    }
+
+    #[test]
+    fn a_stopped_clock_leaves_only_the_op_limit_to_end_a_runaway_expression() {
+        let evaluator = MathEvaluator::on_clock(bounded(), ScriptedClock::frozen().sandbox());
+        let err = evaluator.eval("loop {}").unwrap_err();
+        assert!(matches!(err, ScriptError::OperationLimit { .. }), "{err:?}");
     }
 }

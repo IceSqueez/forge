@@ -1,8 +1,8 @@
-#![allow(clippy::unwrap_used, clippy::panic)]
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod common;
 
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use forge_events::Event;
 use forge_speak_queue::{
@@ -22,7 +22,6 @@ const ENGINE: &str = "poly";
 const SPEAK_STARTED: &str = "speak.started";
 const REPORTED_CONFIDENCE_FLOOR: f64 = 0.65;
 const DETECTOR_BUILD_HANG_GUARD: Duration = Duration::from_secs(120);
-const DELAY_BETWEEN_PROBES: Duration = Duration::from_millis(20);
 
 const UKRAINIAN: &str = "добрий вечір, як ваші справи сьогодні";
 const ENGLISH: &str = "good evening everyone, how is the stream going tonight";
@@ -112,29 +111,22 @@ async fn narrowed_voice_for(
     bus: &RecordingPublisher,
     text: &str,
 ) -> (String, String, f64) {
-    let hang_guard = Instant::now() + DETECTOR_BUILD_HANG_GUARD;
-    loop {
-        speak_and_settle(handle, stream, request("nova", text)).await;
-        let reported = bus
-            .of_kind(SPEAK_STARTED)
-            .iter()
-            .filter(|e| e.payload["text"].as_str() == Some(text))
-            .find_map(|e| {
-                Some((
-                    e.payload["detected_language"].as_str()?.to_owned(),
-                    e.payload["voice_id"].as_str()?.to_owned(),
-                    e.payload["language_confidence"].as_f64()?,
-                ))
-            });
-        if let Some(reported) = reported {
-            return reported;
-        }
-        assert!(
-            Instant::now() < hang_guard,
-            "no speak.started for {text:?} ever reported a detected language"
-        );
-        tokio::time::sleep(DELAY_BETWEEN_PROBES).await;
-    }
+    tokio::time::timeout(DETECTOR_BUILD_HANG_GUARD, handle.language_detector_ready())
+        .await
+        .expect("the language detector was never built")
+        .unwrap();
+    speak_and_settle(handle, stream, request("nova", text)).await;
+    bus.of_kind(SPEAK_STARTED)
+        .iter()
+        .filter(|e| e.payload["text"].as_str() == Some(text))
+        .find_map(|e| {
+            Some((
+                e.payload["detected_language"].as_str()?.to_owned(),
+                e.payload["voice_id"].as_str()?.to_owned(),
+                e.payload["language_confidence"].as_f64()?,
+            ))
+        })
+        .unwrap_or_else(|| panic!("no speak.started for {text:?} reported a detected language"))
 }
 
 #[tokio::test]
@@ -169,6 +161,7 @@ async fn toggling_the_preset_on_and_back_off_starts_and_stops_reporting_a_langua
     );
 
     pipeline.swap(config_with(true));
+    speak_and_settle(&handle, &mut stream, request("nova", ENGLISH)).await;
     let (lang, _, _) = narrowed_voice_for(&handle, &mut stream, &bus, UKRAINIAN).await;
     assert_eq!(lang, "uk", "flipping the preset on must build a detector");
 

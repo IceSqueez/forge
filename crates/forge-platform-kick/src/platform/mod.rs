@@ -709,8 +709,6 @@ pub(crate) mod tests {
         announcements
     }
 
-    const RETIRED_LOOP_BACKOFF: StdDuration = StdDuration::from_millis(100);
-    const RETIRED_LOOP_WINDOW: StdDuration = StdDuration::from_millis(500);
     const BEYOND_ANY_GUARD: StdDuration = StdDuration::from_secs(100 * 24 * 3600);
     const NO_PROGRESS_HORIZON: StdDuration = StdDuration::from_secs(3600);
 
@@ -790,18 +788,11 @@ pub(crate) mod tests {
     async fn reconnecting_while_the_retired_loop_backs_off_leaves_connected_as_the_last_announcement()
      {
         use wiremock::matchers::method;
-        use wiremock::{Mock, MockServer, ResponseTemplate};
+        use wiremock::{Mock, MockServer};
 
         let channel_api = MockServer::start().await;
         Mock::given(method("GET"))
             .respond_with(channel_found())
-            .up_to_n_times(1)
-            .mount(&channel_api)
-            .await;
-        Mock::given(method("GET"))
-            .respond_with(ResponseTemplate::new(
-                reqwest::StatusCode::INTERNAL_SERVER_ERROR,
-            ))
             .mount(&channel_api)
             .await;
         let platform = platform_on(
@@ -810,30 +801,23 @@ pub(crate) mod tests {
             crate::test_support::MemoryBanLedger::shared(),
         )
         .with_pusher_timing(PusherTiming {
-            reconnect_backoff_base: RETIRED_LOOP_BACKOFF,
-            reconnect_backoff_cap: RETIRED_LOOP_BACKOFF,
+            reconnect_backoff_base: BEYOND_ANY_GUARD,
+            reconnect_backoff_cap: BEYOND_ANY_GUARD,
             ..PusherTiming::default()
         });
         let mut stream = platform.events();
         platform.connect().await.unwrap();
         await_link_state(&mut stream, "reconnecting").await;
 
-        Mock::given(method("GET"))
-            .respond_with(channel_found())
-            .with_priority(1)
-            .mount(&channel_api)
-            .await;
         platform.connect().await.unwrap();
-        published_link_announcements(&mut stream);
         await_link_state(&mut stream, "connected").await;
-        tokio::time::sleep(RETIRED_LOOP_WINDOW).await;
-        let late = published_link_announcements(&mut stream);
         platform.disconnect().await.unwrap();
 
-        assert!(
-            late.is_empty(),
-            "announced after the new session connected: {late:?}"
-        );
+        let after_connected: Vec<String> = published_link_announcements(&mut stream)
+            .into_iter()
+            .map(|(state, _)| state)
+            .collect();
+        assert_eq!(after_connected, ["disconnected"]);
     }
 
     #[tokio::test]

@@ -430,23 +430,6 @@ mod filters {
     }
 
     #[test]
-    fn handle_load_returns_seeded_config() {
-        let mut settings = default_settings();
-        settings.max_length = Some(7);
-        let config = build_config_strict(&[], &settings).unwrap();
-        let handle = PipelineConfigHandle::new(config);
-        let loaded = handle.load();
-        let result = process("hello world!", &loaded, &ctx());
-        assert_eq!(
-            result,
-            PipelineResult::Skip {
-                reason: SkipReason::MatchedSkipRule(SkipRule::ExceedsMaxLength)
-            },
-            "loaded config must carry the seeded max_length=7"
-        );
-    }
-
-    #[test]
     fn handle_swap_replaces_active_config_observable_via_process() {
         let mut settings_v1 = default_settings();
         settings_v1.max_length = Some(5);

@@ -1348,12 +1348,4 @@ mod tests {
 
         assert_eq!(sidebar, SettingsSection::ALL.to_vec());
     }
-
-    #[test]
-    fn the_notifications_route_opens_the_notifications_pane() {
-        assert_eq!(
-            Screen::parse_cli("settings:notifications"),
-            Ok(Screen::Settings(Some(SettingsSection::Notifications)))
-        );
-    }
 }

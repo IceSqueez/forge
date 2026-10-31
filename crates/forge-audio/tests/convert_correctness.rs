@@ -5,7 +5,7 @@ use forge_speech_types::PcmBuffer;
 
 #[test]
 fn resample_22050_mono_to_48000_produces_correct_frame_ratio() {
-    let frames = 2_205_usize; // 100 ms at 22050 Hz
+    let frames = 2_205_usize;
     let src: Vec<i16> = (0..frames as i16).map(|i| i * 10).collect();
 
     let resampled = resample(&src, 22_050, 48_000, 1).unwrap();
@@ -44,7 +44,7 @@ fn remix_mono_to_stereo_after_resample_has_correct_channel_count() {
 
 #[test]
 fn pcmbuffer_from_22050_mono_resampled_to_48000_stereo_has_correct_metadata() {
-    let frames = 4_410_usize; // 200 ms at 22050 Hz
+    let frames = 4_410_usize;
     let src: Vec<i16> = (0..frames as i16).map(|i| (i % 500) * 60).collect();
 
     let resampled = resample(&src, 22_050, 48_000, 1).unwrap();

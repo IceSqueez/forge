@@ -106,9 +106,7 @@ impl UserGlobalsRepo for MapUserGlobals {
             name.to_owned(),
         ));
         if self.fail {
-            return Err(StorageError::NotFound {
-                key: name.to_owned(),
-            });
+            return Err(StorageError::NotReady);
         }
         Ok(self
             .store
@@ -130,9 +128,7 @@ impl UserGlobalsRepo for MapUserGlobals {
         value: Variant,
     ) -> Result<(), StorageError> {
         if self.fail {
-            return Err(StorageError::NotFound {
-                key: name.to_owned(),
-            });
+            return Err(StorageError::NotReady);
         }
         self.store.lock().unwrap().insert(
             (

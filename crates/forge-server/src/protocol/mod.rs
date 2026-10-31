@@ -1137,18 +1137,24 @@ mod tests {
     #[tokio::test]
     async fn get_user_globals_with_user_id_returns_filtered_globals() {
         let entry = sample_user_global_entry();
-        let _other_entry = forge_storage::UserGlobalEntry {
+        let other_entry = forge_storage::UserGlobalEntry {
             broadcaster_id: "12345678".to_string(),
             user_id: "11111111".to_string(),
             name: "other".to_string(),
             value: forge_types::Variant::Int(0),
             last_modified: OffsetDateTime::from_unix_timestamp(1_700_000_000).unwrap(),
         };
-        let filtered = vec![entry];
+        let stored = [entry, other_entry];
         let mut tdp = TestDataProvider::new();
         tdp.user_globals()
             .expect_list_for_user()
-            .returning(move |_, _| Ok(filtered.clone()));
+            .returning(move |broadcaster_id, user_id| {
+                Ok(stored
+                    .iter()
+                    .filter(|e| e.broadcaster_id == broadcaster_id && e.user_id == user_id)
+                    .cloned()
+                    .collect())
+            });
         let dp: Arc<dyn DataProvider> = Arc::new(tdp);
         let ctx = make_ctx_with_dp(false, dp);
         let req = WsEnvelope {

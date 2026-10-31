@@ -584,7 +584,29 @@ pub(crate) fn form_buttons<V: 'static>(
 
 #[cfg(test)]
 mod tests {
-    use super::endpoint_host_is_valid;
+    use super::{endpoint_host_is_valid, read_endpoint};
+
+    #[test]
+    fn read_endpoint_fills_blank_fields_and_refuses_ports_outside_the_u16_range() {
+        const DEFAULT_PORT: u16 = 4455;
+        for (host, port, expected_host, expected_port) in [
+            ("", "", "fallback.lan", Some(DEFAULT_PORT)),
+            ("   ", "  ", "fallback.lan", Some(DEFAULT_PORT)),
+            (" studio.lan ", " 8001 ", "studio.lan", Some(8001)),
+            ("studio.lan", "1", "studio.lan", Some(1)),
+            ("studio.lan", "65535", "studio.lan", Some(u16::MAX)),
+            ("studio.lan", "0", "studio.lan", None),
+            ("studio.lan", "65536", "studio.lan", None),
+            ("studio.lan", "-1", "studio.lan", None),
+            ("studio.lan", "80a", "studio.lan", None),
+        ] {
+            assert_eq!(
+                read_endpoint(host, port, "fallback.lan", DEFAULT_PORT),
+                (expected_host.to_owned(), expected_port),
+                "{host:?} {port:?}"
+            );
+        }
+    }
 
     #[test]
     fn endpoint_host_accepts_names_and_addresses_and_refuses_urls_and_stray_characters() {

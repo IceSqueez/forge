@@ -2,7 +2,7 @@
 
 use std::io::Write as _;
 
-use forge_audio::decode_file;
+use forge_audio::{AudioError, decode_file};
 
 fn write_wav_bytes(sample_rate: u32, channels: u16, samples: &[i16]) -> Vec<u8> {
     let bits_per_sample: u16 = 16;
@@ -97,13 +97,16 @@ fn decode_44100_stereo_500ms_has_correct_metadata() {
 #[test]
 fn decode_missing_file_returns_io_error() {
     let result = decode_file(std::path::Path::new("/nonexistent_forge_test/audio.wav"));
-    assert!(result.is_err(), "decode of missing file must return Err");
+    assert!(matches!(result, Err(AudioError::Io(_))), "got {result:?}");
 }
 
 #[test]
-fn decode_empty_wav_data_returns_decode_error() {
+fn decode_of_a_file_that_is_not_audio_returns_decode_error() {
     let tmp = tempfile::Builder::new().suffix(".wav").tempfile().unwrap();
     std::fs::write(tmp.path(), b"not a wav file at all").unwrap();
     let result = decode_file(tmp.path());
-    assert!(result.is_err(), "decode of corrupt data must return Err");
+    assert!(
+        matches!(result, Err(AudioError::Decode(_))),
+        "got {result:?}"
+    );
 }

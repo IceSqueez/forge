@@ -141,3 +141,47 @@ impl SubActionRunner for EditMessageRunner {
         (timer.finish(step_failure::outcome(&edited)), None)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use forge_types::Variant;
+
+    use super::*;
+
+    const SNOWFLAKE: &str = "123456789012345678";
+
+    fn edit(content: &str, embed_title: &str) -> Result<MessageEdit, ConfigProblem> {
+        let config: SubActionConfig = [
+            (config_keys::WEBHOOK_NAME, "alerts"),
+            (config_keys::MESSAGE_ID, SNOWFLAKE),
+            (config_keys::CONTENT, content),
+            (config_keys::EMBED_TITLE, embed_title),
+        ]
+        .iter()
+        .map(|(key, value)| ((*key).to_owned(), Variant::String((*value).to_owned())))
+        .collect();
+        read_config(&config, &ArgStack::new())
+    }
+
+    #[test]
+    fn an_edit_with_neither_content_nor_embed_title_is_refused() {
+        for (content, embed_title) in [("", ""), ("  ", "\n")] {
+            let refused = edit(content, embed_title).err().expect("nothing to edit");
+            assert!(matches!(refused.reason, ConfigReason::AnyOfRequired(_)));
+        }
+    }
+
+    #[test]
+    fn an_edit_carries_only_the_parts_it_was_given() {
+        let text_only = edit("new text", "").expect("content alone is an edit");
+        assert_eq!(text_only.content.as_deref(), Some("new text"));
+        assert_eq!(text_only.embed, None);
+
+        let embed_only = edit("", "New title").expect("an embed title alone is an edit");
+        assert_eq!(embed_only.content, None);
+        assert_eq!(
+            embed_only.embed.and_then(|embed| embed.title).as_deref(),
+            Some("New title")
+        );
+    }
+}

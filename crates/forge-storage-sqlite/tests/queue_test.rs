@@ -124,7 +124,7 @@ async fn list_returns_all_queues_including_default() {
         .await
         .expect("save q2");
     let all = backend.queue_repo().list().await.expect("list");
-    assert!(all.len() >= 3);
+    assert_eq!(all.len(), 3);
     assert!(all.iter().any(|q| q.name == "q1"));
     assert!(all.iter().any(|q| q.name == "q2"));
     assert!(all.iter().any(|q| q.name == "Default"));

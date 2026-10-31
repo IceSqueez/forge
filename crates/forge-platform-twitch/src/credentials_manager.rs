@@ -454,11 +454,13 @@ pub(crate) mod tests {
     fn token_refresh_failure_never_logs_the_endpoint_response_body() {
         for status in [400, 503] {
             let (err, lines) = failing_refresh(status);
-            if let PlatformError::Http { body, .. } = &err {
-                assert!(
+            match (status, &err) {
+                (400, PlatformError::ReauthRequired { .. }) => {}
+                (503, PlatformError::Http { body, .. }) => assert!(
                     body.contains(BODY_SENTINEL),
                     "fixture must reproduce the leak vector: the error itself carries the body"
-                );
+                ),
+                _ => panic!("HTTP {status} surfaced the wrong error shape: {err:?}"),
             }
 
             let forge_lines = forge_test_support::log_capture::forge_lines(&lines);

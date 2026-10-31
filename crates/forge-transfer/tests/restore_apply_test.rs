@@ -400,7 +400,12 @@ fn crash_after_the_rollback_staging_sweep_still_settles_the_restore() {
     let outcome = apply_pending_restore(data.path());
 
     assert!(
-        matches!(outcome, Ok(RestoreOutcome::RolledBack { .. })),
+        matches!(
+            outcome,
+            Ok(RestoreOutcome::RolledBack {
+                reason: RestoreRollback::Failed { .. }
+            })
+        ),
         "{outcome:?}"
     );
 }
@@ -763,7 +768,12 @@ fn rollback_of_a_category_scoped_restore_returns_only_the_listed_entries() {
     let outcome = data.apply();
 
     assert!(
-        matches!(outcome, RestoreOutcome::RolledBack { .. }),
+        matches!(
+            &outcome,
+            RestoreOutcome::RolledBack {
+                reason: RestoreRollback::Failed { error }
+            } if error.contains("in the way")
+        ),
         "{outcome:?}"
     );
     assert_eq!(data.tree(), original_tree(true));

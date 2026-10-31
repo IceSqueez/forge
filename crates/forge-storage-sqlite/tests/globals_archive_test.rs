@@ -83,6 +83,12 @@ async fn archive_hides_global_across_read_surface_and_lists_it_in_archived() {
             .all(|e| e.name != "secret"),
         "list() must exclude the archived global"
     );
+    let archived = repo.list_archived().await.expect("list_archived");
+    assert_eq!(
+        archived.iter().map(|e| e.name.as_str()).collect::<Vec<_>>(),
+        vec!["secret"],
+        "list_archived() holds exactly the archived global"
+    );
 }
 
 #[tokio::test]

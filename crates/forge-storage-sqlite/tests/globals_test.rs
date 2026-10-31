@@ -140,13 +140,25 @@ async fn last_save_at_none_when_no_persisted_globals() {
 }
 
 #[tokio::test]
-async fn last_save_at_some_when_persisted_global_exists() {
+async fn last_save_at_reports_the_instant_of_the_persisted_write() {
     let repo = setup().await;
+    let one_ms = time::Duration::milliseconds(1);
+    let before = time::OffsetDateTime::now_utc() - one_ms;
     repo.set("persisted_key", Variant::Int(42), true)
         .await
         .expect("set");
-    let ts = repo.last_save_at().await.expect("last_save_at");
-    assert!(ts.is_some(), "persisted global must produce a timestamp");
+    let after = time::OffsetDateTime::now_utc() + one_ms;
+
+    let saved_at = repo
+        .last_save_at()
+        .await
+        .expect("last_save_at")
+        .expect("a persisted global produces a timestamp");
+
+    assert!(
+        (before..=after).contains(&saved_at),
+        "{saved_at} is outside {before}..={after}"
+    );
 }
 
 #[tokio::test]

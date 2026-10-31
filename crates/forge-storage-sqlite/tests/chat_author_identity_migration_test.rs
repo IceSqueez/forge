@@ -139,7 +139,11 @@ async fn a_second_alias_row_for_the_same_viewer_is_rejected_after_migration() {
     .execute(&db.pool)
     .await;
 
-    assert!(duplicate.is_err());
+    let is_unique_violation = matches!(
+        duplicate,
+        Err(sqlx::Error::Database(ref error)) if error.is_unique_violation()
+    );
+    assert!(is_unique_violation, "got {duplicate:?}");
 }
 
 #[tokio::test]

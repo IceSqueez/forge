@@ -631,3 +631,22 @@ impl RenderOnce for ChatRowView {
         }
     }
 }
+
+#[cfg(test)]
+mod reply_snippet_tests {
+    use super::{REPLY_SNIPPET_MAX, reply_snippet};
+
+    #[test]
+    fn a_reply_snippet_is_one_trimmed_line() {
+        assert_eq!(reply_snippet("  first\r\nsecond\n"), "first  second");
+    }
+
+    #[test]
+    fn a_reply_snippet_is_cut_on_characters_with_an_ellipsis_only_past_the_limit() {
+        let at_limit = "я".repeat(REPLY_SNIPPET_MAX);
+        let past_limit = "я".repeat(REPLY_SNIPPET_MAX + 1);
+
+        assert_eq!(reply_snippet(&at_limit), at_limit);
+        assert_eq!(reply_snippet(&past_limit), format!("{at_limit}\u{2026}"));
+    }
+}

@@ -204,8 +204,11 @@ mod tests {
             .await;
 
         assert_eq!(telemetry.outcome, SubActionOutcome::Success);
-        let body = server.received_requests().await.unwrap();
-        assert_eq!(body.len(), 1);
+        let requests = server.received_requests().await.unwrap();
+        assert_eq!(requests.len(), 1);
+        let body: serde_json::Value = serde_json::from_slice(&requests[0].body).unwrap();
+        assert_eq!(body["title"], "Hydrate");
+        assert_eq!(body["cost"], 500);
     }
 
     async fn created_with_response(body: ResponseTemplate) -> Option<ArgStack> {

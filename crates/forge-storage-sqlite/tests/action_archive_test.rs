@@ -75,7 +75,7 @@ async fn restore_transitions_archived_to_live_and_is_false_otherwise() {
 }
 
 #[tokio::test]
-async fn archive_hides_action_from_list_get_and_by_group_and_lists_it_in_archived() {
+async fn archive_hides_action_from_list_and_get_and_lists_it_in_archived() {
     let backend = setup().await;
     let queue_id = default_queue_id(&backend).await;
     let repo = backend.action_repo();
@@ -89,6 +89,12 @@ async fn archive_hides_action_from_list_get_and_by_group_and_lists_it_in_archive
     assert!(
         repo.list().await.expect("list").iter().all(|a| a.id != id),
         "list() excludes archived action"
+    );
+    let archived = repo.list_archived().await.expect("list_archived");
+    assert_eq!(
+        archived.iter().map(|a| a.id).collect::<Vec<_>>(),
+        vec![id],
+        "list_archived() holds exactly the archived action"
     );
 }
 

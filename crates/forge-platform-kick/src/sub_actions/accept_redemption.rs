@@ -140,6 +140,7 @@ mod tests {
             .await;
 
         assert_eq!(telemetry.outcome, SubActionOutcome::Success);
+        assert_eq!(last_body(&server).await["ids"], serde_json::json!(["rd_7"]));
     }
 
     #[tokio::test]

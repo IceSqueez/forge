@@ -110,5 +110,5 @@ async fn sub_actions_json_survives_roundtrip() {
     let id = action.id;
     backend.action_repo().save(&action).await.expect("save");
     let got = backend.action_repo().get(id).await.expect("get").unwrap();
-    assert_eq!(got.sub_actions.len(), 1);
+    assert_eq!(got.sub_actions, action.sub_actions);
 }

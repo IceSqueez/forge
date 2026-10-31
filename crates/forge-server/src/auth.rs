@@ -194,7 +194,9 @@ mod tests {
 
     use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 
-    use super::{AuthState, TOKEN_BYTE_LEN, TOKEN_PREFIX, generate_token, masked_token};
+    use super::{
+        AuthState, ServerError, TOKEN_BYTE_LEN, TOKEN_PREFIX, generate_token, masked_token,
+    };
     use crate::test_helpers::MemCreds;
 
     const FIRST_TOKEN: &str = "fg_first-token";
@@ -305,7 +307,13 @@ mod tests {
 
         let result = AuthState::load(false, &creds).await;
 
-        assert!(result.is_err());
+        assert!(
+            matches!(
+                result,
+                Err(ServerError::Storage(StorageError::Connection { .. }))
+            ),
+            "the storage failure must surface as itself"
+        );
     }
 
     #[tokio::test]

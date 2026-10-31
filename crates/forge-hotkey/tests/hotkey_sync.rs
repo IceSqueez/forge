@@ -10,8 +10,8 @@ use forge_hotkey::ClipBindingsSource as _;
 use forge_hotkey::testing::{RecordedCall, RecordingBackend};
 use forge_hotkey::vocabulary::event_kinds;
 use forge_hotkey::{
-    CLIP_COMBO_FIELD, HotkeyClient, HotkeyCombo, HotkeyReconciler, HotkeySyncedClipsRepo,
-    HotkeySyncedTriggerRepo,
+    CLIP_COMBO_FIELD, COMBO_FIELD, HotkeyClient, HotkeyCombo, HotkeyReconciler,
+    HotkeySyncedClipsRepo, HotkeySyncedTriggerRepo,
 };
 use forge_storage::MockSoundboardClipsRepo;
 use forge_storage::{
@@ -284,14 +284,11 @@ async fn applying_changes_stores_combos_canonically_and_registers_them() {
 
 #[tokio::test]
 async fn a_refused_write_leaves_the_client_registrations_untouched() {
-    let unparseable = instance(event_kinds::GLOBAL_PRESSED, Some("Ctrl+XYZ"));
     let valid = instance(event_kinds::GLOBAL_PRESSED, Some("F9"));
     let failure = || StorageError::Connection {
         reason: "disk gone".to_owned(),
     };
     for write in [
-        "invalid combo",
-        "invalid combo in a batch",
         "save",
         "batch",
         "delete",
@@ -328,8 +325,6 @@ async fn a_refused_write_leaves_the_client_registrations_untouched() {
             ..TriggerChanges::default()
         };
         let outcome = match write {
-            "invalid combo" => repo.save(&unparseable).await.map(|_| ()),
-            "invalid combo in a batch" => repo.apply_changes(&batch_of(&unparseable)).await,
             "save" => repo.save(&valid).await.map(|_| ()),
             "batch" => repo.apply_changes(&batch_of(&valid)).await,
             "set enabled" => repo.set_enabled(valid.id, false).await,
@@ -340,6 +335,31 @@ async fn a_refused_write_leaves_the_client_registrations_untouched() {
 
         assert!(outcome.is_err(), "{write} must report the failure");
         assert!(backend.calls().is_empty(), "{write} touched the client");
+    }
+}
+
+#[tokio::test]
+async fn an_unparseable_combo_is_refused_before_it_reaches_storage_or_the_client() {
+    let unparseable = instance(event_kinds::GLOBAL_PRESSED, Some("Ctrl+XYZ"));
+    for in_a_batch in [false, true] {
+        let synced = synced().await;
+
+        let outcome = if in_a_batch {
+            let changes = TriggerChanges {
+                saved: vec![unparseable.clone()],
+                ..TriggerChanges::default()
+            };
+            synced.repo.apply_changes(&changes).await
+        } else {
+            synced.repo.save(&unparseable).await.map(|_| ())
+        };
+
+        assert!(
+            matches!(outcome, Err(StorageError::ValidationFailed { ref field, .. }) if field == COMBO_FIELD),
+            "got {outcome:?}"
+        );
+        assert!(synced.stored.get(unparseable.id).await.unwrap().is_none());
+        assert!(synced.backend.calls().is_empty());
     }
 }
 

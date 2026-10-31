@@ -136,6 +136,9 @@ mod tests {
         let (telemetry, _) = runner.execute(&config("%uid%"), &make_ctx(&stack)).await;
 
         assert_eq!(telemetry.outcome, SubActionOutcome::Success);
+        let requests = server.received_requests().await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&requests[0].body).unwrap();
+        assert_eq!(body["user_id"], 777);
     }
 
     #[tokio::test]

@@ -535,6 +535,50 @@ mod tests {
     }
 
     #[test]
+    fn fmt_clock_pads_below_the_leading_unit_and_shows_hours_only_from_one_hour() {
+        for (secs, expected) in [
+            (0, "0:00"),
+            (9, "0:09"),
+            (59, "0:59"),
+            (60, "1:00"),
+            (3_599, "59:59"),
+            (3_600, "1:00:00"),
+            (3_661, "1:01:01"),
+            (360_000, "100:00:00"),
+        ] {
+            assert_eq!(fmt_clock(secs), expected, "{secs}");
+        }
+    }
+
+    #[test]
+    fn relative_within_week_picks_the_unit_at_each_boundary_and_stops_at_seven_days() {
+        install_source(
+            "fmt_relative_seconds = { $count }s\n\
+             fmt_relative_minutes = { $count }m\n\
+             fmt_relative_hours = { $count }h\n\
+             fmt_relative_days = { $count }d\n",
+        );
+        for (secs, expected) in [
+            (-5, Some("0s")),
+            (0, Some("0s")),
+            (59, Some("59s")),
+            (60, Some("1m")),
+            (3_599, Some("59m")),
+            (3_600, Some("1h")),
+            (86_399, Some("23h")),
+            (86_400, Some("1d")),
+            (7 * 86_400 - 1, Some("6d")),
+            (7 * 86_400, None),
+        ] {
+            assert_eq!(
+                relative_within_week(time::Duration::seconds(secs)).as_deref(),
+                expected,
+                "{secs}"
+            );
+        }
+    }
+
+    #[test]
     fn tr_find_matches_verbatim_so_a_dotted_id_resolves_only_through_ftl_id() {
         install_source("nav_home = Home\n");
         assert_eq!(

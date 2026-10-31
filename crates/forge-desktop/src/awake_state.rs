@@ -71,3 +71,98 @@ impl AwakeState {
         Some(AwakeIndicator { tone, details })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use forge_types::UPSTREAM_FAILURE;
+
+    use super::*;
+
+    fn status(enabled: bool, display: AspectState, system: AspectState) -> AwakeStatus {
+        AwakeStatus {
+            enabled,
+            display,
+            system,
+        }
+    }
+
+    fn refused() -> AspectState {
+        AspectState::Unavailable {
+            reason: MessageRef::new(UPSTREAM_FAILURE),
+        }
+    }
+
+    fn indicator_of(status: AwakeStatus) -> Option<AwakeIndicator> {
+        let mut state = AwakeState::default();
+        state.apply(status);
+        state.indicator()
+    }
+
+    #[test]
+    fn apply_reports_a_change_only_when_the_status_differs() {
+        let mut state = AwakeState::default();
+        let held = status(true, AspectState::Held, AspectState::Held);
+
+        assert!(state.apply(held.clone()));
+        assert!(!state.apply(held));
+        assert!(state.apply(status(false, AspectState::Off, AspectState::Off)));
+    }
+
+    #[test]
+    fn no_indicator_shows_before_a_status_arrives_or_while_switched_off() {
+        assert_eq!(AwakeState::default().indicator(), None);
+        assert_eq!(
+            indicator_of(status(false, AspectState::Held, AspectState::Held)),
+            None
+        );
+    }
+
+    #[test]
+    fn a_refused_aspect_turns_the_indicator_to_a_warning_and_adds_one_detail_per_refusal() {
+        for (display, system, tone, detail_count) in [
+            (AspectState::Held, AspectState::Held, AwakeTone::Normal, 1),
+            (
+                AspectState::Pending,
+                AspectState::Pending,
+                AwakeTone::Normal,
+                1,
+            ),
+            (AspectState::Held, refused(), AwakeTone::Warning, 2),
+            (refused(), refused(), AwakeTone::Warning, 3),
+        ] {
+            let indicator = indicator_of(status(true, display, system)).expect("enabled");
+            assert_eq!(indicator.tone, tone);
+            assert_eq!(indicator.details.len(), detail_count);
+        }
+    }
+
+    #[test]
+    fn the_headline_names_exactly_the_aspects_being_held() {
+        for (display, system, key) in [
+            (
+                AspectState::Held,
+                AspectState::Held,
+                "stay_awake_tooltip_both",
+            ),
+            (
+                AspectState::Held,
+                AspectState::Pending,
+                "stay_awake_tooltip_display_only",
+            ),
+            (
+                AspectState::Pending,
+                AspectState::Held,
+                "stay_awake_tooltip_system_only",
+            ),
+            (
+                AspectState::Pending,
+                AspectState::Pending,
+                "stay_awake_tooltip_starting",
+            ),
+            (refused(), refused(), "stay_awake_tooltip_inactive"),
+        ] {
+            let indicator = indicator_of(status(true, display, system)).expect("enabled");
+            assert_eq!(indicator.details[0], tr!(key));
+        }
+    }
+}

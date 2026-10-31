@@ -403,6 +403,10 @@ async fn instance_with_no_bound_actions_succeeds_and_dispatches_nothing() {
     );
 
     assert!(
+        h.globals.get("barrier_ran").await.unwrap().is_some(),
+        "the barrier's own write proves the step that would expose the trap works"
+    );
+    assert!(
         h.globals.get("trap_ran").await.unwrap().is_none(),
         "firing an instance with no bound actions must dispatch nothing"
     );

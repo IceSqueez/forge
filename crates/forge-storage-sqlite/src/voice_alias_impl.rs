@@ -315,7 +315,8 @@ mod tests {
         };
         repo.set_ignore_profile(&profile).await.expect("set");
         let back = repo.get_ignore_profile().await.expect("get");
-        assert_eq!(back.excluded_locales, vec!["de-DE".to_string()]);
+        assert_eq!(back.excluded_voice_ids, profile.excluded_voice_ids);
+        assert_eq!(back.excluded_locales, profile.excluded_locales);
     }
 
     #[tokio::test]

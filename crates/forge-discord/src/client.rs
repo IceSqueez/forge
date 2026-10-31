@@ -874,6 +874,48 @@ pub(crate) mod tests {
         assert_eq!(ev.payload["embed_count"], 0);
     }
 
+    #[test]
+    fn a_full_embed_reaches_the_wire_with_the_field_shapes_discord_reads() {
+        let embed = DiscordEmbed {
+            title: Some("Title".to_owned()),
+            description: Some("Body".to_owned()),
+            color: Some(0x00_11_22),
+            fields: vec![DiscordEmbedField {
+                name: "Name".to_owned(),
+                value: "Value".to_owned(),
+                inline: true,
+            }],
+            thumbnail_url: Some("https://t.example/thumb.png".to_owned()),
+            image_url: Some("https://t.example/image.png".to_owned()),
+            footer_text: Some("Footer".to_owned()),
+            author_name: Some("Author".to_owned()),
+            timestamp: Some(time::OffsetDateTime::from_unix_timestamp(1793449805).unwrap()),
+        };
+
+        assert_eq!(
+            embed_to_wire(&embed),
+            serde_json::json!({
+                "title": "Title",
+                "description": "Body",
+                "color": 0x00_11_22,
+                "fields": [{ "name": "Name", "value": "Value", "inline": true }],
+                "thumbnail": { "url": "https://t.example/thumb.png" },
+                "image": { "url": "https://t.example/image.png" },
+                "footer": { "text": "Footer" },
+                "author": { "name": "Author" },
+                "timestamp": "2026-10-31T12:30:05Z",
+            })
+        );
+    }
+
+    #[test]
+    fn an_empty_embed_puts_no_keys_on_the_wire() {
+        assert_eq!(
+            embed_to_wire(&DiscordEmbed::default()),
+            serde_json::json!({})
+        );
+    }
+
     #[tokio::test]
     async fn post_embed_returns_message_id_with_embed_count_one() {
         let server = MockServer::start().await;
@@ -1423,6 +1465,7 @@ pub(crate) mod tests {
             .edit_message("alerts", MESSAGE_ID, Some("updated"), None)
             .await;
         assert!(result.is_ok(), "{result:?}");
+        assert_eq!(request_bodies(&server).await[0]["content"], "updated");
     }
 
     #[tokio::test]

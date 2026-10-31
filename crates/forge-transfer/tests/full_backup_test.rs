@@ -897,9 +897,13 @@ async fn adoptable_legacy_database_is_staged() {
             None,
             schema_state(StoredSchema::AdoptableLegacy { version: 46 }, false),
         )
-        .await;
+        .await
+        .expect("an adoptable database stages");
 
-    assert!(staged.is_ok());
+    assert_eq!(
+        files_under(&staged.payload_dir()).get(DATABASE_FILE_NAME),
+        Some(&DB_BYTES.to_vec())
+    );
 }
 
 #[tokio::test]

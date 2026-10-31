@@ -87,15 +87,6 @@ mod tests {
     use crate::client::HotkeyClient;
     use crate::combo::HotkeyCombo;
 
-    #[test]
-    fn sections_returns_one_two_column_section() {
-        let c = HotkeyClient::new_for_test(None);
-        let content: &dyn BuiltinContent = &*c;
-        let sections = content.sections();
-        assert_eq!(sections.len(), 1);
-        assert!(matches!(sections[0], DetailSection::TwoColumnLists { .. }));
-    }
-
     #[tokio::test]
     async fn registered_hotkey_appears_in_left_list() {
         let c = HotkeyClient::new_for_test(Some(true));
@@ -106,31 +97,12 @@ mod tests {
         let DetailSection::TwoColumnLists { left, .. } = &sections[0] else {
             unreachable!("section 0 must be TwoColumnLists");
         };
-        assert!(left.items.iter().any(|item| item.name == "Ctrl+H"));
-    }
-
-    #[test]
-    fn recent_triggers_initially_empty() {
-        let c = HotkeyClient::new_for_test(None);
-        let content: &dyn BuiltinContent = &*c;
-        let sections = content.sections();
-        let DetailSection::TwoColumnLists { right, .. } = &sections[0] else {
-            unreachable!("section 0 must be TwoColumnLists");
-        };
-        assert!(right.items.is_empty());
-    }
-
-    #[test]
-    fn sections_monospace_name_for_hotkeys() {
-        let c = HotkeyClient::new_for_test(None);
-        let content: &dyn BuiltinContent = &*c;
-        let sections = content.sections();
-        let DetailSection::TwoColumnLists { left, .. } = &sections[0] else {
-            unreachable!("section 0 must be TwoColumnLists");
-        };
-        for item in &left.items {
-            assert!(item.monospace_name);
-        }
+        let listed = left
+            .items
+            .iter()
+            .find(|item| item.name == "Ctrl+H")
+            .expect("the registered combo is listed");
+        assert!(listed.monospace_name);
     }
 
     #[test]

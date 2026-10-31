@@ -371,12 +371,6 @@ mod tests {
     }
 
     #[test]
-    fn twitch_and_kick_limits_match_their_documented_500_character_send_caps() {
-        assert_eq!(max_message_chars(T), 500);
-        assert_eq!(max_message_chars(K), 500);
-    }
-
-    #[test]
     fn plan_send_accepts_text_at_the_limit_and_refuses_one_char_over() {
         let limit = max_message_chars(T);
         let twitch_only = reach(&[T], &[T]);

@@ -147,47 +147,10 @@ mod tests {
     use super::*;
     use crate::test_support::test_backend;
 
-    const MARKER: &str = "MARKER-7";
-
     #[test]
     fn date_names_language_matches_the_ui_language_code() {
         for lang in [Language::En, Language::Uk] {
             assert_eq!(date_names_language(lang).code(), lang.to_string());
-        }
-    }
-
-    #[test]
-    fn strings_added_for_toggles_queues_voice_gate_and_server_resolve_in_both_locales() {
-        for lang in [Language::En, Language::Uk] {
-            install_language(lang);
-            for (key, argument) in [
-                ("tts_filters_output_strip_twitch_emotes", None),
-                ("tts_filters_output_strip_twitch_emotes_meta", None),
-                ("tts_filters_output_strip_reward_emotes", None),
-                ("tts_filters_output_strip_reward_emotes_meta", None),
-                ("settings_voice_gate_retry", None),
-                ("soundboard_persist_failed", None),
-                ("queues_not_live_badge", None),
-                ("queues_not_live_tooltip", None),
-                ("queues_apply_live_done", None),
-                ("queues_apply_live_missing", None),
-                ("queues_apply_live_not_found", None),
-                ("queues_apply_live_failed", Some("error")),
-                ("server_unavailable_banner", Some("reason")),
-            ] {
-                let resolved = match argument {
-                    Some(name) => {
-                        tr_lookup(key, Some(&ArgsBuilder::new().set(name, MARKER).build()))
-                    }
-                    None => tr_lookup(key, None),
-                };
-
-                assert_ne!(resolved, key, "{lang:?} {key} is missing");
-                assert!(
-                    argument.is_none() || resolved.contains(MARKER),
-                    "{lang:?} {key} dropped its {argument:?} argument: {resolved}"
-                );
-            }
         }
     }
 

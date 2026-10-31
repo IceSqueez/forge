@@ -229,10 +229,10 @@ mod tests {
     #[test]
     fn min_amount_cents_filter_compares_at_and_around_boundary() {
         for (min, expected) in [
-            (config_min(0), true),        // floor accepts any amount
-            (config_min(500), true),      // boundary: equal passes (>=)
-            (config_min(501), false),     // one over boundary rejects
-            (TriggerConfig::new(), true), // missing config falls back to 0
+            (config_min(0), true),
+            (config_min(500), true),
+            (config_min(501), false),
+            (TriggerConfig::new(), true),
         ] {
             assert_eq!(
                 CharityDonationDescriptor.matches_trigger(&min, &donation_event(500)),

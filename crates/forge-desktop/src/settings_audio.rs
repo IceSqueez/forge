@@ -493,3 +493,33 @@ pub(crate) fn test_tone() -> PcmBuffer {
 async fn play_test_tone(sink: Arc<DeviceSink>) -> Result<(), RepoFailure> {
     sink.play(test_tone()).await.map_err(RepoFailure::from)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn row(id: &str, is_default: bool) -> DeviceRow {
+        DeviceRow {
+            id: id.to_owned(),
+            name: format!("Device {id}"),
+            is_default,
+        }
+    }
+
+    #[test]
+    fn the_selected_row_is_the_wanted_device_then_the_default_then_the_first() {
+        let devices = [row("a", false), row("b", true), row("c", false)];
+        let no_default = [row("a", false), row("c", false)];
+        let cases: [(&[DeviceRow], Option<&str>, usize); 5] = [
+            (&devices, Some("c"), 2),
+            (&devices, Some("unplugged"), 1),
+            (&devices, None, 1),
+            (&no_default, None, 0),
+            (&[], Some("a"), 0),
+        ];
+
+        for (rows, wanted, expected) in cases {
+            assert_eq!(resolve_selected_idx(rows, wanted), expected, "{wanted:?}");
+        }
+    }
+}

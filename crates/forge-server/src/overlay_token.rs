@@ -208,7 +208,10 @@ mod tests {
         });
         creds.expect_store().times(0);
 
-        assert!(OverlayTokenState::load(&creds).await.is_err());
+        assert!(matches!(
+            OverlayTokenState::load(&creds).await,
+            Err(ServerError::Storage(StorageError::Connection { .. }))
+        ));
     }
 
     #[test]

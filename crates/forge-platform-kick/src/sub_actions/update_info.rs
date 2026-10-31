@@ -212,6 +212,9 @@ mod tests {
             .await;
 
         assert_eq!(telemetry.outcome, SubActionOutcome::Success);
+        let requests = server.received_requests().await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&requests[0].body).unwrap();
+        assert_eq!(body["stream_title"], "Live Rust");
     }
 
     #[tokio::test]

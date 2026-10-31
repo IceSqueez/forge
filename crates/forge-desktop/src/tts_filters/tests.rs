@@ -1183,3 +1183,119 @@ fn parse_max_duration_rejects_out_of_range_and_non_integer_input() {
         );
     }
 }
+
+fn blocklist_words(view: &Entity<TtsFiltersView>, cx: &mut TestAppContext) -> Vec<Vec<String>> {
+    view.read_with(cx, |v, _| {
+        v.shown()
+            .rules
+            .iter()
+            .filter_map(|rule| match &rule.kind {
+                FilterRuleKind::Blocklist { words, .. } => Some(words.clone()),
+                _ => None,
+            })
+            .collect()
+    })
+}
+
+#[gpui::test]
+fn removing_a_blocklist_word_keeps_the_rule_until_its_last_word_goes(cx: &mut TestAppContext) {
+    install_presentation(cx);
+    let rt = runtime();
+    let mut rules = stored_rules();
+    rules[0].kind = blocked(&["gtfo", "noob"]);
+    let view = view_over(&RecordingFilters::storing(rules), &rt, cx);
+
+    view.update(cx, |v, cx| v.remove_blocklist_word(0, 0, cx));
+    settle(&rt, cx);
+    assert_eq!(blocklist_words(&view, cx), vec![vec!["noob".to_owned()]]);
+
+    view.update(cx, |v, cx| v.remove_blocklist_word(0, 7, cx));
+    settle(&rt, cx);
+    assert_eq!(blocklist_words(&view, cx), vec![vec!["noob".to_owned()]]);
+
+    view.update(cx, |v, cx| v.remove_blocklist_word(0, 0, cx));
+    settle(&rt, cx);
+    let (words, remaining) = view.read_with(cx, |v, _| {
+        let remaining: Vec<(String, u32)> = v
+            .shown()
+            .rules
+            .iter()
+            .map(|rule| (rule.id.clone(), rule.position))
+            .collect();
+        (v.shown().rules.len(), remaining)
+    });
+    assert_eq!(words, 1);
+    assert_eq!(remaining, vec![("thanks".to_owned(), 0)]);
+}
+
+#[gpui::test]
+fn adding_blocklist_words_merges_case_insensitively_and_moves_the_rule_to_the_new_mode(
+    cx: &mut TestAppContext,
+) {
+    install_presentation(cx);
+    let rt = runtime();
+    let view = view_over(&RecordingFilters::storing(stored_rules()), &rt, cx);
+
+    let accepted = view.update(cx, |v, cx| {
+        v.apply_blocklist_words(
+            vec!["GTFO".to_owned(), "noob".to_owned(), "NOOB".to_owned()],
+            BlocklistMode::Suppress,
+            cx,
+        )
+    });
+    settle(&rt, cx);
+
+    assert!(accepted);
+    assert_eq!(
+        blocklist_words(&view, cx),
+        vec![vec!["gtfo".to_owned(), "noob".to_owned()]]
+    );
+    let (settings_mode, rule_mode) = view.read_with(cx, |v, _| {
+        let rule_mode = v.shown().rules.iter().find_map(|rule| match rule.kind {
+            FilterRuleKind::Blocklist { mode, .. } => Some(mode),
+            _ => None,
+        });
+        (v.shown().settings.blocklist_mode, rule_mode)
+    });
+    assert_eq!(settings_mode, BlocklistMode::Suppress);
+    assert_eq!(rule_mode, Some(BlocklistMode::Suppress));
+}
+
+#[gpui::test]
+fn adding_no_blocklist_words_changes_nothing(cx: &mut TestAppContext) {
+    install_presentation(cx);
+    let rt = runtime();
+    let repo = RecordingFilters::storing(stored_rules());
+    let view = view_over(&repo, &rt, cx);
+
+    let accepted = view.update(cx, |v, cx| {
+        v.apply_blocklist_words(Vec::new(), BlocklistMode::Suppress, cx)
+    });
+    settle(&rt, cx);
+
+    assert!(!accepted);
+    assert_eq!(repo.writes(), 0);
+}
+
+#[gpui::test]
+fn the_first_blocklist_word_creates_a_rule_after_the_existing_ones(cx: &mut TestAppContext) {
+    install_presentation(cx);
+    let rt = runtime();
+    let rules = vec![stored_rules().remove(1)];
+    let view = view_over(&RecordingFilters::storing(rules), &rt, cx);
+
+    view.update(cx, |v, cx| {
+        v.apply_blocklist_words(vec!["gtfo".to_owned()], BlocklistMode::Suppress, cx)
+    });
+    settle(&rt, cx);
+
+    let positions = view.read_with(cx, |v, _| {
+        v.shown()
+            .rules
+            .iter()
+            .map(|rule| rule.position)
+            .collect::<Vec<_>>()
+    });
+    assert_eq!(positions, vec![0, 1]);
+    assert_eq!(blocklist_words(&view, cx), vec![vec!["gtfo".to_owned()]]);
+}

@@ -156,3 +156,68 @@ impl SubActionRunner for PostEmbedRunner {
         (timer.finish(step_failure::outcome(&posted)), produced)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use forge_types::Variant;
+
+    use super::*;
+
+    fn config(entries: &[(&str, &str)]) -> SubActionConfig {
+        entries
+            .iter()
+            .map(|(key, value)| ((*key).to_owned(), Variant::String((*value).to_owned())))
+            .collect()
+    }
+
+    #[test]
+    fn an_embed_needs_a_title_or_a_description_that_is_not_blank() {
+        for (title, description, accepted) in [
+            ("", "", false),
+            ("   ", "\t", false),
+            ("Hydrate", "", true),
+            ("", "Drink water", true),
+        ] {
+            let config = config(&[
+                (config_keys::WEBHOOK_NAME, "alerts"),
+                (config_keys::EMBED_TITLE, title),
+                (config_keys::EMBED_DESCRIPTION, description),
+            ]);
+
+            match read_config(&config, &ArgStack::new()) {
+                Ok(_) => assert!(accepted, "accepted {title:?} / {description:?}"),
+                Err(problem) => {
+                    assert!(!accepted, "refused {title:?} / {description:?}");
+                    assert!(matches!(problem.reason, ConfigReason::AnyOfRequired(_)));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn every_embed_field_interpolates_and_blank_optional_parts_stay_out_of_the_embed() {
+        let args = ArgStack::new().set("who".to_owned(), Variant::String("alice".to_owned()));
+        let config = config(&[
+            (config_keys::WEBHOOK_NAME, "alerts"),
+            (config_keys::EMBED_TITLE, "for %who%"),
+            (config_keys::EMBED_DESCRIPTION, "hi %who%"),
+            (config_keys::EMBED_FOOTER_TEXT, "by %who%"),
+            (config_keys::EMBED_AUTHOR_NAME, "  "),
+            (config_keys::EMBED_THUMBNAIL_URL, "https://t.example/%who%"),
+            (config_keys::EMBED_IMAGE_URL, ""),
+        ]);
+
+        let post = read_config(&config, &args).expect("the embed has content");
+
+        assert_eq!(
+            post.embed,
+            DiscordEmbed {
+                title: Some("for alice".to_owned()),
+                description: Some("hi alice".to_owned()),
+                footer_text: Some("by alice".to_owned()),
+                thumbnail_url: Some("https://t.example/alice".to_owned()),
+                ..Default::default()
+            }
+        );
+    }
+}

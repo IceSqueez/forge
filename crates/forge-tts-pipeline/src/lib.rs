@@ -1019,6 +1019,26 @@ pub use spoken_words::SpokenWords;
 mod tests {
     use super::*;
 
+    #[test]
+    fn a_message_is_emote_only_when_every_word_is_a_known_token_or_a_whole_colon_emote() {
+        let tokens = EmoteTokenSet {
+            tokens: ["Kappa".to_owned()].into_iter().collect(),
+        };
+        for (text, emote_only) in [
+            ("Kappa", true),
+            ("Kappa :smile: :pog_2:", true),
+            ("", false),
+            ("   ", false),
+            ("Kappa hello", false),
+            ("hi:smile:", false),
+            (":smile:hi", false),
+            (":smile", false),
+            ("::", false),
+        ] {
+            assert_eq!(is_emote_only(text, &tokens), emote_only, "{text:?}");
+        }
+    }
+
     fn neutral_output() -> OutputConfig {
         OutputConfig {
             read_display_name_first: false,

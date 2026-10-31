@@ -57,22 +57,28 @@ async fn recent_for_action_returns_empty_for_unknown_action() {
 }
 
 #[tokio::test]
-async fn recent_for_action_respects_limit() {
+async fn recent_for_action_keeps_the_newest_runs_newest_first() {
     let backend = setup().await;
     let action_id = ActionId::new();
-    for _ in 0..5 {
-        backend
-            .history_repo()
-            .save(&make_ctx(action_id, EventId::new()))
-            .await
-            .expect("save");
+    let base = OffsetDateTime::from_unix_timestamp(1_700_000_000).expect("a valid instant");
+    let mut saved = Vec::new();
+    for hour in [2, 0, 4, 1, 3] {
+        let mut ctx = make_ctx(action_id, EventId::new());
+        ctx.started_at = base + time::Duration::hours(hour);
+        backend.history_repo().save(&ctx).await.expect("save");
+        saved.push((hour, ctx.metadata.clone()));
     }
+    saved.sort_by_key(|(hour, _)| std::cmp::Reverse(*hour));
+    let expected: Vec<_> = saved.into_iter().take(3).map(|(_, meta)| meta).collect();
+
     let records = backend
         .history_repo()
         .recent_for_action(action_id, 3)
         .await
         .expect("recent_for_action");
-    assert_eq!(records.len(), 3);
+
+    let kept: Vec<_> = records.into_iter().map(|ctx| ctx.metadata).collect();
+    assert_eq!(kept, expected);
 }
 
 #[tokio::test]

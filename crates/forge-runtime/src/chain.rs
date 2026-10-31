@@ -1121,11 +1121,11 @@ mod tests {
     #[tokio::test]
     async fn condition_verdict_controls_whether_the_step_runs() {
         for (condition, should_run) in [
-            (Some("1 == 1"), true),  // true -> run
-            (Some("1 == 2"), false), // false -> skip
-            (Some(""), true),        // empty -> run
-            (Some("   "), true),     // whitespace-only -> run
-            (None, true),            // absent -> run
+            (Some("1 == 1"), true),
+            (Some("1 == 2"), false),
+            (Some(""), true),
+            (Some("   "), true),
+            (None, true),
         ] {
             let runs = Arc::new(AtomicUsize::new(0));
             let mut r = scripted("g.step", SubActionOutcome::Success);

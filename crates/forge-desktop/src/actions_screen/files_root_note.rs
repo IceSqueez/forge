@@ -8,7 +8,7 @@ use gpui::{AnyElement, App, ClickEvent, Window, div, prelude::*};
 use crate::repo_failure::RepoFailure;
 
 pub(super) fn files_root_note(palette: &ForgePalette, density: Density) -> AnyElement {
-    let root = forge_paths::assets_dir();
+    let root = crate::app_paths::app_paths().assets_dir();
     let caption = div()
         .flex()
         .flex_col()
@@ -56,7 +56,7 @@ pub(super) fn files_root_note(palette: &ForgePalette, density: Density) -> AnyEl
 }
 
 fn open_files_root(cx: &mut App) {
-    let root = forge_paths::assets_dir();
+    let root = crate::app_paths::app_paths().assets_dir();
     if let Err(e) = std::fs::create_dir_all(&root) {
         cx.push_toast(
             ToastKind::Error,

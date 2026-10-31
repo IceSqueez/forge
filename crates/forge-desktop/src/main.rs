@@ -1,6 +1,7 @@
 mod actions;
 mod actions_screen;
 mod amount_scale;
+mod app_paths;
 mod app_shortcut_modal;
 mod async_bridge;
 mod audio_router;
@@ -349,7 +350,7 @@ fn init_tracing() -> (Option<tracing_appender::non_blocking::WorkerGuard>, LogTa
 
     const RETAINED_LOG_FILES: usize = 14;
 
-    let log_dir = forge_paths::data_dir().join(forge_paths::LOGS_DIR_NAME);
+    let log_dir = crate::app_paths::app_paths().logs_dir();
     let appender = std::fs::create_dir_all(&log_dir).ok().and_then(|()| {
         tracing_appender::rolling::Builder::new()
             .rotation(tracing_appender::rolling::Rotation::DAILY)
@@ -440,12 +441,14 @@ struct InstanceClaim {
 }
 
 fn claim_instance() -> Result<InstanceClaim, i32> {
-    let instance_lock = match instance_lock::acquire(&forge_paths::data_dir()) {
+    let instance_lock = match instance_lock::acquire(&crate::app_paths::app_paths().data_dir()) {
         instance_lock::LockOutcome::Acquired(lock) => Some(lock),
         instance_lock::LockOutcome::AlreadyRunning => {
             boot_signal::already_running();
             return Err(
-                match instance_raise::ask_running_instance(&forge_paths::data_dir()) {
+                match instance_raise::ask_running_instance(
+                    &crate::app_paths::app_paths().data_dir(),
+                ) {
                     Ok(()) => EXIT_RAISED_RUNNING_INSTANCE,
                     Err(err) => {
                         tracing::warn!(error = %err, "running instance could not be raised");
@@ -459,14 +462,17 @@ fn claim_instance() -> Result<InstanceClaim, i32> {
             None
         }
     };
-    let restore_outcome =
-        boot_restore::settle_pending_restore(&forge_paths::data_dir(), instance_lock.is_some())
-            .map_err(|err| {
-                tracing::error!(error = %err, "pending restore could not be settled; exiting");
-                EXIT_STARTUP_FAILURE
-            })?;
+    let restore_outcome = boot_restore::settle_pending_restore(
+        &crate::app_paths::app_paths().data_dir(),
+        instance_lock.is_some(),
+    )
+    .map_err(|err| {
+        tracing::error!(error = %err, "pending restore could not be settled; exiting");
+        EXIT_STARTUP_FAILURE
+    })?;
     if instance_lock.is_some()
-        && let Err(err) = forge_transfer::sweep_import_staging(&forge_paths::data_dir())
+        && let Err(err) =
+            forge_transfer::sweep_import_staging(&crate::app_paths::app_paths().data_dir())
     {
         tracing::warn!(error = %err, "leftover import staging could not be removed");
     }
@@ -547,7 +553,7 @@ fn begin_boot(claim: InstanceClaim, launch: MainWindowLaunch, cx: &mut App) {
         .adopt_lock(instance_lock);
     cx.set_global(boot_restore::BootRestore(restore_outcome));
     if holds_lock {
-        match instance_raise::listen(&forge_paths::data_dir()) {
+        match instance_raise::listen(&crate::app_paths::app_paths().data_dir()) {
             Ok(requests) => instance_raise::follow_raise_requests(requests, cx),
             Err(err) => tracing::warn!(error = %err, "raise endpoint unavailable"),
         }
@@ -669,7 +675,7 @@ fn main() {
         update_launch::StartDecision::Boot { deferred_error } => deferred_error,
         update_launch::StartDecision::Exit(code) => std::process::exit(code),
     };
-    crash_hook::install(forge_paths::crashes_dir());
+    crash_hook::install(crate::app_paths::app_paths().crashes_dir());
 
     let initial_screen = match parse_startup_request(lossy_cli_args()) {
         Ok(StartupRequest::Open(screen)) => screen,

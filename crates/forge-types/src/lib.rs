@@ -1,4 +1,5 @@
 mod action;
+mod clock;
 mod data_flow;
 mod date_pattern;
 mod datetime_text;
@@ -27,6 +28,7 @@ pub mod unified_chat;
 mod variant;
 
 pub use action::{Action, ExecutionMode};
+pub use clock::{MonotonicClock, SystemMonotonicClock, SystemWallClock, WallClock};
 pub use data_flow::{DeclaredVariable, SynthesisHint, VariableSchema};
 pub use date_pattern::{
     DatePattern, DatePatternError, DateTextError, LegacyTranslation, NamesLanguage, ParsedPattern,

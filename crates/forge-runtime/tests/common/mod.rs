@@ -13,7 +13,7 @@ use forge_overlay::{OverlayConfig, OverlayKindRegistry, SampleContext, register_
 use forge_registry::SubActionRegistry;
 use forge_runtime::{
     EventBus, FrozenRuntime, LatestValues, NullEventLogRepo, OverlayFrameSink, OverlayReceivers,
-    OverlaySampleSource, RuntimeWiring, RuntimeWiringParts, SystemWallClock, WallClock,
+    OverlaySampleSource, RuntimeWiring, RuntimeWiringParts,
 };
 use forge_storage::{DataProvider, OverlayDefinition, OverlayId};
 use forge_storage_sqlite::SqliteBackend;
@@ -21,6 +21,7 @@ use forge_types::{
     Action, ActionId, ExecutionMode, MessageArg, MessageRef, OverlayCredential, QueueId, Shared,
     SubActionOutcome, SubActionStep, UserText, VerbatimText,
 };
+use forge_types::{SystemWallClock, WallClock};
 use stub_provider::StubProvider;
 use tempfile::TempDir;
 use time::OffsetDateTime;

@@ -851,7 +851,7 @@ pub(crate) mod tests {
             overlay_speech: None,
             overlay_kinds: Arc::new(forge_overlay::OverlayKindRegistry::new()),
             overlay_frames: Arc::new(hub) as Arc<dyn forge_runtime::OverlayFrameSink>,
-            clock: Arc::new(forge_runtime::SystemWallClock),
+            clock: Arc::new(forge_types::SystemWallClock),
         });
         wiring.register_core_sub_actions().unwrap();
         wiring.register_scheduled_run_sub_actions().unwrap();

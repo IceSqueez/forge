@@ -6,8 +6,8 @@ use std::sync::Mutex;
 use forge_storage::{DATABASE_FILE_NAME, DatabaseFileSchema, database_unit_file_names};
 use forge_update::{
     DatabaseUnit, LaunchRole, SchemaProbe, StartAction, SupervisorContext, SupervisorOutcome,
-    SupervisorSettings, SystemClock, SystemProcessHost, UpdateError, launch_role,
-    launch_supervisor, pending_start_action, run_supervisor,
+    SupervisorSettings, SystemProcessHost, UpdateError, launch_role, launch_supervisor,
+    pending_start_action, run_supervisor,
 };
 
 use crate::update_check::CURRENT_VERSION;
@@ -32,7 +32,7 @@ pub fn decide_start(args: impl IntoIterator<Item = OsString>) -> StartDecision {
         LaunchRole::Candidate => StartDecision::Boot {
             deferred_error: None,
         },
-        LaunchRole::Regular => regular_start(&forge_paths::data_dir()),
+        LaunchRole::Regular => regular_start(&crate::app_paths::app_paths().data_dir()),
     }
 }
 
@@ -77,7 +77,7 @@ fn supervise(data_dir: &Path) -> i32 {
         database: &database,
         settings: SupervisorSettings::default(),
         host: &mut host,
-        clock: &SystemClock,
+        clock: &forge_types::SystemMonotonicClock,
         schema: &StoredSchemaVersion,
     });
     match outcome {

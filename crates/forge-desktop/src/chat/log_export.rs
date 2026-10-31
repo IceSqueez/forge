@@ -64,7 +64,7 @@ impl ChatView {
         async_bridge::run_async(
             &self.rt_handle,
             async move {
-                let path = forge_paths::data_dir().join(filename);
+                let path = crate::app_paths::app_paths().data_dir().join(filename);
                 tokio::fs::write(&path, contents)
                     .await
                     .map(|()| path)

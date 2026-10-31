@@ -274,7 +274,7 @@ pub fn run_boot(
                         UpdateFlow::new(
                             Arc::clone(&handles.backend),
                             handles.rt_handle.clone(),
-                            forge_paths::data_dir(),
+                            crate::app_paths::app_paths().data_dir(),
                         )
                         .with_exclusivity(handles.transfer_exclusivity.clone())
                         .with_scheduled_backups(handles.scheduled_backups.clone())
@@ -918,10 +918,12 @@ fn pre_baseline_screen(found: u32, palette: &ForgePalette, density: Density) -> 
         .flex()
         .gap(spacing(Spacing::Sm, density))
         .child(
-            secondary_button(tr!("boot_pre_baseline_open_folder"), palette)
-                .on_click("boot-open-data-folder", |_, _window, cx: &mut App| {
-                    cx.reveal_path(&forge_paths::data_dir())
-                }),
+            secondary_button(tr!("boot_pre_baseline_open_folder"), palette).on_click(
+                "boot-open-data-folder",
+                |_, _window, cx: &mut App| {
+                    cx.reveal_path(&crate::app_paths::app_paths().data_dir())
+                },
+            ),
         )
         .child(
             primary_button(tr!("boot_pre_baseline_quit"), palette)

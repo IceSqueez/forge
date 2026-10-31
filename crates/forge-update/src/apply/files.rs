@@ -4,13 +4,13 @@ use std::time::Duration;
 
 use crate::UpdateError;
 use crate::apply_state::prefixed_sibling;
-use crate::process::Clock;
+use forge_types::MonotonicClock;
 
 const FAILED_BUILD_PREFIX: &str = ".forge-failed-";
 
 #[derive(Clone, Copy)]
 pub(crate) struct FileRetry<'a> {
-    pub(crate) clock: &'a dyn Clock,
+    pub(crate) clock: &'a dyn MonotonicClock,
     pub(crate) attempts: u32,
     pub(crate) delay: Duration,
 }

@@ -9,7 +9,6 @@ use tokio::sync::{mpsc, watch};
 use tracing::{info, warn};
 
 use super::catch_up::CatchUpSettle;
-use super::clock::WallClock;
 use super::hand_off::{HandOff, HandOffPath, QueueHolds, UNREADABLE_REASON};
 use super::handle::{Command, ScheduledRunsHandle};
 use super::limits::{
@@ -21,6 +20,7 @@ use super::waiting::WaitingRuns;
 use crate::catalog::Catalog;
 use crate::task_stop::{StopListener, task_stop};
 use crate::{EventBus, QueueSchedulerHandle};
+use forge_types::WallClock;
 
 const COMMAND_CAPACITY: usize = 64;
 

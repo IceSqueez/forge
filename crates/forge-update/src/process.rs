@@ -3,7 +3,7 @@ use std::io::{ErrorKind, Read};
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use crate::UpdateError;
 
@@ -42,24 +42,6 @@ pub trait ProcessHost {
         program: &Path,
         args: &[OsString],
     ) -> Result<Box<dyn ChildProcess>, UpdateError>;
-}
-
-pub trait Clock {
-    fn now(&self) -> Instant;
-    fn sleep(&self, duration: Duration);
-}
-
-#[derive(Debug, Clone, Copy, Default)]
-pub struct SystemClock;
-
-impl Clock for SystemClock {
-    fn now(&self) -> Instant {
-        Instant::now()
-    }
-
-    fn sleep(&self, duration: Duration) {
-        std::thread::sleep(duration);
-    }
 }
 
 #[derive(Debug, Default)]

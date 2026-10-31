@@ -8,7 +8,7 @@ use tokio::process::Child;
 use crate::error::EspeakError;
 
 const SUBPROCESS_TIMEOUT: Duration = Duration::from_secs(10);
-const ESPEAK_BINARY: &str = "espeak-ng";
+pub(crate) const ESPEAK_BINARY: &str = "espeak-ng";
 const DEFAULT_RATE_WPM: u32 = 175;
 const DEFAULT_PITCH: u32 = 50;
 
@@ -26,8 +26,8 @@ fn timeout_error(timeout: Duration) -> EspeakError {
     }
 }
 
-pub(crate) fn check_espeak_version() -> Result<(), EspeakError> {
-    let status = std::process::Command::new(ESPEAK_BINARY)
+pub(crate) fn check_espeak_version(binary: &Path) -> Result<(), EspeakError> {
+    let status = std::process::Command::new(binary)
         .arg("--version")
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -50,8 +50,8 @@ pub fn pitch_from_semitones(pitch_semitones: f32) -> u32 {
         .clamp(0.0, 99.0) as u32
 }
 
-pub(crate) async fn list_voices_from_binary() -> Result<String, EspeakError> {
-    list_voices_via(Path::new(ESPEAK_BINARY), SUBPROCESS_TIMEOUT).await
+pub(crate) async fn list_voices_from_binary(binary: &Path) -> Result<String, EspeakError> {
+    list_voices_via(binary, SUBPROCESS_TIMEOUT).await
 }
 
 pub(crate) async fn list_voices_via(
@@ -79,9 +79,10 @@ pub(crate) async fn list_voices_via(
 }
 
 pub(crate) async fn run_synthesis(
+    binary: &Path,
     invocation: &SynthesisInvocation<'_>,
 ) -> Result<Vec<u8>, EspeakError> {
-    run_synthesis_via(Path::new(ESPEAK_BINARY), SUBPROCESS_TIMEOUT, invocation).await
+    run_synthesis_via(binary, SUBPROCESS_TIMEOUT, invocation).await
 }
 
 pub(crate) async fn run_synthesis_via(

@@ -3390,6 +3390,7 @@ dependencies = [
  "flate2",
  "forge-durable",
  "forge-net",
+ "forge-types",
  "minisign-verify",
  "serde",
  "serde_json",

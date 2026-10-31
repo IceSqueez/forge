@@ -141,7 +141,7 @@ impl AppShell {
             TransferFlows::new(
                 topics.home_stats.clone(),
                 PackServices::of(&handles),
-                forge_paths::data_dir(),
+                crate::app_paths::app_paths().data_dir(),
                 cx,
             )
             .with_setup_live(SetupLiveHandles::of(&handles), cx)
@@ -190,7 +190,7 @@ impl AppShell {
         let restore_close = cx.new(|_| {
             RestoreClose::new(
                 topics.update_flow.clone(),
-                forge_paths::data_dir(),
+                crate::app_paths::app_paths().data_dir(),
                 handles.rt_handle.clone(),
             )
             .with_scheduled_backups(handles.scheduled_backups.clone())

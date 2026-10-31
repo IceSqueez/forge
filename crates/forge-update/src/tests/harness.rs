@@ -9,9 +9,9 @@ use crate::apply_state::{ApplyPhase, ApplyState};
 use crate::journal::UpdateJournal;
 use crate::supervisor_lock::SupervisorLock;
 use crate::{
-    ApplyMode, ChildExit, ChildProcess, Clock, DatabaseUnit, HandoffPlan, HandoffRequest,
-    HealthMarker, InstallLayout, ProcessHost, SchemaProbe, StagedArtifact, SupervisorContext,
-    SupervisorOutcome, SupervisorSettings, UpdatableInstall, UpdateError, run_supervisor,
+    ApplyMode, ChildExit, ChildProcess, DatabaseUnit, HandoffPlan, HandoffRequest, HealthMarker,
+    InstallLayout, ProcessHost, SchemaProbe, StagedArtifact, SupervisorContext, SupervisorOutcome,
+    SupervisorSettings, UpdatableInstall, UpdateError, run_supervisor,
 };
 use tempfile::TempDir;
 
@@ -237,6 +237,7 @@ impl FakeClock {
         }
     }
 
+    #[cfg(unix)]
     pub fn on_first_sleep(self, fault: impl FnOnce() + 'static) -> Self {
         self.on_first_sleep.replace(Some(Box::new(fault)));
         self
@@ -247,7 +248,7 @@ impl FakeClock {
     }
 }
 
-impl Clock for FakeClock {
+impl forge_types::MonotonicClock for FakeClock {
     fn now(&self) -> Instant {
         self.start + self.offset.get()
     }
@@ -389,6 +390,7 @@ impl Fixture {
         self.state.write(&self.data_dir).unwrap();
     }
 
+    #[cfg(unix)]
     pub fn relocate_staged(&mut self, dir: &Path) {
         std::fs::create_dir_all(dir).unwrap();
         let moved = dir.join(self.staged.file_name().unwrap());

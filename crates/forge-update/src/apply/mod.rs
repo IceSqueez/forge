@@ -4,7 +4,8 @@ use crate::UpdateError;
 use crate::apply_state::ApplyState;
 use crate::install::InstallLayout;
 use crate::journal::UpdateJournal;
-use crate::process::{Clock, ProcessHost};
+use crate::process::ProcessHost;
+use forge_types::MonotonicClock;
 
 mod bundle;
 mod executable;
@@ -15,7 +16,7 @@ use files::{FileRetry, swap_in};
 
 pub(crate) struct ApplyContext<'a> {
     pub(crate) host: &'a mut dyn ProcessHost,
-    pub(crate) clock: &'a dyn Clock,
+    pub(crate) clock: &'a dyn MonotonicClock,
     pub(crate) installer_timeout: Duration,
     pub(crate) poll_interval: Duration,
     pub(crate) retry: FileRetry<'a>,

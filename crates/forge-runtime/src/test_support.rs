@@ -6,12 +6,12 @@ use forge_events::EventPublisher;
 use forge_overlay::OverlayKindRegistry;
 use forge_storage::{DataProvider, OverlayId};
 use forge_storage_sqlite::SqliteBackend;
-use forge_types::Shared;
+use forge_types::{Shared, SystemWallClock};
 use tempfile::TempDir;
 
 use crate::{
     EventBus, FrozenRuntime, LatestValues, NullEventLogRepo, OverlayFrameSink, OverlayReceivers,
-    RuntimeWiring, RuntimeWiringParts, SystemWallClock,
+    RuntimeWiring, RuntimeWiringParts,
 };
 
 pub(crate) struct Sandboxed<T> {

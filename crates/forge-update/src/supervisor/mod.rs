@@ -13,9 +13,10 @@ use crate::health::{HealthMarker, clear_health_marker, read_health_marker};
 use crate::install::InstallLayout;
 use crate::journal::UpdateJournal;
 use crate::leftovers::remember_leftovers;
-use crate::process::{ChildProcess, Clock, ProcessHost};
+use crate::process::{ChildProcess, ProcessHost};
 use crate::report::{ApplyFailure, DatabaseRestore, RollbackReason, UpdateReport, record_outcome};
 use crate::supervisor_lock::SupervisorLock;
+use forge_types::MonotonicClock;
 
 mod launch;
 mod startup;
@@ -61,7 +62,7 @@ pub struct SupervisorContext<'a> {
     pub database: &'a DatabaseUnit,
     pub settings: SupervisorSettings,
     pub host: &'a mut dyn ProcessHost,
-    pub clock: &'a dyn Clock,
+    pub clock: &'a dyn MonotonicClock,
     pub schema: &'a dyn SchemaProbe,
 }
 

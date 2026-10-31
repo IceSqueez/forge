@@ -235,9 +235,9 @@ mod tests {
     use forge_runtime::triggers::TIMER_TICK_KIND;
     use forge_runtime::{
         ActionCancelRegistry, Catalog, CatchUpSettle, Config, HandOff, QueueScheduler,
-        ScheduleError, ScheduledRunsParts, SystemWallClock, spawn_action_engine,
-        spawn_live_viewer_aggregator, spawn_scheduled_runs, spawn_stream_live_signal,
-        spawn_timer_scheduler, spawn_trigger_evaluator,
+        ScheduleError, ScheduledRunsParts, spawn_action_engine, spawn_live_viewer_aggregator,
+        spawn_scheduled_runs, spawn_stream_live_signal, spawn_timer_scheduler,
+        spawn_trigger_evaluator,
     };
     use forge_storage::action::MockActionRepo;
     use forge_storage::history::MockHistoryRepo;
@@ -599,7 +599,7 @@ mod tests {
             actions: Arc::new(MockActionRepo::new()),
             queues: scheduler.clone(),
             bus: Arc::clone(&bus),
-            clock: Arc::new(SystemWallClock),
+            clock: Arc::new(forge_types::SystemWallClock),
             catch_up: CatchUpSettle::immediately(),
         });
         ShutdownHandles {

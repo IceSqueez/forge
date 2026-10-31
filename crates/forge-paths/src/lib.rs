@@ -43,31 +43,70 @@ pub fn app_segment() -> &'static str {
     APP_DIR_NAME
 }
 
-pub fn data_dir() -> PathBuf {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AppPaths {
+    data_dir: PathBuf,
+}
+
+impl AppPaths {
+    pub fn resolve() -> Self {
+        Self::at(resolve_data_dir())
+    }
+
+    pub fn at(data_dir: PathBuf) -> Self {
+        Self { data_dir }
+    }
+
+    pub fn data_dir(&self) -> PathBuf {
+        self.data_dir.clone()
+    }
+
+    pub fn overlays_dir(&self) -> PathBuf {
+        self.data_dir.join(OVERLAYS_DIR_NAME)
+    }
+
+    pub fn media_dir(&self) -> PathBuf {
+        self.data_dir.join(MEDIA_DIR_NAME)
+    }
+
+    pub fn assets_dir(&self) -> PathBuf {
+        self.data_dir.join(ASSETS_DIR_NAME)
+    }
+
+    pub fn logs_dir(&self) -> PathBuf {
+        self.data_dir.join(LOGS_DIR_NAME)
+    }
+
+    pub fn crashes_dir(&self) -> PathBuf {
+        self.data_dir.join(CRASHES_DIR_NAME)
+    }
+
+    pub fn problem_reports_dir(&self) -> PathBuf {
+        self.data_dir.join(PROBLEM_REPORTS_DIR_NAME)
+    }
+}
+
+fn resolve_data_dir() -> PathBuf {
     if let Some(dir) = std::env::var_os(DATA_DIR_ENV).filter(|v| !v.is_empty()) {
         return PathBuf::from(dir);
     }
     base_dirs().data_dir().join(app_segment())
 }
 
+pub fn data_dir() -> PathBuf {
+    resolve_data_dir()
+}
+
 pub fn overlays_dir() -> PathBuf {
-    data_dir().join(OVERLAYS_DIR_NAME)
+    AppPaths::resolve().overlays_dir()
 }
 
 pub fn media_dir() -> PathBuf {
-    data_dir().join(MEDIA_DIR_NAME)
+    AppPaths::resolve().media_dir()
 }
 
 pub fn assets_dir() -> PathBuf {
-    data_dir().join(ASSETS_DIR_NAME)
-}
-
-pub fn crashes_dir() -> PathBuf {
-    data_dir().join(CRASHES_DIR_NAME)
-}
-
-pub fn problem_reports_dir() -> PathBuf {
-    data_dir().join(PROBLEM_REPORTS_DIR_NAME)
+    AppPaths::resolve().assets_dir()
 }
 
 pub const CREDENTIALS_KEY_FILE_NAME: &str = "credentials-key";
@@ -135,6 +174,31 @@ mod tests {
         });
 
         assert_eq!(path, PathBuf::from(overridden));
+    }
+
+    #[test]
+    fn app_paths_at_a_root_keeps_each_folder_under_its_on_disk_name() {
+        let root = PathBuf::from("/srv/forge data");
+        let paths = AppPaths::at(root.clone());
+
+        for (folder, name) in [
+            (paths.overlays_dir(), "overlays"),
+            (paths.media_dir(), "media"),
+            (paths.assets_dir(), "assets"),
+            (paths.logs_dir(), "logs"),
+            (paths.crashes_dir(), "crashes"),
+            (paths.problem_reports_dir(), "reports"),
+        ] {
+            assert_eq!(folder, root.join(name));
+        }
+    }
+
+    #[test]
+    fn app_paths_at_a_root_stays_inside_that_root_for_a_relative_one() {
+        let paths = AppPaths::at(PathBuf::from("portable"));
+
+        assert_eq!(paths.data_dir(), Path::new("portable"));
+        assert_eq!(paths.logs_dir(), Path::new("portable").join("logs"));
     }
 
     #[test]

@@ -1511,7 +1511,7 @@ mod tests {
             ),
             (
                 ENGINE_ID_ESPEAK_NG,
-                Arc::new(forge_tts_espeak::EspeakEngineFactory),
+                Arc::new(forge_tts_espeak::EspeakEngineFactory::default()),
             ),
             (
                 forge_tts_core::ENGINE_ID_SAPI,

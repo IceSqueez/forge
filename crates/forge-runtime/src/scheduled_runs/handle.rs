@@ -3,11 +3,11 @@ use std::sync::Arc;
 use forge_storage::{ScheduledRunId, ScheduledRunRepo};
 use tokio::sync::{mpsc, oneshot, watch};
 
-use super::clock::WallClock;
 use super::hand_off::HandOff;
 use super::request::{ScheduleError, ScheduleRequest, ScheduledPlacement, normalized_key};
 use super::waiting::{WaitingForQueueWatch, WaitingRuns};
 use crate::task_stop::TaskStop;
+use forge_types::WallClock;
 
 pub(super) enum Command {
     Schedule(

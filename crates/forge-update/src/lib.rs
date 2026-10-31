@@ -48,7 +48,7 @@ pub use install::{
 };
 pub use manifest::{Artifact, MANIFEST_FORMAT, UpdateOffer, verify_manifest};
 pub use platform::{ArtifactKind, Platform};
-pub use process::{ChildExit, ChildProcess, Clock, ProcessHost, SystemClock, SystemProcessHost};
+pub use process::{ChildExit, ChildProcess, ProcessHost, SystemProcessHost};
 pub use report::{
     ApplyFailure, DatabaseRestore, OUTCOME_FILE, OUTCOME_FORMAT, RollbackReason, UpdateReport,
     take_update_report,

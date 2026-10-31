@@ -156,7 +156,7 @@ pub fn start_update_report(
     backend: Arc<dyn DataProvider>,
     rt_handle: Handle,
 ) -> Task<Option<String>> {
-    let data_dir = forge_paths::data_dir();
+    let data_dir = crate::app_paths::app_paths().data_dir();
     let settle = cx
         .background_executor()
         .spawn(async move { settle_boot_update(data_dir) });

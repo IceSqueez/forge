@@ -123,8 +123,8 @@ pub use runtime_builder::{FrozenRuntime, RuntimeWiring, RuntimeWiringParts, Sche
 pub use scheduled_runs::{
     CatchUpSettle, HandOff, ScheduleDue, ScheduleError, ScheduleIntent, ScheduleRequest,
     ScheduledPlacement, ScheduledRunsHandle, ScheduledRunsParts, ScheduledRunsStart,
-    ScheduledRunsStartParts, SchedulingContext, ScriptScheduling, SystemWallClock,
-    WaitingForQueueWatch, WaitingRuns, WallClock, reserve_scheduled_runs, spawn_scheduled_runs,
+    ScheduledRunsStartParts, SchedulingContext, ScriptScheduling, WaitingForQueueWatch,
+    WaitingRuns, reserve_scheduled_runs, spawn_scheduled_runs,
 };
 pub use script_registry::{
     CompiledScript, ScriptRegistry, ScriptRegistryError, ScriptRegistryParts,

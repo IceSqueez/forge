@@ -11,12 +11,12 @@ use forge_runtime::{
     ActionEngineHandle, CatchUpSettle, DateNamesHandle, DonationIngest, DonationOverlayAudience,
     EventBus, EventHistory, FirstChatLedger, FrozenRuntime, LatestValues, NotificationPreferences,
     OverlayConnectFanout, OverlayConnectListener, OverlayFrameSink, OverlaySampleSource,
-    OverlaySamples, RuntimeWiring, RuntimeWiringParts, SpeakDispatcher, SystemWallClock,
-    TwitchEmoteLexicon, register_core_triggers, register_donation_sub_actions,
-    register_latest_sub_actions, register_speech_sub_actions, spawn_chat_history_persistence,
-    spawn_event_log_bridge, spawn_latest_overlay_feed, spawn_latest_projector,
-    spawn_live_viewer_aggregator, spawn_notification_policy, spawn_stream_live_signal,
-    spawn_timer_scheduler, spawn_twitch_emote_learning, spawn_viewer_tracker,
+    OverlaySamples, RuntimeWiring, RuntimeWiringParts, SpeakDispatcher, TwitchEmoteLexicon,
+    register_core_triggers, register_donation_sub_actions, register_latest_sub_actions,
+    register_speech_sub_actions, spawn_chat_history_persistence, spawn_event_log_bridge,
+    spawn_latest_overlay_feed, spawn_latest_projector, spawn_live_viewer_aggregator,
+    spawn_notification_policy, spawn_stream_live_signal, spawn_timer_scheduler,
+    spawn_twitch_emote_learning, spawn_viewer_tracker,
 };
 use forge_server::DeliveryHub;
 use forge_soundboard::{
@@ -29,6 +29,7 @@ use forge_storage::{
     read_setting, read_setting_or_default, write_setting,
 };
 use forge_storage_sqlite::SqliteBackend;
+use forge_types::SystemWallClock;
 use forge_types::{LatestValueReader, PlatformId, Shared};
 
 use crate::audio_router::{AudioRouter, AudioRouterParts};
@@ -56,7 +57,9 @@ pub enum BootFailure {
 }
 
 fn default_db_path() -> PathBuf {
-    forge_paths::data_dir().join(forge_storage::DATABASE_FILE_NAME)
+    crate::app_paths::app_paths()
+        .data_dir()
+        .join(forge_storage::DATABASE_FILE_NAME)
 }
 
 const APPEARANCE_READ_BUDGET: Duration = Duration::from_secs(2);
@@ -290,13 +293,13 @@ pub async fn build_runtime(inputs: RuntimeInputs) -> Result<RuntimeHandles, Boot
     let transfer_exclusivity = forge_transfer::TransferExclusivity::new();
     crate::safety_copy_prune::spawn_boot_prune(
         Arc::clone(&backend),
-        forge_paths::data_dir(),
+        crate::app_paths::app_paths().data_dir(),
         transfer_exclusivity.clone(),
     );
     let scheduled_backups =
         forge_transfer::spawn_scheduled_backups(forge_transfer::ScheduledBackupParts {
             provider: Arc::clone(&backend),
-            data_dir: forge_paths::data_dir(),
+            data_dir: crate::app_paths::app_paths().data_dir(),
             exclusivity: transfer_exclusivity.clone(),
             clock: Arc::new(forge_transfer::SystemBackupClock),
         });

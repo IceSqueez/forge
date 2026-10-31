@@ -1,5 +1,4 @@
 mod catch_up;
-mod clock;
 mod hand_off;
 mod handle;
 mod limits;
@@ -12,7 +11,6 @@ mod script_scheduler;
 mod waiting;
 
 pub use catch_up::CatchUpSettle;
-pub use clock::{SystemWallClock, WallClock};
 pub use hand_off::{
     ACTION_DISABLED_REASON, ACTION_NOT_FOUND_REASON, ACTIONS_UNAVAILABLE_REASON, HandOff,
     MISSED_REASON, QUEUES_CLOSED_REASON, SCHEDULED_RUN_DUE_KIND, UNREADABLE_REASON,

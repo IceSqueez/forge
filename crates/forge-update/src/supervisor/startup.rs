@@ -7,9 +7,9 @@ use crate::apply_state::{ApplyPhase, ApplyState};
 use crate::health::{clear_health_marker, same_version};
 use crate::journal::UpdateJournal;
 use crate::leftovers::sweep_leftovers;
-use crate::process::SystemClock;
 use crate::report::{ApplyFailure, UpdateReport, outcome_recorded, record_outcome};
 use crate::supervisor_lock::SupervisorLock;
+use forge_types::SystemMonotonicClock;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StartAction {
@@ -61,7 +61,7 @@ fn abandon_interrupted_update(
     state: &ApplyState,
 ) -> Result<(), UpdateError> {
     let retry = FileRetry {
-        clock: &SystemClock,
+        clock: &SystemMonotonicClock,
         attempts: DEFAULT_FILE_RETRY_ATTEMPTS,
         delay: DEFAULT_FILE_RETRY_DELAY,
     };

@@ -4,7 +4,8 @@ use std::time::Duration;
 
 use super::files::{FileRetry, path_exists, remove_path};
 use crate::UpdateError;
-use crate::process::{ChildExit, Clock, ProcessHost};
+use crate::process::{ChildExit, ProcessHost};
+use forge_types::MonotonicClock;
 
 const SYSTEM_ROOT_ENV: &str = "SystemRoot";
 const SYSTEM_DIR: &str = "System32";
@@ -18,7 +19,7 @@ const SUCCESS_REBOOT_INITIATED: i32 = 1641;
 
 pub(super) struct InstallerRun<'a> {
     pub(super) host: &'a mut dyn ProcessHost,
-    pub(super) clock: &'a dyn Clock,
+    pub(super) clock: &'a dyn MonotonicClock,
     pub(super) timeout: Duration,
     pub(super) poll_interval: Duration,
     pub(super) retry: FileRetry<'a>,

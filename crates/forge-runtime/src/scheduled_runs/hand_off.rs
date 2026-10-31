@@ -11,12 +11,12 @@ use forge_types::{Action, ActionId, EventId, QueueId};
 use serde_json::json;
 use tracing::{info, warn};
 
-use super::clock::WallClock;
 use super::origin::ScheduledOrigin;
 use super::provenance::{initial_args, lateness};
 use crate::catalog::Catalog;
 use crate::queue_scheduler::QUEUE_NOT_FOUND_REASON;
 use crate::{EventBus, QueueAdmission, QueueSchedulerHandle, SchedulerError, SchedulerRequest};
+use forge_types::WallClock;
 
 pub const SCHEDULED_RUN_DUE_KIND: &str = "scheduled_run.due";
 

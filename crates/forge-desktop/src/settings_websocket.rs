@@ -197,7 +197,10 @@ impl SettingsWebSocketView {
             origins_input,
             origins_blur: None,
             regenerate_pending: false,
-            default_overlay_root: forge_paths::overlays_dir().display().to_string(),
+            default_overlay_root: crate::app_paths::app_paths()
+                .overlays_dir()
+                .display()
+                .to_string(),
             lan_modal: None,
             lan_sub: None,
             _subs: subs,

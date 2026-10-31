@@ -366,6 +366,7 @@ pub(crate) mod tests {
     use crate::backend::tests::{MockFailAllBackend, MockPortalBackend};
     pub(crate) use forge_events::test_support::CapturingPublisher;
 
+    #[cfg(target_os = "linux")]
     const HANG_GUARD: std::time::Duration = std::time::Duration::from_secs(120);
 
     pub(crate) fn noop_publisher() -> Arc<dyn EventPublisher> {

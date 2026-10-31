@@ -807,6 +807,36 @@ mod tests {
     }
 
     #[test]
+    fn lowered_handles_follow_every_alias_change() {
+        let first = active("NovaFox", "first-voice");
+        let second = active("twitch:KitCat", "second-voice");
+        let mut resolver = resolver_with(
+            vec![first.clone(), second.clone()],
+            single("default-voice"),
+            IgnoreProfile::default(),
+        );
+        let voice_of = |resolver: &VoiceAliasResolver, id: &str, name: &str| {
+            spoken(resolver.resolve(&request(id, name), None, &[]))
+        };
+
+        assert_eq!(voice_of(&resolver, "twitch:1", "KITCAT"), "second-voice");
+
+        resolver.set_alias(active("Zirka", "added-voice"));
+        assert_eq!(voice_of(&resolver, "kick:2", "ZIRKA"), "added-voice");
+
+        resolver.remove_alias(&first.id);
+        assert_eq!(voice_of(&resolver, "kick:3", "novafox"), "default-voice");
+        assert_eq!(voice_of(&resolver, "twitch:1", "kitcat"), "second-voice");
+        assert_eq!(voice_of(&resolver, "kick:2", "zirka"), "added-voice");
+
+        resolver.set_alias(VoiceAlias {
+            viewer_id: "twitch:KitCat".into(),
+            ..active("twitch:KitCat", "replaced-voice")
+        });
+        assert_eq!(voice_of(&resolver, "twitch:1", "kitcat"), "replaced-voice");
+    }
+
+    #[test]
     fn a_viewer_matching_no_alias_gets_the_strategy_voice() {
         for (viewer_id, name) in [
             ("twitch:2", "aurora2"),

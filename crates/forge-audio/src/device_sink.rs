@@ -5,16 +5,12 @@ use forge_types::{OutputDevice, Shared};
 
 use crate::error::AudioError;
 use crate::handle::{ControlledPlayback, PlaybackHandle};
-use crate::route::DevicePreference;
 use crate::sink::AudioSink;
 use crate::sink_factory::{AudioSinkFactory, CpalSinkFactory};
 use forge_speech_types::PcmBuffer;
 
 pub fn stored_output_device(stored_id: Option<String>) -> OutputDevice {
-    match DevicePreference::from(stored_id) {
-        DevicePreference::ById(id) => OutputDevice::ById { id },
-        _ => OutputDevice::Default,
-    }
+    stored_id.map_or(OutputDevice::Default, |id| OutputDevice::ById { id })
 }
 
 #[derive(Clone)]
@@ -292,7 +288,7 @@ mod tests {
             ),
         ] {
             let resolved = resolve_device(
-                stored_output_device(stored.map(str::to_owned)),
+                &stored_output_device(stored.map(str::to_owned)),
                 &enumerated_devices(),
             );
             assert_eq!(

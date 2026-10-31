@@ -92,6 +92,8 @@ async fn synced() -> Synced {
     }
 }
 
+const NON_HOTKEY_KIND: &str = "midi.note_on";
+
 struct ListGate {
     entered: Arc<Notify>,
     release: Arc<Notify>,
@@ -173,6 +175,28 @@ async fn saving_a_hotkey_trigger_registers_its_combo_in_canonical_form() {
         .unwrap();
 
     assert_eq!(registered(&synced.client), ["Ctrl+Shift+F5"]);
+}
+
+#[tokio::test]
+async fn writing_a_non_hotkey_trigger_does_not_reconcile_but_a_hotkey_write_does() {
+    let synced = synced().await;
+    let unsynced = instance(event_kinds::GLOBAL_PRESSED, Some("F5"));
+    synced.stored.save(&unsynced).await.unwrap();
+    let other = instance(NON_HOTKEY_KIND, None);
+
+    synced.repo.save(&other).await.unwrap();
+    synced.repo.set_enabled(other.id, false).await.unwrap();
+    synced.repo.delete(other.id).await.unwrap();
+    assert!(registered(&synced.client).is_empty());
+
+    synced
+        .repo
+        .save(&instance(event_kinds::GLOBAL_PRESSED, Some("F6")))
+        .await
+        .unwrap();
+    let mut combos = registered(&synced.client);
+    combos.sort();
+    assert_eq!(combos, ["F5", "F6"]);
 }
 
 #[tokio::test]

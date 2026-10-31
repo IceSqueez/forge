@@ -186,7 +186,6 @@ mod tests {
     use forge_types::{Action, ActionId, EventId, QueueId, Secret, SubActionStep, Variant};
     use std::collections::{BTreeSet, HashSet};
     use std::sync::Arc;
-    use std::sync::atomic::Ordering;
 
     use std::collections::BTreeMap;
 
@@ -216,17 +215,19 @@ mod tests {
             .expect_list_for_broadcaster()
             .returning(|_| Ok(vec![]));
         let ctx = dispatch_ctx(Arc::new(tdp), auth_required_for_reads);
-        ctx.client
-            .authenticated
-            .store(authenticated, Ordering::Relaxed);
+        if authenticated {
+            ctx.client
+                .mark_bearer_authenticated(ctx.auth_state.token_generation());
+        }
         ctx
     }
 
     fn make_ctx_with_dp(authenticated: bool, dp: Arc<dyn DataProvider>) -> DispatchContext {
         let ctx = dispatch_ctx(dp, false);
-        ctx.client
-            .authenticated
-            .store(authenticated, Ordering::Relaxed);
+        if authenticated {
+            ctx.client
+                .mark_bearer_authenticated(ctx.auth_state.token_generation());
+        }
         ctx
     }
 
@@ -235,9 +236,10 @@ mod tests {
         auth_required_for_reads: bool,
     ) -> DispatchContext {
         let ctx = registered_dispatch_ctx(test_dp(), auth_required_for_reads).await;
-        ctx.client
-            .authenticated
-            .store(authenticated, Ordering::Relaxed);
+        if authenticated {
+            ctx.client
+                .mark_bearer_authenticated(ctx.auth_state.token_generation());
+        }
         ctx
     }
 
@@ -1319,7 +1321,7 @@ mod tests {
             } => assert_eq!(code, "AUTH_FAILED"),
             other => panic!("expected AUTH_FAILED error, got {other:?}"),
         }
-        assert!(!ctx.client.authenticated.load(Ordering::Acquire));
+        assert!(ctx.client.bearer_generation().is_none());
     }
 
     #[tokio::test]
@@ -1642,7 +1644,7 @@ mod tests {
                 other => panic!("{label} produced {other:?} instead of AUTH_FAILED"),
             }
             assert!(
-                !ctx.client.authenticated.load(Ordering::Acquire),
+                ctx.client.bearer_generation().is_none(),
                 "{label} still marked the session authenticated"
             );
         }
@@ -1664,7 +1666,7 @@ mod tests {
             "the connection was never promoted, so this proves nothing about what it grants"
         );
         assert!(
-            !ctx.client.authenticated.load(Ordering::Acquire),
+            ctx.client.bearer_generation().is_none(),
             "a read-scoped overlay credential unlocked every authenticated method"
         );
     }
@@ -1758,7 +1760,7 @@ mod tests {
             } => assert_eq!(code, "AUTH_FAILED"),
             other => panic!("expected AUTH_FAILED error, got {other:?}"),
         }
-        assert!(!ctx.client.authenticated.load(Ordering::Acquire));
+        assert!(ctx.client.bearer_generation().is_none());
     }
 
     fn make_ctx_with_overlay_root(root: std::path::PathBuf) -> DispatchContext {

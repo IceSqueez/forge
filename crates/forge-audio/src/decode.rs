@@ -11,6 +11,8 @@ use symphonia::core::meta::MetadataOptions;
 use crate::error::AudioError;
 use forge_speech_types::PcmBuffer;
 
+const MILLIS_PER_SECOND: f32 = 1000.0;
+
 pub fn decode_file(path: &Path) -> Result<PcmBuffer, AudioError> {
     let file = std::fs::File::open(path)?;
     let mss = MediaSourceStream::new(Box::new(file), Default::default());
@@ -40,7 +42,7 @@ pub fn probe_duration_secs(path: &Path) -> Result<f32, AudioError> {
         return Ok(secs);
     }
     let pcm = decode_file(path)?;
-    Ok(pcm.duration_ms() as f32 / 1000.0)
+    Ok(pcm.duration_ms() as f32 / MILLIS_PER_SECOND)
 }
 
 fn light_probe_duration_secs(path: &Path) -> Result<Option<f32>, AudioError> {

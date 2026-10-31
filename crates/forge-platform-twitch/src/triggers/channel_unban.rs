@@ -2,14 +2,13 @@ use crate::vocabulary::event_kinds;
 use crate::vocabulary::trigger_ids;
 use forge_events::{Event, EventSource};
 use forge_registry::{
-    ActorDeclaration, ActorIdentity, ActorRole, EventFilter, KindPlatformContract, TriggerCategory,
+    ActorDeclaration, ActorRole, EventFilter, KindPlatformContract, TriggerCategory,
     TriggerKindDescriptor, TriggerVariables,
 };
 use forge_types::PlatformId;
 use forge_types::TriggerConfig;
 
 use super::payload_read::{self, twitch_actor};
-use crate::vocabulary::fields::moderation as fields;
 
 pub(crate) struct ChannelUnbanDescriptor;
 
@@ -56,10 +55,13 @@ impl TriggerKindDescriptor for ChannelUnbanDescriptor {
     fn variables(&self) -> Option<TriggerVariables> {
         Some(
             TriggerVariables::new()
-                .actor(twitch_actor(ActorRole::Principal), moderated_user_identity)
+                .actor(
+                    twitch_actor(ActorRole::Principal),
+                    payload_read::moderated_user_identity,
+                )
                 .actor(
                     twitch_actor(ActorRole::Moderator),
-                    acting_moderator_identity,
+                    payload_read::acting_moderator_identity,
                 ),
         )
     }
@@ -67,24 +69,6 @@ impl TriggerKindDescriptor for ChannelUnbanDescriptor {
     fn actors(&self) -> ActorDeclaration {
         ActorDeclaration::Actors(&[ActorRole::Moderator])
     }
-}
-
-fn moderated_user_identity(event: &Event) -> ActorIdentity {
-    payload_read::identity(
-        event.payload.get(fields::USER),
-        fields::USER_ID,
-        fields::USER_LOGIN,
-        fields::USER_DISPLAY_NAME,
-    )
-}
-
-fn acting_moderator_identity(event: &Event) -> ActorIdentity {
-    payload_read::identity(
-        event.payload.get(fields::MODERATOR),
-        fields::MODERATOR_ID,
-        fields::MODERATOR_LOGIN,
-        fields::MODERATOR_DISPLAY_NAME,
-    )
 }
 
 #[cfg(test)]

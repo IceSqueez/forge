@@ -33,6 +33,8 @@ fn without_nulls(value: serde_json::Value) -> serde_json::Value {
     }
 }
 
+const BROWSER_REFRESH_NO_CACHE_BUTTON: &str = "refreshnocache";
+
 impl ObsClient {
     async fn resolve_scene_item_id(
         &self,
@@ -404,7 +406,7 @@ impl ObsSink for ObsClient {
                 session
                     .obs()
                     .inputs()
-                    .press_properties_button(InputId::Name(input), "refreshnocache"),
+                    .press_properties_button(InputId::Name(input), BROWSER_REFRESH_NO_CACHE_BUTTON),
             )
             .await
     }

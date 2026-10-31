@@ -99,7 +99,10 @@ mod tests {
             ActiveBroadcastIdHandle::new(),
             ledger,
         ));
-        YoutubeIntegrationBundle::new(broadcaster_channel_id.to_owned(), platform, manager)
+        let bundle =
+            YoutubeIntegrationBundle::new(broadcaster_channel_id.to_owned(), platform, manager);
+        YoutubeIntegrationBundle::start_background_tasks(&bundle);
+        bundle
     }
 
     fn row(

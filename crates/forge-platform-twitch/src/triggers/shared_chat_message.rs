@@ -55,13 +55,7 @@ impl TriggerKindDescriptor for SharedChatMessageDescriptor {
     }
 
     fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
-        event
-            .payload
-            .get(chat_fields::FROM_CHANNEL)
-            .and_then(|fc| fc.get(chat_fields::FROM_CHANNEL_LOGIN))
-            .and_then(|v| v.as_str())
-            .map(|s| !s.is_empty())
-            .unwrap_or(false)
+        !from_channel_field(event, chat_fields::FROM_CHANNEL_LOGIN).is_empty()
     }
 
     fn variables(&self) -> Option<TriggerVariables> {
@@ -101,13 +95,7 @@ impl TriggerKindDescriptor for SharedChatMessageDescriptor {
 }
 
 fn from_channel_field(event: &Event, key: &str) -> String {
-    event
-        .payload
-        .get(chat_fields::FROM_CHANNEL)
-        .and_then(|from_channel| from_channel.get(key))
-        .and_then(|value| value.as_str())
-        .unwrap_or_default()
-        .to_owned()
+    super::payload_read::nested_text(event, chat_fields::FROM_CHANNEL, key)
 }
 
 #[cfg(test)]

@@ -1,5 +1,5 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AuthState {
+pub(crate) enum AuthState {
     Cold,
     AwaitingApproval,
     Connected,

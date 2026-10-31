@@ -5,7 +5,7 @@ use forge_types::Secret;
 use crate::active_broadcast_id::ActiveBroadcastIdHandle;
 use crate::data_api::{YoutubeDataApi, json_body};
 
-const CUEPOINT_COST: u32 = 50;
+const CUEPOINT_COST: u32 = 1;
 const CUEPOINT_PATH: &str = "/liveBroadcasts/cuepoint";
 const MISSING_SCOPE: &str = "ad break scope missing";
 

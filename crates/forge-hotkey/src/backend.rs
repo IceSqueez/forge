@@ -5,17 +5,12 @@ use forge_net::TaskShutdown;
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 
+use crate::binding::HotkeyEdge;
 use crate::combo::HotkeyCombo;
 use crate::error::HotkeyError;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct HotkeyId(pub u32);
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum HotkeyEdge {
-    Press,
-    Release,
-}
 
 pub(crate) struct HotkeyFiredEvent {
     pub(crate) id: HotkeyId,

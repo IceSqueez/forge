@@ -5,10 +5,15 @@ use forge_types::{ActionId, EventId, PlatformId};
 
 use super::context::DispatchContext;
 use super::envelope::WsResponse;
-use super::helpers::{build_arg_stack, valid_code_event_name, variant_to_wire_value};
+use super::helpers::{
+    MAX_CODE_EVENT_NAME_LEN, build_arg_stack, valid_code_event_name, variant_to_wire_value,
+};
 use super::introspect::{build_connected_accounts, build_connected_clients};
 
 const WS_API_WRITER: &str = "ws_api";
+
+const DEFAULT_EVENTS_LIMIT: u32 = 100;
+const MAX_EVENTS_LIMIT: u32 = 500;
 
 pub(crate) fn mime_for_extension(ext: &str) -> Option<&'static str> {
     let lowered = ext.to_ascii_lowercase();
@@ -191,7 +196,7 @@ pub(crate) async fn handle_trigger_code_event(
     if !valid_code_event_name(&name) {
         return WsResponse::Error {
             code: Some("INVALID_PAYLOAD".to_owned()),
-            message: "name must match [a-z0-9_]{1,64}".to_owned(),
+            message: format!("name must match [a-z0-9_]{{1,{MAX_CODE_EVENT_NAME_LEN}}}"),
         };
     }
     let kind = format!("{CUSTOM_EVENT_PREFIX}{name}");
@@ -291,7 +296,7 @@ pub(crate) async fn handle_get_events(
     since: Option<String>,
     ctx: &DispatchContext,
 ) -> WsResponse {
-    let limit = limit.unwrap_or(100).min(500) as usize;
+    let limit = limit.unwrap_or(DEFAULT_EVENTS_LIMIT).min(MAX_EVENTS_LIMIT) as usize;
     let since_id: Option<EventId> = match since {
         None => None,
         Some(s) => match serde_json::from_value::<EventId>(serde_json::Value::String(s)) {

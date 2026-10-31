@@ -447,7 +447,8 @@ fn resolve_selected_idx(devices: &[DeviceRow], want_id: Option<&str>) -> usize {
             is_default: d.is_default,
         })
         .collect();
-    let resolved = forge_audio::resolve_device(want_id.map(str::to_string), &infos);
+    let resolved =
+        forge_audio::resolve_device(&stored_output_device(want_id.map(str::to_string)), &infos);
     resolved
         .and_then(|id| devices.iter().position(|d| d.id == id.as_str()))
         .unwrap_or(0)

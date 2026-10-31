@@ -72,33 +72,30 @@ async fn verify_token_sends_the_token_header_and_reads_the_account() {
 
 #[tokio::test]
 async fn verify_token_maps_each_failure_answer_to_its_error() {
-    for (response, expected) in [
+    type Verified = Result<DonatelloAccount, DonatelloError>;
+    type Check = fn(&Verified) -> bool;
+    let cases: Vec<(ResponseTemplate, Check)> = vec![
         (
             ResponseTemplate::new(reqwest::StatusCode::UNAUTHORIZED)
                 .set_body_json(json!({ "success": false, "message": "Помилка авторизації" })),
-            "unauthorized",
+            |result: &Verified| matches!(result, Err(DonatelloError::Unauthorized)),
         ),
         (
             ResponseTemplate::new(reqwest::StatusCode::NOT_FOUND),
-            "profile incomplete",
+            |result: &Verified| matches!(result, Err(DonatelloError::ProfileIncomplete)),
         ),
         (
             ResponseTemplate::new(reqwest::StatusCode::INTERNAL_SERVER_ERROR),
-            "http 500",
+            |result: &Verified| matches!(result, Err(DonatelloError::Http { status: 500 })),
         ),
         (
             ResponseTemplate::new(reqwest::StatusCode::OK).set_body_string("<html>"),
-            "malformed",
+            |result: &Verified| matches!(result, Err(DonatelloError::MalformedResponse { .. })),
         ),
-    ] {
+    ];
+    for (response, expected) in cases {
         let result = verify_against(response).await;
-        let matched = match expected {
-            "unauthorized" => matches!(result, Err(DonatelloError::Unauthorized)),
-            "profile incomplete" => matches!(result, Err(DonatelloError::ProfileIncomplete)),
-            "http 500" => matches!(result, Err(DonatelloError::Http { status: 500 })),
-            _ => matches!(result, Err(DonatelloError::MalformedResponse { .. })),
-        };
-        assert!(matched, "{expected}: {result:?}");
+        assert!(expected(&result), "{result:?}");
     }
 }
 

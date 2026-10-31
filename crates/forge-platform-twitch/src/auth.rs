@@ -170,10 +170,15 @@ pub struct TwitchAuthFlow {
     oauth: TwitchOAuthClient,
     helix: Gateway,
     scopes: &'static [&'static str],
-    device_code: Option<Secret>,
+    pending: Option<PendingDevice>,
     poll_interval: Duration,
-    deadline: Option<Instant>,
     timing: DeviceTiming,
+}
+
+#[derive(Clone)]
+struct PendingDevice {
+    code: Secret,
+    deadline: Instant,
 }
 
 impl TwitchAuthFlow {
@@ -182,9 +187,8 @@ impl TwitchAuthFlow {
             oauth,
             helix,
             scopes: TWITCH_BROADCASTER_SCOPES,
-            device_code: None,
+            pending: None,
             poll_interval: DEFAULT_POLL_INTERVAL,
-            deadline: None,
             timing: DeviceTiming::default(),
         }
     }
@@ -212,11 +216,13 @@ impl TwitchAuthFlow {
         let expires_at = SystemTime::now()
             .checked_add(lifetime)
             .ok_or_else(lifetime_out_of_range)?;
-        self.device_code = Some(authorization.device_code);
+        self.pending = Some(PendingDevice {
+            code: authorization.device_code,
+            deadline,
+        });
         self.poll_interval = self.timing.poll_interval.unwrap_or_else(|| {
             Duration::from_secs(authorization.interval.max(MIN_POLL_INTERVAL_SECS))
         });
-        self.deadline = Some(deadline);
         info!(
             scopes = self.scopes.len(),
             expires_in_secs = authorization.expires_in,
@@ -234,13 +240,10 @@ impl TwitchAuthFlow {
         &mut self,
         cancel: CancellationToken,
     ) -> Result<TwitchAuthBundle, PlatformError> {
-        let device_code = self
-            .device_code
-            .clone()
-            .ok_or_else(|| PlatformError::Auth {
-                reason: "wait_for_authorization called before start".into(),
-            })?;
-        let deadline = self.deadline.ok_or_else(|| PlatformError::Auth {
+        let PendingDevice {
+            code: device_code,
+            deadline,
+        } = self.pending.clone().ok_or_else(|| PlatformError::Auth {
             reason: "wait_for_authorization called before start".into(),
         })?;
 
@@ -417,8 +420,10 @@ mod tests {
     }
 
     fn armed(mut flow: TwitchAuthFlow) -> TwitchAuthFlow {
-        flow.device_code = Some(Secret::new("DEV123"));
-        flow.deadline = Some(tokio::time::Instant::now() + Duration::from_secs(3600));
+        flow.pending = Some(PendingDevice {
+            code: Secret::new("DEV123"),
+            deadline: tokio::time::Instant::now() + Duration::from_secs(3600),
+        });
         flow.poll_interval = QUICK_POLL;
         flow
     }
@@ -1148,7 +1153,7 @@ mod tests {
         };
 
         assert_eq!(reason, DEVICE_LIFETIME_OUT_OF_RANGE_REASON);
-        assert!(flow.device_code.is_none() && flow.deadline.is_none());
+        assert!(flow.pending.is_none());
     }
 
     #[tokio::test]
@@ -1179,7 +1184,7 @@ mod tests {
         let server = MockServer::start().await;
         mount(&server, "/token", poll_answer("authorization_pending")).await;
         let mut flow = armed(flow_at(&server));
-        flow.deadline = Some(tokio::time::Instant::now());
+        flow.pending.as_mut().unwrap().deadline = tokio::time::Instant::now();
 
         let outcome = flow.wait_for_authorization(CancellationToken::new()).await;
 

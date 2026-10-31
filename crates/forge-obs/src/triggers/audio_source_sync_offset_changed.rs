@@ -13,6 +13,9 @@ use crate::vocabulary::fields::audio as fields;
 use crate::vocabulary::messages;
 use crate::vocabulary::{event_kinds, picker_keys, trigger_ids, variables};
 
+const SYNC_OFFSET_MIN_MS: i64 = -950;
+const SYNC_OFFSET_MAX_MS: i64 = 20_000;
+
 pub(crate) struct AudioSourceSyncOffsetChangedDescriptor;
 
 impl TriggerKindDescriptor for AudioSourceSyncOffsetChangedDescriptor {
@@ -116,8 +119,8 @@ impl TriggerKindDescriptor for AudioSourceSyncOffsetChangedDescriptor {
                     kind: VariantKind::Int,
                     label: "Sync offset (ms)".to_owned(),
                     synthesis: Some(SynthesisHint::BoundedInt {
-                        min: -950,
-                        max: 20000,
+                        min: SYNC_OFFSET_MIN_MS,
+                        max: SYNC_OFFSET_MAX_MS,
                     }),
                 },
             ],

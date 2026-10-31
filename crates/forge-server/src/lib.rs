@@ -37,7 +37,7 @@ pub use error::ServerError;
 pub use handle::ServerHandle;
 pub use overlay_token::masked_overlay_token;
 pub use run_state::ServerRunWatch;
-pub use server::{Server, start_server, stopped_server};
+pub use server::{start_server, stopped_server};
 pub use snapshot::{
     BandwidthSnapshot, ConnectedClientSnapshot, EventFilterSnapshot, ServerSnapshot,
 };

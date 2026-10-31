@@ -70,7 +70,7 @@ impl VTubeSink for VTubeClient {
             if let Err(err) = self.set_expression(file, false).await {
                 let error_id = match err {
                     VTubeError::Rejected { error_id, .. } => error_id,
-                    _ => EXPRESSION_ERROR_ID_UNKNOWN,
+                    _ => UNKNOWN_ERROR_ID,
                 };
                 failed.push((file.clone(), error_id));
             }
@@ -281,10 +281,10 @@ impl VTubeSink for VTubeClient {
             "fileName": file_name,
             "positionX": x.unwrap_or(0.0),
             "positionY": y.unwrap_or(0.0),
-            "size": size.unwrap_or(0.32),
+            "size": size.unwrap_or(DEFAULT_ITEM_SIZE),
             "rotation": rotation.unwrap_or(0.0),
-            "fadeTime": fade_time.unwrap_or(0.5),
-            "order": order.unwrap_or(0),
+            "fadeTime": fade_time.unwrap_or(DEFAULT_ITEM_FADE_SECS),
+            "order": order.unwrap_or(DEFAULT_ITEM_ORDER),
             "failIfOrderTaken": false,
             "smoothing": 0,
             "censored": false,
@@ -393,7 +393,7 @@ fn check_items_moved(data: &Value) -> Result<(), VTubeError> {
         .map(|entry| {
             (
                 entry["itemInstanceID"].as_str().unwrap_or("").to_owned(),
-                entry["errorID"].as_i64().unwrap_or(ITEM_ERROR_ID_UNKNOWN),
+                entry["errorID"].as_i64().unwrap_or(UNKNOWN_ERROR_ID),
             )
         })
         .collect();
@@ -409,10 +409,12 @@ fn check_items_moved(data: &Value) -> Result<(), VTubeError> {
     }
 }
 
-const ITEM_ERROR_ID_UNKNOWN: i64 = -1;
+const UNKNOWN_ERROR_ID: i64 = -1;
+const DEFAULT_ITEM_SIZE: f64 = 0.32;
+const DEFAULT_ITEM_FADE_SECS: f64 = 0.5;
+const DEFAULT_ITEM_ORDER: i64 = 0;
 const ITEM_IGNORE_SENTINEL: f64 = -1000.0;
 const ITEM_IGNORE_SENTINEL_ORDER: i64 = -1000;
-const EXPRESSION_ERROR_ID_UNKNOWN: i64 = -1;
 
 #[cfg(test)]
 mod tests {

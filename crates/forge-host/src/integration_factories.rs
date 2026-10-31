@@ -638,6 +638,8 @@ pub(crate) fn wire_discord(
     )
     .inspect_err(|e| tracing::error!(error = %e, "discord gateway build failed"))
     .ok()?;
+    let boot_sync = Arc::clone(&client);
+    tokio::spawn(async move { boot_sync.sync_webhooks().await });
     if let Err(e) = forge_discord::register_discord_sub_actions(sub_actions, Arc::clone(&client)) {
         tracing::error!(error = %e, "discord sub-action registration failed");
     }

@@ -90,7 +90,7 @@ pub(crate) fn run_stage_traced(
                 marks,
                 context.speech_language,
             );
-            (StageOut::Ok(output), carried)
+            (Ok(output), carried)
         }
         StageName::Output => {
             let mut sub_passes = SubPassEdits::default();
@@ -103,7 +103,7 @@ pub(crate) fn run_stage_traced(
                 .fold(marks.to_vec(), |carried, edits| {
                     shrink_through_pass(carried, edits)
                 });
-            (StageOut::Ok(output), carried)
+            (Ok(output), carried)
         }
     }
 }
@@ -113,7 +113,7 @@ pub(crate) fn blocklist_traced(
     config: &PipelineConfig,
 ) -> (StageOut, Vec<AppliedReplacement>) {
     if config.word_blocklist.is_empty() {
-        return (StageOut::Ok(text.to_owned()), Vec::new());
+        return (Ok(text.to_owned()), Vec::new());
     }
     let unspoken = Unspoken::in_output(&config.output);
     let origin_of = |edit: &PassEdit| {
@@ -123,7 +123,7 @@ pub(crate) fn blocklist_traced(
     let mut early_edits = PassEdits::default();
     let censored = match censor_blocked_words(text, config, &[], &mut early_edits) {
         Ok(censored) => censored,
-        Err(reason) => return (StageOut::Skip(reason), Vec::new()),
+        Err(reason) => return (Err(reason), Vec::new()),
     };
     let marks = carry_through_pass(Vec::new(), early_edits.0, origin_of);
     let mut transform_passes = SubPassEdits::default();
@@ -140,10 +140,10 @@ pub(crate) fn blocklist_traced(
         .collect();
     let mut late_edits = PassEdits::default();
     match censor_blocked_words(&transformed, config, &own_tokens, &mut late_edits) {
-        Err(reason) => (StageOut::Skip(reason), Vec::new()),
-        Ok(_) if late_edits.0.is_empty() => (StageOut::Ok(censored), marks),
+        Err(reason) => (Err(reason), Vec::new()),
+        Ok(_) if late_edits.0.is_empty() => (Ok(censored), marks),
         Ok(rechecked) => (
-            StageOut::Ok(rechecked),
+            Ok(rechecked),
             carry_through_pass(carried, late_edits.0, origin_of),
         ),
     }

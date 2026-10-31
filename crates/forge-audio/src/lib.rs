@@ -45,4 +45,3 @@ pub use targeted::{PlaybackTarget, RemoteLegFactory, TargetedSinkFactory};
 pub use voice_gate::{VoiceGateConfig, VoiceGateMonitor, VoiceGateState, VoiceGateWatch};
 
 pub use convert::{remix, resample};
-pub use route::DevicePreference;

@@ -1,6 +1,7 @@
 use forge_speech_types::{EngineId, TtsVoice, VoiceGender, VoiceId};
 use forge_tts_core::ENGINE_ID_OPENAI;
 
+const OUTPUT_SAMPLE_RATE_HZ: u32 = 24_000;
 const ENGINE: fn() -> EngineId = || EngineId(ENGINE_ID_OPENAI.into());
 
 pub(super) fn static_voices() -> Vec<TtsVoice> {
@@ -20,7 +21,7 @@ pub(super) fn static_voices() -> Vec<TtsVoice> {
         gender,
         engine_id: ENGINE(),
         is_neural: true,
-        sample_rate_hint: 24_000,
+        sample_rate_hint: OUTPUT_SAMPLE_RATE_HZ,
     })
     .collect()
 }

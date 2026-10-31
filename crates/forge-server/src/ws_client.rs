@@ -4,7 +4,7 @@ use std::{
     net::SocketAddr,
     sync::{
         Arc, Mutex,
-        atomic::{AtomicBool, AtomicU64, Ordering},
+        atomic::{AtomicU64, Ordering},
     },
     time::Duration,
 };
@@ -55,12 +55,13 @@ pub(crate) fn detect_from_user_agent(ua: Option<&str>) -> ClientType {
     }
 }
 
+const NOT_AUTHENTICATED: u64 = u64::MAX;
+
 pub(crate) struct WsClient {
     pub id: ClientId,
     pub identification: ArcSwap<String>,
     pub remote_addr: SocketAddr,
     pub client_type: ArcSwap<ClientType>,
-    pub authenticated: AtomicBool,
     bearer_generation: AtomicU64,
     pub connected_at: OffsetDateTime,
     pub bytes_sent_session: AtomicU64,
@@ -75,8 +76,7 @@ impl WsClient {
             id,
             remote_addr,
             client_type: ArcSwap::from_pointee(ClientType::Unknown),
-            authenticated: AtomicBool::new(false),
-            bearer_generation: AtomicU64::new(0),
+            bearer_generation: AtomicU64::new(NOT_AUTHENTICATED),
             connected_at: OffsetDateTime::now_utc(),
             bytes_sent_session: AtomicU64::new(0),
             recent_events: Mutex::new(VecDeque::new()),
@@ -86,13 +86,11 @@ impl WsClient {
 
     pub(crate) fn mark_bearer_authenticated(&self, generation: u64) {
         self.bearer_generation.store(generation, Ordering::SeqCst);
-        self.authenticated.store(true, Ordering::SeqCst);
     }
 
     pub(crate) fn bearer_generation(&self) -> Option<u64> {
-        self.authenticated
-            .load(Ordering::SeqCst)
-            .then(|| self.bearer_generation.load(Ordering::SeqCst))
+        let generation = self.bearer_generation.load(Ordering::SeqCst);
+        (generation != NOT_AUTHENTICATED).then_some(generation)
     }
 
     pub(crate) fn uptime(&self) -> time::Duration {

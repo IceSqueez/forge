@@ -3,7 +3,7 @@ use forge_platform_core::PlatformError;
 use thiserror::Error;
 
 use crate::api::whole_seconds;
-use crate::config::STATEMENT_CALL_INTERVAL;
+use crate::config::CALL_INTERVAL;
 use crate::integration::MONOBANK_INTEGRATION;
 
 #[derive(Debug, Error)]
@@ -26,7 +26,10 @@ pub enum MonobankError {
     #[error("the monobank jar identifier is not valid")]
     InvalidJarId,
 
-    #[error("monobank allows one call per minute; next call in {retry_after_secs}s")]
+    #[error(
+        "monobank allows one call per {}s; next call in {retry_after_secs}s",
+        CALL_INTERVAL.as_secs()
+    )]
     CoolingDown { retry_after_secs: u32 },
 
     #[error("rate limited by monobank; retry after {retry_after_secs}s")]
@@ -88,10 +91,10 @@ impl From<GatewayFailure> for MonobankError {
                 Self::Unauthorized
             }
             GatewayFailure::RateLimited { retry_after, .. } => Self::RateLimited {
-                retry_after_secs: whole_seconds(retry_after.max(STATEMENT_CALL_INTERVAL)),
+                retry_after_secs: whole_seconds(retry_after.max(CALL_INTERVAL)),
             },
             GatewayFailure::BudgetExhausted { retry_after } => Self::CoolingDown {
-                retry_after_secs: whole_seconds(retry_after.unwrap_or(STATEMENT_CALL_INTERVAL)),
+                retry_after_secs: whole_seconds(retry_after.unwrap_or(CALL_INTERVAL)),
             },
             GatewayFailure::InvalidRequest(InvalidRequest::InvalidHeader) => Self::MalformedToken,
             other => match other.status() {

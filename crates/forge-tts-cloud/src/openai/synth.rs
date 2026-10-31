@@ -15,6 +15,9 @@ const VALID_VOICES: &[&str] = &["alloy", "echo", "fable", "onyx", "nova", "shimm
 const SPEECH_PATH: &str = "/v1/audio/speech";
 const MODELS_PATH: &str = "/v1/models";
 const INVALID_API_KEY: &str = "invalid API key";
+const MIN_SPEED: f32 = 0.25;
+const MAX_SPEED: f32 = 4.0;
+const SPEECH_MODEL: &str = "tts-1";
 const QUOTA_MARKERS: &[&str] = &["insufficient_quota", "billing"];
 
 fn map_voice_id(id: &VoiceId) -> Result<&'static str, CloudTtsError> {
@@ -26,7 +29,7 @@ fn map_voice_id(id: &VoiceId) -> Result<&'static str, CloudTtsError> {
 }
 
 fn map_speed(rate_multiplier: f32) -> f64 {
-    f64::from(rate_multiplier.clamp(0.25, 4.0))
+    f64::from(rate_multiplier.clamp(MIN_SPEED, MAX_SPEED))
 }
 
 const POLICY: ProviderPolicy = ProviderPolicy {
@@ -71,7 +74,7 @@ pub(super) async fn synthesize(
     }
 
     let body = RequestBody::json(&json!({
-        "model": "tts-1",
+        "model": SPEECH_MODEL,
         "voice": voice,
         "input": req.text,
         "response_format": "wav",

@@ -65,6 +65,9 @@ enum OutputCandidate {
 const OUTPUT_CANDIDATES: [OutputCandidate; 2] =
     [OutputCandidate::Requested, OutputCandidate::HostDefault];
 
+const MILLIS_PER_SECOND: u64 = 1000;
+const PLAYBACK_NEVER_STARTED: &str = "playback ended before its stream started";
+
 pub(crate) struct CpalSink {
     device_id: DeviceId,
 }
@@ -78,7 +81,7 @@ impl CpalSink {
         &self,
         buffer: PcmBuffer,
         control: Arc<PlaybackControl>,
-    ) -> Result<Option<PlaybackTask>, AudioError> {
+    ) -> Result<PlaybackTask, AudioError> {
         let (started_tx, started_rx) = oneshot::channel();
         let request = PlaybackRequest {
             device_id: self.device_id.as_str().to_owned(),
@@ -88,23 +91,21 @@ impl CpalSink {
         };
         let task = tokio::task::spawn_blocking(move || run_playback(request));
         if started_rx.await.is_ok() {
-            return Ok(Some(task));
+            return Ok(task);
         }
         task.await
             .map_err(|e| AudioError::JoinFailed(e.to_string()))??;
-        Ok(None)
+        Err(AudioError::Host(PLAYBACK_NEVER_STARTED.to_owned()))
     }
 }
 
 #[async_trait]
 impl AudioSink for CpalSink {
     async fn play(&self, buffer: PcmBuffer) -> Result<(), AudioError> {
-        match self.start_playback(buffer, PlaybackControl::new()).await? {
-            Some(task) => task
-                .await
-                .map_err(|e| AudioError::JoinFailed(e.to_string()))?,
-            None => Ok(()),
-        }
+        self.start_playback(buffer, PlaybackControl::new())
+            .await?
+            .await
+            .map_err(|e| AudioError::JoinFailed(e.to_string()))?
     }
 
     async fn play_stoppable(&self, buffer: PcmBuffer) -> Result<PlaybackHandle, AudioError> {
@@ -117,12 +118,9 @@ impl AudioSink for CpalSink {
         let control = PlaybackControl::new();
         let handle = PlaybackHandle::from_control(Arc::clone(&control));
         let start_guard = StopIfAbandoned(Some(Arc::clone(&control)));
-        let started = self.start_playback(buffer, control).await?;
+        let task = self.start_playback(buffer, control).await?;
         start_guard.disarm();
-        match started {
-            Some(task) => Ok(ControlledPlayback::from_handle(handle, task)),
-            None => Ok(ControlledPlayback::resolved(Ok(()))),
-        }
+        Ok(ControlledPlayback::from_handle(handle, task))
     }
 }
 
@@ -257,7 +255,7 @@ fn try_start_stream(
     let converted = prepare_samples(buffer, dst_sr, dst_ch)?;
 
     let duration_ms = if dst_sr > 0 {
-        (converted.len() as u64 / u64::from(dst_ch)) * 1000 / u64::from(dst_sr)
+        (converted.len() as u64 / u64::from(dst_ch)) * MILLIS_PER_SECOND / u64::from(dst_sr)
     } else {
         0
     };

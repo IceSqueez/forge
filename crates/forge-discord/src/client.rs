@@ -8,11 +8,11 @@ use forge_net::{
     GatewayTimings, HeaderLookup, Method, MultipartBody, RequestBody, ThrottleHintFamily,
     ThrottleScope,
 };
-use forge_storage::{CredentialId, CredentialsRepo};
+use forge_storage::CredentialsRepo;
 use tokio::sync::broadcast;
 
 use crate::content::{DiscordContentSnapshot, make_content_state, record_send};
-use crate::credentials::{DISCORD_CRED_PREFIX, WebhookCredential};
+use crate::credentials::WebhookCredential;
 use crate::embed::{DiscordEmbed, MAX_CONTENT_CHARS};
 use crate::error::{DiscordError, ValidationFault};
 use crate::events::{publish_failed, publish_posted, publish_rate_limited};
@@ -118,7 +118,7 @@ impl DiscordClient {
         let (health_tx, health_state) = make_health_state();
         let content_state = make_content_state();
 
-        let client = Arc::new(Self {
+        Ok(Arc::new(Self {
             id: crate::DISCORD_INTEGRATION.id,
             publisher,
             creds,
@@ -128,16 +128,13 @@ impl DiscordClient {
             content_state: Arc::clone(&content_state),
             rate_limiter,
             webhook_registry_serial: tokio::sync::Mutex::new(()),
-        });
+        }))
+    }
 
-        let boot_sync = Arc::clone(&client);
-        tokio::spawn(async move {
-            if let Err(error) = boot_sync.list_webhooks().await {
-                tracing::warn!(%error, "discord webhooks could not be listed at startup");
-            }
-        });
-
-        Ok(client)
+    pub async fn sync_webhooks(&self) {
+        if let Err(error) = self.list_webhooks().await {
+            tracing::warn!(%error, "discord webhooks could not be listed at startup");
+        }
     }
 
     pub(crate) fn has_webhooks(&self) -> bool {
@@ -145,7 +142,7 @@ impl DiscordClient {
     }
 
     pub(crate) async fn load_webhook(&self, name: &str) -> Result<WebhookCredential, DiscordError> {
-        let id = CredentialId::new(format!("{DISCORD_CRED_PREFIX}{name}"));
+        let id = crate::webhooks::credential_id(name);
         let json = self
             .creds
             .load(&id)
@@ -762,7 +759,7 @@ pub(crate) mod tests {
 
     fn store_hook(creds: &MemoryCredentials, name: &str, url: &str) {
         creds.put(
-            &format!("{DISCORD_CRED_PREFIX}{name}"),
+            &format!("{}{name}", crate::credentials::DISCORD_CRED_PREFIX),
             &serde_json::json!({ "url": url }).to_string(),
         );
     }

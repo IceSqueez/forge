@@ -808,6 +808,7 @@ mod tests {
             platform,
             Arc::clone(&rig.manager),
         );
+        crate::builtin::YoutubeIntegrationBundle::start_background_tasks(&bundle);
         let mut revisions = bundle.status_revisions().unwrap();
 
         let outcome = bundle.refresh_token().await;

@@ -30,7 +30,7 @@ impl From<EspeakError> for TtsError {
         match e {
             EspeakError::BinaryNotFound => TtsError::EngineUnavailable {
                 id: EngineId(ENGINE_ID_ESPEAK_NG.into()),
-                detail: "espeak-ng binary not found on PATH".into(),
+                detail: e.to_string(),
             },
             EspeakError::VersionProbeFailed(detail) => TtsError::EngineUnavailable {
                 id: EngineId(ENGINE_ID_ESPEAK_NG.into()),

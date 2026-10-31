@@ -8,7 +8,7 @@ use forge_net::{
 use forge_types::Secret;
 use serde::de::DeserializeOwned;
 
-use crate::config::{MonobankConfig, STATEMENT_CALL_INTERVAL};
+use crate::config::{CALL_INTERVAL, MonobankConfig};
 use crate::error::MonobankError;
 use crate::jar::{JarId, MonobankJar};
 use crate::wire::ClientInfoWire;
@@ -21,7 +21,7 @@ const CALLS_PER_INTERVAL: u32 = 1;
 pub(crate) const MONOBANK_GATEWAY_PROFILE: GatewayProfile = GatewayProfile::platform_api(
     CallClass::Interactive,
     ThrottleHintFamily::RetryAfter,
-    STATEMENT_CALL_INTERVAL,
+    CALL_INTERVAL,
 );
 
 #[derive(Clone)]
@@ -35,7 +35,7 @@ impl MonobankRateLimits {
         let per_call = || -> Arc<dyn RateLimiter> {
             Arc::new(TokenBucketRateLimiter::new(
                 CALLS_PER_INTERVAL,
-                STATEMENT_CALL_INTERVAL,
+                CALL_INTERVAL,
             ))
         };
         Self {

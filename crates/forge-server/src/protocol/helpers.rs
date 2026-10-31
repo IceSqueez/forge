@@ -49,9 +49,11 @@ pub(crate) fn variant_to_wire_value(v: &Variant) -> serde_json::Value {
     }
 }
 
+pub(super) const MAX_CODE_EVENT_NAME_LEN: usize = 64;
+
 pub(crate) fn valid_code_event_name(name: &str) -> bool {
     !name.is_empty()
-        && name.len() <= 64
+        && name.len() <= MAX_CODE_EVENT_NAME_LEN
         && name
             .chars()
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')

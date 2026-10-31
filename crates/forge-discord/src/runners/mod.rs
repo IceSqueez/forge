@@ -46,8 +46,14 @@ pub fn register_discord_sub_actions(
     reg: &mut SubActionRegistry,
     client: Arc<DiscordClient>,
 ) -> Result<(), RegistryError> {
+    register_runners(reg, client)
+}
+
+fn register_runners(
+    reg: &mut SubActionRegistry,
+    sink: Arc<dyn DiscordSink>,
+) -> Result<(), RegistryError> {
     let mut reg = reg.owned_by(crate::DISCORD_INTEGRATION.id);
-    let sink: Arc<dyn DiscordSink> = client;
     reg.register(Box::new(PostTextRunner::new(Arc::clone(&sink))))?;
     reg.register(Box::new(PostEmbedRunner::new(Arc::clone(&sink))))?;
     reg.register(Box::new(EditMessageRunner::new(Arc::clone(&sink))))?;
@@ -108,17 +114,7 @@ mod tests {
     #[test]
     fn registering_all_runners_exposes_every_expected_id() {
         let mut reg = SubActionRegistry::new();
-        let sink: Arc<dyn DiscordSink> = Arc::new(MockSink);
-        reg.register(Box::new(PostTextRunner::new(Arc::clone(&sink))))
-            .unwrap();
-        reg.register(Box::new(PostEmbedRunner::new(Arc::clone(&sink))))
-            .unwrap();
-        reg.register(Box::new(EditMessageRunner::new(Arc::clone(&sink))))
-            .unwrap();
-        reg.register(Box::new(SendFileRunner::new(Arc::clone(&sink))))
-            .unwrap();
-        reg.register(Box::new(DeleteMessageRunner::new(Arc::clone(&sink))))
-            .unwrap();
+        register_runners(&mut reg, Arc::new(MockSink)).unwrap();
         for id in &[
             "discord.webhook.send_message",
             "discord.webhook.send_embed",
@@ -564,6 +560,41 @@ mod tests {
                 .map(|error| error.into_config_problem());
 
             assert_eq!(problem, Some(needs), "{} {entries:?}", runner.id());
+        }
+    }
+
+    #[test]
+    fn edit_message_validation_refuses_literal_blank_content_and_defers_a_template() {
+        use forge_registry::SubActionRunner as _;
+        let sink: Arc<dyn DiscordSink> = Arc::new(MockSink);
+        let runner = EditMessageRunner::new(sink);
+        let config_with = |content: Option<&str>| -> forge_registry::SubActionConfig {
+            [
+                (crate::vocabulary::config_keys::WEBHOOK_NAME, Some("alerts")),
+                (
+                    crate::vocabulary::config_keys::MESSAGE_ID,
+                    Some("123456789012345678"),
+                ),
+                (crate::vocabulary::config_keys::CONTENT, content),
+            ]
+            .into_iter()
+            .filter_map(|(key, value)| {
+                value.map(|text| (key.to_owned(), Variant::String(text.to_owned())))
+            })
+            .collect()
+        };
+        for (case, content, accepted) in [
+            ("no key", None, false),
+            ("empty", Some(""), false),
+            ("blank", Some("   "), false),
+            ("text", Some("new text"), true),
+            ("template", Some("%title%"), true),
+        ] {
+            let outcome = runner.check_config(
+                &config_with(content),
+                forge_registry::Interpolation::Deferred,
+            );
+            assert_eq!(outcome.is_ok(), accepted, "{case}: {outcome:?}");
         }
     }
 

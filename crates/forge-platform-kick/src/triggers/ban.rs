@@ -74,6 +74,15 @@ impl TriggerKindDescriptor for BanDescriptor {
                 )
                 .event_specific(
                     DeclaredVariable {
+                        name: variables::ban::IS_PERMANENT.to_owned(),
+                        kind: VariantKind::Bool,
+                        label: "Permanent ban".to_owned(),
+                        synthesis: None,
+                    },
+                    |event| Variant::Bool(payload_read::flag(event, fields::IS_PERMANENT)),
+                )
+                .event_specific(
+                    DeclaredVariable {
                         name: variables::ban::REASON.to_owned(),
                         kind: VariantKind::String,
                         label: "Ban reason".to_owned(),

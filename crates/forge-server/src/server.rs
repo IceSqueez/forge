@@ -51,32 +51,6 @@ pub(crate) struct AppState {
     pub timing: ServerTiming,
 }
 
-pub struct Server {
-    pub config: ServerConfig,
-}
-
-impl Server {
-    pub async fn start(self) -> Result<ServerHandle, ServerError> {
-        let addr = self.config.bind_addr;
-        validate_lan_bind(&addr, self.config.lan_bind_enabled)?;
-        let listener = TcpListener::bind(addr)
-            .await
-            .map_err(|e| ServerError::Bind {
-                addr: addr.to_string(),
-                reason: e.to_string(),
-            })?;
-        let bind_addr = listener.local_addr().unwrap_or(addr);
-        let state = build_state(self.config, bind_addr).await?;
-        Ok(serve_on(listener, state))
-    }
-
-    pub async fn stopped(self) -> Result<ServerHandle, ServerError> {
-        let bind_addr = self.config.bind_addr;
-        let state = build_state(self.config, bind_addr).await?;
-        Ok(ServerHandle::stopped(state, bind_addr))
-    }
-}
-
 async fn build_state(config: ServerConfig, bind_addr: SocketAddr) -> Result<AppState, ServerError> {
     let auth = AuthState::load(config.auth_required_for_reads, config.credentials.as_ref()).await?;
     auth.set_lan_exposed(is_lan_bind(bind_addr.ip()));
@@ -116,11 +90,23 @@ async fn build_state(config: ServerConfig, bind_addr: SocketAddr) -> Result<AppS
 }
 
 pub async fn start_server(config: ServerConfig) -> Result<ServerHandle, ServerError> {
-    Server { config }.start().await
+    let addr = config.bind_addr;
+    validate_lan_bind(&addr, config.lan_bind_enabled)?;
+    let listener = TcpListener::bind(addr)
+        .await
+        .map_err(|e| ServerError::Bind {
+            addr: addr.to_string(),
+            reason: e.to_string(),
+        })?;
+    let bind_addr = listener.local_addr().unwrap_or(addr);
+    let state = build_state(config, bind_addr).await?;
+    Ok(serve_on(listener, state))
 }
 
 pub async fn stopped_server(config: ServerConfig) -> Result<ServerHandle, ServerError> {
-    Server { config }.stopped().await
+    let bind_addr = config.bind_addr;
+    let state = build_state(config, bind_addr).await?;
+    Ok(ServerHandle::stopped(state, bind_addr))
 }
 
 pub(crate) fn is_lan_bind(address: IpAddr) -> bool {

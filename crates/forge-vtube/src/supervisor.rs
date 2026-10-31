@@ -44,6 +44,7 @@ pub(crate) const RECONNECT_MAX_DELAY: Duration = Duration::from_secs(30);
 pub(crate) const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 pub(crate) const EXPRESSION_POLL_INTERVAL: Duration = Duration::from_secs(3);
 pub(crate) const EXPRESSION_POLL_TIMEOUT: Duration = Duration::from_secs(5);
+const PLUGIN_DEVELOPER: &str = crate::PLUGIN_NAME;
 const UNANSWERED_POLLS_BEFORE_SUSPECT: u32 = 2;
 pub(crate) const REQUEST_SWEEP_INTERVAL: Duration = Duration::from_secs(1);
 pub(crate) const TOKEN_APPROVAL_TIMEOUT: Duration = Duration::from_secs(30);
@@ -168,7 +169,7 @@ async fn request_new_token(
         AUTHENTICATION_TOKEN_REQUEST,
         serde_json::json!({
             "pluginName": crate::PLUGIN_NAME,
-            "pluginDeveloper": crate::PLUGIN_NAME
+            "pluginDeveloper": PLUGIN_DEVELOPER
         }),
         approval_timeout,
     )
@@ -207,7 +208,7 @@ async fn authenticate_with_token(
         AUTHENTICATION_REQUEST,
         serde_json::json!({
             "pluginName": crate::PLUGIN_NAME,
-            "pluginDeveloper": crate::PLUGIN_NAME,
+            "pluginDeveloper": PLUGIN_DEVELOPER,
             "authenticationToken": token
         }),
         reply_timeout,

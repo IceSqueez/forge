@@ -10,7 +10,7 @@ const MAX_STATEMENT_WINDOW_DAYS: u64 = 31;
 const HISTORY_LOOKBACK_HOURS: u64 = 1;
 const WINDOW_OVERLAP_MINUTES: u64 = 5;
 
-pub const STATEMENT_CALL_INTERVAL: Duration = Duration::from_secs(SECONDS_PER_MINUTE);
+pub const CALL_INTERVAL: Duration = Duration::from_secs(SECONDS_PER_MINUTE);
 pub(crate) const MAX_STATEMENT_WINDOW: Duration =
     Duration::from_secs(MAX_STATEMENT_WINDOW_DAYS * SECONDS_PER_DAY + SECONDS_PER_HOUR);
 pub const DEFAULT_HISTORY_LOOKBACK: Duration =
@@ -28,7 +28,7 @@ pub struct MonobankTiming {
 impl Default for MonobankTiming {
     fn default() -> Self {
         Self {
-            statement_call_interval: STATEMENT_CALL_INTERVAL,
+            statement_call_interval: CALL_INTERVAL,
             error_backoff_base: POLL_ERROR_BACKOFF_BASE,
             error_backoff_cap: POLL_ERROR_BACKOFF_CAP,
         }

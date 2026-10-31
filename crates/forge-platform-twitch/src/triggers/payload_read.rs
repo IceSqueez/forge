@@ -2,6 +2,8 @@ use forge_events::Event;
 use forge_registry::{ActorBlock, ActorIdentity, ActorRole, LoginSlot};
 use forge_types::{PlatformId, Variant};
 
+use crate::vocabulary::fields::moderation;
+
 pub(super) const fn twitch_actor(role: ActorRole) -> ActorBlock {
     ActorBlock {
         role,
@@ -21,6 +23,24 @@ pub(super) fn identity(
         display_name: actor_text(actor, display_name),
         login: Some(actor_text(actor, login)),
     }
+}
+
+pub(super) fn moderated_user_identity(event: &Event) -> ActorIdentity {
+    identity(
+        event.payload.get(moderation::USER),
+        moderation::USER_ID,
+        moderation::USER_LOGIN,
+        moderation::USER_DISPLAY_NAME,
+    )
+}
+
+pub(super) fn acting_moderator_identity(event: &Event) -> ActorIdentity {
+    identity(
+        event.payload.get(moderation::MODERATOR),
+        moderation::MODERATOR_ID,
+        moderation::MODERATOR_LOGIN,
+        moderation::MODERATOR_DISPLAY_NAME,
+    )
 }
 
 pub(super) fn text(event: &Event, key: &str) -> String {

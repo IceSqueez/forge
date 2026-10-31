@@ -154,6 +154,7 @@ impl YoutubeAssembly {
             Arc::clone(&platform),
             Arc::clone(&self.manager),
         );
+        YoutubeIntegrationBundle::start_background_tasks(&bundle);
         Ok(Some(YoutubeSession { platform, bundle }))
     }
 }

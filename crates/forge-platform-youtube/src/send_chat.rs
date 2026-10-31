@@ -8,9 +8,9 @@ use futures::future::BoxFuture;
 use crate::data_api::{YoutubeDataApi, json_body};
 use crate::live_chat_id::LiveChatIdHandle;
 
-const SEND_COST: u32 = 50;
-const DELETE_COST: u32 = 50;
-const POLL_COST: u32 = 50;
+const SEND_COST: u32 = 20;
+const DELETE_COST: u32 = 20;
+const POLL_COST: u32 = 20;
 const MESSAGES_PATH: &str = "/liveChat/messages";
 const MISSING_SCOPE: &str = "chat write scope missing";
 

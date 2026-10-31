@@ -13,7 +13,8 @@ use forge_net::{TaskOwner, TaskShutdown};
 use tokio::io::unix::AsyncFd;
 use tokio::sync::mpsc;
 
-use crate::backend::{HotkeyBackend, HotkeyEdge, HotkeyFiredEvent, HotkeyId};
+use crate::backend::{HotkeyBackend, HotkeyFiredEvent, HotkeyId};
+use crate::binding::HotkeyEdge;
 use crate::combo::HotkeyCombo;
 use crate::error::HotkeyError;
 use crate::evdev_watch::{

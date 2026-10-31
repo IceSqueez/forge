@@ -186,7 +186,7 @@ mod tests {
     }
 
     #[test]
-    fn pitch_pct_maps_semitones_with_clamping() {
+    fn pitch_pct_maps_semitones_to_percent() {
         assert_eq!(pitch_pct_from_semitones(0.0), 0);
         assert_eq!(pitch_pct_from_semitones(12.0), 100);
         assert_eq!(pitch_pct_from_semitones(-12.0), -50);

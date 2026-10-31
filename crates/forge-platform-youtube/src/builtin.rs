@@ -6,9 +6,11 @@ use std::time::{Duration, SystemTime};
 use forge_platform_core::{
     BuiltinContent, BuiltinHealth, BuiltinStatus, CapabilityFlags, ChatPlatform, ConnectionState,
     DetailSection, HeaderAction, HealthDelta, HealthMetric, HealthMetricId, HealthStream,
-    HealthText, HealthValue, HeroBadge, HeroBadgeTone, LiveViewerSource, ViewerReport,
+    HealthText, HealthValue, HeroBadge, HeroBadgeTone, LiveViewerSource, PlatformError,
+    ViewerReport,
 };
 use forge_registry::{RegistryError, TriggerRegistry};
+use futures::future::BoxFuture;
 use tokio::sync::{broadcast, watch};
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::BroadcastStream;
@@ -84,14 +86,7 @@ impl YoutubeIntegrationBundle {
         let viewer_report_rx = viewer_report_tx.subscribe();
         let state_rx = platform.state_receiver();
 
-        let token_source = {
-            let manager = Arc::clone(&credentials_manager);
-            Arc::new(move || {
-                let manager = Arc::clone(&manager);
-                Box::pin(async move { manager.get_valid_access_token().await })
-                    as futures::future::BoxFuture<'static, _>
-            })
-        };
+        let token_source = Self::token_source(&credentials_manager);
         let quota = platform.api().quota().clone();
         let follow_lookup = YoutubeFollowLookup::new(
             platform.api().clone(),
@@ -99,22 +94,8 @@ impl YoutubeIntegrationBundle {
             channel_id.clone(),
         );
         let retired = CancellationToken::new();
-        let viewer_poll = YoutubeViewerPoll::new(
-            platform.api().clone(),
-            token_source,
-            platform.active_broadcast_id(),
-            viewer_report_tx.clone(),
-        );
-        let poll_retired = retired.clone();
-        tokio::spawn(async move {
-            tokio::select! {
-                biased;
-                () = poll_retired.cancelled() => {}
-                () = viewer_poll.run() => {}
-            }
-        });
 
-        let bundle = Arc::new(Self {
+        Arc::new(Self {
             id: crate::YOUTUBE_INTEGRATION.id,
             channel_id,
             hero_name: RwLock::new(None),
@@ -129,12 +110,42 @@ impl YoutubeIntegrationBundle {
             viewer_report_rx,
             state_rx,
             retired,
+        })
+    }
+
+    fn token_source(
+        manager: &Arc<YoutubeCredentialsManager>,
+    ) -> Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync> {
+        let manager = Arc::clone(manager);
+        Arc::new(move || {
+            let manager = Arc::clone(&manager);
+            Box::pin(async move { manager.get_valid_access_token().await })
+        })
+    }
+
+    pub fn start_background_tasks(bundle: &Arc<Self>) {
+        Self::spawn_viewer_poll(bundle);
+        Self::spawn_health_bridge(bundle);
+        Self::spawn_viewer_health_bridge(bundle);
+        Self::spawn_identity_refresh(bundle);
+        Self::spawn_token_expiry_bridge(bundle);
+    }
+
+    fn spawn_viewer_poll(bundle: &Arc<Self>) {
+        let viewer_poll = YoutubeViewerPoll::new(
+            bundle.platform.api().clone(),
+            Self::token_source(&bundle.credentials_manager),
+            bundle.platform.active_broadcast_id(),
+            bundle.viewer_report_tx.clone(),
+        );
+        let retired = bundle.retired.clone();
+        tokio::spawn(async move {
+            tokio::select! {
+                biased;
+                () = retired.cancelled() => {}
+                () = viewer_poll.run() => {}
+            }
         });
-        Self::spawn_health_bridge(&bundle);
-        Self::spawn_viewer_health_bridge(&bundle);
-        Self::spawn_identity_refresh(&bundle);
-        Self::spawn_token_expiry_bridge(&bundle);
-        bundle
     }
 
     pub fn viewer_source(&self) -> Box<dyn LiveViewerSource> {
@@ -153,13 +164,9 @@ impl YoutubeIntegrationBundle {
     }
 
     fn spawn_health_bridge(bundle: &Arc<Self>) {
-        let Ok(handle) = tokio::runtime::Handle::try_current() else {
-            tracing::warn!("youtube health bridge not started: no tokio runtime");
-            return;
-        };
         let bundle = Arc::clone(bundle);
         let mut state_rx = bundle.state_rx.clone();
-        handle.spawn(async move {
+        tokio::spawn(async move {
             let mut previous = *state_rx.borrow();
             loop {
                 tokio::select! {
@@ -198,13 +205,9 @@ impl YoutubeIntegrationBundle {
     }
 
     fn spawn_viewer_health_bridge(bundle: &Arc<Self>) {
-        let Ok(handle) = tokio::runtime::Handle::try_current() else {
-            tracing::warn!("youtube health bridge not started: no tokio runtime");
-            return;
-        };
         let bundle = Arc::clone(bundle);
         let mut reports_rx = bundle.viewer_report_tx.subscribe();
-        handle.spawn(async move {
+        tokio::spawn(async move {
             loop {
                 tokio::select! {
                     biased;
@@ -225,13 +228,9 @@ impl YoutubeIntegrationBundle {
     }
 
     fn spawn_token_expiry_bridge(bundle: &Arc<Self>) {
-        let Ok(handle) = tokio::runtime::Handle::try_current() else {
-            tracing::warn!("youtube health bridge not started: no tokio runtime");
-            return;
-        };
         let bundle = Arc::clone(bundle);
         let mut expiry_rx = bundle.credentials_manager.subscribe_expiry();
-        handle.spawn(async move {
+        tokio::spawn(async move {
             loop {
                 tokio::select! {
                     biased;
@@ -245,12 +244,8 @@ impl YoutubeIntegrationBundle {
     }
 
     fn spawn_identity_refresh(bundle: &Arc<Self>) {
-        let Ok(handle) = tokio::runtime::Handle::try_current() else {
-            tracing::warn!("youtube health bridge not started: no tokio runtime");
-            return;
-        };
         let bundle = Arc::clone(bundle);
-        handle.spawn(async move {
+        tokio::spawn(async move {
             bundle.refresh_identity().await;
         });
     }
@@ -506,6 +501,7 @@ mod tests {
         ));
         let bundle =
             YoutubeIntegrationBundle::new("UCabc123".to_owned(), Arc::clone(&platform), manager);
+        YoutubeIntegrationBundle::start_background_tasks(&bundle);
         (bundle, platform)
     }
 

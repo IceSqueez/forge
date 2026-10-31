@@ -8,7 +8,6 @@ mod credential_errors;
 mod credential_state;
 mod donation;
 mod donation_poll;
-mod donation_test;
 #[cfg(test)]
 #[path = "../test_support/emitted_codes.rs"]
 mod emitted_codes;
@@ -20,6 +19,7 @@ mod live_viewers;
 mod option_source;
 mod quick_action_builders;
 mod reconnect;
+mod sample_donation;
 mod sender;
 pub use auth::AuthFlow;
 pub use ban_list::{
@@ -54,13 +54,6 @@ pub use donation_poll::{
     PollMetrics, PollPhase, PollPhaseCodes, PollScope, PollStatus, PollStatusBoard, PollVocabulary,
     PollWorker, PolledDonationProvider, RunningPoller, parse_header_token, poll_metrics,
 };
-pub use donation_test::{
-    TEST_DONATION_AMOUNT, TEST_DONATION_AMOUNT_KEY, TEST_DONATION_CURRENCY,
-    TEST_DONATION_CURRENCY_KEY, TEST_DONATION_DONOR, TEST_DONATION_DONOR_KEY,
-    TEST_DONATION_MESSAGE, TEST_DONATION_MESSAGE_KEY, TEST_DONATION_MESSAGES,
-    TEST_DONATION_PROVIDER_KEY, TEST_DONATION_SUB_ACTION, test_donation_quick_action,
-    test_donation_step,
-};
 pub use endpoints::{EndpointRefusal, EndpointSurface, PlatformEndpoints};
 pub use error::{DeviceAuthEnd, HTTP_UNAUTHORIZED, PlatformError};
 pub use follow_lookup::{FollowLookup, FollowStatus};
@@ -76,6 +69,13 @@ pub use option_source::{
 pub use reconnect::{
     AutoReconnectSwitch, AutoReconnectWatch, ReconnectingSession, RedialPhase, SessionEnd,
     record_connection_failure, run_reconnect_loop,
+};
+pub use sample_donation::{
+    TEST_DONATION_AMOUNT, TEST_DONATION_AMOUNT_KEY, TEST_DONATION_CURRENCY,
+    TEST_DONATION_CURRENCY_KEY, TEST_DONATION_DONOR, TEST_DONATION_DONOR_KEY,
+    TEST_DONATION_MESSAGE, TEST_DONATION_MESSAGE_KEY, TEST_DONATION_MESSAGES,
+    TEST_DONATION_PROVIDER_KEY, TEST_DONATION_SUB_ACTION, test_donation_quick_action,
+    test_donation_step,
 };
 pub use sender::{ActingSender, SENDER_FIELD, SENT_AS_FIELD, SenderPreference, SenderRole};
 

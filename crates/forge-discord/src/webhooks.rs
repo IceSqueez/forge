@@ -11,7 +11,7 @@ pub fn validate_webhook_url(url: &str) -> Result<(), DiscordError> {
     WebhookRoute::parse(url).map(|_| ())
 }
 
-fn credential_id(name: &str) -> CredentialId {
+pub(crate) fn credential_id(name: &str) -> CredentialId {
     CredentialId::new(format!("{DISCORD_CRED_PREFIX}{name}"))
 }
 

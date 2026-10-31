@@ -73,7 +73,6 @@ use crate::vocabulary::events::support::{
     HypeTrainClosing, HypeTrainEnded, HypeTrainOpening, HypeTrainProgress, HypeTrainProgressed,
     SubscriptionsGifted,
 };
-use crate::vocabulary::fields::automod as automod_fields;
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const SUCCESSOR_TIMEOUT: Duration = Duration::from_secs(15);
@@ -1473,7 +1472,7 @@ impl ChatSession {
         _frame_msg_id: &str,
     ) {
         let user = wire_user(event_data, &USER_KEYS);
-        let reason = wire_text(event_data, automod_fields::REASON);
+        let reason = wire_text(event_data, WIRE_AUTOMOD_REASON);
         let classification = wire_automod_classification(event_data, &reason);
 
         debug!(
@@ -1654,7 +1653,7 @@ impl ChatSession {
     ) {
         let user = wire_user(event_data, &USER_KEYS);
         let status = wire_text(event_data, "status");
-        let reason = wire_text(event_data, automod_fields::REASON);
+        let reason = wire_text(event_data, WIRE_AUTOMOD_REASON);
         let classification = wire_automod_classification(event_data, &reason);
 
         debug!(
@@ -1929,6 +1928,10 @@ const WHISPER_SENDER_KEYS: WireUserKeys = WireUserKeys {
 };
 
 const BLOCKED_TERM_REASON: &str = "blocked_term";
+const WIRE_AUTOMOD_REASON: &str = "reason";
+const WIRE_BLOCKED_TERM: &str = "blocked_term";
+const WIRE_TERMS_FOUND: &str = "terms_found";
+const WIRE_TERM_ID: &str = "term_id";
 
 static WIRE_ABSENT: serde_json::Value = serde_json::Value::Null;
 
@@ -2103,13 +2106,13 @@ fn extract_prediction_outcomes(event_data: &serde_json::Value) -> Vec<Prediction
 
 fn blocked_terms_found(event_data: &serde_json::Value) -> Vec<String> {
     event_data
-        .get(automod_fields::BLOCKED_TERM)
-        .and_then(|b| b.get(automod_fields::TERMS_FOUND))
+        .get(WIRE_BLOCKED_TERM)
+        .and_then(|b| b.get(WIRE_TERMS_FOUND))
         .and_then(|v| v.as_array())
         .map(|terms| {
             terms
                 .iter()
-                .filter_map(|t| t.get(automod_fields::TERM_ID))
+                .filter_map(|t| t.get(WIRE_TERM_ID))
                 .filter_map(|v| v.as_str())
                 .map(str::to_owned)
                 .collect()

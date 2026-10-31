@@ -154,6 +154,7 @@ async fn forge_reports_not_owned_when_touching_a_dashboard_reward() {
     let (fake, forge) = start(1).await;
     let dashboard = CollectionItemId::new(fake.rewards()[0].id.clone());
     let mut tiers = forge.bundle.tier_changes();
+    forge.connect().await;
     timeout(
         DEADLINE,
         tiers.wait_for(|tier| *tier != BroadcasterTier::Standard),

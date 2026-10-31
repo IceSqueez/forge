@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use rand::RngExt;
+use rand::{Rng, RngExt};
 
 pub const DEFAULT_BASE: Duration = Duration::from_millis(250);
 pub const DEFAULT_CAP: Duration = Duration::from_secs(60);
@@ -33,12 +33,19 @@ impl Backoff {
     }
 
     pub fn next_delay(&mut self) -> Duration {
-        let ceiling = self
-            .base_ms
-            .saturating_mul(1u64.checked_shl(self.attempt.min(32)).unwrap_or(u64::MAX))
-            .min(self.cap_ms);
+        self.next_delay_with(&mut rand::rng())
+    }
+
+    pub fn next_delay_with(&mut self, rng: &mut impl Rng) -> Duration {
+        let ceiling = self.ceiling_ms();
         self.attempt = self.attempt.saturating_add(1);
-        Duration::from_millis(rand::rng().random_range(0..=ceiling))
+        Duration::from_millis(rng.random_range(0..=ceiling))
+    }
+
+    fn ceiling_ms(&self) -> u64 {
+        self.base_ms
+            .saturating_mul(1u64.checked_shl(self.attempt.min(32)).unwrap_or(u64::MAX))
+            .min(self.cap_ms)
     }
 }
 

@@ -20,6 +20,7 @@ use crate::fan_out::fan_out_targets;
 use crate::library::{ClipLibrary, ClipSource};
 use crate::settings::{SoundboardSettings, SoundboardSettingsHandle};
 
+const MILLIS_PER_SECOND: u64 = 1000;
 const MAX_VOLUME: f32 = 1.0;
 
 const PLAYBACK_TAIL_MS: u64 = 200;
@@ -457,7 +458,7 @@ impl SoundboardPlayer {
             clip_id: Some(clip_id),
             clip_label: Some(clip.name.clone()),
             device: prepared.device_label,
-            duration_secs: Some(prepared.duration_ms as f64 / 1000.0),
+            duration_secs: Some(prepared.duration_ms as f64 / MILLIS_PER_SECOND as f64),
             looped: clip.loop_playback,
         });
         if play.control.claim_finish_after_start() {
@@ -547,7 +548,7 @@ impl SoundboardPlayer {
         let sample_rate = buffer.sample_rate.max(1) as u64;
         let channels = buffer.channels.max(1) as u64;
         let frames = (buffer.samples.len() as u64) / channels;
-        let duration_ms = frames.saturating_mul(1000) / sample_rate;
+        let duration_ms = frames.saturating_mul(MILLIS_PER_SECOND) / sample_rate;
 
         Ok(PreparedClip {
             sinks,
@@ -2227,6 +2228,43 @@ mod tests {
         release.notify_one();
 
         wait_for_stop_of(&mut commands, "clip-2").await;
+    }
+
+    const LOOP_CYCLE_MS: u64 = 60_000;
+    const STOP_AFTER: Duration = Duration::from_millis(40);
+
+    #[tokio::test(start_paused = true)]
+    async fn a_loop_cycle_ends_at_the_stop_instead_of_waiting_out_the_cycle() {
+        let control = PlayControl::default();
+        let started = tokio::time::Instant::now();
+
+        tokio::join!(wait_cycle(&control, LOOP_CYCLE_MS), async {
+            tokio::time::sleep(STOP_AFTER).await;
+            control.claim_finish_on_stop();
+        });
+
+        assert_eq!(started.elapsed(), STOP_AFTER);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn an_unstopped_loop_cycle_lasts_exactly_its_length() {
+        let control = PlayControl::default();
+        let started = tokio::time::Instant::now();
+
+        wait_cycle(&control, LOOP_CYCLE_MS).await;
+
+        assert_eq!(started.elapsed(), Duration::from_millis(LOOP_CYCLE_MS));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_stop_before_the_cycle_starts_skips_the_wait() {
+        let control = PlayControl::default();
+        control.claim_finish_on_stop();
+        let started = tokio::time::Instant::now();
+
+        wait_cycle(&control, LOOP_CYCLE_MS).await;
+
+        assert_eq!(started.elapsed(), Duration::ZERO);
     }
 
     const SUB_ACTION_VOLUME: f32 = 0.25;

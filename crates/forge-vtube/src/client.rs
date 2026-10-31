@@ -197,7 +197,8 @@ impl VTubeClient {
         self.state.load()
     }
 
-    pub fn auth_state(&self) -> AuthState {
+    #[cfg(test)]
+    pub(crate) fn auth_state(&self) -> AuthState {
         self.auth_state.read().map_or(AuthState::Cold, |g| *g)
     }
 

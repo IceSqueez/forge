@@ -1,5 +1,7 @@
 use forge_types::{ChatEventDetail, ChatPayload, ChatSegment, ModerationMarks, UserBadge};
 
+const ANONYMOUS_AUTHOR: &str = "anonymous";
+
 pub(crate) fn map_fragments(fragments: Option<&serde_json::Value>) -> Vec<ChatSegment> {
     let arr = match fragments.and_then(|v| v.as_array()) {
         Some(a) => a,
@@ -223,13 +225,13 @@ pub(crate) fn build_gift_sub_chat_payload(
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
     let author = if is_anonymous {
-        "anonymous".to_owned()
+        ANONYMOUS_AUTHOR.to_owned()
     } else {
         event_data
             .get("user_name")
             .and_then(|v| v.as_str())
             .or_else(|| event_data.get("user_login").and_then(|v| v.as_str()))
-            .unwrap_or("anonymous")
+            .unwrap_or(ANONYMOUS_AUTHOR)
             .to_owned()
     };
     let tier = tier_str_to_u8(
@@ -263,13 +265,13 @@ pub(crate) fn build_cheer_chat_payload(
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
     let author = if is_anonymous {
-        "anonymous".to_owned()
+        ANONYMOUS_AUTHOR.to_owned()
     } else {
         event_data
             .get("user_name")
             .and_then(|v| v.as_str())
             .or_else(|| event_data.get("user_login").and_then(|v| v.as_str()))
-            .unwrap_or("anonymous")
+            .unwrap_or(ANONYMOUS_AUTHOR)
             .to_owned()
     };
     let bits = event_data.get("bits").and_then(|v| v.as_u64()).unwrap_or(0);

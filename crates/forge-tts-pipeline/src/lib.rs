@@ -871,10 +871,7 @@ fn stage_output_logged(
     sanitized
 }
 
-enum StageOut {
-    Ok(String),
-    Skip(SkipReason),
-}
+type StageOut = Result<String, SkipReason>;
 
 fn run_stage(
     stage: StageName,
@@ -885,18 +882,16 @@ fn run_stage(
 ) -> StageOut {
     match stage {
         StageName::SkipRules => match stage_skip_rules(text, config, context) {
-            Some(reason) => StageOut::Skip(reason),
-            None => StageOut::Ok(text.to_owned()),
+            Some(reason) => Err(reason),
+            None => Ok(text.to_owned()),
         },
         StageName::WordBlocklist => trace::blocklist_traced(text, config).0,
-        StageName::TextReplacements => StageOut::Ok(stage_text_replacements(
+        StageName::TextReplacements => Ok(stage_text_replacements(
             text,
             &config.replacement_rules,
             context.speech_language,
         )),
-        StageName::Output => {
-            StageOut::Ok(stage_output(text, config, context, prepend_display_name))
-        }
+        StageName::Output => Ok(stage_output(text, config, context, prepend_display_name)),
     }
 }
 
@@ -936,8 +931,8 @@ fn run_stages(
             };
         }
         match run_stage(stage, &current, config, context, prepend_display_name) {
-            StageOut::Ok(s) => current = s,
-            StageOut::Skip(r) => return PipelineResult::Skip { reason: r },
+            Ok(s) => current = s,
+            Err(r) => return PipelineResult::Skip { reason: r },
         }
     }
     PipelineResult::Speak(current)
@@ -972,7 +967,7 @@ pub fn preview(
                 &marks,
             );
             match stage_out {
-                StageOut::Ok(out) => {
+                Ok(out) => {
                     marks = stage_marks;
                     let action = if out == input {
                         StageAction::PassedThrough
@@ -981,7 +976,7 @@ pub fn preview(
                     };
                     (out, action)
                 }
-                StageOut::Skip(reason) => {
+                Err(reason) => {
                     early_skip = Some(reason.clone());
                     (input.clone(), StageAction::Skipped { reason })
                 }

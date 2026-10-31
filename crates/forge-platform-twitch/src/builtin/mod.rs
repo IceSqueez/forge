@@ -2168,6 +2168,20 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn building_a_bundle_asks_helix_nothing_until_the_first_connection() {
+        const SCHEDULER_TURNS: usize = 64;
+        let (b, transport) = bundle_recording_helix("4242");
+
+        for _ in 0..SCHEDULER_TURNS {
+            tokio::task::yield_now().await;
+        }
+        assert_eq!(transport.call_count(), 0);
+
+        b.on_chat_state_changed(ChatConnectionState::Connected);
+        assert_eq!(requests_reached(&transport, SHIELD_PATH, 1).await, 1);
+    }
+
+    #[tokio::test]
     async fn a_fresh_connection_seeds_the_shield_phase_from_helix_once() {
         let (b, transport) = bundle_recording_helix("4242");
 

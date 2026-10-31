@@ -12,9 +12,9 @@ use crate::credentials::YoutubeBroadcaster;
 use crate::data_api::{DataApiError, YoutubeDataApi, json_body, malformed};
 use crate::live_chat_id::LiveChatIdHandle;
 
-const BAN_COST: u32 = 50;
-const MODERATOR_COST: u32 = 50;
-const MODERATOR_LIST_COST: u32 = 1;
+const BAN_COST: u32 = 200;
+const MODERATOR_COST: u32 = 200;
+const MODERATOR_LIST_COST: u32 = 50;
 const MODERATOR_LIST_PAGE_SIZE: &str = "50";
 const BANS_PATH: &str = "/liveChat/bans";
 const BAN_ALREADY_LIFTED_STATUS: u16 = forge_net::status::NOT_FOUND;

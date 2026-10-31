@@ -12,6 +12,7 @@ mod locate;
 mod subprocess;
 
 const MODEL_FLAG: &str = "--model";
+const STDERR_DETAIL_MAX_CHARS: usize = 200;
 const MIN_RATE: f32 = 0.25;
 const MAX_RATE: f32 = 4.0;
 const NEUTRAL_RATE: f32 = 1.0;
@@ -277,7 +278,7 @@ impl TtsEngine for PiperEngine {
         if !output.status.success() {
             let stderr: String = String::from_utf8_lossy(&output.stderr)
                 .chars()
-                .take(200)
+                .take(STDERR_DETAIL_MAX_CHARS)
                 .collect();
             let stderr = stderr.trim();
             let detail = if stderr.is_empty() {

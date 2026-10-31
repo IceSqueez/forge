@@ -12,7 +12,8 @@ use tokio_stream::StreamExt;
 use zbus::Connection;
 use zbus::{ObjectPath, OwnedObjectPath, OwnedVariant, Variant};
 
-use crate::backend::{BackendSessionEvent, HotkeyBackend, HotkeyEdge, HotkeyFiredEvent, HotkeyId};
+use crate::backend::{BackendSessionEvent, HotkeyBackend, HotkeyFiredEvent, HotkeyId};
+use crate::binding::HotkeyEdge;
 use crate::combo::HotkeyCombo;
 use crate::error::HotkeyError;
 use crate::portal_request::{
@@ -1293,6 +1294,43 @@ mod tests {
             h.portal.calls_since(0).last(),
             Some(&bind(3, &[CTRL_F1, SHIFT_F3]))
         );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn unregistering_rebinds_the_remaining_set_and_reports_its_outcome() {
+        let h = Harness::start().await;
+        h.register(FIRST, CTRL_F1).await.unwrap();
+        h.register(SECOND, ALT_F2).await.unwrap();
+        let mark = h.portal.mark();
+
+        h.backend.unregister(FIRST).await.unwrap();
+
+        assert_eq!(h.portal.calls_since(mark).last(), Some(&bind(3, &[ALT_F2])));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_rejected_rebind_makes_unregister_fail() {
+        let h = Harness::start().await;
+        h.register(FIRST, CTRL_F1).await.unwrap();
+        h.portal
+            .reply_to_next_bind(BindReply::Reject("dismissed by the user"));
+
+        let outcome = h.backend.unregister(FIRST).await;
+
+        assert!(
+            matches!(outcome, Err(HotkeyError::Backend(_))),
+            "{outcome:?}"
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn unregistering_an_unknown_hotkey_touches_no_session() {
+        let h = Harness::start().await;
+        let mark = h.portal.mark();
+
+        h.backend.unregister(FIRST).await.unwrap();
+
+        assert_eq!(h.portal.calls_since(mark), Vec::new());
     }
 
     #[tokio::test(start_paused = true)]

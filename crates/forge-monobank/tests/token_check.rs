@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use forge_monobank::{
-    MonobankError, MonobankJar, MonobankProvider, MonobankRateLimits, STATEMENT_CALL_INTERVAL,
+    CALL_INTERVAL, MonobankError, MonobankJar, MonobankProvider, MonobankRateLimits,
 };
 use forge_net::{RateLimitOutcome, RateLimiter, TokenBucketRateLimiter};
 use forge_platform_core::PlatformError;
@@ -88,32 +88,30 @@ async fn verify_token_sends_the_token_header_and_lists_the_jars() {
 
 #[tokio::test]
 async fn verify_token_maps_each_failure_answer_to_its_error() {
-    for (response, expected) in [
+    type Verified = Result<Vec<MonobankJar>, MonobankError>;
+    type Check = fn(&Verified) -> bool;
+    let cases: Vec<(ResponseTemplate, Check)> = vec![
         (
             ResponseTemplate::new(reqwest::StatusCode::UNAUTHORIZED),
-            "unauthorized",
+            |result: &Verified| matches!(result, Err(MonobankError::Unauthorized)),
         ),
         (
             ResponseTemplate::new(reqwest::StatusCode::FORBIDDEN)
                 .set_body_json(json!({ "errorDescription": "Unknown 'X-Token'" })),
-            "unauthorized",
+            |result: &Verified| matches!(result, Err(MonobankError::Unauthorized)),
         ),
         (
             ResponseTemplate::new(reqwest::StatusCode::INTERNAL_SERVER_ERROR),
-            "http 500",
+            |result: &Verified| matches!(result, Err(MonobankError::Http { status: 500 })),
         ),
         (
             ResponseTemplate::new(reqwest::StatusCode::OK).set_body_string("<html>"),
-            "malformed",
+            |result: &Verified| matches!(result, Err(MonobankError::MalformedResponse { .. })),
         ),
-    ] {
+    ];
+    for (response, expected) in cases {
         let result = verify_against(response).await;
-        let matched = match expected {
-            "unauthorized" => matches!(result, Err(MonobankError::Unauthorized)),
-            "http 500" => matches!(result, Err(MonobankError::Http { status: 500 })),
-            _ => matches!(result, Err(MonobankError::MalformedResponse { .. })),
-        };
-        assert!(matched, "{expected}: {result:?}");
+        assert!(expected(&result), "{result:?}");
     }
 }
 
@@ -184,8 +182,7 @@ async fn too_many_requests_without_a_hint_cools_a_spare_budget_for_the_full_call
         reqwest::StatusCode::TOO_MANY_REQUESTS,
     ))
     .await;
-    let spare: Arc<dyn RateLimiter> =
-        Arc::new(TokenBucketRateLimiter::new(10, STATEMENT_CALL_INTERVAL));
+    let spare: Arc<dyn RateLimiter> = Arc::new(TokenBucketRateLimiter::new(10, CALL_INTERVAL));
     let limits = MonobankRateLimits {
         client_info: spare,
         statement: ScriptedLimiter::open(),
@@ -201,7 +198,7 @@ async fn too_many_requests_without_a_hint_cools_a_spare_budget_for_the_full_call
         matches!(throttled, Err(MonobankError::RateLimited { .. })),
         "{throttled:?}"
     );
-    let full_interval = STATEMENT_CALL_INTERVAL.as_secs();
+    let full_interval = CALL_INTERVAL.as_secs();
     assert!(
         matches!(retried, Err(MonobankError::CoolingDown { retry_after_secs })
             if u64::from(retry_after_secs) <= full_interval

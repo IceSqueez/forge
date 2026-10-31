@@ -14,6 +14,9 @@ use crate::gateway_failure::{
 use crate::network::{ProviderLink, is_plain_path_segment};
 
 pub(crate) const API_KEY_HEADER: &str = "xi-api-key";
+const SPEECH_MODEL: &str = "eleven_multilingual_v2";
+const VOICE_STABILITY: f32 = 0.5;
+const VOICE_SIMILARITY_BOOST: f32 = 0.75;
 pub(crate) const INVALID_API_KEY: &str = "invalid API key";
 const SPEECH_PATH: &str = "/v1/text-to-speech";
 const OUTPUT_FORMAT_QUERY: &str = "output_format";
@@ -72,10 +75,10 @@ pub(super) async fn synthesize(
 
     let body = RequestBody::json(&json!({
         "text": req.text,
-        "model_id": "eleven_multilingual_v2",
+        "model_id": SPEECH_MODEL,
         "voice_settings": {
-            "stability": 0.5,
-            "similarity_boost": 0.75
+            "stability": VOICE_STABILITY,
+            "similarity_boost": VOICE_SIMILARITY_BOOST
         }
     }))
     .map_err(|e| CloudTtsError::Rejected(e.to_string()))?;

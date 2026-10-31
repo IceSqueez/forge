@@ -424,7 +424,7 @@ pub(crate) mod tests {
         tx: &mpsc::Sender<crate::backend::HotkeyFiredEvent>,
         id: HotkeyId,
         c: &HotkeyCombo,
-        edge: crate::backend::HotkeyEdge,
+        edge: crate::binding::HotkeyEdge,
     ) {
         tx.send(crate::backend::HotkeyFiredEvent {
             id,
@@ -442,7 +442,7 @@ pub(crate) mod tests {
         id: HotkeyId,
         c: &HotkeyCombo,
     ) {
-        send_edge(tx, id, c, crate::backend::HotkeyEdge::Press).await;
+        send_edge(tx, id, c, crate::binding::HotkeyEdge::Press).await;
     }
 
     async fn release(
@@ -450,7 +450,7 @@ pub(crate) mod tests {
         id: HotkeyId,
         c: &HotkeyCombo,
     ) {
-        send_edge(tx, id, c, crate::backend::HotkeyEdge::Release).await;
+        send_edge(tx, id, c, crate::binding::HotkeyEdge::Release).await;
     }
 
     fn released_event(publisher: &CapturingPublisher) -> forge_events::Event {
@@ -1025,7 +1025,7 @@ pub(crate) mod tests {
                     id: *id,
                     combo: c.clone(),
                     timestamp_us: 0,
-                    edge: crate::backend::HotkeyEdge::Press,
+                    edge: crate::binding::HotkeyEdge::Press,
                 })
                 .await
                 .unwrap();

@@ -905,6 +905,40 @@ mod tests {
         }
     }
 
+    struct StalledRelayIntegration;
+
+    #[async_trait::async_trait]
+    impl forge_runtime::IntegrationFactory<crate::integrations::BuiltinObject>
+        for StalledRelayIntegration
+    {
+        fn id(&self) -> forge_types::IntegrationId {
+            forge_types::IntegrationId::from_static("kick")
+        }
+
+        fn teardown_grace(&self) -> Duration {
+            forge_runtime::DEFAULT_TEARDOWN_GRACE
+        }
+
+        async fn is_configured(&self) -> Result<bool, StorageError> {
+            Ok(true)
+        }
+
+        async fn start(
+            &self,
+        ) -> Result<
+            forge_runtime::RunningIntegration<crate::integrations::BuiltinObject>,
+            forge_runtime::IntegrationStartError,
+        > {
+            Ok(forge_runtime::RunningIntegration::idle().with_teardown(
+                crate::integration_factories::platform_teardown(
+                    forge_runtime::TaskGroup::default(),
+                    crate::integrations::EventRelay::stalled(Arc::new(())),
+                    std::future::ready(()),
+                ),
+            ))
+        }
+    }
+
     async fn running_integration(
         settings: Arc<dyn forge_storage::SettingsRepo>,
         teardown_hangs: bool,
@@ -1016,6 +1050,35 @@ mod tests {
         handles.run_graceful().await;
 
         assert_eq!(*milestones.lock().unwrap(), ["teardown", "storage closed"]);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_stalled_event_relay_retires_inside_the_integrations_stop_budget() {
+        let factory = StalledRelayIntegration;
+        let id = forge_runtime::IntegrationFactory::id(&factory);
+        let supervisor = IntegrationSupervisor::launch(
+            vec![Arc::new(factory)
+                as Arc<
+                    dyn forge_runtime::IntegrationFactory<crate::integrations::BuiltinObject>,
+                >],
+            settings_store(),
+            forge_runtime::IntegrationGate::new(),
+            Arc::new(crate::integrations::BuiltinRegistry::default()),
+            spawn_live_viewer_aggregator(&forge_net::TaskOwner::new()),
+        );
+        supervisor
+            .slot(&id)
+            .unwrap()
+            .set_enabled(true)
+            .await
+            .unwrap();
+
+        supervisor.shutdown(INTEGRATIONS_STOP_BUDGET).await;
+
+        assert_eq!(
+            supervisor.state_of(&id),
+            forge_runtime::LifecycleState::Disabled
+        );
     }
 
     #[tokio::test(start_paused = true)]

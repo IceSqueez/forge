@@ -17,6 +17,7 @@ use forge_storage::{
 };
 use forge_types::{IntegrationId, PlatformId};
 use forge_vtube::{VTUBE_AUTO_RECONNECT, VTUBE_CONNECT_ON_LAUNCH};
+use futures_util::future::BoxFuture;
 use tokio::sync::mpsc;
 
 use crate::integration_sign_out::SignOutRoute;
@@ -24,9 +25,8 @@ use crate::integration_start_errors::{
     hotkey_start_error, kick_start_error, midi_start_error, twitch_start_error, youtube_start_error,
 };
 use crate::integrations::{
-    BuiltinObject, BuiltinRegistry, ObsInstallSeed, VTubeInstallSeed, creds_of,
-    kick_builtin_object, publisher, spawn_connect, spawn_event_bridge, twitch_builtin_object,
-    youtube_builtin_object,
+    BuiltinObject, BuiltinRegistry, EventRelay, ObsInstallSeed, VTubeInstallSeed, creds_of,
+    kick_builtin_object, publisher, spawn_connect, twitch_builtin_object, youtube_builtin_object,
 };
 use crate::platform_identities::OAuthClientIdentity;
 use forge_hotkey::HotkeyReconciler;
@@ -39,9 +39,22 @@ pub const KICK_EVENT_RELAY: &str = "kick_event_relay";
 
 const CONNECT_GUARD: Duration = Duration::from_secs(5);
 const KICK_POLLER_QUEUE_CAPACITY: usize = 256;
+pub(crate) const RELAY_DRAIN_BOUND: Duration = Duration::from_millis(10);
 
 fn idle_with_tasks(tasks: TaskGroup) -> RunningIntegration<BuiltinObject> {
     RunningIntegration::idle().with_teardown(Box::pin(async move { tasks.abort_all() }))
+}
+
+pub(crate) fn platform_teardown(
+    tasks: TaskGroup,
+    relay: EventRelay,
+    shutdown: impl Future<Output = ()> + Send + 'static,
+) -> BoxFuture<'static, ()> {
+    Box::pin(async move {
+        tasks.abort_all();
+        shutdown.await;
+        relay.drain(RELAY_DRAIN_BOUND).await;
+    })
 }
 
 pub(crate) struct TwitchFactory {
@@ -106,7 +119,7 @@ impl IntegrationFactory<BuiltinObject> for TwitchFactory {
             .await
             .map_err(|e| twitch_start_error(&e))?;
         let chat_platform = session.chat_platform();
-        let event_bridge = spawn_event_bridge(
+        let relay = EventRelay::spawn(
             publisher(&self.bus),
             chat_platform
                 .events()
@@ -118,19 +131,19 @@ impl IntegrationFactory<BuiltinObject> for TwitchFactory {
             Arc::clone(&chat_platform),
             PlatformId::Twitch,
         );
-        tasks.track(event_bridge);
         let bot = self.assembly.bot();
         tasks.track(tokio::spawn(async move { bot.sync_status().await }));
         let Some(bundle) = session.into_bundle() else {
-            return Ok(idle_with_tasks(tasks));
+            return Ok(RunningIntegration::idle().with_teardown(platform_teardown(
+                tasks,
+                relay,
+                std::future::ready(()),
+            )));
         };
         tasks.track(spawn_connect(chat_platform, "twitch"));
         let viewers = bundle.viewer_source();
         let object = twitch_builtin_object(Arc::clone(&bundle));
-        let teardown = Box::pin(async move {
-            tasks.abort_all();
-            bundle.shutdown().await;
-        });
+        let teardown = platform_teardown(tasks, relay, async move { bundle.shutdown().await });
         Ok(RunningIntegration::idle()
             .with_object(object)
             .with_viewers(PlatformId::Twitch, viewers)
@@ -205,14 +218,14 @@ impl IntegrationFactory<BuiltinObject> for YoutubeFactory {
         let bundle = session.bundle;
         let chat_platform: Arc<dyn ChatPlatform> = session.platform;
 
-        let mut tasks = TaskGroup::default();
-        tasks.track(spawn_event_bridge(
+        let relay = EventRelay::spawn(
             publisher(&self.bus),
             chat_platform
                 .events()
                 .recording_lag(self.bus.relay_lag(YOUTUBE_EVENT_RELAY)),
             "youtube",
-        ));
+        );
+        let mut tasks = TaskGroup::default();
         tasks.track(spawn_connect(Arc::clone(&chat_platform), "youtube"));
         tasks.absorb(spawn_chat_send_router(
             Arc::clone(&self.bus),
@@ -222,10 +235,7 @@ impl IntegrationFactory<BuiltinObject> for YoutubeFactory {
 
         let viewers = bundle.viewer_source();
         let object = youtube_builtin_object(Arc::clone(&bundle));
-        let teardown = Box::pin(async move {
-            tasks.abort_all();
-            bundle.shutdown().await;
-        });
+        let teardown = platform_teardown(tasks, relay, async move { bundle.shutdown().await });
         Ok(RunningIntegration::idle()
             .with_object(object)
             .with_viewers(PlatformId::YouTube, viewers)
@@ -390,13 +400,13 @@ impl IntegrationFactory<BuiltinObject> for KickFactory {
         };
 
         let bus = publisher(&self.bus);
-        tasks.track(spawn_event_bridge(
+        let relay = EventRelay::spawn(
             Arc::clone(&bus),
             chat_platform
                 .events()
                 .recording_lag(self.bus.relay_lag(KICK_EVENT_RELAY)),
             "kick",
-        ));
+        );
         tasks.track(spawn_connect(chat_platform, "kick"));
 
         let (poller_tx, mut poller_rx) = mpsc::channel::<Event>(KICK_POLLER_QUEUE_CAPACITY);
@@ -425,9 +435,8 @@ impl IntegrationFactory<BuiltinObject> for KickFactory {
         );
 
         let object = kick_builtin_object(Arc::clone(&bundle));
-        let teardown = Box::pin(async move {
+        let teardown = platform_teardown(tasks, relay, async move {
             poller.stop();
-            tasks.abort_all();
             bundle.shutdown().await;
         });
         Ok(RunningIntegration::idle()
@@ -856,6 +865,7 @@ impl IntegrationFactory<BuiltinObject> for HotkeyFactory {
 mod tests {
     use std::collections::BTreeMap;
 
+    use forge_events::EventPublisher;
     use forge_hotkey::HotkeyConfig;
     use forge_hotkey::testing::test_client;
     use forge_hotkey::vocabulary::event_kinds;
@@ -915,6 +925,83 @@ mod tests {
         let factory = hotkey_factory(Vec::new());
 
         assert!(!factory.is_configured().await.unwrap());
+    }
+
+    const HANG_GUARD: Duration = Duration::from_secs(30);
+
+    fn disconnected() -> Event {
+        Event::new(
+            forge_events::EventSource::Core,
+            "platform.connection.changed",
+            serde_json::json!({ "state": "disconnected" }),
+        )
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_platform_teardown_delivers_the_disconnect_its_shutdown_publishes() {
+        let bus = EventBus::new(Arc::new(crate::test_support::StubEventLog));
+        let mut observer = bus.subscribe();
+        let platform = Arc::new(forge_events::EventChannel::new(16));
+        let relay = EventRelay::spawn(publisher(&bus), platform.subscribe(), "kick");
+        let closing = Arc::clone(&platform);
+
+        platform_teardown(TaskGroup::default(), relay, async move {
+            closing.publish(disconnected());
+        })
+        .await;
+
+        let delivered = tokio::time::timeout(HANG_GUARD, observer.recv())
+            .await
+            .expect("the final event must reach the bus")
+            .unwrap();
+        assert_eq!(delivered.payload["state"], "disconnected");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_platform_teardown_stops_its_other_tasks_before_the_platform_shuts_down() {
+        let bus = EventBus::new(Arc::new(crate::test_support::StubEventLog));
+        let platform = forge_events::EventChannel::new(16);
+        let relay = EventRelay::spawn(publisher(&bus), platform.subscribe(), "kick");
+        let (held, released) = tokio::sync::oneshot::channel::<()>();
+        let mut tasks = TaskGroup::default();
+        tasks.track(tokio::spawn(async move {
+            let _held = held;
+            std::future::pending::<()>().await;
+        }));
+
+        let teardown = platform_teardown(tasks, relay, async move {
+            assert!(released.await.is_err());
+        });
+
+        tokio::time::timeout(HANG_GUARD, teardown)
+            .await
+            .expect("the shutdown must see the task already stopped");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_stalled_relay_costs_the_drain_bound_and_is_aborted() {
+        let held = Arc::new(());
+        let relay = EventRelay::stalled(Arc::clone(&held));
+        let started = tokio::time::Instant::now();
+
+        platform_teardown(TaskGroup::default(), relay, std::future::ready(())).await;
+
+        assert_eq!(started.elapsed(), RELAY_DRAIN_BOUND);
+        crate::test_support::yield_until(|| Arc::strong_count(&held) == 1).await;
+    }
+
+    #[tokio::test]
+    async fn an_abandoned_teardown_aborts_its_relay() {
+        let held = Arc::new(());
+        let relay = EventRelay::stalled(Arc::clone(&held));
+
+        drop(platform_teardown(
+            TaskGroup::default(),
+            relay,
+            std::future::pending::<()>(),
+        ));
+
+        crate::test_support::yield_until(|| Arc::strong_count(&held) == 1).await;
     }
 
     #[tokio::test]

@@ -1,6 +1,7 @@
 use forge_types::{IntegrationId, MessageRef, RecoverRwLock};
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
 
 use forge_events::{Delivery, EventPublisher, EventSubscription};
 use forge_platform_core::{
@@ -13,6 +14,7 @@ use forge_runtime::{DonationIngest, EventBus};
 use forge_storage::{CredentialsRepo, DataProvider};
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
+use tokio_util::sync::CancellationToken;
 
 use crate::donation_factories::{wire_donatello, wire_monobank};
 use crate::donation_services::{DonationServices, restore_donatello_poll_interval};
@@ -478,22 +480,69 @@ pub(crate) fn creds_of(backend: &Arc<dyn DataProvider>) -> Arc<dyn CredentialsRe
     Arc::clone(backend) as Arc<dyn CredentialsRepo>
 }
 
-pub(crate) fn spawn_event_bridge(
+pub(crate) struct EventRelay {
+    task: JoinHandle<()>,
+    retired: CancellationToken,
+}
+
+impl EventRelay {
+    pub(crate) fn spawn(
+        bus: Arc<dyn EventPublisher>,
+        events: EventSubscription,
+        label: &'static str,
+    ) -> Self {
+        let retired = CancellationToken::new();
+        Self {
+            task: tokio::spawn(relay_events(bus, events, label, retired.clone())),
+            retired,
+        }
+    }
+
+    pub(crate) async fn drain(mut self, bound: Duration) {
+        self.retired.cancel();
+        if tokio::time::timeout(bound, &mut self.task).await.is_err() {
+            tracing::warn!(?bound, "event relay did not drain in time; aborting it");
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn stalled(held: Arc<()>) -> Self {
+        Self {
+            task: tokio::spawn(async move {
+                let _held = held;
+                std::future::pending::<()>().await;
+            }),
+            retired: CancellationToken::new(),
+        }
+    }
+}
+
+impl Drop for EventRelay {
+    fn drop(&mut self) {
+        self.task.abort();
+    }
+}
+
+async fn relay_events(
     bus: Arc<dyn EventPublisher>,
     mut events: EventSubscription,
     label: &'static str,
-) -> JoinHandle<()> {
-    tokio::spawn(async move {
-        loop {
-            match events.next().await {
-                Delivery::Event(event) => bus.publish(Arc::unwrap_or_clone(event)),
-                Delivery::Closed => break,
-                Delivery::Skipped(skipped) => {
-                    tracing::warn!(bridge = label, skipped, "event bridge dropped events");
-                }
+    retired: CancellationToken,
+) {
+    loop {
+        let delivery = tokio::select! {
+            biased;
+            delivery = events.next() => delivery,
+            () = retired.cancelled() => break,
+        };
+        match delivery {
+            Delivery::Event(event) => bus.publish(Arc::unwrap_or_clone(event)),
+            Delivery::Closed => break,
+            Delivery::Skipped(skipped) => {
+                tracing::warn!(bridge = label, skipped, "event bridge dropped events");
             }
         }
-    })
+    }
 }
 
 pub(crate) fn spawn_connect(
@@ -516,7 +565,6 @@ mod tests {
 
     use forge_platform_core::ConnectionState;
     use forge_runtime::NullEventLogRepo;
-    use std::time::Duration;
 
     fn test_bus() -> Arc<EventBus> {
         EventBus::new(Arc::new(NullEventLogRepo))
@@ -789,7 +837,12 @@ mod tests {
         let bus = test_bus();
         let mut observer = bus.subscribe();
         let platform = EventChannel::new(16);
-        let bridge = spawn_event_bridge(publisher(&bus), platform.subscribe(), "twitch");
+        let bridge = tokio::spawn(relay_events(
+            publisher(&bus),
+            platform.subscribe(),
+            "twitch",
+            CancellationToken::new(),
+        ));
 
         for state in ["connected", "disconnected"] {
             platform.publish(Event::new(
@@ -831,7 +884,12 @@ mod tests {
 
         tokio::time::timeout(
             Duration::from_secs(30),
-            spawn_event_bridge(publisher(&bus), events, "twitch"),
+            tokio::spawn(relay_events(
+                publisher(&bus),
+                events,
+                "twitch",
+                CancellationToken::new(),
+            )),
         )
         .await
         .expect("the bridge must exit once every platform sender is gone")

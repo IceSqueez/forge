@@ -113,7 +113,6 @@ impl SqliteBackend {
         if key.minted {
             report_stranded_credentials(&pool, &credentials).await?;
         }
-        credentials.bind_unbound_rows().await;
         Ok(Self::from_pool_and_credentials(
             pool,
             credentials,
@@ -131,7 +130,6 @@ impl SqliteBackend {
     ) -> Result<Self, SqliteStorageError> {
         let pool = Self::migrate_and_gate(url).await?;
         let credentials = SqliteCredentialsRepo::new_with_key(pool.clone(), key);
-        credentials.bind_unbound_rows().await;
         Ok(Self::from_pool_and_credentials(
             pool,
             credentials,

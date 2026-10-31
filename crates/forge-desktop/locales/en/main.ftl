@@ -4252,6 +4252,7 @@ twitch_bot_mod_error_unavailable = Could not change moderators: { $reason }
 chat_send_as_me = Me
 chat_send_as_bot = Bot
 sender_field_twitch_only_helper = Twitch only; ignored on other platforms
+sender_bot_posts_as_streamer_warning = On Kick and YouTube "Bot only" posts as the streamer
 event_feed_sent_as = sent as @{ $login }
 
 

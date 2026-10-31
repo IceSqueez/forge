@@ -3,7 +3,7 @@ use super::field_controls::{bool_row, field_wrap, hint_block, multiline_field};
 use super::rejection::with_rejection_note;
 use super::variable_insert::InsertTarget;
 use super::*;
-use crate::config_field_label::sender_field_helper;
+use crate::config_field_label::{sender_bot_warning, sender_field_helper};
 use forge_components::{FONT_SM, FONT_XXS, Spacing, body_family, scaled, spacing};
 use forge_registry::CodeLanguage;
 use gpui::Div;
@@ -134,6 +134,10 @@ impl EditSubActionForm {
                         Some(helper) => with_field_helper(select, helper, palette, density),
                         None => select,
                     };
+                    let select = match sender_bot_warning(&self.kind_id, key, selected) {
+                        Some(warning) => with_field_warning(select, warning, palette, density),
+                        None => select,
+                    };
                     grid_items.push((true, select));
                 }
                 SubFormField::UnitAmount {
@@ -231,6 +235,27 @@ fn sub_field_is_half(field: &SubFormField) -> bool {
         }
         _ => false,
     }
+}
+
+fn with_field_warning(
+    element: AnyElement,
+    warning: String,
+    palette: &ForgePalette,
+    density: Density,
+) -> AnyElement {
+    div()
+        .flex()
+        .flex_col()
+        .gap(spacing(Spacing::Xxs, density))
+        .child(element)
+        .child(
+            div()
+                .font_family(body_family())
+                .text_size(FONT_XXS)
+                .text_color(palette.warning)
+                .child(warning),
+        )
+        .into_any_element()
 }
 
 fn with_field_helper(

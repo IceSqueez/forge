@@ -172,14 +172,6 @@ async fn seed_legacy(pool: &SqlitePool, id: &str, key: &[u8; 32], plaintext: &st
         .expect("a legacy row");
 }
 
-async fn stored_row(pool: &SqlitePool, id: &str) -> (Vec<u8>, Vec<u8>, i64) {
-    sqlx::query_as("SELECT encrypted, nonce, bound_to_id FROM credentials WHERE id = ?")
-        .bind(id)
-        .fetch_one(pool)
-        .await
-        .expect("the row exists")
-}
-
 struct Disk {
     dir: tempfile::TempDir,
     url: String,
@@ -213,8 +205,8 @@ async fn a_row_bound_to_one_id_does_not_decrypt_under_another() {
         .await
         .expect("store");
     sqlx::query(
-        "INSERT INTO credentials (id, encrypted, nonce, last_refresh, bound_to_id)
-         SELECT ?, encrypted, nonce, last_refresh, bound_to_id FROM credentials WHERE id = ?",
+        "INSERT INTO credentials (id, encrypted, nonce, last_refresh)
+         SELECT ?, encrypted, nonce, last_refresh FROM credentials WHERE id = ?",
     )
     .bind(BOT)
     .bind(BROADCASTER)
@@ -231,58 +223,31 @@ async fn a_row_bound_to_one_id_does_not_decrypt_under_another() {
 }
 
 #[tokio::test]
-async fn a_legacy_row_reads_with_the_key_alone() {
+async fn a_row_sealed_before_id_binding_fails_with_decryption_so_the_user_reauthenticates() {
+    let disk = Disk::with_empty_schema().await;
+    let side = disk.side().await;
+    seed_legacy(&side, BOT, &TEST_KEY, "legacy_token").await;
+
+    let backend = disk.boot(TEST_KEY).await;
+    let result = backend.load(&CredentialId::new(BOT)).await;
+
+    assert!(
+        matches!(&result, Err(e) if e.stored_secret_unrecoverable()),
+        "{result:?}"
+    );
+}
+
+#[tokio::test]
+async fn storing_over_an_unreadable_legacy_row_makes_it_readable_again() {
     let pools = common::migrated_pools().await;
     seed_legacy(pools.writer(), BOT, &TEST_KEY, "legacy_token").await;
     let repo = SqliteCredentialsRepo::new_with_key(pools.clone(), TEST_KEY);
+    let id = CredentialId::new(BOT);
 
-    let loaded = repo.load(&CredentialId::new(BOT)).await.expect("load");
+    repo.store(&id, "fresh_token").await.expect("store");
 
-    assert_eq!(loaded.as_deref(), Some("legacy_token"));
-}
-
-#[tokio::test]
-async fn opening_the_store_rewrites_a_legacy_row_bound_to_its_id_with_the_value_intact() {
-    let disk = Disk::with_empty_schema().await;
-    let side = disk.side().await;
-    seed_legacy(&side, BOT, &TEST_KEY, "legacy_token").await;
-    let (legacy_bytes, _, _) = stored_row(&side, BOT).await;
-
-    let backend = disk.boot(TEST_KEY).await;
-
-    let (rewritten_bytes, _, bound) = stored_row(&side, BOT).await;
-    let loaded = backend.load(&CredentialId::new(BOT)).await.expect("load");
-    assert_ne!(rewritten_bytes, legacy_bytes);
-    assert_eq!((bound, loaded.as_deref()), (1, Some("legacy_token")));
-}
-
-#[tokio::test]
-async fn a_wrong_key_leaves_a_legacy_row_byte_identical_and_the_right_key_rewrites_it_later() {
-    let disk = Disk::with_empty_schema().await;
-    let side = disk.side().await;
-    seed_legacy(&side, BOT, &TEST_KEY, "legacy_token").await;
-    let legacy = stored_row(&side, BOT).await;
-
-    disk.boot(WRONG_KEY).await.shutdown().await;
-    let after_wrong_key = stored_row(&side, BOT).await;
-    let backend = disk.boot(TEST_KEY).await;
-
-    let (_, _, bound) = stored_row(&side, BOT).await;
-    let loaded = backend.load(&CredentialId::new(BOT)).await.expect("load");
-    assert_eq!(after_wrong_key, legacy);
-    assert_eq!((bound, loaded.as_deref()), (1, Some("legacy_token")));
-}
-
-#[tokio::test]
-async fn an_unreadable_legacy_row_does_not_stop_the_others_being_rewritten() {
-    let disk = Disk::with_empty_schema().await;
-    let side = disk.side().await;
-    seed_legacy(&side, BROADCASTER, &WRONG_KEY, "other_key_token").await;
-    seed_legacy(&side, BOT, &TEST_KEY, "legacy_token").await;
-
-    let _backend = disk.boot(TEST_KEY).await;
-
-    let (_, _, unreadable_bound) = stored_row(&side, BROADCASTER).await;
-    let (_, _, readable_bound) = stored_row(&side, BOT).await;
-    assert_eq!((unreadable_bound, readable_bound), (0, 1));
+    assert_eq!(
+        repo.load(&id).await.expect("load").as_deref(),
+        Some("fresh_token")
+    );
 }

@@ -1,5 +1,5 @@
 use forge_components::{ftl_id, tr, tr_find};
-use forge_platform_core::SENDER_FIELD;
+use forge_platform_core::{SENDER_FIELD, SenderPreference};
 use forge_registry::FormField;
 use forge_runtime::CHAT_SEND_KIND_ID;
 use gpui::SharedString;
@@ -63,6 +63,13 @@ pub(crate) fn field_placeholder(kind_id: &str, key: &str, english: &str) -> Stri
 pub(crate) fn sender_field_helper(kind_id: &str, key: &str) -> Option<String> {
     (key == SENDER_FIELD && PLATFORM_NEUTRAL_SENDER_STEPS.contains(&kind_id))
         .then(|| tr!("sender_field_twitch_only_helper"))
+}
+
+pub(crate) fn sender_bot_warning(kind_id: &str, key: &str, selected: &str) -> Option<String> {
+    (key == SENDER_FIELD
+        && PLATFORM_NEUTRAL_SENDER_STEPS.contains(&kind_id)
+        && selected == SenderPreference::BotOnly.as_str())
+    .then(|| tr!("sender_bot_posts_as_streamer_warning"))
 }
 
 pub(crate) fn scoped_copy(prefix: &str, kind_id: &str, key: &str) -> Option<String> {
@@ -625,6 +632,23 @@ field_label_k3 = Global
                 sender_field_helper(kind, key).is_some(),
                 shown,
                 "{kind}/{key}"
+            );
+        }
+    }
+
+    #[test]
+    fn bot_warning_shows_only_for_the_bot_choice_on_the_platform_neutral_send_step() {
+        for (kind, key, selected, shown) in [
+            (CHAT_SEND_KIND_ID, SENDER_FIELD, "bot", true),
+            (CHAT_SEND_KIND_ID, SENDER_FIELD, "streamer", false),
+            (CHAT_SEND_KIND_ID, SENDER_FIELD, "default", false),
+            (CHAT_SEND_KIND_ID, "message", "bot", false),
+            ("twitch.chat.reply", SENDER_FIELD, "bot", false),
+        ] {
+            assert_eq!(
+                sender_bot_warning(kind, key, selected).is_some(),
+                shown,
+                "{kind}/{key}/{selected}"
             );
         }
     }

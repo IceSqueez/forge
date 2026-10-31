@@ -96,8 +96,9 @@ pub trait ChatPlatform: Send + Sync {
         &self,
         channel: &str,
         text: &str,
-        _sender: SenderPreference,
+        sender: SenderPreference,
     ) -> Result<Option<ActingSender>, PlatformError> {
+        warn_if_bot_sender_ignored(sender, channel);
         self.send_message(channel, text).await.map(|()| None)
     }
 
@@ -106,8 +107,9 @@ pub trait ChatPlatform: Send + Sync {
         channel: &str,
         reply_parent_message_id: &str,
         text: &str,
-        _sender: SenderPreference,
+        sender: SenderPreference,
     ) -> Result<Option<ActingSender>, PlatformError> {
+        warn_if_bot_sender_ignored(sender, channel);
         self.send_reply(channel, reply_parent_message_id, text)
             .await
             .map(|()| None)
@@ -128,6 +130,18 @@ pub trait ChatPlatform: Send + Sync {
 }
 
 const WHISPER_FEATURE: &str = "chat.whisper";
+const BOT_SENDER_IGNORED_CODE: &str = "chat.bot_sender_ignored";
+
+fn warn_if_bot_sender_ignored(sender: SenderPreference, channel: &str) {
+    if sender == SenderPreference::BotOnly {
+        tracing::warn!(
+            code = BOT_SENDER_IGNORED_CODE,
+            channel,
+            sender = sender.as_str(),
+            "bot sender is not supported here; posting as the streamer"
+        );
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ConnectionTransition {

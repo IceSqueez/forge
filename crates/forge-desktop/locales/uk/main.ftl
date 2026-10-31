@@ -4356,6 +4356,7 @@ twitch_bot_mod_error_unavailable = Не вдалося змінити модер
 chat_send_as_me = Я
 chat_send_as_bot = Бот
 sender_field_twitch_only_helper = Лише Twitch; на інших платформах ігнорується
+sender_bot_posts_as_streamer_warning = На Kick і YouTube "Лише бот" публікує від імені стрімера
 event_feed_sent_as = від @{ $login }
 
 

@@ -102,15 +102,7 @@ fn sync_directory(_dir: &std::path::Path) -> Result<(), SqliteStorageError> {
     Ok(())
 }
 
-#[cfg(test)]
 pub(crate) fn encrypt(
-    key: &[u8; 32],
-    plaintext: &str,
-) -> Result<(Vec<u8>, Vec<u8>), SqliteStorageError> {
-    encrypt_for(key, "", plaintext)
-}
-
-pub(crate) fn encrypt_for(
     key: &[u8; 32],
     credential_id: &str,
     plaintext: &str,
@@ -142,14 +134,6 @@ pub(crate) fn encrypt_for(
 }
 
 pub(crate) fn decrypt(
-    key: &[u8; 32],
-    ciphertext: &[u8],
-    nonce: &[u8],
-) -> Result<String, SqliteStorageError> {
-    decrypt_for(key, "", ciphertext, nonce)
-}
-
-pub(crate) fn decrypt_for(
     key: &[u8; 32],
     credential_id: &str,
     ciphertext: &[u8],
@@ -278,12 +262,14 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&key_path).unwrap(), "not-hex");
     }
 
+    const ID: &str = "twitch:bot";
+
     #[test]
     fn encrypt_decrypt_roundtrip() {
         let key = [0xabu8; 32];
         let plaintext = "super-secret-token";
-        let (ciphertext, nonce) = encrypt(&key, plaintext).unwrap();
-        let recovered = decrypt(&key, &ciphertext, &nonce).unwrap();
+        let (ciphertext, nonce) = encrypt(&key, ID, plaintext).unwrap();
+        let recovered = decrypt(&key, ID, &ciphertext, &nonce).unwrap();
         assert_eq!(recovered, plaintext);
     }
 
@@ -291,17 +277,25 @@ mod tests {
     fn decrypt_rejects_wrong_key() {
         let key = [0x01u8; 32];
         let wrong_key = [0x02u8; 32];
-        let (ciphertext, nonce) = encrypt(&key, "payload").unwrap();
-        assert!(decrypt(&wrong_key, &ciphertext, &nonce).is_err());
+        let (ciphertext, nonce) = encrypt(&key, ID, "payload").unwrap();
+        assert!(decrypt(&wrong_key, ID, &ciphertext, &nonce).is_err());
+    }
+
+    #[test]
+    fn decrypt_rejects_another_credential_id() {
+        let key = [0x01u8; 32];
+        let (ciphertext, nonce) = encrypt(&key, ID, "payload").unwrap();
+        assert!(decrypt(&key, "kick:bot", &ciphertext, &nonce).is_err());
+        assert!(decrypt(&key, "", &ciphertext, &nonce).is_err());
     }
 
     #[test]
     fn decrypt_wrong_length_nonce_returns_decrypt_error() {
         let key = [0x0cu8; 32];
-        let (ciphertext, _) = encrypt(&key, "payload").unwrap();
+        let (ciphertext, _) = encrypt(&key, ID, "payload").unwrap();
         for bad_len in [0, NONCE_LEN - 1, NONCE_LEN + 1, 2 * NONCE_LEN] {
             let bad_nonce = vec![0u8; bad_len];
-            let err = decrypt(&key, &ciphertext, &bad_nonce).unwrap_err();
+            let err = decrypt(&key, ID, &ciphertext, &bad_nonce).unwrap_err();
             assert!(
                 matches!(err, SqliteStorageError::Decrypt { .. }),
                 "nonce len {bad_len}: expected Decrypt error, got {err:?}"

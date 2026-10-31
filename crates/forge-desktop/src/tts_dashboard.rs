@@ -13,7 +13,7 @@ use forge_components::{
     hash_accent, icon, install_resize, mono_family, overlay, radius, scaled, section_label, slider,
     spacing, status_dot, tooltip_builder, tr, with_alpha,
 };
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 use std::time::Duration;
 
 use forge_speak_queue::{
@@ -21,7 +21,7 @@ use forge_speak_queue::{
 };
 use forge_speech_types::TtsVoice;
 use forge_storage::SettingsRepo;
-use forge_tts_core::{TtsRegistry, engine_display_name};
+use forge_tts_core::engine_display_name;
 use gpui::{
     Animation, AnimationExt, AnyElement, ClickEvent, Context, CursorStyle, Entity, FontWeight,
     Pixels, Rgba, SharedString, Subscription, Window, bounce, div, ease_in_out, prelude::*, px,
@@ -181,7 +181,6 @@ impl TtsDashboardView {
         speak_state: Entity<SpeakState>,
         speak: Option<SpeakQueueHandle>,
         settings: Arc<dyn SettingsRepo>,
-        registry: Option<Arc<RwLock<TtsRegistry>>>,
         rt_handle: tokio::runtime::Handle,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -205,12 +204,12 @@ impl TtsDashboardView {
 
         Self {
             speak_state,
+            engines: load_engine_roster(speak.as_ref()),
             speak,
             settings,
             rt_handle,
             volume,
             rail_width: RAIL_DEFAULT_W,
-            engines: load_engine_roster(registry.as_ref()),
             pending_stop_all: false,
             dragged_row: None,
             test_input,
@@ -1407,14 +1406,7 @@ mod tests {
         let shared = state.clone();
         let handle = rt.handle().clone();
         let view = cx.new(|cx| {
-            TtsDashboardView::new(
-                shared,
-                speak,
-                backend as Arc<dyn SettingsRepo>,
-                None,
-                handle,
-                cx,
-            )
+            TtsDashboardView::new(shared, speak, backend as Arc<dyn SettingsRepo>, handle, cx)
         });
         Dashboard { view, state }
     }

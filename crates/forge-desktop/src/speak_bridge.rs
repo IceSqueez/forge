@@ -641,8 +641,8 @@ mod tests {
                 forge_speech_types::SynthesisDefaults::default(),
             );
             let deps = forge_speak_queue::QueueDeps {
-                registry: Arc::new(std::sync::RwLock::new(self.engines)),
-                resolver: Arc::new(std::sync::RwLock::new(resolver)),
+                registry: self.engines,
+                resolver,
                 pipeline: forge_speak_queue::PipelineConfigHandle::new(self.pipeline),
                 audio_sink: self.sink,
                 event_bus: self.bus,

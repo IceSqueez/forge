@@ -60,7 +60,6 @@ impl ScreenActionsView {
         let globals_repo = Arc::clone(&self.globals_repo);
         let overlay_repo = Arc::clone(&self.overlay_repo);
         let overlay_schema = Arc::clone(&self.overlay_schema);
-        let tts_registry = self.tts_registry.clone();
         let speak = self.speak.clone();
         async_bridge::run_async(
             &self.rt_handle,
@@ -180,17 +179,15 @@ impl ScreenActionsView {
                         .map(|o| (o.id.to_string(), o.kind_id))
                         .collect();
                 }
-                if let Some(registry) = tts_registry {
-                    let ids = registry
-                        .read()
-                        .unwrap_or_else(|e| e.into_inner())
-                        .engine_ids();
+                if let Some(speak) = speak {
                     map.insert(
                         ENGINE_OPTIONS_KEY.to_owned(),
-                        ids.into_iter().map(|id| (id.0.clone(), id.0)).collect(),
+                        speak
+                            .registered_engine_ids()
+                            .into_iter()
+                            .map(|id| (id.0.clone(), id.0))
+                            .collect(),
                     );
-                }
-                if let Some(speak) = speak {
                     let voices = speak.available_voices();
                     for voice in voices.iter() {
                         map.entry(dependent_options_key(

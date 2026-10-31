@@ -1384,7 +1384,6 @@ mod tests {
                         Arc::new(StubOverlays),
                         Arc::new(OverlayKindRegistry::new()),
                         None,
-                        None,
                         Arc::new(SubActionRegistry::new()),
                         Arc::new(registry()),
                         handle,

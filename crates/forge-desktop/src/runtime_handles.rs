@@ -66,7 +66,6 @@ pub(crate) struct RuntimeHandles {
     pub pipeline_config: Option<forge_speak_queue::PipelineConfigHandle>,
     pub bot_accounts: forge_types::Shared<Vec<String>>,
     pub speak_events: Option<forge_speak_queue::SpeakEventStream>,
-    pub tts_registry: Option<Arc<std::sync::RwLock<forge_tts_core::TtsRegistry>>>,
     pub cloud_tts_gateways: forge_tts_cloud::CloudGateways,
     pub speech_output: Arc<forge_audio::DeviceSink>,
     pub audio_router: Arc<AudioRouter>,

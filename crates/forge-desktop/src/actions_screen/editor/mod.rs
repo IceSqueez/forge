@@ -240,7 +240,6 @@ pub(super) mod tests {
                     Arc::new(StubOverlays),
                     Arc::new(OverlayKindRegistry::new()),
                     None,
-                    None,
                     Arc::new(sub_actions),
                     Arc::new(TriggerRegistry::new()),
                     handle,

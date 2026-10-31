@@ -1,8 +1,7 @@
-use std::sync::{Arc, RwLock};
-
 use forge_components::tr;
+use forge_speak_queue::SpeakQueueHandle;
 use forge_speech_types::{TtsVoice, VoiceGender};
-use forge_tts_core::{EngineClass, TtsRegistry, engine_display_name};
+use forge_tts_core::{EngineClass, engine_display_name};
 
 pub(crate) struct RosterEngine {
     pub id: String,
@@ -10,12 +9,12 @@ pub(crate) struct RosterEngine {
     pub class: EngineClass,
 }
 
-pub(crate) fn load_engine_roster(registry: Option<&Arc<RwLock<TtsRegistry>>>) -> Vec<RosterEngine> {
-    let Some(registry) = registry else {
+pub(crate) fn load_engine_roster(speak: Option<&SpeakQueueHandle>) -> Vec<RosterEngine> {
+    let Some(speak) = speak else {
         return Vec::new();
     };
-    let roster = registry.read().unwrap_or_else(|e| e.into_inner()).roster();
-    roster
+    speak
+        .engine_roster()
         .into_iter()
         .map(|engine| RosterEngine {
             name: engine_display_name(&engine.id.0).to_owned(),

@@ -29,19 +29,16 @@ pub(crate) struct VoiceCatalogState {
 impl VoiceCatalogState {
     pub(crate) fn rebuild(
         &mut self,
-        registry: &std::sync::RwLock<TtsRegistry>,
+        registry: &TtsRegistry,
         disabled: &HashSet<EngineId>,
         tx: &CatalogUpdateSender,
     ) -> Arc<Vec<TtsVoice>> {
-        let slots: Vec<(EngineId, Arc<EngineSlot>)> = {
-            let guard = registry.read().unwrap_or_else(|e| e.into_inner());
-            guard
-                .engine_ids()
-                .into_iter()
-                .filter(|engine_id| !disabled.contains(engine_id))
-                .filter_map(|engine_id| guard.slot(&engine_id).map(|slot| (engine_id, slot)))
-                .collect()
-        };
+        let slots: Vec<(EngineId, Arc<EngineSlot>)> = registry
+            .engine_ids()
+            .into_iter()
+            .filter(|engine_id| !disabled.contains(engine_id))
+            .filter_map(|engine_id| registry.slot(&engine_id).map(|slot| (engine_id, slot)))
+            .collect();
         self.generation = self.generation.wrapping_add(1);
         self.expected = slots
             .iter()

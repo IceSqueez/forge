@@ -375,3 +375,45 @@ async fn switch_alias_key_matching_is_case_insensitive_except_for_the_exact_id()
         assert_eq!((voice.as_str(), engine.as_str()), expected, "case {index}");
     }
 }
+
+#[tokio::test]
+async fn alias_commands_apply_in_send_order_and_the_snapshot_follows() {
+    let (sink, _plays) = recording_sink();
+    let deps = make_deps(
+        standard_registry(),
+        sink,
+        AssignmentStrategy::DeterministicByName,
+        vec![],
+    );
+    let first = alias("v1", "beta", "beta-1");
+    let (handle, mut stream) = forge_speak_queue::spawn(QueueConfig::default(), deps);
+
+    handle
+        .send(SpeakCommand::SetAlias(first.clone()))
+        .await
+        .unwrap();
+    handle
+        .send(SpeakCommand::RemoveAlias(first.id.clone()))
+        .await
+        .unwrap();
+    handle
+        .send(SpeakCommand::SetAlias(alias("v1", "alpha", "alpha-1")))
+        .await
+        .unwrap();
+    handle
+        .send(SpeakCommand::Enqueue(request("v1", "hello")))
+        .await
+        .unwrap();
+
+    let (voice, engine) = wait_for_resolved_voice(&mut stream).await;
+    let kept: Vec<String> = handle
+        .resolver_snapshot()
+        .aliases()
+        .iter()
+        .map(|a| a.voice_id.0.clone())
+        .collect();
+    assert_eq!(
+        ((voice.as_str(), engine.as_str()), kept),
+        (("alpha-1", "alpha"), vec!["alpha-1".to_owned()])
+    );
+}

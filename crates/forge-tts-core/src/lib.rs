@@ -159,6 +159,7 @@ impl EngineSlot {
     }
 }
 
+#[derive(Clone)]
 pub struct TtsRegistry {
     slots: HashMap<EngineId, Arc<EngineSlot>>,
 }

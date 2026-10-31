@@ -32,7 +32,6 @@ use forge_storage::{
     ActionRepo, ActionTelemetry, GlobalsRepo, OverlayRepo, QueueRepo, ScriptRepo, SettingsRepo,
     StorageError, TriggerInstanceRepo,
 };
-use forge_tts_core::TtsRegistry;
 use forge_types::{Action, ActionId, ExecutionOutcome, QueueId, SubActionStep, TriggerInstanceId};
 use gpui::{
     AnyElement, App, ClickEvent, Context, ElementId, Entity, EventEmitter, Pixels, Point,
@@ -41,8 +40,8 @@ use gpui::{
 use gpui::{FocusHandle, ScrollHandle};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::future::Future;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, RwLock};
 
 mod action_writes;
 mod analyzer;
@@ -189,7 +188,6 @@ pub(crate) struct ScreenActionsView {
     overlay_schema: Arc<overlay_schema::OverlayContentSchema>,
     sub_action_favorites: Entity<StoredFavorites>,
     trigger_favorites: Entity<StoredFavorites>,
-    tts_registry: Option<Arc<RwLock<TtsRegistry>>>,
     speak: Option<SpeakQueueHandle>,
     sub_action_registry: Arc<SubActionRegistry>,
     trigger_registry: Arc<TriggerRegistry>,
@@ -271,7 +269,6 @@ impl ScreenActionsView {
         settings_repo: Arc<dyn SettingsRepo>,
         overlay_repo: Arc<dyn OverlayRepo>,
         overlay_kinds: Arc<OverlayKindRegistry>,
-        tts_registry: Option<Arc<RwLock<TtsRegistry>>>,
         speak: Option<SpeakQueueHandle>,
         sub_action_registry: Arc<SubActionRegistry>,
         trigger_registry: Arc<TriggerRegistry>,
@@ -309,7 +306,6 @@ impl ScreenActionsView {
             overlay_schema: Arc::new(overlay_schema::OverlayContentSchema::new(overlay_kinds)),
             sub_action_favorites,
             trigger_favorites,
-            tts_registry,
             speak,
             sub_action_registry,
             trigger_registry,

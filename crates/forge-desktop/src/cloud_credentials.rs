@@ -1,5 +1,5 @@
 use forge_components::FONT_META;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
 use forge_components::{
     BORDER_THIN, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, KeyActivated, Radius,
@@ -18,7 +18,7 @@ use forge_tts_cloud::credentials::{
 use forge_tts_cloud::elevenlabs::ElevenLabsEngineFactory;
 use forge_tts_cloud::openai::OpenAiEngineFactory;
 use forge_tts_cloud::polly::PollyEngineFactory;
-use forge_tts_core::{TtsEngineFactory, TtsRegistry};
+use forge_tts_core::TtsEngineFactory;
 use forge_types::Secret;
 use gpui::{
     AnyElement, App, ClickEvent, Context, Entity, EventEmitter, Pixels, Rgba, SharedString,
@@ -186,7 +186,6 @@ struct PollyForm {
 }
 
 pub(crate) struct CloudCredentialsView {
-    registry: Option<Arc<RwLock<TtsRegistry>>>,
     gateways: CloudGateways,
     credentials: Arc<dyn CredentialsRepo>,
     rt_handle: tokio::runtime::Handle,
@@ -203,7 +202,6 @@ impl EventEmitter<CloudEngineRegistered> for CloudCredentialsView {}
 
 impl CloudCredentialsView {
     pub(crate) fn new(
-        registry: Option<Arc<RwLock<TtsRegistry>>>,
         gateways: CloudGateways,
         credentials: Arc<dyn CredentialsRepo>,
         rt_handle: tokio::runtime::Handle,
@@ -212,9 +210,9 @@ impl CloudCredentialsView {
     ) -> Self {
         let palette = cx.palette();
 
-        let registered = registry
+        let registered = speak
             .as_ref()
-            .map(|r| r.read().unwrap_or_else(|e| e.into_inner()).engine_ids())
+            .map(|queue| queue.registered_engine_ids())
             .unwrap_or_default();
         let is_registered = |kind: CloudEngineKind| registered.contains(&kind.engine_id());
 
@@ -266,7 +264,6 @@ impl CloudCredentialsView {
         }
 
         Self {
-            registry,
             gateways,
             credentials,
             rt_handle,
@@ -475,16 +472,14 @@ impl CloudCredentialsView {
     }
 
     fn hot_register(&mut self, kind: CloudEngineKind, creds: CloudCreds, cx: &mut Context<Self>) {
-        let Some(registry) = self.registry.as_ref() else {
+        let Some(queue) = self.speak.clone() else {
             return;
         };
-        match creds {
-            CloudCreds::Azure(c) => cloud_tts_boot::register_azure(registry, c, &self.gateways),
-            CloudCreds::ElevenLabs(c) => {
-                cloud_tts_boot::register_elevenlabs(registry, c, &self.gateways)
-            }
-            CloudCreds::OpenAi(c) => cloud_tts_boot::register_openai(registry, c, &self.gateways),
-            CloudCreds::Polly(c) => cloud_tts_boot::register_polly(registry, c, &self.gateways),
+        let registration = match creds {
+            CloudCreds::Azure(c) => cloud_tts_boot::azure_registration(c, &self.gateways),
+            CloudCreds::ElevenLabs(c) => cloud_tts_boot::elevenlabs_registration(c, &self.gateways),
+            CloudCreds::OpenAi(c) => cloud_tts_boot::openai_registration(c, &self.gateways),
+            CloudCreds::Polly(c) => cloud_tts_boot::polly_registration(c, &self.gateways),
         };
         match kind {
             CloudEngineKind::Azure => self.azure.is_registered = true,
@@ -492,13 +487,11 @@ impl CloudCredentialsView {
             CloudEngineKind::OpenAI => self.openai.is_registered = true,
             CloudEngineKind::Polly => self.polly.is_registered = true,
         }
-        if let Some(queue) = self.speak.clone() {
-            self.rt_handle.spawn(async move {
-                if let Err(e) = queue.send(SpeakCommand::RefreshVoiceCatalog).await {
-                    tracing::warn!(error = %e, "cloud engine voice-catalog refresh failed");
-                }
-            });
-        }
+        self.rt_handle.spawn(async move {
+            if let Err(e) = queue.send(SpeakCommand::RegisterEngine(registration)).await {
+                tracing::warn!(error = %e, "cloud engine registration failed");
+            }
+        });
         cx.emit(CloudEngineRegistered(kind.engine_id()));
     }
 
@@ -1008,6 +1001,7 @@ mod tests {
     use super::*;
     use crate::test_support::{
         alive_tasks, install_presentation, pump_until, runtime, settle_until_tasks_drain_to,
+        spawn_speak_queue_never_listing,
     };
 
     const ENGINES: [CloudEngineKind; 4] = [
@@ -1026,7 +1020,6 @@ mod tests {
         install_presentation(cx);
         cx.new(|cx| {
             CloudCredentialsView::new(
-                None,
                 CloudGateways::new(),
                 Arc::new(MockCredentialsRepo::new()),
                 rt.handle().clone(),
@@ -1170,7 +1163,7 @@ mod tests {
     struct Rig {
         rt: tokio::runtime::Runtime,
         view: Entity<CloudCredentialsView>,
-        registry: Arc<RwLock<TtsRegistry>>,
+        speak: Option<SpeakQueueHandle>,
         stored: StoredCredentials,
         registered: Arc<Mutex<Vec<EngineId>>>,
     }
@@ -1197,16 +1190,17 @@ mod tests {
                 .push((id.as_str().to_owned(), json.to_owned()));
             Ok(())
         });
-        let registry = Arc::new(RwLock::new(TtsRegistry::new()));
-        let handed = registered_on.map(|()| Arc::clone(&registry));
+        let speak = registered_on.map(|()| {
+            let _runtime = rt.enter();
+            spawn_speak_queue_never_listing(ENGINES.map(|kind| kind.engine_id()))
+        });
         let handle = rt.handle().clone();
         let view = cx.new(|cx| {
             CloudCredentialsView::new(
-                handed,
                 CloudGateways::new(),
                 Arc::new(repo),
                 handle,
-                None,
+                speak.clone(),
                 cx,
             )
         });
@@ -1221,7 +1215,7 @@ mod tests {
         Rig {
             rt,
             view,
-            registry,
+            speak,
             stored,
             registered,
         }
@@ -1338,7 +1332,11 @@ mod tests {
         }
         let mut heard = rig.registered.lock().unwrap().clone();
         heard.sort_by(|a, b| a.0.cmp(&b.0));
-        assert_eq!(heard, rig.registry.read().unwrap().engine_ids());
+        let speak = rig.speak.as_ref().unwrap();
+        pump_until(&rig.rt, || {
+            speak.registered_engine_ids().len() == ENGINES.len()
+        });
+        assert_eq!(heard, speak.registered_engine_ids());
         assert_eq!(heard.len(), ENGINES.len());
     }
 

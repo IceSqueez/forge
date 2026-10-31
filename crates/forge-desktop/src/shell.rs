@@ -411,7 +411,6 @@ impl AppShell {
                 let rt_handle = handles.rt_handle.clone();
                 let pipeline_config = handles.pipeline_config.clone();
                 let bot_accounts = handles.bot_accounts.clone();
-                let tts_registry = handles.tts_registry.clone();
                 let cloud_tts_gateways = handles.cloud_tts_gateways.clone();
                 let view = cx.new(|cx| {
                     TtsView::new(
@@ -421,7 +420,6 @@ impl AppShell {
                         rt_handle,
                         pipeline_config,
                         bot_accounts,
-                        tts_registry,
                         cloud_tts_gateways,
                         preselect,
                         cx,
@@ -484,7 +482,6 @@ impl AppShell {
                 let settings_repo = Arc::clone(&handles.backend) as Arc<dyn SettingsRepo>;
                 let overlay_repo = handles.backend.overlay_repo();
                 let overlay_kinds = Arc::clone(&handles.overlay_kinds);
-                let tts_registry = handles.tts_registry.clone();
                 let speak = handles.speak.clone();
                 let sub_action_registry = handles.sub_action_registry.clone();
                 let trigger_registry = handles.trigger_registry.clone();
@@ -506,7 +503,6 @@ impl AppShell {
                         settings_repo,
                         overlay_repo,
                         overlay_kinds,
-                        tts_registry,
                         speak,
                         sub_action_registry,
                         trigger_registry,

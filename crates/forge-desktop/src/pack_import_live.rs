@@ -604,7 +604,7 @@ mod tests {
     }
 
     fn strategy_applied(resolver: &LiveAliases, strategy: &AssignmentStrategy) -> bool {
-        *resolver.read().unwrap().strategy() == *strategy
+        *resolver.resolver_snapshot().strategy() == *strategy
     }
 
     #[test]

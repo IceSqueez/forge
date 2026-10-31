@@ -2196,12 +2196,33 @@ pub(crate) fn quiet_bus(rt: &tokio::runtime::Runtime) -> Arc<EventBus> {
     rt.block_on(async { EventBus::new(Arc::new(StubEventLog)) })
 }
 
-pub(crate) type LiveAliases = Arc<std::sync::RwLock<forge_speak_queue::VoiceAliasResolver>>;
+pub(crate) type LiveAliases = forge_speak_queue::SpeakQueueHandle;
 
 pub(crate) struct SilentPublisher;
 
 impl forge_events::EventPublisher for SilentPublisher {
     fn publish(&self, _: Event) {}
+}
+
+fn neutral_queue_deps(
+    registry: forge_tts_core::TtsRegistry,
+    aliases: Vec<forge_speech_types::VoiceAlias>,
+) -> forge_speak_queue::QueueDeps {
+    let resolver = forge_speak_queue::VoiceAliasResolver::new(
+        aliases,
+        forge_speech_types::AssignmentStrategy::DeterministicByName,
+        forge_speech_types::IgnoreProfile::default(),
+        forge_speech_types::SynthesisDefaults::default(),
+    );
+    forge_speak_queue::QueueDeps {
+        registry,
+        resolver,
+        pipeline: forge_speak_queue::PipelineConfigHandle::new(neutral_pipeline_config()),
+        audio_sink: Arc::new(forge_audio::NullSink),
+        event_bus: Arc::new(SilentPublisher),
+        disabled_engines: std::collections::HashSet::new(),
+        engine_gains: HashMap::new(),
+    }
 }
 
 pub(crate) fn spawn_speak_queue(
@@ -2211,26 +2232,29 @@ pub(crate) fn spawn_speak_queue(
     forge_speak_queue::SpeakEventStream,
     LiveAliases,
 ) {
-    let resolver = Arc::new(std::sync::RwLock::new(
-        forge_speak_queue::VoiceAliasResolver::new(
-            aliases,
-            forge_speech_types::AssignmentStrategy::DeterministicByName,
-            forge_speech_types::IgnoreProfile::default(),
-            forge_speech_types::SynthesisDefaults::default(),
-        ),
-    ));
-    let deps = forge_speak_queue::QueueDeps {
-        registry: Arc::new(std::sync::RwLock::new(forge_tts_core::TtsRegistry::new())),
-        resolver: Arc::clone(&resolver),
-        pipeline: forge_speak_queue::PipelineConfigHandle::new(neutral_pipeline_config()),
-        audio_sink: Arc::new(forge_audio::NullSink),
-        event_bus: Arc::new(SilentPublisher),
-        disabled_engines: std::collections::HashSet::new(),
-        engine_gains: HashMap::new(),
-    };
+    let deps = neutral_queue_deps(forge_tts_core::TtsRegistry::new(), aliases);
     let (handle, stream) =
         forge_speak_queue::spawn(forge_speak_queue::QueueConfig::default(), deps);
-    (handle, stream, resolver)
+    (handle.clone(), stream, handle)
+}
+
+pub(crate) fn spawn_speak_queue_never_listing(
+    engines: impl IntoIterator<Item = forge_speech_types::EngineId>,
+) -> forge_speak_queue::SpeakQueueHandle {
+    let mut deps = neutral_queue_deps(forge_tts_core::TtsRegistry::new(), Vec::new());
+    deps.disabled_engines = engines.into_iter().collect();
+    let (handle, _events) =
+        forge_speak_queue::spawn(forge_speak_queue::QueueConfig::default(), deps);
+    handle
+}
+
+pub(crate) fn spawn_speak_queue_with_registry(
+    registry: forge_tts_core::TtsRegistry,
+) -> forge_speak_queue::SpeakQueueHandle {
+    let deps = neutral_queue_deps(registry, Vec::new());
+    let (handle, _events) =
+        forge_speak_queue::spawn(forge_speak_queue::QueueConfig::default(), deps);
+    handle
 }
 
 struct ListedVoices {
@@ -2298,23 +2322,7 @@ pub(crate) fn spawn_speak_queue_listing(
         engine.clone(),
         Arc::new(ListedVoicesFactory(engine.clone(), voices)),
     );
-    let resolver = Arc::new(std::sync::RwLock::new(
-        forge_speak_queue::VoiceAliasResolver::new(
-            Vec::new(),
-            forge_speech_types::AssignmentStrategy::DeterministicByName,
-            forge_speech_types::IgnoreProfile::default(),
-            forge_speech_types::SynthesisDefaults::default(),
-        ),
-    ));
-    let deps = forge_speak_queue::QueueDeps {
-        registry: Arc::new(std::sync::RwLock::new(registry)),
-        resolver,
-        pipeline: forge_speak_queue::PipelineConfigHandle::new(neutral_pipeline_config()),
-        audio_sink: Arc::new(forge_audio::NullSink),
-        event_bus: Arc::new(SilentPublisher),
-        disabled_engines: std::collections::HashSet::new(),
-        engine_gains: HashMap::new(),
-    };
+    let deps = neutral_queue_deps(registry, Vec::new());
     let (handle, _events) = rt.block_on(async {
         forge_speak_queue::spawn(forge_speak_queue::QueueConfig::default(), deps)
     });
@@ -2327,8 +2335,7 @@ pub(crate) fn live_alias(
     viewer_id: &str,
 ) -> Option<forge_speech_types::VoiceAlias> {
     resolver
-        .read()
-        .expect("resolver lock")
+        .resolver_snapshot()
         .aliases()
         .iter()
         .find(|alias| alias.viewer_id == viewer_id)

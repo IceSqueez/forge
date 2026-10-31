@@ -176,8 +176,8 @@ pub(crate) fn make_deps(
         SynthesisDefaults::default(),
     );
     QueueDeps {
-        registry: Arc::new(std::sync::RwLock::new(registry)),
-        resolver: Arc::new(std::sync::RwLock::new(resolver)),
+        registry,
+        resolver,
         pipeline: forge_speak_queue::PipelineConfigHandle::new(neutral_pipeline()),
         audio_sink: sink,
         event_bus: Arc::new(NullPublisher),

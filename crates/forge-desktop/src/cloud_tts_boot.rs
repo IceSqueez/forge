@@ -1,5 +1,6 @@
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
+use forge_speak_queue::EngineRegistration;
 use forge_speech_types::EngineId;
 use forge_storage::{CredentialId, CredentialsRepo};
 use forge_tts_cloud::CloudGateways;
@@ -14,7 +15,7 @@ use forge_tts_cloud::polly::PollyEngineFactory;
 use forge_tts_core::TtsRegistry;
 
 pub(crate) async fn register_cloud_engines(
-    registry: &RwLock<TtsRegistry>,
+    registry: &mut TtsRegistry,
     creds: &dyn CredentialsRepo,
     gateways: &CloudGateways,
 ) {
@@ -24,72 +25,48 @@ pub(crate) async fn register_cloud_engines(
     try_register_polly(registry, creds, gateways).await;
 }
 
-pub(crate) fn register_azure(
-    registry: &RwLock<TtsRegistry>,
+pub(crate) fn azure_registration(
     creds: AzureCredentials,
     gateways: &CloudGateways,
-) -> EngineId {
-    let id = EngineId(forge_tts_core::ENGINE_ID_AZURE.into());
-    registry
-        .write()
-        .unwrap_or_else(|e| e.into_inner())
-        .register(
-            id.clone(),
-            Arc::new(AzureEngineFactory::new(creds, gateways)),
-        );
-    id
+) -> EngineRegistration {
+    EngineRegistration {
+        id: EngineId(forge_tts_core::ENGINE_ID_AZURE.into()),
+        factory: Arc::new(AzureEngineFactory::new(creds, gateways)),
+    }
 }
 
-pub(crate) fn register_elevenlabs(
-    registry: &RwLock<TtsRegistry>,
+pub(crate) fn elevenlabs_registration(
     creds: ElevenLabsCredentials,
     gateways: &CloudGateways,
-) -> EngineId {
-    let id = EngineId(forge_tts_core::ENGINE_ID_ELEVENLABS.into());
-    registry
-        .write()
-        .unwrap_or_else(|e| e.into_inner())
-        .register(
-            id.clone(),
-            Arc::new(ElevenLabsEngineFactory::new(creds, gateways)),
-        );
-    id
+) -> EngineRegistration {
+    EngineRegistration {
+        id: EngineId(forge_tts_core::ENGINE_ID_ELEVENLABS.into()),
+        factory: Arc::new(ElevenLabsEngineFactory::new(creds, gateways)),
+    }
 }
 
-pub(crate) fn register_openai(
-    registry: &RwLock<TtsRegistry>,
+pub(crate) fn openai_registration(
     creds: OpenAiCredentials,
     gateways: &CloudGateways,
-) -> EngineId {
-    let id = EngineId(forge_tts_core::ENGINE_ID_OPENAI.into());
-    registry
-        .write()
-        .unwrap_or_else(|e| e.into_inner())
-        .register(
-            id.clone(),
-            Arc::new(OpenAiEngineFactory::new(creds, gateways)),
-        );
-    id
+) -> EngineRegistration {
+    EngineRegistration {
+        id: EngineId(forge_tts_core::ENGINE_ID_OPENAI.into()),
+        factory: Arc::new(OpenAiEngineFactory::new(creds, gateways)),
+    }
 }
 
-pub(crate) fn register_polly(
-    registry: &RwLock<TtsRegistry>,
+pub(crate) fn polly_registration(
     creds: PollyCredentials,
     gateways: &CloudGateways,
-) -> EngineId {
-    let id = EngineId(forge_tts_core::ENGINE_ID_POLLY.into());
-    registry
-        .write()
-        .unwrap_or_else(|e| e.into_inner())
-        .register(
-            id.clone(),
-            Arc::new(PollyEngineFactory::new(creds, gateways)),
-        );
-    id
+) -> EngineRegistration {
+    EngineRegistration {
+        id: EngineId(forge_tts_core::ENGINE_ID_POLLY.into()),
+        factory: Arc::new(PollyEngineFactory::new(creds, gateways)),
+    }
 }
 
 async fn try_register_azure(
-    registry: &RwLock<TtsRegistry>,
+    registry: &mut TtsRegistry,
     creds: &dyn CredentialsRepo,
     gateways: &CloudGateways,
 ) {
@@ -108,12 +85,13 @@ async fn try_register_azure(
             return;
         }
     };
-    register_azure(registry, azure_creds, gateways);
+    let registration = azure_registration(azure_creds, gateways);
+    registry.register(registration.id, registration.factory);
     tracing::info!(engine = "Azure", "registered cloud TTS engine");
 }
 
 async fn try_register_elevenlabs(
-    registry: &RwLock<TtsRegistry>,
+    registry: &mut TtsRegistry,
     creds: &dyn CredentialsRepo,
     gateways: &CloudGateways,
 ) {
@@ -135,12 +113,13 @@ async fn try_register_elevenlabs(
             return;
         }
     };
-    register_elevenlabs(registry, el_creds, gateways);
+    let registration = elevenlabs_registration(el_creds, gateways);
+    registry.register(registration.id, registration.factory);
     tracing::info!(engine = "ElevenLabs", "registered cloud TTS engine");
 }
 
 async fn try_register_openai(
-    registry: &RwLock<TtsRegistry>,
+    registry: &mut TtsRegistry,
     creds: &dyn CredentialsRepo,
     gateways: &CloudGateways,
 ) {
@@ -159,12 +138,13 @@ async fn try_register_openai(
             return;
         }
     };
-    register_openai(registry, oa_creds, gateways);
+    let registration = openai_registration(oa_creds, gateways);
+    registry.register(registration.id, registration.factory);
     tracing::info!(engine = "OpenAI", "registered cloud TTS engine");
 }
 
 async fn try_register_polly(
-    registry: &RwLock<TtsRegistry>,
+    registry: &mut TtsRegistry,
     creds: &dyn CredentialsRepo,
     gateways: &CloudGateways,
 ) {
@@ -183,6 +163,7 @@ async fn try_register_polly(
             return;
         }
     };
-    register_polly(registry, polly_creds, gateways);
+    let registration = polly_registration(polly_creds, gateways);
+    registry.register(registration.id, registration.factory);
     tracing::info!(engine = "Polly", "registered cloud TTS engine");
 }

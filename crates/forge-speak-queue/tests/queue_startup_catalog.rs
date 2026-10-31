@@ -7,7 +7,8 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use forge_speak_queue::{
-    QueueConfig, RequestId, SpeakCommand, SpeakEvent, SpeakEventStream, SpeakQueueHandle,
+    EngineRegistration, QueueConfig, RequestId, SpeakCommand, SpeakEvent, SpeakEventStream,
+    SpeakQueueHandle,
 };
 use forge_speech_types::AssignmentStrategy;
 use forge_speech_types::PcmBuffer;
@@ -111,7 +112,6 @@ impl TtsEngineFactory for ScriptedFactory {
 
 struct Started {
     started_at: tokio::time::Instant,
-    registry: Arc<std::sync::RwLock<TtsRegistry>>,
     handle: SpeakQueueHandle,
     stream: SpeakEventStream,
     plays: Arc<std::sync::Mutex<usize>>,
@@ -147,11 +147,9 @@ fn start_with(
         AssignmentStrategy::DeterministicByName,
         aliases,
     );
-    let registry = Arc::clone(&deps.registry);
     let (handle, stream) = forge_speak_queue::spawn(QueueConfig::default(), deps);
     Started {
         started_at: tokio::time::Instant::now(),
-        registry,
         handle,
         stream,
         plays,
@@ -546,15 +544,18 @@ fn calls(steps: &[Listing]) -> Listing {
     Listing::Calls(steps.to_vec().into())
 }
 
-fn register(q: &Started, id: &str, listing: Listing) {
-    q.registry.write().unwrap().register(
-        EngineId(id.into()),
-        Arc::new(ScriptedFactory {
+async fn register(q: &Started, id: &str, listing: Listing) {
+    q.handle
+        .send(SpeakCommand::RegisterEngine(EngineRegistration {
             id: EngineId(id.into()),
-            listing,
-            listings: Arc::new(AtomicUsize::new(0)),
-        }),
-    );
+            factory: Arc::new(ScriptedFactory {
+                id: EngineId(id.into()),
+                listing,
+                listings: Arc::new(AtomicUsize::new(0)),
+            }),
+        }))
+        .await
+        .unwrap();
 }
 
 async fn settled_after(
@@ -682,7 +683,7 @@ async fn after_startup_no_rebuild_holds_a_request_back() {
                 }
             }
             _ => {
-                register(&q, "zeta", Listing::Never);
+                register(&q, "zeta", Listing::Never).await;
                 q.handle
                     .send(SpeakCommand::RefreshVoiceCatalog)
                     .await
@@ -698,7 +699,7 @@ async fn after_startup_no_rebuild_holds_a_request_back() {
 async fn a_new_engine_joins_the_catalog_when_its_list_arrives() {
     let q = start(&[("alpha", Listing::Ready)]);
     tokio::time::sleep(QUIESCENCE).await;
-    register(&q, "zeta", Listing::Slow(Duration::from_secs(5)));
+    register(&q, "zeta", Listing::Slow(Duration::from_secs(5))).await;
     q.handle
         .send(SpeakCommand::RefreshVoiceCatalog)
         .await
@@ -710,6 +711,28 @@ async fn a_new_engine_joins_the_catalog_when_its_list_arrives() {
         (before, voice_ids(&q.handle)),
         (
             vec!["alpha-1".to_owned()],
+            vec!["alpha-1".to_owned(), "zeta-1".to_owned()]
+        )
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_registered_engine_is_listed_and_voiced_without_a_refresh() {
+    let mut q = start(&[("alpha", Listing::Ready)]);
+    tokio::time::sleep(QUIESCENCE).await;
+    register(&q, "zeta", Listing::Ready).await;
+    round_trip(&mut q).await;
+    let roster: Vec<String> = q
+        .handle
+        .engine_roster()
+        .into_iter()
+        .map(|engine| engine.id.0)
+        .collect();
+    tokio::time::sleep(QUIESCENCE).await;
+    assert_eq!(
+        (roster, voice_ids(&q.handle)),
+        (
+            vec!["alpha".to_owned(), "zeta".to_owned()],
             vec!["alpha-1".to_owned(), "zeta-1".to_owned()]
         )
     );

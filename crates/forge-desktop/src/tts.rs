@@ -1,5 +1,5 @@
 use gpui::Rgba;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, Density, FONT_XS, ForgePalette, KeyActivated, body_family,
@@ -8,7 +8,6 @@ use forge_components::{
 use forge_speak_queue::{PipelineConfigHandle, SpeakQueueHandle};
 use forge_storage::{CredentialsRepo, DataProvider, SettingsRepo};
 use forge_tts_cloud::CloudGateways;
-use forge_tts_core::TtsRegistry;
 use forge_types::Shared;
 use gpui::{
     AnyElement, ClickEvent, Context, Entity, EventEmitter, FontWeight, Pixels, Window, div,
@@ -48,7 +47,6 @@ pub(crate) struct TtsView {
     engines: Entity<TtsEnginesView>,
     aliases: Entity<VoiceAliasesView>,
     filters: Entity<TtsFiltersView>,
-    tts_registry: Option<Arc<RwLock<TtsRegistry>>>,
     speak: Option<SpeakQueueHandle>,
 }
 
@@ -64,7 +62,6 @@ impl TtsView {
         rt_handle: tokio::runtime::Handle,
         pipeline_config: Option<PipelineConfigHandle>,
         bot_accounts: Shared<Vec<String>>,
-        tts_registry: Option<Arc<RwLock<TtsRegistry>>>,
         cloud_gateways: CloudGateways,
         preselect: Option<TtsSection>,
         cx: &mut Context<Self>,
@@ -77,14 +74,12 @@ impl TtsView {
                 speak_state,
                 speak.clone(),
                 Arc::clone(&settings),
-                tts_registry.clone(),
                 rt_handle.clone(),
                 cx,
             )
         });
         let engines = cx.new(|cx| {
             TtsEnginesView::new(
-                tts_registry.clone(),
                 cloud_gateways,
                 Arc::clone(&credentials),
                 settings,
@@ -118,7 +113,6 @@ impl TtsView {
             engines,
             aliases,
             filters,
-            tts_registry,
             speak,
         }
     }
@@ -134,9 +128,9 @@ impl TtsView {
         density: Density,
     ) -> impl IntoElement + use<> {
         let registered = self
-            .tts_registry
+            .speak
             .as_ref()
-            .map(|r| r.read().unwrap_or_else(|e| e.into_inner()).engine_ids())
+            .map(|h| h.registered_engine_ids())
             .unwrap_or_default();
         let voices = self
             .speak

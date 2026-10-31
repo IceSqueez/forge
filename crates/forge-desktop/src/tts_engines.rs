@@ -2,7 +2,7 @@ use forge_components::FONT_LABEL;
 use forge_components::FONT_META;
 use forge_components::FONT_MICRO;
 use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
 use forge_components::{
     BORDER_THIN, DISABLED_OPACITY, Density, FONT_MD, FONT_XS, FONT_XXS, ForgePalette, Icon,
@@ -17,7 +17,7 @@ use forge_speech_types::SynthesisDefaults;
 use forge_speech_types::{EngineId, TtsVoice, VoiceId};
 use forge_storage::{CredentialId, CredentialsRepo, EngineParams, SettingsRepo, StorageError};
 use forge_tts_cloud::CloudGateways;
-use forge_tts_core::{EngineClass, TtsRegistry};
+use forge_tts_core::EngineClass;
 use gpui::{
     AnyElement, ClickEvent, Context, Entity, FontWeight, Pixels, Rgba, SharedString, Subscription,
     Window, div, prelude::*, px,
@@ -64,7 +64,6 @@ enum Selection {
 }
 
 pub(crate) struct TtsEnginesView {
-    registry: Option<Arc<RwLock<TtsRegistry>>>,
     credentials: Arc<dyn CredentialsRepo>,
     settings: Arc<dyn SettingsRepo>,
     speak: Option<SpeakQueueHandle>,
@@ -84,7 +83,6 @@ pub(crate) struct TtsEnginesView {
 
 impl TtsEnginesView {
     pub(crate) fn new(
-        registry: Option<Arc<RwLock<TtsRegistry>>>,
         cloud_gateways: CloudGateways,
         credentials: Arc<dyn CredentialsRepo>,
         settings: Arc<dyn SettingsRepo>,
@@ -94,7 +92,6 @@ impl TtsEnginesView {
     ) -> Self {
         let cloud = cx.new(|cx| {
             CloudCredentialsView::new(
-                registry.clone(),
                 cloud_gateways,
                 Arc::clone(&credentials),
                 rt_handle.clone(),
@@ -110,8 +107,7 @@ impl TtsEnginesView {
         );
 
         let mut view = Self {
-            engines: load_engine_roster(registry.as_ref()),
-            registry,
+            engines: load_engine_roster(speak.as_ref()),
             credentials,
             settings,
             speak,
@@ -419,7 +415,7 @@ impl TtsEnginesView {
     }
 
     fn on_engine_registered(&mut self, engine_id: &EngineId, cx: &mut Context<Self>) {
-        self.engines = load_engine_roster(self.registry.as_ref());
+        self.engines = load_engine_roster(self.speak.as_ref());
         if let Some(index) = self.engines.iter().position(|e| e.id == engine_id.0) {
             self.selected = Selection::Engine(index);
             self.load_params(engine_id.0.clone(), cx);
@@ -1260,7 +1256,7 @@ mod tests {
     use forge_storage::Language;
     use forge_storage::settings::core_settings::{TTS_DISABLED_ENGINES, TTS_ENGINE_PARAMS};
     use forge_tts_core::{
-        ENGINE_ID_ESPEAK_NG, ENGINE_ID_PIPER, TtsEngine, TtsEngineFactory, TtsError,
+        ENGINE_ID_ESPEAK_NG, ENGINE_ID_PIPER, TtsEngine, TtsEngineFactory, TtsError, TtsRegistry,
     };
     use gpui::{Entity, TestAppContext};
     use tokio::sync::mpsc::UnboundedReceiver;
@@ -1269,7 +1265,8 @@ mod tests {
     use crate::i18n::install_language;
     use crate::test_support::{
         ReadFault, SETTINGS_READ_FAILED, SettingWrite, TestBackend, error_toasts,
-        install_presentation, pump, spawn_speak_queue, test_backend, writes_to,
+        install_presentation, pump, runtime, spawn_speak_queue_with_registry, test_backend,
+        writes_to,
     };
 
     const ESPEAK: usize = 0;
@@ -1298,6 +1295,14 @@ mod tests {
                 reason: "the engines pane never builds an engine".to_owned(),
             })
         }
+    }
+
+    fn engines_registry() -> TtsRegistry {
+        let mut registry = TtsRegistry::new();
+        for id in [ENGINE_ID_PIPER, ENGINE_ID_ESPEAK_NG] {
+            registry.register(EngineId(id.to_owned()), Arc::new(NeverCreated));
+        }
+        registry
     }
 
     fn params_key(engine_id: &str) -> String {
@@ -1355,18 +1360,16 @@ mod tests {
             speak: Option<SpeakQueueHandle>,
             cx: &mut TestAppContext,
         ) -> Entity<TtsEnginesView> {
-            let mut registry = TtsRegistry::new();
-            for id in [ENGINE_ID_PIPER, ENGINE_ID_ESPEAK_NG] {
-                registry.register(EngineId(id.to_owned()), Arc::new(NeverCreated));
-            }
-            let registry = Some(Arc::new(RwLock::new(registry)));
+            let speak = speak.or_else(|| {
+                let _runtime = self.rt.enter();
+                Some(spawn_speak_queue_with_registry(engines_registry()))
+            });
             let credentials = Arc::clone(&self.backend) as Arc<dyn CredentialsRepo>;
             let settings = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
             let handle = self.rt.handle().clone();
             let view = cx.update(|cx| {
                 cx.new(|cx| {
                     TtsEnginesView::new(
-                        registry,
                         CloudGateways::new(),
                         credentials,
                         settings,
@@ -1573,12 +1576,16 @@ mod tests {
         for (id, factory) in factories {
             registry.register(EngineId(id.to_owned()), factory);
         }
+        let rt = runtime();
+        let speak = {
+            let _runtime = rt.enter();
+            spawn_speak_queue_with_registry(registry)
+        };
 
-        let roster: Vec<(String, String, EngineClass)> =
-            load_engine_roster(Some(&Arc::new(std::sync::RwLock::new(registry))))
-                .into_iter()
-                .map(|engine| (engine.id, engine.name, engine.class))
-                .collect();
+        let roster: Vec<(String, String, EngineClass)> = load_engine_roster(Some(&speak))
+            .into_iter()
+            .map(|engine| (engine.id, engine.name, engine.class))
+            .collect();
 
         let expected = [
             ("azure", "Azure Speech", EngineClass::Cloud),
@@ -1714,9 +1721,9 @@ mod tests {
     #[gpui::test]
     fn a_failed_disabled_write_toasts_reloads_and_resyncs_the_live_queue(cx: &mut TestAppContext) {
         let rig = EnginesRig::new(cx);
-        let (speak, _events, _aliases) = {
+        let speak = {
             let _runtime = rig.rt.enter();
-            spawn_speak_queue(Vec::new())
+            spawn_speak_queue_with_registry(engines_registry())
         };
         rig.backend.fail_writes(TTS_DISABLED_ENGINES.name());
         let view = rig.open(Some(speak.clone()), cx);

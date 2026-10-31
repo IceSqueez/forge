@@ -9,7 +9,7 @@ const PLAYBACK_START_BOUND: Duration = Duration::from_secs(5);
 use forge_audio::{AudioError, AudioSink};
 use forge_speech_types::{EngineId, TtsVoice, VoiceId};
 use forge_speech_types::{LanguageCode, PcmBuffer};
-use forge_tts_core::{SynthesisRequest, engine_display_name};
+use forge_tts_core::{SynthesisRequest, TtsRegistry, engine_display_name};
 use forge_tts_pipeline::{DetectionOutcome, LanguageDetector, PipelineResult, spoken_words};
 use forge_types::{MessageRef, Shared};
 
@@ -22,9 +22,34 @@ use crate::vocabulary::{FailureReason, HoldReason, RejectReason, SkipReason};
 use crate::voice::{ResolveResult, VoiceAliasResolver, candidate_languages, voice_speaks_language};
 
 use crate::{
-    PipelineConfigHandle, Priority, QueueConfig, QueueDeps, QueuedOrderEntry, RequestId,
-    SpeakCommand, SpeakEvent, SpeakRequest, TargetedLegs,
+    PipelineConfigHandle, Priority, QueueConfig, QueuedOrderEntry, RequestId, SpeakCommand,
+    SpeakEvent, SpeakRequest, TargetedLegs,
 };
+
+pub(crate) struct ActorDeps {
+    pub(crate) registry: Shared<TtsRegistry>,
+    pub(crate) resolver: Shared<VoiceAliasResolver>,
+    pub(crate) pipeline: PipelineConfigHandle,
+    pub(crate) audio_sink: Arc<dyn AudioSink>,
+    pub(crate) event_bus: Arc<dyn forge_events::EventPublisher>,
+    pub(crate) disabled_engines: HashSet<EngineId>,
+    pub(crate) engine_gains: HashMap<EngineId, f32>,
+}
+
+fn update_registry(registry: &Shared<TtsRegistry>, change: impl FnOnce(&mut TtsRegistry)) {
+    let mut next = (*registry.load()).clone();
+    change(&mut next);
+    registry.store(next);
+}
+
+fn update_resolver(
+    resolver: &Shared<VoiceAliasResolver>,
+    change: impl FnOnce(&mut VoiceAliasResolver),
+) {
+    let mut next = (*resolver.load()).clone();
+    change(&mut next);
+    resolver.store(next);
+}
 
 struct SynthTaskResult {
     request: SpeakRequest,
@@ -118,9 +143,9 @@ enum SynthOutcome {
 }
 
 struct SynthTaskDeps {
-    resolver: Arc<std::sync::RwLock<VoiceAliasResolver>>,
+    resolver: Arc<VoiceAliasResolver>,
     pipeline: PipelineConfigHandle,
-    registry: Arc<std::sync::RwLock<forge_tts_core::TtsRegistry>>,
+    registry: Arc<forge_tts_core::TtsRegistry>,
     voice_catalog: Arc<Vec<TtsVoice>>,
     detector: Option<Arc<LanguageDetector>>,
 }
@@ -169,8 +194,8 @@ async fn run_synthesis(
     .await;
 
     let resolve_result = {
-        let guard = deps.resolver.read().unwrap_or_else(|e| e.into_inner());
-        guard.resolve(&req, detected.as_ref().map(|d| d.code), &deps.voice_catalog)
+        deps.resolver
+            .resolve(&req, detected.as_ref().map(|d| d.code), &deps.voice_catalog)
     };
 
     let (voice_id, engine_id, pitch, rate) = match resolve_result {
@@ -205,11 +230,7 @@ async fn run_synthesis(
         }
     };
 
-    let slot = deps
-        .registry
-        .read()
-        .unwrap_or_else(|e| e.into_inner())
-        .slot(&engine_id);
+    let slot = deps.registry.slot(&engine_id);
     let slot = match slot {
         Some(slot) => slot,
         None => {
@@ -369,7 +390,7 @@ fn queue_changed_event(
 )]
 pub(crate) async fn run_actor(
     mut config: QueueConfig,
-    deps: QueueDeps,
+    deps: ActorDeps,
     mut cmd_rx: tokio::sync::mpsc::Receiver<SpeakCommand>,
     event_tx: tokio::sync::broadcast::Sender<SpeakEvent>,
     depth: Arc<AtomicUsize>,
@@ -397,21 +418,21 @@ pub(crate) async fn run_actor(
     let (detector_tx, mut detector_rx) = tokio::sync::mpsc::channel::<DetectorBuild>(1);
     let mut detector_builds = DetectorBuilds::new(detector_tx);
 
-    {
-        let mut registry = deps.registry.write().unwrap_or_else(|e| e.into_inner());
+    update_registry(&deps.registry, |registry| {
         for engine_id in &deps.disabled_engines {
             registry.invalidate(engine_id);
         }
-    }
+    });
     disabled_engines.store(deps.disabled_engines.clone());
     engine_gains.store(deps.engine_gains.clone());
     let mut catalog = VoiceCatalogState::default();
-    let initial_catalog = catalog.rebuild(&deps.registry, &deps.disabled_engines, &catalog_tx);
+    let initial_catalog =
+        catalog.rebuild(&deps.registry.load(), &deps.disabled_engines, &catalog_tx);
     voices.store_arc(initial_catalog.clone());
     let mut task_deps = SynthTaskDeps {
-        resolver: deps.resolver.clone(),
+        resolver: deps.resolver.load(),
         pipeline: deps.pipeline.clone(),
-        registry: deps.registry.clone(),
+        registry: deps.registry.load(),
         voice_catalog: initial_catalog,
         detector: None,
     };
@@ -461,7 +482,7 @@ pub(crate) async fn run_actor(
             && !paused
             && !voicegate_active
             && next_request(&high_queue, &normal_queue).is_some_and(|req| {
-                let resolver = deps.resolver.read().unwrap_or_else(|e| e.into_inner());
+                let resolver = deps.resolver.load();
                 catalog.serves(
                     req,
                     resolver.active_alias_engine(&req.viewer_id, &req.viewer_name),
@@ -476,9 +497,9 @@ pub(crate) async fn run_actor(
             active_request_id = Some(req.request_id.clone());
             let tx = synth_tx.clone();
             let task_deps_clone = SynthTaskDeps {
-                resolver: task_deps.resolver.clone(),
+                resolver: deps.resolver.load(),
                 pipeline: task_deps.pipeline.clone(),
-                registry: task_deps.registry.clone(),
+                registry: deps.registry.load(),
                 voice_catalog: task_deps.voice_catalog.clone(),
                 detector: task_deps.detector.clone(),
             };
@@ -507,12 +528,26 @@ pub(crate) async fn run_actor(
                 match cmd {
                     None => break,
                     Some(SpeakCommand::RefreshVoiceCatalog) => {
-                        deps.registry
-                            .write()
-                            .unwrap_or_else(|e| e.into_inner())
-                            .invalidate_all();
+                        update_registry(&deps.registry, TtsRegistry::invalidate_all);
                         let rebuilt = catalog.rebuild(
-                            &deps.registry,
+                            &deps.registry.load(),
+                            &disabled_engines.load(),
+                            &catalog_tx,
+                        );
+                        publish_catalog(
+                            rebuilt,
+                            &voices,
+                            &mut task_deps,
+                            language_aware,
+                            &mut detector_builds,
+                        );
+                    }
+                    Some(SpeakCommand::RegisterEngine(registration)) => {
+                        update_registry(&deps.registry, |registry| {
+                            registry.register(registration.id, registration.factory);
+                        });
+                        let rebuilt = catalog.rebuild(
+                            &deps.registry.load(),
                             &disabled_engines.load(),
                             &catalog_tx,
                         );
@@ -532,12 +567,11 @@ pub(crate) async fn run_actor(
                             next.insert(engine_id.clone())
                         };
                         if changed {
-                            deps.registry
-                                .write()
-                                .unwrap_or_else(|e| e.into_inner())
-                                .invalidate(&engine_id);
+                            update_registry(&deps.registry, |registry| {
+                                registry.invalidate(&engine_id);
+                            });
                         }
-                        let rebuilt = catalog.rebuild(&deps.registry, &next, &catalog_tx);
+                        let rebuilt = catalog.rebuild(&deps.registry.load(), &next, &catalog_tx);
                         disabled_engines.store(next);
                         publish_catalog(
                             rebuilt,
@@ -567,10 +601,9 @@ pub(crate) async fn run_actor(
                         master_volume_bits.store(config.master_volume.to_bits(), Ordering::Relaxed);
                     }
                     Some(SpeakCommand::SetEngineParams(engine_id, defaults, gain)) => {
-                        {
-                            let mut guard = deps.resolver.write().unwrap_or_else(|e| e.into_inner());
-                            guard.set_engine_default(engine_id.clone(), defaults);
-                        }
+                        update_resolver(&deps.resolver, |resolver| {
+                            resolver.set_engine_default(engine_id.clone(), defaults);
+                        });
                         let mut next = (*engine_gains.load()).clone();
                         next.insert(engine_id, gain.clamp(0.0, 1.0));
                         engine_gains.store(next);
@@ -691,7 +724,7 @@ pub(crate) async fn run_actor(
 async fn handle_synth_result(
     result: SynthTaskResult,
     config: &QueueConfig,
-    deps: &QueueDeps,
+    deps: &ActorDeps,
     event_tx: &tokio::sync::broadcast::Sender<SpeakEvent>,
     active_request_id: &mut Option<RequestId>,
     current_playback: &mut Option<CurrentPlayback>,
@@ -760,7 +793,7 @@ async fn handle_synth_result(
 fn start_clip(
     clip: ReadyClip,
     config: &QueueConfig,
-    deps: &QueueDeps,
+    deps: &ActorDeps,
     event_tx: &tokio::sync::broadcast::Sender<SpeakEvent>,
     active_request_id: &mut Option<RequestId>,
     current_playback: &mut Option<CurrentPlayback>,
@@ -817,7 +850,7 @@ fn start_clip(
 
 fn sink_for(
     request: &SpeakRequest,
-    deps: &QueueDeps,
+    deps: &ActorDeps,
     targeted_legs: &TargetedLegs,
 ) -> Result<Arc<dyn AudioSink>, AudioError> {
     let Some(target) = &request.target else {
@@ -833,7 +866,7 @@ fn sink_for(
 
 async fn finish_playback(
     play_result: Result<(), forge_audio::AudioError>,
-    deps: &QueueDeps,
+    deps: &ActorDeps,
     event_tx: &tokio::sync::broadcast::Sender<SpeakEvent>,
     active_request_id: &mut Option<RequestId>,
     last_successful: &mut Option<SpeakRequest>,
@@ -871,7 +904,7 @@ fn stop_when_started(start: PlaybackStart) {
 
 fn stop_active(
     reason: SkipReason,
-    deps: &QueueDeps,
+    deps: &ActorDeps,
     event_tx: &tokio::sync::broadcast::Sender<SpeakEvent>,
     active_request_id: &mut Option<RequestId>,
     current_playback: &mut Option<CurrentPlayback>,
@@ -923,14 +956,14 @@ fn take_from_queues(
     None
 }
 
-fn enqueue_preview(req: &SpeakRequest, deps: &QueueDeps, catalog: &[TtsVoice]) -> EnqueuePreview {
+fn enqueue_preview(req: &SpeakRequest, deps: &ActorDeps, catalog: &[TtsVoice]) -> EnqueuePreview {
     let spoken_secs = ((req.text.chars().count() as u32) / 15).max(1);
     let estimated_secs = match deps.pipeline.load().output.max_duration_secs {
         Some(cap_secs) => spoken_secs.min(cap_secs),
         None => spoken_secs,
     };
-    let guard = deps.resolver.read().unwrap_or_else(|e| e.into_inner());
-    let preview = match guard.resolve(req, None, catalog) {
+    let resolver = deps.resolver.load();
+    let preview = match resolver.resolve(req, None, catalog) {
         ResolveResult::Speak {
             voice_id,
             engine_id,
@@ -958,7 +991,7 @@ fn enqueue_preview(req: &SpeakRequest, deps: &QueueDeps, catalog: &[TtsVoice]) -
 fn admit_request(
     req: SpeakRequest,
     config: &QueueConfig,
-    deps: &QueueDeps,
+    deps: &ActorDeps,
     event_tx: &tokio::sync::broadcast::Sender<SpeakEvent>,
     high_queue: &mut VecDeque<SpeakRequest>,
     normal_queue: &mut VecDeque<SpeakRequest>,
@@ -1005,7 +1038,7 @@ fn admit_request(
 fn handle_command(
     cmd: SpeakCommand,
     config: &mut QueueConfig,
-    deps: &QueueDeps,
+    deps: &ActorDeps,
     event_tx: &tokio::sync::broadcast::Sender<SpeakEvent>,
     high_queue: &mut VecDeque<SpeakRequest>,
     normal_queue: &mut VecDeque<SpeakRequest>,
@@ -1156,26 +1189,23 @@ fn handle_command(
             );
         }
         SpeakCommand::SetAlias(alias) => {
-            deps.resolver
-                .write()
-                .unwrap_or_else(|e| e.into_inner())
-                .set_alias(alias);
+            update_resolver(&deps.resolver, |resolver| {
+                resolver.set_alias(alias);
+            });
         }
         SpeakCommand::SwitchAlias {
             viewer_id,
             engine_id,
             voice_id,
         } => {
-            deps.resolver
-                .write()
-                .unwrap_or_else(|e| e.into_inner())
-                .switch_alias(&viewer_id, engine_id, voice_id);
+            update_resolver(&deps.resolver, |resolver| {
+                resolver.switch_alias(&viewer_id, engine_id, voice_id);
+            });
         }
         SpeakCommand::SetStrategy(strategy) => {
-            deps.resolver
-                .write()
-                .unwrap_or_else(|e| e.into_inner())
-                .set_strategy(strategy);
+            update_resolver(&deps.resolver, |resolver| {
+                resolver.set_strategy(strategy);
+            });
         }
         SpeakCommand::SetVolume(volume) => {
             config.master_volume = volume.clamp(0.0, 1.0);
@@ -1184,12 +1214,12 @@ fn handle_command(
             config.repeat_window = window;
         }
         SpeakCommand::RemoveAlias(id) => {
-            deps.resolver
-                .write()
-                .unwrap_or_else(|e| e.into_inner())
-                .remove_alias(&id);
+            update_resolver(&deps.resolver, |resolver| {
+                resolver.remove_alias(&id);
+            });
         }
         SpeakCommand::RefreshVoiceCatalog
+        | SpeakCommand::RegisterEngine(_)
         | SpeakCommand::SetEngineEnabled(_, _)
         | SpeakCommand::SetEngineParams(_, _, _) => {}
         SpeakCommand::Pause => {
@@ -1236,7 +1266,7 @@ fn handle_command(
 
 fn remove_queued(
     request_id: &RequestId,
-    deps: &QueueDeps,
+    deps: &ActorDeps,
     event_tx: &tokio::sync::broadcast::Sender<SpeakEvent>,
     high_queue: &mut VecDeque<SpeakRequest>,
     normal_queue: &mut VecDeque<SpeakRequest>,
@@ -1258,7 +1288,7 @@ fn remove_queued(
 
 fn clear_pending(
     keep_current: bool,
-    deps: &QueueDeps,
+    deps: &ActorDeps,
     event_tx: &tokio::sync::broadcast::Sender<SpeakEvent>,
     high_queue: &mut VecDeque<SpeakRequest>,
     normal_queue: &mut VecDeque<SpeakRequest>,
@@ -1405,16 +1435,16 @@ mod tests {
         }
     }
 
-    fn minimal_deps() -> QueueDeps {
+    fn minimal_deps() -> ActorDeps {
         let resolver = VoiceAliasResolver::new(
             vec![],
             AssignmentStrategy::DeterministicByName,
             IgnoreProfile::default(),
             SynthesisDefaults::default(),
         );
-        QueueDeps {
-            registry: Arc::new(std::sync::RwLock::new(forge_tts_core::TtsRegistry::new())),
-            resolver: Arc::new(std::sync::RwLock::new(resolver)),
+        ActorDeps {
+            registry: Shared::new(forge_tts_core::TtsRegistry::new()),
+            resolver: Shared::new(resolver),
             pipeline: crate::PipelineConfigHandle::new(neutral_pipeline()),
             audio_sink: Arc::new(SilentSink),
             event_bus: Arc::new(NullPublisher),
@@ -1425,7 +1455,7 @@ mod tests {
 
     fn dispatch(
         config: &mut QueueConfig,
-        deps: &QueueDeps,
+        deps: &ActorDeps,
         tx: &tokio::sync::broadcast::Sender<SpeakEvent>,
         cmd: SpeakCommand,
     ) {
@@ -1481,9 +1511,9 @@ mod tests {
         }
     }
 
-    fn recording_deps() -> (QueueDeps, Arc<std::sync::Mutex<Vec<Event>>>) {
+    fn recording_deps() -> (ActorDeps, Arc<std::sync::Mutex<Vec<Event>>>) {
         let events = Arc::new(std::sync::Mutex::new(Vec::new()));
-        let deps = QueueDeps {
+        let deps = ActorDeps {
             event_bus: Arc::new(RecordingPublisher {
                 events: Arc::clone(&events),
             }),
@@ -1494,7 +1524,7 @@ mod tests {
 
     struct Harness {
         config: QueueConfig,
-        deps: QueueDeps,
+        deps: ActorDeps,
         events: Arc<std::sync::Mutex<Vec<Event>>>,
         tx: tokio::sync::broadcast::Sender<SpeakEvent>,
         rx: tokio::sync::broadcast::Receiver<SpeakEvent>,
@@ -1835,9 +1865,9 @@ mod tests {
             SynthesisDefaults::default(),
         );
         let deps = SynthTaskDeps {
-            resolver: Arc::new(std::sync::RwLock::new(resolver)),
+            resolver: Arc::new(resolver),
             pipeline: crate::PipelineConfigHandle::new(cfg),
-            registry: Arc::new(std::sync::RwLock::new(registry)),
+            registry: Arc::new(registry),
             voice_catalog: Arc::new(vec![voice.clone()]),
             detector: None,
         };

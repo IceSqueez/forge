@@ -183,32 +183,25 @@ pub(crate) async fn build_speak_queue(
     Option<forge_speak_queue::SpeakQueueHandle>,
     Option<SpeakEventStream>,
     Option<PipelineConfigHandle>,
-    Option<Arc<std::sync::RwLock<TtsRegistry>>>,
 ) {
     let mut registry = TtsRegistry::new();
     register_local_engines(&mut registry, local_engines).await;
 
-    let registry = std::sync::RwLock::new(registry);
     let creds: Arc<dyn CredentialsRepo> = Arc::clone(backend) as Arc<dyn CredentialsRepo>;
-    register_cloud_engines(&registry, creds.as_ref(), cloud_gateways).await;
-    let registry = Arc::new(registry);
+    register_cloud_engines(&mut registry, creds.as_ref(), cloud_gateways).await;
 
-    let engine_ids = registry
-        .read()
-        .unwrap_or_else(|e| e.into_inner())
-        .engine_ids();
+    let engine_ids = registry.engine_ids();
     let (engine_defaults, engine_gains) = load_engine_params(backend, &engine_ids).await;
 
     let mut resolver = load_resolver(backend, warnings).await;
     resolver.set_engine_defaults(engine_defaults);
-    let resolver = Arc::new(std::sync::RwLock::new(resolver));
     let (filter_rules, filter_settings) = load_filters(backend).await;
     let (pipeline_config, _) = build_config(&filter_rules, &filter_settings).dropping_invalid();
     let pipeline = PipelineConfigHandle::new(pipeline_config);
     let disabled_engines = load_disabled_engines(backend).await;
 
     let deps = QueueDeps {
-        registry: Arc::clone(&registry),
+        registry,
         resolver,
         pipeline: pipeline.clone(),
         audio_sink,
@@ -222,5 +215,5 @@ pub(crate) async fn build_speak_queue(
         ..QueueConfig::default()
     };
     let (handle, stream) = forge_speak_queue::spawn(queue_config, deps);
-    (Some(handle), Some(stream), Some(pipeline), Some(registry))
+    (Some(handle), Some(stream), Some(pipeline))
 }

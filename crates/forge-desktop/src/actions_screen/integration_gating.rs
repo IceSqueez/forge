@@ -209,7 +209,6 @@ pub(super) mod tests {
                         Arc::new(StubOverlays),
                         Arc::new(OverlayKindRegistry::new()),
                         None,
-                        None,
                         Arc::new(owned_sub_actions(&[(OBS_SCENE, "obs")])),
                         Arc::new(owned_triggers(&[(OBS_SCENE_CHANGED, "obs")])),
                         handle,

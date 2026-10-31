@@ -23,7 +23,7 @@ use forge_audio::TargetedSinkFactory;
 use forge_speech_types::{AliasId, AssignmentStrategy, SynthesisDefaults, VoiceAlias};
 use forge_speech_types::{EngineId, TtsVoice, VoiceId};
 pub use forge_tts_core::TtsError;
-use forge_tts_core::TtsRegistry;
+use forge_tts_core::{RegisteredEngine, TtsEngineFactory, TtsRegistry};
 pub use forge_tts_pipeline::{EmoteTokenSet, EmoteTreatment};
 use forge_types::{MessageRef, Shared};
 pub use voice::{AliasKey, ResolveResult, VoiceAliasResolver, VoiceSkip};
@@ -92,9 +92,23 @@ pub enum SpeakCommand {
     SetEngineParams(EngineId, SynthesisDefaults, f32),
     RemoveAlias(AliasId),
     RefreshVoiceCatalog,
+    RegisterEngine(EngineRegistration),
     SetEngineEnabled(EngineId, bool),
     VoiceGateActivated,
     VoiceGateDeactivated,
+}
+
+pub struct EngineRegistration {
+    pub id: EngineId,
+    pub factory: Arc<dyn TtsEngineFactory>,
+}
+
+impl std::fmt::Debug for EngineRegistration {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EngineRegistration")
+            .field("id", &self.id)
+            .finish_non_exhaustive()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -192,8 +206,8 @@ impl Default for QueueConfig {
 }
 
 pub struct QueueDeps {
-    pub registry: Arc<std::sync::RwLock<TtsRegistry>>,
-    pub resolver: Arc<std::sync::RwLock<VoiceAliasResolver>>,
+    pub registry: TtsRegistry,
+    pub resolver: VoiceAliasResolver,
     pub pipeline: PipelineConfigHandle,
     pub audio_sink: Arc<dyn forge_audio::AudioSink>,
     pub event_bus: Arc<dyn forge_events::EventPublisher>,
@@ -210,6 +224,8 @@ pub struct SpeakQueueHandle {
     disabled_engines: Shared<HashSet<EngineId>>,
     master_volume_bits: Arc<AtomicU32>,
     engine_gains: Shared<HashMap<EngineId, f32>>,
+    resolver: Shared<VoiceAliasResolver>,
+    registry: Shared<TtsRegistry>,
     targeted_legs: TargetedLegs,
 }
 
@@ -246,6 +262,18 @@ impl SpeakQueueHandle {
 
     pub fn master_volume(&self) -> f32 {
         f32::from_bits(self.master_volume_bits.load(Ordering::Relaxed))
+    }
+
+    pub fn resolver_snapshot(&self) -> Arc<VoiceAliasResolver> {
+        self.resolver.load()
+    }
+
+    pub fn engine_roster(&self) -> Vec<RegisteredEngine> {
+        self.registry.load().roster()
+    }
+
+    pub fn registered_engine_ids(&self) -> Vec<EngineId> {
+        self.registry.load().engine_ids()
     }
 
     pub fn engines(&self) -> Vec<EngineId> {
@@ -296,6 +324,17 @@ pub fn spawn(config: QueueConfig, deps: QueueDeps) -> (SpeakQueueHandle, SpeakEv
     let master_volume_bits = Arc::new(AtomicU32::new(config.master_volume.to_bits()));
     let engine_gains = Shared::<HashMap<EngineId, f32>>::new(HashMap::new());
     let targeted_legs = TargetedLegs::new(None);
+    let resolver = Shared::new(deps.resolver);
+    let registry = Shared::new(deps.registry);
+    let actor_deps = actor::ActorDeps {
+        registry: registry.clone(),
+        resolver: resolver.clone(),
+        pipeline: deps.pipeline,
+        audio_sink: deps.audio_sink,
+        event_bus: deps.event_bus,
+        disabled_engines: deps.disabled_engines,
+        engine_gains: deps.engine_gains,
+    };
 
     let event_tx_clone = event_tx.clone();
     let depth_clone = depth.clone();
@@ -307,7 +346,7 @@ pub fn spawn(config: QueueConfig, deps: QueueDeps) -> (SpeakQueueHandle, SpeakEv
     tokio::spawn(async move {
         actor::run_actor(
             config,
-            deps,
+            actor_deps,
             cmd_rx,
             event_tx_clone,
             depth_clone,
@@ -329,6 +368,8 @@ pub fn spawn(config: QueueConfig, deps: QueueDeps) -> (SpeakQueueHandle, SpeakEv
             disabled_engines,
             master_volume_bits,
             engine_gains,
+            resolver,
+            registry,
             targeted_legs,
         },
         SpeakEventStream(event_rx),
@@ -354,6 +395,13 @@ mod tests {
             disabled_engines: Shared::new(HashSet::new()),
             master_volume_bits: Arc::new(AtomicU32::new(1.0f32.to_bits())),
             engine_gains: Shared::new(HashMap::new()),
+            resolver: Shared::new(VoiceAliasResolver::new(
+                Vec::new(),
+                AssignmentStrategy::DeterministicByName,
+                forge_speech_types::IgnoreProfile::default(),
+                SynthesisDefaults::default(),
+            )),
+            registry: Shared::new(TtsRegistry::new()),
             targeted_legs: Shared::new(None),
         };
         let result = handle.send(SpeakCommand::Skip).await;
@@ -372,6 +420,13 @@ mod tests {
             disabled_engines: Shared::new(HashSet::new()),
             master_volume_bits: Arc::new(AtomicU32::new(1.0f32.to_bits())),
             engine_gains: Shared::new(HashMap::new()),
+            resolver: Shared::new(VoiceAliasResolver::new(
+                Vec::new(),
+                AssignmentStrategy::DeterministicByName,
+                forge_speech_types::IgnoreProfile::default(),
+                SynthesisDefaults::default(),
+            )),
+            registry: Shared::new(TtsRegistry::new()),
             targeted_legs: Shared::new(None),
         };
         let mut sub = handle.subscribe();

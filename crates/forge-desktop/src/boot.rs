@@ -331,7 +331,7 @@ pub(crate) async fn build_runtime(inputs: RuntimeInputs) -> Result<RuntimeHandle
         Arc::clone(&speech_output) as Arc<dyn AudioSink>
     ));
     let cloud_tts_gateways = forge_tts_cloud::CloudGateways::new();
-    let (speak, speak_events, pipeline_config, tts_registry) = build_speak_queue(
+    let (speak, speak_events, pipeline_config) = build_speak_queue(
         &bus,
         &backend,
         Arc::clone(&speech_sink) as Arc<dyn AudioSink>,
@@ -657,7 +657,6 @@ pub(crate) async fn build_runtime(inputs: RuntimeInputs) -> Result<RuntimeHandle
         speak_events,
         pipeline_config,
         bot_accounts,
-        tts_registry,
         cloud_tts_gateways,
         speech_output,
         server_unavailable,

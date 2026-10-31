@@ -31,6 +31,7 @@ pub enum ResolveResult {
     },
 }
 
+#[derive(Clone)]
 pub struct VoiceAliasResolver {
     aliases: Vec<VoiceAlias>,
     strategy: AssignmentStrategy,

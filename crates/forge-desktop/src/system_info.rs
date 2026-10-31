@@ -777,6 +777,55 @@ mod tests {
     }
 
     #[test]
+    fn scrubber_redacts_cyrillic_and_dotted_capital_identities_written_in_another_case() {
+        for (identity, text, expected) in [
+            (
+                "Олександр",
+                "ОЛЕКСАНДР і олександр",
+                "[redacted] і [redacted]",
+            ),
+            (
+                "ОЛЕКСАНДР",
+                "/home/Олександр/.config",
+                "/home/[redacted]/.config",
+            ),
+            ("Ґанна-Єва", "ґАННА-єВА пише", "[redacted] пише"),
+            ("İpek", "x İPEK/y", "x [redacted]/y"),
+            ("İpek", "İpek i\u{307}pek", "[redacted] [redacted]"),
+        ] {
+            assert_eq!(
+                scrubber(&[identity]).scrub(text),
+                expected,
+                "{identity} in {text}"
+            );
+        }
+    }
+
+    #[test]
+    fn scrubber_finds_a_hit_after_text_whose_lowercase_form_is_longer() {
+        assert_eq!(
+            scrubber(&["alice"]).scrub("İİİ ALICE ẞ"),
+            "İİİ [redacted] ẞ",
+        );
+    }
+
+    #[test]
+    fn scrubber_keeps_text_that_only_partly_matches_a_folded_identity() {
+        for (identity, text) in [
+            ("Олександр", "Олексій"),
+            ("Олександр", "оле"),
+            ("ali", "alİ"),
+            ("İpek", "ipek"),
+        ] {
+            assert_eq!(
+                scrubber(&[identity]).scrub(text),
+                text,
+                "{identity} in {text}"
+            );
+        }
+    }
+
+    #[test]
     fn scrubber_without_identities_returns_text_unchanged() {
         let text = "Arch Linux rolling (x86_64)";
 

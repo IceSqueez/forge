@@ -1127,6 +1127,75 @@ mod tests {
         })
     }
 
+    const CLIENT_ID_CUT_INSIDE_A_CHARACTER: &str = "aбвгдежзик";
+
+    fn twitch_sign_in() -> forge_platform_twitch::TwitchSignIn {
+        let publisher: Arc<dyn forge_events::EventPublisher> =
+            Arc::new(forge_events::test_support::NullPublisher);
+        forge_platform_twitch::TwitchAssembly::new(
+            &mut forge_registry::SubActionRegistry::new(),
+            Arc::new(MemoryCredentials::default()),
+            &publisher,
+            &forge_platform_core::PlatformEndpoints::default(),
+            CLIENT_ID_CUT_INSIDE_A_CHARACTER.to_owned(),
+        )
+        .unwrap()
+        .sign_in()
+    }
+
+    fn rerun_with_the_client_id_in_the_environment(test_name: &str) {
+        let test_path = module_path!()
+            .split_once("::")
+            .map_or(module_path!(), |(_, path)| path);
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", &format!("{test_path}::{test_name}")])
+            .env(
+                forge_platform_twitch::TWITCH_CLIENT_ID_ENV,
+                CLIENT_ID_CUT_INSIDE_A_CHARACTER,
+            )
+            .output()
+            .unwrap();
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            output.status.success() && stdout.contains("1 passed"),
+            "{stdout}\n{}",
+            String::from_utf8_lossy(&output.stderr),
+        );
+    }
+
+    #[gpui::test]
+    fn a_client_id_with_a_character_across_the_prefix_cut_logs_whole_characters(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let environment = std::env::var(forge_platform_twitch::TWITCH_CLIENT_ID_ENV);
+        if environment.as_deref() != Ok(CLIENT_ID_CUT_INSIDE_A_CHARACTER) {
+            rerun_with_the_client_id_in_the_environment(
+                "a_client_id_with_a_character_across_the_prefix_cut_logs_whole_characters",
+            );
+            return;
+        }
+        let mounted = mounted_flow(cx);
+        let sign_in = {
+            let _runtime_context = mounted._runtime.enter();
+            twitch_sign_in()
+        };
+        mounted
+            .flow
+            .update(cx, |this, _| this.twitch_sign_in = Some(sign_in));
+
+        let ((), lines) = forge_test_support::log_capture::capture(tracing::Level::INFO, || {
+            mounted
+                .flow
+                .update(cx, |this, cx| this.begin_twitch_device(cx));
+        });
+
+        let logged = lines
+            .iter()
+            .find(|line| line.message() == "starting twitch device flow")
+            .and_then(|line| line.field("id_prefix"));
+        assert_eq!(logged, Some("aбвгде"));
+    }
+
     #[gpui::test]
     fn a_device_code_arriving_for_a_cancelled_attempt_leaves_the_newer_one_alone(
         cx: &mut gpui::TestAppContext,

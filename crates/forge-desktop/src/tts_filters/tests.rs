@@ -13,7 +13,8 @@ use super::preview::MarkTint;
 use super::preview::SPOKEN_QUOTE;
 use super::stage_cards::replacement_meta;
 use super::*;
-use crate::test_support::{install_presentation, pump, runtime};
+use crate::test_support::{install_presentation, press_undo, pump, runtime};
+use forge_components::{ToastKind, Toasts};
 use forge_speak_queue::{EmoteTreatment, ReplacementSource, configured_skip_prefix};
 use forge_storage::{BlocklistMode, FilterRuleKind, SkipRegex};
 use forge_tts_pipeline::{AppliedReplacement, PipelineResult, ReplacementOrigin};
@@ -1319,4 +1320,151 @@ fn the_first_blocklist_word_creates_a_rule_after_the_existing_ones(cx: &mut Test
     });
     assert_eq!(positions, vec![0, 1]);
     assert_eq!(blocklist_words(&view, cx), vec![vec!["gtfo".to_owned()]]);
+}
+
+fn spoken_preview(view: &Entity<TtsFiltersView>, cx: &mut TestAppContext) -> Option<String> {
+    view.read_with(cx, |v, _| {
+        v.cached_preview
+            .as_ref()
+            .and_then(|preview| match &preview.result {
+                PipelineResult::Speak(spoken) => Some(spoken.clone()),
+                _ => None,
+            })
+    })
+}
+
+fn type_in_preview(view: &Entity<TtsFiltersView>, text: &str, cx: &mut TestAppContext) {
+    view.update(cx, |v, cx| {
+        v.preview_input.update(cx, |input, cx| {
+            input.clear(cx);
+            input.insert_at_caret(text, cx);
+        });
+    });
+    cx.run_until_parked();
+}
+
+#[gpui::test]
+fn typing_in_the_preview_runs_the_config_prepared_by_the_last_refresh(cx: &mut TestAppContext) {
+    let view = filters_view(cx);
+    view.update(cx, |v, cx| {
+        v.filters.loaded_mut().unwrap().rules = vec![filter_row(true, literal("thanks", "дякую"))];
+        v.refresh_preview(cx);
+        v.filters.loaded_mut().unwrap().rules.clear();
+    });
+
+    type_in_preview(&view, "thanks", cx);
+
+    assert_eq!(spoken_preview(&view, cx).as_deref(), Some("дякую"));
+}
+
+#[gpui::test]
+fn a_keystroke_after_an_edit_runs_the_config_with_that_edit(cx: &mut TestAppContext) {
+    install_presentation(cx);
+    let rt = runtime();
+    let view = view_over(&RecordingFilters::storing(Vec::new()), &rt, cx);
+    view.update(cx, |v, cx| {
+        v.apply_replacement(
+            ReplaceKind::Text,
+            "thanks".to_owned(),
+            "дякую".to_owned(),
+            false,
+            cx,
+        );
+    });
+
+    type_in_preview(&view, "thanks", cx);
+
+    assert_eq!(spoken_preview(&view, cx).as_deref(), Some("дякую"));
+}
+
+#[gpui::test]
+fn emptying_the_preview_text_drops_the_cached_result(cx: &mut TestAppContext) {
+    let view = filters_view(cx);
+    type_in_preview(&view, "hello", cx);
+
+    view.update(cx, |v, cx| {
+        v.preview_input.update(cx, |input, cx| input.clear(cx));
+        v.rerun_preview(cx);
+    });
+
+    assert!(view.read_with(cx, |v, _| v.cached_preview.is_none()));
+}
+
+fn undo_toasts(cx: &mut TestAppContext) -> usize {
+    cx.update(|cx| {
+        cx.global::<Toasts>()
+            .items()
+            .iter()
+            .filter(|toast| toast.kind == ToastKind::Undo)
+            .count()
+    })
+}
+
+struct UndoRig {
+    rt: tokio::runtime::Runtime,
+    repo: Arc<RecordingFilters>,
+    view: Entity<TtsFiltersView>,
+}
+
+impl UndoRig {
+    fn mount(rules: Vec<FilterRule>, cx: &mut TestAppContext) -> Self {
+        install_presentation(cx);
+        cx.update(|cx| cx.set_global(Toasts::new()));
+        let rt = runtime();
+        let repo = RecordingFilters::storing(rules);
+        let view = view_over(&repo, &rt, cx);
+        Self { rt, repo, view }
+    }
+
+    fn delete(&self, index: usize, cx: &mut TestAppContext) {
+        self.view.update(cx, |v, cx| v.delete_rule(index, cx));
+        settle(&self.rt, cx);
+    }
+
+    fn undo(&self, cx: &mut TestAppContext) {
+        press_undo(cx);
+        settle(&self.rt, cx);
+    }
+
+    fn stored(&self) -> Vec<FilterRule> {
+        self.repo.stored_rules.lock().unwrap().clone()
+    }
+}
+
+#[gpui::test]
+fn undoing_a_rule_removal_stores_the_rule_back_on_its_own_row(cx: &mut TestAppContext) {
+    let rig = UndoRig::mount(stored_rules(), cx);
+    rig.delete(0, cx);
+
+    rig.undo(cx);
+
+    assert_eq!(rig.stored(), stored_rules());
+}
+
+#[gpui::test]
+fn undoing_removals_out_of_order_keeps_every_rule_when_its_row_is_gone(cx: &mut TestAppContext) {
+    let rig = UndoRig::mount(stored_rules(), cx);
+    rig.delete(1, cx);
+    rig.delete(0, cx);
+
+    rig.undo(cx);
+    rig.undo(cx);
+
+    assert_eq!(rig.stored(), stored_rules());
+}
+
+#[gpui::test]
+fn a_refused_rule_removal_offers_no_undo(cx: &mut TestAppContext) {
+    let mut rules = stored_with_a_disabled_bad_regex();
+    if let Some(bad) = rules.last_mut() {
+        bad.enabled = true;
+    }
+    let rig = UndoRig::mount(rules.clone(), cx);
+
+    rig.delete(0, cx);
+
+    assert_eq!(
+        (undo_toasts(cx), rig.repo.writes(), rig.stored()),
+        (0, 0, rules)
+    );
 }

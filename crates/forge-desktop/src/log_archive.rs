@@ -331,6 +331,33 @@ mod tests {
         assert_eq!(out.elided_bytes, 5);
     }
 
+    #[cfg(unix)]
+    fn deny_reads(path: &Path) {
+        use std::os::unix::fs::PermissionsExt;
+
+        fs::set_permissions(path, fs::Permissions::from_mode(0o000)).expect("deny reads");
+    }
+
+    #[cfg(not(unix))]
+    fn deny_reads(_: &Path) {}
+
+    #[test]
+    fn corpus_counts_a_file_past_the_budget_from_its_metadata_without_reading_it() {
+        let dir = ScratchDir::new("budget_metadata");
+        let newest = "new-line\n";
+        dir.write("forge.log.2026-08-01", newest.as_bytes());
+        let budget = framing_len(&dir, newest.len()) + newest.len();
+        let skipped = "forge.log.2026-01-05";
+        let undecodable = [0xff_u8; 4096];
+        dir.write(skipped, &undecodable);
+        deny_reads(&dir.path().join(skipped));
+
+        let out = corpus(dir.path(), budget).expect("corpus");
+
+        assert_eq!(out.elided_bytes, undecodable.len() as u64);
+        assert_eq!(out.files_kept, 1);
+    }
+
     #[test]
     fn clear_truncates_the_active_log_and_deletes_the_rotated_ones() {
         let (dir, active) = loop {

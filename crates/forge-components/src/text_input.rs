@@ -942,24 +942,82 @@ mod tests {
         assert_eq!(content, "lo");
     }
 
-    #[gpui::test]
-    fn backspace_at_the_start_is_a_no_op(cx: &mut gpui::TestAppContext) {
-        let content = with_input(cx, "hi", |input, window, cx| {
-            input.home(&Home, window, cx);
-            input.backspace(&Backspace, window, cx);
-            input.content().to_string()
+    type DeleteEdit = fn(&mut TextInput, &mut Window, &mut Context<TextInput>);
+
+    fn announced_after(
+        cx: &mut gpui::TestAppContext,
+        content: &str,
+        edit: DeleteEdit,
+    ) -> (String, Vec<String>) {
+        install_presentation(cx);
+        let window = cx.add_window(|_window, cx| TextInput::new("placeholder", cx));
+        let input = window.root(cx).unwrap();
+        window
+            .update(cx, |input, _window, cx| {
+                input.set_content(content.to_string(), cx)
+            })
+            .unwrap();
+        let heard = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let sink = std::rc::Rc::clone(&heard);
+        let _subscription = cx.update(|cx| {
+            cx.subscribe(&input, move |_, event: &InputEvent, _| {
+                if let InputEvent::Changed(text) = event {
+                    sink.borrow_mut().push(text.to_string());
+                }
+            })
         });
-        assert_eq!(content, "hi");
+        let edited = window
+            .update(cx, |input, window, cx| {
+                edit(input, window, cx);
+                input.content().to_string()
+            })
+            .unwrap();
+        let announced = heard.borrow().clone();
+        (edited, announced)
     }
 
     #[gpui::test]
-    fn delete_at_the_end_is_a_no_op(cx: &mut gpui::TestAppContext) {
-        let content = with_input(cx, "hi", |input, window, cx| {
-            input.end(&End, window, cx);
-            input.delete(&Delete, window, cx);
-            input.content().to_string()
-        });
-        assert_eq!(content, "hi");
+    fn deleting_past_either_end_of_the_text_changes_and_announces_nothing(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let edits: [(&str, &str, DeleteEdit); 3] = [
+            ("backspace at the start", "hi", |input, window, cx| {
+                input.home(&Home, window, cx);
+                input.backspace(&Backspace, window, cx);
+            }),
+            ("delete at the end", "hi", |input, window, cx| {
+                input.end(&End, window, cx);
+                input.delete(&Delete, window, cx);
+            }),
+            ("backspace with no text", "", |input, window, cx| {
+                input.backspace(&Backspace, window, cx);
+            }),
+        ];
+        for (label, content, edit) in edits {
+            let (edited, announced) = announced_after(cx, content, edit);
+
+            assert_eq!(edited, content, "{label}");
+            assert_eq!(announced, Vec::<String>::new(), "{label}");
+        }
+    }
+
+    #[gpui::test]
+    fn deleting_inside_the_text_announces_what_is_left(cx: &mut gpui::TestAppContext) {
+        let edits: [(&str, &str, DeleteEdit); 2] = [
+            ("backspace at the end", "h", |input, window, cx| {
+                input.end(&End, window, cx);
+                input.backspace(&Backspace, window, cx);
+            }),
+            ("delete at the start", "i", |input, window, cx| {
+                input.home(&Home, window, cx);
+                input.delete(&Delete, window, cx);
+            }),
+        ];
+        for (label, left, edit) in edits {
+            let (_, announced) = announced_after(cx, "hi", edit);
+
+            assert_eq!(announced, vec![left.to_string()], "{label}");
+        }
     }
 
     #[gpui::test]

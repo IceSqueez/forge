@@ -366,12 +366,54 @@ mod tests {
 
     use super::{
         APPEARANCE_READ_BUDGET, BackendOpening, BootFailure, BootPresentation, PresentationRead,
-        load_appearance, open_boot_storage_with,
+        load_appearance, open_boot_storage_with, sqlite_url,
     };
     use crate::test_support::{test_backend, worker_runtime};
     use forge_storage::DataProvider;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[test]
+    fn sqlite_url_escapes_only_the_characters_the_url_parser_would_consume() {
+        for (path, expected) in [
+            ("/data/forge.db", "sqlite:///data/forge.db?mode=rwc"),
+            (
+                "/data/100%/forge.db",
+                "sqlite:///data/100%25/forge.db?mode=rwc",
+            ),
+            (
+                "/data/why?/forge.db",
+                "sqlite:///data/why%3F/forge.db?mode=rwc",
+            ),
+            (
+                "/data/%3F/forge.db",
+                "sqlite:///data/%253F/forge.db?mode=rwc",
+            ),
+            ("/дані/forge.db", "sqlite:///дані/forge.db?mode=rwc"),
+        ] {
+            assert_eq!(sqlite_url(std::path::Path::new(path)), expected);
+        }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_database_under_a_directory_named_with_url_characters_opens_at_that_exact_path() {
+        let root = tempfile::tempdir().unwrap();
+        let directory = root.path().join("100%25 why?");
+        std::fs::create_dir(&directory).unwrap();
+        let database = directory.join("forge.db");
+
+        let opened = forge_storage_sqlite::SqliteBackend::open_for_test(
+            &sqlite_url(&database),
+            [0; 32],
+            root.path().join("media"),
+            None,
+        )
+        .await;
+
+        assert!(opened.is_ok(), "{:?}", opened.err());
+        assert!(database.is_file());
+    }
 
     #[tokio::test]
     async fn the_stored_theme_accent_density_and_both_fonts_come_back_in_their_own_slots() {

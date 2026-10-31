@@ -762,6 +762,16 @@ mod tests {
     }
 
     #[gpui::test]
+    fn deleting_past_either_end_of_the_text_announces_no_change(cx: &mut gpui::TestAppContext) {
+        let (content, changes) = changes_after(cx, |area, window, cx| {
+            area.delete(&Delete, window, cx);
+            area.move_to(0, cx);
+            area.backspace(&Backspace, window, cx);
+        });
+        assert_eq!((content.as_str(), changes), ("ab", Vec::<String>::new()));
+    }
+
+    #[gpui::test]
     fn undo_and_redo_announce_the_restored_content(cx: &mut gpui::TestAppContext) {
         let (_, changes) = changes_after(cx, |area, window, cx| {
             area.undo(&Undo, window, cx);

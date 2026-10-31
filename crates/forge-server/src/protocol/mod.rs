@@ -28,10 +28,10 @@ fn too_many_subscriptions() -> WsResponse {
     }
 }
 
-fn invalid_filter(message: String) -> WsResponse {
+fn invalid_filter(refusal: helpers::UnknownEventSource) -> WsResponse {
     WsResponse::Error {
         code: Some("INVALID_PAYLOAD".to_owned()),
-        message,
+        message: refusal.to_string(),
     }
 }
 

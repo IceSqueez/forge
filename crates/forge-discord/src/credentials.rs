@@ -1,7 +1,7 @@
 use forge_types::Secret;
 use serde::{Deserialize, Serialize};
 
-pub(crate) const DISCORD_CRED_PREFIX: &str = "discord:";
+pub const DISCORD_CRED_PREFIX: &str = "discord:";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct WebhookCredential {

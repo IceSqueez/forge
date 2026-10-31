@@ -112,14 +112,14 @@ pub fn encrypt_for(
     credential_id: &str,
     plaintext: &str,
 ) -> Result<(Vec<u8>, Vec<u8>), SqliteStorageError> {
-    let cipher = Aes256Gcm::new_from_slice(key).map_err(|e| SqliteStorageError::Crypto {
+    let cipher = Aes256Gcm::new_from_slice(key).map_err(|e| SqliteStorageError::Encrypt {
         reason: e.to_string(),
     })?;
 
     let mut nonce_bytes = [0u8; NONCE_LEN];
     rand::rng().fill_bytes(&mut nonce_bytes);
     let nonce =
-        <&Nonce<_>>::try_from(nonce_bytes.as_slice()).map_err(|e| SqliteStorageError::Crypto {
+        <&Nonce<_>>::try_from(nonce_bytes.as_slice()).map_err(|e| SqliteStorageError::Encrypt {
             reason: e.to_string(),
         })?;
 
@@ -131,7 +131,7 @@ pub fn encrypt_for(
                 aad: credential_id.as_bytes(),
             },
         )
-        .map_err(|e| SqliteStorageError::Crypto {
+        .map_err(|e| SqliteStorageError::Encrypt {
             reason: e.to_string(),
         })?;
 
@@ -152,11 +152,11 @@ pub fn decrypt_for(
     ciphertext: &[u8],
     nonce: &[u8],
 ) -> Result<String, SqliteStorageError> {
-    let cipher = Aes256Gcm::new_from_slice(key).map_err(|e| SqliteStorageError::Crypto {
+    let cipher = Aes256Gcm::new_from_slice(key).map_err(|e| SqliteStorageError::Decrypt {
         reason: e.to_string(),
     })?;
 
-    let nonce = <&Nonce<_>>::try_from(nonce).map_err(|e| SqliteStorageError::Crypto {
+    let nonce = <&Nonce<_>>::try_from(nonce).map_err(|e| SqliteStorageError::Decrypt {
         reason: e.to_string(),
     })?;
 
@@ -168,7 +168,7 @@ pub fn decrypt_for(
                 aad: credential_id.as_bytes(),
             },
         )
-        .map_err(|e| SqliteStorageError::Crypto {
+        .map_err(|e| SqliteStorageError::Decrypt {
             reason: e.to_string(),
         })?;
 
@@ -293,15 +293,15 @@ mod tests {
     }
 
     #[test]
-    fn decrypt_wrong_length_nonce_returns_crypto_error() {
+    fn decrypt_wrong_length_nonce_returns_decrypt_error() {
         let key = [0x0cu8; 32];
         let (ciphertext, _) = encrypt(&key, "payload").unwrap();
         for bad_len in [0, NONCE_LEN - 1, NONCE_LEN + 1, 2 * NONCE_LEN] {
             let bad_nonce = vec![0u8; bad_len];
             let err = decrypt(&key, &ciphertext, &bad_nonce).unwrap_err();
             assert!(
-                matches!(err, SqliteStorageError::Crypto { .. }),
-                "nonce len {bad_len}: expected Crypto error, got {err:?}"
+                matches!(err, SqliteStorageError::Decrypt { .. }),
+                "nonce len {bad_len}: expected Decrypt error, got {err:?}"
             );
         }
     }

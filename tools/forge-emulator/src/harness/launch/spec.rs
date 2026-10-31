@@ -7,9 +7,6 @@ use tokio::process::Command;
 use crate::EmulatorError;
 use crate::fixture::ForgeDataDir;
 
-const TWITCH_CLIENT_ID_VARIABLE: &str = "FORGE_TWITCH_CLIENT_ID";
-const KICK_CLIENT_ID_VARIABLE: &str = "FORGE_KICK_CLIENT_ID";
-const KICK_CLIENT_SECRET_VARIABLE: &str = "FORGE_KICK_CLIENT_SECRET";
 pub const DEFAULT_LOG_DIRECTIVES: &str = "info,forge=debug";
 
 pub const INHERITED_VARIABLES: [&str; 20] = [
@@ -126,12 +123,15 @@ impl LaunchSpec {
             .env("RUST_BACKTRACE", "1")
             .env("RUST_LOG", &self.log_directives);
         if let Some(client_id) = &self.twitch_client_id {
-            command.env(TWITCH_CLIENT_ID_VARIABLE, client_id);
+            command.env(forge_platform_twitch::TWITCH_CLIENT_ID_ENV, client_id);
         }
         if let Some(kick) = &self.kick_client {
             command
-                .env(KICK_CLIENT_ID_VARIABLE, &kick.client_id)
-                .env(KICK_CLIENT_SECRET_VARIABLE, &kick.client_secret);
+                .env(forge_platform_kick::KICK_CLIENT_ID_ENV, &kick.client_id)
+                .env(
+                    forge_platform_kick::KICK_CLIENT_SECRET_ENV,
+                    &kick.client_secret,
+                );
         }
         for (variable, url) in &self.endpoint_overrides {
             command.env(variable, url);
@@ -144,7 +144,11 @@ impl LaunchSpec {
 mod tests {
     use std::collections::BTreeMap;
 
+    use forge_platform_kick::{KICK_CLIENT_ID_ENV, KICK_CLIENT_SECRET_ENV};
+    use forge_platform_twitch::TWITCH_CLIENT_ID_ENV;
+
     use super::*;
+    use crate::fixture::DATA_DIR_VARIABLE;
 
     fn spec(data: &std::path::Path, home: PathBuf) -> LaunchSpec {
         LaunchSpec {
@@ -185,7 +189,7 @@ mod tests {
             &[
                 ("WAYLAND_DISPLAY", "wayland-1"),
                 ("HYPRLAND_INSTANCE_SIGNATURE", "sig"),
-                ("FORGE_KICK_CLIENT_SECRET", "real-secret"),
+                (KICK_CLIENT_SECRET_ENV, "real-secret"),
                 ("FORGE_YOUTUBE_API_BASE_URL", "http://127.0.0.1:9"),
                 ("CARGO_HOME", "/home/user/.cargo"),
                 ("SSH_AUTH_SOCK", "/run/user/1000/ssh"),
@@ -200,7 +204,7 @@ mod tests {
             Some("sig")
         );
         for leaked in [
-            "FORGE_KICK_CLIENT_SECRET",
+            KICK_CLIENT_SECRET_ENV,
             "FORGE_YOUTUBE_API_BASE_URL",
             "CARGO_HOME",
             "SSH_AUTH_SOCK",
@@ -243,8 +247,8 @@ mod tests {
         let env = configured(&spec, &[]);
         let data_dir = spec.data_dir.path().to_str().unwrap();
         for (variable, expected) in [
-            ("FORGE_DATA_DIR", data_dir),
-            ("FORGE_TWITCH_CLIENT_ID", "fixtureclient"),
+            (DATA_DIR_VARIABLE, data_dir),
+            (TWITCH_CLIENT_ID_ENV, "fixtureclient"),
             ("FORGE_TWITCH_API_BASE_URL", "http://127.0.0.1:1"),
             ("RUST_LOG", DEFAULT_LOG_DIRECTIVES),
             ("NO_COLOR", "1"),
@@ -262,8 +266,8 @@ mod tests {
         let data = tempfile::tempdir().unwrap();
         let mut spec = spec(data.path(), PathBuf::from("/scratch/home"));
         spec.twitch_client_id = None;
-        let env = configured(&spec, &[("FORGE_TWITCH_CLIENT_ID", "inherited")]);
-        assert!(!env.contains_key("FORGE_TWITCH_CLIENT_ID"), "{env:?}");
+        let env = configured(&spec, &[(TWITCH_CLIENT_ID_ENV, "inherited")]);
+        assert!(!env.contains_key(TWITCH_CLIENT_ID_ENV), "{env:?}");
     }
 
     #[test]
@@ -277,14 +281,14 @@ mod tests {
         let env = configured(
             &spec,
             &[
-                ("FORGE_KICK_CLIENT_ID", "real-id"),
-                ("FORGE_KICK_CLIENT_SECRET", "real-secret"),
+                (KICK_CLIENT_ID_ENV, "real-id"),
+                (KICK_CLIENT_SECRET_ENV, "real-secret"),
             ],
         );
         assert_eq!(
             (
-                env.get("FORGE_KICK_CLIENT_ID").map(String::as_str),
-                env.get("FORGE_KICK_CLIENT_SECRET").map(String::as_str),
+                env.get(KICK_CLIENT_ID_ENV).map(String::as_str),
+                env.get(KICK_CLIENT_SECRET_ENV).map(String::as_str),
             ),
             (Some("fixturekick"), Some("fixture-kick-secret"))
         );

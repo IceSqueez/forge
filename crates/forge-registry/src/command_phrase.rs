@@ -3,8 +3,8 @@ use forge_types::{
     SynthesisHint, TriggerConfig, Variant, VariantKind,
 };
 
-const PHRASE_KEY: &str = "phrase";
-const CASE_SENSITIVE_KEY: &str = "case_sensitive";
+pub const COMMAND_PHRASE_KEY: &str = "phrase";
+pub const COMMAND_CASE_SENSITIVE_KEY: &str = "case_sensitive";
 
 const SIGMA: char = '\u{3c3}';
 const FINAL_SIGMA: char = '\u{3c2}';
@@ -44,7 +44,10 @@ pub(crate) struct MatchedCommand<'m> {
 impl<'m> MatchedCommand<'m> {
     pub(crate) fn read(message: &'m str, config: &TriggerConfig) -> Self {
         let phrase = configured_phrase(config);
-        let case_sensitive = matches!(config.get(CASE_SENSITIVE_KEY), Some(Variant::Bool(true)));
+        let case_sensitive = matches!(
+            config.get(COMMAND_CASE_SENSITIVE_KEY),
+            Some(Variant::Bool(true))
+        );
         match rest_after_phrase(message, phrase, case_sensitive) {
             Some(rest) => Self {
                 name: command_name_of(phrase),
@@ -80,7 +83,7 @@ impl<'m> MatchedCommand<'m> {
 }
 
 fn configured_phrase(config: &TriggerConfig) -> &str {
-    match config.get(PHRASE_KEY) {
+    match config.get(COMMAND_PHRASE_KEY) {
         Some(Variant::String(phrase)) => phrase.trim_end(),
         _ => "",
     }
@@ -269,9 +272,12 @@ mod tests {
     fn trigger_config(phrase: Option<Variant>, case_sensitive: bool) -> TriggerConfig {
         let mut config = TriggerConfig::new();
         if let Some(phrase) = phrase {
-            config.insert(PHRASE_KEY.to_owned(), phrase);
+            config.insert(COMMAND_PHRASE_KEY.to_owned(), phrase);
         }
-        config.insert(CASE_SENSITIVE_KEY.to_owned(), Variant::Bool(case_sensitive));
+        config.insert(
+            COMMAND_CASE_SENSITIVE_KEY.to_owned(),
+            Variant::Bool(case_sensitive),
+        );
         config
     }
 

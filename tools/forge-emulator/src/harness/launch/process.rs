@@ -16,6 +16,7 @@ use crate::EmulatorError;
 use crate::harness::control::{ClientTimeouts, ControlClient, ControlEndpoint, EventStream};
 
 const CONTROL_HOST: &str = "127.0.0.1";
+const FORGE_STARTUP_FAILURE_STATUS: i32 = 1;
 const TAIL_LINES: usize = 20;
 const FIRST_RETRY: Duration = Duration::from_millis(25);
 const RETRY_CEILING: Duration = Duration::from_millis(250);
@@ -284,7 +285,7 @@ fn is_not_listening_yet(error: &EmulatorError) -> bool {
 }
 
 fn classify_exit(status: ExitStatus, output: &CapturedOutput) -> EmulatorError {
-    if status.code() == Some(1)
+    if status.code() == Some(FORGE_STARTUP_FAILURE_STATUS)
         && let Some((stop, line)) = output.boot_stop()
         && stop.is_startup_refusal()
     {
@@ -325,7 +326,10 @@ mod tests {
 
     #[test]
     fn exit_one_after_an_override_refusal_names_the_refused_variable() {
-        let classified = classify_exit(exit_code(1), &output_with(OVERRIDE_LINE));
+        let classified = classify_exit(
+            exit_code(FORGE_STARTUP_FAILURE_STATUS),
+            &output_with(OVERRIDE_LINE),
+        );
         assert!(
             matches!(&classified, EmulatorError::EndpointOverrideRefused { variable, line }
                 if variable == "FORGE_TWITCH_API_BASE_URL" && line == OVERRIDE_LINE),
@@ -335,7 +339,10 @@ mod tests {
 
     #[test]
     fn exit_one_after_an_already_running_refusal_is_its_own_failure_class() {
-        let classified = classify_exit(exit_code(1), &output_with(ALREADY_RUNNING_LINE));
+        let classified = classify_exit(
+            exit_code(FORGE_STARTUP_FAILURE_STATUS),
+            &output_with(ALREADY_RUNNING_LINE),
+        );
         assert!(
             matches!(&classified, EmulatorError::AlreadyRunning { line } if line == ALREADY_RUNNING_LINE),
             "got {classified:?}"
@@ -347,9 +354,9 @@ mod tests {
         for (status, line) in [
             (exit_code(2), OVERRIDE_LINE),
             (ExitStatus::from_raw(9), ALREADY_RUNNING_LINE),
-            (exit_code(1), BOOT_FAILED_LINE),
+            (exit_code(FORGE_STARTUP_FAILURE_STATUS), BOOT_FAILED_LINE),
             (
-                exit_code(1),
+                exit_code(FORGE_STARTUP_FAILURE_STATUS),
                 "2026-10-28T10:00:00.000000Z ERROR platform endpoint override refused; exiting error=endpoint override FORGE_TWITCH_API_BASE_URL refused: malformed",
             ),
         ] {

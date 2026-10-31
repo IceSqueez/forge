@@ -4,11 +4,6 @@ use directories::BaseDirs;
 
 use crate::EmulatorError;
 
-#[cfg(target_os = "macos")]
-const FORGE_APP_SEGMENT: &str = "com.icesqueez.forge";
-#[cfg(not(target_os = "macos"))]
-const FORGE_APP_SEGMENT: &str = "forge";
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LivePaths {
     pub data_dir: PathBuf,
@@ -21,7 +16,7 @@ impl LivePaths {
             reason: "the real home directory cannot be resolved, so the live data directory cannot be ruled out".to_owned(),
         })?;
         Ok(Self {
-            data_dir: base.data_dir().join(FORGE_APP_SEGMENT),
+            data_dir: base.data_dir().join(forge_paths::app_segment()),
             home: base.home_dir().to_owned(),
         })
     }

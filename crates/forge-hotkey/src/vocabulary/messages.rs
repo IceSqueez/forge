@@ -154,6 +154,13 @@ fn with_detail(code: MessageCode, detail: &str) -> MessageRef {
 pub fn failure(error: &HotkeyError) -> MessageRef {
     match error {
         HotkeyError::PortalUnavailable { reason } => with_detail(PORTAL_UNAVAILABLE, reason),
+        HotkeyError::PortalCancelled { .. }
+        | HotkeyError::PortalEnded { .. }
+        | HotkeyError::PortalCall(_)
+        | HotkeyError::PortalSessionMissing
+        | HotkeyError::PortalSessionNotRecreated(_) => {
+            with_detail(PORTAL_UNAVAILABLE, &error.to_string())
+        }
         HotkeyError::PermissionDenied => MessageRef::new(PERMISSION_DENIED),
         HotkeyError::AlreadyRegistered { combo } | HotkeyError::InvalidCombo(combo) => {
             combo_rejected(combo)
@@ -216,6 +223,43 @@ mod tests {
                 PORTAL_UNAVAILABLE,
                 None,
                 Some("no d-bus"),
+            ),
+            (
+                HotkeyError::PortalCancelled {
+                    method: "BindShortcuts",
+                },
+                PORTAL_UNAVAILABLE,
+                None,
+                Some("BindShortcuts was cancelled on the desktop"),
+            ),
+            (
+                HotkeyError::PortalEnded {
+                    method: "BindShortcuts",
+                    code: 2,
+                },
+                PORTAL_UNAVAILABLE,
+                None,
+                Some("BindShortcuts was ended by the desktop (response 2)"),
+            ),
+            (
+                HotkeyError::PortalCall("no reply".to_owned()),
+                PORTAL_UNAVAILABLE,
+                None,
+                Some("no reply"),
+            ),
+            (
+                HotkeyError::PortalSessionMissing,
+                PORTAL_UNAVAILABLE,
+                None,
+                Some("CreateSession returned no usable session_handle"),
+            ),
+            (
+                HotkeyError::PortalSessionNotRecreated(Box::new(HotkeyError::PortalCall(
+                    "no reply".to_owned(),
+                ))),
+                PORTAL_UNAVAILABLE,
+                None,
+                Some("CreateSession failed: no reply"),
             ),
             (HotkeyError::PermissionDenied, PERMISSION_DENIED, None, None),
             (

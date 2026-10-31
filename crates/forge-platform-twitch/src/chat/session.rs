@@ -84,7 +84,26 @@ const AUTHORIZATION_REVOKED_STATUS: &str = "authorization_revoked";
 type EventSubSocket =
     tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
-type SuccessorDial = Pin<Box<dyn Future<Output = Result<(EventSubSocket, String), String>> + Send>>;
+type SuccessorDial =
+    Pin<Box<dyn Future<Output = Result<(EventSubSocket, String), DialFailure>> + Send>>;
+
+#[derive(Debug, thiserror::Error)]
+enum DialFailure {
+    #[error("{0}")]
+    Socket(String),
+
+    #[error("connect timed out")]
+    ConnectTimedOut,
+
+    #[error("timed out before session_welcome")]
+    WelcomeTimedOut,
+
+    #[error("session_welcome missing session.id")]
+    WelcomeWithoutSession,
+
+    #[error("closed before session_welcome")]
+    ClosedBeforeWelcome,
+}
 
 type SubscriptionPassRun = Pin<Box<dyn Future<Output = PassVerdict> + Send>>;
 
@@ -2155,11 +2174,11 @@ fn extract_roles_from_badges(badges: Option<&serde_json::Value>) -> Vec<String> 
         .unwrap_or_default()
 }
 
-async fn connect_socket(url: &str) -> Result<EventSubSocket, String> {
+async fn connect_socket(url: &str) -> Result<EventSubSocket, DialFailure> {
     match tokio::time::timeout(CONNECT_TIMEOUT, tokio_tungstenite::connect_async(url)).await {
         Ok(Ok((socket, _))) => Ok(socket),
-        Ok(Err(e)) => Err(ws_error_reason(&e)),
-        Err(_) => Err("connect timed out".to_owned()),
+        Ok(Err(e)) => Err(DialFailure::Socket(ws_error_reason(&e))),
+        Err(_) => Err(DialFailure::ConnectTimedOut),
     }
 }
 
@@ -2174,25 +2193,26 @@ async fn next_message(
 
 async fn await_successor(
     dial: &mut Option<SuccessorDial>,
-) -> Result<(EventSubSocket, String), String> {
+) -> Result<(EventSubSocket, String), DialFailure> {
     match dial {
         Some(dial) => dial.await,
         None => std::future::pending().await,
     }
 }
 
-async fn dial_successor(url: String) -> Result<(EventSubSocket, String), String> {
+async fn dial_successor(url: String) -> Result<(EventSubSocket, String), DialFailure> {
     match tokio::time::timeout(SUCCESSOR_TIMEOUT, welcome_on_successor(url)).await {
         Ok(welcomed) => welcomed,
-        Err(_) => Err("timed out before session_welcome".to_owned()),
+        Err(_) => Err(DialFailure::WelcomeTimedOut),
     }
 }
 
-async fn welcome_on_successor(url: String) -> Result<(EventSubSocket, String), String> {
+async fn welcome_on_successor(url: String) -> Result<(EventSubSocket, String), DialFailure> {
     let mut socket = connect_socket(&url).await?;
 
     while let Some(frame) = socket.next().await {
-        let Message::Text(text) = frame.map_err(|e| ws_error_reason(&e))? else {
+        let Message::Text(text) = frame.map_err(|e| DialFailure::Socket(ws_error_reason(&e)))?
+        else {
             continue;
         };
         let Ok(parsed) = serde_json::from_str::<WsFrame>(&text) else {
@@ -2207,11 +2227,11 @@ async fn welcome_on_successor(url: String) -> Result<(EventSubSocket, String), S
         }
         return match parsed.payload.and_then(|payload| payload.session) {
             Some(session) => Ok((socket, session.id)),
-            None => Err("session_welcome missing session.id".to_owned()),
+            None => Err(DialFailure::WelcomeWithoutSession),
         };
     }
 
-    Err("closed before session_welcome".to_owned())
+    Err(DialFailure::ClosedBeforeWelcome)
 }
 
 fn arm_successor(successor: &mut Option<SuccessorDial>, url: String) {
@@ -6033,6 +6053,31 @@ mod tests {
                 .map(|record| record.status.clone())
                 .collect();
             assert_eq!(statuses, expected, "revocation carrying {condition_field}");
+        }
+    }
+
+    #[test]
+    fn a_failed_successor_dial_reads_the_same_as_the_reason_the_log_has_always_shown() {
+        for (failure, expected) in [
+            (
+                DialFailure::Socket("tls handshake eof".to_owned()),
+                "tls handshake eof",
+            ),
+            (DialFailure::ConnectTimedOut, "connect timed out"),
+            (
+                DialFailure::WelcomeTimedOut,
+                "timed out before session_welcome",
+            ),
+            (
+                DialFailure::WelcomeWithoutSession,
+                "session_welcome missing session.id",
+            ),
+            (
+                DialFailure::ClosedBeforeWelcome,
+                "closed before session_welcome",
+            ),
+        ] {
+            assert_eq!(failure.to_string(), expected);
         }
     }
 }

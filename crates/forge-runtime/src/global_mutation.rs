@@ -100,14 +100,10 @@ impl RuntimeScriptGlobals {
     }
 }
 
-fn port_error(error: StorageError) -> ScriptGlobalsError {
-    ScriptGlobalsError(error.to_string())
-}
-
 #[async_trait]
 impl ScriptGlobals for RuntimeScriptGlobals {
     async fn get(&self, key: &str) -> Result<Option<Variant>, ScriptGlobalsError> {
-        self.globals.get(key).await.map_err(port_error)
+        Ok(self.globals.get(key).await?)
     }
 
     async fn set(
@@ -117,10 +113,7 @@ impl ScriptGlobals for RuntimeScriptGlobals {
         persisted: bool,
         caused_by: EventId,
     ) -> Result<Option<Variant>, ScriptGlobalsError> {
-        self.mutation(caused_by)
-            .set(key, value, persisted)
-            .await
-            .map_err(port_error)
+        Ok(self.mutation(caused_by).set(key, value, persisted).await?)
     }
 
     async fn increment(
@@ -129,10 +122,7 @@ impl ScriptGlobals for RuntimeScriptGlobals {
         delta: i64,
         caused_by: EventId,
     ) -> Result<GlobalIncrement, ScriptGlobalsError> {
-        self.mutation(caused_by)
-            .increment(key, delta)
-            .await
-            .map_err(port_error)
+        Ok(self.mutation(caused_by).increment(key, delta).await?)
     }
 
     async fn delete(
@@ -140,10 +130,7 @@ impl ScriptGlobals for RuntimeScriptGlobals {
         key: &str,
         caused_by: EventId,
     ) -> Result<GlobalDeletion, ScriptGlobalsError> {
-        self.mutation(caused_by)
-            .delete(key)
-            .await
-            .map_err(port_error)
+        Ok(self.mutation(caused_by).delete(key).await?)
     }
 }
 
@@ -494,6 +481,18 @@ mod tests {
         assert!(publisher.events().is_empty(), "{:?}", publisher.events());
     }
 
+    #[tokio::test]
+    async fn the_script_port_hands_a_failed_write_back_as_the_storage_error_it_was() {
+        let port = port_over(MapGlobals::seeded(&prior_state()));
+
+        let refused = port.increment("ghost", 1, EventId::new()).await;
+
+        assert!(
+            matches!(refused, Err(ScriptGlobalsError::Storage(_))),
+            "{refused:?}"
+        );
+    }
+
     fn port_over(globals: Arc<MapGlobals>) -> RuntimeScriptGlobals {
         RuntimeScriptGlobals::new(globals, Arc::new(Recorder::default()))
     }
@@ -508,19 +507,19 @@ mod tests {
         let incremented = port.increment("hits", 3, cause).await;
         let deleted = port.delete("temp", cause).await;
 
-        assert_eq!(replaced, Ok(Some(prior[0].1.clone())));
+        assert_eq!(replaced.unwrap(), Some(prior[0].1.clone()));
         assert_eq!(
-            incremented,
-            Ok(GlobalIncrement {
+            incremented.unwrap(),
+            GlobalIncrement {
                 previous: Some(Variant::Int(10)),
                 current: Variant::Int(13),
-            })
+            }
         );
         assert_eq!(
-            deleted,
-            Ok(GlobalDeletion::Deleted {
+            deleted.unwrap(),
+            GlobalDeletion::Deleted {
                 previous: Some(Variant::Float(2.5)),
-            })
+            }
         );
     }
 
@@ -532,7 +531,7 @@ mod tests {
             .set("fresh", Variant::Bool(true), false, EventId::new())
             .await;
 
-        assert_eq!(replaced, Ok(None));
+        assert_eq!(replaced.unwrap(), None);
     }
 
     #[tokio::test]
@@ -548,7 +547,7 @@ mod tests {
             .set(UNREADABLE, Variant::Int(7), false, EventId::new())
             .await;
 
-        assert_eq!(replaced, Ok(None));
+        assert_eq!(replaced.unwrap(), None);
         assert_eq!(globals.stored(UNREADABLE), Some(Variant::Int(7)));
         let payloads: Vec<_> = publisher.events().into_iter().map(|e| e.payload).collect();
         assert_eq!(
@@ -568,7 +567,7 @@ mod tests {
 
         let deleted = port.delete(UNREADABLE, EventId::new()).await;
 
-        assert_eq!(deleted, Ok(GlobalDeletion::Deleted { previous: None }));
+        assert_eq!(deleted.unwrap(), GlobalDeletion::Deleted { previous: None });
         assert_eq!(globals.stored(UNREADABLE), None);
         let kinds: Vec<_> = publisher.events().into_iter().map(|e| e.kind).collect();
         assert_eq!(kinds, ["global.deleted"]);

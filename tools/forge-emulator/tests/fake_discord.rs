@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
-use forge_discord::{DiscordClient, MentionPolicy};
+use forge_discord::{DISCORD_CRED_PREFIX, DiscordClient, MentionPolicy};
 use forge_emulator::EmulatorError;
 use forge_emulator::fakes::discord::{FakeDiscord, UNKNOWN_WEBHOOK_CODE};
 use forge_emulator::fixture::{DiscordWebhook, Fixture};
@@ -264,7 +264,7 @@ impl CredentialsRepo for MemoryCreds {
 fn forge_client(fake: &FakeDiscord, saved: &str) -> Arc<DiscordClient> {
     let creds = MemoryCreds {
         store: Mutex::new(HashMap::from([(
-            format!("discord:{ALERTS}"),
+            format!("{DISCORD_CRED_PREFIX}{ALERTS}"),
             json!({ "url": saved }).to_string(),
         )])),
     };

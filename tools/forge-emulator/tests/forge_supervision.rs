@@ -7,11 +7,12 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use forge_emulator::EmulatorError;
-use forge_emulator::fixture::ForgeDataDir;
+use forge_emulator::fixture::{DATA_DIR_VARIABLE, ForgeDataDir};
 use forge_emulator::harness::launch::{
     DEFAULT_LOG_DIRECTIVES, ForgeCommand, ForgeProcess, GameGuard, HyprlandProbe,
     INHERITED_VARIABLES, LaunchSpec, LivePaths,
 };
+use forge_platform_twitch::TWITCH_CLIENT_ID_ENV;
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
 use tempfile::TempDir;
@@ -365,7 +366,7 @@ async fn forge_environment_holds_only_allowlisted_and_launch_variables() {
         .filter(|(key, _)| key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_'))
         .collect();
     let launch_set = [
-        "FORGE_DATA_DIR",
+        DATA_DIR_VARIABLE,
         "HOME",
         "XDG_DATA_HOME",
         "XDG_CONFIG_HOME",
@@ -375,7 +376,7 @@ async fn forge_environment_holds_only_allowlisted_and_launch_variables() {
         "NO_COLOR",
         "RUST_BACKTRACE",
         "RUST_LOG",
-        "FORGE_TWITCH_CLIENT_ID",
+        TWITCH_CLIENT_ID_ENV,
         "FORGE_TWITCH_API_BASE_URL",
     ];
     let shell_set = ["PWD", "OLDPWD", "SHLVL", "_"];
@@ -399,7 +400,7 @@ async fn forge_environment_holds_only_allowlisted_and_launch_variables() {
             .map(|(_, v)| *v)
     };
     assert_eq!(
-        value("FORGE_DATA_DIR").map(Path::new),
+        value(DATA_DIR_VARIABLE).map(Path::new),
         Some(stage.data.canonicalize().unwrap().as_path())
     );
     assert_eq!(value("HOME").map(Path::new), Some(stage.home.as_path()));

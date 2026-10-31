@@ -258,7 +258,24 @@ enum StartupRequest {
     Help,
 }
 
-fn parse_startup_request(mut args: impl Iterator<Item = String>) -> Result<StartupRequest, String> {
+#[derive(Debug, thiserror::Error)]
+enum StartupArgsError {
+    #[error("{0} requires a value")]
+    MissingValue(&'static str),
+
+    #[error("unrecognized argument: {0}")]
+    Unrecognized(String),
+
+    #[error("{FLAG_SELECT} requires {FLAG_SCREEN}")]
+    SelectWithoutScreen,
+
+    #[error("{0}")]
+    InvalidScreen(String),
+}
+
+fn parse_startup_request(
+    mut args: impl Iterator<Item = String>,
+) -> Result<StartupRequest, StartupArgsError> {
     let mut screen_arg: Option<String> = None;
     let mut select_arg: Option<String> = None;
     while let Some(arg) = args.next() {
@@ -267,38 +284,37 @@ fn parse_startup_request(mut args: impl Iterator<Item = String>) -> Result<Start
             FLAG_SCREEN => {
                 screen_arg = Some(
                     args.next()
-                        .ok_or_else(|| format!("{FLAG_SCREEN} requires a value"))?,
+                        .ok_or(StartupArgsError::MissingValue(FLAG_SCREEN))?,
                 );
             }
             FLAG_SELECT => {
                 select_arg = Some(
                     args.next()
-                        .ok_or_else(|| format!("{FLAG_SELECT} requires a value"))?,
+                        .ok_or(StartupArgsError::MissingValue(FLAG_SELECT))?,
                 );
             }
             forge_update::CANDIDATE_FLAG => {}
             restore_relaunch::PREVIOUS_INSTANCE_FLAG => {
-                args.next().ok_or_else(|| {
-                    format!(
-                        "{} requires a value",
-                        restore_relaunch::PREVIOUS_INSTANCE_FLAG
-                    )
-                })?;
+                args.next().ok_or(StartupArgsError::MissingValue(
+                    restore_relaunch::PREVIOUS_INSTANCE_FLAG,
+                ))?;
             }
-            other => return Err(format!("unrecognized argument: {other}")),
+            other => return Err(StartupArgsError::Unrecognized(other.to_owned())),
         }
     }
     let Some(screen_arg) = screen_arg else {
         return match select_arg {
-            Some(_) => Err(format!("{FLAG_SELECT} requires {FLAG_SCREEN}")),
+            Some(_) => Err(StartupArgsError::SelectWithoutScreen),
             None => Ok(StartupRequest::Open(Screen::Home)),
         };
     };
-    let screen = Screen::parse_cli(&screen_arg).map_err(|err| err.to_string())?;
+    let invalid_screen =
+        |err: &dyn std::fmt::Display| StartupArgsError::InvalidScreen(err.to_string());
+    let screen = Screen::parse_cli(&screen_arg).map_err(|err| invalid_screen(&err))?;
     let screen = match select_arg {
         Some(id) => screen
             .with_selected_entity(&id)
-            .map_err(|err| err.to_string())?,
+            .map_err(|err| invalid_screen(&err))?,
         None => screen,
     };
     Ok(StartupRequest::Open(screen))
@@ -784,8 +800,8 @@ mod tests {
     use forge_update::CANDIDATE_FLAG;
 
     use super::{
-        EXIT_RAISED_RUNNING_INSTANCE, EXIT_STARTUP_FAILURE, FLAG_SCREEN, StartupRequest,
-        await_previous_then_claim, claim_instance, parse_startup_request,
+        EXIT_RAISED_RUNNING_INSTANCE, EXIT_STARTUP_FAILURE, FLAG_SCREEN, FLAG_SELECT,
+        StartupRequest, await_previous_then_claim, claim_instance, parse_startup_request,
     };
     use crate::instance_lock::{LockOutcome, acquire};
     use crate::instance_raise;
@@ -947,6 +963,7 @@ mod tests {
 
     fn parse(args: &[&str]) -> Result<StartupRequest, String> {
         parse_startup_request(args.iter().map(|arg| (*arg).to_owned()))
+            .map_err(|error| error.to_string())
     }
 
     fn opened(args: &[&str]) -> Option<Screen> {
@@ -1039,6 +1056,38 @@ mod tests {
                 |m| m.contains(PREVIOUS_INSTANCE_FLAG) && m.contains("requires a value")
             ),
             "{message:?}"
+        );
+    }
+
+    #[test]
+    fn startup_usage_errors_print_the_exact_line_the_user_sees() {
+        for (args, expected) in [
+            (vec![FLAG_SCREEN], "--screen requires a value".to_owned()),
+            (vec![FLAG_SELECT], "--select requires a value".to_owned()),
+            (
+                vec![PREVIOUS_INSTANCE_FLAG],
+                format!("{PREVIOUS_INSTANCE_FLAG} requires a value"),
+            ),
+            (
+                vec![FLAG_SELECT, "42"],
+                "--select requires --screen".to_owned(),
+            ),
+            (vec!["--nope"], "unrecognized argument: --nope".to_owned()),
+        ] {
+            assert_eq!(parse(&args).err().as_deref(), Some(expected.as_str()));
+        }
+    }
+
+    #[test]
+    fn an_invalid_screen_name_prints_the_router_reason_unchanged() {
+        let reason = Screen::parse_cli("no-such-screen")
+            .err()
+            .unwrap()
+            .to_string();
+
+        assert_eq!(
+            parse(&[FLAG_SCREEN, "no-such-screen"]).err().as_deref(),
+            Some(reason.as_str())
         );
     }
 }

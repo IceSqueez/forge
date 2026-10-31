@@ -9,7 +9,8 @@ use std::sync::Arc;
 
 use forge_emulator::EmulatorError;
 use forge_emulator::fixture::{
-    ChatCommand, EventTrigger, Fixture, QueueFixture, SeedReport, TwitchAccount, seed,
+    ChatCommand, DATA_DIR_VARIABLE, EventTrigger, Fixture, KEY_FILE_VARIABLE, QueueFixture,
+    SeedReport, TwitchAccount, seed,
 };
 use forge_events::{Event, EventSource};
 use forge_platform_twitch::TwitchCredentialsManager;
@@ -348,8 +349,8 @@ async fn seeder_process_refuses_to_write_outside_a_fresh_fixture_environment() {
             .env("HOME", home.path())
             .env("XDG_DATA_HOME", home.path())
             .env("APPDATA", home.path())
-            .env("FORGE_DATA_DIR", data_dir.path())
-            .env_remove("FORGE_CREDENTIAL_KEY_FILE")
+            .env(DATA_DIR_VARIABLE, data_dir.path())
+            .env_remove(KEY_FILE_VARIABLE)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
@@ -358,7 +359,7 @@ async fn seeder_process_refuses_to_write_outside_a_fresh_fixture_environment() {
         let key_file = home.path().join("elsewhere-credentials-key");
         let label = match case {
             Refusal::DataDirUnset => {
-                command.env_remove("FORGE_DATA_DIR");
+                command.env_remove(DATA_DIR_VARIABLE);
                 "unset data dir"
             }
             Refusal::NonEmptyDir => {
@@ -367,7 +368,7 @@ async fn seeder_process_refuses_to_write_outside_a_fresh_fixture_environment() {
                 "non-empty data dir"
             }
             Refusal::KeyFileOverride => {
-                command.env("FORGE_CREDENTIAL_KEY_FILE", &key_file);
+                command.env(KEY_FILE_VARIABLE, &key_file);
                 "key file override"
             }
             Refusal::GarbageFixture => {

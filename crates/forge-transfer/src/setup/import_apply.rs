@@ -120,7 +120,7 @@ pub async fn apply_setup_import(
                 Ok(()) => Err(cause),
                 Err(failure) => Err(TransferError::SetupRollbackIncomplete {
                     cause: cause.to_string(),
-                    failure,
+                    failure: failure.to_string(),
                     snapshot: safety_snapshot,
                 }),
             }

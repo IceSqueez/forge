@@ -37,7 +37,8 @@ pub use auth::oauth_client::{
     KickOAuthClient, kick_oauth_gateway,
 };
 pub use auth::{
-    KickAuthBundle, KickAuthFlow, KickSignIn, LoopbackCode, client_credentials, kick_auth_flow,
+    KICK_CLIENT_ID_ENV, KICK_CLIENT_SECRET_ENV, KickAuthBundle, KickAuthFlow, KickSignIn,
+    LoopbackCode, client_credentials, kick_auth_flow,
 };
 pub use builtin::{KickIntegrationBundle, register_kick_triggers};
 pub use capabilities::kick_capabilities;

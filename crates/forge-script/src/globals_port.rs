@@ -1,8 +1,14 @@
+use forge_storage::StorageError;
 use forge_types::{EventId, Variant};
 
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[error("{0}")]
-pub struct ScriptGlobalsError(pub String);
+#[derive(Debug, thiserror::Error)]
+pub enum ScriptGlobalsError {
+    #[error(transparent)]
+    Storage(#[from] StorageError),
+
+    #[error("the script catalog never runs script functions")]
+    DescribeOnly,
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct GlobalIncrement {
@@ -40,4 +46,23 @@ pub trait ScriptGlobals: Send + Sync {
         key: &str,
         caused_by: EventId,
     ) -> Result<GlobalDeletion, ScriptGlobalsError>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_storage_failure_reaches_the_script_verbatim() {
+        let error = ScriptGlobalsError::from(StorageError::TypeMismatch {
+            name: "hits".to_owned(),
+            actual: "string".to_owned(),
+        });
+
+        assert!(matches!(error, ScriptGlobalsError::Storage(_)));
+        assert_eq!(
+            error.to_string(),
+            "global 'hits' has type string, expected numeric"
+        );
+    }
 }

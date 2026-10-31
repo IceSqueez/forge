@@ -47,7 +47,9 @@ pub fn translate_legacy_pattern(text: &str) -> LegacyTranslation {
     }
     let items = match lex(text) {
         Ok(items) => items,
-        Err(component) => return LegacyTranslation::Untranslatable { component },
+        Err(UntranslatableFragment(component)) => {
+            return LegacyTranslation::Untranslatable { component };
+        }
     };
     match translate(&items) {
         Ok(pattern) if DatePattern::parse(&pattern).is_ok() => {
@@ -56,9 +58,11 @@ pub fn translate_legacy_pattern(text: &str) -> LegacyTranslation {
         Ok(_) => LegacyTranslation::Untranslatable {
             component: text.to_owned(),
         },
-        Err(component) => LegacyTranslation::Untranslatable { component },
+        Err(UntranslatableFragment(component)) => LegacyTranslation::Untranslatable { component },
     }
 }
+
+struct UntranslatableFragment(String);
 
 fn looks_legacy(text: &str) -> bool {
     let names_a_component = text.match_indices(COMPONENT_OPEN).any(|(open, _)| {
@@ -102,12 +106,12 @@ impl Component {
         })
     }
 
-    fn untranslatable(&self) -> String {
-        self.raw.clone()
+    fn untranslatable(&self) -> UntranslatableFragment {
+        UntranslatableFragment(self.raw.clone())
     }
 }
 
-fn lex(text: &str) -> Result<Vec<Item>, String> {
+fn lex(text: &str) -> Result<Vec<Item>, UntranslatableFragment> {
     let chars: Vec<char> = text.chars().collect();
     let mut items = Vec::new();
     let mut index = 0;
@@ -118,15 +122,17 @@ fn lex(text: &str) -> Result<Vec<Item>, String> {
                     items.push(Item::Literal(escaped));
                     index += 2;
                 }
-                _ => return Err(chars[index..].iter().collect()),
+                _ => return Err(UntranslatableFragment(chars[index..].iter().collect())),
             },
             COMPONENT_OPEN => {
                 let close = matching_close(&chars, index)
-                    .ok_or_else(|| chars[index..].iter().collect::<String>())?;
+                    .ok_or_else(|| UntranslatableFragment(chars[index..].iter().collect()))?;
                 items.push(Item::Component(component(&chars[index..=close])));
                 index = close + 1;
             }
-            COMPONENT_CLOSE => return Err(chars[index..].iter().collect()),
+            COMPONENT_CLOSE => {
+                return Err(UntranslatableFragment(chars[index..].iter().collect()));
+            }
             other => {
                 items.push(Item::Literal(other));
                 index += 1;
@@ -177,7 +183,7 @@ fn component(bracketed: &[char]) -> Component {
     }
 }
 
-fn translate(items: &[Item]) -> Result<String, String> {
+fn translate(items: &[Item]) -> Result<String, UntranslatableFragment> {
     let mut pattern = String::new();
     let mut literal = String::new();
     let mut index = 0;
@@ -213,7 +219,10 @@ fn push_literal(pattern: &mut String, literal: &str) {
     }
 }
 
-fn translate_component(component: &Component, rest: &[Item]) -> Result<(String, usize), String> {
+fn translate_component(
+    component: &Component,
+    rest: &[Item],
+) -> Result<(String, usize), UntranslatableFragment> {
     let zero_padded = component.value(PADDING.0) != Some("none");
     let pick = |padded: &str, minimal: &str| if zero_padded { padded } else { minimal }.to_owned();
     let spelling = match component.name.as_str() {
@@ -282,7 +291,10 @@ fn translate_component(component: &Component, rest: &[Item]) -> Result<(String, 
     Ok((spelling, 0))
 }
 
-fn offset_hours_minutes(hour: &Component, rest: &[Item]) -> Result<(String, usize), String> {
+fn offset_hours_minutes(
+    hour: &Component,
+    rest: &[Item],
+) -> Result<(String, usize), UntranslatableFragment> {
     let hour_ok = hour.value("sign") == Some("mandatory")
         && hour.admits_only(&[("sign", &["mandatory"]), ("padding", &["zero"])]);
     let followed_by_minutes = matches!(

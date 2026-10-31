@@ -18,6 +18,21 @@ pub enum HotkeyError {
     #[error("the desktop did not bind {combo:?}: {reason}")]
     BindRejected { combo: String, reason: String },
 
+    #[error("{method} was cancelled on the desktop")]
+    PortalCancelled { method: &'static str },
+
+    #[error("{method} was ended by the desktop (response {code})")]
+    PortalEnded { method: &'static str, code: u32 },
+
+    #[error("{0}")]
+    PortalCall(String),
+
+    #[error("CreateSession returned no usable session_handle")]
+    PortalSessionMissing,
+
+    #[error("CreateSession failed: {0}")]
+    PortalSessionNotRecreated(Box<HotkeyError>),
+
     #[error("backend error: {0}")]
     Backend(String),
 
@@ -89,6 +104,42 @@ mod tests {
             for field in fields {
                 assert!(shown.contains(field), "{shown:?} lacks {field:?}");
             }
+        }
+    }
+
+    #[test]
+    fn portal_failures_render_the_wording_the_session_lost_detail_shows() {
+        for (error, expected) in [
+            (
+                HotkeyError::PortalCancelled {
+                    method: "BindShortcuts",
+                },
+                "BindShortcuts was cancelled on the desktop",
+            ),
+            (
+                HotkeyError::PortalEnded {
+                    method: "CreateSession",
+                    code: 2,
+                },
+                "CreateSession was ended by the desktop (response 2)",
+            ),
+            (
+                HotkeyError::PortalCall("org.freedesktop.DBus.Error.NoReply".to_owned()),
+                "org.freedesktop.DBus.Error.NoReply",
+            ),
+            (
+                HotkeyError::PortalSessionMissing,
+                "CreateSession returned no usable session_handle",
+            ),
+            (
+                HotkeyError::PortalSessionNotRecreated(Box::new(HotkeyError::PortalEnded {
+                    method: "CreateSession",
+                    code: 2,
+                })),
+                "CreateSession failed: CreateSession was ended by the desktop (response 2)",
+            ),
+        ] {
+            assert_eq!(error.to_string(), expected);
         }
     }
 }

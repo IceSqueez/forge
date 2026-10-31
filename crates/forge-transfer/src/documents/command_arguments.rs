@@ -1,3 +1,4 @@
+use forge_registry::COMMAND_PHRASE_KEY;
 use std::collections::{HashMap, HashSet};
 
 use forge_registry::{
@@ -11,7 +12,6 @@ const KICK_COMMAND_KIND: &str = "kick.chat.command";
 const YOUTUBE_COMMAND_KIND: &str = "youtube.chat.command";
 const SWITCH_KIND: &str = "core.logic.switch_case";
 
-const PHRASE_KEY: &str = "phrase";
 const KICK_DEFAULT_PHRASE: &str = "!command";
 const WHILE_CONDITION_KEY: &str = "while_condition";
 const SWITCH_VALUE_KEY: &str = "expression";
@@ -161,7 +161,7 @@ fn value_writes_arguments(value: &Variant) -> bool {
 fn bound_actions(documents: &PackDocuments, kind_id: &str) -> Vec<(usize, Option<String>)> {
     let mut bound = Vec::new();
     for trigger in documents.triggers.iter().filter(|t| t.kind_id == kind_id) {
-        let phrase = match trigger.overrides.get(PHRASE_KEY) {
+        let phrase = match trigger.overrides.get(COMMAND_PHRASE_KEY) {
             Some(Variant::String(phrase)) => Some(phrase.clone()),
             _ => None,
         };
@@ -625,7 +625,9 @@ mod tests {
 
     fn phrased(phrase: &str) -> TriggerDocument {
         let mut bound = trigger(KICK_COMMAND_KIND);
-        bound.overrides.insert(PHRASE_KEY.to_owned(), text(phrase));
+        bound
+            .overrides
+            .insert(COMMAND_PHRASE_KEY.to_owned(), text(phrase));
         bound
     }
 

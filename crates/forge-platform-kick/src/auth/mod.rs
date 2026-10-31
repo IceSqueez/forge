@@ -182,13 +182,16 @@ async fn fetch_user_info(api: &Gateway, access_token: &str) -> Result<UserRecord
         })
 }
 
+pub const KICK_CLIENT_ID_ENV: &str = "FORGE_KICK_CLIENT_ID";
+pub const KICK_CLIENT_SECRET_ENV: &str = "FORGE_KICK_CLIENT_SECRET";
+
 pub fn client_credentials() -> Option<(String, Secret)> {
     let client_id = resolve_credential(
-        std::env::var("FORGE_KICK_CLIENT_ID").ok().as_deref(),
+        std::env::var(KICK_CLIENT_ID_ENV).ok().as_deref(),
         option_env!("FORGE_KICK_CLIENT_ID"),
     )?;
     let client_secret = resolve_credential(
-        std::env::var("FORGE_KICK_CLIENT_SECRET").ok().as_deref(),
+        std::env::var(KICK_CLIENT_SECRET_ENV).ok().as_deref(),
         option_env!("FORGE_KICK_CLIENT_SECRET"),
     )?;
     Some((client_id, Secret::new(client_secret)))

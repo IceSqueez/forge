@@ -48,9 +48,13 @@ pub(crate) fn midi_start_error(error: &MidiError) -> IntegrationStartError {
 pub(crate) fn hotkey_start_error(error: &HotkeyError) -> IntegrationStartError {
     tracing::warn!(error = %error, "hotkey engine could not start");
     let category = match error {
-        HotkeyError::PortalUnavailable { .. } | HotkeyError::BackendUnavailable => {
-            StartFailureCategory::Unreachable
-        }
+        HotkeyError::PortalUnavailable { .. }
+        | HotkeyError::PortalCancelled { .. }
+        | HotkeyError::PortalEnded { .. }
+        | HotkeyError::PortalCall(_)
+        | HotkeyError::PortalSessionMissing
+        | HotkeyError::PortalSessionNotRecreated(_)
+        | HotkeyError::BackendUnavailable => StartFailureCategory::Unreachable,
         HotkeyError::PermissionDenied
         | HotkeyError::AlreadyRegistered { .. }
         | HotkeyError::InvalidCombo(_)
@@ -157,6 +161,56 @@ mod tests {
                     hotkey_messages::PORTAL_UNAVAILABLE,
                     None,
                     Some(UPSTREAM),
+                ),
+            ),
+            (
+                HotkeyError::PortalCancelled {
+                    method: "BindShortcuts",
+                },
+                (
+                    StartFailureCategory::Unreachable,
+                    hotkey_messages::PORTAL_UNAVAILABLE,
+                    None,
+                    Some("BindShortcuts was cancelled on the desktop"),
+                ),
+            ),
+            (
+                HotkeyError::PortalEnded {
+                    method: "BindShortcuts",
+                    code: 2,
+                },
+                (
+                    StartFailureCategory::Unreachable,
+                    hotkey_messages::PORTAL_UNAVAILABLE,
+                    None,
+                    Some("BindShortcuts was ended by the desktop (response 2)"),
+                ),
+            ),
+            (
+                HotkeyError::PortalCall(UPSTREAM.to_owned()),
+                (
+                    StartFailureCategory::Unreachable,
+                    hotkey_messages::PORTAL_UNAVAILABLE,
+                    None,
+                    Some(UPSTREAM),
+                ),
+            ),
+            (
+                HotkeyError::PortalSessionMissing,
+                (
+                    StartFailureCategory::Unreachable,
+                    hotkey_messages::PORTAL_UNAVAILABLE,
+                    None,
+                    Some("CreateSession returned no usable session_handle"),
+                ),
+            ),
+            (
+                HotkeyError::PortalSessionNotRecreated(Box::new(HotkeyError::PortalSessionMissing)),
+                (
+                    StartFailureCategory::Unreachable,
+                    hotkey_messages::PORTAL_UNAVAILABLE,
+                    None,
+                    Some("CreateSession failed: CreateSession returned no usable session_handle"),
                 ),
             ),
             (

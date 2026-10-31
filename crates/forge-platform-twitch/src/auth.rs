@@ -380,8 +380,10 @@ fn step_failed(step: &str, error: PlatformError) -> PlatformError {
     }
 }
 
+pub const TWITCH_CLIENT_ID_ENV: &str = "FORGE_TWITCH_CLIENT_ID";
+
 pub fn client_id() -> Option<String> {
-    let runtime = std::env::var("FORGE_TWITCH_CLIENT_ID").ok();
+    let runtime = std::env::var(TWITCH_CLIENT_ID_ENV).ok();
     resolve_client_id(runtime.as_deref(), option_env!("FORGE_TWITCH_CLIENT_ID"))
 }
 

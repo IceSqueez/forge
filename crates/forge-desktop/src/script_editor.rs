@@ -123,80 +123,124 @@ fn input_syntax_example(kind: VariantKind) -> Option<&'static str> {
     }
 }
 
+#[derive(Debug)]
+struct ScriptInputRejection {
+    name: String,
+    reason: ScriptInputReason,
+}
+
+#[derive(Debug)]
+enum ScriptInputReason {
+    NotInteger,
+    NotFloat,
+    NotBool,
+    NotDatetime,
+    WrongShape {
+        shape: String,
+        example: &'static str,
+    },
+    Invalid(String),
+}
+
+impl ScriptInputRejection {
+    fn new(name: &str, reason: ScriptInputReason) -> Self {
+        Self {
+            name: name.to_owned(),
+            reason,
+        }
+    }
+
+    fn user_message(&self) -> String {
+        let name = self.name.as_str();
+        match &self.reason {
+            ScriptInputReason::NotInteger => tr!("script_input_must_be_integer", name = name),
+            ScriptInputReason::NotFloat => tr!("script_input_must_be_float", name = name),
+            ScriptInputReason::NotBool => tr!("script_input_must_be_bool", name = name),
+            ScriptInputReason::NotDatetime => tr!(
+                "script_input_must_be_datetime",
+                name = name,
+                example = DATETIME_INPUT_EXAMPLE
+            ),
+            ScriptInputReason::WrongShape { shape, example } => tr!(
+                "script_input_must_be_shape",
+                name = name,
+                shape = shape.as_str(),
+                example = *example
+            ),
+            ScriptInputReason::Invalid(reason) => tr!(
+                "script_input_invalid",
+                name = name,
+                reason = reason.as_str()
+            ),
+        }
+    }
+}
+
 fn parse_json_input(
     name: &str,
     raw: &str,
     expected: VariantKind,
-    shape: &str,
-    example: &str,
-) -> Result<Variant, String> {
-    let shape_error = || {
-        tr!(
-            "script_input_must_be_shape",
-            name = name,
-            shape = shape,
-            example = example
-        )
+    shape: String,
+    example: &'static str,
+) -> Result<Variant, ScriptInputRejection> {
+    let wrong_shape = |shape: String| {
+        ScriptInputRejection::new(name, ScriptInputReason::WrongShape { shape, example })
     };
-    let value = serde_json::from_str::<serde_json::Value>(raw.trim()).map_err(|_| shape_error())?;
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(raw.trim()) else {
+        return Err(wrong_shape(shape));
+    };
     let variant = Variant::from_plain_json(value).map_err(|e| invalid_input(name, &e))?;
     if VariantKind::from_variant(&variant) == expected {
         Ok(variant)
     } else {
-        Err(shape_error())
+        Err(wrong_shape(shape))
     }
 }
 
-fn invalid_input(name: &str, reason: &dyn std::fmt::Display) -> String {
-    let reason = reason.to_string();
-    tr!(
-        "script_input_invalid",
-        name = name,
-        reason = reason.as_str()
-    )
+fn invalid_input(name: &str, reason: &dyn std::fmt::Display) -> ScriptInputRejection {
+    ScriptInputRejection::new(name, ScriptInputReason::Invalid(reason.to_string()))
 }
 
-fn parse_input_to_variant(name: &str, kind: VariantKind, raw: &str) -> Result<Variant, String> {
+fn parse_input_to_variant(
+    name: &str,
+    kind: VariantKind,
+    raw: &str,
+) -> Result<Variant, ScriptInputRejection> {
+    let rejected = |reason| ScriptInputRejection::new(name, reason);
     match kind {
         VariantKind::Int => raw
             .trim()
             .parse::<i64>()
             .map(Variant::Int)
-            .map_err(|_| tr!("script_input_must_be_integer", name = name)),
+            .map_err(|_| rejected(ScriptInputReason::NotInteger)),
         VariantKind::Float => raw
             .trim()
             .parse::<f64>()
-            .map_err(|_| tr!("script_input_must_be_float", name = name))
+            .map_err(|_| rejected(ScriptInputReason::NotFloat))
             .and_then(|f| Variant::float(f).map_err(|e| invalid_input(name, &e))),
         VariantKind::Bool => match raw.trim() {
             "true" => Ok(Variant::Bool(true)),
             "false" => Ok(Variant::Bool(false)),
-            _ => Err(tr!("script_input_must_be_bool", name = name)),
+            _ => Err(rejected(ScriptInputReason::NotBool)),
         },
         VariantKind::String => Ok(Variant::String(raw.to_owned())),
         VariantKind::Array => parse_json_input(
             name,
             raw,
             VariantKind::Array,
-            &tr!("script_input_shape_array"),
+            tr!("script_input_shape_array"),
             ARRAY_INPUT_EXAMPLE,
         ),
         VariantKind::Object => parse_json_input(
             name,
             raw,
             VariantKind::Object,
-            &tr!("script_input_shape_object"),
+            tr!("script_input_shape_object"),
             OBJECT_INPUT_EXAMPLE,
         ),
         VariantKind::Datetime => forge_types::datetime_from_text(raw)
             .map(Variant::Datetime)
-            .ok_or_else(|| {
-                tr!(
-                    "script_input_must_be_datetime",
-                    name = name,
-                    example = DATETIME_INPUT_EXAMPLE
-                )
-            }),
+            .ok_or_else(|| rejected(ScriptInputReason::NotDatetime)),
     }
 }
 
@@ -497,8 +541,8 @@ impl RunModal {
         for (fname, kind, raw) in &raws {
             match parse_input_to_variant(fname, *kind, raw) {
                 Ok(v) => args = args.set(fname.clone(), v),
-                Err(e) => {
-                    self.error = Some(e.into());
+                Err(rejection) => {
+                    self.error = Some(rejection.user_message().into());
                     cx.notify();
                     return;
                 }
@@ -3971,7 +4015,7 @@ mod tests {
 
     fn parse(kind: VariantKind, raw: &str) -> Result<Variant, String> {
         crate::i18n::install_language(forge_storage::Language::En);
-        parse_input_to_variant("amount", kind, raw)
+        parse_input_to_variant("amount", kind, raw).map_err(|e| e.user_message())
     }
 
     #[test]
@@ -4891,6 +4935,87 @@ mod tests {
                     (vec![id], Vec::new(), false),
                     (Vec::new(), vec![OLD_NAME.to_owned()], true)
                 )
+            );
+        }
+    }
+
+    fn rejection(kind: VariantKind, raw: &str, language: forge_storage::Language) -> String {
+        crate::i18n::install_language(language);
+        without_isolates(
+            &parse_input_to_variant("amount", kind, raw)
+                .unwrap_err()
+                .user_message(),
+        )
+    }
+
+    fn without_isolates(text: &str) -> String {
+        text.replace(['\u{2068}', '\u{2069}'], "")
+    }
+
+    #[test]
+    fn a_rejected_script_input_reads_in_the_active_language() {
+        use forge_storage::Language::{En, Uk};
+
+        for (kind, raw, en, uk) in [
+            (
+                VariantKind::Int,
+                "x",
+                "`amount` must be an integer".to_owned(),
+                "`amount` має бути цілим числом".to_owned(),
+            ),
+            (
+                VariantKind::Float,
+                "x",
+                "`amount` must be a number".to_owned(),
+                "`amount` має бути числом".to_owned(),
+            ),
+            (
+                VariantKind::Bool,
+                "x",
+                "`amount` must be `true` or `false`".to_owned(),
+                "`amount` має бути `true` або `false`".to_owned(),
+            ),
+            (
+                VariantKind::Datetime,
+                "x",
+                format!("`amount` must be an RFC3339 timestamp, e.g. `{DATETIME_INPUT_EXAMPLE}`"),
+                format!(
+                    "`amount` має бути часовою позначкою RFC3339, наприклад `{DATETIME_INPUT_EXAMPLE}`"
+                ),
+            ),
+            (
+                VariantKind::Array,
+                "{}",
+                format!("`amount` must be a JSON array, e.g. `{ARRAY_INPUT_EXAMPLE}`"),
+                format!("`amount` має бути масивом JSON, наприклад `{ARRAY_INPUT_EXAMPLE}`"),
+            ),
+            (
+                VariantKind::Object,
+                "x",
+                format!("`amount` must be a JSON object, e.g. `{OBJECT_INPUT_EXAMPLE}`"),
+                format!("`amount` має бути об'єктом JSON, наприклад `{OBJECT_INPUT_EXAMPLE}`"),
+            ),
+        ] {
+            assert_eq!(rejection(kind, raw, En), en, "{kind:?} en");
+            assert_eq!(rejection(kind, raw, Uk), uk, "{kind:?} uk");
+        }
+    }
+
+    #[test]
+    fn an_invalid_input_reason_is_shown_unchanged_in_either_language() {
+        for language in [forge_storage::Language::En, forge_storage::Language::Uk] {
+            crate::i18n::install_language(language);
+
+            let shown = ScriptInputRejection::new(
+                "amount",
+                ScriptInputReason::Invalid("float is not finite".to_owned()),
+            )
+            .user_message();
+
+            assert_eq!(
+                without_isolates(&shown),
+                "`amount`: float is not finite",
+                "{language:?}"
             );
         }
     }

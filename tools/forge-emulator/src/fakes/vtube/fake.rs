@@ -458,7 +458,7 @@ impl Session {
             Ok((request_id, message_type, data)) => {
                 self.respond(shared, &request_id, &message_type, data);
             }
-            Err(refusal) => {
+            Err(ProtocolRefusal(refusal)) => {
                 let _ = self.outbox.send(refusal);
             }
         }
@@ -629,51 +629,53 @@ impl Session {
     }
 }
 
-fn envelope(text: &str) -> Result<(String, String, Value), String> {
+struct ProtocolRefusal(String);
+
+fn envelope(text: &str) -> Result<(String, String, Value), ProtocolRefusal> {
     let Ok(message) = serde_json::from_str::<Value>(text) else {
-        return Err(protocol::api_error(
+        return Err(ProtocolRefusal(protocol::api_error(
             UNKNOWN_REQUEST_ID,
             ERROR_JSON_INVALID,
             "The message is not valid JSON.",
-        ));
+        )));
     };
     let request_id = match message.get("requestID") {
         None | Some(Value::Null) => protocol::generated_id(),
         Some(id) => match id.as_str().filter(|id| protocol::request_id_is_valid(id)) {
             Some(id) => id.to_owned(),
             None => {
-                return Err(protocol::api_error(
+                return Err(ProtocolRefusal(protocol::api_error(
                     UNKNOWN_REQUEST_ID,
                     ERROR_REQUEST_ID_INVALID,
                     "The requestID has to be 1 to 64 ASCII characters.",
-                ));
+                )));
             }
         },
     };
     if message.get("apiName").and_then(Value::as_str) != Some(API_NAME) {
-        return Err(protocol::api_error(
+        return Err(ProtocolRefusal(protocol::api_error(
             &request_id,
             ERROR_API_NAME_INVALID,
             "apiName has to be VTubeStudioPublicAPI.",
-        ));
+        )));
     }
     if message.get("apiVersion").and_then(Value::as_str) != Some(API_VERSION) {
-        return Err(protocol::api_error(
+        return Err(ProtocolRefusal(protocol::api_error(
             &request_id,
             ERROR_API_VERSION_INVALID,
             "apiVersion has to be 1.0.",
-        ));
+        )));
     }
     let Some(message_type) = message
         .get("messageType")
         .and_then(Value::as_str)
         .filter(|kind| !kind.is_empty())
     else {
-        return Err(protocol::api_error(
+        return Err(ProtocolRefusal(protocol::api_error(
             &request_id,
             ERROR_REQUEST_TYPE_MISSING,
             "The messageType field is missing or empty.",
-        ));
+        )));
     };
     let data = message
         .get("data")

@@ -44,7 +44,9 @@ pub use chain::{
     CancelSignal, ChainExecutor, ChainSignal, ChildChainOutcome, ControlCell, ControlSignal,
     RunningAction, StopMark, TelemetrySink,
 };
-pub use command_phrase::{command_name_of, command_phrase_matches};
+pub use command_phrase::{
+    COMMAND_CASE_SENSITIVE_KEY, COMMAND_PHRASE_KEY, command_name_of, command_phrase_matches,
+};
 pub use condition_messages::{
     CONDITION_MESSAGES, any_condition, chat_command_condition, joined_condition,
 };

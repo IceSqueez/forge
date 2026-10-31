@@ -1218,3 +1218,64 @@ fn an_unreadable_nested_step_is_reported_on_its_top_level_step_only_when_that_st
         ]
     );
 }
+
+fn named_output() -> SubActionIo {
+    SubActionIo {
+        produces: vec![ProducedVariable {
+            output_name_key: INTO_VAR_KEY.to_owned(),
+            kind: VariantKind::String,
+            label: "Output".to_owned(),
+        }],
+        ..SubActionIo::default()
+    }
+}
+
+fn producing_into(name: &str) -> SubActionStep {
+    step(
+        PRODUCER_KIND,
+        SubActionConfig::from([(INTO_VAR_KEY.to_owned(), Variant::String(name.to_owned()))]),
+        true,
+    )
+}
+
+#[test]
+fn a_dotted_or_unicode_output_name_resolves_its_own_token_and_the_paths_below_it() {
+    for (output, reference) in [
+        ("%regex.matched%", "%regex.matched%"),
+        ("%regex.matched%", "%regex.matched.0%"),
+        ("a-b", "%a-b%"),
+        (
+            "%\u{434}\u{43e}\u{43d}\u{430}\u{442}%",
+            "%\u{434}\u{43e}\u{43d}\u{430}\u{442}.\u{441}\u{443}\u{43c}\u{430}%",
+        ),
+    ] {
+        let health = seeded_health(
+            vec![producing_into(output), consumer(reference)],
+            &declaring_registry(named_output()),
+        );
+
+        assert_eq!(health[1], StepHealth::default(), "{output} -> {reference}");
+    }
+}
+
+#[test]
+fn only_a_whole_dotted_output_name_roots_a_reference() {
+    for (output, reference, unknown) in [
+        ("%regex.matched%", "%regex%", "regex"),
+        ("%regex.matched%", "%regex.other%", "regex.other"),
+        ("has space", "%has%", "has"),
+    ] {
+        let health = seeded_health(
+            vec![producing_into(output), consumer(reference)],
+            &declaring_registry(named_output()),
+        );
+
+        assert_eq!(
+            health[1],
+            StepHealth {
+                findings: vec![Finding::UnknownVariable(unknown.to_owned())],
+            },
+            "{output} -> {reference}"
+        );
+    }
+}

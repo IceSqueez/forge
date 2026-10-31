@@ -18,8 +18,11 @@ pub enum SqliteStorageError {
     #[error(transparent)]
     Sqlx(#[from] sqlx::Error),
 
-    #[error("crypto error: {reason}")]
-    Crypto { reason: String },
+    #[error("encryption error: {reason}")]
+    Encrypt { reason: String },
+
+    #[error("decryption error: {reason}")]
+    Decrypt { reason: String },
 
     #[error("key file error: {reason}")]
     KeyFile { reason: String },
@@ -57,8 +60,15 @@ impl From<SqliteStorageError> for forge_storage::StorageError {
                     Self::Connection { reason }
                 }
             }
-            SqliteStorageError::Crypto { reason } => Self::Connection { reason },
-            SqliteStorageError::KeyFile { reason } => Self::Connection { reason },
+            SqliteStorageError::Encrypt { reason } => {
+                tracing::warn!(%reason, "credential encryption failed");
+                Self::Encryption
+            }
+            SqliteStorageError::Decrypt { reason } => {
+                tracing::warn!(%reason, "credential decryption failed");
+                Self::Decryption
+            }
+            SqliteStorageError::KeyFile { reason } => Self::CredentialsKeyFile { reason },
             SqliteStorageError::Decode(msg) => Self::Parse(msg),
         }
     }
@@ -128,5 +138,38 @@ mod tests {
             matches!(error, StorageError::Connection { .. }),
             "{error:?}"
         );
+    }
+
+    #[test]
+    fn credential_failures_convert_to_their_own_storage_errors_without_the_cipher_reason() {
+        const CIPHER_REASON: &str = "aead::Error";
+        let reason = || CIPHER_REASON.to_owned();
+
+        let encrypt = StorageError::from(SqliteStorageError::Encrypt { reason: reason() });
+        assert!(matches!(encrypt, StorageError::Encryption), "{encrypt:?}");
+        assert_eq!(encrypt.to_string(), "encryption failed");
+        assert!(!encrypt.stored_secret_unrecoverable());
+
+        let decrypt = StorageError::from(SqliteStorageError::Decrypt { reason: reason() });
+        assert!(matches!(decrypt, StorageError::Decryption), "{decrypt:?}");
+        assert_eq!(decrypt.to_string(), "decryption failed");
+        assert!(decrypt.stored_secret_unrecoverable());
+    }
+
+    #[test]
+    fn a_key_file_failure_keeps_its_reason_and_never_asks_for_reauth() {
+        let error = StorageError::from(SqliteStorageError::KeyFile {
+            reason: "permission denied".to_owned(),
+        });
+
+        assert!(
+            matches!(&error, StorageError::CredentialsKeyFile { reason } if reason == "permission denied"),
+            "{error:?}"
+        );
+        assert_eq!(
+            error.to_string(),
+            "credentials key file failed: permission denied"
+        );
+        assert!(!error.stored_secret_unrecoverable());
     }
 }

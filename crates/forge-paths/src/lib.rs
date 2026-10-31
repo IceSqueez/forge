@@ -31,18 +31,20 @@ fn base_dirs() -> BaseDirs {
     BaseDirs::new().expect("home directory must be discoverable on supported platforms")
 }
 
+pub const DATA_DIR_ENV: &str = "FORGE_DATA_DIR";
+
 #[cfg(target_os = "macos")]
-fn app_segment() -> &'static str {
+pub fn app_segment() -> &'static str {
     MACOS_BUNDLE_ID
 }
 
 #[cfg(not(target_os = "macos"))]
-fn app_segment() -> &'static str {
+pub fn app_segment() -> &'static str {
     APP_DIR_NAME
 }
 
 pub fn data_dir() -> PathBuf {
-    if let Some(dir) = std::env::var_os("FORGE_DATA_DIR").filter(|v| !v.is_empty()) {
+    if let Some(dir) = std::env::var_os(DATA_DIR_ENV).filter(|v| !v.is_empty()) {
         return PathBuf::from(dir);
     }
     base_dirs().data_dir().join(app_segment())
@@ -70,7 +72,7 @@ pub fn problem_reports_dir() -> PathBuf {
 
 pub const CREDENTIALS_KEY_FILE_NAME: &str = "credentials-key";
 
-const CREDENTIALS_KEY_FILE_ENV: &str = "FORGE_CREDENTIAL_KEY_FILE";
+pub const CREDENTIALS_KEY_FILE_ENV: &str = "FORGE_CREDENTIAL_KEY_FILE";
 
 pub fn credentials_key_path_in(data_dir: &std::path::Path) -> PathBuf {
     match std::env::var_os(CREDENTIALS_KEY_FILE_ENV) {

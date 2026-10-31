@@ -40,7 +40,8 @@ pub(crate) fn classify(text: &str) -> InboundFrame {
         Err(e) => return undecodable(e.to_string()),
     };
     if let Some(status) = fields.remove("status") {
-        return decode_response(fields, &status).unwrap_or_else(undecodable);
+        return decode_response(fields, &status)
+            .unwrap_or_else(|UndecodableFrame(reason)| undecodable(reason));
     }
     if let Some(dropped) = fields.get("dropped") {
         return match dropped.as_u64() {
@@ -57,16 +58,29 @@ pub(crate) fn classify(text: &str) -> InboundFrame {
     undecodable("frame matches no known shape".to_owned())
 }
 
-fn decode_response(mut fields: Map<String, Value>, status: &Value) -> Result<InboundFrame, String> {
+struct UndecodableFrame(String);
+
+fn decode_response(
+    mut fields: Map<String, Value>,
+    status: &Value,
+) -> Result<InboundFrame, UndecodableFrame> {
     let id = match fields.remove("id") {
         Some(Value::String(id)) => Some(id),
         Some(Value::Null) | None => None,
-        Some(other) => return Err(format!("response id is not a string: {other}")),
+        Some(other) => {
+            return Err(UndecodableFrame(format!(
+                "response id is not a string: {other}"
+            )));
+        }
     };
     let outcome = match status.as_str() {
         Some("ok") => Ok(fields),
         Some("error") => Err(refusal(fields.remove("error"))),
-        _ => return Err(format!("unknown response status: {status}")),
+        _ => {
+            return Err(UndecodableFrame(format!(
+                "unknown response status: {status}"
+            )));
+        }
     };
     Ok(InboundFrame::Response { id, outcome })
 }

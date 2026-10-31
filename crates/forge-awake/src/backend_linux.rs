@@ -40,8 +40,8 @@ struct ScreenSaverHold {
 
 pub(crate) struct LinuxBackend {
     reason: String,
-    session: Result<Connection, String>,
-    system: Result<Connection, String>,
+    session: Result<Connection, AwakeError>,
+    system: Result<Connection, AwakeError>,
     screen_saver: Option<ScreenSaverHold>,
     idle_lock: Option<OwnedFd>,
     disruptions: DisruptionSender,
@@ -51,8 +51,8 @@ pub(crate) struct LinuxBackend {
 impl LinuxBackend {
     pub(crate) async fn open(reason: String, disruptions: DisruptionSender) -> Self {
         let (session, system) = tokio::join!(
-            connect(Connection::session()),
-            connect(Connection::system())
+            connect(SESSION_BUS, Connection::session()),
+            connect(SYSTEM_BUS, Connection::system())
         );
         let mut watchers = Vec::new();
         if let Ok(conn) = &session {
@@ -86,7 +86,7 @@ impl LinuxBackend {
         if let Ok(conn) = &self.session {
             return Ok(conn.clone());
         }
-        self.session = connect(Connection::session()).await;
+        self.session = connect(SESSION_BUS, Connection::session()).await;
         match &self.session {
             Ok(conn) => {
                 self.watchers.push(spawn_owner_watch(
@@ -97,10 +97,7 @@ impl LinuxBackend {
                 ));
                 Ok(conn.clone())
             }
-            Err(reason) => Err(AwakeError::Unreachable {
-                service: SESSION_BUS,
-                reason: reason.clone(),
-            }),
+            Err(error) => Err(error.clone()),
         }
     }
 
@@ -108,7 +105,7 @@ impl LinuxBackend {
         if let Ok(conn) = &self.system {
             return Ok(conn.clone());
         }
-        self.system = connect(Connection::system()).await;
+        self.system = connect(SYSTEM_BUS, Connection::system()).await;
         match &self.system {
             Ok(conn) => {
                 self.watchers.push(spawn_owner_watch(
@@ -119,10 +116,7 @@ impl LinuxBackend {
                 ));
                 Ok(conn.clone())
             }
-            Err(reason) => Err(AwakeError::Unreachable {
-                service: SYSTEM_BUS,
-                reason: reason.clone(),
-            }),
+            Err(error) => Err(error.clone()),
         }
     }
 
@@ -153,7 +147,7 @@ impl LinuxBackend {
                 }
                 Err(e) => {
                     if is_connection_lost(&e) {
-                        self.session = Err(e.to_string());
+                        self.session = Err(unreachable(SESSION_BUS, &e));
                     }
                     return Err(classify(e, SCREEN_SAVER_SERVICE));
                 }
@@ -198,7 +192,7 @@ impl LinuxBackend {
         .await
         .map_err(|e| {
             if is_connection_lost(&e) {
-                self.system = Err(e.to_string());
+                self.system = Err(unreachable(SYSTEM_BUS, &e));
             }
             classify(e, LOGIN_SERVICE)
         })?;
@@ -245,12 +239,20 @@ impl AwakeBackend for LinuxBackend {
 }
 
 async fn connect(
+    bus: &'static str,
     connecting: impl Future<Output = zbus::Result<Connection>>,
-) -> Result<Connection, String> {
+) -> Result<Connection, AwakeError> {
     match tokio::time::timeout(BUS_TIMEOUT, connecting).await {
         Ok(Ok(conn)) => Ok(conn),
-        Ok(Err(e)) => Err(e.to_string()),
-        Err(_) => Err("connection timed out".to_owned()),
+        Ok(Err(e)) => Err(unreachable(bus, &e)),
+        Err(_) => Err(unreachable(bus, &"connection timed out")),
+    }
+}
+
+fn unreachable(bus: &'static str, cause: &dyn std::fmt::Display) -> AwakeError {
+    AwakeError::Unreachable {
+        service: bus,
+        reason: cause.to_string(),
     }
 }
 

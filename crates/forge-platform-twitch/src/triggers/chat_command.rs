@@ -2,8 +2,9 @@ use crate::vocabulary::event_kinds;
 use crate::vocabulary::trigger_ids;
 use forge_events::{Event, EventSource};
 use forge_registry::{
-    ActorDeclaration, ChatTriggerFamily, EventFilter, FormField, KindPlatformContract,
-    TriggerCategory, TriggerKindDescriptor, TriggerVariables, command_phrase_matches,
+    ActorDeclaration, COMMAND_CASE_SENSITIVE_KEY, COMMAND_PHRASE_KEY, ChatTriggerFamily,
+    EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
+    TriggerVariables, command_phrase_matches,
 };
 use forge_types::{PlatformId, TriggerConfig, UserText, Variant};
 
@@ -43,20 +44,23 @@ impl TriggerKindDescriptor for ChatCommandDescriptor {
 
     fn default_config(&self) -> TriggerConfig {
         let mut cfg = TriggerConfig::new();
-        cfg.insert("phrase".to_owned(), Variant::String("!command".to_owned()));
-        cfg.insert("case_sensitive".to_owned(), Variant::Bool(false));
+        cfg.insert(
+            COMMAND_PHRASE_KEY.to_owned(),
+            Variant::String("!command".to_owned()),
+        );
+        cfg.insert(COMMAND_CASE_SENSITIVE_KEY.to_owned(), Variant::Bool(false));
         cfg
     }
 
     fn config_fields(&self) -> Vec<FormField> {
         vec![
             FormField::Text {
-                key: "phrase",
+                key: COMMAND_PHRASE_KEY,
                 label: "Command phrase",
                 placeholder: "!command",
             },
             FormField::Toggle {
-                key: "case_sensitive",
+                key: COMMAND_CASE_SENSITIVE_KEY,
                 label: "Case sensitive",
             },
         ]
@@ -75,7 +79,7 @@ impl TriggerKindDescriptor for ChatCommandDescriptor {
 
     fn matches_trigger(&self, config: &TriggerConfig, event: &Event) -> bool {
         let phrase = config
-            .get("phrase")
+            .get(COMMAND_PHRASE_KEY)
             .and_then(|v| {
                 if let Variant::String(s) = v {
                     Some(s.as_str())
@@ -90,7 +94,7 @@ impl TriggerKindDescriptor for ChatCommandDescriptor {
         }
 
         let case_sensitive = config
-            .get("case_sensitive")
+            .get(COMMAND_CASE_SENSITIVE_KEY)
             .and_then(|v| {
                 if let Variant::Bool(b) = v {
                     Some(*b)
@@ -128,8 +132,14 @@ mod tests {
 
     fn make_config(phrase: &str, case_sensitive: bool) -> TriggerConfig {
         let mut config = TriggerConfig::new();
-        config.insert("phrase".to_owned(), Variant::String(phrase.to_owned()));
-        config.insert("case_sensitive".to_owned(), Variant::Bool(case_sensitive));
+        config.insert(
+            COMMAND_PHRASE_KEY.to_owned(),
+            Variant::String(phrase.to_owned()),
+        );
+        config.insert(
+            COMMAND_CASE_SENSITIVE_KEY.to_owned(),
+            Variant::Bool(case_sensitive),
+        );
         config
     }
 
@@ -150,7 +160,10 @@ mod tests {
     #[test]
     fn condition_display_names_the_configured_phrase() {
         let mut cfg = TriggerConfig::new();
-        cfg.insert("phrase".to_owned(), Variant::String("!quote".to_owned()));
+        cfg.insert(
+            COMMAND_PHRASE_KEY.to_owned(),
+            Variant::String("!quote".to_owned()),
+        );
         assert_ne!(
             ChatCommandDescriptor.condition_display(&cfg),
             forge_registry::any_condition()

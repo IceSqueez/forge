@@ -17,6 +17,9 @@ pub enum StorageError {
     #[error("decryption failed")]
     Decryption,
 
+    #[error("credentials key file failed: {reason}")]
+    CredentialsKeyFile { reason: String },
+
     #[error("schema version mismatch: expected {expected}, found {found}")]
     SchemaMismatch { expected: u32, found: u32 },
 
@@ -135,6 +138,7 @@ mod tests {
                 false,
             ),
             (StorageError::Encryption, false),
+            (StorageError::CredentialsKeyFile { reason: text() }, false),
             (
                 StorageError::SchemaMismatch {
                     expected: 2,

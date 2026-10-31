@@ -21,6 +21,7 @@ mod webhooks;
 
 pub use client::DiscordClient;
 pub use content::WebhookPost;
+pub use credentials::DISCORD_CRED_PREFIX;
 pub use embed::{DiscordEmbed, DiscordEmbedField};
 pub use error::{DiscordError, ValidationFault};
 pub use health::DiscordSendHealth;

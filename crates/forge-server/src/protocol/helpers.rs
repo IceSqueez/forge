@@ -6,18 +6,22 @@ use crate::bus_adapter::EventFilter;
 
 use super::envelope::WireEventFilter;
 
+#[derive(Debug, thiserror::Error)]
+#[error("unknown event source: {0}")]
+pub(crate) struct UnknownEventSource(String);
+
 pub(crate) fn parse_wire_filters(
     filters: &[WireEventFilter],
-) -> Result<HashSet<EventFilter>, String> {
+) -> Result<HashSet<EventFilter>, UnknownEventSource> {
     filters.iter().map(parse_wire_filter).collect()
 }
 
-fn parse_wire_filter(wf: &WireEventFilter) -> Result<EventFilter, String> {
+fn parse_wire_filter(wf: &WireEventFilter) -> Result<EventFilter, UnknownEventSource> {
     let source = match wf.source.as_deref() {
         None | Some("*") => None,
         Some(s) => Some(
             serde_json::from_value(serde_json::Value::String(s.to_owned()))
-                .map_err(|_| format!("unknown event source: {s}"))?,
+                .map_err(|_| UnknownEventSource(s.to_owned()))?,
         ),
     };
     let kind = match wf.kind.as_deref() {

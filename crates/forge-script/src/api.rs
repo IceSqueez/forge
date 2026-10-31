@@ -864,8 +864,8 @@ fn build_globals_module(caused_by: EventId, globals: Arc<dyn ScriptGlobals>) -> 
               val: rhai::Dynamic,
               persisted: bool|
               -> Result<(), Box<EvalAltResult>> {
-            let variant =
-                dynamic_to_variant(val).map_err(|e| -> Box<EvalAltResult> { e.into() })?;
+            let variant = dynamic_to_variant(val)
+                .map_err(|e| -> Box<EvalAltResult> { e.to_string().into() })?;
             Handle::current()
                 .block_on(globals_set.set(key.as_str(), variant, persisted, caused_by))
                 .map_err(|e| -> Box<EvalAltResult> { e.to_string().into() })?;

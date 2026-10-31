@@ -1,13 +1,24 @@
 use forge_types::{Variant, datetime_from_text};
 use time::OffsetDateTime;
 
-pub(crate) fn resolve_datetime(v: &Variant, stack_interp: &str) -> Result<OffsetDateTime, String> {
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum DatetimeInputError {
+    #[error("unix timestamp out of range: {0}")]
+    TimestampOutOfRange(#[from] time::error::ComponentRange),
+
+    #[error("cannot parse '{0}' as a datetime or unix timestamp")]
+    Unreadable(String),
+}
+
+pub(crate) fn resolve_datetime(
+    v: &Variant,
+    stack_interp: &str,
+) -> Result<OffsetDateTime, DatetimeInputError> {
     if let Some(dt) = v.as_datetime() {
         return Ok(*dt);
     }
     if let Some(secs) = v.as_int() {
-        return OffsetDateTime::from_unix_timestamp(secs)
-            .map_err(|e| format!("unix timestamp out of range: {e}"));
+        return Ok(OffsetDateTime::from_unix_timestamp(secs)?);
     }
     let s = stack_interp.trim();
     datetime_from_text(s)
@@ -16,7 +27,7 @@ pub(crate) fn resolve_datetime(v: &Variant, stack_interp: &str) -> Result<Offset
                 .ok()
                 .and_then(|ts| OffsetDateTime::from_unix_timestamp(ts).ok())
         })
-        .ok_or_else(|| format!("cannot parse '{s}' as a datetime or unix timestamp"))
+        .ok_or_else(|| DatetimeInputError::Unreadable(s.to_owned()))
 }
 
 #[cfg(test)]
@@ -33,7 +44,9 @@ mod tests {
     }
 
     fn resolved(raw: &Variant, interpolated: &str) -> Result<(OffsetDateTime, UtcOffset), String> {
-        resolve_datetime(raw, interpolated).map(|at| (at, at.offset()))
+        resolve_datetime(raw, interpolated)
+            .map(|at| (at, at.offset()))
+            .map_err(|e| e.to_string())
     }
 
     #[test]
@@ -79,8 +92,9 @@ mod tests {
 
     #[test]
     fn resolve_datetime_names_the_trimmed_input_when_it_is_neither_a_datetime_nor_a_timestamp() {
-        let error =
-            resolve_datetime(&Variant::String("%when%".to_owned()), "  tomorrow \n").unwrap_err();
+        let error = resolve_datetime(&Variant::String("%when%".to_owned()), "  tomorrow \n")
+            .unwrap_err()
+            .to_string();
 
         assert_eq!(
             error,
@@ -100,7 +114,9 @@ mod tests {
             (placeholder, "99999999999999999", "cannot parse"),
             (Variant::Float(1.5), "1.5", "cannot parse '1.5'"),
         ] {
-            let error = resolve_datetime(&raw, interpolated).unwrap_err();
+            let error = resolve_datetime(&raw, interpolated)
+                .unwrap_err()
+                .to_string();
             assert!(
                 error.contains(reason),
                 "{raw:?} / {interpolated:?}: {error}"

@@ -137,10 +137,10 @@ pub struct StressOutcome {
     pub actions: Vec<String>,
     pub pages: Vec<String>,
     pub forge_exited: bool,
-    pub shutdown: Result<ShutdownReport, String>,
+    pub shutdown: Result<ShutdownReport, EmulatorError>,
     pub warnings_total: BTreeMap<String, u64>,
     pub data_dir: PathBuf,
-    pub version: Result<String, String>,
+    pub version: Result<String, EmulatorError>,
 }
 
 type Shared<T> = Arc<Mutex<T>>;
@@ -204,7 +204,7 @@ async fn drive(
     let data_dir = process.data_dir().to_owned();
     let log_dir = process.log_dir();
     let pid = process.pid();
-    let version = client.forge_version().await.map_err(|e| e.to_string());
+    let version = client.forge_version().await;
 
     let mut filters = vec![EventFilter {
         source: Some(EventSource::Twitch),
@@ -333,8 +333,7 @@ async fn drive(
         .map(|exit| ShutdownReport {
             ms: u64::try_from(shutdown_started.elapsed().as_millis()).unwrap_or(u64::MAX),
             forced: exit.forced,
-        })
-        .map_err(|e| e.to_string());
+        });
 
     let tracker = Arc::try_unwrap(tracker)
         .map(|mutex| mutex.into_inner().unwrap_or_else(PoisonError::into_inner))

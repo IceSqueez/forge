@@ -67,7 +67,7 @@ impl SqliteCredentialsRepo {
         let (ciphertext, nonce) = crypto::encrypt_for(&self.key, &row.id, &plaintext)?;
         let readable_back = crypto::decrypt_for(&self.key, &row.id, &ciphertext, &nonce)?;
         if readable_back != plaintext {
-            return Err(SqliteStorageError::Crypto {
+            return Err(SqliteStorageError::Decrypt {
                 reason: "rewritten credential did not read back".to_owned(),
             });
         }

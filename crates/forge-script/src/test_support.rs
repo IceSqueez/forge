@@ -64,17 +64,13 @@ pub(crate) fn repo_globals(
     std::sync::Arc::new(RepoGlobals::new(repo))
 }
 
-fn port_error(error: forge_storage::StorageError) -> crate::ScriptGlobalsError {
-    crate::ScriptGlobalsError(error.to_string())
-}
-
 #[async_trait::async_trait]
 impl crate::ScriptGlobals for RepoGlobals {
     async fn get(
         &self,
         key: &str,
     ) -> Result<Option<forge_types::Variant>, crate::ScriptGlobalsError> {
-        self.repo.get(key).await.map_err(port_error)
+        Ok(self.repo.get(key).await?)
     }
 
     async fn set(
@@ -85,11 +81,8 @@ impl crate::ScriptGlobals for RepoGlobals {
         caused_by: forge_types::EventId,
     ) -> Result<Option<forge_types::Variant>, crate::ScriptGlobalsError> {
         self.record(caused_by);
-        let previous = self.repo.get(key).await.map_err(port_error)?;
-        self.repo
-            .set(key, value, persisted)
-            .await
-            .map_err(port_error)?;
+        let previous = self.repo.get(key).await?;
+        self.repo.set(key, value, persisted).await?;
         Ok(previous)
     }
 
@@ -100,8 +93,8 @@ impl crate::ScriptGlobals for RepoGlobals {
         caused_by: forge_types::EventId,
     ) -> Result<crate::GlobalIncrement, crate::ScriptGlobalsError> {
         self.record(caused_by);
-        let previous = self.repo.get(key).await.map_err(port_error)?;
-        let current = self.repo.incr(key, delta).await.map_err(port_error)?;
+        let previous = self.repo.get(key).await?;
+        let current = self.repo.incr(key, delta).await?;
         Ok(crate::GlobalIncrement { previous, current })
     }
 
@@ -111,8 +104,8 @@ impl crate::ScriptGlobals for RepoGlobals {
         caused_by: forge_types::EventId,
     ) -> Result<crate::GlobalDeletion, crate::ScriptGlobalsError> {
         self.record(caused_by);
-        let previous = self.repo.get(key).await.map_err(port_error)?;
-        if self.repo.delete(key).await.map_err(port_error)? {
+        let previous = self.repo.get(key).await?;
+        if self.repo.delete(key).await? {
             Ok(crate::GlobalDeletion::Deleted { previous })
         } else {
             Ok(crate::GlobalDeletion::Missing)

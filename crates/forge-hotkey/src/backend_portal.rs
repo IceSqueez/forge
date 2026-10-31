@@ -55,13 +55,13 @@ pub(crate) struct ShortcutEdge {
 pub(crate) trait ShortcutsPortal: Send + Sync {
     async fn register_app_id(&self);
 
-    async fn create_session(&self) -> Result<String, String>;
+    async fn create_session(&self) -> Result<String, HotkeyError>;
 
     async fn bind_shortcuts(
         &self,
         session: &str,
         combos: &[HotkeyCombo],
-    ) -> Result<HashMap<String, String>, String>;
+    ) -> Result<HashMap<String, String>, HotkeyError>;
 
     async fn close_session(&self, session: &str);
 
@@ -315,7 +315,7 @@ impl PortalSession {
                 self.shortcut_ids.remove(&shortcut_id);
                 let restored = self.bind().await.map(|_| ());
                 self.note_session_outcome(restored).await;
-                reason
+                reason.to_string()
             }
         };
 
@@ -334,13 +334,13 @@ impl PortalSession {
         self.note_session_outcome(outcome).await;
     }
 
-    async fn note_session_outcome(&mut self, outcome: Result<(), String>) {
+    async fn note_session_outcome(&mut self, outcome: Result<(), HotkeyError>) {
         let event = match outcome {
             Ok(()) if self.session_lost => BackendSessionEvent::Restored,
             Ok(()) => return,
             Err(reason) => {
                 tracing::warn!(%reason, "global shortcuts session is not bound");
-                BackendSessionEvent::Lost(reason)
+                BackendSessionEvent::Lost(reason.to_string())
             }
         };
         self.session_lost = matches!(event, BackendSessionEvent::Lost(_));
@@ -375,13 +375,13 @@ impl PortalSession {
         }
     }
 
-    async fn create_session(&mut self) -> Result<String, String> {
+    async fn create_session(&mut self) -> Result<String, HotkeyError> {
         let portal = Arc::clone(&self.portal);
         self.serve_signals_while(async move { portal.create_session().await })
             .await
     }
 
-    async fn recreate(&mut self) -> Result<(), String> {
+    async fn recreate(&mut self) -> Result<(), HotkeyError> {
         self.portal.register_app_id().await;
         self.session = None;
         self.session_bound = false;
@@ -392,7 +392,7 @@ impl PortalSession {
             match self.create_session().await {
                 Ok(path) => break path,
                 Err(reason) if attempt >= SESSION_RECREATE_ATTEMPTS => {
-                    return Err(format!("CreateSession failed: {reason}"));
+                    return Err(HotkeyError::PortalSessionNotRecreated(Box::new(reason)));
                 }
                 Err(reason) => {
                     tracing::debug!(attempt, %reason, "CreateSession after portal restart failed; retrying");
@@ -416,7 +416,7 @@ impl PortalSession {
         Ok(())
     }
 
-    async fn unbound_session(&mut self) -> Result<String, String> {
+    async fn unbound_session(&mut self) -> Result<String, HotkeyError> {
         if !self.session_bound
             && let Some(path) = &self.session
         {
@@ -431,7 +431,7 @@ impl PortalSession {
         Ok(path)
     }
 
-    async fn bind(&mut self) -> Result<HashMap<String, String>, String> {
+    async fn bind(&mut self) -> Result<HashMap<String, String>, HotkeyError> {
         let session = self.unbound_session().await?;
         self.session_bound = true;
 
@@ -466,7 +466,7 @@ impl ShortcutsPortal for DbusShortcutsPortal {
         register_host_app_id(&self.conn, &self.app_name).await;
     }
 
-    async fn create_session(&self) -> Result<String, String> {
+    async fn create_session(&self) -> Result<String, HotkeyError> {
         create_portal_session(&self.conn, &self.app_name)
             .await
             .map(|path| path.as_str().to_owned())
@@ -476,11 +476,11 @@ impl ShortcutsPortal for DbusShortcutsPortal {
         &self,
         session: &str,
         combos: &[HotkeyCombo],
-    ) -> Result<HashMap<String, String>, String> {
+    ) -> Result<HashMap<String, String>, HotkeyError> {
         let proxy = global_shortcuts_proxy(&self.conn)
             .await
-            .map_err(|e| e.to_string())?;
-        let session = ObjectPath::try_from(session).map_err(|e| e.to_string())?;
+            .map_err(portal_call_failed)?;
+        let session = ObjectPath::try_from(session).map_err(portal_call_failed)?;
 
         let shortcuts: Vec<(&str, HashMap<&str, Variant<'_>>)> = combos
             .iter()
@@ -500,7 +500,7 @@ impl ShortcutsPortal for DbusShortcutsPortal {
             BIND_RESPONSE_TIMEOUT,
         )
         .await
-        .map_err(|e| e.to_string())?
+        .map_err(portal_call_failed)?
         .into_results("BindShortcuts")?;
 
         Ok(bound_triggers(&results))
@@ -601,10 +601,10 @@ async fn register_host_app_id(conn: &Connection, app_id: &str) {
 async fn create_portal_session(
     conn: &Connection,
     app_name: &str,
-) -> Result<OwnedObjectPath, String> {
+) -> Result<OwnedObjectPath, HotkeyError> {
     let proxy = global_shortcuts_proxy(conn)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(portal_call_failed)?;
 
     let handle_token = make_token(app_name, "session");
     let session_token = make_token(app_name, "sess");
@@ -625,11 +625,14 @@ async fn create_portal_session(
         CREATE_SESSION_TIMEOUT,
     )
     .await
-    .map_err(|e| e.to_string())?;
+    .map_err(portal_call_failed)?;
     let results = outcome.into_results("CreateSession")?;
 
-    object_path_result(&results, RESULT_SESSION_HANDLE)
-        .ok_or_else(|| "CreateSession returned no usable session_handle".to_owned())
+    object_path_result(&results, RESULT_SESSION_HANDLE).ok_or(HotkeyError::PortalSessionMissing)
+}
+
+fn portal_call_failed(cause: impl std::fmt::Display) -> HotkeyError {
+    HotkeyError::PortalCall(cause.to_string())
 }
 
 async fn close_session(conn: &Connection, session_path: &str) {
@@ -1017,7 +1020,7 @@ mod tests {
             self.record(PortalCall::RegisterAppId);
         }
 
-        async fn create_session(&self) -> Result<String, String> {
+        async fn create_session(&self) -> Result<String, HotkeyError> {
             let created = {
                 let mut state = self.state();
                 if state.failing_creates > 0 {
@@ -1037,7 +1040,7 @@ mod tests {
                 }
                 None => {
                     self.record(PortalCall::CreateFailed);
-                    Err(CREATE_FAILURE.to_owned())
+                    Err(HotkeyError::PortalCall(CREATE_FAILURE.to_owned()))
                 }
             }
         }
@@ -1046,7 +1049,7 @@ mod tests {
             &self,
             session: &str,
             combos: &[HotkeyCombo],
-        ) -> Result<HashMap<String, String>, String> {
+        ) -> Result<HashMap<String, String>, HotkeyError> {
             let mut ids: Vec<String> = combos.iter().map(|c| c.as_str().to_owned()).collect();
             ids.sort();
             let reply = {
@@ -1054,16 +1057,18 @@ mod tests {
                 if state.live.contains(session) {
                     Ok(state.replies.pop_front())
                 } else {
-                    Err(DEAD_SESSION.to_owned())
+                    Err(HotkeyError::PortalCall(DEAD_SESSION.to_owned()))
                 }
             };
             self.record(PortalCall::Bind(session.to_owned(), ids.clone()));
             match reply? {
-                Some(BindReply::Reject(reason)) => return Err(reason.to_owned()),
+                Some(BindReply::Reject(reason)) => {
+                    return Err(HotkeyError::PortalCall(reason.to_owned()));
+                }
                 Some(BindReply::Only(kept)) => ids.retain(|id| id == kept),
                 Some(BindReply::Hold(released)) => {
                     if released.await.is_err() {
-                        return Err(ABANDONED_BIND.to_owned());
+                        return Err(HotkeyError::PortalCall(ABANDONED_BIND.to_owned()));
                     }
                 }
                 None => {}

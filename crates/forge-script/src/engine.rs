@@ -122,7 +122,9 @@ impl Engine {
         }
         dynamic_to_variant(value)
             .map(Some)
-            .map_err(|reason| ScriptError::Runtime { reason })
+            .map_err(|e| ScriptError::Runtime {
+                reason: e.to_string(),
+            })
     }
 
     pub(crate) fn reset_timer(&self) {

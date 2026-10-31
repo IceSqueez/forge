@@ -117,7 +117,7 @@ pub async fn apply_pack_import(
                 Ok(()) => Err(cause),
                 Err(failure) => Err(TransferError::PackRollbackIncomplete {
                     cause: cause.to_string(),
-                    failure,
+                    failure: failure.to_string(),
                     snapshot: safety_snapshot,
                 }),
             }

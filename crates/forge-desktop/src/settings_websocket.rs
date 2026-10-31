@@ -681,7 +681,7 @@ impl SettingsWebSocketView {
                     cx,
                 );
             }
-            Err(rejected) => {
+            Err(RejectedOrigin(rejected)) => {
                 self.origins_error = Some(rejected.into());
                 self.origins_input
                     .update(cx, |i, cx| i.set_invalid(true, cx));
@@ -1679,7 +1679,9 @@ async fn load_websocket_settings(
     })
 }
 
-fn parse_origins(raw: &str) -> Result<Vec<String>, String> {
+struct RejectedOrigin(String);
+
+fn parse_origins(raw: &str) -> Result<Vec<String>, RejectedOrigin> {
     let mut accepted: Vec<String> = Vec::new();
     for line in raw.lines() {
         let trimmed = line.trim();
@@ -1687,7 +1689,7 @@ fn parse_origins(raw: &str) -> Result<Vec<String>, String> {
             continue;
         }
         let Some(origin) = normalize_origin(trimmed) else {
-            return Err(trimmed.to_owned());
+            return Err(RejectedOrigin(trimmed.to_owned()));
         };
         if !accepted.contains(&origin) {
             accepted.push(origin);

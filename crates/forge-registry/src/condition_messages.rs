@@ -1,11 +1,10 @@
+use crate::command_phrase::COMMAND_PHRASE_KEY;
 use forge_types::{
     DatePatternError, MessageCatalog, MessageCode, MessageRef, TriggerConfig, UserText,
     VerbatimText,
 };
 
 const CONDITION_NAMESPACE: &str = "condition";
-
-const COMMAND_PHRASE_KEY: &str = "phrase";
 
 const FIRST_ARG: &str = "first";
 const NEXT_ARG: &str = "next";

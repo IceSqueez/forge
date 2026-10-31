@@ -5,6 +5,7 @@ use crate::message::{
     INTEGRATION_DISABLED, MessageRef, UserText, VerbatimText, WHISPERS_UNSUPPORTED,
 };
 use crate::redaction::RedactedText;
+use crate::template::is_variable_reference;
 use crate::template::{TemplatePiece, TemplatePieces};
 use crate::variant::Variant;
 use serde::{Deserialize, Serialize};
@@ -105,11 +106,7 @@ pub fn strip_var_decoration(raw: &str) -> String {
 
 pub fn normalize_var_name(raw: &str) -> Option<String> {
     let name = strip_var_decoration(raw);
-    if !name.is_empty() && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_') {
-        Some(name)
-    } else {
-        None
-    }
+    is_variable_reference(&name).then_some(name)
 }
 
 pub fn variant_preview(value: &Variant) -> String {
@@ -635,6 +632,12 @@ mod tests {
             ("%index%", "index"),
             ("  raw_name123  ", "raw_name123"),
             ("%  padded_id  %", "padded_id"),
+            ("%regex.matched%", "regex.matched"),
+            ("a-b", "a-b"),
+            (
+                "%\u{434}\u{43e}\u{43d}\u{430}\u{442}%",
+                "\u{434}\u{43e}\u{43d}\u{430}\u{442}",
+            ),
         ] {
             assert_eq!(
                 normalize_var_name(input).as_deref(),
@@ -647,16 +650,49 @@ mod tests {
     #[test]
     fn normalize_var_name_rejects_non_identifier_charset_after_peeling() {
         for bad in [
-            "regex.matched",
-            "%regex.matched%",
             "has space",
             "%%x%%",
             "",
             "   ",
             "%",
+            "a:b",
+            "%a:b%",
+            "a/b",
+            "\u{438}\u{306}",
         ] {
             assert_eq!(normalize_var_name(bad), None, "input {bad:?}");
         }
+    }
+
+    #[test]
+    fn every_name_normalize_accepts_reads_back_through_its_percent_token() {
+        for raw in [
+            "%regex.matched%",
+            "  a-b  ",
+            "%\u{434}\u{43e}\u{43d}\u{430}\u{442}%",
+            "\u{540d}\u{524d}.\u{ad6d}",
+            "trailing.",
+        ] {
+            let name = normalize_var_name(raw).unwrap();
+            let stack = stack_with(&[(name.as_str(), text("stored"))]);
+
+            assert_eq!(
+                stack.interpolate(&format!("<%{name}%>")),
+                "<stored>",
+                "input {raw:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_nested_path_reaches_a_dotted_output_when_a_shorter_root_does_not_hold_it() {
+        let name = normalize_var_name("%user.name%").unwrap();
+        let stack = stack_with(&[
+            ("user", object(&[("name", text("nested"))])),
+            (name.as_str(), object(&[("first", text("flat"))])),
+        ]);
+
+        assert_eq!(stack.interpolate("%user.name.first%"), "flat");
     }
 
     fn telemetry_carrying_interpolated_text() -> SubActionTelemetry {

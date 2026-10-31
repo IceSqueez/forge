@@ -23,7 +23,8 @@ pub(crate) fn donation_from_wire(
         CurrencyCode::parse(&wire.currency).map_err(|error| invalid(error.to_string()))?;
     let amount = MoneyAmount::parse_decimal(&wire.amount.as_text(), currency)
         .map_err(|error| invalid(error.to_string()))?;
-    let occurred_at = created_at_instant(&wire.created_at).map_err(invalid)?;
+    let occurred_at =
+        created_at_instant(&wire.created_at).map_err(|error| invalid(error.to_string()))?;
     let donor = if wire.is_published == Some(false) {
         Donor::Hidden
     } else {
@@ -44,19 +45,37 @@ pub(crate) fn donation_from_wire(
     })
 }
 
-pub(crate) fn created_at_instant(text: &str) -> Result<OffsetDateTime, String> {
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum CreatedAtError {
+    #[error("createdAt {0:?} is not YYYY-MM-DD HH:MM:SS")]
+    Malformed(String),
+
+    #[error("time zone {DONATELLO_ASSUMED_TIME_ZONE} is unknown")]
+    UnknownTimeZone,
+
+    #[error("createdAt {0:?} does not exist in {DONATELLO_ASSUMED_TIME_ZONE}")]
+    NonexistentLocalTime(String),
+
+    #[error("offset of createdAt {0:?} is out of range")]
+    OffsetOutOfRange(String),
+
+    #[error("createdAt {0:?} is out of range")]
+    OutOfRange(String),
+}
+
+pub(crate) fn created_at_instant(text: &str) -> Result<OffsetDateTime, CreatedAtError> {
     let wall_clock = DateTime::strptime(CREATED_AT_FORMAT, text.trim())
-        .map_err(|_| format!("createdAt {text:?} is not YYYY-MM-DD HH:MM:SS"))?;
-    let zone = TimeZone::get(DONATELLO_ASSUMED_TIME_ZONE)
-        .map_err(|_| format!("time zone {DONATELLO_ASSUMED_TIME_ZONE} is unknown"))?;
-    let zoned = wall_clock.to_zoned(zone).map_err(|_| {
-        format!("createdAt {text:?} does not exist in {DONATELLO_ASSUMED_TIME_ZONE}")
-    })?;
+        .map_err(|_| CreatedAtError::Malformed(text.to_owned()))?;
+    let zone =
+        TimeZone::get(DONATELLO_ASSUMED_TIME_ZONE).map_err(|_| CreatedAtError::UnknownTimeZone)?;
+    let zoned = wall_clock
+        .to_zoned(zone)
+        .map_err(|_| CreatedAtError::NonexistentLocalTime(text.to_owned()))?;
     let offset = UtcOffset::from_whole_seconds(zoned.offset().seconds())
-        .map_err(|_| format!("offset of createdAt {text:?} is out of range"))?;
+        .map_err(|_| CreatedAtError::OffsetOutOfRange(text.to_owned()))?;
     OffsetDateTime::from_unix_timestamp(zoned.timestamp().as_second())
         .map(|instant| instant.to_offset(offset))
-        .map_err(|_| format!("createdAt {text:?} is out of range"))
+        .map_err(|_| CreatedAtError::OutOfRange(text.to_owned()))
 }
 
 #[cfg(test)]
@@ -65,7 +84,7 @@ mod tests {
     use serde_json::{Value, json};
     use time::macros::datetime;
 
-    use super::donation_from_wire;
+    use super::{CreatedAtError, created_at_instant, donation_from_wire};
     use crate::error::DonatelloError;
     use crate::wire::DonateWire;
 
@@ -223,5 +242,41 @@ mod tests {
             let donation = normalize(json!({ "message": message.clone() })).unwrap();
             assert_eq!(donation.message.as_deref(), expected, "message {message}");
         }
+    }
+
+    #[test]
+    fn a_created_at_failure_quotes_the_wire_text_and_names_the_assumed_zone() {
+        for (error, expected) in [
+            (
+                CreatedAtError::Malformed("31.10.2026".to_owned()),
+                r#"createdAt "31.10.2026" is not YYYY-MM-DD HH:MM:SS"#,
+            ),
+            (
+                CreatedAtError::UnknownTimeZone,
+                "time zone Europe/Kyiv is unknown",
+            ),
+            (
+                CreatedAtError::NonexistentLocalTime("2026-03-29 03:30:00".to_owned()),
+                r#"createdAt "2026-03-29 03:30:00" does not exist in Europe/Kyiv"#,
+            ),
+            (
+                CreatedAtError::OffsetOutOfRange("x".to_owned()),
+                r#"offset of createdAt "x" is out of range"#,
+            ),
+            (
+                CreatedAtError::OutOfRange("x".to_owned()),
+                r#"createdAt "x" is out of range"#,
+            ),
+        ] {
+            assert_eq!(error.to_string(), expected);
+        }
+    }
+
+    #[test]
+    fn a_created_at_outside_the_wire_format_is_malformed_and_keeps_the_untrimmed_text() {
+        assert!(matches!(
+            created_at_instant(" 2026-10-31T12:00:00Z "),
+            Err(CreatedAtError::Malformed(text)) if text == " 2026-10-31T12:00:00Z "
+        ));
     }
 }

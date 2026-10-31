@@ -104,7 +104,7 @@ impl EventPublisher for NullPublisher {
 struct UnusedGlobals;
 
 fn unused() -> ScriptGlobalsError {
-    ScriptGlobalsError("globals are not under test".to_owned())
+    ScriptGlobalsError::DescribeOnly
 }
 
 #[async_trait::async_trait]

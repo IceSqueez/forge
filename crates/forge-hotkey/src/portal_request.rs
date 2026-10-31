@@ -9,6 +9,8 @@ use tokio_stream::StreamExt;
 use zbus::Connection;
 use zbus::{DynamicType, OwnedObjectPath, OwnedVariant, Variant};
 
+use crate::HotkeyError;
+
 pub(crate) const PORTAL_DESTINATION: &str = "org.freedesktop.portal.Desktop";
 pub(crate) const PORTAL_OBJECT_PATH: &str = "/org/freedesktop/portal/desktop";
 const REQUEST_INTERFACE: &str = "org.freedesktop.portal.Request";
@@ -28,14 +30,12 @@ pub(crate) enum PortalOutcome {
 impl PortalOutcome {
     pub(crate) fn into_results(
         self,
-        method: &str,
-    ) -> Result<HashMap<String, OwnedVariant>, String> {
+        method: &'static str,
+    ) -> Result<HashMap<String, OwnedVariant>, HotkeyError> {
         match self {
             Self::Success(results) => Ok(results),
-            Self::Cancelled => Err(format!("{method} was cancelled on the desktop")),
-            Self::Ended(code) => Err(format!(
-                "{method} was ended by the desktop (response {code})"
-            )),
+            Self::Cancelled => Err(HotkeyError::PortalCancelled { method }),
+            Self::Ended(code) => Err(HotkeyError::PortalEnded { method, code }),
         }
     }
 }
@@ -130,7 +130,10 @@ mod tests {
             (PortalOutcome::Cancelled, "cancelled"),
             (PortalOutcome::Ended(2), "response 2"),
         ] {
-            let err = outcome.into_results("BindShortcuts").unwrap_err();
+            let err = outcome
+                .into_results("BindShortcuts")
+                .unwrap_err()
+                .to_string();
             assert!(
                 err.contains("BindShortcuts") && err.contains(expected),
                 "unexpected message {err:?}"

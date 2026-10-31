@@ -106,10 +106,14 @@ fn whispers_unsupported_reason(channel: &str) -> String {
 
 const BLANK_WHISPER_RECIPIENT: &str = "a whisper needs a recipient login";
 
-fn sender_of(request: &ChatSendRequest) -> Result<SenderPreference, String> {
+#[derive(Debug, thiserror::Error)]
+#[error("{}", unknown_sender_reason(.0))]
+struct UnknownSender(String);
+
+fn sender_of(request: &ChatSendRequest) -> Result<SenderPreference, UnknownSender> {
     match request.sender.as_deref() {
         None => Ok(SenderPreference::Default),
-        Some(raw) => SenderPreference::parse(raw).ok_or_else(|| unknown_sender_reason(raw)),
+        Some(raw) => SenderPreference::parse(raw).ok_or_else(|| UnknownSender(raw.to_owned())),
     }
 }
 
@@ -217,8 +221,8 @@ pub fn spawn_chat_send_router(
             let caused_by = event.id;
             let sender = match sender_of(&request) {
                 Ok(sender) => sender,
-                Err(reason) => {
-                    bus.publish(route.failed(reason, Some(caused_by)));
+                Err(unknown) => {
+                    bus.publish(route.failed(unknown.to_string(), Some(caused_by)));
                     continue;
                 }
             };

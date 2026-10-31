@@ -1,8 +1,10 @@
 use std::time::{Duration, SystemTime};
 
+use forge_discord::DISCORD_CRED_PREFIX;
 use forge_overlay::{OverlayKindRegistry, register_builtin_kinds};
 use forge_platform_twitch::credentials::{StoredCredential, store_credential};
 use forge_platform_twitch::vocabulary::trigger_ids::CHAT_COMMAND;
+use forge_registry::{COMMAND_CASE_SENSITIVE_KEY, COMMAND_PHRASE_KEY};
 use forge_runtime::{OVERLAY_SEND_KIND_ID, OVERLAY_TARGET_KEY};
 use forge_server::ServerSettings;
 use forge_storage::{
@@ -31,7 +33,6 @@ use forge_donatello::DONATELLO_CREDENTIAL_ID;
 use forge_monobank::MONOBANK_CREDENTIAL_ID;
 
 const SERVER_BIND_ADDRESS: &str = "127.0.0.1";
-const DISCORD_CREDENTIAL_PREFIX: &str = "discord:";
 const OBS_HOST: &str = "127.0.0.1";
 const VTUBE_HOST: &str = "127.0.0.1";
 const TWITCH_TOKEN_LIFETIME: Duration = Duration::from_secs(10 * 365 * 24 * 60 * 60);
@@ -255,7 +256,7 @@ async fn seed_discord_webhook(
     let credential = serde_json::json!({ "url": webhook.url }).to_string();
     provider
         .store(
-            &CredentialId::new(format!("{DISCORD_CREDENTIAL_PREFIX}{}", webhook.name)),
+            &CredentialId::new(format!("{DISCORD_CRED_PREFIX}{}", webhook.name)),
             &credential,
         )
         .await
@@ -388,8 +389,11 @@ async fn seed_chat_command(
     overlays: &[SeededOverlay],
 ) -> Result<SeededCommand, EmulatorError> {
     let mut overrides = TriggerConfig::new();
-    overrides.insert("phrase".to_owned(), Variant::String(command.phrase.clone()));
-    overrides.insert("case_sensitive".to_owned(), Variant::Bool(false));
+    overrides.insert(
+        COMMAND_PHRASE_KEY.to_owned(),
+        Variant::String(command.phrase.clone()),
+    );
+    overrides.insert(COMMAND_CASE_SENSITIVE_KEY.to_owned(), Variant::Bool(false));
     let triggered = seed_triggered_action(
         provider,
         TriggeredAction {

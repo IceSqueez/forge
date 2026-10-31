@@ -92,7 +92,7 @@ impl AudioSink for FanOutSink {
             .into_iter()
             .map(|result| match result {
                 Ok(playback) => RouteStart::Started(playback),
-                Err(e) => RouteStart::Refused(e.to_string()),
+                Err(e) => RouteStart::Refused(e),
             })
             .collect();
 
@@ -116,7 +116,7 @@ impl AudioSink for FanOutSink {
                     .iter()
                     .filter(|verdict| verdict.started)
                     .filter_map(|verdict| verdict.outcome.as_ref().err());
-                warn_failed_routes(settled_failures.map(String::as_str));
+                warn_failed_routes(settled_failures);
                 Ok(())
             } else {
                 Err(route_failure(
@@ -164,12 +164,12 @@ fn lock_started(
 
 enum RouteStart {
     Started(ControlledPlayback),
-    Refused(String),
+    Refused(AudioError),
 }
 
 struct RouteVerdict {
     started: bool,
-    outcome: Result<(), String>,
+    outcome: Result<(), AudioError>,
 }
 
 impl RouteStart {
@@ -184,14 +184,14 @@ impl RouteStart {
         }
     }
 
-    fn refusal(&self) -> Option<&str> {
+    fn refusal(&self) -> Option<&AudioError> {
         match self {
             Self::Started(_) => None,
             Self::Refused(reason) => Some(reason),
         }
     }
 
-    fn into_refusal(self) -> Option<String> {
+    fn into_refusal(self) -> Option<AudioError> {
         match self {
             Self::Started(_) => None,
             Self::Refused(reason) => Some(reason),
@@ -202,7 +202,7 @@ impl RouteStart {
         match self {
             Self::Started(playback) => RouteVerdict {
                 started: true,
-                outcome: playback.await.map_err(|e| e.to_string()),
+                outcome: playback.await,
             },
             Self::Refused(reason) => RouteVerdict {
                 started: false,
@@ -222,28 +222,29 @@ fn settle(outcomes: Vec<Result<(), AudioError>>) -> Result<(), AudioError> {
     for outcome in outcomes {
         match outcome {
             Ok(()) => played = true,
-            Err(e) => reasons.push(e.to_string()),
+            Err(e) => reasons.push(e),
         }
     }
 
     if played {
-        warn_failed_routes(reasons.iter().map(String::as_str));
+        warn_failed_routes(&reasons);
         Ok(())
     } else {
         Err(route_failure(reasons))
     }
 }
 
-fn warn_failed_routes<'a>(reasons: impl IntoIterator<Item = &'a str>) {
+fn warn_failed_routes<'a>(reasons: impl IntoIterator<Item = &'a AudioError>) {
     for reason in reasons {
         tracing::warn!(error = %reason, "audio route failed; playback continues on the surviving routes");
     }
 }
 
-fn route_failure(reasons: Vec<String>) -> AudioError {
-    if reasons.is_empty() {
+fn route_failure(refusals: Vec<AudioError>) -> AudioError {
+    if refusals.is_empty() {
         AudioError::NoRoute
     } else {
+        let reasons: Vec<String> = refusals.iter().map(ToString::to_string).collect();
         AudioError::AllRoutesFailed(reasons.join(ROUTE_REASON_SEPARATOR))
     }
 }

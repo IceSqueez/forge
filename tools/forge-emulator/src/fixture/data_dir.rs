@@ -3,8 +3,8 @@ use std::path::{Path, PathBuf};
 
 use crate::EmulatorError;
 
-pub const DATA_DIR_VARIABLE: &str = "FORGE_DATA_DIR";
-pub const KEY_FILE_VARIABLE: &str = "FORGE_CREDENTIAL_KEY_FILE";
+pub const DATA_DIR_VARIABLE: &str = forge_paths::DATA_DIR_ENV;
+pub const KEY_FILE_VARIABLE: &str = forge_paths::CREDENTIALS_KEY_FILE_ENV;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ForgeDataDir {

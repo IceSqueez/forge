@@ -22,8 +22,6 @@ pub struct MethodDescriptor {
     pub doc: Option<&'static str>,
 }
 
-const DESCRIBE_ONLY_REASON: &str = "the script catalog never runs script functions";
-
 struct DescribeOnly;
 
 impl EventPublisher for DescribeOnly {
@@ -33,7 +31,7 @@ impl EventPublisher for DescribeOnly {
 #[async_trait::async_trait]
 impl ScriptGlobals for DescribeOnly {
     async fn get(&self, _key: &str) -> Result<Option<Variant>, ScriptGlobalsError> {
-        Err(describe_only())
+        Err(ScriptGlobalsError::DescribeOnly)
     }
 
     async fn set(
@@ -43,7 +41,7 @@ impl ScriptGlobals for DescribeOnly {
         _persisted: bool,
         _caused_by: EventId,
     ) -> Result<Option<Variant>, ScriptGlobalsError> {
-        Err(describe_only())
+        Err(ScriptGlobalsError::DescribeOnly)
     }
 
     async fn increment(
@@ -52,7 +50,7 @@ impl ScriptGlobals for DescribeOnly {
         _delta: i64,
         _caused_by: EventId,
     ) -> Result<GlobalIncrement, ScriptGlobalsError> {
-        Err(describe_only())
+        Err(ScriptGlobalsError::DescribeOnly)
     }
 
     async fn delete(
@@ -60,12 +58,8 @@ impl ScriptGlobals for DescribeOnly {
         _key: &str,
         _caused_by: EventId,
     ) -> Result<GlobalDeletion, ScriptGlobalsError> {
-        Err(describe_only())
+        Err(ScriptGlobalsError::DescribeOnly)
     }
-}
-
-fn describe_only() -> ScriptGlobalsError {
-    ScriptGlobalsError(DESCRIBE_ONLY_REASON.to_owned())
 }
 
 static CATALOG: LazyLock<Vec<MethodDescriptor>> = LazyLock::new(|| {

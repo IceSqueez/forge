@@ -6,6 +6,7 @@ mod datetime_text;
 mod donation;
 mod error;
 mod execution;
+mod hex;
 mod ids;
 mod integration;
 mod latest;
@@ -46,6 +47,7 @@ pub use execution::{
     ExecutionContext, ExecutionMetadata, ExecutionOutcome, SubActionOutcome, SubActionTelemetry,
     integration_disabled_message, whispers_unsupported_message,
 };
+pub use hex::to_lower_hex;
 pub use ids::{ActionId, ClipId, DEFAULT_QUEUE_ID, EventId, QueueId, ScriptId, TriggerInstanceId};
 pub use integration::{IntegrationAvailability, IntegrationId};
 pub use latest::{

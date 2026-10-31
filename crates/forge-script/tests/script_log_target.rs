@@ -1,4 +1,3 @@
-#![allow(clippy::unwrap_used)]
 use forge_events::test_support::NullPublisher;
 use std::sync::Arc;
 use std::time::{Duration, Instant};

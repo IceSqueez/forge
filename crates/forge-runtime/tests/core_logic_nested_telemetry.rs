@@ -1,4 +1,4 @@
-#![allow(clippy::unwrap_used)]
+#![expect(clippy::unwrap_used, reason = "test fixtures")]
 mod common;
 use common::chain::{
     args_set, case, chain_step, if_cfg, inline, loop_cfg, run_top, step, switch_cfg,

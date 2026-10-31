@@ -1,4 +1,3 @@
-#![allow(clippy::expect_used)]
 use forge_storage::{
     BlocklistMode, DataProvider, FilterRule, FilterRuleKind, SkipRegex, TtsFiltersRepo,
     TtsPipelineSettings, UrlMode,

@@ -32,12 +32,6 @@ fn replayed(mut event: Event) -> Event {
     event
 }
 
-async fn wait_until_subscribed() {
-    for _ in 0..16 {
-        tokio::task::yield_now().await;
-    }
-}
-
 fn tracker_recording_into(tx: mpsc::UnboundedSender<Recorded>) -> MockViewerRepo {
     let mut repo = MockViewerRepo::new();
     repo.expect_record_messages().returning(move |messages| {
@@ -63,7 +57,6 @@ async fn records_chat_activity_for_each_live_platforms_real_chat_kind() {
     let (tx, mut rx) = mpsc::unbounded_channel::<Recorded>();
 
     spawn_viewer_tracker(Arc::clone(&bus), Arc::new(tracker_recording_into(tx)));
-    wait_until_subscribed().await;
 
     let cases: [(EventSource, &str, PlatformId, &str, &str); 3] = [
         (
@@ -109,7 +102,6 @@ async fn skips_events_that_are_not_recordable_chat_messages() {
     let (tx, mut rx) = mpsc::unbounded_channel::<Recorded>();
 
     spawn_viewer_tracker(Arc::clone(&bus), Arc::new(tracker_recording_into(tx)));
-    wait_until_subscribed().await;
 
     let skipped = [
         user_message(

@@ -1,4 +1,3 @@
-#![allow(clippy::unwrap_used)]
 use forge_storage::DATABASE_FILE_NAME;
 
 use forge_paths::CREDENTIALS_KEY_FILE_NAME;

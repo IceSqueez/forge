@@ -1,4 +1,4 @@
-#![allow(clippy::expect_used)]
+#![expect(clippy::expect_used, reason = "test fixtures")]
 use async_trait::async_trait;
 use forge_storage::settings::core_settings::{INTEGRATION_ENABLED, SERVER_OVERLAY_ROOT, THEME};
 use forge_storage::test_support::{FAIL_CLOSED_CLASSES, MemorySettings, StoredSettingRow};

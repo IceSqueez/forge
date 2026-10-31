@@ -1,5 +1,3 @@
-#![doc = "Sandboxed rhai engine wrapper: ForgeApi, Engine, sandbox limits."]
-
 mod api;
 mod arg_binding;
 mod catalog;

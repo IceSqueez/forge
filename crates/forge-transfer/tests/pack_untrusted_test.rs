@@ -1,4 +1,4 @@
-#![allow(clippy::unwrap_used)]
+#![expect(clippy::unwrap_used, reason = "test fixtures")]
 mod common;
 use common::{empty_documents, entry, file_named_anywhere, sha256_hex};
 

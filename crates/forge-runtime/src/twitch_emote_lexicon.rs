@@ -1,5 +1,5 @@
 use forge_types::RecoverMutex;
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use forge_events::{Event, EventSource};
@@ -11,28 +11,42 @@ use crate::delivery::TWITCH_EMOTE_LEXICON;
 use forge_events::Delivery;
 
 pub(crate) const LEARNED_TWITCH_EMOTE_CAPACITY: usize = 4096;
+const MAX_SIGHTINGS: usize = 2 * LEARNED_TWITCH_EMOTE_CAPACITY;
 
 #[derive(Default)]
 struct LearnedCodes {
-    recency: VecDeque<String>,
-    known: HashSet<String>,
+    sightings: VecDeque<(u64, String)>,
+    last_seen: HashMap<String, u64>,
+    next_sighting: u64,
 }
 
 impl LearnedCodes {
     fn learn(&mut self, code: String) {
-        if self.known.contains(&code) {
-            if let Some(position) = self.recency.iter().position(|seen| *seen == code) {
-                self.recency.remove(position);
+        let sighting = self.next_sighting;
+        self.next_sighting += 1;
+        self.last_seen.insert(code.clone(), sighting);
+        self.sightings.push_back((sighting, code));
+        while self.last_seen.len() > LEARNED_TWITCH_EMOTE_CAPACITY {
+            let Some((sighting, code)) = self.sightings.pop_front() else {
+                break;
+            };
+            if self.is_latest(sighting, &code) {
+                self.last_seen.remove(&code);
             }
-        } else {
-            self.known.insert(code.clone());
         }
-        self.recency.push_back(code);
-        while self.recency.len() > LEARNED_TWITCH_EMOTE_CAPACITY {
-            if let Some(evicted) = self.recency.pop_front() {
-                self.known.remove(&evicted);
-            }
+        if self.sightings.len() > MAX_SIGHTINGS {
+            let last_seen = &self.last_seen;
+            self.sightings
+                .retain(|(sighting, code)| last_seen.get(code) == Some(sighting));
         }
+    }
+
+    fn is_latest(&self, sighting: u64, code: &str) -> bool {
+        self.last_seen.get(code) == Some(&sighting)
+    }
+
+    fn knows(&self, code: &str) -> bool {
+        self.last_seen.contains_key(code)
     }
 }
 
@@ -58,7 +72,7 @@ impl TwitchEmoteLexicon {
         let learned = self.learned();
         let mut found: Vec<String> = Vec::new();
         for word in text.split_whitespace() {
-            if learned.known.contains(word) && !found.iter().any(|code| code == word) {
+            if learned.knows(word) && !found.iter().any(|code| code == word) {
                 found.push(word.to_owned());
             }
         }

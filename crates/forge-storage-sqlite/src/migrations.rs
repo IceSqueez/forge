@@ -2,6 +2,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use forge_paths::BACKUPS_DIR_NAME;
+use forge_types::to_lower_hex;
 use rand::rand_core::Rng;
 use sqlx::SqliteConnection;
 use time::OffsetDateTime;
@@ -144,7 +145,7 @@ pub async fn classify(conn: &mut SqliteConnection) -> Result<JournalState, Sqlit
                 frozen.version
             )));
         }
-        if !frozen.matches(&to_hex(checksum)) {
+        if !frozen.matches(&to_lower_hex(checksum)) {
             return Err(unrecognized(format!(
                 "checksum of migration {version} differs from the shipped migration"
             )));
@@ -274,7 +275,7 @@ fn snapshot_file_name(now: OffsetDateTime) -> String {
         now.hour(),
         now.minute(),
         now.second(),
-        to_hex(&suffix),
+        to_lower_hex(&suffix),
     )
 }
 
@@ -293,18 +294,6 @@ async fn sync_file(path: &Path) -> io::Result<()> {
         .await?
         .sync_all()
         .await
-}
-
-fn to_hex(bytes: &[u8]) -> String {
-    use std::fmt::Write;
-    bytes.iter().fold(String::new(), |mut hex, byte| {
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "writing to a String cannot fail"
-        )]
-        let _ = write!(hex, "{byte:02x}");
-        hex
-    })
 }
 
 fn unrecognized(reason: String) -> SqliteStorageError {

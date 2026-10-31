@@ -1,4 +1,4 @@
-#![allow(clippy::expect_used)]
+#![expect(clippy::expect_used, reason = "test fixtures")]
 mod common;
 use forge_storage_sqlite::{MIGRATIONS, apply_migrations, connect};
 use sqlx::SqlitePool;

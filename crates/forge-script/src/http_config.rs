@@ -2,6 +2,7 @@ use forge_storage::{SettingsRepo, StorageError, read_setting, read_setting_or_de
 
 use crate::settings;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScriptHttpConfig {
     pub allowed_domains: Vec<String>,
     pub max_calls_per_script: u32,

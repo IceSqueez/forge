@@ -1,20 +1,15 @@
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 
-use tokio::sync::{Notify, watch};
+use tokio::sync::watch;
 
 #[derive(Debug, Clone)]
 pub struct TransferExclusivity {
-    held: Arc<AtomicBool>,
-    released: Arc<Notify>,
-    held_signal: Arc<watch::Sender<bool>>,
+    held: Arc<watch::Sender<bool>>,
 }
 
 #[derive(Debug)]
 pub struct TransferGuard {
-    held: Arc<AtomicBool>,
-    released: Arc<Notify>,
-    held_signal: Arc<watch::Sender<bool>>,
+    held: Arc<watch::Sender<bool>>,
 }
 
 #[derive(Debug)]
@@ -29,9 +24,7 @@ impl TransferHeldWatch {
 impl Default for TransferExclusivity {
     fn default() -> Self {
         Self {
-            held: Arc::default(),
-            released: Arc::default(),
-            held_signal: Arc::new(watch::Sender::new(false)),
+            held: Arc::new(watch::Sender::new(false)),
         }
     }
 }
@@ -42,45 +35,38 @@ impl TransferExclusivity {
     }
 
     pub fn try_acquire(&self) -> Option<TransferGuard> {
-        self.held
-            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-            .ok()
-            .map(|_| {
-                self.held_signal.send_replace(true);
-                TransferGuard {
-                    held: Arc::clone(&self.held),
-                    released: Arc::clone(&self.released),
-                    held_signal: Arc::clone(&self.held_signal),
-                }
-            })
+        let acquired = self.held.send_if_modified(|held| {
+            let was_free = !*held;
+            *held = true;
+            was_free
+        });
+        acquired.then(|| TransferGuard {
+            held: Arc::clone(&self.held),
+        })
     }
 
     pub async fn acquire_when_free(&self) -> TransferGuard {
+        let mut held = self.held.subscribe();
         loop {
-            let released = self.released.notified();
-            tokio::pin!(released);
-            released.as_mut().enable();
             if let Some(guard) = self.try_acquire() {
                 return guard;
             }
-            released.await;
+            drop(held.wait_for(|held| !*held).await);
         }
     }
 
     pub fn is_held(&self) -> bool {
-        self.held.load(Ordering::Acquire)
+        *self.held.borrow()
     }
 
     pub fn watch_held(&self) -> TransferHeldWatch {
-        TransferHeldWatch(self.held_signal.subscribe())
+        TransferHeldWatch(self.held.subscribe())
     }
 }
 
 impl Drop for TransferGuard {
     fn drop(&mut self) {
-        self.held.store(false, Ordering::Release);
-        self.held_signal.send_replace(false);
-        self.released.notify_waiters();
+        self.held.send_replace(false);
     }
 }
 

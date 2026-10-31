@@ -1,4 +1,4 @@
-#![allow(clippy::expect_used)]
+#![expect(clippy::expect_used, reason = "test fixtures")]
 use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;

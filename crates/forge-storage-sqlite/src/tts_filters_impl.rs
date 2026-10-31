@@ -6,6 +6,7 @@ use forge_storage::{
 
 use crate::error::SqliteStorageError;
 use crate::pool::SqlitePools;
+use crate::wire_label::{parse_label, wire_label};
 
 pub struct SqliteTtsFiltersRepo {
     db: SqlitePools,
@@ -157,6 +158,8 @@ struct SettingsRow {
     repeat_of_recent_window: i64,
     output_read_display_name_first: i64,
     output_emote_to_word: i64,
+    #[sqlx(flatten)]
+    ext: SettingsExtRow,
 }
 
 #[derive(sqlx::FromRow)]
@@ -173,17 +176,14 @@ struct SettingsExtRow {
     output_max_duration_enabled: i64,
 }
 
-fn decode_settings_row(
-    row: SettingsRow,
-    ext: SettingsExtRow,
-) -> Result<TtsPipelineSettings, StorageError> {
-    let url_mode: UrlMode = serde_json::from_str(&format!("\"{}\"", row.url_mode))
+fn decode_settings_row(row: SettingsRow) -> Result<TtsPipelineSettings, StorageError> {
+    let ext = row.ext;
+    let url_mode: UrlMode = parse_label(&row.url_mode)
         .map_err(|_| StorageError::Parse(format!("unknown url_mode: {}", row.url_mode)))?;
 
-    let blocklist_mode: BlocklistMode =
-        serde_json::from_str(&format!("\"{}\"", row.blocklist_mode)).map_err(|_| {
-            StorageError::Parse(format!("unknown blocklist_mode: {}", row.blocklist_mode))
-        })?;
+    let blocklist_mode: BlocklistMode = parse_label(&row.blocklist_mode).map_err(|_| {
+        StorageError::Parse(format!("unknown blocklist_mode: {}", row.blocklist_mode))
+    })?;
 
     let bot_accounts: Vec<String> = serde_json::from_str(&row.bot_accounts).map_err(|_| {
         StorageError::Parse(format!("invalid bot_accounts json: {}", row.bot_accounts))
@@ -259,14 +259,8 @@ pub(crate) async fn write_pipeline_settings<'e>(
     executor: impl sqlx::SqliteExecutor<'e>,
     settings: &TtsPipelineSettings,
 ) -> Result<(), StorageError> {
-    let url_mode_str = serde_json::to_string(&settings.url_mode)
-        .map_err(StorageError::Serialization)?
-        .trim_matches('"')
-        .to_owned();
-    let blocklist_mode_str = serde_json::to_string(&settings.blocklist_mode)
-        .map_err(StorageError::Serialization)?
-        .trim_matches('"')
-        .to_owned();
+    let url_mode_str = wire_label(&settings.url_mode)?;
+    let blocklist_mode_str = wire_label(&settings.blocklist_mode)?;
     let bot_accounts_json =
         serde_json::to_string(&settings.bot_accounts).map_err(StorageError::Serialization)?;
     let skip_custom_regexes_json = serde_json::to_string(&settings.skip_custom_regexes)
@@ -373,7 +367,11 @@ impl TtsFiltersRepo for SqliteTtsFiltersRepo {
                     skip_contains_url, skip_starts_with_bang, skip_from_bot_accounts,
                     bot_accounts, skip_longer_than, longer_than_max_chars,
                     skip_repeat_of_recent, repeat_of_recent_window,
-                    output_read_display_name_first, output_emote_to_word
+                    output_read_display_name_first, output_emote_to_word,
+                    skip_prefix, skip_emote_only, skip_mostly_non_latin,
+                    skip_custom_regexes, output_sanitize_punctuation,
+                    output_max_duration_secs, output_language_aware_voice, strip_emoji,
+                    skip_prefix_enabled, output_max_duration_enabled
              FROM tts_pipeline_settings WHERE id = 1",
         )
         .fetch_optional(self.db.reader())
@@ -384,18 +382,7 @@ impl TtsFiltersRepo for SqliteTtsFiltersRepo {
             return Ok(TtsPipelineSettings::default());
         };
 
-        let ext: SettingsExtRow = sqlx::query_as(
-            "SELECT skip_prefix, skip_emote_only, skip_mostly_non_latin,
-                    skip_custom_regexes, output_sanitize_punctuation,
-                    output_max_duration_secs, output_language_aware_voice, strip_emoji,
-                    skip_prefix_enabled, output_max_duration_enabled
-             FROM tts_pipeline_settings WHERE id = 1",
-        )
-        .fetch_one(self.db.reader())
-        .await
-        .map_err(SqliteStorageError::Sqlx)?;
-
-        decode_settings_row(row, ext)
+        decode_settings_row(row)
     }
 
     async fn set_pipeline_settings(

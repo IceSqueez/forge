@@ -11,7 +11,6 @@ use time::OffsetDateTime;
 
 use crate::bundle::cancel::CancelFlag;
 use crate::bundle::category::BackupCategory;
-use crate::bundle::digest::to_hex;
 use crate::bundle::manifest::{
     BUNDLE_FORMAT_VERSION, BundleKind, ENCRYPTED_PAYLOAD_ENTRY_NAME, FORGE_VERSION, FullManifest,
     MANIFEST_ENTRY_NAME, PublicManifest,
@@ -21,13 +20,14 @@ use crate::bundle::naming::{
 };
 use crate::bundle::passphrase::Passphrase;
 use crate::bundle::payload::{
-    PayloadFile, append_bytes, append_file, append_verified, collect_payload,
+    PayloadFile, append_bytes, append_file, append_verified, collect_payload, seal_archive,
 };
 use crate::bundle::protection::Protection;
 use crate::bundle::schedule_key::ScheduleKey;
 use crate::error::TransferError;
 use crate::full::snapshot::with_database_snapshot;
 use forge_durable::create_private;
+use forge_types::to_lower_hex;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BackupDestination {
@@ -237,7 +237,7 @@ fn content_fingerprint(input: &BundleInput<'_>, files: &[PayloadFile]) -> String
         hasher.update(file.entry.size.to_be_bytes());
         hasher.update(&file.entry.sha256_hex);
     }
-    to_hex(&hasher.finalize())
+    to_lower_hex(&hasher.finalize())
 }
 
 fn write_bundle(input: BundleInput<'_>) -> Result<BundleOutcome, TransferError> {
@@ -326,8 +326,5 @@ fn write_outer(
         &serde_json::to_vec(manifest).map_err(std::io::Error::from)?,
     )?;
     append_file(&mut builder, ENCRYPTED_PAYLOAD_ENTRY_NAME, ciphertext)?;
-    let mut sink = builder.into_inner()?.finish()?;
-    sink.flush()?;
-    sink.get_ref().sync_all()?;
-    Ok(())
+    seal_archive(builder)
 }

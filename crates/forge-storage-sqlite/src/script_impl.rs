@@ -12,10 +12,10 @@ use crate::epoch::{epoch_ms_now, from_epoch_ms};
 use crate::error::SqliteStorageError;
 use crate::pool::SqlitePools;
 use crate::script_name_steps::{ScriptNameEdit, ScriptNameUses, apply_script_name_edit};
+use crate::wire_label::parse_label;
 
 fn parse_script_id(s: &str) -> Result<ScriptId, SqliteStorageError> {
-    serde_json::from_str(&format!("\"{s}\""))
-        .map_err(|e| SqliteStorageError::Decode(format!("invalid script id '{s}': {e}")))
+    parse_label(s).map_err(|e| SqliteStorageError::Decode(format!("invalid script id '{s}': {e}")))
 }
 
 fn decode_contract(json: &str) -> Result<ScriptContract, SqliteStorageError> {

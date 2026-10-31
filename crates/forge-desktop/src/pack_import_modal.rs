@@ -400,7 +400,7 @@ impl PackImportModal {
                     .child(item.name.clone()),
             )
             .child(badges);
-        if item.conflict != PackConflict::None {
+        if item.conflict != PackConflict::Clear {
             row = row.child(self.render_resolution(index, item, palette, cx));
         }
         row.into_any_element()
@@ -621,7 +621,7 @@ fn card(border: Rgba, background: Rgba, density: Density) -> gpui::Div {
 
 fn conflict_badge(conflict: &PackConflict, palette: &ForgePalette) -> AnyElement {
     match conflict {
-        PackConflict::None => tag(
+        PackConflict::Clear => tag(
             tr!("pack_import_conflict_none"),
             palette.text_faint,
             palette,

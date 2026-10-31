@@ -1,4 +1,4 @@
-#![allow(clippy::expect_used)]
+#![expect(clippy::expect_used, reason = "test fixtures")]
 mod common;
 use forge_events::Event;
 use forge_events::test_support::NullPublisher;

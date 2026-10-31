@@ -5,11 +5,11 @@ use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use sha2::{Digest, Sha256};
 
-use crate::bundle::digest::to_hex;
 use crate::bundle::encryption::classify;
 use crate::bundle::limits::{ENCRYPT_SCRYPT_WORK_FACTOR, MAX_DECRYPT_SCRYPT_WORK_FACTOR};
 use crate::bundle::passphrase::Passphrase;
 use crate::error::TransferError;
+use forge_types::to_lower_hex;
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ScheduleKey {
@@ -31,7 +31,7 @@ impl ScheduleKey {
     }
 
     pub fn fingerprint(&self) -> String {
-        to_hex(&Sha256::digest(self.recipient.as_bytes()))
+        to_lower_hex(&Sha256::digest(self.recipient.as_bytes()))
     }
 }
 

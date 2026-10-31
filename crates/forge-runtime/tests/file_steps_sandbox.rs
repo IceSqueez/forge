@@ -1,4 +1,4 @@
-#![allow(clippy::unwrap_used, clippy::panic)]
+#![expect(clippy::panic, clippy::unwrap_used, reason = "test fixtures")]
 mod common;
 use forge_events::test_support::NullPublisher;
 use std::path::{Path, PathBuf};

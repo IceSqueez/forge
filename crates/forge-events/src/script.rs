@@ -3,6 +3,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::TypedEvent;
 
+pub const CUSTOM_EVENT_PREFIX: &str = "custom.";
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ScriptStarted {
     pub script_id: Option<ScriptId>,

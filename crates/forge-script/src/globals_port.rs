@@ -51,7 +51,7 @@ mod tests {
         assert!(matches!(error, ScriptError::Storage(_)));
         assert_eq!(
             error.to_string(),
-            "global 'hits' has type string, expected numeric"
+            "global 'hits' has type string, which this operation does not accept"
         );
     }
 }

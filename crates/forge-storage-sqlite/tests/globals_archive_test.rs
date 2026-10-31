@@ -1,4 +1,3 @@
-#![allow(clippy::expect_used)]
 use forge_storage::{GlobalsRepo, StorageError};
 use forge_storage_sqlite::SqliteGlobalsRepo;
 use forge_types::Variant;

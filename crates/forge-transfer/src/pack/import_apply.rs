@@ -115,11 +115,14 @@ pub async fn apply_pack_import(
             let journal = std::mem::take(&mut import.undo);
             match journal.roll_back(provider.as_ref()).await {
                 Ok(()) => Err(cause),
-                Err(failure) => Err(TransferError::PackRollbackIncomplete {
-                    cause: cause.to_string(),
-                    failure: failure.to_string(),
-                    snapshot: safety_snapshot,
-                }),
+                Err(failure) => {
+                    tracing::error!(%cause, %failure, "pack import rollback incomplete");
+                    Err(TransferError::PackRollbackIncomplete {
+                        cause: cause.to_string(),
+                        failure: failure.to_string(),
+                        snapshot: safety_snapshot,
+                    })
+                }
             }
         }
     }
@@ -211,7 +214,7 @@ fn preassigned_copy_id(kind: PackItemKind) -> Option<String> {
 
 fn mode_of(item: &PackPlanItem) -> (TargetMode, Option<&str>) {
     let local = match &item.conflict {
-        PackConflict::None => return (TargetMode::Create, None),
+        PackConflict::Clear => return (TargetMode::Create, None),
         PackConflict::IdMatch => item.key.id.as_str(),
         PackConflict::NameMatch { local_id } => local_id.as_str(),
     };

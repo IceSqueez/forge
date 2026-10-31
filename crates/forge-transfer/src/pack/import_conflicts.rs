@@ -32,7 +32,7 @@ fn conflict_of(id_matches: bool, name_match: Option<String>) -> PackConflict {
     match (id_matches, name_match) {
         (true, _) => PackConflict::IdMatch,
         (false, Some(local_id)) => PackConflict::NameMatch { local_id },
-        (false, None) => PackConflict::None,
+        (false, None) => PackConflict::Clear,
     }
 }
 
@@ -46,7 +46,7 @@ pub(crate) fn detect_conflicts(
             PackItemKind::Media,
             media.id.clone(),
             &media.label,
-            PackConflict::None,
+            PackConflict::Clear,
         ));
     }
     for queue in &documents.queues {
@@ -226,7 +226,7 @@ mod tests {
                     local_id: local.id.to_string(),
                 },
             ),
-            (queue("Elsewhere"), PackConflict::None),
+            (queue("Elsewhere"), PackConflict::Clear),
         ];
         for (pack, expected) in cases {
             let mut documents = no_documents();
@@ -259,7 +259,7 @@ mod tests {
                 },
                 true,
             ),
-            (script("fresh"), PackConflict::None, false),
+            (script("fresh"), PackConflict::Clear, false),
         ];
         for (pack, conflict, is_archived) in cases {
             let mut documents = no_documents();
@@ -279,7 +279,7 @@ mod tests {
         for (name, conflict, archived) in [
             ("live", PackConflict::IdMatch, false),
             ("old", PackConflict::IdMatch, true),
-            ("fresh", PackConflict::None, false),
+            ("fresh", PackConflict::Clear, false),
         ] {
             let mut documents = no_documents();
             documents.globals.push(GlobalDocument::of(&global(name)));
@@ -318,7 +318,7 @@ mod tests {
         );
         assert_eq!(
             trigger_conflict(&trigger(PLAIN_TRIGGER, "Other", true), &inventory).conflict,
-            PackConflict::None
+            PackConflict::Clear
         );
     }
 
@@ -333,7 +333,7 @@ mod tests {
         ] {
             assert_eq!(
                 trigger_conflict(&pack, &inventory).conflict,
-                PackConflict::None
+                PackConflict::Clear
             );
         }
     }
@@ -372,7 +372,7 @@ mod tests {
             ),
             (
                 action("fresh", queue_id, Vec::new()),
-                PackConflict::None,
+                PackConflict::Clear,
                 false,
             ),
         ];
@@ -436,7 +436,7 @@ mod tests {
         });
         assert_eq!(
             only_item(&documents, &PackInventory::default()).conflict,
-            PackConflict::None
+            PackConflict::Clear
         );
     }
 }

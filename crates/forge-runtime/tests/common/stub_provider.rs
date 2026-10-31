@@ -1,3 +1,4 @@
+#![expect(clippy::expect_used, reason = "test fixtures")]
 use std::path::Path;
 use std::sync::Arc;
 

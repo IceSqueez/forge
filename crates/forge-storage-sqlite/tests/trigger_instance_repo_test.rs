@@ -1,4 +1,4 @@
-#![allow(clippy::expect_used)]
+#![expect(clippy::expect_used, reason = "test fixtures")]
 use std::collections::{BTreeMap, BTreeSet};
 
 use forge_storage::{DataProvider, StorageError, TriggerChanges};

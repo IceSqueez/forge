@@ -1,4 +1,4 @@
-#![allow(clippy::unwrap_used, clippy::expect_used)]
+#![expect(clippy::expect_used, clippy::unwrap_used, reason = "test fixtures")]
 use std::collections::BTreeMap;
 
 use forge_storage::{ActionRepo, ScriptRecord, ScriptReferences, ScriptRepo, StorageError};

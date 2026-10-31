@@ -1,3 +1,4 @@
+#![expect(clippy::unwrap_used, reason = "test fixtures")]
 use std::collections::HashMap;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};

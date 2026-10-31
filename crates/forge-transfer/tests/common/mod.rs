@@ -1,4 +1,5 @@
-#![allow(dead_code, clippy::unwrap_used)]
+#![expect(clippy::unwrap_used, reason = "test fixtures")]
+#![allow(dead_code)]
 #![expect(
     clippy::panic,
     reason = "a failed child run must fail the calling test"

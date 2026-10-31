@@ -6,12 +6,13 @@ use forge_types::{ActionId, ExecutionContext, ExecutionMetadata};
 use time::OffsetDateTime;
 
 use crate::batch::insert_rows;
-use crate::epoch::{NANOS_PER_MILLI, to_epoch_ms};
+use crate::epoch::{from_epoch_ms, to_epoch_ms};
 use crate::error::SqliteStorageError;
 use crate::pool::SqlitePools;
+use crate::wire_label::{parse_label, wire_label};
 
 fn parse_action_id(s: &str) -> Result<ActionId, StorageError> {
-    serde_json::from_str(&format!("\"{s}\"")).map_err(|e| {
+    parse_label(s).map_err(|e| {
         StorageError::from(SqliteStorageError::Decode(format!(
             "invalid action id `{s}`: {e}"
         )))
@@ -58,10 +59,7 @@ impl EncodedRun {
                     diff.whole_milliseconds().max(0) as i64
                 })
                 .unwrap_or(0),
-            outcome: serde_json::to_string(&ctx.outcome)
-                .map_err(StorageError::Serialization)?
-                .trim_matches('"')
-                .to_string(),
+            outcome: wire_label(&ctx.outcome)?,
             context: serde_json::to_string(ctx).map_err(StorageError::Serialization)?,
         })
     }
@@ -238,15 +236,7 @@ impl HistoryRepo for SqliteHistoryRepo {
         let mut out = HashMap::with_capacity(rows.len());
         for row in rows {
             let id = parse_action_id(&row.action_id)?;
-            let last_ran_at = OffsetDateTime::from_unix_timestamp_nanos(
-                i128::from(row.last_started) * NANOS_PER_MILLI,
-            )
-            .map_err(|e| {
-                StorageError::from(SqliteStorageError::Decode(format!(
-                    "invalid started_at {}: {e}",
-                    row.last_started
-                )))
-            })?;
+            let last_ran_at = from_epoch_ms(row.last_started)?;
             out.insert(
                 id,
                 ActionStats {

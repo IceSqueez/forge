@@ -26,6 +26,7 @@ use crate::schedule::ActionScheduler;
 use crate::schedule_api::build_schedule_module;
 use crate::wall_budget::SandboxClock;
 
+const MAX_SLEEP_MS: u64 = 5_000;
 const SENDER_DOC: &str =
     "sender is \"default\", \"streamer\" or \"bot\"; any other value is a script error.";
 const TARGET_DOC: &str = "target is a platform name; an empty target sends to every enabled platform. A refused send fails with a stable error code followed by its arguments, such as \"common.whispers_unsupported (target=kick)\".";
@@ -210,7 +211,8 @@ impl ForgeApi {
                     return Err("script execution deadline exceeded".into());
                 }
                 let remaining_ms = u64::try_from((deadline - now).as_millis()).unwrap_or(u64::MAX);
-                let clamped = (ms.max(0) as u64).min(5_000).min(remaining_ms);
+                let requested = u64::try_from(ms).unwrap_or(0);
+                let clamped = requested.min(MAX_SLEEP_MS).min(remaining_ms);
                 clock.sleep(Duration::from_millis(clamped));
                 Ok(())
             },
@@ -338,7 +340,7 @@ fn build_http_module(
 
 fn http_response_to_rhai_map(resp: HttpResponse) -> rhai::Map {
     let mut map = rhai::Map::new();
-    map.insert("status".into(), rhai::Dynamic::from(resp.status as i64));
+    map.insert("status".into(), rhai::Dynamic::from(i64::from(resp.status)));
     map.insert("body".into(), rhai::Dynamic::from(resp.body));
     map.insert("truncated".into(), rhai::Dynamic::from(resp.truncated));
     map.insert(

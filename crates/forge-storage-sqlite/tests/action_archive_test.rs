@@ -1,4 +1,3 @@
-#![allow(clippy::expect_used)]
 use forge_storage::DataProvider;
 
 use forge_types::{Action, ActionId, QueueId};

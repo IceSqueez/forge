@@ -61,7 +61,10 @@ pub(crate) async fn prune(
         let sibling = ciphertext_sibling(&path);
         match tokio::fs::remove_file(&path).await {
             Ok(()) => report.removed += 1,
-            Err(_) => report.failed += 1,
+            Err(error) => {
+                tracing::warn!(%error, path = %path.display(), "backup file could not be pruned");
+                report.failed += 1;
+            }
         }
         if let Some(sibling) = sibling
             && let Err(error) = tokio::fs::remove_file(sibling).await

@@ -185,7 +185,7 @@ impl ViewerRepo for SqliteViewerRepo {
         viewer_id: &str,
         enabled: bool,
     ) -> Result<bool, StorageError> {
-        let flag = if enabled { 1 } else { 0 };
+        let flag = i64::from(enabled);
         let result = sqlx::query(
             "UPDATE viewers SET custom_greeting = ?
              WHERE platform = ? AND viewer_id = ?",

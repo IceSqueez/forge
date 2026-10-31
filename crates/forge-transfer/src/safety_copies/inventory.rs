@@ -21,9 +21,14 @@ pub(crate) fn inventory(data_dir: &Path) -> std::io::Result<Vec<SafetyCopy>> {
         Err(e) => return Err(e),
     };
     let mut copies = Vec::new();
-    for entry in entries.flatten() {
-        let Ok(file_type) = entry.file_type() else {
-            continue;
+    for entry in entries {
+        let entry = entry?;
+        let file_type = match entry.file_type() {
+            Ok(file_type) => file_type,
+            Err(error) => {
+                tracing::warn!(%error, path = %entry.path().display(), "safety copy skipped");
+                continue;
+            }
         };
         if file_type.is_symlink() || !(file_type.is_dir() || file_type.is_file()) {
             continue;

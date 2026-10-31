@@ -8,12 +8,12 @@ use crate::safety_copies::kind::SafetyCopyKind;
 use crate::safety_copies::settings::SafetyRetention;
 
 #[derive(Debug, Clone, Default)]
-pub(crate) struct Protection {
+pub(crate) struct PruneExemptions {
     pub names: HashSet<OsString>,
     pub kinds: HashSet<SafetyCopyKind>,
 }
 
-impl Protection {
+impl PruneExemptions {
     fn covers(&self, copy: &SafetyCopy) -> bool {
         self.kinds.contains(&copy.kind)
             || copy
@@ -27,7 +27,7 @@ pub(crate) fn doomed(
     copies: Vec<SafetyCopy>,
     retention: SafetyRetention,
     now: OffsetDateTime,
-    protection: &Protection,
+    protection: &PruneExemptions,
 ) -> Vec<SafetyCopy> {
     let mut by_kind: HashMap<SafetyCopyKind, Vec<SafetyCopy>> = HashMap::new();
     for copy in copies {
@@ -42,7 +42,7 @@ pub(crate) fn doomed(
 
 pub(crate) fn everything_unprotected(
     copies: Vec<SafetyCopy>,
-    protection: &Protection,
+    protection: &PruneExemptions,
 ) -> Vec<SafetyCopy> {
     copies
         .into_iter()
@@ -83,7 +83,7 @@ mod tests {
 
     use time::{Date, Duration, Month, OffsetDateTime, PrimitiveDateTime, Time};
 
-    use super::{Protection, doomed, everything_unprotected};
+    use super::{PruneExemptions, doomed, everything_unprotected};
     use crate::safety_copies::inventory::SafetyCopy;
     use crate::safety_copies::kind::SafetyCopyKind;
     use crate::safety_copies::settings::SafetyRetention;
@@ -138,7 +138,7 @@ mod tests {
             copies,
             SafetyRetention::KeepNewest(KEEP),
             now(),
-            &Protection::default(),
+            &PruneExemptions::default(),
         );
 
         assert_eq!(names(condemned), set(&["pack-c", "pack-d"]));
@@ -156,7 +156,7 @@ mod tests {
             copies,
             SafetyRetention::KeepNewest(KEEP),
             now(),
-            &Protection::default(),
+            &PruneExemptions::default(),
         );
 
         assert_eq!(names(condemned), set(&["oldest"]));
@@ -173,7 +173,7 @@ mod tests {
             copies,
             SafetyRetention::KeepNewest(KEEP),
             now(),
-            &Protection::default(),
+            &PruneExemptions::default(),
         );
 
         assert!(condemned.is_empty());
@@ -197,7 +197,7 @@ mod tests {
             copies,
             SafetyRetention::DeleteAfterDays(DAYS),
             now(),
-            &Protection::default(),
+            &PruneExemptions::default(),
         );
 
         assert_eq!(names(condemned), set(&["just-past"]));
@@ -215,7 +215,7 @@ mod tests {
             copies,
             SafetyRetention::DeleteAfterDays(DAYS),
             now(),
-            &Protection::default(),
+            &PruneExemptions::default(),
         );
 
         assert_eq!(names(condemned), set(&["restore-old"]));
@@ -237,7 +237,7 @@ mod tests {
             copies,
             SafetyRetention::Never,
             now(),
-            &Protection::default(),
+            &PruneExemptions::default(),
         );
 
         assert!(condemned.is_empty());
@@ -245,7 +245,7 @@ mod tests {
 
     #[test]
     fn a_protected_name_or_kind_survives_a_policy_that_would_condemn_it() {
-        let protection = Protection {
+        let protection = PruneExemptions {
             names: [OsString::from("restore-referenced")].into_iter().collect(),
             kinds: [SafetyCopyKind::Update].into_iter().collect(),
         };
@@ -268,7 +268,7 @@ mod tests {
 
     #[test]
     fn everything_unprotected_includes_the_newest_of_each_kind_but_spares_protected_copies() {
-        let protection = Protection {
+        let protection = PruneExemptions {
             names: [OsString::from("restore-referenced")].into_iter().collect(),
             kinds: [SafetyCopyKind::Update].into_iter().collect(),
         };

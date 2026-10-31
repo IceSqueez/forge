@@ -1,5 +1,3 @@
-#![doc = "DataProvider trait + per-domain repo traits. Backend-agnostic storage contract."]
-
 mod action;
 mod ban_ledger;
 mod catalog;

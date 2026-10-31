@@ -1,4 +1,4 @@
-use std::io::{BufWriter, Write};
+use std::io::BufWriter;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -9,7 +9,7 @@ use forge_storage::DataProvider;
 
 use crate::bundle::category::BackupCategory;
 use crate::bundle::naming::{LEGACY_ARCHIVE_EXTENSION, backups_dir, partial_path};
-use crate::bundle::payload::{append_verified, collect_payload};
+use crate::bundle::payload::{append_verified, collect_payload, publish_sealed, seal_archive};
 use crate::error::TransferError;
 use crate::full::snapshot::with_database_snapshot;
 use crate::safety_copies::prune_after_safety_copy;
@@ -51,10 +51,6 @@ fn write_plain_archive(
     for file in &files {
         append_verified(&mut builder, file)?;
     }
-    let mut sink = builder.into_inner()?.finish()?;
-    sink.flush()?;
-    sink.get_ref().sync_all()?;
-    drop(sink);
-    std::fs::rename(&partial, destination)?;
-    Ok(())
+    seal_archive(builder)?;
+    publish_sealed(&partial, destination)
 }

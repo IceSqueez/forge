@@ -1,4 +1,4 @@
-#![allow(clippy::expect_used)]
+#![expect(clippy::expect_used, reason = "test fixtures")]
 mod common;
 use forge_storage::{ViewerMessage, ViewerRepo};
 use forge_storage_sqlite::{MIGRATIONS, SqliteViewerRepo, apply_migrations, connect};

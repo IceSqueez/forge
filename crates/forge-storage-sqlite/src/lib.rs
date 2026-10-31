@@ -40,6 +40,7 @@ mod unit_of_work;
 mod user_globals_impl;
 mod viewer_impl;
 mod voice_alias_impl;
+mod wire_label;
 
 pub use action_impl::SqliteActionRepo;
 pub use ban_ledger_impl::SqliteBanLedgerRepo;

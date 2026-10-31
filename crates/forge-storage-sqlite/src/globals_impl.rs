@@ -88,7 +88,7 @@ where
 {
     let value_json = serde_json::to_string(value).map_err(StorageError::Serialization)?;
     let type_tag = value.type_tag().to_string();
-    let persisted_int: i64 = if persisted { 1 } else { 0 };
+    let persisted_int = i64::from(persisted);
     let now_ms = epoch_ms_now();
 
     sqlx::query(
@@ -185,7 +185,7 @@ impl GlobalsRepo for SqliteGlobalsRepo {
     }
 
     async fn set_persisted(&self, name: &str, persisted: bool) -> Result<bool, StorageError> {
-        let persisted_int: i64 = if persisted { 1 } else { 0 };
+        let persisted_int = i64::from(persisted);
 
         let result = sqlx::query("UPDATE globals SET persisted = ? WHERE name = ?")
             .bind(persisted_int)

@@ -72,6 +72,8 @@ mod core_users_set_var;
 mod core_users_shared;
 pub(crate) mod datetime_input;
 mod event_payload;
+pub(crate) use event_payload::EVENT_NAME_KEY;
+mod chat_send_message;
 mod file_sandbox;
 mod os_ports;
 mod overlay_send;
@@ -82,9 +84,12 @@ mod script_run_inline;
 mod script_run_named;
 mod server_broadcast;
 mod time_pattern;
-mod twitch_chat_send_message;
 mod variant_text;
 
+pub use chat_send_message::{
+    CHAT_SEND_DEFAULT_TARGET, CHAT_SEND_KIND_ID, CHAT_SEND_MESSAGE_KEY, CHAT_SEND_TARGET_KEY,
+    ChatSendMessageRunner,
+};
 pub use core_action_cancel::CoreActionCancelRunner;
 pub use core_action_cancel_scheduled::CANCEL_SCHEDULED_KIND_ID;
 pub(crate) use core_action_cancel_scheduled::CoreActionCancelScheduledRunner;
@@ -179,10 +184,6 @@ pub(crate) use script_run_named::ScriptRunNamedRunner;
 pub use script_run_named::TARGET_VAR_KEY as SCRIPT_TARGET_VAR_KEY;
 pub use server_broadcast::ServerBroadcastRunner;
 pub use time_pattern::translate_legacy_time_steps;
-pub use twitch_chat_send_message::{
-    CHAT_SEND_DEFAULT_TARGET, CHAT_SEND_KIND_ID, CHAT_SEND_MESSAGE_KEY, CHAT_SEND_TARGET_KEY,
-    TwitchChatSendMessageRunner,
-};
 
 use std::sync::Arc;
 
@@ -324,7 +325,7 @@ pub fn register_core_sub_actions(
     reg.register(Box::new(CoreRandomBoolRunner))?;
     reg.register(Box::new(CoreRandomPickRunner))?;
     reg.register(Box::new(CoreMathEvaluateRunner::new()))?;
-    reg.register(Box::new(TwitchChatSendMessageRunner))?;
+    reg.register(Box::new(ChatSendMessageRunner))?;
     reg.register(Box::new(ScriptRunNamedRunner::new(
         Arc::clone(&scripts),
         Arc::clone(&globals),

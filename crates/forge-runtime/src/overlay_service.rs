@@ -774,7 +774,14 @@ impl OverlayServiceHandle {
             .effective_config(&definition.kind_id, &definition.config)
         {
             Ok(config) => config,
-            Err(_) => definition.config.clone(),
+            Err(error) => {
+                tracing::warn!(
+                    overlay = %definition.id,
+                    %error,
+                    "overlay config defaults unavailable; resolving media from the stored config"
+                );
+                definition.config.clone()
+            }
         };
 
         let Some(library) = &self.inner.media else {

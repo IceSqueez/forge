@@ -52,7 +52,7 @@ impl fmt::Display for PackItemKey {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PackConflict {
-    None,
+    Clear,
     IdMatch,
     NameMatch { local_id: String },
 }
@@ -60,7 +60,7 @@ pub enum PackConflict {
 impl PackConflict {
     fn default_resolution(&self) -> Option<PackResolution> {
         match self {
-            Self::None => None,
+            Self::Clear => None,
             Self::IdMatch => Some(PackResolution::Skip),
             Self::NameMatch { .. } => Some(PackResolution::KeepBoth),
         }
@@ -148,7 +148,7 @@ impl PackImportPlan {
             .ok_or_else(|| TransferError::UnknownPackItem {
                 item: key.to_string(),
             })?;
-        if item.conflict == PackConflict::None {
+        if item.conflict == PackConflict::Clear {
             return Err(TransferError::PackResolutionNotAllowed {
                 item: key.to_string(),
             });

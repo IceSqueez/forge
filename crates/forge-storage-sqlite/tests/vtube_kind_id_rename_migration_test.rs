@@ -1,5 +1,4 @@
-#![allow(clippy::expect_used, clippy::panic)]
-
+#![expect(clippy::expect_used, clippy::panic, reason = "test fixtures")]
 mod common;
 use forge_storage_sqlite::apply_migrations as apply;
 use forge_storage_sqlite::{MIGRATIONS, connect};

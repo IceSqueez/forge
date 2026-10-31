@@ -1,4 +1,4 @@
-#![allow(clippy::panic)]
+#![expect(clippy::panic, reason = "test fixtures")]
 mod common;
 use common::{code_of, failure_message, verbatim_arg};
 use forge_events::test_support::NullPublisher;

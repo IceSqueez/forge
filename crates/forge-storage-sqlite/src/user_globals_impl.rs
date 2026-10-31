@@ -119,7 +119,8 @@ impl UserGlobalsRepo for SqliteUserGlobalsRepo {
         let rows: Vec<UserGlobalRow> = sqlx::query_as(
             "SELECT broadcaster_id, user_id, name, value, last_modified \
              FROM user_globals \
-             WHERE broadcaster_id = ? AND user_id = ?",
+             WHERE broadcaster_id = ? AND user_id = ? \
+             ORDER BY name",
         )
         .bind(broadcaster_id)
         .bind(user_id)
@@ -137,7 +138,8 @@ impl UserGlobalsRepo for SqliteUserGlobalsRepo {
         let rows: Vec<UserGlobalRow> = sqlx::query_as(
             "SELECT broadcaster_id, user_id, name, value, last_modified \
              FROM user_globals \
-             WHERE broadcaster_id = ?",
+             WHERE broadcaster_id = ? \
+             ORDER BY user_id, name",
         )
         .bind(broadcaster_id)
         .fetch_all(self.db.reader())
@@ -198,8 +200,9 @@ struct UserGlobalRow {
 fn decode_rows(rows: Vec<UserGlobalRow>) -> Result<Vec<UserGlobalEntry>, StorageError> {
     let mut entries = Vec::with_capacity(rows.len());
     for row in rows {
-        let value: Variant = serde_json::from_str(&row.value)
-            .map_err(|e| StorageError::Parse(format!("variant decode for '{}': {e}", row.name)))?;
+        let value: Variant = serde_json::from_str(&row.value).map_err(|e| {
+            SqliteStorageError::Decode(format!("variant decode for '{}': {e}", row.name))
+        })?;
         let last_modified = from_epoch_ms(row.last_modified)?;
         entries.push(UserGlobalEntry {
             broadcaster_id: row.broadcaster_id,

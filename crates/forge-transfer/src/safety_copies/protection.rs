@@ -4,10 +4,10 @@ use forge_update::update_in_flight;
 
 use crate::full::restore_journal::RestoreJournal;
 use crate::safety_copies::kind::SafetyCopyKind;
-use crate::safety_copies::selection::Protection;
+use crate::safety_copies::selection::PruneExemptions;
 
-pub(crate) fn protection_for(data_dir: &Path) -> Protection {
-    let mut protection = Protection::default();
+pub(crate) fn exemptions_for(data_dir: &Path) -> PruneExemptions {
+    let mut protection = PruneExemptions::default();
     match RestoreJournal::read(data_dir) {
         Ok(None) => {}
         Ok(Some(journal)) => {
@@ -30,7 +30,7 @@ mod tests {
     use std::ffi::OsString;
     use std::path::{Path, PathBuf};
 
-    use super::protection_for;
+    use super::exemptions_for;
     use crate::full::restore_journal::{RESTORE_JOURNAL_FILE, RestoreJournal};
     use crate::safety_copies::kind::SafetyCopyKind;
 
@@ -51,7 +51,7 @@ mod tests {
     fn a_settled_data_dir_protects_nothing() {
         let data = tempfile::tempdir().unwrap();
 
-        let protection = protection_for(data.path());
+        let protection = exemptions_for(data.path());
 
         assert!(protection.names.is_empty() && protection.kinds.is_empty());
     }
@@ -61,7 +61,7 @@ mod tests {
         let data = tempfile::tempdir().unwrap();
         journal_referencing(data.path(), data.path().join("backups").join(SNAPSHOT_NAME));
 
-        let protection = protection_for(data.path());
+        let protection = exemptions_for(data.path());
 
         assert_eq!(
             (
@@ -78,7 +78,7 @@ mod tests {
             let data = tempfile::tempdir().unwrap();
             std::fs::write(data.path().join(RESTORE_JOURNAL_FILE), garbage).unwrap();
 
-            let protection = protection_for(data.path());
+            let protection = exemptions_for(data.path());
 
             assert!(
                 protection.kinds.contains(&SafetyCopyKind::Restore),
@@ -95,7 +95,7 @@ mod tests {
             let path = data.path().join(record);
             std::fs::write(&path, b"{}").unwrap();
 
-            let protection = protection_for(data.path());
+            let protection = exemptions_for(data.path());
 
             assert_eq!(
                 protection.kinds.into_iter().collect::<Vec<_>>(),
@@ -113,7 +113,7 @@ mod tests {
         let file = root.path().join("not-a-dir");
         std::fs::write(&file, b"x").unwrap();
 
-        let protection = protection_for(&file.join("data"));
+        let protection = exemptions_for(&file.join("data"));
 
         assert!(protection.kinds.contains(&SafetyCopyKind::Update));
     }

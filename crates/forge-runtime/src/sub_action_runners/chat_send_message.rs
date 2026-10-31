@@ -71,10 +71,10 @@ fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<ChatSendConf
     })
 }
 
-pub struct TwitchChatSendMessageRunner;
+pub struct ChatSendMessageRunner;
 
 #[async_trait]
-impl SubActionRunner for TwitchChatSendMessageRunner {
+impl SubActionRunner for ChatSendMessageRunner {
     fn id(&self) -> &str {
         CHAT_SEND_KIND_ID
     }
@@ -199,7 +199,7 @@ mod tests {
             control: ControlCell::new(),
             telemetry: TelemetrySink::new(),
         };
-        let (telemetry, _) = TwitchChatSendMessageRunner
+        let (telemetry, _) = ChatSendMessageRunner
             .execute(&config_with_target(target), &ctx)
             .await;
         (telemetry.outcome, sent_requests(&publisher))
@@ -231,7 +231,7 @@ mod tests {
             let mut cfg = SubActionConfig::new();
             cfg.insert("message".to_owned(), Variant::String(template.to_owned()));
 
-            let (telemetry, _) = TwitchChatSendMessageRunner.execute(&cfg, &ctx).await;
+            let (telemetry, _) = ChatSendMessageRunner.execute(&cfg, &ctx).await;
 
             assert!(
                 matches!(&telemetry.outcome, SubActionOutcome::Failed(reason) if crate::test_support::failure::is_field_problem(reason, CHAT_SEND_MESSAGE_KEY, "config.required")),
@@ -255,8 +255,8 @@ mod tests {
             (Some(""), None),
             (Some("   "), None),
         ] {
-            let resolved = TwitchChatSendMessageRunner
-                .targeted_integration(&config_with_target(target), &args);
+            let resolved =
+                ChatSendMessageRunner.targeted_integration(&config_with_target(target), &args);
             assert_eq!(
                 resolved,
                 expected.map(IntegrationId::new),
@@ -337,7 +337,7 @@ mod tests {
         let args = ArgStack::new().set("platform".to_owned(), Variant::String("Kick".to_owned()));
         let ctx = RunContext::leaf(&args, 0, EventId::new(), &publisher);
 
-        let (telemetry, _) = TwitchChatSendMessageRunner
+        let (telemetry, _) = ChatSendMessageRunner
             .execute(&config_with_target(Some("%platform%")), &ctx)
             .await;
 
@@ -364,14 +364,14 @@ mod tests {
             control: ControlCell::new(),
             telemetry: TelemetrySink::new(),
         };
-        let owner = TwitchChatSendMessageRunner.targeted_integration(&config, &args);
+        let owner = ChatSendMessageRunner.targeted_integration(&config, &args);
 
         let (telemetry, _) = crate::integration_gate::run_gated_step(
             &gate,
             owner.as_ref(),
             &ctx,
             "twitch.chat.send_message",
-            TwitchChatSendMessageRunner.execute(&config, &ctx),
+            ChatSendMessageRunner.execute(&config, &ctx),
         )
         .await;
 
@@ -388,7 +388,7 @@ mod tests {
         let args = ArgStack::new();
         let ctx = RunContext::leaf(&args, 0, EventId::new(), &publisher);
 
-        let (telemetry, _) = TwitchChatSendMessageRunner
+        let (telemetry, _) = ChatSendMessageRunner
             .execute(&config_with_target(Some("")), &ctx)
             .await;
 
@@ -412,7 +412,7 @@ mod tests {
         let publisher = CapturingPublisher::default();
         let args = ArgStack::new();
         let ctx = RunContext::leaf(&args, 0, EventId::new(), &publisher);
-        let (telemetry, _) = TwitchChatSendMessageRunner
+        let (telemetry, _) = ChatSendMessageRunner
             .execute(&config_with_sender(sender), &ctx)
             .await;
         (telemetry.outcome, sent_requests(&publisher))
@@ -451,7 +451,7 @@ mod tests {
 
     #[test]
     fn validation_accepts_every_sender_choice_offered_by_the_form() {
-        let offered = TwitchChatSendMessageRunner
+        let offered = ChatSendMessageRunner
             .config_fields()
             .into_iter()
             .find_map(|field| match field {
@@ -462,7 +462,7 @@ mod tests {
         for option in offered {
             let config = config_with_sender(Some(Variant::String((*option).to_owned())));
             assert!(
-                TwitchChatSendMessageRunner.validate_config(&config).is_ok(),
+                ChatSendMessageRunner.validate_config(&config).is_ok(),
                 "{option}"
             );
         }
@@ -471,7 +471,7 @@ mod tests {
     #[test]
     fn validation_rejects_an_unknown_sender_on_the_sender_field() {
         for sender in invalid_senders() {
-            let err = TwitchChatSendMessageRunner
+            let err = ChatSendMessageRunner
                 .validate_config(&config_with_sender(Some(sender.clone())))
                 .unwrap_err();
 

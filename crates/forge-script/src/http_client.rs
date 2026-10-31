@@ -18,6 +18,7 @@ const WILDCARD_PREFIX: &str = "*.";
 const SCRIPT_CALL_CLASS: CallClass = CallClass::Media;
 const NO_RUNTIME: &str = "no async runtime is available to run the request";
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HttpResponse {
     pub status: u16,
     pub body: String,

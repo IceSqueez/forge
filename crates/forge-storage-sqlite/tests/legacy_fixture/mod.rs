@@ -1,4 +1,5 @@
-#![allow(dead_code, clippy::expect_used)]
+#![expect(clippy::expect_used, reason = "test fixtures")]
+#![allow(dead_code)]
 
 use std::path::{Path, PathBuf};
 

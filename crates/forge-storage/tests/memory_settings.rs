@@ -1,4 +1,4 @@
-#![allow(clippy::unwrap_used, clippy::expect_used)]
+#![expect(clippy::expect_used, clippy::unwrap_used, reason = "test fixtures")]
 use std::time::Duration;
 
 use forge_storage::settings::core_settings::{

@@ -1,5 +1,3 @@
-#![allow(clippy::expect_used)]
-
 use forge_storage::{DataProvider, StorageError};
 use forge_types::TriggerInstanceId;
 

@@ -186,7 +186,7 @@ fn generate_key() -> [u8; 32] {
 }
 
 fn key_to_hex(key: &[u8; 32]) -> String {
-    key.iter().map(|b| format!("{b:02x}")).collect()
+    forge_types::to_lower_hex(key)
 }
 
 fn hex_to_key(hex: &str) -> Result<[u8; 32], SqliteStorageError> {

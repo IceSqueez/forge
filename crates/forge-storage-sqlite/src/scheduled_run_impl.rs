@@ -13,13 +13,14 @@ use time::OffsetDateTime;
 use crate::epoch::{from_epoch_ms, to_epoch_ms};
 use crate::error::SqliteStorageError;
 use crate::pool::SqlitePools;
+use crate::wire_label::parse_label;
 
 const POLICY_RUN_LATE_ONCE: &str = "run_late_once";
 const POLICY_SKIP_IF_LATE_BY: &str = "skip_if_late_by";
 
-const STATE_PENDING: &str = "pending";
+pub(crate) const STATE_PENDING: &str = "pending";
 const STATE_DISPATCHED: &str = "dispatched";
-const STATE_CANCELLED: &str = "cancelled";
+pub(crate) const STATE_CANCELLED: &str = "cancelled";
 const STATE_SKIPPED: &str = "skipped";
 const STATE_FAILED: &str = "failed";
 
@@ -89,7 +90,7 @@ fn parse_action_id(raw: &str) -> Result<ActionId, SqliteStorageError> {
 }
 
 fn parse_event_id(raw: &str) -> Result<EventId, SqliteStorageError> {
-    serde_json::from_value(serde_json::Value::String(raw.to_owned()))
+    parse_label(raw)
         .map_err(|e| SqliteStorageError::Decode(format!("invalid event id '{raw}': {e}")))
 }
 

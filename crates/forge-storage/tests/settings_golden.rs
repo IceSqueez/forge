@@ -1,4 +1,4 @@
-#![allow(clippy::unwrap_used)]
+#![expect(clippy::unwrap_used, reason = "test fixtures")]
 use std::collections::BTreeMap;
 
 use forge_storage::settings::core_settings::{

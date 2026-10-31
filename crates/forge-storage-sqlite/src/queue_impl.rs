@@ -6,10 +6,10 @@ use forge_types::{DEFAULT_QUEUE_ID, Queue, QueueId};
 
 use crate::error::SqliteStorageError;
 use crate::pool::SqlitePools;
+use crate::wire_label::parse_label;
 
 fn parse_queue_id(s: &str) -> Result<QueueId, SqliteStorageError> {
-    serde_json::from_str(&format!("\"{s}\""))
-        .map_err(|e| SqliteStorageError::Decode(format!("invalid queue id '{s}': {e}")))
+    parse_label(s).map_err(|e| SqliteStorageError::Decode(format!("invalid queue id '{s}': {e}")))
 }
 
 #[derive(sqlx::FromRow)]
@@ -38,7 +38,7 @@ pub(crate) async fn upsert_queue<'e>(
 ) -> Result<(), StorageError> {
     let id_str = queue.id.to_string();
     let concurrency = i64::from(queue.concurrency.get());
-    let blocking: i64 = if queue.is_serial() { 1 } else { 0 };
+    let blocking = i64::from(queue.is_serial());
 
     sqlx::query(
         "INSERT INTO queues (id, name, description, blocking, concurrency)

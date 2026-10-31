@@ -39,20 +39,13 @@ fn blob_path(root: &Path, id: &MediaBlobId, format: MediaFormat) -> PathBuf {
 }
 
 fn incoming_path(root: &Path) -> PathBuf {
-    use std::fmt::Write as _;
-
     let mut nonce = [0u8; INCOMING_NONCE_BYTES];
     rand::rng().fill_bytes(&mut nonce);
 
-    let mut name = String::from(INCOMING_FILE_PREFIX);
-    for byte in nonce {
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "writing to a String cannot fail"
-        )]
-        let _ = write!(name, "{byte:02x}");
-    }
-    root.join(name)
+    root.join(format!(
+        "{INCOMING_FILE_PREFIX}{}",
+        forge_types::to_lower_hex(&nonce)
+    ))
 }
 
 fn write_blob(root: &Path, format: MediaFormat, bytes: &[u8]) -> std::io::Result<MediaBlobId> {

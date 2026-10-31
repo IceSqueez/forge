@@ -104,7 +104,14 @@ impl CoreTestFireTriggerRunner {
         for action_id in action_ids {
             let action = match self.actions.get(action_id).await {
                 Ok(Some(a)) => a,
-                Ok(None) => continue,
+                Ok(None) => {
+                    tracing::warn!(
+                        action = %action_id,
+                        trigger = %instance_id,
+                        "test trigger skipped a bound action that no longer exists"
+                    );
+                    continue;
+                }
                 Err(e) => {
                     return SubActionOutcome::Failed(core_messages::storage_failed(e).into());
                 }

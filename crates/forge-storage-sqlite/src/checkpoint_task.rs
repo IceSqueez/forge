@@ -1,6 +1,8 @@
 use std::time::Duration;
 
-use sqlx::{Sqlite, SqlitePool, pool::PoolConnection};
+use sqlx::SqlitePool;
+
+use crate::pool::set_busy_timeout;
 
 const CHECKPOINT_INTERVAL: Duration = Duration::from_secs(1);
 const RESTART_AT_WAL_FRAMES: i64 = 4096;
@@ -111,25 +113,13 @@ async fn restart_wal_waiting(
     restarted
 }
 
-async fn set_busy_timeout(
-    conn: &mut PoolConnection<Sqlite>,
-    timeout: Duration,
-) -> Result<(), sqlx::Error> {
-    sqlx::query(sqlx::AssertSqlSafe(format!(
-        "PRAGMA busy_timeout = {}",
-        timeout.as_millis()
-    )))
-    .execute(&mut **conn)
-    .await
-    .map(|_| ())
-}
-
 #[cfg(test)]
 mod tests {
     use std::path::{Path, PathBuf};
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, Ordering};
 
+    use sqlx::{Sqlite, pool::PoolConnection};
     use tempfile::TempDir;
     use tokio::time::Instant;
 

@@ -52,8 +52,7 @@ fn decode_row(row: OverlayRow) -> Result<OverlayDefinition, SqliteStorageError> 
 fn generate_credential() -> OverlayCredential {
     let mut bytes = [0u8; 32];
     rand::rng().fill_bytes(&mut bytes);
-    let hex: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
-    OverlayCredential::new(hex)
+    OverlayCredential::new(forge_types::to_lower_hex(&bytes))
 }
 
 pub struct SqliteOverlayRepo {
@@ -165,7 +164,7 @@ pub(crate) async fn update_overlay<'e>(
         serde_json::to_string(&definition.config).map_err(StorageError::Serialization)?;
     let source_overrides_json =
         serde_json::to_string(&definition.source_overrides).map_err(StorageError::Serialization)?;
-    let enabled: i64 = if definition.enabled { 1 } else { 0 };
+    let enabled = i64::from(definition.enabled);
     let now_ms = epoch_ms_now();
 
     let result = sqlx::query(
@@ -425,7 +424,7 @@ impl OverlayRepo for SqliteOverlayRepo {
     }
 
     async fn set_enabled(&self, id: &OverlayId, enabled: bool) -> Result<bool, StorageError> {
-        let enabled_val: i64 = if enabled { 1 } else { 0 };
+        let enabled_val = i64::from(enabled);
         let now_ms = epoch_ms_now();
 
         let result = sqlx::query("UPDATE overlays SET enabled = ?, updated_at = ? WHERE id = ?")

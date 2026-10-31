@@ -1,4 +1,4 @@
-#![allow(clippy::expect_used)]
+#![expect(clippy::expect_used, reason = "test fixtures")]
 use forge_storage::{ActionRepo, DataProvider};
 use forge_storage_sqlite::{SqliteActionRepo, apply_migrations, connect, migrate_registry_format};
 use forge_types::{Action, ActionId, QueueId, SubActionStep, Variant};

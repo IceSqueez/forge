@@ -1,4 +1,3 @@
-#![allow(clippy::expect_used)]
 use forge_storage::{ActionRepo, StorageError, VoiceAliasRepo};
 use forge_storage_sqlite::{SqliteActionRepo, SqliteVoiceAliasRepo};
 

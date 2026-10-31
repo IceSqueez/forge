@@ -1,4 +1,4 @@
-use forge_events::{Event, EventSource, GlobalSet, TypedEvent};
+use forge_events::{CUSTOM_EVENT_PREFIX, Event, EventSource, GlobalSet, TypedEvent};
 use forge_runtime::{ExecutionRequest, RuntimeError};
 use forge_storage::{GlobalsRepo, MediaFormat, UserGlobalsRepo};
 use forge_types::{ActionId, EventId, PlatformId};
@@ -187,7 +187,7 @@ pub(crate) async fn handle_trigger_code_event(
             message: "name must match [a-z0-9_]{1,64}".to_owned(),
         };
     }
-    let kind = format!("custom.{name}");
+    let kind = format!("{CUSTOM_EVENT_PREFIX}{name}");
     ctx.bus
         .publish(Event::new(EventSource::Server, &kind, args));
     WsResponse::Ok(serde_json::json!({ "ok": true }))

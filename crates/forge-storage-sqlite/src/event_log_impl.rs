@@ -10,10 +10,10 @@ use crate::batch::insert_rows;
 use crate::epoch::{from_epoch_ms, to_epoch_ms};
 use crate::error::SqliteStorageError;
 use crate::pool::SqlitePools;
+use crate::wire_label::{parse_label, wire_label};
 
 fn parse_id<T: serde::de::DeserializeOwned>(s: &str, label: &str) -> Result<T, SqliteStorageError> {
-    serde_json::from_str(&format!("\"{s}\""))
-        .map_err(|e| SqliteStorageError::Decode(format!("invalid {label} '{s}': {e}")))
+    parse_label(s).map_err(|e| SqliteStorageError::Decode(format!("invalid {label} '{s}': {e}")))
 }
 
 const EVENT_LOG_COLUMNS: usize = 7;
@@ -32,10 +32,7 @@ impl EncodedEvent {
     fn encode(event: &Event) -> Result<Self, StorageError> {
         Ok(Self {
             id: event.id.to_string(),
-            source: serde_json::to_string(&event.source)
-                .map_err(StorageError::Serialization)?
-                .trim_matches('"')
-                .to_string(),
+            source: wire_label(&event.source)?,
             kind: event.kind.clone(),
             timestamp: to_epoch_ms(event.timestamp),
             payload: serde_json::to_string(&event.payload).map_err(StorageError::Serialization)?,
@@ -114,7 +111,8 @@ impl EventLogRepo for SqliteEventLogRepo {
         let row = EncodedEvent::encode(event)?;
         sqlx::query(
             "INSERT INTO event_log (id, source, kind, timestamp, payload, caused_by, replay)
-             VALUES (?, ?, ?, ?, ?, ?, ?)",
+             VALUES (?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT(id) DO NOTHING",
         )
         .bind(&row.id)
         .bind(&row.source)

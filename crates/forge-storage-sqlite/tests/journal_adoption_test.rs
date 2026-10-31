@@ -1,4 +1,4 @@
-#![allow(clippy::expect_used)]
+#![expect(clippy::expect_used, reason = "test fixtures")]
 mod common;
 use common::TEST_KEY;
 mod legacy_fixture;

@@ -1,4 +1,3 @@
-#![allow(clippy::expect_used)]
 use forge_storage::DataProvider;
 use std::collections::BTreeMap;
 

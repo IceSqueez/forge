@@ -1,4 +1,5 @@
-#![allow(dead_code, unused_imports, clippy::expect_used)]
+#![expect(clippy::expect_used, reason = "test fixtures")]
+#![allow(dead_code, unused_imports)]
 
 use std::collections::BTreeMap;
 use std::path::Path;

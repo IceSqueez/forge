@@ -10,7 +10,7 @@ use crate::bundle::exclusivity::TransferExclusivity;
 use crate::error::TransferError;
 use crate::safety_copies::inventory::{SafetyCopy, inventory};
 use crate::safety_copies::kind::SafetyCopyKind;
-use crate::safety_copies::protection::protection_for;
+use crate::safety_copies::protection::exemptions_for;
 use crate::safety_copies::selection::{doomed, everything_unprotected};
 use crate::safety_copies::settings::SafetyCopySettings;
 
@@ -122,7 +122,7 @@ async fn sweep(
     let now = OffsetDateTime::now_utc();
     run_blocking(data_dir.to_path_buf(), move |data_dir| {
         let copies = inventory(&data_dir)?;
-        let mut protection = protection_for(&data_dir);
+        let mut protection = exemptions_for(&data_dir);
         protection.names.extend(spared);
         let condemned = match plan {
             Sweep::ByPolicy(policy) => doomed(copies, policy.retention(), now, &protection),

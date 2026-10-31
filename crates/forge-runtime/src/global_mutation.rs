@@ -46,14 +46,10 @@ impl GlobalMutation<'_> {
     ) -> Result<GlobalIncrement, StorageError> {
         let previous = self.previous(key).await;
         let current = self.globals.incr(key, delta).await?;
-        let new_value_json = match &current {
-            Variant::Int(i) => serde_json::Value::from(*i),
-            _ => serde_json::Value::String(current.to_string()),
-        };
         self.publish(GlobalIncremented {
             key: key.to_owned(),
             delta,
-            new_value: new_value_json,
+            new_value: current.to_plain_json(),
         });
         Ok(GlobalIncrement { previous, current })
     }

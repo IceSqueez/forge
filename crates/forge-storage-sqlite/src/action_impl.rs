@@ -7,9 +7,12 @@ use forge_types::{Action, ActionId, ExecutionMode, QueueId, SubActionStep};
 use time::OffsetDateTime;
 
 use crate::batch::insert_rows;
+use crate::epoch::epoch_ms_now;
 use crate::error::SqliteStorageError;
 use crate::pool::SqlitePools;
 use crate::registry_migration::CURRENT_ACTION_FORMAT_VERSION;
+use crate::scheduled_run_impl::{STATE_CANCELLED, STATE_PENDING};
+use crate::wire_label::parse_label;
 
 const ACTION_EXECUTION_COLUMNS: usize = 4;
 
@@ -21,8 +24,7 @@ fn status_label(status: ExecutionStatus) -> &'static str {
 }
 
 fn parse_id<T: serde::de::DeserializeOwned>(s: &str, label: &str) -> Result<T, SqliteStorageError> {
-    serde_json::from_str(&format!("\"{s}\""))
-        .map_err(|e| SqliteStorageError::Decode(format!("invalid {label} id '{s}': {e}")))
+    parse_label(s).map_err(|e| SqliteStorageError::Decode(format!("invalid {label} id '{s}': {e}")))
 }
 
 #[derive(sqlx::FromRow)]
@@ -94,9 +96,9 @@ pub(crate) async fn upsert_action<'e>(
     let description = action.description.as_deref().unwrap_or("").to_string();
     let sub_actions_json =
         serde_json::to_string(&action.sub_actions).map_err(StorageError::Serialization)?;
-    let enabled: i64 = if action.enabled { 1 } else { 0 };
-    let concurrent: i64 = if action.concurrent { 1 } else { 0 };
-    let bypass_pause: i64 = if action.bypass_pause { 1 } else { 0 };
+    let enabled = i64::from(action.enabled);
+    let concurrent = i64::from(action.concurrent);
+    let bypass_pause = i64::from(action.bypass_pause);
     let execution_mode = encode_execution_mode(action.execution_mode);
 
     sqlx::query(
@@ -371,7 +373,7 @@ impl ActionRepo for SqliteActionRepo {
     }
 
     async fn set_enabled(&self, id: ActionId, enabled: bool) -> Result<bool, StorageError> {
-        let enabled_int: i64 = if enabled { 1 } else { 0 };
+        let enabled_int = i64::from(enabled);
         let result =
             sqlx::query("UPDATE actions SET enabled = ? WHERE id = ? AND archived_at IS NULL")
                 .bind(enabled_int)
@@ -401,7 +403,7 @@ impl ActionRepo for SqliteActionRepo {
         id: ActionId,
     ) -> Result<Option<u64>, StorageError> {
         let id_str = id.to_string();
-        let now_ms = OffsetDateTime::now_utc().unix_timestamp() * 1000;
+        let now_ms = epoch_ms_now();
         let mut tx = self
             .db
             .writer()
@@ -419,12 +421,14 @@ impl ActionRepo for SqliteActionRepo {
         let mut cancelled_runs = 0;
         if archived {
             let cancelled = sqlx::query(
-                "UPDATE scheduled_runs SET state = 'cancelled', outcome_reason = ?, resolved_at = ?
-                 WHERE target_action_id = ? AND state = 'pending'",
+                "UPDATE scheduled_runs SET state = ?, outcome_reason = ?, resolved_at = ?
+                 WHERE target_action_id = ? AND state = ?",
             )
+            .bind(STATE_CANCELLED)
             .bind(ACTION_REMOVED_REASON)
             .bind(now_ms)
             .bind(&id_str)
+            .bind(STATE_PENDING)
             .execute(&mut *tx)
             .await
             .map_err(SqliteStorageError::Sqlx)?;

@@ -338,20 +338,10 @@ pub struct MediaBlobId(String);
 
 impl MediaBlobId {
     pub fn from_digest(digest: &[u8; MEDIA_CONTENT_DIGEST_BYTES]) -> Self {
-        use std::fmt::Write as _;
-
-        let mut id =
-            String::with_capacity(MEDIA_CONTENT_HASH.len() + 1 + MEDIA_CONTENT_DIGEST_BYTES * 2);
-        id.push_str(MEDIA_CONTENT_HASH);
-        id.push(MEDIA_BLOB_ID_SEPARATOR);
-        for byte in digest {
-            #[expect(
-                clippy::let_underscore_must_use,
-                reason = "writing to a String cannot fail"
-            )]
-            let _ = write!(id, "{byte:02x}");
-        }
-        Self(id)
+        Self(format!(
+            "{MEDIA_CONTENT_HASH}{MEDIA_BLOB_ID_SEPARATOR}{}",
+            forge_types::to_lower_hex(digest)
+        ))
     }
 
     pub fn from_stored(raw: impl Into<String>) -> Result<Self, StorageError> {

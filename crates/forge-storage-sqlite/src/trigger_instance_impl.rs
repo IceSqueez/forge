@@ -7,18 +7,18 @@ use forge_storage::{
     ActionRepo, QueueRepo, StorageError, TriggerChanges, TriggerInstanceRepo, TriggerWiring,
 };
 use forge_types::{ActionId, PermissionRung, PlatformScope, TriggerInstance, TriggerInstanceId};
-use time::OffsetDateTime;
 
 use crate::action_impl::upsert_action;
+use crate::epoch::epoch_ms_now;
 use crate::error::SqliteStorageError;
 use crate::pool::SqlitePools;
 use crate::queue_impl::{mark_overlay_alert_queue, upsert_queue};
+use crate::wire_label::parse_label;
 
 const REFERENCE_BLOCK_SAMPLE_NAMES: usize = 3;
 
 fn parse_id<T: serde::de::DeserializeOwned>(s: &str, label: &str) -> Result<T, SqliteStorageError> {
-    serde_json::from_str(&format!("\"{s}\""))
-        .map_err(|e| SqliteStorageError::Decode(format!("invalid {label} id '{s}': {e}")))
+    parse_label(s).map_err(|e| SqliteStorageError::Decode(format!("invalid {label} id '{s}': {e}")))
 }
 
 #[derive(sqlx::FromRow)]
@@ -465,7 +465,7 @@ impl TriggerInstanceRepo for SqliteTriggerInstanceRepo {
 
     async fn archive(&self, id: TriggerInstanceId) -> Result<bool, StorageError> {
         let id_str = id.to_string();
-        let now_ms = OffsetDateTime::now_utc().unix_timestamp() * 1000;
+        let now_ms = epoch_ms_now();
         let result = sqlx::query(
             "UPDATE trigger_instances SET archived_at = ? WHERE id = ? AND archived_at IS NULL",
         )
@@ -520,11 +520,11 @@ pub(crate) async fn upsert_instance<'e>(
         serde_json::to_string(&instance.overrides).map_err(StorageError::Serialization)?;
     let platform_scope_json =
         serde_json::to_string(&instance.platform_scope).map_err(StorageError::Serialization)?;
-    let enabled: i64 = if instance.enabled { 1 } else { 0 };
-    let user_defined: i64 = if instance.user_defined { 1 } else { 0 };
+    let enabled = i64::from(instance.enabled);
+    let user_defined = i64::from(instance.user_defined);
 
     let cooldown_secs: i64 = instance.cooldown_secs.into();
-    let cooldown_global: i64 = if instance.cooldown_global { 1 } else { 0 };
+    let cooldown_global = i64::from(instance.cooldown_global);
     let permission_rung = instance.permission_rung.as_str();
 
     sqlx::query(

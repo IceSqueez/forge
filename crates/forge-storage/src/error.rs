@@ -38,7 +38,7 @@ pub enum StorageError {
     #[error("this viewer already has a different voice alias")]
     AliasViewerTaken,
 
-    #[error("global '{name}' has type {actual}, expected numeric")]
+    #[error("global '{name}' has type {actual}, which this operation does not accept")]
     TypeMismatch { name: String, actual: String },
 
     #[error("serialization error: {0}")]

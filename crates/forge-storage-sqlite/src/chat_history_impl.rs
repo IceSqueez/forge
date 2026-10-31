@@ -12,17 +12,14 @@ use crate::batch::insert_rows;
 use crate::epoch::{from_epoch_ms, to_epoch_ms};
 use crate::error::SqliteStorageError;
 use crate::pool::SqlitePools;
+use crate::wire_label::{parse_label, wire_label};
 
 fn parse_id<T: serde::de::DeserializeOwned>(s: &str, label: &str) -> Result<T, SqliteStorageError> {
-    serde_json::from_str(&format!("\"{s}\""))
-        .map_err(|e| SqliteStorageError::Decode(format!("invalid {label} '{s}': {e}")))
+    parse_label(s).map_err(|e| SqliteStorageError::Decode(format!("invalid {label} '{s}': {e}")))
 }
 
 fn encode_source(source: PlatformId) -> Result<String, StorageError> {
-    Ok(serde_json::to_string(&source)
-        .map_err(StorageError::Serialization)?
-        .trim_matches('"')
-        .to_string())
+    wire_label(&source)
 }
 
 const CHAT_HISTORY_COLUMNS: usize = 12;
@@ -190,7 +187,8 @@ impl ChatHistoryRepo for SqliteChatHistoryRepo {
             "INSERT INTO chat_history
                 (id, event_id, source, received_at, author, author_id, author_color,
                  body_segments, badges, is_event, event_detail, moderation)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT(id) DO NOTHING",
         )
         .bind(row.id)
         .bind(&row.event_id)

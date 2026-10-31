@@ -1,5 +1,4 @@
-#![allow(clippy::expect_used)]
-
+#![expect(clippy::expect_used, reason = "test fixtures")]
 use std::ops::Deref;
 
 use tempfile::TempDir;

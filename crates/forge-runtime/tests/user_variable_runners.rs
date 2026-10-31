@@ -1,4 +1,4 @@
-#![allow(clippy::unwrap_used, clippy::expect_used)]
+#![expect(clippy::expect_used, clippy::unwrap_used, reason = "test fixtures")]
 use forge_events::test_support::NullPublisher;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};

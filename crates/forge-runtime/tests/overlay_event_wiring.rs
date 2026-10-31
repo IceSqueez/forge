@@ -1,4 +1,4 @@
-#![allow(clippy::expect_used, clippy::panic)]
+#![expect(clippy::expect_used, clippy::panic, reason = "test fixtures")]
 mod common;
 use forge_events::Event;
 use std::sync::{Arc, Mutex};

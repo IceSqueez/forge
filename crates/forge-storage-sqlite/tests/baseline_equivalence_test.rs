@@ -1,4 +1,4 @@
-#![allow(clippy::expect_used)]
+#![expect(clippy::expect_used, reason = "test fixtures")]
 mod legacy_fixture;
 
 use forge_storage_sqlite::LEGACY_CHAIN;

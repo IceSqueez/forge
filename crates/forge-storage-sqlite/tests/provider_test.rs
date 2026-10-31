@@ -1,4 +1,4 @@
-#![allow(clippy::expect_used)]
+#![expect(clippy::expect_used, reason = "test fixtures")]
 use forge_storage::{DataProvider, GlobalsRepo};
 use forge_types::Variant;
 

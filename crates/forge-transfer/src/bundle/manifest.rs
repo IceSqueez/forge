@@ -27,25 +27,8 @@ pub enum BundleOrigin {
 }
 
 impl BundleKind {
-    const FULL_WIRE: &str = "full";
-    const PACK_WIRE: &str = "pack";
-    const SETUP_WIRE: &str = "setup";
-
     fn from_wire(kind: &str) -> Option<Self> {
-        match kind {
-            Self::FULL_WIRE => Some(Self::Full),
-            Self::PACK_WIRE => Some(Self::Pack),
-            Self::SETUP_WIRE => Some(Self::Setup),
-            _ => None,
-        }
-    }
-
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Full => Self::FULL_WIRE,
-            Self::Pack => Self::PACK_WIRE,
-            Self::Setup => Self::SETUP_WIRE,
-        }
+        serde_json::from_value(serde_json::Value::String(kind.to_owned())).ok()
     }
 }
 
@@ -145,15 +128,13 @@ struct ManifestHead {
 
 pub(crate) fn check_head(bytes: &[u8]) -> Result<BundleKind, TransferError> {
     let head: ManifestHead = serde_json::from_slice(bytes).map_err(TransferError::damaged)?;
-    let kind =
-        BundleKind::from_wire(&head.kind).ok_or(TransferError::UnknownKind { kind: head.kind })?;
     if head.format_version > BUNDLE_FORMAT_VERSION {
         return Err(TransferError::NewerFormat {
             found: head.format_version,
             supported: BUNDLE_FORMAT_VERSION,
         });
     }
-    Ok(kind)
+    BundleKind::from_wire(&head.kind).ok_or(TransferError::UnknownKind { kind: head.kind })
 }
 
 pub(crate) fn check_schema(found: u32) -> Result<(), TransferError> {

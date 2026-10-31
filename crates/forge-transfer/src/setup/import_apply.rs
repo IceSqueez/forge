@@ -118,11 +118,14 @@ pub async fn apply_setup_import(
             let journal = std::mem::take(&mut import.journal);
             match journal.roll_back(provider.as_ref()).await {
                 Ok(()) => Err(cause),
-                Err(failure) => Err(TransferError::SetupRollbackIncomplete {
-                    cause: cause.to_string(),
-                    failure: failure.to_string(),
-                    snapshot: safety_snapshot,
-                }),
+                Err(failure) => {
+                    tracing::error!(%cause, %failure, "setup import rollback incomplete");
+                    Err(TransferError::SetupRollbackIncomplete {
+                        cause: cause.to_string(),
+                        failure: failure.to_string(),
+                        snapshot: safety_snapshot,
+                    })
+                }
             }
         }
     }
@@ -183,6 +186,7 @@ impl SetupImport<'_, '_> {
             let directory = self.overlay_root.join(id.as_str());
             match tokio::fs::remove_dir_all(&directory).await {
                 Err(e) if e.kind() != io::ErrorKind::NotFound => {
+                    tracing::warn!(error = %e, path = %directory.display(), "setup cleanup failed");
                     failures.push(format!("{}: {e}", directory.display()));
                 }
                 _ => {}
@@ -192,7 +196,10 @@ impl SetupImport<'_, '_> {
         for id in self.known_media.difference(&self.carried_media) {
             match media.delete(id).await {
                 Ok(_) | Err(StorageError::MediaReferenced { .. }) => {}
-                Err(e) => failures.push(format!("{}: {e}", id.as_str())),
+                Err(e) => {
+                    tracing::warn!(error = %e, media = id.as_str(), "setup cleanup failed");
+                    failures.push(format!("{}: {e}", id.as_str()));
+                }
             }
         }
         failures

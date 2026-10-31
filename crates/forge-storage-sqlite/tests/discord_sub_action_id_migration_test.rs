@@ -1,4 +1,4 @@
-#![allow(clippy::expect_used)]
+#![expect(clippy::expect_used, reason = "test fixtures")]
 mod common;
 use forge_storage_sqlite::{connect, migrate_registry_format};
 use forge_types::{ActionId, SubActionStep, Variant};

@@ -1,10 +1,11 @@
-use forge_events::{Event, EventSource};
+use forge_events::{CUSTOM_EVENT_PREFIX, Event, EventSource};
 use forge_registry::{
     EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
 };
 use forge_types::{ArgStack, TriggerConfig, UserText, Variant};
 
 use crate::core_messages;
+use crate::sub_action_runners::EVENT_NAME_KEY;
 
 pub(crate) struct ScriptEventCustomDescriptor;
 
@@ -22,7 +23,7 @@ impl TriggerKindDescriptor for ScriptEventCustomDescriptor {
     }
 
     fn summary(&self) -> &str {
-        "Fires when a rhai script publishes a named custom event"
+        "Fires when an emit-event step or a connected WebSocket client sends a named custom event"
     }
 
     fn search_text(&self) -> &str {
@@ -39,13 +40,13 @@ impl TriggerKindDescriptor for ScriptEventCustomDescriptor {
 
     fn default_config(&self) -> TriggerConfig {
         let mut cfg = TriggerConfig::new();
-        cfg.insert("event_name".to_owned(), Variant::String(String::new()));
+        cfg.insert(EVENT_NAME_KEY.to_owned(), Variant::String(String::new()));
         cfg
     }
 
     fn config_fields(&self) -> Vec<FormField> {
         vec![FormField::Text {
-            key: "event_name",
+            key: EVENT_NAME_KEY,
             label: "Event Name",
             placeholder: "my_event",
         }]
@@ -53,7 +54,7 @@ impl TriggerKindDescriptor for ScriptEventCustomDescriptor {
 
     fn condition_display(&self, config: &TriggerConfig) -> UserText {
         config
-            .get("event_name")
+            .get(EVENT_NAME_KEY)
             .and_then(|v| v.as_str())
             .map(str::trim)
             .filter(|s| !s.is_empty())
@@ -66,17 +67,17 @@ impl TriggerKindDescriptor for ScriptEventCustomDescriptor {
     fn event_filter(&self) -> EventFilter {
         EventFilter {
             source: Some(EventSource::Server),
-            kind_prefix: Some("custom.".to_owned()),
+            kind_prefix: Some(CUSTOM_EVENT_PREFIX.to_owned()),
         }
     }
 
     fn matches_trigger(&self, config: &TriggerConfig, event: &Event) -> bool {
-        let event_name = match event.kind.strip_prefix("custom.") {
+        let event_name = match event.kind.strip_prefix(CUSTOM_EVENT_PREFIX) {
             Some(n) => n,
             None => return false,
         };
         let configured_name = config
-            .get("event_name")
+            .get(EVENT_NAME_KEY)
             .and_then(|v| v.as_str())
             .unwrap_or_default()
             .trim();
@@ -103,7 +104,7 @@ mod tests {
 
     fn named(event_name: &str) -> TriggerConfig {
         TriggerConfig::from([(
-            "event_name".to_owned(),
+            EVENT_NAME_KEY.to_owned(),
             Variant::String(event_name.to_owned()),
         )])
     }

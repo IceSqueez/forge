@@ -7,15 +7,15 @@ use forge_storage::{
     clip_source_referrer,
 };
 use forge_types::{ClipId, OutputDevice};
-use time::OffsetDateTime;
 
-use crate::epoch::{NANOS_PER_MILLI, to_epoch_ms};
+use crate::epoch::{from_epoch_ms, to_epoch_ms};
 use crate::error::SqliteStorageError;
 use crate::media_impl::{release_all_references, retain_reference};
 use crate::pool::SqlitePools;
+use crate::wire_label::parse_label;
 
 fn parse_clip_id(s: &str) -> Result<ClipId, StorageError> {
-    serde_json::from_str(&format!("\"{s}\"")).map_err(|e| {
+    parse_label(s).map_err(|e| {
         StorageError::from(SqliteStorageError::Decode(format!(
             "invalid clip id `{s}`: {e}"
         )))
@@ -193,14 +193,7 @@ fn row_to_clip(row: ClipRow) -> Result<StoredClip, StorageError> {
             "invalid output_device json: {e}"
         )))
     })?;
-    let created_at =
-        OffsetDateTime::from_unix_timestamp_nanos(i128::from(row.created_at) * NANOS_PER_MILLI)
-            .map_err(|e| {
-                StorageError::from(SqliteStorageError::Decode(format!(
-                    "invalid created_at {}: {e}",
-                    row.created_at
-                )))
-            })?;
+    let created_at = from_epoch_ms(row.created_at)?;
     Ok(StoredClip {
         id,
         name: row.name,
@@ -222,6 +215,7 @@ mod tests {
     use crate::SqliteBackend;
     use crate::test_support::{Sandboxed, sandboxed_file_backend};
     use forge_types::OutputDevice;
+    use time::OffsetDateTime;
 
     async fn open() -> Sandboxed<SqliteBackend> {
         sandboxed_file_backend([0xab; 32]).await

@@ -1,4 +1,4 @@
-#![allow(clippy::unwrap_used)]
+#![expect(clippy::unwrap_used, reason = "test fixtures")]
 use forge_events::test_support::CapturingPublisher;
 mod common;
 use common::runners::GateRunner;
@@ -16,7 +16,7 @@ use forge_runtime::{
     ActionCancelRegistry, Catalog, EventBus, ExecutionRequest, NullEventLogRepo, ScriptRegistry,
     spawn_action_engine,
 };
-use forge_runtime::{ScriptRunInlineRunner, TwitchChatSendMessageRunner};
+use forge_runtime::{ChatSendMessageRunner, ScriptRunInlineRunner};
 use forge_storage::MockTriggerInstanceRepo;
 use forge_storage::{
     ActionRepo, ActionStats, ActionTelemetry, CatalogRevision, ExecutionStatus, HistoryRepo,
@@ -578,7 +578,7 @@ async fn a_chat_send_targeted_at_a_disabled_platform_fails_the_run_visibly() {
     let id = action.id;
     repo.seed(action);
     let mut reg = SubActionRegistry::new();
-    reg.register(Box::new(TwitchChatSendMessageRunner)).unwrap();
+    reg.register(Box::new(ChatSendMessageRunner)).unwrap();
     let history = Arc::new(SpyHistoryRepo::new());
     let engine = spawn_with(&repo, &history, reg);
     engine.integration_gate().disable(twitch());
@@ -601,7 +601,7 @@ async fn a_chat_send_targeted_at_a_disabled_platform_fails_the_run_visibly() {
 async fn a_quick_chat_send_targeted_at_a_disabled_platform_reports_integration_disabled() {
     let repo = Arc::new(SpyActionRepo::new());
     let mut reg = SubActionRegistry::new();
-    reg.register(Box::new(TwitchChatSendMessageRunner)).unwrap();
+    reg.register(Box::new(ChatSendMessageRunner)).unwrap();
     let engine = spawn_with(&repo, &Arc::new(SpyHistoryRepo::new()), reg);
     let kick = IntegrationId::from_static("kick");
     engine.integration_gate().disable(kick.clone());

@@ -1,4 +1,4 @@
-#![allow(clippy::unwrap_used, clippy::panic)]
+#![expect(clippy::panic, clippy::unwrap_used, reason = "test fixtures")]
 mod common;
 use std::collections::BTreeMap;
 use std::sync::Arc;

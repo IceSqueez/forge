@@ -1,4 +1,5 @@
-#![allow(dead_code, clippy::expect_used, clippy::panic, clippy::unwrap_used)]
+#![expect(clippy::panic, clippy::unwrap_used, reason = "test fixtures")]
+#![allow(dead_code)]
 
 pub(crate) mod chain;
 pub(crate) mod repos;

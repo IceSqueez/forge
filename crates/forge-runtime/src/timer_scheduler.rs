@@ -122,7 +122,7 @@ impl TimerScheduler {
         let snapshot = match self.catalog.current().await {
             Ok(snapshot) => snapshot,
             Err(e) => {
-                warn!("timer_scheduler: catalog rebuild failed, keeping armed timers: {e}");
+                warn!(error = %e, "timer catalog rebuild failed, keeping armed timers");
                 return;
             }
         };

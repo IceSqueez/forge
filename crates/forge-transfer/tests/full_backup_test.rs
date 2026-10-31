@@ -1,4 +1,4 @@
-#![allow(clippy::unwrap_used)]
+#![expect(clippy::unwrap_used, reason = "test fixtures")]
 mod common;
 use common::{SQLITE_KEY, entry, files_under, sha256_hex};
 
@@ -542,17 +542,28 @@ fn manifest_only(manifest: &[u8]) -> Vec<u8> {
 }
 
 #[tokio::test]
-async fn public_manifest_refusals_check_kind_then_format_then_schema_then_scheme() {
+async fn public_manifest_refusals_check_format_then_kind_then_schema_then_scheme() {
     let fx = Fixture::new();
     let newer_format = BUNDLE_FORMAT_VERSION + 1;
     let newer_schema = EXPECTED_SCHEMA_VERSION + 1;
     let age = EncryptionScheme::AGE_SCRYPT_ID;
     let age_version = EncryptionScheme::AGE_SCRYPT_VERSION;
 
-    let cases: [(&str, Vec<u8>, Expected); 5] = [
+    let cases: [(&str, Vec<u8>, Expected); 6] = [
         (
-            "unknown kind wins",
+            "newer format beats an unknown kind",
             manifest_json("not-a-kind", newer_format, newer_schema, "argon2", 1),
+            |e| matches!(e, TransferError::NewerFormat { found, .. } if *found == BUNDLE_FORMAT_VERSION + 1),
+        ),
+        (
+            "unknown kind beats schema and scheme",
+            manifest_json(
+                "not-a-kind",
+                BUNDLE_FORMAT_VERSION,
+                newer_schema,
+                "argon2",
+                1,
+            ),
             |e| matches!(e, TransferError::UnknownKind { kind } if kind == "not-a-kind"),
         ),
         (

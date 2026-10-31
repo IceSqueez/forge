@@ -7,7 +7,7 @@ use forge_registry::{
     TypedField,
 };
 use forge_storage::GlobalsRepo;
-use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
+use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry};
 
 use super::core_globals_shared::{AMOUNT, GLOBAL_BY_KEY, global_name};
 use crate::core_messages;
@@ -81,14 +81,10 @@ impl SubActionRunner for CoreGlobalsDecrementRunner {
 
         let outcome = match self.globals.incr(&resolved_key, delta).await {
             Ok(new_val) => {
-                let new_val_json = match &new_val {
-                    Variant::Int(i) => serde_json::Value::from(*i),
-                    _ => serde_json::Value::String(new_val.to_string()),
-                };
                 GlobalDecremented {
                     key: resolved_key.clone(),
                     delta: amount,
-                    new_value: new_val_json,
+                    new_value: new_val.to_plain_json(),
                 }
                 .publish(
                     ctx.publisher,
@@ -113,8 +109,7 @@ mod tests {
     use forge_events::test_support::CapturingPublisher;
 
     use forge_events::test_support::NullPublisher;
-    use forge_types::EventId;
-
+    use forge_types::{EventId, Variant};
     fn cfg(key: &str, amount: i64) -> SubActionConfig {
         let mut c = SubActionConfig::new();
         c.insert("key".to_owned(), Variant::String(key.to_owned()));
@@ -200,6 +195,13 @@ mod tests {
         assert_eq!(ev.payload["key"], "counter");
         assert_eq!(ev.payload["delta"].as_i64(), Some(3));
         assert_eq!(ev.payload["new_value"].as_i64(), Some(7));
+    }
+
+    #[tokio::test]
+    async fn a_float_global_reports_its_new_value_as_a_json_number() {
+        let globals = Arc::new(MapGlobals::with([("balance", Variant::Float(10.5))]));
+        let events = capture(globals, &cfg("balance", 3)).await;
+        assert_eq!(events[0].payload["new_value"], serde_json::json!(7.5));
     }
 
     #[tokio::test]

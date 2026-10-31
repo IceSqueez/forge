@@ -1,8 +1,9 @@
 use std::str::FromStr;
 use std::time::Duration;
 
-use sqlx::SqlitePool;
+use sqlx::pool::PoolConnection;
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous};
+use sqlx::{Sqlite, SqlitePool};
 
 use crate::error::SqliteStorageError;
 
@@ -53,18 +54,28 @@ impl SqlitePools {
     }
 }
 
+pub(crate) async fn set_busy_timeout(
+    conn: &mut PoolConnection<Sqlite>,
+    timeout: Duration,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        "PRAGMA busy_timeout = {}",
+        timeout.as_millis()
+    )))
+    .execute(&mut **conn)
+    .await
+    .map(|_| ())
+}
+
 impl SqlitePools {
     async fn truncate_wal(&self) {
         let Ok(mut conn) = self.writer.acquire().await else {
             return;
         };
-        let bounded = sqlx::query(sqlx::AssertSqlSafe(format!(
-            "PRAGMA busy_timeout = {}",
-            SHUTDOWN_CHECKPOINT_WAIT.as_millis()
-        )))
-        .execute(&mut *conn)
-        .await;
-        if bounded.is_err() {
+        if set_busy_timeout(&mut conn, SHUTDOWN_CHECKPOINT_WAIT)
+            .await
+            .is_err()
+        {
             return;
         }
         match sqlx::query_as::<_, (i64, i64, i64)>("PRAGMA wal_checkpoint(TRUNCATE)")

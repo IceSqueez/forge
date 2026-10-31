@@ -1,5 +1,5 @@
 use std::fs::File;
-use std::io::{BufReader, Read};
+use std::io::{BufReader, Read, Seek};
 use std::path::Path;
 
 use flate2::read::GzDecoder;
@@ -16,7 +16,7 @@ pub(crate) fn open_outer(path: &Path) -> Result<OuterArchive, TransferError> {
     if file.read_exact(&mut magic).is_err() || magic != GZIP_MAGIC {
         return Err(TransferError::NotABundle);
     }
-    let file = File::open(path)?;
+    file.rewind()?;
     Ok(tar::Archive::new(GzDecoder::new(BufReader::new(file))))
 }
 

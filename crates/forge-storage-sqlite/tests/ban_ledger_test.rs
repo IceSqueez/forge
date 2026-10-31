@@ -1,4 +1,4 @@
-#![allow(clippy::expect_used)]
+#![expect(clippy::expect_used, reason = "test fixtures")]
 use forge_storage::{BAN_LEDGER_LIST_CAP, BanLedgerEntry, BanLedgerKey, BanLedgerRepo, BanOrigin};
 use forge_storage_sqlite::{MIGRATIONS, SqliteBanLedgerRepo, SqlitePools, apply_migrations};
 use forge_types::PlatformId;

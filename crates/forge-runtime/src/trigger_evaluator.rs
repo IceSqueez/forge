@@ -6,8 +6,8 @@ use std::time::Duration;
 use forge_events::{CommandMatched, Event, EventSource, TypedEvent};
 use forge_net::TaskOwner;
 use forge_registry::{
-    ChatTriggerFamily, TriggerKindDescriptor, TriggerRegistry, effective_config,
-    ignores_bot_messages, kind_matches_prefix,
+    COMMAND_PHRASE_KEY, ChatTriggerFamily, TriggerKindDescriptor, TriggerRegistry,
+    effective_config, ignores_bot_messages, kind_matches_prefix,
 };
 use forge_types::{
     ArgStack, COMMAND_TAIL_VARIABLE, ChatPayload, EventId, PermissionRung, SynthesisHint,
@@ -98,7 +98,7 @@ impl TriggerEvaluator {
         let catalog = match self.catalog.current().await {
             Ok(catalog) => catalog,
             Err(e) => {
-                warn!("trigger_evaluator: catalog rebuild failed: {e}");
+                warn!(error = %e, "trigger evaluator catalog rebuild failed");
                 return;
             }
         };
@@ -152,7 +152,7 @@ impl TriggerEvaluator {
                         "queue refused the triggered run"
                     );
                 }
-                Err(e) => warn!("trigger_evaluator: scheduler dispatch failed: {e}"),
+                Err(e) => warn!(error = %e, "trigger evaluator scheduler dispatch failed"),
             }
         }
 
@@ -213,8 +213,8 @@ impl TriggerEvaluator {
             Some(d) => d,
             None => {
                 warn!(
-                    "unknown trigger kind_id: {} - trigger will never fire",
-                    instance.kind_id
+                    kind_id = %instance.kind_id,
+                    "unknown trigger kind - trigger will never fire"
                 );
                 return None;
             }
@@ -316,7 +316,7 @@ impl TriggerEvaluator {
         }
 
         let key = cooldown_key(instance, args)?;
-        let window = Duration::from_secs(instance.cooldown_secs as u64);
+        let window = Duration::from_secs(u64::from(instance.cooldown_secs));
         self.cooldowns.remaining_or_stamp(key, window, event_id)
     }
 }
@@ -447,14 +447,14 @@ impl BlockReason {
             Self::Permission { required, resolved } => json!({
                 "instance_id": instance.id,
                 "kind_id": instance.kind_id,
-                "reason": "permission",
+                "reason": Rejection::Permission.as_str(),
                 "rung_required": required.as_str(),
                 "rung_resolved": resolved.as_str(),
             }),
             Self::Cooldown { remaining } => json!({
                 "instance_id": instance.id,
                 "kind_id": instance.kind_id,
-                "reason": "cooldown",
+                "reason": Rejection::Cooldown.as_str(),
                 "remaining_ms": u64::try_from(remaining.as_millis()).unwrap_or(u64::MAX),
             }),
         }
@@ -482,7 +482,7 @@ fn arg_stack_user(args: &ArgStack) -> Option<String> {
 }
 
 fn command_phrase(config: &TriggerConfig) -> String {
-    match config.get("phrase") {
+    match config.get(COMMAND_PHRASE_KEY) {
         Some(Variant::String(s)) => s.clone(),
         _ => String::new(),
     }

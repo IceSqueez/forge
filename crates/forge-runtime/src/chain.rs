@@ -1381,10 +1381,8 @@ mod tests {
 
     fn chat_send_registry() -> Arc<SubActionRegistry> {
         let mut reg = SubActionRegistry::new();
-        reg.register(Box::new(
-            crate::sub_action_runners::TwitchChatSendMessageRunner,
-        ))
-        .unwrap();
+        reg.register(Box::new(crate::sub_action_runners::ChatSendMessageRunner))
+            .unwrap();
         Arc::new(reg)
     }
 

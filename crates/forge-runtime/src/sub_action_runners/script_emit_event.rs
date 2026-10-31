@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_events::{Event, EventPublisher, EventSource};
+use forge_events::{CUSTOM_EVENT_PREFIX, Event, EventPublisher, EventSource};
 use forge_registry::{
     ConfigProblem, ConfigSpec, RunContext, StepTimer, SubActionCategory, SubActionRunner,
     TextEditor, TextField, TypedField,
@@ -12,7 +12,6 @@ use super::event_payload::{EVENT_NAME_KEY, PAYLOAD};
 use crate::core_messages;
 
 const EMIT_EVENT_KIND_ID: &str = "script.emit_event";
-const CUSTOM_EVENT_PREFIX: &str = "custom.";
 
 const EVENT_NAME: TextField = TextField {
     key: EVENT_NAME_KEY,

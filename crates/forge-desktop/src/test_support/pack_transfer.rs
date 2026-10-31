@@ -623,7 +623,7 @@ fn defaults(_: &PackConflict) -> Option<PackResolution> {
 }
 
 fn on_conflict(resolution: PackResolution) -> impl Fn(&PackConflict) -> Option<PackResolution> {
-    move |conflict| (*conflict != PackConflict::None).then_some(resolution)
+    move |conflict| (*conflict != PackConflict::Clear).then_some(resolution)
 }
 
 fn local_id(outcome: &PackImportOutcome, kind: PackItemKind, pack_id: &str) -> String {

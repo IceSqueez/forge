@@ -1,4 +1,4 @@
-#![allow(clippy::unwrap_used)]
+#![expect(clippy::unwrap_used, reason = "test fixtures")]
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 

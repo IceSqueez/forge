@@ -1,4 +1,4 @@
-use std::fmt::Write as _;
+use forge_types::to_lower_hex;
 use std::io::{self, Read};
 
 use sha2::{Digest, Sha256};
@@ -25,7 +25,7 @@ impl<R: Read> DigestingReader<R> {
     }
 
     pub(crate) fn finish_hex(self) -> String {
-        to_hex(&self.hasher.finalize())
+        to_lower_hex(&self.hasher.finalize())
     }
 }
 
@@ -57,16 +57,5 @@ pub(crate) fn digest_reader(mut reader: impl Read) -> io::Result<(u64, String)> 
         hasher.update(&buffer[..read]);
         size += read as u64;
     }
-    Ok((size, to_hex(&hasher.finalize())))
-}
-
-pub(crate) fn to_hex(bytes: &[u8]) -> String {
-    bytes.iter().fold(String::new(), |mut hex, byte| {
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "writing to a String cannot fail"
-        )]
-        let _ = write!(hex, "{byte:02x}");
-        hex
-    })
+    Ok((size, to_lower_hex(&hasher.finalize())))
 }

@@ -1,4 +1,4 @@
-#![allow(clippy::panic, clippy::expect_used)]
+#![expect(clippy::expect_used, reason = "test fixtures")]
 use forge_script::{Engine, EngineConfig};
 
 const WORKER_STACK: usize = 2 << 20;

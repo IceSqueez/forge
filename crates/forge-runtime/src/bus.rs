@@ -295,10 +295,13 @@ impl EventBus {
             return events;
         }
 
-        self.event_log
-            .recent_since(limit, Some(since_id))
-            .await
-            .unwrap_or_default()
+        match self.event_log.recent_since(limit, Some(since_id)).await {
+            Ok(events) => events,
+            Err(error) => {
+                tracing::warn!(%error, "event log read failed; returning no older events");
+                Vec::new()
+            }
+        }
     }
 
     pub async fn replay_and_publish(&self, event_id: EventId) -> Result<(), RuntimeError> {

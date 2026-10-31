@@ -1,4 +1,4 @@
-use std::io::{BufWriter, Write};
+use std::io::BufWriter;
 use std::path::{Path, PathBuf};
 
 use flate2::Compression;
@@ -13,7 +13,9 @@ use crate::bundle::limits::{MAX_PACK_DOCUMENTS_BYTES, MAX_PACK_MANIFEST_BYTES};
 use crate::bundle::manifest::{ContentEntry, MANIFEST_ENTRY_NAME};
 use crate::bundle::naming::partial_path;
 use crate::bundle::outer::{open_outer, read_bounded};
-use crate::bundle::payload::{PayloadFile, append_bytes, append_verified};
+use crate::bundle::payload::{
+    PayloadFile, append_bytes, append_verified, publish_sealed, seal_archive,
+};
 use crate::documents::model::{ClipSourceDocument, PackDocuments};
 use crate::error::TransferError;
 use forge_durable::create_private;
@@ -57,12 +59,8 @@ pub(crate) fn write_document_bundle(
     for file in files {
         append_verified(&mut builder, file)?;
     }
-    let mut sink = builder.into_inner()?.finish()?;
-    sink.flush()?;
-    sink.get_ref().sync_all()?;
-    drop(sink);
-    std::fs::rename(&partial, destination)?;
-    Ok(())
+    seal_archive(builder)?;
+    publish_sealed(&partial, destination)
 }
 
 pub(crate) fn stage_document_bundle<M: DocumentManifest>(

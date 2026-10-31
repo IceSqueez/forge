@@ -1,4 +1,4 @@
-#![allow(clippy::unwrap_used, clippy::expect_used)]
+#![expect(clippy::unwrap_used, reason = "test fixtures")]
 use forge_storage::{ActionRepo, QueueRepo, StorageError};
 use forge_storage_sqlite::{SqliteActionRepo, SqlitePools, SqliteQueueRepo};
 use forge_types::{ActionId, DEFAULT_QUEUE_ID, Queue, QueueId};

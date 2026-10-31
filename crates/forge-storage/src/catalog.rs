@@ -112,18 +112,10 @@ impl Drop for AdvanceOnDrop {
 pub struct RevisingActionRepo {
     inner: Arc<dyn ActionRepo>,
     revision: CatalogRevision,
-    scheduled_run_revision: Option<CatalogRevision>,
+    scheduled_run_revision: CatalogRevision,
 }
 
 impl RevisingActionRepo {
-    pub fn wrap(inner: Arc<dyn ActionRepo>, revision: CatalogRevision) -> Arc<dyn ActionRepo> {
-        Arc::new(Self {
-            inner,
-            revision,
-            scheduled_run_revision: None,
-        })
-    }
-
     pub fn wrap_cascading_scheduled_runs(
         inner: Arc<dyn ActionRepo>,
         revision: CatalogRevision,
@@ -132,7 +124,7 @@ impl RevisingActionRepo {
         Arc::new(Self {
             inner,
             revision,
-            scheduled_run_revision: Some(scheduled_run_revision),
+            scheduled_run_revision,
         })
     }
 }
@@ -165,8 +157,8 @@ impl ActionRepo for RevisingActionRepo {
         self.revision
             .after(async move {
                 let deleted = inner.delete(id).await?;
-                if deleted && let Some(revision) = scheduled_run_revision {
-                    revision.advance();
+                if deleted {
+                    scheduled_run_revision.advance();
                 }
                 Ok(deleted)
             })
@@ -233,10 +225,8 @@ impl ActionRepo for RevisingActionRepo {
         self.revision
             .after(async move {
                 let cancelled = inner.archive_reporting_cancelled_runs(id).await?;
-                if cancelled.is_some_and(|runs| runs > 0)
-                    && let Some(revision) = scheduled_run_revision
-                {
-                    revision.advance();
+                if cancelled.is_some_and(|runs| runs > 0) {
+                    scheduled_run_revision.advance();
                 }
                 Ok(cancelled)
             })

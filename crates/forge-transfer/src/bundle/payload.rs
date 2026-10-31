@@ -1,6 +1,8 @@
 use std::fs::File;
-use std::io::Write;
+use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
+
+use flate2::write::GzEncoder;
 
 use crate::bundle::category::{BackupCategory, directories_of};
 use crate::bundle::digest::{DigestingReader, digest_reader};
@@ -9,6 +11,20 @@ use crate::bundle::manifest::ContentEntry;
 use crate::error::TransferError;
 
 const ARCHIVED_FILE_MODE: u32 = 0o600;
+
+pub(crate) type GzArchive = tar::Builder<GzEncoder<BufWriter<File>>>;
+
+pub(crate) fn seal_archive(builder: GzArchive) -> Result<(), TransferError> {
+    let mut sink = builder.into_inner()?.finish()?;
+    sink.flush()?;
+    sink.get_ref().sync_all()?;
+    Ok(())
+}
+
+pub(crate) fn publish_sealed(partial: &Path, destination: &Path) -> Result<(), TransferError> {
+    std::fs::rename(partial, destination)?;
+    Ok(forge_durable::sync_parent(destination)?)
+}
 
 pub(crate) struct PayloadFile {
     source: PathBuf,

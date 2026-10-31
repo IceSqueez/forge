@@ -1,4 +1,4 @@
-#![allow(clippy::panic)]
+#![expect(clippy::panic, reason = "test fixtures")]
 use std::collections::BTreeMap;
 
 use forge_script::{BoundExpression, ConditionEvaluator, EngineConfig, MathEvaluator};

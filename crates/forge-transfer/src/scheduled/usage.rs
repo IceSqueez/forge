@@ -1,14 +1,12 @@
 use std::path::Path;
 
 use forge_paths::BACKUPS_DIR_NAME;
-use forge_storage::DATABASE_FILE_NAME;
+use forge_storage::database_unit_file_names;
 
 use crate::bundle::category::BackupCategory;
 use crate::bundle::fs_usage::{directory_bytes, file_bytes};
 use crate::bundle::naming::BUNDLE_EXTENSION;
 use crate::scheduled::destination::is_within;
-
-const DATABASE_SIDECAR_SUFFIXES: [&str; 2] = ["-wal", "-shm"];
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct StorageUsed {
@@ -43,9 +41,9 @@ pub(crate) fn measure(data_dir: &Path, destination: Option<&Path>) -> StorageUse
 }
 
 fn database_bytes(data_dir: &Path) -> u64 {
-    std::iter::once(String::new())
-        .chain(DATABASE_SIDECAR_SUFFIXES.iter().map(|s| (*s).to_owned()))
-        .map(|suffix| file_bytes(&data_dir.join(format!("{DATABASE_FILE_NAME}{suffix}"))))
+    database_unit_file_names()
+        .iter()
+        .map(|name| file_bytes(&data_dir.join(name)))
         .sum()
 }
 

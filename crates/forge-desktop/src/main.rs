@@ -891,13 +891,12 @@ mod tests {
             assert_eq!(claim_instance().err(), Some(EXIT_STARTUP_FAILURE));
             return;
         }
-        let parent = tempfile::tempdir().unwrap();
-        let not_a_directory = parent.path().join("data");
-        std::fs::write(&not_a_directory, "a file").unwrap();
+        let data = tempfile::tempdir().unwrap();
+        std::fs::create_dir(data.path().join(forge_transfer::RESTORE_MARKER_FILE)).unwrap();
 
         run_as_claim_child(
             "a_data_directory_that_cannot_settle_a_restore_is_a_startup_failure",
-            &not_a_directory,
+            data.path(),
         );
     }
 

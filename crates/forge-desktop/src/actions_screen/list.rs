@@ -1492,11 +1492,36 @@ mod tests {
                 .collect()
         }
 
-        fn click_row(&self, vcx: &mut gpui::VisualTestContext, position: usize) {
-            let bounds = self.view.read_with(vcx, |view, _| {
+        fn row_bounds(
+            &self,
+            vcx: &mut gpui::VisualTestContext,
+            position: usize,
+        ) -> gpui::Bounds<Pixels> {
+            self.view.read_with(vcx, |view, _| {
                 let child = view.tree_action_rows()[position].child_index;
                 view.tree_scroll.bounds_for_item(child).unwrap()
-            });
+            })
+        }
+
+        fn click_step_counter(&self, vcx: &mut gpui::VisualTestContext, position: usize) {
+            let bounds = self.row_bounds(vcx, position);
+            let counter = gpui::point(
+                bounds.right() - ROW_GUTTER - RIGHT_SLOT_W / 2.0,
+                bounds.center().y,
+            );
+            vcx.simulate_click(counter, gpui::Modifiers::none());
+            self.settle(vcx);
+        }
+
+        fn right_click_row(&self, vcx: &mut gpui::VisualTestContext, position: usize) {
+            let center = self.row_bounds(vcx, position).center();
+            vcx.simulate_mouse_down(center, MouseButton::Right, gpui::Modifiers::none());
+            vcx.simulate_mouse_up(center, MouseButton::Right, gpui::Modifiers::none());
+            vcx.run_until_parked();
+        }
+
+        fn click_row(&self, vcx: &mut gpui::VisualTestContext, position: usize) {
+            let bounds = self.row_bounds(vcx, position);
             let name_area = gpui::point(bounds.left() + ROW_INDENT, bounds.center().y);
             vcx.simulate_click(name_area, gpui::Modifiers::none());
             self.settle(vcx);
@@ -1941,6 +1966,101 @@ mod tests {
         vcx.run_until_parked();
 
         assert_eq!(fixture.cursor_name(vcx).as_deref(), Some("Free hug"));
+        assert_eq!(fixture.selected_name(vcx), None);
+    }
+
+    #[gpui::test]
+    fn arrows_continue_from_the_row_a_click_selected(cx: &mut gpui::TestAppContext) {
+        let fixture = Fixture::new(cx, &seeds());
+        let vcx = &mut fixture.in_window(cx);
+        fixture.press(vcx, "down");
+
+        fixture.click_row(vcx, 3);
+        fixture.press(vcx, "down");
+
+        assert_eq!(fixture.cursor_name(vcx).as_deref(), Some("Shoutout"));
+    }
+
+    #[gpui::test]
+    fn enter_after_a_click_keeps_the_clicked_row_over_the_row_the_arrows_left_behind(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let fixture = Fixture::new(cx, &seeds());
+        let vcx = &mut fixture.in_window(cx);
+        fixture.press(vcx, "down");
+
+        fixture.click_row(vcx, 3);
+        fixture.press(vcx, "enter");
+        fixture.settle(vcx);
+
+        assert_eq!(fixture.selected_name(vcx).as_deref(), Some("Hug"));
+    }
+
+    #[gpui::test]
+    fn an_open_row_menu_keeps_arrows_and_enter_from_the_list_until_escape_closes_it(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let fixture = Fixture::new(cx, &seeds());
+        let vcx = &mut fixture.in_window(cx);
+        fixture.press(vcx, "down");
+        fixture.right_click_row(vcx, 2);
+        let menu_row = fixture.view.read_with(vcx, |view, _| view.menu_open);
+        assert_eq!(menu_row.map(|id| fixture.name_of(id)), Some("Lurk"));
+
+        fixture.press(vcx, "down enter");
+        assert_eq!(fixture.cursor_name(vcx).as_deref(), Some("Free hug"));
+        assert_eq!(fixture.selected_name(vcx), None);
+
+        fixture.press(vcx, "escape");
+        fixture.press(vcx, "down");
+        assert_eq!(fixture.cursor_name(vcx).as_deref(), Some("Hydrate"));
+    }
+
+    #[gpui::test]
+    fn a_hidden_cursor_row_hands_the_arrows_to_the_visible_selection(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let fixture = Fixture::new(cx, &seeds());
+        let vcx = &mut fixture.in_window(cx);
+        fixture.click_row(vcx, 3);
+        fixture.press(vcx, "down");
+        assert_eq!(fixture.cursor_name(vcx).as_deref(), Some("Shoutout"));
+
+        fixture.search(vcx, "hu");
+        vcx.run_until_parked();
+        fixture.press(vcx, "up");
+
+        assert_eq!(fixture.cursor_name(vcx).as_deref(), Some("Free hug"));
+    }
+
+    #[gpui::test]
+    fn a_click_on_the_step_counter_selects_the_row(cx: &mut gpui::TestAppContext) {
+        let fixture = Fixture::new(cx, &seeds());
+        let vcx = &mut fixture.in_window(cx);
+        fixture.press(vcx, "down");
+
+        fixture.click_step_counter(vcx, 3);
+
+        assert_eq!(
+            (fixture.selected_name(vcx), fixture.cursor_name(vcx)),
+            (Some("Hug".to_owned()), Some("Hug".to_owned()))
+        );
+    }
+
+    #[gpui::test]
+    fn a_click_on_a_row_being_renamed_does_not_select_it(cx: &mut gpui::TestAppContext) {
+        let fixture = Fixture::new(cx, &seeds());
+        let vcx = &mut fixture.in_window(cx);
+        let renamed = fixture
+            .view
+            .read_with(vcx, |view, _| view.tree_action_rows()[3].id);
+        fixture.view.update_in(vcx, |view, window, cx| {
+            view.start_rename(renamed, window, cx)
+        });
+        vcx.run_until_parked();
+
+        fixture.click_step_counter(vcx, 3);
+
         assert_eq!(fixture.selected_name(vcx), None);
     }
 }

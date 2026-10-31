@@ -1099,8 +1099,171 @@ impl TriggersRegistryView {
 mod tests {
     use std::sync::{Arc, Mutex};
 
-    use super::super::tests::{open_list_recording_writes, open_trigger_list, row_named};
+    use forge_components::InputEvent;
+    use forge_types::TriggerInstanceId;
+    use gpui::{Context, Entity, IntoElement, Modifiers, MouseButton, ParentElement, Pixels};
+    use gpui::{Point, Render, Styled, VisualTestContext, Window, div, point, px};
+
+    use super::super::TriggersRegistryView;
+    use super::super::tests::{
+        TriggerList, open_list_recording_writes, open_trigger_list, row_named,
+    };
     use crate::test_support::press_undo;
+
+    const LISTED: [&str; 3] = ["Alfa", "Alma", "Bravo"];
+
+    struct Hosting(Entity<TriggersRegistryView>);
+
+    impl Render for Hosting {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            div().size_full().child(self.0.clone())
+        }
+    }
+
+    struct KeyedList {
+        list: TriggerList,
+        vcx: VisualTestContext,
+    }
+
+    impl KeyedList {
+        fn mount(cx: &mut gpui::TestAppContext) -> Self {
+            let list = open_trigger_list(cx, LISTED.map(row_named).to_vec());
+            cx.update(crate::actions::register_key_bindings);
+            let hosted = list.view.clone();
+            let window = cx.add_window(|_, _| Hosting(hosted));
+            let vcx = VisualTestContext::from_window(window.into(), cx);
+            let mut keyed = Self { list, vcx };
+            keyed.settle();
+            keyed
+        }
+
+        fn settle(&mut self) {
+            self.list.settle(&mut self.vcx);
+        }
+
+        fn press(&mut self, keys: &str) {
+            self.vcx.simulate_keystrokes(keys);
+            self.settle();
+        }
+
+        fn search(&mut self, query: &str) {
+            let changed = InputEvent::Changed(query.to_owned().into());
+            self.list.view.update(&mut self.vcx, |view, cx| {
+                let field = view.search.field().clone();
+                view.on_search_event(field, &changed, cx);
+            });
+            self.vcx.run_until_parked();
+        }
+
+        fn row_point(&mut self, position: usize) -> Point<Pixels> {
+            let (bounds, row_height) = self.list.view.read_with(&self.vcx, |view, _| {
+                let scroll = view.list_scroll.0.borrow();
+                let contents = scroll.last_item_size.unwrap().contents;
+                let rows = view.visible.len() as f32;
+                (scroll.base_handle.bounds(), contents.height / rows)
+            });
+            point(
+                bounds.left() + px(60.0),
+                bounds.top() + row_height * (position as f32 + 0.5),
+            )
+        }
+
+        fn click_row(&mut self, position: usize) {
+            let row = self.row_point(position);
+            self.vcx.simulate_click(row, Modifiers::none());
+            self.settle();
+        }
+
+        fn right_click_row(&mut self, position: usize) {
+            let row = self.row_point(position);
+            self.vcx
+                .simulate_mouse_down(row, MouseButton::Right, Modifiers::none());
+            self.vcx
+                .simulate_mouse_up(row, MouseButton::Right, Modifiers::none());
+            self.vcx.run_until_parked();
+        }
+
+        fn name_of(&self, id: Option<TriggerInstanceId>) -> Option<String> {
+            self.list.view.read_with(&self.vcx, |view, _| {
+                id.and_then(|id| view.find(id).map(|row| row.name.clone()))
+            })
+        }
+
+        fn cursor(&self) -> Option<String> {
+            let at = self
+                .list
+                .view
+                .read_with(&self.vcx, |view, _| view.list_cursor);
+            self.name_of(at)
+        }
+
+        fn selected(&self) -> Option<String> {
+            let selected = self.list.view.read_with(&self.vcx, |view, _| view.selected);
+            self.name_of(selected)
+        }
+    }
+
+    #[gpui::test]
+    fn arrows_continue_from_the_row_a_click_selected(cx: &mut gpui::TestAppContext) {
+        let mut rig = KeyedList::mount(cx);
+        rig.press("down");
+
+        rig.click_row(1);
+        rig.press("down");
+
+        assert_eq!(rig.cursor().as_deref(), Some("Bravo"));
+    }
+
+    #[gpui::test]
+    fn enter_after_a_click_keeps_the_clicked_row_over_the_row_the_arrows_left_behind(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let mut rig = KeyedList::mount(cx);
+        rig.press("down");
+
+        rig.click_row(2);
+        rig.press("enter");
+
+        assert_eq!(rig.selected().as_deref(), Some("Bravo"));
+    }
+
+    #[gpui::test]
+    fn a_hidden_cursor_row_hands_the_arrows_to_the_visible_selection(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let mut rig = KeyedList::mount(cx);
+        rig.click_row(1);
+        rig.press("down");
+        assert_eq!(rig.cursor().as_deref(), Some("Bravo"));
+
+        rig.search("al");
+        rig.press("up");
+
+        assert_eq!(rig.cursor().as_deref(), Some("Alfa"));
+    }
+
+    #[gpui::test]
+    fn enter_on_a_cursor_row_the_search_hid_selects_nothing(cx: &mut gpui::TestAppContext) {
+        let mut rig = KeyedList::mount(cx);
+        rig.press("down down");
+
+        rig.search("bravo");
+        rig.press("enter");
+
+        assert_eq!(rig.selected(), None);
+    }
+
+    #[gpui::test]
+    fn an_open_row_menu_keeps_arrows_and_enter_from_the_list(cx: &mut gpui::TestAppContext) {
+        let mut rig = KeyedList::mount(cx);
+        rig.press("down");
+        rig.right_click_row(2);
+
+        rig.press("down enter");
+
+        assert_eq!(rig.cursor().as_deref(), Some("Alfa"));
+        assert_eq!(rig.selected(), None);
+    }
 
     #[gpui::test]
     fn undoing_a_delete_brings_the_trigger_back(cx: &mut gpui::TestAppContext) {

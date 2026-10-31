@@ -633,6 +633,26 @@ impl<'a> DrawerRig<'a> {
             .read_with(self.vcx, |view, _| view.selected_viewer.clone())
     }
 
+    fn add_viewer(&mut self, name: &str, unix: i64) {
+        let feed = self.view.read_with(self.vcx, |view, _| view.feed.clone());
+        push_each(self.vcx, &feed, vec![line_by(&Self::key(name), unix)]);
+    }
+
+    fn click_row(&mut self, position: usize) {
+        let (bounds, row_height) = self.view.read_with(self.vcx, |view, _| {
+            let scroll = view.drawer_list_scroll.0.borrow();
+            let contents = scroll.last_item_size.unwrap().contents;
+            let rows = view.drawer_keys.len() as f32;
+            (scroll.base_handle.bounds(), contents.height / rows)
+        });
+        let row_center = gpui::point(
+            bounds.center().x,
+            bounds.top() + row_height * (position as f32 + 0.5),
+        );
+        self.vcx.simulate_click(row_center, gpui::Modifiers::none());
+        self.vcx.run_until_parked();
+    }
+
     fn at(&mut self, name: &str) -> bool {
         self.view.read_with(self.vcx, |view, _| {
             view.drawer_list_keys.is_at(&Self::key(name))
@@ -667,4 +687,69 @@ fn a_drawer_search_that_hides_the_cursor_row_takes_the_cursor_with_it(cx: &mut T
 
     rig.press("down");
     assert!(rig.at(OLDEST));
+}
+
+#[gpui::test]
+fn arrows_continue_from_the_viewer_a_click_selected(cx: &mut TestAppContext) {
+    let rt = runtime();
+    let mut rig = DrawerRig::mount(cx, &rt);
+    rig.press("down");
+
+    rig.click_row(1);
+    rig.press("down");
+
+    assert!(rig.at(OLDEST));
+}
+
+#[gpui::test]
+fn enter_after_a_click_keeps_the_clicked_viewer_over_the_row_the_arrows_left_behind(
+    cx: &mut TestAppContext,
+) {
+    let rt = runtime();
+    let mut rig = DrawerRig::mount(cx, &rt);
+    rig.press("down");
+
+    rig.click_row(1);
+    rig.press("enter");
+
+    assert_eq!(rig.selected(), Some(DrawerRig::key(MIDDLE)));
+}
+
+#[gpui::test]
+fn opening_a_viewer_from_outside_the_list_moves_the_cursor_onto_them(cx: &mut TestAppContext) {
+    type Open = fn(&mut ChatView, AuthorKey, &mut gpui::Window, &mut Context<ChatView>);
+    let openings: [(&str, Open); 2] = [
+        ("open", |view, key, _, cx| view.open_viewer(key, cx)),
+        ("whisper", |view, key, window, cx| {
+            view.open_whisper(key, window, cx)
+        }),
+    ];
+    for (how, open) in openings {
+        let rt = runtime();
+        let mut rig = DrawerRig::mount(cx, &rt);
+        rig.press("down");
+
+        rig.view.update_in(rig.vcx, |view, window, cx| {
+            open(view, DrawerRig::key(MIDDLE), window, cx)
+        });
+        rig.vcx.run_until_parked();
+
+        assert!(rig.at(MIDDLE), "{how}");
+    }
+}
+
+#[gpui::test]
+fn a_hidden_cursor_row_hands_the_arrows_to_the_visible_selected_viewer(cx: &mut TestAppContext) {
+    let rt = runtime();
+    let mut rig = DrawerRig::mount(cx, &rt);
+    rig.add_viewer("bea", 4);
+    rig.click_row(2);
+    assert_eq!(rig.selected(), Some(DrawerRig::key(MIDDLE)));
+    rig.press("down");
+    assert!(rig.at(OLDEST));
+
+    rig.search("be");
+    rig.press("up");
+
+    assert!(rig.at("bea"));
 }

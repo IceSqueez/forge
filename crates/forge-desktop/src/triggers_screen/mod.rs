@@ -848,6 +848,12 @@ mod tests {
         repo.expect_list_all().returning(|| Ok(Vec::new()));
         repo.expect_actions_by_instance()
             .returning(|| Ok(Default::default()));
+        let found = Arc::clone(&rows);
+        repo.expect_get().returning(move |id| {
+            let found = found.lock().unwrap();
+            Ok(found.iter().find(|row| row.id == id).cloned())
+        });
+        repo.expect_actions_using().returning(|_| Ok(Vec::new()));
         repo.expect_set_enabled()
             .returning(move |_, enabled| match &writes {
                 Some(writes) => {

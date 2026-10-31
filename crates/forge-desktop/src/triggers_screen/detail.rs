@@ -2014,4 +2014,28 @@ pub(super) mod tests {
 
         assert_eq!(shown_greeting(&fixture, cx), "");
     }
+
+    #[gpui::test]
+    fn a_trigger_used_as_a_template_takes_the_cursor_with_the_selection(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let mut fixture = Fixture::new(cx);
+        let seeded = fixture.view().read_with(cx, |view, _| view.selected);
+
+        fixture
+            .view()
+            .update(cx, |view, cx| view.use_as_template(cx));
+        pump_until(&fixture.rt, || {
+            cx.run_until_parked();
+            fixture
+                .view()
+                .read_with(cx, |view, _| view.selected != seeded)
+        });
+        fixture.settle(cx);
+
+        let (selected, cursor) = fixture
+            .view()
+            .read_with(cx, |view, _| (view.selected, view.list_cursor));
+        assert_eq!(cursor, selected);
+    }
 }

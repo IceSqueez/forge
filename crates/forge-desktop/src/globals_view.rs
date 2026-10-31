@@ -2495,6 +2495,27 @@ mod tests {
             self.vcx.run_until_parked();
         }
 
+        fn open_and_close(&mut self, opening: Opening, name: &str) {
+            let focus = self
+                .view
+                .read_with(&self.vcx, |view, _| view.table_keys.focus().clone());
+            self.view
+                .update_in(&mut self.vcx, |view, window, cx| match opening {
+                    Opening::Edit => {
+                        view.open_edit(name.to_owned().into(), window, cx);
+                        view.cancel_editor(cx);
+                    }
+                    Opening::Inspect => {
+                        let at = view.visible.iter().find(|g| g.name == name);
+                        view.open_inspect(at.unwrap().clone(), cx);
+                        view.close_inspect(cx);
+                    }
+                });
+            self.vcx.run_until_parked();
+            self.vcx.update(|window, cx| window.focus(&focus, cx));
+            self.vcx.run_until_parked();
+        }
+
         fn cursor(&self) -> Option<&'static str> {
             self.view.read_with(&self.vcx, |view, _| {
                 LISTED
@@ -2512,6 +2533,53 @@ mod tests {
                 }
             })
         }
+    }
+
+    #[derive(Clone, Copy, Debug)]
+    enum Opening {
+        Edit,
+        Inspect,
+    }
+
+    #[gpui::test]
+    fn arrows_continue_from_the_row_its_own_button_opened(cx: &mut TestAppContext) {
+        for opening in [Opening::Edit, Opening::Inspect] {
+            let mut rig = ListRig::mount(cx);
+            rig.press("down");
+
+            rig.open_and_close(opening, LISTED[1]);
+            rig.press("down");
+
+            assert_eq!(rig.cursor(), Some(LISTED[2]), "{opening:?}");
+        }
+    }
+
+    #[gpui::test]
+    fn enter_after_a_row_button_reopens_that_row(cx: &mut TestAppContext) {
+        for opening in [Opening::Edit, Opening::Inspect] {
+            let mut rig = ListRig::mount(cx);
+            rig.press("down");
+
+            rig.open_and_close(opening, LISTED[2]);
+            rig.press("enter");
+
+            assert_eq!(rig.edited().as_deref(), Some(LISTED[2]), "{opening:?}");
+        }
+    }
+
+    #[gpui::test]
+    fn an_open_row_menu_keeps_arrows_and_enter_from_the_list(cx: &mut TestAppContext) {
+        let mut rig = ListRig::mount(cx);
+        rig.press("down");
+        rig.view.update(&mut rig.vcx, |view, cx| {
+            view.open_row_menu(LISTED[1].into(), gpui::Point::default(), cx)
+        });
+        rig.vcx.run_until_parked();
+
+        rig.press("down enter");
+
+        assert_eq!(rig.cursor(), Some(LISTED[0]));
+        assert_eq!(rig.edited(), None);
     }
 
     #[gpui::test]

@@ -740,6 +740,25 @@ mod tests {
         );
     }
 
+    #[gpui::test]
+    fn a_created_trigger_takes_the_cursor_with_the_selection(cx: &mut TestAppContext) {
+        let mut fixture = fill_form(cx, "accepted");
+
+        fixture.view().update(cx, |view, cx| view.submit_create(cx));
+        pump_until(&fixture.rt, || {
+            cx.run_until_parked();
+            fixture
+                .view()
+                .read_with(cx, |view, _| view.create.is_none())
+        });
+        fixture.settle(cx);
+
+        let (selected, cursor) = fixture
+            .view()
+            .read_with(cx, |view, _| (view.selected, view.list_cursor));
+        assert_eq!(cursor, selected);
+    }
+
     fn successor(category: TriggerCategory) -> Option<TriggerCategory> {
         use TriggerCategory as C;
         match category {

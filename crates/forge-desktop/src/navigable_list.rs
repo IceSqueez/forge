@@ -196,4 +196,36 @@ mod tests {
         assert_eq!(cursor.activation_target(&[7, 8]), Some(7));
         assert_eq!(cursor.activation_target(&[8]), None);
     }
+
+    #[gpui::test]
+    fn a_cursor_off_the_list_steps_from_the_selection_and_a_listed_one_outranks_it(
+        cx: &mut TestAppContext,
+    ) {
+        use ListStep::{Next, Prev};
+        for (at, selected, step, expected) in [
+            (9, Some(2), Next, 3),
+            (9, Some(2), Prev, 1),
+            (9, Some(8), Next, 1),
+            (9, Some(8), Prev, 3),
+            (9, None, Prev, 3),
+            (1, Some(3), Next, 2),
+        ] {
+            let mut cursor = cx.update(ListCursor::<u32>::new);
+            cursor.move_to(at);
+
+            cursor.step(&[1, 2, 3], selected.as_ref(), step);
+
+            assert!(cursor.is_at(&expected), "{at} {selected:?} {step:?}");
+        }
+    }
+
+    #[gpui::test]
+    fn an_empty_list_leaves_the_cursor_for_when_its_row_comes_back(cx: &mut TestAppContext) {
+        let mut cursor = cx.update(ListCursor::<u32>::new);
+        cursor.move_to(2);
+
+        assert_eq!(cursor.step(&[], None, ListStep::Next), None);
+
+        assert_eq!(cursor.step(&[1, 2, 3], None, ListStep::Next), Some(2));
+    }
 }

@@ -576,6 +576,7 @@ mod tests {
                     key: "telemetry".to_owned(),
                 })
             });
+            scripts.expect_save().returning(|_| Ok(()));
             let mut actions = MockActionRepo::new();
             let linking: Vec<Action> = LINKED.iter().map(|name| linking_action(name)).collect();
             actions.expect_list().returning(move || Ok(linking.clone()));
@@ -693,6 +694,28 @@ mod tests {
             self.settle();
         }
 
+        fn edit_open_script(&mut self) {
+            self.view.update(&mut self.vcx, |view, cx| {
+                view.code_input.update(cx, |area, cx| {
+                    area.set_content("let edited = 2;".to_owned(), cx)
+                });
+            });
+            self.settle();
+        }
+
+        fn focus_list(&mut self) {
+            let focus = self
+                .view
+                .read_with(&self.vcx, |view, _| view.list_keys.focus().clone());
+            self.vcx.update(|window, cx| window.focus(&focus, cx));
+            self.vcx.run_until_parked();
+        }
+
+        fn discard_prompted(&mut self) -> bool {
+            self.view
+                .read_with(&self.vcx, |view, _| view.pending_nav.is_some())
+        }
+
         fn clicked_walk(&mut self) -> Vec<String> {
             (0..self.row_count())
                 .map(|position| {
@@ -763,5 +786,133 @@ mod tests {
 
         assert_eq!(rig.cursor().as_deref(), Some("beta"));
         assert_eq!(rig.selected().as_deref(), Some("zeta"));
+    }
+
+    #[gpui::test]
+    fn a_click_puts_the_arrows_on_the_clicked_row_open_or_not(cx: &mut TestAppContext) {
+        for (clicked, next) in [(1, "zeta"), (2, "gamma")] {
+            let mut rig = Rig::mount(cx);
+            rig.climb_to_the_top();
+
+            rig.click_row(clicked);
+            rig.press("down");
+
+            assert_eq!(rig.cursor().as_deref(), Some(next), "row {clicked}");
+        }
+    }
+
+    #[gpui::test]
+    fn enter_after_a_click_keeps_the_clicked_row_open_or_not(cx: &mut TestAppContext) {
+        for (clicked, name) in [(1, "alpha"), (2, "zeta")] {
+            let mut rig = Rig::mount(cx);
+            rig.climb_to_the_top();
+
+            rig.click_row(clicked);
+            rig.press("enter");
+
+            assert_eq!(rig.opened().as_deref(), Some(name));
+        }
+    }
+
+    #[gpui::test]
+    fn a_new_script_takes_the_cursor_with_the_selection(cx: &mut TestAppContext) {
+        let mut rig = Rig::mount(cx);
+        rig.climb_to_the_top();
+        let opened_before = rig.view.read_with(&rig.vcx, |view, _| view.selected);
+
+        rig.view
+            .update(&mut rig.vcx, |view, cx| view.new_script(cx));
+        rig.settle();
+
+        let (selected, on_it) = rig.view.read_with(&rig.vcx, |view, _| {
+            let selected = view.selected.unwrap();
+            (selected, view.list_keys.is_at(&selected))
+        });
+        assert_ne!(Some(selected), opened_before);
+        assert!(on_it);
+    }
+
+    #[gpui::test]
+    fn a_hidden_cursor_row_hands_the_arrows_to_the_visible_selection(cx: &mut TestAppContext) {
+        let mut rig = Rig::mount(cx);
+        rig.climb_to_the_top();
+        rig.press("down");
+        assert_eq!(rig.cursor().as_deref(), Some("alpha"));
+
+        rig.search("et");
+        rig.press("up");
+
+        assert_eq!(rig.cursor().as_deref(), Some("beta"));
+    }
+
+    #[gpui::test]
+    fn an_open_row_menu_keeps_arrows_and_enter_from_the_list(cx: &mut TestAppContext) {
+        let mut rig = Rig::mount(cx);
+        rig.climb_to_the_top();
+        let target = rig.id_of("alpha");
+        rig.view.update(&mut rig.vcx, |view, cx| {
+            view.open_row_menu(target, gpui::Point::default(), cx)
+        });
+        rig.settle();
+
+        rig.press("down enter");
+
+        assert_eq!(rig.cursor().as_deref(), Some("beta"));
+        assert_eq!(rig.selected().as_deref(), Some("zeta"));
+    }
+
+    #[gpui::test]
+    fn a_click_on_another_row_with_unsaved_edits_waits_for_the_prompt_to_move_the_cursor(
+        cx: &mut TestAppContext,
+    ) {
+        let mut rig = Rig::mount(cx);
+        rig.click_row(2);
+        rig.edit_open_script();
+
+        rig.click_row(0);
+
+        assert!(rig.discard_prompted());
+        assert_eq!(rig.cursor().as_deref(), Some("zeta"));
+    }
+
+    #[gpui::test]
+    fn the_discard_prompt_keeps_the_arrows_from_the_list(cx: &mut TestAppContext) {
+        let mut rig = Rig::mount(cx);
+        rig.click_row(2);
+        rig.edit_open_script();
+        rig.click_row(0);
+
+        rig.press("down");
+
+        assert_eq!(rig.cursor().as_deref(), Some("zeta"));
+    }
+
+    #[gpui::test]
+    fn cancelling_the_discard_prompt_leaves_the_arrows_on_the_open_script(cx: &mut TestAppContext) {
+        let mut rig = Rig::mount(cx);
+        rig.click_row(2);
+        rig.edit_open_script();
+        rig.click_row(0);
+
+        rig.press("escape");
+        assert!(!rig.discard_prompted());
+        assert_eq!(rig.opened().as_deref(), Some("zeta"));
+
+        rig.focus_list();
+        rig.press("down");
+        assert_eq!(rig.cursor().as_deref(), Some("gamma"));
+    }
+
+    #[gpui::test]
+    fn discarding_at_the_prompt_moves_the_cursor_to_the_clicked_row(cx: &mut TestAppContext) {
+        let mut rig = Rig::mount(cx);
+        rig.click_row(2);
+        rig.edit_open_script();
+        rig.click_row(0);
+
+        rig.press("enter");
+
+        assert_eq!(rig.opened().as_deref(), Some("beta"));
+        assert_eq!(rig.cursor().as_deref(), Some("beta"));
     }
 }

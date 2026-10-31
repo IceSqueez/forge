@@ -3,6 +3,7 @@ use std::path::Path;
 
 use forge_audio::AudioError;
 use forge_discord::DiscordError;
+use forge_host::server_boot::ServerUnavailable;
 use forge_hotkey::HotkeyError;
 use forge_hotkey::vocabulary::messages::failure;
 use forge_overlay::OverlayError;
@@ -281,6 +282,15 @@ impl From<SpeakError> for RepoFailure {
 impl From<IntegrationStartError> for RepoFailure {
     fn from(error: IntegrationStartError) -> Self {
         Self::shown(error.message().clone(), &error)
+    }
+}
+
+impl From<ServerUnavailable> for RepoFailure {
+    fn from(reason: ServerUnavailable) -> Self {
+        match reason {
+            ServerUnavailable::Settings(error) => Self::from(error),
+            ServerUnavailable::State(error) => Self::from(error),
+        }
     }
 }
 

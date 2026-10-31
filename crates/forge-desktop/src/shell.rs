@@ -149,8 +149,8 @@ impl AppShell {
             )
             .with_setup_live(SetupLiveHandles::of(&handles), cx)
             .with_shared_exclusivity(
-                handles.transfer_exclusivity.clone(),
-                handles.scheduled_backups.clone(),
+                handles.core.transfer_exclusivity.clone(),
+                handles.core.scheduled_backups.clone(),
             )
             .watching_scheduled(cx)
         });
@@ -196,7 +196,7 @@ impl AppShell {
                 crate::app_paths::app_paths().data_dir(),
                 handles.rt_handle.clone(),
             )
-            .with_scheduled_backups(handles.scheduled_backups.clone())
+            .with_scheduled_backups(handles.core.scheduled_backups.clone())
         });
         cx.subscribe(
             &restore_close,
@@ -269,7 +269,7 @@ impl AppShell {
                 Self::follow_nav(&home, cx);
                 let home_stats = topics.home_stats.clone();
                 let backend = Arc::clone(&handles.backend);
-                let stats_registry = Arc::clone(&handles.trigger_registry);
+                let stats_registry = Arc::clone(&handles.automation.trigger_registry);
                 let rt_handle = handles.rt_handle.clone();
                 cx.spawn(async move |_shell, cx| {
                     refresh_dashboard_stats(home_stats, backend, stats_registry, rt_handle, cx)
@@ -283,12 +283,12 @@ impl AppShell {
                 let rt_handle = handles.rt_handle.clone();
                 let viewer_repo = handles.backend.viewer_repo();
                 let chat_history_repo = handles.backend.chat_history_repo();
-                let action_engine = handles.action_engine.clone();
+                let action_engine = handles.automation.action_engine.clone();
                 let voice_alias_repo = handles.backend.voice_alias_repo();
-                let speak = handles.speak.clone();
-                let bot_accounts = handles.bot_accounts.clone();
-                let bus = Arc::clone(&handles.bus);
-                let builtins = handles.builtins.clone();
+                let speak = handles.speech.speak.clone();
+                let bot_accounts = handles.automation.bot_accounts.clone();
+                let bus = Arc::clone(&handles.core.bus);
+                let builtins = handles.integrations.builtins.clone();
                 cx.new(|cx| {
                     ChatView::new(
                         topics.chat_feed.clone(),
@@ -313,7 +313,7 @@ impl AppShell {
             }
             Screen::EventFeed => {
                 let rt_handle = handles.rt_handle.clone();
-                let bus = Arc::clone(&handles.bus);
+                let bus = Arc::clone(&handles.core.bus);
                 cx.new(|cx| EventFeedView::new(topics.event_log.clone(), rt_handle, bus, cx))
                     .into()
             }
@@ -322,7 +322,7 @@ impl AppShell {
                 let backend: Arc<dyn GlobalsRepo> =
                     Arc::clone(&handles.backend) as Arc<dyn GlobalsRepo>;
                 let rt_handle = handles.rt_handle.clone();
-                let bus = Arc::clone(&handles.bus);
+                let bus = Arc::clone(&handles.core.bus);
                 cx.new(|cx| {
                     let mut view = GlobalsView::new(globals, backend, rt_handle, cx);
                     view.follow_runtime_writes(bus, cx);
@@ -370,7 +370,7 @@ impl AppShell {
             }
             Screen::Queues => {
                 let queue_health = topics.queue_health.clone();
-                let scheduler = handles.scheduler.clone();
+                let scheduler = handles.automation.scheduler.clone();
                 let queue_repo = handles.backend.queue_repo();
                 let action_repo = handles.backend.action_repo();
                 let rt_handle = handles.rt_handle.clone();
@@ -389,13 +389,13 @@ impl AppShell {
                 Self::routed(view, cx).into()
             }
             Screen::Soundboard => {
-                let player = handles.soundboard_player.clone();
+                let player = handles.audio.soundboard_player.clone();
                 let settings_repo =
                     Arc::clone(&handles.backend) as Arc<dyn forge_storage::SettingsRepo>;
                 let rt_handle = handles.rt_handle.clone();
-                let bus = Arc::clone(&handles.bus);
+                let bus = Arc::clone(&handles.core.bus);
                 let keys = ClipKeyState::new(
-                    handles.hotkey_reconciler.clone(),
+                    handles.integrations.hotkey_reconciler.clone(),
                     Arc::clone(&handles.backend),
                 );
                 let switch = Self::integration_switch(topics, handles);
@@ -408,12 +408,12 @@ impl AppShell {
             Screen::Tts(preselect) => {
                 let preselect = *preselect;
                 let speak_state = topics.speak.clone();
-                let speak = handles.speak.clone();
+                let speak = handles.speech.speak.clone();
                 let backend = Arc::clone(&handles.backend);
                 let rt_handle = handles.rt_handle.clone();
-                let pipeline_config = handles.pipeline_config.clone();
-                let bot_accounts = handles.bot_accounts.clone();
-                let cloud_tts_gateways = handles.cloud_tts_gateways.clone();
+                let pipeline_config = handles.speech.pipeline_config.clone();
+                let bot_accounts = handles.automation.bot_accounts.clone();
+                let cloud_tts_gateways = handles.speech.cloud_tts_gateways.clone();
                 let view = cx.new(|cx| {
                     TtsView::new(
                         speak_state,
@@ -434,20 +434,20 @@ impl AppShell {
                     repo: handles.backend.overlay_repo(),
                     server: handles.server.clone(),
                     rt_handle: handles.rt_handle.clone(),
-                    kinds: Arc::clone(&handles.overlay_kinds),
-                    service: handles.overlays.clone(),
-                    samples: Arc::clone(&handles.overlay_samples),
-                    library: Arc::clone(handles.soundboard_player.library()),
+                    kinds: Arc::clone(&handles.overlays.kinds),
+                    service: handles.overlays.service.clone(),
+                    samples: Arc::clone(&handles.overlays.samples),
+                    library: Arc::clone(handles.audio.soundboard_player.library()),
                     media: handles.backend.media_repo(),
                     settings_repo: Arc::clone(&handles.backend) as Arc<dyn SettingsRepo>,
-                    audio_router: Arc::clone(&handles.audio_router),
-                    speak: handles.speak.clone(),
-                    actions: Arc::clone(&handles.overlay_actions),
-                    triggers: handles.trigger_registry.clone(),
-                    sub_actions: handles.sub_action_registry.clone(),
-                    scheduler: handles.scheduler.clone(),
-                    latest_values: handles.latest_values.clone(),
-                    bus: Arc::clone(&handles.bus),
+                    audio_router: Arc::clone(&handles.audio.audio_router),
+                    speak: handles.speech.speak.clone(),
+                    actions: Arc::clone(&handles.overlays.actions),
+                    triggers: handles.automation.trigger_registry.clone(),
+                    sub_actions: handles.automation.sub_action_registry.clone(),
+                    scheduler: handles.automation.scheduler.clone(),
+                    latest_values: handles.core.latest_values.clone(),
+                    bus: Arc::clone(&handles.core.bus),
                 };
                 let view = cx.new(|cx| OverlaysView::new(launch, cx));
                 Self::guarded(view.clone(), cx).with_shortcuts(&view)
@@ -476,21 +476,21 @@ impl AppShell {
                 ));
                 let trigger_instance_repo = HotkeySyncedTriggerRepo::wrap(
                     handles.backend.trigger_instance_repo(),
-                    handles.hotkey_reconciler.clone(),
+                    handles.integrations.hotkey_reconciler.clone(),
                 );
                 let script_repo = Arc::clone(&handles.backend) as Arc<dyn ScriptRepo>;
-                let clip_library = Arc::clone(handles.soundboard_player.library());
+                let clip_library = Arc::clone(handles.audio.soundboard_player.library());
                 let globals_repo = Arc::clone(&handles.backend) as Arc<dyn GlobalsRepo>;
                 let settings_repo = Arc::clone(&handles.backend) as Arc<dyn SettingsRepo>;
                 let overlay_repo = handles.backend.overlay_repo();
-                let overlay_kinds = Arc::clone(&handles.overlay_kinds);
-                let speak = handles.speak.clone();
-                let sub_action_registry = handles.sub_action_registry.clone();
-                let trigger_registry = handles.trigger_registry.clone();
+                let overlay_kinds = Arc::clone(&handles.overlays.kinds);
+                let speak = handles.speech.speak.clone();
+                let sub_action_registry = handles.automation.sub_action_registry.clone();
+                let trigger_registry = handles.automation.trigger_registry.clone();
                 let rt_handle = handles.rt_handle.clone();
-                let bus = Arc::clone(&handles.bus);
-                let scheduler = handles.scheduler.clone();
-                let builtins = handles.builtins.clone();
+                let bus = Arc::clone(&handles.core.bus);
+                let scheduler = handles.automation.scheduler.clone();
+                let builtins = handles.integrations.builtins.clone();
                 let scheduled_run_repo = handles.backend.scheduled_run_repo();
                 let switch = Self::integration_switch(topics, handles);
                 let view = cx.new(|cx| {
@@ -525,15 +525,15 @@ impl AppShell {
             Screen::Triggers(preselect) => {
                 let repo = HotkeySyncedTriggerRepo::wrap(
                     handles.backend.trigger_instance_repo(),
-                    handles.hotkey_reconciler.clone(),
+                    handles.integrations.hotkey_reconciler.clone(),
                 );
                 let action_repo = handles.backend.action_repo();
-                let registry = handles.trigger_registry.clone();
+                let registry = handles.automation.trigger_registry.clone();
                 let settings_repo = Arc::clone(&handles.backend) as Arc<dyn SettingsRepo>;
                 let rt_handle = handles.rt_handle.clone();
                 let preselect = *preselect;
-                let builtins = handles.builtins.clone();
-                let bus = Arc::clone(&handles.bus);
+                let builtins = handles.integrations.builtins.clone();
+                let bus = Arc::clone(&handles.core.bus);
                 let switch = Self::integration_switch(topics, handles);
                 let view = cx.new(|cx| {
                     TriggersRegistryView::new(
@@ -554,10 +554,10 @@ impl AppShell {
             }
             Screen::Scripts => {
                 let backend = handles.backend.clone();
-                let script_registry = handles.script_registry.clone();
-                let bus = handles.bus.clone();
+                let script_registry = handles.automation.script_registry.clone();
+                let bus = handles.core.bus.clone();
                 let integrations: Arc<dyn IntegrationAvailability> =
-                    Arc::new(handles.action_engine.integration_gate().clone());
+                    Arc::new(handles.automation.action_engine.integration_gate().clone());
                 let rt_handle = handles.rt_handle.clone();
                 let editor = cx.new(|cx| {
                     ScriptEditorView::new(
@@ -622,7 +622,7 @@ impl AppShell {
         let changes = handles.backend.scheduled_run_revision().subscribe();
         let catalog_changes = handles.backend.catalog_revision().subscribe();
         let action_repo = handles.backend.action_repo();
-        let runs = handles.scheduled_runs.clone();
+        let runs = handles.automation.scheduled_runs.clone();
         let rt_handle = handles.rt_handle.clone();
         cx.new(|cx| {
             ScheduledRunsView::new(
@@ -640,20 +640,20 @@ impl AppShell {
     fn integration_switch(topics: &Topics, handles: &Arc<RuntimeHandles>) -> IntegrationSwitch {
         IntegrationSwitch::new(
             topics.integration_lifecycle.clone(),
-            handles.integrations.clone(),
+            handles.integrations.supervisor.clone(),
         )
     }
 
     fn hub_launch(handles: &Arc<RuntimeHandles>) -> HubLaunch {
         HubLaunch {
-            supervisor: handles.integrations.clone(),
-            builtins: handles.builtins.clone(),
+            supervisor: handles.integrations.supervisor.clone(),
+            builtins: handles.integrations.builtins.clone(),
             backend: Arc::clone(&handles.backend),
-            sub_actions: Arc::clone(&handles.sub_action_registry),
-            triggers: Arc::clone(&handles.trigger_registry),
+            sub_actions: Arc::clone(&handles.automation.sub_action_registry),
+            triggers: Arc::clone(&handles.automation.trigger_registry),
             rt_handle: handles.rt_handle.clone(),
-            obs_install_seed: handles.obs_install_seed.clone(),
-            vtube_install_seed: handles.vtube_install_seed.clone(),
+            obs_install_seed: handles.integrations.obs_install_seed.clone(),
+            vtube_install_seed: handles.integrations.vtube_install_seed.clone(),
         }
     }
 
@@ -668,24 +668,24 @@ impl AppShell {
         cx: &mut Context<Self>,
     ) -> AnyView {
         let builtin = match id.as_str() {
-            OBS_BUILTIN_ID => match handles.obs_install_seed.live() {
+            OBS_BUILTIN_ID => match handles.integrations.obs_install_seed.live() {
                 Some(client) => Some(obs_builtin_object(client)),
                 None => return Self::obs_connect_screen(handles, cx),
             },
-            VTUBE_BUILTIN_ID => match handles.vtube_install_seed.live() {
+            VTUBE_BUILTIN_ID => match handles.integrations.vtube_install_seed.live() {
                 Some(client) => Some(vtube_builtin_object(client)),
                 None => return Self::vtube_connect_screen(handles, cx),
             },
             MIDI_BUILTIN_ID => return Self::midi_screen(handles, cx),
-            HOTKEY_BUILTIN_ID => match handles.hotkey_reconciler.clone() {
+            HOTKEY_BUILTIN_ID => match handles.integrations.hotkey_reconciler.clone() {
                 Some(reconciler) => return Self::hotkeys_screen(handles, reconciler, cx),
-                None => handles.builtins.get(id),
+                None => handles.integrations.builtins.get(id),
             },
-            DISCORD_BUILTIN_ID => match handles.discord_client.clone() {
+            DISCORD_BUILTIN_ID => match handles.integrations.discord_client.clone() {
                 Some(client) => return Self::discord_screen(handles, client, cx),
-                None => handles.builtins.get(id),
+                None => handles.integrations.builtins.get(id),
             },
-            _ => handles.builtins.get(id),
+            _ => handles.integrations.builtins.get(id),
         };
         let object = builtin.unwrap_or_else(|| unavailable_builtin(id));
 
@@ -693,23 +693,26 @@ impl AppShell {
         let credentials = Arc::clone(&handles.backend) as Arc<dyn CredentialsRepo>;
         let settings = Arc::clone(&handles.backend) as Arc<dyn SettingsRepo>;
         let history = handles.backend.history_repo();
-        let trigger_registry = handles.trigger_registry.clone();
-        let bus = Arc::clone(&handles.bus) as Arc<dyn EventPublisher>;
-        let event_bus = Arc::clone(&handles.bus);
+        let trigger_registry = handles.automation.trigger_registry.clone();
+        let bus = Arc::clone(&handles.core.bus) as Arc<dyn EventPublisher>;
+        let event_bus = Arc::clone(&handles.core.bus);
         let rt_handle = handles.rt_handle.clone();
-        let action_engine = handles.action_engine.clone();
-        let live_viewers = handles.live_viewers.clone();
+        let action_engine = handles.automation.action_engine.clone();
+        let live_viewers = handles.automation.live_viewers.clone();
         let twitch_slot = handles
             .integrations
+            .supervisor
             .slot(&forge_platform_twitch::TWITCH_INTEGRATION.id);
         let kick_slot = handles
             .integrations
+            .supervisor
             .slot(&forge_platform_kick::KICK_INTEGRATION.id);
         let youtube_slot = handles
             .integrations
+            .supervisor
             .slot(&forge_platform_youtube::YOUTUBE_INTEGRATION.id);
-        let obs_install_seed = handles.obs_install_seed.clone();
-        let vtube_install_seed = handles.vtube_install_seed.clone();
+        let obs_install_seed = handles.integrations.obs_install_seed.clone();
+        let vtube_install_seed = handles.integrations.vtube_install_seed.clone();
         let detail = cx.new(|cx| {
             IntegrationDetail::new(
                 object,
@@ -731,25 +734,25 @@ impl AppShell {
                 cx,
             )
         });
-        if let Some(service) = handles.donation_services.service(id) {
+        if let Some(service) = handles.integrations.donation_services.service(id) {
             detail.update(cx, |detail, cx| {
                 detail.attach_donation_settings(service, cx)
             });
         }
-        if let Some(sign_in) = handles.twitch_sign_in.clone() {
+        if let Some(sign_in) = handles.integrations.twitch_sign_in.clone() {
             detail.update(cx, |detail, _| detail.attach_twitch_sign_in(sign_in));
         }
-        if let Some(sign_in) = handles.youtube_sign_in.clone() {
+        if let Some(sign_in) = handles.integrations.youtube_sign_in.clone() {
             detail.update(cx, |detail, _| detail.attach_youtube_sign_in(sign_in));
         }
-        if let Some(sign_in) = handles.kick_sign_in.clone() {
+        if let Some(sign_in) = handles.integrations.kick_sign_in.clone() {
             detail.update(cx, |detail, _| detail.attach_kick_sign_in(sign_in));
         }
-        let platform_credentials = handles.platform_credentials.clone();
+        let platform_credentials = handles.integrations.platform_credentials.clone();
         detail.update(cx, |detail, _| {
             detail.attach_platform_credentials(platform_credentials)
         });
-        if let Some(bot) = handles.twitch_bot.clone() {
+        if let Some(bot) = handles.integrations.twitch_bot.clone() {
             let presence = topics.twitch_bot.clone();
             detail.update(cx, |detail, cx| detail.attach_twitch_bot(bot, presence, cx));
         }
@@ -777,7 +780,7 @@ impl AppShell {
         cx: &mut Context<Self>,
     ) -> AnyView {
         let lifecycle = topics.integration_lifecycle.clone();
-        let slot = handles.integrations.slot(id);
+        let slot = handles.integrations.supervisor.slot(id);
         let rt_handle = handles.rt_handle.clone();
         let id = id.clone();
         let view =
@@ -794,10 +797,10 @@ impl AppShell {
         cx: &mut Context<Self>,
     ) -> AnyView {
         let launch = DisabledLaunch {
-            slot: handles.integrations.slot(id),
+            slot: handles.integrations.supervisor.slot(id),
             backend: Arc::clone(&handles.backend),
-            sub_actions: Arc::clone(&handles.sub_action_registry),
-            triggers: Arc::clone(&handles.trigger_registry),
+            sub_actions: Arc::clone(&handles.automation.sub_action_registry),
+            triggers: Arc::clone(&handles.automation.trigger_registry),
             rt_handle: handles.rt_handle.clone(),
         };
         let lifecycle = topics.integration_lifecycle.clone();
@@ -810,9 +813,9 @@ impl AppShell {
     fn obs_connect_screen(handles: &Arc<RuntimeHandles>, cx: &mut Context<Self>) -> AnyView {
         let credentials = Arc::clone(&handles.backend) as Arc<dyn CredentialsRepo>;
         let settings = Arc::clone(&handles.backend) as Arc<dyn SettingsRepo>;
-        let bus = Arc::clone(&handles.bus) as Arc<dyn EventPublisher>;
+        let bus = Arc::clone(&handles.core.bus) as Arc<dyn EventPublisher>;
         let rt_handle = handles.rt_handle.clone();
-        let seed = handles.obs_install_seed.clone();
+        let seed = handles.integrations.obs_install_seed.clone();
         let connect =
             cx.new(|cx| ObsConnectView::new(rt_handle, credentials, settings, bus, seed, cx));
         Self::follow_nav(&connect, cx);
@@ -831,10 +834,11 @@ impl AppShell {
     ) -> AnyView {
         let backend = Arc::clone(&handles.backend);
         let settings = Arc::clone(&handles.backend) as Arc<dyn SettingsRepo>;
-        let bus = Arc::clone(&handles.bus);
+        let bus = Arc::clone(&handles.core.bus);
         let rt_handle = handles.rt_handle.clone();
         let engine = handles
             .integrations
+            .supervisor
             .slot(&forge_hotkey::HOTKEY_INTEGRATION.id);
         let view = cx.new(|cx| {
             HotkeysScreenView::new(reconciler, engine, backend, settings, bus, rt_handle, cx)
@@ -848,10 +852,11 @@ impl AppShell {
         cx: &mut Context<Self>,
     ) -> AnyView {
         let action_repo = handles.backend.action_repo();
-        let bus = Arc::clone(&handles.bus);
+        let bus = Arc::clone(&handles.core.bus);
         let rt_handle = handles.rt_handle.clone();
         let integration = handles
             .integrations
+            .supervisor
             .slot(&forge_discord::DISCORD_INTEGRATION.id);
         let view = cx
             .new(|cx| DiscordScreenView::new(client, integration, action_repo, bus, rt_handle, cx));
@@ -859,12 +864,15 @@ impl AppShell {
     }
 
     fn midi_screen(handles: &Arc<RuntimeHandles>, cx: &mut Context<Self>) -> AnyView {
-        let sink = Arc::clone(&handles.midi_sink);
-        let integration = handles.integrations.slot(&forge_midi::MIDI_INTEGRATION.id);
+        let sink = Arc::clone(&handles.integrations.midi_sink);
+        let integration = handles
+            .integrations
+            .supervisor
+            .slot(&forge_midi::MIDI_INTEGRATION.id);
         let trigger_repo = handles.backend.trigger_instance_repo();
         let action_repo = handles.backend.action_repo();
         let settings = Arc::clone(&handles.backend) as Arc<dyn SettingsRepo>;
-        let bus = Arc::clone(&handles.bus);
+        let bus = Arc::clone(&handles.core.bus);
         let rt_handle = handles.rt_handle.clone();
         let view = cx.new(|cx| {
             MidiScreenView::new(
@@ -884,9 +892,9 @@ impl AppShell {
     fn vtube_connect_screen(handles: &Arc<RuntimeHandles>, cx: &mut Context<Self>) -> AnyView {
         let credentials = Arc::clone(&handles.backend) as Arc<dyn CredentialsRepo>;
         let settings = Arc::clone(&handles.backend) as Arc<dyn SettingsRepo>;
-        let bus = Arc::clone(&handles.bus) as Arc<dyn EventPublisher>;
+        let bus = Arc::clone(&handles.core.bus) as Arc<dyn EventPublisher>;
         let rt_handle = handles.rt_handle.clone();
-        let seed = handles.vtube_install_seed.clone();
+        let seed = handles.integrations.vtube_install_seed.clone();
         let connect =
             cx.new(|cx| VTubeConnectView::new(rt_handle, credentials, settings, bus, seed, cx));
         Self::follow_nav(&connect, cx);
@@ -899,7 +907,7 @@ impl AppShell {
     }
 
     fn enable_integration(&self, id: &IntegrationId) {
-        if let Some(slot) = self.handles.integrations.slot(id) {
+        if let Some(slot) = self.handles.integrations.supervisor.slot(id) {
             slot.request_enable();
         }
     }
@@ -909,7 +917,7 @@ impl AppShell {
         topic: Entity<IntegrationLifecycle>,
         cx: &mut Context<Self>,
     ) {
-        let mut lifecycle = handles.integrations.watch();
+        let mut lifecycle = handles.integrations.supervisor.watch();
         let mut settled = settled_kinds(&lifecycle.current());
         cx.spawn(async move |this, cx| {
             while let Some(states) = lifecycle.changed().await {

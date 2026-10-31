@@ -1,4 +1,3 @@
-mod boot_smoke;
 mod config_references;
 mod memory_scripts;
 pub(crate) mod pack_flow;
@@ -22,97 +21,48 @@ use forge_runtime::{
     spawn_action_engine,
 };
 use forge_speech_types::PcmBuffer;
-use forge_storage::settings::core_settings::{
-    BACKUP_SCHEDULE_ENABLED, BACKUP_SCHEDULE_KEY, BACKUP_SCHEDULE_LAST_SUCCESS_AT,
-};
-use forge_storage::test_support::MemorySettings;
 use forge_storage::{DataProvider, OverlayId, SettingsRepo, StorageError};
 use forge_types::{Action, ActionId, EventId, PlatformId, TriggerConfig};
-use time::OffsetDateTime;
 
 pub(crate) use forge_host::test_support::{
-    ReadFault, RecordingSink, SETTINGS_READ_FAILED, SETTINGS_WRITE_FAILED, SettingWrite,
-    SilentPublisher, StubActions, StubEventLog, StubHistory, StubOverlays, TestBackend,
-    default_twitch_bot, every_registry_entry, neutral_pipeline_config, overlay_definition,
-    overlay_named, stopped_handle, stopped_server_handle, stopped_server_hosting, stub_catalog,
-    test_backend, test_backend_observing_shutdown, test_backend_with_actions_and_triggers,
-    test_backend_with_gated_export, test_backend_with_late_export, test_backend_with_media,
-    test_backend_with_scripts, test_backend_with_scripts_and_actions,
-    test_backend_with_stalling_export, tone, within_hang_guard, writes_to, yield_until,
+    GatedSchedule, ReadFault, RecordingSink, SETTINGS_READ_FAILED, SETTINGS_WRITE_FAILED,
+    SettingWrite, SilentPublisher, StubActions, StubEventLog, StubHistory, StubOverlays,
+    TestBackend, alive_tasks, default_twitch_bot, every_registry_entry, gated_running_schedule,
+    gated_running_schedule_sharing, install_tracing_interest_floor, keyless_enabled_schedule,
+    neutral_pipeline_config, overlay_definition, overlay_named, pump, pump_until, runtime,
+    stopped_handle, stopped_server_handle, stopped_server_hosting, stub_catalog, test_backend,
+    test_backend_with_actions_and_triggers, test_backend_with_gated_export,
+    test_backend_with_late_export, test_backend_with_media, test_backend_with_scripts,
+    test_backend_with_scripts_and_actions, test_backend_with_stalling_export, within_hang_guard,
+    writes_to, yield_until,
 };
 pub(crate) use memory_scripts::MemoryScripts;
 
-const RUNTIME_PUMPS: usize = 8;
+pub(crate) async fn booted_runtime_handles() -> crate::runtime_handles::RuntimeHandles {
+    let backend = forge_host::test_support::open_store().await;
+    forge_host::test_support::seed_integrations_and_server_off(backend.as_ref()).await;
+    forge_storage::write_setting(backend.as_ref(), &crate::stay_awake::STAY_AWAKE, &false)
+        .await
+        .unwrap();
+    let pre_boot = crate::boot::run_pre_boot(&backend).await;
+    let booted = forge_host::test_support::boot_host(
+        Arc::clone(&backend),
+        forge_host::test_support::fake_identities(),
+        pre_boot.anonymous_donor.clone(),
+    )
+    .await;
+    crate::boot::present_host(
+        booted.host,
+        backend,
+        crate::log_tail::LogTail::new(),
+        pre_boot,
+    )
+    .await
+}
+
 const PUMP_HANG_GUARD: std::time::Duration = std::time::Duration::from_secs(30);
 const WORKER_DRAIN_DEADLINE: std::time::Duration = std::time::Duration::from_secs(30);
 const WORKER_DRAIN_POLL: std::time::Duration = std::time::Duration::from_millis(1);
-
-pub(crate) struct GatedSchedule {
-    pub(crate) handle: forge_transfer::ScheduledBackupHandle,
-    pub(crate) export_gate: Arc<tokio::sync::Notify>,
-    _data_dir: tempfile::TempDir,
-}
-
-pub(crate) fn gated_running_schedule() -> GatedSchedule {
-    let key = forge_transfer::create_schedule_key(&forge_transfer::Passphrase::new(
-        "a gated schedule passphrase".to_owned(),
-    ))
-    .unwrap();
-    let schedule = enabled_schedule_over_test_backend(
-        Some(key.encode().unwrap()),
-        forge_transfer::TransferExclusivity::new(),
-    );
-    schedule.handle.run_now();
-    schedule
-}
-
-pub(crate) fn gated_running_schedule_sharing(
-    exclusivity: forge_transfer::TransferExclusivity,
-) -> GatedSchedule {
-    let key = forge_transfer::create_schedule_key(&forge_transfer::Passphrase::new(
-        "a gated schedule passphrase".to_owned(),
-    ))
-    .unwrap();
-    let schedule = enabled_schedule_over_test_backend(Some(key.encode().unwrap()), exclusivity);
-    schedule.handle.run_now();
-    schedule
-}
-
-pub(crate) fn keyless_enabled_schedule() -> GatedSchedule {
-    enabled_schedule_over_test_backend(None, forge_transfer::TransferExclusivity::new())
-}
-
-fn enabled_schedule_over_test_backend(
-    encoded_key: Option<String>,
-    exclusivity: forge_transfer::TransferExclusivity,
-) -> GatedSchedule {
-    let export_gate = Arc::new(tokio::sync::Notify::new());
-    let last_success = OffsetDateTime::now_utc()
-        .format(&time::format_description::well_known::Rfc3339)
-        .unwrap();
-    let settings = MemorySettings::new();
-    settings.seed(&BACKUP_SCHEDULE_ENABLED, &true).unwrap();
-    settings
-        .seed(&BACKUP_SCHEDULE_LAST_SUCCESS_AT, &Some(last_success))
-        .unwrap();
-    if let Some(encoded) = encoded_key {
-        settings.seed(&BACKUP_SCHEDULE_KEY, &Some(encoded)).unwrap();
-    }
-    let backend = TestBackend::with_gated_export(settings, Arc::clone(&export_gate));
-    let data_dir = tempfile::tempdir().unwrap();
-    let parts = forge_transfer::ScheduledBackupParts {
-        provider: backend,
-        data_dir: data_dir.path().to_path_buf(),
-        exclusivity,
-        clock: Arc::new(forge_transfer::SystemBackupClock),
-    };
-    let handle = forge_transfer::spawn_scheduled_backups(parts);
-    GatedSchedule {
-        handle,
-        export_gate,
-        _data_dir: data_dir,
-    }
-}
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Declares {
@@ -303,23 +253,12 @@ where
     shown
 }
 
-pub(crate) fn runtime() -> tokio::runtime::Runtime {
-    tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .expect("current-thread runtime")
-}
-
 pub(crate) fn worker_runtime() -> tokio::runtime::Runtime {
     tokio::runtime::Builder::new_multi_thread()
         .worker_threads(1)
         .enable_all()
         .build()
         .expect("multi-thread runtime")
-}
-
-pub(crate) fn alive_tasks(rt: &tokio::runtime::Runtime) -> usize {
-    rt.metrics().num_alive_tasks()
 }
 
 pub(crate) fn wait_until_worker_drains_to(rt: &tokio::runtime::Runtime, background_tasks: usize) {
@@ -344,26 +283,7 @@ pub(crate) fn stored_shortcut_overrides(
     runtime().block_on(crate::shortcut_overrides::load_overrides(backend))
 }
 
-pub(crate) fn pump(rt: &tokio::runtime::Runtime) {
-    rt.block_on(async {
-        for _ in 0..RUNTIME_PUMPS {
-            tokio::task::yield_now().await;
-        }
-    });
-}
-
 pub(crate) const FORMAT_ISOLATES: [char; 2] = ['\u{2068}', '\u{2069}'];
-
-pub(crate) fn pump_until(rt: &tokio::runtime::Runtime, mut reached: impl FnMut() -> bool) {
-    let deadline = std::time::Instant::now() + PUMP_HANG_GUARD;
-    while !reached() {
-        assert!(
-            std::time::Instant::now() < deadline,
-            "the awaited state never arrived"
-        );
-        pump(rt);
-    }
-}
 
 pub(crate) fn settle_until(
     cx: &mut gpui::TestAppContext,
@@ -1359,45 +1279,6 @@ pub(crate) fn alias_shape(alias: &forge_speech_types::VoiceAlias) -> AliasShape 
         alias.rate_multiplier,
         alias.state.clone(),
     )
-}
-
-struct TracingInterestFloor;
-
-impl tracing::Subscriber for TracingInterestFloor {
-    fn register_callsite(
-        &self,
-        _: &'static tracing::Metadata<'static>,
-    ) -> tracing::subscriber::Interest {
-        tracing::subscriber::Interest::sometimes()
-    }
-
-    fn enabled(&self, _: &tracing::Metadata<'_>) -> bool {
-        false
-    }
-
-    fn new_span(&self, _: &tracing::span::Attributes<'_>) -> tracing::span::Id {
-        tracing::span::Id::from_u64(1)
-    }
-
-    fn record(&self, _: &tracing::span::Id, _: &tracing::span::Record<'_>) {}
-
-    fn record_follows_from(&self, _: &tracing::span::Id, _: &tracing::span::Id) {}
-
-    fn event(&self, _: &tracing::Event<'_>) {}
-
-    fn enter(&self, _: &tracing::span::Id) {}
-
-    fn exit(&self, _: &tracing::span::Id) {}
-}
-
-pub(crate) fn install_tracing_interest_floor() {
-    static INSTALLED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
-    INSTALLED.get_or_init(|| {
-        drop(tracing::subscriber::set_global_default(
-            TracingInterestFloor,
-        ));
-        tracing::callsite::rebuild_interest_cache();
-    });
 }
 
 struct CurrentSchemaDatabase;

@@ -81,14 +81,14 @@ impl SettingsAudioView {
     ) -> Self {
         let backend = Arc::clone(&handles.backend);
         let rt_handle = handles.rt_handle.clone();
-        let speech_output = Arc::clone(&handles.speech_output);
+        let speech_output = Arc::clone(&handles.speech.speech_output);
         let routing = cx.new(|cx| {
             SettingsAudioRoutingView::new(
                 Arc::clone(&backend) as Arc<dyn SettingsRepo>,
                 backend.overlay_repo(),
-                handles.overlays.clone(),
+                handles.overlays.service.clone(),
                 rt_handle.clone(),
-                Arc::clone(&handles.audio_router),
+                Arc::clone(&handles.audio.audio_router),
                 handles.server.is_some(),
                 cx,
             )
@@ -97,7 +97,7 @@ impl SettingsAudioView {
             SettingsVoiceGateView::new(
                 Arc::clone(&backend),
                 rt_handle.clone(),
-                Arc::clone(&handles.voice_gate),
+                Arc::clone(&handles.speech.voice_gate),
                 initial_active,
                 cx,
             )

@@ -217,8 +217,8 @@ impl SettingsView {
                 Arc::clone(&handles.backend),
                 handles.rt_handle.clone(),
                 handles.server.clone(),
-                handles.overlays.clone(),
-                Arc::clone(&handles.overlay_samples),
+                handles.overlays.service.clone(),
+                Arc::clone(&handles.overlays.samples),
                 cx,
             )
         });
@@ -226,7 +226,7 @@ impl SettingsView {
             SettingsShortcutsView::new(
                 Arc::clone(&handles.backend),
                 handles.rt_handle.clone(),
-                handles.hotkey_client.clone(),
+                handles.integrations.hotkey_client.clone(),
                 cx,
             )
         });
@@ -234,7 +234,7 @@ impl SettingsView {
             SettingsNotificationsView::new(
                 Arc::clone(&handles.backend) as Arc<dyn SettingsRepo>,
                 handles.rt_handle.clone(),
-                handles.notification_policy.clone(),
+                handles.core.notification_policy.clone(),
             )
             .with_backup_failure_notice(cx)
         });
@@ -242,8 +242,8 @@ impl SettingsView {
             BackupScheduleView::new(
                 Arc::clone(&handles.backend),
                 handles.rt_handle.clone(),
-                handles.scheduled_backups.clone(),
-                handles.transfer_exclusivity.clone(),
+                handles.core.scheduled_backups.clone(),
+                handles.core.transfer_exclusivity.clone(),
                 crate::app_paths::app_paths().data_dir(),
                 cx,
             )
@@ -252,8 +252,8 @@ impl SettingsView {
             SafetyCopiesView::new(
                 Arc::clone(&handles.backend),
                 handles.rt_handle.clone(),
-                handles.transfer_exclusivity.clone(),
-                handles.scheduled_backups.clone(),
+                handles.core.transfer_exclusivity.clone(),
+                handles.core.scheduled_backups.clone(),
                 crate::app_paths::app_paths().data_dir(),
                 cx,
             )
@@ -262,12 +262,12 @@ impl SettingsView {
             let mut storage = SettingsStorageView::new(
                 Arc::clone(&handles.backend),
                 handles.rt_handle.clone(),
-                handles.chat_history_retention.clone(),
+                handles.core.chat_history_retention.clone(),
                 cx,
             );
             storage.attach_schedule(schedule, cx);
             storage.attach_safety_copies(safety_copies, cx);
-            storage.follow_transfer_lock(&handles.transfer_exclusivity, cx);
+            storage.follow_transfer_lock(&handles.core.transfer_exclusivity, cx);
             storage
         });
         let about = cx.new(|cx| {
@@ -286,12 +286,12 @@ impl SettingsView {
             SettingsDiagnosticsView::new(
                 handles.log_tail.clone(),
                 Arc::clone(&handles.backend),
-                handles.builtins.clone(),
+                handles.integrations.builtins.clone(),
                 handles.rt_handle.clone(),
                 section == SettingsSection::Diagnostics,
                 cx,
             )
-            .with_storage_changes(handles.scheduled_backups.clone())
+            .with_storage_changes(handles.core.scheduled_backups.clone())
             .with_boot_warnings(handles.boot_warnings.clone())
         });
         let region = cx.new(|cx| {

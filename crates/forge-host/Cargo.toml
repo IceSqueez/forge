@@ -10,8 +10,12 @@ rust-version.workspace = true
 
 [features]
 test-support = [
+  "dep:forge-paths",
   "dep:forge-storage-sqlite",
   "dep:forge-tts-pipeline",
+  "dep:tempfile",
+  "dep:tracing-subscriber",
+  "forge-hotkey/testing",
   "forge-storage-sqlite/test-support",
   "forge-net/test-support",
   "forge-runtime/test-support",
@@ -31,6 +35,7 @@ forge-monobank = { path = "../forge-monobank" }
 forge-net = { path = "../forge-net" }
 forge-obs = { path = "../forge-obs" }
 forge-overlay = { path = "../forge-overlay" }
+forge-paths = { path = "../forge-paths", optional = true }
 forge-platform-core = { path = "../forge-platform-core" }
 forge-platform-kick = { path = "../forge-platform-kick" }
 forge-platform-twitch = { path = "../forge-platform-twitch" }
@@ -51,24 +56,30 @@ forge-tts-cloud = { path = "../forge-tts-cloud", features = [
   "polly",
 ] }
 forge-tts-core = { path = "../forge-tts-core" }
+forge-transfer = { path = "../forge-transfer" }
 forge-tts-pipeline = { path = "../forge-tts-pipeline", optional = true }
 forge-types = { path = "../forge-types" }
 forge-vtube = { path = "../forge-vtube" }
 futures-util = { workspace = true }
 serde_json = { workspace = true }
+tempfile = { workspace = true, optional = true }
 time = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
+tracing-subscriber = { workspace = true, optional = true }
 ulid = { workspace = true }
 
 [dev-dependencies]
+forge-host = { path = ".", features = ["test-support"] }
 forge-hotkey = { path = "../forge-hotkey", features = ["testing"] }
 forge-net = { path = "../forge-net", features = ["test-support"] }
 forge-storage-sqlite = { path = "../forge-storage-sqlite", features = ["test-support"] }
 forge-runtime = { path = "../forge-runtime", features = ["test-support"] }
 forge-storage = { path = "../forge-storage", features = ["test-mocks", "settings-test-support"] }
 forge-tts-pipeline = { path = "../forge-tts-pipeline" }
+tempfile = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
+tracing-subscriber = { workspace = true }
 
 [lints]
 workspace = true

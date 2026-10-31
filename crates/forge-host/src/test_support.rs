@@ -4,6 +4,11 @@
     reason = "test fixtures fail loudly by design"
 )]
 
+mod booted;
+mod logs;
+mod pumps;
+mod schedules;
+
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -37,6 +42,16 @@ use time::OffsetDateTime;
 use crate::integration_factories::{wire_discord, wire_midi, wire_obs, wire_vtube};
 use crate::integrations::{creds_of, publisher, register_platform_triggers};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
+
+pub use booted::{
+    ALL_INTEGRATIONS, BootedHost, RecordingSinkFactory, boot_host, fake_identities, guarded,
+    on_app_runtime, open_store, runs_here_in_isolation, seed_integrations_and_server_off,
+};
+pub use logs::{console_line, install_tracing_interest_floor, signal_fields};
+pub use pumps::{alive_tasks, pump, pump_until, runtime};
+pub use schedules::{
+    GatedSchedule, gated_running_schedule, gated_running_schedule_sharing, keyless_enabled_schedule,
+};
 
 const PUMP_HANG_GUARD: std::time::Duration = std::time::Duration::from_secs(30);
 

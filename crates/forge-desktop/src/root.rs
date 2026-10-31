@@ -191,16 +191,17 @@ pub(crate) fn run_boot(
         };
         match outcome {
             Ok(mut handles) => {
-                let speak_events = handles.speak_events.take();
+                let speak_events = handles.speech.speak_events.take();
                 let overlay_build_failure = handles.overlay_build_failure.take();
                 let boot_warnings = handles.boot_warnings.clone();
                 let initial_screen = handles.first_run.opening_screen(initial_screen);
                 let handles = Arc::new(handles);
-                let bridge_sub = handles.bus.subscribe_observer(UI_EVENTS);
-                let chat_feed_bridge = ChatFeedBridge::subscribe(&handles.bus, &handles.rt_handle);
-                let loss_watch = handles.bus.watch_loss();
-                let depth_watch = handles.scheduler.watch_depths();
-                let obs_stats_watch = handles.obs_install_seed.stream_stats();
+                let bridge_sub = handles.core.bus.subscribe_observer(UI_EVENTS);
+                let chat_feed_bridge =
+                    ChatFeedBridge::subscribe(&handles.core.bus, &handles.rt_handle);
+                let loss_watch = handles.core.bus.watch_loss();
+                let depth_watch = handles.automation.scheduler.watch_depths();
+                let obs_stats_watch = handles.integrations.obs_install_seed.stream_stats();
                 let home_stats_for_obs = home_stats.clone();
                 let event_loss_for_bridge = event_loss.clone();
                 let awake_for_bridge = awake.clone();
@@ -213,23 +214,24 @@ pub(crate) fn run_boot(
                 let event_log_for_bridge = event_log.clone();
                 let platforms_for_bridge = platforms.clone();
                 let twitch_bot_for_bridge = twitch_bot.clone();
-                let event_categories = EventCategories::from_registry(&handles.trigger_registry);
+                let event_categories =
+                    EventCategories::from_registry(&handles.automation.trigger_registry);
                 let twitch_bot_for_seed = twitch_bot.clone();
-                let twitch_bot_handle = handles.twitch_bot.clone();
+                let twitch_bot_handle = handles.integrations.twitch_bot.clone();
                 let rt_handle_for_bot_seed = handles.rt_handle.clone();
                 let queue_health_for_bridge = queue_health.clone();
                 let queue_health_for_depths = queue_health.clone();
                 let speak_for_bridge = speak.clone();
-                let live_viewers_handle = handles.live_viewers.clone();
-                let notification_policy = handles.notification_policy.clone();
+                let live_viewers_handle = handles.automation.live_viewers.clone();
+                let notification_policy = handles.core.notification_policy.clone();
                 let scripts_for_retired_ids =
                     Arc::clone(&handles.backend) as Arc<dyn forge_storage::ScriptRepo>;
                 let retired_ids = crate::script_retired_ids::retired_successions(
-                    &handles.trigger_registry,
-                    &handles.sub_action_registry,
+                    &handles.automation.trigger_registry,
+                    &handles.automation.sub_action_registry,
                 );
                 let rt_handle_for_notices = handles.rt_handle.clone();
-                let scheduled_backups_for_notices = handles.scheduled_backups.clone();
+                let scheduled_backups_for_notices = handles.core.scheduled_backups.clone();
                 let settings_for_backup_notices =
                     Arc::clone(&handles.backend) as Arc<dyn forge_storage::SettingsRepo>;
                 let backend_for_shortcuts = Arc::clone(&handles.backend);
@@ -260,16 +262,17 @@ pub(crate) fn run_boot(
                         cx.set_global(crate::server_unavailable::ServerUnavailable(reason));
                     }
                     platforms.update(cx, |connectivity, cx| {
-                        connectivity.seed_from_builtins(&handles.builtins);
+                        connectivity.seed_from_builtins(&handles.integrations.builtins);
                         cx.notify();
                     });
                     crate::donation_services::mirror_donation_connectivity(
-                        &handles.donation_services,
+                        &handles.integrations.donation_services,
                         &platforms,
                         cx,
                     );
-                    let integration_lifecycle = cx
-                        .new(|_| IntegrationLifecycle::new(handles.integrations.watch().current()));
+                    let integration_lifecycle = cx.new(|_| {
+                        IntegrationLifecycle::new(handles.integrations.supervisor.watch().current())
+                    });
                     let update_flow = cx.new(|_| {
                         UpdateFlow::new(
                             Arc::clone(&handles.backend),
@@ -277,14 +280,14 @@ pub(crate) fn run_boot(
                             handles.rt_handle.clone(),
                             crate::app_paths::app_paths().data_dir(),
                         )
-                        .with_exclusivity(handles.transfer_exclusivity.clone())
-                        .with_scheduled_backups(handles.scheduled_backups.clone())
+                        .with_exclusivity(handles.core.transfer_exclusivity.clone())
+                        .with_scheduled_backups(handles.core.scheduled_backups.clone())
                     });
                     flow_for_updates = Some(update_flow.clone());
                     let problem_report = cx.new(|_| {
                         ProblemReport::new(
                             Arc::clone(&handles.backend),
-                            handles.builtins.clone(),
+                            handles.integrations.builtins.clone(),
                             handles.rt_handle.clone(),
                         )
                     });
@@ -317,28 +320,17 @@ pub(crate) fn run_boot(
                     });
                     AppShell::route_quit(&shell, cx);
                     navigator_for_notices = Some(AppShell::navigator(&shell));
-                    let mut shutdown =
-                        Some(crate::shutdown::ShutdownHandles::from_handles(&handles));
+                    let mut ordered_stop = Some(handles.stop.clone());
                     let stay_awake = handles.stay_awake.clone();
-                    let mut scheduled_backups = Some(handles.scheduled_backups.clone());
                     App::on_app_quit(cx, move |cx| {
                         stay_awake.release();
-                        let taken = shutdown.take();
-                        let backups = scheduled_backups.take();
+                        let taken = ordered_stop.take();
                         let teardown = crate::shutdown::QuitTeardown::claim(cx);
                         let exit = crate::update_exit::ExitHandoff::claim_at_quit(cx);
                         async move {
-                            let backups_stopped = async {
-                                if let Some(backups) = backups {
-                                    crate::shutdown::stop_scheduled_backups(backups).await;
-                                }
-                            };
-                            let graceful = async {
-                                if let Some(handles) = taken {
-                                    handles.run_graceful().await;
-                                }
-                            };
-                            tokio::join!(backups_stopped, graceful);
+                            if let Some(stop) = taken {
+                                stop.run().await;
+                            }
                             if let Some(exit) = exit {
                                 exit.finish();
                             }

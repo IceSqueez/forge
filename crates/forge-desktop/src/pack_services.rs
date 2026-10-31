@@ -38,13 +38,13 @@ impl PackServices {
         Self {
             backend: Arc::clone(&handles.backend),
             settings_catalog: Arc::clone(&handles.settings_catalog),
-            sub_actions: Arc::clone(&handles.sub_action_registry),
-            triggers: Arc::clone(&handles.trigger_registry),
-            overlay_kinds: Arc::clone(&handles.overlay_kinds),
-            overlays: handles.overlays.clone(),
-            overlay_samples: Arc::clone(&handles.overlay_samples),
-            scheduler: handles.scheduler.clone(),
-            scripts: Arc::clone(&handles.script_registry),
+            sub_actions: Arc::clone(&handles.automation.sub_action_registry),
+            triggers: Arc::clone(&handles.automation.trigger_registry),
+            overlay_kinds: Arc::clone(&handles.overlays.kinds),
+            overlays: handles.overlays.service.clone(),
+            overlay_samples: Arc::clone(&handles.overlays.samples),
+            scheduler: handles.automation.scheduler.clone(),
+            scripts: Arc::clone(&handles.automation.script_registry),
             rt_handle: handles.rt_handle.clone(),
         }
     }

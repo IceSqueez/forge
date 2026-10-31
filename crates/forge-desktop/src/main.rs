@@ -137,7 +137,6 @@ mod runtime_event;
 mod runtime_handles;
 mod runtime_status;
 mod safety_copies;
-mod safety_copy_prune;
 mod scheduled_backup_notices;
 mod scheduled_run_labels;
 mod scheduled_runs_section;

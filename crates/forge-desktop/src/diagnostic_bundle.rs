@@ -463,7 +463,10 @@ mod tests {
         DetailSection, HeaderAction, HealthMetric, HealthMetricId, HealthStream, QuickAction,
         QuickActions,
     };
-    use forge_types::{IntegrationId, MessageCode};
+    use forge_types::{
+        ActionId, EventId, ExecutionContext, ExecutionMetadata, ExecutionOutcome, IntegrationId,
+        MessageCode, SubActionOutcome, SubActionTelemetry, UserText, Variant, VerbatimText,
+    };
 
     use super::*;
     use crate::integrations::BuiltinObject;
@@ -741,5 +744,145 @@ mod tests {
             .collect();
 
         assert_eq!(ids, vec!["discord", "obs", "vtube"]);
+    }
+
+    fn input_over(log_dir: &std::path::Path, runs: Vec<DisclosedRun>) -> BundleInput {
+        BundleInput {
+            log_dir: log_dir.to_owned(),
+            level: LogLevel::Info,
+            env_overridden: false,
+            integrations: Vec::new(),
+            config: BTreeMap::new(),
+            runs,
+        }
+    }
+
+    fn write_log(dir: &std::path::Path, body: &str) {
+        std::fs::write(dir.join("forge.log"), body).expect("a log file");
+    }
+
+    fn step_carrying(index: usize, outcome: SubActionOutcome) -> SubActionTelemetry {
+        SubActionTelemetry {
+            index,
+            kind: "core.log".to_owned(),
+            started_at: OffsetDateTime::UNIX_EPOCH,
+            duration_ms: 5,
+            outcome,
+            args_in: BTreeMap::from([("message".to_owned(), SECRET.to_owned())]),
+            produced: BTreeMap::from([("spoken".to_owned(), SECRET.to_owned())]),
+        }
+    }
+
+    fn secret_text() -> UserText {
+        UserText::Verbatim(VerbatimText::new(SECRET))
+    }
+
+    fn run_full_of_the_secret(
+        metadata: ExecutionMetadata,
+        outcome: ExecutionOutcome,
+    ) -> DisclosedRun {
+        DisclosedRun::from(&ExecutionContext {
+            action_id: ActionId::new(),
+            metadata,
+            arg_stack_snapshot: BTreeMap::from([(
+                "user".to_owned(),
+                Variant::String(SECRET.to_owned()),
+            )]),
+            started_at: OffsetDateTime::UNIX_EPOCH,
+            completed_at: None,
+            telemetry: vec![
+                step_carrying(0, SubActionOutcome::Failed(secret_text())),
+                step_carrying(1, SubActionOutcome::Skipped(secret_text())),
+            ],
+            outcome,
+        })
+    }
+
+    #[test]
+    fn no_run_history_value_reaches_the_bundle_text() {
+        let dir = tempfile::tempdir().expect("a log dir");
+        let runs = vec![
+            run_full_of_the_secret(
+                ExecutionMetadata::QuickAction {
+                    builtin_id: "obs".to_owned(),
+                    label: SECRET.to_owned(),
+                },
+                ExecutionOutcome::Failed(secret_text()),
+            ),
+            run_full_of_the_secret(
+                ExecutionMetadata::Trigger {
+                    event_id: EventId::new(),
+                    trigger_kind: None,
+                },
+                ExecutionOutcome::Cancelled,
+            ),
+        ];
+
+        let bundle = assemble(&input_over(dir.path(), runs)).expect("a bundle");
+
+        assert!(!bundle.text.contains(SECRET));
+        assert!(bundle.text.contains("run action="));
+        assert!(bundle.text.contains("len="));
+    }
+
+    #[test]
+    fn an_oversized_log_stays_inside_the_total_budget_and_counts_as_elided() {
+        let dir = tempfile::tempdir().expect("a log dir");
+        let row = line(" INFO", "forge_desktop", &"x".repeat(200));
+        let rows = (TOTAL_BUDGET / row.len()) + 2_000;
+        write_log(dir.path(), &format!("{row}\n").repeat(rows));
+
+        let bundle = assemble(&input_over(dir.path(), Vec::new())).expect("a bundle");
+
+        assert!(bundle.text.len() <= TOTAL_BUDGET, "{}", bundle.text.len());
+        assert!(bundle.elided_bytes > 0);
+    }
+
+    #[test]
+    fn a_log_that_fits_elides_nothing() {
+        let dir = tempfile::tempdir().expect("a log dir");
+        write_log(dir.path(), &line(" INFO", "forge_desktop", "hello"));
+
+        let bundle = assemble(&input_over(dir.path(), Vec::new())).expect("a bundle");
+
+        assert_eq!(bundle.elided_bytes, 0);
+    }
+
+    #[test]
+    fn script_lines_past_their_budget_are_elided_and_added_to_the_corpus_elision() {
+        let dir = tempfile::tempdir().expect("a log dir");
+        let row = line(" INFO", SCRIPT_LOG_TARGET, &"x".repeat(200));
+        let rows = SCRIPT_SECTION_BUDGET / row.len() + 100;
+        write_log(dir.path(), &format!("{row}\n").repeat(rows));
+
+        let bundle = assemble(&input_over(dir.path(), Vec::new())).expect("a bundle");
+
+        assert_eq!(bundle.script_lines, rows);
+        assert!(bundle.elided_bytes > 0);
+        assert!(bundle.text.matches(row.as_str()).count() < rows);
+    }
+
+    #[test]
+    fn script_lines_land_only_in_their_own_section_and_the_sections_keep_their_order() {
+        let dir = tempfile::tempdir().expect("a log dir");
+        let script = line(" INFO", SCRIPT_LOG_TARGET, "from a script");
+        let command = line(" INFO", COMMAND_LINE_TARGET, "ran a command");
+        let plain = line(" INFO", "forge_desktop", "from forge");
+        write_log(dir.path(), &format!("{script}\n{command}\n{plain}\n"));
+
+        let bundle = assemble(&input_over(dir.path(), Vec::new())).expect("a bundle");
+        let at = |needle: &str| bundle.text.find(needle).expect(needle);
+
+        assert_eq!(bundle.text.matches("from a script").count(), 1);
+        assert_eq!((bundle.script_lines, bundle.command_lines), (1, 1));
+        assert!(
+            at("-- integrations") < at("-- configuration")
+                && at("-- configuration") < at("-- run history")
+                && at("-- run history") < at("-- user script log")
+                && at("-- user script log") < at("from a script")
+                && at("from a script") < at("from forge"),
+            "{}",
+            bundle.text
+        );
     }
 }

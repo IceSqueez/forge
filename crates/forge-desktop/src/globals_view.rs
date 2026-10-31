@@ -2317,4 +2317,96 @@ mod tests {
             );
         }
     }
+
+    fn refused() -> SharedString {
+        "refused".into()
+    }
+
+    #[test]
+    fn json_text_of_the_wrong_shape_or_syntax_is_refused_with_the_given_reason() {
+        for (text, want_array) in [
+            ("{\"a\": 1}", true),
+            ("[1]", false),
+            ("3", true),
+            ("null", false),
+            ("not json", true),
+            ("", false),
+        ] {
+            assert_eq!(
+                parse_json_variant(text, want_array, refused()),
+                Err(refused()),
+                "{text:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn json_text_of_the_right_shape_becomes_the_matching_variant() {
+        assert_eq!(
+            parse_json_variant("[1, \"two\"]", true, refused()),
+            Ok(Variant::Array(vec![
+                Variant::Int(1),
+                Variant::String("two".to_owned())
+            ]))
+        );
+        assert_eq!(
+            parse_json_variant("{\"k\": true}", false, refused()),
+            Ok(Variant::Object(std::collections::BTreeMap::from([(
+                "k".to_owned(),
+                Variant::Bool(true)
+            )])))
+        );
+    }
+
+    #[test]
+    fn a_stored_array_or_object_reloads_from_its_json_seed_unchanged() {
+        let nested = Variant::Object(std::collections::BTreeMap::from([(
+            "items".to_owned(),
+            Variant::Array(vec![Variant::Int(1), Variant::Float(2.5)]),
+        )]));
+        let list = Variant::Array(vec![nested.clone()]);
+        for (value, want_array) in [(list, true), (nested, false)] {
+            let seed = json_seed(&value).expect("a json seed");
+            assert_eq!(parse_json_variant(&seed, want_array, refused()), Ok(value));
+        }
+    }
+
+    #[test]
+    fn a_float_seed_parses_back_to_the_exact_stored_value() {
+        for stored in [1e300, -0.1, 1.0, f64::MIN_POSITIVE] {
+            let seed = single_line_seed(&Variant::Float(stored)).expect("a seed");
+            assert_eq!(seed.parse::<f64>(), Ok(stored), "{seed}");
+        }
+    }
+
+    #[test]
+    fn a_datetime_seed_parses_back_to_the_exact_stored_instant() {
+        let stored = time::macros::datetime!(2026-05-18 14:23:00.25 UTC);
+        let seed = single_line_seed(&Variant::Datetime(stored)).expect("a seed");
+
+        assert_eq!(forge_types::datetime_from_text(&seed), Some(stored));
+    }
+
+    #[test]
+    fn only_container_variants_seed_the_json_editor_and_only_scalars_the_line_editor() {
+        for scalar in [Variant::Int(1), Variant::String("s".to_owned())] {
+            assert_eq!(json_seed(&scalar), None);
+        }
+        assert_eq!(single_line_seed(&Variant::Bool(true)), None);
+        assert_eq!(single_line_seed(&Variant::Array(vec![])), None);
+    }
+
+    #[test]
+    fn the_inspector_counts_items_of_a_list_and_keys_of_an_object() {
+        let object = Variant::Object(std::collections::BTreeMap::from([(
+            "k".to_owned(),
+            Variant::Int(1),
+        )]));
+
+        assert_eq!(
+            inspect_count(&Variant::Array(vec![Variant::Int(1), Variant::Int(2)])),
+            ("globals_inspect_subtitle_items", 2)
+        );
+        assert_eq!(inspect_count(&object), ("globals_inspect_subtitle_keys", 1));
+    }
 }

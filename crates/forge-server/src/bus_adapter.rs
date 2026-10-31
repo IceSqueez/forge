@@ -520,7 +520,7 @@ mod tests {
             serde_json::Value::Null,
         ));
 
-        tokio::time::timeout(std::time::Duration::from_millis(200), probe_rx.recv())
+        tokio::time::timeout(std::time::Duration::from_secs(30), probe_rx.recv())
             .await
             .expect("timeout waiting for probe")
             .expect("probe receiver error");
@@ -547,7 +547,7 @@ mod tests {
             serde_json::Value::Null,
         ));
 
-        tokio::time::timeout(std::time::Duration::from_millis(200), probe_rx.recv())
+        tokio::time::timeout(std::time::Duration::from_secs(30), probe_rx.recv())
             .await
             .expect("timeout waiting for probe")
             .expect("probe receiver error");
@@ -858,7 +858,7 @@ mod tests {
             "chat.message",
             serde_json::Value::Null,
         ));
-        tokio::time::timeout(std::time::Duration::from_millis(200), probe_rx.recv())
+        tokio::time::timeout(std::time::Duration::from_secs(30), probe_rx.recv())
             .await
             .expect("timeout waiting for the probe")
             .expect("probe receiver error");

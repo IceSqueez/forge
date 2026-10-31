@@ -5,10 +5,8 @@ use forge_speak_queue::{
     Priority, QueueConfig, RequestId, SpeakCommand, SpeakEvent, SpeakEventStream, SpeakRequest,
 };
 
-use common::{make_deps, recording_sink, request, standard_registry, wait_for};
+use common::{first_started_ids, make_deps, recording_sink, request, standard_registry, wait_for};
 use forge_speech_types::AssignmentStrategy;
-
-const HANG_GUARD_MS: u64 = 30_000;
 
 fn spawn_standard() -> (forge_speak_queue::SpeakQueueHandle, SpeakEventStream) {
     let (sink, _plays) = recording_sink();
@@ -19,28 +17,6 @@ fn spawn_standard() -> (forge_speak_queue::SpeakQueueHandle, SpeakEventStream) {
         vec![],
     );
     forge_speak_queue::spawn(QueueConfig::default(), deps)
-}
-
-async fn first_started_ids(stream: &mut SpeakEventStream, count: usize) -> Vec<RequestId> {
-    let mut seen: Vec<RequestId> = Vec::new();
-    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(HANG_GUARD_MS);
-    while seen.len() < count {
-        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
-        if remaining.is_zero() {
-            panic!("only saw {} of {count} Started request ids", seen.len());
-        }
-        match tokio::time::timeout(remaining, stream.recv()).await {
-            Ok(Ok(SpeakEvent::Started { request_id, .. })) => {
-                if !seen.contains(&request_id) {
-                    seen.push(request_id);
-                }
-            }
-            Ok(Ok(_)) => continue,
-            Ok(Err(_)) => panic!("stream closed"),
-            Err(_) => panic!("timeout waiting for Started events"),
-        }
-    }
-    seen
 }
 
 #[tokio::test]

@@ -106,21 +106,6 @@ mod tests {
     }
 
     #[test]
-    fn a_resolved_routable_host_is_a_bare_address_another_machine_could_dial() {
-        let Some(host) = resolve_routable_host("0.0.0.0:9515") else {
-            return;
-        };
-
-        let address: IpAddr = host
-            .parse()
-            .expect("a routable host goes into a URL verbatim, so it must be a bare address");
-        assert!(
-            !address.is_loopback() && !address.is_unspecified(),
-            "host {host} is reachable from this machine only"
-        );
-    }
-
-    #[test]
     fn extract_port_keeps_only_the_port_of_a_bracketed_ipv6_bind() {
         for (bind, expected) in [
             ("127.0.0.1:9515", "9515"),

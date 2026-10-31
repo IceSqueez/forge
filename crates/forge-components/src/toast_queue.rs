@@ -348,4 +348,14 @@ mod tests {
             ]
         );
     }
+
+    #[test]
+    fn taking_a_toast_removes_it_so_its_action_cannot_run_a_second_time() {
+        let mut toasts = Toasts::new();
+        let id = toasts.show(ToastData::new(0, ToastKind::Info, "saved"));
+
+        assert!(toasts.take(id).is_some());
+        assert!(toasts.take(id).is_none());
+        assert!(toasts.items().is_empty());
+    }
 }

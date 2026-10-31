@@ -878,4 +878,148 @@ mod tests {
             (Some(read_only), Some(HOME_DEFAULT.to_owned()))
         );
     }
+
+    #[gpui::test]
+    fn a_free_chord_binds_and_persists_once(cx: &mut TestAppContext) {
+        let mut harness = Harness::new("{}");
+        let view = harness.open(cx);
+
+        view.update(cx, |v, cx| {
+            v.start_rebind(HOME, cx);
+            v.on_capture_keystroke(ctrl("9"), cx);
+        });
+        harness.settle(cx);
+
+        assert_eq!(shown_chord(&view, HOME, cx).as_deref(), Some("ctrl-9"));
+        let writes = harness.shortcut_writes();
+        assert_eq!(writes.len(), 1);
+        assert!(writes[0].contains("ctrl-9"), "{writes:?}");
+    }
+
+    #[gpui::test]
+    fn escape_ends_the_capture_and_changes_nothing(cx: &mut TestAppContext) {
+        let mut harness = Harness::new("{}");
+        let view = harness.open(cx);
+
+        view.update(cx, |v, cx| {
+            v.start_rebind(HOME, cx);
+            v.on_capture_keystroke(
+                Keystroke {
+                    modifiers: Modifiers::default(),
+                    key: forge_components::ESCAPE_KEY.to_owned(),
+                    key_char: None,
+                },
+                cx,
+            );
+        });
+        harness.settle(cx);
+
+        assert_eq!(view.read_with(cx, |v, _| v.rebinding), None);
+        assert_eq!(shown_chord(&view, HOME, cx).as_deref(), Some(HOME_DEFAULT));
+        assert!(harness.shortcut_writes().is_empty());
+    }
+
+    #[gpui::test]
+    fn a_bare_key_is_refused_with_an_error_and_ends_the_capture(cx: &mut TestAppContext) {
+        let mut harness = Harness::new("{}");
+        let view = harness.open(cx);
+
+        view.update(cx, |v, cx| {
+            v.start_rebind(HOME, cx);
+            v.on_capture_keystroke(
+                Keystroke {
+                    modifiers: Modifiers::default(),
+                    key: "9".to_owned(),
+                    key_char: None,
+                },
+                cx,
+            );
+        });
+        harness.settle(cx);
+
+        view.read_with(cx, |v, _| {
+            assert!(v.rebind_error.is_some());
+            assert_eq!(v.rebinding, None);
+        });
+        assert_eq!(shown_chord(&view, HOME, cx).as_deref(), Some(HOME_DEFAULT));
+        assert!(harness.shortcut_writes().is_empty());
+    }
+
+    #[gpui::test]
+    fn a_taken_chord_asks_first_and_writes_nothing_until_the_steal(cx: &mut TestAppContext) {
+        let mut harness = Harness::new("{}");
+        let view = harness.open(cx);
+
+        view.update(cx, |v, cx| {
+            v.start_rebind(HOME, cx);
+            v.on_capture_keystroke(ctrl("2"), cx);
+        });
+        harness.settle(cx);
+
+        let (target, owner) = view.read_with(cx, |v, _| {
+            let conflict = v.conflict.as_ref().expect("a conflict");
+            (conflict.target_id, conflict.owner_id)
+        });
+        assert_eq!((target, owner), (HOME, CHAT));
+        assert!(harness.shortcut_writes().is_empty());
+
+        view.update(cx, |v, cx| v.conflict_steal(cx));
+        harness.settle(cx);
+
+        assert_eq!(shown_chord(&view, HOME, cx).as_deref(), Some(CHAT_DEFAULT));
+        assert_eq!(shown_chord(&view, CHAT, cx), None);
+        assert!(view.read_with(cx, |v, _| v.conflict.is_none()));
+        assert_eq!(harness.shortcut_writes().len(), 1);
+    }
+
+    #[gpui::test]
+    fn resetting_everything_restores_the_defaults_and_persists_it(cx: &mut TestAppContext) {
+        let mut harness = Harness::new(STORED);
+        let view = harness.open(cx);
+        assert_eq!(shown_chord(&view, CHAT, cx).as_deref(), Some("ctrl-8"));
+
+        view.update(cx, |v, cx| v.reset_all(cx));
+        harness.settle(cx);
+
+        assert_eq!(shown_chord(&view, CHAT, cx).as_deref(), Some(CHAT_DEFAULT));
+        assert_eq!(harness.shortcut_writes().len(), 1);
+    }
+
+    #[gpui::test]
+    fn a_hold_ceiling_outside_its_range_is_marked_invalid_and_keeps_the_value(
+        cx: &mut TestAppContext,
+    ) {
+        let harness = Harness::new("{}");
+        let view = harness.open(cx);
+        let start = view.read_with(cx, |v, _| v.hold_ceiling_secs);
+        for bad in [
+            (CEILING_MIN_SECS - 1).to_string(),
+            (CEILING_MAX_SECS + 1).to_string(),
+            "soon".to_owned(),
+            String::new(),
+        ] {
+            view.update(cx, |v, cx| v.commit_hold_ceiling(&bad, cx));
+
+            view.read_with(cx, |v, _| {
+                assert!(v.hold_ceiling_invalid, "{bad:?}");
+                assert_eq!(v.hold_ceiling_secs, start, "{bad:?}");
+            });
+        }
+    }
+
+    #[gpui::test]
+    fn a_hold_ceiling_at_each_end_of_its_range_is_accepted(cx: &mut TestAppContext) {
+        let harness = Harness::new("{}");
+        let view = harness.open(cx);
+        for secs in [CEILING_MIN_SECS, CEILING_MAX_SECS] {
+            view.update(cx, |v, cx| {
+                v.commit_hold_ceiling(&format!(" {secs} "), cx);
+            });
+
+            view.read_with(cx, |v, _| {
+                assert!(!v.hold_ceiling_invalid);
+                assert_eq!(v.hold_ceiling_secs, secs);
+            });
+        }
+    }
 }

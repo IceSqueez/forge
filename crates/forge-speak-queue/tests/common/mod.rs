@@ -207,6 +207,51 @@ where
     }
 }
 
+pub async fn enqueue_proving_nothing_started(
+    handle: &forge_speak_queue::SpeakQueueHandle,
+    stream: &mut SpeakEventStream,
+) {
+    let proof = request("proof", "proof");
+    let proof_id = proof.request_id.clone();
+    handle
+        .send(forge_speak_queue::SpeakCommand::Enqueue(proof))
+        .await
+        .unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(HANG_GUARD_MS);
+    loop {
+        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+        match tokio::time::timeout(remaining, stream.recv()).await {
+            Ok(Ok(SpeakEvent::Started { .. })) => panic!("an item started while it was held"),
+            Ok(Ok(SpeakEvent::Enqueued { request_id, .. })) if request_id == proof_id => return,
+            Ok(Ok(_)) => continue,
+            Ok(Err(_)) => panic!("stream closed"),
+            Err(_) => panic!("timeout waiting for the proof item"),
+        }
+    }
+}
+
+pub async fn first_started_ids(stream: &mut SpeakEventStream, count: usize) -> Vec<RequestId> {
+    let mut seen: Vec<RequestId> = Vec::new();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(HANG_GUARD_MS);
+    while seen.len() < count {
+        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+        if remaining.is_zero() {
+            panic!("only saw {} of {count} Started request ids", seen.len());
+        }
+        match tokio::time::timeout(remaining, stream.recv()).await {
+            Ok(Ok(SpeakEvent::Started { request_id, .. })) => {
+                if !seen.contains(&request_id) {
+                    seen.push(request_id);
+                }
+            }
+            Ok(Ok(_)) => continue,
+            Ok(Err(_)) => panic!("stream closed"),
+            Err(_) => panic!("timeout waiting for Started events"),
+        }
+    }
+    seen
+}
+
 pub async fn wait_for_resolved_voice(stream: &mut SpeakEventStream) -> (String, String) {
     let deadline = std::time::Instant::now() + std::time::Duration::from_millis(HANG_GUARD_MS);
     loop {

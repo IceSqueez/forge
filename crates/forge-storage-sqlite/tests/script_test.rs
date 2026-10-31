@@ -70,23 +70,34 @@ async fn get_by_name_missing_returns_none() {
 }
 
 #[tokio::test]
-async fn save_twice_same_name_updates_body_and_bumps_last_modified() {
-    let backend = setup().await;
+async fn saving_an_existing_script_replaces_its_body_and_refreshes_only_last_modified() {
+    const AN_OLD_EPOCH_MS: i64 = 1_000;
+    let pool = sqlx::SqlitePool::connect("sqlite::memory:")
+        .await
+        .expect("in-memory pool");
+    forge_storage_sqlite::apply_migrations(&pool)
+        .await
+        .expect("migrations apply");
+    let repo = forge_storage_sqlite::SqliteScriptRepo::new(pool.clone());
     let mut record = make_record("mutable", true);
     let id = record.id;
-    backend.save(record.clone()).await.expect("save 1");
-
-    let before = backend.get(id).await.expect("get before").unwrap();
+    repo.save(record.clone()).await.expect("save 1");
+    sqlx::query("UPDATE scripts SET created_at = ?, last_modified = ? WHERE id = ?")
+        .bind(AN_OLD_EPOCH_MS)
+        .bind(AN_OLD_EPOCH_MS)
+        .bind(id.to_string())
+        .execute(&pool)
+        .await
+        .expect("backdate");
+    let old = repo.get(id).await.expect("get before").unwrap().created_at;
 
     record.body = r#"let x = 42;"#.to_owned();
-    backend.save(record).await.expect("save 2");
-    let got = backend.get(id).await.expect("get after").unwrap();
+    repo.save(record).await.expect("save 2");
+    let got = repo.get(id).await.expect("get after").unwrap();
 
     assert_eq!(got.body, r#"let x = 42;"#);
-    assert!(
-        got.last_modified >= before.last_modified,
-        "last_modified must not regress"
-    );
+    assert_eq!(got.created_at, old);
+    assert!(got.last_modified > old);
 }
 
 #[tokio::test]

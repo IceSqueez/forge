@@ -424,52 +424,119 @@ impl Render for TypeToConfirm {
 
 #[cfg(test)]
 mod tests {
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    use gpui::{Entity, TestAppContext, VisualTestContext};
+
     use super::*;
     use crate::palette::FORGE_DEFAULT;
+    use crate::test_support::install_presentation;
+    use crate::text_input::bind_text_input_keys;
 
-    fn same_rgba(a: Rgba, b: Rgba) -> bool {
-        a.r == b.r && a.g == b.g && a.b == b.b && a.a == b.a
+    const TARGET: &str = "bind to LAN";
+
+    struct Card<'a> {
+        view: Entity<TypeToConfirm>,
+        seen: Rc<RefCell<Vec<TypeToConfirmEvent>>>,
+        vcx: &'a mut VisualTestContext,
     }
 
-    #[test]
-    fn matches_holds_only_on_an_exact_case_sensitive_untrimmed_pair() {
-        for (typed, target, expected) in [
-            ("delete my-channel", "delete my-channel", true),
-            ("delete my-channe", "delete my-channel", false),
-            ("  target  ", "target", false),
-            ("Target", "target", false),
-            ("", "", true),
-        ] {
-            assert_eq!(
-                matches(typed, target),
-                expected,
-                "matches({typed:?}, {target:?})",
-            );
+    fn mount(cx: &mut TestAppContext) -> Card<'_> {
+        install_presentation(cx);
+        cx.update(bind_text_input_keys);
+        let (view, vcx) =
+            cx.add_window_view(|_window, cx| type_to_confirm(TARGET, &FORGE_DEFAULT, cx));
+        let seen = Rc::new(RefCell::new(Vec::new()));
+        let sink = seen.clone();
+        vcx.update(|window, cx| {
+            window.activate_window();
+            cx.subscribe(&view, move |_card, event: &TypeToConfirmEvent, _cx| {
+                sink.borrow_mut().push(*event);
+            })
+            .detach();
+            view.update(cx, |card, cx| card.focus_input(window, cx));
+        });
+        vcx.run_until_parked();
+        Card { view, seen, vcx }
+    }
+
+    impl Card<'_> {
+        fn type_text(&mut self, text: &str) {
+            self.vcx.simulate_input(text);
+            self.vcx.run_until_parked();
+        }
+
+        fn press(&mut self, key: &str) {
+            self.vcx.simulate_keystrokes(key);
+            self.vcx.run_until_parked();
+        }
+
+        fn matched(&mut self) -> bool {
+            self.view.update(self.vcx, |card, _cx| card.matched)
+        }
+
+        fn typed(&mut self) -> String {
+            self.view.update(self.vcx, |card, cx| {
+                card.input.read(cx).content().to_owned()
+            })
         }
     }
 
-    #[test]
-    fn match_border_is_brand_when_matched_and_border_input_otherwise() {
-        let p = FORGE_DEFAULT;
-        assert!(!same_rgba(p.brand, p.border_input));
-        assert!(same_rgba(match_border(true, &p), p.brand));
-        assert!(same_rgba(match_border(false, &p), p.border_input));
+    #[gpui::test]
+    fn enter_confirms_only_the_exact_text_and_only_once(cx: &mut TestAppContext) {
+        let mut card = mount(cx);
+        for near_miss in ["bind to LA", "Bind to LAN", "bind to LAN ", " bind to LAN"] {
+            card.press("ctrl-a");
+            card.type_text(near_miss);
+
+            card.press("enter");
+
+            assert_eq!(card.typed(), near_miss);
+            assert!(!card.matched(), "{near_miss:?}");
+            assert!(card.seen.borrow().is_empty(), "{near_miss:?}");
+        }
+
+        card.press("ctrl-a");
+        card.type_text(TARGET);
+        card.press("enter");
+
+        assert_eq!(*card.seen.borrow(), [TypeToConfirmEvent::Confirmed]);
     }
 
-    #[test]
-    fn bullet_glyph_pairs_each_kind_with_its_tone_glyph_and_hue() {
-        let p = FORGE_DEFAULT;
-        assert!(!same_rgba(p.success, p.warning));
-        assert!(!same_rgba(p.warning, p.info));
-        assert!(!same_rgba(p.success, p.info));
-        for (kind, glyph, hue) in [
-            (BulletKind::Check, Icon::CircleCheck, p.success),
-            (BulletKind::Warning, Icon::AlertTriangle, p.warning),
-            (BulletKind::Info, Icon::InfoCircle, p.info),
-        ] {
-            let (got_glyph, got_hue) = bullet_glyph(kind, &p);
-            assert_eq!(got_glyph, glyph, "glyph for {kind:?}");
-            assert!(same_rgba(got_hue, hue), "hue for {kind:?}");
-        }
+    #[gpui::test]
+    fn erasing_after_a_match_closes_the_gate_again(cx: &mut TestAppContext) {
+        let mut card = mount(cx);
+        card.type_text(TARGET);
+
+        card.press("backspace");
+        card.press("enter");
+
+        assert!(!card.matched());
+        assert!(card.seen.borrow().is_empty());
+
+        card.type_text("N");
+        card.press("enter");
+
+        assert_eq!(*card.seen.borrow(), [TypeToConfirmEvent::Confirmed]);
+    }
+
+    #[gpui::test]
+    fn escape_on_an_empty_field_cancels(cx: &mut TestAppContext) {
+        let mut card = mount(cx);
+
+        card.press("escape");
+
+        assert_eq!(*card.seen.borrow(), [TypeToConfirmEvent::Cancelled]);
+    }
+
+    #[gpui::test]
+    fn escape_cancels_even_when_the_text_matches(cx: &mut TestAppContext) {
+        let mut card = mount(cx);
+        card.type_text(TARGET);
+
+        card.press("escape");
+
+        assert_eq!(*card.seen.borrow(), [TypeToConfirmEvent::Cancelled]);
     }
 }

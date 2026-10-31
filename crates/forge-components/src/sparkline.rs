@@ -189,3 +189,62 @@ impl RenderOnce for Sparkline {
         .size_full()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn samples_scale_between_the_series_extremes_without_a_baseline() {
+        assert_eq!(
+            vertical_fractions(&[2.0, 4.0, 3.0], false),
+            vec![0.0, 1.0, 0.5]
+        );
+    }
+
+    #[test]
+    fn a_zero_baseline_measures_positive_samples_from_zero() {
+        assert_eq!(vertical_fractions(&[2.0, 4.0], true), vec![0.5, 1.0]);
+    }
+
+    #[test]
+    fn a_negative_sample_lowers_the_zero_baseline_floor() {
+        assert_eq!(
+            vertical_fractions(&[-2.0, 0.0, 2.0], true),
+            vec![0.0, 0.5, 1.0]
+        );
+    }
+
+    #[test]
+    fn a_series_without_a_measurable_span_draws_at_its_flat_level() {
+        let cases: [(&[f32], bool, f32); 7] = [
+            (&[3.0, 3.0], false, FLAT_SERIES_FRACTION),
+            (&[7.0], false, FLAT_SERIES_FRACTION),
+            (&[f32::NAN, f32::INFINITY], false, FLAT_SERIES_FRACTION),
+            (&[f32::MIN, f32::MAX], false, FLAT_SERIES_FRACTION),
+            (&[0.0, 0.0], true, 0.0),
+            (&[f32::NEG_INFINITY], true, 0.0),
+            (&[f32::NAN, f32::NAN], true, 0.0),
+        ];
+        for (samples, zero_baseline, level) in cases {
+            assert_eq!(
+                vertical_fractions(samples, zero_baseline),
+                vec![level; samples.len()],
+                "{samples:?} baseline {zero_baseline}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_empty_series_yields_no_points() {
+        assert!(vertical_fractions(&[], false).is_empty());
+    }
+
+    #[test]
+    fn a_non_finite_sample_draws_flat_and_leaves_the_scale_of_its_neighbours() {
+        assert_eq!(
+            vertical_fractions(&[0.0, f32::NAN, 10.0, f32::INFINITY], false),
+            vec![0.0, FLAT_SERIES_FRACTION, 1.0, FLAT_SERIES_FRACTION]
+        );
+    }
+}

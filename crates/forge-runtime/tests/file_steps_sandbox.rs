@@ -29,13 +29,26 @@ const ESCAPE: &str = "core.file_path_escapes";
 const READ_CAP_BYTES: usize = 1024 * 1024;
 const SENTINEL: &str = "qa-sentinel";
 
+static RUN_ROOT: OnceLock<PathBuf> = OnceLock::new();
 static ASSETS_ROOT: OnceLock<PathBuf> = OnceLock::new();
 static NEXT: AtomicU64 = AtomicU64::new(0);
+
+fn run_root() -> &'static Path {
+    RUN_ROOT.get_or_init(|| {
+        let root = Path::new(env!("CARGO_TARGET_TMPDIR")).join("file_steps_sandbox");
+        match std::fs::remove_dir_all(&root) {
+            Ok(()) => {}
+            Err(error) => assert_eq!(error.kind(), std::io::ErrorKind::NotFound),
+        }
+        root
+    })
+}
 
 #[expect(unsafe_code, reason = "env mutation is unsafe in edition 2024")]
 fn assets_root() -> &'static Path {
     ASSETS_ROOT.get_or_init(|| {
-        let data_dir = tempfile::tempdir().unwrap().keep();
+        let data_dir = run_root().join("data");
+        std::fs::create_dir_all(&data_dir).unwrap();
         // SAFETY: every test in this binary calls assets_root() before any other work, so all other test threads are blocked on this OnceLock and none reads the environment while it is written.
         unsafe {
             std::env::set_var("FORGE_DATA_DIR", &data_dir);
@@ -55,7 +68,9 @@ fn case_dir(label: &str) -> (PathBuf, String) {
 
 #[cfg(unix)]
 fn outside_dir() -> PathBuf {
-    tempfile::tempdir().unwrap().keep()
+    let dir = run_root().join(format!("outside-{}", NEXT.fetch_add(1, Ordering::Relaxed)));
+    std::fs::create_dir_all(&dir).unwrap();
+    dir
 }
 
 struct NullPublisher;

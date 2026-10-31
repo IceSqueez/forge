@@ -2453,4 +2453,73 @@ mod tests {
             "the pane offers a token the server already refuses"
         );
     }
+
+    #[test]
+    fn an_origin_is_kept_lowercased_for_each_host_form_and_scheme() {
+        for (typed, stored) in [
+            ("http://localhost", "http://localhost"),
+            ("HTTPS://Overlay.Example.COM", "https://overlay.example.com"),
+            ("http://a-b.test:8080", "http://a-b.test:8080"),
+            ("http://127.0.0.1:65535", "http://127.0.0.1:65535"),
+            ("http://[::1]", "http://[::1]"),
+            ("https://[FE80::1]:443", "https://[fe80::1]:443"),
+            ("  http://spaced.test  ", "http://spaced.test"),
+        ] {
+            assert_eq!(normalize_origin(typed).as_deref(), Some(stored), "{typed}");
+        }
+    }
+
+    #[test]
+    fn an_origin_the_cors_check_could_not_match_is_refused() {
+        for bad in [
+            "localhost",
+            "ftp://a.test",
+            "http://",
+            "http://[::1]:",
+            "http://[]",
+            "http://[::1",
+            "http://[::1]8080",
+            "http://[zz::1]",
+            "http://a..b",
+            "http://.a.test",
+            "http://a.test.",
+            "http://a.test/",
+            "http://a.test/path",
+            "http://a_b.test",
+            "http://зірка.test",
+            "http://user@a.test",
+            "http://a.test:",
+            "http://a.test:0",
+            "http://a.test:65536",
+            "http://a.test:80:81",
+            "http://a.test:http",
+        ] {
+            assert_eq!(normalize_origin(bad), None, "{bad}");
+        }
+    }
+
+    #[test]
+    fn normalizing_a_kept_origin_again_changes_nothing() {
+        for typed in ["HTTP://A.Test:81", "https://[FE80::1]:443", "http://x"] {
+            let once = normalize_origin(typed).expect("a valid origin");
+            assert_eq!(normalize_origin(&once).as_deref(), Some(once.as_str()));
+        }
+    }
+
+    #[test]
+    fn origin_lines_are_trimmed_deduplicated_after_normalizing_and_kept_in_order() {
+        let raw = "http://b.test\n\n   \n  HTTP://B.test \nhttp://a.test\r\n";
+
+        assert_eq!(
+            parse_origins(raw),
+            Ok(vec!["http://b.test".to_owned(), "http://a.test".to_owned()])
+        );
+    }
+
+    #[test]
+    fn the_first_bad_origin_line_refuses_the_whole_list_and_is_named_as_typed() {
+        let raw = "http://ok.test\n  Not An Origin \nalso bad";
+
+        assert_eq!(parse_origins(raw), Err("Not An Origin".to_owned()));
+    }
 }

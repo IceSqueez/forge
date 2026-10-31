@@ -65,3 +65,75 @@ impl SearchState {
 pub fn contains_folded(hay: &str, folded_query: &str) -> bool {
     folded_query.is_empty() || hay.to_lowercase().contains(folded_query)
 }
+
+#[cfg(test)]
+mod tests {
+    use gpui::{TestAppContext, VisualTestContext};
+
+    use super::*;
+    use crate::palette::FORGE_DEFAULT;
+
+    struct Host {
+        search: SearchState,
+    }
+
+    impl gpui::Render for Host {
+        fn render(
+            &mut self,
+            _window: &mut gpui::Window,
+            _cx: &mut Context<Self>,
+        ) -> impl gpui::IntoElement {
+            gpui::div()
+        }
+    }
+
+    fn mount(cx: &mut TestAppContext) -> (Entity<Host>, &mut VisualTestContext) {
+        cx.add_window_view(|_window, cx| Host {
+            search: SearchState::new(cx, FORGE_DEFAULT, "search"),
+        })
+    }
+
+    fn typed(text: &str) -> InputEvent {
+        InputEvent::Changed(SharedString::from(text.to_owned()))
+    }
+
+    #[gpui::test]
+    fn a_typed_query_is_trimmed_and_folded_before_it_matches(cx: &mut TestAppContext) {
+        let (host, vcx) = mount(cx);
+
+        host.update(vcx, |host, _cx| {
+            assert!(host.search.on_changed(&typed("  ЗіРКа ")));
+            assert_eq!(host.search.query(), "зірка");
+            assert!(host.search.matches("Нова ЗІРКА сходить"));
+            assert!(!host.search.matches("місяць"));
+        });
+    }
+
+    #[gpui::test]
+    fn a_query_of_only_spaces_is_empty_and_matches_everything(cx: &mut TestAppContext) {
+        let (host, vcx) = mount(cx);
+
+        host.update(vcx, |host, _cx| {
+            host.search.on_changed(&typed("   "));
+            assert!(host.search.is_empty());
+            assert!(host.search.matches("anything"));
+        });
+    }
+
+    #[gpui::test]
+    fn an_event_that_is_not_a_change_leaves_the_query_alone(cx: &mut TestAppContext) {
+        let (host, vcx) = mount(cx);
+
+        host.update(vcx, |host, _cx| {
+            host.search.on_changed(&typed("kept"));
+            for event in [
+                InputEvent::Submitted("other".into()),
+                InputEvent::Blurred("other".into()),
+                InputEvent::Cancelled,
+            ] {
+                assert!(!host.search.on_changed(&event));
+            }
+            assert_eq!(host.search.query(), "kept");
+        });
+    }
+}

@@ -350,10 +350,7 @@ async fn replace_rules_is_atomic_rollback_on_conflict() {
     assert!(r.replace_rules(&dup).await.is_err());
 
     let got = r.list_rules().await.expect("list after conflict attempt");
-    assert!(
-        !got.is_empty(),
-        "atomicity failure: old rules were deleted before the conflict was hit"
-    );
+    assert_eq!(got, vec![literal_rule("stable", 0)]);
 }
 
 #[tokio::test]

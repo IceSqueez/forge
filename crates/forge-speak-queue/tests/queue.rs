@@ -202,16 +202,14 @@ async fn pause_holds_synthesis() {
     let req = make_request("viewer1", "paused message", Priority::Normal);
     handle.send(SpeakCommand::Enqueue(req)).await.unwrap();
 
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-    assert_eq!(
-        *play_count.lock().unwrap(),
-        0,
-        "should not play while paused"
-    );
+    common::enqueue_proving_nothing_started(&handle, &mut stream).await;
+    assert_eq!(*play_count.lock().unwrap(), 0);
 
     handle.send(SpeakCommand::Resume).await.unwrap();
-    drain_until(&mut stream, |e| matches!(e, SpeakEvent::Finished { .. })).await;
-    assert_eq!(*play_count.lock().unwrap(), 1);
+    for _ in 0..2 {
+        drain_until(&mut stream, |e| matches!(e, SpeakEvent::Finished { .. })).await;
+    }
+    assert_eq!(*play_count.lock().unwrap(), 2);
 }
 
 #[tokio::test]
@@ -235,8 +233,12 @@ async fn clear_empties_queue() {
     handle.send(SpeakCommand::Clear).await.unwrap();
     drain_until(&mut stream, |e| matches!(e, SpeakEvent::Cleared)).await;
 
-    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-    assert_eq!(*play_count.lock().unwrap(), 0);
+    handle.send(SpeakCommand::Resume).await.unwrap();
+    let survivor = make_request("viewer2", "after the clear", Priority::Normal);
+    handle.send(SpeakCommand::Enqueue(survivor)).await.unwrap();
+    drain_until(&mut stream, |e| matches!(e, SpeakEvent::Finished { .. })).await;
+
+    assert_eq!(*play_count.lock().unwrap(), 1);
 }
 
 #[tokio::test]
@@ -279,32 +281,6 @@ async fn queue_full_rejects_when_at_capacity() {
     }
 
     drain_until(&mut stream, |e| matches!(e, SpeakEvent::Rejected { .. })).await;
-}
-
-#[tokio::test]
-async fn high_priority_enqueued_first() {
-    let (sink, play_count) = RecordingSink::new();
-    let config = QueueConfig {
-        max_queue_len: 50,
-        per_user_limit: 50,
-        ..QueueConfig::default()
-    };
-    let (handle, mut stream) = forge_speak_queue::spawn(config, make_deps(Arc::new(sink)));
-
-    handle.send(SpeakCommand::Pause).await.unwrap();
-    drain_until(&mut stream, |e| matches!(e, SpeakEvent::Paused)).await;
-
-    let normal = make_request("user1", "normal", Priority::Normal);
-    let high = make_request("user2", "high priority", Priority::High);
-    handle.send(SpeakCommand::Enqueue(normal)).await.unwrap();
-    handle.send(SpeakCommand::Enqueue(high)).await.unwrap();
-
-    handle.send(SpeakCommand::Resume).await.unwrap();
-    drain_until(&mut stream, |e| {
-        *play_count.lock().unwrap() >= 2 || matches!(e, SpeakEvent::Finished { .. })
-    })
-    .await;
-    assert!(*play_count.lock().unwrap() >= 1);
 }
 
 #[tokio::test]

@@ -554,19 +554,23 @@ async fn a_scheduled_run_reads_back_exactly_as_it_was_specified() {
 }
 
 #[tokio::test]
-async fn a_run_with_a_non_finite_float_argument_cannot_make_the_pending_list_unreadable() {
+async fn a_run_with_a_non_finite_float_argument_is_refused_and_the_pending_list_stays_readable() {
     let backend = setup().await;
     let repo = backend.scheduled_run_repo();
-    place(&repo, &spec(ActionId::new(), 1, None)).await;
+    let healthy = place(&repo, &spec(ActionId::new(), 1, None)).await;
     let mut poisoned = spec(ActionId::new(), 2, None);
     poisoned.args = BTreeMap::from([("ratio".to_owned(), Variant::Float(f64::NAN))]);
 
     let scheduled = repo.schedule(&poisoned).await;
-    let listed = repo.list_pending().await;
 
-    assert!(
-        scheduled.is_err() || listed.is_ok(),
-        "a stored run broke every pending read: {listed:?}"
+    assert!(matches!(
+        scheduled,
+        Err(StorageError::ValidationFailed { field, .. }) if field == "args"
+    ));
+    let listed = repo.list_pending().await.expect("pending list");
+    assert_eq!(
+        listed.iter().map(|run| run.id).collect::<Vec<_>>(),
+        vec![healthy]
     );
 }
 

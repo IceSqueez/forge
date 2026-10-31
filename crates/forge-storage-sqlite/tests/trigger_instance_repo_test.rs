@@ -468,9 +468,13 @@ async fn reference_block_sample_names_capped_at_three() {
             sample_action_names,
         } => {
             assert_eq!(used_in_count, 5);
+            assert_eq!(sample_action_names.len(), 3);
+            let referrers = ["action 0", "action 1", "action 2", "action 3", "action 4"];
             assert!(
-                sample_action_names.len() <= 3,
-                "sample names must not exceed 3"
+                sample_action_names
+                    .iter()
+                    .all(|name| referrers.contains(&name.as_str())),
+                "a sample names a non-referrer: {sample_action_names:?}"
             );
         }
         other => panic!("expected ReferenceBlock, got: {other:?}"),

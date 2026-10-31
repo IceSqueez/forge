@@ -555,44 +555,40 @@ mod tests {
     }
 
     #[test]
-    fn deterministic_resolution_gives_a_name_the_same_voice_on_every_call() {
-        let catalog = piper_voices(&["voice-00", "voice-01", "voice-02", "voice-03", "voice-04"]);
+    fn deterministic_resolution_keeps_the_pinned_voice_of_a_name_across_processes() {
+        let catalog: Vec<TtsVoice> = (0..7)
+            .map(|i| voice(&format!("voice-{i}"), "piper", "en-US"))
+            .collect();
         let resolver = deterministic();
-        let first = spoken(resolver.resolve(&request("uid-alice", "alice"), None, &catalog));
-
-        for _ in 0..50 {
+        for (viewer_name, expected) in [
+            ("alice", "voice-4"),
+            ("bob", "voice-6"),
+            ("Зірка", "voice-1"),
+        ] {
             assert_eq!(
-                spoken(resolver.resolve(&request("uid-alice", "alice"), None, &catalog)),
-                first
+                spoken(resolver.resolve(&request("same-uid", viewer_name), None, &catalog)),
+                expected,
+                "{viewer_name}"
             );
         }
     }
 
     #[test]
-    fn deterministic_resolution_follows_the_name_not_the_viewer_id() {
-        let catalog: Vec<TtsVoice> = (0..10)
-            .map(|i| voice(&format!("voice-{i:02}"), "piper", "en-US"))
+    fn deterministic_resolution_ignores_catalog_order() {
+        let sorted: Vec<TtsVoice> = (0..7)
+            .map(|i| voice(&format!("voice-{i}"), "piper", "en-US"))
             .collect();
         let resolver = deterministic();
-
-        assert_ne!(
-            spoken(resolver.resolve(&request("uid-1", "alice"), None, &catalog)),
-            spoken(resolver.resolve(&request("uid-1", "bob"), None, &catalog))
-        );
-    }
-
-    #[test]
-    fn deterministic_resolution_ignores_catalog_order() {
-        let ascending = piper_voices(&["voice-0", "voice-1", "voice-2", "voice-3"]);
-        let mut descending = ascending.clone();
-        descending.reverse();
-        let resolver = deterministic();
         let req = request("uid-x", "constname");
+        let expected = spoken(resolver.resolve(&req, None, &sorted));
 
-        assert_eq!(
-            spoken(resolver.resolve(&req, None, &ascending)),
-            spoken(resolver.resolve(&req, None, &descending))
-        );
+        for rotation in 1..sorted.len() {
+            let mut rotated = sorted.clone();
+            rotated.rotate_left(rotation);
+            rotated.swap(0, rotation);
+
+            assert_eq!(spoken(resolver.resolve(&req, None, &rotated)), expected);
+        }
     }
 
     #[test]

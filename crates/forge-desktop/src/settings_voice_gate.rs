@@ -715,4 +715,32 @@ mod tests {
 
         assert!(!owner.is_running());
     }
+
+    fn device(id: &str, is_default: bool) -> DeviceRow {
+        DeviceRow {
+            id: id.to_owned(),
+            name: id.to_owned(),
+            is_default,
+        }
+    }
+
+    #[test]
+    fn the_input_selector_prefers_the_stored_device_then_the_os_default_then_the_first() {
+        let with_default = [device("a", false), device("b", true), device("c", false)];
+        let without_default = [device("a", false), device("c", false)];
+        for (devices, want, expected) in [
+            (&with_default[..], Some("c"), 2),
+            (&with_default[..], Some("unplugged"), 1),
+            (&with_default[..], None, 1),
+            (&without_default[..], Some("unplugged"), 0),
+            (&[][..], None, 0),
+        ] {
+            assert_eq!(
+                resolve_input_idx(devices, want),
+                expected,
+                "{want:?} among {} devices",
+                devices.len()
+            );
+        }
+    }
 }

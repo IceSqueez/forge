@@ -388,6 +388,51 @@ mod tests {
     }
 
     #[test]
+    fn scan_names_mapped_speakers_capitalized_and_leaves_unmapped_ones_by_id() {
+        let tmp = tempfile::tempdir().expect("tmpdir");
+        write_voice(
+            tmp.path(),
+            "en_US-multi",
+            r#"{"language":{"code":"en_US"},"audio":{"sample_rate":16000},"num_speakers":3,
+                "speaker_id_map":{"zoe":0,"élan":2}}"#,
+        );
+
+        let mut names: Vec<(String, String)> = scan(tmp.path())
+            .into_iter()
+            .map(|entry| (entry.voice.id.0, entry.voice.name))
+            .collect();
+        names.sort();
+
+        assert_eq!(
+            names,
+            [
+                ("en_US-multi#0", "Zoe"),
+                ("en_US-multi#1", "en_US-multi#1"),
+                ("en_US-multi#2", "Élan"),
+            ]
+            .map(|(id, name)| (id.to_owned(), name.to_owned()))
+        );
+    }
+
+    #[test]
+    fn scan_sorts_by_locale_then_name() {
+        let tmp = tempfile::tempdir().expect("tmpdir");
+        let sidecar = |code: &str| {
+            format!(r#"{{"language":{{"code":"{code}"}},"audio":{{"sample_rate":22050}}}}"#)
+        };
+        write_voice(tmp.path(), "uk_UA-a", &sidecar("uk_UA"));
+        write_voice(tmp.path(), "en_US-z", &sidecar("en_US"));
+        write_voice(tmp.path(), "en_US-b", &sidecar("en_US"));
+
+        let ids: Vec<String> = scan(tmp.path())
+            .into_iter()
+            .map(|entry| entry.voice.id.0)
+            .collect();
+
+        assert_eq!(ids, ["en_US-b", "en_US-z", "uk_UA-a"]);
+    }
+
+    #[test]
     fn scan_keeps_hash_in_file_stem_of_single_speaker_model() {
         let tmp = tempfile::tempdir().expect("tmpdir");
         write_voice(

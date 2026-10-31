@@ -1,272 +1,53 @@
 #![allow(clippy::panic)]
 mod common;
-use std::sync::Arc;
 
-use async_trait::async_trait;
-use forge_audio::{AudioError, AudioSink};
-use forge_events::{Event, EventPublisher};
-use forge_speak_queue::VoiceAliasResolver;
-use forge_speak_queue::{
-    Priority, QueueConfig, QueueDeps, RequestId, SpeakCommand, SpeakEvent, SpeakRequest,
-};
-use forge_speech_types::PcmBuffer;
-use forge_speech_types::{AssignmentStrategy, IgnoreProfile, SynthesisDefaults};
-use forge_speech_types::{EngineId, TtsVoice, VoiceGender, VoiceId};
-use forge_tts_core::{
-    EngineCapabilities, SynthesisRequest, TtsEngine, TtsEngineFactory, TtsError, TtsRegistry,
-};
-use forge_types::EventId;
+use forge_speak_queue::{Priority, QueueConfig, RequestId, SpeakCommand, SpeakEvent, SpeakRequest};
+use forge_speech_types::AssignmentStrategy;
 
-const HANG_GUARD_MS: u64 = 30_000;
+use common::{first_started_ids, make_deps, recording_sink, request, standard_registry, wait_for};
 
-struct FakeEngine {
-    id: EngineId,
-}
-
-impl FakeEngine {
-    fn new() -> Self {
-        Self {
-            id: EngineId("fake".into()),
-        }
-    }
-}
-
-#[async_trait]
-impl TtsEngine for FakeEngine {
-    fn engine_id(&self) -> &EngineId {
-        &self.id
-    }
-    fn capabilities(&self) -> &EngineCapabilities {
-        static CAPS: EngineCapabilities = EngineCapabilities {
-            ssml: false,
-            neural_voices: false,
-            streaming: false,
-            custom_lexicons: false,
-        };
-        &CAPS
-    }
-    async fn list_voices(&self) -> Result<Vec<TtsVoice>, TtsError> {
-        Ok(vec![TtsVoice {
-            id: VoiceId("fake-voice".into()),
-            name: "Fake".into(),
-            locale: "en-US".into(),
-            gender: VoiceGender::Neutral,
-            engine_id: EngineId("fake".into()),
-            is_neural: false,
-            sample_rate_hint: 22_050,
-        }])
-    }
-    async fn synthesize(&self, _req: SynthesisRequest) -> Result<PcmBuffer, TtsError> {
-        Ok(PcmBuffer::new(vec![0i16; 4], 22_050, 1))
-    }
-}
-
-struct FakeFactory;
-impl TtsEngineFactory for FakeFactory {
-    fn class(&self) -> forge_tts_core::EngineClass {
-        forge_tts_core::EngineClass::Local
-    }
-
-    fn create(&self) -> Result<Box<dyn TtsEngine>, TtsError> {
-        Ok(Box::new(FakeEngine::new()))
-    }
-}
-
-struct OrderRecordingSink {
-    notify: Arc<tokio::sync::Notify>,
-}
-
-impl OrderRecordingSink {
-    fn new() -> (Self, Arc<tokio::sync::Notify>) {
-        let notify = Arc::new(tokio::sync::Notify::new());
-        (
-            Self {
-                notify: notify.clone(),
-            },
-            notify,
-        )
-    }
-}
-
-#[async_trait]
-impl AudioSink for OrderRecordingSink {
-    async fn play(&self, buf: PcmBuffer) -> Result<(), AudioError> {
-        let _ = buf;
-        self.notify.notify_one();
-        Ok(())
-    }
-}
-
-struct NullPublisher;
-impl EventPublisher for NullPublisher {
-    fn publish(&self, _event: Event) {}
-}
-
-fn make_deps(sink: Arc<dyn AudioSink>) -> QueueDeps {
-    let mut registry = TtsRegistry::new();
-    registry.register(EngineId("fake".into()), Arc::new(FakeFactory));
-    let resolver = VoiceAliasResolver::new(
-        vec![],
-        AssignmentStrategy::DeterministicByName,
-        IgnoreProfile::default(),
-        SynthesisDefaults::default(),
-    );
-    QueueDeps {
-        registry: Arc::new(std::sync::RwLock::new(registry)),
-        resolver: Arc::new(std::sync::RwLock::new(resolver)),
-        pipeline: forge_speak_queue::PipelineConfigHandle::new(common::neutral_pipeline()),
-        audio_sink: sink,
-        event_bus: Arc::new(NullPublisher),
-        disabled_engines: std::collections::HashSet::new(),
-        engine_gains: std::collections::HashMap::new(),
-    }
-}
-
-fn req(viewer: &str, text: &str, priority: Priority) -> SpeakRequest {
+fn prioritized(viewer: &str, priority: Priority) -> SpeakRequest {
     SpeakRequest {
-        request_id: RequestId::new(),
-        viewer_id: viewer.into(),
-        viewer_name: viewer.into(),
-        text: text.into(),
         priority,
-        engine_override: None,
-        voice_override: None,
-        source_event_id: Some(EventId::new()),
-        is_reward: false,
-        target: None,
-        message_emotes: Default::default(),
-    }
-}
-
-async fn wait_for<F>(stream: &mut forge_speak_queue::SpeakEventStream, pred: F)
-where
-    F: Fn(&SpeakEvent) -> bool,
-{
-    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(HANG_GUARD_MS);
-    loop {
-        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
-        if remaining.is_zero() {
-            panic!("timeout waiting for expected SpeakEvent");
-        }
-        match tokio::time::timeout(remaining, stream.recv()).await {
-            Ok(Ok(ref ev)) if pred(ev) => return,
-            Ok(Ok(_)) => continue,
-            Ok(Err(_)) => panic!("stream closed"),
-            Err(_) => panic!("timeout"),
-        }
+        ..request(viewer, "message")
     }
 }
 
 #[tokio::test]
-async fn high_priority_dispatched_before_normal_when_enqueued_after() {
-    let (sink, notify) = OrderRecordingSink::new();
+async fn every_high_priority_item_plays_before_every_normal_item_in_fifo_order_per_tier() {
+    let (sink, _plays) = recording_sink();
+    let deps = make_deps(
+        standard_registry(),
+        sink,
+        AssignmentStrategy::DeterministicByName,
+        vec![],
+    );
     let config = QueueConfig {
         per_user_limit: 10,
         max_queue_len: 50,
         ..QueueConfig::default()
     };
-    let (handle, mut stream) = forge_speak_queue::spawn(config, make_deps(Arc::new(sink)));
+    let (handle, mut stream) = forge_speak_queue::spawn(config, deps);
 
     handle.send(SpeakCommand::Pause).await.unwrap();
     wait_for(&mut stream, |e| matches!(e, SpeakEvent::Paused)).await;
 
-    let normal_id = {
-        let r = req("user-n", "normal message", Priority::Normal);
-        let id = r.request_id.clone();
-        handle.send(SpeakCommand::Enqueue(r)).await.unwrap();
+    let enqueue = async |viewer: &str, priority| -> RequestId {
+        let item = prioritized(viewer, priority);
+        let id = item.request_id.clone();
+        handle.send(SpeakCommand::Enqueue(item)).await.unwrap();
         id
     };
-    let high_id = {
-        let r = req("user-h", "high priority message", Priority::High);
-        let id = r.request_id.clone();
-        handle.send(SpeakCommand::Enqueue(r)).await.unwrap();
-        id
-    };
-
-    let mut enqueued = 0;
-    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(HANG_GUARD_MS);
-    loop {
-        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
-        if remaining.is_zero() || enqueued >= 2 {
-            break;
-        }
-        match tokio::time::timeout(remaining, stream.recv()).await {
-            Ok(Ok(SpeakEvent::Enqueued { .. })) => enqueued += 1,
-            Ok(Ok(_)) => continue,
-            _ => break,
-        }
-    }
+    let n0 = enqueue("n0", Priority::Normal).await;
+    let h0 = enqueue("h0", Priority::High).await;
+    let n1 = enqueue("n1", Priority::Normal).await;
+    let h1 = enqueue("h1", Priority::High).await;
+    let n2 = enqueue("n2", Priority::Normal).await;
 
     handle.send(SpeakCommand::Resume).await.unwrap();
 
-    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(HANG_GUARD_MS);
-    let mut first_started_id: Option<forge_speak_queue::RequestId> = None;
-    loop {
-        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
-        if remaining.is_zero() {
-            break;
-        }
-        match tokio::time::timeout(remaining, stream.recv()).await {
-            Ok(Ok(SpeakEvent::Started { request_id, .. })) => {
-                first_started_id = Some(request_id);
-                break;
-            }
-            Ok(Ok(_)) => continue,
-            _ => break,
-        }
-    }
-
-    let _ = notify;
-    wait_for(&mut stream, |e| matches!(e, SpeakEvent::Finished { .. })).await;
-    wait_for(&mut stream, |e| matches!(e, SpeakEvent::Finished { .. })).await;
-
-    assert_ne!(normal_id, high_id);
-
-    if let Some(id) = first_started_id.filter(|id| !id.0.is_empty()) {
-        assert_eq!(
-            id, high_id,
-            "first Started event must be for the High-priority request"
-        );
-    }
-}
-
-#[tokio::test]
-async fn multiple_high_priority_items_dispatched_before_normals() {
-    let (sink, _notify) = OrderRecordingSink::new();
-    let config = QueueConfig {
-        per_user_limit: 10,
-        max_queue_len: 50,
-        ..QueueConfig::default()
-    };
-    let (handle, mut stream) = forge_speak_queue::spawn(config, make_deps(Arc::new(sink)));
-
-    handle.send(SpeakCommand::Pause).await.unwrap();
-    wait_for(&mut stream, |e| matches!(e, SpeakEvent::Paused)).await;
-
-    for i in 0..3 {
-        handle
-            .send(SpeakCommand::Enqueue(req(
-                &format!("n{i}"),
-                "normal",
-                Priority::Normal,
-            )))
-            .await
-            .unwrap();
-    }
-    for i in 0..2 {
-        handle
-            .send(SpeakCommand::Enqueue(req(
-                &format!("h{i}"),
-                "high",
-                Priority::High,
-            )))
-            .await
-            .unwrap();
-    }
-
-    handle.send(SpeakCommand::Resume).await.unwrap();
-
-    for _ in 0..5 {
-        wait_for(&mut stream, |e| matches!(e, SpeakEvent::Finished { .. })).await;
-    }
+    assert_eq!(
+        first_started_ids(&mut stream, 5).await,
+        vec![h0, h1, n0, n1, n2]
+    );
 }

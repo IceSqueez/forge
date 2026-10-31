@@ -611,11 +611,11 @@ mod tests {
         let _client = start_client(Arc::clone(&backend), Arc::clone(&publisher)).await;
 
         backend.inject_all(0, vec![0x90, 60, 127]).await;
-        for _ in 0..4 {
-            tokio::task::yield_now().await;
-        }
+        wait_until("midi.input.note_on published", || {
+            publisher.has_kind("midi.input.note_on")
+        })
+        .await;
 
-        assert!(publisher.has_kind("midi.input.note_on"));
         let ev = publisher.find_kind("midi.input.note_on").unwrap();
         assert_eq!(ev.payload["note"], 60);
         assert_eq!(ev.payload["velocity"], 127);
@@ -630,11 +630,11 @@ mod tests {
         let _client = start_client(Arc::clone(&backend), Arc::clone(&publisher)).await;
 
         backend.inject_all(0, vec![0x80, 48, 64]).await;
-        for _ in 0..4 {
-            tokio::task::yield_now().await;
-        }
+        wait_until("midi.input.note_off published", || {
+            publisher.has_kind("midi.input.note_off")
+        })
+        .await;
 
-        assert!(publisher.has_kind("midi.input.note_off"));
         let ev = publisher.find_kind("midi.input.note_off").unwrap();
         assert_eq!(ev.payload["note"], 48);
         assert_eq!(ev.payload["port_name"], "Piano");
@@ -647,11 +647,11 @@ mod tests {
         let _client = start_client(Arc::clone(&backend), Arc::clone(&publisher)).await;
 
         backend.inject_all(0, vec![0xB1, 7, 100]).await;
-        for _ in 0..4 {
-            tokio::task::yield_now().await;
-        }
+        wait_until("midi.input.control_change published", || {
+            publisher.has_kind("midi.input.control_change")
+        })
+        .await;
 
-        assert!(publisher.has_kind("midi.input.control_change"));
         let ev = publisher.find_kind("midi.input.control_change").unwrap();
         assert_eq!(ev.payload["controller"], 7);
         assert_eq!(ev.payload["value"], 100);
@@ -696,9 +696,10 @@ mod tests {
         let _client = start_client(Arc::clone(&backend), Arc::clone(&publisher)).await;
 
         backend.inject_all(0, vec![0x90, 60, 0]).await;
-        for _ in 0..4 {
-            tokio::task::yield_now().await;
-        }
+        wait_until("note off published", || {
+            publisher.has_kind("midi.input.note_off")
+        })
+        .await;
 
         assert!(
             !publisher.has_kind("midi.input.note_on"),
@@ -955,15 +956,10 @@ mod tests {
         let client = start_client(Arc::clone(&backend), Arc::clone(&publisher)).await;
 
         backend.inject_all(0, vec![0x90, 60, 100]).await;
-        settle().await;
-        assert_eq!(
-            note_on_ports(&publisher).len(),
-            1,
-            "port A must start subscribed"
-        );
+        wait_until("port A delivers", || note_on_ports(&publisher).len() == 1).await;
 
         client.disable_input().await.unwrap();
-        settle().await;
+        wait_until("port A closes", || open_ports(&backend) == 0).await;
         backend.inject_all(0, vec![0x90, 62, 100]).await;
         settle().await;
 
@@ -1002,13 +998,14 @@ mod tests {
         let client = start_client(Arc::clone(&backend), Arc::clone(&publisher)).await;
 
         client.enable_input().await.unwrap();
-        settle().await;
         backend.inject_all(0, vec![0x90, 60, 100]).await;
+        backend.inject_all(0, vec![0x90, 61, 100]).await;
+        wait_until("both notes arrive", || note_on_ports(&publisher).len() >= 2).await;
         settle().await;
 
         assert_eq!(
             note_on_ports(&publisher).len(),
-            1,
+            2,
             "a redundant enable must not re-open an already open port"
         );
     }
@@ -1020,13 +1017,17 @@ mod tests {
         let client = start_client(Arc::clone(&backend), Arc::clone(&publisher)).await;
 
         client.disable_input().await.unwrap();
-        settle().await;
-        assert!(publisher.has_kind("midi.engine.disabled"));
+        wait_until("the disable is published", || {
+            publisher.has_kind("midi.engine.disabled")
+        })
+        .await;
         assert!(!publisher.has_kind("midi.engine.enabled"));
 
         client.enable_input().await.unwrap();
-        settle().await;
-        assert!(publisher.has_kind("midi.engine.enabled"));
+        wait_until("the enable is published", || {
+            publisher.has_kind("midi.engine.enabled")
+        })
+        .await;
     }
 
     #[tokio::test]

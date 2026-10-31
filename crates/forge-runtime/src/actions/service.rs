@@ -305,7 +305,11 @@ mod tests {
     use forge_storage::history::MockHistoryRepo;
     use forge_storage::queue::MockQueueRepo;
     use forge_storage::trigger_instance::MockTriggerInstanceRepo;
-    use forge_types::{Action, DEFAULT_QUEUE_ID, ExecutionMode, Queue, QueueId};
+    use forge_types::{
+        Action, DEFAULT_QUEUE_ID, ExecutionContext, ExecutionMetadata, ExecutionMode,
+        ExecutionOutcome, Queue, QueueId, SubActionOutcome, SubActionTelemetry, UserText,
+        VerbatimText,
+    };
 
     use super::*;
 
@@ -316,6 +320,103 @@ mod tests {
             description: String::new(),
             concurrency: std::num::NonZeroU32::MIN,
         }
+    }
+
+    fn step(index: usize, duration_ms: u64, outcome: SubActionOutcome) -> SubActionTelemetry {
+        SubActionTelemetry {
+            index,
+            kind: "core.wait".to_owned(),
+            started_at: time::OffsetDateTime::UNIX_EPOCH,
+            duration_ms,
+            outcome,
+            args_in: Default::default(),
+            produced: Default::default(),
+        }
+    }
+
+    fn run(telemetry: Vec<SubActionTelemetry>) -> ExecutionContext {
+        ExecutionContext {
+            action_id: ActionId::new(),
+            metadata: ExecutionMetadata::QuickAction {
+                builtin_id: "obs".to_owned(),
+                label: "run".to_owned(),
+            },
+            arg_stack_snapshot: Default::default(),
+            started_at: time::OffsetDateTime::UNIX_EPOCH,
+            completed_at: None,
+            telemetry,
+            outcome: ExecutionOutcome::Success,
+        }
+    }
+
+    fn failed() -> SubActionOutcome {
+        SubActionOutcome::Failed(UserText::Verbatim(VerbatimText::new("boom")))
+    }
+
+    #[test]
+    fn step_averages_divide_by_the_runs_each_step_appeared_in() {
+        let history = [
+            run(vec![
+                step(0, 10, SubActionOutcome::Success),
+                step(1, 7, SubActionOutcome::Success),
+            ]),
+            run(vec![step(0, 21, SubActionOutcome::Success)]),
+        ];
+
+        assert_eq!(
+            compute_sub_action_averages(&history, 3),
+            vec![Some(15), Some(7), None]
+        );
+    }
+
+    #[test]
+    fn step_averages_ignore_nested_rows_and_steps_since_deleted() {
+        let history = [run(vec![
+            step(SubActionTelemetry::NESTED, 1_000, SubActionOutcome::Success),
+            step(2, 1_000, SubActionOutcome::Success),
+            step(0, 4, SubActionOutcome::Success),
+        ])];
+
+        assert_eq!(
+            compute_sub_action_averages(&history, 2),
+            vec![Some(4), None]
+        );
+    }
+
+    #[test]
+    fn empty_history_gives_no_average_and_no_outcome_for_any_step() {
+        assert_eq!(compute_sub_action_averages(&[], 2), vec![None, None]);
+        assert_eq!(compute_last_step_outcomes(&[], 2), vec![None, None]);
+    }
+
+    #[test]
+    fn last_outcomes_come_only_from_the_newest_run() {
+        let history = [
+            run(vec![step(0, 1, failed())]),
+            run(vec![
+                step(0, 1, SubActionOutcome::Success),
+                step(1, 1, SubActionOutcome::Success),
+            ]),
+        ];
+
+        assert_eq!(
+            compute_last_step_outcomes(&history, 2),
+            vec![Some(failed()), None]
+        );
+    }
+
+    #[test]
+    fn last_outcomes_ignore_nested_rows_and_steps_since_deleted() {
+        let history = [run(vec![
+            step(SubActionTelemetry::NESTED, 1, failed()),
+            step(1, 1, failed()),
+            step(0, 1, SubActionOutcome::Success),
+        ])];
+
+        assert_eq!(
+            compute_last_step_outcomes(&history, 1),
+            vec![Some(SubActionOutcome::Success)]
+        );
     }
 
     #[tokio::test]

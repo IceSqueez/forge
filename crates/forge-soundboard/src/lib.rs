@@ -2,7 +2,6 @@ mod audio_event;
 mod builtin_library;
 mod bus_event_sink;
 mod control;
-mod duration;
 mod error;
 mod fan_out;
 mod hotkey_dispatch;

@@ -1,6 +1,6 @@
 mod signer;
-pub mod synth;
-pub mod voices;
+mod synth;
+mod voices;
 
 use async_trait::async_trait;
 use forge_speech_types::PcmBuffer;

@@ -5,6 +5,13 @@ use crate::error::{DiscordError, ValidationFault};
 
 const MAX_FIELDS: usize = 25;
 const MAX_TOTAL_TEXT: usize = 6000;
+const MAX_TITLE_CHARS: usize = 256;
+const MAX_DESCRIPTION_CHARS: usize = 4096;
+const MAX_FOOTER_CHARS: usize = 2048;
+const MAX_AUTHOR_NAME_CHARS: usize = 256;
+const MAX_FIELD_NAME_CHARS: usize = 256;
+const MAX_FIELD_VALUE_CHARS: usize = 1024;
+const MAX_COLOR: u32 = 0x00FF_FFFF;
 pub(crate) const MAX_CONTENT_CHARS: usize = 2000;
 const IMAGE_URL_SCHEMES: [&str; 3] = ["http://", "https://", "attachment://"];
 
@@ -30,15 +37,23 @@ pub struct DiscordEmbed {
 
 impl DiscordEmbed {
     pub fn validate(&self) -> Result<(), DiscordError> {
-        if let Some(c) = self.color.filter(|&c| c > 0x00FF_FFFF) {
+        if let Some(c) = self.color.filter(|&c| c > MAX_COLOR) {
             return Err(DiscordError::Validation(ValidationFault::ColorOutOfRange {
                 color: c,
             }));
         }
-        check_len("title", self.title.as_deref(), 256)?;
-        check_len("description", self.description.as_deref(), 4096)?;
-        check_len("footer_text", self.footer_text.as_deref(), 2048)?;
-        check_len("author_name", self.author_name.as_deref(), 256)?;
+        check_len("title", self.title.as_deref(), MAX_TITLE_CHARS)?;
+        check_len(
+            "description",
+            self.description.as_deref(),
+            MAX_DESCRIPTION_CHARS,
+        )?;
+        check_len("footer_text", self.footer_text.as_deref(), MAX_FOOTER_CHARS)?;
+        check_len(
+            "author_name",
+            self.author_name.as_deref(),
+            MAX_AUTHOR_NAME_CHARS,
+        )?;
         check_image_url("thumbnail_url", self.thumbnail_url.as_deref())?;
         check_image_url("image_url", self.image_url.as_deref())?;
         if self.fields.len() > MAX_FIELDS {
@@ -50,8 +65,8 @@ impl DiscordEmbed {
         for field in &self.fields {
             check_no_nul("field.name", &field.name)?;
             check_no_nul("field.value", &field.value)?;
-            check_len("field.name", Some(&field.name), 256)?;
-            check_len("field.value", Some(&field.value), 1024)?;
+            check_len("field.name", Some(&field.name), MAX_FIELD_NAME_CHARS)?;
+            check_len("field.value", Some(&field.value), MAX_FIELD_VALUE_CHARS)?;
         }
         let total = self.total_text_len();
         if total > MAX_TOTAL_TEXT {

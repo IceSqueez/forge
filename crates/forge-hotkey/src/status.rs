@@ -13,7 +13,7 @@ impl BuiltinStatus for HotkeyClient {
     }
 
     fn display_name(&self) -> &str {
-        "Hotkeys"
+        crate::integration::HOTKEY_INTEGRATION.brand_name
     }
 
     fn version(&self) -> Option<String> {

@@ -3,7 +3,7 @@ use forge_tts_core::ENGINE_ID_OPENAI;
 
 const ENGINE: fn() -> EngineId = || EngineId(ENGINE_ID_OPENAI.into());
 
-pub fn static_voices() -> Vec<TtsVoice> {
+pub(super) fn static_voices() -> Vec<TtsVoice> {
     [
         ("alloy", "Alloy", "en-US", VoiceGender::Neutral),
         ("echo", "Echo", "en-US", VoiceGender::Male),

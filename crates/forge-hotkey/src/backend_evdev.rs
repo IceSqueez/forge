@@ -205,7 +205,15 @@ async fn discover_input_devices(input_dir: &Path) -> Result<Vec<PathBuf>, Hotkey
     };
 
     let mut devices = Vec::new();
-    while let Ok(Some(entry)) = dir.next_entry().await {
+    loop {
+        let entry = match dir.next_entry().await {
+            Ok(Some(entry)) => entry,
+            Ok(None) => break,
+            Err(e) => {
+                tracing::warn!(error = %e, "input device listing stopped early; remaining keyboards are not read");
+                break;
+            }
+        };
         let name = entry.file_name();
         if name.to_string_lossy().starts_with(EVENT_NODE_PREFIX) {
             let path = entry.path();

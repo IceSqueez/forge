@@ -19,7 +19,7 @@ use crate::live_chat_id::LiveChatIdHandle;
 use crate::poll_health::{PollHealthReporter, PollLinkHealth};
 use crate::send_chat::YoutubeSendChat;
 
-const PLATFORM_ID: &str = "youtube";
+use crate::vocabulary::INTEGRATION_ID as PLATFORM_ID;
 pub(crate) const EVENT_CHANNEL_CAPACITY: usize = forge_events::PLATFORM_EVENT_CHANNEL_CAPACITY;
 
 use forge_platform_core::TokenSource;

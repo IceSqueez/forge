@@ -1,5 +1,6 @@
 use forge_platform_core::{
-    BuiltinContent, ContentList, ContentListItem, DetailSection, SectionIcon, TrailingToken,
+    BuiltinContent, ContentList, ContentListItem, DEFAULT_ROW_PADDING_Y_PX, DetailSection,
+    SectionIcon, TrailingToken,
 };
 
 use forge_types::{UserText, VerbatimText};
@@ -56,7 +57,7 @@ impl BuiltinContent for HotkeyClient {
                 inline_label: None,
                 count_label: Some(hotkey_count),
                 visible_rows: None,
-                row_padding_y_px: 7,
+                row_padding_y_px: DEFAULT_ROW_PADDING_Y_PX,
                 refreshable: false,
                 items: hotkey_items,
                 footer: None,
@@ -67,7 +68,7 @@ impl BuiltinContent for HotkeyClient {
                 inline_label: None,
                 count_label: Some(trigger_count),
                 visible_rows: None,
-                row_padding_y_px: 7,
+                row_padding_y_px: DEFAULT_ROW_PADDING_Y_PX,
                 refreshable: false,
                 items: trigger_items,
                 footer: None,

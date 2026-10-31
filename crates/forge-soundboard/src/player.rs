@@ -389,10 +389,9 @@ impl SoundboardPlayer {
         else {
             return Err(SoundboardError::SourceMissing(clip.name.clone()));
         };
-        let probed =
-            tokio::task::spawn_blocking(move || crate::duration::probe_clip_duration_secs(&path))
-                .await
-                .map_err(|_| SoundboardError::TaskFailed)??;
+        let probed = tokio::task::spawn_blocking(move || forge_audio::probe_duration_secs(&path))
+            .await
+            .map_err(|_| SoundboardError::TaskFailed)??;
 
         self.library
             .record_probed_duration(clip_id, &clip.file_path, probed)

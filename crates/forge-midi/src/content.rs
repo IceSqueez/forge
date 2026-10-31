@@ -3,8 +3,8 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
 use forge_platform_core::{
-    BuiltinContent, ContentList, ContentListItem, DetailSection, KeyValueRow, SectionIcon,
-    TrailingToken,
+    BuiltinContent, ContentList, ContentListItem, DEFAULT_ROW_PADDING_Y_PX, DetailSection,
+    KeyValueRow, SectionIcon, TrailingToken,
 };
 
 use crate::client::MidiClient;
@@ -85,7 +85,7 @@ impl BuiltinContent for MidiClient {
                     inline_label: None,
                     count_label: Some(input_count),
                     visible_rows: None,
-                    row_padding_y_px: 7,
+                    row_padding_y_px: DEFAULT_ROW_PADDING_Y_PX,
                     refreshable: false,
                     items: input_items,
                     footer: None,
@@ -96,7 +96,7 @@ impl BuiltinContent for MidiClient {
                     inline_label: None,
                     count_label: Some(output_count),
                     visible_rows: None,
-                    row_padding_y_px: 7,
+                    row_padding_y_px: DEFAULT_ROW_PADDING_Y_PX,
                     refreshable: false,
                     items: output_items,
                     footer: None,

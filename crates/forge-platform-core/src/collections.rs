@@ -11,7 +11,7 @@ use crate::builtin::{QuickActionField, QuickActionFieldValue, SectionIcon};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(transparent)]
-pub struct CollectionId(pub String);
+pub struct CollectionId(String);
 
 impl CollectionId {
     pub fn new(s: impl Into<String>) -> Self {
@@ -31,7 +31,7 @@ impl fmt::Display for CollectionId {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(transparent)]
-pub struct CollectionItemId(pub String);
+pub struct CollectionItemId(String);
 
 impl CollectionItemId {
     pub fn new(s: impl Into<String>) -> Self {

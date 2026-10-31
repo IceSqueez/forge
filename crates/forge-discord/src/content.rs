@@ -5,8 +5,8 @@ use std::sync::{Arc, Mutex};
 use time::OffsetDateTime;
 
 use forge_platform_core::{
-    BuiltinContent, ContentList, ContentListItem, DetailSection, SectionIcon, TokenColor,
-    TrailingToken,
+    BuiltinContent, ContentList, ContentListItem, DEFAULT_ROW_PADDING_Y_PX, DetailSection,
+    SectionIcon, TokenColor, TrailingToken,
 };
 
 use crate::client::DiscordClient;
@@ -157,7 +157,7 @@ impl BuiltinContent for DiscordClient {
                 inline_label: None,
                 count_label: Some(webhook_count),
                 visible_rows: None,
-                row_padding_y_px: 7,
+                row_padding_y_px: DEFAULT_ROW_PADDING_Y_PX,
                 refreshable: false,
                 items: webhook_items,
                 footer: None,
@@ -168,7 +168,7 @@ impl BuiltinContent for DiscordClient {
                 inline_label: None,
                 count_label: Some(post_count),
                 visible_rows: None,
-                row_padding_y_px: 7,
+                row_padding_y_px: DEFAULT_ROW_PADDING_Y_PX,
                 refreshable: false,
                 items: post_items,
                 footer: None,

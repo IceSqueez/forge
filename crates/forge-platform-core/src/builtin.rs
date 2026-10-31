@@ -169,8 +169,10 @@ pub struct ContentListItem {
     pub on_click: Option<SubActionStep>,
 }
 
+pub const DEFAULT_ROW_PADDING_Y_PX: u8 = 7;
+
 fn default_row_padding_y_px() -> u8 {
-    7
+    DEFAULT_ROW_PADDING_Y_PX
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

@@ -4,6 +4,9 @@ use rubato::{Async, FixedAsync, PolynomialDegree, Resampler};
 
 use crate::error::AudioError;
 
+const I16_DECODE_SCALE: f32 = 32768.0;
+const I16_ENCODE_SCALE: f32 = 32767.0;
+
 pub fn resample(
     src: &[i16],
     src_rate: u32,
@@ -29,7 +32,7 @@ pub fn resample(
     let waves_in: Vec<Vec<f32>> = (0..ch)
         .map(|c| {
             (0..frame_count)
-                .map(|f| f32::from(src[f * ch + c]) / 32768.0)
+                .map(|f| f32::from(src[f * ch + c]) / I16_DECODE_SCALE)
                 .collect()
         })
         .collect();
@@ -61,7 +64,7 @@ pub fn resample(
                 .read_sample(c, frame_idx)
                 .unwrap_or(0.0)
                 .clamp(-1.0, 1.0);
-            out.push((s * 32767.0) as i16);
+            out.push((s * I16_ENCODE_SCALE) as i16);
         }
     }
 

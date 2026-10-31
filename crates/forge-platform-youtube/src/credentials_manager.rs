@@ -17,7 +17,7 @@ use crate::credentials::{
 use crate::data_api::YoutubeDataApi;
 use crate::oauth_client::GoogleOAuthClient;
 
-const PLATFORM: &str = "youtube";
+use crate::vocabulary::INTEGRATION_ID as PLATFORM;
 
 pub struct YoutubeCredentialsManager {
     refresh: SingleFlightRefresh<YoutubeRotation>,

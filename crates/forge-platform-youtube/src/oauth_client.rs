@@ -12,7 +12,7 @@ use forge_platform_core::{PlatformEndpoints, PlatformError, reauth_required};
 use forge_types::{OAuthToken, Secret};
 use serde::Deserialize;
 
-const PLATFORM: &str = "youtube";
+use crate::vocabulary::INTEGRATION_ID as PLATFORM;
 const TOKEN_PATH: &str = "/token";
 
 const AUTHORIZATION_CODE_GRANT_TYPE: &str = "authorization_code";

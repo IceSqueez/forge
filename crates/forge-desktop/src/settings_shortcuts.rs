@@ -749,7 +749,7 @@ mod tests {
         view.read_with(cx, |v, _| {
             v.overrides
                 .loaded()
-                .and_then(|overrides| overrides.chord_of(entry).map(str::to_owned))
+                .and_then(|overrides| overrides.resolved_chord_of(entry))
         })
     }
 
@@ -863,11 +863,7 @@ mod tests {
             .iter()
             .map(|raw| {
                 let restored = crate::test_support::stored_shortcut_overrides(Some(raw)).unwrap();
-                let chord_of = |id| {
-                    restored
-                        .chord_of(shortcut_entry(id).unwrap())
-                        .map(str::to_owned)
-                };
+                let chord_of = |id| restored.resolved_chord_of(shortcut_entry(id).unwrap());
                 (chord_of(HOME), chord_of(CHAT))
             })
             .collect();

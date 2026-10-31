@@ -483,7 +483,11 @@ mod tests {
     }
 
     const HOME: &str = "nav.home";
-    const HOME_DEFAULT: &str = "ctrl-1";
+    const HOME_DEFAULT: &str = if cfg!(target_os = "macos") {
+        "cmd-1"
+    } else {
+        "ctrl-1"
+    };
     const CHAT: &str = "nav.chat";
     const STORED: &str = r#"{"nav.chat":{"chord":"ctrl-8"}}"#;
     const SETTLE_ROUNDS: usize = 3;
@@ -676,7 +680,7 @@ mod tests {
         view.read_with(cx, |v, _| {
             v.shortcuts
                 .loaded()
-                .and_then(|shortcuts| shortcuts.chord_of(entry).map(str::to_owned))
+                .and_then(|shortcuts| shortcuts.resolved_chord_of(entry))
         })
     }
 
@@ -805,11 +809,8 @@ mod tests {
             .iter()
             .map(|raw| {
                 let restored = crate::test_support::stored_shortcut_overrides(Some(raw)).unwrap();
-                let chord_of = |id| {
-                    restored
-                        .chord_of(crate::actions::shortcut_entry(id).unwrap())
-                        .map(str::to_owned)
-                };
+                let chord_of =
+                    |id| restored.resolved_chord_of(crate::actions::shortcut_entry(id).unwrap());
                 (chord_of(HOME), chord_of(CHAT))
             })
             .collect();

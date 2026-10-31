@@ -142,7 +142,7 @@ impl HotkeysScreenView {
         ];
         let shortcuts = self.shortcuts.loaded();
         if shortcuts
-            .and_then(|shortcuts| shortcuts.chord_of(entry))
+            .and_then(|shortcuts| shortcuts.resolved_chord_of(entry))
             .is_some()
         {
             items.push(

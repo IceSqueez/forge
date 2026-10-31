@@ -145,7 +145,7 @@ impl ShortcutOverrides {
         self.map.is_empty()
     }
 
-    pub(crate) fn chord_of(&self, entry: &'static ShortcutEntry) -> Option<&str> {
+    fn chord_of(&self, entry: &'static ShortcutEntry) -> Option<&str> {
         match self
             .map
             .get(entry.id)
@@ -305,7 +305,7 @@ mod tests {
     }
 
     fn chord(overrides: &ShortcutOverrides, id: &str) -> Option<String> {
-        overrides.chord_of(entry(id)).map(str::to_owned)
+        overrides.resolved_chord_of(entry(id))
     }
 
     fn keystroke(modifiers: Modifiers, key: &str) -> Keystroke {
@@ -527,7 +527,7 @@ mod tests {
         overrides.unbind(CHAT);
         let before: Vec<Option<String>> = SHORTCUTS
             .iter()
-            .map(|entry| overrides.chord_of(entry).map(str::to_owned))
+            .map(|entry| overrides.resolved_chord_of(entry))
             .collect();
 
         let stored = serde_json::to_string(&overrides.snapshot()).unwrap();
@@ -535,7 +535,7 @@ mod tests {
 
         let after: Vec<Option<String>> = SHORTCUTS
             .iter()
-            .map(|entry| restored.chord_of(entry).map(str::to_owned))
+            .map(|entry| restored.resolved_chord_of(entry))
             .collect();
         assert_eq!(after, before);
     }

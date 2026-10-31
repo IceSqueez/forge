@@ -663,9 +663,17 @@ mod tests {
     const KEYBOARD_SHORTCUTS: &str = SHORTCUTS_SETTING.name();
 
     const HOME: &str = "nav.home";
-    const HOME_DEFAULT: &str = "ctrl-1";
+    const HOME_DEFAULT: &str = if cfg!(target_os = "macos") {
+        "cmd-1"
+    } else {
+        "ctrl-1"
+    };
     const CHAT: &str = "nav.chat";
-    const CHAT_DEFAULT: &str = "ctrl-2";
+    const CHAT_DEFAULT: &str = if cfg!(target_os = "macos") {
+        "cmd-2"
+    } else {
+        "ctrl-2"
+    };
     const STORED: &str = r#"{"nav.chat":{"chord":"ctrl-8"}}"#;
     const SETTLE_ROUNDS: usize = 3;
 
@@ -712,6 +720,19 @@ mod tests {
         Keystroke {
             modifiers: Modifiers {
                 control: true,
+                ..Default::default()
+            },
+            key: key.to_owned(),
+            key_char: None,
+        }
+    }
+
+    fn primary(key: &str) -> Keystroke {
+        let on_mac = cfg!(target_os = "macos");
+        Keystroke {
+            modifiers: Modifiers {
+                control: !on_mac,
+                platform: on_mac,
                 ..Default::default()
             },
             key: key.to_owned(),
@@ -953,7 +974,7 @@ mod tests {
 
         view.update(cx, |v, cx| {
             v.start_rebind(HOME, cx);
-            v.on_capture_keystroke(ctrl("2"), cx);
+            v.on_capture_keystroke(primary("2"), cx);
         });
         harness.settle(cx);
 

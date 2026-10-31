@@ -288,9 +288,17 @@ mod tests {
     use forge_storage::test_support::MemorySettings;
 
     const HOME: &str = "nav.home";
-    const HOME_DEFAULT: &str = "ctrl-1";
+    const HOME_DEFAULT: &str = if cfg!(target_os = "macos") {
+        "cmd-1"
+    } else {
+        "ctrl-1"
+    };
     const CHAT: &str = "nav.chat";
-    const CHAT_DEFAULT: &str = "ctrl-2";
+    const CHAT_DEFAULT: &str = if cfg!(target_os = "macos") {
+        "cmd-2"
+    } else {
+        "ctrl-2"
+    };
 
     fn entry(id: &str) -> &'static ShortcutEntry {
         crate::actions::shortcut_entry(id).expect("roster entry")
@@ -316,6 +324,19 @@ mod tests {
             },
             key,
         )
+    }
+
+    fn primary(key: &str) -> Keystroke {
+        let on_mac = cfg!(target_os = "macos");
+        Keystroke {
+            modifiers: Modifiers {
+                control: !on_mac,
+                platform: on_mac,
+                ..Default::default()
+            },
+            key: key.to_owned(),
+            key_char: None,
+        }
     }
 
     #[test]
@@ -478,14 +499,14 @@ mod tests {
     fn verdict_names_the_shortcut_already_holding_the_chord() {
         let overrides = ShortcutOverrides::default();
 
-        let verdict = overrides.verdict(&ctrl("2"), HOME);
+        let verdict = overrides.verdict(&primary("2"), HOME);
 
         match verdict {
             ChordVerdict::Taken { owner_id, chord } => {
                 assert_eq!(owner_id, CHAT);
                 assert_eq!(chord, CHAT_DEFAULT);
             }
-            _ => panic!("ctrl-2 is nav.chat's default and must read as taken"),
+            _ => panic!("the primary-2 chord is nav.chat's default and must read as taken"),
         }
     }
 
@@ -494,7 +515,7 @@ mod tests {
         let overrides = ShortcutOverrides::default();
 
         assert!(
-            matches!(overrides.verdict(&ctrl("2"), CHAT), ChordVerdict::Free(c) if c == CHAT_DEFAULT),
+            matches!(overrides.verdict(&primary("2"), CHAT), ChordVerdict::Free(c) if c == CHAT_DEFAULT),
             "recapturing its own chord must not report the shortcut as its own conflict"
         );
     }

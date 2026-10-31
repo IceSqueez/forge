@@ -1235,6 +1235,7 @@ mod tests {
         let addr = listener
             .local_addr()
             .expect("a bound listener has an address");
+        let background_tasks = alive_tasks(&rt);
         let creds = webhook_pointing_at("https://discord.com/api/webhooks/1/token".to_owned());
         let client = {
             let _entered = rt.enter();
@@ -1245,7 +1246,6 @@ mod tests {
             )
             .expect("the discord gateway builds")
         };
-        let background_tasks = alive_tasks(&rt);
         let posted = rt.spawn(first_posted_body(listener));
         install_language(Language::Uk);
         install_presentation(cx);

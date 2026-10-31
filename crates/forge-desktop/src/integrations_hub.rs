@@ -959,16 +959,20 @@ impl Render for IntegrationsHubView {
 mod tests {
     use std::collections::HashSet;
 
-    use forge_storage::{SettingsRepo, integration_enabled_key};
+    use forge_storage::{
+        MockActionRepo, MockTriggerInstanceRepo, SettingsRepo, integration_enabled_key,
+    };
     use gpui::TestAppContext;
+    use std::sync::Mutex;
     use tokio::sync::mpsc::UnboundedReceiver;
 
     use super::*;
     use crate::test_support::{
-        ClickArea, Sandboxed, SettingWrite, alive_tasks, click_grid, error_toasts, idle_supervisor,
-        install_presentation, link, nav_log, owned_sub_actions, owned_triggers, pump, pump_until,
-        runtime, sandboxed_provider, seed_action, seed_trigger, settle_until,
-        settle_until_tasks_drain_to, step, test_backend, yield_until,
+        ClickArea, Sandboxed, SettingWrite, action_running, alive_tasks, click_grid, error_toasts,
+        idle_supervisor, install_presentation, link, nav_log, owned_sub_actions, owned_triggers,
+        pump, pump_until, runtime, sandboxed_over, sandboxed_provider, seed_action, seed_trigger,
+        settle_until, settle_until_tasks_drain_to, step, test_backend,
+        test_backend_with_actions_and_triggers, trigger_of, yield_until,
     };
     use forge_components::Toasts;
     use forge_runtime::LifecycleStates;
@@ -1054,6 +1058,15 @@ mod tests {
             link(&storage, scene, chat).await;
             storage
         });
+        open_over(cx, rt, welcome, storage)
+    }
+
+    fn open_over(
+        cx: &mut TestAppContext,
+        rt: &tokio::runtime::Runtime,
+        welcome: bool,
+        storage: Sandboxed<Arc<dyn DataProvider>>,
+    ) -> Hub {
         let (settings, writes) = test_backend();
         let supervisor = idle_supervisor(
             rt,
@@ -1147,15 +1160,37 @@ mod tests {
     #[gpui::test]
     fn a_refresh_overtaken_by_a_newer_one_leaves_the_counts_alone(cx: &mut TestAppContext) {
         let rt = runtime();
-        let hub = mount(cx, &rt);
+        let actions = Arc::new(Mutex::new(vec![action_running(
+            "Scene",
+            vec![step(OBS_SCENE, true)],
+        )]));
+        let chat = trigger_of(TWITCH_CHAT);
+        let mut action_repo = MockActionRepo::new();
+        let listed = Arc::clone(&actions);
+        action_repo
+            .expect_list()
+            .returning(move || Ok(listed.lock().unwrap().clone()));
+        let mut trigger_repo = MockTriggerInstanceRepo::new();
+        trigger_repo
+            .expect_list_for_action()
+            .returning(move |_| Ok(vec![chat.clone()]));
+        let storage = sandboxed_over(test_backend_with_actions_and_triggers(
+            Arc::new(action_repo),
+            Arc::new(trigger_repo),
+        ));
+        let mut hub = open_over(cx, &rt, false, storage);
+        settle_until(cx, &rt, |cx| {
+            hub.view
+                .read_with(cx, |view, _| view.references_of(&obs()).total() > 0)
+        });
+        hub.drain_writes(&rt);
         let counted = hub
             .view
             .read_with(cx, |view, _| view.references_of(&obs()).total());
-        rt.block_on(seed_action(
-            &hub._storage,
-            "Second scene",
-            vec![step(OBS_SCENE, true)],
-        ));
+        actions
+            .lock()
+            .unwrap()
+            .push(action_running("Second scene", vec![step(OBS_SCENE, true)]));
         let background_tasks = alive_tasks(&rt);
 
         hub.view.update(cx, |view, cx| {

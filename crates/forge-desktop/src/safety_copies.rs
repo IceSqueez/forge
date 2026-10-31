@@ -715,10 +715,9 @@ mod tests {
 
     use super::*;
     use crate::i18n::install_language;
-    use crate::test_support::pack_flow::{PackWorld, pack_world};
-    use crate::test_support::runtime;
     use crate::test_support::{
-        alive_tasks, install_presentation, settle_until, settle_until_tasks_drain_to,
+        TestBackend, install_presentation, pump, serial_blocking_runtime, settle_until,
+        settle_until_blocking_work_finishes, test_backend,
     };
 
     const STEM_PREFIX: &str = "forge-backup";
@@ -728,7 +727,9 @@ mod tests {
 
     struct Rig {
         rt: tokio::runtime::Runtime,
-        world: PackWorld,
+        provider: Arc<TestBackend>,
+        data_dir: tempfile::TempDir,
+        _writes: tokio::sync::mpsc::UnboundedReceiver<crate::test_support::SettingWrite>,
         exclusivity: TransferExclusivity,
         scheduled: ScheduledBackupHandle,
         view: Entity<SafetyCopiesView>,
@@ -761,11 +762,11 @@ mod tests {
         install_language(Language::En);
         install_presentation(cx);
         cx.update(|cx| cx.set_global(Toasts::new()));
-        let rt = runtime();
-        let world = pack_world(&rt);
-        let provider = Arc::clone(world.provider());
+        let rt = serial_blocking_runtime();
+        let (provider, writes) = test_backend();
+        let data_dir = tempfile::tempdir().unwrap();
         let exclusivity = TransferExclusivity::new();
-        let backups = backups_dir(&world.data_dir());
+        let backups = backups_dir(data_dir.path());
         std::fs::create_dir_all(&backups).unwrap();
         for n in 0..copies {
             let age = time::Duration::hours(i64::try_from(n).unwrap() + 1);
@@ -781,29 +782,31 @@ mod tests {
                 seed.apply(provider.as_ref()).await;
             }
             spawn_scheduled_backups(ScheduledBackupParts {
-                provider: Arc::clone(&provider),
-                data_dir: world.data_dir(),
+                provider: Arc::clone(&provider) as Arc<dyn DataProvider>,
+                data_dir: data_dir.path().to_path_buf(),
                 exclusivity: exclusivity.clone(),
                 clock: Arc::new(SystemBackupClock),
             })
         });
-        let (handle, data_dir) = (rt.handle().clone(), world.data_dir());
+        let (handle, view_data_dir) = (rt.handle().clone(), data_dir.path().to_path_buf());
         let (view_exclusivity, view_scheduled) = (exclusivity.clone(), scheduled.clone());
         let view = cx.update(|cx| {
             cx.new(|cx| {
                 SafetyCopiesView::new(
-                    provider as Arc<dyn DataProvider>,
+                    Arc::clone(&provider) as Arc<dyn DataProvider>,
                     handle,
                     view_exclusivity,
                     view_scheduled,
-                    data_dir,
+                    view_data_dir,
                     cx,
                 )
             })
         });
         let rig = Rig {
             rt,
-            world,
+            provider,
+            data_dir,
+            _writes: writes,
             exclusivity,
             scheduled,
             view,
@@ -822,12 +825,12 @@ mod tests {
 
         fn stored<C: SettingCodec>(&self, setting: &Setting<C>) -> Option<C::Value> {
             self.rt
-                .block_on(read_stored_setting(self.world.provider().as_ref(), setting))
+                .block_on(read_stored_setting(self.provider.as_ref(), setting))
                 .unwrap()
         }
 
         fn copies_on_disk(&self) -> usize {
-            std::fs::read_dir(backups_dir(&self.world.data_dir()))
+            std::fs::read_dir(backups_dir(self.data_dir.path()))
                 .unwrap()
                 .filter(|entry| {
                     entry
@@ -1181,7 +1184,7 @@ mod tests {
     #[gpui::test]
     fn clean_up_deletes_every_safety_copy_and_leaves_the_bundles(cx: &mut TestAppContext) {
         let r = rig(cx, &[], 3);
-        let bundle = backups_dir(&r.world.data_dir()).join("forge-backup-manual.forgebundle");
+        let bundle = backups_dir(r.data_dir.path()).join("forge-backup-manual.forgebundle");
         std::fs::write(&bundle, b"keep").unwrap();
 
         r.view.update(cx, |view, cx| view.clean_up(cx));
@@ -1248,7 +1251,7 @@ mod tests {
         settle_until(cx, &r.rt, |_| {
             r.storage_backups_bytes() == Some(COPY_BYTES as u64)
         });
-        for entry in std::fs::read_dir(backups_dir(&r.world.data_dir())).unwrap() {
+        for entry in std::fs::read_dir(backups_dir(r.data_dir.path())).unwrap() {
             std::fs::remove_file(entry.unwrap().path()).unwrap();
         }
 
@@ -1265,16 +1268,15 @@ mod tests {
         settle_until(cx, &r.rt, |_| {
             r.storage_backups_bytes() == Some(COPY_BYTES as u64)
         });
-        for entry in std::fs::read_dir(backups_dir(&r.world.data_dir())).unwrap() {
+        for entry in std::fs::read_dir(backups_dir(r.data_dir.path())).unwrap() {
             std::fs::remove_file(entry.unwrap().path()).unwrap();
         }
-        let background_tasks = alive_tasks(&r.rt);
 
         r.view.update(cx, |view, cx| {
             view.sweep_finished(SweepOrigin::CleanUp, Ok(report(0, &[], false)), cx);
         });
         settle_until(cx, &r.rt, |cx| r.usage(cx).is_some_and(|u| u.count == 0));
-        settle_until_tasks_drain_to(cx, &r.rt, background_tasks);
+        settle_until_blocking_work_finishes(cx, &r.rt);
 
         assert_eq!(r.storage_backups_bytes(), Some(COPY_BYTES as u64));
     }
@@ -1286,12 +1288,16 @@ mod tests {
         settle_until(cx, &r.rt, |_| {
             r.stored(&SAFETY_COPIES_KEEP_NEWEST) == Some(3)
         });
-        r.rt.block_on(PolicySeed::KeepNewest(7).apply(r.world.provider().as_ref()));
+        r.rt.block_on(PolicySeed::KeepNewest(7).apply(r.provider.as_ref()));
 
-        let background_tasks = alive_tasks(&r.rt);
+        let reads_before = r.provider.reads_of(&SAFETY_COPIES_DELETE_AFTER_DAYS);
 
         r.view.update(cx, |view, cx| view.load(cx));
-        settle_until_tasks_drain_to(cx, &r.rt, background_tasks);
+        settle_until(cx, &r.rt, |_| {
+            r.provider.reads_of(&SAFETY_COPIES_DELETE_AFTER_DAYS) > reads_before
+        });
+        pump(&r.rt);
+        cx.run_until_parked();
 
         assert_eq!(
             (

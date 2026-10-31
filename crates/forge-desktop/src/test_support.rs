@@ -73,6 +73,7 @@ pub(crate) struct TestBackend {
     overlays: Option<Arc<dyn OverlayRepo>>,
     scripts: Option<Arc<dyn ScriptRepo>>,
     actions: Option<Arc<dyn ActionRepo>>,
+    triggers: Option<Arc<dyn TriggerInstanceRepo>>,
     media: Arc<dyn MediaRepo>,
     export_gate: Option<Arc<tokio::sync::Notify>>,
     export_stalls_midway: bool,
@@ -95,6 +96,17 @@ pub(crate) fn test_backend_with_scripts_and_actions(
     let backend = test_backend_with_scripts(scripts);
     let mut backend = Arc::into_inner(backend).unwrap();
     backend.actions = Some(actions);
+    Arc::new(backend)
+}
+
+pub(crate) fn test_backend_with_actions_and_triggers(
+    actions: Arc<dyn ActionRepo>,
+    triggers: Arc<dyn TriggerInstanceRepo>,
+) -> Arc<TestBackend> {
+    let (backend, _) = backend_over(None, None, Arc::new(EmptyMediaLibrary));
+    let mut backend = Arc::into_inner(backend).unwrap();
+    backend.actions = Some(actions);
+    backend.triggers = Some(triggers);
     Arc::new(backend)
 }
 
@@ -159,6 +171,7 @@ fn backend_over(
             overlays,
             scripts,
             actions: None,
+            triggers: None,
             media,
             export_gate: None,
             export_stalls_midway: false,
@@ -230,6 +243,7 @@ fn enabled_schedule_over_test_backend(
         overlays: None,
         scripts: None,
         actions: None,
+        triggers: None,
         media: Arc::new(EmptyMediaLibrary),
         export_gate: Some(Arc::clone(&export_gate)),
         export_stalls_midway: false,
@@ -546,6 +560,9 @@ impl DataProvider for TestBackend {
     }
 
     fn trigger_instance_repo(&self) -> Arc<dyn TriggerInstanceRepo> {
+        if let Some(triggers) = &self.triggers {
+            return Arc::clone(triggers);
+        }
         unreachable!("the settings pane reaches no sub-repo")
     }
 
@@ -1224,6 +1241,27 @@ pub(crate) fn settle_until_tasks_drain_to(
     cx.run_until_parked();
 }
 
+pub(crate) fn serial_blocking_runtime() -> tokio::runtime::Runtime {
+    tokio::runtime::Builder::new_current_thread()
+        .max_blocking_threads(1)
+        .enable_all()
+        .build()
+        .expect("current-thread runtime")
+}
+
+pub(crate) fn settle_until_blocking_work_finishes(
+    cx: &mut gpui::TestAppContext,
+    rt: &tokio::runtime::Runtime,
+) {
+    cx.run_until_parked();
+    pump(rt);
+    rt.block_on(within_hang_guard(async {
+        tokio::task::spawn_blocking(|| ()).await.expect("fence");
+    }));
+    pump(rt);
+    cx.run_until_parked();
+}
+
 pub(crate) async fn within_hang_guard<F: std::future::Future>(awaited: F) -> F::Output {
     tokio::time::timeout(PUMP_HANG_GUARD, awaited)
         .await
@@ -1382,6 +1420,13 @@ impl<T> std::ops::Deref for Sandboxed<T> {
 
     fn deref(&self) -> &T {
         &self.inner
+    }
+}
+
+pub(crate) fn sandboxed_over(provider: Arc<dyn DataProvider>) -> Sandboxed<Arc<dyn DataProvider>> {
+    Sandboxed {
+        inner: provider,
+        _media_root: tempfile::tempdir().expect("a temporary media root"),
     }
 }
 

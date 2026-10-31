@@ -1679,6 +1679,7 @@ async fn load_websocket_settings(
     })
 }
 
+#[derive(Debug, PartialEq, Eq)]
 struct RejectedOrigin(String);
 
 fn parse_origins(raw: &str) -> Result<Vec<String>, RejectedOrigin> {
@@ -2520,6 +2521,9 @@ mod tests {
     fn the_first_bad_origin_line_refuses_the_whole_list_and_is_named_as_typed() {
         let raw = "http://ok.test\n  Not An Origin \nalso bad";
 
-        assert_eq!(parse_origins(raw), Err("Not An Origin".to_owned()));
+        assert_eq!(
+            parse_origins(raw),
+            Err(RejectedOrigin("Not An Origin".to_owned()))
+        );
     }
 }

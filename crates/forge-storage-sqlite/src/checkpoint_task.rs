@@ -142,6 +142,8 @@ mod tests {
     const RESTORED_BUSY_TIMEOUT: Duration = Duration::from_millis(1_234);
     const POLL: Duration = Duration::from_millis(20);
     const SMALL_PAGE_BYTES: u32 = 512;
+    const WAL_SALTS_OFFSET: u64 = 16;
+    const WAL_SALTS_LEN: usize = 8;
     const JOURNAL_SIZE_LIMIT: u64 = 64 * 1024 * 1024;
 
     struct Db {
@@ -190,6 +192,16 @@ mod tests {
         let mut header = [0_u8; 20];
         shm.read_exact(&mut header).unwrap();
         u32::from_ne_bytes(header[16..20].try_into().unwrap())
+    }
+
+    fn wal_generation(db: &Path) -> [u8; WAL_SALTS_LEN] {
+        use std::io::{Read, Seek, SeekFrom};
+
+        let mut wal = std::fs::File::open(db.with_extension("db-wal")).unwrap();
+        wal.seek(SeekFrom::Start(WAL_SALTS_OFFSET)).unwrap();
+        let mut salts = [0_u8; WAL_SALTS_LEN];
+        wal.read_exact(&mut salts).unwrap();
+        salts
     }
 
     fn wal_bytes(db: &Path) -> u64 {
@@ -288,24 +300,20 @@ mod tests {
         while i64::from(wal_frames(&db.path)) < RESTART_AT_WAL_FRAMES {
             tokio::time::sleep(POLL).await;
         }
-        let mut peak = wal_frames(&db.path);
+        let generation_before = wal_generation(&db.path);
         spawn_checkpoint_task(
             db.pools.checkpointer().unwrap().clone(),
             db.pools.writer().clone(),
             DEFAULT_BUSY_TIMEOUT,
         );
 
-        let deadline = Instant::now() + RESET_DEADLINE;
-        let mut reset = false;
-        while Instant::now() < deadline {
-            tokio::time::sleep(POLL).await;
-            let frames = wal_frames(&db.path);
-            if frames < peak {
-                reset = true;
-                break;
+        let reset = tokio::time::timeout(RESET_DEADLINE, async {
+            while wal_generation(&db.path) == generation_before {
+                tokio::time::sleep(POLL).await;
             }
-            peak = frames;
-        }
+        })
+        .await
+        .is_ok();
         running.store(false, Ordering::Relaxed);
         for task in load {
             task.await.unwrap();
@@ -313,7 +321,7 @@ mod tests {
 
         assert!(
             reset,
-            "WAL past {RESTART_AT_WAL_FRAMES} frames was never reset (peak {peak})"
+            "WAL past {RESTART_AT_WAL_FRAMES} frames was never reset"
         );
     }
 

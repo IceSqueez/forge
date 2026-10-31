@@ -300,7 +300,7 @@ mod tests {
 
         assert!(registry.get_by_name(&expected_name).await.is_some());
 
-        let event = tokio::time::timeout(std::time::Duration::from_millis(200), sub.recv())
+        let event = tokio::time::timeout(forge_test_support::HANG_GUARD, sub.recv())
             .await
             .unwrap()
             .unwrap();
@@ -401,10 +401,8 @@ mod tests {
         );
         assert!(registry.get_by_name("broken").await.is_none());
 
-        let event_result =
-            tokio::time::timeout(std::time::Duration::from_millis(50), sub.recv()).await;
         assert!(
-            event_result.is_err(),
+            matches!(sub.try_recv(), Ok(None)),
             "no event should be published on compile failure"
         );
     }

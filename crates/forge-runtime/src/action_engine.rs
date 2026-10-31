@@ -998,10 +998,10 @@ mod tests {
             .await
             .unwrap();
 
-        let deadline = tokio::time::Instant::now() + HISTORY_HANG_GUARD;
-        while last.lock().unwrap().is_none() && tokio::time::Instant::now() < deadline {
-            tokio::time::sleep(Duration::from_millis(25)).await;
-        }
+        forge_test_support::settle_until("the quick action reached its runner", || {
+            last.lock().unwrap().is_some()
+        })
+        .await;
 
         let captured = last.lock().unwrap().clone().expect("runner not called");
         assert_eq!(captured.get("a"), Some(&Variant::Int(99)));

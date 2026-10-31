@@ -1043,8 +1043,7 @@ mod tests {
 
     use super::*;
     use crate::endpoints_test_support::{
-        RecordingPublisher, StubReply, StubServer, data_api_with, spin_until, used_today,
-        wait_until,
+        RecordingPublisher, StubReply, StubServer, data_api_with, used_today, wait_until,
     };
     use crate::quota_state::BROADCAST_COST;
 
@@ -1698,22 +1697,16 @@ mod tests {
         let cancel_clone = cancel.clone();
         let join = tokio::spawn(async move { poller.run(cancel_clone).await });
 
-        let (lc, bc) = tokio::time::timeout(Duration::from_secs(30), async {
-            loop {
-                if let (Some(lc), Some(bc)) = (live.get(), broadcast.get()) {
-                    return (lc, bc);
-                }
-                tokio::time::sleep(Duration::from_millis(10)).await;
-            }
+        forge_test_support::settle_until("both handles were set", || {
+            live.get().is_some() && broadcast.get().is_some()
         })
-        .await
-        .expect("both handles were not set within timeout");
+        .await;
 
         cancel.cancel();
         join.await.unwrap().unwrap();
 
-        assert_eq!(lc, "lc-active-xyz");
-        assert_eq!(bc, "broadcast-1");
+        assert_eq!(live.get().as_deref(), Some("lc-active-xyz"));
+        assert_eq!(broadcast.get().as_deref(), Some("broadcast-1"));
     }
 
     #[tokio::test]
@@ -1741,16 +1734,10 @@ mod tests {
         let cancel_clone = cancel.clone();
         let join = tokio::spawn(async move { poller.run(cancel_clone).await });
 
-        tokio::time::timeout(Duration::from_secs(30), async {
-            loop {
-                if live.get().is_none() && broadcast.get().is_none() {
-                    return;
-                }
-                tokio::time::sleep(Duration::from_millis(10)).await;
-            }
+        forge_test_support::settle_until("both handles were cleared", || {
+            live.get().is_none() && broadcast.get().is_none()
         })
-        .await
-        .expect("handles were not both cleared within timeout");
+        .await;
 
         cancel.cancel();
         join.await.unwrap().unwrap();
@@ -3138,10 +3125,9 @@ mod tests {
                     } = probed_poller(&server, TokenOutcome::Issued, quota);
                     let cancel = CancellationToken::new();
                     let join = tokio::spawn(poller.run(cancel.clone()));
-                    spin_until(
-                        || server.request_count(held_path) == 1,
-                        "the held request never reached the server",
-                    )
+                    forge_test_support::settle_until("the held request reached the server", || {
+                        server.request_count(held_path) == 1
+                    })
                     .await;
 
                     cancel.cancel();
@@ -3319,10 +3305,9 @@ mod tests {
             );
             let cancel = CancellationToken::new();
             let join = tokio::spawn(poller.run(cancel.clone()));
-            spin_until(
-                || calls.load(std::sync::atomic::Ordering::SeqCst) == hang_from,
-                "the poller never asked for the hanging token",
-            )
+            forge_test_support::settle_until("the poller asked for the hanging token", || {
+                calls.load(std::sync::atomic::Ordering::SeqCst) == hang_from
+            })
             .await;
 
             cancel.cancel();

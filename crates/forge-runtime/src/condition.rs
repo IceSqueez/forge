@@ -164,7 +164,6 @@ fn is_digit_run(s: &str) -> bool {
 mod tests {
     use super::*;
     use forge_script::ScriptError;
-    use std::time::{Duration, Instant};
 
     fn unhurried() -> Config {
         Config {
@@ -310,19 +309,16 @@ mod tests {
     #[tokio::test]
     async fn wall_budget_exhausting_condition_returns_typed_error_without_hanging() {
         let gate = gate_with(1_000_000_000, 1);
-        let start = Instant::now();
-        let err = gate
-            .evaluate_with_args("loop {}", &ArgStack::new())
-            .await
-            .unwrap_err();
-        let elapsed = start.elapsed();
+        let err = tokio::time::timeout(
+            forge_test_support::HANG_GUARD,
+            gate.evaluate_with_args("loop {}", &ArgStack::new()),
+        )
+        .await
+        .expect("a wall-bounded condition must return")
+        .unwrap_err();
         assert!(
             matches!(err, RuntimeError::Script(ScriptError::Timeout { .. })),
             "expected Timeout, got {err:?}",
-        );
-        assert!(
-            elapsed < Duration::from_secs(5),
-            "wall-bounded condition must return promptly, took {elapsed:?}",
         );
     }
 

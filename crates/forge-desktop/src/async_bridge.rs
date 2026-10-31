@@ -862,6 +862,14 @@ mod tests {
         })
     }
 
+    fn paused_runtime() -> tokio::runtime::Runtime {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .start_paused(true)
+            .build()
+            .expect("paused current-thread runtime")
+    }
+
     fn settle(cx: &mut TestAppContext, rt: &tokio::runtime::Runtime) {
         for _ in 0..2 {
             rt.block_on(async { tokio::time::sleep(DEBOUNCE_SETTLE).await });
@@ -875,7 +883,7 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         cx.update(|cx| cx.set_global(Toasts::new()));
-        let rt = runtime();
+        let rt = paused_runtime();
         let probe = cx.new(|_| Probe);
         let outcomes: [(Result<(), RepoFailure>, Reported); 2] = [
             (Ok(()), Vec::new()),
@@ -906,7 +914,7 @@ mod tests {
     #[gpui::test]
     fn a_debounced_write_superseded_by_a_newer_one_never_runs_or_reports(cx: &mut TestAppContext) {
         cx.update(|cx| cx.set_global(Toasts::new()));
-        let rt = runtime();
+        let rt = paused_runtime();
         let probe = cx.new(|_| Probe);
         let debounce = Debounced::new(DEBOUNCE);
         let ran = Arc::new(AtomicU64::new(0));
@@ -942,7 +950,7 @@ mod tests {
 
     #[gpui::test]
     fn report_failure_toasts_only_when_the_write_failed(cx: &mut TestAppContext) {
-        let rt = runtime();
+        let rt = paused_runtime();
         let probe = cx.new(|_| Probe);
         for (write_result, expected) in [
             (Ok(()), Vec::new()),

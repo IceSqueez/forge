@@ -317,13 +317,3 @@ async fn answer(mut connection: TcpStream, steps: Vec<Step>, heads: Arc<Mutex<Ve
     }
     connection.shutdown().await.ok();
 }
-
-pub(crate) async fn spin_until(mut reached: impl FnMut() -> bool, what: &str) {
-    for _ in 0..1_000_000 {
-        if reached() {
-            return;
-        }
-        tokio::task::yield_now().await;
-    }
-    panic!("{what}");
-}

@@ -23,7 +23,7 @@ pub(crate) const OTHER_TOKEN: &str = "uMono-other-token-41be02";
 pub(crate) const JAR: &str = "jarAAA111";
 pub(crate) const OTHER_JAR: &str = "jarBBB222";
 pub(crate) const UAH: i64 = 980;
-pub(crate) const WAIT: Duration = Duration::from_secs(30);
+pub(crate) const WAIT: Duration = forge_test_support::HANG_GUARD;
 pub(crate) const TICK: Duration = Duration::from_millis(10);
 pub(crate) use forge_storage::test_support::MemoryCredentials;
 
@@ -69,14 +69,10 @@ impl ScriptedLimiter {
     }
 
     pub(crate) async fn wait_for_acquires(&self, count: usize) {
-        let deadline = tokio::time::Instant::now() + WAIT;
-        while *self.acquires.lock().unwrap() < count {
-            assert!(
-                tokio::time::Instant::now() < deadline,
-                "timed out waiting for {count} budget checks"
-            );
-            tokio::time::sleep(TICK).await;
-        }
+        forge_test_support::settle_until("the awaited budget checks", || {
+            *self.acquires.lock().unwrap() >= count
+        })
+        .await;
     }
 }
 
@@ -385,11 +381,7 @@ impl Harness {
     }
 
     pub(crate) async fn wait_for(&self, what: &str, probe: impl Fn(&PollStatus) -> bool) {
-        let deadline = tokio::time::Instant::now() + WAIT;
-        while !probe(&self.provider.poll_status()) {
-            assert!(tokio::time::Instant::now() < deadline, "timed out: {what}");
-            tokio::time::sleep(Duration::from_millis(5)).await;
-        }
+        forge_test_support::settle_until(what, || probe(&self.provider.poll_status())).await;
     }
 
     pub(crate) async fn wake_poller(&self) {
@@ -397,14 +389,10 @@ impl Harness {
     }
 
     pub(crate) async fn wait_for_statement_calls(&self, count: usize) {
-        let deadline = tokio::time::Instant::now() + WAIT;
-        while self.bank.statement_calls().len() < count {
-            assert!(
-                tokio::time::Instant::now() < deadline,
-                "timed out waiting for {count} statement calls"
-            );
-            tokio::time::sleep(TICK).await;
-        }
+        forge_test_support::settle_until("the awaited statement calls", || {
+            self.bank.statement_calls().len() >= count
+        })
+        .await;
     }
 
     pub(crate) async fn poll_now(&mut self) {

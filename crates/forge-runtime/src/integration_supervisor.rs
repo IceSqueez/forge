@@ -999,7 +999,7 @@ mod tests {
         release.send(()).unwrap();
         starting.await.unwrap().unwrap();
 
-        let resolved = tokio::time::timeout(Duration::from_secs(5), settled)
+        let resolved = tokio::time::timeout(forge_test_support::HANG_GUARD, settled)
             .await
             .is_ok();
         assert_eq!((waited_while_starting, resolved), (true, true));

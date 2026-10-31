@@ -112,23 +112,21 @@ async fn mark_refreshed_on_a_missing_credential_returns_not_found() {
 
 #[tokio::test]
 async fn mark_refreshed_updates_last_refresh_timestamp() {
-    let repo = setup().await;
+    let pools = common::migrated_pools().await;
+    let repo = SqliteCredentialsRepo::new_with_key(pools.clone(), TEST_KEY);
     let id = CredentialId::new("twitch:broadcaster");
     repo.store(&id, "token").await.expect("store");
-
+    sqlx::query("UPDATE credentials SET last_refresh = 1 WHERE id = ?")
+        .bind(id.as_str())
+        .execute(pools.writer())
+        .await
+        .expect("backdate the stamp");
     let before = repo.last_refresh(&id).await.expect("last_refresh before");
-    assert!(before.is_some());
-
-    tokio::time::sleep(tokio::time::Duration::from_millis(2)).await;
 
     repo.mark_refreshed(&id).await.expect("mark_refreshed");
 
     let after = repo.last_refresh(&id).await.expect("last_refresh after");
-    assert!(after.is_some());
-    assert!(
-        after.unwrap() >= before.unwrap(),
-        "mark_refreshed must not go backward"
-    );
+    assert!(after > before, "{before:?} -> {after:?}");
 }
 
 #[tokio::test]

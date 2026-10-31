@@ -20,7 +20,7 @@ use wiremock::{Mock, MockServer, Request, Respond, ResponseTemplate};
 
 pub(crate) const TOKEN: &str = "dn-test-token-7f3a9c";
 pub(crate) const OTHER_TOKEN: &str = "dn-other-token-41be02";
-pub(crate) const WAIT: Duration = Duration::from_secs(30);
+pub(crate) const WAIT: Duration = forge_test_support::HANG_GUARD;
 pub(crate) use forge_storage::test_support::MemoryCredentials;
 
 pub(crate) fn creds_with_token(token: &str) -> Arc<MemoryCredentials> {
@@ -405,14 +405,10 @@ impl Harness {
     }
 
     pub(crate) async fn wait_for_requests(&self, count: usize) {
-        let deadline = tokio::time::Instant::now() + WAIT;
-        while self.list.requested_pages().len() < count {
-            assert!(
-                tokio::time::Instant::now() < deadline,
-                "timed out waiting for {count} page requests"
-            );
-            tokio::time::sleep(TICK).await;
-        }
+        forge_test_support::settle_until("the awaited page requests", || {
+            self.list.requested_pages().len() >= count
+        })
+        .await;
     }
 
     pub(crate) async fn outlast_several_ticks() {
@@ -421,11 +417,7 @@ impl Harness {
     }
 
     pub(crate) async fn wait_for(&self, what: &str, probe: impl Fn(&PollStatus) -> bool) {
-        let deadline = tokio::time::Instant::now() + WAIT;
-        while !probe(&self.provider.poll_status()) {
-            assert!(tokio::time::Instant::now() < deadline, "timed out: {what}");
-            tokio::time::sleep(Duration::from_millis(5)).await;
-        }
+        forge_test_support::settle_until(what, || probe(&self.provider.poll_status())).await;
     }
 
     pub(crate) fn wake_poller(&mut self) {

@@ -1171,23 +1171,15 @@ mod tests {
     }
 
     async fn every_task_released(bundle: &Arc<TwitchIntegrationBundle>) {
-        let released = tokio::time::timeout(HANG_GUARD, async {
-            while Arc::strong_count(bundle) > 1 {
-                tokio::time::sleep(RELEASE_POLL).await;
-            }
+        forge_test_support::settle_until("every bridge released the bundle", || {
+            Arc::strong_count(bundle) == 1
         })
         .await;
-        assert!(
-            released.is_ok(),
-            "{} task(s) still hold the bundle after shutdown",
-            Arc::strong_count(bundle) - 1
-        );
     }
 
     const GOALS_PATH: &str = "/helix/goals";
     const SHIELD_PATH: &str = "/helix/moderation/shield_mode";
     const HANG_GUARD: Duration = Duration::from_secs(30);
-    const RELEASE_POLL: Duration = Duration::from_millis(5);
 
     fn goal_requests(
         transport: &crate::sub_actions::test_support::MockTransport,

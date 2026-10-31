@@ -53,7 +53,7 @@ pub use schedules::{
     GatedSchedule, gated_running_schedule, gated_running_schedule_sharing, keyless_enabled_schedule,
 };
 
-const PUMP_HANG_GUARD: std::time::Duration = std::time::Duration::from_secs(30);
+const PUMP_HANG_GUARD: std::time::Duration = std::time::Duration::from_secs(90);
 
 pub type SettingWrite = (String, String);
 

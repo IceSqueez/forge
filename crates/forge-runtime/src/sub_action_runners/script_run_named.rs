@@ -287,7 +287,6 @@ mod tests {
     use forge_storage_sqlite::SqliteBackend;
     use forge_types::Variant;
     use forge_types::{EventId, ScriptContract, ScriptId};
-    use std::time::Duration;
     use time::OffsetDateTime;
 
     const SECRET: &str = "sk-live-0123456789";
@@ -350,15 +349,11 @@ mod tests {
 
         let mut exec = None;
         let mut error = None;
-        for _ in 0..40 {
-            match tokio::time::timeout(Duration::from_millis(50), sub.recv()).await {
-                Ok(Ok(ev)) if ev.kind == "script.exec" => exec = Some(ev),
-                Ok(Ok(ev)) if ev.kind == "script.error" => error = Some(ev),
-                Ok(Ok(_)) => {}
-                _ => break,
-            }
-            if exec.is_some() && error.is_some() {
-                break;
+        while let Ok(Some(ev)) = sub.try_recv() {
+            match ev.kind.as_str() {
+                "script.exec" => exec = Some(ev),
+                "script.error" => error = Some(ev),
+                _ => {}
             }
         }
         NamedRun {

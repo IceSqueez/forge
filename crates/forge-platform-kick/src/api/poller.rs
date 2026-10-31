@@ -1462,15 +1462,13 @@ mod tests {
         );
         let mut reports = source.subscribe();
         assert!(
-            tokio::time::timeout(StdDuration::from_millis(50), event_rx.recv())
-                .await
-                .is_err(),
+            matches!(event_rx.try_recv(), Err(mpsc::error::TryRecvError::Empty)),
             "a running poller keeps its event channel open"
         );
 
         poller.stop();
 
-        let closed = tokio::time::timeout(StdDuration::from_secs(30), async {
+        let closed = tokio::time::timeout(forge_test_support::HANG_GUARD, async {
             while reports.changed().await.is_ok() {}
             event_rx.recv().await
         })

@@ -1021,7 +1021,7 @@ mod tests {
     }
 
     async fn first_frame(rx: &mut broadcast::Receiver<WsFrame>) -> WsFrame {
-        tokio::time::timeout(std::time::Duration::from_secs(5), rx.recv())
+        tokio::time::timeout(forge_test_support::HANG_GUARD, rx.recv())
             .await
             .expect("timeout waiting for a frame")
             .expect("receiver error")

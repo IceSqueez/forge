@@ -377,7 +377,7 @@ async fn held_reads_signal_their_start_and_complete_only_after_release() {
     assert_eq!(reader.await.unwrap().unwrap().as_deref(), Some("v"));
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn wait_for_read_start_stays_pending_when_no_read_was_issued() {
     let store = MemorySettings::new();
     store.seed_raw(&NOTE, "v");
@@ -388,7 +388,7 @@ async fn wait_for_read_start_stays_pending_when_no_read_was_issued() {
     assert!(outcome.is_err());
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn each_read_releases_exactly_one_start_wait() {
     let store = MemorySettings::new();
     read_setting(&store, &NOTE).await.unwrap();

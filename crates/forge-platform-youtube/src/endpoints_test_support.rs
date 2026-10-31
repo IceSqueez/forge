@@ -385,15 +385,3 @@ pub(crate) async fn wait_until(mut reached: impl FnMut() -> bool) -> bool {
     .await
     .is_ok()
 }
-
-const SPIN_SETTLES: usize = 64;
-
-pub(crate) async fn spin_until(mut reached: impl FnMut() -> bool, what: &str) {
-    for _ in 0..SPIN_SETTLES {
-        if reached() {
-            return;
-        }
-        settle().await;
-    }
-    panic!("{what}");
-}

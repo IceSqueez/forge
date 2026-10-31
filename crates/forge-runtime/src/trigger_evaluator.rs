@@ -1549,7 +1549,7 @@ mod tests {
         }
     }
 
-    const CATALOG_WAIT: Duration = Duration::from_secs(5);
+    const CATALOG_WAIT: Duration = forge_test_support::HANG_GUARD;
 
     struct CatalogRig {
         bus: Arc<EventBus>,

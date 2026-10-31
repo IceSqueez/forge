@@ -8,10 +8,10 @@ use forge_net::{
     BodyProgress, CallClass, GatewayFailure, GatewayProfile, GatewayRequest, GatewayTimings,
     HeaderLookup, RateLimitOutcome, TransportKind,
 };
+use forge_test_support::settle_until;
 use gateway_streaming_support::{
     Gate, MemorySink, Pace, Step, StubServer, UNLIMITED, chunk_frame, chunked_end, chunked_head,
-    sized_body, sized_head, spawn_stream, spin_until, stream, stream_into, stream_with,
-    transport_kind,
+    sized_body, sized_head, spawn_stream, stream, stream_into, stream_with, transport_kind,
 };
 use gateway_support::{Harness, platform};
 use tokio_util::sync::CancellationToken;
@@ -251,7 +251,7 @@ async fn a_body_still_flowing_after_the_request_total_budget_completes() {
         sink.clone(),
         CancellationToken::new(),
     );
-    spin_until(|| sink.len() > 0, "first chunk never delivered").await;
+    settle_until("the first chunk arrived", || sink.len() > 0).await;
     tokio::time::sleep(PAST_TOTAL_BUDGET).await;
 
     gate.open();
@@ -314,10 +314,9 @@ async fn cancelling_during_the_limiter_wait_yields_cancelled_and_sends_nothing()
         let harness = Harness::with_limiter(&server.uri(), platform(), limiter);
         let (request, cancel, trigger) = cancellable(request_level);
         let task = spawn_stream(&harness.gateway, request, MemorySink::default(), cancel);
-        spin_until(
-            || harness.limiter.acquire_count() > 0,
-            "limiter never asked",
-        )
+        settle_until("the limiter was asked", || {
+            harness.limiter.acquire_count() > 0
+        })
         .await;
 
         trigger.cancel();
@@ -336,7 +335,7 @@ async fn cancelling_while_awaiting_response_headers_yields_cancelled_without_obs
         let harness = Harness::new(&server.uri(), platform());
         let (request, cancel, trigger) = cancellable(request_level);
         let task = spawn_stream(&harness.gateway, request, MemorySink::default(), cancel);
-        spin_until(|| !server.heads().is_empty(), "request never arrived").await;
+        settle_until("the request arrived", || !server.heads().is_empty()).await;
 
         trigger.cancel();
         let streamed = task.await.unwrap();
@@ -355,7 +354,7 @@ async fn cancelling_mid_body_yields_cancelled_and_keeps_only_the_delivered_bytes
         let (request, cancel, trigger) = cancellable(request_level);
         let sink = MemorySink::default();
         let task = spawn_stream(&harness.gateway, request, sink.clone(), cancel);
-        spin_until(|| sink.len() > 0, "first chunk never delivered").await;
+        settle_until("the first chunk arrived", || sink.len() > 0).await;
 
         trigger.cancel();
         let streamed = task.await.unwrap();

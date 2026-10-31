@@ -1041,17 +1041,10 @@ mod tests {
         bundle.shutdown().await;
         bundle.shutdown().await;
 
-        let released = tokio::time::timeout(Duration::from_secs(30), async {
-            while Arc::strong_count(&bundle) > 1 {
-                tokio::time::sleep(Duration::from_millis(5)).await;
-            }
+        forge_test_support::settle_until("every bridge released the bundle", || {
+            Arc::strong_count(&bundle) == 1
         })
         .await;
-        assert!(
-            released.is_ok(),
-            "{} task(s) still hold the bundle after shutdown",
-            Arc::strong_count(&bundle) - 1
-        );
         assert!(!platform.connection_state().is_connected());
     }
 

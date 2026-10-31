@@ -49,15 +49,19 @@ fn options(root: &TempDir, stub_body: &str) -> RunOptions {
 }
 
 async fn read_pid(file: &Path) -> u32 {
-    loop {
-        if let Some(pid) = std::fs::read_to_string(file)
-            .ok()
-            .and_then(|text| text.trim().parse().ok())
-        {
-            return pid;
+    timeout(DEADLINE, async {
+        loop {
+            if let Some(pid) = std::fs::read_to_string(file)
+                .ok()
+                .and_then(|text| text.trim().parse().ok())
+            {
+                return pid;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
         }
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
+    })
+    .await
+    .unwrap()
 }
 
 #[tokio::test]

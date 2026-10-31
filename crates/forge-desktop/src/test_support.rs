@@ -60,8 +60,7 @@ pub(crate) async fn booted_runtime_handles() -> crate::runtime_handles::RuntimeH
     .await
 }
 
-const PUMP_HANG_GUARD: std::time::Duration = std::time::Duration::from_secs(30);
-const WORKER_DRAIN_DEADLINE: std::time::Duration = std::time::Duration::from_secs(30);
+const PUMP_HANG_GUARD: std::time::Duration = forge_test_support::HANG_GUARD;
 const WORKER_DRAIN_POLL: std::time::Duration = std::time::Duration::from_millis(1);
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -262,7 +261,7 @@ pub(crate) fn worker_runtime() -> tokio::runtime::Runtime {
 }
 
 pub(crate) fn wait_until_worker_drains_to(rt: &tokio::runtime::Runtime, background_tasks: usize) {
-    let deadline = std::time::Instant::now() + WORKER_DRAIN_DEADLINE;
+    let deadline = std::time::Instant::now() + PUMP_HANG_GUARD;
     while alive_tasks(rt) > background_tasks {
         assert!(
             std::time::Instant::now() < deadline,

@@ -301,3 +301,147 @@ pub fn busy_modal(
         );
     modal(title, body, palette).size(ModalSize::Sm)
 }
+
+#[cfg(test)]
+mod tests {
+    use gpui::{
+        Bounds, Context, Modifiers, Render, ScrollDelta, ScrollEvent, ScrollHandle, TestAppContext,
+        VisualTestContext, point, size,
+    };
+
+    use super::*;
+    use crate::overlay::overlay;
+    use crate::palette::FORGE_DEFAULT;
+    use crate::test_support::install_presentation;
+
+    const SCROLLER: &str = "modal-test-scroller";
+    const CONTENT: &str = "modal-test-content";
+    const FOOTER: &str = "modal-test-footer";
+    const SCROLLER_MAX_HEIGHT: Pixels = px(5000.0);
+    const CONTENT_HEIGHT: Pixels = px(9000.0);
+    const WHEEL_STEP: Pixels = px(-120.0);
+
+    #[derive(Clone, Copy)]
+    enum Body {
+        OneInnerScroller,
+        RigidInSelfScrolling,
+        RigidInOrdinary,
+    }
+
+    struct Host {
+        inner: ScrollHandle,
+        body: Body,
+    }
+
+    impl Render for Host {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            let content = div()
+                .debug_selector(|| CONTENT.to_owned())
+                .flex_none()
+                .h(CONTENT_HEIGHT);
+            let footer = div().debug_selector(|| FOOTER.to_owned()).h(px(30.0));
+            let card = match self.body {
+                Body::OneInnerScroller => modal(
+                    "Scrolling",
+                    div()
+                        .id("modal-test-scroller")
+                        .debug_selector(|| SCROLLER.to_owned())
+                        .w_full()
+                        .min_h_0()
+                        .max_h(SCROLLER_MAX_HEIGHT)
+                        .overflow_y_scroll()
+                        .track_scroll(&self.inner)
+                        .child(content),
+                    &FORGE_DEFAULT,
+                )
+                .body_scrolls_itself(),
+                Body::RigidInSelfScrolling => {
+                    modal("Scrolling", content, &FORGE_DEFAULT).body_scrolls_itself()
+                }
+                Body::RigidInOrdinary => modal("Scrolling", content, &FORGE_DEFAULT),
+            };
+            div()
+                .size_full()
+                .child(overlay(card.footer(footer), &FORGE_DEFAULT))
+        }
+    }
+
+    fn mount(cx: &mut TestAppContext, body: Body) -> (ScrollHandle, &mut VisualTestContext) {
+        install_presentation(cx);
+        let inner = ScrollHandle::new();
+        let handle = inner.clone();
+        let (_, vcx) = cx.add_window_view(move |_, _| Host {
+            inner: handle,
+            body,
+        });
+        vcx.run_until_parked();
+        (inner, vcx)
+    }
+
+    fn painted(vcx: &mut VisualTestContext, selector: &'static str) -> Bounds<Pixels> {
+        vcx.debug_bounds(selector).expect("the element paints")
+    }
+
+    fn wheel_down_over(vcx: &mut VisualTestContext, selector: &'static str) {
+        let window_center = vcx.update(|window, _| {
+            let viewport = window.viewport_size();
+            point(viewport.width / 2.0, viewport.height / 2.0)
+        });
+        let position = painted(vcx, selector)
+            .intersect(&Bounds::centered_at(window_center, size(px(4.0), px(4.0))))
+            .center();
+        vcx.simulate_mouse_move(position, None, Modifiers::none());
+        vcx.simulate_event(ScrollEvent {
+            position,
+            delta: ScrollDelta::Pixels(point(px(0.0), WHEEL_STEP)),
+            ..ScrollEvent::default()
+        });
+        vcx.run_until_parked();
+    }
+
+    #[gpui::test]
+    fn a_self_scrolling_body_leaves_the_wheel_to_its_one_inner_scroller(cx: &mut TestAppContext) {
+        let (inner, vcx) = mount(cx, Body::OneInnerScroller);
+        let before = painted(vcx, SCROLLER);
+
+        wheel_down_over(vcx, SCROLLER);
+
+        assert_eq!(inner.offset().y, WHEEL_STEP);
+        assert_eq!(painted(vcx, SCROLLER), before);
+    }
+
+    #[gpui::test]
+    fn a_self_scrolling_body_fits_its_scroller_above_the_footer(cx: &mut TestAppContext) {
+        let (_, vcx) = mount(cx, Body::OneInnerScroller);
+
+        let scroller = painted(vcx, SCROLLER);
+        let footer = painted(vcx, FOOTER);
+        let window_height = vcx.update(|window, _| window.viewport_size().height);
+
+        assert!(
+            scroller.bottom() <= footer.top(),
+            "{scroller:?} / {footer:?}"
+        );
+        assert!(footer.bottom() <= window_height, "{footer:?}");
+    }
+
+    #[gpui::test]
+    fn a_self_scrolling_body_is_never_a_second_scroller(cx: &mut TestAppContext) {
+        let (_, vcx) = mount(cx, Body::RigidInSelfScrolling);
+        let before = painted(vcx, CONTENT);
+
+        wheel_down_over(vcx, CONTENT);
+
+        assert_eq!(painted(vcx, CONTENT), before);
+    }
+
+    #[gpui::test]
+    fn an_ordinary_body_scrolls_content_taller_than_the_window(cx: &mut TestAppContext) {
+        let (_, vcx) = mount(cx, Body::RigidInOrdinary);
+        let before = painted(vcx, CONTENT);
+
+        wheel_down_over(vcx, CONTENT);
+
+        assert_eq!(painted(vcx, CONTENT).top(), before.top() + WHEEL_STEP);
+    }
+}

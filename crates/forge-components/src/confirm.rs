@@ -672,4 +672,170 @@ mod tests {
 
         assert_eq!(plain, hinted);
     }
+
+    const FOOTER_CARD: &str = "confirm-test-footer-card";
+    const FIRST: &str = "confirm-test-first-button";
+    const SECOND: &str = "confirm-test-second-button";
+    const FOOTER_CARD_WIDTH: Pixels = px(420.0);
+    const WIDE_BUTTON: Pixels = px(260.0);
+    const SHORT_BUTTON: Pixels = px(80.0);
+    const NEARLY_FULL_BUTTON: Pixels = px(360.0);
+    const BUTTON_HEIGHT: Pixels = px(30.0);
+    const LAST_WIDTH_ON_ONE_LINE: f32 = 182.0;
+    const FOOTER_HINT: &str = "esc to keep everything as it is";
+    const LONG_LABEL: &str = "Delete this action and its triggers too";
+
+    struct FooterCard {
+        hint: Option<&'static str>,
+        buttons: Vec<(&'static str, Pixels)>,
+    }
+
+    impl Render for FooterCard {
+        fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            let density = cx.density();
+            let actions =
+                confirm_actions_row(density).children(self.buttons.iter().map(|&(id, width)| {
+                    div()
+                        .debug_selector(|| id.to_owned())
+                        .w(width)
+                        .h(BUTTON_HEIGHT)
+                }));
+            let hint = self.hint.map(SharedString::new_static);
+            div().size_full().child(
+                div()
+                    .debug_selector(|| FOOTER_CARD.to_owned())
+                    .w(FOOTER_CARD_WIDTH)
+                    .flex()
+                    .flex_col()
+                    .child(confirm_footer(hint, actions, &FORGE_DEFAULT, density)),
+            )
+        }
+    }
+
+    fn mount_footer<'a>(
+        cx: &'a mut TestAppContext,
+        hint: Option<&'static str>,
+        buttons: Vec<(&'static str, Pixels)>,
+    ) -> &'a mut VisualTestContext {
+        install_presentation(cx);
+        let (_, vcx) = cx.add_window_view(move |_, _| FooterCard { hint, buttons });
+        vcx.run_until_parked();
+        vcx
+    }
+
+    fn painted(vcx: &mut VisualTestContext, selector: &'static str) -> Bounds<Pixels> {
+        vcx.debug_bounds(selector).expect("the element paints")
+    }
+
+    fn assert_inside(inner: Bounds<Pixels>, card: Bounds<Pixels>) {
+        assert!(
+            inner.left() >= card.left() && inner.right() <= card.right(),
+            "{inner:?} escapes {card:?}"
+        );
+    }
+
+    #[gpui::test]
+    fn two_wide_buttons_stack_whole_inside_the_card(cx: &mut TestAppContext) {
+        let vcx = mount_footer(cx, None, vec![(FIRST, WIDE_BUTTON), (SECOND, WIDE_BUTTON)]);
+
+        let card = painted(vcx, FOOTER_CARD);
+        let (first, second) = (painted(vcx, FIRST), painted(vcx, SECOND));
+
+        assert_inside(first, card);
+        assert_inside(second, card);
+        assert_eq!(
+            (first.size.width, second.size.width),
+            (WIDE_BUTTON, WIDE_BUTTON)
+        );
+        assert!(second.top() >= first.bottom(), "{first:?} / {second:?}");
+    }
+
+    #[gpui::test]
+    fn short_buttons_share_a_line_against_the_right_padding(cx: &mut TestAppContext) {
+        let vcx = mount_footer(
+            cx,
+            None,
+            vec![(FIRST, SHORT_BUTTON), (SECOND, SHORT_BUTTON)],
+        );
+
+        let card = painted(vcx, FOOTER_CARD);
+        let (first, second) = (painted(vcx, FIRST), painted(vcx, SECOND));
+
+        let padding = spacing(Spacing::Lg, Density::Cozy);
+        assert_eq!(first.top(), second.top());
+        assert_eq!(second.right(), card.right() - padding);
+        assert_eq!(
+            second.left() - first.right(),
+            scaled(ACTIONS_GAP, Density::Cozy)
+        );
+    }
+
+    #[gpui::test]
+    fn a_pair_of_buttons_stacks_only_once_it_no_longer_fits_one_line(cx: &mut TestAppContext) {
+        for (width, stacks) in [
+            (LAST_WIDTH_ON_ONE_LINE, false),
+            (LAST_WIDTH_ON_ONE_LINE + 1.0, true),
+        ] {
+            let vcx = mount_footer(cx, None, vec![(FIRST, px(width)), (SECOND, px(width))]);
+
+            let (first, second) = (painted(vcx, FIRST), painted(vcx, SECOND));
+
+            assert_eq!(second.top() > first.top(), stacks, "{width}");
+        }
+    }
+
+    #[gpui::test]
+    fn a_button_as_wide_as_the_footer_stays_within_its_padding(cx: &mut TestAppContext) {
+        let padding = spacing(Spacing::Lg, Density::Cozy);
+        let footer_width = FOOTER_CARD_WIDTH - padding * 2.0;
+        let vcx = mount_footer(
+            cx,
+            None,
+            vec![(FIRST, footer_width), (SECOND, SHORT_BUTTON)],
+        );
+
+        let card = painted(vcx, FOOTER_CARD);
+        let (first, second) = (painted(vcx, FIRST), painted(vcx, SECOND));
+
+        assert_eq!(first.right(), card.right() - padding);
+        assert_eq!(second.right(), card.right() - padding);
+    }
+
+    #[gpui::test]
+    fn a_button_with_no_room_beside_the_hint_drops_to_its_own_line(cx: &mut TestAppContext) {
+        let plain = mount_footer(cx, None, vec![(FIRST, NEARLY_FULL_BUTTON)]);
+        let plain_top = painted(plain, FIRST).top();
+
+        let hinted = mount_footer(cx, Some(FOOTER_HINT), vec![(FIRST, NEARLY_FULL_BUTTON)]);
+        let card = painted(hinted, FOOTER_CARD);
+        let button = painted(hinted, FIRST);
+
+        assert_inside(button, card);
+        assert_eq!(button.size.width, NEARLY_FULL_BUTTON);
+        assert!(button.top() > plain_top, "{button:?} above {plain_top:?}");
+    }
+
+    #[gpui::test]
+    fn long_real_labels_stay_inside_a_confirm_card(cx: &mut TestAppContext) {
+        install_presentation(cx);
+        let (_, vcx) = cx.add_window_view(|_, _| Slot {
+            card: || {
+                footed_card()
+                    .esc_hint(FOOTER_HINT)
+                    .on_cancel("long-cancel", LONG_LABEL, |_, _, _| {})
+                    .on_alternate("long-alternate", LONG_LABEL, |_, _, _| {})
+            },
+        });
+        vcx.run_until_parked();
+
+        let card = painted(vcx, CARD_SLOT);
+        let (cancel, alternate) = (painted(vcx, "long-cancel"), painted(vcx, "long-alternate"));
+
+        assert_inside(cancel, card);
+        assert_inside(alternate, card);
+        assert!(
+            alternate.top() >= cancel.bottom(),
+            "{cancel:?} / {alternate:?}"
+        );
+    }
 }

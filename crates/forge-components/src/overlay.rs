@@ -522,10 +522,13 @@ mod tests {
     use std::cell::Cell;
     use std::rc::Rc;
 
+    use std::time::Duration;
+
     use gpui::{
-        AppContext, Context, Entity, EntityInputHandler, FocusHandle, Focusable,
-        InteractiveElement, IntoElement, Modifiers, MouseButton, Render, TestAppContext,
-        VisualTestContext, Window, div, point, px,
+        AnyView, App, AppContext, Bounds, Context, Entity, EntityInputHandler, FocusHandle,
+        Focusable, InteractiveElement, IntoElement, Modifiers, MouseButton, Pixels, Render,
+        StatefulInteractiveElement, Styled, TestAppContext, VisualTestContext, Window, div, point,
+        px,
     };
 
     use super::{ease_out_cubic, focus_inside_modal, overlay};
@@ -752,6 +755,165 @@ mod tests {
         rig.close();
 
         assert!(rig.focused(|host| host.other.clone()));
+    }
+
+    const TOOLTIP_PROBE: &str = "overlay-test-tooltip";
+    const BEHIND_THE_MODAL: &str = "overlay-test-behind";
+    const INSIDE_THE_MODAL: &str = "overlay-test-inside";
+    const LONGER_THAN_ANY_TOOLTIP_DELAY: Duration = Duration::from_secs(5);
+
+    struct TooltipProbe;
+
+    impl Render for TooltipProbe {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            div()
+                .debug_selector(|| TOOLTIP_PROBE.to_owned())
+                .w(px(40.0))
+                .h(px(20.0))
+        }
+    }
+
+    fn tooltip_probe(_: &mut Window, cx: &mut App) -> AnyView {
+        cx.new(|_| TooltipProbe).into()
+    }
+
+    fn tooltip_trigger(id: &'static str) -> impl IntoElement {
+        div()
+            .id(id)
+            .debug_selector(|| id.to_owned())
+            .w(px(100.0))
+            .h(px(40.0))
+            .tooltip(tooltip_probe)
+    }
+
+    struct TooltipHost {
+        open: bool,
+    }
+
+    impl Render for TooltipHost {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            div()
+                .size_full()
+                .child(tooltip_trigger(BEHIND_THE_MODAL))
+                .children(
+                    self.open
+                        .then(|| overlay(tooltip_trigger(INSIDE_THE_MODAL), &FORGE_DEFAULT)),
+                )
+        }
+    }
+
+    struct TooltipRig<'a> {
+        host: Entity<TooltipHost>,
+        vcx: &'a mut VisualTestContext,
+    }
+
+    fn mount_tooltip_rig(cx: &mut TestAppContext) -> TooltipRig<'_> {
+        install_presentation(cx);
+        let (host, vcx) = cx.add_window_view(|_, _| TooltipHost { open: false });
+        vcx.update(|window, _| window.activate_window());
+        vcx.run_until_parked();
+        TooltipRig { host, vcx }
+    }
+
+    impl TooltipRig<'_> {
+        fn hover(&mut self, selector: &'static str) {
+            let center = self.bounds(selector).center();
+            self.vcx
+                .simulate_mouse_move(center, None, Modifiers::none());
+            self.vcx.run_until_parked();
+        }
+
+        fn bounds(&mut self, selector: &'static str) -> Bounds<Pixels> {
+            self.vcx.debug_bounds(selector).expect("the element paints")
+        }
+
+        fn set_open(&mut self, open: bool) {
+            self.host.update(self.vcx, |host, cx| {
+                host.open = open;
+                cx.notify();
+            });
+            self.vcx.run_until_parked();
+            self.vcx.update(|window, cx| window.simulate_next_frame(cx));
+            self.vcx.run_until_parked();
+        }
+
+        fn let_any_tooltip_delay_elapse(&mut self) {
+            self.vcx
+                .executor()
+                .advance_clock(LONGER_THAN_ANY_TOOLTIP_DELAY);
+            self.vcx.run_until_parked();
+        }
+
+        fn tooltip_shown(&mut self) -> bool {
+            self.vcx.debug_bounds(TOOLTIP_PROBE).is_some()
+        }
+    }
+
+    #[gpui::test]
+    fn a_tooltip_shows_on_the_screen_behind_while_no_modal_is_up(cx: &mut TestAppContext) {
+        let mut rig = mount_tooltip_rig(cx);
+        rig.hover(BEHIND_THE_MODAL);
+
+        rig.let_any_tooltip_delay_elapse();
+
+        assert!(rig.tooltip_shown());
+    }
+
+    #[gpui::test]
+    fn a_pending_tooltip_does_not_show_over_a_mounted_modal(cx: &mut TestAppContext) {
+        let mut rig = mount_tooltip_rig(cx);
+        rig.hover(BEHIND_THE_MODAL);
+
+        rig.set_open(true);
+        rig.let_any_tooltip_delay_elapse();
+
+        assert!(!rig.tooltip_shown());
+    }
+
+    #[gpui::test]
+    fn a_visible_tooltip_disappears_when_a_modal_mounts(cx: &mut TestAppContext) {
+        let mut rig = mount_tooltip_rig(cx);
+        rig.hover(BEHIND_THE_MODAL);
+        rig.let_any_tooltip_delay_elapse();
+        assert!(rig.tooltip_shown());
+
+        rig.set_open(true);
+
+        assert!(!rig.tooltip_shown());
+    }
+
+    #[gpui::test]
+    fn a_pending_tooltip_is_also_dropped_by_a_reopened_modal(cx: &mut TestAppContext) {
+        let mut rig = mount_tooltip_rig(cx);
+        rig.set_open(true);
+        rig.set_open(false);
+        rig.hover(BEHIND_THE_MODAL);
+
+        rig.set_open(true);
+        rig.let_any_tooltip_delay_elapse();
+
+        assert!(!rig.tooltip_shown());
+    }
+
+    #[gpui::test]
+    fn a_tooltip_inside_a_modal_still_shows(cx: &mut TestAppContext) {
+        let mut rig = mount_tooltip_rig(cx);
+        rig.set_open(true);
+        rig.hover(INSIDE_THE_MODAL);
+
+        rig.let_any_tooltip_delay_elapse();
+
+        assert!(rig.tooltip_shown());
+    }
+
+    #[gpui::test]
+    fn a_modal_opened_from_the_keyboard_keeps_keyboard_modality(cx: &mut TestAppContext) {
+        let mut rig = mount_tooltip_rig(cx);
+        rig.vcx.simulate_keystrokes("a");
+
+        rig.set_open(true);
+
+        assert!(rig.vcx.update(|window, _| window.last_input_was_keyboard()));
     }
 
     #[test]

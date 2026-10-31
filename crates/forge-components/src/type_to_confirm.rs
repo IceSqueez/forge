@@ -425,6 +425,9 @@ mod tests {
     use crate::text_input::bind_text_input_keys;
 
     const TARGET: &str = "bind to LAN";
+    const CARD_SLOT: &str = "type-to-confirm-test-card";
+    const CANCEL: &str = "type-to-confirm-cancel";
+    const LONG_LABEL: &str = "Keep the server bound to this machine";
 
     struct Card<'a> {
         view: Entity<TypeToConfirm>,
@@ -528,5 +531,42 @@ mod tests {
         card.press("escape");
 
         assert_eq!(*card.seen.borrow(), [TypeToConfirmEvent::Cancelled]);
+    }
+
+    struct LongLabelCard {
+        card: Entity<TypeToConfirm>,
+    }
+
+    impl Render for LongLabelCard {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            div().size_full().flex().items_start().child(
+                div()
+                    .debug_selector(|| CARD_SLOT.to_owned())
+                    .child(self.card.clone()),
+            )
+        }
+    }
+
+    #[gpui::test]
+    fn labels_too_long_for_one_line_stay_inside_the_card(cx: &mut TestAppContext) {
+        install_presentation(cx);
+        cx.update(bind_text_input_keys);
+        let (_, vcx) = cx.add_window_view(|_, cx| LongLabelCard {
+            card: cx.new(|cx| {
+                type_to_confirm(TARGET, &FORGE_DEFAULT, cx)
+                    .cancel_label(LONG_LABEL)
+                    .confirm_label(LONG_LABEL)
+                    .esc_hint("esc to keep the current binding")
+            }),
+        });
+        vcx.run_until_parked();
+
+        let card = vcx.debug_bounds(CARD_SLOT).expect("the card paints");
+        let cancel = vcx.debug_bounds(CANCEL).expect("the button paints");
+
+        assert!(
+            cancel.left() >= card.left() && cancel.right() <= card.right(),
+            "{cancel:?} escapes {card:?}"
+        );
     }
 }

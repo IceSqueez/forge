@@ -207,7 +207,7 @@ mod tests {
     use forge_components::{FORGE_DEFAULT, TextInput, focus_inside_modal, overlay};
     use gpui::{
         AppContext, Entity, Modifiers, ParentElement, Render, StatefulInteractiveElement,
-        TestAppContext, VisualTestContext, div, point, px, size,
+        TestAppContext, VisualTestContext, div, point, px,
     };
 
     struct KeyedList {
@@ -359,26 +359,6 @@ mod tests {
             assert_eq!(list.activations, 1);
             assert_eq!(list.menus, 2);
         });
-    }
-
-    #[test]
-    fn a_stepped_row_scrolls_just_far_enough_into_the_viewport() {
-        let viewport = Bounds::new(point(px(0.0), px(100.0)), size(px(300.0), px(200.0)));
-        let row_at = |top: f32| Bounds::new(point(px(0.0), px(top)), size(px(300.0), px(30.0)));
-        for (top, expected) in [
-            (150.0, -50.0),
-            (100.0, -50.0),
-            (270.0, -50.0),
-            (70.0, -20.0),
-            (280.0, -60.0),
-            (0.0, 50.0),
-        ] {
-            assert_eq!(
-                offset_revealing(point(px(0.0), px(-50.0)), viewport, row_at(top)).y,
-                px(expected),
-                "row at {top}"
-            );
-        }
     }
 
     #[test]

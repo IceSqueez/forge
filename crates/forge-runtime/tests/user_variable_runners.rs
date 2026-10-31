@@ -1,9 +1,9 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
+use forge_events::test_support::NullPublisher;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
-use forge_events::{Event, EventPublisher};
 use forge_registry::{RunContext, SubActionRunner};
 use forge_runtime::sub_action_runners::{
     CoreUsersGetVarRunner, CoreUsersIncrementVarRunner, CoreUsersSetVarRunner,
@@ -11,11 +11,6 @@ use forge_runtime::sub_action_runners::{
 use forge_storage::{GlobalEntry, GlobalsRepo, StorageError, UserGlobalEntry, UserGlobalsRepo};
 use forge_types::{ArgStack, EventId, SubActionConfig, SubActionOutcome, Variant};
 use time::OffsetDateTime;
-
-struct NullPublisher;
-impl EventPublisher for NullPublisher {
-    fn publish(&self, _event: Event) {}
-}
 
 struct EmptyGlobals;
 

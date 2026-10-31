@@ -1,4 +1,5 @@
 #![allow(clippy::unwrap_used)]
+mod common;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -29,7 +30,7 @@ async fn populated() -> (SqlitePools, PathBuf, TempDir) {
 async fn populated_with(busy_timeout: Option<Duration>) -> (SqlitePools, PathBuf, TempDir) {
     let dir = tempfile::tempdir().unwrap();
     let db = dir.path().join("forge.db");
-    let url = format!("sqlite://{}", db.display());
+    let url = common::sqlite_url(&db);
     let pools = match busy_timeout {
         Some(timeout) => connect_pools_with_busy_timeout(&url, timeout).await,
         None => connect_pools(&url).await,
@@ -128,9 +129,7 @@ async fn close_removes_wal_and_shm_files_on_every_open_write_close_cycle() {
     for cycle in 0..CYCLES {
         let dir = tempfile::tempdir().unwrap();
         let db = dir.path().join("forge.db");
-        let pools = connect_pools(&format!("sqlite://{}", db.display()))
-            .await
-            .unwrap();
+        let pools = connect_pools(&common::sqlite_url(&db)).await.unwrap();
         apply_migrations(pools.writer()).await.unwrap();
         sqlx::query("INSERT INTO settings (key, value) VALUES ('k', 'v')")
             .execute(pools.writer())

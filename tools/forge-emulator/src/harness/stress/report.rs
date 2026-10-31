@@ -259,3 +259,189 @@ fn pair(avg: Option<f64>, max: Option<f64>) -> String {
         _ => "-".to_owned(),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use serde_json::json;
+
+    use super::super::runner::tests::{phase_result, sample};
+    use super::super::runner::{PhaseVerdict, ShutdownReport};
+    use super::super::tracker::Tracker;
+    use super::*;
+
+    const KIB_PER_MIB: u64 = 1024;
+    const FORGE_BINARY: &str = "/bin/forge";
+
+    fn profile() -> StressProfile {
+        serde_json::from_value(json!({
+            "name": "the name",
+            "purpose": "the purpose",
+            "fixture": {
+                "twitch": {},
+                "event_triggers": [
+                    { "trigger_kind": "twitch.chat.message", "action_name": "Chat" }
+                ]
+            },
+            "senders": 10,
+            "stimuli": [{ "kind": "chat", "weight": 1, "runs": ["Chat"] }],
+            "ramp": { "rates": [10], "hold_secs": 5 },
+            "burst": { "multiplier": 2.0, "secs": 5 },
+            "recovery_secs": 5,
+            "knee": { "watch": ["Chat"], "max_backlog_secs": 5.0, "min_achieved_share": 0.9 }
+        }))
+        .unwrap()
+    }
+
+    fn outcome() -> StressOutcome {
+        StressOutcome {
+            phases: vec![phase_result(7, 10, 2)],
+            samples: Vec::new(),
+            tracker: Tracker::new(Vec::new(), Vec::new(), 0),
+            actions: Vec::new(),
+            pages: Vec::new(),
+            forge_exited: false,
+            shutdown: Ok(ShutdownReport {
+                ms: 12,
+                forced: false,
+            }),
+            warnings_total: BTreeMap::new(),
+            data_dir: PathBuf::from("/data"),
+            version: Ok("1.2.3".to_owned()),
+        }
+    }
+
+    fn rendered(outcome: &StressOutcome) -> String {
+        render(&profile(), outcome, Path::new(FORGE_BINARY))
+    }
+
+    fn line_with<'a>(report: &'a str, needle: &str) -> &'a str {
+        report
+            .lines()
+            .find(|line| line.contains(needle))
+            .unwrap_or_else(|| panic!("no line with {needle} in\n{report}"))
+    }
+
+    #[test]
+    fn the_shutdown_line_tells_a_clean_exit_from_a_kill_and_a_failure() {
+        let failed = EmulatorError::ReportWrite {
+            path: PathBuf::from("/x"),
+            reason: "denied".to_owned(),
+        };
+        let cases = [
+            (
+                Ok(ShutdownReport {
+                    ms: 12,
+                    forced: false,
+                }),
+                "shutdown: 12 ms, clean".to_owned(),
+            ),
+            (
+                Ok(ShutdownReport {
+                    ms: 12,
+                    forced: true,
+                }),
+                "shutdown: 12 ms, killed after the grace period".to_owned(),
+            ),
+            (Err(failed), "shutdown: failed: ".to_owned()),
+        ];
+        for (shutdown, expected) in cases {
+            let mut outcome = outcome();
+            outcome.shutdown = shutdown;
+            assert!(rendered(&outcome).contains(&expected), "{expected}");
+        }
+    }
+
+    #[test]
+    fn a_phase_row_carries_its_delivery_and_verdict() {
+        let mut outcome = outcome();
+        outcome.phases[0].verdict = PhaseVerdict::Unjudged("the reason".to_owned());
+        let report = rendered(&outcome);
+        let row = line_with(&report, "| 0 | ramp |");
+        assert!(
+            row.contains("| 7 / 10 | 2 | unjudged: the reason |"),
+            "{row}"
+        );
+    }
+
+    #[test]
+    fn a_phase_row_aggregates_only_the_samples_of_that_phase() {
+        let mut low = sample(&[], None);
+        low.cpu_percent = Some(10.0);
+        low.process.rss_kib = Some(KIB_PER_MIB);
+        let mut high = sample(&[], None);
+        high.cpu_percent = Some(30.0);
+        high.process.rss_kib = Some(2 * KIB_PER_MIB);
+        let mut elsewhere = sample(&[], None);
+        elsewhere.phase = 1;
+        elsewhere.cpu_percent = Some(90.0);
+        elsewhere.process.rss_kib = Some(9 * KIB_PER_MIB);
+        let mut outcome = outcome();
+        outcome.samples = vec![low, high, elsewhere];
+        let report = rendered(&outcome);
+        let row = line_with(&report, "| 0 | ramp |");
+        assert!(row.contains("| 2.0 | - | 20 / 30 |"), "{row}");
+    }
+
+    #[test]
+    fn a_phase_without_samples_renders_dashes_rather_than_zeros() {
+        let report = rendered(&outcome());
+        let row = line_with(&report, "| 0 | ramp |");
+        assert!(row.ends_with("| - | - | - | - | - | - | - | - |"), "{row}");
+    }
+
+    #[test]
+    fn an_unreadable_table_read_is_shown_instead_of_row_counts() {
+        let mut outcome = outcome();
+        outcome.phases[0].tables_error = Some("locked".to_owned());
+        assert!(rendered(&outcome).contains("- 0 ramp: unreadable: locked"));
+    }
+
+    #[test]
+    fn the_table_section_lists_only_tables_with_rows() {
+        let mut outcome = outcome();
+        outcome.phases[0].tables =
+            BTreeMap::from([("empty".to_owned(), 0), ("busy".to_owned(), 3)]);
+        assert_eq!(
+            line_with(&rendered(&outcome), "- 0 ramp:"),
+            "- 0 ramp: busy 3"
+        );
+    }
+
+    #[test]
+    fn log_lines_are_listed_most_frequent_first() {
+        let mut outcome = outcome();
+        outcome.warnings_total = BTreeMap::from([("rare".to_owned(), 1), ("noisy".to_owned(), 9)]);
+        let report = rendered(&outcome);
+        let noisy = report.find("9 x `noisy`").unwrap();
+        let rare = report.find("1 x `rare`").unwrap();
+        assert!(noisy < rare);
+    }
+
+    #[test]
+    fn the_report_files_hold_the_markdown_and_one_json_line_per_sample() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut outcome = outcome();
+        outcome.samples = vec![sample(&[], None), sample(&[], None)];
+
+        let files =
+            write_stress_report(&profile(), &outcome, dir.path(), Path::new(FORGE_BINARY)).unwrap();
+
+        let lines = std::fs::read_to_string(files.samples).unwrap();
+        assert_eq!(lines.lines().count(), outcome.samples.len());
+        assert!(
+            std::fs::read_to_string(files.markdown)
+                .unwrap()
+                .starts_with("# Stress run: the name")
+        );
+    }
+
+    #[test]
+    fn an_unwritable_run_directory_is_a_typed_report_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let missing = dir.path().join("absent");
+        let result = write_stress_report(&profile(), &outcome(), &missing, Path::new(FORGE_BINARY));
+        assert!(matches!(result, Err(EmulatorError::ReportWrite { .. })));
+    }
+}

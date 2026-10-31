@@ -11,7 +11,7 @@ use forge_tts_core::{
 };
 use tokio::sync::Notify;
 
-use common::{HANG_GUARD_MS, make_deps, recording_sink, request, voice, wait_for};
+use common::{HANG_GUARD, make_deps, recording_sink, request, voice, wait_for};
 
 struct DropSignal(Arc<Notify>);
 
@@ -33,13 +33,7 @@ impl TtsEngine for StuckEngine {
         ID.get_or_init(|| EngineId("stuck".into()))
     }
     fn capabilities(&self) -> &EngineCapabilities {
-        static CAPS: EngineCapabilities = EngineCapabilities {
-            ssml: false,
-            neural_voices: false,
-            streaming: false,
-            custom_lexicons: false,
-        };
-        &CAPS
+        &common::PLAIN_CAPABILITIES
     }
     async fn list_voices(&self) -> Result<Vec<TtsVoice>, TtsError> {
         Ok(vec![voice("s-voice", "stuck")])
@@ -110,21 +104,15 @@ async fn with_synthesis_in_flight() -> Harness {
 }
 
 async fn wait_for_entered(entered: &Notify) {
-    tokio::time::timeout(
-        std::time::Duration::from_millis(HANG_GUARD_MS),
-        entered.notified(),
-    )
-    .await
-    .expect("the engine never started synthesizing");
+    tokio::time::timeout(HANG_GUARD, entered.notified())
+        .await
+        .expect("the engine never started synthesizing");
 }
 
 async fn assert_synthesis_future_dropped(dropped: &Notify) {
-    tokio::time::timeout(
-        std::time::Duration::from_millis(HANG_GUARD_MS),
-        dropped.notified(),
-    )
-    .await
-    .expect("the in-flight synthesis kept running after the item was abandoned");
+    tokio::time::timeout(HANG_GUARD, dropped.notified())
+        .await
+        .expect("the in-flight synthesis kept running after the item was abandoned");
 }
 
 #[tokio::test]

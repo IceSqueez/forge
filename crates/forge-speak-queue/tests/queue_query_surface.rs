@@ -5,44 +5,13 @@ use std::collections::BTreeSet;
 
 use forge_speak_queue::{QueueConfig, SpeakCommand, SpeakEvent, SpeakQueueHandle};
 
-use common::{make_deps, recording_sink, request, standard_registry, wait_for};
+use common::{recording_sink, request, settle_on_paused_clock, standard_deps, wait_for};
 use forge_speech_types::EngineId;
-use forge_speech_types::{AssignmentStrategy, SynthesisDefaults};
-
-const HANG_GUARD_MS: u64 = 30_000;
-
-async fn wait_until_depth(handle: &SpeakQueueHandle, expected: usize) {
-    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(HANG_GUARD_MS);
-    while handle.queue_depth() != expected {
-        if std::time::Instant::now() >= deadline {
-            panic!(
-                "queue_depth never reached {expected}; last saw {}",
-                handle.queue_depth()
-            );
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
-    }
-}
-
-async fn wait_until_catalog_populated(handle: &SpeakQueueHandle) {
-    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(HANG_GUARD_MS);
-    while handle.available_voices().is_empty() {
-        if std::time::Instant::now() >= deadline {
-            panic!("catalog never populated");
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
-    }
-}
+use forge_speech_types::SynthesisDefaults;
 
 fn spawn_standard() -> (SpeakQueueHandle, forge_speak_queue::SpeakEventStream) {
     let (sink, _plays) = recording_sink();
-    let deps = make_deps(
-        standard_registry(),
-        sink,
-        AssignmentStrategy::DeterministicByName,
-        vec![],
-    );
-    forge_speak_queue::spawn(QueueConfig::default(), deps)
+    forge_speak_queue::spawn(QueueConfig::default(), standard_deps(sink))
 }
 
 #[tokio::test]
@@ -59,16 +28,25 @@ async fn queue_depth_rises_with_pending_and_falls_to_zero_on_drain() {
             .await
             .unwrap();
     }
-    wait_until_depth(&handle, 3).await;
+    quiesce_after(&handle, &mut stream).await;
+    assert_eq!(handle.queue_depth(), 3, "every held item counts as pending");
 
     handle.send(SpeakCommand::Resume).await.unwrap();
-    wait_until_depth(&handle, 0).await;
+    for _ in 0..3 {
+        wait_for(&mut stream, |e| matches!(e, SpeakEvent::Finished { .. })).await;
+    }
+    quiesce_after(&handle, &mut stream).await;
+    assert_eq!(
+        handle.queue_depth(),
+        0,
+        "a drained queue reports zero depth"
+    );
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn available_voices_reflects_actor_built_catalog() {
     let (handle, _stream) = spawn_standard();
-    wait_until_catalog_populated(&handle).await;
+    settle_on_paused_clock().await;
 
     let ids: BTreeSet<String> = handle
         .available_voices()
@@ -82,10 +60,10 @@ async fn available_voices_reflects_actor_built_catalog() {
     assert_eq!(ids, expected);
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn engines_returns_each_engine_once_despite_multiple_voices() {
     let (handle, _stream) = spawn_standard();
-    wait_until_catalog_populated(&handle).await;
+    settle_on_paused_clock().await;
 
     let mut engines: Vec<String> = handle.engines().into_iter().map(|e| e.0).collect();
     engines.sort();

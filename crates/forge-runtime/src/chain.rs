@@ -432,6 +432,7 @@ impl ChainExecutor for ChainScope {
 
 #[cfg(test)]
 mod tests {
+    use forge_events::test_support::NullPublisher;
     use std::collections::BTreeMap;
     use std::sync::Mutex;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -444,12 +445,6 @@ mod tests {
     use time::OffsetDateTime;
 
     use super::*;
-
-    struct NoopPublisher;
-
-    impl EventPublisher for NoopPublisher {
-        fn publish(&self, _event: Event) {}
-    }
 
     struct ScriptedRunner {
         id: String,
@@ -532,7 +527,7 @@ mod tests {
     }
 
     fn engine(reg: Arc<SubActionRegistry>, max_nesting_depth: u32) -> Arc<ChainEngine> {
-        let publisher: Arc<dyn EventPublisher> = Arc::new(NoopPublisher);
+        let publisher: Arc<dyn EventPublisher> = Arc::new(NullPublisher);
         let config = Config {
             max_nesting_depth,
             ..Default::default()

@@ -467,6 +467,7 @@ pub(crate) fn spawn_connect(
 pub(crate) mod tests {
     use super::*;
     use crate::event_loss::TWITCH_EVENT_RELAY;
+    use crate::test_support::yield_until;
     use forge_events::{Event, EventChannel, EventSource};
     use forge_net::{RateLimitError, RateLimitOutcome, RateLimiter};
     use forge_platform_core::{ConnectionState, PlatformError};
@@ -534,17 +535,6 @@ pub(crate) mod tests {
         port
     }
 
-    async fn until_true(what: &str, mut done: impl FnMut() -> bool) {
-        let deadline = std::time::Instant::now() + Duration::from_secs(30);
-        while !done() {
-            assert!(
-                std::time::Instant::now() < deadline,
-                "never happened: {what}"
-            );
-            tokio::time::sleep(Duration::from_millis(2)).await;
-        }
-    }
-
     #[tokio::test]
     async fn an_obs_seed_reports_the_live_clients_connect_failure_until_cleared() {
         let seed = ObsInstallSeed::new(forge_obs::SwitchableObsSink::new());
@@ -562,10 +552,7 @@ pub(crate) mod tests {
         client.set_auto_reconnect(false);
         seed.install(Arc::clone(&client));
 
-        until_true("the refused connect was recorded", || {
-            seed.connect_failure().is_some()
-        })
-        .await;
+        yield_until(|| seed.connect_failure().is_some()).await;
         let code = seed
             .connect_failure()
             .map(|failure| failure.code().name().to_owned());
@@ -591,10 +578,7 @@ pub(crate) mod tests {
         client.set_auto_reconnect(false);
         seed.install(Arc::clone(&client));
 
-        until_true("the refused connect was recorded", || {
-            seed.connect_failure().is_some()
-        })
-        .await;
+        yield_until(|| seed.connect_failure().is_some()).await;
         let code = seed
             .connect_failure()
             .map(|failure| failure.code().name().to_owned());

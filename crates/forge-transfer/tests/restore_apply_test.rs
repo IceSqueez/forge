@@ -1,6 +1,7 @@
 #![allow(clippy::unwrap_used)]
-use std::collections::BTreeMap;
-use std::io::Write;
+mod common;
+use common::{Tree, files_under, write_file};
+
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -46,43 +47,14 @@ const UNTOUCHED: &[(&str, &[u8])] = &[
     ("forge.lock", b""),
 ];
 
-type Tree = BTreeMap<String, Vec<u8>>;
 type CrashState = fn(&Data);
 const UPDATE_APPLY_STATE_FILE: &str = "update-apply.json";
 const UPDATE_JOURNAL_FILE: &str = "update-journal.json";
-
-fn write_file(path: &Path, bytes: &[u8]) {
-    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-    std::fs::write(path, bytes).unwrap();
-}
 
 fn plant(root: &Path, files: &[(&str, &[u8])]) {
     for (path, bytes) in files {
         write_file(&root.join(path), bytes);
     }
-}
-
-fn files_under(root: &Path) -> Tree {
-    fn walk(root: &Path, dir: &Path, out: &mut Tree) {
-        for child in std::fs::read_dir(dir).unwrap() {
-            let path = child.unwrap().path();
-            if path.is_dir() {
-                walk(root, &path, out);
-            } else {
-                let relative = path
-                    .strip_prefix(root)
-                    .unwrap()
-                    .to_string_lossy()
-                    .replace('\\', "/");
-                out.insert(relative, std::fs::read(&path).unwrap());
-            }
-        }
-    }
-    let mut out = Tree::new();
-    if root.exists() {
-        walk(root, root, &mut out);
-    }
-    out
 }
 
 fn tree(groups: &[&[(&str, &[u8])]]) -> Tree {
@@ -671,10 +643,8 @@ fn legacy_bundle(dir: &Path) -> PathBuf {
             &b"restored database"[..],
         )
         .unwrap();
-    let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
-    gz.write_all(&builder.into_inner().unwrap()).unwrap();
     let bundle = dir.join("legacy.tar.gz");
-    std::fs::write(&bundle, gz.finish().unwrap()).unwrap();
+    std::fs::write(&bundle, common::gzip(&builder.into_inner().unwrap())).unwrap();
     bundle
 }
 

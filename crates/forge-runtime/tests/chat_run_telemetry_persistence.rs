@@ -1,4 +1,5 @@
 #![allow(clippy::unwrap_used)]
+mod common;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
@@ -14,9 +15,7 @@ use forge_storage::action::MockActionRepo;
 use forge_storage::history::MockHistoryRepo;
 use forge_storage::trigger_instance::MockTriggerInstanceRepo;
 use forge_storage::{CatalogRevision, EventLogRepo, StorageError};
-use forge_types::{
-    Action, ActionId, ArgStack, EventId, ExecutionMetadata, ExecutionMode, QueueId, TriggerConfig,
-};
+use forge_types::{Action, ActionId, ArgStack, EventId, ExecutionMetadata, QueueId, TriggerConfig};
 
 const CHAT_KIND: &str = "twitch.channel.chat.message";
 const RUN_DEADLINE: std::time::Duration = std::time::Duration::from_secs(30);
@@ -86,18 +85,7 @@ impl EventLogRepo for StoredEvents {
 }
 
 fn empty_action() -> Action {
-    Action {
-        id: ActionId::new(),
-        name: "greet".to_owned(),
-        group: None,
-        queue_id: QueueId::new(),
-        enabled: true,
-        concurrent: false,
-        bypass_pause: false,
-        execution_mode: ExecutionMode::Sequential,
-        description: None,
-        sub_actions: Vec::new(),
-    }
+    common::sequential_action(ActionId::new(), "greet", QueueId::new(), Vec::new())
 }
 
 struct Persisted {

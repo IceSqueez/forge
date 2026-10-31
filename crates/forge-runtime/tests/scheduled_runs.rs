@@ -1,4 +1,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
+mod common;
+use common::{FixedClock, base};
+
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -30,10 +33,9 @@ use forge_storage::{
     ScheduledRunId, ScheduledRunOutcome, ScheduledRunPlacement, ScheduledRunRepo, ScheduledRunSpec,
     ScheduledRunState, StorageError,
 };
-use forge_storage_sqlite::SqliteBackend;
 use forge_types::{
-    Action, ActionId, ArgStack, EventId, ExecutionContext, ExecutionMetadata, ExecutionMode, Queue,
-    QueueId, Variant,
+    Action, ActionId, ArgStack, EventId, ExecutionContext, ExecutionMetadata, Queue, QueueId,
+    Variant,
 };
 use tempfile::TempDir;
 use time::OffsetDateTime;
@@ -42,21 +44,8 @@ use tokio::sync::{Notify, mpsc, oneshot};
 use tokio::time::{Instant, timeout};
 
 const DEADLINE: Duration = Duration::from_secs(30);
-const BASE_UNIX_SECS: i64 = 1_791_115_200;
 const FIVE_MINUTES: Duration = Duration::from_secs(5 * 60);
 const ONE_SECOND: Duration = Duration::from_secs(1);
-
-fn base() -> OffsetDateTime {
-    OffsetDateTime::from_unix_timestamp(BASE_UNIX_SECS).unwrap()
-}
-
-struct FixedClock;
-
-impl WallClock for FixedClock {
-    fn now(&self) -> OffsetDateTime {
-        base()
-    }
-}
 
 fn spec(target: ActionId, due_at: OffsetDateTime) -> ScheduledRunSpec {
     ScheduledRunSpec {
@@ -121,11 +110,7 @@ struct Harness {
 
 impl Harness {
     async fn new() -> Self {
-        let media = tempfile::tempdir().unwrap();
-        let backend =
-            SqliteBackend::open_for_test(":memory:", [0xcd; 32], media.path().join("media"), None)
-                .await
-                .unwrap();
+        let (backend, media) = common::sqlite_backend().await;
         let dp: Arc<dyn DataProvider> = Arc::new(backend);
         let queue = Queue {
             id: QueueId::new(),
@@ -207,18 +192,8 @@ impl Harness {
     }
 
     async fn action(&self, shape: impl FnOnce(&mut Action)) -> Action {
-        let mut action = Action {
-            id: ActionId::new(),
-            name: "follow-up".to_owned(),
-            group: None,
-            queue_id: self.queue_id,
-            enabled: true,
-            concurrent: false,
-            bypass_pause: false,
-            execution_mode: ExecutionMode::Sequential,
-            description: None,
-            sub_actions: Vec::new(),
-        };
+        let mut action =
+            common::sequential_action(ActionId::new(), "follow-up", self.queue_id, Vec::new());
         shape(&mut action);
         self.dp.action_repo().save(&action).await.unwrap();
         action
@@ -1632,18 +1607,7 @@ async fn a_run_waiting_on_a_paused_queue_is_rechecked_no_faster_than_the_wall_cl
         description: String::new(),
         concurrency: std::num::NonZeroU32::MIN,
     };
-    let action = Action {
-        id: ActionId::new(),
-        name: "follow-up".to_owned(),
-        group: None,
-        queue_id: queue.id,
-        enabled: true,
-        concurrent: false,
-        bypass_pause: false,
-        execution_mode: ExecutionMode::Sequential,
-        description: None,
-        sub_actions: Vec::new(),
-    };
+    let action = common::sequential_action(ActionId::new(), "follow-up", queue.id, Vec::new());
     let mut actions = MockActionRepo::new();
     let listed = action.clone();
     actions

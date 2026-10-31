@@ -35,6 +35,8 @@ tracing = { workspace = true }
 ulid = { workspace = true }
 
 [dev-dependencies]
+async-trait = { workspace = true }
+forge-events = { path = "../forge-events" }
 forge-storage = { path = "../forge-storage", features = ["settings-test-support"] }
 forge-storage-sqlite = { path = "../forge-storage-sqlite", features = ["settings-test-support"] }
 sqlx = { workspace = true }

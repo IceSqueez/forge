@@ -1,4 +1,5 @@
 #![allow(clippy::expect_used, clippy::panic)]
+mod common;
 use std::collections::BTreeMap;
 
 use forge_storage::{SettingDisclosure, SettingPortability};
@@ -22,7 +23,7 @@ type Classes = (String, String);
 
 async fn migrated_from_58(rows: &[(String, String)]) -> (SqlitePool, TempDir) {
     let dir = tempfile::tempdir().expect("a temporary directory");
-    let url = format!("sqlite://{}", dir.path().join("forge.db").display());
+    let url = common::database_url(&dir);
     let pool = connect(&url).await.expect("a database");
     MIGRATIONS
         .run_to(VERSION_BEFORE_CLASSES, &pool)

@@ -1,4 +1,6 @@
 #![allow(clippy::unwrap_used)]
+mod common;
+
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -6,11 +8,9 @@ use forge_events::{Event, EventSource};
 use forge_runtime::{EventBus, FirstChatLedger, NullEventLogRepo, spawn_viewer_tracker};
 use forge_storage::viewer::MockViewerRepo;
 use forge_storage::{DataProvider, ViewerRepo};
-use forge_storage_sqlite::SqliteBackend;
 use forge_types::ChatViewer;
 use tokio::time::timeout;
 
-const TEST_KEY: [u8; 32] = [0xab; 32];
 const RECV_TIMEOUT: Duration = Duration::from_secs(30);
 const CONCURRENT_PUBLISHERS: usize = 32;
 
@@ -93,11 +93,7 @@ async fn back_to_back_lines_of_one_viewer_from_many_threads_yield_exactly_one_fi
 
 #[tokio::test]
 async fn a_viewer_greeted_before_a_restart_is_not_first_again_after_it() {
-    let media = tempfile::tempdir().unwrap();
-    let backend =
-        SqliteBackend::open_for_test(":memory:", TEST_KEY, media.path().join("media"), None)
-            .await
-            .unwrap();
+    let (backend, _media) = common::sqlite_backend().await;
     let viewers: Arc<dyn ViewerRepo> = backend.viewer_repo();
 
     let before = bus_with(Some(FirstChatLedger::load(viewers.as_ref()).await.unwrap()));

@@ -7,12 +7,21 @@ use async_trait::async_trait;
 use forge_events::EventPublisher;
 use tokio::sync::mpsc;
 
-use crate::backend::{HotkeyBackend, HotkeyFiredEvent, HotkeyId};
+use crate::backend::{HotkeyBackend, HotkeyEdge, HotkeyFiredEvent, HotkeyId};
 use crate::client::HotkeyClient;
 use crate::combo::HotkeyCombo;
 use crate::config::HotkeyConfig;
 use crate::error::HotkeyError;
 use crate::main_thread::MainThreadLink;
+
+const FIRED_CHANNEL_CAPACITY: usize = 64;
+const UNREGISTERED_ID: HotkeyId = HotkeyId(0);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FiredEdge {
+    Press,
+    Release,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RecordedCall {
@@ -23,15 +32,17 @@ pub enum RecordedCall {
 pub struct RecordingBackend {
     calls: Mutex<Vec<RecordedCall>>,
     fail_combos: Mutex<HashSet<HotkeyCombo>>,
+    fired_tx: mpsc::Sender<HotkeyFiredEvent>,
     fired_rx_slot: Mutex<Option<mpsc::Receiver<HotkeyFiredEvent>>>,
 }
 
 impl RecordingBackend {
     fn new() -> Arc<Self> {
-        let (_tx, rx) = mpsc::channel::<HotkeyFiredEvent>(1);
+        let (fired_tx, rx) = mpsc::channel::<HotkeyFiredEvent>(FIRED_CHANNEL_CAPACITY);
         Arc::new(Self {
             calls: Mutex::new(Vec::new()),
             fail_combos: Mutex::new(HashSet::new()),
+            fired_tx,
             fired_rx_slot: Mutex::new(Some(rx)),
         })
     }
@@ -45,6 +56,33 @@ impl RecordingBackend {
 
     pub fn calls(&self) -> Vec<RecordedCall> {
         self.calls.lock().unwrap_or_else(|p| p.into_inner()).clone()
+    }
+
+    pub async fn fire(&self, combo: &HotkeyCombo, edge: FiredEdge) {
+        let delivered = self
+            .fired_tx
+            .send(HotkeyFiredEvent {
+                id: self.latest_id_of(combo),
+                combo: combo.clone(),
+                timestamp_us: 0,
+                edge: match edge {
+                    FiredEdge::Press => HotkeyEdge::Press,
+                    FiredEdge::Release => HotkeyEdge::Release,
+                },
+            })
+            .await;
+        assert!(delivered.is_ok(), "the supervisor stopped reading edges");
+    }
+
+    fn latest_id_of(&self, combo: &HotkeyCombo) -> HotkeyId {
+        self.calls()
+            .iter()
+            .rev()
+            .find_map(|call| match call {
+                RecordedCall::Register(id, registered) if registered == combo => Some(*id),
+                _ => None,
+            })
+            .unwrap_or(UNREGISTERED_ID)
     }
 }
 

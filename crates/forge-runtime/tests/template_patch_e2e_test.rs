@@ -21,14 +21,8 @@ use serde_json::json;
 use tempfile::TempDir;
 use time::OffsetDateTime;
 
-const TEST_KEY: [u8; 32] = [0xab; 32];
-
 async fn make_backend() -> (Arc<SqliteBackend>, TempDir) {
-    let media = tempfile::tempdir().unwrap();
-    let backend =
-        SqliteBackend::open_for_test(":memory:", TEST_KEY, media.path().join("media"), None)
-            .await
-            .unwrap();
+    let (backend, media) = common::sqlite_backend().await;
     (Arc::new(backend), media)
 }
 
@@ -296,8 +290,6 @@ async fn sub_action_runner_sees_merged_default_and_override() {
         .unwrap();
     register_core_triggers(wiring.triggers_mut()).unwrap();
     let _runtime = wiring.freeze().await;
-
-    tokio::time::sleep(Duration::from_millis(10)).await;
 
     bus.publish(Event::new(EventSource::Server, "custom.go", json!({})));
 

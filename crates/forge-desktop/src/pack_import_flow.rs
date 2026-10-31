@@ -477,11 +477,11 @@ mod tests {
         seed_overlay, seed_queued_action, stage_into,
     };
     use crate::test_support::{
-        alive_tasks, install_presentation, runtime, wait_until_worker_drains_to, worker_runtime,
+        alive_tasks, install_presentation, pump_until, runtime, settle_until,
+        wait_until_worker_drains_to, worker_runtime,
     };
     use forge_components::tr;
 
-    const SETTLE_DEADLINE: Duration = Duration::from_secs(30);
     const PAST_ANY_TOAST_TIMER: Duration = Duration::from_secs(120);
 
     struct Rig {
@@ -532,23 +532,6 @@ mod tests {
                 .take()
                 .expect("the preview holds the staged pack")
         })
-    }
-
-    fn settle_until(
-        cx: &mut TestAppContext,
-        rig: &Rig,
-        done: impl Fn(&mut TestAppContext) -> bool,
-    ) {
-        let deadline = std::time::Instant::now() + SETTLE_DEADLINE;
-        while std::time::Instant::now() < deadline {
-            rig.rt
-                .block_on(async { tokio::time::sleep(Duration::from_millis(1)).await });
-            cx.run_until_parked();
-            if done(cx) {
-                return;
-            }
-        }
-        panic!("the pack import never settled");
     }
 
     fn step(cx: &mut TestAppContext, rig: &Rig) -> &'static str {
@@ -619,7 +602,7 @@ mod tests {
         let staging = previewing(cx, &rig);
 
         rig.flow.update(cx, |flow, cx| flow.cancel(cx));
-        settle_until(cx, &rig, |_| !staging.exists());
+        settle_until(cx, &rig.rt, |_| !staging.exists());
 
         assert_eq!(step(cx, &rig), "idle");
     }
@@ -631,13 +614,8 @@ mod tests {
         let Rig { rt, world, flow } = rig;
 
         cx.update(move |_| drop(flow));
-        let deadline = std::time::Instant::now() + SETTLE_DEADLINE;
-        while staging.exists() && std::time::Instant::now() < deadline {
-            rt.block_on(async { tokio::time::sleep(Duration::from_millis(1)).await });
-        }
+        pump_until(&rt, || !staging.exists());
         drop(world);
-
-        assert!(!staging.exists(), "{staging:?} survived the flow");
     }
 
     #[gpui::test]
@@ -652,7 +630,9 @@ mod tests {
         });
 
         rig.flow.update(cx, |flow, cx| flow.apply(cx));
-        settle_until(cx, &rig, |cx| step(cx, &rig) == "idle" && !staging.exists());
+        settle_until(cx, &rig.rt, |cx| {
+            step(cx, &rig) == "idle" && !staging.exists()
+        });
 
         let kinds: Vec<ToastKind> = toasts(cx).into_iter().map(|toast| toast.0).collect();
         assert_eq!((kinds, imported.get()), (vec![ToastKind::Success], true));
@@ -912,7 +892,7 @@ mod tests {
         let bundle = export_pack_carrying(&rig.rt, &rig.world, &[action], &[overlay.id]);
 
         rig.flow.update(cx, |flow, cx| flow.open(bundle, cx));
-        settle_until(cx, &rig, |cx| step(cx, &rig) == "idle");
+        settle_until(cx, &rig.rt, |cx| step(cx, &rig) == "idle");
 
         let refusal = TransferError::InvalidOverlayConfig {
             overlay: PACKED_OVERLAY_NAME.to_owned(),

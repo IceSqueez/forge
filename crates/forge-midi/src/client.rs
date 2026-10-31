@@ -129,11 +129,7 @@ impl MidiClient {
     #[cfg(test)]
     pub(crate) fn new_for_test() -> Arc<Self> {
         use crate::backend::tests::MockMidiBackend;
-
-        struct NoopPublisher;
-        impl EventPublisher for NoopPublisher {
-            fn publish(&self, _: forge_events::Event) {}
-        }
+        use forge_events::test_support::NullPublisher;
 
         let backend = Arc::new(MockMidiBackend::new(vec![], vec![]));
         let (health_tx, health_state) = make_health_state();
@@ -142,7 +138,7 @@ impl MidiClient {
             id: IntegrationId::new("midi"),
             config: MidiConfig::default(),
             backend,
-            publisher: Arc::new(NoopPublisher),
+            publisher: Arc::new(NullPublisher),
             health_state,
             health_tx,
             content_state: make_content_state(),
@@ -158,11 +154,7 @@ mod tests {
     use super::*;
     use crate::backend::tests::MockMidiBackend;
     use crate::events::{MidiPortInfo, PortDirection};
-
-    struct NoopPublisher;
-    impl EventPublisher for NoopPublisher {
-        fn publish(&self, _: forge_events::Event) {}
-    }
+    use forge_events::test_support::NullPublisher;
 
     fn client_holding_control_rx() -> (Arc<MidiClient>, mpsc::Receiver<SupervisorCommand>) {
         let (health_tx, health_state) = make_health_state();
@@ -171,7 +163,7 @@ mod tests {
             id: IntegrationId::new("midi"),
             config: MidiConfig::default(),
             backend: Arc::new(MockMidiBackend::new(vec![], vec![])),
-            publisher: Arc::new(NoopPublisher),
+            publisher: Arc::new(NullPublisher),
             health_state,
             health_tx,
             content_state: make_content_state(),

@@ -24,9 +24,9 @@ pub const JAR: &str = "jarAAA111";
 pub const OTHER_JAR: &str = "jarBBB222";
 pub const UAH: i64 = 980;
 pub const WAIT: Duration = Duration::from_secs(30);
-pub const QUIET: Duration = Duration::from_millis(50);
 pub const TICK: Duration = Duration::from_millis(10);
-pub const SEVERAL_TICKS: Duration = Duration::from_millis(100);
+pub const LATER_ARRIVAL_ID: &str = "LATER-ARRIVAL";
+const REFERENCE_POLLS: usize = 8;
 pub const CLIENT_INFO: &str = "/personal/client-info";
 pub const STATEMENT_PREFIX: &str = "/personal/statement/";
 
@@ -96,6 +96,7 @@ impl CredentialsRepo for MemCreds {
 
 pub struct ScriptedLimiter {
     outcome: RateLimitOutcome,
+    acquires: Mutex<usize>,
     throttles: Mutex<Vec<Duration>>,
 }
 
@@ -103,6 +104,7 @@ impl ScriptedLimiter {
     pub fn answering(outcome: RateLimitOutcome) -> Arc<Self> {
         Arc::new(Self {
             outcome,
+            acquires: Mutex::new(0),
             throttles: Mutex::new(Vec::new()),
         })
     }
@@ -114,11 +116,23 @@ impl ScriptedLimiter {
     pub fn throttles(&self) -> Vec<Duration> {
         self.throttles.lock().unwrap().clone()
     }
+
+    pub async fn wait_for_acquires(&self, count: usize) {
+        let deadline = tokio::time::Instant::now() + WAIT;
+        while *self.acquires.lock().unwrap() < count {
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "timed out waiting for {count} budget checks"
+            );
+            tokio::time::sleep(TICK).await;
+        }
+    }
 }
 
 #[async_trait]
 impl RateLimiter for ScriptedLimiter {
     async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, RateLimitError> {
+        *self.acquires.lock().unwrap() += 1;
         Ok(self.outcome)
     }
 
@@ -403,16 +417,16 @@ impl Harness {
         donations
     }
 
-    pub async fn stays_quiet(&mut self) -> bool {
-        tokio::time::timeout(QUIET, self.stream.next())
-            .await
-            .is_err()
+    pub async fn assert_only_a_later_arrival_is_reported_next(&mut self) {
+        self.bank.add(JAR, top_up(LATER_ARRIVAL_ID, now_unix()));
+        self.poll_now().await;
+        let next = self.next().await.expect("the later arrival");
+        assert_eq!(next.donation_id, LATER_ARRIVAL_ID);
     }
 
-    pub async fn stays_quiet_for_several_ticks(&mut self) -> bool {
-        tokio::time::timeout(SEVERAL_TICKS, self.stream.next())
-            .await
-            .is_err()
+    pub async fn outlast_several_ticks() {
+        let reference = Self::ticking(Bank::new(&[JAR])).await;
+        reference.wait_for_statement_calls(REFERENCE_POLLS).await;
     }
 
     pub async fn wait_for(&self, what: &str, probe: impl Fn(&PollStatus) -> bool) {

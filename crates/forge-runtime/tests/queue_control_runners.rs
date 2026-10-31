@@ -1,15 +1,14 @@
 #![allow(clippy::unwrap_used)]
 mod common;
 use common::{code_of, detail_of, failure_message};
+use forge_events::test_support::NullPublisher;
 use std::sync::Arc;
 use std::time::Duration;
 
 use forge_events::EventSubscription;
-use forge_events::{Event, EventPublisher};
 use forge_registry::{RunContext, SubActionRunner};
 use forge_runtime::{EventBus, FrozenRuntime, NullEventLogRepo, QueueMode};
 use forge_storage::DataProvider;
-use forge_storage_sqlite::SqliteBackend;
 use forge_types::{ArgStack, EventId, Queue, QueueId, SubActionConfig, SubActionOutcome, Variant};
 use tempfile::TempDir;
 
@@ -17,17 +16,8 @@ const PAUSE: &str = "core.queue.pause";
 const RESUME: &str = "core.queue.resume";
 const CLEAR: &str = "core.queue.clear";
 
-struct NullPublisher;
-impl EventPublisher for NullPublisher {
-    fn publish(&self, _event: Event) {}
-}
-
 async fn make_dp() -> (Arc<dyn DataProvider>, TempDir) {
-    let media = tempfile::tempdir().unwrap();
-    let backend =
-        SqliteBackend::open_for_test(":memory:", [0xcd; 32], media.path().join("media"), None)
-            .await
-            .unwrap();
+    let (backend, media) = common::sqlite_backend().await;
     (Arc::new(backend), media)
 }
 

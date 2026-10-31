@@ -1,4 +1,6 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
+mod common;
+
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -10,19 +12,13 @@ use forge_runtime::{
     spawn_action_engine,
 };
 use forge_storage::DataProvider;
-use forge_storage_sqlite::SqliteBackend;
 use forge_types::{Action, ActionId, ArgStack, SubActionStep};
 use tempfile::TempDir;
 
-const TEST_KEY: [u8; 32] = [0xab; 32];
 const PIPELINE_TIMEOUT_MS: u64 = 30_000;
 
 async fn make_dp() -> (Arc<dyn DataProvider>, TempDir) {
-    let media = tempfile::tempdir().unwrap();
-    let backend =
-        SqliteBackend::open_for_test(":memory:", TEST_KEY, media.path().join("media"), None)
-            .await
-            .unwrap();
+    let (backend, media) = common::sqlite_backend().await;
     (Arc::new(backend), media)
 }
 
@@ -150,8 +146,6 @@ async fn spawn_pipeline() -> PipelineFixture {
             }
         }
     });
-
-    tokio::time::sleep(Duration::from_millis(10)).await;
 
     PipelineFixture { bus, _media: media }
 }

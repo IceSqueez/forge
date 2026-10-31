@@ -1,12 +1,11 @@
 #![allow(clippy::expect_used)]
 use forge_storage::{ActionRepo, DataProvider};
 use forge_storage_sqlite::{SqliteActionRepo, apply_migrations, connect, registry_migration};
-use forge_types::{Action, ActionId, ExecutionMode, QueueId, SubActionStep, Variant};
+use forge_types::{Action, ActionId, QueueId, SubActionStep, Variant};
 use sqlx::SqlitePool;
 
 mod common;
-
-const TEST_KEY: [u8; 32] = [0xab; 32];
+use common::TEST_KEY;
 
 #[tokio::test]
 async fn old_sub_action_spec_json_is_converted_to_sub_action_step() {
@@ -153,15 +152,6 @@ async fn migrated_pool() -> (SqlitePool, SqliteActionRepo) {
 
 fn action_with_step(kind_id: &str) -> Action {
     Action {
-        id: ActionId::new(),
-        name: "fresh".to_owned(),
-        group: None,
-        queue_id: DEFAULT_QUEUE.parse::<QueueId>().expect("queue id"),
-        enabled: true,
-        concurrent: false,
-        bypass_pause: false,
-        execution_mode: ExecutionMode::Sequential,
-        description: None,
         sub_actions: vec![SubActionStep {
             kind_id: kind_id.to_owned(),
             config: Default::default(),
@@ -170,6 +160,7 @@ fn action_with_step(kind_id: &str) -> Action {
             condition: None,
             label: None,
         }],
+        ..common::action_named("fresh", DEFAULT_QUEUE.parse::<QueueId>().expect("queue id"))
     }
 }
 

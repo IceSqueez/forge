@@ -168,16 +168,12 @@ impl SubActionRunner for CoreLogicWaitUntilRunner {
 mod tests {
     use super::*;
     use crate::Config;
-    use forge_events::{Event, EventPublisher};
+    use forge_events::test_support::NullPublisher;
+
     use forge_registry::CancelSignal;
     use forge_types::EventId;
 
     const TIMER_GRANULARITY: Duration = Duration::from_millis(2);
-
-    struct NullPublisher;
-    impl EventPublisher for NullPublisher {
-        fn publish(&self, _event: Event) {}
-    }
 
     #[tokio::test(start_paused = true)]
     async fn a_run_cancelled_mid_poll_sleep_ends_at_the_moment_of_the_cancel() {

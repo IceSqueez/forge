@@ -1,4 +1,5 @@
 #![allow(clippy::expect_used)]
+mod common;
 use std::collections::BTreeMap;
 
 use forge_storage_sqlite::{MIGRATIONS, apply_migrations, connect};
@@ -97,7 +98,7 @@ fn legacy_json<T: serde::Serialize>(value: &T) -> String {
 
 async fn schema_before_user_text() -> (SqlitePool, TempDir) {
     let dir = tempfile::tempdir().expect("a temporary directory");
-    let url = format!("sqlite://{}", dir.path().join("forge.db").display());
+    let url = common::database_url(&dir);
     let pool = connect(&url).await.expect("a database");
     MIGRATIONS
         .run_to(VERSION_BEFORE_USER_TEXT, &pool)

@@ -1,44 +1,11 @@
 #![allow(clippy::expect_used)]
 use forge_storage::{DataProvider, ExecutionStatus};
-use forge_storage_sqlite::SqliteBackend;
-use forge_types::{Action, ActionId, ExecutionMode, QueueId};
 use std::future::Future;
 
 use time::OffsetDateTime;
 
 mod common;
-use common::Sandboxed;
-
-const TEST_KEY: [u8; 32] = [0xab; 32];
-
-async fn setup() -> Sandboxed<SqliteBackend> {
-    common::sandboxed_backend("sqlite::memory:", TEST_KEY).await
-}
-
-async fn default_queue_id(backend: &SqliteBackend) -> QueueId {
-    backend
-        .queue_repo()
-        .get_by_name("Default")
-        .await
-        .expect("get default queue")
-        .expect("default queue seeded by migration")
-        .id
-}
-
-fn make_test_action(name: &str, queue_id: QueueId) -> Action {
-    Action {
-        id: ActionId::new(),
-        name: name.to_owned(),
-        group: None,
-        queue_id,
-        enabled: true,
-        concurrent: false,
-        bypass_pause: false,
-        execution_mode: ExecutionMode::Sequential,
-        description: None,
-        sub_actions: vec![],
-    }
-}
+use common::{action_named, default_queue_id, setup};
 
 fn at(secs: i64) -> OffsetDateTime {
     OffsetDateTime::from_unix_timestamp(secs).expect("valid unix timestamp")
@@ -58,7 +25,7 @@ async fn within_one_utc_day<T, Fut: Future<Output = T>>(body: impl Fn() -> Fut) 
 async fn telemetry_returns_defaults_for_action_with_no_executions() {
     let backend = setup().await;
     let queue_id = default_queue_id(&backend).await;
-    let action = make_test_action("empty_action", queue_id);
+    let action = action_named("empty_action", queue_id);
     let action_id = action.id;
     backend.action_repo().save(&action).await.expect("save");
 
@@ -79,7 +46,7 @@ async fn record_execution_success_reflects_in_telemetry() {
     let (telemetry, midnight) = within_one_utc_day(|| async {
         let backend = setup().await;
         let queue_id = default_queue_id(&backend).await;
-        let action = make_test_action("success_action", queue_id);
+        let action = action_named("success_action", queue_id);
         let action_id = action.id;
         backend.action_repo().save(&action).await.expect("save");
 
@@ -127,7 +94,7 @@ async fn record_execution_error_is_counted_in_errors_7d() {
     let telemetry = within_one_utc_day(|| async {
         let backend = setup().await;
         let queue_id = default_queue_id(&backend).await;
-        let action = make_test_action("error_action", queue_id);
+        let action = action_named("error_action", queue_id);
         let action_id = action.id;
         backend.action_repo().save(&action).await.expect("save");
 
@@ -158,7 +125,7 @@ async fn telemetry_aggregates_multiple_recorded_executions() {
     let (telemetry, midnight) = within_one_utc_day(|| async {
         let backend = setup().await;
         let queue_id = default_queue_id(&backend).await;
-        let action = make_test_action("stats_action", queue_id);
+        let action = action_named("stats_action", queue_id);
         let action_id = action.id;
         backend.action_repo().save(&action).await.expect("save");
 
@@ -210,7 +177,7 @@ async fn telemetry_aggregates_multiple_recorded_executions() {
 async fn prune_executions_before_removes_older_rows_and_telemetry_excludes_them() {
     let backend = setup().await;
     let queue_id = default_queue_id(&backend).await;
-    let action = make_test_action("prune_action", queue_id);
+    let action = action_named("prune_action", queue_id);
     let action_id = action.id;
     backend.action_repo().save(&action).await.expect("save");
 
@@ -263,7 +230,7 @@ async fn prune_executions_before_removes_older_rows_and_telemetry_excludes_them(
 async fn prune_executions_before_uses_second_precision_at_cutoff_boundary() {
     let backend = setup().await;
     let queue_id = default_queue_id(&backend).await;
-    let action = make_test_action("boundary_action", queue_id);
+    let action = action_named("boundary_action", queue_id);
     let action_id = action.id;
     backend.action_repo().save(&action).await.expect("save");
 
@@ -315,8 +282,8 @@ async fn prune_executions_before_uses_second_precision_at_cutoff_boundary() {
 async fn telemetry_is_scoped_per_action() {
     let backend = setup().await;
     let queue_id = default_queue_id(&backend).await;
-    let action_a = make_test_action("action_a", queue_id);
-    let action_b = make_test_action("action_b", queue_id);
+    let action_a = action_named("action_a", queue_id);
+    let action_b = action_named("action_b", queue_id);
     backend.action_repo().save(&action_a).await.expect("save a");
     backend.action_repo().save(&action_b).await.expect("save b");
 

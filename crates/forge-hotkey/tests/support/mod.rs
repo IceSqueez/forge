@@ -1,9 +1,9 @@
 #![allow(dead_code, clippy::unwrap_used, clippy::expect_used)]
 
+use forge_events::test_support::NullPublisher;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use forge_events::{Event, EventPublisher};
 use forge_hotkey::testing::{RecordingBackend, test_client};
 use forge_hotkey::{COMBO_FIELD, HotkeyClient, HotkeyConfig};
 use forge_storage::{DataProvider, StoredClip};
@@ -152,14 +152,8 @@ pub fn stored_combos(instances: &[TriggerInstance]) -> Vec<(String, Option<Strin
     combos
 }
 
-struct SilentPublisher;
-
-impl EventPublisher for SilentPublisher {
-    fn publish(&self, _: Event) {}
-}
-
 pub fn recording_client() -> (Arc<HotkeyClient>, Arc<RecordingBackend>) {
-    test_client(HotkeyConfig::default(), Arc::new(SilentPublisher))
+    test_client(HotkeyConfig::default(), Arc::new(NullPublisher))
 }
 
 pub fn registered(client: &HotkeyClient) -> Vec<String> {

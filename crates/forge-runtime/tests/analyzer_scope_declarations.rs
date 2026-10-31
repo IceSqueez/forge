@@ -1,7 +1,9 @@
 #![allow(clippy::expect_used)]
+mod common;
+use forge_events::test_support::NullPublisher;
 use std::sync::Arc;
 
-use forge_events::{Event, EventPublisher};
+use forge_events::Event;
 use forge_registry::{
     EventFilter, Finding, FormField, KindPlatformContract, StepHealth, SubActionRegistry,
     SubActionRunner, TriggerCategory, TriggerKindDescriptor, TriggerRegistry, TriggerVariables,
@@ -14,18 +16,12 @@ use forge_runtime::sub_action_runners::{
 };
 use forge_runtime::{ConditionGate, Config};
 use forge_types::{
-    Action, ActionId, DeclaredVariable, ExecutionMode, PermissionRung, PlatformId, PlatformScope,
-    QueueId, SubActionConfig, SubActionStep, TriggerConfig, TriggerInstance, TriggerInstanceId,
-    Variant, VariantKind,
+    ActionId, DeclaredVariable, PermissionRung, PlatformId, PlatformScope, QueueId,
+    SubActionConfig, SubActionStep, TriggerConfig, TriggerInstance, TriggerInstanceId, Variant,
+    VariantKind,
 };
 
 const SEED_TRIGGER: &str = "stub.seed";
-
-struct NullPublisher;
-
-impl EventPublisher for NullPublisher {
-    fn publish(&self, _event: Event) {}
-}
 
 struct SeedTrigger;
 
@@ -146,18 +142,7 @@ fn consuming(names: &[&str]) -> SubActionStep {
 }
 
 fn health_of(steps: Vec<SubActionStep>) -> Vec<StepHealth> {
-    let action = Action {
-        id: ActionId::new(),
-        name: "scope".to_owned(),
-        group: None,
-        queue_id: QueueId::new(),
-        enabled: true,
-        concurrent: false,
-        bypass_pause: false,
-        execution_mode: ExecutionMode::Sequential,
-        description: None,
-        sub_actions: steps,
-    };
+    let action = common::sequential_action(ActionId::new(), "scope", QueueId::new(), steps);
     let seed = TriggerInstance {
         id: TriggerInstanceId::new(),
         kind_id: SEED_TRIGGER.to_owned(),

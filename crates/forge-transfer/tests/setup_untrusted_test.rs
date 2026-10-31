@@ -1,11 +1,13 @@
 #![allow(clippy::unwrap_used)]
+mod common;
+use common::{empty_documents, entry, file_named_anywhere, sha256_hex};
+
 use std::collections::{BTreeMap, HashMap};
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use forge_overlay::{OverlayKindRegistry, register_builtin_kinds};
-use forge_paths::{MEDIA_DIR_NAME, OVERLAYS_DIR_NAME};
+use forge_paths::OVERLAYS_DIR_NAME;
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_speech_types::{AssignmentStrategy, IgnoreProfile};
 use forge_storage::settings::core_settings;
@@ -19,22 +21,19 @@ use forge_storage_sqlite::{SqliteBackend, SqliteDatabaseFileSchema};
 use forge_transfer::{
     ActionDocument, BUNDLE_FORMAT_VERSION, BundleKind, ClipDocument, ClipSourceDocument,
     ClosureRegistries, ContentEntry, MANIFEST_ENTRY_NAME, MediaDocument, OverlayDocument,
-    OverlayFileDocument, PACK_DOCUMENTS_VERSION, PackDocuments, QueueDocument,
-    SETUP_DOCUMENTS_VERSION, SetupDocuments, SetupExportRequest, SetupImportOutcome,
-    SetupImportRequest, SetupManifest, SkippedSetting, StageRequest, TransferError,
-    TriggerDocument, TtsDocument, VoicesDocument, apply_setup_import, backups_dir,
-    setup_staging_root, stage_full_restore, stage_pack, stage_setup, write_setup,
+    PACK_DOCUMENTS_VERSION, PackDocuments, QueueDocument, SETUP_DOCUMENTS_VERSION, SetupDocuments,
+    SetupExportRequest, SetupImportOutcome, SetupImportRequest, SetupManifest, SkippedSetting,
+    StageRequest, TransferError, TriggerDocument, TtsDocument, VoicesDocument, apply_setup_import,
+    backups_dir, setup_staging_root, stage_full_restore, stage_pack, stage_setup, write_setup,
 };
 use forge_types::{
     Action, ActionId, ClipId, DEFAULT_QUEUE_ID, ExecutionMode, PermissionRung, Queue, QueueId,
     TriggerConfig, TriggerInstance, TriggerInstanceId, Variant,
 };
-use sha2::{Digest, Sha256};
 use sqlx::Connection;
 use tempfile::TempDir;
 use time::OffsetDateTime;
 
-const SQLITE_KEY: [u8; 32] = [0x42; 32];
 const DOCUMENTS_ENTRY: &str = "setup/documents.json";
 const MEDIA_FILE: &str = "setup/media/0";
 const OVERLAY_FILE: &str = "setup/overlays/0/payload.css";
@@ -88,11 +87,7 @@ fn owner_registered_catalog() -> SettingsCatalog {
 impl Store {
     async fn open() -> Self {
         let dir = tempfile::tempdir().unwrap();
-        let url = format!("sqlite://{}", dir.path().join(DATABASE_FILE_NAME).display());
-        let backend =
-            SqliteBackend::open_for_test(&url, SQLITE_KEY, dir.path().join(MEDIA_DIR_NAME), None)
-                .await
-                .unwrap();
+        let backend = common::open_backend(dir.path()).await;
         let sqlite = Arc::new(backend);
         Self {
             dir,
@@ -181,39 +176,10 @@ impl Store {
     }
 }
 
-fn sha256_hex(bytes: &[u8]) -> String {
-    Sha256::digest(bytes)
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect()
-}
-
-fn entry(path: &str, bytes: &[u8]) -> ContentEntry {
-    ContentEntry {
-        path: path.to_owned(),
-        size: bytes.len() as u64,
-        sha256_hex: sha256_hex(bytes),
-    }
-}
-
-fn empty_configuration() -> PackDocuments {
-    PackDocuments {
-        version: PACK_DOCUMENTS_VERSION,
-        actions: Vec::new(),
-        triggers: Vec::new(),
-        queues: Vec::new(),
-        scripts: Vec::new(),
-        globals: Vec::new(),
-        clips: Vec::new(),
-        overlays: Vec::new(),
-        media: Vec::new(),
-    }
-}
-
 fn empty_setup() -> SetupDocuments {
     SetupDocuments {
         version: SETUP_DOCUMENTS_VERSION,
-        configuration: empty_configuration(),
+        configuration: empty_documents(),
         global_values: BTreeMap::new(),
         clip_hotkeys: Vec::new(),
         tts: TtsDocument {
@@ -251,72 +217,24 @@ fn manifest(contents: Vec<ContentEntry>) -> Vec<u8> {
     .unwrap()
 }
 
-fn header(name: &str, size: usize) -> tar::Header {
-    let mut header = tar::Header::new_gnu();
-    header.as_gnu_mut().unwrap().name[..name.len()].copy_from_slice(name.as_bytes());
-    header.set_entry_type(tar::EntryType::Regular);
-    header.set_size(size as u64);
-    header.set_mode(0o600);
-    header.set_cksum();
-    header
-}
-
 fn bundle(dir: &Path, documents: &SetupDocuments, files: &[(&str, &[u8])]) -> PathBuf {
     let documents_json = serde_json::to_vec(documents).unwrap();
     let mut contents = vec![entry(DOCUMENTS_ENTRY, &documents_json)];
     contents.extend(files.iter().map(|(path, bytes)| entry(path, bytes)));
     let manifest = manifest(contents);
-    let mut builder = tar::Builder::new(Vec::new());
-    for (name, bytes) in [
+    let mut entries = vec![
         (MANIFEST_ENTRY_NAME, manifest.as_slice()),
         (DOCUMENTS_ENTRY, documents_json.as_slice()),
-    ]
-    .into_iter()
-    .chain(files.iter().copied())
-    {
-        builder.append(&header(name, bytes.len()), bytes).unwrap();
-    }
-    let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
-    gz.write_all(&builder.into_inner().unwrap()).unwrap();
-    let path = dir.join(format!("{}.forgebundle", ulid::Ulid::generate()));
-    std::fs::write(&path, gz.finish().unwrap()).unwrap();
-    path
+    ];
+    entries.extend_from_slice(files);
+    common::write_bundle_file(dir, &entries)
 }
 
 fn overlay_carrying(name: &str) -> OverlayDocument {
-    OverlayDocument {
-        id: "setup-overlay".to_owned(),
-        display_name: "Escaper".to_owned(),
-        kind_id: "overlay.alert".to_owned(),
-        enabled: true,
-        position: 0,
-        config: Default::default(),
-        config_schema_version: 1,
-        source_overrides: vec![name.to_owned()],
-        files: vec![OverlayFileDocument {
-            name: name.to_owned(),
-            file: OVERLAY_FILE.to_owned(),
-        }],
-    }
+    common::overlay_carrying("setup-overlay", OVERLAY_FILE, name)
 }
 
 const PENDING_IMPORT_MARKER: &str = ".forge-import-pending";
-
-fn file_named_anywhere(root: &Path, name: &str) -> bool {
-    let mut pending = vec![root.to_path_buf()];
-    while let Some(dir) = pending.pop() {
-        for entry in std::fs::read_dir(&dir).into_iter().flatten() {
-            let path = entry.unwrap().path();
-            if path.file_name().is_some_and(|n| n == name) {
-                return true;
-            }
-            if path.is_dir() {
-                pending.push(path);
-            }
-        }
-    }
-    false
-}
 
 fn staging_leftovers(data_dir: &Path) -> usize {
     std::fs::read_dir(setup_staging_root(data_dir))
@@ -338,7 +256,7 @@ async fn a_setup_overlay_file_name_that_leaves_the_overlay_folder_is_refused_and
         let documents = SetupDocuments {
             configuration: PackDocuments {
                 overlays: vec![overlay_carrying(&name)],
-                ..empty_configuration()
+                ..empty_documents()
             },
             ..empty_setup()
         };
@@ -408,7 +326,7 @@ async fn staging_refuses_setup_documents_that_do_not_hold_together() {
             SetupDocuments {
                 configuration: PackDocuments {
                     version: PACK_DOCUMENTS_VERSION + 1,
-                    ..empty_configuration()
+                    ..empty_documents()
                 },
                 ..empty_setup()
             },
@@ -430,7 +348,7 @@ async fn staging_refuses_setup_documents_that_do_not_hold_together() {
                         format: MediaFormat::Ogg,
                         file: MEDIA_FILE.to_owned(),
                     }],
-                    ..empty_configuration()
+                    ..empty_documents()
                 },
                 ..empty_setup()
             },
@@ -452,7 +370,7 @@ async fn staging_refuses_setup_documents_that_do_not_hold_together() {
                             media_id: carried.as_str().to_owned(),
                         },
                     }],
-                    ..empty_configuration()
+                    ..empty_documents()
                 },
                 ..empty_setup()
             },
@@ -1072,7 +990,7 @@ async fn a_setup_import_reaches_the_catalog_as_a_single_revision() {
             DEFAULT_QUEUE_ID,
             vec![trigger],
         )],
-        ..empty_configuration()
+        ..empty_documents()
     });
     let path = bundle(store.data_dir(), &documents, &[]);
     let revision = store.provider.catalog_revision();
@@ -1090,7 +1008,7 @@ async fn a_setup_import_whose_commit_fails_removes_the_files_and_media_it_placed
     let documents = setup_of(PackDocuments {
         overlays: vec![overlay_carrying(PAYLOAD_NAME)],
         media: vec![media_document()],
-        ..empty_configuration()
+        ..empty_documents()
     });
     let path = bundle(
         store.data_dir(),
@@ -1132,7 +1050,7 @@ async fn a_setup_import_whose_commit_fails_puts_back_the_overlay_file_it_replace
             id: local.id.as_str().to_owned(),
             ..overlay_carrying(PAYLOAD_NAME)
         }],
-        ..empty_configuration()
+        ..empty_documents()
     });
     let path = bundle(
         store.data_dir(),
@@ -1154,7 +1072,7 @@ async fn a_finished_setup_import_keeps_its_overlay_folder_and_clears_the_pending
     let store = Store::open().await;
     let documents = setup_of(PackDocuments {
         overlays: vec![overlay_carrying(PAYLOAD_NAME)],
-        ..empty_configuration()
+        ..empty_documents()
     });
     let path = bundle(
         store.data_dir(),
@@ -1175,7 +1093,7 @@ async fn a_rolled_back_setup_import_leaves_neither_its_overlay_folder_nor_a_pend
     store.refuse("INSERT", "overlays").await;
     let documents = setup_of(PackDocuments {
         overlays: vec![overlay_carrying(PAYLOAD_NAME)],
-        ..empty_configuration()
+        ..empty_documents()
     });
     let path = bundle(
         store.data_dir(),
@@ -1213,7 +1131,7 @@ async fn importing_over_an_existing_overlay_folder_never_marks_it_as_pending() {
             id: local.id.as_str().to_owned(),
             ..overlay_carrying(PAYLOAD_NAME)
         }],
-        ..empty_configuration()
+        ..empty_documents()
     });
     let path = bundle(
         store.data_dir(),
@@ -1236,7 +1154,7 @@ async fn two_new_setup_overlays_with_one_name_land_under_distinct_ids() {
             overlay_named("first", "Twin"),
             overlay_named("second", "Twin"),
         ],
-        ..empty_configuration()
+        ..empty_documents()
     });
     let path = bundle(store.data_dir(), &documents, &[]);
 
@@ -1291,7 +1209,7 @@ async fn a_setup_import_clears_the_links_a_local_action_holds_to_an_archived_tri
         queues: vec![default_queue_document()],
         triggers: vec![trigger_document(trigger.id)],
         actions: vec![action_document(action.id, DEFAULT_QUEUE_ID, Vec::new())],
-        ..empty_configuration()
+        ..empty_documents()
     });
     let path = bundle(store.data_dir(), &documents, &[]);
 

@@ -1,5 +1,6 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 mod common;
+use common::FixedClock;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::Arc;
 use std::time::Duration;
@@ -11,30 +12,20 @@ use forge_runtime::sub_action_runners::ScriptRunInlineRunner;
 use forge_runtime::{
     ActionEngineHandle, CatchUpSettle, EventBus, NullEventLogRepo, QueueAdmission,
     QueueSchedulerHandle, RuntimeWiringParts, ScheduledRunsHandle, SchedulerRequest,
-    ScriptRegistry, TriggerEvaluatorHandle, WallClock,
+    ScriptRegistry, TriggerEvaluatorHandle,
 };
 use forge_storage::{DataProvider, GlobalsRepo, SettingsRepo};
 use forge_storage_sqlite::SqliteBackend;
-use forge_types::{Action, ActionId, ArgStack, EventId, ExecutionMode, Queue, QueueId, Variant};
+use forge_types::{ActionId, ArgStack, EventId, Queue, QueueId, Variant};
 use tempfile::TempDir;
-use time::OffsetDateTime;
 use tokio::time::timeout;
 
 const DEADLINE: Duration = Duration::from_secs(30);
-const BASE_UNIX_SECS: i64 = 1_791_115_200;
 const ACTION_DONE: &str = "action.done";
 const SCHEDULE_TARGET: &str = "Greet";
 const CHAT_AND_GLOBAL_SCRIPT: &str =
     r#"forge::chat::send("thanks"); forge::globals::set("shoutouts", 1, false);"#;
 const SCHEDULE_SCRIPT: &str = r#"forge::schedule::after("Greet", 3600);"#;
-
-struct FixedClock;
-
-impl WallClock for FixedClock {
-    fn now(&self) -> OffsetDateTime {
-        OffsetDateTime::from_unix_timestamp(BASE_UNIX_SECS).unwrap()
-    }
-}
 
 struct Harness {
     backend: Arc<SqliteBackend>,
@@ -49,12 +40,8 @@ struct Harness {
 
 impl Harness {
     async fn new() -> Self {
-        let media = tempfile::tempdir().unwrap();
-        let backend = Arc::new(
-            SqliteBackend::open_for_test(":memory:", [0xcd; 32], media.path().join("media"), None)
-                .await
-                .unwrap(),
-        );
+        let (backend, media) = common::sqlite_backend().await;
+        let backend = Arc::new(backend);
         forge_storage::write_setting(
             backend.as_ref(),
             &forge_script::settings::TIMEOUT_MS,
@@ -115,18 +102,7 @@ impl Harness {
             })
             .into_iter()
             .collect();
-        let action = Action {
-            id: ActionId::new(),
-            name: name.to_owned(),
-            group: None,
-            queue_id: self.queue_id,
-            enabled: true,
-            concurrent: false,
-            bypass_pause: false,
-            execution_mode: ExecutionMode::Sequential,
-            description: None,
-            sub_actions,
-        };
+        let action = common::sequential_action(ActionId::new(), name, self.queue_id, sub_actions);
         self.backend.action_repo().save(&action).await.unwrap();
         action.id
     }

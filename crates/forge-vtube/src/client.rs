@@ -944,29 +944,22 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
-    async fn stored_token_skips_token_request_and_reaches_connected() {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-
-        tokio::spawn(async move {
-            let Ok((stream, _)) = listener.accept().await else {
-                return;
-            };
-            let mut ws = tokio_tungstenite::accept_async(stream).await.unwrap();
-            serve_full_auth(&mut ws).await;
-            while let Some(Ok(_)) = futures_util::StreamExt::next(&mut ws).await {}
-        });
-
+    async fn stored_token_logs_in_without_asking_for_a_new_one() {
+        let mut vts = FakeVts::bind().await;
         let publisher = MockPublisher::new();
-        let creds = MockCreds::new();
-        let token_blob = serde_json::json!({ "token": "pre-stored-tok", "api_version": "1.0" });
-        creds.insert("vtube:default", &token_blob.to_string());
+        let creds = stored_token_creds();
+        let _client = vts.connect(&publisher, &creds);
+        let mut conn = vts.next_conn(Duration::from_secs(30)).await.unwrap();
 
-        let cfg = VTubeConfig {
-            endpoint: format!("ws://{addr}"),
-        };
-        let _client = VTubeClient::connect(cfg, publisher.publisher(), creds.creds());
+        let login = conn
+            .expect("AuthenticationRequest", Duration::from_secs(30))
+            .await;
+        assert_eq!(login["data"]["authenticationToken"], "stored-token");
 
+        conn.tx.reply(
+            &login,
+            serde_json::json!({ "authenticated": true, "reason": "" }),
+        );
         assert!(
             wait_for_connected(&publisher).await,
             "expected connected with stored token"

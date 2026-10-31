@@ -1,4 +1,6 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
+mod common;
+use common::TEST_KEY;
 use std::fmt::Debug;
 use std::future::Future;
 use std::sync::Arc;
@@ -18,7 +20,6 @@ use sqlx::sqlite::SqlitePoolOptions;
 use time::OffsetDateTime;
 use tokio::sync::Notify;
 
-const TEST_KEY: [u8; 32] = [0xab; 32];
 const CADENCE: Duration = Duration::from_millis(50);
 const HANG_GUARD: Duration = Duration::from_secs(60);
 const POLL: Duration = Duration::from_millis(5);

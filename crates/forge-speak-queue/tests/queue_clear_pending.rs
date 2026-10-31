@@ -12,7 +12,10 @@ use forge_tts_core::{
 };
 use tokio::sync::Notify;
 
-use common::{assert_no_event, make_deps, recording_sink, request, voice, wait_for};
+use common::{
+    assert_no_event_once_settled_on_paused_clock, make_deps, recording_sink, request, voice,
+    wait_for,
+};
 
 struct GatedEngine {
     gate: Arc<Notify>,
@@ -25,13 +28,7 @@ impl TtsEngine for GatedEngine {
         ID.get_or_init(|| EngineId("gate".into()))
     }
     fn capabilities(&self) -> &EngineCapabilities {
-        static CAPS: EngineCapabilities = EngineCapabilities {
-            ssml: false,
-            neural_voices: false,
-            streaming: false,
-            custom_lexicons: false,
-        };
-        &CAPS
+        &common::PLAIN_CAPABILITIES
     }
     async fn list_voices(&self) -> Result<Vec<TtsVoice>, TtsError> {
         Ok(vec![voice("g-voice", "gate")])
@@ -92,7 +89,7 @@ async fn clear_pending_lets_the_in_flight_item_finish() {
     assert_eq!(*plays.lock().unwrap(), 1, "in-flight item must still play");
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn clear_abandons_the_in_flight_item() {
     let gate = Arc::new(Notify::new());
     let (sink, plays) = recording_sink();
@@ -114,11 +111,9 @@ async fn clear_abandons_the_in_flight_item() {
     wait_for(&mut stream, |e| matches!(e, SpeakEvent::Cleared)).await;
 
     gate.notify_one();
-    assert_no_event(
-        &mut stream,
-        |e| matches!(e, SpeakEvent::Finished { .. }),
-        300,
-    )
+    assert_no_event_once_settled_on_paused_clock(&mut stream, |e| {
+        matches!(e, SpeakEvent::Finished { .. })
+    })
     .await;
     assert_eq!(*plays.lock().unwrap(), 0, "abandoned item must not play");
 }

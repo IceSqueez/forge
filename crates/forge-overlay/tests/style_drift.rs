@@ -1,52 +1,44 @@
 #![allow(clippy::expect_used, clippy::panic)]
+mod common;
+use common::{
+    ALERT_KIND, BLANK_KIND, CHAT_KIND, FRAME_KIND, GOAL_KIND, LATEST_KIND, TICKER_KIND, registry,
+};
+
 use std::collections::BTreeSet;
 
 use forge_overlay::metrics::{
     ALERT, AlertMetrics, CHAT, ChatMetrics, FRAME, FrameMetrics, GOAL, GoalMetrics, LATEST,
     LatestMetrics, TEXT_SCALE_PROPERTY, TICKER, TickerMetrics,
 };
-use forge_overlay::{OverlayKindRegistry, element_sizing, register_builtin_kinds, style_guards};
+use forge_overlay::{element_sizing, style_guards};
 
 const SCALED_NUMBERS: &[(&str, &[f32])] = &[
-    ("overlay.alert", &[12.0, 13.0, 14.0, 16.0, 20.0, 22.0, 26.0]),
+    (ALERT_KIND, &[12.0, 13.0, 14.0, 16.0, 20.0, 22.0, 26.0]),
+    (CHAT_KIND, &[6.0, 6.0, 6.0, 8.0, 10.0, 11.0, 13.0, 13.0]),
     (
-        "overlay.chat",
-        &[6.0, 6.0, 6.0, 8.0, 10.0, 11.0, 13.0, 13.0],
-    ),
-    (
-        "overlay.frame",
+        FRAME_KIND,
         &[-13.0, -13.0, 3.0, 8.0, 11.0, 13.0, 14.0, 16.0],
     ),
+    (GOAL_KIND, &[4.0, 8.0, 10.0, 12.0, 12.0, 14.0, 14.0, 18.0]),
     (
-        "overlay.goal",
-        &[4.0, 8.0, 10.0, 12.0, 12.0, 14.0, 14.0, 18.0],
-    ),
-    (
-        "overlay.latest",
+        LATEST_KIND,
         &[
             4.0, 10.0, 12.0, 13.0, 14.0, 14.0, 15.0, 20.0, 20.0, 26.0, 26.0,
         ],
     ),
     (
-        "overlay.ticker",
+        TICKER_KIND,
         &[3.0, 6.0, 10.0, 12.0, 13.0, 14.0, 19.0, 22.0, 26.0],
     ),
 ];
 
 const BREAKING_TEXT: &[(&str, &[&str])] = &[
-    ("overlay.alert", &[".body"]),
-    ("overlay.chat", &[".author", ".message"]),
-    ("overlay.goal", &[".label", ".figure"]),
+    (ALERT_KIND, &[".body"]),
+    (CHAT_KIND, &[".author", ".message"]),
+    (GOAL_KIND, &[".label", ".figure"]),
 ];
 
-const ELLIPSIZING_TEXT: &[(&str, &str)] =
-    &[("overlay.latest", ".value"), ("overlay.ticker", ".body")];
-
-fn registry() -> OverlayKindRegistry {
-    let mut reg = OverlayKindRegistry::new();
-    register_builtin_kinds(&mut reg).expect("the builtin overlay kinds register");
-    reg
-}
+const ELLIPSIZING_TEXT: &[(&str, &str)] = &[(LATEST_KIND, ".value"), (TICKER_KIND, ".body")];
 
 fn scaled_multiplicands(style: &str) -> Vec<f32> {
     let opening = "calc(";
@@ -123,7 +115,7 @@ fn every_metric_a_guard_names_is_written_verbatim_in_its_kinds_stylesheet() {
 fn a_metric_that_drifts_from_its_stylesheet_fails_its_guard() {
     for (kind_id, drifted) in [
         (
-            "overlay.alert",
+            ALERT_KIND,
             AlertMetrics {
                 gap: ALERT.gap + 0.5,
                 ..ALERT
@@ -131,7 +123,7 @@ fn a_metric_that_drifts_from_its_stylesheet_fails_its_guard() {
             .declarations(),
         ),
         (
-            "overlay.chat",
+            CHAT_KIND,
             ChatMetrics {
                 row_radius: CHAT.row_radius + 0.5,
                 ..CHAT
@@ -139,7 +131,7 @@ fn a_metric_that_drifts_from_its_stylesheet_fails_its_guard() {
             .declarations(),
         ),
         (
-            "overlay.frame",
+            FRAME_KIND,
             FrameMetrics {
                 inset: FRAME.inset + 0.5,
                 ..FRAME
@@ -147,7 +139,7 @@ fn a_metric_that_drifts_from_its_stylesheet_fails_its_guard() {
             .declarations(),
         ),
         (
-            "overlay.goal",
+            GOAL_KIND,
             GoalMetrics {
                 track_height: GOAL.track_height + 0.5,
                 ..GOAL
@@ -155,7 +147,7 @@ fn a_metric_that_drifts_from_its_stylesheet_fails_its_guard() {
             .declarations(),
         ),
         (
-            "overlay.latest",
+            LATEST_KIND,
             LatestMetrics {
                 subline_margin: LATEST.subline_margin + 0.5,
                 ..LATEST
@@ -163,7 +155,7 @@ fn a_metric_that_drifts_from_its_stylesheet_fails_its_guard() {
             .declarations(),
         ),
         (
-            "overlay.ticker",
+            TICKER_KIND,
             TickerMetrics {
                 mark_width: TICKER.mark_width + 0.5,
                 ..TICKER
@@ -184,7 +176,7 @@ fn a_metric_that_drifts_from_its_stylesheet_fails_its_guard() {
 
 #[test]
 fn the_icon_box_spends_the_guarded_height_and_accent_on_the_icon_itself() {
-    let style = stylesheet("overlay.alert");
+    let style = stylesheet(ALERT_KIND);
     let icon_height = ALERT
         .declarations()
         .into_iter()
@@ -301,13 +293,13 @@ fn a_kind_is_guarded_against_style_drift_exactly_when_it_draws_a_page() {
 #[test]
 fn every_stock_look_clips_at_the_box_and_keeps_its_margins_inside_it() {
     for kind_id in [
-        "overlay.alert",
-        "overlay.blank",
-        "overlay.chat",
-        "overlay.frame",
-        "overlay.goal",
-        "overlay.latest",
-        "overlay.ticker",
+        ALERT_KIND,
+        BLANK_KIND,
+        CHAT_KIND,
+        FRAME_KIND,
+        GOAL_KIND,
+        LATEST_KIND,
+        TICKER_KIND,
     ] {
         let style = stylesheet(kind_id);
         let root = standalone_rule(style, "html,\nbody");
@@ -328,12 +320,12 @@ fn every_stock_look_clips_at_the_box_and_keeps_its_margins_inside_it() {
 #[test]
 fn only_the_looks_that_keep_position_read_it_from_the_page() {
     for (kind_id, reads_position) in [
-        ("overlay.alert", false),
-        ("overlay.goal", false),
-        ("overlay.latest", false),
-        ("overlay.ticker", false),
-        ("overlay.chat", true),
-        ("overlay.frame", true),
+        (ALERT_KIND, false),
+        (GOAL_KIND, false),
+        (LATEST_KIND, false),
+        (TICKER_KIND, false),
+        (CHAT_KIND, true),
+        (FRAME_KIND, true),
     ] {
         assert_eq!(
             stylesheet(kind_id).contains("data-position"),

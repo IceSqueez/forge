@@ -11,15 +11,11 @@ use forge_runtime::{
     ScriptRegistry,
 };
 use forge_storage::{DataProvider, ScriptRecord};
-use forge_storage_sqlite::SqliteBackend;
-use forge_types::{
-    Action, ArgStack, EventId, ExecutionMode, Queue, ScriptContract, SubActionStep, Variant,
-};
+use forge_types::{ArgStack, EventId, Queue, ScriptContract, SubActionStep, Variant};
 use serde_json::{Value, json};
 use tempfile::TempDir;
 use time::OffsetDateTime;
 
-const TEST_KEY: [u8; 32] = [0xab; 32];
 const HANG_GUARD: Duration = Duration::from_secs(30);
 const ACTION_ID: &str = "01JBZ8Q4T5N7W3K2M9X6V1R0AA";
 const QUEUE_ID: &str = "01JBZ8Q4T5N7W3K2M9X6V1R0QQ";
@@ -33,11 +29,7 @@ struct Rig {
 }
 
 async fn rig() -> Rig {
-    let media = tempfile::tempdir().unwrap();
-    let backend =
-        SqliteBackend::open_for_test(":memory:", TEST_KEY, media.path().join("media"), None)
-            .await
-            .unwrap();
+    let (backend, media) = common::sqlite_backend().await;
     let dp: Arc<dyn DataProvider> = Arc::new(backend);
     let queue = Queue {
         id: QUEUE_ID.parse().unwrap(),
@@ -47,18 +39,12 @@ async fn rig() -> Rig {
     };
     dp.queue_repo().save(&queue).await.unwrap();
     dp.action_repo()
-        .save(&Action {
-            id: ACTION_ID.parse().unwrap(),
-            name: "Golden run".to_owned(),
-            group: None,
-            queue_id: queue.id,
-            enabled: true,
-            concurrent: false,
-            bypass_pause: false,
-            execution_mode: ExecutionMode::Sequential,
-            description: None,
-            sub_actions: Vec::new(),
-        })
+        .save(&common::sequential_action(
+            ACTION_ID.parse().unwrap(),
+            "Golden run",
+            queue.id,
+            Vec::new(),
+        ))
         .await
         .unwrap();
 

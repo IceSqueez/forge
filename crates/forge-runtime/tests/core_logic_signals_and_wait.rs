@@ -1,8 +1,8 @@
 mod common;
+use forge_events::test_support::NullPublisher;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_events::{Event, EventPublisher};
 use forge_registry::{
     CancelSignal, ChainExecutor, ChainSignal, ChildChainOutcome, ControlCell, ControlSignal,
     RegistryError, RunContext, StopMark, SubActionRunner, TelemetrySink,
@@ -13,11 +13,6 @@ use forge_runtime::sub_action_runners::{
 };
 use forge_runtime::{ConditionGate, Config};
 use forge_types::{ArgStack, EventId, SubActionConfig, SubActionOutcome, SubActionStep, Variant};
-
-struct NullPublisher;
-impl EventPublisher for NullPublisher {
-    fn publish(&self, _event: Event) {}
-}
 
 struct NoopExec;
 

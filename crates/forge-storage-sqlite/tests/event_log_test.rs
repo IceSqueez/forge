@@ -1,17 +1,10 @@
 use forge_events::{Event, EventSource};
 use forge_storage::DataProvider;
-use forge_storage_sqlite::SqliteBackend;
 use forge_types::EventId;
 use time::OffsetDateTime;
 
 mod common;
-use common::Sandboxed;
-
-const TEST_KEY: [u8; 32] = [0xab; 32];
-
-async fn setup() -> Sandboxed<SqliteBackend> {
-    common::sandboxed_backend("sqlite::memory:", TEST_KEY).await
-}
+use common::setup;
 
 fn make_event_at(source: EventSource, kind: &str, ts: OffsetDateTime) -> Event {
     Event {

@@ -1,7 +1,7 @@
 #![allow(clippy::panic)]
 mod common;
 use common::{code_of, failure_message, verbatim_arg};
-use forge_events::{Event, EventPublisher};
+use forge_events::test_support::NullPublisher;
 use forge_registry::{RunContext, SubActionRunner};
 use forge_runtime::sub_action_runners::{
     CoreMathEvaluateRunner, CoreStringConcatRunner, CoreStringFormatRunner, CoreStringLengthRunner,
@@ -10,11 +10,6 @@ use forge_runtime::sub_action_runners::{
     CoreStringTrimRunner, CoreStringUppercaseRunner,
 };
 use forge_types::{ArgStack, EventId, SubActionConfig, SubActionOutcome, Variant};
-
-struct NullPublisher;
-impl EventPublisher for NullPublisher {
-    fn publish(&self, _event: Event) {}
-}
 
 fn s(value: &str) -> Variant {
     Variant::String(value.to_owned())

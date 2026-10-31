@@ -10,10 +10,9 @@ use forge_speak_queue::{QueueConfig, SpeakCommand, SpeakEvent, SpeakEventStream}
 use forge_speech_types::AssignmentStrategy;
 use forge_speech_types::PcmBuffer;
 
-use common::{make_deps, request, standard_registry};
+use common::{make_deps, next_matching, request, standard_registry};
 
 const DEVICE_REFUSAL: &str = "device 'hw:9,9' not found";
-const SETTLE_BUDGET: Duration = Duration::from_secs(30);
 
 struct RefusingSink;
 
@@ -42,36 +41,27 @@ async fn a_device_that_refuses_the_stream_fails_the_utterance_with_the_device_re
         .await
         .unwrap();
 
-    let deadline = std::time::Instant::now() + SETTLE_BUDGET;
-    loop {
-        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
-        assert!(
-            !remaining.is_zero(),
-            "the utterance never settled after the device refused the stream"
-        );
-        match tokio::time::timeout(remaining, stream.recv()).await {
-            Ok(Ok(SpeakEvent::Failed { message, .. })) => {
-                assert_eq!(
-                    (
-                        message.code().to_string(),
-                        message.detail().map(|d| d.as_str().to_owned()),
-                    ),
-                    (
-                        "speak.audio_host_failed".to_owned(),
-                        Some(DEVICE_REFUSAL.to_owned()),
-                    ),
-                    "the device reason was replaced"
-                );
-                return;
-            }
-            Ok(Ok(SpeakEvent::Finished { .. })) => {
-                panic!("a device that never opened must not finish the utterance")
-            }
-            Ok(Ok(_)) => continue,
-            Ok(Err(_)) => panic!("the speak event stream closed"),
-            Err(_) => panic!("the utterance never settled after the device refused the stream"),
-        }
-    }
+    let outcome = next_matching(&mut stream, |event| {
+        matches!(
+            event,
+            SpeakEvent::Failed { .. } | SpeakEvent::Finished { .. }
+        )
+    })
+    .await;
+    let SpeakEvent::Failed { message, .. } = outcome else {
+        panic!("a device that never opened must not finish the utterance, got {outcome:?}");
+    };
+    assert_eq!(
+        (
+            message.code().to_string(),
+            message.detail().map(|d| d.as_str().to_owned()),
+        ),
+        (
+            "speak.audio_host_failed".to_owned(),
+            Some(DEVICE_REFUSAL.to_owned()),
+        ),
+        "the device reason was replaced"
+    );
 }
 
 const HUNG_START_WAIT: Duration = Duration::from_secs(3_600);

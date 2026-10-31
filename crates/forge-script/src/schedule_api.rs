@@ -249,10 +249,10 @@ fn placement_map(placement: ScriptSchedulePlacement) -> Map {
 
 #[cfg(test)]
 mod tests {
+    use forge_events::test_support::NullPublisher;
     use std::sync::Mutex;
     use std::time::{Duration, Instant};
 
-    use forge_events::{Event, EventPublisher};
     use forge_types::EventId;
     use time::OffsetDateTime;
     use time::format_description::well_known::Rfc3339;
@@ -267,12 +267,6 @@ mod tests {
     const DUE_UNIX_SECS: i64 = 1_791_118_800;
     const PLACED_ID: i64 = 42;
     const DUE_BINDING: &str = "when";
-
-    struct NullPublisher;
-
-    impl EventPublisher for NullPublisher {
-        fn publish(&self, _event: Event) {}
-    }
 
     struct RecordingScheduler {
         requests: Mutex<Vec<ScriptScheduleRequest>>,

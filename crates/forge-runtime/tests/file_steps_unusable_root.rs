@@ -1,14 +1,9 @@
-use forge_events::{Event, EventPublisher};
+use forge_events::test_support::NullPublisher;
 use forge_registry::{RunContext, SubActionRunner};
 use forge_runtime::sub_action_runners::{
     CoreFileDeleteRunner, CoreFileListRunner, CoreFileReadRunner, CoreFileWriteRunner,
 };
 use forge_types::{ArgStack, EventId, SubActionConfig, SubActionOutcome, Variant};
-
-struct NullPublisher;
-impl EventPublisher for NullPublisher {
-    fn publish(&self, _event: Event) {}
-}
 
 #[expect(unsafe_code, reason = "env mutation is unsafe in edition 2024")]
 #[tokio::test]

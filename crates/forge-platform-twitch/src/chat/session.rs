@@ -3542,19 +3542,11 @@ mod tests {
 
     const FAKE_WAIT: Duration = Duration::from_secs(30);
 
-    async fn within_real_time<T>(
+    async fn within_hang_guard<T>(
         bound: Duration,
         work: impl Future<Output = T>,
     ) -> Result<T, Duration> {
-        let (expiry_tx, expiry) = oneshot::channel::<()>();
-        std::thread::spawn(move || {
-            std::thread::sleep(bound);
-            drop(expiry_tx);
-        });
-        tokio::select! {
-            done = work => Ok(done),
-            _ = expiry => Err(bound),
-        }
+        tokio::time::timeout(bound, work).await.map_err(|_| bound)
     }
     const CHAT_MESSAGE_KIND: &str = "twitch.channel.chat.message";
 
@@ -3589,7 +3581,7 @@ mod tests {
             self.commands
                 .send(PeerCommand::Ping)
                 .expect("the fake socket must outlive the barrier");
-            let answered = within_real_time(FAKE_WAIT, self.pongs.recv()).await;
+            let answered = within_hang_guard(FAKE_WAIT, self.pongs.recv()).await;
             assert!(
                 answered.is_ok_and(|pong| pong.is_some()),
                 "forge must keep reading its socket"
@@ -3601,7 +3593,7 @@ mod tests {
         }
 
         async fn wait_closed_by_forge(&mut self) -> bool {
-            within_real_time(FAKE_WAIT, &mut self.closed)
+            within_hang_guard(FAKE_WAIT, &mut self.closed)
                 .await
                 .is_ok_and(|closed| closed.is_ok())
         }
@@ -3640,7 +3632,7 @@ mod tests {
         }
 
         async fn accept(&mut self) -> Peer {
-            within_real_time(FAKE_WAIT, self.peers.recv())
+            within_hang_guard(FAKE_WAIT, self.peers.recv())
                 .await
                 .expect("forge must dial this socket")
                 .expect("the accept loop must outlive the test")
@@ -3780,7 +3772,7 @@ mod tests {
     }
 
     async fn next_event(events: &mut EventSubscription, kind: &str) -> Event {
-        let found = within_real_time(FAKE_WAIT, async {
+        let found = within_hang_guard(FAKE_WAIT, async {
             loop {
                 let event = events.recv().await.expect("the bus must stay open");
                 if event.kind == kind {
@@ -3806,7 +3798,7 @@ mod tests {
 
     async fn kinds_until_chat(events: &mut EventSubscription, text: &str) -> Vec<String> {
         let mut kinds = Vec::new();
-        let arrived = within_real_time(FAKE_WAIT, async {
+        let arrived = within_hang_guard(FAKE_WAIT, async {
             loop {
                 let event = events.recv().await.expect("the bus must stay open");
                 let awaited = event.kind == CHAT_MESSAGE_KIND
@@ -3828,7 +3820,7 @@ mod tests {
 
     async fn chat_texts_until(events: &mut EventSubscription, last: &str) -> Vec<String> {
         let mut texts = Vec::new();
-        let arrived = within_real_time(FAKE_WAIT, async {
+        let arrived = within_hang_guard(FAKE_WAIT, async {
             loop {
                 let event = events.recv().await.expect("the bus must stay open");
                 if event.kind != CHAT_MESSAGE_KIND {
@@ -3855,7 +3847,7 @@ mod tests {
     }
 
     async fn next_retry_attempt(state: &mut watch::Receiver<ChatConnectionState>) -> u8 {
-        let reported = within_real_time(FAKE_WAIT, async {
+        let reported = within_hang_guard(FAKE_WAIT, async {
             loop {
                 state
                     .changed()
@@ -3876,7 +3868,7 @@ mod tests {
         last: ConnectionState,
     ) -> Vec<ConnectionState> {
         let mut states = Vec::new();
-        let arrived = within_real_time(FAKE_WAIT, async {
+        let arrived = within_hang_guard(FAKE_WAIT, async {
             loop {
                 let event = events.recv().await.expect("the bus must stay open");
                 if event.kind != PlatformConnectionChanged::KIND {
@@ -4391,7 +4383,7 @@ mod tests {
         }
 
         async fn wait_for_a_request(&mut self) {
-            let arrived = within_real_time(FAKE_WAIT, self.requests.recv()).await;
+            let arrived = within_hang_guard(FAKE_WAIT, self.requests.recv()).await;
             assert!(
                 arrived.is_ok_and(|request| request.is_some()),
                 "forge must send a request to this endpoint"
@@ -4517,7 +4509,7 @@ mod tests {
         }
 
         async fn wait_until(&self, what: &str, reached: impl Fn(&Self) -> bool) {
-            let arrived = within_real_time(FAKE_WAIT, async {
+            let arrived = within_hang_guard(FAKE_WAIT, async {
                 while !reached(self) {
                     self.published.notified().await;
                 }
@@ -4814,7 +4806,7 @@ mod tests {
         peer.send(welcome_frame("sess-1"));
         token_endpoint.wait_for_a_request().await;
 
-        let stopped = within_real_time(FAKE_WAIT, handle.shutdown()).await;
+        let stopped = within_hang_guard(FAKE_WAIT, handle.shutdown()).await;
         assert!(
             stopped.is_ok(),
             "the held token fetch must not keep the session from stopping on request"
@@ -4875,7 +4867,7 @@ mod tests {
     async fn next_link_announcement(
         events: &mut EventSubscription,
     ) -> (ConnectionState, Option<bool>) {
-        within_real_time(FAKE_WAIT, async {
+        within_hang_guard(FAKE_WAIT, async {
             loop {
                 let event = events.recv().await.expect("the bus must stay open");
                 if event.kind == PlatformConnectionChanged::KIND {
@@ -4942,7 +4934,7 @@ mod tests {
         let stopped = shut_down_while_refreshing_the_token().await;
 
         stopped.token_endpoint.release();
-        let stored = within_real_time(FAKE_WAIT, stopped.repo.stored.notified()).await;
+        let stored = within_hang_guard(FAKE_WAIT, stopped.repo.stored.notified()).await;
 
         assert!(
             stored.is_ok(),
@@ -4965,7 +4957,7 @@ mod tests {
         caller.abort();
         assert!(caller.await.is_err_and(|e| e.is_cancelled()));
         token_endpoint.release();
-        let stored = within_real_time(FAKE_WAIT, repo.stored.notified()).await;
+        let stored = within_hang_guard(FAKE_WAIT, repo.stored.notified()).await;
 
         assert!(stored.is_ok(), "the rotated pair must survive its caller");
         let saved = manager.load().await.unwrap().unwrap();
@@ -5053,7 +5045,7 @@ mod tests {
     ) -> bool {
         use forge_platform_core::{BuiltinHealth, BuiltinStatus};
         let mut deltas = bundle.stream();
-        within_real_time(FAKE_WAIT, async {
+        within_hang_guard(FAKE_WAIT, async {
             while bundle.connection() != expected {
                 if deltas.next().await.is_none() {
                     return false;
@@ -5634,7 +5626,7 @@ mod tests {
         welcomed.send(welcome_frame("sess-1"));
 
         next_event(&mut events, "platform.reauth_required").await;
-        let ended = within_real_time(FAKE_WAIT, &mut session.task).await;
+        let ended = within_hang_guard(FAKE_WAIT, &mut session.task).await;
         assert!(
             ended.is_ok(),
             "a session that needs sign-in must stop instead of retrying a token Twitch refuses"
@@ -5734,7 +5726,7 @@ mod tests {
     }
 
     async fn next_created(events: &mut EventSubscription, kind: &str) -> Event {
-        let found = within_real_time(FAKE_WAIT, async {
+        let found = within_hang_guard(FAKE_WAIT, async {
             loop {
                 let event = events.recv().await.expect("the bus must stay open");
                 if event.kind == crate::vocabulary::event_kinds::EVENTSUB_SUBSCRIPTION_CREATED
@@ -5980,7 +5972,7 @@ mod tests {
             .and_then(TopicRetries::into_run)
             .expect("a live pass with a failed topic must hand its retries to the session");
 
-        let finished = within_real_time(FAKE_WAIT, retries.finished()).await;
+        let finished = within_hang_guard(FAKE_WAIT, retries.finished()).await;
 
         let refreshes = server
             .received_requests()

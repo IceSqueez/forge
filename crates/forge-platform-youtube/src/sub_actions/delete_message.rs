@@ -92,7 +92,8 @@ impl SubActionRunner for DeleteMessageRunner {
 
 #[cfg(test)]
 mod tests {
-    use forge_events::{Event, EventPublisher};
+    use forge_events::Event;
+    use forge_events::test_support::NullPublisher;
     use forge_types::EventId;
     use futures::future::BoxFuture;
     use wiremock::matchers::{method, path, query_param};
@@ -106,13 +107,8 @@ mod tests {
     use forge_types::Variant;
     use std::collections::BTreeMap;
 
-    struct NoopPublisher;
-    impl EventPublisher for NoopPublisher {
-        fn publish(&self, _: Event) {}
-    }
-
     fn make_ctx(stack: &ArgStack) -> RunContext<'_> {
-        RunContext::leaf(stack, 0, EventId::new(), &NoopPublisher)
+        RunContext::leaf(stack, 0, EventId::new(), &NullPublisher)
     }
 
     fn token_source() -> Arc<

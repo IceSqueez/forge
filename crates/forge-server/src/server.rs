@@ -288,16 +288,11 @@ fn serve_on(listener: TcpListener, state: AppState) -> ServerHandle {
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use std::collections::HashMap;
     use std::sync::{Arc, Mutex};
 
     use async_trait::async_trait;
-    use forge_registry::SubActionRegistry;
-    use forge_runtime::{EventBus, NullEventLogRepo, ScriptRegistry, spawn_action_engine};
-    use forge_storage::{
-        CredentialId, CredentialsRepo, DataProvider, GlobalsRepo, SettingsRepo, StorageError,
-        UserGlobalsRepo,
-    };
+    use forge_runtime::{EventBus, NullEventLogRepo};
+    use forge_storage::{CredentialsRepo, SettingsRepo};
     use time::OffsetDateTime;
     use tokio::net::TcpListener;
     use tracing::Level;
@@ -309,125 +304,12 @@ pub(crate) mod tests {
     use crate::ServerError;
     use crate::audio_clips::{ClipMediaType, ClipOffer, ClipOutcome};
     use crate::bus_adapter::{ClientFilterSet, ClientId, EventFilter, WsFrame};
-    use crate::server_info::ServerInfo;
-    use crate::test_helpers::{log_capture, mem_settings, test_dp};
+    use crate::test_helpers::{
+        MemCreds, app_state, log_capture, mem_settings, server_config, test_dp,
+    };
     use crate::ws_client::WsClient;
     use forge_runtime::OverlayFrameSink;
     use forge_storage::test_support::MemorySettings;
-
-    struct MemCreds(Mutex<HashMap<String, String>>);
-
-    impl MemCreds {
-        fn new() -> Arc<Self> {
-            Arc::new(Self(Mutex::new(HashMap::new())))
-        }
-
-        fn with_token(token: &str) -> Arc<Self> {
-            let me = Self::new();
-            me.0.lock()
-                .expect("mutex")
-                .insert("server:bearer".to_owned(), token.to_owned());
-            me
-        }
-    }
-
-    #[async_trait]
-    impl CredentialsRepo for MemCreds {
-        async fn store(
-            &self,
-            id: &CredentialId,
-            plaintext_bundle: &str,
-        ) -> Result<(), StorageError> {
-            self.0
-                .lock()
-                .expect("mutex")
-                .insert(id.as_str().to_owned(), plaintext_bundle.to_owned());
-            Ok(())
-        }
-
-        async fn load(&self, id: &CredentialId) -> Result<Option<String>, StorageError> {
-            Ok(self.0.lock().expect("mutex").get(id.as_str()).cloned())
-        }
-
-        async fn delete(&self, id: &CredentialId) -> Result<bool, StorageError> {
-            Ok(self.0.lock().expect("mutex").remove(id.as_str()).is_some())
-        }
-
-        async fn list_ids(&self) -> Result<Vec<CredentialId>, StorageError> {
-            Ok(self
-                .0
-                .lock()
-                .expect("mutex")
-                .keys()
-                .map(|k| CredentialId::new(k.clone()))
-                .collect())
-        }
-
-        async fn last_refresh(
-            &self,
-            _id: &CredentialId,
-        ) -> Result<Option<OffsetDateTime>, StorageError> {
-            Ok(None)
-        }
-
-        async fn mark_refreshed(&self, _id: &CredentialId) -> Result<(), StorageError> {
-            Ok(())
-        }
-    }
-
-    fn make_app_state(auth: Arc<AuthState>, creds: Arc<dyn CredentialsRepo>) -> AppState {
-        make_app_state_with_settings(auth, creds, mem_settings())
-    }
-
-    fn make_app_state_with_settings(
-        auth: Arc<AuthState>,
-        creds: Arc<dyn CredentialsRepo>,
-        settings: Arc<dyn SettingsRepo>,
-    ) -> AppState {
-        let bus = EventBus::new(Arc::new(NullEventLogRepo));
-        let bus_adapter = BusAdapter::new(bus.clone());
-        bus_adapter.spawn();
-        let dp: Arc<dyn DataProvider> = test_dp();
-        let actions = dp.action_repo();
-        let globals: Arc<dyn GlobalsRepo> = Arc::clone(&dp) as Arc<dyn GlobalsRepo>;
-        let user_globals: Arc<dyn UserGlobalsRepo> = Arc::clone(&dp) as Arc<dyn UserGlobalsRepo>;
-        let overlays = dp.overlay_repo();
-        let _registry = Arc::new(ScriptRegistry::new());
-        let action_engine = Arc::new(spawn_action_engine(
-            Arc::clone(&bus),
-            forge_runtime::Catalog::new(
-                dp.action_repo(),
-                dp.trigger_instance_repo(),
-                dp.catalog_revision(),
-            ),
-            dp.action_repo(),
-            dp.history_repo(),
-            Arc::new(SubActionRegistry::new()),
-            Arc::new(forge_runtime::ActionCancelRegistry::new()),
-        ));
-        AppState {
-            auth,
-            bus,
-            bus_adapter,
-            actions,
-            globals,
-            user_globals,
-            overlays,
-            credentials: creds,
-            settings,
-            server_info: ServerInfo::serving(std::collections::BTreeSet::new()),
-            action_engine,
-            audio_clips: crate::audio_clips::AudioClipStore::new(),
-            overlay_root: Arc::new(std::path::PathBuf::from("/tmp/forge-test-overlays")),
-            overlay_cors_any_origin: true,
-            bind_addr: "127.0.0.1:9515".parse().expect("addr"),
-            timing: crate::ServerTiming::default(),
-            allowed_origins: Arc::new(crate::origin::build_allowed_origins(
-                "127.0.0.1:9515".parse().expect("addr"),
-                &[],
-            )),
-        }
-    }
 
     async fn make_server(
         auth_required_for_reads: bool,
@@ -437,7 +319,7 @@ pub(crate) mod tests {
             .await
             .expect("auth load");
         let creds_dyn: Arc<dyn CredentialsRepo> = creds;
-        let state = make_app_state(auth, creds_dyn);
+        let state = app_state(auth, creds_dyn);
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
         let addr = listener.local_addr().expect("local addr");
         let handle = serve_on(listener, state);
@@ -453,7 +335,7 @@ pub(crate) mod tests {
             .expect("auth load");
         let auth_ref = Arc::clone(&auth);
         let creds_dyn: Arc<dyn CredentialsRepo> = creds;
-        let state = make_app_state(auth, creds_dyn);
+        let state = app_state(auth, creds_dyn);
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
         let addr = listener.local_addr().expect("local addr");
         let handle = serve_on(listener, state);
@@ -464,7 +346,7 @@ pub(crate) mod tests {
         let creds = MemCreds::new();
         let auth = AuthState::load(false, &*creds).await.expect("auth load");
         let creds_dyn: Arc<dyn CredentialsRepo> = creds;
-        let state = make_app_state(auth, creds_dyn);
+        let state = app_state(auth, creds_dyn);
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
         let observed = state.clone();
         (serve_on(listener, state), observed)
@@ -495,11 +377,10 @@ pub(crate) mod tests {
         let creds = MemCreds::with_token("my-token");
         let auth = AuthState::load(false, &*creds).await.expect("auth load");
         let creds_dyn: Arc<dyn CredentialsRepo> = creds;
-        let state = make_app_state_with_settings(
-            auth,
-            creds_dyn,
-            Arc::clone(&settings) as Arc<dyn SettingsRepo>,
-        );
+        let state = AppState {
+            settings: Arc::clone(&settings) as Arc<dyn SettingsRepo>,
+            ..app_state(auth, creds_dyn)
+        };
 
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
         let boot_addr = listener.local_addr().expect("local addr");
@@ -547,29 +428,10 @@ pub(crate) mod tests {
         port: u16,
         additional_origins: Vec<String>,
     ) -> ServerConfig {
-        let bus = EventBus::new(Arc::new(NullEventLogRepo));
-        let dp: Arc<dyn DataProvider> = test_dp();
-        let action_engine = Arc::new(spawn_action_engine(
-            Arc::clone(&bus),
-            forge_runtime::Catalog::new(
-                dp.action_repo(),
-                dp.trigger_instance_repo(),
-                dp.catalog_revision(),
-            ),
-            dp.action_repo(),
-            dp.history_repo(),
-            Arc::new(SubActionRegistry::new()),
-            Arc::new(forge_runtime::ActionCancelRegistry::new()),
-        ));
-        let mut config = ServerConfig::new(
+        let mut config = server_config(
             settings as Arc<dyn SettingsRepo>,
-            MemCreds::new() as Arc<dyn CredentialsRepo>,
-            bus,
-            dp.action_repo(),
-            Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
-            Arc::clone(&dp) as Arc<dyn UserGlobalsRepo>,
-            dp.overlay_repo(),
-            action_engine,
+            MemCreds::new(),
+            test_dp(),
         );
         config.bind_addr = format!("127.0.0.1:{port}").parse().expect("addr");
         config.overlay_root = std::path::PathBuf::from("/tmp/forge-test-overlays");
@@ -729,11 +591,10 @@ pub(crate) mod tests {
     const ORIGIN_NOT_ALLOWED: &str = "ORIGIN_NOT_ALLOWED";
     const LOOPBACK: &str = "127.0.0.1";
     const EPHEMERAL_PORT: u16 = 0;
-    const UNFINISHED_REQUEST_HEAD: &[u8] = b"GET /api/v1/info HTTP/1.1\r\nHost: localhost\r\n";
-    const LOOPBACK_SETTLE: std::time::Duration = std::time::Duration::from_millis(50);
     const SHORT_DRAIN_BUDGET: std::time::Duration = std::time::Duration::from_millis(100);
-    const SETUP_ATTEMPTS: usize = 20;
-    const OLD_LISTENER_WINDOW: std::time::Duration = std::time::Duration::from_millis(50);
+    const PROMISED_BODY_BYTES: usize = 64;
+    const INTERIM_RESPONSE_CAPACITY: usize = 256;
+    const CONTINUE_STATUS_LINE: &str = "100 Continue";
 
     #[tokio::test]
     async fn ws_handshake_without_an_origin_header_is_accepted() {
@@ -1202,7 +1063,7 @@ pub(crate) mod tests {
             tokio::spawn(async move { handle.stop().await })
         };
 
-        tokio::time::timeout(std::time::Duration::from_secs(30), run_state.changed())
+        tokio::time::timeout(HANG_GUARD, run_state.changed())
             .await
             .expect("run state must flip without waiting for the drain")
             .expect("watch sender alive");
@@ -1334,70 +1195,80 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn a_listener_outliving_a_restart_cannot_report_the_new_one_stopped() {
-        use tokio::io::AsyncWriteExt;
+        use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 
-        let mut outlasted_the_drain = None;
-        for _ in 0..SETUP_ATTEMPTS {
-            let settings = mem_settings();
-            let (handle, boot_addr) = start_with_timing(
-                Arc::clone(&settings),
-                Vec::new(),
-                crate::ServerTiming {
-                    connection_drain_budget: SHORT_DRAIN_BUDGET,
-                    ..crate::ServerTiming::default()
-                },
-            )
-            .await;
-            let new_port = reserve_a_free_port().await;
-            crate::config::ServerSettings::save_bind_address(&*settings, LOOPBACK)
-                .await
-                .expect("save addr");
-            crate::config::ServerSettings::save_port(&*settings, new_port)
-                .await
-                .expect("save port");
+        let settings = mem_settings();
+        let creds = MemCreds::with_token(BEARER_TOKEN);
+        let auth = AuthState::load(false, &*creds).await.expect("auth load");
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let boot_addr = listener.local_addr().expect("local addr");
+        let state = AppState {
+            settings: Arc::clone(&settings) as Arc<dyn SettingsRepo>,
+            bind_addr: boot_addr,
+            allowed_origins: Arc::new(crate::origin::build_allowed_origins(boot_addr, &[])),
+            timing: crate::ServerTiming {
+                connection_drain_budget: SHORT_DRAIN_BUDGET,
+                ..crate::ServerTiming::default()
+            },
+            ..app_state(auth, creds)
+        };
+        let (run_state_tx, _run_state_rx) = tokio::sync::watch::channel(true);
+        let (reported_tx, reported_rx) = tokio::sync::watch::channel(true);
+        let old_listener_reports = reported_tx.clone();
+        let (join, shutdown_tx) =
+            super::serve_on_with_shutdown(listener, state.clone(), reported_tx);
+        let handle = ServerHandle::new(join, shutdown_tx, state, boot_addr, run_state_tx);
+        handle.adopt_generation(reported_rx);
+        let new_port = reserve_a_free_port().await;
+        crate::config::ServerSettings::save_bind_address(&*settings, LOOPBACK)
+            .await
+            .expect("save addr");
+        crate::config::ServerSettings::save_port(&*settings, new_port)
+            .await
+            .expect("save port");
 
-            let mut lingering = tokio::net::TcpStream::connect(boot_addr)
-                .await
-                .expect("connect");
-            lingering
-                .write_all(UNFINISHED_REQUEST_HEAD)
-                .await
-                .expect("write");
-            lingering.flush().await.expect("flush");
-            tokio::time::sleep(LOOPBACK_SETTLE).await;
-
-            let started = tokio::time::Instant::now();
-            tokio::time::timeout(HANG_GUARD, handle.restart())
-                .await
-                .expect("the restart never finished draining")
-                .expect("restart");
-            if started.elapsed() >= SHORT_DRAIN_BUDGET {
-                outlasted_the_drain = Some((handle, lingering));
-                break;
-            }
-            handle
-                .stop()
-                .await
-                .expect("stop a setup that missed the drain");
-        }
-        let (handle, lingering) = outlasted_the_drain
-            .expect("the lingering connection must outlast the drain or this proves nothing");
-
-        let mut run_state = handle.run_state();
+        let mut lingering = tokio::net::TcpStream::connect(boot_addr)
+            .await
+            .expect("connect");
+        let head = format!(
+            "POST /api/v1/globals/score HTTP/1.1\r\nHost: {boot_addr}\r\n\
+             Authorization: Bearer {BEARER_TOKEN}\r\nContent-Type: application/json\r\n\
+             Content-Length: {PROMISED_BODY_BYTES}\r\nExpect: 100-continue\r\n\r\n"
+        );
+        lingering.write_all(head.as_bytes()).await.expect("write");
+        let mut interim = [0_u8; INTERIM_RESPONSE_CAPACITY];
+        let read = tokio::time::timeout(HANG_GUARD, lingering.read(&mut interim))
+            .await
+            .expect("the handler never asked for the body")
+            .expect("read");
         assert!(
-            *run_state.borrow_and_update(),
+            String::from_utf8_lossy(&interim[..read]).contains(CONTINUE_STATUS_LINE),
+            "the request never reached a handler waiting on its body"
+        );
+
+        tokio::time::timeout(HANG_GUARD, handle.restart())
+            .await
+            .expect("the restart never finished draining")
+            .expect("restart");
+        assert!(
+            *old_listener_reports.borrow(),
+            "the old listener must still be serving the unfinished request after the drain"
+        );
+        let run_state = handle.run_state();
+        assert!(
+            *run_state.borrow(),
             "the restarted listener is serving and must report running"
         );
 
         drop(lingering);
+        tokio::time::timeout(HANG_GUARD, old_listener_reports.closed())
+            .await
+            .expect("the old listener never reported its end");
 
         assert!(
-            tokio::time::timeout(OLD_LISTENER_WINDOW, run_state.changed())
-                .await
-                .is_err(),
+            *run_state.borrow(),
             "the previous listener finishing reported the live server stopped"
         );
-
         handle.stop().await.expect("stop after restart");
     }
 
@@ -1575,7 +1446,6 @@ pub(crate) mod tests {
 
     const OVERLAY_IDENTITY: &str = "goal-box";
     const OVERLAY_PAGE_CREDENTIAL: &str = "2f8b1d0c9a7e6f5b4c3d2e1f0a9b8c7d";
-    const FRAME_BUDGET: std::time::Duration = std::time::Duration::from_secs(5);
     const HANG_GUARD: std::time::Duration = std::time::Duration::from_secs(30);
 
     fn served_overlay() -> forge_storage::OverlayDefinition {
@@ -1609,7 +1479,7 @@ pub(crate) mod tests {
         let creds = MemCreds::with_token(BEARER_TOKEN);
         let auth = AuthState::load(false, &*creds).await.expect("auth load");
         let creds_dyn: Arc<dyn CredentialsRepo> = creds;
-        let mut state = make_app_state(auth, creds_dyn);
+        let mut state = app_state(auth, creds_dyn);
 
         let mut overlays = forge_storage::overlay::MockOverlayRepo::new();
         overlays.expect_get_by_credential().returning(|credential| {
@@ -1622,7 +1492,7 @@ pub(crate) mod tests {
     async fn next_text_frame<S: ClientIo>(
         socket: &mut tokio_tungstenite::WebSocketStream<S>,
     ) -> String {
-        let message = tokio::time::timeout(FRAME_BUDGET, futures_util::StreamExt::next(socket))
+        let message = tokio::time::timeout(HANG_GUARD, futures_util::StreamExt::next(socket))
             .await
             .expect("timeout waiting for a frame")
             .expect("the socket closed before a frame arrived")
@@ -2054,7 +1924,7 @@ pub(crate) mod tests {
             .await
             .expect("auth load");
         let creds_dyn: Arc<dyn CredentialsRepo> = creds;
-        serve_over_duplex(make_app_state(auth, creds_dyn)).await
+        serve_over_duplex(app_state(auth, creds_dyn)).await
     }
 
     async fn open_duplex_ws(dialer: &crate::listener::tests::DuplexDialer) -> DuplexSocket {
@@ -2085,7 +1955,7 @@ pub(crate) mod tests {
     }
 
     async fn next_message<S: ClientIo>(socket: &mut ClientSocket<S>) -> Option<ClientMessage> {
-        tokio::time::timeout(FRAME_BUDGET, futures_util::StreamExt::next(socket))
+        tokio::time::timeout(HANG_GUARD, futures_util::StreamExt::next(socket))
             .await
             .expect("timeout waiting for the server")
             .and_then(Result::ok)
@@ -2678,7 +2548,7 @@ pub(crate) mod tests {
     async fn a_socket_that_joins_after_shutdown_is_signalled_is_closed_at_once() {
         let creds = MemCreds::new();
         let auth = AuthState::load(false, &*creds).await.expect("auth load");
-        let state = make_app_state(auth, creds as Arc<dyn CredentialsRepo>);
+        let state = app_state(auth, creds as Arc<dyn CredentialsRepo>);
         let (_shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(true);
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
         let addr = listener.local_addr().expect("local addr");

@@ -63,6 +63,7 @@ mod tests {
     use crate::error::DiscordError;
     use crate::mention::MentionPolicy;
     use async_trait::async_trait;
+    use forge_events::test_support::NullPublisher;
 
     struct MockSink;
 
@@ -209,11 +210,6 @@ mod tests {
         }
     }
 
-    struct SilentPublisher;
-    impl forge_events::EventPublisher for SilentPublisher {
-        fn publish(&self, _: forge_events::Event) {}
-    }
-
     fn text(value: &str) -> Variant {
         Variant::String(value.to_owned())
     }
@@ -227,7 +223,7 @@ mod tests {
 
         let sink: Arc<dyn DiscordSink> = Arc::new(IdSink { fail });
         let stack = ArgStack::new().set("user".to_owned(), text("alice"));
-        let publisher = SilentPublisher;
+        let publisher = NullPublisher;
         let ctx = RunContext::leaf(&stack, 0, EventId::new(), &publisher);
 
         let post_text_runner = PostTextRunner::new(Arc::clone(&sink));
@@ -467,7 +463,7 @@ mod tests {
             ("discord.webhook.delete_message", "message_id"),
         ];
         let stack = ArgStack::new().set("blank".to_owned(), text(" \t "));
-        let publisher = SilentPublisher;
+        let publisher = NullPublisher;
 
         for (id, key) in cases {
             let counting = Arc::new(CountingSink::default());
@@ -590,7 +586,7 @@ mod tests {
             (&edit, "content", any_of(["content", "embed_title"])),
         ];
         let stack = ArgStack::new().set("empty".to_owned(), text(""));
-        let publisher = SilentPublisher;
+        let publisher = NullPublisher;
 
         for (runner, key, problem) in cases {
             let config = config_of(&[

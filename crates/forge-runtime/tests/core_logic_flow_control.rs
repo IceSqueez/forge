@@ -1,124 +1,20 @@
 #![allow(clippy::unwrap_used)]
 mod common;
+use common::chain::{
+    args_set, case, chain_step, if_cfg, inline, loop_cfg, run_top, step, switch_cfg,
+};
+use common::runners::{CancelsItsRunRunner, always_failing_runner};
 use common::{code_of, detail_of, message_of};
+use forge_events::test_support::NullPublisher;
 use std::sync::Arc;
 
-use async_trait::async_trait;
-use forge_events::{Event, EventPublisher};
-use forge_registry::{
-    CancelSignal, ChainSignal, FormField, RegistryError, RunContext, StepTimer, SubActionCategory,
-    SubActionRegistry, SubActionRunner,
-};
+use forge_registry::{CancelSignal, ChainSignal, RunContext, SubActionRegistry, SubActionRunner};
 use forge_runtime::sub_action_runners::{
     CoreArgsSetRunner, CoreLogicBreakLoopRunner, CoreLogicContinueLoopRunner,
     CoreLogicIfThenElseRunner, CoreLogicLoopRunner, CoreLogicStopRunner, CoreLogicSwitchCaseRunner,
 };
 use forge_runtime::{ChainEngine, ChainRun, ConditionGate, Config};
-use forge_types::{
-    ArgStack, EventId, SubActionConfig, SubActionOutcome, SubActionStep, SubActionTelemetry,
-    Variant,
-};
-use time::OffsetDateTime;
-
-struct NullPublisher;
-impl EventPublisher for NullPublisher {
-    fn publish(&self, _event: Event) {}
-}
-
-struct AlwaysFailRunner;
-
-#[async_trait]
-impl SubActionRunner for AlwaysFailRunner {
-    fn id(&self) -> &str {
-        "test.always_fail"
-    }
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Util
-    }
-    fn label(&self) -> &str {
-        ""
-    }
-    fn summary(&self) -> &str {
-        ""
-    }
-    fn search_text(&self) -> &str {
-        ""
-    }
-    fn icon_name(&self) -> &str {
-        ""
-    }
-    fn default_config(&self) -> SubActionConfig {
-        SubActionConfig::new()
-    }
-    fn config_fields(&self) -> Vec<FormField> {
-        Vec::new()
-    }
-    fn validate_config(&self, _config: &SubActionConfig) -> Result<(), RegistryError> {
-        Ok(())
-    }
-    async fn execute(
-        &self,
-        _config: &SubActionConfig,
-        ctx: &RunContext<'_>,
-    ) -> (SubActionTelemetry, Option<ArgStack>) {
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                index: ctx.index,
-                kind: "test.always_fail".to_owned(),
-                started_at: OffsetDateTime::now_utc(),
-                duration_ms: 0,
-                outcome: SubActionOutcome::Failed(forge_types::VerbatimText::new("boom").into()),
-            },
-            None,
-        )
-    }
-}
-
-struct CancelsItsRunRunner;
-
-#[async_trait]
-impl SubActionRunner for CancelsItsRunRunner {
-    fn id(&self) -> &str {
-        "test.cancels_its_run"
-    }
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Util
-    }
-    fn label(&self) -> &str {
-        ""
-    }
-    fn summary(&self) -> &str {
-        ""
-    }
-    fn search_text(&self) -> &str {
-        ""
-    }
-    fn icon_name(&self) -> &str {
-        ""
-    }
-    fn default_config(&self) -> SubActionConfig {
-        SubActionConfig::new()
-    }
-    fn config_fields(&self) -> Vec<FormField> {
-        Vec::new()
-    }
-    fn validate_config(&self, _config: &SubActionConfig) -> Result<(), RegistryError> {
-        Ok(())
-    }
-    async fn execute(
-        &self,
-        _config: &SubActionConfig,
-        ctx: &RunContext<'_>,
-    ) -> (SubActionTelemetry, Option<ArgStack>) {
-        ctx.cancel.cancel();
-        (
-            StepTimer::start(ctx, "test.cancels_its_run").success(),
-            None,
-        )
-    }
-}
+use forge_types::{ArgStack, EventId, SubActionConfig, SubActionOutcome, SubActionStep, Variant};
 
 fn engine() -> Arc<ChainEngine> {
     let config = Config {
@@ -136,7 +32,8 @@ fn engine() -> Arc<ChainEngine> {
         .unwrap();
     reg.register(Box::new(CoreLogicLoopRunner::new(Arc::clone(&gate))))
         .unwrap();
-    reg.register(Box::new(AlwaysFailRunner)).unwrap();
+    reg.register(Box::new(always_failing_runner("test.always_fail")))
+        .unwrap();
     reg.register(Box::new(CancelsItsRunRunner)).unwrap();
     Arc::new(ChainEngine::new(
         Arc::new(reg),
@@ -144,84 +41,6 @@ fn engine() -> Arc<ChainEngine> {
         gate,
         config,
     ))
-}
-
-async fn run_top(engine: &Arc<ChainEngine>, steps: Vec<SubActionStep>) -> ChainRun {
-    engine
-        .run_sequential(
-            &steps,
-            &ArgStack::new(),
-            EventId::new(),
-            &CancelSignal::new(),
-        )
-        .await
-}
-
-fn step(kind: &str, config: SubActionConfig) -> SubActionStep {
-    SubActionStep {
-        kind_id: kind.to_owned(),
-        config,
-        enabled: true,
-        continue_on_error: false,
-        condition: None,
-        label: None,
-    }
-}
-
-fn chain_step(kind: &str, config: SubActionConfig) -> Variant {
-    let mut m = SubActionConfig::new();
-    m.insert("kind_id".to_owned(), Variant::String(kind.to_owned()));
-    m.insert("config".to_owned(), Variant::Object(config));
-    m.insert("enabled".to_owned(), Variant::Bool(true));
-    Variant::Object(m)
-}
-
-fn inline(steps: Vec<Variant>) -> Variant {
-    Variant::Array(steps)
-}
-
-fn args_set(name: &str, value: &str) -> SubActionConfig {
-    let mut c = SubActionConfig::new();
-    c.insert("name".to_owned(), Variant::String(name.to_owned()));
-    c.insert("value".to_owned(), Variant::String(value.to_owned()));
-    c
-}
-
-fn loop_cfg(count: i64, body: Variant) -> SubActionConfig {
-    let mut c = SubActionConfig::new();
-    c.insert("mode".to_owned(), Variant::String("count".to_owned()));
-    c.insert("count".to_owned(), Variant::Int(count));
-    c.insert("body".to_owned(), body);
-    c
-}
-
-fn if_cfg(condition: &str, then_chain: Variant, else_chain: Variant) -> SubActionConfig {
-    let mut c = SubActionConfig::new();
-    c.insert(
-        "condition".to_owned(),
-        Variant::String(condition.to_owned()),
-    );
-    c.insert("then_chain".to_owned(), then_chain);
-    c.insert("else_chain".to_owned(), else_chain);
-    c
-}
-
-fn case(match_val: Variant, chain: Variant) -> Variant {
-    let mut m = SubActionConfig::new();
-    m.insert("match".to_owned(), match_val);
-    m.insert("chain".to_owned(), chain);
-    Variant::Object(m)
-}
-
-fn switch_cfg(expression: &str, cases: Vec<Variant>, default_chain: Variant) -> SubActionConfig {
-    let mut c = SubActionConfig::new();
-    c.insert(
-        "expression".to_owned(),
-        Variant::String(expression.to_owned()),
-    );
-    c.insert("cases".to_owned(), Variant::Array(cases));
-    c.insert("default_chain".to_owned(), default_chain);
-    c
 }
 
 fn s(value: &str) -> Variant {

@@ -508,9 +508,11 @@ mod tests {
     use time::OffsetDateTime;
 
     use super::*;
-    use crate::test_support::{install_presentation, runtime, test_backend};
+    use crate::test_support::{
+        alive_tasks, install_presentation, runtime, settle_until, settle_until_tasks_drain_to,
+        test_backend,
+    };
 
-    const SETTLE_ROUNDS: usize = 200;
     const SAVED_JAR: &str = "jar-saved";
     const OTHER_JAR: &str = "jar-other";
     const PASTED: &str = "pasted-token";
@@ -612,19 +614,6 @@ mod tests {
         )))
     }
 
-    fn settle_until(
-        cx: &mut TestAppContext,
-        rt: &tokio::runtime::Runtime,
-        view: &Entity<DonationSettingsView>,
-        done: impl Fn(&DonationSettingsView) -> bool,
-    ) -> bool {
-        (0..SETTLE_ROUNDS).any(|_| {
-            rt.block_on(async { tokio::time::sleep(Duration::from_millis(1)).await });
-            cx.run_until_parked();
-            view.read_with(cx, |view, _| done(view))
-        })
-    }
-
     fn open(
         cx: &mut TestAppContext,
         rt: &tokio::runtime::Runtime,
@@ -640,8 +629,9 @@ mod tests {
             rt_handle: rt.handle().clone(),
         };
         let view = cx.new(|cx| DonationSettingsView::new(launch, cx));
-        let loaded = settle_until(cx, rt, &view, |view| view.has_token.is_some());
-        assert!(loaded, "the stored token state never loaded");
+        settle_until(cx, rt, |cx| {
+            view.read_with(cx, |view, _| view.has_token.is_some())
+        });
         view
     }
 
@@ -895,9 +885,10 @@ mod tests {
         let rt = runtime();
         let vault = Arc::new(saved_donatello());
         let view = open(cx, &rt, donatello, &vault);
+        let background_tasks = alive_tasks(&rt);
 
         view.update(cx, |view, cx| view.confirm_remove(cx));
-        settle_until(cx, &rt, &view, |_| false);
+        settle_until_tasks_drain_to(cx, &rt, background_tasks);
 
         assert!(!vault.is_empty(), "the stored token was deleted");
         view.read_with(cx, |view, _| {
@@ -916,9 +907,10 @@ mod tests {
             view.request_remove(cx);
             view.confirm_remove(cx);
         });
-        let removed = settle_until(cx, &rt, &view, |view| view.has_token == Some(false));
+        settle_until(cx, &rt, |cx| {
+            view.read_with(cx, |view, _| view.has_token == Some(false))
+        });
 
-        assert!(removed, "the removal never finished");
         assert!(vault.is_empty());
         view.read_with(cx, |view, _| assert_eq!(view.shown_jar(), None));
     }

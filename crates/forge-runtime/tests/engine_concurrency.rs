@@ -1,4 +1,5 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod common;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -28,8 +29,8 @@ use forge_storage::{
 };
 use forge_types::{
     Action, ActionId, ArgStack, DEFAULT_QUEUE_ID, EventId, ExecutionContext, ExecutionMetadata,
-    ExecutionMode, ExecutionOutcome, Queue, QueueId, SubActionConfig, SubActionOutcome,
-    SubActionStep, SubActionTelemetry, Variant,
+    ExecutionOutcome, Queue, QueueId, SubActionConfig, SubActionOutcome, SubActionStep,
+    SubActionTelemetry, Variant,
 };
 use time::OffsetDateTime;
 use tokio::sync::{Notify, mpsc, watch};
@@ -273,18 +274,7 @@ fn step(kind_id: &str, config: SubActionConfig) -> SubActionStep {
 }
 
 fn action(queue_id: QueueId, steps: Vec<SubActionStep>) -> Action {
-    Action {
-        id: ActionId::new(),
-        name: "a".to_owned(),
-        group: None,
-        queue_id,
-        enabled: true,
-        concurrent: false,
-        bypass_pause: false,
-        execution_mode: ExecutionMode::Sequential,
-        description: None,
-        sub_actions: steps,
-    }
+    common::sequential_action(ActionId::new(), "a", queue_id, steps)
 }
 
 fn single(queue_id: QueueId, kind_id: &str) -> Action {

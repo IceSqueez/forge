@@ -1,26 +1,29 @@
-#![allow(clippy::unwrap_used)]
-use std::collections::HashMap;
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+mod common;
+
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
+use common::{
+    ChannelPublisher, FakeObs, Handshake, RELOOKED_ITEM_ID, Recorder, Reply, SCENE, SCENE_UUID,
+    SNAPSHOT_ITEM_ID, SOURCE, Seen, WALL_BUDGET, bind_loopback, completes_every_handshake,
+    connect_to, connect_with_timing, connected, event_frame, fast_retries, settle_until,
+    settle_until_async, spawn_fake_obs, standard_reply, version_data,
+};
 use forge_events::{Event, EventPublisher};
 use forge_events::{PlatformConnectionChanged, TypedEvent};
 use forge_obs::{ObsClient, ObsError, ObsSink, ObsSource, ObsTiming};
 use forge_platform_core::{BuiltinControl, BuiltinStatus, ConnectionState};
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
-use tokio::net::{TcpListener, TcpStream};
+use tokio::net::TcpListener;
 use tokio::sync::{Notify, mpsc, oneshot};
-use tokio::task::JoinSet;
-use tokio_tungstenite::WebSocketStream;
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::tungstenite::protocol::CloseFrame;
 use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
 
 const DISCONNECT_HANG_GUARD: Duration = Duration::from_secs(20);
-
-const PEER_SPEAKS_WINDOW: Duration = Duration::from_secs(2);
 
 const BEYOND_ANY_GUARD: Duration = Duration::from_secs(100 * 24 * 3600);
 
@@ -42,25 +45,7 @@ const ATTEMPTS_BEFORE_VERDICT: usize = 3;
 
 const SESSION_INVALIDATED: u16 = 4011;
 
-struct ChannelPublisher(mpsc::UnboundedSender<Event>);
-
-impl EventPublisher for ChannelPublisher {
-    fn publish(&self, event: Event) {
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the receiver may already be gone"
-        )]
-        let _ = self.0.send(event);
-    }
-}
-
-fn fast_retries() -> ObsTiming {
-    ObsTiming {
-        reconnect_base_delay: Duration::from_millis(1),
-        reconnect_max_delay: Duration::from_millis(5),
-        ..ObsTiming::default()
-    }
-}
+const EVENT_BURST: usize = 1100;
 
 fn endless_retry_pause() -> ObsTiming {
     ObsTiming {
@@ -68,12 +53,6 @@ fn endless_retry_pause() -> ObsTiming {
         reconnect_max_delay: BEYOND_ANY_GUARD,
         ..ObsTiming::default()
     }
-}
-
-async fn bind_loopback() -> (TcpListener, u16) {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let port = listener.local_addr().unwrap().port();
-    (listener, port)
 }
 
 async fn serve_refused_handshakes(listener: TcpListener, accepted: mpsc::UnboundedSender<()>) {
@@ -251,376 +230,24 @@ async fn a_retired_client_stays_silent_when_its_server_speaks_afterwards() {
         reason = "the receiver may already be gone"
     )]
     let _ = gate_tx.send(());
-    #[expect(
-        clippy::let_underscore_must_use,
-        reason = "elapsing the window is an expected outcome"
-    )]
-    let _ = tokio::time::timeout(PEER_SPEAKS_WINDOW, settled_rx).await;
-    tokio::task::yield_now().await;
+    tokio::time::timeout(HANDSHAKE_BUDGET, settled_rx)
+        .await
+        .expect("the mock peer never sent its close frame")
+        .expect("the mock peer stopped before its close frame");
+    drop(client);
+    let published_after_retiring = tokio::time::timeout(HANDSHAKE_BUDGET, rx.recv())
+        .await
+        .expect("a task of the retired client kept its publisher alive");
     server.abort();
 
     assert!(
-        rx.try_recv().is_err(),
+        published_after_retiring.is_none(),
         "a client whose disconnect already returned published again"
     );
 }
 
-const WALL_BUDGET: Duration = Duration::from_secs(90);
-
-const REAL_CLOCK_POLL: Duration = Duration::from_millis(10);
-
-const SCENE: &str = "Main";
-const SCENE_UUID: &str = "6f1d3c1e-8a3b-4b8e-9d1a-0c2b3a4d5e6f";
-const SOURCE: &str = "Webcam";
-const SNAPSHOT_ITEM_ID: i64 = 7;
-const RELOOKED_ITEM_ID: i64 = 9;
-
-const EVENT_BURST: usize = 1100;
-
-const REQUEST_OP: u64 = 6;
-const IDENTIFY_OP: u64 = 1;
-const OBS_SUCCESS: u16 = 100;
-const OBS_RESOURCE_NOT_FOUND: u16 = 600;
-
-async fn settle_until(what: &str, mut done: impl FnMut() -> bool) {
-    let started = Instant::now();
-    while !done() {
-        assert!(started.elapsed() < WALL_BUDGET, "never happened: {what}");
-        tokio::time::sleep(REAL_CLOCK_POLL).await;
-    }
-}
-
 async fn finishes_promptly<F: std::future::Future>(work: F) -> Option<F::Output> {
     tokio::time::timeout(DISCONNECT_HANG_GUARD, work).await.ok()
-}
-
-#[derive(Clone, Copy)]
-enum Handshake {
-    Complete,
-    CloseAfterIdentified,
-    Stall,
-    StallUpgrade,
-}
-
-enum Reply {
-    Answer(Value),
-    Reject,
-    Silent,
-    DropSocket,
-    AnswerThenClose(Value),
-    EventsFirst(Vec<Value>, Box<Reply>),
-    HeldUntil(Arc<Notify>, Box<Reply>),
-}
-
-#[derive(Clone, Copy)]
-struct Seen<'a> {
-    conn: usize,
-    request_type: &'a str,
-    nth: usize,
-}
-
-type Script = Arc<dyn Fn(Seen<'_>) -> Reply + Send + Sync>;
-
-#[derive(Clone, Default)]
-struct WireLog(Arc<Mutex<WireState>>);
-
-#[derive(Default)]
-struct WireState {
-    accepted: usize,
-    requests: Vec<(usize, String, Value)>,
-}
-
-impl WireLog {
-    fn accepted(&self) -> usize {
-        self.0.lock().unwrap().accepted
-    }
-
-    fn count(&self, conn: usize, request_type: &str) -> usize {
-        self.0
-            .lock()
-            .unwrap()
-            .requests
-            .iter()
-            .filter(|(c, t, _)| *c == conn && t == request_type)
-            .count()
-    }
-
-    fn requests_of(&self, conn: usize, types: &[&str]) -> Vec<(String, Value)> {
-        self.0
-            .lock()
-            .unwrap()
-            .requests
-            .iter()
-            .filter(|(c, t, _)| *c == conn && types.contains(&t.as_str()))
-            .map(|(_, t, d)| (t.clone(), d.clone()))
-            .collect()
-    }
-}
-
-#[derive(Clone, Default)]
-struct Recorder(Arc<Mutex<Vec<Event>>>);
-
-impl EventPublisher for Recorder {
-    fn publish(&self, event: Event) {
-        self.0.lock().unwrap().push(event);
-    }
-}
-
-impl Recorder {
-    fn kinds(&self) -> Vec<String> {
-        self.0
-            .lock()
-            .unwrap()
-            .iter()
-            .map(|e| e.kind.clone())
-            .collect()
-    }
-
-    fn announcements(&self) -> Vec<(String, Option<bool>)> {
-        self.0
-            .lock()
-            .unwrap()
-            .iter()
-            .filter(|e| e.kind == PlatformConnectionChanged::KIND)
-            .map(|e| {
-                (
-                    e.payload["state"]
-                        .as_str()
-                        .unwrap_or("<missing>")
-                        .to_owned(),
-                    e.payload["expected"].as_bool(),
-                )
-            })
-            .collect()
-    }
-
-    fn states(&self) -> Vec<String> {
-        self.0
-            .lock()
-            .unwrap()
-            .iter()
-            .filter(|e| e.kind == PlatformConnectionChanged::KIND)
-            .map(|e| {
-                e.payload["state"]
-                    .as_str()
-                    .unwrap_or("<missing>")
-                    .to_owned()
-            })
-            .collect()
-    }
-}
-
-fn version_data() -> Value {
-    json!({
-        "obsVersion": "31.0.0",
-        "obsWebSocketVersion": "5.5.0",
-        "rpcVersion": 1,
-        "availableRequests": [],
-        "supportedImageFormats": [],
-        "platform": "linux",
-        "platformDescription": "loopback fake",
-    })
-}
-
-fn standard_reply(request_type: &str) -> Reply {
-    match request_type {
-        "GetVersion" => Reply::Answer(version_data()),
-        "GetSceneList" => Reply::Answer(json!({
-            "scenes": [{ "sceneName": SCENE, "sceneUuid": SCENE_UUID, "sceneIndex": 0 }],
-        })),
-        "GetSceneItemList" => Reply::Answer(json!({
-            "sceneItems": [{
-                "sceneItemId": SNAPSHOT_ITEM_ID,
-                "sceneItemIndex": 0,
-                "sourceName": SOURCE,
-                "sourceType": "OBS_SOURCE_TYPE_INPUT",
-                "inputKind": "browser_source",
-                "isGroup": null,
-            }],
-        })),
-        "GetSceneItemEnabled" => Reply::Answer(json!({ "sceneItemEnabled": true })),
-        "GetSceneItemId" => Reply::Answer(json!({ "sceneItemId": RELOOKED_ITEM_ID })),
-        t if t.starts_with("Set") => Reply::Answer(Value::Null),
-        _ => Reply::Reject,
-    }
-}
-
-fn event_frame(event_type: &str, data: Value) -> Value {
-    json!({ "op": 5, "d": { "eventType": event_type, "eventData": data } })
-}
-
-struct FakeObs {
-    port: u16,
-    log: WireLog,
-    server: tokio::task::JoinHandle<()>,
-}
-
-impl Drop for FakeObs {
-    fn drop(&mut self) {
-        self.server.abort();
-    }
-}
-
-async fn spawn_fake_obs(handshake: fn(usize) -> Handshake, script: Script) -> FakeObs {
-    let (listener, port) = bind_loopback().await;
-    let log = WireLog::default();
-    let server = tokio::spawn(serve_fake_obs(listener, handshake, script, log.clone()));
-    FakeObs { port, log, server }
-}
-
-async fn serve_fake_obs(
-    listener: TcpListener,
-    handshake: fn(usize) -> Handshake,
-    script: Script,
-    log: WireLog,
-) {
-    let mut connections = JoinSet::new();
-    while let Ok((stream, _)) = listener.accept().await {
-        let conn = {
-            let mut state = log.0.lock().unwrap();
-            state.accepted += 1;
-            state.accepted - 1
-        };
-        connections.spawn(serve_fake_connection(
-            stream,
-            conn,
-            handshake(conn),
-            Arc::clone(&script),
-            log.clone(),
-        ));
-    }
-}
-
-async fn send_json(socket: &mut WebSocketStream<TcpStream>, frame: &Value) -> bool {
-    socket.send(Message::text(frame.to_string())).await.is_ok()
-}
-
-async fn close_socket(socket: &mut WebSocketStream<TcpStream>) {
-    let frame = CloseFrame {
-        code: CloseCode::Normal,
-        reason: "fake OBS closing".into(),
-    };
-    #[expect(
-        clippy::let_underscore_must_use,
-        reason = "the receiver may already be gone"
-    )]
-    let _ = socket.send(Message::Close(Some(frame))).await;
-}
-
-async fn next_json(socket: &mut WebSocketStream<TcpStream>) -> Option<Value> {
-    while let Some(Ok(message)) = socket.next().await {
-        if let Message::Text(text) = message {
-            return serde_json::from_str(text.as_str()).ok();
-        }
-    }
-    None
-}
-
-async fn serve_fake_connection(
-    stream: TcpStream,
-    conn: usize,
-    handshake: Handshake,
-    script: Script,
-    log: WireLog,
-) {
-    if matches!(handshake, Handshake::StallUpgrade) {
-        std::future::pending::<()>().await;
-    }
-    let Ok(mut socket) = tokio_tungstenite::accept_async(stream).await else {
-        return;
-    };
-    if matches!(handshake, Handshake::Stall) {
-        std::future::pending::<()>().await;
-    }
-    let hello = json!({ "op": 0, "d": { "obsWebSocketVersion": "5.5.0", "rpcVersion": 1 } });
-    if !send_json(&mut socket, &hello).await {
-        return;
-    }
-    loop {
-        match next_json(&mut socket).await {
-            Some(frame) if frame["op"].as_u64() == Some(IDENTIFY_OP) => break,
-            Some(_) => {}
-            None => return,
-        }
-    }
-    let identified = json!({ "op": 2, "d": { "negotiatedRpcVersion": 1 } });
-    if !send_json(&mut socket, &identified).await {
-        return;
-    }
-    if matches!(handshake, Handshake::CloseAfterIdentified) {
-        close_socket(&mut socket).await;
-        return;
-    }
-
-    let mut seen_per_type: HashMap<String, usize> = HashMap::new();
-    while let Some(frame) = next_json(&mut socket).await {
-        if frame["op"].as_u64() != Some(REQUEST_OP) {
-            continue;
-        }
-        let request_type = frame["d"]["requestType"].as_str().unwrap_or("").to_owned();
-        let request_id = frame["d"]["requestId"].clone();
-        log.0.lock().unwrap().requests.push((
-            conn,
-            request_type.clone(),
-            frame["d"]["requestData"].clone(),
-        ));
-        let nth = seen_per_type.entry(request_type.clone()).or_default();
-        let mut reply = script(Seen {
-            conn,
-            request_type: &request_type,
-            nth: *nth,
-        });
-        *nth += 1;
-
-        let response = |result: bool, code: u16, data: Value| {
-            json!({ "op": 7, "d": {
-                "requestType": request_type,
-                "requestId": request_id,
-                "requestStatus": { "result": result, "code": code },
-                "responseData": data,
-            }})
-        };
-        loop {
-            match reply {
-                Reply::EventsFirst(events, then) => {
-                    for event in &events {
-                        if !send_json(&mut socket, event).await {
-                            return;
-                        }
-                    }
-                    reply = *then;
-                }
-                Reply::HeldUntil(gate, then) => {
-                    gate.notified().await;
-                    reply = *then;
-                }
-                Reply::Answer(data) => {
-                    if !send_json(&mut socket, &response(true, OBS_SUCCESS, data)).await {
-                        return;
-                    }
-                    break;
-                }
-                Reply::Reject => {
-                    let rejection = response(false, OBS_RESOURCE_NOT_FOUND, Value::Null);
-                    if !send_json(&mut socket, &rejection).await {
-                        return;
-                    }
-                    break;
-                }
-                Reply::Silent => break,
-                Reply::DropSocket => return,
-                Reply::AnswerThenClose(data) => {
-                    let _ = send_json(&mut socket, &response(true, OBS_SUCCESS, data)).await;
-                    close_socket(&mut socket).await;
-                    return;
-                }
-            }
-        }
-    }
-}
-
-fn completes_every_handshake(_: usize) -> Handshake {
-    Handshake::Complete
 }
 
 fn the_first_two_handshakes_complete(conn: usize) -> Handshake {
@@ -637,33 +264,6 @@ fn only_the_first_handshake_completes(conn: usize) -> Handshake {
     } else {
         Handshake::Stall
     }
-}
-
-async fn connect_to(fake: &FakeObs, recorder: &Recorder) -> Arc<ObsClient> {
-    connect_with_timing(fake, recorder, fast_retries()).await
-}
-
-async fn connect_with_timing(
-    fake: &FakeObs,
-    recorder: &Recorder,
-    timing: ObsTiming,
-) -> Arc<ObsClient> {
-    let client = ObsClient::connect_with_timing(
-        &format!("127.0.0.1:{}", fake.port),
-        None,
-        Arc::new(recorder.clone()),
-        timing,
-    )
-    .await
-    .unwrap();
-    Arc::new(client)
-}
-
-async fn connected(client: &ObsClient) {
-    settle_until("the client reached connected", || {
-        client.connection_state() == ConnectionState::Connected
-    })
-    .await;
 }
 
 fn scene_item_enable_state_changed(enabled: bool) -> Value {
@@ -955,11 +555,10 @@ fn scene_list(names: &[&str]) -> Reply {
 }
 
 async fn wait_for_scene(client: &ObsClient, scene: &str) {
-    let started = Instant::now();
-    while !client.scenes().await.unwrap().iter().any(|s| s == scene) {
-        assert!(started.elapsed() < WALL_BUDGET, "{scene} never appeared");
-        tokio::task::yield_now().await;
-    }
+    settle_until_async("the created scene appeared", || async {
+        client.scenes().await.unwrap().iter().any(|s| s == scene)
+    })
+    .await;
 }
 
 #[tokio::test]
@@ -995,15 +594,10 @@ async fn a_scene_created_during_a_held_topology_fetch_survives_the_resync() {
     wait_for_scene(&client, INTRO).await;
     release.notify_one();
 
-    let started = Instant::now();
-    while client.sources(INTRO).await.unwrap().is_empty() {
-        assert!(
-            started.elapsed() < WALL_BUDGET,
-            "the stale fetch landed instead of a refetch: scenes {:?}",
-            client.scenes().await.unwrap()
-        );
-        tokio::task::yield_now().await;
-    }
+    settle_until_async("a refetch replaced the stale fetch", || async {
+        !client.sources(INTRO).await.unwrap().is_empty()
+    })
+    .await;
     assert_eq!(client.scenes().await.unwrap(), vec![SCENE, INTRO]);
 }
 
@@ -1138,8 +732,6 @@ async fn an_event_burst_that_overflows_the_buffer_resyncs_the_catalog_on_the_sam
 
 const PROBE_PASSWORD: &str = "obs-auto-reconnect-secret-4k2j";
 
-const QUIET_WINDOW: Duration = Duration::from_millis(100);
-
 struct RefusingObs {
     port: u16,
     attempts: Arc<AtomicUsize>,
@@ -1174,6 +766,11 @@ impl RefusingObs {
         self.attempts.load(Ordering::SeqCst)
     }
 
+    async fn attempts_excluding_the_probe(&self) -> usize {
+        common::every_earlier_dial_was_accepted(self.port).await;
+        self.attempts() - 1
+    }
+
     async fn connect(&self, password: Option<&str>) -> Arc<ObsClient> {
         self.connect_with_timing(password, fast_retries()).await
     }
@@ -1193,10 +790,6 @@ impl RefusingObs {
         .unwrap();
         Arc::new(client)
     }
-}
-
-async fn let_every_backoff_window_pass() {
-    tokio::time::sleep(QUIET_WINDOW).await;
 }
 
 async fn disconnected(client: &ObsClient) {
@@ -1230,11 +823,11 @@ fn failure_code(client: &ObsClient) -> Option<String> {
 #[tokio::test]
 async fn a_refused_first_connect_with_auto_reconnect_off_is_attempted_exactly_once() {
     let fake = RefusingObs::spawn().await;
-    let _client = parked_after_one_refusal(&fake, None).await;
+    let client = parked_after_one_refusal(&fake, None).await;
 
-    let_every_backoff_window_pass().await;
+    client.disconnect().await.unwrap();
 
-    assert_eq!(fake.attempts(), 1);
+    assert_eq!(fake.attempts_excluding_the_probe().await, 1);
 }
 
 #[tokio::test]
@@ -1276,9 +869,9 @@ async fn a_manual_reconnect_with_auto_reconnect_off_makes_exactly_one_attempt() 
         fake.attempts() == 2 && client.connection_state() == ConnectionState::Disconnected
     })
     .await;
-    let_every_backoff_window_pass().await;
+    client.disconnect().await.unwrap();
 
-    assert_eq!(fake.attempts(), 2);
+    assert_eq!(fake.attempts_excluding_the_probe().await, 2);
 }
 
 #[tokio::test]
@@ -1291,9 +884,8 @@ async fn disconnecting_ends_a_parked_supervisor_so_turning_auto_reconnect_on_dia
         .expect("disconnect waited on the parked supervisor")
         .unwrap();
     client.set_auto_reconnect(true);
-    let_every_backoff_window_pass().await;
 
-    assert_eq!(fake.attempts(), 1);
+    assert_eq!(fake.attempts_excluding_the_probe().await, 1);
 }
 
 #[tokio::test]
@@ -1452,10 +1044,15 @@ async fn a_live_session_lost_with_auto_reconnect_off_shows_why_and_is_not_redial
     let lost = client.set_scene(SCENE).await;
     assert!(matches!(lost, Err(ObsError::Disconnected)), "got {lost:?}");
     disconnected(&client).await;
-    let_every_backoff_window_pass().await;
+    let shown_failure = failure_code(&client);
+    client.disconnect().await.unwrap();
 
-    assert_eq!(fake.log.accepted(), 1, "the lost session was redialled");
-    assert_eq!(failure_code(&client).as_deref(), Some("connection_lost"));
+    assert_eq!(
+        fake.dials_excluding_the_probe().await,
+        1,
+        "the lost session was redialled"
+    );
+    assert_eq!(shown_failure.as_deref(), Some("connection_lost"));
 }
 
 #[derive(Debug, Clone, Copy)]

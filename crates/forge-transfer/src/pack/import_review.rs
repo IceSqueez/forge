@@ -139,3 +139,175 @@ fn collect_executable(
         }
     });
 }
+
+#[cfg(test)]
+mod tests {
+    use forge_types::QueueId;
+
+    use super::*;
+    use crate::documents::model::{
+        ActionDocument, ClipDocument, OverlayDocument, OverlayFileDocument, ScriptDocument,
+        TriggerDocument,
+    };
+    use crate::documents::reference::PackReference;
+    use crate::test_support::{
+        FixtureRegistries, HTTP_STEP, OWNED_TRIGGER, PLAIN_STEP, PLAIN_TRIGGER, SCRIPT_STEP,
+        STEP_OWNER, TRIGGER_OWNER, action, blank_manifest, clip, no_documents, overlay, script,
+        staged, step, trigger,
+    };
+
+    const UNKNOWN_KIND: &str = "fixture.unknown";
+
+    fn action_document(name: &str, steps: Vec<SubActionStep>) -> ActionDocument {
+        ActionDocument::of(&action(name, QueueId::new(), steps), Vec::new())
+    }
+
+    #[test]
+    fn only_integrations_no_registered_kind_belongs_to_are_missing() {
+        let mut manifest = blank_manifest();
+        manifest.required_integrations = vec![
+            IntegrationId::new(STEP_OWNER),
+            IntegrationId::new(TRIGGER_OWNER),
+            IntegrationId::new("absent"),
+        ];
+        let registries = FixtureRegistries::new();
+        let review = review_pack(&staged(manifest, no_documents()), registries.closure());
+        assert_eq!(
+            review.warnings,
+            [PackWarning::MissingIntegration {
+                integration: IntegrationId::new("absent")
+            }]
+        );
+    }
+
+    #[test]
+    fn unknown_kinds_from_the_manifest_steps_and_triggers_merge_into_one_warning_each() {
+        let mut manifest = blank_manifest();
+        manifest.unknown_kinds = vec![UNKNOWN_KIND.to_owned(), "fixture.manifest_only".to_owned()];
+        let mut documents = no_documents();
+        documents.actions.push(action_document(
+            "Acts",
+            vec![step(UNKNOWN_KIND, &[]), step(PLAIN_STEP, &[])],
+        ));
+        documents.triggers.push(TriggerDocument::of(&trigger(
+            "fixture.unknown_trigger",
+            "Trigger",
+            false,
+        )));
+        documents
+            .triggers
+            .push(TriggerDocument::of(&trigger(OWNED_TRIGGER, "Known", false)));
+        documents
+            .triggers
+            .push(TriggerDocument::of(&trigger(PLAIN_TRIGGER, "Known", false)));
+        let registries = FixtureRegistries::new();
+        let review = review_pack(&staged(manifest, documents), registries.closure());
+        assert_eq!(
+            review.warnings,
+            [
+                "fixture.manifest_only",
+                UNKNOWN_KIND,
+                "fixture.unknown_trigger"
+            ]
+            .map(|kind_id| PackWarning::UnknownKind {
+                kind_id: kind_id.to_owned()
+            })
+        );
+    }
+
+    #[test]
+    fn manifest_references_and_soundless_clips_become_warnings() {
+        let unresolved = PackReference {
+            namespace: "script".to_owned(),
+            value: "gone".to_owned(),
+        };
+        let external = PackReference {
+            namespace: "scene".to_owned(),
+            value: "Live".to_owned(),
+        };
+        let mut manifest = blank_manifest();
+        manifest.unresolved_references = vec![unresolved.clone()];
+        manifest.external_references = vec![external.clone()];
+        let mut documents = no_documents();
+        documents.clips.push(ClipDocument::of(
+            &clip("Silent"),
+            ClipSourceDocument::Missing,
+        ));
+        documents.clips.push(ClipDocument::of(
+            &clip("Sounding"),
+            ClipSourceDocument::Media {
+                media_id: "blob".to_owned(),
+            },
+        ));
+        let registries = FixtureRegistries::new();
+        let review = review_pack(&staged(manifest, documents), registries.closure());
+        assert_eq!(
+            review.warnings,
+            [
+                PackWarning::UnresolvedReference {
+                    reference: unresolved
+                },
+                PackWarning::ExternalReference {
+                    reference: external
+                },
+                PackWarning::ClipWithoutSound {
+                    clip: "Silent".to_owned()
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn the_review_lists_everything_that_would_run_and_only_that() {
+        let mut documents = no_documents();
+        documents.actions.push(action_document(
+            "Acts",
+            vec![
+                step(HTTP_STEP, &[]),
+                step(SCRIPT_STEP, &[]),
+                step(PLAIN_STEP, &[]),
+                step(UNKNOWN_KIND, &[]),
+            ],
+        ));
+        documents.scripts.push(ScriptDocument::of(&script("greet")));
+        documents.overlays.push(OverlayDocument::of(
+            &overlay("pack-overlay", "Alert box"),
+            vec![OverlayFileDocument {
+                name: "custom.css".to_owned(),
+                file: "overlays/custom.css".to_owned(),
+            }],
+        ));
+        let registries = FixtureRegistries::new();
+        let review = review_pack(&staged(blank_manifest(), documents), registries.closure());
+        assert_eq!(
+            review.executable,
+            [
+                ExecutableContent::Script {
+                    name: "greet".to_owned()
+                },
+                ExecutableContent::HttpStep {
+                    action: "Acts".to_owned(),
+                    kind_id: HTTP_STEP.to_owned()
+                },
+                ExecutableContent::ScriptStep {
+                    action: "Acts".to_owned(),
+                    kind_id: SCRIPT_STEP.to_owned()
+                },
+                ExecutableContent::OverlaySource {
+                    overlay: "Alert box".to_owned(),
+                    file: "custom.css".to_owned()
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn a_clean_pack_reviews_to_nothing() {
+        let registries = FixtureRegistries::new();
+        let review = review_pack(
+            &staged(blank_manifest(), no_documents()),
+            registries.closure(),
+        );
+        assert_eq!((review.warnings, review.executable), (vec![], vec![]));
+    }
+}

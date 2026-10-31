@@ -134,7 +134,8 @@ impl SubActionRunner for CoreGlobalsSetRunner {
 mod tests {
     use super::*;
     use crate::sub_action_runners::variant_text::parse_variant;
-    use forge_events::{Event, EventPublisher};
+    use forge_events::test_support::NullPublisher;
+
     use forge_registry::RunContext;
     use forge_storage::{GlobalEntry, StorageError};
     use forge_types::Variant;
@@ -142,11 +143,6 @@ mod tests {
     use std::collections::BTreeMap;
     use std::sync::Mutex;
     use time::OffsetDateTime;
-
-    struct NullPublisher;
-    impl EventPublisher for NullPublisher {
-        fn publish(&self, _event: Event) {}
-    }
 
     #[derive(Default)]
     struct MapGlobals {

@@ -950,7 +950,6 @@ impl Render for IntegrationsHubView {
 #[cfg(test)]
 mod tests {
     use std::collections::HashSet;
-    use std::time::Duration;
 
     use forge_storage::{SettingsRepo, integration_enabled_key};
     use gpui::TestAppContext;
@@ -960,20 +959,14 @@ mod tests {
     use crate::test_support::{
         ClickArea, Sandboxed, SettingWrite, alive_tasks, click_grid, error_toasts, idle_supervisor,
         install_presentation, link, nav_log, owned_sub_actions, owned_triggers, pump, pump_until,
-        runtime, sandboxed_provider, seed_action, seed_trigger, step, test_backend,
+        runtime, sandboxed_provider, seed_action, seed_trigger, settle_until,
+        settle_until_tasks_drain_to, step, test_backend, yield_until,
     };
     use forge_components::Toasts;
     use forge_runtime::LifecycleStates;
 
     const OBS_SCENE: &str = "obs.scene.set";
     const TWITCH_CHAT: &str = "twitch.chat";
-    const SETTLE_DEADLINE: Duration = Duration::from_secs(30);
-    const QUIET_ROUNDS: usize = 50;
-
-    fn until_the_settle_deadline() -> impl Iterator<Item = ()> {
-        let deadline = std::time::Instant::now() + SETTLE_DEADLINE;
-        std::iter::from_fn(move || (std::time::Instant::now() < deadline).then_some(()))
-    }
 
     fn twitch() -> IntegrationId {
         IntegrationId::new("twitch")
@@ -1037,13 +1030,10 @@ mod tests {
 
     fn mount_as(cx: &mut TestAppContext, rt: &tokio::runtime::Runtime, welcome: bool) -> Hub {
         let mut hub = open_uncounted(cx, rt, welcome);
-        let counted = until_the_settle_deadline().any(|()| {
-            rt.block_on(async { tokio::time::sleep(Duration::from_millis(1)).await });
-            cx.run_until_parked();
+        settle_until(cx, rt, |cx| {
             hub.view
                 .read_with(cx, |view, _| view.references_of(&obs()).total() > 0)
         });
-        assert!(counted, "the hub never counted the seeded references");
         hub.drain_writes(rt);
         hub
     }
@@ -1158,18 +1148,13 @@ mod tests {
             "Second scene",
             vec![step(OBS_SCENE, true)],
         ));
-        for () in until_the_settle_deadline().take(QUIET_ROUNDS) {
-            rt.block_on(async { tokio::time::sleep(Duration::from_millis(1)).await });
-            cx.run_until_parked();
-        }
         let background_tasks = alive_tasks(&rt);
 
         hub.view.update(cx, |view, cx| {
             view.refresh(cx);
             view.refresh_gen.next();
         });
-        pump_until(&rt, || alive_tasks(&rt) <= background_tasks);
-        cx.run_until_parked();
+        settle_until_tasks_drain_to(cx, &rt, background_tasks);
 
         assert_eq!(
             hub.view
@@ -1466,20 +1451,9 @@ mod tests {
             );
             client.set_auto_reconnect(false);
             seed.install(client);
-            let recorded = loop_until(|| seed.connect_failure().is_some()).await;
-            assert!(recorded, "the refused connect was never recorded");
+            yield_until(|| seed.connect_failure().is_some()).await;
         });
         seed
-    }
-
-    async fn loop_until(mut done: impl FnMut() -> bool) -> bool {
-        for () in until_the_settle_deadline() {
-            if done() {
-                return true;
-            }
-            tokio::time::sleep(Duration::from_millis(1)).await;
-        }
-        done()
     }
 
     #[gpui::test]

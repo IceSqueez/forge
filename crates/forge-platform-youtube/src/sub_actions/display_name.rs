@@ -12,17 +12,12 @@ pub(super) fn resolve(config: &SubActionConfig, ctx: &RunContext<'_>) -> Option<
 
 #[cfg(test)]
 mod tests {
+    use forge_events::test_support::NullPublisher;
     use std::collections::BTreeMap;
 
-    use forge_events::{Event, EventPublisher};
     use forge_types::{ArgStack, EventId, Variant};
 
     use super::*;
-
-    struct NoopPublisher;
-    impl EventPublisher for NoopPublisher {
-        fn publish(&self, _: Event) {}
-    }
 
     fn name_config(name: Variant) -> SubActionConfig {
         BTreeMap::from([(config_keys::DISPLAY_NAME.to_owned(), name)])
@@ -40,7 +35,7 @@ mod tests {
                 Variant::String("  Alice ".to_owned()),
             )
             .set("blank".to_owned(), Variant::String("   ".to_owned()));
-        let ctx = RunContext::leaf(&stack, 0, EventId::new(), &NoopPublisher);
+        let ctx = RunContext::leaf(&stack, 0, EventId::new(), &NullPublisher);
 
         for (config, expected) in [
             (text("%user_name%"), Some("Alice")),

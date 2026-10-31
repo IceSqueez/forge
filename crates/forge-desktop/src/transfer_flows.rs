@@ -330,7 +330,6 @@ impl TransferFlows {
 #[cfg(test)]
 mod tests {
     use std::path::{Path, PathBuf};
-    use std::time::Duration;
 
     use forge_components::{ToastKind, Toasts, tr};
     use forge_storage::Language;
@@ -354,9 +353,7 @@ mod tests {
     use crate::test_support::pack_flow::{
         PackWorld, export_pack, pack_world, queue_named, seed_queued_action,
     };
-    use crate::test_support::{install_presentation, runtime};
-
-    const SETTLE_DEADLINE: Duration = Duration::from_secs(30);
+    use crate::test_support::{install_presentation, runtime, settle_until, within_hang_guard};
 
     struct Rig {
         rt: tokio::runtime::Runtime,
@@ -591,12 +588,7 @@ mod tests {
             flows.route_import(pack_bundle, Ok(BundleKind::Setup), cx)
         });
         cx.update(move |_| drop(home));
-        let deadline = std::time::Instant::now() + SETTLE_DEADLINE;
-        while toasts(cx).is_empty() && std::time::Instant::now() < deadline {
-            rig.rt
-                .block_on(async { tokio::time::sleep(Duration::from_millis(1)).await });
-            cx.run_until_parked();
-        }
+        settle_until(cx, &rig.rt, |cx| !toasts(cx).is_empty());
 
         let staging = setup_staging_root(&rig.world.data_dir());
         let shown = toasts(cx);
@@ -641,19 +633,6 @@ mod tests {
                 scheduled,
             },
         )
-    }
-
-    fn settle_until(
-        cx: &mut TestAppContext,
-        rig: &Rig,
-        done: impl Fn(&mut TestAppContext) -> bool,
-    ) {
-        let deadline = std::time::Instant::now() + SETTLE_DEADLINE;
-        while !done(cx) && std::time::Instant::now() < deadline {
-            rig.rt
-                .block_on(async { tokio::time::sleep(Duration::from_millis(1)).await });
-            cx.run_until_parked();
-        }
     }
 
     fn measured_backups(lock: &SharedLock) -> Option<u64> {
@@ -806,13 +785,13 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         let (rig, lock) = shared_rig(cx, true);
-        settle_until(cx, &rig, |_| measured_backups(&lock).is_some());
+        settle_until(cx, &rig.rt, |_| measured_backups(&lock).is_some());
         let before = measured_backups(&lock);
         let prompt = start_backup_to_backups_dir(cx, &rig);
 
         confirm_passphrase(cx, &prompt);
-        settle_until(cx, &rig, |cx| !backup_running(cx, &rig));
-        settle_until(cx, &rig, |_| measured_backups(&lock) != before);
+        settle_until(cx, &rig.rt, |cx| !backup_running(cx, &rig));
+        settle_until(cx, &rig.rt, |_| measured_backups(&lock) != before);
 
         let kinds: Vec<ToastKind> = toasts(cx).into_iter().map(|toast| toast.0).collect();
         assert_eq!(
@@ -833,7 +812,7 @@ mod tests {
         let prompt = start_backup_to_backups_dir(cx, &rig);
 
         confirm_passphrase(cx, &prompt);
-        settle_until(cx, &rig, |cx| !backup_running(cx, &rig));
+        settle_until(cx, &rig.rt, |cx| !backup_running(cx, &rig));
 
         let kinds: Vec<ToastKind> = toasts(cx).into_iter().map(|toast| toast.0).collect();
         assert_eq!(
@@ -878,9 +857,8 @@ mod tests {
         let mut status = schedule.handle.status();
         let mut settle_on = |cx: &mut TestAppContext, state: ScheduleState| {
             rig.rt.block_on(async {
-                tokio::time::timeout(SETTLE_DEADLINE, status.wait_for(|s| s.state == state))
+                within_hang_guard(status.wait_for(|s| s.state == state))
                     .await
-                    .expect("the schedule never reached the awaited state")
                     .unwrap();
             });
             cx.run_until_parked();

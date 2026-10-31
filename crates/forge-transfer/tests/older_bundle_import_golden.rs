@@ -1,4 +1,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
+mod common;
+use common::{SQLITE_KEY, sha256_hex};
+
 use std::collections::BTreeMap;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -24,11 +27,9 @@ use forge_transfer::{
 };
 use forge_types::{Action, Queue, SubActionStep, TriggerInstance, Variant};
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
 use tempfile::TempDir;
 use time::OffsetDateTime;
 
-const SQLITE_KEY: [u8; 32] = [0x42; 32];
 const OLDER_SCHEMA_VERSION: i64 = 54;
 const OLDER_FORGE_VERSION: &str = "0.6.3";
 const PASSPHRASE: &str = "correct horse battery staple";
@@ -41,13 +42,6 @@ const BACKUP_SEED: &str = include_str!("fixtures/older_backup/seed.json");
 const BACKUP_DATABASE_ENTRY: &str = "forge/forge.db";
 const FAVORITE_STEPS_KEY: &str = "picker.favorites.sub_actions";
 const FAVORITE_STEPS_AFTER_RENAME: &str = r#"["core.logic.wait","obs.scene.switch_current"]"#;
-
-fn sha256_hex(bytes: &[u8]) -> String {
-    Sha256::digest(bytes)
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect()
-}
 
 fn add_file(builder: &mut tar::Builder<Vec<u8>>, path: &str, bytes: &[u8]) {
     let mut header = tar::Header::new_gnu();
@@ -63,9 +57,7 @@ fn tar_gz(files: &[(&str, &[u8])]) -> Vec<u8> {
         add_file(&mut builder, path, bytes);
     }
     let tar = builder.into_inner().unwrap();
-    let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
-    gz.write_all(&tar).unwrap();
-    gz.finish().unwrap()
+    common::gzip(&tar)
 }
 
 fn encrypt(plaintext: &[u8]) -> Vec<u8> {

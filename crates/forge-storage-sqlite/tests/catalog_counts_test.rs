@@ -3,48 +3,13 @@ use std::collections::BTreeMap;
 
 use forge_storage::{DataProvider, GlobalsRepo};
 use forge_storage_sqlite::SqliteBackend;
-use forge_types::{
-    Action, ActionId, ExecutionMode, PermissionRung, TriggerInstance, TriggerInstanceId, Variant,
-};
+use forge_types::{PermissionRung, TriggerInstance, TriggerInstanceId, Variant};
 
 mod common;
-use common::Sandboxed;
+use common::{insert_action, setup};
 
-const TEST_KEY: [u8; 32] = [0xcd; 32];
 const COMMAND: &str = "twitch.command";
 const FOLLOW: &str = "twitch.follow";
-
-async fn setup() -> Sandboxed<SqliteBackend> {
-    common::sandboxed_backend("sqlite::memory:", TEST_KEY).await
-}
-
-async fn saved_action(backend: &SqliteBackend, name: &str) -> ActionId {
-    let queue_id = backend
-        .queue_repo()
-        .get_by_name("Default")
-        .await
-        .expect("get default queue")
-        .expect("default queue exists after migration")
-        .id;
-    let action = Action {
-        id: ActionId::new(),
-        name: name.to_owned(),
-        group: None,
-        queue_id,
-        enabled: true,
-        concurrent: false,
-        bypass_pause: false,
-        execution_mode: ExecutionMode::Sequential,
-        description: None,
-        sub_actions: vec![],
-    };
-    backend
-        .action_repo()
-        .save(&action)
-        .await
-        .expect("save action");
-    action.id
-}
 
 async fn saved_trigger(backend: &SqliteBackend, kind_id: &str, name: &str) -> TriggerInstanceId {
     let instance = TriggerInstance {
@@ -72,8 +37,8 @@ async fn action_count_matches_the_list_and_leaves_out_archived_actions() {
     let backend = setup().await;
     let repo = backend.action_repo();
     let before = repo.count().await.expect("count");
-    saved_action(&backend, "kept").await;
-    let archived = saved_action(&backend, "archived").await;
+    insert_action(&backend, "kept").await;
+    let archived = insert_action(&backend, "archived").await;
     repo.archive(archived).await.expect("archive");
 
     let count = repo.count().await.expect("count");

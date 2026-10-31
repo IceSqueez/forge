@@ -75,13 +75,9 @@ impl SubActionRunner for CoreStringUppercaseRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use forge_events::{Event, EventPublisher};
-    use forge_types::{EventId, SubActionOutcome};
+    use forge_events::test_support::NullPublisher;
 
-    struct NullPublisher;
-    impl EventPublisher for NullPublisher {
-        fn publish(&self, _event: Event) {}
-    }
+    use forge_types::{EventId, SubActionOutcome};
 
     #[tokio::test]
     async fn uppercase_emits_facade_telemetry_shape() {

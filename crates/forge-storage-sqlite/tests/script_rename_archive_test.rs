@@ -3,15 +3,14 @@ use std::collections::BTreeMap;
 
 use forge_storage::{ActionRepo, ScriptRecord, ScriptReferences, ScriptRepo, StorageError};
 use forge_storage_sqlite::{
-    MIGRATIONS, SqliteActionRepo, SqliteScriptRepo, apply_migrations, connect,
+    MIGRATIONS, SqliteActionRepo, SqlitePools, SqliteScriptRepo, apply_migrations,
 };
 use forge_types::{
-    Action, ActionId, DEFAULT_QUEUE_ID, ExecutionMode, ScriptContract, ScriptId, SubActionStep,
-    Variant,
+    Action, ActionId, DEFAULT_QUEUE_ID, ScriptContract, ScriptId, SubActionStep, Variant,
 };
-use sqlx::SqlitePool;
-use tempfile::TempDir;
 use time::OffsetDateTime;
+
+mod common;
 
 const RUN_NAMED: &str = "script.run.named";
 const OLD_NAME: &str = "greet";
@@ -19,28 +18,24 @@ const NEW_NAME: &str = "welcome";
 const VERSION_BEFORE_ARCHIVE: i64 = 54;
 
 struct Db {
-    pool: SqlitePool,
+    pools: common::Sandboxed<SqlitePools>,
     scripts: SqliteScriptRepo,
     actions: SqliteActionRepo,
-    _dir: TempDir,
 }
 
 async fn open_at(version: Option<i64>) -> Db {
-    let dir = tempfile::tempdir().expect("a temporary directory");
-    let url = format!("sqlite://{}", dir.path().join("forge.db").display());
-    let pool = connect(&url).await.expect("a database");
+    let pools = common::empty_pools().await;
     match version {
         Some(version) => MIGRATIONS
-            .run_to(version, &pool)
+            .run_to(version, pools.writer())
             .await
             .expect("the older schema"),
-        None => apply_migrations(&pool).await.expect("migrate"),
+        None => apply_migrations(pools.writer()).await.expect("migrate"),
     }
     Db {
-        scripts: SqliteScriptRepo::new(pool.clone()),
-        actions: SqliteActionRepo::new(pool.clone()),
-        pool,
-        _dir: dir,
+        scripts: SqliteScriptRepo::new(pools.clone()),
+        actions: SqliteActionRepo::new(pools.clone()),
+        pools,
     }
 }
 
@@ -140,16 +135,8 @@ impl Db {
 
     async fn with_action(&self, name: &str, steps: Vec<SubActionStep>) -> ActionId {
         let action = Action {
-            id: ActionId::new(),
-            name: name.to_owned(),
-            group: None,
-            queue_id: DEFAULT_QUEUE_ID,
-            enabled: true,
-            concurrent: false,
-            bypass_pause: false,
-            execution_mode: ExecutionMode::Sequential,
-            description: None,
             sub_actions: steps,
+            ..common::action_named(name, DEFAULT_QUEUE_ID)
         };
         self.actions.save(&action).await.unwrap();
         action.id
@@ -417,11 +404,11 @@ async fn upgrading_from_the_schema_before_archiving_keeps_existing_scripts_live(
     .bind(id.to_string())
     .bind(OLD_NAME)
     .bind(serde_json::to_string(&ScriptContract::default()).unwrap())
-    .execute(&db.pool)
+    .execute(db.pools.writer())
     .await
     .expect("a script row in the older schema");
 
-    apply_migrations(&db.pool).await.expect("upgrade");
+    apply_migrations(db.pools.writer()).await.expect("upgrade");
     let live = db.scripts.get(id).await.unwrap().map(|r| r.name);
     let archived = db.scripts.archive_script(id).await.unwrap();
 

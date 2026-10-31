@@ -64,15 +64,11 @@ static NOOP_EXECUTOR: NoopChainExecutor = NoopChainExecutor;
 
 #[cfg(test)]
 mod tests {
-    use forge_events::Event;
+
+    use forge_events::test_support::NullPublisher;
     use forge_types::{ArgStack, SubActionConfig, Variant};
 
     use super::*;
-
-    struct NullPublisher;
-    impl EventPublisher for NullPublisher {
-        fn publish(&self, _event: Event) {}
-    }
 
     fn one_step() -> Vec<SubActionStep> {
         vec![SubActionStep {

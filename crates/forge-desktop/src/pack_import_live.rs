@@ -318,7 +318,6 @@ mod tests {
     use std::collections::BTreeSet;
     use std::path::PathBuf;
     use std::sync::Arc;
-    use std::time::Duration;
 
     use forge_hotkey::{HotkeyConfig, HotkeyReconciler};
     use forge_speak_queue::PipelineConfigHandle;
@@ -337,7 +336,7 @@ mod tests {
         refresh_setup_live, same_ignore_profile, voice_baseline,
     };
     use crate::test_support::pack_flow::{PackWorld, pack_world, queue_named};
-    use crate::test_support::{LiveAliases, live_alias, runtime, spawn_speak_queue};
+    use crate::test_support::{LiveAliases, live_alias, runtime, spawn_speak_queue, yield_until};
 
     const KNOWN_OVERLAY_KIND: &str = "overlay.blank";
     const RETIRED_OVERLAY_KIND: &str = "overlay.retired";
@@ -541,7 +540,6 @@ mod tests {
         );
     }
 
-    const SPEECH_QUEUE_DEADLINE: Duration = Duration::from_secs(30);
     const IMPORTED_BOT: &str = "imported-bot";
 
     struct SilentPublisher;
@@ -831,15 +829,9 @@ mod tests {
         let outcome = setup_outcome(&[SetupLivePart::Tts], SetupQueueChanges::default());
 
         let refreshed = refresh_setup(&rt, &world, &live, &outcome, Some(&baseline));
-        rt.block_on(async {
-            tokio::time::timeout(SPEECH_QUEUE_DEADLINE, async {
-                while !strategy_applied(&resolver, &AssignmentStrategy::Random) {
-                    tokio::task::yield_now().await;
-                }
-            })
-            .await
-        })
-        .expect("the speech queue never applied the imported strategy");
+        rt.block_on(yield_until(|| {
+            strategy_applied(&resolver, &AssignmentStrategy::Random)
+        }));
 
         assert_eq!(
             (

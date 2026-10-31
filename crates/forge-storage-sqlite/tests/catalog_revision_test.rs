@@ -1,7 +1,6 @@
 use forge_storage::{
     CatalogRevision, DataProvider, ExecutionStatus, ScriptRecord, ScriptRepo, TriggerChanges,
 };
-use forge_storage_sqlite::SqliteBackend;
 use forge_types::{
     Action, ActionId, PermissionRung, Queue, QueueId, ScriptContract, ScriptId, TriggerConfig,
     TriggerInstance, TriggerInstanceId,
@@ -9,27 +8,10 @@ use forge_types::{
 use time::OffsetDateTime;
 
 mod common;
-use common::Sandboxed;
-
-const TEST_KEY: [u8; 32] = [0xab; 32];
-
-async fn setup() -> Sandboxed<SqliteBackend> {
-    common::sandboxed_backend("sqlite::memory:", TEST_KEY).await
-}
+use common::setup;
 
 fn action(queue_id: QueueId) -> Action {
-    Action {
-        id: ActionId::new(),
-        name: "alert".to_owned(),
-        group: None,
-        queue_id,
-        enabled: true,
-        concurrent: false,
-        bypass_pause: false,
-        execution_mode: forge_types::ExecutionMode::Sequential,
-        description: None,
-        sub_actions: vec![],
-    }
+    common::action_named("alert", queue_id)
 }
 
 fn instance() -> TriggerInstance {

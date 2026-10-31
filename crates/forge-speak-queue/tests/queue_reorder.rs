@@ -5,18 +5,13 @@ use forge_speak_queue::{
     Priority, QueueConfig, RequestId, SpeakCommand, SpeakEvent, SpeakEventStream, SpeakRequest,
 };
 
-use common::{first_started_ids, make_deps, recording_sink, request, standard_registry, wait_for};
-use forge_speech_types::AssignmentStrategy;
+use common::{
+    first_started_ids, recording_sink, request, request_with_priority, standard_deps, wait_for,
+};
 
 fn spawn_standard() -> (forge_speak_queue::SpeakQueueHandle, SpeakEventStream) {
     let (sink, _plays) = recording_sink();
-    let deps = make_deps(
-        standard_registry(),
-        sink,
-        AssignmentStrategy::DeterministicByName,
-        vec![],
-    );
-    forge_speak_queue::spawn(QueueConfig::default(), deps)
+    forge_speak_queue::spawn(QueueConfig::default(), standard_deps(sink))
 }
 
 #[tokio::test]
@@ -46,13 +41,6 @@ async fn reordering_ahead_of_an_earlier_item_changes_playback_order() {
         vec![ids[2].clone(), ids[0].clone(), ids[1].clone()],
         "the reordered item must play ahead of its anchor, not after it",
     );
-}
-
-fn high_priority(viewer: &str, text: &str) -> SpeakRequest {
-    SpeakRequest {
-        priority: Priority::High,
-        ..request(viewer, text)
-    }
 }
 
 fn order_is(event: &SpeakEvent, expected: &[(&RequestId, bool)]) -> bool {
@@ -96,8 +84,8 @@ async fn reordering_a_high_priority_item_without_an_anchor_keeps_it_in_the_high_
     let (handle, mut stream) = spawn_standard();
     handle.send(SpeakCommand::Pause).await.unwrap();
     let normal = request("n", "normal");
-    let first_high = high_priority("h1", "first high");
-    let second_high = high_priority("h2", "second high");
+    let first_high = request_with_priority("h1", "first high", Priority::High);
+    let second_high = request_with_priority("h2", "second high", Priority::High);
     for req in [&normal, &first_high, &second_high] {
         handle
             .send(SpeakCommand::Enqueue(req.clone()))

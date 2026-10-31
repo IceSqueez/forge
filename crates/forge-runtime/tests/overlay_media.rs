@@ -21,7 +21,6 @@ use forge_storage::{
     MockOverlayRepo, OverlayConfig, OverlayDefinition, OverlayId, OverlayRepo, SettingsRepo,
     SoundboardClipsRepo, StorageError, StoredClip,
 };
-use forge_types::OverlayCredential;
 use forge_types::{ClipId, OutputDevice, Variant};
 use tempfile::TempDir;
 use time::OffsetDateTime;
@@ -229,20 +228,7 @@ fn default_glyph_file() -> String {
 }
 
 fn definition(config: OverlayConfig) -> OverlayDefinition {
-    OverlayDefinition {
-        id: OverlayId::new(OVERLAY),
-        display_name: "Sub alert".to_owned(),
-        kind_id: ALERT_KIND.to_owned(),
-        enabled: true,
-        position: 0,
-        config,
-        config_schema_version: 1,
-        generator_version: 0,
-        source_overrides: Vec::new(),
-        credential: OverlayCredential::new("2f8b1d0c9a7e6f5b4c3d2e1f0a9b8c7d"),
-        created_at: OffsetDateTime::UNIX_EPOCH,
-        updated_at: OffsetDateTime::UNIX_EPOCH,
-    }
+    common::overlay_definition(OVERLAY, "Sub alert", ALERT_KIND, config)
 }
 
 fn sound_config(value: &str) -> OverlayConfig {

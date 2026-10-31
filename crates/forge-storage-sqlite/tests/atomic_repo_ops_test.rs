@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use forge_storage::{DataProvider, GlobalsRepo, StorageError, UserGlobalsRepo};
 use forge_storage_sqlite::SqliteBackend;
-use forge_types::{Action, ActionId, ExecutionMode, SubActionConfig, SubActionStep, Variant};
+use forge_types::{Action, ActionId, SubActionConfig, SubActionStep, Variant};
 
 mod common;
 use common::{Sandboxed, TEST_KEY};
@@ -12,7 +12,7 @@ const WRITERS: usize = 40;
 
 async fn file_backed() -> (tempfile::TempDir, Sandboxed<Arc<SqliteBackend>>) {
     let dir = tempfile::TempDir::new().expect("tempdir");
-    let url = format!("sqlite://{}", dir.path().join("atomic.sqlite").display());
+    let url = common::sqlite_url(&dir.path().join("atomic.sqlite"));
     let backend = common::sandboxed_backend(&url, TEST_KEY)
         .await
         .map(Arc::new);
@@ -364,25 +364,7 @@ async fn user_variable_increment_rejects_a_non_numeric_value_without_touching_it
 }
 
 async fn seeded_action(backend: &SqliteBackend) -> Action {
-    let queue_id = backend
-        .queue_repo()
-        .get_by_name("Default")
-        .await
-        .expect("queue lookup")
-        .expect("default queue")
-        .id;
-    let action = Action {
-        id: ActionId::new(),
-        name: "original".to_owned(),
-        group: None,
-        queue_id,
-        enabled: true,
-        concurrent: false,
-        bypass_pause: false,
-        execution_mode: ExecutionMode::Sequential,
-        description: None,
-        sub_actions: vec![],
-    };
+    let action = common::action_named("original", common::default_queue_id(backend).await);
     backend.action_repo().save(&action).await.expect("save");
     action
 }

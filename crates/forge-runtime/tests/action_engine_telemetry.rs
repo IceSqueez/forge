@@ -1,4 +1,7 @@
 #![allow(clippy::unwrap_used)]
+mod common;
+use common::runners::GateRunner;
+
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -24,12 +27,38 @@ use forge_types::{
     Variant, integration_disabled_message,
 };
 use time::OffsetDateTime;
-use tokio::sync::Notify;
+use tokio::sync::{Notify, watch};
+
+const HANG_GUARD: Duration = Duration::from_secs(30);
+
+struct WriteSignal(watch::Sender<u64>);
+
+impl WriteSignal {
+    fn new() -> Self {
+        Self(watch::Sender::new(0))
+    }
+
+    fn bump(&self) {
+        self.0.send_modify(|writes| *writes += 1);
+    }
+
+    async fn until<F: Fn() -> bool>(&self, holds: F) -> bool {
+        let mut writes = self.0.subscribe();
+        tokio::time::timeout(HANG_GUARD, async {
+            while !holds() {
+                writes.changed().await.unwrap();
+            }
+        })
+        .await
+        .is_ok()
+    }
+}
 
 struct SpyActionRepo {
     actions: Mutex<HashMap<ActionId, Action>>,
     records: Mutex<Vec<(ActionId, u64, ExecutionStatus)>>,
     fail_record: bool,
+    written: WriteSignal,
 }
 
 impl SpyActionRepo {
@@ -38,6 +67,7 @@ impl SpyActionRepo {
             actions: Mutex::new(HashMap::new()),
             records: Mutex::new(Vec::new()),
             fail_record: false,
+            written: WriteSignal::new(),
         }
     }
 
@@ -85,6 +115,7 @@ impl ActionRepo for SpyActionRepo {
             .lock()
             .unwrap()
             .push((action_id, duration_ms, status));
+        self.written.bump();
         if self.fail_record {
             return Err(StorageError::Connection {
                 reason: "forced record_execution failure".to_owned(),
@@ -99,12 +130,14 @@ impl ActionRepo for SpyActionRepo {
 
 struct SpyHistoryRepo {
     saved: Mutex<Vec<(ActionId, ExecutionOutcome)>>,
+    written: WriteSignal,
 }
 
 impl SpyHistoryRepo {
     fn new() -> Self {
         Self {
             saved: Mutex::new(Vec::new()),
+            written: WriteSignal::new(),
         }
     }
 
@@ -120,6 +153,7 @@ impl HistoryRepo for SpyHistoryRepo {
             .lock()
             .unwrap()
             .push((ctx.action_id, ctx.outcome.clone()));
+        self.written.bump();
         Ok(())
     }
     async fn recent_for_action(
@@ -195,63 +229,6 @@ impl SubActionRunner for FailRunner {
     }
 }
 
-struct GateRunner {
-    running: Arc<Notify>,
-}
-
-#[async_trait]
-impl SubActionRunner for GateRunner {
-    fn id(&self) -> &str {
-        "test.gate"
-    }
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Util
-    }
-    fn label(&self) -> &str {
-        ""
-    }
-    fn summary(&self) -> &str {
-        ""
-    }
-    fn search_text(&self) -> &str {
-        ""
-    }
-    fn icon_name(&self) -> &str {
-        ""
-    }
-    fn default_config(&self) -> SubActionConfig {
-        SubActionConfig::new()
-    }
-    fn config_fields(&self) -> Vec<FormField> {
-        Vec::new()
-    }
-    fn validate_config(&self, _: &SubActionConfig) -> Result<(), RegistryError> {
-        Ok(())
-    }
-    async fn execute(
-        &self,
-        _: &SubActionConfig,
-        ctx: &RunContext<'_>,
-    ) -> (SubActionTelemetry, Option<ArgStack>) {
-        self.running.notify_one();
-        while !ctx.cancel.is_cancelled() {
-            tokio::time::sleep(Duration::from_millis(2)).await;
-        }
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                index: ctx.index,
-                kind: "test.gate".to_owned(),
-                started_at: OffsetDateTime::now_utc(),
-                duration_ms: 0,
-                outcome: SubActionOutcome::Success,
-            },
-            None,
-        )
-    }
-}
-
 fn action_with(steps: Vec<&str>) -> Action {
     Action {
         id: ActionId::new(),
@@ -293,20 +270,10 @@ fn catalog_over(repo: &Arc<SpyActionRepo>) -> Arc<Catalog> {
     Catalog::new(repo.clone(), Arc::new(instances), CatalogRevision::new())
 }
 
-async fn eventually<F: Fn() -> bool>(pred: F) -> bool {
-    for _ in 0..1_200 {
-        if pred() {
-            return true;
-        }
-        tokio::time::sleep(Duration::from_millis(25)).await;
-    }
-    pred()
-}
-
 #[tokio::test]
 async fn successful_execution_records_one_success_row() {
     let repo = Arc::new(SpyActionRepo::new());
-    let action = action_with(vec![]); // empty chain → Completed → Success
+    let action = action_with(vec![]);
     let id = action.id;
     repo.seed(action);
 
@@ -322,7 +289,7 @@ async fn successful_execution_records_one_success_row() {
     engine.dispatch(request(id)).await.unwrap();
 
     assert!(
-        eventually(|| repo.records().len() == 1).await,
+        repo.written.until(|| repo.records().len() == 1).await,
         "a completed run must record exactly one telemetry row",
     );
     let records = repo.records();
@@ -352,7 +319,7 @@ async fn failed_execution_records_one_error_row() {
     engine.dispatch(request(id)).await.unwrap();
 
     assert!(
-        eventually(|| repo.records().len() == 1).await,
+        repo.written.until(|| repo.records().len() == 1).await,
         "a failed run must record exactly one telemetry row",
     );
     let records = repo.records();
@@ -400,11 +367,13 @@ async fn cancelled_execution_records_no_row_but_saves_history() {
     cancel_registry.cancel(id);
 
     assert!(
-        eventually(|| history
-            .saved()
-            .iter()
-            .any(|(a, o)| *a == id && matches!(o, ExecutionOutcome::Cancelled)))
-        .await,
+        history
+            .written
+            .until(|| history
+                .saved()
+                .iter()
+                .any(|(a, o)| *a == id && matches!(o, ExecutionOutcome::Cancelled)))
+            .await,
         "a cancelled run must still be saved to history",
     );
     assert!(
@@ -433,13 +402,13 @@ async fn a_failed_telemetry_write_does_not_stop_later_runs_from_recording() {
 
     engine.dispatch(request(id)).await.unwrap();
     assert!(
-        eventually(|| repo.records().len() == 1).await,
+        repo.written.until(|| repo.records().len() == 1).await,
         "the first run never reached its telemetry write",
     );
     engine.dispatch(request(id)).await.unwrap();
 
     assert!(
-        eventually(|| repo.records().len() == 2).await,
+        repo.written.until(|| repo.records().len() == 2).await,
         "a later run must still record telemetry after a failed write",
     );
 }
@@ -533,11 +502,11 @@ async fn a_run_reaching_a_disabled_integration_step_is_recorded_as_a_failure_nam
     engine.dispatch(request(id)).await.unwrap();
 
     assert!(
-        eventually(|| !history.saved().is_empty()).await,
+        history.written.until(|| !history.saved().is_empty()).await,
         "the run was never saved to history",
     );
     assert_eq!(history.saved()[0].1, disabled_twitch_reason());
-    assert!(eventually(|| repo.records().len() == 1).await);
+    assert!(repo.written.until(|| repo.records().len() == 1).await);
     assert_eq!(repo.records()[0].2, ExecutionStatus::Error);
     assert_eq!(runs.load(std::sync::atomic::Ordering::SeqCst), 0);
 }
@@ -565,7 +534,7 @@ async fn disabling_an_integration_mid_run_fails_the_run_instead_of_cancelling_it
     assert_eq!(engine.integration_gate().disable(twitch()), 1);
 
     assert!(
-        eventually(|| !history.saved().is_empty()).await,
+        history.written.until(|| !history.saved().is_empty()).await,
         "the run was never saved to history",
     );
     assert_eq!(history.saved()[0].1, disabled_twitch_reason());
@@ -620,7 +589,7 @@ async fn a_chat_send_targeted_at_a_disabled_platform_fails_the_run_visibly() {
     engine.dispatch(request(id)).await.unwrap();
 
     assert!(
-        eventually(|| !history.saved().is_empty()).await,
+        history.written.until(|| !history.saved().is_empty()).await,
         "the run was never saved to history",
     );
     assert!(
@@ -676,17 +645,8 @@ struct ScriptHarness {
 
 impl ScriptHarness {
     async fn new(repo: &Arc<SpyActionRepo>) -> Self {
-        let media = tempfile::tempdir().unwrap();
-        let backend = Arc::new(
-            forge_storage_sqlite::SqliteBackend::open_for_test(
-                ":memory:",
-                [0xcd; 32],
-                media.path().join("media"),
-                None,
-            )
-            .await
-            .unwrap(),
-        );
+        let (backend, media) = common::sqlite_backend().await;
+        let backend = Arc::new(backend);
         forge_storage::write_setting(
             backend.as_ref(),
             &forge_script::settings::TIMEOUT_MS,
@@ -801,7 +761,11 @@ async fn an_action_script_sending_to_a_disabled_integration_fails_the_run_and_se
     harness.engine.dispatch(request(id)).await.unwrap();
 
     assert!(
-        eventually(|| !harness.history.saved().is_empty()).await,
+        harness
+            .history
+            .written
+            .until(|| !harness.history.saved().is_empty())
+            .await,
         "the run was never saved to history",
     );
     assert!(

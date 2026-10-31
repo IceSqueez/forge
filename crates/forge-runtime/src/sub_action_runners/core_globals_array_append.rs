@@ -132,17 +132,13 @@ mod tests {
     use super::*;
     use forge_events::Event;
     use forge_events::EventPublisher;
+    use forge_events::test_support::NullPublisher;
     use forge_storage::{GlobalEntry, StorageError};
     use forge_types::EventId;
     use forge_types::Variant;
     use std::collections::BTreeMap;
     use std::sync::Mutex;
     use time::OffsetDateTime;
-
-    struct NullPublisher;
-    impl EventPublisher for NullPublisher {
-        fn publish(&self, _event: Event) {}
-    }
 
     struct CapturingPublisher(Arc<Mutex<Vec<Event>>>);
     impl EventPublisher for CapturingPublisher {

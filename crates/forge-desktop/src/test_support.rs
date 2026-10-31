@@ -67,6 +67,7 @@ pub(crate) const SETTINGS_WRITE_FAILED: &str = "settings store is read-only";
 pub(crate) struct TestBackend {
     settings: MemorySettings,
     writes: UnboundedSender<SettingWrite>,
+    reads: Mutex<HashMap<String, usize>>,
     read_faults: Mutex<HashMap<String, ReadFault>>,
     write_faults: Mutex<std::collections::HashSet<String>>,
     overlays: Option<Arc<dyn OverlayRepo>>,
@@ -152,6 +153,7 @@ fn backend_over(
         Arc::new(TestBackend {
             settings: MemorySettings::new(),
             writes,
+            reads: Mutex::default(),
             read_faults: Mutex::default(),
             write_faults: Mutex::default(),
             overlays,
@@ -222,6 +224,7 @@ fn enabled_schedule_over_test_backend(
     let backend = Arc::new(TestBackend {
         settings,
         writes,
+        reads: Mutex::default(),
         read_faults: Mutex::default(),
         write_faults: Mutex::default(),
         overlays: None,
@@ -261,6 +264,15 @@ pub(crate) fn writes_to(writes: &mut UnboundedReceiver<SettingWrite>, key: &str)
 impl TestBackend {
     pub(crate) fn seed<C: SettingCodec>(&self, setting: &Setting<C>, value: &C::Value) {
         self.settings.seed(setting, value).unwrap();
+    }
+
+    pub(crate) fn reads_of<C: SettingCodec>(&self, setting: &Setting<C>) -> usize {
+        self.reads
+            .lock()
+            .unwrap()
+            .get(setting.name())
+            .copied()
+            .unwrap_or_default()
     }
 
     pub(crate) fn seed_raw<C: SettingCodec>(&self, setting: &Setting<C>, raw: &str) {
@@ -320,6 +332,12 @@ impl TestBackend {
 #[async_trait::async_trait]
 impl SettingsRepo for TestBackend {
     async fn get_raw(&self, gate: RowGate, key: &str) -> Result<Option<String>, StorageError> {
+        *self
+            .reads
+            .lock()
+            .unwrap()
+            .entry(key.to_owned())
+            .or_default() += 1;
         let fault = self.read_faults.lock().unwrap().get(key).cloned();
         match fault {
             Some(ReadFault::Fails) => {
@@ -1176,6 +1194,49 @@ pub(crate) fn pump_until(rt: &tokio::runtime::Runtime, mut reached: impl FnMut()
         );
         pump(rt);
     }
+}
+
+pub(crate) fn settle_until(
+    cx: &mut gpui::TestAppContext,
+    rt: &tokio::runtime::Runtime,
+    mut reached: impl FnMut(&mut gpui::TestAppContext) -> bool,
+) {
+    let deadline = std::time::Instant::now() + PUMP_HANG_GUARD;
+    loop {
+        cx.run_until_parked();
+        if reached(cx) {
+            return;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the awaited state never arrived"
+        );
+        pump(rt);
+    }
+}
+
+pub(crate) fn settle_until_tasks_drain_to(
+    cx: &mut gpui::TestAppContext,
+    rt: &tokio::runtime::Runtime,
+    background_tasks: usize,
+) {
+    settle_until(cx, rt, |_| alive_tasks(rt) <= background_tasks);
+    cx.run_until_parked();
+}
+
+pub(crate) async fn within_hang_guard<F: std::future::Future>(awaited: F) -> F::Output {
+    tokio::time::timeout(PUMP_HANG_GUARD, awaited)
+        .await
+        .expect("the awaited state never arrived")
+}
+
+pub(crate) async fn yield_until(mut reached: impl FnMut() -> bool) {
+    within_hang_guard(async {
+        while !reached() {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await;
 }
 
 pub(crate) struct NeutralOverlaySamples;

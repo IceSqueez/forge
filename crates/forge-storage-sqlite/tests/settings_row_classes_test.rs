@@ -72,7 +72,7 @@ impl Store for Sandboxed<SqliteBackend> {
 }
 
 async fn both_stores() -> (MemorySettings, Sandboxed<SqliteBackend>) {
-    let sqlite = common::sandboxed_backend(":memory:", TEST_KEY).await;
+    let sqlite = common::migrated_backend(TEST_KEY).await;
     (MemorySettings::new(), sqlite)
 }
 
@@ -173,7 +173,7 @@ on_both_stores!(
 
 #[tokio::test]
 async fn seeding_a_legacy_row_on_sqlite_stores_the_column_defaults() {
-    let sqlite = common::sandboxed_backend(":memory:", TEST_KEY).await;
+    let sqlite = common::migrated_backend(TEST_KEY).await;
     sqlite
         .seed_foreign_setting("legacy.row", "v", None)
         .await
@@ -187,7 +187,7 @@ async fn seeding_a_legacy_row_on_sqlite_stores_the_column_defaults() {
 
 #[tokio::test]
 async fn stored_setting_rows_are_ordered_by_key() {
-    let sqlite = common::sandboxed_backend(":memory:", TEST_KEY).await;
+    let sqlite = common::migrated_backend(TEST_KEY).await;
     for key in ["zz.last", "aa.first", "mm.middle"] {
         sqlite
             .seed_foreign_setting(key, "v", None)

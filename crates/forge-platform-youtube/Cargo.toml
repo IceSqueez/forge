@@ -29,6 +29,7 @@ time = { workspace = true }
 jiff = { workspace = true }
 
 [dev-dependencies]
+forge-events = { path = "../forge-events", features = ["test-support"] }
 reqwest = { workspace = true }
 wiremock = { workspace = true }
 forge-storage = { path = "../forge-storage", features = ["test-mocks"] }

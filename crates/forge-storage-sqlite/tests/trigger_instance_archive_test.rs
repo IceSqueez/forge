@@ -1,68 +1,10 @@
 #![allow(clippy::expect_used)]
-use std::collections::BTreeMap;
 
 use forge_storage::{DataProvider, StorageError};
-use forge_storage_sqlite::SqliteBackend;
-use forge_types::{
-    Action, ActionId, ExecutionMode, PermissionRung, QueueId, TriggerInstance, TriggerInstanceId,
-};
+use forge_types::TriggerInstanceId;
 
 mod common;
-use common::Sandboxed;
-
-const TEST_KEY: [u8; 32] = [0xcd; 32];
-
-async fn setup() -> Sandboxed<SqliteBackend> {
-    common::sandboxed_backend("sqlite::memory:", TEST_KEY).await
-}
-
-async fn default_queue_id(backend: &SqliteBackend) -> QueueId {
-    backend
-        .queue_repo()
-        .get_by_name("Default")
-        .await
-        .expect("get default queue")
-        .expect("default queue must exist after migration")
-        .id
-}
-
-async fn insert_action(backend: &SqliteBackend, name: &str) -> ActionId {
-    let queue_id = default_queue_id(backend).await;
-    let action = Action {
-        id: ActionId::new(),
-        name: name.to_owned(),
-        group: None,
-        queue_id,
-        enabled: true,
-        concurrent: false,
-        bypass_pause: false,
-        execution_mode: ExecutionMode::Sequential,
-        description: None,
-        sub_actions: vec![],
-    };
-    let id = action.id;
-    backend
-        .action_repo()
-        .save(&action)
-        .await
-        .expect("save action");
-    id
-}
-
-fn make_instance(kind_id: &str, name: &str, user_defined: bool) -> TriggerInstance {
-    TriggerInstance {
-        id: TriggerInstanceId::new(),
-        kind_id: kind_id.to_owned(),
-        name: name.to_owned(),
-        overrides: BTreeMap::new(),
-        enabled: true,
-        user_defined,
-        platform_scope: Default::default(),
-        cooldown_secs: 0,
-        cooldown_global: true,
-        permission_rung: PermissionRung::Everyone,
-    }
-}
+use common::{insert_action, setup, trigger_instance};
 
 #[tokio::test]
 async fn archive_transitions_live_to_archived_and_is_false_otherwise() {
@@ -77,7 +19,7 @@ async fn archive_transitions_live_to_archived_and_is_false_otherwise() {
         "archiving an unknown instance id must return false"
     );
 
-    let inst = make_instance("twitch.chat.command", "Trigger", true);
+    let inst = trigger_instance("twitch.chat.command", "Trigger", true);
     let id = inst.id;
     repo.save(&inst).await.expect("save");
 
@@ -104,7 +46,7 @@ async fn restore_transitions_archived_to_live_and_is_false_otherwise() {
         "restoring an unknown instance id must return false"
     );
 
-    let inst = make_instance("twitch.chat.command", "Trigger", true);
+    let inst = trigger_instance("twitch.chat.command", "Trigger", true);
     let id = inst.id;
     repo.save(&inst).await.expect("save");
     assert!(
@@ -129,7 +71,7 @@ async fn archive_hides_instance_from_reads_and_lists_it_in_archived() {
     let repo = backend.trigger_instance_repo();
     let action_id = insert_action(&backend, "host action").await;
 
-    let inst = make_instance("twitch.chat.command", "Hidden", true);
+    let inst = trigger_instance("twitch.chat.command", "Hidden", true);
     let id = inst.id;
     repo.save(&inst).await.expect("save");
     backend
@@ -170,7 +112,7 @@ async fn restore_returns_archived_instance_to_visibility() {
     let backend = setup().await;
     let repo = backend.trigger_instance_repo();
 
-    let inst = make_instance("twitch.chat.command", "Restored", true);
+    let inst = trigger_instance("twitch.chat.command", "Restored", true);
     let id = inst.id;
     repo.save(&inst).await.expect("save");
     repo.archive(id).await.expect("archive");
@@ -196,7 +138,7 @@ async fn delete_succeeds_when_only_archived_actions_use_the_instance() {
     let repo = backend.trigger_instance_repo();
     let action_id = insert_action(&backend, "archived user").await;
 
-    let inst = make_instance("twitch.chat.command", "Referenced", true);
+    let inst = trigger_instance("twitch.chat.command", "Referenced", true);
     repo.save(&inst).await.expect("save");
     backend
         .insert_action_trigger_instance_for_test(action_id, inst.id, 0)
@@ -219,7 +161,7 @@ async fn delete_is_blocked_by_live_users_and_counts_only_them() {
     let live = insert_action(&backend, "live user").await;
     let archived = insert_action(&backend, "archived user").await;
 
-    let inst = make_instance("twitch.chat.command", "Shared", true);
+    let inst = trigger_instance("twitch.chat.command", "Shared", true);
     repo.save(&inst).await.expect("save");
     backend
         .insert_action_trigger_instance_for_test(live, inst.id, 0)
@@ -260,7 +202,7 @@ async fn actions_using_excludes_archived_actions() {
     let live = insert_action(&backend, "live user").await;
     let archived = insert_action(&backend, "archived user").await;
 
-    let inst = make_instance("twitch.chat.command", "Shared", true);
+    let inst = trigger_instance("twitch.chat.command", "Shared", true);
     repo.save(&inst).await.expect("save");
     backend
         .insert_action_trigger_instance_for_test(live, inst.id, 0)

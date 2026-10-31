@@ -179,19 +179,14 @@ fn supplied_content(config: &SubActionConfig) -> OverlayConfig {
 
 #[cfg(test)]
 mod tests {
+    use forge_events::test_support::NullPublisher;
     use std::collections::BTreeSet;
 
-    use forge_events::{Event, EventPublisher};
     use forge_types::{EventId, SubActionOutcome};
 
     use super::*;
     use crate::test_support::frozen_core_runtime;
     use forge_types::Variant;
-
-    struct NullPublisher;
-    impl EventPublisher for NullPublisher {
-        fn publish(&self, _event: Event) {}
-    }
 
     fn config(pairs: &[(&str, Variant)]) -> SubActionConfig {
         pairs

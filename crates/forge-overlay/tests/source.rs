@@ -1,30 +1,16 @@
 #![allow(clippy::expect_used)]
+mod common;
+use common::{IDENTITY, UNSAFE_IDENTITIES, names_in, unborn_root};
+
 use std::fs;
-use std::path::{Path, PathBuf};
 
 #[cfg(unix)]
 use forge_overlay::BEHAVIOR_FILE;
 use forge_overlay::{
-    CONFIG_FILE, MARKUP_FILE, OVERRIDABLE_FILES, OverlayError, RESERVED_DIRECTORY, RUNTIME_ASSET,
-    STYLE_FILE, read_overlay_source, write_overlay_source,
+    CONFIG_FILE, MARKUP_FILE, OVERRIDABLE_FILES, OverlayError, RUNTIME_ASSET, STYLE_FILE,
+    read_overlay_source, write_overlay_source,
 };
 use tempfile::TempDir;
-
-const IDENTITY: &str = "sub-alert-1";
-
-const UNSAFE_IDENTITIES: &[(&str, &str)] = &[
-    ("..", "parent traversal"),
-    (".", "the current directory"),
-    ("a/b", "a nested path"),
-    ("/abs", "an absolute path"),
-    ("a\\b", "a windows separator"),
-    ("Up-Case", "an uppercase letter"),
-    ("dot.name", "a dot segment"),
-    ("with space", "a space"),
-    ("", "an empty name"),
-    ("-leading-dash", "a leading dash"),
-    (RESERVED_DIRECTORY, "the reserved shared subtree"),
-];
 
 const NOT_HANDED_OVER: &[(&str, &str)] = &[
     (CONFIG_FILE, "generated configuration, never the user's"),
@@ -38,25 +24,6 @@ const NOT_HANDED_OVER: &[(&str, &str)] = &[
     ("", "an empty name"),
     ("overlay.scss", "a file this build never generates"),
 ];
-
-fn unborn_root(home: &TempDir) -> PathBuf {
-    home.path().join("overlays")
-}
-
-fn names_in(dir: &Path) -> Vec<String> {
-    let mut names: Vec<String> = fs::read_dir(dir)
-        .expect("the directory exists")
-        .map(|entry| {
-            entry
-                .expect("a readable directory entry")
-                .file_name()
-                .to_string_lossy()
-                .into_owned()
-        })
-        .collect();
-    names.sort();
-    names
-}
 
 #[test]
 fn a_written_page_file_reads_back_byte_for_byte_and_leaves_no_staging_file_behind() {

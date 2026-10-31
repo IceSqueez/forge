@@ -182,3 +182,86 @@ pub fn plan_pack_import(
         limits: vec![PackImportLimit::NamesInScriptsAndTextNotFollowed],
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::documents::model::{GlobalDocument, QueueDocument};
+    use crate::test_support::{
+        FixtureRegistries, blank_manifest, global, no_documents, queue, staged,
+    };
+
+    fn plan_with_one_free_and_one_named_and_one_same_id_item() -> (PackImportPlan, Vec<PackItemKey>)
+    {
+        let named = queue("Named");
+        let mut inventory = PackInventory::default();
+        inventory.queues.insert(named.id, named.clone());
+        inventory
+            .globals
+            .insert("score".to_owned(), global("score"));
+        let mut documents = no_documents();
+        documents
+            .queues
+            .push(QueueDocument::of(&queue("Fresh"), None));
+        documents
+            .queues
+            .push(QueueDocument::of(&queue("Named"), None));
+        documents.globals.push(GlobalDocument::of(&global("score")));
+        let registries = FixtureRegistries::new();
+        let plan = plan_pack_import(
+            &staged(blank_manifest(), documents),
+            &inventory,
+            registries.closure(),
+        )
+        .unwrap();
+        let keys = plan.items().iter().map(|item| item.key.clone()).collect();
+        (plan, keys)
+    }
+
+    #[test]
+    fn a_plan_defaults_to_nothing_destructive() {
+        let (plan, _) = plan_with_one_free_and_one_named_and_one_same_id_item();
+        let resolutions: Vec<_> = plan.items().iter().map(|item| item.resolution).collect();
+        assert_eq!(
+            resolutions,
+            [
+                None,
+                Some(PackResolution::KeepBoth),
+                Some(PackResolution::Skip),
+            ]
+        );
+        assert!(!plan.replaces_anything());
+    }
+
+    #[test]
+    fn resolving_a_conflict_to_replace_marks_the_plan_as_replacing() {
+        let (mut plan, keys) = plan_with_one_free_and_one_named_and_one_same_id_item();
+        plan.set_resolution(&keys[2], PackResolution::Replace)
+            .unwrap();
+        assert!(plan.replaces_anything());
+    }
+
+    #[test]
+    fn an_item_without_a_conflict_cannot_take_a_resolution() {
+        let (mut plan, keys) = plan_with_one_free_and_one_named_and_one_same_id_item();
+        let refused = plan.set_resolution(&keys[0], PackResolution::Replace);
+        assert!(matches!(
+            refused,
+            Err(TransferError::PackResolutionNotAllowed { .. })
+        ));
+        assert_eq!(plan.items()[0].resolution, None);
+    }
+
+    #[test]
+    fn a_key_outside_the_plan_is_refused() {
+        let (mut plan, _) = plan_with_one_free_and_one_named_and_one_same_id_item();
+        let stranger = PackItemKey {
+            kind: PackItemKind::Action,
+            id: "stranger".to_owned(),
+        };
+        assert!(matches!(
+            plan.set_resolution(&stranger, PackResolution::Skip),
+            Err(TransferError::UnknownPackItem { .. })
+        ));
+    }
+}

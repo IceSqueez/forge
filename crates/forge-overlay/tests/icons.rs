@@ -1,4 +1,7 @@
 #![allow(clippy::expect_used)]
+mod common;
+use common::BLOB_IDENTITY;
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
@@ -11,8 +14,6 @@ use forge_types::Variant;
 use sha2::{Digest, Sha256};
 
 const CLIP_ULID: &str = "01j9p4s2m7q8v3x5y6z7a8b9c0";
-const BLOB_IDENTITY: &str =
-    "sha256-1fe5a351bf0314c8a1840b023fd1e4cab3f0f123468940c241bd7bf20e989ab8";
 const SVG_EXTENSION: &str = "svg";
 const LICENSE_FILE: &str = "LICENSE";
 

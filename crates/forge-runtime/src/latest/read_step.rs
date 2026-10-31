@@ -141,9 +141,9 @@ pub fn register_latest_sub_actions(
 
 #[cfg(test)]
 mod tests {
+    use forge_events::test_support::NullPublisher;
     use std::sync::Mutex;
 
-    use forge_events::{Event, EventPublisher};
     use forge_types::{EventId, LatestValue, NOW_PLAYING_SLOT, SubActionOutcome};
     use time::OffsetDateTime;
 
@@ -182,12 +182,6 @@ mod tests {
                 )
             })
         }
-    }
-
-    struct NullPublisher;
-
-    impl EventPublisher for NullPublisher {
-        fn publish(&self, _event: Event) {}
     }
 
     fn config(slot: &str, platform: &str, into_var: &str) -> SubActionConfig {

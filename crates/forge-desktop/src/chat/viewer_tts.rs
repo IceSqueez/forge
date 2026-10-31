@@ -179,7 +179,6 @@ impl ChatView {
 mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::{Arc, Mutex};
-    use std::time::Duration;
 
     use forge_components::{ToastKind, tr};
     use forge_speech_types::{AliasId, VoiceAlias};
@@ -193,11 +192,12 @@ mod tests {
     use crate::chat::tests::mount_in_window;
     use crate::chat::viewer_actions::ViewerTarget;
     use crate::chat_author::AuthorKey;
-    use crate::test_support::{alias_shape, runtime};
+    use crate::test_support::{
+        alias_shape, alive_tasks, runtime, settle_until, settle_until_tasks_drain_to,
+    };
     use forge_components::Toasts;
 
     const VIEWER_KEY: &str = "twitch:141981764";
-    const SETTLE_ROUNDS: usize = 2000;
 
     fn id_keyed_viewer() -> ViewerTarget {
         ViewerTarget::new(
@@ -227,27 +227,12 @@ mod tests {
         repo
     }
 
-    fn settle(
-        vcx: &mut VisualTestContext,
-        rt: &tokio::runtime::Runtime,
-        done: impl Fn(&mut VisualTestContext) -> bool,
-    ) {
-        for _ in 0..SETTLE_ROUNDS {
-            rt.block_on(async { tokio::time::sleep(Duration::from_millis(1)).await });
-            vcx.run_until_parked();
-            if done(vcx) {
-                return;
-            }
-        }
-        panic!("the drawer never settled");
+    fn form_open(cx: &mut TestAppContext, view: &Entity<ChatView>) -> bool {
+        view.read_with(cx, |view, _| view.tts_voice.is_some())
     }
 
-    fn form_open(vcx: &mut VisualTestContext, view: &Entity<ChatView>) -> bool {
-        vcx.update(|_window, cx| view.read(cx).tts_voice.is_some())
-    }
-
-    fn toasts(vcx: &mut VisualTestContext) -> Vec<(ToastKind, String)> {
-        vcx.update(|_window, cx| {
+    fn toasts(cx: &mut TestAppContext) -> Vec<(ToastKind, String)> {
+        cx.update(|cx| {
             cx.global::<Toasts>()
                 .items()
                 .iter()
@@ -266,7 +251,7 @@ mod tests {
                 view.open_tts_voice(id_keyed_viewer(), window, cx)
             })
         });
-        settle(vcx, rt, |vcx| form_open(vcx, view));
+        settle_until(vcx, rt, |vcx| form_open(vcx, view));
     }
 
     fn press_enter(vcx: &mut VisualTestContext) {
@@ -287,7 +272,7 @@ mod tests {
 
         open_voice_form(vcx, &rt, &view);
         press_enter(vcx);
-        settle(vcx, &rt, |_| !saved.lock().expect("saved").is_empty());
+        settle_until(vcx, &rt, |_| !saved.lock().expect("saved").is_empty());
 
         let saved = saved
             .lock()
@@ -307,7 +292,7 @@ mod tests {
 
         open_voice_form(vcx, &rt, &view);
         press_enter(vcx);
-        settle(vcx, &rt, |vcx| !form_open(vcx, &view));
+        settle_until(vcx, &rt, |vcx| !form_open(vcx, &view));
 
         assert_eq!(
             toasts(vcx),
@@ -333,7 +318,7 @@ mod tests {
         for _ in 0..2 {
             let before = attempts.load(Ordering::SeqCst);
             press_enter(vcx);
-            settle(vcx, &rt, |vcx| {
+            settle_until(vcx, &rt, |vcx| {
                 attempts.load(Ordering::SeqCst) > before && toasts(vcx).len() > before
             });
         }
@@ -361,7 +346,7 @@ mod tests {
                 view.open_tts_voice(id_keyed_viewer(), window, cx)
             })
         });
-        settle(vcx, &rt, |vcx| !toasts(vcx).is_empty());
+        settle_until(vcx, &rt, |vcx| !toasts(vcx).is_empty());
 
         assert_eq!(
             (
@@ -400,7 +385,7 @@ mod tests {
             vcx.update(|_window, cx| {
                 view.update(cx, |view, cx| view.block_tts_viewer(id_keyed_viewer(), cx))
             });
-            settle(vcx, &rt, |vcx| !toasts(vcx).is_empty());
+            settle_until(vcx, &rt, |vcx| !toasts(vcx).is_empty());
 
             assert_eq!(
                 toasts(vcx)
@@ -431,6 +416,7 @@ mod tests {
         let (view, vcx) = mount_in_window(cx, &rt, repo);
         let name_only =
             ViewerTarget::new(&AuthorKey::by_name(PlatformId::Twitch, "alice"), "alice");
+        let background_tasks = alive_tasks(&rt);
 
         vcx.update(|window, cx| {
             view.update(cx, |view, cx| {
@@ -438,10 +424,7 @@ mod tests {
                 view.block_tts_viewer(name_only, cx);
             })
         });
-        for _ in 0..8 {
-            rt.block_on(async { tokio::time::sleep(Duration::from_millis(1)).await });
-            vcx.run_until_parked();
-        }
+        settle_until_tasks_drain_to(vcx, &rt, background_tasks);
 
         assert_eq!(
             (

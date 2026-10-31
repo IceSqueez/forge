@@ -1,12 +1,12 @@
 #![allow(clippy::unwrap_used)]
 mod common;
 use common::{code_of, failure_message, verbatim_arg};
+use forge_events::test_support::NullPublisher;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
 
 use forge_events::EventSubscription;
-use forge_events::{Event, EventPublisher};
 use forge_registry::{ConfigProblem, ConfigReason, RegistryError, RunContext, SubActionRunner};
 use forge_runtime::{
     EventBus, FrozenRuntime, NullEventLogRepo, QueueAdmission, QueueSchedulerHandle,
@@ -19,11 +19,6 @@ use forge_types::{
     SubActionOutcome, SubActionStep, TriggerInstanceId, Variant,
 };
 use tempfile::TempDir;
-
-struct NullPublisher;
-impl EventPublisher for NullPublisher {
-    fn publish(&self, _event: Event) {}
-}
 
 struct Harness {
     trigger_instances: Arc<dyn TriggerInstanceRepo>,
@@ -54,11 +49,7 @@ fn blocking(id: QueueId) -> Queue {
 }
 
 async fn backend() -> (Arc<SqliteBackend>, TempDir) {
-    let media = tempfile::tempdir().unwrap();
-    let backend =
-        SqliteBackend::open_for_test(":memory:", [0x5a; 32], media.path().join("media"), None)
-            .await
-            .unwrap();
+    let (backend, media) = common::sqlite_backend().await;
     (Arc::new(backend), media)
 }
 

@@ -1,9 +1,9 @@
 #![allow(clippy::unwrap_used)]
+use forge_events::test_support::NullPublisher;
 use std::collections::BTreeSet;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
-use forge_events::{Event, EventPublisher};
 use forge_registry::{
     ConfigProblem, ConfigReason, FormField, RegistryError, RunContext, SubActionRegistry,
     SubActionRunner, ValueBounds,
@@ -92,12 +92,6 @@ impl SoundboardControl for RecordingControl {
     async fn set_master_volume(&self, gain: f32) -> Result<(), SoundboardError> {
         self.record(ControlCall::SetMasterVolume(gain))
     }
-}
-
-struct NullPublisher;
-
-impl EventPublisher for NullPublisher {
-    fn publish(&self, _event: Event) {}
 }
 
 fn make_ctx(stack: &ArgStack) -> RunContext<'_> {

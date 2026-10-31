@@ -8,9 +8,7 @@ use forge_speak_queue::{
 };
 use forge_speech_types::AssignmentStrategy;
 
-use common::{make_deps, neutral_pipeline, recording_sink, request, standard_registry};
-
-const HANG_GUARD: std::time::Duration = std::time::Duration::from_secs(30);
+use common::{make_deps, neutral_pipeline, outcome_of, recording_sink, request, standard_registry};
 
 fn window(size: usize) -> NonZeroUsize {
     NonZeroUsize::new(size).unwrap()
@@ -40,20 +38,10 @@ async fn is_spoken(handle: &SpeakQueueHandle, stream: &mut SpeakEventStream, tex
     let req = request("viewer", text);
     let id = req.request_id.clone();
     handle.send(SpeakCommand::Enqueue(req)).await.unwrap();
-    loop {
-        match tokio::time::timeout(HANG_GUARD, stream.recv()).await {
-            Ok(Ok(SpeakEvent::Finished { request_id })) if request_id == id => return true,
-            Ok(Ok(SpeakEvent::Skipped { request_id, .. })) if request_id == id => return false,
-            Ok(Ok(SpeakEvent::Failed {
-                request_id,
-                message,
-            })) if request_id == id => {
-                panic!("{text:?} failed: {message:?}")
-            }
-            Ok(Ok(_)) => continue,
-            Ok(Err(_)) => panic!("event stream closed"),
-            Err(_) => panic!("no outcome for {text:?}"),
-        }
+    match outcome_of(stream, &id).await {
+        SpeakEvent::Finished { .. } => true,
+        SpeakEvent::Skipped { .. } => false,
+        failure => panic!("{text:?} failed: {failure:?}"),
     }
 }
 

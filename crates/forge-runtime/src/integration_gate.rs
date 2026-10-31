@@ -187,21 +187,15 @@ where
 
 #[cfg(test)]
 mod tests {
+    use forge_events::test_support::NullPublisher;
     use std::pin::pin;
     use std::sync::atomic::{AtomicBool, Ordering};
 
-    use forge_events::{Event, EventPublisher};
     use forge_types::EventId;
     use futures_util::FutureExt;
     use tokio::sync::oneshot;
 
     use super::*;
-
-    struct NoopPublisher;
-
-    impl EventPublisher for NoopPublisher {
-        fn publish(&self, _: Event) {}
-    }
 
     struct DropFlag(Arc<AtomicBool>);
 
@@ -229,7 +223,7 @@ mod tests {
         ran: &AtomicBool,
     ) -> SubActionOutcome {
         let stack = ArgStack::new();
-        let ctx = RunContext::leaf(&stack, 0, EventId::new(), &NoopPublisher);
+        let ctx = RunContext::leaf(&stack, 0, EventId::new(), &NullPublisher);
         let (tel, _) = run_gated_step(gate, owner, &ctx, "test.step", async {
             ran.store(true, Ordering::SeqCst);
             (telemetry(&ctx, SubActionOutcome::Success), None)
@@ -292,7 +286,7 @@ mod tests {
         let gate = IntegrationGate::new();
         let owner = twitch();
         let stack = ArgStack::new();
-        let ctx = RunContext::leaf(&stack, 0, EventId::new(), &NoopPublisher);
+        let ctx = RunContext::leaf(&stack, 0, EventId::new(), &NullPublisher);
         let dropped = Arc::new(AtomicBool::new(false));
         let guard = DropFlag(Arc::clone(&dropped));
         let (_never_tx, never_rx) = oneshot::channel::<()>();
@@ -333,7 +327,7 @@ mod tests {
         let gate = IntegrationGate::new();
         let owner = twitch();
         let stack = ArgStack::new();
-        let ctx = RunContext::leaf(&stack, 0, EventId::new(), &NoopPublisher);
+        let ctx = RunContext::leaf(&stack, 0, EventId::new(), &NullPublisher);
         let (release_tx, release_rx) = oneshot::channel::<()>();
         let mut step = pin!(run_gated_step(
             &gate,
@@ -367,7 +361,7 @@ mod tests {
         run_once(&gate, Some(&twitch()), &ran).await;
 
         let stack = ArgStack::new();
-        let ctx = RunContext::leaf(&stack, 0, EventId::new(), &NoopPublisher);
+        let ctx = RunContext::leaf(&stack, 0, EventId::new(), &NullPublisher);
         let (_never_tx, never_rx) = oneshot::channel::<()>();
         {
             let mut abandoned = pin!(run_gated_step(
@@ -395,7 +389,7 @@ mod tests {
         let gate = IntegrationGate::new();
         let owner = twitch();
         let stack = ArgStack::new();
-        let ctx = RunContext::leaf(&stack, 0, EventId::new(), &NoopPublisher);
+        let ctx = RunContext::leaf(&stack, 0, EventId::new(), &NullPublisher);
         let (_tx_a, rx_a) = oneshot::channel::<()>();
         let (_tx_b, rx_b) = oneshot::channel::<()>();
         let mut first = pin!(run_gated_step(&gate, Some(&owner), &ctx, "a", async {

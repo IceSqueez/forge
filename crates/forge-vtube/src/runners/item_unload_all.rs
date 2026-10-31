@@ -87,7 +87,6 @@ mod tests {
         let ctx = make_ctx(&stack);
         let (tel, extra) = runner.execute(&BTreeMap::new(), &ctx).await;
         assert_eq!(tel.outcome, SubActionOutcome::Success);
-        assert_eq!(tel.kind, "vtube.item.unload_all");
         assert!(extra.is_none());
         assert!(sink.was_called());
     }

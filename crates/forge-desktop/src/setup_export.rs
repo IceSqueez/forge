@@ -242,7 +242,6 @@ impl Render for SetupExportFlow {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
 
     use forge_components::{ToastKind, Toasts};
     use forge_storage::Language;
@@ -252,9 +251,7 @@ mod tests {
     use super::{SetupExportFlow, SetupExportStep, setup_file_name};
     use crate::i18n::install_language;
     use crate::test_support::pack_flow::{PackWorld, pack_world};
-    use crate::test_support::{install_presentation, runtime};
-
-    const SETTLE_DEADLINE: Duration = Duration::from_secs(30);
+    use crate::test_support::{install_presentation, runtime, settle_until};
 
     struct Rig {
         rt: tokio::runtime::Runtime,
@@ -313,12 +310,7 @@ mod tests {
             flow.step = SetupExportStep::ChoosingFile;
             flow.file_chosen(Some(destination.clone()), cx);
         });
-        let deadline = std::time::Instant::now() + SETTLE_DEADLINE;
-        while step(cx, &rig) != SetupExportStep::Idle && std::time::Instant::now() < deadline {
-            rig.rt
-                .block_on(async { tokio::time::sleep(Duration::from_millis(1)).await });
-            cx.run_until_parked();
-        }
+        settle_until(cx, &rig.rt, |cx| step(cx, &rig) == SetupExportStep::Idle);
 
         let kind = rig.rt.block_on(read_bundle_kind(destination)).unwrap();
         assert_eq!(

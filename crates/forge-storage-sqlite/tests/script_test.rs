@@ -1,15 +1,8 @@
 use forge_storage::ScriptRepo;
-use forge_storage_sqlite::SqliteBackend;
 use forge_types::{ScriptContract, ScriptId, ScriptInput, VariantKind};
 
 mod common;
-use common::Sandboxed;
-
-const TEST_KEY: [u8; 32] = [0xab; 32];
-
-async fn setup() -> Sandboxed<SqliteBackend> {
-    common::sandboxed_backend("sqlite::memory:", TEST_KEY).await
-}
+use common::setup;
 
 fn make_record(name: &str, enabled: bool) -> forge_storage::ScriptRecord {
     forge_storage::ScriptRecord {
@@ -72,13 +65,8 @@ async fn get_by_name_missing_returns_none() {
 #[tokio::test]
 async fn saving_an_existing_script_replaces_its_body_and_refreshes_only_last_modified() {
     const AN_OLD_EPOCH_MS: i64 = 1_000;
-    let pool = sqlx::SqlitePool::connect("sqlite::memory:")
-        .await
-        .expect("in-memory pool");
-    forge_storage_sqlite::apply_migrations(&pool)
-        .await
-        .expect("migrations apply");
-    let repo = forge_storage_sqlite::SqliteScriptRepo::new(pool.clone());
+    let pools = common::migrated_pools().await;
+    let repo = forge_storage_sqlite::SqliteScriptRepo::new(pools.clone());
     let mut record = make_record("mutable", true);
     let id = record.id;
     repo.save(record.clone()).await.expect("save 1");
@@ -86,7 +74,7 @@ async fn saving_an_existing_script_replaces_its_body_and_refreshes_only_last_mod
         .bind(AN_OLD_EPOCH_MS)
         .bind(AN_OLD_EPOCH_MS)
         .bind(id.to_string())
-        .execute(&pool)
+        .execute(pools.writer())
         .await
         .expect("backdate");
     let old = repo.get(id).await.expect("get before").unwrap().created_at;

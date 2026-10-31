@@ -1,7 +1,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
+use forge_events::test_support::NullPublisher;
 use std::process::Command;
 
-use forge_events::{Event, EventPublisher};
 use forge_registry::{RunContext, SubActionRunner};
 use forge_runtime::DateNamesHandle;
 use forge_runtime::sub_action_runners::{
@@ -14,11 +14,6 @@ use tokio::sync::{Mutex, MutexGuard};
 const CHILD_MARKER: &str = "FORGE_TIME_STEP_PATTERNS_CHILD";
 
 static NAMES_LANGUAGE_LOCK: Mutex<()> = Mutex::const_new(());
-
-struct NullPublisher;
-impl EventPublisher for NullPublisher {
-    fn publish(&self, _event: Event) {}
-}
 
 async fn names_language(language: NamesLanguage) -> MutexGuard<'static, ()> {
     let guard = NAMES_LANGUAGE_LOCK.lock().await;

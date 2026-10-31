@@ -355,6 +355,7 @@ pub(crate) mod test_support {
         }
     }
 
+    use forge_events::test_support::NullPublisher;
     use std::collections::VecDeque;
     use std::ffi::OsString;
     use std::sync::Mutex;
@@ -529,12 +530,6 @@ pub(crate) mod test_support {
         }
     }
 
-    struct NoopPublisher;
-
-    impl EventPublisher for NoopPublisher {
-        fn publish(&self, _: Event) {}
-    }
-
     pub(crate) fn chat_trigger_args(message_id: &str) -> ArgStack {
         let event = Event::new(
             forge_events::EventSource::Twitch,
@@ -560,7 +555,7 @@ pub(crate) mod test_support {
     }
 
     pub(crate) fn make_ctx(stack: &ArgStack) -> RunContext<'_> {
-        RunContext::leaf(stack, 0, EventId::new(), &NoopPublisher)
+        RunContext::leaf(stack, 0, EventId::new(), &NullPublisher)
     }
 
     pub(crate) fn endpoints_with(overrides: &[(EndpointSurface, &str)]) -> PlatformEndpoints {

@@ -1,23 +1,10 @@
 #![allow(clippy::expect_used)]
-use forge_overlay::{
-    MotionIssue, OverlayKindDescriptor, OverlayKindRegistry, OverriddenSources, motion_issues,
-    register_builtin_kinds,
-};
+mod common;
+use common::{ALERT_KIND, BLANK_KIND, CHAT_KIND, FRAME_KIND, GOAL_KIND, TICKER_KIND, registry};
 
-const ALERT_KIND: &str = "overlay.alert";
-const BLANK_KIND: &str = "overlay.blank";
-const CHAT_KIND: &str = "overlay.chat";
-const FRAME_KIND: &str = "overlay.frame";
-const GOAL_KIND: &str = "overlay.goal";
-const TICKER_KIND: &str = "overlay.ticker";
+use forge_overlay::{MotionIssue, OverlayKindDescriptor, OverriddenSources, motion_issues};
 
 const BOUND_TEXT: &str = r#"<span data-bind="headline"></span>"#;
-
-fn registry() -> OverlayKindRegistry {
-    let mut reg = OverlayKindRegistry::new();
-    register_builtin_kinds(&mut reg).expect("the builtin overlay kinds register");
-    reg
-}
 
 fn issues_of(kind_id: &str, sources: OverriddenSources<'_>) -> Vec<MotionIssue> {
     let reg = registry();

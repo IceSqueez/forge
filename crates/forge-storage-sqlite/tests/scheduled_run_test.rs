@@ -12,17 +12,13 @@ use forge_storage_sqlite::{
     MIGRATIONS, SqliteBackend, SqlitePools, SqliteScheduledRunRepo, apply_migrations, connect,
     connect_pools,
 };
-use forge_types::{Action, ActionId, EventId, Variant};
+use forge_types::{ActionId, EventId, Variant};
 use time::OffsetDateTime;
 
 mod common;
-use common::{Sandboxed, TEST_KEY};
+use common::{TEST_KEY, action_named, setup};
 
 const BASE_UNIX_SECS: i64 = 1_791_115_200;
-
-async fn setup() -> Sandboxed<SqliteBackend> {
-    common::sandboxed_backend("sqlite::memory:", TEST_KEY).await
-}
 
 fn at_ms(offset_ms: i64) -> OffsetDateTime {
     OffsetDateTime::from_unix_timestamp(BASE_UNIX_SECS).unwrap()
@@ -646,25 +642,10 @@ async fn prune_removes_only_resolved_runs_strictly_before_the_cutoff() {
     assert_eq!((pruned, survivors), (1, vec![false, true, true, true]));
 }
 
-fn action_for(queue_id: forge_types::QueueId, name: &str) -> Action {
-    Action {
-        id: ActionId::new(),
-        name: name.to_owned(),
-        group: None,
-        queue_id,
-        enabled: true,
-        concurrent: false,
-        bypass_pause: false,
-        execution_mode: forge_types::ExecutionMode::Sequential,
-        description: None,
-        sub_actions: vec![],
-    }
-}
-
 async fn saved_actions(backend: &SqliteBackend) -> (ActionId, ActionId) {
     let queue_id = backend.queue_repo().list().await.unwrap()[0].id;
-    let doomed = action_for(queue_id, "doomed");
-    let kept = action_for(queue_id, "kept");
+    let doomed = action_named("doomed", queue_id);
+    let kept = action_named("kept", queue_id);
     backend.action_repo().save(&doomed).await.unwrap();
     backend.action_repo().save(&kept).await.unwrap();
     (doomed.id, kept.id)
@@ -929,7 +910,7 @@ async fn schedule_reads_leave_both_revisions_unchanged() {
 
 async fn migrated_pools() -> (SqlitePools, tempfile::TempDir) {
     let dir = tempfile::tempdir().unwrap();
-    let url = format!("sqlite://{}", dir.path().join("forge.db").display());
+    let url = common::database_url(&dir);
     let pools = connect_pools(&url).await.unwrap();
     apply_migrations(pools.writer()).await.unwrap();
     (pools, dir)
@@ -1181,7 +1162,7 @@ const MILLIS_PER_SECOND: i64 = 1_000;
 #[tokio::test]
 async fn a_run_stored_before_replay_marking_reads_back_as_not_replayed() {
     let dir = tempfile::tempdir().unwrap();
-    let url = format!("sqlite://{}", dir.path().join("forge.db").display());
+    let url = common::database_url(&dir);
     let pool = connect(&url).await.unwrap();
     MIGRATIONS
         .run_to(VERSION_BEFORE_SCHEDULED_RUN_REPLAY, &pool)

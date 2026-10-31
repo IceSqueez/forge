@@ -2,8 +2,10 @@
 use aes_gcm::aead::{Aead, KeyInit};
 use aes_gcm::{Aes256Gcm, Nonce};
 use forge_storage::{CredentialId, CredentialsRepo, DataProvider, StorageError};
-use forge_storage_sqlite::{SqliteBackend, SqliteCredentialsRepo, apply_migrations};
+use forge_storage_sqlite::{SqliteBackend, SqliteCredentialsRepo};
 use sqlx::SqlitePool;
+
+mod common;
 
 const TEST_KEY: [u8; 32] = [
     0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10,
@@ -15,12 +17,9 @@ const WRONG_KEY: [u8; 32] = [
     0xde, 0xad, 0xbe, 0xef, 0xde, 0xad, 0xbe, 0xef, 0xde, 0xad, 0xbe, 0xef, 0xde, 0xad, 0xbe, 0xef,
 ];
 
-async fn setup() -> SqliteCredentialsRepo {
-    let pool = sqlx::SqlitePool::connect("sqlite::memory:")
-        .await
-        .expect("in-memory pool");
-    apply_migrations(&pool).await.expect("migrations apply");
-    SqliteCredentialsRepo::new_with_key(pool, TEST_KEY)
+async fn setup() -> common::Sandboxed<SqliteCredentialsRepo> {
+    let pools = common::migrated_pools().await;
+    pools.map(|pools| SqliteCredentialsRepo::new_with_key(pools, TEST_KEY))
 }
 
 #[tokio::test]
@@ -42,16 +41,13 @@ async fn load_missing_returns_none() {
 
 #[tokio::test]
 async fn wrong_key_returns_decryption_error() {
-    let pool = sqlx::SqlitePool::connect("sqlite::memory:")
-        .await
-        .expect("in-memory pool");
-    apply_migrations(&pool).await.expect("migrations apply");
+    let pools = common::migrated_pools().await;
 
-    let writer = SqliteCredentialsRepo::new_with_key(pool.clone(), TEST_KEY);
+    let writer = SqliteCredentialsRepo::new_with_key(pools.clone(), TEST_KEY);
     let id = CredentialId::new("twitch:bot");
     writer.store(&id, "secret_token").await.expect("store");
 
-    let reader = SqliteCredentialsRepo::new_with_key(pool, WRONG_KEY);
+    let reader = SqliteCredentialsRepo::new_with_key(pools.clone(), WRONG_KEY);
     let result = reader.load(&id).await;
     assert!(
         matches!(result, Err(StorageError::Decryption)),
@@ -213,11 +209,8 @@ impl Disk {
 
 #[tokio::test]
 async fn a_row_bound_to_one_id_does_not_decrypt_under_another() {
-    let pool = SqlitePool::connect("sqlite::memory:")
-        .await
-        .expect("in-memory pool");
-    apply_migrations(&pool).await.expect("migrations apply");
-    let repo = SqliteCredentialsRepo::new_with_key(pool.clone(), TEST_KEY);
+    let pools = common::migrated_pools().await;
+    let repo = SqliteCredentialsRepo::new_with_key(pools.clone(), TEST_KEY);
     repo.store(&CredentialId::new(BROADCASTER), "broadcaster_token")
         .await
         .expect("store");
@@ -227,7 +220,7 @@ async fn a_row_bound_to_one_id_does_not_decrypt_under_another() {
     )
     .bind(BOT)
     .bind(BROADCASTER)
-    .execute(&pool)
+    .execute(pools.writer())
     .await
     .expect("the row is copied under the other id");
 
@@ -241,12 +234,9 @@ async fn a_row_bound_to_one_id_does_not_decrypt_under_another() {
 
 #[tokio::test]
 async fn a_legacy_row_reads_with_the_key_alone() {
-    let pool = SqlitePool::connect("sqlite::memory:")
-        .await
-        .expect("in-memory pool");
-    apply_migrations(&pool).await.expect("migrations apply");
-    seed_legacy(&pool, BOT, &TEST_KEY, "legacy_token").await;
-    let repo = SqliteCredentialsRepo::new_with_key(pool, TEST_KEY);
+    let pools = common::migrated_pools().await;
+    seed_legacy(pools.writer(), BOT, &TEST_KEY, "legacy_token").await;
+    let repo = SqliteCredentialsRepo::new_with_key(pools.clone(), TEST_KEY);
 
     let loaded = repo.load(&CredentialId::new(BOT)).await.expect("load");
 

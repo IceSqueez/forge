@@ -1,4 +1,7 @@
 #![allow(clippy::expect_used)]
+mod common;
+use common::BLOB_IDENTITY;
+
 use forge_overlay::config::{DEFAULT_ICON, HEADLINE, ICON, SOUND, SUBLINE};
 use forge_overlay::{
     CLIP_REFERENCE_PREFIX, ClipReference, EmittedIcon, GENERATED_MEDIA_DIRECTORY,
@@ -9,8 +12,6 @@ use forge_overlay::{
 use forge_types::Variant;
 
 const CLIP_ULID: &str = "01j9p4s2m7q8v3x5y6z7a8b9c0";
-const BLOB_IDENTITY: &str =
-    "sha256-1fe5a351bf0314c8a1840b023fd1e4cab3f0f123468940c241bd7bf20e989ab8";
 const WAV: &str = "wav";
 const SVG: &str = "svg";
 const LEGACY_FILE: &str = "fanfare.mp3";

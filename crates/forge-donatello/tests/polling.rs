@@ -257,7 +257,7 @@ async fn a_shrunken_list_without_an_arrival_stops_after_one_page_of_known_donati
         h.poll_now().await;
 
         assert_eq!(h.list.requested_pages(), walk, "{order:?}");
-        assert!(h.stays_quiet().await, "{order:?}");
+        h.assert_only_a_later_arrival_is_reported_next().await;
     }
 }
 
@@ -290,7 +290,7 @@ async fn a_walk_finding_nothing_on_an_unchanged_oldest_first_list_stops_after_on
     h.poll_now().await;
 
     assert_eq!(h.list.requested_pages(), vec![0, 2]);
-    assert!(h.stays_quiet().await);
+    h.assert_only_a_later_arrival_is_reported_next().await;
 }
 
 #[tokio::test]
@@ -307,7 +307,7 @@ async fn a_walk_expecting_arrivals_that_are_all_restored_donations_stops_after_o
     h.poll_now().await;
 
     assert_eq!(h.list.requested_pages(), vec![0, 2]);
-    assert!(h.stays_quiet().await);
+    h.assert_only_a_later_arrival_is_reported_next().await;
 }
 
 #[tokio::test]
@@ -464,10 +464,7 @@ async fn errors_needing_the_user_stop_polling_until_the_user_acts() {
         assert!(expected_platform_error, "{me_status:?}: {failure:?}");
         assert_eq!(h.provider.poll_status().phase, phase, "{me_status:?}");
 
-        assert!(
-            h.stays_quiet_for_several_ticks().await,
-            "{me_status:?} polled again"
-        );
+        Harness::outlast_several_ticks().await;
         assert_eq!(
             h.me_requests().await,
             usize::from(me_status.is_some()),
@@ -505,7 +502,7 @@ async fn paused_poller_sends_no_requests() {
     h.wait_for("paused", |s| s.phase == PollPhase::Paused).await;
     h.list.forget_requests();
 
-    tokio::time::sleep(support::SEVERAL_TICKS).await;
+    Harness::outlast_several_ticks().await;
 
     assert!(h.list.requested_pages().is_empty());
 }
@@ -557,17 +554,6 @@ async fn replacements_straddling_a_page_boundary_are_all_reported() {
     assert_eq!(ids_and_origins(&reported), new_live_ids(2));
 }
 
-async fn wait_for_requests(h: &Harness, count: usize) {
-    let deadline = tokio::time::Instant::now() + support::WAIT;
-    while h.list.requested_pages().len() < count {
-        assert!(
-            tokio::time::Instant::now() < deadline,
-            "timed out waiting for {count} page requests"
-        );
-        tokio::time::sleep(support::TICK).await;
-    }
-}
-
 #[tokio::test]
 async fn pausing_during_a_stalled_page_still_reports_what_the_scan_collected_and_resumes_the_rest()
 {
@@ -578,7 +564,7 @@ async fn pausing_during_a_stalled_page_still_reports_what_the_scan_collected_and
         .fail_after(1, ResponseTemplate::new(200).set_delay(support::WAIT * 10));
 
     h.wake_poller();
-    wait_for_requests(&h, 2).await;
+    h.wait_for_requests(2).await;
     assert!(h.provider.disconnect().await.is_ok());
     let collected = h.donations(20).await;
     h.wait_for("paused", |s| s.phase == PollPhase::Paused).await;

@@ -1,24 +1,15 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
+mod common;
+use common::{LATEST_KIND, registry, text};
+
 use std::collections::BTreeMap;
 
 use forge_overlay::{
-    LatestBinding, OverlayConfig, OverlayKindDescriptor, OverlayKindRegistry, SampleContext,
-    latest_binding, latest_content, register_builtin_kinds, sample_content,
+    LatestBinding, OverlayConfig, OverlayKindDescriptor, SampleContext, latest_binding,
+    latest_content, sample_content,
 };
-use forge_types::{LatestScope, LatestValue, NOW_PLAYING_SLOT, Variant, latest_fields};
+use forge_types::{LatestScope, LatestValue, NOW_PLAYING_SLOT, latest_fields};
 use time::OffsetDateTime;
-
-const LATEST_KIND: &str = "overlay.latest";
-
-fn registry() -> OverlayKindRegistry {
-    let mut reg = OverlayKindRegistry::new();
-    register_builtin_kinds(&mut reg).expect("the builtin overlay kinds register");
-    reg
-}
-
-fn text(value: &str) -> Variant {
-    Variant::String(value.to_owned())
-}
 
 fn config(pairs: &[(&str, &str)]) -> OverlayConfig {
     pairs

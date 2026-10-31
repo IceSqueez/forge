@@ -1,28 +1,25 @@
 #![allow(clippy::unwrap_used)]
-use std::collections::BTreeMap;
-use std::ffi::OsString;
-use std::sync::{Arc, Mutex};
+mod support;
+
+use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use async_trait::async_trait;
-use forge_events::{Event, EventPublisher};
 use forge_net::TokenBucketRateLimiter;
-use forge_platform_core::{
-    ChatPlatform, EndpointSurface, PlatformEndpoints, PlatformError, ViewerReport,
-};
+use forge_platform_core::{ChatPlatform, EndpointSurface, PlatformEndpoints, ViewerReport};
 use forge_platform_youtube::{
     ActiveBroadcastIdHandle, GOOGLE_OAUTH_BUDGET_CAPACITY, GOOGLE_OAUTH_BUDGET_WINDOW,
     GoogleOAuthClient, LiveChatIdHandle, SharedQuota, YoutubeAdBreak, YoutubeAuthBundle,
-    YoutubeBroadcaster, YoutubeChannelLookup, YoutubeCredentialsManager, YoutubeDataApi,
-    YoutubeModeration, YoutubePlatform, YoutubeSendChat, YoutubeStreamMetadata, YoutubeStreamStats,
-    YoutubeThumbnail, YoutubeViewerPoll, google_oauth_gateway,
+    YoutubeChannelLookup, YoutubeCredentialsManager, YoutubeDataApi, YoutubeModeration,
+    YoutubePlatform, YoutubeSendChat, YoutubeStreamMetadata, YoutubeStreamStats, YoutubeThumbnail,
+    YoutubeViewerPoll, google_oauth_gateway,
 };
 use forge_storage::ban_ledger::MockBanLedgerRepo;
-use forge_storage::{CredentialId, CredentialsRepo, StorageError};
 use forge_types::OAuthToken;
-use futures::future::BoxFuture;
 use serde_json::json;
-use time::OffsetDateTime;
+use support::{
+    BroadcasterSource, MemoryRepo, SilentBus, TokenSource, data_api_override, endpoints,
+    fixed_broadcaster, fixed_token,
+};
 use tokio::sync::watch;
 use wiremock::matchers::{body_string_contains, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -30,85 +27,13 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 const STEP_DEADLINE: Duration = Duration::from_secs(30);
 const BROADCAST_ID: &str = "broadcast-override";
 const LIVE_CHAT_ID: &str = "live-chat-override";
-const DATA_API_PREFIX: &str = "/youtube/v3";
-
-type TokenSource = Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync>;
-type BroadcasterSource =
-    Arc<dyn Fn() -> BoxFuture<'static, Result<YoutubeBroadcaster, PlatformError>> + Send + Sync>;
 
 fn broadcaster_source() -> BroadcasterSource {
-    Arc::new(|| {
-        Box::pin(async {
-            Ok(YoutubeBroadcaster {
-                channel_id: "UCoverride".to_owned(),
-                channel_title: "Override".to_owned(),
-            })
-        })
-    })
-}
-
-#[derive(Default)]
-struct MemoryRepo {
-    rows: Mutex<BTreeMap<String, String>>,
-}
-
-#[async_trait]
-impl CredentialsRepo for MemoryRepo {
-    async fn store(&self, id: &CredentialId, plaintext_bundle: &str) -> Result<(), StorageError> {
-        self.rows
-            .lock()
-            .unwrap()
-            .insert(id.to_string(), plaintext_bundle.to_owned());
-        Ok(())
-    }
-
-    async fn load(&self, id: &CredentialId) -> Result<Option<String>, StorageError> {
-        Ok(self.rows.lock().unwrap().get(&id.to_string()).cloned())
-    }
-
-    async fn delete(&self, id: &CredentialId) -> Result<bool, StorageError> {
-        Ok(self.rows.lock().unwrap().remove(&id.to_string()).is_some())
-    }
-
-    async fn list_ids(&self) -> Result<Vec<CredentialId>, StorageError> {
-        Ok(Vec::new())
-    }
-
-    async fn last_refresh(
-        &self,
-        _id: &CredentialId,
-    ) -> Result<Option<OffsetDateTime>, StorageError> {
-        Ok(None)
-    }
-
-    async fn mark_refreshed(&self, _id: &CredentialId) -> Result<(), StorageError> {
-        Ok(())
-    }
-}
-
-fn endpoints(overrides: &[(EndpointSurface, String)]) -> PlatformEndpoints {
-    let table: BTreeMap<&'static str, String> = overrides
-        .iter()
-        .map(|(surface, url)| (surface.env_var(), url.clone()))
-        .collect();
-    PlatformEndpoints::resolve(|variable| table.get(variable).map(OsString::from)).unwrap()
-}
-
-fn data_api_override(server: &MockServer) -> PlatformEndpoints {
-    endpoints(&[(
-        EndpointSurface::YouTubeDataApi,
-        format!("{}{DATA_API_PREFIX}", server.uri()),
-    )])
+    fixed_broadcaster("UCoverride", "Override")
 }
 
 fn token_source() -> TokenSource {
-    Arc::new(|| Box::pin(async { Ok("override-token".to_owned()) }))
-}
-
-struct SilentBus;
-
-impl EventPublisher for SilentBus {
-    fn publish(&self, _event: Event) {}
+    fixed_token("override-token")
 }
 
 fn api(endpoints: &PlatformEndpoints) -> YoutubeDataApi {

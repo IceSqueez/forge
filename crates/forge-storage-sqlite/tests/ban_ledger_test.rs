@@ -1,10 +1,11 @@
 #![allow(clippy::expect_used)]
 use forge_storage::{BAN_LEDGER_LIST_CAP, BanLedgerEntry, BanLedgerKey, BanLedgerRepo, BanOrigin};
-use forge_storage_sqlite::{MIGRATIONS, SqliteBanLedgerRepo, apply_migrations, connect};
+use forge_storage_sqlite::{MIGRATIONS, SqliteBanLedgerRepo, SqlitePools, apply_migrations};
 use forge_types::PlatformId;
 use sqlx::SqlitePool;
-use tempfile::TempDir;
 use time::{Duration, OffsetDateTime};
+
+mod common;
 
 const VERSION_BEFORE_BAN_LEDGER: i64 = 51;
 const CHANNEL: &str = "channel";
@@ -12,24 +13,14 @@ const TEN_MINUTES: Duration = Duration::minutes(10);
 
 struct Ledger {
     repo: SqliteBanLedgerRepo,
-    pool: SqlitePool,
-    _dir: TempDir,
-}
-
-async fn empty_pool() -> (SqlitePool, TempDir) {
-    let dir = tempfile::tempdir().expect("a temporary directory");
-    let url = format!("sqlite://{}", dir.path().join("forge.db").display());
-    let pool = connect(&url).await.expect("a database");
-    (pool, dir)
+    pools: common::Sandboxed<SqlitePools>,
 }
 
 async fn ledger() -> Ledger {
-    let (pool, dir) = empty_pool().await;
-    apply_migrations(&pool).await.expect("migrate");
+    let pools = common::migrated_pools().await;
     Ledger {
-        repo: SqliteBanLedgerRepo::new(pool.clone()),
-        pool,
-        _dir: dir,
+        repo: SqliteBanLedgerRepo::new(pools.clone()),
+        pools,
     }
 }
 
@@ -128,7 +119,7 @@ async fn upsert_lazily_deletes_expired_rows_of_every_key_and_keeps_active_ones()
         .await
         .unwrap();
 
-    assert_eq!(raw_row_count(&ledger.pool).await, 3);
+    assert_eq!(raw_row_count(ledger.pools.writer()).await, 3);
 }
 
 #[tokio::test]
@@ -186,7 +177,7 @@ async fn list_active_clamps_the_limit_to_the_cap() {
     )
     .bind(i64::try_from(BAN_LEDGER_LIST_CAP + 1).unwrap())
     .bind(CHANNEL)
-    .execute(&ledger.pool)
+    .execute(ledger.pools.writer())
     .await
     .expect("seeded bans");
 
@@ -282,32 +273,32 @@ async fn upsert_truncates_timestamps_to_milliseconds_consistently_with_get() {
 
 #[tokio::test]
 async fn migration_adds_the_ban_ledger_and_its_indexes_without_touching_existing_rows() {
-    let (pool, _dir) = empty_pool().await;
+    let pools = common::empty_pools().await;
     MIGRATIONS
-        .run_to(VERSION_BEFORE_BAN_LEDGER, &pool)
+        .run_to(VERSION_BEFORE_BAN_LEDGER, pools.writer())
         .await
         .expect("the schema before the ban ledger");
     sqlx::query(
         "INSERT INTO viewers (platform, viewer_id, username, first_seen_at, last_seen_at)
          VALUES ('kick', '42', 'existing', 7, 9)",
     )
-    .execute(&pool)
+    .execute(pools.writer())
     .await
     .expect("a viewer row");
 
-    apply_migrations(&pool).await.expect("migrate");
+    apply_migrations(pools.writer()).await.expect("migrate");
 
     let mut objects: Vec<String> = sqlx::query_scalar(
         "SELECT name FROM sqlite_master WHERE tbl_name = 'ban_ledger' AND sql IS NOT NULL",
     )
-    .fetch_all(&pool)
+    .fetch_all(pools.writer())
     .await
     .expect("schema objects");
     objects.sort();
     let viewer: (String, i64, i64) = sqlx::query_as(
         "SELECT username, first_seen_at, last_seen_at FROM viewers WHERE viewer_id = '42'",
     )
-    .fetch_one(&pool)
+    .fetch_one(pools.writer())
     .await
     .expect("the existing viewer");
     assert_eq!(

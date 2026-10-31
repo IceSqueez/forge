@@ -793,8 +793,15 @@ pub fn warning_key(target: &str, line: &str) -> String {
 }
 
 #[cfg(test)]
-mod tests {
+pub(super) mod tests {
+    use forge_events::Event;
+    use serde_json::json;
+
     use super::*;
+
+    const WATCHED: &str = "Chat";
+    const WATCHED_STIMULUS: usize = 0;
+    const WATCHED_ACTION_ID: &str = "01CHAT";
 
     fn knee() -> KneeRule {
         KneeRule {
@@ -805,7 +812,11 @@ mod tests {
         }
     }
 
-    fn phase_result(sent: u64, owed: u64, observer_dropped: u64) -> PhaseResult {
+    pub(in crate::harness::stress) fn phase_result(
+        sent: u64,
+        owed: u64,
+        observer_dropped: u64,
+    ) -> PhaseResult {
         PhaseResult {
             phase: Phase {
                 label: "ramp".to_owned(),
@@ -824,7 +835,7 @@ mod tests {
         }
     }
 
-    fn sample(warnings: &[&str], log_error: Option<&str>) -> Sample {
+    pub(in crate::harness::stress) fn sample(warnings: &[&str], log_error: Option<&str>) -> Sample {
         Sample {
             at_ms: 0,
             phase: 0,
@@ -893,6 +904,121 @@ mod tests {
         assert_eq!(
             judged(&[sample(&[], None)], &phase_result(10, 10, 0)),
             PhaseVerdict::Ok
+        );
+    }
+
+    fn tracker_with_backlog(injected: u64) -> Tracker {
+        let mut tracker = Tracker::new(vec![WATCHED.to_owned()], vec![vec![0]], 0);
+        for seq in 0..injected {
+            tracker.injected(seq, WATCHED_STIMULUS, 0, Instant::now());
+        }
+        tracker
+    }
+
+    fn judged_watching(tracker: &Tracker, flood_per_sec: f64) -> PhaseVerdict {
+        let mut rule = knee();
+        rule.watch = vec![WATCHED.to_owned(), "Not in this run".to_owned()];
+        let mut result = phase_result(10, 10, 0);
+        result.phase.flood_per_sec = flood_per_sec;
+        judge_phase(&rule, &[], tracker, 0, &result)
+    }
+
+    #[test]
+    fn the_achieved_share_is_judged_at_the_rule_boundary() {
+        for (sent, owed, degraded) in [
+            (50, 100, false),
+            (49, 100, true),
+            (0, 100, true),
+            (0, 0, false),
+            (150, 100, false),
+        ] {
+            let verdict = judged(&[], &phase_result(sent, owed, 0));
+            assert_eq!(
+                matches!(verdict, PhaseVerdict::Degraded(_)),
+                degraded,
+                "{sent} of {owed}: {verdict:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_short_delivery_outranks_a_fatal_warning_and_names_the_share() {
+        let verdict = judged(
+            &[sample(&["forge: bus lagged"], None)],
+            &phase_result(1, 10, 0),
+        );
+        assert!(
+            matches!(&verdict, PhaseVerdict::Degraded(why) if why.contains("10%")),
+            "{verdict:?}"
+        );
+    }
+
+    #[test]
+    fn warnings_of_one_key_add_up_across_the_samples_of_a_phase() {
+        let samples = [
+            sample(&["forge: bus lagged"], None),
+            sample(&["forge: bus lagged"], None),
+        ];
+        let verdict = judged(&samples, &phase_result(10, 10, 0));
+        assert!(
+            matches!(&verdict, PhaseVerdict::Degraded(why) if why.contains("2 times")),
+            "{verdict:?}"
+        );
+    }
+
+    #[test]
+    fn a_warning_that_is_not_fatal_does_not_degrade_the_phase() {
+        assert_eq!(
+            judged(
+                &[sample(&["forge: harmless"], None)],
+                &phase_result(10, 10, 0)
+            ),
+            PhaseVerdict::Ok
+        );
+    }
+
+    #[test]
+    fn samples_of_another_phase_do_not_judge_this_one() {
+        let mut elsewhere = sample(&["forge: bus lagged"], Some("denied"));
+        elsewhere.phase = 1;
+        assert_eq!(
+            judged(&[elsewhere], &phase_result(10, 10, 0)),
+            PhaseVerdict::Ok
+        );
+    }
+
+    #[test]
+    fn the_backlog_is_judged_at_the_rate_times_the_allowed_seconds() {
+        const FLOOD_PER_SEC: f64 = 4.0;
+        for (backlog, degraded) in [(4, false), (5, true)] {
+            let verdict = judged_watching(&tracker_with_backlog(backlog), FLOOD_PER_SEC);
+            assert_eq!(
+                matches!(verdict, PhaseVerdict::Degraded(_)),
+                degraded,
+                "{backlog} unfinished: {verdict:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_skipped_execution_of_a_watched_action_degrades_the_phase() {
+        const FLOOD_PER_SEC: f64 = 100.0;
+        let mut tracker = tracker_with_backlog(1);
+        tracker.learn_action_id(WATCHED_ACTION_ID.to_owned(), WATCHED);
+        tracker.on_event(
+            &Event::new(
+                EventSource::Core,
+                ActionSkipped::KIND,
+                json!({ "action_id": WATCHED_ACTION_ID, "reason": "queue_pending_overflow" }),
+            ),
+            Instant::now(),
+        );
+
+        let verdict = judged_watching(&tracker, FLOOD_PER_SEC);
+
+        assert!(
+            matches!(&verdict, PhaseVerdict::Degraded(why) if why.contains("1 executions")),
+            "{verdict:?}"
         );
     }
 

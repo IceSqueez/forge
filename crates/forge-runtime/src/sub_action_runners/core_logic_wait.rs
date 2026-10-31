@@ -75,18 +75,14 @@ impl SubActionRunner for CoreLogicWaitRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use forge_events::{Event, EventPublisher};
+    use forge_events::test_support::NullPublisher;
+
     use forge_registry::CancelSignal;
     use forge_types::Variant;
     use forge_types::{EventId, SubActionOutcome};
     use std::time::Duration;
 
     const TIMER_GRANULARITY: Duration = Duration::from_millis(2);
-
-    struct NullPublisher;
-    impl EventPublisher for NullPublisher {
-        fn publish(&self, _event: Event) {}
-    }
 
     fn make_ctx(stack: &ArgStack) -> RunContext<'_> {
         RunContext::leaf(stack, 0, EventId::new(), &NullPublisher)

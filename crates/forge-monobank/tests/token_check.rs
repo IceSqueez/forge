@@ -175,16 +175,21 @@ async fn too_many_requests_without_a_hint_cools_a_spare_budget_for_the_full_call
         statement: ScriptedLimiter::open(),
     };
     let provider = provider(&server.uri(), Arc::default(), limits);
+    let before_the_refusal = std::time::Instant::now();
 
     let throttled = provider.verify_token(TOKEN).await;
     let retried = provider.verify_token(TOKEN).await;
 
+    let elapsed_secs = before_the_refusal.elapsed().as_secs();
     assert!(
         matches!(throttled, Err(MonobankError::RateLimited { .. })),
         "{throttled:?}"
     );
+    let full_interval = STATEMENT_CALL_INTERVAL.as_secs();
     assert!(
-        matches!(retried, Err(MonobankError::CoolingDown { retry_after_secs }) if (59..=60).contains(&retry_after_secs)),
+        matches!(retried, Err(MonobankError::CoolingDown { retry_after_secs })
+            if u64::from(retry_after_secs) <= full_interval
+                && u64::from(retry_after_secs) + elapsed_secs + 1 >= full_interval),
         "{retried:?}"
     );
     assert_eq!(server.received_requests().await.unwrap().len(), 1);

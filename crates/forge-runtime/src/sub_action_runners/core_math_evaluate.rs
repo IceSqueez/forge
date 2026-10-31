@@ -193,13 +193,9 @@ impl SubActionRunner for CoreMathEvaluateRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use forge_events::{Event, EventPublisher};
-    use forge_types::EventId;
+    use forge_events::test_support::NullPublisher;
 
-    struct NullPublisher;
-    impl EventPublisher for NullPublisher {
-        fn publish(&self, _event: Event) {}
-    }
+    use forge_types::EventId;
 
     fn cfg(expr: &str, into: &str, result_type: &str) -> SubActionConfig {
         let mut c = SubActionConfig::new();

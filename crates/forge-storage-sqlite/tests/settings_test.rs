@@ -9,23 +9,18 @@ use forge_storage::{
     set_event_log_retention_days, set_voice_gate_enabled, set_voice_gate_hold_ms,
     set_voice_gate_input_device_id, set_voice_gate_threshold, voice_gate_settings,
 };
-use forge_storage_sqlite::{SqliteBackend, SqliteSettingsRepo, apply_migrations};
+use forge_storage_sqlite::{SqliteBackend, SqliteSettingsRepo};
 
 mod common;
-use common::Sandboxed;
-
-const TEST_KEY: [u8; 32] = [0xab; 32];
+use common::{Sandboxed, TEST_KEY};
 
 async fn setup_backend() -> Sandboxed<SqliteBackend> {
-    common::sandboxed_backend(":memory:", TEST_KEY).await
+    common::migrated_backend(TEST_KEY).await
 }
 
-async fn setup() -> SqliteSettingsRepo {
-    let pool = sqlx::SqlitePool::connect("sqlite::memory:")
-        .await
-        .expect("in-memory pool");
-    apply_migrations(&pool).await.expect("migrations apply");
-    SqliteSettingsRepo::new(pool)
+async fn setup() -> Sandboxed<SqliteSettingsRepo> {
+    let pools = common::migrated_pools().await;
+    pools.map(SqliteSettingsRepo::new)
 }
 
 async fn inject_raw(backend: &Sandboxed<SqliteBackend>, name: &str, value: &str) {
@@ -66,7 +61,7 @@ async fn loading_rows_returns_every_stored_entry() {
     repo.set_theme("catppuccin_mocha").await.expect("set theme");
     repo.set_accent("lavender").await.expect("set accent");
 
-    let rows = load_setting_rows(&repo).await.expect("load rows");
+    let rows = load_setting_rows(&*repo).await.expect("load rows");
     let value_of = |name: &str| {
         rows.iter()
             .find(|row| row.key() == name)
@@ -81,7 +76,7 @@ async fn loading_rows_returns_every_stored_entry() {
 async fn resetting_an_existing_setting_returns_true_and_clears_it() {
     let repo = setup().await;
     repo.set_theme("inter").await.expect("set");
-    let deleted = reset_setting(&repo, &THEME).await.expect("reset");
+    let deleted = reset_setting(&*repo, &THEME).await.expect("reset");
     assert!(deleted);
     let got = repo.get_theme().await.expect("get after reset");
     assert!(got.is_none());
@@ -90,7 +85,7 @@ async fn resetting_an_existing_setting_returns_true_and_clears_it() {
 #[tokio::test]
 async fn resetting_a_missing_setting_returns_false() {
     let repo = setup().await;
-    let deleted = reset_setting(&repo, &THEME).await.expect("reset missing");
+    let deleted = reset_setting(&*repo, &THEME).await.expect("reset missing");
     assert!(!deleted);
 }
 

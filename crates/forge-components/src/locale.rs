@@ -530,14 +530,7 @@ macro_rules! tr {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn install_source(source: &str) {
-        let mut bundle = FluentBundle::new(vec!["en-US".parse().unwrap()]);
-        bundle
-            .add_resource(FluentResource::try_new(source.to_owned()).unwrap())
-            .unwrap();
-        install_bundle(Rc::new(bundle));
-    }
+    use crate::test_support::install_source;
 
     fn warned(key: &str) -> bool {
         WARNED_KEYS.with(|cell| cell.borrow().contains(key))

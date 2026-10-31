@@ -1,12 +1,12 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod common;
 use common::stub_provider::StubProvider;
+use forge_events::test_support::NullPublisher;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
-use forge_events::{Event, EventPublisher};
 use forge_overlay::motion::{DEFAULT_EXIT_MS, EXIT, EXIT_MS, NO_MOTION};
 use forge_overlay::{OverlayKindRegistry, register_builtin_kinds};
 use forge_registry::{RunContext, SubActionRunner};
@@ -20,9 +20,7 @@ use forge_storage::test_support::MemorySettings;
 use forge_storage::{
     MockOverlayRepo, OverlayConfig, OverlayDefinition, OverlayId, OverlayRepo, SettingsRepo,
 };
-use forge_types::OverlayCredential;
 use forge_types::{ArgStack, EventId, SubActionConfig, SubActionOutcome, Variant};
-use time::OffsetDateTime;
 use tokio::time::Instant;
 
 const ALERT_KIND: &str = "overlay.alert";
@@ -108,31 +106,12 @@ impl OverlayFrameSink for TimedSink {
     async fn revoke(&self, _: &OverlayId) {}
 }
 
-struct NullPublisher;
-
-impl EventPublisher for NullPublisher {
-    fn publish(&self, _: Event) {}
-}
-
 fn definition(id: &str, kind_id: &str) -> OverlayDefinition {
     definition_with(id, kind_id, OverlayConfig::new())
 }
 
 fn definition_with(id: &str, kind_id: &str, config: OverlayConfig) -> OverlayDefinition {
-    OverlayDefinition {
-        id: OverlayId::new(id),
-        display_name: id.to_owned(),
-        kind_id: kind_id.to_owned(),
-        enabled: true,
-        position: 0,
-        config,
-        config_schema_version: 1,
-        generator_version: 0,
-        source_overrides: Vec::new(),
-        credential: OverlayCredential::new("2f8b1d0c9a7e6f5b4c3d2e1f0a9b8c7d"),
-        created_at: OffsetDateTime::UNIX_EPOCH,
-        updated_at: OffsetDateTime::UNIX_EPOCH,
-    }
+    common::overlay_definition(id, id, kind_id, config)
 }
 
 struct Harness {

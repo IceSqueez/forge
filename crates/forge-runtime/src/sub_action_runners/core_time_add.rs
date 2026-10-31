@@ -214,14 +214,10 @@ impl SubActionRunner for CoreTimeAddRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use forge_events::{Event, EventPublisher};
+    use forge_events::test_support::NullPublisher;
+
     use forge_types::{EventId, SubActionOutcome};
     use time::Time;
-
-    struct NullPublisher;
-    impl EventPublisher for NullPublisher {
-        fn publish(&self, _event: Event) {}
-    }
 
     fn utc(y: i32, m: Month, d: u8, h: u8, min: u8, s: u8) -> OffsetDateTime {
         OffsetDateTime::new_utc(

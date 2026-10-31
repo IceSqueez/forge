@@ -105,10 +105,11 @@ pub fn register_speech_sub_actions(
 
 #[cfg(test)]
 mod tests {
+    use forge_events::test_support::NullPublisher;
     use std::sync::{Arc, Mutex};
 
     use async_trait::async_trait;
-    use forge_events::{Event, EventPublisher};
+
     use forge_registry::{FormField, RunContext, SubActionRunner};
     use forge_types::{
         ArgStack, EventId, MessageCode, MessageRef, SubActionConfig, SubActionOutcome, UserText,
@@ -252,12 +253,6 @@ mod tests {
                 voice_id,
             })
         }
-    }
-
-    struct NullPublisher;
-
-    impl EventPublisher for NullPublisher {
-        fn publish(&self, _event: Event) {}
     }
 
     fn make_ctx(stack: &ArgStack) -> RunContext<'_> {

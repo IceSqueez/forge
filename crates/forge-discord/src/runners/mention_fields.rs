@@ -29,11 +29,12 @@ pub(super) fn read_mention_policy(
 
 #[cfg(test)]
 mod tests {
+    use forge_events::test_support::NullPublisher;
     use std::collections::BTreeMap;
     use std::sync::{Arc, Mutex};
 
     use async_trait::async_trait;
-    use forge_events::{Event, EventPublisher};
+
     use forge_registry::{ConfigReason, RunContext, SubActionRunner};
     use forge_types::{ArgStack, EventId, SubActionOutcome, Variant};
 
@@ -144,7 +145,7 @@ mod tests {
             )),
         ];
         let stack = ArgStack::new();
-        let publisher = NoopPublisher;
+        let publisher = NullPublisher;
         for runner in &runners {
             let ctx = RunContext::leaf(&stack, 0, EventId::new(), &publisher);
             let (telemetry, _) = runner.execute(&config, &ctx).await;
@@ -211,11 +212,6 @@ mod tests {
         }
     }
 
-    struct NoopPublisher;
-    impl EventPublisher for NoopPublisher {
-        fn publish(&self, _: Event) {}
-    }
-
     #[tokio::test]
     async fn post_and_edit_runners_hand_the_step_toggles_to_the_sink() {
         let config = step_config(&[
@@ -232,7 +228,7 @@ mod tests {
             )),
         ];
         let stack = ArgStack::new();
-        let publisher = NoopPublisher;
+        let publisher = NullPublisher;
         for runner in &runners {
             let ctx = RunContext::leaf(&stack, 0, EventId::new(), &publisher);
             let (telemetry, _) = runner.execute(&config, &ctx).await;

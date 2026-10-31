@@ -1,18 +1,12 @@
+use forge_events::test_support::NullPublisher;
 use std::sync::Arc;
 
-use forge_events::{Event, EventPublisher};
 use forge_hotkey::testing::test_client;
 use forge_hotkey::{HotkeyConfig, HotkeyReconciler, HotkeySyncedClipsRepo};
 use forge_soundboard::ClipLibrary;
 use forge_storage::{DataProvider, StoredClip};
 use forge_types::{ClipId, OutputDevice};
 use time::OffsetDateTime;
-
-struct SilentPublisher;
-
-impl EventPublisher for SilentPublisher {
-    fn publish(&self, _: Event) {}
-}
 
 #[tokio::test]
 async fn a_clip_imported_through_the_library_registers_its_combo() {
@@ -27,7 +21,7 @@ async fn a_clip_imported_through_the_library_registers_its_combo() {
         .await
         .expect("an in-memory backend"),
     );
-    let (client, _backend) = test_client(HotkeyConfig::default(), Arc::new(SilentPublisher));
+    let (client, _backend) = test_client(HotkeyConfig::default(), Arc::new(NullPublisher));
     let reconciler = HotkeyReconciler::new(
         Arc::clone(&client),
         provider.trigger_instance_repo(),

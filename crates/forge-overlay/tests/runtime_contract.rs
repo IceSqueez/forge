@@ -1,4 +1,7 @@
 #![allow(clippy::expect_used, clippy::panic)]
+mod common;
+use common::registry;
+
 use std::collections::BTreeSet;
 
 use forge_overlay::config::{
@@ -9,15 +12,9 @@ use forge_overlay::metrics::{
     TEXT_SCALE_PROPERTY, TEXT_SIZE_PROPERTY,
 };
 use forge_overlay::{
-    MOTION_ASSET, OverlayKindRegistry, PREVIEW_CONNECTION_FIELD, PREVIEW_PARAM, PREVIEW_VALUE,
-    RUNTIME_SOURCE, SAMPLE_FILE, register_builtin_kinds,
+    MOTION_ASSET, PREVIEW_CONNECTION_FIELD, PREVIEW_PARAM, PREVIEW_VALUE, RUNTIME_SOURCE,
+    SAMPLE_FILE,
 };
-
-fn registry() -> OverlayKindRegistry {
-    let mut reg = OverlayKindRegistry::new();
-    register_builtin_kinds(&mut reg).expect("the builtin overlay kinds register");
-    reg
-}
 
 fn function_body(name: &str) -> &'static str {
     let opening = format!("function {name}(");

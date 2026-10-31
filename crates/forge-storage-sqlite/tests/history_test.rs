@@ -6,13 +6,7 @@ use std::collections::BTreeMap;
 use time::OffsetDateTime;
 
 mod common;
-use common::Sandboxed;
-
-const TEST_KEY: [u8; 32] = [0xab; 32];
-
-async fn setup() -> Sandboxed<SqliteBackend> {
-    common::sandboxed_backend("sqlite::memory:", TEST_KEY).await
-}
+use common::setup;
 
 fn make_ctx(action_id: ActionId, event_id: EventId) -> ExecutionContext {
     ExecutionContext {

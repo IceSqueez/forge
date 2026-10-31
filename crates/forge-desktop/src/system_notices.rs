@@ -189,9 +189,8 @@ mod tests {
 
     use super::*;
     use crate::i18n::install_language;
-    use crate::test_support::{pump, quiet_bus, runtime};
+    use crate::test_support::{pump, quiet_bus, runtime, settle_until};
 
-    const SETTLE_ROUNDS: usize = 2000;
     const ALL_ON: NotificationPreferences = NotificationPreferences {
         action_failure_notice: true,
         connection_loss_cue: true,
@@ -292,14 +291,7 @@ mod tests {
                 bus.publish(event);
             }
         });
-        for _ in 0..SETTLE_ROUNDS {
-            pump(&rt);
-            cx.run_until_parked();
-            if toasts(cx).len() >= expected_toasts {
-                break;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(1));
-        }
+        settle_until(cx, &rt, |cx| toasts(cx).len() >= expected_toasts);
         pump(&rt);
         cx.run_until_parked();
         toasts(cx)

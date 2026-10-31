@@ -152,7 +152,7 @@ impl SubActionRunner for ItemMoveRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::error::VTubeError;
+
     use crate::runners::test_support::{MockSink, make_ctx};
     use forge_types::SubActionOutcome;
     use forge_types::Variant;
@@ -220,140 +220,9 @@ mod tests {
         assert!(runner.validate_config(&BTreeMap::new()).is_err());
     }
 
-    struct CaptureSink {
-        last_id: Arc<std::sync::Mutex<Option<String>>>,
-        last_fade_mode: Arc<std::sync::Mutex<Option<String>>>,
-        last_x: Arc<std::sync::Mutex<Option<Option<f64>>>>,
-    }
-
-    impl CaptureSink {
-        fn new() -> Self {
-            Self {
-                last_id: Arc::new(std::sync::Mutex::new(None)),
-                last_fade_mode: Arc::new(std::sync::Mutex::new(None)),
-                last_x: Arc::new(std::sync::Mutex::new(None)),
-            }
-        }
-
-        fn id(&self) -> Option<String> {
-            self.last_id.lock().unwrap().clone()
-        }
-
-        fn fade_mode(&self) -> Option<String> {
-            self.last_fade_mode.lock().unwrap().clone()
-        }
-
-        fn x(&self) -> Option<Option<f64>> {
-            *self.last_x.lock().unwrap()
-        }
-    }
-
-    #[async_trait]
-    impl VTubeSink for CaptureSink {
-        async fn trigger_hotkey(&self, _: &str) -> Result<(), VTubeError> {
-            Ok(())
-        }
-        async fn set_expression(&self, _: &str, _: bool) -> Result<(), VTubeError> {
-            Ok(())
-        }
-        async fn set_param(&self, _: &str, _: f64) -> Result<(), VTubeError> {
-            Ok(())
-        }
-        async fn load_model(&self, _: &str) -> Result<(), VTubeError> {
-            Ok(())
-        }
-        async fn deactivate_all_expressions(&self) -> Result<(), VTubeError> {
-            Ok(())
-        }
-        async fn move_model(
-            &self,
-            _: Option<f64>,
-            _: Option<f64>,
-            _: Option<f64>,
-            _: Option<f64>,
-            _: f64,
-        ) -> Result<(), VTubeError> {
-            Ok(())
-        }
-        async fn move_item(
-            &self,
-            item_instance_id: &str,
-            x: Option<f64>,
-            _: Option<f64>,
-            _: Option<f64>,
-            _: Option<f64>,
-            _: Option<i64>,
-            _: f64,
-            fade_mode: &str,
-        ) -> Result<(), VTubeError> {
-            *self.last_id.lock().unwrap() = Some(item_instance_id.to_owned());
-            *self.last_x.lock().unwrap() = Some(x);
-            *self.last_fade_mode.lock().unwrap() = Some(fade_mode.to_owned());
-            Ok(())
-        }
-        async fn get_current_model(&self) -> Result<Variant, VTubeError> {
-            Ok(Variant::Object(BTreeMap::new()))
-        }
-        async fn get_hotkeys(&self) -> Result<Variant, VTubeError> {
-            Ok(Variant::Object(BTreeMap::new()))
-        }
-        async fn get_expressions(&self) -> Result<Variant, VTubeError> {
-            Ok(Variant::Object(BTreeMap::new()))
-        }
-        async fn get_parameters(&self) -> Result<Variant, VTubeError> {
-            Ok(Variant::Object(BTreeMap::new()))
-        }
-        async fn get_items(&self) -> Result<Variant, VTubeError> {
-            Ok(Variant::Object(BTreeMap::new()))
-        }
-        async fn pin_item(
-            &self,
-            _: &str,
-            _: bool,
-            _: &str,
-            _: &str,
-            _: &str,
-            _: &str,
-            _: &str,
-            _: f64,
-            _: f64,
-        ) -> Result<(), VTubeError> {
-            Ok(())
-        }
-        async fn load_item(
-            &self,
-            _: &str,
-            _: Option<f64>,
-            _: Option<f64>,
-            _: Option<f64>,
-            _: Option<f64>,
-            _: Option<f64>,
-            _: Option<i64>,
-            _: bool,
-        ) -> Result<Variant, VTubeError> {
-            Ok(Variant::Object(BTreeMap::new()))
-        }
-        async fn unload_all_items(&self) -> Result<(), VTubeError> {
-            Ok(())
-        }
-        async fn tint_all_art_meshes(
-            &self,
-            _: i64,
-            _: i64,
-            _: i64,
-            _: i64,
-            _: Option<f64>,
-        ) -> Result<(), VTubeError> {
-            Ok(())
-        }
-        async fn set_physics_override(&self, _: f64, _: f64) -> Result<(), VTubeError> {
-            Ok(())
-        }
-    }
-
     #[tokio::test]
     async fn execute_forwards_resolved_id_and_positional_arg_to_sink() {
-        let sink = Arc::new(CaptureSink::new());
+        let sink = Arc::new(MockSink::new());
         let runner = ItemMoveRunner::new(Arc::clone(&sink) as Arc<dyn VTubeSink>);
         let stack =
             ArgStack::new().set("item".to_owned(), Variant::String("resolved-42".to_owned()));
@@ -363,20 +232,21 @@ mod tests {
         let (tel, _) = runner.execute(&config, &ctx).await;
         assert_eq!(tel.outcome, SubActionOutcome::Success);
         assert_eq!(
-            sink.id().expect("sink must have been called"),
+            sink.strings_sent_to("move_item")
+                .expect("sink must have been called")[0],
             "resolved-42",
             "item_instance_id must be interpolated before reaching the sink"
         );
         let x = sink
-            .x()
-            .expect("sink must have been called")
+            .numbers_sent_to("move_item")
+            .expect("sink must have been called")[0]
             .expect("x was set");
         assert!((x - 0.5).abs() < f64::EPSILON);
     }
 
     #[tokio::test]
     async fn execute_fails_an_unknown_fade_mode_without_moving_the_item() {
-        let sink = Arc::new(CaptureSink::new());
+        let sink = Arc::new(MockSink::new());
         let runner = ItemMoveRunner::new(Arc::clone(&sink) as Arc<dyn VTubeSink>);
         let mut config = config_with_id("item-1");
         config.insert("rotation".to_owned(), Variant::Float(10.0));
@@ -391,12 +261,12 @@ mod tests {
             "{:?}",
             tel.outcome,
         );
-        assert_eq!(sink.fade_mode(), None);
+        assert!(!sink.was_called());
     }
 
     #[tokio::test]
     async fn execute_valid_fade_mode_is_forwarded_unchanged() {
-        let sink = Arc::new(CaptureSink::new());
+        let sink = Arc::new(MockSink::new());
         let runner = ItemMoveRunner::new(Arc::clone(&sink) as Arc<dyn VTubeSink>);
         let mut config = config_with_id("item-1");
         config.insert("rotation".to_owned(), Variant::Float(10.0));
@@ -405,7 +275,8 @@ mod tests {
         let ctx = make_ctx(&stack);
         runner.execute(&config, &ctx).await;
         assert_eq!(
-            sink.fade_mode().expect("sink must have been called"),
+            sink.strings_sent_to("move_item")
+                .expect("sink must have been called")[1],
             "easeIn",
             "a recognised fade_mode must pass through verbatim"
         );

@@ -1,48 +1,17 @@
 #![allow(clippy::expect_used)]
 use forge_storage::DataProvider;
-use forge_storage_sqlite::SqliteBackend;
 use std::collections::BTreeMap;
 
-use forge_types::{Action, ActionId, QueueId, SubActionStep, Variant};
+use forge_types::{ActionId, SubActionStep, Variant};
 
 mod common;
-use common::Sandboxed;
-
-const TEST_KEY: [u8; 32] = [0xab; 32];
-
-async fn setup() -> Sandboxed<SqliteBackend> {
-    common::sandboxed_backend("sqlite::memory:", TEST_KEY).await
-}
-
-async fn insert_default_queue(backend: &SqliteBackend) -> QueueId {
-    let q = backend
-        .queue_repo()
-        .get_by_name("Default")
-        .await
-        .expect("get default queue");
-    q.expect("default queue must exist after migration").id
-}
-
-fn make_action(name: &str, queue_id: QueueId) -> Action {
-    Action {
-        id: ActionId::new(),
-        name: name.to_owned(),
-        group: None,
-        queue_id,
-        enabled: true,
-        concurrent: false,
-        bypass_pause: false,
-        execution_mode: forge_types::ExecutionMode::Sequential,
-        description: None,
-        sub_actions: vec![],
-    }
-}
+use common::{action_named, default_queue_id, setup};
 
 #[tokio::test]
 async fn save_then_get_roundtrips_action() {
     let backend = setup().await;
-    let queue_id = insert_default_queue(&backend).await;
-    let action = make_action("greet", queue_id);
+    let queue_id = default_queue_id(&backend).await;
+    let action = action_named("greet", queue_id);
     let id = action.id;
     backend.action_repo().save(&action).await.expect("save");
     let got = backend.action_repo().get(id).await.expect("get");
@@ -67,8 +36,8 @@ async fn get_missing_action_returns_none() {
 #[tokio::test]
 async fn save_updates_existing_action() {
     let backend = setup().await;
-    let queue_id = insert_default_queue(&backend).await;
-    let mut action = make_action("updatable", queue_id);
+    let queue_id = default_queue_id(&backend).await;
+    let mut action = action_named("updatable", queue_id);
     let id = action.id;
     backend.action_repo().save(&action).await.expect("save 1");
 
@@ -82,8 +51,8 @@ async fn save_updates_existing_action() {
 #[tokio::test]
 async fn delete_existing_action_returns_true() {
     let backend = setup().await;
-    let queue_id = insert_default_queue(&backend).await;
-    let action = make_action("to_delete", queue_id);
+    let queue_id = default_queue_id(&backend).await;
+    let action = action_named("to_delete", queue_id);
     let id = action.id;
     backend.action_repo().save(&action).await.expect("save");
     assert!(backend.action_repo().delete(id).await.expect("delete"));
@@ -105,15 +74,15 @@ async fn delete_missing_action_returns_false() {
 #[tokio::test]
 async fn list_returns_all_actions() {
     let backend = setup().await;
-    let queue_id = insert_default_queue(&backend).await;
+    let queue_id = default_queue_id(&backend).await;
     backend
         .action_repo()
-        .save(&make_action("alpha", queue_id))
+        .save(&action_named("alpha", queue_id))
         .await
         .expect("save a");
     backend
         .action_repo()
-        .save(&make_action("beta", queue_id))
+        .save(&action_named("beta", queue_id))
         .await
         .expect("save b");
     let all = backend.action_repo().list().await.expect("list");
@@ -125,8 +94,8 @@ async fn list_returns_all_actions() {
 #[tokio::test]
 async fn sub_actions_json_survives_roundtrip() {
     let backend = setup().await;
-    let queue_id = insert_default_queue(&backend).await;
-    let mut action = make_action("with_sub", queue_id);
+    let queue_id = default_queue_id(&backend).await;
+    let mut action = action_named("with_sub", queue_id);
     action.sub_actions = vec![SubActionStep {
         kind_id: "core.log.write".to_owned(),
         config: BTreeMap::from([

@@ -1,27 +1,23 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 use forge_storage::{ActionRepo, QueueRepo, StorageError};
-use forge_storage_sqlite::{SqliteActionRepo, SqliteQueueRepo, apply_migrations, connect};
-use forge_types::{Action, ActionId, DEFAULT_QUEUE_ID, ExecutionMode, Queue, QueueId};
-use sqlx::SqlitePool;
-use tempfile::TempDir;
+use forge_storage_sqlite::{SqliteActionRepo, SqlitePools, SqliteQueueRepo};
+use forge_types::{ActionId, DEFAULT_QUEUE_ID, Queue, QueueId};
+
+mod common;
+use common::action_named;
 
 struct Db {
-    pool: SqlitePool,
+    pools: common::Sandboxed<SqlitePools>,
     queues: SqliteQueueRepo,
     actions: SqliteActionRepo,
-    _dir: TempDir,
 }
 
 async fn db() -> Db {
-    let dir = tempfile::tempdir().expect("a temporary directory");
-    let url = format!("sqlite://{}", dir.path().join("forge.db").display());
-    let pool = connect(&url).await.expect("a database");
-    apply_migrations(&pool).await.expect("migrate");
+    let pools = common::migrated_pools().await;
     Db {
-        queues: SqliteQueueRepo::new(pool.clone()),
-        actions: SqliteActionRepo::new(pool.clone()),
-        pool,
-        _dir: dir,
+        queues: SqliteQueueRepo::new(pools.clone()),
+        actions: SqliteActionRepo::new(pools.clone()),
+        pools,
     }
 }
 
@@ -34,21 +30,6 @@ fn queue(name: &str) -> Queue {
     }
 }
 
-fn action(name: &str, queue_id: QueueId) -> Action {
-    Action {
-        id: ActionId::new(),
-        name: name.to_owned(),
-        group: None,
-        queue_id,
-        enabled: true,
-        concurrent: false,
-        bypass_pause: false,
-        execution_mode: ExecutionMode::Sequential,
-        description: None,
-        sub_actions: Vec::new(),
-    }
-}
-
 impl Db {
     async fn with_queue(&self, name: &str) -> QueueId {
         let q = queue(name);
@@ -57,7 +38,7 @@ impl Db {
     }
 
     async fn with_action(&self, name: &str, queue_id: QueueId) -> ActionId {
-        let a = action(name, queue_id);
+        let a = action_named(name, queue_id);
         self.actions.save(&a).await.unwrap();
         a.id
     }
@@ -157,7 +138,7 @@ async fn a_delete_that_fails_partway_leaves_the_actions_in_their_queue() {
         "CREATE TRIGGER refuse_queue_delete BEFORE DELETE ON queues \
          BEGIN SELECT RAISE(ABORT, 'refused'); END",
     )
-    .execute(&db.pool)
+    .execute(db.pools.writer())
     .await
     .unwrap();
 

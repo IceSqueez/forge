@@ -1,5 +1,7 @@
 #![allow(clippy::unwrap_used, clippy::panic)]
-use std::collections::BTreeMap;
+mod common;
+use common::{SQLITE_KEY, Tree, files_under, write_file};
+
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -9,7 +11,7 @@ use forge_paths::{
     ASSETS_DIR_NAME, CREDENTIALS_KEY_FILE_NAME, MEDIA_DIR_NAME, OVERLAYS_DIR_NAME, TTS_DIR_NAME,
 };
 use forge_storage::{CredentialId, CredentialsRepo, DATABASE_FILE_NAME, DataProvider};
-use forge_storage_sqlite::{SqliteBackend, SqliteCredentialsRepo, SqliteDatabaseFileSchema};
+use forge_storage_sqlite::{SqliteCredentialsRepo, SqliteDatabaseFileSchema};
 use forge_transfer::{
     BUNDLE_EXTENSION, BackupCategory, BundleOrigin, BundleSummary, CancelFlag, Passphrase,
     PublicManifest, RestoreOutcome, ScheduleKey, ScheduledBackupRequest, ScheduledWrite,
@@ -22,44 +24,13 @@ use tempfile::TempDir;
 
 const PASSPHRASE: &str = "correct horse battery staple";
 const NEW_PASSPHRASE: &str = "incorrect donkey battery clip";
-const SQLITE_KEY: [u8; 32] = [0x42; 32];
 const KEY_BYTES: &[u8] = b"thirty-two bytes of credential k";
 const SOURCE_MEDIA: &[u8] = b"scheduled media";
 const AGE_SCRYPT_HEADER: &[u8] = b"age-encryption.org/v1\n-> scrypt ";
 const AGE_SECRET_KEY_PREFIX: &str = "AGE-SECRET-KEY-";
 
-type Tree = BTreeMap<String, Vec<u8>>;
-
 fn passphrase(text: &str) -> Passphrase {
     Passphrase::new(text.to_owned())
-}
-
-fn files_under(root: &Path) -> Tree {
-    fn walk(root: &Path, dir: &Path, out: &mut Tree) {
-        for child in std::fs::read_dir(dir).unwrap() {
-            let path = child.unwrap().path();
-            if path.is_dir() {
-                walk(root, &path, out);
-            } else {
-                let relative = path
-                    .strip_prefix(root)
-                    .unwrap()
-                    .to_string_lossy()
-                    .replace('\\', "/");
-                out.insert(relative, std::fs::read(&path).unwrap());
-            }
-        }
-    }
-    let mut out = Tree::new();
-    if root.exists() {
-        walk(root, root, &mut out);
-    }
-    out
-}
-
-fn write_file(path: &Path, bytes: &[u8]) {
-    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-    std::fs::write(path, bytes).unwrap();
 }
 
 struct Source {
@@ -72,11 +43,8 @@ impl Source {
         let dir = tempfile::tempdir().unwrap();
         let data = dir.path().join("data");
         std::fs::create_dir_all(&data).unwrap();
-        let url = format!("sqlite://{}", data.join(DATABASE_FILE_NAME).display());
-        let backend =
-            SqliteBackend::open_for_test(&url, SQLITE_KEY, data.join(MEDIA_DIR_NAME), None)
-                .await
-                .unwrap();
+        let url = common::database_url(&data);
+        let backend = common::open_backend(&data).await;
         let pool = forge_storage_sqlite::connect(&url).await.unwrap();
         SqliteCredentialsRepo::new_with_key(pool.clone(), SQLITE_KEY)
             .store(&CredentialId::new("twitch:broadcaster"), "token")

@@ -14,9 +14,7 @@ use forge_storage::test_support::MemorySettings;
 use forge_storage::{
     MockOverlayRepo, OverlayConfig, OverlayDefinition, OverlayId, OverlayRepo, SettingsRepo,
 };
-use forge_types::OverlayCredential;
 use forge_types::{ArgStack, Variant};
-use time::OffsetDateTime;
 use tokio::sync::Notify;
 
 const ALERT_KIND: &str = "overlay.alert";
@@ -122,20 +120,7 @@ fn content(value: &str) -> OverlayConfig {
 }
 
 fn definition(id: &str, kind_id: &str) -> OverlayDefinition {
-    OverlayDefinition {
-        id: OverlayId::new(id),
-        display_name: id.to_owned(),
-        kind_id: kind_id.to_owned(),
-        enabled: true,
-        position: 0,
-        config: OverlayConfig::new(),
-        config_schema_version: 1,
-        generator_version: 0,
-        source_overrides: Vec::new(),
-        credential: OverlayCredential::new("2f8b1d0c9a7e6f5b4c3d2e1f0a9b8c7d"),
-        created_at: OffsetDateTime::UNIX_EPOCH,
-        updated_at: OffsetDateTime::UNIX_EPOCH,
-    }
+    common::overlay_definition(id, id, kind_id, OverlayConfig::new())
 }
 
 fn harness(overlays: &[(&str, &str)]) -> Harness {

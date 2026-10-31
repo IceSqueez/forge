@@ -1,27 +1,14 @@
 #![allow(clippy::panic)]
 mod common;
 
-use forge_speak_queue::{Priority, QueueConfig, RequestId, SpeakCommand, SpeakEvent, SpeakRequest};
-use forge_speech_types::AssignmentStrategy;
+use forge_speak_queue::{Priority, QueueConfig, RequestId, SpeakCommand, SpeakEvent};
 
-use common::{first_started_ids, make_deps, recording_sink, request, standard_registry, wait_for};
-
-fn prioritized(viewer: &str, priority: Priority) -> SpeakRequest {
-    SpeakRequest {
-        priority,
-        ..request(viewer, "message")
-    }
-}
+use common::{first_started_ids, recording_sink, request_with_priority, standard_deps, wait_for};
 
 #[tokio::test]
 async fn every_high_priority_item_plays_before_every_normal_item_in_fifo_order_per_tier() {
     let (sink, _plays) = recording_sink();
-    let deps = make_deps(
-        standard_registry(),
-        sink,
-        AssignmentStrategy::DeterministicByName,
-        vec![],
-    );
+    let deps = standard_deps(sink);
     let config = QueueConfig {
         per_user_limit: 10,
         max_queue_len: 50,
@@ -33,7 +20,7 @@ async fn every_high_priority_item_plays_before_every_normal_item_in_fifo_order_p
     wait_for(&mut stream, |e| matches!(e, SpeakEvent::Paused)).await;
 
     let enqueue = async |viewer: &str, priority| -> RequestId {
-        let item = prioritized(viewer, priority);
+        let item = request_with_priority(viewer, "message", priority);
         let id = item.request_id.clone();
         handle.send(SpeakCommand::Enqueue(item)).await.unwrap();
         id

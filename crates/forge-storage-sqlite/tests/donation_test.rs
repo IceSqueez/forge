@@ -3,7 +3,7 @@ mod common;
 
 use std::sync::Arc;
 
-use common::{Sandboxed, TEST_KEY, sandboxed_backend};
+use common::{Sandboxed, TEST_KEY};
 use forge_storage::{DataProvider, DonationRepo, StorageError, StoredDonation};
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::{CurrencyCode, Donation, DonationOrigin, Donor, IntegrationId, MoneyAmount};
@@ -16,7 +16,7 @@ const MESSAGE: &str = "private message body";
 const CONCURRENT_INSERTS: usize = 16;
 
 async fn backend() -> Sandboxed<SqliteBackend> {
-    sandboxed_backend(":memory:", TEST_KEY).await
+    common::migrated_backend(TEST_KEY).await
 }
 
 fn repo(backend: &SqliteBackend) -> Arc<dyn DonationRepo> {

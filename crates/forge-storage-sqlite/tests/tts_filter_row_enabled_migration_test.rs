@@ -1,4 +1,5 @@
 #![allow(clippy::expect_used)]
+mod common;
 use forge_storage::{SkipRegex, TtsFiltersRepo};
 use forge_storage_sqlite::{MIGRATIONS, SqliteTtsFiltersRepo, apply_migrations, connect};
 use sqlx::SqlitePool;
@@ -8,7 +9,7 @@ const VERSION_BEFORE_ROW_SWITCHES: i64 = 63;
 
 async fn migrated_with(stored_regexes: &str) -> (SqlitePool, TempDir) {
     let dir = tempfile::tempdir().expect("a temporary directory");
-    let url = format!("sqlite://{}", dir.path().join("forge.db").display());
+    let url = common::database_url(&dir);
     let pool = connect(&url).await.expect("a database");
     MIGRATIONS
         .run_to(VERSION_BEFORE_ROW_SWITCHES, &pool)

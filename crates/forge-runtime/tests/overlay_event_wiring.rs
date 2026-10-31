@@ -26,14 +26,12 @@ use forge_storage::action::MockActionRepo;
 use forge_storage::history::MockHistoryRepo;
 use forge_storage::queue::MockQueueRepo;
 use forge_storage::trigger_instance::MockTriggerInstanceRepo;
-use forge_storage::{DataProvider, OverlayDefinition, OverlayId, StorageError, TriggerWiring};
+use forge_storage::{DataProvider, OverlayDefinition, StorageError, TriggerWiring};
 use forge_storage_sqlite::SqliteBackend;
-use forge_types::OverlayCredential;
 use forge_types::{
-    Action, ActionId, ExecutionMode, PermissionRung, PlatformId, PlatformScope, Queue, QueueId,
-    SubActionConfig, SubActionStep, TriggerConfig, TriggerInstance, TriggerInstanceId, Variant,
+    Action, ActionId, PermissionRung, PlatformId, PlatformScope, Queue, QueueId, SubActionConfig,
+    SubActionStep, TriggerConfig, TriggerInstance, TriggerInstanceId, Variant,
 };
-use time::OffsetDateTime;
 
 const OVERLAY: &str = "sub-alert";
 const OVERLAY_NAME: &str = "Sub alert";
@@ -217,18 +215,8 @@ impl OverlayKindDescriptor for Tuned {
 
 fn definition(kind_id: &str, config: OverlayConfig) -> OverlayDefinition {
     OverlayDefinition {
-        id: OverlayId::new(OVERLAY),
-        display_name: OVERLAY_NAME.to_owned(),
-        kind_id: kind_id.to_owned(),
-        enabled: true,
-        position: 0,
-        config,
         config_schema_version: 2,
-        generator_version: 0,
-        source_overrides: Vec::new(),
-        credential: OverlayCredential::new("2f8b1d0c9a7e6f5b4c3d2e1f0a9b8c7d"),
-        created_at: OffsetDateTime::UNIX_EPOCH,
-        updated_at: OffsetDateTime::UNIX_EPOCH,
+        ..common::overlay_definition(OVERLAY, OVERLAY_NAME, kind_id, config)
     }
 }
 
@@ -523,18 +511,12 @@ fn send_step(target: &str) -> SubActionStep {
 }
 
 fn feeding_action() -> Action {
-    Action {
-        id: ActionId::new(),
-        name: "Shows the alert already".to_owned(),
-        group: None,
-        queue_id: QueueId::new(),
-        enabled: true,
-        concurrent: false,
-        bypass_pause: false,
-        execution_mode: ExecutionMode::Sequential,
-        description: None,
-        sub_actions: vec![send_step(OVERLAY)],
-    }
+    common::sequential_action(
+        ActionId::new(),
+        "Shows the alert already",
+        QueueId::new(),
+        vec![send_step(OVERLAY)],
+    )
 }
 
 fn instance_of(kind_id: &str) -> TriggerInstance {

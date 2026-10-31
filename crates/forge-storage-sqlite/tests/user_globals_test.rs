@@ -1,14 +1,13 @@
 #![allow(clippy::expect_used)]
 use forge_storage::UserGlobalsRepo;
-use forge_storage_sqlite::{SqliteUserGlobalsRepo, apply_migrations};
+use forge_storage_sqlite::SqliteUserGlobalsRepo;
 use forge_types::Variant;
 
-async fn setup() -> SqliteUserGlobalsRepo {
-    let pool = sqlx::SqlitePool::connect("sqlite::memory:")
-        .await
-        .expect("in-memory pool");
-    apply_migrations(&pool).await.expect("migrations apply");
-    SqliteUserGlobalsRepo::new(pool)
+mod common;
+
+async fn setup() -> common::Sandboxed<SqliteUserGlobalsRepo> {
+    let pools = common::migrated_pools().await;
+    pools.map(SqliteUserGlobalsRepo::new)
 }
 
 #[tokio::test]

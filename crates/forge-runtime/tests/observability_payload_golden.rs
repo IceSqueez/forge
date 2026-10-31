@@ -15,7 +15,6 @@ use forge_runtime::{
     EventBus, FrozenRuntime, NullEventLogRepo, QueueMode, QueueSchedulerHandle, RuntimeWiring,
 };
 use forge_storage::DataProvider;
-use forge_storage_sqlite::SqliteBackend;
 use forge_types::{
     Action, ArgStack, ChatPayload, ChatSegment, ExecutionMode, ModerationMarks, PermissionRung,
     Queue, QueueId, SubActionConfig, SubActionStep, TriggerConfig, TriggerInstance,
@@ -24,7 +23,6 @@ use forge_types::{
 use serde_json::{Value, json};
 use tempfile::TempDir;
 
-const TEST_KEY: [u8; 32] = [0xab; 32];
 const HANG_GUARD: Duration = Duration::from_secs(30);
 const COMMAND_DESCRIPTOR_ID: &str = "golden.chat.command";
 const COMMAND_EVENT_PREFIX: &str = "golden.chat";
@@ -188,11 +186,7 @@ struct Rig {
 }
 
 async fn rig() -> Rig {
-    let media = tempfile::tempdir().unwrap();
-    let backend =
-        SqliteBackend::open_for_test(":memory:", TEST_KEY, media.path().join("media"), None)
-            .await
-            .unwrap();
+    let (backend, media) = common::sqlite_backend().await;
     let dp: Arc<dyn DataProvider> = Arc::new(backend);
 
     let queue_id: QueueId = QUEUE_ID.parse().unwrap();

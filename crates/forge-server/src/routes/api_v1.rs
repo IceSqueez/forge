@@ -229,80 +229,13 @@ pub fn router() -> Router<AppState> {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
-    use std::sync::{Arc, Mutex};
+    use std::sync::Arc;
 
-    use async_trait::async_trait;
-    use forge_registry::SubActionRegistry;
-    use forge_runtime::{EventBus, NullEventLogRepo, ScriptRegistry, spawn_action_engine};
-    use forge_storage::{
-        CredentialId, CredentialsRepo, DataProvider, GlobalsRepo, StorageError, UserGlobalsRepo,
-    };
-    use time::OffsetDateTime;
     use tokio::net::TcpListener;
 
     use crate::ServerHandle;
     use crate::auth::AuthState;
-    use crate::bus_adapter::BusAdapter;
-    use crate::server::AppState;
-    use crate::server_info::ServerInfo;
-    use crate::test_helpers::TestDataProvider;
-
-    struct MemCreds(Mutex<HashMap<String, String>>);
-
-    impl MemCreds {
-        fn with_token(token: &str) -> Arc<Self> {
-            let me = Arc::new(Self(Mutex::new(HashMap::new())));
-            me.0.lock()
-                .expect("mutex")
-                .insert("server:bearer".to_owned(), token.to_owned());
-            me
-        }
-    }
-
-    #[async_trait]
-    impl CredentialsRepo for MemCreds {
-        async fn store(
-            &self,
-            id: &CredentialId,
-            plaintext_bundle: &str,
-        ) -> Result<(), StorageError> {
-            self.0
-                .lock()
-                .expect("mutex")
-                .insert(id.as_str().to_owned(), plaintext_bundle.to_owned());
-            Ok(())
-        }
-
-        async fn load(&self, id: &CredentialId) -> Result<Option<String>, StorageError> {
-            Ok(self.0.lock().expect("mutex").get(id.as_str()).cloned())
-        }
-
-        async fn delete(&self, id: &CredentialId) -> Result<bool, StorageError> {
-            Ok(self.0.lock().expect("mutex").remove(id.as_str()).is_some())
-        }
-
-        async fn list_ids(&self) -> Result<Vec<CredentialId>, StorageError> {
-            Ok(self
-                .0
-                .lock()
-                .expect("mutex")
-                .keys()
-                .map(|k| CredentialId::new(k.clone()))
-                .collect())
-        }
-
-        async fn last_refresh(
-            &self,
-            _id: &CredentialId,
-        ) -> Result<Option<OffsetDateTime>, StorageError> {
-            Ok(None)
-        }
-
-        async fn mark_refreshed(&self, _id: &CredentialId) -> Result<(), StorageError> {
-            Ok(())
-        }
-    }
+    use crate::test_helpers::{MemCreds, TestDataProvider, app_state_over};
 
     async fn make_test_server(
         auth_required_for_reads: bool,
@@ -312,54 +245,11 @@ mod tests {
         let auth = AuthState::load(auth_required_for_reads, &*creds)
             .await
             .expect("auth load");
-        let creds_dyn: Arc<dyn CredentialsRepo> = creds;
-        let bus = EventBus::new(Arc::new(NullEventLogRepo));
-        let bus_adapter = BusAdapter::new(bus.clone());
-        bus_adapter.spawn();
         let mut tdp = TestDataProvider::new();
         tdp.globals().expect_list().returning(|| Ok(vec![]));
         tdp.globals().expect_get().returning(|_| Ok(None));
         tdp.globals().expect_set().returning(|_, _, _| Ok(()));
-        let dp: Arc<dyn DataProvider> = Arc::new(tdp);
-        let _registry = Arc::new(ScriptRegistry::new());
-        let action_engine = Arc::new(spawn_action_engine(
-            Arc::clone(&bus),
-            forge_runtime::Catalog::new(
-                dp.action_repo(),
-                dp.trigger_instance_repo(),
-                dp.catalog_revision(),
-            ),
-            dp.action_repo(),
-            dp.history_repo(),
-            Arc::new(SubActionRegistry::new()),
-            Arc::new(forge_runtime::ActionCancelRegistry::new()),
-        ));
-        let actions = dp.action_repo();
-        let globals: Arc<dyn GlobalsRepo> = Arc::clone(&dp) as Arc<dyn GlobalsRepo>;
-        let user_globals: Arc<dyn UserGlobalsRepo> = Arc::clone(&dp) as Arc<dyn UserGlobalsRepo>;
-        let overlays = dp.overlay_repo();
-        let state = AppState {
-            auth,
-            bus,
-            bus_adapter,
-            actions,
-            globals,
-            user_globals,
-            overlays,
-            credentials: creds_dyn,
-            settings: Arc::clone(&dp) as Arc<dyn forge_storage::SettingsRepo>,
-            server_info: ServerInfo::serving(std::collections::BTreeSet::new()),
-            action_engine,
-            audio_clips: crate::audio_clips::AudioClipStore::new(),
-            overlay_root: Arc::new(std::path::PathBuf::from("/tmp/forge-test-overlays")),
-            overlay_cors_any_origin: true,
-            bind_addr: "127.0.0.1:9515".parse().expect("addr"),
-            timing: crate::ServerTiming::default(),
-            allowed_origins: Arc::new(crate::origin::build_allowed_origins(
-                "127.0.0.1:9515".parse().expect("addr"),
-                &[],
-            )),
-        };
+        let state = app_state_over(auth, creds, Arc::new(tdp));
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
         let addr = listener.local_addr().expect("local addr");
         let bind_addr = addr;

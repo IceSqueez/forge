@@ -4,7 +4,6 @@ mod common;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::Duration;
 
 use async_trait::async_trait;
 use forge_speak_queue::{
@@ -17,9 +16,7 @@ use forge_tts_core::{
     EngineCapabilities, SynthesisRequest, TtsEngine, TtsEngineFactory, TtsError, TtsRegistry,
 };
 
-use common::{HANG_GUARD_MS, make_deps, recording_sink, request_with_overrides, voice};
-
-const HANG_GUARD: Duration = Duration::from_millis(HANG_GUARD_MS);
+use common::{HANG_GUARD, make_deps, outcome_of, recording_sink, request_with_overrides, voice};
 
 struct GenerationEngine {
     id: EngineId,
@@ -35,13 +32,7 @@ impl TtsEngine for GenerationEngine {
         &self.id
     }
     fn capabilities(&self) -> &EngineCapabilities {
-        static CAPS: EngineCapabilities = EngineCapabilities {
-            ssml: false,
-            neural_voices: false,
-            streaming: false,
-            custom_lexicons: false,
-        };
-        &CAPS
+        &common::PLAIN_CAPABILITIES
     }
     async fn list_voices(&self) -> Result<Vec<TtsVoice>, TtsError> {
         Ok(vec![voice(&format!("{}-1", self.id.0), &self.id.0)])
@@ -158,25 +149,6 @@ async fn enqueue_on(handle: &SpeakQueueHandle, engine: &str) -> RequestId {
     let id = req.request_id.clone();
     handle.send(SpeakCommand::Enqueue(req)).await.unwrap();
     id
-}
-
-async fn outcome_of(stream: &mut SpeakEventStream, id: &RequestId) -> SpeakEvent {
-    loop {
-        let event = tokio::time::timeout(HANG_GUARD, stream.recv())
-            .await
-            .expect("hang guard: request never finished")
-            .expect("stream open");
-        match &event {
-            SpeakEvent::Finished { request_id }
-            | SpeakEvent::Failed { request_id, .. }
-            | SpeakEvent::Skipped { request_id, .. }
-                if request_id == id =>
-            {
-                return event;
-            }
-            _ => {}
-        }
-    }
 }
 
 async fn speak_on(handle: &SpeakQueueHandle, stream: &mut SpeakEventStream, engine: &str) {

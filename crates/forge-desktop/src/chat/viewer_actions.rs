@@ -243,7 +243,6 @@ mod tests {
     use forge_types::Variant;
 
     use std::sync::Arc;
-    use std::time::Duration;
 
     use forge_runtime::{SpeakDispatcher, SpeechOrigin};
     use forge_speak_queue::SpeakEvent;
@@ -253,12 +252,11 @@ mod tests {
     use super::{ViewerAction, ViewerTarget};
     use crate::chat_author::AuthorKey;
     use crate::speak_bridge::SpeakBridge;
-    use crate::test_support::spawn_speak_queue;
+    use crate::test_support::{spawn_speak_queue, within_hang_guard};
 
     const ONE_WEEK_SECONDS: i64 = 604_800;
     const TWO_WEEKS_SECONDS: i64 = 1_209_600;
     const ONE_DAY_SECONDS: i64 = 86_400;
-    const QUEUE_DEADLINE: Duration = Duration::from_secs(30);
 
     fn by_id(platform: PlatformId, viewer_id: &str) -> ViewerTarget {
         ViewerTarget::new(&AuthorKey::by_viewer_id(platform, viewer_id), "alice")
@@ -555,7 +553,7 @@ mod tests {
     }
 
     async fn first_outcome(stream: &mut forge_speak_queue::SpeakEventStream) -> SpeakEvent {
-        tokio::time::timeout(QUEUE_DEADLINE, async {
+        within_hang_guard(async {
             loop {
                 if let Ok(
                     event @ (SpeakEvent::Skipped { .. }
@@ -568,7 +566,6 @@ mod tests {
             }
         })
         .await
-        .expect("the queue never decided the speech")
     }
 
     #[tokio::test]

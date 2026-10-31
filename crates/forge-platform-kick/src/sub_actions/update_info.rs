@@ -165,7 +165,8 @@ impl SubActionRunner for UpdateInfoRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use forge_events::{Event, EventPublisher};
+    use forge_events::test_support::NullPublisher;
+
     use forge_registry::RegistryError;
     use forge_types::EventId;
     use forge_types::Variant;
@@ -173,13 +174,8 @@ mod tests {
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
-    struct NoopPublisher;
-    impl EventPublisher for NoopPublisher {
-        fn publish(&self, _: Event) {}
-    }
-
     fn make_ctx(stack: &ArgStack) -> RunContext<'_> {
-        RunContext::leaf(stack, 0, EventId::new(), &NoopPublisher)
+        RunContext::leaf(stack, 0, EventId::new(), &NullPublisher)
     }
 
     fn token_source()

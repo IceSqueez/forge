@@ -112,11 +112,12 @@ impl QuickActions for MidiClient {
 }
 #[cfg(test)]
 mod tests {
+    use forge_events::test_support::NullPublisher;
     use std::collections::BTreeMap;
     use std::sync::{Arc, Mutex};
 
     use async_trait::async_trait;
-    use forge_events::{Event, EventPublisher};
+
     use forge_platform_core::QuickActions;
     use forge_registry::{RunContext, SubActionRunner};
     use forge_types::{ArgStack, EventId, SubActionOutcome};
@@ -149,11 +150,6 @@ mod tests {
         ),
     ];
 
-    struct NoopPublisher;
-    impl EventPublisher for NoopPublisher {
-        fn publish(&self, _: Event) {}
-    }
-
     #[derive(Default)]
     struct RecordingSink {
         sent: Mutex<Vec<(String, MidiOutMessage)>>,
@@ -178,7 +174,7 @@ mod tests {
         let sink = Arc::new(RecordingSink::default());
         let runner = MidiSendRunner::new(Arc::clone(&sink) as Arc<dyn MidiSink>);
         let stack = ArgStack::new();
-        let ctx = RunContext::leaf(&stack, 0, EventId::new(), &NoopPublisher);
+        let ctx = RunContext::leaf(&stack, 0, EventId::new(), &NullPublisher);
         let (telemetry, _) = runner.execute(config, &ctx).await;
         assert_eq!(telemetry.outcome, SubActionOutcome::Success);
         sink.sent.lock().unwrap().clone()

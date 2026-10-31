@@ -165,7 +165,7 @@ impl SubActionRunner for ItemPinRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::runners::test_support::{MockSink, RecordingSink, make_ctx};
+    use crate::runners::test_support::{MockSink, make_ctx};
     use forge_types::SubActionOutcome;
     use forge_types::Variant;
     use std::collections::BTreeMap;
@@ -239,7 +239,7 @@ mod tests {
             ("", "  ", ("", "")),
             ("%nothing%", "%nothing%", ("", "")),
         ] {
-            let sink = Arc::new(RecordingSink::default());
+            let sink = Arc::new(MockSink::new());
             let runner = ItemPinRunner::new(Arc::clone(&sink) as Arc<dyn VTubeSink>);
             let mut config = config_with_id("item-1");
             config.insert("model_id".to_owned(), Variant::String(model_id.to_owned()));

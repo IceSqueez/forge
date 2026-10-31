@@ -1,4 +1,5 @@
 #![allow(clippy::expect_used)]
+mod common;
 use forge_storage::ScriptRepo;
 use forge_storage_sqlite::{MIGRATIONS, SqliteBackend, apply_migrations, connect};
 use sqlx::SqlitePool;
@@ -27,7 +28,7 @@ type ScriptColumns = (
 );
 
 fn db_url(dir: &TempDir, file: &str) -> String {
-    format!("sqlite://{}", dir.path().join(file).display())
+    common::sqlite_url(&dir.path().join(file))
 }
 
 async fn schema_56_with_scripts(url: &str) -> SqlitePool {

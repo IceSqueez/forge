@@ -168,6 +168,7 @@ impl SubActionRunner for SpeakRunner {
 
 #[cfg(test)]
 mod tests {
+    use forge_events::test_support::NullPublisher;
     use std::sync::Mutex;
 
     use async_trait::async_trait;
@@ -176,14 +177,8 @@ mod tests {
     use super::*;
     use crate::speak_dispatcher::{SpeakDispatchError, SpeakDispatcher, SpeakingViewer};
     use crate::test_support::failure::{failure_message, verbatim_arg};
-    use forge_events::{Event, EventPublisher};
+    use forge_events::Event;
     use forge_types::Variant;
-
-    struct NullPublisher;
-
-    impl EventPublisher for NullPublisher {
-        fn publish(&self, _event: Event) {}
-    }
 
     #[derive(Debug, Clone, PartialEq, Eq)]
     enum Path {

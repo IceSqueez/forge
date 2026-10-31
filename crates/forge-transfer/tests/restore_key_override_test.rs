@@ -1,5 +1,4 @@
 #![allow(clippy::unwrap_used)]
-use std::path::Path;
 
 use forge_paths::CREDENTIALS_KEY_FILE_NAME;
 use forge_transfer::{
@@ -7,20 +6,21 @@ use forge_transfer::{
 };
 use tempfile::TempDir;
 
-const KEY_FILE_ENV: &str = "FORGE_CREDENTIAL_KEY_FILE";
+mod common;
+use common::write_file;
+
 const STAGE_NAME: &str = "forge-backup-20261019-120000Z-abcdef";
+const KEY_OVERRIDE_TEST: &str =
+    "restore_writes_the_key_to_the_overridden_key_file_and_leaves_the_data_dir_one_alone";
 
-fn write_file(path: &Path, bytes: &[u8]) {
-    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-    std::fs::write(path, bytes).unwrap();
-}
-
-#[expect(unsafe_code, reason = "env mutation is unsafe in edition 2024")]
 #[test]
 fn restore_writes_the_key_to_the_overridden_key_file_and_leaves_the_data_dir_one_alone() {
+    let Some(overridden) = common::key_file_of_this_child_run() else {
+        let keys = TempDir::new().unwrap();
+        common::rerun_in_child_with_key_file(KEY_OVERRIDE_TEST, &keys.path().join("forge.key"));
+        return;
+    };
     let data = TempDir::new().unwrap();
-    let keys = TempDir::new().unwrap();
-    let overridden = keys.path().join("forge.key");
     write_file(&overridden, b"original overridden key");
     let decoy = data.path().join(CREDENTIALS_KEY_FILE_NAME);
     write_file(&decoy, b"decoy key in the data dir");
@@ -37,13 +37,9 @@ fn restore_writes_the_key_to_the_overridden_key_file_and_leaves_the_data_dir_one
         &data.path().join(RESTORE_MARKER_FILE),
         format!(r#"{{"format":1,"staging":"{STAGE_NAME}"}}"#).as_bytes(),
     );
-    // SAFETY: this is the only test in this binary, so no other thread reads or writes the environment while it runs.
-    unsafe { std::env::set_var(KEY_FILE_ENV, &overridden) };
 
     let outcome = apply_pending_restore(data.path()).unwrap();
 
-    // SAFETY: still the only test in this binary; the apply above has returned.
-    unsafe { std::env::remove_var(KEY_FILE_ENV) };
     let RestoreOutcome::Applied {
         pre_restore_snapshot,
     } = outcome

@@ -1266,7 +1266,6 @@ impl Render for BackupScheduleView {
 pub(crate) mod tests {
     use std::path::Path;
     use std::sync::Arc;
-    use std::time::{Duration, Instant};
 
     use forge_components::{DateShape, Toasts, fmt_display, fmt_display_relative, tr};
     use forge_storage::settings::core_settings::{
@@ -1296,11 +1295,10 @@ pub(crate) mod tests {
     };
     use crate::backup_passphrase_modal::PassphrasePurpose;
     use crate::i18n::install_language;
-    use crate::test_support::install_presentation;
     use crate::test_support::pack_flow::{PackWorld, pack_world};
+    use crate::test_support::{install_presentation, settle_until};
     use crate::test_support::{pump, runtime};
 
-    const SETTLE_DEADLINE: Duration = Duration::from_secs(30);
     const OLD_PASSPHRASE: &str = "the old schedule passphrase";
     const NEW_PASSPHRASE: &str = "a brand new schedule passphrase";
     const SCHEDULED_PREFIX: &str = "forge-scheduled-";
@@ -1408,7 +1406,7 @@ pub(crate) mod tests {
             view,
             _service: service,
         };
-        let loaded = rig.settle(cx, |cx| {
+        settle_until(cx, &rig.rt, |cx| {
             rig.view.read_with(cx, |view, _| {
                 view.settings
                     .loaded()
@@ -1416,30 +1414,10 @@ pub(crate) mod tests {
                     == Some(shown_destination.as_str())
             })
         });
-        assert!(loaded, "the schedule settings never loaded");
         rig
     }
 
     impl ScheduleRig {
-        pub(crate) fn settle(
-            &self,
-            cx: &mut TestAppContext,
-            mut done: impl FnMut(&mut TestAppContext) -> bool,
-        ) -> bool {
-            let deadline = Instant::now() + SETTLE_DEADLINE;
-            loop {
-                cx.run_until_parked();
-                if done(cx) {
-                    return true;
-                }
-                if Instant::now() >= deadline {
-                    return false;
-                }
-                self.rt
-                    .block_on(async { tokio::time::sleep(Duration::from_millis(1)).await });
-            }
-        }
-
         pub(crate) fn stored<C: SettingCodec>(&self, setting: &Setting<C>) -> Option<C::Value> {
             self.rt
                 .block_on(read_stored_setting(self.world.provider().as_ref(), setting))
@@ -1509,10 +1487,9 @@ pub(crate) mod tests {
         }
 
         fn settle_until_prompt_closes(&self, cx: &mut TestAppContext) {
-            let closed = self.settle(cx, |cx| {
+            settle_until(cx, &self.rt, |cx| {
                 self.view.read_with(cx, |view, _| view.prompt.is_none())
             });
-            assert!(closed, "the passphrase prompt never closed");
         }
     }
 
@@ -1909,11 +1886,13 @@ pub(crate) mod tests {
         let rig = schedule_rig(cx, &unattended_seeds(&key));
 
         rig.view.update(cx, |view, cx| view.toggle_enabled(cx));
-        let persisted = rig.settle(cx, |_| rig.stored(&BACKUP_SCHEDULE_ENABLED) == Some(false));
+        settle_until(cx, &rig.rt, |_| {
+            rig.stored(&BACKUP_SCHEDULE_ENABLED) == Some(false)
+        });
 
         assert_eq!(
-            (persisted, rig.view_key(cx), rig.stored_key()),
-            (true, Some(key.clone()), Some(key))
+            (rig.view_key(cx), rig.stored_key()),
+            (Some(key.clone()), Some(key))
         );
     }
 
@@ -1925,9 +1904,11 @@ pub(crate) mod tests {
         let rig = schedule_rig(cx, &seeds);
 
         rig.view.update(cx, |view, cx| view.toggle_enabled(cx));
-        let persisted = rig.settle(cx, |_| rig.stored(&BACKUP_SCHEDULE_ENABLED) == Some(true));
+        settle_until(cx, &rig.rt, |_| {
+            rig.stored(&BACKUP_SCHEDULE_ENABLED) == Some(true)
+        });
 
-        assert_eq!((persisted, rig.prompt_purpose(cx)), (true, None));
+        assert_eq!(rig.prompt_purpose(cx), None);
     }
 
     #[gpui::test]
@@ -1958,7 +1939,7 @@ pub(crate) mod tests {
             NEW_PASSPHRASE,
             NEW_PASSPHRASE,
         );
-        let rejected = rig.settle(cx, |cx| {
+        settle_until(cx, &rig.rt, |cx| {
             rig.view.read_with(cx, |view, cx| {
                 view.prompt
                     .as_ref()
@@ -1968,15 +1949,10 @@ pub(crate) mod tests {
 
         assert_eq!(
             (
-                rejected,
                 rig.prompt_purpose(cx),
                 rig.stored_key().map(|stored| stored.recipient)
             ),
-            (
-                true,
-                Some(PassphrasePurpose::ScheduleChange),
-                Some(key.recipient)
-            )
+            (Some(PassphrasePurpose::ScheduleChange), Some(key.recipient))
         );
     }
 
@@ -2027,16 +2003,14 @@ pub(crate) mod tests {
             view.commit_number(ScheduleNumber::KeepNewest, "30", cx);
             flagged
         });
-        let later_saved = rig.settle(cx, |_| rig.stored(&BACKUP_SCHEDULE_KEEP_NEWEST) == Some(30));
+        settle_until(cx, &rig.rt, |_| {
+            rig.stored(&BACKUP_SCHEDULE_KEEP_NEWEST) == Some(30)
+        });
 
         let default = ScheduleNumber::Interval.default_value();
         assert_eq!(
-            (
-                flagged,
-                later_saved,
-                rig.stored(&BACKUP_SCHEDULE_INTERVAL_MINUTES)
-            ),
-            (vec![(true, default); 3], true, None)
+            (flagged, rig.stored(&BACKUP_SCHEDULE_INTERVAL_MINUTES)),
+            (vec![(true, default); 3], None)
         );
     }
 
@@ -2058,16 +2032,13 @@ pub(crate) mod tests {
             }
             accepted
         });
-        let saved = rig.settle(cx, |_| {
+        settle_until(cx, &rig.rt, |_| {
             ScheduleNumber::ALL
                 .iter()
                 .all(|number| rig.stored(number.declaration()) == Some(*number.range().end()))
         });
 
-        assert_eq!(
-            (accepted, saved),
-            (vec![(false, true); ScheduleNumber::ALL.len() * 2], true)
-        );
+        assert_eq!(accepted, vec![(false, true); ScheduleNumber::ALL.len() * 2]);
     }
 
     #[gpui::test]
@@ -2088,13 +2059,11 @@ pub(crate) mod tests {
         rig.view.update(cx, |view, cx| {
             view.commit_number(ScheduleNumber::Interval, "30", cx)
         });
-        let moved = rig.settle(cx, |cx| {
+        settle_until(cx, &rig.rt, |cx| {
             rig.view.read_with(cx, |view, _| {
                 view.status.next_due == Some(last + time::Duration::minutes(30))
             })
         });
-
-        assert!(moved);
     }
 
     #[gpui::test]
@@ -2104,7 +2073,7 @@ pub(crate) mod tests {
         rig.view.update(cx, |view, cx| {
             view.toggle_category(BackupCategory::Media, cx)
         });
-        let persisted = rig.settle(cx, |_| {
+        settle_until(cx, &rig.rt, |_| {
             rig.stored(&BACKUP_SCHEDULE_INCLUDE_MEDIA) == Some(false)
         });
         let reloaded = rig
@@ -2115,15 +2084,12 @@ pub(crate) mod tests {
             .included;
 
         assert_eq!(
-            (persisted, reloaded),
-            (
-                true,
-                vec![
-                    BackupCategory::Voices,
-                    BackupCategory::Overlays,
-                    BackupCategory::Assets
-                ]
-            )
+            reloaded,
+            vec![
+                BackupCategory::Voices,
+                BackupCategory::Overlays,
+                BackupCategory::Assets
+            ]
         );
     }
 
@@ -2135,12 +2101,12 @@ pub(crate) mod tests {
             view.toggle_category(BackupCategory::Voices, cx);
             view.toggle_category(BackupCategory::Voices, cx);
         });
-        let persisted = rig.settle(cx, |_| {
+        settle_until(cx, &rig.rt, |_| {
             rig.stored(&BACKUP_SCHEDULE_INCLUDE_VOICES) == Some(true)
         });
 
         let included = rig.view_included(cx);
-        assert!(persisted && included.contains(&BackupCategory::Voices));
+        assert!(included.contains(&BackupCategory::Voices));
     }
 
     #[gpui::test]
@@ -2309,21 +2275,17 @@ pub(crate) mod tests {
     #[gpui::test]
     fn a_clicked_backup_now_toasts_once_its_run_saves_a_backup(cx: &mut TestAppContext) {
         let rig = schedule_rig(cx, &unattended_seeds(&key_for(OLD_PASSPHRASE)));
-        let progress_loaded = rig.settle(cx, |cx| {
+        settle_until(cx, &rig.rt, |cx| {
             rig.view
                 .read_with(cx, |view, _| view.status.last_success_at.is_some())
         });
-        assert!(
-            progress_loaded,
-            "the seeded last backup never reached the view"
-        );
 
         rig.view.update(cx, |view, cx| view.run_now(cx));
-        let toasted = rig.settle(cx, |cx| !success_toasts(cx).is_empty());
+        settle_until(cx, &rig.rt, |cx| !success_toasts(cx).is_empty());
 
         assert_eq!(
-            (toasted, success_toasts(cx), rig.scheduled_bundles().len()),
-            (true, vec![tr!("backup_schedule_run_done")], 1)
+            (success_toasts(cx), rig.scheduled_bundles().len()),
+            (vec![tr!("backup_schedule_run_done")], 1)
         );
     }
 
@@ -2334,15 +2296,15 @@ pub(crate) mod tests {
         seeds[2] = ScheduleSeed::LastSuccessAt(overdue.format(&Rfc3339).unwrap());
         let rig = schedule_rig(cx, &seeds);
 
-        let saved = rig.settle(cx, |cx| {
+        settle_until(cx, &rig.rt, |cx| {
             rig.view.read_with(cx, |view, _| {
                 view.status.last_success_at > Some(overdue) && !view.is_running()
             })
         });
 
         assert_eq!(
-            (saved, success_toasts(cx), rig.scheduled_bundles().len()),
-            (true, Vec::<String>::new(), 1)
+            (success_toasts(cx), rig.scheduled_bundles().len()),
+            (Vec::<String>::new(), 1)
         );
     }
 

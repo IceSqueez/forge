@@ -8,11 +8,12 @@ use forge_storage::{
     DataProvider, MediaBlobId, MediaFormat, MediaKind, MediaReferrer, MediaReferrerKind, MediaRepo,
     StorageError,
 };
-use forge_storage_sqlite::{SqliteBackend, SqliteMediaRepo, apply_migrations, connect};
+use forge_storage_sqlite::{SqliteBackend, SqliteMediaRepo, SqlitePools};
 use sqlx::SqlitePool;
 use tempfile::TempDir;
 
-const TEST_KEY: [u8; 32] = [0x5c; 32];
+mod common;
+use common::TEST_KEY;
 
 const TINY_GIF: &[u8] = b"GIF89a";
 const TINY_GIF_ID: &str = "sha256-610f5ae4d76e332636a17bd357fd6ce99029316a99d320280d4d77a746bf29e8";
@@ -565,10 +566,9 @@ const STARTUP_SWEEP_POLL: Duration = Duration::from_millis(10);
 #[cfg(windows)]
 const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;
 
-async fn direct_repo(root: &Path) -> (SqliteMediaRepo, SqlitePool) {
-    let pool = connect("sqlite::memory:").await.expect("connect");
-    apply_migrations(&pool).await.expect("apply migrations");
-    (SqliteMediaRepo::new(pool.clone(), root.to_owned()), pool)
+async fn direct_repo(root: &Path) -> (SqliteMediaRepo, common::Sandboxed<SqlitePools>) {
+    let pools = common::migrated_pools().await;
+    (SqliteMediaRepo::new(pools.clone(), root.to_owned()), pools)
 }
 
 #[cfg(windows)]
@@ -605,7 +605,7 @@ fn staged_file(root: &Path, name: &str, aged_by: Duration) {
 async fn sweep_stale_incoming_removes_only_staging_files_at_least_an_hour_old() {
     let dir = tempfile::tempdir().expect("temp dir");
     let root = dir.path();
-    let (repo, _pool) = direct_repo(root).await;
+    let (repo, _pools) = direct_repo(root).await;
     staged_file(root, ".incoming-abandoned", STALE_INCOMING_AGE * 2);
     staged_file(root, ".incoming-on-the-threshold", STALE_INCOMING_AGE);
     staged_file(
@@ -636,7 +636,7 @@ async fn sweep_stale_incoming_removes_only_staging_files_at_least_an_hour_old() 
 #[tokio::test]
 async fn sweep_stale_incoming_of_a_root_that_does_not_exist_yet_removes_nothing() {
     let dir = tempfile::tempdir().expect("temp dir");
-    let (repo, _pool) = direct_repo(&dir.path().join(MEDIA_SUBDIR)).await;
+    let (repo, _pools) = direct_repo(&dir.path().join(MEDIA_SUBDIR)).await;
 
     assert_eq!(repo.sweep_stale_incoming().await.expect("sweep"), 0);
 }
@@ -648,7 +648,7 @@ fn wav_file_of(digit: char) -> String {
 #[tokio::test]
 async fn sweep_unindexed_blobs_keeps_an_old_file_whose_row_exists() {
     let dir = tempfile::tempdir().expect("temp dir");
-    let (repo, _pool) = direct_repo(dir.path()).await;
+    let (repo, _pools) = direct_repo(dir.path()).await;
     let blob = repo
         .store("fixture", TINY_GIF.to_vec())
         .await
@@ -667,7 +667,7 @@ async fn sweep_unindexed_blobs_keeps_an_old_file_whose_row_exists() {
 #[tokio::test]
 async fn sweep_unindexed_blobs_removes_an_old_file_without_a_row() {
     let dir = tempfile::tempdir().expect("temp dir");
-    let (repo, _pool) = direct_repo(dir.path()).await;
+    let (repo, _pools) = direct_repo(dir.path()).await;
     staged_file(dir.path(), &wav_file_of('a'), STALE_INCOMING_AGE * 2);
 
     let removed = repo.sweep_unindexed_blobs().await.expect("sweep");
@@ -678,7 +678,7 @@ async fn sweep_unindexed_blobs_removes_an_old_file_without_a_row() {
 #[tokio::test]
 async fn sweep_unindexed_blobs_matches_a_row_on_its_format_as_well_as_its_id() {
     let dir = tempfile::tempdir().expect("temp dir");
-    let (repo, _pool) = direct_repo(dir.path()).await;
+    let (repo, _pools) = direct_repo(dir.path()).await;
     repo.store("fixture", TINY_GIF.to_vec())
         .await
         .expect("store");
@@ -696,7 +696,7 @@ async fn sweep_unindexed_blobs_matches_a_row_on_its_format_as_well_as_its_id() {
 #[tokio::test]
 async fn sweep_unindexed_blobs_keeps_old_files_that_are_not_named_like_blobs() {
     let dir = tempfile::tempdir().expect("temp dir");
-    let (repo, _pool) = direct_repo(dir.path()).await;
+    let (repo, _pools) = direct_repo(dir.path()).await;
     let bare_id = wav_file_of('a').replace(".wav", "");
     let mut names = vec![
         "notes.txt".to_owned(),
@@ -720,7 +720,7 @@ async fn sweep_unindexed_blobs_keeps_old_files_that_are_not_named_like_blobs() {
 #[tokio::test]
 async fn sweep_unindexed_blobs_keeps_a_directory_named_like_a_blob() {
     let dir = tempfile::tempdir().expect("temp dir");
-    let (repo, _pool) = direct_repo(dir.path()).await;
+    let (repo, _pools) = direct_repo(dir.path()).await;
     std::fs::create_dir(dir.path().join(wav_file_of('a'))).expect("create directory");
 
     let removed = repo.sweep_unindexed_blobs().await.expect("sweep");
@@ -731,7 +731,7 @@ async fn sweep_unindexed_blobs_keeps_a_directory_named_like_a_blob() {
 #[tokio::test]
 async fn sweep_unindexed_blobs_removes_a_file_only_at_least_an_hour_old() {
     let dir = tempfile::tempdir().expect("temp dir");
-    let (repo, _pool) = direct_repo(dir.path()).await;
+    let (repo, _pools) = direct_repo(dir.path()).await;
     let margin = Duration::from_secs(60);
     staged_file(dir.path(), &wav_file_of('a'), STALE_INCOMING_AGE + margin);
     staged_file(dir.path(), &wav_file_of('b'), STALE_INCOMING_AGE - margin);
@@ -744,7 +744,7 @@ async fn sweep_unindexed_blobs_removes_a_file_only_at_least_an_hour_old() {
 #[tokio::test]
 async fn sweep_unindexed_blobs_of_a_root_that_does_not_exist_yet_removes_nothing() {
     let dir = tempfile::tempdir().expect("temp dir");
-    let (repo, _pool) = direct_repo(&dir.path().join("absent")).await;
+    let (repo, _pools) = direct_repo(&dir.path().join("absent")).await;
 
     assert_eq!(repo.sweep_unindexed_blobs().await.expect("sweep"), 0);
 }
@@ -813,8 +813,8 @@ const MALFORMED_STORED_IDS: [&str; 3] = [
 async fn a_stored_row_whose_id_is_not_a_blob_id_fails_to_decode() {
     for malformed in MALFORMED_STORED_IDS {
         let dir = tempfile::tempdir().expect("temp dir");
-        let (repo, pool) = direct_repo(dir.path()).await;
-        insert_blob_row(&pool, malformed).await;
+        let (repo, pools) = direct_repo(dir.path()).await;
+        insert_blob_row(pools.writer(), malformed).await;
 
         let error = repo.list().await.unwrap_err();
 
@@ -829,8 +829,8 @@ async fn a_stored_row_whose_id_is_not_a_blob_id_fails_to_decode() {
 async fn blob_of_a_slot_holding_a_malformed_id_reports_it_as_malformed() {
     for malformed in MALFORMED_STORED_IDS {
         let dir = tempfile::tempdir().expect("temp dir");
-        let (repo, pool) = direct_repo(dir.path()).await;
-        insert_blob_row(&pool, malformed).await;
+        let (repo, pools) = direct_repo(dir.path()).await;
+        insert_blob_row(pools.writer(), malformed).await;
         let referrer = overlay_icon();
         sqlx::query(
             "INSERT INTO media_references (referrer_kind, referrer_id, slot, blob_id) VALUES (?, ?, ?, ?)",
@@ -839,7 +839,7 @@ async fn blob_of_a_slot_holding_a_malformed_id_reports_it_as_malformed() {
         .bind(&referrer.id)
         .bind(&referrer.slot)
         .bind(malformed)
-        .execute(&pool)
+        .execute(pools.writer())
         .await
         .expect("insert reference row");
 

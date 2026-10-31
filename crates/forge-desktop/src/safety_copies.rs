@@ -700,7 +700,6 @@ impl Render for SafetyCopiesView {
 #[cfg(test)]
 mod tests {
     use std::path::Path;
-    use std::time::{Duration, Instant};
 
     use forge_components::Toasts;
     use forge_storage::settings::core_settings::{
@@ -716,17 +715,16 @@ mod tests {
 
     use super::*;
     use crate::i18n::install_language;
-    use crate::test_support::install_presentation;
     use crate::test_support::pack_flow::{PackWorld, pack_world};
     use crate::test_support::runtime;
+    use crate::test_support::{
+        alive_tasks, install_presentation, settle_until, settle_until_tasks_drain_to,
+    };
 
-    const SETTLE_GUARD: Duration = Duration::from_secs(30);
-    const RUNTIME_TURN: Duration = Duration::from_millis(1);
     const STEM_PREFIX: &str = "forge-backup";
     const PRE_PACK: &str = "forge-pre-pack";
     const ARCHIVE: &str = "tar.gz";
     const COPY_BYTES: usize = 64;
-    const SETTLE_ROUNDS: usize = 20;
 
     struct Rig {
         rt: tokio::runtime::Runtime,
@@ -811,30 +809,13 @@ mod tests {
             view,
         };
         let expected = u32::try_from(copies).unwrap();
-        assert!(rig.settle(cx, |cx| rig.usage(cx).is_some_and(|u| u.count == expected)));
+        settle_until(cx, &rig.rt, |cx| {
+            rig.usage(cx).is_some_and(|u| u.count == expected)
+        });
         rig
     }
 
     impl Rig {
-        fn settle(
-            &self,
-            cx: &mut TestAppContext,
-            mut done: impl FnMut(&mut TestAppContext) -> bool,
-        ) -> bool {
-            let started = Instant::now();
-            loop {
-                cx.run_until_parked();
-                if done(cx) {
-                    return true;
-                }
-                if started.elapsed() > SETTLE_GUARD {
-                    return false;
-                }
-                self.rt
-                    .block_on(async { tokio::time::sleep(RUNTIME_TURN).await });
-            }
-        }
-
         fn usage(&self, cx: &mut TestAppContext) -> Option<SafetyCopyUsage> {
             self.view.read_with(cx, |view, _| view.usage)
         }
@@ -887,9 +868,9 @@ mod tests {
         fn fence_with_a_real_change(&self, cx: &mut TestAppContext) -> usize {
             self.view
                 .update(cx, |view, cx| view.pick_mode(SafetyCopyMode::Never, cx));
-            assert!(self.settle(cx, |cx| {
+            settle_until(cx, &self.rt, |cx| {
                 self.stored(&SAFETY_COPIES_MODE) == Some("never".to_owned()) && self.toasts(cx) > 0
-            }));
+            });
             self.toasts(cx)
         }
 
@@ -1056,8 +1037,9 @@ mod tests {
             0,
         );
 
-        assert!(r.settle(cx, |cx| r.settings(cx)
-            == settings(SafetyCopyMode::DeleteAfterDays, 7, 45)));
+        settle_until(cx, &r.rt, |cx| {
+            r.settings(cx) == settings(SafetyCopyMode::DeleteAfterDays, 7, 45)
+        });
         assert_eq!(
             (
                 r.shown(cx, SafetyCopyNumber::KeepNewest).0,
@@ -1074,13 +1056,13 @@ mod tests {
             &[PolicySeed::Mode("never"), PolicySeed::KeepNewest(1)],
             3,
         );
-        assert!(r.settle(cx, |cx| r.settings(cx).mode == SafetyCopyMode::Never));
+        settle_until(cx, &r.rt, |cx| r.settings(cx).mode == SafetyCopyMode::Never);
 
         r.view.update(cx, |view, cx| {
             view.pick_mode(SafetyCopyMode::KeepNewest, cx)
         });
 
-        assert!(r.settle(cx, |cx| r.usage(cx).is_some_and(|u| u.count == 1)));
+        settle_until(cx, &r.rt, |cx| r.usage(cx).is_some_and(|u| u.count == 1));
         assert_eq!(
             (r.stored(&SAFETY_COPIES_MODE), r.copies_on_disk()),
             (Some("keep_newest".to_owned()), 1)
@@ -1102,14 +1084,17 @@ mod tests {
     fn switching_mode_keeps_the_other_number_as_typed(cx: &mut TestAppContext) {
         let r = rig(cx, &[], 0);
         r.type_and_commit(cx, SafetyCopyNumber::KeepNewest, "7");
-        assert!(r.settle(cx, |_| r.stored(&SAFETY_COPIES_KEEP_NEWEST) == Some(7)));
+        settle_until(cx, &r.rt, |_| {
+            r.stored(&SAFETY_COPIES_KEEP_NEWEST) == Some(7)
+        });
 
         r.view.update(cx, |view, cx| {
             view.pick_mode(SafetyCopyMode::DeleteAfterDays, cx);
         });
 
-        assert!(r.settle(cx, |_| r.stored(&SAFETY_COPIES_MODE)
-            == Some("delete_after_days".to_owned())));
+        settle_until(cx, &r.rt, |_| {
+            r.stored(&SAFETY_COPIES_MODE) == Some("delete_after_days".to_owned())
+        });
         assert_eq!(
             (
                 r.stored(&SAFETY_COPIES_KEEP_NEWEST),
@@ -1125,7 +1110,7 @@ mod tests {
 
         r.type_and_commit(cx, SafetyCopyNumber::KeepNewest, " 1 ");
 
-        assert!(r.settle(cx, |cx| r.usage(cx).is_some_and(|u| u.count == 1)));
+        settle_until(cx, &r.rt, |cx| r.usage(cx).is_some_and(|u| u.count == 1));
         assert_eq!(
             (
                 r.shown(cx, SafetyCopyNumber::KeepNewest),
@@ -1201,7 +1186,7 @@ mod tests {
 
         r.view.update(cx, |view, cx| view.clean_up(cx));
 
-        assert!(r.settle(cx, |cx| r.usage(cx).is_some_and(|u| u.count == 0)));
+        settle_until(cx, &r.rt, |cx| r.usage(cx).is_some_and(|u| u.count == 0));
         assert_eq!((r.copies_on_disk(), bundle.is_file()), (0, true));
     }
 
@@ -1212,7 +1197,9 @@ mod tests {
 
         r.view.update(cx, |view, cx| view.clean_up(cx));
 
-        assert!(r.settle(cx, |cx| r.view.read_with(cx, |view, _| !view.cleaning)));
+        settle_until(cx, &r.rt, |cx| {
+            r.view.read_with(cx, |view, _| !view.cleaning)
+        });
         assert_eq!(r.copies_on_disk(), 3);
     }
 
@@ -1258,7 +1245,9 @@ mod tests {
     #[gpui::test]
     fn a_sweep_that_removed_copies_makes_storage_used_measure_again(cx: &mut TestAppContext) {
         let r = rig(cx, &[], 1);
-        assert!(r.settle(cx, |_| r.storage_backups_bytes() == Some(COPY_BYTES as u64)));
+        settle_until(cx, &r.rt, |_| {
+            r.storage_backups_bytes() == Some(COPY_BYTES as u64)
+        });
         for entry in std::fs::read_dir(backups_dir(&r.world.data_dir())).unwrap() {
             std::fs::remove_file(entry.unwrap().path()).unwrap();
         }
@@ -1267,21 +1256,25 @@ mod tests {
             view.sweep_finished(SweepOrigin::CleanUp, Ok(report(1, &[], false)), cx);
         });
 
-        assert!(r.settle(cx, |_| r.storage_backups_bytes() == Some(0)));
+        settle_until(cx, &r.rt, |_| r.storage_backups_bytes() == Some(0));
     }
 
     #[gpui::test]
     fn a_sweep_that_removed_nothing_leaves_storage_used_alone(cx: &mut TestAppContext) {
         let r = rig(cx, &[], 1);
-        assert!(r.settle(cx, |_| r.storage_backups_bytes() == Some(COPY_BYTES as u64)));
+        settle_until(cx, &r.rt, |_| {
+            r.storage_backups_bytes() == Some(COPY_BYTES as u64)
+        });
         for entry in std::fs::read_dir(backups_dir(&r.world.data_dir())).unwrap() {
             std::fs::remove_file(entry.unwrap().path()).unwrap();
         }
+        let background_tasks = alive_tasks(&r.rt);
 
         r.view.update(cx, |view, cx| {
             view.sweep_finished(SweepOrigin::CleanUp, Ok(report(0, &[], false)), cx);
         });
-        r.settle(cx, |cx| r.usage(cx).is_some_and(|u| u.count == 0));
+        settle_until(cx, &r.rt, |cx| r.usage(cx).is_some_and(|u| u.count == 0));
+        settle_until_tasks_drain_to(cx, &r.rt, background_tasks);
 
         assert_eq!(r.storage_backups_bytes(), Some(COPY_BYTES as u64));
     }
@@ -1290,15 +1283,15 @@ mod tests {
     fn a_late_settings_load_does_not_overwrite_a_change_made_on_the_card(cx: &mut TestAppContext) {
         let r = rig(cx, &[], 0);
         r.type_and_commit(cx, SafetyCopyNumber::KeepNewest, "3");
-        assert!(r.settle(cx, |_| { r.stored(&SAFETY_COPIES_KEEP_NEWEST) == Some(3) }));
+        settle_until(cx, &r.rt, |_| {
+            r.stored(&SAFETY_COPIES_KEEP_NEWEST) == Some(3)
+        });
         r.rt.block_on(PolicySeed::KeepNewest(7).apply(r.world.provider().as_ref()));
 
+        let background_tasks = alive_tasks(&r.rt);
+
         r.view.update(cx, |view, cx| view.load(cx));
-        r.settle(cx, |_| true);
-        for _ in 0..SETTLE_ROUNDS {
-            r.rt.block_on(async { tokio::time::sleep(RUNTIME_TURN).await });
-            cx.run_until_parked();
-        }
+        settle_until_tasks_drain_to(cx, &r.rt, background_tasks);
 
         assert_eq!(
             (
@@ -1327,7 +1320,7 @@ mod tests {
 
         r.type_and_commit(cx, SafetyCopyNumber::KeepNewest, "1");
 
-        assert!(r.settle(cx, deferred_shown));
+        settle_until(cx, &r.rt, deferred_shown);
         assert_eq!(
             (r.stored(&SAFETY_COPIES_KEEP_NEWEST), r.copies_on_disk()),
             (Some(1), 3)

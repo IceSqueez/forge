@@ -1,22 +1,31 @@
 #![allow(dead_code, clippy::expect_used)]
 
+use std::collections::BTreeMap;
 use std::ops::Deref;
+use std::path::Path;
 
-use forge_storage_sqlite::SqliteBackend;
+use forge_storage::DataProvider;
+use forge_storage_sqlite::{SqliteBackend, SqlitePools, apply_migrations, connect_pools};
+use forge_types::{
+    Action, ActionId, ExecutionMode, PermissionRung, QueueId, TriggerInstance, TriggerInstanceId,
+};
 use tempfile::TempDir;
 
 pub const TEST_KEY: [u8; 32] = [0xab; 32];
+const DATABASE_FILE: &str = "forge.db";
+const MEDIA_DIR: &str = "media";
+const DEFAULT_QUEUE_NAME: &str = "Default";
 
 pub struct Sandboxed<T> {
     inner: T,
-    _media_root: TempDir,
+    _temp_root: TempDir,
 }
 
 impl<T> Sandboxed<T> {
     pub fn map<U>(self, wrap: impl FnOnce(T) -> U) -> Sandboxed<U> {
         Sandboxed {
             inner: wrap(self.inner),
-            _media_root: self._media_root,
+            _temp_root: self._temp_root,
         }
     }
 }
@@ -36,6 +45,96 @@ pub async fn sandboxed_backend(url: &str, key: [u8; 32]) -> Sandboxed<SqliteBack
         .expect("a backend");
     Sandboxed {
         inner: backend,
-        _media_root: media_root,
+        _temp_root: media_root,
+    }
+}
+
+pub async fn empty_pools() -> Sandboxed<SqlitePools> {
+    let root = tempfile::tempdir().expect("a temporary database directory");
+    let url = database_url(&root);
+    let pools = connect_pools(&url).await.expect("the production pools");
+    Sandboxed {
+        inner: pools,
+        _temp_root: root,
+    }
+}
+
+pub async fn migrated_pools() -> Sandboxed<SqlitePools> {
+    let pools = empty_pools().await;
+    apply_migrations(pools.writer()).await.expect("migrations");
+    pools
+}
+
+pub async fn migrated_backend(key: [u8; 32]) -> Sandboxed<SqliteBackend> {
+    let root = tempfile::tempdir().expect("a temporary database directory");
+    let url = database_url(&root);
+    let backend = SqliteBackend::open_for_test(&url, key, root.path().join(MEDIA_DIR), None)
+        .await
+        .expect("a backend");
+    Sandboxed {
+        inner: backend,
+        _temp_root: root,
+    }
+}
+
+pub async fn setup() -> Sandboxed<SqliteBackend> {
+    migrated_backend(TEST_KEY).await
+}
+
+pub fn sqlite_url(path: &Path) -> String {
+    format!("sqlite://{}", path.display())
+}
+
+pub fn database_url(root: &TempDir) -> String {
+    sqlite_url(&root.path().join(DATABASE_FILE))
+}
+
+pub async fn default_queue_id(backend: &SqliteBackend) -> QueueId {
+    backend
+        .queue_repo()
+        .get_by_name(DEFAULT_QUEUE_NAME)
+        .await
+        .expect("get default queue")
+        .expect("default queue seeded by migration")
+        .id
+}
+
+pub fn action_named(name: &str, queue_id: QueueId) -> Action {
+    Action {
+        id: ActionId::new(),
+        name: name.to_owned(),
+        group: None,
+        queue_id,
+        enabled: true,
+        concurrent: false,
+        bypass_pause: false,
+        execution_mode: ExecutionMode::Sequential,
+        description: None,
+        sub_actions: vec![],
+    }
+}
+
+pub async fn insert_action(backend: &SqliteBackend, name: &str) -> ActionId {
+    let action = action_named(name, default_queue_id(backend).await);
+    backend
+        .action_repo()
+        .save(&action)
+        .await
+        .expect("save action");
+    action.id
+}
+
+pub fn trigger_instance(kind_id: &str, name: &str, user_defined: bool) -> TriggerInstance {
+    TriggerInstance {
+        id: TriggerInstanceId::new(),
+        kind_id: kind_id.to_owned(),
+        name: name.to_owned(),
+        overrides: BTreeMap::new(),
+        enabled: true,
+        user_defined,
+        platform_scope: Default::default(),
+        cooldown_secs: 0,
+        cooldown_global: true,
+        permission_rung: PermissionRung::Everyone,
     }
 }

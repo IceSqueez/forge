@@ -1,27 +1,25 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod common;
+use common::runners::FixedOutcomeRunner;
+
 use std::sync::Arc;
 use std::time::Duration;
 
-use async_trait::async_trait;
 use forge_events::Event;
 use forge_events::EventSubscription;
-use forge_registry::{
-    FormField, RegistryError, RunContext, SubActionCategory, SubActionRegistry, SubActionRunner,
-};
+use forge_registry::SubActionRegistry;
 use forge_runtime::sub_action_runners::{CoreLogicWaitRunner, WAIT_KIND_ID, WAIT_MS_KEY};
 use forge_runtime::{
     ActionCancelRegistry, Catalog, EventBus, NullEventLogRepo, QueueAdmission, QueueScheduler,
     QueueSchedulerHandle, SchedulerRequest, spawn_action_engine,
 };
 use forge_storage::DataProvider;
-use forge_storage_sqlite::SqliteBackend;
 use forge_types::{
-    Action, ActionId, ArgStack, EventId, ExecutionMode, Queue, QueueId, SubActionConfig,
-    SubActionOutcome, SubActionStep, SubActionTelemetry, Variant,
+    Action, ActionId, ArgStack, DEFAULT_QUEUE_ID, EventId, Queue, SubActionConfig,
+    SubActionOutcome, SubActionStep, Variant,
 };
 use serde_json::{Value, json};
 use tempfile::TempDir;
-use time::OffsetDateTime;
 
 const SUCCESS_KIND_ID: &str = "test.succeed";
 const SKIPPED_KIND_ID: &str = "test.skip";
@@ -29,60 +27,6 @@ const FAILING_KIND_ID: &str = "test.fail";
 const FAILURE_REASON: &str = "scene not found";
 const LONG_WAIT_MS: i64 = 60_000;
 const HANG_GUARD: Duration = Duration::from_secs(30);
-
-struct FixedOutcomeRunner {
-    id: &'static str,
-    outcome: SubActionOutcome,
-}
-
-#[async_trait]
-impl SubActionRunner for FixedOutcomeRunner {
-    fn id(&self) -> &str {
-        self.id
-    }
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Util
-    }
-    fn label(&self) -> &str {
-        self.id
-    }
-    fn summary(&self) -> &str {
-        ""
-    }
-    fn search_text(&self) -> &str {
-        ""
-    }
-    fn icon_name(&self) -> &str {
-        ""
-    }
-    fn default_config(&self) -> SubActionConfig {
-        SubActionConfig::new()
-    }
-    fn config_fields(&self) -> Vec<FormField> {
-        Vec::new()
-    }
-    fn validate_config(&self, _: &SubActionConfig) -> Result<(), RegistryError> {
-        Ok(())
-    }
-    async fn execute(
-        &self,
-        _: &SubActionConfig,
-        ctx: &RunContext<'_>,
-    ) -> (SubActionTelemetry, Option<ArgStack>) {
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                index: ctx.index,
-                kind: self.id.to_owned(),
-                started_at: OffsetDateTime::now_utc(),
-                duration_ms: 0,
-                outcome: self.outcome.clone(),
-            },
-            None,
-        )
-    }
-}
 
 struct Rig {
     dp: Arc<dyn DataProvider>,
@@ -92,16 +36,8 @@ struct Rig {
     _media: TempDir,
 }
 
-fn default_queue() -> QueueId {
-    serde_json::from_str("\"00000000000000000000000000\"").unwrap()
-}
-
 async fn rig() -> Rig {
-    let media = tempfile::tempdir().unwrap();
-    let backend =
-        SqliteBackend::open_for_test(":memory:", [0xcd; 32], media.path().join("media"), None)
-            .await
-            .unwrap();
+    let (backend, media) = common::sqlite_backend().await;
     let dp: Arc<dyn DataProvider> = Arc::new(backend);
 
     let mut registry = SubActionRegistry::new();
@@ -140,7 +76,7 @@ async fn rig() -> Rig {
         engine,
         Arc::clone(&bus),
         vec![Queue {
-            id: default_queue(),
+            id: DEFAULT_QUEUE_ID,
             name: "default".to_owned(),
             description: String::new(),
             concurrency: std::num::NonZeroU32::MIN,
@@ -167,18 +103,7 @@ fn step(kind_id: &str, config: SubActionConfig) -> SubActionStep {
 }
 
 async fn saved_action(rig: &Rig, name: &str, steps: Vec<SubActionStep>) -> Action {
-    let action = Action {
-        id: ActionId::new(),
-        name: name.to_owned(),
-        group: None,
-        queue_id: default_queue(),
-        enabled: true,
-        concurrent: false,
-        bypass_pause: false,
-        execution_mode: ExecutionMode::Sequential,
-        description: None,
-        sub_actions: steps,
-    };
+    let action = common::sequential_action(ActionId::new(), name, DEFAULT_QUEUE_ID, steps);
     rig.dp.action_repo().save(&action).await.unwrap();
     action
 }

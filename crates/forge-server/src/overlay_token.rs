@@ -111,45 +111,15 @@ pub fn masked_overlay_token(token: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
     use std::sync::Mutex;
 
     use forge_storage::credentials::MockCredentialsRepo;
 
     use super::*;
+    use crate::test_helpers::MemCreds;
 
-    type Slots = Arc<Mutex<HashMap<String, String>>>;
-
-    fn slot_repo(stored: Option<&str>) -> (MockCredentialsRepo, Slots) {
-        let slots: Slots = Arc::default();
-        if let Some(stored) = stored {
-            slots.lock().expect("lock").insert(
-                SERVER_OVERLAY_TOKEN_CREDENTIAL_ID.to_owned(),
-                stored.to_owned(),
-            );
-        }
-        let mut creds = MockCredentialsRepo::new();
-        let read = Arc::clone(&slots);
-        creds
-            .expect_load()
-            .returning(move |id| Ok(read.lock().expect("lock").get(id.as_str()).cloned()));
-        let write = Arc::clone(&slots);
-        creds.expect_store().returning(move |id, value| {
-            write
-                .lock()
-                .expect("lock")
-                .insert(id.as_str().to_owned(), value.to_owned());
-            Ok(())
-        });
-        (creds, slots)
-    }
-
-    fn persisted(slots: &Slots) -> Option<String> {
-        slots
-            .lock()
-            .expect("lock")
-            .get(SERVER_OVERLAY_TOKEN_CREDENTIAL_ID)
-            .cloned()
+    fn seeded(stored: &str) -> Arc<MemCreds> {
+        MemCreds::with_slot(SERVER_OVERLAY_TOKEN_CREDENTIAL_ID, stored)
     }
 
     #[test]
@@ -164,11 +134,13 @@ mod tests {
 
     #[tokio::test]
     async fn load_with_nothing_stored_issues_persists_and_requires_a_token() {
-        let (creds, slots) = slot_repo(None);
+        let creds = MemCreds::new();
 
-        let state = OverlayTokenState::load(&creds).await.expect("load");
+        let state = OverlayTokenState::load(&*creds).await.expect("load");
 
-        let stored = persisted(&slots).expect("issued token persisted");
+        let stored = creds
+            .stored(SERVER_OVERLAY_TOKEN_CREDENTIAL_ID)
+            .expect("issued token persisted");
         assert!(stored.starts_with(OVERLAY_TOKEN_PREFIX));
         assert!(state.verify(&stored));
         assert!(
@@ -179,9 +151,9 @@ mod tests {
 
     #[tokio::test]
     async fn load_keeps_a_stored_overlay_token() {
-        let (creds, _slots) = slot_repo(Some("fgo_already-issued"));
+        let creds = seeded("fgo_already-issued");
 
-        let state = OverlayTokenState::load(&creds).await.expect("load");
+        let state = OverlayTokenState::load(&*creds).await.expect("load");
 
         assert_eq!(state.current().expose(), "fgo_already-issued");
     }
@@ -189,11 +161,13 @@ mod tests {
     #[tokio::test]
     async fn load_replaces_a_stored_value_that_is_not_an_overlay_token() {
         for foreign in ["fg_bearer-shaped", "unprefixed", ""] {
-            let (creds, slots) = slot_repo(Some(foreign));
+            let creds = seeded(foreign);
 
-            let state = OverlayTokenState::load(&creds).await.expect("load");
+            let state = OverlayTokenState::load(&*creds).await.expect("load");
 
-            let stored = persisted(&slots).expect("replacement persisted");
+            let stored = creds
+                .stored(SERVER_OVERLAY_TOKEN_CREDENTIAL_ID)
+                .expect("replacement persisted");
             assert!(
                 stored.starts_with(OVERLAY_TOKEN_PREFIX),
                 "stored {foreign:?}"

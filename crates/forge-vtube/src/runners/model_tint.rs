@@ -147,7 +147,7 @@ impl SubActionRunner for ModelTintRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::runners::test_support::{MockSink, RecordingSink, make_ctx};
+    use crate::runners::test_support::{MockSink, make_ctx};
     use forge_types::SubActionOutcome;
     use forge_types::Variant;
     use std::collections::BTreeMap;
@@ -165,7 +165,7 @@ mod tests {
 
     #[tokio::test]
     async fn channels_at_the_byte_range_ends_reach_vts_unchanged() {
-        let sink = Arc::new(RecordingSink::default());
+        let sink = Arc::new(MockSink::new());
         let runner = ModelTintRunner::new(Arc::clone(&sink) as Arc<dyn VTubeSink>);
         let config = BTreeMap::from([
             ("color_r".to_owned(), Variant::Int(0)),
@@ -192,7 +192,7 @@ mod tests {
             ("color_b", Variant::Int(-1)),
             ("color_a", Variant::String("256".to_owned())),
         ] {
-            let sink = Arc::new(RecordingSink::default());
+            let sink = Arc::new(MockSink::new());
             let runner = ModelTintRunner::new(Arc::clone(&sink) as Arc<dyn VTubeSink>);
             let config = BTreeMap::from([(key.to_owned(), value.clone())]);
             let stack = ArgStack::new();
@@ -211,7 +211,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_blank_or_boolean_scene_lighting_mix_is_left_out() {
-        let sink = Arc::new(RecordingSink::default());
+        let sink = Arc::new(MockSink::new());
         let runner = ModelTintRunner::new(Arc::clone(&sink) as Arc<dyn VTubeSink>);
         let stack = ArgStack::new();
         let blank = BTreeMap::from([(

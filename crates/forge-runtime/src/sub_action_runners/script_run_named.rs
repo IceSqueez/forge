@@ -287,6 +287,7 @@ mod tests {
     use crate::test_support::{Sandboxed, sandboxed_backend};
     use crate::{EventBus, NullEventLogRepo};
     use forge_events::Event;
+    use forge_events::test_support::NullPublisher;
     use forge_storage::ScriptRecord;
     use forge_storage_sqlite::SqliteBackend;
     use forge_types::Variant;
@@ -538,12 +539,6 @@ mod tests {
             assert!(produced.is_none());
             assert!(self.registry.get_by_name("greet").await.is_none());
         }
-    }
-
-    struct NullPublisher;
-
-    impl EventPublisher for NullPublisher {
-        fn publish(&self, _event: Event) {}
     }
 
     #[tokio::test]

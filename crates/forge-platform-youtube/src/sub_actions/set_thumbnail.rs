@@ -84,9 +84,9 @@ impl SubActionRunner for SetThumbnailRunner {
 
 #[cfg(test)]
 mod tests {
+    use forge_events::test_support::NullPublisher;
     use std::sync::Arc;
 
-    use forge_events::{Event, EventPublisher};
     use forge_types::EventId;
     use futures::future::BoxFuture;
     use serde_json::json;
@@ -100,11 +100,6 @@ mod tests {
     use std::collections::BTreeMap;
 
     const TOKEN_SENTINEL: &str = "yt-thumb-runner-token";
-
-    struct NoopPublisher;
-    impl EventPublisher for NoopPublisher {
-        fn publish(&self, _: Event) {}
-    }
 
     struct TempImage(std::path::PathBuf);
     impl TempImage {
@@ -126,7 +121,7 @@ mod tests {
     }
 
     fn make_ctx(stack: &ArgStack) -> RunContext<'_> {
-        RunContext::leaf(stack, 0, EventId::new(), &NoopPublisher)
+        RunContext::leaf(stack, 0, EventId::new(), &NullPublisher)
     }
 
     fn token_source() -> Arc<

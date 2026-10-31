@@ -466,11 +466,11 @@ mod tests {
     use crate::setup_confirm::{SetupCount, SetupPart};
     use crate::test_support::pack_flow::{PackWorld, pack_world, queue_named, seed_queued_action};
     use crate::test_support::{
-        alive_tasks, install_presentation, runtime, wait_until_worker_drains_to, worker_runtime,
+        alive_tasks, install_presentation, pump_until, runtime, settle_until,
+        wait_until_worker_drains_to, worker_runtime,
     };
     use forge_components::tr;
 
-    const SETTLE_DEADLINE: Duration = Duration::from_secs(30);
     const PAST_ANY_TOAST_TIMER: Duration = Duration::from_secs(120);
     const SNAPSHOT_NAME: &str = "forge-pre-setup-snapshot.forgebundle";
 
@@ -529,23 +529,6 @@ mod tests {
         })
     }
 
-    fn settle_until(
-        cx: &mut TestAppContext,
-        rig: &Rig,
-        done: impl Fn(&mut TestAppContext) -> bool,
-    ) {
-        let deadline = std::time::Instant::now() + SETTLE_DEADLINE;
-        while std::time::Instant::now() < deadline {
-            rig.rt
-                .block_on(async { tokio::time::sleep(Duration::from_millis(1)).await });
-            cx.run_until_parked();
-            if done(cx) {
-                return;
-            }
-        }
-        panic!("the setup import never settled");
-    }
-
     fn step(cx: &mut TestAppContext, rig: &Rig) -> &'static str {
         rig.flow.read_with(cx, |flow, _| match &flow.step {
             SetupImportStep::Idle => "idle",
@@ -572,7 +555,7 @@ mod tests {
     fn confirming(cx: &mut TestAppContext, rig: &Rig) -> PathBuf {
         let bundle = exported_setup(rig);
         rig.flow.update(cx, |flow, cx| flow.open(bundle, cx));
-        settle_until(cx, rig, |cx| step(cx, rig) == "confirming");
+        settle_until(cx, &rig.rt, |cx| step(cx, rig) == "confirming");
         staging_dir(cx, rig)
     }
 
@@ -661,7 +644,7 @@ mod tests {
         std::fs::write(&junk, b"not a bundle").unwrap();
 
         rig.flow.update(cx, |flow, cx| flow.open(junk, cx));
-        settle_until(cx, &rig, |cx| step(cx, &rig) == "idle");
+        settle_until(cx, &rig.rt, |cx| step(cx, &rig) == "idle");
 
         assert_eq!(toast_kinds(cx), vec![ToastKind::Error]);
     }
@@ -672,7 +655,7 @@ mod tests {
         let staging = confirming(cx, &rig);
 
         rig.flow.update(cx, |flow, cx| flow.cancel(cx));
-        settle_until(cx, &rig, |_| !staging.exists());
+        settle_until(cx, &rig.rt, |_| !staging.exists());
 
         assert_eq!(step(cx, &rig), "idle");
     }
@@ -695,13 +678,8 @@ mod tests {
         let Rig { rt, world, flow } = rig;
 
         cx.update(move |_| drop(flow));
-        let deadline = std::time::Instant::now() + SETTLE_DEADLINE;
-        while staging.exists() && std::time::Instant::now() < deadline {
-            rt.block_on(async { tokio::time::sleep(Duration::from_millis(1)).await });
-        }
+        pump_until(&rt, || !staging.exists());
         drop(world);
-
-        assert!(!staging.exists(), "{staging:?} survived the flow");
     }
 
     fn queue_exists(rig: &Rig, name: &str) -> bool {
@@ -727,7 +705,9 @@ mod tests {
         });
 
         rig.flow.update(cx, |flow, cx| flow.confirm(cx));
-        settle_until(cx, &rig, |cx| step(cx, &rig) == "idle" && !staging.exists());
+        settle_until(cx, &rig.rt, |cx| {
+            step(cx, &rig) == "idle" && !staging.exists()
+        });
 
         assert_eq!(
             (queue_exists(&rig, "Later"), imported.get(), toast_kinds(cx)),

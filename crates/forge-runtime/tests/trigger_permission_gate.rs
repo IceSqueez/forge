@@ -12,7 +12,6 @@ use forge_registry::{
 };
 use forge_runtime::{EventBus, FrozenRuntime, NullEventLogRepo, RuntimeWiring};
 use forge_storage::DataProvider;
-use forge_storage_sqlite::SqliteBackend;
 use forge_types::{
     Action, ActionId, ArgStack, ChatPayload, ChatSegment, ExecutionMode, ModerationMarks,
     PermissionRung, Queue, QueueId, SubActionStep, TriggerConfig, TriggerInstance,
@@ -21,7 +20,6 @@ use forge_types::{
 use serde_json::json;
 use tempfile::TempDir;
 
-const TEST_KEY: [u8; 32] = [0xab; 32];
 const CHAT_COMMAND_KIND: &str = "test.chat.command";
 const PLAIN_KIND: &str = "test.plain.ping";
 
@@ -181,12 +179,8 @@ struct Harness {
 }
 
 async fn harness(instances: &[(&TriggerInstance, ActionId)]) -> Harness {
-    let media = tempfile::tempdir().unwrap();
-    let backend = Arc::new(
-        SqliteBackend::open_for_test(":memory:", TEST_KEY, media.path().join("media"), None)
-            .await
-            .unwrap(),
-    );
+    let (backend, media) = common::sqlite_backend().await;
+    let backend = Arc::new(backend);
     let dp: Arc<dyn DataProvider> = Arc::clone(&backend) as Arc<dyn DataProvider>;
 
     let queue_id = QueueId::new();

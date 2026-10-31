@@ -183,6 +183,7 @@ mod tests {
     use crate::i18n::install_language;
     use crate::test_support::{
         GatedSchedule, keyless_enabled_schedule, pump, runtime, staged_restore_in, test_backend,
+        within_hang_guard,
     };
     use crate::update_exit::ExitHandoff;
     use crate::update_flow::UpdateFlow;
@@ -456,8 +457,6 @@ mod tests {
         );
     }
 
-    const SCHEDULE_SETTLE_DEADLINE: std::time::Duration = std::time::Duration::from_secs(30);
-
     fn settled_state(
         h: &Harness,
         schedule: &GatedSchedule,
@@ -465,14 +464,10 @@ mod tests {
     ) -> ScheduleState {
         let mut status = schedule.handle.status();
         h.rt.block_on(async {
-            tokio::time::timeout(
-                SCHEDULE_SETTLE_DEADLINE,
-                status.wait_for(|status| reached(status)),
-            )
-            .await
-            .expect("the schedule never reached the awaited state")
-            .unwrap()
-            .state
+            within_hang_guard(status.wait_for(|status| reached(status)))
+                .await
+                .unwrap()
+                .state
         })
     }
 

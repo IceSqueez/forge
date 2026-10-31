@@ -1,10 +1,11 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 mod common;
+use common::{FixedClock, base};
+use forge_events::test_support::NullPublisher;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use forge_events::{Event, EventPublisher};
 use forge_registry::{
     FormField, RunContext, SubActionRegistry, SubActionRunner, UnitAmountBounds, effective_config,
 };
@@ -12,10 +13,9 @@ use forge_runtime::scheduled_runs::{MAX_SCHEDULED_ARGS_BYTES, MIN_LATE_TOLERANCE
 use forge_runtime::sub_action_runners::{CANCEL_SCHEDULED_KIND_ID, SCHEDULE_ACTION_KIND_ID};
 use forge_runtime::{
     ActionEngineHandle, CatchUpSettle, EventBus, ExecutionRequest, NullEventLogRepo,
-    RuntimeWiringParts, ScheduleError, ScheduledRunsHandle, WallClock,
+    RuntimeWiringParts, ScheduleError, ScheduledRunsHandle,
 };
 use forge_storage::{DataProvider, MissedRunPolicy, ScheduledRun};
-use forge_storage_sqlite::SqliteBackend;
 use forge_types::{
     Action, ActionId, ArgStack, EventId, ExecutionContext, ExecutionMode, Queue, QueueId,
     SubActionConfig, SubActionOutcome, SubActionStep, Variant,
@@ -25,28 +25,9 @@ use time::OffsetDateTime;
 use tokio::time::timeout;
 
 const DEADLINE: Duration = Duration::from_secs(30);
-const BASE_UNIX_SECS: i64 = 1_791_115_200;
 const MINUTE: Duration = Duration::from_secs(60);
 const HOUR: Duration = Duration::from_secs(60 * 60);
 const DAY: Duration = Duration::from_secs(24 * 60 * 60);
-
-fn base() -> OffsetDateTime {
-    OffsetDateTime::from_unix_timestamp(BASE_UNIX_SECS).unwrap()
-}
-
-struct FixedClock;
-
-impl WallClock for FixedClock {
-    fn now(&self) -> OffsetDateTime {
-        base()
-    }
-}
-
-struct NullPublisher;
-
-impl EventPublisher for NullPublisher {
-    fn publish(&self, _event: Event) {}
-}
 
 fn text(value: &str) -> Variant {
     Variant::String(value.to_owned())
@@ -112,11 +93,7 @@ struct Harness {
 
 impl Harness {
     async fn new() -> Self {
-        let media = tempfile::tempdir().unwrap();
-        let backend =
-            SqliteBackend::open_for_test(":memory:", [0xcd; 32], media.path().join("media"), None)
-                .await
-                .unwrap();
+        let (backend, media) = common::sqlite_backend().await;
         let dp: Arc<dyn DataProvider> = Arc::new(backend);
         let queue = Queue {
             id: QueueId::new(),

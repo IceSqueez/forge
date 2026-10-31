@@ -1,7 +1,10 @@
-#![allow(clippy::unwrap_used, clippy::panic)]
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod common;
+
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
+use common::{ChannelPublisher, bind_loopback, settle_until};
 use forge_events::{Event, EventPublisher};
 use forge_obs::{ObsClient, ObsError};
 use forge_platform_core::ConnectionState;
@@ -23,12 +26,26 @@ const AUTH_FAILED_KIND: &str = "obs.connection.auth_failed";
 const SUPERVISOR_BUDGET: Duration = Duration::from_secs(30);
 
 async fn serve_one_close_frame(listener: TcpListener, code: u16, reason: &'static str) {
+    serve_one_gated_close_frame(listener, code, reason, None).await;
+}
+
+async fn serve_one_gated_close_frame(
+    listener: TcpListener,
+    code: u16,
+    reason: &'static str,
+    gate: Option<oneshot::Receiver<()>>,
+) {
     let Ok((stream, _)) = listener.accept().await else {
         return;
     };
     let Ok(mut socket) = tokio_tungstenite::accept_async(stream).await else {
         return;
     };
+    if let Some(gate) = gate
+        && gate.await.is_err()
+    {
+        return;
+    }
     let frame = CloseFrame {
         code: CloseCode::from(code),
         reason: reason.into(),
@@ -39,10 +56,27 @@ async fn serve_one_close_frame(listener: TcpListener, code: u16, reason: &'stati
     while let Some(Ok(_)) = socket.next().await {}
 }
 
-async fn bind_loopback() -> (TcpListener, u16) {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let port = listener.local_addr().unwrap().port();
-    (listener, port)
+async fn received_through_the_auth_failure<T>(
+    rx: &mut mpsc::UnboundedReceiver<T>,
+    kind_of: impl Fn(&T) -> &str,
+) -> Vec<T> {
+    let collect = async {
+        let mut received = Vec::new();
+        loop {
+            let next = rx
+                .recv()
+                .await
+                .expect("the publisher channel closed before the auth failure");
+            let reached_auth_failure = kind_of(&next) == AUTH_FAILED_KIND;
+            received.push(next);
+            if reached_auth_failure {
+                return received;
+            }
+        }
+    };
+    tokio::time::timeout(SUPERVISOR_BUDGET, collect)
+        .await
+        .expect("a rejected password never produced an auth failure")
 }
 
 async fn probe_against_closing_server(code: u16, reason: &'static str, password: &str) -> ObsError {
@@ -53,18 +87,6 @@ async fn probe_against_closing_server(code: u16, reason: &'static str, password:
     match outcome {
         Err(e) => e,
         Ok(_) => panic!("the probe completed a handshake against a peer that only closes"),
-    }
-}
-
-struct ChannelPublisher(mpsc::UnboundedSender<Event>);
-
-impl EventPublisher for ChannelPublisher {
-    fn publish(&self, event: Event) {
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the receiver may already be gone"
-        )]
-        let _ = self.0.send(event);
     }
 }
 
@@ -133,29 +155,14 @@ async fn a_rejected_password_makes_the_supervisor_report_an_authentication_failu
     .await
     .unwrap();
 
-    let deadline = std::time::Instant::now() + SUPERVISOR_BUDGET;
-    let mut kinds: Vec<String> = Vec::new();
-    loop {
-        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
-        let Ok(received) = tokio::time::timeout(remaining, rx.recv()).await else {
-            break;
-        };
-        let kind = received
-            .expect("the publisher channel closed without an event")
-            .kind;
-        let reached_auth_failure = kind == AUTH_FAILED_KIND;
-        kinds.push(kind);
-        if reached_auth_failure {
-            break;
-        }
-    }
+    let events = received_through_the_auth_failure(&mut rx, |event| event.kind.as_str()).await;
 
     server.abort();
     drop(client);
 
-    assert!(
-        kinds.iter().any(|kind| kind == AUTH_FAILED_KIND),
-        "a rejected password produced only {kinds:?}"
+    assert_eq!(
+        events.last().map(|event| event.kind.as_str()),
+        Some(AUTH_FAILED_KIND)
     );
 }
 
@@ -175,31 +182,6 @@ impl EventPublisher for StateProbePublisher {
     }
 }
 
-async fn serve_one_gated_close_frame(
-    listener: TcpListener,
-    code: u16,
-    reason: &'static str,
-    gate: oneshot::Receiver<()>,
-) {
-    let Ok((stream, _)) = listener.accept().await else {
-        return;
-    };
-    let Ok(mut socket) = tokio_tungstenite::accept_async(stream).await else {
-        return;
-    };
-    if gate.await.is_err() {
-        return;
-    }
-    let frame = CloseFrame {
-        code: CloseCode::from(code),
-        reason: reason.into(),
-    };
-    if socket.send(Message::Close(Some(frame))).await.is_err() {
-        return;
-    }
-    while let Some(Ok(_)) = socket.next().await {}
-}
-
 #[tokio::test]
 async fn the_connection_state_is_already_settled_when_the_auth_failure_is_published() {
     let (listener, port) = bind_loopback().await;
@@ -208,7 +190,7 @@ async fn the_connection_state_is_already_settled_when_the_auth_failure_is_publis
         listener,
         AUTHENTICATION_FAILED,
         "authentication failed",
-        gate_rx,
+        Some(gate_rx),
     ));
     let (tx, mut rx) = mpsc::unbounded_channel();
     let slot: Arc<OnceLock<Arc<ObsClient>>> = Arc::new(OnceLock::new());
@@ -236,28 +218,11 @@ async fn the_connection_state_is_already_settled_when_the_auth_failure_is_publis
     )]
     let _ = gate_tx.send(());
 
-    let deadline = std::time::Instant::now() + SUPERVISOR_BUDGET;
-    let mut observed: Vec<(String, Option<ConnectionState>)> = Vec::new();
-    loop {
-        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
-        let Ok(received) = tokio::time::timeout(remaining, rx.recv()).await else {
-            break;
-        };
-        let entry = received.expect("the publisher channel closed without an event");
-        let reached_auth_failure = entry.0 == AUTH_FAILED_KIND;
-        observed.push(entry);
-        if reached_auth_failure {
-            break;
-        }
-    }
+    let observed = received_through_the_auth_failure(&mut rx, |entry| entry.0.as_str()).await;
 
     server.abort();
     drop(client);
 
-    assert!(
-        observed.iter().any(|(kind, _)| kind == AUTH_FAILED_KIND),
-        "a rejected password produced only {observed:?}"
-    );
     for (kind, state_at_publish) in &observed {
         assert_eq!(
             *state_at_publish,
@@ -329,17 +294,14 @@ async fn recorded_failure_code(port: u16) -> String {
     .await
     .unwrap();
     client.set_auto_reconnect(false);
-    let started = std::time::Instant::now();
-    loop {
-        if let Some(failure) = client.connect_failure() {
-            return failure.code().name().to_owned();
-        }
-        assert!(
-            started.elapsed() < SUPERVISOR_BUDGET,
-            "no connect failure was recorded"
-        );
-        tokio::time::sleep(Duration::from_millis(5)).await;
-    }
+    settle_until("a connect failure was recorded", || {
+        client.connect_failure().is_some()
+    })
+    .await;
+    client
+        .connect_failure()
+        .map(|failure| failure.code().name().to_owned())
+        .unwrap()
 }
 
 #[tokio::test]

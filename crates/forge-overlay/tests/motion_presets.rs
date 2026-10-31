@@ -1,4 +1,10 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod common;
+use common::{
+    ALERT_KIND, BLANK_KIND, CHAT_KIND, FRAME_KIND, GOAL_KIND, LATEST_KIND, TICKER_KIND, text,
+    with_kind,
+};
+
 use std::collections::BTreeSet;
 use std::time::Duration;
 
@@ -9,20 +15,11 @@ use forge_overlay::motion::{
     TEXT_EFFECT, TEXT_EFFECT_OPTIONS, TEXT_STAGGER_MS_MAX, TEXT_STAGGER_MS_MIN,
 };
 use forge_overlay::{
-    MOTION_SOURCE, OverlayConfig, OverlayKindDescriptor, OverlayKindRegistry,
-    effective_overlay_config, exit_tail, register_builtin_kinds, show_timing, upgrade_config,
-    validate_overlay_config,
+    MOTION_SOURCE, OverlayConfig, OverlayKindDescriptor, effective_overlay_config, exit_tail,
+    show_timing, upgrade_config, validate_overlay_config,
 };
 use forge_registry::FormField;
 use forge_types::Variant;
-
-const ALERT_KIND: &str = "overlay.alert";
-const BLANK_KIND: &str = "overlay.blank";
-const CHAT_KIND: &str = "overlay.chat";
-const FRAME_KIND: &str = "overlay.frame";
-const GOAL_KIND: &str = "overlay.goal";
-const TICKER_KIND: &str = "overlay.ticker";
-const LATEST_KIND: &str = "overlay.latest";
 
 const MOVING_KINDS: [&str; 5] = [ALERT_KIND, CHAT_KIND, FRAME_KIND, GOAL_KIND, TICKER_KIND];
 const EXITING_KINDS: [&str; 2] = [ALERT_KIND, TICKER_KIND];
@@ -39,21 +36,6 @@ const LEGACY_MAPPING: [(&str, &str, &str, &str); 6] = [
     ("pop", "pop", "pop", "pop"),
     ("wipe-left", "wipe", "fade", "slide-left"),
 ];
-
-fn registry() -> OverlayKindRegistry {
-    let mut reg = OverlayKindRegistry::new();
-    register_builtin_kinds(&mut reg).expect("the builtin overlay kinds register");
-    reg
-}
-
-fn with_kind<T>(kind_id: &str, body: impl FnOnce(&dyn OverlayKindDescriptor) -> T) -> T {
-    let reg = registry();
-    body(reg.get(kind_id).expect("a registered builtin kind"))
-}
-
-fn text(value: &str) -> Variant {
-    Variant::String(value.to_owned())
-}
 
 fn str_of<'a>(config: &'a OverlayConfig, key: &str) -> Option<&'a str> {
     config.get(key).and_then(Variant::as_str)

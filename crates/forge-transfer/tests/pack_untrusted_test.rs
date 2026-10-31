@@ -1,10 +1,12 @@
 #![allow(clippy::unwrap_used)]
-use std::io::Write;
+mod common;
+use common::{empty_documents, entry, file_named_anywhere, sha256_hex};
+
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use forge_overlay::{OverlayError, OverlayKindRegistry, register_builtin_kinds};
-use forge_paths::{MEDIA_DIR_NAME, OVERLAYS_DIR_NAME};
+use forge_paths::OVERLAYS_DIR_NAME;
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_storage::{
     DATABASE_FILE_NAME, DataProvider, EXPECTED_SCHEMA_VERSION, MediaBlobId, MediaFormat,
@@ -12,7 +14,6 @@ use forge_storage::{
 };
 use forge_storage::{OVERLAY_ALERT_QUEUE_NAME, StoreChange};
 use forge_storage::{OverlayDefinition, OverlayId};
-use forge_storage_sqlite::SqliteBackend;
 use forge_transfer::{
     ActionDocument, BUNDLE_FORMAT_VERSION, BundleKind, ClipDocument, ClipSourceDocument,
     ClosureRegistries, ContentEntry, MANIFEST_ENTRY_NAME, MediaDocument, OverlayDocument,
@@ -26,12 +27,10 @@ use forge_types::{
     Action, ActionId, ClipId, ExecutionMode, PermissionRung, Queue, QueueId, TriggerInstanceId,
     Variant,
 };
-use sha2::{Digest, Sha256};
 use sqlx::Connection;
 use tempfile::TempDir;
 use time::OffsetDateTime;
 
-const SQLITE_KEY: [u8; 32] = [0x42; 32];
 const DOCUMENTS_ENTRY: &str = "pack/documents.json";
 const MEDIA_FILE: &str = "pack/media/0";
 const OVERLAY_FILE: &str = "pack/overlays/0/payload.css";
@@ -56,11 +55,7 @@ struct Store {
 impl Store {
     async fn open() -> Self {
         let dir = tempfile::tempdir().unwrap();
-        let url = format!("sqlite://{}", dir.path().join(DATABASE_FILE_NAME).display());
-        let backend =
-            SqliteBackend::open_for_test(&url, SQLITE_KEY, dir.path().join(MEDIA_DIR_NAME), None)
-                .await
-                .unwrap();
+        let backend = common::open_backend(dir.path()).await;
         Self {
             dir,
             provider: Arc::new(backend),
@@ -168,36 +163,7 @@ fn current_schema(kind_id: &str) -> u32 {
         .config_schema_version()
 }
 
-fn sha256_hex(bytes: &[u8]) -> String {
-    Sha256::digest(bytes)
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect()
-}
-
-fn entry(path: &str, bytes: &[u8]) -> ContentEntry {
-    ContentEntry {
-        path: path.to_owned(),
-        size: bytes.len() as u64,
-        sha256_hex: sha256_hex(bytes),
-    }
-}
-
 const PENDING_IMPORT_MARKER: &str = ".forge-import-pending";
-
-fn empty_documents() -> PackDocuments {
-    PackDocuments {
-        version: PACK_DOCUMENTS_VERSION,
-        actions: Vec::new(),
-        triggers: Vec::new(),
-        queues: Vec::new(),
-        scripts: Vec::new(),
-        globals: Vec::new(),
-        clips: Vec::new(),
-        overlays: Vec::new(),
-        media: Vec::new(),
-    }
-}
 
 fn manifest(contents: Vec<ContentEntry>) -> Vec<u8> {
     serde_json::to_vec(&PackManifest {
@@ -218,35 +184,16 @@ fn manifest(contents: Vec<ContentEntry>) -> Vec<u8> {
     .unwrap()
 }
 
-fn header(name: &str, size: usize) -> tar::Header {
-    let mut header = tar::Header::new_gnu();
-    header.as_gnu_mut().unwrap().name[..name.len()].copy_from_slice(name.as_bytes());
-    header.set_entry_type(tar::EntryType::Regular);
-    header.set_size(size as u64);
-    header.set_mode(0o600);
-    header.set_cksum();
-    header
-}
-
 fn bundle_at(dir: &Path, documents_json: &[u8], files: &[(&str, &[u8])]) -> PathBuf {
     let mut contents = vec![entry(DOCUMENTS_ENTRY, documents_json)];
     contents.extend(files.iter().map(|(path, bytes)| entry(path, bytes)));
     let manifest = manifest(contents);
-    let mut builder = tar::Builder::new(Vec::new());
-    for (name, bytes) in [
+    let mut entries = vec![
         (MANIFEST_ENTRY_NAME, manifest.as_slice()),
         (DOCUMENTS_ENTRY, documents_json),
-    ]
-    .into_iter()
-    .chain(files.iter().copied())
-    {
-        builder.append(&header(name, bytes.len()), bytes).unwrap();
-    }
-    let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
-    gz.write_all(&builder.into_inner().unwrap()).unwrap();
-    let path = dir.join(format!("{}.forgebundle", ulid::Ulid::generate()));
-    std::fs::write(&path, gz.finish().unwrap()).unwrap();
-    path
+    ];
+    entries.extend_from_slice(files);
+    common::write_bundle_file(dir, &entries)
 }
 
 fn bundle(dir: &Path, documents: &PackDocuments, files: &[(&str, &[u8])]) -> PathBuf {
@@ -254,20 +201,7 @@ fn bundle(dir: &Path, documents: &PackDocuments, files: &[(&str, &[u8])]) -> Pat
 }
 
 fn overlay_carrying(name: &str) -> OverlayDocument {
-    OverlayDocument {
-        id: "pack-overlay".to_owned(),
-        display_name: "Escaper".to_owned(),
-        kind_id: "overlay.alert".to_owned(),
-        enabled: true,
-        position: 0,
-        config: Default::default(),
-        config_schema_version: 1,
-        source_overrides: vec![name.to_owned()],
-        files: vec![OverlayFileDocument {
-            name: name.to_owned(),
-            file: OVERLAY_FILE.to_owned(),
-        }],
-    }
+    common::overlay_carrying("pack-overlay", OVERLAY_FILE, name)
 }
 
 fn media_claiming(id: &str) -> MediaDocument {
@@ -292,22 +226,6 @@ fn clip_on_media(media_id: &str) -> ClipDocument {
             media_id: media_id.to_owned(),
         },
     }
-}
-
-fn file_named_anywhere(root: &Path, name: &str) -> bool {
-    let mut pending = vec![root.to_path_buf()];
-    while let Some(dir) = pending.pop() {
-        for entry in std::fs::read_dir(&dir).into_iter().flatten() {
-            let path = entry.unwrap().path();
-            if path.file_name().is_some_and(|n| n == name) {
-                return true;
-            }
-            if path.is_dir() {
-                pending.push(path);
-            }
-        }
-    }
-    false
 }
 
 #[tokio::test]

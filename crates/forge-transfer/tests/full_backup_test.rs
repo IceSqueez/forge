@@ -1,4 +1,7 @@
 #![allow(clippy::unwrap_used)]
+mod common;
+use common::{SQLITE_KEY, entry, files_under, sha256_hex};
+
 use std::collections::BTreeMap;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -18,7 +21,6 @@ use forge_transfer::{
     StageRequest, StagedRestore, TransferError, discard_staged_restore, read_bundle_summary,
     restore_staging_root, stage_full_restore, write_full_backup,
 };
-use sha2::{Digest, Sha256};
 use tempfile::TempDir;
 use time::OffsetDateTime;
 
@@ -31,7 +33,6 @@ const MEDIA_ENTRY: &str = "forge/media/clip.ogg";
 const DB_BYTES: &[u8] = b"database bytes";
 const KEY_BYTES: &[u8] = b"thirty-two bytes of credential k";
 const MEDIA_BYTES: &[u8] = b"media bytes";
-const SQLITE_KEY: [u8; 32] = [0x42; 32];
 
 type Expected = fn(&TransferError) -> bool;
 type Archived<'a> = &'a [(&'a str, &'a [u8])];
@@ -64,13 +65,6 @@ fn current_schema() -> Arc<dyn DatabaseFileSchema> {
     )
 }
 
-fn sha256_hex(bytes: &[u8]) -> String {
-    Sha256::digest(bytes)
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect()
-}
-
 fn add_file(builder: &mut tar::Builder<Vec<u8>>, path: &str, bytes: &[u8]) {
     let mut header = tar::Header::new_gnu();
     header.set_entry_type(tar::EntryType::Regular);
@@ -100,9 +94,7 @@ fn tar_gz(build: impl FnOnce(&mut tar::Builder<Vec<u8>>)) -> Vec<u8> {
     let mut builder = tar::Builder::new(Vec::new());
     build(&mut builder);
     let tar = builder.into_inner().unwrap();
-    let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
-    gz.write_all(&tar).unwrap();
-    gz.finish().unwrap()
+    common::gzip(&tar)
 }
 
 fn legacy(build: impl FnOnce(&mut tar::Builder<Vec<u8>>)) -> Vec<u8> {
@@ -121,14 +113,6 @@ fn encrypt(plaintext: &[u8], passphrase: &str) -> Vec<u8> {
     let mut writer = encryptor.wrap_output(Vec::new()).unwrap();
     writer.write_all(plaintext).unwrap();
     writer.finish().unwrap()
-}
-
-fn entry(path: &str, bytes: &[u8]) -> ContentEntry {
-    ContentEntry {
-        path: path.to_owned(),
-        size: bytes.len() as u64,
-        sha256_hex: sha256_hex(bytes),
-    }
 }
 
 fn full_manifest(schema_version: u32, contents: Vec<ContentEntry>) -> Vec<u8> {
@@ -266,27 +250,6 @@ impl Fixture {
     }
 }
 
-fn files_under(root: &Path) -> BTreeMap<String, Vec<u8>> {
-    fn walk(root: &Path, dir: &Path, out: &mut BTreeMap<String, Vec<u8>>) {
-        for child in std::fs::read_dir(dir).unwrap() {
-            let path = child.unwrap().path();
-            if path.is_dir() {
-                walk(root, &path, out);
-            } else {
-                let relative = path
-                    .strip_prefix(root)
-                    .unwrap()
-                    .to_string_lossy()
-                    .into_owned();
-                out.insert(relative, std::fs::read(&path).unwrap());
-            }
-        }
-    }
-    let mut out = BTreeMap::new();
-    walk(root, root, &mut out);
-    out
-}
-
 struct LiveData {
     dir: TempDir,
     provider: Arc<dyn DataProvider>,
@@ -295,11 +258,8 @@ struct LiveData {
 impl LiveData {
     async fn new() -> Self {
         let dir = tempfile::tempdir().unwrap();
-        let url = format!("sqlite://{}", dir.path().join(DATABASE_FILE_NAME).display());
-        let backend =
-            SqliteBackend::open_for_test(&url, SQLITE_KEY, dir.path().join(MEDIA_DIR_NAME), None)
-                .await
-                .unwrap();
+        let url = common::database_url(dir.path());
+        let backend = common::open_backend(dir.path()).await;
         let pool = forge_storage_sqlite::connect(&url).await.unwrap();
         SqliteCredentialsRepo::new_with_key(pool.clone(), SQLITE_KEY)
             .store(&CredentialId::new("twitch:broadcaster"), "token")
@@ -803,9 +763,7 @@ fn previous_writer_layout(data_dir: &Path) -> Vec<u8> {
         .append_dir_all(root.join(MEDIA_DIR_NAME), data_dir.join(MEDIA_DIR_NAME))
         .unwrap();
     let tar = builder.into_inner().unwrap();
-    let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
-    gz.write_all(&tar).unwrap();
-    gz.finish().unwrap()
+    common::gzip(&tar)
 }
 
 #[tokio::test]
@@ -868,11 +826,7 @@ async fn legacy_archive_summary_needs_no_passphrase() {
 #[tokio::test]
 async fn files_that_are_not_bundles_are_refused_as_not_a_bundle() {
     let fx = Fixture::new();
-    let gzip_of_text = {
-        let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
-        gz.write_all(b"plain text, not a tar").unwrap();
-        gz.finish().unwrap()
-    };
+    let gzip_of_text = { common::gzip(b"plain text, not a tar") };
     let cases = [
         ("empty file", Vec::new()),
         ("not gzip", b"PK\x03\x04 zip bytes".to_vec()),

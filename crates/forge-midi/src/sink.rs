@@ -84,11 +84,7 @@ pub(crate) mod tests {
         use crate::backend::tests::MockMidiBackend;
         use crate::config::MidiConfig;
         use crate::events::{MidiPortInfo, PortDirection};
-
-        struct NoopPublisher;
-        impl forge_events::EventPublisher for NoopPublisher {
-            fn publish(&self, _: forge_events::Event) {}
-        }
+        use forge_events::test_support::NullPublisher;
 
         let note = MidiOutMessage::NoteOn {
             note: 60,
@@ -107,7 +103,7 @@ pub(crate) mod tests {
         let before = sink.send_output("Out", &note).await;
         sink.install(MidiClient::start(
             MidiConfig::default(),
-            Arc::new(NoopPublisher),
+            Arc::new(NullPublisher),
             Arc::clone(&backend) as Arc<dyn MidiBackend>,
         ));
         let installed = sink.send_output("Out", &note).await;

@@ -4,16 +4,17 @@ use std::sync::Arc;
 
 use forge_storage::{OverlayConfig, OverlayId, OverlayRepo, StorageError};
 
-use forge_storage_sqlite::{SqliteOverlayRepo, apply_migrations, connect, connect_pools};
+use forge_storage_sqlite::{SqliteOverlayRepo, SqlitePools, apply_migrations, connect_pools};
 use forge_types::OverlayCredential;
 use forge_types::Variant;
 use sqlx::SqlitePool;
 use time::OffsetDateTime;
 
-async fn fresh() -> (SqliteOverlayRepo, SqlitePool) {
-    let pool = connect("sqlite::memory:").await.expect("connect");
-    apply_migrations(&pool).await.expect("apply migrations");
-    (SqliteOverlayRepo::new(pool.clone()), pool)
+mod common;
+
+async fn fresh() -> (SqliteOverlayRepo, common::Sandboxed<SqlitePools>) {
+    let pools = common::migrated_pools().await;
+    (SqliteOverlayRepo::new(pools.clone()), pools)
 }
 
 async fn row_count(pool: &SqlitePool) -> i64 {
@@ -35,7 +36,7 @@ async fn create_mints_the_identity_slug_from_the_display_name() {
         ("!!!", "overlay"),
         ("", "overlay"),
     ] {
-        let (repo, _pool) = fresh().await;
+        let (repo, _pools) = fresh().await;
 
         let created = repo
             .create(display_name, "forge.chat", 1)
@@ -52,7 +53,7 @@ async fn create_mints_the_identity_slug_from_the_display_name() {
 
 #[tokio::test]
 async fn colliding_slugs_take_the_first_free_numeric_suffix() {
-    let (repo, _pool) = fresh().await;
+    let (repo, _pools) = fresh().await;
 
     let first = repo
         .create("Alert Box", "forge.chat", 1)
@@ -87,7 +88,7 @@ async fn colliding_slugs_take_the_first_free_numeric_suffix() {
 
 #[tokio::test]
 async fn create_positions_past_the_highest_survivor_after_deletions() {
-    let (repo, _pool) = fresh().await;
+    let (repo, _pools) = fresh().await;
 
     let first = repo.create("One", "forge.chat", 1).await.expect("one");
     let second = repo.create("Two", "forge.chat", 1).await.expect("two");
@@ -110,7 +111,7 @@ const CONCURRENT_CREATES: usize = 16;
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn concurrent_creates_of_one_name_each_get_their_own_slug_and_position() {
     let dir = tempfile::tempdir().expect("temp dir");
-    let url = format!("sqlite://{}", dir.path().join("forge.db").display());
+    let url = common::database_url(&dir);
     let pools = connect_pools(&url).await.expect("connect");
     apply_migrations(pools.writer())
         .await
@@ -153,7 +154,7 @@ async fn concurrent_creates_of_one_name_each_get_their_own_slug_and_position() {
 
 #[tokio::test]
 async fn renaming_through_save_keeps_the_minted_identity() {
-    let (repo, pool) = fresh().await;
+    let (repo, pools) = fresh().await;
 
     let mut definition = repo
         .create("Alert Box", "forge.chat", 1)
@@ -165,7 +166,7 @@ async fn renaming_through_save_keeps_the_minted_identity() {
     repo.save(&definition).await.expect("save rename");
 
     assert_eq!(
-        row_count(&pool).await,
+        row_count(pools.writer()).await,
         1,
         "rename must not create a new row"
     );
@@ -188,7 +189,7 @@ async fn renaming_through_save_keeps_the_minted_identity() {
 
 #[tokio::test]
 async fn save_round_trips_an_unknown_kind_with_a_sparse_config() {
-    let (repo, _pool) = fresh().await;
+    let (repo, _pools) = fresh().await;
 
     let mut definition = repo
         .create("Round Trip", "forge.chat", 1)
@@ -242,7 +243,7 @@ async fn save_round_trips_an_unknown_kind_with_a_sparse_config() {
 
 #[tokio::test]
 async fn save_preserves_created_at_and_restamps_updated_at() {
-    let (repo, _pool) = fresh().await;
+    let (repo, _pools) = fresh().await;
 
     let mut definition = repo
         .create("Timestamps", "forge.chat", 1)
@@ -272,7 +273,7 @@ async fn save_preserves_created_at_and_restamps_updated_at() {
 
 #[tokio::test]
 async fn saving_a_definition_whose_id_was_never_minted_inserts_nothing() {
-    let (repo, pool) = fresh().await;
+    let (repo, pools) = fresh().await;
 
     let survivor = repo
         .create("Survivor", "forge.chat", 1)
@@ -293,7 +294,11 @@ async fn saving_a_definition_whose_id_was_never_minted_inserts_nothing() {
         matches!(&err, StorageError::NotFound { key } if key == "never-minted"),
         "unexpected error variant: {err:?}"
     );
-    assert_eq!(row_count(&pool).await, 1, "save must not add a row");
+    assert_eq!(
+        row_count(pools.writer()).await,
+        1,
+        "save must not add a row"
+    );
     assert!(
         repo.get(&fabricated.id)
             .await
@@ -318,7 +323,7 @@ async fn saving_a_definition_whose_id_was_never_minted_inserts_nothing() {
 
 #[tokio::test]
 async fn get_by_credential_matches_the_exact_token_only() {
-    let (repo, _pool) = fresh().await;
+    let (repo, _pools) = fresh().await;
 
     let target = repo
         .create("Target", "forge.chat", 1)
@@ -354,7 +359,7 @@ async fn get_by_credential_matches_the_exact_token_only() {
 #[tokio::test]
 async fn a_credential_already_on_disk_resolves_and_round_trips_its_exact_text() {
     const SAVED_CREDENTIAL: &str = "2f8b1d0c9a7e6f5b4c3d2e1f0a9b8c7d";
-    let (repo, pool) = fresh().await;
+    let (repo, pools) = fresh().await;
     let created = repo
         .create("Saved", "forge.chat", 1)
         .await
@@ -362,7 +367,7 @@ async fn a_credential_already_on_disk_resolves_and_round_trips_its_exact_text() 
     sqlx::query("UPDATE overlays SET credential = ? WHERE id = ?")
         .bind(SAVED_CREDENTIAL)
         .bind(created.id.as_str())
-        .execute(&pool)
+        .execute(pools.writer())
         .await
         .expect("plant a saved credential");
 
@@ -375,7 +380,7 @@ async fn a_credential_already_on_disk_resolves_and_round_trips_its_exact_text() 
 
     let on_disk: String = sqlx::query_scalar("SELECT credential FROM overlays WHERE id = ?")
         .bind(created.id.as_str())
-        .fetch_one(&pool)
+        .fetch_one(pools.writer())
         .await
         .expect("read the column");
     assert_eq!(on_disk, SAVED_CREDENTIAL);
@@ -383,7 +388,7 @@ async fn a_credential_already_on_disk_resolves_and_round_trips_its_exact_text() 
 
 #[tokio::test]
 async fn saving_a_duplicate_credential_is_rejected_without_leaking_the_token() {
-    let (repo, pool) = fresh().await;
+    let (repo, pools) = fresh().await;
 
     let first = repo.create("First", "forge.chat", 1).await.expect("first");
     let mut second = repo
@@ -405,12 +410,12 @@ async fn saving_a_duplicate_credential_is_rejected_without_leaking_the_token() {
         !err.to_string().contains(first.credential.expose()),
         "the credential must not appear in the error message"
     );
-    assert_eq!(row_count(&pool).await, 2);
+    assert_eq!(row_count(pools.writer()).await, 2);
 }
 
 #[tokio::test]
 async fn set_enabled_flips_the_stored_flag_and_reports_a_hit() {
-    let (repo, _pool) = fresh().await;
+    let (repo, _pools) = fresh().await;
 
     let definition = repo
         .create("Toggle", "forge.chat", 1)
@@ -434,7 +439,7 @@ async fn set_enabled_flips_the_stored_flag_and_reports_a_hit() {
 
 #[tokio::test]
 async fn set_enabled_reports_a_miss_for_an_unknown_id() {
-    let (repo, _pool) = fresh().await;
+    let (repo, _pools) = fresh().await;
 
     let hit = repo
         .set_enabled(&OverlayId::new("does-not-exist"), true)
@@ -446,7 +451,7 @@ async fn set_enabled_reports_a_miss_for_an_unknown_id() {
 
 #[tokio::test]
 async fn delete_removes_the_row_and_reports_a_hit() {
-    let (repo, pool) = fresh().await;
+    let (repo, pools) = fresh().await;
 
     let definition = repo
         .create("Doomed", "forge.chat", 1)
@@ -454,12 +459,12 @@ async fn delete_removes_the_row_and_reports_a_hit() {
         .expect("create");
 
     assert!(repo.delete(&definition.id).await.expect("delete"));
-    assert_eq!(row_count(&pool).await, 0);
+    assert_eq!(row_count(pools.writer()).await, 0);
 }
 
 #[tokio::test]
 async fn delete_reports_a_miss_for_an_unknown_id() {
-    let (repo, _pool) = fresh().await;
+    let (repo, _pools) = fresh().await;
 
     let hit = repo
         .delete(&OverlayId::new("does-not-exist"))
@@ -471,7 +476,7 @@ async fn delete_reports_a_miss_for_an_unknown_id() {
 
 #[tokio::test]
 async fn list_orders_by_position_then_display_name() {
-    let (repo, _pool) = fresh().await;
+    let (repo, _pools) = fresh().await;
 
     let mut zeta = repo.create("Zeta", "forge.chat", 1).await.expect("zeta");
     let mut beta = repo.create("Beta", "forge.chat", 1).await.expect("beta");
@@ -514,7 +519,7 @@ async fn a_corrupt_row_surfaces_a_parse_error_instead_of_panicking() {
             i64::MAX.to_string(),
         ),
     ] {
-        let (repo, pool) = fresh().await;
+        let (repo, pools) = fresh().await;
         let definition = repo
             .create("Corrupt", "forge.chat", 1)
             .await
@@ -523,7 +528,7 @@ async fn a_corrupt_row_surfaces_a_parse_error_instead_of_panicking() {
         sqlx::query(update_sql)
             .bind(&value)
             .bind(definition.id.as_str())
-            .execute(&pool)
+            .execute(pools.writer())
             .await
             .expect("corrupt the row");
 
@@ -541,10 +546,10 @@ async fn a_corrupt_row_surfaces_a_parse_error_instead_of_panicking() {
 
 #[tokio::test]
 async fn reapplying_migrations_leaves_existing_rows_untouched() {
-    let (repo, pool) = fresh().await;
+    let (repo, pools) = fresh().await;
 
     sqlx::query("INSERT INTO settings (key, value) VALUES ('overlay_host_root', '/srv/overlays')")
-        .execute(&pool)
+        .execute(pools.writer())
         .await
         .expect("seed a pre-existing settings row");
     let definition = repo
@@ -552,11 +557,13 @@ async fn reapplying_migrations_leaves_existing_rows_untouched() {
         .await
         .expect("create");
 
-    apply_migrations(&pool).await.expect("reapply migrations");
+    apply_migrations(pools.writer())
+        .await
+        .expect("reapply migrations");
 
     let setting: Option<String> =
         sqlx::query_scalar("SELECT value FROM settings WHERE key = 'overlay_host_root'")
-            .fetch_optional(&pool)
+            .fetch_optional(pools.writer())
             .await
             .expect("read settings");
     assert_eq!(setting.as_deref(), Some("/srv/overlays"));
@@ -581,7 +588,7 @@ async fn three_overlays(repo: &SqliteOverlayRepo) -> Vec<(OverlayId, OverlayCred
 
 #[tokio::test]
 async fn reissue_all_credentials_retires_every_old_credential_for_a_fresh_distinct_one() {
-    let (repo, _pool) = fresh().await;
+    let (repo, _pools) = fresh().await;
     let before = three_overlays(&repo).await;
 
     let reissued = repo.reissue_all_credentials().await.expect("reissue");
@@ -615,7 +622,7 @@ async fn reissue_all_credentials_retires_every_old_credential_for_a_fresh_distin
 
 #[tokio::test]
 async fn reissue_all_credentials_on_an_empty_store_reissues_nothing() {
-    let (repo, _pool) = fresh().await;
+    let (repo, _pools) = fresh().await;
 
     assert!(
         repo.reissue_all_credentials()
@@ -627,14 +634,14 @@ async fn reissue_all_credentials_on_an_empty_store_reissues_nothing() {
 
 #[tokio::test]
 async fn a_reissue_that_fails_part_way_keeps_every_old_credential() {
-    let (repo, pool) = fresh().await;
+    let (repo, pools) = fresh().await;
     let before = three_overlays(&repo).await;
     assert_eq!(before[1].0.as_str(), "chat");
     sqlx::query(
         "CREATE TRIGGER refuse_reissue BEFORE UPDATE OF credential ON overlays \
          WHEN OLD.id = 'chat' BEGIN SELECT RAISE(ABORT, 'refused'); END",
     )
-    .execute(&pool)
+    .execute(pools.writer())
     .await
     .expect("install failing trigger");
 
@@ -662,7 +669,7 @@ fn refused_field(err: &StorageError) -> Option<&str> {
 
 #[tokio::test]
 async fn create_refuses_a_token_shaped_display_name_and_stores_nothing() {
-    let (repo, pool) = fresh().await;
+    let (repo, pools) = fresh().await;
 
     for shaped in ["fgo_b8f1c07a4e2d", "  FGO_pasted  "] {
         let err = repo
@@ -676,12 +683,16 @@ async fn create_refuses_a_token_shaped_display_name_and_stores_nothing() {
             "{shaped:?} produced {err:?}"
         );
     }
-    assert_eq!(row_count(&pool).await, 0, "a refused create left a row");
+    assert_eq!(
+        row_count(pools.writer()).await,
+        0,
+        "a refused create left a row"
+    );
 }
 
 #[tokio::test]
 async fn create_accepts_a_name_that_only_resembles_the_token_prefix() {
-    let (repo, _pool) = fresh().await;
+    let (repo, _pools) = fresh().await;
 
     let created = repo
         .create("fgo alert", "forge.chat", 1)
@@ -693,7 +704,7 @@ async fn create_accepts_a_name_that_only_resembles_the_token_prefix() {
 
 #[tokio::test]
 async fn renaming_to_a_token_shaped_display_name_is_refused_and_keeps_the_stored_name() {
-    let (repo, _pool) = fresh().await;
+    let (repo, _pools) = fresh().await;
     let mut definition = repo
         .create("Alert Box", "forge.chat", 1)
         .await
@@ -716,7 +727,7 @@ async fn renaming_to_a_token_shaped_display_name_is_refused_and_keeps_the_stored
 
 #[tokio::test]
 async fn the_rename_write_refuses_a_token_shaped_name_and_keeps_the_stored_one() {
-    let (repo, _pool) = fresh().await;
+    let (repo, _pools) = fresh().await;
     let created = repo
         .create("Alert Box", "forge.chat", 1)
         .await
@@ -734,7 +745,7 @@ async fn the_rename_write_refuses_a_token_shaped_name_and_keeps_the_stored_one()
 
 #[tokio::test]
 async fn a_targeted_write_on_an_unknown_id_reports_a_miss() {
-    let (repo, _pool) = fresh().await;
+    let (repo, _pools) = fresh().await;
     let unknown = OverlayId::new("never-minted");
 
     let config_written = repo
@@ -749,7 +760,7 @@ async fn a_targeted_write_on_an_unknown_id_reports_a_miss() {
 
 #[tokio::test]
 async fn a_config_write_changes_only_the_config() {
-    let (repo, _pool) = fresh().await;
+    let (repo, _pools) = fresh().await;
     let created = repo
         .create("Alert Box", "forge.chat", 1)
         .await
@@ -780,7 +791,7 @@ async fn a_config_write_changes_only_the_config() {
 
 #[tokio::test]
 async fn a_rename_changes_only_the_display_name() {
-    let (repo, _pool) = fresh().await;
+    let (repo, _pools) = fresh().await;
     let created = repo
         .create("Alert Box", "forge.chat", 1)
         .await
@@ -807,7 +818,7 @@ async fn a_rename_changes_only_the_display_name() {
 
 #[tokio::test]
 async fn saving_a_token_shaped_identity_is_refused_by_field() {
-    let (repo, _pool) = fresh().await;
+    let (repo, _pools) = fresh().await;
     let mut definition = repo
         .create("Alert Box", "forge.chat", 1)
         .await

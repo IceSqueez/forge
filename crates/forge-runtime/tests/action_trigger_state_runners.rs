@@ -1,5 +1,7 @@
 #![allow(clippy::unwrap_used)]
 mod common;
+use common::repos::InMemoryActionRepo;
+use forge_events::test_support::NullPublisher;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -7,98 +9,16 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use async_trait::async_trait;
-use forge_events::{Event, EventPublisher};
 use forge_registry::{RunContext, SubActionRunner};
 use forge_runtime::sub_action_runners::{
     CoreActionDisableRunner, CoreActionEnableRunner, CoreActionToggleRunner,
     CoreTriggerDisableRunner, CoreTriggerEnableRunner, CoreTriggerToggleRunner,
 };
-use forge_storage::{
-    ActionRepo, ActionTelemetry, ExecutionStatus, StorageError, TriggerInstanceRepo,
-};
+use forge_storage::{ActionRepo, StorageError, TriggerInstanceRepo};
 use forge_types::{
     Action, ActionId, ArgStack, EventId, ExecutionMode, PermissionRung, QueueId, SubActionConfig,
     SubActionOutcome, TriggerInstance, TriggerInstanceId, Variant,
 };
-use time::OffsetDateTime;
-
-struct NullPublisher;
-impl EventPublisher for NullPublisher {
-    fn publish(&self, _event: Event) {}
-}
-
-struct MockActionRepo {
-    map: Mutex<HashMap<ActionId, Action>>,
-    writes: AtomicUsize,
-    fail_writes: bool,
-}
-
-impl MockActionRepo {
-    fn new() -> Self {
-        Self {
-            map: Mutex::new(HashMap::new()),
-            writes: AtomicUsize::new(0),
-            fail_writes: false,
-        }
-    }
-
-    fn failing() -> Self {
-        Self {
-            fail_writes: true,
-            ..Self::new()
-        }
-    }
-
-    fn seed(&self, action: Action) {
-        self.map.lock().unwrap().insert(action.id, action);
-    }
-
-    fn enabled_of(&self, id: ActionId) -> Option<bool> {
-        self.map.lock().unwrap().get(&id).map(|a| a.enabled)
-    }
-
-    fn write_count(&self) -> usize {
-        self.writes.load(Ordering::SeqCst)
-    }
-}
-
-#[async_trait]
-impl ActionRepo for MockActionRepo {
-    async fn list(&self) -> Result<Vec<Action>, StorageError> {
-        Ok(self.map.lock().unwrap().values().cloned().collect())
-    }
-    async fn get(&self, id: ActionId) -> Result<Option<Action>, StorageError> {
-        Ok(self.map.lock().unwrap().get(&id).cloned())
-    }
-    async fn save(&self, action: &Action) -> Result<(), StorageError> {
-        self.writes.fetch_add(1, Ordering::SeqCst);
-        if self.fail_writes {
-            return Err(StorageError::Connection {
-                reason: "forced write failure".to_owned(),
-            });
-        }
-        self.map.lock().unwrap().insert(action.id, action.clone());
-        Ok(())
-    }
-    async fn delete(&self, id: ActionId) -> Result<bool, StorageError> {
-        Ok(self.map.lock().unwrap().remove(&id).is_some())
-    }
-    async fn telemetry(&self, _id: ActionId) -> Result<ActionTelemetry, StorageError> {
-        Ok(ActionTelemetry::default())
-    }
-    async fn record_execution(
-        &self,
-        _action_id: ActionId,
-        _started_at: OffsetDateTime,
-        _duration_ms: u64,
-        _status: ExecutionStatus,
-    ) -> Result<(), StorageError> {
-        Ok(())
-    }
-    async fn prune_executions_before(&self, _cutoff: OffsetDateTime) -> Result<u64, StorageError> {
-        Ok(0)
-    }
-}
 
 struct MockTriggerInstanceRepo {
     map: Mutex<HashMap<TriggerInstanceId, TriggerInstance>>,
@@ -258,7 +178,7 @@ fn trigger_cfg(id: &str) -> SubActionConfig {
     c
 }
 
-fn as_action_repo(repo: &Arc<MockActionRepo>) -> Arc<dyn ActionRepo> {
+fn as_action_repo(repo: &Arc<InMemoryActionRepo>) -> Arc<dyn ActionRepo> {
     repo.clone()
 }
 
@@ -274,13 +194,13 @@ async fn run(runner: &dyn SubActionRunner, config: &SubActionConfig) -> SubActio
 
 #[tokio::test]
 async fn action_enable_and_disable_force_the_persisted_flag() {
-    type Build = fn(Arc<MockActionRepo>) -> Box<dyn SubActionRunner>;
+    type Build = fn(Arc<InMemoryActionRepo>) -> Box<dyn SubActionRunner>;
     let rows: [(Build, bool, bool); 2] = [
         (|r| Box::new(CoreActionEnableRunner::new(r)), false, true),
         (|r| Box::new(CoreActionDisableRunner::new(r)), true, false),
     ];
     for (build, start, expected) in rows {
-        let repo = Arc::new(MockActionRepo::new());
+        let repo = Arc::new(InMemoryActionRepo::new());
         let action = make_action(start);
         let id = action.id;
         repo.seed(action);
@@ -300,7 +220,7 @@ async fn action_enable_and_disable_force_the_persisted_flag() {
 #[tokio::test]
 async fn action_toggle_flips_the_persisted_flag_in_both_directions() {
     for (start, flipped) in [(true, false), (false, true)] {
-        let repo = Arc::new(MockActionRepo::new());
+        let repo = Arc::new(InMemoryActionRepo::new());
         let action = make_action(start);
         let id = action.id;
         repo.seed(action);
@@ -364,14 +284,14 @@ async fn trigger_toggle_flips_the_persisted_flag_in_both_directions() {
 
 #[tokio::test]
 async fn action_runners_fail_and_persist_nothing_for_unknown_id() {
-    type Build = fn(Arc<MockActionRepo>) -> Box<dyn SubActionRunner>;
+    type Build = fn(Arc<InMemoryActionRepo>) -> Box<dyn SubActionRunner>;
     let builds: [Build; 3] = [
         |r| Box::new(CoreActionEnableRunner::new(r)),
         |r| Box::new(CoreActionDisableRunner::new(r)),
         |r| Box::new(CoreActionToggleRunner::new(r)),
     ];
     for build in builds {
-        let repo = Arc::new(MockActionRepo::new());
+        let repo = Arc::new(InMemoryActionRepo::new());
         let missing = ActionId::new();
 
         let runner = build(Arc::clone(&repo));
@@ -434,7 +354,7 @@ fn action_case(
     build: fn(Arc<dyn ActionRepo>) -> Box<dyn SubActionRunner>,
     id: &str,
 ) -> ParseFailureCase {
-    let repo = Arc::new(MockActionRepo::new());
+    let repo = Arc::new(InMemoryActionRepo::new());
     let runner = build(as_action_repo(&repo));
     (runner, action_cfg(id), Box::new(move || repo.write_count()))
 }
@@ -506,7 +426,7 @@ async fn unparseable_id_fails_with_shape_only_text_and_persists_nothing() {
 
 #[tokio::test]
 async fn action_enable_reports_failed_when_save_errors() {
-    let repo = Arc::new(MockActionRepo::failing());
+    let repo = Arc::new(InMemoryActionRepo::failing());
     let action = make_action(false);
     let id = action.id;
     repo.seed(action);

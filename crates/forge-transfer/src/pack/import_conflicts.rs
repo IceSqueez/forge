@@ -175,3 +175,268 @@ fn trigger_name_match(trigger: &TriggerDocument, inventory: &PackInventory) -> O
         })
         .map(|local| local.id.to_string())
 }
+
+#[cfg(test)]
+mod tests {
+    use forge_storage::OverlayId;
+
+    use super::*;
+    use crate::documents::model::{
+        ActionDocument, ClipDocument, ClipSourceDocument, GlobalDocument, MediaDocument,
+        OverlayDocument, QueueDocument, ScriptDocument,
+    };
+    use crate::test_support::{
+        OWNED_TRIGGER, PLAIN_TRIGGER, action, clip, global, no_documents, overlay, queue, script,
+        trigger,
+    };
+    use forge_storage::MediaFormat;
+    use forge_types::{QueueId, TriggerInstanceId};
+
+    fn only_item(documents: &PackDocuments, inventory: &PackInventory) -> DetectedItem {
+        let mut detected = detect_conflicts(documents, inventory);
+        assert_eq!(detected.len(), 1);
+        detected.remove(0)
+    }
+
+    fn trigger_conflict(
+        pack: &forge_types::TriggerInstance,
+        inventory: &PackInventory,
+    ) -> DetectedItem {
+        let mut documents = no_documents();
+        documents.triggers.push(TriggerDocument::of(pack));
+        only_item(&documents, inventory)
+    }
+
+    #[test]
+    fn a_queue_conflict_prefers_the_id_over_the_name() {
+        let local = queue("Alerts");
+        let mut inventory = PackInventory::default();
+        inventory.queues.insert(local.id, local.clone());
+        let renamed = {
+            let mut same_id = local.clone();
+            same_id.name = "Renamed".to_owned();
+            same_id
+        };
+        let cases = [
+            (local.clone(), PackConflict::IdMatch),
+            (renamed, PackConflict::IdMatch),
+            (
+                queue("Alerts"),
+                PackConflict::NameMatch {
+                    local_id: local.id.to_string(),
+                },
+            ),
+            (queue("Elsewhere"), PackConflict::None),
+        ];
+        for (pack, expected) in cases {
+            let mut documents = no_documents();
+            documents.queues.push(QueueDocument::of(&pack, None));
+            assert_eq!(
+                only_item(&documents, &inventory).conflict,
+                expected,
+                "{}",
+                pack.name
+            );
+        }
+    }
+
+    #[test]
+    fn a_script_conflict_reports_an_archived_local_row() {
+        let live = script("live");
+        let archived = script("archived");
+        let mut inventory = PackInventory::default();
+        inventory.scripts.insert(live.name.clone(), live.clone());
+        inventory
+            .archived_scripts
+            .insert(archived.name.clone(), archived.clone());
+        let cases = [
+            (live.clone(), PackConflict::IdMatch, false),
+            (archived.clone(), PackConflict::IdMatch, true),
+            (
+                script("archived"),
+                PackConflict::NameMatch {
+                    local_id: archived.id.to_string(),
+                },
+                true,
+            ),
+            (script("fresh"), PackConflict::None, false),
+        ];
+        for (pack, conflict, is_archived) in cases {
+            let mut documents = no_documents();
+            documents.scripts.push(ScriptDocument::of(&pack));
+            let item = only_item(&documents, &inventory);
+            assert_eq!((item.conflict, item.archived), (conflict, is_archived));
+        }
+    }
+
+    #[test]
+    fn a_global_conflicts_by_name_alone_and_an_archived_one_says_so() {
+        let mut inventory = PackInventory::default();
+        inventory.globals.insert("live".to_owned(), global("live"));
+        inventory
+            .archived_globals
+            .insert("old".to_owned(), global("old"));
+        for (name, conflict, archived) in [
+            ("live", PackConflict::IdMatch, false),
+            ("old", PackConflict::IdMatch, true),
+            ("fresh", PackConflict::None, false),
+        ] {
+            let mut documents = no_documents();
+            documents.globals.push(GlobalDocument::of(&global(name)));
+            let item = only_item(&documents, &inventory);
+            assert_eq!(
+                (item.conflict, item.archived),
+                (conflict, archived),
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_stock_trigger_matches_by_kind_whatever_its_name_is() {
+        let local = trigger(PLAIN_TRIGGER, "Local label", false);
+        let mut inventory = PackInventory::default();
+        inventory.triggers.insert(local.id, local.clone());
+        assert_eq!(
+            trigger_conflict(&trigger(PLAIN_TRIGGER, "Pack label", false), &inventory).conflict,
+            PackConflict::NameMatch {
+                local_id: local.id.to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn a_user_defined_trigger_also_needs_the_same_name_to_match() {
+        let local = trigger(PLAIN_TRIGGER, "Mine", true);
+        let mut inventory = PackInventory::default();
+        inventory.triggers.insert(local.id, local.clone());
+        assert_eq!(
+            trigger_conflict(&trigger(PLAIN_TRIGGER, "Mine", true), &inventory).conflict,
+            PackConflict::NameMatch {
+                local_id: local.id.to_string()
+            }
+        );
+        assert_eq!(
+            trigger_conflict(&trigger(PLAIN_TRIGGER, "Other", true), &inventory).conflict,
+            PackConflict::None
+        );
+    }
+
+    #[test]
+    fn triggers_of_a_different_kind_or_authorship_never_match_by_name() {
+        let local = trigger(PLAIN_TRIGGER, "Same", false);
+        let mut inventory = PackInventory::default();
+        inventory.triggers.insert(local.id, local);
+        for pack in [
+            trigger(OWNED_TRIGGER, "Same", false),
+            trigger(PLAIN_TRIGGER, "Same", true),
+        ] {
+            assert_eq!(
+                trigger_conflict(&pack, &inventory).conflict,
+                PackConflict::None
+            );
+        }
+    }
+
+    #[test]
+    fn an_archived_trigger_with_the_same_id_is_an_id_match() {
+        let local = trigger(PLAIN_TRIGGER, "Gone", false);
+        let mut inventory = PackInventory::default();
+        inventory.archived_triggers.insert(local.id, local.clone());
+        let item = trigger_conflict(&local, &inventory);
+        assert_eq!(
+            (item.conflict, item.archived),
+            (PackConflict::IdMatch, true)
+        );
+    }
+
+    #[test]
+    fn an_action_conflict_covers_live_archived_and_named_rows() {
+        let queue_id = QueueId::new();
+        let live = action("live", queue_id, Vec::new());
+        let archived = action("archived", queue_id, Vec::new());
+        let mut inventory = PackInventory::default();
+        inventory.actions.insert(live.id, live.clone());
+        inventory
+            .archived_actions
+            .insert(archived.id, archived.clone());
+        let cases = [
+            (live.clone(), PackConflict::IdMatch, false),
+            (archived, PackConflict::IdMatch, true),
+            (
+                action("live", queue_id, Vec::new()),
+                PackConflict::NameMatch {
+                    local_id: live.id.to_string(),
+                },
+                false,
+            ),
+            (
+                action("fresh", queue_id, Vec::new()),
+                PackConflict::None,
+                false,
+            ),
+        ];
+        for (pack, conflict, is_archived) in cases {
+            let mut documents = no_documents();
+            documents
+                .actions
+                .push(ActionDocument::of(&pack, Vec::<TriggerInstanceId>::new()));
+            let item = only_item(&documents, &inventory);
+            assert_eq!((item.conflict, item.archived), (conflict, is_archived));
+        }
+    }
+
+    #[test]
+    fn a_clip_and_an_overlay_conflict_by_id_then_by_name() {
+        let local_clip = clip("Ding");
+        let local_overlay = overlay("local-overlay", "Alert box");
+        let mut inventory = PackInventory::default();
+        inventory.clips.insert(local_clip.id, local_clip.clone());
+        inventory
+            .overlays
+            .insert(OverlayId::new("local-overlay"), local_overlay.clone());
+        let mut documents = no_documents();
+        for pack in [local_clip.clone(), clip("Ding")] {
+            documents
+                .clips
+                .push(ClipDocument::of(&pack, ClipSourceDocument::Missing));
+        }
+        for pack in [local_overlay, overlay("pack-overlay", "Alert box")] {
+            documents
+                .overlays
+                .push(OverlayDocument::of(&pack, Vec::new()));
+        }
+        let conflicts: Vec<PackConflict> = detect_conflicts(&documents, &inventory)
+            .into_iter()
+            .map(|item| item.conflict)
+            .collect();
+        assert_eq!(
+            conflicts,
+            [
+                PackConflict::IdMatch,
+                PackConflict::NameMatch {
+                    local_id: local_clip.id.to_string()
+                },
+                PackConflict::IdMatch,
+                PackConflict::NameMatch {
+                    local_id: "local-overlay".to_owned()
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn media_never_conflicts_because_it_is_content_addressed() {
+        let mut documents = no_documents();
+        documents.media.push(MediaDocument {
+            id: "blob".to_owned(),
+            label: "Ding".to_owned(),
+            format: MediaFormat::Ogg,
+            file: "media/blob".to_owned(),
+        });
+        assert_eq!(
+            only_item(&documents, &PackInventory::default()).conflict,
+            PackConflict::None
+        );
+    }
+}

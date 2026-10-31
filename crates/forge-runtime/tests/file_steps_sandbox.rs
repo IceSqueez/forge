@@ -1,10 +1,10 @@
 #![allow(clippy::unwrap_used, clippy::panic)]
 mod common;
+use forge_events::test_support::NullPublisher;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use forge_events::{Event, EventPublisher};
 use forge_registry::{RunContext, SubActionRunner};
 use forge_runtime::sub_action_runners::{
     CoreFileDeleteRunner, CoreFileListRunner, CoreFileReadRunner, CoreFileWriteRunner,
@@ -71,11 +71,6 @@ fn outside_dir() -> PathBuf {
     let dir = run_root().join(format!("outside-{}", NEXT.fetch_add(1, Ordering::Relaxed)));
     std::fs::create_dir_all(&dir).unwrap();
     dir
-}
-
-struct NullPublisher;
-impl EventPublisher for NullPublisher {
-    fn publish(&self, _event: Event) {}
 }
 
 #[derive(Clone, Copy, Debug)]

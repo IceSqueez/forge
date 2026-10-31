@@ -91,13 +91,9 @@ fn to_titlecase(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use forge_events::{Event, EventPublisher};
-    use forge_types::EventId;
+    use forge_events::test_support::NullPublisher;
 
-    struct NullPublisher;
-    impl EventPublisher for NullPublisher {
-        fn publish(&self, _event: Event) {}
-    }
+    use forge_types::EventId;
 
     #[tokio::test]
     async fn titlecase_capitalizes_only_after_whitespace_not_hyphen_or_underscore() {

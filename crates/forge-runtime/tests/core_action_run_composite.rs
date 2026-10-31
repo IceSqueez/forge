@@ -1,89 +1,22 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 mod common;
+use common::repos::InMemoryActionRepo;
 use common::{code_of, failure_message, verbatim_arg};
-use std::collections::{BTreeMap, HashMap};
+use forge_events::test_support::NullPublisher;
+use std::collections::BTreeMap;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use async_trait::async_trait;
-use forge_events::{Event, EventPublisher};
 use forge_registry::{
     CancelSignal, ChainExecutor, ChainSignal, ChildChainOutcome, RegistryError, RunContext,
     SubActionRunner,
 };
 use forge_runtime::sub_action_runners::CoreActionRunRunner;
-use forge_storage::{ActionRepo, ActionTelemetry, ExecutionStatus, StorageError};
 use forge_types::{
     Action, ActionId, ArgStack, EventId, ExecutionMode, QueueId, SubActionConfig, SubActionOutcome,
     SubActionStep, Variant,
 };
-use time::OffsetDateTime;
-
-struct NullPublisher;
-impl EventPublisher for NullPublisher {
-    fn publish(&self, _event: Event) {}
-}
-
-struct MockActionRepo {
-    map: Mutex<HashMap<ActionId, Action>>,
-    fail_get: bool,
-}
-
-impl MockActionRepo {
-    fn new() -> Self {
-        Self {
-            map: Mutex::new(HashMap::new()),
-            fail_get: false,
-        }
-    }
-
-    fn failing_get() -> Self {
-        Self {
-            fail_get: true,
-            ..Self::new()
-        }
-    }
-
-    fn seed(&self, action: Action) {
-        self.map.lock().unwrap().insert(action.id, action);
-    }
-}
-
-#[async_trait]
-impl ActionRepo for MockActionRepo {
-    async fn list(&self) -> Result<Vec<Action>, StorageError> {
-        Ok(self.map.lock().unwrap().values().cloned().collect())
-    }
-    async fn get(&self, id: ActionId) -> Result<Option<Action>, StorageError> {
-        if self.fail_get {
-            return Err(StorageError::Connection {
-                reason: "forced get failure".to_owned(),
-            });
-        }
-        Ok(self.map.lock().unwrap().get(&id).cloned())
-    }
-    async fn save(&self, _action: &Action) -> Result<(), StorageError> {
-        Ok(())
-    }
-    async fn delete(&self, _id: ActionId) -> Result<bool, StorageError> {
-        Ok(false)
-    }
-    async fn telemetry(&self, _id: ActionId) -> Result<ActionTelemetry, StorageError> {
-        Ok(ActionTelemetry::default())
-    }
-    async fn record_execution(
-        &self,
-        _action_id: ActionId,
-        _started_at: OffsetDateTime,
-        _duration_ms: u64,
-        _status: ExecutionStatus,
-    ) -> Result<(), StorageError> {
-        Ok(())
-    }
-    async fn prune_executions_before(&self, _cutoff: OffsetDateTime) -> Result<u64, StorageError> {
-        Ok(0)
-    }
-}
 
 enum ExecResponse {
     Signal(ChainSignal),
@@ -244,7 +177,7 @@ async fn run(
 
 #[tokio::test]
 async fn runs_the_target_actions_sub_actions_as_the_child_chain() {
-    let repo = std::sync::Arc::new(MockActionRepo::new());
+    let repo = std::sync::Arc::new(InMemoryActionRepo::new());
     let target = target_with_steps(&["core.log.write", "twitch.chat.send_message"]);
     let id = target.id;
     repo.seed(target);
@@ -263,7 +196,7 @@ async fn runs_the_target_actions_sub_actions_as_the_child_chain() {
 
 #[tokio::test]
 async fn inherit_args_default_passes_the_parent_arg_stack_to_the_child() {
-    let repo = std::sync::Arc::new(MockActionRepo::new());
+    let repo = std::sync::Arc::new(InMemoryActionRepo::new());
     let target = target_with_steps(&["core.log.write"]);
     let id = target.id;
     repo.seed(target);
@@ -282,7 +215,7 @@ async fn inherit_args_default_passes_the_parent_arg_stack_to_the_child() {
 
 #[tokio::test]
 async fn inherit_args_false_starts_the_child_with_a_fresh_stack() {
-    let repo = std::sync::Arc::new(MockActionRepo::new());
+    let repo = std::sync::Arc::new(InMemoryActionRepo::new());
     let target = target_with_steps(&["core.log.write"]);
     let id = target.id;
     repo.seed(target);
@@ -312,7 +245,7 @@ enum Expect {
 
 #[tokio::test]
 async fn child_signal_maps_to_the_sub_action_outcome() {
-    let repo = std::sync::Arc::new(MockActionRepo::new());
+    let repo = std::sync::Arc::new(InMemoryActionRepo::new());
     let target = target_with_steps(&["core.log.write"]);
     let id = target.id;
     repo.seed(target);
@@ -351,7 +284,7 @@ async fn child_signal_maps_to_the_sub_action_outcome() {
 
 #[tokio::test]
 async fn depth_exceeded_error_maps_to_failed_with_nesting_message() {
-    let repo = std::sync::Arc::new(MockActionRepo::new());
+    let repo = std::sync::Arc::new(InMemoryActionRepo::new());
     let target = target_with_steps(&["core.log.write"]);
     let id = target.id;
     repo.seed(target);
@@ -368,7 +301,7 @@ async fn depth_exceeded_error_maps_to_failed_with_nesting_message() {
 
 #[tokio::test]
 async fn unknown_action_id_fails_without_running_a_child_chain() {
-    let repo = std::sync::Arc::new(MockActionRepo::new());
+    let repo = std::sync::Arc::new(InMemoryActionRepo::new());
     let missing = ActionId::new();
 
     let runner = CoreActionRunRunner::new(repo);
@@ -396,7 +329,7 @@ async fn unknown_action_id_fails_without_running_a_child_chain() {
 
 #[tokio::test]
 async fn a_disabled_target_fails_naming_it_without_running_a_child_chain() {
-    let repo = std::sync::Arc::new(MockActionRepo::new());
+    let repo = std::sync::Arc::new(InMemoryActionRepo::new());
     let mut target = target_with_steps(&["core.log.write"]);
     target.enabled = false;
     let id = target.id;
@@ -415,7 +348,7 @@ async fn a_disabled_target_fails_naming_it_without_running_a_child_chain() {
 #[tokio::test]
 async fn unparseable_action_id_fails_without_running_a_child_chain() {
     const SENTINEL: &str = "not-a-ulid-a-viewer-typed-this";
-    let repo = std::sync::Arc::new(MockActionRepo::new());
+    let repo = std::sync::Arc::new(InMemoryActionRepo::new());
 
     let runner = CoreActionRunRunner::new(repo);
     let executor = MockChainExecutor::completing();
@@ -434,7 +367,7 @@ async fn unparseable_action_id_fails_without_running_a_child_chain() {
 
 #[tokio::test]
 async fn repo_lookup_error_fails_without_running_a_child_chain() {
-    let repo = std::sync::Arc::new(MockActionRepo::failing_get());
+    let repo = std::sync::Arc::new(InMemoryActionRepo::failing_get());
     let id = ActionId::new();
 
     let runner = CoreActionRunRunner::new(repo);
@@ -449,7 +382,7 @@ async fn repo_lookup_error_fails_without_running_a_child_chain() {
 
 #[test]
 fn validate_config_accepts_a_non_empty_action_id() {
-    let runner = CoreActionRunRunner::new(std::sync::Arc::new(MockActionRepo::new()));
+    let runner = CoreActionRunRunner::new(std::sync::Arc::new(InMemoryActionRepo::new()));
     assert!(
         runner
             .validate_config(&cfg("01ARZ3NDEKTSV4RRFFQ69G5FAV"))
@@ -459,14 +392,14 @@ fn validate_config_accepts_a_non_empty_action_id() {
 
 #[test]
 fn validate_config_rejects_empty_or_missing_action_id() {
-    let runner = CoreActionRunRunner::new(std::sync::Arc::new(MockActionRepo::new()));
+    let runner = CoreActionRunRunner::new(std::sync::Arc::new(InMemoryActionRepo::new()));
     assert!(runner.validate_config(&cfg("")).is_err());
     assert!(runner.validate_config(&SubActionConfig::new()).is_err());
 }
 
 #[tokio::test]
 async fn random_pick_target_runs_exactly_one_of_its_steps() {
-    let repo = std::sync::Arc::new(MockActionRepo::new());
+    let repo = std::sync::Arc::new(InMemoryActionRepo::new());
     let mut target = target_with_steps(&["step.a", "step.b", "step.c"]);
     target.execution_mode = ExecutionMode::RandomPick;
     let id = target.id;
@@ -489,7 +422,7 @@ async fn random_pick_target_runs_exactly_one_of_its_steps() {
 
 #[tokio::test]
 async fn random_pick_target_without_steps_succeeds_as_a_no_op() {
-    let repo = std::sync::Arc::new(MockActionRepo::new());
+    let repo = std::sync::Arc::new(InMemoryActionRepo::new());
     let mut target = target_with_steps(&[]);
     target.execution_mode = ExecutionMode::RandomPick;
     let id = target.id;
@@ -503,7 +436,7 @@ async fn random_pick_target_without_steps_succeeds_as_a_no_op() {
 
 #[tokio::test]
 async fn concurrent_target_runs_all_its_steps_as_one_child_chain_in_order() {
-    let repo = std::sync::Arc::new(MockActionRepo::new());
+    let repo = std::sync::Arc::new(InMemoryActionRepo::new());
     let mut target = target_with_steps(&["step.a", "step.b", "step.c"]);
     target.concurrent = true;
     let id = target.id;

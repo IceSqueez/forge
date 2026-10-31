@@ -2,8 +2,9 @@
 mod common;
 
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
-use forge_events::{Event, EventPublisher};
+use forge_events::Event;
 use forge_speak_queue::{
     PipelineConfigHandle, QueueConfig, SpeakCommand, SpeakEvent, SpeakEventStream,
     SpeakQueueHandle, SpeakRequest,
@@ -13,22 +14,18 @@ use forge_speech_types::{EngineId, TtsVoice, VoiceGender, VoiceId};
 use forge_tts_core::TtsRegistry;
 use forge_tts_pipeline::{OutputConfig, PipelineConfig};
 
-use common::{FakeFactory, make_deps, recording_sink, request};
+use common::{
+    FakeFactory, RecordingPublisher, make_deps, outcome_of, recording_bus, recording_sink, request,
+};
 
 const ENGINE: &str = "poly";
+const SPEAK_STARTED: &str = "speak.started";
+const REPORTED_CONFIDENCE_FLOOR: f64 = 0.65;
+const DETECTOR_BUILD_HANG_GUARD: Duration = Duration::from_secs(120);
+const DELAY_BETWEEN_PROBES: Duration = Duration::from_millis(20);
 
 const UKRAINIAN: &str = "добрий вечір, як ваші справи сьогодні";
 const ENGLISH: &str = "good evening everyone, how is the stream going tonight";
-
-struct RecordingPublisher {
-    events: Arc<std::sync::Mutex<Vec<Event>>>,
-}
-
-impl EventPublisher for RecordingPublisher {
-    fn publish(&self, event: Event) {
-        self.events.lock().unwrap().push(event);
-    }
-}
 
 fn localized_voice(id: &str, locale: &str) -> TtsVoice {
     TtsVoice {
@@ -57,7 +54,7 @@ fn spawn_bilingual_queue(
 ) -> (
     SpeakQueueHandle,
     SpeakEventStream,
-    Arc<std::sync::Mutex<Vec<Event>>>,
+    Arc<RecordingPublisher>,
     PipelineConfigHandle,
 ) {
     let voices = vec![
@@ -82,26 +79,16 @@ fn spawn_bilingual_queue(
     );
     deps.pipeline = PipelineConfigHandle::new(config_with(language_aware_voice));
     let pipeline = deps.pipeline.clone();
-    let events = Arc::new(std::sync::Mutex::new(Vec::new()));
-    deps.event_bus = Arc::new(RecordingPublisher {
-        events: Arc::clone(&events),
-    });
+    let (deps, bus) = recording_bus(deps);
 
     let (handle, stream) = forge_speak_queue::spawn(QueueConfig::default(), deps);
-    (handle, stream, events, pipeline)
+    (handle, stream, bus, pipeline)
 }
 
-fn language_of_last_started(events: &Arc<std::sync::Mutex<Vec<Event>>>, text: &str) -> Event {
-    events
-        .lock()
-        .unwrap()
-        .iter()
-        .rfind(|e| {
-            e.kind == "speak.started"
-                && e.payload["text"].as_str() == Some(text)
-                && e.payload["voice_id"].is_string()
-        })
-        .cloned()
+fn language_of_last_started(bus: &RecordingPublisher, text: &str) -> Event {
+    bus.of_kind(SPEAK_STARTED)
+        .into_iter()
+        .rfind(|e| e.payload["text"].as_str() == Some(text) && e.payload["voice_id"].is_string())
         .unwrap_or_else(|| panic!("no resolved speak.started for {text:?}"))
 }
 
@@ -112,52 +99,25 @@ async fn speak_and_settle(
 ) {
     let id = req.request_id.clone();
     handle.send(SpeakCommand::Enqueue(req)).await.unwrap();
-    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(30_000);
-    loop {
-        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
-        if remaining.is_zero() {
-            panic!("timeout waiting for the request to settle");
-        }
-        match tokio::time::timeout(remaining, stream.recv()).await {
-            Ok(Ok(SpeakEvent::Finished { request_id })) if request_id == id => return,
-            Ok(Ok(SpeakEvent::Skipped {
-                request_id,
-                message,
-            })) if request_id == id => {
-                panic!("request was skipped: {message:?}")
-            }
-            Ok(Ok(SpeakEvent::Failed {
-                request_id,
-                message,
-            })) if request_id == id => {
-                panic!("request failed: {message:?}")
-            }
-            Ok(Ok(_)) => continue,
-            Ok(Err(_)) => panic!("stream closed"),
-            Err(_) => panic!("timeout waiting for the request to settle"),
-        }
-    }
+    let outcome = outcome_of(stream, &id).await;
+    assert!(
+        matches!(outcome, SpeakEvent::Finished { .. }),
+        "the request did not finish: {outcome:?}"
+    );
 }
-
-const DETECTOR_READY_BUDGET_MS: u64 = 120_000;
 
 async fn narrowed_voice_for(
     handle: &SpeakQueueHandle,
     stream: &mut SpeakEventStream,
-    events: &Arc<std::sync::Mutex<Vec<Event>>>,
+    bus: &RecordingPublisher,
     text: &str,
 ) -> (String, String, f64) {
-    let deadline =
-        std::time::Instant::now() + std::time::Duration::from_millis(DETECTOR_READY_BUDGET_MS);
-    let mut probes = 0_u32;
+    let hang_guard = Instant::now() + DETECTOR_BUILD_HANG_GUARD;
     loop {
         speak_and_settle(handle, stream, request("nova", text)).await;
-        probes += 1;
-        let found = events
-            .lock()
-            .unwrap()
+        let reported = bus
+            .of_kind(SPEAK_STARTED)
             .iter()
-            .filter(|e| e.kind == "speak.started")
             .filter(|e| e.payload["text"].as_str() == Some(text))
             .find_map(|e| {
                 Some((
@@ -166,33 +126,31 @@ async fn narrowed_voice_for(
                     e.payload["language_confidence"].as_f64()?,
                 ))
             });
-        if let Some(found) = found {
-            return found;
+        if let Some(reported) = reported {
+            return reported;
         }
-        if std::time::Instant::now() >= deadline {
-            panic!(
-                "no speak.started for {text:?} ever reported a detected language \
-                 ({probes} probes over {DETECTOR_READY_BUDGET_MS}ms)"
-            );
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        assert!(
+            Instant::now() < hang_guard,
+            "no speak.started for {text:?} ever reported a detected language"
+        );
+        tokio::time::sleep(DELAY_BETWEEN_PROBES).await;
     }
 }
 
 #[tokio::test]
 async fn a_detected_language_picks_the_voice_that_speaks_it_for_the_same_viewer() {
-    let (handle, mut stream, events, _pipeline) = spawn_bilingual_queue(true);
+    let (handle, mut stream, bus, _pipeline) = spawn_bilingual_queue(true);
 
     let (uk_lang, uk_voice, uk_confidence) =
-        narrowed_voice_for(&handle, &mut stream, &events, UKRAINIAN).await;
+        narrowed_voice_for(&handle, &mut stream, &bus, UKRAINIAN).await;
     assert_eq!(uk_lang, "uk");
     assert_eq!(uk_voice, "poly-uk");
     assert!(
-        uk_confidence >= 0.65,
+        uk_confidence >= REPORTED_CONFIDENCE_FLOOR,
         "a reported detection must clear the confidence floor, got {uk_confidence}"
     );
 
-    let (en_lang, en_voice, _) = narrowed_voice_for(&handle, &mut stream, &events, ENGLISH).await;
+    let (en_lang, en_voice, _) = narrowed_voice_for(&handle, &mut stream, &bus, ENGLISH).await;
     assert_eq!(en_lang, "en");
     assert_eq!(
         en_voice, "poly-en",
@@ -202,22 +160,22 @@ async fn a_detected_language_picks_the_voice_that_speaks_it_for_the_same_viewer(
 
 #[tokio::test]
 async fn toggling_the_preset_on_and_back_off_starts_and_stops_reporting_a_language() {
-    let (handle, mut stream, events, pipeline) = spawn_bilingual_queue(false);
+    let (handle, mut stream, bus, pipeline) = spawn_bilingual_queue(false);
 
     speak_and_settle(&handle, &mut stream, request("nova", UKRAINIAN)).await;
     assert!(
-        language_of_last_started(&events, UKRAINIAN).payload["detected_language"].is_null(),
+        language_of_last_started(&bus, UKRAINIAN).payload["detected_language"].is_null(),
         "the preset is off, so nothing may be detected"
     );
 
     pipeline.swap(config_with(true));
-    let (lang, _, _) = narrowed_voice_for(&handle, &mut stream, &events, UKRAINIAN).await;
+    let (lang, _, _) = narrowed_voice_for(&handle, &mut stream, &bus, UKRAINIAN).await;
     assert_eq!(lang, "uk", "flipping the preset on must build a detector");
 
     pipeline.swap(config_with(false));
     speak_and_settle(&handle, &mut stream, request("nova", ENGLISH)).await;
     assert!(
-        language_of_last_started(&events, ENGLISH).payload["detected_language"].is_null(),
+        language_of_last_started(&bus, ENGLISH).payload["detected_language"].is_null(),
         "flipping the preset back off must stop reporting a language"
     );
 }

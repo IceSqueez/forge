@@ -105,26 +105,17 @@ mod tests {
 
     #[tokio::test]
     async fn execute_interpolates_model_id() {
-        let runner = ModelLoadRunner::new(Arc::new(MockSink::new()));
+        let sink = Arc::new(MockSink::new());
+        let runner = ModelLoadRunner::new(Arc::clone(&sink) as Arc<dyn VTubeSink>);
         let stack = ArgStack::new().set("mid".to_owned(), Variant::String("model-abc".to_owned()));
         let config = BTreeMap::from([("model_id".to_owned(), Variant::String("%mid%".to_owned()))]);
         let ctx = make_ctx(&stack);
         let (tel, extra) = runner.execute(&config, &ctx).await;
         assert_eq!(tel.outcome, SubActionOutcome::Success);
         assert!(extra.is_none());
-    }
-
-    #[tokio::test]
-    async fn execute_returns_success_on_mock_sink() {
-        let runner = ModelLoadRunner::new(Arc::new(MockSink::new()));
-        let stack = ArgStack::new();
-        let config = BTreeMap::from([(
-            "model_id".to_owned(),
-            Variant::String("model-xyz".to_owned()),
-        )]);
-        let ctx = make_ctx(&stack);
-        let (tel, _) = runner.execute(&config, &ctx).await;
-        assert_eq!(tel.outcome, SubActionOutcome::Success);
-        assert_eq!(tel.kind, "vtube.model.load");
+        assert_eq!(
+            sink.strings_sent_to("load_model"),
+            Some(vec!["model-abc".to_owned()]),
+        );
     }
 }

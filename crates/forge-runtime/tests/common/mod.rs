@@ -1,20 +1,102 @@
 #![allow(dead_code, clippy::expect_used, clippy::panic, clippy::unwrap_used)]
 
+pub mod chain;
+pub mod repos;
+pub mod runners;
 pub mod stub_provider;
 
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_events::EventPublisher;
-use forge_overlay::{OverlayKindRegistry, SampleContext, register_builtin_kinds};
+use forge_overlay::{OverlayConfig, OverlayKindRegistry, SampleContext, register_builtin_kinds};
 use forge_registry::SubActionRegistry;
 use forge_runtime::{
     EventBus, FrozenRuntime, LatestValues, NullEventLogRepo, OverlayFrameSink, OverlayReceivers,
-    OverlaySampleSource, RuntimeWiring, RuntimeWiringParts, SystemWallClock,
+    OverlaySampleSource, RuntimeWiring, RuntimeWiringParts, SystemWallClock, WallClock,
 };
-use forge_storage::{DataProvider, OverlayId};
-use forge_types::{MessageArg, MessageRef, Shared, SubActionOutcome, UserText, VerbatimText};
+use forge_storage::{DataProvider, OverlayDefinition, OverlayId};
+use forge_storage_sqlite::SqliteBackend;
+use forge_types::{
+    Action, ActionId, ExecutionMode, MessageArg, MessageRef, OverlayCredential, QueueId, Shared,
+    SubActionOutcome, SubActionStep, UserText, VerbatimText,
+};
 use stub_provider::StubProvider;
+use tempfile::TempDir;
+use time::OffsetDateTime;
+
+pub const TEST_KEY: [u8; 32] = [0xcd; 32];
+pub const BASE_UNIX_SECS: i64 = 1_791_115_200;
+const PAGE_CREDENTIAL: &str = "2f8b1d0c9a7e6f5b4c3d2e1f0a9b8c7d";
+const IN_MEMORY_DATABASE: &str = ":memory:";
+const MEDIA_DIR: &str = "media";
+
+pub async fn sqlite_backend() -> (SqliteBackend, TempDir) {
+    let media = tempfile::tempdir().unwrap();
+    let backend = SqliteBackend::open_for_test(
+        IN_MEMORY_DATABASE,
+        TEST_KEY,
+        media.path().join(MEDIA_DIR),
+        None,
+    )
+    .await
+    .unwrap();
+    (backend, media)
+}
+
+pub fn sequential_action(
+    id: ActionId,
+    name: &str,
+    queue_id: QueueId,
+    sub_actions: Vec<SubActionStep>,
+) -> Action {
+    Action {
+        id,
+        name: name.to_owned(),
+        group: None,
+        queue_id,
+        enabled: true,
+        concurrent: false,
+        bypass_pause: false,
+        execution_mode: ExecutionMode::Sequential,
+        description: None,
+        sub_actions,
+    }
+}
+
+pub fn overlay_definition(
+    id: &str,
+    display_name: &str,
+    kind_id: &str,
+    config: OverlayConfig,
+) -> OverlayDefinition {
+    OverlayDefinition {
+        id: OverlayId::new(id),
+        display_name: display_name.to_owned(),
+        kind_id: kind_id.to_owned(),
+        enabled: true,
+        position: 0,
+        config,
+        config_schema_version: 1,
+        generator_version: 0,
+        source_overrides: Vec::new(),
+        credential: OverlayCredential::new(PAGE_CREDENTIAL),
+        created_at: OffsetDateTime::UNIX_EPOCH,
+        updated_at: OffsetDateTime::UNIX_EPOCH,
+    }
+}
+
+pub fn base() -> OffsetDateTime {
+    OffsetDateTime::from_unix_timestamp(BASE_UNIX_SECS).unwrap()
+}
+
+pub struct FixedClock;
+
+impl WallClock for FixedClock {
+    fn now(&self) -> OffsetDateTime {
+        base()
+    }
+}
 
 pub fn message_of(text: &UserText) -> &MessageRef {
     match text {

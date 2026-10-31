@@ -9,6 +9,8 @@ mod safety_copies;
 mod scheduled;
 mod setup;
 mod staging_sweep;
+#[cfg(test)]
+mod test_support;
 
 pub use bundle::{
     ARCHIVE_ROOT, BUNDLE_EXTENSION, BUNDLE_FORMAT_VERSION, BackupCategory, BundleKind,

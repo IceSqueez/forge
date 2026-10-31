@@ -263,3 +263,281 @@ impl ClosureWalk<'_, '_> {
         });
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use forge_types::{Action, Queue};
+
+    use super::*;
+    use crate::test_support::{
+        ACTION_KEY, CLIP_KEY, FixtureRegistries, GLOBAL_KEY, MEDIA_KEY, OWNED_STEP, OWNED_TRIGGER,
+        PLAIN_STEP, PLAIN_TRIGGER, SCENE_KEY, SCENE_NAMESPACE, SCRIPT_KEY, STEP_OWNER,
+        TRIGGER_OWNER, action, clip, global, queue, script, step, trigger,
+    };
+
+    const BLOB_ID: &str = "sha256-0000000000000000000000000000000000000000000000000000000000000000";
+
+    struct World {
+        inventory: PackInventory,
+        queue: Queue,
+    }
+
+    impl World {
+        fn new() -> Self {
+            let queue = queue("Default");
+            let mut inventory = PackInventory::default();
+            inventory.queues.insert(queue.id, queue.clone());
+            Self { inventory, queue }
+        }
+
+        fn action(&mut self, name: &str, steps: Vec<SubActionStep>) -> Action {
+            let action = action(name, self.queue.id, steps);
+            self.inventory.actions.insert(action.id, action.clone());
+            action
+        }
+
+        fn close_over(&self, roots: &[ActionId]) -> Result<PackSelection, TransferError> {
+            resolve_pack_closure(&self.inventory, FixtureRegistries::new().closure(), roots)
+        }
+    }
+
+    fn unresolved(namespace: InternalNamespace, value: &str) -> PackReference {
+        PackReference {
+            namespace: namespace.as_str().to_owned(),
+            value: value.to_owned(),
+        }
+    }
+
+    #[test]
+    fn no_roots_is_an_empty_pack() {
+        assert!(matches!(
+            World::new().close_over(&[]),
+            Err(TransferError::EmptyPack)
+        ));
+    }
+
+    #[test]
+    fn roots_that_no_longer_exist_are_an_empty_pack() {
+        assert!(matches!(
+            World::new().close_over(&[ActionId::new()]),
+            Err(TransferError::EmptyPack)
+        ));
+    }
+
+    #[test]
+    fn a_root_brings_its_queue_and_only_its_own_triggers() {
+        let mut world = World::new();
+        let root = world.action("Root", Vec::new());
+        let other = world.action("Other", Vec::new());
+        let linked = trigger(PLAIN_TRIGGER, "Linked", false);
+        let foreign = trigger(PLAIN_TRIGGER, "Foreign", false);
+        for (owner, instance) in [(root.id, &linked), (other.id, &foreign)] {
+            world
+                .inventory
+                .triggers
+                .insert(instance.id, instance.clone());
+            world
+                .inventory
+                .action_triggers
+                .insert(owner, vec![instance.id]);
+        }
+        let selection = world.close_over(&[root.id]).unwrap();
+        assert_eq!(
+            (selection.actions, selection.triggers, selection.queues),
+            (
+                BTreeSet::from([root.id]),
+                BTreeSet::from([linked.id]),
+                BTreeSet::from([world.queue.id]),
+            )
+        );
+    }
+
+    #[test]
+    fn a_called_action_is_followed_but_its_triggers_stay_behind() {
+        let mut world = World::new();
+        let called = world.action("Called", Vec::new());
+        let linked = trigger(PLAIN_TRIGGER, "Linked", false);
+        world.inventory.triggers.insert(linked.id, linked.clone());
+        world
+            .inventory
+            .action_triggers
+            .insert(called.id, vec![linked.id]);
+        let called_id = called.id.to_string();
+        let root = world.action(
+            "Root",
+            vec![step(PLAIN_STEP, &[(ACTION_KEY, called_id.as_str())])],
+        );
+        let selection = world.close_over(&[root.id]).unwrap();
+        assert_eq!(selection.actions, BTreeSet::from([root.id, called.id]));
+        assert!(selection.triggers.is_empty());
+    }
+
+    #[test]
+    fn actions_that_call_each_other_terminate() {
+        let mut world = World::new();
+        let first = world.action("First", Vec::new());
+        let first_id = first.id.to_string();
+        let second = world.action(
+            "Second",
+            vec![step(PLAIN_STEP, &[(ACTION_KEY, first_id.as_str())])],
+        );
+        let second_id = second.id.to_string();
+        world
+            .inventory
+            .actions
+            .get_mut(&first.id)
+            .unwrap()
+            .sub_actions = vec![step(PLAIN_STEP, &[(ACTION_KEY, second_id.as_str())])];
+        assert_eq!(
+            world.close_over(&[first.id]).unwrap().actions,
+            BTreeSet::from([first.id, second.id])
+        );
+    }
+
+    #[test]
+    fn step_references_land_in_their_selection_sets() {
+        let mut world = World::new();
+        world
+            .inventory
+            .scripts
+            .insert("greet".to_owned(), script("greet"));
+        world
+            .inventory
+            .globals
+            .insert("score".to_owned(), global("score"));
+        let root = world.action(
+            "Root",
+            vec![step(
+                PLAIN_STEP,
+                &[
+                    (SCRIPT_KEY, "greet"),
+                    (GLOBAL_KEY, "score"),
+                    (SCENE_KEY, "Live"),
+                ],
+            )],
+        );
+        let selection = world.close_over(&[root.id]).unwrap();
+        assert_eq!(
+            (
+                selection.scripts,
+                selection.globals,
+                selection.external_references,
+                selection.unresolved_references,
+            ),
+            (
+                BTreeSet::from(["greet".to_owned()]),
+                BTreeSet::from(["score".to_owned()]),
+                BTreeSet::from([PackReference {
+                    namespace: SCENE_NAMESPACE.to_owned(),
+                    value: "Live".to_owned(),
+                }]),
+                BTreeSet::new(),
+            )
+        );
+    }
+
+    #[test]
+    fn a_dangling_or_archived_reference_is_recorded_not_fatal() {
+        let mut world = World::new();
+        world
+            .inventory
+            .archived_scripts
+            .insert("old".to_owned(), script("old"));
+        let dead_clip = ClipId::new().to_string();
+        let root = world.action(
+            "Root",
+            vec![step(
+                PLAIN_STEP,
+                &[
+                    (SCRIPT_KEY, "old"),
+                    (GLOBAL_KEY, "absent"),
+                    (ACTION_KEY, "not-an-id"),
+                    (CLIP_KEY, dead_clip.as_str()),
+                    (MEDIA_KEY, "not-a-blob"),
+                ],
+            )],
+        );
+        assert_eq!(
+            world.close_over(&[root.id]).unwrap().unresolved_references,
+            BTreeSet::from([
+                unresolved(InternalNamespace::Script, "old"),
+                unresolved(InternalNamespace::Global, "absent"),
+                unresolved(InternalNamespace::Action, "not-an-id"),
+                unresolved(InternalNamespace::SoundboardClip, &dead_clip),
+                unresolved(InternalNamespace::ManagedMedia, "not-a-blob"),
+            ])
+        );
+    }
+
+    #[test]
+    fn a_templated_reference_is_left_for_run_time() {
+        let mut world = World::new();
+        let root = world.action(
+            "Root",
+            vec![step(PLAIN_STEP, &[(SCRIPT_KEY, "%chosen_script%")])],
+        );
+        let selection = world.close_over(&[root.id]).unwrap();
+        assert_eq!(
+            (selection.scripts, selection.unresolved_references),
+            (BTreeSet::new(), BTreeSet::new())
+        );
+    }
+
+    #[test]
+    fn a_clip_brings_its_managed_sound() {
+        let mut world = World::new();
+        let local = clip("Ding");
+        let blob = MediaBlobId::from_stored(BLOB_ID).unwrap();
+        world.inventory.clips.insert(local.id, local.clone());
+        world.inventory.clip_media.insert(local.id, blob.clone());
+        world.inventory.media.insert(
+            blob.clone(),
+            forge_storage::MediaBlob {
+                id: blob.clone(),
+                format: forge_storage::MediaFormat::Ogg,
+                byte_size: 0,
+                label: String::new(),
+                imported_at: time::OffsetDateTime::UNIX_EPOCH,
+            },
+        );
+        let clip_id = local.id.to_string();
+        let root = world.action(
+            "Root",
+            vec![step(PLAIN_STEP, &[(CLIP_KEY, clip_id.as_str())])],
+        );
+        let selection = world.close_over(&[root.id]).unwrap();
+        assert_eq!(
+            (selection.clips, selection.media),
+            (BTreeSet::from([local.id]), BTreeSet::from([blob]))
+        );
+    }
+
+    #[test]
+    fn integrations_come_from_the_owners_of_used_steps_and_triggers() {
+        let mut world = World::new();
+        let root = world.action("Root", vec![step(OWNED_STEP, &[]), step(PLAIN_STEP, &[])]);
+        let linked = trigger(OWNED_TRIGGER, "Linked", false);
+        world.inventory.triggers.insert(linked.id, linked.clone());
+        world
+            .inventory
+            .action_triggers
+            .insert(root.id, vec![linked.id]);
+        assert_eq!(
+            world.close_over(&[root.id]).unwrap().required_integrations,
+            BTreeSet::from([
+                IntegrationId::new(STEP_OWNER),
+                IntegrationId::new(TRIGGER_OWNER),
+            ])
+        );
+    }
+
+    #[test]
+    fn an_unregistered_step_kind_is_carried_as_unknown() {
+        let mut world = World::new();
+        let root = world.action("Root", vec![step("fixture.unknown", &[])]);
+        assert_eq!(
+            world.close_over(&[root.id]).unwrap().unknown_kinds,
+            BTreeSet::from(["fixture.unknown".to_owned()])
+        );
+    }
+}

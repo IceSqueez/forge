@@ -1778,15 +1778,13 @@ mod tests {
 
     use super::*;
     use crate::test_support::{
-        StubEventLog, StubOverlays, TestBackend, pump, pump_until, runtime, stopped_handle,
-        test_backend,
+        StubEventLog, StubOverlays, TestBackend, pump, pump_until, runtime, settle_until,
+        stopped_handle, test_backend,
     };
 
     const STORED_ORIGIN: &str = "http://stored.test:9000";
     const TYPED_ORIGIN: &str = "http://typed.test:9100";
     const RESTART_FAILURE: &str = "address already in use";
-    const SETTLE_ROUNDS: usize = 2_000;
-    const SETTLE_NAP: std::time::Duration = std::time::Duration::from_millis(1);
     const OVERLAY_PAGE: &str = "page.html";
     const EPHEMERAL_PORT: &str = "0";
     const PAGE_SERVED: &str = "200";
@@ -2130,22 +2128,6 @@ mod tests {
         }
     }
 
-    fn settle_until(
-        cx: &mut TestAppContext,
-        rt: &tokio::runtime::Runtime,
-        view: &Entity<SettingsWebSocketView>,
-        done: impl Fn(&SettingsWebSocketView) -> bool,
-    ) {
-        for _ in 0..SETTLE_ROUNDS {
-            settle(cx, rt);
-            if view.read_with(cx, |this, _| done(this)) {
-                return;
-            }
-            rt.block_on(async { tokio::time::sleep(SETTLE_NAP).await });
-        }
-        panic!("the pane never settled");
-    }
-
     fn running_server_serving_one_overlay_page(
         rt: &tokio::runtime::Runtime,
         backend: &Arc<TestBackend>,
@@ -2412,7 +2394,9 @@ mod tests {
             this.request_overlay_token_regenerate(cx);
             this.confirm_overlay_token_regenerate(cx);
         });
-        settle_until(cx, &rt, &view, |this| !this.overlay_token_regenerating);
+        settle_until(cx, &rt, |cx| {
+            view.read_with(cx, |this, _| !this.overlay_token_regenerating)
+        });
 
         let after = live_overlay_token(&rt, &server);
         assert_ne!(
@@ -2446,7 +2430,9 @@ mod tests {
             this.request_overlay_token_regenerate(cx);
             this.confirm_overlay_token_regenerate(cx);
         });
-        settle_until(cx, &rt, &view, |this| !this.overlay_token_regenerating);
+        settle_until(cx, &rt, |cx| {
+            view.read_with(cx, |this, _| !this.overlay_token_regenerating)
+        });
 
         let live = live_overlay_token(&rt, &server);
         assert_ne!(live, before);

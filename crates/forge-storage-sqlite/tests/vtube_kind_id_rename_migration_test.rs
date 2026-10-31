@@ -1,5 +1,6 @@
 #![allow(clippy::expect_used, clippy::panic)]
 
+mod common;
 use forge_storage_sqlite::migrations::apply;
 use forge_storage_sqlite::{MIGRATIONS, connect};
 use sqlx::SqlitePool;
@@ -91,7 +92,7 @@ const ROWS: &[StoredRow] = &[
 ];
 
 fn db_url(dir: &TempDir) -> String {
-    format!("sqlite://{}", dir.path().join("forge.db").display())
+    common::database_url(dir)
 }
 
 async fn insert(pool: &SqlitePool, row: &StoredRow) {

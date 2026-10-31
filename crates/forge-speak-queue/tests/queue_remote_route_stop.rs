@@ -57,7 +57,7 @@ impl RemoteAudioDestination for SilentPage {
     }
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn skipping_an_utterance_on_the_overlay_route_stops_it_on_the_page_exactly_once() {
     let (commands, mut pushed) = mpsc::unbounded_channel();
     let page = Arc::new(SilentPage {

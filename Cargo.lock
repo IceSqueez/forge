@@ -3242,9 +3242,11 @@ name = "forge-transfer"
 version = "0.6.3"
 dependencies = [
  "age",
+ "async-trait",
  "base64 0.23.1",
  "flate2",
  "forge-durable",
+ "forge-events",
  "forge-overlay",
  "forge-paths",
  "forge-registry",

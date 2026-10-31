@@ -3,23 +3,18 @@ use forge_storage::{
     BlocklistMode, DataProvider, FilterRule, FilterRuleKind, SkipRegex, TtsFiltersRepo,
     TtsPipelineSettings, UrlMode,
 };
-use forge_storage_sqlite::{SqliteBackend, SqliteTtsFiltersRepo, apply_migrations};
+use forge_storage_sqlite::{SqliteBackend, SqliteTtsFiltersRepo};
 
 mod common;
-use common::Sandboxed;
+use common::{Sandboxed, TEST_KEY};
 
-const TEST_KEY: [u8; 32] = [0xef; 32];
-
-async fn repo() -> SqliteTtsFiltersRepo {
-    let pool = sqlx::SqlitePool::connect("sqlite::memory:")
-        .await
-        .expect("in-memory pool");
-    apply_migrations(&pool).await.expect("migrations apply");
-    SqliteTtsFiltersRepo::new(pool)
+async fn repo() -> Sandboxed<SqliteTtsFiltersRepo> {
+    let pools = common::migrated_pools().await;
+    pools.map(SqliteTtsFiltersRepo::new)
 }
 
 async fn backend() -> Sandboxed<SqliteBackend> {
-    common::sandboxed_backend("sqlite::memory:", TEST_KEY).await
+    common::migrated_backend(TEST_KEY).await
 }
 
 fn literal_rule(id: &str, pos: u32) -> FilterRule {
@@ -95,11 +90,8 @@ async fn fresh_db_rule_list_is_empty() {
 
 #[tokio::test]
 async fn set_pipeline_settings_is_idempotent_upsert_not_insert() {
-    let pool = sqlx::SqlitePool::connect("sqlite::memory:")
-        .await
-        .expect("pool");
-    apply_migrations(&pool).await.expect("migrations");
-    let r = SqliteTtsFiltersRepo::new(pool.clone());
+    let pools = common::migrated_pools().await;
+    let r = SqliteTtsFiltersRepo::new(pools.clone());
 
     let s1 = TtsPipelineSettings {
         url_mode: UrlMode::Replace,
@@ -114,7 +106,7 @@ async fn set_pipeline_settings_is_idempotent_upsert_not_insert() {
     r.set_pipeline_settings(&s2).await.expect("set 2");
 
     let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM tts_pipeline_settings")
-        .fetch_one(&pool)
+        .fetch_one(pools.writer())
         .await
         .expect("count");
     assert_eq!(count, 1, "must remain a singleton row after two writes");
@@ -336,11 +328,8 @@ async fn replace_rules_with_empty_slice_clears_all_rules() {
 
 #[tokio::test]
 async fn replace_rules_is_atomic_rollback_on_conflict() {
-    let pool = sqlx::SqlitePool::connect("sqlite::memory:")
-        .await
-        .expect("pool");
-    apply_migrations(&pool).await.expect("migrations");
-    let r = SqliteTtsFiltersRepo::new(pool);
+    let pools = common::migrated_pools().await;
+    let r = SqliteTtsFiltersRepo::new(pools.clone());
 
     r.replace_rules(&[literal_rule("stable", 0)])
         .await
@@ -416,19 +405,16 @@ async fn filter_rule_kinds_params_json_round_trip() {
 
 #[tokio::test]
 async fn literal_stored_before_the_inside_words_flag_existed_matches_whole_words() {
-    let pool = sqlx::SqlitePool::connect("sqlite::memory:")
-        .await
-        .expect("in-memory pool");
-    apply_migrations(&pool).await.expect("migrations apply");
+    let pools = common::migrated_pools().await;
     sqlx::query(
         "INSERT INTO tts_filter_rules (id, name, enabled, position, kind, params)
          VALUES ('legacy', 'GG', 1, 0, 'literal', '{\"pattern\":\"gg\",\"replacement\":\"good game\"}')",
     )
-    .execute(&pool)
+    .execute(pools.writer())
     .await
     .expect("insert legacy row");
 
-    let got = SqliteTtsFiltersRepo::new(pool)
+    let got = SqliteTtsFiltersRepo::new(pools.clone())
         .list_rules()
         .await
         .expect("list");

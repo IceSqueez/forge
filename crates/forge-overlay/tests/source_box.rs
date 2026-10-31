@@ -1,4 +1,10 @@
 #![allow(clippy::expect_used)]
+mod common;
+use common::{
+    ALERT_KIND, BLANK_KIND, CHAT_KIND, FRAME_KIND, GOAL_KIND, LATEST_KIND, TICKER_KIND, text,
+    with_kind,
+};
+
 use forge_overlay::config::{
     DESIGN_HEIGHT, DESIGN_SIZE_MAX_PX, DESIGN_SIZE_MIN_PX, DESIGN_WIDTH, ELEMENT_HEIGHT,
     ELEMENT_WIDTH, MARGIN_BOTTOM, MARGIN_LEFT, MARGIN_MAX_PERCENT, MARGIN_MIN_PERCENT,
@@ -6,21 +12,12 @@ use forge_overlay::config::{
     TEXT_SIZE_MIN_PX,
 };
 use forge_overlay::{
-    ContentMargins, DesignSize, OverlayConfig, OverlayError, OverlayKindDescriptor,
-    OverlayKindRegistry, PreviewCanvas, PreviewElement, acknowledge_sizing_notice,
-    effective_overlay_config, element_sizing, register_builtin_kinds, sizing_notice_pending,
-    upgrade_config, validate_overlay_config,
+    ContentMargins, DesignSize, OverlayConfig, OverlayError, OverlayKindDescriptor, PreviewCanvas,
+    PreviewElement, acknowledge_sizing_notice, effective_overlay_config, element_sizing,
+    sizing_notice_pending, upgrade_config, validate_overlay_config,
 };
 use forge_registry::FormField;
 use forge_types::Variant;
-
-const ALERT_KIND: &str = "overlay.alert";
-const BLANK_KIND: &str = "overlay.blank";
-const CHAT_KIND: &str = "overlay.chat";
-const FRAME_KIND: &str = "overlay.frame";
-const GOAL_KIND: &str = "overlay.goal";
-const LATEST_KIND: &str = "overlay.latest";
-const TICKER_KIND: &str = "overlay.ticker";
 
 const ALL_KINDS: [&str; 7] = [
     ALERT_KIND,
@@ -61,23 +58,8 @@ const TEXT_SCALES: &[(&str, &[(u32, f32)])] = &[
     (TICKER_KIND, &[(19, 1.0), (38, 2.0)]),
 ];
 
-fn registry() -> OverlayKindRegistry {
-    let mut reg = OverlayKindRegistry::new();
-    register_builtin_kinds(&mut reg).expect("the builtin overlay kinds register");
-    reg
-}
-
-fn with_kind<T>(kind_id: &str, body: impl FnOnce(&dyn OverlayKindDescriptor) -> T) -> T {
-    let reg = registry();
-    body(reg.get(kind_id).expect("a registered builtin kind"))
-}
-
 fn one(key: &str, value: Variant) -> OverlayConfig {
     OverlayConfig::from([(key.to_owned(), value)])
-}
-
-fn text(value: &str) -> Variant {
-    Variant::String(value.to_owned())
 }
 
 fn int(config: &OverlayConfig, key: &str) -> Option<i64> {

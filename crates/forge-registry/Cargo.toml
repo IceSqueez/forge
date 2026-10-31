@@ -21,4 +21,5 @@ time = { workspace = true }
 tokio = { workspace = true }
 
 [dev-dependencies]
+forge-events = { path = "../forge-events", features = ["test-support"] }
 time = { workspace = true }

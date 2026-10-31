@@ -1634,7 +1634,13 @@ mod tests {
         let cancel_clone = cancel.clone();
         let handle = tokio::spawn(async move { poller.run(cancel_clone).await });
 
-        tokio::time::sleep(Duration::from_millis(100)).await;
+        tokio::time::timeout(Duration::from_secs(30), async {
+            while server.received_requests().await.unwrap().is_empty() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("the poller never reached the API");
         cancel.cancel();
 
         let result = tokio::time::timeout(Duration::from_secs(30), handle)

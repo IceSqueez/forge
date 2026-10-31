@@ -1,6 +1,8 @@
 #![allow(dead_code, clippy::unwrap_used, clippy::panic)]
 
-use std::sync::Arc;
+use forge_events::test_support::NullPublisher;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use async_trait::async_trait;
 use forge_audio::{AudioError, AudioSink};
@@ -19,7 +21,15 @@ use forge_tts_core::{
 };
 use forge_types::EventId;
 
-pub const HANG_GUARD_MS: u64 = 30_000;
+pub const HANG_GUARD: Duration = Duration::from_secs(30);
+const PAUSED_CLOCK_SETTLE: Duration = Duration::from_millis(1);
+
+pub static PLAIN_CAPABILITIES: EngineCapabilities = EngineCapabilities {
+    ssml: false,
+    neural_voices: false,
+    streaming: false,
+    custom_lexicons: false,
+};
 
 pub fn voice(id: &str, engine: &str) -> TtsVoice {
     TtsVoice {
@@ -44,13 +54,7 @@ impl TtsEngine for FakeEngine {
         &self.id
     }
     fn capabilities(&self) -> &EngineCapabilities {
-        static CAPS: EngineCapabilities = EngineCapabilities {
-            ssml: false,
-            neural_voices: false,
-            streaming: false,
-            custom_lexicons: false,
-        };
-        &CAPS
+        &PLAIN_CAPABILITIES
     }
     async fn list_voices(&self) -> Result<Vec<TtsVoice>, TtsError> {
         Ok(self.voices.clone())
@@ -119,9 +123,40 @@ pub fn recording_sink() -> (Arc<dyn AudioSink>, Arc<std::sync::Mutex<usize>>) {
     )
 }
 
-struct NullPublisher;
-impl EventPublisher for NullPublisher {
-    fn publish(&self, _event: Event) {}
+#[derive(Default)]
+pub struct RecordingPublisher {
+    events: Mutex<Vec<Event>>,
+}
+
+impl EventPublisher for RecordingPublisher {
+    fn publish(&self, event: Event) {
+        self.events.lock().unwrap().push(event);
+    }
+}
+
+impl RecordingPublisher {
+    pub fn of_kind(&self, kind: &str) -> Vec<Event> {
+        self.events
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|event| event.kind == kind)
+            .cloned()
+            .collect()
+    }
+
+    pub fn payload_of(&self, kind: &str, request_id: &RequestId) -> Option<serde_json::Value> {
+        self.of_kind(kind)
+            .into_iter()
+            .find(|event| event.payload["request_id"] == request_id.0.as_str())
+            .map(|event| event.payload)
+    }
+}
+
+pub fn recording_bus(deps: QueueDeps) -> (QueueDeps, Arc<RecordingPublisher>) {
+    let bus = Arc::new(RecordingPublisher::default());
+    let event_bus: Arc<dyn EventPublisher> = bus.clone();
+    (QueueDeps { event_bus, ..deps }, bus)
 }
 
 pub fn make_deps(
@@ -145,6 +180,15 @@ pub fn make_deps(
         disabled_engines: std::collections::HashSet::new(),
         engine_gains: std::collections::HashMap::new(),
     }
+}
+
+pub fn standard_deps(sink: Arc<dyn AudioSink>) -> QueueDeps {
+    make_deps(
+        standard_registry(),
+        sink,
+        AssignmentStrategy::DeterministicByName,
+        vec![],
+    )
 }
 
 pub fn alias(viewer_id: &str, engine: &str, voice_id: &str) -> VoiceAlias {
@@ -176,6 +220,13 @@ pub fn request(viewer: &str, text: &str) -> SpeakRequest {
     }
 }
 
+pub fn request_with_priority(viewer: &str, text: &str, priority: Priority) -> SpeakRequest {
+    SpeakRequest {
+        priority,
+        ..request(viewer, text)
+    }
+}
+
 pub fn request_with_overrides(
     viewer: &str,
     engine_override: Option<&str>,
@@ -188,23 +239,44 @@ pub fn request_with_overrides(
     }
 }
 
+pub async fn next_event(stream: &mut SpeakEventStream) -> SpeakEvent {
+    match tokio::time::timeout(HANG_GUARD, stream.recv()).await {
+        Ok(Ok(event)) => event,
+        Ok(Err(error)) => panic!("speak event stream ended: {error:?}"),
+        Err(_) => panic!("no SpeakEvent arrived within the hang guard"),
+    }
+}
+
+pub async fn next_matching<F>(stream: &mut SpeakEventStream, pred: F) -> SpeakEvent
+where
+    F: Fn(&SpeakEvent) -> bool,
+{
+    loop {
+        let event = next_event(stream).await;
+        if pred(&event) {
+            return event;
+        }
+    }
+}
+
 pub async fn wait_for<F>(stream: &mut SpeakEventStream, pred: F)
 where
     F: Fn(&SpeakEvent) -> bool,
 {
-    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(HANG_GUARD_MS);
-    loop {
-        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
-        if remaining.is_zero() {
-            panic!("timeout waiting for expected SpeakEvent");
-        }
-        match tokio::time::timeout(remaining, stream.recv()).await {
-            Ok(Ok(ref ev)) if pred(ev) => return,
-            Ok(Ok(_)) => continue,
-            Ok(Err(_)) => panic!("stream closed"),
-            Err(_) => panic!("timeout waiting for expected SpeakEvent"),
-        }
+    next_matching(stream, pred).await;
+}
+
+pub fn is_outcome_of(event: &SpeakEvent, id: &RequestId) -> bool {
+    match event {
+        SpeakEvent::Finished { request_id }
+        | SpeakEvent::Failed { request_id, .. }
+        | SpeakEvent::Skipped { request_id, .. } => request_id == id,
+        _ => false,
     }
+}
+
+pub async fn outcome_of(stream: &mut SpeakEventStream, id: &RequestId) -> SpeakEvent {
+    next_matching(stream, |event| is_outcome_of(event, id)).await
 }
 
 pub async fn enqueue_proving_nothing_started(
@@ -217,78 +289,59 @@ pub async fn enqueue_proving_nothing_started(
         .send(forge_speak_queue::SpeakCommand::Enqueue(proof))
         .await
         .unwrap();
-    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(HANG_GUARD_MS);
     loop {
-        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
-        match tokio::time::timeout(remaining, stream.recv()).await {
-            Ok(Ok(SpeakEvent::Started { .. })) => panic!("an item started while it was held"),
-            Ok(Ok(SpeakEvent::Enqueued { request_id, .. })) if request_id == proof_id => return,
-            Ok(Ok(_)) => continue,
-            Ok(Err(_)) => panic!("stream closed"),
-            Err(_) => panic!("timeout waiting for the proof item"),
+        match next_event(stream).await {
+            SpeakEvent::Started { .. } => panic!("an item started while it was held"),
+            SpeakEvent::Enqueued { request_id, .. } if request_id == proof_id => return,
+            _ => {}
         }
     }
 }
 
 pub async fn first_started_ids(stream: &mut SpeakEventStream, count: usize) -> Vec<RequestId> {
     let mut seen: Vec<RequestId> = Vec::new();
-    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(HANG_GUARD_MS);
     while seen.len() < count {
-        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
-        if remaining.is_zero() {
-            panic!("only saw {} of {count} Started request ids", seen.len());
-        }
-        match tokio::time::timeout(remaining, stream.recv()).await {
-            Ok(Ok(SpeakEvent::Started { request_id, .. })) => {
-                if !seen.contains(&request_id) {
-                    seen.push(request_id);
-                }
-            }
-            Ok(Ok(_)) => continue,
-            Ok(Err(_)) => panic!("stream closed"),
-            Err(_) => panic!("timeout waiting for Started events"),
+        if let SpeakEvent::Started { request_id, .. } = next_event(stream).await
+            && !seen.contains(&request_id)
+        {
+            seen.push(request_id);
         }
     }
     seen
 }
 
 pub async fn wait_for_resolved_voice(stream: &mut SpeakEventStream) -> (String, String) {
-    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(HANG_GUARD_MS);
     loop {
-        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
-        if remaining.is_zero() {
-            panic!("timeout waiting for resolved Started event");
-        }
-        match tokio::time::timeout(remaining, stream.recv()).await {
-            Ok(Ok(SpeakEvent::Started {
-                voice_id: Some(voice_id),
-                engine_id: Some(engine_id),
-                ..
-            })) => return (voice_id.0, engine_id.0),
-            Ok(Ok(_)) => continue,
-            Ok(Err(_)) => panic!("stream closed"),
-            Err(_) => panic!("timeout waiting for resolved Started event"),
+        if let SpeakEvent::Started {
+            voice_id: Some(voice_id),
+            engine_id: Some(engine_id),
+            ..
+        } = next_event(stream).await
+        {
+            return (voice_id.0, engine_id.0);
         }
     }
 }
 
-pub async fn assert_no_event<F>(stream: &mut SpeakEventStream, pred: F, window_ms: u64)
+pub async fn settle_on_paused_clock() {
+    tokio::time::sleep(PAUSED_CLOCK_SETTLE).await;
+}
+
+pub async fn drain_once_settled_on_paused_clock(stream: &mut SpeakEventStream) -> Vec<SpeakEvent> {
+    let mut drained = Vec::new();
+    while let Ok(received) = tokio::time::timeout(PAUSED_CLOCK_SETTLE, stream.recv()).await {
+        drained.push(received.unwrap());
+    }
+    drained
+}
+
+pub async fn assert_no_event_once_settled_on_paused_clock<F>(stream: &mut SpeakEventStream, pred: F)
 where
     F: Fn(&SpeakEvent) -> bool,
 {
-    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(window_ms);
-    loop {
-        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
-        if remaining.is_zero() {
-            return;
-        }
-        match tokio::time::timeout(remaining, stream.recv()).await {
-            Ok(Ok(ref ev)) if pred(ev) => panic!("unexpected event arrived within window"),
-            Ok(Ok(_)) => continue,
-            Ok(Err(_)) => return,
-            Err(_) => return,
-        }
-    }
+    let drained = drain_once_settled_on_paused_clock(stream).await;
+    let unexpected: Vec<&SpeakEvent> = drained.iter().filter(|event| pred(event)).collect();
+    assert!(unexpected.is_empty(), "unexpected events: {unexpected:?}");
 }
 
 pub fn neutral_output() -> forge_tts_pipeline::OutputConfig {

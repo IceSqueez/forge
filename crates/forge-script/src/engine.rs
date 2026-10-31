@@ -321,50 +321,35 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn with_api_forge_sleep_waits_and_returns() {
+    async fn with_api_forge_sleep_waits_at_least_the_requested_time() {
+        const REQUESTED_MS: u64 = 5;
         let dp = open_test_dp().await;
-        let engine = Engine::with_api(
-            EngineConfig {
-                op_limit: 100_000,
-                wall_time_ms: 30_000,
-            },
-            make_api_with_wall_ms(dp.clone(), 30_000),
-        );
+        let engine = Engine::with_api(unhurried(), make_api(dp.clone()));
         let before = std::time::Instant::now();
         tokio::task::spawn_blocking(move || {
-            drop(engine.eval_script("forge::sleep(80)").unwrap());
+            drop(
+                engine
+                    .eval_script(&format!("forge::sleep({REQUESTED_MS})"))
+                    .unwrap(),
+            );
         })
         .await
         .unwrap();
-        assert!(
-            before.elapsed().as_millis() >= 80,
-            "sleep must pause at least 80ms",
-        );
+        assert!(before.elapsed() >= std::time::Duration::from_millis(REQUESTED_MS));
     }
 
     #[tokio::test]
-    async fn sleep_clamped_to_remaining_wall_budget() {
+    async fn a_script_that_keeps_sleeping_is_refused_once_the_budget_is_spent() {
+        const BUDGET_MS: u64 = 5;
         let dp = open_test_dp().await;
-        let wall_ms = 200_u64;
-        let engine = Engine::with_api(
-            EngineConfig {
-                op_limit: 100_000,
-                wall_time_ms: wall_ms,
-            },
-            make_api_with_wall_ms(dp.clone(), wall_ms),
-        );
-        let start = std::time::Instant::now();
-        let result = tokio::task::spawn_blocking(move || engine.eval_script("forge::sleep(5000)"))
-            .await
-            .unwrap();
-        let elapsed = start.elapsed();
+        let engine = Engine::with_api(unhurried(), make_api_with_wall_ms(dp.clone(), BUDGET_MS));
+        let result =
+            tokio::task::spawn_blocking(move || engine.eval_script("loop { forge::sleep(1) }"))
+                .await
+                .unwrap();
         assert!(
-            result.is_ok() || result.is_err(),
-            "sleep with tight budget must not hang"
-        );
-        assert!(
-            elapsed.as_millis() < 5_500,
-            "sleep(5000) with 200ms budget must not sleep the full 5s, elapsed={elapsed:?}"
+            matches!(&result, Err(ScriptError::Runtime { reason }) if reason.contains("deadline exceeded")),
+            "{result:?}"
         );
     }
 
@@ -387,7 +372,7 @@ mod tests {
             .await
             .unwrap();
         assert!(
-            result.is_err(),
+            matches!(&result, Err(ScriptError::Runtime { reason }) if reason.contains("deadline exceeded")),
             "sleep with already-expired deadline must return error, got: {result:?}"
         );
     }
@@ -487,8 +472,11 @@ mod tests {
             .await
             .unwrap();
         assert!(
-            result.is_err(),
-            "infinite loop must terminate with an error"
+            matches!(
+                result,
+                Err(ScriptError::Timeout { .. } | ScriptError::OperationLimit { .. })
+            ),
+            "infinite loop must end at a sandbox limit, got: {result:?}"
         );
     }
 

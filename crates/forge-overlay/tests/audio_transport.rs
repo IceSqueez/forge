@@ -1,4 +1,7 @@
 #![allow(clippy::panic)]
+mod common;
+use common::BLANK_KIND;
+
 use std::collections::BTreeSet;
 
 use forge_overlay::{
@@ -297,7 +300,7 @@ fn the_blank_look_registers_no_content_handler_of_its_own() {
     let mut reg = OverlayKindRegistry::new();
     register_builtin_kinds(&mut reg).expect("the builtin overlay kinds register");
     let assets = reg
-        .get("overlay.blank")
+        .get(BLANK_KIND)
         .expect("the blank look ships in this build")
         .page_assets();
 

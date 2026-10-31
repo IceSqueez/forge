@@ -122,7 +122,8 @@ mod tests {
 
     #[tokio::test]
     async fn execute_interpolates_expression_file() {
-        let runner = ExpressionSetRunner::new(Arc::new(MockSink::new()));
+        let sink = Arc::new(MockSink::new());
+        let runner = ExpressionSetRunner::new(Arc::clone(&sink) as Arc<dyn VTubeSink>);
         let stack = ArgStack::new().set(
             "expr".to_owned(),
             Variant::String("blink.exp3.json".to_owned()),
@@ -138,22 +139,9 @@ mod tests {
         let (tel, extra) = runner.execute(&config, &ctx).await;
         assert_eq!(tel.outcome, SubActionOutcome::Success);
         assert!(extra.is_none());
-    }
-
-    #[tokio::test]
-    async fn execute_returns_success_on_mock_sink() {
-        let runner = ExpressionSetRunner::new(Arc::new(MockSink::new()));
-        let stack = ArgStack::new();
-        let config = BTreeMap::from([
-            (
-                "expression_file".to_owned(),
-                Variant::String("smile.exp3.json".to_owned()),
-            ),
-            ("active".to_owned(), Variant::Bool(false)),
-        ]);
-        let ctx = make_ctx(&stack);
-        let (tel, _) = runner.execute(&config, &ctx).await;
-        assert_eq!(tel.outcome, SubActionOutcome::Success);
-        assert_eq!(tel.kind, "vtube.expression.set");
+        assert_eq!(
+            sink.strings_sent_to("set_expression"),
+            Some(vec!["blink.exp3.json".to_owned()]),
+        );
     }
 }

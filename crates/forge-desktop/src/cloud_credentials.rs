@@ -995,12 +995,17 @@ fn nonempty(input: &Entity<TextInput>, cx: &App) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use forge_storage::Language;
+    use std::sync::Mutex;
+
+    use forge_components::ToastKind;
     use forge_storage::credentials::MockCredentialsRepo;
+    use forge_storage::{Language, StorageError};
     use gpui::TestAppContext;
 
     use super::*;
-    use crate::test_support::{alive_tasks, install_presentation, pump_until, runtime};
+    use crate::test_support::{
+        alive_tasks, install_presentation, pump_until, runtime, settle_until_tasks_drain_to,
+    };
 
     const ENGINES: [CloudEngineKind; 4] = [
         CloudEngineKind::Azure,
@@ -1150,5 +1155,233 @@ mod tests {
             view.read_with(cx, |this, _| status_of(this, CloudEngineKind::Azure)),
             TestStatus::Err(_)
         ));
+    }
+
+    const PADDED_VALUE: &str = "  stored-value  ";
+    const TRIMMED_VALUE: &str = "\"stored-value\"";
+    const BLANK_VALUE: &str = "   ";
+    const STORE_FAILURE: &str = "credential vault is locked";
+
+    type StoredCredentials = Arc<Mutex<Vec<(String, String)>>>;
+
+    struct Rig {
+        rt: tokio::runtime::Runtime,
+        view: Entity<CloudCredentialsView>,
+        registry: Arc<RwLock<TtsRegistry>>,
+        stored: StoredCredentials,
+        registered: Arc<Mutex<Vec<EngineId>>>,
+    }
+
+    fn rig_with(
+        cx: &mut TestAppContext,
+        registered_on: Option<()>,
+        store: Result<(), &'static str>,
+    ) -> Rig {
+        let rt = runtime();
+        crate::i18n::install_language(Language::En);
+        install_presentation(cx);
+        cx.update(|cx| cx.set_global(forge_components::Toasts::new()));
+        let stored = StoredCredentials::default();
+        let recorded = Arc::clone(&stored);
+        let mut repo = MockCredentialsRepo::new();
+        repo.expect_store().returning(move |id, json| {
+            store.map_err(|reason| StorageError::Connection {
+                reason: reason.to_owned(),
+            })?;
+            recorded
+                .lock()
+                .unwrap()
+                .push((id.as_str().to_owned(), json.to_owned()));
+            Ok(())
+        });
+        let registry = Arc::new(RwLock::new(TtsRegistry::new()));
+        let handed = registered_on.map(|()| Arc::clone(&registry));
+        let handle = rt.handle().clone();
+        let view = cx.new(|cx| {
+            CloudCredentialsView::new(
+                handed,
+                CloudGateways::new(),
+                Arc::new(repo),
+                handle,
+                None,
+                cx,
+            )
+        });
+        let registered = Arc::new(Mutex::new(Vec::new()));
+        let heard = Arc::clone(&registered);
+        cx.update(|cx| {
+            cx.subscribe(&view, move |_, event: &CloudEngineRegistered, _| {
+                heard.lock().unwrap().push(event.0.clone());
+            })
+            .detach();
+        });
+        Rig {
+            rt,
+            view,
+            registry,
+            stored,
+            registered,
+        }
+    }
+
+    fn required_fields(
+        this: &CloudCredentialsView,
+        kind: CloudEngineKind,
+    ) -> Vec<Entity<TextInput>> {
+        match kind {
+            CloudEngineKind::Azure => vec![this.azure.api_key.clone(), this.azure.region.clone()],
+            CloudEngineKind::ElevenLabs => vec![this.elevenlabs.api_key.clone()],
+            CloudEngineKind::OpenAI => vec![this.openai.api_key.clone()],
+            CloudEngineKind::Polly => vec![
+                this.polly.access_key.clone(),
+                this.polly.secret_key.clone(),
+                this.polly.region.clone(),
+            ],
+        }
+    }
+
+    fn fill(rig: &Rig, kind: CloudEngineKind, value: &str, cx: &mut TestAppContext) {
+        rig.view.update(cx, |this, cx| {
+            for field in required_fields(this, kind) {
+                field.update(cx, |input, cx| input.set_content(value, cx));
+            }
+        });
+        cx.run_until_parked();
+    }
+
+    fn dirty(this: &CloudCredentialsView, kind: CloudEngineKind) -> bool {
+        match kind {
+            CloudEngineKind::Azure => this.azure.dirty,
+            CloudEngineKind::ElevenLabs => this.elevenlabs.dirty,
+            CloudEngineKind::OpenAI => this.openai.dirty,
+            CloudEngineKind::Polly => this.polly.dirty,
+        }
+    }
+
+    fn save_and_settle(rig: &Rig, kind: CloudEngineKind, cx: &mut TestAppContext) {
+        let background_tasks = alive_tasks(&rig.rt);
+        rig.view.update(cx, |this, cx| this.save(kind, cx));
+        settle_until_tasks_drain_to(cx, &rig.rt, background_tasks);
+    }
+
+    fn toast_kinds(cx: &mut TestAppContext) -> Vec<(ToastKind, String)> {
+        cx.update(|cx| {
+            cx.global::<forge_components::Toasts>()
+                .items()
+                .iter()
+                .map(|toast| (toast.kind, toast.message.to_string()))
+                .collect()
+        })
+    }
+
+    #[gpui::test]
+    fn every_required_field_left_blank_refuses_the_credentials(cx: &mut TestAppContext) {
+        let rig = rig_with(cx, Some(()), Ok(()));
+
+        for kind in ENGINES {
+            fill(&rig, kind, PADDED_VALUE, cx);
+            let fields = rig
+                .view
+                .read_with(cx, |this, _| required_fields(this, kind));
+            let complete = rig
+                .view
+                .read_with(cx, |this, cx| this.build_creds(kind, cx).is_some());
+            assert!(complete, "{kind:?} refused a complete form");
+            for blanked in fields {
+                let kept = blanked.read_with(cx, |input, _| input.content().to_owned());
+                blanked.update(cx, |input, cx| input.set_content(BLANK_VALUE, cx));
+                let refused = rig
+                    .view
+                    .read_with(cx, |this, cx| this.build_creds(kind, cx).is_none());
+                blanked.update(cx, |input, cx| input.set_content(&kept, cx));
+
+                assert!(refused, "{kind:?} accepted a blank required field");
+            }
+        }
+    }
+
+    #[gpui::test]
+    fn a_blank_form_neither_stores_nor_probes(cx: &mut TestAppContext) {
+        let rig = rig_with(cx, Some(()), Ok(()));
+
+        for kind in ENGINES {
+            fill(&rig, kind, BLANK_VALUE, cx);
+            rig.view.update(cx, |this, cx| this.test(kind, cx));
+            save_and_settle(&rig, kind, cx);
+
+            let status = rig.view.read_with(cx, |this, _| status_of(this, kind));
+            assert_eq!(status, TestStatus::Idle, "{kind:?}");
+        }
+        assert_eq!(rig.stored.lock().unwrap().len(), 0);
+    }
+
+    #[gpui::test]
+    fn saving_stores_trimmed_values_under_the_engines_id_and_puts_it_live(cx: &mut TestAppContext) {
+        let rig = rig_with(cx, Some(()), Ok(()));
+
+        for kind in ENGINES {
+            fill(&rig, kind, PADDED_VALUE, cx);
+            edit_key(&rig.view, kind, cx);
+            save_and_settle(&rig, kind, cx);
+
+            let (id, json) = rig.stored.lock().unwrap().last().cloned().unwrap();
+            assert_eq!(id, kind.credential_id());
+            assert!(json.contains(TRIMMED_VALUE), "{kind:?} stored {json}");
+            assert!(!json.contains(PADDED_VALUE), "{kind:?} stored {json}");
+            let (registered, clean) = rig
+                .view
+                .read_with(cx, |this, _| (this.is_registered(kind), !dirty(this, kind)));
+            assert_eq!((registered, clean), (true, true), "{kind:?}");
+        }
+        let mut heard = rig.registered.lock().unwrap().clone();
+        heard.sort_by(|a, b| a.0.cmp(&b.0));
+        assert_eq!(heard, rig.registry.read().unwrap().engine_ids());
+        assert_eq!(heard.len(), ENGINES.len());
+    }
+
+    #[gpui::test]
+    fn a_failed_store_toasts_keeps_the_form_dirty_and_goes_live_nowhere(cx: &mut TestAppContext) {
+        let rig = rig_with(cx, Some(()), Err(STORE_FAILURE));
+        let kind = CloudEngineKind::OpenAI;
+        fill(&rig, kind, PADDED_VALUE, cx);
+        edit_key(&rig.view, kind, cx);
+
+        save_and_settle(&rig, kind, cx);
+
+        let (registered, still_dirty) = rig
+            .view
+            .read_with(cx, |this, _| (this.is_registered(kind), dirty(this, kind)));
+        let toasts = toast_kinds(cx);
+        assert_eq!(
+            (
+                registered,
+                still_dirty,
+                rig.registered.lock().unwrap().len()
+            ),
+            (false, true, 0)
+        );
+        assert!(
+            matches!(toasts.as_slice(), [(ToastKind::Error, _)]),
+            "{toasts:?}"
+        );
+    }
+
+    #[gpui::test]
+    fn saving_with_no_registry_stores_without_claiming_the_engine_is_live(cx: &mut TestAppContext) {
+        let rig = rig_with(cx, None, Ok(()));
+        let kind = CloudEngineKind::ElevenLabs;
+        fill(&rig, kind, PADDED_VALUE, cx);
+
+        save_and_settle(&rig, kind, cx);
+
+        let registered = rig.view.read_with(cx, |this, _| this.is_registered(kind));
+        assert_eq!(
+            (
+                registered,
+                rig.stored.lock().unwrap().len(),
+                rig.registered.lock().unwrap().len()
+            ),
+            (false, 1, 0)
+        );
     }
 }

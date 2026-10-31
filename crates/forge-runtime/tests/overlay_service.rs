@@ -138,20 +138,7 @@ fn tagged_variant_nodes(value: &serde_json::Value) -> Vec<serde_json::Value> {
 }
 
 fn definition(id: &str) -> OverlayDefinition {
-    OverlayDefinition {
-        id: OverlayId::new(id),
-        display_name: "Sub alert".to_owned(),
-        kind_id: ALERT_KIND.to_owned(),
-        enabled: true,
-        position: 0,
-        config: OverlayConfig::new(),
-        config_schema_version: 1,
-        generator_version: 0,
-        source_overrides: Vec::new(),
-        credential: OverlayCredential::new("2f8b1d0c9a7e6f5b4c3d2e1f0a9b8c7d"),
-        created_at: OffsetDateTime::UNIX_EPOCH,
-        updated_at: OffsetDateTime::UNIX_EPOCH,
-    }
+    common::overlay_definition(id, "Sub alert", ALERT_KIND, OverlayConfig::new())
 }
 
 type RetainedStore = Arc<Mutex<Vec<(OverlayId, OverlayConfig)>>>;

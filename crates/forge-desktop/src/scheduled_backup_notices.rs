@@ -191,9 +191,7 @@ mod tests {
 
     use super::*;
     use crate::i18n::install_language;
-    use crate::test_support::{pump, runtime};
-
-    const SETTLE_ROUNDS: usize = 2000;
+    use crate::test_support::{pump, runtime, settle_until};
 
     fn streak(since_offset_mins: i64, attempts: u32) -> FailureStreak {
         FailureStreak {
@@ -322,7 +320,8 @@ mod tests {
             cx.spawn(async move |cx| drain_failures(rx, notify, handle, navigator, cx).await)
                 .detach();
         });
-        settle(cx, &rt, |_, _| true);
+        pump(&rt);
+        cx.run_until_parked();
         Drain {
             rt,
             tx,
@@ -346,23 +345,6 @@ mod tests {
         })
     }
 
-    fn settle(
-        cx: &mut TestAppContext,
-        rt: &tokio::runtime::Runtime,
-        done: impl Fn(&mut TestAppContext, &tokio::runtime::Runtime) -> bool,
-    ) {
-        for _ in 0..SETTLE_ROUNDS {
-            pump(rt);
-            cx.run_until_parked();
-            if done(cx, rt) {
-                break;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(1));
-        }
-        pump(rt);
-        cx.run_until_parked();
-    }
-
     fn publish(
         cx: &mut TestAppContext,
         rig: &Drain,
@@ -371,9 +353,12 @@ mod tests {
     ) {
         rig.tx.send_replace(status(failure));
         let port = Arc::clone(&rig.port);
-        settle(cx, &rig.rt, move |cx, _| {
+        pump(&rig.rt);
+        settle_until(cx, &rig.rt, move |cx| {
             (port.titles().len(), toasts(cx).len()) == settled
         });
+        pump(&rig.rt);
+        cx.run_until_parked();
     }
 
     fn open_settings_error() -> ShownToast {

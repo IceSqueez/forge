@@ -31,13 +31,11 @@ use forge_storage::{
     MockOverlayRepo, OverlayConfig, OverlayDefinition, OverlayId, OverlayRepo, SettingsRepo,
     StorageError,
 };
-use forge_types::OverlayCredential;
 use forge_types::{
-    Action, ActionId, ArgStack, ExecutionMode, PermissionRung, PlatformScope, QueueId,
-    SubActionConfig, SubActionStep, TriggerConfig, TriggerInstance, TriggerInstanceId, Variant,
+    Action, ActionId, ArgStack, PermissionRung, PlatformScope, QueueId, SubActionConfig,
+    SubActionStep, TriggerConfig, TriggerInstance, TriggerInstanceId, Variant,
 };
 use tempfile::TempDir;
-use time::OffsetDateTime;
 use tokio::sync::Notify;
 
 const OVERLAY: &str = "sub-alert";
@@ -224,13 +222,11 @@ fn triggers() -> Arc<TriggerRegistry> {
 }
 
 fn definition() -> OverlayDefinition {
-    OverlayDefinition {
-        id: OverlayId::new(OVERLAY),
-        display_name: "Sub alert".to_owned(),
-        kind_id: ALERT_KIND.to_owned(),
-        enabled: true,
-        position: 0,
-        config: OverlayConfig::from([
+    common::overlay_definition(
+        OVERLAY,
+        "Sub alert",
+        ALERT_KIND,
+        OverlayConfig::from([
             (
                 HEADLINE_KEY.to_owned(),
                 Variant::String(MESSAGE_TOKEN.to_owned()),
@@ -240,13 +236,7 @@ fn definition() -> OverlayDefinition {
                 Variant::String(VIEWER_TOKEN.to_owned()),
             ),
         ]),
-        config_schema_version: 1,
-        generator_version: 0,
-        source_overrides: Vec::new(),
-        credential: OverlayCredential::new("2f8b1d0c9a7e6f5b4c3d2e1f0a9b8c7d"),
-        created_at: OffsetDateTime::UNIX_EPOCH,
-        updated_at: OffsetDateTime::UNIX_EPOCH,
-    }
+    )
 }
 
 fn send_step() -> SubActionStep {
@@ -266,18 +256,12 @@ fn send_step() -> SubActionStep {
 }
 
 fn feeding_action() -> (Action, Vec<TriggerInstance>) {
-    let action = Action {
-        id: ActionId::new(),
-        name: "announce the chat message".to_owned(),
-        group: None,
-        queue_id: QueueId::new(),
-        enabled: true,
-        concurrent: false,
-        bypass_pause: false,
-        execution_mode: ExecutionMode::Sequential,
-        description: None,
-        sub_actions: vec![send_step()],
-    };
+    let action = common::sequential_action(
+        ActionId::new(),
+        "announce the chat message",
+        QueueId::new(),
+        vec![send_step()],
+    );
     let instance = TriggerInstance {
         id: TriggerInstanceId::new(),
         kind_id: CHATTER_KIND.to_owned(),

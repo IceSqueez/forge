@@ -1,4 +1,6 @@
 #![allow(clippy::unwrap_used)]
+mod common;
+
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
@@ -12,7 +14,6 @@ use forge_transfer::{
 use tempfile::TempDir;
 use time::{Duration, OffsetDateTime};
 
-const SQLITE_KEY: [u8; 32] = [0x42; 32];
 const STEM_PREFIX: &str = "forge-backup";
 const PRE_PACK: &str = "forge-pre-pack";
 const PRE_SETUP: &str = "forge-pre-setup";
@@ -32,10 +33,7 @@ struct Store {
 impl Store {
     async fn open() -> Self {
         let dir = tempfile::tempdir().unwrap();
-        let url = format!("sqlite://{}", dir.path().join(DATABASE_FILE_NAME).display());
-        let repo = SqliteBackend::open_for_test(&url, SQLITE_KEY, dir.path().join("media"), None)
-            .await
-            .unwrap();
+        let repo = common::open_backend(dir.path()).await;
         std::fs::create_dir_all(backups_dir(dir.path())).unwrap();
         Self {
             dir,

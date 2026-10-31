@@ -1,20 +1,13 @@
 #![allow(clippy::expect_used)]
+mod common;
+use common::{ALERT_KIND, registry};
+
 use std::collections::BTreeSet;
 
 use forge_overlay::config::{ANIMATION_OPTIONS, POSITION_OPTIONS};
-use forge_overlay::{
-    BEHAVIOR_FILE, ConfigSection, OverlayKindRegistry, RESERVED_DIRECTORY, RUNTIME_ASSET,
-    STYLE_FILE, register_builtin_kinds,
-};
+use forge_overlay::{BEHAVIOR_FILE, ConfigSection, RESERVED_DIRECTORY, RUNTIME_ASSET, STYLE_FILE};
 
-const ALERT_KIND: &str = "overlay.alert";
 const ICON_BOX_MARKER: &str = "class=\"icon\"";
-
-fn registry() -> OverlayKindRegistry {
-    let mut reg = OverlayKindRegistry::new();
-    register_builtin_kinds(&mut reg).expect("the builtin overlay kinds register");
-    reg
-}
 
 fn quoted_after(source: &str, marker: &str) -> Vec<String> {
     source

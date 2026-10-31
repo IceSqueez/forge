@@ -180,55 +180,20 @@ pub fn generate_token() -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
     use std::sync::{Arc, Mutex};
 
     use forge_storage::credentials::MockCredentialsRepo;
-    use forge_storage::{CredentialId, SERVER_BEARER_CREDENTIAL_ID, StorageError};
+    use forge_storage::{SERVER_BEARER_CREDENTIAL_ID, StorageError};
 
     use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 
     use super::{AuthState, TOKEN_BYTE_LEN, TOKEN_PREFIX, generate_token, masked_token};
+    use crate::test_helpers::MemCreds;
 
     const FIRST_TOKEN: &str = "fg_first-token";
 
-    type Slot = Arc<Mutex<Option<String>>>;
-    type WriteLog = Arc<Mutex<Vec<String>>>;
-    type OtherSlots = Arc<Mutex<HashMap<String, String>>>;
-
-    fn is_bearer(id: &CredentialId) -> bool {
+    fn is_bearer(id: &forge_storage::CredentialId) -> bool {
         id.as_str() == SERVER_BEARER_CREDENTIAL_ID
-    }
-
-    fn slot_backed_repo(initial: Option<&str>) -> (MockCredentialsRepo, Slot, WriteLog) {
-        let slot: Slot = Arc::new(Mutex::new(initial.map(str::to_owned)));
-        let writes: WriteLog = Arc::new(Mutex::new(Vec::new()));
-        let others: OtherSlots = Arc::new(Mutex::new(HashMap::new()));
-        let mut creds = MockCredentialsRepo::new();
-        let read = Arc::clone(&slot);
-        let read_others = Arc::clone(&others);
-        creds.expect_load().returning(move |id| {
-            Ok(if is_bearer(id) {
-                read.lock().expect("lock").clone()
-            } else {
-                read_others.lock().expect("lock").get(id.as_str()).cloned()
-            })
-        });
-        let write = Arc::clone(&slot);
-        let log = Arc::clone(&writes);
-        creds.expect_store().returning(move |id, token| {
-            if is_bearer(id) {
-                *write.lock().expect("lock") = Some(token.to_owned());
-                log.lock().expect("lock").push(token.to_owned());
-            } else {
-                others
-                    .lock()
-                    .expect("lock")
-                    .insert(id.as_str().to_owned(), token.to_owned());
-            }
-            Ok(())
-        });
-        (creds, slot, writes)
     }
 
     #[test]
@@ -242,52 +207,56 @@ mod tests {
 
     #[tokio::test]
     async fn load_keeps_a_stored_prefixed_token_and_writes_nothing() {
-        let (creds, _slot, writes) = slot_backed_repo(Some("fg_already-issued"));
+        let creds = MemCreds::with_token("fg_already-issued");
 
-        let auth = AuthState::load(false, &creds).await.expect("load");
+        let auth = AuthState::load(false, &*creds).await.expect("load");
 
         assert!(auth.verify("fg_already-issued").await);
-        assert!(writes.lock().expect("lock").is_empty());
+        assert!(creds.writes_to(SERVER_BEARER_CREDENTIAL_ID).is_empty());
     }
 
     #[tokio::test]
     async fn load_replaces_an_unprefixed_stored_token_and_rejects_the_old_value() {
-        let (creds, slot, writes) = slot_backed_repo(Some("legacy-unprefixed"));
+        let creds = MemCreds::with_token("legacy-unprefixed");
 
-        let auth = AuthState::load(false, &creds).await.expect("load");
+        let auth = AuthState::load(false, &*creds).await.expect("load");
 
-        let persisted = slot.lock().expect("lock").clone().expect("persisted");
+        let persisted = creds
+            .stored(SERVER_BEARER_CREDENTIAL_ID)
+            .expect("persisted");
         assert!(persisted.starts_with(TOKEN_PREFIX));
-        assert_eq!(writes.lock().expect("lock").len(), 1);
+        assert_eq!(creds.writes_to(SERVER_BEARER_CREDENTIAL_ID).len(), 1);
         assert!(auth.verify(&persisted).await);
         assert!(!auth.verify("legacy-unprefixed").await);
     }
 
     #[tokio::test]
     async fn load_with_nothing_stored_mints_and_persists_a_prefixed_token() {
-        let (creds, slot, writes) = slot_backed_repo(None);
+        let creds = MemCreds::new();
 
-        let auth = AuthState::load(false, &creds).await.expect("load");
+        let auth = AuthState::load(false, &*creds).await.expect("load");
 
-        let persisted = slot.lock().expect("lock").clone().expect("persisted");
+        let persisted = creds
+            .stored(SERVER_BEARER_CREDENTIAL_ID)
+            .expect("persisted");
         assert!(persisted.starts_with(TOKEN_PREFIX));
-        assert_eq!(writes.lock().expect("lock").len(), 1);
+        assert_eq!(creds.writes_to(SERVER_BEARER_CREDENTIAL_ID).len(), 1);
         assert!(auth.verify(&persisted).await);
     }
 
     #[tokio::test]
     async fn regenerated_token_is_prefixed_and_survives_a_fresh_load() {
-        let (creds, _slot, writes) = slot_backed_repo(Some(FIRST_TOKEN));
-        let auth = AuthState::load(false, &creds).await.expect("load");
+        let creds = MemCreds::with_token(FIRST_TOKEN);
+        let auth = AuthState::load(false, &*creds).await.expect("load");
 
-        let regenerated = auth.regenerate(&creds).await.expect("regenerate");
+        let regenerated = auth.regenerate(&*creds).await.expect("regenerate");
 
         assert!(regenerated.expose().starts_with(TOKEN_PREFIX));
-        let reloaded = AuthState::load(false, &creds).await.expect("reload");
+        let reloaded = AuthState::load(false, &*creds).await.expect("reload");
         assert!(reloaded.verify(regenerated.expose()).await);
         assert!(!reloaded.verify(FIRST_TOKEN).await);
         assert_eq!(
-            writes.lock().expect("lock").as_slice(),
+            creds.writes_to(SERVER_BEARER_CREDENTIAL_ID),
             [regenerated.expose().to_owned()]
         );
     }

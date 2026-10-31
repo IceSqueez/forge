@@ -4,9 +4,12 @@ use tempfile::TempDir;
 
 use crate::SqliteBackend;
 
+const DATABASE_FILE: &str = "forge.db";
+const MEDIA_DIR: &str = "media";
+
 pub(crate) struct Sandboxed<T> {
     inner: T,
-    _media_root: TempDir,
+    _temp_root: TempDir,
 }
 
 impl<T> Deref for Sandboxed<T> {
@@ -18,12 +21,13 @@ impl<T> Deref for Sandboxed<T> {
 }
 
 pub(crate) async fn sandboxed_backend(key: [u8; 32]) -> Sandboxed<SqliteBackend> {
-    let media_root = tempfile::tempdir().expect("a temporary media root");
-    let backend = SqliteBackend::open_for_test(":memory:", key, media_root.path().to_owned(), None)
+    let root = tempfile::tempdir().expect("a temporary database directory");
+    let url = format!("sqlite://{}", root.path().join(DATABASE_FILE).display());
+    let backend = SqliteBackend::open_for_test(&url, key, root.path().join(MEDIA_DIR), None)
         .await
-        .expect("an in-memory backend");
+        .expect("a file-backed backend");
     Sandboxed {
         inner: backend,
-        _media_root: media_root,
+        _temp_root: root,
     }
 }

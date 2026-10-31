@@ -1,4 +1,6 @@
 #![allow(clippy::expect_used)]
+mod common;
+use common::TEST_KEY;
 mod legacy_fixture;
 
 use std::path::PathBuf;
@@ -16,7 +18,6 @@ use legacy_fixture::{
 use sqlx::SqlitePool;
 use tempfile::TempDir;
 
-const TEST_KEY: [u8; 32] = [0xab; 32];
 const SNAPSHOT_PREFIX: &str = "forge-pre-baseline-";
 
 struct Workspace {

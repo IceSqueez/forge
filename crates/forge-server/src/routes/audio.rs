@@ -113,9 +113,7 @@ mod tests {
     use std::path::{Path as FsPath, PathBuf};
     use std::sync::Arc;
 
-    use forge_registry::SubActionRegistry;
-    use forge_runtime::{ActionCancelRegistry, EventBus, NullEventLogRepo, spawn_action_engine};
-    use forge_storage::{DataProvider, GlobalsRepo, OverlayId, SettingsRepo, UserGlobalsRepo};
+    use forge_storage::{OverlayId, SettingsRepo};
     use reqwest::StatusCode;
     use tokio::net::TcpListener;
     use tokio::sync::watch;
@@ -127,11 +125,9 @@ mod tests {
         ClipMediaType, ClipOffer, ClipOutcome, ClipOutcomeHandle, ClipTicket,
     };
     use crate::auth::AuthState;
-    use crate::bus_adapter::BusAdapter;
     use crate::origin::build_allowed_origins;
     use crate::server::{AppState, serve_on_with_shutdown};
-    use crate::server_info::ServerInfo;
-    use crate::test_helpers::{log_capture, mem_settings, test_creds, test_dp};
+    use crate::test_helpers::{app_state, log_capture, mem_settings, test_creds};
     use forge_storage::test_support::MemorySettings;
 
     const OWNER: &str = "audio-player";
@@ -269,44 +265,19 @@ mod tests {
         overlay_root: PathBuf,
         settings: Arc<MemorySettings>,
     ) -> Fixture {
-        let bus = EventBus::new(Arc::new(NullEventLogRepo));
-        let bus_adapter = BusAdapter::new(bus.clone());
-        bus_adapter.spawn();
-        let dp: Arc<dyn DataProvider> = test_dp();
-        let action_engine = Arc::new(spawn_action_engine(
-            Arc::clone(&bus),
-            forge_runtime::Catalog::new(
-                dp.action_repo(),
-                dp.trigger_instance_repo(),
-                dp.catalog_revision(),
-            ),
-            dp.action_repo(),
-            dp.history_repo(),
-            Arc::new(SubActionRegistry::new()),
-            Arc::new(ActionCancelRegistry::new()),
-        ));
-
         let listener = TcpListener::bind(LOOPBACK_ANY_PORT).await.expect("bind");
         let addr = listener.local_addr().expect("local addr");
 
         let state = AppState {
-            auth: AuthState::for_test(auth_required_for_reads, BEARER_TOKEN),
-            bus,
-            bus_adapter,
-            actions: dp.action_repo(),
-            globals: Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
-            user_globals: Arc::clone(&dp) as Arc<dyn UserGlobalsRepo>,
-            overlays: dp.overlay_repo(),
-            credentials: test_creds(),
             settings: settings as Arc<dyn SettingsRepo>,
-            server_info: ServerInfo::serving(std::collections::BTreeSet::new()),
-            action_engine,
-            audio_clips: crate::audio_clips::AudioClipStore::new(),
             overlay_root: Arc::new(overlay_root),
             overlay_cors_any_origin,
             bind_addr: addr,
-            timing: crate::ServerTiming::default(),
             allowed_origins: Arc::new(build_allowed_origins(addr, &[])),
+            ..app_state(
+                AuthState::for_test(auth_required_for_reads, BEARER_TOKEN),
+                test_creds(),
+            )
         };
 
         let (run_state_tx, _run_state_rx) = watch::channel(true);

@@ -24,6 +24,17 @@ pub struct StagedPack {
     documents: PackDocuments,
 }
 
+#[cfg(test)]
+impl StagedPack {
+    pub(crate) fn in_memory(manifest: PackManifest, documents: PackDocuments) -> Self {
+        Self {
+            staging_dir: PathBuf::new(),
+            manifest,
+            documents,
+        }
+    }
+}
+
 impl StagedPack {
     pub fn staging_dir(&self) -> &Path {
         &self.staging_dir

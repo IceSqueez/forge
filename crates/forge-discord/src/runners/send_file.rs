@@ -170,6 +170,7 @@ impl SubActionRunner for SendFileRunner {
 
 #[cfg(test)]
 mod tests {
+    use forge_events::test_support::NullPublisher;
     use std::collections::BTreeMap;
 
     use forge_types::Variant;
@@ -180,7 +181,7 @@ mod tests {
     use crate::embed::DiscordEmbed;
     use crate::error::DiscordError;
     use crate::mention::MentionPolicy;
-    use forge_events::{Event, EventPublisher};
+
     use forge_types::EventId;
     use std::sync::Mutex;
 
@@ -267,11 +268,6 @@ mod tests {
         }
     }
 
-    struct NoopPublisher;
-    impl EventPublisher for NoopPublisher {
-        fn publish(&self, _: Event) {}
-    }
-
     fn config(file_path: &str, caption: &str) -> SubActionConfig {
         BTreeMap::from([
             (
@@ -286,7 +282,7 @@ mod tests {
         ])
     }
 
-    fn ctx<'a>(stack: &'a ArgStack, publisher: &'a NoopPublisher) -> RunContext<'a> {
+    fn ctx<'a>(stack: &'a ArgStack, publisher: &'a NullPublisher) -> RunContext<'a> {
         RunContext::leaf(stack, 0, EventId::new(), publisher)
     }
 
@@ -302,7 +298,7 @@ mod tests {
         let sink = CapturingSink::ok();
         let runner = SendFileRunner::new(Arc::clone(&sink) as Arc<dyn DiscordSink>);
         let stack = ArgStack::new();
-        let publisher = NoopPublisher;
+        let publisher = NullPublisher;
         let (telemetry, _) = runner
             .execute(&config("", "cap"), &ctx(&stack, &publisher))
             .await;
@@ -315,7 +311,7 @@ mod tests {
         let sink = CapturingSink::ok();
         let runner = SendFileRunner::new(Arc::clone(&sink) as Arc<dyn DiscordSink>);
         let stack = ArgStack::new();
-        let publisher = NoopPublisher;
+        let publisher = NullPublisher;
         let missing = std::env::temp_dir().join("forge-discord-test-does-not-exist-xyz.png");
         let cfg = config(missing.to_str().unwrap(), "cap");
         let (telemetry, _) = runner.execute(&cfg, &ctx(&stack, &publisher)).await;
@@ -336,7 +332,7 @@ mod tests {
         let sink = CapturingSink::ok();
         let runner = SendFileRunner::new(Arc::clone(&sink) as Arc<dyn DiscordSink>);
         let stack = ArgStack::new();
-        let publisher = NoopPublisher;
+        let publisher = NullPublisher;
         let (telemetry, _) = runner
             .execute(&config(path, "cap"), &ctx(&stack, &publisher))
             .await;
@@ -389,7 +385,7 @@ mod tests {
         let sink = CapturingSink::ok();
         let runner = SendFileRunner::new(Arc::clone(&sink) as Arc<dyn DiscordSink>);
         let stack = ArgStack::new();
-        let publisher = NoopPublisher;
+        let publisher = NullPublisher;
         let (_dir, path) = temp_file("clip-a.png", &[0xDE, 0xAD, 0xBE, 0xEF]);
         let cfg = config(path.to_str().unwrap(), "   ");
         let (telemetry, _) = runner.execute(&cfg, &ctx(&stack, &publisher)).await;
@@ -406,7 +402,7 @@ mod tests {
         let sink = CapturingSink::ok();
         let runner = SendFileRunner::new(Arc::clone(&sink) as Arc<dyn DiscordSink>);
         let stack = ArgStack::new();
-        let publisher = NoopPublisher;
+        let publisher = NullPublisher;
         let (_dir, path) = temp_file("clip-b.png", &[1, 2, 3]);
         let cfg = config(path.to_str().unwrap(), "look at this");
         let (_telemetry, _) = runner.execute(&cfg, &ctx(&stack, &publisher)).await;
@@ -419,7 +415,7 @@ mod tests {
         let sink = CapturingSink::failing();
         let runner = SendFileRunner::new(Arc::clone(&sink) as Arc<dyn DiscordSink>);
         let stack = ArgStack::new();
-        let publisher = NoopPublisher;
+        let publisher = NullPublisher;
         let (_dir, path) = temp_file("clip-c.png", &[9]);
         let cfg = config(path.to_str().unwrap(), "cap");
         let (telemetry, _) = runner.execute(&cfg, &ctx(&stack, &publisher)).await;

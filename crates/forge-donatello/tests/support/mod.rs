@@ -22,9 +22,10 @@ use wiremock::{Mock, MockServer, Request, Respond, ResponseTemplate};
 pub const TOKEN: &str = "dn-test-token-7f3a9c";
 pub const OTHER_TOKEN: &str = "dn-other-token-41be02";
 pub const WAIT: Duration = Duration::from_secs(30);
-pub const QUIET: Duration = Duration::from_millis(50);
 pub const TICK: Duration = Duration::from_millis(10);
-pub const SEVERAL_TICKS: Duration = Duration::from_millis(100);
+pub const LATER_ARRIVAL_ID: &str = "LATER-ARRIVAL";
+const LATER_ARRIVAL_CREATED_AT: &str = "2026-08-01 10:00:00";
+const REFERENCE_POLLS: usize = 8;
 
 #[derive(Default)]
 pub struct MemCreds {
@@ -445,16 +446,28 @@ impl Harness {
         donations
     }
 
-    pub async fn stays_quiet(&mut self) -> bool {
-        tokio::time::timeout(QUIET, self.stream.next())
-            .await
-            .is_err()
+    pub async fn assert_only_a_later_arrival_is_reported_next(&mut self) {
+        self.list
+            .add(donate(LATER_ARRIVAL_ID, LATER_ARRIVAL_CREATED_AT));
+        self.poll_now().await;
+        let next = self.next().await.expect("the later arrival");
+        assert_eq!(next.donation_id, LATER_ARRIVAL_ID);
     }
 
-    pub async fn stays_quiet_for_several_ticks(&mut self) -> bool {
-        tokio::time::timeout(SEVERAL_TICKS, self.stream.next())
-            .await
-            .is_err()
+    pub async fn wait_for_requests(&self, count: usize) {
+        let deadline = tokio::time::Instant::now() + WAIT;
+        while self.list.requested_pages().len() < count {
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "timed out waiting for {count} page requests"
+            );
+            tokio::time::sleep(TICK).await;
+        }
+    }
+
+    pub async fn outlast_several_ticks() {
+        let reference = Self::ticking(Order::NewestFirst, Vec::new()).await;
+        reference.wait_for_requests(REFERENCE_POLLS).await;
     }
 
     pub async fn wait_for(&self, what: &str, probe: impl Fn(&PollStatus) -> bool) {

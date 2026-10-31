@@ -227,14 +227,10 @@ impl SubActionRunner for CoreTimeNowRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use forge_events::{Event, EventPublisher};
+    use forge_events::test_support::NullPublisher;
+
     use forge_registry::RegistryError;
     use forge_types::{EventId, SubActionOutcome};
-
-    struct NullPublisher;
-    impl EventPublisher for NullPublisher {
-        fn publish(&self, _event: Event) {}
-    }
 
     async fn run(cfg: &SubActionConfig) -> (SubActionOutcome, Option<ArgStack>) {
         let stack = ArgStack::new();

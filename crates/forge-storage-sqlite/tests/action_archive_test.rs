@@ -1,40 +1,15 @@
 #![allow(clippy::expect_used)]
 use forge_storage::DataProvider;
-use forge_storage_sqlite::SqliteBackend;
 
-use forge_types::{Action, ActionId, ExecutionMode, QueueId};
+use forge_types::{Action, ActionId, QueueId};
 
 mod common;
-use common::Sandboxed;
-
-const TEST_KEY: [u8; 32] = [0xab; 32];
-
-async fn setup() -> Sandboxed<SqliteBackend> {
-    common::sandboxed_backend("sqlite::memory:", TEST_KEY).await
-}
-
-async fn default_queue_id(backend: &SqliteBackend) -> QueueId {
-    backend
-        .queue_repo()
-        .get_by_name("Default")
-        .await
-        .expect("get default queue")
-        .expect("default queue must exist after migration")
-        .id
-}
+use common::{action_named, default_queue_id, setup};
 
 fn make_action(name: &str, group: Option<&str>, queue_id: QueueId) -> Action {
     Action {
-        id: ActionId::new(),
-        name: name.to_owned(),
         group: group.map(str::to_owned),
-        queue_id,
-        enabled: true,
-        concurrent: false,
-        bypass_pause: false,
-        execution_mode: ExecutionMode::Sequential,
-        description: None,
-        sub_actions: vec![],
+        ..action_named(name, queue_id)
     }
 }
 

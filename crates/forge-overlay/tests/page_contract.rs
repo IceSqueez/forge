@@ -1,4 +1,7 @@
 #![allow(clippy::expect_used, clippy::panic)]
+mod common;
+use common::{CHAT_KIND, registry};
+
 use std::collections::BTreeSet;
 
 use forge_overlay::config::{
@@ -6,18 +9,11 @@ use forge_overlay::config::{
 };
 use forge_overlay::descriptor::ConfigSection;
 use forge_overlay::{
-    LookConfigKey, OverlayConfig, OverlayKindRegistry, PAGE_CONTRACT, RUNTIME_SOURCE,
-    SampleContext, latest_binding, latest_content, look_contract, register_builtin_kinds,
-    sample_content, sample_latest_value,
+    LookConfigKey, OverlayConfig, PAGE_CONTRACT, RUNTIME_SOURCE, SampleContext, latest_binding,
+    latest_content, look_contract, sample_content, sample_latest_value,
 };
 
 const RUNTIME_APPLIED_LOOK_KEYS: [&str; 4] = [ACCENT, FONT, TEXT_SIZE, POSITION];
-
-fn registry() -> OverlayKindRegistry {
-    let mut reg = OverlayKindRegistry::new();
-    register_builtin_kinds(&mut reg).expect("the builtin overlay kinds register");
-    reg
-}
 
 fn header() -> &'static str {
     let end = RUNTIME_SOURCE
@@ -298,9 +294,7 @@ fn a_look_lists_its_own_config_keys_in_descriptor_order_without_the_ones_the_run
 #[test]
 fn the_chat_look_declares_the_platform_content_key() {
     let reg = registry();
-    let chat = reg
-        .get("overlay.chat")
-        .expect("the chat kind is registered");
+    let chat = reg.get(CHAT_KIND).expect("the chat kind is registered");
 
     assert!(look_contract(chat).content_keys.contains(&"platform"));
 }

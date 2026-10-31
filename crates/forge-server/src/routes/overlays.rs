@@ -226,16 +226,12 @@ async fn overlay_serving_enabled(state: &AppState, canon_root: &Path, canon_file
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
     use std::net::SocketAddr;
-    use std::sync::{Arc, Mutex};
+    use std::sync::Arc;
 
-    use async_trait::async_trait;
-    use forge_registry::SubActionRegistry;
-    use forge_runtime::{EventBus, NullEventLogRepo, ScriptRegistry, spawn_action_engine};
     use forge_storage::{
-        CredentialId, CredentialsRepo, DataProvider, GlobalsRepo, MockOverlayRepo, OverlayConfig,
-        OverlayDefinition, OverlayId, OverlayRepo, StorageError, UserGlobalsRepo,
+        CredentialId, CredentialsRepo, MockOverlayRepo, OverlayConfig, OverlayDefinition,
+        OverlayId, OverlayRepo, StorageError,
     };
     use forge_types::OverlayCredential;
     use time::OffsetDateTime;
@@ -243,62 +239,8 @@ mod tests {
 
     use crate::ServerHandle;
     use crate::auth::AuthState;
-    use crate::bus_adapter::BusAdapter;
     use crate::server::AppState;
-    use crate::server_info::ServerInfo;
-    use crate::test_helpers::{log_capture, test_dp};
-
-    struct MemCreds(Mutex<HashMap<String, String>>);
-
-    impl MemCreds {
-        fn new() -> Arc<Self> {
-            Arc::new(Self(Mutex::new(HashMap::new())))
-        }
-    }
-
-    #[async_trait]
-    impl CredentialsRepo for MemCreds {
-        async fn store(
-            &self,
-            id: &CredentialId,
-            plaintext_bundle: &str,
-        ) -> Result<(), StorageError> {
-            self.0
-                .lock()
-                .expect("mutex")
-                .insert(id.as_str().to_owned(), plaintext_bundle.to_owned());
-            Ok(())
-        }
-
-        async fn load(&self, id: &CredentialId) -> Result<Option<String>, StorageError> {
-            Ok(self.0.lock().expect("mutex").get(id.as_str()).cloned())
-        }
-
-        async fn delete(&self, id: &CredentialId) -> Result<bool, StorageError> {
-            Ok(self.0.lock().expect("mutex").remove(id.as_str()).is_some())
-        }
-
-        async fn list_ids(&self) -> Result<Vec<CredentialId>, StorageError> {
-            Ok(self
-                .0
-                .lock()
-                .expect("mutex")
-                .keys()
-                .map(|k| CredentialId::new(k.clone()))
-                .collect())
-        }
-
-        async fn last_refresh(
-            &self,
-            _id: &CredentialId,
-        ) -> Result<Option<OffsetDateTime>, StorageError> {
-            Ok(None)
-        }
-
-        async fn mark_refreshed(&self, _id: &CredentialId) -> Result<(), StorageError> {
-            Ok(())
-        }
-    }
+    use crate::test_helpers::{MemCreds, app_state, log_capture};
 
     const FIXTURE_BIND_ADDR: &str = "127.0.0.1:9515";
     const FIXTURE_OVERLAY_TOKEN: &str = "fgo_fixture";
@@ -327,46 +269,12 @@ mod tests {
             .expect("seed overlay token");
         let auth = AuthState::load(false, &*creds).await.expect("auth load");
         let creds_dyn: Arc<dyn CredentialsRepo> = creds;
-        let bus = EventBus::new(Arc::new(NullEventLogRepo));
-        let bus_adapter = BusAdapter::new(bus.clone());
-        bus_adapter.spawn();
-        let dp: Arc<dyn DataProvider> = test_dp();
-        let actions = dp.action_repo();
-        let globals: Arc<dyn GlobalsRepo> = Arc::clone(&dp) as Arc<dyn GlobalsRepo>;
-        let user_globals: Arc<dyn UserGlobalsRepo> = Arc::clone(&dp) as Arc<dyn UserGlobalsRepo>;
-        let overlays = overlay_repo.unwrap_or_else(|| dp.overlay_repo());
-        let _registry = Arc::new(ScriptRegistry::new());
-        let action_engine = Arc::new(spawn_action_engine(
-            Arc::clone(&bus),
-            forge_runtime::Catalog::new(
-                dp.action_repo(),
-                dp.trigger_instance_repo(),
-                dp.catalog_revision(),
-            ),
-            dp.action_repo(),
-            dp.history_repo(),
-            Arc::new(SubActionRegistry::new()),
-            Arc::new(forge_runtime::ActionCancelRegistry::new()),
-        ));
-        let bind_addr: SocketAddr = FIXTURE_BIND_ADDR.parse().expect("addr");
+        let base = app_state(auth, creds_dyn);
         let state = AppState {
-            auth,
-            bus,
-            bus_adapter,
-            actions,
-            globals,
-            user_globals,
-            overlays,
-            credentials: creds_dyn,
-            settings: Arc::clone(&dp) as Arc<dyn forge_storage::SettingsRepo>,
-            server_info: ServerInfo::serving(std::collections::BTreeSet::new()),
-            action_engine,
-            audio_clips: crate::audio_clips::AudioClipStore::new(),
+            overlays: overlay_repo.unwrap_or_else(|| Arc::clone(&base.overlays)),
             overlay_root: Arc::new(overlay_root),
             overlay_cors_any_origin,
-            bind_addr,
-            timing: crate::ServerTiming::default(),
-            allowed_origins: Arc::new(crate::origin::build_allowed_origins(bind_addr, &[])),
+            ..base
         };
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
         let addr = listener.local_addr().expect("local addr");

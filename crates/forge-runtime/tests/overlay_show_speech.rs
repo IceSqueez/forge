@@ -1,12 +1,13 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod common;
 use common::stub_provider::StubProvider;
+use forge_events::test_support::NullPublisher;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
-use forge_events::{Event, EventPublisher};
+use forge_events::Event;
 use forge_overlay::config::{SHOW, SPEECH, SPEECH_VOICE};
 use forge_overlay::motion::{EXIT, EXIT_MS, NO_MOTION};
 use forge_overlay::{OverlayKindRegistry, register_builtin_kinds};
@@ -23,12 +24,10 @@ use forge_storage::test_support::MemorySettings;
 use forge_storage::{
     MockOverlayRepo, OverlayConfig, OverlayDefinition, OverlayId, OverlayRepo, SettingsRepo,
 };
-use forge_types::OverlayCredential;
 use forge_types::{
     ArgStack, EventId, MessageCode, MessageRef, SubActionConfig, SubActionOutcome, Variant,
     VerbatimText,
 };
-use time::OffsetDateTime;
 use tokio::time::Instant;
 
 const ALERT_KIND: &str = "overlay.alert";
@@ -229,20 +228,7 @@ fn exit(name: &str, ms: i64) -> OverlayConfig {
 fn definition(kind_id: &str, voice: &str, motion: OverlayConfig) -> OverlayDefinition {
     let mut config = motion;
     config.insert(SPEECH_VOICE.to_owned(), Variant::String(voice.to_owned()));
-    OverlayDefinition {
-        id: OverlayId::new(STAGE),
-        display_name: STAGE.to_owned(),
-        kind_id: kind_id.to_owned(),
-        enabled: true,
-        position: 0,
-        config,
-        config_schema_version: 1,
-        generator_version: 0,
-        source_overrides: Vec::new(),
-        credential: OverlayCredential::new("2f8b1d0c9a7e6f5b4c3d2e1f0a9b8c7d"),
-        created_at: OffsetDateTime::UNIX_EPOCH,
-        updated_at: OffsetDateTime::UNIX_EPOCH,
-    }
+    common::overlay_definition(STAGE, STAGE, kind_id, config)
 }
 
 struct Harness {
@@ -605,12 +591,6 @@ async fn the_show_frame_carries_the_same_token_as_its_speech() {
         "the show and its speech cannot be joined on the page, or the speech targets the wrong \
          overlay or voice"
     );
-}
-
-struct NullPublisher;
-
-impl EventPublisher for NullPublisher {
-    fn publish(&self, _: Event) {}
 }
 
 #[tokio::test(start_paused = true)]

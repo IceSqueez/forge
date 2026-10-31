@@ -182,50 +182,26 @@ mod tests {
     use forge_types::Secret;
     use std::collections::{BTreeSet, HashSet};
     use std::sync::Arc;
-    use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+    use std::sync::atomic::Ordering;
 
-    use crate::auth::AuthState;
     use std::collections::BTreeMap;
 
     use forge_events::{
         Event, EventChannel, EventObserver, EventPublisher, EventSource, EventSubscription,
     };
-    use forge_registry::SubActionRegistry;
-    use forge_runtime::{
-        ActionEngineHandle, BusError, EventBus, EventHistory, NullEventLogRepo, ScriptRegistry,
-        spawn_action_engine,
-    };
-    use forge_storage::{DataProvider, GlobalsRepo, StorageError, UserGlobalsRepo};
+    use forge_runtime::{BusError, EventHistory};
+    use forge_storage::{DataProvider, StorageError};
     use forge_types::{Action, ActionId, EventId, QueueId, SubActionStep, Variant};
 
     use super::*;
-    use crate::bus_adapter::{BusAdapter, ClientFilterSet, ClientId, EventFilter};
+    use crate::bus_adapter::{ClientFilterSet, EventFilter};
     use crate::server_info::ServerInfo;
     use forge_storage::GlobalEntry;
     use time::OffsetDateTime;
 
-    use crate::test_helpers::{TestDataProvider, test_creds, test_dp};
-    use crate::ws_client::WsClient;
-
-    fn make_engine(bus: &Arc<EventBus>, dp: &Arc<dyn DataProvider>) -> Arc<ActionEngineHandle> {
-        let _registry = Arc::new(ScriptRegistry::new());
-        Arc::new(spawn_action_engine(
-            Arc::clone(bus),
-            forge_runtime::Catalog::new(
-                dp.action_repo(),
-                dp.trigger_instance_repo(),
-                dp.catalog_revision(),
-            ),
-            dp.action_repo(),
-            dp.history_repo(),
-            Arc::new(SubActionRegistry::new()),
-            Arc::new(forge_runtime::ActionCancelRegistry::new()),
-        ))
-    }
+    use crate::test_helpers::{TestDataProvider, dispatch_ctx, registered_dispatch_ctx, test_dp};
 
     fn make_ctx(authenticated: bool, auth_required_for_reads: bool) -> DispatchContext {
-        let bus = EventBus::new(Arc::new(NullEventLogRepo));
-        let bus_adapter = BusAdapter::new(bus.clone());
         let mut tdp = TestDataProvider::new();
         tdp.action().expect_list().returning(|| Ok(vec![]));
         tdp.action().expect_get().returning(|_| Ok(None));
@@ -234,122 +210,30 @@ mod tests {
         tdp.user_globals()
             .expect_list_for_broadcaster()
             .returning(|_| Ok(vec![]));
-        let dp: Arc<dyn DataProvider> = Arc::new(tdp);
-        let actions = dp.action_repo();
-        let globals: Arc<dyn GlobalsRepo> = Arc::clone(&dp) as Arc<dyn GlobalsRepo>;
-        let user_globals: Arc<dyn UserGlobalsRepo> = Arc::clone(&dp) as Arc<dyn UserGlobalsRepo>;
-        let overlays = dp.overlay_repo();
-        let auth_state = AuthState::for_test(auth_required_for_reads, "test-token");
-        let drop_counter = Arc::new(AtomicU64::new(0));
-        let client = Arc::new(WsClient::new(
-            ClientId::next(),
-            "127.0.0.1:0".parse().unwrap(),
-            Arc::clone(&drop_counter),
-        ));
-        client.authenticated.store(authenticated, Ordering::Relaxed);
-        let action_engine = make_engine(&bus, &dp);
-        let mut creds_tdp = TestDataProvider::new();
-        creds_tdp
-            .credentials()
-            .expect_list_ids()
-            .returning(|| Ok(vec![]));
-        let credentials: Arc<dyn forge_storage::CredentialsRepo> = Arc::new(creds_tdp);
-        DispatchContext {
-            bus,
-            bus_adapter,
-            actions,
-            globals,
-            user_globals,
-            overlays,
-            auth_state,
-            client,
-            credentials,
-            server_info: ServerInfo::serving(BTreeSet::new()),
-            action_engine,
-            overlay_root: Arc::new(std::path::PathBuf::from("/tmp/forge-test-overlays")),
-            overlay_channel_swap: tokio::sync::Mutex::new(None),
-            close_after_auth_failure: AtomicBool::new(false),
-        }
+        let ctx = dispatch_ctx(Arc::new(tdp), auth_required_for_reads);
+        ctx.client
+            .authenticated
+            .store(authenticated, Ordering::Relaxed);
+        ctx
     }
 
     fn make_ctx_with_dp(authenticated: bool, dp: Arc<dyn DataProvider>) -> DispatchContext {
-        let bus = EventBus::new(Arc::new(NullEventLogRepo));
-        let bus_adapter = BusAdapter::new(bus.clone());
-        let auth_state = AuthState::for_test(false, "test-token");
-        let drop_counter = Arc::new(AtomicU64::new(0));
-        let client = Arc::new(WsClient::new(
-            ClientId::next(),
-            "127.0.0.1:0".parse().unwrap(),
-            Arc::clone(&drop_counter),
-        ));
-        client.authenticated.store(authenticated, Ordering::Relaxed);
-        let action_engine = make_engine(&bus, &dp);
-        let actions = dp.action_repo();
-        let globals: Arc<dyn GlobalsRepo> = Arc::clone(&dp) as Arc<dyn GlobalsRepo>;
-        let user_globals: Arc<dyn UserGlobalsRepo> = Arc::clone(&dp) as Arc<dyn UserGlobalsRepo>;
-        let overlays = dp.overlay_repo();
-        DispatchContext {
-            bus,
-            bus_adapter,
-            actions,
-            globals,
-            user_globals,
-            overlays,
-            auth_state,
-            client,
-            credentials: test_creds(),
-            server_info: ServerInfo::serving(BTreeSet::new()),
-            action_engine,
-            overlay_root: Arc::new(std::path::PathBuf::from("/tmp/forge-test-overlays")),
-            overlay_channel_swap: tokio::sync::Mutex::new(None),
-            close_after_auth_failure: AtomicBool::new(false),
-        }
+        let ctx = dispatch_ctx(dp, false);
+        ctx.client
+            .authenticated
+            .store(authenticated, Ordering::Relaxed);
+        ctx
     }
 
     async fn make_registered_ctx(
         authenticated: bool,
         auth_required_for_reads: bool,
     ) -> DispatchContext {
-        let bus = EventBus::new(Arc::new(NullEventLogRepo));
-        let bus_adapter = BusAdapter::new(bus.clone());
-        let dp: Arc<dyn DataProvider> = test_dp();
-        let actions = dp.action_repo();
-        let globals: Arc<dyn GlobalsRepo> = Arc::clone(&dp) as Arc<dyn GlobalsRepo>;
-        let user_globals: Arc<dyn UserGlobalsRepo> = Arc::clone(&dp) as Arc<dyn UserGlobalsRepo>;
-        let overlays = dp.overlay_repo();
-        let auth_state = AuthState::for_test(auth_required_for_reads, "test-token");
-        let (handle, _rx) = bus_adapter
-            .register_client(ClientFilterSet::new(HashSet::new()))
-            .await;
-        let client = Arc::new(WsClient::new(
-            handle.id,
-            "127.0.0.1:0".parse().unwrap(),
-            Arc::clone(&handle.drop_counter),
-        ));
-        client.authenticated.store(authenticated, Ordering::Relaxed);
-        let action_engine = make_engine(&bus, &dp);
-        let mut creds_tdp = TestDataProvider::new();
-        creds_tdp
-            .credentials()
-            .expect_list_ids()
-            .returning(|| Ok(vec![]));
-        let credentials: Arc<dyn forge_storage::CredentialsRepo> = Arc::new(creds_tdp);
-        DispatchContext {
-            bus,
-            bus_adapter,
-            actions,
-            globals,
-            user_globals,
-            overlays,
-            auth_state,
-            client,
-            credentials,
-            server_info: ServerInfo::serving(BTreeSet::new()),
-            action_engine,
-            overlay_root: Arc::new(std::path::PathBuf::from("/tmp/forge-test-overlays")),
-            overlay_channel_swap: tokio::sync::Mutex::new(None),
-            close_after_auth_failure: AtomicBool::new(false),
-        }
+        let ctx = registered_dispatch_ctx(test_dp(), auth_required_for_reads).await;
+        ctx.client
+            .authenticated
+            .store(authenticated, Ordering::Relaxed);
+        ctx
     }
 
     fn sample_action() -> Action {
@@ -1701,35 +1585,7 @@ mod tests {
                 )
             });
         tdp.action().expect_list().returning(|| Ok(vec![]));
-        let dp: Arc<dyn DataProvider> = Arc::new(tdp);
-
-        let bus = EventBus::new(Arc::new(NullEventLogRepo));
-        let bus_adapter = BusAdapter::new(bus.clone());
-        let (handle, _rx) = bus_adapter
-            .register_client(ClientFilterSet::new(HashSet::new()))
-            .await;
-        let client = Arc::new(WsClient::new(
-            handle.id,
-            "127.0.0.1:0".parse().unwrap(),
-            Arc::clone(&handle.drop_counter),
-        ));
-        let action_engine = make_engine(&bus, &dp);
-        DispatchContext {
-            bus,
-            bus_adapter,
-            actions: dp.action_repo(),
-            globals: Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
-            user_globals: Arc::clone(&dp) as Arc<dyn UserGlobalsRepo>,
-            overlays: dp.overlay_repo(),
-            auth_state: AuthState::for_test(true, "test-token"),
-            client,
-            credentials: test_creds(),
-            server_info: ServerInfo::serving(BTreeSet::new()),
-            action_engine,
-            overlay_root: Arc::new(std::path::PathBuf::from("/tmp/forge-test-overlays")),
-            overlay_channel_swap: tokio::sync::Mutex::new(None),
-            close_after_auth_failure: AtomicBool::new(false),
-        }
+        registered_dispatch_ctx(Arc::new(tdp), true).await
     }
 
     fn auth_frame(

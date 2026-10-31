@@ -6,7 +6,6 @@ use forge_events::{Event, EventSource};
 use forge_storage::{ChatHistoryRepo, EventLogRepo, HistoryRepo, ViewerMessage, ViewerRepo};
 use forge_storage_sqlite::{
     SqliteChatHistoryRepo, SqliteEventLogRepo, SqliteHistoryRepo, SqliteViewerRepo,
-    apply_migrations, connect,
 };
 use forge_types::{
     ActionId, EventId, ExecutionContext, ExecutionMetadata, ExecutionOutcome, ModerationMarks,
@@ -15,14 +14,10 @@ use forge_types::{
 use sqlx::SqlitePool;
 use time::OffsetDateTime;
 
+mod common;
+
 const TWO_STATEMENTS: usize = 257;
 const POISON: &str = "poison";
-
-async fn pool() -> SqlitePool {
-    let pool = connect("sqlite::memory:").await.unwrap();
-    apply_migrations(&pool).await.unwrap();
-    pool
-}
 
 async fn count(pool: &SqlitePool, table: &str) -> i64 {
     sqlx::query_scalar(sqlx::AssertSqlSafe(format!("SELECT COUNT(*) FROM {table}")))
@@ -103,19 +98,23 @@ async fn an_event_batch_stores_every_row_across_statement_boundaries() {
         TWO_STATEMENTS,
         2_049,
     ] {
-        let pool = pool().await;
-        let repo = SqliteEventLogRepo::new(pool.clone());
+        let pools = common::migrated_pools().await;
+        let repo = SqliteEventLogRepo::new(pools.clone());
 
         repo.insert_batch(&events(rows)).await.unwrap();
 
-        assert_eq!(count(&pool, "event_log").await, rows as i64, "{rows} rows");
+        assert_eq!(
+            count(pools.writer(), "event_log").await,
+            rows as i64,
+            "{rows} rows"
+        );
     }
 }
 
 #[tokio::test]
 async fn an_event_batch_with_one_failing_row_stores_nothing() {
-    let pool = pool().await;
-    poison(&pool, "event_log", "kind", POISON).await;
+    let pools = common::migrated_pools().await;
+    poison(pools.writer(), "event_log", "kind", POISON).await;
     let mut batch = events(TWO_STATEMENTS);
     batch.push(Arc::new(Event::new(
         EventSource::Core,
@@ -123,74 +122,86 @@ async fn an_event_batch_with_one_failing_row_stores_nothing() {
         serde_json::Value::Null,
     )));
 
-    let result = SqliteEventLogRepo::new(pool.clone())
+    let result = SqliteEventLogRepo::new(pools.clone())
         .insert_batch(&batch)
         .await;
 
     assert_eq!(
-        (result.is_err(), count(&pool, "event_log").await),
+        (result.is_err(), count(pools.writer(), "event_log").await),
         (true, 0)
     );
 }
 
 #[tokio::test]
 async fn a_chat_batch_with_one_failing_row_stores_nothing() {
-    let pool = pool().await;
-    poison(&pool, "chat_history", "id", POISON).await;
+    let pools = common::migrated_pools().await;
+    poison(pools.writer(), "chat_history", "id", POISON).await;
     let mut batch: Vec<UnifiedChatRow> = (0..TWO_STATEMENTS)
         .map(|i| chat_row(&format!("m{i}"), "bob"))
         .collect();
     batch.push(chat_row(POISON, "bob"));
 
-    let result = SqliteChatHistoryRepo::new(pool.clone())
+    let result = SqliteChatHistoryRepo::new(pools.clone())
         .append_batch(&batch)
         .await;
 
     assert_eq!(
-        (result.is_err(), count(&pool, "chat_history").await),
+        (result.is_err(), count(pools.writer(), "chat_history").await),
         (true, 0)
     );
 }
 
 #[tokio::test]
 async fn a_run_history_batch_with_one_failing_run_stores_nothing() {
-    let pool = pool().await;
+    let pools = common::migrated_pools().await;
     let failing = ActionId::new();
-    poison(&pool, "action_history", "action_id", &failing.to_string()).await;
+    poison(
+        pools.writer(),
+        "action_history",
+        "action_id",
+        &failing.to_string(),
+    )
+    .await;
     let mut batch: Vec<ExecutionContext> =
         (0..TWO_STATEMENTS).map(|_| run(ActionId::new())).collect();
     batch.push(run(failing));
 
-    let result = SqliteHistoryRepo::new(pool.clone())
+    let result = SqliteHistoryRepo::new(pools.clone())
         .save_batch(&batch)
         .await;
 
     assert_eq!(
-        (result.is_err(), count(&pool, "action_history").await),
+        (
+            result.is_err(),
+            count(pools.writer(), "action_history").await
+        ),
         (true, 0)
     );
 }
 
 #[tokio::test]
 async fn a_viewer_batch_with_one_failing_row_stores_nothing() {
-    let pool = pool().await;
-    poison(&pool, "viewers", "viewer_id", POISON).await;
+    let pools = common::migrated_pools().await;
+    poison(pools.writer(), "viewers", "viewer_id", POISON).await;
     let mut batch: Vec<ViewerMessage> = (0..TWO_STATEMENTS)
         .map(|i| message(&format!("v{i}"), "name"))
         .collect();
     batch.push(message(POISON, "name"));
 
-    let result = SqliteViewerRepo::new(pool.clone())
+    let result = SqliteViewerRepo::new(pools.clone())
         .record_messages(&batch)
         .await;
 
-    assert_eq!((result.is_err(), count(&pool, "viewers").await), (true, 0));
+    assert_eq!(
+        (result.is_err(), count(pools.writer(), "viewers").await),
+        (true, 0)
+    );
 }
 
 #[tokio::test]
 async fn an_event_already_stored_keeps_its_row_and_the_rest_of_the_batch_lands() {
-    let pool = pool().await;
-    let repo = SqliteEventLogRepo::new(pool.clone());
+    let pools = common::migrated_pools().await;
+    let repo = SqliteEventLogRepo::new(pools.clone());
     let mut stored = Event::new(EventSource::Core, "original", serde_json::Value::Null);
     stored.timestamp = OffsetDateTime::from_unix_timestamp(1_000_000).unwrap();
     repo.insert(&stored).await.unwrap();
@@ -214,8 +225,8 @@ async fn an_event_already_stored_keeps_its_row_and_the_rest_of_the_batch_lands()
 
 #[tokio::test]
 async fn a_chat_message_already_stored_keeps_its_row_and_the_rest_of_the_batch_lands() {
-    let pool = pool().await;
-    let repo = SqliteChatHistoryRepo::new(pool.clone());
+    let pools = common::migrated_pools().await;
+    let repo = SqliteChatHistoryRepo::new(pools.clone());
     repo.append(&chat_row("m1", "original")).await.unwrap();
 
     repo.append_batch(&[chat_row("m1", "overwrite"), chat_row("m2", "fresh")])
@@ -241,8 +252,8 @@ async fn a_chat_message_already_stored_keeps_its_row_and_the_rest_of_the_batch_l
 
 #[tokio::test]
 async fn a_viewer_batch_keeps_the_latest_name_and_the_first_seen_time() {
-    let pool = pool().await;
-    let repo = SqliteViewerRepo::new(pool.clone());
+    let pools = common::migrated_pools().await;
+    let repo = SqliteViewerRepo::new(pools.clone());
     repo.record_message(PlatformId::Twitch, "v1", "old-name")
         .await
         .unwrap();

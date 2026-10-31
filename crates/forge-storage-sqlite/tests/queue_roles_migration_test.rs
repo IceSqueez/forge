@@ -1,4 +1,5 @@
 #![allow(clippy::expect_used)]
+mod common;
 use forge_storage_sqlite::{MIGRATIONS, apply_migrations, connect};
 use sqlx::SqlitePool;
 use tempfile::TempDir;
@@ -11,7 +12,7 @@ const SECOND_ID: &str = "01JBBBBBBBBBBBBBBBBBBBBBBB";
 
 async fn migrated_with(queues: &[(&str, &str)]) -> (SqlitePool, TempDir) {
     let dir = tempfile::tempdir().expect("a temporary directory");
-    let url = format!("sqlite://{}", dir.path().join("forge.db").display());
+    let url = common::database_url(&dir);
     let pool = connect(&url).await.expect("a database");
     MIGRATIONS
         .run_to(VERSION_BEFORE_ROLES, &pool)

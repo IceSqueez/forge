@@ -371,155 +371,61 @@ impl ServerHandle {
 mod tests {
     use std::collections::HashSet;
 
-    use forge_registry::SubActionRegistry;
-    use forge_runtime::{
-        ActionCancelRegistry, EventBus, NullEventLogRepo, OverlayServiceParts, spawn_action_engine,
-    };
-    use forge_storage::credentials::MockCredentialsRepo;
-    use forge_storage::{
-        CredentialsRepo, DataProvider, GlobalsRepo, SettingsRepo, UserGlobalsRepo,
-    };
+    use forge_runtime::{EventBus, NullEventLogRepo, OverlayServiceParts};
+    use forge_storage::{CredentialsRepo, SettingsRepo};
 
     use super::*;
     use crate::bus_adapter::{BusAdapter, ClientFilterSet, OverlayClientClass};
-    use crate::config::ServerConfig;
     use crate::delivery_hub::DeliveryHub;
     use crate::server::stopped_server;
-    use crate::test_helpers::{TestDataProvider, mem_settings};
+    use crate::test_helpers::{MemCreds, TestDataProvider, mem_settings, server_config, test_dp};
     use forge_storage::test_support::INJECTED_FAILURE_REASON;
 
     async fn stopped_handle() -> ServerHandle {
-        let mut credentials = MockCredentialsRepo::new();
-        credentials.expect_load().returning(|_| Ok(None));
-        credentials.expect_store().returning(|_, _| Ok(()));
-        stopped_handle_over(mem_settings() as Arc<dyn SettingsRepo>, credentials).await
+        stopped_handle_over(mem_settings() as Arc<dyn SettingsRepo>, MemCreds::new()).await
     }
 
     async fn stopped_handle_over(
         settings: Arc<dyn SettingsRepo>,
-        credentials: MockCredentialsRepo,
+        credentials: Arc<MemCreds>,
     ) -> ServerHandle {
-        let dp = Arc::new(TestDataProvider::new());
-        let bus = EventBus::new(Arc::new(NullEventLogRepo));
-        let engine = Arc::new(spawn_action_engine(
-            Arc::clone(&bus),
-            forge_runtime::Catalog::new(
-                dp.action_repo(),
-                dp.trigger_instance_repo(),
-                dp.catalog_revision(),
-            ),
-            dp.action_repo(),
-            dp.history_repo(),
-            Arc::new(SubActionRegistry::new()),
-            Arc::new(ActionCancelRegistry::new()),
-        ));
-        let config = ServerConfig::new(
-            settings,
-            Arc::new(credentials) as Arc<dyn CredentialsRepo>,
-            bus,
-            dp.action_repo(),
-            Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
-            Arc::clone(&dp) as Arc<dyn UserGlobalsRepo>,
-            dp.overlay_repo(),
-            engine,
-        );
-
-        stopped_server(config).await.expect("a stopped handle")
-    }
-
-    type CredentialSlots = Arc<std::sync::Mutex<std::collections::HashMap<String, String>>>;
-
-    fn slot_credentials() -> (MockCredentialsRepo, CredentialSlots) {
-        let slots: CredentialSlots = Arc::default();
-        let mut credentials = MockCredentialsRepo::new();
-        let read = Arc::clone(&slots);
-        credentials
-            .expect_load()
-            .returning(move |id| Ok(read.lock().expect("lock").get(id.as_str()).cloned()));
-        let write = Arc::clone(&slots);
-        credentials.expect_store().returning(move |id, value| {
-            write
-                .lock()
-                .expect("lock")
-                .insert(id.as_str().to_owned(), value.to_owned());
-            Ok(())
-        });
-        (credentials, slots)
+        stopped_server(server_config(settings, credentials, test_dp()))
+            .await
+            .expect("a stopped handle")
     }
 
     const PREVIOUS_OVERLAY_TOKEN: &str = "fgo_previous-live-token";
 
-    fn credentials_refusing_to_restore(
-        previous: &'static str,
-    ) -> (MockCredentialsRepo, CredentialSlots) {
-        let slots: CredentialSlots = Arc::default();
-        slots.lock().expect("lock").insert(
-            forge_storage::SERVER_OVERLAY_TOKEN_CREDENTIAL_ID.to_owned(),
-            previous.to_owned(),
-        );
-        let mut credentials = MockCredentialsRepo::new();
-        let read = Arc::clone(&slots);
+    fn credentials_refusing_to_restore(previous: &str) -> Arc<MemCreds> {
+        let credentials =
+            MemCreds::with_slot(forge_storage::SERVER_OVERLAY_TOKEN_CREDENTIAL_ID, previous);
+        credentials.refuse_writes_of(previous);
         credentials
-            .expect_load()
-            .returning(move |id| Ok(read.lock().expect("lock").get(id.as_str()).cloned()));
-        let write = Arc::clone(&slots);
-        credentials.expect_store().returning(move |id, value| {
-            if value == previous {
-                return Err(forge_storage::StorageError::Connection {
-                    reason: "disk is full".into(),
-                });
-            }
-            write
-                .lock()
-                .expect("lock")
-                .insert(id.as_str().to_owned(), value.to_owned());
-            Ok(())
-        });
-        (credentials, slots)
     }
 
     async fn rotation_handle(
         reissue: Result<Vec<OverlayId>, forge_storage::StorageError>,
-    ) -> (ServerHandle, CredentialSlots) {
-        rotation_handle_over(reissue, slot_credentials()).await
+    ) -> (ServerHandle, Arc<MemCreds>) {
+        rotation_handle_over(reissue, MemCreds::new()).await
     }
 
     async fn rotation_handle_over(
         reissue: Result<Vec<OverlayId>, forge_storage::StorageError>,
-        (credentials, slots): (MockCredentialsRepo, CredentialSlots),
-    ) -> (ServerHandle, CredentialSlots) {
+        credentials: Arc<MemCreds>,
+    ) -> (ServerHandle, Arc<MemCreds>) {
         let mut dp = TestDataProvider::new();
         let reissue = std::sync::Mutex::new(Some(reissue));
         dp.overlay()
             .expect_reissue_all_credentials()
             .returning(move || reissue.lock().expect("lock").take().expect("one reissue"));
-        let dp = Arc::new(dp);
-        let bus = EventBus::new(Arc::new(NullEventLogRepo));
-        let engine = Arc::new(spawn_action_engine(
-            Arc::clone(&bus),
-            forge_runtime::Catalog::new(
-                dp.action_repo(),
-                dp.trigger_instance_repo(),
-                dp.catalog_revision(),
-            ),
-            dp.action_repo(),
-            dp.history_repo(),
-            Arc::new(SubActionRegistry::new()),
-            Arc::new(ActionCancelRegistry::new()),
-        ));
-        let config = ServerConfig::new(
+        let config = server_config(
             mem_settings() as Arc<dyn SettingsRepo>,
-            Arc::new(credentials) as Arc<dyn CredentialsRepo>,
-            bus,
-            dp.action_repo(),
-            Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
-            Arc::clone(&dp) as Arc<dyn UserGlobalsRepo>,
-            dp.overlay_repo(),
-            engine,
+            Arc::clone(&credentials) as Arc<dyn CredentialsRepo>,
+            Arc::new(dp),
         );
         (
             stopped_server(config).await.expect("a stopped handle"),
-            slots,
+            credentials,
         )
     }
 
@@ -599,11 +505,7 @@ mod tests {
         );
         assert!(gate.overlay_token().verify(fresh.expose()));
         assert_eq!(
-            slots
-                .lock()
-                .expect("lock")
-                .get(forge_storage::SERVER_OVERLAY_TOKEN_CREDENTIAL_ID)
-                .map(String::as_str),
+            stored_overlay_token(&slots).as_deref(),
             Some(fresh.expose()),
             "a restart would bring the old token back"
         );
@@ -700,7 +602,7 @@ mod tests {
 
     async fn regenerate_with_a_failed_reissue_and_restore(
         root: &std::path::Path,
-    ) -> (ServerHandle, CredentialSlots, Result<Secret, ServerError>) {
+    ) -> (ServerHandle, Arc<MemCreds>, Result<Secret, ServerError>) {
         let (handle, slots) = rotation_handle_over(
             Err(forge_storage::StorageError::Connection {
                 reason: "database is locked".into(),
@@ -772,61 +674,20 @@ mod tests {
         );
     }
 
-    fn stored_overlay_token(slots: &CredentialSlots) -> Option<String> {
-        slots
-            .lock()
-            .expect("lock")
-            .get(forge_storage::SERVER_OVERLAY_TOKEN_CREDENTIAL_ID)
-            .cloned()
+    fn stored_overlay_token(credentials: &MemCreds) -> Option<String> {
+        credentials.stored(forge_storage::SERVER_OVERLAY_TOKEN_CREDENTIAL_ID)
     }
 
     async fn adapter_of(handle: &ServerHandle) -> Arc<BusAdapter> {
         Arc::clone(&handle.inner.lock().await.state.bus_adapter)
     }
 
-    fn credentials_with_a_write_switch() -> (
-        MockCredentialsRepo,
-        CredentialSlots,
-        Arc<std::sync::atomic::AtomicBool>,
-    ) {
-        let slots: CredentialSlots = Arc::default();
-        let refuse_writes = Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let mut credentials = MockCredentialsRepo::new();
-        let read = Arc::clone(&slots);
-        credentials
-            .expect_load()
-            .returning(move |id| Ok(read.lock().expect("lock").get(id.as_str()).cloned()));
-        let write = Arc::clone(&slots);
-        let refuse = Arc::clone(&refuse_writes);
-        credentials.expect_store().returning(move |id, value| {
-            if refuse.load(std::sync::atomic::Ordering::SeqCst) {
-                return Err(forge_storage::StorageError::Connection {
-                    reason: "disk is full".into(),
-                });
-            }
-            write
-                .lock()
-                .expect("lock")
-                .insert(id.as_str().to_owned(), value.to_owned());
-            Ok(())
-        });
-        (credentials, slots, refuse_writes)
-    }
-
-    fn stored_bearer_token(slots: &CredentialSlots) -> Option<String> {
-        slots
-            .lock()
-            .expect("lock")
-            .get(forge_storage::SERVER_BEARER_CREDENTIAL_ID)
-            .cloned()
-    }
-
     #[tokio::test]
     async fn regenerating_the_bearer_token_makes_the_new_token_live_and_stored_and_refuses_the_old_one()
      {
-        let (credentials, slots, _refuse) = credentials_with_a_write_switch();
+        let slots = MemCreds::new();
         let handle =
-            stopped_handle_over(mem_settings() as Arc<dyn SettingsRepo>, credentials).await;
+            stopped_handle_over(mem_settings() as Arc<dyn SettingsRepo>, Arc::clone(&slots)).await;
         let old = handle.bearer_token().await;
 
         let fresh = handle.regenerate_bearer_token().await.expect("regenerate");
@@ -834,7 +695,9 @@ mod tests {
         assert_ne!(fresh, old);
         assert_eq!(handle.bearer_token().await, fresh);
         assert_eq!(
-            stored_bearer_token(&slots).as_deref(),
+            slots
+                .stored(forge_storage::SERVER_BEARER_CREDENTIAL_ID)
+                .as_deref(),
             Some(fresh.expose()),
             "a restart would bring the old token back"
         );
@@ -848,11 +711,11 @@ mod tests {
 
     #[tokio::test]
     async fn a_bearer_regenerate_the_store_refuses_keeps_the_old_token_live() {
-        let (credentials, slots, refuse) = credentials_with_a_write_switch();
+        let slots = MemCreds::new();
         let handle =
-            stopped_handle_over(mem_settings() as Arc<dyn SettingsRepo>, credentials).await;
+            stopped_handle_over(mem_settings() as Arc<dyn SettingsRepo>, Arc::clone(&slots)).await;
         let old = handle.bearer_token().await;
-        refuse.store(true, std::sync::atomic::Ordering::SeqCst);
+        slots.refuse_every_write(true);
 
         let result = handle.regenerate_bearer_token().await;
 
@@ -862,7 +725,12 @@ mod tests {
         );
         assert_eq!(handle.bearer_token().await, old);
         assert!(handle.auth_state().await.verify(old.expose()).await);
-        assert_eq!(stored_bearer_token(&slots).as_deref(), Some(old.expose()));
+        assert_eq!(
+            slots
+                .stored(forge_storage::SERVER_BEARER_CREDENTIAL_ID)
+                .as_deref(),
+            Some(old.expose())
+        );
     }
 
     #[tokio::test]
@@ -870,7 +738,7 @@ mod tests {
         let settings = mem_settings();
         let handle = stopped_handle_over(
             Arc::clone(&settings) as Arc<dyn SettingsRepo>,
-            slot_credentials().0,
+            MemCreds::new(),
         )
         .await;
 
@@ -895,8 +763,7 @@ mod tests {
     async fn a_reads_switch_the_settings_store_refuses_leaves_the_live_switch_unchanged() {
         let settings = mem_settings();
         settings.fail_writes(true);
-        let handle =
-            stopped_handle_over(settings as Arc<dyn SettingsRepo>, slot_credentials().0).await;
+        let handle = stopped_handle_over(settings as Arc<dyn SettingsRepo>, MemCreds::new()).await;
         let before = handle.reads_require_auth().await;
 
         let result = handle.set_reads_require_auth(!before).await;

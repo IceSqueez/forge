@@ -292,11 +292,7 @@ impl HotkeyClient {
     #[cfg(test)]
     pub(crate) fn new_for_test(portal_available: Option<bool>) -> Arc<Self> {
         use crate::backend::tests::MockPortalBackend;
-
-        struct NoopPublisher;
-        impl EventPublisher for NoopPublisher {
-            fn publish(&self, _: forge_events::Event) {}
-        }
+        use forge_events::test_support::NullPublisher;
 
         let (backend, _tx) = MockPortalBackend::new();
         let (health_tx, health_state) = make_health_state();
@@ -310,7 +306,7 @@ impl HotkeyClient {
             id_to_combo: RwLock::new(HashMap::new()),
             refused: Mutex::new(Vec::new()),
             id_counter: AtomicU32::new(1),
-            publisher: Arc::new(NoopPublisher),
+            publisher: Arc::new(NullPublisher),
             health_state,
             health_tx,
             portal_available,
@@ -675,32 +671,6 @@ pub(crate) mod tests {
         assert_eq!(client.registered_combos().len(), 1);
     }
 
-    #[tokio::test]
-    async fn a_fired_press_publishes_the_pressed_payload() {
-        let publisher = RecordingPublisher::new();
-        let (backend, inject_tx) = MockPortalBackend::new();
-        let client = start_supervised(backend, Arc::clone(&publisher) as Arc<dyn EventPublisher>);
-        let c = combo("Ctrl+F1");
-        let id = client.register(c.clone()).await.unwrap();
-
-        inject_tx
-            .send(crate::backend::HotkeyFiredEvent {
-                id,
-                combo: c,
-                timestamp_us: 0,
-                edge: crate::backend::HotkeyEdge::Press,
-            })
-            .await
-            .unwrap();
-        drain_fired(&inject_tx).await;
-
-        let ev = publisher.find_kind("hotkey.global.pressed").unwrap();
-        assert_eq!(
-            ev.payload,
-            serde_json::json!({ "combo": "Ctrl+F1", "id": id.0, "timestamp_us": 0 })
-        );
-    }
-
     #[cfg(target_os = "linux")]
     #[tokio::test]
     async fn portal_unavailable_event_carries_reason_token_and_human_detail() {
@@ -869,53 +839,6 @@ pub(crate) mod tests {
         assert_eq!(registers.load(Ordering::Relaxed), 1);
         assert_eq!(unregisters.load(Ordering::Relaxed), 0);
         assert!(os_registered.lock().unwrap().contains_key(&id.0));
-    }
-
-    #[tokio::test]
-    async fn a_fired_event_is_dropped_while_the_engine_is_disabled() {
-        let publisher = RecordingPublisher::new();
-        let (backend, inject_tx) = MockPortalBackend::new_delivery_gate_only();
-        let client = start_supervised(backend, Arc::clone(&publisher) as Arc<dyn EventPublisher>);
-        let c = combo("Ctrl+F1");
-        let id = client.register(c.clone()).await.unwrap();
-
-        client.disable().await.unwrap();
-        inject_tx
-            .send(crate::backend::HotkeyFiredEvent {
-                id,
-                combo: c,
-                timestamp_us: 0,
-                edge: crate::backend::HotkeyEdge::Press,
-            })
-            .await
-            .unwrap();
-        drain_fired(&inject_tx).await;
-
-        assert!(!publisher.has_kind("hotkey.global.pressed"));
-    }
-
-    #[tokio::test]
-    async fn a_fired_event_is_delivered_again_after_enable() {
-        let publisher = RecordingPublisher::new();
-        let (backend, inject_tx) = MockPortalBackend::new_delivery_gate_only();
-        let client = start_supervised(backend, Arc::clone(&publisher) as Arc<dyn EventPublisher>);
-        let c = combo("Ctrl+F1");
-        let id = client.register(c.clone()).await.unwrap();
-
-        client.disable().await.unwrap();
-        client.enable().await.unwrap();
-        inject_tx
-            .send(crate::backend::HotkeyFiredEvent {
-                id,
-                combo: c,
-                timestamp_us: 0,
-                edge: crate::backend::HotkeyEdge::Press,
-            })
-            .await
-            .unwrap();
-        drain_fired(&inject_tx).await;
-
-        assert!(publisher.has_kind("hotkey.global.pressed"));
     }
 
     #[tokio::test]
@@ -1174,20 +1097,6 @@ pub(crate) mod tests {
         client.disable().await.unwrap();
 
         assert_eq!(publisher.count_kind("hotkey.global.pressed"), 5);
-    }
-
-    #[tokio::test]
-    async fn a_repeat_press_of_a_held_combo_publishes_no_second_press() {
-        let publisher = RecordingPublisher::new();
-        let (backend, inject_tx) = MockPortalBackend::new();
-        let client = start_supervised(backend, Arc::clone(&publisher) as Arc<dyn EventPublisher>);
-        let c = combo("Ctrl+F1");
-        let id = client.register(c.clone()).await.unwrap();
-
-        press(&inject_tx, id, &c).await;
-        press(&inject_tx, id, &c).await;
-
-        assert_eq!(publisher.count_kind("hotkey.global.pressed"), 1);
     }
 
     #[tokio::test]

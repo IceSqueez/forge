@@ -38,6 +38,7 @@ rustix = { workspace = true }
 global-hotkey = { workspace = true }
 
 [dev-dependencies]
+forge-events = { path = "../forge-events", features = ["test-support"] }
 forge-hotkey = { path = ".", features = ["testing"] }
 forge-storage = { path = "../forge-storage", features = ["test-mocks", "settings-test-support"] }
 forge-storage-sqlite = { path = "../forge-storage-sqlite" }

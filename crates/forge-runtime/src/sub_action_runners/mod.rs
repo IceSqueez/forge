@@ -402,7 +402,8 @@ mod tests {
     use crate::egress::{EgressClient, HttpMethod};
     use crate::test_support::{frozen_core_runtime, sandboxed_backend};
     use crate::triggers::TimerTickDescriptor;
-    use forge_events::{Event, EventPublisher};
+    use forge_events::test_support::NullPublisher;
+
     use forge_registry::{
         CodeKind, DurationBounds, FormField, RegistryError, RunContext, SubActionRunner,
         TriggerKindDescriptor,
@@ -587,11 +588,6 @@ mod tests {
             })
             .collect();
         assert!(offenders.is_empty(), "{offenders:?}");
-    }
-
-    struct NullPublisher;
-    impl EventPublisher for NullPublisher {
-        fn publish(&self, _event: Event) {}
     }
 
     fn datetime(text: &str) -> Variant {

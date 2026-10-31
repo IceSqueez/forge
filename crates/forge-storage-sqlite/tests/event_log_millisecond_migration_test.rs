@@ -1,4 +1,5 @@
 #![allow(clippy::expect_used)]
+mod common;
 use forge_storage::EventLogRepo;
 use forge_storage_sqlite::{MIGRATIONS, SqliteEventLogRepo, apply_migrations, connect};
 use sqlx::SqlitePool;
@@ -9,7 +10,7 @@ const STORED_SECONDS: i64 = 1_700_000_000;
 
 async fn migrated_from_second_resolution() -> (SqlitePool, TempDir) {
     let dir = tempfile::tempdir().expect("a temporary directory");
-    let url = format!("sqlite://{}", dir.path().join("forge.db").display());
+    let url = common::database_url(&dir);
     let pool = connect(&url).await.expect("a database");
     MIGRATIONS
         .run_to(VERSION_BEFORE_MILLISECONDS, &pool)

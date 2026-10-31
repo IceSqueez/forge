@@ -1,7 +1,15 @@
-use std::path::Path;
-use std::sync::Arc;
+use std::collections::{BTreeSet, HashMap, HashSet};
+use std::net::SocketAddr;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
+use forge_registry::SubActionRegistry;
+use forge_runtime::{
+    ActionCancelRegistry, ActionEngineHandle, Catalog, EventBus, NullEventLogRepo,
+    spawn_action_engine,
+};
 use forge_storage::CatalogRevision;
 use forge_storage::action::MockActionRepo;
 use forge_storage::ban_ledger::MockBanLedgerRepo;
@@ -34,6 +42,23 @@ use forge_storage::{
 };
 use forge_types::{ScriptId, Variant};
 use time::OffsetDateTime;
+
+use crate::ServerTiming;
+use crate::audio_clips::AudioClipStore;
+use crate::auth::AuthState;
+use crate::bus_adapter::{BusAdapter, ClientFilterSet, ClientId};
+use crate::config::ServerConfig;
+use crate::origin::build_allowed_origins;
+use crate::protocol::DispatchContext;
+use crate::server::AppState;
+use crate::server_info::ServerInfo;
+use crate::ws_client::WsClient;
+
+const TEST_BIND_ADDR: &str = "127.0.0.1:9515";
+const TEST_PEER_ADDR: &str = "127.0.0.1:0";
+const TEST_OVERLAY_ROOT: &str = "/tmp/forge-test-overlays";
+const TEST_BEARER_TOKEN: &str = "test-token";
+const STORE_REFUSAL_REASON: &str = "disk is full";
 
 pub struct TestDataProvider {
     pub action_repo: Arc<MockActionRepo>,
@@ -455,11 +480,246 @@ pub fn test_dp() -> Arc<dyn DataProvider> {
 }
 
 pub fn test_creds() -> Arc<dyn CredentialsRepo> {
-    Arc::new(TestDataProvider::new())
+    MemCreds::new()
 }
 
 pub fn mem_settings() -> Arc<MemorySettings> {
     Arc::new(MemorySettings::new())
+}
+
+#[derive(Default)]
+pub struct MemCreds {
+    slots: Mutex<HashMap<String, String>>,
+    writes: Mutex<Vec<(String, String)>>,
+    refuse_every_write: AtomicBool,
+    refused_value: Mutex<Option<String>>,
+}
+
+impl MemCreds {
+    pub fn new() -> Arc<Self> {
+        Arc::default()
+    }
+
+    pub fn with_slot(id: &str, value: &str) -> Arc<Self> {
+        let creds = Self::new();
+        creds
+            .slots
+            .lock()
+            .expect("mutex")
+            .insert(id.to_owned(), value.to_owned());
+        creds
+    }
+
+    pub fn with_token(token: &str) -> Arc<Self> {
+        Self::with_slot(forge_storage::SERVER_BEARER_CREDENTIAL_ID, token)
+    }
+
+    pub fn stored(&self, id: &str) -> Option<String> {
+        self.slots.lock().expect("mutex").get(id).cloned()
+    }
+
+    pub fn writes_to(&self, id: &str) -> Vec<String> {
+        self.writes
+            .lock()
+            .expect("mutex")
+            .iter()
+            .filter(|(written, _)| written == id)
+            .map(|(_, value)| value.clone())
+            .collect()
+    }
+
+    pub fn refuse_every_write(&self, refuse: bool) {
+        self.refuse_every_write.store(refuse, Ordering::SeqCst);
+    }
+
+    pub fn refuse_writes_of(&self, value: &str) {
+        *self.refused_value.lock().expect("mutex") = Some(value.to_owned());
+    }
+
+    fn refuses(&self, value: &str) -> bool {
+        self.refuse_every_write.load(Ordering::SeqCst)
+            || self.refused_value.lock().expect("mutex").as_deref() == Some(value)
+    }
+}
+
+#[async_trait]
+impl CredentialsRepo for MemCreds {
+    async fn store(&self, id: &CredentialId, plaintext_bundle: &str) -> Result<(), StorageError> {
+        if self.refuses(plaintext_bundle) {
+            return Err(StorageError::Connection {
+                reason: STORE_REFUSAL_REASON.into(),
+            });
+        }
+        self.slots
+            .lock()
+            .expect("mutex")
+            .insert(id.as_str().to_owned(), plaintext_bundle.to_owned());
+        self.writes
+            .lock()
+            .expect("mutex")
+            .push((id.as_str().to_owned(), plaintext_bundle.to_owned()));
+        Ok(())
+    }
+
+    async fn load(&self, id: &CredentialId) -> Result<Option<String>, StorageError> {
+        Ok(self.stored(id.as_str()))
+    }
+
+    async fn delete(&self, id: &CredentialId) -> Result<bool, StorageError> {
+        Ok(self
+            .slots
+            .lock()
+            .expect("mutex")
+            .remove(id.as_str())
+            .is_some())
+    }
+
+    async fn list_ids(&self) -> Result<Vec<CredentialId>, StorageError> {
+        Ok(self
+            .slots
+            .lock()
+            .expect("mutex")
+            .keys()
+            .map(|id| CredentialId::new(id.clone()))
+            .collect())
+    }
+
+    async fn last_refresh(
+        &self,
+        _id: &CredentialId,
+    ) -> Result<Option<OffsetDateTime>, StorageError> {
+        Ok(None)
+    }
+
+    async fn mark_refreshed(&self, _id: &CredentialId) -> Result<(), StorageError> {
+        Ok(())
+    }
+}
+
+pub(crate) fn test_engine(bus: &Arc<EventBus>, dp: &dyn DataProvider) -> Arc<ActionEngineHandle> {
+    Arc::new(spawn_action_engine(
+        Arc::clone(bus),
+        Catalog::new(
+            dp.action_repo(),
+            dp.trigger_instance_repo(),
+            dp.catalog_revision(),
+        ),
+        dp.action_repo(),
+        dp.history_repo(),
+        Arc::new(SubActionRegistry::new()),
+        Arc::new(ActionCancelRegistry::new()),
+    ))
+}
+
+pub(crate) fn app_state_over(
+    auth: Arc<AuthState>,
+    credentials: Arc<dyn CredentialsRepo>,
+    dp: Arc<dyn DataProvider>,
+) -> AppState {
+    let bus = EventBus::new(Arc::new(NullEventLogRepo));
+    let bus_adapter = BusAdapter::new(bus.clone());
+    bus_adapter.spawn();
+    let action_engine = test_engine(&bus, &*dp);
+    let bind_addr: SocketAddr = TEST_BIND_ADDR.parse().expect("addr");
+    AppState {
+        auth,
+        bus,
+        bus_adapter,
+        actions: dp.action_repo(),
+        globals: Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
+        user_globals: Arc::clone(&dp) as Arc<dyn UserGlobalsRepo>,
+        overlays: dp.overlay_repo(),
+        credentials,
+        settings: mem_settings(),
+        server_info: ServerInfo::serving(BTreeSet::new()),
+        action_engine,
+        audio_clips: AudioClipStore::new(),
+        overlay_root: Arc::new(PathBuf::from(TEST_OVERLAY_ROOT)),
+        overlay_cors_any_origin: true,
+        bind_addr,
+        timing: ServerTiming::default(),
+        allowed_origins: Arc::new(build_allowed_origins(bind_addr, &[])),
+    }
+}
+
+pub(crate) fn app_state(auth: Arc<AuthState>, credentials: Arc<dyn CredentialsRepo>) -> AppState {
+    app_state_over(auth, credentials, test_dp())
+}
+
+pub(crate) fn server_config(
+    settings: Arc<dyn SettingsRepo>,
+    credentials: Arc<dyn CredentialsRepo>,
+    dp: Arc<dyn DataProvider>,
+) -> ServerConfig {
+    let bus = EventBus::new(Arc::new(NullEventLogRepo));
+    let action_engine = test_engine(&bus, &*dp);
+    ServerConfig::new(
+        settings,
+        credentials,
+        bus,
+        dp.action_repo(),
+        Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
+        Arc::clone(&dp) as Arc<dyn UserGlobalsRepo>,
+        dp.overlay_repo(),
+        action_engine,
+    )
+}
+
+fn context_for(
+    client: Arc<WsClient>,
+    bus: Arc<EventBus>,
+    bus_adapter: Arc<BusAdapter>,
+    dp: Arc<dyn DataProvider>,
+    auth_required_for_reads: bool,
+) -> DispatchContext {
+    let action_engine = test_engine(&bus, &*dp);
+    DispatchContext {
+        bus,
+        bus_adapter,
+        actions: dp.action_repo(),
+        globals: Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
+        user_globals: Arc::clone(&dp) as Arc<dyn UserGlobalsRepo>,
+        overlays: dp.overlay_repo(),
+        auth_state: AuthState::for_test(auth_required_for_reads, TEST_BEARER_TOKEN),
+        client,
+        credentials: test_creds(),
+        server_info: ServerInfo::serving(BTreeSet::new()),
+        action_engine,
+        overlay_root: Arc::new(PathBuf::from(TEST_OVERLAY_ROOT)),
+        overlay_channel_swap: tokio::sync::Mutex::new(None),
+        close_after_auth_failure: AtomicBool::new(false),
+    }
+}
+
+pub(crate) fn dispatch_ctx(
+    dp: Arc<dyn DataProvider>,
+    auth_required_for_reads: bool,
+) -> DispatchContext {
+    let bus = EventBus::new(Arc::new(NullEventLogRepo));
+    let bus_adapter = BusAdapter::new(bus.clone());
+    let client = Arc::new(WsClient::new(
+        ClientId::next(),
+        TEST_PEER_ADDR.parse().expect("addr"),
+        Arc::new(AtomicU64::new(0)),
+    ));
+    context_for(client, bus, bus_adapter, dp, auth_required_for_reads)
+}
+
+pub(crate) async fn registered_dispatch_ctx(
+    dp: Arc<dyn DataProvider>,
+    auth_required_for_reads: bool,
+) -> DispatchContext {
+    let bus = EventBus::new(Arc::new(NullEventLogRepo));
+    let bus_adapter = BusAdapter::new(bus.clone());
+    let (handle, _rx) = bus_adapter
+        .register_client(ClientFilterSet::new(HashSet::new()))
+        .await;
+    let client = Arc::new(WsClient::new(
+        handle.id,
+        TEST_PEER_ADDR.parse().expect("addr"),
+        Arc::clone(&handle.drop_counter),
+    ));
+    context_for(client, bus, bus_adapter, dp, auth_required_for_reads)
 }
 
 pub mod log_capture {

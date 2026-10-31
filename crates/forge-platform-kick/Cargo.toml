@@ -30,6 +30,7 @@ async-trait = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
+forge-events = { path = "../forge-events", features = ["test-support"] }
 futures-util = { workspace = true }
 reqwest = { workspace = true }
 wiremock = { workspace = true }

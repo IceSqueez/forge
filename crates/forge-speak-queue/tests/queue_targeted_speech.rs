@@ -18,10 +18,10 @@ use forge_tts_core::{
 };
 use tokio::sync::Notify;
 
-use common::{make_deps, recording_sink, request, standard_registry, voice, wait_for};
-
-const WAIT_MS: u64 = 30_000;
-const QUIET_MS: u64 = 300;
+use common::{
+    drain_once_settled_on_paused_clock, make_deps, next_event, next_matching, recording_sink,
+    request, standard_registry, voice, wait_for,
+};
 
 struct RecordingLegs {
     targets: Mutex<Vec<PlaybackTarget>>,
@@ -77,18 +77,7 @@ fn is_terminal_for(event: &SpeakEvent, id: &RequestId) -> bool {
 }
 
 async fn terminal_of(stream: &mut SpeakEventStream, id: &RequestId) -> SpeakEvent {
-    let deadline = std::time::Duration::from_millis(WAIT_MS);
-    tokio::time::timeout(deadline, async {
-        loop {
-            match stream.recv().await {
-                Ok(event) if is_terminal_for(&event, id) => return event,
-                Ok(_) => continue,
-                Err(e) => panic!("the event stream ended before the request did: {e:?}"),
-            }
-        }
-    })
-    .await
-    .expect("the request never reached a terminal outcome")
+    next_matching(stream, |event| is_terminal_for(event, id)).await
 }
 
 #[tokio::test]
@@ -226,13 +215,7 @@ impl TtsEngine for GatedEngine {
         ID.get_or_init(|| EngineId("gate".into()))
     }
     fn capabilities(&self) -> &EngineCapabilities {
-        static CAPS: EngineCapabilities = EngineCapabilities {
-            ssml: false,
-            neural_voices: false,
-            streaming: false,
-            custom_lexicons: false,
-        };
-        &CAPS
+        &common::PLAIN_CAPABILITIES
     }
     async fn list_voices(&self) -> Result<Vec<TtsVoice>, TtsError> {
         Ok(vec![voice("g-voice", "gate")])
@@ -315,37 +298,25 @@ fn terminal_of_event(event: SpeakEvent) -> Option<(RequestId, Terminal)> {
     }
 }
 
-async fn terminals_until_quiet(
+async fn terminals_once_settled(
     stream: &mut SpeakEventStream,
     expected: &[&RequestId],
 ) -> HashMap<RequestId, Vec<Terminal>> {
     let mut seen: HashMap<RequestId, Vec<Terminal>> = HashMap::new();
-    let every_expected_ended =
-        tokio::time::timeout(std::time::Duration::from_millis(WAIT_MS), async {
-            while !expected.iter().all(|id| seen.contains_key(*id)) {
-                match stream.recv().await {
-                    Ok(event) => {
-                        if let Some((id, terminal)) = terminal_of_event(event) {
-                            seen.entry(id).or_default().push(terminal);
-                        }
-                    }
-                    Err(e) => panic!("the event stream ended early: {e:?}"),
-                }
-            }
-        })
-        .await;
-    if every_expected_ended.is_ok() {
-        let quiet = std::time::Duration::from_millis(QUIET_MS);
-        while let Ok(Ok(event)) = tokio::time::timeout(quiet, stream.recv()).await {
-            if let Some((id, terminal)) = terminal_of_event(event) {
-                seen.entry(id).or_default().push(terminal);
-            }
+    while !expected.iter().all(|id| seen.contains_key(*id)) {
+        if let Some((id, terminal)) = terminal_of_event(next_event(stream).await) {
+            seen.entry(id).or_default().push(terminal);
+        }
+    }
+    for event in drain_once_settled_on_paused_clock(stream).await {
+        if let Some((id, terminal)) = terminal_of_event(event) {
+            seen.entry(id).or_default().push(terminal);
         }
     }
     seen
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn cancel_ends_a_waiting_request_as_removed_and_the_active_one_as_skipped_exactly_once() {
     let (handle, mut stream, gate, head) = held_queue().await;
     let waiting = enqueue_waiting(&handle, 1).await.remove(0);
@@ -364,7 +335,7 @@ async fn cancel_ends_a_waiting_request_as_removed_and_the_active_one_as_skipped_
         .unwrap();
     gate.notify_one();
 
-    let seen = terminals_until_quiet(&mut stream, &[&waiting, &head]).await;
+    let seen = terminals_once_settled(&mut stream, &[&waiting, &head]).await;
     assert_eq!(
         (seen.get(&waiting).cloned(), seen.get(&head).cloned()),
         (Some(vec![Terminal::Removed]), Some(vec![Terminal::Skipped])),
@@ -372,7 +343,7 @@ async fn cancel_ends_a_waiting_request_as_removed_and_the_active_one_as_skipped_
     );
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn clearing_ends_every_dropped_request_as_removed_so_no_waiter_hangs() {
     for (command, head_ends_as) in [
         (SpeakCommand::Clear, Terminal::Skipped),
@@ -386,7 +357,7 @@ async fn clearing_ends_every_dropped_request_as_removed_so_no_waiter_hangs() {
         gate.notify_one();
 
         let expected: Vec<&RequestId> = waiting.iter().chain([&head]).collect();
-        let seen = terminals_until_quiet(&mut stream, &expected).await;
+        let seen = terminals_once_settled(&mut stream, &expected).await;
         for id in &waiting {
             assert_eq!(
                 seen.get(id).cloned(),

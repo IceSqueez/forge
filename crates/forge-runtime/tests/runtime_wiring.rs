@@ -21,15 +21,13 @@ use forge_storage::trigger_instance::MockTriggerInstanceRepo;
 use forge_storage::{DataProvider, GlobalsRepo, MissedRunPolicy, SettingsRepo, StorageError};
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::{
-    Action, ActionId, ArgStack, EventId, ExecutionMode, LatestScope, LatestValue,
-    LatestValueReader, Queue, QueueId, SubActionConfig, SubActionOutcome, SubActionStep,
-    TriggerInstanceId, Variant,
+    Action, ActionId, ArgStack, EventId, LatestScope, LatestValue, LatestValueReader, Queue,
+    QueueId, SubActionConfig, SubActionOutcome, SubActionStep, TriggerInstanceId, Variant,
 };
 use tempfile::TempDir;
 use tokio::sync::mpsc;
 use tokio::time::timeout;
 
-const TEST_KEY: [u8; 32] = [0x7c; 32];
 const HANG_GUARD: Duration = Duration::from_secs(30);
 const INLINE_BODY_KEY: &str = "body";
 const QUEUE_PAUSE_KIND_ID: &str = "core.queue.pause";
@@ -38,11 +36,7 @@ const QUEUES_READ: &str = "queues read";
 const CATALOG_BUILT: &str = "catalog built";
 
 async fn sqlite() -> (Arc<SqliteBackend>, TempDir) {
-    let media = tempfile::tempdir().unwrap();
-    let backend =
-        SqliteBackend::open_for_test(":memory:", TEST_KEY, media.path().join("media"), None)
-            .await
-            .unwrap();
+    let (backend, media) = common::sqlite_backend().await;
     forge_storage::write_setting(&backend, &forge_script::settings::TIMEOUT_MS, &10_000)
         .await
         .unwrap();
@@ -63,18 +57,7 @@ fn queue(name: &str) -> Queue {
 }
 
 fn action(queue_id: QueueId, sub_actions: Vec<SubActionStep>) -> Action {
-    Action {
-        id: ActionId::new(),
-        name: "wired".to_owned(),
-        group: None,
-        queue_id,
-        enabled: true,
-        concurrent: false,
-        bypass_pause: false,
-        execution_mode: ExecutionMode::Sequential,
-        description: None,
-        sub_actions,
-    }
+    common::sequential_action(ActionId::new(), "wired", queue_id, sub_actions)
 }
 
 fn pause_step(queue_id: QueueId) -> SubActionStep {

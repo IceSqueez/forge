@@ -423,7 +423,8 @@ fn apply_response(
 mod tests {
     use super::*;
     use crate::test_support::{Sandboxed, sandboxed_backend};
-    use forge_events::{Event, EventPublisher};
+    use forge_events::test_support::NullPublisher;
+
     use forge_registry::ConfigProblem;
     use forge_registry::ConfigReason;
     use forge_registry::RegistryError;
@@ -432,11 +433,6 @@ mod tests {
     use forge_types::EventId;
     use wiremock::matchers::{body_string, header, method, query_param};
     use wiremock::{Mock, MockServer, ResponseTemplate};
-
-    struct NullPublisher;
-    impl EventPublisher for NullPublisher {
-        fn publish(&self, _event: Event) {}
-    }
 
     async fn backend() -> Sandboxed<Arc<SqliteBackend>> {
         sandboxed_backend([0x11; 32]).await.map(Arc::new)

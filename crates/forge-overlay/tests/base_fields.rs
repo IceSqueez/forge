@@ -1,25 +1,14 @@
 #![allow(clippy::expect_used)]
+mod common;
+use common::{ALERT_KIND, BLANK_KIND, CHAT_KIND, FRAME_KIND, GOAL_KIND, TICKER_KIND, registry};
+
 use std::time::Duration;
 
 use forge_overlay::config::{DURATION, SOUND, SPEECH, SPEECH_VOICE};
 use forge_overlay::{
-    DeliveryDisposition, OverlayConfig, OverlayKindRegistry, SpeechProgram, display_window,
-    register_builtin_kinds, take_speech,
+    DeliveryDisposition, OverlayConfig, SpeechProgram, display_window, take_speech,
 };
 use forge_types::Variant;
-
-const ALERT_KIND: &str = "overlay.alert";
-const BLANK_KIND: &str = "overlay.blank";
-const CHAT_KIND: &str = "overlay.chat";
-const FRAME_KIND: &str = "overlay.frame";
-const GOAL_KIND: &str = "overlay.goal";
-const TICKER_KIND: &str = "overlay.ticker";
-
-fn registry() -> OverlayKindRegistry {
-    let mut reg = OverlayKindRegistry::new();
-    register_builtin_kinds(&mut reg).expect("the builtin overlay kinds register");
-    reg
-}
 
 fn stored_duration(value: Variant) -> OverlayConfig {
     OverlayConfig::from([(DURATION.to_owned(), value)])

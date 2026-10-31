@@ -2,18 +2,15 @@
 use std::sync::Arc;
 
 use forge_storage::{DataProvider, GlobalsExport, GlobalsRepo, StorageError};
-use forge_storage_sqlite::{SqliteBackend, SqliteGlobalsRepo, apply_migrations};
+use forge_storage_sqlite::{SqliteBackend, SqliteGlobalsRepo};
 use forge_types::Variant;
 
 mod common;
-use common::Sandboxed;
+use common::{Sandboxed, TEST_KEY};
 
-async fn setup() -> SqliteGlobalsRepo {
-    let pool = sqlx::SqlitePool::connect("sqlite::memory:")
-        .await
-        .expect("in-memory pool");
-    apply_migrations(&pool).await.expect("migrations apply");
-    SqliteGlobalsRepo::new(pool)
+async fn setup() -> Sandboxed<SqliteGlobalsRepo> {
+    let pools = common::migrated_pools().await;
+    pools.map(SqliteGlobalsRepo::new)
 }
 
 #[tokio::test]
@@ -57,7 +54,7 @@ async fn shutting_down_stores_reads_not_flushed_yet() {
 
     backend.shutdown().await;
 
-    let url = format!("sqlite://{}", dir.path().join("test.sqlite").display());
+    let url = common::sqlite_url(&dir.path().join("test.sqlite"));
     let pool = sqlx::SqlitePool::connect(&url).await.expect("reopen");
     let reads: i64 = sqlx::query_scalar("SELECT reads FROM globals WHERE name = 'counted'")
         .fetch_one(&pool)
@@ -175,12 +172,10 @@ async fn set_overwrites_existing_value() {
     assert_eq!(got, Some(Variant::Int(2)));
 }
 
-const TEST_KEY: [u8; 32] = [0xab; 32];
-
 async fn setup_file_backed() -> (tempfile::TempDir, Sandboxed<Arc<SqliteBackend>>) {
     let dir = tempfile::TempDir::new().expect("tempdir");
     let path = dir.path().join("test.sqlite");
-    let url = format!("sqlite://{}", path.display());
+    let url = common::sqlite_url(&path);
     let backend = common::sandboxed_backend(&url, TEST_KEY)
         .await
         .map(Arc::new);
@@ -244,17 +239,14 @@ async fn incr_saturates_at_i64_max_instead_of_wrapping() {
 
 #[tokio::test]
 async fn list_skips_a_row_whose_stored_value_does_not_decode() {
-    let pool = sqlx::SqlitePool::connect("sqlite::memory:")
-        .await
-        .expect("in-memory pool");
-    apply_migrations(&pool).await.expect("migrations apply");
-    let repo = SqliteGlobalsRepo::new(pool.clone());
+    let pools = common::migrated_pools().await;
+    let repo = SqliteGlobalsRepo::new(pools.clone());
     repo.set("good", Variant::Int(1), true).await.expect("set");
     sqlx::query(
         "INSERT INTO globals (name, value, type_tag, persisted, created_at, last_modified)
          VALUES ('corrupt', 'not json', 'int', 1, 0, 0)",
     )
-    .execute(&pool)
+    .execute(pools.writer())
     .await
     .expect("insert corrupt row");
 
@@ -519,7 +511,7 @@ async fn persisted_query_does_not_count_as_a_read() {
 
 #[tokio::test]
 async fn backend_persisted_delegates_to_globals_repo() {
-    let backend = common::sandboxed_backend(":memory:", TEST_KEY).await;
+    let backend = common::migrated_backend(TEST_KEY).await;
     backend
         .set("live", Variant::Int(1), true)
         .await
@@ -534,7 +526,7 @@ async fn backend_persisted_delegates_to_globals_repo() {
 
 #[tokio::test]
 async fn backend_export_all_delegates_correctly() {
-    let backend = common::sandboxed_backend(":memory:", TEST_KEY).await;
+    let backend = common::migrated_backend(TEST_KEY).await;
 
     backend
         .set("x", Variant::Int(100), true)

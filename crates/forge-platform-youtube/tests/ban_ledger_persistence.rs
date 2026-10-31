@@ -1,42 +1,23 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
-use std::collections::BTreeMap;
-use std::ffi::OsString;
+mod support;
+
 use std::path::Path;
 use std::sync::Arc;
 
-use forge_events::{Event, EventPublisher};
-use forge_platform_core::{EndpointSurface, PlatformEndpoints, PlatformError};
-use forge_platform_youtube::{
-    LiveChatIdHandle, SharedQuota, YoutubeBroadcaster, YoutubeDataApi, YoutubeModeration,
-};
+use forge_platform_youtube::{LiveChatIdHandle, SharedQuota, YoutubeDataApi, YoutubeModeration};
 use forge_storage::{BanLedgerKey, DataProvider};
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::PlatformId;
-use futures::future::BoxFuture;
+use support::{SilentBus, data_api_override, fixed_broadcaster, fixed_token};
 use time::OffsetDateTime;
 use wiremock::matchers::{method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-const DATA_API_PREFIX: &str = "/youtube/v3";
 const BANS_ROUTE: &str = "/youtube/v3/liveChat/bans";
 const BAN_ID: &str = "ban-resource-restart";
 const BROADCASTER: &str = "UCbroadcaster";
 const VIEWER: &str = "UCviewer";
 const TEST_KEY: [u8; 32] = [0x5a; 32];
-
-fn data_api_override(server: &MockServer) -> PlatformEndpoints {
-    let table = BTreeMap::from([(
-        EndpointSurface::YouTubeDataApi.env_var(),
-        format!("{}{DATA_API_PREFIX}", server.uri()),
-    )]);
-    PlatformEndpoints::resolve(|variable| table.get(variable).map(OsString::from)).unwrap()
-}
-
-struct SilentBus;
-
-impl EventPublisher for SilentBus {
-    fn publish(&self, _event: Event) {}
-}
 
 async fn open_backend(dir: &Path) -> SqliteBackend {
     let url = format!("sqlite:{}", dir.join("forge.db").display());
@@ -48,19 +29,6 @@ async fn open_backend(dir: &Path) -> SqliteBackend {
 fn moderation_over(server: &MockServer, backend: &SqliteBackend) -> YoutubeModeration {
     let live_chat_id = LiveChatIdHandle::new();
     live_chat_id.set(Some("live-chat".to_owned()));
-    let token_source: Arc<
-        dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync,
-    > = Arc::new(|| Box::pin(async { Ok("token".to_owned()) }));
-    let broadcaster_source: Arc<
-        dyn Fn() -> BoxFuture<'static, Result<YoutubeBroadcaster, PlatformError>> + Send + Sync,
-    > = Arc::new(|| {
-        Box::pin(async {
-            Ok(YoutubeBroadcaster {
-                channel_id: BROADCASTER.to_owned(),
-                channel_title: "Broadcaster".to_owned(),
-            })
-        })
-    });
     let api = YoutubeDataApi::new(
         &data_api_override(server),
         SharedQuota::default(),
@@ -69,8 +37,8 @@ fn moderation_over(server: &MockServer, backend: &SqliteBackend) -> YoutubeModer
     .unwrap();
     YoutubeModeration::new(
         api,
-        token_source,
-        broadcaster_source,
+        fixed_token("token"),
+        fixed_broadcaster(BROADCASTER, "Broadcaster"),
         live_chat_id,
         backend.ban_ledger_repo(),
     )

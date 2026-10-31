@@ -81,9 +81,9 @@ impl SubActionRunner for BanUserRunner {
 
 #[cfg(test)]
 mod tests {
+    use forge_events::test_support::NullPublisher;
     use futures::future::BoxFuture;
 
-    use forge_events::{Event, EventPublisher};
     use forge_types::EventId;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -96,11 +96,6 @@ mod tests {
     use forge_types::SubActionOutcome;
     use forge_types::Variant;
     use std::collections::BTreeMap;
-
-    struct NoopPublisher;
-    impl EventPublisher for NoopPublisher {
-        fn publish(&self, _: Event) {}
-    }
 
     fn runner() -> BanUserRunner {
         let source: Arc<
@@ -198,7 +193,7 @@ mod tests {
         let stack = ArgStack::new()
             .set("uid".to_owned(), Variant::String("UC-target".to_owned()))
             .set("user_name".to_owned(), Variant::String("Alice".to_owned()));
-        let ctx = RunContext::leaf(&stack, 0, EventId::new(), &NoopPublisher);
+        let ctx = RunContext::leaf(&stack, 0, EventId::new(), &NullPublisher);
 
         let (telemetry, _) = BanUserRunner::new(Arc::new(moderation))
             .execute(&display_name_config("%uid%", "%user_name%"), &ctx)

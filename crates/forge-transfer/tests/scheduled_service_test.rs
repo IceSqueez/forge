@@ -1,4 +1,6 @@
 #![allow(clippy::unwrap_used)]
+mod common;
+
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
@@ -8,10 +10,7 @@ use forge_storage::settings::core_settings::{
     BACKUP_SCHEDULE_KEEP_DAILY_DAYS, BACKUP_SCHEDULE_KEEP_NEWEST, BACKUP_SCHEDULE_KEY,
     BACKUP_SCHEDULE_LAST_SUCCESS_AT,
 };
-use forge_storage::{
-    DATABASE_FILE_NAME, DataProvider, RowClasses, Setting, SettingCodec, SettingsRepo,
-    write_setting,
-};
+use forge_storage::{DataProvider, RowClasses, Setting, SettingCodec, SettingsRepo, write_setting};
 use forge_storage_sqlite::SqliteBackend;
 use forge_transfer::{
     BUNDLE_EXTENSION, BackupClock, FailureCategory, Passphrase, ScheduleKey, ScheduleState,
@@ -23,7 +22,6 @@ use time::format_description::well_known::Rfc3339;
 use time::{Duration, OffsetDateTime, UtcOffset};
 
 const PASSPHRASE: &str = "correct horse battery staple";
-const SQLITE_KEY: [u8; 32] = [0x42; 32];
 const INTERVAL_MINUTES: i64 = 60;
 
 struct FakeClock {
@@ -70,11 +68,7 @@ impl Fixture {
         std::fs::create_dir_all(data.join(MEDIA_DIR_NAME)).unwrap();
         std::fs::write(data.join(MEDIA_DIR_NAME).join("clip.ogg"), b"media").unwrap();
         std::fs::create_dir_all(dir.path().join("out")).unwrap();
-        let url = format!("sqlite://{}", data.join(DATABASE_FILE_NAME).display());
-        let backend =
-            SqliteBackend::open_for_test(&url, SQLITE_KEY, data.join(MEDIA_DIR_NAME), None)
-                .await
-                .unwrap();
+        let backend = common::open_backend(&data).await;
         let backend = Arc::new(backend);
         Self {
             dir,

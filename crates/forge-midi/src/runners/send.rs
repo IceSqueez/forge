@@ -213,10 +213,10 @@ impl SubActionRunner for MidiSendRunner {
 
 #[cfg(test)]
 mod tests {
+    use forge_events::test_support::NullPublisher;
     use std::collections::BTreeMap;
     use std::sync::{Arc, Mutex};
 
-    use forge_events::{Event, EventPublisher};
     use forge_registry::{ConfigProblem, ConfigReason, RunContext, SubActionRunner, ValueBounds};
     use forge_types::{ArgStack, EventId, SubActionOutcome, Variant};
 
@@ -227,11 +227,6 @@ mod tests {
     use crate::error::MidiError;
     use crate::events::{MidiPortInfo, PortDirection};
     use crate::sink::MidiSink;
-
-    struct NoopPublisher;
-    impl EventPublisher for NoopPublisher {
-        fn publish(&self, _: Event) {}
-    }
 
     #[derive(Default)]
     struct RecordingSink {
@@ -269,14 +264,14 @@ mod tests {
         ));
         let client = MidiClient::start(
             MidiConfig::default(),
-            Arc::new(NoopPublisher),
+            Arc::new(NullPublisher),
             Arc::clone(&backend) as Arc<dyn crate::backend::MidiBackend>,
         );
         (client, backend)
     }
 
     fn make_run_context<'a>(stack: &'a ArgStack) -> RunContext<'a> {
-        RunContext::leaf(stack, 0, EventId::new(), &NoopPublisher)
+        RunContext::leaf(stack, 0, EventId::new(), &NullPublisher)
     }
 
     fn step(kind: &str, entries: &[(&str, Variant)]) -> SubActionConfig {

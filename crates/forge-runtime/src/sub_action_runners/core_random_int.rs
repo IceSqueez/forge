@@ -135,16 +135,12 @@ impl SubActionRunner for CoreRandomIntRunner {
 
 #[cfg(test)]
 mod tests {
-    use forge_events::{Event, EventPublisher};
+    use forge_events::test_support::NullPublisher;
+
     use forge_registry::RegistryError;
     use forge_types::{EventId, SubActionOutcome};
 
     use super::*;
-
-    struct NullPublisher;
-    impl EventPublisher for NullPublisher {
-        fn publish(&self, _event: Event) {}
-    }
 
     fn text(value: &str) -> Variant {
         Variant::String(value.to_owned())

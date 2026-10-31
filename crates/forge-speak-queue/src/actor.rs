@@ -1372,6 +1372,7 @@ fn next_request<'a>(
 mod tests {
     use async_trait::async_trait;
     use forge_audio::{AudioError, AudioSink};
+    use forge_events::test_support::NullPublisher;
     use forge_events::{Event, EventPublisher};
     use forge_speech_types::{AssignmentStrategy, IgnoreProfile, SynthesisDefaults};
 
@@ -1402,11 +1403,6 @@ mod tests {
         async fn play(&self, _buf: PcmBuffer) -> Result<(), AudioError> {
             Ok(())
         }
-    }
-
-    struct NullPublisher;
-    impl EventPublisher for NullPublisher {
-        fn publish(&self, _event: Event) {}
     }
 
     fn minimal_deps() -> QueueDeps {

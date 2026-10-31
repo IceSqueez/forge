@@ -1235,7 +1235,6 @@ fn fmt_rate(value: Option<f32>, blocked: bool) -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
 
     use forge_components::ThemeId;
     use forge_speech_types::{EngineId, VoiceId};
@@ -1246,18 +1245,12 @@ mod tests {
     use crate::i18n::install_language;
     use crate::test_support::{
         LiveAliases, Sandboxed, alias_shape, error_toasts, live_alias, runtime, sandboxed_backend,
-        spawn_speak_queue,
+        settle_until, spawn_speak_queue,
     };
     use forge_components::Presentation;
     use forge_components::Toasts;
 
     const TEST_KEY: [u8; 32] = [0x5a; 32];
-    const SETTLE_DEADLINE: Duration = Duration::from_secs(30);
-
-    fn until_the_settle_deadline() -> impl Iterator<Item = ()> {
-        let deadline = std::time::Instant::now() + SETTLE_DEADLINE;
-        std::iter::from_fn(move || (std::time::Instant::now() < deadline).then_some(()))
-    }
 
     struct Fixture {
         backend: Sandboxed<forge_storage_sqlite::SqliteBackend>,
@@ -1350,21 +1343,6 @@ mod tests {
         (services.into_fixture(view), vcx)
     }
 
-    fn settle(
-        cx: &mut TestAppContext,
-        rt: &tokio::runtime::Runtime,
-        done: impl Fn(&mut TestAppContext) -> bool,
-    ) {
-        for () in until_the_settle_deadline() {
-            rt.block_on(async { tokio::time::sleep(Duration::from_millis(1)).await });
-            cx.run_until_parked();
-            if done(cx) {
-                return;
-            }
-        }
-        panic!("the save never settled");
-    }
-
     fn live_alias_for(fixture: &Fixture, viewer_id: &str) -> Option<VoiceAlias> {
         live_alias(&fixture.resolver, viewer_id)
     }
@@ -1377,7 +1355,7 @@ mod tests {
         fixture.view.update(cx, |view, cx| {
             view.persist(keyed("fresh", "twitch:alice", "new-voice"), cx)
         });
-        settle(cx, &rt, |_| {
+        settle_until(cx, &rt, |_| {
             live_alias_for(&fixture, "twitch:alice")
                 .is_some_and(|alias| alias.voice_id.0 == "new-voice")
         });
@@ -1403,7 +1381,7 @@ mod tests {
         fixture.view.update(cx, |view, cx| {
             view.persist(keyed("a", "twitch:bob", "voice-edited"), cx)
         });
-        settle(cx, &rt, |cx| cx.update(|cx| error_toasts(cx)) > 0);
+        settle_until(cx, &rt, |cx| cx.update(|cx| error_toasts(cx)) > 0);
 
         let messages: Vec<String> = cx.update(|cx| {
             cx.global::<Toasts>()
@@ -1433,7 +1411,7 @@ mod tests {
     ) -> Fixture {
         let fixture = mount(cx, rt, seeded);
         let view = fixture.view.clone();
-        settle(cx, rt, |cx| {
+        settle_until(cx, rt, |cx| {
             view.read_with(cx, |view, _| !view.aliases.is_empty())
         });
         fixture
@@ -1453,7 +1431,7 @@ mod tests {
             view.apply_aliases(vec![bob, alice], cx);
             view.confirm_delete(cx);
         });
-        settle(cx, &rt, |_| stored_ids(&fixture, &rt).len() == 1);
+        settle_until(cx, &rt, |_| stored_ids(&fixture, &rt).len() == 1);
 
         assert_eq!(stored_ids(&fixture, &rt), ["a"]);
     }
@@ -1503,7 +1481,7 @@ mod tests {
             };
             let (fixture, vcx) = mount_in_window(cx, &rt, vec![seeded]);
             let view = fixture.view.clone();
-            settle(vcx, &rt, |cx| {
+            settle_until(vcx, &rt, |cx| {
                 view.read_with(cx, |view, _| !view.aliases.is_empty())
             });
 
@@ -1523,7 +1501,7 @@ mod tests {
                     .map(|alias| (alias.viewer_id, alias.voice_id.0))
                     .collect::<Vec<_>>()
             };
-            settle(vcx, &rt, |_| {
+            settle_until(vcx, &rt, |_| {
                 saved()
                     .iter()
                     .any(|(id, voice)| id != viewer_id || voice != "amy")
@@ -1552,7 +1530,7 @@ mod tests {
         };
         let (fixture, vcx) = mount_in_window(cx, &rt, vec![seeded.clone()]);
         let view = fixture.view.clone();
-        settle(vcx, &rt, |cx| {
+        settle_until(vcx, &rt, |cx| {
             view.read_with(cx, |view, _| !view.aliases.is_empty())
         });
 
@@ -1566,7 +1544,7 @@ mod tests {
         vcx.simulate_keystrokes("enter");
         let repo = fixture.backend.voice_alias_repo();
         let saved = || rt.block_on(repo.list()).expect("list");
-        settle(vcx, &rt, |_| {
+        settle_until(vcx, &rt, |_| {
             saved()
                 .iter()
                 .any(|alias| alias.viewer_id == "twitch:alicex")

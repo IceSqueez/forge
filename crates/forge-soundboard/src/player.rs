@@ -1136,10 +1136,7 @@ mod tests {
 
         assert_eq!(*play_count.lock().unwrap(), 1, "sink must be called once");
 
-        let deadline = std::time::Instant::now() + Duration::from_secs(30);
-        while events.lock().unwrap().len() < 2 && std::time::Instant::now() < deadline {
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
+        wait_until_finished(&events, clip_id, 1).await;
 
         let recorded = events.lock().unwrap();
         assert_eq!(recorded.len(), 2);

@@ -15,7 +15,6 @@ use forge_storage::test_support::MemorySettings;
 use forge_storage::{
     MockOverlayRepo, OverlayConfig, OverlayDefinition, OverlayId, OverlayRepo, SettingsRepo,
 };
-use forge_types::OverlayCredential;
 use forge_types::{
     ArgStack, LATEST_DONATION_SLOT, LatestScope, LatestValue, LatestValueReader, NOW_PLAYING_SLOT,
     Variant, latest_fields,
@@ -153,18 +152,8 @@ fn definition(overlay: &Overlay) -> OverlayDefinition {
         config.insert("platform".to_owned(), text(overlay.platform));
     }
     OverlayDefinition {
-        id: OverlayId::new(overlay.id),
-        display_name: overlay.id.to_owned(),
-        kind_id: overlay.kind_id.to_owned(),
         enabled: overlay.enabled,
-        position: 0,
-        config,
-        config_schema_version: 1,
-        generator_version: 0,
-        source_overrides: Vec::new(),
-        credential: OverlayCredential::new("2f8b1d0c9a7e6f5b4c3d2e1f0a9b8c7d"),
-        created_at: OffsetDateTime::UNIX_EPOCH,
-        updated_at: OffsetDateTime::UNIX_EPOCH,
+        ..common::overlay_definition(overlay.id, overlay.id, overlay.kind_id, config)
     }
 }
 

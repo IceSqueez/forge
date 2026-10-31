@@ -103,18 +103,28 @@ mod tests {
     }
 
     #[test]
-    fn eval_bounded_expression_terminates_with_error_quickly() {
+    fn eval_past_the_op_limit_returns_the_typed_limit_error() {
+        const OP_LIMIT: u64 = 500;
         let evaluator = MathEvaluator::with_config(EngineConfig {
-            op_limit: 500,
-            wall_time_ms: 50,
+            op_limit: OP_LIMIT,
+            wall_time_ms: 30_000,
         });
-        let start = Instant::now();
-        let result = evaluator.eval("let x = 0; while x < 100000000 { x += 1; } x");
-        let elapsed = start.elapsed();
-        assert!(result.is_err(), "unbounded expression should be rejected");
+        let err = evaluator
+            .eval("let x = 0; while x < 100000000 { x += 1; } x")
+            .unwrap_err();
         assert!(
-            elapsed < Duration::from_secs(5),
-            "evaluation must not hang: took {elapsed:?}"
+            matches!(err, ScriptError::OperationLimit { ops: OP_LIMIT }),
+            "{err:?}"
         );
+    }
+
+    #[test]
+    fn eval_past_the_wall_budget_returns_the_typed_timeout() {
+        let evaluator = MathEvaluator::with_config(EngineConfig {
+            op_limit: 1_000_000_000,
+            wall_time_ms: 1,
+        });
+        let err = evaluator.eval("loop {}").unwrap_err();
+        assert!(matches!(err, ScriptError::Timeout { .. }), "{err:?}");
     }
 }

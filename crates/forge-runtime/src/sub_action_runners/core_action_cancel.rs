@@ -97,18 +97,14 @@ impl SubActionRunner for CoreActionCancelRunner {
 
 #[cfg(test)]
 mod tests {
-    use forge_events::{Event, EventPublisher};
+    use forge_events::test_support::NullPublisher;
+
     use forge_registry::CancelSignal;
     use forge_types::EventId;
 
     use super::*;
     use forge_types::SubActionOutcome;
     use forge_types::Variant;
-
-    struct NullPublisher;
-    impl EventPublisher for NullPublisher {
-        fn publish(&self, _event: Event) {}
-    }
 
     fn cfg(action_id: &str) -> SubActionConfig {
         let mut c = SubActionConfig::new();

@@ -1,205 +1,35 @@
 #![allow(clippy::unwrap_used, clippy::panic)]
 mod common;
-use std::sync::Arc;
 
-use async_trait::async_trait;
-use forge_audio::{AudioError, AudioSink};
-use forge_events::{Event, EventPublisher};
-use forge_speak_queue::VoiceAliasResolver;
-use forge_speak_queue::{
-    Priority, QueueConfig, QueueDeps, RequestId, SpeakCommand, SpeakEvent, SpeakRequest,
-};
-use forge_speech_types::PcmBuffer;
-use forge_speech_types::{AssignmentStrategy, IgnoreProfile, SynthesisDefaults};
-use forge_speech_types::{EngineId, TtsVoice, VoiceGender, VoiceId};
-use forge_tts_core::{
-    EngineCapabilities, SynthesisRequest, TtsEngine, TtsEngineFactory, TtsError, TtsRegistry,
-};
+use forge_speak_queue::{QueueConfig, SpeakCommand, SpeakEvent};
 use forge_types::EventId;
 
-const HANG_GUARD_MS: u64 = 30_000;
-
-struct FakeEngine {
-    id: EngineId,
-    voices: Vec<TtsVoice>,
-}
-
-impl FakeEngine {
-    fn new() -> Self {
-        Self {
-            id: EngineId("fake".into()),
-            voices: vec![TtsVoice {
-                id: VoiceId("fake-voice".into()),
-                name: "Fake Voice".into(),
-                locale: "en-US".into(),
-                gender: VoiceGender::Neutral,
-                engine_id: EngineId("fake".into()),
-                is_neural: false,
-                sample_rate_hint: 22_050,
-            }],
-        }
-    }
-}
-
-#[async_trait]
-impl TtsEngine for FakeEngine {
-    fn engine_id(&self) -> &EngineId {
-        &self.id
-    }
-    fn capabilities(&self) -> &EngineCapabilities {
-        static CAPS: EngineCapabilities = EngineCapabilities {
-            ssml: false,
-            neural_voices: false,
-            streaming: false,
-            custom_lexicons: false,
-        };
-        &CAPS
-    }
-    async fn list_voices(&self) -> Result<Vec<TtsVoice>, TtsError> {
-        Ok(self.voices.clone())
-    }
-    async fn synthesize(&self, _req: SynthesisRequest) -> Result<PcmBuffer, TtsError> {
-        Ok(PcmBuffer::new(vec![0i16; 100], 22_050, 1))
-    }
-}
-
-struct FakeFactory;
-impl TtsEngineFactory for FakeFactory {
-    fn class(&self) -> forge_tts_core::EngineClass {
-        forge_tts_core::EngineClass::Local
-    }
-
-    fn create(&self) -> Result<Box<dyn TtsEngine>, TtsError> {
-        Ok(Box::new(FakeEngine::new()))
-    }
-}
-
-struct RecordingSink {
-    plays: Arc<std::sync::Mutex<usize>>,
-}
-impl RecordingSink {
-    fn new() -> (Self, Arc<std::sync::Mutex<usize>>) {
-        let count = Arc::new(std::sync::Mutex::new(0usize));
-        (
-            Self {
-                plays: count.clone(),
-            },
-            count,
-        )
-    }
-}
-#[async_trait]
-impl AudioSink for RecordingSink {
-    async fn play(&self, _buf: PcmBuffer) -> Result<(), AudioError> {
-        *self.plays.lock().unwrap() += 1;
-        Ok(())
-    }
-}
-
-struct NullPublisher;
-impl EventPublisher for NullPublisher {
-    fn publish(&self, _event: Event) {}
-}
-
-struct RecordingPublisher {
-    events: Arc<std::sync::Mutex<Vec<Event>>>,
-}
-impl EventPublisher for RecordingPublisher {
-    fn publish(&self, event: Event) {
-        self.events.lock().unwrap().push(event);
-    }
-}
-
-fn make_request(viewer: &str, text: &str, priority: Priority) -> SpeakRequest {
-    SpeakRequest {
-        request_id: RequestId::new(),
-        viewer_id: viewer.into(),
-        viewer_name: viewer.into(),
-        text: text.into(),
-        priority,
-        engine_override: None,
-        voice_override: None,
-        source_event_id: Some(EventId::new()),
-        is_reward: false,
-        target: None,
-        message_emotes: Default::default(),
-    }
-}
-
-fn make_deps(sink: Arc<dyn AudioSink>) -> QueueDeps {
-    let mut registry = TtsRegistry::new();
-    registry.register(EngineId("fake".into()), Arc::new(FakeFactory));
-    let resolver = VoiceAliasResolver::new(
-        vec![],
-        AssignmentStrategy::DeterministicByName,
-        IgnoreProfile::default(),
-        SynthesisDefaults::default(),
-    );
-    QueueDeps {
-        registry: Arc::new(std::sync::RwLock::new(registry)),
-        resolver: Arc::new(std::sync::RwLock::new(resolver)),
-        pipeline: forge_speak_queue::PipelineConfigHandle::new(common::neutral_pipeline()),
-        audio_sink: sink,
-        event_bus: Arc::new(NullPublisher),
-        disabled_engines: std::collections::HashSet::new(),
-        engine_gains: std::collections::HashMap::new(),
-    }
-}
-
-fn make_deps_recording(sink: Arc<dyn AudioSink>) -> (QueueDeps, Arc<std::sync::Mutex<Vec<Event>>>) {
-    let events = Arc::new(std::sync::Mutex::new(Vec::new()));
-    let deps = QueueDeps {
-        event_bus: Arc::new(RecordingPublisher {
-            events: Arc::clone(&events),
-        }),
-        ..make_deps(sink)
-    };
-    (deps, events)
-}
-
-async fn drain_until<F>(stream: &mut forge_speak_queue::SpeakEventStream, predicate: F)
-where
-    F: Fn(&SpeakEvent) -> bool,
-{
-    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(HANG_GUARD_MS);
-    loop {
-        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
-        if remaining.is_zero() {
-            panic!("timeout waiting for expected SpeakEvent");
-        }
-        match tokio::time::timeout(remaining, stream.recv()).await {
-            Ok(Ok(ref ev)) if predicate(ev) => return,
-            Ok(Ok(_)) => continue,
-            Ok(Err(_)) => panic!("stream closed"),
-            Err(_) => panic!("timeout waiting for expected SpeakEvent"),
-        }
-    }
-}
+use common::{recording_bus, recording_sink, request, standard_deps, wait_for};
 
 #[tokio::test]
 async fn enqueue_and_finish() {
-    let (sink, play_count) = RecordingSink::new();
+    let (sink, play_count) = recording_sink();
     let (handle, mut stream) =
-        forge_speak_queue::spawn(QueueConfig::default(), make_deps(Arc::new(sink)));
+        forge_speak_queue::spawn(QueueConfig::default(), standard_deps(sink));
 
-    let req = make_request("viewer1", "hello world", Priority::Normal);
+    let req = request("viewer1", "hello world");
     handle.send(SpeakCommand::Enqueue(req)).await.unwrap();
 
-    drain_until(&mut stream, |e| matches!(e, SpeakEvent::Finished { .. })).await;
+    wait_for(&mut stream, |e| matches!(e, SpeakEvent::Finished { .. })).await;
 
     assert_eq!(*play_count.lock().unwrap(), 1);
 }
 
 #[tokio::test]
 async fn pause_holds_synthesis() {
-    let (sink, play_count) = RecordingSink::new();
+    let (sink, play_count) = recording_sink();
     let (handle, mut stream) =
-        forge_speak_queue::spawn(QueueConfig::default(), make_deps(Arc::new(sink)));
+        forge_speak_queue::spawn(QueueConfig::default(), standard_deps(sink));
 
     handle.send(SpeakCommand::Pause).await.unwrap();
-    drain_until(&mut stream, |e| matches!(e, SpeakEvent::Paused)).await;
+    wait_for(&mut stream, |e| matches!(e, SpeakEvent::Paused)).await;
 
-    let req = make_request("viewer1", "paused message", Priority::Normal);
+    let req = request("viewer1", "paused message");
     handle.send(SpeakCommand::Enqueue(req)).await.unwrap();
 
     common::enqueue_proving_nothing_started(&handle, &mut stream).await;
@@ -207,102 +37,96 @@ async fn pause_holds_synthesis() {
 
     handle.send(SpeakCommand::Resume).await.unwrap();
     for _ in 0..2 {
-        drain_until(&mut stream, |e| matches!(e, SpeakEvent::Finished { .. })).await;
+        wait_for(&mut stream, |e| matches!(e, SpeakEvent::Finished { .. })).await;
     }
     assert_eq!(*play_count.lock().unwrap(), 2);
 }
 
 #[tokio::test]
 async fn clear_empties_queue() {
-    let (sink, play_count) = RecordingSink::new();
+    let (sink, play_count) = recording_sink();
     let config = QueueConfig {
         max_queue_len: 50,
         per_user_limit: 50,
         ..QueueConfig::default()
     };
-    let (handle, mut stream) = forge_speak_queue::spawn(config, make_deps(Arc::new(sink)));
+    let (handle, mut stream) = forge_speak_queue::spawn(config, standard_deps(sink));
 
     handle.send(SpeakCommand::Pause).await.unwrap();
-    drain_until(&mut stream, |e| matches!(e, SpeakEvent::Paused)).await;
+    wait_for(&mut stream, |e| matches!(e, SpeakEvent::Paused)).await;
 
     for i in 0..5 {
-        let req = make_request("viewer1", &format!("message {i}"), Priority::Normal);
+        let req = request("viewer1", &format!("message {i}"));
         handle.send(SpeakCommand::Enqueue(req)).await.unwrap();
     }
 
     handle.send(SpeakCommand::Clear).await.unwrap();
-    drain_until(&mut stream, |e| matches!(e, SpeakEvent::Cleared)).await;
+    wait_for(&mut stream, |e| matches!(e, SpeakEvent::Cleared)).await;
 
     handle.send(SpeakCommand::Resume).await.unwrap();
-    let survivor = make_request("viewer2", "after the clear", Priority::Normal);
+    let survivor = request("viewer2", "after the clear");
     handle.send(SpeakCommand::Enqueue(survivor)).await.unwrap();
-    drain_until(&mut stream, |e| matches!(e, SpeakEvent::Finished { .. })).await;
+    wait_for(&mut stream, |e| matches!(e, SpeakEvent::Finished { .. })).await;
 
     assert_eq!(*play_count.lock().unwrap(), 1);
 }
 
 #[tokio::test]
 async fn per_user_limit_rejects_excess() {
-    let (sink, _) = RecordingSink::new();
+    let (sink, _plays) = recording_sink();
     let config = QueueConfig {
         per_user_limit: 2,
         max_queue_len: 50,
         ..QueueConfig::default()
     };
-    let (handle, mut stream) = forge_speak_queue::spawn(config, make_deps(Arc::new(sink)));
+    let (handle, mut stream) = forge_speak_queue::spawn(config, standard_deps(sink));
 
     handle.send(SpeakCommand::Pause).await.unwrap();
-    drain_until(&mut stream, |e| matches!(e, SpeakEvent::Paused)).await;
+    wait_for(&mut stream, |e| matches!(e, SpeakEvent::Paused)).await;
 
     for _ in 0..3 {
-        let req = make_request("same_user", "test", Priority::Normal);
+        let req = request("same_user", "test");
         handle.send(SpeakCommand::Enqueue(req)).await.unwrap();
     }
 
-    drain_until(&mut stream, |e| matches!(e, SpeakEvent::Rejected { .. })).await;
+    wait_for(&mut stream, |e| matches!(e, SpeakEvent::Rejected { .. })).await;
 }
 
 #[tokio::test]
 async fn queue_full_rejects_when_at_capacity() {
-    let (sink, _) = RecordingSink::new();
+    let (sink, _plays) = recording_sink();
     let config = QueueConfig {
         max_queue_len: 2,
         per_user_limit: 50,
         ..QueueConfig::default()
     };
-    let (handle, mut stream) = forge_speak_queue::spawn(config, make_deps(Arc::new(sink)));
+    let (handle, mut stream) = forge_speak_queue::spawn(config, standard_deps(sink));
 
     handle.send(SpeakCommand::Pause).await.unwrap();
-    drain_until(&mut stream, |e| matches!(e, SpeakEvent::Paused)).await;
+    wait_for(&mut stream, |e| matches!(e, SpeakEvent::Paused)).await;
 
     for i in 0..3 {
-        let req = make_request(&format!("user{i}"), "test", Priority::Normal);
+        let req = request(&format!("user{i}"), "test");
         handle.send(SpeakCommand::Enqueue(req)).await.unwrap();
     }
 
-    drain_until(&mut stream, |e| matches!(e, SpeakEvent::Rejected { .. })).await;
+    wait_for(&mut stream, |e| matches!(e, SpeakEvent::Rejected { .. })).await;
 }
 
 #[tokio::test]
 async fn started_bus_event_emitted_at_dequeue_and_after_synth_with_superset_schema() {
-    let (sink, _play_count) = RecordingSink::new();
-    let (deps, bus) = make_deps_recording(Arc::new(sink));
+    let (sink, _plays) = recording_sink();
+    let (deps, bus) = recording_bus(standard_deps(sink));
     let (handle, mut stream) = forge_speak_queue::spawn(QueueConfig::default(), deps);
 
     let src = EventId::new();
-    let mut req = make_request("nova", "hello chat", Priority::Normal);
+    let mut req = request("nova", "hello chat");
     req.source_event_id = Some(src);
     handle.send(SpeakCommand::Enqueue(req)).await.unwrap();
 
-    drain_until(&mut stream, |e| matches!(e, SpeakEvent::Finished { .. })).await;
+    wait_for(&mut stream, |e| matches!(e, SpeakEvent::Finished { .. })).await;
 
-    let started: Vec<Event> = bus
-        .lock()
-        .unwrap()
-        .iter()
-        .filter(|e| e.kind == "speak.started")
-        .cloned()
-        .collect();
+    let started = bus.of_kind("speak.started");
     assert_eq!(
         started.len(),
         2,

@@ -1,33 +1,36 @@
 #![allow(clippy::expect_used)]
+mod common;
+use common::{
+    ALERT_KIND, BLANK_KIND, CHAT_KIND, FRAME_KIND, GOAL_KIND, IDENTITY, LATEST_KIND,
+    PAGE_CREDENTIAL, TICKER_KIND, registry, sub_alert_instance,
+};
+
 use std::collections::BTreeMap;
 
-use forge_overlay::{
-    OverlayConfig, OverlayInstance, OverlayKindRegistry, OverlayMedia, SampleContext,
-    register_builtin_kinds, sample_document,
-};
+use forge_overlay::{OverlayInstance, sample_document};
 use serde_json::Value;
 
 const BUILTIN_IDS: &[&str] = &[
-    "overlay.alert",
-    "overlay.blank",
-    "overlay.chat",
-    "overlay.frame",
-    "overlay.goal",
-    "overlay.latest",
-    "overlay.ticker",
+    ALERT_KIND,
+    BLANK_KIND,
+    CHAT_KIND,
+    FRAME_KIND,
+    GOAL_KIND,
+    LATEST_KIND,
+    TICKER_KIND,
 ];
 
 const EXPECTED_SAMPLE_CONTENT: &[(&str, &[(&str, &str)])] = &[
     (
-        "overlay.alert",
+        ALERT_KIND,
         &[
             ("headline", "Thanks for the sub!"),
             ("subline", "61 months subscribed"),
         ],
     ),
-    ("overlay.blank", &[]),
+    (BLANK_KIND, &[]),
     (
-        "overlay.chat",
+        CHAT_KIND,
         &[
             ("author", "testuser"),
             ("author_color", "#89dceb"),
@@ -36,13 +39,13 @@ const EXPECTED_SAMPLE_CONTENT: &[(&str, &[(&str, &str)])] = &[
             ("platform", ""),
         ],
     ),
-    ("overlay.frame", &[("headline", ""), ("subline", "LIVE")]),
+    (FRAME_KIND, &[("headline", ""), ("subline", "LIVE")]),
     (
-        "overlay.goal",
+        GOAL_KIND,
         &[("label", "Sub goal"), ("target", "100"), ("value", "42")],
     ),
     (
-        "overlay.latest",
+        LATEST_KIND,
         &[
             ("headline", "PixelPal"),
             ("label", "Last donation"),
@@ -50,7 +53,7 @@ const EXPECTED_SAMPLE_CONTENT: &[(&str, &[(&str, &str)])] = &[
         ],
     ),
     (
-        "overlay.ticker",
+        TICKER_KIND,
         &[
             ("headline", "Latest cheer: 5001 bits"),
             ("subline", "\"hey, great stream!\""),
@@ -58,27 +61,12 @@ const EXPECTED_SAMPLE_CONTENT: &[(&str, &[(&str, &str)])] = &[
     ),
 ];
 
-const IDENTITY: &str = "sub-alert-1";
-const PAGE_CREDENTIAL: &str = "7c1e4a90b2d84f36a5c0e9b71d3f8a24";
-
-fn registry() -> OverlayKindRegistry {
-    let mut reg = OverlayKindRegistry::new();
-    register_builtin_kinds(&mut reg).expect("the builtin overlay kinds register");
-    reg
-}
-
 fn raw_sample(kind_id: &str, credential: Option<&str>) -> String {
     let reg = registry();
     let descriptor = reg.get(kind_id).expect("a registered builtin kind");
     let instance = OverlayInstance {
-        id: IDENTITY.to_owned(),
-        display_name: "Sub alert".to_owned(),
-        kind_id: kind_id.to_owned(),
-        config: OverlayConfig::new(),
-        source_overrides: Vec::new(),
         credential: credential.map(forge_types::OverlayCredential::new),
-        media: OverlayMedia::default(),
-        sample: SampleContext::neutral(),
+        ..sub_alert_instance(kind_id)
     };
 
     sample_document(&instance, descriptor).expect("the sample document builds")

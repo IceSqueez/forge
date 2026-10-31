@@ -3,7 +3,7 @@ mod common;
 
 use std::sync::Arc;
 
-use common::{Sandboxed, TEST_KEY, sandboxed_backend};
+use common::{Sandboxed, TEST_KEY};
 use forge_storage::{DataProvider, LatestRecord, LatestValueRepo};
 use forge_storage_sqlite::SqliteBackend;
 use serde_json::json;
@@ -13,7 +13,7 @@ const SLOT: &str = "latest_donation";
 const OTHER_SLOT: &str = "latest_follower";
 
 async fn backend() -> Sandboxed<SqliteBackend> {
-    sandboxed_backend(":memory:", TEST_KEY).await
+    common::migrated_backend(TEST_KEY).await
 }
 
 fn repo(backend: &SqliteBackend) -> Arc<dyn LatestValueRepo> {

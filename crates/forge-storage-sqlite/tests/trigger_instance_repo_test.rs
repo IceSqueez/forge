@@ -4,66 +4,12 @@ use std::collections::{BTreeMap, BTreeSet};
 use forge_storage::{DataProvider, StorageError, TriggerChanges};
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::{
-    Action, ActionId, ExecutionMode, PermissionRung, PlatformId, PlatformScope, QueueId,
-    TriggerInstance, TriggerInstanceId, Variant,
+    ActionId, PermissionRung, PlatformId, PlatformScope, TriggerInstance, TriggerInstanceId,
+    Variant,
 };
 
 mod common;
-use common::Sandboxed;
-
-const TEST_KEY: [u8; 32] = [0xcd; 32];
-
-async fn setup() -> Sandboxed<SqliteBackend> {
-    common::sandboxed_backend("sqlite::memory:", TEST_KEY).await
-}
-
-async fn default_queue_id(backend: &SqliteBackend) -> QueueId {
-    backend
-        .queue_repo()
-        .get_by_name("Default")
-        .await
-        .expect("get default queue")
-        .expect("default queue must exist after migration")
-        .id
-}
-
-async fn insert_action(backend: &SqliteBackend, name: &str) -> ActionId {
-    let queue_id = default_queue_id(backend).await;
-    let action = Action {
-        id: ActionId::new(),
-        name: name.to_owned(),
-        group: None,
-        queue_id,
-        enabled: true,
-        concurrent: false,
-        bypass_pause: false,
-        execution_mode: ExecutionMode::Sequential,
-        description: None,
-        sub_actions: vec![],
-    };
-    let id = action.id;
-    backend
-        .action_repo()
-        .save(&action)
-        .await
-        .expect("save action");
-    id
-}
-
-fn make_instance(kind_id: &str, name: &str, user_defined: bool) -> TriggerInstance {
-    TriggerInstance {
-        id: TriggerInstanceId::new(),
-        kind_id: kind_id.to_owned(),
-        name: name.to_owned(),
-        overrides: BTreeMap::new(),
-        enabled: true,
-        user_defined,
-        platform_scope: Default::default(),
-        cooldown_secs: 0,
-        cooldown_global: true,
-        permission_rung: PermissionRung::Everyone,
-    }
-}
+use common::{insert_action, setup, trigger_instance};
 
 async fn saved_instances_in_id_order<const N: usize>(
     backend: &SqliteBackend,
@@ -74,7 +20,7 @@ async fn saved_instances_in_id_order<const N: usize>(
     for (index, id) in ids.iter().enumerate() {
         let instance = TriggerInstance {
             id: *id,
-            ..make_instance("twitch.chat.command", &format!("Linked {index}"), true)
+            ..trigger_instance("twitch.chat.command", &format!("Linked {index}"), true)
         };
         repo.save(&instance).await.expect("save instance");
     }
@@ -96,7 +42,7 @@ async fn linked_ids(backend: &SqliteBackend, action_id: ActionId) -> Vec<Trigger
 async fn save_and_get_roundtrip() {
     let backend = setup().await;
     let repo = backend.trigger_instance_repo();
-    let inst = make_instance("twitch.chat.command", "My Trigger", true);
+    let inst = trigger_instance("twitch.chat.command", "My Trigger", true);
     let id = inst.id;
     repo.save(&inst).await.expect("save");
     let got = repo.get(id).await.expect("get");
@@ -121,7 +67,7 @@ async fn get_missing_returns_none() {
 async fn save_updates_existing_row() {
     let backend = setup().await;
     let repo = backend.trigger_instance_repo();
-    let mut inst = make_instance("twitch.chat.command", "Original", true);
+    let mut inst = trigger_instance("twitch.chat.command", "Original", true);
     let id = inst.id;
     repo.save(&inst).await.expect("save 1");
     inst.name = "Updated".to_owned();
@@ -164,8 +110,8 @@ async fn list_user_defined_filters_correctly() {
     let backend = setup().await;
     let repo = backend.trigger_instance_repo();
 
-    let user = make_instance("twitch.chat.command", "User Trigger", true);
-    let default = make_instance("twitch.chat.command", "Default", false);
+    let user = trigger_instance("twitch.chat.command", "User Trigger", true);
+    let default = trigger_instance("twitch.chat.command", "Default", false);
     repo.save(&user).await.expect("save user");
     repo.save(&default).await.expect("save default");
 
@@ -181,8 +127,8 @@ async fn list_for_action_returns_instances_in_position_order() {
     let repo = backend.trigger_instance_repo();
     let action_id = insert_action(&backend, "ordered action").await;
 
-    let inst_a = make_instance("twitch.chat.command", "First", true);
-    let inst_b = make_instance("twitch.support.cheer", "Second", true);
+    let inst_a = trigger_instance("twitch.chat.command", "First", true);
+    let inst_b = trigger_instance("twitch.support.cheer", "Second", true);
     repo.save(&inst_a).await.expect("save a");
     repo.save(&inst_b).await.expect("save b");
 
@@ -216,7 +162,7 @@ async fn actions_using_returns_correct_action_ids() {
     let repo = backend.trigger_instance_repo();
     let action_a = insert_action(&backend, "action a").await;
     let action_b = insert_action(&backend, "action b").await;
-    let inst = make_instance("twitch.chat.command", "Shared", true);
+    let inst = trigger_instance("twitch.chat.command", "Shared", true);
     repo.save(&inst).await.expect("save");
 
     backend
@@ -239,7 +185,7 @@ async fn actions_using_returns_correct_action_ids() {
 async fn actions_using_empty_when_not_referenced() {
     let backend = setup().await;
     let repo = backend.trigger_instance_repo();
-    let inst = make_instance("twitch.chat.command", "Lonely", true);
+    let inst = trigger_instance("twitch.chat.command", "Lonely", true);
     repo.save(&inst).await.expect("save");
     let using = repo.actions_using(inst.id).await.expect("actions_using");
     assert!(using.is_empty());
@@ -249,7 +195,7 @@ async fn actions_using_empty_when_not_referenced() {
 async fn delete_unreferenced_instance_returns_true() {
     let backend = setup().await;
     let repo = backend.trigger_instance_repo();
-    let inst = make_instance("twitch.chat.command", "To Delete", true);
+    let inst = trigger_instance("twitch.chat.command", "To Delete", true);
     let id = inst.id;
     repo.save(&inst).await.expect("save");
     assert!(repo.delete(id).await.expect("delete"));
@@ -269,7 +215,7 @@ async fn delete_referenced_instance_returns_reference_block() {
     let backend = setup().await;
     let repo = backend.trigger_instance_repo();
     let action_id = insert_action(&backend, "blocking action").await;
-    let inst = make_instance("twitch.chat.command", "Referenced", true);
+    let inst = trigger_instance("twitch.chat.command", "Referenced", true);
     repo.save(&inst).await.expect("save");
     backend
         .insert_action_trigger_instance_for_test(action_id, inst.id, 0)
@@ -294,7 +240,7 @@ async fn delete_succeeds_after_action_removed() {
     let backend = setup().await;
     let repo = backend.trigger_instance_repo();
     let action_id = insert_action(&backend, "temporary action").await;
-    let inst = make_instance("twitch.chat.command", "Unblocked", true);
+    let inst = trigger_instance("twitch.chat.command", "Unblocked", true);
     repo.save(&inst).await.expect("save");
     backend
         .insert_action_trigger_instance_for_test(action_id, inst.id, 0)
@@ -318,7 +264,7 @@ async fn delete_succeeds_after_action_removed() {
 async fn set_enabled_toggles_flag() {
     let backend = setup().await;
     let repo = backend.trigger_instance_repo();
-    let inst = make_instance("twitch.chat.command", "Toggle Me", true);
+    let inst = trigger_instance("twitch.chat.command", "Toggle Me", true);
     let id = inst.id;
     repo.save(&inst).await.expect("save");
 
@@ -348,7 +294,7 @@ async fn set_enabled_on_a_missing_instance_returns_not_found() {
 async fn toggle_flips_the_flag_and_reports_the_new_state() {
     let backend = setup().await;
     let repo = backend.trigger_instance_repo();
-    let inst = make_instance("twitch.chat.command", "Toggle Me", true);
+    let inst = trigger_instance("twitch.chat.command", "Toggle Me", true);
     repo.save(&inst).await.expect("save");
 
     let first = repo.toggle_enabled(inst.id).await.expect("toggle off");
@@ -361,7 +307,7 @@ async fn toggle_flips_the_flag_and_reports_the_new_state() {
 async fn toggle_of_a_missing_or_archived_instance_changes_nothing() {
     let backend = setup().await;
     let repo = backend.trigger_instance_repo();
-    let archived = make_instance("twitch.chat.command", "Gone", true);
+    let archived = trigger_instance("twitch.chat.command", "Gone", true);
     repo.save(&archived).await.expect("save");
     repo.archive(archived.id).await.expect("archive");
 
@@ -375,7 +321,7 @@ async fn parallel_toggles_each_flip_the_flag_exactly_once() {
     const TOGGLES: usize = 40;
     let backend = setup().await;
     let repo = backend.trigger_instance_repo();
-    let inst = make_instance("twitch.chat.command", "Busy", true);
+    let inst = trigger_instance("twitch.chat.command", "Busy", true);
     repo.save(&inst).await.expect("save");
 
     let toggles: Vec<_> = (0..TOGGLES)
@@ -450,7 +396,7 @@ async fn upsert_default_allows_multiple_kinds() {
 async fn reference_block_sample_names_capped_at_three() {
     let backend = setup().await;
     let repo = backend.trigger_instance_repo();
-    let inst = make_instance("twitch.chat.command", "Many Refs", true);
+    let inst = trigger_instance("twitch.chat.command", "Many Refs", true);
     repo.save(&inst).await.expect("save");
 
     for i in 0..5u32 {
@@ -486,7 +432,7 @@ async fn link_action_inserts_row() {
     let backend = setup().await;
     let repo = backend.trigger_instance_repo();
     let action_id = insert_action(&backend, "link test action").await;
-    let inst = make_instance("twitch.chat.command", "Link Me", true);
+    let inst = trigger_instance("twitch.chat.command", "Link Me", true);
     repo.save(&inst).await.expect("save");
 
     repo.link_action(action_id, inst.id)
@@ -607,7 +553,7 @@ async fn unlink_action_removes_row_returns_true() {
     let backend = setup().await;
     let repo = backend.trigger_instance_repo();
     let action_id = insert_action(&backend, "unlink action").await;
-    let inst = make_instance("twitch.chat.command", "Unlink Me", true);
+    let inst = trigger_instance("twitch.chat.command", "Unlink Me", true);
     repo.save(&inst).await.expect("save");
 
     repo.link_action(action_id, inst.id).await.expect("link");
@@ -629,7 +575,7 @@ async fn unlink_action_returns_false_when_no_row() {
     let backend = setup().await;
     let repo = backend.trigger_instance_repo();
     let action_id = insert_action(&backend, "ghost action").await;
-    let inst = make_instance("twitch.chat.command", "Ghost", true);
+    let inst = trigger_instance("twitch.chat.command", "Ghost", true);
     repo.save(&inst).await.expect("save");
 
     let removed = repo
@@ -657,7 +603,7 @@ async fn list_all_returns_default_and_user_defined_ordered() {
         .await
         .expect("upsert_default");
 
-    let user_inst = make_instance("twitch.support.cheer", "Cheer Trigger", true);
+    let user_inst = trigger_instance("twitch.support.cheer", "Cheer Trigger", true);
     let user_id = user_inst.id;
     repo.save(&user_inst).await.expect("save user-defined");
 
@@ -673,7 +619,7 @@ async fn list_all_returns_default_and_user_defined_ordered() {
 async fn platform_scope_default_round_trips_as_any() {
     let backend = setup().await;
     let repo = backend.trigger_instance_repo();
-    let inst = make_instance("twitch.chat.message", "Scope Any", true);
+    let inst = trigger_instance("twitch.chat.message", "Scope Any", true);
     assert_eq!(inst.platform_scope, PlatformScope::Any);
     let id = inst.id;
     repo.save(&inst).await.expect("save");
@@ -718,7 +664,7 @@ async fn every_permission_rung_survives_a_save_and_get_roundtrip() {
         PermissionRung::Moderator,
         PermissionRung::Broadcaster,
     ] {
-        let mut inst = make_instance("twitch.chat.command", "Gated", true);
+        let mut inst = trigger_instance("twitch.chat.command", "Gated", true);
         inst.permission_rung = rung;
         let id = inst.id;
         repo.save(&inst).await.expect("save");
@@ -786,7 +732,7 @@ async fn instance_on(
     action_id: ActionId,
     name: &str,
 ) -> TriggerInstanceId {
-    let instance = make_instance("twitch.chat.command", name, true);
+    let instance = trigger_instance("twitch.chat.command", name, true);
     let repo = backend.trigger_instance_repo();
     repo.save(&instance).await.expect("save instance");
     repo.link_action(action_id, instance.id)
@@ -802,7 +748,7 @@ async fn a_change_set_failing_on_its_last_write_leaves_every_earlier_write_undon
     let action_id = insert_action(&backend, "Alert").await;
     let removed = instance_on(&backend, action_id, "Removed").await;
     let unlinked = instance_on(&backend, action_id, "Unlinked").await;
-    let fresh = make_instance("twitch.chat.command", "Fresh", true);
+    let fresh = trigger_instance("twitch.chat.command", "Fresh", true);
 
     let outcome = repo
         .apply_changes(&TriggerChanges {
@@ -825,7 +771,7 @@ async fn a_change_set_can_link_an_instance_it_saves_in_the_same_write() {
     let repo = backend.trigger_instance_repo();
     let action_id = insert_action(&backend, "Alert").await;
     let existing = instance_on(&backend, action_id, "Existing").await;
-    let fresh = make_instance("twitch.chat.command", "Fresh", true);
+    let fresh = trigger_instance("twitch.chat.command", "Fresh", true);
 
     repo.apply_changes(&TriggerChanges {
         saved: vec![fresh.clone()],
@@ -843,7 +789,7 @@ async fn a_change_set_removes_before_it_saves_so_one_id_can_be_replaced() {
     let backend = setup().await;
     let repo = backend.trigger_instance_repo();
     let action_id = insert_action(&backend, "Alert").await;
-    let instance = make_instance("twitch.chat.command", "Before", true);
+    let instance = trigger_instance("twitch.chat.command", "Before", true);
     repo.save(&instance).await.expect("save");
     repo.link_action(action_id, instance.id)
         .await
@@ -890,7 +836,7 @@ async fn repeating_a_create_change_set_keeps_one_row_and_one_link() {
     let backend = setup().await;
     let repo = backend.trigger_instance_repo();
     let action_id = insert_action(&backend, "Alert").await;
-    let fresh = make_instance("twitch.chat.command", "Fresh", true);
+    let fresh = trigger_instance("twitch.chat.command", "Fresh", true);
     let create = TriggerChanges {
         saved: vec![fresh.clone()],
         linked: vec![(action_id, fresh.id)],
@@ -938,7 +884,7 @@ async fn the_link_map_groups_actions_by_instance_and_leaves_unlinked_instances_o
     let shared = instance_on(&backend, first, "Shared").await;
     repo.link_action(second, shared).await.expect("link");
     let single = instance_on(&backend, second, "Single").await;
-    let unlinked = make_instance("twitch.chat.command", "Unlinked", true);
+    let unlinked = trigger_instance("twitch.chat.command", "Unlinked", true);
     repo.save(&unlinked).await.expect("save");
 
     let links = repo.actions_by_instance().await.expect("links");

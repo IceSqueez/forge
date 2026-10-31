@@ -53,7 +53,6 @@ pub(crate) async fn block_viewer(
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
 
     use forge_speak_queue::SpeakCommand;
     use forge_speech_types::VoiceAlias;
@@ -64,10 +63,10 @@ mod tests {
     use super::{block_viewer, save_alias};
     use crate::test_support::{
         AliasShape, LiveAliases, alias_shape, live_alias, sandboxed_backend, spawn_speak_queue,
+        yield_until,
     };
 
     const TEST_KEY: [u8; 32] = [0x3c; 32];
-    const QUEUE_DEADLINE: Duration = Duration::from_secs(30);
 
     fn alias(id: &str, viewer_id: &str, viewer_name: &str) -> VoiceAlias {
         VoiceAlias {
@@ -87,13 +86,7 @@ mod tests {
     }
 
     async fn applied(resolver: &LiveAliases, done: impl Fn(&LiveAliases) -> bool) {
-        tokio::time::timeout(QUEUE_DEADLINE, async {
-            while !done(resolver) {
-                tokio::task::yield_now().await;
-            }
-        })
-        .await
-        .expect("the speak queue never applied the alias");
+        yield_until(|| done(resolver)).await;
     }
 
     #[tokio::test]

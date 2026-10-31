@@ -13,9 +13,7 @@ use forge_tts_core::{
 };
 use forge_tts_pipeline::{OutputConfig, PipelineConfig};
 
-use common::{make_deps, recording_sink, request, voice};
-
-const HANG_GUARD_MS: u64 = 30_000;
+use common::{make_deps, next_event, recording_sink, request, voice};
 
 const SAMPLE_RATE: u32 = 22_050;
 const CLIP_SECS: u32 = 5;
@@ -32,13 +30,7 @@ impl TtsEngine for FixedLengthEngine {
     }
 
     fn capabilities(&self) -> &EngineCapabilities {
-        static CAPS: EngineCapabilities = EngineCapabilities {
-            ssml: false,
-            neural_voices: false,
-            streaming: false,
-            custom_lexicons: false,
-        };
-        &CAPS
+        &common::PLAIN_CAPABILITIES
     }
 
     async fn list_voices(&self) -> Result<Vec<TtsVoice>, TtsError> {
@@ -102,21 +94,14 @@ fn spawn_with_cap(
 }
 
 async fn resolved_duration_secs(stream: &mut SpeakEventStream) -> u32 {
-    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(HANG_GUARD_MS);
     loop {
-        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
-        if remaining.is_zero() {
-            panic!("timeout waiting for a resolved Started event");
-        }
-        match tokio::time::timeout(remaining, stream.recv()).await {
-            Ok(Ok(SpeakEvent::Started {
-                voice_id,
-                duration_secs,
-                ..
-            })) if voice_id.is_some() => return duration_secs,
-            Ok(Ok(_)) => continue,
-            Ok(Err(_)) => panic!("stream closed"),
-            Err(_) => panic!("timeout waiting for a resolved Started event"),
+        if let SpeakEvent::Started {
+            voice_id: Some(_),
+            duration_secs,
+            ..
+        } = next_event(stream).await
+        {
+            return duration_secs;
         }
     }
 }

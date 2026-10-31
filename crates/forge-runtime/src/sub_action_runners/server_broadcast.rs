@@ -107,6 +107,7 @@ impl SubActionRunner for ServerBroadcastRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use forge_events::test_support::NullPublisher;
     use forge_registry::RegistryError;
     use forge_registry::{ConfigProblem, ConfigReason};
     use forge_types::EventId;
@@ -129,11 +130,6 @@ mod tests {
         fn captured(&self) -> Vec<Event> {
             self.events.lock().unwrap().clone()
         }
-    }
-
-    struct NullPublisher;
-    impl EventPublisher for NullPublisher {
-        fn publish(&self, _event: Event) {}
     }
 
     fn cfg(event_name: &str, payload: Variant) -> SubActionConfig {

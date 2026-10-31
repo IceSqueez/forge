@@ -1,4 +1,6 @@
 #![allow(clippy::unwrap_used)]
+mod common;
+use common::TEST_KEY;
 mod legacy_fixture;
 
 use std::collections::BTreeSet;
@@ -15,10 +17,8 @@ use forge_storage_sqlite::{
 use legacy_fixture::{LEGACY_HEAD, legacy_db};
 use tempfile::TempDir;
 
-const TEST_KEY: [u8; 32] = [0x5a; 32];
-
 fn url_of(db: &Path) -> String {
-    format!("sqlite://{}", db.display())
+    common::sqlite_url(db)
 }
 
 fn db_in(dir: &TempDir) -> PathBuf {

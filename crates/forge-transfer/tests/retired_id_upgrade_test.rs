@@ -1,6 +1,8 @@
 #![allow(clippy::unwrap_used)]
+mod common;
+use common::entry;
+
 use std::collections::BTreeMap;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use forge_overlay::OverlayKindRegistry;
@@ -11,15 +13,14 @@ use forge_storage::settings::core_settings::{
 };
 use forge_storage::{EXPECTED_SCHEMA_VERSION, TtsPipelineSettings};
 use forge_transfer::{
-    ActionDocument, BUNDLE_FORMAT_VERSION, BundleKind, ClosureRegistries, ContentEntry,
-    MANIFEST_ENTRY_NAME, PACK_DOCUMENTS_VERSION, PackDocuments, PackManifest,
-    SETUP_DOCUMENTS_VERSION, SetupDocuments, SetupManifest, StepDocument, TriggerDocument,
-    TtsDocument, VoicesDocument, stage_pack, stage_setup,
+    ActionDocument, BUNDLE_FORMAT_VERSION, BundleKind, ClosureRegistries, MANIFEST_ENTRY_NAME,
+    PACK_DOCUMENTS_VERSION, PackDocuments, PackManifest, SETUP_DOCUMENTS_VERSION, SetupDocuments,
+    SetupManifest, StepDocument, TriggerDocument, TtsDocument, VoicesDocument, stage_pack,
+    stage_setup,
 };
 use forge_types::{
     ActionId, ExecutionMode, PermissionRung, PlatformScope, QueueId, TriggerInstanceId, Variant,
 };
-use sha2::{Digest, Sha256};
 use tempfile::TempDir;
 use time::OffsetDateTime;
 
@@ -193,17 +194,6 @@ fn setup(spelling: &Spelling) -> SetupDocuments {
     }
 }
 
-fn entry(path: &str, bytes: &[u8]) -> ContentEntry {
-    ContentEntry {
-        path: path.to_owned(),
-        size: bytes.len() as u64,
-        sha256_hex: Sha256::digest(bytes)
-            .iter()
-            .map(|b| format!("{b:02x}"))
-            .collect(),
-    }
-}
-
 fn bundle(dir: &Path, manifest: &[u8], documents_entry: &str, documents: &[u8]) -> PathBuf {
     let mut builder = tar::Builder::new(Vec::new());
     for (name, bytes) in [
@@ -216,10 +206,8 @@ fn bundle(dir: &Path, manifest: &[u8], documents_entry: &str, documents: &[u8]) 
         header.set_mode(0o600);
         builder.append_data(&mut header, name, bytes).unwrap();
     }
-    let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
-    gz.write_all(&builder.into_inner().unwrap()).unwrap();
     let path = dir.join(format!("{}.forgebundle", ulid::Ulid::generate()));
-    std::fs::write(&path, gz.finish().unwrap()).unwrap();
+    std::fs::write(&path, common::gzip(&builder.into_inner().unwrap())).unwrap();
     path
 }
 

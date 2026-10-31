@@ -154,15 +154,12 @@ pub fn fmt_day_period(time_of_day: Time) -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::rc::Rc;
-
-    use fluent::{FluentBundle, FluentResource};
     use time::{Date, Duration, Month, Time, UtcOffset};
-    use unic_langid::LanguageIdentifier;
 
     use super::*;
     use crate::display_formats::{DateFormatChoice, FirstWeekday};
-    use crate::locale::{catalog_source, install_bundle, set_thread_language};
+    use crate::locale::set_thread_language;
+    use crate::test_support::install_catalog;
 
     fn utc(year: i32, month: Month, day: u8, hour: u8, minute: u8) -> OffsetDateTime {
         OffsetDateTime::new_utc(
@@ -185,16 +182,6 @@ mod tests {
         names: NamesLanguage,
     ) -> DateDisplay {
         DateDisplay::new(formats(date_format, clock), names, PatternZone::Utc)
-    }
-
-    fn install_kit_catalog(language: CatalogLanguage) {
-        let id: LanguageIdentifier = "en-US".parse().unwrap();
-        let resource = FluentResource::try_new(catalog_source(language).to_owned()).unwrap();
-        let mut bundle = FluentBundle::new(vec![id]);
-        bundle.set_use_isolating(false);
-        bundle.add_resource(resource).unwrap();
-        install_bundle(Rc::new(bundle));
-        set_thread_language(language);
     }
 
     #[test]
@@ -365,7 +352,7 @@ mod tests {
 
     #[test]
     fn relative_reads_never_for_a_missing_instant() {
-        install_kit_catalog(CatalogLanguage::En);
+        install_catalog(CatalogLanguage::En);
         let display = in_utc(
             DateFormatChoice::YearMonthDay,
             ClockStyle::TwentyFourHour,
@@ -380,7 +367,7 @@ mod tests {
 
     #[test]
     fn relative_switches_to_the_display_date_from_one_week_back() {
-        install_kit_catalog(CatalogLanguage::En);
+        install_catalog(CatalogLanguage::En);
         let now = utc(2026, Month::March, 15, 12, 0);
         let display = in_utc(
             DateFormatChoice::DayMonthYearDot,

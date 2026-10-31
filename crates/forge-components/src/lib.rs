@@ -11,6 +11,8 @@ mod confirm_state;
 mod data;
 mod date_display;
 mod date_time_picker;
+#[cfg(test)]
+mod dismiss_contract;
 mod display_formats;
 pub mod display_zone;
 pub mod dropdown;

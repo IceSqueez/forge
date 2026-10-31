@@ -81,6 +81,7 @@ impl SubActionRunner for DeleteMessageRunner {
 
 #[cfg(test)]
 mod tests {
+    use forge_events::test_support::NullPublisher;
     use std::collections::BTreeMap;
 
     use forge_types::Variant;
@@ -91,7 +92,7 @@ mod tests {
     use crate::embed::DiscordEmbed;
     use crate::error::DiscordError;
     use crate::mention::MentionPolicy;
-    use forge_events::{Event, EventPublisher};
+
     use forge_types::EventId;
     use std::sync::Mutex;
 
@@ -170,11 +171,6 @@ mod tests {
         }
     }
 
-    struct NoopPublisher;
-    impl EventPublisher for NoopPublisher {
-        fn publish(&self, _: Event) {}
-    }
-
     fn config(message_id: &str) -> SubActionConfig {
         BTreeMap::from([
             (
@@ -188,7 +184,7 @@ mod tests {
         ])
     }
 
-    fn ctx<'a>(stack: &'a ArgStack, publisher: &'a NoopPublisher) -> RunContext<'a> {
+    fn ctx<'a>(stack: &'a ArgStack, publisher: &'a NullPublisher) -> RunContext<'a> {
         RunContext::leaf(stack, 0, EventId::new(), publisher)
     }
 
@@ -197,7 +193,7 @@ mod tests {
         let sink = CapturingSink::ok();
         let runner = DeleteMessageRunner::new(Arc::clone(&sink) as Arc<dyn DiscordSink>);
         let stack = ArgStack::new();
-        let publisher = NoopPublisher;
+        let publisher = NullPublisher;
         let (telemetry, _) = runner.execute(&config(""), &ctx(&stack, &publisher)).await;
         assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
         assert!(sink.deleted_id().is_none(), "sink must not run on empty id");
@@ -208,7 +204,7 @@ mod tests {
         let sink = CapturingSink::ok();
         let runner = DeleteMessageRunner::new(Arc::clone(&sink) as Arc<dyn DiscordSink>);
         let stack = ArgStack::new().set("msg".to_owned(), Variant::String("987654321".to_owned()));
-        let publisher = NoopPublisher;
+        let publisher = NullPublisher;
         let (telemetry, _) = runner
             .execute(&config("%msg%"), &ctx(&stack, &publisher))
             .await;
@@ -221,7 +217,7 @@ mod tests {
         let sink = CapturingSink::failing();
         let runner = DeleteMessageRunner::new(Arc::clone(&sink) as Arc<dyn DiscordSink>);
         let stack = ArgStack::new();
-        let publisher = NoopPublisher;
+        let publisher = NullPublisher;
         let (telemetry, _) = runner
             .execute(&config("123"), &ctx(&stack, &publisher))
             .await;

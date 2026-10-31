@@ -678,7 +678,6 @@ mod tests {
     use forge_types::{ChatPayload, ModerationMarks};
     use gpui::{AppContext, Entity, TestAppContext};
     use tokio::sync::mpsc::{UnboundedReceiver, unbounded_channel};
-    use tokio::time::{Duration, timeout};
 
     use super::{
         PerViewerChoice, SettingsStorageView, parse_history_retention_days, parse_limit,
@@ -687,11 +686,10 @@ mod tests {
     use crate::backup_schedule::tests::{ScheduleRig, key_for, schedule_rig, unattended_seeds};
     use crate::home_stats::HomeStats;
     use crate::test_support::{
-        SettingWrite, TestBackend, install_presentation, pump, quiet_bus, runtime, test_backend,
+        SettingWrite, TestBackend, install_presentation, pump, quiet_bus, runtime, settle_until,
+        test_backend, within_hang_guard,
     };
     use crate::transfer_flows::{TransferFlows, TransferRoute};
-
-    const RECV_TIMEOUT: Duration = Duration::from_secs(30);
 
     #[test]
     fn per_viewer_choice_is_unlimited_for_zero_a_preset_on_match_and_custom_when_chosen() {
@@ -810,10 +808,7 @@ mod tests {
             let retained_at = &mut self.retained_at;
             self.rt.block_on(async move {
                 bus.publish(chat_message());
-                timeout(RECV_TIMEOUT, retained_at.recv())
-                    .await
-                    .unwrap()
-                    .unwrap()
+                within_hang_guard(retained_at.recv()).await.unwrap()
             })
         }
 
@@ -1068,10 +1063,12 @@ mod tests {
         let (view, flows) = storage_with_schedule(cx, &schedule);
 
         view.update(cx, |view, cx| view.start_backup(cx));
-        let written = schedule.settle(cx, |_| !schedule.scheduled_bundles().is_empty());
+        settle_until(cx, &schedule.rt, |_| {
+            !schedule.scheduled_bundles().is_empty()
+        });
 
         let asked = flows.read_with(cx, |flows, cx| flows.is_busy(cx));
-        assert_eq!((written, asked), (true, false));
+        assert!(!asked);
     }
 
     #[gpui::test]
@@ -1080,12 +1077,11 @@ mod tests {
         let (view, flows) = storage_with_schedule(cx, &schedule);
 
         view.update(cx, |view, cx| view.start_backup(cx));
-        let asked = schedule.settle(cx, |cx| flows.read_with(cx, |flows, cx| flows.is_busy(cx)));
+        settle_until(cx, &schedule.rt, |cx| {
+            flows.read_with(cx, |flows, cx| flows.is_busy(cx))
+        });
 
-        assert_eq!(
-            (asked, schedule.scheduled_bundles()),
-            (true, Vec::<String>::new())
-        );
+        assert_eq!(schedule.scheduled_bundles(), Vec::<String>::new());
     }
 
     #[gpui::test]

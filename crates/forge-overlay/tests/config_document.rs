@@ -1,4 +1,7 @@
 #![allow(clippy::expect_used)]
+mod common;
+use common::{ALERT_KIND, BLOB_IDENTITY, PAGE_CREDENTIAL};
+
 use forge_overlay::config::{
     ACCENT, DEFAULT_ICON, DESIGN_HEIGHT, DESIGN_WIDTH, DURATION, ELEMENT_HEIGHT, ELEMENT_WIDTH,
     FONT, HEADLINE, ICON, MARGIN_BOTTOM, MARGIN_LEFT, MARGIN_RIGHT, MARGIN_TOP,
@@ -15,11 +18,6 @@ use forge_overlay::{
 use forge_types::Variant;
 use serde_json::{Value, json};
 
-const ALERT_KIND: &str = "overlay.alert";
-
-const PAGE_CREDENTIAL: &str = "7c1e4a90b2d84f36a5c0e9b71d3f8a24";
-const BLOB_IDENTITY: &str =
-    "sha256-1fe5a351bf0314c8a1840b023fd1e4cab3f0f123468940c241bd7bf20e989ab8";
 const SVG: &str = "svg";
 
 fn raw_document(config: OverlayConfig, credential: Option<&str>, media: OverlayMedia) -> String {

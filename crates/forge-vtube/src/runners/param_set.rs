@@ -136,10 +136,9 @@ impl SubActionRunner for ParamSetRunner {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::atomic::{AtomicBool, Ordering};
 
     use super::*;
-    use crate::error::VTubeError;
+
     use crate::runners::test_support::{MockSink, make_ctx};
     use forge_types::SubActionOutcome;
     use forge_types::Variant;
@@ -147,140 +146,8 @@ mod tests {
 
     const LONG_AFTER: Duration = Duration::from_secs(60);
 
-    #[derive(Default)]
-    struct ParamLog {
-        sent: std::sync::Mutex<Vec<(String, f64)>>,
-        failing: AtomicBool,
-        rejected_value: std::sync::Mutex<Option<f64>>,
-    }
-
-    impl ParamLog {
-        fn sent(&self) -> Vec<(String, f64)> {
-            self.sent.lock().unwrap().clone()
-        }
-
-        fn sends_to(&self, param_id: &str) -> usize {
-            self.sent().iter().filter(|(id, _)| id == param_id).count()
-        }
-
-        fn fail_from_now(&self) {
-            self.failing.store(true, Ordering::SeqCst);
-        }
-
-        fn reject_value(&self, value: f64) {
-            *self.rejected_value.lock().unwrap() = Some(value);
-        }
-    }
-
-    #[async_trait]
-    impl VTubeSink for ParamLog {
-        async fn trigger_hotkey(&self, _: &str) -> Result<(), VTubeError> {
-            Ok(())
-        }
-        async fn set_expression(&self, _: &str, _: bool) -> Result<(), VTubeError> {
-            Ok(())
-        }
-        async fn set_param(&self, param_id: &str, value: f64) -> Result<(), VTubeError> {
-            self.sent.lock().unwrap().push((param_id.to_owned(), value));
-            if self.failing.load(Ordering::SeqCst)
-                || *self.rejected_value.lock().unwrap() == Some(value)
-            {
-                Err(VTubeError::NotConnected)
-            } else {
-                Ok(())
-            }
-        }
-        async fn load_model(&self, _: &str) -> Result<(), VTubeError> {
-            Ok(())
-        }
-        async fn deactivate_all_expressions(&self) -> Result<(), VTubeError> {
-            Ok(())
-        }
-        async fn move_model(
-            &self,
-            _: Option<f64>,
-            _: Option<f64>,
-            _: Option<f64>,
-            _: Option<f64>,
-            _: f64,
-        ) -> Result<(), VTubeError> {
-            Ok(())
-        }
-        async fn move_item(
-            &self,
-            _: &str,
-            _: Option<f64>,
-            _: Option<f64>,
-            _: Option<f64>,
-            _: Option<f64>,
-            _: Option<i64>,
-            _: f64,
-            _: &str,
-        ) -> Result<(), VTubeError> {
-            Ok(())
-        }
-        async fn get_current_model(&self) -> Result<Variant, VTubeError> {
-            Ok(Variant::Object(BTreeMap::new()))
-        }
-        async fn get_hotkeys(&self) -> Result<Variant, VTubeError> {
-            Ok(Variant::Object(BTreeMap::new()))
-        }
-        async fn get_expressions(&self) -> Result<Variant, VTubeError> {
-            Ok(Variant::Object(BTreeMap::new()))
-        }
-        async fn get_parameters(&self) -> Result<Variant, VTubeError> {
-            Ok(Variant::Object(BTreeMap::new()))
-        }
-        async fn get_items(&self) -> Result<Variant, VTubeError> {
-            Ok(Variant::Object(BTreeMap::new()))
-        }
-        async fn pin_item(
-            &self,
-            _: &str,
-            _: bool,
-            _: &str,
-            _: &str,
-            _: &str,
-            _: &str,
-            _: &str,
-            _: f64,
-            _: f64,
-        ) -> Result<(), VTubeError> {
-            Ok(())
-        }
-        async fn load_item(
-            &self,
-            _: &str,
-            _: Option<f64>,
-            _: Option<f64>,
-            _: Option<f64>,
-            _: Option<f64>,
-            _: Option<f64>,
-            _: Option<i64>,
-            _: bool,
-        ) -> Result<Variant, VTubeError> {
-            Ok(Variant::Object(BTreeMap::new()))
-        }
-        async fn unload_all_items(&self) -> Result<(), VTubeError> {
-            Ok(())
-        }
-        async fn tint_all_art_meshes(
-            &self,
-            _: i64,
-            _: i64,
-            _: i64,
-            _: i64,
-            _: Option<f64>,
-        ) -> Result<(), VTubeError> {
-            Ok(())
-        }
-        async fn set_physics_override(&self, _: f64, _: f64) -> Result<(), VTubeError> {
-            Ok(())
-        }
-    }
-
-    fn runner_with_log() -> (ParamSetRunner, Arc<ParamLog>) {
-        let log = Arc::new(ParamLog::default());
+    fn runner_with_log() -> (ParamSetRunner, Arc<MockSink>) {
+        let log = Arc::new(MockSink::new());
         let runner = ParamSetRunner::new(
             Arc::clone(&log) as Arc<dyn VTubeSink>,
             Arc::new(HoldRegistry::new()),
@@ -385,7 +252,7 @@ mod tests {
                     if crate::runners::test_support::rejected_field(reason) == Some("hold_secs")),
                 "{hold:?} ran as {outcome:?}",
             );
-            assert!(log.sent().is_empty(), "{hold:?} sent a value");
+            assert!(log.params_sent().is_empty(), "{hold:?} sent a value");
         }
     }
 
@@ -397,7 +264,7 @@ mod tests {
         runner
             .execute(&config("%pid%", 0.75, None), &make_ctx(&stack))
             .await;
-        assert_eq!(log.sent(), vec![("DynamicParam".to_owned(), 0.75)]);
+        assert_eq!(log.params_sent(), vec![("DynamicParam".to_owned(), 0.75)]);
     }
 
     #[tokio::test(start_paused = true)]
@@ -410,7 +277,7 @@ mod tests {
         for at in [399, 401, 1199, 1201, 60_000].map(Duration::from_millis) {
             tokio::time::sleep(at - elapsed).await;
             elapsed = at;
-            observed.push(log.sends_to("P"));
+            observed.push(log.sends_to_param("P"));
         }
 
         assert_eq!(observed, vec![1, 2, 3, 4, 4]);
@@ -424,7 +291,7 @@ mod tests {
 
             tokio::time::sleep(LONG_AFTER).await;
 
-            assert_eq!(log.sends_to("P"), 1, "hold {hold:?}");
+            assert_eq!(log.sends_to_param("P"), 1, "hold {hold:?}");
         }
     }
 
@@ -435,7 +302,7 @@ mod tests {
 
         tokio::time::sleep(Duration::from_secs(700)).await;
 
-        assert_eq!(log.sends_to("P"), 1 + 600_000 / 400);
+        assert_eq!(log.sends_to_param("P"), 1 + 600_000 / 400);
     }
 
     #[tokio::test(start_paused = true)]
@@ -443,12 +310,12 @@ mod tests {
         let (runner, log) = runner_with_log();
         run(&runner, &config("P", 1.0, Some(Variant::Float(10.0)))).await;
         tokio::time::sleep(Duration::from_millis(1000)).await;
-        let before_replacement = log.sent().len();
+        let before_replacement = log.params_sent().len();
 
         run(&runner, &config("P", 2.0, Some(Variant::Float(1.0)))).await;
         tokio::time::sleep(LONG_AFTER).await;
 
-        let after: Vec<f64> = log.sent()[before_replacement..]
+        let after: Vec<f64> = log.params_sent()[before_replacement..]
             .iter()
             .map(|(_, value)| *value)
             .collect();
@@ -460,12 +327,12 @@ mod tests {
         let (runner, log) = runner_with_log();
         run(&runner, &config("P", 1.0, Some(Variant::Float(10.0)))).await;
         tokio::time::sleep(Duration::from_millis(1000)).await;
-        let before_one_shot = log.sent().len();
+        let before_one_shot = log.params_sent().len();
 
         run(&runner, &config("P", 0.0, Some(Variant::Float(0.0)))).await;
         tokio::time::sleep(LONG_AFTER).await;
 
-        let after: Vec<f64> = log.sent()[before_one_shot..]
+        let after: Vec<f64> = log.params_sent()[before_one_shot..]
             .iter()
             .map(|(_, value)| *value)
             .collect();
@@ -482,7 +349,7 @@ mod tests {
         run(&runner, &config("P", 1.0, Some(Variant::Float(10.0)))).await;
         tokio::time::sleep(Duration::from_millis(1000)).await;
         log.reject_value(2.0);
-        let before_failed_set = log.sent().len();
+        let before_failed_set = log.params_sent().len();
 
         let outcome = run(&runner, &config("P", 2.0, None)).await;
         tokio::time::sleep(LONG_AFTER).await;
@@ -491,7 +358,7 @@ mod tests {
             matches!(outcome, SubActionOutcome::Failed(_)),
             "got {outcome:?}"
         );
-        let after: Vec<f64> = log.sent()[before_failed_set..]
+        let after: Vec<f64> = log.params_sent()[before_failed_set..]
             .iter()
             .map(|(_, value)| *value)
             .collect();
@@ -506,7 +373,7 @@ mod tests {
 
         tokio::time::sleep(LONG_AFTER).await;
 
-        assert_eq!((log.sends_to("P"), log.sends_to("Q")), (4, 4));
+        assert_eq!((log.sends_to_param("P"), log.sends_to_param("Q")), (4, 4));
     }
 
     #[tokio::test(start_paused = true)]
@@ -514,12 +381,12 @@ mod tests {
         let (runner, log) = runner_with_log();
         run(&runner, &config("P", 1.0, Some(Variant::Float(10.0)))).await;
         tokio::time::sleep(Duration::from_millis(1000)).await;
-        let before_disconnect = log.sends_to("P");
+        let before_disconnect = log.sends_to_param("P");
 
         log.fail_from_now();
         tokio::time::sleep(LONG_AFTER).await;
 
-        assert_eq!(log.sends_to("P"), before_disconnect + 1);
+        assert_eq!(log.sends_to_param("P"), before_disconnect + 1);
     }
 
     #[tokio::test(start_paused = true)]
@@ -534,7 +401,7 @@ mod tests {
             matches!(outcome, SubActionOutcome::Failed(_)),
             "got {outcome:?}"
         );
-        assert_eq!(log.sends_to("P"), 1);
+        assert_eq!(log.sends_to_param("P"), 1);
     }
 
     #[tokio::test]
@@ -550,6 +417,6 @@ mod tests {
             "got {:?}",
             tel.outcome
         );
-        assert!(log.sent().is_empty());
+        assert!(log.params_sent().is_empty());
     }
 }

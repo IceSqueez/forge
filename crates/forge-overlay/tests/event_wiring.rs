@@ -1,4 +1,7 @@
 #![allow(clippy::expect_used, clippy::panic)]
+mod common;
+use common::{ALERT_KIND, BLANK_KIND, GOAL_KIND, TICKER_KIND};
+
 use std::collections::BTreeSet;
 
 use forge_overlay::config::{HEADLINE, SUBLINE};
@@ -195,10 +198,7 @@ fn exactly_the_alert_and_the_ticker_of_the_shipped_kinds_accept_event_wiring() {
         .map(OverlayKindDescriptor::id)
         .collect();
 
-    assert_eq!(
-        accepted,
-        BTreeSet::from(["overlay.alert", "overlay.ticker"]),
-    );
+    assert_eq!(accepted, BTreeSet::from([ALERT_KIND, TICKER_KIND]),);
 }
 
 #[test]
@@ -211,10 +211,10 @@ fn the_shipped_kind_refused_despite_a_transient_delivery_is_the_one_that_draws_n
         .map(OverlayKindDescriptor::id)
         .collect();
 
-    assert_eq!(refused, BTreeSet::from(["overlay.blank"]));
+    assert_eq!(refused, BTreeSet::from([BLANK_KIND]));
     assert!(
         !kinds
-            .get("overlay.blank")
+            .get(BLANK_KIND)
             .expect("the blank look ships")
             .has_visual_page(),
     );
@@ -383,7 +383,7 @@ fn ordering_lifts_the_curated_rows_into_table_order_and_leaves_the_rest_as_offer
 #[test]
 fn a_content_key_the_model_has_no_line_for_is_left_out_rather_than_invented() {
     let kinds = builtin_kinds();
-    let goal = kinds.get("overlay.goal").expect("the goal kind ships");
+    let goal = kinds.get(GOAL_KIND).expect("the goal kind ships");
     let content_keys: BTreeSet<&str> = goal
         .config_fields()
         .iter()

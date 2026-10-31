@@ -2222,7 +2222,8 @@ mod tests {
     use super::*;
     use crate::i18n::install_language;
     use crate::test_support::{
-        StubActions, held_queue_scheduler, pump, pump_until, runtime, worker_runtime,
+        StubActions, alive_tasks, held_queue_scheduler, pump, pump_until, runtime, settle_until,
+        settle_until_tasks_drain_to, worker_runtime,
     };
     use forge_components::Presentation;
     use forge_components::Toasts;
@@ -2539,9 +2540,18 @@ mod tests {
             cx.set_global(Presentation::new(ThemeId::ForgeDefault, Density::Cozy));
             cx.set_global(Toasts::new());
         });
-        let health = cx.new(|_| QueueHealth::new());
         let mut repo = MockQueueRepo::new();
         repo.expect_list().returning(move || Ok(stored.clone()));
+        mount_over(cx, rt, scheduler, repo)
+    }
+
+    fn mount_over(
+        cx: &mut TestAppContext,
+        rt: &tokio::runtime::Runtime,
+        scheduler: QueueSchedulerHandle,
+        repo: MockQueueRepo,
+    ) -> Entity<QueuesView> {
+        let health = cx.new(|_| QueueHealth::new());
         let view = cx.update(|cx| {
             cx.new(|cx| {
                 QueuesView::new(
@@ -2669,6 +2679,342 @@ mod tests {
 
             assert_eq!(pending, staged, "{asked}");
         }
+    }
+
+    const STORE_FAILURE: &str = "disk gone";
+
+    fn live_mode(
+        rt: &tokio::runtime::Runtime,
+        scheduler: &QueueSchedulerHandle,
+        id: QueueId,
+    ) -> Option<QueueMode> {
+        rt.block_on(scheduler.queue_states())
+            .unwrap()
+            .get(&id)
+            .map(|state| state.mode)
+    }
+
+    fn row_mode(
+        view: &Entity<QueuesView>,
+        id: QueueId,
+        cx: &mut TestAppContext,
+    ) -> Option<QueueMode> {
+        view.read_with(cx, |view, _| {
+            view.queues.iter().find(|q| q.id == id).map(|q| q.mode)
+        })
+    }
+
+    fn acting_on(
+        cx: &mut TestAppContext,
+        rt: &tokio::runtime::Runtime,
+        view: &Entity<QueuesView>,
+        act: impl FnOnce(&mut QueuesView, &mut Context<QueuesView>),
+    ) {
+        let background_tasks = alive_tasks(rt);
+        view.update(cx, act);
+        settle_until_tasks_drain_to(cx, rt, background_tasks);
+    }
+
+    #[gpui::test]
+    fn toggling_a_mode_applies_it_and_toggling_the_active_mode_returns_to_running(
+        cx: &mut TestAppContext,
+    ) {
+        let rt = runtime();
+        let id = QueueId::new();
+        let scheduler = held_queue_scheduler(&rt, named(id, "Alerts"));
+        let view = mount_stored(cx, &rt, scheduler.clone(), vec![named(id, "Alerts")]);
+
+        for (toggled, expected) in [
+            (QueueMode::HOLDING, QueueMode::RUNNING),
+            (QueueMode::PAUSED, QueueMode::PAUSED),
+            (QueueMode::DRAINING, QueueMode::DRAINING),
+            (QueueMode::DRAINING, QueueMode::RUNNING),
+        ] {
+            acting_on(cx, &rt, &view, |view, cx| {
+                view.toggle_mode(id, toggled, cx);
+            });
+
+            assert_eq!(
+                (row_mode(&view, id, cx), live_mode(&rt, &scheduler, id)),
+                (Some(expected), Some(expected)),
+                "{toggled:?}"
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn pause_all_reports_the_first_failure_once_and_still_pauses_the_queues_after_it(
+        cx: &mut TestAppContext,
+    ) {
+        let rt = runtime();
+        let (first_lost, second_lost, live) = (QueueId::new(), QueueId::new(), QueueId::new());
+        let scheduler = held_queue_scheduler(&rt, named(live, "Alerts"));
+        let view = mount_stored(
+            cx,
+            &rt,
+            scheduler.clone(),
+            vec![
+                named(first_lost, "Lost one"),
+                named(second_lost, "Lost two"),
+                named(live, "Alerts"),
+            ],
+        );
+
+        acting_on(cx, &rt, &view, |view, cx| view.pause_all(cx));
+        settle(cx, &rt);
+
+        let shown = toasts(cx);
+        assert_eq!(live_mode(&rt, &scheduler, live), Some(QueueMode::PAUSED));
+        assert!(
+            matches!(shown.as_slice(), [(ToastKind::Error, _)]),
+            "{shown:?}"
+        );
+    }
+
+    #[gpui::test]
+    fn freeing_a_live_queue_confirms_with_its_name(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let id = QueueId::new();
+        let scheduler = held_queue_scheduler(&rt, named(id, "Alerts"));
+        let view = mount_stored(cx, &rt, scheduler, vec![named(id, "Alerts")]);
+
+        acting_on(cx, &rt, &view, |view, cx| view.free(id, cx));
+
+        assert_eq!(
+            toasts(cx),
+            vec![(
+                ToastKind::Info,
+                tr!("queues_free_feedback", name = "Alerts")
+            )]
+        );
+    }
+
+    #[gpui::test]
+    fn freeing_a_queue_the_scheduler_lost_reports_the_failure(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let (live, lost) = (QueueId::new(), QueueId::new());
+        let scheduler = held_queue_scheduler(&rt, named(live, "Alerts"));
+        let view = mount_stored(cx, &rt, scheduler, vec![named(lost, "Lost")]);
+
+        acting_on(cx, &rt, &view, |view, cx| view.free(lost, cx));
+        settle(cx, &rt);
+
+        let shown = toasts(cx);
+        assert!(
+            matches!(shown.as_slice(), [(ToastKind::Error, _)]),
+            "{shown:?}"
+        );
+    }
+
+    #[gpui::test]
+    fn freeing_a_queue_not_on_the_screen_does_nothing(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let id = QueueId::new();
+        let scheduler = held_queue_scheduler(&rt, named(id, "Alerts"));
+        let view = mount_stored(cx, &rt, scheduler, vec![named(id, "Alerts")]);
+
+        acting_on(cx, &rt, &view, |view, cx| view.free(QueueId::new(), cx));
+
+        assert_eq!(toasts(cx), Vec::new());
+    }
+
+    fn saving_repo(
+        stored: Vec<Queue>,
+        outcome: Result<(), &'static str>,
+    ) -> (MockQueueRepo, Arc<std::sync::Mutex<Vec<Queue>>>) {
+        let saved = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let recorded = Arc::clone(&saved);
+        let mut repo = MockQueueRepo::new();
+        repo.expect_list().returning(move || Ok(stored.clone()));
+        repo.expect_save().returning(move |queue| {
+            outcome.map_err(|reason| forge_storage::StorageError::Connection {
+                reason: reason.to_owned(),
+            })?;
+            recorded.lock().unwrap().push(queue.clone());
+            Ok(())
+        });
+        (repo, saved)
+    }
+
+    fn with_open_modal(view: &Entity<QueuesView>, cx: &mut TestAppContext) {
+        view.update(cx, |view, cx| {
+            view.modal = Some(cx.new(|cx| EditQueueModal::new(None, "", "", 1, cx)));
+        });
+    }
+
+    fn draft(editing: Option<QueueId>, concurrency: u32) -> QueueDraft {
+        QueueDraft {
+            editing,
+            name: "Saved".to_owned(),
+            description: String::new(),
+            concurrency,
+        }
+    }
+
+    fn modal_state(view: &Entity<QueuesView>, cx: &mut TestAppContext) -> Option<bool> {
+        view.read_with(cx, |view, cx| {
+            view.modal.as_ref().map(|modal| modal.read(cx).saving)
+        })
+    }
+
+    #[gpui::test]
+    fn saving_a_new_queue_registers_it_live_and_closes_the_modal(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let live = QueueId::new();
+        let scheduler = held_queue_scheduler(&rt, named(live, "Alerts"));
+        let (repo, saved) = saving_repo(vec![named(live, "Alerts")], Ok(()));
+        let view = mount_over_in_english(cx, &rt, scheduler.clone(), repo);
+        with_open_modal(&view, cx);
+
+        view.update(cx, |view, cx| {
+            view.persist(&draft(None, PARALLEL_CONCURRENCY), cx);
+        });
+        settle_until(cx, &rt, |cx| modal_state(&view, cx).is_none());
+
+        let new_id = saved.lock().unwrap()[0].id;
+        assert_ne!(new_id, live);
+        assert_eq!(live_mode(&rt, &scheduler, new_id), Some(QueueMode::RUNNING));
+    }
+
+    #[gpui::test]
+    fn saving_an_edit_keeps_the_queue_id_and_clamps_the_concurrency_to_the_ceiling(
+        cx: &mut TestAppContext,
+    ) {
+        let rt = runtime();
+        let id = QueueId::new();
+        let scheduler = held_queue_scheduler(&rt, named(id, "Alerts"));
+        let (repo, saved) = saving_repo(vec![named(id, "Alerts")], Ok(()));
+        let view = mount_over_in_english(cx, &rt, scheduler.clone(), repo);
+
+        for (asked, kept) in [
+            (MAX_CONCURRENCY, MAX_CONCURRENCY),
+            (MAX_CONCURRENCY + 1, MAX_CONCURRENCY),
+            (MIN_CONCURRENCY - 1, MIN_CONCURRENCY),
+        ] {
+            acting_on(cx, &rt, &view, |view, cx| {
+                view.persist(&draft(Some(id), asked), cx);
+            });
+
+            let last = saved.lock().unwrap().last().cloned().unwrap();
+            assert_eq!((last.id, last.concurrency.get()), (id, kept), "{asked}");
+        }
+        assert_eq!(rt.block_on(scheduler.queue_states()).unwrap().len(), 1);
+    }
+
+    #[gpui::test]
+    fn a_failed_save_leaves_the_modal_open_and_usable_and_registers_nothing(
+        cx: &mut TestAppContext,
+    ) {
+        let rt = runtime();
+        let live = QueueId::new();
+        let scheduler = held_queue_scheduler(&rt, named(live, "Alerts"));
+        let (repo, _saved) = saving_repo(vec![named(live, "Alerts")], Err(STORE_FAILURE));
+        let view = mount_over_in_english(cx, &rt, scheduler.clone(), repo);
+        with_open_modal(&view, cx);
+
+        acting_on(cx, &rt, &view, |view, cx| {
+            view.persist(&draft(None, PARALLEL_CONCURRENCY), cx);
+        });
+
+        let shown = toasts(cx);
+        assert_eq!(
+            (
+                modal_state(&view, cx),
+                rt.block_on(scheduler.queue_states()).unwrap().len()
+            ),
+            (Some(false), 1)
+        );
+        assert!(
+            matches!(shown.as_slice(), [(ToastKind::Error, _)]),
+            "{shown:?}"
+        );
+    }
+
+    fn mount_over_in_english(
+        cx: &mut TestAppContext,
+        rt: &tokio::runtime::Runtime,
+        scheduler: QueueSchedulerHandle,
+        repo: MockQueueRepo,
+    ) -> Entity<QueuesView> {
+        install_language(Language::En);
+        cx.update(|cx| {
+            cx.set_global(Presentation::new(ThemeId::ForgeDefault, Density::Cozy));
+            cx.set_global(Toasts::new());
+        });
+        mount_over(cx, rt, scheduler, repo)
+    }
+
+    #[test]
+    fn a_delete_the_store_refused_leaves_the_queue_running() {
+        let rt = runtime();
+        let id = QueueId::new();
+        let scheduler = held_queue_scheduler(&rt, named(id, "Alerts"));
+        let mut repo = MockQueueRepo::new();
+        repo.expect_delete_reassigning_actions().returning(|_| {
+            Err(forge_storage::StorageError::Connection {
+                reason: STORE_FAILURE.to_owned(),
+            })
+        });
+
+        let deleted = rt.block_on(delete_queue(Arc::new(repo), scheduler.clone(), id));
+
+        assert_eq!(
+            (deleted.is_err(), live_mode(&rt, &scheduler, id)),
+            (true, Some(QueueMode::HOLDING))
+        );
+    }
+
+    #[test]
+    fn a_delete_of_a_queue_already_gone_from_the_store_leaves_the_scheduler_alone() {
+        let rt = runtime();
+        let id = QueueId::new();
+        let scheduler = held_queue_scheduler(&rt, named(id, "Alerts"));
+        let mut repo = MockQueueRepo::new();
+        repo.expect_delete_reassigning_actions()
+            .returning(|_| Ok(None));
+
+        let deleted = rt.block_on(delete_queue(Arc::new(repo), scheduler.clone(), id));
+
+        assert_eq!(
+            (deleted.is_ok(), live_mode(&rt, &scheduler, id)),
+            (true, Some(QueueMode::HOLDING))
+        );
+    }
+
+    #[test]
+    fn deleting_a_queue_stops_it_live_and_leaves_actions_of_other_queues_alone() {
+        let rt = runtime();
+        let doomed = named(QueueId::new(), "Doomed");
+        let kept = named(QueueId::new(), "Kept");
+        let scheduler = held_queue_scheduler(&rt, doomed.clone());
+        let bystander_queue = rt.block_on(async {
+            let provider = crate::test_support::sandboxed_provider().await;
+            let queues = provider.queue_repo();
+            queues.save(&named(DEFAULT_QUEUE_ID, "Main")).await.unwrap();
+            queues.save(&doomed).await.unwrap();
+            queues.save(&kept).await.unwrap();
+            let bystander = forge_types::Action {
+                queue_id: kept.id,
+                ..crate::test_support::action_running("Bystander", Vec::new())
+            };
+            provider.action_repo().save(&bystander).await.unwrap();
+
+            delete_queue(queues, scheduler.clone(), doomed.id)
+                .await
+                .unwrap();
+
+            provider
+                .action_repo()
+                .get(bystander.id)
+                .await
+                .unwrap()
+                .map(|a| a.queue_id)
+        });
+
+        assert_eq!(
+            (bystander_queue, live_mode(&rt, &scheduler, doomed.id)),
+            (Some(kept.id), None)
+        );
     }
 
     #[test]

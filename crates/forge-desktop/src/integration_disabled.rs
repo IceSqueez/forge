@@ -572,7 +572,6 @@ impl Render for IntegrationDisabledView {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
 
     use forge_storage::{CredentialId, SettingsRepo, integration_enabled_key};
     use forge_types::ActionId;
@@ -581,7 +580,7 @@ mod tests {
     use super::*;
     use crate::test_support::{
         Sandboxed, idle_supervisor, link, owned_sub_actions, owned_triggers, pump, runtime,
-        sandboxed_provider, seed_action, seed_trigger, step, test_backend,
+        sandboxed_provider, seed_action, seed_trigger, settle_until, step, test_backend,
     };
     use forge_components::Presentation;
     use forge_registry::ReferencingAction;
@@ -589,12 +588,6 @@ mod tests {
 
     const OBS_SCENE: &str = "obs.scene.set";
     const TWITCH_CHAT: &str = "twitch.chat";
-    const SETTLE_DEADLINE: Duration = Duration::from_secs(30);
-
-    fn until_the_settle_deadline() -> impl Iterator<Item = ()> {
-        let deadline = std::time::Instant::now() + SETTLE_DEADLINE;
-        std::iter::from_fn(move || (std::time::Instant::now() < deadline).then_some(()))
-    }
     const WINDOW_W: f32 = 1000.0;
     const WINDOW_H: f32 = 800.0;
     const SCAN_X: f32 = 120.0;
@@ -644,17 +637,13 @@ mod tests {
         })
     }
 
-    fn settle_until(
+    fn page_settles(
         cx: &mut TestAppContext,
         rt: &tokio::runtime::Runtime,
         view: &Entity<IntegrationDisabledView>,
         loaded: impl Fn(&IntegrationDisabledView) -> bool,
-    ) -> bool {
-        until_the_settle_deadline().any(|()| {
-            rt.block_on(async { tokio::time::sleep(Duration::from_millis(1)).await });
-            cx.run_until_parked();
-            view.read_with(cx, |view, _| loaded(view))
-        })
+    ) {
+        settle_until(cx, rt, |cx| view.read_with(cx, |view, _| loaded(view)));
     }
 
     #[gpui::test]
@@ -663,9 +652,8 @@ mod tests {
         let (storage, scene) = seeded_storage(&rt);
         let view = open(cx, &rt, &storage, obs(), None);
 
-        let loaded = settle_until(cx, &rt, &view, |view| !view.kept.is_empty());
+        page_settles(cx, &rt, &view, |view| !view.kept.is_empty());
 
-        assert!(loaded, "the page never loaded what is kept");
         view.read_with(cx, |view, _| {
             assert_eq!(
                 view.references.actions,
@@ -697,9 +685,8 @@ mod tests {
             )
         });
 
-        let loaded = settle_until(cx, &rt, &view, |view| view.kept.is_empty());
+        page_settles(cx, &rt, &view, |view| view.kept.is_empty());
 
-        assert!(loaded, "the page never replaced the stale listing");
         view.read_with(cx, |view, _| assert_eq!(view.references.total(), 0));
     }
 
@@ -758,12 +745,7 @@ mod tests {
             })
         });
         vcx.simulate_resize(size(px(WINDOW_W), px(WINDOW_H)));
-        let loaded = until_the_settle_deadline().any(|()| {
-            rt.block_on(async { tokio::time::sleep(Duration::from_millis(1)).await });
-            vcx.run_until_parked();
-            view.read_with(vcx, |view, _| !view.references.actions.is_empty())
-        });
-        assert!(loaded, "the page never listed the affected action");
+        page_settles(vcx, &rt, &view, |view| !view.references.actions.is_empty());
 
         scan_column(vcx);
 

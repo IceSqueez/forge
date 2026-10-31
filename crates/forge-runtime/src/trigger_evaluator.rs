@@ -720,7 +720,6 @@ mod tests {
         let mut sub = bus.subscribe();
         let _handle = fixture.spawn_evaluator();
 
-        tokio::time::sleep(Duration::from_millis(10)).await;
         bus.publish(Event::new(
             EventSource::Server,
             "custom.my_event",
@@ -741,7 +740,6 @@ mod tests {
         let mut sub = bus.subscribe();
         let _handle = fixture.spawn_evaluator();
 
-        tokio::time::sleep(Duration::from_millis(10)).await;
         bus.publish(Event::new(
             EventSource::Server,
             "custom.other_event",

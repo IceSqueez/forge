@@ -4,26 +4,21 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
-use forge_audio::{AudioError, AudioSink};
-use forge_events::{Event, EventPublisher};
-use forge_speak_queue::VoiceAliasResolver;
-use forge_speak_queue::{
-    Priority, QueueConfig, QueueDeps, RequestId, SpeakCommand, SpeakEvent, SpeakEventStream,
-    SpeakRequest,
-};
-use forge_speech_types::PcmBuffer;
-use forge_speech_types::{AssignmentStrategy, IgnoreProfile, SynthesisDefaults};
-use forge_speech_types::{EngineId, TtsVoice, VoiceGender, VoiceId};
+use forge_speak_queue::{QueueConfig, RequestId, SpeakCommand, SpeakEvent, SpeakEventStream};
+use forge_speech_types::AssignmentStrategy;
+use forge_speech_types::{EngineId, PcmBuffer, TtsVoice};
 use forge_tts_core::{
     EngineCapabilities, SynthesisRequest, TtsEngine, TtsEngineFactory, TtsError, TtsRegistry,
 };
-use forge_types::EventId;
 use tokio::sync::Notify;
+
+use common::{
+    RecordingPublisher, assert_no_event_once_settled_on_paused_clock, make_deps, next_matching,
+    recording_bus, recording_sink, request, voice, wait_for,
+};
 
 const ENGINE: &str = "gated";
 const HANGING_TEXT: &str = "this synthesis never returns";
-const EVENT_WAIT_MS: u64 = 30_000;
-const QUIET_WINDOW_MS: u64 = 50;
 const SHORT_SYNTHESIS_TIMEOUT: Duration = Duration::from_millis(50);
 
 #[derive(Default)]
@@ -43,24 +38,10 @@ impl TtsEngine for GatedEngine {
         &self.id
     }
     fn capabilities(&self) -> &EngineCapabilities {
-        static CAPS: EngineCapabilities = EngineCapabilities {
-            ssml: false,
-            neural_voices: false,
-            streaming: false,
-            custom_lexicons: false,
-        };
-        &CAPS
+        &common::PLAIN_CAPABILITIES
     }
     async fn list_voices(&self) -> Result<Vec<TtsVoice>, TtsError> {
-        Ok(vec![TtsVoice {
-            id: VoiceId("gated-voice".into()),
-            name: "Gated".into(),
-            locale: "en-US".into(),
-            gender: VoiceGender::Neutral,
-            engine_id: EngineId(ENGINE.into()),
-            is_neural: false,
-            sample_rate_hint: 22_050,
-        }])
+        Ok(vec![voice("gated-voice", ENGINE)])
     }
     async fn synthesize(&self, req: SynthesisRequest) -> Result<PcmBuffer, TtsError> {
         if req.text == HANGING_TEXT {
@@ -91,117 +72,11 @@ impl TtsEngineFactory for GatedFactory {
     }
 }
 
-#[derive(Default)]
-struct CountingSink {
-    plays: Mutex<usize>,
-}
-
-impl CountingSink {
-    fn plays(&self) -> usize {
-        *self.plays.lock().unwrap()
-    }
-}
-
-#[async_trait]
-impl AudioSink for CountingSink {
-    async fn play(&self, _buf: PcmBuffer) -> Result<(), AudioError> {
-        *self.plays.lock().unwrap() += 1;
-        Ok(())
-    }
-}
-
-#[derive(Default)]
-struct RecordingPublisher {
-    events: Mutex<Vec<Event>>,
-}
-
-impl EventPublisher for RecordingPublisher {
-    fn publish(&self, event: Event) {
-        self.events.lock().unwrap().push(event);
-    }
-}
-
-impl RecordingPublisher {
-    fn published(&self, kind: &str, request_id: &RequestId) -> Option<serde_json::Value> {
-        self.events
-            .lock()
-            .unwrap()
-            .iter()
-            .find(|e| e.kind == kind && e.payload["request_id"] == request_id.0.as_str())
-            .map(|e| e.payload.clone())
-    }
-}
-
-fn make_deps(
-    gate: Option<Arc<Gate>>,
-    sink: Arc<dyn AudioSink>,
-    bus: Arc<RecordingPublisher>,
-) -> QueueDeps {
-    let mut registry = TtsRegistry::new();
-    registry.register(EngineId(ENGINE.into()), Arc::new(GatedFactory { gate }));
-    let resolver = VoiceAliasResolver::new(
-        vec![],
-        AssignmentStrategy::DeterministicByName,
-        IgnoreProfile::default(),
-        SynthesisDefaults::default(),
-    );
-    QueueDeps {
-        registry: Arc::new(std::sync::RwLock::new(registry)),
-        resolver: Arc::new(std::sync::RwLock::new(resolver)),
-        pipeline: forge_speak_queue::PipelineConfigHandle::new(common::neutral_pipeline()),
-        audio_sink: sink,
-        event_bus: bus,
-        disabled_engines: std::collections::HashSet::new(),
-        engine_gains: std::collections::HashMap::new(),
-    }
-}
-
-fn speak_req(viewer: &str, text: &str) -> SpeakRequest {
-    SpeakRequest {
-        request_id: RequestId::new(),
-        viewer_id: viewer.into(),
-        viewer_name: viewer.into(),
-        text: text.into(),
-        priority: Priority::Normal,
-        engine_override: None,
-        voice_override: None,
-        source_event_id: Some(EventId::new()),
-        is_reward: false,
-        target: None,
-        message_emotes: Default::default(),
-    }
-}
-
 fn config() -> QueueConfig {
     QueueConfig {
         per_user_limit: 10,
         max_queue_len: 50,
         ..QueueConfig::default()
-    }
-}
-
-async fn wait_for<F>(stream: &mut SpeakEventStream, pred: F) -> SpeakEvent
-where
-    F: Fn(&SpeakEvent) -> bool,
-{
-    let deadline = tokio::time::Instant::now() + Duration::from_millis(EVENT_WAIT_MS);
-    loop {
-        match tokio::time::timeout_at(deadline, stream.recv()).await {
-            Ok(Ok(ev)) if pred(&ev) => return ev,
-            Ok(Ok(_)) => continue,
-            Ok(Err(_)) => panic!("stream closed"),
-            Err(_) => panic!("timeout waiting for expected SpeakEvent"),
-        }
-    }
-}
-
-async fn assert_quiet<F>(stream: &mut SpeakEventStream, pred: F, what: &str)
-where
-    F: Fn(&SpeakEvent) -> bool,
-{
-    let deadline = tokio::time::Instant::now() + Duration::from_millis(QUIET_WINDOW_MS);
-    while let Ok(Ok(ev)) = tokio::time::timeout_at(deadline, stream.recv()).await {
-        assert!(!pred(&ev), "{what}: got {ev:?}");
     }
 }
 
@@ -216,25 +91,37 @@ fn is_finished(ev: &SpeakEvent, id: &RequestId) -> bool {
 struct Harness {
     handle: forge_speak_queue::SpeakQueueHandle,
     stream: SpeakEventStream,
-    sink: Arc<CountingSink>,
+    plays: Arc<Mutex<usize>>,
     bus: Arc<RecordingPublisher>,
 }
 
+impl Harness {
+    fn plays(&self) -> usize {
+        *self.plays.lock().unwrap()
+    }
+}
+
 fn spawn_queue(config: QueueConfig, gate: Option<Arc<Gate>>) -> Harness {
-    let sink = Arc::new(CountingSink::default());
-    let bus = Arc::new(RecordingPublisher::default());
-    let (handle, stream) =
-        forge_speak_queue::spawn(config, make_deps(gate, sink.clone(), Arc::clone(&bus)));
+    let (sink, plays) = recording_sink();
+    let mut registry = TtsRegistry::new();
+    registry.register(EngineId(ENGINE.into()), Arc::new(GatedFactory { gate }));
+    let (deps, bus) = recording_bus(make_deps(
+        registry,
+        sink,
+        AssignmentStrategy::DeterministicByName,
+        vec![],
+    ));
+    let (handle, stream) = forge_speak_queue::spawn(config, deps);
     Harness {
         handle,
         stream,
-        sink,
+        plays,
         bus,
     }
 }
 
 async fn paused_mid_synthesis(q: &mut Harness, gate: &Gate, text: &str) -> RequestId {
-    let req = speak_req("viewer", text);
+    let req = request("viewer", text);
     let id = req.request_id.clone();
     q.handle.send(SpeakCommand::Enqueue(req)).await.unwrap();
     gate.entered.notified().await;
@@ -244,31 +131,29 @@ async fn paused_mid_synthesis(q: &mut Harness, gate: &Gate, text: &str) -> Reque
     id
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn a_clip_synthesized_while_paused_is_held_until_resume() {
     let gate = Arc::new(Gate::default());
     let mut q = spawn_queue(config(), Some(Arc::clone(&gate)));
     let id = paused_mid_synthesis(&mut q, &gate, "sponsor read in progress").await;
 
-    assert_quiet(
-        &mut q.stream,
-        |e| is_started_with_a_voice(e) || is_finished(e, &id),
-        "a clip synthesized during a pause must not start",
-    )
+    assert_no_event_once_settled_on_paused_clock(&mut q.stream, |e| {
+        is_started_with_a_voice(e) || is_finished(e, &id)
+    })
     .await;
-    assert_eq!(q.sink.plays(), 0, "the sink ran while the queue was paused");
+    assert_eq!(q.plays(), 0, "the sink ran while the queue was paused");
 
     q.handle.send(SpeakCommand::Resume).await.unwrap();
     wait_for(&mut q.stream, |e| is_finished(e, &id)).await;
-    assert_eq!(q.sink.plays(), 1, "resume must play the held clip once");
+    assert_eq!(q.plays(), 1, "resume must play the held clip once");
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn skipping_a_held_clip_drops_it_and_resume_plays_the_next_message() {
     let gate = Arc::new(Gate::default());
     let mut q = spawn_queue(config(), Some(Arc::clone(&gate)));
     let held = paused_mid_synthesis(&mut q, &gate, "held then skipped").await;
-    assert_quiet(&mut q.stream, is_started_with_a_voice, "held clip started").await;
+    assert_no_event_once_settled_on_paused_clock(&mut q.stream, is_started_with_a_voice).await;
 
     q.handle.send(SpeakCommand::Skip).await.unwrap();
     wait_for(
@@ -276,7 +161,7 @@ async fn skipping_a_held_clip_drops_it_and_resume_plays_the_next_message() {
         |e| matches!(e, SpeakEvent::Skipped { request_id, .. } if *request_id == held),
     )
     .await;
-    let next = speak_req("viewer", "the next message");
+    let next = request("viewer", "the next message");
     let next_id = next.request_id.clone();
     q.handle.send(SpeakCommand::Enqueue(next)).await.unwrap();
     q.handle.send(SpeakCommand::Resume).await.unwrap();
@@ -286,12 +171,12 @@ async fn skipping_a_held_clip_drops_it_and_resume_plays_the_next_message() {
 
     assert_eq!(
         q.bus
-            .published("speak.skipped", &held)
+            .payload_of("speak.skipped", &held)
             .map(|p| p["reason"].clone()),
         Some(serde_json::json!("user_skip"))
     );
     assert_eq!(
-        q.sink.plays(),
+        q.plays(),
         1,
         "only the next message may reach the sink, never the skipped held clip"
     );
@@ -306,9 +191,9 @@ async fn a_synthesis_past_timeout_per_item_fails_as_engine_timeout_and_the_queue
         },
         None,
     );
-    let stuck = speak_req("viewer", HANGING_TEXT);
+    let stuck = request("viewer", HANGING_TEXT);
     let stuck_id = stuck.request_id.clone();
-    let next = speak_req("viewer", "spoken after the stuck one");
+    let next = request("viewer", "spoken after the stuck one");
     let next_id = next.request_id.clone();
 
     q.handle.send(SpeakCommand::Enqueue(stuck)).await.unwrap();
@@ -317,19 +202,15 @@ async fn a_synthesis_past_timeout_per_item_fails_as_engine_timeout_and_the_queue
 
     assert_eq!(
         q.bus
-            .published("speak.failed", &stuck_id)
+            .payload_of("speak.failed", &stuck_id)
             .map(|p| p["reason"].clone()),
         Some(serde_json::json!("engine_timeout"))
     );
-    assert_eq!(
-        q.sink.plays(),
-        1,
-        "only the message after the stuck one played"
-    );
+    assert_eq!(q.plays(), 1, "only the message after the stuck one played");
 }
 
 async fn speak_once(q: &mut Harness, viewer: &str) {
-    let req = speak_req(viewer, "the message a replay repeats");
+    let req = request(viewer, "the message a replay repeats");
     let id = req.request_id.clone();
     q.handle.send(SpeakCommand::Enqueue(req)).await.unwrap();
     wait_for(&mut q.stream, |e| is_finished(e, &id)).await;
@@ -338,7 +219,7 @@ async fn speak_once(q: &mut Harness, viewer: &str) {
 }
 
 async fn enqueue_admitted(q: &mut Harness, viewer: &str) {
-    let req = speak_req(viewer, "already waiting");
+    let req = request(viewer, "already waiting");
     let id = req.request_id.clone();
     q.handle.send(SpeakCommand::Enqueue(req)).await.unwrap();
     wait_for(
@@ -349,7 +230,7 @@ async fn enqueue_admitted(q: &mut Harness, viewer: &str) {
 }
 
 async fn next_admission(q: &mut Harness) -> SpeakEvent {
-    wait_for(&mut q.stream, |e| {
+    next_matching(&mut q.stream, |e| {
         matches!(e, SpeakEvent::Enqueued { .. } | SpeakEvent::Rejected { .. })
     })
     .await
@@ -415,7 +296,7 @@ async fn an_admitted_replay_counts_against_the_viewers_limit() {
     ));
 
     q.handle
-        .send(SpeakCommand::Enqueue(speak_req(
+        .send(SpeakCommand::Enqueue(request(
             "replayed-viewer",
             "one too many",
         )))

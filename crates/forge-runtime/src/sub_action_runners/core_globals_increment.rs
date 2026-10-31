@@ -93,7 +93,8 @@ impl SubActionRunner for CoreGlobalsIncrementRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use forge_events::{Event, EventPublisher};
+    use forge_events::test_support::NullPublisher;
+
     use forge_registry::RunContext;
     use forge_storage::{GlobalEntry, StorageError};
     use forge_types::Variant;
@@ -162,10 +163,5 @@ mod tests {
         let runner = CoreGlobalsIncrementRunner::new(globals);
         let outcome = runner.execute(&cfg("ghost", 1), &ctx).await.0.outcome;
         assert!(matches!(outcome, SubActionOutcome::Failed(_)));
-    }
-
-    struct NullPublisher;
-    impl EventPublisher for NullPublisher {
-        fn publish(&self, _event: Event) {}
     }
 }

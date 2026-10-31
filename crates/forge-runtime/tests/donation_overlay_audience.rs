@@ -19,13 +19,11 @@ use forge_storage::{
     CatalogRevision, MockOverlayRepo, OverlayConfig, OverlayDefinition, OverlayId, OverlayRepo,
     SettingsRepo, StorageError,
 };
-use forge_types::OverlayCredential;
 use forge_types::{
-    Action, ActionId, ExecutionMode, LATEST_DONATION_SLOT, NOW_PLAYING_SLOT, PermissionRung,
-    PlatformScope, QueueId, SubActionConfig, SubActionStep, TriggerConfig, TriggerInstance,
-    TriggerInstanceId, Variant,
+    Action, ActionId, LATEST_DONATION_SLOT, NOW_PLAYING_SLOT, PermissionRung, PlatformScope,
+    QueueId, SubActionConfig, SubActionStep, TriggerConfig, TriggerInstance, TriggerInstanceId,
+    Variant,
 };
-use time::OffsetDateTime;
 
 const ALERT_KIND: &str = "overlay.alert";
 const LATEST_KIND: &str = "overlay.latest";
@@ -127,18 +125,7 @@ fn on(trigger_kind: &'static str, steps: Vec<SubActionStep>) -> Wiring {
 }
 
 fn action(steps: Vec<SubActionStep>) -> Action {
-    Action {
-        id: ActionId::new(),
-        name: "Donation alert".to_owned(),
-        group: None,
-        queue_id: QueueId::new(),
-        enabled: true,
-        concurrent: false,
-        bypass_pause: false,
-        execution_mode: ExecutionMode::Sequential,
-        description: None,
-        sub_actions: steps,
-    }
+    common::sequential_action(ActionId::new(), "Donation alert", QueueId::new(), steps)
 }
 
 fn trigger(kind_id: &str) -> TriggerInstance {
@@ -227,18 +214,8 @@ fn definition(page: &Page) -> OverlayDefinition {
         config.insert("slot".to_owned(), Variant::String(slot.to_owned()));
     }
     OverlayDefinition {
-        id: OverlayId::new(page.id),
-        display_name: page.id.to_owned(),
-        kind_id: page.kind_id.to_owned(),
         enabled: page.enabled,
-        position: 0,
-        config,
-        config_schema_version: 1,
-        generator_version: 0,
-        source_overrides: Vec::new(),
-        credential: OverlayCredential::new("2f8b1d0c9a7e6f5b4c3d2e1f0a9b8c7d"),
-        created_at: OffsetDateTime::UNIX_EPOCH,
-        updated_at: OffsetDateTime::UNIX_EPOCH,
+        ..common::overlay_definition(page.id, page.id, page.kind_id, config)
     }
 }
 

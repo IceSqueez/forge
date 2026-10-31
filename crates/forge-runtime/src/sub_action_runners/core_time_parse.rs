@@ -166,16 +166,12 @@ impl SubActionRunner for CoreTimeParseRunner {
 mod tests {
     use super::*;
     use crate::test_support::failure::{failure_message, verbatim_arg};
-    use forge_events::{Event, EventPublisher};
+    use forge_events::test_support::NullPublisher;
+
     use forge_registry::ConfigReason;
     use forge_registry::RegistryError;
     use forge_types::{EventId, SubActionOutcome};
     use time::{Date, Month, OffsetDateTime, Time};
-
-    struct NullPublisher;
-    impl EventPublisher for NullPublisher {
-        fn publish(&self, _event: Event) {}
-    }
 
     fn utc(y: i32, m: Month, d: u8, h: u8, min: u8, s: u8) -> OffsetDateTime {
         OffsetDateTime::new_utc(

@@ -1,13 +1,12 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
+mod common;
+use common::runners::{CancelsItsRunRunner, GateRunner};
+use forge_events::test_support::NullPublisher;
+
 use std::sync::Arc;
 use std::time::Duration;
 
-use async_trait::async_trait;
-use forge_events::{Event, EventPublisher};
-use forge_registry::{
-    FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionRegistry,
-    SubActionRunner,
-};
+use forge_registry::{RunContext, SubActionRegistry, SubActionRunner};
 use forge_runtime::sub_action_runners::{
     CoreActionCancelRunner, CoreActionRunRunner, CoreArgsSetRunner, CoreLogicIfThenElseRunner,
     CoreLogicLoopRunner, CoreLogicSwitchCaseRunner,
@@ -17,103 +16,22 @@ use forge_runtime::{
     spawn_action_engine,
 };
 use forge_storage::DataProvider;
-use forge_storage_sqlite::SqliteBackend;
+use forge_storage::HistoryRepo;
+use forge_storage::history::MockHistoryRepo;
 use forge_types::{
-    Action, ActionId, ArgStack, EventId, ExecutionMode, ExecutionOutcome, QueueId, SubActionConfig,
-    SubActionOutcome, SubActionStep, SubActionTelemetry, Variant,
+    Action, ActionId, ArgStack, DEFAULT_QUEUE_ID, EventId, ExecutionContext, ExecutionOutcome,
+    SubActionConfig, SubActionOutcome, SubActionStep, Variant,
 };
 use tempfile::TempDir;
-use time::OffsetDateTime;
-use tokio::sync::Notify;
-
-struct NullPublisher;
-impl EventPublisher for NullPublisher {
-    fn publish(&self, _event: Event) {}
-}
-
-struct GateRunner {
-    running: Arc<Notify>,
-}
-
-#[async_trait]
-impl SubActionRunner for GateRunner {
-    fn id(&self) -> &str {
-        "test.gate"
-    }
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Util
-    }
-    fn label(&self) -> &str {
-        ""
-    }
-    fn summary(&self) -> &str {
-        ""
-    }
-    fn search_text(&self) -> &str {
-        ""
-    }
-    fn icon_name(&self) -> &str {
-        ""
-    }
-    fn default_config(&self) -> SubActionConfig {
-        SubActionConfig::new()
-    }
-    fn config_fields(&self) -> Vec<FormField> {
-        Vec::new()
-    }
-    fn validate_config(&self, _: &SubActionConfig) -> Result<(), RegistryError> {
-        Ok(())
-    }
-    async fn execute(
-        &self,
-        _: &SubActionConfig,
-        ctx: &RunContext<'_>,
-    ) -> (SubActionTelemetry, Option<ArgStack>) {
-        self.running.notify_one();
-        while !ctx.cancel.is_cancelled() {
-            tokio::time::sleep(Duration::from_millis(2)).await;
-        }
-        (
-            SubActionTelemetry {
-                args_in: ::std::collections::BTreeMap::new(),
-                produced: ::std::collections::BTreeMap::new(),
-                index: ctx.index,
-                kind: "test.gate".to_owned(),
-                started_at: OffsetDateTime::now_utc(),
-                duration_ms: 0,
-                outcome: SubActionOutcome::Success,
-            },
-            None,
-        )
-    }
-}
+use tokio::sync::{Notify, mpsc};
 
 async fn make_dp() -> (Arc<dyn DataProvider>, TempDir) {
-    let media = tempfile::tempdir().unwrap();
-    let backend =
-        SqliteBackend::open_for_test(":memory:", [0xcd; 32], media.path().join("media"), None)
-            .await
-            .unwrap();
+    let (backend, media) = common::sqlite_backend().await;
     (Arc::new(backend), media)
 }
 
-fn default_queue() -> QueueId {
-    serde_json::from_str("\"00000000000000000000000000\"").unwrap()
-}
-
 fn action(id: ActionId, steps: Vec<SubActionStep>) -> Action {
-    Action {
-        id,
-        name: "cancel-target".to_owned(),
-        group: None,
-        queue_id: default_queue(),
-        enabled: true,
-        concurrent: false,
-        bypass_pause: false,
-        execution_mode: ExecutionMode::Sequential,
-        description: None,
-        sub_actions: steps,
-    }
+    common::sequential_action(id, "cancel-target", DEFAULT_QUEUE_ID, steps)
 }
 
 fn cancel_cfg(action_id: &str) -> SubActionConfig {
@@ -127,14 +45,27 @@ fn cancel_cfg(action_id: &str) -> SubActionConfig {
 
 const HANG_GUARD: Duration = Duration::from_secs(30);
 
-async fn await_history(dp: &Arc<dyn DataProvider>, id: ActionId) -> ExecutionOutcome {
+type SavedRuns = mpsc::UnboundedReceiver<ExecutionContext>;
+
+fn observed_history() -> (Arc<dyn HistoryRepo>, SavedRuns) {
+    let (saved, runs) = mpsc::unbounded_channel();
+    let mut history = MockHistoryRepo::new();
+    history.expect_save_batch().returning(move |contexts| {
+        for context in contexts {
+            saved.send(context.clone()).unwrap();
+        }
+        Ok(())
+    });
+    (Arc::new(history), runs)
+}
+
+async fn await_history(runs: &mut SavedRuns, id: ActionId) -> ExecutionOutcome {
     tokio::time::timeout(HANG_GUARD, async {
         loop {
-            let recent = dp.history_repo().recent_for_action(id, 1).await.unwrap();
-            if let Some(ctx) = recent.into_iter().next() {
-                return ctx.outcome;
+            let run = runs.recv().await.expect("the history writer stopped");
+            if run.action_id == id {
+                return run.outcome;
             }
-            tokio::time::sleep(Duration::from_millis(25)).await;
         }
     })
     .await
@@ -154,6 +85,7 @@ async fn cancel_runner_aborts_a_live_in_flight_execution() {
     }))
     .unwrap();
 
+    let (history, mut runs) = observed_history();
     let engine = spawn_action_engine(
         Arc::clone(&bus),
         forge_runtime::Catalog::new(
@@ -162,7 +94,7 @@ async fn cancel_runner_aborts_a_live_in_flight_execution() {
             dp.catalog_revision(),
         ),
         dp.action_repo(),
-        dp.history_repo(),
+        history,
         Arc::new(reg),
         Arc::clone(&cancel_registry),
     );
@@ -207,7 +139,7 @@ async fn cancel_runner_aborts_a_live_in_flight_execution() {
     assert!(matches!(telemetry.outcome, SubActionOutcome::Success));
 
     assert_eq!(
-        await_history(&dp, target).await,
+        await_history(&mut runs, target).await,
         ExecutionOutcome::Cancelled,
         "the runner's cancel must unwind the live execution to Cancelled"
     );
@@ -219,6 +151,7 @@ async fn cancel_guard_deregisters_after_a_run_completes() {
     let bus = EventBus::new(Arc::new(NullEventLogRepo));
     let cancel_registry = Arc::new(ActionCancelRegistry::new());
 
+    let (history, mut runs) = observed_history();
     let engine = spawn_action_engine(
         Arc::clone(&bus),
         forge_runtime::Catalog::new(
@@ -227,7 +160,7 @@ async fn cancel_guard_deregisters_after_a_run_completes() {
             dp.catalog_revision(),
         ),
         dp.action_repo(),
-        dp.history_repo(),
+        history,
         Arc::new(SubActionRegistry::new()),
         Arc::clone(&cancel_registry),
     );
@@ -249,7 +182,10 @@ async fn cancel_guard_deregisters_after_a_run_completes() {
         .await
         .unwrap();
 
-    assert_eq!(await_history(&dp, id).await, ExecutionOutcome::Success);
+    assert_eq!(
+        await_history(&mut runs, id).await,
+        ExecutionOutcome::Success
+    );
     let deregistered = tokio::time::timeout(HANG_GUARD, async {
         while cancel_registry.cancel(id) != 0 {
             tokio::task::yield_now().await;
@@ -260,50 +196,6 @@ async fn cancel_guard_deregisters_after_a_run_completes() {
         deregistered.is_ok(),
         "the guard must have deregistered the finished run"
     );
-}
-
-struct CancelsItsRunRunner;
-
-#[async_trait]
-impl SubActionRunner for CancelsItsRunRunner {
-    fn id(&self) -> &str {
-        "test.cancels_its_run"
-    }
-    fn category(&self) -> SubActionCategory {
-        SubActionCategory::Util
-    }
-    fn label(&self) -> &str {
-        ""
-    }
-    fn summary(&self) -> &str {
-        ""
-    }
-    fn search_text(&self) -> &str {
-        ""
-    }
-    fn icon_name(&self) -> &str {
-        ""
-    }
-    fn default_config(&self) -> SubActionConfig {
-        SubActionConfig::new()
-    }
-    fn config_fields(&self) -> Vec<FormField> {
-        Vec::new()
-    }
-    fn validate_config(&self, _config: &SubActionConfig) -> Result<(), RegistryError> {
-        Ok(())
-    }
-    async fn execute(
-        &self,
-        _config: &SubActionConfig,
-        ctx: &RunContext<'_>,
-    ) -> (SubActionTelemetry, Option<ArgStack>) {
-        ctx.cancel.cancel();
-        (
-            StepTimer::start(ctx, "test.cancels_its_run").success(),
-            None,
-        )
-    }
 }
 
 fn plain_step(kind: &str, config: SubActionConfig) -> SubActionStep {
@@ -392,6 +284,7 @@ async fn a_run_cancelled_inside_a_composite_step_is_recorded_as_cancelled() {
     reg.register(Box::new(CoreActionRunRunner::new(dp.action_repo())))
         .unwrap();
     let bus = EventBus::new(Arc::new(NullEventLogRepo));
+    let (history, mut runs) = observed_history();
     let engine = spawn_action_engine(
         Arc::clone(&bus),
         forge_runtime::Catalog::new(
@@ -400,7 +293,7 @@ async fn a_run_cancelled_inside_a_composite_step_is_recorded_as_cancelled() {
             dp.catalog_revision(),
         ),
         dp.action_repo(),
-        dp.history_repo(),
+        history,
         Arc::new(reg),
         Arc::new(ActionCancelRegistry::new()),
     );
@@ -439,7 +332,7 @@ async fn a_run_cancelled_inside_a_composite_step_is_recorded_as_cancelled() {
             .unwrap();
 
         assert_eq!(
-            await_history(&dp, target).await,
+            await_history(&mut runs, target).await,
             ExecutionOutcome::Cancelled,
             "{label}"
         );

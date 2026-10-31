@@ -44,7 +44,7 @@ async fn first_poll_reports_recent_top_ups_as_history_then_new_ones_live_exactly
             ("NEW", DonationOrigin::Live)
         ]
     );
-    assert!(h.stays_quiet().await, "a seen top-up was reported again");
+    h.assert_only_a_later_arrival_is_reported_next().await;
 }
 
 #[tokio::test]
@@ -59,7 +59,7 @@ async fn top_up_older_than_the_history_horizon_is_not_reported() {
         .await;
 
     assert_eq!(first.donation_id, "RECENT");
-    assert!(h.stays_quiet().await);
+    h.assert_only_a_later_arrival_is_reported_next().await;
 }
 
 #[tokio::test]
@@ -130,7 +130,7 @@ async fn outgoing_and_zero_amount_transactions_are_skipped() {
         .await;
 
     assert_eq!(only.donation_id, "IN");
-    assert!(h.stays_quiet().await);
+    h.assert_only_a_later_arrival_is_reported_next().await;
 }
 
 #[tokio::test]
@@ -161,10 +161,7 @@ async fn unreadable_top_ups_are_reported_once_without_blocking_the_rest() {
             .all(|r| matches!(r, Err(PlatformError::MalformedResponse { .. }))),
         "{rejected:?}"
     );
-    assert!(
-        h.stays_quiet().await,
-        "a rejected top-up was reported again"
-    );
+    h.assert_only_a_later_arrival_is_reported_next().await;
 }
 
 #[tokio::test]
@@ -221,20 +218,24 @@ async fn local_cooldown_waits_silently_without_calling_the_bank() {
     let bank = Bank::new(&[JAR]);
     let server = wiremock::MockServer::start().await;
     support::mount(&server, &bank).await;
+    let cooling_down = ScriptedLimiter::answering(RateLimitOutcome::Throttled {
+        wait_for: Duration::from_secs(30),
+    });
     let limits = MonobankRateLimits {
         client_info: ScriptedLimiter::open(),
-        statement: ScriptedLimiter::answering(RateLimitOutcome::Throttled {
-            wait_for: Duration::from_secs(30),
-        }),
+        statement: cooling_down.clone(),
     };
     let provider = support::provider_on(&server.uri(), MemCreds::with(TOKEN, Some(JAR)), limits);
     let mut stream = provider.donations();
 
-    let quiet = tokio::time::timeout(support::QUIET, tokio_stream::StreamExt::next(&mut stream))
+    cooling_down.wait_for_acquires(1).await;
+    assert!(provider.reconnect().await.is_ok());
+    cooling_down.wait_for_acquires(2).await;
+    let buffered = tokio::time::timeout(Duration::ZERO, tokio_stream::StreamExt::next(&mut stream))
         .await
-        .is_err();
+        .is_ok();
 
-    assert!(quiet, "a local cooldown surfaced as a stream item");
+    assert!(!buffered, "a local cooldown surfaced as a stream item");
     assert!(bank.statement_calls().is_empty());
     assert_eq!(provider.poll_status().last_error, None);
 }
@@ -306,12 +307,13 @@ async fn errors_needing_the_user_stop_polling_until_the_user_acts() {
         );
 
         let requests = h.bank.request_count();
-        assert!(
-            h.stays_quiet_for_several_ticks().await,
+        Harness::outlast_several_ticks().await;
+        assert_eq!(
+            h.bank.request_count(),
+            requests,
             "{} polled again",
             case.name
         );
-        assert_eq!(h.bank.request_count(), requests, "{}", case.name);
     }
 }
 
@@ -370,14 +372,14 @@ async fn pause_and_resume_keeps_the_seen_top_ups() {
 
 #[tokio::test]
 async fn paused_poller_sends_no_requests() {
-    let mut h = Harness::ticking(Bank::new(&[JAR])).await;
+    let h = Harness::ticking(Bank::new(&[JAR])).await;
     h.wait_for("baseline poll", |s| s.last_poll_at.is_some())
         .await;
     assert!(h.provider.disconnect().await.is_ok());
     h.wait_for("paused", |s| s.phase == PollPhase::Paused).await;
     let requests = h.bank.request_count();
 
-    assert!(h.stays_quiet_for_several_ticks().await);
+    Harness::outlast_several_ticks().await;
 
     assert_eq!(h.bank.request_count(), requests);
 }

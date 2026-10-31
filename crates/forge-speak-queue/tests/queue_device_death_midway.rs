@@ -2,23 +2,21 @@
 mod common;
 
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
 use async_trait::async_trait;
 use forge_audio::{AudioError, AudioSink, ControlledPlayback};
-use forge_events::{Event, EventPublisher};
 use forge_speak_queue::{QueueConfig, RequestId, SpeakCommand, SpeakEvent};
-use forge_speech_types::AssignmentStrategy;
 use forge_speech_types::PcmBuffer;
 
-use common::{assert_no_event, make_deps, request, standard_registry};
+use common::{
+    RecordingPublisher, assert_no_event_once_settled_on_paused_clock, outcome_of, recording_bus,
+    request, standard_deps, wait_for,
+};
 
 const DEVICE_LOSS: &str = "output stream disconnected";
 const EXPECTED_CODE: &str = "speak.audio_host_failed";
 const DEVICE_ERROR_REASON: &str = "device_error";
 const SPEAK_FAILED_KIND: &str = "speak.failed";
-const SETTLE_BUDGET: Duration = Duration::from_secs(30);
-const STAYS_QUIET_MS: u64 = 50;
 
 struct DyingSink {
     gate: Mutex<Option<tokio::sync::oneshot::Receiver<()>>>,
@@ -61,77 +59,41 @@ impl AudioSink for DyingSink {
     }
 }
 
-#[derive(Default)]
-struct RecordingBus(Mutex<Vec<Event>>);
-
-impl RecordingBus {
-    fn failures(&self) -> Vec<(String, String, String)> {
-        self.0
-            .lock()
-            .unwrap()
-            .iter()
-            .filter(|e| e.kind == SPEAK_FAILED_KIND)
-            .map(|e| {
-                (
-                    e.payload["reason"].as_str().unwrap_or_default().to_owned(),
-                    e.payload["message"]["code"]
-                        .as_str()
-                        .unwrap_or_default()
-                        .to_owned(),
-                    e.payload["message"]["detail"]
-                        .as_str()
-                        .unwrap_or_default()
-                        .to_owned(),
-                )
-            })
-            .collect()
-    }
-}
-
-impl EventPublisher for RecordingBus {
-    fn publish(&self, event: Event) {
-        self.0.lock().unwrap().push(event);
-    }
+fn failures_on(bus: &RecordingPublisher) -> Vec<(String, String, String)> {
+    bus.of_kind(SPEAK_FAILED_KIND)
+        .iter()
+        .map(|e| {
+            (
+                e.payload["reason"].as_str().unwrap_or_default().to_owned(),
+                e.payload["message"]["code"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_owned(),
+                e.payload["message"]["detail"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_owned(),
+            )
+        })
+        .collect()
 }
 
 async fn failure_for(
     stream: &mut forge_speak_queue::SpeakEventStream,
     wanted: &RequestId,
 ) -> (String, Option<String>) {
-    let deadline = std::time::Instant::now() + SETTLE_BUDGET;
-    loop {
-        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
-        assert!(!remaining.is_zero(), "the utterance never settled");
-        match tokio::time::timeout(remaining, stream.recv()).await {
-            Ok(Ok(SpeakEvent::Failed {
-                request_id,
-                message,
-            })) if &request_id == wanted => {
-                return (
-                    message.code().to_string(),
-                    message.detail().map(|d| d.as_str().to_owned()),
-                );
-            }
-            Ok(Ok(SpeakEvent::Finished { request_id })) if &request_id == wanted => {
-                panic!("a device that died mid-clip must not finish the utterance")
-            }
-            Ok(Ok(_)) => continue,
-            Ok(Err(_)) => panic!("the speak event stream closed"),
-            Err(_) => panic!("the utterance never settled"),
-        }
+    match outcome_of(stream, wanted).await {
+        SpeakEvent::Failed { message, .. } => (
+            message.code().to_string(),
+            message.detail().map(|d| d.as_str().to_owned()),
+        ),
+        other => panic!("a device that died mid-clip must fail the utterance, got {other:?}"),
     }
 }
 
 #[tokio::test]
 async fn a_device_lost_mid_utterance_fails_it_with_the_device_reason_on_both_feeds() {
-    let bus = Arc::new(RecordingBus::default());
-    let mut deps = make_deps(
-        standard_registry(),
-        Arc::new(DyingSink::immediate()),
-        AssignmentStrategy::DeterministicByName,
-        vec![],
-    );
-    deps.event_bus = Arc::clone(&bus) as Arc<dyn EventPublisher>;
+    let (deps, bus) = recording_bus(standard_deps(Arc::new(DyingSink::immediate())));
     let (handle, mut stream) = forge_speak_queue::spawn(QueueConfig::default(), deps);
     let utterance = request("viewer", "the headset went away");
     let utterance_id = utterance.request_id.clone();
@@ -143,7 +105,7 @@ async fn a_device_lost_mid_utterance_fails_it_with_the_device_reason_on_both_fee
         (EXPECTED_CODE.to_owned(), Some(DEVICE_LOSS.to_owned()))
     );
     assert_eq!(
-        bus.failures(),
+        failures_on(&bus),
         vec![(
             DEVICE_ERROR_REASON.to_owned(),
             EXPECTED_CODE.to_owned(),
@@ -153,15 +115,10 @@ async fn a_device_lost_mid_utterance_fails_it_with_the_device_reason_on_both_fee
     );
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn a_device_that_dies_while_the_queue_believes_it_is_playing_releases_the_next_utterance() {
     let (gate_tx, gate_rx) = tokio::sync::oneshot::channel();
-    let deps = make_deps(
-        standard_registry(),
-        Arc::new(DyingSink::gated(gate_rx)),
-        AssignmentStrategy::DeterministicByName,
-        vec![],
-    );
+    let deps = standard_deps(Arc::new(DyingSink::gated(gate_rx)));
     let (handle, mut stream) = forge_speak_queue::spawn(QueueConfig::default(), deps);
     let first = request("viewer", "still playing");
     let first_id = first.request_id.clone();
@@ -172,10 +129,9 @@ async fn a_device_that_dies_while_the_queue_believes_it_is_playing_releases_the_
     handle.send(SpeakCommand::Enqueue(second)).await.unwrap();
 
     let waiting = second_id.clone();
-    assert_no_event(
+    assert_no_event_once_settled_on_paused_clock(
         &mut stream,
         move |event| matches!(event, SpeakEvent::Started { request_id, .. } if request_id == &waiting),
-        STAYS_QUIET_MS,
     )
     .await;
 
@@ -189,19 +145,9 @@ async fn a_device_that_dies_while_the_queue_believes_it_is_playing_releases_the_
         failure_for(&mut stream, &first_id).await,
         (EXPECTED_CODE.to_owned(), Some(DEVICE_LOSS.to_owned()))
     );
-    let started_next = tokio::time::timeout(SETTLE_BUDGET, async {
-        loop {
-            match stream.recv().await {
-                Ok(SpeakEvent::Started { request_id, .. }) if request_id == second_id => return,
-                Ok(_) => continue,
-                Err(_) => panic!("the speak event stream closed"),
-            }
-        }
-    })
+    wait_for(
+        &mut stream,
+        |event| matches!(event, SpeakEvent::Started { request_id, .. } if *request_id == second_id),
+    )
     .await;
-
-    assert!(
-        started_next.is_ok(),
-        "the queue stayed wedged on the utterance the dead device dropped"
-    );
 }

@@ -620,15 +620,13 @@ mod tests {
     use crate::i18n::install_language;
     use crate::test_support::{
         GatedSchedule, TestBackend, gated_running_schedule_sharing, keyless_enabled_schedule, pump,
-        runtime, test_backend, test_backend_with_gated_export,
+        runtime, settle_until, test_backend, test_backend_with_gated_export, within_hang_guard,
     };
 
     const VERSION: &str = "0.9.0";
     const RELEASE_PAGE: &str = "https://example.invalid/releases/v0.9.0";
     const ARTIFACT_SIZE: u64 = 100;
     const DRIVE_ROUNDS: usize = 4;
-    const BLOCKING_POOL_TURN: std::time::Duration = std::time::Duration::from_millis(1);
-    const SCHEDULE_SETTLE_GUARD: std::time::Duration = std::time::Duration::from_secs(30);
 
     struct Harness {
         flow: Entity<UpdateFlow>,
@@ -713,13 +711,13 @@ mod tests {
         }
     }
 
-    fn settle_schedule(h: &Harness, schedule: &GatedSchedule, state: ScheduleState) -> bool {
+    fn settle_schedule(h: &Harness, schedule: &GatedSchedule, state: ScheduleState) {
         let mut status = schedule.handle.status();
         h.rt.block_on(async {
-            tokio::time::timeout(SCHEDULE_SETTLE_GUARD, status.wait_for(|s| s.state == state))
+            within_hang_guard(status.wait_for(|s| s.state == state))
                 .await
-                .is_ok()
-        })
+                .unwrap();
+        });
     }
 
     fn restart_and_close(cx: &mut TestAppContext, h: &Harness) -> CloseDecision {
@@ -730,22 +728,11 @@ mod tests {
         decision
     }
 
-    fn drive_until(
-        cx: &mut TestAppContext,
-        h: &Harness,
-        reached: impl Fn(&UpdateStage) -> bool,
-    ) -> bool {
-        let started = std::time::Instant::now();
-        loop {
+    fn drive_until(cx: &mut TestAppContext, h: &Harness, reached: impl Fn(&UpdateStage) -> bool) {
+        settle_until(cx, &h.rt, |cx| {
             drive(cx, h);
-            if reached(&stage(cx, h)) {
-                return true;
-            }
-            if started.elapsed() > SCHEDULE_SETTLE_GUARD {
-                return false;
-            }
-            h.rt.block_on(async { tokio::time::sleep(BLOCKING_POOL_TURN).await });
-        }
+            reached(&stage(cx, h))
+        });
     }
 
     fn waiting_to_restart(stage: &UpdateStage) -> bool {
@@ -772,10 +759,10 @@ mod tests {
         matches!(stage, UpdateStage::Ready { staged: s, .. } if *s == staged())
     }
 
-    fn close_into_the_wait(cx: &mut TestAppContext, h: &Harness) -> bool {
+    fn close_into_the_wait(cx: &mut TestAppContext, h: &Harness) {
         ready(cx, h);
         close(cx, h);
-        drive_until(cx, h, waiting_to_install_on_quit)
+        drive_until(cx, h, waiting_to_install_on_quit);
     }
 
     fn handing_off(stage: &UpdateStage) -> bool {
@@ -1272,7 +1259,7 @@ mod tests {
 
         restart_and_close(cx, &w.h);
 
-        assert!(drive_until(cx, &w.h, waiting_to_restart));
+        drive_until(cx, &w.h, waiting_to_restart);
         assert_eq!(events(cx, &w.h), vec![UpdateFlowEvent::RestartRequested]);
     }
 
@@ -1287,7 +1274,7 @@ mod tests {
         let decision = restart_and_close(cx, &w.h);
 
         assert_eq!(decision, CloseDecision::Hold);
-        assert!(drive_until(cx, &w.h, waiting_to_restart));
+        drive_until(cx, &w.h, waiting_to_restart);
     }
 
     #[gpui::test]
@@ -1298,7 +1285,7 @@ mod tests {
         let _running = exclusivity.try_acquire().unwrap();
         let w = waiting_harness(cx, exclusivity, |_| None);
         restart_and_close(cx, &w.h);
-        assert!(drive_until(cx, &w.h, waiting_to_restart));
+        drive_until(cx, &w.h, waiting_to_restart);
 
         assert_eq!(close(cx, &w.h), CloseDecision::Proceed);
     }
@@ -1312,7 +1299,7 @@ mod tests {
 
         drop(running);
 
-        assert!(drive_until(cx, &w.h, handing_off));
+        drive_until(cx, &w.h, handing_off);
         assert!(exclusivity.is_held());
     }
 
@@ -1323,11 +1310,11 @@ mod tests {
         let w = waiting_harness(cx, exclusivity.clone(), |_| None);
         restart_and_close(cx, &w.h);
         drop(running);
-        assert!(drive_until(cx, &w.h, handing_off));
+        drive_until(cx, &w.h, handing_off);
 
         w.handoff_export.notify_one();
 
-        assert!(drive_until(cx, &w.h, handoff_failed));
+        drive_until(cx, &w.h, handoff_failed);
         assert!(!exclusivity.is_held());
     }
 
@@ -1339,13 +1326,13 @@ mod tests {
             Some(gated_running_schedule_sharing(shared))
         });
         let schedule = w.schedule.as_ref().unwrap();
-        assert!(settle_schedule(&w.h, schedule, ScheduleState::Running));
+        settle_schedule(&w.h, schedule, ScheduleState::Running);
         restart_and_close(cx, &w.h);
 
         schedule.export_gate.notify_one();
 
-        assert!(drive_until(cx, &w.h, handing_off));
-        assert!(settle_schedule(&w.h, schedule, ScheduleState::Suspended));
+        drive_until(cx, &w.h, handing_off);
+        settle_schedule(&w.h, schedule, ScheduleState::Suspended);
     }
 
     #[gpui::test]
@@ -1356,15 +1343,15 @@ mod tests {
             Some(gated_running_schedule_sharing(shared))
         });
         let schedule = w.schedule.as_ref().unwrap();
-        assert!(settle_schedule(&w.h, schedule, ScheduleState::Running));
+        settle_schedule(&w.h, schedule, ScheduleState::Running);
         restart_and_close(cx, &w.h);
         schedule.export_gate.notify_one();
-        assert!(drive_until(cx, &w.h, handing_off));
+        drive_until(cx, &w.h, handing_off);
 
         w.handoff_export.notify_one();
 
-        assert!(drive_until(cx, &w.h, handoff_failed));
-        assert!(settle_schedule(&w.h, schedule, ScheduleState::Idle));
+        drive_until(cx, &w.h, handoff_failed);
+        settle_schedule(&w.h, schedule, ScheduleState::Idle);
     }
 
     #[gpui::test]
@@ -1373,11 +1360,11 @@ mod tests {
         let _running = exclusivity.try_acquire().unwrap();
         let w = waiting_harness(cx, exclusivity, |_| Some(keyless_enabled_schedule()));
         let schedule = w.schedule.as_ref().unwrap();
-        assert!(settle_schedule(&w.h, schedule, ScheduleState::Idle));
+        settle_schedule(&w.h, schedule, ScheduleState::Idle);
 
         restart_and_close(cx, &w.h);
 
-        assert!(drive_until(cx, &w.h, waiting_to_restart));
+        drive_until(cx, &w.h, waiting_to_restart);
         assert_eq!(schedule.handle.status().borrow().state, ScheduleState::Idle);
     }
 
@@ -1388,7 +1375,7 @@ mod tests {
         let exclusivity = TransferExclusivity::new();
         let _running = exclusivity.try_acquire().unwrap();
         let w = waiting_harness(cx, exclusivity, |_| None);
-        assert!(close_into_the_wait(cx, &w.h));
+        close_into_the_wait(cx, &w.h);
 
         assert_eq!(close(cx, &w.h), CloseDecision::Proceed);
     }
@@ -1400,7 +1387,7 @@ mod tests {
         let exclusivity = TransferExclusivity::new();
         let running = exclusivity.try_acquire().unwrap();
         let w = waiting_harness(cx, exclusivity.clone(), |_| None);
-        assert!(close_into_the_wait(cx, &w.h));
+        close_into_the_wait(cx, &w.h);
 
         let decision = close(cx, &w.h);
         drop(running);
@@ -1417,7 +1404,7 @@ mod tests {
         let exclusivity = TransferExclusivity::new();
         let running = exclusivity.try_acquire().unwrap();
         let w = waiting_harness(cx, exclusivity.clone(), |_| None);
-        assert!(close_into_the_wait(cx, &w.h));
+        close_into_the_wait(cx, &w.h);
         drop(running);
         pump(&w.h.rt);
         let taken_by_the_waiter = exclusivity.is_held();
@@ -1441,14 +1428,14 @@ mod tests {
             Some(gated_running_schedule_sharing(shared))
         });
         let schedule = w.schedule.as_ref().unwrap();
-        assert!(settle_schedule(&w.h, schedule, ScheduleState::Running));
-        assert!(close_into_the_wait(cx, &w.h));
+        settle_schedule(&w.h, schedule, ScheduleState::Running);
+        close_into_the_wait(cx, &w.h);
         close(cx, &w.h);
 
         schedule.export_gate.notify_one();
         drive(cx, &w.h);
 
-        assert!(settle_schedule(&w.h, schedule, ScheduleState::Idle));
+        settle_schedule(&w.h, schedule, ScheduleState::Idle);
         assert!(ready_with_the_staged_update(&stage(cx, &w.h)));
     }
 

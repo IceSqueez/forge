@@ -13,7 +13,6 @@ use forge_runtime::{
     register_speech_sub_actions,
 };
 use forge_storage::{DataProvider, MockDonationRepo};
-use forge_storage_sqlite::SqliteBackend;
 use forge_types::{LatestScope, LatestValue, LatestValueReader, Shared};
 use serde_json::Value;
 use tempfile::TempDir;
@@ -41,11 +40,7 @@ impl LatestValueReader for NoLatestValues {
 }
 
 async fn every_runtime_step() -> (Arc<SubActionRegistry>, TempDir) {
-    let media = tempfile::tempdir().unwrap();
-    let backend =
-        SqliteBackend::open_for_test(":memory:", [0x5e; 32], media.path().join("media"), None)
-            .await
-            .unwrap();
+    let (backend, media) = common::sqlite_backend().await;
     let dp: Arc<dyn DataProvider> = Arc::new(backend);
     let bus = EventBus::new(Arc::new(NullEventLogRepo));
     let publisher = Arc::clone(&bus) as Arc<dyn EventPublisher>;

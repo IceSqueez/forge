@@ -1,59 +1,34 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
+mod common;
+use common::{
+    ALERT_KIND, BLOB_IDENTITY, IDENTITY, UNSAFE_IDENTITIES, names_in, registry, sub_alert_instance,
+    unborn_root,
+};
+
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use forge_overlay::config::SOUND;
 use forge_overlay::{
-    BEHAVIOR_FILE, CONFIG_FILE, GENERATED_MEDIA_DIRECTORY, MARKUP_FILE, MOTION_ASSET,
-    OverlayConfig, OverlayError, OverlayInstance, OverlayKindRegistry, OverlayMedia,
-    RESERVED_DIRECTORY, RUNTIME_ASSET, ResolvedMedia, SAMPLE_FILE, STYLE_FILE, SampleContext,
-    ensure_shared_directory, materialize_overlay, refresh_config_credential,
-    register_builtin_kinds, remove_overlay_directory,
+    BEHAVIOR_FILE, CONFIG_FILE, GENERATED_MEDIA_DIRECTORY, MARKUP_FILE, MOTION_ASSET, OverlayError,
+    OverlayInstance, OverlayMedia, RESERVED_DIRECTORY, RUNTIME_ASSET, ResolvedMedia, SAMPLE_FILE,
+    STYLE_FILE, ensure_shared_directory, materialize_overlay, refresh_config_credential,
+    remove_overlay_directory,
 };
 use forge_types::Variant;
 use tempfile::TempDir;
 
-const ALERT_KIND: &str = "overlay.alert";
-const IDENTITY: &str = "sub-alert-1";
 const IDENTITY_LEN_LIMIT: usize = 64;
 #[cfg(unix)]
 const STAGING_NAMES_PLANTED: u32 = 4096;
 
-const UNSAFE_IDENTITIES: &[(&str, &str)] = &[
-    ("..", "parent traversal"),
-    (".", "the current directory"),
-    ("a/b", "a nested path"),
-    ("/abs", "an absolute path"),
-    ("a\\b", "a windows separator"),
-    ("Up-Case", "an uppercase letter"),
-    ("dot.name", "a dot segment"),
-    ("with space", "a space"),
-    ("", "an empty name"),
-    ("-leading-dash", "a leading dash"),
-    (RESERVED_DIRECTORY, "the reserved shared subtree"),
-];
-
-fn registry() -> OverlayKindRegistry {
-    let mut reg = OverlayKindRegistry::new();
-    register_builtin_kinds(&mut reg).expect("the builtin overlay kinds register");
-    reg
-}
-
 fn instance(source_overrides: &[&str]) -> OverlayInstance {
     OverlayInstance {
-        id: IDENTITY.to_owned(),
-        display_name: "Sub alert".to_owned(),
-        kind_id: ALERT_KIND.to_owned(),
-        config: OverlayConfig::new(),
         source_overrides: source_overrides.iter().map(|n| (*n).to_owned()).collect(),
-        credential: None,
-        media: OverlayMedia::default(),
-        sample: SampleContext::neutral(),
+        ..sub_alert_instance(ALERT_KIND)
     }
 }
 
-const BLOB_IDENTITY: &str =
-    "sha256-1fe5a351bf0314c8a1840b023fd1e4cab3f0f123468940c241bd7bf20e989ab8";
 const OTHER_IDENTITY: &str =
     "sha256-610f5ae4d76e332636a17bd357fd6ce99029316a99d320280d4d77a746bf29e8";
 const MEDIA_FORMAT: &str = "wav";
@@ -79,25 +54,6 @@ fn instance_holding(resolved: Vec<ResolvedMedia>) -> OverlayInstance {
 
 fn namespace_of(directory: &Path) -> PathBuf {
     directory.join(GENERATED_MEDIA_DIRECTORY)
-}
-
-fn unborn_root(home: &TempDir) -> PathBuf {
-    home.path().join("overlays")
-}
-
-fn names_in(dir: &Path) -> Vec<String> {
-    let mut names: Vec<String> = fs::read_dir(dir)
-        .expect("the directory exists")
-        .map(|entry| {
-            entry
-                .expect("a readable directory entry")
-                .file_name()
-                .to_string_lossy()
-                .into_owned()
-        })
-        .collect();
-    names.sort();
-    names
 }
 
 fn sorted(values: &[String]) -> Vec<String> {

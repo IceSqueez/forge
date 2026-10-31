@@ -1,20 +1,14 @@
 #![allow(clippy::expect_used)]
-use forge_overlay::config::{HEADLINE, SLOT};
-use forge_overlay::{
-    OverlayConfig, OverlayKindRegistry, PreviewLineRole, PreviewMark, PreviewShape,
-    register_builtin_kinds,
-};
-use forge_types::{LATEST_DONATION_SLOT, NOW_PLAYING_SLOT, Variant};
+mod common;
+use common::{LATEST_KIND, registry};
 
-fn registry() -> OverlayKindRegistry {
-    let mut reg = OverlayKindRegistry::new();
-    register_builtin_kinds(&mut reg).expect("the builtin overlay kinds register");
-    reg
-}
+use forge_overlay::config::{HEADLINE, SLOT};
+use forge_overlay::{OverlayConfig, PreviewLineRole, PreviewMark, PreviewShape};
+use forge_types::{LATEST_DONATION_SLOT, NOW_PLAYING_SLOT, Variant};
 
 fn latest_config(overrides: &[(&str, &str)]) -> OverlayConfig {
     let reg = registry();
-    let look = reg.get("overlay.latest").expect("the latest look");
+    let look = reg.get(LATEST_KIND).expect("the latest look");
     let mut config = look.default_config();
     for (key, value) in overrides {
         config.insert((*key).to_owned(), Variant::String((*value).to_owned()));
@@ -24,7 +18,7 @@ fn latest_config(overrides: &[(&str, &str)]) -> OverlayConfig {
 
 fn preview(overrides: &[(&str, &str)]) -> forge_overlay::PreviewComposition {
     let reg = registry();
-    let look = reg.get("overlay.latest").expect("the latest look");
+    let look = reg.get(LATEST_KIND).expect("the latest look");
     look.preview(&latest_config(overrides))
 }
 

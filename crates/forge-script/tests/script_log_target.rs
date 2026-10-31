@@ -1,9 +1,9 @@
 #![allow(clippy::unwrap_used)]
+use forge_events::test_support::NullPublisher;
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use forge_events::{Event, EventPublisher};
 use forge_script::{
     Engine, EngineConfig, ForgeApi, GlobalDeletion, GlobalIncrement, ScriptGlobals,
     ScriptGlobalsError,
@@ -93,12 +93,6 @@ fn capture(body: impl FnOnce()) -> Vec<CapturedLine> {
         },
     );
     lines.lock().unwrap().clone()
-}
-
-struct NullPublisher;
-
-impl EventPublisher for NullPublisher {
-    fn publish(&self, _event: Event) {}
 }
 
 struct UnusedGlobals;

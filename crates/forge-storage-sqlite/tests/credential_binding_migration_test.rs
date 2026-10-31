@@ -1,3 +1,4 @@
+mod common;
 use aes_gcm::aead::{Aead, KeyInit};
 use aes_gcm::{Aes256Gcm, Nonce};
 use forge_storage::{CredentialId, CredentialsRepo};
@@ -10,7 +11,7 @@ const NONCE: [u8; 12] = [0x07; 12];
 #[tokio::test]
 async fn a_row_from_before_the_binding_keeps_its_bytes_and_stays_readable_after_the_migration() {
     let dir = tempfile::tempdir().expect("a temporary directory");
-    let url = format!("sqlite://{}", dir.path().join("forge.db").display());
+    let url = common::database_url(&dir);
     let pool = connect(&url).await.expect("a database");
     MIGRATIONS
         .run_to(VERSION_BEFORE_BINDING, &pool)

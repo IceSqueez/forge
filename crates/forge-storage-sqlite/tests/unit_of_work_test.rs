@@ -1,4 +1,5 @@
 #![allow(clippy::unwrap_used)]
+mod common;
 use std::path::PathBuf;
 
 use forge_storage::settings::core_settings;
@@ -9,9 +10,8 @@ use forge_storage::{
 };
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::{
-    Action, ActionId, ClipId, DEFAULT_QUEUE_ID, ExecutionMode, OutputDevice, OverlayCredential,
-    PermissionRung, Queue, QueueId, ScriptContract, ScriptId, TriggerConfig, TriggerInstance,
-    TriggerInstanceId, Variant,
+    Action, ClipId, DEFAULT_QUEUE_ID, OutputDevice, OverlayCredential, PermissionRung, Queue,
+    QueueId, ScriptContract, ScriptId, TriggerConfig, TriggerInstance, TriggerInstanceId, Variant,
 };
 use sqlx::SqlitePool;
 use sqlx::sqlite::SqlitePoolOptions;
@@ -115,18 +115,7 @@ fn queue() -> Queue {
 }
 
 fn action(queue_id: QueueId) -> Action {
-    Action {
-        id: ActionId::new(),
-        name: "alert".to_owned(),
-        group: None,
-        queue_id,
-        enabled: true,
-        concurrent: false,
-        bypass_pause: false,
-        execution_mode: ExecutionMode::Sequential,
-        description: None,
-        sub_actions: vec![],
-    }
+    common::action_named("alert", queue_id)
 }
 
 fn instance() -> TriggerInstance {

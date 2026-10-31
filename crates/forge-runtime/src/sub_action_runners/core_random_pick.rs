@@ -199,14 +199,10 @@ impl SubActionRunner for CoreRandomPickRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use forge_events::{Event, EventPublisher};
+    use forge_events::test_support::NullPublisher;
+
     use forge_types::EventId;
     use forge_types::SubActionOutcome;
-
-    struct NullPublisher;
-    impl EventPublisher for NullPublisher {
-        fn publish(&self, _event: Event) {}
-    }
 
     fn str_array(items: &[&str]) -> Variant {
         Variant::Array(

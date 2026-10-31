@@ -92,7 +92,7 @@ mod tests {
 
     use super::*;
     use crate::client::VTubeClient;
-    use crate::runners::test_support::{MockSink, RecordingSink, make_ctx};
+    use crate::runners::test_support::{MockSink, make_ctx};
     use forge_registry::runner::SubActionConfig;
     use forge_types::{ArgStack, SubActionOutcome, Variant};
 
@@ -300,7 +300,7 @@ mod tests {
         field: &NumericField,
         text: &str,
     ) -> (SubActionOutcome, Option<Option<f64>>, bool) {
-        let sink = Arc::new(RecordingSink::default());
+        let sink = Arc::new(MockSink::new());
         let mut reg = SubActionRegistry::new();
         register_vtube_sub_actions(&mut reg, Arc::clone(&sink) as Arc<dyn VTubeSink>).unwrap();
         let mut config: SubActionConfig = field
@@ -363,7 +363,7 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn reset_to_idle_cancels_a_running_parameter_hold() {
-        let sink = Arc::new(RecordingSink::default());
+        let sink = Arc::new(MockSink::new());
         let mut reg = SubActionRegistry::new();
         register_vtube_sub_actions(&mut reg, Arc::clone(&sink) as Arc<dyn VTubeSink>).unwrap();
         let stack = ArgStack::new();

@@ -151,7 +151,7 @@ const ROWS: &[StoredRow] = &[
 ];
 
 fn db_url(dir: &TempDir) -> String {
-    format!("sqlite://{}", dir.path().join("forge.db").display())
+    common::database_url(dir)
 }
 
 async fn insert(pool: &SqlitePool, row: &StoredRow) {

@@ -1029,18 +1029,51 @@ mod tests {
         (bundle, transport)
     }
 
-    async fn settle_spawned_tasks() {
-        for _ in 0..8 {
-            tokio::task::yield_now().await;
-        }
+    async fn requests_reached(
+        transport: &crate::sub_actions::test_support::MockTransport,
+        path: &str,
+        expected: usize,
+    ) -> usize {
+        let count = || {
+            (0..transport.call_count())
+                .filter(|index| transport.request(*index).path == path)
+                .count()
+        };
+        tokio::time::timeout(HANG_GUARD, async {
+            while count() < expected {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("the spawned sync never reached the transport");
+        count()
     }
+
+    async fn every_task_released(bundle: &Arc<TwitchIntegrationBundle>) {
+        let released = tokio::time::timeout(HANG_GUARD, async {
+            while Arc::strong_count(bundle) > 1 {
+                tokio::time::sleep(RELEASE_POLL).await;
+            }
+        })
+        .await;
+        assert!(
+            released.is_ok(),
+            "{} task(s) still hold the bundle after shutdown",
+            Arc::strong_count(bundle) - 1
+        );
+    }
+
+    const GOALS_PATH: &str = "/helix/goals";
+    const SHIELD_PATH: &str = "/helix/moderation/shield_mode";
+    const HANG_GUARD: Duration = Duration::from_secs(30);
+    const RELEASE_POLL: Duration = Duration::from_millis(5);
 
     fn goal_requests(
         transport: &crate::sub_actions::test_support::MockTransport,
     ) -> Vec<HelixRequest> {
         (0..transport.call_count())
             .map(|index| transport.request(index))
-            .filter(|request| request.path == "/helix/goals")
+            .filter(|request| request.path == GOALS_PATH)
             .collect()
     }
 
@@ -1059,9 +1092,8 @@ mod tests {
 
         for (state, expected_syncs) in steps {
             b.on_chat_state_changed(state);
-            settle_spawned_tasks().await;
             assert_eq!(
-                goal_requests(&transport).len(),
+                requests_reached(&transport, GOALS_PATH, expected_syncs).await,
                 expected_syncs,
                 "after {state:?}"
             );
@@ -1073,7 +1105,7 @@ mod tests {
         let (b, transport) = bundle_recording_helix("4242");
 
         b.on_chat_state_changed(ChatConnectionState::Connected);
-        settle_spawned_tasks().await;
+        requests_reached(&transport, GOALS_PATH, 1).await;
 
         let queries: Vec<Vec<(String, String)>> = goal_requests(&transport)
             .into_iter()
@@ -1737,17 +1769,7 @@ mod tests {
         bundle.shutdown().await;
         bundle.shutdown().await;
 
-        let released = tokio::time::timeout(std::time::Duration::from_secs(30), async {
-            while Arc::strong_count(&bundle) > 1 {
-                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
-            }
-        })
-        .await;
-        assert!(
-            released.is_ok(),
-            "{} task(s) still hold the bundle after shutdown",
-            Arc::strong_count(&bundle) - 1
-        );
+        every_task_released(&bundle).await;
         assert_eq!(
             bundle.platform().connection_state(),
             ConnectionState::Disconnected
@@ -1761,8 +1783,6 @@ mod tests {
     }
 
     const ISSUED_TTL_SECS: u64 = 14400;
-    const DELTA_GUARD: Duration = Duration::from_secs(30);
-    const QUIET_WINDOW: Duration = Duration::from_millis(100);
 
     async fn expiry_bridge_fixture() -> ExpiryBridgeFixture {
         use wiremock::matchers::{method, path};
@@ -1822,16 +1842,30 @@ mod tests {
     }
 
     async fn next_delta(health: &mut HealthStream) -> Option<HealthDelta> {
-        tokio::time::timeout(DELTA_GUARD, health.next())
+        tokio::time::timeout(HANG_GUARD, health.next())
             .await
             .ok()
             .flatten()
     }
 
-    async fn no_delta_follows(health: &mut HealthStream) -> bool {
-        tokio::time::timeout(QUIET_WINDOW, health.next())
+    async fn deltas_left_after_retiring(fx: ExpiryBridgeFixture) -> usize {
+        let ExpiryBridgeFixture {
+            _server,
+            bundle,
+            mut health,
+        } = fx;
+        bundle.shutdown().await;
+        drop(bundle);
+        let count_until_closed = async {
+            let mut left = 0;
+            while health.next().await.is_some() {
+                left += 1;
+            }
+            left
+        };
+        tokio::time::timeout(HANG_GUARD, count_until_closed)
             .await
-            .is_err()
+            .expect("a task kept the health channel open after shutdown")
     }
 
     #[tokio::test]
@@ -1848,32 +1882,34 @@ mod tests {
                 Some(API_CALLS_METRIC),
                 "a refresh must emit an API calls delta"
             );
-            assert!(
-                no_delta_follows(&mut fx.health).await,
-                "one refresh must emit exactly one delta"
-            );
             assert_eq!(BuiltinStatus::token_expiry(fx.bundle.as_ref()), renewed);
         }
+        assert_eq!(
+            deltas_left_after_retiring(fx).await,
+            0,
+            "one refresh must emit exactly one delta"
+        );
     }
 
     #[tokio::test]
     async fn token_expiry_stays_unreported_until_a_refresh_publishes_one() {
-        let mut fx = expiry_bridge_fixture().await;
+        let fx = expiry_bridge_fixture().await;
 
-        assert!(no_delta_follows(&mut fx.health).await);
         assert_eq!(BuiltinStatus::token_expiry(fx.bundle.as_ref()), None);
+        assert_eq!(deltas_left_after_retiring(fx).await, 0);
     }
 
     #[tokio::test]
     async fn expiry_bridge_ignores_refreshes_after_the_bundle_is_retired() {
-        let mut fx = expiry_bridge_fixture().await;
+        let fx = expiry_bridge_fixture().await;
         let before = BuiltinStatus::token_expiry(fx.bundle.as_ref());
         fx.bundle.shutdown().await;
 
         refresh_stale_token(&fx.bundle, "existing_access").await;
+        every_task_released(&fx.bundle).await;
 
-        assert!(no_delta_follows(&mut fx.health).await);
         assert_eq!(BuiltinStatus::token_expiry(fx.bundle.as_ref()), before);
+        assert_eq!(deltas_left_after_retiring(fx).await, 0);
     }
 
     fn shield_labels(b: &TwitchIntegrationBundle) -> Vec<String> {
@@ -1925,19 +1961,13 @@ mod tests {
         for state in [
             ChatConnectionState::Connected,
             ChatConnectionState::Connected,
+            ChatConnectionState::Reconnecting { attempt: 1 },
+            ChatConnectionState::Connected,
         ] {
             b.on_chat_state_changed(state);
-            settle_spawned_tasks().await;
         }
 
-        let shield_queries = (0..transport.call_count())
-            .map(|index| transport.request(index))
-            .filter(|request| {
-                request.method == HelixMethod::Get
-                    && request.path == "/helix/moderation/shield_mode"
-            })
-            .count();
-        assert_eq!(shield_queries, 1);
+        assert_eq!(requests_reached(&transport, SHIELD_PATH, 2).await, 2);
     }
 
     #[test]

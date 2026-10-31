@@ -2673,7 +2673,6 @@ dependencies = [
  "forge-net",
  "forge-obs",
  "forge-overlay",
- "forge-paths",
  "forge-platform-core",
  "forge-platform-kick",
  "forge-platform-twitch",
@@ -2687,7 +2686,6 @@ dependencies = [
  "forge-vtube",
  "serde_json",
  "tempfile",
- "time",
  "tokio",
  "ulid",
 ]

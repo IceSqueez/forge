@@ -18,7 +18,6 @@ forge-midi = { path = "../forge-midi" }
 forge-net = { path = "../forge-net", features = ["test-support"] }
 forge-obs = { path = "../forge-obs" }
 forge-overlay = { path = "../forge-overlay" }
-forge-paths = { path = "../forge-paths" }
 forge-platform-core = { path = "../forge-platform-core" }
 forge-platform-kick = { path = "../forge-platform-kick" }
 forge-platform-twitch = { path = "../forge-platform-twitch" }
@@ -33,6 +32,5 @@ forge-vtube = { path = "../forge-vtube" }
 flate2 = { workspace = true }
 serde_json = { workspace = true }
 tempfile = { workspace = true }
-time = { workspace = true }
 tokio = { workspace = true }
 ulid = { workspace = true }

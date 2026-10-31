@@ -6,14 +6,13 @@ use forge_components::ActivePresentation;
 use forge_components::NAME_FIELD_LIMIT;
 use forge_components::PushToast;
 use forge_components::SEARCH_FIELD_WIDTH;
-use forge_components::UNDO_TOAST_DURATION;
 use forge_components::{
     BORDER_THIN, ChipGlyph, ConfirmTone, Density, FONT_XS, FONT_XXS, ForgePalette, Icon,
     InlineEditEvent, InputEvent, ModalSize, OverlayPosition, ResizeEdge, ResizeRange, Spacing,
-    TextArea, TextInput, ToastAction, ToastKind, body_family, chip, confirm_modal, context_menu,
-    header_stat, header_stats, icon, inline_edit, install_resize, menu_divider, menu_item, modal,
-    mono_family, overlay, primary_button, primary_button_with_icon, scaled, secondary_button,
-    spacing, status_dot, toggle, tr,
+    TextArea, TextInput, ToastKind, body_family, chip, confirm_modal, context_menu, header_stat,
+    header_stats, icon, inline_edit, install_resize, menu_divider, menu_item, modal, mono_family,
+    overlay, primary_button, primary_button_with_icon, scaled, secondary_button, spacing,
+    status_dot, toggle, tr,
 };
 use forge_types::{Action, ActionId, DEFAULT_QUEUE_ID, ExecutionMode, Queue};
 use gpui::{
@@ -239,20 +238,11 @@ impl ScreenActionsView {
     pub(super) fn raise_undo_toast(&self, id: ActionId, name: String, cx: &mut Context<Self>) {
         let view = cx.entity();
         let message = tr!("actions_deleted_toast", name = name.as_str());
-        cx.push_toast_full(
-            ToastKind::Undo,
-            message,
-            None,
-            Some(ToastAction::new(
-                tr!("common_undo"),
-                move |_window, app: &mut App| {
-                    view.update(app, |this, cx| {
-                        this.write_action(id, ActionWrite::Restore, cx)
-                    });
-                },
-            )),
-            UNDO_TOAST_DURATION,
-        );
+        cx.push_undo_toast(message, move |_window, app: &mut App| {
+            view.update(app, |this, cx| {
+                this.write_action(id, ActionWrite::Restore, cx)
+            });
+        });
     }
 
     pub(super) fn open_action_modal(
@@ -862,6 +852,7 @@ impl ScreenActionsView {
         Some(
             context_menu(position, palette)
                 .items(items)
+                .dismiss_on_escape(&self.menu_focus)
                 .on_dismiss(move |_window, cx| {
                     view.update(cx, |this, cx| this.close_menu(cx));
                 })

@@ -11,6 +11,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Duration;
 
+use forge_components::drive_overlay_focus;
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, ChipGlyph, Confirm, ConfirmTone, Density, FONT_MD, FONT_SM,
     FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, MenuPlacement, OverlayPosition, Radius,
@@ -27,6 +28,7 @@ use forge_storage::{
     VoiceAliasRepo,
 };
 use forge_types::{PlatformId, Shared, SubActionStep, Variant, is_bot_account};
+use gpui::FocusHandle;
 use gpui::{
     AnyElement, App, ClickEvent, Context, Div, Entity, FontWeight, ListAlignment, ListState,
     MouseButton, MouseDownEvent, Pixels, Point, Rgba, SharedString, Subscription, Window, div,
@@ -245,6 +247,8 @@ pub struct ChatView {
     reply_target: Option<ReplyTarget>,
     reply_input: Entity<TextInput>,
     user_menu: Option<UserMenuTarget>,
+    menu_focus: FocusHandle,
+    menu_focus_restore: Option<FocusHandle>,
     auto_scroll: bool,
     unread: usize,
     last_seen_seq: u64,
@@ -369,6 +373,8 @@ impl ChatView {
             reply_target: None,
             reply_input,
             user_menu: None,
+            menu_focus: cx.focus_handle(),
+            menu_focus_restore: None,
             auto_scroll: true,
             unread: 0,
             last_seen_seq,
@@ -1096,6 +1102,7 @@ impl ChatView {
         Some(
             context_menu(position, palette)
                 .items(items)
+                .dismiss_on_escape(&self.menu_focus)
                 .on_dismiss(move |_window, cx| {
                     view.update(cx, |this, cx| this.close_user_menu(cx));
                 })
@@ -2353,7 +2360,14 @@ fn body_export_text(body: &ChatBody) -> String {
 }
 
 impl Render for ChatView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        drive_overlay_focus(
+            self.user_menu.is_some(),
+            &self.menu_focus,
+            &mut self.menu_focus_restore,
+            window,
+            cx,
+        );
         let palette = cx.palette();
         let density = cx.density();
 

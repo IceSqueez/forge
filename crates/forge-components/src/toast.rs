@@ -13,7 +13,7 @@ use crate::palette::ForgePalette;
 use crate::progress_bar::progress_bar;
 use crate::tokens::{BORDER_THIN, Density, FONT_SM, Radius, Spacing, body_family, radius, spacing};
 
-pub const UNDO_TOAST_DURATION: Duration = Duration::from_millis(6000);
+pub(crate) const UNDO_TOAST_DURATION: Duration = Duration::from_millis(6000);
 const STRIPE_WIDTH: Pixels = px(2.0);
 const KIND_ICON: Pixels = px(14.0);
 const DISMISS_ICON: Pixels = px(12.0);

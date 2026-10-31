@@ -325,6 +325,7 @@ impl RenderOnce for Dropdown {
                 .track_focus(handle)
                 .on_key_down(move |event: &KeyDownEvent, window, cx| {
                     if event.keystroke.key.as_str() == ESCAPE_KEY {
+                        cx.stop_propagation();
                         dismiss(window, cx);
                     }
                 });

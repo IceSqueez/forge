@@ -4,16 +4,13 @@ use crate::async_bridge;
 use crate::repo_failure::RepoFailure;
 use crate::script_lifecycle::ScriptLifecycle;
 use forge_components::PushToast;
-use forge_components::{ToastAction, ToastKind, tr};
+use forge_components::{ToastKind, tr};
 use forge_script::{format_script, validate_syntax};
 use forge_storage::{ScriptRecord, ScriptReferences, ScriptRepo};
 use forge_types::{ScriptContract, ScriptId, VariantKind};
 use gpui::{App, Context};
 use std::sync::Arc;
-use std::time::Duration;
 use time::OffsetDateTime;
-
-const UNDO_TOAST_MS: u64 = 6000;
 
 enum ScriptSaveFailure {
     Syntax(String),
@@ -289,17 +286,11 @@ impl ScriptEditorView {
 
     fn raise_undo_toast(&self, id: ScriptId, name: &str, cx: &mut Context<Self>) {
         let view = cx.entity();
-        cx.push_toast_full(
-            ToastKind::Undo,
+        cx.push_undo_toast(
             tr!("script_editor_deleted_toast", name = name),
-            None,
-            Some(ToastAction::new(
-                tr!("common_undo"),
-                move |_window, app: &mut App| {
-                    view.update(app, |this, cx| this.restore_archived(id, cx));
-                },
-            )),
-            Duration::from_millis(UNDO_TOAST_MS),
+            move |_window, app: &mut App| {
+                view.update(app, |this, cx| this.restore_archived(id, cx));
+            },
         );
     }
 

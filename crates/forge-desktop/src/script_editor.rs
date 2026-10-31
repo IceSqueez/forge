@@ -25,6 +25,7 @@ use self::script_rename::{PendingRename, RenameState};
 use crate::navigation::NavRequested;
 use crate::screen_shortcuts::ScreenShortcuts;
 use crate::unsaved_work::UnsavedWork;
+use forge_components::drive_overlay_focus;
 use forge_components::highlight::Language;
 use forge_components::{
     ActivePresentation, BreadcrumbCrumb, CodeEditor, Confirm, FONT_XS, ForgePalette, Icon,
@@ -36,6 +37,7 @@ use forge_storage::{
     ScriptTelemetry,
 };
 use forge_types::{Action, ActionId, IntegrationAvailability, ScriptContract, ScriptId};
+use gpui::FocusHandle;
 use gpui::prelude::*;
 use gpui::{
     AnyElement, App, Context, Entity, EventEmitter, Pixels, SharedString, Subscription, Task,
@@ -113,6 +115,8 @@ pub struct ScriptEditorView {
 
     rename: Option<RenameState>,
     row_menu: Option<RowMenu>,
+    menu_focus: FocusHandle,
+    menu_focus_restore: Option<FocusHandle>,
     pending_delete: Confirm<ScriptId>,
     delete_referrers: Option<ScriptReferences>,
     pending_rename: Option<PendingRename>,
@@ -264,6 +268,8 @@ impl ScriptEditorView {
             _search_sub: search_sub,
             rename: None,
             row_menu: None,
+            menu_focus: cx.focus_handle(),
+            menu_focus_restore: None,
             pending_delete: Confirm::default(),
             delete_referrers: None,
             pending_rename: None,
@@ -309,7 +315,14 @@ impl ScriptEditorView {
 }
 
 impl Render for ScriptEditorView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        drive_overlay_focus(
+            self.row_menu.is_some() || self.kind_menu.is_some(),
+            &self.menu_focus,
+            &mut self.menu_focus_restore,
+            window,
+            cx,
+        );
         let palette = cx.palette();
         let density = cx.density();
 

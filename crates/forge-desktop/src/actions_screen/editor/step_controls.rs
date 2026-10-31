@@ -1,7 +1,7 @@
 use super::*;
 use forge_components::{
-    ForgePalette, Icon, MenuPlacement, PushToast, Spacing, ToastAction, ToastKind,
-    UNDO_TOAST_DURATION, menu_button, menu_divider, menu_item, spacing, tr,
+    ForgePalette, Icon, MenuPlacement, PushToast, Spacing, menu_button, menu_divider, menu_item,
+    spacing, tr,
 };
 use gpui::{AnyElement, App, ClickEvent, Context, SharedString, div};
 
@@ -114,19 +114,13 @@ impl ScreenActionsView {
     fn raise_step_undo_toast(&self, removed: RemovedStep, cx: &mut Context<Self>) {
         let view = cx.entity();
         let removed = std::cell::Cell::new(Some(removed));
-        cx.push_toast_full(
-            ToastKind::Undo,
+        cx.push_undo_toast(
             tr!("actions_step_removed_toast"),
-            None,
-            Some(ToastAction::new(
-                tr!("common_undo"),
-                move |_window, app: &mut App| {
-                    if let Some(removed) = removed.take() {
-                        view.update(app, |this, cx| this.restore_step(removed, cx));
-                    }
-                },
-            )),
-            UNDO_TOAST_DURATION,
+            move |_window, app: &mut App| {
+                if let Some(removed) = removed.take() {
+                    view.update(app, |this, cx| this.restore_step(removed, cx));
+                }
+            },
         );
     }
 
@@ -292,7 +286,7 @@ impl ScreenActionsView {
 
 #[cfg(test)]
 mod tests {
-    use forge_components::{ToastAction, Toasts};
+    use forge_components::{ToastAction, ToastKind, Toasts};
     use gpui::TestAppContext;
 
     use super::super::super::action_writes::tests::{FIRST, SECOND, Screen, THIRD, kinds};

@@ -2,14 +2,16 @@ use crate::presentation::ActivePresentation;
 use std::time::Duration;
 
 use gpui::{
-    AnyElement, App, Global, IntoElement, ParentElement, SharedString, Styled, deferred, div,
+    AnyElement, App, Global, IntoElement, ParentElement, SharedString, Styled, Window, deferred,
+    div,
 };
 
 use crate::footer::FOOTER_HEIGHT;
 use crate::icons::Icon;
 use crate::palette::ForgePalette;
-use crate::toast::{ToastAction, ToastData, ToastKind, toast_card};
+use crate::toast::{ToastAction, ToastData, ToastKind, UNDO_TOAST_DURATION, toast_card};
 use crate::tokens::{Spacing, spacing};
+use crate::tr;
 
 const DEFAULT_TOAST_MS: u64 = 4000;
 const TOAST_PRIORITY: usize = 2;
@@ -113,6 +115,12 @@ pub trait PushToast {
         secondary_action: ToastAction,
         duration: Duration,
     );
+
+    fn push_undo_toast(
+        &mut self,
+        message: impl Into<SharedString>,
+        on_undo: impl Fn(&mut Window, &mut App) + 'static,
+    );
 }
 
 impl PushToast for App {
@@ -154,6 +162,20 @@ impl PushToast for App {
             Some(action),
             Some(secondary_action),
             duration,
+        );
+    }
+
+    fn push_undo_toast(
+        &mut self,
+        message: impl Into<SharedString>,
+        on_undo: impl Fn(&mut Window, &mut App) + 'static,
+    ) {
+        self.push_toast_full(
+            ToastKind::Undo,
+            message,
+            None,
+            Some(ToastAction::new(tr!("common_undo"), on_undo)),
+            UNDO_TOAST_DURATION,
         );
     }
 }

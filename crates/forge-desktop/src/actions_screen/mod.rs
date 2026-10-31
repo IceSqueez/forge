@@ -13,6 +13,7 @@ use crate::vtube_catalog_options::VTubeCatalogField;
 use forge_components::ActivePresentation;
 use forge_components::PushToast;
 use forge_components::Radius;
+use forge_components::drive_overlay_focus;
 use forge_components::radius;
 use forge_components::{
     BreadcrumbCrumb, Confirm, Density, ForgePalette, GridPicker, Icon, InlineEdit, OverlayPosition,
@@ -32,6 +33,7 @@ use forge_storage::{
 };
 use forge_tts_core::TtsRegistry;
 use forge_types::{Action, ActionId, ExecutionOutcome, QueueId, SubActionStep, TriggerInstanceId};
+use gpui::FocusHandle;
 use gpui::{
     AnyElement, App, ClickEvent, Context, ElementId, Entity, EventEmitter, Pixels, Point,
     SharedString, Subscription, Window, div, prelude::*, px,
@@ -215,6 +217,8 @@ pub struct ScreenActionsView {
     selected: Option<ActionId>,
     hovered: Option<ActionId>,
     menu_open: Option<ActionId>,
+    menu_focus: FocusHandle,
+    menu_focus_restore: Option<FocusHandle>,
     renaming: Option<Renaming>,
     action_modal: Option<ActionForm>,
     history_modal: Option<HistoryModalHost>,
@@ -331,6 +335,8 @@ impl ScreenActionsView {
             selected: preselect,
             hovered: None,
             menu_open: None,
+            menu_focus: cx.focus_handle(),
+            menu_focus_restore: None,
             renaming: None,
             action_modal: None,
             history_modal: None,
@@ -651,6 +657,13 @@ impl EventEmitter<NavRequested> for ScreenActionsView {}
 
 impl Render for ScreenActionsView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        drive_overlay_focus(
+            self.menu_open.is_some(),
+            &self.menu_focus,
+            &mut self.menu_focus_restore,
+            window,
+            cx,
+        );
         let density = cx.density();
         self.release_step_drag(window, cx);
         let palette = cx.palette();

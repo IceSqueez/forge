@@ -9,7 +9,7 @@ use gpui::{
 use crate::Icon;
 use crate::dropdown::{dropdown, dropdown_surface};
 use crate::menu::{context_menu, menu_button};
-use crate::overlay::{anchored_popover, overlay};
+use crate::overlay::{anchored_popover, drive_overlay_focus, overlay};
 use crate::palette::FORGE_DEFAULT;
 use crate::test_support::install_presentation;
 
@@ -26,11 +26,11 @@ enum Surface {
     ContextMenu,
 }
 
-const SURFACES_WITH_ESCAPE: [Surface; 4] = [
-    Surface::Modal,
+const SURFACES_OPENED_FROM_A_MODAL: [Surface; 4] = [
     Surface::Popover,
     Surface::Dropdown,
     Surface::MenuButton,
+    Surface::ContextMenu,
 ];
 const EVERY_SURFACE: [Surface; 5] = [
     Surface::Modal,
@@ -44,6 +44,7 @@ struct Host {
     surface: Surface,
     focus: FocusHandle,
     dismissals: Rc<Cell<usize>>,
+    host_modal_dismissals: Option<Rc<Cell<usize>>>,
 }
 
 impl Render for Host {
@@ -73,9 +74,19 @@ impl Render for Host {
                 .into_any_element(),
             Surface::ContextMenu => context_menu(corner, &FORGE_DEFAULT)
                 .on_dismiss(dismiss)
+                .dismiss_on_escape(&self.focus)
                 .into_any_element(),
         };
-        div().size_full().child(surface)
+        let root = div().size_full();
+        match self.host_modal_dismissals.clone() {
+            Some(modal_dismissals) => root.child(
+                overlay(div().relative().child(surface), &FORGE_DEFAULT)
+                    .on_dismiss("contract-host-modal", move |_, _| {
+                        modal_dismissals.set(modal_dismissals.get() + 1)
+                    }),
+            ),
+            None => root.child(surface),
+        }
     }
 }
 
@@ -85,6 +96,14 @@ struct Opened<'a> {
 }
 
 fn open(cx: &mut TestAppContext, surface: Surface) -> Opened<'_> {
+    open_hosted(cx, surface, None)
+}
+
+fn open_hosted(
+    cx: &mut TestAppContext,
+    surface: Surface,
+    host_modal_dismissals: Option<Rc<Cell<usize>>>,
+) -> Opened<'_> {
     install_presentation(cx);
     let dismissals = Rc::new(Cell::new(0));
     let seen = dismissals.clone();
@@ -92,6 +111,7 @@ fn open(cx: &mut TestAppContext, surface: Surface) -> Opened<'_> {
         surface,
         focus: cx.focus_handle(),
         dismissals: seen,
+        host_modal_dismissals,
     });
     vcx.run_until_parked();
     vcx.update(|window, cx| window.focus(&host.read(cx).focus.clone(), cx));
@@ -113,14 +133,52 @@ fn an_outside_click_dismisses_every_surface_exactly_once(cx: &mut TestAppContext
 }
 
 #[gpui::test]
-fn escape_dismisses_every_surface_that_takes_focus_exactly_once(cx: &mut TestAppContext) {
-    for surface in SURFACES_WITH_ESCAPE {
+fn escape_dismisses_every_surface_exactly_once(cx: &mut TestAppContext) {
+    for surface in EVERY_SURFACE {
         let opened = open(cx, surface);
 
         opened.vcx.simulate_keystrokes("escape");
 
         assert_eq!(opened.dismissals.get(), 1, "{surface:?}");
     }
+}
+
+#[gpui::test]
+fn escape_closes_a_surface_opened_from_a_modal_and_leaves_the_modal_open(cx: &mut TestAppContext) {
+    for surface in SURFACES_OPENED_FROM_A_MODAL {
+        let modal_dismissals = Rc::new(Cell::new(0));
+        let opened = open_hosted(cx, surface, Some(modal_dismissals.clone()));
+
+        opened.vcx.simulate_keystrokes("escape");
+
+        assert_eq!(
+            (opened.dismissals.get(), modal_dismissals.get()),
+            (1, 0),
+            "{surface:?}"
+        );
+    }
+}
+
+#[gpui::test]
+fn closing_hands_focus_back_only_while_the_surface_still_holds_it(cx: &mut TestAppContext) {
+    let opened = open(cx, Surface::ContextMenu);
+    let vcx = opened.vcx;
+    let (surface_focus, earlier_focus, later_focus) =
+        vcx.update(|_, cx| (cx.focus_handle(), cx.focus_handle(), cx.focus_handle()));
+    let mut restore = None;
+
+    vcx.update(|window, cx| {
+        window.focus(&earlier_focus, cx);
+        drive_overlay_focus(true, &surface_focus, &mut restore, window, cx);
+        window.focus(&later_focus, cx);
+        drive_overlay_focus(false, &surface_focus, &mut restore, window, cx);
+        assert!(later_focus.is_focused(window));
+
+        window.focus(&earlier_focus, cx);
+        drive_overlay_focus(true, &surface_focus, &mut restore, window, cx);
+        drive_overlay_focus(false, &surface_focus, &mut restore, window, cx);
+        assert!(earlier_focus.is_focused(window));
+    });
 }
 
 #[gpui::test]

@@ -1,7 +1,6 @@
 use forge_components::NAME_FIELD_LIMIT;
 use forge_components::TINT_BORDER_ALPHA;
 use forge_components::TINT_FILL_ALPHA;
-use forge_components::UNDO_TOAST_DURATION;
 use std::collections::HashMap;
 use std::future::Future;
 use std::sync::Arc;
@@ -14,18 +13,19 @@ use forge_components::tokens::ModalSize;
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, CodeEditor, ColumnWidth, DataRow, Density, FONT_XS, FONT_XXS,
     ForgePalette, Icon, InlineEdit, InlineEditEvent, InputEvent, OverlayPosition, Radius, Spacing,
-    TextInput, ToastAction, ToastKind, badge, body_family, chip, column, confirm_modal,
-    context_menu, empty_state, header_stat, header_stats, hover_reveal, icon, inline_edit,
-    menu_divider, menu_item, modal, mono_family, overlay, page_frame, primary_button,
-    primary_button_with_icon, radius, scaled, secondary_button, spacing, status_dot, toggle, tr,
-    virtual_table, with_alpha,
+    TextInput, ToastKind, badge, body_family, chip, column, confirm_modal, context_menu,
+    empty_state, header_stat, header_stats, hover_reveal, icon, inline_edit, menu_divider,
+    menu_item, modal, mono_family, overlay, page_frame, primary_button, primary_button_with_icon,
+    radius, scaled, secondary_button, spacing, status_dot, toggle, tr, virtual_table, with_alpha,
 };
 use forge_components::{Confirm, SearchState};
 use std::path::PathBuf;
 
+use forge_components::drive_overlay_focus;
 use forge_runtime::EventBus;
 use forge_storage::{GlobalEntry, GlobalsExport, GlobalsRepo};
 use forge_types::{Variant, VariantKind};
+use gpui::FocusHandle;
 use gpui::{
     App, ClickEvent, Context, Entity, EventEmitter, MouseButton, MouseDownEvent, Rgba,
     SharedString, Subscription, Task, UniformListScrollHandle, Window, div, prelude::*, px, svg,
@@ -357,6 +357,8 @@ pub struct GlobalsView {
     inspecting: Option<Global>,
     renaming: Option<RenameState>,
     row_menu: Option<RowMenu>,
+    menu_focus: FocusHandle,
+    menu_focus_restore: Option<FocusHandle>,
     table_scroll: UniformListScrollHandle,
     _globals_obs: Subscription,
     _search_sub: Subscription,
@@ -401,6 +403,8 @@ impl GlobalsView {
             inspecting: None,
             renaming: None,
             row_menu: None,
+            menu_focus: cx.focus_handle(),
+            menu_focus_restore: None,
             table_scroll: UniformListScrollHandle::new(),
             _globals_obs: globals_obs,
             _search_sub: search_sub,
@@ -629,25 +633,16 @@ impl GlobalsView {
     ) {
         let view = cx.entity();
         let message = tr!("globals_deleted_toast", name = name.as_ref());
-        cx.push_toast_full(
-            ToastKind::Undo,
-            message,
-            None,
-            Some(ToastAction::new(
-                tr!("common_undo"),
-                move |_window, app: &mut App| {
-                    let backend = Arc::clone(&backend);
-                    let key = name.to_string();
-                    view.update(app, |this, cx| {
-                        this.spawn_write(
-                            async move { backend.restore(&key).await.map_err(RepoFailure::from) },
-                            cx,
-                        );
-                    });
-                },
-            )),
-            UNDO_TOAST_DURATION,
-        );
+        cx.push_undo_toast(message, move |_window, app: &mut App| {
+            let backend = Arc::clone(&backend);
+            let key = name.to_string();
+            view.update(app, |this, cx| {
+                this.spawn_write(
+                    async move { backend.restore(&key).await.map_err(RepoFailure::from) },
+                    cx,
+                );
+            });
+        });
     }
 
     fn export(&mut self, cx: &mut Context<Self>) {
@@ -1248,6 +1243,7 @@ impl GlobalsView {
         Some(
             context_menu(menu.position, palette)
                 .items(items)
+                .dismiss_on_escape(&self.menu_focus)
                 .on_dismiss(move |_window, cx| {
                     view.update(cx, |this, cx| this.close_row_menu(cx));
                 })
@@ -1723,7 +1719,14 @@ impl GlobalsView {
 }
 
 impl Render for GlobalsView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        drive_overlay_focus(
+            self.row_menu.is_some(),
+            &self.menu_focus,
+            &mut self.menu_focus_restore,
+            window,
+            cx,
+        );
         let palette = cx.palette();
         let density = cx.density();
 

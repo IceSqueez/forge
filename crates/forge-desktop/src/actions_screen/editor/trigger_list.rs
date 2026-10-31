@@ -5,8 +5,7 @@ use crate::integration_switch::{category_inactive_badge, inactive_badge};
 use crate::repo_failure::RepoFailure;
 use forge_components::{
     BORDER_THIN, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, PushToast, Radius, Spacing,
-    ToastAction, ToastKind, UNDO_TOAST_DURATION, body_family, icon, mono_family, radius, row_card,
-    spacing, status_dot, tr,
+    body_family, icon, mono_family, radius, row_card, spacing, status_dot, tr,
 };
 use forge_registry::TriggerKindDescriptor;
 use forge_types::{TriggerInstance, TriggerInstanceId};
@@ -68,19 +67,13 @@ impl ScreenActionsView {
         cx: &mut Context<Self>,
     ) {
         let view = cx.entity();
-        cx.push_toast_full(
-            ToastKind::Undo,
+        cx.push_undo_toast(
             tr!("actions_trigger_unlinked_toast"),
-            None,
-            Some(ToastAction::new(
-                tr!("common_undo"),
-                move |_window, app: &mut App| {
-                    view.update(app, |this, cx| {
-                        this.relink_trigger(action_id, instance_id, cx)
-                    });
-                },
-            )),
-            UNDO_TOAST_DURATION,
+            move |_window, app: &mut App| {
+                view.update(app, |this, cx| {
+                    this.relink_trigger(action_id, instance_id, cx)
+                });
+            },
         );
     }
 

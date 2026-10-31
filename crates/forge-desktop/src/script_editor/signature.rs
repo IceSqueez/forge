@@ -315,6 +315,7 @@ impl ScriptEditorView {
         Some(
             context_menu(position, palette)
                 .items(items)
+                .dismiss_on_escape(&self.menu_focus)
                 .on_dismiss(move |_window, cx| {
                     view.update(cx, |this, cx| this.close_kind_menu(cx));
                 })

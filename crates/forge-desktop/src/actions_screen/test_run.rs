@@ -118,6 +118,8 @@ pub(super) struct TestRunModal {
     selected_trigger: Option<usize>,
     note: Option<TestRunNote>,
     trigger_menu: Option<Point<Pixels>>,
+    menu_focus: FocusHandle,
+    menu_focus_restore: Option<FocusHandle>,
     dispatched: EventId,
     root: Option<EventId>,
     top_run_ids: HashMap<EventId, usize>,
@@ -206,6 +208,8 @@ impl TestRunModal {
             selected_trigger,
             note,
             trigger_menu: None,
+            menu_focus: cx.focus_handle(),
+            menu_focus_restore: None,
             dispatched,
             root: None,
             top_run_ids: HashMap::new(),
@@ -467,6 +471,7 @@ impl TestRunModal {
 
         context_menu(pos, palette)
             .items(items)
+            .dismiss_on_escape(&self.menu_focus)
             .on_dismiss(move |_window, cx| {
                 view.update(cx, |this, cx| this.close_trigger_menu(cx));
             })
@@ -819,7 +824,14 @@ impl TestRunModal {
 }
 
 impl Render for TestRunModal {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        drive_overlay_focus(
+            self.trigger_menu.is_some(),
+            &self.menu_focus,
+            &mut self.menu_focus_restore,
+            window,
+            cx,
+        );
         let palette = cx.palette();
         let palette = &palette;
         let halted = matches!(self.phase, TestRunPhase::Halted { .. });

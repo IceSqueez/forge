@@ -9,12 +9,11 @@ use forge_components::FONT_XXS;
 use forge_components::Spacing;
 use forge_components::spacing;
 use std::sync::Arc;
-use std::time::Duration;
 use tokio::sync::mpsc::error::TrySendError;
 
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, FONT_XS, ForgePalette, Icon, MenuPlacement, Radius, SectionLabel,
-    ToastAction, ToastKind, badge, body_family, card, error_row_with_retry, ghost_button_with_icon,
+    ToastKind, badge, body_family, card, error_row_with_retry, ghost_button_with_icon,
     header_status, icon, menu_button, menu_divider, menu_item, mono_family, pad_tile, page_frame,
     radius, scaled, status_dot, toggle, tr,
 };
@@ -124,8 +123,6 @@ const FOOTER_MT: Pixels = px(14.0);
 const LEARN_PAD_V: Pixels = px(11.0);
 const LEARN_GAP: Pixels = px(8.0);
 const LEARN_GLYPH: Pixels = px(14.0);
-
-const UNDO_TOAST_MS: u64 = 6000;
 
 fn monitor_value_label(event: &MidiMonitorEvent) -> String {
     match event.kind {
@@ -871,28 +868,22 @@ impl MidiScreenView {
         let triggers = Arc::clone(&self.trigger_repo);
         let actions = Arc::clone(&self.action_repo);
         let rt_handle = self.rt_handle.clone();
-        cx.push_toast_full(
-            ToastKind::Undo,
+        cx.push_undo_toast(
             tr!("triggers_toast_deleted", name = name.as_str()),
-            None,
-            Some(ToastAction::new(
-                tr!("common_undo"),
-                move |_window, app: &mut App| {
-                    let triggers = Arc::clone(&triggers);
-                    let actions = Arc::clone(&actions);
-                    async_bridge::run_async_entity(
-                        &rt_handle,
-                        view.clone(),
-                        async move {
-                            triggers.restore(id).await.map_err(RepoFailure::from)?;
-                            load_mappings(&*triggers, &*actions).await
-                        },
-                        |this, result, cx| this.apply_mappings(result, cx),
-                        app,
-                    );
-                },
-            )),
-            Duration::from_millis(UNDO_TOAST_MS),
+            move |_window, app: &mut App| {
+                let triggers = Arc::clone(&triggers);
+                let actions = Arc::clone(&actions);
+                async_bridge::run_async_entity(
+                    &rt_handle,
+                    view.clone(),
+                    async move {
+                        triggers.restore(id).await.map_err(RepoFailure::from)?;
+                        load_mappings(&*triggers, &*actions).await
+                    },
+                    |this, result, cx| this.apply_mappings(result, cx),
+                    app,
+                );
+            },
         );
     }
 

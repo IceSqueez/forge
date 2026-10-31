@@ -4,6 +4,7 @@ use forge_components::FONT_BADGE;
 use forge_components::FONT_META;
 use forge_components::FONT_SM;
 use forge_components::FONT_XS;
+use forge_components::drive_overlay_focus;
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, Confirm, ForgePalette, InlineEdit, SearchState, TextInput,
     ToastKind, page_frame, tr,
@@ -273,6 +274,8 @@ pub struct TriggersRegistryView {
     detail: Option<TriggerDetail>,
     hovered: Option<TriggerInstanceId>,
     menu_open: Option<TriggerInstanceId>,
+    menu_focus: FocusHandle,
+    menu_focus_restore: Option<FocusHandle>,
     menu_click_pos: Option<Point<Pixels>>,
     search: SearchState,
     platforms: Vec<Platform>,
@@ -330,6 +333,8 @@ impl TriggersRegistryView {
             visible: Vec::new(),
             list_scroll: UniformListScrollHandle::new(),
             list_focus: cx.focus_handle(),
+            menu_focus: cx.focus_handle(),
+            menu_focus_restore: None,
             focused_once: false,
             list_cursor: preselect,
             selected: preselect,
@@ -504,6 +509,13 @@ impl EventEmitter<NavRequested> for TriggersRegistryView {}
 
 impl Render for TriggersRegistryView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        drive_overlay_focus(
+            self.menu_open.is_some(),
+            &self.menu_focus,
+            &mut self.menu_focus_restore,
+            window,
+            cx,
+        );
         let density = cx.density();
         let palette = cx.palette();
 

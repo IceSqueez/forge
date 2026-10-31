@@ -665,6 +665,14 @@ mod lifecycle {
         }
     }
 
+    struct EditorHost(Entity<ScriptEditorView>);
+
+    impl Render for EditorHost {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            div().size_full().child(self.0.clone())
+        }
+    }
+
     fn referrer(name: &str) -> ScriptReferrer {
         ScriptReferrer {
             action_id: ActionId::new(),
@@ -739,6 +747,25 @@ mod lifecycle {
             }
         }
 
+        fn open_row_menu(&self, cx: &mut TestAppContext) -> gpui::VisualTestContext {
+            let hosted = self.view.clone();
+            let window = cx.add_window(|_, _| EditorHost(hosted));
+            let mut vcx = gpui::VisualTestContext::from_window(window.into(), cx);
+            self.view.update(&mut vcx, |view, cx| {
+                view.row_menu = Some(RowMenu {
+                    id: self.id,
+                    position: gpui::Point::default(),
+                });
+                cx.notify();
+            });
+            vcx.run_until_parked();
+            vcx
+        }
+
+        fn row_menu_is_open(&self, cx: &mut TestAppContext) -> bool {
+            self.view.read_with(cx, |view, _| view.row_menu.is_some())
+        }
+
         fn runnable(&self, name: &str) -> bool {
             self.rt.block_on(self.registry.get_by_name(name)).is_some()
         }
@@ -801,6 +828,32 @@ mod lifecycle {
             cx.update_window(window, |_, window, cx| (action.on_action)(window, cx))
                 .unwrap();
         });
+    }
+
+    #[gpui::test]
+    fn escape_closes_the_row_menu(cx: &mut TestAppContext) {
+        let rig = Rig::mount(cx, ScriptReferences::default());
+        let mut vcx = rig.open_row_menu(cx);
+
+        vcx.simulate_keystrokes("escape");
+
+        assert!(!rig.row_menu_is_open(cx));
+    }
+
+    #[gpui::test]
+    fn a_menu_command_that_moves_focus_keeps_it_when_the_menu_closes(cx: &mut TestAppContext) {
+        let rig = Rig::mount(cx, ScriptReferences::default());
+        let mut vcx = rig.open_row_menu(cx);
+        let command_focus = vcx.update(|_, cx| cx.focus_handle());
+
+        vcx.update(|window, cx| window.focus(&command_focus, cx));
+        rig.view.update(&mut vcx, |view, cx| {
+            view.row_menu = None;
+            cx.notify();
+        });
+        vcx.run_until_parked();
+
+        assert!(vcx.update(|window, _| command_focus.is_focused(window)));
     }
 
     #[gpui::test]

@@ -161,7 +161,7 @@ pub use text_input::{
     FocusNextField, InputEvent, SEARCH_FIELD_WIDTH, TextInput, bind_text_input_keys, search_input,
     search_input_on_surface,
 };
-pub use toast::{ToastAction, ToastCard, ToastData, ToastKind, UNDO_TOAST_DURATION, toast_card};
+pub use toast::{ToastAction, ToastCard, ToastData, ToastKind, toast_card};
 pub use toast_queue::{PushToast, Toasts, toast_layer};
 pub use toggle::{Toggle, toggle};
 pub use tokens::{

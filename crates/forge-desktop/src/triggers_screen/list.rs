@@ -7,13 +7,12 @@ use forge_components::ActivePresentation;
 use forge_components::PushToast;
 use forge_components::ROW_OFF_OPACITY;
 use forge_components::SEARCH_FIELD_WIDTH;
-use forge_components::UNDO_TOAST_DURATION;
 use forge_components::{
     BORDER_THIN, ChipGlyph, ConfirmTone, Density, FONT_XXS, ForgePalette, Icon, InlineEditEvent,
-    InputEvent, OverlayPosition, Spacing, TextInput, ToastAction, ToastKind, badge, body_family,
-    chip, confirm_modal, context_menu, ghost_button_with_icon, header_stat, header_stats, icon,
-    inline_edit, menu_divider, menu_item, mono_family, overlay, primary_button_with_icon, scaled,
-    spacing, status_dot, toggle, tr,
+    InputEvent, OverlayPosition, Spacing, TextInput, badge, body_family, chip, confirm_modal,
+    context_menu, ghost_button_with_icon, header_stat, header_stats, icon, inline_edit,
+    menu_divider, menu_item, mono_family, overlay, primary_button_with_icon, scaled, spacing,
+    status_dot, toggle, tr,
 };
 use gpui::{
     AnyElement, App, ClickEvent, Context, Div, Entity, FontWeight, MouseButton, MouseDownEvent,
@@ -347,24 +346,15 @@ impl TriggersRegistryView {
     ) {
         let view = cx.entity();
         let message = tr!("triggers_toast_deleted", name = name.as_str());
-        cx.push_toast_full(
-            ToastKind::Undo,
-            message,
-            None,
-            Some(ToastAction::new(
-                tr!("common_undo"),
-                move |_window, app: &mut App| {
-                    let repo = Arc::clone(&repo);
-                    view.update(app, |this, cx| {
-                        this.spawn_write(
-                            async move { repo.restore(id).await.map_err(RepoFailure::from) },
-                            cx,
-                        );
-                    });
-                },
-            )),
-            UNDO_TOAST_DURATION,
-        );
+        cx.push_undo_toast(message, move |_window, app: &mut App| {
+            let repo = Arc::clone(&repo);
+            view.update(app, |this, cx| {
+                this.spawn_write(
+                    async move { repo.restore(id).await.map_err(RepoFailure::from) },
+                    cx,
+                );
+            });
+        });
     }
 
     pub(super) fn start_rename(
@@ -956,6 +946,7 @@ impl TriggersRegistryView {
         Some(
             context_menu(position, palette)
                 .items(items)
+                .dismiss_on_escape(&self.menu_focus)
                 .on_dismiss(move |_window, cx| {
                     view.update(cx, |this, cx| this.close_menu(cx));
                 })

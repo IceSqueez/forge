@@ -23,7 +23,9 @@ pub fn drive_overlay_focus(
             *restore = window.focused(cx);
             window.focus(handle, cx);
         }
-    } else if let Some(prev) = restore.take() {
+    } else if let Some(prev) = restore.take()
+        && handle.is_focused(window)
+    {
         window.focus(&prev, cx);
     }
 }
@@ -329,6 +331,7 @@ impl RenderOnce for AnchoredPopover {
                 .track_focus(handle)
                 .on_key_down(move |event: &KeyDownEvent, window, cx| {
                     if event.keystroke.key.as_str() == ESCAPE_KEY {
+                        cx.stop_propagation();
                         dismiss(window, cx);
                     }
                 });

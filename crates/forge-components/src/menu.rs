@@ -279,6 +279,7 @@ impl MenuInk {
                     .track_focus(focus)
                     .on_key_down(move |event: &KeyDownEvent, window, cx| {
                         if event.keystroke.key.as_str() == crate::tokens::ESCAPE_KEY {
+                            cx.stop_propagation();
                             dismiss(window, cx);
                         }
                     });
@@ -459,6 +460,7 @@ pub struct ContextMenu {
     position: Point<Pixels>,
     items: Vec<MenuItem>,
     on_dismiss: Option<DismissHandler>,
+    escape_focus: Option<FocusHandle>,
     ink: MenuInk,
 }
 
@@ -467,6 +469,7 @@ pub fn context_menu(position: Point<Pixels>, palette: &ForgePalette) -> ContextM
         position,
         items: Vec::new(),
         on_dismiss: None,
+        escape_focus: None,
         ink: MenuInk::from_palette(palette),
     }
 }
@@ -483,6 +486,12 @@ impl ContextMenu {
         self.on_dismiss = Some(Rc::new(handler));
         self
     }
+
+    #[must_use]
+    pub fn dismiss_on_escape(mut self, focus_handle: &FocusHandle) -> Self {
+        self.escape_focus = Some(focus_handle.clone());
+        self
+    }
 }
 
 impl RenderOnce for ContextMenu {
@@ -490,7 +499,12 @@ impl RenderOnce for ContextMenu {
         let density = cx.density();
         let panel = self
             .ink
-            .render_panel(self.items, None, self.on_dismiss.clone(), density)
+            .render_panel(
+                self.items,
+                self.escape_focus.as_ref(),
+                self.on_dismiss.clone(),
+                density,
+            )
             .with_animation(
                 ElementId::Name(SharedString::new_static("forge-context-menu-panel")),
                 enter_animation(),

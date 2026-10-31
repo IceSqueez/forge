@@ -119,7 +119,7 @@ mod tests {
     #[test]
     fn failed_wraps_the_mapped_message_and_outcome_is_success_only_for_ok() {
         let error = || TwitchError::Http {
-            status: 500,
+            status: reqwest::StatusCode::INTERNAL_SERVER_ERROR.as_u16(),
             body: "boom".into(),
         };
 
@@ -215,10 +215,15 @@ mod tests {
         }
 
         let wrapped = helix_message(&TwitchError::Http {
-            status: 403,
+            status: reqwest::StatusCode::FORBIDDEN.as_u16(),
             body: "scope".into(),
         });
-        assert_eq!(wrapped.arg("status"), Some(&MessageArg::Int(403)));
+        assert_eq!(
+            wrapped.arg("status"),
+            Some(&MessageArg::Int(i64::from(
+                reqwest::StatusCode::FORBIDDEN.as_u16()
+            )))
+        );
         assert_eq!(code(&wrapped), "twitch.request_refused");
     }
 

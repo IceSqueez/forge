@@ -917,7 +917,7 @@ mod tests {
     async fn unban_without_a_stored_ban_id_is_refused_without_a_request_or_quota() {
         for seeded in [None, Some(stored_ban(None, BanOrigin::Observed))] {
             let server = MockServer::start().await;
-            mount_delete_status(&server, 204).await;
+            mount_delete_status(&server, reqwest::StatusCode::NO_CONTENT.as_u16()).await;
             let ledger = Arc::new(MemoryBanLedger::default());
             if let Some(entry) = seeded {
                 ledger.seed(entry);
@@ -937,7 +937,11 @@ mod tests {
 
     #[tokio::test]
     async fn unban_lifted_or_already_gone_removes_the_ledger_row() {
-        for status in [200, 204, 404] {
+        for status in [
+            reqwest::StatusCode::OK.as_u16(),
+            reqwest::StatusCode::NO_CONTENT.as_u16(),
+            reqwest::StatusCode::NOT_FOUND.as_u16(),
+        ] {
             let server = MockServer::start().await;
             mount_delete_status(&server, status).await;
             let ledger = seeded_ledger(stored_ban(Some(BAN_RESOURCE_ID), BanOrigin::IssuedByForge));
@@ -956,7 +960,10 @@ mod tests {
 
     #[tokio::test]
     async fn unban_server_error_keeps_the_ledger_row_and_fails() {
-        for status in [500, 503] {
+        for status in [
+            reqwest::StatusCode::INTERNAL_SERVER_ERROR.as_u16(),
+            reqwest::StatusCode::SERVICE_UNAVAILABLE.as_u16(),
+        ] {
             let server = MockServer::start().await;
             mount_delete_status(&server, status).await;
             let ledger = seeded_ledger(stored_ban(Some(BAN_RESOURCE_ID), BanOrigin::IssuedByForge));
@@ -976,7 +983,7 @@ mod tests {
     #[tokio::test]
     async fn unban_reports_success_when_removing_the_row_fails() {
         let server = MockServer::start().await;
-        mount_delete_status(&server, 204).await;
+        mount_delete_status(&server, reqwest::StatusCode::NO_CONTENT.as_u16()).await;
         let ledger = Arc::new(MemoryBanLedger::failing_on(LedgerOp::Remove));
         ledger.seed(stored_ban(Some(BAN_RESOURCE_ID), BanOrigin::IssuedByForge));
         let (moderation, _quota) = moderation_with(&server, ledger, broadcaster_source());
@@ -989,7 +996,7 @@ mod tests {
     #[tokio::test]
     async fn unban_ledger_lookup_failure_is_io_without_a_request_or_quota() {
         let server = MockServer::start().await;
-        mount_delete_status(&server, 204).await;
+        mount_delete_status(&server, reqwest::StatusCode::NO_CONTENT.as_u16()).await;
         let ledger = Arc::new(MemoryBanLedger::failing_on(LedgerOp::Get));
         let (moderation, quota) = moderation_with(&server, ledger, broadcaster_source());
 
@@ -1003,7 +1010,7 @@ mod tests {
     #[tokio::test]
     async fn unban_signed_out_fails_reauth_without_a_request() {
         let server = MockServer::start().await;
-        mount_delete_status(&server, 204).await;
+        mount_delete_status(&server, reqwest::StatusCode::NO_CONTENT.as_u16()).await;
         let ledger = seeded_ledger(stored_ban(Some(BAN_RESOURCE_ID), BanOrigin::IssuedByForge));
         let (moderation, _quota) =
             moderation_with(&server, ledger, signed_out_broadcaster_source());
@@ -1021,7 +1028,7 @@ mod tests {
     async fn unban_after_switching_account_never_reads_the_previous_channel_rows() {
         let server = MockServer::start().await;
         mount_insert_ok(&server).await;
-        mount_delete_status(&server, 204).await;
+        mount_delete_status(&server, reqwest::StatusCode::NO_CONTENT.as_u16()).await;
         let account = Arc::new(std::sync::Mutex::new(test_broadcaster()));
         let ledger = Arc::new(MemoryBanLedger::default());
         let (moderation, _quota) = moderation_with(

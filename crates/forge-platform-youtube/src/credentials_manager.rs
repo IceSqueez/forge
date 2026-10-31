@@ -628,7 +628,10 @@ mod tests {
         let rig = rig(&near_expiry()).await;
         rig.server.reply_always(
             TOKEN_PATH,
-            StubReply::json(400, &json!({ "error": "invalid_grant" })),
+            StubReply::json(
+                reqwest::StatusCode::BAD_REQUEST.as_u16(),
+                &json!({ "error": "invalid_grant" }),
+            ),
         );
 
         let outcome = rig.manager.get_valid_access_token().await;
@@ -881,7 +884,10 @@ mod tests {
 
     #[tokio::test]
     async fn a_refused_handle_backfill_keeps_the_credentials_and_publishes_request_fail() {
-        for status in [403, 500] {
+        for status in [
+            reqwest::StatusCode::FORBIDDEN.as_u16(),
+            reqwest::StatusCode::INTERNAL_SERVER_ERROR.as_u16(),
+        ] {
             let rig = rig(&fresh()).await;
             rig.server.reply_always(
                 CHANNELS_PATH,

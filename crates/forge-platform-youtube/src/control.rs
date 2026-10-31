@@ -12,7 +12,7 @@ impl BuiltinControl for YoutubeIntegrationBundle {
         self.credentials_manager()
             .load()
             .await
-            .map_err(|_| ControlFailure::Transport)?
+            .map_err(credential_load_failure)?
             .ok_or(ControlFailure::NotConnected)?;
 
         self.platform()
@@ -53,7 +53,7 @@ impl YoutubeIntegrationBundle {
             .credentials_manager()
             .load()
             .await
-            .map_err(|_| ControlFailure::Transport)?
+            .map_err(credential_load_failure)?
             .ok_or(ControlFailure::NotConnected)?;
 
         match self
@@ -71,6 +71,11 @@ impl YoutubeIntegrationBundle {
             Err(_) => Err(ControlFailure::Transport),
         }
     }
+}
+
+fn credential_load_failure(err: PlatformError) -> ControlFailure {
+    tracing::warn!(error = %err, "control could not load stored credentials");
+    ControlFailure::Transport
 }
 
 fn map_transport_failure(err: PlatformError) -> ControlFailure {

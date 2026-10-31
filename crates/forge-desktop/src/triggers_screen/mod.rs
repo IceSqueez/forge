@@ -750,6 +750,34 @@ mod tests {
         assert!(chipless.is_empty(), "kinds without a chip: {chipless:?}");
     }
 
+    #[tokio::test]
+    async fn every_registered_trigger_kind_names_an_icon_this_build_carries() {
+        let (triggers, _) = forge_host::test_support::every_registry_entry().await;
+
+        let unknown: Vec<String> = triggers
+            .all()
+            .filter(|descriptor| forge_components::Icon::named(descriptor.icon_name()).is_none())
+            .map(|descriptor| format!("{}: {}", descriptor.id(), descriptor.icon_name()))
+            .collect();
+
+        assert!(triggers.all().count() > 0);
+        assert_eq!(unknown, Vec::<String>::new());
+    }
+
+    #[tokio::test]
+    async fn every_registered_sub_action_kind_names_an_icon_this_build_carries() {
+        let (_, sub_actions) = forge_host::test_support::every_registry_entry().await;
+
+        let unknown: Vec<String> = sub_actions
+            .all()
+            .filter(|runner| forge_components::Icon::named(runner.icon_name()).is_none())
+            .map(|runner| format!("{}: {}", runner.id(), runner.icon_name()))
+            .collect();
+
+        assert!(sub_actions.all().count() > 0);
+        assert_eq!(unknown, Vec::<String>::new());
+    }
+
     fn twitch() -> IntegrationId {
         IntegrationId::new("twitch")
     }

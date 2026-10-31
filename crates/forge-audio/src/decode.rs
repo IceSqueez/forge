@@ -111,7 +111,7 @@ fn decode_stream(mss: MediaSourceStream, hint: Hint) -> Result<PcmBuffer, AudioE
         .map_err(|e| AudioError::Decode(e.to_string()))?;
 
     let mut all_samples: Vec<i16> = Vec::new();
-    let mut interleaved_buf: Vec<f32> = Vec::new();
+    let mut interleaved_buf: Vec<i16> = Vec::new();
 
     loop {
         let packet = match format.next_packet() {
@@ -132,9 +132,7 @@ fn decode_stream(mss: MediaSourceStream, hint: Hint) -> Result<PcmBuffer, AudioE
             Ok(decoded) => {
                 interleaved_buf.clear();
                 decoded.copy_to_vec_interleaved(&mut interleaved_buf);
-                for &s in interleaved_buf.iter() {
-                    all_samples.push((s.clamp(-1.0, 1.0) * 32767.0) as i16);
-                }
+                all_samples.extend_from_slice(&interleaved_buf);
             }
             Err(SymphoniaError::DecodeError(_)) => continue,
             Err(e) => return Err(AudioError::Decode(e.to_string())),
@@ -188,6 +186,28 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn decoded_pcm16_keeps_every_sample_exactly() {
+        let samples = [
+            i16::MIN,
+            -1024,
+            -2,
+            -1,
+            0,
+            1,
+            2,
+            1024,
+            16_384,
+            i16::MAX - 1,
+            i16::MAX,
+        ];
+        let wav_bytes = encode_wave(&PcmBuffer::new(samples.to_vec(), 24_000, 1));
+
+        let pcm = decode_bytes(&wav_bytes, Some("wav")).unwrap();
+
+        assert_eq!(pcm.samples, samples);
     }
 
     #[test]

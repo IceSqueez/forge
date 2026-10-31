@@ -31,7 +31,7 @@ impl ScreenActionsView {
             palette.success
         };
 
-        let (exec_value, exec_color): (SharedString, Rgba) = match &self.last_outcome {
+        let (exec_value, exec_color): (SharedString, Rgba) = match &self.editor.last_outcome {
             Some(ExecutionOutcome::Failed(_)) => (
                 tr!("action_editor_run_history_outcome_failed").into(),
                 palette.danger,

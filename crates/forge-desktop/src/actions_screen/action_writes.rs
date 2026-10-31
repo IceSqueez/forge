@@ -283,6 +283,7 @@ impl ScreenActionsView {
             return Some(write);
         };
         let shown = self
+            .editor
             .detail
             .as_ref()
             .filter(|detail| detail.action.id == id)
@@ -308,7 +309,7 @@ impl ScreenActionsView {
             return;
         };
         let mut shown: Option<Action> = None;
-        if let Some(detail) = self.detail.as_mut()
+        if let Some(detail) = self.editor.detail.as_mut()
             && detail.action.id == id
         {
             if apply_action_edit(&mut detail.action, &write) {
@@ -317,8 +318,8 @@ impl ScreenActionsView {
                 return;
             }
         }
-        let is_new = !self.action_writes.contains_key(&id);
-        let queue = self.action_writes.entry(id).or_default();
+        let is_new = !self.editor.action_writes.contains_key(&id);
+        let queue = self.editor.action_writes.entry(id).or_default();
         match (queue.latest.as_mut(), &write) {
             (_, ActionWrite::Create(action)) => queue.latest = Some(action.clone()),
             (Some(latest), _) => {
@@ -328,7 +329,12 @@ impl ScreenActionsView {
             (None, _) => {}
         }
         queue.pending.push(write);
-        if self.detail.as_ref().is_some_and(|d| d.action.id == id) {
+        if self
+            .editor
+            .detail
+            .as_ref()
+            .is_some_and(|d| d.action.id == id)
+        {
             self.sync_case_fields(cx);
             self.recompute_step_health();
         }
@@ -337,15 +343,15 @@ impl ScreenActionsView {
     }
 
     pub(super) fn has_pending_action_writes(&self, id: ActionId) -> bool {
-        self.action_writes.contains_key(&id)
+        self.editor.action_writes.contains_key(&id)
     }
 
     pub(super) fn latest_written_action(&self, id: ActionId) -> Option<&Action> {
-        self.action_writes.get(&id)?.latest.as_ref()
+        self.editor.action_writes.get(&id)?.latest.as_ref()
     }
 
     fn run_action_writes(&mut self, id: ActionId, cx: &mut Context<Self>) {
-        let Some(queue) = self.action_writes.get_mut(&id) else {
+        let Some(queue) = self.editor.action_writes.get_mut(&id) else {
             return;
         };
         if queue.running || queue.pending.is_empty() {
@@ -354,10 +360,10 @@ impl ScreenActionsView {
         queue.running = true;
         let writes = std::mem::take(&mut queue.pending);
         let latest = queue.latest.clone();
-        let repo = Arc::clone(&self.action_repo);
-        let list_reads = Arc::clone(&self.list_reads);
+        let repo = Arc::clone(&self.deps.action_repo);
+        let list_reads = Arc::clone(&self.tree.list_reads);
         async_bridge::run_async(
-            &self.rt_handle,
+            &self.deps.rt_handle,
             perform_writes(repo, id, latest, writes, list_reads),
             move |this, outcome, cx| this.finish_action_writes(id, outcome, cx),
             cx,
@@ -371,7 +377,7 @@ impl ScreenActionsView {
         cx: &mut Context<Self>,
     ) {
         let save_failed = outcome.saved.is_none();
-        let drained = match self.action_writes.get_mut(&id) {
+        let drained = match self.editor.action_writes.get_mut(&id) {
             Some(queue) => {
                 queue.running = false;
                 if save_failed {
@@ -384,7 +390,7 @@ impl ScreenActionsView {
             None => true,
         };
         if drained {
-            self.action_writes.remove(&id);
+            self.editor.action_writes.remove(&id);
         }
         for error in &outcome.errors {
             self.on_repo_error(&error.failure(), cx);
@@ -731,8 +737,9 @@ pub(in crate::actions_screen) mod tests {
         }
 
         pub(in crate::actions_screen) fn shown(&self, cx: &mut TestAppContext) -> Action {
-            self.view
-                .read_with(cx, |view, _| view.detail.as_ref().unwrap().action.clone())
+            self.view.read_with(cx, |view, _| {
+                view.editor.detail.as_ref().unwrap().action.clone()
+            })
         }
 
         pub(in crate::actions_screen) fn hold_next_list(&self) -> tokio::sync::oneshot::Sender<()> {
@@ -743,7 +750,7 @@ pub(in crate::actions_screen) mod tests {
 
         fn idle(&self, cx: &mut TestAppContext) -> bool {
             self.view
-                .read_with(cx, |view, _| view.action_writes.is_empty())
+                .read_with(cx, |view, _| view.editor.action_writes.is_empty())
         }
     }
 
@@ -950,7 +957,7 @@ pub(in crate::actions_screen) mod tests {
     fn a_chain_edit_under_a_missing_nested_path_writes_nothing(cx: &mut TestAppContext) {
         let screen = Screen::open(cx);
         screen.view.update(cx, |view, _| {
-            view.nav_path = vec![nav::NavFrame {
+            view.editor.nav_path = vec![nav::NavFrame {
                 step_index: chain().len(),
                 chain_key: FIRST.to_owned(),
                 case_index: None,

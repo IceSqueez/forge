@@ -122,10 +122,10 @@ impl ScreenActionsView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let density = cx.density();
-        let current = nav::resolve_chain(&detail.action.sub_actions, &self.nav_path);
+        let current = nav::resolve_chain(&detail.action.sub_actions, &self.editor.nav_path);
         let total = current.len();
-        let at_root = self.nav_path.is_empty();
-        let depth = self.nav_path.len();
+        let at_root = self.editor.nav_path.is_empty();
+        let depth = self.editor.nav_path.len();
 
         let header = if at_root {
             div().flex().items_center().child(
@@ -304,8 +304,8 @@ impl ScreenActionsView {
         let density = cx.density();
         let is_last = i + 1 == total;
         let (fallback_icon, fallback_title, detail_opt) =
-            sub_action_summary(step, &self.select_options);
-        let runner = self.sub_action_registry.get(&step.kind_id);
+            sub_action_summary(step, &self.choices.select_options);
+        let runner = self.deps.sub_action_registry.get(&step.kind_id);
         let title = runner
             .map(crate::kind_copy::step_name)
             .unwrap_or(fallback_title);
@@ -338,7 +338,7 @@ impl ScreenActionsView {
             .text_color(palette.text_primary)
             .child(title);
         let health_dot = if depth == 0 {
-            self.step_health.get(i).map(|health| {
+            self.editor.step_health.get(i).map(|health| {
                 let fields = runner.map(|r| r.config_fields()).unwrap_or_default();
                 self.render_health_dot(health, &step.kind_id, &fields, i, palette)
             })
@@ -393,7 +393,7 @@ impl ScreenActionsView {
         if closed_gate.is_some() {
             card = card.align_top();
         }
-        if self.step_menu_open != Some(i) {
+        if self.menus.step_open != Some(i) {
             card = card.trailing_reveal(SharedString::from(format!("actions-step-row-{i}")));
         }
 

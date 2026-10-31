@@ -15,7 +15,7 @@ struct RemovedStep {
 
 impl ScreenActionsView {
     fn move_step_up(&mut self, i: usize, cx: &mut Context<Self>) {
-        self.step_menu_open = None;
+        self.menus.step_open = None;
         self.persist_chain_mutation(
             move |chain| {
                 if i > 0 && i < chain.len() {
@@ -29,7 +29,7 @@ impl ScreenActionsView {
     }
 
     fn move_step_down(&mut self, i: usize, cx: &mut Context<Self>) {
-        self.step_menu_open = None;
+        self.menus.step_open = None;
         self.persist_chain_mutation(
             move |chain| {
                 if i + 1 < chain.len() {
@@ -43,7 +43,7 @@ impl ScreenActionsView {
     }
 
     fn move_step_top(&mut self, i: usize, cx: &mut Context<Self>) {
-        self.step_menu_open = None;
+        self.menus.step_open = None;
         self.persist_chain_mutation(
             move |chain| {
                 if i != 0 && i < chain.len() {
@@ -57,7 +57,7 @@ impl ScreenActionsView {
     }
 
     fn move_step_bottom(&mut self, i: usize, cx: &mut Context<Self>) {
-        self.step_menu_open = None;
+        self.menus.step_open = None;
         self.persist_chain_mutation(
             move |chain| {
                 let len = chain.len();
@@ -72,7 +72,7 @@ impl ScreenActionsView {
     }
 
     fn duplicate_step(&mut self, i: usize, cx: &mut Context<Self>) {
-        self.step_menu_open = None;
+        self.menus.step_open = None;
         self.persist_chain_mutation(
             move |chain| {
                 if i < chain.len() {
@@ -86,13 +86,13 @@ impl ScreenActionsView {
     }
 
     fn remove_step(&mut self, i: usize, cx: &mut Context<Self>) {
-        self.step_menu_open = None;
-        let removed = self.detail.as_ref().and_then(|detail| {
-            let chain = nav::resolve_chain(&detail.action.sub_actions, &self.nav_path);
+        self.menus.step_open = None;
+        let removed = self.editor.detail.as_ref().and_then(|detail| {
+            let chain = nav::resolve_chain(&detail.action.sub_actions, &self.editor.nav_path);
             Some(RemovedStep {
                 action: detail.action.id,
-                path: self.nav_path.clone(),
-                owners: nav::owner_kinds(&detail.action.sub_actions, &self.nav_path)?,
+                path: self.editor.nav_path.clone(),
+                owners: nav::owner_kinds(&detail.action.sub_actions, &self.editor.nav_path)?,
                 index: i,
                 item: chain.get(i)?.clone(),
             })
@@ -146,22 +146,22 @@ impl ScreenActionsView {
     }
 
     fn toggle_step_menu(&mut self, i: usize, position: Point<Pixels>, cx: &mut Context<Self>) {
-        if self.step_menu_open == Some(i) {
-            self.step_menu_open = None;
+        if self.menus.step_open == Some(i) {
+            self.menus.step_open = None;
         } else {
-            self.step_menu_open = Some(i);
-            self.menu_click_pos = Some(position);
+            self.menus.step_open = Some(i);
+            self.menus.click_pos = Some(position);
         }
         cx.notify();
     }
 
     fn close_step_menu(&mut self, cx: &mut Context<Self>) {
-        self.step_menu_open = None;
+        self.menus.step_open = None;
         cx.notify();
     }
 
     fn set_step_enabled(&mut self, i: usize, enabled: bool, cx: &mut Context<Self>) {
-        self.step_menu_open = None;
+        self.menus.step_open = None;
         self.persist_chain_mutation(
             move |chain| {
                 if let Some(step) = chain.get_mut(i).and_then(nav::ChainItem::step_mut) {
@@ -182,8 +182,12 @@ impl ScreenActionsView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let density = cx.density();
-        let menu_open = self.step_menu_open == Some(i);
-        let menu_pos = if menu_open { self.menu_click_pos } else { None };
+        let menu_open = self.menus.step_open == Some(i);
+        let menu_pos = if menu_open {
+            self.menus.click_pos
+        } else {
+            None
+        };
         let view = cx.entity();
 
         let move_up = step_icon_btn(
@@ -380,9 +384,11 @@ mod tests {
         let removing_from = path.to_vec();
         screen
             .view
-            .update(cx, |view, _| view.nav_path = removing_from);
+            .update(cx, |view, _| view.editor.nav_path = removing_from);
         remove(screen, cx, 0);
-        screen.view.update(cx, |view, _| view.nav_path = Vec::new());
+        screen
+            .view
+            .update(cx, |view, _| view.editor.nav_path = Vec::new());
     }
 
     fn remove_nested_step(screen: &Screen, cx: &mut TestAppContext) -> Vec<nav::NavFrame> {

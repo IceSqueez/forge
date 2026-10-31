@@ -7,31 +7,32 @@ const RUN_HISTORY_PAGE: u32 = 50;
 
 impl ScreenActionsView {
     pub(super) fn open_history_modal(&mut self, cx: &mut Context<Self>) {
-        let Some(id) = self.selected else {
+        let Some(id) = self.tree.selected else {
             return;
         };
         let action_name = self
+            .editor
             .detail
             .as_ref()
             .map(|d| d.action.name.clone())
             .unwrap_or_else(|| tr!("action_editor_this_action"));
-        self.header_menu_open = None;
+        self.menus.header_open = None;
 
-        let registry = Arc::clone(&self.trigger_registry);
+        let registry = Arc::clone(&self.deps.trigger_registry);
         let names = self.action_names();
         let view = cx.new(|_| RunHistoryModal::new(action_name, registry).with_action_names(names));
         let subs = [
             cx.subscribe(&view, Self::on_history_event),
             cx.subscribe(&view, Self::on_history_open_integration),
         ];
-        self.history_modal = Some(HistoryModalHost {
+        self.modals.history = Some(HistoryModalHost {
             view: view.clone(),
             _subs: subs,
         });
 
-        let service = Arc::clone(&self.actions_service);
+        let service = Arc::clone(&self.deps.actions_service);
         async_bridge::run_async(
-            &self.rt_handle,
+            &self.deps.rt_handle,
             async move {
                 service
                     .recent_runs(id, RUN_HISTORY_PAGE)
@@ -57,7 +58,8 @@ impl ScreenActionsView {
     }
 
     fn action_names(&self) -> HashMap<ActionId, SharedString> {
-        self.groups
+        self.tree
+            .groups
             .iter()
             .flat_map(|group| group.actions.iter())
             .map(|action| (action.id, SharedString::from(action.name.clone())))
@@ -70,7 +72,7 @@ impl ScreenActionsView {
         _event: &RunHistoryDismissed,
         cx: &mut Context<Self>,
     ) {
-        self.history_modal = None;
+        self.modals.history = None;
         cx.notify();
     }
 
@@ -80,7 +82,7 @@ impl ScreenActionsView {
         event: &RunHistoryOpenIntegration,
         cx: &mut Context<Self>,
     ) {
-        self.history_modal = None;
+        self.modals.history = None;
         cx.emit(NavRequested(Screen::BuiltinDetail(event.0.clone())));
         cx.notify();
     }
@@ -104,9 +106,9 @@ mod tests {
         let rig = Rig::open(cx, LifecycleState::Disabled, Some(open));
         let log = cx.update(|cx| nav_log(&rig.view, cx));
         let modal = rig.view.update(cx, |view, cx| {
-            view.selected = Some(action_id);
+            view.tree.selected = Some(action_id);
             view.open_history_modal(cx);
-            view.history_modal.as_ref().map(|host| host.view.clone())
+            view.modals.history.as_ref().map(|host| host.view.clone())
         });
         let modal = modal.expect("the history modal opens for the selected action");
 
@@ -114,7 +116,7 @@ mod tests {
 
         let still_open = rig
             .view
-            .read_with(cx, |view, _| view.history_modal.is_some());
+            .read_with(cx, |view, _| view.modals.history.is_some());
         let screens = log.read_with(cx, |log, _| log.screens());
         assert!(!still_open, "the history modal stayed open");
         assert_eq!(screens, vec![Screen::BuiltinDetail(obs())]);

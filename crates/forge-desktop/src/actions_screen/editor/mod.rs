@@ -31,8 +31,8 @@ pub(super) use step_drag::StepDragSession;
 
 impl ScreenActionsView {
     pub(super) fn current_chain(&self) -> Vec<nav::ChainItem> {
-        match &self.detail {
-            Some(detail) => nav::resolve_chain(&detail.action.sub_actions, &self.nav_path),
+        match &self.editor.detail {
+            Some(detail) => nav::resolve_chain(&detail.action.sub_actions, &self.editor.nav_path),
             None => Vec::new(),
         }
     }
@@ -43,7 +43,7 @@ impl ScreenActionsView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let density = cx.density();
-        match (self.selected, self.detail.as_ref()) {
+        match (self.tree.selected, self.editor.detail.as_ref()) {
             (Some(sel), Some(detail)) if detail.action.id == sel => {
                 self.render_editor(detail, palette, cx)
             }
@@ -103,11 +103,12 @@ impl ScreenActionsView {
     pub(super) fn overlay_order_at_risk(&self, action: &Action) -> bool {
         (action.concurrent
             || self
+                .tree
                 .concurrent_queue_ids
                 .contains(&action.queue_id.to_string()))
             && analyzer::sends_order_sensitive_overlay(
                 &action.sub_actions,
-                &self.sub_action_registry,
+                &self.deps.sub_action_registry,
                 &|identity| self.overlay_schema.is_order_sensitive(identity),
             )
     }
@@ -160,12 +161,14 @@ impl ScreenActionsView {
 #[cfg(test)]
 pub(super) mod tests {
     use forge_components::ThemeId;
+    use forge_runtime::ActionsService;
     use forge_runtime::{ActionCancelRegistry, QueueScheduler, spawn_action_engine};
     use forge_soundboard::ClipLibrary;
     use forge_storage::MockGlobalsRepo;
     use forge_storage::MockQueueRepo;
     use forge_storage::MockScriptRepo;
     use forge_storage::MockSoundboardClipsRepo;
+    use forge_storage::QueueRepo;
     use forge_storage::{
         DataProvider, MockMediaRepo, MockTriggerInstanceRepo, SoundboardClipsRepo, StoredClip,
     };
@@ -230,22 +233,24 @@ pub(super) mod tests {
         cx.update(|cx| {
             cx.new(|cx| {
                 ScreenActionsView::new(
-                    action_repo,
-                    queue_repo,
-                    service,
-                    trigger_repo,
-                    Arc::new(scripts),
-                    Arc::new(ClipLibrary::new(clip_repo, backend.media_repo())),
-                    Arc::new(globals),
+                    super::super::ActionsDeps {
+                        action_repo,
+                        queue_repo,
+                        actions_service: service,
+                        trigger_instance_repo: trigger_repo,
+                        script_repo: Arc::new(scripts),
+                        clip_library: Arc::new(ClipLibrary::new(clip_repo, backend.media_repo())),
+                        globals_repo: Arc::new(globals),
+                        overlay_repo: Arc::new(StubOverlays),
+                        speak: None,
+                        sub_action_registry: Arc::new(sub_actions),
+                        trigger_registry: Arc::new(TriggerRegistry::new()),
+                        rt_handle: handle,
+                        bus,
+                        scheduler,
+                    },
                     Arc::clone(&backend) as Arc<dyn SettingsRepo>,
-                    Arc::new(StubOverlays),
                     Arc::new(OverlayKindRegistry::new()),
-                    None,
-                    Arc::new(sub_actions),
-                    Arc::new(TriggerRegistry::new()),
-                    handle,
-                    bus,
-                    scheduler,
                     None,
                     cx,
                 )

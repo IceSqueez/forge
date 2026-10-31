@@ -14,7 +14,7 @@ impl ScreenActionsView {
         if let Some(transfers) = TransferFlows::route(cx) {
             let flow = transfers.read(cx).pack_export.clone();
             let observe = cx.observe(&flow, |_, _, cx| cx.notify());
-            self.pack_export = Some(PackExportHost {
+            self.modals.pack_export = Some(PackExportHost {
                 flow,
                 transfers,
                 _observe: observe,
@@ -24,9 +24,9 @@ impl ScreenActionsView {
     }
 
     pub(super) fn export_pack(&mut self, cx: &mut Context<Self>) {
-        self.header_menu_open = None;
-        let action = self.detail.as_ref().map(|detail| detail.action.id);
-        if let (Some(id), Some(host)) = (action, self.pack_export.as_ref()) {
+        self.menus.header_open = None;
+        let action = self.editor.detail.as_ref().map(|detail| detail.action.id);
+        if let (Some(id), Some(host)) = (action, self.modals.pack_export.as_ref()) {
             host.transfers
                 .update(cx, |transfers, cx| transfers.export_pack_of(vec![id], cx));
         }

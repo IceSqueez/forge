@@ -73,16 +73,16 @@ fn build_recent_group(
 
 impl ScreenActionsView {
     pub(super) fn open_trigger_picker(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(action_id) = self.selected else {
+        let Some(action_id) = self.tree.selected else {
             return;
         };
-        if self.detail.is_none() {
+        if self.editor.detail.is_none() {
             return;
         }
-        self.step_menu_open = None;
-        let service = Arc::clone(&self.actions_service);
+        self.menus.step_open = None;
+        let service = Arc::clone(&self.deps.actions_service);
         let (tx, rx) = tokio::sync::oneshot::channel();
-        self.rt_handle.spawn(async move {
+        self.deps.rt_handle.spawn(async move {
             #[expect(
                 clippy::let_underscore_must_use,
                 reason = "the view may close before the result arrives"
@@ -123,23 +123,24 @@ impl ScreenActionsView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.selected != Some(action_id) || self.detail.is_none() {
+        if self.tree.selected != Some(action_id) || self.editor.detail.is_none() {
             return;
         }
         let palette = cx.palette();
         let action_name = self
+            .editor
             .detail
             .as_ref()
             .map(|d| d.action.name.clone())
             .unwrap_or_else(|| tr!("action_editor_this_action"));
         let (mut kind_groups, picks_kind) =
-            crate::triggers_screen::build_kind_groups(&self.trigger_registry, &palette);
+            crate::triggers_screen::build_kind_groups(&self.deps.trigger_registry, &palette);
         let (recent_group, picks_instance) =
-            build_recent_group(&instances, &self.trigger_registry, &palette);
+            build_recent_group(&instances, &self.deps.trigger_registry, &palette);
         let mut groups = Vec::with_capacity(kind_groups.len() + 1);
         groups.extend(recent_group);
         groups.append(&mut kind_groups);
-        let count = self.trigger_registry.all().count();
+        let count = self.deps.trigger_registry.all().count();
         let config = GridPickerConfig {
             accent: palette.warning,
             art: GridPickerArt::default(),
@@ -171,7 +172,7 @@ impl ScreenActionsView {
         focus_inside_modal(window, cx, |window, cx| {
             picker.update(cx, |f, cx| f.focus(window, cx))
         });
-        self.add_trigger = Some(AddTriggerStage::Pick(AddTriggerPicker {
+        self.modals.add_trigger = Some(AddTriggerStage::Pick(AddTriggerPicker {
             picker,
             picks_kind,
             picks_instance,
@@ -190,7 +191,7 @@ impl ScreenActionsView {
     ) {
         match event {
             GridPickerEvent::Picked(id) => {
-                let Some(AddTriggerStage::Pick(picker)) = self.add_trigger.as_ref() else {
+                let Some(AddTriggerStage::Pick(picker)) = self.modals.add_trigger.as_ref() else {
                     return;
                 };
                 let action_id = picker.action_id;
@@ -208,7 +209,7 @@ impl ScreenActionsView {
     }
 
     pub(in crate::actions_screen) fn cancel_trigger_picker(&mut self, cx: &mut Context<Self>) {
-        self.add_trigger = None;
+        self.modals.add_trigger = None;
         cx.notify();
     }
 
@@ -218,14 +219,14 @@ impl ScreenActionsView {
         instance_id: TriggerInstanceId,
         cx: &mut Context<Self>,
     ) {
-        self.add_trigger = None;
-        if self.selected != Some(action_id) {
+        self.modals.add_trigger = None;
+        if self.tree.selected != Some(action_id) {
             cx.notify();
             return;
         }
-        let service = Arc::clone(&self.actions_service);
+        let service = Arc::clone(&self.deps.actions_service);
         async_bridge::run_async(
-            &self.rt_handle,
+            &self.deps.rt_handle,
             async move {
                 service
                     .link_trigger_instance(action_id, instance_id)

@@ -4,15 +4,15 @@ use forge_registry::{ScopeLevel, ScopedVariable, variables_in_scope};
 
 impl ScreenActionsView {
     pub(super) fn step_scope(&self, target: SubFormTarget) -> Vec<ScopedVariable> {
-        let Some(detail) = &self.detail else {
+        let Some(detail) = &self.editor.detail else {
             return Vec::new();
         };
         scope_at(
             detail,
-            &self.nav_path,
+            &self.editor.nav_path,
             target,
-            &self.sub_action_registry,
-            &self.trigger_registry,
+            &self.deps.sub_action_registry,
+            &self.deps.trigger_registry,
         )
     }
 }

@@ -916,10 +916,10 @@ fn row_status_from_done(done: &SubActionDone) -> RowStatus {
 
 impl ScreenActionsView {
     pub(super) fn start_test_run(&mut self, cx: &mut Context<Self>) {
-        let Some(id) = self.selected else {
+        let Some(id) = self.tree.selected else {
             return;
         };
-        let selected = match self.detail.as_ref() {
+        let selected = match self.editor.detail.as_ref() {
             Some(detail) => detail
                 .trigger_instances
                 .iter()
@@ -933,7 +933,7 @@ impl ScreenActionsView {
     fn launch_test_run(&mut self, id: ActionId, selected: Option<usize>, cx: &mut Context<Self>) {
         let palette = cx.palette();
         let prepared = {
-            let Some(detail) = self.detail.as_ref() else {
+            let Some(detail) = self.editor.detail.as_ref() else {
                 return;
             };
             if detail.action.id != id {
@@ -955,7 +955,7 @@ impl ScreenActionsView {
                 .trigger_instances
                 .iter()
                 .map(|inst| {
-                    let descriptor = self.trigger_registry.get(&inst.kind_id);
+                    let descriptor = self.deps.trigger_registry.get(&inst.kind_id);
                     let kind_label = descriptor
                         .map(crate::kind_copy::trigger_name)
                         .unwrap_or_else(|| inst.kind_id.clone());
@@ -970,8 +970,11 @@ impl ScreenActionsView {
             let selected_inst = selected.and_then(|i| detail.trigger_instances.get(i));
             let trigger_kind = selected_inst.map(|inst| inst.kind_id.clone());
             let declared = selected_inst.and_then(|inst| {
-                let descriptor = self.trigger_registry.get(&inst.kind_id)?;
-                let variables = self.trigger_registry.declared_variables(&inst.kind_id)?;
+                let descriptor = self.deps.trigger_registry.get(&inst.kind_id)?;
+                let variables = self
+                    .deps
+                    .trigger_registry
+                    .declared_variables(&inst.kind_id)?;
                 Some((variables, descriptor.platform_contract()))
             });
             let (initial_args, note) = match (selected_inst, declared) {
@@ -997,12 +1000,12 @@ impl ScreenActionsView {
             }
         };
 
-        let bus = Arc::clone(&self.bus);
-        let scheduler = self.scheduler.clone();
-        let rt_handle = self.rt_handle.clone();
+        let bus = Arc::clone(&self.deps.bus);
+        let scheduler = self.deps.scheduler.clone();
+        let rt_handle = self.deps.rt_handle.clone();
         let modal = cx.new(|cx| TestRunModal::new(prepared, bus, scheduler, rt_handle, cx));
-        self._test_run_sub = Some(cx.subscribe(&modal, Self::on_test_run_event));
-        self.test_run = Some(modal);
+        self.modals._test_run_sub = Some(cx.subscribe(&modal, Self::on_test_run_event));
+        self.modals.test_run = Some(modal);
         cx.notify();
     }
 
@@ -1013,8 +1016,8 @@ impl ScreenActionsView {
         palette: &ForgePalette,
     ) -> TestRunRow {
         let (fallback_icon, fallback_title, _) =
-            super::editor::sub_action_summary(step, &self.select_options);
-        let runner = self.sub_action_registry.get(&step.kind_id);
+            super::editor::sub_action_summary(step, &self.choices.select_options);
+        let runner = self.deps.sub_action_registry.get(&step.kind_id);
         let name = runner
             .map(crate::kind_copy::step_name)
             .unwrap_or(fallback_title);
@@ -1046,14 +1049,14 @@ impl ScreenActionsView {
             } => self.launch_test_run(*action_id, *selected, cx),
             TestRunEvent::DetailChanged(id) => self.load_detail_for(*id, cx),
             TestRunEvent::Cancelled(id) => {
-                self.test_run = None;
-                self._test_run_sub = None;
+                self.modals.test_run = None;
+                self.modals._test_run_sub = None;
                 self.load_detail_for(*id, cx);
                 cx.notify();
             }
             TestRunEvent::Failed(message) => {
-                self.test_run = None;
-                self._test_run_sub = None;
+                self.modals.test_run = None;
+                self.modals._test_run_sub = None;
                 cx.push_toast(
                     ToastKind::Error,
                     tr!("action_editor_test_failed", error = message.as_str()),

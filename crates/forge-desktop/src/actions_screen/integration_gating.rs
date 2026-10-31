@@ -26,7 +26,11 @@ impl ScreenActionsView {
         }
         let integrations = self.integrations.as_ref()?;
         integrations
-            .off_owner(self.sub_action_registry.owning_integration(&step.kind_id))
+            .off_owner(
+                self.deps
+                    .sub_action_registry
+                    .owning_integration(&step.kind_id),
+            )
             .cloned()
     }
 
@@ -36,7 +40,11 @@ impl ScreenActionsView {
         }
         let integrations = self.integrations.as_ref()?;
         integrations
-            .failed_owner(self.sub_action_registry.owning_integration(&step.kind_id))
+            .failed_owner(
+                self.deps
+                    .sub_action_registry
+                    .owning_integration(&step.kind_id),
+            )
             .cloned()
     }
 
@@ -57,7 +65,7 @@ impl ScreenActionsView {
     pub(super) fn switched_off_trigger_owner(&self, kind_id: &str) -> Option<IntegrationId> {
         let integrations = self.integrations.as_ref()?;
         integrations
-            .off_owner(self.trigger_registry.owning_integration(kind_id))
+            .off_owner(self.deps.trigger_registry.owning_integration(kind_id))
             .cloned()
     }
 
@@ -115,12 +123,14 @@ impl ScreenActionsView {
 #[cfg(test)]
 pub(super) mod tests {
     use forge_components::ThemeId;
+    use forge_runtime::ActionsService;
     use forge_runtime::{ActionCancelRegistry, QueueScheduler, spawn_action_engine};
     use forge_soundboard::ClipLibrary;
     use forge_storage::MockQueueRepo;
     use forge_storage::MockSoundboardClipsRepo;
     use forge_storage::MockTriggerInstanceRepo;
     use forge_storage::{DataProvider, SoundboardClipsRepo};
+    use forge_storage::{GlobalsRepo, QueueRepo, ScriptRepo};
 
     use super::*;
     use crate::test_support::{
@@ -198,26 +208,31 @@ pub(super) mod tests {
             let view = cx.update(|cx| {
                 cx.new(|cx| {
                     let mut view = ScreenActionsView::new(
-                        action_repo,
-                        queue_repo,
-                        service,
-                        trigger_repo,
-                        Arc::clone(&backend) as Arc<dyn ScriptRepo>,
-                        Arc::new(ClipLibrary::new(clips, backend.media_repo())),
-                        Arc::clone(&backend) as Arc<dyn GlobalsRepo>,
+                        super::ActionsDeps {
+                            action_repo,
+                            queue_repo,
+                            actions_service: service,
+                            trigger_instance_repo: trigger_repo,
+                            script_repo: Arc::clone(&backend) as Arc<dyn ScriptRepo>,
+                            clip_library: Arc::new(ClipLibrary::new(clips, backend.media_repo())),
+                            globals_repo: Arc::clone(&backend) as Arc<dyn GlobalsRepo>,
+                            overlay_repo: Arc::new(StubOverlays),
+                            speak: None,
+                            sub_action_registry: Arc::new(owned_sub_actions(&[(OBS_SCENE, "obs")])),
+                            trigger_registry: Arc::new(owned_triggers(&[(
+                                OBS_SCENE_CHANGED,
+                                "obs",
+                            )])),
+                            rt_handle: handle,
+                            bus,
+                            scheduler,
+                        },
                         Arc::clone(&backend) as Arc<dyn SettingsRepo>,
-                        Arc::new(StubOverlays),
                         Arc::new(OverlayKindRegistry::new()),
-                        None,
-                        Arc::new(owned_sub_actions(&[(OBS_SCENE, "obs")])),
-                        Arc::new(owned_triggers(&[(OBS_SCENE_CHANGED, "obs")])),
-                        handle,
-                        bus,
-                        scheduler,
                         None,
                         cx,
                     );
-                    view.detail = open;
+                    view.editor.detail = open;
                     view.with_integration_switch(switch, cx)
                 })
             });
@@ -230,7 +245,8 @@ pub(super) mod tests {
 
         fn flagged(&self, cx: &mut gpui::TestAppContext) -> Vec<Option<IntegrationId>> {
             self.view.read_with(cx, |view, _| {
-                view.step_health
+                view.editor
+                    .step_health
                     .iter()
                     .map(|health| health.disabled_integration().cloned())
                     .collect()
@@ -239,7 +255,8 @@ pub(super) mod tests {
 
         fn flagged_failed(&self, cx: &mut gpui::TestAppContext) -> Vec<Option<IntegrationId>> {
             self.view.read_with(cx, |view, _| {
-                view.step_health
+                view.editor
+                    .step_health
                     .iter()
                     .map(|health| health.failed_integration().cloned())
                     .collect()

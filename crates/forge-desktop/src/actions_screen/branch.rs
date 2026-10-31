@@ -78,22 +78,22 @@ impl ScreenActionsView {
             .and_then(nav::ChainItem::step)
             .map(|s| nav::branch_step_count(s, &chain_key, case_index))
             .unwrap_or(0);
-        if self.nav_path.len() >= nav::UI_MAX_NESTING_DEPTH && count == 0 {
+        if self.editor.nav_path.len() >= nav::UI_MAX_NESTING_DEPTH && count == 0 {
             return;
         }
-        self.nav_path.push(nav::NavFrame {
+        self.editor.nav_path.push(nav::NavFrame {
             step_index,
             chain_key,
             case_index,
         });
-        self.step_menu_open = None;
+        self.menus.step_open = None;
         self.sync_case_fields(cx);
         cx.notify();
     }
 
     fn breadcrumb_pop(&mut self, depth: usize, cx: &mut Context<Self>) {
-        self.nav_path.truncate(depth);
-        self.step_menu_open = None;
+        self.editor.nav_path.truncate(depth);
+        self.menus.step_open = None;
         self.sync_case_fields(cx);
         cx.notify();
     }
@@ -173,7 +173,7 @@ impl ScreenActionsView {
             let Some(step) = item.step() else {
                 continue;
             };
-            for cases_key in nav::case_list_keys(step, &self.sub_action_registry) {
+            for cases_key in nav::case_list_keys(step, &self.deps.sub_action_registry) {
                 for ci in 0..nav::case_count(step, cases_key) {
                     if !nav::case_match_is_multi(step, cases_key, ci) {
                         specs.push((
@@ -205,7 +205,7 @@ impl ScreenActionsView {
             });
             fields.insert((si, ci), CaseField { field, _sub: sub });
         }
-        self.case_fields = fields;
+        self.editor.case_fields = fields;
     }
 
     pub(super) fn render_breadcrumb(
@@ -217,12 +217,14 @@ impl ScreenActionsView {
         let density = cx.density();
         let mut segments: Vec<(String, Option<usize>)> =
             vec![(tr!("action_editor_breadcrumb_steps"), Some(0))];
-        for (depth, frame) in self.nav_path.iter().enumerate() {
-            let prefix = nav::resolve_chain(&detail.action.sub_actions, &self.nav_path[..depth]);
+        for (depth, frame) in self.editor.nav_path.iter().enumerate() {
+            let prefix =
+                nav::resolve_chain(&detail.action.sub_actions, &self.editor.nav_path[..depth]);
             let enclosing = prefix.get(frame.step_index).and_then(nav::ChainItem::step);
             let step_label = enclosing
                 .and_then(|s| {
-                    self.sub_action_registry
+                    self.deps
+                        .sub_action_registry
                         .get(&s.kind_id)
                         .map(crate::kind_copy::step_name)
                 })
@@ -231,12 +233,12 @@ impl ScreenActionsView {
                 Some(ci) => format!("{} {}", tr!("action_editor_branch_case"), ci + 1),
                 None => enclosing
                     .and_then(|s| {
-                        let runner = self.sub_action_registry.get(&s.kind_id)?;
+                        let runner = self.deps.sub_action_registry.get(&s.kind_id)?;
                         form_field_label(&s.kind_id, &runner.config_fields(), &frame.chain_key)
                     })
                     .unwrap_or_else(|| branch_field_label(&frame.chain_key)),
             };
-            let pop_target = if depth + 1 == self.nav_path.len() {
+            let pop_target = if depth + 1 == self.editor.nav_path.len() {
                 None
             } else {
                 Some(depth + 1)
@@ -314,7 +316,11 @@ impl ScreenActionsView {
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
         let density = cx.density();
-        let fields = self.sub_action_registry.get(&step.kind_id)?.config_fields();
+        let fields = self
+            .deps
+            .sub_action_registry
+            .get(&step.kind_id)?
+            .config_fields();
         let at_cap = depth >= nav::UI_MAX_NESTING_DEPTH;
         let mut rows: Vec<AnyElement> = Vec::new();
         let mut capped_empty = false;
@@ -422,7 +428,8 @@ impl ScreenActionsView {
                 .w(CASE_MATCH_W)
                 .flex_none()
                 .children(
-                    self.case_fields
+                    self.editor
+                        .case_fields
                         .get(&(step_index, ci))
                         .map(|f| f.field.clone()),
                 )

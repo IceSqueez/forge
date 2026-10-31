@@ -79,7 +79,7 @@ impl ScreenActionsView {
             .child(desc_line);
 
         let id = action.id;
-        let menu_open = self.header_menu_open;
+        let menu_open = self.menus.header_open;
         let view = cx.entity();
         let header_menu = menu_button(Icon::DotsVertical, menu_open.is_some(), palette)
             .placement(MenuPlacement::BottomRight)
@@ -162,14 +162,14 @@ impl ScreenActionsView {
             .flex_col()
             .gap(spacing(Spacing::Md, density))
             .child(header_row);
-        if let Some(telemetry) = &self.telemetry {
+        if let Some(telemetry) = &self.editor.telemetry {
             col = col.child(self.render_stats_row(telemetry, palette, cx));
         }
         col.into_any_element()
     }
 
     fn toggle_header_menu(&mut self, position: Point<Pixels>, cx: &mut Context<Self>) {
-        self.header_menu_open = if self.header_menu_open.is_some() {
+        self.menus.header_open = if self.menus.header_open.is_some() {
             None
         } else {
             Some(position)
@@ -178,16 +178,16 @@ impl ScreenActionsView {
     }
 
     fn close_header_menu(&mut self, cx: &mut Context<Self>) {
-        self.header_menu_open = None;
+        self.menus.header_open = None;
         cx.notify();
     }
 
     fn open_edit_modal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(detail) = self.detail.as_ref() else {
+        let Some(detail) = self.editor.detail.as_ref() else {
             return;
         };
         let action = detail.action.clone();
-        self.header_menu_open = None;
+        self.menus.header_open = None;
         self.open_action_modal(Some(action), window, cx);
     }
 }

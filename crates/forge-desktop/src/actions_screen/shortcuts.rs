@@ -9,14 +9,15 @@ impl ActionForm {
 
 impl ScreenActionsView {
     pub(super) fn has_open_modal(&self, cx: &App) -> bool {
-        self.action_modal.is_some()
-            || self.sub_form.is_some()
-            || self.add_trigger.is_some()
-            || self.grid_picker.is_some()
-            || self.history_modal.is_some()
-            || self.test_run.is_some()
-            || self.pending_delete.get().is_some()
+        self.modals.action_form.is_some()
+            || self.modals.sub_form.is_some()
+            || self.modals.add_trigger.is_some()
+            || self.modals.grid_picker.is_some()
+            || self.modals.history.is_some()
+            || self.modals.test_run.is_some()
+            || self.tree.pending_delete.get().is_some()
             || self
+                .modals
                 .pack_export
                 .as_ref()
                 .is_some_and(|host| host.flow.read(cx).is_busy())
@@ -25,16 +26,17 @@ impl ScreenActionsView {
 
 impl ScreenShortcuts for ScreenActionsView {
     fn save_shortcut(&mut self, cx: &mut Context<Self>) {
-        if let Some(form) = self.sub_form.clone() {
+        if let Some(form) = self.modals.sub_form.clone() {
             form.update(cx, |form, cx| form.submit(cx));
             return;
         }
-        if matches!(self.add_trigger, Some(AddTriggerStage::Fill(_))) {
+        if matches!(self.modals.add_trigger, Some(AddTriggerStage::Fill(_))) {
             self.submit_trigger_fill(cx);
             return;
         }
         if self
-            .action_modal
+            .modals
+            .action_form
             .as_ref()
             .is_some_and(|form| form.ready(cx))
         {
@@ -132,7 +134,7 @@ mod tests {
         fn fill_action_form(&self, cx: &mut TestAppContext, name: &str, with_queue: bool) {
             let name = name.to_owned();
             self.view.update(cx, |view, cx| {
-                let form = view.action_modal.as_mut().unwrap();
+                let form = view.modals.action_form.as_mut().unwrap();
                 form.name
                     .update(cx, |input, cx| input.set_content(name, cx));
                 if with_queue {
@@ -154,23 +156,25 @@ mod tests {
         fn open_action(&self, cx: &mut TestAppContext) {
             self.view.update(cx, |view, _| {
                 let detail = detail(Vec::new());
-                view.selected = Some(detail.action.id);
-                view.detail = Some(detail);
+                view.tree.selected = Some(detail.action.id);
+                view.editor.detail = Some(detail);
             });
         }
 
         fn ask_delete(&self, cx: &mut TestAppContext) {
-            self.view
-                .update(cx, |view, _| view.pending_delete.request(ActionId::new()));
+            self.view.update(cx, |view, _| {
+                view.tree.pending_delete.request(ActionId::new())
+            });
         }
 
         fn form_open(&self, cx: &mut TestAppContext) -> bool {
             self.view
-                .read_with(cx, |view, _| view.action_modal.is_some())
+                .read_with(cx, |view, _| view.modals.action_form.is_some())
         }
 
         fn test_run_open(&self, cx: &mut TestAppContext) -> bool {
-            self.view.read_with(cx, |view, _| view.test_run.is_some())
+            self.view
+                .read_with(cx, |view, _| view.modals.test_run.is_some())
         }
 
         fn saved(&self) -> usize {
@@ -185,7 +189,8 @@ mod tests {
         screen.press_new_action(cx);
 
         let blank = screen.view.read_with(cx, |view, cx| {
-            view.action_modal
+            view.modals
+                .action_form
                 .as_ref()
                 .map(|form| (form.editing, form.name.read(cx).content().to_owned()))
         });
@@ -275,11 +280,15 @@ mod tests {
         let screen = Rig::mount(cx);
         screen.open_action(cx);
         screen.press_run(cx);
-        let first = screen.view.read_with(cx, |view, _| view.test_run.clone());
+        let first = screen
+            .view
+            .read_with(cx, |view, _| view.modals.test_run.clone());
 
         screen.press_run(cx);
 
-        let second = screen.view.read_with(cx, |view, _| view.test_run.clone());
+        let second = screen
+            .view
+            .read_with(cx, |view, _| view.modals.test_run.clone());
         assert_eq!(second.map(|m| m.entity_id()), first.map(|m| m.entity_id()));
     }
 }

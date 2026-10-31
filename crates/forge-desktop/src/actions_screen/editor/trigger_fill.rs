@@ -26,7 +26,7 @@ impl ScreenActionsView {
         cx: &mut Context<Self>,
     ) {
         let palette = cx.palette();
-        let descriptor = self.trigger_registry.get(&kind_id);
+        let descriptor = self.deps.trigger_registry.get(&kind_id);
         let kind_label = descriptor
             .map(crate::kind_copy::trigger_name)
             .unwrap_or_else(|| kind_id.clone());
@@ -55,7 +55,7 @@ impl ScreenActionsView {
         });
         let name_sub = cx.subscribe(&name_field, Self::on_trigger_name_event);
 
-        self.add_trigger = Some(AddTriggerStage::Fill(AddTriggerFill {
+        self.modals.add_trigger = Some(AddTriggerStage::Fill(AddTriggerFill {
             action_id,
             kind_id,
             kind_label,
@@ -91,7 +91,7 @@ impl ScreenActionsView {
     }
 
     fn toggle_trigger_config_field(&mut self, key: String, cx: &mut Context<Self>) {
-        if let Some(AddTriggerStage::Fill(form)) = self.add_trigger.as_mut() {
+        if let Some(AddTriggerStage::Fill(form)) = self.modals.add_trigger.as_mut() {
             for field in &mut form.fields {
                 if let ConfigField::Bool { key: k, value, .. } = field
                     && *k == key
@@ -104,7 +104,7 @@ impl ScreenActionsView {
     }
 
     fn slide_trigger_config_field(&mut self, key: String, next: i64, cx: &mut Context<Self>) {
-        if let Some(AddTriggerStage::Fill(form)) = self.add_trigger.as_mut() {
+        if let Some(AddTriggerStage::Fill(form)) = self.modals.add_trigger.as_mut() {
             for field in &mut form.fields {
                 if let ConfigField::Slide { key: k, value, .. } = field
                     && *k == key
@@ -117,14 +117,14 @@ impl ScreenActionsView {
     }
 
     fn pick_trigger_config_field(&mut self, key: String, choice: String, cx: &mut Context<Self>) {
-        if let Some(AddTriggerStage::Fill(form)) = self.add_trigger.as_mut() {
+        if let Some(AddTriggerStage::Fill(form)) = self.modals.add_trigger.as_mut() {
             set_picked_value(&mut form.fields, &key, &choice, cx);
         }
         cx.notify();
     }
 
     fn open_trigger_choice(&mut self, key: String, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(AddTriggerStage::Fill(form)) = self.add_trigger.as_mut() {
+        if let Some(AddTriggerStage::Fill(form)) = self.modals.add_trigger.as_mut() {
             form.choices
                 .toggle(&form.fields, key, Self::on_trigger_choice_event, window, cx);
         }
@@ -132,7 +132,7 @@ impl ScreenActionsView {
     }
 
     fn close_trigger_choice(&mut self, cx: &mut Context<Self>) {
-        if let Some(AddTriggerStage::Fill(form)) = self.add_trigger.as_mut() {
+        if let Some(AddTriggerStage::Fill(form)) = self.modals.add_trigger.as_mut() {
             form.choices.close();
         }
         cx.notify();
@@ -144,7 +144,7 @@ impl ScreenActionsView {
         event: &PickerEvent,
         cx: &mut Context<Self>,
     ) {
-        let Some(AddTriggerStage::Fill(form)) = self.add_trigger.as_mut() else {
+        let Some(AddTriggerStage::Fill(form)) = self.modals.add_trigger.as_mut() else {
             return;
         };
         match event {
@@ -176,7 +176,7 @@ impl ScreenActionsView {
     }
 
     pub(in crate::actions_screen) fn submit_trigger_fill(&mut self, cx: &mut Context<Self>) {
-        let Some(AddTriggerStage::Fill(form)) = self.add_trigger.as_ref() else {
+        let Some(AddTriggerStage::Fill(form)) = self.modals.add_trigger.as_ref() else {
             return;
         };
         if form.saving {
@@ -187,13 +187,13 @@ impl ScreenActionsView {
             return;
         }
         let action_id = form.action_id;
-        if self.selected != Some(action_id) {
-            self.add_trigger = None;
+        if self.tree.selected != Some(action_id) {
+            self.modals.add_trigger = None;
             cx.notify();
             return;
         }
         let kind_id = form.kind_id.clone();
-        let default = trigger_form_defaults(self.trigger_registry.get(&kind_id));
+        let default = trigger_form_defaults(self.deps.trigger_registry.get(&kind_id));
         let mut buffer = default.clone();
         collect_field_values(&form.fields, &mut buffer, cx);
         let overrides = sparse_overrides(&default, &buffer);
@@ -211,14 +211,14 @@ impl ScreenActionsView {
             permission_rung: PermissionRung::Everyone,
         };
 
-        if let Some(AddTriggerStage::Fill(form)) = self.add_trigger.as_mut() {
+        if let Some(AddTriggerStage::Fill(form)) = self.modals.add_trigger.as_mut() {
             form.saving = true;
         }
         cx.notify();
 
-        let service = Arc::clone(&self.actions_service);
+        let service = Arc::clone(&self.deps.actions_service);
         async_bridge::run_async(
-            &self.rt_handle,
+            &self.deps.rt_handle,
             async move {
                 service
                     .create_linked_trigger(action_id, instance)
@@ -227,12 +227,12 @@ impl ScreenActionsView {
             },
             |this, result: Result<(), RepoFailure>, cx| match result {
                 Ok(()) => {
-                    this.add_trigger = None;
+                    this.modals.add_trigger = None;
                     this.reload_detail(cx);
                     cx.notify();
                 }
                 Err(message) => {
-                    if let Some(AddTriggerStage::Fill(form)) = this.add_trigger.as_mut() {
+                    if let Some(AddTriggerStage::Fill(form)) = this.modals.add_trigger.as_mut() {
                         form.saving = false;
                     }
                     this.on_repo_error(&message, cx);
@@ -251,6 +251,7 @@ impl ScreenActionsView {
         let density = cx.density();
         let dot_color = platform_dot_color(&form.kind_id, palette);
         let glyph = self
+            .deps
             .trigger_registry
             .get(&form.kind_id)
             .map(|d| Icon::from_name(d.icon_name()))

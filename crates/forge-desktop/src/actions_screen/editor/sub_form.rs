@@ -12,33 +12,35 @@ use gpui::{Context, Entity};
 
 impl ScreenActionsView {
     pub(super) fn kind_label(&self, kind_id: &str) -> String {
-        self.sub_action_registry
+        self.deps
+            .sub_action_registry
             .get(kind_id)
             .map(crate::kind_copy::step_name)
             .unwrap_or_else(|| kind_id.to_owned())
     }
 
     pub(super) fn open_sub_form(&mut self, launch: SubFormLaunch, cx: &mut Context<Self>) {
-        self.sub_form_choice_fields = collection_choice_fields(&launch.specs);
-        self.sub_form_obs_fields = obs_catalog_fields(&launch.specs);
-        self.sub_form_vtube_fields = vtube_catalog_fields(&launch.specs);
+        self.choices.choice_fields = collection_choice_fields(&launch.specs);
+        self.choices.obs_fields = obs_catalog_fields(&launch.specs);
+        self.choices.vtube_fields = vtube_catalog_fields(&launch.specs);
         let scope = self.step_scope(launch.target);
         let form = cx.new(|cx| {
-            EditSubActionForm::new(launch, self.rt_handle.clone(), cx).with_variable_scope(scope)
+            EditSubActionForm::new(launch, self.deps.rt_handle.clone(), cx)
+                .with_variable_scope(scope)
         });
-        self._sub_form_sub = Some(cx.subscribe(&form, Self::on_sub_form_event));
-        self.sub_form = Some(form);
+        self.modals._sub_form_sub = Some(cx.subscribe(&form, Self::on_sub_form_event));
+        self.modals.sub_form = Some(form);
         self.fetch_select_options(cx);
         self.start_collection_options(cx);
         cx.notify();
     }
 
     fn close_sub_form(&mut self) {
-        self.sub_form = None;
-        self._sub_form_sub = None;
-        self.sub_form_choice_fields.clear();
-        self.sub_form_obs_fields.clear();
-        self.sub_form_vtube_fields.clear();
+        self.modals.sub_form = None;
+        self.modals._sub_form_sub = None;
+        self.choices.choice_fields.clear();
+        self.choices.obs_fields.clear();
+        self.choices.vtube_fields.clear();
     }
 
     fn on_sub_form_event(
@@ -56,7 +58,7 @@ impl ScreenActionsView {
                     return;
                 }
                 self.close_sub_form();
-                self.step_menu_open = None;
+                self.menus.step_open = None;
                 self.apply_sub_form_commit(commit, cx);
                 cx.notify();
             }
@@ -76,6 +78,7 @@ impl ScreenActionsView {
                 .map(|step| step.config.clone())
                 .unwrap_or_default(),
             SubFormTarget::Add => self
+                .deps
                 .sub_action_registry
                 .get(&commit.kind_id)
                 .map(|r| r.default_config())
@@ -93,7 +96,7 @@ impl ScreenActionsView {
         commit: &SubFormCommit,
         field_keys: &[String],
     ) -> Option<StepRejection> {
-        let runner = self.sub_action_registry.get(&commit.kind_id)?;
+        let runner = self.deps.sub_action_registry.get(&commit.kind_id)?;
         step_rejection(runner, &self.committed_step_config(commit), field_keys)
     }
 
@@ -161,7 +164,7 @@ impl ScreenActionsView {
         let mut config = step.config.clone();
         let continue_on_error = step.continue_on_error;
         let Some((specs, output_name_keys, defaults, icon_name, category, refinement)) =
-            self.sub_action_registry.get(&kind_id).map(|r| {
+            self.deps.sub_action_registry.get(&kind_id).map(|r| {
                 (
                     r.config_fields(),
                     output_name_keys(r),
@@ -192,11 +195,11 @@ impl ScreenActionsView {
             icon_name,
             category: Some(category),
             chain_len,
-            options_seed: self.select_options.clone(),
+            options_seed: self.choices.select_options.clone(),
             refinement,
             schema: Arc::clone(&self.overlay_schema) as Arc<dyn FormSchemaSource>,
         };
-        self.step_menu_open = None;
+        self.menus.step_open = None;
         self.open_sub_form(launch, cx);
     }
 }
@@ -326,16 +329,17 @@ mod tests {
             view.update(cx, |view, cx| {
                 let mut step = crate::test_support::step(PLAY_SOUND, true);
                 step.config = stored;
-                view.detail = Some(crate::actions_screen::integration_gating::tests::detail(
-                    vec![step],
-                ));
+                view.editor.detail = Some(
+                    crate::actions_screen::integration_gating::tests::detail(vec![step]),
+                );
                 view.open_edit_sub_action(0, cx);
             });
             Self { view, saves, rt }
         }
 
         fn form(&self, cx: &mut gpui::TestAppContext) -> Option<Entity<EditSubActionForm>> {
-            self.view.read_with(cx, |view, _| view.sub_form.clone())
+            self.view
+                .read_with(cx, |view, _| view.modals.sub_form.clone())
         }
 
         fn save(&self, cx: &mut gpui::TestAppContext, target: SubFormTarget, clip: &str) {

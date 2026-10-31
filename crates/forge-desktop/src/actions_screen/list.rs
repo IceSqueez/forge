@@ -1,36 +1,29 @@
-use super::action_writes::{ActionSettings, ActionWrite};
+use super::action_writes::ActionWrite;
 use super::*;
-use crate::async_bridge;
 use crate::load_notice::{LoadNotice, NoticeWidth, load_notice};
 use crate::navigable_list::{ListStep, NavigableList, navigable_list};
-use crate::repo_failure::RepoFailure;
 use forge_components::ActivePresentation;
-use forge_components::NAME_FIELD_LIMIT;
 use forge_components::PushToast;
 use forge_components::RevealsFocusIn;
 use forge_components::SEARCH_FIELD_WIDTH;
-use forge_components::focus_inside_modal;
 use forge_components::{
     BORDER_THIN, ChipGlyph, ConfirmTone, Density, FONT_XS, FONT_XXS, ForgePalette, Icon,
-    InlineEditEvent, InputEvent, KeyActivated, ModalSize, OverlayPosition, ResizeEdge, ResizeRange,
-    Spacing, TextArea, TextInput, ToastKind, body_family, chip, confirm_modal, context_menu,
-    header_stat, header_stats, icon, inline_edit, install_resize, menu_divider, menu_item, modal,
-    mono_family, overlay, primary_button, primary_button_with_icon, scaled, secondary_button,
-    spacing, status_dot, toggle, tr,
+    InlineEditEvent, InputEvent, KeyActivated, OverlayPosition, ResizeEdge, ResizeRange, Spacing,
+    TextInput, ToastKind, body_family, chip, confirm_modal, context_menu, header_stat,
+    header_stats, icon, inline_edit, install_resize, menu_divider, menu_item, mono_family, overlay,
+    primary_button_with_icon, scaled, spacing, tr,
 };
-use forge_types::{Action, ActionId, DEFAULT_QUEUE_ID, ExecutionMode, Queue};
+use forge_types::ActionId;
 use gpui::{
     AnyElement, App, ClickEvent, Context, Entity, MouseButton, MouseDownEvent, Pixels, Point, Rgba,
     SharedString, Window, div, px,
 };
-use std::sync::Arc;
 
 struct TreeActionRow {
     id: ActionId,
     child_index: usize,
 }
 
-const DESCRIPTION_HEIGHT: Pixels = px(72.0);
 const ROW_PAD_R: Pixels = px(8.0);
 
 fn tree_notice(label: SharedString, color: Rgba, density: Density) -> impl IntoElement {
@@ -44,47 +37,27 @@ fn tree_notice(label: SharedString, color: Rgba, density: Density) -> impl IntoE
         .child(label)
 }
 
-fn modal_section(
-    palette: &ForgePalette,
-    label: impl Into<SharedString>,
-    control: impl IntoElement,
-    density: Density,
-) -> impl IntoElement {
-    div()
-        .flex()
-        .flex_col()
-        .gap(spacing(Spacing::Xxs, density))
-        .child(
-            div()
-                .font_family(mono_family())
-                .text_size(FONT_XXS)
-                .text_color(palette.text_faint)
-                .child(label.into()),
-        )
-        .child(control)
-}
-
 impl NavigableList for ScreenActionsView {
     fn step_list(&mut self, step: ListStep, cx: &mut Context<Self>) {
-        if self.renaming.is_some() {
+        if self.tree.renaming.is_some() {
             return;
         }
         let rows = self.tree_action_rows();
         let ids: Vec<ActionId> = rows.iter().map(|row| row.id).collect();
-        if let Some(next) = self.tree_keys.step(&ids, self.selected.as_ref(), step) {
+        if let Some(next) = self.tree.keys.step(&ids, self.tree.selected.as_ref(), step) {
             if let Some(row) = rows.get(next) {
-                self.tree_scroll.scroll_to_item(row.child_index);
+                self.tree.scroll.scroll_to_item(row.child_index);
             }
             cx.notify();
         }
     }
 
     fn activate_list(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
-        if self.renaming.is_some() {
+        if self.tree.renaming.is_some() {
             return;
         }
         let ids: Vec<ActionId> = self.tree_action_rows().iter().map(|row| row.id).collect();
-        if let Some(id) = self.tree_keys.activation_target(&ids) {
+        if let Some(id) = self.tree.keys.activation_target(&ids) {
             self.select(id, cx);
         }
     }
@@ -92,18 +65,20 @@ impl NavigableList for ScreenActionsView {
 
 impl ScreenActionsView {
     pub(super) fn find(&self, id: ActionId) -> Option<&ActionSummary> {
-        self.groups
+        self.tree
+            .groups
             .iter()
             .flat_map(|g| g.actions.iter())
             .find(|a| a.id == id)
     }
 
     pub(super) fn total_actions(&self) -> usize {
-        self.groups.iter().map(|g| g.actions.len()).sum()
+        self.tree.groups.iter().map(|g| g.actions.len()).sum()
     }
 
     fn enabled_count(&self) -> usize {
-        self.groups
+        self.tree
+            .groups
             .iter()
             .flat_map(|g| g.actions.iter())
             .filter(|a| a.enabled)
@@ -111,12 +86,13 @@ impl ScreenActionsView {
     }
 
     fn action_passes(&self, action: &ActionSummary) -> bool {
-        let in_filter = self.filter == ActionsFilter::All
+        let in_filter = self.tree.filter == ActionsFilter::All
             || self
+                .tree
                 .filter_action_ids
-                .get(&self.filter)
+                .get(&self.tree.filter)
                 .is_some_and(|ids| ids.contains(&action.id));
-        in_filter && self.search.matches(&action.name)
+        in_filter && self.tree.search.matches(&action.name)
     }
 
     pub(super) fn on_search_event(
@@ -125,31 +101,31 @@ impl ScreenActionsView {
         event: &InputEvent,
         cx: &mut Context<Self>,
     ) {
-        if self.search.on_changed(event) {
+        if self.tree.search.on_changed(event) {
             cx.notify();
         }
     }
 
     fn set_filter(&mut self, filter: ActionsFilter, cx: &mut Context<Self>) {
-        self.filter = filter;
+        self.tree.filter = filter;
         cx.notify();
     }
 
     fn toggle_group(&mut self, index: usize, cx: &mut Context<Self>) {
-        if let Some(group) = self.groups.get_mut(index) {
+        if let Some(group) = self.tree.groups.get_mut(index) {
             group.collapsed = !group.collapsed;
             cx.notify();
         }
     }
 
     pub(super) fn select(&mut self, id: ActionId, cx: &mut Context<Self>) {
-        self.selected = Some(id);
-        self.tree_keys.move_to(id);
-        self.detail = None;
-        self.telemetry = None;
-        self.last_outcome = None;
-        self.nav_path.clear();
-        self.step_menu_open = None;
+        self.tree.selected = Some(id);
+        self.tree.keys.move_to(id);
+        self.editor.detail = None;
+        self.editor.telemetry = None;
+        self.editor.last_outcome = None;
+        self.editor.nav_path.clear();
+        self.menus.step_open = None;
         self.sync_case_fields(cx);
         self.load_detail_for(id, cx);
         cx.notify();
@@ -157,34 +133,34 @@ impl ScreenActionsView {
 
     fn set_hover(&mut self, id: ActionId, hovered: bool, cx: &mut Context<Self>) {
         if hovered {
-            if self.hovered != Some(id) {
-                self.hovered = Some(id);
+            if self.tree.hovered != Some(id) {
+                self.tree.hovered = Some(id);
                 cx.notify();
             }
-        } else if self.hovered == Some(id) {
-            self.hovered = None;
+        } else if self.tree.hovered == Some(id) {
+            self.tree.hovered = None;
             cx.notify();
         }
     }
 
     fn open_row_menu(&mut self, id: ActionId, position: Point<Pixels>, cx: &mut Context<Self>) {
-        self.menu_open = Some(id);
-        self.menu_click_pos = Some(position);
+        self.menus.row_open = Some(id);
+        self.menus.click_pos = Some(position);
         cx.notify();
     }
 
     fn close_menu(&mut self, cx: &mut Context<Self>) {
-        self.menu_open = None;
+        self.menus.row_open = None;
         cx.notify();
     }
 
     pub(super) fn set_enabled(&mut self, id: ActionId, enabled: bool, cx: &mut Context<Self>) {
-        self.menu_open = None;
+        self.menus.row_open = None;
         self.write_action(id, ActionWrite::SetEnabled(enabled), cx);
     }
 
     pub(super) fn duplicate(&mut self, id: ActionId, cx: &mut Context<Self>) {
-        self.menu_open = None;
+        self.menus.row_open = None;
         self.write_action(
             id,
             ActionWrite::Duplicate {
@@ -209,8 +185,8 @@ impl ScreenActionsView {
                 InlineEditEvent::Cancel => this.cancel_rename(cx),
             },
         );
-        self.menu_open = None;
-        self.renaming = Some(Renaming {
+        self.menus.row_open = None;
+        self.tree.renaming = Some(Renaming {
             id,
             editor,
             _sub: sub,
@@ -219,12 +195,12 @@ impl ScreenActionsView {
     }
 
     fn cancel_rename(&mut self, cx: &mut Context<Self>) {
-        self.renaming = None;
+        self.tree.renaming = None;
         cx.notify();
     }
 
     fn commit_rename(&mut self, name: String, cx: &mut Context<Self>) {
-        let Some(renaming) = self.renaming.take() else {
+        let Some(renaming) = self.tree.renaming.take() else {
             cx.notify();
             return;
         };
@@ -235,6 +211,7 @@ impl ScreenActionsView {
         }
         let id = renaming.id;
         let taken = self
+            .tree
             .groups
             .iter()
             .flat_map(|g| g.actions.iter())
@@ -250,24 +227,24 @@ impl ScreenActionsView {
     }
 
     pub(super) fn request_delete(&mut self, id: ActionId, cx: &mut Context<Self>) {
-        self.pending_delete.request(id);
-        self.menu_open = None;
+        self.tree.pending_delete.request(id);
+        self.menus.row_open = None;
         self.load_delete_scheduled_count(id, cx);
         cx.notify();
     }
 
     fn cancel_delete(&mut self, cx: &mut Context<Self>) {
-        self.pending_delete.cancel();
-        self.delete_scheduled_count = None;
+        self.tree.pending_delete.cancel();
+        self.tree.delete_scheduled_count = None;
         cx.notify();
     }
 
     fn confirm_delete(&mut self, cx: &mut Context<Self>) {
-        let Some(id) = self.pending_delete.take() else {
+        let Some(id) = self.tree.pending_delete.take() else {
             return;
         };
         let name = self.find(id).map(|a| a.name.clone()).unwrap_or_default();
-        self.delete_scheduled_count = None;
+        self.tree.delete_scheduled_count = None;
         self.write_action(id, ActionWrite::Archive { name }, cx);
     }
 
@@ -279,200 +256,6 @@ impl ScreenActionsView {
                 this.write_action(id, ActionWrite::Restore, cx)
             });
         });
-    }
-
-    pub(super) fn open_action_modal(
-        &mut self,
-        base: Option<Action>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let palette = cx.palette();
-        let seed_name = base.as_ref().map(|a| a.name.clone()).unwrap_or_default();
-        let seed_group = base
-            .as_ref()
-            .and_then(|a| a.group.clone())
-            .unwrap_or_default();
-        let seed_desc = base
-            .as_ref()
-            .and_then(|a| a.description.clone())
-            .unwrap_or_default();
-        let name = cx.new(|cx| {
-            let mut input =
-                TextInput::new(tr!("actions_name_placeholder"), cx).with_palette(palette);
-            input.set_content(seed_name, cx);
-            input
-        });
-        let group = cx.new(|cx| {
-            let mut input =
-                TextInput::new(tr!("actions_group_placeholder"), cx).with_palette(palette);
-            input.set_content(seed_group, cx);
-            input
-        });
-        let description = cx.new(|cx| {
-            let mut area = TextArea::new(tr!("actions_description_placeholder"), cx)
-                .with_palette(palette)
-                .with_height(DESCRIPTION_HEIGHT);
-            area.set_content(seed_desc, cx);
-            area
-        });
-        focus_inside_modal(window, cx, |window, cx| {
-            name.update(cx, |f, cx| f.focus(window, cx))
-        });
-        let name_sub = cx.subscribe(&name, |_this, _f, _e: &InputEvent, cx| cx.notify());
-        let (editing, enabled, concurrent, bypass_pause, random_pick, preselect_queue) = match &base
-        {
-            Some(a) => (
-                Some(a.id),
-                a.enabled,
-                a.concurrent,
-                a.bypass_pause,
-                a.execution_mode == ExecutionMode::RandomPick,
-                Some(a.queue_id),
-            ),
-            None => (None, true, false, false, false, None),
-        };
-        self.action_modal = Some(ActionForm {
-            editing,
-            base,
-            name,
-            group,
-            description,
-            queues: Vec::new(),
-            selected_queue: 0,
-            preselect_queue,
-            enabled,
-            concurrent,
-            bypass_pause,
-            random_pick,
-            _name_sub: name_sub,
-        });
-        cx.notify();
-
-        let repo = Arc::clone(&self.queue_repo);
-        async_bridge::run_async(
-            &self.rt_handle,
-            async move { repo.list().await.map_err(RepoFailure::from) },
-            |this, result, cx| match result {
-                Ok(queues) => this.apply_queue_options(queues, cx),
-                Err(failure) => this.on_repo_error(&failure, cx),
-            },
-            cx,
-        );
-    }
-
-    fn apply_queue_options(&mut self, queues: Vec<Queue>, cx: &mut Context<Self>) {
-        if let Some(form) = self.action_modal.as_mut() {
-            form.queues = queues
-                .into_iter()
-                .map(|q| (q.id, SharedString::from(q.name)))
-                .collect();
-            let target = form.preselect_queue.unwrap_or(DEFAULT_QUEUE_ID);
-            form.selected_queue = form
-                .queues
-                .iter()
-                .position(|(qid, _)| *qid == target)
-                .unwrap_or(0);
-            cx.notify();
-        }
-    }
-
-    fn cancel_action_modal(&mut self, cx: &mut Context<Self>) {
-        self.action_modal = None;
-        cx.notify();
-    }
-
-    fn select_queue(&mut self, index: usize, cx: &mut Context<Self>) {
-        if let Some(form) = self.action_modal.as_mut() {
-            form.selected_queue = index;
-            cx.notify();
-        }
-    }
-
-    fn toggle_modal_enabled(&mut self, cx: &mut Context<Self>) {
-        if let Some(form) = self.action_modal.as_mut() {
-            form.enabled = !form.enabled;
-            cx.notify();
-        }
-    }
-
-    fn toggle_modal_concurrent(&mut self, cx: &mut Context<Self>) {
-        if let Some(form) = self.action_modal.as_mut() {
-            form.concurrent = !form.concurrent;
-            cx.notify();
-        }
-    }
-
-    fn toggle_modal_bypass(&mut self, cx: &mut Context<Self>) {
-        if let Some(form) = self.action_modal.as_mut() {
-            form.bypass_pause = !form.bypass_pause;
-            cx.notify();
-        }
-    }
-
-    fn toggle_modal_random(&mut self, cx: &mut Context<Self>) {
-        if let Some(form) = self.action_modal.as_mut() {
-            form.random_pick = !form.random_pick;
-            cx.notify();
-        }
-    }
-
-    pub(super) fn submit_action_modal(&mut self, cx: &mut Context<Self>) {
-        let Some(form) = self.action_modal.as_ref() else {
-            return;
-        };
-        let name = form.name.read(cx).content().trim().to_owned();
-        if name.is_empty() {
-            return;
-        }
-        let Some(&(queue_id, _)) = form.queues.get(form.selected_queue) else {
-            cx.push_toast(ToastKind::Error, tr!("actions_no_queue"));
-            return;
-        };
-        let group_name = form.group.read(cx).content().trim().to_owned();
-        let description = form.description.read(cx).content().trim().to_owned();
-        let execution_mode = if form.random_pick {
-            ExecutionMode::RandomPick
-        } else {
-            ExecutionMode::Sequential
-        };
-        let group = (!group_name.is_empty()).then_some(group_name);
-        let description = (!description.is_empty()).then_some(description);
-        let write_target = form.base.as_ref().map(|existing| existing.id);
-        let (enabled, concurrent, bypass_pause) =
-            (form.enabled, form.concurrent, form.bypass_pause);
-        self.action_modal = None;
-        match write_target {
-            Some(id) => self.write_action(
-                id,
-                ActionWrite::Settings(ActionSettings {
-                    name,
-                    group,
-                    queue_id,
-                    enabled,
-                    concurrent,
-                    bypass_pause,
-                    execution_mode,
-                    description,
-                }),
-                cx,
-            ),
-            None => {
-                let action = Action {
-                    id: ActionId::new(),
-                    name,
-                    group,
-                    queue_id,
-                    enabled,
-                    concurrent,
-                    bypass_pause,
-                    execution_mode,
-                    description,
-                    sub_actions: Vec::new(),
-                };
-                self.write_action(action.id, ActionWrite::Create(action), cx);
-            }
-        }
     }
 
     pub(super) fn render_stats(&self, palette: &ForgePalette, density: Density) -> AnyElement {
@@ -516,7 +299,7 @@ impl ScreenActionsView {
                 chip(
                     tr!("actions_filter_all"),
                     ChipGlyph::Dot(palette.brand),
-                    self.filter == ActionsFilter::All,
+                    self.tree.filter == ActionsFilter::All,
                     palette,
                 )
                 .on_click(
@@ -528,7 +311,7 @@ impl ScreenActionsView {
                 chip(
                     tr!("actions_filter_chat"),
                     ChipGlyph::DotIcon(palette.info, Icon::MessageCircle),
-                    self.filter == ActionsFilter::Chat,
+                    self.tree.filter == ActionsFilter::Chat,
                     palette,
                 )
                 .on_click(
@@ -540,7 +323,7 @@ impl ScreenActionsView {
                 chip(
                     tr!("actions_filter_timers"),
                     ChipGlyph::DotIcon(palette.warning, Icon::Clock),
-                    self.filter == ActionsFilter::Timers,
+                    self.tree.filter == ActionsFilter::Timers,
                     palette,
                 )
                 .on_click(
@@ -552,7 +335,7 @@ impl ScreenActionsView {
                 chip(
                     tr!("actions_filter_points"),
                     ChipGlyph::DotIcon(palette.accent_pink_light, Icon::Star),
-                    self.filter == ActionsFilter::Points,
+                    self.tree.filter == ActionsFilter::Points,
                     palette,
                 )
                 .on_click(
@@ -573,7 +356,7 @@ impl ScreenActionsView {
             .child(
                 div()
                     .w(SEARCH_FIELD_WIDTH)
-                    .child(self.search.field().clone()),
+                    .child(self.tree.search.field().clone()),
             )
             .child(divider)
             .child(chips)
@@ -598,7 +381,7 @@ impl ScreenActionsView {
     fn tree_action_rows(&self) -> Vec<TreeActionRow> {
         let mut rows = Vec::new();
         let mut child_index = 0;
-        for group in &self.groups {
+        for group in &self.tree.groups {
             let mut surviving = group
                 .actions
                 .iter()
@@ -628,7 +411,7 @@ impl ScreenActionsView {
 
         if self.total_actions() == 0 {
             let notice = load_notice(
-                &self.list_load,
+                &self.tree.list_load,
                 LoadNotice {
                     id: "actions-load",
                     loading: tr!("actions_tree_loading"),
@@ -647,7 +430,7 @@ impl ScreenActionsView {
                 .into_any_element()
             }));
         } else {
-            for (index, group) in self.groups.iter().enumerate() {
+            for (index, group) in self.tree.groups.iter().enumerate() {
                 let surviving: Vec<&ActionSummary> = group
                     .actions
                     .iter()
@@ -665,10 +448,10 @@ impl ScreenActionsView {
             }
         }
 
-        let focus = self.tree_keys.focus().clone();
+        let focus = self.tree.keys.focus().clone();
         let inner = navigable_list(div().id("actions-tree"), &focus, cx)
-            .track_scroll(&self.tree_scroll)
-            .reveals_focus_in(&self.tree_scroll)
+            .track_scroll(&self.tree.scroll)
+            .reveals_focus_in(&self.tree.scroll)
             .flex_1()
             .min_h(px(0.0))
             .py(spacing(Spacing::Xs, density))
@@ -676,7 +459,7 @@ impl ScreenActionsView {
             .children(rows);
 
         let panel = div()
-            .w(self.tree_width)
+            .w(self.tree.width)
             .flex_none()
             .h_full()
             .flex()
@@ -755,9 +538,9 @@ impl ScreenActionsView {
     ) -> AnyElement {
         let density = cx.density();
         let id = action.id;
-        let selected = self.selected == Some(id);
-        let hovered = self.hovered == Some(id);
-        let renaming = self.renaming.as_ref().filter(|r| r.id == id);
+        let selected = self.tree.selected == Some(id);
+        let hovered = self.tree.hovered == Some(id);
+        let renaming = self.tree.renaming.as_ref().filter(|r| r.id == id);
 
         let (state_icon, state_color) = if action.enabled {
             (Icon::CircleCheckFilled, palette.success)
@@ -776,7 +559,7 @@ impl ScreenActionsView {
         } else {
             gpui::transparent_black().into()
         };
-        let row_bg: Rgba = if selected || hovered || self.tree_keys.is_at(&id) {
+        let row_bg: Rgba = if selected || hovered || self.tree.keys.is_at(&id) {
             palette.elevated
         } else {
             gpui::transparent_black().into()
@@ -871,9 +654,10 @@ impl ScreenActionsView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
-        let id = self.menu_open?;
-        let position = self.menu_click_pos?;
+        let id = self.menus.row_open?;
+        let position = self.menus.click_pos?;
         let action = self
+            .tree
             .groups
             .iter()
             .flat_map(|g| &g.actions)
@@ -926,255 +710,12 @@ impl ScreenActionsView {
         Some(
             context_menu(position, palette)
                 .items(items)
-                .dismiss_on_escape(&self.menu_focus)
+                .dismiss_on_escape(&self.menus.focus)
                 .on_dismiss(move |_window, cx| {
                     view.update(cx, |this, cx| this.close_menu(cx));
                 })
                 .into_any_element(),
         )
-    }
-
-    pub(super) fn render_action_modal(
-        &self,
-        form: &ActionForm,
-        palette: &ForgePalette,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let density = cx.density();
-        let name_len = form
-            .name
-            .read(cx)
-            .content()
-            .chars()
-            .count()
-            .min(NAME_FIELD_LIMIT);
-        let valid = form.ready(cx);
-
-        let name_row = div()
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Xs, density))
-            .child(div().flex_1().child(form.name.clone()))
-            .child(
-                div()
-                    .font_family(mono_family())
-                    .text_size(FONT_XS)
-                    .text_color(palette.text_faint)
-                    .child(format!("{name_len}/{NAME_FIELD_LIMIT}")),
-            );
-        let name_section = modal_section(
-            palette,
-            tr!("actions_modal_section_name"),
-            name_row,
-            density,
-        );
-
-        let group_field = div()
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Xs, density))
-            .child(status_dot(palette.brand, GROUP_DOT))
-            .child(div().flex_1().child(form.group.clone()));
-        let group_section = modal_section(
-            palette,
-            tr!("actions_modal_section_group"),
-            group_field,
-            density,
-        );
-
-        let queue_control: AnyElement = if form.queues.is_empty() {
-            div()
-                .font_family(body_family())
-                .text_size(FONT_XS)
-                .text_color(palette.text_faint)
-                .child(SharedString::from(tr!("actions_loading_queues")))
-                .into_any_element()
-        } else {
-            let mut queue_chips = div().flex().flex_wrap().gap(spacing(Spacing::Xxs, density));
-            for (i, (_, name)) in form.queues.iter().enumerate() {
-                queue_chips = queue_chips.child(
-                    chip(
-                        name.clone(),
-                        ChipGlyph::Dot(palette.brand),
-                        form.selected_queue == i,
-                        palette,
-                    )
-                    .on_click(
-                        SharedString::from(format!("actions-queue-{i}")),
-                        cx.listener(move |this, _: &ClickEvent, _, cx| this.select_queue(i, cx)),
-                    ),
-                );
-            }
-            queue_chips.into_any_element()
-        };
-        let queue_section = modal_section(
-            palette,
-            tr!("actions_modal_section_queue"),
-            queue_control,
-            density,
-        );
-
-        let two_col = div()
-            .flex()
-            .gap(spacing(Spacing::Sm, density))
-            .child(div().flex_1().child(group_section))
-            .child(div().flex_1().child(queue_section));
-
-        let desc_section = modal_section(
-            palette,
-            tr!("actions_modal_section_description"),
-            div().child(form.description.clone()),
-            density,
-        );
-
-        let behavior_header = div()
-            .font_family(mono_family())
-            .text_size(FONT_XXS)
-            .text_color(palette.text_faint)
-            .child(SharedString::from(tr!("actions_modal_section_behavior")));
-
-        let enabled = Self::modal_toggle_row(
-            tr!("actions_modal_enabled_label"),
-            tr!("actions_modal_enabled_desc"),
-            form.enabled,
-            palette.success,
-            "actions-modal-enabled",
-            cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_modal_enabled(cx)),
-            palette,
-            density,
-        );
-        let concurrent = Self::modal_toggle_row(
-            tr!("actions_modal_concurrent_label"),
-            tr!("actions_modal_concurrent_desc"),
-            form.concurrent,
-            palette.info,
-            "actions-modal-concurrent",
-            cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_modal_concurrent(cx)),
-            palette,
-            density,
-        );
-        let bypass = Self::modal_toggle_row(
-            tr!("actions_modal_bypass_label"),
-            tr!("actions_modal_bypass_desc"),
-            form.bypass_pause,
-            palette.warning,
-            "actions-modal-bypass",
-            cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_modal_bypass(cx)),
-            palette,
-            density,
-        );
-        let random = Self::modal_toggle_row(
-            tr!("actions_modal_random_pick_label"),
-            tr!("actions_modal_random_pick_desc"),
-            form.random_pick,
-            palette.danger,
-            "actions-modal-random",
-            cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_modal_random(cx)),
-            palette,
-            density,
-        );
-
-        let body = div()
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Sm, density))
-            .child(name_section)
-            .child(two_col)
-            .child(desc_section)
-            .child(behavior_header)
-            .child(enabled)
-            .child(concurrent)
-            .child(bypass)
-            .child(random);
-
-        let cancel = secondary_button(tr!("actions_modal_cancel_btn"), palette).on_click(
-            "actions-modal-cancel",
-            cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_action_modal(cx)),
-        );
-        let editing = form.editing.is_some();
-        let submit_label = if editing {
-            tr!("actions_modal_save_btn")
-        } else {
-            tr!("actions_modal_create_btn")
-        };
-        let create = primary_button(submit_label, palette)
-            .disabled(!valid)
-            .on_click(
-                "actions-modal-create",
-                cx.listener(|this, _: &ClickEvent, _, cx| this.submit_action_modal(cx)),
-            );
-        let footer = div()
-            .w_full()
-            .flex()
-            .items_center()
-            .justify_end()
-            .gap(spacing(Spacing::Xs, density))
-            .child(cancel)
-            .child(create);
-
-        let modal_title = if editing {
-            tr!("actions_modal_edit_action_title")
-        } else {
-            tr!("actions_modal_new_action_title")
-        };
-        let card = modal(modal_title, body, palette)
-            .size(ModalSize::Md)
-            .footer(footer)
-            .on_close(
-                "actions-modal-close",
-                cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_action_modal(cx)),
-            );
-
-        let view = cx.entity();
-        overlay(card, palette)
-            .position(OverlayPosition::Center)
-            .on_dismiss("actions-modal-scrim", move |_window, cx| {
-                view.update(cx, |this, cx| this.cancel_action_modal(cx));
-            })
-            .into_any_element()
-    }
-
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "each argument is one input of the toggle row plus the active density"
-    )]
-    fn modal_toggle_row(
-        label: impl Into<SharedString>,
-        description: impl Into<SharedString>,
-        on: bool,
-        accent: Rgba,
-        id: &'static str,
-        handler: impl Fn(&ClickEvent, &mut Window, &mut gpui::App) + 'static,
-        palette: &ForgePalette,
-        density: Density,
-    ) -> AnyElement {
-        div()
-            .w_full()
-            .flex()
-            .items_center()
-            .justify_between()
-            .gap(spacing(Spacing::Sm, density))
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .child(
-                        div()
-                            .font_family(body_family())
-                            .text_size(FONT_XS)
-                            .text_color(palette.text_primary)
-                            .child(label.into()),
-                    )
-                    .child(
-                        div()
-                            .font_family(body_family())
-                            .text_size(FONT_XXS)
-                            .text_color(palette.text_muted)
-                            .child(description.into()),
-                    ),
-            )
-            .child(toggle(on, palette).on_color(accent).on_click(id, handler))
-            .into_any_element()
     }
 
     pub(super) fn render_delete_confirm(
@@ -1219,6 +760,8 @@ impl ScreenActionsView {
 
 #[cfg(test)]
 mod tests {
+    use forge_runtime::ActionsService;
+    use forge_storage::{GlobalsRepo, QueueRepo, ScriptRepo};
     use std::collections::HashMap;
 
     use forge_components::ThemeId;
@@ -1374,23 +917,25 @@ mod tests {
             let view = cx.update(|cx| {
                 cx.new(|cx| {
                     ScreenActionsView::new(
-                        action_repo,
-                        queue_repo,
-                        service,
-                        trigger_repo,
-                        Arc::new(crate::test_support::MemoryScripts::default())
-                            as Arc<dyn ScriptRepo>,
-                        Arc::new(ClipLibrary::new(clips, backend.media_repo())),
-                        Arc::new(globals) as Arc<dyn GlobalsRepo>,
+                        super::ActionsDeps {
+                            action_repo,
+                            queue_repo,
+                            actions_service: service,
+                            trigger_instance_repo: trigger_repo,
+                            script_repo: Arc::new(crate::test_support::MemoryScripts::default())
+                                as Arc<dyn ScriptRepo>,
+                            clip_library: Arc::new(ClipLibrary::new(clips, backend.media_repo())),
+                            globals_repo: Arc::new(globals) as Arc<dyn GlobalsRepo>,
+                            overlay_repo: Arc::new(StubOverlays),
+                            speak: None,
+                            sub_action_registry: Arc::new(SubActionRegistry::new()),
+                            trigger_registry: Arc::new(registry()),
+                            rt_handle: handle,
+                            bus,
+                            scheduler,
+                        },
                         Arc::clone(&backend) as Arc<dyn SettingsRepo>,
-                        Arc::new(StubOverlays),
                         Arc::new(OverlayKindRegistry::new()),
-                        None,
-                        Arc::new(SubActionRegistry::new()),
-                        Arc::new(registry()),
-                        handle,
-                        bus,
-                        scheduler,
                         None,
                         cx,
                     )
@@ -1415,6 +960,7 @@ mod tests {
         fn visible(&self, cx: &mut gpui::TestAppContext, name: &str) -> bool {
             self.view.read_with(cx, |view, _| {
                 let action = view
+                    .tree
                     .groups
                     .iter()
                     .flat_map(|g| g.actions.iter())
@@ -1463,14 +1009,20 @@ mod tests {
         fn collapse(&self, cx: &mut gpui::TestAppContext, group: &str) {
             self.view.update(cx, |view, cx| {
                 let name = group.to_uppercase();
-                let index = view.groups.iter().position(|g| g.name == name).unwrap();
+                let index = view
+                    .tree
+                    .groups
+                    .iter()
+                    .position(|g| g.name == name)
+                    .unwrap();
                 view.toggle_group(index, cx);
             });
         }
 
         fn search(&self, cx: &mut gpui::TestAppContext, query: &str) {
             self.view.update(cx, |view, cx| {
-                view.search
+                view.tree
+                    .search
                     .on_changed(&InputEvent::Changed(query.to_owned().into()));
                 cx.notify();
             });
@@ -1489,13 +1041,13 @@ mod tests {
         fn cursor_name(&self, vcx: &mut gpui::VisualTestContext) -> Option<String> {
             let ids: Vec<ActionId> = self.actions.iter().map(|a| a.id).collect();
             self.view.read_with(vcx, |view, _| {
-                let at = ids.iter().find(|id| view.tree_keys.is_at(id));
+                let at = ids.iter().find(|id| view.tree.keys.is_at(id));
                 at.map(|id| self.name_of(*id).to_owned())
             })
         }
 
         fn selected_name(&self, vcx: &mut gpui::VisualTestContext) -> Option<String> {
-            let selected = self.view.read_with(vcx, |view, _| view.selected);
+            let selected = self.view.read_with(vcx, |view, _| view.tree.selected);
             selected.map(|id| self.name_of(id).to_owned())
         }
 
@@ -1515,7 +1067,7 @@ mod tests {
         ) -> gpui::Bounds<Pixels> {
             self.view.read_with(vcx, |view, _| {
                 let child = view.tree_action_rows()[position].child_index;
-                view.tree_scroll.bounds_for_item(child).unwrap()
+                view.tree.scroll.bounds_for_item(child).unwrap()
             })
         }
 
@@ -1790,7 +1342,7 @@ mod tests {
                 |with_repo: bool, count: Option<(ActionId, u64)>, cx: &mut gpui::TestAppContext| {
                     fixture.view.update(cx, |view, _| {
                         view.scheduled_runs = with_repo.then(|| Arc::clone(&repo));
-                        view.delete_scheduled_count = count;
+                        view.tree.delete_scheduled_count = count;
                         view.delete_scheduled_note(id)
                     })
                 };
@@ -1910,7 +1462,7 @@ mod tests {
         let opened = |fixture: &Fixture, vcx: &mut gpui::VisualTestContext| {
             fixture.settle(vcx);
             let detail = fixture.view.read_with(vcx, |view, _| {
-                view.detail.as_ref().map(|detail| detail.action.id)
+                view.editor.detail.as_ref().map(|detail| detail.action.id)
             });
             (
                 fixture.selected_name(vcx),
@@ -2020,7 +1572,7 @@ mod tests {
         let vcx = &mut fixture.in_window(cx);
         fixture.press(vcx, "down");
         fixture.right_click_row(vcx, 2);
-        let menu_row = fixture.view.read_with(vcx, |view, _| view.menu_open);
+        let menu_row = fixture.view.read_with(vcx, |view, _| view.menus.row_open);
         assert_eq!(menu_row.map(|id| fixture.name_of(id)), Some("Lurk"));
 
         fixture.press(vcx, "enter down");

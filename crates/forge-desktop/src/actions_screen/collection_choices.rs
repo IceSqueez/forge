@@ -20,54 +20,54 @@ use forge_host::integrations::BuiltinRegistry;
 impl ScreenActionsView {
     #[must_use]
     pub(crate) fn with_builtins(mut self, builtins: BuiltinRegistry) -> Self {
-        self.builtins = builtins;
+        self.choices.builtins = builtins;
         self
     }
 
     fn collection_sources(&self) -> Vec<CollectionSource> {
-        let trigger_fill = match self.add_trigger.as_ref() {
+        let trigger_fill = match self.modals.add_trigger.as_ref() {
             Some(AddTriggerStage::Fill(form)) => form.choices.fields(),
             _ => &[],
         };
-        distinct_sources(self.sub_form_choice_fields.iter().chain(trigger_fill))
+        distinct_sources(self.choices.choice_fields.iter().chain(trigger_fill))
     }
 
     fn obs_catalog_fields(&self) -> Vec<ObsCatalogField> {
-        let trigger_fill = match self.add_trigger.as_ref() {
+        let trigger_fill = match self.modals.add_trigger.as_ref() {
             Some(AddTriggerStage::Fill(form)) => form.choices.obs_fields(),
             _ => Vec::new(),
         };
-        distinct_obs_fields(self.sub_form_obs_fields.iter().chain(&trigger_fill))
+        distinct_obs_fields(self.choices.obs_fields.iter().chain(&trigger_fill))
     }
 
     fn vtube_catalog_fields(&self) -> Vec<VTubeCatalogField> {
-        let trigger_fill = match self.add_trigger.as_ref() {
+        let trigger_fill = match self.modals.add_trigger.as_ref() {
             Some(AddTriggerStage::Fill(form)) => form.choices.vtube_fields(),
             _ => Vec::new(),
         };
-        distinct_vtube_fields(self.sub_form_vtube_fields.iter().chain(&trigger_fill))
+        distinct_vtube_fields(self.choices.vtube_fields.iter().chain(&trigger_fill))
     }
 
     pub(super) fn start_collection_options(&mut self, cx: &mut Context<Self>) {
         self.refresh_trigger_fill_choices();
         let sources = self.collection_sources();
-        self._collection_watch = watch_collection_revisions(
-            &self.builtins,
+        self.choices._collection_watch = watch_collection_revisions(
+            &self.choices.builtins,
             &sources,
             Self::reload_collection_options,
             cx,
         );
         if !self.obs_catalog_fields().is_empty() {
-            self._collection_watch.push(watch_obs_catalog(
-                &self.bus,
+            self.choices._collection_watch.push(watch_obs_catalog(
+                &self.deps.bus,
                 Self::reload_obs_catalog_options,
                 cx,
             ));
         }
         if !self.vtube_catalog_fields().is_empty() {
-            self._collection_watch.push(watch_vtube_catalog(
-                &self.bus,
-                self.builtins.clone(),
+            self.choices._collection_watch.push(watch_vtube_catalog(
+                &self.deps.bus,
+                self.choices.builtins.clone(),
                 Self::reload_vtube_catalog_options,
                 cx,
             ));
@@ -82,7 +82,7 @@ impl ScreenActionsView {
         if fields.is_empty() {
             return;
         }
-        let client = live_vtube_client(&self.builtins);
+        let client = live_vtube_client(&self.choices.builtins);
         let options = current_vtube_catalog_options(client.as_deref(), &fields);
         self.apply_collection_options(options, cx);
     }
@@ -92,13 +92,13 @@ impl ScreenActionsView {
         if fields.is_empty() {
             return;
         }
-        let client = live_obs_client(&self.builtins);
-        let ticket = self.obs_catalog_options_gen.next();
+        let client = live_obs_client(&self.choices.builtins);
+        let ticket = self.choices.obs_catalog_options_gen.next();
         async_bridge::run_async(
-            &self.rt_handle,
+            &self.deps.rt_handle,
             load_obs_catalog_options(client, fields),
             move |this, options, cx| {
-                if this.obs_catalog_options_gen.is_current(ticket) {
+                if this.choices.obs_catalog_options_gen.is_current(ticket) {
                     this.apply_collection_options(options, cx);
                 }
             },
@@ -111,13 +111,13 @@ impl ScreenActionsView {
         if sources.is_empty() {
             return;
         }
-        let builtins = self.builtins.clone();
-        let ticket = self.collection_options_gen.next();
+        let builtins = self.choices.builtins.clone();
+        let ticket = self.choices.collection_options_gen.next();
         async_bridge::run_async(
-            &self.rt_handle,
+            &self.deps.rt_handle,
             load_collection_options(builtins, sources),
             move |this, options, cx| {
-                if this.collection_options_gen.is_current(ticket) {
+                if this.choices.collection_options_gen.is_current(ticket) {
                     this.apply_collection_options(options, cx);
                 }
             },
@@ -126,21 +126,26 @@ impl ScreenActionsView {
     }
 
     fn apply_collection_options(&mut self, options: ChoiceOptions, cx: &mut Context<Self>) {
-        self.collection_options.extend(options);
-        self.select_options.extend(self.collection_options.clone());
+        self.choices.collection_options.extend(options);
+        self.choices
+            .select_options
+            .extend(self.choices.collection_options.clone());
         self.refresh_trigger_fill_choices();
-        if let Some(form) = self.sub_form.clone() {
-            let merged = self.select_options.clone();
+        if let Some(form) = self.modals.sub_form.clone() {
+            let merged = self.choices.select_options.clone();
             form.update(cx, |form, cx| form.apply_options(&merged, cx));
         }
         cx.notify();
     }
 
     fn refresh_trigger_fill_choices(&mut self) {
-        if let Some(AddTriggerStage::Fill(form)) = self.add_trigger.as_mut() {
+        if let Some(AddTriggerStage::Fill(form)) = self.modals.add_trigger.as_mut() {
             let blank = tr!("config_form_choice_any");
-            form.choices
-                .refresh(&mut form.fields, &self.collection_options, Some(&blank));
+            form.choices.refresh(
+                &mut form.fields,
+                &self.choices.collection_options,
+                Some(&blank),
+            );
         }
     }
 }
@@ -217,12 +222,15 @@ mod tests {
         cx: &mut gpui::TestAppContext,
     ) -> Option<Vec<String>> {
         view.read_with(cx, |view, _| {
-            view.collection_options.get(REWARD_OPTIONS).map(|choices| {
-                choices
-                    .iter()
-                    .map(|(_, title)| title.clone())
-                    .collect::<Vec<_>>()
-            })
+            view.choices
+                .collection_options
+                .get(REWARD_OPTIONS)
+                .map(|choices| {
+                    choices
+                        .iter()
+                        .map(|(_, title)| title.clone())
+                        .collect::<Vec<_>>()
+                })
         })
     }
 
@@ -246,8 +254,8 @@ mod tests {
         );
         let builtins = fake.installed_as("twitch");
         view.update(cx, |view, cx| {
-            view.builtins = builtins;
-            view.sub_form_choice_fields = vec![CollectionChoiceField {
+            view.choices.builtins = builtins;
+            view.choices.choice_fields = vec![CollectionChoiceField {
                 field_key: "reward".to_owned(),
                 source: CollectionSource::parse(REWARD_OPTIONS).expect("a collection key"),
             }];

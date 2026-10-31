@@ -58,20 +58,21 @@ fn build_step_groups(
 
 impl ScreenActionsView {
     pub(super) fn open_grid_picker(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(action_id) = self.selected else {
+        let Some(action_id) = self.tree.selected else {
             return;
         };
-        if self.detail.is_none() {
+        if self.editor.detail.is_none() {
             return;
         }
         let palette = cx.palette();
         let ctx_name = self
+            .editor
             .detail
             .as_ref()
             .map(|d| d.action.name.clone())
             .unwrap_or_else(|| tr!("action_editor_this_action"));
-        let (groups, picks) = build_step_groups(&self.sub_action_registry, &palette);
-        let count = self.sub_action_registry.all().count();
+        let (groups, picks) = build_step_groups(&self.deps.sub_action_registry, &palette);
+        let count = self.deps.sub_action_registry.all().count();
         let config = GridPickerConfig {
             accent: palette.brand,
             art: GridPickerArt::default(),
@@ -107,8 +108,8 @@ impl ScreenActionsView {
         focus_inside_modal(window, cx, |window, cx| {
             picker.update(cx, |f, cx| f.focus(window, cx))
         });
-        self.step_menu_open = None;
-        self.grid_picker = Some(GridPickerForm {
+        self.menus.step_open = None;
+        self.modals.grid_picker = Some(GridPickerForm {
             picker,
             picks,
             action_id,
@@ -127,6 +128,7 @@ impl ScreenActionsView {
         match event {
             GridPickerEvent::Picked(id) => {
                 if let Some(kind_id) = self
+                    .modals
                     .grid_picker
                     .as_ref()
                     .and_then(|f| f.picks.get(id).cloned())
@@ -142,17 +144,19 @@ impl ScreenActionsView {
     }
 
     pub(in crate::actions_screen) fn cancel_grid_picker(&mut self, cx: &mut Context<Self>) {
-        self.grid_picker = None;
+        self.modals.grid_picker = None;
         cx.notify();
     }
 
     fn grid_pick_step(&mut self, kind_id: String, cx: &mut Context<Self>) {
         let same = self
+            .modals
             .grid_picker
             .as_ref()
-            .zip(self.detail.as_ref())
+            .zip(self.editor.detail.as_ref())
             .is_some_and(|(f, d)| f.action_id == d.action.id);
         let prepared = self
+            .deps
             .sub_action_registry
             .get(&kind_id)
             .filter(|_| same)
@@ -166,7 +170,7 @@ impl ScreenActionsView {
                     runner.config_refinement(),
                 )
             });
-        self.grid_picker = None;
+        self.modals.grid_picker = None;
         let Some((config, specs, output_name_keys, icon_name, category, refinement)) = prepared
         else {
             cx.notify();
@@ -187,11 +191,11 @@ impl ScreenActionsView {
             icon_name,
             category: Some(category),
             chain_len,
-            options_seed: self.select_options.clone(),
+            options_seed: self.choices.select_options.clone(),
             refinement,
             schema: Arc::clone(&self.overlay_schema) as Arc<dyn FormSchemaSource>,
         };
-        self.step_menu_open = None;
+        self.menus.step_open = None;
         self.open_sub_form(launch, cx);
     }
 }

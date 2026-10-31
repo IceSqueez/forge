@@ -1,48 +1,39 @@
 use crate::async_bridge::{self, Loadable};
-use crate::collection_options::{ChoiceOptions, CollectionChoiceField};
 use crate::config_form::CollectionChoices;
 use crate::integration_switch::SwitchWatch;
-use crate::navigable_list::ListCursor;
 use crate::navigation::NavRequested;
 use crate::navigation::Screen;
-use crate::obs_catalog_options::ObsCatalogField;
 use crate::picker_favorites::{SUB_ACTION_FAVORITES, StoredFavorites, TRIGGER_FAVORITES};
 use crate::repo_failure::RepoFailure;
 use crate::run_history_modal::RunHistoryModal;
-use crate::vtube_catalog_options::VTubeCatalogField;
 use forge_components::ActivePresentation;
 use forge_components::PushToast;
 use forge_components::Radius;
 use forge_components::drive_overlay_focus;
 use forge_components::radius;
 use forge_components::{
-    BreadcrumbCrumb, Confirm, Density, ForgePalette, GridPicker, Icon, InlineEdit, KeyActivated,
+    BreadcrumbCrumb, Density, ForgePalette, GridPicker, Icon, InlineEdit, KeyActivated,
     OverlayPosition, SearchState, TextArea, TextInput, ToastKind, fmt_display_relative, fmt_number,
     icon, overlay, page_frame, tr,
 };
-use forge_host::integrations::BuiltinRegistry;
 use forge_overlay::OverlayKindRegistry;
 use forge_registry::{SubActionRegistry, TriggerCategory, TriggerRegistry};
+use forge_runtime::ActionDetail;
 use forge_runtime::translate_legacy_time_steps;
-use forge_runtime::{ActionDetail, ActionsService};
 use forge_runtime::{EventBus, QueueSchedulerHandle};
-use forge_soundboard::ClipLibrary;
-use forge_speak_queue::SpeakQueueHandle;
-use forge_storage::{
-    ActionRepo, ActionTelemetry, GlobalsRepo, OverlayRepo, QueueRepo, ScriptRepo, SettingsRepo,
-    StorageError, TriggerInstanceRepo,
-};
+use forge_storage::{ActionRepo, ActionTelemetry, SettingsRepo, StorageError, TriggerInstanceRepo};
 use forge_types::{Action, ActionId, ExecutionOutcome, QueueId, SubActionStep, TriggerInstanceId};
+use gpui::FocusHandle;
 use gpui::{
     AnyElement, App, ClickEvent, Context, ElementId, Entity, EventEmitter, Pixels, Point,
     SharedString, Subscription, Window, div, prelude::*, px,
 };
-use gpui::{FocusHandle, ScrollHandle};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::future::Future;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+mod action_modal;
 mod action_writes;
 mod analyzer;
 mod branch;
@@ -57,12 +48,15 @@ mod nav;
 pub(crate) mod overlay_schema;
 mod run_history;
 mod shortcuts;
+mod state;
 mod step_validation;
 mod sub_action_modal;
 mod test_run;
 mod test_trigger;
 
 pub(crate) use editor::parse_variable_segments;
+pub(crate) use state::ActionsDeps;
+use state::{ActionEditorState, ActionMenus, ActionModals, ActionTreeState, StepChoices};
 
 const LEFT_PANEL_W: Pixels = px(290.0);
 const LEFT_PANEL_MIN: Pixels = px(220.0);
@@ -177,76 +171,17 @@ struct HistoryModalHost {
 }
 
 pub(crate) struct ScreenActionsView {
-    action_repo: Arc<dyn ActionRepo>,
-    queue_repo: Arc<dyn QueueRepo>,
-    actions_service: Arc<ActionsService>,
-    trigger_instance_repo: Arc<dyn TriggerInstanceRepo>,
-    script_repo: Arc<dyn ScriptRepo>,
-    clip_library: Arc<ClipLibrary>,
-    globals_repo: Arc<dyn GlobalsRepo>,
-    overlay_repo: Arc<dyn OverlayRepo>,
+    deps: ActionsDeps,
     overlay_schema: Arc<overlay_schema::OverlayContentSchema>,
     sub_action_favorites: Entity<StoredFavorites>,
     trigger_favorites: Entity<StoredFavorites>,
-    speak: Option<SpeakQueueHandle>,
-    sub_action_registry: Arc<SubActionRegistry>,
-    trigger_registry: Arc<TriggerRegistry>,
-    rt_handle: tokio::runtime::Handle,
-    bus: Arc<EventBus>,
-    scheduler: QueueSchedulerHandle,
-    select_options: HashMap<String, Vec<(String, String)>>,
-    select_options_failed: bool,
-    builtins: BuiltinRegistry,
-    collection_options: ChoiceOptions,
-    collection_options_gen: async_bridge::Generation,
-    obs_catalog_options_gen: async_bridge::Generation,
-    sub_form_choice_fields: Vec<CollectionChoiceField>,
-    sub_form_obs_fields: Vec<ObsCatalogField>,
-    sub_form_vtube_fields: Vec<VTubeCatalogField>,
-    _collection_watch: Vec<gpui::Task<()>>,
-    concurrent_queue_ids: HashSet<String>,
-    tree_width: Pixels,
-    tree_keys: ListCursor<ActionId>,
-    tree_scroll: ScrollHandle,
-    list_load: Loadable<()>,
-    list_reads: Arc<AtomicU64>,
-    landed_list_read: u64,
-    groups: Vec<ActionGroup>,
-    filter_action_ids: HashMap<ActionsFilter, HashSet<ActionId>>,
-    filter: ActionsFilter,
-    search: SearchState,
-    selected: Option<ActionId>,
-    hovered: Option<ActionId>,
-    menu_open: Option<ActionId>,
-    menu_focus: FocusHandle,
-    menu_focus_restore: Option<FocusHandle>,
-    renaming: Option<Renaming>,
-    action_modal: Option<ActionForm>,
-    history_modal: Option<HistoryModalHost>,
-    test_run: Option<Entity<test_run::TestRunModal>>,
-    _test_run_sub: Option<Subscription>,
-    header_menu_open: Option<Point<Pixels>>,
-    pending_delete: Confirm<ActionId>,
-    delete_scheduled_count: Option<(ActionId, u64)>,
     scheduled_runs: Option<Arc<dyn forge_storage::ScheduledRunRepo>>,
-    detail: Option<ActionDetail>,
-    telemetry: Option<ActionTelemetry>,
-    last_outcome: Option<ExecutionOutcome>,
-    sub_form: Option<Entity<sub_action_modal::EditSubActionForm>>,
-    _sub_form_sub: Option<Subscription>,
-    step_menu_open: Option<usize>,
-    step_drag: Option<editor::StepDragSession>,
-    step_drag_focus: gpui::FocusHandle,
-    action_writes: HashMap<ActionId, action_writes::ActionWriteQueue>,
-    menu_click_pos: Option<Point<Pixels>>,
-    grid_picker: Option<GridPickerForm>,
-    add_trigger: Option<AddTriggerStage>,
-    nav_path: Vec<nav::NavFrame>,
-    case_fields: BTreeMap<(usize, usize), CaseField>,
-    step_health: Vec<forge_registry::StepHealth>,
     integrations: Option<SwitchWatch>,
-    pack_export: Option<editor::PackExportHost>,
-    _search_sub: Subscription,
+    tree: ActionTreeState,
+    menus: ActionMenus,
+    choices: StepChoices,
+    editor: ActionEditorState,
+    modals: ActionModals,
 }
 
 fn next_list_read(list_reads: &AtomicU64) -> u64 {
@@ -254,27 +189,10 @@ fn next_list_read(list_reads: &AtomicU64) -> u64 {
 }
 
 impl ScreenActionsView {
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "constructor receives each shared handle it wires"
-    )]
     pub(crate) fn new(
-        action_repo: Arc<dyn ActionRepo>,
-        queue_repo: Arc<dyn QueueRepo>,
-        actions_service: Arc<ActionsService>,
-        trigger_instance_repo: Arc<dyn TriggerInstanceRepo>,
-        script_repo: Arc<dyn ScriptRepo>,
-        clip_library: Arc<ClipLibrary>,
-        globals_repo: Arc<dyn GlobalsRepo>,
+        deps: ActionsDeps,
         settings_repo: Arc<dyn SettingsRepo>,
-        overlay_repo: Arc<dyn OverlayRepo>,
         overlay_kinds: Arc<OverlayKindRegistry>,
-        speak: Option<SpeakQueueHandle>,
-        sub_action_registry: Arc<SubActionRegistry>,
-        trigger_registry: Arc<TriggerRegistry>,
-        rt_handle: tokio::runtime::Handle,
-        bus: Arc<EventBus>,
-        scheduler: QueueSchedulerHandle,
         preselect: Option<ActionId>,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -284,87 +202,28 @@ impl ScreenActionsView {
         let sub_action_favorites = StoredFavorites::shared(
             SUB_ACTION_FAVORITES,
             Arc::clone(&settings_repo),
-            &rt_handle,
+            &deps.rt_handle,
             cx,
         );
         let trigger_favorites = StoredFavorites::shared(
             TRIGGER_FAVORITES,
             Arc::clone(&settings_repo),
-            &rt_handle,
+            &deps.rt_handle,
             cx,
         );
 
         let view = Self {
-            action_repo,
-            queue_repo,
-            actions_service,
-            trigger_instance_repo,
-            script_repo,
-            clip_library,
-            globals_repo,
-            overlay_repo,
+            deps,
             overlay_schema: Arc::new(overlay_schema::OverlayContentSchema::new(overlay_kinds)),
             sub_action_favorites,
             trigger_favorites,
-            speak,
-            sub_action_registry,
-            trigger_registry,
-            rt_handle,
-            bus,
-            scheduler,
-            select_options: HashMap::new(),
-            select_options_failed: false,
-            builtins: BuiltinRegistry::default(),
-            collection_options: ChoiceOptions::new(),
-            collection_options_gen: async_bridge::Generation::default(),
-            obs_catalog_options_gen: async_bridge::Generation::default(),
-            sub_form_choice_fields: Vec::new(),
-            sub_form_obs_fields: Vec::new(),
-            sub_form_vtube_fields: Vec::new(),
-            _collection_watch: Vec::new(),
-            concurrent_queue_ids: HashSet::new(),
-            tree_width: LEFT_PANEL_W,
-            tree_keys: ListCursor::new(cx),
-            tree_scroll: ScrollHandle::new(),
-            list_load: Loadable::Loading,
-            list_reads: Arc::new(AtomicU64::new(0)),
-            landed_list_read: 0,
-            groups: Vec::new(),
-            filter_action_ids: HashMap::new(),
-            filter: ActionsFilter::All,
-            search,
-            selected: preselect,
-            hovered: None,
-            menu_open: None,
-            menu_focus: cx.focus_handle(),
-            menu_focus_restore: None,
-            renaming: None,
-            action_modal: None,
-            history_modal: None,
-            test_run: None,
-            _test_run_sub: None,
-            header_menu_open: None,
-            pending_delete: Confirm::default(),
-            delete_scheduled_count: None,
             scheduled_runs: None,
-            detail: None,
-            telemetry: None,
-            last_outcome: None,
-            sub_form: None,
-            _sub_form_sub: None,
-            step_menu_open: None,
-            step_drag: None,
-            step_drag_focus: cx.focus_handle(),
-            action_writes: HashMap::new(),
-            menu_click_pos: None,
-            grid_picker: None,
-            add_trigger: None,
-            nav_path: Vec::new(),
-            case_fields: BTreeMap::new(),
-            step_health: Vec::new(),
             integrations: None,
-            pack_export: None,
-            _search_sub: search_sub,
+            tree: ActionTreeState::new(search, search_sub, preselect, cx),
+            menus: ActionMenus::new(cx),
+            choices: StepChoices::new(),
+            editor: ActionEditorState::new(cx),
+            modals: ActionModals::default(),
         };
         view.reload(cx);
         view.fetch_select_options(cx);
@@ -372,14 +231,14 @@ impl ScreenActionsView {
     }
 
     fn set_tree_width(&mut self, width: Pixels, cx: &mut Context<Self>) {
-        if self.tree_width != width {
-            self.tree_width = width;
+        if self.tree.width != width {
+            self.tree.width = width;
             cx.notify();
         }
     }
 
     fn reload(&self, cx: &mut Context<Self>) {
-        let repo = Arc::clone(&self.action_repo);
+        let repo = Arc::clone(&self.deps.action_repo);
         self.spawn_reload(
             async move { repo.list().await.map_err(RepoFailure::from) },
             cx,
@@ -391,9 +250,9 @@ impl ScreenActionsView {
         work: impl Future<Output = Result<Vec<Action>, RepoFailure>> + Send + 'static,
         cx: &mut Context<Self>,
     ) {
-        let list_read = next_list_read(&self.list_reads);
+        let list_read = next_list_read(&self.tree.list_reads);
         async_bridge::run_async(
-            &self.rt_handle,
+            &self.deps.rt_handle,
             work,
             move |this, result, cx| this.land_list(list_read, result, cx),
             cx,
@@ -406,10 +265,10 @@ impl ScreenActionsView {
         result: Result<Vec<Action>, RepoFailure>,
         cx: &mut Context<Self>,
     ) {
-        if list_read <= self.landed_list_read {
+        if list_read <= self.tree.landed_list_read {
             return;
         }
-        self.landed_list_read = list_read;
+        self.tree.landed_list_read = list_read;
         match result {
             Ok(actions) => self.apply_actions(actions, cx),
             Err(failure) => {
@@ -423,18 +282,19 @@ impl ScreenActionsView {
         if self.total_actions() > 0 {
             self.on_repo_error(&failure, cx);
         }
-        self.list_load = Loadable::Failed(failure);
+        self.tree.list_load = Loadable::Failed(failure);
         cx.notify();
     }
 
     fn retry_list_load(&mut self, cx: &mut Context<Self>) {
-        self.list_load = Loadable::Loading;
+        self.tree.list_load = Loadable::Loading;
         self.reload(cx);
         cx.notify();
     }
 
     fn apply_actions(&mut self, actions: Vec<Action>, cx: &mut Context<Self>) {
         let collapsed: HashSet<SharedString> = self
+            .tree
             .groups
             .iter()
             .filter(|g| g.collapsed)
@@ -446,27 +306,28 @@ impl ScreenActionsView {
                 group.collapsed = true;
             }
         }
-        self.groups = groups;
+        self.tree.groups = groups;
         self.reload_filter_actions(cx);
 
-        if let Some(selected) = self.selected {
+        if let Some(selected) = self.tree.selected {
             if self.find(selected).is_some() {
                 self.reload_detail(cx);
             } else {
-                self.selected = None;
-                self.detail = None;
-                self.telemetry = None;
-                self.last_outcome = None;
-                self.nav_path.clear();
-                self.case_fields.clear();
+                self.tree.selected = None;
+                self.editor.detail = None;
+                self.editor.telemetry = None;
+                self.editor.last_outcome = None;
+                self.editor.nav_path.clear();
+                self.editor.case_fields.clear();
             }
         }
-        self.list_load = Loadable::Loaded(());
+        self.tree.list_load = Loadable::Loaded(());
         cx.notify();
     }
 
     fn filter_by_kind_id(&self) -> HashMap<String, ActionsFilter> {
-        self.trigger_registry
+        self.deps
+            .trigger_registry
             .all()
             .filter_map(|d| {
                 let filter = TRIGGER_FILTERS
@@ -480,9 +341,9 @@ impl ScreenActionsView {
 
     fn reload_filter_actions(&self, cx: &mut Context<Self>) {
         let filter_by_kind = self.filter_by_kind_id();
-        let repo = Arc::clone(&self.trigger_instance_repo);
+        let repo = Arc::clone(&self.deps.trigger_instance_repo);
         async_bridge::run_async(
-            &self.rt_handle,
+            &self.deps.rt_handle,
             async move {
                 actions_by_trigger_filter(&*repo, &filter_by_kind)
                     .await
@@ -501,7 +362,7 @@ impl ScreenActionsView {
         ids: HashMap<ActionsFilter, HashSet<ActionId>>,
         cx: &mut Context<Self>,
     ) {
-        self.filter_action_ids = ids;
+        self.tree.filter_action_ids = ids;
         cx.notify();
     }
 
@@ -512,7 +373,7 @@ impl ScreenActionsView {
                 .trigger_instances
                 .iter()
                 .any(|instance| filter_by_kind.get(&instance.kind_id) == Some(&filter));
-            let members = self.filter_action_ids.entry(filter).or_default();
+            let members = self.tree.filter_action_ids.entry(filter).or_default();
             if has_trigger {
                 members.insert(detail.action.id);
             } else {
@@ -532,15 +393,15 @@ impl ScreenActionsView {
     }
 
     fn reload_detail(&self, cx: &mut Context<Self>) {
-        if let Some(id) = self.selected {
+        if let Some(id) = self.tree.selected {
             self.load_detail_for(id, cx);
         }
     }
 
     pub(super) fn load_detail_for(&self, id: ActionId, cx: &mut Context<Self>) {
-        let service = Arc::clone(&self.actions_service);
+        let service = Arc::clone(&self.deps.actions_service);
         async_bridge::run_async(
-            &self.rt_handle,
+            &self.deps.rt_handle,
             async move { service.load_detail(id).await.map_err(RepoFailure::from) },
             move |this, result, cx| match result {
                 Ok(detail) => this.apply_detail(id, detail, cx),
@@ -549,9 +410,9 @@ impl ScreenActionsView {
             cx,
         );
 
-        let service = Arc::clone(&self.actions_service);
+        let service = Arc::clone(&self.deps.actions_service);
         async_bridge::run_async(
-            &self.rt_handle,
+            &self.deps.rt_handle,
             async move { service.load_telemetry(id).await.map_err(RepoFailure::from) },
             move |this, result, cx| match result {
                 Ok(telemetry) => this.apply_telemetry(id, telemetry, cx),
@@ -560,9 +421,9 @@ impl ScreenActionsView {
             cx,
         );
 
-        let service = Arc::clone(&self.actions_service);
+        let service = Arc::clone(&self.deps.actions_service);
         async_bridge::run_async(
-            &self.rt_handle,
+            &self.deps.rt_handle,
             async move { service.recent_runs(id, 1).await.map_err(RepoFailure::from) },
             move |this, result, cx| match result {
                 Ok(runs) => {
@@ -576,45 +437,45 @@ impl ScreenActionsView {
     }
 
     fn apply_detail(&mut self, id: ActionId, mut detail: ActionDetail, cx: &mut Context<Self>) {
-        if self.selected != Some(id) {
+        if self.tree.selected != Some(id) {
             return;
         }
         translate_legacy_time_steps(&mut detail.action.sub_actions);
         if let Some(latest) = self.latest_written_action(id) {
             detail.action = latest.clone();
         } else if self.has_pending_action_writes(id)
-            && let Some(current) = self.detail.as_ref()
+            && let Some(current) = self.editor.detail.as_ref()
             && current.action.id == id
         {
             detail.action = current.action.clone();
         }
         self.sync_filter_membership(&detail);
-        self.detail = Some(detail);
+        self.editor.detail = Some(detail);
         self.sync_case_fields(cx);
         self.recompute_step_health();
         cx.notify();
     }
 
     fn recompute_step_health(&mut self) {
-        self.step_health = match &self.detail {
+        self.editor.step_health = match &self.editor.detail {
             Some(detail) => {
                 let mut health = forge_registry::analyze(
                     &detail.action,
                     &detail.trigger_instances,
                     &detail.last_step_outcomes,
-                    &self.sub_action_registry,
-                    &self.trigger_registry,
+                    &self.deps.sub_action_registry,
+                    &self.deps.trigger_registry,
                 );
                 if let Some(integrations) = &self.integrations {
                     forge_registry::flag_switched_off(
                         &detail.action.sub_actions,
-                        &self.sub_action_registry,
+                        &self.deps.sub_action_registry,
                         integrations.off(),
                         &mut health,
                     );
                     forge_registry::flag_failed(
                         &detail.action.sub_actions,
-                        &self.sub_action_registry,
+                        &self.deps.sub_action_registry,
                         integrations.failed(),
                         &mut health,
                     );
@@ -631,10 +492,10 @@ impl ScreenActionsView {
         telemetry: ActionTelemetry,
         cx: &mut Context<Self>,
     ) {
-        if self.selected != Some(id) {
+        if self.tree.selected != Some(id) {
             return;
         }
-        self.telemetry = Some(telemetry);
+        self.editor.telemetry = Some(telemetry);
         cx.notify();
     }
 
@@ -644,10 +505,10 @@ impl ScreenActionsView {
         outcome: Option<ExecutionOutcome>,
         cx: &mut Context<Self>,
     ) {
-        if self.selected != Some(id) {
+        if self.tree.selected != Some(id) {
             return;
         }
-        self.last_outcome = outcome;
+        self.editor.last_outcome = outcome;
         cx.notify();
     }
 
@@ -656,11 +517,11 @@ impl ScreenActionsView {
         mutate: impl FnOnce(&mut Vec<nav::ChainItem>),
         cx: &mut Context<Self>,
     ) {
-        let Some(detail) = self.detail.as_ref() else {
+        let Some(detail) = self.editor.detail.as_ref() else {
             return;
         };
         let id = detail.action.id;
-        let path = self.nav_path.clone();
+        let path = self.editor.nav_path.clone();
         let mut chain = nav::resolve_chain(&detail.action.sub_actions, &path);
         mutate(&mut chain);
         self.write_action(id, action_writes::ActionWrite::SetChain { path, chain }, cx);
@@ -672,13 +533,13 @@ impl EventEmitter<NavRequested> for ScreenActionsView {}
 impl Render for ScreenActionsView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         drive_overlay_focus(
-            self.menu_open.is_some(),
-            &self.menu_focus,
-            &mut self.menu_focus_restore,
+            self.menus.row_open.is_some(),
+            &self.menus.focus,
+            &mut self.menus.focus_restore,
             window,
             cx,
         );
-        self.tree_keys.claim_focus_once(window, cx);
+        self.tree.keys.claim_focus_once(window, cx);
         let density = cx.density();
         self.release_step_drag(window, cx);
         let palette = cx.palette();
@@ -698,18 +559,20 @@ impl Render for ScreenActionsView {
             .child(editor);
 
         let action_modal = self
-            .action_modal
+            .modals
+            .action_form
             .as_ref()
             .map(|form| self.render_action_modal(form, &palette, cx));
-        let history_modal = self.history_modal.as_ref().map(|host| host.view.clone());
-        let test_run_modal = self.test_run.clone();
+        let history_modal = self.modals.history.as_ref().map(|host| host.view.clone());
+        let test_run_modal = self.modals.test_run.clone();
         let delete_modal = self
+            .tree
             .pending_delete
             .get()
             .copied()
             .map(|id| self.render_delete_confirm(id, &palette, cx));
-        let sub_modal = self.sub_form.clone();
-        let grid_picker = self.grid_picker.as_ref().map(|form| {
+        let sub_modal = self.modals.sub_form.clone();
+        let grid_picker = self.modals.grid_picker.as_ref().map(|form| {
             let view = cx.entity();
             overlay(form.picker.clone(), &palette)
                 .position(OverlayPosition::Center)
@@ -719,6 +582,7 @@ impl Render for ScreenActionsView {
                 .into_any_element()
         });
         let trigger_grid = self
+            .modals
             .add_trigger
             .as_ref()
             .map(|stage| self.render_add_trigger(stage, &palette, cx));
@@ -749,7 +613,12 @@ impl Render for ScreenActionsView {
             .children(sub_modal)
             .children(grid_picker)
             .children(trigger_grid)
-            .children(self.pack_export.as_ref().map(|host| host.flow.clone()))
+            .children(
+                self.modals
+                    .pack_export
+                    .as_ref()
+                    .map(|host| host.flow.clone()),
+            )
             .children(row_menu)
     }
 }

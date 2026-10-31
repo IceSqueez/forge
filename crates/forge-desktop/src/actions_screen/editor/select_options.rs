@@ -52,17 +52,17 @@ fn mark_unavailable_clips(
 
 impl ScreenActionsView {
     pub(in crate::actions_screen) fn fetch_select_options(&self, cx: &mut Context<Self>) {
-        let action_repo = Arc::clone(&self.action_repo);
-        let queue_repo = Arc::clone(&self.queue_repo);
-        let ti_repo = Arc::clone(&self.trigger_instance_repo);
-        let script_repo = Arc::clone(&self.script_repo);
-        let clip_library = Arc::clone(&self.clip_library);
-        let globals_repo = Arc::clone(&self.globals_repo);
-        let overlay_repo = Arc::clone(&self.overlay_repo);
+        let action_repo = Arc::clone(&self.deps.action_repo);
+        let queue_repo = Arc::clone(&self.deps.queue_repo);
+        let ti_repo = Arc::clone(&self.deps.trigger_instance_repo);
+        let script_repo = Arc::clone(&self.deps.script_repo);
+        let clip_library = Arc::clone(&self.deps.clip_library);
+        let globals_repo = Arc::clone(&self.deps.globals_repo);
+        let overlay_repo = Arc::clone(&self.deps.overlay_repo);
         let overlay_schema = Arc::clone(&self.overlay_schema);
-        let speak = self.speak.clone();
+        let speak = self.deps.speak.clone();
         async_bridge::run_async(
-            &self.rt_handle,
+            &self.deps.rt_handle,
             async move {
                 let mut map: HashMap<String, Vec<(String, String)>> = HashMap::new();
                 let mut failed_keys: Vec<&'static str> = Vec::new();
@@ -237,23 +237,25 @@ impl ScreenActionsView {
             );
         }
         if !failed_keys.contains(&QUEUE_OPTIONS_KEY) {
-            self.concurrent_queue_ids = concurrent_queue_ids;
+            self.tree.concurrent_queue_ids = concurrent_queue_ids;
         }
         for key in &failed_keys {
-            if let Some(previous) = self.select_options.remove(*key) {
+            if let Some(previous) = self.choices.select_options.remove(*key) {
                 options.insert((*key).to_owned(), previous);
             }
         }
-        let failed_anew = !failed_keys.is_empty() && !self.select_options_failed;
-        self.select_options_failed = !failed_keys.is_empty();
+        let failed_anew = !failed_keys.is_empty() && !self.choices.select_options_failed;
+        self.choices.select_options_failed = !failed_keys.is_empty();
         if failed_anew {
             cx.push_toast(ToastKind::Error, tr!("action_editor_options_load_failed"));
         }
-        self.select_options = options;
-        self.select_options.extend(self.collection_options.clone());
-        if let Some(form) = self.sub_form.clone() {
+        self.choices.select_options = options;
+        self.choices
+            .select_options
+            .extend(self.choices.collection_options.clone());
+        if let Some(form) = self.modals.sub_form.clone() {
             let schema = Arc::clone(&self.overlay_schema) as Arc<dyn FormSchemaSource>;
-            let merged = self.select_options.clone();
+            let merged = self.choices.select_options.clone();
             form.update(cx, |form, cx| {
                 form.apply_options(&merged, cx);
                 form.set_schema(schema, cx);
@@ -367,7 +369,7 @@ mod tests {
         pump_until(&rt, || {
             cx.run_until_parked();
             listed = view.read_with(cx, |view, _| {
-                view.select_options.get(CLIP_OPTIONS_KEY).cloned()
+                view.choices.select_options.get(CLIP_OPTIONS_KEY).cloned()
             });
             listed.is_some()
         });
@@ -404,12 +406,20 @@ mod tests {
         pump_until(&rt, || {
             cx.run_until_parked();
             details = view.read_with(cx, |view, _| {
-                view.select_options.contains_key(CLIP_OPTIONS_KEY).then(|| {
-                    (
-                        super::super::sub_action_summary(&known, &view.select_options).2,
-                        super::super::sub_action_summary(&dangling, &view.select_options).2,
-                    )
-                })
+                view.choices
+                    .select_options
+                    .contains_key(CLIP_OPTIONS_KEY)
+                    .then(|| {
+                        (
+                            super::super::sub_action_summary(&known, &view.choices.select_options)
+                                .2,
+                            super::super::sub_action_summary(
+                                &dangling,
+                                &view.choices.select_options,
+                            )
+                            .2,
+                        )
+                    })
             });
             details.is_some()
         });
@@ -470,13 +480,13 @@ mod tests {
     impl FlakyListing {
         fn action_options(&self, cx: &mut gpui::TestAppContext) -> Option<Vec<(String, String)>> {
             self.view.read_with(cx, |view, _| {
-                view.select_options.get(ACTION_OPTIONS_KEY).cloned()
+                view.choices.select_options.get(ACTION_OPTIONS_KEY).cloned()
             })
         }
 
         fn failed(&self, cx: &mut gpui::TestAppContext) -> bool {
             self.view
-                .read_with(cx, |view, _| view.select_options_failed)
+                .read_with(cx, |view, _| view.choices.select_options_failed)
         }
 
         fn refetch(&self, cx: &mut gpui::TestAppContext, fail: bool) {
@@ -531,7 +541,7 @@ mod tests {
         let known: HashSet<String> = ["queue-1".to_owned()].into_iter().collect();
         listing
             .view
-            .update(cx, |view, _| view.concurrent_queue_ids = known.clone());
+            .update(cx, |view, _| view.tree.concurrent_queue_ids = known.clone());
 
         listing.view.update(cx, |view, cx| {
             view.on_select_options_fetched(
@@ -548,7 +558,7 @@ mod tests {
 
         let kept = listing
             .view
-            .read_with(cx, |view, _| view.concurrent_queue_ids.clone());
+            .read_with(cx, |view, _| view.tree.concurrent_queue_ids.clone());
         assert_eq!(kept, known);
     }
 

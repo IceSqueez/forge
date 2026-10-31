@@ -37,12 +37,12 @@ fn trigger_unlink_btn(
 
 impl ScreenActionsView {
     fn unlink_trigger(&mut self, instance_id: TriggerInstanceId, cx: &mut Context<Self>) {
-        let Some(action_id) = self.selected else {
+        let Some(action_id) = self.tree.selected else {
             return;
         };
-        let service = Arc::clone(&self.actions_service);
+        let service = Arc::clone(&self.deps.actions_service);
         async_bridge::run_async(
-            &self.rt_handle,
+            &self.deps.rt_handle,
             async move {
                 service
                     .unlink_trigger_instance(action_id, instance_id)
@@ -84,9 +84,9 @@ impl ScreenActionsView {
         instance_id: TriggerInstanceId,
         cx: &mut Context<Self>,
     ) {
-        let service = Arc::clone(&self.actions_service);
+        let service = Arc::clone(&self.deps.actions_service);
         async_bridge::run_async(
-            &self.rt_handle,
+            &self.deps.rt_handle,
             async move {
                 service
                     .link_trigger_instance(action_id, instance_id)
@@ -158,7 +158,7 @@ impl ScreenActionsView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let density = cx.density();
-        let descriptor = self.trigger_registry.get(&instance.kind_id);
+        let descriptor = self.deps.trigger_registry.get(&instance.kind_id);
         let switched_off_owner = self.switched_off_trigger_owner(&instance.kind_id);
         let uncovered_category = self.uncovered_trigger_category(&instance.kind_id);
         let accent = if instance.enabled {
@@ -282,6 +282,7 @@ impl ScreenActionsView {
 
 #[cfg(test)]
 mod tests {
+    use forge_runtime::ActionsService;
     use std::sync::Mutex;
 
     use forge_components::{ToastKind, Toasts};
@@ -344,7 +345,7 @@ mod tests {
         queues.expect_list().returning(|| Ok(Vec::new()));
         let actions = Arc::clone(&screen.store) as Arc<dyn forge_storage::ActionRepo>;
         screen.view.update(cx, |view, _| {
-            view.actions_service = Arc::new(ActionsService::new(
+            view.deps.actions_service = Arc::new(ActionsService::new(
                 actions,
                 Arc::new(queues),
                 Arc::new(StubHistory),

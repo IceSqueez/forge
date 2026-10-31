@@ -530,6 +530,7 @@ fn affected_row(
 ) -> gpui::Stateful<gpui::Div> {
     let hover = palette.surface_overlay;
     div()
+        .debug_selector(|| id.to_string())
         .id(id)
         .flex()
         .items_center()
@@ -584,9 +585,8 @@ mod tests {
 
     use super::*;
     use crate::test_support::{
-        ClickArea, Sandboxed, click_until, idle_supervisor, link, owned_sub_actions,
-        owned_triggers, pump, runtime, sandboxed_provider, seed_action, seed_trigger, settle_until,
-        step, test_backend,
+        Sandboxed, click_selector, idle_supervisor, link, owned_sub_actions, owned_triggers, pump,
+        runtime, sandboxed_provider, seed_action, seed_trigger, settle_until, step, test_backend,
     };
     use forge_components::Presentation;
     use forge_registry::ReferencingAction;
@@ -596,9 +596,7 @@ mod tests {
     const TWITCH_CHAT: &str = "twitch.chat";
     const WINDOW_W: f32 = 1000.0;
     const WINDOW_H: f32 = 800.0;
-    const SCAN_X: f32 = 120.0;
-    const BELOW_THE_CRUMB: f32 = 64.0;
-    const SCAN_STEP: f32 = 4.0;
+    const FIRST_ACTION_ROW: &str = "integration-disabled-action-0";
 
     fn obs() -> IntegrationId {
         IntegrationId::new("obs")
@@ -754,18 +752,8 @@ mod tests {
         vcx.simulate_resize(size(px(WINDOW_W), px(WINDOW_H)));
         page_settles(vcx, &rt, &view, |view| !view.references.actions.is_empty());
 
-        let clicked = click_until(
-            vcx,
-            &ClickArea {
-                x: SCAN_X..SCAN_X + SCAN_STEP,
-                y: BELOW_THE_CRUMB..WINDOW_H,
-                step_x: SCAN_STEP,
-                step_y: SCAN_STEP,
-            },
-            |vcx| heard.read_with(vcx, |heard, _| !heard.screens.is_empty()),
-        );
+        click_selector(vcx, FIRST_ACTION_ROW);
 
-        assert!(clicked, "no click on the page opened anything");
         assert_eq!(
             heard.read_with(vcx, |heard, _| heard.screens.clone()),
             vec![Screen::Actions(Some(scene))]

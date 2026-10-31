@@ -296,6 +296,7 @@ impl RenderOnce for Button {
 
         match (self.id, self.on_click) {
             (Some(id), Some(handler)) => root
+                .debug_selector(|| id.to_string())
                 .id(id)
                 .cursor_pointer()
                 .on_click(handler)

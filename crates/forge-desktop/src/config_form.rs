@@ -1291,6 +1291,7 @@ fn render_choice<V: 'static>(
     };
 
     let mut trigger = div()
+        .debug_selector(|| format!("{id_prefix}-{key}"))
         .id(SharedString::from(format!("{id_prefix}-{key}")))
         .w_full()
         .flex()

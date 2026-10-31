@@ -2164,12 +2164,17 @@ pub(crate) fn click_grid(vcx: &mut gpui::VisualTestContext, area: ClickArea) {
 
 const CRUMB_WINDOW_W: f32 = 1000.0;
 const CRUMB_WINDOW_H: f32 = 700.0;
-const CRUMB_BAND_W: f32 = 400.0;
-const CRUMB_BAND_H: f32 = 64.0;
-const CRUMB_SCAN_STEP: f32 = 4.0;
+
+pub(crate) fn click_selector(vcx: &mut gpui::VisualTestContext, selector: &'static str) {
+    let bounds = vcx
+        .debug_bounds(selector)
+        .unwrap_or_else(|| panic!("nothing painted the selector {selector}"));
+    vcx.simulate_click(bounds.center(), gpui::Modifiers::none());
+}
 
 pub(crate) fn hub_crumb_targets<V>(
     cx: &mut gpui::TestAppContext,
+    category: Option<forge_platform_core::IntegrationCategory>,
     build: impl FnOnce(&mut gpui::Window, &mut gpui::Context<V>) -> V,
 ) -> Vec<crate::navigation::Screen>
 where
@@ -2183,19 +2188,8 @@ where
         gpui::px(CRUMB_WINDOW_H),
     ));
     vcx.run_until_parked();
-    click_grid(
-        vcx,
-        ClickArea {
-            x: 0.0..CRUMB_BAND_W,
-            y: 0.0..CRUMB_BAND_H,
-            step_x: CRUMB_SCAN_STEP,
-            step_y: CRUMB_SCAN_STEP,
-        },
-    );
+    click_selector(vcx, crate::hub_crumb::hub_crumb_id(category).leak());
     log.read_with(vcx, |log, _| log.screens())
-        .into_iter()
-        .filter(|screen| matches!(screen, crate::navigation::Screen::Integrations(_)))
-        .collect()
 }
 
 pub(crate) fn quiet_bus(rt: &tokio::runtime::Runtime) -> Arc<EventBus> {

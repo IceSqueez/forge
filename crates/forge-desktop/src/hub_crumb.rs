@@ -17,23 +17,24 @@ pub(crate) fn core_category(screen: &Screen) -> Option<IntegrationCategory> {
         .map(|feature| feature.category)
 }
 
+pub(crate) fn hub_crumb_id(category: Option<IntegrationCategory>) -> String {
+    match category {
+        Some(category) => format!("{WHOLE_HUB_ID}-{}", category.key()),
+        None => WHOLE_HUB_ID.to_owned(),
+    }
+}
+
 pub(crate) fn hub_crumb<V: EventEmitter<NavRequested>>(
     category: Option<IntegrationCategory>,
     cx: &mut Context<V>,
 ) -> BreadcrumbCrumb {
-    let (label, id) = match category {
-        Some(category) => (
-            tr!(category.label_key()),
-            ElementId::Name(format!("{WHOLE_HUB_ID}-{}", category.key()).into()),
-        ),
-        None => (
-            tr!("integrations_breadcrumb"),
-            ElementId::Name(WHOLE_HUB_ID.into()),
-        ),
+    let label = match category {
+        Some(category) => tr!(category.label_key()),
+        None => tr!("integrations_breadcrumb"),
     };
     BreadcrumbCrumb::link(
         label,
-        id,
+        ElementId::Name(hub_crumb_id(category).into()),
         cx.listener(move |_, _: &ClickEvent, _, cx| {
             cx.emit(NavRequested(Screen::Integrations(category)));
         }),
@@ -84,27 +85,15 @@ mod tests {
     #[gpui::test]
     fn clicking_a_category_crumb_opens_the_hub_on_that_category(cx: &mut TestAppContext) {
         let category = Some(IntegrationCategory::AUDIO);
-        let screens = hub_crumb_targets(cx, |_, _| CrumbHost { category });
+        let screens = hub_crumb_targets(cx, category, |_, _| CrumbHost { category });
 
-        assert!(!screens.is_empty(), "no click reached the crumb");
-        assert!(
-            screens
-                .iter()
-                .all(|screen| *screen == Screen::Integrations(Some(IntegrationCategory::AUDIO))),
-            "{screens:?}"
-        );
+        assert_eq!(screens, vec![Screen::Integrations(category)]);
     }
 
     #[gpui::test]
     fn clicking_the_uncategorised_crumb_opens_the_whole_hub(cx: &mut TestAppContext) {
-        let screens = hub_crumb_targets(cx, |_, _| CrumbHost { category: None });
+        let screens = hub_crumb_targets(cx, None, |_, _| CrumbHost { category: None });
 
-        assert!(!screens.is_empty(), "no click reached the crumb");
-        assert!(
-            screens
-                .iter()
-                .all(|screen| *screen == Screen::Integrations(None)),
-            "{screens:?}"
-        );
+        assert_eq!(screens, vec![Screen::Integrations(None)]);
     }
 }

@@ -570,7 +570,8 @@ fn the_crumb_leads_back_to_the_midi_category_on_the_hub(cx: &mut gpui::TestAppCo
     let action_repo = storage.action_repo();
     let handle = rt.handle().clone();
 
-    let targets = crate::test_support::hub_crumb_targets(cx, |_, cx| {
+    let category = forge_midi::MIDI_INTEGRATION.category;
+    let targets = crate::test_support::hub_crumb_targets(cx, Some(category), |_, cx| {
         MidiScreenView::new(
             SwitchableMidiSink::new(),
             None,
@@ -583,13 +584,9 @@ fn the_crumb_leads_back_to_the_midi_category_on_the_hub(cx: &mut gpui::TestAppCo
         )
     });
 
-    let category = forge_midi::MIDI_INTEGRATION.category;
-    assert!(!targets.is_empty(), "no click reached the crumb");
-    assert!(
-        targets
-            .iter()
-            .all(|screen| *screen == crate::navigation::Screen::Integrations(Some(category))),
-        "{targets:?}"
+    assert_eq!(
+        targets,
+        vec![crate::navigation::Screen::Integrations(Some(category))]
     );
 }
 

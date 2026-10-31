@@ -203,6 +203,7 @@ impl RenderOnce for DropdownRow {
         }
 
         let mut row = div()
+            .debug_selector(|| self.id.to_string())
             .id(self.id)
             .w_full()
             .flex_none()

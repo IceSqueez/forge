@@ -88,7 +88,7 @@ pub struct TwitchIntegrationBundle {
     viewer_report_tx: watch::Sender<ViewerReport>,
     transport: Arc<dyn HelixTransport>,
     helix: Gateway,
-    tier: std::sync::RwLock<BroadcasterTier>,
+    tier: watch::Sender<BroadcasterTier>,
     token_expires_at: std::sync::RwLock<Option<SystemTime>>,
     connected_at: std::sync::RwLock<Option<OffsetDateTime>>,
     lifecycle: TwitchLifecycle,
@@ -118,7 +118,7 @@ impl TwitchIntegrationBundle {
             viewer_report_tx,
             transport: Arc::clone(&transport),
             helix,
-            tier: std::sync::RwLock::new(BroadcasterTier::default()),
+            tier: watch::Sender::new(BroadcasterTier::default()),
             token_expires_at: std::sync::RwLock::new(None),
             connected_at: std::sync::RwLock::new(None),
             lifecycle: platform.lifecycle().clone(),
@@ -291,12 +291,20 @@ impl TwitchIntegrationBundle {
             .write()
             .unwrap_or_else(|p| p.into_inner()) = stored.expires_at;
         if let Ok(tier) = resolve_broadcaster_tier(self.transport.as_ref(), &stored.user_id).await {
-            *self.tier.write().unwrap_or_else(|p| p.into_inner()) = tier;
+            self.tier.send_replace(tier);
         }
     }
 
     pub fn tier(&self) -> BroadcasterTier {
-        *self.tier.read().unwrap_or_else(|p| p.into_inner())
+        *self.tier.borrow()
+    }
+
+    pub fn tier_changes(&self) -> watch::Receiver<BroadcasterTier> {
+        self.tier.subscribe()
+    }
+
+    pub fn chat_connection_changes(&self) -> watch::Receiver<ChatConnectionState> {
+        self.state_rx.clone()
     }
 
     fn spawn_viewer_poll(bundle: &Arc<Self>, transport: Arc<dyn HelixTransport>) {
@@ -456,7 +464,7 @@ impl TwitchIntegrationBundle {
             viewer_report_tx,
             transport,
             helix,
-            tier: std::sync::RwLock::new(tier),
+            tier: watch::Sender::new(tier),
             token_expires_at: std::sync::RwLock::new(None),
             connected_at: std::sync::RwLock::new(None),
             lifecycle,

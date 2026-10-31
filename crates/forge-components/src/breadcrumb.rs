@@ -116,6 +116,7 @@ impl RenderOnce for Breadcrumb {
 
             let label_el = match (crumb.id, crumb.on_click) {
                 (Some(id), Some(handler)) => label
+                    .debug_selector(|| id.to_string())
                     .id(id)
                     .cursor_pointer()
                     .hover(move |s| s.text_color(current))

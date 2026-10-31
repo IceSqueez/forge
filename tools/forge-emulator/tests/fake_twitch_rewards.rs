@@ -28,7 +28,6 @@ const DEADLINE: Duration = Duration::from_secs(30);
 const REWARDS_PATH: &str = "/helix/channel_points/custom_rewards";
 const REWARD_ADD: &str = topics::CHANNEL_CHANNEL_POINTS_CUSTOM_REWARD_ADD;
 const DASHBOARD_TITLE: &str = "Dashboard hydrate";
-const TIER_POLL: Duration = Duration::from_millis(10);
 
 struct Forge {
     bundle: Arc<TwitchIntegrationBundle>,
@@ -187,13 +186,14 @@ async fn forge_reports_capacity_when_the_channel_already_has_fifty_rewards() {
 async fn forge_reports_not_owned_when_touching_a_dashboard_reward() {
     let (fake, forge) = start(1).await;
     let dashboard = CollectionItemId::new(fake.rewards()[0].id.clone());
-    timeout(DEADLINE, async {
-        while forge.bundle.tier() == BroadcasterTier::Standard {
-            tokio::time::sleep(TIER_POLL).await;
-        }
-    })
+    let mut tiers = forge.bundle.tier_changes();
+    timeout(
+        DEADLINE,
+        tiers.wait_for(|tier| *tier != BroadcasterTier::Standard),
+    )
     .await
-    .expect("forge resolved the affiliate tier from the fake");
+    .expect("forge resolved the affiliate tier from the fake")
+    .expect("the bundle outlives the wait");
 
     let toggle = forge
         .bundle

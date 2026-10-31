@@ -359,17 +359,11 @@ mod tests {
         let handle = rt.handle().clone();
         let kick = forge_platform_kick::KICK_INTEGRATION;
 
-        let targets = hub_crumb_targets(cx, |_, cx| {
+        let targets = hub_crumb_targets(cx, Some(kick.category), |_, cx| {
             let lifecycle = cx.new(|_| IntegrationLifecycle::new(failed(&kick.id)));
             IntegrationFailedView::new(kick.id.clone(), lifecycle, None, handle, cx)
         });
 
-        assert!(!targets.is_empty(), "no click reached the crumb");
-        assert!(
-            targets
-                .iter()
-                .all(|screen| *screen == Screen::Integrations(Some(kick.category))),
-            "{targets:?}"
-        );
+        assert_eq!(targets, vec![Screen::Integrations(Some(kick.category))]);
     }
 }

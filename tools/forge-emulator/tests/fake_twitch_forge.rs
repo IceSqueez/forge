@@ -14,13 +14,11 @@ use forge_emulator::fixture::TwitchAccount;
 use forge_events::{Event, EventPublisher, EventSubscription};
 use forge_events::{PlatformConnectionChanged, TypedEvent};
 use forge_net::{Gateway, TokenBucketRateLimiter};
-use forge_platform_core::{
-    BuiltinControl, ChatPlatform, ConnectionState, EndpointSurface, PlatformEndpoints,
-};
+use forge_platform_core::{BuiltinControl, ChatPlatform, EndpointSurface, PlatformEndpoints};
 use forge_platform_twitch::credentials::{StoredCredential, store_credential};
 use forge_platform_twitch::{
-    ChatSessionConfig, HELIX_BUDGET_CAPACITY, HELIX_BUDGET_WINDOW, HelixError, HelixHttpTransport,
-    HelixTokenSource, SubscriptionTracker, TWITCH_OAUTH_BUDGET_CAPACITY,
+    ChatConnectionState, ChatSessionConfig, HELIX_BUDGET_CAPACITY, HELIX_BUDGET_WINDOW, HelixError,
+    HelixHttpTransport, HelixTokenSource, SubscriptionTracker, TWITCH_OAUTH_BUDGET_CAPACITY,
     TWITCH_OAUTH_BUDGET_WINDOW, TwitchAssembly, TwitchChat, TwitchChatHandle,
     TwitchCredentialsManager, TwitchIntegrationBundle, TwitchLifecycle, TwitchOAuthClient,
     helix_gateway, send_chat, twitch_oauth_gateway,
@@ -40,7 +38,6 @@ const CHAT_MESSAGE_KIND: &str = twitch_kinds::CHANNEL_CHAT_MESSAGE;
 const CHAT_SUBSCRIPTION: &str = topics::CHANNEL_CHAT_MESSAGE;
 const FOLLOW_SUBSCRIPTION: &str = topics::CHANNEL_FOLLOW;
 const FOLLOW_KIND: &str = twitch_kinds::CHANNEL_FOLLOW;
-const STATE_POLL: Duration = Duration::from_millis(10);
 
 struct FixedTokenSource(OAuthToken);
 
@@ -384,14 +381,15 @@ async fn next_platform_event(events: &mut EventSubscription) -> Event {
         .expect("the platform event stream must stay open")
 }
 
-async fn platform_reaches_connected(platform: &dyn ChatPlatform) {
-    timeout(DEADLINE, async {
-        while platform.connection_state() != ConnectionState::Connected {
-            tokio::time::sleep(STATE_POLL).await;
-        }
-    })
+async fn chat_reaches_connected(bundle: &TwitchIntegrationBundle) {
+    let mut states = bundle.chat_connection_changes();
+    timeout(
+        DEADLINE,
+        states.wait_for(|state| *state == ChatConnectionState::Connected),
+    )
     .await
-    .expect("the platform never reported Connected");
+    .expect("the platform never reported Connected")
+    .expect("the bundle outlives the wait");
 }
 
 async fn sole_live_session_subscribed_to(fake: &FakeTwitch, types: &[&str]) {
@@ -450,7 +448,7 @@ async fn boot_connect_racing_a_reconnect_leaves_one_eventsub_session_delivering_
     });
     boot.await.unwrap().unwrap();
     assert_eq!(reconnect.await.unwrap(), Ok(()));
-    platform_reaches_connected(platform.as_ref()).await;
+    chat_reaches_connected(&bundle).await;
     sole_live_session_subscribed_to(&fake, &[CHAT_SUBSCRIPTION, FOLLOW_SUBSCRIPTION]).await;
 
     let alice = Viewer::new("200000042", "alice");
@@ -488,7 +486,7 @@ async fn bundle_shutdown_publishes_a_final_disconnected_change_and_closes_the_ev
     let (platform, bundle) = forge.open().await;
     let mut events = platform.events();
     platform.connect().await.unwrap();
-    platform_reaches_connected(platform.as_ref()).await;
+    chat_reaches_connected(&bundle).await;
     sole_live_session_subscribed_to(&fake, &[CHAT_SUBSCRIPTION]).await;
 
     bundle.shutdown().await;

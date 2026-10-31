@@ -1162,18 +1162,12 @@ mod tests {
         };
         let handle = rt.handle().clone();
 
-        let targets = hub_crumb_targets(cx, |_, cx| {
+        let category = forge_discord::DISCORD_INTEGRATION.category;
+        let targets = hub_crumb_targets(cx, Some(category), |_, cx| {
             DiscordScreenView::new(client, None, Arc::new(StubActions), bus, handle, cx)
         });
 
-        let category = forge_discord::DISCORD_INTEGRATION.category;
-        assert!(!targets.is_empty(), "no click reached the crumb");
-        assert!(
-            targets
-                .iter()
-                .all(|screen| *screen == Screen::Integrations(Some(category))),
-            "{targets:?}"
-        );
+        assert_eq!(targets, vec![Screen::Integrations(Some(category))]);
     }
 
     const POSTED_REPLY: &str = r#"{"id":"1"}"#;

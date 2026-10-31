@@ -845,7 +845,7 @@ pub(crate) mod tests {
     use super::super::look_change::look_summary;
     use super::super::sizing_section::is_source_box_key;
     use super::*;
-    use crate::test_support::{StubEventLog, pump, runtime, test_backend};
+    use crate::test_support::{StubEventLog, click_selector, pump, runtime, test_backend};
     use forge_components::Presentation;
 
     const OVERLAY: &str = "alert-one";
@@ -1674,7 +1674,9 @@ pub(crate) mod tests {
     }
 
     const PANEL_H: f32 = 1200.0;
-    const SCAN_STEP: f32 = 4.0;
+    const SIZING_ACK: &str = "overlays-sizing-ack";
+    const LOOK_TRIGGER: &str = "overlays-panel-look";
+    const GOAL_LOOK_ROW: &str = "forge-picker-row-0";
     const HELD_WIDTH: i64 = 1500;
 
     fn source_specs() -> Vec<SectionedField> {
@@ -1870,30 +1872,12 @@ pub(crate) mod tests {
     }
 
     impl Shown<'_> {
-        fn click_first_until(
-            &mut self,
-            reached: impl Fn(&Window, &App, &Heard) -> bool,
-        ) -> Option<gpui::Point<Pixels>> {
-            let mut y = 0.0;
-            while y < PANEL_H {
-                let mut x = 0.0;
-                while x < f32::from(PANE_W) {
-                    let at = gpui::point(px(x), px(y));
-                    self.vcx.simulate_click(at, gpui::Modifiers::none());
-                    if self.reached(&reached) {
-                        return Some(at);
-                    }
-                    x += SCAN_STEP;
-                }
-                y += SCAN_STEP;
-            }
-            None
-        }
-
-        fn reached(&mut self, test: &impl Fn(&Window, &App, &Heard) -> bool) -> bool {
-            let heard = self.heard.clone();
-            self.vcx
-                .update(|window, cx| test(window, cx, heard.read(cx)))
+        fn open_look_picker(&mut self) {
+            click_selector(self.vcx, LOOK_TRIGGER);
+            assert!(
+                self.vcx.update(|window, cx| window.focused(cx).is_some()),
+                "the look field opens the picker"
+            );
         }
 
         fn saves(&mut self) -> Vec<OverlayConfig> {
@@ -1907,10 +1891,6 @@ pub(crate) mod tests {
         }
     }
 
-    fn picker_focused(window: &Window, cx: &App, _: &Heard) -> bool {
-        window.focused(cx).is_some()
-    }
-
     fn predating(entries: &[(&str, Variant)]) -> OverlayConfig {
         let mut stored = config(entries);
         stored.insert(MIGRATION_ACKNOWLEDGED.to_owned(), Variant::Bool(false));
@@ -1921,9 +1901,7 @@ pub(crate) mod tests {
     fn got_it_on_the_sizing_notice_saves_the_acknowledgement(cx: &mut gpui::TestAppContext) {
         let mut shown = show(cx, predating(&[]));
 
-        shown
-            .click_first_until(|_, _, heard| !heard.saves.is_empty())
-            .expect("the notice offers a button that acknowledges it");
+        click_selector(shown.vcx, SIZING_ACK);
 
         assert_eq!(
             shown.saves(),
@@ -1933,19 +1911,14 @@ pub(crate) mod tests {
 
     #[gpui::test]
     fn the_sizing_notice_is_gone_once_acknowledged(cx: &mut gpui::TestAppContext) {
-        let mut shown = show(cx, predating(&[]));
-        let acknowledged_at = shown
-            .click_first_until(|_, _, heard| !heard.saves.is_empty())
-            .expect("the notice offers a button that acknowledges it");
+        let shown = show(cx, predating(&[]));
 
-        shown
-            .vcx
-            .simulate_click(acknowledged_at, gpui::Modifiers::none());
+        click_selector(shown.vcx, SIZING_ACK);
 
         assert_eq!(
-            shown.saves().len(),
-            1,
-            "the acknowledged notice still answered a click where its button was"
+            shown.vcx.debug_bounds(SIZING_ACK),
+            None,
+            "the acknowledged notice still paints its button"
         );
     }
 
@@ -1960,9 +1933,7 @@ pub(crate) mod tests {
                 (MARGIN_TOP, Variant::Int(30)),
             ]),
         );
-        shown
-            .click_first_until(picker_focused)
-            .expect("the look field opens the picker");
+        shown.open_look_picker();
 
         shown.vcx.simulate_keystrokes("down enter");
 
@@ -2004,20 +1975,9 @@ pub(crate) mod tests {
     #[gpui::test]
     fn a_look_row_clicked_in_the_open_picker_changes_the_look(cx: &mut gpui::TestAppContext) {
         let mut shown = show(cx, OverlayConfig::new());
-        let trigger = shown
-            .click_first_until(picker_focused)
-            .expect("the look field opens the picker");
+        shown.open_look_picker();
 
-        let mut y = f32::from(trigger.y);
-        while shown.looks().is_empty() && y < PANEL_H {
-            if !shown.reached(&picker_focused) {
-                shown.vcx.simulate_click(trigger, gpui::Modifiers::none());
-            }
-            y += SCAN_STEP;
-            shown
-                .vcx
-                .simulate_click(gpui::point(PANE_W / 2.0, px(y)), gpui::Modifiers::none());
-        }
+        click_selector(shown.vcx, GOAL_LOOK_ROW);
 
         assert_eq!(
             shown

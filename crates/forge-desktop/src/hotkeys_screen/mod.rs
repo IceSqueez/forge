@@ -464,7 +464,8 @@ mod tests {
         let backend = Arc::clone(&storage);
         let handle = rt.handle().clone();
 
-        let targets = hub_crumb_targets(cx, |_, cx| {
+        let category = forge_hotkey::HOTKEY_INTEGRATION.category;
+        let targets = hub_crumb_targets(cx, Some(category), |_, cx| {
             HotkeysScreenView::new(
                 reconciler,
                 None,
@@ -476,14 +477,7 @@ mod tests {
             )
         });
 
-        let category = forge_hotkey::HOTKEY_INTEGRATION.category;
-        assert!(!targets.is_empty(), "no click reached the crumb");
-        assert!(
-            targets
-                .iter()
-                .all(|screen| *screen == Screen::Integrations(Some(category))),
-            "{targets:?}"
-        );
+        assert_eq!(targets, vec![Screen::Integrations(Some(category))]);
     }
 
     const HOME: &str = "nav.home";

@@ -960,12 +960,6 @@ pub fn tone() -> PcmBuffer {
     PcmBuffer::new(vec![0_i16; 16], 48_000, 1)
 }
 
-pub struct SilentPublisher;
-
-impl forge_events::EventPublisher for SilentPublisher {
-    fn publish(&self, _: Event) {}
-}
-
 pub fn neutral_pipeline_config() -> forge_tts_pipeline::PipelineConfig {
     forge_tts_pipeline::PipelineConfig {
         emote_tokens: forge_tts_pipeline::EmoteTokenSet::default(),
@@ -1297,7 +1291,11 @@ pub fn kick_manager_over(
             "client".to_owned(),
             forge_types::Secret::new("secret"),
         ),
-        forge_platform_kick::kick_api_gateway(&endpoints, limiter(), Arc::new(SilentPublisher))
-            .unwrap(),
+        forge_platform_kick::kick_api_gateway(
+            &endpoints,
+            limiter(),
+            Arc::new(forge_events::test_support::NullPublisher),
+        )
+        .unwrap(),
     ))
 }

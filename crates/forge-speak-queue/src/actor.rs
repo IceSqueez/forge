@@ -1417,11 +1417,13 @@ fn next_request<'a>(
 mod tests {
     use async_trait::async_trait;
     use forge_audio::{AudioError, AudioSink};
+    use forge_events::Event;
     use forge_events::test_support::NullPublisher;
-    use forge_events::{Event, EventPublisher};
     use forge_speech_types::{AssignmentStrategy, IgnoreProfile, SynthesisDefaults};
 
     use super::*;
+
+    use forge_events::test_support::CapturingPublisher;
 
     fn neutral_pipeline() -> forge_tts_pipeline::PipelineConfig {
         forge_tts_pipeline::PipelineConfig {
@@ -1517,21 +1519,10 @@ mod tests {
         }
     }
 
-    struct RecordingPublisher {
-        events: Arc<std::sync::Mutex<Vec<Event>>>,
-    }
-    impl EventPublisher for RecordingPublisher {
-        fn publish(&self, event: Event) {
-            self.events.lock().unwrap().push(event);
-        }
-    }
-
-    fn recording_deps() -> (ActorDeps, Arc<std::sync::Mutex<Vec<Event>>>) {
-        let events = Arc::new(std::sync::Mutex::new(Vec::new()));
+    fn recording_deps() -> (ActorDeps, Arc<CapturingPublisher>) {
+        let events = CapturingPublisher::shared();
         let deps = ActorDeps {
-            event_bus: Arc::new(RecordingPublisher {
-                events: Arc::clone(&events),
-            }),
+            event_bus: events.clone(),
             ..minimal_deps()
         };
         (deps, events)
@@ -1540,7 +1531,7 @@ mod tests {
     struct Harness {
         config: QueueConfig,
         deps: ActorDeps,
-        events: Arc<std::sync::Mutex<Vec<Event>>>,
+        events: Arc<CapturingPublisher>,
         tx: tokio::sync::broadcast::Sender<SpeakEvent>,
         rx: tokio::sync::broadcast::Receiver<SpeakEvent>,
         high: VecDeque<SpeakRequest>,
@@ -1597,8 +1588,7 @@ mod tests {
 
         fn bus(&self, kind: &str) -> Event {
             self.events
-                .lock()
-                .unwrap()
+                .events()
                 .iter()
                 .find(|e| e.kind == kind)
                 .cloned()
@@ -1606,7 +1596,7 @@ mod tests {
         }
 
         fn published(&self, kind: &str) -> bool {
-            self.events.lock().unwrap().iter().any(|e| e.kind == kind)
+            self.events.has_kind(kind)
         }
 
         fn drain_events(&mut self) -> Vec<SpeakEvent> {
@@ -2192,8 +2182,7 @@ mod tests {
         Option<forge_types::EventId>,
     )> {
         h.events
-            .lock()
-            .unwrap()
+            .events()
             .iter()
             .map(|e| (e.kind.clone(), e.payload.get("text").cloned(), e.caused_by))
             .collect()
@@ -2217,7 +2206,7 @@ mod tests {
             ],
         );
         let sources = [source_of(h, "b"), source_of(h, "a"), source_of(h, "c")];
-        h.events.lock().unwrap().clear();
+        drop(h.events.take());
         sources
     }
 

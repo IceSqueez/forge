@@ -87,24 +87,11 @@ fn options(list: &[&str]) -> BTreeSet<String> {
 }
 
 fn engine_table(name: &str) -> &'static str {
-    let opening = format!("var {name} = {{");
-    let start = MOTION_SOURCE
-        .find(&opening)
-        .unwrap_or_else(|| panic!("the motion engine no longer declares '{opening}'"))
-        + opening.len();
-    let rest = &MOTION_SOURCE[start..];
-    &rest[..rest
-        .find("\n  };")
-        .unwrap_or_else(|| panic!("'{opening}' is never closed"))]
+    common::js_block(MOTION_SOURCE, &format!("var {name} = {{"))
 }
 
 fn engine_table_keys(name: &str) -> BTreeSet<String> {
-    engine_table(name)
-        .lines()
-        .filter(|line| line.starts_with("    ") && !line.starts_with("     "))
-        .filter_map(|line| line.trim().split_once(':').map(|(key, _)| key))
-        .map(|key| key.trim_matches('"').to_owned())
-        .collect()
+    common::js_object_keys(MOTION_SOURCE, &format!("var {name} = {{"))
 }
 
 fn engine_string(name: &str) -> String {

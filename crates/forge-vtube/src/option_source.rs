@@ -200,7 +200,7 @@ mod tests {
     use tokio::sync::mpsc;
 
     use super::*;
-    use crate::client::tests::{FakeVts, MockPublisher, stored_token_creds};
+    use crate::client::tests::{CapturingPublisher, FakeVts, stored_token_creds};
     use crate::content::{ExpressionItem, HotkeyItem, ModelItem};
     use crate::vts::request::PendingRequest;
 
@@ -652,7 +652,7 @@ mod tests {
     #[tokio::test]
     async fn a_session_bumps_the_option_revision_on_connect_item_spawn_and_loss() {
         let mut fake = FakeVts::bind().await;
-        let publisher = MockPublisher::new();
+        let publisher = CapturingPublisher::shared();
         let client = fake.connect(&publisher, &stored_token_creds());
         let mut revisions = client.revisions();
         let (peer, _) = fake.logged_in_conn().await.answer_all_except(|_| false);

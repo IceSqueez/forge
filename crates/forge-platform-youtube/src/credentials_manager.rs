@@ -265,7 +265,7 @@ mod tests {
         CREDENTIAL_KEY, DEFAULT_ACCESS_TOKEN_LIFETIME_SECS, YoutubeCredentials,
     };
     use crate::endpoints_test_support::{
-        RecordingPublisher, ReplyGate, StubReply, StubServer, data_api_with, oauth_client_at,
+        CapturingPublisher, ReplyGate, StubReply, StubServer, data_api_with, oauth_client_at,
         settle, unreachable_data_api, unreachable_oauth_client, used_today,
     };
     use crate::quota_state::SharedQuota;
@@ -395,7 +395,7 @@ mod tests {
         server: StubServer,
         repo: Arc<MemoryCredentials>,
         quota: SharedQuota,
-        bus: Arc<RecordingPublisher>,
+        bus: Arc<CapturingPublisher>,
         manager: Arc<YoutubeCredentialsManager>,
     }
 
@@ -403,7 +403,7 @@ mod tests {
         let server = StubServer::start().await;
         let repo = repo_with_creds(creds);
         let quota = SharedQuota::default();
-        let bus = Arc::new(RecordingPublisher::default());
+        let bus = Arc::new(CapturingPublisher::default());
         let manager = Arc::new(YoutubeCredentialsManager::new(
             repo.clone(),
             oauth_client_at(&server.uri()),
@@ -897,7 +897,7 @@ mod tests {
                 (
                     creds.channel_handle,
                     stored_creds(&rig.repo).unwrap().channel_handle,
-                    rig.bus.events_of_kind(REQUEST_FAIL_KIND).len(),
+                    rig.bus.of_kind(REQUEST_FAIL_KIND).len(),
                     used_today(&rig.quota).await
                 ),
                 (None, None, 1, 1),

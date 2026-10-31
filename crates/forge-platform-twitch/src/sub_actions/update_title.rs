@@ -111,12 +111,7 @@ mod tests {
     fn runner_with(
         response: Result<serde_json::Value, TwitchError>,
     ) -> (Arc<MockTransport>, UpdateTitleRunner) {
-        let transport = Arc::new(MockTransport::returning(response));
-        let runner = UpdateTitleRunner::new(
-            Arc::clone(&transport) as Arc<dyn HelixTransport>,
-            crate::sub_actions::test_support::self_identity(),
-        );
-        (transport, runner)
+        crate::sub_actions::test_support::runner_with(vec![response], UpdateTitleRunner::new)
     }
 
     fn cfg(title: &str) -> SubActionConfig {

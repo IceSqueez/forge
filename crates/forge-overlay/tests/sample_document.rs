@@ -7,6 +7,9 @@ use common::{
 
 use std::collections::BTreeMap;
 
+use forge_overlay::config::{
+    AUTHOR, AUTHOR_COLOR, BADGES, HEADLINE, LABEL, MESSAGE, PLATFORM, SUBLINE, TARGET, VALUE,
+};
 use forge_overlay::{OverlayInstance, sample_document};
 use serde_json::Value;
 
@@ -24,39 +27,39 @@ const EXPECTED_SAMPLE_CONTENT: &[(&str, &[(&str, &str)])] = &[
     (
         ALERT_KIND,
         &[
-            ("headline", "Thanks for the sub!"),
-            ("subline", "61 months subscribed"),
+            (HEADLINE, "Thanks for the sub!"),
+            (SUBLINE, "61 months subscribed"),
         ],
     ),
     (BLANK_KIND, &[]),
     (
         CHAT_KIND,
         &[
-            ("author", "testuser"),
-            ("author_color", "#89dceb"),
-            ("badges", ""),
-            ("message", "hey, great stream!"),
-            ("platform", ""),
+            (AUTHOR, "testuser"),
+            (AUTHOR_COLOR, "#89dceb"),
+            (BADGES, ""),
+            (MESSAGE, "hey, great stream!"),
+            (PLATFORM, ""),
         ],
     ),
-    (FRAME_KIND, &[("headline", ""), ("subline", "LIVE")]),
+    (FRAME_KIND, &[(HEADLINE, ""), (SUBLINE, "LIVE")]),
     (
         GOAL_KIND,
-        &[("label", "Sub goal"), ("target", "100"), ("value", "42")],
+        &[(LABEL, "Sub goal"), (TARGET, "100"), (VALUE, "42")],
     ),
     (
         LATEST_KIND,
         &[
-            ("headline", "PixelPal"),
-            ("label", "Last donation"),
-            ("subline", "100.00 UAH"),
+            (HEADLINE, "PixelPal"),
+            (LABEL, "Last donation"),
+            (SUBLINE, "100.00 UAH"),
         ],
     ),
     (
         TICKER_KIND,
         &[
-            ("headline", "Latest cheer: 5001 bits"),
-            ("subline", "\"hey, great stream!\""),
+            (HEADLINE, "Latest cheer: 5001 bits"),
+            (SUBLINE, "\"hey, great stream!\""),
         ],
     ),
 ];

@@ -220,7 +220,7 @@ impl ObsClient {
             reconnect_host: host,
             reconnect_port: port,
             reconnect_password: Arc::new(None),
-            reconnect_publisher: Arc::new(crate::runners::test_support::NoopPublisher),
+            reconnect_publisher: Arc::new(forge_events::test_support::NullPublisher),
             auto_reconnect: AutoReconnectSwitch::new(true),
             last_failure: Arc::new(RwLock::new(None)),
             resync_nudge: Arc::new(Notify::new()),
@@ -1329,12 +1329,11 @@ pub(crate) fn map_obws_error(e: obws::error::Error) -> ObsError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use forge_types::RecoverMutex;
+    use forge_events::test_support::CapturingPublisher;
 
     use crate::catalog::ObsCatalog;
     use crate::mirror::merge_reconciled_topology;
     use forge_events::{PlatformConnectionChanged, TypedEvent};
-    use std::sync::Mutex;
 
     const EVERY_CONNECTION_STATE: [ConnectionState; 4] = [
         ConnectionState::Disconnected,
@@ -1342,6 +1341,13 @@ mod tests {
         ConnectionState::Connected,
         ConnectionState::Reconnecting,
     ];
+
+    fn last_payload(publisher: &CapturingPublisher, field: &str) -> Option<serde_json::Value> {
+        publisher
+            .events()
+            .last()
+            .map(|event| event.payload[field].clone())
+    }
 
     #[test]
     fn a_state_transition_announces_the_new_state_only_when_it_actually_changed() {
@@ -1471,32 +1477,6 @@ mod tests {
         assert!(client.auto_reconnect_enabled());
     }
 
-    #[derive(Default)]
-    struct CapturingPublisher(Mutex<Vec<forge_events::Event>>);
-
-    impl EventPublisher for CapturingPublisher {
-        fn publish(&self, event: forge_events::Event) {
-            self.0.lock_recover().push(event);
-        }
-    }
-
-    impl CapturingPublisher {
-        fn kinds(&self) -> Vec<String> {
-            self.0
-                .lock_recover()
-                .iter()
-                .map(|e| e.kind.clone())
-                .collect()
-        }
-
-        fn last_payload(&self, field: &str) -> Option<serde_json::Value> {
-            self.0
-                .lock_recover()
-                .last()
-                .map(|e| e.payload[field].clone())
-        }
-    }
-
     struct EventHarness {
         mirror: ObsMirror,
         health: RwLock<HealthSnapshot>,
@@ -1615,7 +1595,7 @@ mod tests {
         assert_eq!(h.source_flags("Gameplay", "Webcam"), Some((false, false)));
         assert_eq!(h.publisher.kinds(), vec!["obs.source.visibility_changed"]);
         assert_eq!(
-            h.publisher.last_payload("source_name"),
+            last_payload(&h.publisher, "source_name"),
             Some(serde_json::json!("Webcam")),
         );
     }
@@ -1734,7 +1714,7 @@ mod tests {
             Some("obs.source.visibility_changed"),
         );
         assert_eq!(
-            h.publisher.last_payload("source_name"),
+            last_payload(&h.publisher, "source_name"),
             Some(serde_json::json!("Studio Mic")),
         );
     }
@@ -1999,7 +1979,7 @@ mod tests {
         h.feed(&enable_state_changed("Live", 42, false));
 
         assert_eq!(
-            h.publisher.last_payload("scene_name"),
+            last_payload(&h.publisher, "scene_name"),
             Some(serde_json::json!("Live")),
         );
         assert_eq!(h.source_flags("Live", "Webcam"), Some((false, false)));

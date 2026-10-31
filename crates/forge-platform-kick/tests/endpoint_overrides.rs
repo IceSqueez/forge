@@ -1,9 +1,8 @@
-#![allow(clippy::unwrap_used)]
+#![allow(clippy::unwrap_used, clippy::panic)]
 use forge_types::OAuthToken;
 use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::sync::Arc;
-use std::time::Duration;
 
 use forge_net::{Gateway, RateLimiter};
 use forge_platform_core::{ChatPlatform, EndpointSurface, PlatformEndpoints};
@@ -15,11 +14,13 @@ use forge_platform_kick::{
 use forge_storage::BanLedgerRepo;
 use forge_storage::MockBanLedgerRepo;
 use forge_storage::test_support::MemoryCredentials;
+use forge_test_support::HANG_GUARD;
 use futures_util::StreamExt;
 use serde_json::{Value, json};
 use time::OffsetDateTime;
 use tokio::net::TcpListener;
 use tokio::sync::{mpsc, oneshot};
+use tokio::task::JoinHandle;
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::tungstenite::handshake::server::{
     Callback, ErrorResponse, Request, Response,
@@ -27,7 +28,7 @@ use tokio_tungstenite::tungstenite::handshake::server::{
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-const STEP_DEADLINE: Duration = Duration::from_secs(30);
+const FAR_FUTURE_UNIX: i64 = 4_102_444_800;
 const CHATROOM_ID: u64 = 4242;
 
 fn endpoints(overrides: &[(EndpointSurface, String)]) -> PlatformEndpoints {
@@ -224,11 +225,28 @@ impl Callback for PathCapture<'_> {
     }
 }
 
-async fn spawn_pusher_peer() -> (String, oneshot::Receiver<(String, Value)>) {
+struct PusherPeer {
+    seen: oneshot::Receiver<(String, Value)>,
+    task: JoinHandle<()>,
+}
+
+impl PusherPeer {
+    async fn handshake(self) -> (String, Value) {
+        if let Ok(Ok(handshake)) = tokio::time::timeout(HANG_GUARD, self.seen).await {
+            return handshake;
+        }
+        if self.task.is_finished() {
+            self.task.await.unwrap();
+        }
+        panic!("the pusher peer never saw a subscribe frame");
+    }
+}
+
+async fn spawn_pusher_peer() -> (String, PusherPeer) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let socket_addr = listener.local_addr().unwrap();
-    let (seen_tx, seen_rx) = oneshot::channel();
-    tokio::spawn(async move {
+    let (seen_tx, seen) = oneshot::channel();
+    let task = tokio::spawn(async move {
         let (stream, _) = listener.accept().await.unwrap();
         let mut request_path = String::new();
         let mut ws = tokio_tungstenite::accept_hdr_async(stream, PathCapture(&mut request_path))
@@ -243,7 +261,7 @@ async fn spawn_pusher_peer() -> (String, oneshot::Receiver<(String, Value)>) {
         }
         while let Some(Ok(_)) = ws.next().await {}
     });
-    (format!("ws://{socket_addr}/app"), seen_rx)
+    (format!("ws://{socket_addr}/app"), PusherPeer { seen, task })
 }
 
 fn expected_handshake() -> (String, Value) {
@@ -257,7 +275,7 @@ fn expected_handshake() -> (String, Value) {
 async fn chat_socket_override_carries_the_pusher_handshake_and_subscribe_to_the_override_host() {
     let channel_api = MockServer::start().await;
     mount_channel(&channel_api).await;
-    let (socket_base, seen_rx) = spawn_pusher_peer().await;
+    let (socket_base, peer) = spawn_pusher_peer().await;
     let endpoints = endpoints(&[
         (
             EndpointSurface::KickChannelApi,
@@ -271,10 +289,7 @@ async fn chat_socket_override_carries_the_pusher_handshake_and_subscribe_to_the_
         .connect(event_tx)
         .await
         .unwrap();
-    let handshake = tokio::time::timeout(STEP_DEADLINE, seen_rx)
-        .await
-        .unwrap()
-        .unwrap();
+    let handshake = peer.handshake().await;
     handle.shutdown();
 
     assert_eq!(handshake, expected_handshake());
@@ -290,7 +305,7 @@ async fn platform_carries_its_overrides_into_the_chat_session_and_the_sender() {
         .expect(1)
         .mount(&server)
         .await;
-    let (socket_base, seen_rx) = spawn_pusher_peer().await;
+    let (socket_base, peer) = spawn_pusher_peer().await;
     let endpoints = endpoints(&[
         (
             EndpointSurface::KickPublicApi,
@@ -310,7 +325,7 @@ async fn platform_carries_its_overrides_into_the_chat_session_and_the_sender() {
             user_id: 7,
             username: "streamer".to_owned(),
             client_id: "client".to_owned(),
-            expires_at: OffsetDateTime::now_utc() + time::Duration::hours(1),
+            expires_at: OffsetDateTime::from_unix_timestamp(FAR_FUTURE_UNIX).unwrap(),
         })
         .await
         .unwrap();
@@ -324,10 +339,7 @@ async fn platform_carries_its_overrides_into_the_chat_session_and_the_sender() {
 
     platform.connect().await.unwrap();
     platform.send_message("streamer", "hello").await.unwrap();
-    let handshake = tokio::time::timeout(STEP_DEADLINE, seen_rx)
-        .await
-        .unwrap()
-        .unwrap();
+    let handshake = peer.handshake().await;
     platform.disconnect().await.unwrap();
 
     assert_eq!(handshake, expected_handshake());

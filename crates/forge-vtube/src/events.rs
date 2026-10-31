@@ -91,7 +91,7 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::client::tests::MockPublisher;
+    use crate::client::tests::CapturingPublisher;
 
     fn model_loaded(loaded: bool) -> VtsEvent {
         VtsEvent::ModelLoaded {
@@ -167,11 +167,11 @@ mod tests {
                 json!({ "item_instance_id": "inst-1", "item_file_name": "crown.png" }),
             ),
         ] {
-            let publisher = MockPublisher::new();
+            let publisher = CapturingPublisher::shared();
 
             dispatch_vts_event(&event, publisher.as_ref());
 
-            let events = publisher.events.lock().unwrap();
+            let events = publisher.events();
             let [published] = events.as_slice() else {
                 panic!(
                     "{kind}: expected exactly one bus event, got {}",

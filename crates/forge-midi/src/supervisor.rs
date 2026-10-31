@@ -397,13 +397,14 @@ fn build_event_deltas(snap: &mut MidiHealthSnapshot, is_note_on: bool) -> Vec<He
 
 #[cfg(test)]
 mod tests {
+    use forge_events::test_support::CapturingPublisher;
     use std::sync::Arc;
     use std::time::{Duration, Instant};
 
     use tokio::sync::mpsc;
     use tokio_stream::StreamExt;
 
-    use forge_events::{Event, EventPublisher};
+    use forge_events::EventPublisher;
 
     use super::run_supervisor;
     use crate::backend::MidiBackend;
@@ -411,47 +412,6 @@ mod tests {
     use crate::client::MidiClient;
     use crate::config::MidiConfig;
     use crate::events::{MidiPortInfo, PortDirection};
-
-    struct RecordingPublisher {
-        events: std::sync::Mutex<Vec<Event>>,
-    }
-
-    impl RecordingPublisher {
-        fn new() -> Arc<Self> {
-            Arc::new(Self {
-                events: std::sync::Mutex::new(Vec::new()),
-            })
-        }
-
-        fn has_kind(&self, kind: &str) -> bool {
-            self.events.lock().unwrap().iter().any(|e| e.kind == kind)
-        }
-
-        fn find_all_kind(&self, kind: &str) -> Vec<Event> {
-            self.events
-                .lock()
-                .unwrap()
-                .iter()
-                .filter(|e| e.kind == kind)
-                .cloned()
-                .collect()
-        }
-
-        fn find_kind(&self, kind: &str) -> Option<Event> {
-            self.events
-                .lock()
-                .unwrap()
-                .iter()
-                .find(|e| e.kind == kind)
-                .cloned()
-        }
-    }
-
-    impl EventPublisher for RecordingPublisher {
-        fn publish(&self, event: Event) {
-            self.events.lock().unwrap().push(event);
-        }
-    }
 
     fn input_port(name: &str) -> MidiPortInfo {
         MidiPortInfo {
@@ -485,7 +445,7 @@ mod tests {
 
     fn launch_client(
         backend: &Arc<MockMidiBackend>,
-        publisher: &Arc<RecordingPublisher>,
+        publisher: &Arc<CapturingPublisher>,
     ) -> Arc<MidiClient> {
         MidiClient::start(
             MidiConfig::default(),
@@ -496,7 +456,7 @@ mod tests {
 
     async fn start_client(
         backend: Arc<MockMidiBackend>,
-        publisher: Arc<RecordingPublisher>,
+        publisher: Arc<CapturingPublisher>,
     ) -> Arc<MidiClient> {
         let client = launch_client(&backend, &publisher);
         let expected = backend.state.lock().unwrap().input_ports.len();
@@ -504,10 +464,10 @@ mod tests {
         client
     }
 
-    async fn wait_for_port_event(publisher: &RecordingPublisher, kind: &str, port: &str) {
+    async fn wait_for_port_event(publisher: &CapturingPublisher, kind: &str, port: &str) {
         wait_until(kind, || {
             publisher
-                .find_all_kind(kind)
+                .of_kind(kind)
                 .iter()
                 .any(|e| e.payload["port_name"] == port)
         })
@@ -517,13 +477,13 @@ mod tests {
     #[tokio::test]
     async fn the_poll_tick_reports_a_hot_plugged_port_without_a_rescan() {
         let backend = Arc::new(MockMidiBackend::new(vec![input_port("A")], vec![]));
-        let publisher = RecordingPublisher::new();
+        let publisher = CapturingPublisher::shared();
         let _client = start_client(Arc::clone(&backend), Arc::clone(&publisher)).await;
 
         backend.set_input_ports(vec![input_port("A"), input_port("B")]);
         wait_for_port_event(&publisher, "midi.port.added", "B").await;
 
-        let added = publisher.find_all_kind("midi.port.added");
+        let added = publisher.of_kind("midi.port.added");
         let b_ev = added
             .iter()
             .find(|e| e.payload["port_name"] == "B")
@@ -537,7 +497,7 @@ mod tests {
             vec![input_port("A"), input_port("B")],
             vec![],
         ));
-        let publisher = RecordingPublisher::new();
+        let publisher = CapturingPublisher::shared();
         let client = start_client(Arc::clone(&backend), Arc::clone(&publisher)).await;
 
         backend.set_input_ports(vec![input_port("A")]);
@@ -549,7 +509,7 @@ mod tests {
     #[tokio::test]
     async fn subscribe_inject_note_on_emits_bus_event() {
         let backend = Arc::new(MockMidiBackend::new(vec![input_port("Piano")], vec![]));
-        let publisher = RecordingPublisher::new();
+        let publisher = CapturingPublisher::shared();
         let _client = start_client(Arc::clone(&backend), Arc::clone(&publisher)).await;
 
         backend.inject_all(0, vec![0x90, 60, 127]).await;
@@ -568,7 +528,7 @@ mod tests {
     #[tokio::test]
     async fn subscribe_inject_note_off_emits_bus_event() {
         let backend = Arc::new(MockMidiBackend::new(vec![input_port("Piano")], vec![]));
-        let publisher = RecordingPublisher::new();
+        let publisher = CapturingPublisher::shared();
         let _client = start_client(Arc::clone(&backend), Arc::clone(&publisher)).await;
 
         backend.inject_all(0, vec![0x80, 48, 64]).await;
@@ -585,7 +545,7 @@ mod tests {
     #[tokio::test]
     async fn subscribe_inject_cc_emits_bus_event() {
         let backend = Arc::new(MockMidiBackend::new(vec![input_port("Pad")], vec![]));
-        let publisher = RecordingPublisher::new();
+        let publisher = CapturingPublisher::shared();
         let _client = start_client(Arc::clone(&backend), Arc::clone(&publisher)).await;
 
         backend.inject_all(0, vec![0xB1, 7, 100]).await;
@@ -608,7 +568,7 @@ mod tests {
         const TIMING_CLOCK: [u8; 1] = [0xF8];
         const NOTE_ON_MARKER: [u8; 3] = [0x90, 60, 100];
         let backend = Arc::new(MockMidiBackend::new(vec![input_port("Piano")], vec![]));
-        let publisher = RecordingPublisher::new();
+        let publisher = CapturingPublisher::shared();
         let _client = start_client(Arc::clone(&backend), Arc::clone(&publisher)).await;
 
         backend.inject_all(0, CHANNEL_PRESSURE.to_vec()).await;
@@ -621,11 +581,8 @@ mod tests {
         .await;
 
         let kinds: Vec<String> = publisher
-            .events
-            .lock()
-            .unwrap()
-            .iter()
-            .map(|event| event.kind.to_string())
+            .kinds()
+            .into_iter()
             .filter(|kind| kind.starts_with("midi.input."))
             .collect();
         assert_eq!(kinds, ["midi.input.note_on"]);
@@ -634,7 +591,7 @@ mod tests {
     #[tokio::test]
     async fn note_on_velocity_zero_emits_note_off_event() {
         let backend = Arc::new(MockMidiBackend::new(vec![input_port("Piano")], vec![]));
-        let publisher = RecordingPublisher::new();
+        let publisher = CapturingPublisher::shared();
         let _client = start_client(Arc::clone(&backend), Arc::clone(&publisher)).await;
 
         backend.inject_all(0, vec![0x90, 60, 0]).await;
@@ -655,7 +612,7 @@ mod tests {
     #[tokio::test]
     async fn every_port_bearing_event_uses_unified_port_name_key() {
         let backend = Arc::new(MockMidiBackend::new(vec![input_port("Deck")], vec![]));
-        let publisher = RecordingPublisher::new();
+        let publisher = CapturingPublisher::shared();
         let client = start_client(Arc::clone(&backend), Arc::clone(&publisher)).await;
 
         backend.inject_all(0, vec![0x90, 60, 100]).await;
@@ -701,9 +658,9 @@ mod tests {
         }
     }
 
-    fn note_on_ports(publisher: &RecordingPublisher) -> Vec<String> {
+    fn note_on_ports(publisher: &CapturingPublisher) -> Vec<String> {
         publisher
-            .find_all_kind("midi.input.note_on")
+            .of_kind("midi.input.note_on")
             .iter()
             .filter_map(|e| {
                 e.payload
@@ -717,7 +674,7 @@ mod tests {
     #[tokio::test]
     async fn disabled_engine_keeps_discovering_ports_but_leaves_them_unsubscribed() {
         let backend = Arc::new(MockMidiBackend::new(vec![input_port("A")], vec![]));
-        let publisher = RecordingPublisher::new();
+        let publisher = CapturingPublisher::shared();
         let client = start_client(Arc::clone(&backend), Arc::clone(&publisher)).await;
 
         client.disable_input().await.unwrap();
@@ -737,7 +694,7 @@ mod tests {
     #[tokio::test]
     async fn enable_subscribes_ports_discovered_while_disabled() {
         let backend = Arc::new(MockMidiBackend::new(vec![input_port("A")], vec![]));
-        let publisher = RecordingPublisher::new();
+        let publisher = CapturingPublisher::shared();
         let client = start_client(Arc::clone(&backend), Arc::clone(&publisher)).await;
 
         client.disable_input().await.unwrap();
@@ -780,7 +737,7 @@ mod tests {
             .unwrap()
             .refused_opens
             .insert("A".to_owned());
-        let publisher = RecordingPublisher::new();
+        let publisher = CapturingPublisher::shared();
         let client = launch_client(&backend, &publisher);
         wait_for_port_event(&publisher, "midi.port.added", "A").await;
 
@@ -801,7 +758,7 @@ mod tests {
     #[tokio::test]
     async fn a_disabled_engine_lists_its_ports_as_disabled_not_failed() {
         let backend = Arc::new(MockMidiBackend::new(vec![input_port("A")], vec![]));
-        let client = start_client(Arc::clone(&backend), RecordingPublisher::new()).await;
+        let client = start_client(Arc::clone(&backend), CapturingPublisher::shared()).await;
 
         client.disable_input().await.unwrap();
         wait_until("the disable", || !client.is_enabled()).await;
@@ -815,7 +772,7 @@ mod tests {
     #[tokio::test]
     async fn dropping_the_client_ends_the_supervisor_and_closes_its_ports() {
         let backend = Arc::new(MockMidiBackend::new(vec![input_port("A")], vec![]));
-        let client = start_client(Arc::clone(&backend), RecordingPublisher::new()).await;
+        let client = start_client(Arc::clone(&backend), CapturingPublisher::shared()).await;
         assert_eq!(open_ports(&backend), 1);
 
         drop(client);
@@ -894,7 +851,7 @@ mod tests {
     #[tokio::test]
     async fn disable_stops_an_already_established_subscription() {
         let backend = Arc::new(MockMidiBackend::new(vec![input_port("A")], vec![]));
-        let publisher = RecordingPublisher::new();
+        let publisher = CapturingPublisher::shared();
         let client = start_client(Arc::clone(&backend), Arc::clone(&publisher)).await;
 
         backend.inject_all(0, vec![0x90, 60, 100]).await;
@@ -936,7 +893,7 @@ mod tests {
     #[tokio::test]
     async fn enable_while_already_enabled_does_not_duplicate_a_subscription() {
         let backend = Arc::new(MockMidiBackend::new(vec![input_port("A")], vec![]));
-        let publisher = RecordingPublisher::new();
+        let publisher = CapturingPublisher::shared();
         let client = start_client(Arc::clone(&backend), Arc::clone(&publisher)).await;
 
         client.enable_input().await.unwrap();
@@ -955,7 +912,7 @@ mod tests {
     #[tokio::test]
     async fn engine_enable_and_disable_publish_their_own_event_kinds() {
         let backend = Arc::new(MockMidiBackend::new(vec![input_port("A")], vec![]));
-        let publisher = RecordingPublisher::new();
+        let publisher = CapturingPublisher::shared();
         let client = start_client(Arc::clone(&backend), Arc::clone(&publisher)).await;
 
         client.disable_input().await.unwrap();
@@ -977,7 +934,7 @@ mod tests {
         use forge_platform_core::{BuiltinHealth, HealthValue};
 
         let backend = Arc::new(MockMidiBackend::new(vec![input_port("A")], vec![]));
-        let publisher = RecordingPublisher::new();
+        let publisher = CapturingPublisher::shared();
         let client = start_client(Arc::clone(&backend), Arc::clone(&publisher)).await;
 
         let health: &dyn BuiltinHealth = &*client;
@@ -1028,7 +985,7 @@ mod tests {
     #[tokio::test]
     async fn rescan_discovers_a_port_without_waiting_for_the_poll_tick() {
         let backend = Arc::new(MockMidiBackend::new(vec![], vec![]));
-        let publisher = RecordingPublisher::new();
+        let publisher = CapturingPublisher::shared();
         let client = start_client(Arc::clone(&backend), Arc::clone(&publisher)).await;
 
         backend.set_input_ports(vec![input_port("Late")]);
@@ -1040,7 +997,7 @@ mod tests {
     #[tokio::test]
     async fn monitor_stream_receives_every_decoded_input_event() {
         let backend = Arc::new(MockMidiBackend::new(vec![input_port("Pad")], vec![]));
-        let publisher = RecordingPublisher::new();
+        let publisher = CapturingPublisher::shared();
         let client = start_client(Arc::clone(&backend), Arc::clone(&publisher)).await;
 
         let mut monitor = client.monitor_stream();
@@ -1054,14 +1011,14 @@ mod tests {
     #[tokio::test]
     async fn output_port_added_emits_event_with_output_direction() {
         let backend = Arc::new(MockMidiBackend::new(vec![], vec![]));
-        let publisher = RecordingPublisher::new();
+        let publisher = CapturingPublisher::shared();
         let client = start_client(Arc::clone(&backend), Arc::clone(&publisher)).await;
 
         backend.set_output_ports(vec![output_port("Synth")]);
         client.rescan_ports().await.unwrap();
         wait_for_port_event(&publisher, "midi.port.added", "Synth").await;
 
-        let added = publisher.find_all_kind("midi.port.added");
+        let added = publisher.of_kind("midi.port.added");
         assert!(
             added.iter().any(|e| e.payload["direction"] == "output"),
             "expected output port added event"
@@ -1074,7 +1031,7 @@ mod tests {
             vec![],
             vec![output_port("Synth"), output_port("Drums")],
         ));
-        let publisher = RecordingPublisher::new();
+        let publisher = CapturingPublisher::shared();
         let client = start_client(Arc::clone(&backend), Arc::clone(&publisher)).await;
         wait_for_port_event(&publisher, "midi.port.added", "Synth").await;
 
@@ -1091,7 +1048,7 @@ mod tests {
             vec![input_port("A"), input_port("B")],
             vec![],
         ));
-        let client = start_client(Arc::clone(&backend), RecordingPublisher::new()).await;
+        let client = start_client(Arc::clone(&backend), CapturingPublisher::shared()).await;
         let open_ports = || open_ports(&backend);
         assert_eq!(open_ports(), 2, "both inputs open while running");
 

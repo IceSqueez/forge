@@ -423,7 +423,9 @@ mod tests {
     use super::*;
     use std::sync::atomic::Ordering;
 
-    use crate::client::tests::{FakeVts, MockPublisher, PeerConn, stored_token_creds, wait_until};
+    use crate::client::tests::{
+        CapturingPublisher, FakeVts, PeerConn, stored_token_creds, wait_until,
+    };
     use crate::timing::VTubeTiming;
 
     const SETTLE: Duration = Duration::from_secs(30);
@@ -441,7 +443,8 @@ mod tests {
         vts: &mut FakeVts,
         timing: VTubeTiming,
     ) -> (VTubeClient, PeerConn) {
-        let client = vts.connect_with_timing(&MockPublisher::new(), &stored_token_creds(), timing);
+        let client =
+            vts.connect_with_timing(&CapturingPublisher::shared(), &stored_token_creds(), timing);
         let conn = vts.logged_in_conn().await;
         assert!(
             wait_until(SETTLE, || client.connection_state().is_connected()).await,

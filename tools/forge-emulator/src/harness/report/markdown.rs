@@ -1,3 +1,4 @@
+use super::text::LISTED;
 use std::fmt::Write;
 
 use crate::fakes::obs::Authentication;
@@ -14,7 +15,6 @@ use crate::harness::run::{
     LedgerExcerpt, ScenarioVerdict, StepOutcome, StepStatus, Verdict,
 };
 
-const LISTED: usize = 5;
 const PAYLOAD_CHARS: usize = 200;
 const LINE_CHARS: usize = 400;
 const TAIL_LINES: usize = 20;

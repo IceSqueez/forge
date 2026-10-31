@@ -244,12 +244,11 @@ impl<S: Clone + PartialEq, F: Copy + PartialEq> Drop for RunningPoller<S, F> {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Mutex;
-
-    use forge_events::Event;
 
     use super::*;
+
     use crate::builtin::{HealthMetricId, HealthText, HealthValue};
+    use forge_events::test_support::CapturingPublisher;
 
     const POLL_INTERVAL: Duration = Duration::from_secs(30);
 
@@ -292,44 +291,32 @@ mod tests {
         })
     }
 
-    #[derive(Default)]
-    struct Recorder(Mutex<Vec<Event>>);
-
-    impl EventPublisher for Recorder {
-        fn publish(&self, event: Event) {
-            self.0.lock().unwrap().push(event);
-        }
-    }
-
-    impl Recorder {
-        fn announcements(&self) -> Vec<(ConnectionState, bool)> {
-            self.0
-                .lock()
-                .unwrap()
-                .iter()
-                .map(|event| {
-                    (
-                        serde_json::from_value(event.payload["state"].clone()).unwrap(),
-                        event.payload["expected"].as_bool().unwrap(),
-                    )
-                })
-                .collect()
-        }
-
-        fn last(&self) -> Option<(ConnectionState, bool)> {
-            self.announcements().last().copied()
-        }
-    }
-
     fn board() -> Board {
         PollStatusBoard::new("test", POLL_INTERVAL, fixed_metrics)
     }
 
-    fn announcing_board() -> (Arc<Board>, Arc<Recorder>) {
-        let recorder = Arc::new(Recorder::default());
+    fn announcing_board() -> (Arc<Board>, Arc<CapturingPublisher>) {
+        let recorder = Arc::new(CapturingPublisher::default());
         let board = Arc::new(board());
         board.attach_publisher(Arc::clone(&recorder) as Arc<dyn EventPublisher>);
         (board, recorder)
+    }
+
+    fn announcements(recorder: &CapturingPublisher) -> Vec<(ConnectionState, bool)> {
+        recorder
+            .events()
+            .iter()
+            .map(|event| {
+                (
+                    serde_json::from_value(event.payload["state"].clone()).unwrap(),
+                    event.payload["expected"].as_bool().unwrap(),
+                )
+            })
+            .collect()
+    }
+
+    fn last(recorder: &CapturingPublisher) -> Option<(ConnectionState, bool)> {
+        announcements(recorder).last().copied()
     }
 
     #[test]
@@ -342,7 +329,7 @@ mod tests {
             let (board, recorder) = announcing_board();
             board.record_poll(None);
             board.record_failure(&error);
-            assert_eq!(recorder.last(), Some((state, false)), "{error:?}");
+            assert_eq!(last(&recorder), Some((state, false)), "{error:?}");
         }
     }
 
@@ -369,7 +356,7 @@ mod tests {
         board.enter(PollPhase::Paused);
         board.enter(PollPhase::Starting);
         assert_eq!(
-            recorder.announcements(),
+            announcements(&recorder),
             [
                 (ConnectionState::Connected, true),
                 (ConnectionState::Disconnected, true),
@@ -384,7 +371,7 @@ mod tests {
         board.record_poll(None);
         board.record_failure(&Failure::Network);
         board.record_poll(None);
-        assert_eq!(recorder.last(), Some((ConnectionState::Connected, true)));
+        assert_eq!(last(&recorder), Some((ConnectionState::Connected, true)));
     }
 
     #[test]
@@ -394,7 +381,7 @@ mod tests {
         board.record_failure(&Failure::Network);
         board.record_failure(&Failure::Network);
         assert_eq!(
-            recorder.announcements(),
+            announcements(&recorder),
             [
                 (ConnectionState::Connected, true),
                 (ConnectionState::Reconnecting, false),
@@ -408,7 +395,7 @@ mod tests {
         board.record_poll(None);
         board.record_rejected_donation(&Failure::Network);
         assert_eq!(
-            recorder.announcements(),
+            announcements(&recorder),
             [(ConnectionState::Connected, true)]
         );
         assert_eq!(board.snapshot().phase, PollPhase::Polling);
@@ -420,7 +407,7 @@ mod tests {
         let running = board.poller_started();
         board.record_failure(&Failure::Network);
         drop(running);
-        assert_eq!(recorder.last(), Some((ConnectionState::Disconnected, true)));
+        assert_eq!(last(&recorder), Some((ConnectionState::Disconnected, true)));
     }
 
     #[test]
@@ -431,7 +418,7 @@ mod tests {
         let _current = board.poller_started();
         drop(retired);
         assert_eq!(
-            recorder.announcements(),
+            announcements(&recorder),
             [(ConnectionState::Connected, true)]
         );
     }
@@ -444,7 +431,7 @@ mod tests {
         drop(first);
         let _restarted = board.poller_started();
         board.set_poll_interval(POLL_INTERVAL);
-        assert_eq!(recorder.last(), Some((ConnectionState::Disconnected, true)));
+        assert_eq!(last(&recorder), Some((ConnectionState::Disconnected, true)));
     }
 
     fn phase_after_last_poller_exit(reach: impl FnOnce(&Board)) -> PollPhase {

@@ -132,7 +132,7 @@ mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     use super::*;
-    use crate::endpoints_test_support::{RecordingPublisher, data_api_charging, data_api_with};
+    use crate::endpoints_test_support::{CapturingPublisher, data_api_charging, data_api_with};
 
     const REQUEST_FAIL_KIND: &str = "request.fail";
     use crate::quota_state::{QuotaState, SharedQuota, today_pacific};
@@ -546,7 +546,7 @@ mod tests {
 
         for (response, expected, request_fails) in cases {
             let server = server_answering(response).await;
-            let bus = Arc::new(RecordingPublisher::default());
+            let bus = Arc::new(CapturingPublisher::default());
             let lookup = YoutubeFollowLookup::new(
                 data_api_with(
                     &server.uri(),
@@ -560,7 +560,7 @@ mod tests {
             let status = lookup.status_of(VIEWER).await;
 
             assert_eq!(
-                (status, bus.events_of_kind(REQUEST_FAIL_KIND).len()),
+                (status, bus.of_kind(REQUEST_FAIL_KIND).len()),
                 (expected, request_fails)
             );
         }

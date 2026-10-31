@@ -10,7 +10,6 @@ use serde_json::{Value, json};
 mod support;
 
 use forge_storage::test_support::MemoryCredentials;
-use support::QuietPublisher;
 
 const ALERTS: &str = "alerts";
 
@@ -230,7 +229,7 @@ fn forge_client(fake: &FakeDiscord, saved: &str) -> Arc<DiscordClient> {
     .unwrap();
     DiscordClient::new(
         endpoints.base_url(forge_platform_core::EndpointSurface::DiscordApi),
-        Arc::new(QuietPublisher),
+        Arc::new(forge_events::test_support::NullPublisher),
         Arc::new(creds),
     )
     .unwrap()

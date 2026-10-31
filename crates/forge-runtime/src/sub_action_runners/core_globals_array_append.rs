@@ -131,19 +131,11 @@ impl SubActionRunner for CoreGlobalsArrayAppendRunner {
 mod tests {
     use super::*;
     use crate::test_support::MapGlobals;
-    use forge_events::Event;
-    use forge_events::EventPublisher;
+    use forge_events::test_support::CapturingPublisher;
+
     use forge_events::test_support::NullPublisher;
     use forge_types::EventId;
     use forge_types::Variant;
-    use std::sync::Mutex;
-
-    struct CapturingPublisher(Arc<Mutex<Vec<Event>>>);
-    impl EventPublisher for CapturingPublisher {
-        fn publish(&self, event: Event) {
-            self.0.lock().unwrap().push(event);
-        }
-    }
 
     fn cfg(key: &str, value: &str, max_length: i64) -> SubActionConfig {
         let mut c = SubActionConfig::new();
@@ -242,8 +234,7 @@ mod tests {
             "list",
             Variant::Array(vec![Variant::Int(1), Variant::Int(2)]),
         )]));
-        let events: Arc<Mutex<Vec<Event>>> = Arc::new(Mutex::new(Vec::new()));
-        let publisher = CapturingPublisher(Arc::clone(&events));
+        let publisher = CapturingPublisher::default();
         let parent = EventId::new();
         let stack = ArgStack::new();
         let ctx = RunContext::leaf(&stack, 0, parent, &publisher);
@@ -251,7 +242,7 @@ mod tests {
         let outcome = runner.execute(&cfg("list", "3", 0), &ctx).await.0.outcome;
 
         assert!(matches!(outcome, SubActionOutcome::Success));
-        let captured = events.lock().unwrap();
+        let captured = publisher.events();
         let ev = &captured[0];
         assert_eq!(ev.kind, "global.array_appended");
         assert_eq!(ev.caused_by, Some(parent));

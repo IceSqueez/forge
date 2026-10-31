@@ -1,3 +1,4 @@
+use crate::fakes::support::bearer_token;
 use std::sync::Arc;
 
 use axum::Router;
@@ -48,19 +49,19 @@ fn locate(method: &Method, path: &str) -> (YouTubeSurface, Option<Route>) {
         return (YouTubeSurface::UploadApi, None);
     }
     if let Some(rest) = path.strip_prefix(DATA_API_PREFIX) {
-        let route = match (method.as_str(), rest) {
-            ("GET", "/liveChat/messages") => Some(Route::ListChat),
-            ("POST", "/liveChat/messages") => Some(Route::InsertChat),
-            ("GET", "/liveBroadcasts") => Some(Route::ListBroadcasts),
-            ("GET", "/videos") => Some(Route::ListVideos),
-            ("GET", "/channels") => Some(Route::ListChannels),
-            ("GET", "/subscriptions") => Some(Route::ListSubscriptions),
+        let route = match (method, rest) {
+            (&Method::GET, "/liveChat/messages") => Some(Route::ListChat),
+            (&Method::POST, "/liveChat/messages") => Some(Route::InsertChat),
+            (&Method::GET, "/liveBroadcasts") => Some(Route::ListBroadcasts),
+            (&Method::GET, "/videos") => Some(Route::ListVideos),
+            (&Method::GET, "/channels") => Some(Route::ListChannels),
+            (&Method::GET, "/subscriptions") => Some(Route::ListSubscriptions),
             _ => None,
         };
         return (YouTubeSurface::DataApi, route);
     }
     if let Some(rest) = path.strip_prefix(OAUTH_PREFIX) {
-        let route = (method.as_str() == "POST" && rest == "/token").then_some(Route::Token);
+        let route = (*method == Method::POST && rest == "/token").then_some(Route::Token);
         return (YouTubeSurface::OAuth, route);
     }
     (YouTubeSurface::Unknown, None)
@@ -156,10 +157,7 @@ fn decode_body(surface: YouTubeSurface, bytes: &Bytes) -> Option<Value> {
 }
 
 fn check_bearer(headers: &HeaderMap, access_token: &str) -> YouTubeCredentialCheck {
-    let bearer = headers
-        .get("authorization")
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.strip_prefix("Bearer "));
+    let bearer = bearer_token(headers);
     match bearer {
         None => YouTubeCredentialCheck::MissingBearer,
         Some(token) if token != access_token => YouTubeCredentialCheck::WrongBearer,

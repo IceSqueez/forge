@@ -150,7 +150,7 @@ mod tests {
 
     use super::*;
     use crate::backend::tests::MockPortalBackend;
-    use crate::client::tests::{RecordingPublisher, start_supervised};
+    use crate::client::tests::{CapturingPublisher, start_supervised};
 
     fn backdate(client: &HotkeyClient, id: HotkeyId, secs: u64) {
         if secs == 0 {
@@ -172,7 +172,7 @@ mod tests {
             (3, Some(1), true),
             (3, None, false),
         ] {
-            let publisher = RecordingPublisher::new();
+            let publisher = CapturingPublisher::shared();
             let (backend, _tx) = MockPortalBackend::new();
             let client =
                 start_supervised(backend, Arc::clone(&publisher) as Arc<dyn EventPublisher>);

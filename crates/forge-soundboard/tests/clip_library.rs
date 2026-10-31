@@ -1,10 +1,11 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
+use forge_events::test_support::CapturingPublisher;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
-use forge_events::{Event, EventPublisher, EventSource};
+use forge_events::{EventPublisher, EventSource};
 use forge_soundboard::{
     AdoptionVerdict, ClipAvailability, ClipLibrary, ClipRefusal, ClipSource, SoundboardError,
 };
@@ -295,41 +296,6 @@ impl SoundboardClipsRepo for FakeClips {
     }
 }
 
-#[derive(Default)]
-struct RecordingPublisher {
-    events: Mutex<Vec<Event>>,
-}
-
-impl EventPublisher for RecordingPublisher {
-    fn publish(&self, event: Event) {
-        self.events.lock().unwrap().push(event);
-    }
-}
-
-impl RecordingPublisher {
-    fn settled(&self) -> Vec<Value> {
-        self.events
-            .lock()
-            .unwrap()
-            .iter()
-            .filter(|event| event.source == EventSource::Audio && event.kind == ADOPTION_EVENT)
-            .map(|event| event.payload.clone())
-            .collect()
-    }
-
-    fn settled_for(&self, row: &StoredClip) -> usize {
-        let clip_id = json!(row.id.to_string());
-        self.settled()
-            .iter()
-            .filter(|payload| payload["clip_id"] == clip_id)
-            .count()
-    }
-
-    fn published(&self) -> usize {
-        self.events.lock().unwrap().len()
-    }
-}
-
 struct Harness {
     library: Arc<ClipLibrary>,
     clips: Arc<FakeClips>,
@@ -357,8 +323,8 @@ fn harness_with_gate(gate: Option<Arc<Notify>>) -> Harness {
 }
 
 impl Harness {
-    fn listen(&self) -> Arc<RecordingPublisher> {
-        let publisher = Arc::new(RecordingPublisher::default());
+    fn listen(&self) -> Arc<CapturingPublisher> {
+        let publisher = Arc::new(CapturingPublisher::default());
         self.library
             .install_event_publisher(Arc::clone(&publisher) as Arc<dyn EventPublisher>);
         publisher
@@ -622,7 +588,7 @@ async fn a_recorded_refusal_stops_the_background_path_but_not_an_explicit_adopti
         ),
         "an unsupported source was not refused: {refused:?}"
     );
-    assert_eq!(bus.settled_for(&row), 1, "the refusal was not announced");
+    assert_eq!(settled_for(&bus, &row), 1, "the refusal was not announced");
     let _ = drain(&mut fx.calls);
 
     fx.media.knows(
@@ -639,7 +605,7 @@ async fn a_recorded_refusal_stops_the_background_path_but_not_an_explicit_adopti
         "the background path retried a source it had already refused"
     );
     assert_eq!(
-        bus.settled_for(&row),
+        settled_for(&bus, &row),
         1,
         "the background path announced a refusal it never retried",
     );
@@ -649,7 +615,7 @@ async fn a_recorded_refusal_stops_the_background_path_but_not_an_explicit_adopti
         AdoptionVerdict::Adopted
     );
     assert_eq!(
-        bus.settled_for(&row),
+        settled_for(&bus, &row),
         2,
         "the explicit retry settled without announcing it",
     );
@@ -814,7 +780,7 @@ async fn adopting_a_list_announces_one_settled_event_per_row_carrying_its_verdic
 
     fx.library.adopt_all_now(&rows.in_order()).await;
 
-    let announced = bus.settled();
+    let announced = settled(&bus);
     assert_eq!(
         announced,
         vec![
@@ -832,7 +798,7 @@ async fn adopting_a_list_announces_one_settled_event_per_row_carrying_its_verdic
         ],
     );
     assert_eq!(
-        bus.published(),
+        bus.events().len(),
         announced.len(),
         "the library published something other than an adoption verdict",
     );
@@ -850,7 +816,7 @@ async fn a_refused_adoption_names_the_reason_without_leaking_the_source_path() {
         .await
         .expect("an unsupported source settles with a verdict");
 
-    let announced = bus.settled();
+    let announced = settled(&bus);
     let [payload] = announced.as_slice() else {
         panic!("expected exactly one settled event, got {announced:?}");
     };
@@ -893,9 +859,9 @@ async fn an_adoption_already_running_reports_in_flight_and_announces_nothing() {
     assert_eq!(verdict, AdoptionVerdict::InFlight);
 
     assert!(
-        bus.settled().is_empty(),
+        settled(&bus).is_empty(),
         "an unsettled adoption was announced: {:?}",
-        bus.settled(),
+        settled(&bus),
     );
 }
 
@@ -917,4 +883,21 @@ async fn an_adoption_settles_normally_while_no_publisher_is_installed() {
             .expect("the adoption settles without a bus to announce on"),
         AdoptionVerdict::Adopted
     );
+}
+
+fn settled(publisher: &CapturingPublisher) -> Vec<Value> {
+    publisher
+        .events()
+        .into_iter()
+        .filter(|event| event.source == EventSource::Audio && event.kind == ADOPTION_EVENT)
+        .map(|event| event.payload)
+        .collect()
+}
+
+fn settled_for(publisher: &CapturingPublisher, row: &StoredClip) -> usize {
+    let clip_id = json!(row.id.to_string());
+    settled(publisher)
+        .iter()
+        .filter(|payload| payload["clip_id"] == clip_id)
+        .count()
 }

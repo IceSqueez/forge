@@ -446,6 +446,8 @@ mod tests {
 
     use super::*;
 
+    use forge_events::test_support::CapturingPublisher;
+
     struct ScriptedRunner {
         id: String,
         outcome: SubActionOutcome,
@@ -568,24 +570,12 @@ mod tests {
         }
     }
 
-    struct CapturingPublisher {
-        events: Arc<Mutex<Vec<Event>>>,
-    }
-
-    impl EventPublisher for CapturingPublisher {
-        fn publish(&self, event: Event) {
-            self.events.lock().unwrap().push(event);
-        }
-    }
-
     fn capturing_engine(
         reg: Arc<SubActionRegistry>,
         max_nesting_depth: u32,
-    ) -> (Arc<ChainEngine>, Arc<Mutex<Vec<Event>>>) {
-        let events = Arc::new(Mutex::new(Vec::new()));
-        let publisher: Arc<dyn EventPublisher> = Arc::new(CapturingPublisher {
-            events: Arc::clone(&events),
-        });
+    ) -> (Arc<ChainEngine>, Arc<CapturingPublisher>) {
+        let events = CapturingPublisher::shared();
+        let publisher: Arc<dyn EventPublisher> = events.clone();
         let config = Config {
             max_nesting_depth,
             ..Default::default()
@@ -595,10 +585,9 @@ mod tests {
         (eng, events)
     }
 
-    fn done_events(events: &Arc<Mutex<Vec<Event>>>) -> Vec<(usize, String, Option<EventId>)> {
+    fn done_events(events: &Arc<CapturingPublisher>) -> Vec<(usize, String, Option<EventId>)> {
         events
-            .lock()
-            .unwrap()
+            .events()
             .iter()
             .filter(|e| e.kind == "subaction.done")
             .map(|e| {
@@ -609,10 +598,9 @@ mod tests {
             .collect()
     }
 
-    fn run_ids(events: &Arc<Mutex<Vec<Event>>>) -> BTreeMap<usize, EventId> {
+    fn run_ids(events: &Arc<CapturingPublisher>) -> BTreeMap<usize, EventId> {
         events
-            .lock()
-            .unwrap()
+            .events()
             .iter()
             .filter(|e| e.kind == "subaction.run")
             .map(|e| (e.payload["step_index"].as_u64().unwrap() as usize, e.id))
@@ -1059,8 +1047,7 @@ mod tests {
         );
 
         let failed_msg = events
-            .lock()
-            .unwrap()
+            .events()
             .iter()
             .find(|e| e.kind == "subaction.done" && e.payload["outcome"] == "failed")
             .and_then(|e| e.payload["message"].as_str().map(str::to_owned));
@@ -1321,8 +1308,7 @@ mod tests {
         assert_eq!(twitch_runs.load(Ordering::Relaxed), 0);
         assert_eq!(core_runs.load(Ordering::Relaxed), 0, "the chain must stop");
         let done = events
-            .lock()
-            .unwrap()
+            .events()
             .iter()
             .find(|e| e.kind == "subaction.done")
             .cloned()
@@ -1352,8 +1338,7 @@ mod tests {
         .await;
 
         let done = events
-            .lock()
-            .unwrap()
+            .events()
             .iter()
             .find(|e| e.kind == "subaction.done")
             .cloned()
@@ -1413,10 +1398,9 @@ mod tests {
         }
     }
 
-    fn send_requests(events: &Arc<Mutex<Vec<Event>>>) -> usize {
+    fn send_requests(events: &Arc<CapturingPublisher>) -> usize {
         events
-            .lock()
-            .unwrap()
+            .events()
             .iter()
             .filter(|e| e.kind == "chat.send.request")
             .count()

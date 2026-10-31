@@ -156,12 +156,7 @@ mod tests {
     fn runner_with(
         responses: Vec<Result<serde_json::Value, TwitchError>>,
     ) -> (Arc<MockTransport>, SendShoutoutRunner) {
-        let transport = Arc::new(MockTransport::returning_sequence(responses));
-        let runner = SendShoutoutRunner::new(
-            Arc::clone(&transport) as Arc<dyn HelixTransport>,
-            crate::sub_actions::test_support::self_identity(),
-        );
-        (transport, runner)
+        crate::sub_actions::test_support::runner_with(responses, SendShoutoutRunner::new)
     }
 
     fn config(login: &str) -> SubActionConfig {

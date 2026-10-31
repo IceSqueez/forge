@@ -1,13 +1,14 @@
 use std::collections::HashMap;
 use std::net::{Ipv4Addr, SocketAddr};
-use std::sync::{Arc, Mutex};
+use std::ops::Deref;
+use std::sync::Arc;
 use std::time::Duration;
 
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{mpsc, watch};
-use tokio::task::{JoinHandle, JoinSet};
+use tokio::task::JoinSet;
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::tungstenite::protocol::CloseFrame;
 use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
@@ -22,9 +23,9 @@ use super::protocol::{
 };
 use super::studio::{Pushed, Refusal, Studio};
 use crate::EmulatorError;
+use crate::fakes::support::{Observed, ServerTasks, bind_loopback, local_addr};
 use crate::fixture::Fixture;
 
-const SHUTDOWN_GRACE: Duration = Duration::from_secs(2);
 const LISTEN_TIMEOUT: Duration = Duration::from_secs(5);
 const REBIND_ATTEMPTS: u32 = 40;
 const REBIND_PAUSE: Duration = Duration::from_millis(25);
@@ -42,22 +43,15 @@ struct Inner {
 }
 
 struct Shared {
-    inner: Mutex<Inner>,
-    changes: watch::Sender<u64>,
+    state: Observed<Inner>,
     password: Option<String>,
 }
 
-impl Shared {
-    fn mutate<T>(&self, change: impl FnOnce(&mut Inner) -> T) -> T {
-        let mut inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
-        let result = change(&mut inner);
-        drop(inner);
-        self.changes.send_modify(|revision| *revision += 1);
-        result
-    }
+impl Deref for Shared {
+    type Target = Observed<Inner>;
 
-    fn read<T>(&self, look: impl FnOnce(&Inner) -> T) -> T {
-        look(&self.inner.lock().unwrap_or_else(|p| p.into_inner()))
+    fn deref(&self) -> &Observed<Inner> {
+        &self.state
     }
 }
 
@@ -88,8 +82,7 @@ pub struct FakeObs {
     port: u16,
     online: watch::Sender<bool>,
     listening: watch::Receiver<bool>,
-    shutdown: watch::Sender<bool>,
-    task: Option<JoinHandle<()>>,
+    server: ServerTasks,
 }
 
 impl FakeObs {
@@ -99,23 +92,16 @@ impl FakeObs {
                 reason: format!("{field} {problem}"),
             });
         }
-        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
-            .await
-            .map_err(|e| EmulatorError::FakeBind {
-                reason: e.to_string(),
-            })?;
-        let address: SocketAddr = listener.local_addr().map_err(|e| EmulatorError::FakeBind {
-            reason: e.to_string(),
-        })?;
-        let (changes, _) = watch::channel(0);
+        let listener = bind_loopback().await?;
+        let address: SocketAddr = local_addr(&listener)?;
         let shared = Arc::new(Shared {
-            inner: Mutex::new(Inner {
+            state: Observed::new(Inner {
                 ledger: ObsLedger::default(),
                 studio: Studio::new(&config),
                 outboxes: HashMap::new(),
                 next_session: 1,
             }),
-            changes,
+
             password: config.password.clone(),
         });
         let (online, online_rx) = watch::channel(config.online_at_boot);
@@ -134,8 +120,7 @@ impl FakeObs {
             port: address.port(),
             online,
             listening,
-            shutdown,
-            task: Some(task),
+            server: ServerTasks::new(shutdown, vec![task]),
         };
         if config.online_at_boot {
             fake.await_listening(true).await?;
@@ -219,32 +204,13 @@ impl FakeObs {
         timeout: Duration,
         mut probe: impl FnMut(&ObsLedger) -> Option<T>,
     ) -> Result<T, EmulatorError> {
-        let mut changes = self.shared.changes.subscribe();
-        let deadline = tokio::time::Instant::now() + timeout;
-        loop {
-            if let Some(found) = self.shared.read(|inner| probe(&inner.ledger)) {
-                return Ok(found);
-            }
-            match tokio::time::timeout_at(deadline, changes.changed()).await {
-                Ok(Ok(())) => {}
-                Ok(Err(_)) | Err(_) => {
-                    return Err(EmulatorError::WaitTimeout {
-                        what: what.to_owned(),
-                    });
-                }
-            }
-        }
+        self.shared
+            .wait_for(what, timeout, |inner| probe(&inner.ledger))
+            .await
     }
 
-    pub async fn shutdown(mut self) {
-        let _ = self.shutdown.send(true);
-        if let Some(mut task) = self.task.take()
-            && tokio::time::timeout(SHUTDOWN_GRACE, &mut task)
-                .await
-                .is_err()
-        {
-            task.abort();
-        }
+    pub async fn shutdown(self) {
+        self.server.shutdown().await;
     }
 
     fn push(
@@ -272,14 +238,6 @@ impl FakeObs {
             })?
             .map(|_| ())
             .map_err(|_| refused("its server task has stopped"))
-    }
-}
-
-impl Drop for FakeObs {
-    fn drop(&mut self) {
-        if let Some(task) = &self.task {
-            task.abort();
-        }
     }
 }
 

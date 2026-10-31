@@ -4,7 +4,8 @@ mod common;
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
-use common::{ChannelPublisher, bind_loopback, settle_until};
+use common::{bind_loopback, settle_until};
+use forge_events::test_support::ForwardingPublisher;
 use forge_events::{Event, EventPublisher};
 use forge_obs::{ObsClient, ObsError};
 use forge_platform_core::ConnectionState;
@@ -150,7 +151,7 @@ async fn a_rejected_password_makes_the_supervisor_report_an_authentication_failu
     let client = ObsClient::connect(
         &format!("127.0.0.1:{port}"),
         Some("wrong-password"),
-        Arc::new(ChannelPublisher(tx)),
+        Arc::new(ForwardingPublisher(tx)),
     )
     .await
     .unwrap();
@@ -278,18 +279,12 @@ async fn serve_accept_then_reset(listener: TcpListener) {
     drop(stream);
 }
 
-struct Quiet;
-
-impl EventPublisher for Quiet {
-    fn publish(&self, _event: Event) {}
-}
-
 async fn recorded_failure_code(port: u16) -> String {
     use forge_platform_core::BuiltinStatus;
     let client = ObsClient::connect(
         &format!("127.0.0.1:{port}"),
         Some("wrong-password"),
-        Arc::new(Quiet),
+        Arc::new(forge_events::test_support::NullPublisher),
     )
     .await
     .unwrap();

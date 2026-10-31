@@ -1,3 +1,4 @@
+use super::text::{LISTED, VALUE_CHARS};
 use std::collections::BTreeMap;
 
 use forge_events::EventSource;
@@ -12,9 +13,6 @@ use crate::harness::run::{
     JournaledEvent, LedgerExcerpt, LogEvidence, NearMiss,
 };
 use crate::harness::scenario::{Expectation, PayloadMatchers, TwitchSubscription};
-
-const VALUE_CHARS: usize = 120;
-const LISTED: usize = 5;
 
 pub(crate) struct Actual {
     pub(crate) summary: String,

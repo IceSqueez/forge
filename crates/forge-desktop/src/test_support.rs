@@ -1,4 +1,3 @@
-mod config_references;
 mod memory_scripts;
 pub(crate) mod pack_flow;
 mod pack_transfer;
@@ -26,8 +25,8 @@ use forge_types::{Action, ActionId, EventId, PlatformId, TriggerConfig};
 
 pub(crate) use forge_host::test_support::{
     GatedSchedule, ReadFault, RecordingSink, SETTINGS_READ_FAILED, SETTINGS_WRITE_FAILED,
-    SettingWrite, SilentPublisher, StubActions, StubEventLog, StubHistory, StubOverlays,
-    TestBackend, alive_tasks, default_twitch_bot, every_registry_entry, gated_running_schedule,
+    SettingWrite, StubActions, StubEventLog, StubHistory, StubOverlays, TestBackend, alive_tasks,
+    default_twitch_bot, every_registry_entry, gated_running_schedule,
     gated_running_schedule_sharing, install_tracing_interest_floor, keyless_enabled_schedule,
     neutral_pipeline_config, overlay_definition, overlay_named, pump, pump_until, runtime,
     stopped_handle, stopped_server_handle, stopped_server_hosting, stub_catalog, test_backend,
@@ -1138,7 +1137,7 @@ fn neutral_queue_deps(
         resolver,
         pipeline: forge_speak_queue::PipelineConfigHandle::new(neutral_pipeline_config()),
         audio_sink: Arc::new(forge_audio::NullSink),
-        event_bus: Arc::new(SilentPublisher),
+        event_bus: Arc::new(forge_events::test_support::NullPublisher),
         disabled_engines: std::collections::HashSet::new(),
         engine_gains: HashMap::new(),
     }

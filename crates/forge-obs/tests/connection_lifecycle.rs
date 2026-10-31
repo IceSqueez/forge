@@ -6,12 +6,13 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use common::{
-    ChannelPublisher, FakeObs, Handshake, RELOOKED_ITEM_ID, Recorder, Reply, SCENE, SCENE_UUID,
-    SNAPSHOT_ITEM_ID, SOURCE, Seen, WALL_BUDGET, bind_loopback, completes_every_handshake,
-    connect_to, connect_with_timing, connected, event_frame, fast_retries, is_hidden,
-    listed_scenes, listed_sources, page_scenes, page_sources, settle_until, settle_until_async,
-    spawn_fake_obs, standard_reply, version_data,
+    FakeObs, Handshake, RELOOKED_ITEM_ID, Recorder, Reply, SCENE, SCENE_UUID, SNAPSHOT_ITEM_ID,
+    SOURCE, Seen, WALL_BUDGET, bind_loopback, completes_every_handshake, connect_to,
+    connect_with_timing, connected, event_frame, fast_retries, is_hidden, listed_scenes,
+    listed_sources, page_scenes, page_sources, settle_until, settle_until_async, spawn_fake_obs,
+    standard_reply, version_data,
 };
+use forge_events::test_support::ForwardingPublisher;
 use forge_events::{Event, EventPublisher};
 use forge_events::{PlatformConnectionChanged, TypedEvent};
 use forge_obs::{EVENT_BUFFER_CAPACITY, ObsClient, ObsError, ObsSink, ObsTiming};
@@ -136,7 +137,7 @@ async fn a_backoff_loop_announces_one_state_change_per_real_transition() {
     let client = ObsClient::connect_with_timing(
         &format!("127.0.0.1:{port}"),
         None,
-        Arc::new(ChannelPublisher(tx)),
+        Arc::new(ForwardingPublisher(tx)),
         fast_retries(),
     )
     .await
@@ -172,7 +173,7 @@ async fn disconnecting_during_a_stalled_connect_does_not_wait_out_the_connect_ti
     let client = ObsClient::connect_with_timing(
         &format!("127.0.0.1:{port}"),
         None,
-        Arc::new(ChannelPublisher(tx)),
+        Arc::new(ForwardingPublisher(tx)),
         ObsTiming {
             connect_timeout: BEYOND_ANY_GUARD,
             ..ObsTiming::default()
@@ -213,7 +214,7 @@ async fn a_retired_client_stays_silent_when_its_server_speaks_afterwards() {
     let client = ObsClient::connect(
         &format!("127.0.0.1:{port}"),
         None,
-        Arc::new(ChannelPublisher(tx)),
+        Arc::new(ForwardingPublisher(tx)),
     )
     .await
     .unwrap();

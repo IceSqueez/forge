@@ -8,8 +8,8 @@ use forge_types::Variant;
 use super::crowd::{Crowd, CrowdLine, template_problem};
 use super::donation::{DonatelloGift, MonobankGift, OfflineGift};
 use super::expectation::{
-    AbsentEvent, Causation, DiscordPost, Expectation, KickRequestSeen, LogLine, ObservedEvent,
-    OverlayContent, RequestCount, TwitchSubscription, YouTubeRequestSeen,
+    AbsentEvent, Causation, DiscordPost, Expectation, HttpRequestSeen, LogLine, ObservedEvent,
+    OverlayContent, RequestCount, TwitchSubscription,
 };
 use super::matcher::{PayloadMatchers, ValueMatcher};
 use super::model::Scenario;
@@ -423,7 +423,7 @@ impl<'a> Validator<'a> {
         }
     }
 
-    fn check_kick_request(&mut self, location: &str, request: &KickRequestSeen) {
+    fn check_http_request(&mut self, location: &str, request: &HttpRequestSeen) {
         self.check_request_count(
             location,
             &RequestCount {
@@ -533,25 +533,6 @@ impl<'a> Validator<'a> {
             }
             _ => {}
         }
-    }
-
-    fn check_youtube_request(&mut self, location: &str, request: &YouTubeRequestSeen) {
-        self.check_request_count(
-            location,
-            &RequestCount {
-                method: request.method.clone(),
-                path: request.path.clone(),
-                min: Some(1),
-                max: None,
-            },
-        );
-        self.in_range(
-            format!("{location}.within_ms"),
-            request.within_ms,
-            1,
-            MAX_WAIT_MS,
-        );
-        self.check_payload(location, BODY_FIELD, &request.body);
     }
 
     fn require_fake_obs(&mut self, location: &str) {
@@ -1036,9 +1017,9 @@ impl<'a> Validator<'a> {
             | Expectation::YoutubeRequestCount(count) => {
                 self.check_request_count(location, count);
             }
-            Expectation::KickRequest(request) => self.check_kick_request(location, request),
+            Expectation::KickRequest(request) => self.check_http_request(location, request),
             Expectation::KickNoUnexpectedRequests {} => {}
-            Expectation::YoutubeRequest(request) => self.check_youtube_request(location, request),
+            Expectation::YoutubeRequest(request) => self.check_http_request(location, request),
             Expectation::YoutubeNoUnexpectedRequests {} => {}
             Expectation::OverlayContent(content) => self.check_overlay_content(location, content),
             Expectation::LogLine(line) => self.check_log_line(location, line),

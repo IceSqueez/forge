@@ -1049,7 +1049,7 @@ mod tests {
 
     use super::*;
     use crate::endpoints_test_support::{
-        RecordingPublisher, StubReply, StubServer, data_api_with, used_today, wait_until,
+        CapturingPublisher, StubReply, StubServer, data_api_with, used_today, wait_until,
     };
     use crate::quota_state::BROADCAST_COST;
 
@@ -3242,7 +3242,7 @@ mod tests {
                 .respond_with(reply)
                 .mount(&server)
                 .await;
-            let bus = Arc::new(RecordingPublisher::default());
+            let bus = Arc::new(CapturingPublisher::default());
             let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
             let poller = YoutubeChatPoller::new(
                 data_api_with(
@@ -3265,7 +3265,7 @@ mod tests {
             assert_eq!(
                 (
                     matches!(outcome, Err(FetchFailure::ChatEnded)),
-                    bus.events_of_kind(REQUEST_FAIL_KIND).len()
+                    bus.of_kind(REQUEST_FAIL_KIND).len()
                 ),
                 (ended, request_fails)
             );

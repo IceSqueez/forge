@@ -1,8 +1,9 @@
+use crate::fakes::support::Observed;
 use std::collections::HashMap;
-use std::sync::{Mutex, MutexGuard};
+use std::ops::Deref;
 
 use serde_json::{Value, json};
-use tokio::sync::{mpsc, watch};
+use tokio::sync::mpsc;
 
 use super::bans::BanStore;
 use super::chat::Viewer;
@@ -185,8 +186,7 @@ impl Inner {
 pub(crate) struct Shared {
     config: FakeTwitchConfig,
     socket_url: String,
-    inner: Mutex<Inner>,
-    changes: watch::Sender<u64>,
+    state: Observed<Inner>,
 }
 
 impl Shared {
@@ -194,8 +194,7 @@ impl Shared {
         Self {
             config,
             socket_url,
-            inner: Mutex::new(Inner::default()),
-            changes: watch::Sender::new(0),
+            state: Observed::new(Inner::default()),
         }
     }
 
@@ -206,24 +205,12 @@ impl Shared {
     pub(crate) fn socket_url(&self) -> &str {
         &self.socket_url
     }
+}
 
-    fn lock(&self) -> MutexGuard<'_, Inner> {
-        self.inner
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-    }
+impl Deref for Shared {
+    type Target = Observed<Inner>;
 
-    pub(crate) fn read<R>(&self, f: impl FnOnce(&Inner) -> R) -> R {
-        f(&self.lock())
-    }
-
-    pub(crate) fn mutate<R>(&self, f: impl FnOnce(&mut Inner) -> R) -> R {
-        let result = f(&mut self.lock());
-        self.changes.send_modify(|generation| *generation += 1);
-        result
-    }
-
-    pub(crate) fn changes(&self) -> watch::Receiver<u64> {
-        self.changes.subscribe()
+    fn deref(&self) -> &Observed<Inner> {
+        &self.state
     }
 }

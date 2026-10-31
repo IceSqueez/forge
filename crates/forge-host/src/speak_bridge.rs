@@ -618,7 +618,7 @@ mod tests {
                 per_user_limit: forge_speak_queue::QueueConfig::default().per_user_limit,
                 aliases: Vec::new(),
                 pipeline: crate::test_support::neutral_pipeline_config(),
-                bus: Arc::new(crate::test_support::SilentPublisher),
+                bus: Arc::new(forge_events::test_support::NullPublisher),
                 engines: forge_tts_core::TtsRegistry::new(),
                 sink: Arc::new(forge_audio::NullSink),
             }
@@ -740,17 +740,9 @@ mod tests {
         }
     }
 
-    struct CapturingBus(std::sync::Mutex<Vec<forge_events::Event>>);
-
-    impl forge_events::EventPublisher for CapturingBus {
-        fn publish(&self, event: forge_events::Event) {
-            self.0.lock().unwrap().push(event);
-        }
-    }
-
     #[tokio::test]
     async fn a_chat_speech_is_queued_as_caused_by_its_triggering_event() {
-        let bus = Arc::new(CapturingBus(std::sync::Mutex::new(Vec::new())));
+        let bus = forge_events::test_support::CapturingPublisher::shared();
         let (handle, mut stream) = Harness {
             bus: bus.clone(),
             ..Harness::default()
@@ -775,11 +767,8 @@ mod tests {
         admissions(&mut stream, 1).await;
 
         let enqueued: Vec<_> = bus
-            .0
-            .lock()
-            .unwrap()
+            .of_kind("speak.enqueued")
             .iter()
-            .filter(|event| event.kind == "speak.enqueued")
             .map(|event| event.caused_by)
             .collect();
         assert_eq!(enqueued, vec![Some(trigger)]);
@@ -924,7 +913,7 @@ mod tests {
             &stack,
             0,
             forge_types::EventId::new(),
-            &crate::test_support::SilentPublisher,
+            &forge_events::test_support::NullPublisher,
         );
 
         runner.execute(&config, &ctx).await;

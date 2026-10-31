@@ -161,39 +161,18 @@ impl SubActionRunner for TwitchChatSendMessageRunner {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Mutex;
 
-    use forge_events::EventPublisher;
     use forge_registry::{CancelSignal, ControlCell, TelemetrySink};
     use forge_types::{EventId, SubActionOutcome, unknown_chat_target_message};
 
     use super::*;
+
     use crate::integration_gate::{GatedLeafExecutor, IntegrationGate};
-    use forge_events::Event;
+    use forge_events::test_support::CapturingPublisher;
+
     use forge_registry::FormField;
     use forge_registry::RegistryError;
     use forge_types::Variant;
-
-    #[derive(Default)]
-    struct CapturingPublisher(Mutex<Vec<Event>>);
-
-    impl EventPublisher for CapturingPublisher {
-        fn publish(&self, event: Event) {
-            self.0.lock().unwrap().push(event);
-        }
-    }
-
-    impl CapturingPublisher {
-        fn sent_requests(&self) -> Vec<serde_json::Value> {
-            self.0
-                .lock()
-                .unwrap()
-                .iter()
-                .filter(|e| e.kind == "chat.send.request")
-                .map(|e| e.payload.clone())
-                .collect()
-        }
-    }
 
     fn gate_disabling(ids: &[&'static str]) -> IntegrationGate {
         let gate = IntegrationGate::new();
@@ -223,7 +202,7 @@ mod tests {
         let (telemetry, _) = TwitchChatSendMessageRunner
             .execute(&config_with_target(target), &ctx)
             .await;
-        (telemetry.outcome, publisher.sent_requests())
+        (telemetry.outcome, sent_requests(&publisher))
     }
 
     fn config_with_target(target: Option<&str>) -> SubActionConfig {
@@ -233,6 +212,14 @@ mod tests {
             cfg.insert("target".to_owned(), Variant::String(target.to_owned()));
         }
         cfg
+    }
+
+    fn sent_requests(publisher: &CapturingPublisher) -> Vec<serde_json::Value> {
+        publisher
+            .of_kind("chat.send.request")
+            .into_iter()
+            .map(|event| event.payload)
+            .collect()
     }
 
     #[tokio::test]
@@ -251,7 +238,7 @@ mod tests {
                 "{template:?}: {:?}",
                 telemetry.outcome
             );
-            assert!(publisher.sent_requests().is_empty(), "{template:?}");
+            assert!(sent_requests(&publisher).is_empty(), "{template:?}");
         }
     }
 
@@ -355,7 +342,7 @@ mod tests {
             .await;
 
         assert_eq!(telemetry.outcome, SubActionOutcome::Success);
-        let sent = publisher.sent_requests();
+        let sent = sent_requests(&publisher);
         assert_eq!(sent.len(), 1);
         assert_eq!(sent[0]["target"].as_str(), Some("kick"));
     }
@@ -392,7 +379,7 @@ mod tests {
             telemetry.outcome,
             SubActionOutcome::IntegrationDisabled(IntegrationId::from_static("twitch"))
         );
-        assert!(publisher.sent_requests().is_empty());
+        assert!(sent_requests(&publisher).is_empty());
     }
 
     #[tokio::test]
@@ -406,7 +393,7 @@ mod tests {
             .await;
 
         assert_eq!(telemetry.outcome, SubActionOutcome::Success);
-        let sent = publisher.sent_requests();
+        let sent = sent_requests(&publisher);
         assert_eq!(sent.len(), 1);
         assert!(sent[0].get("target").is_none(), "published {}", sent[0]);
     }
@@ -428,7 +415,7 @@ mod tests {
         let (telemetry, _) = TwitchChatSendMessageRunner
             .execute(&config_with_sender(sender), &ctx)
             .await;
-        (telemetry.outcome, publisher.sent_requests())
+        (telemetry.outcome, sent_requests(&publisher))
     }
 
     fn invalid_senders() -> [Variant; 4] {

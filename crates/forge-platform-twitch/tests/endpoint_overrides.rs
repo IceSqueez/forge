@@ -1,7 +1,7 @@
 #![allow(clippy::unwrap_used)]
 use std::ffi::OsString;
 use std::sync::Arc;
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 use forge_net::TokenBucketRateLimiter;
 use forge_platform_core::{AuthFlow, EndpointSurface, PlatformEndpoints};
@@ -17,6 +17,8 @@ use serde_json::json;
 use tokio_util::sync::CancellationToken;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
+
+const LONG_EXPIRED_AFTER: Duration = Duration::from_secs(60);
 
 fn overrides(oauth_base: String, api_base: String) -> PlatformEndpoints {
     PlatformEndpoints::resolve(move |variable| {
@@ -98,7 +100,7 @@ async fn oauth_override_carries_the_token_refresh_to_the_override_host() {
             refresh_token: Some(OAuthToken::new("stale-refresh".to_owned())),
             user_id: "7".to_owned(),
             login: "streamer".to_owned(),
-            expires_at: Some(SystemTime::now()),
+            expires_at: Some(SystemTime::UNIX_EPOCH + LONG_EXPIRED_AFTER),
         },
     )
     .await

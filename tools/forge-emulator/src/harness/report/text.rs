@@ -1,5 +1,7 @@
 use serde_json::Value;
 
+pub(crate) const VALUE_CHARS: usize = 120;
+pub(crate) const LISTED: usize = 5;
 const CLIPPED: &str = "...";
 
 pub(crate) fn code(text: &str) -> String {

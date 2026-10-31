@@ -4,6 +4,7 @@ pub mod donatello;
 pub mod kick;
 pub mod monobank;
 pub mod obs;
+mod support;
 pub mod twitch;
 pub mod vtube;
 pub mod youtube;

@@ -478,3 +478,32 @@ impl Studio {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn status_of(request_type: &str) -> u16 {
+        let mut studio = Studio::new(&FakeObsConfig::default());
+        studio.answer(request_type, &Value::Null).0.code
+    }
+
+    #[test]
+    fn every_advertised_request_type_has_an_answer() {
+        for request_type in SUPPORTED_REQUESTS {
+            assert_ne!(
+                status_of(request_type),
+                STATUS_UNKNOWN_REQUEST_TYPE,
+                "{request_type} is advertised but falls through to the unknown arm"
+            );
+        }
+    }
+
+    #[test]
+    fn an_unadvertised_request_type_is_refused_as_unknown() {
+        assert_eq!(
+            status_of("GetSceneTransitionList"),
+            STATUS_UNKNOWN_REQUEST_TYPE
+        );
+    }
+}

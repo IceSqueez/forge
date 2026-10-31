@@ -2666,6 +2666,7 @@ name = "forge-conformance"
 version = "0.6.3"
 dependencies = [
  "forge-events",
+ "forge-host",
  "forge-hotkey",
  "forge-midi",
  "forge-net",

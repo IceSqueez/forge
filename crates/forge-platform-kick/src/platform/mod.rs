@@ -486,7 +486,7 @@ pub(crate) mod tests {
             crate::gateway::kick_channel_info_gateway(
                 &endpoints,
                 crate::test_support::granting_limiter(),
-                Arc::new(crate::test_support::RecordingPublisher::default()),
+                Arc::new(crate::test_support::CapturingPublisher::default()),
             )
             .unwrap(),
         );

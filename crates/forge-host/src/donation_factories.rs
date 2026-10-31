@@ -277,7 +277,7 @@ mod tests {
         ledger.expect_has_donations_from().returning(|_| Ok(true));
         let ingest = Arc::new(DonationIngest::new(
             Arc::new(ledger),
-            Arc::new(crate::test_support::SilentPublisher),
+            Arc::new(forge_events::test_support::NullPublisher),
             Shared::new(String::new()),
         ));
         let factory = DonationFactory {

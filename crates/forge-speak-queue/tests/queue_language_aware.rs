@@ -14,9 +14,8 @@ use forge_speech_types::{EngineId, TtsVoice, VoiceGender, VoiceId};
 use forge_tts_core::TtsRegistry;
 use forge_tts_pipeline::{OutputConfig, PipelineConfig};
 
-use common::{
-    FakeFactory, RecordingPublisher, make_deps, outcome_of, recording_bus, recording_sink, request,
-};
+use common::{FakeFactory, make_deps, outcome_of, recording_bus, recording_sink, request};
+use forge_events::test_support::CapturingPublisher;
 
 const ENGINE: &str = "poly";
 const SPEAK_STARTED: &str = "speak.started";
@@ -53,7 +52,7 @@ fn spawn_bilingual_queue(
 ) -> (
     SpeakQueueHandle,
     SpeakEventStream,
-    Arc<RecordingPublisher>,
+    Arc<CapturingPublisher>,
     PipelineConfigHandle,
 ) {
     let voices = vec![
@@ -84,7 +83,7 @@ fn spawn_bilingual_queue(
     (handle, stream, bus, pipeline)
 }
 
-fn language_of_last_started(bus: &RecordingPublisher, text: &str) -> Event {
+fn language_of_last_started(bus: &CapturingPublisher, text: &str) -> Event {
     bus.of_kind(SPEAK_STARTED)
         .into_iter()
         .rfind(|e| e.payload["text"].as_str() == Some(text) && e.payload["voice_id"].is_string())
@@ -108,7 +107,7 @@ async fn speak_and_settle(
 async fn narrowed_voice_for(
     handle: &SpeakQueueHandle,
     stream: &mut SpeakEventStream,
-    bus: &RecordingPublisher,
+    bus: &CapturingPublisher,
     text: &str,
 ) -> (String, String, f64) {
     tokio::time::timeout(DETECTOR_BUILD_HANG_GUARD, handle.language_detector_ready())

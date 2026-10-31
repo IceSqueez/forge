@@ -915,6 +915,7 @@ mod tests {
     use crate::engine::{Engine, EngineConfig};
     use crate::http_config::ScriptHttpConfig;
     use forge_events::Event;
+    use forge_events::test_support::CapturingPublisher;
     use forge_storage::GlobalsRepo;
     use forge_storage_sqlite::SqliteBackend;
 
@@ -934,25 +935,17 @@ mod tests {
         }
     }
 
-    struct CapturingPublisher(Arc<Mutex<Vec<Event>>>);
-
-    impl EventPublisher for CapturingPublisher {
-        fn publish(&self, event: Event) {
-            self.0.lock().unwrap().push(event);
-        }
-    }
-
     async fn open_dp() -> Sandboxed<Arc<SqliteBackend>> {
         sandboxed_backend([0xab; 32]).await.map(Arc::new)
     }
 
     fn make_api_with_publisher(
         dp: Arc<SqliteBackend>,
-        captured: Arc<Mutex<Vec<Event>>>,
+        captured: Arc<CapturingPublisher>,
     ) -> (ForgeApi, EventId) {
         let caused_by = EventId::new();
         let api = ForgeApi::new(
-            Arc::new(CapturingPublisher(captured)),
+            captured as Arc<dyn EventPublisher>,
             repo_globals(dp.clone()),
             caused_by,
             Instant::now() + std::time::Duration::from_secs(30),
@@ -971,10 +964,10 @@ mod tests {
                 .unwrap();
         }
         let port = Arc::new(RepoGlobals::new(Arc::clone(&dp) as Arc<dyn GlobalsRepo>));
-        let captured: Arc<Mutex<Vec<Event>>> = Arc::new(Mutex::new(Vec::new()));
+        let captured = CapturingPublisher::shared();
         let caused_by = EventId::new();
         let api = ForgeApi::new(
-            Arc::new(CapturingPublisher(Arc::clone(&captured))),
+            Arc::clone(&captured) as Arc<dyn EventPublisher>,
             Arc::clone(&port) as Arc<dyn ScriptGlobals>,
             caused_by,
             Instant::now() + std::time::Duration::from_secs(30),
@@ -983,7 +976,7 @@ mod tests {
         let result = tokio::task::spawn_blocking(move || engine.eval_script(script).unwrap())
             .await
             .unwrap();
-        let events = captured.lock().unwrap().clone();
+        let events = captured.events();
         (result, caused_by, port, events)
     }
 
@@ -1042,13 +1035,13 @@ mod tests {
 
     fn build_engine_with_http_in_blocking(
         dp: Arc<SqliteBackend>,
-        captured: Arc<Mutex<Vec<Event>>>,
+        captured: Arc<CapturingPublisher>,
         config: Arc<ScriptHttpConfig>,
     ) -> Engine {
         let caused_by = EventId::new();
         let http_client = Arc::new(ScriptHttpClient::new(config).unwrap());
         let api = ForgeApi::new(
-            Arc::new(CapturingPublisher(captured)),
+            captured as Arc<dyn EventPublisher>,
             repo_globals(dp.clone()),
             caused_by,
             Instant::now() + std::time::Duration::from_secs(30),
@@ -1060,7 +1053,7 @@ mod tests {
     #[tokio::test]
     async fn http_get_registered_under_forge_http_namespace() {
         let dp = open_dp().await;
-        let captured: Arc<Mutex<Vec<Event>>> = Arc::new(Mutex::new(Vec::new()));
+        let captured = CapturingPublisher::shared();
         let config = Arc::new(ScriptHttpConfig::default());
 
         let result = tokio::task::spawn_blocking(move || {
@@ -1099,7 +1092,7 @@ mod tests {
         let server_url = server.uri();
         let host = server.address().ip().to_string();
         let dp = open_dp().await;
-        let captured: Arc<Mutex<Vec<Event>>> = Arc::new(Mutex::new(Vec::new()));
+        let captured = CapturingPublisher::shared();
         let config = Arc::new(ScriptHttpConfig {
             allowed_domains: vec![host],
             allow_local: true,
@@ -1137,11 +1130,11 @@ mod tests {
             (r#"forge::error("hi")"#, "error"),
         ] {
             let dp = open_dp().await;
-            let captured: Arc<Mutex<Vec<Event>>> = Arc::new(Mutex::new(Vec::new()));
+            let captured = CapturingPublisher::shared();
             let caused_by = EventId::new();
             let script_id = ScriptId::new();
             let api = ForgeApi::new(
-                Arc::new(CapturingPublisher(Arc::clone(&captured))),
+                Arc::clone(&captured) as Arc<dyn EventPublisher>,
                 repo_globals(dp.clone()),
                 caused_by,
                 Instant::now() + std::time::Duration::from_secs(30),
@@ -1155,7 +1148,7 @@ mod tests {
             .await
             .unwrap();
 
-            let events = captured.lock().unwrap();
+            let events = captured.events();
             let logs: Vec<&Event> = events.iter().filter(|e| e.kind == "script.log").collect();
             assert_eq!(logs.len(), 1, "exactly one script.log for {call}");
             let ev = logs[0];
@@ -1181,10 +1174,10 @@ mod tests {
     #[tokio::test]
     async fn error_count_reflects_only_forge_error_calls() {
         let dp = open_dp().await;
-        let captured: Arc<Mutex<Vec<Event>>> = Arc::new(Mutex::new(Vec::new()));
+        let captured = CapturingPublisher::shared();
         let caused_by = EventId::new();
         let api = ForgeApi::new(
-            Arc::new(CapturingPublisher(captured)),
+            captured as Arc<dyn EventPublisher>,
             repo_globals(dp.clone()),
             caused_by,
             Instant::now() + std::time::Duration::from_secs(30),
@@ -1212,7 +1205,7 @@ mod tests {
     #[tokio::test]
     async fn script_log_script_id_is_null_when_api_has_no_script_id() {
         let dp = open_dp().await;
-        let captured: Arc<Mutex<Vec<Event>>> = Arc::new(Mutex::new(Vec::new()));
+        let captured = CapturingPublisher::shared();
         let (api, _caused_by) = make_api_with_publisher(Arc::clone(&dp), Arc::clone(&captured));
         let engine = Engine::with_api(unhurried(), api);
 
@@ -1222,7 +1215,7 @@ mod tests {
         .await
         .unwrap();
 
-        let events = captured.lock().unwrap();
+        let events = captured.events();
         let ev = events.iter().find(|e| e.kind == "script.log").unwrap();
         assert!(
             ev.payload["script_id"].is_null(),
@@ -1251,7 +1244,7 @@ mod tests {
             ),
         ] {
             let dp = open_dp().await;
-            let captured: Arc<Mutex<Vec<Event>>> = Arc::new(Mutex::new(Vec::new()));
+            let captured = CapturingPublisher::shared();
             let config = Arc::new(ScriptHttpConfig {
                 allowed_domains: vec![host.clone()],
                 allow_local: true,
@@ -1265,7 +1258,7 @@ mod tests {
             .await
             .unwrap();
 
-            let events = captured.lock().unwrap();
+            let events = captured.events();
             let ev = events
                 .iter()
                 .find(|e| e.kind == "script.http_call")
@@ -1293,7 +1286,7 @@ mod tests {
         let server_url = server.uri();
         let host = server.address().ip().to_string();
         let dp = open_dp().await;
-        let captured: Arc<Mutex<Vec<Event>>> = Arc::new(Mutex::new(Vec::new()));
+        let captured = CapturingPublisher::shared();
         let config = Arc::new(ScriptHttpConfig {
             allowed_domains: vec![host.clone()],
             allow_local: true,
@@ -1314,7 +1307,7 @@ mod tests {
         .await
         .unwrap();
 
-        let events = captured.lock().unwrap();
+        let events = captured.events();
         let calls: Vec<&Event> = events
             .iter()
             .filter(|e| e.kind == "script.http_call")
@@ -1356,7 +1349,7 @@ mod tests {
             ),
         ] {
             let dp = open_dp().await;
-            let captured: Arc<Mutex<Vec<Event>>> = Arc::new(Mutex::new(Vec::new()));
+            let captured = CapturingPublisher::shared();
             let (api, caused_by) = make_api_with_publisher(Arc::clone(&dp), Arc::clone(&captured));
             let engine = Engine::with_api(unhurried(), api);
 
@@ -1366,7 +1359,7 @@ mod tests {
             .await
             .unwrap();
 
-            let events = captured.lock().unwrap();
+            let events = captured.events();
             let ev = events
                 .iter()
                 .find(|e| e.kind == "chat.send.request")
@@ -1418,7 +1411,7 @@ mod tests {
             ),
         ] {
             let dp = open_dp().await;
-            let captured: Arc<Mutex<Vec<Event>>> = Arc::new(Mutex::new(Vec::new()));
+            let captured = CapturingPublisher::shared();
             let (api, caused_by) = make_api_with_publisher(Arc::clone(&dp), Arc::clone(&captured));
             let engine = Engine::with_api(unhurried(), api);
 
@@ -1428,7 +1421,7 @@ mod tests {
             .await
             .unwrap();
 
-            let events = captured.lock().unwrap();
+            let events = captured.events();
             let ev = events
                 .iter()
                 .find(|e| e.kind == "chat.send.request")
@@ -1571,7 +1564,7 @@ mod tests {
 
     async fn gated_engine(
         availability: SwitchableAvailability,
-        captured: Arc<Mutex<Vec<Event>>>,
+        captured: Arc<CapturingPublisher>,
     ) -> (Engine, Sandboxed<Arc<SqliteBackend>>) {
         let dp = open_dp().await;
         let (api, _) = make_api_with_publisher(Arc::clone(&dp), captured);
@@ -1579,10 +1572,9 @@ mod tests {
         (Engine::with_api(unhurried(), api), dp)
     }
 
-    fn sent_requests(captured: &Mutex<Vec<Event>>) -> usize {
+    fn sent_requests(captured: &CapturingPublisher) -> usize {
         captured
-            .lock()
-            .unwrap()
+            .events()
             .iter()
             .filter(|e| e.kind == "chat.send.request")
             .count()
@@ -1598,7 +1590,7 @@ mod tests {
             r#"forge::chat::reply_as("bot", "twitch", "msg-1", "hello")"#,
             r#"forge::chat::whisper_as("bot", "twitch", "viewer", "hello")"#,
         ] {
-            let captured: Arc<Mutex<Vec<Event>>> = Arc::new(Mutex::new(Vec::new()));
+            let captured = CapturingPublisher::shared();
             let (engine, _dp) = gated_engine(
                 SwitchableAvailability::disabling("twitch"),
                 Arc::clone(&captured),
@@ -1622,7 +1614,7 @@ mod tests {
 
     #[tokio::test]
     async fn targeted_chat_send_to_an_enabled_integration_publishes_while_another_is_disabled() {
-        let captured: Arc<Mutex<Vec<Event>>> = Arc::new(Mutex::new(Vec::new()));
+        let captured = CapturingPublisher::shared();
         let (engine, _dp) = gated_engine(
             SwitchableAvailability::disabling("kick"),
             Arc::clone(&captured),
@@ -1645,7 +1637,7 @@ mod tests {
     #[tokio::test]
     async fn re_enabling_an_integration_lets_the_same_engine_send_to_it_again() {
         let availability = SwitchableAvailability::disabling("twitch");
-        let captured: Arc<Mutex<Vec<Event>>> = Arc::new(Mutex::new(Vec::new()));
+        let captured = CapturingPublisher::shared();
         let (engine, _dp) = gated_engine(availability.clone(), Arc::clone(&captured)).await;
         let engine = Arc::new(engine);
         let send = r#"forge::chat::send("twitch", "hello")"#;
@@ -1693,14 +1685,13 @@ mod tests {
         availability: SwitchableAvailability,
         call: &'static str,
     ) -> (Result<rhai::Dynamic, crate::ScriptError>, Vec<Event>) {
-        let captured: Arc<Mutex<Vec<Event>>> = Arc::new(Mutex::new(Vec::new()));
+        let captured = CapturingPublisher::shared();
         let (engine, _dp) = gated_engine(availability, Arc::clone(&captured)).await;
         let result = tokio::task::spawn_blocking(move || engine.eval_script(call))
             .await
             .unwrap();
         let sent = captured
-            .lock()
-            .unwrap()
+            .events()
             .iter()
             .filter(|e| e.kind == "chat.send.request")
             .cloned()
@@ -1918,7 +1909,7 @@ mod tests {
 
     async fn eval_latest(reader: Arc<LatestReader>, script: &'static str) -> rhai::Dynamic {
         let dp = open_dp().await;
-        let (api, _) = make_api_with_publisher(Arc::clone(&dp), Arc::new(Mutex::new(Vec::new())));
+        let (api, _) = make_api_with_publisher(Arc::clone(&dp), CapturingPublisher::shared());
         let engine = Engine::with_api(
             unhurried(),
             api.with_latest_values(reader as Arc<dyn LatestValueReader>),
@@ -2008,7 +1999,7 @@ mod tests {
             asked: Mutex::new(Vec::new()),
         });
         let dp = open_dp().await;
-        let (api, _) = make_api_with_publisher(Arc::clone(&dp), Arc::new(Mutex::new(Vec::new())));
+        let (api, _) = make_api_with_publisher(Arc::clone(&dp), CapturingPublisher::shared());
         let engine = Engine::with_api(
             unhurried(),
             api.with_speak_requester(Arc::clone(&requester) as Arc<dyn SpeakRequester>),
@@ -2103,8 +2094,7 @@ mod tests {
             ),
         ] {
             let dp = open_dp().await;
-            let (api, _) =
-                make_api_with_publisher(Arc::clone(&dp), Arc::new(Mutex::new(Vec::new())));
+            let (api, _) = make_api_with_publisher(Arc::clone(&dp), CapturingPublisher::shared());
             let engine = Engine::with_api(unhurried(), api);
 
             let result = tokio::task::spawn_blocking(move || engine.eval_script(script))
@@ -2189,7 +2179,7 @@ mod tests {
             .await;
         let server_url = server.uri();
         let dp = open_dp().await;
-        let captured: Arc<Mutex<Vec<Event>>> = Arc::new(Mutex::new(Vec::new()));
+        let captured = CapturingPublisher::shared();
         let config = Arc::new(ScriptHttpConfig {
             allowed_domains: vec![server.address().ip().to_string()],
             allow_local: true,
@@ -2208,8 +2198,7 @@ mod tests {
         .unwrap();
 
         let calls: Vec<Event> = captured
-            .lock()
-            .unwrap()
+            .events()
             .iter()
             .filter(|event| event.kind == "script.http_call")
             .cloned()

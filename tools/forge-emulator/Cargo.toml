@@ -69,6 +69,7 @@ tokio-tungstenite = { version = "0.30" }
 rustix = { version = "1.1", features = ["process"] }
 
 [dev-dependencies]
+forge-events = { path = "../../crates/forge-events", features = ["test-support"] }
 forge-net = { path = "../../crates/forge-net", features = ["test-support"] }
 async-trait = { version = "0.1" }
 axum = { version = "0.8", features = ["ws"] }

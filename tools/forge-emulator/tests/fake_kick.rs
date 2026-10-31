@@ -56,7 +56,7 @@ fn api(fake: &FakeKick) -> Gateway {
     kick_api_gateway(
         &endpoints(fake),
         limiter(),
-        Arc::new(support::QuietPublisher),
+        Arc::new(forge_events::test_support::NullPublisher),
     )
     .unwrap()
 }
@@ -66,15 +66,10 @@ fn channel_info(fake: &FakeKick) -> Arc<ChannelInfoFetcher> {
         kick_channel_info_gateway(
             &endpoints(fake),
             limiter(),
-            Arc::new(support::QuietPublisher),
+            Arc::new(forge_events::test_support::NullPublisher),
         )
         .unwrap(),
     ))
-}
-
-fn http_base(fake: &FakeKick) -> String {
-    let public = &fake.endpoint_overrides()[0].1;
-    public.trim_end_matches("/public/v1").to_owned()
 }
 
 async fn join_chat(fake: &FakeKick) -> (KickChatHandle, mpsc::Receiver<Event>) {
@@ -121,7 +116,7 @@ async fn manager(fake: &FakeKick, client_secret: &str) -> KickCredentialsManager
 }
 
 async fn raw_socket(fake: &FakeKick, app_key: &str) -> Socket {
-    let base = &fake.endpoint_overrides()[3].1;
+    let base = fake.url_for(EndpointSurface::KickChatSocket).unwrap();
     tokio_tungstenite::connect_async(format!("{base}/{app_key}?protocol=7"))
         .await
         .unwrap()
@@ -350,7 +345,7 @@ async fn forge_send_posts_the_message_as_the_broadcaster() {
 #[tokio::test]
 async fn public_api_without_the_current_token_is_unauthorized() {
     let fake = start(FakeKickSetup::default()).await;
-    let url = format!("{}/public/v1/channels", http_base(&fake));
+    let url = format!("{}/public/v1/channels", fake.http_base());
     for (authorization, expected) in [
         (None, KickCredentialCheck::MissingBearer),
         (Some("Bearer stale-token"), KickCredentialCheck::WrongBearer),
@@ -373,7 +368,7 @@ async fn public_api_without_the_current_token_is_unauthorized() {
 async fn malformed_send_bodies_are_refused_with_400() {
     let fake = start(FakeKickSetup::default()).await;
     let account = KickAccount::default();
-    let url = format!("{}/public/v1/chat", http_base(&fake));
+    let url = format!("{}/public/v1/chat", fake.http_base());
     for body in [
         json!({ "content": "", "type": "bot" }),
         json!({ "content": "hi" }),
@@ -528,7 +523,7 @@ async fn unmodeled_routes_are_recorded_as_unexpected_404s() {
     let fake = start(FakeKickSetup::default()).await;
     let token = KickAccount::default().access_token;
     let client = reqwest::Client::new();
-    let base = http_base(&fake);
+    let base = fake.http_base();
     for (method, path, surface) in [
         ("GET", "/public/v1/users", KickSurface::PublicApi),
         ("POST", "/public/v1/moderation/bans", KickSurface::PublicApi),

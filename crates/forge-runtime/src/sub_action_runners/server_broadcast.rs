@@ -107,30 +107,13 @@ impl SubActionRunner for ServerBroadcastRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use forge_events::test_support::CapturingPublisher;
     use forge_events::test_support::NullPublisher;
     use forge_registry::RegistryError;
     use forge_registry::{ConfigProblem, ConfigReason};
     use forge_types::EventId;
     use forge_types::Variant;
     use std::collections::BTreeMap;
-    use std::sync::Mutex;
-
-    #[derive(Default)]
-    struct RecordingPublisher {
-        events: Mutex<Vec<Event>>,
-    }
-
-    impl EventPublisher for RecordingPublisher {
-        fn publish(&self, event: Event) {
-            self.events.lock().unwrap().push(event);
-        }
-    }
-
-    impl RecordingPublisher {
-        fn captured(&self) -> Vec<Event> {
-            self.events.lock().unwrap().clone()
-        }
-    }
 
     fn cfg(event_name: &str, payload: Variant) -> SubActionConfig {
         let mut c = SubActionConfig::new();
@@ -150,8 +133,8 @@ mod tests {
         config: &SubActionConfig,
         arg_stack: &ArgStack,
         parent: EventId,
-    ) -> (Arc<RecordingPublisher>, SubActionOutcome, Option<ArgStack>) {
-        let recorder = Arc::new(RecordingPublisher::default());
+    ) -> (Arc<CapturingPublisher>, SubActionOutcome, Option<ArgStack>) {
+        let recorder = Arc::new(CapturingPublisher::default());
         let runner = ServerBroadcastRunner::new(recorder.clone());
         let ctx = RunContext::leaf(arg_stack, 0, parent, &NullPublisher);
         let (telemetry, updated_stack) = runner.execute(config, &ctx).await;
@@ -168,7 +151,7 @@ mod tests {
         .await;
 
         assert!(matches!(outcome, SubActionOutcome::Success));
-        let events = recorder.captured();
+        let events = recorder.events();
         assert_eq!(events.len(), 1, "exactly one event must be published");
         assert_eq!(events[0].kind, "broadcast.alert");
         assert!(matches!(events[0].source, EventSource::Server));
@@ -179,7 +162,7 @@ mod tests {
         let parent = EventId::new();
         let (recorder, _, _) = run(&cfg("alert", empty_object()), &ArgStack::new(), parent).await;
 
-        assert_eq!(recorder.captured()[0].caused_by, Some(parent));
+        assert_eq!(recorder.events()[0].caused_by, Some(parent));
     }
 
     #[tokio::test]
@@ -208,7 +191,7 @@ mod tests {
                 EventId::new(),
             )
             .await;
-            assert_eq!(recorder.captured()[0].payload, expected, "{payload:?}");
+            assert_eq!(recorder.events()[0].payload, expected, "{payload:?}");
         }
     }
 
@@ -225,7 +208,7 @@ mod tests {
                 matches!(&outcome, SubActionOutcome::Failed(m) if crate::test_support::failure::rejected_field(m) == Some("payload")),
                 "{payload}: {outcome:?}"
             );
-            assert!(recorder.captured().is_empty(), "{payload}");
+            assert!(recorder.events().is_empty(), "{payload}");
             assert!(updated_stack.is_none(), "{payload:?}");
         }
     }
@@ -252,7 +235,7 @@ mod tests {
         let stack = ArgStack::new().set("kind".to_owned(), Variant::String("raid".to_owned()));
         let (recorder, _, _) = run(&cfg("%kind%", empty_object()), &stack, EventId::new()).await;
 
-        assert_eq!(recorder.captured()[0].kind, "broadcast.raid");
+        assert_eq!(recorder.events()[0].kind, "broadcast.raid");
     }
 
     #[tokio::test]
@@ -262,7 +245,7 @@ mod tests {
 
         assert!(matches!(outcome, SubActionOutcome::Failed(_)));
         assert!(
-            recorder.captured().is_empty(),
+            recorder.events().is_empty(),
             "no event may be published when event_name is empty"
         );
         assert!(
@@ -289,6 +272,6 @@ mod tests {
 
         assert!(validation.is_ok(), "{validation:?}");
         assert!(matches!(outcome, SubActionOutcome::Success), "{outcome:?}");
-        assert_eq!(recorder.captured().len(), 1);
+        assert_eq!(recorder.events().len(), 1);
     }
 }

@@ -1,11 +1,11 @@
-use forge_storage::ScriptRepo;
+use forge_storage::{ScriptRecord, ScriptRepo};
 use forge_types::{ScriptContract, ScriptId, ScriptInput, VariantKind};
 
 mod common;
 use common::setup;
 
-fn make_record(name: &str, enabled: bool) -> forge_storage::ScriptRecord {
-    forge_storage::ScriptRecord {
+fn make_record(name: &str, enabled: bool) -> ScriptRecord {
+    ScriptRecord {
         id: ScriptId::new(),
         name: name.to_owned(),
         body: r#"print("hello");"#.to_owned(),

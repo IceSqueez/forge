@@ -59,6 +59,7 @@ async fn get_missing_setting_returns_none() {
 #[tokio::test]
 async fn loading_rows_returns_every_stored_entry() {
     let repo = setup().await;
+    let seeded = load_setting_rows(&*repo).await.expect("load seeded rows");
     repo.set_theme("catppuccin_mocha").await.expect("set theme");
     repo.set_accent("lavender").await.expect("set accent");
 
@@ -70,7 +71,7 @@ async fn loading_rows_returns_every_stored_entry() {
     };
     assert_eq!(value_of(THEME.name()), Some("catppuccin_mocha"));
     assert_eq!(value_of(ACCENT.name()), Some("lavender"));
-    assert_eq!(rows.len(), 3);
+    assert_eq!(rows.len(), seeded.len() + 2);
 }
 
 #[tokio::test]

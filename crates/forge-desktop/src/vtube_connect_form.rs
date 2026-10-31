@@ -504,37 +504,27 @@ async fn load_prefill(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Mutex;
 
-    use forge_events::{Event, TypedEvent};
+    use forge_events::TypedEvent;
     use forge_vtube::VTubeError;
     use forge_vtube::vocabulary::{VTubeConnectionChanged, VTubeDisconnectReason};
     use gpui::TestAppContext;
 
     use super::*;
+
     use crate::test_support::{install_presentation, pump, pump_until, runtime, test_backend};
+    use forge_events::test_support::CapturingPublisher;
 
-    #[derive(Default)]
-    struct RecordingBus(Mutex<Vec<Event>>);
-
-    impl RecordingBus {
-        fn saw_client_stop(&self) -> bool {
-            self.0.lock().unwrap().iter().any(|event| {
-                VTubeConnectionChanged::from_event(event)
-                    .is_some_and(|changed| !changed.is_connected && changed.reason.is_none())
-            })
-        }
-    }
-
-    impl EventPublisher for RecordingBus {
-        fn publish(&self, event: Event) {
-            self.0.lock().unwrap().push(event);
-        }
+    fn saw_client_stop(bus: &CapturingPublisher) -> bool {
+        bus.events().iter().any(|event| {
+            VTubeConnectionChanged::from_event(event)
+                .is_some_and(|changed| !changed.is_connected && changed.reason.is_none())
+        })
     }
 
     struct Mounted {
         form: Entity<VTubeConnectForm>,
-        bus: Arc<RecordingBus>,
+        bus: Arc<CapturingPublisher>,
         rt: tokio::runtime::Runtime,
         _silent_vts: std::net::TcpListener,
     }
@@ -545,7 +535,7 @@ mod tests {
         let silent_vts = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let port = silent_vts.local_addr().unwrap().port();
         let (backend, _writes) = test_backend();
-        let bus = Arc::new(RecordingBus::default());
+        let bus = Arc::new(CapturingPublisher::default());
         let form = cx.new(|cx| {
             VTubeConnectForm::new(
                 rt.handle().clone(),
@@ -580,7 +570,7 @@ mod tests {
     fn cancel_returns_the_form_to_idle_and_stops_the_attempt(cx: &mut TestAppContext) {
         let mounted = mounted_form(cx);
         running_attempt(&mounted, cx);
-        assert!(!mounted.bus.saw_client_stop());
+        assert!(!saw_client_stop(&mounted.bus));
 
         mounted.form.update(cx, |form, cx| form.on_submit(cx));
         cx.run_until_parked();
@@ -589,14 +579,14 @@ mod tests {
             assert!(form.attempt.is_none());
             assert!(matches!(form.status, Status::Idle));
         });
-        pump_until(&mounted.rt, || mounted.bus.saw_client_stop());
+        pump_until(&mounted.rt, || saw_client_stop(&mounted.bus));
     }
 
     #[gpui::test]
     fn closing_the_form_stops_the_running_attempt(cx: &mut TestAppContext) {
         let mounted = mounted_form(cx);
         running_attempt(&mounted, cx);
-        assert!(!mounted.bus.saw_client_stop());
+        assert!(!saw_client_stop(&mounted.bus));
         let Mounted {
             form,
             bus,
@@ -608,7 +598,7 @@ mod tests {
         cx.update(|_| {});
         cx.run_until_parked();
 
-        pump_until(&rt, || bus.saw_client_stop());
+        pump_until(&rt, || saw_client_stop(&bus));
     }
 
     #[gpui::test]

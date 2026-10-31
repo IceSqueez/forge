@@ -86,12 +86,7 @@ mod tests {
     fn runner_with(
         response: Result<serde_json::Value, TwitchError>,
     ) -> (Arc<MockTransport>, SnoozeAdRunner) {
-        let transport = Arc::new(MockTransport::returning(response));
-        let runner = SnoozeAdRunner::new(
-            Arc::clone(&transport) as Arc<dyn HelixTransport>,
-            crate::sub_actions::test_support::self_identity(),
-        );
-        (transport, runner)
+        crate::sub_actions::test_support::runner_with(vec![response], SnoozeAdRunner::new)
     }
 
     #[tokio::test]

@@ -247,7 +247,7 @@ impl VTubeClient {
         let (health_tx, health_state) = make_health_channel();
         let (req_tx, _) = mpsc::unbounded_channel::<PendingRequest>();
         let (connected_notifier, _) = mpsc::unbounded_channel::<()>();
-        let publisher = tests::MockPublisher::new().publisher();
+        let publisher = tests::CapturingPublisher::shared();
         let creds = tests::MockCreds::new().creds();
         Self {
             config: VTubeConfig {
@@ -316,57 +316,35 @@ pub(crate) mod tests {
     use forge_events::{PlatformConnectionChanged, TypedEvent};
     use forge_platform_core::{BuiltinControl, BuiltinStatus};
 
-    pub(crate) struct MockPublisher {
-        pub events: Arc<std::sync::Mutex<Vec<Event>>>,
+    pub(crate) use forge_events::test_support::CapturingPublisher;
+
+    pub(crate) trait ConnectionEvents {
+        fn connected_event(&self) -> Option<Event>;
+        fn disconnected_event(&self) -> Option<Event>;
+        fn disconnected_with_reason(&self, reason: &str) -> bool;
     }
 
-    impl MockPublisher {
-        pub(crate) fn new() -> Arc<Self> {
-            Arc::new(Self {
-                events: Arc::new(std::sync::Mutex::new(Vec::new())),
+    impl ConnectionEvents for CapturingPublisher {
+        fn connected_event(&self) -> Option<Event> {
+            self.events().into_iter().find(|e| {
+                e.kind == "vtube.connection.changed"
+                    && e.payload["is_connected"].as_bool() == Some(true)
             })
         }
 
-        pub(crate) fn publisher(self: &Arc<Self>) -> Arc<dyn EventPublisher> {
-            Arc::clone(self) as Arc<dyn EventPublisher>
+        fn disconnected_event(&self) -> Option<Event> {
+            self.events().into_iter().find(|e| {
+                e.kind == "vtube.connection.changed"
+                    && e.payload["is_connected"].as_bool() == Some(false)
+            })
         }
 
-        pub(crate) fn connected_event(&self) -> Option<Event> {
-            self.events
-                .lock()
-                .unwrap()
-                .iter()
-                .find(|e| {
-                    e.kind == "vtube.connection.changed"
-                        && e.payload["is_connected"].as_bool() == Some(true)
-                })
-                .cloned()
-        }
-
-        pub(crate) fn disconnected_event(&self) -> Option<Event> {
-            self.events
-                .lock()
-                .unwrap()
-                .iter()
-                .find(|e| {
-                    e.kind == "vtube.connection.changed"
-                        && e.payload["is_connected"].as_bool() == Some(false)
-                })
-                .cloned()
-        }
-
-        pub(crate) fn disconnected_with_reason(&self, reason: &str) -> bool {
-            self.events.lock().unwrap().iter().any(|e| {
+        fn disconnected_with_reason(&self, reason: &str) -> bool {
+            self.events().iter().any(|e| {
                 e.kind == "vtube.connection.changed"
                     && e.payload["is_connected"].as_bool() == Some(false)
                     && e.payload["reason"].as_str() == Some(reason)
             })
-        }
-    }
-
-    impl EventPublisher for MockPublisher {
-        fn publish(&self, event: Event) {
-            self.events.lock().unwrap().push(event);
         }
     }
 
@@ -520,7 +498,7 @@ pub(crate) mod tests {
         false
     }
 
-    pub(crate) async fn wait_for_connected(publisher: &MockPublisher) -> bool {
+    pub(crate) async fn wait_for_connected(publisher: &CapturingPublisher) -> bool {
         wait_for(|| publisher.connected_event().is_some()).await
     }
 
@@ -718,7 +696,7 @@ pub(crate) mod tests {
 
         pub(crate) fn connect(
             &self,
-            publisher: &Arc<MockPublisher>,
+            publisher: &Arc<CapturingPublisher>,
             creds: &Arc<MockCreds>,
         ) -> VTubeClient {
             self.connect_with_timing(publisher, creds, VTubeTiming::default())
@@ -726,7 +704,7 @@ pub(crate) mod tests {
 
         pub(crate) fn connect_with_timing(
             &self,
-            publisher: &Arc<MockPublisher>,
+            publisher: &Arc<CapturingPublisher>,
             creds: &Arc<MockCreds>,
             timing: VTubeTiming,
         ) -> VTubeClient {
@@ -734,7 +712,7 @@ pub(crate) mod tests {
                 VTubeConfig {
                     endpoint: self.endpoint.clone(),
                 },
-                publisher.publisher(),
+                publisher.clone(),
                 creds.creds(),
                 timing,
             )
@@ -742,7 +720,7 @@ pub(crate) mod tests {
 
         pub(crate) fn connect_with_doomed_write(
             &self,
-            publisher: &Arc<MockPublisher>,
+            publisher: &Arc<CapturingPublisher>,
             creds: &Arc<MockCreds>,
             timing: VTubeTiming,
             doomed: DoomedWrite,
@@ -751,7 +729,7 @@ pub(crate) mod tests {
                 VTubeConfig {
                     endpoint: self.endpoint.clone(),
                 },
-                publisher.publisher(),
+                publisher.clone(),
                 creds.creds(),
                 true,
                 timing,
@@ -828,12 +806,12 @@ pub(crate) mod tests {
             while let Some(Ok(_)) = futures_util::StreamExt::next(&mut ws).await {}
         });
 
-        let publisher = MockPublisher::new();
+        let publisher = CapturingPublisher::shared();
         let creds = MockCreds::new();
         let cfg = VTubeConfig {
             endpoint: format!("ws://{addr}"),
         };
-        let _client = VTubeClient::connect(cfg, publisher.publisher(), creds.creds());
+        let _client = VTubeClient::connect(cfg, publisher.clone(), creds.creds());
 
         assert!(
             wait_for_connected(&publisher).await,
@@ -854,12 +832,12 @@ pub(crate) mod tests {
             serve_full_auth(&mut ws).await;
         });
 
-        let publisher = MockPublisher::new();
+        let publisher = CapturingPublisher::shared();
         let creds = MockCreds::new();
         let cfg = VTubeConfig {
             endpoint: format!("ws://{addr}"),
         };
-        let _client = VTubeClient::connect(cfg, publisher.publisher(), creds.creds());
+        let _client = VTubeClient::connect(cfg, publisher.clone(), creds.creds());
 
         assert!(
             wait_for(|| publisher.disconnected_event().is_some()).await,
@@ -892,12 +870,12 @@ pub(crate) mod tests {
             }
         });
 
-        let publisher = MockPublisher::new();
+        let publisher = CapturingPublisher::shared();
         let creds = MockCreds::new();
         let cfg = VTubeConfig {
             endpoint: format!("ws://{addr}"),
         };
-        let _client = VTubeClient::connect(cfg, publisher.publisher(), creds.creds());
+        let _client = VTubeClient::connect(cfg, publisher.clone(), creds.creds());
 
         let result = tokio::time::timeout(Duration::from_secs(30), async {
             accept_rx.recv().await;
@@ -923,12 +901,12 @@ pub(crate) mod tests {
             while let Some(Ok(_)) = futures_util::StreamExt::next(&mut ws).await {}
         });
 
-        let publisher = MockPublisher::new();
+        let publisher = CapturingPublisher::shared();
         let creds = MockCreds::new();
         let cfg = VTubeConfig {
             endpoint: format!("ws://{addr}"),
         };
-        let _client = VTubeClient::connect(cfg, publisher.publisher(), creds.creds());
+        let _client = VTubeClient::connect(cfg, publisher.clone(), creds.creds());
 
         assert!(
             wait_for_connected(&publisher).await,
@@ -945,7 +923,7 @@ pub(crate) mod tests {
     #[tokio::test]
     async fn stored_token_logs_in_without_asking_for_a_new_one() {
         let mut vts = FakeVts::bind().await;
-        let publisher = MockPublisher::new();
+        let publisher = CapturingPublisher::shared();
         let creds = stored_token_creds();
         let _client = vts.connect(&publisher, &creds);
         let mut conn = vts.next_conn(Duration::from_secs(30)).await.unwrap();
@@ -965,11 +943,9 @@ pub(crate) mod tests {
         );
     }
 
-    fn first_disconnect_reason(publisher: &MockPublisher) -> Option<String> {
+    fn first_disconnect_reason(publisher: &CapturingPublisher) -> Option<String> {
         publisher
-            .events
-            .lock()
-            .unwrap()
+            .events()
             .iter()
             .filter(|e| e.kind == "vtube.connection.changed")
             .filter_map(|e| e.payload["reason"].as_str())
@@ -993,7 +969,7 @@ pub(crate) mod tests {
         ];
         for (shape, reject) in rejections {
             let mut vts = FakeVts::bind().await;
-            let publisher = MockPublisher::new();
+            let publisher = CapturingPublisher::shared();
             let creds = stored_token_creds();
             let _client = vts.connect(&publisher, &creds);
             let mut conn = vts.next_conn(Duration::from_secs(30)).await.unwrap();
@@ -1039,7 +1015,7 @@ pub(crate) mod tests {
         ];
         for (case, answer, expected) in cases {
             let mut vts = FakeVts::bind().await;
-            let publisher = MockPublisher::new();
+            let publisher = CapturingPublisher::shared();
             let _client = vts.connect(&publisher, &MockCreds::new());
             let mut conn = vts.next_conn(Duration::from_secs(30)).await.unwrap();
 
@@ -1094,14 +1070,14 @@ pub(crate) mod tests {
             }
         });
 
-        let publisher = MockPublisher::new();
+        let publisher = CapturingPublisher::shared();
         let creds = MockCreds::new();
         let cfg = VTubeConfig {
             endpoint: format!("ws://{addr}"),
         };
         let _client = VTubeClient::connect_with_timing(
             cfg,
-            publisher.publisher(),
+            publisher.clone(),
             creds.creds(),
             VTubeTiming {
                 expression_poll_interval: Duration::from_millis(1),
@@ -1118,21 +1094,19 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn connect_failure_emits_connect_failed_reason_with_detail() {
-        let publisher = MockPublisher::new();
+        let publisher = CapturingPublisher::shared();
         let creds = MockCreds::new();
         let cfg = VTubeConfig {
             endpoint: "ws://127.0.0.1:0".to_owned(),
         };
-        let _client = VTubeClient::connect(cfg, publisher.publisher(), creds.creds());
+        let _client = VTubeClient::connect(cfg, publisher.clone(), creds.creds());
 
         assert!(
             wait_for(|| publisher.disconnected_with_reason("connect_failed")).await,
             "a refused connection must emit the connect_failed reason token"
         );
         let ev = publisher
-            .events
-            .lock()
-            .unwrap()
+            .events()
             .iter()
             .find(|e| e.payload["reason"].as_str() == Some("connect_failed"))
             .cloned()
@@ -1309,7 +1283,7 @@ pub(crate) mod tests {
 
     async fn parked_after_a_socket_close(
         vts: &mut FakeVts,
-        publisher: &Arc<MockPublisher>,
+        publisher: &Arc<CapturingPublisher>,
     ) -> VTubeClient {
         let client = vts.connect(publisher, &stored_token_creds());
         let conn = vts.logged_in_conn().await;
@@ -1331,7 +1305,7 @@ pub(crate) mod tests {
             VTubeConfig {
                 endpoint: format!("ws://{addr}"),
             },
-            MockPublisher::new().publisher(),
+            CapturingPublisher::shared(),
             MockCreds::new().creds(),
         );
         client.set_auto_reconnect(false);
@@ -1359,7 +1333,7 @@ pub(crate) mod tests {
     async fn a_closed_socket_with_auto_reconnect_off_parks_until_auto_reconnect_is_turned_back_on()
     {
         let mut vts = FakeVts::bind().await;
-        let publisher = MockPublisher::new();
+        let publisher = CapturingPublisher::shared();
         let client = parked_after_a_socket_close(&mut vts, &publisher).await;
         assert!(
             vts.next_redial(PARKED_WINDOW).await.is_none(),
@@ -1377,7 +1351,7 @@ pub(crate) mod tests {
     #[tokio::test]
     async fn a_parked_supervisor_ends_when_the_client_disconnects() {
         let mut vts = FakeVts::bind().await;
-        let publisher = MockPublisher::new();
+        let publisher = CapturingPublisher::shared();
         let client = parked_after_a_socket_close(&mut vts, &publisher).await;
         let handle = client.supervisor.lock().unwrap().take().unwrap();
         assert!(
@@ -1397,12 +1371,12 @@ pub(crate) mod tests {
     async fn turning_auto_reconnect_off_while_retrying_settles_disconnected_without_waiting_out_the_pause()
      {
         let (addr, _accepted) = refusing_vts().await;
-        let publisher = MockPublisher::new();
+        let publisher = CapturingPublisher::shared();
         let client = VTubeClient::connect(
             VTubeConfig {
                 endpoint: format!("ws://{addr}"),
             },
-            publisher.publisher(),
+            publisher.clone(),
             MockCreds::new().creds(),
         );
         assert!(
@@ -1430,7 +1404,7 @@ pub(crate) mod tests {
     #[tokio::test]
     async fn a_socket_closed_by_vtube_studio_records_connection_lost() {
         let mut vts = FakeVts::bind().await;
-        let publisher = MockPublisher::new();
+        let publisher = CapturingPublisher::shared();
         let client = parked_after_a_socket_close(&mut vts, &publisher).await;
 
         assert_eq!(failure_code(&client).as_deref(), Some("connection_lost"));
@@ -1452,7 +1426,7 @@ pub(crate) mod tests {
     #[tokio::test]
     async fn a_successful_reconnect_clears_the_connection_lost_failure() {
         let mut vts = FakeVts::bind().await;
-        let publisher = MockPublisher::new();
+        let publisher = CapturingPublisher::shared();
         let client = parked_after_a_socket_close(&mut vts, &publisher).await;
         assert_eq!(
             failure_code(&client).as_deref(),
@@ -1513,7 +1487,7 @@ pub(crate) mod tests {
     #[tokio::test]
     async fn a_rejected_token_records_token_rejected_without_echoing_the_stored_token() {
         let mut vts = FakeVts::bind().await;
-        let publisher = MockPublisher::new();
+        let publisher = CapturingPublisher::shared();
         let client = vts.connect(&publisher, &stored_token_creds());
         let mut conn = vts.next_conn(SETTLE).await.unwrap();
         let login = conn.expect("AuthenticationRequest", SETTLE).await;
@@ -1553,7 +1527,7 @@ pub(crate) mod tests {
             VTubeConfig {
                 endpoint: format!("ws://{addr}"),
             },
-            MockPublisher::new().publisher(),
+            CapturingPublisher::shared(),
             creds.creds(),
         );
 
@@ -1628,13 +1602,13 @@ pub(crate) mod tests {
             };
             while let Some(Ok(_)) = futures_util::StreamExt::next(&mut ws).await {}
         });
-        let publisher = MockPublisher::new();
+        let publisher = CapturingPublisher::shared();
 
         let client = VTubeClient::connect(
             VTubeConfig {
                 endpoint: format!("ws://{addr}"),
             },
-            publisher.publisher(),
+            publisher.clone(),
             MockCreds::new().creds(),
         );
 
@@ -1699,11 +1673,9 @@ pub(crate) mod tests {
         while let Some(Ok(_)) = futures_util::StreamExt::next(&mut ws).await {}
     }
 
-    fn announced_states(publisher: &MockPublisher) -> Vec<String> {
+    fn announced_states(publisher: &CapturingPublisher) -> Vec<String> {
         publisher
-            .events
-            .lock()
-            .unwrap()
+            .events()
             .iter()
             .filter(|e| e.kind == PlatformConnectionChanged::KIND)
             .map(|e| {
@@ -1721,13 +1693,13 @@ pub(crate) mod tests {
         let addr = listener.local_addr().unwrap();
         let (accept_tx, mut accept_rx) = mpsc::unbounded_channel();
         let server = tokio::spawn(serve_refused_handshakes(listener, accept_tx));
-        let publisher = MockPublisher::new();
+        let publisher = CapturingPublisher::shared();
 
         let client = VTubeClient::connect(
             VTubeConfig {
                 endpoint: format!("ws://{addr}"),
             },
-            publisher.publisher(),
+            publisher.clone(),
             MockCreds::new().creds(),
         );
 
@@ -1753,13 +1725,13 @@ pub(crate) mod tests {
         let server = tokio::spawn(serve_auth_then_announced_close(
             listener, gate_rx, settled_tx,
         ));
-        let publisher = MockPublisher::new();
+        let publisher = CapturingPublisher::shared();
 
         let client = VTubeClient::connect(
             VTubeConfig {
                 endpoint: format!("ws://{addr}"),
             },
-            publisher.publisher(),
+            publisher.clone(),
             MockCreds::new().creds(),
         );
         assert!(wait_for_connected(&publisher).await, "expected connected");
@@ -1798,18 +1770,18 @@ pub(crate) mod tests {
         let server = tokio::spawn(serve_auth_then_announced_close(
             listener, gate_rx, settled_tx,
         ));
-        let publisher = MockPublisher::new();
+        let publisher = CapturingPublisher::shared();
 
         let client = VTubeClient::connect(
             VTubeConfig {
                 endpoint: format!("ws://{addr}"),
             },
-            publisher.publisher(),
+            publisher.clone(),
             MockCreds::new().creds(),
         );
         assert!(wait_for_connected(&publisher).await, "expected connected");
         client.disconnect().await.unwrap();
-        publisher.events.lock().unwrap().clear();
+        drop(publisher.take());
 
         #[expect(
             clippy::let_underscore_must_use,
@@ -1826,16 +1798,14 @@ pub(crate) mod tests {
             .unwrap();
 
         assert!(
-            publisher.events.lock().unwrap().is_empty(),
+            publisher.events().is_empty(),
             "a client whose disconnect already returned published again"
         );
     }
 
-    fn announcements(publisher: &MockPublisher) -> Vec<(String, Option<bool>)> {
+    fn announcements(publisher: &CapturingPublisher) -> Vec<(String, Option<bool>)> {
         publisher
-            .events
-            .lock()
-            .unwrap()
+            .events()
             .iter()
             .filter(|e| e.kind == PlatformConnectionChanged::KIND)
             .map(|e| {
@@ -1871,12 +1841,12 @@ pub(crate) mod tests {
             let server = tokio::spawn(serve_auth_then_announced_close(
                 listener, gate_rx, settled_tx,
             ));
-            let publisher = MockPublisher::new();
+            let publisher = CapturingPublisher::shared();
             let client = VTubeClient::connect(
                 VTubeConfig {
                     endpoint: format!("ws://{addr}"),
                 },
-                publisher.publisher(),
+                publisher.clone(),
                 MockCreds::new().creds(),
             );
             assert!(

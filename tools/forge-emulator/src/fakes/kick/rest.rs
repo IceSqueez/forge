@@ -1,3 +1,4 @@
+use crate::fakes::support::bearer_token;
 use std::sync::Arc;
 
 use axum::Router;
@@ -37,11 +38,11 @@ enum Route {
 
 fn locate(method: &Method, path: &str) -> (KickSurface, Option<Route>) {
     if let Some(rest) = path.strip_prefix(PUBLIC_API_PREFIX) {
-        let route = match (method.as_str(), rest) {
-            ("POST", "/chat") => Some(Route::SendChat),
-            ("GET", "/channels") => Some(Route::Channels),
-            ("GET", "/channels/rewards/redemptions") => Some(Route::PendingRedemptions),
-            ("DELETE", rest) => rest
+        let route = match (method, rest) {
+            (&Method::POST, "/chat") => Some(Route::SendChat),
+            (&Method::GET, "/channels") => Some(Route::Channels),
+            (&Method::GET, "/channels/rewards/redemptions") => Some(Route::PendingRedemptions),
+            (&Method::DELETE, rest) => rest
                 .strip_prefix("/chat/")
                 .filter(|id| !id.is_empty() && !id.contains('/'))
                 .map(|_| Route::DeleteChat),
@@ -50,8 +51,8 @@ fn locate(method: &Method, path: &str) -> (KickSurface, Option<Route>) {
         return (KickSurface::PublicApi, route);
     }
     if let Some(rest) = path.strip_prefix(CHANNEL_API_PREFIX) {
-        let route = match (method.as_str(), rest.strip_prefix("/channels/")) {
-            ("GET", Some(slug)) if !slug.is_empty() && !slug.contains('/') => {
+        let route = match (method, rest.strip_prefix("/channels/")) {
+            (&Method::GET, Some(slug)) if !slug.is_empty() && !slug.contains('/') => {
                 Some(Route::ChannelInfo(slug.to_owned()))
             }
             _ => None,
@@ -59,7 +60,7 @@ fn locate(method: &Method, path: &str) -> (KickSurface, Option<Route>) {
         return (KickSurface::ChannelApi, route);
     }
     if let Some(rest) = path.strip_prefix(OAUTH_PREFIX) {
-        let route = (method.as_str() == "POST" && rest == "/token").then_some(Route::Token);
+        let route = (*method == Method::POST && rest == "/token").then_some(Route::Token);
         return (KickSurface::OAuth, route);
     }
     (KickSurface::Unknown, None)
@@ -139,10 +140,7 @@ fn decode_body(surface: KickSurface, bytes: &Bytes) -> Option<Value> {
 }
 
 fn check_bearer(headers: &HeaderMap, access_token: &str) -> KickCredentialCheck {
-    let bearer = headers
-        .get("authorization")
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.strip_prefix("Bearer "));
+    let bearer = bearer_token(headers);
     match bearer {
         None => KickCredentialCheck::MissingBearer,
         Some(token) if token != access_token => KickCredentialCheck::WrongBearer,

@@ -1,7 +1,9 @@
 mod credentials;
+mod globals;
 mod memory;
 
 pub use credentials::MemoryCredentials;
+pub use globals::MemoryGlobals;
 pub use memory::MemorySettings;
 
 use crate::{RowClasses, RowGate};

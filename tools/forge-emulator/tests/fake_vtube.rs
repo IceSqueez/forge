@@ -1,7 +1,8 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+use forge_events::test_support::CapturingPublisher;
 use forge_vtube::vocabulary::event_kinds as vtube_kinds;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use forge_emulator::EmulatorError;
@@ -16,7 +17,6 @@ use forge_vtube::{VTUBE_CREDENTIAL_ID, VTubeClient, VTubeSink, probe_connection}
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
 use tokio::net::TcpStream;
-use tokio::sync::Notify;
 use tokio::time::timeout;
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
@@ -162,47 +162,9 @@ async fn wait_ledger<T>(
     fake.wait_for("ledger state", WAIT, probe).await
 }
 
-#[derive(Default)]
-struct Captured {
-    events: Mutex<Vec<Event>>,
-    published: Notify,
-}
-
-impl EventPublisher for Captured {
-    fn publish(&self, event: Event) {
-        self.events.lock().unwrap().push(event);
-        self.published.notify_waiters();
-    }
-}
-
-impl Captured {
-    fn find(&self, matches: impl Fn(&Event) -> bool) -> Option<Event> {
-        self.events
-            .lock()
-            .unwrap()
-            .iter()
-            .find(|e| matches(e))
-            .cloned()
-    }
-
-    async fn wait_for(&self, matches: impl Fn(&Event) -> bool) -> Option<Event> {
-        timeout(WAIT, async {
-            loop {
-                let published = self.published.notified();
-                if let Some(event) = self.find(&matches) {
-                    return event;
-                }
-                published.await;
-            }
-        })
-        .await
-        .ok()
-    }
-}
-
 struct Forge {
     client: Arc<VTubeClient>,
-    events: Arc<Captured>,
+    events: Arc<CapturingPublisher>,
     credentials: Arc<MemoryCredentials>,
 }
 
@@ -211,7 +173,7 @@ async fn forge_with_token(fake: &FakeVTube, token: &str) -> Forge {
     forge_vtube::credentials::store(&*credentials, token, LOCALHOST, fake.port(), false)
         .await
         .unwrap();
-    let events = Arc::new(Captured::default());
+    let events = Arc::new(CapturingPublisher::default());
     let client = forge_vtube::credentials::load_and_connect(
         &*credentials,
         Arc::clone(&events) as Arc<dyn EventPublisher>,
@@ -230,11 +192,16 @@ fn is_connected(event: &Event) -> bool {
     event.kind == vtube_kinds::CONNECTION_CHANGED && event.payload["is_connected"] == true
 }
 
+async fn event_within(
+    events: &CapturingPublisher,
+    matches: impl FnMut(&Event) -> bool,
+) -> Option<Event> {
+    timeout(WAIT, events.wait_for(matches)).await.ok()
+}
+
 async fn connected_forge(fake: &FakeVTube) -> Forge {
     let forge = forge_with_token(fake, TOKEN).await;
-    forge
-        .events
-        .wait_for(is_connected)
+    event_within(&forge.events, is_connected)
         .await
         .expect("forge connects to the fake VTube Studio");
     wait_ledger(fake, |ledger| {
@@ -281,13 +248,10 @@ async fn forge_with_a_revoked_token_reports_auth_required_and_forgets_the_token(
     let fake = start().await;
     let forge = forge_with_token(&fake, "a-revoked-token").await;
 
-    let reported = forge
-        .events
-        .wait_for(|event| {
-            event.kind == vtube_kinds::CONNECTION_CHANGED
-                && event.payload["reason"] == "auth_required"
-        })
-        .await;
+    let reported = event_within(&forge.events, |event| {
+        event.kind == vtube_kinds::CONNECTION_CHANGED && event.payload["reason"] == "auth_required"
+    })
+    .await;
 
     assert!(reported.is_some(), "forge never reported auth_required");
     assert_eq!(
@@ -444,11 +408,11 @@ async fn a_hotkey_forge_triggers_comes_back_as_a_triggered_event() {
 
     forge.client.trigger_hotkey(WAVE).await.unwrap();
 
-    let event = forge
-        .events
-        .wait_for(|event| event.kind == vtube_kinds::HOTKEY_TRIGGERED)
-        .await
-        .expect(vtube_kinds::HOTKEY_TRIGGERED);
+    let event = event_within(&forge.events, |event| {
+        event.kind == vtube_kinds::HOTKEY_TRIGGERED
+    })
+    .await
+    .expect(vtube_kinds::HOTKEY_TRIGGERED);
     assert_eq!(event.payload["hotkey_name"], WAVE);
     assert_eq!(event.payload["hotkey_id"], hotkey_id(0, 0));
     forge.client.shutdown().await;
@@ -486,9 +450,7 @@ async fn studio_changes_reach_forge_as_its_vtube_events() {
     for (kind, change) in cases {
         assert_eq!(change(&fake).unwrap(), 1, "{kind} was not delivered");
         assert!(
-            forge
-                .events
-                .wait_for(|event| event.kind == kind)
+            event_within(&forge.events, |event| event.kind == kind)
                 .await
                 .is_some(),
             "forge did not publish {kind}"
@@ -496,12 +458,11 @@ async fn studio_changes_reach_forge_as_its_vtube_events() {
     }
     fake.load_model(AVATAR).unwrap();
     assert!(
-        forge
-            .events
-            .wait_for(|event| event.kind == vtube_kinds::MODEL_LOADED
-                && event.payload["model_name"] == AVATAR)
-            .await
-            .is_some()
+        event_within(&forge.events, |event| event.kind
+            == vtube_kinds::MODEL_LOADED
+            && event.payload["model_name"] == AVATAR)
+        .await
+        .is_some()
     );
     forge.client.shutdown().await;
 }
@@ -524,11 +485,11 @@ async fn an_expression_turned_on_in_the_studio_reaches_forge_through_its_state_p
 
     fake.set_expression(BLUSH, true).unwrap();
 
-    let event = forge
-        .events
-        .wait_for(|event| event.kind == vtube_kinds::EXPRESSION_STATE_CHANGED)
-        .await
-        .expect(vtube_kinds::EXPRESSION_STATE_CHANGED);
+    let event = event_within(&forge.events, |event| {
+        event.kind == vtube_kinds::EXPRESSION_STATE_CHANGED
+    })
+    .await
+    .expect(vtube_kinds::EXPRESSION_STATE_CHANGED);
     assert_eq!(event.payload["expression_file"], BLUSH);
     assert_eq!(event.payload["is_active"], true);
     forge.client.shutdown().await;

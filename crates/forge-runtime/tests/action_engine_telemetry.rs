@@ -1,4 +1,5 @@
 #![allow(clippy::unwrap_used)]
+use forge_events::test_support::CapturingPublisher;
 mod common;
 use common::runners::GateRunner;
 
@@ -630,18 +631,10 @@ async fn a_quick_chat_send_targeted_at_a_disabled_platform_reports_integration_d
     assert_eq!(outcome, SubActionOutcome::IntegrationDisabled(kick));
 }
 
-struct CapturingPublisher(Arc<Mutex<Vec<forge_events::Event>>>);
-
-impl forge_events::EventPublisher for CapturingPublisher {
-    fn publish(&self, event: forge_events::Event) {
-        self.0.lock().unwrap().push(event);
-    }
-}
-
 struct ScriptHarness {
     engine: forge_runtime::ActionEngineHandle,
     history: Arc<SpyHistoryRepo>,
-    published: Arc<Mutex<Vec<forge_events::Event>>>,
+    published: Arc<CapturingPublisher>,
     _backend: Arc<forge_storage_sqlite::SqliteBackend>,
     _media: tempfile::TempDir,
 }
@@ -657,12 +650,12 @@ impl ScriptHarness {
         )
         .await
         .unwrap();
-        let published = Arc::new(Mutex::new(Vec::new()));
+        let published = CapturingPublisher::shared();
         let mut reg = SubActionRegistry::new();
         reg.register(Box::new(ScriptRunInlineRunner::new(
             Arc::new(ScriptRegistry::new()),
             Arc::clone(&backend) as Arc<dyn forge_storage::GlobalsRepo>,
-            Arc::new(CapturingPublisher(Arc::clone(&published))),
+            Arc::clone(&published) as Arc<dyn forge_events::EventPublisher>,
             Arc::clone(&backend) as Arc<dyn forge_storage::SettingsRepo>,
         )))
         .unwrap();
@@ -678,12 +671,7 @@ impl ScriptHarness {
     }
 
     fn chat_sends(&self) -> usize {
-        self.published
-            .lock()
-            .unwrap()
-            .iter()
-            .filter(|e| e.kind == "chat.send.request")
-            .count()
+        self.published.count_kind("chat.send.request")
     }
 
     async fn run_quick(&self, body: &str) -> SubActionOutcome {

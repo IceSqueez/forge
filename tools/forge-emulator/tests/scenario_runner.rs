@@ -43,7 +43,7 @@ use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 mod support;
 
 use forge_storage::test_support::MemoryCredentials;
-use support::{QuietPublisher, TokenSource, endpoints_from, static_token_source};
+use support::{TokenSource, endpoints_from, static_token_source};
 
 type Socket = WebSocketStream<MaybeTlsStream<TcpStream>>;
 
@@ -985,9 +985,13 @@ async fn harness_with_obs(online_at_boot: bool) -> Harness {
 
 async fn forge_obs_client(harness: &Harness, password: &str) -> forge_obs::ObsClient {
     let url = harness.obs.as_ref().unwrap().url();
-    forge_obs::ObsClient::connect(&url, Some(password), std::sync::Arc::new(QuietPublisher))
-        .await
-        .unwrap()
+    forge_obs::ObsClient::connect(
+        &url,
+        Some(password),
+        std::sync::Arc::new(forge_events::test_support::NullPublisher),
+    )
+    .await
+    .unwrap()
 }
 
 #[tokio::test]
@@ -1329,7 +1333,7 @@ async fn forge_vtube_client(harness: &Harness, token: &str) -> Arc<forge_vtube::
         .unwrap();
     forge_vtube::credentials::load_and_connect(
         &*credentials,
-        Arc::new(QuietPublisher),
+        Arc::new(forge_events::test_support::NullPublisher),
         credentials.clone(),
     )
     .await
@@ -1501,17 +1505,11 @@ fn kick_endpoints(fake: &FakeKick) -> forge_platform_core::PlatformEndpoints {
     endpoints_from(&fake.endpoint_overrides())
 }
 
-struct KickDiscard;
-
-impl forge_events::EventPublisher for KickDiscard {
-    fn publish(&self, _event: Event) {}
-}
-
 fn kick_api(endpoints: &forge_platform_core::PlatformEndpoints) -> forge_net::Gateway {
     forge_platform_kick::kick_api_gateway(
         endpoints,
         Arc::new(forge_net::test_support::RecordingRateLimiter::granting()),
-        Arc::new(KickDiscard),
+        Arc::new(forge_events::test_support::NullPublisher),
     )
     .unwrap()
 }
@@ -1523,7 +1521,7 @@ fn kick_channel_info(
         forge_platform_kick::kick_channel_info_gateway(
             endpoints,
             Arc::new(forge_net::test_support::RecordingRateLimiter::granting()),
-            Arc::new(KickDiscard),
+            Arc::new(forge_events::test_support::NullPublisher),
         )
         .unwrap(),
     ))
@@ -1733,7 +1731,7 @@ fn youtube_data_api(
     forge_platform_youtube::YoutubeDataApi::new(
         endpoints,
         forge_platform_youtube::SharedQuota::default(),
-        Arc::new(QuietPublisher),
+        Arc::new(forge_events::test_support::NullPublisher),
     )
     .unwrap()
 }

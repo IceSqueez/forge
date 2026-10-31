@@ -6,7 +6,7 @@ use std::collections::BTreeSet;
 
 use forge_overlay::ConfigSection;
 use forge_overlay::config::{
-    ACCENT, DESIGN_WIDTH, FONT, HEADLINE, MARGIN_LEFT, MARGIN_TOP, POSITION, TEXT_SIZE,
+    ACCENT, DESIGN_WIDTH, FONT, HEADLINE, MARGIN_LEFT, MARGIN_TOP, PLATFORM, POSITION, TEXT_SIZE,
 };
 use forge_overlay::{
     LookConfigKey, OverlayConfig, PAGE_CONTRACT, RUNTIME_SOURCE, SampleContext, latest_binding,
@@ -27,20 +27,7 @@ fn function_body(name: &str) -> &'static str {
 }
 
 fn published_names() -> BTreeSet<String> {
-    let opening = "window.forge = Object.freeze({";
-    let start = RUNTIME_SOURCE
-        .find(opening)
-        .expect("the runtime publishes window.forge")
-        + opening.len();
-    let rest = &RUNTIME_SOURCE[start..];
-    let end = rest.find('}').expect("the published object is closed");
-    rest[..end]
-        .lines()
-        .filter_map(|line| line.split(':').next())
-        .map(str::trim)
-        .filter(|name| !name.is_empty())
-        .map(str::to_owned)
-        .collect()
+    common::js_object_keys(RUNTIME_SOURCE, "window.forge = Object.freeze({")
 }
 
 fn shape_up_to_close(text: &str) -> Option<String> {
@@ -288,5 +275,5 @@ fn the_chat_look_declares_the_platform_content_key() {
     let reg = registry();
     let chat = reg.get(CHAT_KIND).expect("the chat kind is registered");
 
-    assert!(look_contract(chat).content_keys.contains(&"platform"));
+    assert!(look_contract(chat).content_keys.contains(&PLATFORM));
 }

@@ -302,28 +302,19 @@ impl From<VoiceSkip> for SkipReason {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, Mutex};
+    use std::sync::Arc;
 
     use forge_audio::AudioError;
-    use forge_events::{Event, EventPublisher, EventSource};
+    use forge_events::{Event, EventSource};
     use forge_speech_types::{EngineId, LanguageCode, VoiceId};
     use forge_types::EventId;
     use serde_json::{Value, json};
     use tokio::sync::broadcast;
 
     use super::*;
+
     use crate::{Priority, RequestId, SpeakEvent, SpeakRequest};
-
-    #[derive(Default)]
-    struct RecordingBus {
-        events: Mutex<Vec<Event>>,
-    }
-
-    impl EventPublisher for RecordingBus {
-        fn publish(&self, event: Event) {
-            self.events.lock().unwrap().push(event);
-        }
-    }
+    use forge_events::test_support::CapturingPublisher;
 
     fn request(source: Option<EventId>) -> SpeakRequest {
         SpeakRequest {
@@ -342,10 +333,10 @@ mod tests {
     }
 
     fn emitted(emit: impl FnOnce(&SpeakEmitter<'_>)) -> (Event, Vec<SpeakEvent>) {
-        let bus = Arc::new(RecordingBus::default());
+        let bus = Arc::new(CapturingPublisher::default());
         let (tx, mut rx) = broadcast::channel(8);
         emit(&SpeakEmitter::new(&tx, bus.as_ref()));
-        let mut events = bus.events.lock().unwrap();
+        let mut events = bus.events();
         assert_eq!(events.len(), 1, "exactly one bus event per emission");
         let feed = std::iter::from_fn(|| rx.try_recv().ok()).collect();
         (events.remove(0), feed)

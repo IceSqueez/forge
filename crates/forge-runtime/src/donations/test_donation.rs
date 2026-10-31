@@ -194,42 +194,21 @@ pub fn register_donation_sub_actions(
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeSet;
-    use std::sync::Mutex;
 
-    use forge_events::{DonationReceived, Event, EventPublisher, TypedEvent};
+    use forge_events::{DonationReceived, EventPublisher, TypedEvent};
     use forge_platform_core::{test_donation_quick_action, test_donation_step};
     use forge_storage::MockDonationRepo;
     use forge_types::{EventId, Shared};
 
     use super::*;
+
+    use forge_events::test_support::CapturingPublisher;
     use forge_types::Variant;
 
     const PLACEHOLDER: &str = "Anonymous donor";
 
-    #[derive(Default)]
-    struct Recorder(Mutex<Vec<Event>>);
-
-    impl EventPublisher for Recorder {
-        fn publish(&self, event: Event) {
-            self.0.lock().unwrap().push(event);
-        }
-    }
-
-    impl Recorder {
-        fn events(&self) -> Vec<Event> {
-            self.0.lock().unwrap().clone()
-        }
-
-        fn announced(&self) -> Vec<DonationReceived> {
-            self.events()
-                .iter()
-                .map(|event| DonationReceived::from_event(event).unwrap())
-                .collect()
-        }
-    }
-
-    fn rig() -> (TestDonationRunner, Arc<Recorder>) {
-        let recorder = Arc::new(Recorder::default());
+    fn rig() -> (TestDonationRunner, Arc<CapturingPublisher>) {
+        let recorder = Arc::new(CapturingPublisher::default());
         let ingest = DonationIngest::new(
             Arc::new(MockDonationRepo::new()),
             Arc::clone(&recorder) as Arc<dyn EventPublisher>,
@@ -252,9 +231,17 @@ mod tests {
         parent: EventId,
     ) -> SubActionOutcome {
         let stack = ArgStack::new();
-        let publisher = Recorder::default();
+        let publisher = CapturingPublisher::default();
         let ctx = RunContext::leaf(&stack, 0, parent, &publisher);
         runner.execute(config, &ctx).await.0.outcome
+    }
+
+    fn announced(recorder: &CapturingPublisher) -> Vec<DonationReceived> {
+        recorder
+            .events()
+            .iter()
+            .map(|event| DonationReceived::from_event(event).unwrap())
+            .collect()
     }
 
     #[tokio::test]
@@ -268,8 +255,7 @@ mod tests {
         )
         .await;
 
-        let announced: Vec<(bool, u64)> = recorder
-            .announced()
+        let announced: Vec<(bool, u64)> = announced(&recorder)
             .iter()
             .map(|received| (received.test, received.amount_micros))
             .collect();
@@ -344,8 +330,7 @@ mod tests {
         )
         .await;
 
-        let names: Vec<String> = recorder
-            .announced()
+        let names: Vec<String> = announced(&recorder)
             .into_iter()
             .map(|received| received.donor_name)
             .collect();

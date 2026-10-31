@@ -362,54 +362,12 @@ pub(crate) mod tests {
     use forge_platform_core::HealthText;
 
     use super::*;
+
     use crate::backend::tests::{MockFailAllBackend, MockPortalBackend};
-
-    pub(crate) struct RecordingPublisher {
-        events: std::sync::Mutex<Vec<forge_events::Event>>,
-    }
-
-    impl RecordingPublisher {
-        pub(crate) fn new() -> Arc<Self> {
-            Arc::new(Self {
-                events: std::sync::Mutex::new(Vec::new()),
-            })
-        }
-
-        pub(crate) fn has_kind(&self, kind: &str) -> bool {
-            self.events.lock().unwrap().iter().any(|e| e.kind == kind)
-        }
-
-        pub(crate) fn find_kind(&self, kind: &str) -> Option<forge_events::Event> {
-            self.events
-                .lock()
-                .unwrap()
-                .iter()
-                .find(|e| e.kind == kind)
-                .cloned()
-        }
-
-        pub(crate) fn count_kind(&self, kind: &str) -> usize {
-            self.events
-                .lock()
-                .unwrap()
-                .iter()
-                .filter(|e| e.kind == kind)
-                .count()
-        }
-    }
-
-    impl EventPublisher for RecordingPublisher {
-        fn publish(&self, event: forge_events::Event) {
-            self.events.lock().unwrap().push(event);
-        }
-    }
+    pub(crate) use forge_events::test_support::CapturingPublisher;
 
     pub(crate) fn noop_publisher() -> Arc<dyn EventPublisher> {
-        struct Noop;
-        impl EventPublisher for Noop {
-            fn publish(&self, _: forge_events::Event) {}
-        }
-        Arc::new(Noop)
+        Arc::new(forge_events::test_support::NullPublisher)
     }
 
     pub(crate) fn start_supervised(
@@ -430,7 +388,7 @@ pub(crate) mod tests {
         }
     }
 
-    async fn wait_for_kind(publisher: &RecordingPublisher, kind: &str) {
+    async fn wait_for_kind(publisher: &CapturingPublisher, kind: &str) {
         for _ in 0..10_000 {
             if publisher.has_kind(kind) {
                 return;
@@ -477,7 +435,7 @@ pub(crate) mod tests {
         send_edge(tx, id, c, crate::backend::HotkeyEdge::Release).await;
     }
 
-    fn released_event(publisher: &RecordingPublisher) -> forge_events::Event {
+    fn released_event(publisher: &CapturingPublisher) -> forge_events::Event {
         publisher.find_kind("hotkey.global.released").unwrap()
     }
 
@@ -501,7 +459,7 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn register_emits_hotkey_registered_event() {
-        let publisher = RecordingPublisher::new();
+        let publisher = CapturingPublisher::shared();
         let (backend, _tx) = MockPortalBackend::new();
         let client = start_supervised(backend, Arc::clone(&publisher) as Arc<dyn EventPublisher>);
         client.register(combo("Ctrl+B")).await.unwrap();
@@ -510,7 +468,7 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn unregister_removes_combo_and_emits_event() {
-        let publisher = RecordingPublisher::new();
+        let publisher = CapturingPublisher::shared();
         let (backend, _tx) = MockPortalBackend::new();
         let client = start_supervised(backend, Arc::clone(&publisher) as Arc<dyn EventPublisher>);
         let id = client.register(combo("Ctrl+C")).await.unwrap();
@@ -634,7 +592,7 @@ pub(crate) mod tests {
     #[cfg(target_os = "linux")]
     #[tokio::test]
     async fn portal_unavailable_event_carries_reason_token_and_human_detail() {
-        let publisher = RecordingPublisher::new();
+        let publisher = CapturingPublisher::shared();
         let (backend, _tx) = MockPortalBackend::new();
         let client = start_supervised(backend, Arc::clone(&publisher) as Arc<dyn EventPublisher>);
 
@@ -719,7 +677,7 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn a_combo_refused_on_enable_leaves_the_registry_so_it_can_be_claimed_again() {
-        let publisher = RecordingPublisher::new();
+        let publisher = CapturingPublisher::shared();
         let (backend, _tx) = MockPortalBackend::new();
         let refuse = Arc::clone(&backend.fail_on);
         let client = start_supervised(backend, Arc::clone(&publisher) as Arc<dyn EventPublisher>);
@@ -803,7 +761,7 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn engine_state_events_follow_the_transition_direction() {
-        let publisher = RecordingPublisher::new();
+        let publisher = CapturingPublisher::shared();
         let (backend, _tx) = MockPortalBackend::new();
         let client = start_supervised(backend, Arc::clone(&publisher) as Arc<dyn EventPublisher>);
 
@@ -833,7 +791,7 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn a_disable_the_os_refuses_stops_delivery_reports_the_error_and_announces_nothing() {
-        let publisher = RecordingPublisher::new();
+        let publisher = CapturingPublisher::shared();
         let (backend, _tx) = MockPortalBackend::new();
         let fail_unregister = Arc::clone(&backend.fail_unregister);
         let client = start_supervised(backend, Arc::clone(&publisher) as Arc<dyn EventPublisher>);
@@ -852,7 +810,7 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn retrying_a_refused_disable_releases_the_grab_and_announces_it_once() {
-        let publisher = RecordingPublisher::new();
+        let publisher = CapturingPublisher::shared();
         let (backend, _tx) = MockPortalBackend::new();
         let fail_unregister = Arc::clone(&backend.fail_unregister);
         let os_registered = Arc::clone(&backend.registered);
@@ -923,7 +881,7 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn a_binding_removed_between_a_refused_disable_and_its_retry_still_loses_its_os_grab() {
-        let publisher = RecordingPublisher::new();
+        let publisher = CapturingPublisher::shared();
         let (backend, _tx) = MockPortalBackend::new();
         let fail_unregister = Arc::clone(&backend.fail_unregister);
         let os_registered = Arc::clone(&backend.registered);
@@ -942,7 +900,7 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn a_removal_the_os_refuses_during_a_refused_disable_keeps_the_binding_for_the_retry() {
-        let publisher = RecordingPublisher::new();
+        let publisher = CapturingPublisher::shared();
         let (backend, _tx) = MockPortalBackend::new();
         let fail_unregister = Arc::clone(&backend.fail_unregister);
         let os_registered = Arc::clone(&backend.registered);
@@ -974,7 +932,7 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn a_no_op_transition_publishes_no_second_engine_event() {
-        let publisher = RecordingPublisher::new();
+        let publisher = CapturingPublisher::shared();
         let (backend, _tx) = MockPortalBackend::new();
         let client = start_supervised(backend, Arc::clone(&publisher) as Arc<dyn EventPublisher>);
 
@@ -1002,7 +960,7 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn enable_failed_event_lists_every_refused_combo() {
-        let publisher = RecordingPublisher::new();
+        let publisher = CapturingPublisher::shared();
         let (backend, _tx) = MockPortalBackend::new();
         let refuse = Arc::clone(&backend.fail_on);
         let client = start_supervised(backend, Arc::clone(&publisher) as Arc<dyn EventPublisher>);
@@ -1019,7 +977,7 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn a_clean_enable_publishes_no_enable_failed_event() {
-        let publisher = RecordingPublisher::new();
+        let publisher = CapturingPublisher::shared();
         let (backend, _tx) = MockPortalBackend::new();
         let client = start_supervised(backend, Arc::clone(&publisher) as Arc<dyn EventPublisher>);
         client.register(combo("Ctrl+F1")).await.unwrap();
@@ -1032,7 +990,7 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn fired_events_queued_before_a_disable_are_all_still_delivered() {
-        let publisher = RecordingPublisher::new();
+        let publisher = CapturingPublisher::shared();
         let (backend, inject_tx) = MockPortalBackend::new();
         let client = start_supervised(backend, Arc::clone(&publisher) as Arc<dyn EventPublisher>);
 
@@ -1076,7 +1034,7 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn an_observed_release_is_caused_by_its_press_and_carries_the_held_duration() {
-        let publisher = RecordingPublisher::new();
+        let publisher = CapturingPublisher::shared();
         let (backend, inject_tx) = MockPortalBackend::new();
         let client = start_supervised(backend, Arc::clone(&publisher) as Arc<dyn EventPublisher>);
         let c = combo("Ctrl+F1");
@@ -1095,7 +1053,7 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn a_release_with_no_open_hold_publishes_nothing() {
-        let publisher = RecordingPublisher::new();
+        let publisher = CapturingPublisher::shared();
         let (backend, inject_tx) = MockPortalBackend::new();
         let client = start_supervised(backend, Arc::clone(&publisher) as Arc<dyn EventPublisher>);
         let c = combo("Ctrl+F1");
@@ -1108,7 +1066,7 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn a_press_after_a_release_opens_a_new_hold_and_publishes_again() {
-        let publisher = RecordingPublisher::new();
+        let publisher = CapturingPublisher::shared();
         let (backend, inject_tx) = MockPortalBackend::new();
         let client = start_supervised(backend, Arc::clone(&publisher) as Arc<dyn EventPublisher>);
         let c = combo("Ctrl+F1");
@@ -1123,7 +1081,7 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn disabling_the_engine_closes_an_open_hold_with_a_synthesized_release() {
-        let publisher = RecordingPublisher::new();
+        let publisher = CapturingPublisher::shared();
         let (backend, inject_tx) = MockPortalBackend::new_delivery_gate_only();
         let client = start_supervised(backend, Arc::clone(&publisher) as Arc<dyn EventPublisher>);
         let c = combo("Ctrl+F1");
@@ -1137,7 +1095,7 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn unregistering_a_held_combo_closes_its_hold_with_a_synthesized_release() {
-        let publisher = RecordingPublisher::new();
+        let publisher = CapturingPublisher::shared();
         let (backend, inject_tx) = MockPortalBackend::new();
         let client = start_supervised(backend, Arc::clone(&publisher) as Arc<dyn EventPublisher>);
         let c = combo("Ctrl+F1");
@@ -1151,7 +1109,7 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn a_stale_release_arriving_after_an_un_sticking_publishes_no_second_release() {
-        let publisher = RecordingPublisher::new();
+        let publisher = CapturingPublisher::shared();
         let (backend, inject_tx) = MockPortalBackend::new();
         let client = start_supervised(backend, Arc::clone(&publisher) as Arc<dyn EventPublisher>);
         let c = combo("Ctrl+F1");
@@ -1166,7 +1124,7 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn a_backend_restart_notice_closes_an_open_hold_with_a_synthesized_release() {
-        let publisher = RecordingPublisher::new();
+        let publisher = CapturingPublisher::shared();
         let (backend, inject_tx) = MockPortalBackend::new();
         let restart_tx = backend.restart_tx.clone();
         let client = start_supervised(backend, Arc::clone(&publisher) as Arc<dyn EventPublisher>);
@@ -1211,7 +1169,7 @@ pub(crate) mod tests {
     #[cfg(target_os = "linux")]
     #[tokio::test]
     async fn a_lost_portal_session_publishes_portal_unavailable_with_the_session_lost_reason() {
-        let publisher = RecordingPublisher::new();
+        let publisher = CapturingPublisher::shared();
         let (backend, _inject_tx) = MockPortalBackend::new();
         let session_tx = backend.session_tx.clone();
         let _client = start_supervised(backend, Arc::clone(&publisher) as Arc<dyn EventPublisher>);
@@ -1295,7 +1253,7 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn a_closed_fired_channel_closes_an_open_hold_with_a_synthesized_release() {
-        let publisher = RecordingPublisher::new();
+        let publisher = CapturingPublisher::shared();
         let (backend, inject_tx) = MockPortalBackend::new();
         let client = start_supervised(backend, Arc::clone(&publisher) as Arc<dyn EventPublisher>);
         let c = combo("Ctrl+F1");
@@ -1310,7 +1268,7 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn release_open_holds_closes_an_open_hold_with_a_synthesized_release() {
-        let publisher = RecordingPublisher::new();
+        let publisher = CapturingPublisher::shared();
         let (backend, inject_tx) = MockPortalBackend::new();
         let client = start_supervised(backend, Arc::clone(&publisher) as Arc<dyn EventPublisher>);
         let c = combo("Ctrl+F1");

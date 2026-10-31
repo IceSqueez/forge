@@ -63,10 +63,3 @@ pub trait DataProvider:
 
     async fn shutdown(&self);
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn _dyn(_: &dyn DataProvider) {}
-}

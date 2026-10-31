@@ -110,17 +110,10 @@ mod tests {
     use crate::test_support::MapGlobals;
     use crate::test_support::failure::failure_message;
     use forge_events::Event;
-    use forge_events::EventPublisher;
+    use forge_events::test_support::CapturingPublisher;
+
     use forge_events::test_support::NullPublisher;
     use forge_types::EventId;
-    use std::sync::Mutex;
-
-    struct CapturingPublisher(Arc<Mutex<Vec<Event>>>);
-    impl EventPublisher for CapturingPublisher {
-        fn publish(&self, event: Event) {
-            self.0.lock().unwrap().push(event);
-        }
-    }
 
     fn cfg(key: &str, amount: i64) -> SubActionConfig {
         let mut c = SubActionConfig::new();
@@ -189,13 +182,12 @@ mod tests {
     }
 
     async fn capture(globals: Arc<MapGlobals>, config: &SubActionConfig) -> Vec<Event> {
-        let events: Arc<Mutex<Vec<Event>>> = Arc::new(Mutex::new(Vec::new()));
-        let publisher = CapturingPublisher(Arc::clone(&events));
+        let publisher = CapturingPublisher::default();
         let stack = ArgStack::new();
         let ctx = RunContext::leaf(&stack, 0, EventId::new(), &publisher);
         let runner = CoreGlobalsDecrementRunner::new(globals);
         let _ = runner.execute(config, &ctx).await;
-        let captured = events.lock().unwrap();
+        let captured = publisher.events();
         captured.clone()
     }
 

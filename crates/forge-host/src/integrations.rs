@@ -580,7 +580,7 @@ mod tests {
         let client = forge_obs::ObsClient::connect(
             &format!("127.0.0.1:{port}"),
             None,
-            Arc::new(crate::test_support::SilentPublisher),
+            Arc::new(forge_events::test_support::NullPublisher),
         )
         .await
         .unwrap();
@@ -667,7 +667,7 @@ mod tests {
             forge_obs::ObsClient::connect(
                 &format!("127.0.0.1:{port}"),
                 None,
-                Arc::new(crate::test_support::SilentPublisher),
+                Arc::new(forge_events::test_support::NullPublisher),
             )
             .await
             .unwrap(),
@@ -705,7 +705,7 @@ mod tests {
             forge_obs::ObsClient::connect(
                 &format!("127.0.0.1:{port}"),
                 None,
-                Arc::new(crate::test_support::SilentPublisher),
+                Arc::new(forge_events::test_support::NullPublisher),
             )
             .await
             .unwrap(),
@@ -736,7 +736,7 @@ mod tests {
             forge_vtube::VTubeConfig {
                 endpoint: format!("ws://127.0.0.1:{port}/"),
             },
-            Arc::new(crate::test_support::SilentPublisher),
+            Arc::new(forge_events::test_support::NullPublisher),
             backend as Arc<dyn forge_storage::CredentialsRepo>,
         ));
         client.set_auto_reconnect(false);

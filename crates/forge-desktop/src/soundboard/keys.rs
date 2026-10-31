@@ -125,7 +125,7 @@ mod tests {
             .map(|backend| Arc::new(backend) as Arc<dyn forge_storage::DataProvider>);
         let (client, _recorder) = forge_hotkey::testing::test_client(
             forge_hotkey::HotkeyConfig::default(),
-            Arc::new(crate::test_support::SilentPublisher),
+            Arc::new(forge_events::test_support::NullPublisher),
         );
         let reconciler = HotkeyReconciler::new(
             Arc::clone(&client),

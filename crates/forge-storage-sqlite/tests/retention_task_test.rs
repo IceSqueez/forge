@@ -20,6 +20,7 @@ use sqlx::sqlite::SqlitePoolOptions;
 use time::OffsetDateTime;
 use tokio::sync::Notify;
 
+const RUN_DURATION_MS: u64 = 5;
 const CADENCE: Duration = Duration::from_millis(50);
 const HANG_GUARD: Duration = Duration::from_secs(60);
 const POLL: Duration = Duration::from_millis(5);
@@ -198,7 +199,12 @@ impl Db {
             .expect("save run");
         self.backend
             .action_repo()
-            .record_execution(action_id, started_at, 5, ExecutionStatus::Success)
+            .record_execution(
+                action_id,
+                started_at,
+                RUN_DURATION_MS,
+                ExecutionStatus::Success,
+            )
             .await
             .expect("record execution");
     }
@@ -399,9 +405,15 @@ async fn a_sweep_prunes_script_executions_older_than_the_action_history_window()
     let script = ScriptId::new();
     let now = OffsetDateTime::now_utc();
     for age in [time::Duration::days(40), time::Duration::days(20)] {
-        ScriptRepo::record_execution(&db.backend, script, now - age, 5, ExecutionStatus::Success)
-            .await
-            .unwrap();
+        ScriptRepo::record_execution(
+            &db.backend,
+            script,
+            now - age,
+            RUN_DURATION_MS,
+            ExecutionStatus::Success,
+        )
+        .await
+        .unwrap();
     }
 
     db.after_a_full_sweep().await;

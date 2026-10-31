@@ -12,10 +12,10 @@ pub enum Expectation {
     TwitchSubscription(TwitchSubscription),
     TwitchNoUnexpectedRequests {},
     TwitchRequestCount(RequestCount),
-    KickRequest(KickRequestSeen),
+    KickRequest(HttpRequestSeen),
     KickRequestCount(RequestCount),
     KickNoUnexpectedRequests {},
-    YoutubeRequest(YouTubeRequestSeen),
+    YoutubeRequest(HttpRequestSeen),
     YoutubeRequestCount(RequestCount),
     YoutubeNoUnexpectedRequests {},
     OverlayContent(OverlayContent),
@@ -29,20 +29,7 @@ pub enum Expectation {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct KickRequestSeen {
-    #[serde(default)]
-    pub method: Option<String>,
-    pub path: String,
-    #[serde(default)]
-    pub body: PayloadMatchers,
-    #[serde(default)]
-    pub status: Option<u16>,
-    pub within_ms: u64,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct YouTubeRequestSeen {
+pub struct HttpRequestSeen {
     #[serde(default)]
     pub method: Option<String>,
     pub path: String,

@@ -170,7 +170,7 @@ pub(crate) fn map_eval_error(
 mod tests {
     use super::*;
     use crate::api::ForgeApi;
-    use forge_events::{Event, EventPublisher};
+    use forge_events::test_support::{CapturingPublisher, NullPublisher};
     use forge_storage::GlobalsRepo;
     use forge_storage::test_support::MemorySettings;
     use forge_storage_sqlite::SqliteBackend;
@@ -190,19 +190,13 @@ mod tests {
         }
     }
 
-    struct MockPublisher;
-
-    impl EventPublisher for MockPublisher {
-        fn publish(&self, _event: Event) {}
-    }
-
     async fn open_test_dp() -> Sandboxed<Arc<SqliteBackend>> {
         sandboxed_backend([0xab; 32]).await.map(Arc::new)
     }
 
     fn make_api(dp: Arc<SqliteBackend>) -> ForgeApi {
         ForgeApi::new(
-            Arc::new(MockPublisher),
+            Arc::new(NullPublisher),
             repo_globals(dp.clone()),
             EventId::new(),
             Instant::now() + std::time::Duration::from_secs(10),
@@ -211,7 +205,7 @@ mod tests {
 
     fn make_api_with_deadline(dp: Arc<SqliteBackend>, deadline: Instant) -> ForgeApi {
         ForgeApi::new(
-            Arc::new(MockPublisher),
+            Arc::new(NullPublisher),
             repo_globals(dp.clone()),
             EventId::new(),
             deadline,
@@ -379,7 +373,7 @@ mod tests {
             .checked_sub(Duration::from_millis(50))
             .unwrap();
         let api = ForgeApi::new(
-            Arc::new(MockPublisher),
+            Arc::new(NullPublisher),
             repo_globals(dp.clone()),
             EventId::new(),
             expired_deadline,
@@ -555,18 +549,9 @@ mod tests {
 
     #[tokio::test]
     async fn with_api_chat_send_publishes_event() {
-        use std::sync::Mutex;
-
-        struct CapturingPublisher(Arc<Mutex<Vec<Event>>>);
-        impl EventPublisher for CapturingPublisher {
-            fn publish(&self, event: Event) {
-                self.0.lock().unwrap().push(event);
-            }
-        }
-
         let dp = open_test_dp().await;
-        let captured: Arc<Mutex<Vec<Event>>> = Arc::new(Mutex::new(Vec::new()));
-        let publisher = Arc::new(CapturingPublisher(Arc::clone(&captured)));
+        let captured = CapturingPublisher::shared();
+        let publisher = Arc::clone(&captured);
         let caused_by = EventId::new();
         let api = ForgeApi::new(
             publisher,
@@ -586,7 +571,7 @@ mod tests {
         .await
         .unwrap();
 
-        let events = captured.lock().unwrap();
+        let events = captured.events();
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].kind, "chat.send.request");
         assert_eq!(events[0].caused_by, Some(caused_by));

@@ -166,7 +166,7 @@ mod tests {
     use crate::api::rewards::{CreateRewardParams, KickRewards};
     use crate::pusher::error::KickError;
     use crate::test_support::{
-        RecordingPublisher, api_at, api_limited_by, api_with, channel_info_with, exhausted_limiter,
+        CapturingPublisher, api_at, api_limited_by, api_with, channel_info_with, exhausted_limiter,
         gateway_waiting_at_most,
     };
 
@@ -524,7 +524,7 @@ mod tests {
         ] {
             let channel_api = answering(refusal).await;
             let official = answering(ResponseTemplate::new(reqwest::StatusCode::OK)).await;
-            let bus = Arc::new(RecordingPublisher::default());
+            let bus = Arc::new(CapturingPublisher::default());
             let fetcher = channel_info_with(&channel_api.uri(), channel_info_bucket(), bus.clone());
             let send = KickSendChat::new(api_with(&official.uri(), official_bucket(), bus));
 
@@ -566,7 +566,7 @@ mod tests {
             ),
         ] {
             let server = answering(template).await;
-            let bus = Arc::new(RecordingPublisher::default());
+            let bus = Arc::new(CapturingPublisher::default());
             let send = KickSendChat::new(api_with(
                 &server.uri(),
                 crate::test_support::granting_limiter(),
@@ -576,7 +576,7 @@ mod tests {
             send.delete("msg-77", TOKEN).await.unwrap_err();
 
             let published: Vec<(EventSource, serde_json::Value)> = bus
-                .events_of_kind(RequestFailed::KIND)
+                .of_kind(RequestFailed::KIND)
                 .into_iter()
                 .map(|event| (event.source, event.payload))
                 .collect();
@@ -588,7 +588,7 @@ mod tests {
     async fn every_refusal_status_publishes_request_fail_for_every_client() {
         for status in [401_u16, 403, 404, 422] {
             let server = answering(ResponseTemplate::new(status)).await;
-            let bus = Arc::new(RecordingPublisher::default());
+            let bus = Arc::new(CapturingPublisher::default());
             let clients = Clients::over(&api_with(
                 &server.uri(),
                 crate::test_support::granting_limiter(),
@@ -598,7 +598,7 @@ mod tests {
             let calls = clients.every_call().await.len();
 
             assert_eq!(
-                bus.events_of_kind(RequestFailed::KIND).len(),
+                bus.of_kind(RequestFailed::KIND).len(),
                 calls,
                 "status {status}"
             );
@@ -607,7 +607,7 @@ mod tests {
 
     #[tokio::test]
     async fn failures_without_a_status_publish_no_request_fail() {
-        let bus = Arc::new(RecordingPublisher::default());
+        let bus = Arc::new(CapturingPublisher::default());
         let unreachable = KickSendChat::new(api_with(
             "http://127.0.0.1:0",
             crate::test_support::granting_limiter(),
@@ -632,7 +632,7 @@ mod tests {
         ];
 
         assert_eq!(outcomes, [true, true, true]);
-        assert!(bus.events_of_kind(RequestFailed::KIND).is_empty());
+        assert!(bus.of_kind(RequestFailed::KIND).is_empty());
     }
 
     #[tokio::test]
@@ -647,7 +647,7 @@ mod tests {
                     .set_body_string("\u{456}".repeat(body_chars)),
             )
             .await;
-            let bus = Arc::new(RecordingPublisher::default());
+            let bus = Arc::new(CapturingPublisher::default());
             let send = KickSendChat::new(api_with(
                 &server.uri(),
                 crate::test_support::granting_limiter(),
@@ -656,7 +656,7 @@ mod tests {
 
             send.send("hi", TOKEN, 42, false).await.unwrap_err();
 
-            let events = bus.events_of_kind(RequestFailed::KIND);
+            let events = bus.of_kind(RequestFailed::KIND);
             let snippet = events[0].payload["body_snippet"].as_str().unwrap();
             assert_eq!(
                 snippet.chars().count(),
@@ -672,7 +672,7 @@ mod tests {
         for status in [401_u16, 403, 429, 500] {
             let server =
                 answering(ResponseTemplate::new(status).set_body_string(echo.clone())).await;
-            let bus = Arc::new(RecordingPublisher::default());
+            let bus = Arc::new(CapturingPublisher::default());
             let clients = Clients::over(&api_with(
                 &server.uri(),
                 crate::test_support::granting_limiter(),
@@ -686,7 +686,7 @@ mod tests {
                     "{label} on {status} leaked the token: {err:?}"
                 );
             }
-            for event in bus.events_of_kind(RequestFailed::KIND) {
+            for event in bus.of_kind(RequestFailed::KIND) {
                 assert!(
                     !event.payload.to_string().contains(TOKEN),
                     "request.fail on {status} leaked the token: {}",

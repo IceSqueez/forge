@@ -39,21 +39,26 @@ fn read_catalog(path: &Path) -> String {
     content
 }
 
+fn is_ident_byte(byte: u8) -> bool {
+    byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_'
+}
+
+fn message_key(line: &str) -> Option<&str> {
+    if !line.as_bytes().first()?.is_ascii_lowercase() {
+        return None;
+    }
+    let ident_len = line
+        .bytes()
+        .position(|byte| !is_ident_byte(byte))
+        .unwrap_or(line.len());
+    let (key, rest) = line.split_at(ident_len);
+    (rest == " =" || rest.starts_with(" = ")).then_some(key)
+}
+
 fn message_keys(content: &str) -> Vec<String> {
     let mut keys = Vec::new();
     for raw in content.lines() {
-        let line = raw.trim_end();
-        let Some(first) = line.chars().next() else {
-            continue;
-        };
-        if !first.is_ascii_lowercase() {
-            continue;
-        }
-        let ident_len = line
-            .find(|c: char| !(c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_'))
-            .unwrap_or(line.len());
-        let (key, rest) = line.split_at(ident_len);
-        if rest == " =" || rest.starts_with(" = ") {
+        if let Some(key) = message_key(raw.trim_end()) {
             keys.push(key.to_owned());
         }
     }
@@ -69,17 +74,9 @@ fn placeholders_by_key(content: &str) -> BTreeMap<String, BTreeSet<String>> {
         let indented = line.starts_with(' ') || line.starts_with('\t');
         if !indented {
             current = None;
-            if let Some(first) = line.chars().next()
-                && first.is_ascii_lowercase()
-            {
-                let ident_len = line
-                    .find(|c: char| !(c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_'))
-                    .unwrap_or(line.len());
-                let (key, rest) = line.split_at(ident_len);
-                if rest == " =" || rest.starts_with(" = ") {
-                    current = Some(key.to_owned());
-                    by_key.entry(key.to_owned()).or_default();
-                }
+            if let Some(key) = message_key(line) {
+                current = Some(key.to_owned());
+                by_key.entry(key.to_owned()).or_default();
             }
         }
         let Some(key) = current.as_ref() else {
@@ -101,7 +98,7 @@ fn placeholder_names(line: &str) -> Vec<String> {
         let start = index + 1;
         let end = bytes[start..]
             .iter()
-            .position(|b| !(b.is_ascii_lowercase() || b.is_ascii_digit() || *b == b'_'))
+            .position(|b| !is_ident_byte(*b))
             .map_or(line.len(), |offset| start + offset);
         if end > start {
             names.push(line[start..end].to_owned());
@@ -117,20 +114,7 @@ fn variants_by_key(content: &str) -> BTreeMap<String, BTreeSet<String>> {
     for raw in content.lines() {
         let line = raw.trim_end();
         if !(line.starts_with(' ') || line.starts_with('\t')) {
-            current = None;
-            let Some(first) = line.chars().next() else {
-                continue;
-            };
-            if !first.is_ascii_lowercase() {
-                continue;
-            }
-            let ident_len = line
-                .find(|c: char| !(c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_'))
-                .unwrap_or(line.len());
-            let (key, rest) = line.split_at(ident_len);
-            if rest == " =" || rest.starts_with(" = ") {
-                current = Some(key.to_owned());
-            }
+            current = message_key(line).map(str::to_owned);
             continue;
         }
         let Some(key) = current.as_ref() else {
@@ -340,11 +324,7 @@ fn collect_tr_calls(content: &str, calls: &mut BTreeMap<String, BTreeSet<String>
             continue;
         };
         let key = cursor[..end].to_owned();
-        if key.is_empty()
-            || !key
-                .bytes()
-                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_')
-        {
+        if key.is_empty() || !key.bytes().all(is_ident_byte) {
             continue;
         }
         let rest = &body[leading + 1 + end + 1..];
@@ -416,7 +396,7 @@ fn argument_names(rest: &str) -> Vec<String> {
                 if !name.is_empty()
                     && tail.starts_with('=')
                     && !tail.starts_with("==")
-                    && name.bytes().all(|b| b.is_ascii_lowercase() || b == b'_')
+                    && name.bytes().all(is_ident_byte)
                 {
                     names.push(name.to_owned());
                 }

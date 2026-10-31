@@ -223,7 +223,7 @@ mod tests {
 
     use super::*;
     use crate::test_support::{
-        OAUTH_CLIENT_SECRET, RecordingPublisher, api_at, api_limited_by, api_with, endpoints_at,
+        CapturingPublisher, OAUTH_CLIENT_SECRET, api_at, api_limited_by, api_with, endpoints_at,
         exhausted_limiter, granting_limiter, oauth_client_at, oauth_client_over, unreachable_api,
         unreachable_oauth_client,
     };
@@ -606,12 +606,12 @@ mod tests {
                 .set_body_string(format!("bad token {ACCESS_TOKEN}")),
         )
         .await;
-        let bus = Arc::new(RecordingPublisher::default());
+        let bus = Arc::new(CapturingPublisher::default());
         let api = api_with(&server.uri(), granting_limiter(), bus.clone());
 
         let error = fetch_user_info(&api, ACCESS_TOKEN).await.unwrap_err();
 
-        let failures = bus.events_of_kind(REQUEST_FAIL_KIND);
+        let failures = bus.of_kind(REQUEST_FAIL_KIND);
         assert_eq!(failures.len(), 1);
         assert_eq!(
             (

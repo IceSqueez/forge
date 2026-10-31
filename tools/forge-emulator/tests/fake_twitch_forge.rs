@@ -1,4 +1,5 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+use forge_events::test_support::ForwardingPublisher;
 use forge_platform_twitch::vocabulary::event_kinds as twitch_kinds;
 use forge_platform_twitch::vocabulary::topics;
 use std::collections::HashMap;
@@ -48,14 +49,6 @@ impl HelixTokenSource for FixedTokenSource {
     }
 }
 
-struct Bus(mpsc::UnboundedSender<Event>);
-
-impl EventPublisher for Bus {
-    fn publish(&self, event: Event) {
-        let _ = self.0.send(event);
-    }
-}
-
 struct Forge {
     assembly: TwitchAssembly,
     creds: Arc<dyn CredentialsRepo>,
@@ -84,7 +77,7 @@ impl Forge {
             PlatformEndpoints::resolve(|variable| overrides.get(variable).map(OsString::from))
                 .unwrap();
         let (tx, events) = mpsc::unbounded_channel();
-        let bus: Arc<dyn EventPublisher> = Arc::new(Bus(tx));
+        let bus: Arc<dyn EventPublisher> = Arc::new(ForwardingPublisher(tx));
         let assembly = TwitchAssembly::new(
             &mut SubActionRegistry::new(),
             Arc::clone(&creds),

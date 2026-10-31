@@ -1,3 +1,4 @@
+use crate::fakes::support::bearer_token;
 use std::sync::Arc;
 
 use axum::Router;
@@ -48,23 +49,23 @@ enum Route {
 
 impl Route {
     fn of(method: &Method, path: &str) -> Option<Self> {
-        let route = match (method.as_str(), path) {
-            ("POST", "/helix/eventsub/subscriptions") => Self::CreateSubscription,
-            ("GET", "/helix/users") => Self::Users,
-            ("GET", "/helix/streams") => Self::Streams,
-            ("GET", "/helix/polls") => Self::Polls,
-            ("GET", "/helix/predictions") => Self::Predictions,
-            ("GET", "/helix/goals") => Self::Goals,
-            ("GET", "/helix/channels/followers") => Self::ChannelFollowers,
-            ("POST", "/helix/chat/messages") => Self::SendChatMessage,
-            ("POST", "/helix/whispers") => Self::SendWhisper,
-            ("GET", CUSTOM_REWARDS) => Self::ListRewards,
-            ("POST", CUSTOM_REWARDS) => Self::CreateReward,
-            ("PATCH", CUSTOM_REWARDS) => Self::UpdateReward,
-            ("DELETE", CUSTOM_REWARDS) => Self::DeleteReward,
-            ("GET", "/helix/moderation/banned") => Self::BannedUsers,
-            ("DELETE", "/helix/moderation/bans") => Self::Unban,
-            ("GET", "/helix/moderation/shield_mode") => Self::ShieldModeStatus,
+        let route = match (method, path) {
+            (&Method::POST, "/helix/eventsub/subscriptions") => Self::CreateSubscription,
+            (&Method::GET, "/helix/users") => Self::Users,
+            (&Method::GET, "/helix/streams") => Self::Streams,
+            (&Method::GET, "/helix/polls") => Self::Polls,
+            (&Method::GET, "/helix/predictions") => Self::Predictions,
+            (&Method::GET, "/helix/goals") => Self::Goals,
+            (&Method::GET, "/helix/channels/followers") => Self::ChannelFollowers,
+            (&Method::POST, "/helix/chat/messages") => Self::SendChatMessage,
+            (&Method::POST, "/helix/whispers") => Self::SendWhisper,
+            (&Method::GET, CUSTOM_REWARDS) => Self::ListRewards,
+            (&Method::POST, CUSTOM_REWARDS) => Self::CreateReward,
+            (&Method::PATCH, CUSTOM_REWARDS) => Self::UpdateReward,
+            (&Method::DELETE, CUSTOM_REWARDS) => Self::DeleteReward,
+            (&Method::GET, "/helix/moderation/banned") => Self::BannedUsers,
+            (&Method::DELETE, "/helix/moderation/bans") => Self::Unban,
+            (&Method::GET, "/helix/moderation/shield_mode") => Self::ShieldModeStatus,
             _ => return None,
         };
         Some(route)
@@ -140,10 +141,7 @@ fn decode_body(bytes: &Bytes) -> Option<Value> {
 }
 
 fn check_credentials(headers: &HeaderMap, config: &FakeTwitchConfig) -> CredentialCheck {
-    let bearer = headers
-        .get("authorization")
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.strip_prefix("Bearer "));
+    let bearer = bearer_token(headers);
     match bearer {
         None => return CredentialCheck::MissingBearer,
         Some(token) if token != config.access_token => return CredentialCheck::WrongBearer,

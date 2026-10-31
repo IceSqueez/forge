@@ -13,6 +13,9 @@ use forge_types::{
 };
 use tempfile::TempDir;
 
+pub(crate) const DEFAULT_QUEUE: &str = "00000000000000000000000000";
+pub(crate) const MILLIS_PER_SECOND: i64 = 1_000;
+pub(crate) const MILLIS_PER_MINUTE: i64 = 60 * MILLIS_PER_SECOND;
 const DATABASE_FILE: &str = "forge.db";
 const MEDIA_DIR: &str = "media";
 const DEFAULT_QUEUE_NAME: &str = "Default";

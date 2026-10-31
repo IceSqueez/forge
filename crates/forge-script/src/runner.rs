@@ -162,19 +162,12 @@ pub async fn run_inline(
 mod tests {
     use std::sync::Mutex;
 
-    use forge_events::Event;
     use forge_types::IntegrationId;
 
     use super::*;
+
     use crate::test_support::{repo_globals, sandboxed_backend};
-
-    struct CapturingPublisher(Arc<Mutex<Vec<Event>>>);
-
-    impl EventPublisher for CapturingPublisher {
-        fn publish(&self, event: Event) {
-            self.0.lock().unwrap().push(event);
-        }
-    }
+    use forge_events::test_support::CapturingPublisher;
 
     struct TwitchDisabled;
 
@@ -187,11 +180,11 @@ mod tests {
     #[tokio::test]
     async fn an_editor_run_sending_to_a_disabled_integration_fails_and_publishes_no_send() {
         let backend = sandboxed_backend([0xab; 32]).await.map(Arc::new);
-        let captured = Arc::new(Mutex::new(Vec::new()));
+        let captured = CapturingPublisher::shared();
         let host = ScriptHost {
             globals: repo_globals(Arc::clone(&backend)),
             settings: Arc::clone(&backend) as Arc<dyn SettingsRepo>,
-            bus: Arc::new(CapturingPublisher(Arc::clone(&captured))),
+            bus: Arc::clone(&captured) as Arc<dyn EventPublisher>,
             capabilities: ScriptCapabilities {
                 integrations: Some(Arc::new(TwitchDisabled)),
                 ..ScriptCapabilities::default()
@@ -219,8 +212,7 @@ mod tests {
         }
         assert!(
             !captured
-                .lock()
-                .unwrap()
+                .events()
                 .iter()
                 .any(|e| e.kind == "chat.send.request"),
             "no chat.send.request may leave a run aimed at a disabled integration"
@@ -255,7 +247,7 @@ mod tests {
         let host = ScriptHost {
             globals: repo_globals(Arc::clone(&backend)),
             settings: Arc::clone(&backend) as Arc<dyn SettingsRepo>,
-            bus: Arc::new(CapturingPublisher(Arc::new(Mutex::new(Vec::new())))),
+            bus: CapturingPublisher::shared() as Arc<dyn EventPublisher>,
             capabilities: ScriptCapabilities {
                 latest_values,
                 ..ScriptCapabilities::default()
@@ -315,7 +307,7 @@ mod tests {
         let host = ScriptHost {
             globals: repo_globals(Arc::clone(&backend)),
             settings: Arc::clone(&backend) as Arc<dyn SettingsRepo>,
-            bus: Arc::new(CapturingPublisher(Arc::new(Mutex::new(Vec::new())))),
+            bus: CapturingPublisher::shared() as Arc<dyn EventPublisher>,
             capabilities: ScriptCapabilities {
                 scheduler: Some(Arc::new(KeyHolder)),
                 ..ScriptCapabilities::default()
@@ -360,7 +352,7 @@ mod tests {
         let host = ScriptHost {
             globals: repo_globals(Arc::clone(&backend)),
             settings: Arc::clone(&backend) as Arc<dyn SettingsRepo>,
-            bus: Arc::new(CapturingPublisher(Arc::new(Mutex::new(Vec::new())))),
+            bus: CapturingPublisher::shared() as Arc<dyn EventPublisher>,
             capabilities: ScriptCapabilities {
                 speak: Some(Arc::clone(&speaker) as Arc<dyn SpeakRequester>),
                 ..ScriptCapabilities::default()
@@ -386,7 +378,7 @@ mod tests {
         let host = ScriptHost {
             globals: repo_globals(Arc::clone(&backend)),
             settings: Arc::clone(&backend) as Arc<dyn SettingsRepo>,
-            bus: Arc::new(CapturingPublisher(Arc::new(Mutex::new(Vec::new())))),
+            bus: CapturingPublisher::shared() as Arc<dyn EventPublisher>,
             capabilities: ScriptCapabilities::default(),
         };
 
@@ -430,7 +422,7 @@ mod tests {
     async fn a_session_runs_under_the_stored_limits() {
         let store = forge_storage::test_support::MemorySettings::new();
         store.seed_raw(&crate::settings::OP_LIMIT, "7777");
-        let bus = Arc::new(CapturingPublisher(Arc::new(Mutex::new(Vec::new()))));
+        let bus = CapturingPublisher::shared();
         let engine = open_session(&store, bus, EventId::new()).await;
 
         let error = tokio::task::spawn_blocking(move || engine.eval_script("loop {}"))
@@ -446,10 +438,10 @@ mod tests {
 
     #[tokio::test]
     async fn a_session_attributes_what_the_script_publishes_to_its_cause() {
-        let captured = Arc::new(Mutex::new(Vec::new()));
+        let captured = CapturingPublisher::shared();
         let cause = EventId::new();
         let store = forge_storage::test_support::MemorySettings::new();
-        let bus = Arc::new(CapturingPublisher(Arc::clone(&captured)));
+        let bus = Arc::clone(&captured);
         let engine = open_session(&store, bus, cause).await;
 
         let sent = tokio::task::spawn_blocking(move || {
@@ -460,7 +452,7 @@ mod tests {
 
         assert!(sent.is_ok(), "{sent:?}");
 
-        let events = captured.lock().unwrap();
+        let events = captured.events();
         assert!(
             events
                 .iter()

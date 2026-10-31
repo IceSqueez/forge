@@ -309,7 +309,9 @@ mod tests {
     use tracing::Level;
 
     use super::*;
+
     use crate::latest::feeds::CHEER_KIND;
+    use forge_events::test_support::CapturingPublisher;
     use forge_test_support::log_capture::capture;
 
     const ANONYMOUS: &str = "Anonymous donor";
@@ -406,31 +408,9 @@ mod tests {
         }
     }
 
-    #[derive(Default)]
-    struct Recorder(Mutex<Vec<Event>>);
-
-    impl EventPublisher for Recorder {
-        fn publish(&self, event: Event) {
-            self.0.lock().unwrap().push(event);
-        }
-    }
-
-    impl Recorder {
-        fn events(&self) -> Vec<Event> {
-            self.0.lock().unwrap().clone()
-        }
-
-        fn changes(&self) -> Vec<LatestChanged> {
-            self.events()
-                .iter()
-                .map(|event| LatestChanged::from_event(event).expect("only latest.changed"))
-                .collect()
-        }
-    }
-
-    async fn rig(store: Store) -> (LatestValues, Arc<Store>, Arc<Recorder>) {
+    async fn rig(store: Store) -> (LatestValues, Arc<Store>, Arc<CapturingPublisher>) {
         let store = Arc::new(store);
-        let recorder = Arc::new(Recorder::default());
+        let recorder = Arc::new(CapturingPublisher::default());
         let values = LatestValues::load(
             Arc::clone(&store) as Arc<dyn LatestValueRepo>,
             Arc::clone(&recorder) as Arc<dyn EventPublisher>,
@@ -510,6 +490,14 @@ mod tests {
             occurred_at: at(0),
             updated_at: at(0),
         }
+    }
+
+    fn changes(recorder: &CapturingPublisher) -> Vec<LatestChanged> {
+        recorder
+            .events()
+            .iter()
+            .map(|event| LatestChanged::from_event(event).expect("only latest.changed"))
+            .collect()
     }
 
     #[tokio::test]
@@ -636,7 +624,7 @@ mod tests {
         paused_runtime().block_on(values.project(event));
     }
 
-    fn rig_blocking(store: Store) -> (LatestValues, Arc<Store>, Arc<Recorder>) {
+    fn rig_blocking(store: Store) -> (LatestValues, Arc<Store>, Arc<CapturingPublisher>) {
         paused_runtime().block_on(rig(store))
     }
 
@@ -653,7 +641,7 @@ mod tests {
         assert_eq!(store.upsert_count(), 3);
         assert_eq!(merged_donor(&values).as_deref(), Some("Olena"));
         assert_eq!(
-            recorder.changes(),
+            changes(&recorder),
             [LatestChanged {
                 slot: LATEST_DONATION_SLOT.to_owned(),
                 platform: Some("donatello".to_owned()),
@@ -711,8 +699,7 @@ mod tests {
             .project(&donation("monobank", "Ivan", 25, false))
             .await;
 
-        let flags: Vec<(Option<String>, bool)> = recorder
-            .changes()
+        let flags: Vec<(Option<String>, bool)> = changes(&recorder)
             .into_iter()
             .map(|change| (change.platform, change.merged_changed))
             .collect();
@@ -776,7 +763,7 @@ mod tests {
             now_playing_title(&values, LatestScope::MostRecentAcrossPlatforms).as_deref(),
             Some("Song B")
         );
-        let last = recorder.changes().pop().unwrap();
+        let last = changes(&recorder).pop().unwrap();
         assert_eq!(last.platform.as_deref(), Some("spotify"));
         assert!(last.cleared);
     }

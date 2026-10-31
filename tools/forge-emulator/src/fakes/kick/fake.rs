@@ -1,4 +1,3 @@
-use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -8,9 +7,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
-use tokio::net::TcpListener;
 use tokio::sync::watch;
-use tokio::task::JoinHandle;
 
 use super::config::FakeKickConfig;
 use super::ledger::KickLedger;
@@ -18,10 +15,9 @@ use super::pusher::{self, SOCKET_PATH_PREFIX};
 use super::rest::{self, CHANNEL_API_PREFIX, OAUTH_PREFIX, PUBLIC_API_PREFIX};
 use super::state::Shared;
 use crate::EmulatorError;
+use crate::fakes::support::{ServerTasks, bind_loopback, local_addr, serve_http};
 
 pub const CHAT_MESSAGE_EVENT: &str = "App\\Events\\ChatMessageEvent";
-
-const SHUTDOWN_GRACE: Duration = Duration::from_secs(2);
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -34,8 +30,7 @@ pub struct FakeKick {
     shared: Arc<Shared>,
     http_base: String,
     socket_base: String,
-    shutdown: watch::Sender<bool>,
-    tasks: Vec<JoinHandle<()>>,
+    server: ServerTasks,
 }
 
 impl FakeKick {
@@ -52,15 +47,9 @@ impl FakeKick {
 
         let shared = Arc::new(Shared::new(config));
         let (shutdown, shutdown_rx) = watch::channel(false);
-        let mut rest_shutdown = shutdown_rx.clone();
+        let rest_shutdown = shutdown_rx.clone();
         let router = rest::router(Arc::clone(&shared));
-        let rest_task = tokio::spawn(async move {
-            let _ = axum::serve(http_listener, router)
-                .with_graceful_shutdown(async move {
-                    let _ = rest_shutdown.changed().await;
-                })
-                .await;
-        });
+        let rest_task = serve_http(http_listener, router, rest_shutdown);
         let socket_task = tokio::spawn(pusher::serve(
             socket_listener,
             Arc::clone(&shared),
@@ -70,9 +59,19 @@ impl FakeKick {
             shared,
             http_base,
             socket_base,
-            shutdown,
-            tasks: vec![rest_task, socket_task],
+            server: ServerTasks::new(shutdown, vec![rest_task, socket_task]),
         })
+    }
+
+    pub fn http_base(&self) -> &str {
+        &self.http_base
+    }
+
+    pub fn url_for(&self, surface: EndpointSurface) -> Option<String> {
+        self.endpoint_overrides()
+            .into_iter()
+            .find(|(variable, _)| *variable == surface.env_var())
+            .map(|(_, url)| url)
     }
 
     pub fn endpoint_overrides(&self) -> [(&'static str, String); 4] {
@@ -118,21 +117,9 @@ impl FakeKick {
         timeout: Duration,
         mut probe: impl FnMut(&KickLedger) -> Option<T>,
     ) -> Result<T, EmulatorError> {
-        let mut changes = self.shared.changes();
-        let deadline = tokio::time::Instant::now() + timeout;
-        loop {
-            if let Some(found) = self.shared.read(|inner| probe(&inner.ledger)) {
-                return Ok(found);
-            }
-            match tokio::time::timeout_at(deadline, changes.changed()).await {
-                Ok(Ok(())) => {}
-                Ok(Err(_)) | Err(_) => {
-                    return Err(EmulatorError::WaitTimeout {
-                        what: what.to_owned(),
-                    });
-                }
-            }
-        }
+        self.shared
+            .wait_for(what, timeout, |inner| probe(&inner.ledger))
+            .await
     }
 
     pub async fn push_event(&self, event: &str, data: &Value) -> Result<usize, EmulatorError> {
@@ -178,24 +165,8 @@ impl FakeKick {
         self.shared.mutate(|inner| inner.channel.live = live);
     }
 
-    pub async fn shutdown(mut self) {
-        let _ = self.shutdown.send(true);
-        for mut task in std::mem::take(&mut self.tasks) {
-            if tokio::time::timeout(SHUTDOWN_GRACE, &mut task)
-                .await
-                .is_err()
-            {
-                task.abort();
-            }
-        }
-    }
-}
-
-impl Drop for FakeKick {
-    fn drop(&mut self) {
-        for task in &self.tasks {
-            task.abort();
-        }
+    pub async fn shutdown(self) {
+        self.server.shutdown().await;
     }
 }
 
@@ -211,18 +182,4 @@ pub(crate) fn message_id() -> String {
         &hex[16..20],
         &hex[20..32]
     )
-}
-
-async fn bind_loopback() -> Result<TcpListener, EmulatorError> {
-    TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
-        .await
-        .map_err(|e| EmulatorError::FakeBind {
-            reason: e.to_string(),
-        })
-}
-
-fn local_addr(listener: &TcpListener) -> Result<SocketAddr, EmulatorError> {
-    listener.local_addr().map_err(|e| EmulatorError::FakeBind {
-        reason: e.to_string(),
-    })
 }

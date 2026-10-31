@@ -380,12 +380,6 @@ mod tests {
         }
     }
 
-    struct SilentPublisher;
-
-    impl forge_events::EventPublisher for SilentPublisher {
-        fn publish(&self, _: forge_events::Event) {}
-    }
-
     struct Rig {
         backend: Sandboxed<Arc<dyn DataProvider>>,
         reconciler: Arc<HotkeyReconciler>,
@@ -398,7 +392,7 @@ mod tests {
                 .map(|backend| Arc::new(backend) as Arc<dyn DataProvider>);
             let (client, _recorder) = forge_hotkey::testing::test_client(
                 forge_hotkey::HotkeyConfig::default(),
-                Arc::new(SilentPublisher),
+                Arc::new(forge_events::test_support::NullPublisher),
             );
             let reconciler = HotkeyReconciler::new(
                 client,

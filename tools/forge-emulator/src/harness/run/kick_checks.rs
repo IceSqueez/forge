@@ -1,8 +1,9 @@
 use tokio::time::Instant;
 
+use super::http_checks::{count_verdict, counted, request_matches};
 use super::outcome::{EVIDENCE_LIMIT, Evidence, FailureCause, KickEvidence, Verdict};
 use crate::fakes::kick::{FakeKick, KickLedger, KickRequest};
-use crate::harness::scenario::{KickRequestSeen, RequestCount};
+use crate::harness::scenario::{HttpRequestSeen, RequestCount};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct KickMark {
@@ -19,33 +20,11 @@ impl KickMark {
     }
 }
 
-pub(crate) fn request_matches(request: &KickRequest, expected: &KickRequestSeen) -> bool {
-    request.path == expected.path
-        && expected
-            .method
-            .as_deref()
-            .is_none_or(|method| request.method == method)
-        && expected
-            .status
-            .is_none_or(|status| request.status == status)
-        && expected.body.0.iter().all(|(pointer, matcher)| {
-            matcher.matches(request.body.as_ref().and_then(|body| body.pointer(pointer)))
-        })
-}
-
-fn counted(request: &KickRequest, expected: &RequestCount) -> bool {
-    request.path == expected.path
-        && expected
-            .method
-            .as_deref()
-            .is_none_or(|method| request.method == method)
-}
-
 pub(crate) async fn observe_kick_request(
     fake: &FakeKick,
     from: KickMark,
     deadline: Instant,
-    expected: &KickRequestSeen,
+    expected: &HttpRequestSeen,
 ) -> (Verdict, Evidence) {
     let remaining = deadline.saturating_duration_since(Instant::now());
     let found = fake
@@ -82,23 +61,13 @@ pub(crate) fn assess_kick_request_count(
     let observed = ledger
         .requests
         .iter()
-        .filter(|request| counted(request, expected))
+        .filter(|request| counted(*request, expected))
         .count();
-    let below = expected.min.is_some_and(|min| observed < min as usize);
-    let above = expected.max.is_some_and(|max| observed > max as usize);
-    let verdict = if below || above {
-        Verdict::Failed(FailureCause::RequestCountOutOfRange {
-            observed,
-            min: expected.min,
-            max: expected.max,
-        })
-    } else {
-        Verdict::Passed
-    };
+    let verdict = count_verdict(observed, expected);
     let requests = ledger
         .requests
         .iter()
-        .filter(|request| counted(request, expected));
+        .filter(|request| counted(*request, expected));
     (verdict, evidence(ledger, KickMark::default(), requests))
 }
 

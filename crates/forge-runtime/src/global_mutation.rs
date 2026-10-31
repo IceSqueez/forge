@@ -136,7 +136,7 @@ impl ScriptGlobals for RuntimeScriptGlobals {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Mutex;
+
     use std::time::{Duration, Instant};
 
     use forge_registry::{RunContext, SubActionRunner};
@@ -144,7 +144,9 @@ mod tests {
     use forge_types::{ArgStack, SubActionConfig, SubActionOutcome};
 
     use super::*;
+
     use crate::test_support::MapGlobals;
+    use forge_events::test_support::CapturingPublisher;
 
     fn seeded(entries: &[(&str, Variant)]) -> Arc<MapGlobals> {
         let globals = MapGlobals::with(entries.iter().map(|(key, value)| (*key, value.clone())));
@@ -156,21 +158,6 @@ mod tests {
     use forge_events::Event;
 
     const UNREADABLE: &str = "unreadable";
-
-    #[derive(Default)]
-    struct Recorder(Mutex<Vec<Event>>);
-
-    impl EventPublisher for Recorder {
-        fn publish(&self, event: Event) {
-            self.0.lock().unwrap().push(event);
-        }
-    }
-
-    impl Recorder {
-        fn events(&self) -> Vec<Event> {
-            self.0.lock().unwrap().clone()
-        }
-    }
 
     #[derive(Clone, Copy, Debug)]
     enum Mutation {
@@ -204,7 +191,7 @@ mod tests {
         async fn run_as_sub_action(
             self,
             globals: Arc<dyn GlobalsRepo>,
-            publisher: &Recorder,
+            publisher: &CapturingPublisher,
             cause: EventId,
         ) -> SubActionOutcome {
             let mut config = SubActionConfig::new();
@@ -232,7 +219,7 @@ mod tests {
         async fn run_as_script(
             self,
             globals: Arc<dyn GlobalsRepo>,
-            publisher: Arc<Recorder>,
+            publisher: Arc<CapturingPublisher>,
             cause: EventId,
         ) -> Result<Option<bool>, ScriptError> {
             let port = RuntimeScriptGlobals::new(
@@ -302,13 +289,13 @@ mod tests {
         mutation: Mutation,
         cause: EventId,
     ) -> (Vec<Event>, Vec<Event>) {
-        let script_publisher = Arc::new(Recorder::default());
+        let script_publisher = Arc::new(CapturingPublisher::default());
         let script = mutation
             .run_as_script(seeded(&prior_state()), Arc::clone(&script_publisher), cause)
             .await;
         assert!(script.is_ok(), "{mutation:?}: {script:?}");
 
-        let runner_publisher = Recorder::default();
+        let runner_publisher = CapturingPublisher::default();
         let outcome = mutation
             .run_as_sub_action(seeded(&prior_state()), &runner_publisher, cause)
             .await;
@@ -361,7 +348,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_script_deleting_a_missing_key_returns_false_and_publishes_nothing() {
-        let publisher = Arc::new(Recorder::default());
+        let publisher = Arc::new(CapturingPublisher::default());
 
         let deleted = Mutation::Delete { key: "ghost" }
             .run_as_script(
@@ -378,7 +365,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_sub_action_deleting_a_missing_key_succeeds_and_publishes_nothing() {
-        let publisher = Recorder::default();
+        let publisher = CapturingPublisher::default();
 
         let outcome = Mutation::Delete { key: "ghost" }
             .run_as_sub_action(seeded(&prior_state()), &publisher, EventId::new())
@@ -390,7 +377,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_failed_script_increment_raises_and_publishes_nothing() {
-        let publisher = Arc::new(Recorder::default());
+        let publisher = Arc::new(CapturingPublisher::default());
 
         let result = Mutation::Increment {
             key: "ghost",
@@ -423,7 +410,7 @@ mod tests {
     }
 
     fn port_over(globals: Arc<MapGlobals>) -> RuntimeScriptGlobals {
-        RuntimeScriptGlobals::new(globals, Arc::new(Recorder::default()))
+        RuntimeScriptGlobals::new(globals, Arc::new(CapturingPublisher::default()))
     }
 
     #[tokio::test]
@@ -466,7 +453,7 @@ mod tests {
     #[tokio::test]
     async fn an_unreadable_previous_value_does_not_block_set() {
         let globals = seeded(&[(UNREADABLE, Variant::Int(1))]);
-        let publisher = Arc::new(Recorder::default());
+        let publisher = Arc::new(CapturingPublisher::default());
         let port = RuntimeScriptGlobals::new(
             Arc::clone(&globals) as Arc<dyn GlobalsRepo>,
             Arc::clone(&publisher) as Arc<dyn EventPublisher>,
@@ -488,7 +475,7 @@ mod tests {
     #[tokio::test]
     async fn an_unreadable_previous_value_does_not_block_delete() {
         let globals = seeded(&[(UNREADABLE, Variant::Int(1))]);
-        let publisher = Arc::new(Recorder::default());
+        let publisher = Arc::new(CapturingPublisher::default());
         let port = RuntimeScriptGlobals::new(
             Arc::clone(&globals) as Arc<dyn GlobalsRepo>,
             Arc::clone(&publisher) as Arc<dyn EventPublisher>,

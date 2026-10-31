@@ -1497,7 +1497,7 @@ mod tests {
                 forge_obs::ObsClient::connect(
                     &format!("127.0.0.1:{port}"),
                     None,
-                    Arc::new(crate::test_support::SilentPublisher),
+                    Arc::new(forge_events::test_support::NullPublisher),
                 )
                 .await
                 .unwrap(),

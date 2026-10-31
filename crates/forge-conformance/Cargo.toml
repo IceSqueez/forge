@@ -12,6 +12,7 @@ workspace = true
 
 [dependencies]
 forge-events = { path = "../forge-events", features = ["test-support"] }
+forge-host = { path = "../forge-host", features = ["test-support"] }
 forge-hotkey = { path = "../forge-hotkey" }
 forge-midi = { path = "../forge-midi" }
 forge-net = { path = "../forge-net", features = ["test-support"] }

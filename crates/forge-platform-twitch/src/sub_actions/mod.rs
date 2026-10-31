@@ -359,7 +359,7 @@ pub(crate) mod test_support {
     use forge_events::test_support::NullPublisher;
     use std::collections::VecDeque;
     use std::ffi::OsString;
-    use std::sync::Mutex;
+    use std::sync::{Arc, Mutex};
 
     use async_trait::async_trait;
     use forge_events::{Event, EventPublisher};
@@ -369,6 +369,7 @@ pub(crate) mod test_support {
 
     use forge_types::{ArgStack, EventId};
 
+    use crate::account::identity::SelfIdentity;
     use crate::config::{HELIX_BUDGET_CAPACITY, HELIX_BUDGET_WINDOW};
     use crate::error::TwitchError;
     use crate::helix::{HelixRequest, HelixTransport};
@@ -377,6 +378,18 @@ pub(crate) mod test_support {
         TWITCH_OAUTH_BUDGET_CAPACITY, TWITCH_OAUTH_BUDGET_WINDOW, TwitchOAuthClient,
         twitch_oauth_gateway,
     };
+
+    pub(crate) fn runner_with<R>(
+        responses: Vec<Result<serde_json::Value, TwitchError>>,
+        build: impl FnOnce(Arc<dyn HelixTransport>, Arc<SelfIdentity>) -> R,
+    ) -> (Arc<MockTransport>, R) {
+        let transport = Arc::new(MockTransport::returning_sequence(responses));
+        let runner = build(
+            Arc::clone(&transport) as Arc<dyn HelixTransport>,
+            self_identity(),
+        );
+        (transport, runner)
+    }
 
     pub(crate) const TOKEN_SENTINEL: &str = "FAKE_TWITCH_TOKEN_SENTINEL_qq123";
     pub(crate) const SELF_USER_ID: &str = "9876";

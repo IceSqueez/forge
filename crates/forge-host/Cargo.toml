@@ -10,6 +10,7 @@ rust-version.workspace = true
 
 [features]
 test-support = [
+  "forge-events/test-support",
   "dep:forge-paths",
   "dep:forge-storage-sqlite",
   "dep:forge-tts-pipeline",

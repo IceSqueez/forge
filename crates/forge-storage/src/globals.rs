@@ -188,36 +188,3 @@ pub fn type_mismatch(name: &str, found: &Variant) -> StorageError {
         actual: found.type_tag().to_string(),
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn global_entry_serde_roundtrip() {
-        let entry = GlobalEntry {
-            name: "my_counter".to_owned(),
-            value: Variant::Int(42),
-            persisted: true,
-            reads: 7,
-            writes: 3,
-            created_at: OffsetDateTime::from_unix_timestamp(1_700_000_000).unwrap(),
-            last_modified: OffsetDateTime::from_unix_timestamp(1_700_001_000).unwrap(),
-        };
-
-        let json = serde_json::to_string(&entry).unwrap();
-        let decoded: GlobalEntry = serde_json::from_str(&json).unwrap();
-
-        assert_eq!(decoded.name, entry.name);
-        assert_eq!(decoded.persisted, entry.persisted);
-        assert_eq!(decoded.reads, entry.reads);
-        assert_eq!(decoded.writes, entry.writes);
-        assert_eq!(decoded.created_at, entry.created_at);
-        assert_eq!(decoded.last_modified, entry.last_modified);
-
-        match (decoded.value, entry.value) {
-            (Variant::Int(a), Variant::Int(b)) => assert_eq!(a, b),
-            _ => panic!("variant mismatch after roundtrip"),
-        }
-    }
-}

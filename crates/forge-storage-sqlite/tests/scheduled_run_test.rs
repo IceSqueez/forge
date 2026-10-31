@@ -16,7 +16,7 @@ use forge_types::{ActionId, EventId, Variant};
 use time::OffsetDateTime;
 
 mod common;
-use common::{TEST_KEY, action_named, setup};
+use common::{MILLIS_PER_MINUTE, MILLIS_PER_SECOND, TEST_KEY, action_named, setup};
 
 const BASE_UNIX_SECS: i64 = 1_791_115_200;
 
@@ -26,7 +26,7 @@ fn at_ms(offset_ms: i64) -> OffsetDateTime {
 }
 
 fn at_min(offset_min: i64) -> OffsetDateTime {
-    at_ms(offset_min * 60_000)
+    at_ms(offset_min * MILLIS_PER_MINUTE)
 }
 
 fn spec(target: ActionId, due_min: i64, key: Option<&str>) -> ScheduledRunSpec {
@@ -1164,7 +1164,6 @@ async fn claiming_an_unreadable_run_fails_and_leaves_it_pending() {
 }
 
 const VERSION_BEFORE_SCHEDULED_RUN_REPLAY: i64 = 53;
-const MILLIS_PER_SECOND: i64 = 1_000;
 
 #[tokio::test]
 async fn a_run_stored_before_replay_marking_reads_back_as_not_replayed() {

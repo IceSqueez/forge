@@ -177,7 +177,7 @@ mod tests {
             forge_platform_youtube::YoutubeDataApi::new(
                 &endpoints,
                 forge_platform_youtube::SharedQuota::default(),
-                Arc::new(crate::test_support::SilentPublisher),
+                Arc::new(forge_events::test_support::NullPublisher),
             )
             .unwrap(),
         );

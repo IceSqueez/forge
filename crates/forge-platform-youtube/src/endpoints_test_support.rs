@@ -1,7 +1,8 @@
+pub(crate) use forge_events::test_support::CapturingPublisher;
 use std::ffi::OsString;
 use std::sync::{Arc, Mutex};
 
-use forge_events::{Event, EventPublisher};
+use forge_events::EventPublisher;
 use forge_platform_core::{EndpointSurface, PlatformEndpoints};
 
 use forge_net::{RateLimiter, TokenBucketRateLimiter};
@@ -62,7 +63,11 @@ pub(crate) fn data_api_with(
 }
 
 pub(crate) fn data_api_charging(base: &str, quota: SharedQuota) -> YoutubeDataApi {
-    data_api_with(base, quota, Arc::new(RecordingPublisher::default()))
+    data_api_with(
+        base,
+        quota,
+        Arc::new(forge_events::test_support::NullPublisher),
+    )
 }
 
 pub(crate) fn data_api_at(base: &str) -> YoutubeDataApi {
@@ -107,29 +112,6 @@ pub(crate) async fn exhaust_quota(quota: &SharedQuota) {
     let mut state = quota.lock().await;
     state.last_reset_date = today_pacific();
     state.used_today = u32::MAX;
-}
-
-#[derive(Default)]
-pub(crate) struct RecordingPublisher {
-    events: Mutex<Vec<Event>>,
-}
-
-impl RecordingPublisher {
-    pub(crate) fn events_of_kind(&self, kind: &str) -> Vec<Event> {
-        self.events
-            .lock()
-            .unwrap()
-            .iter()
-            .filter(|event| event.kind == kind)
-            .cloned()
-            .collect()
-    }
-}
-
-impl EventPublisher for RecordingPublisher {
-    fn publish(&self, event: Event) {
-        self.events.lock().unwrap().push(event);
-    }
 }
 
 const SETTLE_TURNS: usize = 256;

@@ -13,9 +13,10 @@ use forge_tts_core::{
 use tokio::sync::Notify;
 
 use common::{
-    RecordingPublisher, assert_no_event_once_settled_on_paused_clock, make_deps, next_matching,
+    assert_no_event_once_settled_on_paused_clock, make_deps, next_matching, payload_of,
     recording_bus, recording_sink, request, voice, wait_for,
 };
+use forge_events::test_support::CapturingPublisher;
 
 const ENGINE: &str = "gated";
 const HANGING_TEXT: &str = "this synthesis never returns";
@@ -92,7 +93,7 @@ struct Harness {
     handle: forge_speak_queue::SpeakQueueHandle,
     stream: SpeakEventStream,
     plays: Arc<Mutex<usize>>,
-    bus: Arc<RecordingPublisher>,
+    bus: Arc<CapturingPublisher>,
 }
 
 impl Harness {
@@ -170,9 +171,7 @@ async fn skipping_a_held_clip_drops_it_and_resume_plays_the_next_message() {
     wait_for(&mut q.stream, |e| is_finished(e, &next_id)).await;
 
     assert_eq!(
-        q.bus
-            .payload_of("speak.skipped", &held)
-            .map(|p| p["reason"].clone()),
+        payload_of(&q.bus, "speak.skipped", &held).map(|p| p["reason"].clone()),
         Some(serde_json::json!("user_skip"))
     );
     assert_eq!(
@@ -201,9 +200,7 @@ async fn a_synthesis_past_timeout_per_item_fails_as_engine_timeout_and_the_queue
     wait_for(&mut q.stream, |e| is_finished(e, &next_id)).await;
 
     assert_eq!(
-        q.bus
-            .payload_of("speak.failed", &stuck_id)
-            .map(|p| p["reason"].clone()),
+        payload_of(&q.bus, "speak.failed", &stuck_id).map(|p| p["reason"].clone()),
         Some(serde_json::json!("engine_timeout"))
     );
     assert_eq!(q.plays(), 1, "only the message after the stuck one played");

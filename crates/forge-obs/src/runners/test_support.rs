@@ -1,9 +1,9 @@
+use forge_events::test_support::NullPublisher;
 use forge_types::{ArgStack, EventId, MessageArg, RecoverMutex, UserText, Variant};
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
-use forge_events::{Event, EventPublisher};
 use forge_registry::RunContext;
 
 use crate::{InputSettings, ObsError, ObsSink, RecordStatus, SceneList, StreamStatus};
@@ -339,14 +339,8 @@ impl ObsSink for RecordingSink {
     }
 }
 
-pub(crate) struct NoopPublisher;
-
-impl EventPublisher for NoopPublisher {
-    fn publish(&self, _: Event) {}
-}
-
 pub(crate) fn make_ctx(stack: &ArgStack) -> RunContext<'_> {
-    RunContext::leaf(stack, 0, EventId::new(), &NoopPublisher)
+    RunContext::leaf(stack, 0, EventId::new(), &NullPublisher)
 }
 
 pub(crate) fn rejected_field(text: &UserText) -> Option<&str> {

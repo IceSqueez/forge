@@ -200,7 +200,7 @@ mod tests {
 
     use super::*;
     use crate::endpoints_test_support::{
-        OAUTH_CLIENT_ID, OAUTH_CLIENT_SECRET, RecordingPublisher, StubReply, StubServer,
+        CapturingPublisher, OAUTH_CLIENT_ID, OAUTH_CLIENT_SECRET, StubReply, StubServer,
         data_api_at, data_api_charging, data_api_with, oauth_client_at, unreachable_data_api,
         unreachable_oauth_client, used_today,
     };
@@ -316,7 +316,7 @@ mod tests {
             YoutubeDataApi::new(
                 &endpoints,
                 SharedQuota::default(),
-                Arc::new(RecordingPublisher::default()),
+                Arc::new(CapturingPublisher::default()),
             )
             .unwrap(),
         );
@@ -578,13 +578,13 @@ mod tests {
         ] {
             let server = StubServer::start().await;
             server.reply_always(YOUTUBE_CHANNELS_PATH, reply);
-            let bus = Arc::new(RecordingPublisher::default());
+            let bus = Arc::new(CapturingPublisher::default());
             let quota = SharedQuota::default();
             let api = data_api_with(&server.uri(), quota.clone(), bus.clone());
 
             fetch_own_channel(&api, ACCESS_TOKEN).await.err().unwrap();
 
-            let events = bus.events_of_kind(REQUEST_FAIL_KIND);
+            let events = bus.of_kind(REQUEST_FAIL_KIND);
             assert_eq!(
                 (
                     events

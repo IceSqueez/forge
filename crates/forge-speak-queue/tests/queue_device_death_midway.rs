@@ -9,9 +9,10 @@ use forge_speak_queue::{QueueConfig, RequestId, SpeakCommand, SpeakEvent};
 use forge_speech_types::PcmBuffer;
 
 use common::{
-    RecordingPublisher, assert_no_event_once_settled_on_paused_clock, outcome_of, recording_bus,
-    request, standard_deps, wait_for,
+    assert_no_event_once_settled_on_paused_clock, outcome_of, recording_bus, request,
+    standard_deps, wait_for,
 };
+use forge_events::test_support::CapturingPublisher;
 
 const DEVICE_LOSS: &str = "output stream disconnected";
 const EXPECTED_CODE: &str = "speak.audio_host_failed";
@@ -59,7 +60,7 @@ impl AudioSink for DyingSink {
     }
 }
 
-fn failures_on(bus: &RecordingPublisher) -> Vec<(String, String, String)> {
+fn failures_on(bus: &CapturingPublisher) -> Vec<(String, String, String)> {
     bus.of_kind(SPEAK_FAILED_KIND)
         .iter()
         .map(|e| {

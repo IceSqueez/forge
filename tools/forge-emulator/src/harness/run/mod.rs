@@ -1,6 +1,7 @@
 mod discord_checks;
 mod event_checks;
 mod forge_host;
+mod http_checks;
 mod journal;
 mod kick_checks;
 mod ledger_checks;

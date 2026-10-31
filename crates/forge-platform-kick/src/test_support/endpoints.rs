@@ -1,11 +1,11 @@
-use std::sync::{Arc, Mutex};
+pub(crate) use forge_events::test_support::CapturingPublisher;
+use std::sync::Arc;
 use std::time::Duration;
 
-use forge_events::{Event, EventPublisher, EventSource};
+use forge_events::EventPublisher;
 use forge_net::{Gateway, GatewayTimings, RateLimiter};
 use forge_platform_core::{EndpointSurface, PlatformEndpoints};
 use forge_storage::CredentialsRepo;
-use forge_types::EventId;
 
 use crate::auth::credentials_manager::KickCredentialsManager;
 use crate::auth::oauth_client::{KickOAuthClient, kick_oauth_gateway};
@@ -59,7 +59,11 @@ pub(crate) fn api_with(
 }
 
 pub(crate) fn api_limited_by(base: &str, limiter: Arc<dyn RateLimiter>) -> Gateway {
-    api_with(base, limiter, Arc::new(RecordingPublisher::default()))
+    api_with(
+        base,
+        limiter,
+        Arc::new(forge_events::test_support::NullPublisher),
+    )
 }
 
 pub(crate) fn gateway_waiting_at_most(
@@ -106,7 +110,7 @@ pub(crate) fn channel_info_at(base: &str) -> ChannelInfoFetcher {
     channel_info_with(
         base,
         granting_limiter(),
-        Arc::new(RecordingPublisher::default()),
+        Arc::new(forge_events::test_support::NullPublisher),
     )
 }
 
@@ -154,38 +158,4 @@ pub(crate) fn granting_limiter() -> Arc<dyn RateLimiter> {
 
 pub(crate) fn exhausted_limiter() -> Arc<dyn RateLimiter> {
     Arc::new(forge_net::test_support::RecordingRateLimiter::exhausted())
-}
-
-#[derive(Default)]
-pub(crate) struct RecordingPublisher {
-    events: Mutex<Vec<Event>>,
-}
-
-impl RecordingPublisher {
-    pub(crate) fn published(
-        &self,
-    ) -> Vec<(EventSource, String, serde_json::Value, Option<EventId>)> {
-        self.events
-            .lock()
-            .unwrap()
-            .iter()
-            .map(|e| (e.source, e.kind.clone(), e.payload.clone(), e.caused_by))
-            .collect()
-    }
-
-    pub(crate) fn events_of_kind(&self, kind: &str) -> Vec<Event> {
-        self.events
-            .lock()
-            .unwrap()
-            .iter()
-            .filter(|event| event.kind == kind)
-            .cloned()
-            .collect()
-    }
-}
-
-impl EventPublisher for RecordingPublisher {
-    fn publish(&self, event: Event) {
-        self.events.lock().unwrap().push(event);
-    }
 }

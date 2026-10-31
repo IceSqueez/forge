@@ -47,43 +47,32 @@ impl ConnectionAnnouncer {
 
 #[cfg(test)]
 mod tests {
-    use forge_events::Event;
 
     use super::*;
 
+    use forge_events::test_support::CapturingPublisher;
+
     const PLATFORM: &str = "donatello";
 
-    #[derive(Default)]
-    struct Recorder(Mutex<Vec<Event>>);
-
-    impl EventPublisher for Recorder {
-        fn publish(&self, event: Event) {
-            self.0.lock().unwrap().push(event);
-        }
-    }
-
-    impl Recorder {
-        fn announcements(&self) -> Vec<(String, ConnectionState, bool)> {
-            self.0
-                .lock()
-                .unwrap()
-                .iter()
-                .map(|event| {
-                    (
-                        event.payload["platform_id"].as_str().unwrap().to_owned(),
-                        serde_json::from_value(event.payload["state"].clone()).unwrap(),
-                        event.payload["expected"].as_bool().unwrap(),
-                    )
-                })
-                .collect()
-        }
-    }
-
-    fn attached() -> (ConnectionAnnouncer, Arc<Recorder>) {
-        let recorder = Arc::new(Recorder::default());
+    fn attached() -> (ConnectionAnnouncer, Arc<CapturingPublisher>) {
+        let recorder = Arc::new(CapturingPublisher::default());
         let announcer = ConnectionAnnouncer::new(PLATFORM);
         announcer.attach(Arc::clone(&recorder) as Arc<dyn EventPublisher>);
         (announcer, recorder)
+    }
+
+    fn announcements(recorder: &CapturingPublisher) -> Vec<(String, ConnectionState, bool)> {
+        recorder
+            .events()
+            .iter()
+            .map(|event| {
+                (
+                    event.payload["platform_id"].as_str().unwrap().to_owned(),
+                    serde_json::from_value(event.payload["state"].clone()).unwrap(),
+                    event.payload["expected"].as_bool().unwrap(),
+                )
+            })
+            .collect()
     }
 
     #[test]
@@ -95,7 +84,7 @@ mod tests {
             ConnectionTransition::Unexpected,
         );
         assert_eq!(
-            recorder.announcements(),
+            announcements(&recorder),
             [
                 (PLATFORM.to_owned(), ConnectionState::Connected, true),
                 (PLATFORM.to_owned(), ConnectionState::Reconnecting, false),
@@ -108,7 +97,7 @@ mod tests {
         let (announcer, recorder) = attached();
         announcer.announce(ConnectionState::Connected, ConnectionTransition::Expected);
         announcer.announce(ConnectionState::Connected, ConnectionTransition::Unexpected);
-        assert_eq!(recorder.announcements().len(), 1);
+        assert_eq!(announcements(&recorder).len(), 1);
     }
 
     #[test]
@@ -118,12 +107,12 @@ mod tests {
             ConnectionState::Disconnected,
             ConnectionTransition::Unexpected,
         );
-        assert!(recorder.announcements().is_empty());
+        assert!(announcements(&recorder).is_empty());
     }
 
     #[test]
     fn state_announced_before_attach_is_tracked_without_publishing() {
-        let recorder = Arc::new(Recorder::default());
+        let recorder = Arc::new(CapturingPublisher::default());
         let announcer = ConnectionAnnouncer::new(PLATFORM);
         announcer.announce(ConnectionState::Connected, ConnectionTransition::Expected);
         announcer.attach(Arc::clone(&recorder) as Arc<dyn EventPublisher>);
@@ -133,7 +122,7 @@ mod tests {
             ConnectionTransition::Expected,
         );
         assert_eq!(
-            recorder.announcements(),
+            announcements(&recorder),
             [(PLATFORM.to_owned(), ConnectionState::Disconnected, true)]
         );
     }
@@ -142,7 +131,7 @@ mod tests {
     fn a_later_attach_replaces_the_publisher_for_every_following_announcement() {
         let (announcer, retired) = attached();
         announcer.announce(ConnectionState::Connected, ConnectionTransition::Expected);
-        let current = Arc::new(Recorder::default());
+        let current = Arc::new(CapturingPublisher::default());
 
         announcer.attach(Arc::clone(&current) as Arc<dyn EventPublisher>);
         announcer.announce(
@@ -150,9 +139,9 @@ mod tests {
             ConnectionTransition::Unexpected,
         );
 
-        assert_eq!(retired.announcements().len(), 1);
+        assert_eq!(announcements(&retired).len(), 1);
         assert_eq!(
-            current.announcements(),
+            announcements(&current),
             [(PLATFORM.to_owned(), ConnectionState::Reconnecting, false)]
         );
     }

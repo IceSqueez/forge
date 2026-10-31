@@ -15,6 +15,7 @@ use forge_platform_youtube::{
 };
 use forge_storage::MockBanLedgerRepo;
 use forge_storage::test_support::MemoryCredentials;
+use forge_test_support::HANG_GUARD;
 use forge_types::OAuthToken;
 use serde_json::json;
 use support::{
@@ -24,7 +25,6 @@ use tokio::sync::watch;
 use wiremock::matchers::{body_string_contains, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-const STEP_DEADLINE: Duration = Duration::from_secs(30);
 const BROADCAST_ID: &str = "broadcast-override";
 const LIVE_CHAT_ID: &str = "live-chat-override";
 
@@ -279,7 +279,7 @@ async fn data_api_override_carries_the_viewer_poll_to_the_override_host() {
     );
 
     let task = tokio::spawn(poll.run());
-    tokio::time::timeout(STEP_DEADLINE, reports_rx.changed())
+    tokio::time::timeout(HANG_GUARD, reports_rx.changed())
         .await
         .unwrap()
         .unwrap();
@@ -335,7 +335,7 @@ async fn platform_carries_its_override_into_the_chat_poller_and_the_sender() {
     let mut events = platform.events();
 
     platform.connect().await.unwrap();
-    tokio::time::timeout(STEP_DEADLINE, async {
+    tokio::time::timeout(HANG_GUARD, async {
         while events.recv().await.unwrap().kind != "youtube.chat.message" {}
     })
     .await

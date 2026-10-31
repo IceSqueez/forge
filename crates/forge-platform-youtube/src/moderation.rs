@@ -1058,7 +1058,7 @@ mod tests {
         ] {
             let server = MockServer::start().await;
             mount_delete_status(&server, status.as_u16()).await;
-            let bus = Arc::new(crate::endpoints_test_support::RecordingPublisher::default());
+            let bus = Arc::new(crate::endpoints_test_support::CapturingPublisher::default());
             let moderation = YoutubeModeration::new(
                 crate::endpoints_test_support::data_api_with(
                     &server.uri(),
@@ -1074,7 +1074,7 @@ mod tests {
             let outcome = moderation.unban(TARGET_CHANNEL).await;
 
             assert_eq!(
-                (outcome.is_ok(), bus.events_of_kind("request.fail").len()),
+                (outcome.is_ok(), bus.of_kind("request.fail").len()),
                 (lifted, request_fails),
                 "status {status}"
             );

@@ -238,12 +238,6 @@ mod tests {
         }
     }
 
-    struct SilentPublisher;
-
-    impl forge_events::EventPublisher for SilentPublisher {
-        fn publish(&self, _: forge_events::Event) {}
-    }
-
     #[tokio::test]
     async fn the_badge_follows_the_registered_set_only_when_refreshed() {
         let backend = sandboxed_backend_at("sqlite::memory:", TEST_KEY)
@@ -251,7 +245,7 @@ mod tests {
             .map(|backend| Arc::new(backend) as Arc<dyn DataProvider>);
         let (client, _recorder) = forge_hotkey::testing::test_client(
             forge_hotkey::HotkeyConfig::default(),
-            Arc::new(SilentPublisher),
+            Arc::new(forge_events::test_support::NullPublisher),
         );
         let reconciler = HotkeyReconciler::new(
             Arc::clone(&client),

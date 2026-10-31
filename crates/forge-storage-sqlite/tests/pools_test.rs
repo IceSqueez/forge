@@ -53,14 +53,21 @@ async fn a_read_completes_while_a_write_transaction_is_open_and_sees_only_commit
     assert_eq!(keys, vec!["committed".to_string()]);
 }
 
+const WAL_INDEX_HEADER_BYTES: usize = 100;
+const WAL_INDEX_MX_FRAME_OFFSET: usize = 16;
+const WAL_INDEX_BACKFILL_OFFSET: usize = 96;
+
 fn wal_progress(db: &std::path::Path) -> (u32, u32) {
     use std::io::Read;
 
     let mut shm = std::fs::File::open(db.with_extension("db-shm")).unwrap();
-    let mut header = [0_u8; 100];
+    let mut header = [0_u8; WAL_INDEX_HEADER_BYTES];
     shm.read_exact(&mut header).unwrap();
     let field = |at: usize| u32::from_ne_bytes(header[at..at + 4].try_into().unwrap());
-    (field(16), field(96))
+    (
+        field(WAL_INDEX_MX_FRAME_OFFSET),
+        field(WAL_INDEX_BACKFILL_OFFSET),
+    )
 }
 
 #[tokio::test]

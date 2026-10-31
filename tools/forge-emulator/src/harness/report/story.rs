@@ -1,3 +1,4 @@
+use super::text::VALUE_CHARS;
 use serde_json::Value;
 
 use super::text::{clip, code, code_list, compact, plural, quoted, span_ms};
@@ -5,7 +6,6 @@ use crate::fakes::twitch::ViewerBadge;
 use crate::harness::scenario::{ChatViewer, Crowd, StepAction};
 
 const SHORT_TEXT_CHARS: usize = 40;
-const VALUE_CHARS: usize = 120;
 
 pub(crate) fn story(action: &StepAction) -> String {
     match action {

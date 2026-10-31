@@ -23,7 +23,7 @@ use tempfile::TempDir;
 use tokio::io::AsyncWriteExt;
 
 mod support;
-use support::{EMULATOR, QuietPublisher, endpoints_from};
+use support::{EMULATOR, endpoints_from};
 
 async fn seed_fresh(fixture: &Fixture) -> (TempDir, SeedReport) {
     let dir = tempfile::tempdir().unwrap();
@@ -632,7 +632,7 @@ async fn a_seeded_discord_webhook_is_the_one_forge_discord_lists_and_loads() {
     let client = forge_discord::DiscordClient::new(
         forge_platform_core::PlatformEndpoints::default()
             .base_url(forge_platform_core::EndpointSurface::DiscordApi),
-        Arc::new(QuietPublisher),
+        Arc::new(forge_events::test_support::NullPublisher),
         Arc::clone(&backend) as Arc<dyn CredentialsRepo>,
     )
     .unwrap();
@@ -796,7 +796,7 @@ async fn a_seeded_kick_account_is_served_by_forges_manager_refreshing_only_when_
                 forge_platform_kick::KICK_API_BUDGET_CAPACITY,
                 forge_platform_kick::KICK_API_BUDGET_WINDOW,
             )),
-            Arc::new(QuietPublisher),
+            Arc::new(forge_events::test_support::NullPublisher),
         )
         .unwrap();
         let manager = forge_platform_kick::KickCredentialsManager::new(
@@ -865,7 +865,7 @@ async fn a_seeded_youtube_account_is_served_by_forges_manager_refreshing_only_wh
         let api = forge_platform_youtube::YoutubeDataApi::new(
             &endpoints,
             forge_platform_youtube::SharedQuota::default(),
-            Arc::new(QuietPublisher),
+            Arc::new(forge_events::test_support::NullPublisher),
         )
         .unwrap();
         let manager = forge_platform_youtube::YoutubeCredentialsManager::new(

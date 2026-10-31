@@ -80,34 +80,3 @@ pub fn incremented(
         Some(other) => Err(type_mismatch(name, &other)),
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn _dyn(_: &dyn UserGlobalsRepo) {}
-
-    #[test]
-    fn user_global_entry_serde_roundtrip() {
-        let entry = UserGlobalEntry {
-            broadcaster_id: "broadcaster_123".to_owned(),
-            user_id: "user_456".to_owned(),
-            name: "points".to_owned(),
-            value: Variant::Int(100),
-            last_modified: OffsetDateTime::from_unix_timestamp(1_700_000_000).unwrap(),
-        };
-
-        let json = serde_json::to_string(&entry).unwrap();
-        let decoded: UserGlobalEntry = serde_json::from_str(&json).unwrap();
-
-        assert_eq!(decoded.broadcaster_id, entry.broadcaster_id);
-        assert_eq!(decoded.user_id, entry.user_id);
-        assert_eq!(decoded.name, entry.name);
-        assert_eq!(decoded.last_modified, entry.last_modified);
-
-        match (decoded.value, entry.value) {
-            (Variant::Int(a), Variant::Int(b)) => assert_eq!(a, b),
-            _ => panic!("variant mismatch after roundtrip"),
-        }
-    }
-}

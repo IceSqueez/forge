@@ -675,7 +675,6 @@ pub(crate) mod tests {
 
     use std::sync::{Arc, Mutex};
 
-    use forge_events::{Event, EventPublisher};
     use forge_storage::CredentialsRepo;
 
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -683,7 +682,9 @@ pub(crate) mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     use super::*;
+
     use crate::embed::{DiscordEmbed, DiscordEmbedField};
+    use forge_events::test_support::CapturingPublisher;
 
     pub(crate) const HOOK_ID: &str = "1300000000000000001";
     pub(crate) const HOOK_TOKEN: &str = "hook-token-Qx7vT2";
@@ -729,7 +730,7 @@ pub(crate) mod tests {
             let (health_tx, health_state) = make_health_state();
             Arc::new(Self {
                 id: crate::DISCORD_INTEGRATION.id,
-                publisher: MockPublisher::new().publisher(),
+                publisher: CapturingPublisher::shared(),
                 creds,
                 gateway,
                 health_tx,
@@ -746,50 +747,6 @@ pub(crate) mod tests {
             &format!("{DISCORD_CRED_PREFIX}{name}"),
             &serde_json::json!({ "url": url }).to_string(),
         );
-    }
-
-    pub(crate) struct MockPublisher {
-        pub events: Arc<Mutex<Vec<Event>>>,
-    }
-
-    impl MockPublisher {
-        pub(crate) fn new() -> Arc<Self> {
-            Arc::new(Self {
-                events: Arc::new(Mutex::new(Vec::new())),
-            })
-        }
-
-        pub(crate) fn publisher(self: &Arc<Self>) -> Arc<dyn EventPublisher> {
-            Arc::clone(self) as Arc<dyn EventPublisher>
-        }
-
-        pub(crate) fn has_kind(&self, kind: &str) -> bool {
-            self.events.lock().unwrap().iter().any(|e| e.kind == kind)
-        }
-
-        pub(crate) fn find_kind(&self, kind: &str) -> Option<Event> {
-            self.events
-                .lock()
-                .unwrap()
-                .iter()
-                .find(|e| e.kind == kind)
-                .cloned()
-        }
-
-        fn rendered(&self) -> Vec<String> {
-            self.events
-                .lock()
-                .unwrap()
-                .iter()
-                .map(|e| e.payload.to_string())
-                .collect()
-        }
-    }
-
-    impl EventPublisher for MockPublisher {
-        fn publish(&self, event: Event) {
-            self.events.lock().unwrap().push(event);
-        }
     }
 
     fn with_bucket_headers(template: ResponseTemplate, limit: &str) -> ResponseTemplate {
@@ -815,15 +772,15 @@ pub(crate) mod tests {
 
     fn client_at(
         api_base: &str,
-        publisher: &Arc<MockPublisher>,
+        publisher: &Arc<CapturingPublisher>,
         creds: &Arc<MemoryCredentials>,
     ) -> Arc<DiscordClient> {
-        DiscordClient::new(api_base, publisher.publisher(), creds.clone()).unwrap()
+        DiscordClient::new(api_base, publisher.clone(), creds.clone()).unwrap()
     }
 
     async fn make_client(
         server: &MockServer,
-        pub_ref: Arc<MockPublisher>,
+        pub_ref: Arc<CapturingPublisher>,
         creds_ref: Arc<MemoryCredentials>,
     ) -> Arc<DiscordClient> {
         store_hook(&creds_ref, "alerts", &hook_url("discord.com", ""));
@@ -837,7 +794,7 @@ pub(crate) mod tests {
     #[tokio::test]
     async fn post_text_happy_path_returns_message_id() {
         let server = MockServer::start().await;
-        let publisher = MockPublisher::new();
+        let publisher = CapturingPublisher::shared();
         let creds = Arc::new(MemoryCredentials::default());
         let client = make_client(&server, Arc::clone(&publisher), Arc::clone(&creds)).await;
 
@@ -855,7 +812,7 @@ pub(crate) mod tests {
     #[tokio::test]
     async fn post_text_emits_posted_event() {
         let server = MockServer::start().await;
-        let publisher = MockPublisher::new();
+        let publisher = CapturingPublisher::shared();
         let creds = Arc::new(MemoryCredentials::default());
         let client = make_client(&server, Arc::clone(&publisher), Arc::clone(&creds)).await;
 
@@ -919,7 +876,7 @@ pub(crate) mod tests {
     #[tokio::test]
     async fn post_embed_returns_message_id_with_embed_count_one() {
         let server = MockServer::start().await;
-        let publisher = MockPublisher::new();
+        let publisher = CapturingPublisher::shared();
         let creds = Arc::new(MemoryCredentials::default());
         let client = make_client(&server, Arc::clone(&publisher), Arc::clone(&creds)).await;
 
@@ -944,7 +901,7 @@ pub(crate) mod tests {
     #[tokio::test]
     async fn rate_limit_retry_succeeds_after_429() {
         let server = MockServer::start().await;
-        let publisher = MockPublisher::new();
+        let publisher = CapturingPublisher::shared();
         let creds = Arc::new(MemoryCredentials::default());
         let client = make_client(&server, Arc::clone(&publisher), Arc::clone(&creds)).await;
 
@@ -971,7 +928,7 @@ pub(crate) mod tests {
     #[tokio::test]
     async fn double_429_returns_rate_limited_error() {
         let server = MockServer::start().await;
-        let publisher = MockPublisher::new();
+        let publisher = CapturingPublisher::shared();
         let creds = Arc::new(MemoryCredentials::default());
         let client = make_client(&server, Arc::clone(&publisher), Arc::clone(&creds)).await;
 
@@ -992,7 +949,7 @@ pub(crate) mod tests {
         let server = MockServer::start().await;
         let client = make_client(
             &server,
-            MockPublisher::new(),
+            CapturingPublisher::shared(),
             Arc::new(MemoryCredentials::default()),
         )
         .await;
@@ -1016,7 +973,7 @@ pub(crate) mod tests {
     #[tokio::test]
     async fn a_hint_over_the_wait_cap_fails_at_once_without_a_retry() {
         let server = MockServer::start().await;
-        let publisher = MockPublisher::new();
+        let publisher = CapturingPublisher::shared();
         let client = make_client(
             &server,
             Arc::clone(&publisher),
@@ -1050,7 +1007,8 @@ pub(crate) mod tests {
             let server = MockServer::start().await;
             let creds = Arc::new(MemoryCredentials::default());
             store_hook(&creds, "clips", &hook_url("discord.com", ""));
-            let client = make_client(&server, MockPublisher::new(), Arc::clone(&creds)).await;
+            let client =
+                make_client(&server, CapturingPublisher::shared(), Arc::clone(&creds)).await;
             Mock::given(method("POST"))
                 .respond_with(
                     make_429_response(OVER_CAP_HINT_SECS)
@@ -1089,7 +1047,7 @@ pub(crate) mod tests {
     #[tokio::test]
     async fn a_503_counts_as_a_throttle_only_when_it_carries_retry_after() {
         let server = MockServer::start().await;
-        let publisher = MockPublisher::new();
+        let publisher = CapturingPublisher::shared();
         let client = make_client(
             &server,
             Arc::clone(&publisher),
@@ -1209,7 +1167,7 @@ pub(crate) mod tests {
             store_hook(&creds, "alerts", &hook_url("discord.com", ""));
             let client = DiscordClient::with_timings(
                 &stub.base,
-                MockPublisher::new().publisher(),
+                CapturingPublisher::shared(),
                 creds.clone(),
                 GatewayTimings {
                     max_throttle_wait: cap,
@@ -1260,7 +1218,7 @@ pub(crate) mod tests {
             let server = MockServer::start().await;
             let client = make_client(
                 &server,
-                MockPublisher::new(),
+                CapturingPublisher::shared(),
                 Arc::new(MemoryCredentials::default()),
             )
             .await;
@@ -1279,7 +1237,7 @@ pub(crate) mod tests {
     #[tokio::test]
     async fn http_404_returns_bad_response_error_and_emits_failed() {
         let server = MockServer::start().await;
-        let publisher = MockPublisher::new();
+        let publisher = CapturingPublisher::shared();
         let creds = Arc::new(MemoryCredentials::default());
         let client = make_client(&server, Arc::clone(&publisher), Arc::clone(&creds)).await;
 
@@ -1308,7 +1266,7 @@ pub(crate) mod tests {
     #[tokio::test]
     async fn failed_event_payload_carries_reason_status_and_status_only_detail() {
         let server = MockServer::start().await;
-        let publisher = MockPublisher::new();
+        let publisher = CapturingPublisher::shared();
         let creds = Arc::new(MemoryCredentials::default());
         let client = make_client(&server, Arc::clone(&publisher), Arc::clone(&creds)).await;
 
@@ -1332,7 +1290,7 @@ pub(crate) mod tests {
     #[tokio::test]
     async fn an_error_body_echoing_the_webhook_id_or_token_never_surfaces_either() {
         let server = MockServer::start().await;
-        let publisher = MockPublisher::new();
+        let publisher = CapturingPublisher::shared();
         let client = make_client(
             &server,
             Arc::clone(&publisher),
@@ -1364,7 +1322,11 @@ pub(crate) mod tests {
                 .unwrap_err(),
         ];
 
-        let mut surfaced = publisher.rendered();
+        let mut surfaced: Vec<String> = publisher
+            .events()
+            .iter()
+            .map(|event| event.payload.to_string())
+            .collect();
         surfaced.extend(errors.iter().map(ToString::to_string));
         assert_eq!(surfaced.len(), 8, "{surfaced:?}");
         for shown in surfaced {
@@ -1386,7 +1348,7 @@ pub(crate) mod tests {
         .unwrap();
         let client = client_at(
             endpoints.base_url(forge_platform_core::EndpointSurface::DiscordApi),
-            &MockPublisher::new(),
+            &CapturingPublisher::shared(),
             &creds,
         );
         mount_accepting(&server, "POST").await;
@@ -1400,7 +1362,7 @@ pub(crate) mod tests {
     #[tokio::test]
     async fn rate_limited_event_payload_carries_webhook_name_and_retry_after() {
         let server = MockServer::start().await;
-        let publisher = MockPublisher::new();
+        let publisher = CapturingPublisher::shared();
         let creds = Arc::new(MemoryCredentials::default());
         let client = make_client(&server, Arc::clone(&publisher), Arc::clone(&creds)).await;
 
@@ -1435,7 +1397,7 @@ pub(crate) mod tests {
     #[tokio::test]
     async fn embed_with_invalid_content_rejected_before_http() {
         let server = MockServer::start().await;
-        let publisher = MockPublisher::new();
+        let publisher = CapturingPublisher::shared();
         let creds = Arc::new(MemoryCredentials::default());
         let client = make_client(&server, Arc::clone(&publisher), Arc::clone(&creds)).await;
 
@@ -1451,7 +1413,7 @@ pub(crate) mod tests {
     #[tokio::test]
     async fn edit_message_patch_succeeds() {
         let server = MockServer::start().await;
-        let publisher = MockPublisher::new();
+        let publisher = CapturingPublisher::shared();
         let creds = Arc::new(MemoryCredentials::default());
         let client = make_client(&server, Arc::clone(&publisher), Arc::clone(&creds)).await;
 
@@ -1489,7 +1451,7 @@ pub(crate) mod tests {
                 "alerts",
                 &format!("https://discord.com/api/webhooks/{id}/{token}"),
             );
-            let client = client_at(&server.uri(), &MockPublisher::new(), &creds);
+            let client = client_at(&server.uri(), &CapturingPublisher::shared(), &creds);
 
             let err = client.post_text("alerts", "hi").await.unwrap_err();
 
@@ -1507,7 +1469,7 @@ pub(crate) mod tests {
         let server = MockServer::start().await;
         let client = make_client(
             &server,
-            MockPublisher::new(),
+            CapturingPublisher::shared(),
             Arc::new(MemoryCredentials::default()),
         )
         .await;
@@ -1576,7 +1538,7 @@ pub(crate) mod tests {
                 "alerts",
                 &hook_url(host, "?wait=false&thread_id=987"),
             );
-            let client = client_at(&server.uri(), &MockPublisher::new(), &creds);
+            let client = client_at(&server.uri(), &CapturingPublisher::shared(), &creds);
             mount_accepting(&server, "POST").await;
 
             client.post_text("alerts", "hi").await.unwrap();
@@ -1600,7 +1562,7 @@ pub(crate) mod tests {
             "alerts",
             &hook_url("discordapp.com", "?thread_id=987"),
         );
-        let client = client_at(&server.uri(), &MockPublisher::new(), &creds);
+        let client = client_at(&server.uri(), &CapturingPublisher::shared(), &creds);
         Mock::given(wiremock::matchers::any())
             .respond_with(make_standard_response(MESSAGE_ID))
             .mount(&server)
@@ -1639,7 +1601,7 @@ pub(crate) mod tests {
     async fn transport_failures_surface_as_connect_without_the_endpoint() {
         let creds = Arc::new(MemoryCredentials::default());
         store_hook(&creds, "leaky", &hook_url("discord.com", ""));
-        let client = client_at(&refused_api_base(), &MockPublisher::new(), &creds);
+        let client = client_at(&refused_api_base(), &CapturingPublisher::shared(), &creds);
         let embed = DiscordEmbed {
             title: Some("t".to_owned()),
             ..Default::default()
@@ -1683,7 +1645,7 @@ pub(crate) mod tests {
     async fn a_transport_failure_reaches_health_recent_posts_and_the_failed_event() {
         let creds = Arc::new(MemoryCredentials::default());
         store_hook(&creds, "alerts", &hook_url("discord.com", ""));
-        let publisher = MockPublisher::new();
+        let publisher = CapturingPublisher::shared();
         let client = client_at(&refused_api_base(), &publisher, &creds);
 
         client.post_text("alerts", "hi").await.unwrap_err();
@@ -1699,7 +1661,7 @@ pub(crate) mod tests {
     #[tokio::test]
     async fn a_global_throttle_refuses_the_send_and_reports_it_everywhere_without_a_request() {
         let server = MockServer::start().await;
-        let publisher = MockPublisher::new();
+        let publisher = CapturingPublisher::shared();
         let client = make_client(
             &server,
             Arc::clone(&publisher),
@@ -1727,7 +1689,7 @@ pub(crate) mod tests {
         let server = MockServer::start().await;
         let client = make_client(
             &server,
-            MockPublisher::new(),
+            CapturingPublisher::shared(),
             Arc::new(MemoryCredentials::default()),
         )
         .await;
@@ -1752,7 +1714,7 @@ pub(crate) mod tests {
         let server = MockServer::start().await;
         let client = make_client(
             &server,
-            MockPublisher::new(),
+            CapturingPublisher::shared(),
             Arc::new(MemoryCredentials::default()),
         )
         .await;
@@ -1853,7 +1815,7 @@ pub(crate) mod tests {
         let server = MockServer::start().await;
         let client = make_client(
             &server,
-            MockPublisher::new(),
+            CapturingPublisher::shared(),
             Arc::new(MemoryCredentials::default()),
         )
         .await;
@@ -1881,7 +1843,7 @@ pub(crate) mod tests {
         let server = MockServer::start().await;
         let client = make_client(
             &server,
-            MockPublisher::new(),
+            CapturingPublisher::shared(),
             Arc::new(MemoryCredentials::default()),
         )
         .await;
@@ -1901,7 +1863,7 @@ pub(crate) mod tests {
         let server = MockServer::start().await;
         let client = make_client(
             &server,
-            MockPublisher::new(),
+            CapturingPublisher::shared(),
             Arc::new(MemoryCredentials::default()),
         )
         .await;
@@ -1929,7 +1891,7 @@ pub(crate) mod tests {
         let server = MockServer::start().await;
         let client = make_client(
             &server,
-            MockPublisher::new(),
+            CapturingPublisher::shared(),
             Arc::new(MemoryCredentials::default()),
         )
         .await;
@@ -1963,7 +1925,7 @@ pub(crate) mod tests {
         let server = MockServer::start().await;
         let client = make_client(
             &server,
-            MockPublisher::new(),
+            CapturingPublisher::shared(),
             Arc::new(MemoryCredentials::default()),
         )
         .await;
@@ -2022,7 +1984,7 @@ pub(crate) mod tests {
         let server = MockServer::start().await;
         let client = make_client(
             &server,
-            MockPublisher::new(),
+            CapturingPublisher::shared(),
             Arc::new(MemoryCredentials::default()),
         )
         .await;
@@ -2057,7 +2019,7 @@ pub(crate) mod tests {
         let server = MockServer::start().await;
         let client = make_client(
             &server,
-            MockPublisher::new(),
+            CapturingPublisher::shared(),
             Arc::new(MemoryCredentials::default()),
         )
         .await;
@@ -2085,7 +2047,7 @@ pub(crate) mod tests {
     #[tokio::test]
     async fn embed_with_fields_serialized_correctly() {
         let server = MockServer::start().await;
-        let publisher = MockPublisher::new();
+        let publisher = CapturingPublisher::shared();
         let creds = Arc::new(MemoryCredentials::default());
         let client = make_client(&server, Arc::clone(&publisher), Arc::clone(&creds)).await;
 

@@ -243,7 +243,7 @@ mod tests {
     use crate::ban_ledger_test_support::{MemoryBanLedger, broadcaster_source};
     use crate::channel_lookup::YoutubeChannelLookup;
     use crate::endpoints_test_support::{
-        RecordingPublisher, StubReply, StubServer, data_api_charging, data_api_with, exhaust_quota,
+        CapturingPublisher, StubReply, StubServer, data_api_charging, data_api_with, exhaust_quota,
         used_today,
     };
     use crate::follow_lookup::YoutubeFollowLookup;
@@ -320,10 +320,10 @@ mod tests {
     async fn request_fails_published_for(reply: StubReply) -> Vec<Event> {
         let server = StubServer::start().await;
         server.reply_always(PATH, reply);
-        let bus = Arc::new(RecordingPublisher::default());
+        let bus = Arc::new(CapturingPublisher::default());
         let api = data_api_with(&server.uri(), SharedQuota::default(), bus.clone());
         api.send(COST, request()).await.ok();
-        bus.events_of_kind(RequestFailed::KIND)
+        bus.of_kind(RequestFailed::KIND)
     }
 
     #[tokio::test]
@@ -395,7 +395,7 @@ mod tests {
         server.reply_always(PATH, StubReply::ok(&json!({})));
         let quota = SharedQuota::default();
         exhaust_quota(&quota).await;
-        let bus = Arc::new(RecordingPublisher::default());
+        let bus = Arc::new(CapturingPublisher::default());
         let api = data_api_with(&server.uri(), quota, bus.clone());
 
         let outcome = api.send(COST, request()).await;
@@ -404,7 +404,7 @@ mod tests {
         assert_eq!(
             (
                 server.request_count(PATH),
-                bus.events_of_kind(RequestFailed::KIND).len()
+                bus.of_kind(RequestFailed::KIND).len()
             ),
             (0, 0)
         );
@@ -636,7 +636,7 @@ mod tests {
 
     #[tokio::test]
     async fn failures_that_never_got_an_answer_publish_nothing() {
-        let unreachable_bus = Arc::new(RecordingPublisher::default());
+        let unreachable_bus = Arc::new(CapturingPublisher::default());
         data_api_with(
             "http://127.0.0.1:1",
             SharedQuota::default(),
@@ -650,7 +650,7 @@ mod tests {
         cancelled.cancel();
         let server = StubServer::start().await;
         server.reply_always(PATH, StubReply::ok(&json!({})));
-        let cancel_bus = Arc::new(RecordingPublisher::default());
+        let cancel_bus = Arc::new(CapturingPublisher::default());
         data_api_with(&server.uri(), SharedQuota::default(), cancel_bus.clone())
             .send(COST, request().cancel_on(cancelled))
             .await
@@ -658,8 +658,8 @@ mod tests {
 
         assert_eq!(
             (
-                unreachable_bus.events_of_kind(RequestFailed::KIND).len(),
-                cancel_bus.events_of_kind(RequestFailed::KIND).len()
+                unreachable_bus.of_kind(RequestFailed::KIND).len(),
+                cancel_bus.of_kind(RequestFailed::KIND).len()
             ),
             (0, 0)
         );

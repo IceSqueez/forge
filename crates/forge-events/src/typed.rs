@@ -53,13 +53,14 @@ pub trait TypedEvent: Serialize + DeserializeOwned {
 #[cfg(test)]
 mod tests {
     use std::fmt::Debug;
-    use std::sync::Mutex;
 
     use forge_types::{ActionId, IntegrationId, QueueId, ScriptId, TriggerInstanceId};
     use serde_json::json;
     use time::OffsetDateTime;
 
     use super::*;
+
+    use crate::test_support::CapturingPublisher;
     use crate::{
         ActingSender, ActionDone, ActionSkipped, ActionStarted, ChatSendFailed, ChatSendRequest,
         ChatSent, CommandMatched, ConnectionState, GlobalArrayAppended, GlobalArrayRemoved,
@@ -351,18 +352,9 @@ mod tests {
         }
     }
 
-    #[derive(Default)]
-    struct RecordingPublisher(Mutex<Vec<Event>>);
-
-    impl EventPublisher for RecordingPublisher {
-        fn publish(&self, event: Event) {
-            self.0.lock().unwrap().push(event);
-        }
-    }
-
     #[test]
     fn publish_hands_the_built_event_to_the_publisher() {
-        let publisher = RecordingPublisher::default();
+        let publisher = CapturingPublisher::default();
         let cause = EventId::new();
         let deleted = GlobalDeleted {
             key: "gone".to_owned(),
@@ -372,7 +364,7 @@ mod tests {
             .clone()
             .publish(&publisher, EventSource::Rhai, Some(cause));
 
-        let published = publisher.0.into_inner().unwrap();
+        let published = publisher.events();
         let decoded: Vec<_> = published
             .iter()
             .map(|event| {

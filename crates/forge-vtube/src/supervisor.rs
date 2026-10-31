@@ -857,7 +857,7 @@ mod tests {
 
     use super::{diff_and_emit_expressions, emit_connection_changed, set_connection_state};
     use crate::client::VTUBE_PLATFORM_ID;
-    use crate::client::tests::MockPublisher;
+    use crate::client::tests::CapturingPublisher;
     use crate::vocabulary::VTubeDisconnectReason;
 
     const EVERY_CONNECTION_STATE: [ConnectionState; 4] = [
@@ -954,13 +954,13 @@ mod tests {
             (true, true, None),
             (false, false, None),
         ] {
-            let publisher = MockPublisher::new();
+            let publisher = CapturingPublisher::shared();
             let mut baseline = Some(HashMap::from([("smile.exp3.json".to_owned(), prev)]));
             let data = json!({ "expressions": [{ "file": "smile.exp3.json", "active": curr }] });
 
-            diff_and_emit_expressions(&data, &mut baseline, &*publisher.publisher());
+            diff_and_emit_expressions(&data, &mut baseline, &*publisher.clone());
 
-            let events = publisher.events.lock().unwrap();
+            let events = publisher.events();
             match expected {
                 Some(is_active) => {
                     assert_eq!(events.len(), 1, "flip {prev} to {curr} must emit once");
@@ -1016,10 +1016,10 @@ mod tests {
                 true,
             ),
         ] {
-            let publisher = MockPublisher::new();
+            let publisher = CapturingPublisher::shared();
             let mut baseline = baseline;
 
-            let reported = diff_and_emit_expressions(&data, &mut baseline, &*publisher.publisher());
+            let reported = diff_and_emit_expressions(&data, &mut baseline, &*publisher.clone());
 
             assert_eq!(reported, changed, "{case}");
         }
@@ -1027,17 +1027,17 @@ mod tests {
 
     #[test]
     fn first_snapshot_seeds_baseline_without_emitting() {
-        let publisher = MockPublisher::new();
+        let publisher = CapturingPublisher::shared();
         let mut baseline: Option<HashMap<String, bool>> = None;
         let data = json!({ "expressions": [
             { "file": "a.exp3.json", "active": true },
             { "file": "b.exp3.json", "active": false },
         ]});
 
-        diff_and_emit_expressions(&data, &mut baseline, &*publisher.publisher());
+        diff_and_emit_expressions(&data, &mut baseline, &*publisher.clone());
 
         assert!(
-            publisher.events.lock().unwrap().is_empty(),
+            publisher.events().is_empty(),
             "first sighting must seed silently"
         );
         let seeded = baseline.unwrap();
@@ -1047,16 +1047,16 @@ mod tests {
 
     #[test]
     fn newly_appearing_file_seeds_silently_then_later_flip_emits() {
-        let publisher = MockPublisher::new();
+        let publisher = CapturingPublisher::shared();
         let mut baseline = Some(HashMap::from([("known.exp3.json".to_owned(), true)]));
 
         let first = json!({ "expressions": [
             { "file": "known.exp3.json", "active": true },
             { "file": "fresh.exp3.json", "active": true },
         ]});
-        diff_and_emit_expressions(&first, &mut baseline, &*publisher.publisher());
+        diff_and_emit_expressions(&first, &mut baseline, &*publisher.clone());
         assert!(
-            publisher.events.lock().unwrap().is_empty(),
+            publisher.events().is_empty(),
             "a file absent from the previous snapshot must seed silently"
         );
 
@@ -1064,9 +1064,9 @@ mod tests {
             { "file": "known.exp3.json", "active": true },
             { "file": "fresh.exp3.json", "active": false },
         ]});
-        diff_and_emit_expressions(&second, &mut baseline, &*publisher.publisher());
+        diff_and_emit_expressions(&second, &mut baseline, &*publisher.clone());
 
-        let events = publisher.events.lock().unwrap();
+        let events = publisher.events();
         assert_eq!(
             events.len(),
             1,
@@ -1078,20 +1078,20 @@ mod tests {
 
     #[test]
     fn baseline_reset_reseeds_next_snapshot_silently_even_for_known_files() {
-        let publisher = MockPublisher::new();
+        let publisher = CapturingPublisher::shared();
         let mut baseline: Option<HashMap<String, bool>> = None;
 
         let seed = json!({ "expressions": [{ "file": "wave.exp3.json", "active": true }] });
-        diff_and_emit_expressions(&seed, &mut baseline, &*publisher.publisher());
+        diff_and_emit_expressions(&seed, &mut baseline, &*publisher.clone());
 
         baseline = None;
 
         let after_switch =
             json!({ "expressions": [{ "file": "wave.exp3.json", "active": false }] });
-        diff_and_emit_expressions(&after_switch, &mut baseline, &*publisher.publisher());
+        diff_and_emit_expressions(&after_switch, &mut baseline, &*publisher.clone());
 
         assert!(
-            publisher.events.lock().unwrap().is_empty(),
+            publisher.events().is_empty(),
             "after a reset the flipped known file must reseed silently, not emit"
         );
         assert_eq!(baseline.unwrap().get("wave.exp3.json"), Some(&false));
@@ -1107,17 +1107,17 @@ mod tests {
             json!({ "expressions": [{ "file": 42, "active": "yes" }] }),
             json!({ "expressions": [null, 7, "str"] }),
         ] {
-            let publisher = MockPublisher::new();
+            let publisher = CapturingPublisher::shared();
             let mut baseline: Option<HashMap<String, bool>> = None;
 
-            diff_and_emit_expressions(&data, &mut baseline, &*publisher.publisher());
+            diff_and_emit_expressions(&data, &mut baseline, &*publisher.clone());
 
             assert!(
                 baseline.is_some(),
                 "helper must run to completion and seed even on malformed input: {data}"
             );
             assert!(
-                publisher.events.lock().unwrap().is_empty(),
+                publisher.events().is_empty(),
                 "malformed first snapshot must not emit: {data}"
             );
         }
@@ -1125,8 +1125,8 @@ mod tests {
 
     #[test]
     fn connection_changed_publishes_the_full_payload_with_null_for_absent_fields() {
-        let publisher = MockPublisher::new();
-        let p = publisher.publisher();
+        let publisher = CapturingPublisher::shared();
+        let p = publisher.clone();
         emit_connection_changed(&*p, "ws://x:1", true, None, None);
         emit_connection_changed(
             &*p,
@@ -1136,7 +1136,7 @@ mod tests {
             Some("dns failure".to_owned()),
         );
 
-        let events = publisher.events.lock().unwrap();
+        let events = publisher.events();
         let published: Vec<_> = events
             .iter()
             .map(|e| (e.source, e.kind.as_str(), e.payload.clone()))
@@ -1208,7 +1208,7 @@ mod tests {
         use tokio::sync::mpsc;
         use tokio::task::JoinHandle;
 
-        use crate::client::tests::{MockCreds, MockPublisher};
+        use crate::client::tests::{CapturingPublisher, ConnectionEvents, MockCreds};
         use crate::client::{VTubeClient, VTubeConfig};
         use crate::timing::VTubeTiming;
 
@@ -1253,12 +1253,16 @@ mod tests {
                 }
             }
 
-            fn connect(&self, publisher: &Arc<MockPublisher>, timing: VTubeTiming) -> VTubeClient {
+            fn connect(
+                &self,
+                publisher: &Arc<CapturingPublisher>,
+                timing: VTubeTiming,
+            ) -> VTubeClient {
                 VTubeClient::connect_with_timing(
                     VTubeConfig {
                         endpoint: format!("ws://{}", self.addr),
                     },
-                    publisher.publisher(),
+                    publisher.clone(),
                     MockCreds::new().creds(),
                     timing,
                 )
@@ -1298,11 +1302,9 @@ mod tests {
             }
         }
 
-        fn dial_story(publisher: &MockPublisher) -> Vec<String> {
+        fn dial_story(publisher: &CapturingPublisher) -> Vec<String> {
             publisher
-                .events
-                .lock()
-                .unwrap()
+                .events()
                 .iter()
                 .filter_map(|e| {
                     let field = if e.kind == PlatformConnectionChanged::KIND {
@@ -1324,7 +1326,7 @@ mod tests {
         #[tokio::test]
         async fn a_dial_silent_on_the_upgrade_fails_and_redials_from_connecting_and_reconnecting() {
             let mut port = DialCounter::serve(0).await;
-            let publisher = MockPublisher::new();
+            let publisher = CapturingPublisher::shared();
             let started = Instant::now();
 
             let client = port.connect(&publisher, fast_redials());
@@ -1343,7 +1345,7 @@ mod tests {
         #[tokio::test]
         async fn with_auto_reconnect_off_a_silent_dial_settles_disconnected_and_is_not_repeated() {
             let mut port = DialCounter::serve(0).await;
-            let client = port.connect(&MockPublisher::new(), fast_redials());
+            let client = port.connect(&CapturingPublisher::shared(), fast_redials());
             client.set_auto_reconnect(false);
 
             reach_phase(&client, RedialPhase::Parked).await;
@@ -1359,7 +1361,7 @@ mod tests {
             for (case, refused_dials) in [("first dial", 0), ("redial", 1)] {
                 let mut port = DialCounter::serve(refused_dials).await;
                 let client = port.connect(
-                    &MockPublisher::new(),
+                    &CapturingPublisher::shared(),
                     VTubeTiming {
                         connect_timeout: BEYOND_ANY_GUARD,
                         ..fast_redials()
@@ -1386,7 +1388,7 @@ mod tests {
         #[tokio::test]
         async fn the_base_delay_holds_back_the_next_dial() {
             let mut port = DialCounter::serve(usize::MAX).await;
-            let publisher = MockPublisher::new();
+            let publisher = CapturingPublisher::shared();
             let client = port.connect(
                 &publisher,
                 VTubeTiming {
@@ -1407,7 +1409,7 @@ mod tests {
         async fn the_max_delay_caps_a_longer_base_delay() {
             let mut port = DialCounter::serve(usize::MAX).await;
             let _client = port.connect(
-                &MockPublisher::new(),
+                &CapturingPublisher::shared(),
                 VTubeTiming {
                     reconnect_base_delay: BEYOND_ANY_GUARD,
                     reconnect_max_delay: Duration::from_millis(1),
@@ -1435,7 +1437,8 @@ mod tests {
 
         use crate::client::VTubeClient;
         use crate::client::tests::{
-            FakeVts, MockCreds, MockPublisher, PeerConn, stored_token_creds, wait_until,
+            CapturingPublisher, ConnectionEvents, FakeVts, MockCreds, PeerConn, stored_token_creds,
+            wait_until,
         };
         use crate::sink::VTubeSink;
         use crate::timing::VTubeTiming;
@@ -1548,14 +1551,14 @@ mod tests {
 
         async fn connected_session(
             vts: &mut FakeVts,
-            publisher: &Arc<MockPublisher>,
+            publisher: &Arc<CapturingPublisher>,
         ) -> (VTubeClient, PeerConn) {
             connected_session_with_timing(vts, publisher, VTubeTiming::default()).await
         }
 
         async fn connected_session_with_timing(
             vts: &mut FakeVts,
-            publisher: &Arc<MockPublisher>,
+            publisher: &Arc<CapturingPublisher>,
             timing: VTubeTiming,
         ) -> (VTubeClient, PeerConn) {
             let client = vts.connect_with_timing(publisher, &stored_token_creds(), timing);
@@ -1569,7 +1572,7 @@ mod tests {
 
         async fn session_dooming_one_write(
             vts: &mut FakeVts,
-            publisher: &Arc<MockPublisher>,
+            publisher: &Arc<CapturingPublisher>,
             timing: VTubeTiming,
             frame_fragment: &'static str,
             fate: WriteFate,
@@ -1586,22 +1589,18 @@ mod tests {
             (client, conn, write_reached)
         }
 
-        fn face_kinds(publisher: &MockPublisher) -> Vec<String> {
+        fn face_kinds(publisher: &CapturingPublisher) -> Vec<String> {
             publisher
-                .events
-                .lock()
-                .unwrap()
+                .events()
                 .iter()
                 .filter(|e| e.kind.starts_with("vtube.tracking.face_"))
                 .map(|e| e.kind.clone())
                 .collect()
         }
 
-        fn hotkey_event_seen(publisher: &MockPublisher, hotkey_id: &str) -> bool {
+        fn hotkey_event_seen(publisher: &CapturingPublisher, hotkey_id: &str) -> bool {
             publisher
-                .events
-                .lock()
-                .unwrap()
+                .events()
                 .iter()
                 .any(|e| e.kind == "vtube.hotkey.triggered" && e.payload["hotkey_id"] == hotkey_id)
         }
@@ -1648,7 +1647,7 @@ mod tests {
         #[tokio::test]
         async fn two_overlapping_reconnects_leave_one_session_that_serves_requests() {
             let mut vts = FakeVts::bind().await;
-            let publisher = MockPublisher::new();
+            let publisher = CapturingPublisher::shared();
             let (client, _retired) = connected_session(&mut vts, &publisher).await;
 
             let (first, second) = tokio::join!(client.reconnect(), client.reconnect());
@@ -1681,7 +1680,7 @@ mod tests {
         async fn a_request_write_that_fails_ends_the_session_and_redials() {
             let (log, _subscriber) = LogCapture::install();
             let mut vts = FakeVts::bind().await;
-            let publisher = MockPublisher::new();
+            let publisher = CapturingPublisher::shared();
             let (client, _conn, _reached) = session_dooming_one_write(
                 &mut vts,
                 &publisher,
@@ -1712,7 +1711,7 @@ mod tests {
         async fn a_rejected_event_subscription_is_logged_by_name_and_keeps_the_session() {
             let (log, _subscriber) = LogCapture::install();
             let mut vts = FakeVts::bind().await;
-            let publisher = MockPublisher::new();
+            let publisher = CapturingPublisher::shared();
             let (client, mut conn) = connected_session(&mut vts, &publisher).await;
             let accepted = conn.expect("EventSubscriptionRequest", SETTLE).await;
             let rejected = conn.expect("EventSubscriptionRequest", SETTLE).await;
@@ -1732,7 +1731,7 @@ mod tests {
         #[tokio::test]
         async fn a_request_left_unanswered_drops_the_session_as_unresponsive_and_redials() {
             let mut vts = FakeVts::bind().await;
-            let publisher = MockPublisher::new();
+            let publisher = CapturingPublisher::shared();
             let (client, conn) =
                 connected_session_with_timing(&mut vts, &publisher, short_request_timeout()).await;
             let (_peer, ignored) =
@@ -1760,7 +1759,7 @@ mod tests {
         #[tokio::test]
         async fn an_unanswered_request_times_out_the_caller_before_dropping_the_session() {
             let mut vts = FakeVts::bind().await;
-            let publisher = MockPublisher::new();
+            let publisher = CapturingPublisher::shared();
             let timing = short_request_timeout();
             let (client, conn) = connected_session_with_timing(&mut vts, &publisher, timing).await;
             let (_peer, ignored) =
@@ -1794,7 +1793,7 @@ mod tests {
         async fn a_request_write_that_stalls_drops_the_session_and_redials() {
             let (log, _subscriber) = LogCapture::install();
             let mut vts = FakeVts::bind().await;
-            let publisher = MockPublisher::new();
+            let publisher = CapturingPublisher::shared();
             let (client, _conn, _reached) = session_dooming_one_write(
                 &mut vts,
                 &publisher,
@@ -1842,7 +1841,7 @@ mod tests {
             ] {
                 let (log, _subscriber) = LogCapture::install();
                 let mut vts = FakeVts::bind().await;
-                let publisher = MockPublisher::new();
+                let publisher = CapturingPublisher::shared();
                 let (_client, _conn, _reached) = session_dooming_one_write(
                     &mut vts,
                     &publisher,
@@ -1866,7 +1865,7 @@ mod tests {
         #[tokio::test]
         async fn disconnecting_during_a_stalled_expression_poll_write_ends_within_its_limit() {
             let mut vts = FakeVts::bind().await;
-            let publisher = MockPublisher::new();
+            let publisher = CapturingPublisher::shared();
             let (client, _conn, stalled) = session_dooming_one_write(
                 &mut vts,
                 &publisher,
@@ -1886,7 +1885,7 @@ mod tests {
         #[tokio::test]
         async fn a_peer_silent_after_the_upgrade_fails_the_handshake_at_the_reply_deadline() {
             let mut vts = FakeVts::bind().await;
-            let publisher = MockPublisher::new();
+            let publisher = CapturingPublisher::shared();
             let started = std::time::Instant::now();
             let _client = vts.connect_with_timing(
                 &publisher,
@@ -1922,7 +1921,7 @@ mod tests {
             ] {
                 let mut vts = FakeVts::bind().await;
                 let client = vts.connect_with_timing(
-                    &MockPublisher::new(),
+                    &CapturingPublisher::shared(),
                     &creds,
                     VTubeTiming {
                         handshake_reply_timeout: BEYOND_ANY_GUARD,
@@ -1965,7 +1964,7 @@ mod tests {
             let mut poll_timeout = FIRST_POLL_TIMEOUT;
             loop {
                 let mut vts = FakeVts::bind().await;
-                let publisher = MockPublisher::new();
+                let publisher = CapturingPublisher::shared();
                 let timing = VTubeTiming {
                     expression_poll_interval: FAST_POLL_INTERVAL,
                     expression_poll_timeout: poll_timeout,
@@ -2001,7 +2000,7 @@ mod tests {
         #[tokio::test]
         async fn a_credential_read_failure_redials_without_asking_the_user_to_pair_again() {
             let mut vts = FakeVts::bind().await;
-            let publisher = MockPublisher::new();
+            let publisher = CapturingPublisher::shared();
             let creds = stored_token_creds();
             creds.refuse_next_read();
             let client =
@@ -2095,7 +2094,7 @@ mod tests {
         #[tokio::test]
         async fn a_model_config_change_refreshes_the_catalog_again() {
             let mut vts = FakeVts::bind().await;
-            let publisher = MockPublisher::new();
+            let publisher = CapturingPublisher::shared();
             let (_client, mut conn) = connected_session(&mut vts, &publisher).await;
             let no_expressions = json!({});
             serve_past(&mut conn, is_model_list, &no_expressions).await;
@@ -2112,7 +2111,7 @@ mod tests {
         #[tokio::test]
         async fn an_expression_poll_that_differs_from_the_last_one_starts_a_catalog_sweep() {
             let mut vts = FakeVts::bind().await;
-            let publisher = MockPublisher::new();
+            let publisher = CapturingPublisher::shared();
             let timing = VTubeTiming {
                 expression_poll_interval: FAST_POLL_INTERVAL,
                 request_timeout: SETTLE,
@@ -2142,7 +2141,7 @@ mod tests {
         #[tokio::test]
         async fn a_peer_that_answers_every_poll_stays_connected() {
             let mut vts = FakeVts::bind().await;
-            let publisher = MockPublisher::new();
+            let publisher = CapturingPublisher::shared();
             let timing = VTubeTiming {
                 expression_poll_interval: FAST_POLL_INTERVAL,
                 ..VTubeTiming::default()
@@ -2177,7 +2176,7 @@ mod tests {
         #[tokio::test]
         async fn the_current_model_and_face_replies_seed_the_model_and_tracking_tiles() {
             let mut vts = FakeVts::bind().await;
-            let publisher = MockPublisher::new();
+            let publisher = CapturingPublisher::shared();
             let (client, mut conn) = connected_session(&mut vts, &publisher).await;
             let mut deltas = client.health_tx.subscribe();
 
@@ -2203,7 +2202,7 @@ mod tests {
         #[tokio::test]
         async fn a_session_end_clears_the_model_and_tracking_tiles() {
             let mut vts = FakeVts::bind().await;
-            let publisher = MockPublisher::new();
+            let publisher = CapturingPublisher::shared();
             let (client, mut conn) = connected_session(&mut vts, &publisher).await;
             answer_seeds(&mut conn).await;
             assert!(
@@ -2263,7 +2262,7 @@ mod tests {
             ];
             for (case, seed, changes, expected) in cases {
                 let mut vts = FakeVts::bind().await;
-                let publisher = MockPublisher::new();
+                let publisher = CapturingPublisher::shared();
                 let (_client, mut conn) = connected_session(&mut vts, &publisher).await;
                 if let Some(found) = seed {
                     let face = conn.expect("FaceFoundRequest", SETTLE).await;

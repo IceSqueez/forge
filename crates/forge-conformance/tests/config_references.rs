@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 use std::collections::{BTreeMap, BTreeSet};
 
 use forge_overlay::{OverlayKindRegistry, register_builtin_kinds};
@@ -7,9 +8,12 @@ use forge_registry::{
     SubActionRegistry, TriggerRegistry,
 };
 use forge_registry::{LOCAL_FILE_NAMESPACE, OVERLAY_ICON_OPTIONS_KEY, OVERLAY_SOUND_OPTIONS_KEY};
-use forge_types::{Action, ActionId, ExecutionMode, QueueId, SubActionStep, Variant};
+use forge_types::{
+    Action, ActionId, ExecutionMode, PermissionRung, PlatformScope, QueueId, SubActionStep,
+    TriggerInstance, TriggerInstanceId, Variant,
+};
 
-use crate::test_support::every_registry_entry;
+use forge_host::test_support::every_registry_entry;
 
 type Config = BTreeMap<String, Variant>;
 
@@ -29,6 +33,21 @@ const EXTERNAL_OPTIONS_KEYS: &[&str] = &[
     "vtube.hotkey_ids",
     "vtube.model_ids",
 ];
+
+fn trigger_of(kind_id: &str) -> TriggerInstance {
+    TriggerInstance {
+        id: TriggerInstanceId::new(),
+        kind_id: kind_id.to_owned(),
+        name: kind_id.to_owned(),
+        overrides: BTreeMap::new(),
+        enabled: true,
+        user_defined: true,
+        platform_scope: PlatformScope::default(),
+        cooldown_secs: 0,
+        cooldown_global: true,
+        permission_rung: PermissionRung::Everyone,
+    }
+}
 
 fn text(value: &str) -> Variant {
     Variant::String(value.to_owned())
@@ -692,7 +711,7 @@ async fn a_queue_remapped_to_a_non_id_is_refused_and_the_action_is_left_unchange
 async fn a_trigger_instance_lists_its_override_references_under_overrides() {
     let (triggers, sub_actions) = every_registry_entry().await;
     let catalog = ReferenceCatalog::new(&sub_actions, &triggers);
-    let mut trigger = crate::test_support::trigger_of("obs.scene.changed");
+    let mut trigger = trigger_of("obs.scene.changed");
     trigger.overrides = config(&[("scene", text("Live"))]);
 
     let listing = catalog.trigger_instance_references(&trigger);

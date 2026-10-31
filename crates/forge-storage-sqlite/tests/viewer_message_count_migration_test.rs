@@ -57,8 +57,8 @@ async fn dropping_the_counter_removes_the_column_and_keeps_every_other_field() {
         (
             false,
             "ann",
-            FIRST_SEEN_MS / 1000,
-            LAST_SEEN_MS / 1000,
+            FIRST_SEEN_MS / common::MILLIS_PER_SECOND,
+            LAST_SEEN_MS / common::MILLIS_PER_SECOND,
             true
         )
     );
@@ -86,8 +86,12 @@ async fn recording_messages_after_the_drop_updates_name_and_last_seen_but_not_fi
         (
             viewer.username.as_str(),
             viewer.first_seen_at.unix_timestamp(),
-            viewer.last_seen_at.unix_timestamp() > LAST_SEEN_MS / 1000,
+            viewer.last_seen_at.unix_timestamp() > LAST_SEEN_MS / common::MILLIS_PER_SECOND,
         ),
-        ("ann_renamed", FIRST_SEEN_MS / 1000, true)
+        (
+            "ann_renamed",
+            FIRST_SEEN_MS / common::MILLIS_PER_SECOND,
+            true
+        )
     );
 }

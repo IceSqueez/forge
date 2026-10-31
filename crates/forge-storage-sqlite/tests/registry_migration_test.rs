@@ -5,7 +5,7 @@ use forge_types::{Action, ActionId, QueueId, SubActionStep, Variant};
 use sqlx::SqlitePool;
 
 mod common;
-use common::TEST_KEY;
+use common::{DEFAULT_QUEUE, TEST_KEY};
 
 #[tokio::test]
 async fn old_sub_action_spec_json_is_converted_to_sub_action_step() {
@@ -14,14 +14,13 @@ async fn old_sub_action_spec_json_is_converted_to_sub_action_step() {
 
     let action_id = ActionId::new();
 
-    sqlx::query(
-        "INSERT INTO actions (id, name, queue_id, sub_actions) VALUES (?, 'test', '00000000000000000000000000', ?)",
-    )
-    .bind(action_id.to_string())
-    .bind(r#"[{"SendChat":{"message":"Hello!","target":"twitch"}},{"Delay":{"ms":1000}}]"#)
-    .execute(&pool)
-    .await
-    .expect("insert action");
+    sqlx::query("INSERT INTO actions (id, name, queue_id, sub_actions) VALUES (?, 'test', ?, ?)")
+        .bind(action_id.to_string())
+        .bind(DEFAULT_QUEUE)
+        .bind(r#"[{"SendChat":{"message":"Hello!","target":"twitch"}},{"Delay":{"ms":1000}}]"#)
+        .execute(&pool)
+        .await
+        .expect("insert action");
 
     migrate_registry_format(&pool).await.expect("migrate");
 
@@ -60,9 +59,10 @@ async fn migration_is_idempotent_on_second_call() {
     let action_id = ActionId::new();
 
     sqlx::query(
-        "INSERT INTO actions (id, name, queue_id, sub_actions) VALUES (?, 'test', '00000000000000000000000000', ?)",
+        "INSERT INTO actions (id, name, queue_id, sub_actions) VALUES (?, 'test', ?, ?)",
     )
     .bind(action_id.to_string())
+    .bind(DEFAULT_QUEUE)
     .bind(r#"[{"SetGlobal":{"name":"counter","value":{"type":"int","value":0},"persisted":true}}]"#)
     .execute(&pool)
     .await
@@ -106,9 +106,10 @@ async fn open_with_key_applies_action_registry_migration_on_boot() {
         apply_migrations(&pool).await.expect("apply migrations");
 
         sqlx::query(
-            "INSERT INTO actions (id, name, queue_id, sub_actions) VALUES (?, 'boot test', '00000000000000000000000000', ?)",
+            "INSERT INTO actions (id, name, queue_id, sub_actions) VALUES (?, 'boot test', ?, ?)",
         )
         .bind(action_id.to_string())
+        .bind(DEFAULT_QUEUE)
         .bind(r#"[{"GetGlobal":{"name":"score","arg_name":"score_val"}}]"#)
         .execute(&pool)
         .await
@@ -136,7 +137,6 @@ async fn open_with_key_applies_action_registry_migration_on_boot() {
     );
 }
 
-const DEFAULT_QUEUE: &str = "00000000000000000000000000";
 const KIND_THE_DISCORD_CONVERTER_REWRITES: &str = "discord.post_text";
 
 async fn migrated_pool() -> (SqlitePool, SqliteActionRepo) {

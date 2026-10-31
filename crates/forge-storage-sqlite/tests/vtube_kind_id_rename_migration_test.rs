@@ -10,7 +10,7 @@ use tempfile::TempDir;
 const OBS_VERSION_BEFORE_RENAME: i64 = 57;
 const VTUBE_VERSION_BEFORE_RENAME: i64 = 66;
 const VTUBE_RENAME_VERSION: i64 = 67;
-const QUEUE_ID: &str = "00000000000000000000000000";
+const QUEUE_ID: &str = common::DEFAULT_QUEUE;
 const REGISTRY_FORMAT: i64 = 2;
 const STARTED_AT: i64 = 1_761_328_800;
 const SUB_ACTION_FAVORITES: &str = "picker.favorites.sub_actions";

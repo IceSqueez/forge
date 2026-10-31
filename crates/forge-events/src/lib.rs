@@ -11,7 +11,7 @@ mod request;
 mod run;
 mod script;
 mod source;
-#[cfg(feature = "test-support")]
+#[cfg(any(test, feature = "test-support"))]
 pub mod test_support;
 mod timer;
 mod trigger;

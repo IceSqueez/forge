@@ -886,7 +886,7 @@ mod tests {
         clips.expect_list().returning(|| Ok(Vec::new()));
         let (client, _) = test_client(
             HotkeyConfig::default(),
-            Arc::new(crate::test_support::SilentPublisher),
+            Arc::new(forge_events::test_support::NullPublisher),
         );
         HotkeyFactory {
             client,

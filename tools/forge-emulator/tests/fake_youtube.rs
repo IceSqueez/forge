@@ -29,7 +29,7 @@ use tokio::time::timeout;
 mod support;
 
 use forge_storage::test_support::MemoryCredentials;
-use support::{QuietPublisher, endpoints_from, static_token_source};
+use support::{endpoints_from, static_token_source};
 
 const WAIT: Duration = Duration::from_secs(30);
 const CLIENT_ID: &str = "emulator-youtube-client";
@@ -72,7 +72,12 @@ fn data_api(fake: &FakeYouTube, route: &str) -> String {
 }
 
 fn youtube_data_api(endpoints: &PlatformEndpoints) -> YoutubeDataApi {
-    YoutubeDataApi::new(endpoints, SharedQuota::default(), Arc::new(QuietPublisher)).unwrap()
+    YoutubeDataApi::new(
+        endpoints,
+        SharedQuota::default(),
+        Arc::new(forge_events::test_support::NullPublisher),
+    )
+    .unwrap()
 }
 
 fn google_oauth(endpoints: &PlatformEndpoints) -> GoogleOAuthClient {

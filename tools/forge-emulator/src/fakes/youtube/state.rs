@@ -1,9 +1,9 @@
-use std::sync::{Mutex, MutexGuard};
+use crate::fakes::support::Observed;
+use std::ops::Deref;
 
 use serde_json::{Map, Value, json};
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
-use tokio::sync::watch;
 
 use super::config::FakeYouTubeConfig;
 use super::ledger::{YouTubeLedger, YouTubeRequest};
@@ -123,8 +123,7 @@ impl Inner {
 
 pub(crate) struct Shared {
     config: FakeYouTubeConfig,
-    inner: Mutex<Inner>,
-    changes: watch::Sender<u64>,
+    state: Observed<Inner>,
 }
 
 impl Shared {
@@ -132,32 +131,19 @@ impl Shared {
         let inner = Inner::new(&config);
         Self {
             config,
-            inner: Mutex::new(inner),
-            changes: watch::Sender::new(0),
+            state: Observed::new(inner),
         }
     }
 
     pub(crate) fn config(&self) -> &FakeYouTubeConfig {
         &self.config
     }
+}
 
-    fn lock(&self) -> MutexGuard<'_, Inner> {
-        self.inner
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-    }
+impl Deref for Shared {
+    type Target = Observed<Inner>;
 
-    pub(crate) fn read<R>(&self, f: impl FnOnce(&Inner) -> R) -> R {
-        f(&self.lock())
-    }
-
-    pub(crate) fn mutate<R>(&self, f: impl FnOnce(&mut Inner) -> R) -> R {
-        let result = f(&mut self.lock());
-        self.changes.send_modify(|generation| *generation += 1);
-        result
-    }
-
-    pub(crate) fn changes(&self) -> watch::Receiver<u64> {
-        self.changes.subscribe()
+    fn deref(&self) -> &Observed<Inner> {
+        &self.state
     }
 }

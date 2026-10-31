@@ -1,5 +1,6 @@
 #![allow(dead_code, clippy::expect_used, clippy::panic)]
 
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -36,16 +37,101 @@ pub(crate) const UNSAFE_IDENTITIES: &[(&str, &str)] = &[
     (RESERVED_DIRECTORY, "the reserved shared subtree"),
 ];
 
+fn skip_quoted(code: &[u8], open: usize) -> usize {
+    let quote = code[open];
+    let mut at = open + 1;
+    while at < code.len() && code[at] != quote {
+        at += if code[at] == b'\\' { 2 } else { 1 };
+    }
+    at + 1
+}
+
+fn skip_comment(code: &[u8], open: usize) -> Option<usize> {
+    let rest = &code[open..];
+    if rest.starts_with(b"//") {
+        rest.iter()
+            .position(|byte| *byte == b'\n')
+            .map(|end| open + end)
+    } else if rest.starts_with(b"/*") {
+        rest.windows(2)
+            .position(|pair| pair == b"*/")
+            .map(|end| open + end + 2)
+    } else {
+        None
+    }
+}
+
+fn closing_brace(body: &str) -> Option<usize> {
+    let code = body.as_bytes();
+    let mut depth = 1_usize;
+    let mut at = 0;
+    while at < code.len() {
+        if let Some(after) = skip_comment(code, at) {
+            at = after;
+            continue;
+        }
+        match code[at] {
+            b'"' | b'\'' | b'`' => {
+                at = skip_quoted(code, at);
+                continue;
+            }
+            b'{' => depth += 1,
+            b'}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(at);
+                }
+            }
+            _ => {}
+        }
+        at += 1;
+    }
+    None
+}
+
+pub(crate) fn js_block(source: &'static str, opening: &str) -> &'static str {
+    let start = source
+        .find(opening)
+        .unwrap_or_else(|| panic!("the script no longer declares '{opening}'"))
+        + opening.len();
+    let rest = &source[start..];
+    let end = closing_brace(rest).unwrap_or_else(|| panic!("'{opening}' is never closed"));
+    &rest[..end]
+}
+
 pub(crate) fn js_function(source: &'static str, name: &str) -> &'static str {
     let opening = format!("function {name}(");
     let start = source
         .find(&opening)
         .unwrap_or_else(|| panic!("the script no longer declares '{opening}'"));
     let rest = &source[start..];
-    let end = rest
-        .find("\n  }")
-        .unwrap_or_else(|| panic!("'{opening}' is never closed"));
-    &rest[..end]
+    let brace = rest
+        .find('{')
+        .unwrap_or_else(|| panic!("'{opening}' has no body"));
+    let end =
+        closing_brace(&rest[brace + 1..]).unwrap_or_else(|| panic!("'{opening}' is never closed"));
+    &rest[..=brace + end]
+}
+
+pub(crate) fn js_object_keys(source: &'static str, opening: &str) -> BTreeSet<String> {
+    let mut depth = 0_i32;
+    let mut keys = BTreeSet::new();
+    for line in js_block(source, opening).lines() {
+        let line = line.trim();
+        if depth == 0 && !line.is_empty() && !line.starts_with("//") {
+            let key = line.split(':').next().unwrap_or(line);
+            keys.insert(key.trim_matches([',', '"', ' ']).to_owned());
+        }
+        depth += line
+            .chars()
+            .map(|c| match c {
+                '{' | '[' | '(' => 1,
+                '}' | ']' | ')' => -1,
+                _ => 0,
+            })
+            .sum::<i32>();
+    }
+    keys
 }
 
 pub(crate) fn registry() -> OverlayKindRegistry {

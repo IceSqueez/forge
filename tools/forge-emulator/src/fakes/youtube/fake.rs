@@ -1,21 +1,18 @@
-use std::net::{Ipv4Addr, SocketAddr};
+use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
 use forge_platform_core::EndpointSurface;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
-use tokio::net::TcpListener;
 use tokio::sync::watch;
-use tokio::task::JoinHandle;
 
 use super::config::FakeYouTubeConfig;
 use super::ledger::YouTubeLedger;
 use super::rest::{self, DATA_API_PREFIX, OAUTH_PREFIX, UPLOAD_API_PREFIX};
 use super::state::Shared;
 use crate::EmulatorError;
-
-const SHUTDOWN_GRACE: Duration = Duration::from_secs(2);
+use crate::fakes::support::{ServerTasks, bind_loopback, local_addr, serve_http};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -46,8 +43,7 @@ impl YouTubeChatter {
 pub struct FakeYouTube {
     shared: Arc<Shared>,
     http_base: String,
-    shutdown: watch::Sender<bool>,
-    task: Option<JoinHandle<()>>,
+    server: ServerTasks,
 }
 
 impl FakeYouTube {
@@ -62,30 +58,28 @@ impl FakeYouTube {
                 });
             }
         }
-        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
-            .await
-            .map_err(|e| EmulatorError::FakeBind {
-                reason: e.to_string(),
-            })?;
-        let address: SocketAddr = listener.local_addr().map_err(|e| EmulatorError::FakeBind {
-            reason: e.to_string(),
-        })?;
+        let listener = bind_loopback().await?;
+        let address: SocketAddr = local_addr(&listener)?;
         let shared = Arc::new(Shared::new(config));
-        let (shutdown, mut shutdown_rx) = watch::channel(false);
+        let (shutdown, shutdown_rx) = watch::channel(false);
         let router = rest::router(Arc::clone(&shared));
-        let task = tokio::spawn(async move {
-            let _ = axum::serve(listener, router)
-                .with_graceful_shutdown(async move {
-                    let _ = shutdown_rx.changed().await;
-                })
-                .await;
-        });
+        let task = serve_http(listener, router, shutdown_rx);
         Ok(Self {
             shared,
             http_base: format!("http://{address}"),
-            shutdown,
-            task: Some(task),
+            server: ServerTasks::new(shutdown, vec![task]),
         })
+    }
+
+    pub fn http_base(&self) -> &str {
+        &self.http_base
+    }
+
+    pub fn url_for(&self, surface: EndpointSurface) -> Option<String> {
+        self.endpoint_overrides()
+            .into_iter()
+            .find(|(variable, _)| *variable == surface.env_var())
+            .map(|(_, url)| url)
     }
 
     pub fn endpoint_overrides(&self) -> [(&'static str, String); 3] {
@@ -127,21 +121,9 @@ impl FakeYouTube {
         timeout: Duration,
         mut probe: impl FnMut(&YouTubeLedger) -> Option<T>,
     ) -> Result<T, EmulatorError> {
-        let mut changes = self.shared.changes();
-        let deadline = tokio::time::Instant::now() + timeout;
-        loop {
-            if let Some(found) = self.shared.read(|inner| probe(&inner.ledger)) {
-                return Ok(found);
-            }
-            match tokio::time::timeout_at(deadline, changes.changed()).await {
-                Ok(Ok(())) => {}
-                Ok(Err(_)) | Err(_) => {
-                    return Err(EmulatorError::WaitTimeout {
-                        what: what.to_owned(),
-                    });
-                }
-            }
-        }
+        self.shared
+            .wait_for(what, timeout, |inner| probe(&inner.ledger))
+            .await
     }
 
     pub fn inject_chat_message(
@@ -185,22 +167,7 @@ impl FakeYouTube {
             });
     }
 
-    pub async fn shutdown(mut self) {
-        let _ = self.shutdown.send(true);
-        if let Some(mut task) = self.task.take()
-            && tokio::time::timeout(SHUTDOWN_GRACE, &mut task)
-                .await
-                .is_err()
-        {
-            task.abort();
-        }
-    }
-}
-
-impl Drop for FakeYouTube {
-    fn drop(&mut self) {
-        if let Some(task) = &self.task {
-            task.abort();
-        }
+    pub async fn shutdown(self) {
+        self.server.shutdown().await;
     }
 }

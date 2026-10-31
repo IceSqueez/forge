@@ -1,6 +1,6 @@
 use std::collections::{HashMap, VecDeque};
-use std::net::{Ipv4Addr, SocketAddr};
-use std::sync::{Arc, Mutex};
+use std::net::SocketAddr;
+use std::sync::Arc;
 use std::time::Duration;
 
 use axum::Router;
@@ -9,12 +9,11 @@ use axum::http::{HeaderMap, HeaderValue, StatusCode, Uri, header};
 use axum::response::{IntoResponse, Json, Response};
 use forge_platform_core::EndpointSurface;
 use serde_json::{Value, json};
-use tokio::net::TcpListener;
 use tokio::sync::watch;
-use tokio::task::JoinHandle;
 
 use super::config::{DonatesOrder, FakeDonatelloConfig, FakeDonation};
 use crate::EmulatorError;
+use crate::fakes::support::{Observed, ServerTasks, bind_loopback, local_addr, serve_http};
 
 pub const UNAUTHORIZED_MESSAGE: &str = "Помилка авторизації";
 pub const PROFILE_INCOMPLETE_MESSAGE: &str = "Неповні налаштування профілю";
@@ -28,7 +27,6 @@ const API_PREFIX: &str = "/api/v1";
 const PAGE_PARAMETER: &str = "page";
 const SIZE_PARAMETER: &str = "size";
 const MALFORMED_BODY: &str = "{\"content\": [ {\"pubId\": ";
-const SHUTDOWN_GRACE: Duration = Duration::from_secs(2);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DonatesFault {
@@ -53,31 +51,12 @@ struct Inner {
     requests: Vec<RecordedDonatelloRequest>,
 }
 
-struct Shared {
-    inner: Mutex<Inner>,
-    changes: watch::Sender<usize>,
-}
-
-impl Shared {
-    fn mutate<T>(&self, change: impl FnOnce(&mut Inner) -> T) -> T {
-        let mut inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
-        let result = change(&mut inner);
-        let recorded = inner.requests.len();
-        drop(inner);
-        self.changes.send_replace(recorded);
-        result
-    }
-
-    fn read<T>(&self, look: impl FnOnce(&Inner) -> T) -> T {
-        look(&self.inner.lock().unwrap_or_else(|p| p.into_inner()))
-    }
-}
+type Shared = Observed<Inner>;
 
 pub struct FakeDonatello {
     shared: Arc<Shared>,
     base_url: String,
-    shutdown: watch::Sender<bool>,
-    task: Option<JoinHandle<()>>,
+    server: ServerTasks,
 }
 
 impl FakeDonatello {
@@ -87,41 +66,24 @@ impl FakeDonatello {
                 reason: "the fake Donatello token is blank".to_owned(),
             });
         }
-        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
-            .await
-            .map_err(|e| EmulatorError::FakeBind {
-                reason: e.to_string(),
-            })?;
-        let address: SocketAddr = listener.local_addr().map_err(|e| EmulatorError::FakeBind {
-            reason: e.to_string(),
-        })?;
+        let listener = bind_loopback().await?;
+        let address: SocketAddr = local_addr(&listener)?;
         let donations = config.donations.iter().map(FakeDonation::wire).collect();
-        let (changes, _) = watch::channel(0);
-        let shared = Arc::new(Shared {
-            inner: Mutex::new(Inner {
-                config,
-                donations,
-                faults: VecDeque::new(),
-                requests: Vec::new(),
-            }),
-            changes,
-        });
-        let (shutdown, mut shutdown_rx) = watch::channel(false);
+        let shared = Arc::new(Observed::new(Inner {
+            config,
+            donations,
+            faults: VecDeque::new(),
+            requests: Vec::new(),
+        }));
+        let (shutdown, shutdown_rx) = watch::channel(false);
         let router = Router::new()
             .fallback(handle)
             .with_state(Arc::clone(&shared));
-        let task = tokio::spawn(async move {
-            let _ = axum::serve(listener, router)
-                .with_graceful_shutdown(async move {
-                    let _ = shutdown_rx.changed().await;
-                })
-                .await;
-        });
+        let task = serve_http(listener, router, shutdown_rx);
         Ok(Self {
             shared,
             base_url: format!("http://{address}{API_PREFIX}"),
-            shutdown,
-            task: Some(task),
+            server: ServerTasks::new(shutdown, vec![task]),
         })
     }
 
@@ -164,40 +126,13 @@ impl FakeDonatello {
         timeout: Duration,
         mut probe: impl FnMut(&[RecordedDonatelloRequest]) -> Option<T>,
     ) -> Result<T, EmulatorError> {
-        let mut changes = self.shared.changes.subscribe();
-        let deadline = tokio::time::Instant::now() + timeout;
-        loop {
-            if let Some(found) = self.shared.read(|inner| probe(&inner.requests)) {
-                return Ok(found);
-            }
-            match tokio::time::timeout_at(deadline, changes.changed()).await {
-                Ok(Ok(())) => {}
-                Ok(Err(_)) | Err(_) => {
-                    return Err(EmulatorError::WaitTimeout {
-                        what: what.to_owned(),
-                    });
-                }
-            }
-        }
+        self.shared
+            .wait_for(what, timeout, |inner| probe(&inner.requests))
+            .await
     }
 
-    pub async fn shutdown(mut self) {
-        let _ = self.shutdown.send(true);
-        if let Some(mut task) = self.task.take()
-            && tokio::time::timeout(SHUTDOWN_GRACE, &mut task)
-                .await
-                .is_err()
-        {
-            task.abort();
-        }
-    }
-}
-
-impl Drop for FakeDonatello {
-    fn drop(&mut self) {
-        if let Some(task) = &self.task {
-            task.abort();
-        }
+    pub async fn shutdown(self) {
+        self.server.shutdown().await;
     }
 }
 

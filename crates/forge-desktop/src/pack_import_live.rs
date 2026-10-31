@@ -542,12 +542,6 @@ mod tests {
 
     const IMPORTED_BOT: &str = "imported-bot";
 
-    struct SilentPublisher;
-
-    impl forge_events::EventPublisher for SilentPublisher {
-        fn publish(&self, _: forge_events::Event) {}
-    }
-
     fn setup_outcome(parts: &[SetupLivePart], queues: SetupQueueChanges) -> SetupImportOutcome {
         SetupImportOutcome {
             safety_snapshot: PathBuf::from("forge-pre-setup.forgebundle"),
@@ -692,7 +686,7 @@ mod tests {
         let reconciler = rt.block_on(async {
             let (client, _recorder) = forge_hotkey::testing::test_client(
                 HotkeyConfig::default(),
-                Arc::new(SilentPublisher),
+                Arc::new(forge_events::test_support::NullPublisher),
             );
             HotkeyReconciler::new(
                 client,

@@ -63,22 +63,13 @@ impl AudioEventSink for BusAudioEventSink {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Mutex;
 
-    use forge_events::Event;
     use forge_types::ClipId;
     use serde_json::json;
 
     use super::*;
 
-    #[derive(Default)]
-    struct RecordingPublisher(Mutex<Vec<Event>>);
-
-    impl EventPublisher for RecordingPublisher {
-        fn publish(&self, event: Event) {
-            self.0.lock().unwrap().push(event);
-        }
-    }
+    use forge_events::test_support::CapturingPublisher;
 
     #[test]
     fn each_playback_event_publishes_its_audio_kind_and_payload() {
@@ -125,12 +116,12 @@ mod tests {
         ];
 
         for (audio_event, kind, payload) in cases {
-            let publisher = Arc::new(RecordingPublisher::default());
+            let publisher = Arc::new(CapturingPublisher::default());
             let sink = BusAudioEventSink::new(Arc::clone(&publisher) as Arc<dyn EventPublisher>);
 
             sink.emit(audio_event);
 
-            let published = publisher.0.lock().unwrap();
+            let published = publisher.events();
             let [event] = published.as_slice() else {
                 panic!(
                     "{kind}: expected exactly one event, got {}",

@@ -1,4 +1,5 @@
 #![allow(dead_code, clippy::unwrap_used)]
+use forge_events::test_support::CapturingPublisher;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -15,7 +16,7 @@ use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::{Notify, mpsc};
+use tokio::sync::Notify;
 use tokio::task::JoinSet;
 use tokio_tungstenite::WebSocketStream;
 use tokio_tungstenite::tungstenite::Message;
@@ -28,18 +29,6 @@ const EVENT_OP: u64 = 5;
 const RESPONSE_OP: u64 = 7;
 const RPC_VERSION: u64 = 1;
 const NOT_A_WEB_SOCKET_UPGRADE: &[u8] = b"BAD\r\n\r\n";
-
-pub(crate) struct ChannelPublisher(pub mpsc::UnboundedSender<Event>);
-
-impl EventPublisher for ChannelPublisher {
-    fn publish(&self, event: Event) {
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the receiver may already be gone"
-        )]
-        let _ = self.0.send(event);
-    }
-}
 
 pub(crate) fn fast_retries() -> ObsTiming {
     ObsTiming {
@@ -141,54 +130,39 @@ impl WireLog {
 }
 
 #[derive(Clone, Default)]
-pub(crate) struct Recorder(Arc<Mutex<Vec<Event>>>);
+pub(crate) struct Recorder(Arc<CapturingPublisher>);
 
 impl EventPublisher for Recorder {
     fn publish(&self, event: Event) {
-        self.0.lock().unwrap().push(event);
+        self.0.publish(event);
     }
 }
 
 impl Recorder {
     pub(crate) fn kinds(&self) -> Vec<String> {
-        self.0
-            .lock()
-            .unwrap()
-            .iter()
-            .map(|e| e.kind.clone())
-            .collect()
+        self.0.kinds()
     }
 
     pub(crate) fn announcements(&self) -> Vec<(String, Option<bool>)> {
         self.0
-            .lock()
-            .unwrap()
+            .of_kind(PlatformConnectionChanged::KIND)
             .iter()
-            .filter(|e| e.kind == PlatformConnectionChanged::KIND)
-            .map(|e| {
+            .map(|event| {
                 (
-                    e.payload["state"]
+                    event.payload["state"]
                         .as_str()
                         .unwrap_or("<missing>")
                         .to_owned(),
-                    e.payload["expected"].as_bool(),
+                    event.payload["expected"].as_bool(),
                 )
             })
             .collect()
     }
 
     pub(crate) fn states(&self) -> Vec<String> {
-        self.0
-            .lock()
-            .unwrap()
-            .iter()
-            .filter(|e| e.kind == PlatformConnectionChanged::KIND)
-            .map(|e| {
-                e.payload["state"]
-                    .as_str()
-                    .unwrap_or("<missing>")
-                    .to_owned()
-            })
+        self.announcements()
+            .into_iter()
+            .map(|(state, _)| state)
             .collect()
     }
 }

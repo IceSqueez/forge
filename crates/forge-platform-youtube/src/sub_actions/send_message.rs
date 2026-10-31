@@ -97,7 +97,6 @@ mod tests {
     use forge_events::test_support::NullPublisher;
     use std::sync::Arc;
 
-    use forge_events::{Event, EventPublisher};
     use forge_types::EventId;
     use futures::future::BoxFuture;
     use serde_json::json;
@@ -105,30 +104,13 @@ mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     use super::*;
+
     use crate::live_chat_id::LiveChatIdHandle;
+    use forge_events::test_support::CapturingPublisher;
     use forge_types::Variant;
     use std::collections::BTreeMap;
 
     const TOKEN_SENTINEL: &str = "yt-secret-token";
-
-    #[derive(Default)]
-    struct RecordingPublisher(std::sync::Mutex<Vec<Event>>);
-    impl EventPublisher for RecordingPublisher {
-        fn publish(&self, event: Event) {
-            self.0.lock().unwrap().push(event);
-        }
-    }
-
-    impl RecordingPublisher {
-        fn published(&self) -> Vec<(EventSource, String, serde_json::Value, Option<EventId>)> {
-            self.0
-                .lock()
-                .unwrap()
-                .iter()
-                .map(|e| (e.source, e.kind.clone(), e.payload.clone(), e.caused_by))
-                .collect()
-        }
-    }
 
     fn make_ctx(stack: &ArgStack) -> RunContext<'_> {
         RunContext::leaf(stack, 0, EventId::new(), &NullPublisher)
@@ -155,6 +137,16 @@ mod tests {
 
     fn config(message: &str) -> SubActionConfig {
         BTreeMap::from([("message".to_owned(), Variant::String(message.to_owned()))])
+    }
+
+    fn published(
+        publisher: &CapturingPublisher,
+    ) -> Vec<(EventSource, String, serde_json::Value, Option<EventId>)> {
+        publisher
+            .events()
+            .into_iter()
+            .map(|event| (event.source, event.kind, event.payload, event.caused_by))
+            .collect()
     }
 
     #[tokio::test]
@@ -301,7 +293,7 @@ mod tests {
             .await;
         let runner = runner_on(&server);
         let stack = ArgStack::new().set("user".to_owned(), Variant::String("viewer42".to_owned()));
-        let publisher = RecordingPublisher::default();
+        let publisher = CapturingPublisher::default();
         let parent = EventId::new();
 
         runner
@@ -312,7 +304,7 @@ mod tests {
             .await;
 
         assert_eq!(
-            publisher.published(),
+            published(&publisher),
             vec![(
                 EventSource::YouTube,
                 "chat.send".to_owned(),
@@ -344,7 +336,7 @@ mod tests {
                 .await;
             let runner = runner_on(&server);
             let stack = ArgStack::new().set("greeting".to_owned(), Variant::String(String::new()));
-            let publisher = RecordingPublisher::default();
+            let publisher = CapturingPublisher::default();
 
             runner
                 .execute(
@@ -353,7 +345,7 @@ mod tests {
                 )
                 .await;
 
-            assert_eq!(publisher.published(), vec![], "{label}");
+            assert_eq!(published(&publisher), vec![], "{label}");
         }
     }
 }

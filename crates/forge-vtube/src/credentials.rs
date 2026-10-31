@@ -83,7 +83,7 @@ pub async fn clear(creds: &dyn CredentialsRepo) -> Result<bool, StorageError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::client::tests::{MockCreds, MockPublisher};
+    use crate::client::tests::{CapturingPublisher, MockCreds};
 
     #[test]
     fn a_bundle_saved_without_an_endpoint_loads_against_the_vts_loopback_defaults() {
@@ -103,9 +103,9 @@ mod tests {
             VTUBE_CREDENTIAL_ID,
             r#"{"token":"tok","api_version":"1.0","host":"203.0.113.7","port":9123}"#,
         );
-        let publisher = MockPublisher::new();
+        let publisher = CapturingPublisher::shared();
 
-        let client = load_and_connect(&*repo, publisher.publisher(), repo.creds())
+        let client = load_and_connect(&*repo, publisher.clone(), repo.creds())
             .await
             .unwrap();
 
@@ -145,9 +145,9 @@ mod tests {
         store(&*repo, "tok", "203.0.113.7", 9123, true)
             .await
             .unwrap();
-        let publisher = MockPublisher::new();
+        let publisher = CapturingPublisher::shared();
 
-        let client = load_and_connect(&*repo, publisher.publisher(), repo.creds())
+        let client = load_and_connect(&*repo, publisher.clone(), repo.creds())
             .await
             .unwrap();
 
@@ -174,9 +174,9 @@ mod tests {
         store(&*repo, "tok", "203.0.113.7", 9123, false)
             .await
             .unwrap();
-        let publisher = MockPublisher::new();
+        let publisher = CapturingPublisher::shared();
 
-        let client = load_and_connect(&*repo, publisher.publisher(), repo.creds())
+        let client = load_and_connect(&*repo, publisher.clone(), repo.creds())
             .await
             .unwrap();
 

@@ -12,9 +12,9 @@ pub use donation::{
     DonatelloGift, FakeDonatelloSetup, FakeMonobankSetup, MonobankGift, OfflineGift,
 };
 pub use expectation::{
-    AbsentEvent, Causation, DiscordPost, Expectation, KickRequestSeen, LogLine, ObsAuthOutcome,
+    AbsentEvent, Causation, DiscordPost, Expectation, HttpRequestSeen, LogLine, ObsAuthOutcome,
     ObsRequestSeen, ObservedCount, ObservedEvent, OverlayContent, RequestCount, TwitchSubscription,
-    VTubeAuthOutcome, VTubeRequestSeen, YouTubeRequestSeen,
+    VTubeAuthOutcome, VTubeRequestSeen,
 };
 pub use load::{load_scenario, parse_scenario};
 pub use matcher::{EventPattern, PayloadMatchers, UniqueMap, ValueMatcher};

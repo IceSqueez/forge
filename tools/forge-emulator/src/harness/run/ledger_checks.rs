@@ -1,5 +1,6 @@
 use tokio::time::Instant;
 
+use super::http_checks::count_verdict;
 use super::outcome::{EVIDENCE_LIMIT, Evidence, FailureCause, LedgerExcerpt, Verdict};
 use crate::fakes::twitch::{FakeTwitch, Ledger, RecordedRequest};
 use crate::harness::scenario::{RequestCount, TwitchSubscription};
@@ -102,17 +103,7 @@ pub(crate) fn assess_request_count(
         })
         .collect();
     let observed = matching.len();
-    let below = expected.min.is_some_and(|min| observed < min as usize);
-    let above = expected.max.is_some_and(|max| observed > max as usize);
-    let verdict = if below || above {
-        Verdict::Failed(FailureCause::RequestCountOutOfRange {
-            observed,
-            min: expected.min,
-            max: expected.max,
-        })
-    } else {
-        Verdict::Passed
-    };
+    let verdict = count_verdict(observed, expected);
     let excerpt = LedgerExcerpt {
         requests: capped(matching.into_iter()),
         ..LedgerExcerpt::default()

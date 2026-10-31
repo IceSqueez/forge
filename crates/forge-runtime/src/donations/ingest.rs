@@ -212,13 +212,15 @@ mod tests {
     use std::sync::atomic::{AtomicBool, Ordering};
 
     use async_trait::async_trait;
-    use forge_events::Event;
+
     use forge_platform_core::PlatformError;
     use forge_storage::{StorageError, StoredDonation};
     use forge_types::{CurrencyCode, Donor, MoneyAmount};
     use tokio::sync::{oneshot, watch};
 
     use super::*;
+
+    use forge_events::test_support::CapturingPublisher;
 
     const PLACEHOLDER: &str = "Anonymous donor";
 
@@ -342,32 +344,6 @@ mod tests {
         }
     }
 
-    #[derive(Default)]
-    struct Recorder(Mutex<Vec<Event>>);
-
-    impl EventPublisher for Recorder {
-        fn publish(&self, event: Event) {
-            self.0.lock().unwrap().push(event);
-        }
-    }
-
-    impl Recorder {
-        fn announced(&self) -> Vec<DonationReceived> {
-            let events = self.0.lock().unwrap();
-            events
-                .iter()
-                .map(|event| DonationReceived::from_event(event).unwrap())
-                .collect()
-        }
-
-        fn announced_ids(&self) -> Vec<String> {
-            self.announced()
-                .into_iter()
-                .map(|received| received.donation_id)
-                .collect()
-        }
-    }
-
     fn provider() -> IntegrationId {
         IntegrationId::new("donatello")
     }
@@ -405,14 +381,14 @@ mod tests {
 
     struct Rig {
         ledger: Arc<Ledger>,
-        recorder: Arc<Recorder>,
+        recorder: Arc<CapturingPublisher>,
         anonymous: Shared<String>,
         ingest: DonationIngest,
     }
 
     fn rig(ledger: Ledger) -> Rig {
         let ledger = Arc::new(ledger);
-        let recorder = Arc::new(Recorder::default());
+        let recorder = Arc::new(CapturingPublisher::default());
         let anonymous = Shared::new(PLACEHOLDER.to_owned());
         let ingest = DonationIngest::new(
             Arc::clone(&ledger) as Arc<dyn DonationRepo>,
@@ -448,6 +424,21 @@ mod tests {
             .await;
     }
 
+    fn announced(recorder: &CapturingPublisher) -> Vec<DonationReceived> {
+        recorder
+            .events()
+            .iter()
+            .map(|event| DonationReceived::from_event(event).unwrap())
+            .collect()
+    }
+
+    fn announced_ids(recorder: &CapturingPublisher) -> Vec<String> {
+        announced(recorder)
+            .into_iter()
+            .map(|received| received.donation_id)
+            .collect()
+    }
+
     #[test]
     fn the_catch_up_window_includes_its_boundary_and_excludes_one_millisecond_past_it() {
         let now = OffsetDateTime::now_utc();
@@ -473,7 +464,7 @@ mod tests {
         drain(&rig, vec![fresh("h1", DonationOrigin::History)]).await;
 
         assert_eq!(
-            (rig.recorder.announced_ids(), rig.ledger.announced("h1")),
+            (announced_ids(&rig.recorder), rig.ledger.announced("h1")),
             (Vec::<String>::new(), Some(true))
         );
     }
@@ -492,7 +483,7 @@ mod tests {
         )
         .await;
 
-        assert_eq!(rig.recorder.announced_ids(), ["l1", "h2"]);
+        assert_eq!(announced_ids(&rig.recorder), ["l1", "h2"]);
     }
 
     #[tokio::test]
@@ -504,7 +495,7 @@ mod tests {
 
         drain(&rig, vec![fresh("h1", DonationOrigin::History)]).await;
 
-        assert!(rig.recorder.announced_ids().is_empty());
+        assert!(announced_ids(&rig.recorder).is_empty());
     }
 
     #[tokio::test]
@@ -513,7 +504,7 @@ mod tests {
 
         drain(&rig, vec![fresh("h1", DonationOrigin::History)]).await;
 
-        let announced = rig.recorder.announced();
+        let announced = announced(&rig.recorder);
         assert_eq!(
             announced
                 .iter()
@@ -542,7 +533,7 @@ mod tests {
         drain(&rig, vec![fresh("l1", DonationOrigin::Live)]).await;
 
         assert_eq!(
-            (rig.recorder.announced_ids(), rig.ledger.announced("l1")),
+            (announced_ids(&rig.recorder), rig.ledger.announced("l1")),
             (Vec::<String>::new(), Some(false))
         );
     }
@@ -556,7 +547,7 @@ mod tests {
 
         drain(&rig, vec![fresh("l1", DonationOrigin::Live)]).await;
 
-        assert!(rig.recorder.announced_ids().is_empty());
+        assert!(announced_ids(&rig.recorder).is_empty());
     }
 
     #[tokio::test]
@@ -565,9 +556,7 @@ mod tests {
 
         drain(&rig, vec![fresh("t1", DonationOrigin::Test)]).await;
 
-        let flags: Vec<bool> = rig
-            .recorder
-            .announced()
+        let flags: Vec<bool> = announced(&rig.recorder)
             .iter()
             .map(|received| received.test)
             .collect();
@@ -593,7 +582,7 @@ mod tests {
             )
             .await;
 
-        assert_eq!(rig.recorder.announced_ids(), ["l1"]);
+        assert_eq!(announced_ids(&rig.recorder), ["l1"]);
     }
 
     #[tokio::test]
@@ -610,9 +599,7 @@ mod tests {
         )
         .await;
 
-        let names: Vec<String> = rig
-            .recorder
-            .announced()
+        let names: Vec<String> = announced(&rig.recorder)
             .into_iter()
             .map(|received| received.donor_name)
             .collect();
@@ -641,9 +628,7 @@ mod tests {
 
         rig.ingest.recover_unannounced().await;
 
-        let announced: Vec<(String, bool)> = rig
-            .recorder
-            .announced()
+        let announced: Vec<(String, bool)> = announced(&rig.recorder)
             .into_iter()
             .map(|received| (received.donation_id, received.test))
             .collect();
@@ -717,14 +702,14 @@ mod tests {
 
     struct HeldRig {
         ledger: Arc<Ledger>,
-        recorder: Arc<Recorder>,
+        recorder: Arc<CapturingPublisher>,
         ingest: Arc<DonationIngest>,
         waker: CatchUpWaker,
     }
 
     fn held_rig(ledger: Ledger, audience: Arc<ScriptedAudience>) -> HeldRig {
         let ledger = Arc::new(ledger);
-        let recorder = Arc::new(Recorder::default());
+        let recorder = Arc::new(CapturingPublisher::default());
         let ingest = Arc::new(
             DonationIngest::new(
                 Arc::clone(&ledger) as Arc<dyn DonationRepo>,
@@ -761,7 +746,7 @@ mod tests {
         let ingest = Arc::new(
             DonationIngest::new(
                 Arc::new(Ledger::default()) as Arc<dyn DonationRepo>,
-                Arc::new(Recorder::default()) as Arc<dyn EventPublisher>,
+                Arc::new(CapturingPublisher::default()) as Arc<dyn EventPublisher>,
                 Shared::new(PLACEHOLDER.to_owned()),
             )
             .holding_catch_up(),
@@ -807,7 +792,7 @@ mod tests {
         audience.asked_at_least(1).await;
 
         assert_eq!(
-            (rig.recorder.announced_ids(), rig.ledger.announced("missed")),
+            (announced_ids(&rig.recorder), rig.ledger.announced("missed")),
             (Vec::<String>::new(), Some(false))
         );
     }
@@ -829,7 +814,7 @@ mod tests {
         rig.waker.wake();
         until_marked(&rig.ledger, &["newer", "older"]).await;
 
-        assert_eq!(rig.recorder.announced_ids(), ["older", "newer"]);
+        assert_eq!(announced_ids(&rig.recorder), ["older", "newer"]);
     }
 
     type ArrivalCase = (
@@ -870,7 +855,7 @@ mod tests {
 
             assert_eq!(
                 (
-                    rig.recorder.announced_ids(),
+                    announced_ids(&rig.recorder),
                     rig.ledger.announced("arrived")
                 ),
                 (
@@ -905,7 +890,7 @@ mod tests {
         rig.waker.wake();
         until_marked(&rig.ledger, &["missed"]).await;
 
-        assert_eq!(rig.recorder.announced_ids(), ["missed"]);
+        assert_eq!(announced_ids(&rig.recorder), ["missed"]);
     }
 
     #[tokio::test]
@@ -923,7 +908,7 @@ mod tests {
         open_gate.send(()).unwrap();
         until_marked(&rig.ledger, &["missed"]).await;
 
-        assert_eq!(rig.recorder.announced_ids(), ["missed"]);
+        assert_eq!(announced_ids(&rig.recorder), ["missed"]);
     }
 
     #[tokio::test(start_paused = true)]
@@ -934,7 +919,7 @@ mod tests {
         let ingest = Arc::new(
             DonationIngest::new(
                 Arc::new(Ledger::default()) as Arc<dyn DonationRepo>,
-                Arc::new(Recorder::default()) as Arc<dyn EventPublisher>,
+                Arc::new(CapturingPublisher::default()) as Arc<dyn EventPublisher>,
                 Shared::new(PLACEHOLDER.to_owned()),
             )
             .holding_catch_up(),

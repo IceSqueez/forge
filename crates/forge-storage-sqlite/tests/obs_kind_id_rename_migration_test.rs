@@ -10,7 +10,7 @@ use tempfile::TempDir;
 
 const VERSION_BEFORE_RENAME: i64 = 57;
 const RENAME_VERSION: i64 = 58;
-const QUEUE_ID: &str = "00000000000000000000000000";
+const QUEUE_ID: &str = common::DEFAULT_QUEUE;
 const REGISTRY_FORMAT: i64 = 2;
 const STARTED_AT: i64 = 1_761_328_800;
 

@@ -1,18 +1,17 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
+use forge_events::test_support::CapturingPublisher;
 use forge_obs::vocabulary::event_kinds as obs_kinds;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 
 use forge_emulator::EmulatorError;
 use forge_emulator::fakes::obs::{
     Authentication, FakeInput, FakeObs, FakeObsConfig, ObsLedger, authentication_string,
 };
-use forge_events::{Event, EventPublisher};
 use forge_obs::{ObsClient, ObsError, ObsSink, probe_connection};
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
 use tokio::net::TcpStream;
-use tokio::sync::Notify;
 use tokio::time::timeout;
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
@@ -22,35 +21,6 @@ type Socket = WebSocketStream<MaybeTlsStream<TcpStream>>;
 const PASSWORD: &str = "obs-fake-secret-7c1d";
 const WAIT: Duration = Duration::from_secs(30);
 const LOCALHOST: &str = "127.0.0.1";
-
-#[derive(Default)]
-struct Captured {
-    kinds: Mutex<Vec<String>>,
-    published: Notify,
-}
-
-impl EventPublisher for Captured {
-    fn publish(&self, event: Event) {
-        self.kinds.lock().unwrap().push(event.kind);
-        self.published.notify_waiters();
-    }
-}
-
-impl Captured {
-    fn kinds(&self) -> Vec<String> {
-        self.kinds.lock().unwrap().clone()
-    }
-
-    async fn saw(&self, kind: &str) {
-        loop {
-            let published = self.published.notified();
-            if self.kinds().iter().any(|seen| seen == kind) {
-                return;
-            }
-            published.await;
-        }
-    }
-}
 
 fn with_password() -> FakeObsConfig {
     FakeObsConfig {
@@ -173,7 +143,7 @@ async fn forge_probe_with_the_wrong_password_is_refused_as_an_authentication_fai
 #[tokio::test]
 async fn forge_client_primes_its_catalog_and_publishes_connected() {
     let fake = FakeObs::start(with_password()).await.unwrap();
-    let captured = Arc::new(Captured::default());
+    let captured = Arc::new(CapturingPublisher::default());
 
     let _client = ObsClient::connect(&fake.url(), Some(PASSWORD), captured.clone())
         .await
@@ -188,9 +158,12 @@ async fn forge_client_primes_its_catalog_and_publishes_connected() {
     })
     .await
     .unwrap();
-    timeout(WAIT, captured.saw(obs_kinds::CONNECTION_CONNECTED))
-        .await
-        .expect("forge's client reported the connection");
+    timeout(
+        WAIT,
+        captured.wait_for_kind(obs_kinds::CONNECTION_CONNECTED),
+    )
+    .await
+    .expect("forge's client reported the connection");
     let unanswered: Vec<_> = fake
         .ledger()
         .requests
@@ -203,7 +176,7 @@ async fn forge_client_primes_its_catalog_and_publishes_connected() {
 #[tokio::test]
 async fn forge_scene_switch_is_recorded_and_echoed_as_a_scene_changed_event() {
     let fake = FakeObs::start(with_password()).await.unwrap();
-    let captured = Arc::new(Captured::default());
+    let captured = Arc::new(CapturingPublisher::default());
     let client = ObsClient::connect(&fake.url(), Some(PASSWORD), captured.clone())
         .await
         .unwrap();
@@ -211,13 +184,16 @@ async fn forge_scene_switch_is_recorded_and_echoed_as_a_scene_changed_event() {
         .await
         .unwrap();
 
-    timeout(WAIT, captured.saw(obs_kinds::CONNECTION_CONNECTED))
-        .await
-        .expect("forge's client reported the connection");
+    timeout(
+        WAIT,
+        captured.wait_for_kind(obs_kinds::CONNECTION_CONNECTED),
+    )
+    .await
+    .expect("forge's client reported the connection");
     client.set_scene("BRB").await.unwrap();
 
     assert_eq!(fake.current_scene().as_deref(), Some("BRB"));
-    timeout(WAIT, captured.saw(obs_kinds::SCENE_CHANGED))
+    timeout(WAIT, captured.wait_for_kind(obs_kinds::SCENE_CHANGED))
         .await
         .expect("forge's client saw the scene change");
 }

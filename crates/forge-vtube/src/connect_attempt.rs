@@ -150,7 +150,7 @@ mod tests {
 
     use super::*;
     use crate::client::tests::{
-        FakeVts, MockCreds, MockPublisher, POLL_STEP, stored_token_creds, wait_for,
+        CapturingPublisher, FakeVts, MockCreds, POLL_STEP, stored_token_creds, wait_for,
     };
 
     const HANG_GUARD: Duration = Duration::from_secs(30);
@@ -171,12 +171,12 @@ mod tests {
     ) -> (
         AttemptPhaseFeed,
         watch::Receiver<VTubeAttemptPhase>,
-        Arc<MockPublisher>,
+        Arc<CapturingPublisher>,
     ) {
         let (phases, receiver) = watch::channel(phase);
-        let bus = MockPublisher::new();
+        let bus = CapturingPublisher::shared();
         let feed = AttemptPhaseFeed {
-            downstream: bus.publisher(),
+            downstream: bus.clone(),
             phases,
         };
         (feed, receiver, bus)
@@ -213,7 +213,7 @@ mod tests {
             VTubeConfig {
                 endpoint: endpoint.to_owned(),
             },
-            MockPublisher::new().publisher(),
+            CapturingPublisher::shared(),
             creds.creds(),
         )
     }
@@ -290,7 +290,7 @@ mod tests {
         }
 
         assert!(!phases.has_changed().unwrap());
-        assert_eq!(bus.events.lock().unwrap().len(), published);
+        assert_eq!(bus.events().len(), published);
     }
 
     #[test]
@@ -301,7 +301,7 @@ mod tests {
         feed.publish(change(false, Some(VTubeDisconnectReason::SocketClosed)));
 
         assert_eq!(*phases.borrow(), VTubeAttemptPhase::TimedOut);
-        assert_eq!(bus.events.lock().unwrap().len(), 2);
+        assert_eq!(bus.events().len(), 2);
     }
 
     #[tokio::test(start_paused = true)]

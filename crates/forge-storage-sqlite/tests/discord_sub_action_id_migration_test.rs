@@ -1,4 +1,5 @@
 #![allow(clippy::expect_used)]
+mod common;
 use forge_storage_sqlite::{connect, migrate_registry_format};
 use forge_types::{ActionId, SubActionStep, Variant};
 use sqlx::SqlitePool;
@@ -14,9 +15,10 @@ async fn fresh_pool() -> SqlitePool {
 async fn insert_format1_action(pool: &SqlitePool, id: &ActionId, sub_actions_json: &str) {
     sqlx::query(
         "INSERT INTO actions (id, name, queue_id, sub_actions, format_version) \
-         VALUES (?, 'test', '00000000000000000000000000', ?, 1)",
+         VALUES (?, 'test', ?, ?, 1)",
     )
     .bind(id.to_string())
+    .bind(common::DEFAULT_QUEUE)
     .bind(sub_actions_json)
     .execute(pool)
     .await

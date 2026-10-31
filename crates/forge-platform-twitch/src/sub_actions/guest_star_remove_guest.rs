@@ -106,12 +106,7 @@ mod tests {
     fn runner_with(
         responses: Vec<Result<serde_json::Value, TwitchError>>,
     ) -> (Arc<MockTransport>, GuestStarRemoveGuestRunner) {
-        let transport = Arc::new(MockTransport::returning_sequence(responses));
-        let runner = GuestStarRemoveGuestRunner::new(
-            Arc::clone(&transport) as Arc<dyn HelixTransport>,
-            crate::sub_actions::test_support::self_identity(),
-        );
-        (transport, runner)
+        crate::sub_actions::test_support::runner_with(responses, GuestStarRemoveGuestRunner::new)
     }
 
     fn config(session_template: &str, target: &str, slot: &str) -> SubActionConfig {

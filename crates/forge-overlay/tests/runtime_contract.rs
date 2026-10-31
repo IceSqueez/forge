@@ -30,28 +30,6 @@ fn behind_the_preview_gate(body: &str, needle: &str) -> bool {
     at(body, needle) > at(&body[gate..], "return;") + gate
 }
 
-fn block_after(source: &str, opening: &str) -> String {
-    let start = source
-        .find(opening)
-        .unwrap_or_else(|| panic!("the runtime no longer declares '{opening}'"))
-        + opening.len();
-    let rest = &source[start..];
-    let end = rest
-        .find('}')
-        .unwrap_or_else(|| panic!("'{opening}' is never closed"));
-    rest[..end].to_owned()
-}
-
-fn keys_in(block: &str) -> BTreeSet<String> {
-    block
-        .lines()
-        .filter_map(|line| line.split(':').next())
-        .map(str::trim)
-        .filter(|key| !key.is_empty())
-        .map(str::to_owned)
-        .collect()
-}
-
 fn members_called_on(source: &str, receiver: &str) -> BTreeSet<String> {
     source
         .match_indices(receiver)
@@ -67,7 +45,7 @@ fn members_called_on(source: &str, receiver: &str) -> BTreeSet<String> {
 
 #[test]
 fn the_runtime_carries_a_hex_value_for_every_accent_the_form_offers() {
-    let mapped = keys_in(&block_after(RUNTIME_SOURCE, "var ACCENT_HEX = {"));
+    let mapped = common::js_object_keys(RUNTIME_SOURCE, "var ACCENT_HEX = {");
     let offered: BTreeSet<String> = ACCENT_OPTIONS
         .iter()
         .map(|name| (*name).to_owned())
@@ -81,10 +59,7 @@ fn the_runtime_carries_a_hex_value_for_every_accent_the_form_offers() {
 
 #[test]
 fn every_helper_a_generated_page_calls_is_one_the_runtime_publishes() {
-    let published = keys_in(&block_after(
-        RUNTIME_SOURCE,
-        "window.forge = Object.freeze({",
-    ));
+    let published = common::js_object_keys(RUNTIME_SOURCE, "window.forge = Object.freeze({");
 
     for descriptor in registry().all() {
         for called in members_called_on(descriptor.page_assets().behavior, "forge.") {

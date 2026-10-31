@@ -1,12 +1,13 @@
 #![allow(dead_code, clippy::unwrap_used, clippy::panic)]
 
+use forge_events::test_support::CapturingPublisher;
 use forge_events::test_support::NullPublisher;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
 use forge_audio::{AudioError, AudioSink};
-use forge_events::{Event, EventPublisher};
+use forge_events::EventPublisher;
 use forge_speak_queue::VoiceAliasResolver;
 use forge_speak_queue::{
     Priority, QueueDeps, RequestId, SpeakEvent, SpeakEventStream, SpeakRequest,
@@ -123,42 +124,19 @@ pub(crate) fn recording_sink() -> (Arc<dyn AudioSink>, Arc<std::sync::Mutex<usiz
     )
 }
 
-#[derive(Default)]
-pub(crate) struct RecordingPublisher {
-    events: Mutex<Vec<Event>>,
+pub(crate) fn payload_of(
+    bus: &CapturingPublisher,
+    kind: &str,
+    request_id: &RequestId,
+) -> Option<serde_json::Value> {
+    bus.of_kind(kind)
+        .into_iter()
+        .find(|event| event.payload["request_id"] == request_id.0.as_str())
+        .map(|event| event.payload)
 }
 
-impl EventPublisher for RecordingPublisher {
-    fn publish(&self, event: Event) {
-        self.events.lock().unwrap().push(event);
-    }
-}
-
-impl RecordingPublisher {
-    pub(crate) fn of_kind(&self, kind: &str) -> Vec<Event> {
-        self.events
-            .lock()
-            .unwrap()
-            .iter()
-            .filter(|event| event.kind == kind)
-            .cloned()
-            .collect()
-    }
-
-    pub(crate) fn payload_of(
-        &self,
-        kind: &str,
-        request_id: &RequestId,
-    ) -> Option<serde_json::Value> {
-        self.of_kind(kind)
-            .into_iter()
-            .find(|event| event.payload["request_id"] == request_id.0.as_str())
-            .map(|event| event.payload)
-    }
-}
-
-pub(crate) fn recording_bus(deps: QueueDeps) -> (QueueDeps, Arc<RecordingPublisher>) {
-    let bus = Arc::new(RecordingPublisher::default());
+pub(crate) fn recording_bus(deps: QueueDeps) -> (QueueDeps, Arc<CapturingPublisher>) {
+    let bus = Arc::new(CapturingPublisher::default());
     let event_bus: Arc<dyn EventPublisher> = bus.clone();
     (QueueDeps { event_bus, ..deps }, bus)
 }

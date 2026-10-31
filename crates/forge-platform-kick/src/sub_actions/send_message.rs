@@ -145,7 +145,7 @@ impl SubActionRunner for SendMessageRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::{RecordingPublisher, broadcaster_id_source, make_ctx, token_source};
+    use crate::test_support::{CapturingPublisher, broadcaster_id_source, make_ctx, token_source};
 
     use forge_types::EventId;
     use forge_types::Variant;
@@ -178,6 +178,16 @@ mod tests {
             ("message".to_owned(), Variant::String(message.to_owned())),
             ("as_bot".to_owned(), Variant::Bool(true)),
         ])
+    }
+
+    fn published(
+        publisher: &CapturingPublisher,
+    ) -> Vec<(EventSource, String, serde_json::Value, Option<EventId>)> {
+        publisher
+            .events()
+            .into_iter()
+            .map(|event| (event.source, event.kind, event.payload, event.caused_by))
+            .collect()
     }
 
     #[tokio::test]
@@ -303,7 +313,7 @@ mod tests {
             .await;
         let runner = runner_on(&server);
         let stack = ArgStack::new().set("u".to_owned(), Variant::String("alice".to_owned()));
-        let publisher = RecordingPublisher::default();
+        let publisher = CapturingPublisher::default();
         let parent = EventId::new();
 
         runner
@@ -314,7 +324,7 @@ mod tests {
             .await;
 
         assert_eq!(
-            publisher.published(),
+            published(&publisher),
             vec![(
                 EventSource::Kick,
                 "chat.send".to_owned(),
@@ -355,7 +365,7 @@ mod tests {
             let client = KickSendChat::new(crate::test_support::api_at(&server.uri()));
             let runner = SendMessageRunner::new(Arc::new(client), token_source(), broadcaster_ids);
             let stack = ArgStack::new().set("u".to_owned(), Variant::String(String::new()));
-            let publisher = RecordingPublisher::default();
+            let publisher = CapturingPublisher::default();
 
             runner
                 .execute(
@@ -364,7 +374,7 @@ mod tests {
                 )
                 .await;
 
-            assert_eq!(publisher.published(), vec![], "{label}");
+            assert_eq!(published(&publisher), vec![], "{label}");
         }
     }
 }

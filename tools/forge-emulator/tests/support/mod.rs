@@ -6,7 +6,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use forge_emulator::harness::launch::{ForgeCommand, GameGuard, HyprlandProbe, LivePaths};
-use forge_events::{Event, EventPublisher};
 use forge_platform_core::{PlatformEndpoints, PlatformError};
 use futures_util::future::BoxFuture;
 use tokio::time::timeout;
@@ -19,12 +18,6 @@ const GONE_POLL: Duration = Duration::from_millis(10);
 
 pub type TokenSource =
     Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync>;
-
-pub struct QuietPublisher;
-
-impl EventPublisher for QuietPublisher {
-    fn publish(&self, _: Event) {}
-}
 
 pub fn endpoints_from(overrides: &[(&'static str, String)]) -> PlatformEndpoints {
     PlatformEndpoints::resolve(|variable| {

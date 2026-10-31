@@ -21,6 +21,7 @@ const DURATION_MS: u64 = 2_500;
 
 const AUDIO_SECTION_START: &str = "function textOf(";
 const AUDIO_SECTION_END: &str = "function deliver(";
+const AUDIO_SECTION_MIN_LINES: usize = 100;
 
 const TIMERS: &[&str] = &["setTimeout", "setInterval", "requestAnimationFrame"];
 const DOM_SINKS: &[&str] = &[
@@ -64,13 +65,17 @@ fn at(source: &str, needle: &str) -> usize {
 fn audio_section() -> &'static str {
     let start = at(RUNTIME_SOURCE, AUDIO_SECTION_START);
     let end = start + at(&RUNTIME_SOURCE[start..], AUDIO_SECTION_END);
-    &RUNTIME_SOURCE[start..end]
+    let section = &RUNTIME_SOURCE[start..end];
+    assert!(
+        section.lines().count() >= AUDIO_SECTION_MIN_LINES,
+        "the audited audio section shrank to {} lines, so its negative checks scan almost nothing",
+        section.lines().count()
+    );
+    section
 }
 
 fn receive_body() -> &'static str {
-    let start = at(RUNTIME_SOURCE, "function receive(");
-    let end = start + at(&RUNTIME_SOURCE[start..], "\n  }");
-    &RUNTIME_SOURCE[start..end]
+    common::js_function(RUNTIME_SOURCE, "receive")
 }
 
 fn members_after(source: &str, marker: &str) -> BTreeSet<String> {

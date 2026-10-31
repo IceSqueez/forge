@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
-use std::net::{Ipv4Addr, SocketAddr};
-use std::sync::{Arc, Mutex};
+use std::net::SocketAddr;
+use std::sync::Arc;
 use std::time::Duration;
 
 use axum::Router;
@@ -11,12 +11,11 @@ use axum::response::{IntoResponse, Json, Response};
 use forge_platform_core::{EndpointSurface, PlatformEndpoints};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use tokio::net::TcpListener;
 use tokio::sync::watch;
-use tokio::task::JoinHandle;
 
 use super::multipart::{FormPart, boundary, form_parts};
 use crate::EmulatorError;
+use crate::fakes::support::{Observed, ServerTasks, bind_loopback, local_addr, serve_http};
 use crate::fixture::Fixture;
 
 pub const UNKNOWN_WEBHOOK_CODE: u64 = 10015;
@@ -29,10 +28,12 @@ const PAYLOAD_JSON_FIELD: &str = "payload_json";
 const FIRST_WEBHOOK_ID: u64 = 1_300_000_000_000_000_001;
 const FIRST_MESSAGE_ID: u64 = 1_400_000_000_000_000_001;
 const CHANNEL_ID: &str = "1200000000000000001";
+const RATE_LIMIT_HEADER: &str = "x-ratelimit-limit";
+const RATE_REMAINING_HEADER: &str = "x-ratelimit-remaining";
+const RATE_RESET_AFTER_HEADER: &str = "x-ratelimit-reset-after";
 const BUCKET_LIMIT: &str = "5";
 const BUCKET_REMAINING: &str = "4";
 const BUCKET_RESET_AFTER: &str = "1.0";
-const SHUTDOWN_GRACE: Duration = Duration::from_secs(2);
 const INVALID_JSON_CODE: u32 = 50_109;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -75,31 +76,12 @@ struct Inner {
     next_message_id: u64,
 }
 
-struct Shared {
-    inner: Mutex<Inner>,
-    changes: watch::Sender<usize>,
-}
-
-impl Shared {
-    fn mutate<T>(&self, change: impl FnOnce(&mut Inner) -> T) -> T {
-        let mut inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
-        let result = change(&mut inner);
-        let recorded = inner.posts.len();
-        drop(inner);
-        self.changes.send_replace(recorded);
-        result
-    }
-
-    fn read<T>(&self, look: impl FnOnce(&Inner) -> T) -> T {
-        look(&self.inner.lock().unwrap_or_else(|p| p.into_inner()))
-    }
-}
+type Shared = Observed<Inner>;
 
 pub struct FakeDiscord {
     shared: Arc<Shared>,
     base_url: String,
-    shutdown: watch::Sender<bool>,
-    task: Option<JoinHandle<()>>,
+    server: ServerTasks,
 }
 
 impl FakeDiscord {
@@ -117,40 +99,23 @@ impl FakeDiscord {
                 token: format!("fake-discord-token-{offset}"),
             });
         }
-        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
-            .await
-            .map_err(|e| EmulatorError::FakeBind {
-                reason: e.to_string(),
-            })?;
-        let address: SocketAddr = listener.local_addr().map_err(|e| EmulatorError::FakeBind {
-            reason: e.to_string(),
-        })?;
-        let (changes, _) = watch::channel(0);
-        let shared = Arc::new(Shared {
-            inner: Mutex::new(Inner {
-                webhooks,
-                posts: Vec::new(),
-                rate_limits: VecDeque::new(),
-                next_message_id: FIRST_MESSAGE_ID,
-            }),
-            changes,
-        });
-        let (shutdown, mut shutdown_rx) = watch::channel(false);
+        let listener = bind_loopback().await?;
+        let address: SocketAddr = local_addr(&listener)?;
+        let shared = Arc::new(Observed::new(Inner {
+            webhooks,
+            posts: Vec::new(),
+            rate_limits: VecDeque::new(),
+            next_message_id: FIRST_MESSAGE_ID,
+        }));
+        let (shutdown, shutdown_rx) = watch::channel(false);
         let router = Router::new()
             .fallback(handle)
             .with_state(Arc::clone(&shared));
-        let task = tokio::spawn(async move {
-            let _ = axum::serve(listener, router)
-                .with_graceful_shutdown(async move {
-                    let _ = shutdown_rx.changed().await;
-                })
-                .await;
-        });
+        let task = serve_http(listener, router, shutdown_rx);
         Ok(Self {
             shared,
             base_url: format!("http://{address}"),
-            shutdown,
-            task: Some(task),
+            server: ServerTasks::new(shutdown, vec![task]),
         })
     }
 
@@ -203,40 +168,13 @@ impl FakeDiscord {
         timeout: Duration,
         mut probe: impl FnMut(&[RecordedPost]) -> Option<T>,
     ) -> Result<T, EmulatorError> {
-        let mut changes = self.shared.changes.subscribe();
-        let deadline = tokio::time::Instant::now() + timeout;
-        loop {
-            if let Some(found) = self.shared.read(|inner| probe(&inner.posts)) {
-                return Ok(found);
-            }
-            match tokio::time::timeout_at(deadline, changes.changed()).await {
-                Ok(Ok(())) => {}
-                Ok(Err(_)) | Err(_) => {
-                    return Err(EmulatorError::WaitTimeout {
-                        what: what.to_owned(),
-                    });
-                }
-            }
-        }
+        self.shared
+            .wait_for(what, timeout, |inner| probe(&inner.posts))
+            .await
     }
 
-    pub async fn shutdown(mut self) {
-        let _ = self.shutdown.send(true);
-        if let Some(mut task) = self.task.take()
-            && tokio::time::timeout(SHUTDOWN_GRACE, &mut task)
-                .await
-                .is_err()
-        {
-            task.abort();
-        }
-    }
-}
-
-impl Drop for FakeDiscord {
-    fn drop(&mut self) {
-        if let Some(task) = &self.task {
-            task.abort();
-        }
+    pub async fn shutdown(self) {
+        self.server.shutdown().await;
     }
 }
 
@@ -446,8 +384,8 @@ fn answer(
             "embeds": payload.embeds,
         })
     };
-    match (method.as_str(), message_id) {
-        ("POST", None) => {
+    match (method, message_id) {
+        (&Method::POST, None) => {
             let id = inner.next_message_id.to_string();
             inner.next_message_id += 1;
             let mut answer = if wait {
@@ -458,11 +396,11 @@ fn answer(
             answer.message_id = Some(id);
             answer
         }
-        ("PATCH", Some(id)) => Answer {
+        (&Method::PATCH, Some(id)) => Answer {
             message_id: Some(id.clone()),
             ..Answer::json(StatusCode::OK, message(&id))
         },
-        ("DELETE", Some(id)) => Answer {
+        (&Method::DELETE, Some(id)) => Answer {
             message_id: Some(id),
             ..Answer::empty()
         },
@@ -485,9 +423,9 @@ fn respond(answer: Answer) -> Response {
         }
     } else if answer.status.is_success() {
         for (name, value) in [
-            ("x-ratelimit-limit", BUCKET_LIMIT),
-            ("x-ratelimit-remaining", BUCKET_REMAINING),
-            ("x-ratelimit-reset-after", BUCKET_RESET_AFTER),
+            (RATE_LIMIT_HEADER, BUCKET_LIMIT),
+            (RATE_REMAINING_HEADER, BUCKET_REMAINING),
+            (RATE_RESET_AFTER_HEADER, BUCKET_RESET_AFTER),
         ] {
             headers.insert(name, axum::http::HeaderValue::from_static(value));
         }

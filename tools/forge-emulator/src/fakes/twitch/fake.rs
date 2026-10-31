@@ -1,13 +1,10 @@
 use forge_platform_twitch::vocabulary::topics;
-use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
 
 use forge_platform_core::EndpointSurface;
 use serde_json::Value;
-use tokio::net::TcpListener;
 use tokio::sync::watch;
-use tokio::task::JoinHandle;
 
 use super::bans;
 use super::chat::{self, Viewer};
@@ -19,17 +16,16 @@ use super::rewards::FakeReward;
 use super::socket;
 use super::state::{Outbox, Shared};
 use crate::EmulatorError;
+use crate::fakes::support::{ServerTasks, bind_loopback, local_addr, serve_http};
 
 const CHAT_MESSAGE_SUBSCRIPTION: &str = topics::CHANNEL_CHAT_MESSAGE;
 const FOLLOW_SUBSCRIPTION: &str = topics::CHANNEL_FOLLOW;
 const SOCKET_PATH: &str = "/ws";
-const SHUTDOWN_GRACE: Duration = Duration::from_secs(2);
 
 pub struct FakeTwitch {
     shared: Arc<Shared>,
     api_base_url: String,
-    shutdown: watch::Sender<bool>,
-    tasks: Vec<JoinHandle<()>>,
+    server: ServerTasks,
 }
 
 impl FakeTwitch {
@@ -46,15 +42,9 @@ impl FakeTwitch {
 
         let shared = Arc::new(Shared::new(config, socket_url));
         let (shutdown, shutdown_rx) = watch::channel(false);
-        let mut rest_shutdown = shutdown_rx.clone();
+        let rest_shutdown = shutdown_rx.clone();
         let router = rest::router(Arc::clone(&shared));
-        let rest_task = tokio::spawn(async move {
-            let _ = axum::serve(api_listener, router)
-                .with_graceful_shutdown(async move {
-                    let _ = rest_shutdown.changed().await;
-                })
-                .await;
-        });
+        let rest_task = serve_http(api_listener, router, rest_shutdown);
         let socket_task = tokio::spawn(socket::serve(
             socket_listener,
             Arc::clone(&shared),
@@ -64,8 +54,7 @@ impl FakeTwitch {
         Ok(Self {
             shared,
             api_base_url,
-            shutdown,
-            tasks: vec![rest_task, socket_task],
+            server: ServerTasks::new(shutdown, vec![rest_task, socket_task]),
         })
     }
 
@@ -104,21 +93,9 @@ impl FakeTwitch {
         timeout: Duration,
         mut probe: impl FnMut(&Ledger) -> Option<T>,
     ) -> Result<T, EmulatorError> {
-        let mut changes = self.shared.changes();
-        let deadline = tokio::time::Instant::now() + timeout;
-        loop {
-            if let Some(found) = self.shared.read(|inner| probe(&inner.ledger)) {
-                return Ok(found);
-            }
-            match tokio::time::timeout_at(deadline, changes.changed()).await {
-                Ok(Ok(())) => {}
-                Ok(Err(_)) | Err(_) => {
-                    return Err(EmulatorError::WaitTimeout {
-                        what: what.to_owned(),
-                    });
-                }
-            }
-        }
+        self.shared
+            .wait_for(what, timeout, |inner| probe(&inner.ledger))
+            .await
     }
 
     pub async fn inject_notification(
@@ -178,24 +155,8 @@ impl FakeTwitch {
         self.shared.read(|inner| inner.rewards.snapshot())
     }
 
-    pub async fn shutdown(mut self) {
-        let _ = self.shutdown.send(true);
-        for mut task in std::mem::take(&mut self.tasks) {
-            if tokio::time::timeout(SHUTDOWN_GRACE, &mut task)
-                .await
-                .is_err()
-            {
-                task.abort();
-            }
-        }
-    }
-}
-
-impl Drop for FakeTwitch {
-    fn drop(&mut self) {
-        for task in &self.tasks {
-            task.abort();
-        }
+    pub async fn shutdown(self) {
+        self.server.shutdown().await;
     }
 }
 
@@ -207,18 +168,4 @@ pub(super) async fn deliver(deliveries: Vec<(Outbox, String)>) -> usize {
         }
     }
     reached
-}
-
-async fn bind_loopback() -> Result<TcpListener, EmulatorError> {
-    TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
-        .await
-        .map_err(|e| EmulatorError::FakeBind {
-            reason: e.to_string(),
-        })
-}
-
-fn local_addr(listener: &TcpListener) -> Result<SocketAddr, EmulatorError> {
-    listener.local_addr().map_err(|e| EmulatorError::FakeBind {
-        reason: e.to_string(),
-    })
 }

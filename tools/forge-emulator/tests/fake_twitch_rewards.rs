@@ -53,7 +53,7 @@ impl Forge {
         let endpoints =
             PlatformEndpoints::resolve(|variable| overrides.get(variable).map(OsString::from))
                 .unwrap();
-        let bus: Arc<dyn EventPublisher> = Arc::new(support::QuietPublisher);
+        let bus: Arc<dyn EventPublisher> = Arc::new(forge_events::test_support::NullPublisher);
         let assembly = TwitchAssembly::new(
             &mut SubActionRegistry::new(),
             creds,

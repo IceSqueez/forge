@@ -1184,3 +1184,41 @@ fn item_event(kind: &str, item: &Item) -> Pushed {
         }),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const ANSWERED_BY_THE_SESSION: [&str; 4] = [
+        "APIStateRequest",
+        "AuthenticationTokenRequest",
+        "AuthenticationRequest",
+        "EventSubscriptionRequest",
+    ];
+
+    fn refused_as_unknown(message_type: &str) -> bool {
+        let mut studio = Studio::new(&FakeVTubeConfig::default());
+        matches!(
+            studio.answer(1, message_type, &Value::Null).0,
+            Answer::Refused { error_id, .. } if error_id == ERROR_REQUEST_TYPE_UNKNOWN
+        )
+    }
+
+    #[test]
+    fn every_advertised_request_type_has_an_answer() {
+        for message_type in SUPPORTED_REQUESTS
+            .iter()
+            .filter(|message_type| !ANSWERED_BY_THE_SESSION.contains(message_type))
+        {
+            assert!(
+                !refused_as_unknown(message_type),
+                "{message_type} is advertised but falls through to the unknown arm"
+            );
+        }
+    }
+
+    #[test]
+    fn an_unadvertised_request_type_is_refused_as_unknown() {
+        assert!(refused_as_unknown("ArtMeshListRequest"));
+    }
+}

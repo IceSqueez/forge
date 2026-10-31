@@ -1,3 +1,4 @@
+use super::text::VALUE_CHARS;
 use forge_events::{ActionDone, ActionStarted, CommandMatched, EventSource, TypedEvent};
 use serde_json::Value;
 
@@ -5,8 +6,6 @@ use super::text::{clip, code, compact, quoted, span_ms};
 use crate::harness::scenario::{
     Expectation, ObservedCount, PayloadMatchers, RequestCount, StepAction, ValueMatcher,
 };
-
-const VALUE_CHARS: usize = 120;
 
 const SUBJECT_POINTERS: [(&str, &str, &str); 3] = [
     (ActionStarted::KIND, "/action_name", "starts"),

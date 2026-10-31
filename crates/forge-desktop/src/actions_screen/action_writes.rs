@@ -735,6 +735,12 @@ pub(in crate::actions_screen) mod tests {
                 .read_with(cx, |view, _| view.detail.as_ref().unwrap().action.clone())
         }
 
+        pub(in crate::actions_screen) fn hold_next_list(&self) -> tokio::sync::oneshot::Sender<()> {
+            let (release, gate) = tokio::sync::oneshot::channel();
+            *self.store.next_list_held.lock().unwrap() = Some(gate);
+            release
+        }
+
         fn idle(&self, cx: &mut TestAppContext) -> bool {
             self.view
                 .read_with(cx, |view, _| view.action_writes.is_empty())

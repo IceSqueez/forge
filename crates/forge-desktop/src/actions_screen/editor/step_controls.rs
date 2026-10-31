@@ -291,9 +291,13 @@ mod tests {
 
     use super::super::super::action_writes::tests::{FIRST, SECOND, Screen, THIRD, kinds};
     use super::*;
+    use crate::repo_failure::RepoFailure;
     use crate::test_support::{blank_window, press_undo, step};
+    use forge_registry::{UndecodableReason, UndecodableStep};
+    use forge_types::Variant;
 
     const INNER_KEY: &str = "then";
+    const UNREADABLE_RAW: i64 = 7;
 
     fn stored(screen: &Screen, id: ActionId) -> Vec<String> {
         kinds(&screen.store.stored(id).sub_actions)
@@ -330,6 +334,90 @@ mod tests {
                 .and_then(|toast| toast.action)
                 .expect("an undo action")
         })
+    }
+
+    fn frame(step_index: usize) -> nav::NavFrame {
+        nav::NavFrame {
+            step_index,
+            chain_key: INNER_KEY.to_owned(),
+            case_index: None,
+        }
+    }
+
+    fn fresh_steps(kinds: &[&str]) -> Vec<nav::ChainItem> {
+        kinds
+            .iter()
+            .map(|kind| nav::ChainItem::fresh(step(kind, true)))
+            .collect()
+    }
+
+    fn unreadable() -> nav::ChainItem {
+        nav::ChainItem::Unreadable(UndecodableStep {
+            position: 0,
+            reason: UndecodableReason::NotAnObject,
+            raw: Variant::Int(UNREADABLE_RAW),
+        })
+    }
+
+    fn set_chain(
+        screen: &Screen,
+        cx: &mut TestAppContext,
+        path: &[nav::NavFrame],
+        chain: Vec<nav::ChainItem>,
+    ) {
+        screen.write(
+            cx,
+            screen.alpha,
+            action_writes::ActionWrite::SetChain {
+                path: path.to_vec(),
+                chain,
+            },
+        );
+        screen.settle(cx);
+    }
+
+    fn remove_at_path(screen: &Screen, cx: &mut TestAppContext, path: &[nav::NavFrame]) {
+        let removing_from = path.to_vec();
+        screen
+            .view
+            .update(cx, |view, _| view.nav_path = removing_from);
+        remove(screen, cx, 0);
+        screen.view.update(cx, |view, _| view.nav_path = Vec::new());
+    }
+
+    fn remove_nested_step(screen: &Screen, cx: &mut TestAppContext) -> Vec<nav::NavFrame> {
+        let path = vec![frame(0)];
+        set_chain(screen, cx, &path, fresh_steps(&[SECOND, THIRD]));
+        remove_at_path(screen, cx, &path);
+        path
+    }
+
+    fn move_to_bravo(screen: &Screen, cx: &mut TestAppContext) {
+        let bravo = screen.bravo;
+        screen.view.update(cx, |view, cx| view.select(bravo, cx));
+        screen.settle(cx);
+    }
+
+    fn error_messages(cx: &mut TestAppContext) -> Vec<String> {
+        cx.update(|cx| {
+            cx.global::<Toasts>()
+                .items()
+                .iter()
+                .filter(|toast| toast.kind == ToastKind::Error)
+                .map(|toast| toast.message.to_string())
+                .collect()
+        })
+    }
+
+    fn steps_gone() -> Vec<String> {
+        let message = RepoFailure::steps_gone().text();
+        vec![tr!("actions_toast_error", message = message.as_str()).to_string()]
+    }
+
+    fn undo_left_the_stored_action_alone(screen: &Screen, cx: &mut TestAppContext) -> bool {
+        let before = screen.store.stored(screen.alpha);
+        undo(screen, cx);
+        screen.store.stored(screen.alpha) == before
     }
 
     fn expected(steps: &[&str]) -> Vec<String> {
@@ -450,27 +538,7 @@ mod tests {
     fn undo_restores_a_nested_step_after_navigating_back_to_the_root(cx: &mut TestAppContext) {
         let screen = Screen::open(cx);
         blank_window(cx);
-        let path = vec![nav::NavFrame {
-            step_index: 0,
-            chain_key: INNER_KEY.to_owned(),
-            case_index: None,
-        }];
-        let inner = [SECOND, THIRD]
-            .map(|kind| nav::ChainItem::fresh(step(kind, true)))
-            .to_vec();
-        screen.write(
-            cx,
-            screen.alpha,
-            action_writes::ActionWrite::SetChain {
-                path: path.clone(),
-                chain: inner,
-            },
-        );
-        screen.settle(cx);
-        let nested = path.clone();
-        screen.view.update(cx, |view, _| view.nav_path = nested);
-        remove(&screen, cx, 0);
-        screen.view.update(cx, |view, _| view.nav_path = Vec::new());
+        let path = remove_nested_step(&screen, cx);
 
         undo(&screen, cx);
 
@@ -481,6 +549,162 @@ mod tests {
             .map(|step| step.kind_id.as_str())
             .collect();
         assert_eq!(restored, [SECOND, THIRD]);
+    }
+
+    #[gpui::test]
+    fn undo_is_refused_when_the_owner_of_the_chain_vanished(cx: &mut TestAppContext) {
+        let screen = Screen::open(cx);
+        blank_window(cx);
+        remove_nested_step(&screen, cx);
+        set_chain(&screen, cx, &[], Vec::new());
+
+        let untouched = undo_left_the_stored_action_alone(&screen, cx);
+
+        assert_eq!((error_messages(cx), untouched), (steps_gone(), true));
+    }
+
+    #[gpui::test]
+    fn undo_is_refused_when_the_owner_of_the_chain_changed_type(cx: &mut TestAppContext) {
+        let screen = Screen::open(cx);
+        blank_window(cx);
+        remove_nested_step(&screen, cx);
+        set_chain(&screen, cx, &[], fresh_steps(&[THIRD, SECOND]));
+
+        let untouched = undo_left_the_stored_action_alone(&screen, cx);
+
+        assert_eq!((error_messages(cx), untouched), (steps_gone(), true));
+    }
+
+    #[gpui::test]
+    fn undo_is_refused_when_an_unreadable_item_replaced_a_nested_owner(cx: &mut TestAppContext) {
+        let screen = Screen::open(cx);
+        blank_window(cx);
+        let outer = vec![frame(0)];
+        let inner = vec![frame(0), frame(0)];
+        set_chain(&screen, cx, &outer, fresh_steps(&[SECOND]));
+        set_chain(&screen, cx, &inner, fresh_steps(&[THIRD, FIRST]));
+        remove_at_path(&screen, cx, &inner);
+        set_chain(&screen, cx, &outer, vec![unreadable()]);
+
+        let untouched = undo_left_the_stored_action_alone(&screen, cx);
+
+        assert_eq!((error_messages(cx), untouched), (steps_gone(), true));
+    }
+
+    #[gpui::test]
+    fn restoring_an_unreadable_item_into_the_root_chain_is_refused(cx: &mut TestAppContext) {
+        let screen = Screen::open(cx);
+
+        screen.write(
+            cx,
+            screen.alpha,
+            action_writes::ActionWrite::InsertStep {
+                path: Vec::new(),
+                owners: Vec::new(),
+                index: 0,
+                item: unreadable(),
+            },
+        );
+        screen.settle(cx);
+
+        assert_eq!(
+            (error_messages(cx), stored(&screen, screen.alpha)),
+            (steps_gone(), expected(&[FIRST, SECOND, THIRD]))
+        );
+    }
+
+    #[gpui::test]
+    fn undo_into_a_nested_chain_keeps_its_unreadable_neighbour(cx: &mut TestAppContext) {
+        let screen = Screen::open(cx);
+        blank_window(cx);
+        let path = vec![frame(0)];
+        let mut chain = fresh_steps(&[SECOND]);
+        chain.push(unreadable());
+        set_chain(&screen, cx, &path, chain);
+        remove_at_path(&screen, cx, &path);
+
+        undo(&screen, cx);
+
+        let restored = nav::resolve_chain(&screen.store.stored(screen.alpha).sub_actions, &path);
+        assert_eq!(
+            (
+                restored
+                    .first()
+                    .and_then(nav::ChainItem::step)
+                    .map(|step| step.kind_id.as_str()),
+                matches!(restored.get(1), Some(nav::ChainItem::Unreadable(_))),
+                error_messages(cx).len(),
+            ),
+            (Some(SECOND), true, 0)
+        );
+    }
+
+    #[gpui::test]
+    fn undo_refused_while_the_action_is_not_shown_keeps_the_screen_on_the_other_action(
+        cx: &mut TestAppContext,
+    ) {
+        let screen = Screen::open(cx);
+        blank_window(cx);
+        remove_nested_step(&screen, cx);
+        set_chain(&screen, cx, &[], Vec::new());
+        move_to_bravo(&screen, cx);
+
+        let untouched = undo_left_the_stored_action_alone(&screen, cx);
+
+        assert_eq!(
+            (error_messages(cx), untouched, screen.shown(cx).id),
+            (steps_gone(), true, screen.bravo)
+        );
+    }
+
+    #[gpui::test]
+    fn undo_with_a_pending_write_restores_a_step_of_an_action_that_is_not_shown(
+        cx: &mut TestAppContext,
+    ) {
+        let screen = Screen::open(cx);
+        blank_window(cx);
+        let release_write = screen.hold_next_list();
+        remove(&screen, cx, 1);
+        move_to_bravo(&screen, cx);
+        let alpha = screen.alpha;
+        let pending = screen
+            .view
+            .read_with(cx, |view, _| view.has_pending_action_writes(alpha));
+
+        undo(&screen, cx);
+        release_write.send(()).unwrap();
+        screen.settle(cx);
+
+        assert_eq!(
+            (pending, stored(&screen, alpha), screen.shown(cx).id),
+            (true, expected(&[FIRST, SECOND, THIRD]), screen.bravo)
+        );
+    }
+
+    #[gpui::test]
+    fn undo_is_refused_at_once_against_the_pending_chain_of_an_action_that_is_not_shown(
+        cx: &mut TestAppContext,
+    ) {
+        let screen = Screen::open(cx);
+        blank_window(cx);
+        remove_nested_step(&screen, cx);
+        let release_write = screen.hold_next_list();
+        set_chain(&screen, cx, &[], Vec::new());
+        move_to_bravo(&screen, cx);
+
+        undo(&screen, cx);
+        let refused_before_the_queue_drained = error_messages(cx);
+        release_write.send(()).unwrap();
+        screen.settle(cx);
+
+        assert_eq!(
+            (
+                refused_before_the_queue_drained,
+                error_messages(cx).len(),
+                stored(&screen, screen.alpha)
+            ),
+            (steps_gone(), 1, Vec::<String>::new())
+        );
     }
 
     #[gpui::test]

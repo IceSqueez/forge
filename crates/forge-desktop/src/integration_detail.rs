@@ -28,6 +28,7 @@ use crate::platform_credentials::PlatformCredentialManagers;
 use crate::platforms::PlatformConnectivity;
 use crate::run_history_modal::RunHistoryModal;
 use crate::twitch_bot_section::TwitchBotSection;
+use forge_components::OverflowRevealingFocus;
 use forge_components::{
     ActivePresentation, BreadcrumbCrumb, Confirm, SearchState, page_frame, scaled, tr,
 };
@@ -357,7 +358,7 @@ impl Render for IntegrationDetail {
         let scroll = div()
             .id("integration-detail-scroll")
             .flex_1()
-            .overflow_y_scroll()
+            .overflow_y_revealing_focus()
             .bg(palette.base)
             .child(
                 div()

@@ -2,7 +2,9 @@ use std::collections::HashMap;
 use std::mem::Discriminant;
 use std::sync::Arc;
 
-use forge_components::{FocusNextField, FocusPreviousField, Toasts, toast_layer};
+use forge_components::{
+    FocusNextField, FocusPreviousField, Toasts, reveal_focus_after_tab, toast_layer,
+};
 use forge_events::EventPublisher;
 use forge_registry::TriggerRegistry;
 use forge_runtime::compute_stats;
@@ -1303,7 +1305,7 @@ impl Render for AppShell {
                     .child(self.router.content.clone()),
             );
 
-        let root = div()
+        let root = reveal_focus_after_tab(div())
             .key_context(SHELL_CONTEXT)
             .track_focus(&self.focus)
             .on_action(cx.listener(Self::go_home))

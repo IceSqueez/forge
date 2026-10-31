@@ -5,6 +5,7 @@ use crate::load_notice::{LoadNotice, NoticeWidth, load_notice};
 use crate::navigable_list::{ListStep, NavigableList, stepped_index};
 use crate::repo_failure::RepoFailure;
 use forge_components::ActivePresentation;
+use forge_components::OverflowRevealingFocus;
 use forge_components::PushToast;
 use forge_components::ROW_OFF_OPACITY;
 use forge_components::SEARCH_FIELD_WIDTH;
@@ -635,7 +636,7 @@ impl TriggersRegistryView {
                 .id("triggers-list")
                 .flex_1()
                 .h_full()
-                .overflow_y_scroll()
+                .overflow_y_revealing_focus()
                 .bg(palette.base)
                 .child(empty)
                 .into_any_element();

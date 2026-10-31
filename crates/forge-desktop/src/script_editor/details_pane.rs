@@ -1,4 +1,5 @@
 use super::ScriptEditorView;
+use forge_components::OverflowRevealingFocus;
 use forge_components::{
     ActivePresentation, BORDER_THIN, Density, FONT_BADGE, FONT_XS, FONT_XXS, ForgePalette,
     ResizeEdge, ResizeRange, Spacing, body_family, fmt_display_relative, install_resize,
@@ -49,7 +50,7 @@ impl ScriptEditorView {
             .id("script-details-pane")
             .flex_1()
             .min_h_0()
-            .overflow_y_scroll()
+            .overflow_y_revealing_focus()
             .p(scaled(DETAILS_PANE_PAD, density))
             .child(details_heading(
                 tr!("script_editor_details_heading"),

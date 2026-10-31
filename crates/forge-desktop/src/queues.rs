@@ -12,6 +12,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use forge_components::ConfirmTone;
+use forge_components::OverflowRevealingFocus;
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, ChipGlyph, Confirm, Density, FONT_SM, FONT_XS, FONT_XXS,
     ForgePalette, Icon, InputEvent, KeyActivated, MenuItem, MenuPlacement, ModalSize,
@@ -1684,7 +1685,7 @@ impl Render for QueuesView {
             .id("queues-scroll")
             .flex_1()
             .h_full()
-            .overflow_y_scroll()
+            .overflow_y_revealing_focus()
             .bg(palette.base)
             .child(
                 div()

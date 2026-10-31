@@ -1,8 +1,9 @@
 use gpui::{
-    App, BoxShadow, InteractiveElement, KeyBinding, NoAction, Pixels, Rgba,
+    App, BoxShadow, InteractiveElement, KeyBinding, NoAction, ParentElement, Pixels, Rgba,
     StatefulInteractiveElement, Styled, point, px,
 };
 
+use crate::focus_reveal::ReportsRevealBounds;
 use crate::text_input::CommitFocusedField;
 use crate::tokens::{ENTER_KEY, SPACE_KEY};
 
@@ -29,7 +30,7 @@ pub fn with_focus_ring<E: InteractiveElement>(element: E, ring: Rgba) -> E {
     })
 }
 
-pub trait KeyActivated: StatefulInteractiveElement + Styled {
+pub trait KeyActivated: StatefulInteractiveElement + Styled + ParentElement {
     fn key_activated(self, ring: Rgba) -> Self {
         let tab_stop = self
             .key_context(KEY_CONTEXT)
@@ -38,11 +39,11 @@ pub trait KeyActivated: StatefulInteractiveElement + Styled {
                 window.prevent_default();
                 window.dispatch_action(Box::new(CommitFocusedField), cx);
             });
-        with_focus_ring(tab_stop, ring)
+        with_focus_ring(tab_stop, ring).reports_reveal_bounds()
     }
 }
 
-impl<E: StatefulInteractiveElement + Styled> KeyActivated for E {}
+impl<E: StatefulInteractiveElement + Styled + ParentElement> KeyActivated for E {}
 
 #[cfg(test)]
 mod tests {

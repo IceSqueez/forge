@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use forge_components::RevealsFocusIn;
 use forge_components::{
     ConfirmTone, Density, FONT_SM, FONT_XS, ForgePalette, Icon, ModalSize, OverlayPosition,
     Spacing, ToastKind, body_family, card, confirm_modal, field_hint, ghost_button,
@@ -517,6 +518,7 @@ impl SettingsDiagnosticsView {
         let mut list = div()
             .id("settings-diagnostics-tail")
             .track_scroll(&self.scroll)
+            .reveals_focus_in(&self.scroll)
             .max_h(TAIL_MAX_HEIGHT)
             .overflow_y_scroll()
             .p(pad)

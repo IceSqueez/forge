@@ -6,12 +6,13 @@ use crate::elevation_shadow;
 use crate::key_activation::KeyActivated;
 use std::rc::Rc;
 
+use crate::focus_reveal::{FocusRevealingScroll, OverflowRevealingFocus};
 use gpui::prelude::FluentBuilder;
 use gpui::{
     Anchor, AnchoredPositionMode, AnimationExt, AnyElement, App, ClickEvent, Div, ElementId,
     FocusHandle, InteractiveElement, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent,
-    ParentElement, Pixels, RenderOnce, Rgba, SharedString, Stateful, StatefulInteractiveElement,
-    Styled, Window, anchored, deferred, div, point, px, relative,
+    ParentElement, Pixels, RenderOnce, Rgba, SharedString, StatefulInteractiveElement, Styled,
+    Window, anchored, deferred, div, point, px, relative,
 };
 
 use crate::icons::{Icon, icon};
@@ -53,11 +54,11 @@ pub fn dropdown_surface(palette: &ForgePalette) -> Div {
         .occlude()
 }
 
-pub fn dropdown_list(id: impl Into<ElementId>, palette: &ForgePalette) -> Stateful<Div> {
+pub fn dropdown_list(id: impl Into<ElementId>, palette: &ForgePalette) -> FocusRevealingScroll {
     dropdown_surface(palette)
         .id(id)
         .max_h(DROPDOWN_MAX_HEIGHT)
-        .overflow_y_scroll()
+        .overflow_y_revealing_focus()
 }
 
 #[derive(IntoElement)]

@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
+use forge_components::OverflowRevealingFocus;
 use forge_components::{
     BORDER_THIN, FONT_XXS, ForgePalette, KeyActivated, Picker, PickerEvent, PickerItem,
     PickerLabels, accent_swatch, body_family, field_label, scaled, section_label, tr,
@@ -783,7 +784,7 @@ impl Render for OverlayPropertyPanel {
             .id("overlays-panel-scroll")
             .flex_1()
             .min_h(px(0.0))
-            .overflow_y_scroll()
+            .overflow_y_revealing_focus()
             .p(scaled(PANE_PAD, density))
             .flex()
             .flex_col();

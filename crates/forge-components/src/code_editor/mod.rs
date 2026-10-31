@@ -11,6 +11,7 @@ use gpui::{
 };
 
 use crate::caret_blink::{CaretBlink, CaretHost, set_caret_blinking};
+use crate::focus_reveal::ReportsRevealBounds;
 use crate::highlight::Language;
 use crate::palette::{FORGE_DEFAULT, ForgePalette};
 use crate::presentation::ActivePresentation;
@@ -439,7 +440,8 @@ impl Render for CodeEditor {
                 }
             })
             .on_action(|_: &FocusPreviousField, window, cx| window.focus_prev(cx))
-            .on_scroll(cx.listener(Self::on_scroll_wheel));
+            .on_scroll(cx.listener(Self::on_scroll_wheel))
+            .reports_reveal_bounds();
         let editor = with_multiline_actions(with_editing_actions(editor, cx), cx)
             .w_full()
             .overflow_hidden()

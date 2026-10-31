@@ -4,6 +4,7 @@ use crate::user_text::{ResolvedText, resolve_user_text};
 use forge_components::ActivePresentation;
 use forge_components::BORDER_THIN;
 use forge_components::Language;
+use forge_components::OverflowRevealingFocus;
 use forge_components::{
     Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, KeyActivated, ModalSize,
     OverlayPosition, Radius, Spacing, body_family, error_row, fmt_display_relative,
@@ -231,7 +232,7 @@ impl RunHistoryModal {
             .flex_col()
             .gap(scaled(RAIL_ROW_GAP, density))
             .pr(spacing(Spacing::Sm, density))
-            .overflow_y_scroll()
+            .overflow_y_revealing_focus()
             .border_r(BORDER_THIN)
             .border_color(palette.border_regular);
         for (index, ctx) in runs.iter().enumerate() {
@@ -243,7 +244,7 @@ impl RunHistoryModal {
             .flex_1()
             .min_w(px(0.0))
             .h_full()
-            .overflow_y_scroll()
+            .overflow_y_revealing_focus()
             .pl(spacing(Spacing::Md, density))
             .child(self.render_detail(&runs[selected], palette, cx));
 

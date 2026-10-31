@@ -1,3 +1,4 @@
+use crate::focus_reveal::OverflowRevealingFocus;
 use crate::key_activation::KeyActivated;
 use crate::presentation::ActivePresentation;
 use gpui::{
@@ -13,6 +14,7 @@ use crate::tokens::{
     radius, scaled, spacing,
 };
 
+const BODY_ID: &str = "forge-modal-body";
 const HEADER_TILE: Pixels = px(28.0);
 const HEADER_TILE_ICON: Pixels = px(15.0);
 const TITLE_GAP: Pixels = px(2.0);
@@ -236,7 +238,13 @@ impl RenderOnce for Modal {
         let header = self.render_header(density);
         let footer = self.render_footer(density);
 
-        let mut body = div().w_full().flex().flex_col();
+        let mut body = div()
+            .id(BODY_ID)
+            .w_full()
+            .min_h_0()
+            .overflow_y_revealing_focus()
+            .flex()
+            .flex_col();
         if self.pad_body {
             body = body.p(spacing(Spacing::Md, density));
         }
@@ -248,6 +256,7 @@ impl RenderOnce for Modal {
             .w(self
                 .width_override
                 .unwrap_or_else(|| modal_width(self.size)))
+            .max_h(window.viewport_size().height - spacing(Spacing::Lg, density) * 2.0)
             .bg(self.card_bg)
             .rounded(radius(Radius::Lg))
             .overflow_hidden()

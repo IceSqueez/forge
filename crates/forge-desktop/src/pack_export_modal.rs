@@ -1,5 +1,6 @@
 use std::collections::BTreeSet;
 
+use forge_components::OverflowRevealingFocus;
 use forge_components::focus_inside_modal;
 use forge_components::{
     ActivePresentation, BORDER_THIN, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent,
@@ -392,7 +393,7 @@ impl PackExportModal {
                     .id("pack-export-actions")
                     .w_full()
                     .h(ACTION_LIST_H)
-                    .overflow_y_scroll()
+                    .overflow_y_revealing_focus()
                     .p(spacing(Spacing::Xxs, density))
                     .rounded(radius(Radius::Md))
                     .border(BORDER_THIN)

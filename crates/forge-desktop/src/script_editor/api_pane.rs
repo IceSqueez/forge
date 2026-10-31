@@ -1,4 +1,5 @@
 use super::ScriptEditorView;
+use forge_components::OverflowRevealingFocus;
 use forge_components::{
     BORDER_THIN, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, Spacing, badge, body_family, icon,
     mono_family, spacing, tr,
@@ -43,7 +44,7 @@ impl ScriptEditorView {
             .flex_none()
             .w(RIGHT_PANE_W)
             .h_full()
-            .overflow_y_scroll()
+            .overflow_y_revealing_focus()
             .bg(palette.shell)
             .border_l(BORDER_THIN)
             .border_color(palette.surface_overlay)

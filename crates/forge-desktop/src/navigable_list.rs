@@ -1,8 +1,9 @@
 use std::cell::Cell;
 use std::rc::Rc;
 
+use forge_components::offset_revealing;
 use gpui::{
-    App, Bounds, Context, FocusHandle, Global, InteractiveElement, IntoElement, Pixels, Point,
+    App, Bounds, Context, FocusHandle, Global, InteractiveElement, IntoElement, Pixels,
     ScrollHandle, Styled, Subscription, WeakFocusHandle, Window, canvas,
 };
 
@@ -87,22 +88,6 @@ pub(crate) fn list_keys<V: NavigableList, E: InteractiveElement>(
                 this.open_list_menu(window, cx)
             }),
         )
-}
-
-fn offset_revealing(
-    offset: Point<Pixels>,
-    viewport: Bounds<Pixels>,
-    row: Bounds<Pixels>,
-) -> Point<Pixels> {
-    let above = viewport.top() - row.top();
-    let below = row.bottom() - viewport.bottom();
-    let mut revealed = offset;
-    if above > Pixels::ZERO {
-        revealed.y += above;
-    } else if below > Pixels::ZERO {
-        revealed.y -= below;
-    }
-    revealed
 }
 
 pub(crate) struct ListCursor<Id> {

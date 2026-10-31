@@ -2,6 +2,7 @@ use forge_components::ActivePresentation;
 use forge_components::Density;
 use forge_components::FONT_FIELD;
 use forge_components::FONT_META;
+use forge_components::OverflowRevealingFocus;
 use forge_components::Spacing;
 use forge_components::spacing;
 use forge_components::{
@@ -199,7 +200,7 @@ impl OverlaysView {
                         )))
                         .flex_1()
                         .min_h(px(0.0))
-                        .overflow_y_scroll()
+                        .overflow_y_revealing_focus()
                         .p(scaled(PROPERTY_PANE_PAD, density))
                         .flex()
                         .flex_col()

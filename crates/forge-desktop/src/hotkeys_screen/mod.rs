@@ -2,6 +2,7 @@ use forge_components::FONT_LABEL;
 use std::sync::Arc;
 use std::time::Duration;
 
+use forge_components::RevealsFocusIn;
 use forge_components::{
     BreadcrumbCrumb, Icon, ToastKind, body_family, icon, page_frame, scaled, tr,
 };
@@ -376,6 +377,7 @@ impl Render for HotkeysScreenView {
         let body = div()
             .id("hotkeys-scroll")
             .track_scroll(&self.scroll)
+            .reveals_focus_in(&self.scroll)
             .flex_1()
             .h_full()
             .overflow_y_scroll()

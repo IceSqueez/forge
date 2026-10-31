@@ -1,3 +1,4 @@
+use forge_components::RevealsFocusIn;
 use gpui::{
     App, AppContext, Context, Entity, EventEmitter, FontWeight, InteractiveElement, IntoElement,
     ParentElement, Render, ScrollHandle, SharedString, StatefulInteractiveElement, Styled,
@@ -489,6 +490,7 @@ impl InputBar {
                     .id("forge-inputbar-emoji-grid")
                     .h(EMOJI_GRID_HEIGHT)
                     .track_scroll(&self.emoji_scroll)
+                    .reveals_focus_in(&self.emoji_scroll)
                     .overflow_y_scroll()
                     .child(grid),
             )

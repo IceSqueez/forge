@@ -1,5 +1,6 @@
 use forge_components::FONT_XL;
 use forge_components::FONT_XXL;
+use forge_components::RevealsFocusIn;
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, Density, FONT_LG, FONT_MD, FONT_SM, FONT_XS, FONT_XXS,
     ForgePalette, Icon, KeyActivated, Radius, Spacing, body_family, card, dropdown, dropdown_row,
@@ -1229,6 +1230,7 @@ impl Render for HomeView {
         let focus = self.row_keys.focus().clone();
         let body = navigable_list(div().id("home-scroll"), &focus, cx)
             .track_scroll(&self.scroll)
+            .reveals_focus_in(&self.scroll)
             .flex_1()
             .overflow_y_scroll()
             .bg(palette.base)

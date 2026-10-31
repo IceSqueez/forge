@@ -9,6 +9,7 @@ use forge_components::spacing;
 use std::collections::HashSet;
 use std::sync::Arc;
 
+use forge_components::OverflowRevealingFocus;
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, ConfirmTone, FONT_XS, ForgePalette, Icon, MenuPlacement,
     OverlayPosition, SectionLabel, ToastKind, badge, body_family, card, confirm_modal,
@@ -1115,7 +1116,7 @@ impl Render for DiscordScreenView {
             .id("discord-scroll")
             .flex_1()
             .h_full()
-            .overflow_y_scroll()
+            .overflow_y_revealing_focus()
             .bg(palette.base)
             .child(
                 div()

@@ -1,3 +1,4 @@
+use forge_components::OverflowRevealingFocus;
 use forge_components::Spacing;
 use forge_components::spacing;
 use forge_components::{
@@ -261,7 +262,7 @@ impl Render for IntegrationFailedView {
         let body = div()
             .id("integration-failed-scroll")
             .flex_1()
-            .overflow_y_scroll()
+            .overflow_y_revealing_focus()
             .bg(palette.base)
             .child(
                 div()

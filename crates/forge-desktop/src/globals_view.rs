@@ -24,6 +24,7 @@ use forge_components::{Confirm, SearchState};
 use std::path::PathBuf;
 
 use crate::navigable_list::{ListCursor, ListStep, NavigableList, navigable_list};
+use forge_components::OverflowRevealingFocus;
 use forge_components::drive_overlay_focus;
 use forge_runtime::EventBus;
 use forge_storage::{GlobalEntry, GlobalsExport, GlobalsRepo};
@@ -1707,7 +1708,7 @@ impl GlobalsView {
             .id("globals-inspect-scroll")
             .w_full()
             .max_h(px(400.0))
-            .overflow_y_scroll()
+            .overflow_y_revealing_focus()
             .child(code);
 
         let hint = div()

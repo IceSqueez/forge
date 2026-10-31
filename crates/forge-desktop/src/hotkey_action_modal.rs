@@ -9,6 +9,8 @@ use forge_components::radius;
 use forge_components::spacing;
 use std::sync::Arc;
 
+use forge_components::OverflowRevealingFocus;
+use forge_components::RevealsFocusIn;
 use forge_components::{
     BORDER_THIN, FONT_SECTION_LABEL, ForgePalette, Icon, InputEvent, OverlayPosition, SearchState,
     TextInput, body_family, ghost_button_with_icon, icon, modal, mono_family, overlay,
@@ -470,6 +472,7 @@ impl HotkeyActionModal {
                 div()
                     .id("hotkeys-modal-actions")
                     .track_scroll(&self.list_scroll)
+                    .reveals_focus_in(&self.list_scroll)
                     .w_full()
                     .max_h(LIST_MAX_H)
                     .overflow_y_scroll()
@@ -682,7 +685,7 @@ impl Render for HotkeyActionModal {
             .id("hotkeys-modal-body")
             .w_full()
             .max_h(BODY_MAX_H)
-            .overflow_y_scroll()
+            .overflow_y_revealing_focus()
             .py(spacing(Spacing::Md, density))
             .px(scaled(BODY_PAD_H, density))
             .flex()

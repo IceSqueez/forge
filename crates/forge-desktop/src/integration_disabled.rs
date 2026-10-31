@@ -6,6 +6,7 @@ use forge_components::Spacing;
 use forge_components::spacing;
 use std::sync::Arc;
 
+use forge_components::OverflowRevealingFocus;
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, FONT_XS, FONT_XXS, ForgePalette, Icon, KeyActivated, Radius,
     body_family, ghost_button_with_icon, health_tile, icon, integration_inactive_badge,
@@ -561,7 +562,7 @@ impl Render for IntegrationDisabledView {
         let body = div()
             .id("integration-disabled-scroll")
             .flex_1()
-            .overflow_y_scroll()
+            .overflow_y_revealing_focus()
             .bg(palette.base)
             .child(
                 div()

@@ -1,3 +1,4 @@
+use forge_components::OverflowRevealingFocus;
 use forge_components::{
     ActivePresentation, BORDER_THIN, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon,
     ModalSize, OverlayPosition, Radius, Spacing, badge, body_family, failure_note, ghost_button,
@@ -309,7 +310,7 @@ impl PackImportModal {
                     .id("pack-import-items")
                     .w_full()
                     .h(ITEM_LIST_H)
-                    .overflow_y_scroll()
+                    .overflow_y_revealing_focus()
                     .p(spacing(Spacing::Xs, density))
                     .rounded(radius(Radius::Md))
                     .border(BORDER_THIN)

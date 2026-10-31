@@ -17,6 +17,7 @@ mod display_formats;
 mod display_zone;
 mod dropdown;
 mod error_row;
+mod focus_reveal;
 mod fonts;
 mod footer;
 mod form_field;
@@ -93,6 +94,10 @@ pub use display_formats::{
 pub use display_zone::display_zone;
 pub use dropdown::{dropdown, dropdown_list, dropdown_row, dropdown_surface};
 pub use error_row::{error_row, error_row_with_retry};
+pub use focus_reveal::{
+    FocusRevealingScroll, OverflowRevealingFocus, ReportsRevealBounds, RevealsFocusIn,
+    offset_revealing, reveal_focus_after_tab,
+};
 pub use fonts::embedded_fonts;
 pub use footer::{FOOTER_HEIGHT, app_footer, footer_alert, footer_indicator};
 pub use form_field::{

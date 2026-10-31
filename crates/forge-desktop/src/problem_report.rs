@@ -5,6 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use forge_audio::stored_output_device;
+use forge_components::OverflowRevealingFocus;
 use forge_components::{
     ActivePresentation, Density, FONT_SM, FONT_XS, ForgePalette, Icon, ModalSize, OverlayPosition,
     PushToast, Spacing, ToastAction, ToastKind, body_family, card, ghost_button, modal,
@@ -305,7 +306,7 @@ impl ProblemReport {
                     div()
                         .id("problem-report-issue-text")
                         .max_h(ISSUE_TEXT_MAX_HEIGHT)
-                        .overflow_y_scroll()
+                        .overflow_y_revealing_focus()
                         .font_family(mono_family())
                         .text_size(FONT_XS)
                         .text_color(palette.text_secondary)

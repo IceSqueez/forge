@@ -12,6 +12,7 @@ use crate::hub_card::{
     hub_section_header, hub_tile, lifecycle_badge,
 };
 
+use forge_components::OverflowRevealingFocus;
 use forge_components::{
     BreadcrumbCrumb, ForgePalette, Icon, KeyActivated, ToastKind, body_family, icon, mono_family,
     page_frame, scaled, toggle, tr,
@@ -927,7 +928,7 @@ impl Render for IntegrationsHubView {
         let scroll = div()
             .id("integrations-hub-scroll")
             .flex_1()
-            .overflow_y_scroll()
+            .overflow_y_revealing_focus()
             .bg(palette.base)
             .child(
                 div()

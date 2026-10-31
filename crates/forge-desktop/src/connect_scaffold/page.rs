@@ -1,6 +1,7 @@
 use forge_components::FONT_FIELD;
 use forge_components::FONT_LABEL;
 use forge_components::FONT_META;
+use forge_components::OverflowRevealingFocus;
 use forge_components::Spacing;
 use forge_components::spacing;
 use forge_components::{
@@ -110,7 +111,7 @@ impl ConnectPage {
         let scroll = div()
             .id(self.scroll_id)
             .flex_1()
-            .overflow_y_scroll()
+            .overflow_y_revealing_focus()
             .bg(palette.base)
             .child(
                 div()

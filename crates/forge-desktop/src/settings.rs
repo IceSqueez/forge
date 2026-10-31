@@ -3,6 +3,7 @@ use forge_components::FONT_ROW;
 use forge_components::FONT_XXL;
 use std::sync::Arc;
 
+use forge_components::OverflowRevealingFocus;
 use forge_components::{
     AccentColor, BORDER_THIN, BreadcrumbCrumb, Density, FONT_MD, FONT_SM, FONT_XS, FONT_XXS,
     ForgePalette, Icon, KeyActivated, Picker, PickerEvent, PickerItem, PickerLabels, Radius,
@@ -692,7 +693,7 @@ impl SettingsView {
             .max_w(NAV_WIDTH)
             .h_full()
             .flex_shrink_0()
-            .overflow_y_scroll()
+            .overflow_y_revealing_focus()
             .bg(palette.shell)
             .border_r(BORDER_THIN)
             .border_color(palette.border_regular)
@@ -769,7 +770,7 @@ impl SettingsView {
             .flex_1()
             .min_w(px(0.0))
             .h_full()
-            .overflow_y_scroll()
+            .overflow_y_revealing_focus()
             .bg(palette.base)
             .py(scaled(PANE_PAD_V, density))
             .px(spacing(Spacing::Lg, density))

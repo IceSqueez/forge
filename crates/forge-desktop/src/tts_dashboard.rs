@@ -16,6 +16,7 @@ use forge_components::{
 use std::sync::Arc;
 use std::time::Duration;
 
+use forge_components::OverflowRevealingFocus;
 use forge_speak_queue::{
     EmoteTokenSet, Priority, RequestId, SpeakCommand, SpeakQueueHandle, SpeakRequest,
 };
@@ -671,7 +672,7 @@ impl TtsDashboardView {
                     .id("tts-session-scroll")
                     .flex_1()
                     .min_h(px(0.0))
-                    .overflow_y_scroll()
+                    .overflow_y_revealing_focus()
                     .py(scaled(RAIL_PAD_Y, density))
                     .px(scaled(RAIL_PAD_X, density))
                     .child(content),
@@ -1006,7 +1007,7 @@ impl Render for TtsDashboardView {
             .flex_1()
             .min_w(px(0.0))
             .h_full()
-            .overflow_y_scroll()
+            .overflow_y_revealing_focus()
             .bg(palette.base)
             .py(scaled(BODY_PAD_Y, density))
             .px(scaled(BODY_PAD_X, density))

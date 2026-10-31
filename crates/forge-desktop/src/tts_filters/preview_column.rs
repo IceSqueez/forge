@@ -1,6 +1,7 @@
 use super::preview::SPOKEN_QUOTE;
 use super::preview::{MarkTint, PreviewMark};
 use super::{TtsFiltersView, mono_caption};
+use forge_components::OverflowRevealingFocus;
 use forge_components::{
     BORDER_THIN, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, KeyActivated, Radius,
     Spacing, body_family, card, icon, mono_family, radius, spacing, tr,
@@ -137,7 +138,7 @@ impl TtsFiltersView {
                     .id("filt-preview")
                     .flex_1()
                     .min_h(px(0.0))
-                    .overflow_y_scroll()
+                    .overflow_y_revealing_focus()
                     .p(spacing(Spacing::Md, density))
                     .child(inner),
             )

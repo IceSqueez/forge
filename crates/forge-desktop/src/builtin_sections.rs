@@ -17,6 +17,7 @@ use forge_types::SubActionStep;
 
 use crate::health_text::{health_metric_label, health_text};
 use crate::user_text::user_text_string;
+use forge_components::OverflowRevealingFocus;
 use gpui::{
     AnyElement, App, ClickEvent, Div, FontWeight, ListSizingBehavior, Pixels, Rgba, SharedString,
     Window, div, prelude::*, px, relative, svg, uniform_list,
@@ -377,7 +378,7 @@ fn render_subscription_list(
             .w_full()
             .flex_1()
             .min_h(px(0.0))
-            .overflow_y_scroll()
+            .overflow_y_revealing_focus()
             .flex()
             .flex_col();
         for item in items {
@@ -463,7 +464,7 @@ fn render_scopes_list(
             .w_full()
             .flex_1()
             .min_h(px(0.0))
-            .overflow_y_scroll()
+            .overflow_y_revealing_focus()
             .flex()
             .flex_col();
         for scope in scopes {
@@ -620,7 +621,7 @@ fn render_chip_grid(
             .id(SharedString::from(format!("chip-grid-{title}")))
             .w_full()
             .max_h(px(SCROLL_PANEL_MAX_H))
-            .overflow_y_scroll()
+            .overflow_y_revealing_focus()
             .p(scaled(px(14.0), density))
             .child(grid)
             .into_any_element()
@@ -1289,21 +1290,25 @@ fn trailing_token_elem(
                 row: SharedString::from(site.row.to_owned()),
                 step: step.clone(),
             };
-            svg()
-                .flex_none()
-                .size(ROW_TRAILING_GLYPH)
-                .path(glyph.path())
-                .text_color(tc)
+            div()
                 .id(site
                     .hooks
                     .element_id(&format!("token-{}", site.index), site.row_index))
+                .flex_none()
+                .size(ROW_TRAILING_GLYPH)
                 .cursor_pointer()
-                .hover(move |s| s.text_color(hover_tint))
                 .key_activated(palette.text_primary)
                 .on_click(move |_: &ClickEvent, window, cx| {
                     cx.stop_propagation();
                     run(&click, window, cx);
                 })
+                .child(
+                    svg()
+                        .size(ROW_TRAILING_GLYPH)
+                        .path(glyph.path())
+                        .text_color(tc)
+                        .hover(move |s| s.text_color(hover_tint)),
+                )
                 .into_any_element()
         }
     }

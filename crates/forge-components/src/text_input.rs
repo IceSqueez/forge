@@ -9,6 +9,7 @@ use gpui::{
 };
 
 use crate::caret_blink::{CaretBlink, CaretHost, set_caret_blinking};
+use crate::focus_reveal::ReportsRevealBounds;
 use crate::icons::{Icon, icon};
 use crate::palette::{FORGE_DEFAULT, ForgePalette, with_alpha};
 use crate::text_buffer::TextBuffer;
@@ -712,7 +713,8 @@ impl Render for TextInput {
             .on_action(cx.listener(Self::focus_next_field))
             .on_action(cx.listener(Self::focus_previous_field))
             .on_action(cx.listener(Self::commit_focused_field))
-            .on_action(cx.listener(Self::paste));
+            .on_action(cx.listener(Self::paste))
+            .reports_reveal_bounds();
         let mut field = with_editing_actions(field, cx)
             .w_full()
             .flex()

@@ -10,6 +10,7 @@ mod tests;
 use crate::hub_crumb::{core_category, hub_crumb};
 use crate::navigation::{NavRequested, Screen};
 use crate::server_bearer;
+use forge_components::OverflowRevealingFocus;
 use forge_components::{
     ActivePresentation, BreadcrumbCrumb, Confirm, FONT_XXS, ForgePalette, Spacing, grow_cell,
     mono_family, page_frame, spacing, tr,
@@ -234,7 +235,7 @@ impl Render for ServerConsoleView {
             .w_full()
             .flex_1()
             .min_h(px(0.0))
-            .overflow_y_scroll()
+            .overflow_y_revealing_focus()
             .child(body);
 
         let modal = self.disconnect_confirm(&palette, cx);

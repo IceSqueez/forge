@@ -3,6 +3,7 @@ use super::*;
 use crate::actions_screen::editor::{step_glyph, sub_category_color};
 use crate::actions_screen::files_root_note::files_root_note;
 use forge_components::BORDER_THIN;
+use forge_components::OverflowRevealingFocus;
 use forge_components::{
     FONT_XS, FONT_XXS, Spacing, body_family, modal, mono_family, primary_button, scaled,
     secondary_button, spacing, toggle,
@@ -121,7 +122,7 @@ impl EditSubActionForm {
             .px(spacing(Spacing::Md, density))
             .py(spacing(Spacing::Sm, density))
             .max_h(SUB_MODAL_MAX_H)
-            .overflow_y_scroll()
+            .overflow_y_revealing_focus()
             .when(self.category == Some(SubActionCategory::Files), |body| {
                 body.child(files_root_note(palette, density))
             })

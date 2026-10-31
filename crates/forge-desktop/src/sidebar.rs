@@ -1,5 +1,6 @@
 use forge_components::Density;
 use forge_components::FONT_MICRO;
+use forge_components::OverflowRevealingFocus;
 use forge_components::Spacing;
 use forge_components::spacing;
 use forge_components::{
@@ -518,7 +519,7 @@ impl Render for SidebarNav {
                 div()
                     .id("sidebar-scroll")
                     .flex_1()
-                    .overflow_y_scroll()
+                    .overflow_y_revealing_focus()
                     .flex()
                     .flex_col()
                     .px(scaled(SIDEBAR_PAD_H, density))

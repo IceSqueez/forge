@@ -1,6 +1,7 @@
 use super::{GLYPH_ACTION, ScriptEditorView, ScriptEntry};
 use crate::load_notice::{LoadNotice, NoticeWidth, load_notice};
 use crate::navigable_list::{ListStep, NavigableList, navigable_list};
+use forge_components::RevealsFocusIn;
 use forge_components::{
     ActivePresentation, BORDER_THIN, Density, FONT_FIELD, FONT_XS, FONT_XXS, ForgePalette, Icon,
     KeyActivated, Radius, ResizeEdge, ResizeRange, Spacing, body_family, context_menu, icon,
@@ -211,6 +212,7 @@ impl ScriptEditorView {
         let focus = self.list_keys.focus().clone();
         let scroll = navigable_list(div().id("script-left-scroll"), &focus, cx)
             .track_scroll(&self.list_scroll)
+            .reveals_focus_in(&self.list_scroll)
             .flex_1()
             .min_h_0()
             .overflow_y_scroll()

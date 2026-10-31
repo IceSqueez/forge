@@ -4,6 +4,7 @@ use forge_components::Density;
 use forge_components::FONT_FIELD;
 use forge_components::FONT_ROW;
 use forge_components::FONT_SECTION_LABEL;
+use forge_components::OverflowRevealingFocus;
 use forge_components::Spacing;
 use forge_components::spacing;
 use forge_components::{
@@ -103,7 +104,7 @@ impl OverlaysView {
             .id("overlays-registry-scroll")
             .flex_1()
             .min_h(px(0.0))
-            .overflow_y_scroll()
+            .overflow_y_revealing_focus()
             .px(scaled(LIST_PAD_H, density))
             .pt(scaled(LIST_PAD_TOP, density))
             .pb(scaled(LIST_PAD_BOTTOM, density));

@@ -4,6 +4,7 @@ use forge_components::FONT_MICRO;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
+use forge_components::OverflowRevealingFocus;
 use forge_components::{
     BORDER_THIN, DISABLED_OPACITY, Density, FONT_MD, FONT_XS, FONT_XXS, ForgePalette, Icon,
     KeyActivated, PushToast, Radius, Spacing, ToastKind, avatar_tile, body_family, card,
@@ -568,7 +569,7 @@ impl TtsEnginesView {
             .border_color(palette.border_regular)
             .py(spacing(Spacing::Sm, density))
             .px(spacing(Spacing::Xs, density))
-            .overflow_y_scroll()
+            .overflow_y_revealing_focus()
             .child(column)
             .into_any_element()
     }
@@ -764,7 +765,7 @@ impl TtsEnginesView {
             .bg(palette.base)
             .py(spacing(Spacing::Md, density))
             .px(spacing(Spacing::Lg, density))
-            .overflow_y_scroll()
+            .overflow_y_revealing_focus()
             .child(inner)
             .into_any_element()
     }

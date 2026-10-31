@@ -5,6 +5,7 @@ use forge_components::FONT_LABEL;
 use forge_components::FONT_META;
 use forge_components::FONT_ROW;
 use forge_components::FONT_XL;
+use forge_components::OverflowRevealingFocus;
 use forge_components::Spacing;
 use forge_components::spacing;
 use forge_components::{
@@ -91,9 +92,10 @@ impl IntegrationsHubView {
             .id("integrations-welcome-scroll")
             .flex_1()
             .min_h_0()
-            .overflow_y_scroll()
+            .overflow_y_revealing_focus()
             .bg(palette.base)
             .flex()
+            .items_start()
             .justify_center()
             .child(column);
 

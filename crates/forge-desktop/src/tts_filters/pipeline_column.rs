@@ -1,4 +1,5 @@
 use super::TtsFiltersView;
+use forge_components::OverflowRevealingFocus;
 use forge_components::{
     BORDER_THIN, DISABLED_OPACITY, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon,
     KeyActivated, Radius, Spacing, TINT_FILL_ALPHA, body_family, card, error_row_with_retry, icon,
@@ -78,7 +79,7 @@ impl TtsFiltersView {
             .flex_1()
             .min_w(px(0.0))
             .h_full()
-            .overflow_y_scroll()
+            .overflow_y_revealing_focus()
             .child(col)
             .into_any_element()
     }

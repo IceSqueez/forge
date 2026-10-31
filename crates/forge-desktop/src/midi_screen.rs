@@ -14,6 +14,7 @@ use crate::integrations::BuiltinObject;
 use crate::midi_mapping_modal::MidiMappingModal;
 use crate::midi_signal::MidiSignal;
 use crate::navigation::NavRequested;
+use forge_components::OverflowRevealingFocus;
 use forge_components::{
     ActivePresentation, BreadcrumbCrumb, grow_cell, header_status, page_frame, scaled, tr,
 };
@@ -177,7 +178,7 @@ impl Render for MidiScreenView {
             .id("midi-scroll")
             .flex_1()
             .h_full()
-            .overflow_y_scroll()
+            .overflow_y_revealing_focus()
             .bg(palette.base)
             .child(
                 div()

@@ -16,6 +16,7 @@ use forge_components::FONT_LABEL;
 use forge_components::FONT_META;
 use forge_components::FONT_SM;
 use forge_components::FONT_XS;
+use forge_components::OverflowRevealingFocus;
 use forge_components::ROW_OFF_OPACITY;
 use forge_components::{
     Density, FONT_XXS, Icon, InputEvent, KeyActivated, Picker, PickerEvent, Radius, ResizeEdge,
@@ -632,7 +633,7 @@ impl TriggersRegistryView {
             .id("triggers-detail-body")
             .flex_1()
             .min_h(px(0.0))
-            .overflow_y_scroll()
+            .overflow_y_revealing_focus()
             .py(scaled(BODY_PAD_V, density))
             .px(spacing(Spacing::Md, density))
             .flex()

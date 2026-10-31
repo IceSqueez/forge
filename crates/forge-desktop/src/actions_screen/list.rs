@@ -7,6 +7,7 @@ use crate::repo_failure::RepoFailure;
 use forge_components::ActivePresentation;
 use forge_components::NAME_FIELD_LIMIT;
 use forge_components::PushToast;
+use forge_components::RevealsFocusIn;
 use forge_components::SEARCH_FIELD_WIDTH;
 use forge_components::focus_inside_modal;
 use forge_components::{
@@ -667,6 +668,7 @@ impl ScreenActionsView {
         let focus = self.tree_keys.focus().clone();
         let inner = navigable_list(div().id("actions-tree"), &focus, cx)
             .track_scroll(&self.tree_scroll)
+            .reveals_focus_in(&self.tree_scroll)
             .flex_1()
             .min_h(px(0.0))
             .py(spacing(Spacing::Xs, density))

@@ -7,6 +7,7 @@ use crate::key_activation::KeyActivated;
 use crate::presentation::ActivePresentation;
 use std::collections::HashSet;
 
+use crate::focus_reveal::OverflowRevealingFocus;
 use gpui::{
     AnyElement, App, ClickEvent, Context, ElementId, Entity, EventEmitter, FontWeight,
     ListAlignment, ListState, MouseButton, MouseDownEvent, Pixels, Rgba, SharedString,
@@ -584,7 +585,7 @@ impl GridPicker {
             .gap(scaled(RAIL_GAP, density))
             .py(spacing(Spacing::Sm, density))
             .px(spacing(Spacing::Sm, density))
-            .overflow_y_scroll()
+            .overflow_y_revealing_focus()
             .border_r(BORDER_THIN)
             .border_color(p.surface_overlay)
             .child(grid_rail_entry(

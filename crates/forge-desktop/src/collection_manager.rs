@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use forge_components::OverflowRevealingFocus;
 use forge_components::{
     Confirm, ConfirmTone, ForgePalette, Icon, OverlayPosition, ToastKind, body_family,
     confirm_modal, modal, mono_family, overlay, primary_button_with_icon, secondary_button, tr,
@@ -533,7 +534,7 @@ impl Render for CollectionManager {
             .id("collection-manager-body")
             .w_full()
             .max_h(BODY_MAX_HEIGHT)
-            .overflow_y_scroll()
+            .overflow_y_revealing_focus()
             .child(content);
 
         let card = modal(self.title.clone(), body, &palette)

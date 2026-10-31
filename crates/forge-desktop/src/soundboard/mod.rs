@@ -8,6 +8,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use forge_audio::DeviceInfo;
+use forge_components::OverflowRevealingFocus;
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, Confirm, FONT_XS, Icon, Radius, SearchState, Spacing,
     body_family, icon, page_frame, radius, scaled, spacing, tr, with_alpha,
@@ -316,7 +317,7 @@ impl Render for SoundboardView {
             .id("sb-scroll")
             .flex_1()
             .h_full()
-            .overflow_y_scroll()
+            .overflow_y_revealing_focus()
             .bg(palette.base)
             .child(
                 div()

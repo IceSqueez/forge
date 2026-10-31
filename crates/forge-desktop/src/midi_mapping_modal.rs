@@ -8,6 +8,7 @@ use forge_components::radius;
 use forge_components::spacing;
 use std::sync::Arc;
 
+use forge_components::OverflowRevealingFocus;
 use forge_components::{
     BORDER_THIN, Density, FONT_SECTION_LABEL, ForgePalette, Icon, InputEvent, KeyActivated,
     OverlayPosition, Radius, SearchState, TextInput, body_family, dropdown, dropdown_list,
@@ -703,7 +704,7 @@ impl MidiMappingModal {
                     .id("midi-modal-actions")
                     .w_full()
                     .max_h(LIST_MAX_H)
-                    .overflow_y_scroll()
+                    .overflow_y_revealing_focus()
                     .p(scaled(LIST_PAD, density))
                     .rounded(LIST_RADIUS)
                     .border(BORDER_THIN)
@@ -874,7 +875,7 @@ impl Render for MidiMappingModal {
             .id("midi-modal-body")
             .w_full()
             .max_h(BODY_MAX_H)
-            .overflow_y_scroll()
+            .overflow_y_revealing_focus()
             .py(spacing(Spacing::Md, density))
             .px(scaled(BODY_PAD_H, density))
             .flex()

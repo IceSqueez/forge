@@ -1,7 +1,8 @@
+use crate::focus_reveal::OverflowRevealingFocus;
 use gpui::{
     AnyElement, App, Context, Div, ElementId, InteractiveElement, IntoElement, ParentElement,
-    Pixels, RenderOnce, Rgba, SharedString, StatefulInteractiveElement, Styled,
-    UniformListScrollHandle, Window, div, px, relative, uniform_list,
+    Pixels, RenderOnce, Rgba, SharedString, Styled, UniformListScrollHandle, Window, div, px,
+    relative, uniform_list,
 };
 
 use crate::palette::ForgePalette;
@@ -312,7 +313,7 @@ impl RenderOnce for DataTable {
                 .flex_1()
                 .min_h(px(0.0))
                 .w_full()
-                .overflow_y_scroll()
+                .overflow_y_revealing_focus()
                 .child(body_inner)
                 .into_any_element(),
             None => body_inner.into_any_element(),

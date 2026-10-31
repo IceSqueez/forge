@@ -1,4 +1,5 @@
 use super::*;
+use forge_components::OverflowRevealingFocus;
 use forge_components::{
     Density, FONT_SM, FONT_XS, ForgePalette, Icon, Spacing, body_family, icon, scaled, spacing, tr,
 };
@@ -148,7 +149,7 @@ impl ScreenActionsView {
             .flex_1()
             .min_w_0()
             .h_full()
-            .overflow_y_scroll()
+            .overflow_y_revealing_focus()
             .py(scaled(PANE_PAD_V, density))
             .px(scaled(PANE_PAD_H, density))
             .child(body)

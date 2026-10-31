@@ -2,6 +2,7 @@ use forge_types::PlatformId;
 use std::sync::Arc;
 use std::time::Duration;
 
+use forge_components::RevealsFocusIn;
 use forge_components::{
     ActivePresentation, BORDER_THIN, Icon, Radius, Spacing, drive_overlay_focus, empty_state,
     radius, spacing, tr,
@@ -366,6 +367,7 @@ impl Render for BannedPanel {
         let focus = self.row_keys.focus().clone();
         let list = navigable_list(div().id("chat-banned-panel"), &focus, cx)
             .track_scroll(&self.list_scroll)
+            .reveals_focus_in(&self.list_scroll)
             .flex_1()
             .min_h(px(0.0))
             .overflow_y_scroll()

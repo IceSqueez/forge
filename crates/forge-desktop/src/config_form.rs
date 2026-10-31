@@ -1382,6 +1382,8 @@ mod tests {
     use super::*;
     use forge_registry::UnitAmountBounds;
 
+    mod live_pickers;
+
     fn config(entries: &[(&str, Variant)]) -> FieldConfig {
         entries
             .iter()
@@ -2020,15 +2022,19 @@ mod tests {
     }
 
     #[gpui::test]
-    fn only_an_integration_select_becomes_a_choice_when_the_form_has_no_option_map(
+    fn only_a_select_with_an_options_provider_becomes_a_choice_when_the_form_has_no_option_map(
         cx: &mut gpui::TestAppContext,
     ) {
         for (options_key, expect_choice) in [
             ("collections.twitch.rewards", true),
             ("obs.scene_names", true),
             ("vtube.model_ids", true),
+            ("acme.widget_ids", true),
+            (DONATION_PROVIDER_OPTIONS_KEY, true),
             ("action.ids", false),
-            ("tts.engine_ids", false),
+            (forge_runtime::ENGINE_OPTIONS_KEY, false),
+            (forge_runtime::VOICE_OPTIONS_PREFIX, false),
+            (forge_registry::ENGINE_VOICE_OPTIONS_KEY, false),
         ] {
             let (_host, fields) = build(
                 cx,
@@ -2044,6 +2050,17 @@ mod tests {
                 "{options_key}"
             );
         }
+    }
+
+    #[test]
+    fn a_form_asks_integrations_only_for_the_choices_they_serve() {
+        let choices = CollectionChoices::for_specs(&[
+            dynamic_select("acme.widget_ids"),
+            dynamic_select(DONATION_PROVIDER_OPTIONS_KEY),
+            dynamic_select(forge_runtime::ENGINE_OPTIONS_KEY),
+        ]);
+
+        assert_eq!(choices.option_keys(), ["acme.widget_ids"]);
     }
 
     #[test]

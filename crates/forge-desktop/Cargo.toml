@@ -88,10 +88,12 @@ forge-hotkey = { path = "../forge-hotkey", features = ["testing"] }
 forge-host = { path = "../forge-host", features = ["test-support"] }
 forge-storage-sqlite = { path = "../forge-storage-sqlite", features = ["settings-test-support", "test-support"] }
 forge-storage = { path = "../forge-storage", features = ["test-mocks", "settings-test-support"] }
+forge-test-support = { path = "../forge-test-support" }
 gpui = { workspace = true, features = ["test-support"] }
 tar = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
+tokio-tungstenite = { workspace = true }
 
 [lints]
 workspace = true

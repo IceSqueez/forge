@@ -478,6 +478,60 @@ mod tests {
     }
 
     #[test]
+    fn a_key_that_fails_leaves_the_other_keys_of_the_form_filled() {
+        let audio_key = "obs.audio_input_names";
+        let rewards = FakeCollections::listing(Ok(mixed_rewards()));
+        let builtins = rewards.installed_as("twitch");
+        builtins.install(
+            FakeLists::resolving(SCENES_KEY, Err(CollectionFailure::Transport)).object("obs"),
+        );
+        builtins.install(FakeLists::offering(audio_key, &["Mic"]).object("audio"));
+
+        let options = runtime().block_on(resolve_options(
+            builtins,
+            keys(&[SCENES_KEY, audio_key, OWNED_REWARD_KEY]),
+        ));
+
+        assert_eq!(
+            (
+                titles(&options[SCENES_KEY]),
+                titles(&options[audio_key]),
+                titles(&options[OWNED_REWARD_KEY]),
+            ),
+            (vec![], vec!["Mic label"], vec!["Hydrate"])
+        );
+    }
+
+    #[test]
+    fn a_failed_listing_leaves_a_sibling_integrations_collection_filled() {
+        let failing = FakeCollections::listing(Err(CollectionFailure::Transport));
+        let builtins = failing.installed_as("twitch");
+        let kick_key = "collections.kick.rewards";
+        let kick = FakeCollections::listing(Ok(mixed_rewards()));
+        for object in kick.installed_as("kick").snapshot() {
+            builtins.install(object);
+        }
+
+        let options = runtime().block_on(resolve_options(
+            builtins,
+            keys(&[REWARD_KEY, kick_key, "collections.kick.rewards.manageable"]),
+        ));
+
+        assert_eq!(
+            (
+                titles(&options[REWARD_KEY]),
+                titles(&options[kick_key]),
+                titles(&options["collections.kick.rewards.manageable"]),
+            ),
+            (
+                vec![],
+                vec!["Hydrate", "Highlight my message"],
+                vec!["Hydrate"],
+            )
+        );
+    }
+
+    #[test]
     fn owned_only_choices_drop_rewards_forge_cannot_modify_while_plain_choices_keep_all() {
         let rewards = mixed_rewards();
 
@@ -644,6 +698,33 @@ mod tests {
             (after_swap, after_retired_bump, reloads(cx, &watcher)),
             (1, 1, 2)
         );
+    }
+
+    #[gpui::test]
+    fn a_removed_integration_reloads_the_form_and_stops_signalling_it(cx: &mut TestAppContext) {
+        let lists = FakeLists::offering(SCENES_KEY, &[]);
+        let object = lists.object("obs");
+        let id = object.status.id().clone();
+        let builtins = installed(vec![object]);
+        let watcher = watching(cx, &builtins, &[SCENES_KEY]);
+
+        builtins.remove(&id);
+        let after_removal = reloads(cx, &watcher);
+        lists.signal.bump();
+
+        assert_eq!((after_removal, reloads(cx, &watcher)), (1, 1));
+    }
+
+    #[gpui::test]
+    fn a_collection_bump_the_form_does_not_use_reloads_nothing(cx: &mut TestAppContext) {
+        let rewards = FakeCollections::listing(Ok(Vec::new()));
+        let builtins = rewards.installed_as("twitch");
+        builtins.install(FakeLists::offering(SCENES_KEY, &[]).object("obs"));
+        let watcher = watching(cx, &builtins, &[SCENES_KEY]);
+
+        rewards.bump();
+
+        assert_eq!(reloads(cx, &watcher), 0);
     }
 
     #[gpui::test]

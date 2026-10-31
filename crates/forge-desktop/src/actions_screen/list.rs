@@ -141,6 +141,7 @@ impl ScreenActionsView {
 
     pub(super) fn select(&mut self, id: ActionId, cx: &mut Context<Self>) {
         self.selected = Some(id);
+        self.tree_keys.move_to(id);
         self.detail = None;
         self.telemetry = None;
         self.last_outcome = None;
@@ -656,8 +657,7 @@ impl ScreenActionsView {
             .min_h(px(0.0))
             .py(spacing(Spacing::Xs, density))
             .overflow_y_scroll()
-            .children(rows)
-            .children(self.render_row_context_menu(palette, cx));
+            .children(rows);
 
         let panel = div()
             .w(self.tree_width)
@@ -791,8 +791,7 @@ impl ScreenActionsView {
                 .into_any_element(),
         };
 
-        let mut select_area = div()
-            .id(SharedString::from(format!("actions-row-select-{id}")))
+        let select_area = div()
             .flex_1()
             .h_full()
             .flex()
@@ -802,11 +801,6 @@ impl ScreenActionsView {
             .pr(scaled(ROW_PAD_R, density))
             .child(icon(state_icon, TREE_GLYPH, state_color))
             .child(name_el);
-        if renaming.is_none() {
-            select_area = select_area
-                .cursor_pointer()
-                .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.select(id, cx)));
-        }
 
         let slot_inner: AnyElement = div()
             .font_family(mono_family())
@@ -828,7 +822,7 @@ impl ScreenActionsView {
                 .child(slot_inner),
         );
 
-        div()
+        let row = div()
             .id(SharedString::from(format!("actions-row-{id}")))
             .w_full()
             .h(ROW_HEIGHT)
@@ -846,7 +840,12 @@ impl ScreenActionsView {
             )
             .child(div().w(STRIPE_W).h_full().bg(stripe_color))
             .child(select_area)
-            .child(right_slot)
+            .child(right_slot);
+        if renaming.is_some() {
+            return row.into_any_element();
+        }
+        row.cursor_pointer()
+            .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.select(id, cx)))
             .into_any_element()
     }
 

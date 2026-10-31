@@ -94,6 +94,7 @@ impl ScriptEditorView {
 
     fn open_script(&mut self, id: ScriptId, cx: &mut Context<Self>) {
         self.selected = Some(id);
+        self.list_keys.move_to(id);
         let repo = Arc::clone(&self.backend) as Arc<dyn ScriptRepo>;
         async_bridge::run_async(
             &self.rt_handle,
@@ -200,6 +201,8 @@ impl ScriptEditorView {
 
     pub(super) fn select(&mut self, id: ScriptId, cx: &mut Context<Self>) {
         if self.selected == Some(id) {
+            self.list_keys.move_to(id);
+            cx.notify();
             return;
         }
         if self.current_dirty(cx) {

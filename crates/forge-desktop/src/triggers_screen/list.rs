@@ -22,11 +22,10 @@ use std::sync::Arc;
 
 impl NavigableList for TriggersRegistryView {
     fn step_list(&mut self, step: ListStep, cx: &mut Context<Self>) {
-        let current = self.list_cursor.and_then(|id| {
-            self.visible
-                .iter()
-                .position(|&idx| self.instances.get(idx).map(|r| r.id) == Some(id))
-        });
+        let current = self
+            .list_cursor
+            .and_then(|id| self.visible_position(id))
+            .or_else(|| self.selected.and_then(|id| self.visible_position(id)));
         let Some(next) = stepped_index(current, self.visible.len(), step) else {
             return;
         };
@@ -43,13 +42,22 @@ impl NavigableList for TriggersRegistryView {
     }
 
     fn activate_list(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(id) = self.list_cursor {
+        if let Some(id) = self
+            .list_cursor
+            .filter(|&id| self.visible_position(id).is_some())
+        {
             self.select(id, cx);
         }
     }
 }
 
 impl TriggersRegistryView {
+    fn visible_position(&self, id: TriggerInstanceId) -> Option<usize> {
+        self.visible
+            .iter()
+            .position(|&idx| self.instances.get(idx).map(|r| r.id) == Some(id))
+    }
+
     pub(super) fn find(&self, id: TriggerInstanceId) -> Option<&TriggerInstanceRow> {
         self.instances.iter().find(|i| i.id == id)
     }

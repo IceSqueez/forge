@@ -713,6 +713,7 @@ impl Render for ScreenActionsView {
             .add_trigger
             .as_ref()
             .map(|stage| self.render_add_trigger(stage, &palette, cx));
+        let row_menu = self.render_row_context_menu(&palette, cx);
         let frame = page_frame(
             vec![
                 BreadcrumbCrumb::leaf(tr!("actions_breadcrumb_automation")),
@@ -740,6 +741,7 @@ impl Render for ScreenActionsView {
             .children(grid_picker)
             .children(trigger_grid)
             .children(self.pack_export.as_ref().map(|host| host.flow.clone()))
+            .children(row_menu)
     }
 }
 

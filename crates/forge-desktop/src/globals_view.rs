@@ -741,6 +741,7 @@ impl GlobalsView {
     }
 
     fn open_edit(&mut self, name: SharedString, window: &mut Window, cx: &mut Context<Self>) {
+        self.table_keys.move_to(name.clone());
         let Some(global) = self
             .globals
             .read(cx)
@@ -1317,6 +1318,7 @@ impl GlobalsView {
     }
 
     fn open_inspect(&mut self, g: Global, cx: &mut Context<Self>) {
+        self.table_keys.move_to(g.name.clone());
         self.inspecting = Some(g);
         cx.notify();
     }

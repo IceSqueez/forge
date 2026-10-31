@@ -329,6 +329,7 @@ impl TriggersRegistryView {
                     this.create = None;
                     this.apply_rows(rows, cx);
                     this.selected = Some(new_id);
+                    this.list_cursor = Some(new_id);
                     this.detail = None;
                     this.load_detail(new_id, cx);
                     cx.notify();

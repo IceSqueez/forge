@@ -104,8 +104,7 @@ impl ChatView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.selected_viewer = Some(key);
-        self.request_selected_follow(cx);
+        self.point_at_viewer(key, cx);
         self.drawer_menu_open = None;
         self.whisper_open = true;
         self.whisper_input.update(cx, |input, cx| {

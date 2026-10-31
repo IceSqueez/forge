@@ -154,6 +154,7 @@ impl ScriptEditorView {
                 });
                 let id = record.id;
                 self.selected = Some(id);
+                self.list_keys.move_to(id);
                 self.code_input.update(cx, |area, cx| {
                     area.set_content(body.clone(), cx);
                 });

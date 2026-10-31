@@ -51,9 +51,14 @@ impl ChatView {
         }
     }
 
-    pub(super) fn open_viewer(&mut self, key: AuthorKey, cx: &mut Context<Self>) {
+    pub(super) fn point_at_viewer(&mut self, key: AuthorKey, cx: &mut Context<Self>) {
+        self.drawer_list_keys.move_to(key.clone());
         self.selected_viewer = Some(key);
         self.request_selected_follow(cx);
+    }
+
+    pub(super) fn open_viewer(&mut self, key: AuthorKey, cx: &mut Context<Self>) {
+        self.point_at_viewer(key, cx);
         cx.notify();
     }
 
@@ -70,8 +75,7 @@ impl ChatView {
     }
 
     pub(super) fn select_viewer(&mut self, key: AuthorKey, cx: &mut Context<Self>) {
-        self.selected_viewer = Some(key);
-        self.request_selected_follow(cx);
+        self.point_at_viewer(key, cx);
         cx.notify();
     }
 

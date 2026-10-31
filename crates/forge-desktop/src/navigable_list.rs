@@ -77,17 +77,22 @@ impl<Id: Clone + PartialEq> ListCursor<Id> {
         self.cursor.as_ref() == Some(id)
     }
 
+    pub(crate) fn move_to(&mut self, id: Id) {
+        self.cursor = Some(id);
+    }
+
     pub(crate) fn step(
         &mut self,
         rows: &[Id],
         selected: Option<&Id>,
         step: ListStep,
     ) -> Option<usize> {
+        let row_of = |id: &Id| rows.iter().position(|row| row == id);
         let current = self
             .cursor
             .as_ref()
-            .or(selected)
-            .and_then(|id| rows.iter().position(|row| row == id));
+            .and_then(row_of)
+            .or_else(|| selected.and_then(row_of));
         let next = stepped_index(current, rows.len(), step)?;
         self.cursor = rows.get(next).cloned();
         Some(next)

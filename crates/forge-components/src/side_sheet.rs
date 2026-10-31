@@ -25,11 +25,6 @@ const RESIZE_HIT_W: Pixels = px(8.0);
 
 const RESIZE_GROUP: &str = "forge-side-sheet-resize";
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub(crate) enum SheetPosition {
-    Right,
-}
-
 #[derive(Clone, Copy, Debug)]
 pub struct SheetWidth {
     pub initial: f32,
@@ -84,7 +79,6 @@ impl Render for DragGhost {
 pub struct SideSheet {
     content: AnyElement,
     width: Pixels,
-    position: SheetPosition,
     surface_bg: Rgba,
     border: Rgba,
     handle_rest: Rgba,
@@ -105,7 +99,6 @@ pub fn side_sheet(width: Pixels, content: impl IntoElement, palette: &ForgePalet
     SideSheet {
         content: content.into_any_element(),
         width,
-        position: SheetPosition::Right,
         surface_bg: palette.shell,
         border: palette.border_regular,
         handle_rest: palette.border_input,
@@ -234,7 +227,6 @@ impl SideSheet {
     }
 
     fn render_resize_edge(&self, id: ElementId) -> AnyElement {
-        let position = self.position;
         let rest = self.handle_rest;
         let hover = self.handle_hover;
 
@@ -244,12 +236,14 @@ impl SideSheet {
             .bg(rest)
             .group_hover(RESIZE_GROUP, move |s| s.bg(hover));
 
-        let mut strip = div().absolute().top_0().h_full().w(RESIZE_HIT_W).flex();
-        strip = match position {
-            SheetPosition::Right => strip.left_0().justify_start(),
-        };
-
-        strip
+        div()
+            .absolute()
+            .top_0()
+            .h_full()
+            .w(RESIZE_HIT_W)
+            .flex()
+            .left_0()
+            .justify_start()
             .group(RESIZE_GROUP)
             .cursor(CursorStyle::ResizeLeftRight)
             .id(id)
@@ -275,7 +269,6 @@ impl RenderOnce for SideSheet {
             ));
 
         let resize = self.resize.take();
-        let position = self.position;
 
         let mut panel = div()
             .relative()
@@ -297,10 +290,7 @@ impl RenderOnce for SideSheet {
             let edge = self.render_resize_edge(id);
             panel = panel
                 .on_drag_move(move |e: &DragMoveEvent<SheetResizeDrag>, window, cx| {
-                    let cursor_x = e.event.position.x;
-                    let raw = match position {
-                        SheetPosition::Right => e.bounds.right() - cursor_x,
-                    };
+                    let raw = e.bounds.right() - e.event.position.x;
                     handler(&clamp_extent(raw, min, max), window, cx);
                 })
                 .children(header)

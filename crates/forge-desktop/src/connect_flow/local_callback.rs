@@ -8,6 +8,29 @@ use forge_components::ROW_HOVER_WASH_ALPHA;
 use std::sync::Arc;
 use std::time::Duration;
 
+const ICON_INLINE: gpui::Pixels = px(13.0);
+const ICON_NOTICE: gpui::Pixels = px(16.0);
+const SPINNER_SIZE: gpui::Pixels = px(11.0);
+const PULSE_DOT: gpui::Pixels = px(8.0);
+const BUTTON_RADIUS: gpui::Pixels = px(7.0);
+const BODY_LINE_H: gpui::Pixels = px(20.0);
+const PAGE_MAX_W: gpui::Pixels = px(640.0);
+const STEP_BADGE: gpui::Pixels = px(24.0);
+const STEP_BORDER: gpui::Pixels = px(1.5);
+const BLOCK_MB: gpui::Pixels = px(14.0);
+const BLOCK_MB_ALT: gpui::Pixels = px(22.0);
+const ROW_PAD_V: gpui::Pixels = px(5.0);
+const ROW_PAD_V_ALT: gpui::Pixels = px(7.0);
+const ROW_PAD_V_WIDE: gpui::Pixels = px(9.0);
+const ROW_PAD_V_TALL: gpui::Pixels = px(11.0);
+const ROW_PAD_H: gpui::Pixels = px(11.0);
+const ROW_PAD_H_ALT: gpui::Pixels = px(14.0);
+const ROW_PAD_H_WIDE: gpui::Pixels = px(20.0);
+const ROW_GAP: gpui::Pixels = px(1.0);
+const ROW_GAP_ALT: gpui::Pixels = px(5.0);
+const ROW_GAP_WIDE: gpui::Pixels = px(7.0);
+const ROW_GAP_TALL: gpui::Pixels = px(13.0);
+
 const AUTHORIZATION_TIMEOUT: Duration = Duration::from_secs(300);
 
 use crate::async_bridge;
@@ -277,7 +300,8 @@ impl ConnectFlow {
         let accent = crate::platform_visuals::platform_color(self.platform, palette);
         let (indicator, label, color): (AnyElement, String, Rgba) = match self.phase {
             LocalCallbackFlowPhase::Starting | LocalCallbackFlowPhase::Waiting => (
-                spinner("oauth-status-spin", Icon::Loader2, px(11.0), accent).into_any_element(),
+                spinner("oauth-status-spin", Icon::Loader2, SPINNER_SIZE, accent)
+                    .into_any_element(),
                 tr!("oauth_status_authorizing"),
                 accent,
             ),
@@ -328,7 +352,7 @@ impl ConnectFlow {
 
         div()
             .w_full()
-            .max_w(px(640.0))
+            .max_w(PAGE_MAX_W)
             .flex()
             .flex_col()
             .child(self.oauth_explainer(palette, density))
@@ -360,8 +384,8 @@ impl ConnectFlow {
             .font_family(body_family())
             .text_size(FONT_FIELD)
             .text_color(palette.text_muted)
-            .line_height(px(20.0))
-            .mb(scaled(px(22.0), density))
+            .line_height(BODY_LINE_H)
+            .mb(scaled(BLOCK_MB_ALT, density))
             .child(styled)
             .into_any_element()
     }
@@ -383,9 +407,9 @@ impl ConnectFlow {
         );
         let url_box = div()
             .w_full()
-            .py(scaled(px(7.0), density))
-            .px(scaled(px(11.0), density))
-            .rounded(px(7.0))
+            .py(scaled(ROW_PAD_V_ALT, density))
+            .px(scaled(ROW_PAD_H, density))
+            .rounded(BUTTON_RADIUS)
             .border(BORDER_THIN)
             .border_color(palette.border_regular)
             .bg(palette.shell)
@@ -427,7 +451,7 @@ impl ConnectFlow {
                 div()
                     .flex()
                     .items_center()
-                    .gap(scaled(px(7.0), density))
+                    .gap(scaled(ROW_GAP_WIDE, density))
                     .mt(spacing(Spacing::Xs, density))
                     .child(icon(
                         Icon::Server2,
@@ -496,7 +520,7 @@ impl ConnectFlow {
             .bg(palette.elevated)
             .py(spacing(Spacing::Xxs, density))
             .px(spacing(Spacing::Md, density))
-            .mb(scaled(px(14.0), density))
+            .mb(scaled(BLOCK_MB, density))
             .child(s1)
             .child(s2)
             .child(s3)
@@ -524,7 +548,7 @@ impl ConnectFlow {
             _ => palette.surface_overlay,
         };
         let inner: AnyElement = match state {
-            StepState::Done => icon(Icon::Check, px(13.0), palette.success).into_any_element(),
+            StepState::Done => icon(Icon::Check, ICON_INLINE, palette.success).into_any_element(),
             StepState::Active => spinner(
                 SharedString::from(format!("oauth-step-spin-{n}")),
                 Icon::Loader2,
@@ -542,14 +566,14 @@ impl ConnectFlow {
         };
         let mut circle = div()
             .flex_none()
-            .size(px(24.0))
+            .size(STEP_BADGE)
             .flex()
             .items_center()
             .justify_center()
             .rounded(radius(Radius::Lg))
             .bg(circle_bg);
         if matches!(state, StepState::Done) {
-            circle = circle.border(px(1.5)).border_color(palette.success);
+            circle = circle.border(STEP_BORDER).border_color(palette.success);
         }
         let circle = circle.child(inner);
 
@@ -574,8 +598,8 @@ impl ConnectFlow {
             .w_full()
             .flex()
             .items_start()
-            .gap(scaled(px(13.0), density))
-            .py(scaled(px(11.0), density))
+            .gap(scaled(ROW_GAP_TALL, density))
+            .py(scaled(ROW_PAD_V_TALL, density))
             .child(circle)
             .child(content);
         if !is_last {
@@ -616,20 +640,20 @@ impl ConnectFlow {
             scopes = scopes.as_str()
         );
 
-        let pulse = pulse_dot("oauth-progress-pulse", accent, px(8.0));
+        let pulse = pulse_dot("oauth-progress-pulse", accent, PULSE_DOT);
 
         div()
             .w_full()
             .flex()
             .items_center()
             .gap(spacing(Spacing::Sm, density))
-            .py(scaled(px(11.0), density))
-            .px(scaled(px(14.0), density))
+            .py(scaled(ROW_PAD_V_TALL, density))
+            .px(scaled(ROW_PAD_H_ALT, density))
             .rounded(radius(Radius::Md))
             .border(BORDER_THIN)
             .border_color(palette.border_regular)
             .bg(palette.elevated)
-            .mb(scaled(px(14.0), density))
+            .mb(scaled(BLOCK_MB, density))
             .child(pulse)
             .child(
                 div()
@@ -637,7 +661,7 @@ impl ConnectFlow {
                     .min_w(px(0.0))
                     .flex()
                     .flex_col()
-                    .gap(scaled(px(1.0), density))
+                    .gap(scaled(ROW_GAP, density))
                     .child(
                         div()
                             .font_family(body_family())
@@ -663,14 +687,14 @@ impl ConnectFlow {
             .flex()
             .items_center()
             .gap(spacing(Spacing::Sm, density))
-            .py(scaled(px(11.0), density))
-            .px(scaled(px(14.0), density))
+            .py(scaled(ROW_PAD_V_TALL, density))
+            .px(scaled(ROW_PAD_H_ALT, density))
             .rounded(radius(Radius::Md))
             .border(BORDER_THIN)
             .border_color(palette.success)
             .bg(palette.elevated)
-            .mb(scaled(px(14.0), density))
-            .child(icon(Icon::CircleCheckFilled, px(16.0), palette.success))
+            .mb(scaled(BLOCK_MB, density))
+            .child(icon(Icon::CircleCheckFilled, ICON_NOTICE, palette.success))
             .child(
                 div()
                     .font_family(body_family())
@@ -746,7 +770,7 @@ impl ConnectFlow {
                     .flex()
                     .items_center()
                     .gap(spacing(Spacing::Xs, density))
-                    .child(icon(Icon::AlertTriangle, px(16.0), palette.danger))
+                    .child(icon(Icon::AlertTriangle, ICON_NOTICE, palette.danger))
                     .child(
                         div()
                             .font_family(body_family())
@@ -780,11 +804,11 @@ impl ConnectFlow {
             .id("oauth-choose-different")
             .flex()
             .items_center()
-            .gap(scaled(px(5.0), density))
+            .gap(scaled(ROW_GAP_ALT, density))
             .cursor_pointer()
             .key_activated(palette.text_primary)
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.leave(cx)))
-            .child(icon(Icon::ArrowLeft, px(13.0), palette.text_muted))
+            .child(icon(Icon::ArrowLeft, ICON_INLINE, palette.text_muted))
             .child(
                 div()
                     .font_family(body_family())
@@ -801,16 +825,16 @@ impl ConnectFlow {
                         .id("oauth-signin")
                         .flex()
                         .items_center()
-                        .gap(scaled(px(5.0), density))
-                        .py(scaled(px(9.0), density))
-                        .px(scaled(px(20.0), density))
+                        .gap(scaled(ROW_GAP_ALT, density))
+                        .py(scaled(ROW_PAD_V_WIDE, density))
+                        .px(scaled(ROW_PAD_H_WIDE, density))
                         .rounded(radius(Radius::Sm))
                         .bg(palette.brand)
                         .cursor_pointer()
                         .hover(|s| s.bg(with_alpha(palette.brand, CTA_HOVER_ALPHA)))
                         .key_activated(palette.text_primary)
                         .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.start_connect(cx)))
-                        .child(icon(Icon::ExternalLink, px(13.0), palette.shell))
+                        .child(icon(Icon::ExternalLink, ICON_INLINE, palette.shell))
                         .child(
                             div()
                                 .font_family(body_family())
@@ -826,8 +850,8 @@ impl ConnectFlow {
                 div()
                     .id("oauth-footer-cancel")
                     .flex_none()
-                    .py(scaled(px(5.0), density))
-                    .px(scaled(px(11.0), density))
+                    .py(scaled(ROW_PAD_V, density))
+                    .px(scaled(ROW_PAD_H, density))
                     .rounded(radius(Radius::Sm))
                     .border(BORDER_THIN)
                     .border_color(palette.border_regular)
@@ -893,7 +917,7 @@ impl ConnectFlow {
             .border_color(palette.warning)
             .bg(palette.elevated)
             .mb(spacing(Spacing::Md, density))
-            .child(icon(Icon::AlertTriangle, px(16.0), palette.warning))
+            .child(icon(Icon::AlertTriangle, ICON_NOTICE, palette.warning))
             .child(text_col)
     }
 }

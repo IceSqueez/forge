@@ -3,7 +3,7 @@ use std::sync::Arc;
 use forge_components::{ActivePresentation, ForgePalette, Icon, tr};
 use forge_events::EventPublisher;
 use forge_storage::{CredentialsRepo, SettingsRepo};
-use gpui::{Context, Entity, EventEmitter, SharedString, Subscription, Window, prelude::*};
+use gpui::{Context, Entity, EventEmitter, Subscription, Window, prelude::*};
 
 use crate::connect_scaffold::{ConnectPage, GuideStep, fragment, mono_fragment};
 use crate::navigation::NavRequested;
@@ -61,7 +61,10 @@ fn guide_steps(palette: &ForgePalette) -> Vec<GuideStep> {
                 palette.text_primary,
             ),
             mono_fragment(
-                SharedString::from(format!("{DEFAULT_PORT})")),
+                tr!(
+                    "connect_step_port_default_value",
+                    port = DEFAULT_PORT.to_string()
+                ),
                 palette.text_primary,
             ),
         ],

@@ -263,11 +263,12 @@ impl SettingsDiagnosticsView {
             return;
         };
         let text = bundle.text;
+        let filter_name = tr!("settings_diagnostics_export_filter_text");
         async_bridge::run_async(
             &self.rt_handle,
             async move {
                 let filter = async_bridge::DialogFilter {
-                    name: "Text".to_owned(),
+                    name: filter_name,
                     extensions: vec!["txt"],
                 };
                 let Some(path) =

@@ -110,16 +110,12 @@ impl OverlaysView {
     }
 
     fn delete_body(&self, id: &OverlayId, cx: &Context<Self>) -> String {
-        let base = tr!("overlays_confirm_delete_body");
         match self.wiring.view.read(cx).delete_feed_count(id) {
-            Some(count) => format!(
-                "{base} {}",
-                tr!(
-                    "overlays_confirm_delete_feeds",
-                    count = i64::try_from(count).unwrap_or(i64::MAX)
-                )
+            Some(count) => tr!(
+                "overlays_confirm_delete_body_feeds",
+                count = i64::try_from(count).unwrap_or(i64::MAX)
             ),
-            None => base,
+            None => tr!("overlays_confirm_delete_body"),
         }
     }
 

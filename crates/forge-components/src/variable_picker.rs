@@ -10,7 +10,9 @@ use crate::dropdown::{
 };
 use crate::icons::Icon;
 use crate::palette::ForgePalette;
-use crate::picker::{PICKER_CONTEXT, SelectNext, SelectPrev, item_matches, message_row};
+use crate::picker::{
+    PICKER_CONTEXT, PickerStep, SelectNext, SelectPrev, item_matches, message_row, wrapped_step,
+};
 use crate::search_state::SearchState;
 use crate::text_input::{InputEvent, TextInput};
 use crate::tokens::{ENTER_KEY, ESCAPE_KEY, body_family, mono_family};
@@ -205,7 +207,7 @@ impl VariablePicker {
         }
     }
 
-    fn step_selection(&mut self, forward: bool) {
+    fn step_selection(&mut self, step: PickerStep) {
         if let Some(open) = self.formats.as_mut() {
             let count = self
                 .groups
@@ -213,7 +215,7 @@ impl VariablePicker {
                 .and_then(|group| group.entries.get(open.entry))
                 .map_or(0, |entry| entry.formats.len());
             if count > 0 {
-                open.selected = wrapped_step(open.selected, count, forward);
+                open.selected = wrapped_step(open.selected, count, step);
             }
             return;
         }
@@ -231,7 +233,7 @@ impl VariablePicker {
             .selected
             .and_then(|pos| entries.iter().position(|&entry_pos| entry_pos == pos))
             .unwrap_or(0);
-        let next = entries[wrapped_step(current, entries.len(), forward)];
+        let next = entries[wrapped_step(current, entries.len(), step)];
         self.selected = Some(next);
         self.list_scroll
             .scroll_to_item(next, ScrollStrategy::Nearest);
@@ -256,12 +258,12 @@ impl VariablePicker {
     }
 
     fn on_select_next(&mut self, _: &SelectNext, _window: &mut Window, cx: &mut Context<Self>) {
-        self.step_selection(true);
+        self.step_selection(PickerStep::Next);
         cx.notify();
     }
 
     fn on_select_prev(&mut self, _: &SelectPrev, _window: &mut Window, cx: &mut Context<Self>) {
-        self.step_selection(false);
+        self.step_selection(PickerStep::Prev);
         cx.notify();
     }
 
@@ -380,16 +382,6 @@ impl VariablePicker {
             .child(back)
             .children(rows)
             .into_any_element()
-    }
-}
-
-fn wrapped_step(current: usize, count: usize, forward: bool) -> usize {
-    if forward {
-        (current + 1) % count
-    } else if current == 0 {
-        count - 1
-    } else {
-        current - 1
     }
 }
 

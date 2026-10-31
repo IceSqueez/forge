@@ -410,9 +410,15 @@ async fn gather(
     let settings = Arc::clone(&backend) as Arc<dyn SettingsRepo>;
     let level = diagnostic_log_level(settings.as_ref())
         .await
-        .unwrap_or(DEFAULT_DIAGNOSTIC_LOG_LEVEL);
+        .unwrap_or_else(|error| {
+            tracing::warn!(%error, "diagnostic log level unreadable for the report");
+            DEFAULT_DIAGNOSTIC_LOG_LEVEL
+        });
     let speech_preference = read_setting(settings.as_ref(), &AUDIO_OUTPUT_DEVICE_ID)
         .await
+        .inspect_err(|error| {
+            tracing::warn!(%error, "speech output device unreadable for the report");
+        })
         .ok()
         .map(stored_output_device);
     let input =
@@ -508,8 +514,13 @@ pub(crate) fn start_crash_notice(
     let pending =
         rt_handle.spawn_blocking(move || crash_record::latest_pending(&crashes_dir, process_id));
     cx.spawn(async move |cx| {
-        let Ok(Some(pending)) = pending.await else {
-            return;
+        let pending = match pending.await {
+            Ok(Some(pending)) => pending,
+            Ok(None) => return,
+            Err(error) => {
+                tracing::warn!(%error, "pending crash lookup stopped");
+                return;
+            }
         };
         tracing::info!(crashed_at = %pending.record.occurred_at_utc, "unreported crash found");
         cx.update(|cx| raise_crash_toast(pending, report, rt_handle, cx));

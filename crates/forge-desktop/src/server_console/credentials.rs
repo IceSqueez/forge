@@ -36,12 +36,12 @@ impl ServerConsoleView {
 
     fn copy_bind_address(&mut self, cx: &mut Context<Self>) {
         if let Some(address) = self.lifecycle.bind_address.clone() {
-            crate::toasts::copy_to_clipboard(address, cx);
+            crate::clipboard::copy_to_clipboard(address, cx);
         }
     }
 
     fn copy_token(&mut self, cx: &mut Context<Self>) {
-        crate::toasts::copy_to_clipboard(self.secrets.bearer_token.expose().to_owned(), cx);
+        crate::clipboard::copy_to_clipboard(self.secrets.bearer_token.expose().to_owned(), cx);
     }
 
     pub(super) fn request_regenerate(&mut self, cx: &mut Context<Self>) {

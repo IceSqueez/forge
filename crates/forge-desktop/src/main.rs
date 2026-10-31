@@ -28,6 +28,7 @@ mod clip_editor;
 mod clip_key_state;
 mod clip_messages;
 mod clip_playback;
+mod clipboard;
 mod cloud_credentials;
 mod collection_form;
 mod collection_list;
@@ -177,7 +178,6 @@ mod system_notices;
 #[cfg(test)]
 mod test_support;
 mod titlebar;
-mod toasts;
 mod topics;
 mod transfer_flows;
 mod trigger_form_shape;

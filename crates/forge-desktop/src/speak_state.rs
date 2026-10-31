@@ -1,3 +1,6 @@
+use std::collections::HashMap;
+use std::sync::Arc;
+
 use forge_speak_queue::{QueuedOrderEntry, RequestId, SpeakEvent};
 use forge_types::UserText;
 
@@ -22,7 +25,7 @@ pub(crate) struct QueueItem {
     pub is_high_priority: bool,
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone, Copy, Default)]
 pub(crate) struct SessionStats {
     pub spoken: u32,
     pub skipped: u32,
@@ -33,8 +36,8 @@ pub(crate) struct SessionStats {
 pub(crate) struct SpeakState {
     manual_paused: bool,
     gate_held: bool,
-    now_speaking: Option<NowSpeaking>,
-    queue: Vec<QueueItem>,
+    now_speaking: Option<Arc<NowSpeaking>>,
+    queue: Arc<Vec<QueueItem>>,
     stats: SessionStats,
     last_drop: Option<UserText>,
 }
@@ -67,13 +70,13 @@ impl SpeakState {
                     duration_secs: estimated_secs,
                     is_high_priority,
                 };
-                match self
-                    .queue
+                let queue = Arc::make_mut(&mut self.queue);
+                match queue
                     .iter_mut()
                     .find(|queued| queued.request_id == item.request_id)
                 {
                     Some(queued) => *queued = item,
-                    None => self.queue.push(item),
+                    None => queue.push(item),
                 }
                 true
             }
@@ -86,7 +89,7 @@ impl SpeakState {
                 duration_secs,
             } => {
                 self.last_drop = None;
-                self.now_speaking = Some(NowSpeaking {
+                self.now_speaking = Some(Arc::new(NowSpeaking {
                     request_id,
                     viewer_name,
                     engine_id: engine_id.map(|id| id.0).unwrap_or_default(),
@@ -94,7 +97,7 @@ impl SpeakState {
                     text,
                     elapsed_secs: 0,
                     total_secs: duration_secs,
-                });
+                }));
                 true
             }
             SpeakEvent::Progress {
@@ -102,7 +105,7 @@ impl SpeakState {
                 elapsed_secs,
             } => match self.now_speaking.as_mut() {
                 Some(ns) if ns.request_id == request_id => {
-                    ns.elapsed_secs = elapsed_secs;
+                    Arc::make_mut(ns).elapsed_secs = elapsed_secs;
                     true
                 }
                 _ => false,
@@ -157,25 +160,27 @@ impl SpeakState {
     }
 
     fn reseat_queue(&mut self, order: &[QueuedOrderEntry]) -> bool {
+        let by_id: HashMap<&RequestId, &QueueItem> = self
+            .queue
+            .iter()
+            .map(|item| (&item.request_id, item))
+            .collect();
         let reseated: Vec<QueueItem> = order
             .iter()
             .filter_map(|entry| {
-                self.queue
-                    .iter()
-                    .find(|item| item.request_id == entry.request_id)
-                    .map(|item| QueueItem {
-                        is_high_priority: entry.is_high_priority,
-                        ..item.clone()
-                    })
+                by_id.get(&entry.request_id).map(|&item| QueueItem {
+                    is_high_priority: entry.is_high_priority,
+                    ..item.clone()
+                })
             })
             .collect();
 
         let changed = reseated.len() != self.queue.len()
-            || reseated.iter().zip(&self.queue).any(|(new, old)| {
+            || reseated.iter().zip(self.queue.iter()).any(|(new, old)| {
                 new.request_id != old.request_id || new.is_high_priority != old.is_high_priority
             });
         if changed {
-            self.queue = reseated;
+            self.queue = Arc::new(reseated);
         }
         changed
     }
@@ -186,7 +191,7 @@ impl SpeakState {
 
     pub(crate) fn clear_all(&mut self) {
         self.now_speaking = None;
-        self.queue.clear();
+        self.queue = Arc::default();
     }
 
     pub(crate) fn manual_paused(&self) -> bool {
@@ -197,16 +202,16 @@ impl SpeakState {
         self.gate_held
     }
 
-    pub(crate) fn now_speaking_snapshot(&self) -> Option<NowSpeaking> {
+    pub(crate) fn now_speaking_snapshot(&self) -> Option<Arc<NowSpeaking>> {
         self.now_speaking.clone()
     }
 
-    pub(crate) fn queue_snapshot(&self) -> Vec<QueueItem> {
-        self.queue.clone()
+    pub(crate) fn queue_snapshot(&self) -> Arc<Vec<QueueItem>> {
+        Arc::clone(&self.queue)
     }
 
     pub(crate) fn stats_snapshot(&self) -> SessionStats {
-        self.stats.clone()
+        self.stats
     }
 }
 
@@ -282,8 +287,8 @@ mod tests {
     fn queue_ids(state: &SpeakState) -> Vec<String> {
         state
             .queue_snapshot()
-            .into_iter()
-            .map(|item| item.request_id.0)
+            .iter()
+            .map(|item| item.request_id.0.clone())
             .collect()
     }
 
@@ -393,7 +398,9 @@ mod tests {
 
         assert_eq!(queue_ids(&state), ["c", "a"]);
         assert_eq!(
-            state.now_speaking_snapshot().map(|ns| ns.request_id.0),
+            state
+                .now_speaking_snapshot()
+                .map(|ns| ns.request_id.0.clone()),
             Some("b".to_owned())
         );
     }

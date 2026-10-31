@@ -161,7 +161,7 @@ impl IntegrationDisabledView {
         };
     }
 
-    pub(crate) fn enable(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn enable(&mut self, _cx: &mut Context<Self>) {
         let Some(slot) = self.launch.slot.clone() else {
             return;
         };
@@ -170,7 +170,6 @@ impl IntegrationDisabledView {
                 tracing::warn!(integration = %slot.id(), error = %e, "could not enable the integration");
             }
         });
-        cx.notify();
     }
 
     fn go(&mut self, screen: Screen, cx: &mut Context<Self>) {

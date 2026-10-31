@@ -19,6 +19,12 @@ use gpui::{
 };
 use std::time::Instant;
 
+const ROW_GAP: gpui::Pixels = px(3.0);
+const ROW_GAP_ALT: gpui::Pixels = px(5.0);
+const BLOCK_MB: gpui::Pixels = px(3.0);
+const ROW_PAD_V: gpui::Pixels = px(5.0);
+const ROW_PAD_H: gpui::Pixels = px(11.0);
+
 impl QueuesView {
     fn queue_card(
         &self,
@@ -99,7 +105,7 @@ impl QueuesView {
         let left = div()
             .flex()
             .flex_col()
-            .gap(scaled(px(3.0), density))
+            .gap(scaled(ROW_GAP, density))
             .child(name_row)
             .child(desc);
 
@@ -417,7 +423,7 @@ fn metric_col(
                 .font_family(mono_family())
                 .text_size(FONT_XXS)
                 .text_color(palette.text_muted)
-                .mb(scaled(px(3.0), density))
+                .mb(scaled(BLOCK_MB, density))
                 .child(caption),
         )
         .child(
@@ -710,9 +716,9 @@ fn card_button(
         .flex()
         .items_center()
         .justify_center()
-        .gap(scaled(px(5.0), density))
-        .py(scaled(px(5.0), density))
-        .px(scaled(px(11.0), density))
+        .gap(scaled(ROW_GAP_ALT, density))
+        .py(scaled(ROW_PAD_V, density))
+        .px(scaled(ROW_PAD_H, density))
         .rounded(radius(Radius::Sm))
         .cursor_pointer()
         .key_activated(palette.text_primary)

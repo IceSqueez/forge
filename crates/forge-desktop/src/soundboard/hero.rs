@@ -11,6 +11,8 @@ use gpui::{AnyElement, ClickEvent, Context, Pixels, div, prelude::*, px};
 use super::routing::ROUTING_PAD;
 use super::{LABEL_FS, SoundboardView};
 
+const ROW_GAP: Pixels = px(5.0);
+
 const HERO_ICON_TILE: Pixels = px(40.0);
 const HERO_ICON_TILE_RADIUS: Pixels = px(10.0);
 const HERO_GLYPH: Pixels = px(20.0);
@@ -48,7 +50,7 @@ impl SoundboardView {
         div()
             .flex()
             .items_center()
-            .gap(scaled(px(5.0), density))
+            .gap(scaled(ROW_GAP, density))
             .child(icon(Icon::Volume, HEADER_ICON, palette.success))
             .child(
                 div()

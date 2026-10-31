@@ -9,8 +9,8 @@ use gpui::{
     AnyElement, ClickEvent, Context, EventEmitter, SharedString, Window, div, prelude::*, px,
 };
 
+use crate::clipboard::copy_to_clipboard;
 use crate::repo_failure::RepoFailure;
-use crate::toasts::copy_to_clipboard;
 use crate::user_text::user_text_string;
 use forge_components::ActivePresentation;
 use forge_components::{FONT_FIELD, failure_note, failure_with_retry, field_frame};

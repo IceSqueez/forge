@@ -228,6 +228,11 @@ impl TtsDashboardView {
         }
     }
 
+    pub(crate) fn refresh_engine_roster(&mut self, cx: &mut Context<Self>) {
+        self.engines = load_engine_roster(self.speak.as_ref());
+        cx.notify();
+    }
+
     fn dispatch(&self, cmd: SpeakCommand) {
         let Some(handle) = self.speak.clone() else {
             tracing::warn!("TTS command dropped - speak queue unavailable");
@@ -294,12 +299,6 @@ impl TtsDashboardView {
         cx.notify();
     }
 
-    fn release_row_drag(&mut self, drag_active: bool) {
-        if !drag_active {
-            self.dragged_row = None;
-        }
-    }
-
     fn reorder_queued(
         &mut self,
         request_id: RequestId,
@@ -364,7 +363,6 @@ impl Render for TtsDashboardView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let palette = cx.palette();
         let density = cx.density();
-        self.release_row_drag(cx.has_active_drag());
 
         let manual_paused = self.speak_state.read(cx).manual_paused();
         let gate_held = self.speak_state.read(cx).gate_held();
@@ -388,7 +386,7 @@ impl Render for TtsDashboardView {
 
         let control_strip = self.control_strip(manual_paused, gate_held, &palette, cx);
         let now_speaking = now_speaking_panel(
-            now.as_ref(),
+            now.as_deref(),
             now_voice,
             last_drop.as_deref(),
             manual_paused,

@@ -3,6 +3,8 @@ use gpui::{SharedString, div, prelude::*, px};
 
 use super::HOTKEY_FS;
 
+const BLOCK_MB: gpui::Pixels = px(5.0);
+
 pub(super) fn section_label(
     label: impl Into<SharedString>,
     palette: &ForgePalette,
@@ -20,7 +22,7 @@ pub(crate) fn field_lite_label(
     density: Density,
 ) -> impl IntoElement {
     div()
-        .mb(scaled(px(5.0), density))
+        .mb(scaled(BLOCK_MB, density))
         .font_family(mono_family())
         .text_size(HOTKEY_FS)
         .text_color(palette.text_muted)

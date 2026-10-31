@@ -352,6 +352,7 @@ settings_diagnostics_cleared = Logs cleared
 settings_diagnostics_clear_failed = Could not clear logs: { $error }
 settings_diagnostics_exported = Diagnostic bundle saved to { $path }
 settings_diagnostics_export_failed = Could not export diagnostic bundle: { $error }
+settings_diagnostics_export_filter_text = Text
 settings_diagnostics_level_label = Log level
 settings_diagnostics_level_hint = Applies right away, no restart. Debug and trace grow the log fast on a busy stream.
 settings_diagnostics_level_env_locked = The RUST_LOG environment variable is in charge for this run, so the level cannot be changed here.
@@ -766,6 +767,7 @@ settings_ws_overlay_section_title = Overlay host root
 settings_ws_overlay_folder_prefix = Folder served at
 settings_ws_browse_btn = Browse
 settings_ws_lan_modal_title = Expose Forge to your network?
+settings_ws_lan_phrase = expose to LAN
 settings_ws_lan_modal_explanation = You're switching from 127.0.0.1 (localhost only) to 0.0.0.0 (all network interfaces). Other devices on your LAN - and anyone on the same Wi-Fi - will be able to reach the Forge server.
 settings_ws_lan_modal_confirm_label = Expose to LAN
 settings_ws_lan_bullet_phone = Phone / tablet / second PC can connect to overlays and the WS API
@@ -1497,6 +1499,7 @@ tts_filters_modal_replace_note = Leave replacement empty to strip matched text.
 
 ## TTS Filters - preview column
 
+tts_filters_preview_speak_failed = Could not send the preview to the speech queue
 tts_filters_preview_header = Live preview
 tts_filters_preview_input_label = INPUT MESSAGE
 tts_filters_preview_input_placeholder = Type a message to preview...
@@ -2513,6 +2516,9 @@ widget_picker_no_results = No results.
 ## Widget - output device picker
 
 widget_device_default_suffix = (default)
+widget_device_default_label = { $name } { widget_device_default_suffix }
+system_notice_toast = { $title } - { $body }
+stay_awake_hold_reason = forge keeps the system and display awake while it runs
 widget_device_test = Test
 
 ## Widget - quick actions panel
@@ -2673,6 +2679,7 @@ obs_connect_step_enable_option = Enable WebSocket server
 obs_connect_step_port_prefix = Note the
 obs_connect_step_port_field = port
 obs_connect_step_port_default_prefix = (default
+connect_step_port_default_value = { $port })
 obs_connect_step_reveal_prefix = Click
 obs_connect_step_reveal_button = Show Connect Info
 obs_connect_step_reveal_suffix = to reveal the password
@@ -3075,6 +3082,10 @@ overlays_toast_build_failed_pass = Overlay pages could not be rebuilt: { $reason
 overlays_toast_speech_failed = { $overlay } was shown without speech: { $error }. Pick an installed voice in its Voice field.
 overlays_confirm_delete_title = Delete overlay?
 overlays_confirm_delete_body = Any OBS browser source pointing at this overlay will stop loading. This cannot be undone.
+overlays_confirm_delete_body_feeds = { overlays_confirm_delete_body } { $count ->
+    [one] { $count } action sends to it.
+   *[other] { $count } actions send to it.
+}
 
 overlays_mode_design = Design
 overlays_mode_code = Code
@@ -4026,10 +4037,6 @@ overlays_wire_fires_on = Fires on { $triggers }
 overlays_wire_fires_untriggered = Actions send to this overlay, but no event drives them yet.
 overlays_wire_action_disabled = disabled
 overlays_wire_overlay_off = This overlay is off, so nothing is displayed while it stays off.
-overlays_confirm_delete_feeds = { $count ->
-    [one] { $count } action sends to it.
-   *[other] { $count } actions send to it.
-}
 nav_item_integrations = Integrations
 integrations_breadcrumb = Integrations
 integrations_title = Integrations

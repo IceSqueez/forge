@@ -599,7 +599,7 @@ impl TtsDashboardView {
             row = row.border_b(BORDER_THIN).border_color(palette.elevated);
         }
 
-        if self.dragged_row.as_ref() == Some(&item.request_id) {
+        if cx.has_active_drag() && self.dragged_row.as_ref() == Some(&item.request_id) {
             row.opacity(DRAG_SOURCE_OPACITY).into_any_element()
         } else {
             row.into_any_element()

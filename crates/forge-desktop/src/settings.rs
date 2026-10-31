@@ -45,6 +45,8 @@ use crate::update_check::{CheckResult, run_update_check};
 use crate::update_flow::UpdateFlow;
 use forge_components::{ActivePresentation, Presentation};
 
+const ROW_PAD_V: Pixels = px(7.0);
+
 const RELEASES_URL: &str = concat!(env!("CARGO_PKG_REPOSITORY"), "/releases");
 
 pub(crate) const NAV_WIDTH: Pixels = px(210.0);
@@ -507,7 +509,7 @@ impl SettingsView {
             .items_center()
             .justify_between()
             .px(spacing(Spacing::Sm, density))
-            .py(scaled(px(7.0), density))
+            .py(scaled(ROW_PAD_V, density))
             .rounded(radius(Radius::Sm))
             .bg(palette.base)
             .border(BORDER_THIN)

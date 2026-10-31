@@ -25,6 +25,8 @@ use crate::window_presence::PresenceGate;
 use forge_components::ActivePresentation;
 use forge_host::voice_gate::VoiceGateOwner;
 
+const ROW_PAD_V: Pixels = px(7.0);
+
 const METER_WIDTH: Pixels = px(72.0);
 const METER_HEIGHT: Pixels = px(6.0);
 const SLIDER_WIDTH: Pixels = px(140.0);
@@ -340,7 +342,7 @@ impl SettingsVoiceGateView {
 
     fn display_name(&self, device: &DeviceRow) -> String {
         if device.is_default {
-            format!("{} {}", device.name, tr!("widget_device_default_suffix"))
+            tr!("widget_device_default_label", name = device.name.as_str())
         } else {
             device.name.clone()
         }
@@ -388,7 +390,7 @@ impl SettingsVoiceGateView {
             .justify_between()
             .w_full()
             .px(spacing(Spacing::Sm, density))
-            .py(scaled(px(7.0), density))
+            .py(scaled(ROW_PAD_V, density))
             .rounded(radius(Radius::Sm))
             .bg(palette.base)
             .border(BORDER_THIN)

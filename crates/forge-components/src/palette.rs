@@ -58,15 +58,7 @@ pub fn with_alpha(c: Rgba, alpha: f32) -> Rgba {
 }
 
 pub fn accent_swatch(name: &str, palette: &ForgePalette) -> Option<Rgba> {
-    match name {
-        "mauve" => Some(palette.accent_mauve),
-        "sky" => Some(palette.info),
-        "green" => Some(palette.success),
-        "peach" => Some(palette.accent_peach),
-        "yellow" => Some(palette.warning),
-        "red" => Some(palette.danger),
-        _ => None,
-    }
+    AccentColor::from_storage_key(name).and_then(|accent| accent.palette_swatch(palette))
 }
 
 const TOKYO_NIGHT_FLAMINGO: Rgba = hex(0xff, 0x79, 0xc6);
@@ -112,6 +104,18 @@ impl AccentColor {
             .into_iter()
             .find(|accent| accent.storage_key() == key)
     }
+
+    fn palette_swatch(self, palette: &ForgePalette) -> Option<Rgba> {
+        match self {
+            AccentColor::Red => Some(palette.danger),
+            AccentColor::Peach => Some(palette.accent_peach),
+            AccentColor::Yellow => Some(palette.warning),
+            AccentColor::Green => Some(palette.success),
+            AccentColor::Sky => Some(palette.info),
+            AccentColor::Mauve => Some(palette.accent_mauve),
+            AccentColor::Flamingo => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -135,7 +139,7 @@ impl ThemeId {
 
     pub fn from_storage_key(key: &str) -> Option<ThemeId> {
         match key {
-            "forge_default" | "catppuccin_mocha" => Some(ThemeId::ForgeDefault),
+            "forge_default" => Some(ThemeId::ForgeDefault),
             "tokyo_night" => Some(ThemeId::TokyoNight),
             "latte" => Some(ThemeId::Latte),
             _ => None,
@@ -152,19 +156,11 @@ impl ThemeId {
 
     pub fn accent(self, accent: AccentColor) -> Rgba {
         let palette = self.palette();
-        match accent {
-            AccentColor::Red => palette.danger,
-            AccentColor::Peach => palette.accent_peach,
-            AccentColor::Yellow => palette.warning,
-            AccentColor::Green => palette.success,
-            AccentColor::Sky => palette.info,
-            AccentColor::Mauve => palette.accent_mauve,
-            AccentColor::Flamingo => match self {
-                ThemeId::ForgeDefault => palette.accent_pink_light,
-                ThemeId::TokyoNight => TOKYO_NIGHT_FLAMINGO,
-                ThemeId::Latte => LATTE_FLAMINGO,
-            },
-        }
+        accent.palette_swatch(&palette).unwrap_or(match self {
+            ThemeId::ForgeDefault => palette.accent_pink_light,
+            ThemeId::TokyoNight => TOKYO_NIGHT_FLAMINGO,
+            ThemeId::Latte => LATTE_FLAMINGO,
+        })
     }
 
     pub fn accented_palette(self, accent: AccentColor) -> ForgePalette {

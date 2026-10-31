@@ -188,11 +188,12 @@ impl EventWiringView {
         async_bridge::run_async(
             &self.handles.rt_handle,
             async move { actions.overlay_feeds(&target, &sub_actions).await },
-            move |this, result: Result<Vec<OverlayFeed>, _>, cx| {
-                if let Ok(feeds) = result {
+            move |this, result: Result<Vec<OverlayFeed>, _>, cx| match result {
+                Ok(feeds) => {
                     this.delete_count = Some((id, feeds.len()));
                     cx.notify();
                 }
+                Err(error) => tracing::warn!(%error, "overlay feed count unreadable"),
             },
             cx,
         );

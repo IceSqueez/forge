@@ -76,7 +76,6 @@ impl IntegrationFailedView {
             |this, outcome, cx| this.apply_retry_outcome(outcome, cx),
             cx,
         );
-        cx.notify();
     }
 
     pub(crate) fn apply_retry_outcome(
@@ -91,7 +90,6 @@ impl IntegrationFailedView {
                 tr!("integration_retry_failed", name = self.name().to_string()),
             );
         }
-        cx.notify();
     }
 
     pub(crate) fn open_live_detail(&mut self, cx: &mut Context<Self>) {

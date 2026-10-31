@@ -16,7 +16,10 @@ use gpui::{
 use crate::repo_failure::RepoFailure;
 use forge_components::ActivePresentation;
 
-const LAN_PHRASE: &str = "expose to LAN";
+const ROW_GAP: Pixels = px(2.0);
+const ROW_GAP_ALT: Pixels = px(3.0);
+const ROW_PAD_V: Pixels = px(1.0);
+
 const MIN_PORT: u16 = 1024;
 const BADGE_GLYPH: Pixels = px(10.0);
 
@@ -51,7 +54,7 @@ impl SettingsWebSocketView {
         }
         let palette = cx.palette();
         let modal = cx.new(|cx| {
-            type_to_confirm(LAN_PHRASE, &palette, cx)
+            type_to_confirm(tr!("settings_ws_lan_phrase"), &palette, cx)
                 .title(tr!("settings_ws_lan_modal_title"))
                 .explanation(tr!("settings_ws_lan_modal_explanation"))
                 .instruction(
@@ -207,8 +210,8 @@ impl SettingsWebSocketView {
             .flex_none()
             .flex()
             .items_center()
-            .gap(scaled(px(3.0), density))
-            .py(scaled(px(1.0), density))
+            .gap(scaled(ROW_GAP_ALT, density))
+            .py(scaled(ROW_PAD_V, density))
             .px(spacing(Spacing::Xs, density))
             .rounded(radius(Radius::Sm))
             .bg(palette.surface_overlay)
@@ -248,7 +251,7 @@ impl SettingsWebSocketView {
             .min_w(px(0.0))
             .flex()
             .flex_col()
-            .gap(scaled(px(2.0), density))
+            .gap(scaled(ROW_GAP, density))
             .child(title_row)
             .child(
                 div()

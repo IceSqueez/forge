@@ -10,6 +10,10 @@ use forge_storage::{BlocklistMode, FilterRule, FilterRuleKind};
 use gpui::prelude::*;
 use gpui::{AnyElement, ClickEvent, Context, SharedString, div, px};
 
+const ROW_GAP: gpui::Pixels = px(5.0);
+
+const COLLAPSED_BLOCKLIST_CHIPS: usize = 3;
+
 impl TtsFiltersView {
     pub(super) fn skip_card(
         &self,
@@ -151,7 +155,7 @@ impl TtsFiltersView {
         let mode_choice = div()
             .flex()
             .flex_col()
-            .gap(scaled(px(5.0), density))
+            .gap(scaled(ROW_GAP, density))
             .py(spacing(Spacing::Xs, density))
             .child(
                 radio_row(
@@ -246,7 +250,7 @@ impl TtsFiltersView {
         let visible = if self.blocklist_expanded {
             total
         } else {
-            total.min(3)
+            total.min(COLLAPSED_BLOCKLIST_CHIPS)
         };
 
         let mut row = div()
@@ -288,7 +292,7 @@ impl TtsFiltersView {
             );
         }
 
-        if !self.blocklist_expanded && total > 3 {
+        if !self.blocklist_expanded && total > COLLAPSED_BLOCKLIST_CHIPS {
             row = row.child(
                 div()
                     .id("filt-bl-more")
@@ -306,7 +310,8 @@ impl TtsFiltersView {
                             .text_color(palette.text_faint)
                             .child(tr!(
                                 "tts_filters_blocklist_more",
-                                count = i64::try_from(total - 3).unwrap_or(i64::MAX)
+                                count = i64::try_from(total - COLLAPSED_BLOCKLIST_CHIPS)
+                                    .unwrap_or(i64::MAX)
                             )),
                     ),
             );

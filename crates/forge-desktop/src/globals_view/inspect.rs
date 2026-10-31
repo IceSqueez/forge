@@ -10,6 +10,11 @@ use forge_types::Variant;
 use gpui::prelude::*;
 use gpui::{ClickEvent, Context, SharedString, div, px};
 
+const GUTTER_W: gpui::Pixels = px(34.0);
+const PANEL_MAX_H: gpui::Pixels = px(400.0);
+const BLOCK_PR: gpui::Pixels = px(12.0);
+const ROW_PAD_H: gpui::Pixels = px(12.0);
+
 pub(super) struct InspectedGlobal {
     global: Global,
     json_lines: Vec<String>,
@@ -101,8 +106,8 @@ impl GlobalsView {
                     .child(
                         div()
                             .flex_none()
-                            .w(px(34.0))
-                            .pr(scaled(px(12.0), density))
+                            .w(GUTTER_W)
+                            .pr(scaled(BLOCK_PR, density))
                             .flex()
                             .justify_end()
                             .font_family(mono_family())
@@ -120,12 +125,12 @@ impl GlobalsView {
             .border_color(palette.border_regular)
             .rounded(radius(Radius::Md))
             .py(spacing(Spacing::Sm, density))
-            .px(scaled(px(12.0), density))
+            .px(scaled(ROW_PAD_H, density))
             .child(listing);
         let body = div()
             .id("globals-inspect-scroll")
             .w_full()
-            .max_h(px(400.0))
+            .max_h(PANEL_MAX_H)
             .min_h_0()
             .overflow_y_revealing_focus()
             .child(code);

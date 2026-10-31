@@ -25,6 +25,8 @@ use crate::settings_pane_header::SettingsPaneHeader;
 use crate::settings_voice_gate::SettingsVoiceGateView;
 use forge_components::ActivePresentation;
 
+const ROW_PAD_V: gpui::Pixels = px(7.0);
+
 const TEST_TONE_SAMPLE_RATE: u32 = 22_050;
 
 const TEST_TONE_DURATION_MS: u32 = 200;
@@ -243,7 +245,7 @@ impl SettingsAudioView {
 
     fn display_name(&self, device: &DeviceRow) -> String {
         if device.is_default {
-            format!("{} {}", device.name, tr!("widget_device_default_suffix"))
+            tr!("widget_device_default_label", name = device.name.as_str())
         } else {
             device.name.clone()
         }
@@ -291,7 +293,7 @@ impl SettingsAudioView {
             .justify_between()
             .w_full()
             .px(spacing(Spacing::Sm, density))
-            .py(scaled(px(7.0), density))
+            .py(scaled(ROW_PAD_V, density))
             .rounded(radius(Radius::Sm))
             .bg(palette.base)
             .border(BORDER_THIN)

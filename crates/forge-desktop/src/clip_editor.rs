@@ -329,6 +329,9 @@ impl ClipEditor {
             cx.notify();
             return;
         }
+        let Some(file_path) = self.file_path.clone() else {
+            return;
+        };
         let (hotkey, release) = match &self.key {
             Some(key) => (key.combo.clone(), key.release.clone()),
             None => (self.kept_hotkey.clone(), None),
@@ -336,7 +339,7 @@ impl ClipEditor {
         let draft = ClipDraft {
             edit_id: self.edit_id,
             name: self.name_input.read(cx).content().trim().to_owned(),
-            file_path: self.file_path.clone().unwrap_or_default(),
+            file_path,
             category: self.category.clone(),
             loop_playback: self.loop_playback,
             hotkey,

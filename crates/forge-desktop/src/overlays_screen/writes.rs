@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use forge_components::{ToastKind, tr};
+use forge_components::{PushToast, ToastKind, tr};
 use forge_overlay::MediaIssue;
 use forge_runtime::{OverlaySampleSource, OverlayServiceHandle};
 use forge_storage::{OverlayConfig, OverlayDefinition, OverlayId};
@@ -9,7 +9,6 @@ use gpui::Context;
 use super::OverlaysView;
 use crate::async_bridge;
 use crate::repo_failure::RepoFailure;
-use forge_components::PushToast;
 
 #[derive(Default)]
 pub(super) struct Regenerated {

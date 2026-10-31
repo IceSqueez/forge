@@ -1,5 +1,16 @@
 use super::*;
 
+const SKETCH_RADIUS: gpui::Pixels = px(2.0);
+const SWATCH_RADIUS: gpui::Pixels = px(11.0);
+const SKETCH_W: gpui::Pixels = px(46.0);
+const SKETCH_H: gpui::Pixels = px(100.0);
+const SWATCH: gpui::Pixels = px(48.0);
+const BLOCK_PAD: gpui::Pixels = px(6.0);
+const BLOCK_PAD_ALT: gpui::Pixels = px(8.0);
+const BLOCK_PAD_WIDE: gpui::Pixels = px(12.0);
+const ROW_GAP: gpui::Pixels = px(4.0);
+const ROW_GAP_ALT: gpui::Pixels = px(5.0);
+
 impl SettingsView {
     pub(super) fn render_nav(
         &self,
@@ -264,16 +275,20 @@ impl SettingsView {
         };
 
         let bar = |height: f32, width_frac: gpui::DefiniteLength, color: Rgba| {
-            div().h(px(height)).w(width_frac).rounded(px(2.0)).bg(color)
+            div()
+                .h(px(height))
+                .w(width_frac)
+                .rounded(SKETCH_RADIUS)
+                .bg(color)
         };
         let sidebar = div()
-            .w(px(46.0))
+            .w(SKETCH_W)
             .flex_none()
             .h_full()
             .flex()
             .flex_col()
-            .gap(px(4.0))
-            .p(px(6.0))
+            .gap(ROW_GAP)
+            .p(BLOCK_PAD)
             .bg(pal.shell)
             .border_r(BORDER_THIN)
             .border_color(pal.border_regular)
@@ -300,8 +315,8 @@ impl SettingsView {
             .h_full()
             .flex()
             .flex_col()
-            .gap(px(5.0))
-            .p(px(8.0))
+            .gap(ROW_GAP_ALT)
+            .p(BLOCK_PAD_ALT)
             .child(bar(
                 8.0,
                 gpui::relative(0.5),
@@ -317,7 +332,7 @@ impl SettingsView {
                 div()
                     .flex()
                     .flex_row()
-                    .gap(px(5.0))
+                    .gap(ROW_GAP_ALT)
                     .child(bar(14.0, gpui::relative(0.4), pal.brand))
                     .child(bar(
                         14.0,
@@ -331,7 +346,7 @@ impl SettingsView {
                 with_alpha(pal.text_muted, 0.3),
             ));
         let preview = div()
-            .h(px(100.0))
+            .h(SKETCH_H)
             .w_full()
             .flex()
             .flex_row()
@@ -371,7 +386,7 @@ impl SettingsView {
             .flex()
             .flex_col()
             .gap(spacing(Spacing::Xs, density))
-            .p(scaled(px(12.0), density))
+            .p(scaled(BLOCK_PAD_WIDE, density))
             .rounded(radius(Radius::Md))
             .border(BORDER_THIN)
             .border_color(border_color)
@@ -470,13 +485,13 @@ impl SettingsView {
         let version = env!("CARGO_PKG_VERSION");
 
         let tile = div()
-            .w(px(48.0))
-            .h(px(48.0))
+            .w(SWATCH)
+            .h(SWATCH)
             .flex_none()
             .flex()
             .items_center()
             .justify_center()
-            .rounded(px(11.0))
+            .rounded(SWATCH_RADIUS)
             .bg(palette.brand)
             .child(
                 div()

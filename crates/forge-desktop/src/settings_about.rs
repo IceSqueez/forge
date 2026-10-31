@@ -11,9 +11,9 @@ use gpui::{ClickEvent, Context, Entity, Window, div, prelude::*};
 use tokio::runtime::Handle;
 
 use crate::async_bridge;
+use crate::clipboard::copy_to_clipboard;
 use crate::problem_report::{ProblemReport, ReportSubject};
 use crate::system_info::{HostFacts, InfoField, SystemInfo, WindowFacts};
-use crate::toasts::copy_to_clipboard;
 
 enum AboutState {
     NotStarted,

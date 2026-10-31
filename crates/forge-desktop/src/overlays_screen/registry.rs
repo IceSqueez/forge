@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use forge_components::{ToastKind, tr};
+use forge_components::{PushToast, ToastKind, tr};
 use forge_overlay::MediaIssue;
 use forge_storage::{OverlayDefinition, OverlayId};
 use gpui::{Context, Pixels, Point};
@@ -10,9 +10,8 @@ use super::OverlaysView;
 use super::code_pane::LeaveIntent;
 use super::sound_choice;
 use crate::async_bridge::{self, Loadable};
+use crate::clipboard::copy_to_clipboard;
 use crate::repo_failure::RepoFailure;
-use crate::toasts::copy_to_clipboard;
-use forge_components::PushToast;
 
 #[derive(Default)]
 pub(super) struct RegistryState {

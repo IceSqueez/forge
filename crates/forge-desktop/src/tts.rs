@@ -119,6 +119,10 @@ impl TtsView {
 
     fn select_section(&mut self, section: TtsSection, cx: &mut Context<Self>) {
         self.section = section;
+        if section == TtsSection::Dashboard {
+            self.dashboard
+                .update(cx, |dashboard, cx| dashboard.refresh_engine_roster(cx));
+        }
         cx.notify();
     }
 

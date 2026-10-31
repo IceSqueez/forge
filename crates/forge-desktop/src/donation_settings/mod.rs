@@ -6,7 +6,7 @@ use forge_monobank::MonobankJar;
 use forge_storage::{CredentialsRepo, SettingsRepo, has_credentials_for, write_setting};
 use gpui::{AppContext as _, Context, Entity, Subscription, Window, px};
 
-use crate::async_bridge::{self, ErrorSink};
+use crate::async_bridge::{self, ErrorSink, SnapshotWriter, WriteOutcome};
 use forge_components::ActivePresentation;
 use forge_donatello::DONATELLO_POLL_INTERVAL_SECS;
 use forge_host::donation_services::{DonationService, stored_donatello_poll_interval};
@@ -60,6 +60,7 @@ pub(crate) struct DonationSettingsView {
     picked_jar: Option<String>,
     saved_jar: Option<String>,
     poll_interval: Option<Duration>,
+    poll_writer: SnapshotWriter,
     remove_pending: bool,
     _token_sub: Subscription,
 }
@@ -80,6 +81,7 @@ impl DonationSettingsView {
                 this.on_token_edited(cx);
             }
         });
+        let poll_writer = SnapshotWriter::new(&launch.rt_handle);
         let mut view = Self {
             launch,
             token,
@@ -92,6 +94,7 @@ impl DonationSettingsView {
             picked_jar: None,
             saved_jar: None,
             poll_interval: None,
+            poll_writer,
             remove_pending: false,
             _token_sub: token_sub,
         };
@@ -470,13 +473,15 @@ impl DonationSettingsView {
         self.poll_interval = Some(applied);
         let settings = Arc::clone(&self.launch.settings);
         let secs = applied.as_secs();
-        self.launch.rt_handle.spawn(async move {
-            if let Err(error) =
-                write_setting(settings.as_ref(), &DONATELLO_POLL_INTERVAL_SECS, &secs).await
-            {
-                tracing::warn!(error = %error, "could not keep the Donatello poll interval");
-            }
-        });
+        self.poll_writer.write(
+            async move { write_setting(settings.as_ref(), &DONATELLO_POLL_INTERVAL_SECS, &secs).await },
+            |_, outcome, _| {
+                if let WriteOutcome::Failed(error) = outcome {
+                    tracing::warn!(%error, "could not keep the Donatello poll interval");
+                }
+            },
+            cx,
+        );
         cx.notify();
     }
 

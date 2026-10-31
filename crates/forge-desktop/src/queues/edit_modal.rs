@@ -17,6 +17,9 @@ use gpui::{
     div, px,
 };
 
+const ROW_PAD_H: gpui::Pixels = px(12.0);
+const ROW_GAP: gpui::Pixels = px(14.0);
+
 pub(super) struct QueueDraft {
     pub(super) editing: Option<QueueId>,
     pub(super) name: String,
@@ -116,7 +119,7 @@ impl EditQueueModal {
             editing: self.editing,
             name: self.name_input.read(cx).content().trim().to_owned(),
             description: self.desc_input.read(cx).content().trim().to_owned(),
-            concurrency: self.concurrency.clamp(MIN_CONCURRENCY, MAX_CONCURRENCY),
+            concurrency: self.concurrency,
         };
         cx.emit(EditQueueEvent::Submit(draft));
     }
@@ -192,7 +195,7 @@ impl EditQueueModal {
             .flex_col()
             .gap(spacing(Spacing::Xxs, density))
             .py(spacing(Spacing::Sm, density))
-            .px(scaled(px(12.0), density))
+            .px(scaled(ROW_PAD_H, density))
             .rounded(CONCURRENCY_BOX_RADIUS)
             .border(BORDER_THIN)
             .border_color(palette.border_input)
@@ -202,7 +205,7 @@ impl EditQueueModal {
                     .w_full()
                     .flex()
                     .items_center()
-                    .gap(scaled(px(14.0), density))
+                    .gap(scaled(ROW_GAP, density))
                     .child(
                         div().flex_1().child(
                             slider(

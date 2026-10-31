@@ -30,6 +30,33 @@ use forge_runtime::IntegrationStartError;
 
 pub(super) type TwitchFlowHandle = Arc<tokio::sync::Mutex<Option<TwitchAuthFlow>>>;
 
+const ICON_SMALL: Pixels = px(12.0);
+const ICON_INLINE: Pixels = px(13.0);
+const ICON_NOTICE: Pixels = px(16.0);
+const SPINNER_SIZE: Pixels = px(11.0);
+const PULSE_DOT: Pixels = px(8.0);
+const BUTTON_RADIUS: Pixels = px(7.0);
+const BODY_LINE_H: Pixels = px(20.0);
+const PAGE_MAX_W: Pixels = px(640.0);
+const STEP_BADGE: Pixels = px(24.0);
+const BLOCK_MB: Pixels = px(8.0);
+const BLOCK_MB_ALT: Pixels = px(14.0);
+const BLOCK_MB_WIDE: Pixels = px(22.0);
+const ROW_PAD_V: Pixels = px(5.0);
+const ROW_PAD_V_ALT: Pixels = px(8.0);
+const ROW_PAD_V_WIDE: Pixels = px(11.0);
+const ROW_PAD_V_TALL: Pixels = px(14.0);
+const ROW_PAD_H: Pixels = px(11.0);
+const ROW_PAD_H_ALT: Pixels = px(12.0);
+const ROW_PAD_H_WIDE: Pixels = px(14.0);
+const ROW_PAD_H_TALL: Pixels = px(20.0);
+const ROW_GAP: Pixels = px(1.0);
+const ROW_GAP_ALT: Pixels = px(3.0);
+const ROW_GAP_WIDE: Pixels = px(5.0);
+const ROW_GAP_TALL: Pixels = px(8.0);
+const ROW_GAP_XL: Pixels = px(14.0);
+const BLOCK_PAD: Pixels = px(14.0);
+
 const CLIENT_ID_LOG_PREFIX_CHARS: usize = 6;
 const TWITCH_DEVICE_POLL_SECS: &str = "5";
 const COPY_FLIP: Duration = Duration::from_millis(1400);
@@ -392,8 +419,13 @@ impl ConnectFlow {
             .map_or(TwitchDevicePhase::Starting, |d| d.phase);
         let (indicator, label, color): (AnyElement, String, Rgba) = match phase {
             TwitchDevicePhase::Starting | TwitchDevicePhase::Waiting => (
-                spinner("twitch-device-status-spin", Icon::Loader2, px(11.0), accent)
-                    .into_any_element(),
+                spinner(
+                    "twitch-device-status-spin",
+                    Icon::Loader2,
+                    SPINNER_SIZE,
+                    accent,
+                )
+                .into_any_element(),
                 tr!("oauth_status_authorizing"),
                 accent,
             ),
@@ -470,7 +502,7 @@ impl ConnectFlow {
             .is_some_and(|d| d.code.is_some());
         let mut column = div()
             .w_full()
-            .max_w(px(640.0))
+            .max_w(PAGE_MAX_W)
             .flex()
             .flex_col()
             .child(self.twitch_explainer(palette, density));
@@ -501,8 +533,8 @@ impl ConnectFlow {
             .font_family(body_family())
             .text_size(FONT_XS)
             .text_color(palette.text_muted)
-            .line_height(px(20.0))
-            .mb(scaled(px(22.0), density))
+            .line_height(BODY_LINE_H)
+            .mb(scaled(BLOCK_MB_WIDE, density))
             .child(styled)
             .into_any_element()
     }
@@ -525,9 +557,9 @@ impl ConnectFlow {
         let url_box = div()
             .flex_1()
             .min_w(px(0.0))
-            .py(scaled(px(8.0), density))
-            .px(scaled(px(12.0), density))
-            .rounded(px(7.0))
+            .py(scaled(ROW_PAD_V_ALT, density))
+            .px(scaled(ROW_PAD_H_ALT, density))
+            .rounded(BUTTON_RADIUS)
             .border(BORDER_THIN)
             .border_color(palette.border_regular)
             .bg(palette.shell)
@@ -540,9 +572,9 @@ impl ConnectFlow {
             .flex_none()
             .flex()
             .items_center()
-            .gap(scaled(px(5.0), density))
-            .py(scaled(px(5.0), density))
-            .px(scaled(px(11.0), density))
+            .gap(scaled(ROW_GAP_WIDE, density))
+            .py(scaled(ROW_PAD_V, density))
+            .px(scaled(ROW_PAD_H, density))
             .rounded(radius(Radius::Sm))
             .border(BORDER_THIN)
             .border_color(palette.border_regular)
@@ -550,7 +582,7 @@ impl ConnectFlow {
             .hover(|s| s.border_color(palette.border_active))
             .key_activated(palette.text_primary)
             .on_click(cx.listener(|this, _, _, cx| this.twitch_open_url(cx)))
-            .child(icon(Icon::ExternalLink, px(13.0), accent))
+            .child(icon(Icon::ExternalLink, ICON_INLINE, accent))
             .child(
                 div()
                     .font_family(body_family())
@@ -579,14 +611,14 @@ impl ConnectFlow {
                         .font_weight(FontWeight::MEDIUM)
                         .text_size(FONT_XS)
                         .text_color(palette.text_primary)
-                        .mb(scaled(px(8.0), density))
+                        .mb(scaled(BLOCK_MB, density))
                         .child(tr!("twitch_device_open_title")),
                 )
                 .child(
                     div()
                         .flex()
                         .items_center()
-                        .gap(scaled(px(8.0), density))
+                        .gap(scaled(ROW_GAP_TALL, density))
                         .child(url_box)
                         .child(open_btn),
                 ),
@@ -624,9 +656,9 @@ impl ConnectFlow {
             .flex()
             .items_center()
             .justify_center()
-            .gap(scaled(px(8.0), density))
-            .py(scaled(px(14.0), density))
-            .px(scaled(px(20.0), density))
+            .gap(scaled(ROW_GAP_TALL, density))
+            .py(scaled(ROW_PAD_V_TALL, density))
+            .px(scaled(ROW_PAD_H_TALL, density))
             .rounded(radius(Radius::Md))
             .border(BORDER_THIN)
             .border_color(accent)
@@ -644,8 +676,8 @@ impl ConnectFlow {
             .flex()
             .flex_col()
             .items_center()
-            .gap(scaled(px(3.0), density))
-            .p(scaled(px(14.0), density))
+            .gap(scaled(ROW_GAP_ALT, density))
+            .p(scaled(BLOCK_PAD, density))
             .rounded(radius(Radius::Md))
             .border(BORDER_THIN)
             .border_color(palette.border_regular)
@@ -676,14 +708,14 @@ impl ConnectFlow {
         let meta_row = div()
             .flex()
             .items_center()
-            .gap(scaled(px(14.0), density))
+            .gap(scaled(ROW_GAP_XL, density))
             .mt(spacing(Spacing::Sm, density))
             .child(
                 div()
                     .flex()
                     .items_center()
-                    .gap(scaled(px(5.0), density))
-                    .child(icon(Icon::Clock, px(13.0), palette.text_muted))
+                    .gap(scaled(ROW_GAP_WIDE, density))
+                    .child(icon(Icon::Clock, ICON_INLINE, palette.text_muted))
                     .child(
                         div()
                             .font_family(body_family())
@@ -714,7 +746,7 @@ impl ConnectFlow {
                     .cursor_pointer()
                     .key_activated(palette.text_primary)
                     .on_click(cx.listener(|this, _, _, cx| this.begin_twitch_device(cx)))
-                    .child(icon(Icon::Refresh, px(12.0), accent))
+                    .child(icon(Icon::Refresh, ICON_SMALL, accent))
                     .child(
                         div()
                             .font_family(body_family())
@@ -726,7 +758,7 @@ impl ConnectFlow {
 
         step_card(2, accent, palette.shell, palette, density)
             .border_color(accent)
-            .mb(scaled(px(14.0), density))
+            .mb(scaled(BLOCK_MB_ALT, density))
             .child(
                 div()
                     .flex_1()
@@ -774,19 +806,19 @@ impl ConnectFlow {
             interval = TWITCH_DEVICE_POLL_SECS,
             scopes = scopes.as_str()
         );
-        let pulse = pulse_dot("twitch-device-pulse", accent, px(8.0));
+        let pulse = pulse_dot("twitch-device-pulse", accent, PULSE_DOT);
         div()
             .w_full()
             .flex()
             .items_center()
             .gap(spacing(Spacing::Sm, density))
-            .py(scaled(px(11.0), density))
-            .px(scaled(px(14.0), density))
+            .py(scaled(ROW_PAD_V_WIDE, density))
+            .px(scaled(ROW_PAD_H_WIDE, density))
             .rounded(radius(Radius::Md))
             .border(BORDER_THIN)
             .border_color(palette.border_regular)
             .bg(palette.elevated)
-            .mb(scaled(px(14.0), density))
+            .mb(scaled(BLOCK_MB_ALT, density))
             .child(pulse)
             .child(
                 div()
@@ -794,7 +826,7 @@ impl ConnectFlow {
                     .min_w(px(0.0))
                     .flex()
                     .flex_col()
-                    .gap(scaled(px(1.0), density))
+                    .gap(scaled(ROW_GAP, density))
                     .child(
                         div()
                             .font_family(body_family())
@@ -820,14 +852,14 @@ impl ConnectFlow {
             .flex()
             .items_center()
             .gap(spacing(Spacing::Sm, density))
-            .py(scaled(px(11.0), density))
-            .px(scaled(px(14.0), density))
+            .py(scaled(ROW_PAD_V_WIDE, density))
+            .px(scaled(ROW_PAD_H_WIDE, density))
             .rounded(radius(Radius::Md))
             .border(BORDER_THIN)
             .border_color(palette.success)
             .bg(palette.elevated)
-            .mb(scaled(px(14.0), density))
-            .child(icon(Icon::CircleCheckFilled, px(16.0), palette.success))
+            .mb(scaled(BLOCK_MB_ALT, density))
+            .child(icon(Icon::CircleCheckFilled, ICON_NOTICE, palette.success))
             .child(
                 div()
                     .font_family(body_family())
@@ -851,8 +883,8 @@ impl ConnectFlow {
             .border(BORDER_THIN)
             .border_color(palette.warning)
             .bg(palette.elevated)
-            .mb(scaled(px(14.0), density))
-            .child(icon(Icon::Clock, px(16.0), palette.warning))
+            .mb(scaled(BLOCK_MB_ALT, density))
+            .child(icon(Icon::Clock, ICON_NOTICE, palette.warning))
             .child(
                 div()
                     .flex_1()
@@ -893,7 +925,7 @@ impl ConnectFlow {
             .hover(|s| s.bg(with_alpha(accent, CTA_HOVER_ALPHA)))
             .key_activated(palette.text_primary)
             .on_click(cx.listener(|this, _, _, cx| this.begin_twitch_device(cx)))
-            .child(icon(Icon::Refresh, px(12.0), palette.shell))
+            .child(icon(Icon::Refresh, ICON_SMALL, palette.shell))
             .child(
                 div()
                     .font_family(body_family())
@@ -912,13 +944,13 @@ impl ConnectFlow {
             .border(BORDER_THIN)
             .border_color(palette.danger)
             .bg(palette.elevated)
-            .mb(scaled(px(14.0), density))
+            .mb(scaled(BLOCK_MB_ALT, density))
             .child(
                 div()
                     .flex()
                     .items_center()
                     .gap(spacing(Spacing::Xs, density))
-                    .child(icon(Icon::AlertTriangle, px(16.0), palette.danger))
+                    .child(icon(Icon::AlertTriangle, ICON_NOTICE, palette.danger))
                     .child(
                         div()
                             .flex_1()
@@ -955,7 +987,7 @@ impl ConnectFlow {
             .cursor_pointer()
             .key_activated(palette.text_primary)
             .on_click(cx.listener(|this, _, _, cx| this.cancel_twitch_and_leave(cx)))
-            .child(icon(Icon::ChevronLeft, px(13.0), palette.text_muted))
+            .child(icon(Icon::ChevronLeft, ICON_INLINE, palette.text_muted))
             .child(
                 div()
                     .font_family(body_family())
@@ -1003,7 +1035,7 @@ fn step_card(
 ) -> gpui::Div {
     let circle = div()
         .flex_none()
-        .size(px(24.0))
+        .size(STEP_BADGE)
         .flex()
         .items_center()
         .justify_center()
@@ -1021,7 +1053,7 @@ fn step_card(
         .w_full()
         .flex()
         .items_start()
-        .gap(scaled(px(14.0), density))
+        .gap(scaled(ROW_GAP_XL, density))
         .p(spacing(Spacing::Md, density))
         .rounded(radius(Radius::Md))
         .border(BORDER_THIN)

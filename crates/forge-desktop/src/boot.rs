@@ -135,25 +135,32 @@ fn open_boot_storage_with(
 }
 
 async fn load_appearance(settings: &dyn SettingsRepo) -> PersistedAppearance {
-    let theme = match read_setting(settings, &THEME).await {
-        Ok(Some(key)) => ThemeId::from_storage_key(&key).unwrap_or_default(),
-        _ => ThemeId::default(),
-    };
-    let accent = match read_setting(settings, &ACCENT).await {
-        Ok(Some(key)) => AccentColor::from_storage_key(&key).unwrap_or_default(),
-        _ => AccentColor::default(),
-    };
-    let density = match read_setting(settings, &DENSITY).await {
-        Ok(Some(key)) => Density::from_storage_key(&key).unwrap_or_default(),
-        _ => Density::default(),
-    };
+    let theme = stored_or_warn(read_setting(settings, &THEME).await, "theme")
+        .and_then(|key| ThemeId::from_storage_key(&key))
+        .unwrap_or_default();
+    let accent = stored_or_warn(read_setting(settings, &ACCENT).await, "accent")
+        .and_then(|key| AccentColor::from_storage_key(&key))
+        .unwrap_or_default();
+    let density = stored_or_warn(read_setting(settings, &DENSITY).await, "density")
+        .and_then(|key| Density::from_storage_key(&key))
+        .unwrap_or_default();
     PersistedAppearance {
         theme,
         accent,
         density,
-        body_font: read_setting(settings, &FONT_BODY).await.ok().flatten(),
-        mono_font: read_setting(settings, &FONT_MONO).await.ok().flatten(),
+        body_font: stored_or_warn(read_setting(settings, &FONT_BODY).await, "body font"),
+        mono_font: stored_or_warn(read_setting(settings, &FONT_MONO).await, "mono font"),
     }
+}
+
+fn stored_or_warn<E: std::fmt::Display>(
+    read: Result<Option<String>, E>,
+    setting: &'static str,
+) -> Option<String> {
+    read.unwrap_or_else(|error| {
+        tracing::warn!(%error, setting, "appearance setting unreadable; the default applies");
+        None
+    })
 }
 
 fn sqlite_url(db_path: &std::path::Path) -> String {
@@ -269,7 +276,6 @@ pub(crate) async fn run_pre_boot(backend: &Arc<dyn DataProvider>) -> PreBoot {
         };
     apply_persisted_log_level(settings_repo.as_ref()).await;
     let settings_catalog = Arc::new(crate::settings_catalog::registered_settings_catalog());
-    let stay_awake = crate::stay_awake::start_stay_awake(Arc::clone(&settings_repo)).await;
 
     let (startup_language, persist) =
         crate::i18n::resolve_startup_language(Arc::clone(&settings_repo)).await;
@@ -279,6 +285,11 @@ pub(crate) async fn run_pre_boot(backend: &Arc<dyn DataProvider>) -> PreBoot {
     {
         tracing::warn!(error = %e, "failed to persist detected locale");
     }
+    let stay_awake = crate::stay_awake::start_stay_awake(
+        Arc::clone(&settings_repo),
+        crate::i18n::message_in(startup_language, crate::stay_awake::HOLD_REASON_KEY),
+    )
+    .await;
     let startup_display_formats =
         crate::i18n::resolve_startup_display_formats(settings_repo.as_ref(), startup_language)
             .await;

@@ -566,12 +566,18 @@ async fn seed_chat_history(
         let settings = Arc::clone(&backend) as Arc<dyn forge_storage::SettingsRepo>;
         let limit = forge_storage::chat_history_display_limit(settings.as_ref())
             .await
-            .unwrap_or(DEFAULT_DISPLAY_LIMIT);
+            .unwrap_or_else(|error| {
+                tracing::warn!(%error, "chat history limit unreadable; the default applies");
+                DEFAULT_DISPLAY_LIMIT
+            });
         let rows = backend
             .chat_history_repo()
             .list_recent(limit as usize)
             .await
-            .unwrap_or_default();
+            .unwrap_or_else(|error| {
+                tracing::warn!(%error, "chat history unreadable; the feed starts empty");
+                Vec::new()
+            });
         (limit, rows)
     });
     let Ok((limit, mut rows)) = reply.await else {

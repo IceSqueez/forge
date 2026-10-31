@@ -76,7 +76,7 @@ impl SettingsWebSocketView {
 
     fn copy_overlay_token(&mut self, cx: &mut Context<Self>) {
         if let Some(token) = &self.overlay_token {
-            crate::toasts::copy_to_clipboard(token.expose().to_owned(), cx);
+            crate::clipboard::copy_to_clipboard(token.expose().to_owned(), cx);
         }
     }
 
@@ -171,7 +171,7 @@ impl SettingsWebSocketView {
     }
 
     fn copy_token(&mut self, cx: &mut Context<Self>) {
-        crate::toasts::copy_to_clipboard(self.bearer_token.expose().to_owned(), cx);
+        crate::clipboard::copy_to_clipboard(self.bearer_token.expose().to_owned(), cx);
     }
 
     fn request_regenerate(&mut self, cx: &mut Context<Self>) {

@@ -86,12 +86,32 @@ pub struct GridPickerItem {
     pub matches: Option<GridItemQuery>,
 }
 
-pub const LEADING_SCOPE: &str = "all";
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GridScope {
+    Leading,
+    Named(SharedString),
+}
+
+impl GridScope {
+    pub fn name(&self) -> Option<&str> {
+        match self {
+            Self::Leading => None,
+            Self::Named(name) => Some(name),
+        }
+    }
+
+    fn rail_element_id(&self) -> SharedString {
+        match self {
+            Self::Leading => SharedString::new_static("forge-grid-rail-leading"),
+            Self::Named(name) => SharedString::from(format!("forge-grid-rail-{name}")),
+        }
+    }
+}
 
 pub struct GridPickerGroup {
     pub label: SharedString,
     pub dot_color: Rgba,
-    pub scope: SharedString,
+    pub scope: GridScope,
     pub items: Vec<GridPickerItem>,
 }
 
@@ -160,7 +180,13 @@ pub enum FavoritesStatus {
 enum RailSel {
     All,
     Favorites,
-    Group(SharedString),
+    Group(GridScope),
+}
+
+struct RailScope {
+    scope: GridScope,
+    label: SharedString,
+    dot: Rgba,
 }
 
 #[derive(Clone)]
@@ -446,22 +472,27 @@ impl GridPicker {
         cx.emit(GridPickerEvent::Dismissed);
     }
 
-    fn scope_entries(&self) -> Vec<(SharedString, String, Rgba)> {
-        let mut seen: Vec<(SharedString, String, Rgba)> = Vec::new();
-        for g in &self.groups {
-            if g.scope.as_ref() == LEADING_SCOPE || seen.iter().any(|(id, _, _)| id == &g.scope) {
-                continue;
-            }
-            seen.push((g.scope.clone(), scope_label(&g.label), g.dot_color));
-        }
-        seen
-    }
-
-    fn leading_band_entry(&self) -> Option<(SharedString, String, Rgba)> {
-        self.groups
+    fn rail_scopes(&self) -> Vec<RailScope> {
+        let leading = self
+            .groups
             .iter()
-            .find(|g| g.scope.as_ref() == LEADING_SCOPE)
-            .map(|g| (g.scope.clone(), scope_label(&g.label), g.dot_color))
+            .filter(|group| group.scope == GridScope::Leading)
+            .take(1);
+        let named = self
+            .groups
+            .iter()
+            .filter(|group| group.scope != GridScope::Leading);
+        let mut scopes: Vec<RailScope> = Vec::new();
+        for group in leading.chain(named) {
+            if scopes.iter().all(|seen| seen.scope != group.scope) {
+                scopes.push(RailScope {
+                    scope: group.scope.clone(),
+                    label: group.label.clone(),
+                    dot: group.dot_color,
+                });
+            }
+        }
+        scopes
     }
 
     fn render_header(&self, accent: Rgba, cx: &mut Context<Self>) -> AnyElement {
@@ -590,14 +621,7 @@ impl GridPicker {
             .child(grid_rail_entry(
                 "forge-grid-rail-all",
                 tr!("widget_grid_picker_all"),
-                Some(
-                    div()
-                        .flex_none()
-                        .size(RAIL_DOT)
-                        .rounded(radius(Radius::Pill))
-                        .bg(p.text_muted)
-                        .into_any_element(),
-                ),
+                Some(rail_dot(p.text_muted)),
                 matches!(self.rail, RailSel::All),
                 &p,
                 cx.listener(|this, _: &ClickEvent, _, cx| this.set_rail(RailSel::All, cx)),
@@ -622,45 +646,17 @@ impl GridPicker {
             ));
         }
 
-        if let Some((scope_id, label, dot)) = self.leading_band_entry() {
-            let active = matches!(&self.rail, RailSel::Group(s) if s == &scope_id);
-            let sid = scope_id.clone();
-            let lead: AnyElement = div()
-                .flex_none()
-                .size(RAIL_DOT)
-                .rounded(radius(Radius::Pill))
-                .bg(dot)
-                .into_any_element();
+        for entry in self.rail_scopes() {
+            let active = matches!(&self.rail, RailSel::Group(selected) if selected == &entry.scope);
+            let selection = entry.scope.clone();
             col = col.child(grid_rail_entry(
-                SharedString::from(format!("forge-grid-rail-{scope_id}")),
-                label,
-                Some(lead),
+                entry.scope.rail_element_id(),
+                entry.label,
+                Some(rail_dot(entry.dot)),
                 active,
                 &p,
                 cx.listener(move |this, _: &ClickEvent, _, cx| {
-                    this.set_rail(RailSel::Group(sid.clone()), cx)
-                }),
-                density,
-            ));
-        }
-
-        for (scope_id, label, dot) in self.scope_entries() {
-            let active = matches!(&self.rail, RailSel::Group(s) if s == &scope_id);
-            let sid = scope_id.clone();
-            let lead: AnyElement = div()
-                .flex_none()
-                .size(RAIL_DOT)
-                .rounded(radius(Radius::Pill))
-                .bg(dot)
-                .into_any_element();
-            col = col.child(grid_rail_entry(
-                SharedString::from(format!("forge-grid-rail-{scope_id}")),
-                label,
-                Some(lead),
-                active,
-                &p,
-                cx.listener(move |this, _: &ClickEvent, _, cx| {
-                    this.set_rail(RailSel::Group(sid.clone()), cx)
+                    this.set_rail(RailSel::Group(selection.clone()), cx)
                 }),
                 density,
             ));
@@ -1042,12 +1038,13 @@ fn item_hit(item: &GridPickerItem, query: &str) -> bool {
     }
 }
 
-fn scope_label(group_label: &str) -> String {
-    group_label
-        .split(" \u{b7} ")
-        .next()
-        .unwrap_or(group_label)
-        .to_owned()
+fn rail_dot(color: Rgba) -> AnyElement {
+    div()
+        .flex_none()
+        .size(RAIL_DOT)
+        .rounded(radius(Radius::Pill))
+        .bg(color)
+        .into_any_element()
 }
 
 fn grid_rail_entry(
@@ -1149,7 +1146,7 @@ mod tests {
         GridPickerGroup {
             label: SharedString::from(scope.to_owned()),
             dot_color: FORGE_DEFAULT.brand,
-            scope: SharedString::from(scope.to_owned()),
+            scope: GridScope::Named(SharedString::from(scope.to_owned())),
             items,
         }
     }
@@ -1287,9 +1284,9 @@ mod tests {
         let rail = vcx.update(|_window, cx| {
             picker
                 .read(cx)
-                .scope_entries()
+                .rail_scopes()
                 .into_iter()
-                .map(|(_, label, _)| label)
+                .map(|entry| entry.label.to_string())
                 .collect::<Vec<_>>()
         });
 

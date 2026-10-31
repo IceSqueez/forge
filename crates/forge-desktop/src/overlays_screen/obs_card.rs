@@ -13,7 +13,7 @@ use forge_types::Variant;
 use gpui::{AnyElement, ClickEvent, Context, Pixels, SharedString, div, prelude::*, px, relative};
 
 use super::OverlaysView;
-use crate::toasts::copy_to_clipboard;
+use crate::clipboard::copy_to_clipboard;
 
 const CARD_PAD: Pixels = px(12.0);
 const CARD_RADIUS: Pixels = px(10.0);

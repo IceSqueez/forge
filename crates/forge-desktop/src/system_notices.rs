@@ -25,7 +25,11 @@ pub(crate) struct NoticeText {
 
 impl NoticeText {
     pub(crate) fn toast_message(&self) -> String {
-        format!("{} - {}", self.title, self.body)
+        tr!(
+            "system_notice_toast",
+            title = self.title.as_str(),
+            body = self.body.as_str()
+        )
     }
 
     pub(crate) fn desktop_notice(&self) -> DesktopNotice {

@@ -236,11 +236,7 @@ impl Picker {
         if self.filtered.is_empty() {
             return;
         }
-        self.selected = if self.selected + 1 >= self.filtered.len() {
-            0
-        } else {
-            self.selected + 1
-        };
+        self.selected = wrapped_step(self.selected, self.filtered.len(), PickerStep::Next);
         self.list_scroll
             .scroll_to_item(self.selected, ScrollStrategy::Nearest);
         cx.notify();
@@ -250,11 +246,7 @@ impl Picker {
         if self.filtered.is_empty() {
             return;
         }
-        self.selected = if self.selected == 0 {
-            self.filtered.len() - 1
-        } else {
-            self.selected - 1
-        };
+        self.selected = wrapped_step(self.selected, self.filtered.len(), PickerStep::Prev);
         self.list_scroll
             .scroll_to_item(self.selected, ScrollStrategy::Nearest);
         cx.notify();
@@ -320,6 +312,20 @@ pub(crate) fn message_row(text: SharedString, palette: ForgePalette) -> AnyEleme
         .text_color(palette.text_faint)
         .child(text)
         .into_any_element()
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PickerStep {
+    Next,
+    Prev,
+}
+
+pub(crate) fn wrapped_step(current: usize, count: usize, step: PickerStep) -> usize {
+    match step {
+        PickerStep::Next => (current + 1) % count,
+        PickerStep::Prev if current == 0 => count - 1,
+        PickerStep::Prev => current - 1,
+    }
 }
 
 impl Render for Picker {

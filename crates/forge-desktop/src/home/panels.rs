@@ -1,5 +1,8 @@
 use super::*;
 
+const BAR_H: gpui::Pixels = px(40.0);
+const ROW_GAP: gpui::Pixels = px(3.0);
+
 impl HomeView {
     pub(super) fn health_stat(
         label: String,
@@ -34,7 +37,7 @@ impl HomeView {
             .flex_1()
             .flex()
             .flex_col()
-            .gap(scaled(px(3.0), density))
+            .gap(scaled(ROW_GAP, density))
             .child(
                 div()
                     .font_family(mono_family())
@@ -116,7 +119,7 @@ impl HomeView {
             .child(
                 div()
                     .w_full()
-                    .h(px(40.0))
+                    .h(BAR_H)
                     .child(sparkline(&health.throughput, palette.brand)),
             );
 

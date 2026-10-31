@@ -130,7 +130,7 @@ impl ServerConsoleView {
 
     pub(super) fn copy_browser_source_url(&mut self, cx: &mut Context<Self>) {
         if let Some(url) = self.browser_source_url() {
-            crate::toasts::copy_to_clipboard(url, cx);
+            crate::clipboard::copy_to_clipboard(url, cx);
         }
     }
 

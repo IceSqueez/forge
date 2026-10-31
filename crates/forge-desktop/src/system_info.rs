@@ -154,6 +154,7 @@ pub(crate) struct HostFacts {
 impl HostFacts {
     pub(crate) fn collect(data_dir: &Path, speech_preference: Option<OutputDevice>) -> Self {
         let audio_outputs = forge_audio::list_output_devices()
+            .inspect_err(|error| tracing::warn!(%error, "audio outputs unreadable for host facts"))
             .ok()
             .map(|devices| AudioOutputs {
                 device_count: devices.len(),
@@ -490,12 +491,20 @@ pub(crate) fn directory_size(root: &Path) -> Option<u64> {
     let mut total: u64 = 0;
     let mut pending = vec![root.to_path_buf()];
     while let Some(dir) = pending.pop() {
-        let Ok(entries) = fs::read_dir(&dir) else {
-            continue;
+        let entries = match fs::read_dir(&dir) {
+            Ok(entries) => entries,
+            Err(error) => {
+                tracing::debug!(%error, "directory left out of the size total");
+                continue;
+            }
         };
         for entry in entries.flatten() {
-            let Ok(metadata) = entry.metadata() else {
-                continue;
+            let metadata = match entry.metadata() {
+                Ok(metadata) => metadata,
+                Err(error) => {
+                    tracing::debug!(%error, "entry left out of the size total");
+                    continue;
+                }
             };
             if metadata.is_dir() {
                 pending.push(entry.path());

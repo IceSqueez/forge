@@ -23,6 +23,16 @@ use gpui::{
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
+fn run_duration_label(ctx: &ExecutionContext) -> String {
+    match ctx.completed_at {
+        Some(done) => {
+            let ms = (done - ctx.started_at).whole_milliseconds().max(0);
+            tr!("action_editor_run_history_duration_ms", count = ms)
+        }
+        None => "-".to_owned(),
+    }
+}
+
 const RAIL_ROW_GAP: Pixels = px(2.0);
 const CHIP_PAD_V: Pixels = px(1.0);
 const MODAL_W: Pixels = px(880.0);
@@ -308,13 +318,7 @@ impl RunHistoryModal {
             ExecutionOutcome::Cancelled => palette.text_muted,
         };
         let when = fmt_display_relative(Some(ctx.started_at));
-        let duration = match ctx.completed_at {
-            Some(done) => {
-                let ms = (done - ctx.started_at).whole_milliseconds().max(0);
-                tr!("action_editor_run_history_duration_ms", count = ms)
-            }
-            None => "-".to_owned(),
-        };
+        let duration = run_duration_label(ctx);
         let (bg, time_color) = if active {
             (palette.surface_overlay, palette.text_primary)
         } else {
@@ -370,13 +374,7 @@ impl RunHistoryModal {
     ) -> AnyElement {
         let density = cx.density();
         let when = fmt_display_relative(Some(ctx.started_at));
-        let duration = match ctx.completed_at {
-            Some(done) => {
-                let ms = (done - ctx.started_at).whole_milliseconds().max(0);
-                tr!("action_editor_run_history_duration_ms", count = ms)
-            }
-            None => "-".to_owned(),
-        };
+        let duration = run_duration_label(ctx);
         let (badge_color, badge_label, error_message) = match &ctx.outcome {
             ExecutionOutcome::Success => (
                 palette.success,
@@ -494,10 +492,9 @@ impl RunHistoryModal {
                     .unwrap_or_else(|| tr!("action_editor_run_history_trigger_fallback").into());
                 (glyph, label)
             }
-            ExecutionMetadata::QuickAction { label, .. } => (
-                Icon::from_name("layout-grid"),
-                SharedString::from(label.clone()),
-            ),
+            ExecutionMetadata::QuickAction { label, .. } => {
+                (Icon::LayoutGrid, SharedString::from(label.clone()))
+            }
             ExecutionMetadata::Scheduled {
                 scheduled_by_action,
                 ..

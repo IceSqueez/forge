@@ -360,6 +360,7 @@ settings_diagnostics_cleared = Журнали очищено
 settings_diagnostics_clear_failed = Не вдалося очистити журнали: { $error }
 settings_diagnostics_exported = Діагностичний пакет збережено до { $path }
 settings_diagnostics_export_failed = Не вдалося експортувати діагностичний пакет: { $error }
+settings_diagnostics_export_filter_text = Текст
 settings_diagnostics_level_label = Рівень журналювання
 settings_diagnostics_level_hint = Застосовується одразу, без перезапуску. Debug і trace швидко нарощують журнал на активному стрімі.
 settings_diagnostics_level_env_locked = Цим запуском керує змінна середовища RUST_LOG, тож рівень тут змінити не можна.
@@ -787,6 +788,7 @@ settings_ws_overlay_section_title = Коренева тека оверлею
 settings_ws_overlay_folder_prefix = Тека доступна за адресою
 settings_ws_browse_btn = Огляд
 settings_ws_lan_modal_title = Відкрити Forge для вашої мережі?
+settings_ws_lan_phrase = відкрити для LAN
 settings_ws_lan_modal_explanation = Ви перемикаєтеся з 127.0.0.1 (тільки локальний хост) на 0.0.0.0 (всі мережеві інтерфейси). Інші пристрої у вашій локальній мережі - та всі в тій самій Wi-Fi - матимуть доступ до сервера Forge.
 settings_ws_lan_modal_confirm_label = Відкрити для LAN
 settings_ws_lan_bullet_phone = Телефон / планшет / другий ПК зможуть підключатися до оверлеїв та WS API
@@ -1528,6 +1530,7 @@ tts_filters_modal_replace_note = Залиште заміну порожньою,
 
 ## TTS Filters - колонка попереднього перегляду
 
+tts_filters_preview_speak_failed = Не вдалося надіслати попередній перегляд до черги мовлення
 tts_filters_preview_header = Живий перегляд
 tts_filters_preview_input_label = ВХІДНЕ ПОВІДОМЛЕННЯ
 tts_filters_preview_input_placeholder = Введіть повідомлення для перегляду...
@@ -2566,6 +2569,9 @@ widget_picker_no_results = Нічого не знайдено.
 ## Widget - output device picker
 
 widget_device_default_suffix = (за замовчуванням)
+widget_device_default_label = { $name } { widget_device_default_suffix }
+system_notice_toast = { $title } - { $body }
+stay_awake_hold_reason = forge не дає системі й дисплею заснути, поки працює
 widget_device_test = Тест
 
 ## Widget - quick actions panel
@@ -2746,6 +2752,7 @@ obs_connect_step_enable_option = Enable WebSocket server
 obs_connect_step_port_prefix = Занотуйте
 obs_connect_step_port_field = порт
 obs_connect_step_port_default_prefix = (типово
+connect_step_port_default_value = { $port })
 obs_connect_step_reveal_prefix = Натисніть
 obs_connect_step_reveal_button = Show Connect Info
 obs_connect_step_reveal_suffix = для показу пароля
@@ -3155,6 +3162,12 @@ overlays_toast_build_failed_pass = Не вдалося перебудувати 
 overlays_toast_speech_failed = { $overlay } показано без мовлення: { $error }. Оберіть встановлений голос у полі Голос.
 overlays_confirm_delete_title = Видалити оверлей?
 overlays_confirm_delete_body = Будь-яке браузерне джерело OBS, що вказує на цей оверлей, перестане завантажуватися. Це не можна скасувати.
+overlays_confirm_delete_body_feeds = { overlays_confirm_delete_body } { $count ->
+    [one] До нього надсилає { $count } дія.
+    [few] До нього надсилають { $count } дії.
+    [many] До нього надсилають { $count } дій.
+   *[other] До нього надсилають { $count } дій.
+}
 
 overlays_mode_design = Дизайн
 overlays_mode_code = Код
@@ -4116,12 +4129,6 @@ overlays_wire_fires_on = Спрацьовує на { $triggers }
 overlays_wire_fires_untriggered = Дії надсилають до цього оверлея, але жодна подія їх ще не запускає.
 overlays_wire_action_disabled = вимкнено
 overlays_wire_overlay_off = Цей оверлей вимкнено, тож поки він вимкнений, нічого не показується.
-overlays_confirm_delete_feeds = { $count ->
-    [one] До нього надсилає { $count } дія.
-    [few] До нього надсилають { $count } дії.
-    [many] До нього надсилають { $count } дій.
-   *[other] До нього надсилають { $count } дій.
-}
 nav_item_integrations = Інтеграції
 integrations_breadcrumb = Інтеграції
 integrations_title = Інтеграції

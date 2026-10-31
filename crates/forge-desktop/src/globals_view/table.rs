@@ -3,16 +3,26 @@ use crate::globals::{Global, variant_kind_color};
 use crate::load_notice::{LoadNotice, NoticeWidth, load_notice};
 use crate::navigable_list::navigable_list;
 use forge_components::{
-    ActivePresentation, ColumnWidth, DataRow, Density, FONT_XS, ForgePalette, Icon, KeyActivated,
-    Radius, Spacing, badge, body_family, column, context_menu, empty_state, hover_reveal, icon,
-    menu_divider, menu_item, mono_family, radius, scaled, spacing, status_dot, toggle, tr,
-    virtual_table, with_alpha,
+    ActivePresentation, ColumnWidth, DataRow, Density, FONT_SECTION_LABEL, FONT_XS, ForgePalette,
+    Icon, KeyActivated, Radius, Spacing, badge, body_family, column, context_menu, empty_state,
+    hover_reveal, icon, menu_divider, menu_item, mono_family, radius, scaled, spacing, status_dot,
+    toggle, tr, virtual_table, with_alpha,
 };
 use forge_types::{Variant, VariantKind};
 use gpui::prelude::*;
 use gpui::{
     ClickEvent, Context, MouseButton, MouseDownEvent, Rgba, SharedString, Window, div, px, svg,
 };
+
+const COL_MARK_W: gpui::Pixels = px(24.0);
+const COL_TYPE_W: gpui::Pixels = px(80.0);
+const COL_MODIFIED_W: gpui::Pixels = px(120.0);
+const COL_BY_W: gpui::Pixels = px(96.0);
+const COL_PERSIST_W: gpui::Pixels = px(64.0);
+const COL_ACTIONS_W: gpui::Pixels = px(84.0);
+const ROW_GAP: gpui::Pixels = px(2.0);
+const BLOCK_PAD: gpui::Pixels = px(2.0);
+const BLOCK_PAD_ALT: gpui::Pixels = px(4.0);
 
 impl GlobalsView {
     pub(super) fn render_table(
@@ -52,20 +62,29 @@ impl GlobalsView {
                 .into_any_element()
         } else {
             let columns = vec![
-                column("", ColumnWidth::Fixed(px(24.0))),
+                column("", ColumnWidth::Fixed(COL_MARK_W)),
                 column(tr!("globals_editor_section_name"), ColumnWidth::Flex(8.0)),
                 column(
                     tr!("globals_editor_section_type"),
-                    ColumnWidth::Fixed(px(80.0)),
+                    ColumnWidth::Fixed(COL_TYPE_W),
                 ),
                 column(tr!("globals_editor_section_value"), ColumnWidth::Flex(8.0)),
-                column(tr!("globals_col_modified"), ColumnWidth::Fixed(px(120.0))),
+                column(
+                    tr!("globals_col_modified"),
+                    ColumnWidth::Fixed(COL_MODIFIED_W),
+                ),
                 column(
                     tr!("globals_col_reads_writes"),
-                    ColumnWidth::Fixed(px(96.0)),
+                    ColumnWidth::Fixed(COL_BY_W),
                 ),
-                column(tr!("globals_col_persist"), ColumnWidth::Fixed(px(64.0))),
-                column(tr!("globals_col_actions"), ColumnWidth::Fixed(px(84.0))),
+                column(
+                    tr!("globals_col_persist"),
+                    ColumnWidth::Fixed(COL_PERSIST_W),
+                ),
+                column(
+                    tr!("globals_col_actions"),
+                    ColumnWidth::Fixed(COL_ACTIONS_W),
+                ),
             ];
             let pal = *palette;
             virtual_table(
@@ -122,7 +141,7 @@ impl GlobalsView {
             variant_kind_color(kind, palette),
             kind.contract_name(),
             true,
-            px(9.5),
+            FONT_SECTION_LABEL,
         ));
 
         let value_cell = self.value_cell(g, palette, cx);
@@ -157,7 +176,7 @@ impl GlobalsView {
             .flex()
             .items_center()
             .justify_end()
-            .gap(scaled(px(2.0), density))
+            .gap(scaled(ROW_GAP, density))
             .child(self.row_action(
                 (gpui::ElementId::from("globals-edit"), name.clone()),
                 Icon::Edit,
@@ -367,7 +386,7 @@ impl GlobalsView {
                     .flex()
                     .items_center()
                     .justify_center()
-                    .p(px(2.0))
+                    .p(BLOCK_PAD)
                     .rounded(radius(Radius::Sm))
                     .cursor_pointer()
                     .hover(move |s| s.bg(hover_bg))
@@ -413,7 +432,7 @@ impl GlobalsView {
             .flex()
             .items_center()
             .justify_center()
-            .p(px(4.0))
+            .p(BLOCK_PAD_ALT)
             .rounded(radius(Radius::Sm))
             .cursor_pointer()
             .hover(move |s| s.bg(hover_bg))

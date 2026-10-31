@@ -13,7 +13,7 @@ use gpui::{
     Window, div, prelude::*, px,
 };
 
-use crate::toasts::copy_to_clipboard;
+use crate::clipboard::copy_to_clipboard;
 use forge_components::ActivePresentation;
 
 const BODY_PAD_H: Pixels = px(18.0);

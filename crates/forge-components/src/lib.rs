@@ -107,7 +107,7 @@ pub use form_field::{
 pub use glyph::{GlyphArt, glyph_art};
 pub use grid_picker::{
     FavoritesStatus, GridPicker, GridPickerArt, GridPickerConfig, GridPickerEvent, GridPickerGroup,
-    GridPickerItem, GridPickerItemState, GridPickerSubtitle, LEADING_SCOPE,
+    GridPickerItem, GridPickerItemState, GridPickerSubtitle, GridScope,
 };
 pub use icons::{Icon, IconAssets, icon, spinner};
 pub use inline_edit::{InlineEdit, InlineEditEvent, inline_edit};

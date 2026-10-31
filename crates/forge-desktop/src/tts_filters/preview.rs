@@ -1,5 +1,6 @@
 use super::TtsFiltersView;
-use forge_components::tr;
+use crate::async_bridge::{self, ErrorSink};
+use forge_components::{PushToast, ToastKind, tr};
 use forge_speak_queue::{
     EmoteTokenSet, Priority, ReplacementSource, RequestId, SpeakCommand, SpeakRequest, build_config,
 };
@@ -143,10 +144,11 @@ impl TtsFiltersView {
             return;
         }
         let Some(handle) = self.speak.clone() else {
+            cx.push_toast(ToastKind::Error, tr!("tts_filters_preview_speak_failed"));
             return;
         };
         let speaker_name = tr!("tts_filters_preview_speaker_name");
-        self.rt_handle.spawn(async move {
+        let send = async move {
             let request = SpeakRequest {
                 request_id: RequestId::new(),
                 viewer_id: String::new(),
@@ -160,10 +162,15 @@ impl TtsFiltersView {
                 target: None,
                 message_emotes: EmoteTokenSet::default(),
             };
-            if let Err(e) = handle.send(SpeakCommand::Enqueue(request)).await {
-                tracing::warn!(error = %e, "tts filters preview speak failed");
-            }
-        });
+            handle.send(SpeakCommand::Enqueue(request)).await
+        };
+        async_bridge::report_failure(
+            &self.rt_handle,
+            send,
+            ErrorSink::Toast,
+            tr!("tts_filters_preview_speak_failed"),
+            cx,
+        );
     }
 }
 

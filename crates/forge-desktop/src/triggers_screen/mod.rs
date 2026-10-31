@@ -680,11 +680,19 @@ mod tests {
 
         let (groups, _) = build_kind_groups(&triggers, &forge_components::FORGE_DEFAULT);
 
-        let scopes: Vec<String> = groups.iter().map(|g| g.scope.to_string()).collect();
-        let start = scopes.iter().position(|s| s == "moderation").unwrap();
+        let scopes: Vec<Option<&str>> = groups.iter().map(|g| g.scope.name()).collect();
+        let start = scopes
+            .iter()
+            .position(|s| *s == Some("moderation"))
+            .unwrap();
         let labels: Vec<(String, String)> = groups[start + 1..]
             .iter()
-            .map(|g| (g.scope.to_string(), g.label.to_string()))
+            .map(|g| {
+                (
+                    g.scope.name().unwrap_or_default().to_owned(),
+                    g.label.to_string(),
+                )
+            })
             .collect();
         assert_eq!(
             labels,

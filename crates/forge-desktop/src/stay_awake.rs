@@ -20,7 +20,7 @@ pub(crate) const STAY_AWAKE: Setting<Flag> = Setting::new(
     Verbatim,
 );
 
-const HOLD_REASON: &str = "forge keeps the system and display awake while it runs";
+pub(crate) const HOLD_REASON_KEY: &str = "stay_awake_hold_reason";
 
 #[derive(Clone)]
 pub(crate) struct StayAwakeSetting {
@@ -59,12 +59,12 @@ impl StayAwakeSetting {
     }
 }
 
-pub(crate) async fn start_stay_awake(settings: Arc<dyn SettingsRepo>) -> StayAwakeSetting {
+pub(crate) async fn start_stay_awake(
+    settings: Arc<dyn SettingsRepo>,
+    reason: String,
+) -> StayAwakeSetting {
     let enabled = read_setting_or_default(settings.as_ref(), &STAY_AWAKE).await;
-    let service = StayAwake::spawn(StayAwakeConfig {
-        enabled,
-        reason: HOLD_REASON.to_owned(),
-    });
+    let service = StayAwake::spawn(StayAwakeConfig { enabled, reason });
     StayAwakeSetting {
         service,
         settings,
@@ -82,7 +82,7 @@ mod tests {
     use gpui::{AppContext, Entity, TestAppContext};
     use tokio::runtime::Runtime;
 
-    use super::{ENABLED_BY_DEFAULT, HOLD_REASON, STAY_AWAKE, StayAwakeSetting};
+    use super::{ENABLED_BY_DEFAULT, HOLD_REASON_KEY, STAY_AWAKE, StayAwakeSetting};
     use crate::async_bridge::{SnapshotWriter, WriteOutcome};
     use crate::test_support::{SETTINGS_WRITE_FAILED, pump, runtime, test_backend, writes_to};
 
@@ -93,7 +93,7 @@ mod tests {
         let _entered = parked.enter();
         StayAwake::spawn(StayAwakeConfig {
             enabled: ENABLED_BY_DEFAULT,
-            reason: HOLD_REASON.to_owned(),
+            reason: HOLD_REASON_KEY.to_owned(),
         })
     }
 

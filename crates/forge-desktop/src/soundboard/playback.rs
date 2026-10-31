@@ -14,6 +14,8 @@ use crate::clip_messages::failure_message;
 use crate::clip_playback::PadPlayClaims;
 use crate::window_presence::PresenceGate;
 
+const ROW_GAP: Pixels = px(5.0);
+
 const TICK_INTERVAL: Duration = Duration::from_millis(100);
 const STOP_ICON: Pixels = px(12.0);
 
@@ -154,7 +156,7 @@ impl SoundboardView {
             .id("sb-stop-all")
             .flex()
             .items_center()
-            .gap(scaled(px(5.0), density))
+            .gap(scaled(ROW_GAP, density))
             .cursor_pointer()
             .py(spacing(Spacing::Xxs, density))
             .px(spacing(Spacing::Xs, density))

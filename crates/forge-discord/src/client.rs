@@ -1880,6 +1880,29 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
+    async fn post_test_pings_users_and_roles_but_never_everyone() {
+        let server = MockServer::start().await;
+        let client = make_client(
+            &server,
+            CapturingPublisher::shared(),
+            Arc::new(MemoryCredentials::default()),
+        )
+        .await;
+        mount_accepting(&server, "POST").await;
+
+        client
+            .post_test("alerts", &hook_url("discord.com", ""), "@everyone test")
+            .await
+            .unwrap();
+
+        let bodies = request_bodies(&server).await;
+        assert_eq!(
+            bodies[0]["allowed_mentions"],
+            serde_json::json!({ "parse": ["users", "roles"] })
+        );
+    }
+
+    #[tokio::test]
     async fn edit_message_sends_the_allowed_mentions_of_each_toggle_combination() {
         let server = MockServer::start().await;
         let client = make_client(

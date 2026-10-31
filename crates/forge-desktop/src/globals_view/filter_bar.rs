@@ -7,6 +7,10 @@ use forge_components::{
 use gpui::prelude::*;
 use gpui::{ClickEvent, Context, div, px};
 
+const ICON_ROW: gpui::Pixels = px(14.0);
+const SEARCH_W: gpui::Pixels = px(200.0);
+const BLOCK_PAD: gpui::Pixels = px(5.0);
+
 impl GlobalsView {
     pub(super) fn render_stats<'a>(
         &self,
@@ -77,7 +81,7 @@ impl GlobalsView {
             ));
         }
 
-        let search = div().w(px(200.0)).child(self.search.field().clone());
+        let search = div().w(SEARCH_W).child(self.search.field().clone());
 
         div()
             .flex()
@@ -99,11 +103,11 @@ impl GlobalsView {
             .flex()
             .items_center()
             .justify_center()
-            .p(px(5.0))
+            .p(BLOCK_PAD)
             .rounded(radius(Radius::Sm))
             .cursor_pointer()
             .hover(move |s| s.bg(export_hover))
-            .child(icon(Icon::Download, px(14.0), palette.success))
+            .child(icon(Icon::Download, ICON_ROW, palette.success))
             .key_activated(palette.text_primary)
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.export(cx)));
         let new_btn =

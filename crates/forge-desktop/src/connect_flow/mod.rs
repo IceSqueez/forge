@@ -18,6 +18,9 @@ use forge_runtime::IntegrationSlot;
 use device_code::{TwitchDeviceState, TwitchFlowHandle};
 use local_callback::{KickFlowHandle, LocalCallbackFlowPhase, YoutubeFlowHandle};
 
+const DOT_RADIUS: gpui::Pixels = px(4.0);
+const STATUS_DOT: gpui::Pixels = px(8.0);
+
 pub(crate) enum ConnectFlowEvent {
     Connected(BuiltinObject),
     Leave,
@@ -177,5 +180,9 @@ fn connect_copy(platform: PlatformId) -> (&'static str, String) {
 }
 
 fn status_dot(color: Rgba) -> impl IntoElement {
-    div().flex_none().size(px(8.0)).rounded(px(4.0)).bg(color)
+    div()
+        .flex_none()
+        .size(STATUS_DOT)
+        .rounded(DOT_RADIUS)
+        .bg(color)
 }

@@ -16,9 +16,9 @@ use forge_components::focus_inside_modal;
 use forge_components::{
     BORDER_THIN, FONT_XXS, ForgePalette, GlyphArt, GridPicker, GridPickerArt, GridPickerConfig,
     GridPickerEvent, GridPickerGroup, GridPickerItem, GridPickerItemState, GridPickerSubtitle,
-    Icon, InputEvent, ModalSize, OverlayPosition, Picker, PickerEvent, Radius, Spacing, TextInput,
-    body_family, ghost_button_with_icon, modal, mono_family, overlay, primary_button, radius,
-    secondary_button, spacing, tr,
+    GridScope, Icon, InputEvent, ModalSize, OverlayPosition, Picker, PickerEvent, Radius, Spacing,
+    TextInput, body_family, ghost_button_with_icon, modal, mono_family, overlay, primary_button,
+    radius, secondary_button, spacing, tr,
 };
 use forge_host::integration_catalog::{declaration_of, declarations};
 use forge_platform_core::IntegrationDeclaration;
@@ -552,7 +552,7 @@ pub(crate) fn build_kind_groups(
         groups.push(GridPickerGroup {
             label,
             dot_color: color,
-            scope: slug,
+            scope: GridScope::Named(slug),
             items,
         });
     }

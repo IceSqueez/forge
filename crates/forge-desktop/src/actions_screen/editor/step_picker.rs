@@ -6,7 +6,7 @@ use forge_components::ActivePresentation;
 use forge_components::focus_inside_modal;
 use forge_components::{
     ForgePalette, GlyphArt, GridPicker, GridPickerArt, GridPickerConfig, GridPickerEvent,
-    GridPickerGroup, GridPickerItem, GridPickerItemState, GridPickerSubtitle, Icon, tr,
+    GridPickerGroup, GridPickerItem, GridPickerItemState, GridPickerSubtitle, GridScope, Icon, tr,
 };
 use forge_registry::{FormSchemaSource, SubActionRegistry, SubActionRunner};
 use gpui::{Context, Entity, SharedString, Window};
@@ -40,7 +40,7 @@ fn build_step_groups(
     let mut groups: Vec<GridPickerGroup> = Vec::new();
     let mut picks: HashMap<SharedString, String> = HashMap::new();
     for (scope, name, group, runner) in runners {
-        let scope = SharedString::from(scope);
+        let scope = GridScope::Named(SharedString::from(scope));
         let color = group.color(palette);
         let id = SharedString::from(format!("step-{}", runner.id()));
         picks.insert(id.clone(), runner.id().to_owned());
@@ -223,7 +223,7 @@ mod tests {
         let found = |scope: &str| {
             groups
                 .iter()
-                .find(|group| group.scope.as_ref() == scope)
+                .find(|group| group.scope.name() == Some(scope))
                 .map(|group| (group.label.to_string(), group.dot_color))
         };
         for (scope, label, tint) in [
@@ -235,7 +235,7 @@ mod tests {
         ] {
             assert_eq!(found(scope), Some((label.to_owned(), tint)), "{scope}");
         }
-        let scopes: Vec<&str> = groups.iter().map(|group| group.scope.as_ref()).collect();
+        let scopes: Vec<Option<&str>> = groups.iter().map(|group| group.scope.name()).collect();
         let mut sorted = scopes.clone();
         sorted.sort_unstable();
         assert_eq!(scopes, sorted);

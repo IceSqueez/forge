@@ -94,6 +94,7 @@ struct ActionChoice {
     name: String,
 }
 
+#[derive(PartialEq, Eq)]
 enum OpenPanel {
     Type,
     Device,
@@ -317,11 +318,11 @@ impl MidiMappingModal {
     }
 
     fn toggle_panel(&mut self, panel: OpenPanel, cx: &mut Context<Self>) {
-        let same = matches!(
-            (&self.open_panel, &panel),
-            (Some(OpenPanel::Type), OpenPanel::Type) | (Some(OpenPanel::Device), OpenPanel::Device)
-        );
-        self.open_panel = if same { None } else { Some(panel) };
+        self.open_panel = if self.open_panel.as_ref() == Some(&panel) {
+            None
+        } else {
+            Some(panel)
+        };
         cx.notify();
     }
 

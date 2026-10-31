@@ -19,6 +19,8 @@ use super::{SMALL_GLYPH, SoundboardView};
 use crate::async_bridge;
 use crate::clip_messages::failure_message;
 
+const BLOCK_MT: gpui::Pixels = px(3.0);
+
 impl SoundboardView {
     pub(super) fn refresh_builtins(&self, cx: &mut Context<Self>) {
         let imported_ids: HashSet<String> = self.imported_builtin_ids();
@@ -136,7 +138,7 @@ impl SoundboardView {
         .top_right(icon(Icon::Plus, SMALL_GLYPH, palette.text_faint))
         .sublabel(
             div()
-                .mt(scaled(px(3.0), density))
+                .mt(scaled(BLOCK_MT, density))
                 .font_family(mono_family())
                 .text_size(FONT_XXS)
                 .text_color(palette.text_faint)

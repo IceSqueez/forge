@@ -285,7 +285,7 @@ impl TwitchBotSection {
     }
 
     fn copy(text: String, cx: &mut Context<Self>) {
-        crate::toasts::copy_to_clipboard(text, cx);
+        crate::clipboard::copy_to_clipboard(text, cx);
     }
 
     fn header_status(&self, status: &BotStatus) -> String {

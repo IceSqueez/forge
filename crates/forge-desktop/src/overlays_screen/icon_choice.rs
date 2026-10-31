@@ -1,4 +1,4 @@
-use forge_components::LEADING_SCOPE;
+use forge_components::GridScope;
 use forge_components::focus_inside_modal;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -189,7 +189,7 @@ pub(super) fn icon_groups(
     let mut groups = vec![GridPickerGroup {
         label: tr!("overlays_icon_group_none").into(),
         dot_color: palette.text_muted,
-        scope: SharedString::from(LEADING_SCOPE),
+        scope: GridScope::Leading,
         items: vec![GridPickerItem {
             id: SharedString::from(NO_ICON_ID),
             glyph: GlyphArt::Icon(Icon::Ban),
@@ -221,7 +221,7 @@ pub(super) fn icon_groups(
         groups.push(GridPickerGroup {
             label: category_label(*category).into(),
             dot_color: category_dot(*category, palette),
-            scope: SharedString::from(category.as_str()),
+            scope: GridScope::Named(SharedString::from(category.as_str())),
             items,
         });
     }
@@ -248,7 +248,7 @@ pub(super) fn icon_groups(
     groups.push(GridPickerGroup {
         label: tr!("overlays_icon_group_imported").into(),
         dot_color: palette.info,
-        scope: SharedString::from(IMPORTED_SCOPE),
+        scope: GridScope::Named(SharedString::from(IMPORTED_SCOPE)),
         items: imported,
     });
 
@@ -323,8 +323,12 @@ impl OverlaysView {
                 let blobs = media.list().await?;
                 let mut resolved: Vec<IconImage> = Vec::new();
                 for (id, blob) in image_rows(blobs) {
-                    let Ok(path) = media.resolve(&id).await else {
-                        continue;
+                    let path = match media.resolve(&id).await {
+                        Ok(path) => path,
+                        Err(error) => {
+                            tracing::warn!(%error, "imported icon image unreadable; left out");
+                            continue;
+                        }
                     };
                     resolved.push(IconImage {
                         id: blob.id.as_str().to_owned(),
@@ -815,13 +819,13 @@ mod tests {
         let palette = forge_components::FORGE_DEFAULT;
         let groups = icon_groups(&library(), palette.brand, &palette);
 
-        let mut expected: Vec<String> = vec![LEADING_SCOPE.to_owned()];
-        expected.extend(IconCategory::ALL.iter().map(|c| c.as_str().to_owned()));
-        expected.push(IMPORTED_SCOPE.to_owned());
+        let mut expected: Vec<Option<&str>> = vec![None];
+        expected.extend(IconCategory::ALL.iter().map(|c| Some(c.as_str())));
+        expected.push(Some(IMPORTED_SCOPE));
         assert_eq!(
             groups
                 .iter()
-                .map(|group| group.scope.to_string())
+                .map(|group| group.scope.name())
                 .collect::<Vec<_>>(),
             expected,
         );

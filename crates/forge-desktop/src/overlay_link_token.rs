@@ -43,10 +43,9 @@ fn load_once(server: Option<&ServerHandle>, rt_handle: &tokio::runtime::Handle, 
     cx.set_global(OverlayLinkToken(None));
     let reply =
         crate::async_bridge::on_runtime(rt_handle, async move { handle.overlay_token().await });
-    cx.spawn(async move |cx| {
-        if let Ok(token) = reply.await {
-            cx.update(|cx| publish(token, cx));
-        }
+    cx.spawn(async move |cx| match reply.await {
+        Ok(token) => cx.update(|cx| publish(token, cx)),
+        Err(error) => tracing::warn!(%error, "overlay link token lookup stopped"),
     })
     .detach();
 }

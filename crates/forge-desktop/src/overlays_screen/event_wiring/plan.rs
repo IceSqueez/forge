@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use forge_components::{ForgePalette, GridPickerGroup, GridPickerItem, tr};
+use forge_components::{ForgePalette, GridPickerGroup, GridPickerItem, GridScope, tr};
 use forge_overlay::{
     ConfigSection, OverlayConfig, OverlayKindDescriptor, SampleTrigger, delivered_content,
     is_curated, order_curated_first, sample_context,
@@ -99,7 +99,7 @@ pub(super) fn offered_events(
             GridPickerGroup {
                 label: tr!("overlays_wire_scope_suggested").into(),
                 dot_color: palette.brand,
-                scope: SharedString::from(SUGGESTED_SCOPE),
+                scope: GridScope::Named(SharedString::from(SUGGESTED_SCOPE)),
                 items: suggested.into_iter().map(|(_, item)| item).collect(),
             },
         );
@@ -205,7 +205,7 @@ mod tests {
             .into_iter()
             .map(|group| {
                 (
-                    group.scope.to_string(),
+                    group.scope.name().unwrap_or_default().to_owned(),
                     group
                         .items
                         .into_iter()

@@ -24,6 +24,23 @@ use gpui::{
 };
 use std::rc::Rc;
 
+const METER_RADIUS: Pixels = px(5.0);
+const PILL_RADIUS: Pixels = px(8.0);
+const LIVE_DOT: Pixels = px(5.0);
+const ROW_DOT: Pixels = px(7.0);
+const METER_H: Pixels = px(6.0);
+const ACCENT_EDGE_W: Pixels = px(2.0);
+const ROW_GAP: Pixels = px(2.0);
+const ROW_GAP_ALT: Pixels = px(5.0);
+const ROW_GAP_WIDE: Pixels = px(7.0);
+const ROW_GAP_TALL: Pixels = px(12.0);
+const BLOCK_PAD: Pixels = px(14.0);
+const ROW_PAD_V: Pixels = px(0.0);
+const ROW_PAD_V_ALT: Pixels = px(7.0);
+const ROW_PAD_V_WIDE: Pixels = px(8.0);
+const ROW_PAD_H: Pixels = px(12.0);
+const ROW_PAD_H_ALT: Pixels = px(14.0);
+
 const SCROLL_PANEL_MAX_H: f32 = 320.0;
 const SCROLL_ROW_EST_H: f32 = 30.0;
 
@@ -502,7 +519,7 @@ fn render_two_column(
         .w_full()
         .flex()
         .items_stretch()
-        .gap(scaled(px(12.0), density))
+        .gap(scaled(ROW_GAP_TALL, density))
         .child(grow_cell(
             dispatch_section(left, hooks, palette, density),
             10.0,
@@ -622,7 +639,7 @@ fn render_chip_grid(
             .w_full()
             .max_h(px(SCROLL_PANEL_MAX_H))
             .overflow_y_revealing_focus()
-            .p(scaled(px(14.0), density))
+            .p(scaled(BLOCK_PAD, density))
             .child(grid)
             .into_any_element()
     };
@@ -655,7 +672,7 @@ fn chip_elem(
         .border(BORDER_THIN)
         .border_color(palette.border_regular)
         .rounded(radius(Radius::Sm))
-        .py(scaled(px(7.0), density))
+        .py(scaled(ROW_PAD_V_ALT, density))
         .px(spacing(Spacing::Sm, density))
         .child(icon(
             Icon::from_name(chip_icon.as_str()),
@@ -1001,14 +1018,14 @@ fn health_bar_section(bar: &HealthBar, palette: &ForgePalette, density: Density)
     let track = div()
         .flex_1()
         .min_w(px(0.0))
-        .h(px(6.0))
-        .rounded(px(5.0))
+        .h(METER_H)
+        .rounded(METER_RADIUS)
         .bg(palette.shell)
         .child(
             div()
-                .h(px(6.0))
+                .h(METER_H)
                 .w(relative(fraction))
-                .rounded(px(5.0))
+                .rounded(METER_RADIUS)
                 .bg(level_color),
         );
 
@@ -1084,7 +1101,7 @@ pub(crate) fn panel_header_row(
         .min_w(px(0.0))
         .flex()
         .items_center()
-        .gap(scaled(px(7.0), density))
+        .gap(scaled(ROW_GAP_WIDE, density))
         .child(icon(
             Icon::from_name(icon_str),
             FONT_SM,
@@ -1104,7 +1121,7 @@ pub(crate) fn panel_header_row(
         .flex()
         .items_center()
         .py(spacing(Spacing::Sm, density))
-        .px(scaled(px(14.0), density))
+        .px(scaled(ROW_PAD_H_ALT, density))
         .child(left);
     if let Some(c) = count {
         row = row.child(mono(c.to_owned(), FONT_XXS, palette.text_faint));
@@ -1144,12 +1161,12 @@ fn info_card_header(
         let badge = div()
             .flex()
             .items_center()
-            .gap(scaled(px(5.0), density))
-            .py(px(0.0))
+            .gap(scaled(ROW_GAP_ALT, density))
+            .py(ROW_PAD_V)
             .px(spacing(Spacing::Xs, density))
-            .rounded(px(8.0))
+            .rounded(PILL_RADIUS)
             .bg(palette.surface_overlay)
-            .child(status_dot(palette.success, px(5.0)))
+            .child(status_dot(palette.success, LIVE_DOT))
             .child(body(
                 tr!("widget_builtin_live_badge"),
                 FONT_XS,
@@ -1167,8 +1184,8 @@ fn list_footer_bar(footer: &ListFooter, palette: &ForgePalette, density: Density
         .flex()
         .items_center()
         .gap(spacing(Spacing::Sm, density))
-        .py(scaled(px(8.0), density))
-        .px(scaled(px(14.0), density))
+        .py(scaled(ROW_PAD_V_WIDE, density))
+        .px(scaled(ROW_PAD_H_ALT, density))
         .border_t(BORDER_THIN)
         .border_color(palette.border_regular)
         .bg(palette.shell);
@@ -1201,7 +1218,7 @@ fn active_row_wrapper(
         .w_full()
         .flex()
         .bg(palette.shell)
-        .child(div().flex_none().w(px(2.0)).bg(palette.success))
+        .child(div().flex_none().w(ACCENT_EDGE_W).bg(palette.success))
         .child(padded)
         .into_any_element()
 }
@@ -1228,7 +1245,7 @@ fn plain_row_wrapper(
 fn active_badge(label: &str, palette: &ForgePalette, density: Density) -> AnyElement {
     div()
         .flex_none()
-        .py(px(0.0))
+        .py(ROW_PAD_V)
         .px(spacing(Spacing::Xs, density))
         .rounded(radius(Radius::Md))
         .bg(palette.surface_overlay)
@@ -1252,7 +1269,7 @@ fn trailing_token_elem(
             let tc = with_alpha(token_color_value(color, palette), dim);
             div()
                 .flex_none()
-                .py(px(0.0))
+                .py(ROW_PAD_V)
                 .px(spacing(Spacing::Xs, density))
                 .rounded(radius(Radius::Md))
                 .bg(palette.surface_overlay)
@@ -1386,7 +1403,7 @@ fn health_metric_card(
         .flex_col()
         .gap(spacing(Spacing::Xxs, density))
         .py(spacing(Spacing::Sm, density))
-        .px(scaled(px(12.0), density))
+        .px(scaled(ROW_PAD_H, density))
         .rounded(radius(Radius::Md))
         .border(BORDER_THIN)
         .border_color(palette.border_regular)
@@ -1416,13 +1433,13 @@ fn health_value_col(value: &HealthValue, palette: &ForgePalette, density: Densit
                 .flex()
                 .items_center()
                 .gap(spacing(Spacing::Xs, density))
-                .child(status_dot(color, px(7.0)))
+                .child(status_dot(color, ROW_DOT))
                 .child(body(health_text(label), FONT_SM, color));
             if let Some(d) = detail {
                 div()
                     .flex()
                     .flex_col()
-                    .gap(scaled(px(2.0), density))
+                    .gap(scaled(ROW_GAP, density))
                     .child(value_row)
                     .child(mono(health_text(d), FONT_XXS, palette.text_faint))
                     .into_any_element()
@@ -1436,7 +1453,7 @@ fn health_value_col(value: &HealthValue, palette: &ForgePalette, density: Densit
                 div()
                     .flex()
                     .flex_col()
-                    .gap(scaled(px(2.0), density))
+                    .gap(scaled(ROW_GAP, density))
                     .child(primary_el)
                     .child(mono(health_text(sec), FONT_XXS, palette.text_faint))
                     .into_any_element()
@@ -1460,7 +1477,7 @@ fn health_value_col(value: &HealthValue, palette: &ForgePalette, density: Densit
                 div()
                     .flex()
                     .flex_col()
-                    .gap(scaled(px(2.0), density))
+                    .gap(scaled(ROW_GAP, density))
                     .child(ratio_el)
                     .child(mono(health_text(hint), FONT_XXS, palette.text_faint))
                     .into_any_element()

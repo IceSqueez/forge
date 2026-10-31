@@ -16,6 +16,13 @@ use gpui::{
     Subscription, Window, div, px,
 };
 
+const INPUT_H: Pixels = px(62.0);
+const ROW_GAP: Pixels = px(2.0);
+const ROW_GAP_ALT: Pixels = px(5.0);
+const ROW_PAD_V: Pixels = px(5.0);
+const ROW_PAD_H: Pixels = px(14.0);
+const BLOCK_PAD: Pixels = px(2.0);
+
 const MODAL_W: Pixels = px(480.0);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -84,7 +91,7 @@ impl AddFilterModal {
             TextArea::new(tr!("tts_filters_modal_blocklist_words_placeholder"), cx)
                 .with_palette(palette)
                 .on_surface()
-                .with_height(px(62.0))
+                .with_height(INPUT_H)
         });
         let replace_from = cx.new(|cx| {
             TextInput::new(tr!("tts_filters_modal_replace_find_placeholder"), cx)
@@ -261,7 +268,7 @@ impl AddFilterModal {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let color = palette.danger;
-        let mut list = div().flex().flex_col().gap(scaled(px(5.0), density));
+        let mut list = div().flex().flex_col().gap(scaled(ROW_GAP_ALT, density));
         for preset in SKIP_PRESETS {
             let selected = self.skip_preset == preset;
             let id = SharedString::from(format!("filt-modal-skip-{}", preset.key()));
@@ -304,7 +311,7 @@ impl AddFilterModal {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let color = palette.success;
-        let mut list = div().flex().flex_col().gap(scaled(px(5.0), density));
+        let mut list = div().flex().flex_col().gap(scaled(ROW_GAP_ALT, density));
         for preset in OUTPUT_PRESETS {
             let selected = self.output_preset == preset;
             let id = SharedString::from(format!("filt-modal-output-{}", preset.key()));
@@ -374,7 +381,7 @@ impl AddFilterModal {
         let mode_list = div()
             .flex()
             .flex_col()
-            .gap(scaled(px(5.0), density))
+            .gap(scaled(ROW_GAP_ALT, density))
             .child(
                 radio_row(
                     "filt-modal-bl-censor",
@@ -439,8 +446,8 @@ impl AddFilterModal {
         let is_regex = self.replace_kind == ReplaceKind::Regex;
         let mut tabs = div()
             .flex()
-            .p(px(2.0))
-            .gap(px(2.0))
+            .p(BLOCK_PAD)
+            .gap(ROW_GAP)
             .rounded(radius(Radius::Sm))
             .bg(palette.shell)
             .border(BORDER_THIN)
@@ -461,8 +468,8 @@ impl AddFilterModal {
             };
             let mut chip = div()
                 .id(id)
-                .py(scaled(px(5.0), density))
-                .px(scaled(px(14.0), density))
+                .py(scaled(ROW_PAD_V, density))
+                .px(scaled(ROW_PAD_H, density))
                 .rounded(radius(Radius::Sm))
                 .cursor_pointer()
                 .font_family(mono_family())

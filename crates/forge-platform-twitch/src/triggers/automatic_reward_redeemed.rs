@@ -104,16 +104,6 @@ mod tests {
     }
 
     #[test]
-    fn event_filter_targets_automatic_reward_topic_from_twitch() {
-        let filter = SPEC.event_filter();
-        assert_eq!(filter.source, Some(EventSource::Twitch));
-        assert_eq!(
-            filter.kind_prefix.as_deref(),
-            Some("twitch.channel.channel_points_automatic_reward_redemption.add")
-        );
-    }
-
-    #[test]
     fn build_arg_stack_types_reward_cost_as_int_and_maps_identity_fields() {
         let stack = SPEC.build_arg_stack(&automatic_reward_event());
         assert_eq!(stack.get("reward.cost"), Some(&Variant::Int(300)));

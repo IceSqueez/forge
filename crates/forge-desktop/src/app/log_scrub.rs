@@ -350,11 +350,21 @@ mod tests {
     }
 
     #[test]
-    fn a_path_in_the_users_own_checkout_keeps_everything_after_the_home_directory() {
-        assert_eq!(
-            scrub("panicked at /home/bob/Source/forge/crates/app/src/main.rs:1:2"),
-            "panicked at ~/Source/forge/crates/app/src/main.rs:1:2",
-        );
+    fn scrubbing_rewrites_home_paths_and_quoted_or_named_credentials() {
+        for (label, input, expected) in [
+            (
+                "a_path_in_the_users_own_checkout_keeps_everything_after_the_home_directory",
+                "panicked at /home/bob/Source/forge/crates/app/src/main.rs:1:2",
+                "panicked at ~/Source/forge/crates/app/src/main.rs:1:2",
+            ),
+            (
+                "a_quoted_credential_value_is_redacted_together_with_its_quotes",
+                "{\"refresh_token\": \"abcdef123456\"}",
+                "{\"refresh_token\": <redacted:token>}",
+            ),
+        ] {
+            assert_eq!(scrub(input), expected, "{label}");
+        }
     }
 
     #[test]
@@ -381,14 +391,6 @@ mod tests {
                 "vendor key {key:?}",
             );
         }
-    }
-
-    #[test]
-    fn a_quoted_credential_value_is_redacted_together_with_its_quotes() {
-        assert_eq!(
-            scrub("{\"refresh_token\": \"abcdef123456\"}"),
-            "{\"refresh_token\": <redacted:token>}",
-        );
     }
 
     #[test]

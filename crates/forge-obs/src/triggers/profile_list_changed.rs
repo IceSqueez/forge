@@ -56,37 +56,32 @@ mod tests {
     }
 
     #[test]
-    fn arg_stack_collects_all_names_into_string_array() {
-        let event = Event::new(
-            EventSource::Obs,
-            "obs.profile.list_changed",
-            json!({ "all_names": ["Streaming", "Recording"] }),
-        );
-        let stack = PROFILE_LIST_CHANGED.build_arg_stack(&event);
-        assert_eq!(
-            stack.get("obs.profiles.names"),
-            Some(&Variant::Array(vec![
-                Variant::String("Streaming".to_owned()),
-                Variant::String("Recording".to_owned()),
-            ])),
-        );
-    }
-
-    #[test]
-    fn arg_stack_skips_non_string_array_elements() {
-        let event = Event::new(
-            EventSource::Obs,
-            "obs.profile.list_changed",
-            json!({ "all_names": ["Streaming", 42, true, "Recording"] }),
-        );
-        let stack = PROFILE_LIST_CHANGED.build_arg_stack(&event);
-        assert_eq!(
-            stack.get("obs.profiles.names"),
-            Some(&Variant::Array(vec![
-                Variant::String("Streaming".to_owned()),
-                Variant::String("Recording".to_owned()),
-            ])),
-        );
+    fn arg_stack_collects_string_names_and_skips_other_elements() {
+        for (label, input) in [
+            (
+                "arg_stack_collects_all_names_into_string_array",
+                json!(["Streaming", "Recording"]),
+            ),
+            (
+                "arg_stack_skips_non_string_array_elements",
+                json!(["Streaming", 42, true, "Recording"]),
+            ),
+        ] {
+            let event = Event::new(
+                EventSource::Obs,
+                "obs.profile.list_changed",
+                json!({ "all_names": input }),
+            );
+            let stack = PROFILE_LIST_CHANGED.build_arg_stack(&event);
+            assert_eq!(
+                stack.get("obs.profiles.names"),
+                Some(&Variant::Array(vec![
+                    Variant::String("Streaming".to_owned()),
+                    Variant::String("Recording".to_owned()),
+                ])),
+                "{label}"
+            );
+        }
     }
 
     #[test]

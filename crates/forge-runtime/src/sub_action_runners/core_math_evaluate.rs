@@ -220,15 +220,22 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn evaluate_result_type_int_truncates_float_value() {
-        let (_, out) = run(&cfg("10.0 / 4.0", "x", "int")).await;
-        assert_eq!(out.unwrap().get("x"), Some(&Variant::Int(2)));
-    }
-
-    #[tokio::test]
-    async fn evaluate_result_type_float_promotes_int_value() {
-        let (_, out) = run(&cfg("5", "x", "float")).await;
-        assert_eq!(out.unwrap().get("x"), Some(&Variant::Float(5.0)));
+    async fn evaluate_result_type_converts_the_value() {
+        for (label, config, result) in [
+            (
+                "evaluate_result_type_int_truncates_float_value",
+                &cfg("10.0 / 4.0", "x", "int"),
+                &Variant::Int(2),
+            ),
+            (
+                "evaluate_result_type_float_promotes_int_value",
+                &cfg("5", "x", "float"),
+                &Variant::Float(5.0),
+            ),
+        ] {
+            let (_, out) = run(config).await;
+            assert_eq!(out.unwrap().get("x"), Some(result), "{label}");
+        }
     }
 
     #[tokio::test]

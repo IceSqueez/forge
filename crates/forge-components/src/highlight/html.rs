@@ -382,11 +382,26 @@ mod tests {
     use crate::highlight::tests::{assert_pieces, class_of, pieces};
 
     #[test]
-    fn comment_spans_lines_until_its_close() {
-        assert_eq!(
-            pieces(Html, "<!-- a\n<b> -->x"),
-            vec![("<!-- a\n<b> -->", Comment), ("x", Plain)]
-        );
+    fn closed_markup_keeps_one_class_up_to_its_close() {
+        for (label, source, piece) in [
+            (
+                "comment_spans_lines_until_its_close",
+                "<!-- a\n<b> -->x",
+                ("<!-- a\n<b> -->", Comment),
+            ),
+            (
+                "comment_closes_at_bang_close_sequence",
+                "<!-- a --!>x",
+                ("<!-- a --!>", Comment),
+            ),
+            (
+                "empty_end_tag_is_punctuation_and_leaves_data_state",
+                "</>x",
+                ("</>", Punctuation),
+            ),
+        ] {
+            assert_eq!(pieces(Html, source), vec![piece, ("x", Plain)], "{label}");
+        }
     }
 
     #[test]
@@ -398,16 +413,21 @@ mod tests {
     }
 
     #[test]
-    fn comment_closes_at_bang_close_sequence() {
-        assert_eq!(
-            pieces(Html, "<!-- a --!>x"),
-            vec![("<!-- a --!>", Comment), ("x", Plain)]
-        );
-    }
-
-    #[test]
-    fn unterminated_comment_colors_the_rest_of_the_document() {
-        assert_eq!(pieces(Html, "<!-- a\n<b>"), vec![("<!-- a\n<b>", Comment)]);
+    fn text_without_a_close_keeps_one_class_to_the_end() {
+        for (label, source, piece) in [
+            (
+                "unterminated_comment_colors_the_rest_of_the_document",
+                "<!-- a\n<b>",
+                ("<!-- a\n<b>", Comment),
+            ),
+            (
+                "less_than_not_followed_by_a_letter_is_text",
+                "a < 1 <3",
+                ("a < 1 <3", Plain),
+            ),
+        ] {
+            assert_eq!(pieces(Html, source), vec![piece], "{label}");
+        }
     }
 
     #[test]
@@ -441,19 +461,6 @@ mod tests {
                 "{text:?}"
             );
         }
-    }
-
-    #[test]
-    fn empty_end_tag_is_punctuation_and_leaves_data_state() {
-        assert_eq!(
-            pieces(Html, "</>x"),
-            vec![("</>", Punctuation), ("x", Plain)]
-        );
-    }
-
-    #[test]
-    fn less_than_not_followed_by_a_letter_is_text() {
-        assert_eq!(pieces(Html, "a < 1 <3"), vec![("a < 1 <3", Plain)]);
     }
 
     #[test]

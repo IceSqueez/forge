@@ -92,24 +92,20 @@ mod tests {
     }
 
     #[test]
-    fn matches_exact_scene_name() {
-        let d = SCENE_CURRENT_CHANGED;
-        let event = scene_changed_event("Menu", "Gameplay");
-        assert!(d.matches_trigger(&named_config("Gameplay"), &event));
-    }
-
-    #[test]
-    fn does_not_match_different_scene_name() {
-        let d = SCENE_CURRENT_CHANGED;
-        let event = scene_changed_event("Menu", "Gameplay");
-        assert!(!d.matches_trigger(&named_config("BRB"), &event));
-    }
-
-    #[test]
-    fn empty_string_scene_config_matches_any() {
-        let d = SCENE_CURRENT_CHANGED;
-        let event = scene_changed_event("Menu", "Gameplay");
-        assert!(d.matches_trigger(&named_config(""), &event));
+    fn matches_the_named_scene_or_any_scene_when_empty() {
+        for (label, input, expected) in [
+            ("matches_exact_scene_name", "Gameplay", true),
+            ("does_not_match_different_scene_name", "BRB", false),
+            ("empty_string_scene_config_matches_any", "", true),
+        ] {
+            let d = SCENE_CURRENT_CHANGED;
+            let event = scene_changed_event("Menu", "Gameplay");
+            assert_eq!(
+                d.matches_trigger(&named_config(input), &event),
+                expected,
+                "{label}"
+            );
+        }
     }
 
     #[test]

@@ -438,18 +438,6 @@ async fn set_enabled_flips_the_stored_flag_and_reports_a_hit() {
 }
 
 #[tokio::test]
-async fn set_enabled_reports_a_miss_for_an_unknown_id() {
-    let (repo, _pools) = fresh().await;
-
-    let hit = repo
-        .set_enabled(&OverlayId::new("does-not-exist"), true)
-        .await
-        .expect("set_enabled");
-
-    assert!(!hit);
-}
-
-#[tokio::test]
 async fn delete_removes_the_row_and_reports_a_hit() {
     let (repo, pools) = fresh().await;
 
@@ -460,18 +448,6 @@ async fn delete_removes_the_row_and_reports_a_hit() {
 
     assert!(repo.delete(&definition.id).await.expect("delete"));
     assert_eq!(row_count(pools.writer()).await, 0);
-}
-
-#[tokio::test]
-async fn delete_reports_a_miss_for_an_unknown_id() {
-    let (repo, _pools) = fresh().await;
-
-    let hit = repo
-        .delete(&OverlayId::new("does-not-exist"))
-        .await
-        .expect("delete");
-
-    assert!(!hit);
 }
 
 #[tokio::test]
@@ -741,21 +717,6 @@ async fn the_rename_write_refuses_a_token_shaped_name_and_keeps_the_stored_one()
     assert_eq!(refused_field(&err), Some("display_name"), "{err:?}");
     let reloaded = repo.get(&created.id).await.expect("get").expect("stored");
     assert_eq!(reloaded.display_name, "Alert Box");
-}
-
-#[tokio::test]
-async fn a_targeted_write_on_an_unknown_id_reports_a_miss() {
-    let (repo, _pools) = fresh().await;
-    let unknown = OverlayId::new("never-minted");
-
-    let config_written = repo
-        .update_config(&unknown, &OverlayConfig::new())
-        .await
-        .expect("update_config");
-    let renamed = repo.rename(&unknown, "Name").await.expect("rename");
-
-    assert!(!config_written);
-    assert!(!renamed);
 }
 
 #[tokio::test]

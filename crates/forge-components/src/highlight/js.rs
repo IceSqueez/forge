@@ -307,17 +307,33 @@ mod tests {
     use crate::highlight::tests::{assert_pieces, class_of, pieces};
 
     #[test]
-    fn template_interpolation_switches_to_code_and_back() {
-        assert_eq!(
-            pieces(JavaScript, "`a${b}c`"),
-            vec![
-                ("`a", String),
-                ("${", Punctuation),
-                ("b", Plain),
-                ("}", Punctuation),
-                ("c`", String)
-            ]
-        );
+    fn class_switches_land_on_template_and_regex_edges() {
+        for (label, input, expected) in [
+            (
+                "template_interpolation_switches_to_code_and_back",
+                "`a${b}c`",
+                vec![
+                    ("`a", String),
+                    ("${", Punctuation),
+                    ("b", Plain),
+                    ("}", Punctuation),
+                    ("c`", String),
+                ],
+            ),
+            (
+                "unterminated_regex_falls_back_to_punctuation",
+                "x = /ab\nc",
+                vec![
+                    ("x ", Plain),
+                    ("=", Punctuation),
+                    (" ", Plain),
+                    ("/", Punctuation),
+                    ("ab\nc", Plain),
+                ],
+            ),
+        ] {
+            assert_eq!(pieces(JavaScript, input), expected, "{label}");
+        }
     }
 
     #[test]
@@ -340,9 +356,30 @@ mod tests {
     }
 
     #[test]
-    fn template_spans_lines() {
-        assert_pieces(JavaScript, "`a\nb` + c", &[("`a\nb`", String)]);
-        assert_eq!(class_of(JavaScript, "`a\nb` + c", "c"), Some(Plain));
+    fn literals_end_where_the_newline_rules_say() {
+        for (label, source, literal, after_literal) in [
+            (
+                "template_spans_lines",
+                "`a\nb` + c",
+                "`a\nb`",
+                class_of(JavaScript, "`a\nb` + c", "c"),
+            ),
+            (
+                "quoted_string_with_escaped_newline_continues",
+                "'a\\\nb' + c",
+                "'a\\\nb'",
+                class_of(JavaScript, "'a\\\nb' + c", "c"),
+            ),
+            (
+                "quoted_string_without_escape_ends_at_the_newline",
+                "'a\nb + c",
+                "'a",
+                class_of(JavaScript, "'a\nb + c", "b"),
+            ),
+        ] {
+            assert_pieces(JavaScript, source, &[(literal, String)]);
+            assert_eq!(after_literal, Some(Plain), "{label}");
+        }
     }
 
     #[test]
@@ -378,32 +415,6 @@ mod tests {
     #[test]
     fn slash_inside_regex_class_does_not_end_the_regex() {
         assert_pieces(JavaScript, "x = /[/]/;", &[("/[/]/", String)]);
-    }
-
-    #[test]
-    fn unterminated_regex_falls_back_to_punctuation() {
-        assert_eq!(
-            pieces(JavaScript, "x = /ab\nc"),
-            vec![
-                ("x ", Plain),
-                ("=", Punctuation),
-                (" ", Plain),
-                ("/", Punctuation),
-                ("ab\nc", Plain)
-            ]
-        );
-    }
-
-    #[test]
-    fn quoted_string_with_escaped_newline_continues() {
-        assert_pieces(JavaScript, "'a\\\nb' + c", &[("'a\\\nb'", String)]);
-        assert_eq!(class_of(JavaScript, "'a\\\nb' + c", "c"), Some(Plain));
-    }
-
-    #[test]
-    fn quoted_string_without_escape_ends_at_the_newline() {
-        assert_pieces(JavaScript, "'a\nb + c", &[("'a", String)]);
-        assert_eq!(class_of(JavaScript, "'a\nb + c", "b"), Some(Plain));
     }
 
     #[test]

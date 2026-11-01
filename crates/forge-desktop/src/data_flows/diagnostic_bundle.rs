@@ -534,23 +534,30 @@ mod tests {
     }
 
     #[test]
-    fn keep_newest_lines_drops_whole_leading_lines_and_reports_their_bytes() {
-        let text = "oldest\nmiddle\nnewest\n".to_owned();
+    fn keep_newest_lines_cuts_on_line_boundaries_and_reports_dropped_bytes() {
+        for (label, text, budget, newest, dropped) in [
+            (
+                "keep_newest_lines_drops_whole_leading_lines_and_reports_their_bytes",
+                "oldest\nmiddle\nnewest\n",
+                8,
+                "newest\n",
+                "oldest\nmiddle\n",
+            ),
+            (
+                "keep_newest_lines_does_not_cut_inside_a_multibyte_character",
+                "a\nПривіт\nz\n",
+                12,
+                "z\n",
+                "a\nПривіт\n",
+            ),
+        ] {
+            let text = text.to_owned();
 
-        let (kept, elided) = keep_newest_lines(text, 8);
+            let (kept, elided) = keep_newest_lines(text, budget);
 
-        assert_eq!(kept, "newest\n");
-        assert_eq!(elided, "oldest\nmiddle\n".len() as u64);
-    }
-
-    #[test]
-    fn keep_newest_lines_does_not_cut_inside_a_multibyte_character() {
-        let text = "a\nПривіт\nz\n".to_owned();
-
-        let (kept, elided) = keep_newest_lines(text, 12);
-
-        assert_eq!(kept, "z\n");
-        assert_eq!(elided, "a\nПривіт\n".len() as u64);
+            assert_eq!(kept, newest, "{label}");
+            assert_eq!(elided, dropped.len() as u64, "{label}");
+        }
     }
 
     #[test]

@@ -43,16 +43,6 @@ mod tests {
     use forge_types::Variant;
 
     #[test]
-    fn event_filter_targets_vip_remove_topic_from_twitch() {
-        let filter = SPEC.event_filter();
-        assert_eq!(filter.source, Some(EventSource::Twitch));
-        assert_eq!(
-            filter.kind_prefix.as_deref(),
-            Some("twitch.channel.vip.remove")
-        );
-    }
-
-    #[test]
     fn build_arg_stack_maps_user_fields_from_nested_payload() {
         let payload = serde_json::json!({
             "user": { "id": "555", "login": "former_vip", "display_name": "FormerVip" },

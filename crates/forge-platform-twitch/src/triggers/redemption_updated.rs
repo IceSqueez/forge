@@ -187,16 +187,6 @@ mod tests {
     }
 
     #[test]
-    fn event_filter_targets_redemption_update_kind_from_twitch() {
-        let filter = SPEC.event_filter();
-        assert_eq!(filter.source, Some(EventSource::Twitch));
-        assert_eq!(
-            filter.kind_prefix.as_deref(),
-            Some("twitch.channel.channel_points_custom_reward_redemption.update")
-        );
-    }
-
-    #[test]
     fn matches_trigger_gates_fulfilled_event_by_status_filter() {
         let event = fulfilled_event();
         let cases = [

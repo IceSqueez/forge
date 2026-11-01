@@ -140,21 +140,19 @@ mod tests {
     }
 
     #[test]
-    fn does_not_match_non_prefix() {
-        let cfg = make_config("!quote", false);
-        assert!(!SPEC.matches_trigger(&cfg, &chat_event("hello !quote")));
-    }
-
-    #[test]
-    fn a_phrase_does_not_match_a_longer_command_sharing_its_prefix() {
-        let cfg = make_config("!so", false);
-        assert!(!SPEC.matches_trigger(&cfg, &chat_event("!sound on")));
-    }
-
-    #[test]
-    fn empty_phrase_never_matches() {
-        let cfg = make_config("", false);
-        assert!(!SPEC.matches_trigger(&cfg, &chat_event("!anything")));
+    fn a_phrase_that_is_not_a_whole_leading_command_never_matches() {
+        for (label, phrase, message) in [
+            ("does_not_match_non_prefix", "!quote", "hello !quote"),
+            (
+                "a_phrase_does_not_match_a_longer_command_sharing_its_prefix",
+                "!so",
+                "!sound on",
+            ),
+            ("empty_phrase_never_matches", "", "!anything"),
+        ] {
+            let cfg = make_config(phrase, false);
+            assert!(!SPEC.matches_trigger(&cfg, &chat_event(message)), "{label}");
+        }
     }
 
     #[test]

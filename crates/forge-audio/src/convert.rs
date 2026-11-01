@@ -253,10 +253,25 @@ mod tests {
     }
 
     #[test]
-    fn remix_mono_to_stereo_duplicates() {
-        let src: Vec<i16> = vec![100, 200, 300];
-        let out = remix(&src, 1, 2);
-        assert_eq!(out, vec![100, 100, 200, 200, 300, 300]);
+    fn remix_maps_each_source_layout_onto_the_target_layout() {
+        for (label, samples, source_channels, expected) in [
+            (
+                "remix_mono_to_stereo_duplicates",
+                vec![100, 200, 300],
+                1,
+                vec![100, 100, 200, 200, 300, 300],
+            ),
+            (
+                "remix_identity_returns_unchanged",
+                vec![1, 2, 3, 4],
+                2,
+                vec![1, 2, 3, 4],
+            ),
+        ] {
+            let src: Vec<i16> = samples;
+            let out = remix(&src, source_channels, 2);
+            assert_eq!(out, expected, "{label}");
+        }
     }
 
     #[test]
@@ -356,12 +371,5 @@ mod tests {
     fn resample_with_zero_channels_is_rejected_when_the_rates_differ() {
         let result = resample(&[1, 2, 3, 4], 22_050, 48_000, 0);
         assert!(matches!(result, Err(AudioError::Resample(_))));
-    }
-
-    #[test]
-    fn remix_identity_returns_unchanged() {
-        let src: Vec<i16> = vec![1, 2, 3, 4];
-        let out = remix(&src, 2, 2);
-        assert_eq!(out, src);
     }
 }

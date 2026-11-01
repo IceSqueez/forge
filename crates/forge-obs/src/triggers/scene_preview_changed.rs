@@ -97,18 +97,26 @@ mod tests {
     }
 
     #[test]
-    fn matches_when_config_scene_equals_new_preview() {
-        let d = SCENE_PREVIEW_CHANGED;
-        assert!(d.matches_trigger(
-            &named_config("Gameplay"),
-            &preview_event("Menu", "Gameplay")
-        ));
-    }
-
-    #[test]
-    fn does_not_match_when_config_scene_differs_from_new_preview() {
-        let d = SCENE_PREVIEW_CHANGED;
-        assert!(!d.matches_trigger(&named_config("BRB"), &preview_event("Menu", "Gameplay")));
+    fn matches_only_the_configured_preview_scene() {
+        for (label, input, expected) in [
+            (
+                "matches_when_config_scene_equals_new_preview",
+                "Gameplay",
+                true,
+            ),
+            (
+                "does_not_match_when_config_scene_differs_from_new_preview",
+                "BRB",
+                false,
+            ),
+        ] {
+            let d = SCENE_PREVIEW_CHANGED;
+            assert_eq!(
+                d.matches_trigger(&named_config(input), &preview_event("Menu", "Gameplay")),
+                expected,
+                "{label}"
+            );
+        }
     }
 
     #[test]

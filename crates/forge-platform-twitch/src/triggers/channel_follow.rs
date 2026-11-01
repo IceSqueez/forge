@@ -67,13 +67,6 @@ mod tests {
     }
 
     #[test]
-    fn event_filter_gates_on_follow_kind_prefix() {
-        let filter = SPEC.event_filter();
-        assert_eq!(filter.kind_prefix.as_deref(), Some("twitch.channel.follow"));
-        assert_eq!(filter.source, Some(EventSource::Twitch));
-    }
-
-    #[test]
     fn a_follow_publishes_the_canonical_actor_block_and_the_moment_it_happened() {
         let stack = SPEC.build_arg_stack(&follow_event());
         for (name, value) in [

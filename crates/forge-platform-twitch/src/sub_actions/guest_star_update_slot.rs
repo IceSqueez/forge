@@ -329,27 +329,27 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn empty_session_id_fails_before_helix_call() {
-        let (transport, runner) = runner_with(Ok(serde_json::Value::Null));
-        let stack = ArgStack::new();
-        let config = cfg("", "2", &[("audio_enabled", select(ON))]);
+    async fn an_empty_id_fails_before_helix_call() {
+        for (label, config) in [
+            (
+                "empty_session_id_fails_before_helix_call",
+                cfg("", "2", &[("audio_enabled", select(ON))]),
+            ),
+            (
+                "empty_slot_id_fails_before_helix_call",
+                cfg("SESSION-7", "", &[("audio_enabled", select(ON))]),
+            ),
+        ] {
+            let (transport, runner) = runner_with(Ok(serde_json::Value::Null));
+            let stack = ArgStack::new();
+            let (telemetry, _) = runner.execute(&config, &make_ctx(&stack)).await;
 
-        let (telemetry, _) = runner.execute(&config, &make_ctx(&stack)).await;
-
-        assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
-        assert_eq!(transport.call_count(), 0);
-    }
-
-    #[tokio::test]
-    async fn empty_slot_id_fails_before_helix_call() {
-        let (transport, runner) = runner_with(Ok(serde_json::Value::Null));
-        let stack = ArgStack::new();
-        let config = cfg("SESSION-7", "", &[("audio_enabled", select(ON))]);
-
-        let (telemetry, _) = runner.execute(&config, &make_ctx(&stack)).await;
-
-        assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
-        assert_eq!(transport.call_count(), 0);
+            assert!(
+                matches!(telemetry.outcome, SubActionOutcome::Failed(_)),
+                "{label}"
+            );
+            assert_eq!(transport.call_count(), 0, "{label}");
+        }
     }
 
     #[test]

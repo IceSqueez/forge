@@ -1552,25 +1552,24 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn self_loop_stops_at_the_depth_limit_after_an_earlier_step_floods_its_start_out_of_the_ring()
-     {
-        let rig = small_ring_self_loop_rig(&[FLOOD_KIND, EMIT_KIND]).await;
-        let root = platform_event(&rig.bus);
+    async fn self_loop_stops_at_the_depth_limit_for_each_flooding_shape() {
+        for (label, input) in [
+            (
+                "self_loop_stops_at_the_depth_limit_after_an_earlier_step_floods_its_start_out_of_the_ring",
+                &[FLOOD_KIND, EMIT_KIND][..],
+            ),
+            (
+                "self_loop_stops_at_the_depth_limit_when_its_emitting_step_floods_its_own_run_event_out_of_the_ring",
+                &[FLOOD_THEN_EMIT_KIND][..],
+            ),
+        ] {
+            let rig = small_ring_self_loop_rig(input).await;
+            let root = platform_event(&rig.bus);
 
-        let trace = drive_self_loop(&rig, root).await;
+            let trace = drive_self_loop(&rig, root).await;
 
-        assert_eq!(trace.starts, MAX_CAUSATION_DEPTH);
-    }
-
-    #[tokio::test]
-    async fn self_loop_stops_at_the_depth_limit_when_its_emitting_step_floods_its_own_run_event_out_of_the_ring()
-     {
-        let rig = small_ring_self_loop_rig(&[FLOOD_THEN_EMIT_KIND]).await;
-        let root = platform_event(&rig.bus);
-
-        let trace = drive_self_loop(&rig, root).await;
-
-        assert_eq!(trace.starts, MAX_CAUSATION_DEPTH);
+            assert_eq!(trace.starts, MAX_CAUSATION_DEPTH, "{label}");
+        }
     }
 
     fn body_of(kind_id: &str) -> Variant {

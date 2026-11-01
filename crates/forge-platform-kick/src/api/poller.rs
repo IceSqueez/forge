@@ -601,39 +601,41 @@ mod tests {
     }
 
     #[test]
-    fn diff_channel_reports_status_change_only_on_live_flip() {
-        let prev = snapshot(false, "Title", 1, "Cat");
-        let next = snapshot(true, "Title", 1, "Cat");
-        let delta = diff_channel(&prev, &next);
-        assert!(delta.status_changed);
-        assert!(!delta.metadata_changed);
-    }
-
-    #[test]
-    fn diff_channel_reports_metadata_change_on_title_change() {
-        let prev = snapshot(true, "Old", 1, "Cat");
-        let next = snapshot(true, "New", 1, "Cat");
-        let delta = diff_channel(&prev, &next);
-        assert!(!delta.status_changed);
-        assert!(delta.metadata_changed);
-    }
-
-    #[test]
-    fn diff_channel_reports_metadata_change_on_category_id_change() {
-        let prev = snapshot(true, "Title", 1, "Cat");
-        let next = snapshot(true, "Title", 2, "Cat");
-        let delta = diff_channel(&prev, &next);
-        assert!(!delta.status_changed);
-        assert!(delta.metadata_changed);
-    }
-
-    #[test]
-    fn diff_channel_reports_nothing_changed_for_identical_snapshots() {
-        let prev = snapshot(true, "Title", 1, "Cat");
-        let next = snapshot(true, "Title", 1, "Cat");
-        let delta = diff_channel(&prev, &next);
-        assert!(!delta.status_changed);
-        assert!(!delta.metadata_changed);
+    fn diff_channel_reports_only_what_changed() {
+        for (label, prev, next, status_changed, metadata_changed) in [
+            (
+                "diff_channel_reports_status_change_only_on_live_flip",
+                snapshot(false, "Title", 1, "Cat"),
+                snapshot(true, "Title", 1, "Cat"),
+                true,
+                false,
+            ),
+            (
+                "diff_channel_reports_metadata_change_on_title_change",
+                snapshot(true, "Old", 1, "Cat"),
+                snapshot(true, "New", 1, "Cat"),
+                false,
+                true,
+            ),
+            (
+                "diff_channel_reports_metadata_change_on_category_id_change",
+                snapshot(true, "Title", 1, "Cat"),
+                snapshot(true, "Title", 2, "Cat"),
+                false,
+                true,
+            ),
+            (
+                "diff_channel_reports_nothing_changed_for_identical_snapshots",
+                snapshot(true, "Title", 1, "Cat"),
+                snapshot(true, "Title", 1, "Cat"),
+                false,
+                false,
+            ),
+        ] {
+            let delta = diff_channel(&prev, &next);
+            assert_eq!(delta.status_changed, status_changed, "{label}");
+            assert_eq!(delta.metadata_changed, metadata_changed, "{label}");
+        }
     }
 
     #[test]

@@ -246,14 +246,31 @@ mod tests {
     }
 
     #[test]
-    fn range_for_rounds_a_total_the_unit_does_not_divide_down_to_whole_units() {
-        let bounds = UnitAmountBounds {
-            min: 1,
-            max_base_units: 100,
-            units: one_unit("thirties", 30),
-        };
-
-        assert_eq!(bounds.range_for("thirties"), 1..=3);
+    fn range_for_derives_whole_unit_bounds() {
+        for (label, bounds, input, expected) in [
+            (
+                "range_for_rounds_a_total_the_unit_does_not_divide_down_to_whole_units",
+                UnitAmountBounds {
+                    min: 1,
+                    max_base_units: 100,
+                    units: one_unit("thirties", 30),
+                },
+                "thirties",
+                1..=3,
+            ),
+            (
+                "range_for_a_zero_sized_unit_counts_it_as_one_base_unit_instead_of_dividing_by_zero",
+                UnitAmountBounds {
+                    min: 0,
+                    max_base_units: 500,
+                    units: one_unit("ticks", 0),
+                },
+                "ticks",
+                0..=500,
+            ),
+        ] {
+            assert_eq!(bounds.range_for(input), expected, "{label}");
+        }
     }
 
     #[test]
@@ -275,17 +292,6 @@ mod tests {
                 "{max_base_units} base units at {base_units} per unit"
             );
         }
-    }
-
-    #[test]
-    fn range_for_a_zero_sized_unit_counts_it_as_one_base_unit_instead_of_dividing_by_zero() {
-        let bounds = UnitAmountBounds {
-            min: 0,
-            max_base_units: 500,
-            units: one_unit("ticks", 0),
-        };
-
-        assert_eq!(bounds.range_for("ticks"), 0..=500);
     }
 
     #[test]

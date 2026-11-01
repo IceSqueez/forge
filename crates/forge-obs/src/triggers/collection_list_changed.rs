@@ -58,37 +58,32 @@ mod tests {
     }
 
     #[test]
-    fn arg_stack_collects_all_names_into_string_array() {
-        let event = Event::new(
-            EventSource::Obs,
-            "obs.collection.list_changed",
-            json!({ "all_names": ["Main", "Alt"] }),
-        );
-        let stack = COLLECTION_LIST_CHANGED.build_arg_stack(&event);
-        assert_eq!(
-            stack.get("obs.collections.names"),
-            Some(&Variant::Array(vec![
-                Variant::String("Main".to_owned()),
-                Variant::String("Alt".to_owned()),
-            ])),
-        );
-    }
-
-    #[test]
-    fn arg_stack_skips_non_string_array_elements() {
-        let event = Event::new(
-            EventSource::Obs,
-            "obs.collection.list_changed",
-            json!({ "all_names": ["Main", 7, null, "Alt"] }),
-        );
-        let stack = COLLECTION_LIST_CHANGED.build_arg_stack(&event);
-        assert_eq!(
-            stack.get("obs.collections.names"),
-            Some(&Variant::Array(vec![
-                Variant::String("Main".to_owned()),
-                Variant::String("Alt".to_owned()),
-            ])),
-        );
+    fn arg_stack_collects_string_names_and_skips_other_elements() {
+        for (label, input) in [
+            (
+                "arg_stack_collects_all_names_into_string_array",
+                json!(["Main", "Alt"]),
+            ),
+            (
+                "arg_stack_skips_non_string_array_elements",
+                json!(["Main", 7, null, "Alt"]),
+            ),
+        ] {
+            let event = Event::new(
+                EventSource::Obs,
+                "obs.collection.list_changed",
+                json!({ "all_names": input }),
+            );
+            let stack = COLLECTION_LIST_CHANGED.build_arg_stack(&event);
+            assert_eq!(
+                stack.get("obs.collections.names"),
+                Some(&Variant::Array(vec![
+                    Variant::String("Main".to_owned()),
+                    Variant::String("Alt".to_owned()),
+                ])),
+                "{label}"
+            );
+        }
     }
 
     #[test]

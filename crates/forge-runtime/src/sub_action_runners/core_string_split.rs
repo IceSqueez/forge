@@ -183,19 +183,24 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn split_max_parts_caps_count_keeping_remainder_in_final_part() {
-        let mut cfg = SubActionConfig::new();
-        cfg.insert("source".to_owned(), Variant::String("a,b,c,d".to_owned()));
-        cfg.insert("max_parts".to_owned(), Variant::Int(2));
-        assert_eq!(split_parts(&cfg).await, vec!["a", "b,c,d"]);
-    }
-
-    #[tokio::test]
-    async fn split_max_parts_zero_means_unlimited() {
-        let mut cfg = SubActionConfig::new();
-        cfg.insert("source".to_owned(), Variant::String("a,b,c,d".to_owned()));
-        cfg.insert("max_parts".to_owned(), Variant::Int(0));
-        assert_eq!(split_parts(&cfg).await, vec!["a", "b", "c", "d"]);
+    async fn split_max_parts_caps_the_count_or_leaves_it_unlimited() {
+        for (label, max_parts, expected) in [
+            (
+                "split_max_parts_caps_count_keeping_remainder_in_final_part",
+                2,
+                vec!["a", "b,c,d"],
+            ),
+            (
+                "split_max_parts_zero_means_unlimited",
+                0,
+                vec!["a", "b", "c", "d"],
+            ),
+        ] {
+            let mut cfg = SubActionConfig::new();
+            cfg.insert("source".to_owned(), Variant::String("a,b,c,d".to_owned()));
+            cfg.insert("max_parts".to_owned(), Variant::Int(max_parts));
+            assert_eq!(split_parts(&cfg).await, expected, "{label}");
+        }
     }
 
     fn empty_separator_cfg(source: &str, max_parts: i64) -> SubActionConfig {

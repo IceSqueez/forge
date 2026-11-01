@@ -297,15 +297,24 @@ mod tests {
     }
 
     #[test]
-    fn capped_keeps_text_at_the_limit_and_cuts_one_over() {
-        assert_eq!(capped("abcd", 4), "abcd");
-        assert_eq!(capped("abcde", 4), "abcd...");
-    }
-
-    #[test]
-    fn capped_counts_characters_not_bytes() {
-        assert_eq!(capped("ґґґґ", 4), "ґґґґ");
-        assert_eq!(capped("ґґґґ🎙", 4), "ґґґґ...");
+    fn capped_keeps_text_at_the_limit_and_cuts_one_over_counting_characters() {
+        for (label, at_limit, over_limit, cut) in [
+            (
+                "capped_keeps_text_at_the_limit_and_cuts_one_over",
+                "abcd",
+                "abcde",
+                "abcd...",
+            ),
+            (
+                "capped_counts_characters_not_bytes",
+                "ґґґґ",
+                "ґґґґ🎙",
+                "ґґґґ...",
+            ),
+        ] {
+            assert_eq!(capped(at_limit, 4), at_limit, "{label}");
+            assert_eq!(capped(over_limit, 4), cut, "{label}");
+        }
     }
 
     #[test]

@@ -199,42 +199,29 @@ mod tests {
     }
 
     #[test]
-    fn named_month_uses_the_names_language_order_and_month_names() {
-        let value = utc(2026, Month::March, 5, 12, 0);
-        for (names, expected) in [
-            (NamesLanguage::En, "Mar 5, 2026"),
-            (NamesLanguage::Uk, "5 бер. 2026"),
-        ] {
-            let display = in_utc(
+    fn date_text_follows_the_names_language_for_each_shape() {
+        for (label, english, ukrainian, format, shape) in [
+            (
+                "named_month_uses_the_names_language_order_and_month_names",
+                "Mar 5, 2026",
+                "5 бер. 2026",
                 DateFormatChoice::NamedMonth,
-                ClockStyle::TwentyFourHour,
-                names,
-            );
-            assert_eq!(
-                display.format(DateShape::Date, value),
-                expected,
-                "{names:?}"
-            );
-        }
-    }
-
-    #[test]
-    fn month_year_uses_the_stand_alone_month_name_of_the_names_language() {
-        let value = utc(2026, Month::March, 5, 12, 0);
-        for (names, expected) in [
-            (NamesLanguage::En, "March 2026"),
-            (NamesLanguage::Uk, "березень 2026"),
-        ] {
-            let display = in_utc(
+                DateShape::Date,
+            ),
+            (
+                "month_year_uses_the_stand_alone_month_name_of_the_names_language",
+                "March 2026",
+                "березень 2026",
                 DateFormatChoice::YearMonthDay,
-                ClockStyle::TwentyFourHour,
-                names,
-            );
-            assert_eq!(
-                display.format(DateShape::MonthYear, value),
-                expected,
-                "{names:?}"
-            );
+                DateShape::MonthYear,
+            ),
+        ] {
+            let value = utc(2026, Month::March, 5, 12, 0);
+            for (names, expected) in [(NamesLanguage::En, english), (NamesLanguage::Uk, ukrainian)]
+            {
+                let display = in_utc(format, ClockStyle::TwentyFourHour, names);
+                assert_eq!(display.format(shape, value), expected, "{label}: {names:?}");
+            }
         }
     }
 

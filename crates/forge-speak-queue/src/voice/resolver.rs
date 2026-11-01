@@ -747,25 +747,36 @@ mod tests {
     }
 
     #[test]
-    fn an_engine_override_intersects_with_the_detected_language() {
-        let mut req = request("mira", "mira");
-        req.engine_override = Some(EngineId("alpha".into()));
+    fn the_language_and_engine_intersection_picks_the_voice() {
+        for (label, req, engine, detected, expected) in [
+            (
+                "an_engine_override_intersects_with_the_detected_language",
+                request("mira", "mira"),
+                "alpha",
+                "uk",
+                "alpha-uk",
+            ),
+            (
+                "an_empty_language_and_engine_intersection_falls_back_to_the_engine_alone",
+                request("nova", "nova"),
+                "beta",
+                "en",
+                "beta-uk",
+            ),
+        ] {
+            let mut req = req;
+            req.engine_override = Some(EngineId(engine.into()));
 
-        assert_eq!(
-            spoken(deterministic().resolve(&req, Some(language("uk")), &bilingual_catalog())),
-            "alpha-uk"
-        );
-    }
-
-    #[test]
-    fn an_empty_language_and_engine_intersection_falls_back_to_the_engine_alone() {
-        let mut req = request("nova", "nova");
-        req.engine_override = Some(EngineId("beta".into()));
-
-        assert_eq!(
-            spoken(deterministic().resolve(&req, Some(language("en")), &bilingual_catalog())),
-            "beta-uk"
-        );
+            assert_eq!(
+                spoken(deterministic().resolve(
+                    &req,
+                    Some(language(detected)),
+                    &bilingual_catalog()
+                )),
+                expected,
+                "{label}"
+            );
+        }
     }
 
     #[test]

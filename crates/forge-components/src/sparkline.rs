@@ -195,11 +195,21 @@ mod tests {
     use super::*;
 
     #[test]
-    fn samples_scale_between_the_series_extremes_without_a_baseline() {
-        assert_eq!(
-            vertical_fractions(&[2.0, 4.0, 3.0], false),
-            vec![0.0, 1.0, 0.5]
-        );
+    fn samples_scale_for_each_baseline_mode() {
+        for (label, input, expected) in [
+            (
+                "samples_scale_between_the_series_extremes_without_a_baseline",
+                &[2.0, 4.0, 3.0][..],
+                vec![0.0, 1.0, 0.5],
+            ),
+            (
+                "a_non_finite_sample_draws_flat_and_leaves_the_scale_of_its_neighbours",
+                &[0.0, f32::NAN, 10.0, f32::INFINITY][..],
+                vec![0.0, FLAT_SERIES_FRACTION, 1.0, FLAT_SERIES_FRACTION],
+            ),
+        ] {
+            assert_eq!(vertical_fractions(input, false), expected, "{label}");
+        }
     }
 
     #[test]
@@ -238,13 +248,5 @@ mod tests {
     #[test]
     fn an_empty_series_yields_no_points() {
         assert!(vertical_fractions(&[], false).is_empty());
-    }
-
-    #[test]
-    fn a_non_finite_sample_draws_flat_and_leaves_the_scale_of_its_neighbours() {
-        assert_eq!(
-            vertical_fractions(&[0.0, f32::NAN, 10.0, f32::INFINITY], false),
-            vec![0.0, FLAT_SERIES_FRACTION, 1.0, FLAT_SERIES_FRACTION]
-        );
     }
 }

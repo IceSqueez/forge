@@ -187,16 +187,6 @@ mod tests {
     }
 
     #[test]
-    fn event_filter_targets_automod_message_update_kind_from_twitch() {
-        let filter = SPEC.event_filter();
-        assert_eq!(filter.source, Some(EventSource::Twitch));
-        assert_eq!(
-            filter.kind_prefix.as_deref(),
-            Some("twitch.automod.message.update")
-        );
-    }
-
-    #[test]
     fn status_filter_matches_title_case_payload_case_insensitively() {
         let event = message_event("Approved");
         for (filter, expected) in [

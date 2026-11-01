@@ -48,13 +48,6 @@ mod tests {
     }
 
     #[test]
-    fn event_filter_targets_channel_unban_topic_from_twitch() {
-        let filter = SPEC.event_filter();
-        assert_eq!(filter.source, Some(EventSource::Twitch));
-        assert_eq!(filter.kind_prefix.as_deref(), Some("twitch.channel.unban"));
-    }
-
-    #[test]
     fn build_arg_stack_exposes_user_and_moderator_without_ban_specific_vars() {
         let stack = SPEC.build_arg_stack(&unban_event());
         assert_eq!(

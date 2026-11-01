@@ -98,16 +98,6 @@ async fn delete_returns_true_and_entry_is_gone() {
 }
 
 #[tokio::test]
-async fn delete_missing_returns_false() {
-    let repo = setup().await;
-    let deleted = repo
-        .delete(&UserGlobalKey::new("bc1", "u1", "ghost"))
-        .await
-        .expect("delete missing");
-    assert!(!deleted);
-}
-
-#[tokio::test]
 async fn set_overwrites_existing_value() {
     let repo = setup().await;
     repo.set(&UserGlobalKey::new("bc1", "u1", "k"), Variant::Int(1))

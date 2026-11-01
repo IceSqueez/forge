@@ -213,16 +213,6 @@ mod tests {
     }
 
     #[test]
-    fn event_filter_targets_guest_update_kind_from_twitch() {
-        let filter = SPEC.event_filter();
-        assert_eq!(filter.source, Some(EventSource::Twitch));
-        assert_eq!(
-            filter.kind_prefix.as_deref(),
-            Some("twitch.channel.guest_star_guest.update")
-        );
-    }
-
-    #[test]
     fn state_filter_ignores_case_and_outer_whitespace_with_empty_and_any_meaning_any() {
         let event = update_event("live");
         for (filter, expected) in [

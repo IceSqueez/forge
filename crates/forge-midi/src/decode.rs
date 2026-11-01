@@ -125,145 +125,127 @@ mod tests {
     use super::*;
 
     #[test]
-    fn note_on_decoded_correctly() {
-        let result = decode_midi_bytes(&[0x90, 60, 127]).unwrap();
-        assert_eq!(
-            result,
-            Some(MidiEvent::NoteOn {
-                note: 60,
-                velocity: 127,
-                channel: 0,
-            })
-        );
+    fn decode_maps_each_status_byte_to_its_event() {
+        for (label, bytes, event) in [
+            (
+                "note_on_decoded_correctly",
+                &[0x90, 60, 127][..],
+                MidiEvent::NoteOn {
+                    note: 60,
+                    velocity: 127,
+                    channel: 0,
+                },
+            ),
+            (
+                "note_on_velocity_zero_becomes_note_off",
+                &[0x90, 60, 0][..],
+                MidiEvent::NoteOff {
+                    note: 60,
+                    velocity: 0,
+                    channel: 0,
+                },
+            ),
+            (
+                "note_off_decoded_correctly",
+                &[0x80, 48, 64][..],
+                MidiEvent::NoteOff {
+                    note: 48,
+                    velocity: 64,
+                    channel: 0,
+                },
+            ),
+            (
+                "cc_decoded_with_channel",
+                &[0xB1, 7, 100][..],
+                MidiEvent::ControlChange {
+                    controller: 7,
+                    value: 100,
+                    channel: 1,
+                },
+            ),
+            (
+                "pitch_bend_full_down_decodes_to_zero",
+                &[0xE0, 0x00, 0x00][..],
+                MidiEvent::PitchBend {
+                    value: 0,
+                    channel: 0,
+                },
+            ),
+            (
+                "pitch_bend_center_decodes_to_8192",
+                &[0xE0, 0x00, 0x40][..],
+                MidiEvent::PitchBend {
+                    value: 8192,
+                    channel: 0,
+                },
+            ),
+            (
+                "pitch_bend_full_up_decodes_to_16383",
+                &[0xE0, 0x7F, 0x7F][..],
+                MidiEvent::PitchBend {
+                    value: 16383,
+                    channel: 0,
+                },
+            ),
+            (
+                "pitch_bend_extracts_channel",
+                &[0xE5, 0x00, 0x40][..],
+                MidiEvent::PitchBend {
+                    value: 8192,
+                    channel: 5,
+                },
+            ),
+            (
+                "program_change_decodes_program",
+                &[0xC0, 10][..],
+                MidiEvent::ProgramChange {
+                    program: 10,
+                    channel: 0,
+                },
+            ),
+            (
+                "program_change_extracts_channel",
+                &[0xC3, 10][..],
+                MidiEvent::ProgramChange {
+                    program: 10,
+                    channel: 3,
+                },
+            ),
+            (
+                "note_on_channel_15",
+                &[0x9F, 64, 80][..],
+                MidiEvent::NoteOn {
+                    note: 64,
+                    velocity: 80,
+                    channel: 15,
+                },
+            ),
+            (
+                "cc_channel_2",
+                &[0xB2, 11, 64][..],
+                MidiEvent::ControlChange {
+                    controller: 11,
+                    value: 64,
+                    channel: 2,
+                },
+            ),
+        ] {
+            let result = decode_midi_bytes(bytes).unwrap();
+            assert_eq!(result, Some(event), "{label}");
+        }
     }
 
     #[test]
-    fn note_on_velocity_zero_becomes_note_off() {
-        let result = decode_midi_bytes(&[0x90, 60, 0]).unwrap();
-        assert_eq!(
-            result,
-            Some(MidiEvent::NoteOff {
-                note: 60,
-                velocity: 0,
-                channel: 0,
-            })
-        );
-    }
-
-    #[test]
-    fn note_off_decoded_correctly() {
-        let result = decode_midi_bytes(&[0x80, 48, 64]).unwrap();
-        assert_eq!(
-            result,
-            Some(MidiEvent::NoteOff {
-                note: 48,
-                velocity: 64,
-                channel: 0,
-            })
-        );
-    }
-
-    #[test]
-    fn cc_decoded_with_channel() {
-        let result = decode_midi_bytes(&[0xB1, 7, 100]).unwrap();
-        assert_eq!(
-            result,
-            Some(MidiEvent::ControlChange {
-                controller: 7,
-                value: 100,
-                channel: 1,
-            })
-        );
-    }
-
-    #[test]
-    fn unsupported_status_byte_returns_none() {
-        let result = decode_midi_bytes(&[0xD0, 64]).unwrap();
-        assert_eq!(result, None);
-    }
-
-    #[test]
-    fn pitch_bend_full_down_decodes_to_zero() {
-        let result = decode_midi_bytes(&[0xE0, 0x00, 0x00]).unwrap();
-        assert_eq!(
-            result,
-            Some(MidiEvent::PitchBend {
-                value: 0,
-                channel: 0,
-            })
-        );
-    }
-
-    #[test]
-    fn pitch_bend_center_decodes_to_8192() {
-        let result = decode_midi_bytes(&[0xE0, 0x00, 0x40]).unwrap();
-        assert_eq!(
-            result,
-            Some(MidiEvent::PitchBend {
-                value: 8192,
-                channel: 0,
-            })
-        );
-    }
-
-    #[test]
-    fn pitch_bend_full_up_decodes_to_16383() {
-        let result = decode_midi_bytes(&[0xE0, 0x7F, 0x7F]).unwrap();
-        assert_eq!(
-            result,
-            Some(MidiEvent::PitchBend {
-                value: 16383,
-                channel: 0,
-            })
-        );
-    }
-
-    #[test]
-    fn pitch_bend_extracts_channel() {
-        let result = decode_midi_bytes(&[0xE5, 0x00, 0x40]).unwrap();
-        assert_eq!(
-            result,
-            Some(MidiEvent::PitchBend {
-                value: 8192,
-                channel: 5,
-            })
-        );
-    }
-
-    #[test]
-    fn pitch_bend_truncated_returns_none() {
-        let result = decode_midi_bytes(&[0xE0, 0x00]).unwrap();
-        assert_eq!(result, None);
-    }
-
-    #[test]
-    fn program_change_decodes_program() {
-        let result = decode_midi_bytes(&[0xC0, 10]).unwrap();
-        assert_eq!(
-            result,
-            Some(MidiEvent::ProgramChange {
-                program: 10,
-                channel: 0,
-            })
-        );
-    }
-
-    #[test]
-    fn program_change_extracts_channel() {
-        let result = decode_midi_bytes(&[0xC3, 10]).unwrap();
-        assert_eq!(
-            result,
-            Some(MidiEvent::ProgramChange {
-                program: 10,
-                channel: 3,
-            })
-        );
-    }
-
-    #[test]
-    fn program_change_truncated_returns_none() {
-        let result = decode_midi_bytes(&[0xC0]).unwrap();
-        assert_eq!(result, None);
+    fn unsupported_or_truncated_messages_decode_to_none() {
+        for (label, input) in [
+            ("unsupported_status_byte_returns_none", &[0xD0, 64][..]),
+            ("pitch_bend_truncated_returns_none", &[0xE0, 0x00][..]),
+            ("program_change_truncated_returns_none", &[0xC0][..]),
+            ("empty_data_returns_none", &[][..]),
+        ] {
+            let result = decode_midi_bytes(input).unwrap();
+            assert_eq!(result, None, "{label}");
+        }
     }
 
     #[test]
@@ -273,65 +255,43 @@ mod tests {
     }
 
     #[test]
-    fn empty_data_returns_none() {
-        let result = decode_midi_bytes(&[]).unwrap();
-        assert_eq!(result, None);
-    }
-
-    #[test]
-    fn note_on_channel_15() {
-        let result = decode_midi_bytes(&[0x9F, 64, 80]).unwrap();
-        assert_eq!(
-            result,
-            Some(MidiEvent::NoteOn {
-                note: 64,
-                velocity: 80,
-                channel: 15,
-            })
-        );
-    }
-
-    #[test]
-    fn cc_channel_2() {
-        let result = decode_midi_bytes(&[0xB2, 11, 64]).unwrap();
-        assert_eq!(
-            result,
-            Some(MidiEvent::ControlChange {
-                controller: 11,
-                value: 64,
-                channel: 2,
-            })
-        );
-    }
-
-    #[test]
-    fn message_to_bytes_note_on() {
-        let msg = MidiOutMessage::NoteOn {
-            note: 72,
-            velocity: 64,
-            channel: 0,
-        };
-        assert_eq!(message_to_bytes(&msg).unwrap(), vec![0x90, 72, 64]);
-    }
-
-    #[test]
-    fn message_to_bytes_note_off() {
-        let msg = MidiOutMessage::NoteOff {
-            note: 48,
-            velocity: 0,
-            channel: 1,
-        };
-        assert_eq!(message_to_bytes(&msg).unwrap(), vec![0x81, 48, 0]);
-    }
-
-    #[test]
-    fn message_to_bytes_cc() {
-        let msg = MidiOutMessage::ControlChange {
-            controller: 7,
-            value: 127,
-            channel: 3,
-        };
-        assert_eq!(message_to_bytes(&msg).unwrap(), vec![0xB3, 7, 127]);
+    fn message_to_bytes_encodes_each_message_kind() {
+        for (label, msg, expected) in [
+            (
+                "message_to_bytes_note_on",
+                MidiOutMessage::NoteOn {
+                    note: 72,
+                    velocity: 64,
+                    channel: 0,
+                },
+                vec![0x90, 72, 64],
+            ),
+            (
+                "message_to_bytes_note_off",
+                MidiOutMessage::NoteOff {
+                    note: 48,
+                    velocity: 0,
+                    channel: 1,
+                },
+                vec![0x81, 48, 0],
+            ),
+            (
+                "message_to_bytes_cc",
+                MidiOutMessage::ControlChange {
+                    controller: 7,
+                    value: 127,
+                    channel: 3,
+                },
+                vec![0xB3, 7, 127],
+            ),
+            (
+                "message_to_bytes_raw_valid",
+                MidiOutMessage::Raw(vec![0x90, 60, 100]),
+                vec![0x90, 60, 100],
+            ),
+        ] {
+            assert_eq!(message_to_bytes(&msg).unwrap(), expected, "{label}");
+        }
     }
 
     fn channel_messages(channel: u8, first: u8, second: u8) -> [MidiOutMessage; 3] {
@@ -388,12 +348,6 @@ mod tests {
                 );
             }
         }
-    }
-
-    #[test]
-    fn message_to_bytes_raw_valid() {
-        let msg = MidiOutMessage::Raw(vec![0x90, 60, 100]);
-        assert_eq!(message_to_bytes(&msg).unwrap(), vec![0x90, 60, 100]);
     }
 
     #[test]

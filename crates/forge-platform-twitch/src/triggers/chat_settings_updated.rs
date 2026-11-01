@@ -89,16 +89,6 @@ mod tests {
     }
 
     #[test]
-    fn event_filter_targets_chat_settings_update_kind_from_twitch() {
-        let filter = SPEC.event_filter();
-        assert_eq!(filter.source, Some(EventSource::Twitch));
-        assert_eq!(
-            filter.kind_prefix.as_deref(),
-            Some("twitch.channel.chat_settings.update")
-        );
-    }
-
-    #[test]
     fn build_arg_stack_marshals_mode_flags_as_bool_and_durations_as_int() {
         let stack = SPEC.build_arg_stack(&settings_event());
         for (key, expected) in [

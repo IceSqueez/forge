@@ -235,31 +235,35 @@ fn a_thread_display_format_override_shadows_only_the_thread_that_installed_it() 
 }
 
 #[test]
-fn duplicate_message_ids_reports_each_id_defined_twice_across_app_fragments() {
-    let ids = forge_components::duplicate_message_ids(
-        CatalogLanguage::En,
-        &["same_id = A\nonly_a = A\n", "same_id = B\nonly_b = B\n"],
-    );
-
-    assert_eq!(ids, vec!["same_id".to_owned()]);
-}
-
-#[test]
-fn duplicate_message_ids_reports_an_id_defined_twice_inside_one_fragment() {
-    let ids =
-        forge_components::duplicate_message_ids(CatalogLanguage::Uk, &["twice = A\ntwice = B\n"]);
-
-    assert_eq!(ids, vec!["twice".to_owned()]);
-}
-
-#[test]
-fn duplicate_message_ids_reports_an_app_id_that_collides_with_the_kit_catalog() {
-    let ids = forge_components::duplicate_message_ids(
-        CatalogLanguage::En,
-        &["widget_save_saving = Mine\n"],
-    );
-
-    assert_eq!(ids, vec![KIT_KEY.to_owned()]);
+fn duplicate_message_ids_reports_every_collision_source() {
+    for (label, ids, input) in [
+        (
+            "duplicate_message_ids_reports_each_id_defined_twice_across_app_fragments",
+            forge_components::duplicate_message_ids(
+                CatalogLanguage::En,
+                &["same_id = A\nonly_a = A\n", "same_id = B\nonly_b = B\n"],
+            ),
+            "same_id",
+        ),
+        (
+            "duplicate_message_ids_reports_an_id_defined_twice_inside_one_fragment",
+            forge_components::duplicate_message_ids(
+                CatalogLanguage::Uk,
+                &["twice = A\ntwice = B\n"],
+            ),
+            "twice",
+        ),
+        (
+            "duplicate_message_ids_reports_an_app_id_that_collides_with_the_kit_catalog",
+            forge_components::duplicate_message_ids(
+                CatalogLanguage::En,
+                &["widget_save_saving = Mine\n"],
+            ),
+            KIT_KEY,
+        ),
+    ] {
+        assert_eq!(ids, vec![input.to_owned()], "{label}");
+    }
 }
 
 #[test]

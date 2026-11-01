@@ -375,32 +375,35 @@ fn a_blocklist_mark_names_the_entry_and_the_text_as_written() {
 }
 
 #[test]
-fn a_later_rule_rewriting_part_of_an_earlier_mark_drops_that_mark() {
-    let config = PipelineConfig {
-        replacement_rules: vec![text_rule("a", "bcd"), text_rule("c", "X")],
-        ..neutral_config()
-    };
-    let (_, outcomes) = preview("a", &config, &ctx());
-    assert_eq!(
-        marked_slices(stage(&outcomes, StageName::TextReplacements)),
-        vec![("X", ReplacementOrigin::ReplacementRuleIndex(1))]
-    );
-}
-
-#[test]
-fn a_later_rule_rewriting_text_before_an_earlier_mark_shifts_that_mark() {
-    let config = PipelineConfig {
-        replacement_rules: vec![text_rule("aa", "b"), text_rule("x", "yyy")],
-        ..neutral_config()
-    };
-    let (_, outcomes) = preview("x aa", &config, &ctx());
-    assert_eq!(
-        marked_slices(stage(&outcomes, StageName::TextReplacements)),
-        vec![
-            ("yyy", ReplacementOrigin::ReplacementRuleIndex(1)),
-            ("b", ReplacementOrigin::ReplacementRuleIndex(0)),
-        ]
-    );
+fn a_later_rule_updates_the_marks_it_touches() {
+    for (label, replacement_rules_2, input, expected) in [
+        (
+            "a_later_rule_rewriting_part_of_an_earlier_mark_drops_that_mark",
+            vec![text_rule("a", "bcd"), text_rule("c", "X")],
+            "a",
+            vec![("X", ReplacementOrigin::ReplacementRuleIndex(1))],
+        ),
+        (
+            "a_later_rule_rewriting_text_before_an_earlier_mark_shifts_that_mark",
+            vec![text_rule("aa", "b"), text_rule("x", "yyy")],
+            "x aa",
+            vec![
+                ("yyy", ReplacementOrigin::ReplacementRuleIndex(1)),
+                ("b", ReplacementOrigin::ReplacementRuleIndex(0)),
+            ],
+        ),
+    ] {
+        let config = PipelineConfig {
+            replacement_rules: replacement_rules_2,
+            ..neutral_config()
+        };
+        let (_, outcomes) = preview(input, &config, &ctx());
+        assert_eq!(
+            marked_slices(stage(&outcomes, StageName::TextReplacements)),
+            expected,
+            "{label}"
+        );
+    }
 }
 
 #[test]

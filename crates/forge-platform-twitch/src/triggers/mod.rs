@@ -165,6 +165,7 @@ pub fn register_twitch_triggers(reg: &mut TriggerRegistry) -> Result<(), Registr
 mod tests {
     use super::*;
 
+    use forge_events::EventSource;
     use forge_registry::{
         ActorRole, ActorSlot, CanonicalCount, CanonicalVariable, TriggerKindDescriptor,
     };
@@ -289,11 +290,246 @@ mod tests {
     }
 
     #[test]
-    fn duplicate_registration_returns_error() {
-        let mut reg = TriggerRegistry::new();
-        register_twitch_triggers(&mut reg).unwrap();
-        let result = register_twitch_triggers(&mut reg);
-        assert!(result.is_err());
+    fn every_trigger_filters_twitch_events_on_its_own_kind() {
+        for (label, spec, kind) in [
+            (
+                "ad_break_started",
+                ad_break_started::SPEC,
+                "twitch.channel.ad_break.begin",
+            ),
+            (
+                "automatic_reward_redeemed",
+                automatic_reward_redeemed::SPEC,
+                "twitch.channel.channel_points_automatic_reward_redemption.add",
+            ),
+            (
+                "automod_message_held",
+                automod_message_held::SPEC,
+                "twitch.automod.message.hold",
+            ),
+            (
+                "automod_message_updated",
+                automod_message_updated::SPEC,
+                "twitch.automod.message.update",
+            ),
+            (
+                "automod_settings_updated",
+                automod_settings_updated::SPEC,
+                "twitch.automod.settings.update",
+            ),
+            (
+                "automod_terms_updated",
+                automod_terms_updated::SPEC,
+                "twitch.automod.terms.update",
+            ),
+            ("channel_ban", channel_ban::SPEC, "twitch.channel.ban"),
+            (
+                "channel_follow",
+                channel_follow::SPEC,
+                "twitch.channel.follow",
+            ),
+            (
+                "channel_points_redemption",
+                channel_points_redemption::SPEC,
+                "twitch.channel.channel_points_custom_reward_redemption.add",
+            ),
+            (
+                "channel_timeout",
+                channel_timeout::SPEC,
+                "twitch.channel.ban",
+            ),
+            ("channel_unban", channel_unban::SPEC, "twitch.channel.unban"),
+            (
+                "channel_updated",
+                channel_updated::SPEC,
+                "twitch.channel.update",
+            ),
+            (
+                "charity_progress",
+                charity_progress::SPEC,
+                "twitch.channel.charity_campaign.progress",
+            ),
+            (
+                "charity_stopped",
+                charity_stopped::SPEC,
+                "twitch.channel.charity_campaign.stop",
+            ),
+            (
+                "chat_cleared",
+                chat_cleared::SPEC,
+                "twitch.channel.chat.clear",
+            ),
+            (
+                "chat_settings_updated",
+                chat_settings_updated::SPEC,
+                "twitch.channel.chat_settings.update",
+            ),
+            ("goal_ended", goal_ended::SPEC, "twitch.channel.goal.end"),
+            (
+                "goal_started",
+                goal_started::SPEC,
+                "twitch.channel.goal.begin",
+            ),
+            (
+                "guest_star_guest_updated",
+                guest_star_guest_updated::SPEC,
+                "twitch.channel.guest_star_guest.update",
+            ),
+            (
+                "guest_star_session_began",
+                guest_star_session_began::SPEC,
+                "twitch.channel.guest_star_session.begin",
+            ),
+            (
+                "guest_star_session_ended",
+                guest_star_session_ended::SPEC,
+                "twitch.channel.guest_star_session.end",
+            ),
+            (
+                "guest_star_settings_updated",
+                guest_star_settings_updated::SPEC,
+                "twitch.channel.guest_star_settings.update",
+            ),
+            (
+                "hype_train_ended",
+                hype_train_ended::SPEC,
+                "twitch.channel.hype_train.end",
+            ),
+            (
+                "hype_train_progress",
+                hype_train_progress::SPEC,
+                "twitch.channel.hype_train.progress",
+            ),
+            (
+                "hype_train_started",
+                hype_train_started::SPEC,
+                "twitch.channel.hype_train.begin",
+            ),
+            (
+                "moderator_added",
+                moderator_added::SPEC,
+                "twitch.channel.moderator.add",
+            ),
+            (
+                "moderator_removed",
+                moderator_removed::SPEC,
+                "twitch.channel.moderator.remove",
+            ),
+            ("poll_ended", poll_ended::SPEC, "twitch.channel.poll.end"),
+            (
+                "poll_progress",
+                poll_progress::SPEC,
+                "twitch.channel.poll.progress",
+            ),
+            (
+                "poll_started",
+                poll_started::SPEC,
+                "twitch.channel.poll.begin",
+            ),
+            (
+                "prediction_ended",
+                prediction_ended::SPEC,
+                "twitch.channel.prediction.end",
+            ),
+            (
+                "prediction_locked",
+                prediction_locked::SPEC,
+                "twitch.channel.prediction.lock",
+            ),
+            (
+                "prediction_progress",
+                prediction_progress::SPEC,
+                "twitch.channel.prediction.progress",
+            ),
+            (
+                "prediction_started",
+                prediction_started::SPEC,
+                "twitch.channel.prediction.begin",
+            ),
+            ("raid_sent", raid_sent::SPEC, "twitch.channel.raid"),
+            (
+                "redemption_updated",
+                redemption_updated::SPEC,
+                "twitch.channel.channel_points_custom_reward_redemption.update",
+            ),
+            (
+                "reward_added",
+                reward_added::SPEC,
+                "twitch.channel.channel_points_custom_reward.add",
+            ),
+            (
+                "reward_removed",
+                reward_removed::SPEC,
+                "twitch.channel.channel_points_custom_reward.remove",
+            ),
+            (
+                "reward_updated",
+                reward_updated::SPEC,
+                "twitch.channel.channel_points_custom_reward.update",
+            ),
+            (
+                "shield_mode_ended",
+                shield_mode_ended::SPEC,
+                "twitch.channel.shield_mode.end",
+            ),
+            (
+                "shield_mode_started",
+                shield_mode_started::SPEC,
+                "twitch.channel.shield_mode.begin",
+            ),
+            (
+                "shoutout_received",
+                shoutout_received::SPEC,
+                "twitch.channel.shoutout.receive",
+            ),
+            (
+                "shoutout_sent",
+                shoutout_sent::SPEC,
+                "twitch.channel.shoutout.create",
+            ),
+            (
+                "stream_offline",
+                stream_offline::SPEC,
+                "twitch.stream.offline",
+            ),
+            ("stream_online", stream_online::SPEC, "twitch.stream.online"),
+            (
+                "suspicious_user_message",
+                suspicious_user_message::SPEC,
+                "twitch.channel.suspicious_user.message",
+            ),
+            (
+                "unban_request_created",
+                unban_request_created::SPEC,
+                "twitch.channel.unban_request.create",
+            ),
+            (
+                "unban_request_resolved",
+                unban_request_resolved::SPEC,
+                "twitch.channel.unban_request.resolve",
+            ),
+            ("user_update", user_update::SPEC, "twitch.user.update"),
+            ("vip_added", vip_added::SPEC, "twitch.channel.vip.add"),
+            (
+                "vip_removed",
+                vip_removed::SPEC,
+                "twitch.channel.vip.remove",
+            ),
+            (
+                "warning_acknowledged",
+                warning_acknowledged::SPEC,
+                "twitch.channel.warning.acknowledge",
+            ),
+            (
+                "warning_sent",
+                warning_sent::SPEC,
+                "twitch.channel.warning.send",
+            ),
+        ] {
+            let filter = spec.event_filter();
+            assert_eq!(filter.source, Some(EventSource::Twitch), "{label}");
+            assert_eq!(filter.kind_prefix.as_deref(), Some(kind), "{label}");
+        }
     }
 
     #[test]

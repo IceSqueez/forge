@@ -63,16 +63,6 @@ mod tests {
     use forge_registry::TriggerKindDescriptor;
 
     #[test]
-    fn event_filter_targets_unban_request_create_topic_from_twitch() {
-        let filter = SPEC.event_filter();
-        assert_eq!(filter.source, Some(EventSource::Twitch));
-        assert_eq!(
-            filter.kind_prefix.as_deref(),
-            Some("twitch.channel.unban_request.create")
-        );
-    }
-
-    #[test]
     fn build_arg_stack_maps_create_fields_from_publisher_payload() {
         let payload = serde_json::json!({
             "id": "req-7",

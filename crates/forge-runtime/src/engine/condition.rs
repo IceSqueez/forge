@@ -238,35 +238,34 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn deferred_string_ordering_returns_correct_boolean_without_error() {
-        let gate = ConditionGate::new(&unhurried());
-        assert!(
-            gate.evaluate_with_args(r#""apple" < "banana""#, &ArgStack::new())
-                .await
-                .unwrap()
-        );
-        assert!(
-            !gate
-                .evaluate_with_args(r#""banana" < "apple""#, &ArgStack::new())
-                .await
-                .unwrap()
-        );
-    }
-
-    #[tokio::test]
-    async fn deferred_mixed_kind_comparison_returns_correct_boolean_without_error() {
-        let gate = ConditionGate::new(&unhurried());
-        assert!(
-            gate.evaluate_with_args("2 == 2.0", &ArgStack::new())
-                .await
-                .unwrap()
-        );
-        assert!(
-            !gate
-                .evaluate_with_args("2 < 1.0", &ArgStack::new())
-                .await
-                .unwrap()
-        );
+    async fn deferred_comparisons_return_the_correct_boolean_without_error() {
+        for (label, true_condition, false_condition) in [
+            (
+                "deferred_string_ordering_returns_correct_boolean_without_error",
+                r#""apple" < "banana""#,
+                r#""banana" < "apple""#,
+            ),
+            (
+                "deferred_mixed_kind_comparison_returns_correct_boolean_without_error",
+                "2 == 2.0",
+                "2 < 1.0",
+            ),
+        ] {
+            let gate = ConditionGate::new(&unhurried());
+            assert!(
+                gate.evaluate_with_args(true_condition, &ArgStack::new())
+                    .await
+                    .unwrap(),
+                "{label}"
+            );
+            assert!(
+                !gate
+                    .evaluate_with_args(false_condition, &ArgStack::new())
+                    .await
+                    .unwrap(),
+                "{label}"
+            );
+        }
     }
 
     #[tokio::test]

@@ -235,12 +235,25 @@ mod tests {
     }
 
     #[test]
-    fn canonical_chain_beats_is_default_flagged_sysdefault() {
-        let devices = [dev("sysdefault", true), dev("pipewire", false)];
-        assert_eq!(
-            pick_default_output_device(&devices),
-            Some(DeviceId::new("pipewire")),
-        );
+    fn the_canonical_chain_wins_and_the_flagged_device_is_the_fallback() {
+        for (label, devices, input) in [
+            (
+                "canonical_chain_beats_is_default_flagged_sysdefault",
+                [dev("sysdefault", true), dev("pipewire", false)],
+                "pipewire",
+            ),
+            (
+                "falls_back_to_is_default_when_no_canonical_name_present",
+                [dev("BuiltInOutput", false), dev("USB DAC", true)],
+                "USB DAC",
+            ),
+        ] {
+            assert_eq!(
+                pick_default_output_device(&devices),
+                Some(DeviceId::new(input)),
+                "{label}"
+            );
+        }
     }
 
     #[test]
@@ -270,15 +283,6 @@ mod tests {
                 "chain order violated for {devices:?}",
             );
         }
-    }
-
-    #[test]
-    fn falls_back_to_is_default_when_no_canonical_name_present() {
-        let devices = [dev("BuiltInOutput", false), dev("USB DAC", true)];
-        assert_eq!(
-            pick_default_output_device(&devices),
-            Some(DeviceId::new("USB DAC")),
-        );
     }
 
     #[test]

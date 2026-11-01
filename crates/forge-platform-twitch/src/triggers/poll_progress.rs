@@ -49,16 +49,6 @@ mod tests {
     }
 
     #[test]
-    fn event_filter_targets_poll_progress_topic_from_twitch() {
-        let filter = SPEC.event_filter();
-        assert_eq!(filter.source, Some(EventSource::Twitch));
-        assert_eq!(
-            filter.kind_prefix.as_deref(),
-            Some("twitch.channel.poll.progress")
-        );
-    }
-
-    #[test]
     fn build_arg_stack_maps_poll_id_and_title() {
         let stack = SPEC.build_arg_stack(&poll_progress_event());
         assert_eq!(

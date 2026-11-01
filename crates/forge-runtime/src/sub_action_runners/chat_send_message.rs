@@ -310,12 +310,21 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_padded_target_is_published_trimmed() {
-        let (outcome, sent) = run_gated(Some("  kick \t"), IntegrationGate::new()).await;
+    async fn a_target_is_published_normalized() {
+        for (label, target, published) in [
+            ("a_padded_target_is_published_trimmed", "  kick \t", "kick"),
+            (
+                "a_mixed_case_target_is_published_normalized",
+                "Twitch",
+                "twitch",
+            ),
+        ] {
+            let (outcome, sent) = run_gated(Some(target), IntegrationGate::new()).await;
 
-        assert_eq!(outcome, SubActionOutcome::Success);
-        assert_eq!(sent.len(), 1);
-        assert_eq!(sent[0]["target"].as_str(), Some("kick"));
+            assert_eq!(outcome, SubActionOutcome::Success, "{label}");
+            assert_eq!(sent.len(), 1, "{label}");
+            assert_eq!(sent[0]["target"].as_str(), Some(published), "{label}");
+        }
     }
 
     #[tokio::test]
@@ -327,15 +336,6 @@ mod tests {
             SubActionOutcome::Failed(unknown_chat_target_message("myspace").into())
         );
         assert!(sent.is_empty(), "published {sent:?}");
-    }
-
-    #[tokio::test]
-    async fn a_mixed_case_target_is_published_normalized() {
-        let (outcome, sent) = run_gated(Some("Twitch"), IntegrationGate::new()).await;
-
-        assert_eq!(outcome, SubActionOutcome::Success);
-        assert_eq!(sent.len(), 1);
-        assert_eq!(sent[0]["target"].as_str(), Some("twitch"));
     }
 
     #[tokio::test]

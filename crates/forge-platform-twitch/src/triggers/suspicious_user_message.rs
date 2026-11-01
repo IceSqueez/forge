@@ -73,16 +73,6 @@ mod tests {
     }
 
     #[test]
-    fn event_filter_targets_suspicious_user_message_topic_from_twitch() {
-        let filter = SPEC.event_filter();
-        assert_eq!(filter.source, Some(EventSource::Twitch));
-        assert_eq!(
-            filter.kind_prefix.as_deref(),
-            Some("twitch.channel.suspicious_user.message")
-        );
-    }
-
-    #[test]
     fn build_arg_stack_maps_user_low_trust_and_message_fields() {
         let stack = SPEC.build_arg_stack(&suspicious_user_event());
         assert_eq!(

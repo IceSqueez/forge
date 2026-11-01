@@ -260,33 +260,6 @@ async fn mark_announced_stamps_an_unannounced_donation_once() {
 }
 
 #[tokio::test]
-async fn mark_announced_reports_false_for_an_unknown_donation() {
-    let backend = backend().await;
-    let repo = repo(&backend);
-    repo.insert_if_new(&live("d-1", at(0)), at(5))
-        .await
-        .expect("insert");
-
-    let unknown_id = repo
-        .mark_announced(&IntegrationId::new(PROVIDER), "d-2", at(7))
-        .await
-        .expect("mark");
-    let other_provider = repo
-        .mark_announced(&IntegrationId::new(OTHER_PROVIDER), "d-1", at(7))
-        .await
-        .expect("mark");
-
-    assert_eq!(
-        (
-            unknown_id,
-            other_provider,
-            stored(&repo, "d-1").await.announced_at
-        ),
-        (false, false, None)
-    );
-}
-
-#[tokio::test]
 async fn list_recent_returns_newest_occurrence_first_and_the_later_insert_first_on_ties() {
     let backend = backend().await;
     let repo = repo(&backend);

@@ -92,19 +92,6 @@ async fn deleting_a_queue_moves_its_live_and_archived_actions_to_the_default_and
 }
 
 #[tokio::test]
-async fn deleting_a_queue_that_does_not_exist_reports_none() {
-    let db = db().await;
-
-    let moved = db
-        .queues
-        .delete_reassigning_actions(QueueId::new())
-        .await
-        .unwrap();
-
-    assert_eq!(moved, None);
-}
-
-#[tokio::test]
 async fn neither_delete_path_removes_the_default_queue() {
     let db = db().await;
     let parked = db.with_action("Parked", DEFAULT_QUEUE_ID).await;

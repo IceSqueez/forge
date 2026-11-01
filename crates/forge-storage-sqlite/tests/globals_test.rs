@@ -196,19 +196,16 @@ async fn setup_file_backed() -> (tempfile::TempDir, Sandboxed<Arc<SqliteBackend>
 }
 
 #[tokio::test]
-async fn incr_on_int_global_returns_updated_value() {
-    let repo = setup().await;
-    repo.set("n", Variant::Int(10), false).await.expect("set");
-    let result = repo.incr("n", 5).await.expect("incr");
-    assert_eq!(result, Variant::Int(15));
-}
-
-#[tokio::test]
-async fn incr_with_negative_amount_decrements() {
-    let repo = setup().await;
-    repo.set("n", Variant::Int(10), false).await.expect("set");
-    let result = repo.incr("n", -3).await.expect("incr");
-    assert_eq!(result, Variant::Int(7));
+async fn incr_adds_the_signed_amount() {
+    for (label, amount, total) in [
+        ("incr_on_int_global_returns_updated_value", 5, 15),
+        ("incr_with_negative_amount_decrements", -3, 7),
+    ] {
+        let repo = setup().await;
+        repo.set("n", Variant::Int(10), false).await.expect("set");
+        let result = repo.incr("n", amount).await.expect("incr");
+        assert_eq!(result, Variant::Int(total), "{label}");
+    }
 }
 
 #[tokio::test]

@@ -123,16 +123,6 @@ mod tests {
     }
 
     #[test]
-    fn event_filter_targets_hype_train_progress_on_twitch() {
-        let filter = SPEC.event_filter();
-        assert_eq!(filter.source, Some(EventSource::Twitch));
-        assert_eq!(
-            filter.kind_prefix.as_deref(),
-            Some("twitch.channel.hype_train.progress")
-        );
-    }
-
-    #[test]
     fn matches_trigger_fires_only_when_level_at_or_above_min_level() {
         let cases = [
             ("min below event level", config_with_min_level(1), true),

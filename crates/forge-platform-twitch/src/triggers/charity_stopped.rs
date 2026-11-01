@@ -17,20 +17,3 @@ pub(super) const SPEC: TwitchTriggerSpec = TwitchTriggerSpec {
     variables: families::charity_variables,
     ..TwitchTriggerSpec::BASE
 };
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use forge_events::EventSource;
-    use forge_registry::TriggerKindDescriptor;
-
-    #[test]
-    fn event_filter_targets_stop_topic_on_twitch_source() {
-        let filter = SPEC.event_filter();
-        assert_eq!(filter.source, Some(EventSource::Twitch));
-        assert_eq!(
-            filter.kind_prefix.as_deref(),
-            Some("twitch.channel.charity_campaign.stop")
-        );
-    }
-}

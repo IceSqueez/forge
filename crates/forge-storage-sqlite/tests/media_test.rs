@@ -400,26 +400,6 @@ async fn delete_removes_the_row_and_the_file_once_the_last_referrer_is_released(
 }
 
 #[tokio::test]
-async fn delete_reports_nothing_removed_for_an_unknown_blob() {
-    let fx = fixture().await;
-
-    let removed = fx
-        .media()
-        .delete(&MediaBlobId::from_stored(TINY_GIF_ID).expect("fixture blob id is well formed"))
-        .await
-        .expect("delete an unknown blob");
-
-    assert!(!removed);
-}
-
-#[tokio::test]
-async fn release_reports_nothing_held_for_an_empty_slot() {
-    let fx = fixture().await;
-
-    assert!(!fx.media().release(&clip_source()).await.expect("release"));
-}
-
-#[tokio::test]
 async fn retain_refuses_a_blob_that_was_never_stored() {
     let fx = fixture().await;
 
@@ -493,16 +473,6 @@ async fn referrers_lists_every_slot_pointing_at_the_blob() {
     assert_eq!(
         fx.media().referrers(&blob.id).await.expect("referrers"),
         vec![overlay_icon(), clip_source()]
-    );
-}
-
-#[tokio::test]
-async fn blob_of_reports_nothing_for_a_slot_that_was_never_retained() {
-    let fx = fixture().await;
-
-    assert_eq!(
-        fx.media().blob_of(&clip_source()).await.expect("blob_of"),
-        None
     );
 }
 

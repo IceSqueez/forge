@@ -610,18 +610,23 @@ fn strings(items: &[&str]) -> Variant {
 }
 
 #[tokio::test]
-async fn lines_mode_splits_on_newlines_stripping_trailing_carriage_returns() {
-    let (outcome, value) =
-        read_fixture(Some("Lines array"), "out", "out", "alpha\r\nbeta\ngamma").await;
-    assert_eq!(outcome, SubActionOutcome::Success);
-    assert_eq!(value, Some(strings(&["alpha", "beta", "gamma"])));
-}
-
-#[tokio::test]
-async fn absent_read_as_defaults_to_lines_array() {
-    let (outcome, value) = read_fixture(None, "out", "out", "x\ny").await;
-    assert_eq!(outcome, SubActionOutcome::Success);
-    assert_eq!(value, Some(strings(&["x", "y"])));
+async fn reading_as_lines_splits_on_newlines() {
+    for (label, read, content) in [
+        (
+            "lines_mode_splits_on_newlines_stripping_trailing_carriage_returns",
+            read_fixture(Some("Lines array"), "out", "out", "alpha\r\nbeta\ngamma"),
+            &["alpha", "beta", "gamma"][..],
+        ),
+        (
+            "absent_read_as_defaults_to_lines_array",
+            read_fixture(None, "out", "out", "x\ny"),
+            &["x", "y"][..],
+        ),
+    ] {
+        let (outcome, value) = read.await;
+        assert_eq!(outcome, SubActionOutcome::Success, "{label}");
+        assert_eq!(value, Some(strings(content)), "{label}");
+    }
 }
 
 #[tokio::test]
@@ -635,10 +640,23 @@ async fn unrecognised_read_as_fails_without_producing_a_value() {
 }
 
 #[tokio::test]
-async fn whole_file_mode_returns_the_entire_content_as_one_string() {
-    let (outcome, value) = read_fixture(Some("Whole file"), "out", "out", "line1\nline2\n").await;
-    assert_eq!(outcome, SubActionOutcome::Success);
-    assert_eq!(value, Some(text("line1\nline2\n")));
+async fn reading_the_whole_file_binds_one_string_to_the_sanitized_name() {
+    for (label, read, content) in [
+        (
+            "whole_file_mode_returns_the_entire_content_as_one_string",
+            read_fixture(Some("Whole file"), "out", "out", "line1\nline2\n"),
+            "line1\nline2\n",
+        ),
+        (
+            "target_var_name_is_sanitized_before_binding",
+            read_fixture(Some("Whole file"), "  %result%  ", "result", "hi"),
+            "hi",
+        ),
+    ] {
+        let (outcome, value) = read.await;
+        assert_eq!(outcome, SubActionOutcome::Success, "{label}");
+        assert_eq!(value, Some(text(content)), "{label}");
+    }
 }
 
 #[tokio::test]
@@ -672,11 +690,4 @@ async fn json_mode_failures_report_typed_message_and_produce_no_binding() {
         );
         assert!(value.is_none());
     }
-}
-
-#[tokio::test]
-async fn target_var_name_is_sanitized_before_binding() {
-    let (outcome, value) = read_fixture(Some("Whole file"), "  %result%  ", "result", "hi").await;
-    assert_eq!(outcome, SubActionOutcome::Success);
-    assert_eq!(value, Some(text("hi")));
 }

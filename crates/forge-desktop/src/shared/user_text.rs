@@ -156,30 +156,30 @@ mod tests {
     }
 
     #[test]
-    fn an_int_arg_selects_the_english_plural_branch() {
-        install(Language::En);
+    fn an_int_arg_selects_the_plural_branch_of_each_language() {
+        for (label, language, counts, expected) in [
+            (
+                "an_int_arg_selects_the_english_plural_branch",
+                Language::En,
+                vec![1_i64, 2],
+                vec!["1 item", "2 items"],
+            ),
+            (
+                "an_int_arg_selects_the_ukrainian_one_few_and_many_plural_branches",
+                Language::Uk,
+                vec![1_i64, 2, 5, 21],
+                vec!["1 елемент", "2 елементи", "5 елементів", "21 елемент"],
+            ),
+        ] {
+            install(language);
 
-        let rendered: Vec<String> = [1_i64, 2]
-            .into_iter()
-            .map(|n| primary(&MessageRef::new(PROBE_COUNT).with_arg("count", n)))
-            .collect();
+            let rendered: Vec<String> = counts
+                .into_iter()
+                .map(|n| primary(&MessageRef::new(PROBE_COUNT).with_arg("count", n)))
+                .collect();
 
-        assert_eq!(rendered, vec!["1 item", "2 items"]);
-    }
-
-    #[test]
-    fn an_int_arg_selects_the_ukrainian_one_few_and_many_plural_branches() {
-        install(Language::Uk);
-
-        let rendered: Vec<String> = [1_i64, 2, 5, 21]
-            .into_iter()
-            .map(|n| primary(&MessageRef::new(PROBE_COUNT).with_arg("count", n)))
-            .collect();
-
-        assert_eq!(
-            rendered,
-            vec!["1 елемент", "2 елементи", "5 елементів", "21 елемент"]
-        );
+            assert_eq!(rendered, expected, "{label}");
+        }
     }
 
     #[test]

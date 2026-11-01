@@ -262,16 +262,6 @@ mod tests {
     }
 
     #[test]
-    fn event_filter_targets_redemption_kind_from_twitch() {
-        let filter = SPEC.event_filter();
-        assert_eq!(filter.source, Some(EventSource::Twitch));
-        assert_eq!(
-            filter.kind_prefix.as_deref(),
-            Some("twitch.channel.channel_points_custom_reward_redemption.add")
-        );
-    }
-
-    #[test]
     fn matches_trigger_applies_reward_id_then_title_precedence() {
         let cases = [
             ("both blank matches any", "", "", true),

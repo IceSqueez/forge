@@ -1706,12 +1706,28 @@ mod tests {
     }
 
     #[test]
-    fn censor_prefers_the_longest_entry_that_ends_on_a_word_boundary() {
-        let config = blocklist(&["go", "go-away"], BlocklistMode::Censor);
-        assert_eq!(
-            process("go-away now", &config, &ctx()),
-            PipelineResult::Speak("[beep] now".into())
-        );
+    fn censoring_replaces_the_blocked_word_as_each_case_expects() {
+        for (label, blocked, text, spoken) in [
+            (
+                "censor_prefers_the_longest_entry_that_ends_on_a_word_boundary",
+                &["go", "go-away"][..],
+                "go-away now",
+                "[beep] now",
+            ),
+            (
+                "censoring_keeps_the_whitespace_around_the_blocked_word",
+                &["gtfo"][..],
+                "  a   gtfo\n\tb  ",
+                "  a   [beep]\n\tb  ",
+            ),
+        ] {
+            let config = blocklist(blocked, BlocklistMode::Censor);
+            assert_eq!(
+                process(text, &config, &ctx()),
+                PipelineResult::Speak(spoken.into()),
+                "{label}"
+            );
+        }
     }
 
     #[test]
@@ -1780,15 +1796,6 @@ mod tests {
                 );
             }
         }
-    }
-
-    #[test]
-    fn censoring_keeps_the_whitespace_around_the_blocked_word() {
-        let config = blocklist(&["gtfo"], BlocklistMode::Censor);
-        assert_eq!(
-            process("  a   gtfo\n\tb  ", &config, &ctx()),
-            PipelineResult::Speak("  a   [beep]\n\tb  ".into())
-        );
     }
 
     #[test]

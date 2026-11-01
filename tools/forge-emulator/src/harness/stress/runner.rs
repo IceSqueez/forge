@@ -1035,12 +1035,19 @@ pub(super) mod tests {
     }
 
     #[test]
-    fn a_clean_phase_is_ok() {
+    fn a_phase_without_a_fatal_warning_is_ok() {
+ for (label, input) in [
+("a_clean_phase_is_ok", &[][..]),
+("a_warning_that_is_not_fatal_does_not_degrade_the_phase", &["forge: harmless"][..]),
+] {
+
         assert_eq!(
-            judged(&[sample(&[], None)], &phase_result(10, 10, 0)),
-            PhaseVerdict::Ok
+            judged(&[sample(input, None)], &phase_result(10, 10, 0)),
+            PhaseVerdict::Ok, "{label}"
         );
-    }
+    
+}
+}
 
     fn tracker_with_backlog(injected: u64) -> Tracker {
         let mut tracker = Tracker::new(vec![WATCHED.to_owned()], vec![vec![0]], 0);
@@ -1098,17 +1105,6 @@ pub(super) mod tests {
         assert!(
             matches!(&verdict, PhaseVerdict::Degraded(why) if why.contains("2 times")),
             "{verdict:?}"
-        );
-    }
-
-    #[test]
-    fn a_warning_that_is_not_fatal_does_not_degrade_the_phase() {
-        assert_eq!(
-            judged(
-                &[sample(&["forge: harmless"], None)],
-                &phase_result(10, 10, 0)
-            ),
-            PhaseVerdict::Ok
         );
     }
 

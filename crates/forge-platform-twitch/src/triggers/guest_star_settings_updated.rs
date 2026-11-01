@@ -64,16 +64,6 @@ mod tests {
     }
 
     #[test]
-    fn event_filter_targets_settings_update_kind_from_twitch() {
-        let filter = SPEC.event_filter();
-        assert_eq!(filter.source, Some(EventSource::Twitch));
-        assert_eq!(
-            filter.kind_prefix.as_deref(),
-            Some("twitch.channel.guest_star_settings.update")
-        );
-    }
-
-    #[test]
     fn build_arg_stack_marshals_slot_count_as_int_and_moderator_flag_as_bool() {
         let stack = SPEC.build_arg_stack(&settings_event());
         assert_eq!(stack.get("guest_star.slot_count"), Some(&Variant::Int(5)));

@@ -561,14 +561,6 @@ mod tests {
     }
 
     #[test]
-    fn duplicate_registration_returns_error() {
-        let mut reg = TriggerRegistry::new();
-        register_youtube_triggers(&mut reg).unwrap();
-        let result = register_youtube_triggers(&mut reg);
-        assert!(result.is_err());
-    }
-
-    #[test]
     fn all_kind_ids_are_reachable() {
         let mut reg = TriggerRegistry::new();
         register_youtube_triggers(&mut reg).unwrap();

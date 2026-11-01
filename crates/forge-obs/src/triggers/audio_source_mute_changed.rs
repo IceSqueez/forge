@@ -101,23 +101,28 @@ mod tests {
     }
 
     #[test]
-    fn configured_filter_matches_when_source_name_equals() {
-        let mut cfg = BTreeMap::new();
-        cfg.insert("source_name".to_owned(), Variant::String("Mic".to_owned()));
-        assert!(
-            AUDIO_SOURCE_MUTE_CHANGED
-                .matches_trigger(&cfg, &audio_event("obs.audio.source_mute_changed", "Mic"))
-        );
-    }
-
-    #[test]
-    fn configured_filter_rejects_when_source_name_differs() {
-        let mut cfg = BTreeMap::new();
-        cfg.insert("source_name".to_owned(), Variant::String("Mic".to_owned()));
-        assert!(!AUDIO_SOURCE_MUTE_CHANGED.matches_trigger(
-            &cfg,
-            &audio_event("obs.audio.source_mute_changed", "Desktop")
-        ));
+    fn configured_filter_admits_only_the_named_source() {
+        for (label, input, expected) in [
+            (
+                "configured_filter_matches_when_source_name_equals",
+                "Mic",
+                true,
+            ),
+            (
+                "configured_filter_rejects_when_source_name_differs",
+                "Desktop",
+                false,
+            ),
+        ] {
+            let mut cfg = BTreeMap::new();
+            cfg.insert("source_name".to_owned(), Variant::String("Mic".to_owned()));
+            assert_eq!(
+                AUDIO_SOURCE_MUTE_CHANGED
+                    .matches_trigger(&cfg, &audio_event("obs.audio.source_mute_changed", input)),
+                expected,
+                "{label}"
+            );
+        }
     }
 
     #[test]

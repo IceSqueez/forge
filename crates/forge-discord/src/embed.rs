@@ -162,62 +162,61 @@ mod tests {
     }
 
     #[test]
-    fn color_above_max_rejected() {
-        let e = DiscordEmbed {
-            color: Some(0x01_00_00_00),
-            ..Default::default()
-        };
-        assert!(matches!(e.validate(), Err(DiscordError::Validation(_))));
-    }
-
-    #[test]
-    fn title_too_long_rejected() {
-        let e = DiscordEmbed {
-            title: Some("a".repeat(257)),
-            ..Default::default()
-        };
-        assert!(matches!(e.validate(), Err(DiscordError::Validation(_))));
-    }
-
-    #[test]
-    fn description_too_long_rejected() {
-        let e = DiscordEmbed {
-            description: Some("b".repeat(4097)),
-            ..Default::default()
-        };
-        assert!(matches!(e.validate(), Err(DiscordError::Validation(_))));
-    }
-
-    #[test]
-    fn too_many_fields_rejected() {
+    fn each_limit_or_forbidden_character_is_rejected() {
         let field = DiscordEmbedField {
             name: "n".to_owned(),
             value: "v".to_owned(),
             inline: false,
         };
-        let e = DiscordEmbed {
-            fields: vec![field; 26],
-            ..Default::default()
-        };
-        assert!(matches!(e.validate(), Err(DiscordError::Validation(_))));
-    }
-
-    #[test]
-    fn null_byte_in_title_rejected() {
-        let e = DiscordEmbed {
-            title: Some("bad\0char".to_owned()),
-            ..Default::default()
-        };
-        assert!(matches!(e.validate(), Err(DiscordError::Validation(_))));
-    }
-
-    #[test]
-    fn other_control_char_in_description_rejected() {
-        let e = DiscordEmbed {
-            description: Some("bad\x01char".to_owned()),
-            ..Default::default()
-        };
-        assert!(matches!(e.validate(), Err(DiscordError::Validation(_))));
+        for (label, embed) in [
+            (
+                "color_above_max_rejected",
+                DiscordEmbed {
+                    color: Some(0x01_00_00_00),
+                    ..Default::default()
+                },
+            ),
+            (
+                "title_too_long_rejected",
+                DiscordEmbed {
+                    title: Some("a".repeat(257)),
+                    ..Default::default()
+                },
+            ),
+            (
+                "description_too_long_rejected",
+                DiscordEmbed {
+                    description: Some("b".repeat(4097)),
+                    ..Default::default()
+                },
+            ),
+            (
+                "too_many_fields_rejected",
+                DiscordEmbed {
+                    fields: vec![field; 26],
+                    ..Default::default()
+                },
+            ),
+            (
+                "null_byte_in_title_rejected",
+                DiscordEmbed {
+                    title: Some("bad\0char".to_owned()),
+                    ..Default::default()
+                },
+            ),
+            (
+                "other_control_char_in_description_rejected",
+                DiscordEmbed {
+                    description: Some("bad\x01char".to_owned()),
+                    ..Default::default()
+                },
+            ),
+        ] {
+            assert!(
+                matches!(embed.validate(), Err(DiscordError::Validation(_))),
+                "{label}"
+            );
+        }
     }
 
     #[test]

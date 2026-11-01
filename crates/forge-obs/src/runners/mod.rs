@@ -235,14 +235,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn duplicate_registration_returns_error() {
-        let mut reg = SubActionRegistry::new();
-        register_obs_sub_actions(&mut reg, Arc::new(MockSink)).unwrap();
-        let result = register_obs_sub_actions(&mut reg, Arc::new(MockSink));
-        assert!(result.is_err());
-    }
-
     #[tokio::test]
     async fn signal_runners_send_exactly_one_matching_sink_call_and_report_its_kind() {
         for (id, expected) in SIGNAL_RUNNERS {

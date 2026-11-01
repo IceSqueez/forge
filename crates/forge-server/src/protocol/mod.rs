@@ -489,19 +489,34 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn get_events_empty_bus_returns_empty_list() {
-        let ctx = make_ctx(false, false);
-        let req = WsEnvelope {
-            id: Some("13".into()),
-            inner: WsRequest::GetEvents {
-                limit: None,
-                since: None,
-            },
-        };
-        let resp = dispatch(req, &ctx).await;
-        let json = serialize_response_frame(&resp);
-        assert_eq!(json["status"], "ok");
-        assert_eq!(json["events"].as_array().unwrap().len(), 0);
+    async fn listing_an_empty_bus_returns_an_empty_list() {
+        for (label, request_id, inner_2, list_key) in [
+            (
+                "get_events_empty_bus_returns_empty_list",
+                "13",
+                WsRequest::GetEvents {
+                    limit: None,
+                    since: None,
+                },
+                "events",
+            ),
+            (
+                "get_active_viewers_empty_bus_returns_empty_list",
+                "av1",
+                WsRequest::GetActiveViewers,
+                "viewers",
+            ),
+        ] {
+            let ctx = make_ctx(false, false);
+            let req = WsEnvelope {
+                id: Some(request_id.into()),
+                inner: inner_2,
+            };
+            let resp = dispatch(req, &ctx).await;
+            let json = serialize_response_frame(&resp);
+            assert_eq!(json["status"], "ok", "{label}");
+            assert_eq!(json[list_key].as_array().unwrap().len(), 0, "{label}");
+        }
     }
 
     #[tokio::test]
@@ -1141,20 +1156,38 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn set_global_null_value_returns_invalid_payload() {
-        let ctx = make_ctx(true, false);
-        let req = WsEnvelope {
-            id: Some("10".into()),
-            inner: WsRequest::SetGlobal {
-                name: "counter".to_owned(),
-                value: serde_json::Value::Null,
-                persisted: false,
-            },
-        };
-        let resp = dispatch(req, &ctx).await;
-        match resp.inner {
-            WsResponse::Error { code, .. } => assert_eq!(code.as_str(), "INVALID_PAYLOAD"),
-            other => panic!("expected INVALID_PAYLOAD error, got {other:?}"),
+    async fn invalid_mutations_return_invalid_payload() {
+        for (label, input, inner_2) in [
+            (
+                "set_global_null_value_returns_invalid_payload",
+                "10",
+                WsRequest::SetGlobal {
+                    name: "counter".to_owned(),
+                    value: serde_json::Value::Null,
+                    persisted: false,
+                },
+            ),
+            (
+                "trigger_code_event_invalid_name_returns_invalid_payload",
+                "12",
+                WsRequest::TriggerCodeEvent {
+                    name: "Invalid-Name!".to_owned(),
+                    args: serde_json::json!({}),
+                },
+            ),
+        ] {
+            let ctx = make_ctx(true, false);
+            let req = WsEnvelope {
+                id: Some(input.into()),
+                inner: inner_2,
+            };
+            let resp = dispatch(req, &ctx).await;
+            match resp.inner {
+                WsResponse::Error { code, .. } => {
+                    assert_eq!(code.as_str(), "INVALID_PAYLOAD", "{label}")
+                }
+                other => panic!("{label}: expected INVALID_PAYLOAD error, got {other:?}"),
+            }
         }
     }
 
@@ -1283,23 +1316,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn trigger_code_event_invalid_name_returns_invalid_payload() {
-        let ctx = make_ctx(true, false);
-        let req = WsEnvelope {
-            id: Some("12".into()),
-            inner: WsRequest::TriggerCodeEvent {
-                name: "Invalid-Name!".to_owned(),
-                args: serde_json::json!({}),
-            },
-        };
-        let resp = dispatch(req, &ctx).await;
-        match resp.inner {
-            WsResponse::Error { code, .. } => assert_eq!(code.as_str(), "INVALID_PAYLOAD"),
-            other => panic!("expected INVALID_PAYLOAD error, got {other:?}"),
-        }
-    }
-
-    #[tokio::test]
     async fn trigger_code_event_empty_name_returns_invalid_payload() {
         let ctx = make_ctx(true, false);
         let req = WsEnvelope {
@@ -1342,35 +1358,33 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn authenticate_wrong_token_returns_auth_failed() {
-        let ctx = make_ctx(false, true);
-        let req = WsEnvelope {
-            id: Some("a2".into()),
-            inner: WsRequest::Auth {
-                token: Some(Secret::new("wrong-token")),
-                overlay_credential: None,
-                preview_connection: false,
-            },
-        };
-        let resp = dispatch(req, &ctx).await;
-        match resp.inner {
-            WsResponse::Error { code, .. } => assert_eq!(code.as_str(), "AUTH_FAILED"),
-            other => panic!("expected AUTH_FAILED error, got {other:?}"),
+    async fn authenticate_with_a_bad_token_returns_auth_failed() {
+        for (label, request_id, token) in [
+            (
+                "authenticate_wrong_token_returns_auth_failed",
+                "a2",
+                "wrong-token",
+            ),
+            ("authenticate_empty_token_returns_auth_failed", "a3", ""),
+        ] {
+            let ctx = make_ctx(false, true);
+            let req = WsEnvelope {
+                id: Some(request_id.into()),
+                inner: WsRequest::Auth {
+                    token: Some(Secret::new(token)),
+                    overlay_credential: None,
+                    preview_connection: false,
+                },
+            };
+            let resp = dispatch(req, &ctx).await;
+            match resp.inner {
+                WsResponse::Error { code, .. } => {
+                    assert_eq!(code.as_str(), "AUTH_FAILED", "{label}")
+                }
+                other => panic!("{label}: expected AUTH_FAILED error, got {other:?}"),
+            }
+            assert!(ctx.session.client.bearer_generation().is_none(), "{label}");
         }
-        assert!(ctx.session.client.bearer_generation().is_none());
-    }
-
-    #[tokio::test]
-    async fn get_active_viewers_empty_bus_returns_empty_list() {
-        let ctx = make_ctx(false, false);
-        let req = WsEnvelope {
-            id: Some("av1".into()),
-            inner: WsRequest::GetActiveViewers,
-        };
-        let resp = dispatch(req, &ctx).await;
-        let json = serialize_response_frame(&resp);
-        assert_eq!(json["status"], "ok");
-        assert_eq!(json["viewers"].as_array().unwrap().len(), 0);
     }
 
     fn chat_event(
@@ -1776,25 +1790,6 @@ mod tests {
             ctx.session.overlay_channel_swap.lock().await.is_none(),
             "an unknown credential still put the connection onto the overlay delivery channel"
         );
-    }
-
-    #[tokio::test]
-    async fn authenticate_empty_token_returns_auth_failed() {
-        let ctx = make_ctx(false, true);
-        let req = WsEnvelope {
-            id: Some("a3".into()),
-            inner: WsRequest::Auth {
-                token: Some(Secret::new("")),
-                overlay_credential: None,
-                preview_connection: false,
-            },
-        };
-        let resp = dispatch(req, &ctx).await;
-        match resp.inner {
-            WsResponse::Error { code, .. } => assert_eq!(code.as_str(), "AUTH_FAILED"),
-            other => panic!("expected AUTH_FAILED error, got {other:?}"),
-        }
-        assert!(ctx.session.client.bearer_generation().is_none());
     }
 
     fn make_ctx_with_overlay_root(root: std::path::PathBuf) -> DispatchContext {

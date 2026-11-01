@@ -121,14 +121,32 @@ async fn pause_runner_with_unparseable_queue_id_fails() {
 }
 
 #[tokio::test]
-async fn pause_runner_with_unregistered_queue_propagates_not_found() {
-    let rig = live_runtime(nonblocking(QueueId::new())).await;
-    let runner = rig.step(PAUSE);
+async fn control_runners_with_unregistered_queue_propagate_not_found() {
+    for (label, input) in [
+        (
+            "pause_runner_with_unregistered_queue_propagates_not_found",
+            PAUSE,
+        ),
+        (
+            "resume_runner_with_unregistered_queue_propagates_not_found",
+            RESUME,
+        ),
+        (
+            "clear_runner_with_unregistered_queue_propagates_not_found",
+            CLEAR,
+        ),
+    ] {
+        let rig = live_runtime(nonblocking(QueueId::new())).await;
+        let runner = rig.step(input);
 
-    let outcome = run_outcome(runner, &cfg_queue(&QueueId::new().to_string())).await;
-    let refusal = failure_message(&outcome);
-    assert_eq!(code_of(refusal), "core.scheduler_failed");
-    assert!(detail_of(refusal).is_some_and(|d| d.contains("queue not found")));
+        let outcome = run_outcome(runner, &cfg_queue(&QueueId::new().to_string())).await;
+        let refusal = failure_message(&outcome);
+        assert_eq!(code_of(refusal), "core.scheduler_failed", "{label}");
+        assert!(
+            detail_of(refusal).is_some_and(|d| d.contains("queue not found")),
+            "{label}"
+        );
+    }
 }
 
 #[tokio::test]
@@ -151,17 +169,6 @@ async fn resume_runner_clears_paused_state_on_registered_queue() {
 }
 
 #[tokio::test]
-async fn resume_runner_with_unregistered_queue_propagates_not_found() {
-    let rig = live_runtime(nonblocking(QueueId::new())).await;
-    let runner = rig.step(RESUME);
-
-    let outcome = run_outcome(runner, &cfg_queue(&QueueId::new().to_string())).await;
-    let refusal = failure_message(&outcome);
-    assert_eq!(code_of(refusal), "core.scheduler_failed");
-    assert!(detail_of(refusal).is_some_and(|d| d.contains("queue not found")));
-}
-
-#[tokio::test]
 async fn clear_runner_succeeds_and_emits_cleared_event() {
     let q_id = QueueId::new();
     let rig = live_runtime(nonblocking(q_id)).await;
@@ -174,15 +181,4 @@ async fn clear_runner_succeeds_and_emits_cleared_event() {
         await_queue_event(&mut sub, "queue.cleared", q_id, 10_000).await,
         "clear runner must drive a queue.cleared event on the live scheduler"
     );
-}
-
-#[tokio::test]
-async fn clear_runner_with_unregistered_queue_propagates_not_found() {
-    let rig = live_runtime(nonblocking(QueueId::new())).await;
-    let runner = rig.step(CLEAR);
-
-    let outcome = run_outcome(runner, &cfg_queue(&QueueId::new().to_string())).await;
-    let refusal = failure_message(&outcome);
-    assert_eq!(code_of(refusal), "core.scheduler_failed");
-    assert!(detail_of(refusal).is_some_and(|d| d.contains("queue not found")));
 }

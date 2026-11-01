@@ -279,44 +279,46 @@ fn walk_fixture() -> Vec<SubActionStep> {
 }
 
 #[test]
-fn walk_visits_parents_before_children_in_field_and_case_order() {
-    assert_eq!(
-        visited(&walk_fixture(), StepReach::All),
-        [
-            BRANCH_KIND,
-            "then.0",
-            "#1",
-            SWITCH_KIND,
-            "case.0",
-            "case.1",
-            "default",
-            BRANCH_KIND,
-            "under.disabled",
-            "#1",
-            "else.0",
-            OPTIONAL_KIND,
-            "optional.0",
-            "last",
-        ]
-    );
-}
-
-#[test]
-fn walk_over_enabled_steps_skips_each_disabled_step_with_its_whole_subtree() {
-    assert_eq!(
-        visited(&walk_fixture(), StepReach::Enabled),
-        [
-            BRANCH_KIND,
-            "then.0",
-            "#1",
-            SWITCH_KIND,
-            "case.0",
-            "case.1",
-            "default",
-            "else.0",
-            "last",
-        ]
-    );
+fn walk_visits_the_steps_each_reach_allows() {
+    for (label, input, expected) in [
+        (
+            "walk_visits_parents_before_children_in_field_and_case_order",
+            StepReach::All,
+            vec![
+                BRANCH_KIND,
+                "then.0",
+                "#1",
+                SWITCH_KIND,
+                "case.0",
+                "case.1",
+                "default",
+                BRANCH_KIND,
+                "under.disabled",
+                "#1",
+                "else.0",
+                OPTIONAL_KIND,
+                "optional.0",
+                "last",
+            ],
+        ),
+        (
+            "walk_over_enabled_steps_skips_each_disabled_step_with_its_whole_subtree",
+            StepReach::Enabled,
+            vec![
+                BRANCH_KIND,
+                "then.0",
+                "#1",
+                SWITCH_KIND,
+                "case.0",
+                "case.1",
+                "default",
+                "else.0",
+                "last",
+            ],
+        ),
+    ] {
+        assert_eq!(visited(&walk_fixture(), input), expected, "{label}");
+    }
 }
 
 #[test]

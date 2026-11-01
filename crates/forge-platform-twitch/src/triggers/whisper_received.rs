@@ -261,54 +261,63 @@ mod tests {
     }
 
     #[test]
-    fn from_user_filter_is_case_insensitive() {
-        let cfg = config(&[("from_user", Variant::String("BobX".to_owned()))]);
-        assert!(SPEC.matches_trigger(&cfg, &whisper_event("bobx", "hi")));
-    }
-
-    #[test]
-    fn from_user_filter_rejects_other_sender() {
-        let cfg = config(&[("from_user", Variant::String("bobx".to_owned()))]);
-        assert!(!SPEC.matches_trigger(&cfg, &whisper_event("alice", "hi")));
-    }
-
-    #[test]
-    fn match_text_substring_present_matches() {
-        let cfg = config(&[("match_text", Variant::String("secret".to_owned()))]);
-        assert!(SPEC.matches_trigger(&cfg, &whisper_event("bobx", "the secret code")));
-    }
-
-    #[test]
-    fn match_text_substring_absent_rejects() {
-        let cfg = config(&[("match_text", Variant::String("secret".to_owned()))]);
-        assert!(!SPEC.matches_trigger(&cfg, &whisper_event("bobx", "nothing here")));
-    }
-
-    #[test]
-    fn regex_match_text_matches_when_pattern_hits() {
-        let cfg = config(&[
-            ("match_text", Variant::String(r"^!play\s+\d+$".to_owned())),
-            ("match_is_regex", Variant::Bool(true)),
-        ]);
-        assert!(SPEC.matches_trigger(&cfg, &whisper_event("bobx", "!play 42")));
-    }
-
-    #[test]
-    fn regex_match_text_rejects_when_pattern_misses() {
-        let cfg = config(&[
-            ("match_text", Variant::String(r"^!play\s+\d+$".to_owned())),
-            ("match_is_regex", Variant::Bool(true)),
-        ]);
-        assert!(!SPEC.matches_trigger(&cfg, &whisper_event("bobx", "!play later")));
-    }
-
-    #[test]
-    fn invalid_regex_does_not_panic_and_rejects() {
-        let cfg = config(&[
-            ("match_text", Variant::String("[".to_owned())),
-            ("match_is_regex", Variant::Bool(true)),
-        ]);
-        assert!(!SPEC.matches_trigger(&cfg, &whisper_event("bobx", "[bracket")));
+    fn filters_admit_only_matching_whispers() {
+        for (label, filter, event, expected) in [
+            (
+                "from_user_filter_is_case_insensitive",
+                &[("from_user", Variant::String("BobX".to_owned()))][..],
+                &whisper_event("bobx", "hi"),
+                true,
+            ),
+            (
+                "from_user_filter_rejects_other_sender",
+                &[("from_user", Variant::String("bobx".to_owned()))][..],
+                &whisper_event("alice", "hi"),
+                false,
+            ),
+            (
+                "match_text_substring_present_matches",
+                &[("match_text", Variant::String("secret".to_owned()))][..],
+                &whisper_event("bobx", "the secret code"),
+                true,
+            ),
+            (
+                "match_text_substring_absent_rejects",
+                &[("match_text", Variant::String("secret".to_owned()))][..],
+                &whisper_event("bobx", "nothing here"),
+                false,
+            ),
+            (
+                "regex_match_text_matches_when_pattern_hits",
+                &[
+                    ("match_text", Variant::String(r"^!play\s+\d+$".to_owned())),
+                    ("match_is_regex", Variant::Bool(true)),
+                ][..],
+                &whisper_event("bobx", "!play 42"),
+                true,
+            ),
+            (
+                "regex_match_text_rejects_when_pattern_misses",
+                &[
+                    ("match_text", Variant::String(r"^!play\s+\d+$".to_owned())),
+                    ("match_is_regex", Variant::Bool(true)),
+                ][..],
+                &whisper_event("bobx", "!play later"),
+                false,
+            ),
+            (
+                "invalid_regex_does_not_panic_and_rejects",
+                &[
+                    ("match_text", Variant::String("[".to_owned())),
+                    ("match_is_regex", Variant::Bool(true)),
+                ][..],
+                &whisper_event("bobx", "[bracket"),
+                false,
+            ),
+        ] {
+            let cfg = config(filter);
+            assert_eq!(SPEC.matches_trigger(&cfg, event), expected, "{label}");
+        }
     }
 
     fn regex_config(pattern: &str) -> TriggerConfig {

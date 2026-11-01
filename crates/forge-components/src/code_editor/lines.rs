@@ -485,16 +485,41 @@ mod tests {
     }
 
     #[test]
-    fn editing_one_line_keeps_the_layout_of_every_other_line() {
-        let mut lines = synced(
-            Language::JavaScript,
-            "let a = 1;\nlet b = 2;\nlet c = 3;\nlet d = 4;",
-        );
-        mark_all(&mut lines);
-        lines.sync(&Arc::from(
-            "let a = 1;\nlet b = 22;\nlet c = 3;\nlet d = 4;",
-        ));
-        assert_eq!(payloads(&lines), vec![1, 0, 3, 4]);
+    fn an_edit_keeps_the_layout_of_every_line_it_leaves_unchanged() {
+        for (label, lines, input, expected) in [
+            (
+                "editing_one_line_keeps_the_layout_of_every_other_line",
+                synced(
+                    Language::JavaScript,
+                    "let a = 1;\nlet b = 2;\nlet c = 3;\nlet d = 4;",
+                ),
+                &Arc::from("let a = 1;\nlet b = 22;\nlet c = 3;\nlet d = 4;"),
+                vec![1, 0, 3, 4],
+            ),
+            (
+                "json_lookback_line_keeps_its_layout_when_its_colors_do_not_change",
+                synced(Language::Json, "{\n\"a\": 1,\n\"b\": 2\n}"),
+                &Arc::from("{\n\"a\": 1,\n\"b\": 3\n}"),
+                vec![1, 2, 0, 4],
+            ),
+            (
+                "json_lookback_line_loses_its_layout_when_the_edit_recolors_it",
+                synced(Language::Json, "[\n\"a\"\n1]"),
+                &Arc::from("[\n\"a\"\n: 1]"),
+                vec![1, 0, 0],
+            ),
+            (
+                "identical_content_in_a_new_source_keeps_every_layout",
+                synced(Language::Html, "<p>\nx\n</p>"),
+                &Arc::from("<p>\nx\n</p>"),
+                vec![1, 2, 3],
+            ),
+        ] {
+            let mut lines = lines;
+            mark_all(&mut lines);
+            lines.sync(input);
+            assert_eq!(payloads(&lines), expected, "{label}");
+        }
     }
 
     #[test]
@@ -514,30 +539,6 @@ mod tests {
         mark_all(&mut lines);
         lines.sync(&Arc::from("/* let a = 1;\nlet b = 2;\n*/\nlet c = 3;"));
         assert_eq!(payloads(&lines), vec![0, 0, 0, 4]);
-    }
-
-    #[test]
-    fn json_lookback_line_keeps_its_layout_when_its_colors_do_not_change() {
-        let mut lines = synced(Language::Json, "{\n\"a\": 1,\n\"b\": 2\n}");
-        mark_all(&mut lines);
-        lines.sync(&Arc::from("{\n\"a\": 1,\n\"b\": 3\n}"));
-        assert_eq!(payloads(&lines), vec![1, 2, 0, 4]);
-    }
-
-    #[test]
-    fn json_lookback_line_loses_its_layout_when_the_edit_recolors_it() {
-        let mut lines = synced(Language::Json, "[\n\"a\"\n1]");
-        mark_all(&mut lines);
-        lines.sync(&Arc::from("[\n\"a\"\n: 1]"));
-        assert_eq!(payloads(&lines), vec![1, 0, 0]);
-    }
-
-    #[test]
-    fn identical_content_in_a_new_source_keeps_every_layout() {
-        let mut lines = synced(Language::Html, "<p>\nx\n</p>");
-        mark_all(&mut lines);
-        lines.sync(&Arc::from("<p>\nx\n</p>"));
-        assert_eq!(payloads(&lines), vec![1, 2, 3]);
     }
 
     #[test]

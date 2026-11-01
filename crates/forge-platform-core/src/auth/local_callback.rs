@@ -360,62 +360,64 @@ mod tests {
     }
 
     #[test]
-    fn process_request_extracts_code() {
-        let req = "GET /oauth/callback?code=abc123&state=xyz HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n";
-        let code = process_request(req, "xyz").unwrap();
-        assert_eq!(code, "abc123");
+    fn process_request_extracts_and_decodes_the_code() {
+        for (label, req, expected) in [
+            (
+                "process_request_extracts_code",
+                "GET /oauth/callback?code=abc123&state=xyz HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n",
+                "abc123",
+            ),
+            (
+                "process_request_decodes_percent_encoded_code",
+                "GET /oauth/callback?code=ab%2Fcd&state=xyz HTTP/1.1\r\n\r\n",
+                "ab/cd",
+            ),
+        ] {
+            let code = process_request(req, "xyz").unwrap();
+            assert_eq!(code, expected, "{label}");
+        }
     }
 
     #[test]
-    fn process_request_rejects_state_mismatch() {
-        let req = "GET /oauth/callback?code=abc&state=wrong HTTP/1.1\r\n\r\n";
-        let err = process_request(req, "expected").unwrap_err();
-        assert!(
-            matches!(err, PlatformError::Auth { ref reason } if reason.contains("state mismatch"))
-        );
-    }
-
-    #[test]
-    fn process_request_propagates_user_denial() {
-        let req = "GET /oauth/callback?error=access_denied&state=xyz HTTP/1.1\r\n\r\n";
-        let err = process_request(req, "xyz").unwrap_err();
-        assert!(
-            matches!(err, PlatformError::Auth { ref reason } if reason.contains("access_denied"))
-        );
-    }
-
-    #[test]
-    fn process_request_requires_state() {
-        let req = "GET /oauth/callback?code=abc HTTP/1.1\r\n\r\n";
-        let err = process_request(req, "xyz").unwrap_err();
-        assert!(
-            matches!(err, PlatformError::Auth { ref reason } if reason.contains("state parameter missing"))
-        );
-    }
-
-    #[test]
-    fn process_request_requires_code() {
-        let req = "GET /oauth/callback?state=xyz HTTP/1.1\r\n\r\n";
-        let err = process_request(req, "xyz").unwrap_err();
-        assert!(
-            matches!(err, PlatformError::Auth { ref reason } if reason.contains("code parameter missing"))
-        );
-    }
-
-    #[test]
-    fn process_request_rejects_wrong_path() {
-        let req = "GET /not/the/callback?code=abc&state=xyz HTTP/1.1\r\n\r\n";
-        let err = process_request(req, "xyz").unwrap_err();
-        assert!(
-            matches!(err, PlatformError::Auth { ref reason } if reason.contains("unexpected callback path"))
-        );
-    }
-
-    #[test]
-    fn process_request_decodes_percent_encoded_code() {
-        let req = "GET /oauth/callback?code=ab%2Fcd&state=xyz HTTP/1.1\r\n\r\n";
-        let code = process_request(req, "xyz").unwrap();
-        assert_eq!(code, "ab/cd");
+    fn process_request_refuses_each_invalid_callback() {
+        for (label, req, expected_state, reason_text) in [
+            (
+                "process_request_rejects_state_mismatch",
+                "GET /oauth/callback?code=abc&state=wrong HTTP/1.1\r\n\r\n",
+                "expected",
+                "state mismatch",
+            ),
+            (
+                "process_request_propagates_user_denial",
+                "GET /oauth/callback?error=access_denied&state=xyz HTTP/1.1\r\n\r\n",
+                "xyz",
+                "access_denied",
+            ),
+            (
+                "process_request_requires_state",
+                "GET /oauth/callback?code=abc HTTP/1.1\r\n\r\n",
+                "xyz",
+                "state parameter missing",
+            ),
+            (
+                "process_request_requires_code",
+                "GET /oauth/callback?state=xyz HTTP/1.1\r\n\r\n",
+                "xyz",
+                "code parameter missing",
+            ),
+            (
+                "process_request_rejects_wrong_path",
+                "GET /not/the/callback?code=abc&state=xyz HTTP/1.1\r\n\r\n",
+                "xyz",
+                "unexpected callback path",
+            ),
+        ] {
+            let err = process_request(req, expected_state).unwrap_err();
+            assert!(
+                matches!(err, PlatformError::Auth { ref reason } if reason.contains(reason_text)),
+                "{label}"
+            );
+        }
     }
 
     #[tokio::test]

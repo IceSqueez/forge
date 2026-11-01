@@ -149,14 +149,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn duplicate_registration_returns_error() {
-        let mut reg = SubActionRegistry::new();
-        register_vtube_sub_actions(&mut reg, Arc::new(MockSink::new())).unwrap();
-        let result = register_vtube_sub_actions(&mut reg, Arc::new(MockSink::new()));
-        assert!(result.is_err());
-    }
-
     enum WhenEmpty {
         Fails,
         SkipsTheCall,

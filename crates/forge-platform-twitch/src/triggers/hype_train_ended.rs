@@ -72,16 +72,6 @@ mod tests {
     }
 
     #[test]
-    fn event_filter_targets_hype_train_end_on_twitch() {
-        let filter = SPEC.event_filter();
-        assert_eq!(filter.source, Some(EventSource::Twitch));
-        assert_eq!(
-            filter.kind_prefix.as_deref(),
-            Some("twitch.channel.hype_train.end")
-        );
-    }
-
-    #[test]
     fn build_arg_stack_maps_all_vars_with_int_level_and_total() {
         let stack = SPEC.build_arg_stack(&end_event());
         assert_eq!(

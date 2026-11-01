@@ -41,17 +41,23 @@ async fn role_holders(pool: &SqlitePool) -> Vec<String> {
 }
 
 #[tokio::test]
-async fn the_queue_with_the_alert_name_receives_the_role() {
-    let (pool, _dir) = migrated_with(&[(FIRST_ID, "Chat"), (SECOND_ID, ALERT_QUEUE)]).await;
+async fn the_first_queue_with_the_alert_name_receives_the_role() {
+    for (label, first_row, holder) in [
+        (
+            "the_queue_with_the_alert_name_receives_the_role",
+            (FIRST_ID, "Chat"),
+            SECOND_ID,
+        ),
+        (
+            "of_two_queues_with_the_alert_name_only_the_first_receives_the_role",
+            (SECOND_ID, ALERT_QUEUE),
+            FIRST_ID,
+        ),
+    ] {
+        let (pool, _dir) = migrated_with(&[first_row, (holder, ALERT_QUEUE)]).await;
 
-    assert_eq!(role_holders(&pool).await, [SECOND_ID]);
-}
-
-#[tokio::test]
-async fn of_two_queues_with_the_alert_name_only_the_first_receives_the_role() {
-    let (pool, _dir) = migrated_with(&[(SECOND_ID, ALERT_QUEUE), (FIRST_ID, ALERT_QUEUE)]).await;
-
-    assert_eq!(role_holders(&pool).await, [FIRST_ID]);
+        assert_eq!(role_holders(&pool).await, [holder], "{label}");
+    }
 }
 
 #[tokio::test]

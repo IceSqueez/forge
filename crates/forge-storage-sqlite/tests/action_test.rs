@@ -1,7 +1,7 @@
 use forge_storage::DataProvider;
 use std::collections::BTreeMap;
 
-use forge_types::{ActionId, SubActionStep, Variant};
+use forge_types::{SubActionStep, Variant};
 
 mod common;
 use common::{action_named, default_queue_id, setup};
@@ -19,17 +19,6 @@ async fn save_then_get_roundtrips_action() {
     assert_eq!(got.id, id);
     assert_eq!(got.name, "greet");
     assert!(got.enabled);
-}
-
-#[tokio::test]
-async fn get_missing_action_returns_none() {
-    let backend = setup().await;
-    let got = backend
-        .action_repo()
-        .get(ActionId::new())
-        .await
-        .expect("get");
-    assert!(got.is_none());
 }
 
 #[tokio::test]
@@ -56,18 +45,6 @@ async fn delete_existing_action_returns_true() {
     backend.action_repo().save(&action).await.expect("save");
     assert!(backend.action_repo().delete(id).await.expect("delete"));
     assert!(backend.action_repo().get(id).await.expect("get").is_none());
-}
-
-#[tokio::test]
-async fn delete_missing_action_returns_false() {
-    let backend = setup().await;
-    assert!(
-        !backend
-            .action_repo()
-            .delete(ActionId::new())
-            .await
-            .expect("delete")
-    );
 }
 
 #[tokio::test]

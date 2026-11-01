@@ -58,29 +58,26 @@ async fn stored_pair(pool: &SqlitePool) -> (String, String) {
 }
 
 #[tokio::test]
-async fn migration_rewrites_every_retired_variable_name_in_actions_and_trigger_overrides() {
-    let dir = TempDir::new().expect("a temporary directory");
-    let pool = seeded(&dir, STORED).await;
+async fn migration_rewrites_only_retired_variable_names() {
+    for (label, input, expected) in [
+        (
+            "migration_rewrites_every_retired_variable_name_in_actions_and_trigger_overrides",
+            STORED,
+            (MIGRATED.to_owned(), MIGRATED.to_owned()),
+        ),
+        (
+            "migration_leaves_text_without_obs_variables_untouched",
+            UNRELATED,
+            (UNRELATED.to_owned(), UNRELATED.to_owned()),
+        ),
+    ] {
+        let dir = TempDir::new().expect("a temporary directory");
+        let pool = seeded(&dir, input).await;
 
-    apply_migrations(&pool).await.expect("migrate");
+        apply_migrations(&pool).await.expect("migrate");
 
-    assert_eq!(
-        stored_pair(&pool).await,
-        (MIGRATED.to_owned(), MIGRATED.to_owned())
-    );
-}
-
-#[tokio::test]
-async fn migration_leaves_text_without_obs_variables_untouched() {
-    let dir = TempDir::new().expect("a temporary directory");
-    let pool = seeded(&dir, UNRELATED).await;
-
-    apply_migrations(&pool).await.expect("migrate");
-
-    assert_eq!(
-        stored_pair(&pool).await,
-        (UNRELATED.to_owned(), UNRELATED.to_owned())
-    );
+        assert_eq!(stored_pair(&pool).await, expected, "{label}");
+    }
 }
 
 #[tokio::test]

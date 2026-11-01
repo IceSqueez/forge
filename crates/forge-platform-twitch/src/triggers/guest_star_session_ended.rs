@@ -55,16 +55,6 @@ mod tests {
     }
 
     #[test]
-    fn event_filter_targets_session_end_kind_from_twitch() {
-        let filter = SPEC.event_filter();
-        assert_eq!(filter.source, Some(EventSource::Twitch));
-        assert_eq!(
-            filter.kind_prefix.as_deref(),
-            Some("twitch.channel.guest_star_session.end")
-        );
-    }
-
-    #[test]
     fn build_arg_stack_exposes_session_id_chaining_var_and_ended_at() {
         let stack = SPEC.build_arg_stack(&end_event());
         assert_eq!(

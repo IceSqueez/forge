@@ -161,21 +161,26 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn substring_indices_count_chars_not_bytes() {
-        let out = run(&cfg("Привіт", 0, 3)).await.1.unwrap();
-        assert_eq!(
-            out.get("string.result").and_then(|v| v.as_str()),
-            Some("При")
-        );
-    }
-
-    #[tokio::test]
-    async fn substring_end_minus_one_extends_to_string_end() {
-        let out = run(&cfg("hello", 2, -1)).await.1.unwrap();
-        assert_eq!(
-            out.get("string.result").and_then(|v| v.as_str()),
-            Some("llo")
-        );
+    async fn substring_counts_chars_and_treats_minus_one_as_the_end() {
+        for (label, config, result) in [
+            (
+                "substring_indices_count_chars_not_bytes",
+                &cfg("Привіт", 0, 3),
+                "При",
+            ),
+            (
+                "substring_end_minus_one_extends_to_string_end",
+                &cfg("hello", 2, -1),
+                "llo",
+            ),
+        ] {
+            let out = run(config).await.1.unwrap();
+            assert_eq!(
+                out.get("string.result").and_then(|v| v.as_str()),
+                Some(result),
+                "{label}"
+            );
+        }
     }
 
     #[tokio::test]

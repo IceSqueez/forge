@@ -302,27 +302,54 @@ mod tests {
     }
 
     #[test]
-    fn plan_send_broadcast_skips_a_failed_platform() {
-        let plan = plan_send("hi", &[], &reach(&[T, Y], &[T])).unwrap();
+    fn plan_send_routes_around_disconnected_platforms() {
+        for (label, input, expected) in [
+            (
+                "plan_send_broadcast_skips_a_failed_platform",
+                &[][..],
+                SendRoute::Broadcast,
+            ),
+            (
+                "plan_send_filters_a_targeted_disconnected_platform_out_of_the_recipients",
+                &[T, Y][..],
+                SendRoute::Targeted(vec![T]),
+            ),
+        ] {
+            let plan = plan_send("hi", input, &reach(&[T, Y], &[T])).unwrap();
 
-        assert_eq!(plan.route, SendRoute::Broadcast);
-        assert_eq!(plan.recipients, vec![T]);
+            assert_eq!(plan.route, expected, "{label}");
+            assert_eq!(plan.recipients, vec![T], "{label}");
+        }
     }
 
     #[test]
-    fn plan_send_filters_a_targeted_disconnected_platform_out_of_the_recipients() {
-        let plan = plan_send("hi", &[T, Y], &reach(&[T, Y], &[T])).unwrap();
-
-        assert_eq!(plan.route, SendRoute::Targeted(vec![T]));
-        assert_eq!(plan.recipients, vec![T]);
-    }
-
-    #[test]
-    fn plan_send_refuses_a_target_that_is_only_a_disconnected_platform() {
-        assert_eq!(
-            plan_send("hi", &[Y], &reach(&[T, Y], &[])),
-            Err(SendRefusal::NoPlatformConnected)
-        );
+    fn plan_send_refuses_when_no_recipient_is_connected() {
+        for (label, target, disconnected, refusal) in [
+            (
+                "plan_send_refuses_a_target_that_is_only_a_disconnected_platform",
+                Y,
+                &[T, Y][..],
+                SendRefusal::NoPlatformConnected,
+            ),
+            (
+                "plan_send_reports_no_platform_enabled_ahead_of_no_platform_connected",
+                T,
+                &[][..],
+                SendRefusal::NoPlatformEnabled,
+            ),
+            (
+                "plan_send_refuses_when_every_enabled_platform_is_disconnected",
+                T,
+                &[T, K][..],
+                SendRefusal::NoPlatformConnected,
+            ),
+        ] {
+            assert_eq!(
+                plan_send("hi", &[target], &reach(disconnected, &[])),
+                Err(refusal),
+                "{label}"
+            );
+        }
     }
 
     #[test]
@@ -334,22 +361,6 @@ mod tests {
                 "text {text:?}"
             );
         }
-    }
-
-    #[test]
-    fn plan_send_reports_no_platform_enabled_ahead_of_no_platform_connected() {
-        assert_eq!(
-            plan_send("hi", &[T], &reach(&[], &[])),
-            Err(SendRefusal::NoPlatformEnabled)
-        );
-    }
-
-    #[test]
-    fn plan_send_refuses_when_every_enabled_platform_is_disconnected() {
-        assert_eq!(
-            plan_send("hi", &[T], &reach(&[T, K], &[])),
-            Err(SendRefusal::NoPlatformConnected)
-        );
     }
 
     #[test]

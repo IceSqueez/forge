@@ -60,22 +60,20 @@ mod tests {
     }
 
     #[test]
-    fn scratch_directories_apart_from_the_live_ones_are_accepted() {
-        let refusal = live().refuse_overlap(
-            Path::new("/nonexistent-run/attempt-1/data"),
-            Path::new("/nonexistent-run/attempt-1/home"),
-        );
-        assert!(refusal.is_ok(), "got {refusal:?}");
-    }
+    fn scratch_paths_apart_from_the_live_ones_are_accepted() {
+ for (label, data_dir, home_dir) in [
+("scratch_directories_apart_from_the_live_ones_are_accepted", "/nonexistent-run/attempt-1/data", "/nonexistent-run/attempt-1/home"),
+("scratch_home_inside_the_real_home_is_accepted", "/nonexistent-user/runs/data", "/nonexistent-user/runs/home"),
+] {
 
-    #[test]
-    fn scratch_home_inside_the_real_home_is_accepted() {
         let refusal = live().refuse_overlap(
-            Path::new("/nonexistent-user/runs/data"),
-            Path::new("/nonexistent-user/runs/home"),
+            Path::new(data_dir),
+            Path::new(home_dir),
         );
-        assert!(refusal.is_ok(), "got {refusal:?}");
-    }
+        assert!(refusal.is_ok(), "{label}: got {refusal:?}");
+    
+}
+}
 
     #[test]
     fn data_directory_overlapping_the_live_one_is_refused() {

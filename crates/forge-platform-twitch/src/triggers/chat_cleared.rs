@@ -56,16 +56,6 @@ mod tests {
     }
 
     #[test]
-    fn event_filter_gates_on_chat_clear_kind_prefix() {
-        let filter = SPEC.event_filter();
-        assert_eq!(
-            filter.kind_prefix.as_deref(),
-            Some("twitch.channel.chat.clear")
-        );
-        assert_eq!(filter.source, Some(EventSource::Twitch));
-    }
-
-    #[test]
     fn build_arg_stack_maps_broadcaster_from_nested_payload() {
         let stack = SPEC.build_arg_stack(&chat_clear_event());
         assert_eq!(

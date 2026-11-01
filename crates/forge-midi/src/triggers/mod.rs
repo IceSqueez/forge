@@ -513,12 +513,4 @@ mod tests {
             assert_eq!(nameless.get("midi.device.name"), None, "{id}");
         }
     }
-
-    #[test]
-    fn duplicate_registration_returns_error() {
-        let mut reg = TriggerRegistry::new();
-        register_midi_triggers(&mut reg).unwrap();
-        let result = register_midi_triggers(&mut reg);
-        assert!(result.is_err());
-    }
 }

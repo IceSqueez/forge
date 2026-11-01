@@ -150,11 +150,4 @@ mod tests {
             }
         }
     }
-
-    #[test]
-    fn event_filter_targets_twitch_user_update_kind() {
-        let filter = SPEC.event_filter();
-        assert_eq!(filter.source, Some(EventSource::Twitch));
-        assert_eq!(filter.kind_prefix.as_deref(), Some("twitch.user.update"));
-    }
 }

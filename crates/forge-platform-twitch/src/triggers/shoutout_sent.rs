@@ -84,16 +84,6 @@ mod tests {
     }
 
     #[test]
-    fn event_filter_targets_shoutout_create_topic_from_twitch() {
-        let filter = SPEC.event_filter();
-        assert_eq!(filter.source, Some(EventSource::Twitch));
-        assert_eq!(
-            filter.kind_prefix.as_deref(),
-            Some("twitch.channel.shoutout.create")
-        );
-    }
-
-    #[test]
     fn build_arg_stack_maps_target_fields_and_types_viewer_count_as_int() {
         let stack = SPEC.build_arg_stack(&shoutout_sent_event());
         assert_eq!(

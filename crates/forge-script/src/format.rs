@@ -32,17 +32,27 @@ mod tests {
     use super::*;
 
     #[test]
-    fn format_strips_trailing_whitespace() {
-        let input = "let x = 1;   \nlet y = 2;  \n";
-        let result = format_script(input);
-        assert_eq!(result, "let x = 1;\nlet y = 2;\n");
-    }
-
-    #[test]
-    fn format_collapses_three_blank_lines_to_two() {
-        let input = "hello\n\n\n\nworld\n";
-        let result = format_script(input);
-        assert_eq!(result, "hello\n\n\nworld\n");
+    fn format_normalizes_whitespace_and_keeps_indentation() {
+        for (label, input, expected) in [
+            (
+                "format_strips_trailing_whitespace",
+                "let x = 1;   \nlet y = 2;  \n",
+                "let x = 1;\nlet y = 2;\n",
+            ),
+            (
+                "format_collapses_three_blank_lines_to_two",
+                "hello\n\n\n\nworld\n",
+                "hello\n\n\nworld\n",
+            ),
+            (
+                "format_preserves_meaningful_indentation",
+                "fn foo() {\n    let x = 1;\n    x\n}\n",
+                "fn foo() {\n    let x = 1;\n    x\n}\n",
+            ),
+        ] {
+            let result = format_script(input);
+            assert_eq!(result, expected, "{label}");
+        }
     }
 
     #[test]
@@ -67,12 +77,5 @@ mod tests {
             let twice = format_script(&once);
             assert_eq!(once, twice, "not idempotent for: {input:?}");
         }
-    }
-
-    #[test]
-    fn format_preserves_meaningful_indentation() {
-        let input = "fn foo() {\n    let x = 1;\n    x\n}\n";
-        let result = format_script(input);
-        assert_eq!(result, "fn foo() {\n    let x = 1;\n    x\n}\n");
     }
 }

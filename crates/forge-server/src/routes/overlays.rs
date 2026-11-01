@@ -644,10 +644,23 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn serve_overlay_returns_cors_star_when_any_origin_true() {
-        let (_, headers) = overlay_response_headers(true, |_| None).await;
+    async fn serve_overlay_cors_origin_follows_the_any_origin_setting() {
+        for (label, input, expected) in [
+            (
+                "serve_overlay_returns_cors_star_when_any_origin_true",
+                true,
+                ANY_ORIGIN_WILDCARD.to_owned(),
+            ),
+            (
+                "serve_overlay_falls_back_to_the_bind_authority_when_no_origin_is_present",
+                false,
+                format!("http://{FIXTURE_BIND_ADDR}"),
+            ),
+        ] {
+            let (_, headers) = overlay_response_headers(input, |_| None).await;
 
-        assert_eq!(allowed_origin(&headers), ANY_ORIGIN_WILDCARD);
+            assert_eq!(allowed_origin(&headers), expected, "{label}");
+        }
     }
 
     #[tokio::test]
@@ -662,16 +675,6 @@ mod tests {
     async fn serve_overlay_never_echoes_an_origin_the_handshake_rule_rejects() {
         let (_, headers) =
             overlay_response_headers(false, |_| Some(FOREIGN_ORIGIN.to_owned())).await;
-
-        assert_eq!(
-            allowed_origin(&headers),
-            format!("http://{FIXTURE_BIND_ADDR}")
-        );
-    }
-
-    #[tokio::test]
-    async fn serve_overlay_falls_back_to_the_bind_authority_when_no_origin_is_present() {
-        let (_, headers) = overlay_response_headers(false, |_| None).await;
 
         assert_eq!(
             allowed_origin(&headers),

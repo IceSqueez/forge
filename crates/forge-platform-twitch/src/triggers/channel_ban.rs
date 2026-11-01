@@ -118,13 +118,6 @@ mod tests {
     }
 
     #[test]
-    fn event_filter_targets_channel_ban_topic_from_twitch() {
-        let filter = SPEC.event_filter();
-        assert_eq!(filter.source, Some(EventSource::Twitch));
-        assert_eq!(filter.kind_prefix.as_deref(), Some("twitch.channel.ban"));
-    }
-
-    #[test]
     fn build_arg_stack_exposes_user_moderator_reason_and_banned_at() {
         let stack = SPEC.build_arg_stack(&ban_event(true));
         assert_eq!(

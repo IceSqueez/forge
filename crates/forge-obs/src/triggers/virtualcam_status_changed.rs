@@ -68,21 +68,32 @@ mod tests {
     }
 
     #[test]
-    fn build_arg_stack_takes_the_state_from_the_kind_and_is_active_from_the_payload() {
-        let event = Event::new(
-            EventSource::Obs,
-            "obs.virtualcam.started",
-            json!({ "is_active": true }),
-        );
-        let stack = VIRTUALCAM_STATUS_CHANGED.build_arg_stack(&event);
-        assert_eq!(
-            stack.get("obs.virtualcam.output_state"),
-            Some(&Variant::String("started".to_owned()))
-        );
-        assert_eq!(
-            stack.get("obs.virtualcam.is_active"),
-            Some(&Variant::Bool(true))
-        );
+    fn build_arg_stack_reads_is_active_only_from_a_bool() {
+        for (label, input, expected) in [
+            (
+                "build_arg_stack_takes_the_state_from_the_kind_and_is_active_from_the_payload",
+                json!(true),
+                Some(&Variant::Bool(true)),
+            ),
+            (
+                "build_arg_stack_omits_is_active_when_wrong_json_type",
+                json!("true"),
+                None,
+            ),
+        ] {
+            let event = Event::new(
+                EventSource::Obs,
+                "obs.virtualcam.started",
+                json!({ "is_active": input }),
+            );
+            let stack = VIRTUALCAM_STATUS_CHANGED.build_arg_stack(&event);
+            assert_eq!(
+                stack.get("obs.virtualcam.output_state"),
+                Some(&Variant::String("started".to_owned())),
+                "{label}"
+            );
+            assert_eq!(stack.get("obs.virtualcam.is_active"), expected, "{label}");
+        }
     }
 
     #[test]
@@ -107,21 +118,6 @@ mod tests {
         assert_eq!(
             stack.get("obs.virtualcam.output_state"),
             Some(&Variant::String("started".to_owned())),
-        );
-        assert_eq!(stack.get("obs.virtualcam.is_active"), None);
-    }
-
-    #[test]
-    fn build_arg_stack_omits_is_active_when_wrong_json_type() {
-        let event = Event::new(
-            EventSource::Obs,
-            "obs.virtualcam.started",
-            json!({ "is_active": "true" }),
-        );
-        let stack = VIRTUALCAM_STATUS_CHANGED.build_arg_stack(&event);
-        assert_eq!(
-            stack.get("obs.virtualcam.output_state"),
-            Some(&Variant::String("started".to_owned()))
         );
         assert_eq!(stack.get("obs.virtualcam.is_active"), None);
     }

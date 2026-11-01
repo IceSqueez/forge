@@ -784,13 +784,25 @@ mod tests {
     }
 
     #[test]
-    fn scrubber_redacts_every_occurrence_regardless_of_case() {
-        let scrubber = scrubber(&["Alice"]);
+    fn scrubber_redacts_identities_as_each_case_expects() {
+        for (label, identities, text, expected) in [
+            (
+                "scrubber_redacts_every_occurrence_regardless_of_case",
+                "Alice",
+                "ALICE met alice and aLiCe",
+                "[redacted] met [redacted] and [redacted]",
+            ),
+            (
+                "scrubber_leaves_non_ascii_text_around_a_hit_intact",
+                "alice",
+                "Динамік alice ünïcode 🎧",
+                "Динамік [redacted] ünïcode 🎧",
+            ),
+        ] {
+            let scrubber = scrubber(&[identities]);
 
-        assert_eq!(
-            scrubber.scrub("ALICE met alice and aLiCe"),
-            "[redacted] met [redacted] and [redacted]",
-        );
+            assert_eq!(scrubber.scrub(text), expected, "{label}");
+        }
     }
 
     #[test]
@@ -828,16 +840,6 @@ mod tests {
         let scrubber = scrubber(&["red", "alice"]);
 
         assert_eq!(scrubber.scrub("alice red"), "[redacted] [redacted]");
-    }
-
-    #[test]
-    fn scrubber_leaves_non_ascii_text_around_a_hit_intact() {
-        let scrubber = scrubber(&["alice"]);
-
-        assert_eq!(
-            scrubber.scrub("Динамік alice ünïcode 🎧"),
-            "Динамік [redacted] ünïcode 🎧",
-        );
     }
 
     #[test]

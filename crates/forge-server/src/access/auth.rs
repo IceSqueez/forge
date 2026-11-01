@@ -356,10 +356,25 @@ mod tests {
     }
 
     #[test]
-    fn masked_token_reveals_only_the_last_four_characters_and_never_the_body() {
-        let masked = masked_token("fg_supersecretvalue9c4a");
-        assert!(masked.ends_with("9c4a"), "masked = {masked}");
-        assert!(!masked.contains("supersecret"), "masked = {masked}");
+    fn masked_token_reveals_only_the_last_four_characters() {
+        for (label, token, tail, body) in [
+            (
+                "masked_token_reveals_only_the_last_four_characters_and_never_the_body",
+                "fg_supersecretvalue9c4a",
+                "9c4a",
+                "supersecret",
+            ),
+            (
+                "masked_token_splits_multibyte_tokens_on_character_boundaries",
+                "префікс-тікт",
+                "тікт",
+                "префікс",
+            ),
+        ] {
+            let masked = masked_token(token);
+            assert!(masked.ends_with(tail), "{label}: masked = {masked}");
+            assert!(!masked.contains(body), "{label}: masked = {masked}");
+        }
     }
 
     #[test]
@@ -389,13 +404,6 @@ mod tests {
             let masked = masked_token(token);
             assert!(masked.ends_with(token), "token {token} masked to {masked}");
         }
-    }
-
-    #[test]
-    fn masked_token_splits_multibyte_tokens_on_character_boundaries() {
-        let masked = masked_token("префікс-тікт");
-        assert!(masked.ends_with("тікт"), "masked = {masked}");
-        assert!(!masked.contains("префікс"), "masked = {masked}");
     }
 
     #[test]

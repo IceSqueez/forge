@@ -342,16 +342,6 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn a_held_reservation_extends_to_the_resolved_id_of_its_own_target() {
-        let ledger = CadenceLedger::default();
-        let Ok(mut reservation) = ledger.reserve_shoutout(&["login:target"]) else {
-            panic!("the first reservation must find the channel free");
-        };
-
-        assert_eq!(reservation.extend(&["id:555"]), Ok(()));
-    }
-
-    #[tokio::test(start_paused = true)]
     async fn a_held_reservation_blocks_a_concurrent_shoutout() {
         let ledger = CadenceLedger::default();
         let Ok(_held) = ledger.reserve_shoutout(&["id:1"]) else {

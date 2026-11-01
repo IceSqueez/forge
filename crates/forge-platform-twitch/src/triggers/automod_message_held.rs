@@ -146,16 +146,6 @@ mod tests {
     }
 
     #[test]
-    fn event_filter_targets_automod_hold_kind_from_twitch() {
-        let filter = SPEC.event_filter();
-        assert_eq!(filter.source, Some(EventSource::Twitch));
-        assert_eq!(
-            filter.kind_prefix.as_deref(),
-            Some("twitch.automod.message.hold")
-        );
-    }
-
-    #[test]
     fn build_arg_stack_exposes_message_id_chaining_var_and_typed_level() {
         let stack = SPEC.build_arg_stack(&hold_event());
         assert_eq!(

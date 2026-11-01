@@ -109,16 +109,6 @@ mod tests {
     }
 
     #[test]
-    fn event_filter_targets_warning_send_topic_from_twitch() {
-        let filter = SPEC.event_filter();
-        assert_eq!(filter.source, Some(EventSource::Twitch));
-        assert_eq!(
-            filter.kind_prefix.as_deref(),
-            Some("twitch.channel.warning.send")
-        );
-    }
-
-    #[test]
     fn build_arg_stack_surfaces_target_and_moderator_scalar_fields() {
         let stack = SPEC.build_arg_stack(&warning_send_event(full_payload()));
         assert_eq!(

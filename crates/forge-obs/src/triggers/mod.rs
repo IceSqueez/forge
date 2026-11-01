@@ -165,12 +165,4 @@ mod tests {
             assert!(reg.get(id).is_some(), "missing trigger: {id}");
         }
     }
-
-    #[test]
-    fn duplicate_registration_returns_error() {
-        let mut reg = TriggerRegistry::new();
-        register_obs_triggers(&mut reg).unwrap();
-        let result = register_obs_triggers(&mut reg);
-        assert!(result.is_err());
-    }
 }

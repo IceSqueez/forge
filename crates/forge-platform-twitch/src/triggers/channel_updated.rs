@@ -54,13 +54,6 @@ mod tests {
     }
 
     #[test]
-    fn event_filter_targets_channel_update_topic_from_twitch() {
-        let filter = SPEC.event_filter();
-        assert_eq!(filter.source, Some(EventSource::Twitch));
-        assert_eq!(filter.kind_prefix.as_deref(), Some("twitch.channel.update"));
-    }
-
-    #[test]
     fn build_arg_stack_maps_channel_fields_from_nested_payload() {
         let stack = SPEC.build_arg_stack(&channel_update_event());
         assert_eq!(

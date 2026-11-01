@@ -139,15 +139,18 @@ mod tests {
     }
 
     #[test]
-    fn does_not_match_below_threshold() {
-        let cfg = make_config(100);
-        assert!(!SPEC.matches_trigger(&cfg, &cheer_event(50)));
-    }
-
-    #[test]
-    fn min_bits_zero_always_matches() {
-        let cfg = make_config(0);
-        assert!(SPEC.matches_trigger(&cfg, &cheer_event(1)));
+    fn min_bits_gates_the_cheer() {
+        for (label, min_bits, bits, expected) in [
+            ("does_not_match_below_threshold", 100, 50, false),
+            ("min_bits_zero_always_matches", 0, 1, true),
+        ] {
+            let cfg = make_config(min_bits);
+            assert_eq!(
+                SPEC.matches_trigger(&cfg, &cheer_event(bits)),
+                expected,
+                "{label}"
+            );
+        }
     }
 
     #[test]

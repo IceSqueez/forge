@@ -133,18 +133,31 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_stored_secure_endpoint_is_redialed_over_tls() {
-        let repo = MockCreds::new();
-        store(&*repo, "tok", "203.0.113.7", 9123, true)
-            .await
-            .unwrap();
-        let publisher = CapturingPublisher::shared();
+    async fn load_and_connect_dials_the_stored_endpoint_and_scheme() {
+        for (label, input, expected) in [
+            (
+                "a_stored_secure_endpoint_is_redialed_over_tls",
+                true,
+                "wss://203.0.113.7:9123/",
+            ),
+            (
+                "load_and_connect_dials_the_stored_endpoint_not_the_compiled_in_default",
+                false,
+                "ws://203.0.113.7:9123/",
+            ),
+        ] {
+            let repo = MockCreds::new();
+            store(&*repo, "tok", "203.0.113.7", 9123, input)
+                .await
+                .unwrap();
+            let publisher = CapturingPublisher::shared();
 
-        let client = load_and_connect(&*repo, publisher.clone(), repo.creds())
-            .await
-            .unwrap();
+            let client = load_and_connect(&*repo, publisher.clone(), repo.creds())
+                .await
+                .unwrap();
 
-        assert_eq!(client.config.endpoint, "wss://203.0.113.7:9123/");
+            assert_eq!(client.config.endpoint, expected, "{label}");
+        }
     }
 
     #[test]
@@ -159,21 +172,6 @@ mod tests {
         let s = format!("{creds:?}");
 
         assert!(!s.contains("super-secret-vtube-token"), "Debug leaked: {s}");
-    }
-
-    #[tokio::test]
-    async fn load_and_connect_dials_the_stored_endpoint_not_the_compiled_in_default() {
-        let repo = MockCreds::new();
-        store(&*repo, "tok", "203.0.113.7", 9123, false)
-            .await
-            .unwrap();
-        let publisher = CapturingPublisher::shared();
-
-        let client = load_and_connect(&*repo, publisher.clone(), repo.creds())
-            .await
-            .unwrap();
-
-        assert_eq!(client.config.endpoint, "ws://203.0.113.7:9123/");
     }
 
     const SAVED_BUNDLE: &str =

@@ -249,24 +249,28 @@ mod tests {
     }
 
     #[test]
-    fn a_code_from_another_namespace_is_reported() {
-        assert_eq!(
-            catalog_problems(&[catalog("alpha", OTHER_CODES)]),
-            vec![CatalogProblem::Malformed(TypesError::ForeignCode {
-                namespace: "alpha",
-                code: MessageCode::from_static("beta", "one"),
-            })]
-        );
-    }
-
-    #[test]
-    fn a_code_listed_twice_is_reported() {
-        assert_eq!(
-            catalog_problems(&[catalog("alpha", DUPLICATE_CODES)]),
-            vec![CatalogProblem::Malformed(TypesError::DuplicateCode(
-                MessageCode::from_static("alpha", "one")
-            ))]
-        );
+    fn a_foreign_or_repeated_code_is_reported() {
+        for (label, codes, problem) in [
+            (
+                "a_code_from_another_namespace_is_reported",
+                OTHER_CODES,
+                TypesError::ForeignCode {
+                    namespace: "alpha",
+                    code: MessageCode::from_static("beta", "one"),
+                },
+            ),
+            (
+                "a_code_listed_twice_is_reported",
+                DUPLICATE_CODES,
+                TypesError::DuplicateCode(MessageCode::from_static("alpha", "one")),
+            ),
+        ] {
+            assert_eq!(
+                catalog_problems(&[catalog("alpha", codes)]),
+                vec![CatalogProblem::Malformed(problem)],
+                "{label}"
+            );
+        }
     }
 
     #[test]

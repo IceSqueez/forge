@@ -161,47 +161,40 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn array_remove_first_only_drops_leftmost_match() {
-        let globals = seeded();
-        let outcome = run(globals.clone(), &cfg("list", "1", false)).await;
-        assert!(matches!(outcome, SubActionOutcome::Success));
-        assert_eq!(
-            globals.array("list"),
-            vec![
-                Variant::Int(2),
-                Variant::Int(1),
-                Variant::Int(3),
-                Variant::Int(1),
-            ]
-        );
-    }
-
-    #[tokio::test]
-    async fn array_remove_all_drops_every_match() {
-        let globals = seeded();
-        let outcome = run(globals.clone(), &cfg("list", "1", true)).await;
-        assert!(matches!(outcome, SubActionOutcome::Success));
-        assert_eq!(
-            globals.array("list"),
-            vec![Variant::Int(2), Variant::Int(3)]
-        );
-    }
-
-    #[tokio::test]
-    async fn array_remove_absent_value_leaves_array_unchanged() {
-        let globals = seeded();
-        let outcome = run(globals.clone(), &cfg("list", "99", false)).await;
-        assert!(matches!(outcome, SubActionOutcome::Success));
-        assert_eq!(
-            globals.array("list"),
-            vec![
-                Variant::Int(1),
-                Variant::Int(2),
-                Variant::Int(1),
-                Variant::Int(3),
-                Variant::Int(1),
-            ]
-        );
+    async fn array_remove_drops_the_requested_matches() {
+        for (label, input, expected) in [
+            (
+                "array_remove_first_only_drops_leftmost_match",
+                &cfg("list", "1", false),
+                vec![
+                    Variant::Int(2),
+                    Variant::Int(1),
+                    Variant::Int(3),
+                    Variant::Int(1),
+                ],
+            ),
+            (
+                "array_remove_all_drops_every_match",
+                &cfg("list", "1", true),
+                vec![Variant::Int(2), Variant::Int(3)],
+            ),
+            (
+                "array_remove_absent_value_leaves_array_unchanged",
+                &cfg("list", "99", false),
+                vec![
+                    Variant::Int(1),
+                    Variant::Int(2),
+                    Variant::Int(1),
+                    Variant::Int(3),
+                    Variant::Int(1),
+                ],
+            ),
+        ] {
+            let globals = seeded();
+            let outcome = run(globals.clone(), input).await;
+            assert!(matches!(outcome, SubActionOutcome::Success), "{label}");
+            assert_eq!(globals.array("list"), expected, "{label}");
+        }
     }
 
     #[tokio::test]

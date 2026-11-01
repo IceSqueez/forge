@@ -71,16 +71,6 @@ mod tests {
     }
 
     #[test]
-    fn event_filter_targets_automod_terms_update_kind_from_twitch() {
-        let filter = SPEC.event_filter();
-        assert_eq!(filter.source, Some(EventSource::Twitch));
-        assert_eq!(
-            filter.kind_prefix.as_deref(),
-            Some("twitch.automod.terms.update")
-        );
-    }
-
-    #[test]
     fn build_arg_stack_reads_top_level_action_into_automod_action_var() {
         let stack = SPEC.build_arg_stack(&terms_event());
         assert_eq!(

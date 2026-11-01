@@ -81,14 +81,32 @@ mod filters {
     }
 
     #[test]
-    fn enabled_literal_rule_rewrites_matching_text() {
-        let rules = [literal_rule("lol", "lol", "(laugh)", true)];
-        let config = build_config_strict(&rules, &default_settings()).unwrap();
-        let result = process("LOL that was funny lol!", &config, &ctx());
-        assert_eq!(
-            result,
-            PipelineResult::Speak("(laugh) that was funny (laugh)!".into())
-        );
+    fn literal_rules_apply_only_when_enabled_and_non_empty() {
+        for (label, rule, text, spoken) in [
+            (
+                "enabled_literal_rule_rewrites_matching_text",
+                literal_rule("lol", "lol", "(laugh)", true),
+                "LOL that was funny lol!",
+                "(laugh) that was funny (laugh)!",
+            ),
+            (
+                "empty_pattern_literal_is_noop",
+                literal_rule("empty", "", "anything", true),
+                "hello world",
+                "hello world",
+            ),
+            (
+                "disabled_literal_rule_does_not_apply",
+                literal_rule("lol", "lol", "(laugh)", false),
+                "lol",
+                "lol",
+            ),
+        ] {
+            let rules = [rule];
+            let config = build_config_strict(&rules, &default_settings()).unwrap();
+            let result = process(text, &config, &ctx());
+            assert_eq!(result, PipelineResult::Speak(spoken.into()), "{label}");
+        }
     }
 
     #[test]
@@ -116,22 +134,6 @@ mod filters {
                 );
             }
         }
-    }
-
-    #[test]
-    fn empty_pattern_literal_is_noop() {
-        let rules = [literal_rule("empty", "", "anything", true)];
-        let config = build_config_strict(&rules, &default_settings()).unwrap();
-        let result = process("hello world", &config, &ctx());
-        assert_eq!(result, PipelineResult::Speak("hello world".into()));
-    }
-
-    #[test]
-    fn disabled_literal_rule_does_not_apply() {
-        let rules = [literal_rule("lol", "lol", "(laugh)", false)];
-        let config = build_config_strict(&rules, &default_settings()).unwrap();
-        let result = process("lol", &config, &ctx());
-        assert_eq!(result, PipelineResult::Speak("lol".into()));
     }
 
     #[test]

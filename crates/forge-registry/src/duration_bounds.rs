@@ -241,17 +241,26 @@ mod tests {
     }
 
     #[test]
-    fn fitting_units_drop_a_unit_that_could_only_hold_zero() {
-        let bounds = DurationBounds::in_millis(0, 60_000);
-
-        assert_eq!(unit_values(bounds), [MS, SEC, MIN]);
-    }
-
-    #[test]
-    fn fitting_units_keep_the_smallest_unit_even_when_its_range_is_only_zero() {
-        let bounds = DurationBounds::in_millis(0, 0);
-
-        assert_eq!(unit_values(bounds), [MS]);
+    fn fitting_units_keep_only_the_units_the_bounds_can_hold() {
+        for (label, bounds, expected) in [
+            (
+                "fitting_units_drop_a_unit_that_could_only_hold_zero",
+                DurationBounds::in_millis(0, 60_000),
+                vec![MS, SEC, MIN],
+            ),
+            (
+                "fitting_units_keep_the_smallest_unit_even_when_its_range_is_only_zero",
+                DurationBounds::in_millis(0, 0),
+                vec![MS],
+            ),
+            (
+                "fitting_units_drop_a_unit_whose_rounded_up_minimum_passes_the_maximum",
+                DurationBounds::in_millis(1_500, 1_999),
+                vec![MS],
+            ),
+        ] {
+            assert_eq!(unit_values(bounds), expected, "{label}");
+        }
     }
 
     #[test]
@@ -260,13 +269,6 @@ mod tests {
             let bounds = DurationBounds::in_millis(0, max_ms);
             assert_eq!(unit_values(bounds), expected, "max {max_ms} ms");
         }
-    }
-
-    #[test]
-    fn fitting_units_drop_a_unit_whose_rounded_up_minimum_passes_the_maximum() {
-        let bounds = DurationBounds::in_millis(1_500, 1_999);
-
-        assert_eq!(unit_values(bounds), [MS]);
     }
 
     #[test]

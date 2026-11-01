@@ -42,25 +42,31 @@ mod tests {
     use std::collections::BTreeMap;
 
     #[test]
-    fn matches_collection_changed_kind() {
-        let d = SCENE_COLLECTION_CHANGED;
-        let event = Event::new(
-            EventSource::Obs,
-            "obs.collection.changed",
-            json!({ "collection_name": "Stream" }),
-        );
-        assert!(d.matches_trigger(&BTreeMap::new(), &event));
-    }
-
-    #[test]
-    fn does_not_match_collection_changing_kind() {
-        let d = SCENE_COLLECTION_CHANGED;
-        let event = Event::new(
-            EventSource::Obs,
-            "obs.collection.changing",
-            json!({ "collection_name": "Stream" }),
-        );
-        assert!(!d.matches_trigger(&BTreeMap::new(), &event));
+    fn matches_only_the_collection_changed_kind() {
+        for (label, input, expected) in [
+            (
+                "matches_collection_changed_kind",
+                "obs.collection.changed",
+                true,
+            ),
+            (
+                "does_not_match_collection_changing_kind",
+                "obs.collection.changing",
+                false,
+            ),
+        ] {
+            let d = SCENE_COLLECTION_CHANGED;
+            let event = Event::new(
+                EventSource::Obs,
+                input,
+                json!({ "collection_name": "Stream" }),
+            );
+            assert_eq!(
+                d.matches_trigger(&BTreeMap::new(), &event),
+                expected,
+                "{label}"
+            );
+        }
     }
 
     #[test]

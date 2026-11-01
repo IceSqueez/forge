@@ -55,16 +55,6 @@ mod tests {
     }
 
     #[test]
-    fn event_filter_targets_poll_begin_topic_from_twitch() {
-        let filter = SPEC.event_filter();
-        assert_eq!(filter.source, Some(EventSource::Twitch));
-        assert_eq!(
-            filter.kind_prefix.as_deref(),
-            Some("twitch.channel.poll.begin")
-        );
-    }
-
-    #[test]
     fn build_arg_stack_maps_poll_id_title_and_timing_fields() {
         let stack = SPEC.build_arg_stack(&poll_begin_event());
         assert_eq!(

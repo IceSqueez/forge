@@ -190,33 +190,33 @@ async fn if_non_undefined_condition_errors_fail_even_when_treating_undefined_as_
 }
 
 #[tokio::test]
-async fn if_condition_argument_text_cannot_pick_the_branch() {
-    let eng = engine();
-    let cfg = marker_branches(r#""%message%" == "!secret""#);
-    let run = run_with(
-        &eng,
-        vec![step("core.logic.if_then_else", cfg)],
-        &[("message", INJECTION)],
-    )
-    .await;
+async fn if_condition_treats_argument_text_as_a_literal() {
+    for (label, condition, message, marker) in [
+        (
+            "if_condition_argument_text_cannot_pick_the_branch",
+            r#""%message%" == "!secret""#,
+            INJECTION,
+            "ELSE",
+        ),
+        (
+            "if_condition_compares_quoted_chat_text_literally",
+            r#""%message%" == "he said \"hi\" C:\\temp""#,
+            r#"he said "hi" C:\temp"#,
+            "THEN",
+        ),
+    ] {
+        let eng = engine();
+        let cfg = marker_branches(condition);
+        let run = run_with(
+            &eng,
+            vec![step("core.logic.if_then_else", cfg)],
+            &[("message", message)],
+        )
+        .await;
 
-    assert_eq!(run.signal, ChainSignal::Completed);
-    assert_eq!(run.arg_stack.get("marker"), Some(&text("ELSE")));
-}
-
-#[tokio::test]
-async fn if_condition_compares_quoted_chat_text_literally() {
-    let eng = engine();
-    let cfg = marker_branches(r#""%message%" == "he said \"hi\" C:\\temp""#);
-    let run = run_with(
-        &eng,
-        vec![step("core.logic.if_then_else", cfg)],
-        &[("message", r#"he said "hi" C:\temp"#)],
-    )
-    .await;
-
-    assert_eq!(run.signal, ChainSignal::Completed);
-    assert_eq!(run.arg_stack.get("marker"), Some(&text("THEN")));
+        assert_eq!(run.signal, ChainSignal::Completed, "{label}");
+        assert_eq!(run.arg_stack.get("marker"), Some(&text(marker)), "{label}");
+    }
 }
 
 fn while_cfg(condition: &str, max_iterations: i64) -> SubActionConfig {

@@ -56,13 +56,6 @@ mod tests {
     }
 
     #[test]
-    fn event_filter_gates_on_stream_offline_kind_prefix() {
-        let filter = SPEC.event_filter();
-        assert_eq!(filter.kind_prefix.as_deref(), Some("twitch.stream.offline"));
-        assert_eq!(filter.source, Some(EventSource::Twitch));
-    }
-
-    #[test]
     fn build_arg_stack_maps_broadcaster_from_nested_payload() {
         let stack = SPEC.build_arg_stack(&offline_event());
         assert_eq!(

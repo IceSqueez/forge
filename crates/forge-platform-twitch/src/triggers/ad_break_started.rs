@@ -114,16 +114,6 @@ mod tests {
     }
 
     #[test]
-    fn event_filter_targets_ad_break_begin_topic_from_twitch() {
-        let filter = SPEC.event_filter();
-        assert_eq!(filter.source, Some(EventSource::Twitch));
-        assert_eq!(
-            filter.kind_prefix.as_deref(),
-            Some("twitch.channel.ad_break.begin")
-        );
-    }
-
-    #[test]
     fn an_ad_break_publishes_whoever_requested_it_as_the_canonical_actor() {
         let stack = SPEC.build_arg_stack(&ad_break_event());
         for (name, value) in [

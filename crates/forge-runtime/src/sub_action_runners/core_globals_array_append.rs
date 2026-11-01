@@ -151,17 +151,26 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn array_append_adds_parsed_value_at_end() {
-        let globals = Arc::new(MapGlobals::with([(
-            "list",
-            Variant::Array(vec![Variant::Int(1), Variant::Int(2)]),
-        )]));
-        let outcome = run(globals.clone(), &cfg("list", "3", 0)).await;
-        assert!(matches!(outcome, SubActionOutcome::Success));
-        assert_eq!(
-            globals.array("list"),
-            vec![Variant::Int(1), Variant::Int(2), Variant::Int(3)]
-        );
+    async fn array_append_appends_and_caps_the_length_fifo() {
+        for (label, stored, config, expected) in [
+            (
+                "array_append_adds_parsed_value_at_end",
+                vec![Variant::Int(1), Variant::Int(2)],
+                &cfg("list", "3", 0),
+                vec![Variant::Int(1), Variant::Int(2), Variant::Int(3)],
+            ),
+            (
+                "array_append_past_max_length_drains_oldest_fifo",
+                vec![Variant::Int(1), Variant::Int(2), Variant::Int(3)],
+                &cfg("list", "4", 3),
+                vec![Variant::Int(2), Variant::Int(3), Variant::Int(4)],
+            ),
+        ] {
+            let globals = Arc::new(MapGlobals::with([("list", Variant::Array(stored))]));
+            let outcome = run(globals.clone(), config).await;
+            assert!(matches!(outcome, SubActionOutcome::Success), "{label}");
+            assert_eq!(globals.array("list"), expected, "{label}");
+        }
     }
 
     #[tokio::test]
@@ -200,20 +209,6 @@ mod tests {
         let globals = Arc::new(MapGlobals::with([("list", Variant::Int(5))]));
         let outcome = run(globals, &cfg("list", "x", 0)).await;
         assert!(matches!(outcome, SubActionOutcome::Failed(_)));
-    }
-
-    #[tokio::test]
-    async fn array_append_past_max_length_drains_oldest_fifo() {
-        let globals = Arc::new(MapGlobals::with([(
-            "list",
-            Variant::Array(vec![Variant::Int(1), Variant::Int(2), Variant::Int(3)]),
-        )]));
-        let outcome = run(globals.clone(), &cfg("list", "4", 3)).await;
-        assert!(matches!(outcome, SubActionOutcome::Success));
-        assert_eq!(
-            globals.array("list"),
-            vec![Variant::Int(2), Variant::Int(3), Variant::Int(4)]
-        );
     }
 
     #[tokio::test]

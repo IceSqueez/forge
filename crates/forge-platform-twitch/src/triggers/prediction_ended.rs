@@ -65,16 +65,6 @@ mod tests {
     }
 
     #[test]
-    fn event_filter_targets_prediction_end_topic_from_twitch() {
-        let filter = SPEC.event_filter();
-        assert_eq!(filter.source, Some(EventSource::Twitch));
-        assert_eq!(
-            filter.kind_prefix.as_deref(),
-            Some("twitch.channel.prediction.end")
-        );
-    }
-
-    #[test]
     fn build_arg_stack_carries_winning_outcome_and_status_fields() {
         let stack = SPEC.build_arg_stack(&prediction_end_event());
         assert_eq!(

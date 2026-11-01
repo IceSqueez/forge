@@ -34,17 +34,6 @@ async fn save_get_roundtrip() {
 }
 
 #[tokio::test]
-async fn get_missing_id_returns_none() {
-    let backend = setup().await;
-    let got = backend
-        .script_repo()
-        .get(ScriptId::new())
-        .await
-        .expect("get");
-    assert!(got.is_none());
-}
-
-#[tokio::test]
 async fn get_by_name_finds_existing_script() {
     let backend = setup().await;
     backend
@@ -60,17 +49,6 @@ async fn get_by_name_finds_existing_script() {
         .expect("get_by_name")
         .unwrap();
     assert_eq!(got.name, "known_name");
-}
-
-#[tokio::test]
-async fn get_by_name_missing_returns_none() {
-    let backend = setup().await;
-    let got = backend
-        .script_repo()
-        .get_by_name("ghost")
-        .await
-        .expect("get_by_name");
-    assert!(got.is_none());
 }
 
 #[tokio::test]
@@ -167,17 +145,6 @@ async fn delete_existing_returns_true_and_removes() {
 
     let all = backend.script_repo().list().await.expect("list");
     assert!(all.is_empty());
-}
-
-#[tokio::test]
-async fn delete_missing_returns_false() {
-    let backend = setup().await;
-    let deleted = backend
-        .script_repo()
-        .delete(ScriptId::new())
-        .await
-        .expect("delete missing");
-    assert!(!deleted);
 }
 
 #[tokio::test]

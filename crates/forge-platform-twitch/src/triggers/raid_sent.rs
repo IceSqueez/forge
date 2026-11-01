@@ -69,13 +69,6 @@ mod tests {
     use forge_types::Variant;
 
     #[test]
-    fn event_filter_targets_channel_raid_topic_from_twitch() {
-        let filter = SPEC.event_filter();
-        assert_eq!(filter.source, Some(EventSource::Twitch));
-        assert_eq!(filter.kind_prefix.as_deref(), Some("twitch.channel.raid"));
-    }
-
-    #[test]
     fn build_arg_stack_exposes_to_broadcaster_and_viewer_count_as_int() {
         let event = Event::new(
             EventSource::Twitch,

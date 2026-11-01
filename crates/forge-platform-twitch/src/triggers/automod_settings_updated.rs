@@ -76,16 +76,6 @@ mod tests {
     }
 
     #[test]
-    fn event_filter_targets_automod_settings_update_kind_from_twitch() {
-        let filter = SPEC.event_filter();
-        assert_eq!(filter.source, Some(EventSource::Twitch));
-        assert_eq!(
-            filter.kind_prefix.as_deref(),
-            Some("twitch.automod.settings.update")
-        );
-    }
-
-    #[test]
     fn build_arg_stack_marshals_overall_level_as_int_and_exposes_moderator() {
         let stack = SPEC.build_arg_stack(&settings_event());
         assert_eq!(

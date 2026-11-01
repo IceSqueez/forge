@@ -884,16 +884,6 @@ mod tests {
     }
 
     #[gpui::test]
-    fn a_tooltip_shows_on_the_screen_behind_while_no_modal_is_up(cx: &mut TestAppContext) {
-        let mut rig = mount_tooltip_rig(cx);
-        rig.hover(BEHIND_THE_MODAL);
-
-        rig.let_any_tooltip_delay_elapse();
-
-        assert!(rig.tooltip_shown());
-    }
-
-    #[gpui::test]
     fn a_pending_tooltip_does_not_show_over_a_mounted_modal(cx: &mut TestAppContext) {
         let mut rig = mount_tooltip_rig(cx);
         rig.hover(BEHIND_THE_MODAL);

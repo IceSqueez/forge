@@ -55,14 +55,32 @@ mod tests {
     }
 
     #[test]
-    fn samples_inside_the_span_add_up() {
-        let start = Instant::now();
-        let mut window = RateWindow::new(SPAN);
-        window.push(start, 5);
-        window.push(start + STEP, 7);
+    fn the_window_totals_only_samples_inside_the_span() {
+        for (label, sampled_at, read_at, total, retained) in [
+            ("samples_inside_the_span_add_up", STEP, STEP * 2, 12, 2),
+            (
+                "a_sample_older_than_the_span_is_dropped_and_newer_ones_stay",
+                SPAN,
+                SPAN + STEP,
+                7,
+                1,
+            ),
+            (
+                "a_window_that_aged_out_entirely_totals_zero",
+                STEP,
+                SPAN * 3,
+                0,
+                0,
+            ),
+        ] {
+            let start = Instant::now();
+            let mut window = RateWindow::new(SPAN);
+            window.push(start, 5);
+            window.push(start + sampled_at, 7);
 
-        assert_eq!(window.total_at(start + STEP * 2), 12);
-        assert_eq!(window.retained(), 2);
+            assert_eq!(window.total_at(start + read_at), total, "{label}");
+            assert_eq!(window.retained(), retained, "{label}");
+        }
     }
 
     #[test]
@@ -72,28 +90,6 @@ mod tests {
         window.push(start, 5);
 
         assert_eq!(window.total_at(start + SPAN), 5);
-    }
-
-    #[test]
-    fn a_sample_older_than_the_span_is_dropped_and_newer_ones_stay() {
-        let start = Instant::now();
-        let mut window = RateWindow::new(SPAN);
-        window.push(start, 5);
-        window.push(start + SPAN, 7);
-
-        assert_eq!(window.total_at(start + SPAN + STEP), 7);
-        assert_eq!(window.retained(), 1);
-    }
-
-    #[test]
-    fn a_window_that_aged_out_entirely_totals_zero() {
-        let start = Instant::now();
-        let mut window = RateWindow::new(SPAN);
-        window.push(start, 5);
-        window.push(start + STEP, 7);
-
-        assert_eq!(window.total_at(start + SPAN * 3), 0);
-        assert_eq!(window.retained(), 0);
     }
 
     #[test]

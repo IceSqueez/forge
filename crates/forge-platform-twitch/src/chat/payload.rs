@@ -385,13 +385,28 @@ mod tests {
     }
 
     #[test]
-    fn map_badges_moderator_and_vip() {
-        let badges = serde_json::json!([
-            { "set_id": "moderator", "id": "1", "info": "" },
-            { "set_id": "vip", "id": "1", "info": "" }
-        ]);
-        let result = map_badges(Some(&badges));
-        assert_eq!(result, vec![UserBadge::Moderator, UserBadge::Vip]);
+    fn map_badges_keeps_known_sets_and_skips_unknown_ones() {
+        for (label, first_set, second_set, expected) in [
+            (
+                "map_badges_moderator_and_vip",
+                "moderator",
+                "vip",
+                vec![UserBadge::Moderator, UserBadge::Vip],
+            ),
+            (
+                "map_badges_skips_unknown_set_ids",
+                "totally-unknown-set-id",
+                "moderator",
+                vec![UserBadge::Moderator],
+            ),
+        ] {
+            let badges = serde_json::json!([
+                { "set_id": first_set, "id": "1", "info": "" },
+                { "set_id": second_set, "id": "1", "info": "" }
+            ]);
+            let result = map_badges(Some(&badges));
+            assert_eq!(result, expected, "{label}");
+        }
     }
 
     #[test]
@@ -411,16 +426,6 @@ mod tests {
             let badges = serde_json::json!([{ "set_id": set_id, "id": "1", "info": info }]);
             assert_eq!(map_badges(Some(&badges)), vec![expected], "set_id={set_id}");
         }
-    }
-
-    #[test]
-    fn map_badges_skips_unknown_set_ids() {
-        let badges = serde_json::json!([
-            { "set_id": "totally-unknown-set-id", "id": "1", "info": "" },
-            { "set_id": "moderator", "id": "1", "info": "" }
-        ]);
-        let result = map_badges(Some(&badges));
-        assert_eq!(result, vec![UserBadge::Moderator]);
     }
 
     #[test]

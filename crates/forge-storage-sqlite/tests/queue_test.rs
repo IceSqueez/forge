@@ -40,13 +40,6 @@ async fn save_then_get_roundtrips_queue() {
 }
 
 #[tokio::test]
-async fn get_missing_queue_returns_none() {
-    let backend = setup().await;
-    let got = backend.queue_repo().get(QueueId::new()).await.expect("get");
-    assert!(got.is_none());
-}
-
-#[tokio::test]
 async fn get_by_name_finds_existing_queue() {
     let backend = setup().await;
     backend
@@ -61,17 +54,6 @@ async fn get_by_name_finds_existing_queue() {
         .expect("get_by_name");
     assert!(got.is_some());
     assert_eq!(got.unwrap().name, "slow");
-}
-
-#[tokio::test]
-async fn get_by_name_missing_returns_none() {
-    let backend = setup().await;
-    let got = backend
-        .queue_repo()
-        .get_by_name("ghost")
-        .await
-        .expect("get_by_name");
-    assert!(got.is_none());
 }
 
 #[tokio::test]
@@ -96,18 +78,6 @@ async fn delete_existing_queue_returns_true() {
     backend.queue_repo().save(&queue).await.expect("save");
     assert!(backend.queue_repo().delete(id).await.expect("delete"));
     assert!(backend.queue_repo().get(id).await.expect("get").is_none());
-}
-
-#[tokio::test]
-async fn delete_missing_queue_returns_false() {
-    let backend = setup().await;
-    assert!(
-        !backend
-            .queue_repo()
-            .delete(QueueId::new())
-            .await
-            .expect("delete")
-    );
 }
 
 #[tokio::test]

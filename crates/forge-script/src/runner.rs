@@ -521,35 +521,28 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn run_for_value_returns_the_scripts_value_as_a_variant() {
-        let value = session_for_value()
-            .await
-            .run_for_value(
-                "40 + 2".to_owned(),
-                ScriptContract::default(),
-                ArgStack::new(),
-            )
-            .await
-            .unwrap()
-            .unwrap();
+    async fn run_for_value_returns_the_scripts_value_when_it_has_one() {
+        for (label, input, expected) in [
+            (
+                "run_for_value_returns_the_scripts_value_as_a_variant",
+                "40 + 2",
+                Some(Variant::Int(42)),
+            ),
+            (
+                "run_for_value_returns_none_for_a_script_without_a_value",
+                "let ignored = 1;",
+                None,
+            ),
+        ] {
+            let value = session_for_value()
+                .await
+                .run_for_value(input.to_owned(), ScriptContract::default(), ArgStack::new())
+                .await
+                .unwrap()
+                .unwrap();
 
-        assert_eq!(value, Some(Variant::Int(42)));
-    }
-
-    #[tokio::test]
-    async fn run_for_value_returns_none_for_a_script_without_a_value() {
-        let value = session_for_value()
-            .await
-            .run_for_value(
-                "let ignored = 1;".to_owned(),
-                ScriptContract::default(),
-                ArgStack::new(),
-            )
-            .await
-            .unwrap()
-            .unwrap();
-
-        assert_eq!(value, None);
+            assert_eq!(value, expected, "{label}");
+        }
     }
 
     #[tokio::test]

@@ -66,16 +66,6 @@ mod tests {
     }
 
     #[test]
-    fn event_filter_targets_goal_end_topic_from_twitch() {
-        let filter = SPEC.event_filter();
-        assert_eq!(filter.source, Some(EventSource::Twitch));
-        assert_eq!(
-            filter.kind_prefix.as_deref(),
-            Some("twitch.channel.goal.end")
-        );
-    }
-
-    #[test]
     fn build_arg_stack_maps_amounts_as_int_and_is_achieved_as_bool() {
         let stack = SPEC.build_arg_stack(&goal_end_event(true));
         assert_eq!(

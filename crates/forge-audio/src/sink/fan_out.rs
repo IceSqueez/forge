@@ -1,41 +1,13 @@
-use forge_types::RecoverMutex;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use async_trait::async_trait;
 
 use crate::error::AudioError;
-use crate::handle::{ControlledPlayback, PlaybackHandle};
 use crate::sink::AudioSink;
+use crate::sink::playback::{ControlledPlayback, PlaybackHandle};
 use forge_speech_types::PcmBuffer;
 
 const ROUTE_REASON_SEPARATOR: &str = "; ";
-
-pub(crate) async fn fan_out_stoppable(
-    buffer: PcmBuffer,
-    sinks: &[Arc<dyn AudioSink>],
-) -> (PlaybackHandle, Vec<Result<(), AudioError>>) {
-    let futures: Vec<_> = sinks
-        .iter()
-        .map(|sink| {
-            let sink = Arc::clone(sink);
-            let buf = buffer.clone();
-            async move { sink.play_stoppable(buf).await }
-        })
-        .collect();
-
-    let mut handles = Vec::new();
-    let mut outcomes = Vec::with_capacity(sinks.len());
-    for result in futures::future::join_all(futures).await {
-        match result {
-            Ok(handle) => {
-                handles.push(handle);
-                outcomes.push(Ok(()));
-            }
-            Err(e) => outcomes.push(Err(e)),
-        }
-    }
-    (PlaybackHandle::merge(handles), outcomes)
-}
 
 pub struct FanOutSink {
     sinks: Vec<Arc<dyn AudioSink>>,
@@ -49,46 +21,18 @@ impl FanOutSink {
 
 #[async_trait]
 impl AudioSink for FanOutSink {
-    async fn play(&self, buffer: PcmBuffer) -> Result<(), AudioError> {
+    async fn start(&self, buffer: PcmBuffer) -> Result<ControlledPlayback, AudioError> {
         let futures: Vec<_> = self
             .sinks
             .iter()
             .map(|sink| {
                 let sink = Arc::clone(sink);
                 let buf = buffer.clone();
-                async move { sink.play(buf).await }
-            })
-            .collect();
-        settle(futures::future::join_all(futures).await)
-    }
-
-    async fn play_stoppable(&self, buffer: PcmBuffer) -> Result<PlaybackHandle, AudioError> {
-        let (handle, outcomes) = fan_out_stoppable(buffer, &self.sinks).await;
-        settle(outcomes)?;
-        Ok(handle)
-    }
-
-    async fn play_controlled(&self, buffer: PcmBuffer) -> Result<ControlledPlayback, AudioError> {
-        let start_guard = StopStartedIfAbandoned::default();
-        let futures: Vec<_> = self
-            .sinks
-            .iter()
-            .map(|sink| {
-                let sink = Arc::clone(sink);
-                let buf = buffer.clone();
-                let started = Arc::clone(&start_guard.started);
-                async move {
-                    let playback = sink.play_controlled(buf).await;
-                    if let Ok(playback) = &playback {
-                        lock_started(&started).push(playback.handle());
-                    }
-                    playback
-                }
+                async move { sink.start(buf).await }
             })
             .collect();
 
         let starts = futures::future::join_all(futures).await;
-        start_guard.disarm();
         let routes: Vec<RouteStart> = starts
             .into_iter()
             .map(|result| match result {
@@ -128,37 +72,8 @@ impl AudioSink for FanOutSink {
                 ))
             }
         };
-        Ok(ControlledPlayback::merged(handle, Box::pin(completion)))
+        Ok(ControlledPlayback::merged(handle, completion))
     }
-}
-
-#[derive(Default)]
-struct StopStartedIfAbandoned {
-    started: Arc<Mutex<Vec<PlaybackHandle>>>,
-    disarmed: bool,
-}
-
-impl StopStartedIfAbandoned {
-    fn disarm(mut self) {
-        self.disarmed = true;
-    }
-}
-
-impl Drop for StopStartedIfAbandoned {
-    fn drop(&mut self) {
-        if self.disarmed {
-            return;
-        }
-        for handle in lock_started(&self.started).iter() {
-            handle.stop();
-        }
-    }
-}
-
-fn lock_started(
-    started: &Mutex<Vec<PlaybackHandle>>,
-) -> std::sync::MutexGuard<'_, Vec<PlaybackHandle>> {
-    started.lock_recover()
 }
 
 enum RouteStart {
@@ -211,28 +126,6 @@ impl RouteStart {
     }
 }
 
-fn settle(outcomes: Vec<Result<(), AudioError>>) -> Result<(), AudioError> {
-    if outcomes.is_empty() {
-        return Err(AudioError::NoRoute);
-    }
-
-    let mut played = false;
-    let mut reasons = Vec::new();
-    for outcome in outcomes {
-        match outcome {
-            Ok(()) => played = true,
-            Err(e) => reasons.push(e),
-        }
-    }
-
-    if played {
-        warn_failed_routes(&reasons);
-        Ok(())
-    } else {
-        Err(route_failure(reasons))
-    }
-}
-
 fn warn_failed_routes<'a>(reasons: impl IntoIterator<Item = &'a AudioError>) {
     for reason in reasons {
         tracing::warn!(error = %reason, "audio route failed; playback continues on the surviving routes");
@@ -254,7 +147,7 @@ mod tests {
     use std::sync::Mutex;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
-    use crate::handle::PlaybackControl;
+    use crate::sink::playback::PlaybackControl;
 
     use futures::poll;
     use tokio::sync::oneshot;
@@ -281,24 +174,11 @@ mod tests {
 
     #[async_trait]
     impl AudioSink for MockRoute {
-        async fn play(&self, buffer: PcmBuffer) -> Result<(), AudioError> {
+        async fn start(&self, buffer: PcmBuffer) -> Result<ControlledPlayback, AudioError> {
             self.received.lock().unwrap().push(buffer);
-            match &self.start_refusal {
-                Some(reason) => Err(AudioError::Host(reason.clone())),
-                None => Ok(()),
+            if let Some(reason) = &self.start_refusal {
+                return Err(AudioError::Host(reason.clone()));
             }
-        }
-
-        async fn play_stoppable(&self, buffer: PcmBuffer) -> Result<PlaybackHandle, AudioError> {
-            self.play(buffer).await?;
-            Ok(PlaybackHandle::from_control(Arc::clone(&self.control)))
-        }
-
-        async fn play_controlled(
-            &self,
-            buffer: PcmBuffer,
-        ) -> Result<ControlledPlayback, AudioError> {
-            let handle = self.play_stoppable(buffer).await?;
             let finish = self.finish.lock().unwrap().take().unwrap();
             let completions = Arc::clone(&self.completions);
             let completion = async move {
@@ -308,7 +188,10 @@ mod tests {
                 completions.fetch_add(1, Ordering::Relaxed);
                 outcome.map_err(AudioError::Host)
             };
-            Ok(ControlledPlayback::merged(handle, Box::pin(completion)))
+            Ok(ControlledPlayback::new(
+                Arc::clone(&self.control),
+                completion,
+            ))
         }
     }
 
@@ -390,8 +273,7 @@ mod tests {
         let empty = FanOutSink::new(Vec::new());
         for outcome in [
             empty.play(clip()).await,
-            empty.play_stoppable(clip()).await.map(|_| ()),
-            empty.play_controlled(clip()).await.map(|_| ()),
+            empty.start(clip()).await.map(|_| ()),
         ] {
             assert!(
                 matches!(&outcome, Err(AudioError::NoRoute)),
@@ -420,7 +302,7 @@ mod tests {
             ),
         ] {
             let probes: Vec<Probe> = refusals.iter().map(|r| route(*r)).collect();
-            let outcome = fan(&probes).play(clip()).await;
+            let outcome = fan(&probes).start(clip()).await.map(|_| ());
             let expected: Vec<&str> = refusals.iter().flatten().copied().collect();
 
             if expected.len() < refusals.len() {
@@ -444,13 +326,13 @@ mod tests {
             ),
         ] {
             let probes: Vec<Probe> = refusals.iter().map(|r| route(*r)).collect();
-            let handle = fan(&probes).play_stoppable(clip()).await;
+            let playback = fan(&probes).start(clip()).await;
             assert!(
-                handle.is_ok(),
+                playback.is_ok(),
                 "{case}: one surviving route must keep the clip playing"
             );
 
-            handle.unwrap().stop();
+            playback.unwrap().stop();
             for (probe, refusal) in probes.iter().zip(refusals) {
                 assert_eq!(
                     probe.stopped(),
@@ -464,11 +346,7 @@ mod tests {
     #[tokio::test]
     async fn a_controlled_fan_out_fails_with_every_reason_when_no_route_starts() {
         let probes = [route(Some(START_REFUSAL_A)), route(Some(START_REFUSAL_B))];
-        let err = fan(&probes)
-            .play_controlled(clip())
-            .await
-            .map(|_| ())
-            .unwrap_err();
+        let err = fan(&probes).start(clip()).await.map(|_| ()).unwrap_err();
         assert!(
             matches!(&err, AudioError::AllRoutesFailed(_)),
             "no route started yet the fan-out reported {err:?}"
@@ -484,7 +362,7 @@ mod tests {
     #[tokio::test]
     async fn a_controlled_fan_out_completes_only_once_every_started_route_has() {
         let mut probes = [route(None), route(None)];
-        let playback = fan(&probes).play_controlled(clip()).await.unwrap();
+        let playback = fan(&probes).start(clip()).await.unwrap();
         let mut playback = pin!(playback);
 
         assert!(
@@ -526,7 +404,7 @@ mod tests {
             ),
         ] {
             let mut probes = [route(None), route(None)];
-            let playback = fan(&probes).play_controlled(clip()).await.unwrap();
+            let playback = fan(&probes).start(clip()).await.unwrap();
             let mut playback = pin!(playback);
 
             assert!(
@@ -581,7 +459,7 @@ mod tests {
         ] {
             let mut probes: Vec<Probe> = plan.iter().map(|(refusal, _)| route(*refusal)).collect();
             let playback = fan(&probes)
-                .play_controlled(clip())
+                .start(clip())
                 .await
                 .unwrap_or_else(|e| panic!("{case}: a surviving route must start, got {e:?}"));
             let playback = pin!(playback);
@@ -624,7 +502,7 @@ mod tests {
     #[tokio::test]
     async fn control_reaches_every_started_route_including_one_that_already_finished() {
         let mut probes = [route(Some(START_REFUSAL_A)), route(None), route(None)];
-        let playback = fan(&probes).play_controlled(clip()).await.unwrap();
+        let playback = fan(&probes).start(clip()).await.unwrap();
         let mut playback = pin!(playback);
 
         assert!(
@@ -660,7 +538,7 @@ mod tests {
     #[tokio::test]
     async fn dropping_a_merged_playback_leaves_no_route_reporting_late() {
         let mut probes = [route(None), route(None)];
-        let playback = fan(&probes).play_controlled(clip()).await.unwrap();
+        let playback = fan(&probes).start(clip()).await.unwrap();
         drop(playback);
 
         for probe in probes.iter_mut() {
@@ -682,7 +560,7 @@ mod tests {
     #[tokio::test]
     async fn every_route_receives_the_clip_untouched_at_its_native_rate() {
         let probes = [route(None), route(None)];
-        assert!(fan(&probes).play(clip()).await.is_ok());
+        assert!(fan(&probes).start(clip()).await.is_ok());
         for probe in &probes {
             assert_eq!(
                 probe.received(),
@@ -696,14 +574,7 @@ mod tests {
 
     #[async_trait]
     impl AudioSink for NeverStarts {
-        async fn play(&self, _buffer: PcmBuffer) -> Result<(), AudioError> {
-            std::future::pending().await
-        }
-
-        async fn play_controlled(
-            &self,
-            _buffer: PcmBuffer,
-        ) -> Result<ControlledPlayback, AudioError> {
+        async fn start(&self, _buffer: PcmBuffer) -> Result<ControlledPlayback, AudioError> {
             std::future::pending().await
         }
     }
@@ -714,11 +585,8 @@ mod tests {
         let started: Arc<dyn AudioSink> = probe.sink();
         let fan_out = FanOutSink::new(vec![started, Arc::new(NeverStarts)]);
 
-        let abandoned = tokio::time::timeout(
-            std::time::Duration::from_secs(5),
-            fan_out.play_controlled(clip()),
-        )
-        .await;
+        let abandoned =
+            tokio::time::timeout(std::time::Duration::from_secs(5), fan_out.start(clip())).await;
 
         assert!(
             abandoned.is_err(),

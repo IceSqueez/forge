@@ -6,13 +6,13 @@ use async_trait::async_trait;
 use tokio::time::Instant;
 
 use crate::error::AudioError;
-use crate::handle::{ControlSnapshot, ControlledPlayback, PlaybackControl, PlaybackHandle};
+use crate::pcm::wave::encode_wave;
 use crate::remote::{
     ClipMediaType, PlaybackCorrelation, RemoteAudioDestination, RemoteClip, RemoteCommand,
     RemoteDelivery, RemoteDestinationId, RemoteFailure, RemoteVerdict,
 };
 use crate::sink::AudioSink;
-use crate::wave::encode_wave;
+use crate::sink::playback::{ControlSnapshot, ControlledPlayback, PlaybackControl};
 use forge_speech_types::PcmBuffer;
 use forge_types::RemoteClipId;
 
@@ -39,7 +39,7 @@ impl RemoteSink {
         }
     }
 
-    pub fn correlated(self, correlation: PlaybackCorrelation) -> Self {
+    pub(crate) fn correlated(self, correlation: PlaybackCorrelation) -> Self {
         Self {
             correlation: Some(correlation),
             ..self
@@ -49,27 +49,7 @@ impl RemoteSink {
 
 #[async_trait]
 impl AudioSink for RemoteSink {
-    async fn play(&self, buffer: PcmBuffer) -> Result<(), AudioError> {
-        self.play_stoppable(buffer).await.map(|_| ())
-    }
-
-    async fn play_stoppable(&self, buffer: PcmBuffer) -> Result<PlaybackHandle, AudioError> {
-        let playback = self.play_controlled(buffer).await?;
-        let handle = playback.handle();
-        let destination_id = self.destination_id.clone();
-        tokio::spawn(async move {
-            if let Err(e) = playback.await {
-                tracing::warn!(
-                    destination = %destination_id,
-                    error = %e,
-                    "remote audio clip did not play"
-                );
-            }
-        });
-        Ok(handle)
-    }
-
-    async fn play_controlled(&self, buffer: PcmBuffer) -> Result<ControlledPlayback, AudioError> {
+    async fn start(&self, buffer: PcmBuffer) -> Result<ControlledPlayback, AudioError> {
         let duration_ms = buffer.duration_ms();
         let clip = RemoteClip {
             bytes: encode_wave(&buffer),
@@ -103,7 +83,7 @@ impl AudioSink for RemoteSink {
         }
 
         let controls = Controls::new();
-        let handle = PlaybackHandle::from_control(Arc::clone(&controls.control));
+        let control = Arc::clone(&controls.control);
         let budget = watchdog_budget(duration_ms);
         let clip = LiveClip {
             destination: Arc::clone(&self.destination),
@@ -122,7 +102,7 @@ impl AudioSink for RemoteSink {
             budget,
             live_players,
         );
-        Ok(ControlledPlayback::merged(handle, Box::pin(completion)))
+        Ok(ControlledPlayback::new(control, completion))
     }
 }
 
@@ -396,7 +376,7 @@ mod tests {
     use tokio::sync::{Notify, mpsc};
 
     use super::*;
-    use crate::wave::tests::parse_header;
+    use crate::pcm::wave::tests::parse_header;
 
     const DESTINATION: &str = "audio-overlay";
     const CLIP: &str = "clip-cap-3Kd8QmPr";
@@ -515,7 +495,7 @@ mod tests {
     }
 
     async fn finish(sink: RemoteSink, buffer: PcmBuffer) -> Result<(), AudioError> {
-        sink.play_controlled(buffer).await?.await
+        sink.start(buffer).await?.await
     }
 
     async fn next_pushed(rx: &mut mpsc::UnboundedReceiver<RemoteCommand>) -> Option<RemoteCommand> {
@@ -526,7 +506,7 @@ mod tests {
     async fn a_route_with_no_live_page_fails_at_send_time_without_waiting_for_a_verdict() {
         let (page, _rx) = FakePage::new(0, Report::Never);
 
-        let refusal = sink(&page).play_controlled(clip_of(20)).await.err();
+        let refusal = sink(&page).start(clip_of(20)).await.err();
 
         assert!(
             matches!(
@@ -663,7 +643,7 @@ mod tests {
                 reason: RemoteFailure::PageRefused(PAGE_REFUSAL.to_owned()),
             }),
         );
-        let playback = sink(&page).play_controlled(clip_of(4_000)).await.unwrap();
+        let playback = sink(&page).start(clip_of(4_000)).await.unwrap();
 
         playback.stop();
         let started = tokio::time::Instant::now();
@@ -689,7 +669,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn pausing_and_resuming_reach_the_page_as_an_ordered_pair() {
         let (page, mut rx) = FakePage::new(1, Report::Never);
-        let playback = sink(&page).play_controlled(clip_of(4_000)).await.unwrap();
+        let playback = sink(&page).start(clip_of(4_000)).await.unwrap();
 
         playback.pause();
         let held = next_pushed(&mut rx).await;
@@ -711,7 +691,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn the_control_observer_retires_with_the_clip_so_a_late_stop_reaches_nobody() {
         let (page, mut rx) = FakePage::new(1, Report::Now(RemoteVerdict::Played));
-        let playback = sink(&page).play_controlled(clip_of(4_000)).await.unwrap();
+        let playback = sink(&page).start(clip_of(4_000)).await.unwrap();
         let handle = playback.handle();
 
         assert!(playback.await.is_ok());
@@ -776,13 +756,13 @@ mod tests {
             }),
         );
 
-        let handle = sink(&page).play_stoppable(clip_of(4_000)).await.unwrap();
-        handle.stop();
+        let playback = sink(&page).start(clip_of(4_000)).await.unwrap();
+        playback.handle().stop();
 
         assert_eq!(
             next_pushed(&mut rx).await,
             Some(RemoteCommand::Stop),
-            "a clip started without a completion future must still be stoppable"
+            "a clip must stop through a handle taken from its playback"
         );
     }
 
@@ -810,7 +790,7 @@ mod tests {
             ("stopped and dropped in the same step", true, true),
         ] {
             let (page, mut rx) = FakePage::new(1, Report::Never);
-            let mut playback = sink(&page).play_controlled(clip_of(4_000)).await.unwrap();
+            let mut playback = sink(&page).start(clip_of(4_000)).await.unwrap();
             if poll_first {
                 let parked = tokio::time::timeout(TIMING_TOLERANCE / 2, &mut playback).await;
                 assert!(parked.is_err(), "{case}: the clip settled on its own");
@@ -828,11 +808,11 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn dropping_a_fan_out_playback_stops_its_remote_leg_exactly_once() {
         let (page, mut rx) = FakePage::new(1, Report::Never);
-        let fan_out = crate::fan_out::FanOutSink::new(vec![
+        let fan_out = crate::sink::fan_out::FanOutSink::new(vec![
             Arc::new(sink(&page)) as Arc<dyn AudioSink>,
             Arc::new(crate::sink::NullSink),
         ]);
-        let playback = fan_out.play_controlled(clip_of(4_000)).await.unwrap();
+        let playback = fan_out.start(clip_of(4_000)).await.unwrap();
 
         drop(playback);
 
@@ -847,7 +827,7 @@ mod tests {
                 reason: RemoteFailure::PageRefused(PAGE_REFUSAL.to_owned()),
             }),
         );
-        let playback = sink(&page).play_controlled(clip_of(20)).await.unwrap();
+        let playback = sink(&page).start(clip_of(20)).await.unwrap();
         let handle = playback.handle();
         handle.pause();
         let settling = tokio::spawn(playback);
@@ -866,7 +846,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn a_resume_after_a_pause_longer_than_the_watchdog_budget_still_reaches_the_page() {
         let (page, mut rx) = FakePage::new(1, Report::Never);
-        let playback = sink(&page).play_controlled(clip_of(20)).await.unwrap();
+        let playback = sink(&page).start(clip_of(20)).await.unwrap();
 
         playback.pause();
         assert_eq!(next_pushed(&mut rx).await, Some(RemoteCommand::Pause));
@@ -883,7 +863,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn a_clip_held_forever_still_settles_at_the_wall_clock_ceiling() {
         let (page, _rx) = FakePage::new(1, Report::Never);
-        let playback = sink(&page).play_controlled(clip_of(20)).await.unwrap();
+        let playback = sink(&page).start(clip_of(20)).await.unwrap();
         playback.pause();
         let started = tokio::time::Instant::now();
 

@@ -14,8 +14,8 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use forge_audio::{
-    AudioError, AudioSink, ControlledPlayback, RemoteAudioDestination, RemoteClip, RemoteCommand,
-    RemoteDelivery, RemoteDestinationId, RemoteSink, RemoteVerdict,
+    AudioError, AudioSink, ControlledPlayback, PlaybackControl, RemoteAudioDestination, RemoteClip,
+    RemoteCommand, RemoteDelivery, RemoteDestinationId, RemoteSink, RemoteVerdict,
 };
 use forge_speak_queue::{
     Priority, QueueConfig, RequestId, SpeakCommand, SpeakEvent, SpeakEventStream, SpeakQueueHandle,
@@ -64,11 +64,7 @@ impl ScriptedSink {
 
 #[async_trait]
 impl AudioSink for ScriptedSink {
-    async fn play(&self, _buffer: PcmBuffer) -> Result<(), AudioError> {
-        Ok(())
-    }
-
-    async fn play_controlled(&self, _buffer: PcmBuffer) -> Result<ControlledPlayback, AudioError> {
+    async fn start(&self, _buffer: PcmBuffer) -> Result<ControlledPlayback, AudioError> {
         let call = self.calls.fetch_add(1, Ordering::SeqCst);
         let live_now = self.live.fetch_add(1, Ordering::SeqCst) + 1;
         self.peak.fetch_max(live_now, Ordering::SeqCst);
@@ -82,11 +78,14 @@ impl AudioSink for ScriptedSink {
             Start::Panics => panic!("the device driver blew up"),
         }
         let live = Arc::clone(&self.live);
-        Ok(ControlledPlayback::from_future(async move {
-            finish.await.unwrap();
-            live.fetch_sub(1, Ordering::SeqCst);
-            Ok(())
-        }))
+        Ok(ControlledPlayback::new(
+            PlaybackControl::new(),
+            async move {
+                finish.await.unwrap();
+                live.fetch_sub(1, Ordering::SeqCst);
+                Ok(())
+            },
+        ))
     }
 }
 

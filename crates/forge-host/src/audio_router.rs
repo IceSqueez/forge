@@ -386,9 +386,10 @@ mod tests {
 
         async fn next_line_reaches(&mut self) -> Option<String> {
             let before = self.local.calls();
-            self.router
+            let _line = self
+                .router
                 .speech_sink()
-                .play_stoppable(tone())
+                .start(tone())
                 .await
                 .expect("the installed speech route accepts a line");
             if self.local.calls() > before {

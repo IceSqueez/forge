@@ -17,7 +17,7 @@ pub(crate) struct ControlSnapshot {
 }
 
 #[derive(Default)]
-pub(crate) struct PlaybackControl {
+pub struct PlaybackControl {
     stop: AtomicBool,
     pause: AtomicBool,
     finish: AtomicBool,
@@ -26,7 +26,7 @@ pub(crate) struct PlaybackControl {
 }
 
 impl PlaybackControl {
-    pub(crate) fn new() -> Arc<Self> {
+    pub fn new() -> Arc<Self> {
         Arc::new(Self::default())
     }
 
@@ -95,7 +95,7 @@ impl PlaybackControl {
     }
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct PlaybackHandle {
     controls: Arc<[Arc<PlaybackControl>]>,
 }
@@ -123,77 +123,53 @@ impl PlaybackHandle {
         }
     }
 
-    pub fn pause(&self) {
+    pub(crate) fn pause(&self) {
         for control in self.controls.iter() {
             control.pause();
         }
     }
 
-    pub fn resume(&self) {
+    pub(crate) fn resume(&self) {
         for control in self.controls.iter() {
             control.resume();
         }
     }
-
-    pub async fn finished(&self) {
-        for control in self.controls.iter() {
-            loop {
-                let seen = control.snapshot();
-                if seen.finished {
-                    break;
-                }
-                control.changed_from(seen).await;
-            }
-        }
-    }
 }
 
-enum Completion {
-    Ready,
-    Handle(tokio::task::JoinHandle<Result<(), AudioError>>),
-    Merged(Pin<Box<dyn Future<Output = Result<(), AudioError>> + Send>>),
-}
+type PlaybackCompletion = Pin<Box<dyn Future<Output = Result<(), AudioError>> + Send>>;
 
 pub struct ControlledPlayback {
     playback: PlaybackHandle,
-    completion: Completion,
+    completion: PlaybackCompletion,
+    settled: bool,
 }
 
 impl ControlledPlayback {
-    pub fn resolved(outcome: Result<(), AudioError>) -> Self {
-        Self::from_future(std::future::ready(outcome))
-    }
-
-    pub fn from_future(
+    pub fn new(
+        control: Arc<PlaybackControl>,
         completion: impl Future<Output = Result<(), AudioError>> + Send + 'static,
     ) -> Self {
-        Self::merged(PlaybackHandle::default(), Box::pin(completion))
+        Self::merged(PlaybackHandle::from_control(control), completion)
     }
 
-    pub(crate) fn completed() -> Self {
-        Self {
-            playback: PlaybackHandle::default(),
-            completion: Completion::Ready,
-        }
-    }
-
-    pub(crate) fn from_handle(
-        playback: PlaybackHandle,
-        completion: tokio::task::JoinHandle<Result<(), AudioError>>,
+    pub(crate) fn from_task(
+        control: Arc<PlaybackControl>,
+        task: tokio::task::JoinHandle<Result<(), AudioError>>,
     ) -> Self {
-        Self {
-            playback,
-            completion: Completion::Handle(completion),
-        }
+        Self::new(control, async move {
+            task.await
+                .map_err(|e| AudioError::JoinFailed(e.to_string()))?
+        })
     }
 
     pub(crate) fn merged(
         playback: PlaybackHandle,
-        completion: Pin<Box<dyn Future<Output = Result<(), AudioError>> + Send>>,
+        completion: impl Future<Output = Result<(), AudioError>> + Send + 'static,
     ) -> Self {
         Self {
             playback,
-            completion: Completion::Merged(completion),
+            completion: Box::pin(completion),
+            settled: false,
         }
     }
 
@@ -219,13 +195,16 @@ impl Future for ControlledPlayback {
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.get_mut();
-        match &mut this.completion {
-            Completion::Ready => Poll::Ready(Ok(())),
-            Completion::Handle(handle) => Pin::new(handle).poll(cx).map(|res| {
-                res.map_err(|e| AudioError::JoinFailed(e.to_string()))
-                    .and_then(|played| played)
-            }),
-            Completion::Merged(future) => future.as_mut().poll(cx),
+        let outcome = this.completion.as_mut().poll(cx);
+        this.settled = outcome.is_ready();
+        outcome
+    }
+}
+
+impl Drop for ControlledPlayback {
+    fn drop(&mut self) {
+        if !self.settled {
+            self.playback.stop();
         }
     }
 }
@@ -238,8 +217,8 @@ mod tests {
 
     #[tokio::test]
     async fn a_controlled_playback_carries_the_verdict_its_device_task_returned() {
-        let played = ControlledPlayback::from_handle(
-            PlaybackHandle::default(),
+        let played = ControlledPlayback::from_task(
+            PlaybackControl::new(),
             tokio::spawn(async { Ok::<(), AudioError>(()) }),
         );
         assert!(
@@ -247,8 +226,8 @@ mod tests {
             "a device that played the clip to the end must finish the utterance"
         );
 
-        let refused = ControlledPlayback::from_handle(
-            PlaybackHandle::default(),
+        let refused = ControlledPlayback::from_task(
+            PlaybackControl::new(),
             tokio::spawn(async { Err(AudioError::Host(DEVICE_REFUSAL.to_owned())) }),
         );
         let outcome = refused.await;

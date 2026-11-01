@@ -497,6 +497,7 @@ mod tests {
     use super::*;
     use forge_audio::AudioSinkFactory;
     use forge_audio::ControlledPlayback;
+    use forge_audio::PlaybackControl;
     use std::time::Duration;
 
     fn no_managed_media(imports: Arc<std::sync::atomic::AtomicUsize>) -> MockMediaRepo {
@@ -534,10 +535,13 @@ mod tests {
 
     #[async_trait]
     impl AudioSink for CountingSink {
-        async fn play(&self, buffer: PcmBuffer) -> Result<(), AudioError> {
+        async fn start(&self, buffer: PcmBuffer) -> Result<ControlledPlayback, AudioError> {
             *self.count.lock().unwrap() += 1;
             *self.last_buf.lock().unwrap() = Some(buffer);
-            Ok(())
+            Ok(ControlledPlayback::new(
+                PlaybackControl::new(),
+                std::future::ready(Ok(())),
+            ))
         }
     }
 
@@ -1041,9 +1045,12 @@ mod tests {
 
     #[async_trait]
     impl AudioSink for LoggingSink {
-        async fn play(&self, _buffer: PcmBuffer) -> Result<(), AudioError> {
+        async fn start(&self, _buffer: PcmBuffer) -> Result<ControlledPlayback, AudioError> {
             self.log.0.lock().unwrap().push(self.label.clone());
-            Ok(())
+            Ok(ControlledPlayback::new(
+                PlaybackControl::new(),
+                std::future::ready(Ok(())),
+            ))
         }
     }
 
@@ -1284,7 +1291,7 @@ mod tests {
 
     #[async_trait]
     impl AudioSink for RefusingDevice {
-        async fn play(&self, _buffer: PcmBuffer) -> Result<(), AudioError> {
+        async fn start(&self, _buffer: PcmBuffer) -> Result<ControlledPlayback, AudioError> {
             Err(AudioError::Host(
                 "device 'usb-headset' not found".to_owned(),
             ))
@@ -1524,7 +1531,7 @@ mod tests {
                     active: ActiveRegistry::default(),
                     event_sink: Arc::new(event_sink),
                 },
-                ControlledPlayback::from_future(std::future::pending()),
+                ControlledPlayback::new(PlaybackControl::new(), std::future::pending()),
                 FAR_LONGER_THAN_THE_HANG_GUARD_MS,
             ));
             if watcher_parks_first {
@@ -1591,20 +1598,16 @@ mod tests {
 
     #[async_trait]
     impl AudioSink for UnpluggableDevice {
-        async fn play(&self, _buffer: PcmBuffer) -> Result<(), AudioError> {
-            Ok(())
-        }
-
-        async fn play_controlled(
-            &self,
-            _buffer: PcmBuffer,
-        ) -> Result<ControlledPlayback, AudioError> {
+        async fn start(&self, _buffer: PcmBuffer) -> Result<ControlledPlayback, AudioError> {
             self.opened.fetch_add(1, Ordering::SeqCst);
             let unplug = Arc::clone(&self.unplug);
-            Ok(ControlledPlayback::from_future(async move {
-                unplug.notified().await;
-                Err(AudioError::DeviceLost(UNPLUGGED.to_owned()))
-            }))
+            Ok(ControlledPlayback::new(
+                PlaybackControl::new(),
+                async move {
+                    unplug.notified().await;
+                    Err(AudioError::DeviceLost(UNPLUGGED.to_owned()))
+                },
+            ))
         }
     }
 
@@ -1645,9 +1648,12 @@ mod tests {
 
     #[async_trait]
     impl AudioSink for OpenCountingDevice {
-        async fn play(&self, _buffer: PcmBuffer) -> Result<(), AudioError> {
+        async fn start(&self, _buffer: PcmBuffer) -> Result<ControlledPlayback, AudioError> {
             self.0.fetch_add(1, Ordering::SeqCst);
-            Ok(())
+            Ok(ControlledPlayback::new(
+                PlaybackControl::new(),
+                std::future::ready(Ok(())),
+            ))
         }
     }
 

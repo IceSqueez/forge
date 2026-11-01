@@ -3,10 +3,10 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_types::{OutputDevice, Shared};
 
+use crate::device::sink_factory::AudioSinkFactory;
 use crate::error::AudioError;
-use crate::handle::{ControlledPlayback, PlaybackHandle};
 use crate::sink::AudioSink;
-use crate::sink_factory::{AudioSinkFactory, CpalSinkFactory};
+use crate::sink::playback::ControlledPlayback;
 use forge_speech_types::PcmBuffer;
 
 pub fn stored_output_device(stored_id: Option<String>) -> OutputDevice {
@@ -36,10 +36,6 @@ pub struct DeviceSink {
 }
 
 impl DeviceSink {
-    pub fn new(device: OutputDeviceHandle) -> Self {
-        Self::with_factory(device, Arc::new(CpalSinkFactory))
-    }
-
     pub fn with_factory(device: OutputDeviceHandle, factory: Arc<dyn AudioSinkFactory>) -> Self {
         Self { device, factory }
     }
@@ -56,16 +52,8 @@ impl DeviceSink {
 
 #[async_trait]
 impl AudioSink for DeviceSink {
-    async fn play(&self, buffer: PcmBuffer) -> Result<(), AudioError> {
-        self.current().await?.play(buffer).await
-    }
-
-    async fn play_stoppable(&self, buffer: PcmBuffer) -> Result<PlaybackHandle, AudioError> {
-        self.current().await?.play_stoppable(buffer).await
-    }
-
-    async fn play_controlled(&self, buffer: PcmBuffer) -> Result<ControlledPlayback, AudioError> {
-        self.current().await?.play_controlled(buffer).await
+    async fn start(&self, buffer: PcmBuffer) -> Result<ControlledPlayback, AudioError> {
+        self.current().await?.start(buffer).await
     }
 }
 
@@ -77,8 +65,9 @@ mod tests {
 
     use tokio::sync::Notify;
 
-    use crate::device::{DeviceId, DeviceInfo};
-    use crate::route::resolve_device;
+    use crate::device::catalog::{DeviceId, DeviceInfo};
+    use crate::device::resolve::resolve_device;
+    use crate::sink::playback::PlaybackControl;
 
     const DEFAULT_ID: &str = "default";
     const HEADSET_ID: &str = "hw:1";
@@ -143,24 +132,20 @@ mod tests {
 
     #[async_trait]
     impl AudioSink for RecordingSink {
-        async fn play(&self, _buffer: PcmBuffer) -> Result<(), AudioError> {
-            Ok(())
-        }
-
-        async fn play_controlled(
-            &self,
-            _buffer: PcmBuffer,
-        ) -> Result<ControlledPlayback, AudioError> {
+        async fn start(&self, _buffer: PcmBuffer) -> Result<ControlledPlayback, AudioError> {
             let device = self.device.clone();
             let finished = Arc::clone(&self.finished);
             let gate = self.gate.clone();
-            Ok(ControlledPlayback::from_future(async move {
-                if let Some(gate) = gate {
-                    gate.notified().await;
-                }
-                finished.lock().unwrap().push(device);
-                Ok(())
-            }))
+            Ok(ControlledPlayback::new(
+                PlaybackControl::new(),
+                async move {
+                    if let Some(gate) = gate {
+                        gate.notified().await;
+                    }
+                    finished.lock().unwrap().push(device);
+                    Ok(())
+                },
+            ))
         }
     }
 
@@ -181,10 +166,10 @@ mod tests {
             Arc::clone(&factory) as Arc<dyn AudioSinkFactory>,
         );
 
-        sink.play(clip()).await.unwrap();
-        sink.play(clip()).await.unwrap();
+        sink.start(clip()).await.unwrap();
+        sink.start(clip()).await.unwrap();
         sink.device_handle().swap(headset());
-        sink.play(clip()).await.unwrap();
+        sink.start(clip()).await.unwrap();
 
         assert_eq!(
             factory.built(),
@@ -201,7 +186,7 @@ mod tests {
             Arc::clone(&factory) as Arc<dyn AudioSinkFactory>,
         );
 
-        let running = sink.play_controlled(clip()).await.unwrap();
+        let running = sink.start(clip()).await.unwrap();
         sink.device_handle().swap(headset());
         gate.notify_one();
         running.await.unwrap();
@@ -212,7 +197,7 @@ mod tests {
             "a swap mid-clip must not move the clip that is already playing"
         );
 
-        let next = sink.play_controlled(clip()).await.unwrap();
+        let next = sink.start(clip()).await.unwrap();
         gate.notify_one();
         next.await.unwrap();
 
@@ -238,14 +223,7 @@ mod tests {
         };
 
         refused(sink.play(clip()).await, "play");
-        refused(
-            sink.play_stoppable(clip()).await.map(|_| ()),
-            "play_stoppable",
-        );
-        refused(
-            sink.play_controlled(clip()).await.map(|_| ()),
-            "play_controlled",
-        );
+        refused(sink.start(clip()).await.map(|_| ()), "start");
     }
 
     fn enumerated_devices() -> Vec<DeviceInfo> {

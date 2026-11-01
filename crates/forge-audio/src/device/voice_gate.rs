@@ -1,10 +1,13 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use std::thread::Thread;
 use std::time::{Duration, Instant};
 
 use tokio::sync::watch;
 
-use crate::device::DeviceId;
+use crate::device::catalog::DeviceId;
+use crate::device::gate_machine::{GateEdge, GateMachine, GateSettings};
+use crate::device::samples::peak;
 use crate::error::AudioError;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -37,7 +40,7 @@ pub enum VoiceGateState {
 
 enum GateControl {
     SetDevice(Option<DeviceId>),
-    StreamFailed,
+    StreamFailed(String),
     Stop,
 }
 
@@ -47,10 +50,35 @@ struct GateShared {
     level_bits: AtomicU32,
     threshold_bits: AtomicU32,
     hold_nanos: AtomicU64,
+    gate_open: AtomicBool,
+    hiccups: AtomicU64,
+}
+
+impl GateShared {
+    fn settings(&self) -> GateSettings {
+        GateSettings {
+            threshold: f32::from_bits(self.threshold_bits.load(Ordering::Relaxed)),
+            hold_nanos: self.hold_nanos.load(Ordering::Relaxed),
+        }
+    }
+}
+
+#[derive(Clone)]
+struct MonitorMailbox {
+    controls: crossbeam_channel::Sender<GateControl>,
+    monitor: Thread,
+}
+
+impl MonitorMailbox {
+    fn post(&self, control: GateControl) -> bool {
+        let delivered = self.controls.send(control).is_ok();
+        self.monitor.unpark();
+        delivered
+    }
 }
 
 pub struct VoiceGateMonitor {
-    control_tx: crossbeam_channel::Sender<GateControl>,
+    mailbox: MonitorMailbox,
     state_rx: watch::Receiver<VoiceGateState>,
     shared: Arc<GateShared>,
 }
@@ -61,16 +89,31 @@ impl VoiceGateMonitor {
             level_bits: AtomicU32::new(0.0f32.to_bits()),
             threshold_bits: AtomicU32::new(config.threshold.to_bits()),
             hold_nanos: AtomicU64::new(u64::try_from(config.hold.as_nanos()).unwrap_or(u64::MAX)),
+            gate_open: AtomicBool::new(false),
+            hiccups: AtomicU64::new(0),
         });
         let (control_tx, control_rx) = crossbeam_channel::unbounded();
         let (state_tx, state_rx) = watch::channel(VoiceGateState::Inactive);
 
-        let thread_shared = Arc::clone(&shared);
+        let publisher = GatePublisher::new(state_tx, Arc::clone(&shared));
         let failure_tx = control_tx.clone();
-        std::thread::spawn(move || run(config, control_rx, failure_tx, state_tx, thread_shared));
+        let monitor = std::thread::spawn(move || {
+            MonitorLoop {
+                controls: control_rx,
+                mailbox: MonitorMailbox {
+                    controls: failure_tx,
+                    monitor: std::thread::current(),
+                },
+                publisher,
+            }
+            .run(config.device);
+        });
 
         Self {
-            control_tx,
+            mailbox: MonitorMailbox {
+                controls: control_tx,
+                monitor: monitor.thread().clone(),
+            },
             state_rx,
             shared,
         }
@@ -96,114 +139,173 @@ impl VoiceGateMonitor {
             u64::try_from(config.hold.as_nanos()).unwrap_or(u64::MAX),
             Ordering::Relaxed,
         );
-        if self
-            .control_tx
-            .send(GateControl::SetDevice(config.device))
-            .is_err()
-        {
+        if !self.mailbox.post(GateControl::SetDevice(config.device)) {
             tracing::debug!("voice gate monitor stopped; device change dropped");
         }
     }
 
     pub fn stop(&self) {
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the monitor thread may already have exited"
-        )]
-        let _ = self.control_tx.send(GateControl::Stop);
+        self.mailbox.post(GateControl::Stop);
     }
 }
 
 impl Drop for VoiceGateMonitor {
     fn drop(&mut self) {
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "the monitor thread may already have exited"
-        )]
-        let _ = self.control_tx.send(GateControl::Stop);
+        self.mailbox.post(GateControl::Stop);
     }
 }
 
-fn run(
-    initial: VoiceGateConfig,
-    control_rx: crossbeam_channel::Receiver<GateControl>,
-    failure_tx: crossbeam_channel::Sender<GateControl>,
+struct GatePublisher {
     state_tx: watch::Sender<VoiceGateState>,
     shared: Arc<GateShared>,
-) {
-    let mut device = initial.device;
-    loop {
-        match open_and_start(
-            device.clone(),
-            &shared,
-            state_tx.clone(),
-            failure_tx.clone(),
-        ) {
-            Ok(_stream) => {
-                state_tx.send_replace(VoiceGateState::Inactive);
-                loop {
-                    match control_rx.recv() {
-                        Ok(GateControl::Stop) | Err(_) => return,
-                        Ok(GateControl::SetDevice(next)) => {
-                            if next == device {
-                                continue;
-                            }
-                            device = next;
-                            break;
-                        }
-                        Ok(GateControl::StreamFailed) => break,
+    published_open: bool,
+}
+
+impl GatePublisher {
+    fn new(state_tx: watch::Sender<VoiceGateState>, shared: Arc<GateShared>) -> Self {
+        Self {
+            state_tx,
+            shared,
+            published_open: false,
+        }
+    }
+
+    fn restart(&mut self) {
+        self.published_open = false;
+        self.state_tx.send_replace(VoiceGateState::Inactive);
+    }
+
+    fn forward_gate(&mut self) {
+        let open = self.shared.gate_open.load(Ordering::Acquire);
+        if open == self.published_open {
+            return;
+        }
+        self.published_open = open;
+        self.state_tx.send_replace(if open {
+            VoiceGateState::Active
+        } else {
+            VoiceGateState::Inactive
+        });
+    }
+
+    fn unavailable(&mut self, reason: String) {
+        self.shared.gate_open.store(false, Ordering::Release);
+        self.published_open = false;
+        self.state_tx
+            .send_replace(VoiceGateState::Unavailable(reason));
+    }
+
+    fn report_hiccups(&self) {
+        let hiccups = self.shared.hiccups.swap(0, Ordering::Relaxed);
+        if hiccups > 0 {
+            tracing::debug!(hiccups, "cpal input stream hiccups");
+        }
+    }
+}
+
+struct MonitorLoop {
+    controls: crossbeam_channel::Receiver<GateControl>,
+    mailbox: MonitorMailbox,
+    publisher: GatePublisher,
+}
+
+impl MonitorLoop {
+    fn run(mut self, initial: Option<DeviceId>) {
+        let mut device = initial;
+        loop {
+            match open_and_start(device.clone(), &self.publisher.shared, self.mailbox.clone()) {
+                Ok(_stream) => {
+                    self.publisher.restart();
+                    let keep_running = self.follow_stream(&mut device);
+                    self.publisher.report_hiccups();
+                    if !keep_running {
+                        return;
+                    }
+                }
+                Err(err) => {
+                    self.publisher.unavailable(err.to_string());
+                    match self.next_control(Some(REOPEN_INTERVAL)) {
+                        Some(GateControl::Stop) => return,
+                        Some(GateControl::SetDevice(next)) => device = next,
+                        Some(GateControl::StreamFailed(_)) | None => {}
                     }
                 }
             }
-            Err(err) => {
-                state_tx.send_replace(VoiceGateState::Unavailable(err.to_string()));
-                match control_rx.recv_timeout(REOPEN_INTERVAL) {
-                    Ok(GateControl::Stop)
-                    | Err(crossbeam_channel::RecvTimeoutError::Disconnected) => {
-                        return;
+        }
+    }
+
+    fn follow_stream(&mut self, device: &mut Option<DeviceId>) -> bool {
+        loop {
+            match self.next_control(None) {
+                Some(GateControl::Stop) => return false,
+                Some(GateControl::SetDevice(next)) => {
+                    if next == *device {
+                        continue;
                     }
-                    Ok(GateControl::SetDevice(next)) => device = next,
-                    Ok(GateControl::StreamFailed)
-                    | Err(crossbeam_channel::RecvTimeoutError::Timeout) => {}
+                    *device = next;
+                    return true;
+                }
+                Some(GateControl::StreamFailed(reason)) => {
+                    tracing::error!("cpal input stream error: {}", reason);
+                    self.publisher.unavailable(reason);
+                    return true;
+                }
+                None => {}
+            }
+        }
+    }
+
+    fn next_control(&mut self, patience: Option<Duration>) -> Option<GateControl> {
+        let deadline = patience.map(|patience| Instant::now() + patience);
+        loop {
+            self.publisher.forward_gate();
+            match self.controls.try_recv() {
+                Ok(control) => return Some(control),
+                Err(crossbeam_channel::TryRecvError::Disconnected) => {
+                    return Some(GateControl::Stop);
+                }
+                Err(crossbeam_channel::TryRecvError::Empty) => {}
+            }
+            match deadline {
+                None => std::thread::park(),
+                Some(deadline) => {
+                    let left = deadline.saturating_duration_since(Instant::now());
+                    if left.is_zero() {
+                        return None;
+                    }
+                    std::thread::park_timeout(left);
                 }
             }
         }
     }
 }
 
-fn gate_tick(
-    peak: f32,
+struct GateCallback {
     epoch: Instant,
-    shared: &GateShared,
-    is_active: &AtomicBool,
-    last_active_nanos: &AtomicU64,
-    state_tx: &watch::Sender<VoiceGateState>,
-) {
-    shared.level_bits.store(peak.to_bits(), Ordering::Relaxed);
-    let threshold = f32::from_bits(shared.threshold_bits.load(Ordering::Relaxed));
-    let now_nanos = u64::try_from(epoch.elapsed().as_nanos()).unwrap_or(u64::MAX);
+    machine: GateMachine,
+    shared: Arc<GateShared>,
+    monitor: Thread,
+}
 
-    if peak >= threshold {
-        last_active_nanos.store(now_nanos, Ordering::Relaxed);
-        if !is_active.swap(true, Ordering::Relaxed) {
-            state_tx.send_replace(VoiceGateState::Active);
+impl GateCallback {
+    fn on_block(&mut self, peak: f32) {
+        self.shared
+            .level_bits
+            .store(peak.to_bits(), Ordering::Relaxed);
+        let now_nanos = u64::try_from(self.epoch.elapsed().as_nanos()).unwrap_or(u64::MAX);
+        if let Some(edge) = self.machine.tick(peak, self.shared.settings(), now_nanos) {
+            self.shared
+                .gate_open
+                .store(edge == GateEdge::Opened, Ordering::Release);
+            self.monitor.unpark();
         }
-        return;
-    }
-
-    let hold = shared.hold_nanos.load(Ordering::Relaxed);
-    let last_active = last_active_nanos.load(Ordering::Relaxed);
-    if is_active.load(Ordering::Relaxed) && now_nanos.saturating_sub(last_active) >= hold {
-        is_active.store(false, Ordering::Relaxed);
-        state_tx.send_replace(VoiceGateState::Inactive);
     }
 }
 
 fn open_and_start(
     device_id: Option<DeviceId>,
     shared: &Arc<GateShared>,
-    state_tx: watch::Sender<VoiceGateState>,
-    failure_tx: crossbeam_channel::Sender<GateControl>,
+    mailbox: MonitorMailbox,
 ) -> Result<cpal::Stream, AudioError> {
     use cpal::traits::{DeviceTrait, StreamTrait};
 
@@ -216,13 +318,15 @@ fn open_and_start(
     let stream_config: cpal::StreamConfig = config.into();
     let sample_format = config.sample_format();
 
+    shared.gate_open.store(false, Ordering::Release);
     let ctx = CallbackContext {
-        epoch: Instant::now(),
-        shared: Arc::clone(shared),
-        is_active: Arc::new(AtomicBool::new(false)),
-        last_active_nanos: Arc::new(AtomicU64::new(0)),
-        state_tx,
-        failure_tx,
+        callback: GateCallback {
+            epoch: Instant::now(),
+            machine: GateMachine::default(),
+            shared: Arc::clone(shared),
+            monitor: mailbox.monitor.clone(),
+        },
+        mailbox,
     };
 
     let stream = build_input_stream(&device, stream_config, sample_format, ctx)?;
@@ -232,12 +336,8 @@ fn open_and_start(
 }
 
 struct CallbackContext {
-    epoch: Instant,
-    shared: Arc<GateShared>,
-    is_active: Arc<AtomicBool>,
-    last_active_nanos: Arc<AtomicU64>,
-    state_tx: watch::Sender<VoiceGateState>,
-    failure_tx: crossbeam_channel::Sender<GateControl>,
+    callback: GateCallback,
+    mailbox: MonitorMailbox,
 }
 
 fn build_input_stream(
@@ -279,34 +379,17 @@ where
     T: cpal::SizedSample,
     f32: cpal::FromSample<T>,
 {
-    use cpal::FromSample;
     use cpal::traits::DeviceTrait;
 
     let CallbackContext {
-        epoch,
-        shared,
-        is_active,
-        last_active_nanos,
-        state_tx,
-        failure_tx,
+        mut callback,
+        mailbox,
     } = ctx;
-    let error_tx = state_tx.clone();
+    let shared = Arc::clone(&callback.shared);
     device.build_input_stream(
         stream_config,
-        move |data: &[T], _: &cpal::InputCallbackInfo| {
-            let peak = data.iter().fold(0.0f32, |acc, s| {
-                acc.max(<f32 as FromSample<T>>::from_sample_(*s).abs())
-            });
-            gate_tick(
-                peak,
-                epoch,
-                &shared,
-                &is_active,
-                &last_active_nanos,
-                &state_tx,
-            );
-        },
-        move |err| input_stream_error_fn(err, &error_tx, &failure_tx),
+        move |data: &[T], _: &cpal::InputCallbackInfo| callback.on_block(peak(data)),
+        move |err| input_stream_error_fn(err, &shared, &mailbox),
         None,
     )
 }
@@ -335,20 +418,12 @@ fn find_input_device(host: &cpal::Host, id: Option<&DeviceId>) -> Option<cpal::D
     }
 }
 
-fn input_stream_error_fn(
-    err: cpal::Error,
-    state_tx: &watch::Sender<VoiceGateState>,
-    control_tx: &crossbeam_channel::Sender<GateControl>,
-) {
-    if !crate::cpal_sink::ends_playback(err.kind()) {
-        tracing::debug!("cpal input stream hiccup: {}", err);
+fn input_stream_error_fn(err: cpal::Error, shared: &GateShared, mailbox: &MonitorMailbox) {
+    if !crate::device::cpal_sink::ends_playback(err.kind()) {
+        shared.hiccups.fetch_add(1, Ordering::Relaxed);
         return;
     }
-    tracing::error!("cpal input stream error: {}", err);
-    state_tx.send_replace(VoiceGateState::Unavailable(err.to_string()));
-    if control_tx.send(GateControl::StreamFailed).is_err() {
-        tracing::debug!("voice gate monitor stopped; stream failure dropped");
-    }
+    mailbox.post(GateControl::StreamFailed(err.to_string()));
 }
 
 #[cfg(test)]
@@ -360,40 +435,36 @@ mod tests {
     const RELEASES_AT_ONCE: u64 = 0;
 
     struct Gate {
-        epoch: Instant,
-        shared: GateShared,
-        is_active: AtomicBool,
-        last_active_nanos: AtomicU64,
-        state_tx: watch::Sender<VoiceGateState>,
+        callback: GateCallback,
+        publisher: GatePublisher,
         state_rx: watch::Receiver<VoiceGateState>,
     }
 
     impl Gate {
         fn holding_for(hold_nanos: u64) -> Self {
             let (state_tx, state_rx) = watch::channel(VoiceGateState::Inactive);
+            let shared = Arc::new(GateShared {
+                level_bits: AtomicU32::new(0.0f32.to_bits()),
+                threshold_bits: AtomicU32::new(THRESHOLD.to_bits()),
+                hold_nanos: AtomicU64::new(hold_nanos),
+                gate_open: AtomicBool::new(false),
+                hiccups: AtomicU64::new(0),
+            });
             Self {
-                epoch: Instant::now(),
-                shared: GateShared {
-                    level_bits: AtomicU32::new(0.0f32.to_bits()),
-                    threshold_bits: AtomicU32::new(THRESHOLD.to_bits()),
-                    hold_nanos: AtomicU64::new(hold_nanos),
+                callback: GateCallback {
+                    epoch: Instant::now(),
+                    machine: GateMachine::default(),
+                    shared: Arc::clone(&shared),
+                    monitor: std::thread::current(),
                 },
-                is_active: AtomicBool::new(false),
-                last_active_nanos: AtomicU64::new(0),
-                state_tx,
+                publisher: GatePublisher::new(state_tx, shared),
                 state_rx,
             }
         }
 
-        fn tick(&self, peak: f32) {
-            gate_tick(
-                peak,
-                self.epoch,
-                &self.shared,
-                &self.is_active,
-                &self.last_active_nanos,
-                &self.state_tx,
-            );
+        fn tick(&mut self, peak: f32) {
+            self.callback.on_block(peak);
+            self.publisher.forward_gate();
         }
 
         fn state_published(&mut self) -> Option<VoiceGateState> {
@@ -462,12 +533,12 @@ mod tests {
 
     #[test]
     fn every_tick_reports_its_peak_as_the_level() {
-        let gate = Gate::holding_for(NEVER_RELEASES);
+        let mut gate = Gate::holding_for(NEVER_RELEASES);
 
         gate.tick(0.25);
 
         assert_eq!(
-            f32::from_bits(gate.shared.level_bits.load(Ordering::Relaxed)),
+            f32::from_bits(gate.callback.shared.level_bits.load(Ordering::Relaxed)),
             0.25
         );
     }

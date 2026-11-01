@@ -7,7 +7,7 @@ use crate::error::AudioError;
 const I16_DECODE_SCALE: f32 = 32768.0;
 const I16_ENCODE_SCALE: f32 = 32767.0;
 
-pub fn resample(
+pub(crate) fn resample(
     src: &[i16],
     src_rate: u32,
     dst_rate: u32,
@@ -126,7 +126,7 @@ fn downmix_frame_to_stereo(frame: &[i16], mix: &[Gains], norm: f32) -> [i16; 2] 
     [clamp(left), clamp(right)]
 }
 
-pub fn remix(src: &[i16], src_channels: u16, dst_channels: u16) -> Vec<i16> {
+pub(crate) fn remix(src: &[i16], src_channels: u16, dst_channels: u16) -> Vec<i16> {
     if src_channels == dst_channels {
         return src.to_vec();
     }

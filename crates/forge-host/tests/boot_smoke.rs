@@ -318,7 +318,7 @@ fn applying_routes_opens_no_sink_and_speech_then_reaches_the_injected_factory() 
             (
                 builds_after_apply,
                 booted.sinks.builds(),
-                booted.sinks.sink.plays()
+                booted.sinks.sink.calls()
             ),
             (0, 1, 1)
         );

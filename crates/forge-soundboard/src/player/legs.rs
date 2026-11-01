@@ -129,11 +129,11 @@ pub(super) async fn play_target(
     let other_starts = other_sinks.iter().map(|sink| {
         let sink = Arc::clone(sink);
         let buffer = buffer.clone();
-        async move { sink.play_controlled(buffer).await }
+        async move { sink.start(buffer).await }
     });
     let (mut outcomes, last_outcome) = tokio::join!(
         futures::future::join_all(other_starts),
-        last_sink.play_controlled(buffer),
+        last_sink.start(buffer),
     );
     outcomes.push(last_outcome);
     let mut outcomes = outcomes.into_iter();

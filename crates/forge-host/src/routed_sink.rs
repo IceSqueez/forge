@@ -2,7 +2,7 @@ use forge_types::RecoverRwLock;
 use std::sync::{Arc, RwLock};
 
 use async_trait::async_trait;
-use forge_audio::{AudioError, AudioSink, ControlledPlayback, PlaybackHandle};
+use forge_audio::{AudioError, AudioSink, ControlledPlayback};
 use forge_speech_types::PcmBuffer;
 
 pub struct RoutedSink {
@@ -27,16 +27,8 @@ impl RoutedSink {
 
 #[async_trait]
 impl AudioSink for RoutedSink {
-    async fn play(&self, buffer: PcmBuffer) -> Result<(), AudioError> {
-        self.current().play(buffer).await
-    }
-
-    async fn play_stoppable(&self, buffer: PcmBuffer) -> Result<PlaybackHandle, AudioError> {
-        self.current().play_stoppable(buffer).await
-    }
-
-    async fn play_controlled(&self, buffer: PcmBuffer) -> Result<ControlledPlayback, AudioError> {
-        self.current().play_controlled(buffer).await
+    async fn start(&self, buffer: PcmBuffer) -> Result<ControlledPlayback, AudioError> {
+        self.current().start(buffer).await
     }
 }
 
@@ -47,6 +39,8 @@ mod tests {
 
     use tokio::sync::Notify;
     use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
+
+    use forge_audio::PlaybackControl;
 
     use super::*;
     use crate::test_support::{RecordingSink, tone};
@@ -77,7 +71,7 @@ mod tests {
 
     #[async_trait]
     impl AudioSink for GatedSink {
-        async fn play(&self, _: PcmBuffer) -> Result<(), AudioError> {
+        async fn start(&self, _: PcmBuffer) -> Result<ControlledPlayback, AudioError> {
             self.plays.fetch_add(1, Ordering::SeqCst);
             #[expect(
                 clippy::let_underscore_must_use,
@@ -85,7 +79,10 @@ mod tests {
             )]
             let _ = self.started.send(());
             self.release.notified().await;
-            Ok(())
+            Ok(ControlledPlayback::new(
+                PlaybackControl::new(),
+                std::future::ready(Ok(())),
+            ))
         }
     }
 
@@ -93,8 +90,11 @@ mod tests {
 
     #[async_trait]
     impl AudioSink for PanicsWhenDropped {
-        async fn play(&self, _: PcmBuffer) -> Result<(), AudioError> {
-            Ok(())
+        async fn start(&self, _: PcmBuffer) -> Result<ControlledPlayback, AudioError> {
+            Ok(ControlledPlayback::new(
+                PlaybackControl::new(),
+                std::future::ready(Ok(())),
+            ))
         }
     }
 
@@ -138,23 +138,9 @@ mod tests {
 
         routed.install(Arc::clone(&installed) as Arc<dyn AudioSink>);
         routed.play(tone()).await.expect("play reaches a sink");
-        routed
-            .play_stoppable(tone())
-            .await
-            .expect("play_stoppable reaches a sink");
-        routed
-            .play_controlled(tone())
-            .await
-            .expect("play_controlled reaches a sink");
+        routed.start(tone()).await.expect("start reaches a sink");
 
-        assert_eq!(
-            (
-                installed.plays(),
-                installed.stoppables(),
-                installed.controlled()
-            ),
-            (1, 1, 1)
-        );
+        assert_eq!(installed.calls(), 2);
         assert_eq!(replaced.calls(), 0);
     }
 
@@ -178,6 +164,6 @@ mod tests {
             .play(tone())
             .await
             .expect("playback survives the poisoned lock");
-        assert_eq!(installed.plays(), 1);
+        assert_eq!(installed.calls(), 1);
     }
 }

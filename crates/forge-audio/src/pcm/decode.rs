@@ -147,7 +147,7 @@ fn decode_stream(mss: MediaSourceStream, hint: Hint) -> Result<PcmBuffer, AudioE
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::wave::encode_wave;
+    use crate::pcm::wave::encode_wave;
 
     const ROUNDING_TOLERANCE: u16 = 1;
 

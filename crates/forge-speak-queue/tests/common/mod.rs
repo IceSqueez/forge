@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use forge_audio::{AudioError, AudioSink};
+use forge_audio::{AudioError, AudioSink, ControlledPlayback, PlaybackControl};
 use forge_events::EventPublisher;
 use forge_speak_queue::VoiceAliasResolver;
 use forge_speak_queue::{
@@ -94,9 +94,12 @@ pub(crate) struct RecordingSink {
 
 #[async_trait]
 impl AudioSink for RecordingSink {
-    async fn play(&self, _buf: PcmBuffer) -> Result<(), AudioError> {
+    async fn start(&self, _buf: PcmBuffer) -> Result<ControlledPlayback, AudioError> {
         *self.plays.lock().unwrap() += 1;
-        Ok(())
+        Ok(ControlledPlayback::new(
+            PlaybackControl::new(),
+            std::future::ready(Ok(())),
+        ))
     }
 }
 

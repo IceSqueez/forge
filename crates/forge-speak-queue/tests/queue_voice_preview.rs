@@ -4,7 +4,7 @@ mod common;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
-use forge_audio::{AudioError, AudioSink};
+use forge_audio::{AudioError, AudioSink, ControlledPlayback, PlaybackControl};
 use forge_speak_queue::{
     PipelineConfigHandle, QueueConfig, RequestId, SpeakCommand, SpeakEvent, SpeakEventStream,
     SpeakQueueHandle, SpeakRequest,
@@ -79,9 +79,12 @@ struct MeasuringSink {
 
 #[async_trait]
 impl AudioSink for MeasuringSink {
-    async fn play(&self, buf: PcmBuffer) -> Result<(), AudioError> {
+    async fn start(&self, buf: PcmBuffer) -> Result<ControlledPlayback, AudioError> {
         self.played.lock().unwrap().push(buf.samples.len());
-        Ok(())
+        Ok(ControlledPlayback::new(
+            PlaybackControl::new(),
+            std::future::ready(Ok(())),
+        ))
     }
 }
 

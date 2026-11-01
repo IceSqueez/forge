@@ -841,9 +841,7 @@ impl QueueActor {
         match sink_for(&request, &self.deps, &self.handles.targeted_legs) {
             Ok(sink) => {
                 let start = tokio::spawn(async move {
-                    match tokio::time::timeout(PLAYBACK_START_BOUND, sink.play_controlled(pcm))
-                        .await
-                    {
+                    match tokio::time::timeout(PLAYBACK_START_BOUND, sink.start(pcm)).await {
                         Ok(started) => started.map_err(|e| device_failure(&e)),
                         Err(_) => Err(Outcome::Failed {
                             reason: FailureReason::DeviceError,
@@ -1191,7 +1189,7 @@ fn enqueue_preview(
 #[cfg(test)]
 mod tests {
     use async_trait::async_trait;
-    use forge_audio::{AudioError, AudioSink};
+    use forge_audio::{AudioError, AudioSink, ControlledPlayback, PlaybackControl};
     use forge_events::Event;
     use forge_events::test_support::NullPublisher;
     use forge_speech_types::{AssignmentStrategy, IgnoreProfile, SynthesisDefaults};
@@ -1222,8 +1220,11 @@ mod tests {
     struct SilentSink;
     #[async_trait]
     impl AudioSink for SilentSink {
-        async fn play(&self, _buf: PcmBuffer) -> Result<(), AudioError> {
-            Ok(())
+        async fn start(&self, _buf: PcmBuffer) -> Result<ControlledPlayback, AudioError> {
+            Ok(ControlledPlayback::new(
+                PlaybackControl::new(),
+                std::future::ready(Ok(())),
+            ))
         }
     }
 

@@ -29,8 +29,8 @@ pub const AUDIO_MESSAGES: MessageCatalog = MessageCatalog {
         REMOTE_WITHDRAWN,
         REMOTE_SERVER_STOPPED,
     ],
-    en_ftl: include_str!("../locales/en/messages.ftl"),
-    uk_ftl: include_str!("../locales/uk/messages.ftl"),
+    en_ftl: include_str!("../../locales/en/messages.ftl"),
+    uk_ftl: include_str!("../../locales/uk/messages.ftl"),
 };
 
 impl RemoteFailure {

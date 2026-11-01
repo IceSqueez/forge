@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use async_trait::async_trait;
-use forge_audio::{AudioError, AudioSink, ControlledPlayback};
+use forge_audio::{AudioError, AudioSink, ControlledPlayback, PlaybackControl};
 use forge_speak_queue::{QueueConfig, SpeakCommand, SpeakEvent, SpeakEventStream};
 use forge_speech_types::AssignmentStrategy;
 use forge_speech_types::PcmBuffer;
@@ -18,7 +18,7 @@ struct RefusingSink;
 
 #[async_trait]
 impl AudioSink for RefusingSink {
-    async fn play(&self, _buffer: PcmBuffer) -> Result<(), AudioError> {
+    async fn start(&self, _buffer: PcmBuffer) -> Result<ControlledPlayback, AudioError> {
         Err(AudioError::Host(DEVICE_REFUSAL.to_owned()))
     }
 }
@@ -106,16 +106,15 @@ impl HangsOnFirstStart {
 
 #[async_trait]
 impl AudioSink for HangsOnFirstStart {
-    async fn play(&self, _buffer: PcmBuffer) -> Result<(), AudioError> {
-        Ok(())
-    }
-
-    async fn play_controlled(&self, _buffer: PcmBuffer) -> Result<ControlledPlayback, AudioError> {
+    async fn start(&self, _buffer: PcmBuffer) -> Result<ControlledPlayback, AudioError> {
         if self.hang_next.swap(false, Ordering::SeqCst) {
             let _abandoned = MarkOnDrop(Arc::clone(&self.start_abandoned));
             std::future::pending::<()>().await;
         }
-        Ok(ControlledPlayback::resolved(Ok(())))
+        Ok(ControlledPlayback::new(
+            PlaybackControl::new(),
+            std::future::ready(Ok(())),
+        ))
     }
 }
 

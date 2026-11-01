@@ -3,9 +3,11 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_types::OutputDevice;
 
+use crate::device::cpal_sink::CpalSink;
+use crate::device::resolve::resolve_output_device;
 use crate::error::AudioError;
-use crate::route::{build_cpal_sink, resolve_output_device};
 use crate::sink::AudioSink;
+use forge_speech_types::PcmBuffer;
 
 #[async_trait]
 pub trait AudioSinkFactory: Send + Sync {
@@ -18,6 +20,11 @@ pub struct CpalSinkFactory;
 impl AudioSinkFactory for CpalSinkFactory {
     async fn build(&self, device: &OutputDevice) -> Result<Arc<dyn AudioSink>, AudioError> {
         let device_id = resolve_output_device(device.clone()).await?;
-        Ok(build_cpal_sink(device_id))
+        Ok(Arc::new(CpalSink::new(device_id)))
     }
+}
+
+pub async fn play_on_default_output(buffer: PcmBuffer) -> Result<(), AudioError> {
+    let device_id = resolve_output_device(OutputDevice::Default).await?;
+    CpalSink::new(device_id).play(buffer).await
 }

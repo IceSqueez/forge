@@ -14,7 +14,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
-use forge_audio::{AudioError, AudioSink, ControlledPlayback, PlaybackHandle};
+use forge_audio::{AudioError, AudioSink, ControlledPlayback, PlaybackControl};
 use forge_events::Event;
 use forge_platform_core::PlatformEndpoints;
 use forge_platform_core::PlatformError;
@@ -1165,9 +1165,7 @@ pub fn stopped_handle(rt: &tokio::runtime::Runtime, backend: &Arc<TestBackend>) 
 
 #[derive(Default)]
 pub struct RecordingSink {
-    plays: AtomicUsize,
-    stoppables: AtomicUsize,
-    controlled: AtomicUsize,
+    starts: AtomicUsize,
 }
 
 impl RecordingSink {
@@ -1175,38 +1173,19 @@ impl RecordingSink {
         Arc::new(Self::default())
     }
 
-    pub fn plays(&self) -> usize {
-        self.plays.load(Ordering::SeqCst)
-    }
-
-    pub fn stoppables(&self) -> usize {
-        self.stoppables.load(Ordering::SeqCst)
-    }
-
-    pub fn controlled(&self) -> usize {
-        self.controlled.load(Ordering::SeqCst)
-    }
-
     pub fn calls(&self) -> usize {
-        self.plays() + self.stoppables() + self.controlled()
+        self.starts.load(Ordering::SeqCst)
     }
 }
 
 #[async_trait::async_trait]
 impl AudioSink for RecordingSink {
-    async fn play(&self, _: PcmBuffer) -> Result<(), AudioError> {
-        self.plays.fetch_add(1, Ordering::SeqCst);
-        Ok(())
-    }
-
-    async fn play_stoppable(&self, _: PcmBuffer) -> Result<PlaybackHandle, AudioError> {
-        self.stoppables.fetch_add(1, Ordering::SeqCst);
-        Ok(PlaybackHandle::default())
-    }
-
-    async fn play_controlled(&self, _: PcmBuffer) -> Result<ControlledPlayback, AudioError> {
-        self.controlled.fetch_add(1, Ordering::SeqCst);
-        Ok(ControlledPlayback::resolved(Ok(())))
+    async fn start(&self, _: PcmBuffer) -> Result<ControlledPlayback, AudioError> {
+        self.starts.fetch_add(1, Ordering::SeqCst);
+        Ok(ControlledPlayback::new(
+            PlaybackControl::new(),
+            std::future::ready(Ok(())),
+        ))
     }
 }
 

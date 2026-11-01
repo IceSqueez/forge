@@ -822,7 +822,7 @@ mod tests {
                 destination: forge_audio::RemoteDestinationId::new(SHOWING),
                 correlation: forge_audio::PlaybackCorrelation::new("show-1"),
             })
-            .play_controlled(tone())
+            .start(tone())
             .await
             .expect("the show legs start")
             .await

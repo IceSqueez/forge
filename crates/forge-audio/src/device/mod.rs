@@ -1,0 +1,10 @@
+pub(crate) mod catalog;
+pub(crate) mod cpal_sink;
+pub(crate) mod device_sink;
+pub(crate) mod enumerate;
+pub(crate) mod gate_machine;
+pub(crate) mod output_feed;
+pub(crate) mod resolve;
+pub(crate) mod samples;
+pub(crate) mod sink_factory;
+pub(crate) mod voice_gate;

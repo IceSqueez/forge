@@ -1,47 +1,31 @@
-mod alert_cue;
-mod audio_route;
-mod convert;
-mod cpal_sink;
-mod decode;
-mod default_output;
 mod device;
-mod device_sink;
 mod error;
-mod fan_out;
-mod handle;
+mod pcm;
 mod remote;
-mod remote_messages;
-mod remote_sink;
-mod route;
 mod sink;
-mod sink_factory;
-mod targeted;
-mod voice_gate;
-mod wave;
 
-pub use alert_cue::alert_cue;
-pub use audio_route::AudioRoute;
-pub use decode::{decode_bytes, decode_file, probe_duration_secs};
-pub use default_output::play_on_default_output;
-pub use device::{
-    DeviceId, DeviceInfo, OutputDevice, list_input_devices, list_output_devices,
-    pick_default_input_device, pick_default_output_device, refresh_input_devices,
+pub use device::catalog::{
+    DeviceId, DeviceInfo, pick_default_input_device, pick_default_output_device,
+};
+pub use device::device_sink::{DeviceSink, OutputDeviceHandle, stored_output_device};
+pub use device::enumerate::{
+    OutputDevice, list_input_devices, list_output_devices, refresh_input_devices,
     refresh_output_devices,
 };
-pub use device_sink::{DeviceSink, OutputDeviceHandle, stored_output_device};
+pub use device::resolve::resolve_device;
+pub use device::sink_factory::{AudioSinkFactory, CpalSinkFactory, play_on_default_output};
+pub use device::voice_gate::{VoiceGateConfig, VoiceGateMonitor, VoiceGateState, VoiceGateWatch};
 pub use error::AudioError;
-pub use fan_out::FanOutSink;
-pub use handle::{ControlledPlayback, PlaybackHandle};
+pub use pcm::alert_cue::alert_cue;
+pub use pcm::decode::{decode_bytes, decode_file, probe_duration_secs};
+pub use remote::messages::AUDIO_MESSAGES;
+pub use remote::remote_sink::RemoteSink;
+pub use remote::targeted::{PlaybackTarget, RemoteLegFactory, TargetedSinkFactory};
 pub use remote::{
     ClipMediaType, PlaybackCorrelation, RemoteAudioDestination, RemoteClip, RemoteCommand,
     RemoteDelivery, RemoteDestinationId, RemoteFailure, RemoteVerdict,
 };
-pub use remote_messages::AUDIO_MESSAGES;
-pub use remote_sink::RemoteSink;
-pub use route::resolve_device;
+pub use sink::fan_out::FanOutSink;
+pub use sink::playback::{ControlledPlayback, PlaybackControl, PlaybackHandle};
+pub use sink::route::AudioRoute;
 pub use sink::{AudioSink, NullSink};
-pub use sink_factory::{AudioSinkFactory, CpalSinkFactory};
-pub use targeted::{PlaybackTarget, RemoteLegFactory, TargetedSinkFactory};
-pub use voice_gate::{VoiceGateConfig, VoiceGateMonitor, VoiceGateState, VoiceGateWatch};
-
-pub use convert::{remix, resample};

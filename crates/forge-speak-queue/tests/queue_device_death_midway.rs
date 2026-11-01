@@ -8,7 +8,7 @@ mod common;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
-use forge_audio::{AudioError, AudioSink, ControlledPlayback};
+use forge_audio::{AudioError, AudioSink, ControlledPlayback, PlaybackControl};
 use forge_speak_queue::{QueueConfig, RequestId, SpeakCommand, SpeakEvent};
 use forge_speech_types::PcmBuffer;
 
@@ -43,23 +43,23 @@ impl DyingSink {
 
 #[async_trait]
 impl AudioSink for DyingSink {
-    async fn play(&self, _buffer: PcmBuffer) -> Result<(), AudioError> {
-        Err(AudioError::Host(DEVICE_LOSS.to_owned()))
-    }
-
-    async fn play_controlled(&self, _buffer: PcmBuffer) -> Result<ControlledPlayback, AudioError> {
+    async fn start(&self, _buffer: PcmBuffer) -> Result<ControlledPlayback, AudioError> {
         match self.gate.lock().unwrap().take() {
-            None => Ok(ControlledPlayback::resolved(Err(AudioError::Host(
-                DEVICE_LOSS.to_owned(),
-            )))),
-            Some(gate) => Ok(ControlledPlayback::from_future(async move {
-                #[expect(
-                    clippy::let_underscore_must_use,
-                    reason = "only completion matters here"
-                )]
-                let _ = gate.await;
-                Err(AudioError::Host(DEVICE_LOSS.to_owned()))
-            })),
+            None => Ok(ControlledPlayback::new(
+                PlaybackControl::new(),
+                std::future::ready(Err(AudioError::Host(DEVICE_LOSS.to_owned()))),
+            )),
+            Some(gate) => Ok(ControlledPlayback::new(
+                PlaybackControl::new(),
+                async move {
+                    #[expect(
+                        clippy::let_underscore_must_use,
+                        reason = "only completion matters here"
+                    )]
+                    let _ = gate.await;
+                    Err(AudioError::Host(DEVICE_LOSS.to_owned()))
+                },
+            )),
         }
     }
 }

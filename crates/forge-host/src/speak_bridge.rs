@@ -1757,22 +1757,18 @@ mod tests {
 
     #[async_trait]
     impl forge_audio::AudioSink for HeldSink {
-        async fn play(
-            &self,
-            _: forge_speech_types::PcmBuffer,
-        ) -> Result<(), forge_audio::AudioError> {
-            Ok(())
-        }
-
-        async fn play_controlled(
+        async fn start(
             &self,
             _: forge_speech_types::PcmBuffer,
         ) -> Result<forge_audio::ControlledPlayback, forge_audio::AudioError> {
             let mut released = self.0.subscribe();
-            Ok(forge_audio::ControlledPlayback::from_future(async move {
-                drop(released.wait_for(|released| *released).await);
-                Ok(())
-            }))
+            Ok(forge_audio::ControlledPlayback::new(
+                forge_audio::PlaybackControl::new(),
+                async move {
+                    drop(released.wait_for(|released| *released).await);
+                    Ok(())
+                },
+            ))
         }
     }
 

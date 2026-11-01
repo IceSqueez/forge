@@ -1,11 +1,6 @@
-use std::sync::Arc;
-
-use crate::cpal_sink::CpalSink;
-use crate::device::{
-    DeviceId, DeviceInfo, OutputDevice, list_output_devices, pick_default_output_device,
-};
+use crate::device::catalog::{DeviceId, DeviceInfo, pick_default_output_device};
+use crate::device::enumerate::{OutputDevice, list_output_devices};
 use crate::error::AudioError;
-use crate::sink::AudioSink;
 
 pub fn resolve_device(preference: &OutputDevice, devices: &[DeviceInfo]) -> Option<DeviceId> {
     match preference {
@@ -41,8 +36,4 @@ pub(crate) async fn resolve_output_device(
     })
     .await
     .map_err(|e| AudioError::JoinFailed(e.to_string()))?
-}
-
-pub(crate) fn build_cpal_sink(device_id: DeviceId) -> Arc<dyn AudioSink> {
-    Arc::new(CpalSink::new(device_id))
 }

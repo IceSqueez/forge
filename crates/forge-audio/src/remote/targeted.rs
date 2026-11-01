@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
-use crate::fan_out::FanOutSink;
+use crate::remote::remote_sink::RemoteSink;
 use crate::remote::{PlaybackCorrelation, RemoteAudioDestination, RemoteDestinationId};
-use crate::remote_sink::RemoteSink;
 use crate::sink::AudioSink;
+use crate::sink::fan_out::FanOutSink;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PlaybackTarget {
@@ -49,6 +49,7 @@ mod tests {
     use super::*;
     use crate::error::AudioError;
     use crate::remote::{RemoteClip, RemoteCommand, RemoteDelivery, RemoteVerdict};
+    use crate::sink::playback::{ControlledPlayback, PlaybackControl};
     use forge_speech_types::PcmBuffer;
     use forge_types::RemoteClipId;
 
@@ -98,9 +99,12 @@ mod tests {
 
     #[async_trait]
     impl AudioSink for CountingSink {
-        async fn play(&self, _: PcmBuffer) -> Result<(), AudioError> {
+        async fn start(&self, _: PcmBuffer) -> Result<ControlledPlayback, AudioError> {
             self.plays.fetch_add(1, Ordering::SeqCst);
-            Ok(())
+            Ok(ControlledPlayback::new(
+                PlaybackControl::new(),
+                std::future::ready(Ok(())),
+            ))
         }
     }
 
@@ -114,7 +118,7 @@ mod tests {
     async fn play_through(factory: &RemoteLegFactory) {
         factory
             .sink_for(&target())
-            .play_controlled(PcmBuffer::new(vec![0; 16], 1_000, 1))
+            .start(PcmBuffer::new(vec![0; 16], 1_000, 1))
             .await
             .expect("the targeted legs start")
             .await

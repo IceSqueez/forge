@@ -29,8 +29,12 @@ impl CardStatus {
             LifecycleState::Failed(reason) => Self::Failed(reason.clone()),
             LifecycleState::Running => match (connection, connected) {
                 (ConnectionAffordance::Connectionless, _) => Self::Active,
-                (ConnectionAffordance::Connectable, true) => Self::Connected,
-                (ConnectionAffordance::Connectable, false) => Self::NotConnected,
+                (ConnectionAffordance::Connectable | ConnectionAffordance::Configured, true) => {
+                    Self::Connected
+                }
+                (ConnectionAffordance::Connectable | ConnectionAffordance::Configured, false) => {
+                    Self::NotConnected
+                }
             },
         }
     }

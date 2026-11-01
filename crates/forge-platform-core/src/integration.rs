@@ -77,6 +77,7 @@ impl IntegrationCategory {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConnectionAffordance {
     Connectable,
+    Configured,
     Connectionless,
 }
 

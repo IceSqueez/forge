@@ -12,7 +12,7 @@ pub const DISCORD_INTEGRATION: IntegrationDeclaration = IntegrationDeclaration {
     brand_name: "Discord",
     category: IntegrationCategory::COMMUNITY,
     description_key: "integration_discord_description",
-    connection: ConnectionAffordance::Connectionless,
+    connection: ConnectionAffordance::Configured,
     sign_in: SignInRoute::NotNeeded,
     identity: IntegrationIdentity {
         icon: "brand-discord",

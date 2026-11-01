@@ -485,7 +485,9 @@ fn nav_status(
         CardStatus::Failed(_) => (palette.danger, false),
         CardStatus::Active | CardStatus::Connected => (palette.success, false),
         CardStatus::NotConnected | CardStatus::Disabled => match connection {
-            ConnectionAffordance::Connectable => (palette.text_extreme_faint, false),
+            ConnectionAffordance::Connectable | ConnectionAffordance::Configured => {
+                (palette.text_extreme_faint, false)
+            }
             ConnectionAffordance::Connectionless => (palette.success, false),
         },
     };

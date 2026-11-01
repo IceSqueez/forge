@@ -36,23 +36,27 @@ pub(crate) use forge_host::test_support::{
 };
 pub(crate) use memory_scripts::MemoryScripts;
 
-pub(crate) async fn booted_runtime_handles() -> crate::runtime_handles::RuntimeHandles {
+pub(crate) async fn booted_runtime_handles() -> crate::app::runtime_handles::RuntimeHandles {
     let backend = forge_host::test_support::open_store().await;
     forge_host::test_support::seed_integrations_and_server_off(backend.as_ref()).await;
-    forge_storage::write_setting(backend.as_ref(), &crate::stay_awake::STAY_AWAKE, &false)
-        .await
-        .unwrap();
-    let pre_boot = crate::boot::run_pre_boot(&backend).await;
+    forge_storage::write_setting(
+        backend.as_ref(),
+        &crate::app::stay_awake::STAY_AWAKE,
+        &false,
+    )
+    .await
+    .unwrap();
+    let pre_boot = crate::app::boot::run_pre_boot(&backend).await;
     let booted = forge_host::test_support::boot_host(
         Arc::clone(&backend),
         forge_host::test_support::fake_identities(),
         pre_boot.anonymous_donor.clone(),
     )
     .await;
-    crate::boot::present_host(
+    crate::app::boot::present_host(
         booted.host,
         backend,
-        crate::log_tail::LogTail::new(),
+        crate::app::log_tail::LogTail::new(),
         pre_boot,
     )
     .await
@@ -243,9 +247,9 @@ pub(crate) fn trigger_registry(stubs: Vec<StubTrigger>) -> TriggerRegistry {
 
 pub(crate) fn shown_in_english<F>(failure: F) -> String
 where
-    F: Into<crate::repo_failure::RepoFailure> + std::fmt::Display,
+    F: Into<crate::shared::repo_failure::RepoFailure> + std::fmt::Display,
 {
-    crate::i18n::install_language(forge_storage::Language::En);
+    crate::app::i18n::install_language(forge_storage::Language::En);
     let diagnostic = failure.to_string();
     let shown = failure.into().text();
     assert!(
@@ -277,12 +281,17 @@ pub(crate) fn wait_until_worker_drains_to(rt: &tokio::runtime::Runtime, backgrou
 
 pub(crate) fn stored_shortcut_overrides(
     raw: Option<&str>,
-) -> Result<crate::shortcut_overrides::ShortcutOverrides, StorageError> {
+) -> Result<crate::automation::shortcut_overrides::ShortcutOverrides, StorageError> {
     let (backend, _writes) = test_backend();
     if let Some(raw) = raw {
-        backend.seed_raw(&crate::shortcut_overrides::KEYBOARD_SHORTCUTS, raw);
+        backend.seed_raw(
+            &crate::automation::shortcut_overrides::KEYBOARD_SHORTCUTS,
+            raw,
+        );
     }
-    runtime().block_on(crate::shortcut_overrides::load_overrides(backend))
+    runtime().block_on(crate::automation::shortcut_overrides::load_overrides(
+        backend,
+    ))
 }
 
 const QUIET_ROUNDS_TO_SETTLE: usize = 2;
@@ -369,7 +378,7 @@ pub(crate) fn settle_until_tasks_drain_to(
 pub(crate) struct StalledDownloader;
 
 #[async_trait::async_trait]
-impl crate::update_flow::ArtifactDownloader for StalledDownloader {
+impl crate::data_flows::update_flow::ArtifactDownloader for StalledDownloader {
     async fn download(
         &self,
         _artifact: &forge_update::Artifact,
@@ -542,9 +551,9 @@ impl FakeCollections {
         let registry = forge_host::integrations::BuiltinRegistry::default();
         registry.install(forge_host::integrations::BuiltinObject {
             collections: Some(Arc::clone(self) as Arc<dyn forge_platform_core::BuiltinCollections>),
-            ..crate::unavailable_builtin::unavailable_builtin(&forge_types::IntegrationId::new(
-                builtin,
-            ))
+            ..crate::integrations::unavailable_builtin::unavailable_builtin(
+                &forge_types::IntegrationId::new(builtin),
+            )
         });
         registry
     }
@@ -881,24 +890,26 @@ pub(crate) fn lifecycle_switch(
     rt: &tokio::runtime::Runtime,
     initial: forge_runtime::LifecycleStates,
 ) -> (
-    gpui::Entity<crate::integration_lifecycle::IntegrationLifecycle>,
-    crate::integration_switch::IntegrationSwitch,
+    gpui::Entity<crate::integrations::integration_lifecycle::IntegrationLifecycle>,
+    crate::integrations::integration_switch::IntegrationSwitch,
 ) {
     let (settings, _writes) = test_backend();
     let supervisor = idle_supervisor(rt, settings as Arc<dyn SettingsRepo>, &[]);
     cx.update(|cx| {
         let lifecycle = gpui::AppContext::new(cx, |_| {
-            crate::integration_lifecycle::IntegrationLifecycle::new(initial)
+            crate::integrations::integration_lifecycle::IntegrationLifecycle::new(initial)
         });
-        let switch =
-            crate::integration_switch::IntegrationSwitch::new(lifecycle.clone(), supervisor);
+        let switch = crate::integrations::integration_switch::IntegrationSwitch::new(
+            lifecycle.clone(),
+            supervisor,
+        );
         (lifecycle, switch)
     })
 }
 
 pub(crate) fn switch_lifecycle(
     cx: &mut gpui::TestAppContext,
-    lifecycle: &gpui::Entity<crate::integration_lifecycle::IntegrationLifecycle>,
+    lifecycle: &gpui::Entity<crate::integrations::integration_lifecycle::IntegrationLifecycle>,
     states: forge_runtime::LifecycleStates,
 ) {
     lifecycle.update(cx, |lifecycle, cx| {
@@ -909,17 +920,17 @@ pub(crate) fn switch_lifecycle(
 }
 
 pub(crate) struct NavLog {
-    screens: Vec<crate::navigation::Screen>,
+    screens: Vec<crate::app::navigation::Screen>,
     _sub: gpui::Subscription,
 }
 
 impl NavLog {
-    pub(crate) fn screens(&self) -> Vec<crate::navigation::Screen> {
+    pub(crate) fn screens(&self) -> Vec<crate::app::navigation::Screen> {
         self.screens.clone()
     }
 }
 
-pub(crate) fn nav_log<V: gpui::EventEmitter<crate::navigation::NavRequested>>(
+pub(crate) fn nav_log<V: gpui::EventEmitter<crate::app::navigation::NavRequested>>(
     view: &gpui::Entity<V>,
     cx: &mut gpui::App,
 ) -> gpui::Entity<NavLog> {
@@ -927,7 +938,7 @@ pub(crate) fn nav_log<V: gpui::EventEmitter<crate::navigation::NavRequested>>(
         screens: Vec::new(),
         _sub: cx.subscribe(
             view,
-            |log: &mut NavLog, _, event: &crate::navigation::NavRequested, _| {
+            |log: &mut NavLog, _, event: &crate::app::navigation::NavRequested, _| {
                 log.screens.push(event.0.clone());
             },
         ),
@@ -1027,10 +1038,10 @@ pub(crate) fn open_under_root<V: gpui::Render>(
     cx: &mut gpui::TestAppContext,
     screen: impl FnOnce(&mut gpui::App) -> gpui::Entity<V>,
 ) -> (gpui::Entity<V>, &mut gpui::VisualTestContext) {
-    cx.update(crate::actions::register_key_bindings);
+    cx.update(crate::app::actions::register_key_bindings);
     let (root, vcx) = cx.add_window_view(|window, cx| {
         let root = cx.focus_handle();
-        let forward = crate::navigable_list::forward_root_focus_to_list(&root, window, cx);
+        let forward = crate::app::navigable_list::forward_root_focus_to_list(&root, window, cx);
         ScreenUnderRoot {
             root,
             screen: screen(cx),
@@ -1119,9 +1130,9 @@ pub(crate) fn hub_crumb_targets<V>(
     cx: &mut gpui::TestAppContext,
     category: Option<forge_platform_core::IntegrationCategory>,
     build: impl FnOnce(&mut gpui::Window, &mut gpui::Context<V>) -> V,
-) -> Vec<crate::navigation::Screen>
+) -> Vec<crate::app::navigation::Screen>
 where
-    V: gpui::Render + gpui::EventEmitter<crate::navigation::NavRequested>,
+    V: gpui::Render + gpui::EventEmitter<crate::app::navigation::NavRequested>,
 {
     install_presentation(cx);
     let (view, vcx) = cx.add_window_view(build);
@@ -1131,7 +1142,10 @@ where
         gpui::px(CRUMB_WINDOW_H),
     ));
     vcx.run_until_parked();
-    click_selector(vcx, crate::hub_crumb::hub_crumb_id(category).leak());
+    click_selector(
+        vcx,
+        crate::integrations::hub_crumb::hub_crumb_id(category).leak(),
+    );
     log.read_with(vcx, |log, _| log.screens())
 }
 

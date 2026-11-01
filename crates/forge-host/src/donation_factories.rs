@@ -61,17 +61,7 @@ impl<P: DonationIntegration + 'static> IntegrationFactory<BuiltinObject> for Don
         let mut tasks = TaskGroup::default();
         tasks.track(tokio::spawn(async move { ingest.drain(id, stream).await }));
         let provider = Arc::clone(&self.provider);
-        let object = BuiltinObject {
-            status: provider.clone(),
-            health: provider.clone(),
-            content: provider.clone(),
-            quick: provider.clone(),
-            control: Some(provider),
-            collections: None,
-            option_source: None,
-            follow: None,
-            ban_list: None,
-        };
+        let object = BuiltinObject::of(provider.clone()).with_control(provider);
         Ok(RunningIntegration::idle()
             .with_object(object)
             .with_teardown(Box::pin(async move { tasks.abort_all() })))

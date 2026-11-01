@@ -27,7 +27,7 @@ use forge_types::{
 use time::OffsetDateTime;
 use ulid::Ulid;
 
-use crate::settings_catalog::registered_settings_catalog;
+use crate::preferences::settings_catalog::registered_settings_catalog;
 
 use forge_host::test_support::pack_fixture::{
     Fixture, GLOBAL_NAME, Registries, SECRET_TOKEN, Store, files_under, seed,
@@ -176,7 +176,7 @@ async fn seed_source_extras(store: &Store, f: &Fixture) {
             (ENGINE_PARAMS_KEY, "{\"speed\":1.2}"),
             (forge_hotkey::HOLD_CEILING.name(), "9"),
             (
-                crate::window_placement::WINDOW_PLACEMENT.name(),
+                crate::app::window_placement::WINDOW_PLACEMENT.name(),
                 "source-window",
             ),
             (
@@ -222,16 +222,19 @@ async fn seed_target_extras(store: &Store, f: &Fixture) -> TargetExtras {
         store,
         &[
             (core_settings::THEME.name(), TARGET_THEME),
-            (crate::settings_catalog::DENSITY.name(), "compact"),
             (
-                crate::window_placement::WINDOW_PLACEMENT.name(),
+                crate::preferences::settings_catalog::DENSITY.name(),
+                "compact",
+            ),
+            (
+                crate::app::window_placement::WINDOW_PLACEMENT.name(),
                 "target-window",
             ),
             (
                 core_settings::AUDIO_OUTPUT_DEVICE_ID.name(),
                 "target-speakers",
             ),
-            (crate::stay_awake::STAY_AWAKE.name(), "true"),
+            (crate::app::stay_awake::STAY_AWAKE.name(), "true"),
             (UNCLASSIFIED_KEY, "target-note"),
         ],
     )
@@ -812,7 +815,7 @@ async fn a_setup_carries_owner_declared_portable_settings_and_withholds_owner_ma
     assert_eq!(
         (
             carried.get(forge_hotkey::HOLD_CEILING.name()).cloned(),
-            carried.contains_key(crate::window_placement::WINDOW_PLACEMENT.name()),
+            carried.contains_key(crate::app::window_placement::WINDOW_PLACEMENT.name()),
         ),
         (Some("9".to_owned()), false)
     );
@@ -1028,12 +1031,15 @@ async fn only_a_changed_setting_the_hotkey_layer_declares_refreshes_the_hotkeys(
     const SHORTCUT_OVERRIDE: &str = r#"{"palette.open":{"chord":"Ctrl+K","enabled":true}}"#;
     let ceiling = [(forge_hotkey::HOLD_CEILING.name(), "9")];
     let shortcuts = [(
-        crate::shortcut_overrides::KEYBOARD_SHORTCUTS.name(),
+        crate::automation::shortcut_overrides::KEYBOARD_SHORTCUTS.name(),
         SHORTCUT_OVERRIDE,
     )];
-    let density = [(crate::settings_catalog::DENSITY.name(), "compact")];
+    let density = [(
+        crate::preferences::settings_catalog::DENSITY.name(),
+        "compact",
+    )];
     let both_specs = [
-        crate::shortcut_overrides::KEYBOARD_SHORTCUTS.spec(),
+        crate::automation::shortcut_overrides::KEYBOARD_SHORTCUTS.spec(),
         forge_hotkey::HOLD_CEILING.spec(),
     ];
     for (carried, declared, refreshes, case) in [
@@ -1110,7 +1116,10 @@ async fn a_portable_setting_only_the_target_holds_is_removed_and_recommends_a_re
     let bundle = export_setup(&store).await;
     set_settings(
         &store,
-        &[(crate::settings_catalog::DENSITY.name(), "compact")],
+        &[(
+            crate::preferences::settings_catalog::DENSITY.name(),
+            "compact",
+        )],
     )
     .await;
 
@@ -1121,7 +1130,7 @@ async fn a_portable_setting_only_the_target_holds_is_removed_and_recommends_a_re
             outcome.restart_recommended,
             settings_of(&store)
                 .await
-                .get(crate::settings_catalog::DENSITY.name())
+                .get(crate::preferences::settings_catalog::DENSITY.name())
                 .cloned()
         ),
         (true, None)

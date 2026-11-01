@@ -18,7 +18,7 @@ use crate::vocabulary::{config_keys, sub_action_ids};
 use forge_registry::interpolated_text;
 
 const MIN_TIMEOUT_MINUTES: i64 = 1;
-const MAX_TIMEOUT_MINUTES: i64 = 10080;
+pub(crate) const MAX_TIMEOUT_MINUTES: i64 = 10080;
 const DEFAULT_TIMEOUT_MINUTES: i64 = 10;
 const SECONDS_PER_MINUTE: u64 = 60;
 

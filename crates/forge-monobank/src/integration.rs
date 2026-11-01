@@ -24,5 +24,6 @@ pub const MONOBANK_INTEGRATION: IntegrationDeclaration = IntegrationDeclaration 
         step_tint: IntegrationTint::TextSecondary,
         trigger_tint: IntegrationTint::TextSecondary,
     },
+    connection_strip: None,
     disclaimer: None,
 };

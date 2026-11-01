@@ -10,11 +10,11 @@ use gpui::{
     point, prelude::*, px,
 };
 
-use crate::caret_blink::{CaretBlink, CaretHost, set_caret_blinking};
+use crate::caret_blink::{CaretBlink, CaretHost, watch_focus};
 use crate::focus_reveal::ReportsRevealBounds;
 use crate::highlight::Language;
 use crate::palette::{FORGE_DEFAULT, ForgePalette};
-use crate::presentation::ActivePresentation;
+use crate::presentation::{ActivePresentation, Presentation};
 use crate::text_buffer::TextBuffer;
 use crate::text_editing::*;
 use crate::text_input::{CommitFocusedField, FocusNextField, FocusPreviousField, InputEvent};
@@ -61,7 +61,7 @@ pub struct CodeEditor {
     motion: CaretMotion,
     caret: CaretBlink,
     committed: SharedString,
-    blur_sub: Option<Subscription>,
+    _presentation_sub: Subscription,
 }
 
 impl EventEmitter<InputEvent> for CodeEditor {}
@@ -69,6 +69,10 @@ impl EventEmitter<InputEvent> for CodeEditor {}
 impl CaretHost for CodeEditor {
     fn caret(&mut self) -> &mut CaretBlink {
         &mut self.caret
+    }
+
+    fn focus_left(&mut self, _: &mut Window, cx: &mut Context<Self>) {
+        self.commit_on_leave(cx);
     }
 }
 
@@ -78,7 +82,7 @@ impl CodeEditor {
         placeholder: impl Into<SharedString>,
         cx: &mut Context<Self>,
     ) -> Self {
-        Self {
+        let mut editor = Self {
             focus_handle: cx.focus_handle().tab_stop(true),
             buffer: TextBuffer::default(),
             lines: Lines::new(language),
@@ -99,14 +103,10 @@ impl CodeEditor {
             motion: CaretMotion::default(),
             caret: CaretBlink::new(),
             committed: SharedString::default(),
-            blur_sub: None,
-        }
-    }
-
-    #[must_use]
-    pub fn with_palette(mut self, palette: ForgePalette) -> Self {
-        self.palette = palette;
-        self
+            _presentation_sub: cx.observe_global::<Presentation>(Self::on_presentation_changed),
+        };
+        editor.adopt_presentation(cx);
+        editor
     }
 
     #[must_use]
@@ -177,13 +177,6 @@ impl CodeEditor {
         }
     }
 
-    pub fn set_palette(&mut self, palette: ForgePalette, cx: &mut Context<Self>) {
-        self.palette = palette;
-        self.lines.reset_payloads();
-        self.geometry.invalidate();
-        cx.notify();
-    }
-
     pub fn set_gutter_marks(&mut self, lines: Vec<usize>, cx: &mut Context<Self>) {
         self.gutter_marks = lines;
         cx.notify();
@@ -195,6 +188,21 @@ impl CodeEditor {
 
     pub fn focus(&self, window: &mut Window, cx: &mut App) {
         window.focus(&self.focus_handle, cx);
+    }
+
+    fn adopt_presentation(&mut self, cx: &App) {
+        self.density = cx.density();
+        let palette = cx.palette();
+        if self.palette != palette {
+            self.palette = palette;
+            self.lines.reset_payloads();
+            self.geometry.invalidate();
+        }
+    }
+
+    fn on_presentation_changed(&mut self, cx: &mut Context<Self>) {
+        self.adopt_presentation(cx);
+        cx.notify();
     }
 
     fn pad_y(&self) -> Pixels {
@@ -278,13 +286,13 @@ impl CodeEditor {
     fn commit_focused_field(
         &mut self,
         _: &CommitFocusedField,
-        window: &mut Window,
+        _: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.on_blur(window, cx);
+        self.commit_on_leave(cx);
     }
 
-    fn on_blur(&mut self, _: &mut Window, cx: &mut Context<Self>) {
+    fn commit_on_leave(&mut self, cx: &mut Context<Self>) {
         if self.committed.as_ref() == self.buffer.as_str() {
             return;
         }
@@ -402,17 +410,9 @@ impl Focusable for CodeEditor {
 
 impl Render for CodeEditor {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        if self.blur_sub.is_none() {
-            let handle = self.focus_handle.clone();
-            self.blur_sub = Some(cx.on_blur(&handle, window, Self::on_blur));
-        }
-        self.density = cx.density();
         let focus = self.focus_handle.clone();
-        let newly_watched = self.caret.watch(&focus, window, cx);
+        watch_focus(self, &focus, window, cx);
         let focused = focus.is_focused(window);
-        if newly_watched {
-            set_caret_blinking(self, focused && window.is_visible(), cx);
-        }
         let editor_handle = cx.entity().downgrade();
         let leave_focus = focus.clone();
         let stuck_focus = focus.clone();
@@ -973,5 +973,24 @@ mod tests {
         });
 
         assert_eq!(after, (format!("a + {TOKEN}b"), 4 + TOKEN.len()));
+    }
+
+    #[gpui::test]
+    fn a_theme_change_reaches_the_editor_on_its_next_render(cx: &mut TestAppContext) {
+        install_presentation(cx);
+        let (editor, vcx) =
+            cx.add_window_view(|_window, cx| CodeEditor::new(Language::Rhai, "", cx));
+        vcx.update(|_window, cx| {
+            cx.set_global(crate::Presentation::new(
+                crate::ThemeId::Latte,
+                crate::Density::Cozy,
+            ));
+            editor.update(cx, |editor, cx| editor.adopt_presentation(cx));
+        });
+
+        vcx.update(|_window, cx| {
+            assert_eq!(editor.read(cx).palette, cx.palette());
+            assert_ne!(editor.read(cx).palette, crate::FORGE_DEFAULT);
+        });
     }
 }

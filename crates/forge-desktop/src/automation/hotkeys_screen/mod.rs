@@ -1,0 +1,841 @@
+use forge_components::FONT_LABEL;
+use std::sync::Arc;
+use std::time::Duration;
+
+use forge_components::RevealsFocusIn;
+use forge_components::{
+    ActivePresentation, BreadcrumbCrumb, Icon, ToastKind, icon, page_frame, scaled, tr,
+};
+use forge_events::Event;
+use forge_hotkey::HotkeyClient;
+use forge_runtime::EventBus;
+use forge_storage::{DataProvider, SettingsRepo, StorageError};
+use forge_types::TriggerInstanceId;
+use gpui::{Context, EventEmitter, Pixels, Point, ScrollHandle, Task, Window, div, prelude::*, px};
+use time::OffsetDateTime;
+
+use crate::app::actions::SHORTCUTS;
+use crate::app::async_bridge::{
+    self, BridgeFlow, Loadable, SnapshotWriter, WriteOutcome, drain_events,
+};
+use crate::app::navigable_list::ListCursor;
+use crate::app::navigation::NavRequested;
+use crate::app::runtime_event::{self, RuntimeEvent};
+use crate::automation::combo_capture::ComboCapture;
+use crate::automation::combo_conflict::{ClipKey, clip_keys, combo_holder};
+use crate::automation::shortcut_overrides::{ShortcutOverrides, load_overrides, save_overrides};
+use crate::integrations::hub_crumb::hub_crumb;
+use crate::shared::repo_failure::RepoFailure;
+use forge_components::PushToast;
+use forge_host::integrations::BuiltinObject;
+use forge_hotkey::HotkeyReconciler;
+use forge_hotkey::{BindingRow, HotkeyEdge, conflict_count, load_bindings, registered_combos};
+use forge_runtime::IntegrationSlot;
+
+mod action_modal;
+mod app_row;
+mod app_shortcuts;
+mod binding_row;
+mod binding_writes;
+mod capture;
+mod conflict;
+mod delete;
+mod footer;
+mod hero;
+mod list;
+mod row_style;
+mod stats;
+
+use action_modal::OpenModal;
+use app_shortcuts::OpenAppModal;
+use capture::Capture;
+use conflict::ConflictPrompt;
+use delete::DeletePrompt;
+use list::RowKey;
+
+const RELATIVE_TIME_TICK: Duration = Duration::from_secs(30);
+const SCROLL_PAD_X: Pixels = px(22.0);
+const SCROLL_PAD_Y: Pixels = px(18.0);
+
+const LABEL_FS: Pixels = FONT_LABEL;
+
+const HEADER_GAP: Pixels = px(5.0);
+const HEADER_GLYPH: Pixels = px(13.0);
+
+struct LastFired {
+    combo: String,
+    at: OffsetDateTime,
+}
+
+pub(crate) struct HotkeysScreenView {
+    client: Arc<HotkeyClient>,
+    reconciler: Arc<HotkeyReconciler>,
+    engine: Option<IntegrationSlot<BuiltinObject>>,
+    backend: Arc<dyn DataProvider>,
+    settings_repo: Arc<dyn SettingsRepo>,
+    rt_handle: tokio::runtime::Handle,
+    enabled: bool,
+    bindings: Vec<BindingRow>,
+    clip_keys: Vec<ClipKey>,
+    shortcuts: Loadable<ShortcutOverrides>,
+    shortcut_writer: SnapshotWriter,
+    conflicts: usize,
+    last_fired: Option<LastFired>,
+    last_synthesized: Option<OffsetDateTime>,
+    capture: Capture,
+    key_capture: ComboCapture,
+    conflict: Option<ConflictPrompt>,
+    delete_prompt: Option<DeletePrompt>,
+    modal: Option<OpenModal>,
+    app_modal: Option<OpenAppModal>,
+    menu_open: Option<RowKey>,
+    menu_click_pos: Option<Point<Pixels>>,
+    row_keys: ListCursor<RowKey>,
+    scroll: ScrollHandle,
+    _bus_bridge: Task<()>,
+    _relative_time_tick: Task<()>,
+}
+
+impl HotkeysScreenView {
+    pub(crate) fn new(
+        reconciler: Arc<HotkeyReconciler>,
+        engine: Option<IntegrationSlot<BuiltinObject>>,
+        backend: Arc<dyn DataProvider>,
+        settings_repo: Arc<dyn SettingsRepo>,
+        bus: Arc<EventBus>,
+        rt_handle: tokio::runtime::Handle,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        let bus_bridge = Self::spawn_bus_bridge(bus, cx);
+        let client = Arc::clone(reconciler.client());
+        let mut view = Self {
+            enabled: client.is_enabled(),
+            conflicts: conflict_count(&client),
+            client,
+            reconciler,
+            engine,
+            backend,
+            settings_repo,
+            shortcut_writer: SnapshotWriter::new(&rt_handle),
+            rt_handle,
+            bindings: Vec::new(),
+            clip_keys: Vec::new(),
+            shortcuts: Loadable::Loading,
+            last_fired: None,
+            last_synthesized: None,
+            capture: Capture::Off,
+            key_capture: ComboCapture::default(),
+            conflict: None,
+            delete_prompt: None,
+            modal: None,
+            app_modal: None,
+            menu_open: None,
+            menu_click_pos: None,
+            row_keys: ListCursor::new(cx),
+            scroll: ScrollHandle::new(),
+            _bus_bridge: bus_bridge,
+            _relative_time_tick: Self::spawn_relative_time_tick(cx),
+        };
+        view.load(cx);
+        view.load_shortcuts(cx);
+        view
+    }
+
+    fn spawn_relative_time_tick(cx: &mut Context<Self>) -> Task<()> {
+        cx.spawn(async move |this, cx| {
+            loop {
+                cx.background_executor().timer(RELATIVE_TIME_TICK).await;
+                let repainted = this.update(cx, |this, cx| {
+                    if this.last_fired.is_some() {
+                        cx.notify();
+                    }
+                });
+                if repainted.is_err() {
+                    break;
+                }
+            }
+        })
+    }
+
+    fn spawn_bus_bridge(bus: Arc<EventBus>, cx: &mut Context<Self>) -> Task<()> {
+        cx.spawn(async move |this, cx| {
+            drain_events(&bus, cx, move |batch, cx| {
+                if !batch.iter().any(runtime_event::is_hotkey_event) {
+                    return BridgeFlow::Continue;
+                }
+                match this.update(cx, |this, cx| this.on_hotkey_events(batch, cx)) {
+                    Ok(()) => BridgeFlow::Continue,
+                    Err(_) => BridgeFlow::Stop,
+                }
+            })
+            .await;
+        })
+    }
+
+    fn on_hotkey_events(&mut self, batch: &[Event], cx: &mut Context<Self>) {
+        for event in batch {
+            match runtime_event::decode(event) {
+                Some(RuntimeEvent::HotkeyPressed(pressed)) => {
+                    self.last_fired = Some(LastFired {
+                        combo: pressed.combo,
+                        at: event.timestamp,
+                    });
+                }
+                Some(RuntimeEvent::HotkeyEnableFailed(failed)) if !failed.combos.is_empty() => {
+                    cx.push_toast(
+                        ToastKind::Warn,
+                        tr!(
+                            "hotkeys_toast_enable_partial",
+                            count = i64::try_from(failed.combos.len()).unwrap_or(i64::MAX)
+                        ),
+                    );
+                }
+                _ => {}
+            }
+        }
+        self.refresh_from_client(cx);
+    }
+
+    fn load(&mut self, cx: &mut Context<Self>) {
+        let backend = Arc::clone(&self.backend);
+        let registered = registered_combos(&self.client);
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move {
+                let clips = backend
+                    .soundboard_clips_repo()
+                    .list()
+                    .await
+                    .map_err(RepoFailure::from)?;
+                let rows = load_bindings(backend, registered)
+                    .await
+                    .map_err(|error| RepoFailure::hotkey(&error))?;
+                Ok((rows, clip_keys(&clips)))
+            },
+            |this, result, cx| this.apply_bindings(result, cx),
+            cx,
+        );
+    }
+
+    fn apply_bindings(
+        &mut self,
+        result: Result<(Vec<BindingRow>, Vec<ClipKey>), RepoFailure>,
+        cx: &mut Context<Self>,
+    ) {
+        match result {
+            Ok((rows, clips)) => {
+                self.bindings = rows;
+                self.clip_keys = clips;
+                self.refresh_from_client(cx);
+            }
+            Err(failure) => self.on_repo_error(&failure, cx),
+        }
+    }
+
+    fn load_shortcuts(&mut self, cx: &mut Context<Self>) {
+        self.shortcuts = Loadable::Loading;
+        let repo = Arc::clone(&self.settings_repo);
+        async_bridge::run_async(
+            &self.rt_handle,
+            load_overrides(repo),
+            |this, result, cx| this.apply_shortcuts(result, cx),
+            cx,
+        );
+        cx.notify();
+    }
+
+    fn rollback_shortcuts(&mut self, cx: &mut Context<Self>) {
+        self.shortcuts = Loadable::Loading;
+        let repo = Arc::clone(&self.settings_repo);
+        async_bridge::run_async(
+            &self.rt_handle,
+            load_overrides(repo),
+            |this, result, cx| {
+                this.apply_shortcuts(result, cx);
+                if let Some(shortcuts) = this.shortcuts.loaded() {
+                    shortcuts.apply(cx);
+                }
+            },
+            cx,
+        );
+        cx.notify();
+    }
+
+    fn apply_shortcuts(
+        &mut self,
+        result: Result<ShortcutOverrides, StorageError>,
+        cx: &mut Context<Self>,
+    ) {
+        if let Err(e) = &result {
+            tracing::warn!(error = %e, "failed to load keyboard shortcuts");
+        }
+        self.shortcuts = Loadable::settled(result);
+        cx.notify();
+    }
+
+    fn persist_shortcuts(&mut self, cx: &mut Context<Self>) {
+        let Some(shortcuts) = self.shortcuts.loaded() else {
+            return;
+        };
+        shortcuts.apply(cx);
+        let repo = Arc::clone(&self.settings_repo);
+        let map = shortcuts.snapshot();
+        self.shortcut_writer
+            .write(save_overrides(repo, map), Self::on_shortcuts_written, cx);
+        cx.notify();
+    }
+
+    fn on_shortcuts_written(&mut self, outcome: WriteOutcome, cx: &mut Context<Self>) {
+        if let WriteOutcome::Failed(reason) = outcome {
+            self.on_repo_error(&reason, cx);
+            self.rollback_shortcuts(cx);
+        }
+    }
+
+    fn refresh_from_client(&mut self, cx: &mut Context<Self>) {
+        let registered = registered_combos(&self.client);
+        for row in &mut self.bindings {
+            row.registered = registered.iter().any(|(_, combo)| combo == &row.combo);
+        }
+        self.conflicts = conflict_count(&self.client);
+        self.enabled = self.client.is_enabled();
+        self.last_synthesized = self.client.last_synthesized_release();
+        cx.notify();
+    }
+
+    fn on_repo_error(&mut self, failure: &RepoFailure, cx: &mut Context<Self>) {
+        tracing::warn!(error = %failure, "hotkey binding operation failed");
+        let message = failure.text();
+        cx.push_toast(
+            ToastKind::Error,
+            tr!("hotkeys_toast_error", message = message.as_str()),
+        );
+        cx.notify();
+    }
+
+    fn enabled_count(&self) -> usize {
+        self.bindings.iter().filter(|row| row.enabled()).count()
+    }
+
+    fn row_by_key(&self, key: TriggerInstanceId) -> Option<&BindingRow> {
+        self.bindings.iter().find(|row| row.key == key)
+    }
+
+    fn row_of_instance(&self, instance_id: TriggerInstanceId) -> Option<&BindingRow> {
+        self.bindings.iter().find(|row| {
+            row.halves()
+                .any(|(_, half)| half.instance_id == instance_id)
+        })
+    }
+
+    fn locked_edge_for(&self, combo: &str) -> Option<HotkeyEdge> {
+        combo_holder(&self.bindings, combo, None)
+            .and_then(|row| row.free_edge())
+            .map(HotkeyEdge::opposite)
+    }
+
+    fn global_count(&self) -> usize {
+        self.bindings.iter().filter(|row| row.registered).count()
+    }
+
+    fn total_count(&self) -> usize {
+        self.bindings.len() + SHORTCUTS.len()
+    }
+
+    fn active_count(&self) -> usize {
+        self.enabled_count()
+            + self
+                .shortcuts
+                .loaded()
+                .map_or(0, ShortcutOverrides::bound_count)
+    }
+}
+
+impl EventEmitter<NavRequested> for HotkeysScreenView {}
+
+impl Render for HotkeysScreenView {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.row_keys.claim_focus_once(window, cx);
+        let palette = cx.palette();
+        let density = cx.density();
+
+        let header_right = div()
+            .flex()
+            .items_center()
+            .gap(scaled(HEADER_GAP, density))
+            .child(icon(Icon::Keyboard, HEADER_GLYPH, palette.success))
+            .child(
+                div()
+                    .font_family(cx.body_family())
+                    .text_size(LABEL_FS)
+                    .text_color(palette.text_muted)
+                    .child(tr!(
+                        "hotkeys_header_summary",
+                        count = i64::try_from(self.active_count()).unwrap_or(i64::MAX)
+                    )),
+            );
+
+        let body = div()
+            .id("hotkeys-scroll")
+            .track_scroll(&self.scroll)
+            .reveals_focus_in(&self.scroll)
+            .flex_1()
+            .h_full()
+            .overflow_y_scroll()
+            .bg(palette.base)
+            .child(
+                div()
+                    .w_full()
+                    .py(scaled(SCROLL_PAD_Y, density))
+                    .px(scaled(SCROLL_PAD_X, density))
+                    .flex()
+                    .flex_col()
+                    .child(self.render_hero(&palette, cx))
+                    .child(self.render_stats(&palette, density, cx))
+                    .child(self.render_bindings(&palette, cx))
+                    .child(self.render_footer(&palette, density, cx)),
+            );
+
+        let frame = page_frame(
+            vec![
+                hub_crumb(Some(forge_hotkey::HOTKEY_INTEGRATION.category), cx),
+                BreadcrumbCrumb::leaf(tr!("hotkeys_hero_title")),
+            ],
+            &palette,
+        )
+        .header_right(header_right)
+        .density(density)
+        .body(body);
+
+        let prompt = if let Some(conflict) = &self.conflict {
+            Some(self.render_conflict(conflict, &palette, cx))
+        } else {
+            self.delete_prompt
+                .as_ref()
+                .map(|prompt| self.render_delete_confirm(prompt, &palette, cx))
+        };
+
+        div()
+            .size_full()
+            .flex()
+            .flex_col()
+            .bg(palette.base)
+            .child(frame)
+            .children(self.modal.as_ref().map(|open| open.view.clone()))
+            .children(self.app_modal.as_ref().map(|open| open.view.clone()))
+            .children(prompt)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use forge_hotkey::HotkeyConfig;
+    use gpui::{Entity, TestAppContext, VisualTestContext};
+
+    use super::*;
+    use crate::app::navigation::Screen;
+    use crate::automation::shortcut_overrides::KEYBOARD_SHORTCUTS as SHORTCUTS_SETTING;
+    use crate::test_support::{
+        ReadFault, SETTINGS_READ_FAILED, Sandboxed, SettingWrite, TestBackend,
+        click_outside_the_list, hub_crumb_targets, install_presentation, open_under_root,
+        quiet_bus, runtime, sandboxed_provider, settle_focus, test_backend, writes_to,
+    };
+    use capture::Capture;
+    use forge_components::Toasts;
+
+    const KEYBOARD_SHORTCUTS: &str = SHORTCUTS_SETTING.name();
+    use tokio::sync::mpsc::UnboundedReceiver;
+
+    #[gpui::test]
+    fn the_crumb_leads_back_to_the_hotkeys_category_on_the_hub(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let bus = quiet_bus(&rt);
+        let storage = rt.block_on(sandboxed_provider());
+        let (settings, _writes) = test_backend();
+        let reconciler = {
+            let _entered = rt.enter();
+            let (client, _backend) = forge_hotkey::testing::test_client(
+                HotkeyConfig::default(),
+                Arc::clone(&bus) as Arc<dyn forge_events::EventPublisher>,
+            );
+            HotkeyReconciler::new(
+                client,
+                storage.trigger_instance_repo(),
+                storage.soundboard_clips_repo(),
+            )
+        };
+        let backend = Arc::clone(&storage);
+        let handle = rt.handle().clone();
+
+        let category = forge_hotkey::HOTKEY_INTEGRATION.category;
+        let targets = hub_crumb_targets(cx, Some(category), |_, cx| {
+            HotkeysScreenView::new(
+                reconciler,
+                None,
+                backend,
+                settings as Arc<dyn SettingsRepo>,
+                bus,
+                handle,
+                cx,
+            )
+        });
+
+        assert_eq!(targets, vec![Screen::Integrations(Some(category))]);
+    }
+
+    const HOME: &str = "nav.home";
+    const HOME_DEFAULT: &str = if cfg!(target_os = "macos") {
+        "cmd-1"
+    } else {
+        "ctrl-1"
+    };
+    const CHAT: &str = "nav.chat";
+    const STORED: &str = r#"{"nav.chat":{"chord":"ctrl-8","enabled":true}}"#;
+
+    struct Harness {
+        rt: tokio::runtime::Runtime,
+        settings: Arc<TestBackend>,
+        writes: UnboundedReceiver<SettingWrite>,
+        storage: Sandboxed<Arc<dyn DataProvider>>,
+    }
+
+    impl Harness {
+        fn new(stored: &str) -> Self {
+            let rt = runtime();
+            let storage = rt.block_on(sandboxed_provider());
+            let (settings, writes) = test_backend();
+            settings.seed_raw(&SHORTCUTS_SETTING, stored);
+            Self {
+                rt,
+                settings,
+                writes,
+                storage,
+            }
+        }
+
+        fn open(&self, cx: &mut TestAppContext) -> Entity<HotkeysScreenView> {
+            install_presentation(cx);
+            cx.update(|cx| cx.set_global(Toasts::new()));
+            let parts = self.view_parts();
+            let view = cx.update(|cx| cx.new(parts));
+            self.settle(cx);
+            view
+        }
+
+        fn open_under_root<'a>(
+            &self,
+            cx: &'a mut TestAppContext,
+        ) -> (Entity<HotkeysScreenView>, &'a mut VisualTestContext) {
+            install_presentation(cx);
+            cx.update(|cx| cx.set_global(Toasts::new()));
+            let parts = self.view_parts();
+            let (view, vcx) = open_under_root(cx, |cx| cx.new(parts));
+            self.settle(vcx);
+            (view, vcx)
+        }
+
+        fn view_parts(
+            &self,
+        ) -> impl FnOnce(&mut Context<HotkeysScreenView>) -> HotkeysScreenView + use<> {
+            let bus = quiet_bus(&self.rt);
+            let reconciler = {
+                let _entered = self.rt.enter();
+                let (client, _backend) = forge_hotkey::testing::test_client(
+                    HotkeyConfig::default(),
+                    Arc::clone(&bus) as Arc<dyn forge_events::EventPublisher>,
+                );
+                HotkeyReconciler::new(
+                    client,
+                    self.storage.trigger_instance_repo(),
+                    self.storage.soundboard_clips_repo(),
+                )
+            };
+            let backend = Arc::clone(&*self.storage);
+            let settings = Arc::clone(&self.settings) as Arc<dyn SettingsRepo>;
+            let handle = self.rt.handle().clone();
+            move |cx| HotkeysScreenView::new(reconciler, None, backend, settings, bus, handle, cx)
+        }
+
+        fn settle(&self, cx: &mut TestAppContext) {
+            crate::test_support::settle_runtime_work(cx, &self.rt);
+        }
+
+        fn shortcut_writes(&mut self) -> Vec<String> {
+            writes_to(&mut self.writes, KEYBOARD_SHORTCUTS)
+        }
+    }
+
+    #[gpui::test]
+    fn after_a_click_outside_enter_rebinds_the_row_at_the_cursor(cx: &mut TestAppContext) {
+        let harness = Harness::new("{}");
+        let (view, vcx) = harness.open_under_root(cx);
+
+        click_outside_the_list(vcx);
+        vcx.simulate_keystrokes("down down enter");
+
+        let second = SHORTCUTS[1].id;
+        view.read_with(vcx, |view, _| {
+            assert!(view.capture == Capture::App(second));
+        });
+
+        vcx.simulate_keystrokes("escape");
+        view.read_with(vcx, |view, _| assert!(view.capture == Capture::Off));
+    }
+
+    #[gpui::test]
+    fn the_arrows_stop_moving_the_cursor_while_a_row_captures(cx: &mut TestAppContext) {
+        let harness = Harness::new("{}");
+        let (view, vcx) = harness.open_under_root(cx);
+        click_outside_the_list(vcx);
+        vcx.simulate_keystrokes("down enter down");
+
+        let first = RowKey::App(SHORTCUTS[0].id);
+        view.read_with(vcx, |view, _| assert!(view.row_keys.is_at(&first)));
+    }
+
+    #[gpui::test]
+    fn space_toggles_the_row_at_the_cursor(cx: &mut TestAppContext) {
+        let mut harness = Harness::new("{}");
+        let (view, vcx) = harness.open_under_root(cx);
+        let id = SHORTCUTS[0].id;
+        click_outside_the_list(vcx);
+
+        vcx.simulate_keystrokes("down space");
+        harness.settle(vcx);
+
+        let enabled = view.read_with(vcx, |view, _| {
+            view.shortcuts
+                .loaded()
+                .map(|shortcuts| shortcuts.is_enabled(id))
+        });
+        assert_eq!(enabled, Some(false));
+        assert_eq!(harness.shortcut_writes().len(), 1);
+    }
+
+    #[gpui::test]
+    fn the_menu_key_opens_the_row_menu_and_its_arrows_stay_inside_it(cx: &mut TestAppContext) {
+        let harness = Harness::new("{}");
+        let (view, vcx) = harness.open_under_root(cx);
+        let first = RowKey::App(SHORTCUTS[0].id);
+        click_outside_the_list(vcx);
+
+        vcx.simulate_keystrokes("down shift-f10");
+        settle_focus(vcx);
+        view.read_with(vcx, |view, _| assert!(view.menu_open == Some(first)));
+
+        vcx.simulate_keystrokes("down down");
+        view.read_with(vcx, |view, _| assert!(view.row_keys.is_at(&first)));
+
+        vcx.simulate_keystrokes("escape");
+        settle_focus(vcx);
+        view.read_with(vcx, |view, _| assert!(view.menu_open.is_none()));
+
+        vcx.simulate_keystrokes("down");
+        let second = RowKey::App(SHORTCUTS[1].id);
+        view.read_with(vcx, |view, _| assert!(view.row_keys.is_at(&second)));
+    }
+
+    #[gpui::test]
+    fn stepping_past_the_fold_scrolls_the_row_into_view_and_back(cx: &mut TestAppContext) {
+        let harness = Harness::new("{}");
+        let (view, vcx) = harness.open_under_root(cx);
+        vcx.simulate_resize(gpui::size(px(900.0), px(300.0)));
+        settle_focus(vcx);
+        click_outside_the_list(vcx);
+        let offset =
+            |vcx: &mut VisualTestContext| view.read_with(vcx, |view, _| view.scroll.offset().y);
+
+        vcx.simulate_keystrokes("up");
+        settle_focus(vcx);
+        let at_the_last_row = offset(vcx);
+        assert!(at_the_last_row < px(0.0));
+
+        for _ in SHORTCUTS {
+            vcx.simulate_keystrokes("up");
+            settle_focus(vcx);
+        }
+        assert!(offset(vcx) > at_the_last_row);
+    }
+
+    #[gpui::test]
+    fn enter_on_the_last_row_starts_adding_a_binding(cx: &mut TestAppContext) {
+        let harness = Harness::new("{}");
+        let (view, vcx) = harness.open_under_root(cx);
+        click_outside_the_list(vcx);
+
+        vcx.simulate_keystrokes("up enter");
+
+        view.read_with(vcx, |view, _| assert!(view.capture == Capture::Add));
+    }
+
+    fn shown_chord(
+        view: &Entity<HotkeysScreenView>,
+        id: &str,
+        cx: &mut TestAppContext,
+    ) -> Option<String> {
+        let entry = crate::app::actions::shortcut_entry(id).unwrap();
+        view.read_with(cx, |v, _| {
+            v.shortcuts
+                .loaded()
+                .and_then(|shortcuts| shortcuts.resolved_chord_of(entry))
+        })
+    }
+
+    type Edit = fn(&mut HotkeysScreenView, &mut Context<HotkeysScreenView>);
+
+    fn edit_paths() -> [(&'static str, Edit); 4] {
+        [
+            ("reset", |v, cx| v.reset_app_binding(CHAT, cx)),
+            ("unbind", |v, cx| v.unbind_app_binding(HOME, cx)),
+            ("toggle", |v, cx| v.toggle_app_binding(HOME, cx)),
+            ("captured chord", |v, cx| {
+                v.apply_capture(Capture::App(HOME), "ctrl-9".to_owned(), cx)
+            }),
+        ]
+    }
+
+    #[gpui::test]
+    fn no_app_shortcut_edit_after_a_failed_load_writes_over_the_stored_shortcuts(
+        cx: &mut TestAppContext,
+    ) {
+        let unreachable = crate::test_support::shown_in_english(StorageError::Connection {
+            reason: SETTINGS_READ_FAILED.to_owned(),
+        });
+        let undecodable = crate::test_support::shown_in_english(StorageError::UndecodableSetting {
+            key: KEYBOARD_SHORTCUTS.to_owned(),
+        });
+        for (fault, stored, failing_read, reason) in [
+            ("unreachable store", STORED, true, unreachable),
+            ("undecodable value", "not json", false, undecodable),
+        ] {
+            for (case, edit) in edit_paths() {
+                let mut harness = Harness::new(stored);
+                if failing_read {
+                    harness
+                        .settings
+                        .fault_reads(KEYBOARD_SHORTCUTS, ReadFault::Fails);
+                }
+                let view = harness.open(cx);
+
+                view.update(cx, edit);
+                harness.settle(cx);
+
+                let failure = view.read_with(cx, |v, _| v.shortcuts.failure());
+                assert_eq!(
+                    (harness.shortcut_writes(), failure),
+                    (Vec::<String>::new(), Some(reason.clone())),
+                    "{fault}: {case}"
+                );
+            }
+        }
+    }
+
+    #[gpui::test]
+    fn no_app_shortcut_edit_while_the_load_is_pending_writes_and_the_load_lands_intact(
+        cx: &mut TestAppContext,
+    ) {
+        for (case, edit) in edit_paths() {
+            let mut harness = Harness::new(STORED);
+            let gate = Arc::new(tokio::sync::Notify::new());
+            harness
+                .settings
+                .fault_reads(KEYBOARD_SHORTCUTS, ReadFault::Held(Arc::clone(&gate)));
+            let view = harness.open(cx);
+
+            view.update(cx, edit);
+            harness.settle(cx);
+            let writes_while_pending = harness.shortcut_writes();
+            harness.settings.heal_reads(KEYBOARD_SHORTCUTS);
+            gate.notify_one();
+            harness.settle(cx);
+
+            assert_eq!(
+                (writes_while_pending, shown_chord(&view, CHAT, cx)),
+                (Vec::<String>::new(), Some("ctrl-8".to_owned())),
+                "{case}"
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn an_app_shortcut_cannot_be_opened_or_captured_until_the_shortcuts_load(
+        cx: &mut TestAppContext,
+    ) {
+        let entry = crate::app::actions::shortcut_entry(HOME).unwrap();
+        for (state, fault) in [
+            ("failed", ReadFault::Fails),
+            (
+                "pending",
+                ReadFault::Held(Arc::new(tokio::sync::Notify::new())),
+            ),
+        ] {
+            let harness = Harness::new(STORED);
+            harness.settings.fault_reads(KEYBOARD_SHORTCUTS, fault);
+            let view = harness.open(cx);
+
+            view.update(cx, |v, cx| {
+                v.edit_app_binding(entry, cx);
+                v.start_capture(Capture::App(HOME), cx);
+            });
+
+            let refused = view.read_with(cx, |v, _| {
+                (v.app_modal.is_none(), matches!(v.capture, Capture::Off))
+            });
+            assert_eq!(refused, (true, true), "{state}");
+        }
+    }
+
+    #[gpui::test]
+    fn retrying_a_failed_app_shortcut_load_restores_them_and_edits_persist_again(
+        cx: &mut TestAppContext,
+    ) {
+        let mut harness = Harness::new(STORED);
+        harness
+            .settings
+            .fault_reads(KEYBOARD_SHORTCUTS, ReadFault::Fails);
+        let view = harness.open(cx);
+        harness.settings.heal_reads(KEYBOARD_SHORTCUTS);
+
+        view.update(cx, |v, cx| v.load_shortcuts(cx));
+        harness.settle(cx);
+        view.update(cx, |v, cx| v.unbind_app_binding(HOME, cx));
+        harness.settle(cx);
+
+        let written: Vec<(Option<String>, Option<String>)> = harness
+            .shortcut_writes()
+            .iter()
+            .map(|raw| {
+                let restored = crate::test_support::stored_shortcut_overrides(Some(raw)).unwrap();
+                let chord_of = |id| {
+                    restored.resolved_chord_of(crate::app::actions::shortcut_entry(id).unwrap())
+                };
+                (chord_of(HOME), chord_of(CHAT))
+            })
+            .collect();
+        assert_eq!(written, vec![(None, Some("ctrl-8".to_owned()))]);
+    }
+
+    #[gpui::test]
+    fn a_failed_app_shortcut_write_toasts_and_rolls_back_to_the_stored_shortcuts(
+        cx: &mut TestAppContext,
+    ) {
+        let harness = Harness::new(STORED);
+        harness.settings.fail_writes(KEYBOARD_SHORTCUTS);
+        let view = harness.open(cx);
+
+        view.update(cx, |v, cx| v.unbind_app_binding(HOME, cx));
+        harness.settle(cx);
+
+        let toasted = cx.update(|cx| {
+            cx.global::<Toasts>()
+                .items()
+                .iter()
+                .map(|toast| toast.kind)
+                .collect::<Vec<_>>()
+        });
+        assert_eq!(
+            (toasted, shown_chord(&view, HOME, cx)),
+            (vec![ToastKind::Error], Some(HOME_DEFAULT.to_owned()))
+        );
+    }
+}

@@ -651,17 +651,7 @@ impl IntegrationFactory<BuiltinObject> for DiscordFactory {
 
     async fn start(&self) -> Result<RunningIntegration<BuiltinObject>, IntegrationStartError> {
         let client = Arc::clone(&self.client);
-        Ok(RunningIntegration::idle().with_object(BuiltinObject {
-            status: client.clone(),
-            health: client.clone(),
-            content: client.clone(),
-            quick: client,
-            control: None,
-            collections: None,
-            option_source: None,
-            follow: None,
-            ban_list: None,
-        }))
+        Ok(RunningIntegration::idle().with_object(BuiltinObject::of(client.clone())))
     }
 }
 
@@ -721,17 +711,7 @@ impl IntegrationFactory<BuiltinObject> for MidiFactory {
         )
         .map_err(|e| midi_start_error(&e))?;
         self.sink.install(Arc::clone(&client));
-        let object = BuiltinObject {
-            status: client.clone(),
-            health: client.clone(),
-            content: client.clone(),
-            quick: client.clone(),
-            control: Some(client),
-            collections: None,
-            option_source: None,
-            follow: None,
-            ban_list: None,
-        };
+        let object = BuiltinObject::of(client.clone()).with_control(client);
         let sink = Arc::clone(&self.sink);
         let teardown = Box::pin(async move {
             if let Some(client) = sink.take()
@@ -813,17 +793,7 @@ impl IntegrationFactory<BuiltinObject> for HotkeyFactory {
             );
         }
         let client = Arc::clone(&self.client);
-        let object = BuiltinObject {
-            status: client.clone(),
-            health: client.clone(),
-            content: client.clone(),
-            quick: client.clone(),
-            control: Some(client.clone()),
-            collections: None,
-            option_source: None,
-            follow: None,
-            ban_list: None,
-        };
+        let object = BuiltinObject::of(client.clone()).with_control(client.clone());
         let teardown = Box::pin(async move {
             if let Err(e) = client.disable().await {
                 tracing::warn!(error = %e, "hotkey engine did not release its bindings");

@@ -1,3 +1,4 @@
+use forge_registry::{StepCardDetail, card_int, card_text};
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -49,6 +50,15 @@ impl StepCatalogEntry for CoreGlobalsIncrementRunner {
     }
     fn icon_name(&self) -> &str {
         "plus"
+    }
+
+    fn card_detail(&self, config: &SubActionConfig) -> Option<StepCardDetail> {
+        let name = card_text(config, super::core_globals_shared::NAME_KEY).unwrap_or("");
+        let amount = card_int(config, super::core_globals_shared::AMOUNT_KEY)
+            .unwrap_or(super::core_globals_shared::DEFAULT_AMOUNT);
+        Some(StepCardDetail::Message(
+            crate::core_messages::step_increment_detail(name, amount),
+        ))
     }
 }
 

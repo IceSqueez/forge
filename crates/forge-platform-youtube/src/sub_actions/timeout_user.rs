@@ -15,7 +15,7 @@ use crate::vocabulary::{config_keys, sub_action_ids};
 use forge_registry::interpolated_text;
 
 const MIN_TIMEOUT_SECONDS: i64 = 1;
-const MAX_TIMEOUT_SECONDS: i64 = 86_400;
+pub(crate) const MAX_TIMEOUT_SECONDS: i64 = 86_400;
 const DEFAULT_TIMEOUT_SECONDS: i64 = 300;
 
 const DURATION_SECONDS: DurationField = DurationField {

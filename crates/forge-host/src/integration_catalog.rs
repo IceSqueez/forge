@@ -1,5 +1,7 @@
-use forge_platform_core::{EndpointSurface, IntegrationDeclaration};
-use forge_types::{IntegrationId, MessageCatalog};
+use forge_platform_core::{
+    ChatLimits, EndpointSurface, IntegrationDeclaration, ViewerAction, ViewerRef, ViewerStep,
+};
+use forge_types::{IntegrationId, MessageCatalog, PlatformId};
 
 pub const INTEGRATION_MESSAGE_CATALOGS: &[MessageCatalog] = &[
     forge_platform_twitch::vocabulary::messages::TWITCH_MESSAGES,
@@ -28,6 +30,42 @@ pub fn declarations() -> [IntegrationDeclaration; 10] {
         forge_midi::MIDI_INTEGRATION,
         forge_hotkey::HOTKEY_INTEGRATION,
     ]
+}
+
+pub const fn chat_declaration(platform: PlatformId) -> IntegrationDeclaration {
+    match platform {
+        PlatformId::Twitch => forge_platform_twitch::TWITCH_INTEGRATION,
+        PlatformId::YouTube => forge_platform_youtube::YOUTUBE_INTEGRATION,
+        PlatformId::Kick => forge_platform_kick::KICK_INTEGRATION,
+    }
+}
+
+pub const fn chat_limits(platform: PlatformId) -> ChatLimits {
+    match platform {
+        PlatformId::Twitch => forge_platform_twitch::TWITCH_CHAT_LIMITS,
+        PlatformId::YouTube => forge_platform_youtube::YOUTUBE_CHAT_LIMITS,
+        PlatformId::Kick => forge_platform_kick::KICK_CHAT_LIMITS,
+    }
+}
+
+pub const fn loopback_authorize_endpoint(platform: PlatformId) -> &'static str {
+    match platform {
+        PlatformId::YouTube => forge_platform_youtube::GOOGLE_AUTHORIZE_ENDPOINT,
+        PlatformId::Kick => forge_platform_kick::KICK_AUTHORIZE_ENDPOINT,
+        PlatformId::Twitch => "",
+    }
+}
+
+pub fn viewer_step(
+    platform: PlatformId,
+    viewer: ViewerRef<'_>,
+    action: &ViewerAction,
+) -> Option<ViewerStep> {
+    match platform {
+        PlatformId::Twitch => forge_platform_twitch::viewer_step(viewer, action),
+        PlatformId::YouTube => forge_platform_youtube::viewer_step(viewer, action),
+        PlatformId::Kick => forge_platform_kick::viewer_step(viewer, action),
+    }
 }
 
 pub fn endpoint_surfaces() -> Vec<EndpointSurface> {

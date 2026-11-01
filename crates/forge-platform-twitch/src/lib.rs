@@ -34,6 +34,7 @@ mod sub_actions;
 mod subscriptions;
 mod timestamp;
 mod triggers;
+mod viewer_step;
 pub mod vocabulary;
 
 pub use account::identity::BroadcasterTier;
@@ -51,7 +52,7 @@ pub use credentials_manager::TwitchCredentialsManager;
 pub use error::TwitchError;
 pub use helix::{HelixHttpTransport, HelixRequest, HelixTokenSource, HelixTransport};
 pub use helix_gateway::helix_gateway;
-pub use integration::TWITCH_INTEGRATION;
+pub use integration::{TWITCH_CHAT_LIMITS, TWITCH_INTEGRATION};
 pub use lifecycle::TwitchLifecycle;
 pub use oauth_client::{
     TWITCH_OAUTH_BUDGET_CAPACITY, TWITCH_OAUTH_BUDGET_WINDOW, TwitchOAuthClient,
@@ -60,6 +61,7 @@ pub use oauth_client::{
 pub use sub_actions::register_twitch_sub_actions;
 pub use subscriptions::{SubStatus, SubscriptionTracker};
 pub use triggers::register_twitch_triggers;
+pub use viewer_step::viewer_step;
 
 pub use assembly::TwitchSession;
 pub use auth::DeviceTiming;

@@ -2,13 +2,14 @@ use crate::focus_reveal::OverflowRevealingFocus;
 use crate::key_activation::KeyActivated;
 use crate::presentation::ActivePresentation;
 use gpui::{
-    AnyElement, App, ClickEvent, ElementId, InteractiveElement, IntoElement, ParentElement, Pixels,
-    RenderOnce, Rgba, SharedString, StatefulInteractiveElement, Styled, Window, div, px,
+    AnyElement, App, ClickEvent, Div, ElementId, InteractiveElement, IntoElement, MouseButton,
+    ParentElement, Pixels, RenderOnce, Rgba, SharedString, StatefulInteractiveElement, Styled,
+    Window, div, px,
 };
 
 use crate::icons::{Icon, icon, spinner};
 use crate::overlay::confine_tab;
-use crate::palette::ForgePalette;
+use crate::palette::{ForgePalette, with_alpha};
 use crate::tokens::{
     BORDER_THIN, Density, FONT_MD, FONT_XS, ModalSize, Radius, Spacing, modal_width, radius,
     scaled, spacing,
@@ -18,6 +19,8 @@ const BODY_ID: &str = "forge-modal-body";
 const HEADER_TILE: Pixels = px(28.0);
 const HEADER_TILE_ICON: Pixels = px(15.0);
 const TITLE_GAP: Pixels = px(2.0);
+const ALERT_TILE: Pixels = px(36.0);
+const ALERT_TILE_ALPHA: f32 = 0.12;
 type CloseHandler = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
 
 #[derive(IntoElement)]
@@ -28,7 +31,10 @@ pub struct Modal {
     body: AnyElement,
     pad_body: bool,
     body_scrolls_itself: bool,
+    has_header: bool,
     footer: Option<AnyElement>,
+    footer_in_band: bool,
+    keeps_focus_on_press: bool,
     header_icon: Option<(Icon, Rgba)>,
     tile_size: Option<(Pixels, Pixels)>,
     size: ModalSize,
@@ -57,7 +63,10 @@ pub fn modal(
         body: body.into_any_element(),
         pad_body: true,
         body_scrolls_itself: false,
+        has_header: true,
         footer: None,
+        footer_in_band: true,
+        keeps_focus_on_press: false,
         header_icon: None,
         tile_size: None,
         size: ModalSize::Md,
@@ -75,7 +84,45 @@ pub fn modal(
     }
 }
 
+pub(crate) fn bare_modal(body: impl IntoElement, palette: &ForgePalette) -> Modal {
+    let mut card = modal(SharedString::default(), body, palette);
+    card.has_header = false;
+    card.pad_body = false;
+    card
+}
+
+pub(crate) fn alert_tile(accent: Rgba, glyph: Pixels) -> Div {
+    div()
+        .flex_none()
+        .flex()
+        .items_center()
+        .justify_center()
+        .size(ALERT_TILE)
+        .rounded(radius(Radius::Md))
+        .bg(with_alpha(accent, ALERT_TILE_ALPHA))
+        .child(icon(Icon::AlertTriangle, glyph, accent))
+}
+
 impl Modal {
+    #[must_use]
+    pub(crate) fn bare_footer(mut self, footer: impl IntoElement) -> Self {
+        self.footer = Some(footer.into_any_element());
+        self.footer_in_band = false;
+        self
+    }
+
+    #[must_use]
+    pub(crate) fn keeps_focus_on_press(mut self) -> Self {
+        self.keeps_focus_on_press = true;
+        self
+    }
+
+    #[must_use]
+    pub(crate) fn frame_border(mut self, color: Rgba) -> Self {
+        self.border = color;
+        self
+    }
+
     #[must_use]
     pub fn subtitle(mut self, subtitle: impl Into<SharedString>) -> Self {
         self.subtitle = Some(subtitle.into());
@@ -219,6 +266,9 @@ impl Modal {
 
     fn render_footer(&mut self, density: Density) -> Option<AnyElement> {
         let footer = self.footer.take()?;
+        if !self.footer_in_band {
+            return Some(footer);
+        }
 
         let band = div()
             .w_full()
@@ -243,7 +293,7 @@ impl RenderOnce for Modal {
             .use_state(cx, |_, cx| cx.focus_handle())
             .read(cx)
             .clone();
-        let header = self.render_header(density, cx);
+        let header = self.has_header.then(|| self.render_header(density, cx));
         let footer = self.render_footer(density);
 
         let mut body = div().id(BODY_ID).w_full().min_h_0().flex().flex_col();
@@ -257,7 +307,13 @@ impl RenderOnce for Modal {
             body.overflow_y_revealing_focus().into_any_element()
         };
 
-        confine_tab(div().track_focus(&scope), &scope)
+        let mut frame = confine_tab(div().track_focus(&scope), &scope);
+        if self.keeps_focus_on_press {
+            frame = frame.on_mouse_down(MouseButton::Left, |_, window, _| {
+                window.prevent_default();
+            });
+        }
+        frame
             .flex()
             .flex_col()
             .w(self
@@ -269,7 +325,7 @@ impl RenderOnce for Modal {
             .overflow_hidden()
             .border(BORDER_THIN)
             .border_color(self.border)
-            .child(header)
+            .children(header)
             .child(body)
             .children(footer)
     }

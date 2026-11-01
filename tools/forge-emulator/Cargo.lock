@@ -864,6 +864,7 @@ dependencies = [
 name = "forge-donatello"
 version = "0.6.3"
 dependencies = [
+ "async-trait",
  "forge-events",
  "forge-net",
  "forge-platform-core",
@@ -944,6 +945,7 @@ dependencies = [
 name = "forge-monobank"
 version = "0.6.3"
 dependencies = [
+ "async-trait",
  "forge-events",
  "forge-net",
  "forge-platform-core",

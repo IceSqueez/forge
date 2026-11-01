@@ -101,24 +101,177 @@ pub fn hover_reveal(content: impl IntoElement, group: impl Into<SharedString>) -
         .child(content)
 }
 
-struct DataTableColors {
+#[derive(Clone, Copy)]
+struct TablePadding {
+    vertical: Pixels,
+    horizontal: Pixels,
+}
+
+#[derive(Clone, Copy)]
+struct TableStyle {
     header_bg: Rgba,
     header_ink: Rgba,
     separator: Rgba,
     header_rule: Option<Rgba>,
     hover: Rgba,
+    header_pad: Option<(Pixels, Pixels)>,
+    row_pad: Option<(Pixels, Pixels)>,
+    cell_gap: Pixels,
+    trailing_rule: bool,
+}
+
+impl TableStyle {
+    fn new(palette: &ForgePalette) -> Self {
+        Self {
+            header_bg: palette.shell,
+            header_ink: palette.text_faint,
+            separator: palette.border_regular,
+            header_rule: None,
+            hover: palette.base,
+            header_pad: None,
+            row_pad: None,
+            cell_gap: px(0.0),
+            trailing_rule: true,
+        }
+    }
+
+    fn padding(custom: Option<(Pixels, Pixels)>, density: Density) -> TablePadding {
+        let (vertical, horizontal) =
+            custom.unwrap_or((spacing(Spacing::Xs, density), spacing(Spacing::Md, density)));
+        TablePadding {
+            vertical,
+            horizontal,
+        }
+    }
+
+    fn header_rule_color(&self) -> Rgba {
+        self.header_rule.unwrap_or(self.separator)
+    }
+
+    fn header(&self, columns: Vec<Column>, density: Density, cx: &App) -> Div {
+        let pad = Self::padding(self.header_pad, density);
+        let header_ink = self.header_ink;
+        let header_cells = columns.into_iter().map(move |c| {
+            let label_el = div()
+                .font_family(cx.mono_family())
+                .text_size(FONT_XXS)
+                .truncate()
+                .text_color(header_ink)
+                .child(c.label);
+            let cell = column_cell(c.width, label_el);
+            match c.align {
+                HeaderAlign::Start => cell,
+                HeaderAlign::End => cell.flex().justify_end(),
+            }
+        });
+        div()
+            .flex()
+            .items_center()
+            .w_full()
+            .gap(self.cell_gap)
+            .py(pad.vertical)
+            .px(pad.horizontal)
+            .bg(self.header_bg)
+            .children(header_cells)
+    }
+
+    fn header_rule_line(&self) -> Div {
+        div()
+            .flex_none()
+            .h(BORDER_THIN)
+            .w_full()
+            .bg(self.header_rule_color())
+    }
+
+    fn row(&self, row: DataRow, widths: &[ColumnWidth], density: Density) -> Div {
+        let pad = Self::padding(self.row_pad, density);
+        let hover = self.hover;
+        let cells = row
+            .cells
+            .into_iter()
+            .zip(widths.iter().copied())
+            .map(|(cell, width)| column_cell(width, cell));
+        let mut row_el = div()
+            .flex()
+            .items_center()
+            .w_full()
+            .gap(self.cell_gap)
+            .py(pad.vertical)
+            .px(pad.horizontal)
+            .hover(move |s| s.bg(hover))
+            .children(cells);
+        if row.highlighted {
+            row_el = row_el.bg(hover);
+        }
+        if let Some(group) = row.reveal_group {
+            row_el = row_el.group(group);
+        }
+        row_el
+    }
+
+    fn rule_follows(&self, index: usize, row_count: usize) -> bool {
+        self.trailing_rule || index + 1 != row_count
+    }
+}
+
+macro_rules! table_style_setters {
+    () => {
+        #[must_use]
+        pub fn header_bg(mut self, color: Rgba) -> Self {
+            self.style.header_bg = color;
+            self
+        }
+
+        #[must_use]
+        pub fn separator(mut self, color: Rgba) -> Self {
+            self.style.separator = color;
+            self
+        }
+
+        #[must_use]
+        pub fn header_rule(mut self, color: Rgba) -> Self {
+            self.style.header_rule = Some(color);
+            self
+        }
+
+        #[must_use]
+        pub fn row_hover(mut self, color: Rgba) -> Self {
+            self.style.hover = color;
+            self
+        }
+
+        #[must_use]
+        pub fn header_padding(mut self, vertical: Pixels, horizontal: Pixels) -> Self {
+            self.style.header_pad = Some((vertical, horizontal));
+            self
+        }
+
+        #[must_use]
+        pub fn row_padding(mut self, vertical: Pixels, horizontal: Pixels) -> Self {
+            self.style.row_pad = Some((vertical, horizontal));
+            self
+        }
+
+        #[must_use]
+        pub fn cell_gap(mut self, gap: Pixels) -> Self {
+            self.style.cell_gap = gap;
+            self
+        }
+
+        #[must_use]
+        pub fn trailing_rule(mut self, on: bool) -> Self {
+            self.style.trailing_rule = on;
+            self
+        }
+    };
 }
 
 #[derive(IntoElement)]
 pub struct DataTable {
     columns: Vec<Column>,
     rows: Vec<DataRow>,
-    colors: DataTableColors,
+    style: TableStyle,
     density: Option<Density>,
-    header_pad: Option<(Pixels, Pixels)>,
-    row_pad: Option<(Pixels, Pixels)>,
-    cell_gap: Pixels,
-    trailing_rule: bool,
     scroll_id: Option<ElementId>,
 }
 
@@ -126,74 +279,18 @@ pub fn data_table(palette: &ForgePalette, columns: Vec<Column>, rows: Vec<DataRo
     DataTable {
         columns,
         rows,
-        colors: DataTableColors {
-            header_bg: palette.shell,
-            header_ink: palette.text_faint,
-            separator: palette.border_regular,
-            header_rule: None,
-            hover: palette.base,
-        },
+        style: TableStyle::new(palette),
         density: None,
-        header_pad: None,
-        row_pad: None,
-        cell_gap: px(0.0),
-        trailing_rule: true,
         scroll_id: None,
     }
 }
 
 impl DataTable {
+    table_style_setters!();
+
     #[must_use]
     pub fn density(mut self, density: Density) -> Self {
         self.density = Some(density);
-        self
-    }
-
-    #[must_use]
-    pub fn header_bg(mut self, color: Rgba) -> Self {
-        self.colors.header_bg = color;
-        self
-    }
-
-    #[must_use]
-    pub fn separator(mut self, color: Rgba) -> Self {
-        self.colors.separator = color;
-        self
-    }
-
-    #[must_use]
-    pub fn header_rule(mut self, color: Rgba) -> Self {
-        self.colors.header_rule = Some(color);
-        self
-    }
-
-    #[must_use]
-    pub fn row_hover(mut self, color: Rgba) -> Self {
-        self.colors.hover = color;
-        self
-    }
-
-    #[must_use]
-    pub fn header_padding(mut self, vertical: Pixels, horizontal: Pixels) -> Self {
-        self.header_pad = Some((vertical, horizontal));
-        self
-    }
-
-    #[must_use]
-    pub fn row_padding(mut self, vertical: Pixels, horizontal: Pixels) -> Self {
-        self.row_pad = Some((vertical, horizontal));
-        self
-    }
-
-    #[must_use]
-    pub fn cell_gap(mut self, gap: Pixels) -> Self {
-        self.cell_gap = gap;
-        self
-    }
-
-    #[must_use]
-    pub fn trailing_rule(mut self, on: bool) -> Self {
-        self.trailing_rule = on;
         self
     }
 
@@ -202,39 +299,6 @@ impl DataTable {
         self.scroll_id = Some(id.into());
         self
     }
-}
-
-fn table_header(
-    columns: Vec<Column>,
-    header_bg: Rgba,
-    header_ink: Rgba,
-    gap: Pixels,
-    h_py: Pixels,
-    h_px: Pixels,
-    cx: &App,
-) -> Div {
-    let header_cells = columns.into_iter().map(move |c| {
-        let label_el = div()
-            .font_family(cx.mono_family())
-            .text_size(FONT_XXS)
-            .truncate()
-            .text_color(header_ink)
-            .child(c.label);
-        let cell = column_cell(c.width, label_el);
-        match c.align {
-            HeaderAlign::Start => cell,
-            HeaderAlign::End => cell.flex().justify_end(),
-        }
-    });
-    div()
-        .flex()
-        .items_center()
-        .w_full()
-        .gap(gap)
-        .py(h_py)
-        .px(h_px)
-        .bg(header_bg)
-        .children(header_cells)
 }
 
 fn column_cell(width: ColumnWidth, child: impl IntoElement) -> Div {
@@ -256,63 +320,18 @@ fn column_cell(width: ColumnWidth, child: impl IntoElement) -> Div {
 impl RenderOnce for DataTable {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let d = self.density.unwrap_or_else(|| cx.density());
-        let colors = self.colors;
-        let gap = self.cell_gap;
-        let (h_py, h_px) = self
-            .header_pad
-            .unwrap_or((spacing(Spacing::Xs, d), spacing(Spacing::Md, d)));
-        let (r_py, r_px) = self
-            .row_pad
-            .unwrap_or((spacing(Spacing::Xs, d), spacing(Spacing::Md, d)));
-
-        let separator = colors.separator;
-        let header_rule_color = colors.header_rule.unwrap_or(separator);
+        let style = self.style;
+        let separator = style.separator;
         let rule = move || div().flex_none().h(BORDER_THIN).w_full().bg(separator);
-        let header_rule = div()
-            .flex_none()
-            .h(BORDER_THIN)
-            .w_full()
-            .bg(header_rule_color);
 
         let widths: Vec<ColumnWidth> = self.columns.iter().map(|c| c.width).collect();
+        let header = style.header(self.columns, d, cx);
 
-        let header = table_header(
-            self.columns,
-            colors.header_bg,
-            colors.header_ink,
-            gap,
-            h_py,
-            h_px,
-            cx,
-        );
-
-        let hover = colors.hover;
         let total = self.rows.len();
         let mut body_children: Vec<AnyElement> = Vec::new();
         for (index, row) in self.rows.into_iter().enumerate() {
-            let cells = row
-                .cells
-                .into_iter()
-                .zip(widths.iter().copied())
-                .map(|(cell, width)| column_cell(width, cell));
-
-            let mut row_el = div()
-                .flex()
-                .items_center()
-                .w_full()
-                .gap(gap)
-                .py(r_py)
-                .px(r_px)
-                .hover(move |s| s.bg(hover))
-                .children(cells);
-
-            if let Some(group) = row.reveal_group {
-                row_el = row_el.group(group);
-            }
-
-            body_children.push(row_el.into_any_element());
-            let last = index + 1 == total;
-            if !last || self.trailing_rule {
+            body_children.push(style.row(row, &widths, d).into_any_element());
+            if style.rule_follows(index, total) {
                 body_children.push(rule().into_any_element());
             }
         }
@@ -336,7 +355,9 @@ impl RenderOnce for DataTable {
         if has_scroll {
             root = root.flex_1().min_h(px(0.0));
         }
-        root.child(header).child(header_rule).child(body)
+        root.child(header)
+            .child(style.header_rule_line())
+            .child(body)
     }
 }
 
@@ -346,15 +367,7 @@ pub struct VirtualTable<'a> {
     row_count: usize,
     scroll: &'a UniformListScrollHandle,
     density: Density,
-    header_bg: Rgba,
-    header_ink: Rgba,
-    separator: Rgba,
-    header_rule: Option<Rgba>,
-    hover: Rgba,
-    header_pad: Option<(Pixels, Pixels)>,
-    row_pad: Option<(Pixels, Pixels)>,
-    cell_gap: Pixels,
-    trailing_rule: bool,
+    style: TableStyle,
 }
 
 pub fn virtual_table<'a>(
@@ -371,66 +384,12 @@ pub fn virtual_table<'a>(
         row_count,
         scroll,
         density,
-        header_bg: palette.shell,
-        header_ink: palette.text_faint,
-        separator: palette.border_regular,
-        header_rule: None,
-        hover: palette.base,
-        header_pad: None,
-        row_pad: None,
-        cell_gap: px(0.0),
-        trailing_rule: true,
+        style: TableStyle::new(palette),
     }
 }
 
 impl<'a> VirtualTable<'a> {
-    #[must_use]
-    pub fn header_bg(mut self, color: Rgba) -> Self {
-        self.header_bg = color;
-        self
-    }
-
-    #[must_use]
-    pub fn separator(mut self, color: Rgba) -> Self {
-        self.separator = color;
-        self
-    }
-
-    #[must_use]
-    pub fn header_rule(mut self, color: Rgba) -> Self {
-        self.header_rule = Some(color);
-        self
-    }
-
-    #[must_use]
-    pub fn row_hover(mut self, color: Rgba) -> Self {
-        self.hover = color;
-        self
-    }
-
-    #[must_use]
-    pub fn header_padding(mut self, vertical: Pixels, horizontal: Pixels) -> Self {
-        self.header_pad = Some((vertical, horizontal));
-        self
-    }
-
-    #[must_use]
-    pub fn row_padding(mut self, vertical: Pixels, horizontal: Pixels) -> Self {
-        self.row_pad = Some((vertical, horizontal));
-        self
-    }
-
-    #[must_use]
-    pub fn cell_gap(mut self, gap: Pixels) -> Self {
-        self.cell_gap = gap;
-        self
-    }
-
-    #[must_use]
-    pub fn trailing_rule(mut self, on: bool) -> Self {
-        self.trailing_rule = on;
-        self
-    }
+    table_style_setters!();
 
     pub fn build<V, F>(self, row_builder: F, cx: &mut Context<V>) -> AnyElement
     where
@@ -438,29 +397,11 @@ impl<'a> VirtualTable<'a> {
         F: Fn(&mut V, usize, &mut Window, &mut Context<V>) -> DataRow + 'static,
     {
         let d = self.density;
-        let gap = self.cell_gap;
-        let (h_py, h_px) = self
-            .header_pad
-            .unwrap_or((spacing(Spacing::Xs, d), spacing(Spacing::Md, d)));
-        let (r_py, r_px) = self
-            .row_pad
-            .unwrap_or((spacing(Spacing::Xs, d), spacing(Spacing::Md, d)));
-        let separator = self.separator;
-        let header_rule_color = self.header_rule.unwrap_or(separator);
-        let hover = self.hover;
+        let style = self.style;
         let row_count = self.row_count;
-        let trailing_rule = self.trailing_rule;
 
         let widths: Vec<ColumnWidth> = self.columns.iter().map(|c| c.width).collect();
-        let header = table_header(
-            self.columns,
-            self.header_bg,
-            self.header_ink,
-            gap,
-            h_py,
-            h_px,
-            cx,
-        );
+        let header = style.header(self.columns, d, cx);
 
         let list = uniform_list(
             self.id,
@@ -468,30 +409,10 @@ impl<'a> VirtualTable<'a> {
             cx.processor(move |view, range: std::ops::Range<usize>, window, cx| {
                 let mut out = Vec::with_capacity(range.len());
                 for ix in range {
-                    let last = ix + 1 == row_count;
                     let row = row_builder(view, ix, window, cx);
-                    let cells = row
-                        .cells
-                        .into_iter()
-                        .zip(widths.iter().copied())
-                        .map(|(cell, width)| column_cell(width, cell));
-                    let mut row_el = div()
-                        .flex()
-                        .items_center()
-                        .w_full()
-                        .gap(gap)
-                        .py(r_py)
-                        .px(r_px)
-                        .hover(move |s| s.bg(hover))
-                        .children(cells);
-                    if trailing_rule || !last {
-                        row_el = row_el.border_b(BORDER_THIN).border_color(separator);
-                    }
-                    if row.highlighted {
-                        row_el = row_el.bg(hover);
-                    }
-                    if let Some(group) = row.reveal_group {
-                        row_el = row_el.group(group);
+                    let mut row_el = style.row(row, &widths, d);
+                    if style.rule_follows(ix, row_count) {
+                        row_el = row_el.border_b(BORDER_THIN).border_color(style.separator);
                     }
                     out.push(row_el);
                 }
@@ -502,12 +423,6 @@ impl<'a> VirtualTable<'a> {
         .flex_1()
         .min_h(px(0.0));
 
-        let rule = div()
-            .flex_none()
-            .h(BORDER_THIN)
-            .w_full()
-            .bg(header_rule_color);
-
         div()
             .flex()
             .flex_col()
@@ -515,7 +430,7 @@ impl<'a> VirtualTable<'a> {
             .min_h(px(0.0))
             .w_full()
             .child(header)
-            .child(rule)
+            .child(style.header_rule_line())
             .child(list)
             .into_any_element()
     }

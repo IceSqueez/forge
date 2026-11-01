@@ -15,6 +15,7 @@ forge-events = { path = "../forge-events" }
 forge-net = { path = "../forge-net" }
 forge-platform-core = { path = "../forge-platform-core" }
 forge-storage = { path = "../forge-storage" }
+async-trait = { workspace = true }
 forge-types = { path = "../forge-types" }
 
 jiff = { workspace = true }
@@ -26,7 +27,6 @@ tracing = { workspace = true }
 
 [dev-dependencies]
 forge-test-support = { path = "../forge-test-support" }
-async-trait = { workspace = true }
 reqwest = { workspace = true }
 forge-storage = { path = "../forge-storage", features = ["settings-test-support"] }
 time = { workspace = true, features = ["macros"] }

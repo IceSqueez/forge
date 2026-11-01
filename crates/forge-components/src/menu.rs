@@ -6,14 +6,16 @@ use std::sync::Arc;
 
 use gpui::{
     Anchor, AnchoredPositionMode, AnimationExt, AnyElement, App, ClickEvent, Div, ElementId,
-    Entity, FocusHandle, InteractiveElement, IntoElement, KeyBinding, KeyDownEvent,
-    KeyboardClickEvent, MouseButton, MouseDownEvent, ParentElement, Pixels, Point, RenderOnce,
-    Rgba, SharedString, StatefulInteractiveElement, Styled, Window, actions, anchored, deferred,
-    div, point, px,
+    Entity, FocusHandle, InteractiveElement, IntoElement, KeyBinding, KeyboardClickEvent,
+    ParentElement, Pixels, Point, RenderOnce, Rgba, SharedString, StatefulInteractiveElement,
+    Styled, Window, actions, anchored, deferred, div, point, px,
 };
 
 use crate::icons::{Icon, icon};
-use crate::overlay::{drive_overlay_focus, enter_animation};
+use crate::overlay::{
+    DismissHandler, PRESS_ANY, PRESS_LEFT, dismiss_backdrop, dismissing_on_escape,
+    drive_overlay_focus, enter_animation,
+};
 use crate::palette::ForgePalette;
 use crate::tokens::{BORDER_THIN, DISABLED_OPACITY, Density, FONT_XS, Spacing, scaled, spacing};
 
@@ -47,8 +49,6 @@ pub fn bind_menu_keys(cx: &mut App) {
 type ItemClick = Rc<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
 
 type ToggleHandler = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
-
-type DismissHandler = Rc<dyn Fn(&mut Window, &mut App) + 'static>;
 
 pub struct MenuEntry {
     id: ElementId,
@@ -320,7 +320,7 @@ impl MenuKeyboard {
             (self.cursor.clone(), self.cursor.clone(), self.cursor);
         let dismiss_on_escape = Rc::clone(&dismiss);
         let enabled_for_prev = Rc::clone(&enabled);
-        panel
+        let panel = panel
             .track_focus(&self.focus)
             .key_context(MENU_KEY_CONTEXT)
             .on_action(move |_: &MenuSelectPrev, _, cx| {
@@ -345,13 +345,8 @@ impl MenuKeyboard {
                     handler(&event, window, cx);
                     dismiss(window, cx);
                 }
-            })
-            .on_key_down(move |event: &KeyDownEvent, window, cx| {
-                if event.keystroke.key.as_str() == crate::tokens::ESCAPE_KEY {
-                    cx.stop_propagation();
-                    dismiss_on_escape(window, cx);
-                }
-            })
+            });
+        dismissing_on_escape(panel, move |window, cx| dismiss_on_escape(window, cx))
     }
 }
 
@@ -527,19 +522,7 @@ impl RenderOnce for MenuButton {
                 el.opacity(delta)
             });
 
-        let viewport = window.viewport_size();
-        let mut backdrop = div().size_full().occlude();
-        if let Some(dismiss) = dismiss {
-            backdrop =
-                backdrop.on_mouse_down(MouseButton::Left, move |_: &MouseDownEvent, window, cx| {
-                    dismiss(window, cx);
-                });
-        }
-        let backdrop_layer = anchored()
-            .position_mode(AnchoredPositionMode::Window)
-            .position(point(px(0.0), px(0.0)))
-            .anchor(Anchor::TopLeft)
-            .child(div().w(viewport.width).h(viewport.height).child(backdrop));
+        let backdrop_layer = dismiss_backdrop(dismiss, PRESS_LEFT, window);
 
         let panel_layer = match self.anchor_at {
             Some(position) => anchored()
@@ -620,23 +603,7 @@ impl RenderOnce for ContextMenu {
                 |el, delta| el.opacity(delta),
             );
 
-        let viewport = window.viewport_size();
-        let mut backdrop = div().size_full().occlude();
-        if let Some(dismiss) = self.on_dismiss.clone() {
-            let dismiss_right = dismiss.clone();
-            backdrop = backdrop
-                .on_mouse_down(MouseButton::Left, move |_: &MouseDownEvent, window, cx| {
-                    dismiss(window, cx);
-                })
-                .on_mouse_down(MouseButton::Right, move |_: &MouseDownEvent, window, cx| {
-                    dismiss_right(window, cx);
-                });
-        }
-        let backdrop_layer = anchored()
-            .position_mode(AnchoredPositionMode::Window)
-            .position(point(px(0.0), px(0.0)))
-            .anchor(Anchor::TopLeft)
-            .child(div().w(viewport.width).h(viewport.height).child(backdrop));
+        let backdrop_layer = dismiss_backdrop(self.on_dismiss.clone(), PRESS_ANY, window);
 
         let panel_layer = anchored()
             .position_mode(AnchoredPositionMode::Window)

@@ -26,5 +26,6 @@ pub const DISCORD_INTEGRATION: IntegrationDeclaration = IntegrationDeclaration {
         step_tint: IntegrationTint::Info,
         trigger_tint: IntegrationTint::Info,
     },
+    connection_strip: None,
     disclaimer: None,
 };

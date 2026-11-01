@@ -13,6 +13,7 @@ mod reject_redemption;
 mod send_message;
 mod step_failure;
 mod timeout_user;
+pub(crate) use timeout_user::MAX_TIMEOUT_MINUTES;
 mod unban_user;
 mod update_info;
 mod update_reward;

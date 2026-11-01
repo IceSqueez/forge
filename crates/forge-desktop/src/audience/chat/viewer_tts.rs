@@ -1,0 +1,449 @@
+use std::sync::Arc;
+
+use forge_components::focus_inside_modal;
+use forge_components::{ToastKind, tr};
+use forge_speech_types::VoiceAlias;
+use forge_storage::StorageError;
+use gpui::{AppContext, Context, Entity, Subscription, Window};
+
+use super::viewer_actions::ViewerTarget;
+use super::viewer_drawer::ViewerDrawer;
+use crate::app::async_bridge;
+use crate::audio::tts_engine_roster::load_engine_roster;
+use crate::audio::voice_alias_form::{
+    AliasForm, AliasFormEvent, AliasIdentity, AliasValues, platform_scope,
+};
+use crate::audio::voice_alias_store::{block_viewer, save_alias};
+use crate::shared::repo_failure::RepoFailure;
+use forge_components::PushToast;
+
+pub(super) struct TtsVoiceHost {
+    pub(super) view: Entity<AliasForm>,
+    _events: Subscription,
+}
+
+impl ViewerDrawer {
+    pub(super) fn block_tts_viewer(&mut self, target: ViewerTarget, cx: &mut Context<Self>) {
+        self.drawer_menu_open = None;
+        cx.notify();
+        let Some(key) = target.tts_alias_key() else {
+            return;
+        };
+        let repo = Arc::clone(&self.services.voice_alias_repo);
+        let speak = self.services.speak.clone();
+        let name = target.name;
+        async_bridge::run_async(
+            &self.services.rt_handle,
+            async move { block_viewer(repo.as_ref(), speak.as_ref(), key, name).await },
+            |_this, outcome, cx| match outcome {
+                Ok(_) => cx.push_toast(ToastKind::Success, tr!("chat_drawer_block_tts_sent")),
+                Err(e) => cx.push_toast(
+                    ToastKind::Error,
+                    tr!(
+                        "chat_drawer_block_tts_failed",
+                        error = RepoFailure::from(e).text()
+                    ),
+                ),
+            },
+            cx,
+        );
+    }
+
+    pub(super) fn open_tts_voice(
+        &mut self,
+        target: ViewerTarget,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.drawer_menu_open = None;
+        cx.notify();
+        if self.tts_voice.is_some() {
+            return;
+        }
+        let Some(key) = target.tts_alias_key() else {
+            return;
+        };
+        let repo = Arc::clone(&self.services.voice_alias_repo);
+        let lookup_key = key.clone();
+        let reply = crate::app::async_bridge::on_runtime(&self.services.rt_handle, async move {
+            repo.find_by_alias_key(&lookup_key).await
+        });
+        cx.spawn_in(window, async move |this, cx| {
+            let Ok(found) = reply.await else {
+                return;
+            };
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the view may close before the result arrives"
+            )]
+            let _ = this.update_in(cx, |this, window, cx| match found {
+                Ok(existing) => this.show_tts_voice_form(target, key, existing, window, cx),
+                Err(e) => cx.push_toast(
+                    ToastKind::Error,
+                    tr!(
+                        "chat_drawer_tts_voice_failed",
+                        error = RepoFailure::from(e).text()
+                    ),
+                ),
+            });
+        })
+        .detach();
+    }
+
+    fn show_tts_voice_form(
+        &mut self,
+        target: ViewerTarget,
+        key: String,
+        existing: Option<VoiceAlias>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.tts_voice.is_some() {
+            return;
+        }
+        let identity = AliasIdentity {
+            key,
+            name: target.name,
+            platform: platform_scope(target.platform),
+        };
+        let editing = existing.as_ref().map(|alias| alias.id.clone());
+        let values = existing.as_ref().map(AliasValues::of).unwrap_or_default();
+        let roster = load_engine_roster(self.services.speak.as_ref());
+        let view = cx.new(|cx| AliasForm::new(editing, Some(identity), true, values, roster, cx));
+        focus_inside_modal(window, cx, |window, cx| {
+            view.update(cx, |form, cx| form.focus(window, cx))
+        });
+        let events = cx.subscribe(&view, Self::on_tts_voice_event);
+        self.tts_voice = Some(TtsVoiceHost {
+            view,
+            _events: events,
+        });
+        cx.notify();
+    }
+
+    fn on_tts_voice_event(
+        &mut self,
+        form: Entity<AliasForm>,
+        event: &AliasFormEvent,
+        cx: &mut Context<Self>,
+    ) {
+        match event {
+            AliasFormEvent::Submit(alias) => self.save_tts_voice(form, alias.clone(), cx),
+            AliasFormEvent::Cancel => self.close_tts_voice(cx),
+        }
+    }
+
+    fn save_tts_voice(
+        &mut self,
+        form: Entity<AliasForm>,
+        alias: VoiceAlias,
+        cx: &mut Context<Self>,
+    ) {
+        let replaces_existing = form.update(cx, |form, cx| {
+            form.set_saving(true, cx);
+            form.is_editing()
+        });
+        let repo = Arc::clone(&self.services.voice_alias_repo);
+        let speak = self.services.speak.clone();
+        async_bridge::run_async(
+            &self.services.rt_handle,
+            async move { save_alias(repo.as_ref(), speak.as_ref(), &alias, replaces_existing).await },
+            move |this, outcome, cx| match outcome {
+                Ok(_) => {
+                    this.close_tts_voice(cx);
+                    cx.push_toast(ToastKind::Success, tr!("chat_drawer_tts_voice_saved"));
+                }
+                Err(e) => {
+                    form.update(cx, |form, cx| form.set_saving(false, cx));
+                    let message = match e {
+                        StorageError::AliasViewerTaken => tr!("tts_aliases_viewer_taken"),
+                        other => tr!(
+                            "chat_drawer_tts_voice_failed",
+                            error = RepoFailure::from(other).text()
+                        ),
+                    };
+                    cx.push_toast(ToastKind::Error, message);
+                }
+            },
+            cx,
+        );
+    }
+
+    fn close_tts_voice(&mut self, cx: &mut Context<Self>) {
+        self.tts_voice = None;
+        cx.notify();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::{Arc, Mutex};
+
+    use forge_components::{ToastKind, tr};
+    use forge_speech_types::{AliasId, VoiceAlias};
+    use forge_speech_types::{AliasState, EngineId, VoiceId};
+    use forge_storage::MockVoiceAliasRepo;
+    use forge_storage::StorageError;
+    use forge_types::PlatformId;
+    use gpui::{Entity, TestAppContext, VisualTestContext};
+
+    use crate::audience::chat::ChatView;
+    use crate::audience::chat::tests::mount_in_window;
+    use crate::audience::chat::viewer_actions::ViewerTarget;
+    use crate::audience::chat_author::AuthorKey;
+    use crate::test_support::{
+        alias_shape, alive_tasks, runtime, settle_until, settle_until_tasks_drain_to,
+    };
+    use forge_components::Toasts;
+
+    const VIEWER_KEY: &str = "twitch:141981764";
+
+    fn id_keyed_viewer() -> ViewerTarget {
+        ViewerTarget::new(
+            &AuthorKey::by_viewer_id(PlatformId::Twitch, "141981764"),
+            "alice",
+        )
+    }
+
+    fn stored_alias() -> VoiceAlias {
+        VoiceAlias {
+            id: AliasId::from_string("a1".to_owned()),
+            alias_key: VIEWER_KEY.to_owned(),
+            viewer_name: "alice".to_owned(),
+            engine_id: EngineId("piper".to_owned()),
+            voice_id: VoiceId("amy".to_owned()),
+            pitch_semitones: Some(1.5),
+            rate_multiplier: None,
+            state: AliasState::Active,
+        }
+    }
+
+    fn finding(found: Option<VoiceAlias>) -> MockVoiceAliasRepo {
+        let mut repo = MockVoiceAliasRepo::new();
+        repo.expect_find_by_alias_key()
+            .withf(|key| key == VIEWER_KEY)
+            .returning(move |_| Ok(found.clone()));
+        repo
+    }
+
+    fn form_open(cx: &mut TestAppContext, view: &Entity<ChatView>) -> bool {
+        view.read_with(cx, |view, cx| view.drawer.read(cx).tts_voice.is_some())
+    }
+
+    fn toasts(cx: &mut TestAppContext) -> Vec<(ToastKind, String)> {
+        cx.update(|cx| {
+            cx.global::<Toasts>()
+                .items()
+                .iter()
+                .map(|toast| (toast.kind, toast.message.to_string()))
+                .collect()
+        })
+    }
+
+    fn open_voice_form(
+        vcx: &mut VisualTestContext,
+        rt: &tokio::runtime::Runtime,
+        view: &Entity<ChatView>,
+    ) {
+        vcx.update(|window, cx| {
+            view.update(cx, |view, cx| {
+                view.drawer.update(cx, |drawer, cx| {
+                    drawer.open_tts_voice(id_keyed_viewer(), window, cx)
+                })
+            })
+        });
+        settle_until(vcx, rt, |vcx| form_open(vcx, view));
+    }
+
+    fn press_enter(vcx: &mut VisualTestContext) {
+        vcx.simulate_keystrokes("enter");
+    }
+
+    #[gpui::test]
+    fn set_tts_voice_saves_the_stored_alias_back_under_the_viewer_key(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let saved = Arc::new(Mutex::new(Vec::new()));
+        let mut repo = finding(Some(stored_alias()));
+        let sink = Arc::clone(&saved);
+        repo.expect_upsert().returning(move |alias| {
+            sink.lock().expect("saved").push(alias.clone());
+            Ok(alias.clone())
+        });
+        let (view, vcx) = mount_in_window(cx, &rt, repo);
+
+        open_voice_form(vcx, &rt, &view);
+        press_enter(vcx);
+        settle_until(vcx, &rt, |_| !saved.lock().expect("saved").is_empty());
+
+        let saved = saved
+            .lock()
+            .expect("saved")
+            .iter()
+            .map(alias_shape)
+            .collect::<Vec<_>>();
+        assert_eq!(saved, [alias_shape(&stored_alias())]);
+    }
+
+    #[gpui::test]
+    fn a_saved_voice_closes_the_form_with_a_success_toast(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let mut repo = finding(None);
+        repo.expect_upsert().returning(|alias| Ok(alias.clone()));
+        let (view, vcx) = mount_in_window(cx, &rt, repo);
+
+        open_voice_form(vcx, &rt, &view);
+        press_enter(vcx);
+        settle_until(vcx, &rt, |vcx| !form_open(vcx, &view));
+
+        assert_eq!(
+            toasts(vcx),
+            [(ToastKind::Success, tr!("chat_drawer_tts_voice_saved"))]
+        );
+    }
+
+    #[gpui::test]
+    fn a_voice_another_alias_holds_shows_the_taken_error_and_keeps_the_form_usable(
+        cx: &mut TestAppContext,
+    ) {
+        let rt = runtime();
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let mut repo = finding(None);
+        let counter = Arc::clone(&attempts);
+        repo.expect_upsert().returning(move |_| {
+            counter.fetch_add(1, Ordering::SeqCst);
+            Err(StorageError::AliasViewerTaken)
+        });
+        let (view, vcx) = mount_in_window(cx, &rt, repo);
+
+        open_voice_form(vcx, &rt, &view);
+        for _ in 0..2 {
+            let before = attempts.load(Ordering::SeqCst);
+            press_enter(vcx);
+            settle_until(vcx, &rt, |vcx| {
+                attempts.load(Ordering::SeqCst) > before && toasts(vcx).len() > before
+            });
+        }
+
+        let taken = (ToastKind::Error, tr!("tts_aliases_viewer_taken"));
+        assert_eq!(
+            (form_open(vcx, &view), toasts(vcx)),
+            (true, vec![taken.clone(), taken])
+        );
+    }
+
+    #[gpui::test]
+    fn a_failed_alias_lookup_reports_an_error_instead_of_opening_the_form(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let mut repo = MockVoiceAliasRepo::new();
+        repo.expect_find_by_alias_key().returning(|_| {
+            Err(StorageError::Connection {
+                reason: "closed".to_owned(),
+            })
+        });
+        let (view, vcx) = mount_in_window(cx, &rt, repo);
+
+        vcx.update(|window, cx| {
+            view.update(cx, |view, cx| {
+                view.drawer.update(cx, |drawer, cx| {
+                    drawer.open_tts_voice(id_keyed_viewer(), window, cx)
+                })
+            })
+        });
+        settle_until(vcx, &rt, |vcx| !toasts(vcx).is_empty());
+
+        assert_eq!(
+            (
+                form_open(vcx, &view),
+                toasts(vcx)
+                    .into_iter()
+                    .map(|(kind, _)| kind)
+                    .collect::<Vec<_>>()
+            ),
+            (false, vec![ToastKind::Error])
+        );
+    }
+
+    #[gpui::test]
+    fn blocking_from_the_drawer_toasts_whether_the_block_was_stored(cx: &mut TestAppContext) {
+        let failure = || StorageError::Connection {
+            reason: "closed".to_owned(),
+        };
+        for (lookup_fails, expected) in [(false, ToastKind::Success), (true, ToastKind::Error)] {
+            let rt = runtime();
+            let mut repo = MockVoiceAliasRepo::new();
+            repo.expect_find_by_alias_key()
+                .withf(|key| key == VIEWER_KEY)
+                .returning(move |_| {
+                    if lookup_fails {
+                        Err(failure())
+                    } else {
+                        Ok(None)
+                    }
+                });
+            repo.expect_upsert()
+                .withf(|alias| alias.alias_key == VIEWER_KEY && alias.state == AliasState::Blocked)
+                .returning(|alias| Ok(alias.clone()));
+            let (view, vcx) = mount_in_window(cx, &rt, repo);
+
+            vcx.update(|_window, cx| {
+                view.update(cx, |view, cx| {
+                    view.drawer.update(cx, |drawer, cx| {
+                        drawer.block_tts_viewer(id_keyed_viewer(), cx)
+                    })
+                })
+            });
+            settle_until(vcx, &rt, |vcx| !toasts(vcx).is_empty());
+
+            assert_eq!(
+                toasts(vcx)
+                    .into_iter()
+                    .map(|(kind, _)| kind)
+                    .collect::<Vec<_>>(),
+                [expected],
+                "lookup fails = {lookup_fails}"
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn a_viewer_known_only_by_name_can_neither_get_a_voice_nor_be_blocked(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let repo_calls = Arc::new(AtomicUsize::new(0));
+        let mut repo = MockVoiceAliasRepo::new();
+        let finds = Arc::clone(&repo_calls);
+        repo.expect_find_by_alias_key().returning(move |_| {
+            finds.fetch_add(1, Ordering::SeqCst);
+            Ok(None)
+        });
+        let upserts = Arc::clone(&repo_calls);
+        repo.expect_upsert().returning(move |alias| {
+            upserts.fetch_add(1, Ordering::SeqCst);
+            Ok(alias.clone())
+        });
+        let (view, vcx) = mount_in_window(cx, &rt, repo);
+        let name_only =
+            ViewerTarget::new(&AuthorKey::by_name(PlatformId::Twitch, "alice"), "alice");
+        let background_tasks = alive_tasks(&rt);
+
+        vcx.update(|window, cx| {
+            view.update(cx, |view, cx| {
+                view.drawer.update(cx, |drawer, cx| {
+                    drawer.open_tts_voice(name_only.clone(), window, cx)
+                });
+                view.drawer
+                    .update(cx, |drawer, cx| drawer.block_tts_viewer(name_only, cx));
+            })
+        });
+        settle_until_tasks_drain_to(vcx, &rt, background_tasks);
+
+        assert_eq!(
+            (
+                repo_calls.load(Ordering::SeqCst),
+                form_open(vcx, &view),
+                toasts(vcx)
+            ),
+            (0, false, Vec::new())
+        );
+    }
+}

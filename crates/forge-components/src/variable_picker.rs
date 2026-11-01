@@ -9,7 +9,6 @@ use crate::dropdown::{
     DROPDOWN_PADDING, dropdown_group_header, dropdown_list_height, dropdown_row, dropdown_surface,
 };
 use crate::icons::Icon;
-use crate::palette::ForgePalette;
 use crate::picker::{
     PICKER_CONTEXT, PickerStep, SelectNext, SelectPrev, item_matches, message_row, wrapped_step,
 };
@@ -73,7 +72,6 @@ pub struct VariablePicker {
     selected: Option<usize>,
     formats: Option<OpenFormats>,
     labels: VariablePickerLabels,
-    palette: ForgePalette,
     list_scroll: UniformListScrollHandle,
     focus_handle: FocusHandle,
     _search_sub: Subscription,
@@ -91,11 +89,10 @@ impl VariablePicker {
     pub fn new(
         labels: VariablePickerLabels,
         groups: Vec<VariableGroup>,
-        palette: ForgePalette,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        let search = SearchState::new(cx, palette, labels.placeholder.clone());
+        let search = SearchState::new(cx, labels.placeholder.clone());
         let search_sub = cx.subscribe_in(search.field(), window, Self::on_search_event);
         let mut picker = Self {
             search,
@@ -104,7 +101,6 @@ impl VariablePicker {
             selected: None,
             formats: None,
             labels,
-            palette,
             list_scroll: UniformListScrollHandle::new(),
             focus_handle: cx.focus_handle(),
             _search_sub: search_sub,
@@ -297,7 +293,7 @@ impl VariablePicker {
                     .get(group)
                     .map(|group| group.title.clone())
                     .unwrap_or_default(),
-                &self.palette,
+                &cx.palette(),
                 density,
                 cx,
             )
@@ -310,7 +306,7 @@ impl VariablePicker {
                 dropdown_row(
                     ("forge-variable-row", pos),
                     variable.token.clone(),
-                    &self.palette,
+                    &cx.palette(),
                 )
                 .label_family(cx.mono_family())
                 .tag(variable.tag.clone())
@@ -326,7 +322,7 @@ impl VariablePicker {
 
     fn render_main(&self, cx: &mut Context<Self>) -> AnyElement {
         if self.rows.is_empty() {
-            return message_row(self.labels.empty.clone(), self.palette, cx);
+            return message_row(self.labels.empty.clone(), cx.palette(), cx);
         }
         let count = self.rows.len();
         uniform_list(
@@ -352,7 +348,7 @@ impl VariablePicker {
         let Some(variable) = self.entry(open.group, open.entry) else {
             return div().into_any_element();
         };
-        let back = dropdown_row("forge-variable-back", variable.token.clone(), &self.palette)
+        let back = dropdown_row("forge-variable-back", variable.token.clone(), &cx.palette())
             .icon(Some(Icon::ChevronLeft))
             .label_family(cx.mono_family())
             .tag(variable.tag.clone())
@@ -368,7 +364,7 @@ impl VariablePicker {
                 cx.body_family()
             };
             let token = format.token.clone();
-            dropdown_row(("forge-variable-format", index), label, &self.palette)
+            dropdown_row(("forge-variable-format", index), label, &cx.palette())
                 .label_family(family)
                 .suffix(Some(format.preview.clone()))
                 .highlighted(open.selected == index)
@@ -388,7 +384,7 @@ impl VariablePicker {
 
 impl Render for VariablePicker {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let surface = dropdown_surface(&self.palette)
+        let surface = dropdown_surface(&cx.palette())
             .key_context(PICKER_CONTEXT)
             .track_focus(&self.focus_handle)
             .on_action(cx.listener(Self::on_select_next))
@@ -414,7 +410,6 @@ mod tests {
     use gpui::{AppContext, VisualTestContext};
 
     use super::*;
-    use crate::palette::FORGE_DEFAULT;
     use crate::picker::bind_picker_keys;
     use crate::text_input::bind_text_input_keys;
 
@@ -481,9 +476,8 @@ mod tests {
             bind_text_input_keys(cx);
         });
         install_presentation(cx);
-        let (picker, vcx) = cx.add_window_view(|window, cx| {
-            VariablePicker::new(labels(), groups, FORGE_DEFAULT, window, cx)
-        });
+        let (picker, vcx) =
+            cx.add_window_view(|window, cx| VariablePicker::new(labels(), groups, window, cx));
         let heard = vcx.update(|window, cx| {
             picker.update(cx, |view, cx| view.focus(window, cx));
             cx.new(|cx| Heard {

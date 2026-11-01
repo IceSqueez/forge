@@ -50,6 +50,15 @@ pub(super) struct Frame {
     cursor: Option<Bounds<Pixels>>,
 }
 
+struct Measured {
+    font: Font,
+    font_size: Pixels,
+    line_height: Pixels,
+    advance: Pixels,
+    gutter_width: Pixels,
+    text_left: Pixels,
+}
+
 struct Viewport {
     bounds: Bounds<Pixels>,
     text_x: Pixels,
@@ -76,6 +85,13 @@ impl CodeEditor {
         focused: bool,
         window: &mut Window,
     ) -> Frame {
+        let measured = self.measure(bounds, window);
+        let caret_line = self.lines.line_index_at(self.buffer.cursor());
+        let scroll = self.settle_scroll(bounds.size.height, caret_line, window);
+        self.build_frame(bounds, measured, scroll, caret_line, focused, window)
+    }
+
+    fn measure(&mut self, bounds: Bounds<Pixels>, window: &mut Window) -> Measured {
         let style = window.text_style();
         let font = style.font();
         let font_size = style.font_size.to_pixels(window.rem_size());
@@ -93,7 +109,6 @@ impl CodeEditor {
         };
         let text_left = gutter_width + text_pad_x;
         let wrap_width = (bounds.size.width - text_left - text_pad_x).max(advance);
-        let pad_y = self.pad_y();
         self.geometry.configure(
             TextMetrics {
                 font: font.clone(),
@@ -106,14 +121,28 @@ impl CodeEditor {
         );
         self.text_left = text_left;
         self.last_bounds = Some(bounds);
+        Measured {
+            font,
+            font_size,
+            line_height,
+            advance,
+            gutter_width,
+            text_left,
+        }
+    }
 
+    fn settle_scroll(
+        &mut self,
+        view_height: Pixels,
+        caret_line: usize,
+        window: &mut Window,
+    ) -> Pixels {
+        let pad_y = self.pad_y();
         let cursor = self.buffer.cursor();
-        let caret_line = self.lines.line_index_at(cursor);
         self.geometry
             .shape_line(&mut self.lines, caret_line, &self.palette, window);
         self.geometry.refresh(&self.lines);
 
-        let view_height = bounds.size.height;
         let mut scroll = self.scroll_offset.clamp(px(0.0), self.max_scroll());
         if self.follow_caret {
             scroll = self.scroll_to_caret(scroll, cursor, view_height);
@@ -139,7 +168,19 @@ impl CodeEditor {
             scroll = scroll.clamp(px(0.0), self.max_scroll());
         }
         self.scroll_offset = scroll;
+        scroll
+    }
 
+    fn build_frame(
+        &mut self,
+        bounds: Bounds<Pixels>,
+        measured: Measured,
+        scroll: Pixels,
+        caret_line: usize,
+        focused: bool,
+        window: &mut Window,
+    ) -> Frame {
+        let view_height = bounds.size.height;
         let painted = self.visible_lines(scroll, view_height, 0);
         for index in painted.clone() {
             self.geometry
@@ -147,78 +188,34 @@ impl CodeEditor {
         }
         self.geometry.refresh(&self.lines);
 
+        let Measured {
+            font,
+            font_size,
+            line_height,
+            advance,
+            gutter_width,
+            text_left,
+        } = measured;
         let viewport = Viewport {
             bounds,
             text_x: bounds.left() + text_left,
-            origin_y: bounds.top() + pad_y - scroll,
+            origin_y: bounds.top() + self.pad_y() - scroll,
             line_height,
             advance,
             font,
             font_size,
         };
-        let band = (focused && !self.compact).then(|| {
-            Bounds::from_corners(
-                point(
-                    bounds.left(),
-                    viewport.origin_y + self.geometry.top(caret_line),
-                ),
-                point(
-                    bounds.right(),
-                    viewport.origin_y + self.geometry.bottom(caret_line),
-                ),
-            )
-        });
-        let cursor_bounds = self
-            .geometry
-            .point_for_offset(&self.lines, cursor)
-            .map(|caret| viewport.row_bounds(caret.y, caret.x, CARET_WIDTH));
-
         Frame {
             palette: self.palette,
             line_height,
             gutter: (!self.compact)
                 .then(|| Bounds::new(bounds.origin, size(gutter_width, view_height))),
             gutter_corner_radius: self.gutter_corner_radius(),
-            band,
+            band: (focused && !self.compact).then(|| self.caret_band(caret_line, &viewport)),
             selection: self.range_rows(&painted, self.buffer.selected_range(), &viewport, true),
-            underlines: self
-                .buffer
-                .marked_range()
-                .map(|marked| {
-                    self.range_rows(&painted, marked, &viewport, false)
-                        .into_iter()
-                        .map(|row| {
-                            Bounds::new(
-                                point(row.left(), row.bottom() - COMPOSITION_UNDERLINE),
-                                size(row.size.width, COMPOSITION_UNDERLINE),
-                            )
-                        })
-                        .collect()
-                })
-                .unwrap_or_default(),
-            lines: painted
-                .clone()
-                .filter_map(|index| {
-                    let shape = self.geometry.shape_of(&self.lines, index)?;
-                    Some(PaintLine {
-                        origin: point(
-                            viewport.text_x,
-                            viewport.origin_y + self.geometry.top(index),
-                        ),
-                        shape,
-                    })
-                })
-                .collect(),
-            marks: painted
-                .clone()
-                .filter(|index| self.gutter_marks.contains(index))
-                .map(|index| {
-                    Bounds::new(
-                        point(bounds.left(), viewport.origin_y + self.geometry.top(index)),
-                        size(GUTTER_ACCENT_W, line_height),
-                    )
-                })
-                .collect(),
+            underlines: self.composition_underlines(&painted, &viewport),
+            lines: self.paint_lines(&painted, &viewport),
+            marks: self.gutter_mark_bars(&painted, &viewport),
             labels: if self.compact {
                 Vec::new()
             } else {
@@ -231,8 +228,82 @@ impl CodeEditor {
                 )
             },
             placeholder: self.placeholder_label(&viewport, window),
-            cursor: cursor_bounds,
+            cursor: self
+                .geometry
+                .point_for_offset(&self.lines, self.buffer.cursor())
+                .map(|caret| viewport.row_bounds(caret.y, caret.x, CARET_WIDTH)),
         }
+    }
+
+    fn caret_band(&self, caret_line: usize, viewport: &Viewport) -> Bounds<Pixels> {
+        let bounds = viewport.bounds;
+        Bounds::from_corners(
+            point(
+                bounds.left(),
+                viewport.origin_y + self.geometry.top(caret_line),
+            ),
+            point(
+                bounds.right(),
+                viewport.origin_y + self.geometry.bottom(caret_line),
+            ),
+        )
+    }
+
+    fn composition_underlines(
+        &self,
+        painted: &RangeInclusive<usize>,
+        viewport: &Viewport,
+    ) -> Vec<Bounds<Pixels>> {
+        self.buffer
+            .marked_range()
+            .map(|marked| {
+                self.range_rows(painted, marked, viewport, false)
+                    .into_iter()
+                    .map(|row| {
+                        Bounds::new(
+                            point(row.left(), row.bottom() - COMPOSITION_UNDERLINE),
+                            size(row.size.width, COMPOSITION_UNDERLINE),
+                        )
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    fn paint_lines(&self, painted: &RangeInclusive<usize>, viewport: &Viewport) -> Vec<PaintLine> {
+        painted
+            .clone()
+            .filter_map(|index| {
+                let shape = self.geometry.shape_of(&self.lines, index)?;
+                Some(PaintLine {
+                    origin: point(
+                        viewport.text_x,
+                        viewport.origin_y + self.geometry.top(index),
+                    ),
+                    shape,
+                })
+            })
+            .collect()
+    }
+
+    fn gutter_mark_bars(
+        &self,
+        painted: &RangeInclusive<usize>,
+        viewport: &Viewport,
+    ) -> Vec<Bounds<Pixels>> {
+        painted
+            .clone()
+            .filter(|index| self.gutter_marks.contains(index))
+            .map(|index| {
+                Bounds::new(
+                    point(
+                        viewport.bounds.left(),
+                        viewport.origin_y + self.geometry.top(index),
+                    ),
+                    size(GUTTER_ACCENT_W, viewport.line_height),
+                )
+            })
+            .collect()
     }
 
     fn scroll_to_caret(&self, scroll: Pixels, cursor: usize, view_height: Pixels) -> Pixels {
@@ -605,6 +676,7 @@ mod tests {
 
     #[gpui::test]
     fn a_caret_on_an_unmeasured_document_leaves_the_scroll_alone(cx: &mut TestAppContext) {
+        install_presentation(cx);
         let editor = cx.new(|cx| CodeEditor::new(Language::Rhai, "", cx));
 
         let after = editor.read_with(cx, |editor, _cx| {

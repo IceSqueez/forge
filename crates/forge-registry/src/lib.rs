@@ -31,6 +31,7 @@ mod run_context;
 mod runner;
 mod scope;
 mod scope_io;
+mod step_card;
 mod step_tree;
 mod synthesis;
 mod telemetry;
@@ -98,6 +99,7 @@ pub use run_context::RunContext;
 pub use runner::{StepCatalogEntry, SubActionConfig, SubActionRunner, validate_declared_config};
 pub use scope::{ScopeLevel, ScopeOrigin, ScopedVariable, variables_in_scope};
 pub use scope_io::{ProducedVariable, SubActionIo};
+pub use step_card::{StepCardDetail, card_int, card_scalar, card_text, card_variable};
 pub use step_tree::{
     CASE_CHAIN_KEY, CASE_MATCH_KEY, ChainEntry, STEP_CONDITION_KEY, STEP_CONFIG_KEY, STEP_KIND_KEY,
     StepNode, StepReach, UndecodableReason, UndecodableStep, decode_chain, decode_step,

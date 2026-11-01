@@ -126,6 +126,23 @@ impl AudioDestination {
     }
 }
 
+pub async fn release_receiver(
+    settings: &dyn SettingsRepo,
+    id: &OverlayId,
+) -> Result<bool, StorageError> {
+    if load_audio_routes(settings).await.destination.as_ref() != Some(id) {
+        return Ok(false);
+    }
+    set_destination(settings, None).await?;
+    Ok(true)
+}
+
+pub async fn restore_receiver(settings: &dyn SettingsRepo, id: &OverlayId) {
+    if let Err(error) = set_destination(settings, Some(id)).await {
+        tracing::warn!(overlay = %id, %error, "audio receiver not restored after a failed delete");
+    }
+}
+
 pub async fn resolve_destination(
     repo: &dyn OverlayRepo,
     server_available: bool,

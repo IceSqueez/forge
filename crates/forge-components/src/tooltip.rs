@@ -3,20 +3,12 @@ use gpui::{
     Styled, Window, div,
 };
 
-use crate::palette::ForgePalette;
 use crate::presentation::ActivePresentation;
-use crate::tokens::{BORDER_THIN, Density, FONT_XS, Radius, Spacing, radius, spacing};
+use crate::tokens::{BORDER_THIN, FONT_XS, Radius, Spacing, radius, spacing};
 
-pub(crate) fn tooltip_surface(
-    label: impl Into<SharedString>,
-    palette: &ForgePalette,
-    density: Density,
-    cx: &App,
-) -> impl IntoElement {
-    tooltip_frame(palette, density, cx).child(label.into())
-}
-
-fn tooltip_frame(palette: &ForgePalette, density: Density, cx: &App) -> Div {
+fn tooltip_frame(cx: &App) -> Div {
+    let palette = cx.palette();
+    let density = cx.density();
     div()
         .py(spacing(Spacing::Xxs, density))
         .px(spacing(Spacing::Sm, density))
@@ -31,13 +23,11 @@ fn tooltip_frame(palette: &ForgePalette, density: Density, cx: &App) -> Div {
 
 pub struct Tooltip {
     label: SharedString,
-    palette: ForgePalette,
 }
 
-pub fn tooltip(label: impl Into<SharedString>, palette: &ForgePalette) -> Tooltip {
+pub fn tooltip(label: impl Into<SharedString>) -> Tooltip {
     Tooltip {
         label: label.into(),
-        palette: *palette,
     }
 }
 
@@ -49,29 +39,23 @@ impl Tooltip {
 
 impl Render for Tooltip {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        tooltip_surface(self.label.clone(), &self.palette, cx.density(), cx)
+        tooltip_frame(cx).child(self.label.clone())
     }
 }
 
 pub fn tooltip_builder(
     label: impl Into<SharedString>,
-    palette: &ForgePalette,
 ) -> impl Fn(&mut Window, &mut App) -> AnyView + 'static {
     let label = label.into();
-    let palette = *palette;
-    move |_window, cx| tooltip(label.clone(), &palette).build(cx)
+    move |_window, cx| tooltip(label.clone()).build(cx)
 }
 
 pub(crate) struct TooltipLines {
     lines: Vec<SharedString>,
-    palette: ForgePalette,
 }
 
-pub(crate) fn tooltip_lines(lines: Vec<SharedString>, palette: &ForgePalette) -> TooltipLines {
-    TooltipLines {
-        lines,
-        palette: *palette,
-    }
+pub(crate) fn tooltip_lines(lines: Vec<SharedString>) -> TooltipLines {
+    TooltipLines { lines }
 }
 
 impl TooltipLines {
@@ -83,7 +67,7 @@ impl TooltipLines {
 impl Render for TooltipLines {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let density = cx.density();
-        let mut col = tooltip_frame(&self.palette, density, cx)
+        let mut col = tooltip_frame(cx)
             .flex()
             .flex_col()
             .gap(spacing(Spacing::Xxs, density));
@@ -96,8 +80,6 @@ impl Render for TooltipLines {
 
 pub fn tooltip_lines_builder(
     lines: Vec<SharedString>,
-    palette: &ForgePalette,
 ) -> impl Fn(&mut Window, &mut App) -> AnyView + 'static {
-    let palette = *palette;
-    move |_window, cx| tooltip_lines(lines.clone(), &palette).build(cx)
+    move |_window, cx| tooltip_lines(lines.clone()).build(cx)
 }

@@ -101,7 +101,8 @@ pub use fonts::embedded_fonts;
 pub use footer::{FOOTER_HEIGHT, app_footer, footer_alert, footer_indicator};
 pub use form_field::{
     NAME_FIELD_LIMIT, choice_trigger, failure_note, failure_with_retry, field_column, field_frame,
-    int_entry_invalid, int_range_hint, parse_int_in_range, toggle_row,
+    int_entry_invalid, int_range_hint, parse_int_in_range, readonly_mono_field,
+    setting_choice_trigger, toggle_row,
 };
 pub use glyph::{GlyphArt, glyph_art};
 pub use grid_picker::{
@@ -116,8 +117,8 @@ pub use integration_gating::{
 };
 pub use key_activation::{KeyActivated, bind_key_activation, with_focus_ring};
 pub use locale::{
-    ArgsBuilder, CatalogLanguage, catalog_source, duplicate_message_ids, fmt_bytes, fmt_clock,
-    fmt_number, fmt_uptime, fmt_uptime_short, ftl_id, install_bundle, install_process_language,
+    CatalogLanguage, TrArgs, TrValue, catalog_source, duplicate_message_ids, fmt_bytes, fmt_clock,
+    fmt_number, fmt_uptime, fmt_uptime_short, ftl_id, install_process_language,
     install_thread_language, resolve_in_language, tr_find, tr_find_warned, tr_lookup,
 };
 pub use menu::{
@@ -129,7 +130,9 @@ pub use overlay::{
     Overlay, OverlayPosition, anchored_popover, drive_overlay_focus, focus_inside_modal, overlay,
 };
 pub use page_frame::{header_stat, header_stats, header_status, page_frame};
-pub use palette::{AccentColor, FORGE_DEFAULT, ForgePalette, ThemeId, accent_swatch, with_alpha};
+pub use palette::{
+    AccentColor, FORGE_DEFAULT, ForgePalette, PaletteColor, ThemeId, accent_swatch, with_alpha,
+};
 pub use picker::{Picker, PickerEvent, PickerItem, PickerLabels, bind_picker_keys};
 pub use platform_hero::platform_hero;
 pub use presentation::{ActivePresentation, FontFamilies, Presentation};
@@ -149,7 +152,7 @@ pub use side_sheet::{SheetWidth, side_sheet};
 pub use slider::{Slider, slider};
 pub use sparkline::sparkline;
 pub use status::{badge, pulse_dot, status_dot};
-pub use syntax_color::highlighted_text;
+pub use syntax_color::{SyntaxHighlights, highlighted_text, syntax_highlights};
 pub use text_area::{TextArea, bind_text_area_keys};
 pub use text_input::{
     FocusNextField, FocusPreviousField, InputEvent, SEARCH_FIELD_WIDTH, TextInput,

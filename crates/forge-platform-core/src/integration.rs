@@ -93,6 +93,7 @@ pub enum IntegrationTint {
     ThemeBrand,
     AccentPinkLight,
     AccentTeal,
+    AccentPeach,
     TextSecondary,
     Success,
     Warning,
@@ -135,6 +136,26 @@ pub struct IntegrationCatalogGroup {
     pub trigger_tint: IntegrationTint,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ConnectionStripMark {
+    pub label: &'static str,
+    pub dot_tint: IntegrationTint,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BanListScope {
+    WholeChannel,
+    SeenByForge,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ChatLimits {
+    pub max_message_chars: usize,
+    pub replies_to_messages: bool,
+    pub follow_lookup: bool,
+    pub ban_list: BanListScope,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IntegrationDeclaration {
     pub id: IntegrationId,
@@ -145,6 +166,7 @@ pub struct IntegrationDeclaration {
     pub sign_in: SignInRoute,
     pub identity: IntegrationIdentity,
     pub catalog_group: IntegrationCatalogGroup,
+    pub connection_strip: Option<ConnectionStripMark>,
     pub disclaimer: Option<IntegrationDisclaimer>,
 }
 

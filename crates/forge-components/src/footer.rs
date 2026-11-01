@@ -141,7 +141,6 @@ pub fn footer_alert(
     label: impl Into<SharedString>,
     color: Rgba,
     details: Vec<SharedString>,
-    palette: &ForgePalette,
     density: Density,
     cx: &App,
 ) -> impl IntoElement {
@@ -152,7 +151,6 @@ pub fn footer_alert(
         color,
         color,
         details,
-        palette,
         density,
         cx,
     )
@@ -169,7 +167,6 @@ pub fn footer_indicator(
     icon_color: Rgba,
     label_color: Rgba,
     details: Vec<SharedString>,
-    palette: &ForgePalette,
     density: Density,
     cx: &App,
 ) -> impl IntoElement {
@@ -180,7 +177,7 @@ pub fn footer_indicator(
         .gap(scaled(ALERT_GAP, density))
         .child(icon(glyph, ALERT_ICON_SIZE, icon_color))
         .child(mono_cell(label, label_color, FONT_XS, cx))
-        .tooltip(tooltip_lines_builder(details, palette))
+        .tooltip(tooltip_lines_builder(details))
 }
 
 #[cfg(test)]

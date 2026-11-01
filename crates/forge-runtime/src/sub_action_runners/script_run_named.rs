@@ -1,3 +1,4 @@
+use forge_registry::{StepCardDetail, card_text, card_variable};
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -91,6 +92,16 @@ impl StepCatalogEntry for ScriptRunNamedRunner {
     }
     fn icon_name(&self) -> &str {
         "script"
+    }
+
+    fn card_detail(&self, config: &SubActionConfig) -> Option<StepCardDetail> {
+        let script_name = card_text(config, SCRIPT_NAME_KEY).unwrap_or("");
+        let target = card_text(config, TARGET_VAR_KEY).unwrap_or("");
+        Some(StepCardDetail::Text(if target.is_empty() {
+            script_name.to_owned()
+        } else {
+            format!("{script_name} \u{2192} {}", card_variable(target))
+        }))
     }
 }
 

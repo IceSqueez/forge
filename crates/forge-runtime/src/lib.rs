@@ -110,6 +110,7 @@ pub use engine::action_engine::QuickActionOrigin;
 pub use engine::chain::ChainScope;
 pub use engine::queue_scheduler::ClearMode;
 pub use engine::queue_scheduler::QueueSchedulerStart;
+pub use engine::queue_service::{QueueApplyError, QueueService};
 pub use engine::scheduled_runs::ScheduleIntent;
 pub use engine::scheduled_runs::ScheduledPlacement;
 pub use engine::scheduled_runs::ScriptScheduling;

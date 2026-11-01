@@ -1,0 +1,234 @@
+use super::{MappingRow, MidiScreenView};
+use crate::app::async_bridge::{self, Loadable, WriteOutcome};
+use crate::automation::midi_mapping_modal::MappingDraft;
+use crate::automation::midi_signal::MidiSignal;
+use crate::shared::repo_failure::RepoFailure;
+use forge_components::{PushToast, ToastKind, tr};
+use forge_midi::vocabulary::event_kinds::INPUT_PREFIX;
+use forge_storage::{
+    ActionRepo, JsonDocument, Setting, StorageError, TriggerChanges, TriggerInstanceRepo,
+    read_stored_setting, write_setting,
+};
+use forge_types::{ActionId, TriggerInstance};
+use gpui::Context;
+use std::collections::HashMap;
+use std::sync::Arc;
+
+pub(crate) const MIDI_KNOWN_DEVICES: Setting<JsonDocument<Vec<String>>> = Setting::new(
+    "midi.known_devices",
+    JsonDocument::new(),
+    forge_storage::SettingPortability::MachineLocal,
+    forge_storage::SettingDisclosure::Withheld,
+);
+
+pub(super) async fn load_mappings(
+    triggers: &dyn TriggerInstanceRepo,
+    actions: &dyn ActionRepo,
+) -> Result<Vec<MappingRow>, RepoFailure> {
+    let instances = triggers.list_all().await.map_err(RepoFailure::from)?;
+    let links = triggers
+        .actions_by_instance()
+        .await
+        .map_err(RepoFailure::from)?;
+    let names: HashMap<ActionId, String> = actions
+        .list()
+        .await
+        .map_err(RepoFailure::from)?
+        .into_iter()
+        .map(|action| (action.id, action.name))
+        .collect();
+    let rows = instances
+        .into_iter()
+        .filter(|instance| instance.kind_id.starts_with(INPUT_PREFIX))
+        .filter_map(|instance| {
+            let linked = links.get(&instance.id).map_or(&[][..], Vec::as_slice);
+            if !instance.user_defined && linked.is_empty() {
+                return None;
+            }
+            let action = linked
+                .first()
+                .and_then(|id| names.get(id).map(|name| (*id, name.clone())));
+            Some(MappingRow {
+                signal: MidiSignal::from_instance(&instance.kind_id, &instance.overrides),
+                id: instance.id,
+                name: instance.name,
+                action,
+            })
+        })
+        .collect();
+    Ok(rows)
+}
+
+pub(super) async fn save_mapping(
+    triggers: &dyn TriggerInstanceRepo,
+    actions: &dyn ActionRepo,
+    draft: MappingDraft,
+) -> Result<Vec<MappingRow>, RepoFailure> {
+    let overrides = draft.signal.overrides();
+    let instance = match draft.instance_id {
+        Some(id) => {
+            let source = triggers
+                .get(id)
+                .await
+                .map_err(RepoFailure::from)?
+                .ok_or_else(RepoFailure::trigger_gone)?;
+            TriggerInstance {
+                kind_id: draft.signal.kind_id.clone(),
+                name: draft.name.clone(),
+                overrides,
+                ..source
+            }
+        }
+        None => {
+            TriggerInstance::new_user_defined(draft.signal.kind_id.clone(), draft.name, overrides)
+        }
+    };
+    let linked = match draft.instance_id {
+        Some(id) => triggers
+            .actions_using(id)
+            .await
+            .map_err(RepoFailure::from)?,
+        None => Vec::new(),
+    };
+    let changes = relink_changes(instance, linked, draft.action_id);
+    triggers
+        .apply_changes(&changes)
+        .await
+        .map_err(RepoFailure::from)?;
+
+    load_mappings(triggers, actions).await
+}
+
+fn relink_changes(
+    instance: TriggerInstance,
+    linked: Vec<ActionId>,
+    action_id: ActionId,
+) -> TriggerChanges {
+    let instance_id = instance.id;
+    let (unlinked, linked) = if linked.contains(&action_id) {
+        (Vec::new(), Vec::new())
+    } else {
+        let unlinked = linked
+            .into_iter()
+            .map(|previous| (previous, instance_id))
+            .collect();
+        (unlinked, vec![(action_id, instance_id)])
+    };
+    TriggerChanges {
+        removed: Vec::new(),
+        unlinked,
+        saved: vec![instance],
+        linked,
+    }
+}
+
+impl MidiScreenView {
+    pub(super) fn load(&mut self, cx: &mut Context<Self>) {
+        self.load_known_devices(cx);
+        let triggers = Arc::clone(&self.trigger_repo);
+        let actions = Arc::clone(&self.action_repo);
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move { load_mappings(&*triggers, &*actions).await },
+            |this, mappings, cx| this.apply_mappings(mappings, cx),
+            cx,
+        );
+    }
+
+    pub(super) fn load_known_devices(&mut self, cx: &mut Context<Self>) {
+        self.known_devices = Loadable::Loading;
+        let settings = Arc::clone(&self.settings_repo);
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move {
+                read_stored_setting(settings.as_ref(), &MIDI_KNOWN_DEVICES)
+                    .await
+                    .map(Option::unwrap_or_default)
+            },
+            |this, result: Result<Vec<String>, StorageError>, cx| {
+                if let Err(error) = &result {
+                    tracing::warn!(%error, "failed to load known MIDI devices");
+                }
+                this.known_devices = Loadable::settled(result);
+                this.remember_live_ports(cx);
+                this.ensure_device_selection();
+                cx.notify();
+            },
+            cx,
+        );
+        cx.notify();
+    }
+
+    pub(super) fn known(&self) -> &[String] {
+        self.known_devices.loaded().map_or(&[], Vec::as_slice)
+    }
+
+    fn device_write_settled(&mut self, outcome: WriteOutcome, _: &mut Context<Self>) {
+        if let WriteOutcome::Failed(error) = outcome {
+            self.known_devices = Loadable::Failed(error);
+        }
+    }
+
+    pub(super) fn apply_mappings(
+        &mut self,
+        result: Result<Vec<MappingRow>, RepoFailure>,
+        cx: &mut Context<Self>,
+    ) {
+        match result {
+            Ok(rows) => {
+                self.mappings = rows;
+                cx.notify();
+            }
+            Err(failure) => self.on_repo_error(&failure, cx),
+        }
+    }
+
+    pub(super) fn on_repo_error(&mut self, failure: &RepoFailure, cx: &mut Context<Self>) {
+        tracing::warn!(error = %failure, "midi operation failed");
+        let message = failure.text();
+        cx.push_toast(
+            ToastKind::Error,
+            tr!("midi_toast_error", message = message.as_str()),
+        );
+        cx.notify();
+    }
+
+    pub(super) fn refresh_ports(&mut self, cx: &mut Context<Self>) {
+        let ports = self
+            .client
+            .as_ref()
+            .map(|client| client.connected_input_ports())
+            .unwrap_or_default();
+        if ports == self.live_ports {
+            return;
+        }
+        self.live_ports = ports;
+        self.remember_live_ports(cx);
+        cx.notify();
+    }
+
+    pub(super) fn remember_live_ports(&mut self, cx: &mut Context<Self>) {
+        let Some(known) = self.known_devices.loaded_mut() else {
+            return;
+        };
+        let discovered: Vec<String> = self
+            .live_ports
+            .iter()
+            .filter(|port| !known.contains(port))
+            .cloned()
+            .collect();
+        if discovered.is_empty() {
+            return;
+        }
+        known.extend(discovered);
+        known.sort();
+        let devices = known.clone();
+        self.ensure_device_selection();
+        let repo = Arc::clone(&self.settings_repo);
+        self.device_writer.write(
+            async move { write_setting(repo.as_ref(), &MIDI_KNOWN_DEVICES, &devices).await },
+            Self::device_write_settled,
+            cx,
+        );
+    }
+}

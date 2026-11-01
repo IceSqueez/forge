@@ -1,5 +1,3 @@
-use crate::HOVER_FILL_ALPHA;
-use crate::key_activation::KeyActivated;
 use crate::presentation::ActivePresentation;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -8,22 +6,21 @@ use gpui::prelude::FluentBuilder as _;
 use gpui::{
     App, ClickEvent, Div, ElementId, FocusHandle, FontWeight, InteractiveElement, IntoElement,
     KeyBinding, KeyDownEvent, KeyboardClickEvent, NoAction, ParentElement, Pixels, RenderOnce,
-    Rgba, SharedString, StatefulInteractiveElement, Styled, Window, div, px,
+    Rgba, SharedString, Styled, Window, div, px,
 };
 
-use crate::buttons::secondary_button;
+use crate::buttons::{Button, secondary_button};
 use crate::icons::{Icon, icon};
+use crate::modal::{alert_tile, bare_modal};
 use crate::overlay::{ModalFocusClaim, confine_tab, modal_focus};
-use crate::palette::{ForgePalette, with_alpha};
+use crate::palette::ForgePalette;
 use crate::tokens::{
-    BORDER_THIN, Density, ENTER_KEY, FONT_MD, FONT_META, FONT_SM, FONT_XS, ModalSize, Radius,
-    Spacing, modal_width, radius, scaled, spacing,
+    BORDER_THIN, Density, ENTER_KEY, FONT_MD, FONT_META, FONT_SM, FONT_XS, ModalSize, Spacing,
+    scaled, spacing,
 };
 
-const HEADER_GAP: Pixels = px(12.0);
-const ICON_TILE: Pixels = px(36.0);
+pub(crate) const HEADER_GAP: Pixels = px(12.0);
 const ICON_TILE_GLYPH: Pixels = px(18.0);
-const ICON_TILE_ALPHA: f32 = 0.12;
 const ACTIONS_GAP: Pixels = px(8.0);
 const ESC_HINT_GAP: Pixels = px(5.0);
 const ESC_HINT_GLYPH: Pixels = px(12.0);
@@ -159,32 +156,20 @@ impl ConfirmModal {
     }
 }
 
-fn accent_confirm_button(
-    id: ElementId,
+pub(crate) fn confirm_action(
     label: SharedString,
     accent: Rgba,
-    ink: Rgba,
-    handler: SharedActionHandler,
+    palette: &ForgePalette,
     density: Density,
-    cx: &App,
-) -> impl IntoElement {
-    div()
-        .id(id)
-        .max_w_full()
-        .flex()
-        .items_center()
-        .py(spacing(Spacing::Xxs, density))
-        .px(spacing(Spacing::Sm, density))
-        .rounded(radius(Radius::Sm))
-        .bg(accent)
-        .font_family(cx.body_family())
+) -> Button {
+    secondary_button(label, palette)
+        .fits_parent()
+        .fill(accent, palette.shell)
         .text_size(FONT_SM)
-        .text_color(ink)
-        .cursor_pointer()
-        .hover(move |style| style.bg(with_alpha(accent, HOVER_FILL_ALPHA)))
-        .key_activated(ink)
-        .on_click(move |event, window, cx| handler(event, window, cx))
-        .child(label)
+        .padding(
+            spacing(Spacing::Xxs, density),
+            spacing(Spacing::Sm, density),
+        )
 }
 
 fn enter_focus(id: &ElementId, window: &mut Window, cx: &mut App) -> FocusHandle {
@@ -252,15 +237,7 @@ impl RenderOnce for ConfirmModal {
 
         let accent = tone.accent(&palette);
 
-        let tile = div()
-            .flex_none()
-            .flex()
-            .items_center()
-            .justify_center()
-            .size(ICON_TILE)
-            .rounded(radius(Radius::Md))
-            .bg(with_alpha(accent, ICON_TILE_ALPHA))
-            .child(icon(Icon::AlertTriangle, ICON_TILE_GLYPH, accent));
+        let tile = alert_tile(accent, ICON_TILE_GLYPH);
 
         let mut titles = div()
             .flex()
@@ -319,43 +296,30 @@ impl RenderOnce for ConfirmModal {
         if let Some((id, label, handler)) = confirm {
             let handler: SharedActionHandler = Rc::from(handler);
             enter_binding = Some((enter_focus(&id, window, cx), Rc::clone(&handler)));
-            actions = actions.child(accent_confirm_button(
-                id,
-                label,
-                accent,
-                palette.shell,
-                handler,
-                density,
-                cx,
-            ));
+            actions = actions.child(
+                confirm_action(label, accent, &palette, density)
+                    .on_click(id, move |event, window, cx| handler(event, window, cx)),
+            );
         }
 
-        let mut card = div()
-            .flex()
-            .flex_col()
-            .w(modal_width(ModalSize::Sm))
-            .bg(palette.elevated)
-            .rounded(radius(Radius::Lg))
-            .overflow_hidden()
-            .border(BORDER_THIN)
-            .border_color(palette.border_regular)
-            .child(body);
-
+        let mut card = bare_modal(body, &palette).size(ModalSize::Sm);
         if has_actions {
-            card = card.child(confirm_footer(esc_hint, actions, &palette, density, cx));
+            card = card.bare_footer(confirm_footer(esc_hint, actions, &palette, density, cx));
         }
 
-        card.when_some(enter_binding, |card, (focus, confirm)| {
-            let enter_scope = focus.clone();
-            confine_tab(card.key_context(KEY_CONTEXT).track_focus(&focus), &focus).on_key_down(
-                move |event: &KeyDownEvent, window, cx| {
-                    if plain_enter_press(event) && enter_scope.is_focused(window) {
-                        cx.stop_propagation();
-                        confirm(&keyboard_click(), window, cx);
-                    }
-                },
-            )
-        })
+        let Some((focus, confirm)) = enter_binding else {
+            return card.into_any_element();
+        };
+        let enter_scope = focus.clone();
+        confine_tab(div().key_context(KEY_CONTEXT).track_focus(&focus), &focus)
+            .on_key_down(move |event: &KeyDownEvent, window, cx| {
+                if plain_enter_press(event) && enter_scope.is_focused(window) {
+                    cx.stop_propagation();
+                    confirm(&keyboard_click(), window, cx);
+                }
+            })
+            .child(card)
+            .into_any_element()
     }
 }
 

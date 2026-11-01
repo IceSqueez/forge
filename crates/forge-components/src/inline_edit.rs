@@ -6,7 +6,6 @@ use gpui::{
     prelude::*,
 };
 
-use crate::palette::ForgePalette;
 use crate::text_input::{InputEvent, TextInput};
 use crate::tokens::{BORDER_THIN, Radius, radius};
 
@@ -17,7 +16,6 @@ pub enum InlineEditEvent {
 
 pub struct InlineEdit {
     input: Entity<TextInput>,
-    palette: ForgePalette,
     committed: bool,
     _sub: Subscription,
     _focus_sub: Option<Subscription>,
@@ -27,21 +25,19 @@ impl EventEmitter<InlineEditEvent> for InlineEdit {}
 
 pub fn inline_edit<V: 'static>(
     seed: impl Into<String>,
-    palette: ForgePalette,
     font_size: Pixels,
     window: &mut Window,
     cx: &mut Context<V>,
 ) -> Entity<InlineEdit> {
-    let editor = cx.new(|cx| InlineEdit::new(seed.into(), palette, font_size, cx));
+    let editor = cx.new(|cx| InlineEdit::new(seed.into(), font_size, cx));
     editor.update(cx, |this, cx| this.arm(window, cx));
     editor
 }
 
 impl InlineEdit {
-    fn new(seed: String, palette: ForgePalette, font_size: Pixels, cx: &mut Context<Self>) -> Self {
+    fn new(seed: String, font_size: Pixels, cx: &mut Context<Self>) -> Self {
         let input = cx.new(|cx| {
             let mut ti = TextInput::new("", cx)
-                .with_palette(palette)
                 .plain()
                 .mono()
                 .with_font_size(font_size);
@@ -55,7 +51,6 @@ impl InlineEdit {
         });
         Self {
             input,
-            palette,
             committed: false,
             _sub: sub,
             _focus_sub: None,
@@ -94,9 +89,9 @@ impl Render for InlineEdit {
             .items_center()
             .px(spacing(Spacing::Xxs, density))
             .rounded(radius(Radius::Sm))
-            .bg(self.palette.shell)
+            .bg(cx.palette().shell)
             .border(BORDER_THIN)
-            .border_color(self.palette.border_active)
+            .border_color(cx.palette().border_active)
             .on_mouse_down_out(cx.listener(|this, _: &MouseDownEvent, _, cx| this.commit(cx)))
             .child(self.input.clone())
     }

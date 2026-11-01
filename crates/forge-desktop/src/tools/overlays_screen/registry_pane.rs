@@ -1,0 +1,410 @@
+use crate::app::navigable_list::{ListStep, NavigableList, cursor_ring, list_keys};
+use crate::shared::load_notice::{LoadNotice, NoticeWidth, load_notice};
+use forge_components::Density;
+use forge_components::FONT_FIELD;
+use forge_components::FONT_ROW;
+use forge_components::FONT_SECTION_LABEL;
+use forge_components::OverflowRevealingFocus;
+use forge_components::Spacing;
+use forge_components::spacing;
+use forge_components::{
+    ActivePresentation, BORDER_THIN, FONT_XXS, ForgePalette, Icon, KeyActivated, MenuPlacement,
+    icon, menu_button, menu_divider, menu_item, pad_tile, scaled, toggle, tooltip_builder, tr,
+};
+use forge_storage::{OverlayDefinition, OverlayId};
+use gpui::{
+    AnyElement, App, ClickEvent, Context, ElementId, FontWeight, Pixels, Rgba, SharedString,
+    Window, div, prelude::*, px,
+};
+
+use super::OverlaysView;
+
+const PANE_W: Pixels = px(254.0);
+const PANE_HEAD_PAD_TOP: Pixels = px(12.0);
+const PANE_HEAD_PAD_H: Pixels = px(12.0);
+const PANE_HEAD_PAD_BOTTOM: Pixels = px(8.0);
+const PANE_TITLE_FS: Pixels = FONT_FIELD;
+
+const LIST_PAD_H: Pixels = px(8.0);
+const LIST_PAD_TOP: Pixels = px(8.0);
+const LIST_PAD_BOTTOM: Pixels = px(12.0);
+
+const ROW_PAD_V: Pixels = px(9.0);
+const ROW_RADIUS: Pixels = px(8.0);
+const ROW_MB: Pixels = px(2.0);
+const ROW_STRIPE_W: Pixels = px(2.0);
+const ROW_TILE: Pixels = px(28.0);
+const ROW_TILE_RADIUS: Pixels = px(7.0);
+const ROW_GLYPH: Pixels = px(14.0);
+const ROW_NAME_FS: Pixels = FONT_ROW;
+const ROW_KIND_FS: Pixels = FONT_SECTION_LABEL;
+const ROW_BADGE_GLYPH: Pixels = px(12.0);
+
+const EMPTY_PAD_V: Pixels = px(14.0);
+
+const FOOTER_PAD_H: Pixels = px(12.0);
+const ADD_GLYPH: Pixels = px(13.0);
+
+fn row_element_id(control: &'static str, overlay: &OverlayId) -> ElementId {
+    ElementId::from((
+        ElementId::from(control),
+        SharedString::from(overlay.to_string()),
+    ))
+}
+
+impl NavigableList for OverlaysView {
+    fn step_list(&mut self, step: ListStep, cx: &mut Context<Self>) {
+        let rows = self.registry_ids();
+        let selected = self.registry.selected.clone();
+        if self
+            .registry_keys
+            .step(&rows, selected.as_ref(), step)
+            .is_some()
+        {
+            cx.notify();
+        }
+    }
+
+    fn activate_list(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        let rows = self.registry_ids();
+        if let Some(id) = self.registry_keys.activation_target(&rows) {
+            self.select(id, cx);
+        }
+    }
+}
+
+impl OverlaysView {
+    fn registry_ids(&self) -> Vec<OverlayId> {
+        self.registry
+            .overlays
+            .iter()
+            .map(|definition| definition.id.clone())
+            .collect()
+    }
+
+    pub(super) fn render_registry_pane(
+        &self,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let density = cx.density();
+        div()
+            .flex_none()
+            .w(PANE_W)
+            .min_w(PANE_W)
+            .max_w(PANE_W)
+            .h_full()
+            .flex()
+            .flex_col()
+            .bg(palette.shell)
+            .border_r(BORDER_THIN)
+            .border_color(palette.border_regular)
+            .child(self.render_pane_header(palette, density, cx))
+            .child(self.render_list(palette, cx))
+            .child(self.render_add_bar(palette, cx))
+            .into_any_element()
+    }
+
+    fn render_pane_header(&self, palette: &ForgePalette, density: Density, cx: &App) -> AnyElement {
+        div()
+            .flex_none()
+            .flex()
+            .items_center()
+            .justify_between()
+            .px(scaled(PANE_HEAD_PAD_H, density))
+            .pt(scaled(PANE_HEAD_PAD_TOP, density))
+            .pb(scaled(PANE_HEAD_PAD_BOTTOM, density))
+            .border_b(BORDER_THIN)
+            .border_color(palette.border_regular)
+            .child(
+                div()
+                    .font_family(cx.body_family())
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_size(PANE_TITLE_FS)
+                    .text_color(palette.text_primary)
+                    .child(tr!("overlays_pane_title")),
+            )
+            .child(
+                div()
+                    .font_family(cx.mono_family())
+                    .text_size(FONT_XXS)
+                    .text_color(palette.text_faint)
+                    .child(self.registry.overlays.len().to_string()),
+            )
+            .into_any_element()
+    }
+
+    fn render_list(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
+        let density = cx.density();
+        let focus = self.registry_keys.focus().clone();
+        let mut list = list_keys(div().track_focus(&focus), cx)
+            .id("overlays-registry-scroll")
+            .flex_1()
+            .min_h(px(0.0))
+            .overflow_y_revealing_focus()
+            .px(scaled(LIST_PAD_H, density))
+            .pt(scaled(LIST_PAD_TOP, density))
+            .pb(scaled(LIST_PAD_BOTTOM, density));
+
+        if self.registry.overlays.is_empty() {
+            let notice = load_notice(
+                &self.registry.list_load,
+                LoadNotice {
+                    id: "overlays-load",
+                    loading: tr!("overlays_pane_loading"),
+                    width: NoticeWidth::NarrowColumn,
+                },
+                cx.listener(|this, _: &ClickEvent, _, cx| this.load(cx)),
+                palette,
+                density,
+                cx,
+            );
+            return list
+                .child(notice.unwrap_or_else(|| {
+                    empty_note(tr!("overlays_pane_empty"), palette, density, cx).into_any_element()
+                }))
+                .into_any_element();
+        }
+
+        for definition in &self.registry.overlays {
+            list = list.child(self.render_row(definition, palette, cx));
+        }
+        list.into_any_element()
+    }
+
+    fn render_row(
+        &self,
+        definition: &OverlayDefinition,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let density = cx.density();
+        let id = definition.id.clone();
+        let selected = self.registry.selected.as_ref() == Some(&id);
+        let visuals = self.visuals(definition, palette);
+
+        let stripe: Rgba = if selected {
+            visuals.accent
+        } else {
+            gpui::transparent_black().into()
+        };
+        let row_bg: Rgba = if selected {
+            palette.surface_overlay
+        } else {
+            gpui::transparent_black().into()
+        };
+        let name_color = if selected {
+            palette.text_primary
+        } else {
+            palette.text_secondary
+        };
+        let glyph_color = if definition.enabled {
+            visuals.accent
+        } else {
+            palette.text_faint
+        };
+        let kind_label = visuals
+            .label
+            .clone()
+            .unwrap_or_else(|| tr!("overlays_type_unavailable"));
+
+        let tile = div()
+            .flex_none()
+            .size(ROW_TILE)
+            .flex()
+            .items_center()
+            .justify_center()
+            .rounded(ROW_TILE_RADIUS)
+            .bg(palette.elevated)
+            .child(icon(visuals.icon, ROW_GLYPH, glyph_color));
+
+        let labels = self.render_row_labels(definition, kind_label, name_color, palette, cx);
+
+        let toggle_id = id.clone();
+        let switch = toggle(definition.enabled, palette)
+            .on_color(visuals.accent)
+            .on_click(
+                row_element_id("overlay-toggle", &id),
+                cx.listener(move |this, _: &ClickEvent, _, cx| {
+                    this.toggle_enabled(toggle_id.clone(), cx)
+                }),
+            );
+
+        let select_id = id.clone();
+        let hover_bg = palette.elevated;
+        div()
+            .id(row_element_id("overlay-row", &id))
+            .flex()
+            .items_center()
+            .gap(spacing(Spacing::Sm, density))
+            .px(spacing(Spacing::Sm, density))
+            .py(scaled(ROW_PAD_V, density))
+            .mb(ROW_MB)
+            .rounded(ROW_RADIUS)
+            .border_l(ROW_STRIPE_W)
+            .border_color(stripe)
+            .bg(row_bg)
+            .cursor_pointer()
+            .when(!selected, |row| row.hover(move |s| s.bg(hover_bg)))
+            .relative()
+            .when(self.registry_keys.is_at(&id), |row| {
+                row.child(self.registry_keys.row_anchor(None))
+                    .child(cursor_ring(palette))
+            })
+            .key_activated(palette.text_primary)
+            .on_click(
+                cx.listener(move |this, _: &ClickEvent, _, cx| this.select(select_id.clone(), cx)),
+            )
+            .child(tile)
+            .child(labels)
+            .children(self.render_media_badge(&id, palette))
+            .child(switch)
+            .child(self.render_row_menu(&id, palette, cx))
+            .into_any_element()
+    }
+
+    fn render_row_labels(
+        &self,
+        definition: &OverlayDefinition,
+        kind_label: String,
+        name_color: Rgba,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> gpui::Div {
+        div()
+            .flex_1()
+            .min_w(px(0.0))
+            .flex()
+            .flex_col()
+            .child(
+                div()
+                    .w_full()
+                    .truncate()
+                    .font_family(cx.body_family())
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_size(ROW_NAME_FS)
+                    .text_color(name_color)
+                    .child(definition.display_name.clone()),
+            )
+            .child(
+                div()
+                    .w_full()
+                    .truncate()
+                    .font_family(cx.mono_family())
+                    .text_size(ROW_KIND_FS)
+                    .text_color(palette.text_faint)
+                    .child(kind_label),
+            )
+    }
+
+    fn render_media_badge(&self, id: &OverlayId, palette: &ForgePalette) -> Option<AnyElement> {
+        let note = self.media_badge(id)?;
+        Some(
+            div()
+                .id(row_element_id("overlay-media-issue", id))
+                .flex_none()
+                .tooltip(tooltip_builder(note))
+                .child(icon(Icon::AlertTriangle, ROW_BADGE_GLYPH, palette.warning))
+                .into_any_element(),
+        )
+    }
+
+    fn render_row_menu(
+        &self,
+        id: &OverlayId,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let open = self.registry.menu_open.as_ref() == Some(id);
+        let view = cx.entity();
+        let rename_id = id.clone();
+        let copy_id = id.clone();
+        let delete_id = id.clone();
+        let toggle_id = id.clone();
+
+        menu_button(Icon::DotsVertical, open, palette)
+            .placement(MenuPlacement::BottomRight)
+            .open_at(self.registry.menu_click_pos)
+            .items(vec![
+                menu_item(
+                    row_element_id("overlay-menu-rename", id),
+                    tr!("overlays_menu_rename"),
+                    cx.listener(move |this, _: &ClickEvent, _, cx| {
+                        this.open_rename_form(rename_id.clone(), cx)
+                    }),
+                )
+                .icon(Icon::Pencil)
+                .into(),
+                menu_item(
+                    row_element_id("overlay-menu-copy-url", id),
+                    tr!("overlays_menu_copy_url"),
+                    cx.listener(move |this, _: &ClickEvent, _, cx| this.copy_url(&copy_id, cx)),
+                )
+                .icon(Icon::Copy)
+                .into(),
+                menu_divider(),
+                menu_item(
+                    row_element_id("overlay-menu-delete", id),
+                    tr!("common_delete"),
+                    cx.listener(move |this, _: &ClickEvent, _, cx| {
+                        this.prompt_delete(delete_id.clone(), cx)
+                    }),
+                )
+                .icon(Icon::Trash)
+                .color(palette.danger)
+                .into(),
+            ])
+            .on_toggle(
+                row_element_id("overlay-menu-trigger", id),
+                cx.listener(move |this, event: &ClickEvent, _, cx| {
+                    this.toggle_menu(&toggle_id, event.position(), cx)
+                }),
+            )
+            .on_dismiss(move |_window, cx| {
+                view.update(cx, |this, cx| this.close_menu(cx));
+            })
+            .into_any_element()
+    }
+
+    fn render_add_bar(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
+        let density = cx.density();
+        div()
+            .flex_none()
+            .px(scaled(FOOTER_PAD_H, density))
+            .py(spacing(Spacing::Sm, density))
+            .border_t(BORDER_THIN)
+            .border_color(palette.border_regular)
+            .child(
+                pad_tile(
+                    "overlays-add",
+                    icon(Icon::Plus, ADD_GLYPH, palette.brand),
+                    div()
+                        .flex()
+                        .items_center()
+                        .child(tr!("overlays_add_overlay")),
+                    palette,
+                )
+                .bar(palette)
+                .title_color(palette.brand)
+                .hover_border(palette.brand)
+                .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.open_create_form(cx))),
+            )
+            .into_any_element()
+    }
+}
+
+fn empty_note(
+    message: String,
+    palette: &ForgePalette,
+    density: Density,
+    cx: &App,
+) -> impl IntoElement {
+    div()
+        .w_full()
+        .px(spacing(Spacing::Sm, density))
+        .py(scaled(EMPTY_PAD_V, density))
+        .font_family(cx.body_family())
+        .text_size(FONT_XXS)
+        .text_color(palette.text_faint)
+        .child(SharedString::from(message))
+}

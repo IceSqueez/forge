@@ -37,6 +37,7 @@ mod start_poll;
 mod start_prediction;
 mod start_raid;
 mod timeout_user;
+pub(crate) use timeout_user::MAX_DURATION_SECONDS;
 mod unban_user;
 mod update_automod_settings;
 mod update_category;

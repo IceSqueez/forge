@@ -231,10 +231,16 @@ async fn set_binding_enabled_applies_to_every_instance_it_is_given() {
     let backend = Arc::clone(&store.provider);
     let press = seed_instance(&backend, event_kinds::GLOBAL_PRESSED, Some("Ctrl+F1")).await;
     let release = seed_instance(&backend, event_kinds::GLOBAL_RELEASED, Some("Ctrl+F1")).await;
+    let rig = reconciled(&backend).await;
 
-    set_binding_enabled(Arc::clone(&backend), vec![press, release], false)
-        .await
-        .unwrap();
+    set_binding_enabled(
+        rig.reconciler,
+        Arc::clone(&backend),
+        vec![press, release],
+        false,
+    )
+    .await
+    .unwrap();
 
     let repo = backend.trigger_instance_repo();
     let states: Vec<bool> = vec![
@@ -249,8 +255,10 @@ async fn set_binding_enabled_on_a_list_holding_an_unknown_id_toggles_nothing() {
     let store = store().await;
     let backend = Arc::clone(&store.provider);
     let known = seed_instance(&backend, event_kinds::GLOBAL_PRESSED, Some("Ctrl+F1")).await;
+    let rig = reconciled(&backend).await;
 
     let failed = set_binding_enabled(
+        rig.reconciler,
         Arc::clone(&backend),
         vec![known, TriggerInstanceId::new()],
         false,
@@ -1409,10 +1417,14 @@ async fn disabling_both_halves_through_the_store_releases_the_combo_on_the_next_
     let rig = reconciled(&backend).await;
     let id = rig.id_of("F1");
 
-    set_binding_enabled(Arc::clone(&backend), vec![press, release], false)
-        .await
-        .unwrap();
-    rig.reconciler.reconcile().await;
+    set_binding_enabled(
+        Arc::clone(&rig.reconciler),
+        Arc::clone(&backend),
+        vec![press, release],
+        false,
+    )
+    .await
+    .unwrap();
 
     assert_eq!(
         rig.recorder.calls().last(),
@@ -1429,10 +1441,14 @@ async fn disabling_one_half_keeps_the_grab_the_other_half_needs() {
     seed_instance(&backend, event_kinds::GLOBAL_RELEASED, Some("F1")).await;
     let rig = reconciled(&backend).await;
 
-    set_binding_enabled(Arc::clone(&backend), vec![press], false)
-        .await
-        .unwrap();
-    rig.reconciler.reconcile().await;
+    set_binding_enabled(
+        Arc::clone(&rig.reconciler),
+        Arc::clone(&backend),
+        vec![press],
+        false,
+    )
+    .await
+    .unwrap();
 
     assert_eq!(rig.registered(), ["F1"]);
 }
@@ -1445,10 +1461,14 @@ async fn disabling_a_binding_keeps_the_combo_a_clip_is_bound_to() {
     seed_clip_on(&backend, "F1").await;
     let rig = reconciled(&backend).await;
 
-    set_binding_enabled(Arc::clone(&backend), vec![press], false)
-        .await
-        .unwrap();
-    rig.reconciler.reconcile().await;
+    set_binding_enabled(
+        Arc::clone(&rig.reconciler),
+        Arc::clone(&backend),
+        vec![press],
+        false,
+    )
+    .await
+    .unwrap();
 
     assert_eq!(rig.registered(), ["F1"]);
 }

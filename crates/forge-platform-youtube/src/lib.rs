@@ -15,6 +15,7 @@ mod integration;
 mod quick_actions;
 mod sub_actions;
 mod triggers;
+mod viewer_step;
 pub mod vocabulary;
 
 pub use account::auth::LoopbackCode;
@@ -47,6 +48,7 @@ pub use chat::chat_poller::ChatPollTimings;
 pub use chat::chat_poller::YoutubeChatPoller;
 pub use chat::moderation::YoutubeModeration;
 pub use chat::send_chat::YoutubeSendChat;
-pub use integration::YOUTUBE_INTEGRATION;
+pub use integration::{YOUTUBE_CHAT_LIMITS, YOUTUBE_INTEGRATION};
 pub use sub_actions::register_youtube_sub_actions;
 pub use triggers::register_youtube_triggers;
+pub use viewer_step::viewer_step;

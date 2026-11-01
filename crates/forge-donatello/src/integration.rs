@@ -24,5 +24,6 @@ pub const DONATELLO_INTEGRATION: IntegrationDeclaration = IntegrationDeclaration
         step_tint: IntegrationTint::AccentPinkLight,
         trigger_tint: IntegrationTint::AccentPinkLight,
     },
+    connection_strip: None,
     disclaimer: None,
 };

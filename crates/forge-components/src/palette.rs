@@ -1,5 +1,7 @@
 use gpui::Rgba;
 
+pub type PaletteColor = fn(&ForgePalette) -> Rgba;
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ForgePalette {
     pub base: Rgba,

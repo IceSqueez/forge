@@ -17,6 +17,7 @@ mod sub_actions;
 #[cfg(test)]
 mod test_support;
 mod triggers;
+mod viewer_step;
 pub mod vocabulary;
 
 pub use api::categories::KickCategories;
@@ -39,12 +40,13 @@ pub use gateway::{
     KICK_API_BUDGET_CAPACITY, KICK_API_BUDGET_WINDOW, KICK_CHANNEL_INFO_BUDGET_CAPACITY,
     KICK_CHANNEL_INFO_BUDGET_WINDOW, kick_api_gateway, kick_channel_info_gateway,
 };
-pub use integration::KICK_INTEGRATION;
+pub use integration::{KICK_CHAT_LIMITS, KICK_INTEGRATION};
 pub use platform::KickPlatform;
 pub use pusher::chat::{KickChat, KickChatHandle};
 pub use pusher::chatroom_lookup::ChannelInfoFetcher;
 pub use pusher::{chat, error, protocol};
 pub use sub_actions::{KickSubActionDeps, register_kick_sub_actions};
+pub use viewer_step::viewer_step;
 
 pub use api::categories::CategoryMatch;
 pub use api::channel::ChannelSnapshot;

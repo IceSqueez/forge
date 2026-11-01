@@ -1,0 +1,128 @@
+use std::sync::Arc;
+
+use forge_components::{ActivePresentation, ForgePalette, Icon, tr};
+use forge_events::EventPublisher;
+use forge_storage::{CredentialsRepo, SettingsRepo};
+use gpui::{App, Context, Entity, EventEmitter, Subscription, Window, prelude::*};
+
+use crate::app::navigation::NavRequested;
+use crate::integrations::connect_scaffold::{ConnectPage, GuideStep, fragment, mono_fragment};
+use crate::integrations::obs_credentials_form::{
+    DEFAULT_PORT, ObsConnected, ObsCredentialsForm, ObsSubmit,
+};
+use forge_host::integrations::ObsInstallSeed;
+
+pub(crate) struct ObsConnectView {
+    form: Entity<ObsCredentialsForm>,
+    _form_sub: Subscription,
+}
+
+impl EventEmitter<NavRequested> for ObsConnectView {}
+impl EventEmitter<ObsConnected> for ObsConnectView {}
+
+impl ObsConnectView {
+    pub(crate) fn new(
+        rt_handle: tokio::runtime::Handle,
+        credentials: Arc<dyn CredentialsRepo>,
+        settings: Arc<dyn SettingsRepo>,
+        bus: Arc<dyn EventPublisher>,
+        seed: ObsInstallSeed,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        let form = cx.new(|cx| {
+            ObsCredentialsForm::new(
+                rt_handle,
+                credentials,
+                settings,
+                bus,
+                seed,
+                ObsSubmit::Connect,
+                cx,
+            )
+        });
+        let form_sub = cx.subscribe(&form, |_, _, _: &ObsConnected, cx| cx.emit(ObsConnected));
+
+        Self {
+            form,
+            _form_sub: form_sub,
+        }
+    }
+}
+
+fn guide_steps(palette: &ForgePalette, cx: &App) -> Vec<GuideStep> {
+    vec![
+        vec![
+            fragment(
+                tr!("obs_connect_step_menu_prefix"),
+                palette.text_primary,
+                cx,
+            ),
+            fragment(tr!("obs_connect_step_menu_path"), palette.text_muted, cx),
+        ],
+        vec![
+            fragment(
+                tr!("obs_connect_step_enable_prefix"),
+                palette.text_primary,
+                cx,
+            ),
+            fragment(tr!("obs_connect_step_enable_option"), palette.success, cx),
+        ],
+        vec![
+            fragment(
+                tr!("obs_connect_step_port_prefix"),
+                palette.text_primary,
+                cx,
+            ),
+            mono_fragment(tr!("obs_connect_step_port_field"), palette.text_primary, cx),
+            fragment(
+                tr!("obs_connect_step_port_default_prefix"),
+                palette.text_primary,
+                cx,
+            ),
+            mono_fragment(
+                tr!(
+                    "connect_step_port_default_value",
+                    port = DEFAULT_PORT.to_string()
+                ),
+                palette.text_primary,
+                cx,
+            ),
+        ],
+        vec![
+            fragment(
+                tr!("obs_connect_step_reveal_prefix"),
+                palette.text_primary,
+                cx,
+            ),
+            fragment(tr!("obs_connect_step_reveal_button"), palette.success, cx),
+            fragment(
+                tr!("obs_connect_step_reveal_suffix"),
+                palette.text_primary,
+                cx,
+            ),
+        ],
+    ]
+}
+
+impl Render for ObsConnectView {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let palette = cx.palette();
+        let density = cx.density();
+
+        ConnectPage {
+            scroll_id: "obs-connect-scroll",
+            crumb_id: "obs-connect-crumb-apps",
+            hero_glyph: Icon::Broadcast,
+            hero_tint: palette.success,
+            step_number_tint: palette.brand,
+            title: tr!("obs_connect_title"),
+            subtitle: tr!("obs_connect_subtitle"),
+            guide_title: tr!("obs_connect_guide_title"),
+            guide_intro: tr!("obs_connect_guide_intro"),
+            settings_title: tr!("obs_connect_settings_title"),
+            steps: guide_steps(&palette, cx),
+            form: self.form.clone().into(),
+        }
+        .render(&palette, density, cx)
+    }
+}

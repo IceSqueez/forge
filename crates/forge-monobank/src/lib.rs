@@ -1,3 +1,4 @@
+mod account_setup;
 mod api;
 mod config;
 mod content;

@@ -8,7 +8,7 @@ use crate::toggle::toggle;
 use crate::tokens::Density;
 use crate::tokens::Spacing;
 use crate::tokens::spacing;
-use crate::tokens::{BORDER_THIN, FONT_XS, FONT_XXS, Radius, radius, scaled};
+use crate::tokens::{BORDER_THIN, FONT_SM, FONT_XS, FONT_XXS, Radius, radius, scaled};
 use crate::tr;
 use crate::{ActivePresentation, FONT_FIELD};
 use gpui::{
@@ -22,6 +22,7 @@ const HINT_FONT: Pixels = FONT_META;
 const NOTE_FONT: Pixels = FONT_LABEL;
 const RETRY_GAP: Pixels = px(5.0);
 const CHOICE_GAP: Pixels = px(8.0);
+const COMPACT_FIELD_PAD_V: Pixels = px(7.0);
 
 pub fn field_column(
     palette: &ForgePalette,
@@ -214,6 +215,70 @@ pub fn int_range_hint(min: i64, max: i64) -> String {
             max = max.to_string()
         )
     }
+}
+
+pub fn setting_choice_trigger(
+    id: impl Into<ElementId>,
+    selected: impl Into<SharedString>,
+    palette: &ForgePalette,
+    on_click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    density: Density,
+    cx: &App,
+) -> gpui::Stateful<gpui::Div> {
+    div()
+        .id(id)
+        .flex()
+        .items_center()
+        .justify_between()
+        .w_full()
+        .px(spacing(Spacing::Sm, density))
+        .py(scaled(COMPACT_FIELD_PAD_V, density))
+        .rounded(radius(Radius::Sm))
+        .bg(palette.base)
+        .border(BORDER_THIN)
+        .border_color(palette.border_input)
+        .cursor_pointer()
+        .key_activated(palette.text_primary)
+        .on_click(on_click)
+        .child(
+            div()
+                .font_family(cx.body_family())
+                .text_size(FONT_SM)
+                .text_color(palette.text_primary)
+                .child(selected.into()),
+        )
+        .child(icon(Icon::ChevronDown, FONT_XS, palette.text_faint))
+}
+
+pub fn readonly_mono_field(
+    content: impl Into<SharedString>,
+    palette: &ForgePalette,
+    density: Density,
+    cx: &App,
+) -> gpui::Div {
+    div()
+        .flex_1()
+        .min_w(px(0.0))
+        .flex()
+        .items_center()
+        .justify_between()
+        .gap(spacing(Spacing::Xs, density))
+        .py(scaled(COMPACT_FIELD_PAD_V, density))
+        .px(spacing(Spacing::Sm, density))
+        .rounded(radius(Radius::Md))
+        .border(BORDER_THIN)
+        .border_color(palette.border_regular)
+        .bg(palette.shell)
+        .child(
+            div()
+                .min_w(px(0.0))
+                .overflow_hidden()
+                .text_ellipsis()
+                .font_family(cx.mono_family())
+                .text_size(FONT_XS)
+                .text_color(palette.text_primary)
+                .child(content.into()),
+        )
 }
 
 #[cfg(test)]

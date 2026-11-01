@@ -13,7 +13,7 @@ use crate::icons::Icon;
 use crate::palette::ForgePalette;
 use crate::search_state::SearchState;
 use crate::text_input::{InputEvent, TextInput};
-use crate::tokens::{ENTER_KEY, ESCAPE_KEY, Radius};
+use crate::tokens::{ENTER_KEY, ESCAPE_KEY};
 
 const SEARCH_THRESHOLD: usize = 10;
 const MESSAGE_FONT: Pixels = FONT_ROW;
@@ -59,7 +59,6 @@ pub struct Picker {
     loading: bool,
     custom_entry: Option<SharedString>,
     labels: PickerLabels,
-    palette: ForgePalette,
     list_scroll: UniformListScrollHandle,
     focus_handle: FocusHandle,
     _search_sub: Subscription,
@@ -74,14 +73,9 @@ impl Focusable for Picker {
 }
 
 impl Picker {
-    pub fn new(
-        labels: PickerLabels,
-        items: Vec<PickerItem>,
-        palette: ForgePalette,
-        cx: &mut Context<Self>,
-    ) -> Self {
+    pub fn new(labels: PickerLabels, items: Vec<PickerItem>, cx: &mut Context<Self>) -> Self {
         let placeholder = labels.placeholder.clone();
-        let search = SearchState::new(cx, palette, placeholder);
+        let search = SearchState::new(cx, placeholder);
         let search_sub = cx.subscribe(search.field(), Self::on_search_event);
 
         let mut this = Self {
@@ -93,7 +87,6 @@ impl Picker {
             loading: false,
             custom_entry: None,
             labels,
-            palette,
             list_scroll: UniformListScrollHandle::new(),
             focus_handle: cx.focus_handle(),
             _search_sub: search_sub,
@@ -123,15 +116,6 @@ impl Picker {
 
     pub fn set_loading(&mut self, loading: bool, cx: &mut Context<Self>) {
         self.loading = loading;
-        cx.notify();
-    }
-
-    pub fn set_palette(&mut self, palette: ForgePalette, cx: &mut Context<Self>) {
-        self.palette = palette;
-        self.search.field().update(cx, |input, cx| {
-            input.set_palette(palette, cx);
-            input.set_static_chrome(Some((palette.border_regular, Radius::Sm)));
-        });
         cx.notify();
     }
 
@@ -222,7 +206,7 @@ impl Picker {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let value = typed.clone();
-        dropdown_row("forge-picker-custom", typed, &self.palette)
+        dropdown_row("forge-picker-custom", typed, &cx.palette())
             .icon(Some(Icon::Pencil))
             .suffix(hint)
             .highlighted(self.filtered.is_empty())
@@ -275,7 +259,7 @@ impl Picker {
     ) -> AnyElement {
         let id = item.id.clone();
         let is_current = self.current.as_ref() == Some(&item.id);
-        dropdown_row(("forge-picker-row", idx), item.label.clone(), &self.palette)
+        dropdown_row(("forge-picker-row", idx), item.label.clone(), &cx.palette())
             .icon(item.icon)
             .suffix(item.sublabel.clone())
             .current(is_current)
@@ -330,7 +314,7 @@ pub(crate) fn wrapped_step(current: usize, count: usize, step: PickerStep) -> us
 
 impl Render for Picker {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let p = self.palette;
+        let p = cx.palette();
         let custom_row = self
             .custom_value(cx)
             .map(|typed| self.render_custom_row(typed, self.custom_entry.clone(), cx));
@@ -388,7 +372,6 @@ mod tests {
     use gpui::{AppContext, Modifiers, VisualTestContext, point, px};
 
     use super::*;
-    use crate::palette::FORGE_DEFAULT;
 
     struct Heard {
         events: Vec<PickerEvent>,
@@ -422,9 +405,8 @@ mod tests {
         cx.update(bind_picker_keys);
         let current = current.map(|id| SharedString::from(id.to_owned()));
         install_presentation(cx);
-        let (picker, vcx) = cx.add_window_view(|_window, cx| {
-            Picker::new(labels(), roster, FORGE_DEFAULT, cx).with_current(current)
-        });
+        let (picker, vcx) = cx
+            .add_window_view(|_window, cx| Picker::new(labels(), roster, cx).with_current(current));
         let heard = vcx.update(|window, cx| {
             picker.update(cx, |view, cx| view.focus(window, cx));
             cx.new(|cx| Heard {
@@ -716,7 +698,7 @@ mod tests {
         cx.update(crate::text_input::bind_text_input_keys);
         install_presentation(cx);
         let (picker, vcx) = cx.add_window_view(|_window, cx| {
-            Picker::new(labels(), roster, FORGE_DEFAULT, cx).with_custom_entry("custom".into())
+            Picker::new(labels(), roster, cx).with_custom_entry("custom".into())
         });
         let heard = vcx.update(|window, cx| {
             picker.update(cx, |view, cx| view.focus(window, cx));

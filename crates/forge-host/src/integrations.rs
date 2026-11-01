@@ -17,7 +17,7 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 use crate::donation_factories::{wire_donatello, wire_monobank};
-use crate::donation_services::{DonationServices, restore_donatello_poll_interval};
+use crate::donation_services::{DonationService, DonationServices, donatello_service};
 use crate::integration_catalog::declarations;
 use crate::integration_factories::{
     wire_discord, wire_hotkey, wire_kick, wire_midi, wire_obs, wire_twitch, wire_vtube,
@@ -40,6 +40,50 @@ pub struct BuiltinObject {
     pub option_source: Option<Arc<dyn BuiltinOptionSource>>,
     pub follow: Option<Arc<dyn FollowLookup>>,
     pub ban_list: Option<Arc<dyn BanListSource>>,
+}
+
+impl BuiltinObject {
+    pub fn of<T>(subject: Arc<T>) -> Self
+    where
+        T: BuiltinStatus + BuiltinHealth + BuiltinContent + QuickActions + 'static,
+    {
+        Self {
+            status: subject.clone(),
+            health: subject.clone(),
+            content: subject.clone(),
+            quick: subject,
+            control: None,
+            collections: None,
+            option_source: None,
+            follow: None,
+            ban_list: None,
+        }
+    }
+
+    pub fn with_control(mut self, control: Arc<dyn BuiltinControl>) -> Self {
+        self.control = Some(control);
+        self
+    }
+
+    pub fn with_collections(mut self, collections: Arc<dyn BuiltinCollections>) -> Self {
+        self.collections = Some(collections);
+        self
+    }
+
+    pub fn with_option_source(mut self, option_source: Arc<dyn BuiltinOptionSource>) -> Self {
+        self.option_source = Some(option_source);
+        self
+    }
+
+    pub fn with_follow(mut self, follow: Arc<dyn FollowLookup>) -> Self {
+        self.follow = Some(follow);
+        self
+    }
+
+    pub fn with_ban_list(mut self, ban_list: Arc<dyn BanListSource>) -> Self {
+        self.ban_list = Some(ban_list);
+        self
+    }
 }
 
 type BuiltinEntries = HashMap<IntegrationId, BuiltinObject>;
@@ -128,14 +172,23 @@ pub struct Integrations {
     pub sign_out_routes: SignOutRoutes,
 }
 
+pub trait SeededClient: BuiltinStatus + BuiltinControl + Send + Sync + Sized + 'static {
+    type Sink: Send + Sync + 'static;
+
+    fn integration_id() -> IntegrationId;
+    fn install_on(sink: &Self::Sink, client: Arc<Self>);
+    fn forget_on(_sink: &Self::Sink) {}
+    fn builtin_object(self: Arc<Self>) -> BuiltinObject;
+}
+
 #[async_trait::async_trait]
-pub trait ObsConnection: Send + Sync {
+pub trait LiveConnection: Send + Sync {
     fn connect_failure(&self) -> Option<MessageRef>;
     async fn disconnect(&self) -> ControlOutcome;
 }
 
 #[async_trait::async_trait]
-impl ObsConnection for forge_obs::ObsClient {
+impl<C: SeededClient> LiveConnection for C {
     fn connect_failure(&self) -> Option<MessageRef> {
         BuiltinStatus::connect_failure(self)
     }
@@ -145,20 +198,32 @@ impl ObsConnection for forge_obs::ObsClient {
     }
 }
 
-struct LiveObs {
-    client: Option<Arc<forge_obs::ObsClient>>,
-    connection: Arc<dyn ObsConnection>,
+struct LiveClient<C> {
+    client: Option<Arc<C>>,
+    connection: Arc<dyn LiveConnection>,
 }
 
-#[derive(Clone)]
-pub struct ObsInstallSeed {
-    sink: Arc<forge_obs::SwitchableObsSink>,
-    live: LiveSlot<LiveObs>,
+pub struct InstallSeed<C: SeededClient> {
+    sink: Arc<C::Sink>,
+    live: LiveSlot<LiveClient<C>>,
     builtins: BuiltinRegistry,
 }
 
-impl ObsInstallSeed {
-    pub fn new(sink: Arc<forge_obs::SwitchableObsSink>, builtins: BuiltinRegistry) -> Self {
+pub type ObsInstallSeed = InstallSeed<forge_obs::ObsClient>;
+pub type VTubeInstallSeed = InstallSeed<forge_vtube::VTubeClient>;
+
+impl<C: SeededClient> Clone for InstallSeed<C> {
+    fn clone(&self) -> Self {
+        Self {
+            sink: Arc::clone(&self.sink),
+            live: self.live.clone(),
+            builtins: self.builtins.clone(),
+        }
+    }
+}
+
+impl<C: SeededClient> InstallSeed<C> {
+    pub fn new(sink: Arc<C::Sink>, builtins: BuiltinRegistry) -> Self {
         Self {
             sink,
             live: LiveSlot::new(),
@@ -167,30 +232,22 @@ impl ObsInstallSeed {
     }
 
     fn forget_object(&self) {
-        self.builtins.remove(&forge_obs::OBS_INTEGRATION.id);
+        C::forget_on(&self.sink);
+        self.builtins.remove(&C::integration_id());
     }
 
-    pub fn stream_output(&self) -> forge_obs::StreamOutputActive {
-        self.sink.stream_output()
-    }
-
-    pub fn stream_stats(&self) -> forge_obs::ObsStatsWatch {
-        self.sink.stream_stats()
-    }
-
-    pub fn install(&self, client: Arc<forge_obs::ObsClient>) {
-        self.sink.install(Arc::clone(&client));
-        self.builtins
-            .install(obs_builtin_object(Arc::clone(&client)));
-        let connection: Arc<dyn ObsConnection> = client.clone();
-        self.live.install(Arc::new(LiveObs {
+    pub fn install(&self, client: Arc<C>) {
+        C::install_on(&self.sink, Arc::clone(&client));
+        self.builtins.install(Arc::clone(&client).builtin_object());
+        let connection: Arc<dyn LiveConnection> = client.clone();
+        self.live.install(Arc::new(LiveClient {
             client: Some(client),
             connection,
         }));
     }
 
-    pub fn install_connection(&self, connection: Arc<dyn ObsConnection>) {
-        self.live.install(Arc::new(LiveObs {
+    pub fn install_connection(&self, connection: Arc<dyn LiveConnection>) {
+        self.live.install(Arc::new(LiveClient {
             client: None,
             connection,
         }));
@@ -210,7 +267,7 @@ impl ObsInstallSeed {
         }
     }
 
-    pub fn live(&self) -> Option<Arc<forge_obs::ObsClient>> {
+    pub fn live(&self) -> Option<Arc<C>> {
         self.live.current().and_then(|live| live.client.clone())
     }
 
@@ -219,131 +276,82 @@ impl ObsInstallSeed {
     }
 }
 
-#[derive(Clone)]
-pub struct VTubeInstallSeed {
-    sink: Arc<forge_vtube::SwitchableVTubeSink>,
-    live: LiveSlot<forge_vtube::VTubeClient>,
-    builtins: BuiltinRegistry,
-}
-
-impl VTubeInstallSeed {
-    pub fn new(sink: Arc<forge_vtube::SwitchableVTubeSink>, builtins: BuiltinRegistry) -> Self {
-        Self {
-            sink,
-            live: LiveSlot::new(),
-            builtins,
-        }
+impl ObsInstallSeed {
+    pub fn stream_output(&self) -> forge_obs::StreamOutputActive {
+        self.sink.stream_output()
     }
 
-    fn forget_object(&self) {
-        self.sink.clear();
-        self.builtins.remove(&forge_vtube::VTUBE_INTEGRATION.id);
-    }
-
-    pub fn install(&self, client: Arc<forge_vtube::VTubeClient>) {
-        self.sink.install(Arc::clone(&client));
-        self.builtins
-            .install(vtube_builtin_object(Arc::clone(&client)));
-        self.live.install(client);
-    }
-
-    pub fn clear(&self) {
-        self.forget_object();
-        self.live.take();
-    }
-
-    pub async fn disconnect_live(&self) {
-        self.forget_object();
-        if let Some(client) = self.live.take()
-            && let Err(err) = client.disconnect().await
-        {
-            tracing::warn!(error = %err, "disconnecting the live client failed");
-        }
-    }
-
-    pub fn live(&self) -> Option<Arc<forge_vtube::VTubeClient>> {
-        self.live.current()
-    }
-
-    pub fn connect_failure(&self) -> Option<MessageRef> {
-        self.live()?.connect_failure()
+    pub fn stream_stats(&self) -> forge_obs::ObsStatsWatch {
+        self.sink.stream_stats()
     }
 }
 
-pub fn vtube_builtin_object(client: Arc<forge_vtube::VTubeClient>) -> BuiltinObject {
-    BuiltinObject {
-        status: client.clone(),
-        health: client.clone(),
-        content: client.clone(),
-        quick: client.clone(),
-        control: Some(Arc::clone(&client) as Arc<dyn BuiltinControl>),
-        collections: None,
-        option_source: Some(client as Arc<dyn BuiltinOptionSource>),
-        follow: None,
-        ban_list: None,
+impl SeededClient for forge_obs::ObsClient {
+    type Sink = forge_obs::SwitchableObsSink;
+
+    fn integration_id() -> IntegrationId {
+        forge_obs::OBS_INTEGRATION.id
+    }
+
+    fn install_on(sink: &Self::Sink, client: Arc<Self>) {
+        sink.install(client);
+    }
+
+    fn builtin_object(self: Arc<Self>) -> BuiltinObject {
+        BuiltinObject::of(self.clone())
+            .with_control(self.clone())
+            .with_option_source(self)
     }
 }
 
-pub fn obs_builtin_object(client: Arc<forge_obs::ObsClient>) -> BuiltinObject {
-    BuiltinObject {
-        status: client.clone(),
-        health: client.clone(),
-        content: client.clone(),
-        quick: client.clone(),
-        control: Some(Arc::clone(&client) as Arc<dyn BuiltinControl>),
-        collections: None,
-        option_source: Some(client as Arc<dyn BuiltinOptionSource>),
-        follow: None,
-        ban_list: None,
+impl SeededClient for forge_vtube::VTubeClient {
+    type Sink = forge_vtube::SwitchableVTubeSink;
+
+    fn integration_id() -> IntegrationId {
+        forge_vtube::VTUBE_INTEGRATION.id
+    }
+
+    fn install_on(sink: &Self::Sink, client: Arc<Self>) {
+        sink.install(client);
+    }
+
+    fn forget_on(sink: &Self::Sink) {
+        sink.clear();
+    }
+
+    fn builtin_object(self: Arc<Self>) -> BuiltinObject {
+        BuiltinObject::of(self.clone())
+            .with_control(self.clone())
+            .with_option_source(self)
     }
 }
 
 pub fn twitch_builtin_object(
     bundle: Arc<forge_platform_twitch::TwitchIntegrationBundle>,
 ) -> BuiltinObject {
-    BuiltinObject {
-        status: bundle.clone(),
-        health: bundle.clone(),
-        content: bundle.clone(),
-        quick: bundle.clone(),
-        control: Some(Arc::clone(&bundle) as Arc<dyn BuiltinControl>),
-        collections: Some(Arc::clone(&bundle) as Arc<dyn BuiltinCollections>),
-        option_source: Some(Arc::clone(&bundle) as Arc<dyn BuiltinOptionSource>),
-        follow: Some(Arc::clone(&bundle) as Arc<dyn FollowLookup>),
-        ban_list: Some(bundle as Arc<dyn BanListSource>),
-    }
+    BuiltinObject::of(bundle.clone())
+        .with_control(bundle.clone())
+        .with_collections(bundle.clone())
+        .with_option_source(bundle.clone())
+        .with_follow(bundle.clone())
+        .with_ban_list(bundle)
 }
 
 pub fn youtube_builtin_object(
     bundle: Arc<forge_platform_youtube::YoutubeIntegrationBundle>,
 ) -> BuiltinObject {
-    BuiltinObject {
-        status: bundle.clone(),
-        health: bundle.clone(),
-        content: bundle.clone(),
-        quick: bundle.clone(),
-        control: Some(Arc::clone(&bundle) as Arc<dyn BuiltinControl>),
-        collections: None,
-        option_source: None,
-        follow: Some(Arc::clone(&bundle) as Arc<dyn FollowLookup>),
-        ban_list: Some(bundle as Arc<dyn BanListSource>),
-    }
+    BuiltinObject::of(bundle.clone())
+        .with_control(bundle.clone())
+        .with_follow(bundle.clone())
+        .with_ban_list(bundle)
 }
 
 pub fn kick_builtin_object(
     bundle: Arc<forge_platform_kick::KickIntegrationBundle>,
 ) -> BuiltinObject {
-    BuiltinObject {
-        status: bundle.clone(),
-        health: bundle.clone(),
-        content: bundle.clone(),
-        quick: bundle.clone(),
-        control: Some(Arc::clone(&bundle) as Arc<dyn BuiltinControl>),
-        collections: None,
-        option_source: None,
-        follow: None,
-        ban_list: Some(bundle as Arc<dyn BanListSource>),
-    }
+    BuiltinObject::of(bundle.clone())
+        .with_control(bundle.clone())
+        .with_ban_list(bundle)
 }
 
 pub struct IntegrationInputs {
@@ -431,13 +439,13 @@ pub async fn build_integrations(
     }
     let mut donation_services = DonationServices::default();
     if let Some(donatello) = wire_donatello(backend, endpoints, donations, bus) {
-        let provider = donatello.provider();
-        restore_donatello_poll_interval(&provider, backend.as_ref()).await;
-        donation_services.donatello = Some(provider);
+        let service = donatello_service(donatello.provider());
+        service.restore_poll_interval(backend.as_ref()).await;
+        donation_services.register(service);
         factories.push(Arc::new(donatello));
     }
     if let Some(monobank) = wire_monobank(backend, endpoints, donations, bus) {
-        donation_services.monobank = Some(monobank.provider());
+        donation_services.register(DonationService::of(monobank.provider()));
         factories.push(Arc::new(monobank));
     }
 
@@ -609,7 +617,7 @@ mod tests {
     }
 
     async fn installable_object(port: u16) -> BuiltinObject {
-        obs_builtin_object(silent_client(port).await)
+        silent_client(port).await.builtin_object()
     }
 
     fn wakes_now(changes: &mut BuiltinRegistryChanges) -> Option<bool> {
@@ -683,7 +691,7 @@ mod tests {
     }
 
     #[async_trait::async_trait]
-    impl ObsConnection for RecordedConnection {
+    impl LiveConnection for RecordedConnection {
         fn connect_failure(&self) -> Option<MessageRef> {
             Some(MessageRef::new(MessageCode::from_static("obs", "refused")))
         }

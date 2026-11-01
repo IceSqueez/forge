@@ -1,0 +1,142 @@
+use forge_components::Spacing;
+use forge_components::spacing;
+use forge_components::{
+    ActivePresentation, ForgePalette, Icon, OverlayPosition, modal, overlay, primary_button,
+    scaled, secondary_button, tr,
+};
+use gpui::{AnyElement, ClickEvent, Context, EventEmitter, Pixels, Window, div, prelude::*, px};
+
+use crate::app::actions::{ShortcutEntry, chord_caps};
+use crate::automation::chord_capture::{ChordCapture, chord_capture_field};
+
+const MODAL_W: Pixels = px(440.0);
+const BODY_PAD_H: Pixels = px(18.0);
+
+const FOOTER_GAP: Pixels = px(8.0);
+
+pub(crate) enum AppShortcutModalEvent {
+    Save(Option<String>),
+    Recapture,
+    Cancel,
+}
+
+pub(crate) struct AppShortcutModal {
+    entry: &'static ShortcutEntry,
+    chord: Option<String>,
+    capturing: bool,
+}
+
+impl EventEmitter<AppShortcutModalEvent> for AppShortcutModal {}
+
+impl AppShortcutModal {
+    pub(crate) fn new(entry: &'static ShortcutEntry, chord: Option<String>) -> Self {
+        Self {
+            entry,
+            chord,
+            capturing: false,
+        }
+    }
+
+    pub(crate) fn apply_capture(&mut self, chord: String, cx: &mut Context<Self>) {
+        self.capturing = false;
+        self.chord = Some(chord);
+        cx.notify();
+    }
+
+    pub(crate) fn cancel_capture(&mut self, cx: &mut Context<Self>) {
+        if !self.capturing {
+            return;
+        }
+        self.capturing = false;
+        cx.notify();
+    }
+
+    fn recapture(&mut self, cx: &mut Context<Self>) {
+        self.capturing = true;
+        cx.emit(AppShortcutModalEvent::Recapture);
+        cx.notify();
+    }
+
+    fn save(&mut self, cx: &mut Context<Self>) {
+        if self.capturing {
+            return;
+        }
+        cx.emit(AppShortcutModalEvent::Save(self.chord.clone()));
+    }
+
+    fn cancel(&mut self, cx: &mut Context<Self>) {
+        cx.emit(AppShortcutModalEvent::Cancel);
+    }
+
+    fn render_chord(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
+        let caps = self.chord.as_deref().map(chord_caps);
+        chord_capture_field(
+            ChordCapture {
+                capturing: self.capturing,
+                caps: caps.as_deref(),
+                recapture_id: "app-shortcut-recapture",
+            },
+            cx.listener(|this, _: &ClickEvent, _, cx| this.recapture(cx)),
+            palette,
+            cx.density(),
+            cx,
+        )
+        .into_any_element()
+    }
+
+    fn render_footer(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
+        let density = cx.density();
+        div()
+            .w_full()
+            .flex()
+            .items_center()
+            .justify_end()
+            .gap(scaled(FOOTER_GAP, density))
+            .child(secondary_button(tr!("common_cancel"), palette).on_click(
+                "app-shortcut-cancel",
+                cx.listener(|this, _: &ClickEvent, _, cx| this.cancel(cx)),
+            ))
+            .child(
+                primary_button(tr!("hotkeys_modal_save_changes"), palette)
+                    .disabled(self.capturing)
+                    .on_click(
+                        "app-shortcut-save",
+                        cx.listener(|this, _: &ClickEvent, _, cx| this.save(cx)),
+                    ),
+            )
+            .into_any_element()
+    }
+}
+
+impl Render for AppShortcutModal {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let density = cx.density();
+        let palette = cx.palette();
+
+        let body = div()
+            .w_full()
+            .py(spacing(Spacing::Md, density))
+            .px(scaled(BODY_PAD_H, density))
+            .child(self.render_chord(&palette, cx));
+
+        let card = modal(tr!(self.entry.label_key), body, &palette)
+            .header_icon(Icon::Keyboard, palette.success)
+            .subtitle(tr!("hotkeys_app_modal_subtitle"))
+            .width(MODAL_W)
+            .flush_body()
+            .footer(self.render_footer(&palette, cx))
+            .on_close(
+                "app-shortcut-close",
+                cx.listener(|this, _: &ClickEvent, _, cx| this.cancel(cx)),
+            );
+
+        let view = cx.entity();
+        div().absolute().top_0().left_0().size_full().child(
+            overlay(card, &palette)
+                .position(OverlayPosition::Center)
+                .on_dismiss("app-shortcut-scrim", move |_window, cx| {
+                    view.update(cx, |this, cx| this.cancel(cx));
+                }),
+        )
+    }
+}

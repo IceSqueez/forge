@@ -204,15 +204,18 @@ pub async fn delete_binding_half(
 }
 
 pub async fn set_binding_enabled(
+    reconciler: Arc<HotkeyReconciler>,
     backend: Arc<dyn DataProvider>,
     instance_ids: Vec<TriggerInstanceId>,
     enabled: bool,
 ) -> Result<(), HotkeyError> {
-    backend
+    let written = backend
         .trigger_instance_repo()
         .set_all_enabled(&instance_ids, enabled)
         .await
-        .map_err(HotkeyError::from)
+        .map_err(HotkeyError::from);
+    reconciler.reconcile().await;
+    written
 }
 
 pub async fn rebind_combo(

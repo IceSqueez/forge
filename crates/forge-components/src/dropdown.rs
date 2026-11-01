@@ -8,16 +8,17 @@ use std::rc::Rc;
 use crate::focus_reveal::{FocusRevealingScroll, OverflowRevealingFocus};
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    Anchor, AnchoredPositionMode, AnimationExt, AnyElement, App, ClickEvent, Div, ElementId,
-    FocusHandle, InteractiveElement, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent,
-    ParentElement, Pixels, RenderOnce, Rgba, SharedString, StatefulInteractiveElement, Styled,
-    Window, anchored, deferred, div, point, px, relative,
+    AnimationExt, AnyElement, App, ClickEvent, Div, ElementId, FocusHandle, InteractiveElement,
+    IntoElement, ParentElement, Pixels, RenderOnce, Rgba, SharedString, StatefulInteractiveElement,
+    Styled, Window, deferred, div, px, relative,
 };
 
 use crate::icons::{Icon, icon};
-use crate::overlay::enter_animation;
+use crate::overlay::{
+    DismissHandler, PRESS_LEFT, dismiss_backdrop, dismissing_on_escape, enter_animation,
+};
 use crate::palette::ForgePalette;
-use crate::tokens::{BORDER_THIN, Density, ESCAPE_KEY, FONT_XXS, scaled};
+use crate::tokens::{BORDER_THIN, Density, FONT_XXS, scaled};
 
 pub(crate) const DROPDOWN_ROW_HEIGHT: Pixels = px(27.0);
 pub(crate) const DROPDOWN_PADDING: Pixels = px(4.0);
@@ -36,7 +37,6 @@ const ICON_SIZE: Pixels = px(13.0);
 
 const DROPDOWN_PRIORITY: usize = 1;
 
-type DismissHandler = Rc<dyn Fn(&mut Window, &mut App) + 'static>;
 type RowClick = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
 
 pub fn dropdown_surface(palette: &ForgePalette) -> Div {
@@ -300,19 +300,7 @@ impl Dropdown {
 
 impl RenderOnce for Dropdown {
     fn render(self, window: &mut Window, _cx: &mut App) -> impl IntoElement {
-        let viewport = window.viewport_size();
-        let mut backdrop = div().size_full().occlude();
-        if let Some(dismiss) = self.on_dismiss.clone() {
-            backdrop =
-                backdrop.on_mouse_down(MouseButton::Left, move |_: &MouseDownEvent, window, cx| {
-                    dismiss(window, cx);
-                });
-        }
-        let backdrop_layer = anchored()
-            .position_mode(AnchoredPositionMode::Window)
-            .position(point(px(0.0), px(0.0)))
-            .anchor(Anchor::TopLeft)
-            .child(div().w(viewport.width).h(viewport.height).child(backdrop));
+        let backdrop_layer = dismiss_backdrop(self.on_dismiss.clone(), PRESS_LEFT, window);
 
         let panel = div().w_full().child(self.content).with_animation(
             ElementId::Name(SharedString::new_static("forge-dropdown-panel")),
@@ -330,14 +318,9 @@ impl RenderOnce for Dropdown {
             .child(panel);
         if let (Some(handle), Some(dismiss)) = (self.escape_focus.as_ref(), self.on_dismiss.clone())
         {
-            root = root
-                .track_focus(handle)
-                .on_key_down(move |event: &KeyDownEvent, window, cx| {
-                    if event.keystroke.key.as_str() == ESCAPE_KEY {
-                        cx.stop_propagation();
-                        dismiss(window, cx);
-                    }
-                });
+            root = dismissing_on_escape(root.track_focus(handle), move |window, cx| {
+                dismiss(window, cx);
+            });
         }
 
         deferred(root).with_priority(DROPDOWN_PRIORITY)

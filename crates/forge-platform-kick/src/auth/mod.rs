@@ -2,6 +2,8 @@ pub(crate) mod credentials;
 pub(crate) mod credentials_manager;
 pub(crate) mod oauth_client;
 
+use async_trait::async_trait;
+use forge_platform_core::{LoopbackAttempt, LoopbackSignIn, PkceAuthorizeUrl};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -73,6 +75,35 @@ impl KickSignIn {
 
     pub async fn save(&self, bundle: KickAuthBundle) -> Result<(), PlatformError> {
         self.manager.save_from_bundle(bundle).await
+    }
+}
+
+struct KickLoopbackAttempt {
+    flow: KickAuthFlow,
+    sign_in: KickSignIn,
+}
+
+#[async_trait]
+impl LoopbackAttempt for KickLoopbackAttempt {
+    async fn start(&mut self) -> Result<PkceAuthorizeUrl, PlatformError> {
+        let code = self.flow.start().await?;
+        Ok(PkceAuthorizeUrl {
+            auth_url: code.auth_url,
+        })
+    }
+
+    async fn complete(mut self: Box<Self>, timeout: Duration) -> Result<(), PlatformError> {
+        let bundle = self.flow.wait_for_authorization(timeout).await?;
+        self.sign_in.save(bundle).await
+    }
+}
+
+impl LoopbackSignIn for KickSignIn {
+    fn attempt(&self) -> Box<dyn LoopbackAttempt> {
+        Box::new(KickLoopbackAttempt {
+            flow: self.flow(),
+            sign_in: self.clone(),
+        })
     }
 }
 

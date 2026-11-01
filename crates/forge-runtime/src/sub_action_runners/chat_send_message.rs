@@ -5,6 +5,7 @@ use forge_registry::{
     ChoiceField, ConfigChoice, ConfigProblem, ConfigSpec, RunContext, StepCatalogEntry, StepTimer,
     SubActionCategory, SubActionRunner, TextEditor, TextField, TypedField,
 };
+use forge_registry::{StepCardDetail, card_text};
 use forge_types::{
     ArgStack, IntegrationId, MessageRef, NO_CHAT_PLATFORM_ENABLED, SubActionConfig,
     SubActionTelemetry, resolve_chat_target,
@@ -88,6 +89,14 @@ impl StepCatalogEntry for ChatSendMessageRunner {
     }
     fn icon_name(&self) -> &str {
         "message-circle"
+    }
+
+    fn card_detail(&self, config: &SubActionConfig) -> Option<StepCardDetail> {
+        let target = card_text(config, CHAT_SEND_TARGET_KEY).unwrap_or(CHAT_SEND_DEFAULT_TARGET);
+        let message = card_text(config, CHAT_SEND_MESSAGE_KEY).unwrap_or("");
+        Some(StepCardDetail::Text(format!(
+            "\u{2192} {target}: \"{message}\""
+        )))
     }
 }
 

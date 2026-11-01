@@ -10,22 +10,24 @@ use std::collections::HashSet;
 use crate::focus_reveal::OverflowRevealingFocus;
 use gpui::{
     AnyElement, App, ClickEvent, Context, ElementId, Entity, EventEmitter, FontWeight,
-    ListAlignment, ListState, MouseButton, MouseDownEvent, Pixels, Rgba, SharedString,
-    Subscription, Window, div, list, prelude::*, px, relative,
+    ListAlignment, ListState, Pixels, Rgba, SharedString, Subscription, Window, div, list,
+    prelude::*, px,
 };
 
 use crate::error_row::compact_error_with_retry;
-use crate::glyph::{GlyphArt, glyph_art};
+use crate::glyph::GlyphArt;
 use crate::icons::{Icon, icon};
-use crate::palette::ForgePalette;
 use crate::picker::{PICKER_CONTEXT, SelectNext, SelectPrev};
-use crate::status::badge;
+use crate::search_state::{SearchState, contains_folded};
 use crate::text_input::{InputEvent, TextInput};
 use crate::tokens::{
-    BORDER_THIN, DISABLED_OPACITY, Density, FONT_SM, FONT_XS, FONT_XXS, Radius, Spacing, radius,
-    scaled, spacing,
+    BORDER_THIN, Density, FONT_SM, FONT_XS, FONT_XXS, Radius, Spacing, radius, scaled, spacing,
 };
 use crate::tr;
+
+mod rows;
+
+use rows::{render_card_row, render_header_row};
 
 const GRID_W: Pixels = px(880.0);
 const GRID_H: Pixels = px(640.0);
@@ -212,14 +214,12 @@ enum PickerRow {
 }
 
 pub struct GridPicker {
-    search: Entity<TextInput>,
-    query: String,
+    search: SearchState,
     rail: RailSel,
     favorites: HashSet<SharedString>,
     favorites_status: FavoritesStatus,
     groups: Vec<GridPickerGroup>,
     config: GridPickerConfig,
-    palette: ForgePalette,
     rows: Vec<PickerRow>,
     matched: Vec<MatchedItem>,
     cursor: usize,
@@ -242,28 +242,24 @@ impl GridPicker {
         config: GridPickerConfig,
         groups: Vec<GridPickerGroup>,
         favorites: HashSet<SharedString>,
-        palette: ForgePalette,
         cx: &mut Context<Self>,
     ) -> Self {
         let placeholder = config.search_placeholder.clone();
-        let search = cx.new(|cx| {
+        let search = SearchState::from_field(cx.new(|cx| {
             TextInput::new(placeholder, cx)
-                .with_palette(palette)
-                .leading_icon(Icon::Search, palette.text_muted)
+                .leading_icon(Icon::Search, |palette| palette.text_muted)
                 .with_font_size(GRID_SEARCH_FS)
-                .static_chrome(palette.border_regular, Radius::Sm)
-        });
-        let search_sub = cx.subscribe(&search, Self::on_search_event);
+                .static_chrome(|palette| palette.border_regular, Radius::Sm)
+        }));
+        let search_sub = cx.subscribe(search.field(), Self::on_search_event);
 
         let mut picker = Self {
             search,
-            query: String::new(),
             rail: RailSel::All,
             favorites,
             favorites_status: FavoritesStatus::Ready,
             groups,
             config,
-            palette,
             rows: Vec::new(),
             matched: Vec::new(),
             cursor: 0,
@@ -277,8 +273,8 @@ impl GridPicker {
     }
 
     fn rebuild_rows(&mut self, reset_scroll: bool) {
-        let searching = !self.query.trim().is_empty();
-        let query = self.query.trim().to_lowercase();
+        let searching = !self.search.is_empty();
+        let query = self.search.query().to_owned();
 
         let mut shown: Vec<(&GridPickerGroup, Vec<&GridPickerItem>)> = Vec::new();
         for group in &self.groups {
@@ -384,7 +380,7 @@ impl GridPicker {
     }
 
     pub fn focus(&self, window: &mut Window, cx: &mut App) {
-        self.search.update(cx, |f, cx| f.focus(window, cx));
+        self.search.field().update(cx, |f, cx| f.focus(window, cx));
     }
 
     pub fn set_groups(&mut self, groups: Vec<GridPickerGroup>, cx: &mut Context<Self>) {
@@ -412,16 +408,12 @@ impl GridPicker {
         cx: &mut Context<Self>,
     ) {
         match event {
-            InputEvent::Changed(text) => {
-                self.query = text.to_string();
+            InputEvent::Changed(_) => {
+                self.search.on_changed(event);
                 self.rebuild_rows(true);
-                let border = if self.query.trim().is_empty() {
-                    self.palette.border_regular
-                } else {
-                    self.config.accent
-                };
+                let border = (!self.search.is_empty()).then_some(self.config.accent);
                 field.update(cx, |input, cx| {
-                    input.set_static_chrome(Some((border, Radius::Sm)));
+                    input.set_border_override(border);
                     cx.notify();
                 });
                 cx.notify();
@@ -433,13 +425,10 @@ impl GridPicker {
     }
 
     fn clear_search(&mut self, cx: &mut Context<Self>) {
-        self.query.clear();
+        self.search.clear(cx);
         self.rebuild_rows(true);
-        let field = self.search.clone();
-        let border = self.palette.border_regular;
-        field.update(cx, |input, cx| {
-            input.set_content("", cx);
-            input.set_static_chrome(Some((border, Radius::Sm)));
+        self.search.field().update(cx, |input, _cx| {
+            input.set_border_override(None);
         });
         cx.notify();
     }
@@ -497,7 +486,7 @@ impl GridPicker {
 
     fn render_header(&self, accent: Rgba, cx: &mut Context<Self>) -> AnyElement {
         let density = cx.density();
-        let p = self.palette;
+        let p = cx.palette();
 
         let tile = div()
             .flex_none()
@@ -573,13 +562,18 @@ impl GridPicker {
 
     fn render_search(&self, cx: &mut Context<Self>) -> AnyElement {
         let density = cx.density();
-        let p = self.palette;
+        let p = cx.palette();
         let mut row = div()
             .flex()
             .items_center()
             .gap(spacing(Spacing::Sm, density))
-            .child(div().flex_1().min_w(px(0.0)).child(self.search.clone()));
-        if !self.query.is_empty() {
+            .child(
+                div()
+                    .flex_1()
+                    .min_w(px(0.0))
+                    .child(self.search.field().clone()),
+            );
+        if !self.search.typed().is_empty() {
             row = row.child(
                 div()
                     .id("forge-grid-search-clear")
@@ -604,7 +598,7 @@ impl GridPicker {
 
     fn render_rail(&self, accent: Rgba, cx: &mut Context<Self>) -> AnyElement {
         let density = cx.density();
-        let p = self.palette;
+        let p = cx.palette();
         let star: AnyElement = icon(Icon::Star, RAIL_STAR, accent).into_any_element();
         let mut col = div()
             .id("forge-grid-rail")
@@ -668,8 +662,8 @@ impl GridPicker {
 
     fn render_cards(&self, cx: &mut Context<Self>) -> AnyElement {
         let density = cx.density();
-        let p = self.palette;
-        let query = self.query.trim().to_owned();
+        let p = cx.palette();
+        let query = self.search.typed().trim().to_owned();
         let searching = !query.is_empty();
         let total = self.match_total;
 
@@ -746,7 +740,7 @@ impl GridPicker {
 
     fn render_list_row(&mut self, ix: usize, cx: &mut Context<Self>) -> AnyElement {
         let density = cx.density();
-        let p = self.palette;
+        let p = cx.palette();
         let accent = self.config.accent;
         let art = self.config.art;
         match &self.rows[ix] {
@@ -772,7 +766,7 @@ impl GridPicker {
     }
 
     fn render_footer(&self, density: Density, cx: &App) -> AnyElement {
-        let p = self.palette;
+        let p = cx.palette();
         div()
             .flex_none()
             .flex()
@@ -797,7 +791,7 @@ impl GridPicker {
 impl Render for GridPicker {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let density = cx.density();
-        let p = self.palette;
+        let p = cx.palette();
         let accent = self.config.accent;
 
         let body = div()
@@ -828,215 +822,10 @@ impl Render for GridPicker {
     }
 }
 
-fn render_header_row(
-    label: &SharedString,
-    dot: Rgba,
-    count: usize,
-    p: &ForgePalette,
-    density: Density,
-    cx: &App,
-) -> AnyElement {
-    let inner = div()
-        .flex()
-        .items_center()
-        .gap(spacing(Spacing::Xs, density))
-        .child(
-            div()
-                .flex_none()
-                .size(GRID_GROUP_DOT)
-                .rounded(radius(Radius::Pill))
-                .bg(dot),
-        )
-        .child(
-            div()
-                .flex_1()
-                .min_w(px(0.0))
-                .font_family(cx.mono_family())
-                .text_size(GRID_GROUP_FS)
-                .text_color(p.text_muted)
-                .child(label.to_uppercase()),
-        )
-        .child(
-            div()
-                .font_family(cx.mono_family())
-                .text_size(GRID_GROUP_FS)
-                .text_color(p.text_faint)
-                .child(count.to_string()),
-        );
-
-    div()
-        .h(GRID_HEADER_ROW_H)
-        .w_full()
-        .flex()
-        .items_end()
-        .pb(spacing(Spacing::Xs, density))
-        .child(inner)
-        .into_any_element()
-}
-
-fn render_card_row(
-    cards: &[Option<CardData>; 2],
-    accent: Rgba,
-    art: GridPickerArt,
-    p: &ForgePalette,
-    cx: &mut Context<GridPicker>,
-) -> AnyElement {
-    let row = div()
-        .h(art.row_height())
-        .w_full()
-        .flex()
-        .items_start()
-        .gap(GRID_CARD_GAP);
-    match cards {
-        [Some(left), Some(right)] => row
-            .child(render_card_el(left, accent, art, p, cx))
-            .child(render_card_el(right, accent, art, p, cx)),
-        [Some(left), None] => row.child(
-            div()
-                .w(relative(0.5))
-                .flex()
-                .child(render_card_el(left, accent, art, p, cx)),
-        ),
-        _ => row,
-    }
-    .into_any_element()
-}
-
-fn render_card_el(
-    card: &CardData,
-    accent: Rgba,
-    art: GridPickerArt,
-    p: &ForgePalette,
-    cx: &mut Context<GridPicker>,
-) -> AnyElement {
-    let density = cx.density();
-    let dim = !matches!(card.state, GridPickerItemState::Normal);
-
-    let tile = div()
-        .flex_none()
-        .flex()
-        .items_center()
-        .justify_center()
-        .size(art.tile)
-        .rounded(GRID_CARD_TILE_RADIUS)
-        .bg(p.surface_overlay)
-        .child(glyph_art(
-            &card.glyph,
-            art.glyph,
-            card.tint,
-            SharedString::from(format!("forge-grid-art-{}", card.id)),
-        ));
-
-    let name = div()
-        .flex_1()
-        .min_w(px(0.0))
-        .truncate()
-        .font_family(cx.body_family())
-        .font_weight(FontWeight::MEDIUM)
-        .text_size(GRID_CARD_NAME_FS)
-        .text_color(p.text_primary)
-        .child(card.name.clone());
-
-    let star_glyph = if card.favorite {
-        Icon::StarFilled
-    } else {
-        Icon::Star
-    };
-    let star_tint = if card.favorite { accent } else { p.text_faint };
-    let mut star = div()
-        .id(SharedString::from(format!("forge-grid-star-{}", card.id)))
-        .flex_none()
-        .flex()
-        .items_center()
-        .justify_center()
-        .p(GRID_STAR_PAD)
-        .on_mouse_down(MouseButton::Left, |_: &MouseDownEvent, _, cx| {
-            cx.stop_propagation()
-        })
-        .child(icon(star_glyph, GRID_CARD_ICON, star_tint));
-    star = if card.favorite_editable {
-        star.cursor_pointer().on_click(cx.listener({
-            let id = card.id.clone();
-            move |this, _: &ClickEvent, _, cx| this.toggle_favorite(id.clone(), cx)
-        }))
-    } else {
-        star.opacity(DISABLED_OPACITY)
-    };
-
-    let trailing: Option<AnyElement> = match card.state {
-        GridPickerItemState::Disabled => Some(
-            badge(
-                p.surface_overlay,
-                p.text_primary,
-                tr!("widget_grid_picker_badge_off"),
-                true,
-                GRID_BADGE_FS,
-            )
-            .into_any_element(),
-        ),
-        GridPickerItemState::Normal => None,
-    };
-
-    let top = div()
-        .flex()
-        .items_center()
-        .gap(spacing(Spacing::Xs, density))
-        .pb(GRID_CARD_ROW_MB)
-        .child(tile)
-        .child(name)
-        .child(star)
-        .children(trailing);
-
-    let desc = div()
-        .truncate()
-        .w_full()
-        .min_w(px(0.0))
-        .font_family(cx.body_family())
-        .text_size(GRID_META_FS)
-        .text_color(p.text_muted)
-        .child(card.desc.clone());
-
-    let edge = if card.cursored {
-        accent
-    } else {
-        p.border_regular
-    };
-    let base = div()
-        .flex_1()
-        .min_w(px(0.0))
-        .h(art.card_height())
-        .flex()
-        .flex_col()
-        .py(GRID_CARD_PAD_V)
-        .px(scaled(GRID_CARD_PAD_H, density))
-        .rounded(radius(Radius::Md))
-        .border(BORDER_THIN)
-        .border_color(edge)
-        .bg(p.shell)
-        .child(top)
-        .child(desc);
-
-    let base = if dim {
-        base.opacity(DISABLED_OPACITY)
-    } else {
-        base
-    };
-    base.id(card.id.clone())
-        .cursor_pointer()
-        .hover(move |s| s.border_color(accent))
-        .on_click(cx.listener({
-            let id = card.id.clone();
-            move |this, _: &ClickEvent, _, cx| this.emit_picked(id.clone(), cx)
-        }))
-        .into_any_element()
-}
-
 fn item_hit(item: &GridPickerItem, query: &str) -> bool {
     match &item.matches {
         Some(test) => test(query),
-        None => {
-            item.name.to_lowercase().contains(query) || item.desc.to_lowercase().contains(query)
-        }
+        None => contains_folded(&item.name, query) || contains_folded(&item.desc, query),
     }
 }
 
@@ -1172,9 +961,8 @@ mod tests {
         groups: Vec<GridPickerGroup>,
     ) -> (Entity<GridPicker>, Entity<Picked>, &mut VisualTestContext) {
         install_presentation(cx);
-        let (picker, vcx) = cx.add_window_view(|_window, cx| {
-            GridPicker::new(settings(), groups, HashSet::new(), FORGE_DEFAULT, cx)
-        });
+        let (picker, vcx) = cx
+            .add_window_view(|_window, cx| GridPicker::new(settings(), groups, HashSet::new(), cx));
         let picked = vcx.update(|_window, cx| {
             cx.new(|cx| Picked {
                 seen: Vec::new(),
@@ -1191,7 +979,7 @@ mod tests {
     fn search(picker: &Entity<GridPicker>, vcx: &mut VisualTestContext, event: InputEvent) {
         vcx.update(|_window, cx| {
             picker.update(cx, |view, cx| {
-                let field = view.search.clone();
+                let field = view.search.field().clone();
                 view.on_search_event(field, &event, cx);
             });
         });

@@ -288,11 +288,7 @@ fn tr_find_warned_returns_the_text_of_a_present_key_and_none_for_a_missing_one()
 
 #[cfg(debug_assertions)]
 mod missing_key_warnings {
-    use std::rc::Rc;
     use std::sync::Arc;
-
-    use fluent::{FluentBundle, FluentResource};
-    use forge_components::{catalog_source, install_bundle};
 
     use super::*;
 
@@ -373,14 +369,6 @@ mod missing_key_warnings {
         (Some(key.to_owned()), Some(KEY_NOT_FOUND.to_owned()))
     }
 
-    fn kit_bundle(language: CatalogLanguage) -> Rc<FluentBundle<FluentResource>> {
-        let mut bundle = FluentBundle::new(vec!["en-US".parse().unwrap()]);
-        bundle
-            .add_resource(FluentResource::try_new(catalog_source(language).to_owned()).unwrap())
-            .unwrap();
-        Rc::new(bundle)
-    }
-
     #[test]
     fn a_process_missing_key_warns_once_across_all_threads() {
         let _guard = serialized();
@@ -417,8 +405,7 @@ mod missing_key_warnings {
     }
 
     #[test]
-    fn a_thread_override_dedupes_missing_keys_apart_from_the_process_and_resets_on_install_bundle()
-    {
+    fn a_thread_override_dedupes_missing_keys_apart_from_the_process_and_resets_on_reinstall() {
         let _guard = serialized();
         install_process_language(CatalogLanguage::En, &[]);
 
@@ -427,7 +414,7 @@ mod missing_key_warnings {
             install_thread_language(CatalogLanguage::Uk, &[]);
             miss("absent_per_scope");
             miss("absent_per_scope");
-            install_bundle(kit_bundle(CatalogLanguage::Uk));
+            install_thread_language(CatalogLanguage::Uk, &[]);
             miss("absent_per_scope");
         });
 

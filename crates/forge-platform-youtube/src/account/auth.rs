@@ -1,3 +1,5 @@
+use async_trait::async_trait;
+use forge_platform_core::{LoopbackAttempt, LoopbackSignIn, PkceAuthorizeUrl};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
@@ -67,6 +69,35 @@ impl YoutubeSignIn {
 
     pub async fn save(&self, bundle: YoutubeAuthBundle) -> Result<(), PlatformError> {
         self.manager.save_from_bundle(bundle).await
+    }
+}
+
+struct GoogleLoopbackAttempt {
+    flow: GoogleAuthFlow,
+    sign_in: YoutubeSignIn,
+}
+
+#[async_trait]
+impl LoopbackAttempt for GoogleLoopbackAttempt {
+    async fn start(&mut self) -> Result<PkceAuthorizeUrl, PlatformError> {
+        let code = self.flow.start().await?;
+        Ok(PkceAuthorizeUrl {
+            auth_url: code.auth_url,
+        })
+    }
+
+    async fn complete(mut self: Box<Self>, timeout: Duration) -> Result<(), PlatformError> {
+        let bundle = self.flow.wait_for_authorization(timeout).await?;
+        self.sign_in.save(bundle).await
+    }
+}
+
+impl LoopbackSignIn for YoutubeSignIn {
+    fn attempt(&self) -> Box<dyn LoopbackAttempt> {
+        Box::new(GoogleLoopbackAttempt {
+            flow: self.flow(),
+            sign_in: self.clone(),
+        })
     }
 }
 

@@ -93,3 +93,5 @@ msg-core-condition_timer_min_messages = ≥{ $count } { $count ->
     [one] message
    *[other] messages
 }
+msg-core-step_wait_detail = { $ms } ms
+msg-core-step_increment_detail = { $name } += { $amount } (persisted)

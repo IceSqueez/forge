@@ -1,0 +1,12 @@
+pub(crate) mod config_field_label;
+pub(crate) mod config_form;
+pub(crate) mod config_text;
+pub(crate) mod kind_copy;
+pub(crate) mod load_notice;
+pub(crate) mod option_choices;
+pub(crate) mod option_labels;
+pub(crate) mod option_list_text;
+pub(crate) mod picker_favorites;
+pub(crate) mod repo_failure;
+pub(crate) mod unsaved_work;
+pub(crate) mod user_text;

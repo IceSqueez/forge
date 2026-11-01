@@ -15,13 +15,13 @@ pub use audio_event::AudioEvent;
 pub use audio_event::AudioEventSink;
 pub use audio_event::NullAudioEventSink;
 pub use builtin_library::{
-    BUILTIN_SOUNDS, BuiltinSoundEntry, builtin_availability, resolve_builtin_path,
+    BUILTIN_SOUNDS, BuiltinSoundEntry, SoundCategory, builtin_availability, resolve_builtin_path,
 };
 pub use bus_event_sink::BusAudioEventSink;
 pub use control::SoundboardControl;
 pub use error::SoundboardError;
 pub use hotkey_dispatch::{pressed_combo, spawn_clip_hotkey_dispatcher};
-pub use library::{AdoptionVerdict, ClipAvailability, ClipLibrary, ClipSource};
+pub use library::{AdoptionVerdict, ClipAvailability, ClipLibrary, ClipSource, NewClip};
 pub use player::ClipToggle;
 pub use player::{ClipRoute, PlayOutcome, SoundboardPlayer};
 pub use runners::{

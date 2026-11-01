@@ -1,0 +1,1102 @@
+use std::rc::Rc;
+use std::sync::Arc;
+use std::time::Duration;
+
+use forge_components::RevealsFocusIn;
+use forge_components::{
+    ActivePresentation, ConfirmTone, Density, FONT_SM, FONT_XS, ForgePalette, Icon, ModalSize,
+    OverlayPosition, Spacing, ToastKind, card, confirm_modal, field_hint, ghost_button,
+    ghost_button_with_icon, icon, modal, overlay, primary_button, segment, segmented, setting_row,
+    spacing, tr,
+};
+use forge_storage::{
+    DEFAULT_DIAGNOSTIC_LOG_LEVEL, DataProvider, SettingsRepo, diagnostic_log_level,
+    set_diagnostic_log_level,
+};
+use forge_types::LogLevel;
+use gpui::{
+    AnyElement, App, ClickEvent, Context, FontWeight, Pixels, Rgba, ScrollHandle, SharedString,
+    Window, div, prelude::*, px,
+};
+use tracing::Level;
+
+use crate::app::async_bridge::{self, Loadable};
+use crate::app::boot_warnings::boot_warning_message;
+use crate::app::error::DesktopError;
+use crate::app::log_archive;
+use crate::app::log_tail::{LogLine, LogTail};
+use crate::app::navigation::SettingsSection;
+use crate::app::window_presence::PresenceGate;
+use crate::data_flows::bundle_preview::{export_statement, statement_row};
+use crate::data_flows::diagnostic_bundle::{self, BUNDLE_FILE_NAME, Bundle};
+use crate::preferences::settings_pane_header::SettingsPaneHeader;
+use crate::shared::load_notice::{LoadNotice, NoticeWidth, load_notice};
+use crate::shared::repo_failure::RepoFailure;
+use forge_components::PushToast;
+use forge_components::{DateShape, fmt_display};
+use forge_host::boot_warnings::BootWarnings;
+use forge_host::integrations::BuiltinRegistry;
+use forge_transfer::ScheduledBackupHandle;
+
+const TAIL_REFRESH: Duration = Duration::from_secs(2);
+const TAIL_MAX_HEIGHT: Pixels = px(320.0);
+const TAIL_LINE_HEIGHT: Pixels = px(20.0);
+const LEVEL_COLUMN: Pixels = px(38.0);
+const FOLLOW_SLACK: Pixels = px(24.0);
+const NOTE_GLYPH: Pixels = px(14.0);
+const PREVIEW_WIDTH: Pixels = px(600.0);
+
+type LevelApplier = Rc<dyn Fn(&LogLevel) -> bool>;
+
+pub(crate) struct SettingsDiagnosticsView {
+    tail: LogTail,
+    backend: Arc<dyn DataProvider>,
+    builtins: BuiltinRegistry,
+    rt_handle: tokio::runtime::Handle,
+    lines: Vec<LogLine>,
+    shown_tail_revision: Option<u64>,
+    level: LogLevel,
+    level_load: Loadable<()>,
+    level_picked: bool,
+    env_overridden: bool,
+    apply_level: LevelApplier,
+    scroll: ScrollHandle,
+    active: bool,
+    clear_pending: bool,
+    clearing: bool,
+    preparing_export: bool,
+    pending_export: Option<Bundle>,
+    storage_changes: Option<ScheduledBackupHandle>,
+    boot_warnings: BootWarnings,
+}
+
+impl SettingsDiagnosticsView {
+    pub(crate) fn new(
+        tail: LogTail,
+        backend: Arc<dyn DataProvider>,
+        builtins: BuiltinRegistry,
+        rt_handle: tokio::runtime::Handle,
+        initial_active: bool,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        Self::spawn_refresher(cx);
+        let mut view = Self {
+            tail,
+            backend,
+            builtins,
+            rt_handle,
+            lines: Vec::new(),
+            shown_tail_revision: None,
+            level: DEFAULT_DIAGNOSTIC_LOG_LEVEL,
+            level_load: Loadable::Loading,
+            level_picked: false,
+            env_overridden: crate::app::log_level::env_overridden(),
+            apply_level: Rc::new(crate::app::log_level::apply),
+            scroll: ScrollHandle::new(),
+            active: initial_active,
+            clear_pending: false,
+            clearing: false,
+            preparing_export: false,
+            pending_export: None,
+            storage_changes: None,
+            boot_warnings: BootWarnings::default(),
+        };
+        view.load_level(cx);
+        if initial_active {
+            view.refresh(cx);
+        }
+        view
+    }
+
+    #[must_use]
+    pub(crate) fn with_storage_changes(mut self, scheduled: ScheduledBackupHandle) -> Self {
+        self.storage_changes = Some(scheduled);
+        self
+    }
+
+    #[cfg(test)]
+    #[must_use]
+    fn with_level_applier(mut self, apply_level: LevelApplier) -> Self {
+        self.apply_level = apply_level;
+        self
+    }
+
+    #[must_use]
+    pub(crate) fn with_boot_warnings(mut self, warnings: BootWarnings) -> Self {
+        self.boot_warnings = warnings;
+        self
+    }
+
+    fn load_level(&mut self, cx: &mut Context<Self>) {
+        self.level_load = Loadable::Loading;
+        let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move {
+                diagnostic_log_level(repo.as_ref())
+                    .await
+                    .map_err(RepoFailure::from)
+            },
+            |this, result, cx| {
+                match result {
+                    Ok(level) => {
+                        this.level_load = Loadable::Loaded(());
+                        if !this.level_picked {
+                            this.level = level;
+                        }
+                    }
+                    Err(message) => {
+                        tracing::warn!(error = %message, "could not read the diagnostics log level");
+                        this.level_load = Loadable::Failed(message);
+                    }
+                }
+                cx.notify();
+            },
+            cx,
+        );
+    }
+
+    fn select_level(&mut self, level: LogLevel, cx: &mut Context<Self>) {
+        if self.env_overridden || self.level == level {
+            return;
+        }
+        if !(self.apply_level)(&level) {
+            cx.push_toast(
+                ToastKind::Error,
+                tr!("settings_diagnostics_level_apply_failed"),
+            );
+            return;
+        }
+        let previous = std::mem::replace(&mut self.level, level.clone());
+        self.level_picked = true;
+        let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
+        async_bridge::optimistic(
+            &self.rt_handle,
+            "diagnostics log level",
+            previous,
+            async move { set_diagnostic_log_level(repo.as_ref(), &level).await },
+            |this, previous, _, cx| {
+                (this.apply_level)(&previous);
+                this.level = previous;
+                cx.push_toast(ToastKind::Error, tr!("settings_persist_failed"));
+            },
+            cx,
+        );
+        cx.notify();
+    }
+
+    pub(crate) fn set_active(&mut self, active: bool, cx: &mut Context<Self>) {
+        if self.active == active {
+            return;
+        }
+        self.active = active;
+        if active {
+            self.refresh(cx);
+        }
+    }
+
+    fn spawn_refresher(cx: &mut Context<Self>) {
+        let mut presence = PresenceGate::of(cx);
+        cx.spawn(async move |this, cx| {
+            loop {
+                cx.background_executor().timer(TAIL_REFRESH).await;
+                presence.until_visible().await;
+                let alive = this.update(cx, |this, cx| {
+                    if this.active {
+                        this.refresh(cx);
+                    }
+                });
+                if alive.is_err() {
+                    break;
+                }
+            }
+        })
+        .detach();
+    }
+
+    fn refresh(&mut self, cx: &mut Context<Self>) {
+        let revision = self.tail.revision();
+        if self.shown_tail_revision == Some(revision) {
+            return;
+        }
+        self.shown_tail_revision = Some(revision);
+        let follow = self.is_at_bottom();
+        self.lines = self.tail.snapshot();
+        if follow {
+            self.scroll.scroll_to_bottom();
+        }
+        cx.notify();
+    }
+
+    fn is_at_bottom(&self) -> bool {
+        let max = self.scroll.max_offset().y;
+        max <= px(0.0) || self.scroll.offset().y <= FOLLOW_SLACK - max
+    }
+
+    fn log_dir() -> std::path::PathBuf {
+        diagnostic_bundle::log_dir()
+    }
+
+    fn open_log_dir(&mut self, cx: &mut Context<Self>) {
+        cx.reveal_path(&Self::log_dir());
+    }
+
+    fn prepare_export(&mut self, cx: &mut Context<Self>) {
+        if self.preparing_export || self.pending_export.is_some() {
+            return;
+        }
+        self.preparing_export = true;
+
+        let backend = Arc::clone(&self.backend);
+        let integrations = diagnostic_bundle::integration_facts(&self.builtins);
+        let level = self.level.clone();
+        let env_overridden = self.env_overridden;
+
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move {
+                let input =
+                    diagnostic_bundle::gather_input(backend, integrations, level, env_overridden)
+                        .await?;
+                tokio::task::spawn_blocking(move || diagnostic_bundle::assemble(&input))
+                    .await
+                    .map_err(RepoFailure::from)?
+            },
+            |this, result: Result<Bundle, RepoFailure>, cx| {
+                this.preparing_export = false;
+                match result {
+                    Ok(bundle) => this.pending_export = Some(bundle),
+                    Err(e) => cx.push_toast(
+                        ToastKind::Error,
+                        tr!("settings_diagnostics_export_failed", error = e.text()),
+                    ),
+                }
+                cx.notify();
+            },
+            cx,
+        );
+        cx.notify();
+    }
+
+    fn cancel_export(&mut self, cx: &mut Context<Self>) {
+        self.pending_export = None;
+        cx.notify();
+    }
+
+    fn write_export(&mut self, cx: &mut Context<Self>) {
+        let Some(bundle) = self.pending_export.take() else {
+            return;
+        };
+        let text = bundle.text;
+        let filter_name = tr!("settings_diagnostics_export_filter_text");
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move {
+                let filter = async_bridge::DialogFilter {
+                    name: filter_name,
+                    extensions: vec!["txt"],
+                };
+                let Some(path) =
+                    async_bridge::save_file(Some(filter), Some(BUNDLE_FILE_NAME.to_owned())).await
+                else {
+                    return Ok(None);
+                };
+                tokio::fs::write(&path, text).await?;
+                Ok::<_, DesktopError>(Some(path))
+            },
+            |_this, result, cx| match result {
+                Ok(None) => {}
+                Ok(Some(path)) => {
+                    let path = path.display().to_string();
+                    cx.push_toast(
+                        ToastKind::Success,
+                        tr!("settings_diagnostics_exported", path = path.as_str()),
+                    );
+                }
+                Err(error) => {
+                    tracing::warn!(error = %error, "diagnostic export failed");
+                    let shown = error.user_message();
+                    cx.push_toast(
+                        ToastKind::Error,
+                        tr!("settings_diagnostics_export_failed", error = shown.as_str()),
+                    );
+                }
+            },
+            cx,
+        );
+        cx.notify();
+    }
+
+    fn request_clear(&mut self, cx: &mut Context<Self>) {
+        self.clear_pending = true;
+        cx.notify();
+    }
+
+    fn cancel_clear(&mut self, cx: &mut Context<Self>) {
+        self.clear_pending = false;
+        cx.notify();
+    }
+
+    fn clear_logs(&mut self, cx: &mut Context<Self>) {
+        if self.clearing {
+            return;
+        }
+        self.clear_pending = false;
+        self.clearing = true;
+        let dir = Self::log_dir();
+        async_bridge::run_blocking(
+            &self.rt_handle,
+            move || log_archive::clear(&dir),
+            |this, result, cx| {
+                this.clearing = false;
+                match result {
+                    Ok(()) => {
+                        this.tail.clear();
+                        this.lines.clear();
+                        if let Some(scheduled) = &this.storage_changes {
+                            scheduled.storage_changed();
+                        }
+                        cx.push_toast(ToastKind::Success, tr!("settings_diagnostics_cleared"));
+                    }
+                    Err(e) => cx.push_toast(
+                        ToastKind::Error,
+                        tr!("settings_diagnostics_clear_failed", error = e.text()),
+                    ),
+                }
+                cx.notify();
+            },
+            cx,
+        );
+        cx.notify();
+    }
+
+    fn actions(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement + use<> {
+        div()
+            .flex()
+            .items_center()
+            .gap(spacing(Spacing::Xs, density))
+            .child(
+                ghost_button_with_icon(
+                    Icon::FolderOpen,
+                    tr!("settings_diagnostics_open_log_dir"),
+                    palette,
+                )
+                .density(density)
+                .on_click(
+                    "settings-diagnostics-open",
+                    cx.listener(|this, _: &ClickEvent, _, cx| this.open_log_dir(cx)),
+                ),
+            )
+            .child(
+                ghost_button_with_icon(
+                    Icon::Download,
+                    tr!("settings_diagnostics_export_bundle"),
+                    palette,
+                )
+                .density(density)
+                .busy(self.preparing_export)
+                .on_click(
+                    "settings-diagnostics-export",
+                    cx.listener(|this, _: &ClickEvent, _, cx| this.prepare_export(cx)),
+                ),
+            )
+            .child(
+                ghost_button_with_icon(
+                    Icon::Trash,
+                    tr!("settings_diagnostics_clear_logs"),
+                    palette,
+                )
+                .density(density)
+                .ink(palette.danger)
+                .busy(self.clearing)
+                .on_click(
+                    "settings-diagnostics-clear",
+                    cx.listener(|this, _: &ClickEvent, _, cx| this.request_clear(cx)),
+                ),
+            )
+    }
+
+    fn boot_warnings_card(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &App,
+    ) -> Option<impl IntoElement + use<>> {
+        if self.boot_warnings.is_empty() {
+            return None;
+        }
+        let rows = self.boot_warnings.iter().map(|warning| {
+            div()
+                .flex()
+                .items_start()
+                .gap(spacing(Spacing::Xxs, density))
+                .child(div().flex_none().child(icon(
+                    Icon::AlertTriangle,
+                    NOTE_GLYPH,
+                    palette.warning,
+                )))
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w(px(0.0))
+                        .text_size(FONT_XS)
+                        .text_color(palette.text_primary)
+                        .child(boot_warning_message(warning)),
+                )
+        });
+        let body = div()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Xs, density))
+            .child(field_hint(tr!("boot_warnings_card_intro"), palette, cx))
+            .children(rows);
+        Some(card(body, palette).full_width())
+    }
+
+    fn level_card(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement + use<> {
+        let segments = crate::app::log_level::SELECTABLE
+            .iter()
+            .map(|level| {
+                let choice = level.clone();
+                segment(
+                    SharedString::from(format!("settings-diagnostics-level-{}", level_key(level))),
+                    tr!(level_label_key(level)),
+                    self.level == *level,
+                    cx.listener(move |this, _: &ClickEvent, _, cx| {
+                        this.select_level(choice.clone(), cx)
+                    }),
+                )
+                .disabled(self.env_overridden || !self.level_load.is_loaded())
+            })
+            .collect();
+
+        let hint = if self.env_overridden {
+            tr!("settings_diagnostics_level_env_locked")
+        } else {
+            tr!("settings_diagnostics_level_hint")
+        };
+
+        let level_failure = matches!(self.level_load, Loadable::Failed(_))
+            .then(|| {
+                load_notice(
+                    &self.level_load,
+                    LoadNotice {
+                        id: "settings-diagnostics-level-load",
+                        loading: tr!("settings_diagnostics_level_loading"),
+                        width: NoticeWidth::Pane,
+                    },
+                    cx.listener(|this, _: &ClickEvent, _, cx| {
+                        this.load_level(cx);
+                        cx.notify();
+                    }),
+                    palette,
+                    density,
+                    cx,
+                )
+            })
+            .flatten();
+
+        let body = div()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Sm, density))
+            .children(level_failure)
+            .child(setting_row(
+                tr!("settings_diagnostics_level_label"),
+                Some(hint.into()),
+                segmented(segments, palette),
+                palette,
+                density,
+            ))
+            .child(note_row(
+                tr!("settings_diagnostics_level_env_hatch"),
+                palette,
+                density,
+                cx,
+            ))
+            .child(note_row(
+                tr!("settings_diagnostics_level_targets"),
+                palette,
+                density,
+                cx,
+            ));
+
+        card(body, palette).full_width()
+    }
+
+    fn tail_body(&self, palette: &ForgePalette, density: Density, cx: &App) -> AnyElement {
+        let pad = spacing(Spacing::Sm, density);
+        if self.lines.is_empty() {
+            return div()
+                .p(pad)
+                .font_family(cx.mono_family())
+                .text_size(FONT_XS)
+                .text_color(palette.text_muted)
+                .child(tr!("settings_diagnostics_tail_empty"))
+                .into_any_element();
+        }
+
+        let mut list = div()
+            .id("settings-diagnostics-tail")
+            .track_scroll(&self.scroll)
+            .reveals_focus_in(&self.scroll)
+            .max_h(TAIL_MAX_HEIGHT)
+            .overflow_y_scroll()
+            .p(pad)
+            .font_family(cx.mono_family())
+            .text_size(FONT_XS)
+            .line_height(TAIL_LINE_HEIGHT);
+        for line in &self.lines {
+            list = list.child(log_row(line, palette, density));
+        }
+        list.into_any_element()
+    }
+
+    fn export_overlay(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
+        let bundle = self.pending_export.as_ref()?;
+
+        let mut body = div()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Sm, density))
+            .child(
+                div()
+                    .font_family(cx.body_family())
+                    .text_size(FONT_SM)
+                    .text_color(palette.text_primary)
+                    .child(tr!("settings_diagnostics_export_preview_lead")),
+            );
+        for note in export_statement(bundle, &self.level) {
+            body = body.child(statement_row(note, palette, density, cx));
+        }
+
+        let footer = div()
+            .flex()
+            .items_center()
+            .justify_end()
+            .gap(spacing(Spacing::Xs, density))
+            .child(
+                ghost_button(tr!("common_cancel"), palette)
+                    .density(density)
+                    .on_click(
+                        "settings-diagnostics-export-cancel",
+                        cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_export(cx)),
+                    ),
+            )
+            .child(
+                primary_button(tr!("settings_diagnostics_export_preview_confirm"), palette)
+                    .density(density)
+                    .on_click(
+                        "settings-diagnostics-export-confirm",
+                        cx.listener(|this, _: &ClickEvent, _, cx| this.write_export(cx)),
+                    ),
+            );
+
+        let card = modal(
+            tr!("settings_diagnostics_export_preview_title"),
+            body,
+            palette,
+        )
+        .header_icon(Icon::Download, palette.brand)
+        .size(ModalSize::Lg)
+        .width(PREVIEW_WIDTH)
+        .footer(footer)
+        .on_close(
+            "settings-diagnostics-export-close",
+            cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_export(cx)),
+        );
+
+        let weak = cx.entity().downgrade();
+        Some(
+            overlay(card, palette)
+                .position(OverlayPosition::Center)
+                .on_dismiss("settings-diagnostics-export-dismiss", move |_window, cx| {
+                    #[expect(
+                        clippy::let_underscore_must_use,
+                        reason = "the view may close before the result arrives"
+                    )]
+                    let _ = weak.update(cx, |this, cx| this.cancel_export(cx));
+                })
+                .into_any_element(),
+        )
+    }
+
+    fn clear_overlay(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> Option<AnyElement> {
+        if !self.clear_pending {
+            return None;
+        }
+
+        let modal = confirm_modal(
+            tr!("settings_diagnostics_clear_confirm_title"),
+            tr!("settings_diagnostics_clear_confirm_body"),
+            ConfirmTone::Destructive,
+            palette,
+        )
+        .esc_hint(tr!("widget_confirm_esc_to_cancel"))
+        .on_cancel(
+            "settings-diagnostics-clear-cancel",
+            tr!("common_cancel"),
+            cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_clear(cx)),
+        )
+        .on_confirm(
+            "settings-diagnostics-clear-confirm",
+            tr!("settings_diagnostics_clear_confirm_action"),
+            cx.listener(|this, _: &ClickEvent, _, cx| this.clear_logs(cx)),
+        );
+
+        let weak = cx.entity().downgrade();
+        Some(
+            overlay(modal, palette)
+                .position(OverlayPosition::Center)
+                .on_dismiss("settings-diagnostics-clear-dismiss", move |_window, cx| {
+                    #[expect(
+                        clippy::let_underscore_must_use,
+                        reason = "the view may close before the result arrives"
+                    )]
+                    let _ = weak.update(cx, |this, cx| this.cancel_clear(cx));
+                })
+                .into_any_element(),
+        )
+    }
+}
+
+impl Render for SettingsDiagnosticsView {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let palette = cx.palette();
+        let density = cx.density();
+
+        let body = div()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Md, density))
+            .children(self.boot_warnings_card(&palette, density, cx))
+            .child(self.level_card(&palette, density, cx))
+            .child(self.actions(&palette, density, cx))
+            .child(
+                card(self.tail_body(&palette, density, cx), &palette)
+                    .padding(px(0.0))
+                    .full_width(),
+            );
+
+        div()
+            .flex()
+            .flex_col()
+            .child(
+                SettingsPaneHeader::new(SettingsSection::Diagnostics)
+                    .subtitle(tr!("settings_diagnostics_subtitle")),
+            )
+            .child(body)
+            .children(self.clear_overlay(&palette, cx))
+            .children(self.export_overlay(&palette, density, cx))
+    }
+}
+
+fn level_key(level: &LogLevel) -> &'static str {
+    forge_storage::log_level_as_str(level)
+}
+
+fn level_label_key(level: &LogLevel) -> &'static str {
+    match level {
+        LogLevel::Trace => "settings_diagnostics_level_trace",
+        LogLevel::Debug => "settings_diagnostics_level_debug",
+        LogLevel::Info => "settings_diagnostics_level_info",
+        LogLevel::Warn => "settings_diagnostics_level_warn",
+        LogLevel::Error => "settings_diagnostics_level_error",
+    }
+}
+
+fn note_row(
+    text: impl Into<SharedString>,
+    palette: &ForgePalette,
+    density: Density,
+    cx: &App,
+) -> impl IntoElement {
+    div()
+        .flex()
+        .items_start()
+        .gap(spacing(Spacing::Xxs, density))
+        .child(
+            div()
+                .flex_none()
+                .child(icon(Icon::InfoCircle, NOTE_GLYPH, palette.info)),
+        )
+        .child(
+            div()
+                .flex_1()
+                .min_w(px(0.0))
+                .child(field_hint(text.into(), palette, cx)),
+        )
+}
+
+fn log_row(line: &LogLine, palette: &ForgePalette, density: Density) -> impl IntoElement {
+    div()
+        .flex()
+        .gap(spacing(Spacing::Sm, density))
+        .child(
+            div()
+                .flex_none()
+                .text_color(palette.text_faint)
+                .child(fmt_display(DateShape::TimeWithMillis, line.at)),
+        )
+        .child(
+            div()
+                .flex_none()
+                .w(LEVEL_COLUMN)
+                .font_weight(FontWeight::MEDIUM)
+                .text_color(level_color(line.level, palette))
+                .child(line.level.as_str()),
+        )
+        .child(
+            div()
+                .flex_none()
+                .text_color(palette.brand)
+                .child(SharedString::from(line.target)),
+        )
+        .child(
+            div()
+                .flex_1()
+                .min_w(px(0.0))
+                .text_color(palette.text_primary)
+                .child(SharedString::from(line.message.clone())),
+        )
+}
+
+fn level_color(level: Level, palette: &ForgePalette) -> Rgba {
+    if level == Level::ERROR {
+        palette.danger
+    } else if level == Level::WARN {
+        palette.warning
+    } else if level == Level::INFO {
+        palette.success
+    } else {
+        palette.text_muted
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Bundle, LogLevel, export_statement, level_label_key};
+    use crate::app::log_level::SELECTABLE;
+    use crate::data_flows::bundle_preview::StatementTone;
+
+    #[test]
+    fn every_level_label_key_is_defined_in_both_catalogs() {
+        for locale in ["en", "uk"] {
+            let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("locales")
+                .join(locale)
+                .join("main.ftl");
+            let catalog = std::fs::read_to_string(&path).unwrap();
+            for level in SELECTABLE {
+                let key = level_label_key(&level);
+                let definition = format!("{key} = ");
+                assert!(
+                    catalog.lines().any(|line| line.starts_with(&definition)),
+                    "{locale}/main.ftl is missing {key}",
+                );
+            }
+        }
+    }
+
+    const TRACE_NOTE: &str = "settings_diagnostics_export_preview_trace";
+    const TRACE_NONE_NOTE: &str = "settings_diagnostics_export_preview_trace_none";
+    const SCRIPT_NOTE: &str = "settings_diagnostics_export_preview_script";
+    const SCRIPT_NONE_NOTE: &str = "settings_diagnostics_export_preview_script_none";
+    const ELIDED_NOTE: &str = "settings_diagnostics_export_preview_elided";
+
+    fn bundle(script_lines: usize, command_lines: usize, elided_bytes: u64) -> Bundle {
+        Bundle {
+            text: "x".repeat(2048),
+            script_lines,
+            command_lines,
+            elided_bytes,
+        }
+    }
+
+    fn notes(bundle: &Bundle, level: &LogLevel) -> Vec<(String, bool)> {
+        export_statement(bundle, level)
+            .into_iter()
+            .map(|note| (note.text.to_string(), note.tone == StatementTone::Alert))
+            .collect()
+    }
+
+    fn note_keys(bundle: &Bundle, level: &LogLevel) -> Vec<String> {
+        notes(bundle, level)
+            .into_iter()
+            .map(|(key, _)| key)
+            .collect()
+    }
+
+    #[test]
+    fn the_command_line_warning_follows_the_bundle_contents_not_the_active_level() {
+        for level in SELECTABLE {
+            assert!(
+                note_keys(&bundle(0, 3, 0), &level).contains(&TRACE_NOTE.to_owned()),
+                "a bundle carrying command lines must warn at level {level:?}",
+            );
+            assert!(
+                !note_keys(&bundle(0, 0, 0), &level).contains(&TRACE_NOTE.to_owned()),
+                "a bundle with no command lines must not claim it carries them at {level:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn a_trace_level_bundle_with_no_matched_command_still_explains_what_trace_records() {
+        assert!(
+            note_keys(&bundle(0, 0, 0), &LogLevel::Trace).contains(&TRACE_NONE_NOTE.to_owned()),
+        );
+
+        for level in SELECTABLE.into_iter().filter(|l| *l != LogLevel::Trace) {
+            assert!(
+                !note_keys(&bundle(0, 0, 0), &level).contains(&TRACE_NONE_NOTE.to_owned()),
+                "level {level:?} must not explain trace behaviour it is not running at",
+            );
+        }
+        assert!(
+            !note_keys(&bundle(0, 2, 0), &LogLevel::Trace).contains(&TRACE_NONE_NOTE.to_owned()),
+            "the no-match wording must give way to the real count",
+        );
+    }
+
+    #[test]
+    fn the_command_line_warning_is_an_alert_and_the_no_match_explanation_is_too() {
+        for (bundle, key) in [
+            (bundle(0, 1, 0), TRACE_NOTE),
+            (bundle(0, 0, 0), TRACE_NONE_NOTE),
+        ] {
+            let alerted = notes(&bundle, &LogLevel::Trace)
+                .into_iter()
+                .find(|(note, _)| note == key)
+                .map(|(_, alert)| alert);
+            assert_eq!(alerted, Some(true), "{key} must be styled as an alert");
+        }
+    }
+
+    #[test]
+    fn the_script_note_switches_on_the_script_line_count() {
+        for (count, expected, other, alert) in [
+            (0usize, SCRIPT_NONE_NOTE, SCRIPT_NOTE, false),
+            (1, SCRIPT_NOTE, SCRIPT_NONE_NOTE, true),
+            (900, SCRIPT_NOTE, SCRIPT_NONE_NOTE, true),
+        ] {
+            let notes = notes(&bundle(count, 0, 0), &LogLevel::Info);
+            assert!(
+                notes.contains(&(expected.to_owned(), alert)),
+                "{count} script lines must state {expected} as alert={alert}: {notes:?}",
+            );
+            assert!(
+                !notes.iter().any(|(key, _)| key == other),
+                "{count} script lines must not also state {other}",
+            );
+        }
+    }
+
+    #[test]
+    fn the_elided_note_appears_only_when_bytes_were_left_out() {
+        assert!(!note_keys(&bundle(0, 0, 0), &LogLevel::Info).contains(&ELIDED_NOTE.to_owned()));
+        assert!(note_keys(&bundle(0, 0, 1), &LogLevel::Info).contains(&ELIDED_NOTE.to_owned()));
+    }
+
+    struct LevelRig {
+        rt: tokio::runtime::Runtime,
+        backend: std::sync::Arc<forge_host::test_support::TestBackend>,
+        writes: tokio::sync::mpsc::UnboundedReceiver<crate::test_support::SettingWrite>,
+        view: gpui::Entity<super::SettingsDiagnosticsView>,
+    }
+
+    fn mount_with_stored(stored: LogLevel, cx: &mut gpui::TestAppContext) -> LevelRig {
+        mount_applying(stored, std::rc::Rc::new(|_| true), cx)
+    }
+
+    fn mount_applying(
+        stored: LogLevel,
+        apply_level: super::LevelApplier,
+        cx: &mut gpui::TestAppContext,
+    ) -> LevelRig {
+        use gpui::AppContext as _;
+
+        crate::test_support::install_presentation(cx);
+        cx.update(|cx| cx.set_global(forge_components::Toasts::new()));
+        let rt = crate::test_support::runtime();
+        let (backend, mut writes) = crate::test_support::test_backend();
+        rt.block_on(forge_storage::set_diagnostic_log_level(
+            backend.as_ref(),
+            &stored,
+        ))
+        .unwrap();
+        while writes.try_recv().is_ok() {}
+        let view = cx.update(|cx| {
+            cx.new(|cx| {
+                super::SettingsDiagnosticsView::new(
+                    crate::app::log_tail::LogTail::new(),
+                    backend.clone() as std::sync::Arc<dyn forge_storage::DataProvider>,
+                    forge_host::integrations::BuiltinRegistry::default(),
+                    rt.handle().clone(),
+                    false,
+                    cx,
+                )
+                .with_level_applier(apply_level)
+            })
+        });
+        LevelRig {
+            rt,
+            backend,
+            writes,
+            view,
+        }
+    }
+
+    impl LevelRig {
+        fn settle(&self, cx: &mut gpui::TestAppContext) {
+            crate::test_support::settle_runtime_work(cx, &self.rt);
+        }
+
+        fn level(&self, cx: &mut gpui::TestAppContext) -> LogLevel {
+            self.view.read_with(cx, |view, _| view.level.clone())
+        }
+    }
+
+    #[gpui::test]
+    fn a_level_that_cannot_be_applied_is_neither_shown_nor_persisted(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let mut rig = mount_applying(LogLevel::Debug, std::rc::Rc::new(|_| false), cx);
+        rig.settle(cx);
+
+        rig.view
+            .update(cx, |view, cx| view.select_level(LogLevel::Trace, cx));
+        rig.settle(cx);
+
+        let errors = cx.update(|cx| crate::test_support::error_toasts(cx));
+        assert_eq!(
+            (rig.level(cx), rig.writes.try_recv().is_err(), errors),
+            (LogLevel::Debug, true, 1)
+        );
+    }
+
+    fn recording_applier() -> (
+        std::rc::Rc<std::cell::RefCell<Vec<LogLevel>>>,
+        super::LevelApplier,
+    ) {
+        let applied = std::rc::Rc::<std::cell::RefCell<Vec<LogLevel>>>::default();
+        let recorded = std::rc::Rc::clone(&applied);
+        let apply: super::LevelApplier = std::rc::Rc::new(move |level: &LogLevel| {
+            recorded.borrow_mut().push(level.clone());
+            true
+        });
+        (applied, apply)
+    }
+
+    #[gpui::test]
+    fn an_applied_level_is_shown_and_persisted(cx: &mut gpui::TestAppContext) {
+        let (applied, apply) = recording_applier();
+        let mut rig = mount_applying(LogLevel::Debug, apply, cx);
+        rig.settle(cx);
+
+        rig.view
+            .update(cx, |view, cx| view.select_level(LogLevel::Trace, cx));
+        rig.settle(cx);
+
+        assert_eq!(
+            (
+                rig.level(cx),
+                rig.writes.try_recv().is_ok(),
+                applied.borrow().clone()
+            ),
+            (LogLevel::Trace, true, vec![LogLevel::Trace])
+        );
+    }
+
+    #[gpui::test]
+    fn a_level_that_cannot_be_persisted_rolls_back_on_screen_and_in_the_filter(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let (applied, apply) = recording_applier();
+        let rig = mount_applying(LogLevel::Debug, apply, cx);
+        rig.settle(cx);
+        rig.backend
+            .fail_writes(forge_storage::settings::core_settings::DIAGNOSTICS_LOG_LEVEL.name());
+
+        rig.view
+            .update(cx, |view, cx| view.select_level(LogLevel::Trace, cx));
+        rig.settle(cx);
+
+        assert_eq!(
+            (
+                rig.level(cx),
+                applied.borrow().clone(),
+                cx.update(|cx| crate::test_support::error_toasts(cx))
+            ),
+            (LogLevel::Debug, vec![LogLevel::Trace, LogLevel::Debug], 1)
+        );
+    }
+
+    #[gpui::test]
+    fn a_stored_level_arriving_after_the_user_picked_one_does_not_overwrite_it(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let rig = mount_with_stored(LogLevel::Debug, cx);
+        rig.view.update(cx, |view, _| {
+            view.level = LogLevel::Error;
+            view.level_picked = true;
+        });
+
+        rig.settle(cx);
+
+        assert_eq!(rig.level(cx), LogLevel::Error);
+    }
+
+    #[gpui::test]
+    fn the_stored_level_is_shown_once_it_loads(cx: &mut gpui::TestAppContext) {
+        let rig = mount_with_stored(LogLevel::Warn, cx);
+
+        rig.settle(cx);
+
+        assert_eq!(rig.level(cx), LogLevel::Warn);
+    }
+
+    #[gpui::test]
+    fn the_boot_problems_card_appears_only_after_a_start_that_recorded_one(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        use forge_host::boot_warnings::{BootWarning, BootWarnings};
+
+        let rig = mount_with_stored(LogLevel::Warn, cx);
+        let card_shown = |rig: &LevelRig, cx: &mut gpui::TestAppContext| {
+            rig.view.read_with(cx, |view, cx| {
+                view.boot_warnings_card(
+                    &forge_components::FORGE_DEFAULT,
+                    forge_components::Density::Cozy,
+                    cx,
+                )
+                .is_some()
+            })
+        };
+
+        let clean = card_shown(&rig, cx);
+        rig.view.update(cx, |view, _| {
+            let mut warnings = BootWarnings::default();
+            warnings.record(BootWarning::Queues);
+            view.boot_warnings = warnings;
+        });
+        let degraded = card_shown(&rig, cx);
+
+        assert_eq!((clean, degraded), (false, true));
+    }
+}

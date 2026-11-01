@@ -1,3 +1,4 @@
+use crate::step_card::StepCardDetail;
 use async_trait::async_trait;
 use forge_types::{ArgStack, IntegrationId, SubActionTelemetry};
 
@@ -19,6 +20,9 @@ pub trait StepCatalogEntry {
     fn summary(&self) -> &str;
     fn search_text(&self) -> &str;
     fn icon_name(&self) -> &str;
+    fn card_detail(&self, _config: &SubActionConfig) -> Option<StepCardDetail> {
+        None
+    }
 }
 
 #[async_trait]

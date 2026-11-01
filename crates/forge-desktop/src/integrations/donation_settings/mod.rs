@@ -1,0 +1,783 @@
+use std::sync::Arc;
+use std::time::Duration;
+
+use forge_components::{InputEvent, TextInput, tr};
+use forge_platform_core::{AccountTarget, SavedAccount, TokenCheck};
+use forge_storage::{CredentialsRepo, SettingsRepo, has_credentials_for};
+use gpui::{AppContext as _, Context, Entity, Subscription, Window, px};
+
+use crate::app::async_bridge::{self, ErrorSink, SnapshotWriter, WriteOutcome};
+use forge_host::donation_services::DonationService;
+
+mod problem;
+mod render;
+
+pub(crate) use problem::{TokenProblem, problem_message};
+pub(crate) use render::remove_confirm;
+
+const TOKEN_FONT_SIZE: gpui::Pixels = px(12.0);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Busy {
+    Checking,
+    Saving,
+    LoadingJars,
+    Removing,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Outcome {
+    Success(String),
+    Problem(String),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum JarSource {
+    Pasted,
+    Stored,
+}
+
+pub(crate) struct DonationSettingsLaunch {
+    pub service: DonationService,
+    pub credentials: Arc<dyn CredentialsRepo>,
+    pub settings: Arc<dyn SettingsRepo>,
+    pub rt_handle: tokio::runtime::Handle,
+}
+
+pub(crate) struct DonationSettingsView {
+    launch: DonationSettingsLaunch,
+    token: Entity<TextInput>,
+    token_revealed: bool,
+    has_token: Option<bool>,
+    busy: Option<Busy>,
+    outcome: Option<Outcome>,
+    jars: Vec<AccountTarget>,
+    jar_source: Option<JarSource>,
+    picked_jar: Option<String>,
+    saved_jar: Option<String>,
+    poll_interval: Option<Duration>,
+    poll_writer: SnapshotWriter,
+    remove_pending: bool,
+    _token_sub: Subscription,
+}
+
+impl DonationSettingsView {
+    pub(crate) fn new(launch: DonationSettingsLaunch, cx: &mut Context<Self>) -> Self {
+        let token = cx.new(|cx| {
+            TextInput::new(tr!("donation_token_placeholder"), cx)
+                .plain()
+                .mono()
+                .with_font_size(TOKEN_FONT_SIZE)
+                .secure(true)
+        });
+        let token_sub = cx.subscribe(&token, |this, _input, event: &InputEvent, cx| {
+            if let InputEvent::Changed(_) = event {
+                this.on_token_edited(cx);
+            }
+        });
+        let poll_writer = SnapshotWriter::new(&launch.rt_handle);
+        let mut view = Self {
+            launch,
+            token,
+            token_revealed: false,
+            has_token: None,
+            busy: None,
+            outcome: None,
+            jars: Vec::new(),
+            jar_source: None,
+            picked_jar: None,
+            saved_jar: None,
+            poll_interval: None,
+            poll_writer,
+            remove_pending: false,
+            _token_sub: token_sub,
+        };
+        view.load_stored(cx);
+        view
+    }
+
+    pub(crate) fn service_name(&self) -> &'static str {
+        self.launch.service.setup().brand_name()
+    }
+
+    pub(crate) fn picks_a_target(&self) -> bool {
+        self.launch.service.setup().picks_a_target()
+    }
+
+    pub(crate) fn focus_token(&self, window: &mut Window, cx: &mut Context<Self>) {
+        self.token.update(cx, |input, cx| input.focus(window, cx));
+    }
+
+    fn load_stored(&mut self, cx: &mut Context<Self>) {
+        let credentials = Arc::clone(&self.launch.credentials);
+        let service = self.launch.service.clone();
+        let settings = Arc::clone(&self.launch.settings);
+        async_bridge::run_async(
+            &self.launch.rt_handle,
+            async move {
+                let present = has_credentials_for(credentials.as_ref(), service.id()).await;
+                let jar = service.setup().stored_target().await;
+                let interval = service.shown_poll_interval(settings.as_ref()).await;
+                (present, jar, interval)
+            },
+            |this, (present, jar, interval), cx| {
+                match present {
+                    Ok(present) => this.has_token = Some(present),
+                    Err(error) => {
+                        tracing::warn!(error = %error, "could not tell whether a donation token is stored");
+                    }
+                }
+                this.saved_jar = jar;
+                this.poll_interval = interval;
+                cx.notify();
+            },
+            cx,
+        );
+    }
+
+    pub(crate) fn draft_token(&self, cx: &gpui::App) -> String {
+        self.token.read(cx).content().trim().to_owned()
+    }
+
+    pub(crate) fn can_check(&self, cx: &gpui::App) -> bool {
+        if self.busy.is_some() {
+            return false;
+        }
+        let pasted = !self.draft_token(cx).is_empty();
+        if self.picks_a_target() {
+            pasted || self.has_token == Some(true)
+        } else {
+            pasted
+        }
+    }
+
+    pub(crate) fn can_save(&self, cx: &gpui::App) -> bool {
+        if self.busy.is_some() {
+            return false;
+        }
+        let pasted = !self.draft_token(cx).is_empty();
+        if !self.picks_a_target() {
+            return pasted;
+        }
+        let Some(picked) = &self.picked_jar else {
+            return false;
+        };
+        let changes_something =
+            self.jar_source == Some(JarSource::Pasted) || self.saved_jar.as_ref() != Some(picked);
+        match self.jar_source {
+            Some(JarSource::Pasted) => pasted && changes_something,
+            Some(JarSource::Stored) => self.has_token == Some(true) && changes_something,
+            None => false,
+        }
+    }
+
+    pub(crate) fn shown_jar(&self) -> Option<&String> {
+        self.picked_jar.as_ref().or(self.saved_jar.as_ref())
+    }
+
+    fn on_token_edited(&mut self, cx: &mut Context<Self>) {
+        self.outcome = None;
+        if self.jar_source == Some(JarSource::Pasted) {
+            self.jars.clear();
+            self.jar_source = None;
+            self.picked_jar = None;
+        }
+        cx.notify();
+    }
+
+    fn toggle_reveal(&mut self, cx: &mut Context<Self>) {
+        self.token_revealed = !self.token_revealed;
+        let secure = !self.token_revealed;
+        self.token
+            .update(cx, |input, cx| input.set_secure(secure, cx));
+        cx.notify();
+    }
+
+    fn open_token_page(&mut self, cx: &mut Context<Self>) {
+        let page = self.launch.service.setup().token_page();
+        async_bridge::open_external(
+            &self.launch.rt_handle,
+            page,
+            ErrorSink::Toast,
+            tr!("integration_open_url_failed"),
+            cx,
+        );
+    }
+
+    fn begin(&mut self, busy: Busy, cx: &mut Context<Self>) {
+        self.busy = Some(busy);
+        self.outcome = None;
+        cx.notify();
+    }
+
+    fn fail(&mut self, problem: &TokenProblem, cx: &mut Context<Self>) {
+        self.busy = None;
+        self.outcome = Some(Outcome::Problem(problem_message(
+            problem,
+            self.service_name(),
+        )));
+        cx.notify();
+    }
+
+    fn check_token(&mut self, cx: &mut Context<Self>) {
+        if !self.can_check(cx) {
+            return;
+        }
+        let setup = self.launch.service.setup();
+        let raw = self.draft_token(cx);
+        let source = if raw.is_empty() {
+            JarSource::Stored
+        } else {
+            JarSource::Pasted
+        };
+        let busy = if setup.picks_a_target() {
+            Busy::LoadingJars
+        } else {
+            Busy::Checking
+        };
+        self.begin(busy, cx);
+        async_bridge::run_async(
+            &self.launch.rt_handle,
+            async move {
+                match source {
+                    JarSource::Pasted => setup.check_token(&raw).await,
+                    JarSource::Stored => setup.stored_targets().await.map(TokenCheck::Targets),
+                }
+            },
+            move |this, result, cx| match result {
+                Ok(TokenCheck::Account { nickname }) => {
+                    this.busy = None;
+                    this.outcome = Some(Outcome::Success(token_works_line(nickname)));
+                    cx.notify();
+                }
+                Ok(TokenCheck::Targets(targets)) => this.apply_jars(source, targets, cx),
+                Err(problem) => this.fail(&problem, cx),
+            },
+            cx,
+        );
+    }
+
+    pub(crate) fn apply_jars(
+        &mut self,
+        source: JarSource,
+        jars: Vec<AccountTarget>,
+        cx: &mut Context<Self>,
+    ) {
+        self.busy = None;
+        self.outcome = jars
+            .is_empty()
+            .then(|| Outcome::Problem(tr!("donation_jar_none")));
+        let keep = self
+            .saved_jar
+            .clone()
+            .filter(|saved| jars.iter().any(|jar| &jar.id == saved));
+        let only = match jars.as_slice() {
+            [jar] => Some(jar.id.clone()),
+            _ => None,
+        };
+        self.picked_jar = keep.or(only);
+        self.jars = jars;
+        self.jar_source = Some(source);
+        cx.notify();
+    }
+
+    fn pick_jar(&mut self, jar_id: String, cx: &mut Context<Self>) {
+        if self.busy.is_some() {
+            return;
+        }
+        self.picked_jar = Some(jar_id);
+        self.outcome = None;
+        cx.notify();
+    }
+
+    fn save(&mut self, cx: &mut Context<Self>) {
+        if !self.can_save(cx) {
+            return;
+        }
+        let setup = self.launch.service.setup();
+        let raw = self.draft_token(cx);
+        let target = self.picked_jar.clone();
+        let source = self.jar_source;
+        if setup.picks_a_target() && target.is_none() {
+            return;
+        }
+        self.begin(Busy::Saving, cx);
+        async_bridge::run_async(
+            &self.launch.rt_handle,
+            async move {
+                match (source, target) {
+                    (Some(JarSource::Stored) | None, Some(target)) => {
+                        setup.select_target(&target).await
+                    }
+                    (_, target) => setup.save_token(&raw, target.as_deref()).await,
+                }
+            },
+            |this, result, cx| match result {
+                Ok(SavedAccount::Account { nickname }) => {
+                    this.token_saved(token_saved_line(nickname), None, cx);
+                }
+                Ok(SavedAccount::Target(target)) => {
+                    let line = tr!("donation_jar_saved", jar = jar_title(&target));
+                    this.token_saved(line, Some(target.id), cx);
+                }
+                Err(problem) => this.fail(&problem, cx),
+            },
+            cx,
+        );
+    }
+
+    fn token_saved(&mut self, line: String, jar: Option<String>, cx: &mut Context<Self>) {
+        self.busy = None;
+        self.has_token = Some(true);
+        self.outcome = Some(Outcome::Success(line));
+        if jar.is_some() {
+            self.saved_jar = jar;
+            self.picked_jar = None;
+            if self.jar_source == Some(JarSource::Pasted) {
+                self.jar_source = Some(JarSource::Stored);
+            }
+        }
+        self.token.update(cx, |input, cx| input.clear(cx));
+        cx.notify();
+    }
+
+    fn request_remove(&mut self, cx: &mut Context<Self>) {
+        if self.busy.is_some() || self.has_token != Some(true) {
+            return;
+        }
+        self.remove_pending = true;
+        cx.notify();
+    }
+
+    pub(crate) fn cancel_remove(&mut self, cx: &mut Context<Self>) {
+        self.remove_pending = false;
+        cx.notify();
+    }
+
+    pub(crate) fn confirm_remove(&mut self, cx: &mut Context<Self>) {
+        if !self.remove_pending {
+            return;
+        }
+        self.remove_pending = false;
+        self.begin(Busy::Removing, cx);
+        let setup = self.launch.service.setup();
+        async_bridge::run_async(
+            &self.launch.rt_handle,
+            async move { setup.remove_token().await },
+            |this, result, cx| match result {
+                Ok(()) => {
+                    this.busy = None;
+                    this.has_token = Some(false);
+                    this.jars.clear();
+                    this.jar_source = None;
+                    this.picked_jar = None;
+                    this.saved_jar = None;
+                    this.outcome = Some(Outcome::Success(tr!("donation_token_removed")));
+                    cx.notify();
+                }
+                Err(problem) => this.fail(&problem, cx),
+            },
+            cx,
+        );
+    }
+
+    fn set_poll_interval(&mut self, requested: Duration, cx: &mut Context<Self>) {
+        let Some(applied) = self.launch.service.apply_poll_interval(requested) else {
+            return;
+        };
+        self.poll_interval = Some(applied);
+        let settings = Arc::clone(&self.launch.settings);
+        let service = self.launch.service.clone();
+        self.poll_writer.write(
+            async move { service.keep_poll_interval(settings.as_ref(), applied).await },
+            |_, outcome, _| {
+                if let WriteOutcome::Failed(error) = outcome {
+                    tracing::warn!(%error, "could not keep the donation poll interval");
+                }
+            },
+            cx,
+        );
+        cx.notify();
+    }
+
+    pub(crate) fn is_remove_pending(&self) -> bool {
+        self.remove_pending
+    }
+}
+
+pub(crate) fn jar_title(jar: &AccountTarget) -> String {
+    jar.title
+        .clone()
+        .unwrap_or_else(|| tr!("donation_jar_untitled"))
+}
+
+fn token_works_line(nickname: Option<String>) -> String {
+    match nickname {
+        Some(name) => tr!("donation_token_works_as", name = name),
+        None => tr!("donation_token_works"),
+    }
+}
+
+fn token_saved_line(nickname: Option<String>) -> String {
+    match nickname {
+        Some(name) => tr!("donation_token_saved_as", name = name),
+        None => tr!("donation_token_saved"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use forge_storage::test_support::MemoryCredentials;
+
+    use forge_donatello::{DONATELLO_CREDENTIAL_ID, DonatelloConfig, DonatelloProvider};
+    use forge_monobank::{MonobankConfig, MonobankProvider, MonobankRateLimits};
+    use forge_platform_core::PlatformEndpoints;
+
+    use gpui::TestAppContext;
+
+    use super::*;
+    use crate::test_support::{
+        alive_tasks, install_presentation, runtime, settle_until, settle_until_tasks_drain_to,
+        test_backend,
+    };
+
+    const SAVED_JAR: &str = "jar-saved";
+    const OTHER_JAR: &str = "jar-other";
+    const PASTED: &str = "pasted-token";
+
+    type Build = fn(&Arc<MemoryCredentials>) -> DonationService;
+
+    fn saved_monobank() -> MemoryCredentials {
+        MemoryCredentials::holding(
+            forge_monobank::MONOBANK_CREDENTIAL_ID,
+            &format!(r#"{{"token":"stored-token","jar_id":"{SAVED_JAR}"}}"#),
+        )
+    }
+
+    fn saved_donatello() -> MemoryCredentials {
+        MemoryCredentials::holding(DONATELLO_CREDENTIAL_ID, "stored-token")
+    }
+
+    fn monobank(vault: &Arc<MemoryCredentials>) -> DonationService {
+        let config = MonobankConfig::new(&PlatformEndpoints::default());
+        let gateways = forge_monobank::monobank_gateways(&config, MonobankRateLimits::official())
+            .expect("the gateways build offline");
+        DonationService::of(Arc::new(MonobankProvider::new(
+            config,
+            Arc::clone(vault) as Arc<dyn CredentialsRepo>,
+            gateways,
+        )))
+    }
+
+    fn donatello(vault: &Arc<MemoryCredentials>) -> DonationService {
+        let config = DonatelloConfig::new(&PlatformEndpoints::default());
+        let gateway =
+            forge_donatello::donatello_gateway(&config, forge_donatello::default_rate_limiter())
+                .expect("the gateway builds offline");
+        DonationService::of(Arc::new(DonatelloProvider::new(
+            config,
+            Arc::clone(vault) as Arc<dyn CredentialsRepo>,
+            gateway,
+        )))
+    }
+
+    fn open(
+        cx: &mut TestAppContext,
+        rt: &tokio::runtime::Runtime,
+        build: Build,
+        vault: &Arc<MemoryCredentials>,
+    ) -> Entity<DonationSettingsView> {
+        install_presentation(cx);
+        let (settings, _writes) = test_backend();
+        let launch = DonationSettingsLaunch {
+            service: build(vault),
+            credentials: Arc::clone(vault) as Arc<dyn CredentialsRepo>,
+            settings: settings as Arc<dyn SettingsRepo>,
+            rt_handle: rt.handle().clone(),
+        };
+        let view = cx.new(|cx| DonationSettingsView::new(launch, cx));
+        settle_until(cx, rt, |cx| {
+            view.read_with(cx, |view, _| view.has_token.is_some())
+        });
+        view
+    }
+
+    fn type_token(cx: &mut TestAppContext, view: &Entity<DonationSettingsView>, text: &str) {
+        let token = view.read_with(cx, |view, _| view.token.clone());
+        token.update(cx, |input, cx| {
+            input.set_content(text.to_owned(), cx);
+            cx.emit(InputEvent::Changed(text.to_owned().into()));
+        });
+        cx.run_until_parked();
+    }
+
+    fn jar(id: &str) -> AccountTarget {
+        AccountTarget {
+            id: id.to_owned(),
+            title: None,
+            currency: None,
+            goal: None,
+        }
+    }
+
+    fn jars(ids: &[&str]) -> Vec<AccountTarget> {
+        ids.iter().map(|id| jar(id)).collect()
+    }
+
+    #[gpui::test]
+    fn the_check_button_needs_a_pasted_token_unless_monobank_already_holds_one(
+        cx: &mut TestAppContext,
+    ) {
+        let rt = runtime();
+        let cases: [(Build, MemoryCredentials, &str, bool, &str); 5] = [
+            (
+                monobank,
+                saved_monobank(),
+                "",
+                true,
+                "monobank lists the jars of the saved token",
+            ),
+            (
+                monobank,
+                MemoryCredentials::default(),
+                "",
+                false,
+                "monobank with nothing saved or pasted",
+            ),
+            (
+                monobank,
+                MemoryCredentials::default(),
+                PASTED,
+                true,
+                "monobank with a pasted token",
+            ),
+            (
+                donatello,
+                saved_donatello(),
+                "",
+                false,
+                "donatello only checks a pasted token",
+            ),
+            (
+                donatello,
+                MemoryCredentials::default(),
+                "  ",
+                false,
+                "whitespace is not a token",
+            ),
+        ];
+
+        for (build, vault, field, expected, case) in cases {
+            let vault = Arc::new(vault);
+            let view = open(cx, &rt, build, &vault);
+            type_token(cx, &view, field);
+
+            assert_eq!(
+                view.read_with(cx, |view, cx| view.can_check(cx)),
+                expected,
+                "{case}"
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn nothing_can_be_checked_or_saved_while_a_request_runs(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let view = open(cx, &rt, donatello, &Arc::new(MemoryCredentials::default()));
+        type_token(cx, &view, PASTED);
+
+        view.update(cx, |view, _| view.busy = Some(Busy::Checking));
+
+        assert_eq!(
+            view.read_with(cx, |view, cx| (view.can_check(cx), view.can_save(cx))),
+            (false, false)
+        );
+    }
+
+    #[gpui::test]
+    fn donatello_can_be_saved_only_with_a_pasted_token(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let view = open(cx, &rt, donatello, &Arc::new(saved_donatello()));
+
+        for (field, expected) in [("", false), ("   ", false), (PASTED, true)] {
+            type_token(cx, &view, field);
+            assert_eq!(
+                view.read_with(cx, |view, cx| view.can_save(cx)),
+                expected,
+                "{field:?}"
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn monobank_can_be_saved_only_when_it_would_change_the_stored_choice(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let cases = [
+            (
+                JarSource::Stored,
+                "",
+                Some(SAVED_JAR),
+                false,
+                "the saved jar again",
+            ),
+            (
+                JarSource::Stored,
+                "",
+                Some(OTHER_JAR),
+                true,
+                "another jar of the saved token",
+            ),
+            (JarSource::Stored, "", None, false, "no jar picked"),
+            (
+                JarSource::Pasted,
+                PASTED,
+                Some(SAVED_JAR),
+                true,
+                "a new token for the same jar",
+            ),
+            (
+                JarSource::Pasted,
+                "",
+                Some(OTHER_JAR),
+                false,
+                "pasted jars after the field was emptied",
+            ),
+        ];
+
+        for (source, field, picked, expected, case) in cases {
+            let view = open(cx, &rt, monobank, &Arc::new(saved_monobank()));
+            type_token(cx, &view, field);
+            view.update(cx, |view, cx| {
+                view.apply_jars(source, jars(&[SAVED_JAR, OTHER_JAR]), cx);
+                view.picked_jar = picked.map(str::to_owned);
+            });
+
+            assert_eq!(
+                view.read_with(cx, |view, cx| view.can_save(cx)),
+                expected,
+                "{case}"
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn monobank_without_a_saved_token_cannot_save_a_stored_listing(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let view = open(cx, &rt, monobank, &Arc::new(MemoryCredentials::default()));
+
+        view.update(cx, |view, cx| {
+            view.apply_jars(JarSource::Stored, jars(&[OTHER_JAR]), cx);
+        });
+
+        assert!(!view.read_with(cx, |view, cx| view.can_save(cx)));
+    }
+
+    #[gpui::test]
+    fn loading_jars_preselects_the_saved_jar_or_the_only_one(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let cases = [
+            (
+                &[OTHER_JAR, SAVED_JAR][..],
+                Some(SAVED_JAR),
+                "the saved jar stays selected",
+            ),
+            (
+                &[OTHER_JAR][..],
+                Some(OTHER_JAR),
+                "a single jar is selected for the user",
+            ),
+            (
+                &[OTHER_JAR, "jar-third"][..],
+                None,
+                "a choice between unsaved jars is left open",
+            ),
+        ];
+
+        for (listed, expected, case) in cases {
+            let view = open(cx, &rt, monobank, &Arc::new(saved_monobank()));
+
+            view.update(cx, |view, cx| {
+                view.apply_jars(JarSource::Stored, jars(listed), cx)
+            });
+
+            view.read_with(cx, |view, _| {
+                assert_eq!(view.picked_jar.as_deref(), expected, "{case}");
+                assert_eq!(view.outcome, None, "{case}");
+            });
+        }
+    }
+
+    #[gpui::test]
+    fn an_account_without_jars_is_reported_and_leaves_nothing_selected(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let view = open(cx, &rt, monobank, &Arc::new(saved_monobank()));
+        view.update(cx, |view, _| view.busy = Some(Busy::LoadingJars));
+
+        view.update(cx, |view, cx| {
+            view.apply_jars(JarSource::Stored, Vec::new(), cx)
+        });
+
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.picked_jar, None);
+            assert_eq!(view.busy, None);
+            assert_eq!(
+                view.outcome,
+                Some(Outcome::Problem(tr!("donation_jar_none")))
+            );
+        });
+    }
+
+    #[gpui::test]
+    fn editing_the_token_drops_jars_loaded_from_the_pasted_one_only(cx: &mut TestAppContext) {
+        let rt = runtime();
+        for (source, kept) in [(JarSource::Pasted, false), (JarSource::Stored, true)] {
+            let view = open(cx, &rt, monobank, &Arc::new(saved_monobank()));
+            type_token(cx, &view, PASTED);
+            view.update(cx, |view, cx| {
+                view.apply_jars(source, jars(&[OTHER_JAR]), cx);
+            });
+
+            type_token(cx, &view, "pasted-token-edited");
+
+            view.read_with(cx, |view, _| {
+                assert_eq!(!view.jars.is_empty(), kept, "{source:?}");
+                assert_eq!(view.picked_jar.is_some(), kept, "{source:?}");
+            });
+        }
+    }
+
+    #[gpui::test]
+    fn confirming_a_removal_nobody_asked_for_removes_nothing(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let vault = Arc::new(saved_donatello());
+        let view = open(cx, &rt, donatello, &vault);
+        let background_tasks = alive_tasks(&rt);
+
+        view.update(cx, |view, cx| view.confirm_remove(cx));
+        settle_until_tasks_drain_to(cx, &rt, background_tasks);
+
+        assert!(!vault.ids().is_empty(), "the stored token was deleted");
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.has_token, Some(true));
+            assert_eq!(view.busy, None);
+        });
+    }
+
+    #[gpui::test]
+    fn a_requested_removal_once_confirmed_forgets_the_token_and_the_jar(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let vault = Arc::new(saved_monobank());
+        let view = open(cx, &rt, monobank, &vault);
+
+        view.update(cx, |view, cx| {
+            view.request_remove(cx);
+            view.confirm_remove(cx);
+        });
+        settle_until(cx, &rt, |cx| {
+            view.read_with(cx, |view, _| view.has_token == Some(false))
+        });
+
+        assert!(vault.ids().is_empty());
+        view.read_with(cx, |view, _| assert_eq!(view.shown_jar(), None));
+    }
+}

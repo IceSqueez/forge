@@ -404,6 +404,32 @@ settings_about_field_gpu_backend = Графічний бекенд
 settings_about_field_displays = Дисплеї
 settings_about_field_audio_outputs = Аудіовиходи
 settings_about_field_data_dir = Розмір теки даних
+settings_about_value_build_dev = розробка
+settings_about_value_build_release = реліз
+settings_about_value_build_release_install = реліз, { $install }
+settings_about_value_install_mac_bundle = застосунок macOS
+settings_about_value_install_windows_user = інсталятор Windows (для користувача)
+settings_about_value_install_windows_portable = портативна версія Windows
+settings_about_value_install_appimage = AppImage
+settings_about_value_install_development = збірка для розробки
+settings_about_value_install_unsupported = непідтримувана платформа
+settings_about_value_install_unknown = невідоме розташування
+settings_about_value_install_mac_translocated = застосунок macOS (перенесений системою)
+settings_about_value_install_read_only = розташування лише для читання
+settings_about_value_install_windows_machine = інсталятор Windows (для всіх користувачів)
+settings_about_value_install_system_package = системний пакет
+settings_about_value_cpu_cores = { $model }, логічних ядер: { $count }
+settings_about_value_displays_scaled = { $displays } (масштаб вікна { $scale })
+settings_about_value_audio_none = немає
+settings_about_value_audio_devices = { $count ->
+    [one] { $count } пристрій; forge використовує: { $speech }
+    [few] { $count } пристрої; forge використовує: { $speech }
+    [many] { $count } пристроїв; forge використовує: { $speech }
+   *[other] { $count } пристроїв; forge використовує: { $speech }
+}
+settings_about_value_system_default = системний типовий
+settings_about_value_system_default_device = системний типовий ({ $device })
+settings_about_value_chosen_missing = { $fallback } - вибраний пристрій не під'єднано
 settings_about_report_problem = Повідомити про проблему
 crash_notice = Минулого разу forge несподівано закрилася.
 crash_notice_report = Повідомити
@@ -1033,7 +1059,6 @@ action_editor_test_run_status_queued = у черзі
 action_editor_test_run_status_running = виконується...
 action_editor_test_run_status_failed = помилка
 action_editor_test_run_status_skipped = пропущено
-action_editor_step_wait_ms = { $ms } мс
 action_editor_test_run_status_ms = { $ms } мс
 action_editor_test_run_failed_banner = Збій на кроці { $step } · { $name }
 action_editor_test_run_completed = Виконано кроків: { $count } · помилок: { $errors }
@@ -1068,18 +1093,7 @@ action_editor_trigger_picker_footer_hint = Створює новий триге�
 
 ## Редактор дій - назви типів кроків
 
-action_editor_kind_send_chat = Надіслати в чат
-action_editor_kind_set_global = Встановити змінну
-action_editor_kind_delay = Затримка
-action_editor_kind_log = Журнал
-action_editor_kind_play_sound = Відтворити звук
 action_editor_clip_missing = Звук не знайдено
-action_editor_kind_speak = Синтез мовлення
-action_editor_kind_read_file = Читати файл
-action_editor_kind_random_int = Випадкове число
-action_editor_kind_incr_global = Збільшити змінну
-action_editor_kind_run_script = Запустити скрипт
-action_editor_global_increment_detail = { $name } += { $amount } (збережено)
 action_editor_kind_sub_action = Крок
 
 ## Реєстр тригерів - заголовок / фільтри
@@ -1801,7 +1815,13 @@ queues_mode_drain_tooltip = Продовжувати обробку накопи
 queues_mode_hold_tooltip = Зупинити обробку, але й далі приймати нові дії в чергу
 queues_mode_active_tooltip = Повернути до виконання
 queues_free_tooltip = Прибрати все, що чекає - дія, яка вже виконується, завершиться, а режим лишиться той самий
-queues_free_feedback = Прибрано дії з очікування в черзі «{ $name }».
+queues_free_feedback = { $count ->
+    [0] У черзі «{ $name }» нічого не чекало.
+    [one] Прибрано { $count } дію з очікування в черзі «{ $name }».
+    [few] Прибрано { $count } дії з очікування в черзі «{ $name }».
+    [many] Прибрано { $count } дій з очікування в черзі «{ $name }».
+   *[other] Прибрано { $count } дій з очікування в черзі «{ $name }».
+}
 queues_free_failed = Не вдалося звільнити чергу: { $error }
 queues_free_confirm_title = Прибрати дії з очікування
 queues_free_confirm_body = Усе, що чекає в цій черзі, буде прибрано. Дія, що виконується, завершиться. Це не можна скасувати.

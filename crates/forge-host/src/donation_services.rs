@@ -1,82 +1,147 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use forge_donatello::{DONATELLO_POLL_INTERVAL_SECS, DonatelloProvider};
-use forge_monobank::MonobankProvider;
-use forge_platform_core::{BuiltinHealth, BuiltinStatus};
-use forge_storage::{SettingsRepo, read_stored_setting};
+use forge_donatello::DONATELLO_POLL_INTERVAL_SECS;
+use forge_platform_core::{AdjustablePoll, BuiltinHealth, BuiltinStatus, DonationAccountSetup};
+use forge_storage::{
+    Setting, SettingsRepo, StorageError, Tally, read_stored_setting, write_setting,
+};
 use forge_types::IntegrationId;
 
-#[derive(Clone, Default)]
-pub struct DonationServices {
-    pub donatello: Option<Arc<DonatelloProvider>>,
-    pub monobank: Option<Arc<MonobankProvider>>,
+#[derive(Clone)]
+struct PollControl {
+    setting: &'static Setting<Tally>,
+    poll: Arc<dyn AdjustablePoll>,
 }
 
 #[derive(Clone)]
-pub enum DonationService {
-    Donatello(Arc<DonatelloProvider>),
-    Monobank(Arc<MonobankProvider>),
+pub struct DonationService {
+    status: Arc<dyn BuiltinStatus>,
+    health: Arc<dyn BuiltinHealth>,
+    setup: Arc<dyn DonationAccountSetup>,
+    poll: Option<PollControl>,
 }
 
 impl DonationService {
-    pub fn id(&self) -> &IntegrationId {
-        match self {
-            Self::Donatello(provider) => BuiltinStatus::id(provider.as_ref()),
-            Self::Monobank(provider) => BuiltinStatus::id(provider.as_ref()),
+    pub fn of<P>(provider: Arc<P>) -> Self
+    where
+        P: BuiltinStatus + BuiltinHealth + DonationAccountSetup + 'static,
+    {
+        Self {
+            status: provider.clone(),
+            health: provider.clone(),
+            setup: provider,
+            poll: None,
         }
+    }
+
+    #[must_use]
+    pub fn with_adjustable_poll(
+        mut self,
+        setting: &'static Setting<Tally>,
+        poll: Arc<dyn AdjustablePoll>,
+    ) -> Self {
+        self.poll = Some(PollControl { setting, poll });
+        self
+    }
+
+    pub fn id(&self) -> &IntegrationId {
+        self.status.id()
     }
 
     pub fn status(&self) -> Arc<dyn BuiltinStatus> {
-        match self {
-            Self::Donatello(provider) => Arc::clone(provider) as Arc<dyn BuiltinStatus>,
-            Self::Monobank(provider) => Arc::clone(provider) as Arc<dyn BuiltinStatus>,
-        }
+        Arc::clone(&self.status)
     }
 
     pub fn health(&self) -> Arc<dyn BuiltinHealth> {
-        match self {
-            Self::Donatello(provider) => Arc::clone(provider) as Arc<dyn BuiltinHealth>,
-            Self::Monobank(provider) => Arc::clone(provider) as Arc<dyn BuiltinHealth>,
+        Arc::clone(&self.health)
+    }
+
+    pub fn setup(&self) -> Arc<dyn DonationAccountSetup> {
+        Arc::clone(&self.setup)
+    }
+
+    pub async fn shown_poll_interval(&self, settings: &dyn SettingsRepo) -> Option<Duration> {
+        let control = self.poll.as_ref()?;
+        Some(
+            stored_poll_interval(control.setting, settings)
+                .await
+                .map_or(control.poll.default_interval(), |stored| {
+                    control.poll.bounded_interval(stored)
+                }),
+        )
+    }
+
+    pub fn apply_poll_interval(&self, requested: Duration) -> Option<Duration> {
+        let control = self.poll.as_ref()?;
+        Some(control.poll.apply_interval(requested))
+    }
+
+    pub async fn keep_poll_interval(
+        &self,
+        settings: &dyn SettingsRepo,
+        interval: Duration,
+    ) -> Result<(), StorageError> {
+        match &self.poll {
+            Some(control) => write_setting(settings, control.setting, &interval.as_secs()).await,
+            None => Ok(()),
         }
     }
+
+    pub async fn restore_poll_interval(&self, settings: &dyn SettingsRepo) {
+        if let Some(control) = &self.poll
+            && let Some(interval) = stored_poll_interval(control.setting, settings).await
+        {
+            control.poll.apply_interval(interval);
+        }
+    }
+}
+
+#[derive(Clone, Default)]
+pub struct DonationServices {
+    services: Vec<DonationService>,
 }
 
 impl DonationServices {
-    pub fn all(&self) -> Vec<DonationService> {
-        let donatello = self.donatello.clone().map(DonationService::Donatello);
-        let monobank = self.monobank.clone().map(DonationService::Monobank);
-        donatello.into_iter().chain(monobank).collect()
+    pub fn register(&mut self, service: DonationService) {
+        self.services.push(service);
+    }
+
+    pub fn all(&self) -> &[DonationService] {
+        &self.services
     }
 
     pub fn service(&self, id: &IntegrationId) -> Option<DonationService> {
-        self.all().into_iter().find(|service| service.id() == id)
+        self.services
+            .iter()
+            .find(|service| service.id() == id)
+            .cloned()
     }
 }
 
-pub async fn stored_donatello_poll_interval(settings: &dyn SettingsRepo) -> Option<Duration> {
-    match read_stored_setting(settings, &DONATELLO_POLL_INTERVAL_SECS).await {
+pub fn donatello_service(provider: Arc<forge_donatello::DonatelloProvider>) -> DonationService {
+    DonationService::of(Arc::clone(&provider))
+        .with_adjustable_poll(&DONATELLO_POLL_INTERVAL_SECS, provider)
+}
+
+async fn stored_poll_interval(
+    setting: &'static Setting<Tally>,
+    settings: &dyn SettingsRepo,
+) -> Option<Duration> {
+    match read_stored_setting(settings, setting).await {
         Ok(stored) => stored.map(Duration::from_secs),
         Err(error) => {
-            tracing::warn!(error = %error, "could not read the Donatello poll interval");
+            tracing::warn!(error = %error, "could not read the poll interval");
             None
         }
-    }
-}
-
-pub async fn restore_donatello_poll_interval(
-    provider: &DonatelloProvider,
-    settings: &dyn SettingsRepo,
-) {
-    if let Some(interval) = stored_donatello_poll_interval(settings).await {
-        provider.set_poll_interval(interval);
     }
 }
 
 #[cfg(test)]
 mod tests {
     use forge_donatello::{
-        DEFAULT_POLL_INTERVAL, DonatelloConfig, MAX_POLL_INTERVAL, MIN_POLL_INTERVAL,
+        DEFAULT_POLL_INTERVAL, DonatelloConfig, DonatelloProvider, MAX_POLL_INTERVAL,
+        MIN_POLL_INTERVAL,
     };
     use forge_platform_core::{DonationProvider, PlatformEndpoints};
     use forge_storage::CredentialsRepo;
@@ -94,13 +159,15 @@ mod tests {
         let gateway =
             forge_donatello::donatello_gateway(&config, forge_donatello::default_rate_limiter())
                 .expect("the gateway builds offline");
-        let provider = DonatelloProvider::new(
+        let provider = Arc::new(DonatelloProvider::new(
             config,
             Arc::clone(&backend) as Arc<dyn CredentialsRepo>,
             gateway,
-        );
+        ));
 
-        restore_donatello_poll_interval(&provider, backend.as_ref()).await;
+        donatello_service(Arc::clone(&provider))
+            .restore_poll_interval(backend.as_ref())
+            .await;
 
         let mut feed = provider.donations();
         let first = feed.next().await;

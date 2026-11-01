@@ -1,6 +1,7 @@
 use forge_platform_core::{
-    CatalogLabel, ConnectionAffordance, IntegrationCatalogGroup, IntegrationCategory,
-    IntegrationDeclaration, IntegrationIdentity, IntegrationTint, SignInRoute, TileMark,
+    CatalogLabel, ConnectionAffordance, ConnectionStripMark, IntegrationCatalogGroup,
+    IntegrationCategory, IntegrationDeclaration, IntegrationIdentity, IntegrationTint, SignInRoute,
+    TileMark,
 };
 use forge_types::IntegrationId;
 
@@ -26,5 +27,9 @@ pub const VTUBE_INTEGRATION: IntegrationDeclaration = IntegrationDeclaration {
         step_tint: IntegrationTint::AccentTeal,
         trigger_tint: IntegrationTint::AccentTeal,
     },
+    connection_strip: Some(ConnectionStripMark {
+        label: "VTube",
+        dot_tint: IntegrationTint::Warning,
+    }),
     disclaimer: None,
 };

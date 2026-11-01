@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 
+use crate::integration::IntegrationId;
 use crate::message::{MessageRef, UNKNOWN_CHAT_TARGET, VerbatimText};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -33,6 +34,10 @@ impl PlatformId {
         Self::ALL
             .into_iter()
             .find(|platform| platform.as_str().eq_ignore_ascii_case(raw))
+    }
+
+    pub const fn integration_id(self) -> IntegrationId {
+        IntegrationId::from_static(self.as_str())
     }
 
     pub const fn supports_whispers(self) -> bool {

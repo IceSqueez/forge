@@ -34,21 +34,31 @@ pub(crate) fn syntax_runs(
         .collect()
 }
 
-pub fn highlighted_text(
+pub type SyntaxHighlights = Vec<(Range<usize>, HighlightStyle)>;
+
+pub fn syntax_highlights(
     language: Language,
-    text: impl Into<SharedString>,
+    text: &str,
     palette: &ForgePalette,
-) -> StyledText {
-    let text = text.into();
+) -> SyntaxHighlights {
     let mut offset = 0usize;
-    let highlights: Vec<(Range<usize>, HighlightStyle)> = syntax_runs(language, &text, palette)
+    syntax_runs(language, text, palette)
         .into_iter()
         .map(|(len, color)| {
             let start = offset;
             offset += len;
             (start..offset, HighlightStyle::from(color))
         })
-        .collect();
+        .collect()
+}
+
+pub fn highlighted_text(
+    language: Language,
+    text: impl Into<SharedString>,
+    palette: &ForgePalette,
+) -> StyledText {
+    let text = text.into();
+    let highlights = syntax_highlights(language, &text, palette);
     StyledText::new(text).with_highlights(highlights)
 }
 

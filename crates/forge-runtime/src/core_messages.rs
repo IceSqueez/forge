@@ -65,6 +65,10 @@ pub(crate) const CONDITION_FAILED: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "condition_failed");
 pub(crate) const FIELD_REQUIRED: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "field_required");
+pub(crate) const STEP_WAIT_DETAIL: MessageCode =
+    MessageCode::from_static(CORE_NAMESPACE, "step_wait_detail");
+pub(crate) const STEP_INCREMENT_DETAIL: MessageCode =
+    MessageCode::from_static(CORE_NAMESPACE, "step_increment_detail");
 pub(crate) const FILE_PATH_EMPTY: MessageCode =
     MessageCode::from_static(CORE_NAMESPACE, "file_path_empty");
 pub(crate) const FILE_PATH_ABSOLUTE: MessageCode =
@@ -213,6 +217,8 @@ const COUNT_CONDITION_ARG: &str = "count";
 pub const CORE_MESSAGES: MessageCatalog = MessageCatalog {
     namespace: CORE_NAMESPACE,
     codes: &[
+        STEP_WAIT_DETAIL,
+        STEP_INCREMENT_DETAIL,
         UNKNOWN_ACTION,
         UNKNOWN_TRIGGER_INSTANCE,
         ACTION_NESTING_TOO_DEEP,
@@ -433,6 +439,16 @@ pub(crate) fn condition_failed(cause: impl Display) -> MessageRef {
 
 pub(crate) fn field_required(field: &str) -> MessageRef {
     MessageRef::new(FIELD_REQUIRED).with_arg(FIELD_ARG, verbatim(field))
+}
+
+pub(crate) fn step_wait_detail(ms: i64) -> MessageRef {
+    MessageRef::new(STEP_WAIT_DETAIL).with_arg("ms", ms)
+}
+
+pub(crate) fn step_increment_detail(name: &str, amount: i64) -> MessageRef {
+    MessageRef::new(STEP_INCREMENT_DETAIL)
+        .with_arg(NAME_ARG, VerbatimText::new(name))
+        .with_arg(AMOUNT_ARG, amount)
 }
 
 pub(crate) fn file_path_empty() -> MessageRef {
@@ -698,6 +714,8 @@ mod tests {
 
     fn every_constructor() -> Vec<MessageRef> {
         vec![
+            step_wait_detail(1),
+            step_increment_detail("a", 1),
             unknown_action(ActionId::new()),
             unknown_trigger_instance(TriggerInstanceId::new()),
             action_nesting_too_deep(),

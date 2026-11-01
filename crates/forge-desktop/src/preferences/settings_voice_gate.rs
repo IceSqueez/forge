@@ -1,0 +1,686 @@
+use std::sync::Arc;
+use std::time::Duration;
+
+use forge_audio::{
+    DeviceId, DeviceInfo, VoiceGateConfig, VoiceGateState, pick_default_input_device,
+};
+use forge_components::{
+    ActivePresentation, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent,
+    Radius, SettingRow, Spacing, TextInput, drive_overlay_focus, ghost_button, icon_button, radius,
+    setting_block, setting_choice_trigger, setting_row, setting_rows, spacing, toggle, tr,
+};
+use forge_storage::{DataProvider, SettingsRepo, VoiceGateSettings};
+use gpui::{
+    AnyElement, ClickEvent, Context, Entity, FocusHandle, Pixels, Subscription, Window, div,
+    prelude::*, px, relative,
+};
+
+use crate::app::async_bridge::{self, ErrorSink, Loadable};
+use crate::app::window_presence::PresenceGate;
+use crate::audio::device_choice::{
+    DeviceDirection, DevicePickerHandlers, DevicePickerIds, device_id_at, device_index,
+    device_picker_overlay, enumerate_devices, selected_device_label,
+};
+use crate::shared::load_notice::{LoadNotice, NoticeWidth, load_notice};
+use crate::shared::repo_failure::RepoFailure;
+use forge_host::voice_gate::VoiceGateOwner;
+
+const METER_WIDTH: Pixels = px(72.0);
+const METER_HEIGHT: Pixels = px(6.0);
+const SLIDER_WIDTH: Pixels = px(140.0);
+const READOUT_WIDTH: Pixels = px(38.0);
+const HOLD_INPUT_WIDTH: Pixels = px(96.0);
+
+const LEVEL_TICK: Duration = Duration::from_millis(100);
+
+const HOLD_MIN_MS: u32 = 0;
+const HOLD_MAX_MS: u32 = 10_000;
+
+pub(crate) struct SettingsVoiceGateView {
+    backend: Arc<dyn DataProvider>,
+    rt_handle: tokio::runtime::Handle,
+    owner: Arc<VoiceGateOwner>,
+    enabled: bool,
+    devices: Vec<DeviceInfo>,
+    selected_idx: usize,
+    selected_id: Option<String>,
+    threshold: f32,
+    hold_ms: u32,
+    hold_input: Entity<TextInput>,
+    hold_invalid: bool,
+    level: f32,
+    gate_state: Option<VoiceGateState>,
+    devices_load: Loadable<()>,
+    persist_error: Option<String>,
+    picker_open: bool,
+    overlay_focus: FocusHandle,
+    focus_restore: Option<FocusHandle>,
+    active: bool,
+    ticking: bool,
+    devices_gen: async_bridge::Generation,
+    threshold_debounce: async_bridge::Debounced,
+    hold_debounce: async_bridge::Debounced,
+    _subs: Vec<Subscription>,
+}
+
+impl SettingsVoiceGateView {
+    pub(crate) fn new(
+        backend: Arc<dyn DataProvider>,
+        rt_handle: tokio::runtime::Handle,
+        owner: Arc<VoiceGateOwner>,
+        initial_active: bool,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        let defaults = VoiceGateSettings::default();
+        let hold_input = cx.new(|cx| {
+            let mut input = TextInput::new(tr!("settings_voice_gate_hold_placeholder"), cx)
+                .with_font_size(FONT_SM);
+            input.set_content(defaults.hold_ms.to_string(), cx);
+            input
+        });
+        let subs = vec![cx.subscribe(
+            &hold_input,
+            |this, _input, event: &InputEvent, cx| match event {
+                InputEvent::Changed(text) => this.commit_hold(text.as_ref(), cx),
+                InputEvent::Submitted(text) => this.commit_hold(text.as_ref(), cx),
+                InputEvent::Cancelled | InputEvent::Blurred(_) => {}
+            },
+        )];
+
+        let mut view = Self {
+            backend,
+            rt_handle,
+            owner,
+            enabled: defaults.enabled,
+            devices: Vec::new(),
+            selected_idx: 0,
+            selected_id: defaults.input_device_id,
+            threshold: defaults.threshold,
+            hold_ms: defaults.hold_ms,
+            hold_input,
+            hold_invalid: false,
+            level: 0.0,
+            gate_state: None,
+            devices_load: Loadable::Loading,
+            persist_error: None,
+            picker_open: false,
+            overlay_focus: cx.focus_handle(),
+            focus_restore: None,
+            active: initial_active,
+            ticking: false,
+            devices_gen: async_bridge::Generation::default(),
+            threshold_debounce: async_bridge::Debounced::new(async_bridge::SLIDER_PERSIST_DEBOUNCE),
+            hold_debounce: async_bridge::Debounced::new(async_bridge::SLIDER_PERSIST_DEBOUNCE),
+            _subs: subs,
+        };
+        view.load(false, cx);
+        if initial_active {
+            view.read_gate(cx);
+            view.ensure_ticker(cx);
+        }
+        view
+    }
+
+    pub(crate) fn set_active(&mut self, active: bool, cx: &mut Context<Self>) {
+        if self.active == active {
+            return;
+        }
+        self.active = active;
+        if active {
+            self.read_gate(cx);
+            self.ensure_ticker(cx);
+        } else {
+            self.level = 0.0;
+            cx.notify();
+        }
+    }
+
+    fn load(&mut self, uncached: bool, cx: &mut Context<Self>) {
+        self.devices_load = Loadable::Loading;
+        let ticket = self.devices_gen.next();
+        let settings = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
+        async_bridge::run_async(
+            &self.rt_handle,
+            load_devices_and_settings(settings, uncached),
+            move |this, result, cx| {
+                if this.devices_gen.is_current(ticket) {
+                    this.apply_loaded(result, cx);
+                }
+            },
+            cx,
+        );
+        cx.notify();
+    }
+
+    fn apply_loaded(
+        &mut self,
+        result: Result<(Vec<DeviceInfo>, VoiceGateSettings), RepoFailure>,
+        cx: &mut Context<Self>,
+    ) {
+        self.devices_load = Loadable::settled(result.as_ref().map(|_| ()).map_err(Clone::clone));
+        match result {
+            Ok((devices, settings)) => {
+                self.devices = devices;
+                self.enabled = settings.enabled;
+                self.threshold = settings.threshold;
+                self.hold_ms = settings.hold_ms;
+                self.hold_invalid = false;
+                self.hold_input.update(cx, |input, cx| {
+                    input.set_invalid(false, cx);
+                    input.set_content(settings.hold_ms.to_string(), cx);
+                });
+                let want = self.selected_id.clone().or(settings.input_device_id);
+                self.selected_idx = resolve_input_idx(&self.devices, want.as_deref());
+                self.selected_id = device_id_at(&self.devices, self.selected_idx);
+            }
+            Err(message) => {
+                tracing::warn!(error = %message, "failed to load voice gate settings");
+            }
+        }
+        self.read_gate(cx);
+        self.ensure_ticker(cx);
+    }
+
+    fn refresh(&mut self, cx: &mut Context<Self>) {
+        self.load(true, cx);
+    }
+
+    fn config(&self) -> VoiceGateConfig {
+        VoiceGateConfig {
+            device: self.selected_id.clone().map(DeviceId::new),
+            threshold: self.threshold,
+            hold: Duration::from_millis(u64::from(self.hold_ms)),
+        }
+    }
+
+    fn read_gate(&mut self, cx: &mut Context<Self>) {
+        self.gate_state = self.owner.state();
+        self.level = if self.active { self.owner.level() } else { 0.0 };
+        cx.notify();
+    }
+
+    fn ensure_ticker(&mut self, cx: &mut Context<Self>) {
+        if self.ticking || !self.active || !self.owner.is_running() {
+            return;
+        }
+        self.ticking = true;
+        let mut presence = PresenceGate::of(cx);
+        cx.spawn(async move |this, cx| {
+            loop {
+                cx.background_executor().timer(LEVEL_TICK).await;
+                presence.until_visible().await;
+                let keep_going = this.update(cx, |this, cx| {
+                    if this.active && this.owner.is_running() {
+                        this.read_gate(cx);
+                        true
+                    } else {
+                        this.ticking = false;
+                        this.read_gate(cx);
+                        false
+                    }
+                });
+                match keep_going {
+                    Ok(true) => continue,
+                    _ => break,
+                }
+            }
+        })
+        .detach();
+    }
+
+    fn toggle_enabled(&mut self, cx: &mut Context<Self>) {
+        self.enabled = !self.enabled;
+        self.persist_error = None;
+        if self.enabled {
+            self.owner.start(self.config());
+        } else {
+            self.owner.stop();
+        }
+        let settings = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
+        let enabled = self.enabled;
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move {
+                forge_storage::set_voice_gate_enabled(settings.as_ref(), enabled)
+                    .await
+                    .map_err(RepoFailure::from)
+            },
+            |this, result, cx| this.apply_persist_result(result, cx),
+            cx,
+        );
+        self.read_gate(cx);
+        self.ensure_ticker(cx);
+    }
+
+    fn retry_gate(&mut self, cx: &mut Context<Self>) {
+        if !self.enabled {
+            return;
+        }
+        self.owner.start(self.config());
+        self.read_gate(cx);
+        self.ensure_ticker(cx);
+    }
+
+    fn select_device(&mut self, idx: usize, cx: &mut Context<Self>) {
+        self.selected_idx = idx;
+        self.selected_id = device_id_at(&self.devices, idx);
+        self.persist_error = None;
+        self.picker_open = false;
+        self.owner.reconfigure(self.config());
+        let settings = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
+        let device_id = self.selected_id.clone();
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move {
+                forge_storage::set_voice_gate_input_device_id(settings.as_ref(), device_id)
+                    .await
+                    .map_err(RepoFailure::from)
+            },
+            |this, result, cx| this.apply_persist_result(result, cx),
+            cx,
+        );
+        self.read_gate(cx);
+    }
+
+    fn set_threshold(&mut self, threshold: f32, cx: &mut Context<Self>) {
+        self.threshold = threshold.clamp(0.0, 1.0);
+        self.owner.reconfigure(self.config());
+        let settings = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
+        let value = self.threshold;
+        self.threshold_debounce.schedule_reporting(
+            &self.rt_handle,
+            tr!("settings_persist_failed"),
+            async move { forge_storage::set_voice_gate_threshold(settings.as_ref(), value).await },
+            ErrorSink::Toast,
+            cx,
+        );
+        cx.notify();
+    }
+
+    fn commit_hold(&mut self, text: &str, cx: &mut Context<Self>) {
+        let parsed = text
+            .trim()
+            .parse::<u32>()
+            .ok()
+            .filter(|v| (HOLD_MIN_MS..=HOLD_MAX_MS).contains(v));
+        self.hold_invalid = parsed.is_none();
+        let invalid = self.hold_invalid;
+        self.hold_input
+            .update(cx, |input, cx| input.set_invalid(invalid, cx));
+        if let Some(hold_ms) = parsed {
+            self.hold_ms = hold_ms;
+            self.owner.reconfigure(self.config());
+            let settings = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
+            self.hold_debounce.schedule_reporting(
+                &self.rt_handle,
+                tr!("settings_persist_failed"),
+                async move { forge_storage::set_voice_gate_hold_ms(settings.as_ref(), hold_ms).await },
+                ErrorSink::Toast,
+                cx,
+            );
+        }
+        cx.notify();
+    }
+
+    fn apply_persist_result(&mut self, result: Result<(), RepoFailure>, cx: &mut Context<Self>) {
+        if let Err(message) = result {
+            tracing::warn!(error = %message, "failed to persist voice gate settings");
+            self.persist_error = Some(message.text());
+            cx.notify();
+        }
+    }
+
+    fn toggle_picker(&mut self, cx: &mut Context<Self>) {
+        self.picker_open = !self.picker_open;
+        cx.notify();
+    }
+
+    fn close_picker(&mut self, cx: &mut Context<Self>) {
+        if self.picker_open {
+            self.picker_open = false;
+            cx.notify();
+        }
+    }
+
+    fn device_section(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let notice = load_notice(
+            &self.devices_load,
+            LoadNotice {
+                id: "settings-voice-gate-devices-load",
+                loading: tr!("settings_voice_gate_scanning"),
+                width: NoticeWidth::Pane,
+            },
+            cx.listener(|this, _: &ClickEvent, _, cx| this.load(true, cx)),
+            palette,
+            density,
+            cx,
+        );
+        if let Some(notice) = notice {
+            return notice;
+        }
+        self.picker_row(palette, density, cx)
+    }
+
+    fn picker_row(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let trigger = setting_choice_trigger(
+            "settings-voice-gate-device-trigger",
+            selected_device_label(&self.devices, self.selected_idx),
+            palette,
+            cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_picker(cx)),
+            density,
+            cx,
+        );
+
+        let mut field = div().relative().flex_1().min_w(px(0.0)).child(trigger);
+        if self.picker_open {
+            field = field.child(self.picker_overlay(palette, cx));
+        }
+
+        let refresh_btn = icon_button(Icon::Refresh, palette).on_click(
+            "settings-voice-gate-refresh",
+            cx.listener(|this, _: &ClickEvent, _, cx| this.refresh(cx)),
+        );
+
+        div()
+            .w_full()
+            .flex()
+            .flex_row()
+            .items_center()
+            .gap(spacing(Spacing::Sm, density))
+            .child(field)
+            .child(refresh_btn)
+            .into_any_element()
+    }
+
+    fn picker_overlay(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
+        device_picker_overlay(
+            DevicePickerIds {
+                list: "settings-voice-gate-device-list",
+                row: "settings-voice-gate-device",
+            },
+            &self.devices,
+            self.selected_idx,
+            DevicePickerHandlers {
+                select: Self::select_device,
+                close: Self::close_picker,
+            },
+            &self.overlay_focus,
+            palette,
+            cx,
+        )
+    }
+
+    fn threshold_row(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &mut Context<Self>,
+    ) -> SettingRow {
+        let control = div()
+            .flex()
+            .flex_row()
+            .items_center()
+            .gap(spacing(Spacing::Sm, density))
+            .child(div().w(SLIDER_WIDTH).child(
+                forge_components::slider(self.threshold, 0.0, 1.0, palette).on_change(
+                    "settings-voice-gate-threshold",
+                    cx.listener(|this, value: &f32, _, cx| this.set_threshold(*value, cx)),
+                ),
+            ))
+            .child(
+                div()
+                    .w(READOUT_WIDTH)
+                    .font_family(cx.mono_family())
+                    .text_size(FONT_XXS)
+                    .text_color(palette.text_muted)
+                    .child(format!("{}%", (self.threshold * 100.0).round() as u32)),
+            )
+            .child(self.level_meter(palette));
+
+        setting_row(
+            tr!("settings_voice_gate_threshold_label"),
+            Some(tr!("settings_voice_gate_threshold_hint").into()),
+            control,
+            palette,
+            density,
+        )
+    }
+
+    fn level_meter(&self, palette: &ForgePalette) -> impl IntoElement {
+        let level = self.level.clamp(0.0, 1.0);
+        let fill = if level >= self.threshold {
+            palette.success
+        } else {
+            palette.info
+        };
+        div()
+            .w(METER_WIDTH)
+            .h(METER_HEIGHT)
+            .rounded(radius(Radius::Pill))
+            .bg(palette.surface_overlay)
+            .child(
+                div()
+                    .h_full()
+                    .w(relative(level))
+                    .rounded(radius(Radius::Pill))
+                    .bg(fill),
+            )
+    }
+
+    fn hold_row(&self, palette: &ForgePalette, density: Density) -> SettingRow {
+        let row = setting_row(
+            tr!("settings_voice_gate_hold_label"),
+            Some(self.hold_hint().into()),
+            div().w(HOLD_INPUT_WIDTH).child(self.hold_input.clone()),
+            palette,
+            density,
+        );
+        if self.hold_invalid {
+            row.hint_color(palette.danger)
+        } else {
+            row
+        }
+    }
+
+    fn hold_hint(&self) -> String {
+        if self.hold_invalid {
+            tr!(
+                "settings_voice_gate_hold_range",
+                min = HOLD_MIN_MS.to_string(),
+                max = HOLD_MAX_MS.to_string()
+            )
+        } else {
+            tr!("settings_voice_gate_hold_hint")
+        }
+    }
+
+    fn state_line(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> impl IntoElement {
+        let density = cx.density();
+        let (text, color) = match &self.gate_state {
+            None => (tr!("settings_voice_gate_state_off"), palette.text_muted),
+            Some(VoiceGateState::Inactive) => (
+                tr!("settings_voice_gate_state_inactive"),
+                palette.text_secondary,
+            ),
+            Some(VoiceGateState::Active) => {
+                (tr!("settings_voice_gate_state_active"), palette.success)
+            }
+            Some(VoiceGateState::Unavailable(message)) => (
+                tr!("settings_voice_gate_state_unavailable", error = message),
+                palette.danger,
+            ),
+        };
+        let unavailable = matches!(self.gate_state, Some(VoiceGateState::Unavailable(_)));
+        let mut line = div()
+            .flex()
+            .items_center()
+            .gap(spacing(Spacing::Sm, density))
+            .font_family(cx.body_family())
+            .text_size(FONT_XS)
+            .text_color(color)
+            .child(text);
+        if unavailable {
+            line = line.child(
+                ghost_button(tr!("settings_voice_gate_retry"), palette).on_click(
+                    "settings-voice-gate-retry",
+                    cx.listener(|this, _: &ClickEvent, _, cx| this.retry_gate(cx)),
+                ),
+            );
+        }
+        line
+    }
+}
+
+impl Render for SettingsVoiceGateView {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        drive_overlay_focus(
+            self.picker_open,
+            &self.overlay_focus,
+            &mut self.focus_restore,
+            window,
+            cx,
+        );
+
+        let palette = cx.palette();
+        let density = cx.density();
+
+        let rows = setting_rows(&palette)
+            .row(setting_row(
+                tr!("settings_voice_gate_enable_label"),
+                Some(tr!("settings_voice_gate_enable_hint").into()),
+                toggle(self.enabled, &palette).on_click(
+                    "settings-voice-gate-enable",
+                    cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_enabled(cx)),
+                ),
+                &palette,
+                density,
+            ))
+            .row(
+                setting_row(
+                    tr!("settings_voice_gate_input_devices"),
+                    None,
+                    self.device_section(&palette, density, cx),
+                    &palette,
+                    density,
+                )
+                .stacked(),
+            )
+            .row(self.threshold_row(&palette, density, cx))
+            .row(self.hold_row(&palette, density))
+            .in_card(&palette);
+
+        let mut content = div()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Xs, density))
+            .child(rows)
+            .child(self.state_line(&palette, cx));
+
+        if let Some(message) = &self.persist_error {
+            content = content.child(
+                div()
+                    .font_family(cx.body_family())
+                    .text_size(FONT_SM)
+                    .text_color(palette.danger)
+                    .child(tr!("settings_voice_gate_persist_error", error = message)),
+            );
+        }
+
+        setting_block(
+            tr!("settings_voice_gate_title"),
+            None,
+            content,
+            &palette,
+            density,
+            cx,
+        )
+    }
+}
+
+fn resolve_input_idx(devices: &[DeviceInfo], want_id: Option<&str>) -> usize {
+    let wanted = want_id
+        .map(|want| DeviceId::new(want.to_owned()))
+        .filter(|want| devices.iter().any(|device| device.id == *want));
+    let chosen = wanted.or_else(|| pick_default_input_device(devices));
+    device_index(devices, chosen.as_ref())
+}
+
+async fn load_devices_and_settings(
+    settings: Arc<dyn SettingsRepo>,
+    uncached: bool,
+) -> Result<(Vec<DeviceInfo>, VoiceGateSettings), RepoFailure> {
+    let devices = enumerate_devices(DeviceDirection::Input, uncached).await?;
+    let stored = forge_storage::voice_gate_settings(settings.as_ref())
+        .await
+        .map_err(RepoFailure::from)?;
+    Ok((devices, stored))
+}
+
+#[cfg(test)]
+mod tests {
+    use gpui::TestAppContext;
+
+    use super::*;
+    use crate::test_support::{install_presentation, runtime, test_backend};
+
+    #[gpui::test]
+    fn retrying_a_switched_off_gate_does_not_start_a_monitor(cx: &mut TestAppContext) {
+        install_presentation(cx);
+        let rt = runtime();
+        let (backend, _writes) = test_backend();
+        let owner = Arc::new(VoiceGateOwner::new(rt.handle().clone(), None));
+        let view = cx.update(|cx| {
+            cx.new(|cx| {
+                SettingsVoiceGateView::new(
+                    backend,
+                    rt.handle().clone(),
+                    Arc::clone(&owner),
+                    false,
+                    cx,
+                )
+            })
+        });
+
+        view.update(cx, |view, cx| view.retry_gate(cx));
+
+        assert!(!owner.is_running());
+    }
+
+    fn device(id: &str, is_default: bool) -> DeviceInfo {
+        DeviceInfo {
+            id: DeviceId::new(id.to_owned()),
+            name: id.to_owned(),
+            is_default,
+        }
+    }
+
+    #[test]
+    fn the_input_selector_prefers_the_stored_device_then_the_os_default_then_the_first() {
+        let with_default = [device("a", false), device("b", true), device("c", false)];
+        let without_default = [device("a", false), device("c", false)];
+        for (devices, want, expected) in [
+            (&with_default[..], Some("c"), 2),
+            (&with_default[..], Some("unplugged"), 1),
+            (&with_default[..], None, 1),
+            (&without_default[..], Some("unplugged"), 0),
+            (&[][..], None, 0),
+        ] {
+            assert_eq!(
+                resolve_input_idx(devices, want),
+                expected,
+                "{want:?} among {} devices",
+                devices.len()
+            );
+        }
+    }
+}

@@ -1,7 +1,7 @@
 use forge_platform_core::{
-    CatalogLabel, ConnectionAffordance, IntegrationCatalogGroup, IntegrationCategory,
-    IntegrationDeclaration, IntegrationDisclaimer, IntegrationIdentity, IntegrationTint,
-    SignInRoute, TileMark,
+    BanListScope, CatalogLabel, ChatLimits, ConnectionAffordance, ConnectionStripMark,
+    IntegrationCatalogGroup, IntegrationCategory, IntegrationDeclaration, IntegrationDisclaimer,
+    IntegrationIdentity, IntegrationTint, SignInRoute, TileMark,
 };
 use forge_types::{IntegrationId, PlatformId};
 
@@ -25,8 +25,21 @@ pub const KICK_INTEGRATION: IntegrationDeclaration = IntegrationDeclaration {
         step_tint: IntegrationTint::PlatformBrand(PlatformId::Kick),
         trigger_tint: IntegrationTint::PlatformBrand(PlatformId::Kick),
     },
+    connection_strip: Some(ConnectionStripMark {
+        label: "Kick",
+        dot_tint: IntegrationTint::PlatformBrand(PlatformId::Kick),
+    }),
     disclaimer: Some(IntegrationDisclaimer {
         short_key: "integration_kick_disclaimer_short",
         full_key: "integration_kick_disclaimer",
     }),
+};
+
+const MAX_CHAT_MESSAGE_CHARS: usize = 500;
+
+pub const KICK_CHAT_LIMITS: ChatLimits = ChatLimits {
+    max_message_chars: MAX_CHAT_MESSAGE_CHARS,
+    replies_to_messages: false,
+    follow_lookup: false,
+    ban_list: BanListScope::SeenByForge,
 };

@@ -4,6 +4,7 @@ use forge_registry::{
     ProducedVariable, RunContext, StepCatalogEntry, StepTimer, SubActionCategory, SubActionIo,
     SubActionRunner, TypedField, ValueBounds, VariableField,
 };
+use forge_registry::{StepCardDetail, card_scalar, card_text, card_variable};
 use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant, VariantKind};
 use rand::RngExt;
 
@@ -76,6 +77,16 @@ impl StepCatalogEntry for CoreRandomIntRunner {
     fn icon_name(&self) -> &str {
         "dice"
     }
+
+    fn card_detail(&self, config: &SubActionConfig) -> Option<StepCardDetail> {
+        let min = card_scalar(config, RANDOM_INT_MIN_KEY);
+        let max = card_scalar(config, RANDOM_INT_MAX_KEY);
+        let target = card_text(config, TARGET_VAR_KEY).unwrap_or("");
+        Some(StepCardDetail::Text(format!(
+            "[{min}..{max}] \u{2192} {}",
+            card_variable(target)
+        )))
+    }
 }
 
 #[async_trait]
@@ -142,6 +153,37 @@ mod tests {
 
     fn text(value: &str) -> Variant {
         Variant::String(value.to_owned())
+    }
+
+    #[test]
+    fn the_card_shows_the_bounds_as_the_editor_stored_them() {
+        let text = |value: &str| Some(Variant::String(value.to_owned()));
+        for (min, max, expected) in [
+            (text("1"), text("100"), "[1..100] \u{2192} %roll%"),
+            (
+                Some(Variant::Int(1)),
+                Some(Variant::Int(100)),
+                "[1..100] \u{2192} %roll%",
+            ),
+            (text("%low%"), text("-5"), "[%low%..-5] \u{2192} %roll%"),
+            (None, None, "[..] \u{2192} %roll%"),
+        ] {
+            let mut config = SubActionConfig::new();
+            for (key, bound) in [(RANDOM_INT_MIN_KEY, min), (RANDOM_INT_MAX_KEY, max)] {
+                if let Some(bound) = bound {
+                    config.insert(key.to_owned(), bound);
+                }
+            }
+            config.insert(
+                TARGET_VAR_KEY.to_owned(),
+                Variant::String("roll".to_owned()),
+            );
+
+            assert_eq!(
+                CoreRandomIntRunner.card_detail(&config),
+                Some(StepCardDetail::Text(expected.to_owned()))
+            );
+        }
     }
 
     fn cfg(min: Variant, max: Variant) -> SubActionConfig {

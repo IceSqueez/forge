@@ -171,7 +171,7 @@ pub fn resolve_in_language(language: CatalogLanguage, app_sources: &[&str], key:
     format_message(&bundle, key, None).unwrap_or_else(|| key.to_owned())
 }
 
-pub fn install_bundle(bundle: Rc<ThreadBundle>) {
+pub(crate) fn install_bundle(bundle: Rc<ThreadBundle>) {
     BUNDLE.with(|cell| {
         *cell.borrow_mut() = Some(bundle);
     });
@@ -282,27 +282,19 @@ pub(crate) fn relative_within_week(elapsed: time::Duration) -> Option<String> {
     let secs = elapsed.whole_seconds().max(0) as u64;
 
     if secs < 60 {
-        let args = ArgsBuilder::new()
-            .set("count", i64::try_from(secs).unwrap_or(i64::MAX))
-            .build();
+        let args = TrArgs::new().set("count", i64::try_from(secs).unwrap_or(i64::MAX));
         Some(tr_lookup("fmt_relative_seconds", Some(&args)))
     } else if secs < 3_600 {
         let mins = secs / 60;
-        let args = ArgsBuilder::new()
-            .set("count", i64::try_from(mins).unwrap_or(i64::MAX))
-            .build();
+        let args = TrArgs::new().set("count", i64::try_from(mins).unwrap_or(i64::MAX));
         Some(tr_lookup("fmt_relative_minutes", Some(&args)))
     } else if secs < 86_400 {
         let hours = secs / 3_600;
-        let args = ArgsBuilder::new()
-            .set("count", i64::try_from(hours).unwrap_or(i64::MAX))
-            .build();
+        let args = TrArgs::new().set("count", i64::try_from(hours).unwrap_or(i64::MAX));
         Some(tr_lookup("fmt_relative_hours", Some(&args)))
     } else if secs < 7 * 86_400 {
         let days = secs / 86_400;
-        let args = ArgsBuilder::new()
-            .set("count", i64::try_from(days).unwrap_or(i64::MAX))
-            .build();
+        let args = TrArgs::new().set("count", i64::try_from(days).unwrap_or(i64::MAX));
         Some(tr_lookup("fmt_relative_days", Some(&args)))
     } else {
         None
@@ -374,12 +366,9 @@ pub fn fmt_uptime_short(secs: u64) -> String {
 }
 
 fn uptime_copy(key: &str, parts: &[(&'static str, u64)]) -> String {
-    let args = parts
-        .iter()
-        .fold(ArgsBuilder::new(), |args, (name, value)| {
-            args.set(name, i64::try_from(*value).unwrap_or(i64::MAX))
-        })
-        .build();
+    let args = parts.iter().fold(TrArgs::new(), |args, (name, value)| {
+        args.set(name, i64::try_from(*value).unwrap_or(i64::MAX))
+    });
     tr_lookup(key, Some(&args))
 }
 
@@ -418,16 +407,16 @@ fn is_ftl_id_char(ch: char) -> bool {
     ch.is_ascii_alphanumeric() || ch == FTL_ID_FILLER
 }
 
-pub fn tr_lookup(key: &str, args: Option<&FluentArgs<'_>>) -> String {
+pub fn tr_lookup(key: &str, args: Option<&TrArgs<'_>>) -> String {
     tr_find_warned(key, args).unwrap_or_else(|| key.to_owned())
 }
 
-pub fn tr_find_warned(key: &str, args: Option<&FluentArgs<'_>>) -> Option<String> {
+pub fn tr_find_warned(key: &str, args: Option<&TrArgs<'_>>) -> Option<String> {
     let Some(active) = active_bundle() else {
         warn_unlocalized_once(key);
         return None;
     };
-    let found = active.format(key, args);
+    let found = active.format(key, args.map(|args| &args.0));
     if found.is_none() {
         active.warn_missing_once(key);
     }
@@ -447,8 +436,8 @@ fn warn_unlocalized_once(key: &str) {
     });
 }
 
-pub fn tr_find(key: &str, args: Option<&FluentArgs<'_>>) -> Option<String> {
-    active_bundle()?.format(key, args)
+pub fn tr_find(key: &str, args: Option<&TrArgs<'_>>) -> Option<String> {
+    active_bundle()?.format(key, args.map(|args| &args.0))
 }
 
 fn format_message<M: MemoizerKind>(
@@ -486,27 +475,51 @@ fn first_sighting(seen: &Mutex<BTreeSet<String>>, key: &str) -> bool {
     !seen.contains(key) && seen.insert(key.to_owned())
 }
 
-pub struct ArgsBuilder<'a>(FluentArgs<'a>);
+pub struct TrValue<'a>(FluentValue<'a>);
 
-impl<'a> Default for ArgsBuilder<'a> {
-    fn default() -> Self {
-        Self::new()
-    }
+macro_rules! tr_values {
+    ($($source:ty),+ $(,)?) => {
+        $(impl<'a> From<$source> for TrValue<'a> {
+            fn from(value: $source) -> Self {
+                Self(value.into())
+            }
+        })+
+    };
 }
 
-impl<'a> ArgsBuilder<'a> {
+tr_values!(
+    String,
+    &'a String,
+    &'a str,
+    Cow<'a, str>,
+    i8,
+    i16,
+    i32,
+    i64,
+    i128,
+    isize,
+    u8,
+    u16,
+    u32,
+    u64,
+    u128,
+    usize,
+    f32,
+    f64,
+);
+
+#[derive(Default)]
+pub struct TrArgs<'a>(FluentArgs<'a>);
+
+impl<'a> TrArgs<'a> {
     pub fn new() -> Self {
-        Self(FluentArgs::new())
+        Self::default()
     }
 
     #[must_use]
-    pub fn set(mut self, key: &'a str, value: impl Into<FluentValue<'a>>) -> Self {
-        self.0.set(key, value);
+    pub fn set(mut self, key: &'a str, value: impl Into<TrValue<'a>>) -> Self {
+        self.0.set(key, value.into().0);
         self
-    }
-
-    pub fn build(self) -> FluentArgs<'a> {
-        self.0
     }
 }
 
@@ -516,9 +529,8 @@ macro_rules! tr {
         $crate::tr_lookup($key, None)
     };
     ($key:expr, $($name:ident = $val:expr),+ $(,)?) => {{
-        let args = $crate::ArgsBuilder::new()
-            $(.set(stringify!($name), $val))+
-            .build();
+        let args = $crate::TrArgs::new()
+            $(.set(stringify!($name), $val))+;
         $crate::tr_lookup($key, Some(&args))
     }};
 }

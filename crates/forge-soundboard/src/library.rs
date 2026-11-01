@@ -1,4 +1,4 @@
-use forge_types::{ClipId, RecoverMutex};
+use forge_types::{ClipId, OutputDevice, RecoverMutex};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -10,8 +10,20 @@ use forge_storage::{
 
 pub(crate) use forge_storage::clip_source_referrer;
 
+use time::OffsetDateTime;
+
 use crate::error::SoundboardError;
 use crate::vocabulary::{ClipAdoptionSettled, SettledVerdict};
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NewClip {
+    pub name: String,
+    pub file_path: PathBuf,
+    pub hotkey: Option<String>,
+    pub category: String,
+    pub loop_playback: bool,
+    pub builtin_id: Option<String>,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ClipSource {
@@ -179,6 +191,24 @@ impl ClipLibrary {
 
     pub async fn total_bytes(&self) -> Result<u64, SoundboardError> {
         self.media.total_bytes().await.map_err(storage_failed)
+    }
+
+    pub async fn create_clip(&self, new: NewClip) -> Result<ClipId, SoundboardError> {
+        let clip = StoredClip {
+            id: ClipId::new(),
+            name: new.name,
+            file_path: new.file_path,
+            volume: 1.0,
+            output_device: OutputDevice::Default,
+            hotkey: new.hotkey,
+            created_at: OffsetDateTime::now_utc(),
+            category: new.category,
+            loop_playback: new.loop_playback,
+            duration_secs: None,
+            builtin_id: new.builtin_id,
+        };
+        self.save_clip(&clip).await?;
+        Ok(clip.id)
     }
 
     pub async fn save_clip(&self, clip: &StoredClip) -> Result<(), SoundboardError> {

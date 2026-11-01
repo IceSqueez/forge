@@ -105,3 +105,5 @@ msg-core-condition_timer_min_messages = ≥{ $count } { $count ->
     [many] повідомлень
    *[other] повідомлення
 }
+msg-core-step_wait_detail = { $ms } мс
+msg-core-step_increment_detail = { $name } += { $amount } (збережено)

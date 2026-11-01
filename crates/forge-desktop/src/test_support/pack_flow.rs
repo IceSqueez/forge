@@ -20,7 +20,7 @@ use tempfile::TempDir;
 use ulid::Ulid;
 
 use super::{STORAGE_KEY, StubEventLog};
-use crate::pack_services::PackServices;
+use crate::data_flows::pack_services::PackServices;
 
 pub(crate) const PACK_NAME: &str = "Alerts pack";
 pub(crate) const PACKED_OVERLAY_NAME: &str = "Packed chat";
@@ -91,7 +91,9 @@ pub(crate) fn pack_world(rt: &tokio::runtime::Runtime) -> PackWorld {
         PackWorld {
             services: PackServices {
                 backend: provider,
-                settings_catalog: Arc::new(crate::settings_catalog::registered_settings_catalog()),
+                settings_catalog: Arc::new(
+                    crate::preferences::settings_catalog::registered_settings_catalog(),
+                ),
                 sub_actions: Arc::new(SubActionRegistry::new()),
                 triggers: Arc::new(TriggerRegistry::new()),
                 overlay_kinds: kinds,

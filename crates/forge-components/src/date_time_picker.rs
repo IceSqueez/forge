@@ -7,11 +7,12 @@ use gpui::{
 };
 use time::{Date, Duration, Month, OffsetDateTime, PrimitiveDateTime, Time, UtcOffset};
 
+use crate::buttons::icon_button;
 use crate::buttons::{ghost_button_with_icon, primary_button, secondary_button};
 use crate::date_display::{DateShape, fmt_calendar_date, fmt_day_period};
 use crate::display_formats::{ClockStyle, FirstWeekday};
 use crate::display_zone::{DisplayZone, WallTime};
-use crate::icons::{Icon, icon};
+use crate::icons::Icon;
 use crate::palette::ForgePalette;
 use crate::tokens::{
     BORDER_THIN, Density, FONT_SM, FONT_XS, FONT_XXS, Radius, Spacing, radius, spacing,
@@ -42,7 +43,6 @@ pub enum DateTimePickerEvent {
 }
 
 pub struct DateTimePicker {
-    palette: ForgePalette,
     labels: DateTimePickerLabels,
     year: i32,
     month: Month,
@@ -69,14 +69,12 @@ impl DateTimePicker {
         initial: Option<&str>,
         zone: DisplayZone,
         labels: DateTimePickerLabels,
-        palette: ForgePalette,
         _cx: &mut Context<Self>,
     ) -> Self {
         let seed = initial
             .and_then(datetime_from_text)
             .unwrap_or_else(OffsetDateTime::now_utc);
         let mut picker = Self {
-            palette,
             labels,
             year: seed.year(),
             month: seed.month(),
@@ -304,7 +302,7 @@ impl DateTimePicker {
     }
 
     fn render_month_nav(&self, cx: &mut Context<Self>) -> AnyElement {
-        let p = self.palette;
+        let p = cx.palette();
         div()
             .w_full()
             .flex()
@@ -336,7 +334,7 @@ impl DateTimePicker {
     }
 
     fn render_weekday_header(&self, cx: &App) -> AnyElement {
-        let p = self.palette;
+        let p = cx.palette();
         let mut row = div().flex();
         for title in self.weekday_titles() {
             row = row.child(
@@ -354,7 +352,7 @@ impl DateTimePicker {
     }
 
     fn render_day_grid(&self, cx: &mut Context<Self>) -> AnyElement {
-        let p = self.palette;
+        let p = cx.palette();
         let lead = self.leading_blanks();
         let len = self.month.length(self.year);
 
@@ -394,7 +392,7 @@ impl DateTimePicker {
 
     fn render_time(&self, cx: &mut Context<Self>) -> AnyElement {
         let density = cx.density();
-        let p = self.palette;
+        let p = cx.palette();
         div()
             .w_full()
             .flex()
@@ -458,7 +456,7 @@ impl DateTimePicker {
             id,
             fmt_day_period(day_period_sample(after_noon)),
             selected,
-            &self.palette,
+            &cx.palette(),
             density,
             cx,
         )
@@ -484,7 +482,7 @@ impl DateTimePicker {
                     "forge-dtp-repeat-earlier",
                     self.repeat_choice_label(repeated.earlier),
                     !self.later_in_repeat,
-                    &self.palette,
+                    &cx.palette(),
                     density,
                     cx,
                 )
@@ -496,7 +494,7 @@ impl DateTimePicker {
                     "forge-dtp-repeat-later",
                     self.repeat_choice_label(repeated.later),
                     self.later_in_repeat,
-                    &self.palette,
+                    &cx.palette(),
                     density,
                     cx,
                 )
@@ -515,7 +513,7 @@ impl DateTimePicker {
         density: Density,
         cx: &App,
     ) -> AnyElement {
-        let p = self.palette;
+        let p = cx.palette();
         div()
             .flex()
             .flex_col()
@@ -548,7 +546,7 @@ impl DateTimePicker {
 
     fn render_footer(&self, cx: &mut Context<Self>) -> AnyElement {
         let density = cx.density();
-        let p = self.palette;
+        let p = cx.palette();
         div()
             .w_full()
             .flex()
@@ -582,7 +580,7 @@ impl DateTimePicker {
 impl Render for DateTimePicker {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let density = cx.density();
-        let p = self.palette;
+        let p = cx.palette();
         div()
             .occlude()
             .w(PANEL_W)
@@ -612,20 +610,13 @@ fn nav_btn(
     palette: &ForgePalette,
     handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
 ) -> AnyElement {
-    let hover = palette.surface_overlay;
-    let ink = palette.text_secondary;
-    div()
-        .id(id.into())
-        .flex()
-        .items_center()
-        .justify_center()
-        .size(NAV_BTN)
-        .rounded(radius(Radius::Sm))
-        .cursor_pointer()
-        .hover(move |s| s.bg(hover))
-        .key_activated(palette.text_primary)
-        .on_click(handler)
-        .child(icon(glyph, NAV_GLYPH, ink))
+    icon_button(glyph, palette)
+        .square(NAV_BTN)
+        .glyph_size(NAV_GLYPH)
+        .ink(palette.text_secondary)
+        .hover_fill(palette.surface_overlay)
+        .focus_ring(palette.text_primary)
+        .on_click(id, handler)
         .into_any_element()
 }
 
@@ -768,7 +759,6 @@ mod tests {
 
     fn picker(year: i32, month: Month, first_day: FirstWeekday) -> DateTimePicker {
         DateTimePicker {
-            palette: crate::palette::FORGE_DEFAULT,
             labels: DateTimePickerLabels {
                 now: SharedString::default(),
                 set: SharedString::default(),

@@ -1,0 +1,576 @@
+use std::collections::HashMap;
+use std::sync::Arc;
+
+use forge_speak_queue::{QueuedOrderEntry, RequestId, SpeakEvent};
+use forge_types::UserText;
+
+#[derive(Clone)]
+pub(crate) struct NowSpeaking {
+    pub request_id: RequestId,
+    pub viewer_name: String,
+    pub engine_id: String,
+    pub voice_id: String,
+    pub text: String,
+    pub elapsed_secs: u32,
+    pub total_secs: u32,
+}
+
+#[derive(Clone)]
+pub(crate) struct QueueItem {
+    pub request_id: RequestId,
+    pub viewer_name: String,
+    pub engine_voice: String,
+    pub text: String,
+    pub duration_secs: u32,
+    pub is_high_priority: bool,
+}
+
+#[derive(Clone, Copy, Default)]
+pub(crate) struct SessionStats {
+    pub spoken: u32,
+    pub skipped: u32,
+    pub filtered: u32,
+}
+
+fn replace_flag(flag: &mut bool, value: bool) -> bool {
+    let changed = *flag != value;
+    *flag = value;
+    changed
+}
+
+#[derive(Default)]
+pub(crate) struct SpeakState {
+    manual_paused: bool,
+    gate_held: bool,
+    now_speaking: Option<Arc<NowSpeaking>>,
+    queue: Arc<Vec<QueueItem>>,
+    stats: SessionStats,
+    last_drop: Option<UserText>,
+    voice_catalog_revision: u64,
+}
+
+impl SpeakState {
+    pub(crate) fn new() -> Self {
+        Self::default()
+    }
+
+    pub(crate) fn voice_catalog_revision(&self) -> u64 {
+        self.voice_catalog_revision
+    }
+
+    pub(crate) fn last_drop(&self) -> Option<&UserText> {
+        self.last_drop.as_ref()
+    }
+
+    pub(crate) fn apply_event(&mut self, event: SpeakEvent) -> bool {
+        match event {
+            SpeakEvent::Enqueued {
+                request_id,
+                viewer_name,
+                text,
+                is_high_priority,
+                voice_preview,
+                estimated_secs,
+                ..
+            } => {
+                let item = QueueItem {
+                    request_id,
+                    viewer_name,
+                    engine_voice: voice_preview,
+                    text,
+                    duration_secs: estimated_secs,
+                    is_high_priority,
+                };
+                self.upsert_queued(item);
+                true
+            }
+            SpeakEvent::Started {
+                request_id,
+                voice_id,
+                engine_id,
+                viewer_name,
+                text,
+                duration_secs,
+            } => {
+                self.last_drop = None;
+                self.now_speaking = Some(Arc::new(NowSpeaking {
+                    request_id,
+                    viewer_name,
+                    engine_id: engine_id.map(|id| id.0).unwrap_or_default(),
+                    voice_id: voice_id.map(|id| id.0).unwrap_or_default(),
+                    text,
+                    elapsed_secs: 0,
+                    total_secs: duration_secs,
+                }));
+                true
+            }
+            SpeakEvent::Progress {
+                request_id,
+                elapsed_secs,
+            } => match self.now_speaking.as_mut() {
+                Some(ns) if ns.request_id == request_id => {
+                    Arc::make_mut(ns).elapsed_secs = elapsed_secs;
+                    true
+                }
+                _ => false,
+            },
+            SpeakEvent::Finished { .. } => {
+                self.now_speaking = None;
+                self.stats.spoken = self.stats.spoken.saturating_add(1);
+                true
+            }
+            SpeakEvent::Failed { message, .. } => {
+                self.now_speaking = None;
+                self.last_drop = Some(message.into());
+                true
+            }
+            SpeakEvent::Skipped { message, .. } => {
+                self.now_speaking = None;
+                self.stats.skipped = self.stats.skipped.saturating_add(1);
+                self.last_drop = Some(message.into());
+                true
+            }
+            SpeakEvent::Removed { .. } => false,
+            SpeakEvent::Rejected { .. } => {
+                self.stats.filtered = self.stats.filtered.saturating_add(1);
+                true
+            }
+            SpeakEvent::QueueChanged { order, .. } => self.reseat_queue(&order),
+            SpeakEvent::Paused => replace_flag(&mut self.manual_paused, true),
+            SpeakEvent::Resumed => replace_flag(&mut self.manual_paused, false),
+            SpeakEvent::VoiceGateHeld => replace_flag(&mut self.gate_held, true),
+            SpeakEvent::VoiceGateReleased => replace_flag(&mut self.gate_held, false),
+            SpeakEvent::Cleared => {
+                self.now_speaking = None;
+                true
+            }
+            SpeakEvent::VoiceCatalogChanged => {
+                self.voice_catalog_revision = self.voice_catalog_revision.wrapping_add(1);
+                true
+            }
+        }
+    }
+
+    fn upsert_queued(&mut self, item: QueueItem) {
+        let queue = Arc::make_mut(&mut self.queue);
+        match queue
+            .iter_mut()
+            .find(|queued| queued.request_id == item.request_id)
+        {
+            Some(queued) => *queued = item,
+            None => queue.push(item),
+        }
+    }
+
+    fn reseat_queue(&mut self, order: &[QueuedOrderEntry]) -> bool {
+        let by_id: HashMap<&RequestId, &QueueItem> = self
+            .queue
+            .iter()
+            .map(|item| (&item.request_id, item))
+            .collect();
+        let reseated: Vec<QueueItem> = order
+            .iter()
+            .filter_map(|entry| {
+                by_id.get(&entry.request_id).map(|&item| QueueItem {
+                    is_high_priority: entry.is_high_priority,
+                    ..item.clone()
+                })
+            })
+            .collect();
+
+        let changed = reseated.len() != self.queue.len()
+            || reseated.iter().zip(self.queue.iter()).any(|(new, old)| {
+                new.request_id != old.request_id || new.is_high_priority != old.is_high_priority
+            });
+        if changed {
+            self.queue = Arc::new(reseated);
+        }
+        changed
+    }
+
+    pub(crate) fn set_manual_paused(&mut self, paused: bool) {
+        self.manual_paused = paused;
+    }
+
+    pub(crate) fn clear_all(&mut self) {
+        self.now_speaking = None;
+        self.queue = Arc::default();
+    }
+
+    pub(crate) fn manual_paused(&self) -> bool {
+        self.manual_paused
+    }
+
+    pub(crate) fn gate_held(&self) -> bool {
+        self.gate_held
+    }
+
+    pub(crate) fn now_speaking_snapshot(&self) -> Option<Arc<NowSpeaking>> {
+        self.now_speaking.clone()
+    }
+
+    pub(crate) fn queue_snapshot(&self) -> Arc<Vec<QueueItem>> {
+        Arc::clone(&self.queue)
+    }
+
+    pub(crate) fn stats_snapshot(&self) -> SessionStats {
+        self.stats
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn manual_pause() -> SpeakEvent {
+        SpeakEvent::Paused
+    }
+
+    fn rid(id: &str) -> RequestId {
+        RequestId(id.to_owned())
+    }
+
+    fn enqueued(id: &str, is_high_priority: bool) -> SpeakEvent {
+        enqueued_saying(id, is_high_priority, "hello")
+    }
+
+    fn enqueued_saying(id: &str, is_high_priority: bool, text: &str) -> SpeakEvent {
+        SpeakEvent::Enqueued {
+            request_id: rid(id),
+            queue_len: 0,
+            viewer_name: format!("viewer-{id}"),
+            text: text.to_owned(),
+            is_high_priority,
+            voice_preview: "piper / amy".into(),
+            estimated_secs: 3,
+        }
+    }
+
+    fn queue_changed(order: &[(&str, bool)]) -> SpeakEvent {
+        SpeakEvent::QueueChanged {
+            queue_len: order.len(),
+            order: order
+                .iter()
+                .map(|(id, is_high_priority)| QueuedOrderEntry {
+                    request_id: rid(id),
+                    is_high_priority: *is_high_priority,
+                })
+                .collect(),
+        }
+    }
+
+    fn started(id: &str) -> SpeakEvent {
+        SpeakEvent::Started {
+            request_id: rid(id),
+            voice_id: Some(forge_speech_types::VoiceId("amy".into())),
+            engine_id: Some(forge_speech_types::EngineId("piper".into())),
+            viewer_name: format!("viewer-{id}"),
+            text: "hello".into(),
+            duration_secs: 3,
+        }
+    }
+
+    #[test]
+    fn a_started_event_without_a_resolved_voice_shows_empty_engine_and_voice() {
+        let mut state = SpeakState::new();
+
+        state.apply_event(SpeakEvent::Started {
+            request_id: rid("a"),
+            voice_id: None,
+            engine_id: None,
+            viewer_name: "viewer-a".into(),
+            text: "hello".into(),
+            duration_secs: 0,
+        });
+
+        let now = state.now_speaking_snapshot().expect("now speaking");
+        assert_eq!((now.engine_id.as_str(), now.voice_id.as_str()), ("", ""));
+    }
+
+    fn queue_ids(state: &SpeakState) -> Vec<String> {
+        state
+            .queue_snapshot()
+            .iter()
+            .map(|item| item.request_id.0.clone())
+            .collect()
+    }
+
+    fn seeded(ids: &[&str]) -> SpeakState {
+        let mut state = SpeakState::new();
+        for id in ids {
+            state.apply_event(enqueued(id, false));
+        }
+        state
+    }
+
+    #[test]
+    fn queue_changed_order_reseats_the_pending_list_into_playback_sequence() {
+        let mut state = seeded(&["a", "b", "c"]);
+
+        state.apply_event(queue_changed(&[("c", false), ("a", false), ("b", false)]));
+
+        assert_eq!(queue_ids(&state), ["c", "a", "b"]);
+    }
+
+    #[test]
+    fn queue_changed_order_is_the_authority_on_queue_membership() {
+        for (case, order, expected) in [
+            (
+                "an id dropped from the order leaves the list",
+                vec![("a", false), ("c", false)],
+                vec!["a", "c"],
+            ),
+            (
+                "an id with no cached item renders no phantom row",
+                vec![("a", false), ("d", false), ("c", false)],
+                vec!["a", "c"],
+            ),
+        ] {
+            let mut state = seeded(&["a", "b", "c"]);
+
+            state.apply_event(queue_changed(&order));
+
+            assert_eq!(queue_ids(&state), expected, "{case}");
+        }
+    }
+
+    #[test]
+    fn queue_changed_entry_overrides_the_priority_the_item_was_enqueued_with() {
+        for (case, enqueued_high, seated_high) in [
+            ("promoted into the high queue", false, true),
+            ("demoted into the normal queue", true, false),
+        ] {
+            let mut state = SpeakState::new();
+            state.apply_event(enqueued("a", enqueued_high));
+
+            state.apply_event(queue_changed(&[("a", seated_high)]));
+
+            let flags: Vec<bool> = state
+                .queue_snapshot()
+                .iter()
+                .map(|item| item.is_high_priority)
+                .collect();
+            assert_eq!(flags, [seated_high], "{case}");
+        }
+    }
+
+    #[test]
+    fn queue_changed_reports_a_repaint_only_when_the_visible_list_moves() {
+        for (case, order, expected) in [
+            ("identical order", vec![("a", false), ("b", false)], false),
+            ("permuted order", vec![("b", false), ("a", false)], true),
+            ("priority flip only", vec![("a", true), ("b", false)], true),
+            ("shrunken membership", vec![("a", false)], true),
+        ] {
+            let mut state = seeded(&["a", "b"]);
+
+            assert_eq!(state.apply_event(queue_changed(&order)), expected, "{case}");
+        }
+    }
+
+    #[test]
+    fn repeated_enqueued_for_one_request_replaces_the_row_instead_of_duplicating_it() {
+        for (case, between) in [
+            ("back to back", Vec::new()),
+            (
+                "after the order was already reseated",
+                vec![queue_changed(&[("a", false)])],
+            ),
+        ] {
+            let mut state = SpeakState::new();
+            state.apply_event(enqueued_saying("a", false, "first"));
+            for event in between {
+                state.apply_event(event);
+            }
+
+            state.apply_event(enqueued_saying("a", false, "second"));
+
+            let queue = state.queue_snapshot();
+            assert_eq!(queue.len(), 1, "{case}");
+            assert_eq!(queue[0].text, "second", "{case}");
+        }
+    }
+
+    #[test]
+    fn starting_a_reordered_item_leaves_the_remaining_rows_in_the_broadcast_sequence() {
+        let mut state = seeded(&["a", "b", "c"]);
+        state.apply_event(queue_changed(&[("b", false), ("c", false), ("a", false)]));
+
+        state.apply_event(queue_changed(&[("c", false), ("a", false)]));
+        state.apply_event(started("b"));
+
+        assert_eq!(queue_ids(&state), ["c", "a"]);
+        assert_eq!(
+            state
+                .now_speaking_snapshot()
+                .map(|ns| ns.request_id.0.clone()),
+            Some("b".to_owned())
+        );
+    }
+
+    #[test]
+    fn clearing_the_pending_list_is_owned_by_the_empty_order_not_by_the_cleared_event() {
+        let mut state = seeded(&["a", "b"]);
+        state.apply_event(queue_changed(&[("b", false)]));
+        state.apply_event(started("a"));
+
+        state.apply_event(SpeakEvent::Cleared);
+        assert_eq!(queue_ids(&state), ["b"]);
+        assert!(state.now_speaking_snapshot().is_none());
+
+        state.apply_event(queue_changed(&[]));
+        assert!(queue_ids(&state).is_empty());
+    }
+
+    #[test]
+    fn a_failed_utterance_clears_the_now_playing_row_and_keeps_its_reason() {
+        let device_loss = forge_types::MessageRef::new(forge_types::MessageCode::from_static(
+            "speak",
+            "audio_device_lost",
+        ))
+        .with_detail(forge_types::UpstreamDetail::from_redacted(
+            "output stream disconnected",
+        ));
+        let mut state = SpeakState::new();
+        state.apply_event(started("a"));
+
+        let changed = state.apply_event(SpeakEvent::Failed {
+            request_id: rid("a"),
+            message: device_loss.clone(),
+        });
+
+        assert!(changed);
+        assert!(state.now_speaking_snapshot().is_none());
+        assert_eq!(state.last_drop(), Some(&UserText::Message(device_loss)));
+        assert_eq!(
+            state.stats_snapshot().spoken,
+            0,
+            "an utterance the device dropped must not be counted as spoken"
+        );
+    }
+
+    #[test]
+    fn a_skipped_utterance_keeps_its_message_as_the_last_drop_and_counts_as_skipped() {
+        let skipped = forge_types::MessageRef::new(forge_types::MessageCode::from_static(
+            "speak",
+            "skipped_by_user",
+        ));
+        let mut state = SpeakState::new();
+        state.apply_event(started("a"));
+
+        state.apply_event(SpeakEvent::Skipped {
+            request_id: rid("a"),
+            message: skipped.clone(),
+        });
+
+        assert_eq!(
+            (
+                state.last_drop().cloned(),
+                state.stats_snapshot().skipped,
+                state.now_speaking_snapshot().is_none(),
+            ),
+            (Some(UserText::Message(skipped)), 1, true)
+        );
+    }
+
+    #[test]
+    fn removed_neither_drops_the_row_nor_asks_for_a_repaint_on_its_own() {
+        let mut state = seeded(&["a", "b"]);
+
+        let changed = state.apply_event(SpeakEvent::Removed {
+            request_id: rid("a"),
+        });
+
+        assert!(!changed);
+        assert_eq!(queue_ids(&state), ["a", "b"]);
+    }
+
+    #[test]
+    fn manual_pause_events_leave_the_voice_gate_hold_untouched() {
+        let mut state = SpeakState::new();
+        state.apply_event(SpeakEvent::VoiceGateHeld);
+
+        state.apply_event(manual_pause());
+        assert!(state.gate_held());
+        assert!(state.manual_paused());
+
+        state.apply_event(SpeakEvent::Resumed);
+        assert!(
+            state.gate_held(),
+            "clicking resume must not hide an active gate hold"
+        );
+        assert!(!state.manual_paused());
+    }
+
+    #[test]
+    fn voice_gate_events_leave_the_manual_pause_untouched() {
+        let mut state = SpeakState::new();
+        state.apply_event(manual_pause());
+
+        state.apply_event(SpeakEvent::VoiceGateHeld);
+        assert!(state.manual_paused());
+        assert!(state.gate_held());
+
+        state.apply_event(SpeakEvent::VoiceGateReleased);
+        assert!(
+            state.manual_paused(),
+            "the gate going quiet must not un-pause the queue"
+        );
+        assert!(!state.gate_held());
+    }
+
+    #[test]
+    fn apply_event_reports_change_only_when_a_pause_flag_flips() {
+        for (case, prime, probe, expected) in [
+            ("first manual pause", vec![], manual_pause(), true),
+            (
+                "repeated manual pause",
+                vec![manual_pause()],
+                manual_pause(),
+                false,
+            ),
+            (
+                "resume after pause",
+                vec![manual_pause()],
+                SpeakEvent::Resumed,
+                true,
+            ),
+            ("resume while running", vec![], SpeakEvent::Resumed, false),
+            ("first gate hold", vec![], SpeakEvent::VoiceGateHeld, true),
+            (
+                "repeated gate hold",
+                vec![SpeakEvent::VoiceGateHeld],
+                SpeakEvent::VoiceGateHeld,
+                false,
+            ),
+            (
+                "release after hold",
+                vec![SpeakEvent::VoiceGateHeld],
+                SpeakEvent::VoiceGateReleased,
+                true,
+            ),
+            (
+                "release while open",
+                vec![],
+                SpeakEvent::VoiceGateReleased,
+                false,
+            ),
+        ] {
+            let mut state = SpeakState::new();
+            for event in prime {
+                state.apply_event(event);
+            }
+            assert_eq!(state.apply_event(probe), expected, "{case}");
+        }
+    }
+
+    #[test]
+    fn a_voice_catalog_change_bumps_the_revision_and_reports_a_repaint() {
+        let mut state = SpeakState::new();
+        let before = state.voice_catalog_revision();
+
+        assert!(state.apply_event(SpeakEvent::VoiceCatalogChanged));
+
+        assert_eq!(state.voice_catalog_revision(), before + 1);
+    }
+}

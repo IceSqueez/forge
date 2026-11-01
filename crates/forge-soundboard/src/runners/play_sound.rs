@@ -1,3 +1,4 @@
+use forge_registry::{StepCardDetail, card_text};
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -45,6 +46,15 @@ impl StepCatalogEntry for PlaySoundRunner {
     }
     fn icon_name(&self) -> &str {
         "volume"
+    }
+
+    fn card_detail(&self, config: &SubActionConfig) -> Option<StepCardDetail> {
+        Some(StepCardDetail::OptionLabel {
+            options_key: forge_registry::SOUNDBOARD_CLIP_OPTIONS_KEY,
+            value: card_text(config, config_keys::CLIP_ID)
+                .unwrap_or("")
+                .to_owned(),
+        })
     }
 }
 

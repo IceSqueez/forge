@@ -1,3 +1,4 @@
+use forge_registry::{StepCardDetail, card_text};
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -81,6 +82,12 @@ impl StepCatalogEntry for CoreGlobalsSetRunner {
     }
     fn icon_name(&self) -> &str {
         "database"
+    }
+
+    fn card_detail(&self, config: &SubActionConfig) -> Option<StepCardDetail> {
+        let name = card_text(config, super::core_globals_shared::NAME_KEY).unwrap_or("");
+        let value = card_text(config, GLOBAL_VALUE_KEY).unwrap_or("");
+        Some(StepCardDetail::Text(format!("{name} = \"{value}\"")))
     }
 }
 

@@ -1,0 +1,470 @@
+use std::time::Duration;
+
+use forge_components::{
+    ActivePresentation, BORDER_THIN, ConfirmTone, Density, FONT_SM, FONT_XS, FONT_XXS,
+    ForgePalette, Icon, KeyActivated, OverlayPosition, Radius, Spacing, confirm_modal,
+    ghost_button_with_icon, icon, overlay, primary_button, radio_row, radius, secondary_button,
+    segment, segmented, spacing, status_dot, tr,
+};
+use forge_platform_core::AccountTarget;
+use gpui::{
+    AnyElement, App, ClickEvent, Context, Div, ElementId, Entity, Pixels, Rgba, SharedString,
+    Window, div, prelude::*, px,
+};
+
+use super::{Busy, DonationSettingsView, JarSource, Outcome, jar_title};
+use forge_components::{card_shell, divider};
+
+const STATUS_DOT: Pixels = px(6.0);
+const EYE_GLYPH: Pixels = px(12.0);
+const LINK_GLYPH: Pixels = px(11.0);
+const POLL_PRESETS_SECS: [u64; 6] = [10, 15, 30, 60, 120, 300];
+const SECONDS_PER_MINUTE: u64 = 60;
+
+impl DonationSettingsView {
+    fn header(&self, palette: &ForgePalette, density: Density, cx: &App) -> AnyElement {
+        let (dot, label) = match self.has_token {
+            Some(true) => (palette.success, tr!("donation_token_status_saved")),
+            Some(false) => (palette.warning, tr!("donation_token_status_missing")),
+            None => (palette.text_faint, tr!("donation_token_status_unknown")),
+        };
+        div()
+            .w_full()
+            .flex()
+            .items_center()
+            .justify_between()
+            .py(spacing(Spacing::Sm, density))
+            .px(spacing(Spacing::Md, density))
+            .child(
+                text(
+                    tr!("donation_settings_title", service = self.service_name()),
+                    FONT_SM,
+                    palette.text_primary,
+                    cx,
+                )
+                .flex_1()
+                .min_w(px(0.0)),
+            )
+            .child(
+                div()
+                    .flex_none()
+                    .flex()
+                    .items_center()
+                    .gap(spacing(Spacing::Xs, density))
+                    .child(status_dot(dot, STATUS_DOT))
+                    .child(text(label, FONT_XS, palette.text_muted, cx)),
+            )
+            .into_any_element()
+    }
+
+    fn token_field(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let eye = if self.token_revealed {
+            Icon::EyeOff
+        } else {
+            Icon::Eye
+        };
+        let value_box = div()
+            .w_full()
+            .flex()
+            .items_center()
+            .gap(spacing(Spacing::Xs, density))
+            .bg(palette.shell)
+            .border(BORDER_THIN)
+            .border_color(palette.border_input)
+            .rounded(radius(Radius::Md))
+            .px(spacing(Spacing::Sm, density))
+            .py(spacing(Spacing::Xs, density))
+            .child(div().flex_1().min_w(px(0.0)).child(self.token.clone()))
+            .child(
+                div()
+                    .id("donation-token-reveal")
+                    .flex_none()
+                    .cursor_pointer()
+                    .key_activated(palette.text_primary)
+                    .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_reveal(cx)))
+                    .child(icon(eye, EYE_GLYPH, palette.text_faint)),
+            );
+        let hint = if self.has_token == Some(true) {
+            tr!("donation_token_hint_replace")
+        } else {
+            tr!("donation_token_hint_new", service = self.service_name())
+        };
+        let token_page = div()
+            .id("donation-token-page")
+            .flex_none()
+            .flex()
+            .items_center()
+            .gap(spacing(Spacing::Xxs, density))
+            .cursor_pointer()
+            .text_color(palette.brand)
+            .key_activated(palette.text_primary)
+            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.open_token_page(cx)))
+            .child(text(
+                tr!("donation_token_page_link"),
+                FONT_XS,
+                palette.brand,
+                cx,
+            ))
+            .child(icon(Icon::ExternalLink, LINK_GLYPH, palette.brand));
+        div()
+            .w_full()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Xs, density))
+            .child(mono_label(tr!("donation_token_label"), palette, cx))
+            .child(value_box)
+            .child(
+                div()
+                    .w_full()
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .gap(spacing(Spacing::Sm, density))
+                    .child(
+                        text(hint, FONT_XS, palette.text_muted, cx)
+                            .flex_1()
+                            .min_w(px(0.0)),
+                    )
+                    .child(token_page),
+            )
+            .into_any_element()
+    }
+
+    fn jar_picker(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let mut list = div()
+            .w_full()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Xs, density))
+            .child(mono_label(tr!("donation_jar_label"), palette, cx));
+        if self.jars.is_empty() {
+            let hint = if self.busy == Some(Busy::LoadingJars) {
+                tr!("donation_jar_loading")
+            } else {
+                tr!("donation_jar_hint")
+            };
+            return list
+                .child(text(hint, FONT_XS, palette.text_muted, cx))
+                .into_any_element();
+        }
+        let shown = self.shown_jar().cloned();
+        for jar in &self.jars {
+            let selected = shown.as_ref() == Some(&jar.id);
+            let jar_id = jar.id.clone();
+            let row = radio_row(
+                ElementId::Name(format!("donation-jar-{}", jar.id).into()),
+                selected,
+                palette.brand,
+                jar_content(jar, density, palette, cx),
+                palette,
+            )
+            .disabled(self.busy.is_some())
+            .on_click(
+                cx.listener(move |this, _: &ClickEvent, _, cx| this.pick_jar(jar_id.clone(), cx)),
+            );
+            list = list.child(row);
+        }
+        list.into_any_element()
+    }
+
+    fn outcome_row(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &App,
+    ) -> Option<AnyElement> {
+        let (color, message): (Rgba, String) = match self.outcome.as_ref()? {
+            Outcome::Success(message) => (palette.success, message.clone()),
+            Outcome::Problem(message) => (palette.danger, message.clone()),
+        };
+        Some(
+            div()
+                .w_full()
+                .flex()
+                .items_center()
+                .gap(spacing(Spacing::Xs, density))
+                .child(status_dot(color, STATUS_DOT))
+                .child(text(message, FONT_XS, color, cx).flex_1().min_w(px(0.0)))
+                .into_any_element(),
+        )
+    }
+
+    fn action_row(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let check_label = match (self.picks_a_target(), self.busy) {
+            (true, Some(Busy::LoadingJars)) => tr!("donation_jar_loading_button"),
+            (true, _) => tr!("donation_jar_load"),
+            (false, Some(Busy::Checking)) => tr!("donation_token_checking"),
+            (false, _) => tr!("donation_token_check"),
+        };
+        let save_label = if self.busy == Some(Busy::Saving) {
+            tr!("donation_token_saving")
+        } else if self.picks_a_target() && self.jar_source == Some(JarSource::Stored) {
+            tr!("donation_jar_save")
+        } else {
+            tr!("donation_token_save")
+        };
+        let check = secondary_button(check_label, palette)
+            .density(density)
+            .disabled(!self.can_check(cx))
+            .busy(matches!(
+                self.busy,
+                Some(Busy::Checking | Busy::LoadingJars)
+            ))
+            .on_click(
+                "donation-token-check",
+                cx.listener(|this, _: &ClickEvent, _, cx| this.check_token(cx)),
+            );
+        let save = primary_button(save_label, palette)
+            .density(density)
+            .disabled(!self.can_save(cx))
+            .busy(self.busy == Some(Busy::Saving))
+            .on_click(
+                "donation-token-save",
+                cx.listener(|this, _: &ClickEvent, _, cx| this.save(cx)),
+            );
+        let mut left = div().flex().items_center();
+        if self.has_token == Some(true) {
+            left = left.child(
+                ghost_button_with_icon(Icon::Trash, tr!("donation_token_remove"), palette)
+                    .density(density)
+                    .ink(palette.danger)
+                    .disabled(self.busy.is_some())
+                    .on_click(
+                        "donation-token-remove",
+                        cx.listener(|this, _: &ClickEvent, _, cx| this.request_remove(cx)),
+                    ),
+            );
+        }
+        div()
+            .w_full()
+            .flex()
+            .items_center()
+            .justify_between()
+            .gap(spacing(Spacing::Sm, density))
+            .child(left)
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(spacing(Spacing::Xs, density))
+                    .child(check)
+                    .child(save),
+            )
+            .into_any_element()
+    }
+
+    fn polling_section(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
+        let current = self.poll_interval?;
+        let segments = POLL_PRESETS_SECS
+            .iter()
+            .map(|secs| {
+                let interval = Duration::from_secs(*secs);
+                segment(
+                    ElementId::Name(format!("donation-poll-{secs}").into()),
+                    interval_label(*secs),
+                    interval == current,
+                    cx.listener(move |this, _: &ClickEvent, _, cx| {
+                        this.set_poll_interval(interval, cx)
+                    }),
+                )
+            })
+            .collect();
+        Some(
+            div()
+                .w_full()
+                .flex()
+                .flex_col()
+                .gap(spacing(Spacing::Xs, density))
+                .child(mono_label(tr!("donation_poll_label"), palette, cx))
+                .child(div().flex().child(segmented(segments, palette)))
+                .child(text(
+                    tr!(
+                        "donation_poll_hint",
+                        seconds = i64::try_from(current.as_secs()).unwrap_or(i64::MAX)
+                    ),
+                    FONT_XS,
+                    palette.text_muted,
+                    cx,
+                ))
+                .into_any_element(),
+        )
+    }
+}
+
+impl Render for DonationSettingsView {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let palette = cx.palette();
+        let density = cx.density();
+        let mut body = div()
+            .w_full()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Md, density))
+            .py(spacing(Spacing::Md, density))
+            .px(spacing(Spacing::Md, density))
+            .child(self.token_field(&palette, density, cx));
+        if self.picks_a_target() {
+            body = body.child(self.jar_picker(&palette, density, cx));
+        }
+        body = body
+            .children(self.outcome_row(&palette, density, cx))
+            .child(self.action_row(&palette, density, cx))
+            .child(encryption_note(&palette, density, cx));
+        let mut shell = card_shell(&palette)
+            .child(self.header(&palette, density, cx))
+            .child(divider(&palette))
+            .child(body);
+        if let Some(polling) = self.polling_section(&palette, density, cx) {
+            shell = shell.child(divider(&palette)).child(
+                div()
+                    .w_full()
+                    .py(spacing(Spacing::Md, density))
+                    .px(spacing(Spacing::Md, density))
+                    .child(polling),
+            );
+        }
+        shell
+    }
+}
+
+pub(crate) fn remove_confirm(
+    view: &Entity<DonationSettingsView>,
+    palette: &ForgePalette,
+    cx: &App,
+) -> Option<AnyElement> {
+    let settings = view.read(cx);
+    if !settings.is_remove_pending() {
+        return None;
+    }
+    let body = if settings.picks_a_target() {
+        tr!("donation_token_remove_body_monobank")
+    } else {
+        tr!("donation_token_remove_body")
+    };
+    let name = settings.service_name();
+    let cancel_view = view.clone();
+    let confirm_view = view.clone();
+    let dismiss_view = view.clone();
+    let card = confirm_modal(
+        tr!("donation_token_remove_title"),
+        body,
+        ConfirmTone::Destructive,
+        palette,
+    )
+    .item_name(name)
+    .esc_hint(tr!("widget_confirm_esc_to_cancel"))
+    .on_cancel(
+        "donation-token-remove-cancel",
+        tr!("common_cancel"),
+        move |_: &ClickEvent, _, cx| {
+            cancel_view.update(cx, |this, cx| this.cancel_remove(cx));
+        },
+    )
+    .on_confirm(
+        "donation-token-remove-confirm",
+        tr!("donation_token_remove"),
+        move |_: &ClickEvent, _, cx| {
+            confirm_view.update(cx, |this, cx| this.confirm_remove(cx));
+        },
+    );
+    Some(
+        overlay(card, palette)
+            .position(OverlayPosition::Center)
+            .on_dismiss("donation-token-remove-scrim", move |_window, cx| {
+                dismiss_view.update(cx, |this, cx| this.cancel_remove(cx));
+            })
+            .into_any_element(),
+    )
+}
+
+fn jar_content(jar: &AccountTarget, density: Density, palette: &ForgePalette, cx: &App) -> Div {
+    div()
+        .flex_1()
+        .min_w(px(0.0))
+        .flex()
+        .flex_col()
+        .gap(spacing(Spacing::Xxs, density))
+        .child(text(jar_title(jar), FONT_SM, palette.text_primary, cx))
+        .children(jar_meta(jar).map(|meta| mono_text(meta, palette.text_muted, cx)))
+}
+
+fn mono_text(content: SharedString, color: Rgba, cx: &App) -> Div {
+    div()
+        .font_family(cx.mono_family())
+        .text_size(FONT_XXS)
+        .text_color(color)
+        .child(content)
+}
+
+fn jar_meta(jar: &AccountTarget) -> Option<SharedString> {
+    let goal = jar
+        .goal
+        .as_ref()
+        .map(|goal| tr!("donation_jar_goal", goal = goal.as_str()));
+    let parts: Vec<String> = jar.currency.clone().into_iter().chain(goal).collect();
+    (!parts.is_empty()).then(|| parts.join(" \u{00b7} ").into())
+}
+
+fn interval_label(secs: u64) -> String {
+    if secs >= SECONDS_PER_MINUTE && secs.is_multiple_of(SECONDS_PER_MINUTE) {
+        tr!(
+            "donation_poll_minutes",
+            minutes = i64::try_from(secs / SECONDS_PER_MINUTE).unwrap_or(i64::MAX)
+        )
+    } else {
+        tr!(
+            "donation_poll_seconds",
+            seconds = i64::try_from(secs).unwrap_or(i64::MAX)
+        )
+    }
+}
+
+fn encryption_note(palette: &ForgePalette, density: Density, cx: &App) -> impl IntoElement {
+    div()
+        .flex()
+        .items_center()
+        .gap(spacing(Spacing::Xxs, density))
+        .child(icon(Icon::Lock, LINK_GLYPH, palette.success))
+        .child(text(
+            tr!("donation_token_encrypted_note"),
+            FONT_XS,
+            palette.text_muted,
+            cx,
+        ))
+}
+
+fn mono_label(label: String, palette: &ForgePalette, cx: &App) -> Div {
+    div()
+        .font_family(cx.mono_family())
+        .text_size(FONT_XXS)
+        .text_color(palette.text_muted)
+        .child(label.to_uppercase())
+}
+
+fn text(content: impl Into<SharedString>, size: Pixels, color: Rgba, cx: &App) -> Div {
+    div()
+        .font_family(cx.body_family())
+        .text_size(size)
+        .text_color(color)
+        .child(content.into())
+}

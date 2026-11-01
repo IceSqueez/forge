@@ -1,0 +1,256 @@
+use std::sync::Arc;
+
+use forge_components::focus_inside_modal;
+use forge_components::{ForgePalette, Icon, ToastKind, icon, pad_tile, tr};
+use forge_soundboard::{NewClip, SoundboardError};
+use forge_storage::{MediaFormat, MediaKind};
+use forge_types::ClipId;
+use gpui::{AnyElement, ClickEvent, Context, Entity, Pixels, Window, prelude::*, px};
+
+use super::SoundboardView;
+use super::keys::unregistered_combo;
+use crate::app::async_bridge;
+use crate::audio::clip_editor::{ClipDraft, ClipEditor, ClipEditorEvent, ClipEditorLaunch};
+use crate::audio::clip_key_state::canonical_combo;
+use crate::audio::clip_messages::failure_message;
+use crate::automation::combo_conflict::release_holder;
+use forge_components::PushToast;
+
+const ADD_ICON: Pixels = px(13.0);
+
+impl SoundboardView {
+    fn open_add(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.open_editor(
+            ClipEditorLaunch {
+                edit_id: None,
+                name: String::new(),
+                category: forge_soundboard::SoundCategory::ALL[0].as_str().to_owned(),
+                file_path: None,
+                loop_playback: false,
+                hotkey: None,
+            },
+            window,
+            cx,
+        );
+    }
+
+    pub(super) fn open_edit(&mut self, id: ClipId, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(launch) = self.pads.read(cx).edit_launch(id) else {
+            return;
+        };
+        self.open_editor(launch, window, cx);
+    }
+
+    fn open_editor(
+        &mut self,
+        launch: ClipEditorLaunch,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let rt_handle = self.handles.rt_handle.clone();
+        let keys = self.pads.read(cx).keys();
+        let holders = keys.available().then(|| keys.holders());
+        let switch = self.integration_switch();
+        let modal = cx.new(|cx| {
+            let editor = ClipEditor::new(launch, holders, rt_handle, cx);
+            match switch {
+                Some(switch) => editor.with_integration_switch(switch, cx),
+                None => editor,
+            }
+        });
+        focus_inside_modal(window, cx, |window, cx| {
+            modal.update(cx, |m, cx| m.focus(window, cx))
+        });
+        self._modal_sub = Some(cx.subscribe(&modal, Self::on_modal_event));
+        self.modal = Some(modal);
+        self.pads.update(cx, |pads, cx| pads.reload_key_holders(cx));
+        cx.notify();
+    }
+
+    fn on_modal_event(
+        &mut self,
+        _modal: Entity<ClipEditor>,
+        event: &ClipEditorEvent,
+        cx: &mut Context<Self>,
+    ) {
+        match event {
+            ClipEditorEvent::Submit(draft) => self.persist(draft, cx),
+            ClipEditorEvent::Cancel => self.close_modal(cx),
+        }
+    }
+
+    fn close_modal(&mut self, cx: &mut Context<Self>) {
+        self.modal = None;
+        self._modal_sub = None;
+        cx.notify();
+    }
+
+    fn persist(&mut self, draft: &ClipDraft, cx: &mut Context<Self>) {
+        let name = draft.name.clone();
+        let file_path = draft.file_path.clone();
+        let category = draft.category.clone();
+        let loop_playback = draft.loop_playback;
+        let edit_id = draft.edit_id;
+        let hotkey = draft.hotkey.clone();
+        let keys = self.pads.read(cx).keys();
+        let release = match (draft.release.clone(), draft.hotkey.clone()) {
+            (Some(holder), Some(combo)) => keys
+                .reconciler()
+                .map(|reconciler| (holder.label(), holder, combo, Arc::clone(reconciler))),
+            _ => None,
+        };
+        let reconciler = keys.reconciler().cloned();
+        let backend = Arc::clone(keys.backend());
+
+        if let Some(modal) = self.modal.as_ref() {
+            modal.update(cx, |m, cx| m.set_saving(cx));
+        }
+        let library = Arc::clone(&self.handles.library);
+        let player = Arc::clone(&self.handles.player);
+        let saved_name = name.clone();
+        async_bridge::run_async(
+            &self.handles.rt_handle,
+            async move {
+                let target_id = match edit_id {
+                    Some(id) => {
+                        let Some(mut clip) = library.get(id).await? else {
+                            return Err(SoundboardError::ClipNotFound(id.to_string()));
+                        };
+                        clip.name = name;
+                        if clip.file_path != file_path {
+                            clip.file_path = file_path;
+                            clip.duration_secs = None;
+                        }
+                        clip.category = category;
+                        clip.loop_playback = loop_playback;
+                        clip.hotkey = hotkey.clone();
+                        library.save_clip(&clip).await?;
+                        id
+                    }
+                    None => {
+                        library
+                            .create_clip(NewClip {
+                                name,
+                                file_path,
+                                hotkey: hotkey.clone(),
+                                category,
+                                loop_playback,
+                                builtin_id: None,
+                            })
+                            .await?
+                    }
+                };
+                let shared = match release {
+                    Some((label, holder, combo, reconciler)) => {
+                        release_holder(holder, combo.clone(), reconciler, backend)
+                            .await
+                            .err()
+                            .map(|_| SharedCombo {
+                                combo: canonical_combo(&combo),
+                                holder: label,
+                            })
+                    }
+                    None => None,
+                };
+                if let Err(error) = player.ensure_clip_duration(target_id).await {
+                    tracing::warn!(%error, "clip duration could not be measured");
+                }
+                Ok::<_, SoundboardError>(ClipSaved {
+                    unregistered: unregistered_combo(hotkey.as_deref(), reconciler.as_deref()),
+                    shared,
+                })
+            },
+            move |this, result, cx| match result {
+                Ok(saved) => this.on_saved(&saved_name, saved, cx),
+                Err(error) => this.on_save_error(failure_message(&error), cx),
+            },
+            cx,
+        );
+        cx.notify();
+    }
+
+    fn on_saved(&mut self, name: &str, saved: ClipSaved, cx: &mut Context<Self>) {
+        if let Some(shared) = saved.shared {
+            cx.push_toast(
+                ToastKind::Warn,
+                tr!(
+                    "soundboard_toast_key_still_shared",
+                    name = name,
+                    combo = shared.combo.as_str(),
+                    holder = shared.holder.as_str()
+                ),
+            );
+        }
+        if let Some(combo) = saved.unregistered {
+            cx.push_toast(
+                ToastKind::Warn,
+                tr!(
+                    "soundboard_toast_key_not_registered",
+                    name = name,
+                    combo = combo.as_str()
+                ),
+            );
+        }
+        self.close_modal(cx);
+        self.pads.update(cx, |pads, cx| {
+            pads.reload(cx);
+            pads.reload_key_holders(cx);
+        });
+    }
+
+    fn on_save_error(&mut self, message: String, cx: &mut Context<Self>) {
+        if let Some(modal) = self.modal.as_ref() {
+            modal.update(cx, |m, cx| m.fail_save(message, cx));
+        }
+        cx.notify();
+    }
+
+    pub(super) fn render_add_bar(
+        &self,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        pad_tile(
+            "sb-add-bar",
+            icon(Icon::Plus, ADD_ICON, palette.accent_peach),
+            tr!("soundboard_add_sound"),
+            palette,
+        )
+        .bar(palette)
+        .title_color(palette.accent_peach)
+        .hover_border(palette.accent_peach)
+        .on_click(cx.listener(|this, _: &ClickEvent, window, cx| this.open_add(window, cx)))
+        .into_any_element()
+    }
+}
+
+struct ClipSaved {
+    unregistered: Option<String>,
+    shared: Option<SharedCombo>,
+}
+
+struct SharedCombo {
+    combo: String,
+    holder: String,
+}
+
+pub(crate) fn audio_dialog_extensions() -> Vec<&'static str> {
+    MediaFormat::ACCEPTED
+        .iter()
+        .copied()
+        .filter(|format| format.kind() == MediaKind::Audio)
+        .map(MediaFormat::as_str)
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_import_dialog_offers_every_accepted_audio_format_and_nothing_else() {
+        let mut offered = audio_dialog_extensions();
+        offered.sort_unstable();
+        assert_eq!(offered, ["flac", "m4a", "mp3", "ogg", "wav"]);
+    }
+}

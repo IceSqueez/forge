@@ -1,6 +1,7 @@
 #![expect(clippy::expect_used, clippy::unwrap_used, reason = "test fixtures")]
 mod common;
 use common::{FixedClock, base};
+use forge_storage::RunRefusal;
 
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
@@ -27,7 +28,6 @@ use forge_runtime::{
 use forge_storage::MockActionRepo;
 use forge_storage::MockHistoryRepo;
 use forge_storage::MockTriggerInstanceRepo;
-use forge_storage::RunRefusal;
 use forge_storage::{
     CatalogRevision, DataProvider, MissedRunPolicy, MockScheduledRunRepo, ScheduledRun,
     ScheduledRunId, ScheduledRunOutcome, ScheduledRunPlacement, ScheduledRunRepo, ScheduledRunSpec,

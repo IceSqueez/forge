@@ -17,7 +17,7 @@ use crate::vocabulary::{config_keys, sub_action_ids};
 
 const DEFAULT_DURATION_SECONDS: i64 = 600;
 const MIN_DURATION_SECONDS: i64 = 1;
-const MAX_DURATION_SECONDS: i64 = 1_209_600;
+pub(crate) const MAX_DURATION_SECONDS: i64 = 1_209_600;
 
 pub(crate) const TIMEOUT_DURATION: DurationField = DurationField {
     key: config_keys::DURATION_SECONDS,

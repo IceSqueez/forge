@@ -15,6 +15,7 @@ mod integration_start_errors;
 pub mod integrations;
 pub mod os_adapters;
 mod overlay_boot;
+pub mod overlay_removal;
 pub mod platform_credentials;
 pub mod platform_identities;
 mod remote_audio;

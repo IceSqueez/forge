@@ -330,3 +330,16 @@ impl ScheduledRunRepo for RevisingScheduledRunRepo {
         self.inner.count_pending_for_action(action_id).await
     }
 }
+
+#[cfg(test)]
+mod reason_tests {
+    use super::RunRefusal;
+
+    #[test]
+    fn every_reason_reads_back_from_its_stored_token() {
+        for reason in RunRefusal::ALL {
+            assert_eq!(RunRefusal::from_code(reason.code()), Some(reason));
+        }
+        assert_eq!(RunRefusal::from_code("vendor_glitch"), None);
+    }
+}

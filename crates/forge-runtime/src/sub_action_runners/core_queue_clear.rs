@@ -40,7 +40,7 @@ impl CoreQueueClearRunner {
             ClearMode::CancelCurrent
         };
         match self.scheduler.clear(queue_id, mode).await {
-            Ok(()) => SubActionOutcome::Success,
+            Ok(_) => SubActionOutcome::Success,
             Err(e) => SubActionOutcome::Failed(core_messages::scheduler_failed(e).into()),
         }
     }

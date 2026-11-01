@@ -1,0 +1,15 @@
+pub(crate) mod settings;
+pub(crate) mod settings_about;
+pub(crate) mod settings_audio;
+pub(crate) mod settings_audio_routing;
+pub(crate) mod settings_catalog;
+pub(crate) mod settings_diagnostics;
+pub(crate) mod settings_notifications;
+pub(crate) mod settings_pane_header;
+pub(crate) mod settings_region;
+pub(crate) mod settings_scripting;
+pub(crate) mod settings_shortcuts;
+pub(crate) mod settings_storage;
+pub(crate) mod settings_update_status;
+pub(crate) mod settings_voice_gate;
+pub(crate) mod settings_websocket;

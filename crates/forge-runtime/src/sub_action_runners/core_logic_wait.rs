@@ -3,6 +3,7 @@ use forge_registry::{
     ConfigSpec, DurationBounds, DurationField, RunContext, StepCatalogEntry, StepTimer,
     SubActionCategory, SubActionRunner, TypedField,
 };
+use forge_registry::{StepCardDetail, card_int};
 use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry};
 
 const MAX_DELAY_MS: i64 = 60_000;
@@ -37,6 +38,13 @@ impl StepCatalogEntry for CoreLogicWaitRunner {
     }
     fn icon_name(&self) -> &str {
         "clock-pause"
+    }
+
+    fn card_detail(&self, config: &SubActionConfig) -> Option<StepCardDetail> {
+        let ms = card_int(config, WAIT_MS_KEY).unwrap_or(0);
+        Some(StepCardDetail::Message(
+            crate::core_messages::step_wait_detail(ms),
+        ))
     }
 }
 

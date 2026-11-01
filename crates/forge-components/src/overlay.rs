@@ -5,8 +5,8 @@ use gpui::{
     Anchor, AnchoredPositionMode, Animation, AnimationExt, AnyElement, App, Div, ElementId, Entity,
     FocusHandle, Global, InteractiveElement, IntoElement, KeyDownEvent, MouseButton,
     MouseDownEvent, MouseMoveEvent, ParentElement, Pixels, PlatformInput, Point, RenderOnce, Rgba,
-    ScrollDelta, ScrollEvent, SharedString, Styled, WeakFocusHandle, Window, anchored, deferred,
-    div, point, px,
+    ScrollDelta, ScrollEvent, SharedString, Size, Styled, WeakFocusHandle, Window, anchored,
+    deferred, div, point, px,
 };
 
 use crate::palette::{ForgePalette, with_alpha};
@@ -66,6 +66,59 @@ fn take_entrusted_focus(window: &Window, cx: &mut App) -> Option<FocusEntrusted>
     } else {
         None
     }
+}
+
+pub(crate) const PRESS_LEFT: &[MouseButton] = &[MouseButton::Left];
+pub(crate) const PRESS_ANY: &[MouseButton] = &[MouseButton::Left, MouseButton::Right];
+
+fn dismissing_on_press(
+    mut layer: Div,
+    dismiss: Option<DismissHandler>,
+    buttons: &[MouseButton],
+) -> Div {
+    if let Some(dismiss) = dismiss {
+        for button in buttons {
+            let dismiss = dismiss.clone();
+            layer = layer.on_mouse_down(*button, move |_: &MouseDownEvent, window, cx| {
+                dismiss(window, cx);
+            });
+        }
+    }
+    layer
+}
+
+pub(crate) fn dismiss_backdrop(
+    dismiss: Option<DismissHandler>,
+    buttons: &[MouseButton],
+    window: &Window,
+) -> impl IntoElement + use<> {
+    let viewport = window.viewport_size();
+    anchored()
+        .position_mode(AnchoredPositionMode::Window)
+        .position(point(px(0.0), px(0.0)))
+        .anchor(Anchor::TopLeft)
+        .child(
+            div()
+                .w(viewport.width)
+                .h(viewport.height)
+                .child(dismissing_on_press(
+                    div().size_full().occlude(),
+                    dismiss,
+                    buttons,
+                )),
+        )
+}
+
+pub(crate) fn dismissing_on_escape<E: InteractiveElement>(
+    element: E,
+    dismiss: impl Fn(&mut Window, &mut App) + 'static,
+) -> E {
+    element.on_key_down(move |event: &KeyDownEvent, window, cx| {
+        if event.keystroke.key.as_str() == ESCAPE_KEY {
+            cx.stop_propagation();
+            dismiss(window, cx);
+        }
+    })
 }
 
 struct ModalFocus {
@@ -223,7 +276,7 @@ pub enum OverlayPosition {
     Right(Pixels),
 }
 
-type DismissHandler = Rc<dyn Fn(&mut Window, &mut App) + 'static>;
+pub(crate) type DismissHandler = Rc<dyn Fn(&mut Window, &mut App) + 'static>;
 
 #[derive(IntoElement)]
 pub struct Overlay {
@@ -294,14 +347,11 @@ impl Overlay {
 
     fn render_scrim(&self, animate_alpha: bool) -> gpui::AnyElement {
         let scrim = self.scrim;
-        let mut layer = div().absolute().top_0().left_0().size_full().occlude();
-
-        if let Some(handler) = self.on_dismiss.clone().filter(|_| !self.busy) {
-            layer =
-                layer.on_mouse_down(MouseButton::Left, move |_: &MouseDownEvent, window, cx| {
-                    handler(window, cx);
-                });
-        }
+        let layer = dismissing_on_press(
+            div().absolute().top_0().left_0().size_full().occlude(),
+            self.on_dismiss.clone().filter(|_| !self.busy),
+            PRESS_LEFT,
+        );
 
         if animate_alpha {
             let base_a = scrim.a;
@@ -326,6 +376,67 @@ impl Overlay {
             SharedString::new_static("panel"),
         )
     }
+
+    fn center_root(&self, content: AnyElement, viewport: Size<Pixels>) -> Div {
+        let card = div().occlude().child(content);
+        let content_layer = div()
+            .absolute()
+            .top_0()
+            .left_0()
+            .size_full()
+            .flex()
+            .items_center()
+            .justify_center()
+            .child(card);
+
+        viewport_frame(viewport)
+            .child(self.render_scrim(false))
+            .child(content_layer)
+    }
+
+    fn left_root(&self, content: AnyElement, width: Pixels, viewport: Size<Pixels>) -> Div {
+        let panel_id = self.panel_anim_id();
+        let card = div()
+            .absolute()
+            .top_0()
+            .left_0()
+            .h_full()
+            .occlude()
+            .child(content)
+            .with_animation(panel_id, enter_animation(), move |el, delta| {
+                el.left(width * -(1.0 - delta))
+            });
+
+        viewport_frame(viewport)
+            .child(self.render_scrim(true))
+            .child(card)
+    }
+
+    fn right_root(&self, content: AnyElement, width: Pixels, viewport: Size<Pixels>) -> Div {
+        let panel_id = self.panel_anim_id();
+        let card = div()
+            .absolute()
+            .top_0()
+            .right_0()
+            .h_full()
+            .occlude()
+            .child(content)
+            .with_animation(panel_id, enter_animation(), move |el, delta| {
+                el.right(width * -(1.0 - delta))
+            });
+
+        viewport_frame(viewport)
+            .child(self.render_scrim(true))
+            .child(card)
+    }
+}
+
+fn viewport_frame(viewport: Size<Pixels>) -> Div {
+    div()
+        .relative()
+        .w(viewport.width)
+        .h(viewport.height)
+        .overflow_hidden()
 }
 
 impl RenderOnce for Overlay {
@@ -340,79 +451,17 @@ impl RenderOnce for Overlay {
         let content = std::mem::replace(&mut self.content, div().into_any_element());
 
         let root: Div = match position {
-            OverlayPosition::Center => {
-                let card = div().occlude().child(content);
-                let content_layer = div()
-                    .absolute()
-                    .top_0()
-                    .left_0()
-                    .size_full()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .child(card);
-
-                div()
-                    .relative()
-                    .w(viewport.width)
-                    .h(viewport.height)
-                    .overflow_hidden()
-                    .child(self.render_scrim(false))
-                    .child(content_layer)
-            }
-            OverlayPosition::Left(width) => {
-                let panel_id = self.panel_anim_id();
-                let card = div()
-                    .absolute()
-                    .top_0()
-                    .left_0()
-                    .h_full()
-                    .occlude()
-                    .child(content)
-                    .with_animation(panel_id, enter_animation(), move |el, delta| {
-                        el.left(width * -(1.0 - delta))
-                    });
-
-                div()
-                    .relative()
-                    .w(viewport.width)
-                    .h(viewport.height)
-                    .overflow_hidden()
-                    .child(self.render_scrim(true))
-                    .child(card)
-            }
-            OverlayPosition::Right(width) => {
-                let panel_id = self.panel_anim_id();
-                let card = div()
-                    .absolute()
-                    .top_0()
-                    .right_0()
-                    .h_full()
-                    .occlude()
-                    .child(content)
-                    .with_animation(panel_id, enter_animation(), move |el, delta| {
-                        el.right(width * -(1.0 - delta))
-                    });
-
-                div()
-                    .relative()
-                    .w(viewport.width)
-                    .h(viewport.height)
-                    .overflow_hidden()
-                    .child(self.render_scrim(true))
-                    .child(card)
-            }
+            OverlayPosition::Center => self.center_root(content, viewport),
+            OverlayPosition::Left(width) => self.left_root(content, width, viewport),
+            OverlayPosition::Right(width) => self.right_root(content, width, viewport),
         };
 
         let mut root = root;
         if let (Some(handle), Some(handler)) = (escape_focus.as_ref(), self.on_dismiss.clone()) {
             let busy = self.busy;
-            root = confine_tab(root.track_focus(handle), handle).on_key_down(
-                move |event: &KeyDownEvent, window, cx| {
-                    if event.keystroke.key.as_str() != ESCAPE_KEY {
-                        return;
-                    }
-                    cx.stop_propagation();
+            root = dismissing_on_escape(
+                confine_tab(root.track_focus(handle), handle),
+                move |window, cx| {
                     if !busy {
                         handler(window, cx);
                     }
@@ -473,19 +522,7 @@ impl AnchoredPopover {
 
 impl RenderOnce for AnchoredPopover {
     fn render(self, window: &mut Window, _cx: &mut App) -> impl IntoElement {
-        let viewport = window.viewport_size();
-        let mut backdrop = div().size_full().occlude();
-        if let Some(dismiss) = self.on_dismiss.clone() {
-            backdrop =
-                backdrop.on_mouse_down(MouseButton::Left, move |_: &MouseDownEvent, window, cx| {
-                    dismiss(window, cx);
-                });
-        }
-        let backdrop_layer = anchored()
-            .position_mode(AnchoredPositionMode::Window)
-            .position(point(px(0.0), px(0.0)))
-            .anchor(Anchor::TopLeft)
-            .child(div().w(viewport.width).h(viewport.height).child(backdrop));
+        let backdrop_layer = dismiss_backdrop(self.on_dismiss.clone(), PRESS_LEFT, window);
 
         let content = div().child(self.content).with_animation(
             ElementId::Name(SharedString::new_static("forge-popover-content")),
@@ -503,13 +540,9 @@ impl RenderOnce for AnchoredPopover {
         let mut root = div().child(backdrop_layer).child(panel_layer);
         if let (Some(handle), Some(dismiss)) = (self.escape_focus.as_ref(), self.on_dismiss.clone())
         {
-            root = confine_tab(root.track_focus(handle), handle).on_key_down(
-                move |event: &KeyDownEvent, window, cx| {
-                    if event.keystroke.key.as_str() == ESCAPE_KEY {
-                        cx.stop_propagation();
-                        dismiss(window, cx);
-                    }
-                },
+            root = dismissing_on_escape(
+                confine_tab(root.track_focus(handle), handle),
+                move |window, cx| dismiss(window, cx),
             );
         }
 

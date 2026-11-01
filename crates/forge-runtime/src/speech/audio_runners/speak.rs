@@ -1,3 +1,4 @@
+use forge_registry::{StepCardDetail, card_text};
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -96,6 +97,14 @@ impl StepCatalogEntry for SpeakRunner {
     }
     fn icon_name(&self) -> &str {
         "message-circle"
+    }
+
+    fn card_detail(&self, config: &SubActionConfig) -> Option<StepCardDetail> {
+        Some(StepCardDetail::Text(
+            card_text(config, super::SPEECH_TEXT_KEY)
+                .unwrap_or("")
+                .to_owned(),
+        ))
     }
 }
 

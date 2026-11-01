@@ -1,212 +1,14 @@
-mod actions;
-mod actions_screen;
-mod amount_scale;
-mod app_paths;
-mod app_shortcut_modal;
-mod async_bridge;
-mod awake_state;
-mod backup_flow;
-mod backup_passphrase_modal;
-mod backup_schedule;
-mod boot;
-mod boot_restore;
-mod boot_signal;
-mod boot_warnings;
-mod builtin_sections;
-mod bundle_preview;
-mod chat;
-mod chat_author;
-mod chat_drawer;
-mod chat_feed;
-mod chat_feed_bridge;
-mod chat_gap_row;
-mod chat_input_bar;
-mod chat_row;
-mod chat_viewer_messages;
-mod chrome;
-mod clip_editor;
-mod clip_key_state;
-mod clip_messages;
-mod clip_playback;
-mod clipboard;
-mod cloud_credentials;
-mod collection_form;
-mod collection_list;
-mod collection_manager;
-mod collection_text;
-mod combo_capture;
-mod combo_conflict;
-mod config_field_label;
-mod config_form;
-mod config_text;
-mod connect_flow;
-mod connect_scaffold;
-mod crash_hook;
-mod crash_record;
-mod detail_route;
-mod diagnostic_bundle;
-mod discord_screen;
-mod discord_webhook_modal;
-mod discord_webhooks;
-mod donation_services;
-mod donation_settings;
-mod engine_voice_choices;
-mod error;
-mod event_categories;
-mod event_feed;
-mod event_log;
-mod event_loss;
-mod event_loss_card;
-mod first_run;
-mod footer;
-mod globals;
-mod globals_view;
-mod health_text;
-mod home;
-mod home_stats;
-mod hotkey_action_modal;
-mod hotkey_bindings;
-mod hotkeys_screen;
-mod hub_card;
-mod hub_crumb;
-mod i18n;
-mod import_busy;
-mod in_flight_steps;
-mod instance_lock;
-mod instance_raise;
-mod integration_catalog;
-mod integration_detail;
-mod integration_disable_modal;
-mod integration_disabled;
-mod integration_extensions;
-mod integration_failed;
-mod integration_lifecycle;
-mod integration_quick_action_modal;
-mod integration_quick_actions;
-mod integration_switch;
-mod integrations_hub;
-mod issue_link;
-mod kind_copy;
-mod load_notice;
-mod local_tts_engines;
-mod log_archive;
-mod log_level;
-mod log_scrub;
-mod log_tail;
-mod message_catalogs;
-mod midi_mapping_modal;
-mod midi_screen;
-mod midi_signal;
-mod navigable_list;
-mod navigation;
-mod navigation_guard;
-mod obs_connect;
-mod obs_credentials_form;
-mod obs_settings_modal;
-mod option_choices;
-mod option_labels;
-mod option_list_text;
-mod overlay_build_failure;
-mod overlay_link_token;
-mod overlay_speech_failure;
-mod overlays_screen;
-mod pack_export;
-mod pack_export_modal;
-mod pack_import_flow;
-mod pack_import_live;
-mod pack_import_modal;
-mod pack_services;
-mod picker_favorites;
-mod platform_visuals;
-mod platforms;
-mod presentation;
-mod problem_report;
-mod queue_health;
-mod queues;
-mod repo_failure;
-mod restore_close;
-mod restore_confirm;
-mod restore_flow;
-mod restore_passphrase_modal;
-mod restore_problem;
-mod restore_relaunch;
-mod root;
-mod run_disclosure;
-mod run_history_modal;
-mod runtime_event;
-mod runtime_handles;
-mod runtime_status;
-mod safety_copies;
-mod scheduled_backup_notices;
-mod scheduled_run_labels;
-mod scheduled_runs_section;
-mod screen_shortcuts;
-mod script_editor;
-mod script_lifecycle;
-mod server_bearer;
-mod server_console;
-mod server_restart;
-mod server_unavailable;
-mod settings;
-mod settings_about;
-mod settings_audio;
-mod settings_audio_routing;
-mod settings_catalog;
-mod settings_diagnostics;
-mod settings_notifications;
-mod settings_pane_header;
-mod settings_region;
-mod settings_scripting;
-mod settings_shortcuts;
-mod settings_storage;
-mod settings_update_status;
-mod settings_voice_gate;
-mod settings_websocket;
-mod setup_confirm;
-mod setup_export;
-mod setup_import_flow;
-mod shell;
-mod shortcut_overrides;
-mod shutdown;
-mod sidebar;
-mod soundboard;
-mod speak_state;
-mod start_failure;
-mod stay_awake;
-mod system_info;
-mod system_notices;
+mod app;
+mod audience;
+mod audio;
+mod automation;
+mod data_flows;
+mod integrations;
+mod preferences;
+mod shared;
 #[cfg(test)]
 mod test_support;
-mod titlebar;
-mod topics;
-mod transfer_flows;
-mod trigger_form_shape;
-mod triggers_screen;
-mod tts;
-mod tts_dashboard;
-mod tts_engine_roster;
-mod tts_engines;
-mod tts_filters;
-mod twitch_bot_presence;
-mod twitch_bot_section;
-mod unavailable_builtin;
-mod unsaved_work;
-mod update_check;
-mod update_exit;
-mod update_flow;
-mod update_handoff;
-mod update_launch;
-mod update_leftover;
-mod update_report;
-mod update_toast;
-mod user_text;
-mod voice_alias_form;
-mod voice_alias_store;
-mod voice_aliases;
-mod vtube_connect;
-mod vtube_connect_form;
-mod window_placement;
-mod window_presence;
+mod tools;
 
 use std::cell::Cell;
 use std::rc::Rc;
@@ -219,14 +21,14 @@ use gpui::{
     TitlebarOptions, WindowBounds, WindowOptions, point, px, size,
 };
 
-use crate::actions::register_key_bindings;
-use crate::log_tail::LogTail;
-use crate::navigation::Screen;
-use crate::root::{BootInputs, RestoreWaitView, RootView, run_boot};
-use crate::settings::{NAV_WIDTH, PANE_MIN_WIDTH};
-use crate::shutdown::{RUNTIME_SHUTDOWN_BUDGET, RuntimeSlot, silence_logging};
-use crate::sidebar::SIDEBAR_MAX;
-use crate::titlebar::TITLEBAR_HEIGHT;
+use crate::app::actions::register_key_bindings;
+use crate::app::log_tail::LogTail;
+use crate::app::navigation::Screen;
+use crate::app::root::{BootInputs, RestoreWaitView, RootView, run_boot};
+use crate::app::shutdown::{RUNTIME_SHUTDOWN_BUDGET, RuntimeSlot, silence_logging};
+use crate::app::sidebar::SIDEBAR_MAX;
+use crate::app::titlebar::TITLEBAR_HEIGHT;
+use crate::preferences::settings::{NAV_WIDTH, PANE_MIN_WIDTH};
 use forge_components::{AccentColor, Density, FontFamilies, Presentation, ThemeId};
 
 const SHELL_MIN_CONTENT_HEIGHT: Pixels = px(480.0);
@@ -281,9 +83,9 @@ fn parse_startup_request(
                 );
             }
             forge_update::CANDIDATE_FLAG => {}
-            restore_relaunch::PREVIOUS_INSTANCE_FLAG => {
+            data_flows::restore_relaunch::PREVIOUS_INSTANCE_FLAG => {
                 args.next().ok_or(StartupArgsError::MissingValue(
-                    restore_relaunch::PREVIOUS_INSTANCE_FLAG,
+                    data_flows::restore_relaunch::PREVIOUS_INSTANCE_FLAG,
                 ))?;
             }
             other => return Err(StartupArgsError::Unrecognized(other.to_owned())),
@@ -326,21 +128,21 @@ fn init_tracing() -> (Option<tracing_appender::non_blocking::WorkerGuard>, LogTa
 
     let (env_filter, env_overridden) = match EnvFilter::try_from_default_env() {
         Ok(filter) => (filter, true),
-        Err(_) => (crate::log_level::default_filter(), false),
+        Err(_) => (crate::app::log_level::default_filter(), false),
     };
-    let filter_layer = crate::log_level::reloadable(env_filter, env_overridden);
+    let filter_layer = crate::app::log_level::reloadable(env_filter, env_overridden);
     let console_layer = fmt::layer()
         .with_target(false)
-        .with_writer(crate::log_scrub::scrubbed(std::io::stdout));
+        .with_writer(crate::app::log_scrub::scrubbed(std::io::stdout));
     let log_tail = LogTail::new();
 
     const RETAINED_LOG_FILES: usize = 14;
 
-    let log_dir = crate::app_paths::app_paths().logs_dir();
+    let log_dir = crate::app::app_paths::app_paths().logs_dir();
     let appender = std::fs::create_dir_all(&log_dir).ok().and_then(|()| {
         tracing_appender::rolling::Builder::new()
             .rotation(tracing_appender::rolling::Rotation::DAILY)
-            .filename_prefix(log_archive::LOG_PREFIX)
+            .filename_prefix(app::log_archive::LOG_PREFIX)
             .max_log_files(RETAINED_LOG_FILES)
             .build(&log_dir)
             .ok()
@@ -348,7 +150,7 @@ fn init_tracing() -> (Option<tracing_appender::non_blocking::WorkerGuard>, LogTa
     let (file_layer, guard) = match appender {
         Some(appender) => {
             let (writer, guard) = tracing_appender::non_blocking(appender);
-            let layer = log_archive::file_layer(crate::log_scrub::scrubbed(writer));
+            let layer = app::log_archive::file_layer(crate::app::log_scrub::scrubbed(writer));
             (Some(layer), Some(guard))
         }
         None => (None, None),
@@ -416,34 +218,35 @@ enum StartupGate {
 }
 
 struct InstanceClaim {
-    instance_lock: Option<instance_lock::InstanceLock>,
+    instance_lock: Option<app::instance_lock::InstanceLock>,
     restore_outcome: forge_transfer::RestoreOutcome,
 }
 
 fn claim_instance() -> Result<InstanceClaim, i32> {
-    let instance_lock = match instance_lock::acquire(&crate::app_paths::app_paths().data_dir()) {
-        instance_lock::LockOutcome::Acquired(lock) => Some(lock),
-        instance_lock::LockOutcome::AlreadyRunning => {
-            boot_signal::already_running();
-            return Err(
-                match instance_raise::ask_running_instance(
-                    &crate::app_paths::app_paths().data_dir(),
-                ) {
-                    Ok(()) => EXIT_RAISED_RUNNING_INSTANCE,
-                    Err(err) => {
-                        tracing::warn!(error = %err, "running instance could not be raised");
-                        EXIT_STARTUP_FAILURE
-                    }
-                },
-            );
-        }
-        instance_lock::LockOutcome::Unavailable(err) => {
-            tracing::warn!(error = %err, "single-instance lock unavailable; starting anyway");
-            None
-        }
-    };
-    let restore_outcome = boot_restore::settle_pending_restore(
-        &crate::app_paths::app_paths().data_dir(),
+    let instance_lock =
+        match app::instance_lock::acquire(&crate::app::app_paths::app_paths().data_dir()) {
+            app::instance_lock::LockOutcome::Acquired(lock) => Some(lock),
+            app::instance_lock::LockOutcome::AlreadyRunning => {
+                app::boot_signal::already_running();
+                return Err(
+                    match app::instance_raise::ask_running_instance(
+                        &crate::app::app_paths::app_paths().data_dir(),
+                    ) {
+                        Ok(()) => EXIT_RAISED_RUNNING_INSTANCE,
+                        Err(err) => {
+                            tracing::warn!(error = %err, "running instance could not be raised");
+                            EXIT_STARTUP_FAILURE
+                        }
+                    },
+                );
+            }
+            app::instance_lock::LockOutcome::Unavailable(err) => {
+                tracing::warn!(error = %err, "single-instance lock unavailable; starting anyway");
+                None
+            }
+        };
+    let restore_outcome = app::boot_restore::settle_pending_restore(
+        &crate::app::app_paths::app_paths().data_dir(),
         instance_lock.is_some(),
     )
     .map_err(|err| {
@@ -452,7 +255,7 @@ fn claim_instance() -> Result<InstanceClaim, i32> {
     })?;
     if instance_lock.is_some()
         && let Err(err) =
-            forge_transfer::sweep_import_staging(&crate::app_paths::app_paths().data_dir())
+            forge_transfer::sweep_import_staging(&crate::app::app_paths::app_paths().data_dir())
     {
         tracing::warn!(error = %err, "leftover import staging could not be removed");
     }
@@ -463,7 +266,7 @@ fn claim_instance() -> Result<InstanceClaim, i32> {
 }
 
 fn await_previous_then_claim(previous: u32) -> Result<InstanceClaim, i32> {
-    if restore_relaunch::await_previous_exit(previous) {
+    if data_flows::restore_relaunch::await_previous_exit(previous) {
         tracing::info!(previous, "previous forge instance exited");
     } else {
         tracing::warn!(
@@ -529,19 +332,19 @@ fn begin_boot(claim: InstanceClaim, launch: MainWindowLaunch, cx: &mut App) {
         restore_outcome,
     } = claim;
     let holds_lock = instance_lock.is_some();
-    cx.global::<update_exit::ExitHandoff>()
+    cx.global::<data_flows::update_exit::ExitHandoff>()
         .adopt_lock(instance_lock);
-    cx.set_global(boot_restore::BootRestore(restore_outcome));
+    cx.set_global(app::boot_restore::BootRestore(restore_outcome));
     if holds_lock {
-        match instance_raise::listen(&crate::app_paths::app_paths().data_dir()) {
-            Ok(requests) => instance_raise::follow_raise_requests(requests, cx),
+        match app::instance_raise::listen(&crate::app::app_paths::app_paths().data_dir()) {
+            Ok(requests) => app::instance_raise::follow_raise_requests(requests, cx),
             Err(err) => tracing::warn!(error = %err, "raise endpoint unavailable"),
         }
     }
-    let crate::boot::BootStorage {
+    let crate::app::boot::BootStorage {
         presentation,
         opening,
-    } = crate::boot::open_boot_storage(&launch.rt_handle);
+    } = crate::app::boot::open_boot_storage(&launch.rt_handle);
     cx.spawn(async move |cx| {
         let presentation = presentation.arrived().await;
         cx.update(|cx| open_main_window(presentation, opening, launch, cx));
@@ -550,8 +353,8 @@ fn begin_boot(claim: InstanceClaim, launch: MainWindowLaunch, cx: &mut App) {
 }
 
 fn open_main_window(
-    presentation: crate::boot::BootPresentation,
-    opening: crate::boot::BackendOpening,
+    presentation: crate::app::boot::BootPresentation,
+    opening: crate::app::boot::BackendOpening,
     launch: MainWindowLaunch,
     cx: &mut App,
 ) {
@@ -575,8 +378,10 @@ fn open_main_window(
     #[cfg(target_os = "linux")]
     prewarm_kit_fonts(cx);
 
-    let (window_bounds, display_id) =
-        crate::window_placement::initial_window_bounds(presentation.window_placement.as_ref(), cx);
+    let (window_bounds, display_id) = crate::app::window_placement::initial_window_bounds(
+        presentation.window_placement.as_ref(),
+        cx,
+    );
     let options = WindowOptions {
         window_bounds: Some(window_bounds),
         display_id,
@@ -608,9 +413,9 @@ fn open_main_window(
         )
     });
     let window = match cx.open_window(options, move |window, cx| {
-        crate::window_presence::track_window_presence(window, cx);
+        crate::app::window_presence::track_window_presence(window, cx);
         if let Some((backend, rt_handle, persisted)) = placement_storage {
-            crate::window_placement::track_window_placement(
+            crate::app::window_placement::track_window_placement(
                 window, backend, rt_handle, persisted, cx,
             );
         }
@@ -638,18 +443,12 @@ fn open_main_window(
     run_boot(boot_inputs, Some(opening), window, cx);
 }
 
-fn main() {
-    let deferred_update_error = match update_launch::decide_start(std::env::args_os().skip(1)) {
-        update_launch::StartDecision::Boot { deferred_error } => deferred_error,
-        update_launch::StartDecision::Exit(code) => std::process::exit(code),
-    };
-    crash_hook::install(crate::app_paths::app_paths().crashes_dir());
-
-    let initial_screen = match parse_startup_request(lossy_cli_args()) {
-        Ok(StartupRequest::Open(screen)) => screen,
+fn requested_screen_or_exit() -> Option<Screen> {
+    match parse_startup_request(lossy_cli_args()) {
+        Ok(StartupRequest::Open(screen)) => Some(screen),
         Ok(StartupRequest::Help) => {
             print_usage();
-            return;
+            None
         }
         #[expect(
             clippy::print_stderr,
@@ -659,6 +458,42 @@ fn main() {
             eprintln!("forge-desktop: {message}");
             std::process::exit(EXIT_USAGE_ERROR);
         }
+    }
+}
+
+fn prepare_application(cx: &mut App) {
+    if let Err(err) = cx
+        .text_system()
+        .add_fonts(forge_components::embedded_fonts())
+    {
+        tracing::error!(error = %err, "failed to register embedded fonts");
+    }
+
+    crate::app::presentation::seed_presentation(cx);
+    cx.set_global(forge_components::Toasts::new());
+
+    crate::app::i18n::install_os_default();
+
+    register_key_bindings(cx);
+    cx.on_action(|_: &crate::app::actions::Quit, cx| cx.quit());
+    if cfg!(target_os = "macos") {
+        cx.set_menus([gpui::Menu::new("forge").items([gpui::MenuItem::action(
+            forge_components::tr!("app_menu_quit"),
+            crate::app::actions::Quit,
+        )])]);
+    }
+}
+
+fn main() {
+    let deferred_update_error =
+        match data_flows::update_launch::decide_start(std::env::args_os().skip(1)) {
+            data_flows::update_launch::StartDecision::Boot { deferred_error } => deferred_error,
+            data_flows::update_launch::StartDecision::Exit(code) => std::process::exit(code),
+        };
+    app::crash_hook::install(crate::app::app_paths::app_paths().crashes_dir());
+
+    let Some(initial_screen) = requested_screen_or_exit() else {
+        return;
     };
 
     let (log_guard, log_tail) = init_tracing();
@@ -671,7 +506,7 @@ fn main() {
     ) {
         Ok(endpoints) => endpoints,
         Err(err) => {
-            boot_signal::endpoint_override_refused(&err);
+            app::boot_signal::endpoint_override_refused(&err);
             drop(log_guard);
             std::process::exit(EXIT_STARTUP_FAILURE);
         }
@@ -689,7 +524,7 @@ fn main() {
 
     let guard_handle = rt_handle.clone();
     let rt_guard = guard_handle.enter();
-    let startup_gate = match restore_relaunch::previous_instance(lossy_cli_args()) {
+    let startup_gate = match data_flows::restore_relaunch::previous_instance(lossy_cli_args()) {
         Some(previous) => StartupGate::AwaitingPrevious(previous),
         None => match claim_instance() {
             Ok(claim) => StartupGate::Claimed(claim),
@@ -701,7 +536,7 @@ fn main() {
     };
     let runtime_slot = RuntimeSlot::new(rt);
     let slot_for_app = runtime_slot.clone();
-    let exit_handoff = update_exit::ExitHandoff::new(None);
+    let exit_handoff = data_flows::update_exit::ExitHandoff::new(None);
     let exit_for_app = exit_handoff.clone();
     let window_failed = Rc::new(Cell::new(false));
     let window_failure = Rc::clone(&window_failed);
@@ -716,35 +551,7 @@ fn main() {
     application.run(move |cx: &mut App| {
         cx.set_global(slot_for_app);
         cx.set_global(exit_for_app);
-        if let Err(err) = cx
-            .text_system()
-            .add_fonts(forge_components::embedded_fonts())
-        {
-            tracing::error!(error = %err, "failed to register embedded fonts");
-        }
-
-        cx.set_global(crate::presentation::ActiveLanguage(
-            forge_storage::Language::default(),
-        ));
-        cx.set_global(crate::presentation::ActiveDisplayFormats(
-            forge_components::DisplayFormatChoices::following(
-                forge_components::Region::for_language(crate::i18n::catalog_language(
-                    forge_storage::Language::default(),
-                )),
-            ),
-        ));
-        cx.set_global(forge_components::Toasts::new());
-
-        crate::i18n::install_os_default();
-
-        register_key_bindings(cx);
-        cx.on_action(|_: &crate::actions::Quit, cx| cx.quit());
-        if cfg!(target_os = "macos") {
-            cx.set_menus([gpui::Menu::new("forge").items([gpui::MenuItem::action(
-                forge_components::tr!("app_menu_quit"),
-                crate::actions::Quit,
-            )])]);
-        }
+        prepare_application(cx);
 
         let launch = MainWindowLaunch {
             rt_handle,
@@ -779,10 +586,10 @@ mod tests {
         EXIT_RAISED_RUNNING_INSTANCE, EXIT_STARTUP_FAILURE, FLAG_SCREEN, FLAG_SELECT,
         StartupRequest, await_previous_then_claim, claim_instance, parse_startup_request,
     };
-    use crate::instance_lock::{LockOutcome, acquire};
-    use crate::instance_raise;
-    use crate::navigation::Screen;
-    use crate::restore_relaunch::PREVIOUS_INSTANCE_FLAG;
+    use crate::app::instance_lock::{LockOutcome, acquire};
+    use crate::app::instance_raise;
+    use crate::app::navigation::Screen;
+    use crate::data_flows::restore_relaunch::PREVIOUS_INSTANCE_FLAG;
 
     const CLAIM_CHILD_MARKER: &str = "FORGE_CLAIM_CHILD";
 
@@ -811,7 +618,7 @@ mod tests {
         );
     }
 
-    fn holding_the_lock(data_dir: &std::path::Path) -> crate::instance_lock::InstanceLock {
+    fn holding_the_lock(data_dir: &std::path::Path) -> crate::app::instance_lock::InstanceLock {
         match acquire(data_dir) {
             LockOutcome::Acquired(lock) => lock,
             LockOutcome::AlreadyRunning | LockOutcome::Unavailable(_) => {

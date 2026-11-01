@@ -1,33 +1,29 @@
 use gpui::{AppContext, Context, Entity, SharedString};
 
-use crate::palette::ForgePalette;
 use crate::text_input::{InputEvent, TextInput, search_input, search_input_on_surface};
 
 pub struct SearchState {
     field: Entity<TextInput>,
+    typed: String,
     query: String,
 }
 
 impl SearchState {
-    pub fn new<V: 'static>(
-        cx: &mut Context<V>,
-        palette: ForgePalette,
-        placeholder: impl Into<SharedString>,
-    ) -> Self {
-        Self::from_field(cx.new(|cx| search_input(placeholder, palette, cx)))
+    pub fn new<V: 'static>(cx: &mut Context<V>, placeholder: impl Into<SharedString>) -> Self {
+        Self::from_field(cx.new(|cx| search_input(placeholder, cx)))
     }
 
     pub fn on_surface<V: 'static>(
         cx: &mut Context<V>,
-        palette: ForgePalette,
         placeholder: impl Into<SharedString>,
     ) -> Self {
-        Self::from_field(cx.new(|cx| search_input_on_surface(placeholder, palette, cx)))
+        Self::from_field(cx.new(|cx| search_input_on_surface(placeholder, cx)))
     }
 
     pub fn from_field(field: Entity<TextInput>) -> Self {
         Self {
             field,
+            typed: String::new(),
             query: String::new(),
         }
     }
@@ -40,6 +36,10 @@ impl SearchState {
         &self.query
     }
 
+    pub fn typed(&self) -> &str {
+        &self.typed
+    }
+
     pub fn is_empty(&self) -> bool {
         self.query.is_empty()
     }
@@ -48,7 +48,8 @@ impl SearchState {
         let InputEvent::Changed(text) = event else {
             return false;
         };
-        self.query = text.trim().to_lowercase();
+        self.typed = text.to_string();
+        self.query = self.typed.trim().to_lowercase();
         true
     }
 
@@ -57,6 +58,7 @@ impl SearchState {
     }
 
     pub fn clear<V: 'static>(&mut self, cx: &mut Context<V>) {
+        self.typed.clear();
         self.query.clear();
         self.field.update(cx, |input, cx| input.set_content("", cx));
     }
@@ -71,7 +73,6 @@ mod tests {
     use gpui::{TestAppContext, VisualTestContext};
 
     use super::*;
-    use crate::palette::FORGE_DEFAULT;
 
     struct Host {
         search: SearchState,
@@ -89,7 +90,7 @@ mod tests {
 
     fn mount(cx: &mut TestAppContext) -> (Entity<Host>, &mut VisualTestContext) {
         cx.add_window_view(|_window, cx| Host {
-            search: SearchState::new(cx, FORGE_DEFAULT, "search"),
+            search: SearchState::new(cx, "search"),
         })
     }
 

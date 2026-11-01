@@ -1,0 +1,345 @@
+use super::PlatformFilter;
+use super::timeline::ChatTimeline;
+use super::timeline::ChatTimelineEvent;
+use super::viewer_actions::ViewerTarget;
+use crate::audience::chat_feed::ChatFeed;
+use crate::audience::chat_gap_row::chat_gap_row;
+use crate::audience::chat_row::{ChatRow, chat_row};
+use crate::integrations::platform_visuals::{platform_mark, role_badge};
+use forge_components::{
+    ActivePresentation, BORDER_THIN, ChipGlyph, DateShape, Density, FONT_XS, ForgePalette, Icon,
+    KeyActivated, Radius, SEARCH_FIELD_WIDTH, Spacing, chip, empty_state, fmt_display, icon,
+    radius, spacing, tr,
+};
+use forge_types::PlatformId;
+use gpui::{
+    AnyElement, App, ClickEvent, Context, Div, Entity, MouseButton, MouseDownEvent, Pixels, Rgba,
+    div, list, prelude::*, px,
+};
+use std::collections::VecDeque;
+use std::rc::Rc;
+
+const CHIP_DIVIDER_H: Pixels = px(14.0);
+const ICON_BTN_PAD: Pixels = px(5.0);
+const ICON_BTN_RADIUS: Pixels = px(5.0);
+const EXPORT_ICON: Pixels = px(14.0);
+const SEARCH_MISS_OPACITY: f32 = 0.3;
+
+impl ChatTimeline {
+    pub(super) fn render_filter_left(
+        &self,
+        offered: &[PlatformFilter],
+        palette: &ForgePalette,
+        density: Density,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let platform_chips = [
+            (
+                "chat-chip-all",
+                tr!("chat_filter_all"),
+                PlatformFilter::All,
+                palette.brand,
+            ),
+            (
+                "chat-chip-twitch",
+                "Twitch".to_owned(),
+                PlatformFilter::Single(PlatformId::Twitch),
+                palette.brand,
+            ),
+            (
+                "chat-chip-youtube",
+                "YouTube".to_owned(),
+                PlatformFilter::Single(PlatformId::YouTube),
+                palette.danger,
+            ),
+            (
+                "chat-chip-kick",
+                "Kick".to_owned(),
+                PlatformFilter::Single(PlatformId::Kick),
+                palette.info,
+            ),
+        ];
+
+        let mut chips = div()
+            .flex()
+            .items_center()
+            .gap(spacing(Spacing::Xxs, density));
+        for (id, label, filter, dot) in platform_chips {
+            if !offered.contains(&filter) {
+                continue;
+            }
+            let active = self.platform_filter == filter;
+            chips = chips.child(chip(label, ChipGlyph::Dot(dot), active, palette).on_click(
+                id,
+                cx.listener(move |this, _, _, cx| this.set_platform_filter(filter, cx)),
+            ));
+        }
+        chips = chips.child(
+            div()
+                .w(BORDER_THIN)
+                .h(CHIP_DIVIDER_H)
+                .bg(palette.border_regular),
+        );
+        chips = chips.child(
+            chip(
+                tr!("chat_filter_events"),
+                ChipGlyph::None,
+                self.events_only,
+                palette,
+            )
+            .on_click(
+                "chat-chip-events",
+                cx.listener(|this, _, _, cx| this.toggle_events(cx)),
+            ),
+        );
+        chips = chips.child(
+            chip(
+                tr!("chat_filter_hide_bots"),
+                ChipGlyph::Icon(Icon::BellOff, palette.text_faint),
+                self.hide_bots,
+                palette,
+            )
+            .on_click(
+                "chat-chip-hide-bots",
+                cx.listener(|this, _, _, cx| this.toggle_hide_bots(cx)),
+            ),
+        );
+
+        div()
+            .flex()
+            .items_center()
+            .gap(spacing(Spacing::Sm, density))
+            .child(
+                div()
+                    .w(SEARCH_FIELD_WIDTH)
+                    .child(self.search.field().clone()),
+            )
+            .child(chips)
+            .into_any_element()
+    }
+
+    pub(super) fn render_filter_right(
+        &self,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let surf = palette.surface_overlay;
+        let green = palette.success;
+
+        div()
+            .id("chat-export")
+            .flex()
+            .items_center()
+            .justify_center()
+            .p(ICON_BTN_PAD)
+            .rounded(ICON_BTN_RADIUS)
+            .cursor_pointer()
+            .hover(move |s| s.bg(surf))
+            .key_activated(palette.text_primary)
+            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.export_chat_log(cx)))
+            .child(icon(Icon::Download, EXPORT_ICON, green))
+            .into_any_element()
+    }
+
+    pub(super) fn render_chat_area(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement + use<> {
+        let query = self.search.query().to_string();
+        let search_active = !query.is_empty();
+
+        let snapshot: Rc<VecDeque<u64>> = self.visible.clone();
+        let empty = snapshot.is_empty();
+        let frame = FeedRowFrame {
+            snapshot,
+            feed: self.feed.clone(),
+            view: cx.entity(),
+            palette: *palette,
+            density,
+            row_gap: spacing(Spacing::Xxs, density),
+            cursor_seq: self.feed_keys.current().copied(),
+            cursor_bg: palette.shell,
+            query,
+            search_active,
+        };
+        let list_el = list(self.chat_list.clone(), move |ix, _window, app| {
+            frame.render_row(ix, app)
+        })
+        .flex_1()
+        .min_h(px(0.0))
+        .py(spacing(Spacing::Sm, density))
+        .px(spacing(Spacing::Md, density));
+
+        let body: AnyElement = if empty {
+            div()
+                .w_full()
+                .flex_1()
+                .flex()
+                .items_center()
+                .justify_center()
+                .child(empty_state(tr!("chat_no_filter_matches"), palette).density(density))
+                .into_any_element()
+        } else {
+            list_el.into_any_element()
+        };
+
+        let area = self
+            .feed_keys_on(div(), palette, cx)
+            .relative()
+            .flex_1()
+            .min_h(px(0.0))
+            .flex()
+            .flex_col()
+            .bg(palette.base)
+            .child(body);
+
+        area.children(self.unread_pill_overlay(palette, density, cx))
+    }
+
+    fn unread_pill_overlay(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &mut Context<Self>,
+    ) -> Option<Div> {
+        if self.unread == 0 {
+            return None;
+        }
+        let label = if self.unread == 1 {
+            tr!("chat_new_message")
+        } else {
+            tr!(
+                "chat_new_messages",
+                count = i64::try_from(self.unread).unwrap_or(i64::MAX)
+            )
+        };
+        let pill = div()
+            .id("chat-unread-pill")
+            .flex()
+            .items_center()
+            .gap(spacing(Spacing::Xxs, density))
+            .py(spacing(Spacing::Xs, density))
+            .px(spacing(Spacing::Sm, density))
+            .rounded(radius(Radius::Pill))
+            .bg(palette.brand)
+            .cursor_pointer()
+            .key_activated(palette.text_primary)
+            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.jump_to_latest(cx)))
+            .child(icon(Icon::ArrowDown, FONT_XS, palette.shell))
+            .child(
+                div()
+                    .font_family(cx.mono_family())
+                    .text_size(FONT_XS)
+                    .text_color(palette.shell)
+                    .child(label),
+            );
+        let overlay = div()
+            .absolute()
+            .inset_0()
+            .flex()
+            .justify_center()
+            .items_end()
+            .pb(spacing(Spacing::Md, density))
+            .child(pill);
+        Some(overlay)
+    }
+}
+
+struct FeedRowFrame {
+    snapshot: Rc<VecDeque<u64>>,
+    feed: Entity<ChatFeed>,
+    view: Entity<ChatTimeline>,
+    palette: ForgePalette,
+    density: Density,
+    row_gap: Pixels,
+    cursor_seq: Option<u64>,
+    cursor_bg: Rgba,
+    query: String,
+    search_active: bool,
+}
+
+impl FeedRowFrame {
+    fn render_row(&self, ix: usize, app: &mut App) -> AnyElement {
+        let Some(seq) = self.snapshot.get(ix).copied() else {
+            return div().into_any_element();
+        };
+        let previous = ix
+            .checked_sub(1)
+            .and_then(|prev| self.snapshot.get(prev).copied());
+        let feed_state = self.feed.read(app);
+        let Some(msg) = feed_state.get(seq) else {
+            return div().into_any_element();
+        };
+        let gap = feed_state.gap_before(previous, seq);
+        let data = ChatRow {
+            id: msg.id.clone(),
+            timestamp: fmt_display(DateShape::TimeWithSeconds, msg.received_at).into(),
+            platform: platform_mark(msg.platform, &self.palette),
+            badges: msg
+                .badges
+                .iter()
+                .map(|&kind| role_badge(kind, &self.palette))
+                .collect(),
+            username: msg.username.clone(),
+            username_color: ChatTimeline::username_color(msg, &self.palette),
+            body: msg.body.clone(),
+            moderated: msg.moderated,
+            reply: msg.reply.clone(),
+        };
+        let author_key = msg.author_key();
+        let menu_view = self.view.clone();
+        let cursor_view = self.view.clone();
+        let menu_target = author_key
+            .as_ref()
+            .map(|key| ViewerTarget::new(key, msg.username.to_string()));
+        let menu_message_id = msg.id.clone();
+        let view = self.view.clone();
+        let row = chat_row(&self.palette, data).on_username_click(
+            (gpui::ElementId::from("chat-username"), msg.id.clone()),
+            move |_: &ClickEvent, _, app| {
+                if let Some(key) = author_key.clone() {
+                    view.update(app, |_, cx| cx.emit(ChatTimelineEvent::OpenViewer(key)));
+                }
+            },
+        );
+        let mut framed = div().relative().pb(self.row_gap);
+        if !gap.is_empty() {
+            framed = framed.child(div().pb(self.row_gap).child(chat_gap_row(
+                gap.label(),
+                &self.palette,
+                self.density,
+                app,
+            )));
+        }
+        framed = framed.child(row);
+        if self.cursor_seq == Some(seq) {
+            framed = framed
+                .bg(self.cursor_bg)
+                .child(cursor_view.read(app).feed_keys.row_anchor(None));
+        }
+        if let Some(menu_target) = menu_target {
+            framed = framed.on_mouse_down(
+                MouseButton::Right,
+                move |event: &MouseDownEvent, _window, app| {
+                    let position = event.position;
+                    let viewer = menu_target.clone();
+                    let message_id = menu_message_id.to_string();
+                    menu_view.update(app, |_, cx| {
+                        cx.emit(ChatTimelineEvent::OpenUserMenu {
+                            position,
+                            viewer,
+                            message_id,
+                        });
+                    });
+                },
+            );
+        }
+        if self.search_active && !msg.matches_query(&self.query) {
+            framed.opacity(SEARCH_MISS_OPACITY).into_any_element()
+        } else {
+            framed.into_any_element()
+        }
+    }
+}

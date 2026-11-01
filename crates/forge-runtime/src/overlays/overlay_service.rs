@@ -350,6 +350,71 @@ impl OverlayServiceHandle {
         Ok(blocking(move || write_overlay_source(&root, &identity, &name, &body)).await??)
     }
 
+    pub async fn write_override(
+        &self,
+        id: &OverlayId,
+        file: &str,
+        body: String,
+    ) -> Result<bool, RuntimeError> {
+        let Some(mut definition) = self.inner.repo.get(id).await? else {
+            return Ok(false);
+        };
+        let newly_held = !definition.source_overrides.iter().any(|held| held == file);
+        if newly_held {
+            definition.source_overrides.push(file.to_owned());
+            self.inner.repo.save(&definition).await?;
+        }
+        if let Err(error) = self.write_source(id, file, body).await {
+            if newly_held {
+                definition.source_overrides.retain(|held| held != file);
+                if let Err(rollback) = self.inner.repo.save(&definition).await {
+                    tracing::warn!(overlay = %id, error = %rollback, "source override left recorded after a failed write");
+                }
+            }
+            return Err(error);
+        }
+        self.reload_page(id).await;
+        Ok(true)
+    }
+
+    pub async fn revert_override(
+        &self,
+        id: &OverlayId,
+        file: &str,
+        samples: &dyn OverlaySampleSource,
+    ) -> Result<Option<MaterializeReport>, RuntimeError> {
+        let Some(mut definition) = self.inner.repo.get(id).await? else {
+            return Ok(None);
+        };
+        definition.source_overrides.retain(|held| held != file);
+        self.inner.repo.save(&definition).await?;
+        self.materialize(id, samples).await.map(Some)
+    }
+
+    pub async fn change_look(
+        &self,
+        id: &OverlayId,
+        kind_id: String,
+        config: OverlayConfig,
+        config_schema_version: u32,
+    ) -> Result<bool, RuntimeError> {
+        let Some(mut definition) = self.inner.repo.get(id).await? else {
+            return Ok(false);
+        };
+        definition.kind_id = kind_id;
+        definition.config = config;
+        definition.config_schema_version = config_schema_version;
+        self.save(&definition).await?;
+        Ok(true)
+    }
+
+    pub async fn discard_assets(&self, id: &OverlayId) -> Result<bool, RuntimeError> {
+        if let Err(error) = self.release_media(id).await {
+            tracing::warn!(overlay = %id, %error, "overlay media references not released");
+        }
+        self.remove_folder(id).await
+    }
+
     pub async fn release_media(&self, id: &OverlayId) -> Result<u64, RuntimeError> {
         let Some(library) = &self.inner.media else {
             return Ok(0);

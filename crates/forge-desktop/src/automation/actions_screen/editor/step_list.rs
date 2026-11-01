@@ -1,0 +1,574 @@
+use super::cards::{add_row_button, empty_placeholder_card};
+use super::step_presentation::variable_text;
+use super::*;
+use crate::automation::actions_screen::config_problem_text::config_problem_text;
+use crate::integrations::integration_switch::ClosedGate;
+use crate::integrations::integration_switch::integration_name;
+use crate::shared::user_text::resolve_user_text;
+use forge_components::ROW_OFF_OPACITY;
+use forge_components::{
+    ActivePresentation, BORDER_THIN, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, Spacing,
+    health_tile, icon, radius, row_card, scaled, spacing, tooltip_lines_builder, tr,
+};
+use forge_registry::{Finding, FormField, HealthSeverity, StepHealth, UndecodableStep};
+use forge_types::SubActionStep;
+use gpui::{AnyElement, App, ClickEvent, Context, FontWeight, Rgba, SharedString, div, px};
+
+fn analyzer_finding_message(
+    finding: &Finding,
+    kind_id: &str,
+    fields: &[FormField],
+) -> SharedString {
+    let text = match finding {
+        Finding::UnknownVariable(name) => {
+            tr!("action_editor_health_unknown_var", name = name.clone())
+        }
+        Finding::ProducedLater(name) => {
+            tr!("action_editor_health_produced_later", name = name.clone())
+        }
+        Finding::IsolatedSibling(name) => {
+            tr!("action_editor_health_isolated_sibling", name = name.clone())
+        }
+        Finding::SomeTriggersOnly(name) => {
+            tr!("action_editor_health_some_triggers", name = name.clone())
+        }
+        Finding::UnverifiableVariable(name) => {
+            tr!("action_editor_health_unverifiable_var", name = name.clone())
+        }
+        Finding::LastRunFailed(message) => {
+            tr!(
+                "action_editor_health_last_run_failed",
+                message = resolve_user_text(message).inline()
+            )
+        }
+        Finding::IntegrationDisabled(owner) => {
+            tr!(
+                "action_editor_health_integration_disabled",
+                name = integration_name(owner).to_string()
+            )
+        }
+        Finding::IntegrationFailed(owner) => {
+            tr!(
+                "action_editor_health_integration_failed",
+                name = integration_name(owner).to_string()
+            )
+        }
+        Finding::DateFormatOnNonDatetime(name) => {
+            tr!(
+                "action_editor_health_date_format_not_datetime",
+                name = name.clone()
+            )
+        }
+        Finding::InvalidDatePattern {
+            name,
+            pattern,
+            reason,
+        } => {
+            tr!(
+                "action_editor_health_invalid_date_pattern",
+                name = name.clone(),
+                pattern = pattern.clone(),
+                reason = crate::shared::user_text::resolve_message(reason).primary
+            )
+        }
+        Finding::InvalidStepConfig(problem) => {
+            tr!(
+                "action_editor_health_invalid_step_config",
+                message = config_problem_text(problem, kind_id, fields)
+            )
+        }
+        Finding::UndecodableStep { position, .. } => {
+            tr!(
+                "action_editor_health_undecodable_step",
+                position = (position + 1).to_string()
+            )
+        }
+    };
+    SharedString::from(text)
+}
+
+fn step_number_column(i: usize, is_last: bool, palette: &ForgePalette, cx: &App) -> gpui::Div {
+    let circle = div()
+        .flex()
+        .items_center()
+        .justify_center()
+        .size(STEP_CIRCLE)
+        .rounded(STEP_CIRCLE_RADIUS)
+        .bg(palette.brand)
+        .child(
+            div()
+                .font_family(cx.mono_family())
+                .text_size(FONT_XS)
+                .text_color(palette.shell)
+                .child((i + 1).to_string()),
+        );
+    let connector = div()
+        .w(STEP_CONNECTOR_W)
+        .h(if is_last { px(0.0) } else { STEP_CONNECTOR_H })
+        .bg(palette.border_regular);
+    div()
+        .flex()
+        .flex_col()
+        .items_center()
+        .w(STEP_COL_W)
+        .child(circle)
+        .child(connector)
+}
+
+impl ActionEditor {
+    pub(super) fn render_sub_actions_section(
+        &self,
+        detail: &ActionDetail,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let density = cx.density();
+        let current = nav::resolve_chain(&detail.action.sub_actions, &self.nav_path);
+        let total = current.len();
+        let at_root = self.nav_path.is_empty();
+        let depth = self.nav_path.len();
+
+        let header = if at_root {
+            div().flex().items_center().child(
+                div()
+                    .font_family(cx.mono_family())
+                    .text_size(FONT_XXS)
+                    .text_color(palette.text_muted)
+                    .child(tr!(
+                        "action_editor_sub_actions_count",
+                        count = i64::try_from(total).unwrap_or(i64::MAX)
+                    )),
+            )
+        } else {
+            div()
+                .flex()
+                .items_center()
+                .child(self.render_breadcrumb(detail, palette, cx))
+                .child(div().flex_1())
+                .child(
+                    div()
+                        .font_family(cx.mono_family())
+                        .text_size(FONT_XXS)
+                        .text_color(palette.text_faint)
+                        .child(total.to_string()),
+                )
+        };
+
+        let mut steps_col = div().flex().flex_col();
+        if current.is_empty() {
+            let empty_label = if at_root {
+                tr!("action_editor_no_steps")
+            } else {
+                tr!("action_editor_branch_empty")
+            };
+            steps_col = steps_col.child(empty_placeholder_card(
+                Icon::Plus,
+                palette.brand,
+                empty_label,
+                palette,
+                density,
+                cx,
+            ));
+        }
+        for (i, item) in current.iter().enumerate() {
+            steps_col = steps_col.child(match item {
+                nav::ChainItem::Step { step, .. } => {
+                    self.render_step_block(step, i, total, depth, palette, cx)
+                }
+                nav::ChainItem::Unreadable(unreadable) => {
+                    self.render_unreadable_block(unreadable, i, total, palette, cx)
+                }
+            });
+        }
+        steps_col = steps_col.child(
+            div()
+                .pl(STEP_COL_W + spacing(Spacing::Xs, density))
+                .pt(spacing(Spacing::Xs, density))
+                .child(add_row_button(
+                    "actions-add-step",
+                    Icon::Plus,
+                    tr!("action_editor_add_step"),
+                    palette.brand,
+                    cx.listener(|this, _: &ClickEvent, window, cx| {
+                        this.open_grid_picker(window, cx)
+                    }),
+                    density,
+                    cx,
+                )),
+        );
+
+        div()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Xs, density))
+            .child(header)
+            .child(self.wire_step_list_drop(steps_col, cx))
+            .into_any_element()
+    }
+
+    fn render_health_dot(
+        &self,
+        health: &StepHealth,
+        kind_id: &str,
+        fields: &[FormField],
+        i: usize,
+        palette: &ForgePalette,
+    ) -> AnyElement {
+        let severity = health.severity();
+        let color = match severity {
+            HealthSeverity::Green => palette.success,
+            HealthSeverity::Yellow => palette.warning,
+            HealthSeverity::Red => palette.danger,
+        };
+        let gate_title = if health.disabled_integration().is_some() {
+            Some(tr!("action_editor_health_disabled"))
+        } else if health.failed_integration().is_some() {
+            Some(tr!("action_editor_health_failed"))
+        } else {
+            None
+        };
+        let (glyph, color, title): (Icon, Rgba, SharedString) = match gate_title {
+            Some(title) => (Icon::PlugOff, palette.warning, title.into()),
+            None => (
+                Icon::Heartbeat,
+                color,
+                match severity {
+                    HealthSeverity::Green => tr!("action_editor_health_ok").into(),
+                    HealthSeverity::Yellow => tr!("action_editor_health_warn").into(),
+                    HealthSeverity::Red => tr!("action_editor_health_error").into(),
+                },
+            ),
+        };
+        let tile = health_tile(glyph, color);
+        let mut lines: Vec<SharedString> = vec![title];
+        lines.extend(
+            health
+                .findings
+                .iter()
+                .map(|finding| analyzer_finding_message(finding, kind_id, fields)),
+        );
+        div()
+            .id(SharedString::from(format!("actions-step-health-{i}")))
+            .flex_none()
+            .child(tile)
+            .tooltip(tooltip_lines_builder(lines))
+            .into_any_element()
+    }
+
+    fn render_unreadable_block(
+        &self,
+        unreadable: &UndecodableStep,
+        i: usize,
+        total: usize,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let density = cx.density();
+        let is_last = i + 1 == total;
+        let title = div()
+            .flex_1()
+            .min_w_0()
+            .font_family(cx.body_family())
+            .text_size(FONT_XS)
+            .text_color(palette.text_secondary)
+            .child(tr!(
+                "action_editor_health_undecodable_step",
+                position = (unreadable.position + 1).to_string()
+            ));
+        let card = row_card(title, palette)
+            .leading(icon(Icon::AlertTriangle, CARD_GLYPH, palette.danger))
+            .idle_background(palette.elevated)
+            .bordered(palette.border_regular, BORDER_THIN, radius(Radius::Md))
+            .padding_xy(STEP_CARD_PAD_V, scaled(STEP_CARD_PAD_H, density));
+        let step_row = div()
+            .flex()
+            .items_start()
+            .gap(spacing(Spacing::Xs, density))
+            .child(step_number_column(i, is_last, palette, cx))
+            .child(div().flex_1().min_w(px(0.0)).child(card));
+        let row = div()
+            .w_full()
+            .pb(if is_last { px(0.0) } else { STEP_GAP })
+            .child(step_row);
+        self.wire_step_row_drop(row, i, total, palette, cx)
+            .into_any_element()
+    }
+
+    fn render_step_meta(
+        &self,
+        detail: &str,
+        closed_gate: Option<&ClosedGate>,
+        i: usize,
+        depth: usize,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let Some(gate) = closed_gate else {
+            return variable_text(detail, palette, cx).into_any_element();
+        };
+        div()
+            .flex()
+            .flex_col()
+            .child(variable_text(detail, palette, cx))
+            .child(
+                div()
+                    .mt(STEP_NOTICE_MT)
+                    .child(self.render_closed_gate_notice(
+                        gate,
+                        SharedString::from(format!("actions-step-enable-{depth}-{i}")),
+                        palette,
+                        cx,
+                    )),
+            )
+            .into_any_element()
+    }
+
+    fn with_branch_affordances(
+        &self,
+        step_row: gpui::Div,
+        step: &SubActionStep,
+        i: usize,
+        depth: usize,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let density = cx.density();
+        match self.render_branch_affordances(step, i, depth, palette, cx) {
+            Some(branches) => {
+                let indented = div()
+                    .pl(STEP_COL_W + spacing(Spacing::Xs, density))
+                    .pt(spacing(Spacing::Xxs, density))
+                    .child(branches);
+                div()
+                    .flex()
+                    .flex_col()
+                    .child(step_row)
+                    .child(indented)
+                    .into_any_element()
+            }
+            None => step_row.into_any_element(),
+        }
+    }
+
+    fn render_step_block(
+        &self,
+        step: &SubActionStep,
+        i: usize,
+        total: usize,
+        depth: usize,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let density = cx.density();
+        let is_last = i + 1 == total;
+        let runner = self.deps.sub_action_registry.get(&step.kind_id);
+        let detail_opt = step_card_detail(runner, step, &self.choices.select_options);
+        let title = runner
+            .map(crate::shared::kind_copy::step_name)
+            .unwrap_or_else(|| tr!("action_editor_kind_sub_action"));
+        let (glyph, glyph_color) = step_glyph(
+            &step.kind_id,
+            runner.map(|r| r.icon_name()).unwrap_or(UNKNOWN_STEP_ICON),
+            runner.map(|r| StepGroup::of(&self.deps.sub_action_registry, r).color(palette)),
+            palette,
+        );
+        let detail_str = detail_opt
+            .or_else(|| runner.map(crate::shared::kind_copy::step_summary))
+            .unwrap_or_else(|| step.kind_id.clone());
+
+        let left_col = step_number_column(i, is_last, palette, cx);
+
+        let grip = self.render_step_grip(
+            i,
+            SharedString::from(title.clone()),
+            glyph,
+            glyph_color,
+            palette,
+            cx,
+        );
+        let title_el = self.render_step_title(step, title, i, depth, palette, cx);
+
+        let enabled = step.enabled;
+        let closed_gate = self.closed_step_gate(step);
+        let meta = self.render_step_meta(&detail_str, closed_gate.as_ref(), i, depth, palette, cx);
+        let mut card = row_card(title_el, palette)
+            .leading(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(spacing(Spacing::Xxs, density))
+                    .child(grip)
+                    .child(icon(glyph, CARD_GLYPH, glyph_color)),
+            )
+            .meta(meta)
+            .trailing(self.render_step_controls(i, total, enabled, palette, cx))
+            .idle_background(palette.elevated)
+            .bordered(palette.border_regular, BORDER_THIN, radius(Radius::Md))
+            .padding_xy(STEP_CARD_PAD_V, scaled(STEP_CARD_PAD_H, density))
+            .on_click(
+                SharedString::from(format!("actions-step-card-{i}")),
+                cx.listener(move |this, _: &ClickEvent, _, cx| this.open_edit_sub_action(i, cx)),
+            );
+        if closed_gate.is_some() {
+            card = card.align_top();
+        }
+        if self.step_open != Some(i) {
+            card = card.trailing_reveal(SharedString::from(format!("actions-step-row-{i}")));
+        }
+
+        let step_row = div()
+            .flex()
+            .items_start()
+            .gap(spacing(Spacing::Xs, density))
+            .child(left_col)
+            .child(
+                div()
+                    .flex_1()
+                    .min_w(px(0.0))
+                    .when(!enabled, |el| el.opacity(ROW_OFF_OPACITY))
+                    .child(card),
+            );
+
+        let block = self.with_branch_affordances(step_row, step, i, depth, palette, cx);
+
+        let row = div()
+            .w_full()
+            .pb(if is_last { px(0.0) } else { STEP_GAP })
+            .child(block);
+        self.wire_step_row_drop(row, i, total, palette, cx)
+            .into_any_element()
+    }
+
+    fn render_step_title(
+        &self,
+        step: &SubActionStep,
+        title: String,
+        i: usize,
+        depth: usize,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> gpui::Div {
+        let density = cx.density();
+        let runner = self.deps.sub_action_registry.get(&step.kind_id);
+        let title_text = div()
+            .flex_1()
+            .min_w_0()
+            .font_family(cx.body_family())
+            .font_weight(FontWeight::SEMIBOLD)
+            .text_size(FONT_XS)
+            .text_color(palette.text_primary)
+            .child(title);
+        let health_dot = if depth == 0 {
+            self.step_health.get(i).map(|health| {
+                let fields = runner.map(|r| r.config_fields()).unwrap_or_default();
+                self.render_health_dot(health, &step.kind_id, &fields, i, palette)
+            })
+        } else {
+            None
+        };
+        div()
+            .flex()
+            .items_center()
+            .gap(spacing(Spacing::Xs, density))
+            .child(title_text)
+            .children(health_dot)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use forge_storage::Language;
+
+    use super::*;
+    use crate::app::i18n::install_language;
+
+    const NAME: &str = "NAME-7";
+    const PATTERN: &str = "PATTERN-7";
+    const REASON: &str = "REASON-7";
+    const REASON_LETTER: &str = "Q-7";
+
+    fn date_reason() -> forge_types::MessageRef {
+        forge_types::MessageRef::new(forge_types::MessageCode::from_static(
+            "condition",
+            "date_pattern_unsupported_letter",
+        ))
+        .with_arg("letter", forge_types::VerbatimText::new(REASON_LETTER))
+        .with_arg("position", 3_usize)
+    }
+
+    #[test]
+    fn date_findings_render_their_arguments_in_both_locales() {
+        for lang in [Language::En, Language::Uk] {
+            install_language(lang);
+            for (finding, carried) in [
+                (
+                    Finding::DateFormatOnNonDatetime(NAME.to_owned()),
+                    vec![NAME],
+                ),
+                (
+                    Finding::InvalidDatePattern {
+                        name: NAME.to_owned(),
+                        pattern: PATTERN.to_owned(),
+                        reason: date_reason(),
+                    },
+                    vec![NAME, PATTERN, REASON_LETTER],
+                ),
+                (
+                    Finding::InvalidStepConfig(forge_registry::ConfigProblem::whole(
+                        forge_registry::ConfigReason::Coded(
+                            forge_types::MessageRef::new(forge_types::MessageCode::from_static(
+                                "config", "not_json",
+                            ))
+                            .with_detail(forge_types::UpstreamDetail::from_redacted(REASON)),
+                        ),
+                    )),
+                    vec![REASON],
+                ),
+            ] {
+                let rendered = analyzer_finding_message(&finding, "test.step", &[]);
+                for marker in carried {
+                    assert!(
+                        rendered.contains(marker),
+                        "{lang:?} {finding:?} dropped {marker}: {rendered}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn an_invalid_step_config_line_names_the_field_by_its_form_label() {
+        install_language(Language::En);
+        let fields = [FormField::Text {
+            key: "scene",
+            label: "Target scene",
+            placeholder: "",
+        }];
+        let finding = Finding::InvalidStepConfig(forge_registry::ConfigProblem::field(
+            "scene",
+            forge_registry::ConfigReason::Required,
+        ));
+
+        let rendered = analyzer_finding_message(&finding, "test.step", &fields);
+
+        assert!(rendered.contains("Target scene"), "{rendered}");
+    }
+
+    #[test]
+    fn an_unreadable_nested_step_line_counts_its_position_from_one_in_both_locales() {
+        for lang in [Language::En, Language::Uk] {
+            install_language(lang);
+            let finding = Finding::UndecodableStep {
+                position: 41,
+                reason: forge_registry::UndecodableReason::NotAnObject,
+            };
+
+            let rendered = analyzer_finding_message(&finding, "test.step", &[]);
+
+            assert!(
+                rendered.contains("42") && !rendered.contains("41"),
+                "{lang:?}: {rendered}"
+            );
+        }
+    }
+}

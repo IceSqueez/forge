@@ -215,7 +215,7 @@ enum SchedulerCommand {
     Clear(
         QueueId,
         ClearMode,
-        oneshot::Sender<Result<(), RuntimeError>>,
+        oneshot::Sender<Result<usize, RuntimeError>>,
     ),
     Register(Queue, oneshot::Sender<MembershipOutcome>),
     Deregister(QueueId, oneshot::Sender<MembershipOutcome>),
@@ -372,8 +372,8 @@ impl PendingBuffer {
         taken
     }
 
-    fn clear(&self) {
-        self.take_all();
+    fn clear(&self) -> usize {
+        self.take_all().len()
     }
 
     fn take_all(&self) -> VecDeque<QueueTask> {
@@ -544,7 +544,7 @@ impl QueueSchedulerHandle {
         rx.await.map_err(|_| RuntimeError::SchedulerChannelClosed)?
     }
 
-    pub async fn clear(&self, queue_id: QueueId, mode: ClearMode) -> Result<(), RuntimeError> {
+    pub async fn clear(&self, queue_id: QueueId, mode: ClearMode) -> Result<usize, RuntimeError> {
         let (tx, rx) = oneshot::channel();
         self.sender
             .send(SchedulerCommand::Clear(queue_id, mode, tx))
@@ -1130,7 +1130,7 @@ impl QueueScheduler {
         queue_id: &QueueId,
         mode: ClearMode,
         bus: &Arc<EventBus>,
-    ) -> Result<(), RuntimeError> {
+    ) -> Result<usize, RuntimeError> {
         let slot = slots
             .get(queue_id)
             .ok_or(RuntimeError::QueueNotFound(*queue_id))?;
@@ -1138,7 +1138,7 @@ impl QueueScheduler {
         if mode == ClearMode::CancelCurrent {
             slot.inflight.cancel_all();
         }
-        slot.pending.clear();
+        let dropped = slot.pending.clear();
 
         bus.publish(Event::new(
             EventSource::Core,
@@ -1150,7 +1150,7 @@ impl QueueScheduler {
             }),
         ));
 
-        Ok(())
+        Ok(dropped)
     }
 }
 

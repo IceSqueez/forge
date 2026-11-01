@@ -3,6 +3,7 @@ use forge_registry::{
     ChoiceField, ConfigChoice, ConfigProblem, ConfigSpec, RunContext, StepCatalogEntry, StepTimer,
     SubActionCategory, SubActionRunner, TextEditor, TextField, TypedField,
 };
+use forge_registry::{StepCardDetail, card_text};
 use forge_types::{ArgStack, LogLevel, SCRIPT_LOG_TARGET, SubActionConfig, SubActionTelemetry};
 use tracing::{debug, error, info, trace, warn};
 
@@ -97,6 +98,12 @@ impl StepCatalogEntry for CoreLogWriteRunner {
     }
     fn icon_name(&self) -> &str {
         "terminal"
+    }
+
+    fn card_detail(&self, config: &SubActionConfig) -> Option<StepCardDetail> {
+        let level = card_text(config, LOG_LEVEL_KEY).unwrap_or(LOG_DEFAULT_LEVEL);
+        let message = card_text(config, LOG_MESSAGE_KEY).unwrap_or("");
+        Some(StepCardDetail::Text(format!("[{level}] \"{message}\"")))
     }
 }
 

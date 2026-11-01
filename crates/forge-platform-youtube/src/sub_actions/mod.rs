@@ -11,6 +11,7 @@ mod send_message;
 mod set_thumbnail;
 mod step_failure;
 mod timeout_user;
+pub(crate) use timeout_user::MAX_TIMEOUT_SECONDS;
 mod unban_user;
 mod update_category;
 mod update_description;

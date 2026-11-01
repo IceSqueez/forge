@@ -396,6 +396,30 @@ settings_about_field_gpu_backend = GPU backend
 settings_about_field_displays = Displays
 settings_about_field_audio_outputs = Audio outputs
 settings_about_field_data_dir = Data folder size
+settings_about_value_build_dev = dev
+settings_about_value_build_release = release
+settings_about_value_build_release_install = release, { $install }
+settings_about_value_install_mac_bundle = macOS app bundle
+settings_about_value_install_windows_user = Windows installer (per-user)
+settings_about_value_install_windows_portable = Windows portable
+settings_about_value_install_appimage = AppImage
+settings_about_value_install_development = development build
+settings_about_value_install_unsupported = unsupported platform
+settings_about_value_install_unknown = unknown location
+settings_about_value_install_mac_translocated = macOS app (translocated)
+settings_about_value_install_read_only = read-only location
+settings_about_value_install_windows_machine = Windows installer (all users)
+settings_about_value_install_system_package = system package
+settings_about_value_cpu_cores = { $model }, { $count } logical cores
+settings_about_value_displays_scaled = { $displays } (window scale { $scale })
+settings_about_value_audio_none = none
+settings_about_value_audio_devices = { $count ->
+    [one] { $count } device; forge uses: { $speech }
+   *[other] { $count } devices; forge uses: { $speech }
+}
+settings_about_value_system_default = system default
+settings_about_value_system_default_device = system default ({ $device })
+settings_about_value_chosen_missing = { $fallback } - chosen device not connected
 settings_about_report_problem = Report a problem
 crash_notice = forge closed unexpectedly last time.
 crash_notice_report = Report
@@ -1010,7 +1034,6 @@ action_editor_test_run_status_queued = queued
 action_editor_test_run_status_running = running...
 action_editor_test_run_status_failed = failed
 action_editor_test_run_status_skipped = skipped
-action_editor_step_wait_ms = { $ms } ms
 action_editor_test_run_status_ms = { $ms } ms
 action_editor_test_run_failed_banner = Run failed at step { $step } · { $name }
 action_editor_test_run_completed = Completed { $count } steps · { $errors } errors
@@ -1044,18 +1067,7 @@ action_editor_trigger_picker_footer_hint = Creates a new trigger of the chosen k
 
 ## Action editor - sub-action card titles
 
-action_editor_kind_send_chat = Send chat message
-action_editor_kind_set_global = Set global
-action_editor_kind_delay = Delay
-action_editor_kind_log = Log
-action_editor_kind_play_sound = Play sound
 action_editor_clip_missing = Missing clip
-action_editor_kind_speak = Speak
-action_editor_kind_read_file = Read file
-action_editor_kind_random_int = Random int
-action_editor_kind_incr_global = Increment global
-action_editor_kind_run_script = Run script
-action_editor_global_increment_detail = { $name } += { $amount } (persisted)
 action_editor_kind_sub_action = Step
 
 ## Triggers registry - page header / filters
@@ -1764,7 +1776,11 @@ queues_mode_drain_tooltip = Keep processing the backlog, skip every new action
 queues_mode_hold_tooltip = Stop processing but keep queueing new actions
 queues_mode_active_tooltip = Back to running
 queues_free_tooltip = Drop everything waiting - the action in flight still finishes and the mode stays as it is
-queues_free_feedback = Dropped the waiting actions in “{ $name }”.
+queues_free_feedback = { $count ->
+    [0] Nothing was waiting in “{ $name }”.
+    [one] Dropped { $count } waiting action in “{ $name }”.
+   *[other] Dropped { $count } waiting actions in “{ $name }”.
+}
 queues_free_failed = Could not free the queue: { $error }
 queues_free_confirm_title = Drop waiting actions
 queues_free_confirm_body = Everything waiting in this queue is dropped. The action in flight still finishes. This cannot be undone.

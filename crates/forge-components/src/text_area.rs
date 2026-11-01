@@ -8,8 +8,8 @@ use gpui::{
     WrappedLine, div, fill, point, prelude::*, px, relative, size,
 };
 
-use crate::caret_blink::{CaretBlink, CaretHost, set_caret_blinking};
-use crate::palette::{FORGE_DEFAULT, ForgePalette, with_alpha};
+use crate::caret_blink::{CaretBlink, CaretHost, watch_focus};
+use crate::palette::with_alpha;
 use crate::text_buffer::{EditKind, TextBuffer};
 use crate::text_editing::*;
 use crate::text_input::InputEvent;
@@ -23,6 +23,8 @@ pub fn bind_text_area_keys(cx: &mut App) {
     cx.bind_keys(editing_key_bindings(KEY_CONTEXT));
 }
 
+const PARAGRAPH_BREAK_BYTES: usize = '\n'.len_utf8();
+
 struct AreaLayout {
     lines: Vec<WrappedLine>,
     para_tops: Vec<Pixels>,
@@ -32,6 +34,54 @@ struct AreaLayout {
 }
 
 impl AreaLayout {
+    fn from_lines(lines: Vec<WrappedLine>, line_height: Pixels) -> Self {
+        let mut para_tops = Vec::with_capacity(lines.len());
+        let mut para_byte_starts = Vec::with_capacity(lines.len());
+        let mut y = px(0.0);
+        let mut byte = 0usize;
+        for line in &lines {
+            para_tops.push(y);
+            para_byte_starts.push(byte);
+            y += line.size(line_height).height;
+            byte += line.len() + PARAGRAPH_BREAK_BYTES;
+        }
+        Self {
+            lines,
+            para_tops,
+            para_byte_starts,
+            line_height,
+            total_height: y,
+        }
+    }
+
+    fn clamped_scroll(
+        &self,
+        mut scroll_offset: Pixels,
+        followed_caret: Option<Point<Pixels>>,
+        view_h: Pixels,
+    ) -> Pixels {
+        if let Some(caret) = followed_caret {
+            if caret.y - scroll_offset < px(0.0) {
+                scroll_offset = caret.y;
+            }
+            if caret.y + self.line_height - scroll_offset > view_h {
+                scroll_offset = caret.y + self.line_height - view_h;
+            }
+        }
+        if scroll_offset < px(0.0) {
+            scroll_offset = px(0.0);
+        }
+        let max_scroll = self.total_height - view_h;
+        if max_scroll > px(0.0) {
+            if scroll_offset > max_scroll {
+                scroll_offset = max_scroll;
+            }
+        } else {
+            scroll_offset = px(0.0);
+        }
+        scroll_offset
+    }
+
     fn point_for_offset(&self, offset: usize) -> Option<Point<Pixels>> {
         for i in (0..self.lines.len()).rev() {
             let start = self.para_byte_starts[i];
@@ -66,7 +116,6 @@ pub struct TextArea {
     last_bounds: Option<Bounds<Pixels>>,
     scroll_offset: Pixels,
     motion: CaretMotion,
-    palette: ForgePalette,
     font_size: Pixels,
     mono: bool,
     height: Pixels,
@@ -94,7 +143,6 @@ impl TextArea {
             last_bounds: None,
             scroll_offset: px(0.0),
             motion: CaretMotion::default(),
-            palette: FORGE_DEFAULT,
             font_size: FONT_XS,
             mono: false,
             height: DEFAULT_AREA_HEIGHT,
@@ -103,12 +151,6 @@ impl TextArea {
             caret: CaretBlink::new(),
             invalid: false,
         }
-    }
-
-    #[must_use]
-    pub fn with_palette(mut self, palette: ForgePalette) -> Self {
-        self.palette = palette;
-        self
     }
 
     #[must_use]
@@ -137,11 +179,6 @@ impl TextArea {
 
     pub fn content(&self) -> &str {
         self.buffer.as_str()
-    }
-
-    pub fn set_palette(&mut self, palette: ForgePalette, cx: &mut Context<Self>) {
-        self.palette = palette;
-        cx.notify();
     }
 
     pub fn set_invalid(&mut self, invalid: bool, cx: &mut Context<Self>) {
@@ -400,7 +437,7 @@ impl Element for AreaElement {
         let selected_range = input.buffer.selected_range().clone();
         let marked_range = input.buffer.marked_range().cloned();
         let cursor = input.cursor_offset();
-        let palette = input.palette;
+        let palette = cx.palette();
         let style = window.text_style();
         let line_height = window.line_height();
 
@@ -435,52 +472,16 @@ impl Element for AreaElement {
             .shape_text(display_text, font_size, &runs, wrap_width, None)
             .unwrap_or_default();
 
-        let mut para_tops = Vec::with_capacity(shaped.len());
-        let mut para_byte_starts = Vec::with_capacity(shaped.len());
-        let mut y = px(0.0);
-        let mut byte = 0usize;
-        for line in shaped.iter() {
-            para_tops.push(y);
-            para_byte_starts.push(byte);
-            y += line.size(line_height).height;
-            byte += line.len() + 1; // +1 for the '\n' the shaper consumed between paragraphs
-        }
-        let layout = AreaLayout {
-            lines: shaped.into_iter().collect(),
-            para_tops,
-            para_byte_starts,
-            line_height,
-            total_height: y,
-        };
+        let layout = AreaLayout::from_lines(shaped.into_iter().collect(), line_height);
 
-        let mut scroll_offset = input.scroll_offset;
         let view_h = bounds.size.height;
         let caret_point = if selected_range.is_empty() {
             layout.point_for_offset(cursor)
         } else {
             None
         };
-        if input.follow_caret
-            && let Some(caret) = caret_point
-        {
-            if caret.y - scroll_offset < px(0.0) {
-                scroll_offset = caret.y;
-            }
-            if caret.y + line_height - scroll_offset > view_h {
-                scroll_offset = caret.y + line_height - view_h;
-            }
-        }
-        if scroll_offset < px(0.0) {
-            scroll_offset = px(0.0);
-        }
-        let max_scroll = layout.total_height - view_h;
-        if max_scroll > px(0.0) {
-            if scroll_offset > max_scroll {
-                scroll_offset = max_scroll;
-            }
-        } else {
-            scroll_offset = px(0.0);
-        }
+        let followed_caret = caret_point.filter(|_| input.follow_caret);
+        let scroll_offset = layout.clamped_scroll(input.scroll_offset, followed_caret, view_h);
 
         let cursor = caret_point.map(|caret| {
             fill(
@@ -576,25 +577,23 @@ impl Render for TextArea {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let density = cx.density();
         let focus = self.focus_handle.clone();
-        let newly_watched = self.caret.watch(&focus, window, cx);
+        watch_focus(self, &focus, window, cx);
         let focused = focus.is_focused(window);
-        if newly_watched {
-            set_caret_blinking(self, focused && window.is_visible(), cx);
-        }
+        let palette = cx.palette();
         let border_color = if focused {
-            self.palette.border_active
+            palette.border_active
         } else {
-            self.palette.border_input
+            palette.border_input
         };
         let border_color = if self.invalid {
-            self.palette.danger
+            palette.danger
         } else {
             border_color
         };
         let surface = if self.on_surface {
-            self.palette.elevated
+            palette.elevated
         } else {
-            self.palette.shell
+            palette.shell
         };
         let font_family = if self.mono {
             cx.mono_family()
@@ -614,7 +613,7 @@ impl Render for TextArea {
             .overflow_hidden()
             .font_family(font_family)
             .text_size(self.font_size)
-            .text_color(self.palette.text_primary)
+            .text_color(palette.text_primary)
             .line_height(self.font_size * LINE_HEIGHT_RATIO)
             .h(self.height)
             .px(spacing(Spacing::Sm, density))

@@ -1,3 +1,4 @@
+use forge_registry::{StepCardDetail, card_text, card_variable};
 use std::path::Path;
 use std::path::PathBuf;
 
@@ -100,6 +101,15 @@ impl StepCatalogEntry for CoreFileReadRunner {
     }
     fn icon_name(&self) -> &str {
         "file-text"
+    }
+
+    fn card_detail(&self, config: &SubActionConfig) -> Option<StepCardDetail> {
+        let path = card_text(config, FILE_READ_PATH_KEY).unwrap_or("");
+        let target = card_text(config, FILE_READ_TARGET_VAR_KEY).unwrap_or("");
+        Some(StepCardDetail::Text(format!(
+            "{path} \u{2192} {}",
+            card_variable(target)
+        )))
     }
 }
 

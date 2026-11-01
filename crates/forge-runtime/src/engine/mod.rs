@@ -5,6 +5,7 @@ pub(crate) mod condition;
 pub(crate) mod cooldown;
 pub(crate) mod queue_depth;
 pub(crate) mod queue_scheduler;
+pub(crate) mod queue_service;
 pub(crate) mod run_history;
 pub(crate) mod scheduled_runs;
 pub(crate) mod timer_scheduler;

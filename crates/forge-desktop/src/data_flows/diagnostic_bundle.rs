@@ -1,0 +1,892 @@
+use std::collections::BTreeMap;
+use std::fmt::Write as _;
+use std::path::PathBuf;
+use std::sync::Arc;
+
+use crate::automation::run_disclosure::{
+    DisclosedOutcome, DisclosedRun, DisclosedStep, DisclosedStepOutcome, DisclosedTrigger,
+    DisclosedValue,
+};
+use crate::shared::repo_failure::RepoFailure;
+use forge_platform_core::HealthValue;
+use forge_runtime::COMMAND_LINE_TARGET;
+use forge_storage::{DataProvider, SettingsRepo, disclose_rows, load_setting_rows};
+use forge_types::REDACTION_STAMP;
+use forge_types::{INTEGRATION_DISABLED, LogLevel, SCRIPT_LOG_TARGET};
+use time::OffsetDateTime;
+
+use crate::app::log_archive;
+use forge_host::integrations::BuiltinRegistry;
+
+pub(crate) const RUN_HISTORY_LIMIT: u32 = 25;
+
+pub(crate) const BUNDLE_FILE_NAME: &str = "forge-diagnostics.txt";
+
+const TOTAL_BUDGET: usize = 4 * 1024 * 1024;
+
+const SCRIPT_SECTION_BUDGET: usize = 512 * 1024;
+
+const FRAMING_RESERVE: usize = 4096;
+
+const RULE: &str =
+    "================================================================================";
+
+#[derive(Debug)]
+pub(crate) struct IntegrationFacts {
+    pub id: String,
+    pub connection: &'static str,
+    pub limited: bool,
+    pub version: Option<String>,
+    pub uptime_secs: Option<u64>,
+    pub endpoint_present: bool,
+    pub token_expires_in_secs: Option<i64>,
+    pub health: Vec<(String, String)>,
+    pub quick_actions: usize,
+}
+
+#[derive(Debug)]
+pub(crate) struct BundleInput {
+    pub log_dir: PathBuf,
+    pub level: LogLevel,
+    pub env_overridden: bool,
+    pub integrations: Vec<IntegrationFacts>,
+    pub config: BTreeMap<String, String>,
+    pub runs: Vec<DisclosedRun>,
+}
+
+#[derive(Debug)]
+pub(crate) struct Bundle {
+    pub text: String,
+    pub script_lines: usize,
+    pub command_lines: usize,
+    pub elided_bytes: u64,
+}
+
+pub(crate) fn integration_facts(builtins: &BuiltinRegistry) -> Vec<IntegrationFacts> {
+    let now = std::time::SystemTime::now();
+    let mut facts: Vec<IntegrationFacts> = builtins
+        .snapshot()
+        .iter()
+        .map(|object| IntegrationFacts {
+            id: object.status.id().as_str().to_owned(),
+            connection: object.status.connection().as_str(),
+            limited: object.status.capability_flags().limited,
+            version: object.status.version(),
+            uptime_secs: object.status.uptime().map(|d| d.as_secs()),
+            endpoint_present: object.status.endpoint().is_some(),
+            token_expires_in_secs: object.status.token_expiry().map(|at| {
+                match at.duration_since(now) {
+                    Ok(left) => i64::try_from(left.as_secs()).unwrap_or(i64::MAX),
+                    Err(past) => -(past.duration().as_secs() as i64),
+                }
+            }),
+            health: object
+                .health
+                .metrics()
+                .iter()
+                .map(|metric| (metric.id.to_string(), health_shape(&metric.value)))
+                .collect(),
+            quick_actions: object.quick.actions().len(),
+        })
+        .collect();
+    facts.sort_by(|a, b| a.id.cmp(&b.id));
+    facts
+}
+
+fn health_shape(value: &HealthValue) -> String {
+    match value {
+        HealthValue::Status { active, .. } => format!("status(active={active})"),
+        HealthValue::Text { .. } => "text".to_owned(),
+        HealthValue::Pair { .. } => "pair".to_owned(),
+        HealthValue::Ratio { used, total, .. } => format!("ratio({used}/{total})"),
+    }
+}
+
+pub(crate) fn log_dir() -> PathBuf {
+    crate::app::app_paths::app_paths().logs_dir()
+}
+
+pub(crate) async fn gather_input(
+    backend: Arc<dyn DataProvider>,
+    integrations: Vec<IntegrationFacts>,
+    level: LogLevel,
+    env_overridden: bool,
+) -> Result<BundleInput, RepoFailure> {
+    let history = backend.history_repo();
+    let settings = backend as Arc<dyn SettingsRepo>;
+    let stored = load_setting_rows(settings.as_ref())
+        .await
+        .map_err(RepoFailure::from)?;
+    let runs = history
+        .recent(RUN_HISTORY_LIMIT)
+        .await
+        .map_err(RepoFailure::from)?;
+    Ok(BundleInput {
+        log_dir: log_dir(),
+        level,
+        env_overridden,
+        integrations,
+        config: disclose_rows(&stored),
+        runs: runs.iter().map(DisclosedRun::from).collect(),
+    })
+}
+
+pub(crate) fn assemble(input: &BundleInput) -> Result<Bundle, RepoFailure> {
+    let mut out = String::new();
+    write_header(&mut out, input);
+    write_integrations(&mut out, &input.integrations);
+    write_config(&mut out, &input.config);
+    write_runs(&mut out, &input.runs);
+
+    let room = TOTAL_BUDGET
+        .saturating_sub(out.len())
+        .saturating_sub(FRAMING_RESERVE);
+    let corpus = log_archive::corpus(&input.log_dir, room)?;
+    let command_lines = corpus
+        .text
+        .lines()
+        .filter(|line| log_archive::line_target(line) == Some(COMMAND_LINE_TARGET))
+        .count();
+    let (script, rest) = split_script_lines(&corpus.text);
+    let script_lines = script.lines().count();
+    let (script, script_elided) = keep_newest_lines(script, SCRIPT_SECTION_BUDGET);
+
+    write_script_section(&mut out, &script, script_lines, script_elided);
+    write_corpus_section(&mut out, &rest, &corpus);
+
+    Ok(Bundle {
+        text: out,
+        script_lines,
+        command_lines,
+        elided_bytes: corpus.elided_bytes + script_elided,
+    })
+}
+
+fn split_script_lines(corpus: &str) -> (String, String) {
+    let mut script = String::new();
+    let mut rest = String::new();
+    for line in corpus.lines() {
+        let sink = if log_archive::line_target(line) == Some(SCRIPT_LOG_TARGET) {
+            &mut script
+        } else {
+            &mut rest
+        };
+        sink.push_str(line);
+        sink.push('\n');
+    }
+    (script, rest)
+}
+
+fn keep_newest_lines(text: String, budget: usize) -> (String, u64) {
+    if text.len() <= budget {
+        return (text, 0);
+    }
+    let start = log_archive::line_start_at_or_after(&text, text.len() - budget);
+    (text[start..].to_owned(), start as u64)
+}
+
+#[expect(
+    clippy::let_underscore_must_use,
+    reason = "writing to a String cannot fail"
+)]
+fn write_header(out: &mut String, input: &BundleInput) {
+    let level_source = if input.env_overridden {
+        "RUST_LOG"
+    } else {
+        "settings"
+    };
+    let profile = if cfg!(debug_assertions) {
+        "debug"
+    } else {
+        "release"
+    };
+    let _ = write!(
+        out,
+        "{RULE}\nforge diagnostic bundle\n{RULE}\n\
+         version    : {}\n\
+         os / arch  : {} / {}\n\
+         build      : {profile}\n\
+         log level  : {} (from {level_source})\n\
+         generated  : {}\n\
+         redaction  : a value shown as `{REDACTION_STAMP} len=N>` or `{REDACTION_STAMP}>` was withheld on purpose - \
+         it is a redaction, not a truncated or failed read.\n",
+        env!("CARGO_PKG_VERSION"),
+        std::env::consts::OS,
+        std::env::consts::ARCH,
+        forge_storage::log_level_as_str(&input.level),
+        stamp_time(OffsetDateTime::now_utc()),
+    );
+}
+
+#[expect(
+    clippy::let_underscore_must_use,
+    reason = "writing to a String cannot fail"
+)]
+fn write_integrations(out: &mut String, facts: &[IntegrationFacts]) {
+    section(out, "integrations");
+    out.push_str(
+        "(state only - no account name, channel name, endpoint or host value appears here)\n",
+    );
+    if facts.is_empty() {
+        out.push_str("none installed\n");
+        return;
+    }
+    for fact in facts {
+        let _ = writeln!(
+            out,
+            "{:<12} state={:<13} capability={:<8} version={:<10} uptime={:<10} endpoint={:<6} token={:<16} quick_actions={}",
+            fact.id,
+            fact.connection,
+            if fact.limited { "limited" } else { "full" },
+            fact.version.as_deref().unwrap_or("-"),
+            fact.uptime_secs
+                .map_or_else(|| "-".to_owned(), |s| format!("{s}s")),
+            if fact.endpoint_present {
+                "set"
+            } else {
+                "unset"
+            },
+            fact.token_expires_in_secs
+                .map_or_else(|| "none".to_owned(), |s| format!("expires_in={s}s")),
+            fact.quick_actions,
+        );
+        if !fact.health.is_empty() {
+            let metrics: Vec<String> = fact
+                .health
+                .iter()
+                .map(|(label, shape)| format!("{label}={shape}"))
+                .collect();
+            let _ = writeln!(out, "  health: {}", metrics.join(" | "));
+        }
+    }
+}
+
+#[expect(
+    clippy::let_underscore_must_use,
+    reason = "writing to a String cannot fail"
+)]
+fn write_config(out: &mut String, config: &BTreeMap<String, String>) {
+    section(out, "configuration");
+    out.push_str(
+        "(default-deny: a key with no disclosure class is absent entirely; `set` / `unset` means \
+         the value exists but cannot be shown)\n",
+    );
+    if config.is_empty() {
+        out.push_str("nothing disclosable\n");
+        return;
+    }
+    for (key, value) in config {
+        let _ = writeln!(out, "{key:<40} = {value}");
+    }
+}
+
+#[expect(
+    clippy::let_underscore_must_use,
+    reason = "writing to a String cannot fail"
+)]
+fn write_runs(out: &mut String, runs: &[DisclosedRun]) {
+    section(out, "run history");
+    out.push_str(
+        "(newest first; every string is its length only - no interpolated value appears here)\n",
+    );
+    if runs.is_empty() {
+        out.push_str("no runs recorded\n");
+        return;
+    }
+    for run in runs {
+        let duration = run
+            .completed_at
+            .map(|at| (at - run.started_at).whole_milliseconds());
+        let _ = writeln!(
+            out,
+            "\nrun action={} trigger={} started={} duration={} outcome={}",
+            run.action_id,
+            trigger_shape(&run.trigger),
+            stamp_time(run.started_at),
+            duration.map_or_else(|| "-".to_owned(), |ms| format!("{ms}ms")),
+            outcome_shape(&run.outcome),
+        );
+        if !run.arguments.is_empty() {
+            let _ = writeln!(out, "  args: {}", values_shape(&run.arguments));
+        }
+        for step in &run.steps {
+            write_step(out, step);
+        }
+    }
+}
+
+#[expect(
+    clippy::let_underscore_must_use,
+    reason = "writing to a String cannot fail"
+)]
+fn write_step(out: &mut String, step: &DisclosedStep) {
+    let _ = writeln!(
+        out,
+        "  step {:<4} {:<28} {:>7}ms {}",
+        step.index
+            .map_or_else(|| "-".to_owned(), |index| index.to_string()),
+        step.kind,
+        step.duration_ms,
+        step_outcome_shape(&step.outcome),
+    );
+    if !step.args_in.is_empty() {
+        let _ = writeln!(out, "    in  {{ {} }}", values_shape(&step.args_in));
+    }
+    if !step.produced.is_empty() {
+        let _ = writeln!(out, "    out {{ {} }}", values_shape(&step.produced));
+    }
+}
+
+fn values_shape(values: &BTreeMap<String, DisclosedValue>) -> String {
+    values
+        .iter()
+        .map(|(name, value)| format!("{name}={value}"))
+        .collect::<Vec<_>>()
+        .join("  ")
+}
+
+fn trigger_shape(trigger: &DisclosedTrigger) -> String {
+    match trigger {
+        DisclosedTrigger::Event {
+            event_id,
+            trigger_kind,
+        } => format!(
+            "event({event_id}, kind={})",
+            trigger_kind.as_deref().unwrap_or("-")
+        ),
+        DisclosedTrigger::QuickAction {
+            builtin_id,
+            label_chars,
+        } => format!("quick_action({builtin_id}, label {REDACTION_STAMP} len={label_chars}>)"),
+        DisclosedTrigger::Scheduled {
+            event_id,
+            scheduled_run_id,
+        } => format!("scheduled({event_id}, run={scheduled_run_id})"),
+    }
+}
+
+fn outcome_shape(outcome: &DisclosedOutcome) -> String {
+    match outcome {
+        DisclosedOutcome::Success => "success".to_owned(),
+        DisclosedOutcome::Cancelled => "cancelled".to_owned(),
+        DisclosedOutcome::Failed { reason_chars } => {
+            format!("failed(reason {REDACTION_STAMP} len={reason_chars}>)")
+        }
+    }
+}
+
+fn step_outcome_shape(outcome: &DisclosedStepOutcome) -> String {
+    match outcome {
+        DisclosedStepOutcome::Success => "success".to_owned(),
+        DisclosedStepOutcome::Failed { reason_chars } => {
+            format!("failed(reason {REDACTION_STAMP} len={reason_chars}>)")
+        }
+        DisclosedStepOutcome::Skipped { reason_chars } => {
+            format!("skipped(reason {REDACTION_STAMP} len={reason_chars}>)")
+        }
+        DisclosedStepOutcome::IntegrationDisabled(integration) => {
+            format!("failed({INTEGRATION_DISABLED}: {integration})")
+        }
+    }
+}
+
+#[expect(
+    clippy::let_underscore_must_use,
+    reason = "writing to a String cannot fail"
+)]
+fn write_script_section(out: &mut String, script: &str, total_lines: usize, elided: u64) {
+    section(out, &format!("user script log ({total_lines} lines)"));
+    out.push_str(
+        "(written by the log step in your own actions and scripts - forge did not choose this \
+         text; it is grouped here so you can read it before publishing)\n",
+    );
+    if elided > 0 {
+        let _ = writeln!(
+            out,
+            "({elided} older bytes of this section did not fit and were left out)"
+        );
+    }
+    if script.is_empty() {
+        out.push_str("no script log lines\n");
+        return;
+    }
+    out.push_str(script);
+}
+
+fn write_corpus_section(out: &mut String, rest: &str, corpus: &log_archive::Corpus) {
+    section(
+        out,
+        &format!(
+            "log ({} files, {} older bytes left out)",
+            corpus.files_kept, corpus.elided_bytes
+        ),
+    );
+    out.push_str("(script log lines were lifted into the section above)\n");
+    if rest.is_empty() {
+        out.push_str("no log lines\n");
+        return;
+    }
+    out.push_str(rest);
+}
+
+#[expect(
+    clippy::let_underscore_must_use,
+    reason = "writing to a String cannot fail"
+)]
+fn section(out: &mut String, title: &str) {
+    let _ = write!(out, "\n{RULE}\n-- {title}\n{RULE}\n");
+}
+
+fn stamp_time(at: OffsetDateTime) -> String {
+    format!(
+        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
+        at.year(),
+        u8::from(at.month()),
+        at.day(),
+        at.hour(),
+        at.minute(),
+        at.second(),
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    use forge_platform_core::{
+        BuiltinContent, BuiltinHealth, BuiltinStatus, CapabilityFlags, ConnectionState,
+        DetailSection, HeaderAction, HealthMetric, HealthMetricId, HealthStream, QuickAction,
+        QuickActions,
+    };
+    use forge_types::{
+        ActionId, EventId, ExecutionContext, ExecutionMetadata, ExecutionOutcome, IntegrationId,
+        MessageCode, SubActionOutcome, SubActionTelemetry, UserText, Variant, VerbatimText,
+    };
+
+    use super::*;
+    use forge_host::integrations::BuiltinObject;
+
+    const SECRET: &str = "nova_the_broadcaster";
+
+    fn line(level: &str, target: &str, message: &str) -> String {
+        format!("2026-09-06T20:55:20.123456Z {level} {target}: {message}")
+    }
+
+    #[test]
+    fn target_of_reads_the_third_field_so_a_message_quoting_a_target_is_not_one() {
+        for (input, expected) in [
+            (
+                line(" INFO", SCRIPT_LOG_TARGET, "message=\"hi\""),
+                Some(SCRIPT_LOG_TARGET),
+            ),
+            (
+                line(" INFO", "forge_desktop", "saw forge::action: in the text"),
+                Some("forge_desktop"),
+            ),
+            (
+                line(" WARN", "no_colon_here", "x").replace("no_colon_here:", "no_colon_here"),
+                None,
+            ),
+            ("two fields".to_owned(), None),
+            (String::new(), None),
+        ] {
+            assert_eq!(log_archive::line_target(&input), expected, "line {input:?}");
+        }
+    }
+
+    #[test]
+    fn split_script_lines_moves_only_script_target_lines_out_of_the_corpus() {
+        let corpus = [
+            line(" INFO", "forge_desktop", "boot"),
+            line(" INFO", SCRIPT_LOG_TARGET, "message=\"from my action\""),
+            line("TRACE", COMMAND_LINE_TARGET, "line=\"!so someone\""),
+            line(" WARN", SCRIPT_LOG_TARGET, "message=\"second\""),
+        ]
+        .join("\n");
+
+        let (script, rest) = split_script_lines(&corpus);
+
+        assert_eq!(script.lines().count(), 2);
+        assert!(
+            script
+                .lines()
+                .all(|l| log_archive::line_target(l) == Some(SCRIPT_LOG_TARGET))
+        );
+        assert_eq!(rest.lines().count(), 2);
+        assert!(
+            !rest.contains("from my action") && !rest.contains("second"),
+            "a script line stayed behind in the corpus:\n{rest}",
+        );
+    }
+
+    #[test]
+    fn keep_newest_lines_leaves_text_that_already_fits_untouched() {
+        let text = "one\ntwo\n".to_owned();
+
+        for budget in [text.len(), text.len() + 1, usize::MAX] {
+            assert_eq!(
+                keep_newest_lines(text.clone(), budget),
+                (text.clone(), 0),
+                "budget {budget}",
+            );
+        }
+    }
+
+    #[test]
+    fn keep_newest_lines_drops_whole_leading_lines_and_reports_their_bytes() {
+        let text = "oldest\nmiddle\nnewest\n".to_owned();
+
+        let (kept, elided) = keep_newest_lines(text, 8);
+
+        assert_eq!(kept, "newest\n");
+        assert_eq!(elided, "oldest\nmiddle\n".len() as u64);
+    }
+
+    #[test]
+    fn keep_newest_lines_does_not_cut_inside_a_multibyte_character() {
+        let text = "a\nПривіт\nz\n".to_owned();
+
+        let (kept, elided) = keep_newest_lines(text, 12);
+
+        assert_eq!(kept, "z\n");
+        assert_eq!(elided, "a\nПривіт\n".len() as u64);
+    }
+
+    #[test]
+    fn health_shape_lets_no_metric_text_through() {
+        for (value, expected) in [
+            (
+                HealthValue::Status {
+                    label: forge_types::VerbatimText::new(SECRET).into(),
+                    active: true,
+                    detail: Some(forge_types::VerbatimText::new(SECRET).into()),
+                },
+                "status(active=true)",
+            ),
+            (
+                HealthValue::Text {
+                    primary: forge_types::VerbatimText::new(SECRET).into(),
+                    secondary: Some(forge_types::VerbatimText::new(SECRET).into()),
+                },
+                "text",
+            ),
+            (
+                HealthValue::Pair {
+                    left: forge_types::VerbatimText::new(SECRET).into(),
+                    right: forge_types::VerbatimText::new(SECRET).into(),
+                },
+                "pair",
+            ),
+            (
+                HealthValue::Ratio {
+                    used: 3,
+                    total: 800,
+                    reset_hint: Some(forge_types::VerbatimText::new(SECRET).into()),
+                },
+                "ratio(3/800)",
+            ),
+        ] {
+            assert_eq!(health_shape(&value), expected);
+        }
+    }
+
+    struct ProbeBuiltin {
+        id: IntegrationId,
+    }
+
+    impl ProbeBuiltin {
+        fn object(id: &str) -> BuiltinObject {
+            let probe = Arc::new(Self {
+                id: IntegrationId::new(id),
+            });
+            BuiltinObject {
+                status: probe.clone(),
+                health: probe.clone(),
+                content: probe.clone(),
+                quick: probe,
+                control: None,
+                collections: None,
+                option_source: None,
+                follow: None,
+                ban_list: None,
+            }
+        }
+    }
+
+    impl BuiltinStatus for ProbeBuiltin {
+        fn id(&self) -> &IntegrationId {
+            &self.id
+        }
+        fn credential_state(&self) -> forge_platform_core::CredentialState {
+            forge_platform_core::CredentialState::Valid
+        }
+        fn display_name(&self) -> &str {
+            SECRET
+        }
+        fn version(&self) -> Option<String> {
+            Some("5.6.1".to_owned())
+        }
+        fn connection(&self) -> ConnectionState {
+            ConnectionState::Connected
+        }
+        fn uptime(&self) -> Option<Duration> {
+            Some(Duration::from_secs(90))
+        }
+        fn endpoint(&self) -> Option<forge_types::UserText> {
+            Some(forge_types::VerbatimText::new(SECRET).into())
+        }
+        fn capability_flags(&self) -> CapabilityFlags {
+            CapabilityFlags {
+                limited: false,
+                label: Some(forge_types::VerbatimText::new(SECRET).into()),
+            }
+        }
+        fn header_actions(&self) -> Vec<HeaderAction> {
+            Vec::new()
+        }
+        fn hero_name(&self) -> Option<String> {
+            Some(SECRET.to_owned())
+        }
+
+        fn status_revisions(&self) -> Option<forge_platform_core::CollectionRevisions> {
+            None
+        }
+    }
+
+    const STUB_METRIC_IDS: [HealthMetricId; 4] = [
+        HealthMetricId::new(MessageCode::from_static("stub", "metric0")),
+        HealthMetricId::new(MessageCode::from_static("stub", "metric1")),
+        HealthMetricId::new(MessageCode::from_static("stub", "metric2")),
+        HealthMetricId::new(MessageCode::from_static("stub", "metric3")),
+    ];
+
+    impl BuiltinHealth for ProbeBuiltin {
+        fn metrics(&self) -> [HealthMetric; 4] {
+            std::array::from_fn(|i| HealthMetric {
+                id: STUB_METRIC_IDS[i].clone(),
+                value: HealthValue::Text {
+                    primary: forge_types::VerbatimText::new(SECRET).into(),
+                    secondary: None,
+                },
+            })
+        }
+        fn stream(&self) -> HealthStream {
+            Box::pin(futures_util::stream::empty())
+        }
+    }
+
+    impl BuiltinContent for ProbeBuiltin {
+        fn sections(&self) -> Vec<DetailSection> {
+            Vec::new()
+        }
+
+        fn content_revisions(&self) -> Option<forge_platform_core::CollectionRevisions> {
+            None
+        }
+    }
+
+    impl QuickActions for ProbeBuiltin {
+        fn actions(&self) -> Vec<QuickAction> {
+            Vec::new()
+        }
+    }
+
+    #[test]
+    fn integration_facts_expose_an_endpoint_as_presence_and_never_its_value() {
+        let registry = BuiltinRegistry::default();
+        registry.install(ProbeBuiltin::object("probe"));
+
+        let facts = integration_facts(&registry);
+
+        let fact = facts.first().expect("one installed builtin");
+        assert!(fact.endpoint_present, "presence itself is disclosed");
+        assert_eq!(fact.id, "probe");
+        assert_eq!(fact.connection, "connected");
+        assert_eq!(fact.uptime_secs, Some(90));
+        for (label, shape) in &fact.health {
+            assert!(
+                !label.contains(SECRET) && !shape.contains(SECRET),
+                "health metric {label}={shape} leaked the probe value",
+            );
+        }
+    }
+
+    #[test]
+    fn integration_facts_key_health_by_the_stable_metric_id() {
+        let registry = BuiltinRegistry::default();
+        registry.install(ProbeBuiltin::object("probe"));
+
+        let keys: Vec<String> = integration_facts(&registry)
+            .remove(0)
+            .health
+            .into_iter()
+            .map(|(key, _)| key)
+            .collect();
+
+        assert_eq!(
+            keys,
+            [
+                "stub.metric0",
+                "stub.metric1",
+                "stub.metric2",
+                "stub.metric3"
+            ]
+        );
+    }
+
+    #[test]
+    fn integration_facts_are_ordered_by_id_so_two_bundles_diff_cleanly() {
+        let registry = BuiltinRegistry::default();
+        for id in ["vtube", "discord", "obs"] {
+            registry.install(ProbeBuiltin::object(id));
+        }
+
+        let ids: Vec<String> = integration_facts(&registry)
+            .into_iter()
+            .map(|fact| fact.id)
+            .collect();
+
+        assert_eq!(ids, vec!["discord", "obs", "vtube"]);
+    }
+
+    fn input_over(log_dir: &std::path::Path, runs: Vec<DisclosedRun>) -> BundleInput {
+        BundleInput {
+            log_dir: log_dir.to_owned(),
+            level: LogLevel::Info,
+            env_overridden: false,
+            integrations: Vec::new(),
+            config: BTreeMap::new(),
+            runs,
+        }
+    }
+
+    fn write_log(dir: &std::path::Path, body: &str) {
+        std::fs::write(dir.join("forge.log"), body).expect("a log file");
+    }
+
+    fn step_carrying(index: usize, outcome: SubActionOutcome) -> SubActionTelemetry {
+        SubActionTelemetry {
+            index,
+            kind: "core.log".to_owned(),
+            started_at: OffsetDateTime::UNIX_EPOCH,
+            duration_ms: 5,
+            outcome,
+            args_in: BTreeMap::from([("message".to_owned(), SECRET.to_owned())]),
+            produced: BTreeMap::from([("spoken".to_owned(), SECRET.to_owned())]),
+        }
+    }
+
+    fn secret_text() -> UserText {
+        UserText::Verbatim(VerbatimText::new(SECRET))
+    }
+
+    fn run_full_of_the_secret(
+        metadata: ExecutionMetadata,
+        outcome: ExecutionOutcome,
+    ) -> DisclosedRun {
+        DisclosedRun::from(&ExecutionContext {
+            action_id: ActionId::new(),
+            metadata,
+            arg_stack_snapshot: BTreeMap::from([(
+                "user".to_owned(),
+                Variant::String(SECRET.to_owned()),
+            )]),
+            started_at: OffsetDateTime::UNIX_EPOCH,
+            completed_at: None,
+            telemetry: vec![
+                step_carrying(0, SubActionOutcome::Failed(secret_text())),
+                step_carrying(1, SubActionOutcome::Skipped(secret_text())),
+            ],
+            outcome,
+        })
+    }
+
+    #[test]
+    fn no_run_history_value_reaches_the_bundle_text() {
+        let dir = tempfile::tempdir().expect("a log dir");
+        let runs = vec![
+            run_full_of_the_secret(
+                ExecutionMetadata::QuickAction {
+                    builtin_id: "obs".to_owned(),
+                    label: SECRET.to_owned(),
+                },
+                ExecutionOutcome::Failed(secret_text()),
+            ),
+            run_full_of_the_secret(
+                ExecutionMetadata::Trigger {
+                    event_id: EventId::new(),
+                    trigger_kind: None,
+                },
+                ExecutionOutcome::Cancelled,
+            ),
+        ];
+
+        let bundle = assemble(&input_over(dir.path(), runs)).expect("a bundle");
+
+        assert!(!bundle.text.contains(SECRET));
+        assert!(bundle.text.contains("run action="));
+        assert!(bundle.text.contains("len="));
+    }
+
+    #[test]
+    fn an_oversized_log_stays_inside_the_total_budget_and_counts_as_elided() {
+        let dir = tempfile::tempdir().expect("a log dir");
+        let row = line(" INFO", "forge_desktop", &"x".repeat(200));
+        let rows = (TOTAL_BUDGET / row.len()) + 2_000;
+        write_log(dir.path(), &format!("{row}\n").repeat(rows));
+
+        let bundle = assemble(&input_over(dir.path(), Vec::new())).expect("a bundle");
+
+        assert!(bundle.text.len() <= TOTAL_BUDGET, "{}", bundle.text.len());
+        assert!(bundle.elided_bytes > 0);
+    }
+
+    #[test]
+    fn a_log_that_fits_elides_nothing() {
+        let dir = tempfile::tempdir().expect("a log dir");
+        write_log(dir.path(), &line(" INFO", "forge_desktop", "hello"));
+
+        let bundle = assemble(&input_over(dir.path(), Vec::new())).expect("a bundle");
+
+        assert_eq!(bundle.elided_bytes, 0);
+    }
+
+    #[test]
+    fn script_lines_past_their_budget_are_elided_and_added_to_the_corpus_elision() {
+        let dir = tempfile::tempdir().expect("a log dir");
+        let row = line(" INFO", SCRIPT_LOG_TARGET, &"x".repeat(200));
+        let rows = SCRIPT_SECTION_BUDGET / row.len() + 100;
+        write_log(dir.path(), &format!("{row}\n").repeat(rows));
+
+        let bundle = assemble(&input_over(dir.path(), Vec::new())).expect("a bundle");
+
+        assert_eq!(bundle.script_lines, rows);
+        assert!(bundle.elided_bytes > 0);
+        assert!(bundle.text.matches(row.as_str()).count() < rows);
+    }
+
+    #[test]
+    fn script_lines_land_only_in_their_own_section_and_the_sections_keep_their_order() {
+        let dir = tempfile::tempdir().expect("a log dir");
+        let script = line(" INFO", SCRIPT_LOG_TARGET, "from a script");
+        let command = line(" INFO", COMMAND_LINE_TARGET, "ran a command");
+        let plain = line(" INFO", "forge_desktop", "from forge");
+        write_log(dir.path(), &format!("{script}\n{command}\n{plain}\n"));
+
+        let bundle = assemble(&input_over(dir.path(), Vec::new())).expect("a bundle");
+        let at = |needle: &str| bundle.text.find(needle).expect(needle);
+
+        assert_eq!(bundle.text.matches("from a script").count(), 1);
+        assert_eq!((bundle.script_lines, bundle.command_lines), (1, 1));
+        assert!(
+            at("-- integrations") < at("-- configuration")
+                && at("-- configuration") < at("-- run history")
+                && at("-- run history") < at("-- user script log")
+                && at("-- user script log") < at("from a script")
+                && at("from a script") < at("from forge"),
+            "{}",
+            bundle.text
+        );
+    }
+}

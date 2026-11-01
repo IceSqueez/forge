@@ -24,5 +24,6 @@ pub const MIDI_INTEGRATION: IntegrationDeclaration = IntegrationDeclaration {
         step_tint: IntegrationTint::Danger,
         trigger_tint: IntegrationTint::Danger,
     },
+    connection_strip: None,
     disclaimer: None,
 };

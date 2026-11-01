@@ -26,5 +26,6 @@ pub const HOTKEY_INTEGRATION: IntegrationDeclaration = IntegrationDeclaration {
         step_tint: IntegrationTint::Warning,
         trigger_tint: IntegrationTint::Warning,
     },
+    connection_strip: None,
     disclaimer: None,
 };

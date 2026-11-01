@@ -4,14 +4,14 @@ use std::ops::Range;
 use gpui::{
     App, Bounds, ClipboardItem, Context, CursorStyle, Element, ElementId, ElementInputHandler,
     Entity, EventEmitter, FocusHandle, Focusable, GlobalElementId, Hsla, KeyBinding, LayoutId,
-    PaintQuad, Pixels, Point, Rgba, ShapedLine, SharedString, Style, Subscription, TextAlign,
-    TextRun, UnderlineStyle, Window, actions, div, fill, point, prelude::*, px, relative, size,
+    PaintQuad, Pixels, Point, Rgba, ShapedLine, SharedString, Style, TextAlign, TextRun,
+    UnderlineStyle, Window, actions, div, fill, point, prelude::*, px, relative, size,
 };
 
-use crate::caret_blink::{CaretBlink, CaretHost, set_caret_blinking};
+use crate::caret_blink::{CaretBlink, CaretHost, watch_focus};
 use crate::focus_reveal::ReportsRevealBounds;
 use crate::icons::{Icon, icon};
-use crate::palette::{FORGE_DEFAULT, ForgePalette, with_alpha};
+use crate::palette::{ForgePalette, PaletteColor, with_alpha};
 use crate::text_buffer::TextBuffer;
 use crate::text_edit::{content_offset_for_mask, mask_graphemes, mask_offset};
 use crate::text_editing::*;
@@ -73,15 +73,15 @@ pub struct TextInput {
     last_bounds: Option<Bounds<Pixels>>,
     scroll_offset: Pixels,
     motion: CaretMotion,
-    palette: ForgePalette,
     font_size: Pixels,
     read_only: bool,
     secure: bool,
-    leading_icon: Option<(Icon, Rgba)>,
+    leading_icon: Option<(Icon, PaletteColor)>,
     prefix: Option<SharedString>,
-    accent: Option<Rgba>,
+    accent: Option<PaletteColor>,
     on_surface: bool,
-    static_chrome: Option<(Rgba, Radius)>,
+    static_chrome: Option<(PaletteColor, Radius)>,
+    border_override: Option<Rgba>,
     plain: bool,
     mono: bool,
     compact: bool,
@@ -89,7 +89,6 @@ pub struct TextInput {
     invalid: bool,
     caret: CaretBlink,
     committed: SharedString,
-    blur_sub: Option<Subscription>,
 }
 
 impl EventEmitter<InputEvent> for TextInput {}
@@ -97,6 +96,10 @@ impl EventEmitter<InputEvent> for TextInput {}
 impl CaretHost for TextInput {
     fn caret(&mut self) -> &mut CaretBlink {
         &mut self.caret
+    }
+
+    fn focus_left(&mut self, _: &mut Window, cx: &mut Context<Self>) {
+        self.commit_on_leave(cx);
     }
 }
 
@@ -110,7 +113,6 @@ impl TextInput {
             last_bounds: None,
             scroll_offset: px(0.0),
             motion: CaretMotion::default(),
-            palette: FORGE_DEFAULT,
             font_size: FONT_XS,
             read_only: false,
             secure: false,
@@ -119,6 +121,7 @@ impl TextInput {
             accent: None,
             on_surface: false,
             static_chrome: None,
+            border_override: None,
             plain: false,
             mono: false,
             compact: false,
@@ -126,7 +129,6 @@ impl TextInput {
             invalid: false,
             caret: CaretBlink::new(),
             committed: SharedString::default(),
-            blur_sub: None,
         }
     }
 
@@ -139,12 +141,6 @@ impl TextInput {
     #[must_use]
     pub fn mono(mut self) -> Self {
         self.mono = true;
-        self
-    }
-
-    #[must_use]
-    pub fn with_palette(mut self, palette: ForgePalette) -> Self {
-        self.palette = palette;
         self
     }
 
@@ -179,7 +175,7 @@ impl TextInput {
     }
 
     #[must_use]
-    pub fn leading_icon(mut self, glyph: Icon, tint: Rgba) -> Self {
+    pub fn leading_icon(mut self, glyph: Icon, tint: PaletteColor) -> Self {
         self.leading_icon = Some((glyph, tint));
         self
     }
@@ -191,7 +187,7 @@ impl TextInput {
     }
 
     #[must_use]
-    pub fn accent(mut self, accent: Rgba) -> Self {
+    pub fn accent(mut self, accent: PaletteColor) -> Self {
         self.accent = Some(accent);
         self
     }
@@ -203,7 +199,7 @@ impl TextInput {
     }
 
     #[must_use]
-    pub fn static_chrome(mut self, border: Rgba, corner: Radius) -> Self {
+    pub fn static_chrome(mut self, border: PaletteColor, corner: Radius) -> Self {
         self.static_chrome = Some((border, corner));
         self
     }
@@ -212,13 +208,12 @@ impl TextInput {
         self.buffer.as_str()
     }
 
-    pub fn set_palette(&mut self, palette: ForgePalette, cx: &mut Context<Self>) {
-        self.palette = palette;
-        cx.notify();
+    pub fn set_static_chrome(&mut self, chrome: Option<(PaletteColor, Radius)>) {
+        self.static_chrome = chrome;
     }
 
-    pub fn set_static_chrome(&mut self, chrome: Option<(Rgba, Radius)>) {
-        self.static_chrome = chrome;
+    pub fn set_border_override(&mut self, border: Option<Rgba>) {
+        self.border_override = border;
     }
 
     pub fn set_secure(&mut self, secure: bool, cx: &mut Context<Self>) {
@@ -288,10 +283,6 @@ impl TextInput {
     fn submit(&mut self, _: &Submit, _: &mut Window, cx: &mut Context<Self>) {
         self.committed = self.buffer.text().into();
         cx.emit(InputEvent::Submitted(self.committed.clone()));
-    }
-
-    fn on_blur(&mut self, _: &mut Window, cx: &mut Context<Self>) {
-        self.commit_on_leave(cx);
     }
 
     fn commit_on_leave(&mut self, cx: &mut Context<Self>) {
@@ -426,21 +417,18 @@ forward_input_handler!(TextInput);
 
 pub fn search_input(
     placeholder: impl Into<SharedString>,
-    palette: ForgePalette,
     cx: &mut Context<TextInput>,
 ) -> TextInput {
     TextInput::new(placeholder, cx)
-        .with_palette(palette)
-        .leading_icon(Icon::Search, palette.text_muted)
-        .static_chrome(palette.border_regular, Radius::Sm)
+        .leading_icon(Icon::Search, |palette| palette.text_muted)
+        .static_chrome(|palette| palette.border_regular, Radius::Sm)
 }
 
 pub(crate) fn search_input_on_surface(
     placeholder: impl Into<SharedString>,
-    palette: ForgePalette,
     cx: &mut Context<TextInput>,
 ) -> TextInput {
-    search_input(placeholder, palette, cx).on_surface()
+    search_input(placeholder, cx).on_surface()
 }
 
 struct TextElement {
@@ -452,6 +440,63 @@ struct PrepaintState {
     cursor: Option<PaintQuad>,
     selection: Option<PaintQuad>,
     scroll_offset: Pixels,
+}
+
+fn composition_runs(
+    run: TextRun,
+    text_len: usize,
+    marked_range: Option<&Range<usize>>,
+) -> Vec<TextRun> {
+    if let Some(marked_range) = marked_range {
+        vec![
+            TextRun {
+                len: marked_range.start,
+                ..run.clone()
+            },
+            TextRun {
+                len: marked_range.end - marked_range.start,
+                underline: Some(UnderlineStyle {
+                    color: Some(run.color),
+                    thickness: COMPOSITION_UNDERLINE,
+                    wavy: false,
+                }),
+                ..run.clone()
+            },
+            TextRun {
+                len: text_len - marked_range.end,
+                ..run
+            },
+        ]
+        .into_iter()
+        .filter(|run| run.len > 0)
+        .collect()
+    } else {
+        vec![run]
+    }
+}
+
+fn clamped_scroll(
+    mut scroll_offset: Pixels,
+    cursor_x: Pixels,
+    full_width: Pixels,
+    width: Pixels,
+) -> Pixels {
+    if cursor_x - scroll_offset > width {
+        scroll_offset = cursor_x - width;
+    }
+    if cursor_x - scroll_offset < px(0.0) {
+        scroll_offset = cursor_x;
+    }
+    if scroll_offset < px(0.0) {
+        scroll_offset = px(0.0);
+    }
+    let max_scroll = full_width - width;
+    if max_scroll > px(0.0) && scroll_offset > max_scroll {
+        scroll_offset = max_scroll;
+    } else if max_scroll <= px(0.0) {
+        scroll_offset = px(0.0);
+    }
+    scroll_offset
 }
 
 impl IntoElement for TextElement {
@@ -500,9 +545,8 @@ impl Element for TextElement {
         let content = SharedString::from(input.buffer.text());
         let selected_range = input.buffer.selected_range().clone();
         let cursor = input.cursor_offset();
-        let palette = input.palette;
+        let palette = cx.palette();
         let secure = input.secure;
-        let mut scroll_offset = input.scroll_offset;
         let style = window.text_style();
 
         let (display_text, text_color): (SharedString, Hsla) = if content.is_empty() {
@@ -523,32 +567,8 @@ impl Element for TextElement {
             underline: None,
             strikethrough: None,
         };
-        let runs = if let Some(marked_range) = input.buffer.marked_range().filter(|_| !secure) {
-            vec![
-                TextRun {
-                    len: marked_range.start,
-                    ..run.clone()
-                },
-                TextRun {
-                    len: marked_range.end - marked_range.start,
-                    underline: Some(UnderlineStyle {
-                        color: Some(run.color),
-                        thickness: COMPOSITION_UNDERLINE,
-                        wavy: false,
-                    }),
-                    ..run.clone()
-                },
-                TextRun {
-                    len: display_text.len() - marked_range.end,
-                    ..run
-                },
-            ]
-            .into_iter()
-            .filter(|run| run.len > 0)
-            .collect()
-        } else {
-            vec![run]
-        };
+        let marked_range = input.buffer.marked_range().filter(|_| !secure);
+        let runs = composition_runs(run, display_text.len(), marked_range);
 
         let font_size = style.font_size.to_pixels(window.rem_size());
         let line = window
@@ -559,21 +579,7 @@ impl Element for TextElement {
         let full_width = line.x_for_index(display_text.len());
         let width = bounds.size.width;
 
-        if cursor_x - scroll_offset > width {
-            scroll_offset = cursor_x - width;
-        }
-        if cursor_x - scroll_offset < px(0.0) {
-            scroll_offset = cursor_x;
-        }
-        if scroll_offset < px(0.0) {
-            scroll_offset = px(0.0);
-        }
-        let max_scroll = full_width - width;
-        if max_scroll > px(0.0) && scroll_offset > max_scroll {
-            scroll_offset = max_scroll;
-        } else if max_scroll <= px(0.0) {
-            scroll_offset = px(0.0);
-        }
+        let scroll_offset = clamped_scroll(input.scroll_offset, cursor_x, full_width, width);
 
         let origin_x = bounds.left() - scroll_offset;
         let (selection, cursor) = if selected_range.is_empty() {
@@ -669,48 +675,59 @@ impl Focusable for TextInput {
     }
 }
 
-impl Render for TextInput {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let density = cx.density();
-        if self.blur_sub.is_none() {
-            let handle = self.focus_handle.clone();
-            self.blur_sub = Some(cx.on_blur(&handle, window, Self::on_blur));
-        }
-        let focus = self.focus_handle.clone();
-        let newly_watched = self.caret.watch(&focus, window, cx);
-        let focused = focus.is_focused(window);
-        if newly_watched {
-            set_caret_blinking(self, focused && window.is_visible(), cx);
-        }
+impl TextInput {
+    fn border_tone(
+        &self,
+        focused: bool,
+        accent: Option<Rgba>,
+        palette: &ForgePalette,
+    ) -> (Rgba, Radius) {
         let (border_color, corner) = match self.static_chrome {
-            Some((border, corner)) => (border, corner),
+            Some((border, corner)) => (border(palette), corner),
             None => {
                 let border = if self.read_only {
-                    self.palette.disabled
+                    palette.disabled
                 } else if focused {
-                    self.accent.unwrap_or(self.palette.border_active)
+                    accent.unwrap_or(palette.border_active)
                 } else {
-                    self.palette.border_input
+                    palette.border_input
                 };
                 (border, Radius::Md)
             }
         };
-        let border_color = if self.invalid {
-            self.palette.danger
+        let border_color = self.border_override.unwrap_or(border_color);
+        if self.invalid {
+            (palette.danger, corner)
         } else {
-            border_color
-        };
-        let text_color = if self.read_only {
-            self.palette.text_muted
-        } else if let Some(accent) = self.accent {
+            (border_color, corner)
+        }
+    }
+
+    fn text_tone(&self, accent: Option<Rgba>, palette: &ForgePalette) -> Rgba {
+        if self.read_only {
+            palette.text_muted
+        } else if let Some(accent) = accent {
             accent
         } else {
-            self.palette.text_primary
-        };
+            palette.text_primary
+        }
+    }
+}
+
+impl Render for TextInput {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let density = cx.density();
+        let focus = self.focus_handle.clone();
+        watch_focus(self, &focus, window, cx);
+        let focused = focus.is_focused(window);
+        let palette = cx.palette();
+        let accent = self.accent.map(|accent| accent(&palette));
+        let (border_color, corner) = self.border_tone(focused, accent, &palette);
+        let text_color = self.text_tone(accent, &palette);
         let surface = if self.on_surface {
-            self.palette.elevated
+            palette.elevated
         } else {
-            self.palette.shell
+            palette.shell
         };
 
         let field = div()
@@ -772,7 +789,7 @@ impl Render for TextInput {
         }
         field = field.gap(spacing(Spacing::Xs, density));
         if let Some((glyph, tint)) = self.leading_icon {
-            field = field.child(icon(glyph, FONT_SM, tint));
+            field = field.child(icon(glyph, FONT_SM, tint(&palette)));
         }
         if let Some(prefix) = self.prefix.clone() {
             field = field.child(
@@ -780,7 +797,7 @@ impl Render for TextInput {
                     .flex_none()
                     .font_family(cx.mono_family())
                     .text_size(self.font_size)
-                    .text_color(self.palette.text_faint)
+                    .text_color(palette.text_faint)
                     .child(prefix),
             );
         }

@@ -6,6 +6,8 @@ const CARET_BLINK_INTERVAL: Duration = Duration::from_millis(530);
 
 pub(crate) trait CaretHost: Sized + 'static {
     fn caret(&mut self) -> &mut CaretBlink;
+
+    fn focus_left(&mut self, _window: &mut Window, _cx: &mut Context<Self>) {}
 }
 
 pub(crate) struct CaretBlink {
@@ -45,7 +47,8 @@ impl CaretBlink {
                 cx.notify();
             }
         });
-        let on_blur = cx.on_blur(focus, window, |host: &mut T, _, cx| {
+        let on_blur = cx.on_blur(focus, window, |host: &mut T, window, cx| {
+            host.focus_left(window, cx);
             if set_caret_blinking(host, false, cx) {
                 cx.notify();
             }
@@ -63,11 +66,18 @@ impl CaretBlink {
     }
 }
 
-pub(crate) fn set_caret_blinking<T: CaretHost>(
+pub(crate) fn watch_focus<T: CaretHost>(
     host: &mut T,
-    blinking: bool,
+    focus: &FocusHandle,
+    window: &mut Window,
     cx: &mut Context<T>,
-) -> bool {
+) {
+    if host.caret().watch(focus, window, cx) {
+        set_caret_blinking(host, focus.is_focused(window) && window.is_visible(), cx);
+    }
+}
+
+fn set_caret_blinking<T: CaretHost>(host: &mut T, blinking: bool, cx: &mut Context<T>) -> bool {
     let caret = host.caret();
     if blinking == caret.ticker.is_some() {
         return false;

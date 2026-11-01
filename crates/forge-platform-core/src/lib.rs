@@ -9,6 +9,7 @@ mod credential_state;
 mod credentialed_control;
 mod donation;
 mod donation_poll;
+mod donation_setup;
 #[cfg(test)]
 #[path = "../test_support/emitted_codes.rs"]
 mod emitted_codes;
@@ -23,6 +24,7 @@ mod reconnect;
 mod sample_donation;
 mod sender;
 mod timestamp;
+mod viewer_step;
 pub use ban_list::{
     BanDuration, BanEntry, BanListOutcome, BanListSource, BanListUnavailable, BanPage,
     BanPageToken, UnbanAbility, UnbanRefusal,
@@ -58,13 +60,16 @@ pub use donation_poll::{
     PollMetrics, PollPhase, PollPhaseCodes, PollScope, PollStatus, PollStatusBoard, PollVocabulary,
     PollWorker, PolledDonationProvider, RunningPoller, parse_header_token, poll_metrics,
 };
+pub use donation_setup::{
+    AccountTarget, AdjustablePoll, DonationAccountSetup, SavedAccount, TokenCheck, TokenProblem,
+};
 pub use endpoints::{EndpointRefusal, EndpointSurface, PlatformEndpoints};
 pub use error::{DeviceAuthEnd, PlatformError};
 pub use follow_lookup::{FollowLookup, FollowStatus};
 pub use integration::{
-    CatalogLabel, ConnectionAffordance, IntegrationCatalogGroup, IntegrationCategory,
-    IntegrationDeclaration, IntegrationDisclaimer, IntegrationIdentity, IntegrationTint,
-    SignInRoute, TileMark,
+    BanListScope, CatalogLabel, ChatLimits, ConnectionAffordance, ConnectionStripMark,
+    IntegrationCatalogGroup, IntegrationCategory, IntegrationDeclaration, IntegrationDisclaimer,
+    IntegrationIdentity, IntegrationTint, SignInRoute, TileMark,
 };
 pub use live_viewers::{LiveViewerSource, ViewerReport, ViewerReportStream};
 pub use option_source::{
@@ -83,9 +88,11 @@ pub use sample_donation::{
 };
 pub use sender::{ActingSender, SENDER_FIELD, SENT_AS_FIELD, SenderPreference, SenderRole};
 pub use timestamp::{parse_timestamp, parse_timestamp_logged, timestamp_variant};
+pub use viewer_step::{ViewerAction, ViewerRef, ViewerStep};
 
 pub use auth::pkce_flow::PkceAuthorizeUrl;
 pub use auth::{
-    CALLBACK_PATH, PkceAuthorization, PkceAuthorizeConfig, PkceLoopback, REFRESH_BUFFER,
-    SingleFlightRefresh, TokenRotation, TokenSource, expires_within_refresh_buffer,
+    CALLBACK_PATH, LoopbackAttempt, LoopbackSignIn, PkceAuthorization, PkceAuthorizeConfig,
+    PkceLoopback, REFRESH_BUFFER, SingleFlightRefresh, TokenRotation, TokenSource,
+    expires_within_refresh_buffer,
 };

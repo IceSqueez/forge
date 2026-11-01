@@ -1,31 +1,24 @@
-use crate::HOVER_FILL_ALPHA;
-use crate::key_activation::KeyActivated;
 use crate::presentation::ActivePresentation;
 use gpui::{
-    App, AppContext, ClickEvent, Context, ElementId, Entity, EventEmitter, FontWeight,
-    InteractiveElement, IntoElement, ParentElement, Pixels, Render, Rgba, SharedString,
-    StatefulInteractiveElement, Styled, Subscription, Window, div, px,
+    App, AppContext, Context, Div, Entity, EventEmitter, FontWeight, IntoElement, ParentElement,
+    Pixels, Render, Rgba, SharedString, Styled, Subscription, Window, div, px,
 };
 
 use crate::buttons::secondary_button;
-use crate::confirm::{confirm_actions_row, confirm_footer};
+use crate::confirm::{HEADER_GAP, confirm_action, confirm_actions_row, confirm_footer};
 use crate::icons::{Icon, icon};
-use crate::palette::{ForgePalette, with_alpha};
+use crate::modal::{alert_tile, bare_modal};
+use crate::palette::{ForgePalette, PaletteColor};
 use crate::text_input::{InputEvent, TextInput};
 use crate::tokens::{
     BORDER_THIN, Density, FONT_MD, FONT_SM, Radius, Spacing, radius, scaled, spacing,
 };
 
-const HEADER_GAP: Pixels = px(12.0);
-const ICON_TILE: Pixels = px(36.0);
 const ICON_TILE_GLYPH: Pixels = px(20.0);
-const ICON_TILE_ALPHA: f32 = 0.12;
 const SECTION_STACK_GAP: Pixels = px(8.0);
 const BULLET_GLYPH: Pixels = px(14.0);
 const CHIP_PAD_Y: Pixels = px(1.0);
 const CARD_WIDTH: Pixels = px(520.0);
-
-type ActionHandler = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BulletKind {
@@ -63,11 +56,11 @@ pub(crate) fn bullet_glyph(kind: BulletKind, palette: &ForgePalette) -> (Icon, R
     }
 }
 
-fn match_border(matched: bool, palette: &ForgePalette) -> Rgba {
+fn match_border(matched: bool) -> PaletteColor {
     if matched {
-        palette.brand
+        |palette| palette.brand
     } else {
-        palette.border_input
+        |palette| palette.border_input
     }
 }
 
@@ -82,7 +75,6 @@ pub struct TypeToConfirm {
     confirm_label: SharedString,
     cancel_label: SharedString,
     esc_hint: Option<SharedString>,
-    palette: ForgePalette,
     matched: bool,
     _input_sub: Subscription,
 }
@@ -91,18 +83,15 @@ impl EventEmitter<TypeToConfirmEvent> for TypeToConfirm {}
 
 pub fn type_to_confirm(
     target: impl Into<SharedString>,
-    palette: &ForgePalette,
     cx: &mut Context<TypeToConfirm>,
 ) -> TypeToConfirm {
     let target = target.into();
-    let palette = *palette;
     let matched = target.is_empty();
 
     let input = cx.new(|cx| {
         TextInput::new("", cx)
-            .with_palette(palette)
             .with_font_size(FONT_SM)
-            .static_chrome(match_border(matched, &palette), Radius::Md)
+            .static_chrome(match_border(matched), Radius::Md)
     });
 
     let sub = cx.subscribe(&input, |this, input, event: &InputEvent, cx| match event {
@@ -110,7 +99,7 @@ pub fn type_to_confirm(
             let now = text.as_ref() == this.target.as_ref();
             if now != this.matched {
                 this.matched = now;
-                let border = match_border(now, &this.palette);
+                let border = match_border(now);
                 input.update(cx, |inp, cx| {
                     inp.set_static_chrome(Some((border, Radius::Md)));
                     cx.notify();
@@ -138,7 +127,6 @@ pub fn type_to_confirm(
         confirm_label: SharedString::default(),
         cancel_label: SharedString::default(),
         esc_hint: None,
-        palette,
         matched,
         _input_sub: sub,
     }
@@ -197,64 +185,9 @@ impl TypeToConfirm {
     }
 }
 
-fn confirm_button(
-    id: ElementId,
-    label: SharedString,
-    palette: &ForgePalette,
-    enabled: bool,
-    handler: ActionHandler,
-    density: Density,
-    cx: &App,
-) -> impl IntoElement {
-    let accent = palette.warning;
-    let ink = palette.shell;
-    let disabled_bg = palette.surface_overlay;
-    let disabled_ink = palette.disabled;
-
-    let base = div()
-        .max_w_full()
-        .flex()
-        .items_center()
-        .py(spacing(Spacing::Xxs, density))
-        .px(spacing(Spacing::Sm, density))
-        .rounded(radius(Radius::Md))
-        .font_family(cx.body_family())
-        .text_size(FONT_SM);
-
-    if enabled {
-        base.id(id)
-            .bg(accent)
-            .font_weight(FontWeight::MEDIUM)
-            .text_color(ink)
-            .cursor_pointer()
-            .hover(move |style| style.bg(with_alpha(accent, HOVER_FILL_ALPHA)))
-            .key_activated(palette.text_primary)
-            .on_click(handler)
-            .child(label)
-            .into_any_element()
-    } else {
-        base.bg(disabled_bg)
-            .text_color(disabled_ink)
-            .child(label)
-            .into_any_element()
-    }
-}
-
-impl Render for TypeToConfirm {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let density = cx.density();
-        let p = self.palette;
-        let entity = cx.entity();
-
-        let tile = div()
-            .flex_none()
-            .flex()
-            .items_center()
-            .justify_center()
-            .size(ICON_TILE)
-            .rounded(radius(Radius::Md))
-            .bg(with_alpha(p.warning, ICON_TILE_ALPHA))
-            .child(icon(Icon::AlertTriangle, ICON_TILE_GLYPH, p.warning));
+impl TypeToConfirm {
+    fn header_section(&self, density: Density, p: &ForgePalette, cx: &App) -> Div {
+        let tile = alert_tile(p.warning, ICON_TILE_GLYPH);
 
         let title_row = div()
             .flex()
@@ -270,7 +203,7 @@ impl Render for TypeToConfirm {
                     .child(self.title.clone()),
             );
 
-        let header = div()
+        div()
             .w_full()
             .flex()
             .flex_col()
@@ -284,8 +217,10 @@ impl Render for TypeToConfirm {
                     .text_size(FONT_SM)
                     .text_color(p.text_muted)
                     .child(self.explanation.clone()),
-            );
+            )
+    }
 
+    fn risk_section(&self, density: Density, p: &ForgePalette, cx: &App) -> Div {
         let mut risk = div()
             .w_full()
             .flex()
@@ -297,7 +232,7 @@ impl Render for TypeToConfirm {
             .border_color(p.border_regular);
 
         for item in &self.bullets {
-            let (glyph, hue) = bullet_glyph(item.kind, &p);
+            let (glyph, hue) = bullet_glyph(item.kind, p);
             risk = risk.child(
                 div()
                     .flex()
@@ -316,7 +251,10 @@ impl Render for TypeToConfirm {
                     ),
             );
         }
+        risk
+    }
 
+    fn confirm_band(&self, density: Density, p: &ForgePalette, cx: &App) -> Div {
         let phrase_chip = div()
             .flex_none()
             .py(scaled(CHIP_PAD_Y, density))
@@ -347,7 +285,7 @@ impl Render for TypeToConfirm {
                     .child(format!(" {}", self.instruction_suffix)),
             );
 
-        let confirm_band = div()
+        div()
             .w_full()
             .flex()
             .flex_col()
@@ -357,45 +295,57 @@ impl Render for TypeToConfirm {
             .border_t(BORDER_THIN)
             .border_color(p.border_regular)
             .child(instruction)
-            .child(self.input.clone());
+            .child(self.input.clone())
+    }
 
+    fn footer(&self, density: Density, p: &ForgePalette, cx: &mut Context<Self>) -> Div {
+        let entity = cx.entity();
         let cancel_entity = entity.clone();
-        let cancel = secondary_button(self.cancel_label.clone(), &p)
+        let cancel = secondary_button(self.cancel_label.clone(), p)
             .fits_parent()
             .on_click("type-to-confirm-cancel", move |_event, _window, app| {
                 cancel_entity.update(app, |_this, cx| cx.emit(TypeToConfirmEvent::Cancelled));
             });
 
-        let confirm_entity = entity.clone();
-        let confirm_handler: ActionHandler = Box::new(move |_event, _window, app| {
-            confirm_entity.update(app, |_this, cx| cx.emit(TypeToConfirmEvent::Confirmed));
-        });
-        let confirm = confirm_button(
-            "type-to-confirm-confirm".into(),
-            self.confirm_label.clone(),
-            &p,
-            self.matched,
-            confirm_handler,
-            density,
-            cx,
-        );
+        let confirm_entity = entity;
+        let confirm = confirm_action(self.confirm_label.clone(), p.warning, p, density)
+            .corner(Radius::Md)
+            .weight(if self.matched {
+                FontWeight::MEDIUM
+            } else {
+                FontWeight::NORMAL
+            })
+            .disabled_tones(p.surface_overlay, p.disabled)
+            .focus_ring(p.text_primary)
+            .disabled(!self.matched)
+            .on_click("type-to-confirm-confirm", move |_event, _window, app| {
+                confirm_entity.update(app, |_this, cx| cx.emit(TypeToConfirmEvent::Confirmed));
+            });
 
         let actions = confirm_actions_row(density).child(cancel).child(confirm);
-        let footer = confirm_footer(self.esc_hint.clone(), actions, &p, density, cx).bg(p.shell);
+        confirm_footer(self.esc_hint.clone(), actions, p, density, cx).bg(p.shell)
+    }
+}
 
-        div()
+impl Render for TypeToConfirm {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let density = cx.density();
+        let p = cx.palette();
+        let footer = self.footer(density, &p, cx);
+
+        let body = div()
+            .w_full()
             .flex()
             .flex_col()
-            .w(CARD_WIDTH)
-            .bg(p.elevated)
-            .rounded(radius(Radius::Lg))
-            .overflow_hidden()
-            .border(BORDER_THIN)
-            .border_color(p.border_input)
-            .child(header)
-            .child(risk)
-            .child(confirm_band)
-            .child(footer)
+            .child(self.header_section(density, &p, cx))
+            .child(self.risk_section(density, &p, cx))
+            .child(self.confirm_band(density, &p, cx));
+
+        bare_modal(body, &p)
+            .width(CARD_WIDTH)
+            .frame_border(p.border_input)
+            .keeps_focus_on_press()
+            .bare_footer(footer)
     }
 }
 
@@ -404,10 +354,12 @@ mod tests {
     use std::cell::RefCell;
     use std::rc::Rc;
 
-    use gpui::{Bounds, Entity, Modifiers, Point, TestAppContext, VisualTestContext, point};
+    use gpui::{
+        Bounds, Entity, InteractiveElement, Modifiers, Point, TestAppContext, VisualTestContext,
+        point,
+    };
 
     use super::*;
-    use crate::palette::FORGE_DEFAULT;
     use crate::test_support::install_presentation;
     use crate::text_input::bind_text_input_keys;
 
@@ -427,7 +379,7 @@ mod tests {
         install_presentation(cx);
         cx.update(bind_text_input_keys);
         let (view, vcx) = cx.add_window_view(|_window, cx| {
-            type_to_confirm(TARGET, &FORGE_DEFAULT, cx)
+            type_to_confirm(TARGET, cx)
                 .cancel_label("Keep it local")
                 .confirm_label("Open it to the network")
         });
@@ -585,7 +537,7 @@ mod tests {
         cx.update(bind_text_input_keys);
         let (_, vcx) = cx.add_window_view(|_, cx| LongLabelCard {
             card: cx.new(|cx| {
-                type_to_confirm(TARGET, &FORGE_DEFAULT, cx)
+                type_to_confirm(TARGET, cx)
                     .cancel_label(LONG_LABEL)
                     .confirm_label(LONG_LABEL)
                     .esc_hint("esc to keep the current binding")

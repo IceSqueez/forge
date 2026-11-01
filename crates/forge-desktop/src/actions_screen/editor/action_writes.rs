@@ -685,6 +685,82 @@ pub(in crate::actions_screen) mod tests {
         async fn restore(&self, id: ActionId) -> Result<bool, StorageError> {
             Ok(self.archived.lock().unwrap().remove(&id))
         }
+
+        async fn count(&self) -> Result<usize, forge_storage::StorageError> {
+            Ok(forge_storage::ActionRepo::list(self).await?.len())
+        }
+
+        async fn ids_named(
+            &self,
+            name: &str,
+        ) -> Result<Vec<forge_types::ActionId>, forge_storage::StorageError> {
+            Ok(forge_storage::ActionRepo::list(self)
+                .await?
+                .into_iter()
+                .filter(|action| action.name == name)
+                .map(|action| action.id)
+                .collect())
+        }
+
+        async fn record_executions(
+            &self,
+            executions: &[forge_storage::ActionExecution],
+        ) -> Result<(), forge_storage::StorageError> {
+            for execution in executions {
+                self.record_execution(
+                    execution.action_id,
+                    execution.started_at,
+                    execution.duration_ms,
+                    execution.status,
+                )
+                .await?;
+            }
+            Ok(())
+        }
+
+        async fn set_enabled(
+            &self,
+            _id: forge_types::ActionId,
+            _enabled: bool,
+        ) -> Result<bool, forge_storage::StorageError> {
+            Err(forge_storage::StorageError::NotReady)
+        }
+
+        async fn toggle_enabled(
+            &self,
+            _id: forge_types::ActionId,
+        ) -> Result<Option<bool>, forge_storage::StorageError> {
+            Err(forge_storage::StorageError::NotReady)
+        }
+
+        async fn duplicate(
+            &self,
+            source_id: forge_types::ActionId,
+            new_id: forge_types::ActionId,
+            new_name: &str,
+        ) -> Result<(), forge_storage::StorageError> {
+            let mut copy = self.get(source_id).await?.ok_or_else(|| {
+                forge_storage::StorageError::NotFound {
+                    key: source_id.to_string(),
+                }
+            })?;
+            copy.id = new_id;
+            copy.name = new_name.to_owned();
+            self.save(&copy).await
+        }
+
+        async fn archive_reporting_cancelled_runs(
+            &self,
+            _id: forge_types::ActionId,
+        ) -> Result<Option<u64>, forge_storage::StorageError> {
+            Err(forge_storage::StorageError::NotReady)
+        }
+
+        async fn list_archived(
+            &self,
+        ) -> Result<Vec<forge_types::Action>, forge_storage::StorageError> {
+            Ok(Vec::new())
+        }
     }
 
     pub(in crate::actions_screen) struct Screen {

@@ -4,6 +4,7 @@ use forge_overlay::OverlayError;
 use forge_storage::StorageError;
 
 use crate::bundle::manifest::BundleKind;
+use crate::documents::RollbackFailures;
 
 #[derive(Debug, thiserror::Error)]
 pub enum TransferError {
@@ -54,8 +55,8 @@ pub enum TransferError {
         safety_backup_hint(.snapshot.as_deref())
     )]
     PackRollbackIncomplete {
-        cause: String,
-        failure: String,
+        cause: Box<TransferError>,
+        failure: RollbackFailures,
         snapshot: Option<PathBuf>,
     },
 
@@ -67,8 +68,8 @@ pub enum TransferError {
         .snapshot.display()
     )]
     SetupRollbackIncomplete {
-        cause: String,
-        failure: String,
+        cause: Box<TransferError>,
+        failure: RollbackFailures,
         snapshot: PathBuf,
     },
 
@@ -189,7 +190,7 @@ impl TransferError {
 mod tests {
     use std::path::PathBuf;
 
-    use super::TransferError;
+    use super::{RollbackFailures, TransferError};
 
     const SNAPSHOT: &str = "/data/backups/forge-pre-setup-20261019-a1b2c3.tar.gz";
 
@@ -197,13 +198,13 @@ mod tests {
     fn an_incomplete_rollback_names_the_safety_backup_when_one_was_taken() {
         for error in [
             TransferError::PackRollbackIncomplete {
-                cause: "cause".to_owned(),
-                failure: "failure".to_owned(),
+                cause: Box::new(TransferError::MissingDatabase),
+                failure: RollbackFailures::default(),
                 snapshot: Some(PathBuf::from(SNAPSHOT)),
             },
             TransferError::SetupRollbackIncomplete {
-                cause: "cause".to_owned(),
-                failure: "failure".to_owned(),
+                cause: Box::new(TransferError::MissingDatabase),
+                failure: RollbackFailures::default(),
                 snapshot: PathBuf::from(SNAPSHOT),
             },
         ] {
@@ -214,8 +215,8 @@ mod tests {
     #[test]
     fn an_incomplete_pack_rollback_without_a_snapshot_points_at_no_backup() {
         let error = TransferError::PackRollbackIncomplete {
-            cause: "cause".to_owned(),
-            failure: "failure".to_owned(),
+            cause: Box::new(TransferError::MissingDatabase),
+            failure: RollbackFailures::default(),
             snapshot: None,
         };
 

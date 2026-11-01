@@ -55,16 +55,12 @@ pub fn unique_suffix() -> String {
         .to_owned()
 }
 
-pub(crate) fn fresh_scheduled_stem() -> String {
-    stamped_stem(
-        SCHEDULED_PREFIX,
-        OffsetDateTime::now_utc(),
-        &unique_suffix(),
-    )
+pub(crate) fn fresh_scheduled_stem(now: OffsetDateTime) -> String {
+    stamped_stem(SCHEDULED_PREFIX, now, &unique_suffix())
 }
 
-pub(crate) fn fresh_stem() -> String {
-    backup_file_stem(OffsetDateTime::now_utc(), &unique_suffix())
+pub(crate) fn fresh_stem(now: OffsetDateTime) -> String {
+    backup_file_stem(now, &unique_suffix())
 }
 
 pub(crate) fn fresh_pre_restore_dir(data_dir: &Path) -> PathBuf {

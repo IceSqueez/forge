@@ -9,7 +9,7 @@ use forge_registry::{
 use forge_storage::{GlobalsRepo, StorageError};
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry};
 
-use super::core_globals_shared::{GLOBAL_BY_KEY, global_name};
+use super::core_globals_shared::{GLOBAL_BY_NAME, global_name};
 use crate::core_messages;
 
 const UNBOUNDED_LENGTH: i64 = 0;
@@ -35,14 +35,14 @@ const MAX_LENGTH: IntegerField = IntegerField {
     },
 };
 
-const CONFIG: ConfigSpec = ConfigSpec::new(&[&GLOBAL_BY_KEY, &VALUE, &MAX_LENGTH]);
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&GLOBAL_BY_NAME, &VALUE, &MAX_LENGTH]);
 
 fn read_config(
     config: &SubActionConfig,
     args: &ArgStack,
 ) -> Result<(String, String, i64), ConfigProblem> {
     Ok((
-        global_name(&GLOBAL_BY_KEY, config, args)?,
+        global_name(&GLOBAL_BY_NAME, config, args)?,
         VALUE.read(config, args)?,
         MAX_LENGTH.read(config, args)?,
     ))
@@ -139,7 +139,7 @@ mod tests {
 
     fn cfg(key: &str, value: &str, max_length: i64) -> SubActionConfig {
         let mut c = SubActionConfig::new();
-        c.insert("key".to_owned(), Variant::String(key.to_owned()));
+        c.insert("name".to_owned(), Variant::String(key.to_owned()));
         c.insert("value".to_owned(), Variant::String(value.to_owned()));
         c.insert("max_length".to_owned(), Variant::Int(max_length));
         c

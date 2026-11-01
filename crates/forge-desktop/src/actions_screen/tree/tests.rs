@@ -114,6 +114,10 @@ impl Fixture {
             .expect_telemetry()
             .returning(|_| Ok(forge_storage::ActionTelemetry::default()));
         let mut trigger_repo = MockTriggerInstanceRepo::new();
+        let by_action = linked.clone();
+        trigger_repo
+            .expect_instances_by_action()
+            .returning(move || Ok(by_action.clone().into_iter().collect()));
         trigger_repo
             .expect_list_for_action()
             .returning(move |id| Ok(linked.get(&id).cloned().unwrap_or_default()));

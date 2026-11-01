@@ -1022,6 +1022,16 @@ mod tests {
         async fn clear_platform(&self, _: PlatformId) -> Result<u64, StorageError> {
             Ok(0)
         }
+
+        async fn append_batch(
+            &self,
+            rows: &[forge_types::UnifiedChatRow],
+        ) -> Result<(), forge_storage::StorageError> {
+            for row in rows {
+                forge_storage::ChatHistoryRepo::append(self, row).await?;
+            }
+            Ok(())
+        }
     }
 
     #[tokio::test]

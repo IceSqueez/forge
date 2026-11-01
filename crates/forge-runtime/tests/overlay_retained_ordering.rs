@@ -158,6 +158,7 @@ fn harness(overlays: &[(&str, &str)]) -> Harness {
         frames: Mutex::default(),
     });
     let service = OverlayServiceHandle::new(OverlayServiceParts {
+        default_root: std::path::PathBuf::new(),
         date_names: forge_runtime::DateNamesHandle::default(),
         tasks: forge_net::TaskOwner::new(),
         repo: Arc::new(repo) as Arc<dyn OverlayRepo>,

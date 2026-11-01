@@ -125,11 +125,13 @@ async fn list_for_action_returns_instances_in_position_order() {
     repo.save(&inst_b).await.expect("save b");
 
     backend
-        .insert_action_trigger_instance_for_test(action_id, inst_a.id, 1)
+        .trigger_instance_repo()
+        .link_action_at(action_id, inst_a.id, 1)
         .await
         .expect("join a");
     backend
-        .insert_action_trigger_instance_for_test(action_id, inst_b.id, 0)
+        .trigger_instance_repo()
+        .link_action_at(action_id, inst_b.id, 0)
         .await
         .expect("join b");
 
@@ -158,11 +160,13 @@ async fn actions_using_returns_correct_action_ids() {
     repo.save(&inst).await.expect("save");
 
     backend
-        .insert_action_trigger_instance_for_test(action_a, inst.id, 0)
+        .trigger_instance_repo()
+        .link_action_at(action_a, inst.id, 0)
         .await
         .expect("join a");
     backend
-        .insert_action_trigger_instance_for_test(action_b, inst.id, 0)
+        .trigger_instance_repo()
+        .link_action_at(action_b, inst.id, 0)
         .await
         .expect("join b");
 
@@ -210,7 +214,8 @@ async fn delete_referenced_instance_returns_reference_block() {
     let inst = trigger_instance("twitch.chat.command", "Referenced", true);
     repo.save(&inst).await.expect("save");
     backend
-        .insert_action_trigger_instance_for_test(action_id, inst.id, 0)
+        .trigger_instance_repo()
+        .link_action_at(action_id, inst.id, 0)
         .await
         .expect("join");
 
@@ -235,7 +240,8 @@ async fn delete_succeeds_after_action_removed() {
     let inst = trigger_instance("twitch.chat.command", "Unblocked", true);
     repo.save(&inst).await.expect("save");
     backend
-        .insert_action_trigger_instance_for_test(action_id, inst.id, 0)
+        .trigger_instance_repo()
+        .link_action_at(action_id, inst.id, 0)
         .await
         .expect("join");
 
@@ -270,16 +276,19 @@ async fn set_enabled_toggles_flag() {
 }
 
 #[tokio::test]
-async fn set_enabled_on_a_missing_instance_returns_not_found() {
+async fn set_enabled_on_a_missing_instance_reports_nothing_changed() {
     let backend = setup().await;
 
-    let err = backend
+    let updated = backend
         .trigger_instance_repo()
         .set_enabled(TriggerInstanceId::new(), true)
         .await
-        .expect_err("a missing instance must not be silently ignored");
+        .unwrap();
 
-    assert!(matches!(err, StorageError::NotFound { .. }), "got {err:?}");
+    assert!(
+        !updated,
+        "a missing instance must report that nothing changed"
+    );
 }
 
 #[tokio::test]
@@ -394,7 +403,8 @@ async fn reference_block_sample_names_capped_at_three() {
     for i in 0..5u32 {
         let action_id = insert_action(&backend, &format!("action {i}")).await;
         backend
-            .insert_action_trigger_instance_for_test(action_id, inst.id, 0)
+            .trigger_instance_repo()
+            .link_action_at(action_id, inst.id, 0)
             .await
             .expect("join");
     }

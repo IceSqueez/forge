@@ -93,6 +93,12 @@ impl TriggerInstanceRepo for HotkeySyncedTriggerRepo {
         self.inner.actions_using(instance_id).await
     }
 
+    async fn instances_by_action(
+        &self,
+    ) -> Result<HashMap<ActionId, Vec<TriggerInstance>>, StorageError> {
+        self.inner.instances_by_action().await
+    }
+
     async fn actions_by_instance(
         &self,
     ) -> Result<HashMap<TriggerInstanceId, Vec<ActionId>>, StorageError> {
@@ -189,12 +195,16 @@ impl TriggerInstanceRepo for HotkeySyncedTriggerRepo {
         self.inner.upsert_default(kind_id, name).await
     }
 
-    async fn set_enabled(&self, id: TriggerInstanceId, enabled: bool) -> Result<(), StorageError> {
-        self.inner.set_enabled(id, enabled).await?;
+    async fn set_enabled(
+        &self,
+        id: TriggerInstanceId,
+        enabled: bool,
+    ) -> Result<bool, StorageError> {
+        let updated = self.inner.set_enabled(id, enabled).await?;
         if self.stored_as_hotkey(id).await {
             self.sync().await;
         }
-        Ok(())
+        Ok(updated)
     }
 
     async fn set_all_enabled(
@@ -226,6 +236,14 @@ impl TriggerInstanceRepo for HotkeySyncedTriggerRepo {
 
     async fn list_archived(&self) -> Result<Vec<TriggerInstance>, StorageError> {
         self.inner.list_archived().await
+    }
+
+    async fn toggle_enabled(&self, id: TriggerInstanceId) -> Result<Option<bool>, StorageError> {
+        let toggled = self.inner.toggle_enabled(id).await?;
+        if toggled.is_some() && self.stored_as_hotkey(id).await {
+            self.sync().await;
+        }
+        Ok(toggled)
     }
 }
 

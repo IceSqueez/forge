@@ -1049,6 +1049,7 @@ mod tests {
         let (backend, _writes) = test_backend();
         let _entered = rt.enter();
         let overlay_service = OverlayServiceHandle::new(forge_runtime::OverlayServiceParts {
+            default_root: std::path::PathBuf::new(),
             date_names: forge_runtime::DateNamesHandle::default(),
             tasks: forge_net::TaskOwner::new(),
             repo: Arc::new(StubOverlays),

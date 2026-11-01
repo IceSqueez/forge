@@ -4,11 +4,10 @@ use forge_components::{ToastAction, ToastData, ToastKind, Toasts, tr};
 use forge_runtime::NotifyPort;
 use forge_storage::settings::DEFAULT_NOTIFICATIONS_SCHEDULED_BACKUP_FAILURE_OS_NOTICE;
 use forge_storage::{SettingsRepo, read_setting_or_default};
-use forge_transfer::{FailureStreak, ScheduledBackupHandle, ScheduledBackupStatus};
+use forge_transfer::{FailureStreak, ScheduledBackupHandle, ScheduledBackupStatusWatch};
 use gpui::{App, AsyncApp, Global};
 use time::OffsetDateTime;
 use tokio::runtime::Handle;
-use tokio::sync::watch;
 
 use crate::settings_catalog::SCHEDULED_BACKUP_FAILURE_OS_NOTICE;
 
@@ -96,7 +95,7 @@ async fn load_preference(rt: &Handle, settings: Arc<dyn SettingsRepo>) -> bool {
 }
 
 pub(crate) async fn drain_failures(
-    mut status: watch::Receiver<ScheduledBackupStatus>,
+    mut status: ScheduledBackupStatusWatch,
     port: Arc<dyn NotifyPort>,
     rt: Handle,
     navigator: Navigator,
@@ -106,7 +105,7 @@ pub(crate) async fn drain_failures(
     let mut fallback_log = FallbackLog::default();
     let mut toast: Option<u64> = None;
     loop {
-        let failure = status.borrow_and_update().failure;
+        let failure = status.latest().failure;
         match streaks.observe(failure) {
             StreakChange::Started(streak) => {
                 let text = cx.update(|_| failure_notice_text(&streak));
@@ -135,7 +134,7 @@ pub(crate) async fn drain_failures(
             }
             StreakChange::Unchanged => {}
         }
-        if status.changed().await.is_err() {
+        if status.changed().await.is_none() {
             break;
         }
     }
@@ -179,7 +178,9 @@ mod tests {
     use forge_components::{ToastKind, Toasts};
     use forge_runtime::{DesktopNotice, RuntimeError};
     use forge_storage::Language;
-    use forge_transfer::{FailureCategory, ScheduleState};
+    use forge_transfer::{
+        FailureCategory, ScheduleState, ScheduledBackupStatus, ScheduledBackupStatusFeed,
+    };
     use gpui::TestAppContext;
     use time::Duration;
 
@@ -288,7 +289,7 @@ mod tests {
 
     struct Drain {
         rt: tokio::runtime::Runtime,
-        tx: watch::Sender<ScheduledBackupStatus>,
+        tx: ScheduledBackupStatusFeed,
         port: Arc<RecordingPort>,
         opened: Rc<RefCell<Vec<Screen>>>,
     }
@@ -303,7 +304,7 @@ mod tests {
             cx.set_global(BackupFailureNoticePreference(os_notice));
         });
         let rt = runtime();
-        let (tx, rx) = watch::channel(status(None));
+        let (tx, rx) = ScheduledBackupStatusFeed::new(status(None));
         let port = Arc::new(RecordingPort::default());
         let notify = Arc::clone(&port) as Arc<dyn NotifyPort>;
         let handle = rt.handle().clone();
@@ -345,7 +346,7 @@ mod tests {
         failure: Option<FailureStreak>,
         settled: (usize, usize),
     ) {
-        rig.tx.send_replace(status(failure));
+        rig.tx.publish(status(failure));
         let port = Arc::clone(&rig.port);
         pump(&rig.rt);
         settle_until(cx, &rig.rt, move |cx| {

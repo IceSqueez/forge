@@ -16,11 +16,49 @@ pub(crate) struct Tokens {
     pub(crate) rotations: u32,
 }
 
-pub(crate) struct Broadcast {
-    pub(crate) live: bool,
-    pub(crate) started_at: Option<String>,
-    pub(crate) offline_at: Option<String>,
-    pub(crate) ended_at_message: Option<usize>,
+pub(crate) enum Broadcast {
+    NeverLive,
+    Live {
+        started_at: String,
+    },
+    Ended {
+        started_at: String,
+        offline_at: String,
+        ended_at_message: usize,
+    },
+}
+
+impl Broadcast {
+    pub(crate) fn is_live(&self) -> bool {
+        matches!(self, Self::Live { .. })
+    }
+
+    pub(crate) fn never_live(&self) -> bool {
+        matches!(self, Self::NeverLive)
+    }
+
+    pub(crate) fn started_at(&self) -> Option<&str> {
+        match self {
+            Self::NeverLive => None,
+            Self::Live { started_at } | Self::Ended { started_at, .. } => Some(started_at),
+        }
+    }
+
+    pub(crate) fn ended_at_message(&self) -> Option<usize> {
+        match self {
+            Self::Ended {
+                ended_at_message, ..
+            } => Some(*ended_at_message),
+            Self::NeverLive | Self::Live { .. } => None,
+        }
+    }
+
+    pub(crate) fn offline_at(&self) -> Option<&str> {
+        match self {
+            Self::Ended { offline_at, .. } => Some(offline_at),
+            Self::NeverLive | Self::Live { .. } => None,
+        }
+    }
 }
 
 pub(crate) struct Inner {
@@ -40,6 +78,37 @@ pub(crate) fn now_rfc3339() -> String {
         .unwrap_or_else(|_| UNIX_EPOCH_RFC3339.to_owned())
 }
 
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct AuthorRoles {
+    pub(crate) owner: bool,
+    pub(crate) sponsor: bool,
+    pub(crate) moderator: bool,
+}
+
+pub(crate) fn author_details(channel_id: &str, display_name: &str, roles: AuthorRoles) -> Value {
+    json!({
+        "channelId": channel_id,
+        "channelUrl": format!("http://www.youtube.com/channel/{channel_id}"),
+        "displayName": display_name,
+        "profileImageUrl": "",
+        "isVerified": false,
+        "isChatOwner": roles.owner,
+        "isChatSponsor": roles.sponsor,
+        "isChatModerator": roles.moderator
+    })
+}
+
+pub(crate) fn text_message_snippet(text: &str) -> Map<String, Value> {
+    let mut snippet = Map::new();
+    snippet.insert("type".to_owned(), json!("textMessageEvent"));
+    snippet.insert("displayMessage".to_owned(), json!(text));
+    snippet.insert(
+        "textMessageDetails".to_owned(),
+        json!({ "messageText": text }),
+    );
+    snippet
+}
+
 impl Inner {
     fn new(config: &FakeYouTubeConfig) -> Self {
         Self {
@@ -50,11 +119,12 @@ impl Inner {
                 refresh: config.refresh_token.clone(),
                 rotations: 0,
             },
-            broadcast: Broadcast {
-                live: config.live,
-                started_at: config.live.then(now_rfc3339),
-                offline_at: None,
-                ended_at_message: None,
+            broadcast: if config.live {
+                Broadcast::Live {
+                    started_at: now_rfc3339(),
+                }
+            } else {
+                Broadcast::NeverLive
             },
             chat: Vec::new(),
             next_message: 1,
@@ -62,7 +132,7 @@ impl Inner {
     }
 
     pub(crate) fn chat_open(&self) -> bool {
-        self.broadcast.live
+        self.broadcast.is_live()
     }
 
     pub(crate) fn append_message(
@@ -102,23 +172,21 @@ impl Inner {
     }
 
     pub(crate) fn owner_details(config: &FakeYouTubeConfig) -> Value {
-        json!({
-            "channelId": config.channel_id,
-            "channelUrl": format!("http://www.youtube.com/channel/{}", config.channel_id),
-            "displayName": config.channel_title,
-            "profileImageUrl": "",
-            "isVerified": false,
-            "isChatOwner": true,
-            "isChatSponsor": false,
-            "isChatModerator": false
-        })
+        author_details(
+            &config.channel_id,
+            &config.channel_title,
+            AuthorRoles {
+                owner: true,
+                sponsor: false,
+                moderator: false,
+            },
+        )
     }
 
     pub(crate) fn go_live(&mut self) {
-        self.broadcast.live = true;
-        self.broadcast.started_at = Some(now_rfc3339());
-        self.broadcast.offline_at = None;
-        self.broadcast.ended_at_message = None;
+        self.broadcast = Broadcast::Live {
+            started_at: now_rfc3339(),
+        };
     }
 
     pub(crate) fn end_broadcast(&mut self, config: &FakeYouTubeConfig) {
@@ -126,9 +194,11 @@ impl Inner {
         snippet.insert("type".to_owned(), json!(CHAT_ENDED_EVENT));
         snippet.insert("hasDisplayContent".to_owned(), json!(false));
         self.append_message(config, snippet, Self::owner_details(config));
-        self.broadcast.live = false;
-        self.broadcast.offline_at = Some(now_rfc3339());
-        self.broadcast.ended_at_message = Some(self.chat.len());
+        self.broadcast = Broadcast::Ended {
+            started_at: self.broadcast.started_at().unwrap_or_default().to_owned(),
+            offline_at: now_rfc3339(),
+            ended_at_message: self.chat.len(),
+        };
     }
 
     pub(crate) fn record_request(&mut self, request: YouTubeRequest) {

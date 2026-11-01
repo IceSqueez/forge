@@ -34,15 +34,57 @@ pub(crate) struct Signals {
 }
 
 #[derive(Clone)]
+pub struct ScheduledBackupStatusWatch(watch::Receiver<ScheduledBackupStatus>);
+
+impl ScheduledBackupStatusWatch {
+    pub fn current(&self) -> ScheduledBackupStatus {
+        self.0.borrow().clone()
+    }
+
+    pub fn latest(&mut self) -> ScheduledBackupStatus {
+        self.0.borrow_and_update().clone()
+    }
+
+    pub async fn changed(&mut self) -> Option<ScheduledBackupStatus> {
+        self.0.changed().await.ok()?;
+        Some(self.0.borrow_and_update().clone())
+    }
+
+    pub async fn wait_for(
+        &mut self,
+        ready: impl FnMut(&ScheduledBackupStatus) -> bool,
+    ) -> Option<ScheduledBackupStatus> {
+        self.0
+            .wait_for(ready)
+            .await
+            .ok()
+            .map(|status| status.clone())
+    }
+}
+
+pub struct ScheduledBackupStatusFeed(watch::Sender<ScheduledBackupStatus>);
+
+impl ScheduledBackupStatusFeed {
+    pub fn new(initial: ScheduledBackupStatus) -> (Self, ScheduledBackupStatusWatch) {
+        let (sender, receiver) = watch::channel(initial);
+        (Self(sender), ScheduledBackupStatusWatch(receiver))
+    }
+
+    pub fn publish(&self, status: ScheduledBackupStatus) {
+        self.0.send_replace(status);
+    }
+}
+
+#[derive(Clone)]
 pub struct ScheduledBackupHandle {
     signals: Arc<Signals>,
     stopped: CancellationToken,
     suspended: Arc<watch::Sender<bool>>,
-    status: watch::Receiver<ScheduledBackupStatus>,
+    status: ScheduledBackupStatusWatch,
 }
 
 impl ScheduledBackupHandle {
-    pub fn status(&self) -> watch::Receiver<ScheduledBackupStatus> {
+    pub fn status(&self) -> ScheduledBackupStatusWatch {
         self.status.clone()
     }
 
@@ -112,7 +154,7 @@ pub fn spawn_scheduled_backups(parts: ScheduledBackupParts) -> ScheduledBackupHa
         signals,
         stopped,
         suspended: Arc::new(suspended_tx),
-        status: status_rx,
+        status: ScheduledBackupStatusWatch(status_rx),
     }
 }
 
@@ -283,7 +325,7 @@ mod tests {
     use crate::bundle::passphrase::Passphrase;
     use crate::bundle::schedule_key::create_schedule_key;
     use crate::scheduled::clock::BackupClock;
-    use crate::scheduled::settings::{Progress, ScheduleSettings};
+    use crate::scheduled::settings::{Progress, ScheduleSettings, StoredScheduleKey};
     use crate::scheduled::status::{ScheduleState, ScheduledBackupStatus};
 
     struct FixedClock;
@@ -389,7 +431,7 @@ mod tests {
         std::fs::create_dir_all(&folder).unwrap();
         service.settings.enabled = true;
         service.settings.destination = Some(folder.clone());
-        service.settings.key = Some(
+        service.settings.key = StoredScheduleKey::Readable(
             create_schedule_key(&Passphrase::new("correct horse battery staple".to_owned()))
                 .unwrap(),
         );
@@ -421,7 +463,7 @@ mod tests {
         std::fs::create_dir_all(&folder).unwrap();
         service.settings.enabled = true;
         service.settings.destination = Some(folder.clone());
-        service.settings.key = Some(
+        service.settings.key = StoredScheduleKey::Readable(
             create_schedule_key(&Passphrase::new("correct horse battery staple".to_owned()))
                 .unwrap(),
         );
@@ -498,7 +540,7 @@ mod tests {
         let first_run_started = status
             .wait_for(|status| status.state == ScheduleState::Running)
             .await
-            .is_ok();
+            .is_some();
 
         handle.shutdown();
         assert!(first_run_started, "the first backup never started");

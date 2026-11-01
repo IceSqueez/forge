@@ -495,7 +495,7 @@ impl BackupScheduleView {
                 invalid: false,
             });
         }
-        let status = service.status().borrow().clone();
+        let status = service.status().current();
         let mut view = Self {
             backend,
             rt_handle,
@@ -569,11 +569,11 @@ impl BackupScheduleView {
         let mut status = self.service.status();
         self._status_bridge = Some(cx.spawn(async move |this, cx| {
             loop {
-                let current = status.borrow_and_update().clone();
+                let current = status.latest();
                 if this
                     .update(cx, |this, cx| this.apply_status(current, cx))
                     .is_err()
-                    || status.changed().await.is_err()
+                    || status.changed().await.is_none()
                 {
                     break;
                 }

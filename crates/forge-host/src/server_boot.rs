@@ -49,6 +49,7 @@ pub(crate) struct ServerInputs<'a> {
     pub(crate) action_engine: &'a ActionEngineHandle,
     pub(crate) available_platforms: BTreeSet<PlatformId>,
     pub(crate) delivery_hub: &'a DeliveryHub,
+    pub(crate) default_overlay_root: PathBuf,
 }
 
 pub(crate) async fn build_server(
@@ -61,6 +62,7 @@ pub(crate) async fn build_server(
         action_engine,
         available_platforms,
         delivery_hub,
+        default_overlay_root,
     } = inputs;
     let settings = match ServerSettings::load(backend.as_ref()).await {
         Ok(settings) => settings,
@@ -89,6 +91,7 @@ pub(crate) async fn build_server(
             Arc::clone(backend) as Arc<dyn UserGlobalsRepo>;
         let event_history: Arc<dyn EventHistory> = Arc::clone(bus) as Arc<dyn EventHistory>;
         let mut config = ServerConfig::new(
+            default_overlay_root.clone(),
             settings_repo,
             credentials,
             event_history,
@@ -97,7 +100,6 @@ pub(crate) async fn build_server(
             user_globals,
             backend.overlay_repo(),
             Arc::new(action_engine.clone()),
-            forge_paths::overlays_dir(),
         );
         if let Some(bind_addr) = bind_addr {
             config.bind_addr = bind_addr;

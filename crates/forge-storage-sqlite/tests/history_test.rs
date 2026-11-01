@@ -439,7 +439,7 @@ async fn a_scheduled_run_reads_back_with_its_scheduled_origin() {
         event_id: EventId::new(),
         scheduled_run_id: 42,
         scheduled_by_action: Some(ActionId::new()),
-        scheduled_by_run: Some("run-7".to_owned()),
+        scheduled_by_run: Some(forge_types::EventId::new()),
     };
 
     backend.history_repo().save(&ctx).await.expect("save");

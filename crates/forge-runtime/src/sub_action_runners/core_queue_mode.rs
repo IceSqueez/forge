@@ -8,17 +8,56 @@ use super::core_queue_shared::{QUEUE, QUEUE_SPEC};
 use crate::core_messages;
 use crate::{QueueMode, QueueSchedulerHandle};
 
-pub(crate) struct CoreQueuePauseRunner {
-    scheduler: QueueSchedulerHandle,
+#[derive(Clone, Copy)]
+struct StepCopy {
+    id: &'static str,
+    label: &'static str,
+    summary: &'static str,
+    search_text: &'static str,
+    icon_name: &'static str,
 }
 
-impl CoreQueuePauseRunner {
-    pub(crate) fn new(scheduler: QueueSchedulerHandle) -> Self {
-        Self { scheduler }
+const PAUSE_COPY: StepCopy = StepCopy {
+    id: "core.queue.pause",
+    label: "Pause Queue",
+    summary: "Stop a queue from starting new actions until resumed",
+    search_text: "pause queue hold stop suspend",
+    icon_name: "pause",
+};
+
+const RESUME_COPY: StepCopy = StepCopy {
+    id: "core.queue.resume",
+    label: "Resume Queue",
+    summary: "Let a paused queue start running actions again",
+    search_text: "resume queue unpause continue start",
+    icon_name: "play",
+};
+
+pub(crate) struct CoreQueueModeRunner {
+    scheduler: QueueSchedulerHandle,
+    mode: QueueMode,
+    copy: StepCopy,
+}
+
+impl CoreQueueModeRunner {
+    pub(crate) fn pause(scheduler: QueueSchedulerHandle) -> Self {
+        Self {
+            scheduler,
+            mode: QueueMode::PAUSED,
+            copy: PAUSE_COPY,
+        }
+    }
+
+    pub(crate) fn resume(scheduler: QueueSchedulerHandle) -> Self {
+        Self {
+            scheduler,
+            mode: QueueMode::RUNNING,
+            copy: RESUME_COPY,
+        }
     }
 
     async fn run(&self, queue_id: QueueId) -> SubActionOutcome {
-        match self.scheduler.set_mode(queue_id, QueueMode::PAUSED).await {
+        match self.scheduler.set_mode(queue_id, self.mode).await {
             Ok(()) => SubActionOutcome::Success,
             Err(e) => SubActionOutcome::Failed(core_messages::scheduler_failed(e).into()),
         }
@@ -26,9 +65,9 @@ impl CoreQueuePauseRunner {
 }
 
 #[async_trait]
-impl SubActionRunner for CoreQueuePauseRunner {
+impl SubActionRunner for CoreQueueModeRunner {
     fn id(&self) -> &str {
-        "core.queue.pause"
+        self.copy.id
     }
 
     fn category(&self) -> SubActionCategory {
@@ -36,19 +75,19 @@ impl SubActionRunner for CoreQueuePauseRunner {
     }
 
     fn label(&self) -> &str {
-        "Pause Queue"
+        self.copy.label
     }
 
     fn summary(&self) -> &str {
-        "Stop a queue from starting new actions until resumed"
+        self.copy.summary
     }
 
     fn search_text(&self) -> &str {
-        "pause queue hold stop suspend"
+        self.copy.search_text
     }
 
     fn icon_name(&self) -> &str {
-        "pause"
+        self.copy.icon_name
     }
 
     fn config_spec(&self) -> Option<ConfigSpec> {

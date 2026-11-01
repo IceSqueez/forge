@@ -10,7 +10,7 @@ pub(crate) enum Undo {
     OverlayDir(PathBuf),
     OverlayFile {
         path: PathBuf,
-        previous: Option<Vec<u8>>,
+        set_aside: Option<PathBuf>,
     },
 }
 
@@ -40,6 +40,25 @@ impl UndoJournal {
         }
     }
 
+    pub(crate) async fn discard_set_aside_files(&self) {
+        for entry in &self.entries {
+            let Undo::OverlayFile {
+                set_aside: Some(set_aside),
+                ..
+            } = entry
+            else {
+                continue;
+            };
+            if let Err(error) = tokio::fs::remove_file(set_aside).await {
+                tracing::warn!(
+                    %error,
+                    path = %set_aside.display(),
+                    "replaced overlay file could not be cleaned up"
+                );
+            }
+        }
+    }
+
     pub(crate) async fn roll_back(
         self,
         provider: &dyn DataProvider,
@@ -59,7 +78,7 @@ impl UndoJournal {
 }
 
 #[derive(Debug, thiserror::Error)]
-enum UndoFailure {
+pub enum UndoFailure {
     #[error(transparent)]
     Storage(#[from] forge_storage::StorageError),
 
@@ -67,8 +86,10 @@ enum UndoFailure {
     File(#[from] io::Error),
 }
 
-#[derive(Debug)]
-pub(crate) struct RollbackFailures(Vec<UndoFailure>);
+#[derive(Debug, Default)]
+pub struct RollbackFailures(Vec<UndoFailure>);
+
+impl std::error::Error for RollbackFailures {}
 
 impl std::fmt::Display for RollbackFailures {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -89,8 +110,8 @@ async fn revert(provider: &dyn DataProvider, undo: Undo) -> Result<(), UndoFailu
             Err(e) if e.kind() != io::ErrorKind::NotFound => Err(e.into()),
             _ => Ok(()),
         },
-        Undo::OverlayFile { path, previous } => match previous {
-            Some(bytes) => Ok(tokio::fs::write(&path, bytes).await?),
+        Undo::OverlayFile { path, set_aside } => match set_aside {
+            Some(set_aside) => Ok(tokio::fs::rename(&set_aside, &path).await?),
             None => match tokio::fs::remove_file(&path).await {
                 Err(e) if e.kind() != io::ErrorKind::NotFound => Err(e.into()),
                 _ => Ok(()),

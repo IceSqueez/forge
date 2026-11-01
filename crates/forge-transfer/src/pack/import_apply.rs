@@ -5,14 +5,16 @@ use std::sync::Arc;
 use forge_overlay::image_references;
 use forge_registry::{InternalNamespace, ReferenceRemap};
 use forge_storage::{
-    DataProvider, MediaBlobId, MediaReferrer, MediaReferrerKind, NewOverlay, OverlayConfig,
-    OverlayDefinition, OverlayId, QueueRole, ScriptRecord, StoreChange, StoredClip,
-    clip_source_referrer, unique_overlay_id,
+    DataProvider, MediaBlobId, NewOverlay, OverlayConfig, OverlayDefinition, OverlayId,
+    StoreChange, unique_overlay_id,
 };
-use forge_types::{ActionId, ClipId, OutputDevice, QueueId, ScriptId, TriggerInstanceId};
-use time::OffsetDateTime;
+use forge_types::{ActionId, ClipId, QueueId, ScriptId, TriggerInstanceId};
 
 use crate::bundle::naming::fresh_pre_pack_stem;
+use crate::documents::apply::{
+    ClipTarget, MediaIntake, clip_changes, overlay_media_retains, queue_changes, remapped_media,
+    script_changes, staged_source,
+};
 use crate::documents::closure::ClosureRegistries;
 use crate::documents::convert::{action_of, queue_of, trigger_of};
 use crate::documents::inventory::{PackInventory, load_pack_inventory};
@@ -21,7 +23,7 @@ use crate::documents::model::{
 };
 use crate::documents::overlay_configs::check_overlay_configs;
 use crate::documents::overlay_files::{place_overlay_files, rewrite_overlay_media};
-use crate::documents::undo::{Undo, UndoJournal};
+use crate::documents::undo::UndoJournal;
 use crate::error::TransferError;
 use crate::pack::import_conflicts::detect_conflicts;
 use crate::pack::import_names::NameBook;
@@ -104,6 +106,7 @@ pub async fn apply_pack_import(
     match ran {
         Ok(()) => {
             import.undo.settle_overlay_dirs().await;
+            import.undo.discard_set_aside_files().await;
             Ok(PackImportOutcome {
                 safety_snapshot,
                 written: import.written,
@@ -117,8 +120,8 @@ pub async fn apply_pack_import(
                 Err(failure) => {
                     tracing::error!(%cause, %failure, "pack import rollback incomplete");
                     Err(TransferError::PackRollbackIncomplete {
-                        cause: cause.to_string(),
-                        failure: failure.to_string(),
+                        cause: Box::new(cause),
+                        failure,
                         snapshot: safety_snapshot,
                     })
                 }
@@ -396,18 +399,14 @@ impl<'a> PackImport<'_, 'a> {
         pack_path: &str,
         label: &str,
     ) -> Result<MediaBlobId, TransferError> {
-        let source =
-            self.staged
-                .file(pack_path)
-                .ok_or_else(|| TransferError::ContentsMismatch {
-                    path: pack_path.to_owned(),
-                })?;
-        let bytes = tokio::fs::read(&source).await?;
-        let blob = self.provider.media_repo().store(label, bytes).await?;
-        if self.known_media.insert(blob.id.clone()) {
-            self.undo.push(Undo::Media(blob.id.clone()));
+        let source = staged_source(self.staged.file(pack_path), pack_path)?;
+        MediaIntake {
+            provider: self.provider,
+            known_media: &mut self.known_media,
+            undo: &mut self.undo,
         }
-        Ok(blob.id)
+        .store(source, label)
+        .await
     }
 
     async fn write_media(&mut self) -> Result<(), TransferError> {
@@ -446,13 +445,14 @@ impl<'a> PackImport<'_, 'a> {
             let mut queue = queue_of(document);
             queue.id = ulid_id(target.preassigned_id()?)?;
             queue.name = target.name.clone();
-            self.written_queues.insert(queue.id);
-            self.changes.push(StoreChange::SaveQueue(queue.clone()));
-            if document.role == Some(QueueRole::OverlayAlerts) {
-                self.changes
-                    .push(StoreChange::ClaimOverlayAlertQueue(queue.id));
-            }
-            self.record_written(item, queue.id.to_string(), &target);
+            let id = queue.id;
+            self.written_queues.insert(id);
+            self.changes.extend(queue_changes(
+                queue,
+                document.role,
+                StoreChange::ClaimOverlayAlertQueue,
+            ));
+            self.record_written(item, id.to_string(), &target);
         }
         Ok(())
     }
@@ -469,22 +469,8 @@ impl<'a> PackImport<'_, 'a> {
                 .replaces()
                 .then(|| self.inventory.stored_script(id))
                 .flatten();
-            let archived = previous.as_ref().is_some_and(|stored| stored.archived);
-            let previous = previous.map(|stored| stored.row);
-            let now = OffsetDateTime::now_utc();
-            let record = ScriptRecord {
-                id,
-                name: target.name.clone(),
-                body: document.body.clone(),
-                contract: document.contract.clone(),
-                enabled: document.enabled,
-                created_at: previous.as_ref().map_or(now, |script| script.created_at),
-                last_modified: now,
-            };
-            self.changes.push(StoreChange::SaveScript(Box::new(record)));
-            if archived {
-                self.changes.push(StoreChange::RestoreScript(id));
-            }
+            self.changes
+                .extend(script_changes(document, id, &target.name, previous));
             self.record_written(item, id.to_string(), &target);
         }
         Ok(())
@@ -508,7 +494,6 @@ impl<'a> PackImport<'_, 'a> {
     }
 
     async fn write_clips(&mut self) -> Result<(), TransferError> {
-        let media = self.provider.media_repo();
         let staged = self.staged;
         for document in &staged.documents().clips {
             let item = key(PackItemKind::Clip, document.id.to_string());
@@ -518,11 +503,7 @@ impl<'a> PackImport<'_, 'a> {
             let id: ClipId = ulid_id(target.preassigned_id()?)?;
             let blob = match &document.source {
                 ClipSourceDocument::Media { media_id } => {
-                    let stored = self
-                        .remap
-                        .get(InternalNamespace::ManagedMedia, media_id)
-                        .unwrap_or(media_id);
-                    Some(MediaBlobId::from_stored(stored)?)
+                    Some(remapped_media(&self.remap, media_id)?)
                 }
                 ClipSourceDocument::File { file, label } => {
                     Some(self.store_staged(file, label).await?)
@@ -533,37 +514,20 @@ impl<'a> PackImport<'_, 'a> {
                 .replaces()
                 .then(|| self.inventory.clips.get(&id).cloned())
                 .flatten();
-            let file_path = match &blob {
-                Some(blob) => media.resolve(blob).await?,
-                None => previous
-                    .as_ref()
-                    .map(|clip| clip.file_path.clone())
-                    .unwrap_or_default(),
-            };
-            let clip = StoredClip {
-                id,
-                name: target.name.clone(),
-                file_path,
-                volume: document.volume,
-                output_device: previous
-                    .as_ref()
-                    .map_or(OutputDevice::Default, |clip| clip.output_device.clone()),
-                hotkey: previous.as_ref().and_then(|clip| clip.hotkey.clone()),
-                created_at: previous
-                    .as_ref()
-                    .map_or_else(OffsetDateTime::now_utc, |clip| clip.created_at),
-                category: document.category.clone(),
-                loop_playback: document.loop_playback,
-                duration_secs: document.duration_secs,
-                builtin_id: document.builtin_id.clone(),
-            };
-            self.changes.push(StoreChange::SaveClip(Box::new(clip)));
-            if let Some(blob) = blob {
-                self.changes.push(StoreChange::RetainMedia {
-                    referrer: clip_source_referrer(id),
-                    blob,
-                });
-            }
+            let hotkey = previous.as_ref().and_then(|clip| clip.hotkey.clone());
+            let changes = clip_changes(
+                self.provider,
+                document,
+                ClipTarget {
+                    id,
+                    name: &target.name,
+                    previous: previous.as_ref(),
+                    hotkey,
+                },
+                blob,
+            )
+            .await?;
+            self.changes.extend(changes);
             self.record_written(item, id.to_string(), &target);
         }
         Ok(())
@@ -611,17 +575,8 @@ impl<'a> PackImport<'_, 'a> {
                     .insert(InternalNamespace::Overlay, document.id.clone(), id.as_str());
             }
             self.write_overlay_files(&id, &document.files).await?;
-            for reference in image_references(&config) {
-                let Ok(blob) = MediaBlobId::from_stored(reference.image) else {
-                    continue;
-                };
-                if self.known_media.contains(&blob) {
-                    let referrer =
-                        MediaReferrer::new(MediaReferrerKind::Overlay, id.as_str(), reference.key);
-                    self.changes
-                        .push(StoreChange::RetainMedia { referrer, blob });
-                }
-            }
+            self.changes
+                .extend(overlay_media_retains(&config, &id, &self.known_media));
             self.record_written(item, id.as_str().to_owned(), &target);
         }
         Ok(())

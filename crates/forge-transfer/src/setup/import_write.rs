@@ -1,20 +1,20 @@
 use std::collections::BTreeMap;
 
-use forge_overlay::image_references;
 use forge_registry::InternalNamespace;
 use forge_storage::settings::core_settings;
 use forge_storage::{
-    MediaBlobId, MediaReferrer, MediaReferrerKind, NewOverlay, OverlayConfig, OverlayDefinition,
-    OverlayId, QueueRole, ScriptRecord, SettingRow, StorageError, StoreChange, StoredClip,
-    clip_source_referrer, setting_row, unique_overlay_id,
+    MediaBlobId, NewOverlay, OverlayConfig, OverlayDefinition, OverlayId, SettingRow, StorageError,
+    StoreChange, setting_row, unique_overlay_id,
 };
-use forge_types::{ClipId, OutputDevice};
-use time::OffsetDateTime;
+use forge_types::ClipId;
 
+use crate::documents::apply::{
+    ClipTarget, MediaIntake, clip_changes, overlay_media_retains, queue_changes, remapped_media,
+    script_changes, staged_source,
+};
 use crate::documents::convert::{action_of, queue_of, trigger_of};
 use crate::documents::model::{ClipSourceDocument, OverlayDocument};
 use crate::documents::overlay_files::{place_overlay_files, rewrite_overlay_media};
-use crate::documents::undo::Undo;
 use crate::error::TransferError;
 use crate::setup::import_apply::{SetupImport, SetupLivePart, SkippedSetting};
 
@@ -30,19 +30,16 @@ impl SetupImport<'_, '_> {
         setup_path: &str,
         label: &str,
     ) -> Result<MediaBlobId, TransferError> {
-        let source =
-            self.staged
-                .file(setup_path)
-                .ok_or_else(|| TransferError::ContentsMismatch {
-                    path: setup_path.to_owned(),
-                })?;
-        let bytes = tokio::fs::read(&source).await?;
-        let blob = self.provider.media_repo().store(label, bytes).await?;
-        if self.known_media.insert(blob.id.clone()) {
-            self.journal.push(Undo::Media(blob.id.clone()));
+        let source = staged_source(self.staged.file(setup_path), setup_path)?;
+        let blob = MediaIntake {
+            provider: self.provider,
+            known_media: &mut self.known_media,
+            undo: &mut self.journal,
         }
-        self.carried_media.insert(blob.id.clone());
-        Ok(blob.id)
+        .store(source, label)
+        .await?;
+        self.carried_media.insert(blob.clone());
+        Ok(blob)
     }
 
     pub(super) async fn write_media(&mut self) -> Result<(), TransferError> {
@@ -69,11 +66,11 @@ impl SetupImport<'_, '_> {
                 Some(local) if *local != queue => self.queues.changed.push(queue.clone()),
                 Some(_) => {}
             }
-            let id = queue.id;
-            self.changes.push(StoreChange::SaveQueue(queue));
-            if document.role == Some(QueueRole::OverlayAlerts) {
-                self.changes.push(StoreChange::AssignOverlayAlertQueue(id));
-            }
+            self.changes.extend(queue_changes(
+                queue,
+                document.role,
+                StoreChange::AssignOverlayAlertQueue,
+            ));
             self.refresh.insert(SetupLivePart::Queues);
         }
     }
@@ -82,22 +79,12 @@ impl SetupImport<'_, '_> {
         let staged = self.staged;
         for document in &staged.documents().configuration.scripts {
             let previous = self.inventory.configuration.stored_script(document.id);
-            let archived = previous.as_ref().is_some_and(|stored| stored.archived);
-            let previous = previous.map(|stored| stored.row);
-            let now = OffsetDateTime::now_utc();
-            let record = ScriptRecord {
-                id: document.id,
-                name: document.name.clone(),
-                body: document.body.clone(),
-                contract: document.contract.clone(),
-                enabled: document.enabled,
-                created_at: previous.as_ref().map_or(now, |script| script.created_at),
-                last_modified: now,
-            };
-            self.changes.push(StoreChange::SaveScript(Box::new(record)));
-            if archived {
-                self.changes.push(StoreChange::RestoreScript(document.id));
-            }
+            self.changes.extend(script_changes(
+                document,
+                document.id,
+                &document.name,
+                previous,
+            ));
             self.refresh.insert(SetupLivePart::Scripts);
         }
     }
@@ -120,7 +107,6 @@ impl SetupImport<'_, '_> {
     }
 
     pub(super) async fn write_clips(&mut self) -> Result<(), TransferError> {
-        let media = self.provider.media_repo();
         let staged = self.staged;
         let documents = staged.documents();
         let hotkeys: BTreeMap<ClipId, &str> = documents
@@ -131,11 +117,7 @@ impl SetupImport<'_, '_> {
         for document in &documents.configuration.clips {
             let blob = match &document.source {
                 ClipSourceDocument::Media { media_id } => {
-                    let stored = self
-                        .remap
-                        .get(InternalNamespace::ManagedMedia, media_id)
-                        .unwrap_or(media_id);
-                    Some(MediaBlobId::from_stored(stored)?)
+                    Some(remapped_media(&self.remap, media_id)?)
                 }
                 ClipSourceDocument::File { file, label } => {
                     Some(self.store_staged(file, label).await?)
@@ -148,37 +130,19 @@ impl SetupImport<'_, '_> {
                 .clips
                 .get(&document.id)
                 .cloned();
-            let file_path = match &blob {
-                Some(blob) => media.resolve(blob).await?,
-                None => previous
-                    .as_ref()
-                    .map(|clip| clip.file_path.clone())
-                    .unwrap_or_default(),
-            };
-            let clip = StoredClip {
-                id: document.id,
-                name: document.name.clone(),
-                file_path,
-                volume: document.volume,
-                output_device: previous
-                    .as_ref()
-                    .map_or(OutputDevice::Default, |clip| clip.output_device.clone()),
-                hotkey: hotkeys.get(&document.id).map(|hotkey| (*hotkey).to_owned()),
-                created_at: previous
-                    .as_ref()
-                    .map_or_else(OffsetDateTime::now_utc, |clip| clip.created_at),
-                category: document.category.clone(),
-                loop_playback: document.loop_playback,
-                duration_secs: document.duration_secs,
-                builtin_id: document.builtin_id.clone(),
-            };
-            self.changes.push(StoreChange::SaveClip(Box::new(clip)));
-            if let Some(blob) = blob {
-                self.changes.push(StoreChange::RetainMedia {
-                    referrer: clip_source_referrer(document.id),
-                    blob,
-                });
-            }
+            let changes = clip_changes(
+                self.provider,
+                document,
+                ClipTarget {
+                    id: document.id,
+                    name: &document.name,
+                    previous: previous.as_ref(),
+                    hotkey: hotkeys.get(&document.id).map(|hotkey| (*hotkey).to_owned()),
+                },
+                blob,
+            )
+            .await?;
+            self.changes.extend(changes);
             self.refresh.insert(SetupLivePart::Hotkeys);
         }
         Ok(())
@@ -233,17 +197,8 @@ impl SetupImport<'_, '_> {
                 |undo| journal.push(undo),
             )
             .await?;
-            for reference in image_references(&config) {
-                let Ok(blob) = MediaBlobId::from_stored(reference.image) else {
-                    continue;
-                };
-                if self.known_media.contains(&blob) {
-                    let referrer =
-                        MediaReferrer::new(MediaReferrerKind::Overlay, id.as_str(), reference.key);
-                    self.changes
-                        .push(StoreChange::RetainMedia { referrer, blob });
-                }
-            }
+            self.changes
+                .extend(overlay_media_retains(&config, &id, &self.known_media));
             self.refresh.insert(SetupLivePart::Overlays);
         }
         Ok(())

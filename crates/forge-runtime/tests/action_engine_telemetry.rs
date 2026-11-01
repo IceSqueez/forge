@@ -127,6 +127,80 @@ impl ActionRepo for SpyActionRepo {
     async fn prune_executions_before(&self, _cutoff: OffsetDateTime) -> Result<u64, StorageError> {
         Ok(0)
     }
+
+    async fn count(&self) -> Result<usize, forge_storage::StorageError> {
+        Ok(forge_storage::ActionRepo::list(self).await?.len())
+    }
+
+    async fn ids_named(
+        &self,
+        name: &str,
+    ) -> Result<Vec<forge_types::ActionId>, forge_storage::StorageError> {
+        Ok(forge_storage::ActionRepo::list(self)
+            .await?
+            .into_iter()
+            .filter(|action| action.name == name)
+            .map(|action| action.id)
+            .collect())
+    }
+
+    async fn record_executions(
+        &self,
+        executions: &[forge_storage::ActionExecution],
+    ) -> Result<(), forge_storage::StorageError> {
+        for execution in executions {
+            self.record_execution(
+                execution.action_id,
+                execution.started_at,
+                execution.duration_ms,
+                execution.status,
+            )
+            .await?;
+        }
+        Ok(())
+    }
+
+    async fn set_enabled(
+        &self,
+        _id: forge_types::ActionId,
+        _enabled: bool,
+    ) -> Result<bool, forge_storage::StorageError> {
+        Err(forge_storage::StorageError::NotReady)
+    }
+
+    async fn toggle_enabled(
+        &self,
+        _id: forge_types::ActionId,
+    ) -> Result<Option<bool>, forge_storage::StorageError> {
+        Err(forge_storage::StorageError::NotReady)
+    }
+
+    async fn duplicate(
+        &self,
+        _source_id: forge_types::ActionId,
+        _new_id: forge_types::ActionId,
+        _new_name: &str,
+    ) -> Result<(), forge_storage::StorageError> {
+        Err(forge_storage::StorageError::NotReady)
+    }
+
+    async fn archive_reporting_cancelled_runs(
+        &self,
+        _id: forge_types::ActionId,
+    ) -> Result<Option<u64>, forge_storage::StorageError> {
+        Err(forge_storage::StorageError::NotReady)
+    }
+
+    async fn restore(
+        &self,
+        _id: forge_types::ActionId,
+    ) -> Result<bool, forge_storage::StorageError> {
+        Err(forge_storage::StorageError::NotReady)
+    }
+
+    async fn list_archived(&self) -> Result<Vec<forge_types::Action>, forge_storage::StorageError> {
+        Ok(Vec::new())
+    }
 }
 
 struct SpyHistoryRepo {
@@ -176,6 +250,23 @@ impl HistoryRepo for SpyHistoryRepo {
         _since: OffsetDateTime,
     ) -> Result<HashMap<ActionId, ActionStats>, StorageError> {
         Ok(HashMap::new())
+    }
+
+    async fn save_batch(
+        &self,
+        contexts: &[forge_types::ExecutionContext],
+    ) -> Result<(), forge_storage::StorageError> {
+        for ctx in contexts {
+            forge_storage::HistoryRepo::save(self, ctx).await?;
+        }
+        Ok(())
+    }
+
+    async fn recent(
+        &self,
+        _limit: u32,
+    ) -> Result<Vec<forge_types::ExecutionContext>, forge_storage::StorageError> {
+        Ok(Vec::new())
     }
 }
 
@@ -262,6 +353,9 @@ fn request(action_id: ActionId) -> ExecutionRequest {
 fn catalog_over(repo: &Arc<SpyActionRepo>) -> Arc<Catalog> {
     let mut instances = MockTriggerInstanceRepo::new();
     instances.expect_list_for_action().returning(|_| Ok(vec![]));
+    instances
+        .expect_instances_by_action()
+        .returning(|| Ok(Default::default()));
     Catalog::new(repo.clone(), Arc::new(instances), CatalogRevision::new())
 }
 
@@ -273,15 +367,16 @@ async fn successful_execution_records_one_success_row() {
     repo.seed(action);
 
     let bus = EventBus::new(Arc::new(NullEventLogRepo));
-    let engine = spawn_action_engine(
-        Arc::clone(&bus),
-        catalog_over(&repo),
-        repo.clone(),
-        Arc::new(SpyHistoryRepo::new()),
-        Arc::new(SubActionRegistry::new()),
-        Arc::new(ActionCancelRegistry::new()),
-        forge_runtime::DateNamesHandle::default(),
-    );
+    let engine = spawn_action_engine(forge_runtime::ActionEngineParts {
+        bus: Arc::clone(&bus),
+        catalog: catalog_over(&repo),
+        actions: repo.clone(),
+        history: Arc::new(SpyHistoryRepo::new()),
+        sub_action_registry: Arc::new(SubActionRegistry::new()),
+        cancel_registry: Arc::new(ActionCancelRegistry::new()),
+        date_names: forge_runtime::DateNamesHandle::default(),
+        config: forge_runtime::Config::default(),
+    });
     engine.dispatch(request(id)).await.unwrap();
 
     assert!(
@@ -304,15 +399,16 @@ async fn failed_execution_records_one_error_row() {
     reg.register(Box::new(FailRunner)).unwrap();
 
     let bus = EventBus::new(Arc::new(NullEventLogRepo));
-    let engine = spawn_action_engine(
-        Arc::clone(&bus),
-        catalog_over(&repo),
-        repo.clone(),
-        Arc::new(SpyHistoryRepo::new()),
-        Arc::new(reg),
-        Arc::new(ActionCancelRegistry::new()),
-        forge_runtime::DateNamesHandle::default(),
-    );
+    let engine = spawn_action_engine(forge_runtime::ActionEngineParts {
+        bus: Arc::clone(&bus),
+        catalog: catalog_over(&repo),
+        actions: repo.clone(),
+        history: Arc::new(SpyHistoryRepo::new()),
+        sub_action_registry: Arc::new(reg),
+        cancel_registry: Arc::new(ActionCancelRegistry::new()),
+        date_names: forge_runtime::DateNamesHandle::default(),
+        config: forge_runtime::Config::default(),
+    });
     engine.dispatch(request(id)).await.unwrap();
 
     assert!(
@@ -348,15 +444,16 @@ async fn cancelled_execution_records_no_row_but_saves_history() {
     let history = Arc::new(SpyHistoryRepo::new());
     let cancel_registry = Arc::new(ActionCancelRegistry::new());
     let bus = EventBus::new(Arc::new(NullEventLogRepo));
-    let engine = spawn_action_engine(
-        Arc::clone(&bus),
-        catalog_over(&repo),
-        repo.clone(),
-        history.clone(),
-        Arc::new(reg),
-        Arc::clone(&cancel_registry),
-        forge_runtime::DateNamesHandle::default(),
-    );
+    let engine = spawn_action_engine(forge_runtime::ActionEngineParts {
+        bus: Arc::clone(&bus),
+        catalog: catalog_over(&repo),
+        actions: repo.clone(),
+        history: history.clone(),
+        sub_action_registry: Arc::new(reg),
+        cancel_registry: Arc::clone(&cancel_registry),
+        date_names: forge_runtime::DateNamesHandle::default(),
+        config: forge_runtime::Config::default(),
+    });
     engine.dispatch(request(id)).await.unwrap();
 
     tokio::time::timeout(Duration::from_secs(30), running.notified())
@@ -389,15 +486,16 @@ async fn a_failed_telemetry_write_does_not_stop_later_runs_from_recording() {
     repo.seed(action);
 
     let bus = EventBus::new(Arc::new(NullEventLogRepo));
-    let engine = spawn_action_engine(
-        Arc::clone(&bus),
-        catalog_over(&repo),
-        repo.clone(),
-        Arc::new(SpyHistoryRepo::new()),
-        Arc::new(SubActionRegistry::new()),
-        Arc::new(ActionCancelRegistry::new()),
-        forge_runtime::DateNamesHandle::default(),
-    );
+    let engine = spawn_action_engine(forge_runtime::ActionEngineParts {
+        bus: Arc::clone(&bus),
+        catalog: catalog_over(&repo),
+        actions: repo.clone(),
+        history: Arc::new(SpyHistoryRepo::new()),
+        sub_action_registry: Arc::new(SubActionRegistry::new()),
+        cancel_registry: Arc::new(ActionCancelRegistry::new()),
+        date_names: forge_runtime::DateNamesHandle::default(),
+        config: forge_runtime::Config::default(),
+    });
 
     engine.dispatch(request(id)).await.unwrap();
     assert!(
@@ -471,15 +569,16 @@ fn spawn_with(
     history: &Arc<SpyHistoryRepo>,
     reg: SubActionRegistry,
 ) -> forge_runtime::ActionEngineHandle {
-    spawn_action_engine(
-        EventBus::new(Arc::new(NullEventLogRepo)),
-        catalog_over(repo),
-        repo.clone(),
-        history.clone(),
-        Arc::new(reg),
-        Arc::new(ActionCancelRegistry::new()),
-        forge_runtime::DateNamesHandle::default(),
-    )
+    spawn_action_engine(forge_runtime::ActionEngineParts {
+        bus: EventBus::new(Arc::new(NullEventLogRepo)),
+        catalog: catalog_over(repo),
+        actions: repo.clone(),
+        history: history.clone(),
+        sub_action_registry: Arc::new(reg),
+        cancel_registry: Arc::new(ActionCancelRegistry::new()),
+        date_names: forge_runtime::DateNamesHandle::default(),
+        config: forge_runtime::Config::default(),
+    })
 }
 
 #[tokio::test]

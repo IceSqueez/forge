@@ -69,7 +69,8 @@ pub fn restore_staging_root(data_dir: &Path) -> PathBuf {
 }
 
 pub async fn stage_full_restore(request: StageRequest) -> Result<StagedRestore, TransferError> {
-    let staging_dir = restore_staging_root(&request.data_dir).join(fresh_stem());
+    let staging_dir =
+        restore_staging_root(&request.data_dir).join(fresh_stem(time::OffsetDateTime::now_utc()));
     let staged = stage_into(&staging_dir, request, |request, target| {
         stage(&request, target)
     })

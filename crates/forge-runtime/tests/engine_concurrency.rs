@@ -18,15 +18,15 @@ use forge_registry::{
     FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionRegistry,
     SubActionRunner,
 };
-use forge_runtime::{ACTION_DISABLED_REASON, ACTION_NOT_FOUND_REASON, ACTIONS_UNAVAILABLE_REASON};
 use forge_runtime::{
-    ActionCancelRegistry, ActionEngineHandle, Catalog, ENGINE_STOPPED_REASON, EventBus,
-    ExecutionRequest, MAX_PENDING_PER_QUEUE, NullEventLogRepo, PendingQuickAction,
-    QUEUE_DRAINING_REASON, QUEUE_PAUSED_REASON, QueueAdmission, QueueMode, QueueRuntimeState,
-    QueueScheduler, QueueSchedulerHandle, RuntimeError, SchedulerRequest, spawn_action_engine,
+    ActionCancelRegistry, ActionEngineHandle, Catalog, EventBus, ExecutionRequest,
+    MAX_PENDING_PER_QUEUE, NullEventLogRepo, PendingQuickAction, QueueAdmission, QueueMode,
+    QueueRuntimeState, QueueScheduler, QueueSchedulerHandle, RuntimeError, SchedulerRequest,
+    spawn_action_engine,
 };
 use forge_runtime::{CoreLogicWaitRunner, WAIT_KIND_ID, WAIT_MS_KEY};
 use forge_storage::MockTriggerInstanceRepo;
+use forge_storage::RunRefusal;
 use forge_storage::{ActionRepo, ActionStats, CatalogRevision, HistoryRepo, StorageError};
 use forge_types::{
     Action, ActionId, ArgStack, DEFAULT_QUEUE_ID, EventId, ExecutionContext, ExecutionMetadata,
@@ -90,6 +90,23 @@ impl HistoryRepo for CapturingHistoryRepo {
         _since: OffsetDateTime,
     ) -> Result<HashMap<ActionId, ActionStats>, StorageError> {
         Ok(HashMap::new())
+    }
+
+    async fn save_batch(
+        &self,
+        contexts: &[forge_types::ExecutionContext],
+    ) -> Result<(), forge_storage::StorageError> {
+        for ctx in contexts {
+            forge_storage::HistoryRepo::save(self, ctx).await?;
+        }
+        Ok(())
+    }
+
+    async fn recent(
+        &self,
+        _limit: u32,
+    ) -> Result<Vec<forge_types::ExecutionContext>, forge_storage::StorageError> {
+        Ok(Vec::new())
     }
 }
 
@@ -279,22 +296,26 @@ async fn rig(queues: Vec<Queue>, actions: &[&Action]) -> Rig {
     instances
         .expect_list_for_action()
         .returning(|_| Ok(Vec::new()));
-    let engine = spawn_action_engine(
-        Arc::clone(&bus),
-        Catalog::new(
+    instances
+        .expect_instances_by_action()
+        .returning(|| Ok(Default::default()));
+    let engine = spawn_action_engine(forge_runtime::ActionEngineParts {
+        bus: Arc::clone(&bus),
+        catalog: Catalog::new(
             Arc::clone(&repo),
             Arc::new(instances),
             CatalogRevision::new(),
         ),
-        repo,
-        Arc::new(CapturingHistoryRepo {
+        actions: repo,
+        history: Arc::new(CapturingHistoryRepo {
             saved: saved_tx,
             gate: save_open,
         }),
-        Arc::new(registry),
-        Arc::new(ActionCancelRegistry::new()),
-        forge_runtime::DateNamesHandle::default(),
-    );
+        sub_action_registry: Arc::new(registry),
+        cancel_registry: Arc::new(ActionCancelRegistry::new()),
+        date_names: forge_runtime::DateNamesHandle::default(),
+        config: forge_runtime::Config::default(),
+    });
     let sched = QueueScheduler::spawn(engine.clone(), Arc::clone(&bus), queues);
     Rig {
         bus,
@@ -804,7 +825,7 @@ async fn a_run_of_a_disabled_action_is_skipped_and_saved_as_failed_on_its_own_qu
 
     let (skipped, saved) = refused_run(&mut rig, &disabled, &mut sub).await;
 
-    assert_eq!(reason_of(&skipped), Some(ACTION_DISABLED_REASON));
+    assert_eq!(reason_of(&skipped), Some(RunRefusal::ActionDisabled.code()));
     assert_eq!(queue_of(&skipped), Some(queue_id.to_string().as_str()));
     assert_eq!(failure_code(&saved), "core.action_disabled");
     assert!(saved.telemetry.is_empty(), "no step of a refused run runs");
@@ -820,7 +841,7 @@ async fn a_run_of_a_deleted_action_is_skipped_and_saved_as_failed() {
 
     let (skipped, saved) = refused_run(&mut rig, &deleted, &mut sub).await;
 
-    assert_eq!(reason_of(&skipped), Some(ACTION_NOT_FOUND_REASON));
+    assert_eq!(reason_of(&skipped), Some(RunRefusal::ActionNotFound.code()));
     assert_eq!(
         queue_of(&skipped),
         Some(DEFAULT_QUEUE_ID.to_string().as_str())
@@ -839,7 +860,10 @@ async fn a_run_is_skipped_and_saved_as_failed_when_actions_cannot_be_read() {
 
     let (skipped, saved) = refused_run(&mut rig, &wanted, &mut sub).await;
 
-    assert_eq!(reason_of(&skipped), Some(ACTIONS_UNAVAILABLE_REASON));
+    assert_eq!(
+        reason_of(&skipped),
+        Some(RunRefusal::ActionsUnavailable.code())
+    );
     assert_eq!(failure_code(&saved), "core.storage_failed");
     rig.sched.shutdown();
 }
@@ -857,7 +881,10 @@ async fn a_lookup_failure_for_an_action_outside_the_catalog_is_saved_as_a_storag
 
     let (skipped, saved) = refused_run(&mut rig, &disabled, &mut sub).await;
 
-    assert_eq!(reason_of(&skipped), Some(ACTIONS_UNAVAILABLE_REASON));
+    assert_eq!(
+        reason_of(&skipped),
+        Some(RunRefusal::ActionsUnavailable.code())
+    );
     assert_eq!(failure_code(&saved), "core.storage_failed");
     rig.sched.shutdown();
 }
@@ -890,7 +917,7 @@ async fn a_queued_run_that_cannot_reach_a_stopped_engine_is_skipped_and_frees_it
         .await
         .pop()
         .unwrap();
-    assert_eq!(reason_of(&skipped), Some(ENGINE_STOPPED_REASON));
+    assert_eq!(reason_of(&skipped), Some(RunRefusal::EngineStopped.code()));
     settle(
         &rig.sched,
         queue_id,
@@ -1083,8 +1110,8 @@ async fn paused_and_draining_queues_refuse_an_alongside_run() {
     let mut sub = rig.bus.subscribe();
 
     for (mode, reason) in [
-        (QueueMode::PAUSED, QUEUE_PAUSED_REASON),
-        (QueueMode::DRAINING, QUEUE_DRAINING_REASON),
+        (QueueMode::PAUSED, RunRefusal::QueuePaused.code()),
+        (QueueMode::DRAINING, RunRefusal::QueueDraining.code()),
     ] {
         rig.sched.set_mode(queue_id, mode).await.unwrap();
         rig.sched.dispatch(admitted(&beside)).await.unwrap();

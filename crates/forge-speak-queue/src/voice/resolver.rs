@@ -82,7 +82,7 @@ impl VoiceAliasResolver {
         match self
             .aliases
             .iter_mut()
-            .find(|existing| existing.viewer_id == alias.viewer_id)
+            .find(|existing| existing.alias_key == alias.alias_key)
         {
             Some(existing) => *existing = alias,
             None => self.aliases.push(alias),
@@ -101,14 +101,14 @@ impl VoiceAliasResolver {
         let target = self
             .aliases
             .iter()
-            .position(|alias| alias.viewer_id == key)
+            .position(|alias| alias.alias_key == key)
             .or_else(|| {
                 [lowered.as_str(), lowered_handle]
                     .into_iter()
                     .find_map(|candidate| {
                         self.aliases
                             .iter()
-                            .position(|alias| alias.viewer_id.to_lowercase() == candidate)
+                            .position(|alias| alias.alias_key.to_lowercase() == candidate)
                     })
             });
         if let Some(existing) = target.map(|index| &mut self.aliases[index]) {
@@ -239,7 +239,7 @@ impl VoiceAliasResolver {
         };
         self.aliases
             .iter()
-            .find(|alias| alias.viewer_id == viewer_id)
+            .find(|alias| alias.alias_key == viewer_id)
             .or_else(|| viewer_platform.and_then(|platform| named_on(Some(platform))))
             .or_else(|| named_on(None))
     }
@@ -249,7 +249,7 @@ fn lowered_handles_of(aliases: &[VoiceAlias]) -> Vec<(Option<PlatformId>, String
     aliases
         .iter()
         .map(|alias| {
-            let (platform, handle) = split_stored(&alias.viewer_id);
+            let (platform, handle) = split_stored(&alias.alias_key);
             (platform, handle.to_lowercase())
         })
         .collect()
@@ -348,7 +348,7 @@ mod tests {
     fn alias(key: &str, voice: &str, state: AliasState) -> VoiceAlias {
         VoiceAlias {
             id: AliasId::generate(),
-            viewer_id: key.into(),
+            alias_key: key.into(),
             viewer_name: key.into(),
             engine_id: EngineId("piper".into()),
             voice_id: VoiceId(voice.into()),
@@ -830,7 +830,7 @@ mod tests {
         assert_eq!(voice_of(&resolver, "kick:2", "zirka"), "added-voice");
 
         resolver.set_alias(VoiceAlias {
-            viewer_id: "twitch:KitCat".into(),
+            alias_key: "twitch:KitCat".into(),
             ..active("twitch:KitCat", "replaced-voice")
         });
         assert_eq!(voice_of(&resolver, "twitch:1", "kitcat"), "replaced-voice");

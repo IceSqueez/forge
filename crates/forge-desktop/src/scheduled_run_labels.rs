@@ -1,15 +1,5 @@
 use forge_components::tr;
-use forge_runtime::{
-    ACTION_DISABLED_REASON, ACTION_NOT_FOUND_REASON, ACTIONS_UNAVAILABLE_REASON, MISSED_REASON,
-    QUEUES_CLOSED_REASON, UNREADABLE_REASON,
-};
-use forge_runtime::{
-    ENGINE_STOPPED_REASON, QUEUE_DELETED_REASON, QUEUE_DRAINING_REASON, QUEUE_NOT_FOUND_REASON,
-    QUEUE_OVERFLOW_REASON, QUEUE_PAUSED_REASON,
-};
-use forge_storage::{
-    ACTION_REMOVED_REASON, CANCELLED_REASON, SUPERSEDED_REASON, ScheduledRunState,
-};
+use forge_storage::{RunRefusal, ScheduledRunState};
 use time::OffsetDateTime;
 
 const SECS_PER_MINUTE: i64 = 60;
@@ -107,40 +97,37 @@ pub(crate) fn outcome_badge_key(tone: OutcomeTone) -> &'static str {
     }
 }
 
-pub(crate) fn reason_key(reason: &str) -> Option<&'static str> {
+pub(crate) fn reason_key(reason: RunRefusal) -> &'static str {
     match reason {
-        MISSED_REASON => Some("queues_scheduled_reason_missed"),
-        SUPERSEDED_REASON => Some("queues_scheduled_reason_superseded"),
-        CANCELLED_REASON => Some("queues_scheduled_reason_cancelled"),
-        ACTION_REMOVED_REASON => Some("queues_scheduled_reason_action_removed"),
-        ACTION_DISABLED_REASON => Some("queues_scheduled_reason_action_disabled"),
-        ACTION_NOT_FOUND_REASON => Some("queues_scheduled_reason_action_not_found"),
-        ACTIONS_UNAVAILABLE_REASON => Some("queues_scheduled_reason_actions_unavailable"),
-        QUEUES_CLOSED_REASON => Some("queues_scheduled_reason_queues_closed"),
-        UNREADABLE_REASON => Some("queues_scheduled_reason_unreadable"),
-        QUEUE_PAUSED_REASON => Some("queues_scheduled_reason_queue_paused"),
-        QUEUE_DRAINING_REASON => Some("queues_scheduled_reason_queue_draining"),
-        QUEUE_OVERFLOW_REASON => Some("queues_scheduled_reason_queue_overflow"),
-        QUEUE_NOT_FOUND_REASON => Some("queues_scheduled_reason_queue_not_found"),
-        QUEUE_DELETED_REASON => Some("queues_scheduled_reason_queue_deleted"),
-        ENGINE_STOPPED_REASON => Some("queues_scheduled_reason_engine_stopped"),
-        _ => None,
+        RunRefusal::Missed => "queues_scheduled_reason_missed",
+        RunRefusal::Superseded => "queues_scheduled_reason_superseded",
+        RunRefusal::Cancelled => "queues_scheduled_reason_cancelled",
+        RunRefusal::ActionRemoved => "queues_scheduled_reason_action_removed",
+        RunRefusal::ActionDisabled => "queues_scheduled_reason_action_disabled",
+        RunRefusal::ActionNotFound => "queues_scheduled_reason_action_not_found",
+        RunRefusal::ActionsUnavailable => "queues_scheduled_reason_actions_unavailable",
+        RunRefusal::QueuesClosed => "queues_scheduled_reason_queues_closed",
+        RunRefusal::Unreadable => "queues_scheduled_reason_unreadable",
+        RunRefusal::QueuePaused => "queues_scheduled_reason_queue_paused",
+        RunRefusal::QueueDraining => "queues_scheduled_reason_queue_draining",
+        RunRefusal::QueueOverflow => "queues_scheduled_reason_queue_overflow",
+        RunRefusal::QueueNotFound => "queues_scheduled_reason_queue_not_found",
+        RunRefusal::QueueDeleted => "queues_scheduled_reason_queue_deleted",
+        RunRefusal::EngineStopped => "queues_scheduled_reason_engine_stopped",
     }
 }
 
-pub(crate) fn reason_label(reason: &str, late_by: Option<Span>) -> String {
+pub(crate) fn reason_label(reason: RunRefusal, late_by: Option<Span>) -> String {
     match (reason, late_by) {
-        (MISSED_REASON, Some(span)) => {
+        (RunRefusal::Missed, Some(span)) => {
             tr!("queues_scheduled_reason_missed_by", span = span.label())
         }
-        _ => reason_key(reason).map_or_else(|| reason.to_owned(), |key| tr!(key)),
+        _ => tr!(reason_key(reason)),
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
     use forge_storage::Language;
 
     use super::*;
@@ -148,26 +135,8 @@ mod tests {
 
     const OCT_4_2026_NOON_UTC: i64 = 1_791_115_200;
 
-    const REASON_SOURCES: [&str; 3] = [
-        "../forge-storage/src/scheduled_run.rs",
-        "../forge-runtime/src/scheduled_runs/hand_off.rs",
-        "../forge-runtime/src/queue_scheduler.rs",
-    ];
-
     fn plain(rendered: String) -> String {
         rendered.replace(crate::test_support::FORMAT_ISOLATES, "")
-    }
-
-    fn reason_tokens_declared_in(source: &str) -> Vec<String> {
-        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(source);
-        std::fs::read_to_string(&path)
-            .unwrap()
-            .lines()
-            .filter_map(|line| line.trim().strip_prefix("pub const "))
-            .filter_map(|rest| rest.split_once("_REASON: &str = \""))
-            .filter_map(|(_, value)| value.strip_suffix("\";"))
-            .map(str::to_owned)
-            .collect()
     }
 
     #[test]
@@ -261,20 +230,15 @@ mod tests {
     }
 
     #[test]
-    fn every_reason_token_storage_or_runtime_declares_has_a_label_in_every_locale() {
-        for source in REASON_SOURCES {
-            let tokens = reason_tokens_declared_in(source);
-            assert!(!tokens.is_empty(), "{source} declares no reason tokens");
-            for token in tokens {
-                let key = reason_key(&token)
-                    .unwrap_or_else(|| panic!("{token} from {source} has no label key"));
-                for language in [Language::En, Language::Uk] {
-                    assert_ne!(
-                        message_in(language, key),
-                        key,
-                        "{language:?} catalog is missing {key}"
-                    );
-                }
+    fn every_run_refusal_has_a_label_in_every_locale() {
+        for reason in RunRefusal::ALL {
+            let key = reason_key(reason);
+            for language in [Language::En, Language::Uk] {
+                assert_ne!(
+                    message_in(language, key),
+                    key,
+                    "{language:?} catalog is missing {key}"
+                );
             }
         }
     }
@@ -288,25 +252,25 @@ mod tests {
         for (language, reason, late_by, expected) in [
             (
                 Language::En,
-                MISSED_REASON,
+                RunRefusal::Missed,
                 late,
                 "Missed by 1 h 30 min - forge was not running at the due time",
             ),
             (
                 Language::En,
-                MISSED_REASON,
+                RunRefusal::Missed,
                 None,
                 "Missed - forge was not running at the due time",
             ),
             (
                 Language::En,
-                CANCELLED_REASON,
+                RunRefusal::Cancelled,
                 late,
                 "Cancelled before it was due",
             ),
             (
                 Language::Uk,
-                MISSED_REASON,
+                RunRefusal::Missed,
                 late,
                 "Пропущено на 1 год 30 хв - forge не працював у призначений час",
             ),
@@ -318,12 +282,6 @@ mod tests {
                 "{language:?} {reason}"
             );
         }
-    }
-
-    #[test]
-    fn reason_label_shows_an_unknown_reason_verbatim() {
-        install_language(Language::En);
-        assert_eq!(reason_label("vendor_glitch", None), "vendor_glitch");
     }
 
     #[test]

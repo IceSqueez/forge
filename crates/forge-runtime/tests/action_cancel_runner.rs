@@ -86,19 +86,20 @@ async fn cancel_runner_aborts_a_live_in_flight_execution() {
     .unwrap();
 
     let (history, mut runs) = observed_history();
-    let engine = spawn_action_engine(
-        Arc::clone(&bus),
-        forge_runtime::Catalog::new(
+    let engine = spawn_action_engine(forge_runtime::ActionEngineParts {
+        bus: Arc::clone(&bus),
+        catalog: forge_runtime::Catalog::new(
             dp.action_repo(),
             dp.trigger_instance_repo(),
             dp.catalog_revision(),
         ),
-        dp.action_repo(),
+        actions: dp.action_repo(),
         history,
-        Arc::new(reg),
-        Arc::clone(&cancel_registry),
-        forge_runtime::DateNamesHandle::default(),
-    );
+        sub_action_registry: Arc::new(reg),
+        cancel_registry: Arc::clone(&cancel_registry),
+        date_names: forge_runtime::DateNamesHandle::default(),
+        config: forge_runtime::Config::default(),
+    });
 
     let target = ActionId::new();
     dp.action_repo()
@@ -153,19 +154,20 @@ async fn cancel_guard_deregisters_after_a_run_completes() {
     let cancel_registry = Arc::new(ActionCancelRegistry::new());
 
     let (history, mut runs) = observed_history();
-    let engine = spawn_action_engine(
-        Arc::clone(&bus),
-        forge_runtime::Catalog::new(
+    let engine = spawn_action_engine(forge_runtime::ActionEngineParts {
+        bus: Arc::clone(&bus),
+        catalog: forge_runtime::Catalog::new(
             dp.action_repo(),
             dp.trigger_instance_repo(),
             dp.catalog_revision(),
         ),
-        dp.action_repo(),
+        actions: dp.action_repo(),
         history,
-        Arc::new(SubActionRegistry::new()),
-        Arc::clone(&cancel_registry),
-        forge_runtime::DateNamesHandle::default(),
-    );
+        sub_action_registry: Arc::new(SubActionRegistry::new()),
+        cancel_registry: Arc::clone(&cancel_registry),
+        date_names: forge_runtime::DateNamesHandle::default(),
+        config: forge_runtime::Config::default(),
+    });
 
     let id = ActionId::new();
     dp.action_repo()
@@ -287,19 +289,20 @@ async fn a_run_cancelled_inside_a_composite_step_is_recorded_as_cancelled() {
         .unwrap();
     let bus = EventBus::new(Arc::new(NullEventLogRepo));
     let (history, mut runs) = observed_history();
-    let engine = spawn_action_engine(
-        Arc::clone(&bus),
-        forge_runtime::Catalog::new(
+    let engine = spawn_action_engine(forge_runtime::ActionEngineParts {
+        bus: Arc::clone(&bus),
+        catalog: forge_runtime::Catalog::new(
             dp.action_repo(),
             dp.trigger_instance_repo(),
             dp.catalog_revision(),
         ),
-        dp.action_repo(),
+        actions: dp.action_repo(),
         history,
-        Arc::new(reg),
-        Arc::new(ActionCancelRegistry::new()),
-        forge_runtime::DateNamesHandle::default(),
-    );
+        sub_action_registry: Arc::new(reg),
+        cancel_registry: Arc::new(ActionCancelRegistry::new()),
+        date_names: forge_runtime::DateNamesHandle::default(),
+        config: forge_runtime::Config::default(),
+    });
     let child = ActionId::new();
     dp.action_repo()
         .save(&action(

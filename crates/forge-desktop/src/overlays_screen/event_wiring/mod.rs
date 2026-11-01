@@ -586,15 +586,16 @@ mod tests {
     fn scheduler_on(rt: &tokio::runtime::Runtime) -> QueueSchedulerHandle {
         rt.block_on(async {
             let bus = EventBus::new(Arc::new(StubEventLog));
-            let engine = spawn_action_engine(
-                Arc::clone(&bus),
-                crate::test_support::stub_catalog(),
-                Arc::new(MockActionRepo::new()),
-                Arc::new(MockHistoryRepo::new()),
-                Arc::new(SubActionRegistry::new()),
-                Arc::new(ActionCancelRegistry::new()),
-                forge_runtime::DateNamesHandle::default(),
-            );
+            let engine = spawn_action_engine(forge_runtime::ActionEngineParts {
+                bus: Arc::clone(&bus),
+                catalog: crate::test_support::stub_catalog(),
+                actions: Arc::new(MockActionRepo::new()),
+                history: Arc::new(MockHistoryRepo::new()),
+                sub_action_registry: Arc::new(SubActionRegistry::new()),
+                cancel_registry: Arc::new(ActionCancelRegistry::new()),
+                date_names: forge_runtime::DateNamesHandle::default(),
+                config: forge_runtime::Config::default(),
+            });
             QueueScheduler::spawn(engine, bus, Vec::new())
         })
     }

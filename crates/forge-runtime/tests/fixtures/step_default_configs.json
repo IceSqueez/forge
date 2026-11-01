@@ -180,13 +180,13 @@
     }
   },
   "core.globals.array_append": {
-    "key": {
-      "type": "string",
-      "value": ""
-    },
     "max_length": {
       "type": "int",
       "value": 0
+    },
+    "name": {
+      "type": "string",
+      "value": ""
     },
     "value": {
       "type": "string",
@@ -194,7 +194,7 @@
     }
   },
   "core.globals.array_remove": {
-    "key": {
+    "name": {
       "type": "string",
       "value": ""
     },
@@ -212,7 +212,7 @@
       "type": "int",
       "value": 1
     },
-    "key": {
+    "name": {
       "type": "string",
       "value": ""
     }
@@ -258,7 +258,7 @@
     }
   },
   "core.globals.toggle": {
-    "key": {
+    "name": {
       "type": "string",
       "value": ""
     }

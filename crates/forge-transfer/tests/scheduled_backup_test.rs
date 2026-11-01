@@ -81,6 +81,7 @@ impl Source {
         categories: Vec<BackupCategory>,
     ) -> Result<PathBuf, TransferError> {
         write_scheduled_backup(ScheduledBackupRequest {
+            now: time::OffsetDateTime::now_utc(),
             provider: self.provider.clone(),
             data_dir: self.data_dir(),
             folder,
@@ -398,6 +399,7 @@ impl Source {
     ) -> ScheduledWrite {
         write_scheduled_backup_unless_unchanged(
             ScheduledBackupRequest {
+                now: time::OffsetDateTime::now_utc(),
                 provider: self.provider.clone(),
                 data_dir: self.data_dir(),
                 folder,
@@ -550,6 +552,7 @@ async fn a_cancelled_scheduled_write_is_interrupted_and_leaves_no_file_behind() 
 
     let result = write_scheduled_backup_cancellable(
         ScheduledBackupRequest {
+            now: time::OffsetDateTime::now_utc(),
             provider: source.provider.clone(),
             data_dir: source.data_dir(),
             folder: source.folder(),

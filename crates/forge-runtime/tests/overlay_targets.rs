@@ -391,6 +391,10 @@ fn service_over(seed: Vec<(Action, Vec<TriggerInstance>)>) -> ActionsService {
         .returning(move || Ok(actions.clone()));
 
     let mut trigger_repo = MockTriggerInstanceRepo::new();
+    let by_action = triggers.clone();
+    trigger_repo
+        .expect_instances_by_action()
+        .returning(move || Ok(by_action.clone().into_iter().collect()));
     trigger_repo
         .expect_list_for_action()
         .returning(move |id| Ok(triggers.get(&id).cloned().unwrap_or_default()));

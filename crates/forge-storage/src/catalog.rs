@@ -131,6 +131,10 @@ impl RevisingActionRepo {
 
 #[async_trait]
 impl ActionRepo for RevisingActionRepo {
+    async fn ids_named(&self, name: &str) -> Result<Vec<ActionId>, StorageError> {
+        self.inner.ids_named(name).await
+    }
+
     async fn list(&self) -> Result<Vec<Action>, StorageError> {
         self.inner.list().await
     }
@@ -261,6 +265,12 @@ impl RevisingTriggerInstanceRepo {
 
 #[async_trait]
 impl TriggerInstanceRepo for RevisingTriggerInstanceRepo {
+    async fn instances_by_action(
+        &self,
+    ) -> Result<HashMap<ActionId, Vec<TriggerInstance>>, StorageError> {
+        self.inner.instances_by_action().await
+    }
+
     async fn list_all(&self) -> Result<Vec<TriggerInstance>, StorageError> {
         self.inner.list_all().await
     }
@@ -379,7 +389,11 @@ impl TriggerInstanceRepo for RevisingTriggerInstanceRepo {
             .await
     }
 
-    async fn set_enabled(&self, id: TriggerInstanceId, enabled: bool) -> Result<(), StorageError> {
+    async fn set_enabled(
+        &self,
+        id: TriggerInstanceId,
+        enabled: bool,
+    ) -> Result<bool, StorageError> {
         let inner = Arc::clone(&self.inner);
         self.revision
             .after(async move { inner.set_enabled(id, enabled).await })

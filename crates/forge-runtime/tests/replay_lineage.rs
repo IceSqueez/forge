@@ -59,6 +59,8 @@ impl Harness {
         dp.queue_repo().save(&queue).await.unwrap();
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let runtime = common::frozen_runtime(RuntimeWiringParts {
+            paths: forge_paths::AppPaths::at(std::env::temp_dir().join("forge-tests")),
+            config: forge_runtime::Config::default(),
             date_names: forge_runtime::DateNamesHandle::default(),
             clock: Arc::new(FixedClock),
             ..common::wiring_parts(dp, Arc::clone(&bus)).await

@@ -119,7 +119,7 @@ pub enum ExecutionMetadata {
         #[serde(default)]
         scheduled_by_action: Option<ActionId>,
         #[serde(default)]
-        scheduled_by_run: Option<String>,
+        scheduled_by_run: Option<EventId>,
     },
 }
 

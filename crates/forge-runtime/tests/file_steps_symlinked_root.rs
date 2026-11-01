@@ -5,7 +5,6 @@ use forge_registry::{RunContext, SubActionRunner};
 use forge_runtime::{CoreFileListRunner, CoreFileWriteRunner};
 use forge_types::{ArgStack, EventId, SubActionConfig, SubActionOutcome, Variant};
 
-#[expect(unsafe_code, reason = "env mutation is unsafe in edition 2024")]
 #[tokio::test]
 async fn a_files_folder_that_is_itself_a_symlink_is_used_as_the_root() {
     let base = tempfile::tempdir().unwrap();
@@ -14,17 +13,15 @@ async fn a_files_folder_that_is_itself_a_symlink_is_used_as_the_root() {
     std::fs::create_dir_all(&real_root).unwrap();
     std::fs::create_dir_all(&data_dir).unwrap();
     std::os::unix::fs::symlink(&real_root, data_dir.join("assets")).unwrap();
-    // SAFETY: this binary holds a single test, so no other thread reads the environment while it is written.
-    unsafe {
-        std::env::set_var("FORGE_DATA_DIR", &data_dir);
-    }
 
     let stack = ArgStack::new();
     let ctx = RunContext::leaf(&stack, 0, EventId::new(), &NullPublisher);
     let mut write = SubActionConfig::new();
     write.insert("path".to_owned(), Variant::String("note.txt".to_owned()));
     write.insert("content".to_owned(), Variant::String("hello".to_owned()));
-    let (written, _) = CoreFileWriteRunner.execute(&write, &ctx).await;
+    let (written, _) = CoreFileWriteRunner::new(data_dir.join("assets"))
+        .execute(&write, &ctx)
+        .await;
     assert_eq!(written.outcome, SubActionOutcome::Success);
     assert_eq!(
         std::fs::read_to_string(real_root.join("note.txt")).unwrap(),
@@ -33,7 +30,9 @@ async fn a_files_folder_that_is_itself_a_symlink_is_used_as_the_root() {
 
     let mut list = SubActionConfig::new();
     list.insert("path".to_owned(), Variant::String(".".to_owned()));
-    let (_, listed) = CoreFileListRunner.execute(&list, &ctx).await;
+    let (_, listed) = CoreFileListRunner::new(data_dir.join("assets"))
+        .execute(&list, &ctx)
+        .await;
     assert_eq!(
         listed.unwrap().get("file.entries").cloned(),
         Some(Variant::Array(vec![Variant::String("note.txt".to_owned())]))

@@ -49,7 +49,8 @@ pub fn setup_staging_root(data_dir: &Path) -> PathBuf {
 }
 
 pub async fn stage_setup(bundle: PathBuf, data_dir: PathBuf) -> Result<StagedSetup, TransferError> {
-    let staging_dir = setup_staging_root(&data_dir).join(fresh_stem());
+    let staging_dir =
+        setup_staging_root(&data_dir).join(fresh_stem(time::OffsetDateTime::now_utc()));
     let staged = stage_into(&staging_dir, bundle, |bundle, target| {
         stage(&bundle, target)
     })

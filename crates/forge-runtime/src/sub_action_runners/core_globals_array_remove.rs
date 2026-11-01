@@ -9,7 +9,7 @@ use forge_registry::{
 use forge_storage::{GlobalsRepo, StorageError};
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry};
 
-use super::core_globals_shared::{GLOBAL_BY_KEY, global_name};
+use super::core_globals_shared::{GLOBAL_BY_NAME, global_name};
 use crate::core_messages;
 
 const VALUE: TextField = TextField {
@@ -28,14 +28,14 @@ const REMOVE_ALL: ToggleField = ToggleField {
     default: false,
 };
 
-const CONFIG: ConfigSpec = ConfigSpec::new(&[&GLOBAL_BY_KEY, &VALUE, &REMOVE_ALL]);
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&GLOBAL_BY_NAME, &VALUE, &REMOVE_ALL]);
 
 fn read_config(
     config: &SubActionConfig,
     args: &ArgStack,
 ) -> Result<(String, String, bool), ConfigProblem> {
     Ok((
-        global_name(&GLOBAL_BY_KEY, config, args)?,
+        global_name(&GLOBAL_BY_NAME, config, args)?,
         VALUE.read(config, args)?,
         REMOVE_ALL.read(config, args)?,
     ))
@@ -136,7 +136,7 @@ mod tests {
 
     fn cfg(key: &str, value: &str, remove_all: bool) -> SubActionConfig {
         let mut c = SubActionConfig::new();
-        c.insert("key".to_owned(), Variant::String(key.to_owned()));
+        c.insert("name".to_owned(), Variant::String(key.to_owned()));
         c.insert("value".to_owned(), Variant::String(value.to_owned()));
         c.insert("remove_all".to_owned(), Variant::Bool(remove_all));
         c

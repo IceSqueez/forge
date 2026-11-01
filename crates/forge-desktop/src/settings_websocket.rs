@@ -654,6 +654,7 @@ mod tests {
         server: Option<ServerHandle>,
     ) -> Entity<SettingsWebSocketView> {
         let overlays = OverlayServiceHandle::new(forge_runtime::OverlayServiceParts {
+            default_root: std::path::PathBuf::new(),
             date_names: forge_runtime::DateNamesHandle::default(),
             tasks: forge_net::TaskOwner::new(),
             repo: Arc::new(StubOverlays),

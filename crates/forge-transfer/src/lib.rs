@@ -30,6 +30,7 @@ pub use documents::{
     PackReference, PackSelection, QueueDocument, StepDocument, TriggerDocument,
     load_pack_inventory, resolve_pack_closure,
 };
+pub use documents::{RollbackFailures, UndoFailure};
 pub use error::TransferError;
 pub use full::{
     BackupDestination, FullBackupRequest, RESTORE_JOURNAL_FILE, RESTORE_MARKER_FILE,
@@ -54,8 +55,8 @@ pub use safety_copies::{
 };
 pub use scheduled::{
     BackupClock, FailureCategory, FailureStreak, ScheduleState, ScheduledBackupHandle,
-    ScheduledBackupParts, ScheduledBackupStatus, StorageUsed, SystemBackupClock,
-    spawn_scheduled_backups,
+    ScheduledBackupParts, ScheduledBackupStatus, ScheduledBackupStatusFeed,
+    ScheduledBackupStatusWatch, StorageUsed, SystemBackupClock, spawn_scheduled_backups,
 };
 pub use setup::ClipHotkeyDocument;
 pub use setup::{

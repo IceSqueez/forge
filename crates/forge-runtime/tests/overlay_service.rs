@@ -230,6 +230,7 @@ fn harness(definitions: Vec<OverlayDefinition>, attach_sink: bool) -> Harness {
     };
 
     let service = OverlayServiceHandle::new(OverlayServiceParts {
+        default_root: std::path::PathBuf::new(),
         date_names: forge_runtime::DateNamesHandle::default(),
         tasks: forge_net::TaskOwner::new(),
         repo: Arc::new(repo) as Arc<dyn OverlayRepo>,
@@ -1041,6 +1042,7 @@ async fn an_overlay_root_setting_that_names_nowhere_falls_back_to_the_default_di
         arrange(&settings);
 
         let service = OverlayServiceHandle::new(OverlayServiceParts {
+            default_root: std::path::PathBuf::from("/default/overlays"),
             date_names: forge_runtime::DateNamesHandle::default(),
             tasks: forge_net::TaskOwner::new(),
             repo: Arc::new(MockOverlayRepo::new()) as Arc<dyn OverlayRepo>,
@@ -1055,7 +1057,7 @@ async fn an_overlay_root_setting_that_names_nowhere_falls_back_to_the_default_di
 
         assert_eq!(
             service.root().await,
-            forge_paths::overlays_dir(),
+            std::path::PathBuf::from("/default/overlays"),
             "{label} must resolve to the default overlay directory, never to a relative path"
         );
     }
@@ -1120,6 +1122,7 @@ fn service_whose_repo_answers(removed: bool, enabled_changed: bool) -> OverlaySe
     repo.expect_set_enabled()
         .returning(move |_, _| Ok(enabled_changed));
     OverlayServiceHandle::new(OverlayServiceParts {
+        default_root: std::path::PathBuf::new(),
         date_names: forge_runtime::DateNamesHandle::default(),
         tasks: forge_net::TaskOwner::new(),
         repo: Arc::new(repo) as Arc<dyn OverlayRepo>,
@@ -1439,6 +1442,7 @@ async fn raced_overlay() -> RacedOverlay {
         .await
         .unwrap();
     let service = OverlayServiceHandle::new(OverlayServiceParts {
+        default_root: std::path::PathBuf::new(),
         date_names: forge_runtime::DateNamesHandle::default(),
         tasks: forge_net::TaskOwner::new(),
         repo: Arc::new(ChangesAfterRead {
@@ -1502,6 +1506,7 @@ async fn a_config_write_the_look_refuses_stores_nothing() {
         .returning(move |_| Ok(Some(overlay.clone())));
     repo.expect_update_config().never();
     let service = OverlayServiceHandle::new(OverlayServiceParts {
+        default_root: std::path::PathBuf::new(),
         date_names: forge_runtime::DateNamesHandle::default(),
         tasks: forge_net::TaskOwner::new(),
         repo: Arc::new(repo) as Arc<dyn OverlayRepo>,

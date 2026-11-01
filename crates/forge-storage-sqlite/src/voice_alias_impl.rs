@@ -19,8 +19,8 @@ pub(crate) async fn upsert_alias(
     };
 
     let viewer_holder: Option<(String,)> =
-        sqlx::query_as("SELECT id FROM voice_aliases WHERE viewer_id = ?")
-            .bind(&alias.viewer_id)
+        sqlx::query_as("SELECT id FROM voice_aliases WHERE alias_key = ?")
+            .bind(&alias.alias_key)
             .fetch_optional(&mut *conn)
             .await
             .map_err(SqliteStorageError::Sqlx)?;
@@ -43,11 +43,11 @@ pub(crate) async fn upsert_alias(
 
     sqlx::query(
         "INSERT INTO voice_aliases
-            (id, viewer_id, viewer_name, engine_id, voice_id,
+            (id, alias_key, viewer_name, engine_id, voice_id,
              pitch_semitones, rate_multiplier, state, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
          ON CONFLICT(id) DO UPDATE SET
-            viewer_id       = excluded.viewer_id,
+            alias_key       = excluded.alias_key,
             viewer_name     = excluded.viewer_name,
             engine_id       = excluded.engine_id,
             voice_id        = excluded.voice_id,
@@ -57,7 +57,7 @@ pub(crate) async fn upsert_alias(
             updated_at      = excluded.updated_at",
     )
     .bind(stored_id.as_str())
-    .bind(&alias.viewer_id)
+    .bind(&alias.alias_key)
     .bind(&alias.viewer_name)
     .bind(&alias.engine_id.0)
     .bind(&alias.voice_id.0)
@@ -111,7 +111,7 @@ impl SqliteVoiceAliasRepo {
 #[derive(sqlx::FromRow)]
 struct AliasRow {
     id: String,
-    viewer_id: String,
+    alias_key: String,
     viewer_name: String,
     engine_id: String,
     voice_id: String,
@@ -132,7 +132,7 @@ fn decode_alias_row(row: AliasRow) -> Result<VoiceAlias, StorageError> {
     };
     Ok(VoiceAlias {
         id: AliasId::from_string(row.id),
-        viewer_id: row.viewer_id,
+        alias_key: row.alias_key,
         viewer_name: row.viewer_name,
         engine_id: EngineId(row.engine_id),
         voice_id: VoiceId(row.voice_id),
@@ -146,7 +146,7 @@ fn decode_alias_row(row: AliasRow) -> Result<VoiceAlias, StorageError> {
 impl VoiceAliasRepo for SqliteVoiceAliasRepo {
     async fn list(&self) -> Result<Vec<VoiceAlias>, StorageError> {
         let rows: Vec<AliasRow> = sqlx::query_as(
-            "SELECT id, viewer_id, viewer_name, engine_id, voice_id,
+            "SELECT id, alias_key, viewer_name, engine_id, voice_id,
                     pitch_semitones, rate_multiplier, state
              FROM voice_aliases ORDER BY viewer_name COLLATE NOCASE",
         )
@@ -178,13 +178,13 @@ impl VoiceAliasRepo for SqliteVoiceAliasRepo {
         Ok(())
     }
 
-    async fn find_by_viewer(&self, viewer_id: &str) -> Result<Option<VoiceAlias>, StorageError> {
+    async fn find_by_alias_key(&self, alias_key: &str) -> Result<Option<VoiceAlias>, StorageError> {
         let row: Option<AliasRow> = sqlx::query_as(
-            "SELECT id, viewer_id, viewer_name, engine_id, voice_id,
+            "SELECT id, alias_key, viewer_name, engine_id, voice_id,
                     pitch_semitones, rate_multiplier, state
-             FROM voice_aliases WHERE viewer_id = ? LIMIT 1",
+             FROM voice_aliases WHERE alias_key = ? LIMIT 1",
         )
-        .bind(viewer_id)
+        .bind(alias_key)
         .fetch_optional(self.db.reader())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
@@ -265,7 +265,7 @@ mod tests {
     fn sample_alias() -> VoiceAlias {
         VoiceAlias {
             id: AliasId::generate(),
-            viewer_id: "123456".into(),
+            alias_key: "123456".into(),
             viewer_name: "testviewer".into(),
             engine_id: EngineId("piper".into()),
             voice_id: VoiceId("uk_UA-ukrainian-medium".into()),
@@ -320,25 +320,25 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn find_by_viewer_returns_none_for_unknown() {
+    async fn find_by_alias_key_returns_none_for_unknown() {
         let backend = open().await;
         let repo = backend.voice_alias_repo();
-        let result = repo.find_by_viewer("nobody").await.expect("find");
+        let result = repo.find_by_alias_key("nobody").await.expect("find");
         assert!(result.is_none());
     }
 
     #[tokio::test]
-    async fn upsert_and_find_by_viewer() {
+    async fn upsert_and_find_by_alias_key() {
         let backend = open().await;
         let repo = backend.voice_alias_repo();
         let alias = sample_alias();
         repo.upsert(&alias).await.expect("upsert");
         let found = repo
-            .find_by_viewer(&alias.viewer_id)
+            .find_by_alias_key(&alias.alias_key)
             .await
             .expect("find")
             .expect("present");
-        assert_eq!(found.viewer_id, alias.viewer_id);
+        assert_eq!(found.alias_key, alias.alias_key);
         assert_eq!(found.engine_id.0, "piper");
     }
 
@@ -349,14 +349,17 @@ mod tests {
         let alias = sample_alias();
         repo.upsert(&alias).await.expect("upsert");
         repo.delete(&alias.id).await.expect("delete");
-        let found = repo.find_by_viewer(&alias.viewer_id).await.expect("find");
+        let found = repo
+            .find_by_alias_key(&alias.alias_key)
+            .await
+            .expect("find");
         assert!(found.is_none());
     }
 
-    fn alias(id: &str, viewer_id: &str, voice: &str) -> VoiceAlias {
+    fn alias(id: &str, alias_key: &str, voice: &str) -> VoiceAlias {
         VoiceAlias {
             id: AliasId::from_string(id.into()),
-            viewer_id: viewer_id.into(),
+            alias_key: alias_key.into(),
             voice_id: VoiceId(voice.into()),
             ..sample_alias()
         }
@@ -368,14 +371,14 @@ mod tests {
             .await
             .expect("list")
             .into_iter()
-            .map(|a| (a.id.as_str().to_owned(), a.viewer_id, a.voice_id.0))
+            .map(|a| (a.id.as_str().to_owned(), a.alias_key, a.voice_id.0))
             .collect();
         rows.sort();
         rows
     }
 
-    fn row(id: &str, viewer_id: &str, voice: &str) -> (String, String, String) {
-        (id.into(), viewer_id.into(), voice.into())
+    fn row(id: &str, alias_key: &str, voice: &str) -> (String, String, String) {
+        (id.into(), alias_key.into(), voice.into())
     }
 
     #[tokio::test]
@@ -453,7 +456,7 @@ mod tests {
         assert_eq!(
             (
                 returned.id.as_str(),
-                returned.viewer_id.as_str(),
+                returned.alias_key.as_str(),
                 returned.viewer_name.as_str(),
                 returned.engine_id.0.as_str(),
                 returned.voice_id.0.as_str(),

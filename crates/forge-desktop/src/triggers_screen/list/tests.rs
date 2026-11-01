@@ -341,7 +341,7 @@ fn open_list_over(
         .returning(move |_, enabled| match &writes {
             Some(writes) => {
                 writes.lock().unwrap().push(enabled);
-                Ok(())
+                Ok(true)
             }
             None => Err(forge_storage::StorageError::Connection {
                 reason: "database is locked".to_owned(),

@@ -10,6 +10,9 @@ mod status;
 mod usage;
 
 pub use clock::{BackupClock, SystemBackupClock};
-pub use service::{ScheduledBackupHandle, ScheduledBackupParts, spawn_scheduled_backups};
+pub use service::{
+    ScheduledBackupHandle, ScheduledBackupParts, ScheduledBackupStatusFeed,
+    ScheduledBackupStatusWatch, spawn_scheduled_backups,
+};
 pub use status::{FailureCategory, FailureStreak, ScheduleState, ScheduledBackupStatus};
 pub use usage::StorageUsed;

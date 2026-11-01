@@ -27,7 +27,7 @@ use crate::harness::launch::{
     ForgeCommand, GameGuard, LaunchOptions, LaunchedForge, LivePaths, launch_forge,
 };
 use crate::harness::overlay::{OverlayPage, OverlayPages};
-use crate::harness::run::LogTail;
+use crate::harness::run::{LogRecord, LogTail};
 
 const READY_TIMEOUT: Duration = Duration::from_secs(120);
 const SUBSCRIBED_TIMEOUT: Duration = Duration::from_secs(60);
@@ -801,9 +801,7 @@ async fn sample_loop(mut state: SampleLoop) {
             Ok(records) => {
                 for record in records {
                     if record.level == "WARN" || record.level == "ERROR" {
-                        *warnings
-                            .entry(warning_key(&record.target, &record.line))
-                            .or_default() += 1;
+                        *warnings.entry(warning_key(&record)).or_default() += 1;
                     }
                 }
             }
@@ -859,24 +857,8 @@ async fn sample_loop(mut state: SampleLoop) {
     }
 }
 
-pub fn warning_key(target: &str, line: &str) -> String {
-    let message = line
-        .split_once(&format!("{target}: "))
-        .map_or(line, |(_, rest)| rest);
-    let mut cut = message.len();
-    for (index, _) in message.match_indices(' ') {
-        let word = &message[index + 1..];
-        let key_len = word.find('=').filter(|at| {
-            word[..*at]
-                .chars()
-                .all(|c| c.is_ascii_alphanumeric() || c == '_')
-        });
-        if key_len.is_some_and(|at| at > 0) {
-            cut = index;
-            break;
-        }
-    }
-    format!("{target}: {}", message[..cut].trim())
+pub fn warning_key(record: &LogRecord) -> String {
+    format!("{}: {}", record.target, record.message)
 }
 
 #[cfg(test)]
@@ -1208,8 +1190,8 @@ pub(super) mod tests {
                 "forge::x: a = b is not a field",
             ),
         ] {
-            let target = expected.split(": ").next().unwrap();
-            assert_eq!(warning_key(target, line), expected);
+            let record = LogRecord::parse(PathBuf::from("forge.log"), line).unwrap();
+            assert_eq!(warning_key(&record), expected);
         }
     }
 }

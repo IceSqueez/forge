@@ -26,69 +26,32 @@ pub struct TriggerWiring {
 pub trait TriggerInstanceRepo: Send + Sync {
     async fn list_all(&self) -> Result<Vec<TriggerInstance>, StorageError>;
 
-    async fn count_of_kinds(&self, kind_ids: &[String]) -> Result<usize, StorageError> {
-        Ok(self
-            .list_all()
-            .await?
-            .iter()
-            .filter(|instance| kind_ids.contains(&instance.kind_id))
-            .count())
-    }
+    async fn count_of_kinds(&self, kind_ids: &[String]) -> Result<usize, StorageError>;
 
     async fn list_user_defined(&self) -> Result<Vec<TriggerInstance>, StorageError>;
     async fn list_for_action(
         &self,
         action_id: ActionId,
     ) -> Result<Vec<TriggerInstance>, StorageError>;
+    async fn instances_by_action(
+        &self,
+    ) -> Result<HashMap<ActionId, Vec<TriggerInstance>>, StorageError>;
     async fn actions_using(
         &self,
         instance_id: TriggerInstanceId,
     ) -> Result<Vec<ActionId>, StorageError>;
     async fn actions_by_instance(
         &self,
-    ) -> Result<HashMap<TriggerInstanceId, Vec<ActionId>>, StorageError> {
-        let mut links = HashMap::new();
-        for instance in self.list_all().await? {
-            let actions = self.actions_using(instance.id).await?;
-            if !actions.is_empty() {
-                links.insert(instance.id, actions);
-            }
-        }
-        Ok(links)
-    }
+    ) -> Result<HashMap<TriggerInstanceId, Vec<ActionId>>, StorageError>;
 
-    async fn apply_changes(&self, changes: &TriggerChanges) -> Result<(), StorageError> {
-        for instance_id in &changes.removed {
-            for action_id in self.actions_using(*instance_id).await? {
-                self.unlink_action(action_id, *instance_id).await?;
-            }
-            self.delete(*instance_id).await?;
-        }
-        for (action_id, instance_id) in &changes.unlinked {
-            self.unlink_action(*action_id, *instance_id).await?;
-        }
-        for instance in &changes.saved {
-            self.save(instance).await?;
-        }
-        for (action_id, instance_id) in &changes.linked {
-            self.link_action(*action_id, *instance_id).await?;
-        }
-        Ok(())
-    }
+    async fn apply_changes(&self, changes: &TriggerChanges) -> Result<(), StorageError>;
 
     async fn commit_overlay_wiring(
         &self,
         wiring: &TriggerWiring,
         queues: Arc<dyn QueueRepo>,
         actions: Arc<dyn ActionRepo>,
-    ) -> Result<(), StorageError> {
-        if let Some(queue) = &wiring.created_queue {
-            queues.save(queue).await?;
-        }
-        actions.save(&wiring.action).await?;
-        self.save(&wiring.instance).await?;
-        self.link_action(wiring.action.id, wiring.instance.id).await
-    }
+    ) -> Result<(), StorageError>;
 
     async fn link_action(
         &self,
@@ -114,36 +77,20 @@ pub trait TriggerInstanceRepo: Send + Sync {
         kind_id: &str,
         name: &str,
     ) -> Result<TriggerInstanceId, StorageError>;
-    async fn set_enabled(&self, id: TriggerInstanceId, enabled: bool) -> Result<(), StorageError>;
+    async fn set_enabled(&self, id: TriggerInstanceId, enabled: bool)
+    -> Result<bool, StorageError>;
 
     async fn set_all_enabled(
         &self,
         ids: &[TriggerInstanceId],
         enabled: bool,
-    ) -> Result<(), StorageError> {
-        for id in ids {
-            self.set_enabled(*id, enabled).await?;
-        }
-        Ok(())
-    }
+    ) -> Result<(), StorageError>;
 
-    async fn toggle_enabled(&self, id: TriggerInstanceId) -> Result<Option<bool>, StorageError> {
-        let Some(instance) = self.get(id).await? else {
-            return Ok(None);
-        };
-        self.set_enabled(id, !instance.enabled).await?;
-        Ok(Some(!instance.enabled))
-    }
+    async fn toggle_enabled(&self, id: TriggerInstanceId) -> Result<Option<bool>, StorageError>;
 
-    async fn archive(&self, _id: TriggerInstanceId) -> Result<bool, StorageError> {
-        Err(StorageError::NotReady)
-    }
+    async fn archive(&self, id: TriggerInstanceId) -> Result<bool, StorageError>;
 
-    async fn restore(&self, _id: TriggerInstanceId) -> Result<bool, StorageError> {
-        Err(StorageError::NotReady)
-    }
+    async fn restore(&self, id: TriggerInstanceId) -> Result<bool, StorageError>;
 
-    async fn list_archived(&self) -> Result<Vec<TriggerInstance>, StorageError> {
-        Ok(Vec::new())
-    }
+    async fn list_archived(&self) -> Result<Vec<TriggerInstance>, StorageError>;
 }

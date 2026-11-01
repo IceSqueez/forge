@@ -7,6 +7,7 @@ use async_trait::async_trait;
 use forge_types::{RecoverMutex, Variant, VariantKind};
 use time::OffsetDateTime;
 
+use crate::globals::{append_bounded, remove_matching, type_mismatch};
 use crate::{GlobalEntry, GlobalsRepo, StorageError};
 
 #[derive(Default)]
@@ -124,5 +125,111 @@ impl GlobalsRepo for MemoryGlobals {
         };
         rows.insert(name.to_owned(), (next.clone(), persisted));
         Ok(next)
+    }
+
+    async fn peek(&self, name: &str) -> Result<Option<Variant>, StorageError> {
+        self.get(name).await
+    }
+
+    async fn persisted(&self, name: &str) -> Result<Option<bool>, StorageError> {
+        Ok(self.rows().get(name).map(|(_, persisted)| *persisted))
+    }
+
+    async fn set_persisted(&self, name: &str, persisted: bool) -> Result<bool, StorageError> {
+        Ok(self
+            .rows()
+            .get_mut(name)
+            .map(|row| row.1 = persisted)
+            .is_some())
+    }
+
+    async fn rename(&self, old_name: &str, new_name: &str) -> Result<(), StorageError> {
+        if old_name == new_name {
+            return Ok(());
+        }
+        let mut rows = self.rows();
+        if rows.contains_key(new_name) {
+            return Err(StorageError::NameCollision {
+                name: new_name.to_owned(),
+            });
+        }
+        let Some(row) = rows.remove(old_name) else {
+            return Err(StorageError::NotFound {
+                key: old_name.to_owned(),
+            });
+        };
+        rows.insert(new_name.to_owned(), row);
+        Ok(())
+    }
+
+    async fn count(&self) -> Result<usize, StorageError> {
+        Ok(self.rows().len())
+    }
+
+    async fn archive(&self, _name: &str) -> Result<bool, StorageError> {
+        Err(StorageError::NotReady)
+    }
+
+    async fn restore(&self, _name: &str) -> Result<bool, StorageError> {
+        Err(StorageError::NotReady)
+    }
+
+    async fn list_archived(&self) -> Result<Vec<GlobalEntry>, StorageError> {
+        Ok(Vec::new())
+    }
+
+    async fn array_append(
+        &self,
+        name: &str,
+        item: Variant,
+        max_len: Option<usize>,
+    ) -> Result<usize, StorageError> {
+        let mut items = match self.get(name).await? {
+            None => Vec::new(),
+            Some(Variant::Array(items)) => items,
+            Some(other) => return Err(type_mismatch(name, &other)),
+        };
+        append_bounded(&mut items, item, max_len);
+        let len = items.len();
+        let persisted = self.persisted(name).await?.unwrap_or(false);
+        self.set(name, Variant::Array(items), persisted).await?;
+        Ok(len)
+    }
+
+    async fn array_remove(
+        &self,
+        name: &str,
+        item: &Variant,
+        remove_all: bool,
+    ) -> Result<usize, StorageError> {
+        let mut items = match self.get(name).await? {
+            None => {
+                return Err(StorageError::NotFound {
+                    key: name.to_owned(),
+                });
+            }
+            Some(Variant::Array(items)) => items,
+            Some(other) => return Err(type_mismatch(name, &other)),
+        };
+        remove_matching(&mut items, item, remove_all);
+        let len = items.len();
+        let persisted = self.persisted(name).await?.unwrap_or(false);
+        self.set(name, Variant::Array(items), persisted).await?;
+        Ok(len)
+    }
+
+    async fn toggle(&self, name: &str) -> Result<bool, StorageError> {
+        let flipped = match self.get(name).await? {
+            None => {
+                return Err(StorageError::NotFound {
+                    key: name.to_owned(),
+                });
+            }
+            Some(Variant::Bool(current)) => !current,
+            Some(other) => return Err(type_mismatch(name, &other)),
+        };
+        let persisted = self.persisted(name).await?.unwrap_or(false);
+        self.set(name, Variant::Bool(flipped), persisted).await?;
+        Ok(flipped)
     }
 }

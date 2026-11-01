@@ -104,6 +104,7 @@ pub async fn apply_setup_import(
     match import.run().await {
         Ok(()) => {
             import.journal.settle_overlay_dirs().await;
+            import.journal.discard_set_aside_files().await;
             let cleanup_failures = import.clean_up().await;
             Ok(SetupImportOutcome {
                 safety_snapshot,
@@ -121,8 +122,8 @@ pub async fn apply_setup_import(
                 Err(failure) => {
                     tracing::error!(%cause, %failure, "setup import rollback incomplete");
                     Err(TransferError::SetupRollbackIncomplete {
-                        cause: cause.to_string(),
-                        failure: failure.to_string(),
+                        cause: Box::new(cause),
+                        failure,
                         snapshot: safety_snapshot,
                     })
                 }

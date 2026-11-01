@@ -9,14 +9,14 @@ use forge_registry::{
 use forge_storage::GlobalsRepo;
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry};
 
-use super::core_globals_shared::{AMOUNT, GLOBAL_BY_KEY, global_name};
+use super::core_globals_shared::{AMOUNT, GLOBAL_BY_NAME, global_name};
 use crate::core_messages;
 
-const CONFIG: ConfigSpec = ConfigSpec::new(&[&GLOBAL_BY_KEY, &AMOUNT]);
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&GLOBAL_BY_NAME, &AMOUNT]);
 
 fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<(String, i64), ConfigProblem> {
     Ok((
-        global_name(&GLOBAL_BY_KEY, config, args)?,
+        global_name(&GLOBAL_BY_NAME, config, args)?,
         AMOUNT.read(config, args)?,
     ))
 }
@@ -112,7 +112,7 @@ mod tests {
     use forge_types::{EventId, Variant};
     fn cfg(key: &str, amount: i64) -> SubActionConfig {
         let mut c = SubActionConfig::new();
-        c.insert("key".to_owned(), Variant::String(key.to_owned()));
+        c.insert("name".to_owned(), Variant::String(key.to_owned()));
         c.insert("amount".to_owned(), Variant::Int(amount));
         c
     }

@@ -199,6 +199,77 @@ impl GlobalsRepo for StubProvider {
     async fn incr(&self, name: &str, amount: i64) -> Result<Variant, StorageError> {
         self.globals_repo.incr(name, amount).await
     }
+
+    async fn peek(
+        &self,
+        name: &str,
+    ) -> Result<Option<forge_types::Variant>, forge_storage::StorageError> {
+        forge_storage::GlobalsRepo::get(self, name).await
+    }
+
+    async fn persisted(&self, name: &str) -> Result<Option<bool>, forge_storage::StorageError> {
+        Ok(forge_storage::GlobalsRepo::list(self)
+            .await?
+            .into_iter()
+            .find(|entry| entry.name == name)
+            .map(|entry| entry.persisted))
+    }
+
+    async fn set_persisted(
+        &self,
+        _name: &str,
+        _persisted: bool,
+    ) -> Result<bool, forge_storage::StorageError> {
+        Err(forge_storage::StorageError::NotReady)
+    }
+
+    async fn rename(
+        &self,
+        _old_name: &str,
+        _new_name: &str,
+    ) -> Result<(), forge_storage::StorageError> {
+        Err(forge_storage::StorageError::NotReady)
+    }
+
+    async fn count(&self) -> Result<usize, forge_storage::StorageError> {
+        Ok(forge_storage::GlobalsRepo::list(self).await?.len())
+    }
+
+    async fn archive(&self, _name: &str) -> Result<bool, forge_storage::StorageError> {
+        Err(forge_storage::StorageError::NotReady)
+    }
+
+    async fn restore(&self, _name: &str) -> Result<bool, forge_storage::StorageError> {
+        Err(forge_storage::StorageError::NotReady)
+    }
+
+    async fn list_archived(
+        &self,
+    ) -> Result<Vec<forge_storage::GlobalEntry>, forge_storage::StorageError> {
+        Ok(Vec::new())
+    }
+
+    async fn array_append(
+        &self,
+        _name: &str,
+        _item: forge_types::Variant,
+        _max_len: Option<usize>,
+    ) -> Result<usize, forge_storage::StorageError> {
+        Err(forge_storage::StorageError::NotReady)
+    }
+
+    async fn array_remove(
+        &self,
+        _name: &str,
+        _item: &forge_types::Variant,
+        _remove_all: bool,
+    ) -> Result<usize, forge_storage::StorageError> {
+        Err(forge_storage::StorageError::NotReady)
+    }
+
+    async fn toggle(&self, _name: &str) -> Result<bool, forge_storage::StorageError> {
+        Err(forge_storage::StorageError::NotReady)
+    }
 }
 
 #[async_trait]
@@ -254,6 +325,21 @@ impl UserGlobalsRepo for StubProvider {
         self.user_globals_repo
             .list_for_broadcaster(broadcaster_id)
             .await
+    }
+
+    async fn incr(
+        &self,
+        broadcaster_id: &str,
+        user_id: &str,
+        name: &str,
+        amount: i64,
+    ) -> Result<forge_types::Variant, forge_storage::StorageError> {
+        let current =
+            forge_storage::UserGlobalsRepo::get(self, broadcaster_id, user_id, name).await?;
+        let next = forge_storage::incremented(name, current, amount)?;
+        forge_storage::UserGlobalsRepo::set(self, broadcaster_id, user_id, name, next.clone())
+            .await?;
+        Ok(next)
     }
 }
 
@@ -466,4 +552,11 @@ impl DataProvider for StubProvider {
     }
 
     async fn shutdown(&self) {}
+
+    async fn commit_changes(
+        &self,
+        _changes: &[forge_storage::StoreChange],
+    ) -> Result<(), forge_storage::StorageError> {
+        Err(forge_storage::StorageError::NotReady)
+    }
 }

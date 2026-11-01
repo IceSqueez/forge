@@ -425,8 +425,8 @@ mod tests {
             .expect_list()
             .returning(move || Ok(vec![listed.clone()]));
         tdp.trigger_instance()
-            .expect_list_for_action()
-            .returning(|_| Ok(Vec::new()));
+            .expect_instances_by_action()
+            .returning(|| Ok(Default::default()));
         tdp.history().expect_save().returning(|_| Ok(()));
         let dp: Arc<dyn DataProvider> = Arc::new(tdp);
         let ctx = make_ctx_with_dp(true, dp);

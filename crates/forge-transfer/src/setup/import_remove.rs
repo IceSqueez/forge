@@ -3,6 +3,7 @@ use std::collections::BTreeSet;
 use forge_storage::{MediaReferrerKind, OverlayId, StoreChange, clip_source_referrer};
 use forge_types::{ActionId, ClipId, QueueId, ScriptId, TriggerInstanceId};
 
+use crate::documents::apply::absent;
 use crate::error::TransferError;
 use crate::setup::import_apply::{SetupImport, SetupLivePart};
 
@@ -50,10 +51,14 @@ impl SetupImport<'_, '_> {
     }
 
     pub(super) async fn unlink_local(&mut self) -> Result<(), TransferError> {
-        let repo = self.provider.trigger_instance_repo();
+        let links = self
+            .provider
+            .trigger_instance_repo()
+            .instances_by_action()
+            .await?;
         let mut links_change = !self.inventory.configuration.archived_triggers.is_empty();
         for action in self.local_action_ids() {
-            links_change |= !repo.list_for_action(action).await?.is_empty();
+            links_change |= links.get(&action).is_some_and(|linked| !linked.is_empty());
             self.changes.push(StoreChange::UnlinkAllTriggers(action));
         }
         if links_change {
@@ -65,14 +70,12 @@ impl SetupImport<'_, '_> {
     pub(super) fn remove_absent_triggers(&mut self) {
         let kept = self.setup_trigger_ids();
         let configuration = &self.inventory.configuration;
-        let absent: Vec<_> = configuration
+        let local = configuration
             .triggers
             .keys()
             .chain(configuration.archived_triggers.keys())
-            .filter(|id| !kept.contains(id))
-            .copied()
-            .collect();
-        for id in absent {
+            .copied();
+        for id in absent(local, &kept) {
             self.changes.push(StoreChange::DeleteTrigger(id));
             self.refresh.insert(SetupLivePart::Hotkeys);
         }
@@ -85,15 +88,13 @@ impl SetupImport<'_, '_> {
             .iter()
             .map(|script| script.id)
             .collect();
-        let local = &self.inventory.configuration;
-        let absent: Vec<ScriptId> = local
+        let stored = &self.inventory.configuration;
+        let local = stored
             .scripts
             .values()
-            .chain(local.archived_scripts.values())
-            .map(|script| script.id)
-            .filter(|id| !kept.contains(id))
-            .collect();
-        for id in absent {
+            .chain(stored.archived_scripts.values())
+            .map(|script| script.id);
+        for id in absent(local, &kept) {
             self.changes.push(StoreChange::DeleteScript(id));
             self.refresh.insert(SetupLivePart::Scripts);
         }
@@ -102,15 +103,8 @@ impl SetupImport<'_, '_> {
     pub(super) fn remove_absent_clips(&mut self) {
         let configuration = &self.staged.documents().configuration;
         let kept: BTreeSet<ClipId> = configuration.clips.iter().map(|clip| clip.id).collect();
-        let absent: Vec<ClipId> = self
-            .inventory
-            .configuration
-            .clips
-            .keys()
-            .filter(|id| !kept.contains(id))
-            .copied()
-            .collect();
-        for id in absent {
+        let local = self.inventory.configuration.clips.keys().copied();
+        for id in absent(local, &kept) {
             if self.inventory.configuration.clip_media.contains_key(&id) {
                 self.changes
                     .push(StoreChange::ReleaseMedia(clip_source_referrer(id)));
@@ -140,19 +134,17 @@ impl SetupImport<'_, '_> {
 
     pub(super) fn remove_absent_voice_aliases(&mut self) {
         let voices = &self.staged.documents().voices;
-        let kept: BTreeSet<&str> = voices
+        let kept: BTreeSet<_> = voices
             .aliases
             .iter()
-            .map(|alias| alias.id.as_str())
+            .map(|alias| alias.id.clone())
             .collect();
-        let absent: Vec<_> = self
+        let local = self
             .inventory
             .voice_aliases
             .iter()
-            .filter(|alias| !kept.contains(alias.id.as_str()))
-            .map(|alias| alias.id.clone())
-            .collect();
-        for id in absent {
+            .map(|alias| alias.id.clone());
+        for id in absent(local, &kept) {
             self.changes.push(StoreChange::DeleteVoiceAlias(id));
             self.refresh.insert(SetupLivePart::Tts);
         }
@@ -160,27 +152,21 @@ impl SetupImport<'_, '_> {
 
     pub(super) fn remove_absent_actions(&mut self) {
         let kept = self.setup_action_ids();
-        let configuration = &self.inventory.configuration;
-        let absent = configuration
-            .actions
-            .keys()
-            .chain(configuration.archived_actions.keys())
-            .filter(|id| !kept.contains(id))
-            .map(|id| StoreChange::DeleteAction(*id));
-        self.changes.extend(absent);
+        let removed = absent(self.local_action_ids(), &kept);
+        self.changes
+            .extend(removed.into_iter().map(StoreChange::DeleteAction));
     }
 
     pub(super) fn remove_absent_queues(&mut self) {
         let kept = self.setup_queue_ids();
-        let absent: Vec<QueueId> = self
+        let local = self
             .inventory
             .configuration
             .queues
             .values()
-            .filter(|queue| !queue.is_default() && !kept.contains(&queue.id))
-            .map(|queue| queue.id)
-            .collect();
-        for id in absent {
+            .filter(|queue| !queue.is_default())
+            .map(|queue| queue.id);
+        for id in absent(local, &kept) {
             self.changes.push(StoreChange::DeleteQueue(id));
             self.queues.removed.push(id);
             self.refresh.insert(SetupLivePart::Queues);
@@ -194,15 +180,8 @@ impl SetupImport<'_, '_> {
             .iter()
             .map(|overlay| OverlayId::new(overlay.id.as_str()))
             .collect();
-        let absent: Vec<OverlayId> = self
-            .inventory
-            .configuration
-            .overlays
-            .keys()
-            .filter(|id| !kept.contains(*id))
-            .cloned()
-            .collect();
-        for id in absent {
+        let local = self.inventory.configuration.overlays.keys().cloned();
+        for id in absent(local, &kept) {
             self.changes.push(StoreChange::ReleaseAllMedia {
                 kind: MediaReferrerKind::Overlay,
                 referrer_id: id.as_str().to_owned(),

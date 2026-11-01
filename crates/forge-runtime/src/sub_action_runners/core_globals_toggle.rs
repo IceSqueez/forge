@@ -6,10 +6,10 @@ use forge_registry::{ConfigSpec, RunContext, StepTimer, SubActionCategory, SubAc
 use forge_storage::{GlobalsRepo, StorageError};
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry};
 
-use super::core_globals_shared::{GLOBAL_BY_KEY, global_name};
+use super::core_globals_shared::{GLOBAL_BY_NAME, global_name};
 use crate::core_messages;
 
-const CONFIG: ConfigSpec = ConfigSpec::new(&[&GLOBAL_BY_KEY]);
+const CONFIG: ConfigSpec = ConfigSpec::new(&[&GLOBAL_BY_NAME]);
 
 pub(crate) struct CoreGlobalsToggleRunner {
     globals: Arc<dyn GlobalsRepo>,
@@ -57,7 +57,7 @@ impl SubActionRunner for CoreGlobalsToggleRunner {
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
         let timer = StepTimer::start(ctx, self.id());
-        let resolved_key = match global_name(&GLOBAL_BY_KEY, config, ctx.arg_stack) {
+        let resolved_key = match global_name(&GLOBAL_BY_NAME, config, ctx.arg_stack) {
             Ok(key) => key,
             Err(problem) => return (timer.invalid_config(&problem), None),
         };
@@ -102,7 +102,7 @@ mod tests {
 
     fn cfg(key: &str) -> SubActionConfig {
         let mut c = SubActionConfig::new();
-        c.insert("key".to_owned(), Variant::String(key.to_owned()));
+        c.insert("name".to_owned(), Variant::String(key.to_owned()));
         c
     }
 

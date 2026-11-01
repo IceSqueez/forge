@@ -1,7 +1,6 @@
 use async_trait::async_trait;
 use forge_storage::{
-    ACTION_REMOVED_REASON, ActionExecution, ActionRepo, ActionTelemetry, ExecutionStatus,
-    StorageError,
+    ActionExecution, ActionRepo, ActionTelemetry, ExecutionStatus, RunRefusal, StorageError,
 };
 use forge_types::{Action, ActionId, ExecutionMode, QueueId, SubActionStep};
 use time::OffsetDateTime;
@@ -157,6 +156,18 @@ impl ActionRepo for SqliteActionRepo {
 
         rows.into_iter()
             .map(|row| decode_row(row).map_err(StorageError::from))
+            .collect()
+    }
+
+    async fn ids_named(&self, name: &str) -> Result<Vec<ActionId>, StorageError> {
+        let rows: Vec<(String,)> =
+            sqlx::query_as("SELECT id FROM actions WHERE name = ? AND archived_at IS NULL")
+                .bind(name)
+                .fetch_all(self.db.reader())
+                .await
+                .map_err(SqliteStorageError::Sqlx)?;
+        rows.into_iter()
+            .map(|(id,)| parse_id::<ActionId>(&id, "action").map_err(StorageError::from))
             .collect()
     }
 
@@ -426,7 +437,7 @@ impl ActionRepo for SqliteActionRepo {
                  WHERE target_action_id = ? AND state = ?",
             )
             .bind(STATE_CANCELLED)
-            .bind(ACTION_REMOVED_REASON)
+            .bind(RunRefusal::ActionRemoved.code())
             .bind(now_ms)
             .bind(&id_str)
             .bind(STATE_PENDING)

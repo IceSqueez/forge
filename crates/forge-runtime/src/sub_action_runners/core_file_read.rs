@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::path::PathBuf;
 
 use crate::core_messages;
 use async_trait::async_trait;
@@ -74,7 +75,15 @@ fn read_config(
     ))
 }
 
-pub struct CoreFileReadRunner;
+pub struct CoreFileReadRunner {
+    assets_root: PathBuf,
+}
+
+impl CoreFileReadRunner {
+    pub fn new(assets_root: PathBuf) -> Self {
+        Self { assets_root }
+    }
+}
 
 #[async_trait]
 impl SubActionRunner for CoreFileReadRunner {
@@ -128,10 +137,11 @@ impl SubActionRunner for CoreFileReadRunner {
             Err(problem) => return (timer.invalid_config(&problem), None),
         };
 
-        let (outcome, produced) = match super::file_sandbox::resolve_sandboxed(&path).await {
-            Err(reason) => (SubActionOutcome::Failed(reason.into()), None),
-            Ok(abs_path) => read_into(&abs_path, read_as, target_var, ctx).await,
-        };
+        let (outcome, produced) =
+            match super::file_sandbox::resolve_sandboxed(&self.assets_root, &path).await {
+                Err(reason) => (SubActionOutcome::Failed(reason.into()), None),
+                Ok(abs_path) => read_into(&abs_path, read_as, target_var, ctx).await,
+            };
 
         (timer.finish(outcome), produced)
     }

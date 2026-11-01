@@ -577,7 +577,7 @@ fn form_to_alias(form: &AliasForm, cx: &App) -> VoiceAlias {
     let rate = parse_rate(form.rate.read(cx).content()).unwrap_or_default();
     VoiceAlias {
         id: form.editing.clone().unwrap_or_else(AliasId::generate),
-        viewer_id: form
+        alias_key: form
             .locked_key
             .clone()
             .unwrap_or_else(|| AliasKey::new(form.platform.kind(), &viewer).to_stored()),
@@ -830,7 +830,7 @@ mod tests {
     fn stored(state: AliasState) -> VoiceAlias {
         VoiceAlias {
             id: AliasId::from_string("a1".to_owned()),
-            viewer_id: "youtube:UCx9".to_owned(),
+            alias_key: "youtube:UCx9".to_owned(),
             viewer_name: "alice".to_owned(),
             engine_id: EngineId("elevenlabs".to_owned()),
             voice_id: VoiceId("en_US-amy".to_owned()),
@@ -845,7 +845,7 @@ mod tests {
             cx,
             Some(existing.id.clone()),
             Some(identity(
-                &existing.viewer_id,
+                &existing.alias_key,
                 &existing.viewer_name,
                 platform_scope(PlatformId::YouTube),
             )),

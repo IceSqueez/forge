@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -8,9 +9,74 @@ use time::OffsetDateTime;
 
 use crate::{CatalogRevision, StorageError};
 
-pub const SUPERSEDED_REASON: &str = "superseded";
-pub const CANCELLED_REASON: &str = "cancelled";
-pub const ACTION_REMOVED_REASON: &str = "action_removed";
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum RunRefusal {
+    Missed,
+    Superseded,
+    Cancelled,
+    ActionRemoved,
+    ActionDisabled,
+    ActionNotFound,
+    ActionsUnavailable,
+    QueuesClosed,
+    Unreadable,
+    QueuePaused,
+    QueueDraining,
+    QueueOverflow,
+    QueueNotFound,
+    QueueDeleted,
+    EngineStopped,
+}
+
+impl RunRefusal {
+    pub const ALL: [Self; 15] = [
+        Self::Missed,
+        Self::Superseded,
+        Self::Cancelled,
+        Self::ActionRemoved,
+        Self::ActionDisabled,
+        Self::ActionNotFound,
+        Self::ActionsUnavailable,
+        Self::QueuesClosed,
+        Self::Unreadable,
+        Self::QueuePaused,
+        Self::QueueDraining,
+        Self::QueueOverflow,
+        Self::QueueNotFound,
+        Self::QueueDeleted,
+        Self::EngineStopped,
+    ];
+
+    pub const fn code(self) -> &'static str {
+        match self {
+            Self::Missed => "missed",
+            Self::Superseded => "superseded",
+            Self::Cancelled => "cancelled",
+            Self::ActionRemoved => "action_removed",
+            Self::ActionDisabled => "action_disabled",
+            Self::ActionNotFound => "action_not_found",
+            Self::ActionsUnavailable => "actions_unavailable",
+            Self::QueuesClosed => "queues_closed",
+            Self::Unreadable => "unreadable",
+            Self::QueuePaused => "queue_paused",
+            Self::QueueDraining => "queue_draining",
+            Self::QueueOverflow => "queue_pending_overflow",
+            Self::QueueNotFound => "queue_not_found",
+            Self::QueueDeleted => "queue_deleted",
+            Self::EngineStopped => "engine_stopped",
+        }
+    }
+
+    pub fn from_code(code: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|reason| reason.code() == code)
+    }
+}
+
+impl fmt::Display for RunRefusal {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.code())
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ScheduledRunId(i64);
@@ -67,7 +133,7 @@ pub struct ScheduledRunSpec {
     pub missed_run_policy: MissedRunPolicy,
     pub args: BTreeMap<String, Variant>,
     pub scheduled_by_action: Option<ActionId>,
-    pub scheduled_by_run: Option<String>,
+    pub scheduled_by_run: Option<EventId>,
     pub trigger_event_id: Option<EventId>,
     pub replay: bool,
     pub scheduled_at: OffsetDateTime,
@@ -79,7 +145,7 @@ pub struct ScheduledRun {
     pub id: ScheduledRunId,
     pub spec: ScheduledRunSpec,
     pub state: ScheduledRunState,
-    pub outcome_reason: Option<String>,
+    pub outcome_reason: Option<RunRefusal>,
     pub resolved_at: Option<OffsetDateTime>,
 }
 
@@ -105,7 +171,7 @@ pub trait ScheduledRunRepo: Send + Sync {
     async fn fail_unreadable_due(
         &self,
         now: OffsetDateTime,
-        reason: &str,
+        reason: RunRefusal,
     ) -> Result<Vec<ScheduledRunId>, StorageError>;
 
     async fn next_due(&self) -> Result<Option<OffsetDateTime>, StorageError>;
@@ -122,7 +188,7 @@ pub trait ScheduledRunRepo: Send + Sync {
         &self,
         id: ScheduledRunId,
         outcome: ScheduledRunOutcome,
-        reason: Option<String>,
+        reason: Option<RunRefusal>,
         at: OffsetDateTime,
     ) -> Result<bool, StorageError>;
 
@@ -181,13 +247,12 @@ impl ScheduledRunRepo for RevisingScheduledRunRepo {
     async fn fail_unreadable_due(
         &self,
         now: OffsetDateTime,
-        reason: &str,
+        reason: RunRefusal,
     ) -> Result<Vec<ScheduledRunId>, StorageError> {
         let inner = Arc::clone(&self.inner);
-        let reason = reason.to_owned();
         self.revision
             .after_when(
-                async move { inner.fail_unreadable_due(now, &reason).await },
+                async move { inner.fail_unreadable_due(now, reason).await },
                 |failed| !failed.is_empty(),
             )
             .await
@@ -231,7 +296,7 @@ impl ScheduledRunRepo for RevisingScheduledRunRepo {
         &self,
         id: ScheduledRunId,
         outcome: ScheduledRunOutcome,
-        reason: Option<String>,
+        reason: Option<RunRefusal>,
         at: OffsetDateTime,
     ) -> Result<bool, StorageError> {
         let inner = Arc::clone(&self.inner);

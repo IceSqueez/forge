@@ -341,6 +341,9 @@ mod tests {
             .expect_list_for_action()
             .returning(|_| Ok(Vec::new()));
         triggers
+            .expect_instances_by_action()
+            .returning(|| Ok(Default::default()));
+        triggers
             .expect_actions_by_instance()
             .returning(|| Ok(Default::default()));
         triggers.expect_unlink_action().returning(move |_, _| {

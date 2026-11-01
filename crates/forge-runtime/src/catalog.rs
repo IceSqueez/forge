@@ -59,12 +59,14 @@ impl CatalogSnapshot {
             bindings: Vec::new(),
             bindings_by_kind: HashMap::new(),
         };
-        for action in actions.list().await? {
+        let listed = actions.list().await?;
+        let mut links = trigger_instances.instances_by_action().await?;
+        for action in listed {
             if !action.enabled {
                 continue;
             }
             let action = Arc::new(action);
-            for instance in trigger_instances.list_for_action(action.id).await? {
+            for instance in links.remove(&action.id).unwrap_or_default() {
                 if !instance.enabled {
                     continue;
                 }
@@ -232,6 +234,82 @@ mod tests {
         ) -> Result<u64, StorageError> {
             Ok(0)
         }
+
+        async fn count(&self) -> Result<usize, forge_storage::StorageError> {
+            Ok(forge_storage::ActionRepo::list(self).await?.len())
+        }
+
+        async fn ids_named(
+            &self,
+            name: &str,
+        ) -> Result<Vec<forge_types::ActionId>, forge_storage::StorageError> {
+            Ok(forge_storage::ActionRepo::list(self)
+                .await?
+                .into_iter()
+                .filter(|action| action.name == name)
+                .map(|action| action.id)
+                .collect())
+        }
+
+        async fn record_executions(
+            &self,
+            executions: &[forge_storage::ActionExecution],
+        ) -> Result<(), forge_storage::StorageError> {
+            for execution in executions {
+                self.record_execution(
+                    execution.action_id,
+                    execution.started_at,
+                    execution.duration_ms,
+                    execution.status,
+                )
+                .await?;
+            }
+            Ok(())
+        }
+
+        async fn set_enabled(
+            &self,
+            _id: forge_types::ActionId,
+            _enabled: bool,
+        ) -> Result<bool, forge_storage::StorageError> {
+            Err(forge_storage::StorageError::NotReady)
+        }
+
+        async fn toggle_enabled(
+            &self,
+            _id: forge_types::ActionId,
+        ) -> Result<Option<bool>, forge_storage::StorageError> {
+            Err(forge_storage::StorageError::NotReady)
+        }
+
+        async fn duplicate(
+            &self,
+            _source_id: forge_types::ActionId,
+            _new_id: forge_types::ActionId,
+            _new_name: &str,
+        ) -> Result<(), forge_storage::StorageError> {
+            Err(forge_storage::StorageError::NotReady)
+        }
+
+        async fn archive_reporting_cancelled_runs(
+            &self,
+            _id: forge_types::ActionId,
+        ) -> Result<Option<u64>, forge_storage::StorageError> {
+            Err(forge_storage::StorageError::NotReady)
+        }
+
+        async fn restore(
+            &self,
+            _id: forge_types::ActionId,
+        ) -> Result<bool, forge_storage::StorageError> {
+            Err(forge_storage::StorageError::NotReady)
+        }
+
+        async fn list_archived(
+            &self,
+        ) -> Result<Vec<forge_types::Action>, forge_storage::StorageError> {
+            Ok(Vec::new())
+        }
     }
 
     type Links = Arc<StdMutex<HashMap<ActionId, Vec<TriggerInstance>>>>;
@@ -249,8 +327,8 @@ mod tests {
         let mut instances = MockTriggerInstanceRepo::new();
         let served = Arc::clone(&links);
         instances
-            .expect_list_for_action()
-            .returning(move |id| Ok(served.lock().unwrap().get(&id).cloned().unwrap_or_default()));
+            .expect_instances_by_action()
+            .returning(move || Ok(served.lock().unwrap().clone()));
         let revision = CatalogRevision::new();
         let catalog = Catalog::new(
             Arc::clone(&actions) as Arc<dyn ActionRepo>,

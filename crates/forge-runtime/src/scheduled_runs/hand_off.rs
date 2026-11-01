@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use forge_events::{Event, EventSource};
 use forge_storage::{
-    ActionRepo, MissedRunPolicy, ScheduledRun, ScheduledRunId, ScheduledRunOutcome,
+    ActionRepo, MissedRunPolicy, RunRefusal, ScheduledRun, ScheduledRunId, ScheduledRunOutcome,
     ScheduledRunRepo, ScheduledRunState, StorageError,
 };
 use forge_types::{Action, ActionId, EventId, QueueId};
@@ -15,29 +15,21 @@ use tracing::{info, warn};
 use super::origin::ScheduledOrigin;
 use super::provenance::{initial_args, lateness};
 use crate::catalog::Catalog;
-use crate::queue_scheduler::QUEUE_NOT_FOUND_REASON;
 use crate::{EventBus, QueueAdmission, QueueSchedulerHandle, SchedulerRequest};
 use forge_types::WallClock;
 
 pub const SCHEDULED_RUN_DUE_KIND: &str = "scheduled_run.due";
 
-pub const MISSED_REASON: &str = "missed";
-pub const ACTION_DISABLED_REASON: &str = "action_disabled";
-pub const ACTION_NOT_FOUND_REASON: &str = "action_not_found";
-pub const ACTIONS_UNAVAILABLE_REASON: &str = "actions_unavailable";
-pub const QUEUES_CLOSED_REASON: &str = "queues_closed";
-pub const UNREADABLE_REASON: &str = "unreadable";
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HandOff {
     Dispatched,
-    Skipped(&'static str),
-    Failed(&'static str),
-    WaitingForQueue(&'static str),
+    Skipped(RunRefusal),
+    Failed(RunRefusal),
+    WaitingForQueue(RunRefusal),
     NotPending,
 }
 
-pub(super) type QueueHolds = HashMap<QueueId, &'static str>;
+pub(super) type QueueHolds = HashMap<QueueId, RunRefusal>;
 
 enum Target {
     Ready(Arc<Action>),
@@ -69,7 +61,7 @@ impl HandOffPath {
                 .settle(
                     run.id,
                     ScheduledRunOutcome::Skipped,
-                    Some(MISSED_REASON.to_owned()),
+                    Some(RunRefusal::Missed),
                     now,
                 )
                 .await?;
@@ -81,7 +73,7 @@ impl HandOffPath {
                 late_secs = late.as_secs(),
                 "scheduled run skipped: missed by more than its late tolerance"
             );
-            return Ok(HandOff::Skipped(MISSED_REASON));
+            return Ok(HandOff::Skipped(RunRefusal::Missed));
         }
         self.claim_and_hand_off(&run, late, holds).await
     }
@@ -129,12 +121,12 @@ impl HandOffPath {
         Ok(outcome)
     }
 
-    async fn queue_hold(&self, action: &Action, holds: &mut QueueHolds) -> Option<&'static str> {
+    async fn queue_hold(&self, action: &Action, holds: &mut QueueHolds) -> Option<RunRefusal> {
         if action.bypass_pause {
             return None;
         }
         if let Some(reason) = holds.get(&action.queue_id) {
-            return Some(reason);
+            return Some(*reason);
         }
         let reason = self
             .queues
@@ -180,15 +172,15 @@ impl HandOffPath {
             }
             Err(e) => {
                 warn!(error = %e, "scheduled run: action catalog unavailable");
-                return Target::Refused(HandOff::Failed(ACTIONS_UNAVAILABLE_REASON));
+                return Target::Refused(HandOff::Failed(RunRefusal::ActionsUnavailable));
             }
         }
         match self.actions.get(action_id).await {
-            Ok(Some(_)) => Target::Refused(HandOff::Skipped(ACTION_DISABLED_REASON)),
-            Ok(None) => Target::Refused(HandOff::Failed(ACTION_NOT_FOUND_REASON)),
+            Ok(Some(_)) => Target::Refused(HandOff::Skipped(RunRefusal::ActionDisabled)),
+            Ok(None) => Target::Refused(HandOff::Failed(RunRefusal::ActionNotFound)),
             Err(e) => {
                 warn!(error = %e, "scheduled run: action lookup failed");
-                Target::Refused(HandOff::Failed(ACTIONS_UNAVAILABLE_REASON))
+                Target::Refused(HandOff::Failed(RunRefusal::ActionsUnavailable))
             }
         }
     }
@@ -211,16 +203,16 @@ impl HandOffPath {
         id
     }
 
-    async fn settle(&self, run: &ScheduledRun, outcome: ScheduledRunOutcome, reason: &str) {
+    async fn settle(&self, run: &ScheduledRun, outcome: ScheduledRunOutcome, reason: RunRefusal) {
         warn!(
             scheduled_run = run.id.get(),
             action = %run.spec.target_action_id,
-            reason,
+            %reason,
             "scheduled run not handed off"
         );
         let settled = self
             .repo
-            .settle(run.id, outcome, Some(reason.to_owned()), self.clock.now())
+            .settle(run.id, outcome, Some(reason), self.clock.now())
             .await;
         if let Err(e) = settled {
             warn!(scheduled_run = run.id.get(), error = %e, "could not record the scheduled run outcome");
@@ -228,10 +220,10 @@ impl HandOffPath {
     }
 }
 
-fn refusal_reason(refusal: &RuntimeError) -> &'static str {
+fn refusal_reason(refusal: &RuntimeError) -> RunRefusal {
     match refusal {
-        RuntimeError::QueueRefused(reason) => reason,
-        RuntimeError::QueueNotFound(_) => QUEUE_NOT_FOUND_REASON,
-        _ => QUEUES_CLOSED_REASON,
+        RuntimeError::QueueRefused(reason) => *reason,
+        RuntimeError::QueueNotFound(_) => RunRefusal::QueueNotFound,
+        _ => RunRefusal::QueuesClosed,
     }
 }

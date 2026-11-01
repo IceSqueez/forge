@@ -9,7 +9,7 @@ use crate::{
     TriggerInstanceRepo, TtsFiltersRepo, UserGlobalsRepo, ViewerRepo, VoiceAliasRepo,
 };
 
-pub const EXPECTED_SCHEMA_VERSION: u32 = 70;
+pub const EXPECTED_SCHEMA_VERSION: u32 = 71;
 
 pub const DATABASE_FILE_NAME: &str = "forge.db";
 const WAL_SUFFIX: &str = "-wal";
@@ -51,11 +51,7 @@ pub trait DataProvider:
 
     fn scheduled_run_revision(&self) -> CatalogRevision;
 
-    async fn commit_changes(&self, _changes: &[StoreChange]) -> Result<(), StorageError> {
-        Err(StorageError::Connection {
-            reason: "this backend has no transactional writes".to_owned(),
-        })
-    }
+    async fn commit_changes(&self, changes: &[StoreChange]) -> Result<(), StorageError>;
 
     async fn export(&self, path: &std::path::Path) -> Result<(), StorageError>;
 

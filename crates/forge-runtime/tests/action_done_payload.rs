@@ -65,19 +65,20 @@ async fn rig() -> Rig {
 
     let bus = EventBus::new(Arc::new(NullEventLogRepo));
     let cancel = Arc::new(ActionCancelRegistry::new());
-    let engine = spawn_action_engine(
-        Arc::clone(&bus),
-        Catalog::new(
+    let engine = spawn_action_engine(forge_runtime::ActionEngineParts {
+        bus: Arc::clone(&bus),
+        catalog: Catalog::new(
             dp.action_repo(),
             dp.trigger_instance_repo(),
             dp.catalog_revision(),
         ),
-        dp.action_repo(),
-        dp.history_repo(),
-        Arc::new(registry),
-        Arc::clone(&cancel),
-        forge_runtime::DateNamesHandle::default(),
-    );
+        actions: dp.action_repo(),
+        history: dp.history_repo(),
+        sub_action_registry: Arc::new(registry),
+        cancel_registry: Arc::clone(&cancel),
+        date_names: forge_runtime::DateNamesHandle::default(),
+        config: forge_runtime::Config::default(),
+    });
     let sched = QueueScheduler::spawn(
         engine,
         Arc::clone(&bus),

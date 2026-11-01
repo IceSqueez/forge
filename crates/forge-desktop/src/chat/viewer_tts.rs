@@ -65,7 +65,7 @@ impl ViewerDrawer {
         let repo = Arc::clone(&self.services.voice_alias_repo);
         let lookup_key = key.clone();
         let reply = crate::async_bridge::on_runtime(&self.services.rt_handle, async move {
-            repo.find_by_viewer(&lookup_key).await
+            repo.find_by_alias_key(&lookup_key).await
         });
         cx.spawn_in(window, async move |this, cx| {
             let Ok(found) = reply.await else {
@@ -207,7 +207,7 @@ mod tests {
     fn stored_alias() -> VoiceAlias {
         VoiceAlias {
             id: AliasId::from_string("a1".to_owned()),
-            viewer_id: VIEWER_KEY.to_owned(),
+            alias_key: VIEWER_KEY.to_owned(),
             viewer_name: "alice".to_owned(),
             engine_id: EngineId("piper".to_owned()),
             voice_id: VoiceId("amy".to_owned()),
@@ -219,7 +219,7 @@ mod tests {
 
     fn finding(found: Option<VoiceAlias>) -> MockVoiceAliasRepo {
         let mut repo = MockVoiceAliasRepo::new();
-        repo.expect_find_by_viewer()
+        repo.expect_find_by_alias_key()
             .withf(|key| key == VIEWER_KEY)
             .returning(move |_| Ok(found.clone()));
         repo
@@ -334,7 +334,7 @@ mod tests {
     fn a_failed_alias_lookup_reports_an_error_instead_of_opening_the_form(cx: &mut TestAppContext) {
         let rt = runtime();
         let mut repo = MockVoiceAliasRepo::new();
-        repo.expect_find_by_viewer().returning(|_| {
+        repo.expect_find_by_alias_key().returning(|_| {
             Err(StorageError::Connection {
                 reason: "closed".to_owned(),
             })
@@ -370,7 +370,7 @@ mod tests {
         for (lookup_fails, expected) in [(false, ToastKind::Success), (true, ToastKind::Error)] {
             let rt = runtime();
             let mut repo = MockVoiceAliasRepo::new();
-            repo.expect_find_by_viewer()
+            repo.expect_find_by_alias_key()
                 .withf(|key| key == VIEWER_KEY)
                 .returning(move |_| {
                     if lookup_fails {
@@ -380,7 +380,7 @@ mod tests {
                     }
                 });
             repo.expect_upsert()
-                .withf(|alias| alias.viewer_id == VIEWER_KEY && alias.state == AliasState::Blocked)
+                .withf(|alias| alias.alias_key == VIEWER_KEY && alias.state == AliasState::Blocked)
                 .returning(|alias| Ok(alias.clone()));
             let (view, vcx) = mount_in_window(cx, &rt, repo);
 
@@ -410,7 +410,7 @@ mod tests {
         let repo_calls = Arc::new(AtomicUsize::new(0));
         let mut repo = MockVoiceAliasRepo::new();
         let finds = Arc::clone(&repo_calls);
-        repo.expect_find_by_viewer().returning(move |_| {
+        repo.expect_find_by_alias_key().returning(move |_| {
             finds.fetch_add(1, Ordering::SeqCst);
             Ok(None)
         });

@@ -206,6 +206,77 @@ impl GlobalsRepo for TestDataProvider {
     async fn incr(&self, name: &str, amount: i64) -> Result<Variant, StorageError> {
         self.globals_repo.incr(name, amount).await
     }
+
+    async fn peek(
+        &self,
+        name: &str,
+    ) -> Result<Option<forge_types::Variant>, forge_storage::StorageError> {
+        forge_storage::GlobalsRepo::get(self, name).await
+    }
+
+    async fn persisted(&self, name: &str) -> Result<Option<bool>, forge_storage::StorageError> {
+        Ok(forge_storage::GlobalsRepo::list(self)
+            .await?
+            .into_iter()
+            .find(|entry| entry.name == name)
+            .map(|entry| entry.persisted))
+    }
+
+    async fn set_persisted(
+        &self,
+        _name: &str,
+        _persisted: bool,
+    ) -> Result<bool, forge_storage::StorageError> {
+        Err(forge_storage::StorageError::NotReady)
+    }
+
+    async fn rename(
+        &self,
+        _old_name: &str,
+        _new_name: &str,
+    ) -> Result<(), forge_storage::StorageError> {
+        Err(forge_storage::StorageError::NotReady)
+    }
+
+    async fn count(&self) -> Result<usize, forge_storage::StorageError> {
+        Ok(forge_storage::GlobalsRepo::list(self).await?.len())
+    }
+
+    async fn archive(&self, _name: &str) -> Result<bool, forge_storage::StorageError> {
+        Err(forge_storage::StorageError::NotReady)
+    }
+
+    async fn restore(&self, _name: &str) -> Result<bool, forge_storage::StorageError> {
+        Err(forge_storage::StorageError::NotReady)
+    }
+
+    async fn list_archived(
+        &self,
+    ) -> Result<Vec<forge_storage::GlobalEntry>, forge_storage::StorageError> {
+        Ok(Vec::new())
+    }
+
+    async fn array_append(
+        &self,
+        _name: &str,
+        _item: forge_types::Variant,
+        _max_len: Option<usize>,
+    ) -> Result<usize, forge_storage::StorageError> {
+        Err(forge_storage::StorageError::NotReady)
+    }
+
+    async fn array_remove(
+        &self,
+        _name: &str,
+        _item: &forge_types::Variant,
+        _remove_all: bool,
+    ) -> Result<usize, forge_storage::StorageError> {
+        Err(forge_storage::StorageError::NotReady)
+    }
+
+    async fn toggle(&self, _name: &str) -> Result<bool, forge_storage::StorageError> {
+        Err(forge_storage::StorageError::NotReady)
+    }
 }
 
 #[async_trait]
@@ -261,6 +332,21 @@ impl UserGlobalsRepo for TestDataProvider {
         self.user_globals_repo
             .list_for_broadcaster(broadcaster_id)
             .await
+    }
+
+    async fn incr(
+        &self,
+        broadcaster_id: &str,
+        user_id: &str,
+        name: &str,
+        amount: i64,
+    ) -> Result<forge_types::Variant, forge_storage::StorageError> {
+        let current =
+            forge_storage::UserGlobalsRepo::get(self, broadcaster_id, user_id, name).await?;
+        let next = forge_storage::incremented(name, current, amount)?;
+        forge_storage::UserGlobalsRepo::set(self, broadcaster_id, user_id, name, next.clone())
+            .await?;
+        Ok(next)
     }
 }
 
@@ -473,6 +559,15 @@ impl DataProvider for TestDataProvider {
     }
 
     async fn shutdown(&self) {}
+
+    async fn commit_changes(
+        &self,
+        _changes: &[forge_storage::StoreChange],
+    ) -> Result<(), forge_storage::StorageError> {
+        Err(forge_storage::StorageError::Connection {
+            reason: "this backend has no transactional writes".to_owned(),
+        })
+    }
 }
 
 pub fn test_dp() -> Arc<dyn DataProvider> {
@@ -597,19 +692,20 @@ impl CredentialsRepo for MemCreds {
 }
 
 pub(crate) fn test_engine(bus: &Arc<EventBus>, dp: &dyn DataProvider) -> Arc<ActionEngineHandle> {
-    Arc::new(spawn_action_engine(
-        Arc::clone(bus),
-        Catalog::new(
+    Arc::new(spawn_action_engine(forge_runtime::ActionEngineParts {
+        bus: Arc::clone(bus),
+        catalog: Catalog::new(
             dp.action_repo(),
             dp.trigger_instance_repo(),
             dp.catalog_revision(),
         ),
-        dp.action_repo(),
-        dp.history_repo(),
-        Arc::new(SubActionRegistry::new()),
-        Arc::new(ActionCancelRegistry::new()),
-        forge_runtime::DateNamesHandle::default(),
-    ))
+        actions: dp.action_repo(),
+        history: dp.history_repo(),
+        sub_action_registry: Arc::new(SubActionRegistry::new()),
+        cancel_registry: Arc::new(ActionCancelRegistry::new()),
+        date_names: forge_runtime::DateNamesHandle::default(),
+        config: forge_runtime::Config::default(),
+    }))
 }
 
 pub(crate) fn app_state_over(
@@ -656,6 +752,7 @@ pub(crate) fn server_config(
     let bus = EventBus::new(Arc::new(NullEventLogRepo));
     let action_engine = test_engine(&bus, &*dp);
     ServerConfig::new(
+        PathBuf::new(),
         settings,
         credentials,
         bus,
@@ -664,7 +761,6 @@ pub(crate) fn server_config(
         Arc::clone(&dp) as Arc<dyn UserGlobalsRepo>,
         dp.overlay_repo(),
         action_engine,
-        PathBuf::new(),
     )
 }
 

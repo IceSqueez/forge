@@ -1,3 +1,4 @@
+use crate::chain::skipped_telemetry;
 use crate::error::RuntimeError;
 use std::sync::Arc;
 use std::time::Duration;
@@ -8,11 +9,11 @@ use forge_events::{
 };
 use forge_net::{TaskOwner, TaskShutdown};
 use forge_registry::{CancelSignal, ChainSignal, RunContext, RunningAction, SubActionRegistry};
-use forge_storage::{ActionExecution, ActionRepo, ExecutionStatus, HistoryRepo};
+use forge_storage::{ActionExecution, ActionRepo, ExecutionStatus, HistoryRepo, RunRefusal};
 use forge_types::{
     Action, ActionId, ArgStack, DEFAULT_QUEUE_ID, EventId, ExecutionContext, ExecutionMetadata,
     ExecutionOutcome, MessageRef, NamesLanguage, QueueId, SubActionOutcome, SubActionStep,
-    SubActionTelemetry, UserText, VerbatimText,
+    UserText, VerbatimText,
 };
 use time::OffsetDateTime;
 use tokio::sync::{mpsc, oneshot};
@@ -25,15 +26,13 @@ use crate::core_messages;
 use crate::date_names::DateNamesHandle;
 use crate::integration_gate::{GatedLeafExecutor, IntegrationGate};
 use crate::run_history::RunHistoryWriter;
-use crate::scheduled_runs::{
-    ACTION_DISABLED_REASON, ACTION_NOT_FOUND_REASON, ACTIONS_UNAVAILABLE_REASON, ScheduledOrigin,
-};
+use crate::scheduled_runs::ScheduledOrigin;
 use crate::{Config, EventBus};
 
 const EXECUTION_INTAKE_CAPACITY: usize = 256;
+const CAUSATION_DEPTH_SKIP_REASON: &str = "causation_depth_exceeded";
 const QUICK_ACTION_INTAKE_CAPACITY: usize = 64;
 const MAX_CAUSATION_DEPTH: usize = 16;
-const CAUSATION_DEPTH_SKIP_REASON: &str = "causation_depth_exceeded";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct QuickActionOrigin {
@@ -176,19 +175,20 @@ struct ActionEngine {
 }
 
 impl ActionEngine {
-    pub(crate) fn spawn(
-        bus: Arc<EventBus>,
-        catalog: Arc<Catalog>,
-        actions: Arc<dyn ActionRepo>,
-        history: Arc<dyn HistoryRepo>,
-        sub_action_registry: Arc<SubActionRegistry>,
-        cancel_registry: Arc<ActionCancelRegistry>,
-        date_names: DateNamesHandle,
-    ) -> ActionEngineHandle {
+    fn spawn(parts: ActionEngineParts) -> ActionEngineHandle {
+        let ActionEngineParts {
+            bus,
+            catalog,
+            actions,
+            history,
+            sub_action_registry,
+            cancel_registry,
+            date_names,
+            config,
+        } = parts;
         let (tx, rx) = mpsc::channel(EXECUTION_INTAKE_CAPACITY);
         let (quick_tx, quick_rx) = mpsc::channel(QUICK_ACTION_INTAKE_CAPACITY);
         let tasks = TaskOwner::new();
-        let config = Config::default();
         let gate = Arc::new(crate::condition::ConditionGate::new(&config));
         let chain_engine = Arc::new(ChainEngine::on_bus(
             Arc::clone(&sub_action_registry),
@@ -274,17 +274,17 @@ impl ActionEngine {
     async fn refuse_unrunnable(&self, req: ExecutionRequest, origin: Option<ScheduledOrigin>) {
         let (reason, queue_id, failure) = match self.actions.get(req.action_id).await {
             Ok(Some(action)) => (
-                ACTION_DISABLED_REASON,
+                RunRefusal::ActionDisabled,
                 action.queue_id,
                 core_messages::action_disabled(),
             ),
             Ok(None) => (
-                ACTION_NOT_FOUND_REASON,
+                RunRefusal::ActionNotFound,
                 DEFAULT_QUEUE_ID,
                 core_messages::unknown_action(req.action_id),
             ),
             Err(e) => (
-                ACTIONS_UNAVAILABLE_REASON,
+                RunRefusal::ActionsUnavailable,
                 DEFAULT_QUEUE_ID,
                 core_messages::storage_failed(e),
             ),
@@ -296,15 +296,15 @@ impl ActionEngine {
         &self,
         req: ExecutionRequest,
         origin: Option<ScheduledOrigin>,
-        reason: &str,
+        reason: RunRefusal,
         queue_id: QueueId,
         failure: MessageRef,
     ) {
-        warn!(action = %req.action_id, reason, "action run refused");
+        warn!(action = %req.action_id, %reason, "action run refused");
         self.bus.publish(
             ActionSkipped {
                 action_id: req.action_id,
-                reason: reason.to_owned(),
+                reason: reason.code().to_owned(),
                 queue_id,
             }
             .into_event(EventSource::Core, Some(req.trigger_event_id)),
@@ -378,7 +378,7 @@ impl ActionEngine {
                 self.refuse(
                     req,
                     origin,
-                    ACTIONS_UNAVAILABLE_REASON,
+                    RunRefusal::ActionsUnavailable,
                     DEFAULT_QUEUE_ID,
                     core_messages::storage_failed(e),
                 );
@@ -650,80 +650,24 @@ async fn run_quick_action(
     let _ = req.outcome.send(reported);
 }
 
-pub(crate) fn skipped_telemetry(index: usize, kind_id: &str) -> SubActionTelemetry {
-    SubActionTelemetry {
-        args_in: ::std::collections::BTreeMap::new(),
-        produced: ::std::collections::BTreeMap::new(),
-        index,
-        kind: kind_id.to_owned(),
-        started_at: OffsetDateTime::now_utc(),
-        duration_ms: 0,
-        outcome: SubActionOutcome::Skipped(core_messages::unknown_step_kind(kind_id).into()),
-    }
+pub struct ActionEngineParts {
+    pub bus: Arc<EventBus>,
+    pub catalog: Arc<Catalog>,
+    pub actions: Arc<dyn ActionRepo>,
+    pub history: Arc<dyn HistoryRepo>,
+    pub sub_action_registry: Arc<SubActionRegistry>,
+    pub cancel_registry: Arc<ActionCancelRegistry>,
+    pub date_names: DateNamesHandle,
+    pub config: Config,
 }
 
-pub(crate) fn disabled_telemetry(index: usize, kind_id: &str) -> SubActionTelemetry {
-    SubActionTelemetry {
-        args_in: ::std::collections::BTreeMap::new(),
-        produced: ::std::collections::BTreeMap::new(),
-        index,
-        kind: kind_id.to_owned(),
-        started_at: OffsetDateTime::now_utc(),
-        duration_ms: 0,
-        outcome: SubActionOutcome::Skipped(core_messages::step_disabled().into()),
-    }
-}
-
-pub(crate) fn condition_skipped_telemetry(index: usize, kind_id: &str) -> SubActionTelemetry {
-    SubActionTelemetry {
-        args_in: ::std::collections::BTreeMap::new(),
-        produced: ::std::collections::BTreeMap::new(),
-        index,
-        kind: kind_id.to_owned(),
-        started_at: OffsetDateTime::now_utc(),
-        duration_ms: 0,
-        outcome: SubActionOutcome::Skipped(core_messages::condition_not_met().into()),
-    }
-}
-
-pub(crate) fn condition_failed_telemetry(
-    index: usize,
-    kind_id: &str,
-    message: UserText,
-) -> SubActionTelemetry {
-    SubActionTelemetry {
-        args_in: ::std::collections::BTreeMap::new(),
-        produced: ::std::collections::BTreeMap::new(),
-        index,
-        kind: kind_id.to_owned(),
-        started_at: OffsetDateTime::now_utc(),
-        duration_ms: 0,
-        outcome: SubActionOutcome::Failed(message),
-    }
-}
-
-pub fn spawn_action_engine(
-    bus: Arc<EventBus>,
-    catalog: Arc<Catalog>,
-    actions: Arc<dyn ActionRepo>,
-    history: Arc<dyn HistoryRepo>,
-    sub_action_registry: Arc<SubActionRegistry>,
-    cancel_registry: Arc<ActionCancelRegistry>,
-    date_names: DateNamesHandle,
-) -> ActionEngineHandle {
-    ActionEngine::spawn(
-        bus,
-        catalog,
-        actions,
-        history,
-        sub_action_registry,
-        cancel_registry,
-        date_names,
-    )
+pub fn spawn_action_engine(parts: ActionEngineParts) -> ActionEngineHandle {
+    ActionEngine::spawn(parts)
 }
 
 #[cfg(test)]
 mod tests {
+    use forge_types::SubActionTelemetry;
     use std::collections::BTreeMap;
     use std::sync::Mutex;
     use std::time::Duration;
@@ -875,19 +819,20 @@ mod tests {
             outcome: SubActionOutcome::Failed(VerbatimText::new("kaboom").into()),
         }))
         .unwrap();
-        let engine = spawn_action_engine(
-            Arc::clone(&bus),
-            crate::Catalog::new(
+        let engine = spawn_action_engine(crate::ActionEngineParts {
+            bus: Arc::clone(&bus),
+            catalog: crate::Catalog::new(
                 dp.action_repo(),
                 dp.trigger_instance_repo(),
                 dp.catalog_revision(),
             ),
-            dp.action_repo(),
-            dp.history_repo(),
-            Arc::new(reg),
-            Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
-            crate::DateNamesHandle::default(),
-        );
+            actions: dp.action_repo(),
+            history: dp.history_repo(),
+            sub_action_registry: Arc::new(reg),
+            cancel_registry: Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
+            date_names: crate::DateNamesHandle::default(),
+            config: crate::Config::default(),
+        });
 
         let cases = [
             ("map.success", ExecutionOutcome::Success),
@@ -973,19 +918,20 @@ mod tests {
         });
         let mut reg = SubActionRegistry::new();
         reg.register(runner).unwrap();
-        let engine = spawn_action_engine(
-            Arc::clone(&bus),
-            crate::Catalog::new(
+        let engine = spawn_action_engine(crate::ActionEngineParts {
+            bus: Arc::clone(&bus),
+            catalog: crate::Catalog::new(
                 dp.action_repo(),
                 dp.trigger_instance_repo(),
                 dp.catalog_revision(),
             ),
-            dp.action_repo(),
-            dp.history_repo(),
-            Arc::new(reg),
-            Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
-            crate::DateNamesHandle::default(),
-        );
+            actions: dp.action_repo(),
+            history: dp.history_repo(),
+            sub_action_registry: Arc::new(reg),
+            cancel_registry: Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
+            date_names: crate::DateNamesHandle::default(),
+            config: crate::Config::default(),
+        });
 
         let mut overrides = BTreeMap::new();
         overrides.insert("a".to_owned(), Variant::Int(99));
@@ -1027,19 +973,20 @@ mod tests {
             .await
             .map(|backend| Arc::new(backend) as Arc<dyn DataProvider>);
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
-        let engine = spawn_action_engine(
-            Arc::clone(&bus),
-            crate::Catalog::new(
+        let engine = spawn_action_engine(crate::ActionEngineParts {
+            bus: Arc::clone(&bus),
+            catalog: crate::Catalog::new(
                 dp.action_repo(),
                 dp.trigger_instance_repo(),
                 dp.catalog_revision(),
             ),
-            dp.action_repo(),
-            dp.history_repo(),
-            Arc::new(SubActionRegistry::new()),
-            Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
-            crate::DateNamesHandle::default(),
-        );
+            actions: dp.action_repo(),
+            history: dp.history_repo(),
+            sub_action_registry: Arc::new(SubActionRegistry::new()),
+            cancel_registry: Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
+            date_names: crate::DateNamesHandle::default(),
+            config: crate::Config::default(),
+        });
 
         let parent = EventId::new();
         for expected_parent in [Some(parent), None] {
@@ -1160,19 +1107,20 @@ mod tests {
         }))
         .unwrap();
 
-        let engine = spawn_action_engine(
-            Arc::clone(&bus),
-            crate::Catalog::new(
+        let engine = spawn_action_engine(crate::ActionEngineParts {
+            bus: Arc::clone(&bus),
+            catalog: crate::Catalog::new(
                 dp.action_repo(),
                 dp.trigger_instance_repo(),
                 dp.catalog_revision(),
             ),
-            dp.action_repo(),
+            actions: dp.action_repo(),
             history,
-            Arc::new(reg),
-            Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
-            crate::DateNamesHandle::default(),
-        );
+            sub_action_registry: Arc::new(reg),
+            cancel_registry: Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
+            date_names: crate::DateNamesHandle::default(),
+            config: crate::Config::default(),
+        });
 
         let cases = [
             ("quick.ok", ExecutionOutcome::Success),
@@ -1206,19 +1154,20 @@ mod tests {
             .map(|backend| Arc::new(backend) as Arc<dyn DataProvider>);
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let (history, mut rx) = capturing_history();
-        let engine = spawn_action_engine(
-            Arc::clone(&bus),
-            crate::Catalog::new(
+        let engine = spawn_action_engine(crate::ActionEngineParts {
+            bus: Arc::clone(&bus),
+            catalog: crate::Catalog::new(
                 dp.action_repo(),
                 dp.trigger_instance_repo(),
                 dp.catalog_revision(),
             ),
-            dp.action_repo(),
+            actions: dp.action_repo(),
             history,
-            Arc::new(SubActionRegistry::new()),
-            Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
-            crate::DateNamesHandle::default(),
-        );
+            sub_action_registry: Arc::new(SubActionRegistry::new()),
+            cancel_registry: Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
+            date_names: crate::DateNamesHandle::default(),
+            config: crate::Config::default(),
+        });
 
         engine
             .execute_quick_action(
@@ -1251,19 +1200,20 @@ mod tests {
             .map(|backend| Arc::new(backend) as Arc<dyn DataProvider>);
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let (history, mut rx) = capturing_history();
-        let engine = spawn_action_engine(
-            Arc::clone(&bus),
-            crate::Catalog::new(
+        let engine = spawn_action_engine(crate::ActionEngineParts {
+            bus: Arc::clone(&bus),
+            catalog: crate::Catalog::new(
                 dp.action_repo(),
                 dp.trigger_instance_repo(),
                 dp.catalog_revision(),
             ),
-            dp.action_repo(),
+            actions: dp.action_repo(),
             history,
-            Arc::new(SubActionRegistry::new()),
-            Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
-            crate::DateNamesHandle::default(),
-        );
+            sub_action_registry: Arc::new(SubActionRegistry::new()),
+            cancel_registry: Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
+            date_names: crate::DateNamesHandle::default(),
+            config: crate::Config::default(),
+        });
 
         engine
             .execute_quick_action(
@@ -1306,19 +1256,20 @@ mod tests {
             last_config: Arc::new(Mutex::new(None)),
         }))
         .unwrap();
-        let engine = spawn_action_engine(
-            Arc::clone(&bus),
-            crate::Catalog::new(
+        let engine = spawn_action_engine(crate::ActionEngineParts {
+            bus: Arc::clone(&bus),
+            catalog: crate::Catalog::new(
                 dp.action_repo(),
                 dp.trigger_instance_repo(),
                 dp.catalog_revision(),
             ),
-            dp.action_repo(),
+            actions: dp.action_repo(),
             history,
-            Arc::new(reg),
-            Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
-            crate::DateNamesHandle::default(),
-        );
+            sub_action_registry: Arc::new(reg),
+            cancel_registry: Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
+            date_names: crate::DateNamesHandle::default(),
+            config: crate::Config::default(),
+        });
 
         let mut overrides = BTreeMap::new();
         overrides.insert("a".to_owned(), Variant::Int(99));
@@ -1513,19 +1464,20 @@ mod tests {
             crate::sub_action_runners::CoreLogicLoopRunner::new(gate),
         ))
         .unwrap();
-        let engine = spawn_action_engine(
-            Arc::clone(&bus),
-            crate::Catalog::new(
+        let engine = spawn_action_engine(crate::ActionEngineParts {
+            bus: Arc::clone(&bus),
+            catalog: crate::Catalog::new(
                 dp.action_repo(),
                 dp.trigger_instance_repo(),
                 dp.catalog_revision(),
             ),
-            dp.action_repo(),
-            dp.history_repo(),
-            Arc::new(reg),
-            Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
-            crate::DateNamesHandle::default(),
-        );
+            actions: dp.action_repo(),
+            history: dp.history_repo(),
+            sub_action_registry: Arc::new(reg),
+            cancel_registry: Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
+            date_names: crate::DateNamesHandle::default(),
+            config: crate::Config::default(),
+        });
         let action_id = ActionId::new();
         let action = forge_types::Action {
             id: action_id,
@@ -1841,15 +1793,16 @@ mod tests {
             .await
             .map(|backend| Arc::new(backend) as Arc<dyn DataProvider>);
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
-        let engine = spawn_action_engine(
-            Arc::clone(&bus),
-            crate::Catalog::from_provider(dp.as_ref()),
-            dp.action_repo(),
-            dp.history_repo(),
-            Arc::new(SubActionRegistry::new()),
-            Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
-            crate::DateNamesHandle::default(),
-        );
+        let engine = spawn_action_engine(crate::ActionEngineParts {
+            bus: Arc::clone(&bus),
+            catalog: crate::Catalog::from_provider(dp.as_ref()),
+            actions: dp.action_repo(),
+            history: dp.history_repo(),
+            sub_action_registry: Arc::new(SubActionRegistry::new()),
+            cancel_registry: Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
+            date_names: crate::DateNamesHandle::default(),
+            config: crate::Config::default(),
+        });
         let default_queue = forge_types::DEFAULT_QUEUE_ID;
         let mut action = forge_types::Action {
             id: ActionId::new(),

@@ -100,7 +100,7 @@ async fn stored_portable_settings_of(store: &Store) -> Settings {
 fn alias(viewer: &str, voice: &str) -> VoiceAlias {
     VoiceAlias {
         id: AliasId::generate(),
-        viewer_id: viewer.to_owned(),
+        alias_key: viewer.to_owned(),
         viewer_name: format!("{viewer} name"),
         engine_id: EngineId("piper".to_owned()),
         voice_id: VoiceId(voice.to_owned()),

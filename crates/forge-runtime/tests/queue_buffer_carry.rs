@@ -63,6 +63,23 @@ impl HistoryRepo for NullHistoryRepo {
     ) -> Result<HashMap<ActionId, ActionStats>, StorageError> {
         Ok(HashMap::new())
     }
+
+    async fn save_batch(
+        &self,
+        contexts: &[forge_types::ExecutionContext],
+    ) -> Result<(), forge_storage::StorageError> {
+        for ctx in contexts {
+            forge_storage::HistoryRepo::save(self, ctx).await?;
+        }
+        Ok(())
+    }
+
+    async fn recent(
+        &self,
+        _limit: u32,
+    ) -> Result<Vec<forge_types::ExecutionContext>, forge_storage::StorageError> {
+        Ok(Vec::new())
+    }
 }
 
 struct Gate {
@@ -190,19 +207,23 @@ async fn gated_queue(concurrency: u32, actions: &[ActionId]) -> GatedQueue {
     instances
         .expect_list_for_action()
         .returning(|_| Ok(Vec::new()));
-    let engine = spawn_action_engine(
-        Arc::clone(&bus),
-        Catalog::new(
+    instances
+        .expect_instances_by_action()
+        .returning(|| Ok(Default::default()));
+    let engine = spawn_action_engine(forge_runtime::ActionEngineParts {
+        bus: Arc::clone(&bus),
+        catalog: Catalog::new(
             Arc::clone(&repo),
             Arc::new(instances),
             CatalogRevision::new(),
         ),
-        repo,
-        Arc::new(NullHistoryRepo),
-        Arc::new(registry),
-        Arc::new(ActionCancelRegistry::new()),
-        forge_runtime::DateNamesHandle::default(),
-    );
+        actions: repo,
+        history: Arc::new(NullHistoryRepo),
+        sub_action_registry: Arc::new(registry),
+        cancel_registry: Arc::new(ActionCancelRegistry::new()),
+        date_names: forge_runtime::DateNamesHandle::default(),
+        config: forge_runtime::Config::default(),
+    });
     let sched = QueueScheduler::spawn(
         engine,
         Arc::clone(&bus),

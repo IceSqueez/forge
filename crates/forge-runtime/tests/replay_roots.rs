@@ -108,19 +108,20 @@ async fn spawn_pipeline() -> PipelineFixture {
     dp.action_repo().save(&action).await.unwrap();
 
     let bus = EventBus::new(Arc::new(NullEventLogRepo));
-    let engine = spawn_action_engine(
-        Arc::clone(&bus),
-        forge_runtime::Catalog::new(
+    let engine = spawn_action_engine(forge_runtime::ActionEngineParts {
+        bus: Arc::clone(&bus),
+        catalog: forge_runtime::Catalog::new(
             dp.action_repo(),
             dp.trigger_instance_repo(),
             dp.catalog_revision(),
         ),
-        dp.action_repo(),
-        dp.history_repo(),
-        Arc::new(SubActionRegistry::new()),
-        Arc::new(forge_runtime::ActionCancelRegistry::new()),
-        forge_runtime::DateNamesHandle::default(),
-    );
+        actions: dp.action_repo(),
+        history: dp.history_repo(),
+        sub_action_registry: Arc::new(SubActionRegistry::new()),
+        cancel_registry: Arc::new(forge_runtime::ActionCancelRegistry::new()),
+        date_names: forge_runtime::DateNamesHandle::default(),
+        config: forge_runtime::Config::default(),
+    });
     let scheduler = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
 
     let mut listener_sub = bus.subscribe();

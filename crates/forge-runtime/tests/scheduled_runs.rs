@@ -12,22 +12,22 @@ use forge_events::{Event, EventSource};
 use forge_registry::SubActionRegistry;
 use forge_runtime::MAX_PENDING_PER_QUEUE;
 use forge_runtime::{
-    ACTION_DISABLED_REASON, ACTION_NOT_FOUND_REASON, CATCH_UP_SETTLE_LIMIT, MAX_LATE_TOLERANCE,
-    MAX_PENDING_SCHEDULED_RUNS, MAX_PENDING_SCHEDULED_RUNS_PER_ACTION, MAX_SCHEDULE_DELAY,
-    MAX_SCHEDULE_KEY_CHARS, MAX_SCHEDULED_ARGS_BYTES, MIN_LATE_TOLERANCE, MIN_SCHEDULE_DELAY,
-    MISSED_REASON, SCHEDULED_AT_VARIABLE, SCHEDULED_DUE_AT_VARIABLE, SCHEDULED_KEY_VARIABLE,
-    SCHEDULED_LATE_SECONDS_VARIABLE, SCHEDULED_RUN_DUE_KIND, UNREADABLE_REASON, WALL_CLOCK_RECHECK,
+    ActionCancelRegistry, Catalog, CatchUpSettle, EventBus, HandOff, NullEventLogRepo,
+    QueueAdmission, QueueMode, QueueScheduler, QueueSchedulerHandle, RuntimeError, ScheduleDue,
+    ScheduleRequest, ScheduledRunsHandle, ScheduledRunsParts, SchedulerRequest, WaitingRuns,
+    spawn_action_engine, spawn_scheduled_runs,
 };
 use forge_runtime::{
-    ActionCancelRegistry, Catalog, CatchUpSettle, EventBus, HandOff, NullEventLogRepo,
-    QUEUE_DRAINING_REASON, QUEUE_NOT_FOUND_REASON, QUEUE_PAUSED_REASON, QueueAdmission, QueueMode,
-    QueueScheduler, QueueSchedulerHandle, RuntimeError, ScheduleDue, ScheduleRequest,
-    ScheduledRunsHandle, ScheduledRunsParts, SchedulerRequest, WaitingRuns, spawn_action_engine,
-    spawn_scheduled_runs,
+    CATCH_UP_SETTLE_LIMIT, MAX_LATE_TOLERANCE, MAX_PENDING_SCHEDULED_RUNS,
+    MAX_PENDING_SCHEDULED_RUNS_PER_ACTION, MAX_SCHEDULE_DELAY, MAX_SCHEDULE_KEY_CHARS,
+    MAX_SCHEDULED_ARGS_BYTES, MIN_LATE_TOLERANCE, MIN_SCHEDULE_DELAY, SCHEDULED_AT_VARIABLE,
+    SCHEDULED_DUE_AT_VARIABLE, SCHEDULED_KEY_VARIABLE, SCHEDULED_LATE_SECONDS_VARIABLE,
+    SCHEDULED_RUN_DUE_KIND, WALL_CLOCK_RECHECK,
 };
 use forge_storage::MockActionRepo;
 use forge_storage::MockHistoryRepo;
 use forge_storage::MockTriggerInstanceRepo;
+use forge_storage::RunRefusal;
 use forge_storage::{
     CatalogRevision, DataProvider, MissedRunPolicy, MockScheduledRunRepo, ScheduledRun,
     ScheduledRunId, ScheduledRunOutcome, ScheduledRunPlacement, ScheduledRunRepo, ScheduledRunSpec,
@@ -135,15 +135,16 @@ impl Harness {
             }
             Ok(())
         });
-        let engine = spawn_action_engine(
-            Arc::clone(&bus),
-            Arc::clone(&catalog),
-            dp.action_repo(),
-            Arc::new(history),
-            Arc::new(SubActionRegistry::new()),
-            Arc::new(ActionCancelRegistry::new()),
-            forge_runtime::DateNamesHandle::default(),
-        );
+        let engine = spawn_action_engine(forge_runtime::ActionEngineParts {
+            bus: Arc::clone(&bus),
+            catalog: Arc::clone(&catalog),
+            actions: dp.action_repo(),
+            history: Arc::new(history),
+            sub_action_registry: Arc::new(SubActionRegistry::new()),
+            cancel_registry: Arc::new(ActionCancelRegistry::new()),
+            date_names: forge_runtime::DateNamesHandle::default(),
+            config: forge_runtime::Config::default(),
+        });
         let queues = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue.clone()]);
         Self {
             dp,
@@ -257,7 +258,7 @@ async fn barrier(handle: &ScheduledRunsHandle) {
 }
 
 fn outcome(run: &ScheduledRun) -> (ScheduledRunState, Option<&str>) {
-    (run.state, run.outcome_reason.as_deref())
+    (run.state, run.outcome_reason.map(RunRefusal::code))
 }
 
 async fn waiting_for(handle: &ScheduledRunsHandle, ids: &[ScheduledRunId]) {
@@ -339,19 +340,31 @@ async fn an_overdue_run_whose_target_cannot_run_is_settled_with_the_matching_rea
     for (shape, expected) in [
         (
             TargetShape::Disabled,
-            (ScheduledRunState::Skipped, Some(ACTION_DISABLED_REASON)),
+            (
+                ScheduledRunState::Skipped,
+                Some(RunRefusal::ActionDisabled.code()),
+            ),
         ),
         (
             TargetShape::Archived,
-            (ScheduledRunState::Failed, Some(ACTION_NOT_FOUND_REASON)),
+            (
+                ScheduledRunState::Failed,
+                Some(RunRefusal::ActionNotFound.code()),
+            ),
         ),
         (
             TargetShape::NeverExisted,
-            (ScheduledRunState::Failed, Some(ACTION_NOT_FOUND_REASON)),
+            (
+                ScheduledRunState::Failed,
+                Some(RunRefusal::ActionNotFound.code()),
+            ),
         ),
         (
             TargetShape::QueueNotRunning,
-            (ScheduledRunState::Failed, Some(QUEUE_NOT_FOUND_REASON)),
+            (
+                ScheduledRunState::Failed,
+                Some(RunRefusal::QueueNotFound.code()),
+            ),
         ),
     ] {
         let harness = Harness::new().await;
@@ -397,7 +410,7 @@ async fn an_overdue_run_is_refused_only_once_its_queue_is_full() {
             MAX_PENDING_PER_QUEUE,
             (
                 ScheduledRunState::Failed,
-                Some(forge_runtime::QUEUE_OVERFLOW_REASON),
+                Some(RunRefusal::QueueOverflow.code()),
             ),
         ),
     ] {
@@ -425,7 +438,7 @@ async fn lateness_beyond_the_tolerance_skips_the_run_and_up_to_it_runs_once() {
         (
             MissedRunPolicy::SkipIfLateBy(MIN_LATE_TOLERANCE),
             MIN_LATE_TOLERANCE + ONE_SECOND,
-            (ScheduledRunState::Skipped, Some(MISSED_REASON)),
+            (ScheduledRunState::Skipped, Some(RunRefusal::Missed.code())),
         ),
         (
             MissedRunPolicy::RunLateOnce,
@@ -472,7 +485,8 @@ async fn provenance_run() -> ProvenanceRun {
     let mut late_run = overdue(action.id, LATE_BY);
     late_run.key = Some("follow:alice".to_owned());
     late_run.scheduled_by_action = Some(scheduled_by);
-    late_run.scheduled_by_run = Some("run-7".to_owned());
+    let scheduling_run = EventId::new();
+    late_run.scheduled_by_run = Some(scheduling_run);
     late_run.trigger_event_id = Some(cause.id);
     late_run.args = BTreeMap::from([
         ("greeting".to_owned(), Variant::String("hi".to_owned())),
@@ -532,7 +546,7 @@ async fn a_scheduled_run_lands_in_run_history_with_its_scheduled_origin() {
         Some((
             run.run_id.get(),
             Some(run.scheduled_by),
-            Some("run-7".to_owned())
+            run.spec.scheduled_by_run
         ))
     );
 }
@@ -1106,15 +1120,16 @@ fn mock_parts(
         Arc::new(MockTriggerInstanceRepo::new()),
         CatalogRevision::new(),
     );
-    let engine = spawn_action_engine(
-        Arc::clone(&bus),
-        Arc::clone(&catalog),
-        Arc::new(MockActionRepo::new()),
-        Arc::new(MockHistoryRepo::new()),
-        Arc::new(SubActionRegistry::new()),
-        Arc::new(ActionCancelRegistry::new()),
-        forge_runtime::DateNamesHandle::default(),
-    );
+    let engine = spawn_action_engine(forge_runtime::ActionEngineParts {
+        bus: Arc::clone(&bus),
+        catalog: Arc::clone(&catalog),
+        actions: Arc::new(MockActionRepo::new()),
+        history: Arc::new(MockHistoryRepo::new()),
+        sub_action_registry: Arc::new(SubActionRegistry::new()),
+        cancel_registry: Arc::new(ActionCancelRegistry::new()),
+        date_names: forge_runtime::DateNamesHandle::default(),
+        config: forge_runtime::Config::default(),
+    });
     ScheduledRunsParts {
         repo: Arc::new(repo),
         revision,
@@ -1202,7 +1217,7 @@ async fn a_dispatch_pass_fails_unreadable_due_runs_at_the_wall_clock_time() {
                 clippy::let_underscore_must_use,
                 reason = "the receiver may already be gone"
             )]
-            let _ = calls_tx.send((now, reason.to_owned()));
+            let _ = calls_tx.send((now, reason));
             Ok(Vec::new())
         });
     repo.expect_list_due().returning(|_| Ok(Vec::new()));
@@ -1214,7 +1229,7 @@ async fn a_dispatch_pass_fails_unreadable_due_runs_at_the_wall_clock_time() {
     ));
 
     let first = timeout(DEADLINE, calls.recv()).await.unwrap().unwrap();
-    assert_eq!(first, (base(), UNREADABLE_REASON.to_owned()));
+    assert_eq!(first, (base(), RunRefusal::Unreadable));
 }
 
 struct ShiftingClock(AtomicU64);
@@ -1323,7 +1338,7 @@ impl ScheduledRunRepo for HookedRepo {
     async fn fail_unreadable_due(
         &self,
         now: OffsetDateTime,
-        reason: &str,
+        reason: RunRefusal,
     ) -> Result<Vec<ScheduledRunId>, StorageError> {
         self.inner.fail_unreadable_due(now, reason).await
     }
@@ -1369,7 +1384,7 @@ impl ScheduledRunRepo for HookedRepo {
         &self,
         id: ScheduledRunId,
         outcome: ScheduledRunOutcome,
-        reason: Option<String>,
+        reason: Option<RunRefusal>,
         at: OffsetDateTime,
     ) -> Result<bool, StorageError> {
         self.inner.settle(id, outcome, reason, at).await
@@ -1465,7 +1480,7 @@ async fn a_waiting_skip_if_late_run_is_judged_against_its_tolerance_on_the_next_
         (
             MIN_LATE_TOLERANCE + ONE_SECOND,
             Wake::StillRefusing,
-            (ScheduledRunState::Skipped, Some(MISSED_REASON)),
+            (ScheduledRunState::Skipped, Some(RunRefusal::Missed.code())),
         ),
     ] {
         let harness = Harness::new().await;
@@ -1518,8 +1533,8 @@ async fn a_run_late_once_run_waits_indefinitely_and_reports_the_whole_wait_as_la
 #[tokio::test]
 async fn run_now_on_a_waiting_run_reports_its_queue_and_leaves_it_pending() {
     for (mode, reason) in [
-        (QueueMode::PAUSED, QUEUE_PAUSED_REASON),
-        (QueueMode::DRAINING, QUEUE_DRAINING_REASON),
+        (QueueMode::PAUSED, RunRefusal::QueuePaused),
+        (QueueMode::DRAINING, RunRefusal::QueueDraining),
     ] {
         let harness = Harness::new().await;
         harness.set_mode(mode).await;
@@ -1555,7 +1570,10 @@ async fn a_waiting_run_fails_once_its_queue_is_removed() {
     let run = harness.handed_off(&handle, id).await;
     assert_eq!(
         outcome(&run),
-        (ScheduledRunState::Failed, Some(QUEUE_NOT_FOUND_REASON))
+        (
+            ScheduledRunState::Failed,
+            Some(RunRefusal::QueueNotFound.code())
+        )
     );
 }
 
@@ -1624,21 +1642,25 @@ async fn a_run_waiting_on_a_paused_queue_is_rechecked_no_faster_than_the_wall_cl
     triggers
         .expect_list_for_action()
         .returning(|_| Ok(Vec::new()));
+    triggers
+        .expect_instances_by_action()
+        .returning(|| Ok(Default::default()));
     let catalog = Catalog::new(
         Arc::new(actions),
         Arc::new(triggers),
         CatalogRevision::new(),
     );
     let bus = EventBus::new(Arc::new(NullEventLogRepo));
-    let engine = spawn_action_engine(
-        Arc::clone(&bus),
-        Arc::clone(&catalog),
-        Arc::new(MockActionRepo::new()),
-        Arc::new(MockHistoryRepo::new()),
-        Arc::new(SubActionRegistry::new()),
-        Arc::new(ActionCancelRegistry::new()),
-        forge_runtime::DateNamesHandle::default(),
-    );
+    let engine = spawn_action_engine(forge_runtime::ActionEngineParts {
+        bus: Arc::clone(&bus),
+        catalog: Arc::clone(&catalog),
+        actions: Arc::new(MockActionRepo::new()),
+        history: Arc::new(MockHistoryRepo::new()),
+        sub_action_registry: Arc::new(SubActionRegistry::new()),
+        cancel_registry: Arc::new(ActionCancelRegistry::new()),
+        date_names: forge_runtime::DateNamesHandle::default(),
+        config: forge_runtime::Config::default(),
+    });
     let queues = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue.clone()]);
     queues.set_mode(queue.id, QueueMode::PAUSED).await.unwrap();
     let waiting = ScheduledRun {

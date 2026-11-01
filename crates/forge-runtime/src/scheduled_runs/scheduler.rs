@@ -4,14 +4,14 @@ use std::time::Duration;
 
 use forge_net::TaskOwner;
 use forge_storage::{
-    ActionRepo, CatalogChanges, CatalogRevision, ScheduledRunRepo, ScheduledRunSpec,
+    ActionRepo, CatalogChanges, CatalogRevision, RunRefusal, ScheduledRunRepo, ScheduledRunSpec,
 };
 use time::OffsetDateTime;
 use tokio::sync::{mpsc, watch};
 use tracing::{info, warn};
 
 use super::catch_up::CatchUpSettle;
-use super::hand_off::{HandOff, HandOffPath, QueueHolds, UNREADABLE_REASON};
+use super::hand_off::{HandOff, HandOffPath, QueueHolds};
 use super::handle::{Command, ScheduledRunsHandle};
 use super::limits::{
     CATCH_UP_SETTLE_LIMIT, MAX_PENDING_SCHEDULED_RUNS, MAX_PENDING_SCHEDULED_RUNS_PER_ACTION,
@@ -273,7 +273,11 @@ impl ScheduledRunsTask {
     }
 
     async fn fail_unreadable(&self, now: OffsetDateTime) {
-        match self.repo.fail_unreadable_due(now, UNREADABLE_REASON).await {
+        match self
+            .repo
+            .fail_unreadable_due(now, RunRefusal::Unreadable)
+            .await
+        {
             Ok(failed) => {
                 for id in failed {
                     warn!(

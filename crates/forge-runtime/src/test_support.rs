@@ -46,6 +46,8 @@ pub(crate) async fn frozen_core_runtime(
     )
     .await;
     let mut wiring = RuntimeWiring::new(RuntimeWiringParts {
+        paths: forge_paths::AppPaths::at(std::env::temp_dir().join("forge-tests")),
+        config: crate::Config::default(),
         date_names: crate::DateNamesHandle::default(),
         tasks: forge_net::TaskOwner::new(),
         bus,

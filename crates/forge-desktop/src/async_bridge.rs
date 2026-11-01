@@ -759,15 +759,16 @@ mod tests {
         }
         let mut history = MockHistoryRepo::new();
         history.expect_save().returning(|_| Ok(()));
-        spawn_action_engine(
-            EventBus::new(Arc::new(StubEventLog)),
-            crate::test_support::stub_catalog(),
-            Arc::new(StubActions),
-            Arc::new(history),
-            Arc::new(registry),
-            Arc::new(ActionCancelRegistry::new()),
-            forge_runtime::DateNamesHandle::default(),
-        )
+        spawn_action_engine(forge_runtime::ActionEngineParts {
+            bus: EventBus::new(Arc::new(StubEventLog)),
+            catalog: crate::test_support::stub_catalog(),
+            actions: Arc::new(StubActions),
+            history: Arc::new(history),
+            sub_action_registry: Arc::new(registry),
+            cancel_registry: Arc::new(ActionCancelRegistry::new()),
+            date_names: forge_runtime::DateNamesHandle::default(),
+            config: forge_runtime::Config::default(),
+        })
     }
 
     fn quick_step(kind_id: &str) -> SubActionStep {

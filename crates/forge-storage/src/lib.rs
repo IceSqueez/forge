@@ -76,9 +76,9 @@ pub use provider::{
 };
 pub use queue::{OVERLAY_ALERT_QUEUE_NAME, QueueRepo, QueueRole};
 pub use scheduled_run::{
-    ACTION_REMOVED_REASON, CANCELLED_REASON, MissedRunPolicy, RevisingScheduledRunRepo,
-    SUPERSEDED_REASON, ScheduledRun, ScheduledRunId, ScheduledRunOutcome, ScheduledRunPlacement,
-    ScheduledRunRepo, ScheduledRunSpec, ScheduledRunState,
+    MissedRunPolicy, RevisingScheduledRunRepo, RunRefusal, ScheduledRun, ScheduledRunId,
+    ScheduledRunOutcome, ScheduledRunPlacement, ScheduledRunRepo, ScheduledRunSpec,
+    ScheduledRunState,
 };
 pub use schema_file::{DatabaseFileSchema, StoredDatabase, StoredSchema};
 pub use script::{

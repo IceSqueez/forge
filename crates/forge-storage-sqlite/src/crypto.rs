@@ -2,15 +2,16 @@ use aes_gcm::aead::{Aead, KeyInit, Payload};
 use aes_gcm::{Aes256Gcm, Nonce};
 use rand::rand_core::Rng;
 
+use std::path::Path;
+
 use zeroize::Zeroizing;
 
 use crate::error::SqliteStorageError;
 
 const NONCE_LEN: usize = 12;
 
-pub(crate) fn load_or_create_key() -> Result<CredentialsKey, SqliteStorageError> {
-    let path = forge_paths::credentials_key_path();
-    let (key, minted) = load_or_create_file_key(&path)?;
+pub(crate) fn load_or_create_key(path: &Path) -> Result<CredentialsKey, SqliteStorageError> {
+    let (key, minted) = load_or_create_file_key(path)?;
     Ok(CredentialsKey {
         key: Zeroizing::new(key),
         minted,

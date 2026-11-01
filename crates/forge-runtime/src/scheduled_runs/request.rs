@@ -26,7 +26,7 @@ pub struct ScheduleRequest {
     pub missed_run_policy: MissedRunPolicy,
     pub args: BTreeMap<String, Variant>,
     pub scheduled_by_action: Option<ActionId>,
-    pub scheduled_by_run: Option<String>,
+    pub scheduled_by_run: Option<EventId>,
     pub trigger_event_id: Option<EventId>,
     pub cause: Option<EventId>,
 }

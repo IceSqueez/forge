@@ -174,8 +174,95 @@ impl TriggerInstanceRepo for FakeTriggerRepo {
         &self,
         _id: TriggerInstanceId,
         _enabled: bool,
-    ) -> Result<(), StorageError> {
+    ) -> Result<bool, StorageError> {
         Err(StorageError::NotReady)
+    }
+
+    async fn count_of_kinds(
+        &self,
+        kind_ids: &[String],
+    ) -> Result<usize, forge_storage::StorageError> {
+        Ok(forge_storage::TriggerInstanceRepo::list_all(self)
+            .await?
+            .iter()
+            .filter(|instance| kind_ids.contains(&instance.kind_id))
+            .count())
+    }
+
+    async fn instances_by_action(
+        &self,
+    ) -> Result<
+        std::collections::HashMap<forge_types::ActionId, Vec<forge_types::TriggerInstance>>,
+        forge_storage::StorageError,
+    > {
+        Ok(Default::default())
+    }
+
+    async fn actions_by_instance(
+        &self,
+    ) -> Result<
+        std::collections::HashMap<forge_types::TriggerInstanceId, Vec<forge_types::ActionId>>,
+        forge_storage::StorageError,
+    > {
+        let mut links = std::collections::HashMap::new();
+        for instance in self.list_all().await? {
+            let actions = self.actions_using(instance.id).await?;
+            if !actions.is_empty() {
+                links.insert(instance.id, actions);
+            }
+        }
+        Ok(links)
+    }
+
+    async fn apply_changes(
+        &self,
+        _changes: &forge_storage::TriggerChanges,
+    ) -> Result<(), forge_storage::StorageError> {
+        Err(forge_storage::StorageError::NotReady)
+    }
+
+    async fn commit_overlay_wiring(
+        &self,
+        _wiring: &forge_storage::TriggerWiring,
+        _queues: std::sync::Arc<dyn forge_storage::QueueRepo>,
+        _actions: std::sync::Arc<dyn forge_storage::ActionRepo>,
+    ) -> Result<(), forge_storage::StorageError> {
+        Err(forge_storage::StorageError::NotReady)
+    }
+
+    async fn set_all_enabled(
+        &self,
+        _ids: &[forge_types::TriggerInstanceId],
+        _enabled: bool,
+    ) -> Result<(), forge_storage::StorageError> {
+        Err(forge_storage::StorageError::NotReady)
+    }
+
+    async fn toggle_enabled(
+        &self,
+        _id: forge_types::TriggerInstanceId,
+    ) -> Result<Option<bool>, forge_storage::StorageError> {
+        Err(forge_storage::StorageError::NotReady)
+    }
+
+    async fn archive(
+        &self,
+        _id: forge_types::TriggerInstanceId,
+    ) -> Result<bool, forge_storage::StorageError> {
+        Err(forge_storage::StorageError::NotReady)
+    }
+
+    async fn restore(
+        &self,
+        _id: forge_types::TriggerInstanceId,
+    ) -> Result<bool, forge_storage::StorageError> {
+        Err(forge_storage::StorageError::NotReady)
+    }
+
+    async fn list_archived(
+        &self,
+    ) -> Result<Vec<forge_types::TriggerInstance>, forge_storage::StorageError> {
+        Ok(Vec::new())
     }
 }
 
@@ -231,6 +318,80 @@ impl ActionRepo for FakeActionRepo {
 
     async fn prune_executions_before(&self, _cutoff: OffsetDateTime) -> Result<u64, StorageError> {
         Err(StorageError::NotReady)
+    }
+
+    async fn count(&self) -> Result<usize, forge_storage::StorageError> {
+        Ok(forge_storage::ActionRepo::list(self).await?.len())
+    }
+
+    async fn ids_named(
+        &self,
+        name: &str,
+    ) -> Result<Vec<forge_types::ActionId>, forge_storage::StorageError> {
+        Ok(forge_storage::ActionRepo::list(self)
+            .await?
+            .into_iter()
+            .filter(|action| action.name == name)
+            .map(|action| action.id)
+            .collect())
+    }
+
+    async fn record_executions(
+        &self,
+        executions: &[forge_storage::ActionExecution],
+    ) -> Result<(), forge_storage::StorageError> {
+        for execution in executions {
+            self.record_execution(
+                execution.action_id,
+                execution.started_at,
+                execution.duration_ms,
+                execution.status,
+            )
+            .await?;
+        }
+        Ok(())
+    }
+
+    async fn set_enabled(
+        &self,
+        _id: forge_types::ActionId,
+        _enabled: bool,
+    ) -> Result<bool, forge_storage::StorageError> {
+        Err(forge_storage::StorageError::NotReady)
+    }
+
+    async fn toggle_enabled(
+        &self,
+        _id: forge_types::ActionId,
+    ) -> Result<Option<bool>, forge_storage::StorageError> {
+        Err(forge_storage::StorageError::NotReady)
+    }
+
+    async fn duplicate(
+        &self,
+        _source_id: forge_types::ActionId,
+        _new_id: forge_types::ActionId,
+        _new_name: &str,
+    ) -> Result<(), forge_storage::StorageError> {
+        Err(forge_storage::StorageError::NotReady)
+    }
+
+    async fn archive_reporting_cancelled_runs(
+        &self,
+        _id: forge_types::ActionId,
+    ) -> Result<Option<u64>, forge_storage::StorageError> {
+        Err(forge_storage::StorageError::NotReady)
+    }
+
+    async fn restore(
+        &self,
+        _id: forge_types::ActionId,
+    ) -> Result<bool, forge_storage::StorageError> {
+        Err(forge_storage::StorageError::NotReady)
+    }
+
+    async fn list_archived(&self) -> Result<Vec<forge_types::Action>, forge_storage::StorageError> {
+        Ok(Vec::new())
     }
 }
 

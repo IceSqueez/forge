@@ -1,3 +1,4 @@
+pub(crate) mod apply;
 pub(crate) mod archive;
 pub(crate) mod closure;
 pub(crate) mod convert;
@@ -19,3 +20,4 @@ pub use model::{
     TriggerDocument,
 };
 pub use reference::PackReference;
+pub use undo::{RollbackFailures, UndoFailure};

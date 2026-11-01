@@ -163,6 +163,10 @@ fn catalog(wirings: Vec<Wiring>, readable: bool) -> Arc<Catalog> {
         }
     });
     let mut trigger_repo = MockTriggerInstanceRepo::new();
+    let by_action = instances.clone();
+    trigger_repo
+        .expect_instances_by_action()
+        .returning(move || Ok(by_action.clone().into_iter().collect()));
     trigger_repo
         .expect_list_for_action()
         .returning(move |id| Ok(instances.get(&id).cloned().unwrap_or_default()));
@@ -238,6 +242,7 @@ fn overlays(pages: &[Page], readable: bool) -> OverlayServiceHandle {
     let mut kinds = OverlayKindRegistry::new();
     register_builtin_kinds(&mut kinds).expect("the builtin overlay kinds register");
     OverlayServiceHandle::new(OverlayServiceParts {
+        default_root: std::path::PathBuf::new(),
         date_names: forge_runtime::DateNamesHandle::default(),
         tasks: forge_net::TaskOwner::new(),
         repo: Arc::new(repo) as Arc<dyn OverlayRepo>,

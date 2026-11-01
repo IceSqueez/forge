@@ -26,65 +26,23 @@ pub trait GlobalsRepo: Send + Sync {
     async fn set(&self, name: &str, value: Variant, persisted: bool) -> Result<(), StorageError>;
     async fn delete(&self, name: &str) -> Result<bool, StorageError>;
 
-    async fn peek(&self, name: &str) -> Result<Option<Variant>, StorageError> {
-        self.get(name).await
-    }
+    async fn peek(&self, name: &str) -> Result<Option<Variant>, StorageError>;
 
-    async fn persisted(&self, name: &str) -> Result<Option<bool>, StorageError> {
-        Ok(self
-            .list()
-            .await?
-            .into_iter()
-            .find(|e| e.name == name)
-            .map(|e| e.persisted))
-    }
+    async fn persisted(&self, name: &str) -> Result<Option<bool>, StorageError>;
 
-    async fn set_persisted(&self, name: &str, persisted: bool) -> Result<bool, StorageError> {
-        let Some(entry) = self.list().await?.into_iter().find(|e| e.name == name) else {
-            return Ok(false);
-        };
-        self.set(name, entry.value, persisted).await?;
-        Ok(true)
-    }
+    async fn set_persisted(&self, name: &str, persisted: bool) -> Result<bool, StorageError>;
 
-    async fn rename(&self, old_name: &str, new_name: &str) -> Result<(), StorageError> {
-        if old_name == new_name {
-            return Ok(());
-        }
-
-        let entries = self.list().await?;
-        if entries.iter().any(|e| e.name == new_name) {
-            return Err(StorageError::NameCollision {
-                name: new_name.to_string(),
-            });
-        }
-        let Some(entry) = entries.into_iter().find(|e| e.name == old_name) else {
-            return Err(StorageError::NotFound {
-                key: old_name.to_string(),
-            });
-        };
-
-        self.delete(old_name).await?;
-        self.set(new_name, entry.value, entry.persisted).await
-    }
+    async fn rename(&self, old_name: &str, new_name: &str) -> Result<(), StorageError>;
 
     async fn list(&self) -> Result<Vec<GlobalEntry>, StorageError>;
 
-    async fn count(&self) -> Result<usize, StorageError> {
-        Ok(self.list().await?.len())
-    }
+    async fn count(&self) -> Result<usize, StorageError>;
 
-    async fn archive(&self, _name: &str) -> Result<bool, StorageError> {
-        Err(StorageError::NotReady)
-    }
+    async fn archive(&self, name: &str) -> Result<bool, StorageError>;
 
-    async fn restore(&self, _name: &str) -> Result<bool, StorageError> {
-        Err(StorageError::NotReady)
-    }
+    async fn restore(&self, name: &str) -> Result<bool, StorageError>;
 
-    async fn list_archived(&self) -> Result<Vec<GlobalEntry>, StorageError> {
-        Ok(Vec::new())
-    }
+    async fn list_archived(&self) -> Result<Vec<GlobalEntry>, StorageError>;
 
     async fn storage_bytes(&self) -> Result<u64, StorageError>;
 
@@ -97,55 +55,16 @@ pub trait GlobalsRepo: Send + Sync {
         name: &str,
         item: Variant,
         max_len: Option<usize>,
-    ) -> Result<usize, StorageError> {
-        let mut items = match self.get(name).await? {
-            None => Vec::new(),
-            Some(Variant::Array(items)) => items,
-            Some(other) => return Err(type_mismatch(name, &other)),
-        };
-        append_bounded(&mut items, item, max_len);
-        let len = items.len();
-        let persisted = self.persisted(name).await?.unwrap_or(false);
-        self.set(name, Variant::Array(items), persisted).await?;
-        Ok(len)
-    }
+    ) -> Result<usize, StorageError>;
 
     async fn array_remove(
         &self,
         name: &str,
         item: &Variant,
         remove_all: bool,
-    ) -> Result<usize, StorageError> {
-        let mut items = match self.get(name).await? {
-            None => {
-                return Err(StorageError::NotFound {
-                    key: name.to_string(),
-                });
-            }
-            Some(Variant::Array(items)) => items,
-            Some(other) => return Err(type_mismatch(name, &other)),
-        };
-        remove_matching(&mut items, item, remove_all);
-        let len = items.len();
-        let persisted = self.persisted(name).await?.unwrap_or(false);
-        self.set(name, Variant::Array(items), persisted).await?;
-        Ok(len)
-    }
+    ) -> Result<usize, StorageError>;
 
-    async fn toggle(&self, name: &str) -> Result<bool, StorageError> {
-        let flipped = match self.get(name).await? {
-            None => {
-                return Err(StorageError::NotFound {
-                    key: name.to_string(),
-                });
-            }
-            Some(Variant::Bool(current)) => !current,
-            Some(other) => return Err(type_mismatch(name, &other)),
-        };
-        let persisted = self.persisted(name).await?.unwrap_or(false);
-        self.set(name, Variant::Bool(flipped), persisted).await?;
-        Ok(flipped)
-    }
+    async fn toggle(&self, name: &str) -> Result<bool, StorageError>;
 
     async fn export_all(&self) -> Result<Vec<GlobalTransit>, StorageError> {
         let mut entries = self.list().await?;

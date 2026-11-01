@@ -80,20 +80,22 @@ impl ServerDeps {
 
     pub fn build(self) -> ServerConfig {
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
-        let engine = Arc::new(spawn_action_engine(
-            Arc::clone(&bus),
-            Catalog::new(
+        let engine = Arc::new(spawn_action_engine(forge_runtime::ActionEngineParts {
+            bus: Arc::clone(&bus),
+            catalog: Catalog::new(
                 Arc::clone(&self.actions),
                 Arc::new(MockTriggerInstanceRepo::new()),
                 CatalogRevision::new(),
             ),
-            Arc::clone(&self.actions),
-            Arc::new(MockHistoryRepo::new()),
-            Arc::new(SubActionRegistry::new()),
-            Arc::new(ActionCancelRegistry::new()),
-            forge_runtime::DateNamesHandle::default(),
-        ));
+            actions: Arc::clone(&self.actions),
+            history: Arc::new(MockHistoryRepo::new()),
+            sub_action_registry: Arc::new(SubActionRegistry::new()),
+            cancel_registry: Arc::new(ActionCancelRegistry::new()),
+            date_names: forge_runtime::DateNamesHandle::default(),
+            config: forge_runtime::Config::default(),
+        }));
         let mut config = ServerConfig::new(
+            self.overlay_root.clone(),
             self.settings,
             self.credentials,
             bus,
@@ -102,7 +104,6 @@ impl ServerDeps {
             self.user_globals,
             self.overlays,
             engine,
-            self.overlay_root,
         );
         config.bind_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), EPHEMERAL_PORT);
         config

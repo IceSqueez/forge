@@ -59,6 +59,8 @@ fn shown<T>(result: Result<T, ScriptError>) -> Result<T, String> {
 async fn fixed_clock_runtime(dp: Arc<dyn DataProvider>) -> FrozenRuntime {
     let bus = EventBus::new(Arc::new(NullEventLogRepo));
     common::frozen_runtime(RuntimeWiringParts {
+        paths: forge_paths::AppPaths::at(std::env::temp_dir().join("forge-tests")),
+        config: forge_runtime::Config::default(),
         date_names: forge_runtime::DateNamesHandle::default(),
         clock: Arc::new(FixedClock),
         ..common::wiring_parts(dp, bus).await
@@ -257,8 +259,8 @@ async fn a_failing_action_list_makes_name_lookup_unavailable() {
     let mut provider = StubProvider::idle();
     let mut actions = MockActionRepo::new();
     actions
-        .expect_list()
-        .returning(|| Err(StorageError::NotReady));
+        .expect_ids_named()
+        .returning(|_| Err(StorageError::NotReady));
     provider.action_repo = Arc::new(actions);
     let runtime = fixed_clock_runtime(Arc::new(provider)).await;
     let scheduler = script_scheduler(&runtime.scripts, ArgStack::new());

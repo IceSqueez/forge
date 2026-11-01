@@ -1,5 +1,5 @@
 use forge_script::ScriptError;
-use forge_storage::{OverlayId, StorageError};
+use forge_storage::{OverlayId, RunRefusal, StorageError};
 use forge_types::{EventId, QueueId};
 use thiserror::Error;
 
@@ -41,7 +41,7 @@ pub enum RuntimeError {
     QueueNotFound(QueueId),
 
     #[error("queue refused the run: {0}")]
-    QueueRefused(&'static str),
+    QueueRefused(RunRefusal),
 
     #[error("engine channel closed")]
     EngineChannelClosed,

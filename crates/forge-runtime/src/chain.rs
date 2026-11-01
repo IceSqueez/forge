@@ -15,17 +15,63 @@ use forge_types::{
 };
 use rand::RngExt;
 use std::collections::BTreeMap;
+use time::OffsetDateTime;
 use tracing::warn;
 
 use crate::Config;
-use crate::action_engine::{
-    condition_failed_telemetry, condition_skipped_telemetry, disabled_telemetry, skipped_telemetry,
-};
 use crate::bus::{EventBus, LineageHold};
 use crate::condition::ConditionGate;
 use crate::core_messages;
 use crate::date_names::DateNamesHandle;
 use crate::integration_gate::{IntegrationGate, run_gated_step, step_owner};
+
+fn unstarted_step_telemetry(
+    index: usize,
+    kind_id: &str,
+    outcome: SubActionOutcome,
+) -> SubActionTelemetry {
+    SubActionTelemetry {
+        args_in: BTreeMap::new(),
+        produced: BTreeMap::new(),
+        index,
+        kind: kind_id.to_owned(),
+        started_at: OffsetDateTime::now_utc(),
+        duration_ms: 0,
+        outcome,
+    }
+}
+
+pub(crate) fn skipped_telemetry(index: usize, kind_id: &str) -> SubActionTelemetry {
+    unstarted_step_telemetry(
+        index,
+        kind_id,
+        SubActionOutcome::Skipped(core_messages::unknown_step_kind(kind_id).into()),
+    )
+}
+
+fn disabled_telemetry(index: usize, kind_id: &str) -> SubActionTelemetry {
+    unstarted_step_telemetry(
+        index,
+        kind_id,
+        SubActionOutcome::Skipped(core_messages::step_disabled().into()),
+    )
+}
+
+fn condition_skipped_telemetry(index: usize, kind_id: &str) -> SubActionTelemetry {
+    unstarted_step_telemetry(
+        index,
+        kind_id,
+        SubActionOutcome::Skipped(core_messages::condition_not_met().into()),
+    )
+}
+
+fn condition_failed_telemetry(
+    index: usize,
+    kind_id: &str,
+    message: UserText,
+) -> SubActionTelemetry {
+    unstarted_step_telemetry(index, kind_id, SubActionOutcome::Failed(message))
+}
 
 pub(crate) fn capture_args_in(
     registry: &SubActionRegistry,

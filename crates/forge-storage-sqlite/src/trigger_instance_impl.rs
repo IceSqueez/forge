@@ -62,6 +62,13 @@ fn decode_row(row: InstanceRow) -> Result<TriggerInstance, SqliteStorageError> {
     })
 }
 
+#[derive(sqlx::FromRow)]
+struct LinkedInstanceRow {
+    action_id: String,
+    #[sqlx(flatten)]
+    instance: InstanceRow,
+}
+
 pub(crate) struct SqliteTriggerInstanceRepo {
     db: SqlitePools,
 }
@@ -164,6 +171,32 @@ impl TriggerInstanceRepo for SqliteTriggerInstanceRepo {
         rows.into_iter()
             .map(|row| decode_row(row).map_err(StorageError::from))
             .collect()
+    }
+
+    async fn instances_by_action(
+        &self,
+    ) -> Result<HashMap<ActionId, Vec<TriggerInstance>>, StorageError> {
+        let rows: Vec<LinkedInstanceRow> = sqlx::query_as(
+            "SELECT ati.action_id, ti.id, ti.kind_id, ti.name, ti.overrides, ti.enabled,
+                    ti.user_defined, ti.platform_scope, ti.cooldown_secs, ti.cooldown_global,
+                    ti.permission_rung
+             FROM trigger_instances ti
+             JOIN action_trigger_instances ati ON ati.trigger_instance_id = ti.id
+             WHERE ti.archived_at IS NULL
+             ORDER BY ati.action_id, ati.position, ti.id",
+        )
+        .fetch_all(self.db.reader())
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+
+        let mut links: HashMap<ActionId, Vec<TriggerInstance>> = HashMap::new();
+        for row in rows {
+            links
+                .entry(parse_id(&row.action_id, "action")?)
+                .or_default()
+                .push(decode_row(row.instance)?);
+        }
+        Ok(links)
     }
 
     async fn actions_using(
@@ -429,8 +462,16 @@ impl TriggerInstanceRepo for SqliteTriggerInstanceRepo {
             .map_err(StorageError::from)
     }
 
-    async fn set_enabled(&self, id: TriggerInstanceId, enabled: bool) -> Result<(), StorageError> {
-        update_enabled(self.db.writer(), id, enabled).await
+    async fn set_enabled(
+        &self,
+        id: TriggerInstanceId,
+        enabled: bool,
+    ) -> Result<bool, StorageError> {
+        match update_enabled(self.db.writer(), id, enabled).await {
+            Ok(()) => Ok(true),
+            Err(StorageError::NotFound { .. }) => Ok(false),
+            Err(other) => Err(other),
+        }
     }
 
     async fn set_all_enabled(

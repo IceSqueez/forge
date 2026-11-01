@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use forge_paths::AppPaths;
 use forge_storage::settings::core_settings;
 use forge_storage::{
     ActionRepo, BanLedgerRepo, CatalogRevision, ChatHistoryRepo, CredentialId, CredentialsKeyLoss,
@@ -109,9 +110,10 @@ impl Drop for SqliteBackend {
 }
 
 impl SqliteBackend {
-    pub async fn open(url: &str) -> Result<Self, SqliteStorageError> {
+    pub async fn open(url: &str, paths: &AppPaths) -> Result<Self, SqliteStorageError> {
         let pool = Self::migrate_and_gate(url).await?;
-        let key = crate::crypto::load_or_create_key()?;
+        let key_file = forge_paths::credentials_key_path_in(&paths.data_dir());
+        let key = crate::crypto::load_or_create_key(&key_file)?;
         let credentials = SqliteCredentialsRepo::new_with_key(pool.clone(), key.key);
         if key.minted {
             report_stranded_credentials(&pool, &credentials).await?;
@@ -120,7 +122,7 @@ impl SqliteBackend {
             pool,
             credentials,
             PRUNE_INTERVAL_PRODUCTION,
-            forge_paths::media_dir(),
+            paths.media_dir(),
         ))
     }
 
@@ -254,19 +256,6 @@ impl SqliteBackend {
             shutdown,
             pool,
         }
-    }
-
-    #[doc(hidden)]
-    pub async fn insert_action_trigger_instance_for_test(
-        &self,
-        action_id: forge_types::ActionId,
-        trigger_instance_id: forge_types::TriggerInstanceId,
-        position: i64,
-    ) -> Result<(), SqliteStorageError> {
-        self.trigger_instance
-            .link_action_at(action_id, trigger_instance_id, position)
-            .await
-            .map_err(|e| SqliteStorageError::Decode(e.to_string()))
     }
 
     #[doc(hidden)]

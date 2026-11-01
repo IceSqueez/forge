@@ -5,6 +5,7 @@ use forge_registry::{
     TextEditor, TextField, ToggleField, TypedField,
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry};
+use std::path::PathBuf;
 
 const PATH: TextField = TextField {
     key: "path",
@@ -28,7 +29,15 @@ fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<(String, boo
     Ok((PATH.read(config, args)?, IGNORE_MISSING.read(config, args)?))
 }
 
-pub struct CoreFileDeleteRunner;
+pub struct CoreFileDeleteRunner {
+    assets_root: PathBuf,
+}
+
+impl CoreFileDeleteRunner {
+    pub fn new(assets_root: PathBuf) -> Self {
+        Self { assets_root }
+    }
+}
 
 #[async_trait]
 impl SubActionRunner for CoreFileDeleteRunner {
@@ -71,7 +80,7 @@ impl SubActionRunner for CoreFileDeleteRunner {
             Err(problem) => return (timer.invalid_config(&problem), None),
         };
 
-        let outcome = match super::file_sandbox::resolve_sandboxed(&path).await {
+        let outcome = match super::file_sandbox::resolve_sandboxed(&self.assets_root, &path).await {
             Err(reason) => SubActionOutcome::Failed(reason.into()),
             Ok(abs_path) => match tokio::fs::remove_file(&abs_path).await {
                 Ok(()) => SubActionOutcome::Success,

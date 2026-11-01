@@ -63,12 +63,7 @@ pub struct ChatAuthorPage {
 pub trait ChatHistoryRepo: Send + Sync {
     async fn append(&self, row: &UnifiedChatRow) -> Result<(), StorageError>;
 
-    async fn append_batch(&self, rows: &[UnifiedChatRow]) -> Result<(), StorageError> {
-        for row in rows {
-            self.append(row).await?;
-        }
-        Ok(())
-    }
+    async fn append_batch(&self, rows: &[UnifiedChatRow]) -> Result<(), StorageError>;
 
     async fn list_recent(&self, limit: usize) -> Result<Vec<UnifiedChatRow>, StorageError>;
 

@@ -11,7 +11,6 @@ rust-version.workspace = true
 [features]
 test-support = [
   "forge-events/test-support",
-  "dep:forge-paths",
   "dep:forge-storage-sqlite",
   "dep:forge-tts-pipeline",
   "dep:tempfile",
@@ -38,7 +37,7 @@ forge-monobank = { path = "../forge-monobank" }
 forge-net = { path = "../forge-net" }
 forge-obs = { path = "../forge-obs" }
 forge-overlay = { path = "../forge-overlay" }
-forge-paths = { path = "../forge-paths", optional = true }
+forge-paths = { path = "../forge-paths" }
 forge-platform-core = { path = "../forge-platform-core" }
 forge-platform-kick = { path = "../forge-platform-kick" }
 forge-platform-twitch = { path = "../forge-platform-twitch" }

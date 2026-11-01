@@ -90,8 +90,10 @@ fn sub_actions() -> SubActionRegistry {
         .expect("the time format runner registers");
     reg.register(Box::new(CoreTimeParseRunner))
         .expect("the time parse runner registers");
-    reg.register(Box::new(CoreFileWriteRunner))
-        .expect("the file-write runner registers");
+    reg.register(Box::new(
+        CoreFileWriteRunner::new(std::path::PathBuf::new()),
+    ))
+    .expect("the file-write runner registers");
     reg.register(Box::new(ServerBroadcastRunner::new(Arc::new(
         NullPublisher,
     ))))

@@ -158,6 +158,7 @@ struct OverlayService {
     definitions: OverlayDefinitionRevision,
     date_names: DateNamesHandle,
     tasks: TaskOwner,
+    default_root: PathBuf,
 }
 
 pub struct OverlayServiceParts {
@@ -171,6 +172,7 @@ pub struct OverlayServiceParts {
     pub latest: Option<Arc<dyn LatestValueReader>>,
     pub date_names: DateNamesHandle,
     pub tasks: TaskOwner,
+    pub default_root: PathBuf,
 }
 
 #[derive(Clone)]
@@ -191,6 +193,7 @@ impl OverlayServiceHandle {
             latest,
             date_names,
             tasks,
+            default_root,
         } = parts;
         let shows = Arc::new(ShowSequencer::new(
             Arc::clone(&frames),
@@ -212,6 +215,7 @@ impl OverlayServiceHandle {
                 definitions: OverlayDefinitionRevision::default(),
                 date_names,
                 tasks,
+                default_root,
             }),
         }
     }
@@ -248,10 +252,10 @@ impl OverlayServiceHandle {
         .await
         {
             Ok(Some(root)) if !root.is_empty() => PathBuf::from(root),
-            Ok(_) => forge_paths::overlays_dir(),
+            Ok(_) => self.inner.default_root.clone(),
             Err(error) => {
                 tracing::warn!(%error, "overlay root setting unreadable; using the default");
-                forge_paths::overlays_dir()
+                self.inner.default_root.clone()
             }
         }
     }
@@ -882,6 +886,7 @@ mod tests {
 
     fn handle_with(frames: Arc<dyn OverlayFrameSink>) -> OverlayServiceHandle {
         OverlayServiceHandle::new(OverlayServiceParts {
+            default_root: std::path::PathBuf::new(),
             date_names: DateNamesHandle::default(),
             tasks: forge_net::TaskOwner::new(),
             repo: Arc::new(MockOverlayRepo::new()),
@@ -960,6 +965,7 @@ mod tests {
         let mut repo = MockOverlayRepo::new();
         repo.expect_delete().times(1).returning(move |_| outcome());
         OverlayServiceHandle::new(OverlayServiceParts {
+            default_root: std::path::PathBuf::new(),
             date_names: DateNamesHandle::default(),
             tasks: forge_net::TaskOwner::new(),
             repo: Arc::new(repo),

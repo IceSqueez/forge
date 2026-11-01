@@ -31,6 +31,7 @@ use crate::sub_action_runners::{
     CoreSubActionDeps, register_core_sub_actions, register_scheduled_run_sub_actions,
 };
 use crate::trigger_evaluator::{TriggerEvaluatorHandle, spawn_trigger_evaluator};
+use forge_paths::AppPaths;
 
 pub struct RuntimeWiringParts {
     pub bus: Arc<EventBus>,
@@ -43,6 +44,8 @@ pub struct RuntimeWiringParts {
     pub clock: Arc<dyn WallClock>,
     pub date_names: DateNamesHandle,
     pub tasks: TaskOwner,
+    pub paths: AppPaths,
+    pub config: Config,
 }
 
 pub struct RuntimeWiring {
@@ -58,6 +61,8 @@ pub struct RuntimeWiring {
     scheduled_runs_start: ScheduledRunsStart,
     sub_actions: SubActionRegistry,
     triggers: TriggerRegistry,
+    paths: AppPaths,
+    config: Config,
 }
 
 impl RuntimeWiring {
@@ -73,6 +78,8 @@ impl RuntimeWiring {
             clock,
             date_names,
             tasks,
+            paths,
+            config,
         } = parts;
         let (scheduler, scheduler_start) = QueueScheduler::reserve();
         let (scheduled_runs, scheduled_runs_start) =
@@ -103,6 +110,7 @@ impl RuntimeWiring {
             latest: Some(latest),
             date_names: date_names.clone(),
             tasks,
+            default_root: paths.overlays_dir(),
         });
         Self {
             bus,
@@ -117,6 +125,8 @@ impl RuntimeWiring {
             scheduled_runs_start,
             sub_actions: SubActionRegistry::new(),
             triggers: TriggerRegistry::new(),
+            paths,
+            config,
         }
     }
 
@@ -151,7 +161,8 @@ impl RuntimeWiring {
                 script_repo: Arc::clone(&self.provider) as Arc<dyn ScriptRepo>,
                 cancel_registry: Arc::clone(&self.cancel_registry),
                 overlays: self.overlays.clone(),
-                config: Config::default(),
+                config: self.config.clone(),
+                assets_root: self.paths.assets_dir(),
             },
         )
     }
@@ -174,6 +185,8 @@ impl RuntimeWiring {
             scheduled_runs_start,
             sub_actions,
             triggers,
+            paths: _,
+            config,
         } = self;
         let sub_action_registry = Arc::new(sub_actions);
         let trigger_registry = Arc::new(triggers);
@@ -184,15 +197,16 @@ impl RuntimeWiring {
         let queues_loaded = stored_queues.is_some();
 
         let catalog = Catalog::from_provider(provider.as_ref());
-        let action_engine = spawn_action_engine(
-            Arc::clone(&bus),
-            Arc::clone(&catalog),
-            provider.action_repo(),
-            provider.history_repo(),
-            Arc::clone(&sub_action_registry),
+        let action_engine = spawn_action_engine(crate::ActionEngineParts {
+            bus: Arc::clone(&bus),
+            catalog: Arc::clone(&catalog),
+            actions: provider.action_repo(),
+            history: provider.history_repo(),
+            sub_action_registry: Arc::clone(&sub_action_registry),
             cancel_registry,
             date_names,
-        );
+            config: config.clone(),
+        });
         scheduler_start.start(
             action_engine.clone(),
             Arc::clone(&bus),

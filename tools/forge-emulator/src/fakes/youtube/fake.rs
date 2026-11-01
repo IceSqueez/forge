@@ -4,13 +4,13 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value, json};
+use serde_json::{Map, Value};
 use tokio::sync::watch;
 
 use super::config::FakeYouTubeConfig;
 use super::ledger::YouTubeLedger;
 use super::rest::{self, DATA_API_PREFIX, OAUTH_PREFIX, UPLOAD_API_PREFIX};
-use super::state::Shared;
+use super::state::{AuthorRoles, Shared, author_details, text_message_snippet};
 use crate::EmulatorError;
 use crate::fakes::support::{ServerTasks, bind_loopback, local_addr, serve_http};
 
@@ -27,16 +27,15 @@ pub struct YouTubeChatter {
 
 impl YouTubeChatter {
     fn author_details(&self) -> Value {
-        json!({
-            "channelId": self.channel_id,
-            "channelUrl": format!("http://www.youtube.com/channel/{}", self.channel_id),
-            "displayName": self.display_name,
-            "profileImageUrl": "",
-            "isVerified": false,
-            "isChatOwner": false,
-            "isChatSponsor": self.sponsor,
-            "isChatModerator": self.moderator
-        })
+        author_details(
+            &self.channel_id,
+            &self.display_name,
+            AuthorRoles {
+                owner: false,
+                sponsor: self.sponsor,
+                moderator: self.moderator,
+            },
+        )
     }
 }
 
@@ -112,7 +111,7 @@ impl FakeYouTube {
     }
 
     pub fn is_live(&self) -> bool {
-        self.shared.read(|inner| inner.broadcast.live)
+        self.shared.read(|inner| inner.broadcast.is_live())
     }
 
     pub async fn wait_for<T>(
@@ -131,14 +130,7 @@ impl FakeYouTube {
         author: &YouTubeChatter,
         text: &str,
     ) -> Result<String, EmulatorError> {
-        let mut snippet = Map::new();
-        snippet.insert("type".to_owned(), json!("textMessageEvent"));
-        snippet.insert("displayMessage".to_owned(), json!(text));
-        snippet.insert(
-            "textMessageDetails".to_owned(),
-            json!({ "messageText": text }),
-        );
-        self.inject_chat_event(author, snippet)
+        self.inject_chat_event(author, text_message_snippet(text))
     }
 
     pub fn inject_chat_event(
@@ -160,7 +152,7 @@ impl FakeYouTube {
     pub fn set_live(&self, live: bool) {
         let config = self.shared.config();
         self.shared
-            .mutate(|inner| match (inner.broadcast.live, live) {
+            .mutate(|inner| match (inner.broadcast.is_live(), live) {
                 (false, true) => inner.go_live(),
                 (true, false) => inner.end_broadcast(config),
                 _ => {}

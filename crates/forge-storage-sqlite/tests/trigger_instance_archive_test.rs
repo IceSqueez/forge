@@ -73,7 +73,8 @@ async fn archive_hides_instance_from_reads_and_lists_it_in_archived() {
     let id = inst.id;
     repo.save(&inst).await.expect("save");
     backend
-        .insert_action_trigger_instance_for_test(action_id, id, 0)
+        .trigger_instance_repo()
+        .link_action_at(action_id, id, 0)
         .await
         .expect("link");
     repo.archive(id).await.expect("archive");
@@ -139,7 +140,8 @@ async fn delete_succeeds_when_only_archived_actions_use_the_instance() {
     let inst = trigger_instance("twitch.chat.command", "Referenced", true);
     repo.save(&inst).await.expect("save");
     backend
-        .insert_action_trigger_instance_for_test(action_id, inst.id, 0)
+        .trigger_instance_repo()
+        .link_action_at(action_id, inst.id, 0)
         .await
         .expect("link");
     backend
@@ -162,11 +164,13 @@ async fn delete_is_blocked_by_live_users_and_counts_only_them() {
     let inst = trigger_instance("twitch.chat.command", "Shared", true);
     repo.save(&inst).await.expect("save");
     backend
-        .insert_action_trigger_instance_for_test(live, inst.id, 0)
+        .trigger_instance_repo()
+        .link_action_at(live, inst.id, 0)
         .await
         .expect("link live");
     backend
-        .insert_action_trigger_instance_for_test(archived, inst.id, 1)
+        .trigger_instance_repo()
+        .link_action_at(archived, inst.id, 1)
         .await
         .expect("link archived");
     backend
@@ -203,11 +207,13 @@ async fn actions_using_excludes_archived_actions() {
     let inst = trigger_instance("twitch.chat.command", "Shared", true);
     repo.save(&inst).await.expect("save");
     backend
-        .insert_action_trigger_instance_for_test(live, inst.id, 0)
+        .trigger_instance_repo()
+        .link_action_at(live, inst.id, 0)
         .await
         .expect("link live");
     backend
-        .insert_action_trigger_instance_for_test(archived, inst.id, 1)
+        .trigger_instance_repo()
+        .link_action_at(archived, inst.id, 1)
         .await
         .expect("link archived");
 

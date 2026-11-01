@@ -6,7 +6,7 @@ use crate::core_messages;
 
 const DRIVE_SEPARATOR: u8 = b':';
 
-pub(super) async fn resolve_sandboxed(rel: &str) -> Result<PathBuf, MessageRef> {
+pub(super) async fn resolve_sandboxed(root: &Path, rel: &str) -> Result<PathBuf, MessageRef> {
     if rel.trim().is_empty() {
         return Err(core_messages::file_path_empty());
     }
@@ -26,11 +26,10 @@ pub(super) async fn resolve_sandboxed(rel: &str) -> Result<PathBuf, MessageRef> 
         }
     }
 
-    let root = forge_paths::assets_dir();
-    tokio::fs::create_dir_all(&root)
+    tokio::fs::create_dir_all(root)
         .await
         .map_err(core_messages::file_io_failed)?;
-    let canon_root = tokio::fs::canonicalize(&root)
+    let canon_root = tokio::fs::canonicalize(root)
         .await
         .map_err(core_messages::file_io_failed)?;
 

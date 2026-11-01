@@ -470,7 +470,6 @@ impl ScheduledRunsView {
         let ink = tone_ink(tone, palette);
         let reason = run
             .outcome_reason
-            .as_deref()
             .map(|reason| reason_label(reason, row.late_by()))
             .unwrap_or_default();
         let resolved = run

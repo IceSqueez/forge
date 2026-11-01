@@ -20,6 +20,14 @@ use crate::bundle::schedule_key::ScheduleKey;
 use crate::bundle::settings_read::optional_text;
 use crate::scheduled::retention::RetentionPolicy;
 
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) enum StoredScheduleKey {
+    #[default]
+    Absent,
+    Unreadable,
+    Readable(ScheduleKey),
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ScheduleSettings {
     pub enabled: bool,
@@ -27,8 +35,7 @@ pub(crate) struct ScheduleSettings {
     pub retention: RetentionPolicy,
     pub categories: Vec<BackupCategory>,
     pub destination: Option<PathBuf>,
-    pub key: Option<ScheduleKey>,
-    pub key_unreadable: bool,
+    pub key: StoredScheduleKey,
 }
 
 impl Default for ScheduleSettings {
@@ -42,8 +49,7 @@ impl Default for ScheduleSettings {
             },
             categories: BackupCategory::all(),
             destination: None,
-            key: None,
-            key_unreadable: false,
+            key: StoredScheduleKey::Absent,
         }
     }
 }
@@ -69,8 +75,11 @@ impl ScheduleSettings {
             .chain(optional_categories.into_iter().flatten())
             .collect();
         let stored_key = optional_text(repo, &BACKUP_SCHEDULE_KEY).await?;
-        let decoded_key = stored_key.as_deref().map(ScheduleKey::decode);
-        let key_unreadable = matches!(decoded_key, Some(Err(_)));
+        let key = match stored_key.as_deref().map(ScheduleKey::decode) {
+            None => StoredScheduleKey::Absent,
+            Some(Ok(key)) => StoredScheduleKey::Readable(key),
+            Some(Err(_)) => StoredScheduleKey::Unreadable,
+        };
         Ok(Self {
             enabled: read_setting(repo, &BACKUP_SCHEDULE_ENABLED).await?,
             interval_minutes: read_setting(repo, &BACKUP_SCHEDULE_INTERVAL_MINUTES).await?,
@@ -82,8 +91,7 @@ impl ScheduleSettings {
             destination: optional_text(repo, &BACKUP_SCHEDULE_DESTINATION)
                 .await?
                 .map(PathBuf::from),
-            key: decoded_key.and_then(Result::ok),
-            key_unreadable,
+            key,
         })
     }
 }
@@ -135,7 +143,7 @@ mod tests {
     use forge_storage::test_support::MemorySettings;
     use time::{Date, Month};
 
-    use super::{Progress, ScheduleSettings};
+    use super::{Progress, ScheduleSettings, StoredScheduleKey};
     use crate::bundle::category::BackupCategory;
 
     #[tokio::test]
@@ -222,12 +230,16 @@ mod tests {
         ] {
             repo.seed(&BACKUP_SCHEDULE_KEY, &stored).unwrap();
             let settings = ScheduleSettings::load(&repo).await.unwrap();
-            loaded.push((settings.key, settings.key_unreadable));
+            loaded.push(settings.key);
         }
 
         assert_eq!(
             loaded,
-            vec![(None, false), (Some(key), false), (None, true)]
+            vec![
+                StoredScheduleKey::Absent,
+                StoredScheduleKey::Readable(key),
+                StoredScheduleKey::Unreadable,
+            ]
         );
     }
 

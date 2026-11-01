@@ -10,7 +10,7 @@ use serde_json::{Map, Value, json};
 
 use super::config::{FakeYouTubeConfig, YouTubeRefreshAnswer};
 use super::ledger::{YouTubeCredentialCheck, YouTubeRequest, YouTubeSurface};
-use super::state::{Inner, Shared};
+use super::state::{Inner, Shared, text_message_snippet};
 use crate::vocabulary::REDACTED;
 
 pub(crate) const DATA_API_PREFIX: &str = "/youtube/v3";
@@ -294,9 +294,9 @@ fn list_chat(
     };
     let ended_and_delivered = inner
         .broadcast
-        .ended_at_message
+        .ended_at_message()
         .is_some_and(|end| offset >= end);
-    let never_live = !inner.chat_open() && inner.broadcast.ended_at_message.is_none();
+    let never_live = inner.broadcast.never_live();
     if ended_and_delivered || never_live {
         return google_error(
             StatusCode::FORBIDDEN,
@@ -314,7 +314,7 @@ fn list_chat(
         "pageInfo": { "totalResults": items.len(), "resultsPerPage": items.len() },
         "items": items
     });
-    if let Some(offline_at) = &inner.broadcast.offline_at {
+    if let Some(offline_at) = inner.broadcast.offline_at() {
         response["offlineAt"] = json!(offline_at);
     }
     (StatusCode::OK, response)
@@ -367,13 +367,7 @@ fn insert_chat(
             "The live chat is no longer live.",
         );
     }
-    let mut snippet = Map::new();
-    snippet.insert("type".to_owned(), json!("textMessageEvent"));
-    snippet.insert("displayMessage".to_owned(), json!(text));
-    snippet.insert(
-        "textMessageDetails".to_owned(),
-        json!({ "messageText": text }),
-    );
+    let snippet = text_message_snippet(text);
     let mut created = inner.store_message(config, snippet, Inner::owner_details(config));
     if let Some(resource) = created.as_object_mut() {
         resource.remove("authorDetails");
@@ -385,10 +379,10 @@ fn broadcasts(inner: &Inner, config: &FakeYouTubeConfig, query: &[(String, Strin
     let asks_for_active = query_value(query, "broadcastStatus") == Some("active");
     let asks_for_own = query_value(query, "mine") == Some("true")
         || query_value(query, "id") == Some(config.broadcast_id.as_str());
-    if !inner.broadcast.live || !(asks_for_active || asks_for_own) {
+    if !inner.broadcast.is_live() || !(asks_for_active || asks_for_own) {
         return Vec::new();
     }
-    let started_at = inner.broadcast.started_at.clone().unwrap_or_default();
+    let started_at = inner.broadcast.started_at().unwrap_or_default().to_owned();
     let mut base = Map::new();
     base.insert("kind".to_owned(), json!("youtube#liveBroadcast"));
     base.insert("etag".to_owned(), json!("emulator-broadcast-etag"));
@@ -430,19 +424,19 @@ fn videos(inner: &Inner, config: &FakeYouTubeConfig, query: &[(String, String)])
     let asked = query_value(query, "id")
         .map(|ids| ids.split(',').any(|id| id == config.broadcast_id))
         .unwrap_or(false);
-    if !asked || inner.broadcast.started_at.is_none() {
+    if !asked || inner.broadcast.never_live() {
         return Vec::new();
     }
-    let started_at = inner.broadcast.started_at.clone().unwrap_or_default();
+    let started_at = inner.broadcast.started_at().unwrap_or_default().to_owned();
     let mut streaming = json!({
         "actualStartTime": started_at,
         "scheduledStartTime": started_at
     });
-    if inner.broadcast.live {
+    if inner.broadcast.is_live() {
         streaming["concurrentViewers"] = json!(config.concurrent_viewers.to_string());
         streaming["activeLiveChatId"] = json!(config.live_chat_id);
     }
-    if let Some(offline_at) = &inner.broadcast.offline_at {
+    if let Some(offline_at) = inner.broadcast.offline_at() {
         streaming["actualEndTime"] = json!(offline_at);
     }
     let mut base = Map::new();
@@ -462,7 +456,7 @@ fn videos(inner: &Inner, config: &FakeYouTubeConfig, query: &[(String, String)])
                     "description": "",
                     "channelTitle": config.channel_title,
                     "categoryId": "20",
-                    "liveBroadcastContent": if inner.broadcast.live { "live" } else { "none" }
+                    "liveBroadcastContent": if inner.broadcast.is_live() { "live" } else { "none" }
                 }),
             ),
             (

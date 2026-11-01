@@ -104,6 +104,8 @@ impl Harness {
         dp.queue_repo().save(&queue).await.unwrap();
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let runtime = common::frozen_runtime(RuntimeWiringParts {
+            paths: forge_paths::AppPaths::at(std::env::temp_dir().join("forge-tests")),
+            config: forge_runtime::Config::default(),
             date_names: forge_runtime::DateNamesHandle::default(),
             clock: Arc::new(FixedClock),
             ..common::wiring_parts(Arc::clone(&dp), Arc::clone(&bus)).await
@@ -736,7 +738,7 @@ fn origins(runs: &[ScheduledRun]) -> Vec<Origin> {
         .map(|run| {
             (
                 run.spec.scheduled_by_action,
-                run.spec.scheduled_by_run.clone(),
+                run.spec.scheduled_by_run.map(|run| run.to_string()),
                 run.spec.trigger_event_id,
             )
         })

@@ -501,7 +501,7 @@ mod tests {
                 .voice_alias_repo()
                 .upsert(&VoiceAlias {
                     id: AliasId::generate(),
-                    viewer_id: "twitch:viewer".to_owned(),
+                    alias_key: "twitch:viewer".to_owned(),
                     viewer_name: "viewer".to_owned(),
                     engine_id: EngineId("piper".to_owned()),
                     voice_id: VoiceId("amy".to_owned()),

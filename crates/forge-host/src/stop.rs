@@ -411,6 +411,82 @@ mod tests {
         async fn prune_executions_before(&self, _: OffsetDateTime) -> Result<u64, StorageError> {
             std::future::pending().await
         }
+
+        async fn count(&self) -> Result<usize, forge_storage::StorageError> {
+            Ok(forge_storage::ActionRepo::list(self).await?.len())
+        }
+
+        async fn ids_named(
+            &self,
+            name: &str,
+        ) -> Result<Vec<forge_types::ActionId>, forge_storage::StorageError> {
+            Ok(forge_storage::ActionRepo::list(self)
+                .await?
+                .into_iter()
+                .filter(|action| action.name == name)
+                .map(|action| action.id)
+                .collect())
+        }
+
+        async fn record_executions(
+            &self,
+            executions: &[forge_storage::ActionExecution],
+        ) -> Result<(), forge_storage::StorageError> {
+            for execution in executions {
+                self.record_execution(
+                    execution.action_id,
+                    execution.started_at,
+                    execution.duration_ms,
+                    execution.status,
+                )
+                .await?;
+            }
+            Ok(())
+        }
+
+        async fn set_enabled(
+            &self,
+            _id: forge_types::ActionId,
+            _enabled: bool,
+        ) -> Result<bool, forge_storage::StorageError> {
+            Err(forge_storage::StorageError::NotReady)
+        }
+
+        async fn toggle_enabled(
+            &self,
+            _id: forge_types::ActionId,
+        ) -> Result<Option<bool>, forge_storage::StorageError> {
+            Err(forge_storage::StorageError::NotReady)
+        }
+
+        async fn duplicate(
+            &self,
+            _source_id: forge_types::ActionId,
+            _new_id: forge_types::ActionId,
+            _new_name: &str,
+        ) -> Result<(), forge_storage::StorageError> {
+            Err(forge_storage::StorageError::NotReady)
+        }
+
+        async fn archive_reporting_cancelled_runs(
+            &self,
+            _id: forge_types::ActionId,
+        ) -> Result<Option<u64>, forge_storage::StorageError> {
+            Err(forge_storage::StorageError::NotReady)
+        }
+
+        async fn restore(
+            &self,
+            _id: forge_types::ActionId,
+        ) -> Result<bool, forge_storage::StorageError> {
+            Err(forge_storage::StorageError::NotReady)
+        }
+
+        async fn list_archived(
+            &self,
+        ) -> Result<Vec<forge_types::Action>, forge_storage::StorageError> {
+            Ok(Vec::new())
+        }
     }
 
     struct StalledRuns;
@@ -439,7 +515,7 @@ mod tests {
         async fn fail_unreadable_due(
             &self,
             _: OffsetDateTime,
-            _: &str,
+            _: forge_storage::RunRefusal,
         ) -> Result<Vec<ScheduledRunId>, StorageError> {
             std::future::pending().await
         }
@@ -468,7 +544,7 @@ mod tests {
             &self,
             _: ScheduledRunId,
             _: forge_storage::ScheduledRunOutcome,
-            _: Option<String>,
+            _: Option<forge_storage::RunRefusal>,
             _: OffsetDateTime,
         ) -> Result<bool, StorageError> {
             std::future::pending().await
@@ -579,14 +655,18 @@ mod tests {
                 cooldown_global: true,
                 permission_rung: PermissionRung::Everyone,
             };
+            let timed_action = action.id;
             let mut actions = MockActionRepo::new();
             actions
                 .expect_list()
                 .returning(move || Ok(vec![action.clone()]));
             let mut instances = MockTriggerInstanceRepo::new();
-            instances
-                .expect_list_for_action()
-                .returning(move |_| Ok(vec![timer.clone()]));
+            instances.expect_instances_by_action().returning(move || {
+                Ok(std::collections::HashMap::from([(
+                    timed_action,
+                    vec![timer.clone()],
+                )]))
+            });
             Self {
                 timer_catalog: Catalog::new(
                     Arc::new(actions),
@@ -600,15 +680,16 @@ mod tests {
 
     fn handles_over(bus: Arc<EventBus>, intake: Intake) -> StopSequence {
         let catalog = stub_catalog();
-        let action_engine = spawn_action_engine(
-            Arc::clone(&bus),
-            Arc::clone(&catalog),
-            Arc::new(MockActionRepo::new()),
-            Arc::new(MockHistoryRepo::new()),
-            Arc::new(SubActionRegistry::new()),
-            Arc::new(ActionCancelRegistry::new()),
-            forge_runtime::DateNamesHandle::default(),
-        );
+        let action_engine = spawn_action_engine(forge_runtime::ActionEngineParts {
+            bus: Arc::clone(&bus),
+            catalog: Arc::clone(&catalog),
+            actions: Arc::new(MockActionRepo::new()),
+            history: Arc::new(MockHistoryRepo::new()),
+            sub_action_registry: Arc::new(SubActionRegistry::new()),
+            cancel_registry: Arc::new(ActionCancelRegistry::new()),
+            date_names: forge_runtime::DateNamesHandle::default(),
+            config: forge_runtime::Config::default(),
+        });
         let scheduler = QueueScheduler::spawn(action_engine.clone(), Arc::clone(&bus), Vec::new());
         let trigger_evaluator = spawn_trigger_evaluator(
             Arc::clone(&bus),
@@ -857,7 +938,7 @@ mod tests {
         };
         tokio::join!(stop_scheduled_backups(schedule.handle.clone()), run_ends);
 
-        let state = schedule.handle.status().borrow().state;
+        let state = schedule.handle.status().current().state;
         assert!(
             state != ScheduleState::Running && started.elapsed() < SCHEDULED_BACKUP_STOP_BUDGET,
             "{state:?} after {:?}",
@@ -873,7 +954,7 @@ mod tests {
 
         stop_scheduled_backups(schedule.handle.clone()).await;
 
-        let state = schedule.handle.status().borrow().state;
+        let state = schedule.handle.status().current().state;
         assert!(
             state == ScheduleState::Running && started.elapsed() >= SCHEDULED_BACKUP_STOP_BUDGET,
             "{state:?} after {:?}",

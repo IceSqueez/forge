@@ -49,12 +49,7 @@ pub struct ActionStats {
 #[async_trait]
 pub trait HistoryRepo: Send + Sync {
     async fn save(&self, ctx: &ExecutionContext) -> Result<(), StorageError>;
-    async fn save_batch(&self, contexts: &[ExecutionContext]) -> Result<(), StorageError> {
-        for ctx in contexts {
-            self.save(ctx).await?;
-        }
-        Ok(())
-    }
+    async fn save_batch(&self, contexts: &[ExecutionContext]) -> Result<(), StorageError>;
     async fn recent_for_action(
         &self,
         action_id: ActionId,
@@ -65,10 +60,7 @@ pub trait HistoryRepo: Send + Sync {
         builtin_id: &str,
         limit: u32,
     ) -> Result<Vec<ExecutionContext>, StorageError>;
-    async fn recent(&self, limit: u32) -> Result<Vec<ExecutionContext>, StorageError> {
-        let _ = limit;
-        Ok(Vec::new())
-    }
+    async fn recent(&self, limit: u32) -> Result<Vec<ExecutionContext>, StorageError>;
     async fn stats_summary(
         &self,
         since: OffsetDateTime,
@@ -80,48 +72,6 @@ mod tests {
     use super::*;
     use crate::set_event_log_retention_days;
     use crate::test_support::MemorySettings;
-
-    struct MinimalRepo;
-
-    #[async_trait]
-    impl HistoryRepo for MinimalRepo {
-        async fn save(&self, _ctx: &ExecutionContext) -> Result<(), StorageError> {
-            Ok(())
-        }
-        async fn recent_for_action(
-            &self,
-            _action_id: ActionId,
-            _limit: u32,
-        ) -> Result<Vec<ExecutionContext>, StorageError> {
-            Ok(Vec::new())
-        }
-        async fn recent_for_builtin(
-            &self,
-            _builtin_id: &str,
-            _limit: u32,
-        ) -> Result<Vec<ExecutionContext>, StorageError> {
-            Ok(Vec::new())
-        }
-        async fn stats_summary(
-            &self,
-            _since: OffsetDateTime,
-        ) -> Result<HashMap<ActionId, ActionStats>, StorageError> {
-            Ok(HashMap::new())
-        }
-    }
-
-    #[tokio::test]
-    async fn recent_defaults_to_an_empty_history_for_a_repo_that_does_not_override_it() {
-        let repo: &dyn HistoryRepo = &MinimalRepo;
-
-        for limit in [0, 1, u32::MAX] {
-            assert_eq!(
-                repo.recent(limit).await.unwrap(),
-                Vec::new(),
-                "limit {limit}",
-            );
-        }
-    }
 
     async fn read_back(history_raw: Option<&str>, event_log_days: Option<u32>) -> u32 {
         let repo = MemorySettings::new();

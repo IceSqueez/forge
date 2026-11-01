@@ -129,15 +129,20 @@ async fn dedupe_keeps_only_the_newest_alias_per_viewer_with_rowid_breaking_ties(
 async fn a_second_alias_row_for_the_same_viewer_is_rejected_after_migration() {
     let db = db_at_previous_schema().await;
     apply_migrations(&db.pool).await.expect("migrate");
-    insert_alias(&db.pool, "first", "v1", "2026-01-01 00:00:00").await;
+    let insert = |id: &'static str| {
+        sqlx::query(
+            "INSERT INTO voice_aliases
+                (id, alias_key, viewer_name, engine_id, voice_id, created_at, updated_at)
+             VALUES (?, 'v1', 'name', 'piper', 'voice', 'x', 'x')",
+        )
+        .bind(id)
+    };
+    insert("first")
+        .execute(&db.pool)
+        .await
+        .expect("first alias");
 
-    let duplicate = sqlx::query(
-        "INSERT INTO voice_aliases
-            (id, viewer_id, viewer_name, engine_id, voice_id, created_at, updated_at)
-         VALUES ('second', 'v1', 'name', 'piper', 'voice', 'x', 'x')",
-    )
-    .execute(&db.pool)
-    .await;
+    let duplicate = insert("second").execute(&db.pool).await;
 
     let is_unique_violation = matches!(
         duplicate,

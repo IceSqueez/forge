@@ -255,6 +255,7 @@ fn log_record(fields: &[(&str, &str)]) -> LogRecord {
         file: PathBuf::from("/tmp/forge-emulator-run/attempt-1/data/logs/forge.log.2026-09-13"),
         level: "DEBUG".to_owned(),
         target: "forge::trigger".to_owned(),
+        message: String::new(),
         line: format!("2026-09-13T10:00:01Z DEBUG forge::trigger: trigger rejected {fields:?}"),
         fields,
     }

@@ -182,7 +182,7 @@ async fn open_backend() -> Result<Arc<dyn DataProvider>, BootFailure> {
         });
     }
     let url = sqlite_url(&db_path);
-    match SqliteBackend::open(&url).await {
+    match SqliteBackend::open(&url, crate::app_paths::app_paths()).await {
         Ok(backend) => Ok(Arc::new(backend) as Arc<dyn DataProvider>),
         Err(e) => {
             let err: StorageError = e.into();

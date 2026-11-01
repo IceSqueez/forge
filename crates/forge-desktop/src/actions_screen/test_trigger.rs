@@ -73,15 +73,16 @@ mod tests {
                 .expect("migrations seed the default queue");
             let queue_id = queue.id;
             let bus = EventBus::new(Arc::new(StubEventLog));
-            let engine = spawn_action_engine(
-                Arc::clone(&bus),
-                Catalog::from_provider(provider.as_ref()),
-                provider.action_repo(),
-                provider.history_repo(),
-                Arc::new(SubActionRegistry::new()),
-                Arc::new(ActionCancelRegistry::new()),
-                forge_runtime::DateNamesHandle::default(),
-            );
+            let engine = spawn_action_engine(forge_runtime::ActionEngineParts {
+                bus: Arc::clone(&bus),
+                catalog: Catalog::from_provider(provider.as_ref()),
+                actions: provider.action_repo(),
+                history: provider.history_repo(),
+                sub_action_registry: Arc::new(SubActionRegistry::new()),
+                cancel_registry: Arc::new(ActionCancelRegistry::new()),
+                date_names: forge_runtime::DateNamesHandle::default(),
+                config: forge_runtime::Config::default(),
+            });
             let scheduler = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
             let mut sub = bus.subscribe();
 

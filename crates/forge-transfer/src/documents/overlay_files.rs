@@ -7,11 +7,13 @@ use forge_storage::OverlayId;
 use forge_types::Variant;
 
 use crate::bundle::document_layout::safe_segments;
+use crate::bundle::naming::{sibling_with_extension, unique_suffix};
 use crate::documents::model::{DocumentConfig, OverlayFileDocument};
 use crate::documents::undo::Undo;
 use crate::error::TransferError;
 
 pub(crate) const PENDING_IMPORT_MARKER: &str = ".forge-import-pending";
+const SET_ASIDE_EXTENSION: &str = "forge-import-previous";
 
 pub(crate) async fn place_overlay_files(
     overlay_root: &Path,
@@ -47,16 +49,20 @@ pub(crate) async fn place_overlay_files(
         if let Some(parent) = destination.parent() {
             tokio::fs::create_dir_all(parent).await?;
         }
-        let previous = match tokio::fs::read(&destination).await {
-            Ok(bytes) => Some(bytes),
+        let aside = sibling_with_extension(
+            &destination,
+            &format!("{SET_ASIDE_EXTENSION}-{}", unique_suffix()),
+        );
+        let set_aside = match tokio::fs::rename(&destination, &aside).await {
+            Ok(()) => Some(aside),
             Err(e) if e.kind() == io::ErrorKind::NotFound => None,
             Err(e) => return Err(e.into()),
         };
-        tokio::fs::copy(&source, &destination).await?;
         record(Undo::OverlayFile {
-            path: destination,
-            previous,
+            path: destination.clone(),
+            set_aside,
         });
+        tokio::fs::copy(&source, &destination).await?;
     }
     Ok(())
 }

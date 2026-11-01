@@ -11,10 +11,7 @@ mod script_scheduler;
 mod waiting;
 
 pub use catch_up::CatchUpSettle;
-pub use hand_off::{
-    ACTION_DISABLED_REASON, ACTION_NOT_FOUND_REASON, ACTIONS_UNAVAILABLE_REASON, HandOff,
-    MISSED_REASON, QUEUES_CLOSED_REASON, SCHEDULED_RUN_DUE_KIND, UNREADABLE_REASON,
-};
+pub use hand_off::{HandOff, SCHEDULED_RUN_DUE_KIND};
 pub use handle::ScheduledRunsHandle;
 pub use limits::{
     CATCH_UP_SETTLE_LIMIT, MAX_LATE_TOLERANCE, MAX_PENDING_SCHEDULED_RUNS,

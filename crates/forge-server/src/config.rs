@@ -68,6 +68,7 @@ impl ServerConfig {
         reason = "constructor receives each shared handle it wires"
     )]
     pub fn new(
+        default_overlay_root: PathBuf,
         settings: Arc<dyn SettingsRepo>,
         credentials: Arc<dyn CredentialsRepo>,
         event_bus: Arc<dyn EventHistory>,
@@ -76,7 +77,6 @@ impl ServerConfig {
         user_globals: Arc<dyn UserGlobalsRepo>,
         overlays: Arc<dyn OverlayRepo>,
         action_engine: Arc<ActionEngineHandle>,
-        default_overlay_root: PathBuf,
     ) -> Self {
         Self {
             bind_addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), DEFAULT_PORT),

@@ -1,4 +1,5 @@
 use std::io::ErrorKind;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::core_messages;
@@ -114,7 +115,15 @@ fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<WriteRequest
     })
 }
 
-pub struct CoreFileWriteRunner;
+pub struct CoreFileWriteRunner {
+    assets_root: PathBuf,
+}
+
+impl CoreFileWriteRunner {
+    pub fn new(assets_root: PathBuf) -> Self {
+        Self { assets_root }
+    }
+}
 
 #[async_trait]
 impl SubActionRunner for CoreFileWriteRunner {
@@ -164,19 +173,20 @@ impl SubActionRunner for CoreFileWriteRunner {
             Err(problem) => return (timer.invalid_config(&problem), None),
         };
 
-        let (outcome, updated) = match super::file_sandbox::resolve_sandboxed(&request.path).await {
-            Err(reason) => (SubActionOutcome::Failed(reason.into()), None),
-            Ok(abs_path) => match do_write(&abs_path, &request).await {
+        let (outcome, updated) =
+            match super::file_sandbox::resolve_sandboxed(&self.assets_root, &request.path).await {
                 Err(reason) => (SubActionOutcome::Failed(reason.into()), None),
-                Ok(bytes_written) => {
-                    let stack = ctx.arg_stack.clone().set(
-                        FILE_BYTES_WRITTEN_VAR.to_owned(),
-                        Variant::Int(i64::try_from(bytes_written).unwrap_or(i64::MAX)),
-                    );
-                    (SubActionOutcome::Success, Some(stack))
-                }
-            },
-        };
+                Ok(abs_path) => match do_write(&abs_path, &request).await {
+                    Err(reason) => (SubActionOutcome::Failed(reason.into()), None),
+                    Ok(bytes_written) => {
+                        let stack = ctx.arg_stack.clone().set(
+                            FILE_BYTES_WRITTEN_VAR.to_owned(),
+                            Variant::Int(i64::try_from(bytes_written).unwrap_or(i64::MAX)),
+                        );
+                        (SubActionOutcome::Success, Some(stack))
+                    }
+                },
+            };
 
         (timer.finish(outcome), updated)
     }

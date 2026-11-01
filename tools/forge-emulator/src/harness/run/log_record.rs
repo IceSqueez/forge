@@ -8,6 +8,7 @@ pub struct LogRecord {
     pub file: PathBuf,
     pub level: String,
     pub target: String,
+    pub message: String,
     pub fields: BTreeMap<String, String>,
     pub line: String,
 }
@@ -26,6 +27,7 @@ impl LogRecord {
             file,
             level: level.to_owned(),
             target: target.to_owned(),
+            message: message_before_fields(message_and_fields).to_owned(),
             fields: trailing_fields(message_and_fields),
             line: line.to_owned(),
         })
@@ -36,6 +38,22 @@ impl LogRecord {
             .iter()
             .all(|(key, value)| self.fields.get(key) == Some(value))
     }
+}
+
+fn message_before_fields(text: &str) -> &str {
+    let is_field_start = |word: &str| {
+        word.find('=').is_some_and(|at| {
+            at > 0
+                && word[..at]
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '_')
+        })
+    };
+    let cut = text
+        .match_indices(' ')
+        .map(|(index, _)| index)
+        .find(|index| is_field_start(&text[*index + 1..]));
+    text[..cut.unwrap_or(text.len())].trim()
 }
 
 fn is_level(word: &str) -> bool {

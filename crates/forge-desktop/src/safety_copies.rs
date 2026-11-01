@@ -881,7 +881,7 @@ mod tests {
         fn storage_backups_bytes(&self) -> Option<u64> {
             self.scheduled
                 .status()
-                .borrow()
+                .current()
                 .storage_used
                 .map(|used| used.backups)
         }

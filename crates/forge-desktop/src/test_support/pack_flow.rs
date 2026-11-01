@@ -74,6 +74,7 @@ pub(crate) fn pack_world(rt: &tokio::runtime::Runtime) -> PackWorld {
         let kinds = Arc::new(kinds);
         let bus = EventBus::new(Arc::new(StubEventLog));
         let overlays = OverlayServiceHandle::new(forge_runtime::OverlayServiceParts {
+            default_root: std::path::PathBuf::new(),
             date_names: forge_runtime::DateNamesHandle::default(),
             tasks: forge_net::TaskOwner::new(),
             repo: provider.overlay_repo(),

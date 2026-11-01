@@ -75,11 +75,14 @@ pub async fn load_pack_inventory(
     let action_repo = provider.action_repo();
     let actions = action_repo.list().await?;
     let trigger_repo = provider.trigger_instance_repo();
-    let mut action_triggers = BTreeMap::new();
-    for action in &actions {
-        let linked = trigger_repo.list_for_action(action.id).await?;
-        action_triggers.insert(action.id, linked.iter().map(|trigger| trigger.id).collect());
-    }
+    let mut links = trigger_repo.instances_by_action().await?;
+    let action_triggers = actions
+        .iter()
+        .map(|action| {
+            let linked = links.remove(&action.id).unwrap_or_default();
+            (action.id, linked.iter().map(|trigger| trigger.id).collect())
+        })
+        .collect();
     let media_repo = provider.media_repo();
     let clips = provider.soundboard_clips_repo().list().await?;
     let mut clip_media = BTreeMap::new();

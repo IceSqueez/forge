@@ -2,9 +2,8 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use forge_storage::{
-    CANCELLED_REASON, MissedRunPolicy, SUPERSEDED_REASON, ScheduledRun, ScheduledRunId,
-    ScheduledRunOutcome, ScheduledRunPlacement, ScheduledRunRepo, ScheduledRunSpec,
-    ScheduledRunState, StorageError,
+    MissedRunPolicy, RunRefusal, ScheduledRun, ScheduledRunId, ScheduledRunOutcome,
+    ScheduledRunPlacement, ScheduledRunRepo, ScheduledRunSpec, ScheduledRunState, StorageError,
 };
 use forge_types::{ActionId, EventId, Variant};
 use sqlx::SqliteConnection;
@@ -94,6 +93,11 @@ fn parse_event_id(raw: &str) -> Result<EventId, SqliteStorageError> {
         .map_err(|e| SqliteStorageError::Decode(format!("invalid event id '{raw}': {e}")))
 }
 
+fn parse_refusal(raw: &str) -> Result<RunRefusal, SqliteStorageError> {
+    RunRefusal::from_code(raw)
+        .ok_or_else(|| SqliteStorageError::Decode(format!("unknown run refusal '{raw}'")))
+}
+
 #[derive(sqlx::FromRow)]
 struct ScheduledRunRow {
     id: i64,
@@ -128,7 +132,11 @@ fn decode_row(row: ScheduledRunRow) -> Result<ScheduledRun, StorageError> {
                 .as_deref()
                 .map(parse_action_id)
                 .transpose()?,
-            scheduled_by_run: row.scheduled_by_run,
+            scheduled_by_run: row
+                .scheduled_by_run
+                .as_deref()
+                .map(parse_event_id)
+                .transpose()?,
             trigger_event_id: row
                 .trigger_event_id
                 .as_deref()
@@ -139,7 +147,11 @@ fn decode_row(row: ScheduledRunRow) -> Result<ScheduledRun, StorageError> {
             label: row.label,
         },
         state: parse_state(&row.state)?,
-        outcome_reason: row.outcome_reason,
+        outcome_reason: row
+            .outcome_reason
+            .as_deref()
+            .map(parse_refusal)
+            .transpose()?,
         resolved_at: row.resolved_at.map(from_epoch_ms).transpose()?,
     })
 }
@@ -188,7 +200,7 @@ async fn supersede_pending_key(
          WHERE key = ? AND state = ? RETURNING id",
     )
     .bind(STATE_CANCELLED)
-    .bind(SUPERSEDED_REASON)
+    .bind(RunRefusal::Superseded.code())
     .bind(to_epoch_ms(at))
     .bind(key)
     .bind(STATE_PENDING)
@@ -215,7 +227,7 @@ impl SqliteScheduledRunRepo {
     ) -> Result<bool, StorageError> {
         let query = sqlx::query(sql)
             .bind(STATE_CANCELLED)
-            .bind(CANCELLED_REASON)
+            .bind(RunRefusal::Cancelled.code())
             .bind(to_epoch_ms(at));
         let query = match bind {
             Binding::Id(id) => query.bind(id.get()),
@@ -277,7 +289,7 @@ impl ScheduledRunRepo for SqliteScheduledRunRepo {
         .bind(skip_late_ms)
         .bind(args)
         .bind(spec.scheduled_by_action.map(|id| id.to_string()))
-        .bind(spec.scheduled_by_run.as_deref())
+        .bind(spec.scheduled_by_run.map(|run| run.to_string()))
         .bind(spec.trigger_event_id.map(|id| id.to_string()))
         .bind(spec.replay)
         .bind(to_epoch_ms(spec.scheduled_at))
@@ -338,7 +350,7 @@ impl ScheduledRunRepo for SqliteScheduledRunRepo {
     async fn fail_unreadable_due(
         &self,
         now: OffsetDateTime,
-        reason: &str,
+        reason: RunRefusal,
     ) -> Result<Vec<ScheduledRunId>, StorageError> {
         let rows = sqlx::query_as::<_, ScheduledRunRow>(concat!(
             "SELECT ",
@@ -365,7 +377,7 @@ impl ScheduledRunRepo for SqliteScheduledRunRepo {
                  WHERE id = ? AND state = ?",
             )
             .bind(STATE_FAILED)
-            .bind(reason)
+            .bind(reason.code())
             .bind(to_epoch_ms(now))
             .bind(id)
             .bind(STATE_PENDING)
@@ -435,7 +447,7 @@ impl ScheduledRunRepo for SqliteScheduledRunRepo {
         &self,
         id: ScheduledRunId,
         outcome: ScheduledRunOutcome,
-        reason: Option<String>,
+        reason: Option<RunRefusal>,
         at: OffsetDateTime,
     ) -> Result<bool, StorageError> {
         let result = sqlx::query(
@@ -443,7 +455,7 @@ impl ScheduledRunRepo for SqliteScheduledRunRepo {
              WHERE id = ? AND state IN (?, ?)",
         )
         .bind(state_label(outcome.into()))
-        .bind(reason)
+        .bind(reason.map(RunRefusal::code))
         .bind(to_epoch_ms(at))
         .bind(id.get())
         .bind(STATE_PENDING)

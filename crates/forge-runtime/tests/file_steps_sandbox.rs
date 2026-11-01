@@ -44,16 +44,9 @@ fn run_root() -> &'static Path {
     })
 }
 
-#[expect(unsafe_code, reason = "env mutation is unsafe in edition 2024")]
 fn assets_root() -> &'static Path {
     ASSETS_ROOT.get_or_init(|| {
-        let data_dir = run_root().join("data");
-        std::fs::create_dir_all(&data_dir).unwrap();
-        // SAFETY: every test in this binary calls assets_root() before any other work, so all other test threads are blocked on this OnceLock and none reads the environment while it is written.
-        unsafe {
-            std::env::set_var("FORGE_DATA_DIR", &data_dir);
-        }
-        let root = data_dir.join("assets");
+        let root = run_root().join("data").join("assets");
         std::fs::create_dir_all(&root).unwrap();
         std::fs::canonicalize(root).unwrap()
     })
@@ -114,10 +107,26 @@ async fn run_with(
     }
     let ctx = RunContext::leaf(stack, 0, EventId::new(), &NullPublisher);
     let (telemetry, produced) = match step {
-        Step::Read => CoreFileReadRunner.execute(&cfg, &ctx).await,
-        Step::Write => CoreFileWriteRunner.execute(&cfg, &ctx).await,
-        Step::List => CoreFileListRunner.execute(&cfg, &ctx).await,
-        Step::Delete => CoreFileDeleteRunner.execute(&cfg, &ctx).await,
+        Step::Read => {
+            CoreFileReadRunner::new(assets_root().to_path_buf())
+                .execute(&cfg, &ctx)
+                .await
+        }
+        Step::Write => {
+            CoreFileWriteRunner::new(assets_root().to_path_buf())
+                .execute(&cfg, &ctx)
+                .await
+        }
+        Step::List => {
+            CoreFileListRunner::new(assets_root().to_path_buf())
+                .execute(&cfg, &ctx)
+                .await
+        }
+        Step::Delete => {
+            CoreFileDeleteRunner::new(assets_root().to_path_buf())
+                .execute(&cfg, &ctx)
+                .await
+        }
     };
     (telemetry.outcome, produced)
 }

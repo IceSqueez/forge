@@ -148,7 +148,7 @@ impl TriggerEvaluator {
                         target: DECISION_TARGET,
                         event = %event.id,
                         instance = %instance.id,
-                        reason,
+                        %reason,
                         "queue refused the triggered run"
                     );
                 }
@@ -629,15 +629,16 @@ mod tests {
         queues: Vec<Queue>,
     ) -> (Arc<Catalog>, QueueSchedulerHandle) {
         let catalog = Catalog::from_provider(dp.as_ref());
-        let engine = crate::action_engine::spawn_action_engine(
-            Arc::clone(bus),
-            Arc::clone(&catalog),
-            dp.action_repo(),
-            dp.history_repo(),
-            log_step_registry(),
-            Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
-            crate::DateNamesHandle::default(),
-        );
+        let engine = crate::action_engine::spawn_action_engine(crate::ActionEngineParts {
+            bus: Arc::clone(bus),
+            catalog: Arc::clone(&catalog),
+            actions: dp.action_repo(),
+            history: dp.history_repo(),
+            sub_action_registry: log_step_registry(),
+            cancel_registry: Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
+            date_names: crate::DateNamesHandle::default(),
+            config: crate::Config::default(),
+        });
         (
             catalog,
             QueueScheduler::spawn(engine, Arc::clone(bus), queues),
@@ -671,7 +672,8 @@ mod tests {
         dp.action_repo().save(&action).await.unwrap();
         dp.trigger_instance_repo().save(&instance).await.unwrap();
         backend
-            .insert_action_trigger_instance_for_test(a_id, instance.id, 0)
+            .trigger_instance_repo()
+            .link_action_at(a_id, instance.id, 0)
             .await
             .unwrap();
 
@@ -1003,15 +1005,16 @@ mod tests {
             Arc::new(forge_storage::MockTriggerInstanceRepo::new()),
             forge_storage::CatalogRevision::new(),
         );
-        let engine = crate::action_engine::spawn_action_engine(
-            Arc::clone(&bus),
-            Arc::clone(&catalog),
+        let engine = crate::action_engine::spawn_action_engine(crate::ActionEngineParts {
+            bus: Arc::clone(&bus),
+            catalog: Arc::clone(&catalog),
             actions,
-            Arc::new(forge_storage::MockHistoryRepo::new()),
-            Arc::new(SubActionRegistry::new()),
-            Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
-            crate::DateNamesHandle::default(),
-        );
+            history: Arc::new(forge_storage::MockHistoryRepo::new()),
+            sub_action_registry: Arc::new(SubActionRegistry::new()),
+            cancel_registry: Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
+            date_names: crate::DateNamesHandle::default(),
+            config: crate::Config::default(),
+        });
         let evaluator = TriggerEvaluator {
             bus: Arc::clone(&bus),
             registry: Arc::new(registry),

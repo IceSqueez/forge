@@ -377,7 +377,7 @@ async fn a_refused_write_leaves_the_client_registrations_untouched() {
         let outcome = match write {
             RefusedWrite::Save => repo.save(&valid).await.map(|_| ()),
             RefusedWrite::Batch => repo.apply_changes(&batch_of(&valid)).await,
-            RefusedWrite::SetEnabled => repo.set_enabled(valid.id, false).await,
+            RefusedWrite::SetEnabled => repo.set_enabled(valid.id, false).await.map(|_| ()),
             RefusedWrite::Delete => repo.delete(valid.id).await.map(|_| ()),
             RefusedWrite::Archive => repo.archive(valid.id).await.map(|_| ()),
             RefusedWrite::Restore => repo.restore(valid.id).await.map(|_| ()),

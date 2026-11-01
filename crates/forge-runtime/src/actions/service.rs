@@ -50,10 +50,14 @@ impl ActionsService {
         let since = OffsetDateTime::now_utc() - RUN_STATS_WINDOW;
         let stats = self.history.stats_summary(since).await?;
 
+        let links = self.trigger_instances.instances_by_action().await?;
+
         let mut summaries = Vec::with_capacity(actions.len());
         for action in actions {
-            let action_triggers = self.trigger_instances.list_for_action(action.id).await?;
-            let first_trigger_kind_id = action_triggers.first().map(|t| t.kind_id.clone());
+            let first_trigger_kind_id = links
+                .get(&action.id)
+                .and_then(|triggers| triggers.first())
+                .map(|t| t.kind_id.clone());
 
             let queue_name = all_queues
                 .iter()
@@ -180,12 +184,13 @@ impl ActionsService {
         overlay: &OverlayId,
         sub_actions: &SubActionRegistry,
     ) -> Result<Vec<OverlayFeed>, StorageError> {
+        let mut links = self.trigger_instances.instances_by_action().await?;
         let mut feeds = Vec::new();
         for action in self.actions.list().await? {
             if !feeds_overlay(&action.sub_actions, sub_actions, overlay.as_str()) {
                 continue;
             }
-            let triggers = self.trigger_instances.list_for_action(action.id).await?;
+            let triggers = links.remove(&action.id).unwrap_or_default();
             feeds.push(OverlayFeed {
                 action_id: action.id,
                 action_name: action.name,
@@ -458,6 +463,9 @@ mod tests {
         triggers
             .expect_list_for_action()
             .returning(|_| Ok(Vec::new()));
+        triggers
+            .expect_instances_by_action()
+            .returning(|| Ok(Default::default()));
         let service = ActionsService::new(
             Arc::new(actions),
             Arc::new(queues),

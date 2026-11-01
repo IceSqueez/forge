@@ -35,7 +35,7 @@ async fn a_voice_alias_with_an_unknown_state_fails_to_decode() {
     let pools = common::migrated_pools().await;
     sqlx::query(
         "INSERT INTO voice_aliases
-            (id, viewer_id, viewer_name, engine_id, voice_id, state, created_at, updated_at)
+            (id, alias_key, viewer_name, engine_id, voice_id, state, created_at, updated_at)
          VALUES ('a1', 'v1', 'ann', 'piper', 'voice', 'Muted', '0', '0')",
     )
     .execute(pools.writer())

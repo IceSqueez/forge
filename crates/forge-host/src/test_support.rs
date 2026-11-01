@@ -387,6 +387,77 @@ impl GlobalsRepo for TestBackend {
     async fn incr(&self, _: &str, _: i64) -> Result<Variant, StorageError> {
         unreachable!("this TestBackend was built without globals")
     }
+
+    async fn peek(
+        &self,
+        name: &str,
+    ) -> Result<Option<forge_types::Variant>, forge_storage::StorageError> {
+        forge_storage::GlobalsRepo::get(self, name).await
+    }
+
+    async fn persisted(&self, name: &str) -> Result<Option<bool>, forge_storage::StorageError> {
+        Ok(forge_storage::GlobalsRepo::list(self)
+            .await?
+            .into_iter()
+            .find(|entry| entry.name == name)
+            .map(|entry| entry.persisted))
+    }
+
+    async fn set_persisted(
+        &self,
+        _name: &str,
+        _persisted: bool,
+    ) -> Result<bool, forge_storage::StorageError> {
+        Err(forge_storage::StorageError::NotReady)
+    }
+
+    async fn rename(
+        &self,
+        _old_name: &str,
+        _new_name: &str,
+    ) -> Result<(), forge_storage::StorageError> {
+        Err(forge_storage::StorageError::NotReady)
+    }
+
+    async fn count(&self) -> Result<usize, forge_storage::StorageError> {
+        Ok(forge_storage::GlobalsRepo::list(self).await?.len())
+    }
+
+    async fn archive(&self, _name: &str) -> Result<bool, forge_storage::StorageError> {
+        Err(forge_storage::StorageError::NotReady)
+    }
+
+    async fn restore(&self, _name: &str) -> Result<bool, forge_storage::StorageError> {
+        Err(forge_storage::StorageError::NotReady)
+    }
+
+    async fn list_archived(
+        &self,
+    ) -> Result<Vec<forge_storage::GlobalEntry>, forge_storage::StorageError> {
+        Ok(Vec::new())
+    }
+
+    async fn array_append(
+        &self,
+        _name: &str,
+        _item: forge_types::Variant,
+        _max_len: Option<usize>,
+    ) -> Result<usize, forge_storage::StorageError> {
+        Err(forge_storage::StorageError::NotReady)
+    }
+
+    async fn array_remove(
+        &self,
+        _name: &str,
+        _item: &forge_types::Variant,
+        _remove_all: bool,
+    ) -> Result<usize, forge_storage::StorageError> {
+        Err(forge_storage::StorageError::NotReady)
+    }
+
+    async fn toggle(&self, _name: &str) -> Result<bool, forge_storage::StorageError> {
+        Err(forge_storage::StorageError::NotReady)
+    }
 }
 
 #[async_trait::async_trait]
@@ -409,6 +480,21 @@ impl UserGlobalsRepo for TestBackend {
 
     async fn list_for_broadcaster(&self, _: &str) -> Result<Vec<UserGlobalEntry>, StorageError> {
         unreachable!("this TestBackend was built without user globals")
+    }
+
+    async fn incr(
+        &self,
+        broadcaster_id: &str,
+        user_id: &str,
+        name: &str,
+        amount: i64,
+    ) -> Result<forge_types::Variant, forge_storage::StorageError> {
+        let current =
+            forge_storage::UserGlobalsRepo::get(self, broadcaster_id, user_id, name).await?;
+        let next = forge_storage::incremented(name, current, amount)?;
+        forge_storage::UserGlobalsRepo::set(self, broadcaster_id, user_id, name, next.clone())
+            .await?;
+        Ok(next)
     }
 }
 
@@ -606,6 +692,13 @@ impl DataProvider for TestBackend {
             on_shutdown();
         }
     }
+
+    async fn commit_changes(
+        &self,
+        _changes: &[forge_storage::StoreChange],
+    ) -> Result<(), forge_storage::StorageError> {
+        Err(forge_storage::StorageError::NotReady)
+    }
 }
 
 pub struct EmptyMediaLibrary;
@@ -786,6 +879,80 @@ impl ActionRepo for StubActions {
     async fn prune_executions_before(&self, _: OffsetDateTime) -> Result<u64, StorageError> {
         Ok(0)
     }
+
+    async fn count(&self) -> Result<usize, forge_storage::StorageError> {
+        Ok(forge_storage::ActionRepo::list(self).await?.len())
+    }
+
+    async fn ids_named(
+        &self,
+        name: &str,
+    ) -> Result<Vec<forge_types::ActionId>, forge_storage::StorageError> {
+        Ok(forge_storage::ActionRepo::list(self)
+            .await?
+            .into_iter()
+            .filter(|action| action.name == name)
+            .map(|action| action.id)
+            .collect())
+    }
+
+    async fn record_executions(
+        &self,
+        executions: &[forge_storage::ActionExecution],
+    ) -> Result<(), forge_storage::StorageError> {
+        for execution in executions {
+            self.record_execution(
+                execution.action_id,
+                execution.started_at,
+                execution.duration_ms,
+                execution.status,
+            )
+            .await?;
+        }
+        Ok(())
+    }
+
+    async fn set_enabled(
+        &self,
+        _id: forge_types::ActionId,
+        _enabled: bool,
+    ) -> Result<bool, forge_storage::StorageError> {
+        Err(forge_storage::StorageError::NotReady)
+    }
+
+    async fn toggle_enabled(
+        &self,
+        _id: forge_types::ActionId,
+    ) -> Result<Option<bool>, forge_storage::StorageError> {
+        Err(forge_storage::StorageError::NotReady)
+    }
+
+    async fn duplicate(
+        &self,
+        _source_id: forge_types::ActionId,
+        _new_id: forge_types::ActionId,
+        _new_name: &str,
+    ) -> Result<(), forge_storage::StorageError> {
+        Err(forge_storage::StorageError::NotReady)
+    }
+
+    async fn archive_reporting_cancelled_runs(
+        &self,
+        _id: forge_types::ActionId,
+    ) -> Result<Option<u64>, forge_storage::StorageError> {
+        Err(forge_storage::StorageError::NotReady)
+    }
+
+    async fn restore(
+        &self,
+        _id: forge_types::ActionId,
+    ) -> Result<bool, forge_storage::StorageError> {
+        Err(forge_storage::StorageError::NotReady)
+    }
+
+    async fn list_archived(&self) -> Result<Vec<forge_types::Action>, forge_storage::StorageError> {
+        Ok(Vec::new())
+    }
 }
 
 pub fn stub_catalog() -> Arc<Catalog> {
@@ -825,6 +992,23 @@ impl HistoryRepo for StubHistory {
         _: OffsetDateTime,
     ) -> Result<HashMap<ActionId, ActionStats>, StorageError> {
         Ok(HashMap::new())
+    }
+
+    async fn save_batch(
+        &self,
+        contexts: &[forge_types::ExecutionContext],
+    ) -> Result<(), forge_storage::StorageError> {
+        for ctx in contexts {
+            forge_storage::HistoryRepo::save(self, ctx).await?;
+        }
+        Ok(())
+    }
+
+    async fn recent(
+        &self,
+        _limit: u32,
+    ) -> Result<Vec<forge_types::ExecutionContext>, forge_storage::StorageError> {
+        Ok(Vec::new())
     }
 }
 
@@ -1088,6 +1272,8 @@ pub async fn every_registry_entry() -> (Arc<TriggerRegistry>, Arc<SubActionRegis
     let hub =
         forge_server::DeliveryHub::new(Arc::clone(&bus) as Arc<dyn forge_events::EventObserver>);
     let mut wiring = forge_runtime::RuntimeWiring::new(forge_runtime::RuntimeWiringParts {
+        paths: forge_paths::AppPaths::at(std::env::temp_dir().join("forge-tests")),
+        config: forge_runtime::Config::default(),
         date_names: forge_runtime::DateNamesHandle::default(),
         tasks: forge_net::TaskOwner::new(),
         bus: Arc::clone(&bus),

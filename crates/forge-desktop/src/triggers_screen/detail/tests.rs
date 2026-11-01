@@ -125,9 +125,89 @@ impl TriggerInstanceRepo for RecordingTriggers {
         unreachable!("the detail sheet never upserts a default")
     }
 
-    async fn set_enabled(&self, _: TriggerInstanceId, enabled: bool) -> Result<(), StorageError> {
+    async fn set_enabled(&self, _: TriggerInstanceId, enabled: bool) -> Result<bool, StorageError> {
         self.instance.lock().unwrap().enabled = enabled;
-        Ok(())
+        Ok(true)
+    }
+
+    async fn count_of_kinds(
+        &self,
+        kind_ids: &[String],
+    ) -> Result<usize, forge_storage::StorageError> {
+        Ok(forge_storage::TriggerInstanceRepo::list_all(self)
+            .await?
+            .iter()
+            .filter(|instance| kind_ids.contains(&instance.kind_id))
+            .count())
+    }
+
+    async fn instances_by_action(
+        &self,
+    ) -> Result<
+        std::collections::HashMap<forge_types::ActionId, Vec<forge_types::TriggerInstance>>,
+        forge_storage::StorageError,
+    > {
+        Ok(Default::default())
+    }
+
+    async fn actions_by_instance(
+        &self,
+    ) -> Result<
+        std::collections::HashMap<forge_types::TriggerInstanceId, Vec<forge_types::ActionId>>,
+        forge_storage::StorageError,
+    > {
+        Ok(Default::default())
+    }
+
+    async fn apply_changes(
+        &self,
+        _changes: &forge_storage::TriggerChanges,
+    ) -> Result<(), forge_storage::StorageError> {
+        Err(forge_storage::StorageError::NotReady)
+    }
+
+    async fn commit_overlay_wiring(
+        &self,
+        _wiring: &forge_storage::TriggerWiring,
+        _queues: std::sync::Arc<dyn forge_storage::QueueRepo>,
+        _actions: std::sync::Arc<dyn forge_storage::ActionRepo>,
+    ) -> Result<(), forge_storage::StorageError> {
+        Err(forge_storage::StorageError::NotReady)
+    }
+
+    async fn set_all_enabled(
+        &self,
+        _ids: &[forge_types::TriggerInstanceId],
+        _enabled: bool,
+    ) -> Result<(), forge_storage::StorageError> {
+        Err(forge_storage::StorageError::NotReady)
+    }
+
+    async fn toggle_enabled(
+        &self,
+        _id: forge_types::TriggerInstanceId,
+    ) -> Result<Option<bool>, forge_storage::StorageError> {
+        Err(forge_storage::StorageError::NotReady)
+    }
+
+    async fn archive(
+        &self,
+        _id: forge_types::TriggerInstanceId,
+    ) -> Result<bool, forge_storage::StorageError> {
+        Err(forge_storage::StorageError::NotReady)
+    }
+
+    async fn restore(
+        &self,
+        _id: forge_types::TriggerInstanceId,
+    ) -> Result<bool, forge_storage::StorageError> {
+        Err(forge_storage::StorageError::NotReady)
+    }
+
+    async fn list_archived(
+        &self,
+    ) -> Result<Vec<forge_types::TriggerInstance>, forge_storage::StorageError> {
+        Ok(Vec::new())
     }
 }
 

@@ -4,9 +4,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use forge_storage::{
-    CatalogRevision, DataProvider, MissedRunPolicy, RevisingScheduledRunRepo, ScheduledRun,
-    ScheduledRunId, ScheduledRunOutcome, ScheduledRunRepo, ScheduledRunSpec, ScheduledRunState,
-    StorageError,
+    CatalogRevision, DataProvider, MissedRunPolicy, RevisingScheduledRunRepo, RunRefusal,
+    ScheduledRun, ScheduledRunId, ScheduledRunOutcome, ScheduledRunRepo, ScheduledRunSpec,
+    ScheduledRunState, StorageError,
 };
 use forge_storage_sqlite::{
     MIGRATIONS, SqliteBackend, SqlitePools, SqliteScheduledRunRepo, apply_migrations, connect,
@@ -92,7 +92,7 @@ async fn scheduling_with_a_key_cancels_the_pending_run_holding_that_key() {
         (
             placement.superseded,
             old.state,
-            old.outcome_reason.as_deref(),
+            old.outcome_reason.map(RunRefusal::code),
             old.resolved_at,
             pending_ids(&repo).await,
         ),
@@ -326,7 +326,7 @@ async fn cancel_moves_a_pending_run_to_cancelled() {
         (
             cancelled,
             run.state,
-            run.outcome_reason.as_deref(),
+            run.outcome_reason.map(RunRefusal::code),
             run.resolved_at
         ),
         (
@@ -417,13 +417,10 @@ async fn settle_records_each_outcome_with_its_reason() {
         (ScheduledRunOutcome::Skipped, ScheduledRunState::Skipped),
         (ScheduledRunOutcome::Failed, ScheduledRunState::Failed),
     ] {
-        for reason in [None, Some("action disabled".to_owned())] {
+        for reason in [None, Some(RunRefusal::ActionDisabled)] {
             let id = place(&repo, &spec(ActionId::new(), 1, None)).await;
 
-            let settled = repo
-                .settle(id, outcome, reason.clone(), at_min(7))
-                .await
-                .unwrap();
+            let settled = repo.settle(id, outcome, reason, at_min(7)).await.unwrap();
 
             let run = fetch(&repo, id).await;
             assert_eq!(
@@ -446,7 +443,7 @@ async fn settle_turns_a_claimed_run_into_a_failure() {
         .settle(
             id,
             ScheduledRunOutcome::Failed,
-            Some("queue refused".to_owned()),
+            Some(RunRefusal::QueueOverflow),
             at_min(2),
         )
         .await
@@ -454,8 +451,12 @@ async fn settle_turns_a_claimed_run_into_a_failure() {
 
     let run = fetch(&repo, id).await;
     assert_eq!(
-        (settled, run.state, run.outcome_reason.as_deref()),
-        (true, ScheduledRunState::Failed, Some("queue refused"))
+        (settled, run.state, run.outcome_reason.map(RunRefusal::code)),
+        (
+            true,
+            ScheduledRunState::Failed,
+            Some("queue_pending_overflow")
+        )
     );
 }
 
@@ -474,7 +475,7 @@ async fn settle_refuses_terminal_and_missing_runs() {
             .settle(
                 id,
                 ScheduledRunOutcome::Dispatched,
-                Some("late".to_owned()),
+                Some(RunRefusal::Missed),
                 at_min(9),
             )
             .await
@@ -523,7 +524,7 @@ async fn a_scheduled_run_reads_back_exactly_as_it_was_specified() {
         missed_run_policy: MissedRunPolicy::SkipIfLateBy(Duration::from_millis(90_123)),
         args: every_variant_kind(),
         scheduled_by_action: Some(ActionId::new()),
-        scheduled_by_run: Some("run-42".to_owned()),
+        scheduled_by_run: Some(EventId::new()),
         trigger_event_id: Some(EventId::new()),
         replay: true,
         scheduled_at: at_ms(7),
@@ -698,7 +699,7 @@ async fn archiving_an_action_cancels_its_pending_runs_as_action_removed_at_archi
         assert_eq!(
             (
                 run.state,
-                run.outcome_reason.as_deref(),
+                run.outcome_reason.map(RunRefusal::code),
                 (before..=after).contains(&resolved_at),
             ),
             (ScheduledRunState::Cancelled, Some("action_removed"), true),
@@ -726,7 +727,7 @@ async fn archiving_an_action_spares_its_resolved_runs_and_other_actions_pending_
         (
             dispatched.state,
             dispatched.resolved_at,
-            cancelled.outcome_reason.as_deref(),
+            cancelled.outcome_reason.map(RunRefusal::code),
             cancelled.resolved_at,
             pending_ids(&repo).await,
         ),
@@ -815,7 +816,7 @@ async fn deleting_an_archived_action_keeps_the_runs_its_archive_cancelled() {
     assert!(backend.action_repo().delete(archived).await.unwrap());
 
     assert_eq!(
-        fetch(&repo, run).await.outcome_reason.as_deref(),
+        fetch(&repo, run).await.outcome_reason.map(RunRefusal::code),
         Some("action_removed")
     );
 }
@@ -985,7 +986,7 @@ async fn the_schema_allows_one_pending_run_per_key_and_any_number_of_resolved_on
     assert!(row("pending", None).await.is_err());
 }
 
-const UNREADABLE: &str = "unreadable";
+const UNREADABLE: RunRefusal = RunRefusal::Unreadable;
 
 async fn insert_unreadable(
     pools: &SqlitePools,
@@ -1079,7 +1080,7 @@ async fn a_failed_unreadable_run_records_the_reason_and_the_resolution_time() {
         raw_state(&fixture.pools, fixture.due_unreadable).await,
         (
             "failed".to_owned(),
-            Some(UNREADABLE.to_owned()),
+            Some(UNREADABLE.code().to_owned()),
             Some(at_min(10).unix_timestamp() * MILLIS_PER_SECOND)
         )
     );

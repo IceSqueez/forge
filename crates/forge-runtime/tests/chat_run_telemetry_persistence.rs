@@ -116,6 +116,9 @@ async fn run_for_chat_and_follow(chat: &Event, follow: &Event) -> Persisted {
 
     let mut instances = MockTriggerInstanceRepo::new();
     instances.expect_list_for_action().returning(|_| Ok(vec![]));
+    instances
+        .expect_instances_by_action()
+        .returning(|| Ok(Default::default()));
     let actions = Arc::new(actions);
     let catalog = Catalog::new(
         Arc::clone(&actions) as _,
@@ -129,15 +132,16 @@ async fn run_for_chat_and_follow(chat: &Event, follow: &Event) -> Persisted {
     triggers.register(Box::new(ChatDescriptor)).unwrap();
     bus.declare_lanes(&triggers);
     EventBus::spawn_flush_task(Arc::clone(&bus));
-    let engine = spawn_action_engine(
-        Arc::clone(&bus),
+    let engine = spawn_action_engine(forge_runtime::ActionEngineParts {
+        bus: Arc::clone(&bus),
         catalog,
         actions,
-        Arc::new(history),
-        Arc::new(SubActionRegistry::new()),
-        Arc::new(ActionCancelRegistry::new()),
-        forge_runtime::DateNamesHandle::default(),
-    );
+        history: Arc::new(history),
+        sub_action_registry: Arc::new(SubActionRegistry::new()),
+        cancel_registry: Arc::new(ActionCancelRegistry::new()),
+        date_names: forge_runtime::DateNamesHandle::default(),
+        config: forge_runtime::Config::default(),
+    });
 
     let mut observer = bus.subscribe();
     for root in [chat, follow] {

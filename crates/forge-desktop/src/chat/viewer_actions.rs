@@ -590,7 +590,7 @@ mod tests {
                 .expect("an id-keyed viewer has a key");
             let (speak, mut stream, _resolver) = spawn_speak_queue(vec![VoiceAlias {
                 id: AliasId::generate(),
-                viewer_id: key.clone(),
+                alias_key: key.clone(),
                 viewer_name: target.name.clone(),
                 engine_id: EngineId(String::new()),
                 voice_id: VoiceId(String::new()),

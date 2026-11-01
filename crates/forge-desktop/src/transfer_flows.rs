@@ -108,9 +108,9 @@ impl TransferFlows {
         if let Some(scheduled) = &self.scheduled {
             let mut status = scheduled.status();
             cx.spawn(async move |this, cx| {
-                let mut running = status.borrow_and_update().state == ScheduleState::Running;
-                while status.changed().await.is_ok() {
-                    let now_running = status.borrow_and_update().state == ScheduleState::Running;
+                let mut running = status.latest().state == ScheduleState::Running;
+                while let Some(current) = status.changed().await {
+                    let now_running = current.state == ScheduleState::Running;
                     if now_running == running {
                         continue;
                     }
@@ -645,7 +645,7 @@ mod tests {
     fn measured_backups(lock: &SharedLock) -> Option<u64> {
         lock.scheduled
             .status()
-            .borrow()
+            .current()
             .storage_used
             .map(|used| used.backups)
     }

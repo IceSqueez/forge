@@ -417,15 +417,16 @@ pub(crate) fn sandboxed_over(provider: Arc<dyn DataProvider>) -> Sandboxed<Arc<d
 }
 
 pub(crate) fn stub_action_engine(bus: Arc<EventBus>) -> forge_runtime::ActionEngineHandle {
-    spawn_action_engine(
+    spawn_action_engine(forge_runtime::ActionEngineParts {
         bus,
-        stub_catalog(),
-        Arc::new(StubActions),
-        Arc::new(StubHistory),
-        Arc::new(SubActionRegistry::new()),
-        Arc::new(ActionCancelRegistry::new()),
-        forge_runtime::DateNamesHandle::default(),
-    )
+        catalog: stub_catalog(),
+        actions: Arc::new(StubActions),
+        history: Arc::new(StubHistory),
+        sub_action_registry: Arc::new(SubActionRegistry::new()),
+        cancel_registry: Arc::new(ActionCancelRegistry::new()),
+        date_names: forge_runtime::DateNamesHandle::default(),
+        config: forge_runtime::Config::default(),
+    })
 }
 
 pub(crate) fn held_queue_scheduler(
@@ -1265,7 +1266,7 @@ pub(crate) fn live_alias(
         .resolver_snapshot()
         .aliases()
         .iter()
-        .find(|alias| alias.viewer_id == viewer_id)
+        .find(|alias| alias.alias_key == viewer_id)
         .cloned()
 }
 
@@ -1284,7 +1285,7 @@ pub(crate) struct AliasShape {
 pub(crate) fn alias_shape(alias: &forge_speech_types::VoiceAlias) -> AliasShape {
     AliasShape {
         id: alias.id.as_str().to_owned(),
-        viewer_id: alias.viewer_id.clone(),
+        viewer_id: alias.alias_key.clone(),
         viewer_name: alias.viewer_name.clone(),
         engine_id: alias.engine_id.0.clone(),
         voice_id: alias.voice_id.0.clone(),

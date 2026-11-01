@@ -51,7 +51,7 @@ impl SchedulingContext {
                 BTreeMap::new()
             },
             scheduled_by_action: self.scheduled_by.map(|run| run.action_id),
-            scheduled_by_run: self.scheduled_by.map(|run| run.start_event_id.to_string()),
+            scheduled_by_run: self.scheduled_by.map(|run| run.start_event_id),
             trigger_event_id: self
                 .scheduled_by
                 .map(|run| run.trigger_event_id)

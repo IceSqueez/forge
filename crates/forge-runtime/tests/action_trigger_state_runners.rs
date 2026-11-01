@@ -10,10 +10,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use async_trait::async_trait;
 use forge_registry::{RunContext, SubActionRunner};
-use forge_runtime::{
-    CoreActionDisableRunner, CoreActionEnableRunner, CoreActionToggleRunner,
-    CoreTriggerDisableRunner, CoreTriggerEnableRunner, CoreTriggerToggleRunner,
-};
+use forge_runtime::{CoreActionStateRunner, CoreTriggerStateRunner};
 use forge_storage::{ActionRepo, StorageError, TriggerInstanceRepo};
 use forge_types::{
     Action, ActionId, ArgStack, EventId, PermissionRung, QueueId, SubActionConfig,
@@ -119,17 +116,108 @@ impl TriggerInstanceRepo for MockTriggerInstanceRepo {
             key: "upsert_default unused".to_owned(),
         })
     }
-    async fn set_enabled(&self, id: TriggerInstanceId, enabled: bool) -> Result<(), StorageError> {
+    async fn set_enabled(
+        &self,
+        id: TriggerInstanceId,
+        enabled: bool,
+    ) -> Result<bool, StorageError> {
         self.writes.fetch_add(1, Ordering::SeqCst);
         if self.fail_writes {
             return Err(StorageError::Connection {
                 reason: "forced write failure".to_owned(),
             });
         }
-        if let Some(instance) = self.map.lock().unwrap().get_mut(&id) {
-            instance.enabled = enabled;
-        }
-        Ok(())
+        Ok(self
+            .map
+            .lock()
+            .unwrap()
+            .get_mut(&id)
+            .map(|instance| instance.enabled = enabled)
+            .is_some())
+    }
+
+    async fn count_of_kinds(
+        &self,
+        kind_ids: &[String],
+    ) -> Result<usize, forge_storage::StorageError> {
+        Ok(forge_storage::TriggerInstanceRepo::list_all(self)
+            .await?
+            .iter()
+            .filter(|instance| kind_ids.contains(&instance.kind_id))
+            .count())
+    }
+
+    async fn instances_by_action(
+        &self,
+    ) -> Result<
+        std::collections::HashMap<forge_types::ActionId, Vec<forge_types::TriggerInstance>>,
+        forge_storage::StorageError,
+    > {
+        Ok(Default::default())
+    }
+
+    async fn actions_by_instance(
+        &self,
+    ) -> Result<
+        std::collections::HashMap<forge_types::TriggerInstanceId, Vec<forge_types::ActionId>>,
+        forge_storage::StorageError,
+    > {
+        Ok(Default::default())
+    }
+
+    async fn apply_changes(
+        &self,
+        _changes: &forge_storage::TriggerChanges,
+    ) -> Result<(), forge_storage::StorageError> {
+        Err(forge_storage::StorageError::NotReady)
+    }
+
+    async fn commit_overlay_wiring(
+        &self,
+        _wiring: &forge_storage::TriggerWiring,
+        _queues: std::sync::Arc<dyn forge_storage::QueueRepo>,
+        _actions: std::sync::Arc<dyn forge_storage::ActionRepo>,
+    ) -> Result<(), forge_storage::StorageError> {
+        Err(forge_storage::StorageError::NotReady)
+    }
+
+    async fn set_all_enabled(
+        &self,
+        _ids: &[forge_types::TriggerInstanceId],
+        _enabled: bool,
+    ) -> Result<(), forge_storage::StorageError> {
+        Err(forge_storage::StorageError::NotReady)
+    }
+
+    async fn toggle_enabled(
+        &self,
+        id: forge_types::TriggerInstanceId,
+    ) -> Result<Option<bool>, forge_storage::StorageError> {
+        let Some(instance) = self.get(id).await? else {
+            return Ok(None);
+        };
+        self.set_enabled(id, !instance.enabled).await?;
+        Ok(Some(!instance.enabled))
+    }
+
+    async fn archive(
+        &self,
+        _id: forge_types::TriggerInstanceId,
+    ) -> Result<bool, forge_storage::StorageError> {
+        Err(forge_storage::StorageError::NotReady)
+    }
+
+    async fn restore(
+        &self,
+        _id: forge_types::TriggerInstanceId,
+    ) -> Result<bool, forge_storage::StorageError> {
+        Err(forge_storage::StorageError::NotReady)
+    }
+
+    async fn list_archived(
+        &self,
+    ) -> Result<Vec<forge_types::TriggerInstance>, forge_storage::StorageError> {
+        Ok(Vec::new())
     }
 }
 
@@ -188,8 +276,8 @@ async fn run(runner: &dyn SubActionRunner, config: &SubActionConfig) -> SubActio
 async fn action_enable_and_disable_force_the_persisted_flag() {
     type Build = fn(Arc<InMemoryActionRepo>) -> Box<dyn SubActionRunner>;
     let rows: [(Build, bool, bool); 2] = [
-        (|r| Box::new(CoreActionEnableRunner::new(r)), false, true),
-        (|r| Box::new(CoreActionDisableRunner::new(r)), true, false),
+        (|r| Box::new(CoreActionStateRunner::enable(r)), false, true),
+        (|r| Box::new(CoreActionStateRunner::disable(r)), true, false),
     ];
     for (build, start, expected) in rows {
         let repo = Arc::new(InMemoryActionRepo::new());
@@ -217,7 +305,7 @@ async fn action_toggle_flips_the_persisted_flag_in_both_directions() {
         let id = action.id;
         repo.seed(action);
 
-        let runner = CoreActionToggleRunner::new(as_action_repo(&repo));
+        let runner = CoreActionStateRunner::toggle(as_action_repo(&repo));
         let outcome = run(&runner, &action_cfg(&id.to_string())).await;
 
         assert!(matches!(outcome, SubActionOutcome::Success));
@@ -233,8 +321,12 @@ async fn action_toggle_flips_the_persisted_flag_in_both_directions() {
 async fn trigger_enable_and_disable_force_the_persisted_flag() {
     type Build = fn(Arc<MockTriggerInstanceRepo>) -> Box<dyn SubActionRunner>;
     let rows: [(Build, bool, bool); 2] = [
-        (|r| Box::new(CoreTriggerEnableRunner::new(r)), false, true),
-        (|r| Box::new(CoreTriggerDisableRunner::new(r)), true, false),
+        (|r| Box::new(CoreTriggerStateRunner::enable(r)), false, true),
+        (
+            |r| Box::new(CoreTriggerStateRunner::disable(r)),
+            true,
+            false,
+        ),
     ];
     for (build, start, expected) in rows {
         let repo = Arc::new(MockTriggerInstanceRepo::new());
@@ -262,7 +354,7 @@ async fn trigger_toggle_flips_the_persisted_flag_in_both_directions() {
         let id = instance.id;
         repo.seed(instance);
 
-        let runner = CoreTriggerToggleRunner::new(as_trigger_repo(&repo));
+        let runner = CoreTriggerStateRunner::toggle(as_trigger_repo(&repo));
         let outcome = run(&runner, &trigger_cfg(&id.to_string())).await;
 
         assert!(matches!(outcome, SubActionOutcome::Success));
@@ -278,9 +370,9 @@ async fn trigger_toggle_flips_the_persisted_flag_in_both_directions() {
 async fn action_runners_fail_and_persist_nothing_for_unknown_id() {
     type Build = fn(Arc<InMemoryActionRepo>) -> Box<dyn SubActionRunner>;
     let builds: [Build; 3] = [
-        |r| Box::new(CoreActionEnableRunner::new(r)),
-        |r| Box::new(CoreActionDisableRunner::new(r)),
-        |r| Box::new(CoreActionToggleRunner::new(r)),
+        |r| Box::new(CoreActionStateRunner::enable(r)),
+        |r| Box::new(CoreActionStateRunner::disable(r)),
+        |r| Box::new(CoreActionStateRunner::toggle(r)),
     ];
     for build in builds {
         let repo = Arc::new(InMemoryActionRepo::new());
@@ -303,7 +395,7 @@ async fn trigger_toggle_fails_and_persists_nothing_for_unknown_id() {
     let repo = Arc::new(MockTriggerInstanceRepo::new());
     let missing = TriggerInstanceId::new();
 
-    let runner = CoreTriggerToggleRunner::new(as_trigger_repo(&repo));
+    let runner = CoreTriggerStateRunner::toggle(as_trigger_repo(&repo));
     let outcome = run(&runner, &trigger_cfg(&missing.to_string())).await;
 
     assert!(matches!(outcome, SubActionOutcome::Failed(_)));
@@ -315,11 +407,11 @@ async fn trigger_toggle_fails_and_persists_nothing_for_unknown_id() {
 }
 
 #[tokio::test]
-async fn trigger_enable_and_disable_on_unknown_id_are_noop_success() {
+async fn trigger_enable_and_disable_on_unknown_id_fail_without_materializing_it() {
     type Build = fn(Arc<MockTriggerInstanceRepo>) -> Box<dyn SubActionRunner>;
     let builds: [Build; 2] = [
-        |r| Box::new(CoreTriggerEnableRunner::new(r)),
-        |r| Box::new(CoreTriggerDisableRunner::new(r)),
+        |r| Box::new(CoreTriggerStateRunner::enable(r)),
+        |r| Box::new(CoreTriggerStateRunner::disable(r)),
     ];
     for build in builds {
         let repo = Arc::new(MockTriggerInstanceRepo::new());
@@ -328,7 +420,7 @@ async fn trigger_enable_and_disable_on_unknown_id_are_noop_success() {
         let runner = build(Arc::clone(&repo));
         let outcome = run(&*runner, &trigger_cfg(&missing.to_string())).await;
 
-        assert!(matches!(outcome, SubActionOutcome::Success));
+        assert!(matches!(outcome, SubActionOutcome::Failed(_)));
         assert!(
             repo.enabled_of(missing).is_none(),
             "the absent instance must not be materialized"
@@ -372,32 +464,32 @@ async fn unparseable_id_fails_with_shape_only_text_and_persists_nothing() {
         (
             "core.action.enable",
             "action_id",
-            action_case(|r| Box::new(CoreActionEnableRunner::new(r)), SENTINEL),
+            action_case(|r| Box::new(CoreActionStateRunner::enable(r)), SENTINEL),
         ),
         (
             "core.action.disable",
             "action_id",
-            action_case(|r| Box::new(CoreActionDisableRunner::new(r)), SENTINEL),
+            action_case(|r| Box::new(CoreActionStateRunner::disable(r)), SENTINEL),
         ),
         (
             "core.action.toggle",
             "action_id",
-            action_case(|r| Box::new(CoreActionToggleRunner::new(r)), SENTINEL),
+            action_case(|r| Box::new(CoreActionStateRunner::toggle(r)), SENTINEL),
         ),
         (
             "core.trigger.enable",
             "trigger_instance_id",
-            trigger_case(|r| Box::new(CoreTriggerEnableRunner::new(r)), SENTINEL),
+            trigger_case(|r| Box::new(CoreTriggerStateRunner::enable(r)), SENTINEL),
         ),
         (
             "core.trigger.disable",
             "trigger_instance_id",
-            trigger_case(|r| Box::new(CoreTriggerDisableRunner::new(r)), SENTINEL),
+            trigger_case(|r| Box::new(CoreTriggerStateRunner::disable(r)), SENTINEL),
         ),
         (
             "core.trigger.toggle",
             "trigger_instance_id",
-            trigger_case(|r| Box::new(CoreTriggerToggleRunner::new(r)), SENTINEL),
+            trigger_case(|r| Box::new(CoreTriggerStateRunner::toggle(r)), SENTINEL),
         ),
     ];
 
@@ -423,7 +515,7 @@ async fn action_enable_reports_failed_when_save_errors() {
     let id = action.id;
     repo.seed(action);
 
-    let runner = CoreActionEnableRunner::new(as_action_repo(&repo));
+    let runner = CoreActionStateRunner::enable(as_action_repo(&repo));
     let outcome = run(&runner, &action_cfg(&id.to_string())).await;
 
     assert!(matches!(outcome, SubActionOutcome::Failed(_)));
@@ -436,7 +528,7 @@ async fn trigger_enable_reports_failed_when_set_enabled_errors() {
     let id = instance.id;
     repo.seed(instance);
 
-    let runner = CoreTriggerEnableRunner::new(as_trigger_repo(&repo));
+    let runner = CoreTriggerStateRunner::enable(as_trigger_repo(&repo));
     let outcome = run(&runner, &trigger_cfg(&id.to_string())).await;
 
     assert!(matches!(outcome, SubActionOutcome::Failed(_)));

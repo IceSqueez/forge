@@ -1159,7 +1159,7 @@ fn row_from_alias(a: VoiceAlias) -> AliasRow {
     let engine = a.engine_id.0;
     let engine_label = engine_display_name(&engine).to_owned();
     let voice = a.voice_id.0;
-    let key = AliasKey::parse(&a.viewer_id);
+    let key = AliasKey::parse(&a.alias_key);
     let platform = alias_key_scope(&key);
     let named = AliasKey::parse(&a.viewer_name);
     let viewer_name = match named.platform {
@@ -1168,7 +1168,7 @@ fn row_from_alias(a: VoiceAlias) -> AliasRow {
     };
     AliasRow {
         id: a.id,
-        viewer_id: a.viewer_id,
+        viewer_id: a.alias_key,
         viewer_name,
         platform,
         engine_id: engine,
@@ -1466,7 +1466,7 @@ mod tests {
     fn stored_alias(viewer_id: &str, viewer_name: &str) -> VoiceAlias {
         VoiceAlias {
             id: AliasId::generate(),
-            viewer_id: viewer_id.to_owned(),
+            alias_key: viewer_id.to_owned(),
             viewer_name: viewer_name.to_owned(),
             engine_id: EngineId("piper".to_owned()),
             voice_id: VoiceId("amy".to_owned()),
@@ -1508,7 +1508,7 @@ mod tests {
                 rt.block_on(repo.list())
                     .expect("list")
                     .into_iter()
-                    .map(|alias| (alias.viewer_id, alias.voice_id.0))
+                    .map(|alias| (alias.alias_key, alias.voice_id.0))
                     .collect::<Vec<_>>()
             };
             settle_until(vcx, &rt, |_| {
@@ -1557,11 +1557,11 @@ mod tests {
         settle_until(vcx, &rt, |_| {
             saved()
                 .iter()
-                .any(|alias| alias.viewer_id == "twitch:alicex")
+                .any(|alias| alias.alias_key == "twitch:alicex")
         });
 
         let renamed = VoiceAlias {
-            viewer_id: "twitch:alicex".to_owned(),
+            alias_key: "twitch:alicex".to_owned(),
             viewer_name: "alicex".to_owned(),
             ..seeded
         };
@@ -1670,7 +1670,7 @@ mod tests {
             Ok(())
         }
 
-        async fn find_by_viewer(
+        async fn find_by_alias_key(
             &self,
             _viewer_id: &str,
         ) -> Result<Option<VoiceAlias>, StorageError> {

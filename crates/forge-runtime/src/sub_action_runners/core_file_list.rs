@@ -1,5 +1,6 @@
 use std::io::ErrorKind;
 use std::path::Path;
+use std::path::PathBuf;
 
 use crate::core_messages;
 use async_trait::async_trait;
@@ -73,7 +74,15 @@ fn read_config(config: &SubActionConfig, args: &ArgStack) -> Result<ListRequest,
     })
 }
 
-pub struct CoreFileListRunner;
+pub struct CoreFileListRunner {
+    assets_root: PathBuf,
+}
+
+impl CoreFileListRunner {
+    pub fn new(assets_root: PathBuf) -> Self {
+        Self { assets_root }
+    }
+}
 
 #[async_trait]
 impl SubActionRunner for CoreFileListRunner {
@@ -127,33 +136,33 @@ impl SubActionRunner for CoreFileListRunner {
             Err(problem) => return (timer.invalid_config(&problem), None),
         };
 
-        let (outcome, produced) = match super::file_sandbox::resolve_sandboxed(&request.path).await
-        {
-            Err(reason) => (SubActionOutcome::Failed(reason.into()), None),
-            Ok(abs_path) => match tokio::fs::metadata(&abs_path).await {
-                Err(error) if error.kind() == ErrorKind::NotFound => (
-                    SubActionOutcome::Failed(core_messages::directory_not_found().into()),
-                    None,
-                ),
-                Err(error) => (
-                    SubActionOutcome::Failed(core_messages::file_io_failed(error).into()),
-                    None,
-                ),
-                Ok(meta) if !meta.is_dir() => (
-                    SubActionOutcome::Failed(core_messages::path_not_directory().into()),
-                    None,
-                ),
-                Ok(_) => match collect_entries(&abs_path, &request).await {
-                    Err(reason) => (SubActionOutcome::Failed(reason.into()), None),
-                    Ok(entries) => {
-                        let array =
-                            Variant::Array(entries.into_iter().map(Variant::String).collect());
-                        let stack = ctx.arg_stack.clone().set(request.into_var, array);
-                        (SubActionOutcome::Success, Some(stack))
-                    }
+        let (outcome, produced) =
+            match super::file_sandbox::resolve_sandboxed(&self.assets_root, &request.path).await {
+                Err(reason) => (SubActionOutcome::Failed(reason.into()), None),
+                Ok(abs_path) => match tokio::fs::metadata(&abs_path).await {
+                    Err(error) if error.kind() == ErrorKind::NotFound => (
+                        SubActionOutcome::Failed(core_messages::directory_not_found().into()),
+                        None,
+                    ),
+                    Err(error) => (
+                        SubActionOutcome::Failed(core_messages::file_io_failed(error).into()),
+                        None,
+                    ),
+                    Ok(meta) if !meta.is_dir() => (
+                        SubActionOutcome::Failed(core_messages::path_not_directory().into()),
+                        None,
+                    ),
+                    Ok(_) => match collect_entries(&abs_path, &request).await {
+                        Err(reason) => (SubActionOutcome::Failed(reason.into()), None),
+                        Ok(entries) => {
+                            let array =
+                                Variant::Array(entries.into_iter().map(Variant::String).collect());
+                            let stack = ctx.arg_stack.clone().set(request.into_var, array);
+                            (SubActionOutcome::Success, Some(stack))
+                        }
+                    },
                 },
-            },
-        };
+            };
 
         (timer.finish(outcome), produced)
     }

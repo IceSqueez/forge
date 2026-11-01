@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::voice::{EngineId, TtsVoice, VoiceId};
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct AliasId(String);
 
 impl AliasId {
@@ -28,7 +28,7 @@ pub enum AliasState {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VoiceAlias {
     pub id: AliasId,
-    pub viewer_id: String,
+    pub alias_key: String,
     pub viewer_name: String,
     pub engine_id: EngineId,
     pub voice_id: VoiceId,
@@ -115,7 +115,7 @@ mod tests {
     fn voice_alias_keeps_its_stored_json_shape() {
         let alias = VoiceAlias {
             id: AliasId::from_string("01HWTEST".into()),
-            viewer_id: "123456".into(),
+            alias_key: "123456".into(),
             viewer_name: "testviewer".into(),
             engine_id: EngineId("piper".into()),
             voice_id: VoiceId("uk_UA-ukrainian-medium".into()),
@@ -123,7 +123,7 @@ mod tests {
             rate_multiplier: None,
             state: AliasState::Blocked,
         };
-        let wire = r#"{"id":"01HWTEST","viewer_id":"123456","viewer_name":"testviewer","engine_id":"piper","voice_id":"uk_UA-ukrainian-medium","pitch_semitones":2.0,"rate_multiplier":null,"state":"Blocked"}"#;
+        let wire = r#"{"id":"01HWTEST","alias_key":"123456","viewer_name":"testviewer","engine_id":"piper","voice_id":"uk_UA-ukrainian-medium","pitch_semitones":2.0,"rate_multiplier":null,"state":"Blocked"}"#;
         assert_eq!(encode_and_reencode(&alias, wire), [wire, wire]);
     }
 

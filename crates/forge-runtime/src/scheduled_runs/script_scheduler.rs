@@ -40,19 +40,18 @@ impl ScriptScheduling {
         if let Ok(id) = wanted.parse::<ActionId>() {
             return Ok(id);
         }
-        let actions = self
+        let named = self
             .actions
-            .list()
+            .ids_named(wanted)
             .await
             .map_err(|e| ScriptError::ActionsUnavailable(e.to_string()))?;
-        let mut named = actions.iter().filter(|action| action.name == wanted);
-        match (named.next(), named.count()) {
-            (Some(action), 0) => Ok(action.id),
-            (Some(_), others) => Err(ScriptError::AmbiguousScheduleTarget {
+        match named.as_slice() {
+            [id] => Ok(*id),
+            [] => Err(ScriptError::UnknownScheduleTarget(wanted.to_owned())),
+            several => Err(ScriptError::AmbiguousScheduleTarget {
                 name: wanted.to_owned(),
-                count: others + 1,
+                count: several.len(),
             }),
-            (None, _) => Err(ScriptError::UnknownScheduleTarget(wanted.to_owned())),
         }
     }
 }

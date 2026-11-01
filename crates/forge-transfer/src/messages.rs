@@ -250,8 +250,8 @@ mod tests {
     #[test]
     fn an_unclassified_error_falls_back_to_operation_failed_carrying_its_description() {
         let error = TransferError::PackRollbackIncomplete {
-            cause: "cause".into(),
-            failure: "failure".into(),
+            cause: Box::new(TransferError::MissingDatabase),
+            failure: crate::documents::RollbackFailures::default(),
             snapshot: Some(PathBuf::from("/data/backups/safety.tar.gz")),
         };
 

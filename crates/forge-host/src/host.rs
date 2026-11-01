@@ -31,6 +31,8 @@ use crate::soundboard_boot::{SoundboardInputs, build_soundboard};
 use crate::speak_boot::{LocalTtsEngine, Speech, build_speech};
 use crate::stop::{OrderedStop, OrderedStopParts};
 
+use forge_paths::AppPaths;
+
 pub struct HostInputs {
     pub provider: Arc<dyn DataProvider>,
     pub data_dir: PathBuf,
@@ -56,6 +58,7 @@ pub async fn build_host(inputs: HostInputs) -> Host {
         date_names,
     } = inputs;
     let mut boot_warnings = BootWarnings::default();
+    let paths = AppPaths::at(data_dir.clone());
     let core = build_core(&backend, data_dir, anonymous_donor.clone()).await;
     let bus = &core.bus;
     let services = &core.services;
@@ -93,6 +96,8 @@ pub async fn build_host(inputs: HostInputs) -> Host {
         overlay_frames: Arc::new(delivery_hub.clone()) as Arc<dyn OverlayFrameSink>,
         clock: Arc::new(SystemWallClock),
         date_names: date_names.clone(),
+        paths: paths.clone(),
+        config: forge_runtime::Config::default(),
     });
     if let Err(e) = wiring.scripts().load_all(backend.as_ref()).await {
         tracing::warn!(error = %e, "script registry load failed at boot");
@@ -252,6 +257,7 @@ pub async fn build_host(inputs: HostInputs) -> Host {
             bus,
             action_engine: &action_engine,
             available_platforms: trigger_registry.platforms(),
+            default_overlay_root: paths.overlays_dir(),
             delivery_hub: &delivery_hub,
         },
         &mut boot_warnings,

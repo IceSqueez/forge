@@ -58,13 +58,7 @@ pub trait UserGlobalsRepo: Send + Sync {
         user_id: &str,
         name: &str,
         amount: i64,
-    ) -> Result<Variant, StorageError> {
-        let current = self.get(broadcaster_id, user_id, name).await?;
-        let next = incremented(name, current, amount)?;
-        self.set(broadcaster_id, user_id, name, next.clone())
-            .await?;
-        Ok(next)
-    }
+    ) -> Result<Variant, StorageError>;
 }
 
 pub fn incremented(

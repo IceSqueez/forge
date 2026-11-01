@@ -429,7 +429,7 @@ impl SpeakDispatcher for SpeakBridge {
     ) -> Result<(), MessageRef> {
         let alias = VoiceAlias {
             id: AliasId::generate(),
-            viewer_id,
+            alias_key: viewer_id,
             viewer_name,
             engine_id: EngineId(engine_id),
             voice_id: VoiceId(voice_id),
@@ -999,7 +999,7 @@ mod tests {
             let (handle, mut stream) = Harness {
                 aliases: vec![forge_speech_types::VoiceAlias {
                     id: forge_speech_types::AliasId::generate(),
-                    viewer_id: key.to_owned(),
+                    alias_key: key.to_owned(),
                     viewer_name: key.to_owned(),
                     engine_id: EngineId("piper".to_owned()),
                     voice_id: VoiceId("amy".to_owned()),
@@ -1032,7 +1032,7 @@ mod tests {
         let (handle, mut stream) = Harness {
             aliases: vec![forge_speech_types::VoiceAlias {
                 id: forge_speech_types::AliasId::generate(),
-                viewer_id: "aurora".to_owned(),
+                alias_key: "aurora".to_owned(),
                 viewer_name: "Aurora".to_owned(),
                 engine_id: EngineId("piper".to_owned()),
                 voice_id: VoiceId("donor-voice".to_owned()),
@@ -1173,6 +1173,7 @@ mod tests {
         });
         let overlays =
             forge_runtime::OverlayServiceHandle::new(forge_runtime::OverlayServiceParts {
+                default_root: std::path::PathBuf::new(),
                 date_names: forge_runtime::DateNamesHandle::default(),
                 tasks: forge_net::TaskOwner::new(),
                 repo: Arc::new(repo) as Arc<dyn OverlayRepo>,

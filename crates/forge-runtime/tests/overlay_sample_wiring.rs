@@ -285,6 +285,10 @@ fn actions_service(catalog: Catalog) -> Arc<ActionsService> {
     });
 
     let mut trigger_repo = MockTriggerInstanceRepo::new();
+    let by_action = linked.clone();
+    trigger_repo
+        .expect_instances_by_action()
+        .returning(move || Ok(by_action.clone().into_iter().collect()));
     trigger_repo
         .expect_list_for_action()
         .returning(move |id| Ok(linked.get(&id).cloned().unwrap_or_default()));
@@ -323,6 +327,7 @@ fn wired(catalog: Catalog) -> Wired {
     let page = Arc::new(RecordingPage::default());
     let speaker = Arc::new(ListeningSpeaker::default());
     let service = OverlayServiceHandle::new(OverlayServiceParts {
+        default_root: std::path::PathBuf::new(),
         date_names: forge_runtime::DateNamesHandle::default(),
         tasks: forge_net::TaskOwner::new(),
         repo: Arc::new(repo) as Arc<dyn OverlayRepo>,

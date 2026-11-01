@@ -618,12 +618,12 @@ impl Wiring {
         }
 
         let mut triggers = MockTriggerInstanceRepo::new();
-        triggers
-            .expect_list_for_action()
-            .returning(move |id| match &linked {
-                Some((fed, instance)) if *fed == id => Ok(vec![instance.clone()]),
-                _ => Ok(Vec::new()),
-            });
+        triggers.expect_instances_by_action().returning(move || {
+            Ok(linked
+                .iter()
+                .map(|(fed, instance)| (*fed, vec![instance.clone()]))
+                .collect())
+        });
         match self.reach(Step::Commit) {
             Reach::Runs => {
                 let log = Arc::clone(&written);

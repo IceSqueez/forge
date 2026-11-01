@@ -31,7 +31,7 @@ pub(crate) async fn block_viewer(
     key: String,
     viewer_name: String,
 ) -> Result<VoiceAlias, StorageError> {
-    let alias = match repo.find_by_viewer(&key).await? {
+    let alias = match repo.find_by_alias_key(&key).await? {
         Some(existing) => VoiceAlias {
             viewer_name,
             state: AliasState::Blocked,
@@ -39,7 +39,7 @@ pub(crate) async fn block_viewer(
         },
         None => VoiceAlias {
             id: AliasId::generate(),
-            viewer_id: key,
+            alias_key: key,
             viewer_name,
             engine_id: EngineId(String::new()),
             voice_id: VoiceId(String::new()),
@@ -71,7 +71,7 @@ mod tests {
     fn alias(id: &str, viewer_id: &str, viewer_name: &str) -> VoiceAlias {
         VoiceAlias {
             id: AliasId::from_string(id.to_owned()),
-            viewer_id: viewer_id.to_owned(),
+            alias_key: viewer_id.to_owned(),
             viewer_name: viewer_name.to_owned(),
             engine_id: EngineId("piper".to_owned()),
             voice_id: VoiceId("amy".to_owned()),
@@ -203,7 +203,7 @@ mod tests {
     #[tokio::test]
     async fn blocking_stops_at_a_failed_lookup_without_writing() {
         let mut repo = MockVoiceAliasRepo::new();
-        repo.expect_find_by_viewer().returning(|_| {
+        repo.expect_find_by_alias_key().returning(|_| {
             Err(StorageError::Connection {
                 reason: "closed".to_owned(),
             })

@@ -195,6 +195,7 @@ impl Harness {
         let slots = Arc::new(SlotStore::default());
         let tasks = forge_net::TaskOwner::new();
         let service = OverlayServiceHandle::new(OverlayServiceParts {
+            default_root: std::path::PathBuf::new(),
             date_names: forge_runtime::DateNamesHandle::default(),
             tasks: tasks.clone(),
             repo: Arc::new(repo) as Arc<dyn OverlayRepo>,

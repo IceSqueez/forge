@@ -497,7 +497,7 @@ impl UpdateFlow {
             return;
         };
         if let Some(scheduled) = &self.scheduled
-            && scheduled.status().borrow().state == ScheduleState::Running
+            && scheduled.status().current().state == ScheduleState::Running
         {
             scheduled.set_suspended(true);
             self.scheduled_suspended = true;
@@ -1600,7 +1600,10 @@ mod tests {
         restart_and_close(cx, &w.h);
 
         drive_until(cx, &w.h, waiting_to_restart);
-        assert_eq!(schedule.handle.status().borrow().state, ScheduleState::Idle);
+        assert_eq!(
+            schedule.handle.status().current().state,
+            ScheduleState::Idle
+        );
     }
 
     #[gpui::test]

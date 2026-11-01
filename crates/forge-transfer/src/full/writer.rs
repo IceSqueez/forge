@@ -49,6 +49,7 @@ pub struct ScheduledBackupRequest {
     pub folder: PathBuf,
     pub key: ScheduleKey,
     pub categories: Vec<BackupCategory>,
+    pub now: OffsetDateTime,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -65,41 +66,44 @@ pub async fn write_full_backup(request: FullBackupRequest) -> Result<PathBuf, Tr
         passphrase,
     } = request;
     passphrase.ensure_strong_enough()?;
-    let stem = fresh_stem();
+    let now = OffsetDateTime::now_utc();
+    let stem = fresh_stem(now);
     let destination = match destination {
         BackupDestination::BackupsDir => {
             backups_dir(&data_dir).join(format!("{stem}.{BUNDLE_EXTENSION}"))
         }
         BackupDestination::File(path) => path,
     };
-    let written = write_protected(WriteJob {
-        provider,
-        data_dir,
-        stem,
-        destination,
-        protection: Protection::Passphrase(passphrase),
-        categories: BackupCategory::all(),
-        unchanged_since: None,
-        cancel: CancelFlag::new(),
-    })
+    write_protected(
+        WriteJob {
+            provider,
+            data_dir,
+            stem,
+            destination: destination.clone(),
+            protection: Protection::Passphrase(passphrase),
+            categories: BackupCategory::all(),
+            now,
+            cancel: CancelFlag::new(),
+        },
+        |input| {
+            let prepared = prepare_bundle(&input)?;
+            emit_bundle(&input, &prepared)
+        },
+    )
     .await?;
-    match written {
-        ScheduledWrite::Written { path, .. } => Ok(path),
-        ScheduledWrite::Unchanged { .. } => Err(TransferError::Interrupted {
-            reason: "the backup was skipped as unchanged".to_owned(),
-        }),
-    }
+    Ok(destination)
 }
 
 pub async fn write_scheduled_backup(
     request: ScheduledBackupRequest,
 ) -> Result<PathBuf, TransferError> {
-    match write_scheduled_backup_unless_unchanged(request, None).await? {
-        ScheduledWrite::Written { path, .. } => Ok(path),
-        ScheduledWrite::Unchanged { .. } => Err(TransferError::Interrupted {
-            reason: "the backup was skipped as unchanged".to_owned(),
-        }),
-    }
+    let (job, destination) = scheduled_job(request, CancelFlag::new())?;
+    write_protected(job, |input| {
+        let prepared = prepare_bundle(&input)?;
+        emit_bundle(&input, &prepared)
+    })
+    .await?;
+    Ok(destination)
 }
 
 pub async fn write_scheduled_backup_unless_unchanged(
@@ -114,27 +118,50 @@ pub async fn write_scheduled_backup_cancellable(
     unchanged_since: Option<String>,
     cancel: CancelFlag,
 ) -> Result<ScheduledWrite, TransferError> {
+    let (job, destination) = scheduled_job(request, cancel)?;
+    let path = destination.clone();
+    write_protected(job, move |input| {
+        let prepared = prepare_bundle(&input)?;
+        if unchanged_since.as_deref() == Some(prepared.fingerprint.as_str()) {
+            return Ok(ScheduledWrite::Unchanged {
+                fingerprint: prepared.fingerprint,
+            });
+        }
+        emit_bundle(&input, &prepared)?;
+        Ok(ScheduledWrite::Written {
+            path,
+            fingerprint: prepared.fingerprint,
+        })
+    })
+    .await
+}
+
+fn scheduled_job(
+    request: ScheduledBackupRequest,
+    cancel: CancelFlag,
+) -> Result<(WriteJob, PathBuf), TransferError> {
     let ScheduledBackupRequest {
         provider,
         data_dir,
         folder,
         key,
         categories,
+        now,
     } = request;
     let protection = Protection::scheduled(key)?;
-    let stem = fresh_scheduled_stem();
+    let stem = fresh_scheduled_stem(now);
     let destination = folder.join(format!("{stem}.{BUNDLE_EXTENSION}"));
-    write_protected(WriteJob {
+    let job = WriteJob {
         provider,
         data_dir,
         stem,
-        destination,
+        destination: destination.clone(),
         protection,
         categories: with_database(categories),
-        unchanged_since,
+        now,
         cancel,
-    })
-    .await
+    };
+    Ok((job, destination))
 }
 
 fn with_database(categories: Vec<BackupCategory>) -> Vec<BackupCategory> {
@@ -151,11 +178,15 @@ struct WriteJob {
     destination: PathBuf,
     protection: Protection,
     categories: Vec<BackupCategory>,
-    unchanged_since: Option<String>,
+    now: OffsetDateTime,
     cancel: CancelFlag,
 }
 
-async fn write_protected(job: WriteJob) -> Result<ScheduledWrite, TransferError> {
+async fn write_protected<T, F>(job: WriteJob, body: F) -> Result<T, TransferError>
+where
+    T: Send + 'static,
+    F: FnOnce(BundleInput<'_>) -> Result<T, TransferError> + Send + 'static,
+{
     let WriteJob {
         provider,
         data_dir,
@@ -163,21 +194,21 @@ async fn write_protected(job: WriteJob) -> Result<ScheduledWrite, TransferError>
         destination,
         protection,
         categories,
-        unchanged_since,
+        now,
         cancel,
     } = job;
     let schema_version = provider.schema_version().await?;
     let work_dir = data_dir.clone();
     let output = destination.clone();
     let written = with_database_snapshot(&provider, &data_dir, &stem, move |snapshot| {
-        write_bundle(BundleInput {
+        body(BundleInput {
             data_dir: &work_dir,
             snapshot: &snapshot,
             destination: &output,
             protection: &protection,
             categories: &categories,
             schema_version,
-            unchanged_since: unchanged_since.as_deref(),
+            now,
             cancel: &cancel,
         })
     })
@@ -190,23 +221,12 @@ async fn write_protected(job: WriteJob) -> Result<ScheduledWrite, TransferError>
             tracing::debug!(%error, "partial export could not be removed");
         }
     }
-    written.map(|outcome| {
-        if outcome.written {
-            ScheduledWrite::Written {
-                path: destination,
-                fingerprint: outcome.fingerprint,
-            }
-        } else {
-            ScheduledWrite::Unchanged {
-                fingerprint: outcome.fingerprint,
-            }
-        }
-    })
+    written
 }
 
-struct BundleOutcome {
+struct PreparedBundle {
+    files: Vec<PayloadFile>,
     fingerprint: String,
-    written: bool,
 }
 
 struct BundleInput<'a> {
@@ -216,7 +236,7 @@ struct BundleInput<'a> {
     protection: &'a Protection,
     categories: &'a [BackupCategory],
     schema_version: u32,
-    unchanged_since: Option<&'a str>,
+    now: OffsetDateTime,
     cancel: &'a CancelFlag,
 }
 
@@ -241,18 +261,17 @@ fn content_fingerprint(input: &BundleInput<'_>, files: &[PayloadFile]) -> String
     to_lower_hex(&hasher.finalize())
 }
 
-fn write_bundle(input: BundleInput<'_>) -> Result<BundleOutcome, TransferError> {
+fn prepare_bundle(input: &BundleInput<'_>) -> Result<PreparedBundle, TransferError> {
     let key = credentials_key_path_in(input.data_dir);
     let files = collect_payload(input.data_dir, input.snapshot, &key, input.categories)?;
     input.cancel.checkpoint()?;
-    let fingerprint = content_fingerprint(&input, &files);
-    if input.unchanged_since == Some(fingerprint.as_str()) {
-        return Ok(BundleOutcome {
-            fingerprint,
-            written: false,
-        });
-    }
-    let created_at = OffsetDateTime::now_utc();
+    let fingerprint = content_fingerprint(input, &files);
+    Ok(PreparedBundle { files, fingerprint })
+}
+
+fn emit_bundle(input: &BundleInput<'_>, prepared: &PreparedBundle) -> Result<(), TransferError> {
+    let files = &prepared.files;
+    let created_at = input.now;
     let full = FullManifest {
         format_version: BUNDLE_FORMAT_VERSION,
         kind: BundleKind::Full,
@@ -276,16 +295,13 @@ fn write_bundle(input: BundleInput<'_>) -> Result<BundleOutcome, TransferError> 
     };
 
     let ciphertext = ciphertext_path(input.destination);
-    write_encrypted_payload(&ciphertext, input.protection, &full, &files, input.cancel)?;
+    write_encrypted_payload(&ciphertext, input.protection, &full, files, input.cancel)?;
     input.cancel.checkpoint()?;
     let partial = partial_path(input.destination);
     write_outer(&partial, &public, &ciphertext)?;
     std::fs::remove_file(&ciphertext)?;
     publish_sealed(&partial, input.destination)?;
-    Ok(BundleOutcome {
-        fingerprint,
-        written: true,
-    })
+    Ok(())
 }
 
 fn write_encrypted_payload(

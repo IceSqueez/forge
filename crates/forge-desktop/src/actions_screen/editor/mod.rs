@@ -488,6 +488,9 @@ pub(in crate::actions_screen) mod tests {
             .expect_list_for_action()
             .returning(|_| Ok(Vec::new()));
         triggers
+            .expect_instances_by_action()
+            .returning(|| Ok(Default::default()));
+        triggers
             .expect_actions_by_instance()
             .returning(|| Ok(Default::default()));
         let trigger_repo: Arc<dyn TriggerInstanceRepo> = Arc::new(triggers);

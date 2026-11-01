@@ -1,4 +1,5 @@
 use crate::error::RuntimeError;
+use forge_storage::RunRefusal;
 use forge_types::{Action, ActionId, ArgStack, EventId, Queue, QueueId, RecoverMutex};
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
@@ -19,13 +20,7 @@ use crate::{ActionEngineHandle, EventBus, ExecutionRequest};
 
 pub const MAX_PENDING_PER_QUEUE: usize = 500;
 
-pub const QUEUE_NOT_FOUND_REASON: &str = "queue_not_found";
-pub const QUEUE_OVERFLOW_REASON: &str = "queue_pending_overflow";
 const QUEUE_CLEARED_KIND: &str = "queue.cleared";
-pub const QUEUE_PAUSED_REASON: &str = "queue_paused";
-pub const QUEUE_DRAINING_REASON: &str = "queue_draining";
-pub const QUEUE_DELETED_REASON: &str = "queue_deleted";
-pub const ENGINE_STOPPED_REASON: &str = "engine_stopped";
 
 pub struct SchedulerRequest {
     pub queue_id: QueueId,
@@ -119,13 +114,13 @@ impl QueueMode {
         }
     }
 
-    fn intake_refusal(self, bypass_pause: bool) -> Option<&'static str> {
+    fn intake_refusal(self, bypass_pause: bool) -> Option<RunRefusal> {
         if bypass_pause || self.intake == QueueIntake::Accept {
             return None;
         }
         Some(match self.processing {
-            QueueProcessing::Running => QUEUE_DRAINING_REASON,
-            QueueProcessing::Frozen => QUEUE_PAUSED_REASON,
+            QueueProcessing::Running => RunRefusal::QueueDraining,
+            QueueProcessing::Frozen => RunRefusal::QueuePaused,
         })
     }
 }
@@ -211,7 +206,7 @@ enum SchedulerCommand {
         ScheduledOrigin,
         oneshot::Sender<Result<(), RuntimeError>>,
     ),
-    IntakeRefusal(QueueId, bool, oneshot::Sender<Option<&'static str>>),
+    IntakeRefusal(QueueId, bool, oneshot::Sender<Option<RunRefusal>>),
     SetMode(
         QueueId,
         QueueMode,
@@ -527,7 +522,7 @@ impl QueueSchedulerHandle {
         &self,
         queue_id: QueueId,
         bypass_pause: bool,
-    ) -> Result<Option<&'static str>, RuntimeError> {
+    ) -> Result<Option<RunRefusal>, RuntimeError> {
         let (tx, rx) = oneshot::channel();
         self.sender
             .send(SchedulerCommand::IntakeRefusal(queue_id, bypass_pause, tx))
@@ -704,7 +699,7 @@ impl Launcher {
                         launcher.queue_id,
                         action_id,
                         trigger_event_id,
-                        ENGINE_STOPPED_REASON,
+                        RunRefusal::EngineStopped,
                     );
                 }
             }
@@ -944,7 +939,7 @@ impl QueueScheduler {
                                     queue_id,
                                     task.action_id,
                                     task.trigger_event_id,
-                                    QUEUE_DELETED_REASON,
+                                    RunRefusal::QueueDeleted,
                                 );
                             }
                             depths.deregister(&queue_id);
@@ -984,7 +979,7 @@ impl QueueScheduler {
         arrival: Arrival,
         slots: &mut HashMap<QueueId, QueueSlot>,
         bus: &Arc<EventBus>,
-    ) -> Result<(), &'static str> {
+    ) -> Result<(), RunRefusal> {
         let SchedulerRequest {
             queue_id,
             action_id,
@@ -1002,9 +997,9 @@ impl QueueScheduler {
                 queue_id,
                 action_id,
                 trigger_event_id,
-                QUEUE_NOT_FOUND_REASON,
+                RunRefusal::QueueNotFound,
             );
-            return Err(QUEUE_NOT_FOUND_REASON);
+            return Err(RunRefusal::QueueNotFound);
         };
 
         let origin = match arrival {
@@ -1039,9 +1034,9 @@ impl QueueScheduler {
             queue_id,
             action_id,
             trigger_event_id,
-            QUEUE_OVERFLOW_REASON,
+            RunRefusal::QueueOverflow,
         );
-        Err(QUEUE_OVERFLOW_REASON)
+        Err(RunRefusal::QueueOverflow)
     }
 
     fn publish_skip(
@@ -1049,12 +1044,12 @@ impl QueueScheduler {
         queue_id: QueueId,
         action_id: ActionId,
         trigger_event_id: EventId,
-        reason: &str,
+        reason: RunRefusal,
     ) {
         bus.publish(
             ActionSkipped {
                 action_id,
-                reason: reason.to_owned(),
+                reason: reason.code().to_owned(),
                 queue_id,
             }
             .into_event(EventSource::Core, Some(trigger_event_id)),
@@ -1386,19 +1381,20 @@ mod tests {
         registry: Arc<SubActionRegistry>,
         queues: Vec<Queue>,
     ) -> QueueSchedulerHandle {
-        let engine = spawn_action_engine(
-            Arc::clone(bus),
-            crate::Catalog::new(
+        let engine = spawn_action_engine(crate::ActionEngineParts {
+            bus: Arc::clone(bus),
+            catalog: crate::Catalog::new(
                 dp.action_repo(),
                 dp.trigger_instance_repo(),
                 dp.catalog_revision(),
             ),
-            dp.action_repo(),
-            dp.history_repo(),
-            registry,
-            Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
-            crate::DateNamesHandle::default(),
-        );
+            actions: dp.action_repo(),
+            history: dp.history_repo(),
+            sub_action_registry: registry,
+            cancel_registry: Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
+            date_names: crate::DateNamesHandle::default(),
+            config: crate::Config::default(),
+        });
         QueueScheduler::spawn(engine, Arc::clone(bus), queues)
     }
 
@@ -1803,7 +1799,11 @@ mod tests {
                     ids_of(&seen, "action.skipped"),
                     has(&seen, "action.start", waiting),
                 ),
-                (vec![QUEUE_DELETED_REASON], vec![waiting.to_string()], false),
+                (
+                    vec![RunRefusal::QueueDeleted.code()],
+                    vec![waiting.to_string()],
+                    false
+                ),
                 "{mode:?}"
             );
             sched.shutdown();
@@ -2799,9 +2799,9 @@ mod tests {
         for mode in [QueueMode::PAUSED, QueueMode::HOLDING] {
             let (q_id, _bus, sched) = frozen_queue_filled_to_the_cap().await;
             let expected = if mode == QueueMode::PAUSED {
-                QUEUE_PAUSED_REASON
+                RunRefusal::QueuePaused
             } else {
-                QUEUE_OVERFLOW_REASON
+                RunRefusal::QueueOverflow
             };
             sched.set_mode(q_id, mode).await.unwrap();
 
@@ -2824,7 +2824,7 @@ mod tests {
         assert!(
             matches!(
                 offered,
-                Err(RuntimeError::QueueRefused(QUEUE_NOT_FOUND_REASON))
+                Err(RuntimeError::QueueRefused(RunRefusal::QueueNotFound))
             ),
             "got {offered:?}"
         );

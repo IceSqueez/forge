@@ -142,7 +142,11 @@ fn database_url() -> String {
 }
 
 pub async fn open_store() -> Arc<dyn DataProvider> {
-    Arc::new(SqliteBackend::open(&database_url()).await.unwrap())
+    Arc::new(
+        SqliteBackend::open(&database_url(), &forge_paths::AppPaths::resolve())
+            .await
+            .unwrap(),
+    )
 }
 
 pub async fn seed_integrations_and_server_off(settings: &dyn SettingsRepo) {

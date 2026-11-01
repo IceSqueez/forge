@@ -374,9 +374,15 @@ mod tests {
             .returning(move || Ok(vec![listed.lock().unwrap().clone()]));
         let mut instance_repo = MockTriggerInstanceRepo::new();
         let linked = Arc::clone(&instances);
+        let linked_action = Arc::clone(&action);
         instance_repo
-            .expect_list_for_action()
-            .returning(move |_| Ok(linked.lock().unwrap().clone()));
+            .expect_instances_by_action()
+            .returning(move || {
+                Ok(HashMap::from([(
+                    linked_action.lock().unwrap().id,
+                    linked.lock().unwrap().clone(),
+                )]))
+            });
 
         let revision = CatalogRevision::new();
         let catalog = Catalog::new(

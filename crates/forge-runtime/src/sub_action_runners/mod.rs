@@ -1,11 +1,11 @@
+use std::path::PathBuf;
+
 mod core_action_cancel;
 mod core_action_cancel_scheduled;
-mod core_action_disable;
-mod core_action_enable;
 mod core_action_run;
 mod core_action_schedule;
 mod core_action_shared;
-mod core_action_toggle;
+mod core_action_state;
 mod core_args_set;
 mod core_clipboard_copy;
 mod core_clipboard_read;
@@ -36,8 +36,7 @@ mod core_logic_wait_until;
 mod core_math_evaluate;
 mod core_notify_show;
 mod core_queue_clear;
-mod core_queue_pause;
-mod core_queue_resume;
+mod core_queue_mode;
 mod core_queue_shared;
 mod core_random_bool;
 mod core_random_float;
@@ -61,10 +60,8 @@ mod core_time_diff;
 mod core_time_format;
 mod core_time_now;
 mod core_time_parse;
-mod core_trigger_disable;
-mod core_trigger_enable;
 mod core_trigger_shared;
-mod core_trigger_toggle;
+mod core_trigger_state;
 mod core_url_open;
 mod core_users_get_var;
 mod core_users_increment_var;
@@ -93,12 +90,10 @@ pub use chat_send_message::{
 pub use core_action_cancel::CoreActionCancelRunner;
 pub use core_action_cancel_scheduled::CANCEL_SCHEDULED_KIND_ID;
 pub(crate) use core_action_cancel_scheduled::CoreActionCancelScheduledRunner;
-pub use core_action_disable::CoreActionDisableRunner;
-pub use core_action_enable::CoreActionEnableRunner;
 pub use core_action_run::CoreActionRunRunner;
 pub(crate) use core_action_schedule::CoreActionScheduleRunner;
 pub use core_action_schedule::SCHEDULE_ACTION_KIND_ID;
-pub use core_action_toggle::CoreActionToggleRunner;
+pub use core_action_state::CoreActionStateRunner;
 pub use core_args_set::CoreArgsSetRunner;
 pub(crate) use core_clipboard_copy::CoreClipboardCopyRunner;
 pub(crate) use core_clipboard_read::CoreClipboardReadRunner;
@@ -138,8 +133,7 @@ pub use core_logic_wait_until::CoreLogicWaitUntilRunner;
 pub use core_math_evaluate::CoreMathEvaluateRunner;
 pub(crate) use core_notify_show::CoreNotifyShowRunner;
 pub(crate) use core_queue_clear::CoreQueueClearRunner;
-pub(crate) use core_queue_pause::CoreQueuePauseRunner;
-pub(crate) use core_queue_resume::CoreQueueResumeRunner;
+pub(crate) use core_queue_mode::CoreQueueModeRunner;
 pub(crate) use core_random_bool::CoreRandomBoolRunner;
 pub(crate) use core_random_float::CoreRandomFloatRunner;
 pub(crate) use core_random_int::CoreRandomIntRunner;
@@ -165,9 +159,7 @@ pub(crate) use core_time_diff::CoreTimeDiffRunner;
 pub use core_time_format::CoreTimeFormatRunner;
 pub use core_time_now::CoreTimeNowRunner;
 pub use core_time_parse::CoreTimeParseRunner;
-pub use core_trigger_disable::CoreTriggerDisableRunner;
-pub use core_trigger_enable::CoreTriggerEnableRunner;
-pub use core_trigger_toggle::CoreTriggerToggleRunner;
+pub use core_trigger_state::CoreTriggerStateRunner;
 pub(crate) use core_url_open::CoreUrlOpenRunner;
 pub use core_users_get_var::CoreUsersGetVarRunner;
 pub use core_users_increment_var::CoreUsersIncrementVarRunner;
@@ -229,6 +221,7 @@ pub struct CoreSubActionDeps {
     pub cancel_registry: Arc<ActionCancelRegistry>,
     pub overlays: OverlayServiceHandle,
     pub config: Config,
+    pub assets_root: PathBuf,
 }
 
 pub fn register_core_sub_actions(
@@ -248,6 +241,7 @@ pub fn register_core_sub_actions(
         cancel_registry,
         overlays,
         config,
+        assets_root,
     } = deps;
     let condition_gate = Arc::new(ConditionGate::new(&config));
 
@@ -263,23 +257,29 @@ pub fn register_core_sub_actions(
         &condition_gate,
     ))))?;
     reg.register(Box::new(CoreLogicWaitUntilRunner::new(condition_gate)))?;
-    reg.register(Box::new(CoreQueuePauseRunner::new(scheduler.clone())))?;
-    reg.register(Box::new(CoreQueueResumeRunner::new(scheduler.clone())))?;
+    reg.register(Box::new(CoreQueueModeRunner::pause(scheduler.clone())))?;
+    reg.register(Box::new(CoreQueueModeRunner::resume(scheduler.clone())))?;
     reg.register(Box::new(CoreQueueClearRunner::new(scheduler.clone())))?;
     reg.register(Box::new(CoreActionCancelRunner::new(Arc::clone(
         &cancel_registry,
     ))))?;
-    reg.register(Box::new(CoreActionEnableRunner::new(Arc::clone(&actions))))?;
-    reg.register(Box::new(CoreActionDisableRunner::new(Arc::clone(&actions))))?;
-    reg.register(Box::new(CoreActionToggleRunner::new(Arc::clone(&actions))))?;
+    reg.register(Box::new(CoreActionStateRunner::enable(Arc::clone(
+        &actions,
+    ))))?;
+    reg.register(Box::new(CoreActionStateRunner::disable(Arc::clone(
+        &actions,
+    ))))?;
+    reg.register(Box::new(CoreActionStateRunner::toggle(Arc::clone(
+        &actions,
+    ))))?;
     reg.register(Box::new(CoreActionRunRunner::new(Arc::clone(&actions))))?;
-    reg.register(Box::new(CoreTriggerEnableRunner::new(Arc::clone(
+    reg.register(Box::new(CoreTriggerStateRunner::enable(Arc::clone(
         &trigger_instances,
     ))))?;
-    reg.register(Box::new(CoreTriggerDisableRunner::new(Arc::clone(
+    reg.register(Box::new(CoreTriggerStateRunner::disable(Arc::clone(
         &trigger_instances,
     ))))?;
-    reg.register(Box::new(CoreTriggerToggleRunner::new(Arc::clone(
+    reg.register(Box::new(CoreTriggerStateRunner::toggle(Arc::clone(
         &trigger_instances,
     ))))?;
     reg.register(Box::new(CoreTestFireTriggerRunner::new(
@@ -317,10 +317,10 @@ pub fn register_core_sub_actions(
     )))?;
     reg.register(Box::new(CoreLogicWaitRunner))?;
     reg.register(Box::new(CoreLogWriteRunner))?;
-    reg.register(Box::new(CoreFileReadRunner))?;
-    reg.register(Box::new(CoreFileWriteRunner))?;
-    reg.register(Box::new(CoreFileDeleteRunner))?;
-    reg.register(Box::new(CoreFileListRunner))?;
+    reg.register(Box::new(CoreFileReadRunner::new(assets_root.clone())))?;
+    reg.register(Box::new(CoreFileWriteRunner::new(assets_root.clone())))?;
+    reg.register(Box::new(CoreFileDeleteRunner::new(assets_root.clone())))?;
+    reg.register(Box::new(CoreFileListRunner::new(assets_root)))?;
     reg.register(Box::new(CoreRandomIntRunner))?;
     reg.register(Box::new(CoreRandomFloatRunner))?;
     reg.register(Box::new(CoreRandomBoolRunner))?;

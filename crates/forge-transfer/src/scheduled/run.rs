@@ -7,6 +7,7 @@ use crate::full::writer::{
 use crate::scheduled::destination::resolve_folder;
 use crate::scheduled::prune::prune;
 use crate::scheduled::service::{Service, Trigger};
+use crate::scheduled::settings::StoredScheduleKey;
 use crate::scheduled::status::{FailureCategory, FailureStreak};
 
 struct Completed {
@@ -35,14 +36,11 @@ impl Service {
     }
 
     async fn execute(&mut self, trigger: Trigger) -> Result<Completed, FailureCategory> {
-        if self.settings.key_unreadable {
-            return Err(FailureCategory::KeyUnreadable);
-        }
-        let key = self
-            .settings
-            .key
-            .clone()
-            .ok_or(FailureCategory::KeyMissing)?;
+        let key = match &self.settings.key {
+            StoredScheduleKey::Readable(key) => key.clone(),
+            StoredScheduleKey::Unreadable => return Err(FailureCategory::KeyUnreadable),
+            StoredScheduleKey::Absent => return Err(FailureCategory::KeyMissing),
+        };
         let folder =
             resolve_folder(&self.parts.data_dir, self.settings.destination.as_deref()).await?;
         let unchanged_since = match trigger {
@@ -56,6 +54,7 @@ impl Service {
             folder: folder.clone(),
             key,
             categories: self.settings.categories.clone(),
+            now: self.parts.clock.now(),
         };
         let signals = std::sync::Arc::clone(&self.signals);
         let cancel = CancelFlag::new();

@@ -60,23 +60,44 @@ pub(crate) fn valid_code_event_name(name: &str) -> bool {
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
 }
 
+fn json_kind(value: &serde_json::Value) -> &'static str {
+    match value {
+        serde_json::Value::Null => "null",
+        serde_json::Value::Bool(_) => "bool",
+        serde_json::Value::Number(_) => "number",
+        serde_json::Value::String(_) => "string",
+        serde_json::Value::Array(_) => "array",
+        serde_json::Value::Object(_) => "object",
+    }
+}
+
 pub(crate) fn build_arg_stack(args: serde_json::Value) -> ArgStack {
     let obj = match args {
         serde_json::Value::Object(m) => m,
         serde_json::Value::Null => return ArgStack::new(),
         other => {
-            tracing::warn!(shape = %other, "action args ignored: not a JSON object");
+            tracing::warn!(
+                shape = json_kind(&other),
+                "action args ignored: not a JSON object"
+            );
             return ArgStack::new();
         }
     };
-    obj.into_iter()
-        .filter_map(|(key, value)| match Variant::from_plain_json(value) {
-            Ok(variant) => Some((key, variant)),
-            Err(error) => {
-                tracing::warn!(%error, arg = %key, "action arg dropped");
-                None
-            }
+    let received = obj.len();
+    let accepted: Vec<(String, Variant)> = obj
+        .into_iter()
+        .filter_map(|(key, value)| {
+            Variant::from_plain_json(value)
+                .ok()
+                .map(|variant| (key, variant))
         })
+        .collect();
+    let dropped = received - accepted.len();
+    if dropped > 0 {
+        tracing::warn!(dropped, "action args dropped: not representable");
+    }
+    accepted
+        .into_iter()
         .fold(ArgStack::new(), |stack, (k, v)| stack.set(k, v))
 }
 

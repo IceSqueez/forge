@@ -823,10 +823,15 @@ mod tests {
     use std::rc::Rc;
 
     use forge_storage::Language;
-    use forge_transfer::{PackImportPlan, PackItemKey, PackItemKind, PackResolution};
+    use forge_transfer::{
+        ExecutableContent, PackImportPlan, PackItemKey, PackItemKind, PackResolution,
+    };
     use gpui::{AppContext, Entity, TestAppContext};
 
-    use super::{PackHeader, PackImportModal, PackImportModalEvent, carry_choices, grouped_items};
+    use super::{
+        PackHeader, PackImportModal, PackImportModalEvent, carry_choices, executable_lines,
+        grouped_items,
+    };
     use crate::app::i18n::install_language;
     use crate::test_support::pack_flow::{
         PackWorld, export_pack, pack_world, queue_named, seed_queued_action, stage_into,
@@ -955,6 +960,63 @@ mod tests {
             .collect();
 
         assert_eq!(kinds, vec![PackItemKind::Action, PackItemKind::Queue]);
+    }
+
+    #[gpui::test]
+    fn choosing_for_all_covers_every_conflict_and_reports_one_shared_choice(
+        cx: &mut TestAppContext,
+    ) {
+        let planned = reimported_into_its_source();
+        let modal = mount(cx, planned.plan.clone());
+
+        modal.update(cx, |modal, cx| {
+            modal.choose_for_all(PackResolution::Replace, cx)
+        });
+
+        let (action, queue, shared) = modal.read_with(cx, |modal, _| {
+            (
+                resolution_of(modal.plan(), &planned.action),
+                resolution_of(modal.plan(), &planned.queue),
+                modal.shared_resolution(),
+            )
+        });
+        let replace = Some(PackResolution::Replace);
+        assert_eq!((action, queue, shared), (replace, replace, replace));
+
+        modal.update(cx, |modal, cx| {
+            modal.choose(&planned.queue, PackResolution::Skip, cx)
+        });
+        let shared = modal.read_with(cx, |modal, _| modal.shared_resolution());
+        assert_eq!(shared, None);
+    }
+
+    #[test]
+    fn overlay_files_share_one_line_per_overlay_after_the_other_runnable_content() {
+        install_language(Language::En);
+        let source = |overlay: &str, file: &str| ExecutableContent::OverlaySource {
+            overlay: overlay.to_owned(),
+            file: file.to_owned(),
+        };
+
+        let lines = executable_lines(&[
+            source("Follow", "index.html"),
+            source("Raid", "index.html"),
+            source("Follow", "overlay.js"),
+            ExecutableContent::Script {
+                name: "greet".to_owned(),
+            },
+        ]);
+
+        assert_eq!(lines.len(), 3, "{lines:?}");
+        assert!(lines[0].contains("greet"), "{lines:?}");
+        assert!(
+            lines[1].contains("Follow") && lines[1].contains("index.html, overlay.js"),
+            "{lines:?}"
+        );
+        assert!(
+            lines[2].contains("Raid") && !lines[2].contains("overlay.js"),
+            "{lines:?}"
+        );
     }
 
     #[gpui::test]

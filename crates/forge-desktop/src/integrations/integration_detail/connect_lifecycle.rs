@@ -28,16 +28,16 @@ impl IntegrationDetail {
             },
             sign_in: match platform {
                 PlatformId::Twitch => {
-                    ConnectSignIn::DeviceCode(self.sign_in.twitch_sign_in.clone())
+                    ConnectSignIn::DeviceCode(self.services.twitch_sign_in.clone())
                 }
                 PlatformId::YouTube => ConnectSignIn::LocalCallback(
-                    self.sign_in
+                    self.services
                         .youtube_sign_in
                         .clone()
                         .map(|sign_in| Arc::new(sign_in) as Arc<dyn LoopbackSignIn>),
                 ),
                 PlatformId::Kick => ConnectSignIn::LocalCallback(
-                    self.sign_in
+                    self.services
                         .kick_sign_in
                         .clone()
                         .map(|sign_in| Arc::new(sign_in) as Arc<dyn LoopbackSignIn>),

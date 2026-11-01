@@ -52,19 +52,4 @@ impl IntegrationDetail {
         self.sign_in.twitch_bot = Some(section);
         cx.notify();
     }
-
-    pub(crate) fn attach_twitch_sign_in(&mut self, sign_in: forge_platform_twitch::TwitchSignIn) {
-        self.sign_in.twitch_sign_in = Some(sign_in);
-    }
-
-    pub(crate) fn attach_youtube_sign_in(
-        &mut self,
-        sign_in: forge_platform_youtube::YouTubeSignIn,
-    ) {
-        self.sign_in.youtube_sign_in = Some(sign_in);
-    }
-
-    pub(crate) fn attach_kick_sign_in(&mut self, sign_in: forge_platform_kick::KickSignIn) {
-        self.sign_in.kick_sign_in = Some(sign_in);
-    }
 }

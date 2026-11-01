@@ -441,6 +441,9 @@ mod quick_action_bridge {
                     twitch_slot: None,
                     kick_slot: None,
                     youtube_slot: None,
+                    twitch_sign_in: None,
+                    youtube_sign_in: None,
+                    kick_sign_in: None,
                     obs_install_seed: ObsInstallSeed::new(
                         forge_obs::SwitchableObsSink::new(),
                         Default::default(),

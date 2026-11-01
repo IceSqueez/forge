@@ -32,6 +32,9 @@ pub(crate) struct DetailServices {
     pub(crate) twitch_slot: Option<IntegrationSlot<BuiltinObject>>,
     pub(crate) kick_slot: Option<IntegrationSlot<BuiltinObject>>,
     pub(crate) youtube_slot: Option<IntegrationSlot<BuiltinObject>>,
+    pub(crate) twitch_sign_in: Option<forge_platform_twitch::TwitchSignIn>,
+    pub(crate) youtube_sign_in: Option<forge_platform_youtube::YouTubeSignIn>,
+    pub(crate) kick_sign_in: Option<forge_platform_kick::KickSignIn>,
     pub(crate) obs_install_seed: ObsInstallSeed,
     pub(crate) sign_out: IntegrationSignOut,
 }
@@ -87,9 +90,6 @@ pub(super) struct SignInState {
     pub(super) connect: Option<ActiveConnect>,
     pub(super) donation_settings: Option<DonationSettingsLink>,
     pub(super) twitch_bot: Option<Entity<TwitchBotSection>>,
-    pub(super) twitch_sign_in: Option<forge_platform_twitch::TwitchSignIn>,
-    pub(super) youtube_sign_in: Option<forge_platform_youtube::YouTubeSignIn>,
-    pub(super) kick_sign_in: Option<forge_platform_kick::KickSignIn>,
     pub(super) _twitch_bot_subs: Vec<Subscription>,
 }
 

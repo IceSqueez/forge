@@ -2,7 +2,7 @@ use forge_components::{ForgePalette, Icon};
 use forge_overlay::{OverlayKindRegistry, PreviewAccent, effective_overlay_config};
 use forge_storage::OverlayDefinition;
 use forge_types::{MessageCode, MessageRef, NamesLanguage};
-use gpui::Rgba;
+use gpui::{Rgba, rgb};
 
 use crate::shared::user_text::resolve_message;
 
@@ -19,7 +19,13 @@ impl KindVisuals {
 }
 
 pub(super) fn accent_color(accent: PreviewAccent, palette: &ForgePalette) -> Rgba {
-    forge_components::accent_swatch(accent.as_str(), palette).unwrap_or(palette.accent_mauve)
+    match accent {
+        PreviewAccent::Custom([red, green, blue]) => rgb(u32::from_be_bytes([0, red, green, blue])),
+        named => named
+            .name()
+            .and_then(|name| forge_components::accent_swatch(name, palette))
+            .unwrap_or(palette.accent_mauve),
+    }
 }
 
 pub(super) fn kind_visuals(

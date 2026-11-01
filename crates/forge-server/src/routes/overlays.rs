@@ -405,6 +405,27 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn serve_overlay_ignores_the_query_a_page_adds_to_restart_a_gif() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        tokio::fs::write(dir.path().join("wave.gif"), b"GIF89a")
+            .await
+            .expect("write");
+
+        let (handle, addr) =
+            make_overlay_server(dir.path().to_path_buf(), true, MemCreds::new()).await;
+
+        let resp = reqwest::get(format!(
+            "http://{addr}/overlays/fgo_fixture/wave.gif?play=3"
+        ))
+        .await
+        .expect("request");
+        assert_eq!(resp.status(), reqwest::StatusCode::OK);
+        assert_eq!(&resp.bytes().await.expect("body")[..], b"GIF89a");
+
+        handle.stop().await.expect("stop");
+    }
+
+    #[tokio::test]
     async fn serve_overlay_returns_404_for_missing_file() {
         let dir = tempfile::tempdir().expect("tempdir");
 

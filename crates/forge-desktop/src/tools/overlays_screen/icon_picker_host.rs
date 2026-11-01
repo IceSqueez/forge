@@ -2,19 +2,20 @@ use forge_components::{
     ActivePresentation, ForgePalette, GridPicker, GridPickerArt, GridPickerConfig, GridPickerEvent,
     GridPickerSubtitle, Icon, OverlayPosition, focus_inside_modal, overlay, tr,
 };
-use forge_overlay::config::ICON;
+use forge_overlay::config::{ICON, IMAGE};
 use forge_overlay::effective_overlay_config;
 use forge_storage::{MediaBlob, MediaRepo, OverlayDefinition, StorageError};
 use gpui::{
     AnyElement, App, Context, Entity, EventEmitter, Rgba, Subscription, Window, prelude::*,
 };
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use super::OverlaysView;
 use super::icon_choice::{
-    IconImage, IconPick, PICK_ART, PICK_TILE, icon_art, icon_choice, icon_groups,
-    image_dialog_extensions, image_rows, import_outcome, picked_icon,
+    IconChoice, IconImage, IconPick, PICK_ART, PICK_TILE, icon_art, icon_choice,
+    image_dialog_extensions, image_rows, import_outcome, offers_library_images_only, picked_icon,
+    picker_groups,
 };
 use super::property_panel::{IconPickRequested, IconPickResult, OverlayPropertyPanel};
 use crate::app::async_bridge::{self, DialogFilter};
@@ -127,13 +128,13 @@ impl IconPickerHost {
         }
         self.images = images;
         cx.emit(IconHostEvent::ImagesChanged);
-        if let Some((picker, accent)) = self
+        if let Some((key, picker, accent)) = self
             .picker
             .as_ref()
-            .map(|open| (open.view.clone(), open.accent))
+            .map(|open| (open.key.clone(), open.view.clone(), open.accent))
         {
             let palette = cx.palette();
-            let groups = icon_groups(&self.images, accent, &palette);
+            let groups = picker_groups(&key, &self.images, accent, &palette);
             picker.update(cx, |picker, cx| picker.set_groups(groups, cx));
         }
         cx.notify();
@@ -141,7 +142,20 @@ impl IconPickerHost {
 
     pub(super) fn open_picker(&mut self, key: String, accent: Rgba, cx: &mut Context<Self>) {
         let palette = cx.palette();
-        let groups = icon_groups(&self.images, accent, &palette);
+        let groups = picker_groups(&key, &self.images, accent, &palette);
+        let (title, subtitle, search) = if offers_library_images_only(&key) {
+            (
+                tr!("overlays_image_picker_title"),
+                tr!("overlays_image_picker_subtitle"),
+                tr!("overlays_image_picker_search"),
+            )
+        } else {
+            (
+                tr!("overlays_icon_picker_title"),
+                tr!("overlays_icon_picker_subtitle"),
+                tr!("overlays_icon_picker_search"),
+            )
+        };
         let config = GridPickerConfig {
             accent,
             art: GridPickerArt {
@@ -149,10 +163,10 @@ impl IconPickerHost {
                 glyph: PICK_ART,
             },
             header_icon: Icon::Photo,
-            title: tr!("overlays_icon_picker_title").into(),
-            subtitle: GridPickerSubtitle::Plain(tr!("overlays_icon_picker_subtitle").into()),
+            title: title.into(),
+            subtitle: GridPickerSubtitle::Plain(subtitle.into()),
             footer_hint: tr!("overlays_icon_picker_hint").into(),
-            search_placeholder: tr!("overlays_icon_picker_search").into(),
+            search_placeholder: search.into(),
             favorites_label: tr!("picker_favorites").into(),
             favorites_empty: tr!("picker_favorites_empty").into(),
         };
@@ -335,5 +349,19 @@ impl OverlaysView {
         let config = effective_overlay_config(descriptor, &definition.config);
         let stored = config.get(ICON).and_then(forge_types::Variant::as_str)?;
         icon_art(&icon_choice(stored, self.icon_host.read(cx).images()))
+    }
+
+    pub(super) fn preview_image(
+        &self,
+        definition: &OverlayDefinition,
+        cx: &App,
+    ) -> Option<Arc<Path>> {
+        let descriptor = self.handles.kinds.get(&definition.kind_id)?;
+        let config = effective_overlay_config(descriptor, &definition.config);
+        let stored = config.get(IMAGE).and_then(forge_types::Variant::as_str)?;
+        match icon_choice(stored, self.icon_host.read(cx).images()) {
+            IconChoice::Image(image) => Some(Arc::clone(&image.path)),
+            IconChoice::None | IconChoice::Glyph(_) | IconChoice::Unresolved(_) => None,
+        }
     }
 }

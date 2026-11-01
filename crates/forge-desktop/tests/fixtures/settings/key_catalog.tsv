@@ -46,6 +46,7 @@ key	notifications.connection_loss_sound	portable	withheld
 key	notifications.scheduled_backup_failure_os_notice	portable	withheld
 key	obs.auto_reconnect	portable	withheld
 key	obs.connect_on_launch	portable	withheld
+key	overlay.custom_accents	portable	kind
 key	picker.favorites.icons	portable	kind
 key	picker.favorites.sub_actions	portable	kind
 key	picker.favorites.triggers	portable	kind

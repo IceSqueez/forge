@@ -243,6 +243,13 @@ pub const PICKER_FAVORITES_ICONS: Setting<JsonDocument<Vec<String>>> = Setting::
     Kind,
 );
 
+pub const OVERLAY_CUSTOM_ACCENTS: Setting<JsonDocument<Vec<String>>> = Setting::new(
+    "overlay.custom_accents",
+    JsonDocument::new(),
+    Portable,
+    Kind,
+);
+
 pub const BACKUP_SCHEDULE_ENABLED: Setting<Flag> = Setting::new(
     "backup_schedule.enabled",
     Flag {
@@ -401,6 +408,7 @@ pub const CORE_SETTINGS: &[SettingSpec] = &[
     PICKER_FAVORITES_SUB_ACTIONS.spec(),
     PICKER_FAVORITES_TRIGGERS.spec(),
     PICKER_FAVORITES_ICONS.spec(),
+    OVERLAY_CUSTOM_ACCENTS.spec(),
     TTS_DISABLED_ENGINES.spec(),
     TTS_SYNTHESIS_DEFAULTS.spec(),
     TTS_MASTER_VOLUME.spec(),

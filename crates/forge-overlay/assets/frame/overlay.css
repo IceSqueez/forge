@@ -31,6 +31,7 @@ body {
 
 .corner {
   position: absolute;
+  z-index: 1;
   left: 22px;
   bottom: calc(-13px * var(--text-scale));
   display: flex;
@@ -40,6 +41,17 @@ body {
   border: 1px solid var(--accent);
   border-radius: 999px;
   background: rgba(20, 20, 28, 0.92);
+  transform: translate(var(--label-x, 0px), var(--label-y, 0px));
+}
+
+.corner[data-side="center"] {
+  left: 50%;
+  transform: translate(calc(-50% + var(--label-x, 0px)), var(--label-y, 0px));
+}
+
+.corner[data-side="right"] {
+  right: 22px;
+  left: auto;
 }
 
 body[data-position="top"] .corner {

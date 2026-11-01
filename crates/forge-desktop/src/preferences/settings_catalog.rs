@@ -235,6 +235,7 @@ mod tests {
             core_settings::PICKER_FAVORITES_SUB_ACTIONS.name(),
             core_settings::PICKER_FAVORITES_TRIGGERS.name(),
             core_settings::PICKER_FAVORITES_ICONS.name(),
+            core_settings::OVERLAY_CUSTOM_ACCENTS.name(),
             crate::automation::midi_screen::MIDI_KNOWN_DEVICES.name(),
             crate::app::window_placement::WINDOW_PLACEMENT.name(),
         ] {

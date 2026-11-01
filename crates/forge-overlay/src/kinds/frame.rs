@@ -1,4 +1,4 @@
-use forge_types::MessageCode;
+use forge_types::{MessageCode, Variant};
 
 use crate::catalog::descriptor::{
     DeliveryDisposition, OverlayConfig, OverlayKindDescriptor, SectionedField,
@@ -14,7 +14,7 @@ use crate::render::preview::{PreviewComposition, PreviewShape, compose};
 
 pub const KIND_ID: &str = "overlay.frame";
 
-pub const CONFIG_SCHEMA_VERSION: u32 = 3;
+pub const CONFIG_SCHEMA_VERSION: u32 = 4;
 
 const DESIGN_WIDTH_PX: u32 = 1280;
 const DESIGN_HEIGHT_PX: u32 = 720;
@@ -84,12 +84,21 @@ impl OverlayKindDescriptor for FrameOverlayKind {
         );
         defaults.insert(config::HEADLINE.to_owned(), config::text(""));
         defaults.insert(config::SUBLINE.to_owned(), config::text("LIVE"));
+        defaults.extend([
+            (
+                config::LABEL_SIDE.to_owned(),
+                config::text(config::LABEL_SIDE_LEFT),
+            ),
+            (config::LABEL_OFFSET_X.to_owned(), Variant::Int(0)),
+            (config::LABEL_OFFSET_Y.to_owned(), Variant::Int(0)),
+        ]);
         defaults
     }
 
     fn look_fields(&self) -> Vec<SectionedField> {
         let mut fields = config::shared_fields();
         fields.push(config::position_field("Caption edge"));
+        fields.extend(config::label_placement_fields());
         fields
     }
 

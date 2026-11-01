@@ -7,7 +7,9 @@ use crate::catalog::descriptor::OverlayKindDescriptor;
 use crate::catalog::instance::OverlayInstance;
 use crate::config::effective_overlay_config;
 use crate::error::OverlayError;
-use crate::files::media::{EmittedIcon, MediaSlot, emitted_icon, emitted_media_value, media_slot};
+use crate::files::media::{
+    EmittedIcon, MediaSlot, emitted_icon, emitted_image, emitted_media_value, media_slot,
+};
 use crate::render::materialize::GENERATOR_VERSION;
 use crate::render::sample::sample_content;
 
@@ -61,6 +63,7 @@ fn page_value(instance: &OverlayInstance, key: &str, value: &Variant) -> Value {
     let resolved = instance.media.for_key(key);
     match media_slot(key) {
         Some(MediaSlot::Icon) => icon_value(&emitted_icon(stored, resolved)),
+        Some(MediaSlot::Image) => Value::String(emitted_image(resolved)),
         Some(MediaSlot::Sound) => match emitted_media_value(key, stored, resolved) {
             Some(emitted) => Value::String(emitted),
             None => value.to_plain_json(),

@@ -22,7 +22,7 @@ pub use catalog::source_box::{ContentMargins, DesignSize};
 pub use catalog::wiring::{
     EventWiringTrigger, accepts_event_wiring, is_curated, order_curated_first, suggested_content,
 };
-pub use config::{effective_overlay_config, validate_overlay_config};
+pub use config::{effective_overlay_config, hex_color_channels, validate_overlay_config};
 pub use error::OverlayError;
 pub use files::assets::{
     BEHAVIOR_FILE, CONFIG_FILE, MARKUP_FILE, MOTION_ASSET, MOTION_SOURCE, OVERRIDABLE_FILES,
@@ -37,7 +37,7 @@ pub use files::media::{
     CLIP_REFERENCE_PREFIX, ClipReference, EmittedIcon, GENERATED_MEDIA_DIRECTORY,
     IMAGE_REFERENCE_PREFIX, IconValue, ImageReference, MEDIA_KEYS, MediaIssue, MediaSlot,
     MediaValue, OverlayMedia, ResolvedMedia, clip_reference, clip_references, emitted_icon,
-    emitted_media_value, glyph_media, image_reference, image_references, media_slot,
+    emitted_image, emitted_media_value, glyph_media, image_reference, image_references, media_slot,
     read_icon_value, read_media_value,
 };
 pub use kinds::register_builtin_kinds;
@@ -63,8 +63,9 @@ pub use render::page_contract::{
     LookConfigKey, LookContract, PAGE_CONTRACT, PageContract, PageFunction, look_contract,
 };
 pub use render::preview::{
-    PreviewAccent, PreviewCanvas, PreviewComposition, PreviewElement, PreviewFont, PreviewLineRole,
-    PreviewMark, PreviewPosition, PreviewShape,
+    PreviewAccent, PreviewCanvas, PreviewComposition, PreviewElement, PreviewFont, PreviewImage,
+    PreviewImageSide, PreviewLabel, PreviewLabelSide, PreviewLineRole, PreviewMark,
+    PreviewPosition, PreviewShape, PreviewSurface,
 };
 pub use render::sample::{SampleContext, SampleTrigger, sample_content, sample_context};
 

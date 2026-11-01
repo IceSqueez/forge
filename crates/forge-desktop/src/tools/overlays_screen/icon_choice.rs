@@ -9,8 +9,8 @@ use forge_components::{
     spacing, tr,
 };
 use forge_overlay::{
-    CURATED_ICONS, CuratedIcon, IconCategory, IconValue, curated_icon, image_reference,
-    read_icon_value,
+    CURATED_ICONS, CuratedIcon, IconCategory, IconValue, MediaSlot, curated_icon, image_reference,
+    media_slot, read_icon_value,
 };
 use forge_storage::settings::core_settings::PICKER_FAVORITES_ICONS;
 use forge_storage::{MediaBlob, MediaBlobId, MediaFormat, MediaKind, StorageError};
@@ -174,25 +174,65 @@ fn category_dot(category: IconCategory, palette: &ForgePalette) -> Rgba {
     }
 }
 
-pub(super) fn icon_groups(
+pub(super) fn offers_library_images_only(key: &str) -> bool {
+    media_slot(key) == Some(MediaSlot::Image)
+}
+
+pub(super) fn picker_groups(
+    key: &str,
     images: &[IconImage],
     accent: Rgba,
     palette: &ForgePalette,
 ) -> Vec<GridPickerGroup> {
-    let mut groups = vec![GridPickerGroup {
-        label: tr!("overlays_icon_group_none").into(),
+    if offers_library_images_only(key) {
+        image_groups(images, accent, palette)
+    } else {
+        icon_groups(images, accent, palette)
+    }
+}
+
+fn empty_group(name: String, desc: String, palette: &ForgePalette) -> GridPickerGroup {
+    GridPickerGroup {
+        label: name.clone().into(),
         dot_color: palette.text_muted,
         scope: GridScope::Leading,
         items: vec![GridPickerItem {
             id: SharedString::from(NO_ICON_ID),
             glyph: GlyphArt::Icon(Icon::Ban),
             tint: palette.text_faint,
-            name: tr!("overlays_icon_none").into(),
-            desc: tr!("overlays_icon_none_desc").into(),
+            name: name.into(),
+            desc: desc.into(),
             state: GridPickerItemState::Normal,
             matches: None,
         }],
-    }];
+    }
+}
+
+fn image_groups(
+    images: &[IconImage],
+    accent: Rgba,
+    palette: &ForgePalette,
+) -> Vec<GridPickerGroup> {
+    vec![
+        empty_group(
+            tr!("overlays_image_none"),
+            tr!("overlays_image_none_desc"),
+            palette,
+        ),
+        imported_group(images, accent, palette),
+    ]
+}
+
+pub(super) fn icon_groups(
+    images: &[IconImage],
+    accent: Rgba,
+    palette: &ForgePalette,
+) -> Vec<GridPickerGroup> {
+    let mut groups = vec![empty_group(
+        tr!("overlays_icon_none"),
+        tr!("overlays_icon_none_desc"),
+        palette,
+    )];
 
     for category in IconCategory::ALL {
         let items: Vec<GridPickerItem> = CURATED_ICONS
@@ -224,6 +264,11 @@ pub(super) fn icon_groups(
         });
     }
 
+    groups.push(imported_group(images, accent, palette));
+    groups
+}
+
+fn imported_group(images: &[IconImage], accent: Rgba, palette: &ForgePalette) -> GridPickerGroup {
     let formats = image_dialog_extensions().join(WORD_SEPARATOR);
     let mut imported = vec![GridPickerItem {
         id: SharedString::from(IMPORT_ICON_ID),
@@ -243,17 +288,16 @@ pub(super) fn icon_groups(
         state: GridPickerItemState::Normal,
         matches: None,
     }));
-    groups.push(GridPickerGroup {
+    GridPickerGroup {
         label: tr!("overlays_icon_group_imported").into(),
         dot_color: palette.info,
         scope: GridScope::Named(SharedString::from(IMPORTED_SCOPE)),
         items: imported,
-    });
-
-    groups
+    }
 }
 
 pub(super) fn icon_field_row(
+    key: &str,
     selected: &str,
     images: &[IconImage],
     accent: Rgba,
@@ -263,7 +307,10 @@ pub(super) fn icon_field_row(
 ) -> Div {
     let choice = icon_choice(selected, images);
     let art = icon_art(&choice);
-    let label = icon_label(&choice);
+    let label = match choice {
+        IconChoice::None if offers_library_images_only(key) => tr!("overlays_image_none"),
+        _ => icon_label(&choice),
+    };
     let tone = match choice {
         IconChoice::None => palette.text_faint,
         _ => palette.text_primary,
@@ -306,7 +353,7 @@ pub(super) fn icon_field_row(
 
 #[cfg(test)]
 mod tests {
-    use forge_overlay::config::{DEFAULT_ICON, ICON};
+    use forge_overlay::config::{DEFAULT_ICON, ICON, IMAGE};
     use forge_overlay::kinds::alert::AlertOverlayKind;
     use forge_overlay::{IconCategory, effective_overlay_config};
     use forge_storage::{
@@ -386,6 +433,30 @@ mod tests {
             IconPickResult::Chosen(value) => Some(value),
             IconPickResult::Refused(_) => None,
         }
+    }
+
+    #[test]
+    fn the_image_field_offers_the_library_and_no_curated_glyph() {
+        let palette = forge_components::FORGE_DEFAULT;
+        let groups = picker_groups(IMAGE, &library(), palette.brand, &palette);
+        let ids: Vec<String> = groups
+            .iter()
+            .flat_map(|group| group.items.iter().map(|item| item.id.to_string()))
+            .collect();
+
+        assert_eq!(
+            ids,
+            vec![
+                NO_ICON_ID.to_owned(),
+                IMPORT_ICON_ID.to_owned(),
+                image_reference(BLOB_A),
+                image_reference(BLOB_B),
+            ]
+        );
+        assert!(
+            picker_groups(ICON, &library(), palette.brand, &palette).len() > groups.len(),
+            "the icon field lost its curated glyphs"
+        );
     }
 
     #[test]

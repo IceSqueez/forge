@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use forge_overlay::config::{DEFAULT_ICON, HEADLINE, ICON, SOUND};
+use forge_overlay::config::{DEFAULT_ICON, HEADLINE, ICON, IMAGE, SOUND};
 use forge_overlay::{
     CONFIG_FILE, GENERATED_MEDIA_DIRECTORY, ICON_FILE_FIELD, ICON_TINTABLE_FIELD,
     MaterializeReport, MediaIssue, OverlayKindRegistry, clip_reference, glyph_media,
@@ -579,6 +579,50 @@ async fn an_imported_icon_is_drawn_as_imported_and_holds_the_slot_a_glyph_gives_
         switched.world().released,
         vec![ICON.to_owned()],
         "switching to a curated glyph left the imported image held forever"
+    );
+}
+
+#[tokio::test]
+async fn an_alert_image_reaches_the_page_and_holds_its_own_slot_beside_the_icon() {
+    let config =
+        OverlayConfig::from([(IMAGE.to_owned(), Variant::String(image_reference(BLOB_ID)))]);
+    let harness = harness(
+        config,
+        Some(MediaWorld {
+            blob: Some(blob(MediaFormat::Gif)),
+            ..MediaWorld::resolvable()
+        }),
+    );
+
+    let report = pass(&harness).await;
+
+    assert!(report.media_issues.is_empty(), "{:?}", report.media_issues);
+    let file = format!("{BLOB_ID}.{}", MediaFormat::Gif.as_str());
+    assert!(report.media_written.contains(&file));
+    assert_eq!(
+        harness.world().retained,
+        vec![(
+            IMAGE.to_owned(),
+            MediaBlobId::from_stored(BLOB_ID).expect("fixture blob id is well formed")
+        )],
+    );
+}
+
+#[tokio::test]
+async fn an_alert_image_naming_a_blob_that_is_not_a_picture_is_reported_on_its_slot() {
+    let config =
+        OverlayConfig::from([(IMAGE.to_owned(), Variant::String(image_reference(BLOB_ID)))]);
+    let harness = harness(config, Some(MediaWorld::resolvable()));
+
+    let report = pass(&harness).await;
+
+    assert_eq!(
+        report.media_issues,
+        vec![MediaIssue::ImageKindMismatch {
+            key: IMAGE.to_owned(),
+            image: BLOB_ID.to_owned(),
+            format: MediaFormat::Wav.to_string(),
+        }]
     );
 }
 

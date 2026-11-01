@@ -1,7 +1,7 @@
 use sha2::{Digest, Sha256};
 
 use crate::catalog::descriptor::OverlayConfig;
-use crate::config::{ICON, SOUND};
+use crate::config::{ICON, IMAGE, SOUND};
 use crate::error::OverlayError;
 use crate::files::icons::curated_icon;
 
@@ -9,7 +9,7 @@ pub use forge_registry::{CLIP_REFERENCE_PREFIX, IMAGE_REFERENCE_PREFIX};
 
 pub const GENERATED_MEDIA_DIRECTORY: &str = "forge-media";
 
-pub const MEDIA_KEYS: &[&str] = &[SOUND, ICON];
+pub const MEDIA_KEYS: &[&str] = &[SOUND, ICON, IMAGE];
 
 const PAGE_PATH_SEPARATOR: char = '/';
 const EXTENSION_SEPARATOR: char = '.';
@@ -21,12 +21,14 @@ const GLYPH_EXTENSION: &str = "svg";
 pub enum MediaSlot {
     Sound,
     Icon,
+    Image,
 }
 
 pub fn media_slot(key: &str) -> Option<MediaSlot> {
     match key {
         SOUND => Some(MediaSlot::Sound),
         ICON => Some(MediaSlot::Icon),
+        IMAGE => Some(MediaSlot::Image),
         _ => None,
     }
 }
@@ -65,6 +67,10 @@ pub fn read_icon_value(stored: &str) -> IconValue<'_> {
     }
 }
 
+pub(crate) fn names_a_library_image(stored: &str) -> bool {
+    matches!(read_icon_value(stored), IconValue::Image(image) if is_token(image, true))
+}
+
 pub fn image_reference(blob_id: &str) -> String {
     format!("{IMAGE_REFERENCE_PREFIX}{blob_id}")
 }
@@ -95,6 +101,7 @@ pub fn clip_references(config: &OverlayConfig) -> Vec<ClipReference> {
 
 pub fn image_references(config: &OverlayConfig) -> Vec<ImageReference> {
     stored_values(config, MediaSlot::Icon)
+        .chain(stored_values(config, MediaSlot::Image))
         .filter_map(|(key, value)| match read_icon_value(value) {
             IconValue::Image(image) => Some(ImageReference {
                 key,
@@ -298,6 +305,10 @@ pub fn emitted_media_value(
         MediaValue::Clip(_) => Some(resolved.map(ResolvedMedia::page_path).unwrap_or_default()),
         MediaValue::Empty | MediaValue::File(_) => None,
     }
+}
+
+pub fn emitted_image(resolved: Option<&ResolvedMedia>) -> String {
+    resolved.map(ResolvedMedia::page_path).unwrap_or_default()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

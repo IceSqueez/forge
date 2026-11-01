@@ -1,4 +1,4 @@
-use forge_types::MessageCode;
+use forge_types::{MessageCode, Variant};
 
 use crate::catalog::descriptor::{
     DeliveryDisposition, OverlayConfig, OverlayKindDescriptor, SectionedField,
@@ -14,7 +14,7 @@ use crate::render::preview::{PreviewComposition, PreviewShape, compose};
 
 pub const KIND_ID: &str = "overlay.alert";
 
-pub const CONFIG_SCHEMA_VERSION: u32 = 4;
+pub const CONFIG_SCHEMA_VERSION: u32 = 5;
 
 const DESIGN_WIDTH_PX: u32 = 800;
 const DESIGN_HEIGHT_PX: u32 = 600;
@@ -88,12 +88,33 @@ impl OverlayKindDescriptor for AlertOverlayKind {
             config::text("%sub_cumulative_months% months subscribed"),
         );
         defaults.insert(config::ICON.to_owned(), config::text(config::DEFAULT_ICON));
+        defaults.extend([
+            (
+                config::BACKGROUND_COLOR.to_owned(),
+                config::text(config::DEFAULT_BACKGROUND_COLOR),
+            ),
+            (
+                config::BACKGROUND_OPACITY.to_owned(),
+                Variant::Int(config::DEFAULT_BACKGROUND_OPACITY_PERCENT),
+            ),
+            (config::IMAGE.to_owned(), config::text("")),
+            (
+                config::IMAGE_POSITION.to_owned(),
+                config::text(config::IMAGE_POSITION_ABOVE),
+            ),
+            (
+                config::IMAGE_HEIGHT.to_owned(),
+                Variant::Int(config::DEFAULT_IMAGE_HEIGHT_PX),
+            ),
+        ]);
         defaults
     }
 
     fn look_fields(&self) -> Vec<SectionedField> {
         let mut fields = config::shared_fields();
         fields.push(config::icon_field());
+        fields.extend(config::background_fields());
+        fields.extend(config::image_fields());
         fields
     }
 

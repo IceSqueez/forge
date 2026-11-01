@@ -8,7 +8,7 @@ use crate::catalog::descriptor::OverlayConfig;
 
 pub(crate) use fields::*;
 pub use keys::*;
-pub use validation::{effective_overlay_config, validate_overlay_config};
+pub use validation::{effective_overlay_config, hex_color_channels, validate_overlay_config};
 
 pub(crate) fn read_str<'a>(config: &'a OverlayConfig, key: &str) -> &'a str {
     config

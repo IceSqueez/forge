@@ -66,6 +66,24 @@ pub(super) fn pick_outcome(result: AdoptionResult) -> PickOutcome {
 }
 
 pub(super) fn issue_message(issue: &MediaIssue) -> String {
+    match (media_slot(issue.key()), issue) {
+        (Some(MediaSlot::Image), MediaIssue::UnknownImage { .. }) => {
+            tr!("overlays_image_issue_unknown_image")
+        }
+        (Some(MediaSlot::Image), MediaIssue::ImageBytesMissing { .. }) => {
+            tr!("overlays_image_issue_bytes_missing")
+        }
+        (Some(MediaSlot::Image), MediaIssue::ImageKindMismatch { format, .. }) => {
+            tr!(
+                "overlays_image_issue_kind_mismatch",
+                format = format.as_str()
+            )
+        }
+        _ => shared_issue_message(issue),
+    }
+}
+
+fn shared_issue_message(issue: &MediaIssue) -> String {
     match issue {
         MediaIssue::UnknownClip { .. } => tr!("overlays_sound_issue_unknown_clip"),
         MediaIssue::ClipOutsideLibrary { .. } => tr!("overlays_sound_issue_outside_library"),
@@ -102,7 +120,7 @@ pub(super) fn field_notes(
 ) -> Vec<String> {
     if adopting {
         return vec![match media_slot(key) {
-            Some(MediaSlot::Icon) => tr!("overlays_icon_importing"),
+            Some(MediaSlot::Icon | MediaSlot::Image) => tr!("overlays_icon_importing"),
             Some(MediaSlot::Sound) | None => tr!("overlays_sound_adopting"),
         }];
     }
@@ -146,7 +164,7 @@ pub(super) fn notes_block(
 mod tests {
     use std::path::PathBuf;
 
-    use forge_overlay::config::{HEADLINE, ICON, SOUND};
+    use forge_overlay::config::{HEADLINE, ICON, IMAGE, SOUND};
     use forge_storage::{MediaFormat, MediaRefusal};
     use forge_types::OutputDevice;
     use time::OffsetDateTime;
@@ -180,6 +198,23 @@ mod tests {
 
     fn values(options: &[ChoiceOption]) -> Vec<String> {
         options.iter().map(|option| option.value.clone()).collect()
+    }
+
+    #[test]
+    fn an_image_slot_issue_speaks_of_the_image_and_an_icon_slot_of_the_icon() {
+        let unknown = |key: &str| MediaIssue::UnknownImage {
+            key: key.to_owned(),
+            image: BLOB_ID.to_owned(),
+        };
+
+        assert_eq!(
+            issue_message(&unknown(IMAGE)),
+            "overlays_image_issue_unknown_image"
+        );
+        assert_eq!(
+            issue_message(&unknown(ICON)),
+            "overlays_icon_issue_unknown_image"
+        );
     }
 
     #[test]

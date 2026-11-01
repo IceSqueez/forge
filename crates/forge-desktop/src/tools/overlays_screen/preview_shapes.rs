@@ -4,13 +4,15 @@ use forge_components::{
 };
 use forge_overlay::metrics::{ALERT, CHAT, FRAME, GOAL, LATEST, SURFACE_RGB, TICKER};
 use forge_overlay::{
-    AxisBound, ElementSizing, PreviewComposition, PreviewElement, PreviewFont, PreviewLineRole,
-    PreviewMark, PreviewPosition, PreviewShape,
+    AxisBound, ElementSizing, PreviewComposition, PreviewElement, PreviewFont, PreviewImageSide,
+    PreviewLabelSide, PreviewLineRole, PreviewMark, PreviewPosition, PreviewShape,
 };
 use gpui::{
-    AnyElement, App, Div, FontWeight, Length, Pixels, Rgba, SharedString, div, prelude::*, px,
+    AnyElement, App, Div, FontWeight, Length, Pixels, Rgba, SharedString, div, img, prelude::*, px,
     relative,
 };
+use std::path::Path;
+use std::sync::Arc;
 
 use super::kind_visuals::accent_color;
 use super::preview_stage::{HINT_FS, HINT_GAP, HINT_GLYPH};
@@ -93,6 +95,7 @@ pub(super) fn fills_canvas(shape: PreviewShape) -> bool {
 pub(super) struct StageGlyphs {
     pub(super) badge: Icon,
     pub(super) icon: Option<GlyphArt>,
+    pub(super) image: Option<Arc<Path>>,
 }
 
 pub(super) fn render_composition(
@@ -112,15 +115,9 @@ pub(super) fn render_composition(
 
     match composition.shape {
         PreviewShape::Blank => blank_note(glyphs.badge, family, palette, density),
-        PreviewShape::BadgeBanner => badge_banner(
-            composition,
-            plan,
-            scale,
-            accent,
-            family,
-            glyphs.icon.as_ref(),
-            palette,
-        ),
+        PreviewShape::BadgeBanner => {
+            badge_banner(composition, plan, scale, accent, family, glyphs, palette)
+        }
         PreviewShape::BorderedFrame => bordered_frame(composition, scale, accent, family, palette),
         PreviewShape::LatestCard => latest_card(composition, plan, scale, accent, family, palette),
         PreviewShape::MessageFeed => {
@@ -174,9 +171,10 @@ fn badge_banner(
     scale: Scale,
     accent: Rgba,
     family: SharedString,
-    art: Option<&GlyphArt>,
+    glyphs: &StageGlyphs,
     palette: &ForgePalette,
 ) -> AnyElement {
+    let art = glyphs.icon.as_ref();
     let mut lines = div().flex_1().min_w(px(0.0)).flex().flex_col();
 
     if let Some(text) = line_text(composition, PreviewLineRole::Headline) {
@@ -195,17 +193,11 @@ fn badge_banner(
         lines = lines.child(banner_headline(PLACEHOLDER.into(), scale, family, palette));
     }
 
-    let card = div()
-        .flex_none()
+    let message = div()
+        .min_w(px(0.0))
         .flex()
         .items_center()
         .gap(scale.text_at(ALERT.gap))
-        .py(scale.text_at(ALERT.padding_block))
-        .px(scale.text_at(ALERT.padding_inline))
-        .rounded(scale.text_at(ALERT.radius))
-        .border(scale.at(ALERT.border))
-        .border_color(accent)
-        .bg(surface(ALERT.surface_alpha))
         .children(art.map(|art| {
             div().flex_none().child(glyph_art(
                 art,
@@ -216,7 +208,37 @@ fn badge_banner(
         }))
         .child(lines);
 
+    let picture = composition
+        .image
+        .zip(glyphs.image.as_ref())
+        .map(|(placed, path)| (placed.side, banner_picture(path, placed.height, scale)));
+    let stacked = matches!(picture, Some((PreviewImageSide::Above, _)));
+    let card = div()
+        .flex_none()
+        .flex()
+        .items_center()
+        .when(stacked, |card| card.flex_col())
+        .gap(scale.text_at(ALERT.gap))
+        .py(scale.text_at(ALERT.padding_block))
+        .px(scale.text_at(ALERT.padding_inline))
+        .rounded(scale.text_at(ALERT.radius))
+        .border(scale.at(ALERT.border))
+        .border_color(accent)
+        .bg(composition.surface.map_or_else(
+            || surface(ALERT.surface_alpha),
+            |chosen| surface_color(chosen.rgb, chosen.alpha),
+        ))
+        .children(picture.map(|(_, picture)| picture))
+        .child(message);
+
     sized(card, plan).into_any_element()
+}
+
+fn banner_picture(path: &Arc<Path>, height: u16, scale: Scale) -> impl IntoElement {
+    img(Arc::clone(path))
+        .id("overlays-preview-image")
+        .flex_none()
+        .h(scale.at(f32::from(height)))
 }
 
 fn banner_headline(
@@ -244,9 +266,7 @@ fn bordered_frame(
     let subline = line_text(composition, PreviewLineRole::Subline);
     let empty = headline.is_none() && subline.is_none();
 
-    let mut corner = div()
-        .absolute()
-        .left(scale.at(FRAME.label_inset_inline))
+    let corner = div()
         .flex()
         .items_center()
         .gap(scale.text_at(FRAME.label_gap))
@@ -257,13 +277,6 @@ fn bordered_frame(
         .border_color(accent)
         .bg(surface(FRAME.surface_alpha))
         .font_family(family);
-
-    corner = match composition.position {
-        PreviewPosition::Top => corner.top(-scale.text_at(FRAME.label_overhang)),
-        PreviewPosition::Center | PreviewPosition::Bottom => {
-            corner.bottom(-scale.text_at(FRAME.label_overhang))
-        }
-    };
 
     let corner = corner
         .children(headline.map(|text| {
@@ -288,6 +301,38 @@ fn bordered_frame(
                     .child(PLACEHOLDER),
             )
         });
+    let corner = match composition.label {
+        Some(label) => corner
+            .relative()
+            .left(scale.at(f32::from(label.offset_x)))
+            .top(scale.at(f32::from(label.offset_y))),
+        None => corner,
+    };
+
+    let lane = div()
+        .absolute()
+        .left_0()
+        .right_0()
+        .px(scale.at(FRAME.label_inset_inline))
+        .flex();
+    let lane = match composition.label.map(|label| label.side) {
+        Some(PreviewLabelSide::Center) => lane.justify_center(),
+        Some(PreviewLabelSide::Right) => lane.justify_end(),
+        Some(PreviewLabelSide::Left) | None => lane,
+    };
+    let lane = match composition.position {
+        PreviewPosition::Top => lane.top(-scale.text_at(FRAME.label_overhang)),
+        PreviewPosition::Center | PreviewPosition::Bottom => {
+            lane.bottom(-scale.text_at(FRAME.label_overhang))
+        }
+    };
+
+    let frame = div()
+        .absolute()
+        .size_full()
+        .rounded(scale.at(FRAME.radius))
+        .border(scale.at(FRAME.border))
+        .border_color(accent);
 
     div()
         .absolute()
@@ -295,10 +340,8 @@ fn bordered_frame(
         .left(scale.at(FRAME.inset))
         .right(scale.at(FRAME.inset))
         .bottom(scale.at(FRAME.inset))
-        .rounded(scale.at(FRAME.radius))
-        .border(scale.at(FRAME.border))
-        .border_color(accent)
-        .child(corner)
+        .child(frame)
+        .child(lane.child(corner))
         .into_any_element()
 }
 
@@ -574,7 +617,10 @@ fn line_text(composition: &PreviewComposition, role: PreviewLineRole) -> Option<
 }
 
 fn surface(alpha: f32) -> Rgba {
-    let [red, green, blue] = SURFACE_RGB;
+    surface_color(SURFACE_RGB, alpha)
+}
+
+fn surface_color([red, green, blue]: [u8; 3], alpha: f32) -> Rgba {
     Rgba {
         r: f32::from(red) / CHANNEL_MAX,
         g: f32::from(green) / CHANNEL_MAX,

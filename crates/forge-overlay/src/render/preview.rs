@@ -3,7 +3,9 @@ use forge_types::{LATEST_DONATION_SLOT, NOW_PLAYING_SLOT, Variant};
 use crate::catalog::descriptor::OverlayConfig;
 use crate::catalog::source_box::{ContentMargins, DesignSize};
 use crate::config;
-use crate::metrics::ElementSizing;
+use crate::metrics::{ALERT, ElementSizing, SURFACE_RGB};
+
+const PERCENT_SCALE: f32 = 100.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PreviewShape {
@@ -24,17 +26,19 @@ pub enum PreviewAccent {
     Peach,
     Yellow,
     Red,
+    Custom([u8; 3]),
 }
 
 impl PreviewAccent {
-    pub fn as_str(self) -> &'static str {
+    pub fn name(self) -> Option<&'static str> {
         match self {
-            Self::Mauve => config::ACCENT_MAUVE,
-            Self::Sky => config::ACCENT_SKY,
-            Self::Green => config::ACCENT_GREEN,
-            Self::Peach => config::ACCENT_PEACH,
-            Self::Yellow => config::ACCENT_YELLOW,
-            Self::Red => config::ACCENT_RED,
+            Self::Mauve => Some(config::ACCENT_MAUVE),
+            Self::Sky => Some(config::ACCENT_SKY),
+            Self::Green => Some(config::ACCENT_GREEN),
+            Self::Peach => Some(config::ACCENT_PEACH),
+            Self::Yellow => Some(config::ACCENT_YELLOW),
+            Self::Red => Some(config::ACCENT_RED),
+            Self::Custom(_) => None,
         }
     }
 }
@@ -63,6 +67,38 @@ pub enum PreviewLineRole {
 pub enum PreviewMark {
     Donation,
     NowPlaying,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PreviewSurface {
+    pub rgb: [u8; 3],
+    pub alpha: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PreviewImageSide {
+    Above,
+    Left,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PreviewImage {
+    pub side: PreviewImageSide,
+    pub height: u16,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PreviewLabelSide {
+    Left,
+    Center,
+    Right,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PreviewLabel {
+    pub side: PreviewLabelSide,
+    pub offset_x: i16,
+    pub offset_y: i16,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -104,6 +140,9 @@ pub struct PreviewComposition {
     pub lines: Vec<PreviewLine>,
     pub fill: Option<f32>,
     pub mark: Option<PreviewMark>,
+    pub surface: Option<PreviewSurface>,
+    pub image: Option<PreviewImage>,
+    pub label: Option<PreviewLabel>,
 }
 
 pub(crate) fn compose(
@@ -122,11 +161,86 @@ pub(crate) fn compose(
         lines: lines_of(shape, config),
         fill: fill_of(shape, config),
         mark: mark_of(shape, config),
+        surface: surface_of(shape, config),
+        image: image_of(shape, config),
+        label: label_of(shape, config),
     }
 }
 
+fn label_of(shape: PreviewShape, config: &OverlayConfig) -> Option<PreviewLabel> {
+    if shape != PreviewShape::BorderedFrame {
+        return None;
+    }
+    let side = match config::read_str(config, config::LABEL_SIDE) {
+        config::LABEL_SIDE_CENTER => PreviewLabelSide::Center,
+        config::LABEL_SIDE_RIGHT => PreviewLabelSide::Right,
+        _ => PreviewLabelSide::Left,
+    };
+    Some(PreviewLabel {
+        side,
+        offset_x: label_offset(config, config::LABEL_OFFSET_X),
+        offset_y: label_offset(config, config::LABEL_OFFSET_Y),
+    })
+}
+
+fn label_offset(config: &OverlayConfig, key: &str) -> i16 {
+    config
+        .get(key)
+        .and_then(Variant::as_int)
+        .map(|offset| offset.clamp(config::LABEL_OFFSET_MIN_PX, config::LABEL_OFFSET_MAX_PX))
+        .and_then(|offset| i16::try_from(offset).ok())
+        .unwrap_or_default()
+}
+
+fn surface_of(shape: PreviewShape, config: &OverlayConfig) -> Option<PreviewSurface> {
+    if shape != PreviewShape::BadgeBanner {
+        return None;
+    }
+    let percent = config
+        .get(config::BACKGROUND_OPACITY)
+        .and_then(Variant::as_int)
+        .map(|percent| {
+            percent.clamp(
+                config::BACKGROUND_OPACITY_MIN_PERCENT,
+                config::BACKGROUND_OPACITY_MAX_PERCENT,
+            )
+        })
+        .and_then(|percent| u8::try_from(percent).ok());
+    Some(PreviewSurface {
+        rgb: config::hex_color_channels(config::read_str(config, config::BACKGROUND_COLOR))
+            .unwrap_or(SURFACE_RGB),
+        alpha: percent.map_or(ALERT.surface_alpha, |percent| {
+            f32::from(percent) / PERCENT_SCALE
+        }),
+    })
+}
+
+fn image_of(shape: PreviewShape, config: &OverlayConfig) -> Option<PreviewImage> {
+    if shape != PreviewShape::BadgeBanner || config::read_str(config, config::IMAGE).is_empty() {
+        return None;
+    }
+    let side = match config::read_str(config, config::IMAGE_POSITION) {
+        config::IMAGE_POSITION_LEFT => PreviewImageSide::Left,
+        _ => PreviewImageSide::Above,
+    };
+    Some(PreviewImage {
+        side,
+        height: u16::try_from(bounded_px(
+            config,
+            config::IMAGE_HEIGHT,
+            config::IMAGE_HEIGHT_MIN_PX,
+            config::IMAGE_HEIGHT_MAX_PX,
+        )?)
+        .ok()?,
+    })
+}
+
 fn accent_of(config: &OverlayConfig) -> PreviewAccent {
-    match config::read_str(config, config::ACCENT) {
+    let stored = config::read_str(config, config::ACCENT);
+    if let Some(channels) = config::hex_color_channels(stored) {
+        return PreviewAccent::Custom(channels);
+    }
+    match stored {
         config::ACCENT_SKY => PreviewAccent::Sky,
         config::ACCENT_GREEN => PreviewAccent::Green,
         config::ACCENT_PEACH => PreviewAccent::Peach,

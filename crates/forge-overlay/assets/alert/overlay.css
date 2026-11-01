@@ -36,6 +36,32 @@ body {
   font-family: var(--font);
 }
 
+#stage.image-above {
+  flex-direction: column;
+}
+
+.message {
+  display: contents;
+}
+
+#stage.image-above .message {
+  display: flex;
+  gap: inherit;
+  align-items: center;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.picture {
+  flex: 0 1 auto;
+  display: block;
+  min-width: 0;
+  min-height: 0;
+  max-width: 100%;
+  height: var(--image-height);
+  object-fit: contain;
+}
+
 .icon {
   flex: none;
   height: calc(26px * var(--text-scale));

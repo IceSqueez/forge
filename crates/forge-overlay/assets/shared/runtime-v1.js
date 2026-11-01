@@ -177,6 +177,7 @@
     red: "#f38ba8",
   };
   var FALLBACK_ACCENT = ACCENT_HEX.mauve;
+  var CUSTOM_ACCENT = /^#[0-9a-f]{6}$/i;
   var FONT_NAME = /^[A-Za-z0-9 _-]+$/;
 
   var TEXT_SIZE_PROPERTY = "--text-size";
@@ -298,7 +299,9 @@
   }
 
   function applyAppearance(values) {
-    var accent = ACCENT_HEX[values.accent] || FALLBACK_ACCENT;
+    var accent = CUSTOM_ACCENT.test(values.accent)
+      ? values.accent
+      : ACCENT_HEX[values.accent] || FALLBACK_ACCENT;
     document_.documentElement.style.setProperty("--accent", accent);
 
     var font = values.font;

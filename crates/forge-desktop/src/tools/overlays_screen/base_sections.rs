@@ -8,8 +8,9 @@ use forge_components::{
     toggle, tr,
 };
 use forge_overlay::config::{
-    DESIGN_HEIGHT, DESIGN_WIDTH, DURATION, MARGIN_BOTTOM, MARGIN_LEFT, MARGIN_RIGHT, MARGIN_TOP,
-    SOUND, SPEECH, SPEECH_VOICE,
+    BACKGROUND_COLOR, BACKGROUND_OPACITY, DESIGN_HEIGHT, DESIGN_WIDTH, DURATION, IMAGE,
+    IMAGE_HEIGHT, IMAGE_POSITION, LABEL_OFFSET_X, LABEL_OFFSET_Y, LABEL_SIDE, MARGIN_BOTTOM,
+    MARGIN_LEFT, MARGIN_RIGHT, MARGIN_TOP, SOUND, SPEECH, SPEECH_VOICE,
 };
 use forge_overlay::{ConfigSection, DeliveryDisposition, OverlayConfig};
 use forge_runtime::{OverlayDelivery, OverlayDispatch, ShowEnd, ShowTicket};
@@ -83,6 +84,14 @@ pub(super) fn base_label(key: &str) -> Option<String> {
         SPEECH => Some(tr!("overlays_base_speech")),
         SPEECH_VOICE => Some(tr!("overlays_base_voice")),
         DURATION => Some(tr!("overlays_base_duration")),
+        BACKGROUND_COLOR => Some(tr!("overlays_alert_background_color")),
+        BACKGROUND_OPACITY => Some(tr!("overlays_alert_background_opacity")),
+        IMAGE => Some(tr!("overlays_alert_image")),
+        IMAGE_POSITION => Some(tr!("overlays_alert_image_position")),
+        IMAGE_HEIGHT => Some(tr!("overlays_alert_image_height")),
+        LABEL_SIDE => Some(tr!("overlays_frame_label_side")),
+        LABEL_OFFSET_X => Some(tr!("overlays_frame_label_offset_x")),
+        LABEL_OFFSET_Y => Some(tr!("overlays_frame_label_offset_y")),
         DESIGN_WIDTH => Some(tr!("overlays_source_width")),
         DESIGN_HEIGHT => Some(tr!("overlays_source_height")),
         MARGIN_TOP => Some(tr!("overlays_source_margin_top")),
@@ -98,6 +107,10 @@ pub(super) fn base_hint(key: &str) -> Option<String> {
         SPEECH => Some(tr!("overlays_base_speech_hint")),
         SPEECH_VOICE => Some(tr!("overlays_base_voice_hint")),
         DURATION => Some(tr!("overlays_base_duration_hint")),
+        BACKGROUND_COLOR => Some(tr!("overlays_alert_background_color_hint")),
+        IMAGE => Some(tr!("overlays_alert_image_hint")),
+        LABEL_OFFSET_X => Some(tr!("overlays_frame_label_offset_x_hint")),
+        LABEL_OFFSET_Y => Some(tr!("overlays_frame_label_offset_y_hint")),
         _ => None,
     }
 }

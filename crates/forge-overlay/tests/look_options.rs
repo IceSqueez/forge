@@ -1,0 +1,376 @@
+#![expect(clippy::expect_used, reason = "test fixtures assert directly")]
+mod common;
+use common::{ALERT_KIND, BLOB_IDENTITY, FRAME_KIND, TICKER_KIND, registry, sub_alert_instance};
+
+use forge_overlay::config::{
+    ACCENT, BACKGROUND_COLOR, BACKGROUND_OPACITY, DEFAULT_BACKGROUND_COLOR,
+    DEFAULT_BACKGROUND_OPACITY_PERCENT, DEFAULT_IMAGE_HEIGHT_PX, IMAGE, IMAGE_HEIGHT,
+    IMAGE_HEIGHT_MAX_PX, IMAGE_HEIGHT_MIN_PX, IMAGE_POSITION, IMAGE_POSITION_ABOVE,
+    IMAGE_POSITION_LEFT, LABEL_OFFSET_MAX_PX, LABEL_OFFSET_MIN_PX, LABEL_OFFSET_X, LABEL_OFFSET_Y,
+    LABEL_SIDE, LABEL_SIDE_CENTER, LABEL_SIDE_LEFT, LABEL_SIDE_RIGHT,
+};
+use forge_overlay::metrics::{ALERT, SURFACE_RGB};
+use forge_overlay::{
+    GENERATED_MEDIA_DIRECTORY, IconValue, ImageReference, MediaSlot, OverlayConfig, OverlayError,
+    OverlayMedia, PreviewAccent, PreviewImage, PreviewImageSide, PreviewLabel, PreviewLabelSide,
+    PreviewSurface, RUNTIME_SOURCE, ResolvedMedia, config_document, effective_overlay_config,
+    glyph_media, hex_color_channels, image_reference, image_references, media_slot,
+    read_icon_value, validate_overlay_config,
+};
+use forge_types::{NamesLanguage, Variant};
+use serde_json::Value;
+
+const GIF: &str = "gif";
+
+fn text(key: &str, value: &str) -> OverlayConfig {
+    OverlayConfig::from([(key.to_owned(), Variant::String(value.to_owned()))])
+}
+
+fn number(key: &str, value: i64) -> OverlayConfig {
+    OverlayConfig::from([(key.to_owned(), Variant::Int(value))])
+}
+
+fn composition(kind_id: &str, stored: OverlayConfig) -> forge_overlay::PreviewComposition {
+    let reg = registry();
+    let descriptor = reg.get(kind_id).expect("the kind ships in this build");
+    descriptor.preview(
+        &effective_overlay_config(descriptor, &stored),
+        NamesLanguage::En,
+    )
+}
+
+fn accepts(kind_id: &str, config: &OverlayConfig) -> bool {
+    let reg = registry();
+    let descriptor = reg.get(kind_id).expect("the kind ships in this build");
+    validate_overlay_config(descriptor, config).is_ok()
+}
+
+fn page_config(stored: OverlayConfig, media: OverlayMedia) -> Value {
+    let reg = registry();
+    let descriptor = reg.get(ALERT_KIND).expect("the alert kind ships");
+    let mut instance = sub_alert_instance(ALERT_KIND);
+    instance.config = stored;
+    instance.media = media;
+    let document = config_document(&instance, descriptor).expect("the config document builds");
+    let parsed: Value = serde_json::from_str(&document).expect("the document is valid JSON");
+    parsed["config"].clone()
+}
+
+#[test]
+fn the_alert_defaults_paint_the_surface_the_stylesheet_always_drew() {
+    let reg = registry();
+    let assets = reg
+        .get(ALERT_KIND)
+        .expect("the alert kind ships")
+        .page_assets();
+    let scale = ALERT.surface_alpha * 100.0;
+
+    assert_eq!(
+        hex_color_channels(DEFAULT_BACKGROUND_COLOR),
+        Some(SURFACE_RGB)
+    );
+    assert!(
+        (f32::from(u8::try_from(DEFAULT_BACKGROUND_OPACITY_PERCENT).expect("a percent")) - scale)
+            .abs()
+            < 0.001
+    );
+    assert!(
+        assets.behavior.contains(&format!(
+            "var FALLBACK_SURFACE = \"{DEFAULT_BACKGROUND_COLOR}\";"
+        )),
+        "a cleared color field would paint something other than the default"
+    );
+    assert!(assets.style.contains("background: rgba(20, 20, 28, 0.86);"));
+}
+
+#[test]
+fn an_alert_without_an_image_keeps_the_row_the_stock_page_always_laid_out() {
+    let reg = registry();
+    let assets = reg
+        .get(ALERT_KIND)
+        .expect("the alert kind ships")
+        .page_assets();
+
+    assert!(
+        !assets.markup.contains("picture"),
+        "the image exists only when placed"
+    );
+    assert!(
+        assets.style.contains(".message {\n  display: contents;\n}"),
+        "the wrapper must not take part in the default row"
+    );
+
+    let config = page_config(OverlayConfig::new(), OverlayMedia::default());
+    assert_eq!(config[IMAGE], Value::String(String::new()));
+    assert_eq!(config[IMAGE_POSITION], IMAGE_POSITION_ABOVE);
+    assert_eq!(config[IMAGE_HEIGHT], DEFAULT_IMAGE_HEIGHT_PX);
+}
+
+#[test]
+fn a_color_is_exactly_a_hash_and_six_hex_digits() {
+    for (value, expected) in [
+        ("#000000", Some([0, 0, 0])),
+        ("#ffFFff", Some([255, 255, 255])),
+        ("#123456", Some([18, 52, 86])),
+        ("#12345", None),
+        ("#1234567", None),
+        ("123456", None),
+        ("#12345g", None),
+        ("#+12345", None),
+        ("", None),
+    ] {
+        assert_eq!(hex_color_channels(value), expected, "{value:?}");
+    }
+}
+
+#[test]
+fn the_background_color_refuses_anything_a_page_could_not_paint() {
+    for (value, accepted) in [
+        ("", true),
+        ("#123456", true),
+        ("red", false),
+        ("#12", false),
+        ("url(http://x)", false),
+    ] {
+        assert_eq!(
+            accepts(ALERT_KIND, &text(BACKGROUND_COLOR, value)),
+            accepted,
+            "{value:?}"
+        );
+    }
+}
+
+#[test]
+fn the_image_field_takes_only_a_library_reference_never_a_path_or_a_glyph() {
+    for (value, accepted) in [
+        ("", true),
+        (&image_reference(BLOB_IDENTITY)[..], true),
+        ("heart", false),
+        ("/etc/passwd", false),
+        ("../secret.gif", false),
+        ("image:", false),
+        ("image:../../etc/passwd", false),
+        ("image:/abs/file.gif", false),
+        ("clip:01j9p4s2m7q8v3x5y6z7a8b9c0", false),
+    ] {
+        let verdict = validate_overlay_config(
+            registry().get(ALERT_KIND).expect("the alert kind ships"),
+            &text(IMAGE, value),
+        );
+        assert_eq!(verdict.is_ok(), accepted, "{value:?}");
+        if !accepted {
+            assert!(
+                matches!(&verdict, Err(OverlayError::UnknownChoice { key, .. }) if key == IMAGE),
+                "{value:?} produced {verdict:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_kind_without_the_fields_ignores_their_keys() {
+    assert!(accepts(TICKER_KIND, &text(BACKGROUND_COLOR, "not a color")));
+    assert!(accepts(TICKER_KIND, &text(IMAGE, "../secret.gif")));
+}
+
+#[test]
+fn the_numeric_controls_stop_at_their_bounds() {
+    for (config, accepted) in [
+        (number(BACKGROUND_OPACITY, 0), true),
+        (number(BACKGROUND_OPACITY, 100), true),
+        (number(BACKGROUND_OPACITY, -1), false),
+        (number(BACKGROUND_OPACITY, 101), false),
+        (number(IMAGE_HEIGHT, IMAGE_HEIGHT_MIN_PX), true),
+        (number(IMAGE_HEIGHT, IMAGE_HEIGHT_MAX_PX), true),
+        (number(IMAGE_HEIGHT, IMAGE_HEIGHT_MIN_PX - 1), false),
+        (number(IMAGE_HEIGHT, IMAGE_HEIGHT_MAX_PX + 1), false),
+    ] {
+        assert_eq!(accepts(ALERT_KIND, &config), accepted, "{config:?}");
+    }
+    for (config, accepted) in [
+        (number(LABEL_OFFSET_X, LABEL_OFFSET_MIN_PX), true),
+        (number(LABEL_OFFSET_Y, LABEL_OFFSET_MAX_PX), true),
+        (number(LABEL_OFFSET_X, LABEL_OFFSET_MIN_PX - 1), false),
+        (number(LABEL_OFFSET_Y, LABEL_OFFSET_MAX_PX + 1), false),
+    ] {
+        assert_eq!(accepts(FRAME_KIND, &config), accepted, "{config:?}");
+    }
+    assert!(!accepts(FRAME_KIND, &text(LABEL_SIDE, "diagonal")));
+    assert!(!accepts(ALERT_KIND, &text(IMAGE_POSITION, "right")));
+}
+
+#[test]
+fn the_image_key_is_a_media_slot_of_its_own_that_shares_the_image_references() {
+    let reference = image_reference(BLOB_IDENTITY);
+    let config = text(IMAGE, &reference);
+
+    assert_eq!(media_slot(IMAGE), Some(MediaSlot::Image));
+    assert_eq!(read_icon_value(&reference), IconValue::Image(BLOB_IDENTITY));
+    assert_eq!(
+        image_references(&config),
+        vec![ImageReference {
+            key: IMAGE.to_owned(),
+            image: BLOB_IDENTITY.to_owned(),
+        }],
+        "export and retention would miss the blob this alert draws"
+    );
+}
+
+#[test]
+fn a_glyph_name_in_the_image_slot_is_never_resolved_as_a_glyph() {
+    assert_eq!(glyph_media(&text(IMAGE, "heart")), OverlayMedia::default());
+}
+
+#[test]
+fn the_page_gets_the_generated_file_and_never_the_stored_reference() {
+    let reference = image_reference(BLOB_IDENTITY);
+    let resolved = ResolvedMedia::new(IMAGE, BLOB_IDENTITY, GIF, b"GIF89a".to_vec())
+        .expect("a content id is a token");
+
+    let served = page_config(
+        text(IMAGE, &reference),
+        OverlayMedia {
+            resolved: vec![resolved],
+            issues: Vec::new(),
+        },
+    );
+    assert_eq!(
+        served[IMAGE],
+        format!("{GENERATED_MEDIA_DIRECTORY}/{BLOB_IDENTITY}.{GIF}")
+    );
+
+    let unresolved = page_config(text(IMAGE, &reference), OverlayMedia::default());
+    assert_eq!(
+        unresolved[IMAGE], "",
+        "an unresolved image must draw nothing"
+    );
+}
+
+#[test]
+fn the_editor_preview_follows_the_surface_choices() {
+    let mut chosen = text(BACKGROUND_COLOR, "#123456");
+    chosen.extend(number(BACKGROUND_OPACITY, 40));
+
+    for (stored, expected) in [
+        (
+            OverlayConfig::new(),
+            PreviewSurface {
+                rgb: SURFACE_RGB,
+                alpha: ALERT.surface_alpha,
+            },
+        ),
+        (
+            chosen,
+            PreviewSurface {
+                rgb: [18, 52, 86],
+                alpha: 0.4,
+            },
+        ),
+        (
+            text(BACKGROUND_COLOR, ""),
+            PreviewSurface {
+                rgb: SURFACE_RGB,
+                alpha: ALERT.surface_alpha,
+            },
+        ),
+    ] {
+        assert_eq!(composition(ALERT_KIND, stored).surface, Some(expected));
+    }
+    assert_eq!(composition(FRAME_KIND, OverlayConfig::new()).surface, None);
+}
+
+#[test]
+fn the_editor_preview_places_a_chosen_image_and_reserves_nothing_without_one() {
+    let reference = image_reference(BLOB_IDENTITY);
+    assert_eq!(composition(ALERT_KIND, OverlayConfig::new()).image, None);
+    assert_eq!(
+        composition(ALERT_KIND, text(IMAGE, &reference)).image,
+        Some(PreviewImage {
+            side: PreviewImageSide::Above,
+            height: 120,
+        })
+    );
+
+    let mut left = text(IMAGE, &reference);
+    left.extend(text(IMAGE_POSITION, IMAGE_POSITION_LEFT));
+    left.extend(number(IMAGE_HEIGHT, 90));
+    assert_eq!(
+        composition(ALERT_KIND, left).image,
+        Some(PreviewImage {
+            side: PreviewImageSide::Left,
+            height: 90,
+        })
+    );
+}
+
+#[test]
+fn a_custom_accent_is_accepted_on_every_kind_and_a_named_one_stays_named() {
+    assert!(accepts(ALERT_KIND, &text(ACCENT, "#ff8800")));
+    assert!(accepts(FRAME_KIND, &text(ACCENT, "#FF8800")));
+    for refused in ["teal", "#ff88", "ff8800", "var(--x)", ""] {
+        assert!(!accepts(ALERT_KIND, &text(ACCENT, refused)), "{refused:?}");
+    }
+    assert_eq!(
+        composition(ALERT_KIND, text(ACCENT, "#ff8800")).accent,
+        PreviewAccent::Custom([255, 136, 0])
+    );
+    assert_eq!(
+        composition(ALERT_KIND, text(ACCENT, "sky")).accent,
+        PreviewAccent::Sky
+    );
+    assert_eq!(PreviewAccent::Custom([0, 0, 0]).name(), None);
+    assert_eq!(PreviewAccent::Sky.name(), Some("sky"));
+}
+
+#[test]
+fn the_runtime_publishes_a_custom_accent_verbatim_through_the_same_property() {
+    let apply = common::js_function(RUNTIME_SOURCE, "applyAppearance");
+
+    assert!(RUNTIME_SOURCE.contains("var CUSTOM_ACCENT = /^#[0-9a-f]{6}$/i;"));
+    assert!(apply.contains("CUSTOM_ACCENT.test(values.accent)"));
+    assert!(apply.contains("setProperty(\"--accent\", accent)"));
+}
+
+#[test]
+fn the_frame_label_defaults_to_its_old_place_and_draws_above_the_frame() {
+    assert_eq!(
+        composition(FRAME_KIND, OverlayConfig::new()).label,
+        Some(PreviewLabel {
+            side: PreviewLabelSide::Left,
+            offset_x: 0,
+            offset_y: 0,
+        })
+    );
+    let reg = registry();
+    let assets = reg
+        .get(FRAME_KIND)
+        .expect("the frame kind ships")
+        .page_assets();
+
+    assert!(assets.style.contains("z-index: 1;\n  left: 22px;"));
+    assert!(assets.style.contains("var(--label-x, 0px)"));
+    assert!(assets.behavior.contains("label.dataset.side"));
+}
+
+#[test]
+fn the_frame_label_moves_to_any_side_and_offset() {
+    for (side, expected) in [
+        (LABEL_SIDE_LEFT, PreviewLabelSide::Left),
+        (LABEL_SIDE_CENTER, PreviewLabelSide::Center),
+        (LABEL_SIDE_RIGHT, PreviewLabelSide::Right),
+    ] {
+        let mut stored = text(LABEL_SIDE, side);
+        stored.extend(number(LABEL_OFFSET_X, -30));
+        stored.extend(number(LABEL_OFFSET_Y, 45));
+
+        assert_eq!(
+            composition(FRAME_KIND, stored).label,
+            Some(PreviewLabel {
+                side: expected,
+                offset_x: -30,
+                offset_y: 45,
+            })
+        );
+    }
+    assert_eq!(composition(ALERT_KIND, OverlayConfig::new()).label, None);
+}

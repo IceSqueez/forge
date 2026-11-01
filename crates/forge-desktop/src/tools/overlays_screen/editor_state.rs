@@ -10,8 +10,11 @@ use gpui::{AppContext, Context, Entity, Subscription};
 use super::OverlaysView;
 use super::base_sections::BaseEvent;
 use super::code_pane::{CodeServices, LeaveIntent, OverlayCodeEditor};
+use super::custom_accents::CustomAccents;
 use super::look_change;
-use super::property_panel::{OverlayPropertyPanel, PanelLaunch, PropertyPanelEvent};
+use super::property_panel::{
+    AccentListEdit, OverlayPropertyPanel, PanelLaunch, PropertyPanelEvent,
+};
 use crate::app::async_bridge;
 use crate::audio::engine_voice_choices::engine_voice_options;
 
@@ -26,6 +29,7 @@ pub(super) struct OpenPanel {
     _sub: Subscription,
     _media_sub: Subscription,
     _icon_sub: Subscription,
+    _accent_sub: Subscription,
     _base_sub: Subscription,
 }
 
@@ -142,6 +146,7 @@ impl OverlaysView {
             effective,
             choices: self.panel_choices(),
             icon_images: self.icon_host.read(cx).images().to_vec(),
+            custom_accents: self.custom_accents.read(cx).colors().to_vec(),
             overridden_files: definition.source_overrides.clone(),
             service: self.handles.service.clone(),
             samples: Arc::clone(&self.handles.samples),
@@ -162,16 +167,42 @@ impl OverlaysView {
         let media_sub = cx.subscribe(&view, Self::on_adopt_requested);
         let icon_sub = cx.subscribe(&view, Self::on_icon_pick_requested);
         let base_sub = cx.subscribe(&view, Self::on_base_event);
+        let accent_sub = cx.subscribe(&view, Self::on_accent_list_edit);
         self.editor.panel = Some(OpenPanel {
             view,
             _sub: sub,
             _media_sub: media_sub,
             _icon_sub: icon_sub,
+            _accent_sub: accent_sub,
             _base_sub: base_sub,
         });
         self.load_clips(cx);
         self.probe_hide_timing(&definition, cx);
         self.probe_motion_notices(&definition, cx);
+    }
+
+    fn on_accent_list_edit(
+        &mut self,
+        _view: Entity<OverlayPropertyPanel>,
+        event: &AccentListEdit,
+        cx: &mut Context<Self>,
+    ) {
+        self.custom_accents.update(cx, |store, cx| match event {
+            AccentListEdit::Add(color) => store.add(color, cx),
+            AccentListEdit::Remove(color) => store.remove(color, cx),
+        });
+    }
+
+    pub(super) fn on_custom_accents_changed(
+        &mut self,
+        store: Entity<CustomAccents>,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(panel) = self.editor.panel.as_ref().map(|open| open.view.clone()) else {
+            return;
+        };
+        let colors = store.read(cx).colors().to_vec();
+        panel.update(cx, |panel, cx| panel.set_custom_accents(colors, cx));
     }
 
     fn on_base_event(

@@ -17,6 +17,14 @@ pub(crate) const SPEECH_KEYS: [&str; 2] = [SPEECH, SPEECH_VOICE];
 pub const SPEECH_VOICE: &str = "speech_voice";
 pub const SHOW: &str = "show";
 pub const ICON: &str = "icon";
+pub const BACKGROUND_COLOR: &str = "background_color";
+pub const BACKGROUND_OPACITY: &str = "background_opacity";
+pub const IMAGE: &str = "image";
+pub const IMAGE_POSITION: &str = "image_position";
+pub const LABEL_SIDE: &str = "label_side";
+pub const LABEL_OFFSET_X: &str = "label_offset_x";
+pub const LABEL_OFFSET_Y: &str = "label_offset_y";
+pub const IMAGE_HEIGHT: &str = "image_height";
 
 pub const AUTHOR: &str = "author";
 pub const AUTHOR_COLOR: &str = "author_color";
@@ -67,6 +75,27 @@ pub const FONT_OPTIONS: &[&str] = &[FONT_INTER, FONT_JETBRAINS_MONO, FONT_RUBIK,
 pub const POSITION_TOP: &str = "top";
 pub const POSITION_BOTTOM: &str = "bottom";
 pub const POSITION_OPTIONS: &[&str] = &[POSITION_TOP, POSITION_BOTTOM];
+
+pub const IMAGE_POSITION_ABOVE: &str = "above";
+pub const IMAGE_POSITION_LEFT: &str = "left";
+pub const IMAGE_POSITION_OPTIONS: &[&str] = &[IMAGE_POSITION_ABOVE, IMAGE_POSITION_LEFT];
+
+pub const LABEL_SIDE_LEFT: &str = "left";
+pub const LABEL_SIDE_CENTER: &str = "center";
+pub const LABEL_SIDE_RIGHT: &str = "right";
+pub const LABEL_SIDE_OPTIONS: &[&str] = &[LABEL_SIDE_LEFT, LABEL_SIDE_CENTER, LABEL_SIDE_RIGHT];
+
+pub const LABEL_OFFSET_MIN_PX: i64 = -4000;
+pub const LABEL_OFFSET_MAX_PX: i64 = 4000;
+
+pub const DEFAULT_BACKGROUND_COLOR: &str = "#14141c";
+pub const BACKGROUND_OPACITY_MIN_PERCENT: i64 = 0;
+pub const BACKGROUND_OPACITY_MAX_PERCENT: i64 = 100;
+pub const DEFAULT_BACKGROUND_OPACITY_PERCENT: i64 = 86;
+
+pub const IMAGE_HEIGHT_MIN_PX: i64 = 16;
+pub const IMAGE_HEIGHT_MAX_PX: i64 = 480;
+pub const DEFAULT_IMAGE_HEIGHT_PX: i64 = 120;
 
 pub const DURATION_MIN_SECS: i64 = 1;
 pub const DURATION_MAX_SECS: i64 = 15;

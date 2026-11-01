@@ -2,6 +2,7 @@ mod base_sections;
 mod bindings_panel;
 mod catalog;
 mod code_pane;
+mod custom_accents;
 mod delete_prompt;
 mod editor_pane;
 mod editor_state;
@@ -31,6 +32,8 @@ mod voice_choice;
 mod writes;
 
 use std::sync::Arc;
+
+use self::custom_accents::CustomAccents;
 
 use forge_components::{
     ActivePresentation, BreadcrumbCrumb, Confirm, Density, FONT_XS, ForgePalette, Icon, ToastKind,
@@ -140,13 +143,14 @@ pub(crate) struct OverlaysView {
     editor: EditorState,
     catalog: MediaCatalog,
     icon_host: Entity<IconPickerHost>,
+    custom_accents: Entity<CustomAccents>,
     stage: StageState,
     form: Option<OpenForm>,
     pending_delete: Confirm<PendingDelete>,
     wiring: WiringLink,
     receiver: Option<OverlayId>,
     latest: LatestSource,
-    _child_subscriptions: [Subscription; 4],
+    _child_subscriptions: [Subscription; 5],
 }
 
 pub(crate) struct OverlaysLaunch {
@@ -210,6 +214,13 @@ impl OverlaysView {
             &launch.rt_handle,
             cx,
         );
+        let custom_accents = cx.new(|cx| {
+            CustomAccents::new(
+                Arc::clone(&launch.settings_repo),
+                launch.rt_handle.clone(),
+                cx,
+            )
+        });
         let icon_host = cx.new(|cx| {
             IconPickerHost::new(launch.media, launch.rt_handle.clone(), icon_favorites, cx)
         });
@@ -219,6 +230,7 @@ impl OverlaysView {
                 cx.notify();
             }),
             cx.subscribe(&icon_host, Self::on_icon_host_event),
+            cx.observe(&custom_accents, Self::on_custom_accents_changed),
             cx.observe(&icon_host, |_, _: Entity<IconPickerHost>, cx| cx.notify()),
         ];
         let latest = LatestSource {
@@ -246,6 +258,7 @@ impl OverlaysView {
             editor,
             catalog: MediaCatalog::default(),
             icon_host,
+            custom_accents,
             stage: StageState::default(),
             form: None,
             pending_delete: Confirm::default(),

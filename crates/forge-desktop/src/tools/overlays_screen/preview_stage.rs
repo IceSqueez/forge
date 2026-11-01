@@ -3,6 +3,8 @@ use forge_components::FONT_BADGE;
 use forge_components::FONT_XXS;
 use forge_components::Spacing;
 use forge_components::spacing;
+use std::path::Path;
+use std::sync::Arc;
 use std::time::Duration;
 
 use forge_components::{
@@ -96,6 +98,7 @@ struct StagePreview {
     composition: PreviewComposition,
     plan: ElementPlan,
     icon: Option<GlyphArt>,
+    image: Option<Arc<Path>>,
 }
 
 #[derive(Default)]
@@ -160,6 +163,7 @@ impl OverlaysView {
                 composition,
                 plan,
                 icon: self.preview_icon(definition, cx),
+                image: self.preview_image(definition, cx),
             })
         });
         self.stage.preview = next;
@@ -373,6 +377,7 @@ impl OverlaysView {
                 StageGlyphs {
                     badge: visuals.icon,
                     icon: preview.icon.clone(),
+                    image: preview.image.clone(),
                 },
                 cx,
             ))

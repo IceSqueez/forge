@@ -1,14 +1,30 @@
 use forge_registry::{FormField, effective_config};
 use forge_types::Variant;
 
+use super::keys::{ACCENT, BACKGROUND_COLOR, IMAGE};
 use crate::catalog::descriptor::{OverlayConfig, OverlayKindDescriptor, SectionedField};
 use crate::error::OverlayError;
+use crate::files::media::names_a_library_image;
+
+const HEX_COLOR_PREFIX: char = '#';
+const HEX_COLOR_DIGITS: usize = 6;
+const HEX_RADIX: u32 = 16;
 
 pub fn effective_overlay_config(
     descriptor: &dyn OverlayKindDescriptor,
     stored: &OverlayConfig,
 ) -> OverlayConfig {
     effective_config(&descriptor.default_config(), stored)
+}
+
+pub fn hex_color_channels(value: &str) -> Option<[u8; 3]> {
+    let digits = value.strip_prefix(HEX_COLOR_PREFIX)?;
+    if digits.len() != HEX_COLOR_DIGITS || !digits.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return None;
+    }
+    let number = u32::from_str_radix(digits, HEX_RADIX).ok()?;
+    let [_, red, green, blue] = number.to_be_bytes();
+    Some([red, green, blue])
 }
 
 pub fn validate_overlay_config(
@@ -33,12 +49,19 @@ pub(super) fn check_field(field: &FormField, config: &OverlayConfig) -> Result<(
         | FormField::FilePicker { key, .. }
         | FormField::DateTime { key, .. }
         | FormField::DynamicSelect { key, .. }
-        | FormField::DependentSelect { key, .. } => expect_string(config, key).map(|_| ()),
+        | FormField::DependentSelect { key, .. } => match expect_string(config, key)? {
+            Some(value) if !is_well_formed(key, value) => Err(OverlayError::UnknownChoice {
+                key: (*key).to_owned(),
+                value: value.to_owned(),
+            }),
+            _ => Ok(()),
+        },
         FormField::Select { key, options, .. } | FormField::Swatch { key, options, .. } => {
             let Some(value) = expect_string(config, key)? else {
                 return Ok(());
             };
-            if options.contains(&value) {
+            let custom_accent = *key == ACCENT && hex_color_channels(value).is_some();
+            if options.contains(&value) || custom_accent {
                 return Ok(());
             }
             Err(OverlayError::UnknownChoice {
@@ -76,6 +99,14 @@ pub(super) fn check_field(field: &FormField, config: &OverlayConfig) -> Result<(
             }),
         },
         FormField::SubChain { .. } | FormField::CaseList { .. } => Ok(()),
+    }
+}
+
+fn is_well_formed(key: &str, value: &str) -> bool {
+    match key {
+        BACKGROUND_COLOR => value.is_empty() || hex_color_channels(value).is_some(),
+        IMAGE => value.is_empty() || names_a_library_image(value),
+        _ => true,
     }
 }
 

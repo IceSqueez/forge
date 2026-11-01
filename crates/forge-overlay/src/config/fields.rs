@@ -282,6 +282,91 @@ pub(crate) fn icon_field() -> SectionedField {
     )
 }
 
+pub(crate) fn background_fields() -> [SectionedField; 2] {
+    [
+        in_section(
+            ConfigSection::Style,
+            FormField::Text {
+                key: BACKGROUND_COLOR,
+                label: "Background color",
+                placeholder: DEFAULT_BACKGROUND_COLOR,
+            },
+        ),
+        in_section(
+            ConfigSection::Style,
+            FormField::Slider {
+                key: BACKGROUND_OPACITY,
+                label: "Background opacity",
+                min: BACKGROUND_OPACITY_MIN_PERCENT,
+                max: BACKGROUND_OPACITY_MAX_PERCENT,
+                unit: "%",
+            },
+        ),
+    ]
+}
+
+pub(crate) fn image_fields() -> [SectionedField; 3] {
+    [
+        in_section(
+            ConfigSection::Style,
+            FormField::DynamicSelect {
+                key: IMAGE,
+                label: "Image",
+                options_key: ICON_OPTIONS_KEY,
+            },
+        ),
+        in_section(
+            ConfigSection::Style,
+            FormField::Select {
+                key: IMAGE_POSITION,
+                label: "Image position",
+                options: IMAGE_POSITION_OPTIONS,
+            },
+        ),
+        in_section(
+            ConfigSection::Style,
+            FormField::Slider {
+                key: IMAGE_HEIGHT,
+                label: "Image height",
+                min: IMAGE_HEIGHT_MIN_PX,
+                max: IMAGE_HEIGHT_MAX_PX,
+                unit: "px",
+            },
+        ),
+    ]
+}
+
+pub(crate) fn label_placement_fields() -> [SectionedField; 3] {
+    [
+        in_section(
+            ConfigSection::Style,
+            FormField::Select {
+                key: LABEL_SIDE,
+                label: "Caption side",
+                options: LABEL_SIDE_OPTIONS,
+            },
+        ),
+        in_section(
+            ConfigSection::Style,
+            FormField::Integer {
+                key: LABEL_OFFSET_X,
+                label: "Caption offset right",
+                min: LABEL_OFFSET_MIN_PX,
+                max: LABEL_OFFSET_MAX_PX,
+            },
+        ),
+        in_section(
+            ConfigSection::Style,
+            FormField::Integer {
+                key: LABEL_OFFSET_Y,
+                label: "Caption offset down",
+                min: LABEL_OFFSET_MIN_PX,
+                max: LABEL_OFFSET_MAX_PX,
+            },
+        ),
+    ]
+}
+
 pub(crate) fn sound_field() -> SectionedField {
     in_section(
         ConfigSection::Behavior,
